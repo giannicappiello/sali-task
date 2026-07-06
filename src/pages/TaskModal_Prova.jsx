@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
-function TaskModal({ open, onClose, onSaved }) {
+function TaskModal({ open, mode, task, onClose, onSaved }) {
   const [titolo, setTitolo] = useState("");
   const [descrizione, setDescrizione] = useState("");
   const [categoriaId, setCategoriaId] = useState("");
@@ -19,11 +19,25 @@ function TaskModal({ open, onClose, onSaved }) {
   const [utenti, setUtenti] = useState([]);
   const [saving, setSaving] = useState(false);
 
+  const isEditing = mode === "edit" && Boolean(task?.id);
+
   useEffect(() => {
-    if (open) {
-      loadOptions();
+    if (!open) return;
+
+    async function initializeModal() {
+      const options = await loadOptions();
+
+      if (mode === "edit" && task?.id) {
+        fillForm(task);
+      } else {
+        resetForm();
+        const nuova = options.stati.find((s) => s.nome === "Nuova");
+        setStatoId(nuova?.id || options.stati[0]?.id || "");
+      }
     }
-  }, [open]);
+
+    initializeModal();
+  }, [open, mode, task]);
 
   async function loadOptions() {
     const [categorieRes, statiRes, progettiRes, prodottiRes, utentiRes] =
@@ -41,20 +55,43 @@ function TaskModal({ open, onClose, onSaved }) {
     if (prodottiRes.error) console.error("Errore prodotti:", prodottiRes.error);
     if (utentiRes.error) console.error("Errore utenti:", utentiRes.error);
 
-    setCategorie(categorieRes.data || []);
-    setStati(statiRes.data || []);
-    setProgetti(progettiRes.data || []);
-    setProdotti(prodottiRes.data || []);
-    setUtenti(utentiRes.data || []);
+    const categorieData = categorieRes.data || [];
+    const statiData = statiRes.data || [];
+    const progettiData = progettiRes.data || [];
+    const prodottiData = prodottiRes.data || [];
+    const utentiData = utentiRes.data || [];
 
-    const nuova = (statiRes.data || []).find((s) => s.nome === "Nuova");
-    setStatoId((current) => current || nuova?.id || statiRes.data?.[0]?.id || "");
+    setCategorie(categorieData);
+    setStati(statiData);
+    setProgetti(progettiData);
+    setProdotti(prodottiData);
+    setUtenti(utentiData);
+
+    return {
+      categorie: categorieData,
+      stati: statiData,
+      progetti: progettiData,
+      prodotti: prodottiData,
+      utenti: utentiData,
+    };
+  }
+
+  function fillForm(taskToEdit) {
+    setTitolo(taskToEdit.titolo || "");
+    setDescrizione(taskToEdit.descrizione || "");
+    setCategoriaId(taskToEdit.categoria_id || "");
+    setStatoId(taskToEdit.stato_id || "");
+    setProgettoId(taskToEdit.progetto_id || "");
+    setProdottoId(taskToEdit.prodotto_id || "");
+    setAssegnatoAId(taskToEdit.assegnato_a_id || "");
+    setDeadline(taskToEdit.deadline || "");
   }
 
   function resetForm() {
     setTitolo("");
     setDescrizione("");
     setCategoriaId("");
+    setStatoId("");
     setProgettoId("");
     setProdottoId("");
     setAssegnatoAId("");
@@ -71,7 +108,7 @@ function TaskModal({ open, onClose, onSaved }) {
 
     setSaving(true);
 
-    const { error } = await supabase.from("tasks").insert({
+    const payload = {
       titolo: titolo.trim(),
       descrizione: descrizione.trim() || null,
       categoria_id: categoriaId || null,
@@ -80,7 +117,14 @@ function TaskModal({ open, onClose, onSaved }) {
       prodotto_id: prodottoId || null,
       assegnato_a_id: assegnatoAId || null,
       deadline: deadline || null,
-    });
+      updated_at: new Date().toISOString(),
+    };
+
+    const request = isEditing
+      ? supabase.from("tasks").update(payload).eq("id", task.id)
+      : supabase.from("tasks").insert(payload);
+
+    const { error } = await request;
 
     setSaving(false);
 
@@ -107,8 +151,12 @@ function TaskModal({ open, onClose, onSaved }) {
       <div className="task-modal">
         <div className="modal-header">
           <div>
-            <h2>Nuova task</h2>
-            <p>Crea una nuova attività con assegnazione e deadline.</p>
+            <h2>{isEditing ? "Modifica task" : "Nuova task"}</h2>
+            <p>
+              {isEditing
+                ? "Aggiorna attività, assegnazione, stato e deadline."
+                : "Crea una nuova attività con assegnazione e deadline."}
+            </p>
           </div>
 
           <button className="modal-close" onClick={handleClose} type="button">
@@ -151,6 +199,7 @@ function TaskModal({ open, onClose, onSaved }) {
           <div className="form-group">
             <label>Stato</label>
             <select value={statoId} onChange={(e) => setStatoId(e.target.value)}>
+              <option value="">Seleziona stato</option>
               {stati.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.nome}
@@ -210,7 +259,7 @@ function TaskModal({ open, onClose, onSaved }) {
             </button>
 
             <button type="submit" className="primary-action" disabled={saving}>
-              {saving ? "Salvataggio..." : "Salva task"}
+              {saving ? "Salvataggio..." : isEditing ? "Salva modifiche" : "Salva task"}
             </button>
           </div>
         </form>

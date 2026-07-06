@@ -1,33 +1,43 @@
-import { useState } from "react";
+import { Navigate, Route, Routes } from "react-router-dom";
+import { AuthProvider } from "./contexts/AuthContext";
+import ProtectedRoute from "./components/ProtectedRoute";
 import Layout from "./components/Layout";
-import Dashboard from "./pages/Dashboard";
-import Tasks from "./pages/Tasks";
-import Projects from "./pages/Projects";
-import Products from "./pages/Products";
-import Team from "./pages/Team";
-import Calendar from "./pages/Calendar";
-import Reports from "./pages/Reports";
-import Settings from "./pages/Settings";
+
+import Login from "./pages/Login/Login";
+import Dashboard from "./pages/Dashboard/Dashboard";
+import Tasks from "./pages/Tasks/Tasks";
+import Projects from "./pages/Projects/Projects";
+import Products from "./pages/Products/Products";
+import Team from "./pages/Team/Team";
+import Calendar from "./pages/Calendar/Calendar";
+import Reports from "./pages/Reports/Reports";
+import Settings from "./pages/Settings/Settings";
+
 import "./styles/App.css";
 
 function App() {
-  const [activePage, setActivePage] = useState("dashboard");
-
-  const pages = {
-    dashboard: <Dashboard />,
-    tasks: <Tasks />,
-    projects: <Projects />,
-    products: <Products />,
-    team: <Team />,
-    calendar: <Calendar />,
-    reports: <Reports />,
-    settings: <Settings />,
-  };
-
   return (
-    <Layout activePage={activePage} setActivePage={setActivePage}>
-      {pages[activePage]}
-    </Layout>
+    <AuthProvider>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+
+        <Route element={<ProtectedRoute />}>
+          <Route path="/" element={<Layout />}>
+            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="tasks" element={<Tasks />} />
+            <Route path="projects" element={<Projects />} />
+            <Route path="products" element={<Products />} />
+            <Route path="team" element={<Team />} />
+            <Route path="calendar" element={<Calendar />} />
+            <Route path="reports" element={<Reports />} />
+            <Route path="settings" element={<Settings />} />
+          </Route>
+        </Route>
+
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+    </AuthProvider>
   );
 }
 

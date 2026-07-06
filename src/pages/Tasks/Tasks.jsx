@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Plus, Search, CalendarDays, AlertCircle } from "lucide-react";
-import { supabase } from "../lib/supabaseClient";
-import TaskModal from "../components/TaskModal";
+import { supabase } from "../../lib/supabaseClient";
+import TaskModal from "./TaskModal";
 
 function Tasks() {
   const [tasks, setTasks] = useState([]);
@@ -228,7 +228,7 @@ function Tasks() {
         {loading ? (
           <p className="table-message">Caricamento task...</p>
         ) : filteredTasks.length === 0 ? (
-          <p className="table-message">Nessuna task trovata.</p>
+          <p className="table-message">Nessuna task trovata. Crea la prima task reale.</p>
         ) : (
           <div className="tasks-table authors-table">
             <div className="tasks-table-head">

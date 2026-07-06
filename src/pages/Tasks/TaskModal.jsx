@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { X, History, MessageCircle, Paperclip, CheckSquare } from "lucide-react";
-import { supabase } from "../lib/supabaseClient";
+import { supabase } from "../../lib/supabaseClient";
+import { useAuth } from "../../contexts/AuthContext";
 
 function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
+  const { profile } = useAuth();
   const [activeTab, setActiveTab] = useState("dettagli");
 
   const [titolo, setTitolo] = useState("");
@@ -12,8 +14,6 @@ function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
   const [progettoId, setProgettoId] = useState("");
   const [prodottoId, setProdottoId] = useState("");
   const [assegnatoAId, setAssegnatoAId] = useState("");
-  const [creatoDaId, setCreatoDaId] = useState("");
-  const [modificatoDaId, setModificatoDaId] = useState("");
   const [deadline, setDeadline] = useState("");
 
   const [categorie, setCategorie] = useState([]);
@@ -52,8 +52,6 @@ function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
         setProgettoId(task.progetto_id || "");
         setProdottoId(task.prodotto_id || "");
         setAssegnatoAId(task.assegnato_a_id || "");
-        setCreatoDaId(task.creato_da_id || "");
-        setModificatoDaId(task.modificato_da_id || "");
         setDeadline(task.deadline || "");
         await loadAttivita(task.id);
       } else {
@@ -67,13 +65,7 @@ function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
         setAttivita([]);
 
         const nuova = options.stati.find((s) => s.nome === "Nuova");
-        const giovanni = options.utenti.find((u) =>
-          u.nome.toLowerCase().includes("giovanni")
-        );
-
         setStatoId(nuova?.id || options.stati[0]?.id || "");
-        setCreatoDaId(giovanni?.id || options.utenti[0]?.id || "");
-        setModificatoDaId("");
       }
     }
 
@@ -146,8 +138,6 @@ function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
     setProgettoId("");
     setProdottoId("");
     setAssegnatoAId("");
-    setCreatoDaId("");
-    setModificatoDaId("");
     setDeadline("");
     setAttivita([]);
     setActiveTab("dettagli");
@@ -223,11 +213,6 @@ function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
         oldValue: task.deadline,
         newValue: payload.deadline,
       },
-      {
-        campo: "modificato da",
-        oldValue: getLabel("utenti", task.modificato_da_id),
-        newValue: getLabel("utenti", payload.modificato_da_id),
-      },
     ];
 
     return fields
@@ -280,22 +265,22 @@ function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
       prodotto_id: prodottoId || null,
       assegnato_a_id: assegnatoAId || null,
       deadline: deadline || null,
-      updated_at: new Date().toISOString(),
     };
 
     const payload = isEditing
       ? {
           ...basePayload,
-          modificato_da_id: modificatoDaId || null,
+          modificato_da_id: profile?.id || null,
         }
       : {
           ...basePayload,
-          creato_da_id: creatoDaId || null,
+          creato_da_id: profile?.id || null,
+          richiedente_id: profile?.id || null,
           modificato_da_id: null,
         };
 
     const changes = buildChanges(payload);
-    const userIdForActivity = isEditing ? modificatoDaId : creatoDaId;
+    const userIdForActivity = profile?.id || null;
 
     if (isEditing && changes.length === 0) {
       setSaving(false);
@@ -365,7 +350,7 @@ function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
             <p>
               {isEditing
                 ? "Gestisci dettagli, attività, commenti, allegati e checklist."
-                : "Crea una nuova attività indicando anche chi la crea."}
+                : "Crea una nuova attività. Creatore e modifiche saranno registrati automaticamente."}
             </p>
           </div>
 
@@ -512,37 +497,6 @@ function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
                 value={deadline}
                 onChange={(e) => setDeadline(e.target.value)}
               />
-            </div>
-
-            <div className="form-group">
-              <label>Creata da</label>
-              <select
-                value={creatoDaId}
-                onChange={(e) => setCreatoDaId(e.target.value)}
-                disabled={isEditing}
-              >
-                <option value="">Seleziona utente</option>
-                {utenti.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.nome}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label>Modificata da</label>
-              <select
-                value={modificatoDaId}
-                onChange={(e) => setModificatoDaId(e.target.value)}
-              >
-                <option value="">Nessuna modifica</option>
-                {utenti.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.nome}
-                  </option>
-                ))}
-              </select>
             </div>
 
             <div className="modal-actions">

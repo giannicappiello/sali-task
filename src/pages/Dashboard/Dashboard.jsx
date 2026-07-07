@@ -8,9 +8,18 @@ import {
   Activity,
   CalendarDays,
   UserCircle,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
+
+function formatDateForQuery(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 function Dashboard() {
   const navigate = useNavigate();
@@ -19,6 +28,7 @@ function Dashboard() {
   const [tasks, setTasks] = useState([]);
   const [attivita, setAttivita] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
 
   const today = useMemo(() => {
     const value = new Date();
@@ -74,21 +84,21 @@ function Dashboard() {
 
   function isToday(date) {
     if (!date) return false;
-    const d = new Date(date);
+    const d = new Date(`${date}T00:00:00`);
     d.setHours(0, 0, 0, 0);
     return d.getTime() === today.getTime();
   }
 
   function isOverdue(task) {
     if (!task.deadline || isClosed(task)) return false;
-    const d = new Date(task.deadline);
+    const d = new Date(`${task.deadline}T00:00:00`);
     d.setHours(0, 0, 0, 0);
     return d < today;
   }
 
   function isUrgent(task) {
     if (!task.deadline || isClosed(task)) return false;
-    const d = new Date(task.deadline);
+    const d = new Date(`${task.deadline}T00:00:00`);
     d.setHours(0, 0, 0, 0);
     const diffDays = Math.ceil((d - today) / (1000 * 60 * 60 * 24));
     return diffDays >= 0 && diffDays <= 3;
@@ -110,42 +120,51 @@ function Dashboard() {
   }, [tasks, profile?.id]);
 
   const calendarDays = useMemo(() => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth();
+    const year = calendarMonth.getFullYear();
+    const month = calendarMonth.getMonth();
     const firstDay = new Date(year, month, 1);
     const startOffset = (firstDay.getDay() + 6) % 7;
     const start = new Date(year, month, 1 - startOffset);
 
-    return Array.from({ length: 35 }).map((_, index) => {
+    return Array.from({ length: 42 }).map((_, index) => {
       const day = new Date(start);
       day.setDate(start.getDate() + index);
+      const dateKey = formatDateForQuery(day);
 
-      const dayTasks = tasks.filter((task) => {
-        if (!task.deadline) return false;
-        const d = new Date(task.deadline);
-        return (
-          d.getFullYear() === day.getFullYear() &&
-          d.getMonth() === day.getMonth() &&
-          d.getDate() === day.getDate()
-        );
-      });
+      const dayTasks = tasks.filter((task) => task.deadline === dateKey);
 
       return {
         date: day,
+        dateKey,
         inMonth: day.getMonth() === month,
-        isToday:
-          day.getFullYear() === now.getFullYear() &&
-          day.getMonth() === now.getMonth() &&
-          day.getDate() === now.getDate(),
+        isToday: dateKey === formatDateForQuery(new Date()),
         count: dayTasks.length,
         hasOverdue: dayTasks.some(isOverdue),
       };
     });
-  }, [tasks]);
+  }, [tasks, calendarMonth]);
 
   function goToTasks(filter) {
     navigate(`/tasks?filter=${filter}`);
+  }
+
+  function goToDate(dateKey) {
+    navigate(`/tasks?date=${dateKey}`);
+  }
+
+  function changeMonth(direction) {
+    setCalendarMonth((current) => {
+      const next = new Date(current);
+      next.setMonth(current.getMonth() + direction);
+      return next;
+    });
+  }
+
+  function formatMonth(date) {
+    return date.toLocaleDateString("it-IT", {
+      month: "long",
+      year: "numeric",
+    });
   }
 
   function formatTime(date) {
@@ -229,9 +248,17 @@ function Dashboard() {
         </div>
 
         <div className="panel mini-calendar-panel">
-          <div className="panel-header">
+          <div className="panel-header calendar-panel-header">
             <h3>Calendario</h3>
-            <CalendarDays size={24} />
+            <div className="calendar-month-controls">
+              <button type="button" onClick={() => changeMonth(-1)}>
+                <ChevronLeft size={18} />
+              </button>
+              <strong>{formatMonth(calendarMonth)}</strong>
+              <button type="button" onClick={() => changeMonth(1)}>
+                <ChevronRight size={18} />
+              </button>
+            </div>
           </div>
 
           <div className="mini-calendar">
@@ -245,8 +272,9 @@ function Dashboard() {
                   key={index}
                   type="button"
                   className={`calendar-day ${day.inMonth ? "" : "muted"} ${day.isToday ? "today" : ""} ${day.count ? "has-task" : ""} ${day.hasOverdue ? "has-overdue" : ""}`}
-                  onClick={() => day.count > 0 && navigate(`/tasks?date=${day.date.toISOString().slice(0, 10)}`)}
+                  onClick={() => day.count > 0 && goToDate(day.dateKey)}
                   disabled={!day.count}
+                  title={day.count > 0 ? `${day.count} task` : "Nessuna task"}
                 >
                   <span>{day.date.getDate()}</span>
                   {day.count > 0 && <small>{day.count}</small>}

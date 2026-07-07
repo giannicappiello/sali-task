@@ -15,11 +15,15 @@ function statusClass(item) { const s = statusOf(item); if (s === "Completato") r
 function formatDate(date) { if (!date) return "-"; return new Date(`${date}T00:00:00`).toLocaleDateString("it-IT", { weekday: "short", day: "2-digit", month: "short" }); }
 
 export default function Agenda() {
-  const { profile } = useAuth();
+  const { profile, hasPermission, isAdmin } = useAuth();
+  const adminMode = Boolean(isAdmin?.() || hasPermission?.("agenda.read.all"));
+  const canWriteAgenda = Boolean(hasPermission?.("agenda.write") || adminMode);
   const [view, setView] = useState("month");
   const [cursor, setCursor] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState(todayIso());
   const [query, setQuery] = useState("");
+  const [selectedUserId, setSelectedUserId] = useState("all");
+  const [users, setUsers] = useState([]);
   const [reminders, setReminders] = useState([]);
   const [products, setProducts] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -31,20 +35,53 @@ export default function Agenda() {
   const [saving, setSaving] = useState(false);
   const [comment, setComment] = useState("");
 
-  useEffect(() => { loadData(); }, [profile?.id]);
+  useEffect(() => { loadData(); }, [profile?.id, adminMode]);
   useEffect(() => { if (selected?.id) loadDetail(selected.id); }, [selected?.id]);
 
   async function loadData() {
     if (!profile?.id) return;
-    const [remRes, prodRes, projRes] = await Promise.all([
-      supabase.from("agenda_reminder").select("*").eq("utente_id", profile.id).order("deadline", { ascending: true, nullsFirst: false }),
+
+    const userDepartmentIds = profile?.reparto_ids || [];
+
+    let reminderQuery = supabase
+      .from("agenda_reminder")
+      .select("*,utenti(id,nome,email)");
+
+    if (!adminMode) {
+      reminderQuery = reminderQuery.eq("utente_id", profile.id);
+    }
+
+    const [remRes, prodRes, projRes, projectDepartmentsRes, usersRes] = await Promise.all([
+      reminderQuery.order("deadline", { ascending: true, nullsFirst: false }),
       supabase.from("prodotti").select("id,nome,codice").eq("attivo", true).order("nome").limit(500),
       supabase.from("v4_progetti").select("id,titolo").order("created_at", { ascending: false }).limit(500),
+      supabase.from("v4_progetto_reparti").select("progetto_id,reparto_id"),
+      adminMode ? supabase.from("utenti").select("id,nome,email,attivo").eq("attivo", true).order("nome") : Promise.resolve({ data: [], error: null }),
     ]);
+
     if (remRes.error) console.error("Agenda:", remRes.error);
+    if (projRes.error) console.error("Progetti agenda:", projRes.error);
+    if (projectDepartmentsRes.error) console.error("Reparti progetto agenda:", projectDepartmentsRes.error);
+    if (usersRes.error) console.error("Utenti agenda:", usersRes.error);
+
+    const allProjects = projRes.data || [];
+    const projectDepartments = projectDepartmentsRes.data || [];
+
+    const visibleProjects = adminMode
+      ? allProjects
+      : allProjects.filter((project) => {
+          const deps = projectDepartments
+            .filter((row) => row.progetto_id === project.id)
+            .map((row) => row.reparto_id)
+            .filter(Boolean);
+
+          return deps.length === 0 || deps.some((id) => userDepartmentIds.includes(id));
+        });
+
     setReminders(remRes.data || []);
     setProducts(prodRes.data || []);
-    setProjects(projRes.data || []);
+    setProjects(visibleProjects);
+    setUsers(usersRes.data || []);
   }
 
   async function loadDetail(id) {
@@ -59,9 +96,21 @@ export default function Agenda() {
   const filtered = useMemo(() => {
     const text = query.trim().toLowerCase();
     let data = reminders;
-    if (text) data = data.filter((item) => `${item.titolo || ""} ${item.descrizione || ""} ${products.find((p) => p.id === item.prodotto_id)?.nome || ""} ${projects.find((p) => p.id === item.progetto_id)?.titolo || ""}`.toLowerCase().includes(text));
+
+    if (adminMode && selectedUserId !== "all") {
+      data = data.filter((item) => item.utente_id === selectedUserId);
+    }
+
+    if (text) {
+      data = data.filter((item) =>
+        `${item.titolo || ""} ${item.descrizione || ""} ${products.find((p) => p.id === item.prodotto_id)?.nome || ""} ${projects.find((p) => p.id === item.progetto_id)?.titolo || ""} ${item.utenti?.nome || ""} ${item.utenti?.email || ""}`
+          .toLowerCase()
+          .includes(text)
+      );
+    }
+
     return data;
-  }, [reminders, query]);
+  }, [reminders, query, products, projects, adminMode, selectedUserId]);
 
   const calendarDays = useMemo(() => {
     if (view === "day") return [{ date: new Date(`${selectedDate}T00:00:00`), key: selectedDate }];
@@ -88,13 +137,20 @@ export default function Agenda() {
     return map;
   }, [filtered]);
 
+  function canEditReminder(item) {
+    if (!item?.id) return canWriteAgenda;
+    return adminMode || item.utente_id === profile?.id;
+  }
+
   function openNew(date = selectedDate) {
+    if (!canWriteAgenda) return alert("Non hai i permessi per creare reminder.");
     setForm({ ...defaultForm, deadline: date || todayIso() });
     setSelected(null);
     setFormOpen(true);
   }
 
   function openEdit(item) {
+    if (!canEditReminder(item)) return alert("Non hai i permessi per modificare questo reminder.");
     setSelected(item);
     setForm({
       titolo: item.titolo || "",
@@ -109,10 +165,12 @@ export default function Agenda() {
 
   async function saveReminder(e) {
     e.preventDefault();
+    if (!canWriteAgenda) return alert("Non hai i permessi per modificare l'agenda.");
+    if (selected?.id && !canEditReminder(selected)) return alert("Non hai i permessi per modificare questo reminder.");
     if (!form.titolo.trim()) return alert("Inserisci il titolo.");
     setSaving(true);
     const payload = {
-      utente_id: profile.id,
+      utente_id: selected?.utente_id || profile.id,
       titolo: form.titolo.trim(),
       descrizione: form.descrizione.trim() || null,
       deadline: form.deadline || null,
@@ -132,6 +190,7 @@ export default function Agenda() {
   }
 
   async function completeReminder(item) {
+    if (!canEditReminder(item)) return alert("Non hai i permessi per completare questo reminder.");
     const { error } = await supabase.from("agenda_reminder").update({ completato: true, stato: "Completato", completato_il: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", item.id);
     if (error) return alert(error.message);
     await loadData();
@@ -141,6 +200,7 @@ export default function Agenda() {
   async function saveComment(e) {
     e.preventDefault();
     if (!selected?.id || !comment.trim()) return;
+    if (!canEditReminder(selected)) return alert("Non hai i permessi per commentare questo reminder.");
     const { error } = await supabase.from("agenda_commenti").insert({ reminder_id: selected.id, utente_id: profile.id, commento: comment.trim() });
     if (error) return alert(error.message);
     setComment("");
@@ -149,6 +209,7 @@ export default function Agenda() {
 
   async function uploadAttachment(file) {
     if (!selected?.id || !file) return;
+    if (!canEditReminder(selected)) return alert("Non hai i permessi per allegare file a questo reminder.");
     const path = `${profile.id}/agenda/${selected.id}/${Date.now()}-${file.name}`;
     const uploaded = await supabase.storage.from("allegati").upload(path, file, { upsert: true });
     if (uploaded.error) return alert(`Errore upload. Verifica bucket Storage "allegati". ${uploaded.error.message}`);
@@ -168,11 +229,19 @@ export default function Agenda() {
     <div className="agenda-page v4-page">
       <div className="page-title-row">
         <div><h1>Agenda personale</h1><p>Reminder privati visibili solo all'utente e agli amministratori.</p></div>
-        <button className="primary-action" onClick={() => openNew()}><Plus size={18} />Nuovo reminder</button>
+        {canWriteAgenda && <button className="primary-action" onClick={() => openNew()}><Plus size={18} />Nuovo reminder</button>}
       </div>
 
       <div className="v4-toolbar">
         <div className="task-search"><Search size={18} /><input placeholder="Cerca tutto in agenda..." value={query} onChange={(e) => setQuery(e.target.value)} /></div>
+        {adminMode && (
+          <select className="filter-chip" value={selectedUserId} onChange={(e) => setSelectedUserId(e.target.value)}>
+            <option value="all">Tutti gli utenti</option>
+            {users.map((user) => (
+              <option key={user.id} value={user.id}>{user.nome || user.email}</option>
+            ))}
+          </select>
+        )}
         {Object.entries(viewLabels).map(([key, label]) => <button key={key} className={`filter-chip ${view === key ? "active" : ""}`} onClick={() => setView(key)}>{label}</button>)}
         <button className="filter-chip" onClick={() => setCursor(addDays(cursor, view === "week" ? -7 : -30))}>Indietro</button>
         <button className="filter-chip" onClick={() => setCursor(new Date())}>Oggi</button>
@@ -202,10 +271,10 @@ export default function Agenda() {
           {(remindersByDay.get(selectedDate) || []).length === 0 ? <p className="empty-text">Nessun reminder in questa giornata.</p> : (
             <div className="v4-list">{(remindersByDay.get(selectedDate) || []).map((item) => (
               <div key={item.id} className={`v4-list-row ${statusClass(item)}`}>
-                <button className="v4-list-main" onClick={() => { setSelected(item); setFormOpen(false); }}><strong>{item.titolo}</strong><span>{item.descrizione || "Nessuna descrizione"}</span><small>{products.find((p) => p.id === item.prodotto_id)?.nome || ""} {projects.find((p) => p.id === item.progetto_id)?.titolo ? `· ${projects.find((p) => p.id === item.progetto_id)?.titolo}` : ""}</small></button>
+                <button className="v4-list-main" onClick={() => { setSelected(item); setFormOpen(false); }}><strong>{item.titolo}</strong><span>{item.descrizione || "Nessuna descrizione"}</span><small>{adminMode && item.utenti?.nome ? `${item.utenti.nome} · ` : ""}{products.find((p) => p.id === item.prodotto_id)?.nome || ""} {projects.find((p) => p.id === item.progetto_id)?.titolo ? `· ${projects.find((p) => p.id === item.progetto_id)?.titolo}` : ""}</small></button>
                 <span className={`status-pill ${statusClass(item)}`}>{statusOf(item)}</span>
-                {!isDone(item) && <button className="icon-action success" onClick={() => completeReminder(item)}><CheckCircle2 size={18} /></button>}
-                <button className="icon-action" onClick={() => openEdit(item)}>Modifica</button>
+                {!isDone(item) && canEditReminder(item) && <button className="icon-action success" onClick={() => completeReminder(item)}><CheckCircle2 size={18} /></button>}
+                {canEditReminder(item) && <button className="icon-action" onClick={() => openEdit(item)}>Modifica</button>}
               </div>
             ))}</div>
           )}

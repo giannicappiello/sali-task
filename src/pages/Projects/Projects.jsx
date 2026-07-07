@@ -63,8 +63,9 @@ function safeArray(value) {
 }
 
 export default function Projects() {
-  const { profile, hasPermission } = useAuth();
+  const { profile, hasPermission, isAdmin, userDepartmentIds = [] } = useAuth();
   const canManage = hasPermission("projects.write");
+  const canReadAllProjects = hasPermission("projects.read.all") || isAdmin?.();
   const actorId = profile?.id || null;
 
   async function getCurrentUtenteId() {
@@ -112,8 +113,8 @@ export default function Projects() {
   const [dragActive, setDragActive] = useState(false);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (profile?.id) loadData();
+  }, [profile?.id, userDepartmentIds.join(",")]);
 
   useEffect(() => {
     if (selectedPhase?.id) loadPhaseDetails(selectedPhase.id);
@@ -144,15 +145,45 @@ export default function Projects() {
     if (projectsRes.error) console.error("Progetti:", projectsRes.error.message);
     if (phasesRes.error) console.error("Fasi:", phasesRes.error.message);
 
-    setProjects(projectsRes.data || []);
-    setPhases(phasesRes.data || []);
+    const allProjects = projectsRes.data || [];
+    const allPhases = phasesRes.data || [];
+    const allProjectDepartments = prRes.data || [];
+    const allowedDepartmentIds = userDepartmentIds || [];
+
+    const visibleProjectIds = new Set(
+      canReadAllProjects
+        ? allProjects.map((project) => project.id)
+        : allProjects
+            .filter((project) => {
+              const projectDepartmentIds = allProjectDepartments
+                .filter((row) => row.progetto_id === project.id)
+                .map((row) => row.reparto_id)
+                .filter(Boolean);
+
+              if (projectDepartmentIds.length === 0) return true;
+              return projectDepartmentIds.some((repartoId) => allowedDepartmentIds.includes(repartoId));
+            })
+            .map((project) => project.id)
+    );
+
+    const visibleProjects = allProjects.filter((project) => visibleProjectIds.has(project.id));
+    const visiblePhases = canReadAllProjects
+      ? allPhases
+      : allPhases.filter((phase) => {
+          if (!visibleProjectIds.has(phase.progetto_id)) return false;
+          if (!phase.reparto_id) return true;
+          return allowedDepartmentIds.includes(phase.reparto_id);
+        });
+
+    setProjects(visibleProjects);
+    setPhases(visiblePhases);
     setProducts((productsRes.data || []).filter((item) => item.id));
     setDepartments((departmentsRes.data || []).filter((item) => item.attivo !== false));
     setUsers((usersRes.data || []).filter((item) => item.attivo !== false));
     setTemplates((templatesRes.data || []).filter((item) => item.attivo !== false));
-    setProjectProducts(ppRes.data || []);
-    setProjectDepartments(prRes.data || []);
-    setPhaseProducts(fpRes.data || []);
+    setProjectProducts((ppRes.data || []).filter((row) => visibleProjectIds.has(row.progetto_id)));
+    setProjectDepartments((prRes.data || []).filter((row) => visibleProjectIds.has(row.progetto_id)));
+    setPhaseProducts((fpRes.data || []).filter((row) => visiblePhases.some((phase) => phase.id === row.fase_id)));
     setLoading(false);
   }
 

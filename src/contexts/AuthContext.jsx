@@ -132,14 +132,38 @@ export function AuthProvider({ children }) {
       await supabase.from("utenti").update({ ultimo_accesso: now, last_seen: now }).eq("id", data.id);
     }
 
+    let repartoRows = [];
+    if (data?.id) {
+      const { data: userDepartmentRows, error: userDepartmentsError } = await supabase
+        .from("utenti_reparti")
+        .select("reparto_id,reparti(id,nome)")
+        .eq("utente_id", data.id);
+
+      if (userDepartmentsError) {
+        console.error("Errore caricamento reparti utente:", userDepartmentsError);
+      } else {
+        repartoRows = userDepartmentRows || [];
+      }
+    }
+
+    const reparto_ids = repartoRows.map((row) => row.reparto_id).filter(Boolean);
+    const reparti_multipli = repartoRows.map((row) => row.reparti).filter(Boolean);
+
+    if (data?.reparto_id && !reparto_ids.includes(data.reparto_id)) {
+      reparto_ids.push(data.reparto_id);
+      if (data.reparti) reparti_multipli.push(data.reparti);
+    }
+
     const nextProfile = data
-      ? { ...data, ultimo_accesso: now, last_seen: now }
+      ? { ...data, ultimo_accesso: now, last_seen: now, reparto_ids, reparti_multipli }
       : {
           id: null,
           auth_user_id: user.id,
           nome: user.email?.split("@")[0] || "Utente",
           email: user.email,
           reparti: null,
+          reparti_multipli: [],
+          reparto_ids: [],
           ruoli: null,
         };
 
@@ -184,13 +208,22 @@ export function AuthProvider({ children }) {
     return error ? { success: false, error } : { success: true };
   }
 
+  function isAdmin() {
+    const roleName = (profile?.ruoli?.nome || "").toLowerCase();
+    const level = Number(profile?.ruoli?.livello || 0);
+    return ["admin", "administrator", "amministratore", "super admin", "direzione"].includes(roleName) || level >= 80;
+  }
+
   function hasPermission(code) {
     if (!profile) return false;
-    const roleName = (profile.ruoli?.nome || "").toLowerCase();
-    if (["admin", "administrator", "amministratore", "responsabile"].includes(roleName)) return true;
-    if (permissions.includes(code)) return true;
-    if (permissions.length === 0) return true;
-    return false;
+    if (isAdmin()) return true;
+    return permissions.includes(code);
+  }
+
+  function canAccessDepartment(repartoId) {
+    if (!repartoId) return true;
+    if (isAdmin()) return true;
+    return (profile?.reparto_ids || []).includes(repartoId);
   }
 
   const value = useMemo(
@@ -205,6 +238,9 @@ export function AuthProvider({ children }) {
       signOut,
       resetPassword,
       hasPermission,
+      isAdmin,
+      canAccessDepartment,
+      userDepartmentIds: profile?.reparto_ids || [],
       reloadProfile: () => authUser && loadProfile(authUser),
     }),
     [session, authUser, profile, permissions, loading]

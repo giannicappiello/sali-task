@@ -1,22 +1,28 @@
-import { useEffect, useState } from "react";
-import { Plus, Pencil, Trash2, X, Save } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 
-const emptyRole = { nome: "", descrizione: "", livello: 10 };
 const emptyDepartment = { nome: "", descrizione: "", attivo: true };
+const emptyRole = { nome: "", descrizione: "", livello: 10 };
+const emptyTemplate = { titolo: "", reparto_id: "", ordine: 1, attivo: true };
 
-function Settings() {
+export default function Settings() {
   const { hasPermission } = useAuth();
   const canManage = hasPermission("settings.manage");
 
-  const [activeTab, setActiveTab] = useState("reparti");
-  const [reparti, setReparti] = useState([]);
-  const [ruoli, setRuoli] = useState([]);
+  const [tab, setTab] = useState("checklist");
+  const [departments, setDepartments] = useState([]);
+  const [roles, setRoles] = useState([]);
+  const [templates, setTemplates] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [userDepartments, setUserDepartments] = useState([]);
 
-  const [modal, setModal] = useState({ open: false, type: "reparto", item: null });
-  const [roleForm, setRoleForm] = useState(emptyRole);
+  const [modal, setModal] = useState({ open: false, type: "checklist", item: null });
   const [departmentForm, setDepartmentForm] = useState(emptyDepartment);
+  const [roleForm, setRoleForm] = useState(emptyRole);
+  const [templateForm, setTemplateForm] = useState(emptyTemplate);
+  const [selectedUserDepartmentIds, setSelectedUserDepartmentIds] = useState([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -24,34 +30,65 @@ function Settings() {
   }, []);
 
   async function loadData() {
-    const [repartiRes, ruoliRes] = await Promise.all([
+    const [departmentsRes, rolesRes, templatesRes, usersRes, userDepartmentsRes] = await Promise.all([
       supabase.from("reparti").select("*").order("nome"),
       supabase.from("ruoli").select("*").order("livello", { ascending: false }),
+      supabase.from("checklist_template").select("*,reparti(id,nome)").order("ordine", { ascending: true }),
+      supabase.from("utenti").select("id,nome,email,attivo").order("nome"),
+      supabase.from("utenti_reparti").select("id,utente_id,reparto_id"),
     ]);
 
-    if (repartiRes.error) {
-      console.error("Errore reparti:", repartiRes.error);
-      setReparti([]);
-    } else {
-      setReparti(repartiRes.data || []);
-    }
+    if (departmentsRes.error) console.error("Errore reparti:", departmentsRes.error.message);
+    if (rolesRes.error) console.error("Errore ruoli:", rolesRes.error.message);
+    if (templatesRes.error) console.error("Errore checklist:", templatesRes.error.message);
+    if (usersRes.error) console.error("Errore utenti:", usersRes.error.message);
+    if (userDepartmentsRes.error) console.error("Errore utenti_reparti:", userDepartmentsRes.error.message);
 
-    if (ruoliRes.error) {
-      console.error("Errore ruoli:", ruoliRes.error);
-      setRuoli([]);
-    } else {
-      setRuoli(ruoliRes.data || []);
-    }
+    setDepartments(departmentsRes.data || []);
+    setRoles(rolesRes.data || []);
+    setTemplates(templatesRes.data || []);
+    setUsers(usersRes.data || []);
+    setUserDepartments(userDepartmentsRes.data || []);
+  }
+
+  const activeDepartments = useMemo(
+    () => departments.filter((item) => item.attivo !== false),
+    [departments]
+  );
+
+  function getUserDepartmentIds(userId) {
+    return userDepartments
+      .filter((row) => row.utente_id === userId && row.reparto_id)
+      .map((row) => row.reparto_id);
+  }
+
+  function getUserDepartmentNames(userId) {
+    const ids = getUserDepartmentIds(userId);
+    const names = ids
+      .map((id) => departments.find((department) => department.id === id)?.nome)
+      .filter(Boolean);
+
+    return names.length ? names.join(", ") : "Nessun reparto associato";
   }
 
   function openCreate(type) {
     setModal({ open: true, type, item: null });
-    setRoleForm(emptyRole);
     setDepartmentForm(emptyDepartment);
+    setRoleForm(emptyRole);
+    setTemplateForm(emptyTemplate);
+    setSelectedUserDepartmentIds([]);
   }
 
   function openEdit(type, item) {
     setModal({ open: true, type, item });
+
+    if (type === "reparto") {
+      setDepartmentForm({
+        nome: item.nome || "",
+        descrizione: item.descrizione || "",
+        attivo: item.attivo !== false,
+      });
+    }
 
     if (type === "ruolo") {
       setRoleForm({
@@ -59,31 +96,38 @@ function Settings() {
         descrizione: item.descrizione || "",
         livello: item.livello || 10,
       });
-    } else {
-      setDepartmentForm({
-        nome: item.nome || "",
-        descrizione: item.descrizione || "",
+    }
+
+    if (type === "checklist") {
+      setTemplateForm({
+        titolo: item.titolo || "",
+        reparto_id: item.reparto_id || "",
+        ordine: item.ordine || 1,
         attivo: item.attivo !== false,
       });
+    }
+
+    if (type === "utente_reparti") {
+      setSelectedUserDepartmentIds(getUserDepartmentIds(item.id));
     }
   }
 
   function closeModal() {
-    setModal({ open: false, type: "reparto", item: null });
-    setRoleForm(emptyRole);
-    setDepartmentForm(emptyDepartment);
+    setModal({ open: false, type: "checklist", item: null });
+    setSelectedUserDepartmentIds([]);
+  }
+
+  function toggleUserDepartment(repartoId) {
+    setSelectedUserDepartmentIds((current) =>
+      current.includes(repartoId)
+        ? current.filter((id) => id !== repartoId)
+        : [...current, repartoId]
+    );
   }
 
   async function saveReparto(e) {
     e.preventDefault();
     if (!canManage) return alert("Non hai i permessi.");
-
-    if (!departmentForm.nome.trim()) {
-      alert("Inserisci il nome del reparto.");
-      return;
-    }
-
-    setSaving(true);
 
     const payload = {
       nome: departmentForm.nome.trim(),
@@ -91,127 +135,196 @@ function Settings() {
       attivo: departmentForm.attivo,
     };
 
+    if (!payload.nome) return alert("Inserisci il nome del reparto.");
+
+    setSaving(true);
     const request = modal.item
       ? supabase.from("reparti").update(payload).eq("id", modal.item.id)
       : supabase.from("reparti").insert(payload);
 
     const { error } = await request;
-
     setSaving(false);
 
-    if (error) {
-      console.error(error);
-      alert("Errore durante il salvataggio del reparto.");
-      return;
-    }
+    if (error) return alert(error.message);
 
-    await loadData();
     closeModal();
+    await loadData();
   }
 
   async function saveRuolo(e) {
     e.preventDefault();
     if (!canManage) return alert("Non hai i permessi.");
 
-    if (!roleForm.nome.trim()) {
-      alert("Inserisci il nome del ruolo.");
-      return;
-    }
-
-    setSaving(true);
-
     const payload = {
-      nome: roleForm.nome.trim().toLowerCase(),
+      nome: roleForm.nome.trim(),
       descrizione: roleForm.descrizione.trim() || null,
       livello: Number(roleForm.livello) || 0,
     };
 
+    if (!payload.nome) return alert("Inserisci il nome del ruolo.");
+
+    setSaving(true);
     const request = modal.item
       ? supabase.from("ruoli").update(payload).eq("id", modal.item.id)
       : supabase.from("ruoli").insert(payload);
 
     const { error } = await request;
-
     setSaving(false);
 
-    if (error) {
-      console.error(error);
-      alert("Errore durante il salvataggio del ruolo.");
-      return;
-    }
+    if (error) return alert(error.message);
 
-    await loadData();
     closeModal();
-  }
-
-  async function deleteReparto(item) {
-    if (!canManage) return alert("Non hai i permessi.");
-    if (!window.confirm(`Eliminare il reparto ${item.nome}?`)) return;
-
-    const { error } = await supabase.from("reparti").delete().eq("id", item.id);
-
-    if (error) {
-      console.error(error);
-      alert("Impossibile eliminare il reparto. Potrebbe essere collegato a utenti o task.");
-      return;
-    }
-
     await loadData();
   }
 
-  async function deleteRuolo(item) {
+  async function saveTemplate(e) {
+    e.preventDefault();
     if (!canManage) return alert("Non hai i permessi.");
 
-    if (item.nome === "admin") {
-      alert("Non puoi eliminare il ruolo admin.");
-      return;
+    const payload = {
+      titolo: templateForm.titolo.trim(),
+      reparto_id: templateForm.reparto_id || null,
+      ordine: Number(templateForm.ordine) || 1,
+      attivo: templateForm.attivo,
+    };
+
+    if (!payload.titolo) return alert("Inserisci la voce checklist.");
+
+    setSaving(true);
+    const request = modal.item
+      ? supabase.from("checklist_template").update(payload).eq("id", modal.item.id)
+      : supabase.from("checklist_template").insert(payload);
+
+    const { error } = await request;
+    setSaving(false);
+
+    if (error) return alert(error.message);
+
+    closeModal();
+    await loadData();
+  }
+
+  async function saveUserDepartments(e) {
+    e.preventDefault();
+    if (!canManage) return alert("Non hai i permessi.");
+    if (!modal.item?.id) return alert("Utente non selezionato.");
+
+    setSaving(true);
+
+    const deleteRes = await supabase
+      .from("utenti_reparti")
+      .delete()
+      .eq("utente_id", modal.item.id);
+
+    if (deleteRes.error) {
+      setSaving(false);
+      return alert(deleteRes.error.message);
     }
 
-    if (!window.confirm(`Eliminare il ruolo ${item.nome}?`)) return;
+    const rows = selectedUserDepartmentIds.map((reparto_id) => ({
+      utente_id: modal.item.id,
+      reparto_id,
+    }));
 
-    const { error } = await supabase.from("ruoli").delete().eq("id", item.id);
+    if (rows.length > 0) {
+      const insertRes = await supabase.from("utenti_reparti").insert(rows);
 
-    if (error) {
-      console.error(error);
-      alert("Impossibile eliminare il ruolo. Potrebbe essere collegato a utenti o permessi.");
-      return;
+      if (insertRes.error) {
+        setSaving(false);
+        return alert(insertRes.error.message);
+      }
     }
+
+    setSaving(false);
+    closeModal();
+    await loadData();
+  }
+
+  async function remove(type, item) {
+    if (!canManage) return alert("Non hai i permessi.");
+    if (!window.confirm("Confermi eliminazione?")) return;
+
+    const table = type === "reparto" ? "reparti" : type === "ruolo" ? "ruoli" : "checklist_template";
+    const { error } = await supabase.from(table).delete().eq("id", item.id);
+
+    if (error) return alert(error.message);
 
     await loadData();
   }
 
   return (
-    <div className="settings-page">
+    <div className="settings-page v4-page">
       <div className="page-title-row">
         <div>
           <h1>Impostazioni</h1>
-          <p>Gestione ruoli, reparti e configurazioni base.</p>
+          <p>Gestione checklist preimpostate, reparti, ruoli e associazioni utente/reparto.</p>
         </div>
       </div>
 
       <div className="settings-tabs">
-        <button className={activeTab === "reparti" ? "active" : ""} onClick={() => setActiveTab("reparti")}>
+        <button className={tab === "checklist" ? "active" : ""} onClick={() => setTab("checklist")}>
+          Checklist progetto
+        </button>
+        <button className={tab === "reparti" ? "active" : ""} onClick={() => setTab("reparti")}>
           Reparti
         </button>
-        <button className={activeTab === "ruoli" ? "active" : ""} onClick={() => setActiveTab("ruoli")}>
+        <button className={tab === "ruoli" ? "active" : ""} onClick={() => setTab("ruoli")}>
           Ruoli
+        </button>
+        <button className={tab === "utenti" ? "active" : ""} onClick={() => setTab("utenti")}>
+          Utenti / reparti
         </button>
       </div>
 
-      {activeTab === "reparti" && (
+      {tab === "checklist" && (
         <div className="panel settings-panel">
           <div className="panel-header">
-            <h3>Reparti</h3>
+            <h3>Voci checklist preimpostate</h3>
             {canManage && (
-              <button className="primary-action" onClick={() => openCreate("reparto")}>
-                <Plus size={18} />
-                Nuovo reparto
+              <button className="primary-action" onClick={() => openCreate("checklist")}>
+                <Plus size={18} /> Nuova voce
               </button>
             )}
           </div>
 
           <div className="settings-list">
-            {reparti.map((item) => (
+            {templates.map((item) => (
+              <div className="settings-row" key={item.id}>
+                <div>
+                  <strong>{item.titolo}</strong>
+                  <span>{item.reparti?.nome || "Tutti i reparti"}</span>
+                </div>
+                <span className={`config-status ${item.attivo ? "active" : "inactive"}`}>
+                  {item.attivo ? "Attiva" : "Disattiva"}
+                </span>
+                <span className="role-level">Ordine {item.ordine}</span>
+                <div className="config-actions">
+                  <button onClick={() => openEdit("checklist", item)}>
+                    <Pencil size={16} />
+                  </button>
+                  <button className="danger" onClick={() => remove("checklist", item)}>
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {tab === "reparti" && (
+        <div className="panel settings-panel">
+          <div className="panel-header">
+            <h3>Reparti</h3>
+            {canManage && (
+              <button className="primary-action" onClick={() => openCreate("reparto")}>
+                <Plus size={18} /> Nuovo reparto
+              </button>
+            )}
+          </div>
+
+          <div className="settings-list">
+            {departments.map((item) => (
               <div className="settings-row" key={item.id}>
                 <div>
                   <strong>{item.nome}</strong>
@@ -221,8 +334,12 @@ function Settings() {
                   {item.attivo ? "Attivo" : "Disattivo"}
                 </span>
                 <div className="config-actions">
-                  <button onClick={() => openEdit("reparto", item)}><Pencil size={16} /></button>
-                  <button className="danger" onClick={() => deleteReparto(item)}><Trash2 size={16} /></button>
+                  <button onClick={() => openEdit("reparto", item)}>
+                    <Pencil size={16} />
+                  </button>
+                  <button className="danger" onClick={() => remove("reparto", item)}>
+                    <Trash2 size={16} />
+                  </button>
                 </div>
               </div>
             ))}
@@ -230,20 +347,19 @@ function Settings() {
         </div>
       )}
 
-      {activeTab === "ruoli" && (
+      {tab === "ruoli" && (
         <div className="panel settings-panel">
           <div className="panel-header">
             <h3>Ruoli</h3>
             {canManage && (
               <button className="primary-action" onClick={() => openCreate("ruolo")}>
-                <Plus size={18} />
-                Nuovo ruolo
+                <Plus size={18} /> Nuovo ruolo
               </button>
             )}
           </div>
 
           <div className="settings-list">
-            {ruoli.map((item) => (
+            {roles.map((item) => (
               <div className="settings-row" key={item.id}>
                 <div>
                   <strong>{item.nome}</strong>
@@ -251,8 +367,12 @@ function Settings() {
                 </div>
                 <span className="role-level">Livello {item.livello}</span>
                 <div className="config-actions">
-                  <button onClick={() => openEdit("ruolo", item)}><Pencil size={16} /></button>
-                  <button className="danger" onClick={() => deleteRuolo(item)}><Trash2 size={16} /></button>
+                  <button onClick={() => openEdit("ruolo", item)}>
+                    <Pencil size={16} />
+                  </button>
+                  <button className="danger" onClick={() => remove("ruolo", item)}>
+                    <Trash2 size={16} />
+                  </button>
                 </div>
               </div>
             ))}
@@ -260,64 +380,196 @@ function Settings() {
         </div>
       )}
 
+      {tab === "utenti" && (
+        <div className="panel settings-panel">
+          <div className="panel-header">
+            <h3>Utenti / reparti</h3>
+          </div>
+
+          <div className="settings-list">
+            {users.map((item) => (
+              <div className="settings-row" key={item.id}>
+                <div>
+                  <strong>{item.nome || item.email || "Utente senza nome"}</strong>
+                  <span>{item.email || "Email non disponibile"}</span>
+                  <span>Reparti: {getUserDepartmentNames(item.id)}</span>
+                </div>
+
+                <span className={`config-status ${item.attivo !== false ? "active" : "inactive"}`}>
+                  {item.attivo !== false ? "Attivo" : "Disattivo"}
+                </span>
+
+                <div className="config-actions">
+                  <button onClick={() => openEdit("utente_reparti", item)}>
+                    <Pencil size={16} />
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            {users.length === 0 && <p>Nessun utente trovato.</p>}
+          </div>
+        </div>
+      )}
+
       {modal.open && (
         <div className="modal-backdrop">
-          <div className="config-modal">
+          <form
+            className="modal-card v4-modal"
+            onSubmit={
+              modal.type === "reparto"
+                ? saveReparto
+                : modal.type === "ruolo"
+                  ? saveRuolo
+                  : modal.type === "utente_reparti"
+                    ? saveUserDepartments
+                    : saveTemplate
+            }
+          >
             <div className="modal-header">
-              <div>
-                <h2>{modal.item ? "Modifica" : "Nuovo"} {modal.type === "ruolo" ? "ruolo" : "reparto"}</h2>
-                <p>Gestisci le configurazioni base del workspace.</p>
-              </div>
-              <button className="modal-close" onClick={closeModal}><X size={22} /></button>
+              <h2>
+                {modal.type === "utente_reparti"
+                  ? `Reparti di ${modal.item?.nome || modal.item?.email || "utente"}`
+                  : modal.item
+                    ? "Modifica"
+                    : "Nuovo"}
+              </h2>
+              <button type="button" onClick={closeModal}>
+                <X size={20} />
+              </button>
             </div>
 
-            {modal.type === "reparto" ? (
-              <form className="config-form" onSubmit={saveReparto}>
-                <div className="form-group full">
-                  <label>Nome reparto</label>
-                  <input value={departmentForm.nome} onChange={(e) => setDepartmentForm({ ...departmentForm, nome: e.target.value })} />
-                </div>
-                <div className="form-group full">
-                  <label>Descrizione</label>
-                  <textarea value={departmentForm.descrizione} onChange={(e) => setDepartmentForm({ ...departmentForm, descrizione: e.target.value })} />
-                </div>
-                <div className="form-group full">
-                  <label>Stato</label>
-                  <select value={departmentForm.attivo ? "true" : "false"} onChange={(e) => setDepartmentForm({ ...departmentForm, attivo: e.target.value === "true" })}>
-                    <option value="true">Attivo</option>
-                    <option value="false">Disattivo</option>
-                  </select>
-                </div>
-                <div className="modal-actions">
-                  <button type="button" className="secondary-action" onClick={closeModal}>Annulla</button>
-                  <button className="primary-action" disabled={saving}><Save size={18} /> Salva</button>
-                </div>
-              </form>
-            ) : (
-              <form className="config-form" onSubmit={saveRuolo}>
-                <div className="form-group full">
-                  <label>Nome ruolo</label>
-                  <input value={roleForm.nome} onChange={(e) => setRoleForm({ ...roleForm, nome: e.target.value })} />
-                </div>
-                <div className="form-group full">
-                  <label>Descrizione</label>
-                  <textarea value={roleForm.descrizione} onChange={(e) => setRoleForm({ ...roleForm, descrizione: e.target.value })} />
-                </div>
-                <div className="form-group full">
-                  <label>Livello</label>
-                  <input type="number" value={roleForm.livello} onChange={(e) => setRoleForm({ ...roleForm, livello: e.target.value })} />
-                </div>
-                <div className="modal-actions">
-                  <button type="button" className="secondary-action" onClick={closeModal}>Annulla</button>
-                  <button className="primary-action" disabled={saving}><Save size={18} /> Salva</button>
-                </div>
-              </form>
+            {modal.type === "reparto" && (
+              <>
+                <label>
+                  Nome reparto
+                  <input
+                    value={departmentForm.nome}
+                    onChange={(e) => setDepartmentForm({ ...departmentForm, nome: e.target.value })}
+                  />
+                </label>
+
+                <label>
+                  Descrizione
+                  <textarea
+                    rows="3"
+                    value={departmentForm.descrizione}
+                    onChange={(e) => setDepartmentForm({ ...departmentForm, descrizione: e.target.value })}
+                  />
+                </label>
+
+                <label className="check-line">
+                  <input
+                    type="checkbox"
+                    checked={departmentForm.attivo}
+                    onChange={(e) => setDepartmentForm({ ...departmentForm, attivo: e.target.checked })}
+                  />
+                  Attivo
+                </label>
+              </>
             )}
-          </div>
+
+            {modal.type === "ruolo" && (
+              <>
+                <label>
+                  Nome ruolo
+                  <input
+                    value={roleForm.nome}
+                    onChange={(e) => setRoleForm({ ...roleForm, nome: e.target.value })}
+                  />
+                </label>
+
+                <label>
+                  Descrizione
+                  <textarea
+                    rows="3"
+                    value={roleForm.descrizione}
+                    onChange={(e) => setRoleForm({ ...roleForm, descrizione: e.target.value })}
+                  />
+                </label>
+
+                <label>
+                  Livello
+                  <input
+                    type="number"
+                    value={roleForm.livello}
+                    onChange={(e) => setRoleForm({ ...roleForm, livello: e.target.value })}
+                  />
+                </label>
+              </>
+            )}
+
+            {modal.type === "checklist" && (
+              <>
+                <label>
+                  Voce checklist
+                  <input
+                    value={templateForm.titolo}
+                    onChange={(e) => setTemplateForm({ ...templateForm, titolo: e.target.value })}
+                  />
+                </label>
+
+                <label>
+                  Reparto
+                  <select
+                    value={templateForm.reparto_id}
+                    onChange={(e) => setTemplateForm({ ...templateForm, reparto_id: e.target.value })}
+                  >
+                    <option value="">Tutti i reparti</option>
+                    {activeDepartments.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.nome}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  Ordine
+                  <input
+                    type="number"
+                    value={templateForm.ordine}
+                    onChange={(e) => setTemplateForm({ ...templateForm, ordine: e.target.value })}
+                  />
+                </label>
+
+                <label className="check-line">
+                  <input
+                    type="checkbox"
+                    checked={templateForm.attivo}
+                    onChange={(e) => setTemplateForm({ ...templateForm, attivo: e.target.checked })}
+                  />
+                  Attiva
+                </label>
+              </>
+            )}
+
+            {modal.type === "utente_reparti" && (
+              <div className="checkbox-group scrollable-check-group">
+                <strong>Seleziona uno o più reparti</strong>
+
+                {activeDepartments.map((department) => (
+                  <label key={department.id}>
+                    <input
+                      type="checkbox"
+                      checked={selectedUserDepartmentIds.includes(department.id)}
+                      onChange={() => toggleUserDepartment(department.id)}
+                    />
+                    {department.nome}
+                  </label>
+                ))}
+
+                {activeDepartments.length === 0 && <p>Nessun reparto attivo disponibile.</p>}
+              </div>
+            )}
+
+            <button className="primary-action" disabled={saving}>
+              <Save size={18} />
+              {saving ? "Salvataggio..." : "Salva"}
+            </button>
+          </form>
         </div>
       )}
     </div>
   );
 }
-
-export default Settings;

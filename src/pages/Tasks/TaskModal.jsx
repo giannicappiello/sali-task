@@ -5,6 +5,26 @@ import { useAuth } from "../../contexts/AuthContext";
 
 function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
   const { profile } = useAuth();
+
+  async function getCurrentUtenteId() {
+    if (profile?.id) {
+      const byId = await supabase.from("utenti").select("id").eq("id", profile.id).maybeSingle();
+      if (byId.data?.id) return byId.data.id;
+    }
+
+    if (profile?.auth_user_id) {
+      const byProfileAuth = await supabase.from("utenti").select("id").eq("auth_user_id", profile.auth_user_id).maybeSingle();
+      if (byProfileAuth.data?.id) return byProfileAuth.data.id;
+    }
+
+    const { data: authData } = await supabase.auth.getUser();
+    const authUserId = authData?.user?.id;
+    if (!authUserId) return null;
+
+    const byAuth = await supabase.from("utenti").select("id").eq("auth_user_id", authUserId).maybeSingle();
+    return byAuth.data?.id || null;
+  }
+
   const isEditing = mode === "edit" && task?.id;
   const [activeTab, setActiveTab] = useState("dettagli");
   const [form, setForm] = useState({ titolo:"", descrizione:"", categoria_id:"", stato_id:"", progetto_id:"", prodotto_id:"", assegnato_a_id:"", deadline:"" });
@@ -108,11 +128,19 @@ function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
   async function uploadAttachment(e){
     const file = e.target.files?.[0]; if(!file) return;
     setUploading(true);
+
+    const currentUtenteId = await getCurrentUtenteId();
+    if(!currentUtenteId){
+      setUploading(false);
+      e.target.value="";
+      return alert("Utente non trovato nella tabella utenti. Verifica login e tabella utenti.");
+    }
+
     const storagePath = `${task.id}/${Date.now()}-${file.name.replaceAll("/","-")}`;
     const up = await supabase.storage.from("task-attachments").upload(storagePath,file,{cacheControl:"3600",upsert:false});
     if(up.error){ console.error(up.error); setUploading(false); e.target.value=""; return alert("Errore caricamento allegato."); }
     const signed = await supabase.storage.from("task-attachments").createSignedUrl(storagePath,60*60*24*7);
-    const ins = await supabase.from("task_allegati").insert({task_id:task.id,nome_file:file.name,file_url:signed.data?.signedUrl || storagePath,storage_path:storagePath,tipo_file:file.type || null,dimensione_bytes:file.size,caricato_da_id:profile?.id || null});
+    const ins = await supabase.from("task_allegati").insert({task_id:task.id,nome_file:file.name,file_url:signed.data?.signedUrl || storagePath,storage_path:storagePath,tipo_file:file.type || null,dimensione_bytes:file.size,caricato_da_id:currentUtenteId});
     if(ins.error){ console.error(ins.error); setUploading(false); e.target.value=""; return alert("Errore salvataggio allegato."); }
     await addActivity("ALLEGATO","allegati",file.name,"Nuovo allegato caricato");
     await Promise.all([loadAllegati(), loadAttivita()]); setUploading(false); e.target.value="";

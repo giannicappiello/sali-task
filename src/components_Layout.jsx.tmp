@@ -1,0 +1,97 @@
+import { useEffect, useMemo, useState } from 'react'
+import { BarChart3, Bell, CalendarDays, CheckSquare, ChevronLeft, ChevronRight, Folder, LogOut, Menu, MessageCircle, Moon, Package, Search, Settings, Sun, Users, X } from 'lucide-react'
+import { useAuth } from '../contexts/AuthContext.jsx'
+
+const navItems = [
+  { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+  { id: 'tasks', label: 'Task', icon: CheckSquare },
+  { id: 'projects', label: 'Progetti', icon: Folder },
+  { id: 'products', label: 'Prodotti', icon: Package },
+  { id: 'team', label: 'Team', icon: Users },
+  { id: 'calendar', label: 'Calendario', icon: CalendarDays },
+  { id: 'reports', label: 'Report', icon: BarChart3 },
+  { id: 'messages', label: 'Messaggi', icon: MessageCircle },
+  { id: 'settings', label: 'Impostazioni', icon: Settings }
+]
+
+const pageMeta = {
+  dashboard: { title: 'Buongiorno 👋', subtitle: 'Ecco cosa sta succedendo oggi in Progre.' },
+  tasks: { title: 'Task', subtitle: 'Gestione attività, assegnazioni e deadline.' },
+  projects: { title: 'Progetti', subtitle: 'Avanzamento e storico dei progetti.' },
+  products: { title: 'Prodotti', subtitle: 'Archivio prodotti e attività collegate.' },
+  team: { title: 'Team', subtitle: 'Persone, carichi di lavoro e assegnazioni.' },
+  calendar: { title: 'Calendario', subtitle: 'Scadenze, eventi e giornate programmate.' },
+  reports: { title: 'Report', subtitle: 'Analisi, riepiloghi e risultati.' },
+  messages: { title: 'Messaggi', subtitle: 'Chat interna e notifiche operative.' },
+  settings: { title: 'Impostazioni', subtitle: 'Preferenze e configurazione workspace.' }
+}
+
+export default function Layout({ activePage, setActivePage, children }) {
+  const { user, signOut } = useAuth()
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
+  const [darkMode, setDarkMode] = useState(false)
+  const [updateAvailable, setUpdateAvailable] = useState(false)
+  const meta = useMemo(() => pageMeta[activePage] || pageMeta.dashboard, [activePage])
+
+  const email = user?.email || 'utente@progre.it'
+  const displayName = user?.user_metadata?.full_name || user?.user_metadata?.name || email.split('@')[0] || 'Utente'
+  const initials = displayName.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase()
+
+  useEffect(() => { document.title = 'Progre Workspace' }, [])
+  useEffect(() => { document.body.classList.toggle('dark-mode', darkMode) }, [darkMode])
+  useEffect(() => {
+    const onUpdate = () => setUpdateAvailable(true)
+    window.addEventListener('pwa-update-available', onUpdate)
+    return () => window.removeEventListener('pwa-update-available', onUpdate)
+  }, [])
+
+  const goTo = (id) => { setActivePage(id); setSidebarOpen(false) }
+
+  return (
+    <div className={`app-shell ${collapsed ? 'sidebar-collapsed' : ''}`}>
+      <button className="mobile-overlay" aria-label="Chiudi menu" onClick={() => setSidebarOpen(false)} data-open={sidebarOpen} />
+      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+        <div className="brand-box">
+          <div className="brand-logo">P</div>
+          <div className="brand-copy"><h1>PROGRE</h1><p>WORKSPACE</p></div>
+          <button className="sidebar-close" onClick={() => setSidebarOpen(false)} aria-label="Chiudi menu"><X size={20} /></button>
+        </div>
+        <nav className="sidebar-nav">
+          {navItems.map((item) => {
+            const Icon = item.icon
+            return <button key={item.id} className={`nav-item ${activePage === item.id ? 'active' : ''}`} onClick={() => goTo(item.id)} title={item.label}><Icon size={20} /><span>{item.label}</span></button>
+          })}
+        </nav>
+        <div className="favorites">
+          <div className="favorites-title"><span>Preferiti</span><strong>+</strong></div>
+          <p className="favorite-item violet">Nuova linea solari 2027</p>
+          <p className="favorite-item green">Shampoo Riparatore</p>
+          <p className="favorite-item orange">Rebranding linea viso</p>
+        </div>
+        <div className="sidebar-user">
+          <div className="avatar">{initials}</div>
+          <div><strong>{displayName}</strong><span>{email}</span></div>
+        </div>
+      </aside>
+      <main className="main-area">
+        <header className="topbar">
+          <div className="topbar-left">
+            <button className="hamburger" onClick={() => setSidebarOpen(true)} aria-label="Apri menu"><Menu size={22} /></button>
+            <button className="collapse-btn" onClick={() => setCollapsed((value) => !value)} aria-label="Riduci sidebar">{collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}</button>
+            <div className="topbar-title"><h2>{meta.title}</h2><p>{meta.subtitle}</p></div>
+          </div>
+          <div className="topbar-actions">
+            <label className="search-box"><Search size={19} /><input placeholder="Cerca..." /><span>⌘ K</span></label>
+            <button className="icon-btn" aria-label="Notifiche"><Bell size={22} /><small>3</small></button>
+            <button className="icon-btn" aria-label="Chat" onClick={() => goTo('messages')}><MessageCircle size={22} /></button>
+            <button className="theme-toggle" onClick={() => setDarkMode((value) => !value)} aria-label="Cambia tema"><Sun size={17} /><Moon size={17} /></button>
+            <button className="logout-btn" onClick={signOut} title="Esci"><LogOut size={18} /><span>Esci</span></button>
+          </div>
+        </header>
+        {updateAvailable && <div className="update-banner">È disponibile un aggiornamento dell'app.<button onClick={() => window.location.reload()}>Aggiorna ora</button></div>}
+        <section className="content-area">{children}</section>
+      </main>
+    </div>
+  )
+}

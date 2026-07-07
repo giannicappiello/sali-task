@@ -1,320 +1,160 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  ListChecks,
-  Clock,
-  AlertCircle,
-  CheckCircle2,
-  Activity,
-  CalendarDays,
-  UserCircle,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react";
+import { AlertCircle, CalendarDays, CheckCircle2, Clock, ListChecks, UserCircle } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 
-function formatDateForQuery(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function isPast(date) {
+  return date && date < todayIso();
+}
+
+function isDone(item) {
+  return ["completato", "completata", "evaso", "evasa", "chiuso", "chiusa"].includes(String(item?.stato || "").toLowerCase()) || item?.completato;
+}
+
+function formatDate(date) {
+  if (!date) return "Senza deadline";
+  return new Date(`${date}T00:00:00`).toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 function Dashboard() {
   const navigate = useNavigate();
   const { profile } = useAuth();
-
-  const [tasks, setTasks] = useState([]);
-  const [attivita, setAttivita] = useState([]);
+  const [phases, setPhases] = useState([]);
+  const [reminders, setReminders] = useState([]);
+  const [activity, setActivity] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
-
-  const today = useMemo(() => {
-    const value = new Date();
-    value.setHours(0, 0, 0, 0);
-    return value;
-  }, []);
 
   useEffect(() => {
     loadDashboard();
-  }, [profile?.id]);
+  }, [profile?.id, profile?.reparto_id]);
 
   async function loadDashboard() {
     setLoading(true);
 
-    const { data: taskData, error: tasksError } = await supabase
-      .from("tasks")
-      .select(`
-        id,
-        titolo,
-        deadline,
-        assegnato_a_id,
-        data_completamento,
-        stati_task(nome, chiusa)
-      `);
+    let phasesQuery = supabase
+      .from("v4_fasi_progetto")
+      .select("id,titolo,stato,deadline,reparto_id,progetto_id,updated_at,v4_progetti(titolo)")
+      .order("deadline", { ascending: true, nullsFirst: false });
 
-    const { data: activityData, error: activityError } = await supabase
-      .from("attivita_task")
-      .select(`
-        id,
-        data_ora,
-        tipo,
-        campo,
-        valore_precedente,
-        valore_nuovo,
-        note,
-        utenti(nome),
-        tasks(titolo)
-      `)
-      .order("data_ora", { ascending: false })
-      .limit(10);
+    if (profile?.reparto_id) phasesQuery = phasesQuery.eq("reparto_id", profile.reparto_id);
 
-    if (tasksError) console.error("Errore caricamento dashboard task:", tasksError);
-    if (activityError) console.error("Errore caricamento attività:", activityError);
+    const [phasesRes, remindersRes, activityRes] = await Promise.all([
+      phasesQuery.limit(120),
+      supabase
+        .from("agenda_reminder")
+        .select("id,titolo,descrizione,stato,deadline,completato,created_at,updated_at")
+        .eq("utente_id", profile?.id || "00000000-0000-0000-0000-000000000000")
+        .order("deadline", { ascending: true, nullsFirst: false })
+        .limit(120),
+      supabase
+        .from("v4_audit_log")
+        .select("id,entity_type,azione,dettagli,created_at,user_id")
+        .order("created_at", { ascending: false })
+        .limit(12),
+    ]);
 
-    setTasks(taskData || []);
-    setAttivita(activityData || []);
+    if (phasesRes.error) console.error("Dashboard fasi:", phasesRes.error);
+    if (remindersRes.error) console.error("Dashboard reminder:", remindersRes.error);
+    if (activityRes.error) console.error("Dashboard timeline:", activityRes.error);
+
+    setPhases(phasesRes.data || []);
+    setReminders(remindersRes.data || []);
+    setActivity(activityRes.data || []);
     setLoading(false);
   }
 
-  function isClosed(task) {
-    return Boolean(task.stati_task?.chiusa);
-  }
-
-  function isToday(date) {
-    if (!date) return false;
-    const d = new Date(`${date}T00:00:00`);
-    d.setHours(0, 0, 0, 0);
-    return d.getTime() === today.getTime();
-  }
-
-  function isOverdue(task) {
-    if (!task.deadline || isClosed(task)) return false;
-    const d = new Date(`${task.deadline}T00:00:00`);
-    d.setHours(0, 0, 0, 0);
-    return d < today;
-  }
-
-  function isUrgent(task) {
-    if (!task.deadline || isClosed(task)) return false;
-    const d = new Date(`${task.deadline}T00:00:00`);
-    d.setHours(0, 0, 0, 0);
-    const diffDays = Math.ceil((d - today) / (1000 * 60 * 60 * 24));
-    return diffDays >= 0 && diffDays <= 3;
-  }
-
   const stats = useMemo(() => {
-    const open = tasks.filter((task) => !isClosed(task));
-    const mine = tasks.filter((task) => task.assegnato_a_id === profile?.id && !isClosed(task));
-
+    const openPhases = phases.filter((item) => !isDone(item));
+    const openReminders = reminders.filter((item) => !isDone(item));
     return {
-      aperte: open.length,
-      oggi: tasks.filter((task) => isToday(task.deadline) && !isClosed(task)).length,
-      scadute: tasks.filter(isOverdue).length,
-      completate: tasks.filter(isClosed).length,
-      mieAperte: mine.length,
-      mieUrgenti: mine.filter(isUrgent).length,
-      mieInRitardo: mine.filter(isOverdue).length,
+      pAperte: openPhases.length,
+      pOggi: openPhases.filter((item) => item.deadline === todayIso()).length,
+      pScadute: openPhases.filter((item) => isPast(item.deadline)).length,
+      pCompletate: phases.filter(isDone).length,
+      rAperti: openReminders.length,
+      rOggi: openReminders.filter((item) => item.deadline === todayIso()).length,
+      rScaduti: openReminders.filter((item) => isPast(item.deadline)).length,
+      rCompletati: reminders.filter(isDone).length,
     };
-  }, [tasks, profile?.id]);
+  }, [phases, reminders]);
 
-  const calendarDays = useMemo(() => {
-    const year = calendarMonth.getFullYear();
-    const month = calendarMonth.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const startOffset = (firstDay.getDay() + 6) % 7;
-    const start = new Date(year, month, 1 - startOffset);
-
-    return Array.from({ length: 42 }).map((_, index) => {
-      const day = new Date(start);
-      day.setDate(start.getDate() + index);
-      const dateKey = formatDateForQuery(day);
-
-      const dayTasks = tasks.filter((task) => task.deadline === dateKey);
-
-      return {
-        date: day,
-        dateKey,
-        inMonth: day.getMonth() === month,
-        isToday: dateKey === formatDateForQuery(new Date()),
-        count: dayTasks.length,
-        hasOverdue: dayTasks.some(isOverdue),
-      };
-    });
-  }, [tasks, calendarMonth]);
-
-  function goToTasks(filter) {
-    navigate(`/tasks?filter=${filter}`);
-  }
-
-  function goToDate(dateKey) {
-    navigate(`/tasks?date=${dateKey}`);
-  }
-
-  function changeMonth(direction) {
-    setCalendarMonth((current) => {
-      const next = new Date(current);
-      next.setMonth(current.getMonth() + direction);
-      return next;
-    });
-  }
-
-  function formatMonth(date) {
-    return date.toLocaleDateString("it-IT", {
-      month: "long",
-      year: "numeric",
-    });
-  }
-
-  function formatTime(date) {
-    if (!date) return "-";
-    return new Date(date).toLocaleTimeString("it-IT", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  }
-
-  function activityText(item) {
-    const user = item.utenti?.nome || "Utente";
-    const task = item.tasks?.titolo || "task";
-    const field = item.campo ? ` / ${item.campo}` : "";
-    return `${user} - ${item.tipo}${field} - ${task}`;
-  }
+  const upcoming = useMemo(() => {
+    return [...phases]
+      .filter((item) => !isDone(item))
+      .sort((a, b) => String(a.deadline || "9999").localeCompare(String(b.deadline || "9999")))
+      .slice(0, 8);
+  }, [phases]);
 
   return (
-    <div className="dashboard-page">
+    <div className="dashboard-page v4-page">
+      <div className="v4-section-title">
+        <div>
+          <h1>Vista operativa</h1>
+          <p>Solo attività del tuo reparto e reminder personali.</p>
+        </div>
+        <button className="secondary-action" onClick={loadDashboard}>Aggiorna</button>
+      </div>
+
       <div className="kpi-grid">
-        <button className="kpi-card kpi-clickable" onClick={() => goToTasks("aperte")}>
+        <button className="kpi-card kpi-clickable" onClick={() => navigate("/tasks?filter=aperte")}>
           <div className="kpi-icon blue"><ListChecks size={26} /></div>
-          <div>
-            <span>Task aperte</span>
-            <strong>{loading ? "..." : stats.aperte}</strong>
-            <p>Attività ancora da completare</p>
-          </div>
+          <div><span>Progetti aperti</span><strong>{loading ? "..." : stats.pAperte}</strong><p>Fasi del tuo reparto</p></div>
         </button>
-
-        <button className="kpi-card kpi-clickable" onClick={() => goToTasks("oggi")}>
+        <button className="kpi-card kpi-clickable" onClick={() => navigate("/tasks?filter=oggi")}>
           <div className="kpi-icon orange"><Clock size={26} /></div>
-          <div>
-            <span>In scadenza oggi</span>
-            <strong>{loading ? "..." : stats.oggi}</strong>
-            <p>Deadline previste oggi</p>
-          </div>
+          <div><span>In scadenza oggi</span><strong>{loading ? "..." : stats.pOggi}</strong><p>Fasi da evadere oggi</p></div>
         </button>
-
-        <button className="kpi-card kpi-clickable" onClick={() => goToTasks("scadute")}>
+        <button className="kpi-card kpi-clickable" onClick={() => navigate("/tasks?filter=scadute")}>
           <div className="kpi-icon red"><AlertCircle size={26} /></div>
-          <div>
-            <span>Scadute</span>
-            <strong>{loading ? "..." : stats.scadute}</strong>
-            <p>Attività oltre deadline</p>
-          </div>
+          <div><span>Scadute</span><strong>{loading ? "..." : stats.pScadute}</strong><p>Fasi oltre deadline</p></div>
         </button>
-
-        <button className="kpi-card kpi-clickable" onClick={() => goToTasks("completate")}>
+        <button className="kpi-card kpi-clickable" onClick={() => navigate("/tasks?filter=completate")}>
           <div className="kpi-icon green"><CheckCircle2 size={26} /></div>
-          <div>
-            <span>Completate</span>
-            <strong>{loading ? "..." : stats.completate}</strong>
-            <p>Attività chiuse</p>
-          </div>
+          <div><span>Completate</span><strong>{loading ? "..." : stats.pCompletate}</strong><p>Fasi evase</p></div>
         </button>
       </div>
 
       <div className="dashboard-grid dashboard-grid-pro">
         <div className="panel my-tasks-panel">
-          <div className="panel-header">
-            <h3>Le mie task</h3>
-            <UserCircle size={24} />
-          </div>
-
-          <div className="my-task-stats">
-            <button onClick={() => goToTasks("mie")}>
-              <strong>{stats.mieAperte}</strong>
-              <span>aperte</span>
-            </button>
-
-            <button onClick={() => goToTasks("urgenti")}>
-              <strong>{stats.mieUrgenti}</strong>
-              <span>urgenti</span>
-            </button>
-
-            <button onClick={() => goToTasks("mie_scadute")}>
-              <strong>{stats.mieInRitardo}</strong>
-              <span>in ritardo</span>
-            </button>
+          <div className="panel-header"><h3>Reminder personali</h3><UserCircle size={24} /></div>
+          <div className="my-task-stats four-stats">
+            <button onClick={() => navigate("/agenda?filter=aperti")}><strong>{stats.rAperti}</strong><span>aperti</span></button>
+            <button onClick={() => navigate("/agenda?filter=oggi")}><strong>{stats.rOggi}</strong><span>oggi</span></button>
+            <button onClick={() => navigate("/agenda?filter=scaduti")}><strong>{stats.rScaduti}</strong><span>scaduti</span></button>
+            <button onClick={() => navigate("/agenda?filter=completati")}><strong>{stats.rCompletati}</strong><span>completati</span></button>
           </div>
         </div>
 
-        <div className="panel mini-calendar-panel">
-          <div className="panel-header calendar-panel-header">
-            <h3>Calendario</h3>
-            <div className="calendar-month-controls">
-              <button type="button" onClick={() => changeMonth(-1)}>
-                <ChevronLeft size={18} />
-              </button>
-              <strong>{formatMonth(calendarMonth)}</strong>
-              <button type="button" onClick={() => changeMonth(1)}>
-                <ChevronRight size={18} />
-              </button>
-            </div>
-          </div>
-
-          <div className="mini-calendar">
-            <div className="calendar-weekdays">
-              <span>L</span><span>M</span><span>M</span><span>G</span><span>V</span><span>S</span><span>D</span>
-            </div>
-
-            <div className="calendar-days">
-              {calendarDays.map((day, index) => (
-                <button
-                  key={index}
-                  type="button"
-                  className={`calendar-day ${day.inMonth ? "" : "muted"} ${day.isToday ? "today" : ""} ${day.count ? "has-task" : ""} ${day.hasOverdue ? "has-overdue" : ""}`}
-                  onClick={() => day.count > 0 && goToDate(day.dateKey)}
-                  disabled={!day.count}
-                  title={day.count > 0 ? `${day.count} task` : "Nessuna task"}
-                >
-                  <span>{day.date.getDate()}</span>
-                  {day.count > 0 && <small>{day.count}</small>}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="panel timeline-panel">
-          <div className="panel-header">
-            <h3>Timeline attività</h3>
-            <Activity size={24} />
-          </div>
-
-          {attivita.length === 0 ? (
-            <div className="empty-dashboard-state">
-              <Activity size={34} />
-              <h4>Nessuna attività registrata</h4>
-              <p>Quando verranno create o modificate task, qui apparirà la timeline.</p>
-            </div>
-          ) : (
-            <div className="timeline-list">
-              {attivita.map((item) => (
-                <button
-                  type="button"
-                  className="timeline-item"
-                  key={item.id}
-                  onClick={() => navigate("/tasks")}
-                >
-                  <time>{formatTime(item.data_ora)}</time>
-                  <div>
-                    <strong>{activityText(item)}</strong>
-                    <span>{item.note || "Aggiornamento registrato"}</span>
-                  </div>
+        <div className="panel calendar-summary-panel">
+          <div className="panel-header"><h3>Prossime scadenze reparto</h3><CalendarDays size={24} /></div>
+          {upcoming.length === 0 ? <p className="empty-text">Nessuna fase aperta per il tuo reparto.</p> : (
+            <div className="v4-timeline-list">
+              {upcoming.map((item) => (
+                <button key={item.id} className={`v4-timeline-row ${isPast(item.deadline) ? "danger" : item.deadline === todayIso() ? "today" : ""}`} onClick={() => navigate(`/tasks?date=${item.deadline || ""}`)}>
+                  <span>{formatDate(item.deadline)}</span>
+                  <strong>{item.titolo}</strong>
+                  <small>{item.v4_progetti?.titolo || "Progetto"}</small>
                 </button>
               ))}
             </div>
           )}
         </div>
+      </div>
+
+      <div className="panel timeline-panel full-width-panel">
+        <div className="panel-header"><h3>Timeline reparto</h3></div>
+        {activity.length === 0 ? <p className="empty-text">Nessuna attività recente.</p> : (
+          <div className="activity-list">
+            {activity.map((item) => (
+              <p key={item.id}><strong>{item.user_id ? "Utente" : "Sistema"}</strong> · {item.azione} · {item.dettagli || item.entity_type} <small>{new Date(item.created_at).toLocaleString("it-IT")}</small></p>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

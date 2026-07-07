@@ -2,65 +2,59 @@ import { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
-  CheckSquare,
-  Folder,
-  Package,
-  Users,
-  CalendarDays,
-  BarChart3,
-  Settings,
-  Search,
   Bell,
-  MessageCircle,
-  Sun,
-  Moon,
-  Menu,
+  BookOpenCheck,
+  CalendarDays,
+  ClipboardList,
+  FileArchive,
+  Folder,
   LogOut,
+  Menu,
+  MessageCircle,
+  Package,
+  Search,
+  Settings,
+  Users,
   X,
-  ArrowRight,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../contexts/AuthContext";
 
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "4.0";
 
 const menuItems = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permission: "dashboard.read" },
-  { path: "/tasks", label: "Task", icon: CheckSquare, permission: "tasks.read" },
+  { path: "/agenda", label: "Agenda personale", icon: BookOpenCheck, permission: "agenda.read" },
   { path: "/projects", label: "Progetti", icon: Folder, permission: "projects.read" },
+  { path: "/tasks", label: "Planning fasi", icon: ClipboardList, permission: "tasks.read" },
   { path: "/products", label: "Prodotti", icon: Package, permission: "products.read" },
-  { path: "/messages", label: "Messaggi", icon: MessageCircle, permission: "tasks.read" },
+  { path: "/documentation", label: "Documentazione", icon: FileArchive, permission: "documentation.read" },
+  { path: "/messages", label: "Messaggi", icon: MessageCircle, permission: "messages.read" },
   { path: "/team", label: "Team", icon: Users, permission: "team.read" },
-  { path: "/calendar", label: "Calendario", icon: CalendarDays, permission: "tasks.read" },
-  { path: "/reports", label: "Report", icon: BarChart3, permission: "reports.read" },
+  { path: "/calendar", label: "Calendario", icon: CalendarDays, permission: "calendar.read" },
   { path: "/settings", label: "Impostazioni", icon: Settings, permission: "settings.manage" },
 ];
 
 const pageInfo = {
-  "/dashboard": { title: "Dashboard", subtitle: "Panoramica generale del workspace." },
-  "/tasks": { title: "Task", subtitle: "Gestione attività, assegnazioni e deadline." },
-  "/projects": { title: "Progetti", subtitle: "Avanzamento, timeline e attività collegate." },
-  "/products": { title: "Prodotti", subtitle: "Schede prodotto, sviluppo e documentazione." },
-  "/messages": { title: "Messaggi", subtitle: "Chat diretta tra utenti del workspace." },
-  "/team": { title: "Team", subtitle: "Utenti, ruoli, reparti e carichi di lavoro." },
-  "/calendar": { title: "Calendario", subtitle: "Scadenze, attività e pianificazione." },
-  "/reports": { title: "Report", subtitle: "Analisi attività, tempi e performance." },
-  "/settings": { title: "Impostazioni", subtitle: "Ruoli, reparti e configurazioni workspace." },
+  "/dashboard": { title: "Dashboard", subtitle: "Progetti del reparto, reminder personali e timeline operativa." },
+  "/agenda": { title: "Agenda personale", subtitle: "Reminder privati, allegati, commenti e planning." },
+  "/projects": { title: "Progetti", subtitle: "Progetti orizzontali con checklist e fasi operative." },
+  "/tasks": { title: "Planning fasi", subtitle: "Vista mensile, settimanale e giornaliera delle fasi progettuali." },
+  "/products": { title: "Prodotti", subtitle: "Prodotti, progetti collegati, documenti e storico." },
+  "/documentation": { title: "Documentazione", subtitle: "Schede tecniche, SDS, certificazioni, artwork, etichette e regolatorio." },
+  "/messages": { title: "Messaggi", subtitle: "Conversazioni e notifiche interne." },
+  "/team": { title: "Team", subtitle: "Utenti, ruoli, reparti e presenze." },
+  "/calendar": { title: "Calendario", subtitle: "Scadenze, reminder e fasi." },
+  "/settings": { title: "Impostazioni", subtitle: "Checklist preimpostate, reparti, ruoli e configurazioni." },
 };
 
 function getInitials(name) {
   if (!name) return "PW";
-  return name
-    .split(" ")
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+  return name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
 }
 
 function formatDateTime(date) {
-  if (!date) return "Mai registrato";
-
+  if (!date) return "-";
   return new Date(date).toLocaleString("it-IT", {
     day: "2-digit",
     month: "2-digit",
@@ -72,13 +66,9 @@ function formatDateTime(date) {
 
 function getPresence(profile) {
   if (!profile?.last_seen) return { label: "Offline", className: "offline" };
-
-  const lastSeen = new Date(profile.last_seen).getTime();
-  const diffMinutes = (Date.now() - lastSeen) / 1000 / 60;
-
+  const diffMinutes = (Date.now() - new Date(profile.last_seen).getTime()) / 1000 / 60;
   if (diffMinutes <= 2) return { label: "Online", className: "online" };
   if (diffMinutes <= 15) return { label: "Attivo di recente", className: "recent" };
-
   return { label: "Offline", className: "offline" };
 }
 
@@ -89,215 +79,76 @@ function Layout() {
 
   const currentPage = pageInfo[location.pathname] || pageInfo["/dashboard"];
   const presence = getPresence(profile);
-
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
   const [searchOpen, setSearchOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState("");
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
-
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
   const [notifications, setNotifications] = useState([]);
 
-  const [chatUnreadCount, setChatUnreadCount] = useState(0);
-
-  const visibleMenuItems = useMemo(() => {
-    return menuItems.filter((item) => hasPermission(item.permission));
-  }, [hasPermission]);
+  const visibleMenuItems = useMemo(() => menuItems.filter((item) => hasPermission(item.permission)), [hasPermission]);
 
   useEffect(() => {
+    document.title = `${currentPage.title} · Progre Workspace`;
     setMobileMenuOpen(false);
-  }, [location.pathname]);
+  }, [location.pathname, currentPage.title]);
 
   useEffect(() => {
     loadNotificationCount();
-    loadChatUnreadCount();
-
-    const handleChatRead = () => {
-      loadNotificationCount();
-      loadChatUnreadCount();
-    };
-
-    window.addEventListener("chat-read-updated", handleChatRead);
-
-    return () => {
-      window.removeEventListener("chat-read-updated", handleChatRead);
-    };
   }, [profile?.id]);
 
   useEffect(() => {
-    if (!searchOpen) return;
-
-    const handler = window.setTimeout(() => {
-      runGlobalSearch(globalSearch);
-    }, 280);
-
+    if (!searchOpen) return undefined;
+    const handler = window.setTimeout(() => runGlobalSearch(globalSearch), 280);
     return () => window.clearTimeout(handler);
   }, [globalSearch, searchOpen]);
 
   async function loadNotificationCount() {
     if (!profile?.id) return;
-
     const { count, error } = await supabase
       .from("notifiche")
       .select("*", { count: "exact", head: true })
       .eq("utente_id", profile.id)
       .eq("letta", false);
-
-    if (error) {
-      console.error("Errore conteggio notifiche:", error);
-      setNotificationCount(0);
-      return;
-    }
-
-    setNotificationCount(count || 0);
-  }
-
-  async function loadChatUnreadCount() {
-    if (!profile?.id) return;
-
-    const { count, error } = await supabase
-      .from("notifiche")
-      .select("*", { count: "exact", head: true })
-      .eq("utente_id", profile.id)
-      .eq("letta", false)
-      .eq("tipo", "chat");
-
-    if (error) {
-      console.error("Errore conteggio chat non lette:", error);
-      setChatUnreadCount(0);
-      return;
-    }
-
-    setChatUnreadCount(count || 0);
+    if (!error) setNotificationCount(count || 0);
   }
 
   async function loadNotifications() {
     if (!profile?.id) return;
-
     const { data, error } = await supabase
       .from("notifiche")
-      .select(`
-        id,
-        titolo,
-        messaggio,
-        tipo,
-        task_id,
-        letta,
-        created_at,
-        chat_conversazione_id
-      `)
+      .select("id,titolo,messaggio,tipo,task_id,letta,created_at,chat_conversazione_id,progetto_id,prodotto_id")
       .eq("utente_id", profile.id)
       .order("created_at", { ascending: false })
-      .limit(20);
-
-    if (error) {
-      console.error("Errore caricamento notifiche:", error);
-      setNotifications([]);
-      return;
-    }
-
-    setNotifications(data || []);
+      .limit(25);
+    if (!error) setNotifications(data || []);
   }
 
   async function runGlobalSearch(query) {
     const q = query.trim();
-
     if (q.length < 2) {
       setSearchResults([]);
       return;
     }
-
     setSearchLoading(true);
-
     const pattern = `%${q}%`;
 
-    const [tasksRes, projectsRes, productsRes, usersRes, commentsRes] = await Promise.all([
-      supabase
-        .from("tasks")
-        .select("id, titolo, descrizione")
-        .or(`titolo.ilike.${pattern},descrizione.ilike.${pattern}`)
-        .limit(6),
-      supabase
-        .from("progetti")
-        .select("id, nome, descrizione")
-        .or(`nome.ilike.${pattern},descrizione.ilike.${pattern}`)
-        .limit(6),
-      supabase
-        .from("prodotti")
-        .select("id, nome, codice")
-        .or(`nome.ilike.${pattern},codice.ilike.${pattern}`)
-        .limit(6),
-      supabase
-        .from("utenti")
-        .select("id, nome, email")
-        .or(`nome.ilike.${pattern},email.ilike.${pattern}`)
-        .limit(6),
-      supabase
-        .from("task_commenti")
-        .select("id, commento, task_id")
-        .ilike("commento", pattern)
-        .limit(6),
+    const [projectsRes, phasesRes, productsRes, docsRes, remindersRes] = await Promise.all([
+      supabase.from("v4_progetti").select("id,titolo,descrizione").or(`titolo.ilike.${pattern},descrizione.ilike.${pattern}`).limit(6),
+      supabase.from("v4_fasi_progetto").select("id,titolo,descrizione,progetto_id").or(`titolo.ilike.${pattern},descrizione.ilike.${pattern},note.ilike.${pattern}`).limit(6),
+      supabase.from("prodotti").select("id,nome,codice,descrizione").or(`nome.ilike.${pattern},codice.ilike.${pattern},descrizione.ilike.${pattern}`).limit(6),
+      supabase.from("documenti").select("id,titolo,tipo_documento,tipo,codice_documento,codice").or(`titolo.ilike.${pattern},tipo.ilike.${pattern},tipo_documento.ilike.${pattern},codice.ilike.${pattern},codice_documento.ilike.${pattern}`).limit(6),
+      supabase.from("agenda_reminder").select("id,titolo,descrizione").or(`titolo.ilike.${pattern},descrizione.ilike.${pattern}`).limit(6),
     ]);
 
     const results = [];
-
-    if (!tasksRes.error) {
-      results.push(
-        ...(tasksRes.data || []).map((item) => ({
-          type: "Task",
-          title: item.titolo,
-          description: item.descrizione || "Task",
-          path: "/tasks",
-        }))
-      );
-    }
-
-    if (!projectsRes.error) {
-      results.push(
-        ...(projectsRes.data || []).map((item) => ({
-          type: "Progetto",
-          title: item.nome,
-          description: item.descrizione || "Progetto",
-          path: "/projects",
-        }))
-      );
-    }
-
-    if (!productsRes.error) {
-      results.push(
-        ...(productsRes.data || []).map((item) => ({
-          type: "Prodotto",
-          title: item.nome,
-          description: item.codice || "Prodotto",
-          path: "/products",
-        }))
-      );
-    }
-
-    if (!usersRes.error) {
-      results.push(
-        ...(usersRes.data || []).map((item) => ({
-          type: "Utente",
-          title: item.nome,
-          description: item.email || "Utente",
-          path: "/team",
-        }))
-      );
-    }
-
-    if (!commentsRes.error) {
-      results.push(
-        ...(commentsRes.data || []).map((item) => ({
-          type: "Commento",
-          title: item.commento.slice(0, 70),
-          description: "Commento task",
-          path: "/tasks",
-        }))
-      );
-    }
+    if (!projectsRes.error) results.push(...(projectsRes.data || []).map((item) => ({ type: "Progetto", title: item.titolo, description: item.descrizione || "Progetto", path: "/projects" })));
+    if (!phasesRes.error) results.push(...(phasesRes.data || []).map((item) => ({ type: "Fase", title: item.titolo, description: item.descrizione || "Fase checklist", path: "/tasks" })));
+    if (!productsRes.error) results.push(...(productsRes.data || []).map((item) => ({ type: "Prodotto", title: item.nome, description: item.codice || "Prodotto", path: "/products" })));
+    if (!docsRes.error) results.push(...(docsRes.data || []).map((item) => ({ type: "Documento", title: item.titolo, description: item.tipo_documento || item.tipo || item.codice_documento || item.codice || "Documento", path: "/documentation" })));
+    if (!remindersRes.error) results.push(...(remindersRes.data || []).map((item) => ({ type: "Reminder", title: item.titolo, description: item.descrizione || "Agenda personale", path: "/agenda" })));
 
     setSearchResults(results);
     setSearchLoading(false);
@@ -330,29 +181,17 @@ function Layout() {
     if (!notification.letta) {
       await supabase.from("notifiche").update({ letta: true }).eq("id", notification.id);
       await loadNotificationCount();
-      await loadChatUnreadCount();
     }
-
     setNotificationOpen(false);
-
-    if (notification.tipo === "chat") {
-      navigate("/messages");
-      return;
-    }
-
-    navigate(notification.task_id ? `/tasks?task=${notification.task_id}` : "/tasks");
+    if (notification.tipo === "chat") navigate("/messages");
+    else if (notification.progetto_id) navigate("/projects");
+    else if (notification.prodotto_id) navigate("/products");
+    else navigate(notification.task_id ? `/tasks?task=${notification.task_id}` : "/tasks");
   }
 
   return (
     <div className={`app-shell ${mobileMenuOpen ? "mobile-menu-is-open" : ""}`}>
-      {mobileMenuOpen && (
-        <button
-          type="button"
-          className="mobile-sidebar-overlay"
-          aria-label="Chiudi menu"
-          onClick={() => setMobileMenuOpen(false)}
-        />
-      )}
+      {mobileMenuOpen && <button type="button" className="mobile-sidebar-overlay" aria-label="Chiudi menu" onClick={() => setMobileMenuOpen(false)} />}
 
       <aside className={`sidebar ${mobileMenuOpen ? "mobile-open" : ""}`}>
         <div className="sidebar-brand-area">
@@ -363,27 +202,14 @@ function Layout() {
               <p>WORKSPACE</p>
             </div>
           </div>
-
-          <button
-            type="button"
-            className="mobile-sidebar-close"
-            onClick={() => setMobileMenuOpen(false)}
-            aria-label="Chiudi menu"
-          >
-            <X size={22} />
-          </button>
+          <button type="button" className="mobile-sidebar-close" onClick={() => setMobileMenuOpen(false)} aria-label="Chiudi menu"><X size={22} /></button>
         </div>
 
         <nav className="sidebar-nav">
           {visibleMenuItems.map((item) => {
             const Icon = item.icon;
-
             return (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}
-              >
+              <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
                 <Icon size={21} />
                 <span>{item.label}</span>
               </NavLink>
@@ -397,29 +223,13 @@ function Layout() {
               <div className="avatar profile-avatar">{getInitials(profile?.nome)}</div>
               <div className="profile-main-text">
                 <strong>{profile?.nome || "Utente"}</strong>
-                <span>{profile?.ruoli?.nome || "Ruolo non impostato"}</span>
+                <span>{profile?.reparti?.nome || "Reparto non impostato"}</span>
               </div>
             </div>
-
-            <div className={`presence-badge ${presence.className}`}>
-              <span className="presence-dot" />
-              {presence.label}
-            </div>
-
-            <div className="profile-meta">
-              <span>Ultimo accesso</span>
-              <strong>{formatDateTime(profile?.ultimo_accesso)}</strong>
-            </div>
-
-            <div className="workspace-version">
-              <span>Workspace Progre</span>
-              <strong>v{APP_VERSION}</strong>
-            </div>
-
-            <button className="logout-btn" onClick={signOut}>
-              <LogOut size={18} />
-              Esci
-            </button>
+            <div className={`presence-badge ${presence.className}`}><span className="presence-dot" />{presence.label}</div>
+            <div className="profile-meta"><span>Ruolo</span><strong>{profile?.ruoli?.nome || "Utente"}</strong></div>
+            <div className="workspace-version"><span>Release</span><strong>v{APP_VERSION}</strong></div>
+            <button className="logout-btn" onClick={signOut}><LogOut size={18} />Esci</button>
           </div>
         </div>
       </aside>
@@ -427,116 +237,43 @@ function Layout() {
       <main className="main-area">
         <header className="topbar">
           <div className="topbar-left">
-            <button
-              type="button"
-              className="mobile-menu-btn"
-              onClick={() => setMobileMenuOpen(true)}
-              aria-label="Apri menu"
-            >
-              <Menu size={25} />
-            </button>
-
-            <div>
-              <h2>{currentPage.title}</h2>
-              <p>{currentPage.subtitle}</p>
-            </div>
+            <button type="button" className="mobile-menu-btn" onClick={() => setMobileMenuOpen(true)} aria-label="Apri menu"><Menu size={25} /></button>
+            <div><h2>{currentPage.title}</h2><p>{currentPage.subtitle}</p></div>
           </div>
 
           <div className="topbar-actions">
-            <button className="search-box search-box-button" onClick={openSearch}>
-              <Search size={18} />
-              <span className="search-placeholder">Cerca task, prodotti, utenti...</span>
-              <strong>⌘ K</strong>
-            </button>
-
-            <button className="icon-btn notification-btn" onClick={openNotifications}>
-              <Bell size={21} />
-              {notificationCount > 0 && <small>{notificationCount}</small>}
-            </button>
-
-            <button className="icon-btn notification-btn" onClick={() => navigate("/messages")}>
-              <MessageCircle size={21} />
-              {chatUnreadCount > 0 && <small>{chatUnreadCount}</small>}
-            </button>
-
-            <div className="theme-toggle">
-              <Sun size={17} />
-              <Moon size={17} />
-            </div>
+            <button className="search-box search-box-button" onClick={openSearch}><Search size={18} /><span className="search-placeholder">Cerca tutto...</span><strong>⌘ K</strong></button>
+            <button className="icon-btn notification-btn" onClick={openNotifications}><Bell size={21} />{notificationCount > 0 && <small>{notificationCount}</small>}</button>
+            <button className="icon-btn notification-btn" onClick={() => navigate("/messages")}><MessageCircle size={21} /></button>
           </div>
 
           {notificationOpen && (
             <div className="topbar-popover">
-              <div className="topbar-popover-header">
-                <h3>Notifiche</h3>
-                <p>{notificationCount} non lette</p>
-              </div>
-
+              <div className="topbar-popover-header"><h3>Notifiche</h3><p>{notificationCount} non lette</p></div>
               <div className="notification-list">
-                {notifications.length === 0 ? (
-                  <div className="topbar-popover-empty">Nessuna notifica.</div>
-                ) : (
-                  notifications.map((item) => (
-                    <button
-                      key={item.id}
-                      className={`notification-row ${item.letta ? "" : "unread"}`}
-                      onClick={() => goToNotification(item)}
-                    >
-                      <strong>{item.titolo || "Notifica"}</strong>
-                      <span>{item.messaggio || "-"}</span>
-                      <small>{formatDateTime(item.created_at)}</small>
-                    </button>
-                  ))
-                )}
+                {notifications.length === 0 ? <div className="topbar-popover-empty">Nessuna notifica.</div> : notifications.map((item) => (
+                  <button key={item.id} className={`notification-row ${item.letta ? "" : "unread"}`} onClick={() => goToNotification(item)}>
+                    <strong>{item.titolo || "Notifica"}</strong><span>{item.messaggio || "-"}</span><small>{formatDateTime(item.created_at)}</small>
+                  </button>
+                ))}
               </div>
             </div>
           )}
         </header>
 
-        <section className="content-area">
-          <Outlet />
-        </section>
+        <section className="content-area"><Outlet /></section>
       </main>
 
       {searchOpen && (
         <div className="global-search-backdrop" onClick={closeSearch}>
           <div className="global-search-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="global-search-input-row">
-              <Search size={21} />
-              <input
-                autoFocus
-                placeholder="Cerca in task, prodotti, utenti, progetti, commenti..."
-                value={globalSearch}
-                onChange={(e) => setGlobalSearch(e.target.value)}
-              />
-              <button onClick={closeSearch}>
-                <X size={20} />
-              </button>
-            </div>
-
+            <div className="global-search-input-row"><Search size={21} /><input autoFocus placeholder="Cerca in progetti, fasi, prodotti, documenti, reminder..." value={globalSearch} onChange={(e) => setGlobalSearch(e.target.value)} /><button onClick={closeSearch}><X size={20} /></button></div>
             <div className="global-search-results">
-              {globalSearch.trim().length < 2 ? (
-                <p className="global-search-empty">Scrivi almeno 2 caratteri per cercare.</p>
-              ) : searchLoading ? (
-                <p className="global-search-empty">Ricerca in corso...</p>
-              ) : searchResults.length === 0 ? (
-                <p className="global-search-empty">Nessun risultato trovato.</p>
-              ) : (
-                searchResults.map((result, index) => (
-                  <button
-                    key={`${result.type}-${index}`}
-                    className="global-search-result"
-                    onClick={() => goToResult(result.path)}
-                  >
-                    <span>{result.type}</span>
-                    <div>
-                      <strong>{result.title}</strong>
-                      <small>{result.description}</small>
-                    </div>
-                    <ArrowRight size={18} />
-                  </button>
-                ))
-              )}
+              {globalSearch.trim().length < 2 ? <p className="global-search-empty">Scrivi almeno 2 caratteri per cercare.</p> : searchLoading ? <p className="global-search-empty">Ricerca in corso...</p> : searchResults.length === 0 ? <p className="global-search-empty">Nessun risultato.</p> : searchResults.map((item, index) => (
+                <button key={`${item.type}-${index}`} className="global-search-result-row" onClick={() => goToResult(item.path)}>
+                  <span>{item.type}</span><strong>{item.title}</strong><small>{item.description}</small>
+                </button>
+              ))}
             </div>
           </div>
         </div>

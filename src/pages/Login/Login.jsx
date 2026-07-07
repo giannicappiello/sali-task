@@ -1,152 +1,63 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Eye, EyeOff, Lock, Mail, ShieldCheck } from "lucide-react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
-import { Eye, EyeOff, Lock, Mail } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 
 function Login() {
-  const { session, signIn, resetPassword } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-
+  const { session, signIn, resetPassword } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [message, setMessage] = useState("");
-  const [errorMessage, setErrorMessage] = useState("");
+  const [remember, setRemember] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState(null);
 
-  const from = location.state?.from?.pathname || "/dashboard";
+  useEffect(() => {
+    const saved = window.localStorage.getItem("progre-login-email");
+    if (saved) setEmail(saved);
+  }, []);
 
-  if (session) {
-    return <Navigate to={from} replace />;
-  }
+  if (session) return <Navigate to={location.state?.from?.pathname || "/dashboard"} replace />;
 
   async function handleSubmit(e) {
     e.preventDefault();
-
-    setMessage("");
-    setErrorMessage("");
-
-    if (!email.trim() || !password.trim()) {
-      setErrorMessage("Inserisci email e password.");
+    setMessage(null);
+    if (!email.trim() || !password) {
+      setMessage({ type: "error", text: "Inserisci email e password." });
       return;
     }
-
     setSubmitting(true);
-
     const result = await signIn(email.trim(), password);
-
     setSubmitting(false);
-
     if (!result.success) {
-      setErrorMessage("Email o password non corretti.");
+      setMessage({ type: "error", text: result.error?.message || "Credenziali non valide." });
       return;
     }
-
-    navigate(from, { replace: true });
+    if (remember) window.localStorage.setItem("progre-login-email", email.trim());
+    else window.localStorage.removeItem("progre-login-email");
+    navigate(location.state?.from?.pathname || "/dashboard", { replace: true });
   }
 
   async function handleResetPassword() {
-    setMessage("");
-    setErrorMessage("");
-
+    setMessage(null);
     if (!email.trim()) {
-      setErrorMessage("Inserisci prima la tua email.");
+      setMessage({ type: "error", text: "Inserisci prima la tua email." });
       return;
     }
-
     const result = await resetPassword(email.trim());
-
-    if (!result.success) {
-      setErrorMessage("Non è stato possibile inviare il recupero password.");
-      return;
-    }
-
-    setMessage("Ti abbiamo inviato una email per reimpostare la password.");
+    setMessage(result.success ? { type: "success", text: "Email di recupero inviata." } : { type: "error", text: result.error?.message || "Impossibile inviare il recupero password." });
   }
 
   return (
-    <div className="login-page">
+    <div className="login-page login-v4">
       <div className="login-left">
-        <div className="login-brand">
-          <div className="login-logo">P</div>
-          <div>
-            <h1>PROGRE</h1>
-            <p>WORKSPACE</p>
-          </div>
-        </div>
-
-        <div className="login-copy">
-          <span>Gestionale interno</span>
-          <h2>Organizza task, progetti, prodotti e deadline in un unico workspace.</h2>
-          <p>
-            Accesso riservato al team Progre. Le attività, lo storico e i dati
-            aziendali sono protetti da autenticazione.
-          </p>
-        </div>
+        <div className="login-brand"><div className="login-logo">P</div><div><h1>PROGRE</h1><p>WORKSPACE 4.0</p></div></div>
+        <div className="login-copy"><span>PLM cosmetico collaborativo</span><h2>Sviluppo prodotto, documentazione, task e reparti in un unico workspace.</h2><p>Agenda personale, progetti con checklist, documentazione regolatoria, prodotti, messaggi e dashboard reparto.</p></div>
+        <div className="login-badges"><span>Installabile PWA</span><span>Supabase realtime</span><span>Ruoli e permessi</span></div>
       </div>
-
-      <div className="login-right">
-        <form className="login-card" onSubmit={handleSubmit}>
-          <div className="login-card-header">
-            <h2>Accedi</h2>
-            <p>Inserisci le tue credenziali per entrare nel workspace.</p>
-          </div>
-
-          {errorMessage && <div className="auth-alert error">{errorMessage}</div>}
-          {message && <div className="auth-alert success">{message}</div>}
-
-          <label className="login-field">
-            <span>Email</span>
-            <div>
-              <Mail size={18} />
-              <input
-                type="email"
-                placeholder="nome@progre.it"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="email"
-              />
-            </div>
-          </label>
-
-          <label className="login-field">
-            <span>Password</span>
-            <div>
-              <Lock size={18} />
-              <input
-                type={showPassword ? "text" : "password"}
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-              />
-              <button
-                type="button"
-                className="show-password-btn"
-                onClick={() => setShowPassword((value) => !value)}
-              >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            </div>
-          </label>
-
-          <div className="login-options">
-            <label>
-              <input type="checkbox" defaultChecked />
-              Ricordami
-            </label>
-
-            <button type="button" onClick={handleResetPassword}>
-              Password dimenticata?
-            </button>
-          </div>
-
-          <button type="submit" className="login-submit" disabled={submitting}>
-            {submitting ? "Accesso in corso..." : "Accedi"}
-          </button>
-        </form>
-      </div>
+      <div className="login-right"><form className="login-card" onSubmit={handleSubmit}><div className="login-card-header"><ShieldCheck size={34} /><h2>Accedi</h2><p>Usa le credenziali abilitate su Supabase Auth.</p></div>{message && <div className={`auth-alert ${message.type}`}>{message.text}</div>}<label className="login-field"><span>Email</span><div><Mail size={19} /><input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="nome@progre.it" /></div></label><label className="login-field"><span>Password</span><div><Lock size={19} /><input type={showPassword ? "text" : "password"} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" /><button type="button" className="show-password-btn" onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label><div className="login-options"><label><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />Ricorda email</label><button type="button" onClick={handleResetPassword}>Password dimenticata?</button></div><button className="login-submit" disabled={submitting}>{submitting ? "Accesso in corso..." : "Entra nel workspace"}</button></form></div>
     </div>
   );
 }

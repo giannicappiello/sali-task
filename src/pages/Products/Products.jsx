@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Search,
   Package,
@@ -22,6 +23,8 @@ const emptyForm = {
 };
 
 function Products() {
+  const navigate = useNavigate();
+
   const [prodotti, setProdotti] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -52,7 +55,8 @@ function Products() {
         created_at,
         updated_at
       `)
-      .order("nome", { ascending: true });
+      .order("nome", { ascending: true })
+      .range(0, 49999);
 
     if (error) {
       console.error("Errore caricamento prodotti:", error);
@@ -94,6 +98,10 @@ function Products() {
       ...current,
       [field]: value,
     }));
+  }
+
+  function openProductTasks(product) {
+    navigate(`/tasks?product=${product.id}`);
   }
 
   async function handleSave(e) {
@@ -300,10 +308,15 @@ function Products() {
 
             {filteredProducts.map((product) => (
               <div className="products-table-row" key={product.id}>
-                <div className="product-main-cell">
+                <button
+                  type="button"
+                  className="product-main-cell product-click-cell"
+                  onClick={() => openProductTasks(product)}
+                  title="Apri task collegate a questo prodotto"
+                >
                   <strong>{product.nome}</strong>
-                  <small>{product.note || "Nessuna nota"}</small>
-                </div>
+                  <small>{product.note || "Clicca per vedere le task collegate"}</small>
+                </button>
 
                 <span className="product-code">{product.codice || "-"}</span>
                 <span>{product.brand || "-"}</span>

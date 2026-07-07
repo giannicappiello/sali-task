@@ -1,587 +1,170 @@
-import { useEffect, useMemo, useState } from "react";
-import { X, History, MessageCircle, Paperclip, CheckSquare } from "lucide-react";
+import { useEffect, useState } from "react";
+import { X, History, MessageCircle, Paperclip, CheckSquare, Send, Upload, Trash2, Download, Plus } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 
 function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
   const { profile } = useAuth();
+  const isEditing = mode === "edit" && task?.id;
   const [activeTab, setActiveTab] = useState("dettagli");
-
-  const [titolo, setTitolo] = useState("");
-  const [descrizione, setDescrizione] = useState("");
-  const [categoriaId, setCategoriaId] = useState("");
-  const [statoId, setStatoId] = useState("");
-  const [progettoId, setProgettoId] = useState("");
-  const [prodottoId, setProdottoId] = useState("");
-  const [assegnatoAId, setAssegnatoAId] = useState("");
-  const [deadline, setDeadline] = useState("");
-
-  const [categorie, setCategorie] = useState([]);
-  const [stati, setStati] = useState([]);
-  const [progetti, setProgetti] = useState([]);
-  const [prodotti, setProdotti] = useState([]);
-  const [utenti, setUtenti] = useState([]);
+  const [form, setForm] = useState({ titolo:"", descrizione:"", categoria_id:"", stato_id:"", progetto_id:"", prodotto_id:"", assegnato_a_id:"", deadline:"" });
+  const [opts, setOpts] = useState({ categorie:[], stati:[], progetti:[], prodotti:[], utenti:[] });
   const [attivita, setAttivita] = useState([]);
+  const [commenti, setCommenti] = useState([]);
+  const [allegati, setAllegati] = useState([]);
+  const [checklist, setChecklist] = useState([]);
+  const [newComment, setNewComment] = useState("");
+  const [newChecklist, setNewChecklist] = useState("");
   const [saving, setSaving] = useState(false);
-
-  const isEditing = mode === "edit" && task && task.id;
-
-  const optionsMaps = useMemo(() => {
-    return {
-      categorie: Object.fromEntries(categorie.map((item) => [item.id, item.nome])),
-      stati: Object.fromEntries(stati.map((item) => [item.id, item.nome])),
-      progetti: Object.fromEntries(progetti.map((item) => [item.id, item.nome])),
-      prodotti: Object.fromEntries(prodotti.map((item) => [item.id, item.nome])),
-      utenti: Object.fromEntries(utenti.map((item) => [item.id, item.nome])),
-    };
-  }, [categorie, stati, progetti, prodotti, utenti]);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     if (!open) return;
+    init();
+  }, [open, task?.id]);
 
-    async function initialize() {
-      setActiveTab("dettagli");
-
-      const options = await loadOptions();
-
-      if (isEditing) {
-        setTitolo(task.titolo || "");
-        setDescrizione(task.descrizione || "");
-        setCategoriaId(task.categoria_id || "");
-        setStatoId(task.stato_id || "");
-        setProgettoId(task.progetto_id || "");
-        setProdottoId(task.prodotto_id || "");
-        setAssegnatoAId(task.assegnato_a_id || "");
-        setDeadline(task.deadline || "");
-        await loadAttivita(task.id);
-      } else {
-        setTitolo("");
-        setDescrizione("");
-        setCategoriaId("");
-        setProgettoId("");
-        setProdottoId("");
-        setAssegnatoAId("");
-        setDeadline("");
-        setAttivita([]);
-
-        const nuova = options.stati.find((s) => s.nome === "Nuova");
-        setStatoId(nuova?.id || options.stati[0]?.id || "");
-      }
-    }
-
-    initialize();
-  }, [open, mode, task?.id]);
-
-  async function loadOptions() {
-    const [categorieRes, statiRes, progettiRes, prodottiRes, utentiRes] =
-      await Promise.all([
-        supabase.from("categorie_task").select("*").eq("attiva", true).order("ordine"),
-        supabase.from("stati_task").select("*").eq("attiva", true).order("ordine"),
-        supabase.from("progetti").select("*").order("nome"),
-        supabase.from("prodotti").select("*").order("nome"),
-        supabase.from("utenti").select("*").eq("attivo", true).order("nome"),
-      ]);
-
-    if (categorieRes.error) console.error("Errore categorie:", categorieRes.error);
-    if (statiRes.error) console.error("Errore stati:", statiRes.error);
-    if (progettiRes.error) console.error("Errore progetti:", progettiRes.error);
-    if (prodottiRes.error) console.error("Errore prodotti:", prodottiRes.error);
-    if (utentiRes.error) console.error("Errore utenti:", utentiRes.error);
-
-    const options = {
-      categorie: categorieRes.data || [],
-      stati: statiRes.data || [],
-      progetti: progettiRes.data || [],
-      prodotti: prodottiRes.data || [],
-      utenti: utentiRes.data || [],
-    };
-
-    setCategorie(options.categorie);
-    setStati(options.stati);
-    setProgetti(options.progetti);
-    setProdotti(options.prodotti);
-    setUtenti(options.utenti);
-
-    return options;
-  }
-
-  async function loadAttivita(taskId) {
-    const { data, error } = await supabase
-      .from("attivita_task")
-      .select(`
-        id,
-        data_ora,
-        tipo,
-        campo,
-        valore_precedente,
-        valore_nuovo,
-        note,
-        utenti(nome)
-      `)
-      .eq("task_id", taskId)
-      .order("data_ora", { ascending: false });
-
-    if (error) {
-      console.error("Errore caricamento attività task:", error);
-      setAttivita([]);
-      return;
-    }
-
-    setAttivita(data || []);
-  }
-
-  function resetForm() {
-    setTitolo("");
-    setDescrizione("");
-    setCategoriaId("");
-    setStatoId("");
-    setProgettoId("");
-    setProdottoId("");
-    setAssegnatoAId("");
-    setDeadline("");
-    setAttivita([]);
+  async function init() {
     setActiveTab("dettagli");
-  }
-
-  function getLabel(mapName, value) {
-    if (!value) return "";
-    return optionsMaps[mapName]?.[value] || value;
-  }
-
-  function normalize(value) {
-    return value === undefined || value === null ? "" : String(value);
-  }
-
-  function getChangeType(field) {
-    if (field === "stato") return "CAMBIO STATO";
-    if (field === "assegnato a") return "CAMBIO ASSEGNATO";
-    if (field === "deadline") return "CAMBIO DEADLINE";
-    return "MODIFICA";
-  }
-
-  function buildChanges(payload) {
-    if (!isEditing) {
-      return [
-        {
-          tipo: "CREAZIONE",
-          campo: "task",
-          valore_precedente: null,
-          valore_nuovo: payload.titolo,
-          note: "Task creata",
-        },
-      ];
-    }
-
-    const fields = [
-      {
-        campo: "titolo",
-        oldValue: task.titolo,
-        newValue: payload.titolo,
-      },
-      {
-        campo: "descrizione",
-        oldValue: task.descrizione,
-        newValue: payload.descrizione,
-      },
-      {
-        campo: "categoria",
-        oldValue: getLabel("categorie", task.categoria_id),
-        newValue: getLabel("categorie", payload.categoria_id),
-      },
-      {
-        campo: "stato",
-        oldValue: getLabel("stati", task.stato_id),
-        newValue: getLabel("stati", payload.stato_id),
-      },
-      {
-        campo: "progetto",
-        oldValue: getLabel("progetti", task.progetto_id),
-        newValue: getLabel("progetti", payload.progetto_id),
-      },
-      {
-        campo: "prodotto",
-        oldValue: getLabel("prodotti", task.prodotto_id),
-        newValue: getLabel("prodotti", payload.prodotto_id),
-      },
-      {
-        campo: "assegnato a",
-        oldValue: getLabel("utenti", task.assegnato_a_id),
-        newValue: getLabel("utenti", payload.assegnato_a_id),
-      },
-      {
-        campo: "deadline",
-        oldValue: task.deadline,
-        newValue: payload.deadline,
-      },
-    ];
-
-    return fields
-      .filter((field) => normalize(field.oldValue) !== normalize(field.newValue))
-      .map((field) => ({
-        tipo: getChangeType(field.campo),
-        campo: field.campo,
-        valore_precedente: normalize(field.oldValue) || null,
-        valore_nuovo: normalize(field.newValue) || null,
-        note: `Campo "${field.campo}" modificato`,
-      }));
-  }
-
-  async function insertActivityRows(taskId, userId, changes) {
-    if (!changes.length) return;
-
-    const rows = changes.map((change) => ({
-      task_id: taskId,
-      utente_id: userId || null,
-      tipo: change.tipo,
-      campo: change.campo,
-      valore_precedente: change.valore_precedente,
-      valore_nuovo: change.valore_nuovo,
-      note: change.note,
-    }));
-
-    const { error } = await supabase.from("attivita_task").insert(rows);
-
-    if (error) {
-      console.error("Errore inserimento attività:", error);
-    }
-  }
-
-  async function handleSave(e) {
-    e.preventDefault();
-
-    if (!titolo.trim()) {
-      alert("Inserisci il titolo della task.");
-      return;
-    }
-
-    setSaving(true);
-
-    const basePayload = {
-      titolo: titolo.trim(),
-      descrizione: descrizione.trim() || null,
-      categoria_id: categoriaId || null,
-      stato_id: statoId || null,
-      progetto_id: progettoId || null,
-      prodotto_id: prodottoId || null,
-      assegnato_a_id: assegnatoAId || null,
-      deadline: deadline || null,
-    };
-
-    const payload = isEditing
-      ? {
-          ...basePayload,
-          modificato_da_id: profile?.id || null,
-        }
-      : {
-          ...basePayload,
-          creato_da_id: profile?.id || null,
-          richiedente_id: profile?.id || null,
-          modificato_da_id: null,
-        };
-
-    const changes = buildChanges(payload);
-    const userIdForActivity = profile?.id || null;
-
-    if (isEditing && changes.length === 0) {
-      setSaving(false);
-      onClose();
-      return;
-    }
-
+    const [categorie, stati, progetti, prodotti, utenti] = await Promise.all([
+      supabase.from("categorie_task").select("*").eq("attiva", true).order("ordine"),
+      supabase.from("stati_task").select("*").eq("attiva", true).order("ordine"),
+      supabase.from("progetti").select("*").order("nome"),
+      supabase.from("prodotti").select("*").order("nome"),
+      supabase.from("utenti").select("*").eq("attivo", true).order("nome"),
+    ]);
+    const nextOpts = { categorie: categorie.data || [], stati: stati.data || [], progetti: progetti.data || [], prodotti: prodotti.data || [], utenti: utenti.data || [] };
+    setOpts(nextOpts);
     if (isEditing) {
-      const { error } = await supabase.from("tasks").update(payload).eq("id", task.id);
-
-      if (error) {
-        setSaving(false);
-        console.error("Errore salvataggio task:", error);
-        alert("Errore durante il salvataggio della task.");
-        return;
-      }
-
-      await insertActivityRows(task.id, userIdForActivity, changes);
+      setForm({
+        titolo: task.titolo || "", descrizione: task.descrizione || "", categoria_id: task.categoria_id || "", stato_id: task.stato_id || "",
+        progetto_id: task.progetto_id || "", prodotto_id: task.prodotto_id || "", assegnato_a_id: task.assegnato_a_id || "", deadline: task.deadline || "",
+      });
+      await Promise.all([loadAttivita(), loadCommenti(), loadAllegati(), loadChecklist()]);
     } else {
-      const { data, error } = await supabase
-        .from("tasks")
-        .insert(payload)
-        .select("id")
-        .single();
-
-      if (error) {
-        setSaving(false);
-        console.error("Errore salvataggio task:", error);
-        alert("Errore durante il salvataggio della task.");
-        return;
-      }
-
-      await insertActivityRows(data.id, userIdForActivity, changes);
+      const nuova = nextOpts.stati.find(s => s.nome === "Nuova");
+      setForm({ titolo:"", descrizione:"", categoria_id:"", stato_id: nuova?.id || nextOpts.stati[0]?.id || "", progetto_id:"", prodotto_id:"", assegnato_a_id:"", deadline:"" });
+      setAttivita([]); setCommenti([]); setAllegati([]); setChecklist([]);
     }
-
-    setSaving(false);
-    resetForm();
-    onSaved();
-    onClose();
   }
 
-  function handleClose() {
-    resetForm();
-    onClose();
+  function update(field, value){ setForm(c => ({...c, [field]: value})); }
+  function mapName(list, id){ return list.find(x => x.id === id)?.nome || id || ""; }
+  function fmt(date){ if(!date) return "-"; return new Date(date).toLocaleString("it-IT",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}); }
+  function fileSize(bytes){ if(!bytes) return "-"; if(bytes<1024) return `${bytes} B`; if(bytes<1024*1024) return `${Math.round(bytes/1024)} KB`; return `${(bytes/1024/1024).toFixed(1)} MB`; }
+
+  async function loadAttivita(){ const {data,error}=await supabase.from("attivita_task").select("id,data_ora,tipo,campo,valore_precedente,valore_nuovo,note,utenti(nome)").eq("task_id",task.id).order("data_ora",{ascending:false}); if(error) console.error(error); setAttivita(data||[]); }
+  async function loadCommenti(){ const {data,error}=await supabase.from("task_commenti").select("id,commento,created_at,utente_id,utenti(nome)").eq("task_id",task.id).order("created_at"); if(error) console.error(error); setCommenti(data||[]); }
+  async function loadAllegati(){ const {data,error}=await supabase.from("task_allegati").select("id,nome_file,file_url,storage_path,tipo_file,dimensione_bytes,created_at,caricato_da_id,utenti:utenti!task_allegati_caricato_da_id_fkey(nome)").eq("task_id",task.id).order("created_at",{ascending:false}); if(error) console.error(error); setAllegati(data||[]); }
+  async function loadChecklist(){ const {data,error}=await supabase.from("task_checklist").select("id,testo,completata,completata_il,completata_da_id,ordine,created_at,utenti:utenti!task_checklist_completata_da_id_fkey(nome)").eq("task_id",task.id).order("ordine").order("created_at"); if(error) console.error(error); setChecklist(data||[]); }
+
+  async function addActivity(tipo, campo, valore_nuovo, note){ await supabase.from("attivita_task").insert({ task_id: task.id, utente_id: profile?.id || null, tipo, campo, valore_nuovo, note }); }
+
+  async function handleSave(e){
+    e.preventDefault();
+    if(!form.titolo.trim()) return alert("Inserisci il titolo della task.");
+    setSaving(true);
+    const payload = { titolo: form.titolo.trim(), descrizione: form.descrizione.trim() || null, categoria_id: form.categoria_id || null, stato_id: form.stato_id || null, progetto_id: form.progetto_id || null, prodotto_id: form.prodotto_id || null, assegnato_a_id: form.assegnato_a_id || null, deadline: form.deadline || null };
+    if(isEditing){
+      const {error}=await supabase.from("tasks").update({...payload, modificato_da_id: profile?.id || null}).eq("id", task.id);
+      if(error){ console.error(error); setSaving(false); return alert("Errore durante il salvataggio."); }
+      await addActivity("MODIFICA", "task", form.titolo.trim(), "Task modificata");
+    } else {
+      const {data,error}=await supabase.from("tasks").insert({...payload, creato_da_id: profile?.id || null, richiedente_id: profile?.id || null}).select("id").single();
+      if(error){ console.error(error); setSaving(false); return alert("Errore durante il salvataggio."); }
+      await supabase.from("attivita_task").insert({ task_id: data.id, utente_id: profile?.id || null, tipo:"CREAZIONE", campo:"task", valore_nuovo: form.titolo.trim(), note:"Task creata" });
+    }
+    setSaving(false); onSaved(); onClose();
   }
 
-  function formatDateTime(date) {
-    if (!date) return "-";
-
-    return new Date(date).toLocaleString("it-IT", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+  async function addComment(e){
+    e.preventDefault(); if(!newComment.trim()) return;
+    const text = newComment.trim();
+    const {error}=await supabase.from("task_commenti").insert({task_id:task.id,utente_id:profile?.id||null,commento:text});
+    if(error){ console.error(error); return alert("Errore commento."); }
+    await addActivity("COMMENTO","commenti",text,"Nuovo commento inserito");
+    setNewComment(""); await Promise.all([loadCommenti(), loadAttivita()]);
   }
 
-  if (!open) return null;
+  async function deleteComment(id){ if(!confirm("Eliminare questo commento?")) return; await supabase.from("task_commenti").delete().eq("id",id); await loadCommenti(); }
 
-  return (
-    <div className="modal-backdrop">
-      <div className="task-modal task-modal-wide">
-        <div className="modal-header">
-          <div>
-            <h2>{isEditing ? "Modifica task" : "Nuova task"}</h2>
-            <p>
-              {isEditing
-                ? "Gestisci dettagli, attività, commenti, allegati e checklist."
-                : "Crea una nuova attività. Creatore e modifiche saranno registrati automaticamente."}
-            </p>
-          </div>
+  async function addChecklist(e){
+    e.preventDefault(); if(!newChecklist.trim()) return;
+    const text = newChecklist.trim();
+    const {error}=await supabase.from("task_checklist").insert({task_id:task.id,testo:text,ordine:checklist.length+1});
+    if(error){ console.error(error); return alert("Errore checklist."); }
+    await addActivity("CHECKLIST","checklist",text,"Nuovo punto checklist");
+    setNewChecklist(""); await Promise.all([loadChecklist(), loadAttivita()]);
+  }
 
-          <button className="modal-close" onClick={handleClose} type="button">
-            <X size={22} />
-          </button>
-        </div>
+  async function toggleChecklist(item){
+    const completed = !item.completata;
+    const {error}=await supabase.from("task_checklist").update({completata:completed,completata_da_id:completed ? profile?.id || null : null,completata_il:completed ? new Date().toISOString() : null}).eq("id",item.id);
+    if(error){ console.error(error); return alert("Errore checklist."); }
+    await loadChecklist();
+  }
 
-        <div className="task-tabs">
-          <button
-            className={activeTab === "dettagli" ? "active" : ""}
-            onClick={() => setActiveTab("dettagli")}
-            type="button"
-          >
-            Dettagli
-          </button>
+  async function deleteChecklist(id){ if(!confirm("Eliminare questo punto checklist?")) return; await supabase.from("task_checklist").delete().eq("id",id); await loadChecklist(); }
 
-          <button
-            className={activeTab === "attivita" ? "active" : ""}
-            onClick={() => setActiveTab("attivita")}
-            type="button"
-            disabled={!isEditing}
-          >
-            <History size={16} />
-            Attività
-          </button>
+  async function uploadAttachment(e){
+    const file = e.target.files?.[0]; if(!file) return;
+    setUploading(true);
+    const storagePath = `${task.id}/${Date.now()}-${file.name.replaceAll("/","-")}`;
+    const up = await supabase.storage.from("task-attachments").upload(storagePath,file,{cacheControl:"3600",upsert:false});
+    if(up.error){ console.error(up.error); setUploading(false); e.target.value=""; return alert("Errore caricamento allegato."); }
+    const signed = await supabase.storage.from("task-attachments").createSignedUrl(storagePath,60*60*24*7);
+    const ins = await supabase.from("task_allegati").insert({task_id:task.id,nome_file:file.name,file_url:signed.data?.signedUrl || storagePath,storage_path:storagePath,tipo_file:file.type || null,dimensione_bytes:file.size,caricato_da_id:profile?.id || null});
+    if(ins.error){ console.error(ins.error); setUploading(false); e.target.value=""; return alert("Errore salvataggio allegato."); }
+    await addActivity("ALLEGATO","allegati",file.name,"Nuovo allegato caricato");
+    await Promise.all([loadAllegati(), loadAttivita()]); setUploading(false); e.target.value="";
+  }
 
-          <button
-            className={activeTab === "commenti" ? "active" : ""}
-            onClick={() => setActiveTab("commenti")}
-            type="button"
-            disabled={!isEditing}
-          >
-            <MessageCircle size={16} />
-            Commenti
-          </button>
+  async function openAttachment(a){
+    if(!a.storage_path){ window.open(a.file_url,"_blank","noopener,noreferrer"); return; }
+    const {data,error}=await supabase.storage.from("task-attachments").createSignedUrl(a.storage_path,600);
+    if(error){ console.error(error); return alert("Errore apertura allegato."); }
+    window.open(data.signedUrl,"_blank","noopener,noreferrer");
+  }
 
-          <button
-            className={activeTab === "allegati" ? "active" : ""}
-            onClick={() => setActiveTab("allegati")}
-            type="button"
-            disabled={!isEditing}
-          >
-            <Paperclip size={16} />
-            Allegati
-          </button>
+  async function deleteAttachment(a){
+    if(!confirm(`Eliminare l'allegato "${a.nome_file}"?`)) return;
+    if(a.storage_path) await supabase.storage.from("task-attachments").remove([a.storage_path]);
+    await supabase.from("task_allegati").delete().eq("id",a.id);
+    await loadAllegati();
+  }
 
-          <button
-            className={activeTab === "checklist" ? "active" : ""}
-            onClick={() => setActiveTab("checklist")}
-            type="button"
-            disabled={!isEditing}
-          >
-            <CheckSquare size={16} />
-            Checklist
-          </button>
-        </div>
+  if(!open) return null;
+  const completed = checklist.filter(i=>i.completata).length;
 
-        {activeTab === "dettagli" && (
-          <form onSubmit={handleSave} className="task-form">
-            <div className="form-group full">
-              <label>Titolo *</label>
-              <input
-                value={titolo}
-                onChange={(e) => setTitolo(e.target.value)}
-                placeholder="Es. Revisione formula shampoo"
-                autoFocus
-              />
-            </div>
-
-            <div className="form-group full">
-              <label>Descrizione</label>
-              <textarea
-                value={descrizione}
-                onChange={(e) => setDescrizione(e.target.value)}
-                placeholder="Descrivi l'attività..."
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Categoria</label>
-              <select value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)}>
-                <option value="">Seleziona categoria</option>
-                {categorie.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nome}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label>Stato</label>
-              <select value={statoId} onChange={(e) => setStatoId(e.target.value)}>
-                <option value="">Seleziona stato</option>
-                {stati.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.nome}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label>Progetto</label>
-              <select value={progettoId} onChange={(e) => setProgettoId(e.target.value)}>
-                <option value="">Nessun progetto</option>
-                {progetti.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.nome}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label>Prodotto</label>
-              <select value={prodottoId} onChange={(e) => setProdottoId(e.target.value)}>
-                <option value="">Nessun prodotto</option>
-                {prodotti.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.nome}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label>Assegnato a</label>
-              <select value={assegnatoAId} onChange={(e) => setAssegnatoAId(e.target.value)}>
-                <option value="">Non assegnata</option>
-                {utenti.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.nome}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label>Deadline</label>
-              <input
-                type="date"
-                value={deadline}
-                onChange={(e) => setDeadline(e.target.value)}
-              />
-            </div>
-
-            <div className="modal-actions">
-              <button type="button" className="secondary-action" onClick={handleClose}>
-                Annulla
-              </button>
-
-              <button type="submit" className="primary-action" disabled={saving}>
-                {saving ? "Salvataggio..." : isEditing ? "Salva modifiche" : "Salva task"}
-              </button>
-            </div>
-          </form>
-        )}
-
-        {activeTab === "attivita" && (
-          <div className="task-tab-content">
-            <div className="tab-title-row">
-              <div>
-                <h3>Storico attività task</h3>
-                <p>Registro completo delle modifiche effettuate sulla task.</p>
-              </div>
-              <button type="button" className="secondary-action" onClick={() => loadAttivita(task.id)}>
-                Aggiorna storico
-              </button>
-            </div>
-
-            {attivita.length === 0 ? (
-              <p className="empty-state">Nessuna attività registrata.</p>
-            ) : (
-              <div className="activity-table">
-                <div className="activity-table-head">
-                  <span>Data e ora</span>
-                  <span>Utente</span>
-                  <span>Azione</span>
-                  <span>Campo</span>
-                  <span>Da</span>
-                  <span>A</span>
-                  <span>Note</span>
-                </div>
-
-                {attivita.map((item) => (
-                  <div className="activity-table-row" key={item.id}>
-                    <span>{formatDateTime(item.data_ora)}</span>
-                    <span>{item.utenti?.nome || "-"}</span>
-                    <span className="activity-type">{item.tipo}</span>
-                    <span>{item.campo || "-"}</span>
-                    <span className="old-value">{item.valore_precedente || "—"}</span>
-                    <span className="new-value">{item.valore_nuovo || "—"}</span>
-                    <span>{item.note || "-"}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === "commenti" && (
-          <div className="task-tab-content">
-            <h3>Commenti</h3>
-            <p className="empty-state">
-              Modulo commenti pronto per il prossimo step. Qui inseriremo la conversazione della task.
-            </p>
-          </div>
-        )}
-
-        {activeTab === "allegati" && (
-          <div className="task-tab-content">
-            <h3>Allegati</h3>
-            <p className="empty-state">
-              Modulo allegati pronto per il prossimo step. Qui caricheremo PDF, immagini, Excel e documenti.
-            </p>
-          </div>
-        )}
-
-        {activeTab === "checklist" && (
-          <div className="task-tab-content">
-            <h3>Checklist</h3>
-            <p className="empty-state">
-              Modulo checklist pronto per il prossimo step. Qui inseriremo sotto-attività con spunta.
-            </p>
-          </div>
-        )}
-      </div>
+  return <div className="modal-backdrop"><div className="task-modal task-modal-wide">
+    <div className="modal-header"><div><h2>{isEditing ? "Modifica task" : "Nuova task"}</h2><p>{isEditing ? "Gestisci dettagli, attività, commenti, allegati e checklist." : "Crea una nuova attività."}</p></div><button className="modal-close" onClick={onClose} type="button"><X size={22}/></button></div>
+    <div className="task-tabs">
+      <button className={activeTab==="dettagli"?"active":""} onClick={()=>setActiveTab("dettagli")} type="button">Dettagli</button>
+      <button className={activeTab==="attivita"?"active":""} onClick={()=>setActiveTab("attivita")} type="button" disabled={!isEditing}><History size={16}/>Attività</button>
+      <button className={activeTab==="commenti"?"active":""} onClick={()=>setActiveTab("commenti")} type="button" disabled={!isEditing}><MessageCircle size={16}/>Commenti</button>
+      <button className={activeTab==="allegati"?"active":""} onClick={()=>setActiveTab("allegati")} type="button" disabled={!isEditing}><Paperclip size={16}/>Allegati</button>
+      <button className={activeTab==="checklist"?"active":""} onClick={()=>setActiveTab("checklist")} type="button" disabled={!isEditing}><CheckSquare size={16}/>Checklist {checklist.length ? `(${completed}/${checklist.length})` : ""}</button>
     </div>
-  );
+
+    {activeTab==="dettagli" && <form onSubmit={handleSave} className="task-form">
+      <div className="form-group full"><label>Titolo *</label><input value={form.titolo} onChange={e=>update("titolo",e.target.value)} autoFocus /></div>
+      <div className="form-group full"><label>Descrizione</label><textarea value={form.descrizione} onChange={e=>update("descrizione",e.target.value)} /></div>
+      <div className="form-group"><label>Categoria</label><select value={form.categoria_id} onChange={e=>update("categoria_id",e.target.value)}><option value="">Seleziona categoria</option>{opts.categorie.map(x=><option key={x.id} value={x.id}>{x.nome}</option>)}</select></div>
+      <div className="form-group"><label>Stato</label><select value={form.stato_id} onChange={e=>update("stato_id",e.target.value)}><option value="">Seleziona stato</option>{opts.stati.map(x=><option key={x.id} value={x.id}>{x.nome}</option>)}</select></div>
+      <div className="form-group"><label>Progetto</label><select value={form.progetto_id} onChange={e=>update("progetto_id",e.target.value)}><option value="">Nessun progetto</option>{opts.progetti.map(x=><option key={x.id} value={x.id}>{x.nome}</option>)}</select></div>
+      <div className="form-group"><label>Prodotto</label><select value={form.prodotto_id} onChange={e=>update("prodotto_id",e.target.value)}><option value="">Nessun prodotto</option>{opts.prodotti.map(x=><option key={x.id} value={x.id}>{x.nome}</option>)}</select></div>
+      <div className="form-group"><label>Assegnato a</label><select value={form.assegnato_a_id} onChange={e=>update("assegnato_a_id",e.target.value)}><option value="">Non assegnata</option>{opts.utenti.map(x=><option key={x.id} value={x.id}>{x.nome}</option>)}</select></div>
+      <div className="form-group"><label>Deadline</label><input type="date" value={form.deadline} onChange={e=>update("deadline",e.target.value)} /></div>
+      <div className="modal-actions"><button type="button" className="secondary-action" onClick={onClose}>Annulla</button><button type="submit" className="primary-action" disabled={saving}>{saving ? "Salvataggio..." : "Salva task"}</button></div>
+    </form>}
+
+    {activeTab==="attivita" && <div className="task-tab-content"><div className="tab-title-row"><div><h3>Storico attività task</h3><p>Registro completo delle modifiche effettuate sulla task.</p></div><button type="button" className="secondary-action" onClick={loadAttivita}>Aggiorna storico</button></div>{attivita.length===0 ? <p className="empty-state">Nessuna attività registrata.</p> : <div className="activity-table"><div className="activity-table-head"><span>Data e ora</span><span>Utente</span><span>Azione</span><span>Campo</span><span>Da</span><span>A</span><span>Note</span></div>{attivita.map(i=><div className="activity-table-row" key={i.id}><span>{fmt(i.data_ora)}</span><span>{i.utenti?.nome||"-"}</span><span className="activity-type">{i.tipo}</span><span>{i.campo||"-"}</span><span className="old-value">{i.valore_precedente||"—"}</span><span className="new-value">{i.valore_nuovo||"—"}</span><span>{i.note||"-"}</span></div>)}</div>}</div>}
+
+    {activeTab==="commenti" && <div className="task-tab-content"><div className="tab-title-row"><div><h3>Commenti</h3><p>Messaggistica interna collegata alla task.</p></div></div><div className="comments-list">{commenti.length===0 ? <p className="empty-state">Nessun commento inserito.</p> : commenti.map(c=><div className="comment-card" key={c.id}><div><strong>{c.utenti?.nome||"Utente"}</strong><span>{fmt(c.created_at)}</span></div><p>{c.commento}</p><button type="button" onClick={()=>deleteComment(c.id)}><Trash2 size={15}/></button></div>)}</div><form className="comment-form" onSubmit={addComment}><textarea value={newComment} onChange={e=>setNewComment(e.target.value)} placeholder="Scrivi un commento..."/><button className="primary-action"><Send size={17}/>Invia</button></form></div>}
+
+    {activeTab==="allegati" && <div className="task-tab-content"><div className="tab-title-row"><div><h3>Allegati</h3><p>Carica documenti, immagini, PDF o file di lavoro.</p></div><label className="upload-button"><Upload size={17}/>{uploading?"Caricamento...":"Carica file"}<input type="file" onChange={uploadAttachment} disabled={uploading}/></label></div>{allegati.length===0 ? <p className="empty-state">Nessun allegato caricato.</p> : <div className="attachments-list">{allegati.map(a=><div className="attachment-row" key={a.id}><div><strong>{a.nome_file}</strong><span>{fileSize(a.dimensione_bytes)} · {a.utenti?.nome||"Utente"} · {fmt(a.created_at)}</span></div><button type="button" onClick={()=>openAttachment(a)}><Download size={16}/></button><button type="button" className="danger" onClick={()=>deleteAttachment(a)}><Trash2 size={16}/></button></div>)}</div>}</div>}
+
+    {activeTab==="checklist" && <div className="task-tab-content"><div className="tab-title-row"><div><h3>Checklist</h3><p>{completed} completate su {checklist.length} punti.</p></div></div><form className="checklist-form" onSubmit={addChecklist}><input value={newChecklist} onChange={e=>setNewChecklist(e.target.value)} placeholder="Aggiungi punto checklist..."/><button className="primary-action"><Plus size={17}/>Aggiungi</button></form>{checklist.length===0 ? <p className="empty-state">Nessun punto checklist inserito.</p> : <div className="checklist-list">{checklist.map(i=><div className={`checklist-row ${i.completata?"done":""}`} key={i.id}><label><input type="checkbox" checked={i.completata} onChange={()=>toggleChecklist(i)}/><span>{i.testo}</span></label><button type="button" onClick={()=>deleteChecklist(i.id)}><Trash2 size={16}/></button></div>)}</div>}</div>}
+  </div></div>;
 }
 
 export default TaskModal;

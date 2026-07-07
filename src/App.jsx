@@ -8,6 +8,7 @@ import Dashboard from "./pages/Dashboard/Dashboard";
 import Tasks from "./pages/Tasks/Tasks";
 import Projects from "./pages/Projects/Projects";
 import Products from "./pages/Products/Products";
+import Messages from "./pages/Messages/Messages";
 import Team from "./pages/Team/Team";
 import Calendar from "./pages/Calendar/Calendar";
 import Reports from "./pages/Reports/Reports";
@@ -28,6 +29,7 @@ function App() {
             <Route path="tasks" element={<Tasks />} />
             <Route path="projects" element={<Projects />} />
             <Route path="products" element={<Products />} />
+            <Route path="messages" element={<Messages />} />
             <Route path="team" element={<Team />} />
             <Route path="calendar" element={<Calendar />} />
             <Route path="reports" element={<Reports />} />

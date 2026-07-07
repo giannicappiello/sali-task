@@ -29,6 +29,7 @@ const menuItems = [
   { path: "/tasks", label: "Task", icon: CheckSquare, permission: "tasks.read" },
   { path: "/projects", label: "Progetti", icon: Folder, permission: "projects.read" },
   { path: "/products", label: "Prodotti", icon: Package, permission: "products.read" },
+  { path: "/messages", label: "Messaggi", icon: MessageCircle, permission: "tasks.read" },
   { path: "/team", label: "Team", icon: Users, permission: "team.read" },
   { path: "/calendar", label: "Calendario", icon: CalendarDays, permission: "tasks.read" },
   { path: "/reports", label: "Report", icon: BarChart3, permission: "reports.read" },
@@ -40,6 +41,7 @@ const pageInfo = {
   "/tasks": { title: "Task", subtitle: "Gestione attività, assegnazioni e deadline." },
   "/projects": { title: "Progetti", subtitle: "Avanzamento, timeline e attività collegate." },
   "/products": { title: "Prodotti", subtitle: "Schede prodotto, sviluppo e documentazione." },
+  "/messages": { title: "Messaggi", subtitle: "Chat diretta tra utenti del workspace." },
   "/team": { title: "Team", subtitle: "Utenti, ruoli, reparti e carichi di lavoro." },
   "/calendar": { title: "Calendario", subtitle: "Scadenze, attività e pianificazione." },
   "/reports": { title: "Report", subtitle: "Analisi attività, tempi e performance." },
@@ -48,11 +50,17 @@ const pageInfo = {
 
 function getInitials(name) {
   if (!name) return "PW";
-  return name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+  return name
+    .split(" ")
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
 }
 
 function formatDateTime(date) {
   if (!date) return "Mai registrato";
+
   return new Date(date).toLocaleString("it-IT", {
     day: "2-digit",
     month: "2-digit",
@@ -70,6 +78,7 @@ function getPresence(profile) {
 
   if (diffMinutes <= 2) return { label: "Online", className: "online" };
   if (diffMinutes <= 15) return { label: "Attivo di recente", className: "recent" };
+
   return { label: "Offline", className: "offline" };
 }
 
@@ -82,11 +91,17 @@ function Layout() {
   const presence = getPresence(profile);
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   const [searchOpen, setSearchOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState("");
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
+
+  const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
+  const [notifications, setNotifications] = useState([]);
+
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
 
   const visibleMenuItems = useMemo(() => {
     return menuItems.filter((item) => hasPermission(item.permission));
@@ -98,6 +113,18 @@ function Layout() {
 
   useEffect(() => {
     loadNotificationCount();
+    loadChatUnreadCount();
+
+    const handleChatRead = () => {
+      loadNotificationCount();
+      loadChatUnreadCount();
+    };
+
+    window.addEventListener("chat-read-updated", handleChatRead);
+
+    return () => {
+      window.removeEventListener("chat-read-updated", handleChatRead);
+    };
   }, [profile?.id]);
 
   useEffect(() => {
@@ -128,6 +155,53 @@ function Layout() {
     setNotificationCount(count || 0);
   }
 
+  async function loadChatUnreadCount() {
+    if (!profile?.id) return;
+
+    const { count, error } = await supabase
+      .from("notifiche")
+      .select("*", { count: "exact", head: true })
+      .eq("utente_id", profile.id)
+      .eq("letta", false)
+      .eq("tipo", "chat");
+
+    if (error) {
+      console.error("Errore conteggio chat non lette:", error);
+      setChatUnreadCount(0);
+      return;
+    }
+
+    setChatUnreadCount(count || 0);
+  }
+
+  async function loadNotifications() {
+    if (!profile?.id) return;
+
+    const { data, error } = await supabase
+      .from("notifiche")
+      .select(`
+        id,
+        titolo,
+        messaggio,
+        tipo,
+        task_id,
+        letta,
+        created_at,
+        chat_conversazione_id
+      `)
+      .eq("utente_id", profile.id)
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (error) {
+      console.error("Errore caricamento notifiche:", error);
+      setNotifications([]);
+      return;
+    }
+
+    setNotifications(data || []);
+  }
+
   async function runGlobalSearch(query) {
     const q = query.trim();
 
@@ -140,60 +214,89 @@ function Layout() {
 
     const pattern = `%${q}%`;
 
-    const [tasksRes, projectsRes, productsRes, usersRes, commentsRes] =
-      await Promise.all([
-        supabase.from("tasks").select("id, titolo, descrizione").or(`titolo.ilike.${pattern},descrizione.ilike.${pattern}`).limit(6),
-        supabase.from("progetti").select("id, nome, descrizione").or(`nome.ilike.${pattern},descrizione.ilike.${pattern}`).limit(6),
-        supabase.from("prodotti").select("id, nome, codice, descrizione").or(`nome.ilike.${pattern},codice.ilike.${pattern},descrizione.ilike.${pattern}`).limit(6),
-        supabase.from("utenti").select("id, nome, email").or(`nome.ilike.${pattern},email.ilike.${pattern}`).limit(6),
-        supabase.from("task_commenti").select("id, commento, task_id").ilike("commento", pattern).limit(6),
-      ]);
+    const [tasksRes, projectsRes, productsRes, usersRes, commentsRes] = await Promise.all([
+      supabase
+        .from("tasks")
+        .select("id, titolo, descrizione")
+        .or(`titolo.ilike.${pattern},descrizione.ilike.${pattern}`)
+        .limit(6),
+      supabase
+        .from("progetti")
+        .select("id, nome, descrizione")
+        .or(`nome.ilike.${pattern},descrizione.ilike.${pattern}`)
+        .limit(6),
+      supabase
+        .from("prodotti")
+        .select("id, nome, codice")
+        .or(`nome.ilike.${pattern},codice.ilike.${pattern}`)
+        .limit(6),
+      supabase
+        .from("utenti")
+        .select("id, nome, email")
+        .or(`nome.ilike.${pattern},email.ilike.${pattern}`)
+        .limit(6),
+      supabase
+        .from("task_commenti")
+        .select("id, commento, task_id")
+        .ilike("commento", pattern)
+        .limit(6),
+    ]);
 
     const results = [];
 
     if (!tasksRes.error) {
-      results.push(...(tasksRes.data || []).map((item) => ({
-        type: "Task",
-        title: item.titolo,
-        description: item.descrizione || "Task",
-        path: "/tasks",
-      })));
+      results.push(
+        ...(tasksRes.data || []).map((item) => ({
+          type: "Task",
+          title: item.titolo,
+          description: item.descrizione || "Task",
+          path: "/tasks",
+        }))
+      );
     }
 
     if (!projectsRes.error) {
-      results.push(...(projectsRes.data || []).map((item) => ({
-        type: "Progetto",
-        title: item.nome,
-        description: item.descrizione || "Progetto",
-        path: "/projects",
-      })));
+      results.push(
+        ...(projectsRes.data || []).map((item) => ({
+          type: "Progetto",
+          title: item.nome,
+          description: item.descrizione || "Progetto",
+          path: "/projects",
+        }))
+      );
     }
 
     if (!productsRes.error) {
-      results.push(...(productsRes.data || []).map((item) => ({
-        type: "Prodotto",
-        title: item.nome,
-        description: item.codice || item.descrizione || "Prodotto",
-        path: "/products",
-      })));
+      results.push(
+        ...(productsRes.data || []).map((item) => ({
+          type: "Prodotto",
+          title: item.nome,
+          description: item.codice || "Prodotto",
+          path: "/products",
+        }))
+      );
     }
 
     if (!usersRes.error) {
-      results.push(...(usersRes.data || []).map((item) => ({
-        type: "Utente",
-        title: item.nome,
-        description: item.email || "Utente",
-        path: "/team",
-      })));
+      results.push(
+        ...(usersRes.data || []).map((item) => ({
+          type: "Utente",
+          title: item.nome,
+          description: item.email || "Utente",
+          path: "/team",
+        }))
+      );
     }
 
     if (!commentsRes.error) {
-      results.push(...(commentsRes.data || []).map((item) => ({
-        type: "Commento",
-        title: item.commento.slice(0, 70),
-        description: "Commento task",
-        path: "/tasks",
-      })));
+      results.push(
+        ...(commentsRes.data || []).map((item) => ({
+          type: "Commento",
+          title: item.commento.slice(0, 70),
+          description: "Commento task",
+          path: "/tasks",
+        }))
+      );
     }
 
     setSearchResults(results);
@@ -204,6 +307,7 @@ function Layout() {
     setSearchOpen(true);
     setGlobalSearch("");
     setSearchResults([]);
+    setNotificationOpen(false);
   }
 
   function closeSearch() {
@@ -212,9 +316,31 @@ function Layout() {
     setSearchResults([]);
   }
 
+  function openNotifications() {
+    setNotificationOpen((value) => !value);
+    loadNotifications();
+  }
+
   function goToResult(path) {
     navigate(path);
     closeSearch();
+  }
+
+  async function goToNotification(notification) {
+    if (!notification.letta) {
+      await supabase.from("notifiche").update({ letta: true }).eq("id", notification.id);
+      await loadNotificationCount();
+      await loadChatUnreadCount();
+    }
+
+    setNotificationOpen(false);
+
+    if (notification.tipo === "chat") {
+      navigate("/messages");
+      return;
+    }
+
+    navigate(notification.task_id ? `/tasks?task=${notification.task_id}` : "/tasks");
   }
 
   return (
@@ -251,6 +377,7 @@ function Layout() {
         <nav className="sidebar-nav">
           {visibleMenuItems.map((item) => {
             const Icon = item.icon;
+
             return (
               <NavLink
                 key={item.path}
@@ -322,13 +449,14 @@ function Layout() {
               <strong>⌘ K</strong>
             </button>
 
-            <button className="icon-btn notification-btn">
+            <button className="icon-btn notification-btn" onClick={openNotifications}>
               <Bell size={21} />
               {notificationCount > 0 && <small>{notificationCount}</small>}
             </button>
 
-            <button className="icon-btn">
+            <button className="icon-btn notification-btn" onClick={() => navigate("/messages")}>
               <MessageCircle size={21} />
+              {chatUnreadCount > 0 && <small>{chatUnreadCount}</small>}
             </button>
 
             <div className="theme-toggle">
@@ -336,6 +464,33 @@ function Layout() {
               <Moon size={17} />
             </div>
           </div>
+
+          {notificationOpen && (
+            <div className="topbar-popover">
+              <div className="topbar-popover-header">
+                <h3>Notifiche</h3>
+                <p>{notificationCount} non lette</p>
+              </div>
+
+              <div className="notification-list">
+                {notifications.length === 0 ? (
+                  <div className="topbar-popover-empty">Nessuna notifica.</div>
+                ) : (
+                  notifications.map((item) => (
+                    <button
+                      key={item.id}
+                      className={`notification-row ${item.letta ? "" : "unread"}`}
+                      onClick={() => goToNotification(item)}
+                    >
+                      <strong>{item.titolo || "Notifica"}</strong>
+                      <span>{item.messaggio || "-"}</span>
+                      <small>{formatDateTime(item.created_at)}</small>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
         </header>
 
         <section className="content-area">

@@ -1,13 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Plus, Search, CalendarDays, AlertCircle } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
+import { useAuth } from "../../contexts/AuthContext";
 import TaskModal from "./TaskModal";
 
 function Tasks() {
+  const { profile } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [activeFilter, setActiveFilter] = useState("tutte");
+
+  const activeFilter = searchParams.get("filter") || "tutte";
+  const activeDate = searchParams.get("date") || "";
 
   const [modal, setModal] = useState({
     open: false,
@@ -102,6 +109,10 @@ function Tasks() {
     return Boolean(task.stati_task?.chiusa);
   }
 
+  function isOpen(task) {
+    return !isClosed(task);
+  }
+
   function isToday(task) {
     if (!task.deadline) return false;
 
@@ -121,8 +132,27 @@ function Tasks() {
     return deadline < today;
   }
 
+  function isUrgent(task) {
+    if (!task.deadline || isClosed(task)) return false;
+
+    const today = getTodayDateOnly();
+    const deadline = getDateOnly(task.deadline);
+    const diffDays = Math.ceil((deadline - today) / (1000 * 60 * 60 * 24));
+
+    return diffDays >= 0 && diffDays <= 3;
+  }
+
+  function isMine(task) {
+    return task.assegnato_a_id === profile?.id;
+  }
+
   function hasNoDeadline(task) {
     return !task.deadline;
+  }
+
+  function matchesDate(task) {
+    if (!activeDate) return true;
+    return task.deadline === activeDate;
   }
 
   function formatDate(date) {
@@ -164,36 +194,77 @@ function Tasks() {
   }
 
   function matchesFilter(task) {
-    if (activeFilter === "oggi") return isToday(task);
+    if (activeDate) return matchesDate(task);
+
+    if (activeFilter === "aperte") return isOpen(task);
+    if (activeFilter === "oggi") return isToday(task) && isOpen(task);
     if (activeFilter === "scadute") return isOverdue(task);
+    if (activeFilter === "completate") return isClosed(task);
     if (activeFilter === "senza_deadline") return hasNoDeadline(task);
+    if (activeFilter === "mie") return isMine(task) && isOpen(task);
+    if (activeFilter === "urgenti") return isMine(task) && isUrgent(task);
+    if (activeFilter === "mie_scadute") return isMine(task) && isOverdue(task);
+
     return true;
   }
+
+  const counters = useMemo(() => {
+    return {
+      tutte: tasks.length,
+      aperte: tasks.filter(isOpen).length,
+      oggi: tasks.filter((task) => isToday(task) && isOpen(task)).length,
+      scadute: tasks.filter(isOverdue).length,
+      completate: tasks.filter(isClosed).length,
+      senza_deadline: tasks.filter(hasNoDeadline).length,
+      mie: tasks.filter((task) => isMine(task) && isOpen(task)).length,
+      urgenti: tasks.filter((task) => isMine(task) && isUrgent(task)).length,
+      mie_scadute: tasks.filter((task) => isMine(task) && isOverdue(task)).length,
+    };
+  }, [tasks, profile?.id]);
+
+  const filters = [
+    { id: "tutte", label: "Tutte", count: counters.tutte },
+    { id: "aperte", label: "Aperte", count: counters.aperte },
+    { id: "oggi", label: "Oggi", count: counters.oggi },
+    { id: "scadute", label: "Scadute", count: counters.scadute },
+    { id: "completate", label: "Completate", count: counters.completate },
+    { id: "mie", label: "Le mie", count: counters.mie },
+    { id: "urgenti", label: "Urgenti", count: counters.urgenti },
+    { id: "senza_deadline", label: "Senza deadline", count: counters.senza_deadline },
+  ];
 
   const filteredTasks = tasks.filter((task) => {
     return matchesSearch(task) && matchesFilter(task);
   });
 
-  const counters = {
-    tutte: tasks.length,
-    oggi: tasks.filter(isToday).length,
-    scadute: tasks.filter(isOverdue).length,
-    senza_deadline: tasks.filter(hasNoDeadline).length,
-  };
+  function setFilter(filter) {
+    if (filter === "tutte") {
+      setSearchParams({});
+      return;
+    }
 
-  const filters = [
-    { id: "tutte", label: "Tutte", count: counters.tutte },
-    { id: "oggi", label: "Oggi", count: counters.oggi },
-    { id: "scadute", label: "Scadute", count: counters.scadute },
-    { id: "senza_deadline", label: "Senza deadline", count: counters.senza_deadline },
-  ];
+    setSearchParams({ filter });
+  }
+
+  function resetDateFilter() {
+    setSearchParams({});
+  }
+
+  function getPageSubtitle() {
+    if (activeDate) {
+      return `Task con deadline ${new Date(activeDate).toLocaleDateString("it-IT")}`;
+    }
+
+    const current = filters.find((filter) => filter.id === activeFilter);
+    return current ? `Filtro attivo: ${current.label}` : "Gestione attività, assegnazioni, responsabilità e deadline.";
+  }
 
   return (
     <div className="tasks-page">
       <div className="page-title-row">
         <div>
           <h1>Task</h1>
-          <p>Gestione attività, assegnazioni, responsabilità e deadline.</p>
+          <p>{getPageSubtitle()}</p>
         </div>
 
         <button className="primary-action" onClick={openCreateModal}>
@@ -212,23 +283,31 @@ function Tasks() {
           />
         </div>
 
-        {filters.map((filter) => (
-          <button
-            key={filter.id}
-            className={`filter-chip ${activeFilter === filter.id ? "active" : ""}`}
-            onClick={() => setActiveFilter(filter.id)}
-          >
-            {filter.label}
-            <span className="filter-count">{filter.count}</span>
+        {activeDate && (
+          <button className="filter-chip active" onClick={resetDateFilter}>
+            Data: {new Date(activeDate).toLocaleDateString("it-IT")}
+            <span className="filter-count">×</span>
           </button>
-        ))}
+        )}
+
+        {!activeDate &&
+          filters.map((filter) => (
+            <button
+              key={filter.id}
+              className={`filter-chip ${activeFilter === filter.id ? "active" : ""}`}
+              onClick={() => setFilter(filter.id)}
+            >
+              {filter.label}
+              <span className="filter-count">{filter.count}</span>
+            </button>
+          ))}
       </div>
 
       <div className="panel tasks-panel">
         {loading ? (
           <p className="table-message">Caricamento task...</p>
         ) : filteredTasks.length === 0 ? (
-          <p className="table-message">Nessuna task trovata. Crea la prima task reale.</p>
+          <p className="table-message">Nessuna task trovata per questo filtro.</p>
         ) : (
           <div className="tasks-table authors-table">
             <div className="tasks-table-head">

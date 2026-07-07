@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   ListChecks,
   Clock,
@@ -12,6 +13,7 @@ import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 
 function Dashboard() {
+  const navigate = useNavigate();
   const { profile } = useAuth();
 
   const [tasks, setTasks] = useState([]);
@@ -142,6 +144,10 @@ function Dashboard() {
     });
   }, [tasks]);
 
+  function goToTasks(filter) {
+    navigate(`/tasks?filter=${filter}`);
+  }
+
   function formatTime(date) {
     if (!date) return "-";
     return new Date(date).toLocaleTimeString("it-IT", {
@@ -160,41 +166,41 @@ function Dashboard() {
   return (
     <div className="dashboard-page">
       <div className="kpi-grid">
-        <div className="kpi-card">
+        <button className="kpi-card kpi-clickable" onClick={() => goToTasks("aperte")}>
           <div className="kpi-icon blue"><ListChecks size={26} /></div>
           <div>
             <span>Task aperte</span>
             <strong>{loading ? "..." : stats.aperte}</strong>
-            <p>Dati reali da Supabase</p>
+            <p>Attività ancora da completare</p>
           </div>
-        </div>
+        </button>
 
-        <div className="kpi-card">
+        <button className="kpi-card kpi-clickable" onClick={() => goToTasks("oggi")}>
           <div className="kpi-icon orange"><Clock size={26} /></div>
           <div>
             <span>In scadenza oggi</span>
             <strong>{loading ? "..." : stats.oggi}</strong>
-            <p>Deadline di oggi</p>
+            <p>Deadline previste oggi</p>
           </div>
-        </div>
+        </button>
 
-        <div className="kpi-card">
+        <button className="kpi-card kpi-clickable" onClick={() => goToTasks("scadute")}>
           <div className="kpi-icon red"><AlertCircle size={26} /></div>
           <div>
             <span>Scadute</span>
             <strong>{loading ? "..." : stats.scadute}</strong>
-            <p>Task aperte oltre deadline</p>
+            <p>Attività oltre deadline</p>
           </div>
-        </div>
+        </button>
 
-        <div className="kpi-card">
+        <button className="kpi-card kpi-clickable" onClick={() => goToTasks("completate")}>
           <div className="kpi-icon green"><CheckCircle2 size={26} /></div>
           <div>
             <span>Completate</span>
             <strong>{loading ? "..." : stats.completate}</strong>
-            <p>Task chiuse</p>
+            <p>Attività chiuse</p>
           </div>
-        </div>
+        </button>
       </div>
 
       <div className="dashboard-grid dashboard-grid-pro">
@@ -205,18 +211,20 @@ function Dashboard() {
           </div>
 
           <div className="my-task-stats">
-            <div>
+            <button onClick={() => goToTasks("mie")}>
               <strong>{stats.mieAperte}</strong>
               <span>aperte</span>
-            </div>
-            <div>
+            </button>
+
+            <button onClick={() => goToTasks("urgenti")}>
               <strong>{stats.mieUrgenti}</strong>
               <span>urgenti</span>
-            </div>
-            <div>
+            </button>
+
+            <button onClick={() => goToTasks("mie_scadute")}>
               <strong>{stats.mieInRitardo}</strong>
               <span>in ritardo</span>
-            </div>
+            </button>
           </div>
         </div>
 
@@ -233,13 +241,16 @@ function Dashboard() {
 
             <div className="calendar-days">
               {calendarDays.map((day, index) => (
-                <div
+                <button
                   key={index}
+                  type="button"
                   className={`calendar-day ${day.inMonth ? "" : "muted"} ${day.isToday ? "today" : ""} ${day.count ? "has-task" : ""} ${day.hasOverdue ? "has-overdue" : ""}`}
+                  onClick={() => day.count > 0 && navigate(`/tasks?date=${day.date.toISOString().slice(0, 10)}`)}
+                  disabled={!day.count}
                 >
                   <span>{day.date.getDate()}</span>
                   {day.count > 0 && <small>{day.count}</small>}
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -260,13 +271,18 @@ function Dashboard() {
           ) : (
             <div className="timeline-list">
               {attivita.map((item) => (
-                <div className="timeline-item" key={item.id}>
+                <button
+                  type="button"
+                  className="timeline-item"
+                  key={item.id}
+                  onClick={() => navigate("/tasks")}
+                >
                   <time>{formatTime(item.data_ora)}</time>
                   <div>
                     <strong>{activityText(item)}</strong>
                     <span>{item.note || "Aggiornamento registrato"}</span>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           )}

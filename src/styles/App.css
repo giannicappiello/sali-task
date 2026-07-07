@@ -1701,3 +1701,63 @@ body {
     width: min(318px, 88vw) !important;
   }
 }
+
+/* DASHBOARD CLICKABLE CARDS + TASK FILTER LINKS */
+
+.kpi-clickable {
+  width: 100%;
+  border: 1px solid var(--border);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+.kpi-clickable:hover {
+  transform: translateY(-2px);
+  border-color: #bfdbfe;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+}
+
+.my-task-stats button {
+  min-height: 110px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: #f8fafc;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  cursor: pointer;
+  transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+.my-task-stats button:hover {
+  transform: translateY(-2px);
+  border-color: #bfdbfe;
+  background: #eef6ff;
+}
+
+.my-task-stats button strong,
+.my-task-stats button span {
+  display: block;
+}
+
+.calendar-day {
+  border: 0;
+  cursor: pointer;
+}
+
+.calendar-day:disabled {
+  cursor: default;
+}
+
+.timeline-item {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.timeline-item:hover {
+  background: #f8fafc;
+}

@@ -81,16 +81,20 @@ function Layout() {
   const currentPage = pageInfo[location.pathname] || pageInfo["/dashboard"];
   const presence = getPresence(profile);
 
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState("");
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
-
   const [notificationCount, setNotificationCount] = useState(0);
 
   const visibleMenuItems = useMemo(() => {
     return menuItems.filter((item) => hasPermission(item.permission));
   }, [hasPermission]);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
 
   useEffect(() => {
     loadNotificationCount();
@@ -148,58 +152,48 @@ function Layout() {
     const results = [];
 
     if (!tasksRes.error) {
-      results.push(
-        ...(tasksRes.data || []).map((item) => ({
-          type: "Task",
-          title: item.titolo,
-          description: item.descrizione || "Task",
-          path: "/tasks",
-        }))
-      );
+      results.push(...(tasksRes.data || []).map((item) => ({
+        type: "Task",
+        title: item.titolo,
+        description: item.descrizione || "Task",
+        path: "/tasks",
+      })));
     }
 
     if (!projectsRes.error) {
-      results.push(
-        ...(projectsRes.data || []).map((item) => ({
-          type: "Progetto",
-          title: item.nome,
-          description: item.descrizione || "Progetto",
-          path: "/projects",
-        }))
-      );
+      results.push(...(projectsRes.data || []).map((item) => ({
+        type: "Progetto",
+        title: item.nome,
+        description: item.descrizione || "Progetto",
+        path: "/projects",
+      })));
     }
 
     if (!productsRes.error) {
-      results.push(
-        ...(productsRes.data || []).map((item) => ({
-          type: "Prodotto",
-          title: item.nome,
-          description: item.codice || item.descrizione || "Prodotto",
-          path: "/products",
-        }))
-      );
+      results.push(...(productsRes.data || []).map((item) => ({
+        type: "Prodotto",
+        title: item.nome,
+        description: item.codice || item.descrizione || "Prodotto",
+        path: "/products",
+      })));
     }
 
     if (!usersRes.error) {
-      results.push(
-        ...(usersRes.data || []).map((item) => ({
-          type: "Utente",
-          title: item.nome,
-          description: item.email || "Utente",
-          path: "/team",
-        }))
-      );
+      results.push(...(usersRes.data || []).map((item) => ({
+        type: "Utente",
+        title: item.nome,
+        description: item.email || "Utente",
+        path: "/team",
+      })));
     }
 
     if (!commentsRes.error) {
-      results.push(
-        ...(commentsRes.data || []).map((item) => ({
-          type: "Commento",
-          title: item.commento.slice(0, 70),
-          description: "Commento task",
-          path: "/tasks",
-        }))
-      );
+      results.push(...(commentsRes.data || []).map((item) => ({
+        type: "Commento",
+        title: item.commento.slice(0, 70),
+        description: "Commento task",
+        path: "/tasks",
+      })));
     }
 
     setSearchResults(results);
@@ -224,8 +218,17 @@ function Layout() {
   }
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div className={`app-shell ${mobileMenuOpen ? "mobile-menu-is-open" : ""}`}>
+      {mobileMenuOpen && (
+        <button
+          type="button"
+          className="mobile-sidebar-overlay"
+          aria-label="Chiudi menu"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
+      <aside className={`sidebar ${mobileMenuOpen ? "mobile-open" : ""}`}>
         <div className="sidebar-brand-area">
           <div className="brand-box">
             <div className="brand-logo">P</div>
@@ -234,6 +237,15 @@ function Layout() {
               <p>WORKSPACE</p>
             </div>
           </div>
+
+          <button
+            type="button"
+            className="mobile-sidebar-close"
+            onClick={() => setMobileMenuOpen(false)}
+            aria-label="Chiudi menu"
+          >
+            <X size={22} />
+          </button>
         </div>
 
         <nav className="sidebar-nav">
@@ -288,7 +300,15 @@ function Layout() {
       <main className="main-area">
         <header className="topbar">
           <div className="topbar-left">
-            <Menu size={24} />
+            <button
+              type="button"
+              className="mobile-menu-btn"
+              onClick={() => setMobileMenuOpen(true)}
+              aria-label="Apri menu"
+            >
+              <Menu size={25} />
+            </button>
+
             <div>
               <h2>{currentPage.title}</h2>
               <p>{currentPage.subtitle}</p>

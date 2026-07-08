@@ -61,6 +61,7 @@ export default function Agenda() {
 
   const [query, setQuery] = useState("");
   const [selectedUserId, setSelectedUserId] = useState("all");
+  const [selectedStatus, setSelectedStatus] = useState("all");
   const [users, setUsers] = useState([]);
   const [reminders, setReminders] = useState([]);
   const [products, setProducts] = useState([]);
@@ -166,6 +167,15 @@ export default function Agenda() {
 
     if (adminMode && selectedUserId !== "all") data = data.filter((item) => item.utente_id === selectedUserId);
 
+    if (selectedStatus !== "all") {
+      data = data.filter((item) => {
+        if (selectedStatus === "Scaduto") return statusOf(item) === "Scaduto";
+        if (selectedStatus === "Oggi") return statusOf(item) === "Oggi";
+        if (selectedStatus === "Completato") return isDone(item);
+        return String(item.stato || "Aperto").toLowerCase() === selectedStatus.toLowerCase();
+      });
+    }
+
     if (text) {
       data = data.filter((item) => {
         const productName = products.find((p) => p.id === item.prodotto_id)?.nome || "";
@@ -181,7 +191,7 @@ export default function Agenda() {
         String(dateOnly(a.deadline) || "9999-12-31").localeCompare(String(dateOnly(b.deadline) || "9999-12-31")) ||
         String(a.titolo || "").localeCompare(String(b.titolo || ""))
     );
-  }, [reminders, query, products, projects, users, adminMode, selectedUserId]);
+  }, [reminders, query, products, projects, users, adminMode, selectedUserId, selectedStatus]);
 
   const remindersByDay = useMemo(() => {
     const map = new Map();
@@ -342,6 +352,13 @@ export default function Agenda() {
             ))}
           </select>
         )}
+        <select className="filter-chip" value={selectedStatus} onChange={(e) => setSelectedStatus(e.target.value)}>
+          <option value="all">Tutti gli stati</option>
+          <option value="Aperto">Aperto</option>
+          <option value="In lavorazione">In lavorazione</option>
+          <option value="Scaduto">Scaduto</option>
+          <option value="Completato">Completato</option>
+        </select>
       </div>
 
       <div className="v4-split">
@@ -439,6 +456,7 @@ export default function Agenda() {
               <option value="Aperto">Aperto</option>
               <option value="In lavorazione">In lavorazione</option>
               <option value="Completato">Completato</option>
+              <option value="Scaduto">Scaduto</option>
             </select></label>
             <div className="form-grid-2">
               <label>Prodotto<select value={form.prodotto_id} onChange={(e) => setForm({ ...form, prodotto_id: e.target.value })}><option value="">Nessuno</option>{products.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}</select></label>

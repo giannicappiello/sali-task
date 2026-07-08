@@ -772,13 +772,158 @@ export default function Projects() {
     await loadPhaseDetails(selectedPhase.id);
   }
 
+  async function deletePhaseCompletely(phase, options = {}) {
+    if (!phase?.id) return false;
+
+    const { data: files, error: filesError } = await supabase
+      .from("v4_allegati")
+      .select("file_path")
+      .eq("entity_type", "fase_progetto")
+      .eq("entity_id", phase.id);
+
+    if (filesError) {
+      alert(filesError.message);
+      return false;
+    }
+
+    const paths = (files || []).map((file) => file.file_path).filter(Boolean);
+
+    if (paths.length > 0) {
+      const { error: storageError } = await supabase.storage
+        .from("allegati")
+        .remove(paths);
+
+      if (storageError) {
+        alert(`Errore eliminazione file fisici: ${storageError.message}`);
+        return false;
+      }
+    }
+
+    const deleteSteps = [
+      supabase.from("v4_commenti").delete().eq("entity_type", "fase_progetto").eq("entity_id", phase.id),
+      supabase.from("v4_allegati").delete().eq("entity_type", "fase_progetto").eq("entity_id", phase.id),
+      supabase.from("v4_fase_reparti").delete().eq("fase_id", phase.id),
+      supabase.from("v4_fase_prodotti").delete().eq("fase_id", phase.id),
+      supabase.from("v4_audit_log").delete().eq("entity_type", "fase_progetto").eq("entity_id", phase.id),
+    ];
+
+    for (const step of deleteSteps) {
+      const { error } = await step;
+      if (error) {
+        alert(error.message);
+        return false;
+      }
+    }
+
+    const { error } = await supabase.from("v4_fasi_progetto").delete().eq("id", phase.id);
+    if (error) {
+      alert(error.message);
+      return false;
+    }
+
+    if (options.closeModal) {
+      setPhaseModal(false);
+      setSelectedPhase(null);
+    }
+
+    if (options.reload !== false) {
+      await loadData();
+    }
+    return true;
+  }
+
+  async function deleteProjectCompletely(project) {
+    if (!project?.id) return false;
+
+    const projectPhases = phases.filter((phase) => phase.progetto_id === project.id);
+    const phaseIds = projectPhases.map((phase) => phase.id).filter(Boolean);
+
+    for (const phase of projectPhases) {
+      const deleted = await deletePhaseCompletely(phase, { reload: false });
+      if (!deleted) return false;
+    }
+
+    const { data: projectFiles, error: projectFilesError } = await supabase
+      .from("v4_allegati")
+      .select("file_path")
+      .eq("entity_type", "progetto")
+      .eq("entity_id", project.id);
+
+    if (projectFilesError) {
+      alert(projectFilesError.message);
+      return false;
+    }
+
+    const projectPaths = (projectFiles || []).map((file) => file.file_path).filter(Boolean);
+    if (projectPaths.length > 0) {
+      const { error: storageError } = await supabase.storage
+        .from("allegati")
+        .remove(projectPaths);
+
+      if (storageError) {
+        alert(`Errore eliminazione file fisici progetto: ${storageError.message}`);
+        return false;
+      }
+    }
+
+    const deleteSteps = [
+      supabase.from("v4_commenti").delete().eq("entity_type", "progetto").eq("entity_id", project.id),
+      supabase.from("v4_allegati").delete().eq("entity_type", "progetto").eq("entity_id", project.id),
+      supabase.from("v4_progetto_prodotti").delete().eq("progetto_id", project.id),
+      supabase.from("v4_progetto_reparti").delete().eq("progetto_id", project.id),
+      supabase.from("v4_audit_log").delete().eq("entity_type", "progetto").eq("entity_id", project.id),
+    ];
+
+    if (phaseIds.length > 0) {
+      deleteSteps.push(
+        supabase.from("v4_audit_log").delete().eq("entity_type", "fase_progetto").in("entity_id", phaseIds)
+      );
+    }
+
+    for (const step of deleteSteps) {
+      const { error } = await step;
+      if (error) {
+        alert(error.message);
+        return false;
+      }
+    }
+
+    const { error } = await supabase.from("v4_progetti").delete().eq("id", project.id);
+    if (error) {
+      alert(error.message);
+      return false;
+    }
+
+    if (selectedProject?.id === project.id) {
+      setSelectedProject(null);
+      setProjectModal(false);
+      setPhaseModal(false);
+      setSelectedPhase(null);
+    }
+
+    await loadData();
+    return true;
+  }
+
   async function removePhase(phase) {
     if (!canManage) return alert("Non hai i permessi.");
-    if (!window.confirm("Vuoi eliminare questa fase?")) return;
-    const { error } = await supabase.from("v4_fasi_progetto").delete().eq("id", phase.id);
-    if (error) return alert(error.message);
-    await log("fase_progetto", phase.id, "eliminazione fase", phase.titolo);
-    await loadData();
+    if (!window.confirm("Vuoi eliminare questa fase?\n\nVerranno eliminati anche commenti, allegati, reparti, prodotti, storico e file fisici collegati.")) return;
+    await deletePhaseCompletely(phase);
+  }
+
+  async function removeProject(project) {
+    if (!canManage) return alert("Non hai i permessi.");
+    if (!project?.id) return;
+    const projectPhases = phases.filter((phase) => phase.progetto_id === project.id);
+    if (!window.confirm(`Vuoi eliminare il progetto "${project.titolo || "senza titolo"}"?\n\nVerranno eliminate anche ${projectPhases.length} fasi/task collegate, tutti i commenti, allegati, reparti, prodotti, storico e file fisici delle fasi.\n\nOperazione non reversibile.`)) return;
+    await deleteProjectCompletely(project);
+  }
+
+  async function removeSelectedPhase() {
+    if (!canManage) return alert("Non hai i permessi.");
+    if (!selectedPhase?.id) return;
+    if (!window.confirm("Vuoi eliminare questa fase?\n\nVerranno eliminati anche commenti, allegati, reparti, prodotti, storico e file fisici collegati.")) return;
+    await deletePhaseCompletely(selectedPhase, { closeModal: true });
   }
 
   async function log(entity_type, entity_id, azione, dettagli) {
@@ -1015,6 +1160,11 @@ export default function Projects() {
                   ))}
 
                   {canManage && <button className="add-phase-inline" onClick={() => openPhase(project)}><Plus size={16} /> Aggiungi fase</button>}
+                  {canManage && (
+                    <button className="add-phase-inline danger" onClick={() => removeProject(project)}>
+                      <Trash2 size={16} /> Elimina progetto
+                    </button>
+                  )}
                 </div>
               </section>
             );
@@ -1278,7 +1428,14 @@ export default function Projects() {
               </div>
             )}
 
-            <button className="primary-action" disabled={saving}><Save size={18} /> {saving ? "Salvataggio..." : "Salva fase"}</button>
+            <div className="dashboard-message-actions">
+              {selectedPhase?.id && canManage && (
+                <button type="button" className="secondary-action danger" onClick={removeSelectedPhase} disabled={saving}>
+                  <Trash2 size={18} /> Elimina
+                </button>
+              )}
+              <button className="primary-action" disabled={saving}><Save size={18} /> {saving ? "Salvataggio..." : "Salva fase"}</button>
+            </div>
           </form>
         </div>
       )}

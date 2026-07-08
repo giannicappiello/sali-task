@@ -309,7 +309,6 @@ export default function Agenda() {
       utente_id: profile.id,
       nome_file: file.name,
       file_url: data.publicUrl,
-      storage_path: path,
       tipo_file: file.type || null,
     });
     if (error) return alert(error.message);

@@ -3134,3 +3134,71 @@ body {
     flex-direction: column;
   }
 }
+
+/* PLANNING FASI - versione chiara stile giornate */
+.planning-clean-page .page-title-row { margin-bottom: 4px; }
+.planning-kpi-row { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:14px; }
+.planning-kpi-card { background:#fff; border:1px solid var(--border); border-radius:16px; padding:16px 18px; box-shadow:var(--shadow-soft); }
+.planning-kpi-card span { display:block; color:var(--muted); font-size:13px; font-weight:800; }
+.planning-kpi-card strong { display:block; margin-top:5px; font-size:30px; }
+.planning-kpi-card.today { border-color:#fed7aa; background:#fff7ed; }
+.planning-kpi-card.danger { border-color:#fecaca; background:#fff7f7; }
+.planning-kpi-card.done { border-color:#bbf7d0; background:#f0fdf4; }
+.planning-toolbar-clean { align-items:stretch; }
+.planning-toolbar-clean .task-search { max-width:none; min-width:280px; }
+.planning-navigation { min-height:auto; padding:14px 16px; display:flex; justify-content:space-between; align-items:center; gap:16px; }
+.planning-nav-left { display:flex; align-items:center; gap:12px; }
+.planning-nav-left > div strong, .planning-nav-left > div span { display:block; }
+.planning-nav-left > div strong { text-transform:capitalize; font-size:18px; }
+.planning-nav-left > div span { color:var(--muted); font-size:12px; font-weight:700; margin-top:2px; }
+.planning-view-tabs, .status-tabs { display:flex; gap:8px; flex-wrap:wrap; }
+.planning-view-tabs button, .status-tabs button { border:1px solid var(--border); background:#fff; color:#334155; border-radius:999px; padding:9px 13px; font-weight:800; cursor:pointer; }
+.planning-view-tabs button.active, .status-tabs button.active { background:#eaf2ff; color:var(--primary); border-color:#bfdbfe; }
+.planning-month-panel { padding:16px; }
+.planning-week-labels { display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:10px; margin-bottom:8px; }
+.planning-week-labels span { color:#64748b; font-size:12px; font-weight:900; text-transform:uppercase; padding-left:4px; }
+.planning-grid.month.clean-month { gap:10px; }
+.planning-day.clean { min-height:122px; padding:12px; border-radius:16px; background:#fff; }
+.planning-day.clean strong { font-size:13px; text-transform:capitalize; }
+.planning-empty-day { color:#94a3b8; font-size:12px; font-weight:700; margin-top:auto; }
+.planning-day-summary { display:grid; gap:6px; margin-top:4px; }
+.summary-line { display:flex; justify-content:space-between; align-items:center; gap:8px; border-radius:10px; padding:6px 8px; font-size:12px; font-weight:800; }
+.summary-line.open { background:#eff6ff; color:#1d4ed8; }
+.summary-line.danger { background:#fee2e2; color:#b91c1c; }
+.summary-line.done { background:#dcfce7; color:#15803d; }
+.summary-line b { font-size:13px; }
+.planning-week-list { display:grid; gap:12px; }
+.planning-week-day { min-height:auto; padding:16px; }
+.planning-week-day-title { width:100%; border:0; background:transparent; display:flex; justify-content:space-between; align-items:center; padding:0 0 12px; cursor:pointer; text-align:left; }
+.planning-week-day-title strong { font-size:17px; text-transform:capitalize; }
+.planning-week-day-title span { color:var(--muted); font-size:13px; font-weight:800; }
+.planning-detail-split { align-items:start; }
+.planning-task-list { display:grid; gap:10px; }
+.planning-task-card { border:1px solid var(--border); border-radius:16px; background:#fff; padding:13px; display:grid; gap:12px; }
+.planning-task-card.open { border-left:5px solid #60a5fa; }
+.planning-task-card.today { border-left:5px solid #fb923c; background:#fffaf5; }
+.planning-task-card.danger { border-left:5px solid #ef4444; background:#fff7f7; }
+.planning-task-card.done { border-left:5px solid #22c55e; background:#f7fff9; }
+.planning-task-card.compact { padding:11px; }
+.planning-task-main { border:0; background:transparent; padding:0; text-align:left; cursor:pointer; display:grid; gap:4px; }
+.planning-task-title-row { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+.planning-task-title-row strong { font-size:16px; line-height:1.35; }
+.planning-task-main span { color:#334155; font-size:13px; font-weight:800; }
+.planning-task-main small { color:#64748b; font-size:12px; font-weight:700; }
+.planning-task-main p { margin:5px 0 0; color:#475569; line-height:1.45; font-size:13px; }
+.planning-department-actions { display:flex; flex-wrap:wrap; gap:7px; }
+.empty-planning-box { min-height:190px; display:grid; place-items:center; align-content:center; gap:8px; text-align:center; color:var(--muted); }
+.empty-planning-box strong { color:var(--text); font-size:17px; }
+.empty-planning-box span { font-size:13px; }
+.planning-selected-card h2 { margin:0 0 8px; }
+.planning-selected-card p { color:#475569; line-height:1.55; }
+@media (max-width: 1100px) {
+  .planning-kpi-row { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+  .planning-navigation { align-items:flex-start; flex-direction:column; }
+  .planning-week-labels, .planning-grid.month.clean-month { grid-template-columns:1fr; }
+}
+@media (max-width: 700px) {
+  .planning-kpi-row { grid-template-columns:1fr; }
+  .planning-nav-left { flex-wrap:wrap; }
+  .planning-detail-split { grid-template-columns:1fr; }
+}

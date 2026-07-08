@@ -267,9 +267,41 @@ export default function Agenda() {
 
   async function deleteReminder(item) {
     if (!canEditReminder(item)) return alert("Non hai i permessi per eliminare questo reminder.");
-    if (!confirm("Eliminare questo reminder?")) return;
+    if (!confirm("Eliminare questo reminder?\n\nVerranno eliminati anche commenti, allegati e file collegati.")) return;
+
+    const { data: files, error: filesError } = await supabase
+      .from("agenda_allegati")
+      .select("file_url")
+      .eq("reminder_id", item.id);
+
+    if (filesError) return alert(filesError.message);
+
+    const paths = (files || [])
+      .map((file) => {
+        try {
+          if (!file.file_url) return null;
+          const url = new URL(file.file_url);
+          const marker = "/object/public/allegati/";
+          const index = url.pathname.indexOf(marker);
+          if (index === -1) return null;
+          return decodeURIComponent(url.pathname.slice(index + marker.length));
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    if (paths.length > 0) {
+      const { error: storageError } = await supabase.storage.from("allegati").remove(paths);
+      if (storageError) return alert(`Errore eliminazione file: ${storageError.message}`);
+    }
+
+    await supabase.from("agenda_commenti").delete().eq("reminder_id", item.id);
+    await supabase.from("agenda_allegati").delete().eq("reminder_id", item.id);
+
     const { error } = await supabase.from("agenda_reminder").delete().eq("id", item.id);
     if (error) return alert(error.message);
+
     setSelected(null);
     setFormOpen(false);
     await loadData();

@@ -3,8 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Bell,
-  BookOpenCheck,
-  CalendarDays,
+  BellRing,
   ClipboardList,
   FileArchive,
   Folder,
@@ -23,28 +22,27 @@ import { useAuth } from "../contexts/AuthContext";
 const APP_VERSION = "4.0";
 
 const menuItems = [
-  { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permission: "dashboard.read" },
-  { path: "/agenda", label: "Agenda personale", icon: BookOpenCheck, permission: "agenda.read" },
+  { path: "/dashboard", label: "Le mie attività", icon: LayoutDashboard, permission: "dashboard.read" },
   { path: "/projects", label: "Progetti", icon: Folder, permission: "projects.read" },
   { path: "/tasks", label: "Planning fasi", icon: ClipboardList, permission: "tasks.read" },
+  { path: "/reminders", label: "Reminder", icon: BellRing, permission: "agenda.read" },
   { path: "/products", label: "Prodotti", icon: Package, permission: "products.read" },
   { path: "/documentation", label: "Documentazione", icon: FileArchive, permission: "documentation.read" },
   { path: "/messages", label: "Messaggi", icon: MessageCircle, permission: "messages.read" },
   { path: "/team", label: "Team", icon: Users, permission: "team.read" },
-  { path: "/calendar", label: "Calendario", icon: CalendarDays, permission: "calendar.read" },
   { path: "/settings", label: "Impostazioni", icon: Settings, permission: "settings.manage" },
 ];
 
 const pageInfo = {
-  "/dashboard": { title: "Dashboard", subtitle: "Progetti del reparto, reminder personali e timeline operativa." },
-  "/agenda": { title: "Agenda personale", subtitle: "Reminder privati, allegati, commenti e planning." },
+  "/dashboard": { title: "Le mie attività", subtitle: "Task/fasi del reparto, reminder personali e messaggi." },
+  "/agenda": { title: "Reminder", subtitle: "Reminder personali, allegati e commenti." },
+  "/reminders": { title: "Reminder", subtitle: "Reminder personali organizzati per deadline." },
   "/projects": { title: "Progetti", subtitle: "Progetti orizzontali con checklist e fasi operative." },
   "/tasks": { title: "Planning fasi", subtitle: "Vista mensile, settimanale e giornaliera delle fasi progettuali." },
   "/products": { title: "Prodotti", subtitle: "Prodotti, progetti collegati, documenti e storico." },
   "/documentation": { title: "Documentazione", subtitle: "Schede tecniche, SDS, certificazioni, artwork, etichette e regolatorio." },
   "/messages": { title: "Messaggi", subtitle: "Conversazioni e notifiche interne." },
   "/team": { title: "Team", subtitle: "Utenti, ruoli, reparti e presenze." },
-  "/calendar": { title: "Calendario", subtitle: "Scadenze, reminder e fasi." },
   "/settings": { title: "Impostazioni", subtitle: "Checklist preimpostate, reparti, ruoli e configurazioni." },
 };
 
@@ -148,7 +146,7 @@ function Layout() {
     if (!phasesRes.error) results.push(...(phasesRes.data || []).map((item) => ({ type: "Fase", title: item.titolo, description: item.descrizione || "Fase checklist", path: "/tasks" })));
     if (!productsRes.error) results.push(...(productsRes.data || []).map((item) => ({ type: "Prodotto", title: item.nome, description: item.codice || "Prodotto", path: "/products" })));
     if (!docsRes.error) results.push(...(docsRes.data || []).map((item) => ({ type: "Documento", title: item.titolo, description: item.tipo_documento || item.tipo || item.codice_documento || item.codice || "Documento", path: "/documentation" })));
-    if (!remindersRes.error) results.push(...(remindersRes.data || []).map((item) => ({ type: "Reminder", title: item.titolo, description: item.descrizione || "Agenda personale", path: "/agenda" })));
+    if (!remindersRes.error) results.push(...(remindersRes.data || []).map((item) => ({ type: "Reminder", title: item.titolo, description: item.descrizione || "Agenda personale", path: "/reminders" })));
 
     setSearchResults(results);
     setSearchLoading(false);

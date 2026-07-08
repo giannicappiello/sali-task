@@ -1,26 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, ChevronLeft, ChevronRight, Clock, Download, MessageSquare, Paperclip, Plus, Save, Search, X } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { CheckCircle2, Clock, Download, MessageSquare, Paperclip, Plus, Save, Search, X } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 
-const viewLabels = { month: "Mese", week: "Settimana", day: "Giorno" };
-const defaultForm = { titolo: "", descrizione: "", deadline: new Date().toISOString().slice(0, 10), priorita: "Media", prodotto_id: "", progetto_id: "" };
+const defaultForm = { titolo: "", descrizione: "", deadline: new Date().toISOString().slice(0, 10), prodotto_id: "", progetto_id: "" };
 
 function todayIso() { return new Date().toISOString().slice(0, 10); }
-function addDays(date, days) { const next = new Date(date); next.setDate(next.getDate() + days); return next; }
-function iso(date) { return date.toISOString().slice(0, 10); }
 function isDone(item) { return item.completato || String(item.stato || "").toLowerCase() === "completato"; }
 function statusOf(item) { if (isDone(item)) return "Completato"; if (item.deadline && item.deadline < todayIso()) return "Scaduto"; if (item.deadline === todayIso()) return "Oggi"; return item.stato || "Aperto"; }
 function statusClass(item) { const s = statusOf(item); if (s === "Completato") return "done"; if (s === "Scaduto") return "danger"; if (s === "Oggi") return "today"; return "open"; }
-function formatDate(date) { if (!date) return "-"; return new Date(`${date}T00:00:00`).toLocaleDateString("it-IT", { weekday: "short", day: "2-digit", month: "short" }); }
+function formatDate(date) { if (!date) return "Senza deadline"; return new Date(`${date}T00:00:00`).toLocaleDateString("it-IT", { weekday: "short", day: "2-digit", month: "short", year: "numeric" }); }
 
 export default function Agenda() {
+  const [params, setParams] = useSearchParams();
   const { profile, hasPermission, isAdmin } = useAuth();
   const adminMode = Boolean(isAdmin?.() || hasPermission?.("agenda.read.all"));
   const canWriteAgenda = Boolean(hasPermission?.("agenda.write") || adminMode);
-  const [view, setView] = useState("month");
-  const [cursor, setCursor] = useState(() => new Date());
-  const [selectedDate, setSelectedDate] = useState(todayIso());
   const [query, setQuery] = useState("");
   const [selectedUserId, setSelectedUserId] = useState("all");
   const [users, setUsers] = useState([]);
@@ -37,6 +33,18 @@ export default function Agenda() {
 
   useEffect(() => { loadData(); }, [profile?.id, adminMode]);
   useEffect(() => { if (selected?.id) loadDetail(selected.id); }, [selected?.id]);
+  useEffect(() => {
+    if (params.get("new") === "1" && canWriteAgenda) {
+      openNew();
+      setParams({}, { replace: true });
+    }
+  }, [params, canWriteAgenda]);
+  useEffect(() => {
+    const reminderId = params.get("reminder");
+    if (!reminderId || !reminders.length) return;
+    const found = reminders.find((item) => item.id === reminderId);
+    if (found) openEdit(found);
+  }, [params, reminders]);
 
   async function loadData() {
     if (!profile?.id) return;
@@ -47,9 +55,7 @@ export default function Agenda() {
       .from("agenda_reminder")
       .select("*,utenti(id,nome,email)");
 
-    if (!adminMode) {
-      reminderQuery = reminderQuery.eq("utente_id", profile.id);
-    }
+    if (!adminMode) reminderQuery = reminderQuery.eq("utente_id", profile.id);
 
     const [remRes, prodRes, projRes, projectDepartmentsRes, usersRes] = await Promise.all([
       reminderQuery.order("deadline", { ascending: true, nullsFirst: false }),
@@ -59,22 +65,17 @@ export default function Agenda() {
       adminMode ? supabase.from("utenti").select("id,nome,email,attivo").eq("attivo", true).order("nome") : Promise.resolve({ data: [], error: null }),
     ]);
 
-    if (remRes.error) console.error("Agenda:", remRes.error);
-    if (projRes.error) console.error("Progetti agenda:", projRes.error);
-    if (projectDepartmentsRes.error) console.error("Reparti progetto agenda:", projectDepartmentsRes.error);
-    if (usersRes.error) console.error("Utenti agenda:", usersRes.error);
+    if (remRes.error) console.error("Reminder:", remRes.error);
+    if (projRes.error) console.error("Progetti reminder:", projRes.error);
+    if (projectDepartmentsRes.error) console.error("Reparti progetto reminder:", projectDepartmentsRes.error);
+    if (usersRes.error) console.error("Utenti reminder:", usersRes.error);
 
     const allProjects = projRes.data || [];
     const projectDepartments = projectDepartmentsRes.data || [];
-
     const visibleProjects = adminMode
       ? allProjects
       : allProjects.filter((project) => {
-          const deps = projectDepartments
-            .filter((row) => row.progetto_id === project.id)
-            .map((row) => row.reparto_id)
-            .filter(Boolean);
-
+          const deps = projectDepartments.filter((row) => row.progetto_id === project.id).map((row) => row.reparto_id).filter(Boolean);
           return deps.length === 0 || deps.some((id) => userDepartmentIds.includes(id));
         });
 
@@ -97,9 +98,7 @@ export default function Agenda() {
     const text = query.trim().toLowerCase();
     let data = reminders;
 
-    if (adminMode && selectedUserId !== "all") {
-      data = data.filter((item) => item.utente_id === selectedUserId);
-    }
+    if (adminMode && selectedUserId !== "all") data = data.filter((item) => item.utente_id === selectedUserId);
 
     if (text) {
       data = data.filter((item) =>
@@ -109,24 +108,8 @@ export default function Agenda() {
       );
     }
 
-    return data;
+    return [...data].sort((a, b) => String(a.deadline || "9999-12-31").localeCompare(String(b.deadline || "9999-12-31")) || String(a.titolo || "").localeCompare(String(b.titolo || "")));
   }, [reminders, query, products, projects, adminMode, selectedUserId]);
-
-  const calendarDays = useMemo(() => {
-    if (view === "day") return [{ date: new Date(`${selectedDate}T00:00:00`), key: selectedDate }];
-    if (view === "week") {
-      const base = new Date(cursor);
-      const day = (base.getDay() + 6) % 7;
-      const start = addDays(base, -day);
-      return Array.from({ length: 7 }, (_, i) => { const date = addDays(start, i); return { date, key: iso(date) }; });
-    }
-    const year = cursor.getFullYear();
-    const month = cursor.getMonth();
-    const first = new Date(year, month, 1);
-    const offset = (first.getDay() + 6) % 7;
-    const start = new Date(year, month, 1 - offset);
-    return Array.from({ length: 42 }, (_, i) => { const date = addDays(start, i); return { date, key: iso(date), inMonth: date.getMonth() === month }; });
-  }, [view, cursor, selectedDate]);
 
   const remindersByDay = useMemo(() => {
     const map = new Map();
@@ -134,7 +117,7 @@ export default function Agenda() {
       const key = item.deadline || "senza-data";
       map.set(key, [...(map.get(key) || []), item]);
     });
-    return map;
+    return Array.from(map.entries());
   }, [filtered]);
 
   function canEditReminder(item) {
@@ -142,10 +125,12 @@ export default function Agenda() {
     return adminMode || item.utente_id === profile?.id;
   }
 
-  function openNew(date = selectedDate) {
+  function openNew() {
     if (!canWriteAgenda) return alert("Non hai i permessi per creare reminder.");
-    setForm({ ...defaultForm, deadline: date || todayIso() });
+    setForm({ ...defaultForm, deadline: todayIso() });
     setSelected(null);
+    setComments([]);
+    setAttachments([]);
     setFormOpen(true);
   }
 
@@ -156,7 +141,6 @@ export default function Agenda() {
       titolo: item.titolo || "",
       descrizione: item.descrizione || "",
       deadline: item.deadline || todayIso(),
-      priorita: item.priorita || "Media",
       prodotto_id: item.prodotto_id || "",
       progetto_id: item.progetto_id || "",
     });
@@ -165,7 +149,7 @@ export default function Agenda() {
 
   async function saveReminder(e) {
     e.preventDefault();
-    if (!canWriteAgenda) return alert("Non hai i permessi per modificare l'agenda.");
+    if (!canWriteAgenda) return alert("Non hai i permessi per modificare i reminder.");
     if (selected?.id && !canEditReminder(selected)) return alert("Non hai i permessi per modificare questo reminder.");
     if (!form.titolo.trim()) return alert("Inserisci il titolo.");
     setSaving(true);
@@ -174,19 +158,28 @@ export default function Agenda() {
       titolo: form.titolo.trim(),
       descrizione: form.descrizione.trim() || null,
       deadline: form.deadline || null,
-      priorita: form.priorita,
       prodotto_id: form.prodotto_id || null,
       progetto_id: form.progetto_id || null,
       stato: selected?.stato || "Aperto",
       updated_at: new Date().toISOString(),
     };
-    const request = selected?.id ? supabase.from("agenda_reminder").update(payload).eq("id", selected.id) : supabase.from("agenda_reminder").insert(payload).select().single();
+    const request = selected?.id ? supabase.from("agenda_reminder").update(payload).eq("id", selected.id).select().single() : supabase.from("agenda_reminder").insert(payload).select().single();
     const { data, error } = await request;
     setSaving(false);
     if (error) return alert(`Errore salvataggio: ${error.message}`);
     await loadData();
     if (data?.id) setSelected(data);
     setFormOpen(false);
+  }
+
+  async function deleteReminder(item) {
+    if (!canEditReminder(item)) return alert("Non hai i permessi per eliminare questo reminder.");
+    if (!confirm("Eliminare questo reminder?")) return;
+    const { error } = await supabase.from("agenda_reminder").delete().eq("id", item.id);
+    if (error) return alert(error.message);
+    setSelected(null);
+    setFormOpen(false);
+    await loadData();
   }
 
   async function completeReminder(item) {
@@ -219,92 +212,48 @@ export default function Agenda() {
     await loadDetail(selected.id);
   }
 
-  function daySummary(items) {
-    const open = items.filter((item) => !isDone(item));
-    const done = items.filter(isDone);
-    return { open: open.length, done: done.length, danger: open.filter((item) => statusOf(item) === "Scaduto").length };
-  }
-
-  function movePeriod(direction) {
-    const multiplier = direction === "next" ? 1 : -1;
-    const days = view === "day" ? 1 : view === "week" ? 7 : 30;
-    const nextCursor = addDays(cursor, multiplier * days);
-    setCursor(nextCursor);
-    if (view !== "month") setSelectedDate(iso(nextCursor));
-  }
-
-  function changeSelectedDate(value) {
-    if (!value) return;
-    const next = new Date(`${value}T00:00:00`);
-    setSelectedDate(value);
-    setCursor(next);
-  }
-
   return (
     <div className="agenda-page v4-page">
       <div className="page-title-row">
-        <div><h1>Agenda personale</h1><p>Reminder privati visibili solo all'utente e agli amministratori.</p></div>
-        {canWriteAgenda && <button className="primary-action" onClick={() => openNew()}><Plus size={18} />Nuovo reminder</button>}
+        <div><h1>Reminder</h1><p>Elenco dei reminder organizzati per data deadline.</p></div>
+        {canWriteAgenda && <button className="primary-action" onClick={openNew}><Plus size={18} />Nuovo reminder</button>}
       </div>
 
       <div className="v4-toolbar agenda-toolbar-clear">
-        <div className="task-search"><Search size={18} /><input placeholder="Cerca tutto in agenda..." value={query} onChange={(e) => setQuery(e.target.value)} /></div>
+        <div className="task-search"><Search size={18} /><input placeholder="Cerca reminder..." value={query} onChange={(e) => setQuery(e.target.value)} /></div>
         {adminMode && (
           <select className="filter-chip" value={selectedUserId} onChange={(e) => setSelectedUserId(e.target.value)}>
             <option value="all">Tutti gli utenti</option>
-            {users.map((user) => (
-              <option key={user.id} value={user.id}>{user.nome || user.email}</option>
-            ))}
+            {users.map((user) => <option key={user.id} value={user.id}>{user.nome || user.email}</option>)}
           </select>
         )}
-        <div className="planning-view-tabs">
-          {Object.entries(viewLabels).map(([key, label]) => <button key={key} className={`filter-chip ${view === key ? "active" : ""}`} onClick={() => setView(key)}>{label}</button>)}
-        </div>
-        <div className="planning-navigation" style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-          <button className="filter-chip" onClick={() => movePeriod("prev")} title="Periodo precedente"><ChevronLeft size={16} /> Indietro</button>
-          <input className="filter-chip" type="date" value={selectedDate} onChange={(e) => changeSelectedDate(e.target.value)} />
-          <button className="filter-chip" onClick={() => { const now = new Date(); setCursor(now); setSelectedDate(todayIso()); }}>Oggi</button>
-          <button className="filter-chip" onClick={() => movePeriod("next")} title="Periodo successivo">Avanti <ChevronRight size={16} /></button>
-        </div>
-      </div>
-
-      <div className="planning-legend panel" style={{ display: "flex", gap: "14px", alignItems: "center", flexWrap: "wrap", padding: "10px 14px", marginBottom: "12px" }}>
-        <strong>Legenda:</strong>
-        <span><span className="dot open">•</span> Aperti</span>
-        <span><span className="dot today">•</span> Oggi</span>
-        <span><span className="dot danger">•</span> Scaduti</span>
-        <span><span className="dot done">•</span> Completati</span>
-      </div>
-
-      <div className={`planning-grid ${view}`}>
-        {calendarDays.map((day) => {
-          const items = remindersByDay.get(day.key) || [];
-          const summary = daySummary(items);
-          return (
-            <button key={day.key} className={`planning-day ${day.inMonth === false ? "muted" : ""} ${day.key === selectedDate ? "selected" : ""}`} onClick={() => { setSelectedDate(day.key); setView(view === "month" ? "day" : view); }}>
-              <strong>{formatDate(day.key)}</strong>
-              {view === "month" ? (
-                <div className="planning-counters"><span className="dot open">{summary.open}</span><span className="dot danger">{summary.danger}</span><span className="dot done">{summary.done}</span></div>
-              ) : (
-                <div className="planning-items">{items.slice(0, 5).map((item) => <span key={item.id} className={`planning-chip ${statusClass(item)}`}>{item.titolo}</span>)}</div>
-              )}
-            </button>
-          );
-        })}
       </div>
 
       <div className="v4-split">
         <div className="panel">
-          <div className="panel-header"><h3>Dettagli del giorno · {formatDate(selectedDate)}</h3></div>
-          {(remindersByDay.get(selectedDate) || []).length === 0 ? <p className="empty-text">Nessun reminder in questa giornata.</p> : (
-            <div className="v4-list">{(remindersByDay.get(selectedDate) || []).map((item) => (
-              <div key={item.id} className={`v4-list-row ${statusClass(item)}`}>
-                <button className="v4-list-main" onClick={() => { setSelected(item); setFormOpen(false); }}><strong>{item.titolo}</strong><span>{item.descrizione || "Nessuna descrizione"}</span><small>{adminMode && item.utenti?.nome ? `${item.utenti.nome} · ` : ""}{products.find((p) => p.id === item.prodotto_id)?.nome || ""} {projects.find((p) => p.id === item.progetto_id)?.titolo ? `· ${projects.find((p) => p.id === item.progetto_id)?.titolo}` : ""}</small></button>
-                <span className={`status-pill ${statusClass(item)}`}>{statusOf(item)}</span>
-                {!isDone(item) && canEditReminder(item) && <button className="icon-action success" onClick={() => completeReminder(item)}><CheckCircle2 size={18} /></button>}
-                {canEditReminder(item) && <button className="icon-action" onClick={() => openEdit(item)}>Modifica</button>}
-              </div>
-            ))}</div>
+          <div className="panel-header"><h3>Tutti i reminder</h3><span>{filtered.length} reminder</span></div>
+          {filtered.length === 0 ? <p className="empty-text">Nessun reminder trovato.</p> : (
+            <div className="reminder-deadline-list">
+              {remindersByDay.map(([day, items]) => (
+                <section key={day} className="reminder-date-group">
+                  <h4>{formatDate(day === "senza-data" ? null : day)}</h4>
+                  <div className="v4-list">
+                    {items.map((item) => (
+                      <div key={item.id} className={`v4-list-row ${statusClass(item)}`}>
+                        <button className="v4-list-main" onClick={() => openEdit(item)}>
+                          <strong>{item.titolo}</strong>
+                          <span>{item.descrizione || "Nessuna descrizione"}</span>
+                          <small>{adminMode && item.utenti?.nome ? `${item.utenti.nome} · ` : ""}{products.find((p) => p.id === item.prodotto_id)?.nome || ""} {projects.find((p) => p.id === item.progetto_id)?.titolo ? `· ${projects.find((p) => p.id === item.progetto_id)?.titolo}` : ""}</small>
+                        </button>
+                        <span className={`status-pill ${statusClass(item)}`}>{statusOf(item)}</span>
+                        {!isDone(item) && canEditReminder(item) && <button className="icon-action success" onClick={() => completeReminder(item)}><CheckCircle2 size={18} /></button>}
+                        {canEditReminder(item) && <button className="icon-action" onClick={() => openEdit(item)}>Modifica</button>}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
           )}
         </div>
 
@@ -313,7 +262,7 @@ export default function Agenda() {
           {!selected ? <p className="empty-text">Seleziona un reminder per vedere commenti e allegati.</p> : (
             <>
               <p className="detail-description">{selected.descrizione || "Nessuna descrizione."}</p>
-              <div className="mini-meta"><span><Clock size={15} /> {formatDate(selected.deadline)}</span><span>Priorità: {selected.priorita || "Media"}</span></div>
+              <div className="mini-meta"><span><Clock size={15} /> {formatDate(selected.deadline)}</span></div>
               <form className="comment-form" onSubmit={saveComment}><input placeholder="Aggiungi commento..." value={comment} onChange={(e) => setComment(e.target.value)} /><button><MessageSquare size={16} />Invia</button></form>
               <div className="comments-box">{comments.map((item) => <p key={item.id}><strong>{item.utente_id === profile.id ? "Tu" : "Utente"}</strong> {item.commento}<small>{new Date(item.created_at).toLocaleString("it-IT")}</small></p>)}</div>
               <label className="upload-box"><Paperclip size={18} />Carica allegato<input type="file" hidden onChange={(e) => uploadAttachment(e.target.files?.[0])} /></label>
@@ -328,9 +277,13 @@ export default function Agenda() {
           <div className="modal-header"><h2>{selected ? "Modifica reminder" : "Nuovo reminder"}</h2><button type="button" onClick={() => setFormOpen(false)}><X size={20} /></button></div>
           <label>Titolo<input value={form.titolo} onChange={(e) => setForm({ ...form, titolo: e.target.value })} /></label>
           <label>Descrizione<textarea rows="4" value={form.descrizione} onChange={(e) => setForm({ ...form, descrizione: e.target.value })} /></label>
-          <div className="form-grid-2"><label>Deadline<input type="date" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} /></label><label>Priorità<select value={form.priorita} onChange={(e) => setForm({ ...form, priorita: e.target.value })}><option>Bassa</option><option>Media</option><option>Alta</option></select></label></div>
+          <label>Deadline<input type="date" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} /></label>
           <div className="form-grid-2"><label>Prodotto<select value={form.prodotto_id} onChange={(e) => setForm({ ...form, prodotto_id: e.target.value })}><option value="">Nessuno</option>{products.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}</select></label><label>Progetto<select value={form.progetto_id} onChange={(e) => setForm({ ...form, progetto_id: e.target.value })}><option value="">Nessuno</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.titolo}</option>)}</select></label></div>
-          <button className="primary-action" disabled={saving}><Save size={18} />{saving ? "Salvataggio..." : "Salva reminder"}</button>
+          <div className="dashboard-message-actions">
+            {selected && !isDone(selected) && <button type="button" className="secondary-action" onClick={() => completeReminder(selected)}><CheckCircle2 size={18} />Evadi</button>}
+            {selected && <button type="button" className="secondary-action danger" onClick={() => deleteReminder(selected)}>Elimina</button>}
+            <button className="primary-action" disabled={saving}><Save size={18} />{saving ? "Salvataggio..." : "Salva reminder"}</button>
+          </div>
         </form></div>
       )}
     </div>

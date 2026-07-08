@@ -1,10 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Search } from "lucide-react";
+import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Plus, Save, Search, X } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
+import PhaseChecklistModal from "../../components/PhaseChecklistModal";
 
 const CLOSED_STATES = ["evaso", "evasa", "completato", "completata", "chiuso", "chiusa"];
+
+const phaseEmpty = {
+  titolo: "",
+  descrizione: "",
+  note: "",
+  progetto_id: "",
+  deadline: "",
+  reparto_ids: [],
+  prodotti: [],
+  stato: "da_evadere",
+};
 
 function normalize(value) {
   return String(value || "").trim().toLowerCase().replaceAll(" ", "_");
@@ -85,7 +97,12 @@ export default function Tasks() {
   const [phaseDepartments, setPhaseDepartments] = useState([]);
   const [phaseProducts, setPhaseProducts] = useState([]);
   const [products, setProducts] = useState([]);
+  const [templates, setTemplates] = useState([]);
+  const [templateDepartments, setTemplateDepartments] = useState([]);
   const [selectedPhase, setSelectedPhase] = useState(null);
+  const [phaseModalOpen, setPhaseModalOpen] = useState(false);
+  const [phaseForm, setPhaseForm] = useState(phaseEmpty);
+  const [savingPhase, setSavingPhase] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const actorId = profile?.id || null;
@@ -97,6 +114,13 @@ export default function Tasks() {
   }, [profile?.id, userDepartmentIds.join(",")]);
 
   useEffect(() => {
+    if (params.get("new") === "1") {
+      openPhaseModal(null);
+      setParams({}, { replace: true });
+    }
+  }, [params]);
+
+  useEffect(() => {
     const nextParams = {};
     if (selectedDate) nextParams.date = selectedDate;
     if (statusFilter !== "tutte") nextParams.filter = statusFilter;
@@ -106,7 +130,7 @@ export default function Tasks() {
   async function loadPlanning() {
     setLoading(true);
 
-    const [projectsRes, phasesRes, projectDepartmentsRes, phaseDepartmentsRes, departmentsRes, phaseProductsRes, productsRes] = await Promise.all([
+    const [projectsRes, phasesRes, projectDepartmentsRes, phaseDepartmentsRes, departmentsRes, phaseProductsRes, productsRes, templatesRes, templateDepartmentsRes] = await Promise.all([
       supabase.from("v4_progetti").select("id,titolo,descrizione,deadline,priorita,stato,created_at").order("created_at", { ascending: false }),
       supabase
         .from("v4_fasi_progetto")
@@ -118,6 +142,8 @@ export default function Tasks() {
       supabase.from("reparti").select("id,nome,attivo").order("nome"),
       supabase.from("v4_fase_prodotti").select("id,fase_id,prodotto_id,prodotto_nome"),
       supabase.from("prodotti").select("id,nome,codice").order("nome").limit(5000),
+      supabase.from("checklist_template").select("id,titolo,reparto_id,ordine,attivo,reparti(id,nome)").eq("attivo", true).order("ordine", { ascending: true }),
+      supabase.from("checklist_template_reparti").select("id,template_id,reparto_id"),
     ]);
 
     if (projectsRes.error) console.error("Planning progetti:", projectsRes.error.message);
@@ -144,9 +170,9 @@ export default function Tasks() {
     );
 
     const visiblePhases = (canReadAllProjects || canReadAllTasksInVisibleProjects)
-      ? allPhases.filter((phase) => visibleProjectIds.has(phase.progetto_id))
+      ? allPhases.filter((phase) => !phase.progetto_id || visibleProjectIds.has(phase.progetto_id))
       : allPhases.filter((phase) => {
-          if (!visibleProjectIds.has(phase.progetto_id)) return false;
+          if (phase.progetto_id && !visibleProjectIds.has(phase.progetto_id)) return false;
           const ids = allPhaseDepartments.filter((row) => row.fase_id === phase.id).map((row) => row.reparto_id).filter(Boolean);
           if (ids.length) return ids.some((id) => allowedDepartmentIds.includes(id));
           if (!phase.reparto_id) return true;
@@ -160,6 +186,8 @@ export default function Tasks() {
     setPhaseDepartments(allPhaseDepartments.filter((row) => visiblePhaseIds.has(row.fase_id)));
     setPhaseProducts((phaseProductsRes.data || []).filter((row) => visiblePhaseIds.has(row.fase_id)));
     setProducts(productsRes.data || []);
+    setTemplates(templatesRes.data || []);
+    setTemplateDepartments(templateDepartmentsRes.data || []);
     setLoading(false);
   }
 
@@ -201,6 +229,21 @@ export default function Tasks() {
       planningProducts: productsByPhase.get(phase.id) || [],
     }));
   }, [phases, departmentsByPhase, productsByPhase]);
+
+  useEffect(() => {
+    const phaseId = params.get("task");
+    if (!phaseId || !enrichedPhases.length) return;
+    const found = enrichedPhases.find((phase) => phase.id === phaseId);
+    if (found) {
+      setSelectedPhase(found);
+      if (found.deadline_day) {
+        setSelectedDate(found.deadline_day);
+        setCursor(new Date(`${found.deadline_day}T00:00:00`));
+        setView("day");
+      }
+      openPhaseModal(found);
+    }
+  }, [params, enrichedPhases]);
 
   const filtered = useMemo(() => {
     const text = query.trim().toLowerCase();
@@ -354,6 +397,102 @@ export default function Tasks() {
     await loadPlanning();
   }
 
+  function getPhaseDepartmentIds(phaseId) {
+    return phaseDepartments.filter((row) => row.fase_id === phaseId && row.reparto_id).map((row) => row.reparto_id);
+  }
+
+  function getPhaseProductIds(phaseId) {
+    return phaseProducts.filter((row) => row.fase_id === phaseId && row.prodotto_id).map((row) => row.prodotto_id);
+  }
+
+  function togglePhaseDepartment(departmentId) {
+    setPhaseForm((current) => {
+      const currentIds = safeArray(current.reparto_ids);
+      const nextIds = currentIds.includes(departmentId) ? currentIds.filter((id) => id !== departmentId) : [...currentIds, departmentId];
+      return { ...current, reparto_ids: nextIds };
+    });
+  }
+
+  function togglePhaseProduct(productId) {
+    setPhaseForm((current) => {
+      const currentIds = safeArray(current.prodotti);
+      const nextIds = currentIds.includes(productId) ? currentIds.filter((id) => id !== productId) : [...currentIds, productId];
+      return { ...current, prodotti: nextIds };
+    });
+  }
+
+  function openPhaseModal(phase = null) {
+    setSelectedPhase(phase);
+    setPhaseForm(
+      phase
+        ? {
+            titolo: phase.titolo || "",
+            descrizione: phase.descrizione || "",
+            note: phase.note || "",
+            progetto_id: phase.progetto_id || "",
+            deadline: phase.deadline_day || dateOnly(phase.deadline) || "",
+            reparto_ids: getPhaseDepartmentIds(phase.id).length ? getPhaseDepartmentIds(phase.id) : [phase.reparto_id].filter(Boolean),
+            prodotti: getPhaseProductIds(phase.id),
+            stato: phase.stato || "da_evadere",
+          }
+        : { ...phaseEmpty, deadline: selectedDate || todayIso(), reparto_ids: userDepartmentIds.length ? [userDepartmentIds[0]] : [] }
+    );
+    setPhaseModalOpen(true);
+  }
+
+  async function savePhaseProducts(phaseId, productIds) {
+    await supabase.from("v4_fase_prodotti").delete().eq("fase_id", phaseId);
+    const rows = safeArray(productIds).map((productId) => {
+      const product = products.find((item) => item.id === productId);
+      return { fase_id: phaseId, prodotto_id: productId, prodotto_nome: product?.nome || null };
+    });
+    if (rows.length) await supabase.from("v4_fase_prodotti").insert(rows);
+  }
+
+  async function savePhaseDepartments(phaseId, departmentIds) {
+    await supabase.from("v4_fase_reparti").delete().eq("fase_id", phaseId);
+    const rows = safeArray(departmentIds).map((departmentId) => ({ fase_id: phaseId, reparto_id: departmentId, completato: false }));
+    if (rows.length) await supabase.from("v4_fase_reparti").insert(rows);
+  }
+
+  async function savePhase(e) {
+    e.preventDefault();
+    if (!phaseForm.titolo.trim()) return alert("Inserisci il titolo della task/fase.");
+    setSavingPhase(true);
+    const now = new Date().toISOString();
+    const payload = {
+      progetto_id: phaseForm.progetto_id || null,
+      titolo: phaseForm.titolo.trim(),
+      descrizione: phaseForm.descrizione.trim() || null,
+      note: phaseForm.note.trim() || null,
+      priorita: null,
+      deadline: phaseForm.deadline || null,
+      reparto_id: safeArray(phaseForm.reparto_ids)[0] || null,
+      stato: phaseForm.stato || "da_evadere",
+      modificato_da: actorId,
+      updated_at: now,
+    };
+    if (!selectedPhase?.id) payload.creato_da = actorId;
+
+    const request = selectedPhase?.id
+      ? supabase.from("v4_fasi_progetto").update(payload).eq("id", selectedPhase.id).select().single()
+      : supabase.from("v4_fasi_progetto").insert(payload).select().single();
+
+    const { data, error } = await request;
+    if (error) {
+      setSavingPhase(false);
+      return alert(error.message);
+    }
+
+    const phaseId = data?.id || selectedPhase?.id;
+    await savePhaseDepartments(phaseId, phaseForm.reparto_ids);
+    await savePhaseProducts(phaseId, phaseForm.prodotti);
+    await log("fase_progetto", phaseId, selectedPhase?.id ? "modifica fase" : "creazione fase", payload.titolo);
+    setSavingPhase(false);
+    setPhaseModalOpen(false);
+    await loadPlanning();
+  }
+
   function PhaseCard({ phase, compact = false }) {
     const departments = phase.planningDepartments || [];
     const productsList = phase.planningProducts || [];
@@ -361,7 +500,7 @@ export default function Tasks() {
 
     return (
       <article className={`planning-task-card ${statusClass(phase)} ${compact ? "compact" : ""}`}>
-        <button className="planning-task-main" type="button" onClick={() => setSelectedPhase(phase)}>
+        <button className="planning-task-main" type="button" onClick={() => openPhaseModal(phase)}>
           <div className="planning-task-title-row">
             <strong>{phase.titolo || "Fase senza titolo"}</strong>
             <span className={`status-pill ${statusClass(phase)}`}>{phaseStatus(phase)}</span>
@@ -402,6 +541,7 @@ export default function Tasks() {
           <h1>Planning fasi</h1>
           <p>Vista chiara delle attività per data, progetto, reparto e stato di avanzamento.</p>
         </div>
+        <button className="primary-action" type="button" onClick={() => openPhaseModal(null)}><Plus size={18} /> Nuova task/fase</button>
       </div>
 
       <div className="planning-kpi-row">
@@ -514,7 +654,7 @@ export default function Tasks() {
               <h2>{selectedPhase.titolo}</h2>
               <p>{selectedPhase.descrizione || selectedPhase.note || "Nessuna descrizione."}</p>
               <div className="mini-meta">
-                <span>Progetto: {selectedPhase.v4_progetti?.titolo || "-"}</span>
+                <span>Progetto: {selectedPhase.v4_progetti?.titolo || "Senza progetto"}</span>
                 <span>Deadline: {formatDate(selectedPhase.deadline)}</span>
                 <span>Stato: {phaseStatus(selectedPhase)}</span>
                 <span>Reparti: {(selectedPhase.planningDepartments || []).map((item) => item.nome).join(", ") || selectedPhase.reparti?.nome || "-"}</span>
@@ -530,6 +670,23 @@ export default function Tasks() {
           <div className="planning-task-list">{undatedItems.map((phase) => <PhaseCard key={phase.id} phase={phase} />)}</div>
         </section>
       )}
+
+      <PhaseChecklistModal
+        open={phaseModalOpen}
+        phase={selectedPhase}
+        initialDate={selectedDate || todayIso()}
+        projects={projects}
+        departments={departments}
+        products={products}
+        phaseDepartments={phaseDepartments}
+        phaseProducts={phaseProducts}
+        templates={templates}
+        templateDepartments={templateDepartments}
+        canManage={true}
+        canCompleteDepartment={canCompleteDepartment}
+        onClose={() => setPhaseModalOpen(false)}
+        onSaved={loadPlanning}
+      />
     </div>
   );
 }

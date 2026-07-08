@@ -3202,3 +3202,24 @@ body {
   .planning-nav-left { flex-wrap:wrap; }
   .planning-detail-split { grid-template-columns:1fr; }
 }
+
+/* Dashboard Le mie attività */
+.dashboard-quick-actions { display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+.calendar-kpi.success svg { color: var(--success); }
+.dashboard-day-counts { display:grid; gap:4px; margin-top:8px; }
+.dashboard-day-line { border-radius:8px; padding:4px 6px; font-size:10px; font-weight:900; line-height:1.1; }
+.dashboard-day-line.success { background:#dcfce7; color:#15803d; }
+.dashboard-day-line.danger { background:#fee2e2; color:#b91c1c; }
+.dashboard-activity-list { display:grid; gap:14px; }
+.dashboard-activity-group { display:grid; gap:8px; }
+.dashboard-activity-group h4 { margin:0; font-size:13px; font-weight:900; }
+.dashboard-activity-group h4.success { color:#15803d; }
+.dashboard-activity-group h4.danger { color:#b91c1c; }
+.dashboard-activity-group h4.done { color:#334155; }
+.dashboard-messages-panel { margin-top:18px; }
+.dashboard-message-actions { display:flex; gap:10px; flex-wrap:wrap; }
+@media (max-width: 760px) {
+  .dashboard-quick-actions, .dashboard-message-actions { width:100%; }
+  .dashboard-quick-actions button, .dashboard-message-actions button { width:100%; justify-content:center; }
+  .dashboard-day-line { font-size:9px; padding:3px 4px; }
+}

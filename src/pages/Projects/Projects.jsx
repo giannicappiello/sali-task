@@ -18,7 +18,6 @@ import { useAuth } from "../../contexts/AuthContext";
 const projectEmpty = {
   titolo: "",
   descrizione: "",
-  priorita: "Media",
   deadline: "",
   prodotti: [],
   reparti: [],
@@ -364,7 +363,6 @@ export default function Projects() {
         ? {
             titolo: project.titolo || "",
             descrizione: project.descrizione || "",
-            priorita: project.priorita || "Media",
             deadline: project.deadline || "",
             prodotti: getProjectProductIds(project.id),
             reparti: getProjectDepartmentIds(project.id),
@@ -432,7 +430,7 @@ export default function Projects() {
     const payload = {
       titolo: projectForm.titolo.trim(),
       descrizione: projectForm.descrizione.trim() || null,
-      priorita: projectForm.priorita || "Media",
+      priorita: null,
       deadline: projectForm.deadline || null,
       modificato_da: actorId,
       updated_at: new Date().toISOString(),
@@ -1035,10 +1033,7 @@ export default function Projects() {
             <label>Titolo<input value={projectForm.titolo} onChange={(e) => setProjectForm({ ...projectForm, titolo: e.target.value })} /></label>
             <label>Descrizione<textarea rows="4" value={projectForm.descrizione} onChange={(e) => setProjectForm({ ...projectForm, descrizione: e.target.value })} /></label>
 
-            <div className="form-grid-2">
-              <label>Priorità<select value={projectForm.priorita} onChange={(e) => setProjectForm({ ...projectForm, priorita: e.target.value })}><option>Bassa</option><option>Media</option><option>Alta</option></select></label>
-              <label>Deadline<input type="date" value={projectForm.deadline} onChange={(e) => setProjectForm({ ...projectForm, deadline: e.target.value })} /></label>
-            </div>
+            <label>Deadline<input type="date" value={projectForm.deadline} onChange={(e) => setProjectForm({ ...projectForm, deadline: e.target.value })} /></label>
 
             <div className="checkbox-group scrollable-check-group">
               <strong>Prodotti associati</strong>

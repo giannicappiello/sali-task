@@ -294,7 +294,15 @@ export default function Projects() {
     phaseDepartments.forEach((row) => {
       const list = map.get(row.fase_id) || [];
       const department = departments.find((item) => item.id === row.reparto_id);
-      if (department) list.push({ ...department, completato: row.completato, completato_at: row.completato_at });
+      if (department) {
+        list.push({
+          ...department,
+          fase_reparto_id: row.id,
+          completato: Boolean(row.completato),
+          completato_at: row.completato_at,
+          completato_da: row.completato_da,
+        });
+      }
       map.set(row.fase_id, list);
     });
     return map;
@@ -529,11 +537,37 @@ export default function Projects() {
   }
 
   async function savePhaseDepartments(phaseId, departmentIds) {
-    await supabase.from("v4_fase_reparti").delete().eq("fase_id", phaseId);
     const uniqueIds = [...new Set(safeArray(departmentIds).filter(Boolean))];
-    const rows = uniqueIds.map((reparto_id) => ({ fase_id: phaseId, reparto_id }));
-    if (rows.length) {
+
+    const { data: existingRows, error: existingError } = await supabase
+      .from("v4_fase_reparti")
+      .select("id,fase_id,reparto_id,completato,completato_at,completato_da")
+      .eq("fase_id", phaseId);
+
+    if (existingError) throw existingError;
+
+    const existing = existingRows || [];
+    const existingIds = existing.map((row) => row.reparto_id).filter(Boolean);
+    const idsToDelete = existingIds.filter((id) => !uniqueIds.includes(id));
+    const idsToInsert = uniqueIds.filter((id) => !existingIds.includes(id));
+
+    if (idsToDelete.length) {
+      const { error } = await supabase
+        .from("v4_fase_reparti")
+        .delete()
+        .eq("fase_id", phaseId)
+        .in("reparto_id", idsToDelete);
+      if (error) throw error;
+    }
+
+    if (idsToInsert.length) {
+      const rows = idsToInsert.map((reparto_id) => ({ fase_id: phaseId, reparto_id, completato: false }));
       const { error } = await supabase.from("v4_fase_reparti").insert(rows);
+      if (error) throw error;
+    }
+
+    if (!uniqueIds.length) {
+      const { error } = await supabase.from("v4_fase_reparti").delete().eq("fase_id", phaseId);
       if (error) throw error;
     }
   }
@@ -612,6 +646,21 @@ export default function Projects() {
       .eq("id", phase.id);
 
     if (error) return alert(error.message);
+
+    const phaseDepartmentRows = phaseDepartments.filter((row) => row.fase_id === phase.id);
+    if (phaseDepartmentRows.length > 0) {
+      const resetDepartments = await supabase
+        .from("v4_fase_reparti")
+        .update({
+          completato: false,
+          completato_at: null,
+          completato_da: null,
+        })
+        .eq("fase_id", phase.id);
+
+      if (resetDepartments.error) return alert(resetDepartments.error.message);
+    }
+
     await log("fase_progetto", phase.id, "fase riaperta", phase.titolo);
     await loadData();
   }
@@ -742,6 +791,115 @@ export default function Projects() {
     return users.find((item) => item.id === userId)?.nome || "Non assegnato";
   }
 
+  function canCompleteDepartment(departmentId) {
+    if (canManage || canReadAllProjects || hasPermission("tasks.complete.any_department")) return true;
+    if (hasPermission("tasks.complete.own_department")) {
+      return safeArray(userDepartmentIds).includes(departmentId);
+    }
+    return safeArray(userDepartmentIds).includes(departmentId);
+  }
+
+  async function completeDepartmentPhase(phase, department) {
+    if (!phase?.id || !department?.id) return;
+
+    if (!canCompleteDepartment(department.id)) {
+      return alert("Non hai i permessi per completare questo reparto.");
+    }
+
+    const now = new Date().toISOString();
+
+    const { error } = await supabase
+      .from("v4_fase_reparti")
+      .update({
+        completato: true,
+        completato_at: now,
+        completato_da: actorId,
+      })
+      .eq("fase_id", phase.id)
+      .eq("reparto_id", department.id);
+
+    if (error) return alert(error.message);
+
+    const { data: rows, error: rowsError } = await supabase
+      .from("v4_fase_reparti")
+      .select("reparto_id,completato")
+      .eq("fase_id", phase.id);
+
+    if (rowsError) return alert(rowsError.message);
+
+    const allCompleted = (rows || []).length > 0 && (rows || []).every((row) => Boolean(row.completato));
+
+    const phasePayload = allCompleted
+      ? {
+          stato: "evaso",
+          completato_da: actorId,
+          completato_at: now,
+          modificato_da: actorId,
+          updated_at: now,
+        }
+      : {
+          stato: "in_lavorazione",
+          completato_da: null,
+          completato_at: null,
+          modificato_da: actorId,
+          updated_at: now,
+        };
+
+    const { error: phaseError } = await supabase
+      .from("v4_fasi_progetto")
+      .update(phasePayload)
+      .eq("id", phase.id);
+
+    if (phaseError) return alert(phaseError.message);
+
+    await log(
+      "fase_progetto",
+      phase.id,
+      allCompleted ? "fase evasa da tutti i reparti" : "reparto completato",
+      `${phase.titolo || "Fase"} · ${department.nome}`
+    );
+
+    await loadData();
+  }
+
+  async function reopenDepartmentPhase(phase, department) {
+    if (!phase?.id || !department?.id) return;
+
+    if (!canManage && !hasPermission("tasks.reopen")) {
+      return alert("Non hai i permessi per riaprire questo reparto.");
+    }
+
+    const now = new Date().toISOString();
+
+    const { error } = await supabase
+      .from("v4_fase_reparti")
+      .update({
+        completato: false,
+        completato_at: null,
+        completato_da: null,
+      })
+      .eq("fase_id", phase.id)
+      .eq("reparto_id", department.id);
+
+    if (error) return alert(error.message);
+
+    const { error: phaseError } = await supabase
+      .from("v4_fasi_progetto")
+      .update({
+        stato: "in_lavorazione",
+        completato_da: null,
+        completato_at: null,
+        modificato_da: actorId,
+        updated_at: now,
+      })
+      .eq("id", phase.id);
+
+    if (phaseError) return alert(phaseError.message);
+
+    await log("fase_progetto", phase.id, "reparto riaperto", `${phase.titolo || "Fase"} · ${department.nome}`);
+    await loadData();
+  }
+
   return (
     <div className="projects-page v4-page projects-v4-final">
       <div className="page-title-row">
@@ -817,7 +975,37 @@ export default function Projects() {
                         <small>Deadline {formatDate(phase.deadline)} · {phase.stato || "Da evadere"}</small>
                       </button>
                       <div className="phase-card-actions">
-                        {isDone(phase) ? (
+                        {(departmentsByPhase.get(phase.id) || []).length > 0 ? (
+                          <div
+                            className="department-completion-actions"
+                            style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}
+                          >
+                            {(departmentsByPhase.get(phase.id) || []).map((department) =>
+                              department.completato ? (
+                                <button
+                                  key={department.id}
+                                  type="button"
+                                  className="reopen-phase-btn"
+                                  onClick={() => reopenDepartmentPhase(phase, department)}
+                                  title={department.completato_at ? `Completato il ${new Date(department.completato_at).toLocaleString("it-IT")}` : "Reparto completato"}
+                                >
+                                  <CheckCircle2 size={15} /> {department.nome} completato
+                                </button>
+                              ) : (
+                                <button
+                                  key={department.id}
+                                  type="button"
+                                  className="complete-phase-btn"
+                                  onClick={() => completeDepartmentPhase(phase, department)}
+                                  disabled={!canCompleteDepartment(department.id)}
+                                  title={!canCompleteDepartment(department.id) ? "Non puoi completare questo reparto" : `Completa ${department.nome}`}
+                                >
+                                  <CheckCircle2 size={15} /> Completa {department.nome}
+                                </button>
+                              )
+                            )}
+                          </div>
+                        ) : isDone(phase) ? (
                           <button className="reopen-phase-btn" onClick={() => reopenPhase(phase)}><Clock3 size={15} /> Riapri</button>
                         ) : (
                           <button className="complete-phase-btn" onClick={() => completePhase(phase)}><CheckCircle2 size={15} /> Completa</button>
@@ -927,6 +1115,38 @@ export default function Projects() {
                 </label>
               ))}
             </div>
+
+            {selectedPhase?.id && (departmentsByPhase.get(selectedPhase.id) || []).length > 0 && (
+              <div className="checkbox-group">
+                <strong>Completamento per reparto</strong>
+                {(departmentsByPhase.get(selectedPhase.id) || []).map((department) => (
+                  <div
+                    key={department.id}
+                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", padding: "8px 0" }}
+                  >
+                    <span>
+                      {department.completato ? "✓" : "○"} {department.nome}
+                      {department.completato_at ? ` · ${new Date(department.completato_at).toLocaleString("it-IT")}` : ""}
+                    </span>
+
+                    {department.completato ? (
+                      <button type="button" className="reopen-phase-btn" onClick={() => reopenDepartmentPhase(selectedPhase, department)}>
+                        <Clock3 size={15} /> Riapri {department.nome}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="complete-phase-btn"
+                        onClick={() => completeDepartmentPhase(selectedPhase, department)}
+                        disabled={!canCompleteDepartment(department.id)}
+                      >
+                        <CheckCircle2 size={15} /> Completa {department.nome}
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="phase-products-toolbar" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
               <strong>Prodotti associati alla fase: {safeArray(phaseForm.prodotti).length}</strong>

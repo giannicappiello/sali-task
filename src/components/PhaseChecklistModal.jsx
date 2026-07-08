@@ -309,6 +309,53 @@ export default function PhaseChecklistModal({
     await loadPhaseDetails(selectedPhase.id);
   }
 
+  async function deletePhase() {
+    if (!canManage) return alert("Non hai i permessi per eliminare le fasi.");
+    if (!selectedPhase?.id) return;
+    if (!window.confirm("Eliminare questa task/fase?\n\nVerranno eliminati anche commenti, reparti, prodotti, allegati, storico e file fisici collegati.")) return;
+
+    setSaving(true);
+
+    const { data: files, error: filesError } = await supabase
+      .from("v4_allegati")
+      .select("file_path")
+      .eq("entity_type", "fase_progetto")
+      .eq("entity_id", selectedPhase.id);
+
+    if (filesError) {
+      setSaving(false);
+      return alert(filesError.message);
+    }
+
+    const paths = (files || []).map((file) => file.file_path).filter(Boolean);
+
+    if (paths.length) {
+      const { error: storageError } = await supabase.storage
+        .from("allegati")
+        .remove(paths);
+
+      if (storageError) {
+        setSaving(false);
+        return alert(`Errore eliminazione file: ${storageError.message}`);
+      }
+    }
+
+    await supabase.from("v4_commenti").delete().eq("entity_type", "fase_progetto").eq("entity_id", selectedPhase.id);
+    await supabase.from("v4_allegati").delete().eq("entity_type", "fase_progetto").eq("entity_id", selectedPhase.id);
+    await supabase.from("v4_fase_reparti").delete().eq("fase_id", selectedPhase.id);
+    await supabase.from("v4_fase_prodotti").delete().eq("fase_id", selectedPhase.id);
+    await supabase.from("v4_audit_log").delete().eq("entity_type", "fase_progetto").eq("entity_id", selectedPhase.id);
+
+    const { error } = await supabase.from("v4_fasi_progetto").delete().eq("id", selectedPhase.id);
+
+    setSaving(false);
+
+    if (error) return alert(error.message);
+
+    onSaved?.();
+    onClose?.();
+  }
+
   async function completeDepartmentPhase(department) {
     if (!selectedPhase?.id || !department?.id) return;
     if (!canCompleteDepartment(department.id)) return alert("Non hai i permessi per completare questo reparto.");
@@ -441,7 +488,14 @@ export default function PhaseChecklistModal({
           </div>
         </div>
 
-        <button className="primary-action" disabled={saving}><Save size={18} /> {saving ? "Salvataggio..." : "Salva fase"}</button>
+        <div className="dashboard-message-actions">
+          {selectedPhase?.id && canManage && (
+            <button type="button" className="secondary-action danger" onClick={deletePhase} disabled={saving}>
+              <Trash2 size={18} /> Elimina
+            </button>
+          )}
+          <button className="primary-action" disabled={saving}><Save size={18} /> {saving ? "Salvataggio..." : "Salva fase"}</button>
+        </div>
       </form>
     </div>
   );

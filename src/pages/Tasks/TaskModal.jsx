@@ -160,6 +160,50 @@ function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
     await loadAllegati();
   }
 
+  async function deleteTask(){
+    if(!isEditing || !task?.id) return;
+    if(!confirm("Eliminare questa task?\n\nVerranno eliminati anche commenti, checklist, storico attività, allegati e file fisici collegati.")) return;
+
+    setSaving(true);
+
+    const { data: files, error: filesError } = await supabase
+      .from("task_allegati")
+      .select("storage_path")
+      .eq("task_id", task.id);
+
+    if(filesError){
+      setSaving(false);
+      return alert(filesError.message);
+    }
+
+    const paths = (files || []).map(file => file.storage_path).filter(Boolean);
+
+    if(paths.length){
+      const { error: storageError } = await supabase.storage
+        .from("task-attachments")
+        .remove(paths);
+
+      if(storageError){
+        setSaving(false);
+        return alert(`Errore eliminazione file: ${storageError.message}`);
+      }
+    }
+
+    await supabase.from("task_commenti").delete().eq("task_id", task.id);
+    await supabase.from("task_checklist").delete().eq("task_id", task.id);
+    await supabase.from("attivita_task").delete().eq("task_id", task.id);
+    await supabase.from("task_allegati").delete().eq("task_id", task.id);
+
+    const { error } = await supabase.from("tasks").delete().eq("id", task.id);
+
+    setSaving(false);
+
+    if(error) return alert(error.message);
+
+    onSaved?.();
+    onClose?.();
+  }
+
   if(!open) return null;
   const completed = checklist.filter(i=>i.completata).length;
 
@@ -182,7 +226,11 @@ function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
       <div className="form-group"><label>Prodotto</label><select value={form.prodotto_id} onChange={e=>update("prodotto_id",e.target.value)}><option value="">Nessun prodotto</option>{opts.prodotti.map(x=><option key={x.id} value={x.id}>{x.nome}</option>)}</select></div>
       <div className="form-group"><label>Assegnato a</label><select value={form.assegnato_a_id} onChange={e=>update("assegnato_a_id",e.target.value)}><option value="">Non assegnata</option>{opts.utenti.map(x=><option key={x.id} value={x.id}>{x.nome}</option>)}</select></div>
       <div className="form-group"><label>Deadline</label><input type="date" value={form.deadline} onChange={e=>update("deadline",e.target.value)} /></div>
-      <div className="modal-actions"><button type="button" className="secondary-action" onClick={onClose}>Annulla</button><button type="submit" className="primary-action" disabled={saving}>{saving ? "Salvataggio..." : "Salva task"}</button></div>
+      <div className="modal-actions">
+        <button type="button" className="secondary-action" onClick={onClose}>Annulla</button>
+        {isEditing && <button type="button" className="secondary-action danger" onClick={deleteTask} disabled={saving}><Trash2 size={16} /> Elimina</button>}
+        <button type="submit" className="primary-action" disabled={saving}>{saving ? "Salvataggio..." : "Salva task"}</button>
+      </div>
     </form>}
 
     {activeTab==="attivita" && <div className="task-tab-content"><div className="tab-title-row"><div><h3>Storico attività task</h3><p>Registro completo delle modifiche effettuate sulla task.</p></div><button type="button" className="secondary-action" onClick={loadAttivita}>Aggiorna storico</button></div>{attivita.length===0 ? <p className="empty-state">Nessuna attività registrata.</p> : <div className="activity-table"><div className="activity-table-head"><span>Data e ora</span><span>Utente</span><span>Azione</span><span>Campo</span><span>Da</span><span>A</span><span>Note</span></div>{attivita.map(i=><div className="activity-table-row" key={i.id}><span>{fmt(i.data_ora)}</span><span>{i.utenti?.nome||"-"}</span><span className="activity-type">{i.tipo}</span><span>{i.campo||"-"}</span><span className="old-value">{i.valore_precedente||"—"}</span><span className="new-value">{i.valore_nuovo||"—"}</span><span>{i.note||"-"}</span></div>)}</div>}</div>}

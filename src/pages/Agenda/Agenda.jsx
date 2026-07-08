@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Clock, Download, MessageSquare, Paperclip, Plus, Save, Search, X } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, Clock, Download, MessageSquare, Paperclip, Plus, Save, Search, X } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 
@@ -225,6 +225,21 @@ export default function Agenda() {
     return { open: open.length, done: done.length, danger: open.filter((item) => statusOf(item) === "Scaduto").length };
   }
 
+  function movePeriod(direction) {
+    const multiplier = direction === "next" ? 1 : -1;
+    const days = view === "day" ? 1 : view === "week" ? 7 : 30;
+    const nextCursor = addDays(cursor, multiplier * days);
+    setCursor(nextCursor);
+    if (view !== "month") setSelectedDate(iso(nextCursor));
+  }
+
+  function changeSelectedDate(value) {
+    if (!value) return;
+    const next = new Date(`${value}T00:00:00`);
+    setSelectedDate(value);
+    setCursor(next);
+  }
+
   return (
     <div className="agenda-page v4-page">
       <div className="page-title-row">
@@ -232,7 +247,7 @@ export default function Agenda() {
         {canWriteAgenda && <button className="primary-action" onClick={() => openNew()}><Plus size={18} />Nuovo reminder</button>}
       </div>
 
-      <div className="v4-toolbar">
+      <div className="v4-toolbar agenda-toolbar-clear">
         <div className="task-search"><Search size={18} /><input placeholder="Cerca tutto in agenda..." value={query} onChange={(e) => setQuery(e.target.value)} /></div>
         {adminMode && (
           <select className="filter-chip" value={selectedUserId} onChange={(e) => setSelectedUserId(e.target.value)}>
@@ -242,10 +257,23 @@ export default function Agenda() {
             ))}
           </select>
         )}
-        {Object.entries(viewLabels).map(([key, label]) => <button key={key} className={`filter-chip ${view === key ? "active" : ""}`} onClick={() => setView(key)}>{label}</button>)}
-        <button className="filter-chip" onClick={() => setCursor(addDays(cursor, view === "week" ? -7 : -30))}>Indietro</button>
-        <button className="filter-chip" onClick={() => setCursor(new Date())}>Oggi</button>
-        <button className="filter-chip" onClick={() => setCursor(addDays(cursor, view === "week" ? 7 : 30))}>Avanti</button>
+        <div className="planning-view-tabs">
+          {Object.entries(viewLabels).map(([key, label]) => <button key={key} className={`filter-chip ${view === key ? "active" : ""}`} onClick={() => setView(key)}>{label}</button>)}
+        </div>
+        <div className="planning-navigation" style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <button className="filter-chip" onClick={() => movePeriod("prev")} title="Periodo precedente"><ChevronLeft size={16} /> Indietro</button>
+          <input className="filter-chip" type="date" value={selectedDate} onChange={(e) => changeSelectedDate(e.target.value)} />
+          <button className="filter-chip" onClick={() => { const now = new Date(); setCursor(now); setSelectedDate(todayIso()); }}>Oggi</button>
+          <button className="filter-chip" onClick={() => movePeriod("next")} title="Periodo successivo">Avanti <ChevronRight size={16} /></button>
+        </div>
+      </div>
+
+      <div className="planning-legend panel" style={{ display: "flex", gap: "14px", alignItems: "center", flexWrap: "wrap", padding: "10px 14px", marginBottom: "12px" }}>
+        <strong>Legenda:</strong>
+        <span><span className="dot open">•</span> Aperti</span>
+        <span><span className="dot today">•</span> Oggi</span>
+        <span><span className="dot danger">•</span> Scaduti</span>
+        <span><span className="dot done">•</span> Completati</span>
       </div>
 
       <div className={`planning-grid ${view}`}>

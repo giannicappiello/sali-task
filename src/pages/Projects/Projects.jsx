@@ -30,7 +30,9 @@ const phaseEmpty = {
   note: "",
   deadline: "",
   reparto_id: "",
+  reparto_ids: [],
   stato: "da_evadere",
+  prodotti: [],
 };
 
 const closedStates = ["evaso", "evasa", "completato", "completata", "chiuso", "chiusa"];
@@ -66,6 +68,7 @@ export default function Projects() {
   const { profile, hasPermission, isAdmin, userDepartmentIds = [] } = useAuth();
   const canManage = hasPermission("projects.write");
   const canReadAllProjects = hasPermission("projects.read.all") || isAdmin?.();
+  const canReadAllTasksInVisibleProjects = canReadAllProjects || hasPermission("tasks.read.project_departments") || hasPermission("tasks.read.all");
   const actorId = profile?.id || null;
 
   async function getCurrentUtenteId() {
@@ -96,6 +99,8 @@ export default function Projects() {
   const [projectProducts, setProjectProducts] = useState([]);
   const [projectDepartments, setProjectDepartments] = useState([]);
   const [phaseProducts, setPhaseProducts] = useState([]);
+  const [templateDepartments, setTemplateDepartments] = useState([]);
+  const [phaseDepartments, setPhaseDepartments] = useState([]);
 
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("tutti");
@@ -111,6 +116,7 @@ export default function Projects() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [dragActive, setDragActive] = useState(false);
+  const [showPhaseProducts, setShowPhaseProducts] = useState(false);
 
   useEffect(() => {
     if (profile?.id) loadData();
@@ -126,7 +132,7 @@ export default function Projects() {
 
   async function loadData() {
     setLoading(true);
-    const [projectsRes, phasesRes, productsRes, departmentsRes, usersRes, templatesRes, ppRes, prRes, fpRes] = await Promise.all([
+    const [projectsRes, phasesRes, productsRes, departmentsRes, usersRes, templatesRes, ppRes, prRes, fpRes, templateDepartmentsRes, phaseDepartmentsRes] = await Promise.all([
       supabase.from("v4_progetti").select("*").order("created_at", { ascending: false }),
       supabase
         .from("v4_fasi_progetto")
@@ -140,10 +146,14 @@ export default function Projects() {
       supabase.from("v4_progetto_prodotti").select("id,progetto_id,prodotto_id,prodotto_nome"),
       supabase.from("v4_progetto_reparti").select("id,progetto_id,reparto_id"),
       supabase.from("v4_fase_prodotti").select("id,fase_id,prodotto_id,prodotto_nome"),
+      supabase.from("checklist_template_reparti").select("id,template_id,reparto_id"),
+      supabase.from("v4_fase_reparti").select("id,fase_id,reparto_id,completato,completato_at,completato_da"),
     ]);
 
     if (projectsRes.error) console.error("Progetti:", projectsRes.error.message);
     if (phasesRes.error) console.error("Fasi:", phasesRes.error.message);
+    if (templateDepartmentsRes.error) console.error("Reparti checklist:", templateDepartmentsRes.error.message);
+    if (phaseDepartmentsRes.error) console.error("Reparti fase:", phaseDepartmentsRes.error.message);
 
     const allProjects = projectsRes.data || [];
     const allPhases = phasesRes.data || [];
@@ -167,10 +177,16 @@ export default function Projects() {
     );
 
     const visibleProjects = allProjects.filter((project) => visibleProjectIds.has(project.id));
-    const visiblePhases = canReadAllProjects
-      ? allPhases
+    const allPhaseDepartments = phaseDepartmentsRes.data || [];
+    const visiblePhases = (canReadAllProjects || canReadAllTasksInVisibleProjects)
+      ? allPhases.filter((phase) => visibleProjectIds.has(phase.progetto_id))
       : allPhases.filter((phase) => {
           if (!visibleProjectIds.has(phase.progetto_id)) return false;
+          const phaseDepartmentIds = allPhaseDepartments
+            .filter((row) => row.fase_id === phase.id)
+            .map((row) => row.reparto_id)
+            .filter(Boolean);
+          if (phaseDepartmentIds.length > 0) return phaseDepartmentIds.some((id) => allowedDepartmentIds.includes(id));
           if (!phase.reparto_id) return true;
           return allowedDepartmentIds.includes(phase.reparto_id);
         });
@@ -184,6 +200,8 @@ export default function Projects() {
     setProjectProducts((ppRes.data || []).filter((row) => visibleProjectIds.has(row.progetto_id)));
     setProjectDepartments((prRes.data || []).filter((row) => visibleProjectIds.has(row.progetto_id)));
     setPhaseProducts((fpRes.data || []).filter((row) => visiblePhases.some((phase) => phase.id === row.fase_id)));
+    setTemplateDepartments(templateDepartmentsRes.data || []);
+    setPhaseDepartments((phaseDepartmentsRes.data || []).filter((row) => visiblePhases.some((phase) => phase.id === row.fase_id)));
     setLoading(false);
   }
 
@@ -212,6 +230,12 @@ export default function Projects() {
     phases.forEach((phase) => {
       const list = map.get(phase.progetto_id) || [];
       list.push(phase);
+      list.sort((a, b) => {
+        const ad = a.deadline || "9999-12-31";
+        const bd = b.deadline || "9999-12-31";
+        if (ad !== bd) return ad.localeCompare(bd);
+        return Number(a.ordine || 0) - Number(b.ordine || 0);
+      });
       map.set(phase.progetto_id, list);
     });
     return map;
@@ -254,6 +278,28 @@ export default function Projects() {
     return map;
   }, [projectDepartments, departments]);
 
+  const departmentsByTemplate = useMemo(() => {
+    const map = new Map();
+    templateDepartments.forEach((row) => {
+      const list = map.get(row.template_id) || [];
+      const department = departments.find((item) => item.id === row.reparto_id);
+      if (department) list.push(department);
+      map.set(row.template_id, list);
+    });
+    return map;
+  }, [templateDepartments, departments]);
+
+  const departmentsByPhase = useMemo(() => {
+    const map = new Map();
+    phaseDepartments.forEach((row) => {
+      const list = map.get(row.fase_id) || [];
+      const department = departments.find((item) => item.id === row.reparto_id);
+      if (department) list.push({ ...department, completato: row.completato, completato_at: row.completato_at });
+      map.set(row.fase_id, list);
+    });
+    return map;
+  }, [phaseDepartments, departments]);
+
   const filteredProjects = useMemo(() => {
     const text = query.trim().toLowerCase();
     return projects.filter((project) => {
@@ -295,6 +341,14 @@ export default function Projects() {
     return phaseProducts.filter((row) => row.fase_id === phaseId && row.prodotto_id).map((row) => row.prodotto_id);
   }
 
+  function getTemplateDepartmentIds(templateId) {
+    return templateDepartments.filter((row) => row.template_id === templateId && row.reparto_id).map((row) => row.reparto_id);
+  }
+
+  function getPhaseDepartmentIds(phaseId) {
+    return phaseDepartments.filter((row) => row.fase_id === phaseId && row.reparto_id).map((row) => row.reparto_id);
+  }
+
   function openProject(project = null) {
     setSelectedProject(project);
     setProjectForm(
@@ -315,6 +369,8 @@ export default function Projects() {
   function openPhase(project, phase = null) {
     setSelectedProject(project);
     setSelectedPhase(phase);
+    const projectProductIds = project?.id ? getProjectProductIds(project.id) : [];
+    const projectDepartmentIds = project?.id ? getProjectDepartmentIds(project.id) : [];
     setPhaseForm(
       phase
         ? {
@@ -323,11 +379,13 @@ export default function Projects() {
             note: phase.note || "",
             deadline: phase.deadline || "",
             reparto_id: phase.reparto_id || "",
+            reparto_ids: getPhaseDepartmentIds(phase.id).length ? getPhaseDepartmentIds(phase.id) : (phase.reparto_id ? [phase.reparto_id] : []),
             stato: phase.stato || "da_evadere",
             prodotti: getPhaseProductIds(phase.id),
           }
-        : { ...phaseEmpty }
+        : { ...phaseEmpty, prodotti: projectProductIds, reparto_ids: projectDepartmentIds, reparto_id: projectDepartmentIds[0] || "" }
     );
+    setShowPhaseProducts(false);
     setPhaseModal(true);
   }
 
@@ -345,6 +403,16 @@ export default function Projects() {
         ? safeArray(current.prodotti).filter((id) => id !== productId)
         : [...safeArray(current.prodotti), productId],
     }));
+  }
+
+  function togglePhaseDepartment(departmentId) {
+    setPhaseForm((current) => {
+      const currentIds = safeArray(current.reparto_ids);
+      const nextIds = currentIds.includes(departmentId)
+        ? currentIds.filter((id) => id !== departmentId)
+        : [...currentIds, departmentId];
+      return { ...current, reparto_ids: nextIds, reparto_id: nextIds[0] || "" };
+    });
   }
 
   async function saveProject(e) {
@@ -389,23 +457,43 @@ export default function Projects() {
 
   async function createTemplatePhases(projectId, repartoIds) {
     const activeTemplates = templates.filter((item) => item.attivo !== false);
-    const selectedTemplates = activeTemplates.filter((item) => !repartoIds.length || !item.reparto_id || repartoIds.includes(item.reparto_id));
+    const selectedTemplates = activeTemplates.filter((item) => {
+      const templateDepartmentIds = getTemplateDepartmentIds(item.id);
+      if (!repartoIds.length) return true;
+      if (templateDepartmentIds.length === 0 && !item.reparto_id) return true;
+      const ids = templateDepartmentIds.length ? templateDepartmentIds : [item.reparto_id].filter(Boolean);
+      return ids.some((id) => repartoIds.includes(id));
+    });
 
-    const rows = selectedTemplates.map((item, index) => ({
-      progetto_id: projectId,
-      titolo: item.titolo,
-      reparto_id: item.reparto_id || null,
-      stato: "da_evadere",
-      priorita: null,
-      assegnato_a: null,
-      ordine: index + 1,
-      creato_da: actorId,
-      modificato_da: actorId,
-    }));
+    for (const [index, item] of selectedTemplates.entries()) {
+      const templateDepartmentIds = getTemplateDepartmentIds(item.id);
+      const ids = templateDepartmentIds.length ? templateDepartmentIds : [item.reparto_id].filter(Boolean);
+      const effectiveDepartmentIds = ids.length ? ids : repartoIds;
 
-    if (rows.length) {
-      const { error } = await supabase.from("v4_fasi_progetto").insert(rows);
-      if (error) alert(`Errore creazione checklist: ${error.message}`);
+      const { data, error } = await supabase
+        .from("v4_fasi_progetto")
+        .insert({
+          progetto_id: projectId,
+          titolo: item.titolo,
+          reparto_id: effectiveDepartmentIds[0] || null,
+          stato: "da_evadere",
+          priorita: null,
+          assegnato_a: null,
+          ordine: index + 1,
+          creato_da: actorId,
+          modificato_da: actorId,
+        })
+        .select("id")
+        .single();
+
+      if (error) {
+        alert(`Errore creazione checklist: ${error.message}`);
+        continue;
+      }
+
+      if (data?.id && effectiveDepartmentIds.length) {
+        await savePhaseDepartments(data.id, effectiveDepartmentIds);
+      }
     }
   }
 
@@ -440,6 +528,16 @@ export default function Projects() {
     }
   }
 
+  async function savePhaseDepartments(phaseId, departmentIds) {
+    await supabase.from("v4_fase_reparti").delete().eq("fase_id", phaseId);
+    const uniqueIds = [...new Set(safeArray(departmentIds).filter(Boolean))];
+    const rows = uniqueIds.map((reparto_id) => ({ fase_id: phaseId, reparto_id }));
+    if (rows.length) {
+      const { error } = await supabase.from("v4_fase_reparti").insert(rows);
+      if (error) throw error;
+    }
+  }
+
   async function savePhase(e) {
     e.preventDefault();
     if (!canManage) return alert("Non hai i permessi per modificare le fasi.");
@@ -454,7 +552,7 @@ export default function Projects() {
       note: phaseForm.note.trim() || null,
       priorita: null,
       deadline: phaseForm.deadline || null,
-      reparto_id: phaseForm.reparto_id || null,
+      reparto_id: safeArray(phaseForm.reparto_ids)[0] || phaseForm.reparto_id || null,
       assegnato_a: null,
       stato: phaseForm.stato || "da_evadere",
       modificato_da: actorId,
@@ -476,8 +574,9 @@ export default function Projects() {
 
     try {
       await savePhaseProducts(data?.id || selectedPhase?.id, phaseForm.prodotti);
+      await savePhaseDepartments(data?.id || selectedPhase?.id, phaseForm.reparto_ids);
     } catch (phaseProductError) {
-      return alert(`Errore associazione prodotti fase: ${phaseProductError.message}`);
+      return alert(`Errore associazione fase: ${phaseProductError.message}`);
     }
 
     await log("fase_progetto", data?.id || selectedPhase?.id || selectedProject.id, selectedPhase?.id ? "modifica fase" : "nuova fase", payload.titolo);
@@ -711,7 +810,7 @@ export default function Projects() {
                     <div className={`phase-card ${statusClass(phase)}`} key={phase.id}>
                       <button className="phase-card-main" onClick={() => openPhase(project, phase)}>
                         <strong>{phase.titolo}</strong>
-                        <span>{phase.reparti?.nome || "Reparto non impostato"}</span>
+                        <span>{(departmentsByPhase.get(phase.id) || []).map((d) => d.nome).join(", ") || phase.reparti?.nome || "Reparto non impostato"}</span>
                         {(productsByPhase.get(phase.id) || []).length > 0 && (
                           <small>Prodotti: {(productsByPhase.get(phase.id) || []).map((item) => item.nome).join(", ")}</small>
                         )}
@@ -781,10 +880,18 @@ export default function Projects() {
                 value={phaseForm.titolo}
                 onChange={(e) => {
                   const selectedTemplate = templates.find((item) => item.titolo === e.target.value);
+                  const templateDepartmentIds = selectedTemplate ? getTemplateDepartmentIds(selectedTemplate.id) : [];
+                  const projectDepartmentIds = selectedProject?.id ? getProjectDepartmentIds(selectedProject.id) : [];
+                  const nextDepartmentIds = templateDepartmentIds.length
+                    ? templateDepartmentIds
+                    : selectedTemplate?.reparto_id
+                      ? [selectedTemplate.reparto_id]
+                      : projectDepartmentIds;
                   setPhaseForm({
                     ...phaseForm,
                     titolo: selectedTemplate?.titolo || "",
-                    reparto_id: selectedTemplate?.reparto_id || "",
+                    reparto_ids: nextDepartmentIds,
+                    reparto_id: nextDepartmentIds[0] || "",
                   });
                 }}
               >
@@ -794,7 +901,7 @@ export default function Projects() {
                 )}
                 {templates.map((item) => (
                   <option key={item.id} value={item.titolo}>
-                    {item.titolo}{item.reparti?.nome ? ` · ${item.reparti.nome}` : ""}
+                    {item.titolo}{(departmentsByTemplate.get(item.id) || []).length ? ` · ${(departmentsByTemplate.get(item.id) || []).map((d) => d.nome).join(", ")}` : item.reparti?.nome ? ` · ${item.reparti.nome}` : ""}
                   </option>
                 ))}
               </select>
@@ -804,22 +911,45 @@ export default function Projects() {
 
             <div className="form-grid-2">
               <label>Stato<select value={phaseForm.stato} onChange={(e) => setPhaseForm({ ...phaseForm, stato: e.target.value })}><option value="da_evadere">Da evadere</option><option value="in_lavorazione">In lavorazione</option><option value="in_valutazione">In valutazione</option><option value="evaso">Evaso</option></select></label>
-              <label>Reparto<input disabled value={departments.find((d) => d.id === phaseForm.reparto_id)?.nome || ""} /></label>
+              <label>Reparti selezionati<input disabled value={safeArray(phaseForm.reparto_ids).map((id) => departments.find((d) => d.id === id)?.nome).filter(Boolean).join(", ") || "Nessun reparto"} /></label>
             </div>
 
             <div className="checkbox-group scrollable-check-group">
-              <strong>Prodotti associati alla fase</strong>
-              {products.map((p) => (
-                <label key={p.id}>
+              <strong>Reparti competenti sulla fase</strong>
+              {(selectedProject?.id ? departments.filter((d) => getProjectDepartmentIds(selectedProject.id).includes(d.id)) : departments).map((d) => (
+                <label key={d.id}>
                   <input
                     type="checkbox"
-                    checked={safeArray(phaseForm.prodotti).includes(p.id)}
-                    onChange={() => togglePhaseProduct(p.id)}
+                    checked={safeArray(phaseForm.reparto_ids).includes(d.id)}
+                    onChange={() => togglePhaseDepartment(d.id)}
                   />
-                  {p.nome}{p.codice ? ` · ${p.codice}` : ""}
+                  {d.nome}
                 </label>
               ))}
             </div>
+
+            <div className="phase-products-toolbar" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
+              <strong>Prodotti associati alla fase: {safeArray(phaseForm.prodotti).length}</strong>
+              <button type="button" className="filter-chip" onClick={() => setShowPhaseProducts((value) => !value)}>
+                {showPhaseProducts ? "Chiudi prodotti" : safeArray(phaseForm.prodotti).length ? "Aggiungi/Modifica/Rimuovi prodotti" : "Aggiungi prodotti"}
+              </button>
+            </div>
+
+            {showPhaseProducts && (
+              <div className="checkbox-group scrollable-check-group">
+                <strong>Prodotti associati alla fase</strong>
+                {products.map((p) => (
+                  <label key={p.id}>
+                    <input
+                      type="checkbox"
+                      checked={safeArray(phaseForm.prodotti).includes(p.id)}
+                      onChange={() => togglePhaseProduct(p.id)}
+                    />
+                    {p.nome}{p.codice ? ` · ${p.codice}` : ""}
+                  </label>
+                ))}
+              </div>
+            )}
 
             <label>Deadline<input type="date" value={phaseForm.deadline} onChange={(e) => setPhaseForm({ ...phaseForm, deadline: e.target.value })} /></label>
 

@@ -5,7 +5,7 @@ import { useAuth } from "../../contexts/AuthContext";
 
 const emptyDepartment = { nome: "", descrizione: "", attivo: true };
 const emptyRole = { nome: "", descrizione: "", livello: 40, permessi: [] };
-const emptyTemplate = { titolo: "", reparto_id: "", ordine: 1, attivo: true };
+const emptyTemplate = { titolo: "", reparto_id: "", reparto_ids: [], ordine: 1, attivo: true };
 const emptyUserAccess = { ruolo_id: "", attivo: true, reparti: [] };
 
 const permissionLabels = {
@@ -13,6 +13,7 @@ const permissionLabels = {
   "projects.read.all": "Vede tutti i progetti",
   "projects.write": "Crea e modifica progetti/task",
   "tasks.read": "Vede task dei propri reparti",
+  "tasks.read.project_departments": "Vede tutte le task dei progetti dei propri reparti",
   "tasks.write": "Aggiorna task/commenti/allegati",
   "agenda.read": "Vede la propria agenda",
   "agenda.read.all": "Vede tutte le agende",
@@ -39,6 +40,7 @@ export default function Settings() {
   const [userDepartments, setUserDepartments] = useState([]);
   const [permissions, setPermissions] = useState([]);
   const [rolePermissions, setRolePermissions] = useState([]);
+  const [templateDepartments, setTemplateDepartments] = useState([]);
 
   const [modal, setModal] = useState({ open: false, type: "checklist", item: null });
   const [departmentForm, setDepartmentForm] = useState(emptyDepartment);
@@ -52,7 +54,7 @@ export default function Settings() {
   }, []);
 
   async function loadData() {
-    const [departmentsRes, rolesRes, templatesRes, usersRes, userDepartmentsRes, permissionsRes, rolePermissionsRes] = await Promise.all([
+    const [departmentsRes, rolesRes, templatesRes, usersRes, userDepartmentsRes, permissionsRes, rolePermissionsRes, templateDepartmentsRes] = await Promise.all([
       supabase.from("reparti").select("*").order("nome"),
       supabase.from("ruoli").select("*").order("livello", { ascending: false }),
       supabase.from("checklist_template").select("*,reparti(id,nome)").order("ordine", { ascending: true }),
@@ -60,6 +62,7 @@ export default function Settings() {
       supabase.from("utenti_reparti").select("id,utente_id,reparto_id"),
       supabase.from("permessi").select("id,codice,descrizione").order("codice"),
       supabase.from("permessi_ruolo").select("ruolo_id,permesso_id,permessi(id,codice,descrizione)"),
+      supabase.from("checklist_template_reparti").select("id,template_id,reparto_id"),
     ]);
 
     if (departmentsRes.error) console.error("Errore reparti:", departmentsRes.error.message);
@@ -69,6 +72,7 @@ export default function Settings() {
     if (userDepartmentsRes.error) console.error("Errore utenti_reparti:", userDepartmentsRes.error.message);
     if (permissionsRes.error) console.error("Errore permessi:", permissionsRes.error.message);
     if (rolePermissionsRes.error) console.error("Errore permessi_ruolo:", rolePermissionsRes.error.message);
+    if (templateDepartmentsRes.error) console.error("Errore reparti checklist:", templateDepartmentsRes.error.message);
 
     setDepartments(departmentsRes.data || []);
     setRoles(rolesRes.data || []);
@@ -77,6 +81,7 @@ export default function Settings() {
     setUserDepartments(userDepartmentsRes.data || []);
     setPermissions(permissionsRes.data || []);
     setRolePermissions(rolePermissionsRes.data || []);
+    setTemplateDepartments(templateDepartmentsRes.data || []);
   }
 
   const activeDepartments = useMemo(() => departments.filter((item) => item.attivo !== false), [departments]);
@@ -100,6 +105,17 @@ export default function Settings() {
       .filter((row) => row.ruolo_id === roleId)
       .map((row) => row.permessi?.codice)
       .filter(Boolean);
+  }
+
+  function getTemplateDepartmentIds(templateId) {
+    return templateDepartments.filter((row) => row.template_id === templateId && row.reparto_id).map((row) => row.reparto_id);
+  }
+
+  function getTemplateDepartmentNames(templateId, fallbackName = "Tutti i reparti") {
+    const names = getTemplateDepartmentIds(templateId)
+      .map((id) => departments.find((department) => department.id === id)?.nome)
+      .filter(Boolean);
+    return names.length ? names.join(", ") : fallbackName;
   }
 
   function openCreate(type) {
@@ -127,7 +143,14 @@ export default function Settings() {
     }
 
     if (type === "checklist") {
-      setTemplateForm({ titolo: item.titolo || "", reparto_id: item.reparto_id || "", ordine: item.ordine || 1, attivo: item.attivo !== false });
+      const ids = getTemplateDepartmentIds(item.id);
+      setTemplateForm({
+        titolo: item.titolo || "",
+        reparto_id: ids[0] || item.reparto_id || "",
+        reparto_ids: ids.length ? ids : (item.reparto_id ? [item.reparto_id] : []),
+        ordine: item.ordine || 1,
+        attivo: item.attivo !== false,
+      });
     }
 
     if (type === "utente_accessi") {
@@ -206,13 +229,39 @@ export default function Settings() {
   async function saveTemplate(e) {
     e.preventDefault();
     if (!canManage) return alert("Non hai i permessi.");
-    const payload = { titolo: templateForm.titolo.trim(), reparto_id: templateForm.reparto_id || null, ordine: Number(templateForm.ordine) || 1, attivo: templateForm.attivo };
+    const selectedDepartmentIds = Array.isArray(templateForm.reparto_ids) ? templateForm.reparto_ids.filter(Boolean) : [];
+    const payload = {
+      titolo: templateForm.titolo.trim(),
+      reparto_id: selectedDepartmentIds[0] || null,
+      ordine: Number(templateForm.ordine) || 1,
+      attivo: templateForm.attivo,
+    };
     if (!payload.titolo) return alert("Inserisci la voce checklist.");
+
     setSaving(true);
-    const request = modal.item ? supabase.from("checklist_template").update(payload).eq("id", modal.item.id) : supabase.from("checklist_template").insert(payload);
-    const { error } = await request;
+    const request = modal.item
+      ? supabase.from("checklist_template").update(payload).eq("id", modal.item.id).select("id").single()
+      : supabase.from("checklist_template").insert(payload).select("id").single();
+
+    const { data, error } = await request;
+    if (error) {
+      setSaving(false);
+      return alert(error.message);
+    }
+
+    const templateId = data?.id || modal.item?.id;
+    await supabase.from("checklist_template_reparti").delete().eq("template_id", templateId);
+
+    const rows = selectedDepartmentIds.map((reparto_id) => ({ template_id: templateId, reparto_id }));
+    if (rows.length > 0) {
+      const insertRes = await supabase.from("checklist_template_reparti").insert(rows);
+      if (insertRes.error) {
+        setSaving(false);
+        return alert(insertRes.error.message);
+      }
+    }
+
     setSaving(false);
-    if (error) return alert(error.message);
     closeModal();
     await loadData();
   }
@@ -286,7 +335,7 @@ export default function Settings() {
           <div className="settings-list">
             {templates.map((item) => (
               <div className="settings-row" key={item.id}>
-                <div><strong>{item.titolo}</strong><span>{item.reparti?.nome || "Tutti i reparti"}</span></div>
+                <div><strong>{item.titolo}</strong><span>{getTemplateDepartmentNames(item.id, item.reparti?.nome || "Tutti i reparti")}</span></div>
                 <span className={`config-status ${item.attivo ? "active" : "inactive"}`}>{item.attivo ? "Attiva" : "Disattiva"}</span>
                 <span className="role-level">Ordine {item.ordine}</span>
                 <div className="config-actions"><button onClick={() => openEdit("checklist", item)}><Pencil size={16} /></button><button className="danger" onClick={() => remove("checklist", item)}><Trash2 size={16} /></button></div>
@@ -359,7 +408,7 @@ export default function Settings() {
 
             {modal.type === "ruolo" && <><label>Nome ruolo<input value={roleForm.nome} onChange={(e) => setRoleForm({ ...roleForm, nome: e.target.value })} /></label><label>Descrizione<textarea rows="3" value={roleForm.descrizione} onChange={(e) => setRoleForm({ ...roleForm, descrizione: e.target.value })} /></label><label>Livello<input type="number" value={roleForm.livello} onChange={(e) => setRoleForm({ ...roleForm, livello: e.target.value })} /></label><div className="checkbox-group scrollable-check-group"><strong>Permessi del ruolo</strong>{permissions.map((permission) => (<label key={permission.id}><input type="checkbox" checked={(roleForm.permessi || []).includes(permission.id)} onChange={() => toggleListValue(setRoleForm, "permessi", permission.id)} />{permission.codice} · {permission.descrizione || permissionLabels[permission.codice] || ""}</label>))}{permissions.length === 0 && <p>Nessun permesso disponibile. Esegui prima la query SQL.</p>}</div></>}
 
-            {modal.type === "checklist" && <><label>Voce checklist<input value={templateForm.titolo} onChange={(e) => setTemplateForm({ ...templateForm, titolo: e.target.value })} /></label><label>Reparto<select value={templateForm.reparto_id} onChange={(e) => setTemplateForm({ ...templateForm, reparto_id: e.target.value })}><option value="">Tutti i reparti</option>{activeDepartments.map((d) => <option key={d.id} value={d.id}>{d.nome}</option>)}</select></label><label>Ordine<input type="number" value={templateForm.ordine} onChange={(e) => setTemplateForm({ ...templateForm, ordine: e.target.value })} /></label><label className="check-line"><input type="checkbox" checked={templateForm.attivo} onChange={(e) => setTemplateForm({ ...templateForm, attivo: e.target.checked })} />Attiva</label></>}
+            {modal.type === "checklist" && <><label>Voce checklist<input value={templateForm.titolo} onChange={(e) => setTemplateForm({ ...templateForm, titolo: e.target.value })} /></label><div className="checkbox-group scrollable-check-group"><strong>Reparti collegati alla voce checklist</strong><p className="muted">Se non selezioni reparti, la voce sarà valida per tutti i reparti.</p>{activeDepartments.map((department) => (<label key={department.id}><input type="checkbox" checked={(templateForm.reparto_ids || []).includes(department.id)} onChange={() => toggleListValue(setTemplateForm, "reparto_ids", department.id)} />{department.nome}</label>))}{activeDepartments.length === 0 && <p>Nessun reparto attivo disponibile.</p>}</div><label>Ordine<input type="number" value={templateForm.ordine} onChange={(e) => setTemplateForm({ ...templateForm, ordine: e.target.value })} /></label><label className="check-line"><input type="checkbox" checked={templateForm.attivo} onChange={(e) => setTemplateForm({ ...templateForm, attivo: e.target.checked })} />Attiva</label></>}
 
             {modal.type === "utente_accessi" && <><label>Ruolo<select value={userAccessForm.ruolo_id} onChange={(e) => setUserAccessForm({ ...userAccessForm, ruolo_id: e.target.value })}><option value="">Nessun ruolo</option>{roles.map((role) => <option key={role.id} value={role.id}>{role.nome} · livello {role.livello}</option>)}</select></label><label className="check-line"><input type="checkbox" checked={userAccessForm.attivo} onChange={(e) => setUserAccessForm({ ...userAccessForm, attivo: e.target.checked })} />Utente attivo</label><div className="checkbox-group scrollable-check-group"><strong>Reparti dell'utente</strong>{activeDepartments.map((department) => (<label key={department.id}><input type="checkbox" checked={(userAccessForm.reparti || []).includes(department.id)} onChange={() => toggleListValue(setUserAccessForm, "reparti", department.id)} />{department.nome}</label>))}{activeDepartments.length === 0 && <p>Nessun reparto attivo disponibile.</p>}</div></>}
 

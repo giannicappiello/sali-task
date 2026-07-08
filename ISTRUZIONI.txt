@@ -1,0 +1,16 @@
+PROGRE WORKSPACE - PACCHETTO COMPLETO
+
+1) Fai una copia di sicurezza della tua cartella C:\Progetti\sali-task.
+2) Estrai questo ZIP e copia i file dentro C:\Progetti\sali-task sovrascrivendo quelli esistenti.
+3) NON cancellare il tuo file .env locale. Questo ZIP contiene solo .env.example.
+4) Nel terminale:
+   npm install
+   npm run dev
+5) Apri http://localhost:5173
+6) Se Supabase mostra dati demo, apri supabase/schema_progre_workspace.sql nel SQL Editor di Supabase ed eseguilo.
+7) Per la PWA: dopo npm run build + npm run preview, Chrome/Edge mostreranno il pulsante Installa app.
+
+Note:
+- Le pagine non sono più placeholder: Dashboard, Task, Progetti, Prodotti, Messaggi, Team, Calendario, Report e Impostazioni sono operative.
+- Se le tue tabelle Supabase hanno nomi/colonne diversi, l'app non si blocca: mostra dati demo e segnala l'errore.
+- La pagina Prodotti usa limit 1000, quindi non ha più il vincolo dei 100 record.

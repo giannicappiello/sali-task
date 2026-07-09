@@ -273,3 +273,97 @@
     justify-content: center;
   }
 }
+
+.chat-attachments {
+  margin-top: 10px;
+  display: grid;
+  gap: 7px;
+}
+
+.chat-attachments a {
+  min-height: 34px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 7px 10px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  color: #1e293b;
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.chat-attachments a:hover {
+  background: white;
+}
+
+.chat-attachments a span {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #1e293b;
+  font-size: 13px;
+}
+
+.chat-attachments a em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.chat-compose {
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+}
+
+.chat-pending-files {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chat-pending-files span {
+  min-height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #f8fafc;
+  padding: 5px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.chat-pending-files button {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: #fee2e2;
+  color: #991b1b;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.chat-attach-button {
+  width: 48px;
+  height: 48px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: white;
+  display: grid;
+  place-items: center;
+  color: var(--primary);
+  cursor: pointer;
+}
+
+.chat-attach-button:hover {
+  background: #eef6ff;
+}

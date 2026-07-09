@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Download,
   MessageCircle,
+  Paperclip,
   Plus,
   Search,
   Send,
+  Trash2,
   User,
   X,
   RefreshCw,
@@ -18,10 +21,12 @@ function Messages() {
   const [utenti, setUtenti] = useState([]);
   const [conversations, setConversations] = useState([]);
   const [messages, setMessages] = useState([]);
+  const [attachmentsByMessage, setAttachmentsByMessage] = useState({});
 
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [search, setSearch] = useState("");
   const [newMessage, setNewMessage] = useState("");
+  const [pendingFiles, setPendingFiles] = useState([]);
 
   const [newChatOpen, setNewChatOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState("");
@@ -235,8 +240,28 @@ function Messages() {
     if (error) {
       console.error("Errore caricamento messaggi:", error);
       setMessages([]);
+      setAttachmentsByMessage({});
       setMessagesLoading(false);
       return;
+    }
+
+    const { data: attachments, error: attachmentsError } = await supabase
+      .from("chat_allegati")
+      .select("id,conversazione_id,messaggio_id,nome_file,file_url,storage_path,tipo_file,dimensione_bytes,created_at")
+      .eq("conversazione_id", conversationId)
+      .order("created_at", { ascending: true });
+
+    if (attachmentsError) {
+      console.error("Errore caricamento allegati chat:", attachmentsError);
+      setAttachmentsByMessage({});
+    } else {
+      const grouped = {};
+      (attachments || []).forEach((attachment) => {
+        const key = attachment.messaggio_id;
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(attachment);
+      });
+      setAttachmentsByMessage(grouped);
     }
 
     setMessages(data || []);
@@ -325,33 +350,128 @@ async function refreshChat() {
     }
   }
 
+  function addPendingFiles(files) {
+    const list = Array.from(files || []).filter(Boolean);
+    if (!list.length) return;
+    setPendingFiles((current) => [...current, ...list]);
+  }
+
+  function removePendingFile(index) {
+    setPendingFiles((current) => current.filter((_, currentIndex) => currentIndex !== index));
+  }
+
+  function formatFileSize(bytes) {
+    const value = Number(bytes || 0);
+    if (!value) return "";
+    if (value < 1024) return `${value} B`;
+    if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
+    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function attachmentUrl(attachment) {
+    if (attachment?.file_url) return attachment.file_url;
+    if (!attachment?.storage_path) return "#";
+    const { data } = supabase.storage.from("allegati").getPublicUrl(attachment.storage_path);
+    return data?.publicUrl || "#";
+  }
+
+  async function uploadMessageAttachments(messageId, files) {
+    const list = Array.from(files || []).filter(Boolean);
+    if (!list.length) return;
+
+    for (const file of list) {
+      const cleanFileName = file.name.replaceAll("/", "-");
+      const storagePath = `${profile.id}/chat/${selectedConversation.id}/${messageId}/${Date.now()}-${cleanFileName}`;
+
+      const uploaded = await supabase.storage.from("allegati").upload(storagePath, file, { upsert: true });
+      if (uploaded.error) throw uploaded.error;
+
+      const { data: publicUrlData } = supabase.storage.from("allegati").getPublicUrl(storagePath);
+      const { error } = await supabase.from("chat_allegati").insert({
+        conversazione_id: selectedConversation.id,
+        messaggio_id: messageId,
+        nome_file: file.name,
+        file_url: publicUrlData?.publicUrl || null,
+        storage_path: storagePath,
+        tipo_file: file.type || null,
+        dimensione_bytes: file.size || null,
+        caricato_da_id: profile.id,
+      });
+
+      if (error) throw error;
+    }
+  }
+
+  async function createMessageRecord(messageText) {
+    const payload = {
+      conversazione_id: selectedConversation.id,
+      mittente_id: profile.id,
+      messaggio: messageText,
+    };
+
+    const inserted = await supabase
+      .from("chat_messaggi")
+      .insert(payload)
+      .select("id")
+      .single();
+
+    if (!inserted.error && inserted.data?.id) {
+      await supabase
+        .from("chat_conversazioni")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", selectedConversation.id);
+      return inserted.data.id;
+    }
+
+    const rpcResult = await supabase.rpc("chat_send_message", {
+      p_conversazione_id: selectedConversation.id,
+      p_messaggio: messageText,
+    });
+
+    if (rpcResult.error) throw rpcResult.error;
+
+    const latest = await supabase
+      .from("chat_messaggi")
+      .select("id")
+      .eq("conversazione_id", selectedConversation.id)
+      .eq("mittente_id", profile.id)
+      .eq("messaggio", messageText)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (latest.error) throw latest.error;
+    if (!latest.data?.id) throw new Error("Messaggio creato, ma non è stato possibile collegare gli allegati.");
+    return latest.data.id;
+  }
+
   async function sendMessage(e) {
     e.preventDefault();
 
-    if (!selectedConversation?.id || !newMessage.trim()) return;
+    if (!selectedConversation?.id) return;
+    if (!newMessage.trim() && pendingFiles.length === 0) return;
 
     setSending(true);
 
-    const { error } = await supabase.rpc("chat_send_message", {
-      p_conversazione_id: selectedConversation.id,
-      p_messaggio: newMessage.trim(),
-    });
+    const messageText = newMessage.trim() || "📎 Allegato";
 
-    if (error) {
+    try {
+      const messageId = await createMessageRecord(messageText);
+      await uploadMessageAttachments(messageId, pendingFiles);
+
+      setNewMessage("");
+      setPendingFiles([]);
+      await Promise.all([
+        loadMessages(selectedConversation.id),
+        loadConversations(false),
+        markConversationAsRead(selectedConversation.id),
+      ]);
+    } catch (error) {
       console.error("Errore invio messaggio:", error);
       alert(`Errore durante l'invio del messaggio: ${error.message}`);
+    } finally {
       setSending(false);
-      return;
     }
-
-    setNewMessage("");
-    await Promise.all([
-      loadMessages(selectedConversation.id),
-      loadConversations(false),
-      markConversationAsRead(selectedConversation.id),
-    ]);
-
-    setSending(false);
   }
 
   function formatTime(date) {
@@ -506,6 +626,17 @@ async function refreshChat() {
                         <div className="chat-bubble">
                           <strong>{mine ? "Tu" : message.utenti?.nome || "Utente"}</strong>
                           <p>{message.messaggio}</p>
+                          {(attachmentsByMessage[message.id] || []).length > 0 && (
+                            <div className="chat-attachments">
+                              {(attachmentsByMessage[message.id] || []).map((attachment) => (
+                                <a key={attachment.id} href={attachmentUrl(attachment)} target="_blank" rel="noreferrer" download={attachment.nome_file}>
+                                  <Download size={15} />
+                                  <span>{attachment.nome_file}</span>
+                                  <em>{formatFileSize(attachment.dimensione_bytes)}</em>
+                                </a>
+                              ))}
+                            </div>
+                          )}
                           <span>{formatTime(message.created_at)}</span>
                         </div>
                       </div>
@@ -517,12 +648,31 @@ async function refreshChat() {
               </div>
 
               <form className="chat-compose" onSubmit={sendMessage}>
+                {pendingFiles.length > 0 && (
+                  <div className="chat-pending-files">
+                    {pendingFiles.map((file, index) => (
+                      <span key={`${file.name}-${index}`}>
+                        <Paperclip size={14} />
+                        {file.name}
+                        <button type="button" onClick={() => removePendingFile(index)} title="Rimuovi allegato">
+                          <Trash2 size={13} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <label className="chat-attach-button" title="Aggiungi allegato">
+                  <Paperclip size={18} />
+                  <input type="file" multiple hidden onChange={(e) => { addPendingFiles(e.target.files); e.target.value = ""; }} />
+                </label>
+
                 <input
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
                   placeholder={`Scrivi a ${selectedTitle}...`}
                 />
-                <button className="primary-action" disabled={sending || !newMessage.trim()}>
+                <button className="primary-action" disabled={sending || (!newMessage.trim() && pendingFiles.length === 0)}>
                   <Send size={18} />
                   {sending ? "Invio..." : "Invia"}
                 </button>

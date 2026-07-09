@@ -229,3 +229,41 @@
     grid-column: span 1;
   }
 }
+
+.presence-badge {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.presence-badge::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.presence-badge.online {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.presence-badge.online::before {
+  background: #22c55e;
+}
+
+.presence-badge.offline {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.presence-badge.offline::before {
+  background: #94a3b8;
+}

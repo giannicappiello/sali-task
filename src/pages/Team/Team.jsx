@@ -277,6 +277,13 @@ function Team() {
     });
   }
 
+  function isUserOnline(user) {
+    if (!user?.attivo || !user?.ultimo_accesso) return false;
+    const lastAccess = new Date(user.ultimo_accesso).getTime();
+    if (Number.isNaN(lastAccess)) return false;
+    return Date.now() - lastAccess <= 15 * 60 * 1000;
+  }
+
   function getInitials(name) {
     if (!name) return "UT";
 
@@ -361,6 +368,9 @@ function Team() {
                   <div>
                     <strong>{user.nome}</strong>
                     <small>{user.email}</small>
+                    <span className={`presence-badge ${isUserOnline(user) ? "online" : "offline"}`}>
+                      {isUserOnline(user) ? "Online" : "Offline"}
+                    </span>
                     {!user.auth_user_id && (
                       <em>Profilo non ancora collegato ad Auth</em>
                     )}

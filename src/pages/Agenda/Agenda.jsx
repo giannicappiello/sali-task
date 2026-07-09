@@ -104,7 +104,7 @@ export default function Agenda() {
     const reminderId = params.get("reminder");
     if (!reminderId || !reminders.length) return;
     const found = reminders.find((item) => item.id === reminderId);
-    if (found) openEdit(found);
+    if (found) setSelected(found);
   }, [params, reminders]);
 
   function userName(userId) {
@@ -219,8 +219,7 @@ export default function Agenda() {
 
   function canCompleteReminderDepartment(departmentId) {
     if (adminMode || canWriteAgenda) return true;
-    const ids = profile?.reparto_ids || [];
-    return ids.includes(departmentId);
+    return currentUserDepartmentIds().includes(departmentId);
   }
 
   const filteredProductsForReminder = useMemo(() => {
@@ -305,9 +304,22 @@ export default function Agenda() {
     return Array.from(map.entries());
   }, [filtered]);
 
+  function currentUserDepartmentIds() {
+    return profile?.reparto_ids || [profile?.reparto_id].filter(Boolean);
+  }
+
+  function isReminderForOwnDepartment(item) {
+    if (!item?.id) return false;
+    const ids = currentUserDepartmentIds();
+    if (!ids.length) return false;
+    return reminderDepartments
+      .filter((row) => row.reminder_id === item.id && row.reparto_id)
+      .some((row) => ids.includes(row.reparto_id));
+  }
+
   function canEditReminder(item) {
     if (!item?.id) return canWriteAgenda;
-    return adminMode || item.utente_id === profile?.id;
+    return adminMode || item.utente_id === profile?.id || isReminderForOwnDepartment(item);
   }
 
   function openNew() {
@@ -342,7 +354,7 @@ export default function Agenda() {
 
   async function saveReminder(e) {
     e.preventDefault();
-    if (!canWriteAgenda) return alert("Non hai i permessi per modificare i reminder.");
+    if (!selected?.id && !canWriteAgenda) return alert("Non hai i permessi per creare reminder.");
     if (selected?.id && !canEditReminder(selected)) return alert("Non hai i permessi per modificare questo reminder.");
     if (!form.titolo.trim()) return alert("Inserisci il titolo.");
 
@@ -591,7 +603,7 @@ export default function Agenda() {
                   <div className="v4-list">
                     {items.map((item) => (
                       <div key={item.id} className={`v4-list-row ${statusClass(item)}`}>
-                        <button className="v4-list-main" onClick={() => openEdit(item)}>
+                        <button className="v4-list-main" onClick={() => setSelected(item)}>
                           <strong>{item.titolo}</strong>
                           <span>{item.descrizione || "Nessuna descrizione"}</span>
                           <small>
@@ -620,7 +632,14 @@ export default function Agenda() {
         <div className="panel detail-panel">
           <div className="panel-header">
             <h3>{selected ? selected.titolo : "Reminder selezionato"}</h3>
-            {selected && <span className={`status-pill ${statusClass(selected)}`}>{statusOf(selected)}</span>}
+            {selected && (
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <span className={`status-pill ${statusClass(selected)}`}>{statusOf(selected)}</span>
+                {canEditReminder(selected) && (
+                  <button type="button" className="icon-action" onClick={() => openEdit(selected)}>Modifica</button>
+                )}
+              </div>
+            )}
           </div>
           {!selected ? (
             <p className="empty-text">Seleziona un reminder per vedere commenti e allegati.</p>

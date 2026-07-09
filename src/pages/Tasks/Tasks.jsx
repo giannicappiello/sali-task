@@ -39,7 +39,10 @@ function addMonths(date, months) {
 }
 
 function iso(date) {
-  return date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function dateOnly(value) {
@@ -82,7 +85,16 @@ function statusClass(item) {
 function formatDate(value, options = {}) {
   const date = dateOnly(value);
   if (!date) return "Senza data";
-  return new Date(`${date}T00:00:00`).toLocaleDateString("it-IT", options.weekday ? { weekday: "short", day: "2-digit", month: "short" } : { day: "2-digit", month: "short", year: "numeric" });
+
+  const [year, month, day] = date.split("-").map(Number);
+  const localDate = new Date(year, month - 1, day);
+
+  return localDate.toLocaleDateString(
+    "it-IT",
+    options.weekday
+      ? { weekday: "long", day: "2-digit", month: "long", year: "numeric" }
+      : { day: "2-digit", month: "2-digit", year: "numeric" }
+  );
 }
 
 function monthTitle(date) {
@@ -96,13 +108,82 @@ function safeArray(value) {
 
 function PlanningColorLegend() {
   return (
-    <div className="panel" style={{ padding: "12px 16px", marginBottom: "16px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-        <strong style={{ marginRight: "4px" }}>Legenda colori</strong>
-        <span className="status-pill open">Aperte</span>
-        <span className="status-pill today">Oggi</span>
-        <span className="status-pill danger">Scadute / bloccate</span>
-        <span className="status-pill done">Completate</span>
+    <div className="planning-calendar-legend" style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+      <strong style={{ marginRight: "4px" }}>Legenda colori</strong>
+      <span className="status-pill open">Aperte</span>
+      <span className="status-pill today">Oggi</span>
+      <span className="status-pill danger">Scadute / bloccate</span>
+      <span className="status-pill done">Completate</span>
+    </div>
+  );
+}
+
+function buildPlanningMonthDays(monthDate, phases, selectedDate) {
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+  const first = new Date(year, month, 1);
+  const start = new Date(year, month, 1 - ((first.getDay() + 6) % 7));
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = addDays(start, index);
+    const key = iso(date);
+    const items = phases.filter((phase) => phase.deadline_day === key);
+    const open = items.filter((phase) => !isDone(phase)).length;
+    const overdue = items.filter((phase) => phaseStatus(phase) === "Scaduta").length;
+    const done = items.filter(isDone).length;
+    return { key, date, inMonth: date.getMonth() === month, isToday: key === todayIso(), isSelected: key === selectedDate, open, overdue, done, total: items.length };
+  });
+}
+
+function SixMonthPlanningOverview({ currentMonth, phases, selectedDate, onSelectDate }) {
+  const months = Array.from({ length: 6 }).map((_, index) => {
+    const date = new Date(currentMonth);
+    date.setMonth(currentMonth.getMonth() + index);
+    return date;
+  });
+
+  return (
+    <div className="panel six-month-overview" style={{ marginBottom: "16px" }}>
+      <div className="panel-header" style={{ alignItems: "flex-start", gap: "12px" }}>
+        <div>
+          <h3>Panoramica 6 mesi</h3>
+          <p>Vista rapida delle fasi dei prossimi sei mesi.</p>
+        </div>
+        <PlanningColorLegend />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(150px, 1fr))", gap: "12px", overflowX: "auto" }}>
+        {months.map((month) => {
+          const days = buildPlanningMonthDays(month, phases, selectedDate);
+          return (
+            <div key={`${month.getFullYear()}-${month.getMonth()}`} className="six-month-card" style={{ minWidth: "150px" }}>
+              <strong style={{ display: "block", marginBottom: "8px", textTransform: "capitalize" }}>{monthTitle(month)}</strong>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "4px", fontSize: "11px", color: "#64748b", marginBottom: "5px" }}>
+                <span>L</span><span>M</span><span>M</span><span>G</span><span>V</span><span>S</span><span>D</span>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(18px, 1fr))", gap: "4px" }}>
+                {days.map((day) => (
+                  <button
+                    key={day.key}
+                    type="button"
+                    onClick={() => onSelectDate(day.key, month)}
+                    title={`${day.key} · ${day.total} fasi`}
+                    style={{
+                      minHeight: "24px",
+                      borderRadius: "8px",
+                      border: day.isSelected ? "1px solid #2563eb" : "1px solid #e5e7eb",
+                      background: day.overdue > 0 ? "#fee2e2" : day.done > 0 ? "#dcfce7" : day.open > 0 ? "#e0f2fe" : "#fff",
+                      color: day.inMonth ? "#0f172a" : "#94a3b8",
+                      fontWeight: day.total > 0 ? 800 : 500,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {day.date.getDate()}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -566,6 +647,17 @@ export default function Tasks() {
     );
   }
 
+
+  function PlanningActivityGroup({ title, items, danger = false, done = false }) {
+    if (!items.length) return null;
+    return (
+      <div className="dashboard-activity-group">
+        <h4 className={danger ? "danger" : done ? "done" : "success"}>{title}</h4>
+        {items.map((phase) => <PhaseCard key={phase.id} phase={phase} compact />)}
+      </div>
+    );
+  }
+
   return (
     <div className="tasks-page v4-page planning-clean-page">
       <div className="page-title-row">
@@ -573,17 +665,40 @@ export default function Tasks() {
           <h1>Planning fasi</h1>
           <p>Vista chiara delle attività per data, progetto, reparto e stato di avanzamento.</p>
         </div>
-        <button className="primary-action" type="button" onClick={() => openPhaseModal(null)}><Plus size={18} /> Nuova task/fase</button>
+        <button className="primary-action" type="button" onClick={() => openPhaseModal(null)}>
+          <Plus size={18} /> Nuova task/fase
+        </button>
       </div>
 
-      <div className="planning-kpi-row">
-        <div className="planning-kpi-card"><span>Aperte</span><strong>{totals.open}</strong></div>
-        <div className="planning-kpi-card today"><span>Oggi</span><strong>{totals.today}</strong></div>
-        <div className="planning-kpi-card danger"><span>Scadute</span><strong>{totals.overdue}</strong></div>
-        <div className="planning-kpi-card done"><span>Completate</span><strong>{totals.done}</strong></div>
+      <div className="calendar-kpi-grid dashboard-activity-kpis">
+        <button type="button" className={`calendar-kpi success ${statusFilter === "aperte" ? "active" : ""}`} onClick={() => setStatusFilter("aperte")}>
+          <CalendarDays size={22} />
+          <div><strong>{loading ? "..." : totals.open}</strong><span>Task/fasi pianificate</span></div>
+        </button>
+        <button type="button" className={`calendar-kpi danger ${statusFilter === "scadute" ? "active" : ""}`} onClick={() => setStatusFilter("scadute")}>
+          <Clock3 size={22} />
+          <div><strong>{loading ? "..." : totals.overdue}</strong><span>Task/fasi scadute</span></div>
+        </button>
+        <button type="button" className={`calendar-kpi success ${statusFilter === "completate" ? "active" : ""}`} onClick={() => setStatusFilter("completate")}>
+          <CheckCircle2 size={22} />
+          <div><strong>{loading ? "..." : totals.done}</strong><span>Task/fasi completate</span></div>
+        </button>
+        <button type="button" className={`calendar-kpi ${statusFilter === "oggi" ? "active" : ""}`} onClick={() => setStatusFilter("oggi")}>
+          <CalendarDays size={22} />
+          <div><strong>{loading ? "..." : totals.today}</strong><span>Task/fasi oggi</span></div>
+        </button>
       </div>
 
-      <PlanningColorLegend />
+      <SixMonthPlanningOverview
+        currentMonth={cursor}
+        phases={filtered}
+        selectedDate={selectedDate}
+        onSelectDate={(dayKey, monthDate) => {
+          setSelectedDate(dayKey);
+          setCursor(new Date(monthDate));
+          setView("month");
+        }}
+      />
 
       <div className="v4-toolbar planning-toolbar-clean">
         <div className="task-search">
@@ -604,99 +719,77 @@ export default function Tasks() {
         </div>
       </div>
 
-      <div className="planning-navigation panel">
-        <div className="planning-nav-left">
-          <button type="button" className="icon-action" onClick={() => moveCursor(-1)}><ChevronLeft size={18} /> Indietro</button>
-          <div>
-            <strong>{view === "month" ? monthTitle(cursor) : view === "week" ? "Settimana" : formatDate(selectedDate)}</strong>
-            <span>{filtered.length} attività visualizzate</span>
-          </div>
-          <button type="button" className="icon-action" onClick={() => moveCursor(1)}>Avanti <ChevronRight size={18} /></button>
-        </div>
-
-        <div className="planning-view-tabs">
-          {[["month", "Mese"], ["week", "Settimana"], ["day", "Giorno"]].map(([value, label]) => (
-            <button key={value} className={view === value ? "active" : ""} onClick={() => setView(value)}>{label}</button>
-          ))}
-          <button onClick={() => { setCursor(new Date()); setSelectedDate(todayIso()); }}>Oggi</button>
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="panel"><p className="empty-text">Caricamento planning...</p></div>
-      ) : view === "month" ? (
-        <div className="planning-month-panel panel">
-          <div className="planning-week-labels"><span>Lun</span><span>Mar</span><span>Mer</span><span>Gio</span><span>Ven</span><span>Sab</span><span>Dom</span></div>
-          <div className="planning-grid month clean-month">
-            {days.map((day) => {
-              const items = phasesByDay.get(day.key) || [];
-              const summary = daySummary(items);
-              return (
-                <button key={day.key} className={`planning-day clean ${day.inMonth === false ? "muted" : ""} ${selectedDate === day.key ? "selected" : ""}`} type="button" onClick={() => selectDay(day.key)}>
-                  <strong>{formatDate(day.key, { weekday: true })}</strong>
-                  {items.length === 0 ? <span className="planning-empty-day">Nessuna attività</span> : (
-                    <div className="planning-day-summary">
-                      {summary.open > 0 && <span className="summary-line open">Aperte <b>{summary.open}</b></span>}
-                      {summary.overdue > 0 && <span className="summary-line danger">Scadute <b>{summary.overdue}</b></span>}
-                      {summary.done > 0 && <span className="summary-line done">Completate <b>{summary.done}</b></span>}
-                    </div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ) : view === "week" ? (
-        <div className="planning-week-list">
-          {days.map((day) => {
-            const items = phasesByDay.get(day.key) || [];
-            return (
-              <section className="panel planning-week-day" key={day.key}>
-                <button type="button" className="planning-week-day-title" onClick={() => selectDay(day.key)}>
-                  <strong>{formatDate(day.key, { weekday: true })}</strong>
-                  <span>{items.length} attività</span>
-                </button>
-                {items.length === 0 ? <p className="empty-text">Nessuna attività.</p> : <div className="planning-task-list">{items.map((phase) => <PhaseCard key={phase.id} phase={phase} compact />)}</div>}
-              </section>
-            );
-          })}
-        </div>
-      ) : null}
-
-      <div className="v4-split planning-detail-split">
-        <section className="panel">
-          <div className="panel-header">
-            <h3>Attività del giorno · {formatDate(selectedDate, { weekday: true })}</h3>
-          </div>
-          {selectedItems.length === 0 ? (
-            <div className="empty-planning-box">
-              <CalendarDays size={34} />
-              <strong>Nessuna attività con deadline in questa giornata</strong>
-              <span>Controlla i filtri o passa alla vista mese/settimana.</span>
+      <div className="calendar-layout-grid">
+        <div className="panel calendar-main-panel">
+          <div className="calendar-main-header">
+            <button type="button" onClick={() => moveCursor(-1)}><ChevronLeft size={20} /></button>
+            <div style={{ display: "grid", gap: "6px", justifyItems: "center" }}>
+              <h3>{monthTitle(cursor)}</h3>
+              <PlanningColorLegend />
             </div>
-          ) : (
-            <div className="planning-task-list">{selectedItems.map((phase) => <PhaseCard key={phase.id} phase={phase} />)}</div>
-          )}
-        </section>
+            <button type="button" onClick={() => moveCursor(1)}><ChevronRight size={20} /></button>
+          </div>
 
-        <aside className="panel detail-panel">
-          <div className="panel-header"><h3>Dettaglio fase</h3><CalendarDays size={20} /></div>
-          {!selectedPhase ? (
-            <p className="empty-text">Seleziona una fase per vedere riepilogo, reparto e avanzamento.</p>
+          {loading ? (
+            <p className="table-message">Caricamento planning...</p>
           ) : (
-            <div className="detail-card planning-selected-card">
-              <h2>{selectedPhase.titolo}</h2>
-              <p>{selectedPhase.descrizione || selectedPhase.note || "Nessuna descrizione."}</p>
-              <div className="mini-meta">
-                <span>Progetto: {selectedPhase.v4_progetti?.titolo || "Senza progetto"}</span>
-                <span>Deadline: {formatDate(selectedPhase.deadline)}</span>
-                <span>Stato: {isBlockedByOpenPhase(selectedPhase, enrichedPhases) ? "Bloccata" : phaseStatus(selectedPhase)}</span>
-                {selectedPhase.bloccante_id && <span>Fase bloccante: {getBlockingPhase(selectedPhase, enrichedPhases)?.titolo || "-"}</span>}
-                <span>Reparti: {(selectedPhase.planningDepartments || []).map((item) => item.nome).join(", ") || selectedPhase.reparti?.nome || "-"}</span>
+            <div className="full-calendar">
+              <div className="full-calendar-weekdays">
+                <span>Lunedì</span><span>Martedì</span><span>Mercoledì</span><span>Giovedì</span><span>Venerdì</span><span>Sabato</span><span>Domenica</span>
+              </div>
+              <div className="full-calendar-days">
+                {days.map((day) => {
+                  const items = phasesByDay.get(day.key) || [];
+                  const summary = daySummary(items);
+                  return (
+                    <button
+                      key={day.key}
+                      type="button"
+                      className={`full-calendar-day ${day.inMonth === false ? "muted" : ""} ${day.key === todayIso() ? "today" : ""} ${selectedDate === day.key ? "selected" : ""} ${items.length ? "has-task" : ""} ${summary.overdue > 0 ? "has-overdue" : ""}`}
+                      onClick={() => {
+                        setSelectedDate(day.key);
+                        setCursor(new Date(`${day.key}T00:00:00`));
+                        setView("month");
+                      }}
+                    >
+                      <span className="day-number">{day.date.getDate()}</span>
+                      {items.length > 0 && (
+                        <div className="dashboard-day-counts">
+                          {summary.open > 0 && <span className="dashboard-day-line success">Aperte {summary.open}</span>}
+                          {summary.overdue > 0 && <span className="dashboard-day-line danger">Scadute {summary.overdue}</span>}
+                          {summary.done > 0 && <span className="status-pill done">Completate {summary.done}</span>}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
-        </aside>
+        </div>
+
+        <div className="panel calendar-side-panel">
+          <div className="panel-header">
+            <div>
+              <h3>{formatDate(selectedDate, { weekday: true })}</h3>
+              <p>{selectedItems.length} attività nel giorno</p>
+            </div>
+          </div>
+
+          {selectedItems.length === 0 ? (
+            <div className="calendar-empty-day">
+              <CalendarDays size={34} />
+              <h4>Nessuna attività</h4>
+              <p>Non ci sono fasi/task per questa giornata.</p>
+            </div>
+          ) : (
+            <div className="dashboard-activity-list">
+              <PlanningActivityGroup title="Task/fasi pianificate" items={selectedItems.filter((item) => !isDone(item) && phaseStatus(item) !== "Scaduta")} />
+              <PlanningActivityGroup title="Task/fasi scadute / bloccate" danger items={selectedItems.filter((item) => !isDone(item) && phaseStatus(item) === "Scaduta")} />
+              <PlanningActivityGroup title="Completate" done items={selectedItems.filter(isDone)} />
+            </div>
+          )}
+        </div>
       </div>
 
       {undatedItems.length > 0 && (

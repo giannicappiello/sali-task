@@ -86,12 +86,99 @@ function statusLabel(item) {
 
 function DashboardColorLegend() {
   return (
-    <div className="panel" style={{ padding: "12px 16px", marginBottom: "16px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-        <strong style={{ marginRight: "4px" }}>Legenda colori</strong>
-        <span className="dashboard-day-line success">Pianificate</span>
-        <span className="dashboard-day-line danger">Scadute</span>
-        <span className="status-pill done">Completate / evasi</span>
+    <div className="dashboard-calendar-legend" style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+      <strong style={{ marginRight: "4px" }}>Legenda colori</strong>
+      <span className="dashboard-day-line success">Pianificate</span>
+      <span className="dashboard-day-line danger">Scadute</span>
+      <span className="status-pill done">Completate / evasi</span>
+    </div>
+  );
+}
+
+function buildDashboardMonthDays(monthDate, activities, selectedDate) {
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const startOffset = (firstDay.getDay() + 6) % 7;
+  const start = new Date(year, month, 1 - startOffset);
+
+  return Array.from({ length: 42 }).map((_, index) => {
+    const day = new Date(start);
+    day.setDate(start.getDate() + index);
+    const dateKey = formatDateForQuery(day);
+    const dayItems = activities.filter((item) => dateOnly(item.deadline) === dateKey);
+    const dayTasks = dayItems.filter((item) => item.tipo === "task");
+    const dayReminders = dayItems.filter((item) => item.tipo === "reminder");
+    const plannedTasks = dayTasks.filter((item) => !isTaskDone(item) && !isOverdue(item)).length;
+    const overdueTasks = dayTasks.filter(isOverdue).length;
+    const plannedReminders = dayReminders.filter((item) => !isReminderDone(item) && !isOverdue(item)).length;
+    const overdueReminders = dayReminders.filter(isOverdue).length;
+    const doneItems = dayItems.filter((item) => item.tipo === "task" ? isTaskDone(item) : isReminderDone(item)).length;
+
+    return {
+      date: day,
+      dateKey,
+      inMonth: day.getMonth() === month,
+      isToday: dateKey === todayIso(),
+      isSelected: dateKey === selectedDate,
+      planned: plannedTasks + plannedReminders,
+      overdue: overdueTasks + overdueReminders,
+      done: doneItems,
+      total: dayItems.length,
+    };
+  });
+}
+
+function SixMonthDashboardOverview({ currentMonth, activities, selectedDate, onSelectDate }) {
+  const months = Array.from({ length: 6 }).map((_, index) => {
+    const date = new Date(currentMonth);
+    date.setMonth(currentMonth.getMonth() + index);
+    return date;
+  });
+
+  return (
+    <div className="panel six-month-overview" style={{ marginBottom: "16px" }}>
+      <div className="panel-header" style={{ alignItems: "flex-start", gap: "12px" }}>
+        <div>
+          <h3>Panoramica 6 mesi</h3>
+          <p>Vista rapida delle attività dei prossimi sei mesi.</p>
+        </div>
+        <DashboardColorLegend />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(150px, 1fr))", gap: "12px", overflowX: "auto" }}>
+        {months.map((month) => {
+          const days = buildDashboardMonthDays(month, activities, selectedDate);
+          return (
+            <div key={`${month.getFullYear()}-${month.getMonth()}`} className="six-month-card" style={{ minWidth: "150px" }}>
+              <strong style={{ display: "block", marginBottom: "8px", textTransform: "capitalize" }}>{formatMonth(month)}</strong>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "4px", fontSize: "11px", color: "#64748b", marginBottom: "5px" }}>
+                <span>L</span><span>M</span><span>M</span><span>G</span><span>V</span><span>S</span><span>D</span>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(18px, 1fr))", gap: "4px" }}>
+                {days.map((day) => (
+                  <button
+                    key={day.dateKey}
+                    type="button"
+                    onClick={() => onSelectDate(day.dateKey, month)}
+                    title={`${day.dateKey} · ${day.total} attività`}
+                    className={`mini-calendar-day ${day.inMonth ? "" : "muted"} ${day.isToday ? "today" : ""} ${day.isSelected ? "selected" : ""}`}
+                    style={{
+                      minHeight: "24px",
+                      borderRadius: "8px",
+                      border: day.isSelected ? "1px solid #2563eb" : "1px solid #e5e7eb",
+                      background: day.overdue > 0 ? "#fee2e2" : day.done > 0 ? "#dcfce7" : day.planned > 0 ? "#e0f2fe" : "#fff",
+                      color: day.inMonth ? "#0f172a" : "#94a3b8",
+                      fontWeight: day.total > 0 ? 800 : 500,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {day.date.getDate()}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -108,6 +195,7 @@ function Dashboard() {
   const [templateDepartments, setTemplateDepartments] = useState([]);
   const [phaseDepartments, setPhaseDepartments] = useState([]);
   const [phaseProducts, setPhaseProducts] = useState([]);
+  const [reminderDepartments, setReminderDepartments] = useState([]);
   const [currentMonth, setCurrentMonth] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState(todayIso());
   const [activityFilter, setActivityFilter] = useState(null);
@@ -130,7 +218,7 @@ function Dashboard() {
 
     const departmentIds = userDepartmentIds.length ? userDepartmentIds : [profile?.reparto_id].filter(Boolean);
 
-    const [phasesRes, phaseDepartmentsRes, phaseProductsRes, remindersRes, messageParticipantsRes, projectsRes, departmentsRes, productsRes, templatesRes, templateDepartmentsRes] = await Promise.all([
+    const [phasesRes, phaseDepartmentsRes, phaseProductsRes, remindersRes, reminderDepartmentsRes, messageParticipantsRes, projectsRes, departmentsRes, productsRes, templatesRes, templateDepartmentsRes] = await Promise.all([
       supabase
         .from("v4_fasi_progetto")
         .select("id,titolo,descrizione,note,stato,deadline,reparto_id,progetto_id,completato_at,v4_progetti(id,titolo),reparti(id,nome)")
@@ -140,8 +228,8 @@ function Dashboard() {
       supabase
         .from("agenda_reminder")
         .select("id,titolo,descrizione,stato,deadline,completato,utente_id,prodotto_id,progetto_id,updated_at")
-        .eq("utente_id", profile.id)
         .order("deadline", { ascending: true, nullsFirst: false }),
+      supabase.from("agenda_reminder_reparti").select("id,reminder_id,reparto_id,completato,completato_at,completato_da"),
       supabase
         .from("chat_partecipanti")
         .select("id,ultimo_letto_at,conversazione_id,chat_conversazioni(updated_at)")
@@ -157,6 +245,7 @@ function Dashboard() {
     if (phaseDepartmentsRes.error) console.error("Dashboard reparti fase:", phaseDepartmentsRes.error.message);
     if (phaseProductsRes.error) console.error("Dashboard prodotti fase:", phaseProductsRes.error.message);
     if (remindersRes.error) console.error("Dashboard reminder:", remindersRes.error.message);
+    if (reminderDepartmentsRes.error) console.error("Dashboard reparti reminder:", reminderDepartmentsRes.error.message);
     if (messageParticipantsRes.error) console.error("Dashboard messaggi:", messageParticipantsRes.error.message);
 
     const allPhaseDepartments = phaseDepartmentsRes.data || [];
@@ -177,9 +266,21 @@ function Dashboard() {
       return new Date(updatedAt).getTime() > new Date(row.ultimo_letto_at).getTime();
     }).length;
 
+    const allReminderDepartments = reminderDepartmentsRes.data || [];
+    const visibleReminders = (remindersRes.data || []).filter((reminder) => {
+      if (reminder.utente_id === profile.id) return true;
+      if (!departmentIds.length) return false;
+      const reminderDepartmentIds = allReminderDepartments
+        .filter((row) => row.reminder_id === reminder.id && row.reparto_id)
+        .map((row) => row.reparto_id);
+      return reminderDepartmentIds.some((id) => departmentIds.includes(id));
+    });
+    const visibleReminderIds = new Set(visibleReminders.map((reminder) => reminder.id));
+
     setTasks(visibleTasks.map((item) => ({ ...item, tipo: "task" })));
-    setReminders((remindersRes.data || []).map((item) => ({ ...item, tipo: "reminder" })));
+    setReminders(visibleReminders.map((item) => ({ ...item, tipo: "reminder" })));
     setPhaseDepartments(allPhaseDepartments);
+    setReminderDepartments(allReminderDepartments.filter((row) => visibleReminderIds.has(row.reminder_id)));
     setPhaseProducts(phaseProductsRes.data || []);
     setProjects(projectsRes.data || []);
     setDepartments((departmentsRes.data || []).filter((item) => item.attivo !== false));
@@ -451,7 +552,7 @@ function Dashboard() {
       <div className="page-title-row">
         <div>
           <h1>Le mie attività</h1>
-          <p>Task/fasi del tuo reparto e reminder personali.</p>
+          <p>Task/fasi del tuo reparto e reminder personali o condivisi con il tuo reparto.</p>
         </div>
         <div className="dashboard-quick-actions">
           <button className="primary-action" onClick={openNewPhase}><Plus size={18} /> Nuova task/fase</button>
@@ -479,13 +580,25 @@ function Dashboard() {
         </button>
       </div>
 
-      <DashboardColorLegend />
+      <SixMonthDashboardOverview
+        currentMonth={currentMonth}
+        activities={activities}
+        selectedDate={selectedDate}
+        onSelectDate={(dateKey, monthDate) => {
+          setSelectedDate(dateKey);
+          setCurrentMonth(new Date(monthDate));
+          setActivityFilter(null);
+        }}
+      />
 
       <div className="calendar-layout-grid">
         <div className="panel calendar-main-panel">
           <div className="calendar-main-header">
             <button type="button" onClick={() => changeMonth(-1)}><ChevronLeft size={20} /></button>
-            <h3>{formatMonth(currentMonth)}</h3>
+            <div style={{ display: "grid", gap: "6px", justifyItems: "center" }}>
+              <h3>{formatMonth(currentMonth)}</h3>
+              <DashboardColorLegend />
+            </div>
             <button type="button" onClick={() => changeMonth(1)}><ChevronRight size={20} /></button>
           </div>
 

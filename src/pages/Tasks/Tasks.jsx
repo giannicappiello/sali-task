@@ -93,6 +93,21 @@ function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+
+function PlanningColorLegend() {
+  return (
+    <div className="panel" style={{ padding: "12px 16px", marginBottom: "16px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+        <strong style={{ marginRight: "4px" }}>Legenda colori</strong>
+        <span className="status-pill open">Aperte</span>
+        <span className="status-pill today">Oggi</span>
+        <span className="status-pill danger">Scadute / bloccate</span>
+        <span className="status-pill done">Completate</span>
+      </div>
+    </div>
+  );
+}
+
 export default function Tasks() {
   const { profile, hasPermission, isAdmin, userDepartmentIds = [] } = useAuth();
   const [params, setParams] = useSearchParams();
@@ -567,6 +582,8 @@ export default function Tasks() {
         <div className="planning-kpi-card danger"><span>Scadute</span><strong>{totals.overdue}</strong></div>
         <div className="planning-kpi-card done"><span>Completate</span><strong>{totals.done}</strong></div>
       </div>
+
+      <PlanningColorLegend />
 
       <div className="v4-toolbar planning-toolbar-clean">
         <div className="task-search">

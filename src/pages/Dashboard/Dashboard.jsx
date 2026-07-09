@@ -83,6 +83,20 @@ function statusLabel(item) {
   return "Pianificata";
 }
 
+
+function DashboardColorLegend() {
+  return (
+    <div className="panel" style={{ padding: "12px 16px", marginBottom: "16px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+        <strong style={{ marginRight: "4px" }}>Legenda colori</strong>
+        <span className="dashboard-day-line success">Pianificate</span>
+        <span className="dashboard-day-line danger">Scadute</span>
+        <span className="status-pill done">Completate / evasi</span>
+      </div>
+    </div>
+  );
+}
+
 function Dashboard() {
   const { profile, userDepartmentIds = [] } = useAuth();
   const [tasks, setTasks] = useState([]);
@@ -464,6 +478,8 @@ function Dashboard() {
           <div><strong>{loading ? "..." : monthStats.overdueReminders}</strong><span>Reminder scaduti</span></div>
         </button>
       </div>
+
+      <DashboardColorLegend />
 
       <div className="calendar-layout-grid">
         <div className="panel calendar-main-panel">

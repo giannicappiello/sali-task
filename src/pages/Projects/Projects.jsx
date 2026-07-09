@@ -34,6 +34,13 @@ const phaseEmpty = {
   prodotti: [],
 };
 
+const quickProductEmpty = {
+  nome: "",
+  codice: "",
+  brand: "",
+  categoria: "",
+};
+
 const closedStates = ["evaso", "evasa", "completato", "completata", "chiuso", "chiusa"];
 
 function normalize(value) {
@@ -116,6 +123,10 @@ export default function Projects() {
   const [loading, setLoading] = useState(true);
   const [dragActive, setDragActive] = useState(false);
   const [showPhaseProducts, setShowPhaseProducts] = useState(false);
+  const [projectProductQuery, setProjectProductQuery] = useState("");
+  const [quickProductModal, setQuickProductModal] = useState(false);
+  const [quickProductForm, setQuickProductForm] = useState(quickProductEmpty);
+  const [savingQuickProduct, setSavingQuickProduct] = useState(false);
 
   useEffect(() => {
     if (profile?.id) loadData();
@@ -336,6 +347,16 @@ export default function Projects() {
     });
   }, [projects, phasesByProject, productsByProject, departmentsByProject, productsByPhase, query, statusFilter]);
 
+  const filteredProjectProducts = useMemo(() => {
+    const text = projectProductQuery.trim().toLowerCase();
+    if (!text) return products;
+    return products.filter((product) =>
+      `${product.nome || ""} ${product.codice || ""} ${product.brand || ""} ${product.categoria || ""}`
+        .toLowerCase()
+        .includes(text)
+    );
+  }, [products, projectProductQuery]);
+
   function getProjectProductIds(projectId) {
     return projectProducts.filter((row) => row.progetto_id === projectId && row.prodotto_id).map((row) => row.prodotto_id);
   }
@@ -358,6 +379,7 @@ export default function Projects() {
 
   function openProject(project = null) {
     setSelectedProject(project);
+    setProjectProductQuery("");
     setProjectForm(
       project
         ? {
@@ -419,6 +441,49 @@ export default function Projects() {
         : [...currentIds, departmentId];
       return { ...current, reparto_ids: nextIds, reparto_id: nextIds[0] || "" };
     });
+  }
+
+  function openQuickProductModal() {
+    if (!canManage) return alert("Non hai i permessi per creare prodotti.");
+    setQuickProductForm({ ...quickProductEmpty, nome: projectProductQuery.trim() });
+    setQuickProductModal(true);
+  }
+
+  function updateQuickProductForm(field, value) {
+    setQuickProductForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function saveQuickProduct(e) {
+    e.preventDefault();
+    if (!canManage) return alert("Non hai i permessi per creare prodotti.");
+    if (!quickProductForm.nome.trim()) return alert("Inserisci il nome del prodotto.");
+
+    setSavingQuickProduct(true);
+    const payload = {
+      nome: quickProductForm.nome.trim(),
+      codice: quickProductForm.codice.trim() || null,
+      brand: quickProductForm.brand.trim() || null,
+      categoria: quickProductForm.categoria.trim() || null,
+      stato: "Attivo",
+      attivo: true,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase.from("prodotti").insert(payload).select("id,nome,codice,brand,categoria").single();
+    setSavingQuickProduct(false);
+    if (error) return alert(error.message);
+
+    if (data?.id) {
+      setProducts((current) => [...current, data].sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""))));
+      setProjectForm((current) => ({
+        ...current,
+        prodotti: safeArray(current.prodotti).includes(data.id) ? current.prodotti : [...safeArray(current.prodotti), data.id],
+      }));
+      setProjectProductQuery("");
+    }
+
+    setQuickProductModal(false);
+    setQuickProductForm(quickProductEmpty);
   }
 
   async function saveProject(e) {
@@ -486,8 +551,7 @@ export default function Projects() {
           priorita: null,
           assegnato_a: null,
           ordine: index + 1,
-          creato_da: actorId,
-          modificato_da: actorId,
+              modificato_da: actorId,
         })
         .select("id")
         .single();
@@ -1187,7 +1251,33 @@ export default function Projects() {
 
             <div className="checkbox-group scrollable-check-group">
               <strong>Prodotti associati</strong>
-              {products.map((p) => <label key={p.id}><input type="checkbox" checked={projectForm.prodotti.includes(p.id)} onChange={() => toggleMulti(p.id, "prodotti")} />{p.nome}{p.codice ? ` · ${p.codice}` : ""}</label>)}
+              <div className="v4-toolbar" style={{ margin: "8px 0 10px", padding: 0, gap: "10px" }}>
+                <div className="task-search">
+                  <Search size={18} />
+                  <input
+                    placeholder="Cerca prodotto per nome, codice, brand..."
+                    value={projectProductQuery}
+                    onChange={(e) => setProjectProductQuery(e.target.value)}
+                  />
+                </div>
+                <button type="button" className="secondary-action" onClick={openQuickProductModal}>
+                  <Plus size={18} /> Crea nuovo prodotto
+                </button>
+              </div>
+              {filteredProjectProducts.length === 0 ? (
+                <p className="empty-text">Nessun prodotto trovato.</p>
+              ) : (
+                filteredProjectProducts.map((p) => (
+                  <label key={p.id}>
+                    <input
+                      type="checkbox"
+                      checked={safeArray(projectForm.prodotti).includes(p.id)}
+                      onChange={() => toggleMulti(p.id, "prodotti")}
+                    />
+                    {p.nome}{p.codice ? ` · ${p.codice}` : ""}
+                  </label>
+                ))
+              )}
             </div>
 
             <div className="checkbox-group">
@@ -1196,6 +1286,31 @@ export default function Projects() {
             </div>
 
             <button className="primary-action" disabled={saving}><Save size={18} /> {saving ? "Salvataggio..." : "Salva progetto"}</button>
+          </form>
+        </div>
+      )}
+
+      {quickProductModal && (
+        <div className="modal-backdrop">
+          <form className="modal-card v4-modal" onSubmit={saveQuickProduct}>
+            <div className="modal-header">
+              <h2>Crea nuovo prodotto</h2>
+              <button type="button" onClick={() => setQuickProductModal(false)}><X size={20} /></button>
+            </div>
+
+            <label>Nome *<input value={quickProductForm.nome} onChange={(e) => updateQuickProductForm("nome", e.target.value)} autoFocus /></label>
+            <div className="form-grid-2">
+              <label>Codice<input value={quickProductForm.codice} onChange={(e) => updateQuickProductForm("codice", e.target.value)} /></label>
+              <label>Brand<input value={quickProductForm.brand} onChange={(e) => updateQuickProductForm("brand", e.target.value)} /></label>
+              <label>Categoria<input value={quickProductForm.categoria} onChange={(e) => updateQuickProductForm("categoria", e.target.value)} /></label>
+            </div>
+
+            <div className="dashboard-message-actions">
+              <button type="button" className="secondary-action" onClick={() => setQuickProductModal(false)}>Annulla</button>
+              <button type="submit" className="primary-action" disabled={savingQuickProduct}>
+                <Save size={18} /> {savingQuickProduct ? "Salvataggio..." : "Salva e associa"}
+              </button>
+            </div>
           </form>
         </div>
       )}

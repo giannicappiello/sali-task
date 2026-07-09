@@ -143,8 +143,7 @@ export default function Products() {
       updated_at: new Date().toISOString(),
     };
 
-    if (!selected?.id) payload.creato_da = profile?.id || null;
-
+    
     const request = selected?.id
       ? supabase.from("prodotti").update(payload).eq("id", selected.id).select().single()
       : supabase.from("prodotti").insert(payload).select().single();

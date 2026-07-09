@@ -10,6 +10,8 @@ const defaultForm = {
   deadline: new Date().toISOString().slice(0, 10),
   prodotto_id: "",
   progetto_id: "",
+  prodotti: [],
+  reparto_ids: [],
   stato: "Aperto",
 };
 
@@ -66,6 +68,10 @@ export default function Agenda() {
   const [reminders, setReminders] = useState([]);
   const [products, setProducts] = useState([]);
   const [projects, setProjects] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [reminderDepartments, setReminderDepartments] = useState([]);
+  const [reminderProducts, setReminderProducts] = useState([]);
+  const [productQuery, setProductQuery] = useState("");
   const [selected, setSelected] = useState(null);
   const [comments, setComments] = useState([]);
   const [attachments, setAttachments] = useState([]);
@@ -113,14 +119,16 @@ export default function Agenda() {
     const userDepartmentIds = profile?.reparto_ids || [];
 
     let reminderQuery = supabase.from("agenda_reminder").select("*");
-    if (!adminMode) reminderQuery = reminderQuery.eq("utente_id", profile.id);
 
-    const [remRes, prodRes, projRes, projectDepartmentsRes, usersRes] = await Promise.all([
+    const [remRes, prodRes, projRes, projectDepartmentsRes, usersRes, departmentsRes, reminderDepartmentsRes, reminderProductsRes] = await Promise.all([
       reminderQuery.order("deadline", { ascending: true, nullsFirst: false }),
       supabase.from("prodotti").select("id,nome,codice,attivo").order("nome").limit(5000),
       supabase.from("v4_progetti").select("id,titolo").order("created_at", { ascending: false }).limit(500),
       supabase.from("v4_progetto_reparti").select("progetto_id,reparto_id"),
       supabase.from("utenti").select("id,nome,email,attivo").order("nome"),
+      supabase.from("reparti").select("id,nome,attivo").order("nome"),
+      supabase.from("agenda_reminder_reparti").select("id,reminder_id,reparto_id,completato,completato_at,completato_da,note_completamento"),
+      supabase.from("agenda_reminder_prodotti").select("id,reminder_id,prodotto_id,prodotto_nome"),
     ]);
 
     if (remRes.error) console.error("Reminder agenda_reminder:", remRes.error.message);
@@ -128,6 +136,9 @@ export default function Agenda() {
     if (projRes.error) console.error("Progetti reminder:", projRes.error.message);
     if (projectDepartmentsRes.error) console.error("Reparti progetto reminder:", projectDepartmentsRes.error.message);
     if (usersRes.error) console.error("Utenti reminder:", usersRes.error.message);
+    if (departmentsRes.error) console.error("Reparti reminder:", departmentsRes.error.message);
+    if (reminderDepartmentsRes.error) console.error("Reparti collegati reminder:", reminderDepartmentsRes.error.message);
+    if (reminderProductsRes.error) console.error("Prodotti collegati reminder:", reminderProductsRes.error.message);
 
     const allProjects = projRes.data || [];
     const projectDepartments = projectDepartmentsRes.data || [];
@@ -141,10 +152,24 @@ export default function Agenda() {
           return deps.length === 0 || deps.some((id) => userDepartmentIds.includes(id));
         });
 
-    setReminders(remRes.data || []);
+    const allReminderDepartments = reminderDepartmentsRes.data || [];
+    const allReminderProducts = reminderProductsRes.data || [];
+    const visibleReminders = adminMode
+      ? (remRes.data || [])
+      : (remRes.data || []).filter((item) => {
+          if (item.utente_id === profile.id) return true;
+          const ids = allReminderDepartments.filter((row) => row.reminder_id === item.id).map((row) => row.reparto_id).filter(Boolean);
+          return ids.some((id) => userDepartmentIds.includes(id));
+        });
+    const visibleReminderIds = new Set(visibleReminders.map((item) => item.id));
+
+    setReminders(visibleReminders);
     setProducts((prodRes.data || []).filter((item) => item.attivo !== false));
     setProjects(visibleProjects);
     setUsers((usersRes.data || []).filter((item) => item.attivo !== false));
+    setDepartments((departmentsRes.data || []).filter((item) => item.attivo !== false));
+    setReminderDepartments(allReminderDepartments.filter((row) => visibleReminderIds.has(row.reminder_id)));
+    setReminderProducts(allReminderProducts.filter((row) => visibleReminderIds.has(row.reminder_id)));
     setLoading(false);
   }
 
@@ -159,6 +184,83 @@ export default function Agenda() {
 
     setComments(commentsRes.data || []);
     setAttachments(attachmentsRes.data || []);
+  }
+
+  function getReminderProductIds(reminderId, fallbackProductId = null) {
+    const ids = reminderProducts.filter((row) => row.reminder_id === reminderId && row.prodotto_id).map((row) => row.prodotto_id);
+    if (!ids.length && fallbackProductId) return [fallbackProductId];
+    return ids;
+  }
+
+  function getReminderDepartmentIds(reminderId) {
+    return reminderDepartments.filter((row) => row.reminder_id === reminderId && row.reparto_id).map((row) => row.reparto_id);
+  }
+
+  function getReminderProductNames(item) {
+    const ids = getReminderProductIds(item.id, item.prodotto_id);
+    return ids.map((id) => products.find((product) => product.id === id)?.nome).filter(Boolean).join(", ");
+  }
+
+  function getReminderDepartmentNames(item) {
+    const ids = getReminderDepartmentIds(item.id);
+    return ids.map((id) => departments.find((department) => department.id === id)?.nome).filter(Boolean).join(", ");
+  }
+
+  function getReminderDepartmentRows(item) {
+    if (!item?.id) return [];
+    return reminderDepartments
+      .filter((row) => row.reminder_id === item.id)
+      .map((row) => {
+        const department = departments.find((dep) => dep.id === row.reparto_id);
+        return department ? { ...department, reminder_reparto_id: row.id, completato: Boolean(row.completato), completato_at: row.completato_at, completato_da: row.completato_da } : null;
+      })
+      .filter(Boolean);
+  }
+
+  function canCompleteReminderDepartment(departmentId) {
+    if (adminMode || canWriteAgenda) return true;
+    const ids = profile?.reparto_ids || [];
+    return ids.includes(departmentId);
+  }
+
+  const filteredProductsForReminder = useMemo(() => {
+    const text = productQuery.trim().toLowerCase();
+    if (!text) return products;
+    return products.filter((product) => `${product.nome || ""} ${product.codice || ""}`.toLowerCase().includes(text));
+  }, [products, productQuery]);
+
+  function toggleFormArray(field, value) {
+    setForm((current) => {
+      const list = safeArray(current[field]);
+      const nextList = list.includes(value) ? list.filter((id) => id !== value) : [...list, value];
+      return { ...current, [field]: nextList };
+    });
+  }
+
+  function safeArray(value) {
+    return Array.isArray(value) ? value : [];
+  }
+
+  async function saveReminderAssociations(reminderId, productIds, departmentIds) {
+    await Promise.all([
+      supabase.from("agenda_reminder_prodotti").delete().eq("reminder_id", reminderId),
+      supabase.from("agenda_reminder_reparti").delete().eq("reminder_id", reminderId),
+    ]);
+
+    const productRows = safeArray(productIds).filter(Boolean).map((prodotto_id) => {
+      const product = products.find((item) => item.id === prodotto_id);
+      return { reminder_id: reminderId, prodotto_id, prodotto_nome: product?.nome || null };
+    });
+    const departmentRows = safeArray(departmentIds).filter(Boolean).map((reparto_id) => ({ reminder_id: reminderId, reparto_id, completato: false }));
+
+    if (productRows.length) {
+      const { error } = await supabase.from("agenda_reminder_prodotti").insert(productRows);
+      if (error) throw error;
+    }
+    if (departmentRows.length) {
+      const { error } = await supabase.from("agenda_reminder_reparti").insert(departmentRows);
+      if (error) throw error;
+    }
   }
 
   const filtered = useMemo(() => {
@@ -178,9 +280,10 @@ export default function Agenda() {
 
     if (text) {
       data = data.filter((item) => {
-        const productName = products.find((p) => p.id === item.prodotto_id)?.nome || "";
+        const productName = getReminderProductNames(item);
+        const departmentName = getReminderDepartmentNames(item);
         const projectTitle = projects.find((p) => p.id === item.progetto_id)?.titolo || "";
-        return `${item.titolo || ""} ${item.descrizione || ""} ${productName} ${projectTitle} ${userName(item.utente_id)}`
+        return `${item.titolo || ""} ${item.descrizione || ""} ${productName} ${departmentName} ${projectTitle} ${userName(item.utente_id)}`
           .toLowerCase()
           .includes(text);
       });
@@ -209,11 +312,13 @@ export default function Agenda() {
 
   function openNew() {
     if (!canWriteAgenda) return alert("Non hai i permessi per creare reminder.");
-    setForm({ ...defaultForm, deadline: todayIso() });
+    setForm({ ...defaultForm, deadline: todayIso(), prodotti: [], reparto_ids: [] });
+    setProductQuery("");
     setSelected(null);
     setComments([]);
     setAttachments([]);
     setComment("");
+    setProductQuery("");
     setFormOpen(true);
   }
 
@@ -226,9 +331,12 @@ export default function Agenda() {
       deadline: dateOnly(item.deadline) || todayIso(),
       prodotto_id: item.prodotto_id || "",
       progetto_id: item.progetto_id || "",
+      prodotti: getReminderProductIds(item.id, item.prodotto_id),
+      reparto_ids: getReminderDepartmentIds(item.id),
       stato: item.stato || "Aperto",
     });
     setComment("");
+    setProductQuery("");
     setFormOpen(true);
   }
 
@@ -244,7 +352,7 @@ export default function Agenda() {
       titolo: form.titolo.trim(),
       descrizione: form.descrizione.trim() || null,
       deadline: form.deadline || null,
-      prodotto_id: form.prodotto_id || null,
+      prodotto_id: safeArray(form.prodotti)[0] || form.prodotto_id || null,
       progetto_id: form.progetto_id || null,
       stato: form.stato || "Aperto",
       updated_at: new Date().toISOString(),
@@ -255,9 +363,19 @@ export default function Agenda() {
       : supabase.from("agenda_reminder").insert(payload).select().single();
 
     const { data, error } = await request;
-    setSaving(false);
-    if (error) return alert(`Errore salvataggio: ${error.message}`);
+    if (error) {
+      setSaving(false);
+      return alert(`Errore salvataggio: ${error.message}`);
+    }
 
+    try {
+      await saveReminderAssociations(data.id, form.prodotti, form.reparto_ids);
+    } catch (associationError) {
+      setSaving(false);
+      return alert(`Errore associazioni reminder: ${associationError.message}`);
+    }
+
+    setSaving(false);
     await loadData();
     if (data?.id) {
       setSelected(data);
@@ -298,6 +416,8 @@ export default function Agenda() {
 
     await supabase.from("agenda_commenti").delete().eq("reminder_id", item.id);
     await supabase.from("agenda_allegati").delete().eq("reminder_id", item.id);
+    await supabase.from("agenda_reminder_prodotti").delete().eq("reminder_id", item.id);
+    await supabase.from("agenda_reminder_reparti").delete().eq("reminder_id", item.id);
 
     const { error } = await supabase.from("agenda_reminder").delete().eq("id", item.id);
     if (error) return alert(error.message);
@@ -309,6 +429,12 @@ export default function Agenda() {
 
   async function completeReminder(item) {
     if (!canEditReminder(item)) return alert("Non hai i permessi per completare questo reminder.");
+
+    const departmentsForReminder = getReminderDepartmentRows(item);
+    if (departmentsForReminder.length > 0) {
+      return alert("Questo reminder è condiviso con più reparti. Completa il reminder reparto per reparto dalla scheda di dettaglio o dalla modifica reminder.");
+    }
+
     const { error } = await supabase
       .from("agenda_reminder")
       .update({ completato: true, stato: "Completato", completato_il: new Date().toISOString(), updated_at: new Date().toISOString() })
@@ -317,6 +443,60 @@ export default function Agenda() {
     await loadData();
     const updated = { ...item, completato: true, stato: "Completato" };
     if (selected?.id === item.id) setSelected(updated);
+  }
+
+  async function completeReminderDepartment(item, department) {
+    if (!item?.id || !department?.id) return;
+    if (!canCompleteReminderDepartment(department.id)) return alert("Non hai i permessi per completare questo reparto.");
+
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from("agenda_reminder_reparti")
+      .update({ completato: true, completato_at: now, completato_da: profile?.id || null })
+      .eq("reminder_id", item.id)
+      .eq("reparto_id", department.id);
+    if (error) return alert(error.message);
+
+    const { data: rows, error: rowsError } = await supabase
+      .from("agenda_reminder_reparti")
+      .select("reparto_id,completato")
+      .eq("reminder_id", item.id);
+    if (rowsError) return alert(rowsError.message);
+
+    const allCompleted = (rows || []).length > 0 && (rows || []).every((row) => Boolean(row.completato));
+    const payload = allCompleted
+      ? { completato: true, stato: "Completato", completato_il: now, updated_at: now }
+      : { completato: false, stato: "In lavorazione", completato_il: null, updated_at: now };
+
+    const { error: reminderError } = await supabase.from("agenda_reminder").update(payload).eq("id", item.id);
+    if (reminderError) return alert(reminderError.message);
+
+    await loadData();
+    await loadDetail(item.id);
+    if (selected?.id === item.id) setSelected({ ...item, ...payload });
+  }
+
+  async function reopenReminderDepartment(item, department) {
+    if (!item?.id || !department?.id) return;
+    if (!canCompleteReminderDepartment(department.id)) return alert("Non hai i permessi per riaprire questo reparto.");
+
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from("agenda_reminder_reparti")
+      .update({ completato: false, completato_at: null, completato_da: null })
+      .eq("reminder_id", item.id)
+      .eq("reparto_id", department.id);
+    if (error) return alert(error.message);
+
+    const { error: reminderError } = await supabase
+      .from("agenda_reminder")
+      .update({ completato: false, stato: "In lavorazione", completato_il: null, updated_at: now })
+      .eq("id", item.id);
+    if (reminderError) return alert(reminderError.message);
+
+    await loadData();
+    await loadDetail(item.id);
+    if (selected?.id === item.id) setSelected({ ...item, completato: false, stato: "In lavorazione", completato_il: null });
   }
 
   async function saveComment(e) {
@@ -416,12 +596,13 @@ export default function Agenda() {
                           <span>{item.descrizione || "Nessuna descrizione"}</span>
                           <small>
                             {adminMode ? `${userName(item.utente_id)} · ` : ""}
-                            {products.find((p) => p.id === item.prodotto_id)?.nome || ""}
+                            {getReminderProductNames(item)}
+                            {getReminderDepartmentNames(item) ? ` · ${getReminderDepartmentNames(item)}` : ""}
                             {projects.find((p) => p.id === item.progetto_id)?.titolo ? ` · ${projects.find((p) => p.id === item.progetto_id)?.titolo}` : ""}
                           </small>
                         </button>
                         <span className={`status-pill ${statusClass(item)}`}>{statusOf(item)}</span>
-                        {!isDone(item) && canEditReminder(item) && (
+                        {!isDone(item) && canEditReminder(item) && getReminderDepartmentRows(item).length === 0 && (
                           <button className="icon-action success" onClick={() => completeReminder(item)}>
                             <CheckCircle2 size={18} />
                           </button>
@@ -447,6 +628,21 @@ export default function Agenda() {
             <>
               <p className="detail-description">{selected.descrizione || "Nessuna descrizione."}</p>
               <div className="mini-meta"><span><Clock size={15} /> {formatDate(selected.deadline)}</span></div>
+              {getReminderDepartmentRows(selected).length > 0 && (
+                <div className="checkbox-group">
+                  <strong>Completamento per reparto</strong>
+                  {getReminderDepartmentRows(selected).map((department) => (
+                    <div key={department.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", padding: "8px 0" }}>
+                      <span>{department.completato ? "✓" : "○"} {department.nome}{department.completato_at ? ` · ${new Date(department.completato_at).toLocaleString("it-IT")}` : ""}</span>
+                      {department.completato ? (
+                        <button type="button" className="reopen-phase-btn" onClick={() => reopenReminderDepartment(selected, department)}><Clock size={15} /> Riapri {department.nome}</button>
+                      ) : (
+                        <button type="button" className="complete-phase-btn" onClick={() => completeReminderDepartment(selected, department)} disabled={!canCompleteReminderDepartment(department.id)}><CheckCircle2 size={15} /> Completa {department.nome}</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
               <form className="comment-form" onSubmit={saveComment}>
                 <input placeholder="Aggiungi commento..." value={comment} onChange={(e) => setComment(e.target.value)} />
                 <button><MessageSquare size={16} /> Invia</button>
@@ -490,13 +686,50 @@ export default function Agenda() {
               <option value="Completato">Completato</option>
               <option value="Scaduto">Scaduto</option>
             </select></label>
-            <div className="form-grid-2">
-              <label>Prodotto<select value={form.prodotto_id} onChange={(e) => setForm({ ...form, prodotto_id: e.target.value })}><option value="">Nessuno</option>{products.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}</select></label>
-              <label>Progetto<select value={form.progetto_id} onChange={(e) => setForm({ ...form, progetto_id: e.target.value })}><option value="">Nessuno</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.titolo}</option>)}</select></label>
+            <label>Progetto<select value={form.progetto_id} onChange={(e) => setForm({ ...form, progetto_id: e.target.value })}><option value="">Nessuno</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.titolo}</option>)}</select></label>
+
+            <div className="checkbox-group scrollable-check-group">
+              <strong>Condividi con reparti</strong>
+              {departments.map((department) => (
+                <label key={department.id}>
+                  <input type="checkbox" checked={safeArray(form.reparto_ids).includes(department.id)} onChange={() => toggleFormArray("reparto_ids", department.id)} />
+                  {department.nome}
+                </label>
+              ))}
             </div>
 
+            <div className="checkbox-group scrollable-check-group">
+              <strong>Prodotti associati</strong>
+              <div className="task-search" style={{ margin: "8px 0" }}>
+                <Search size={18} />
+                <input placeholder="Ricerca rapida prodotto..." value={productQuery} onChange={(e) => setProductQuery(e.target.value)} />
+              </div>
+              {filteredProductsForReminder.length === 0 ? <p className="empty-text">Nessun prodotto trovato.</p> : filteredProductsForReminder.map((product) => (
+                <label key={product.id}>
+                  <input type="checkbox" checked={safeArray(form.prodotti).includes(product.id)} onChange={() => toggleFormArray("prodotti", product.id)} />
+                  {product.nome}{product.codice ? ` · ${product.codice}` : ""}
+                </label>
+              ))}
+            </div>
+
+            {selected?.id && getReminderDepartmentRows(selected).length > 0 && (
+              <div className="checkbox-group">
+                <strong>Completamento per reparto</strong>
+                {getReminderDepartmentRows(selected).map((department) => (
+                  <div key={department.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", padding: "8px 0" }}>
+                    <span>{department.completato ? "✓" : "○"} {department.nome}{department.completato_at ? ` · ${new Date(department.completato_at).toLocaleString("it-IT")}` : ""}</span>
+                    {department.completato ? (
+                      <button type="button" className="reopen-phase-btn" onClick={() => reopenReminderDepartment(selected, department)}><Clock size={15} /> Riapri {department.nome}</button>
+                    ) : (
+                      <button type="button" className="complete-phase-btn" onClick={() => completeReminderDepartment(selected, department)} disabled={!canCompleteReminderDepartment(department.id)}><CheckCircle2 size={15} /> Completa {department.nome}</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="dashboard-message-actions">
-              {selected && !isDone(selected) && <button type="button" className="secondary-action" onClick={() => completeReminder(selected)}><CheckCircle2 size={18} /> Evadi</button>}
+              {selected && !isDone(selected) && getReminderDepartmentRows(selected).length === 0 && <button type="button" className="secondary-action" onClick={() => completeReminder(selected)}><CheckCircle2 size={18} /> Evadi</button>}
               {selected && <button type="button" className="secondary-action danger" onClick={() => deleteReminder(selected)}>Elimina</button>}
               <button type="button" className="primary-action" disabled={saving} onClick={saveReminder}><Save size={18} /> {saving ? "Salvataggio..." : "Salva reminder"}</button>
             </div>

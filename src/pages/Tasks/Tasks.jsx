@@ -51,6 +51,16 @@ function isDone(item) {
   return CLOSED_STATES.includes(normalize(item?.stato)) || Boolean(item?.completato_at);
 }
 
+function getBlockingPhase(item, list) {
+  if (!item?.bloccante_id) return null;
+  return safeArray(list).find((phase) => phase.id === item.bloccante_id) || null;
+}
+
+function isBlockedByOpenPhase(item, list) {
+  const blocker = getBlockingPhase(item, list);
+  return Boolean(blocker && !isDone(blocker));
+}
+
 function phaseStatus(item) {
   const deadline = dateOnly(item?.deadline);
   if (isDone(item)) return "Completata";
@@ -337,6 +347,8 @@ export default function Tasks() {
   }
 
   async function completeWholePhase(phase) {
+    const blocker = getBlockingPhase(phase, enrichedPhases);
+    if (blocker && !isDone(blocker)) return alert(`Questa fase è bloccata da: ${blocker.titolo || "fase bloccante"}. Completa prima la fase bloccante.`);
     const now = new Date().toISOString();
     const { error } = await supabase
       .from("v4_fasi_progetto")
@@ -349,6 +361,8 @@ export default function Tasks() {
   }
 
   async function completeDepartmentPhase(phase, department) {
+    const blocker = getBlockingPhase(phase, enrichedPhases);
+    if (blocker && !isDone(blocker)) return alert(`Questa fase è bloccata da: ${blocker.titolo || "fase bloccante"}. Completa prima la fase bloccante.`);
     if (!canCompleteDepartment(department.id)) return alert("Non hai i permessi per completare questo reparto.");
 
     const now = new Date().toISOString();
@@ -497,18 +511,21 @@ export default function Tasks() {
     const departments = phase.planningDepartments || [];
     const productsList = phase.planningProducts || [];
     const visibleProject = projects.find((project) => project.id === phase.progetto_id);
+    const blocker = getBlockingPhase(phase, enrichedPhases);
+    const blocked = blocker && !isDone(blocker);
 
     return (
       <article className={`planning-task-card ${statusClass(phase)} ${compact ? "compact" : ""}`}>
         <button className="planning-task-main" type="button" onClick={() => openPhaseModal(phase)}>
           <div className="planning-task-title-row">
             <strong>{phase.titolo || "Fase senza titolo"}</strong>
-            <span className={`status-pill ${statusClass(phase)}`}>{phaseStatus(phase)}</span>
+            <span className={`status-pill ${blocked ? "danger" : statusClass(phase)}`}>{blocked ? "Bloccata" : phaseStatus(phase)}</span>
           </div>
           <span>{phase.v4_progetti?.titolo || visibleProject?.titolo || "Progetto non impostato"}</span>
           <small>{departments.map((department) => department.nome).join(", ") || phase.reparti?.nome || "Reparto non impostato"}</small>
           {productsList.length > 0 && <small>Prodotti: {productsList.join(", ")}</small>}
           {phase.descrizione && <p>{phase.descrizione}</p>}
+          {blocker && <small className={blocked ? "danger" : "done"}>Fase bloccante: {blocker.titolo || "fase"}{blocked ? " · da completare" : " · completata"}</small>}
         </button>
 
         <div className="planning-department-actions">
@@ -519,13 +536,13 @@ export default function Tasks() {
                   <Clock3 size={15} /> Riapri {department.nome}
                 </button>
               ) : (
-                <button key={department.id} type="button" className="complete-phase-btn" onClick={() => completeDepartmentPhase(phase, department)} disabled={!canCompleteDepartment(department.id)}>
+                <button key={department.id} type="button" className="complete-phase-btn" onClick={() => completeDepartmentPhase(phase, department)} disabled={blocked || !canCompleteDepartment(department.id)}>
                   <CheckCircle2 size={15} /> Completa {department.nome}
                 </button>
               )
             )
           ) : !isDone(phase) ? (
-            <button type="button" className="complete-phase-btn" onClick={() => completeWholePhase(phase)}>
+            <button type="button" className="complete-phase-btn" onClick={() => completeWholePhase(phase)} disabled={blocked}>
               <CheckCircle2 size={15} /> Completa fase
             </button>
           ) : null}
@@ -602,9 +619,9 @@ export default function Tasks() {
                   <strong>{formatDate(day.key, { weekday: true })}</strong>
                   {items.length === 0 ? <span className="planning-empty-day">Nessuna attività</span> : (
                     <div className="planning-day-summary">
-                      <span className="summary-line open">Aperte <b>{summary.open}</b></span>
-                      <span className="summary-line danger">Scadute <b>{summary.overdue}</b></span>
-                      <span className="summary-line done">Completate <b>{summary.done}</b></span>
+                      {summary.open > 0 && <span className="summary-line open">Aperte <b>{summary.open}</b></span>}
+                      {summary.overdue > 0 && <span className="summary-line danger">Scadute <b>{summary.overdue}</b></span>}
+                      {summary.done > 0 && <span className="summary-line done">Completate <b>{summary.done}</b></span>}
                     </div>
                   )}
                 </button>
@@ -656,7 +673,8 @@ export default function Tasks() {
               <div className="mini-meta">
                 <span>Progetto: {selectedPhase.v4_progetti?.titolo || "Senza progetto"}</span>
                 <span>Deadline: {formatDate(selectedPhase.deadline)}</span>
-                <span>Stato: {phaseStatus(selectedPhase)}</span>
+                <span>Stato: {isBlockedByOpenPhase(selectedPhase, enrichedPhases) ? "Bloccata" : phaseStatus(selectedPhase)}</span>
+                {selectedPhase.bloccante_id && <span>Fase bloccante: {getBlockingPhase(selectedPhase, enrichedPhases)?.titolo || "-"}</span>}
                 <span>Reparti: {(selectedPhase.planningDepartments || []).map((item) => item.nome).join(", ") || selectedPhase.reparti?.nome || "-"}</span>
               </div>
             </div>
@@ -682,6 +700,7 @@ export default function Tasks() {
         phaseProducts={phaseProducts}
         templates={templates}
         templateDepartments={templateDepartments}
+        allPhases={enrichedPhases}
         canManage={true}
         canCompleteDepartment={canCompleteDepartment}
         onClose={() => setPhaseModalOpen(false)}

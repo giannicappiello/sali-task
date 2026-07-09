@@ -489,10 +489,10 @@ function Dashboard() {
                     <span className="day-number">{day.date.getDate()}</span>
                     {day.items.length > 0 && (
                       <div className="dashboard-day-counts">
-                        <span className="dashboard-day-line success">Task {day.plannedTasks}</span>
-                        <span className="dashboard-day-line danger">Task scad. {day.overdueTasks}</span>
-                        <span className="dashboard-day-line success">Rem. {day.plannedReminders}</span>
-                        <span className="dashboard-day-line danger">Rem. scad. {day.overdueReminders}</span>
+                        {day.plannedTasks > 0 && <span className="dashboard-day-line success">Task {day.plannedTasks}</span>}
+                        {day.overdueTasks > 0 && <span className="dashboard-day-line danger">Task scad. {day.overdueTasks}</span>}
+                        {day.plannedReminders > 0 && <span className="dashboard-day-line success">Rem. {day.plannedReminders}</span>}
+                        {day.overdueReminders > 0 && <span className="dashboard-day-line danger">Rem. scad. {day.overdueReminders}</span>}
                       </div>
                     )}
                   </button>

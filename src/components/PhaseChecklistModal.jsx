@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Clock3, FileText, MessageSquare, Paperclip, Save, Trash2, X } from "lucide-react";
+import { CheckCircle2, Clock3, FileText, MessageSquare, Paperclip, Save, Search, Trash2, X } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../contexts/AuthContext";
 
-const emptyForm = { titolo: "", descrizione: "", note: "", progetto_id: "", deadline: "", reparto_ids: [], prodotti: [], stato: "da_evadere" };
+const emptyForm = { titolo: "", descrizione: "", note: "", progetto_id: "", deadline: "", reparto_ids: [], prodotti: [], stato: "da_evadere", bloccante_id: "" };
 const closedStates = ["evaso", "evasa", "completato", "completata", "chiuso", "chiusa"];
 function safeArray(value) { return Array.isArray(value) ? value : []; }
 function normalize(value) { return String(value || "").trim().toLowerCase().replaceAll(" ", "_"); }
@@ -23,6 +23,8 @@ export default function PhaseChecklistModal({
   phaseProducts = [],
   templates = [],
   templateDepartments = [],
+  allPhases = [],
+  initialProjectId = "",
   canManage = true,
   canCompleteDepartment = () => true,
   onClose,
@@ -39,6 +41,7 @@ export default function PhaseChecklistModal({
   const [saving, setSaving] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [showPhaseProducts, setShowPhaseProducts] = useState(false);
+  const [phaseProductQuery, setPhaseProductQuery] = useState("");
 
   const selectedPhase = phase?.id ? phase : null;
 
@@ -48,6 +51,7 @@ export default function PhaseChecklistModal({
     setPendingFiles([]);
     setComment("");
     setShowPhaseProducts(false);
+    setPhaseProductQuery("");
     if (selectedPhase?.id) {
       setForm({
         titolo: selectedPhase.titolo || "",
@@ -58,14 +62,15 @@ export default function PhaseChecklistModal({
         reparto_ids: getPhaseDepartmentIds(selectedPhase.id).length ? getPhaseDepartmentIds(selectedPhase.id) : [selectedPhase.reparto_id].filter(Boolean),
         prodotti: getPhaseProductIds(selectedPhase.id),
         stato: selectedPhase.stato || "da_evadere",
+        bloccante_id: selectedPhase.bloccante_id || "",
       });
       loadPhaseDetails(selectedPhase.id);
     } else {
-      setForm({ ...emptyForm, deadline: initialDate || todayIso() });
+      setForm({ ...emptyForm, progetto_id: initialProjectId || "", deadline: initialDate || todayIso() });
       setComments([]);
       setAttachments([]);
     }
-  }, [open, selectedPhase?.id, initialDate]);
+  }, [open, selectedPhase?.id, initialDate, initialProjectId]);
 
   function getPhaseDepartmentIds(phaseId) {
     return safeArray(phaseDepartments).filter((row) => row.fase_id === phaseId && row.reparto_id).map((row) => row.reparto_id);
@@ -78,6 +83,16 @@ export default function PhaseChecklistModal({
   function getTemplateDepartmentIds(templateId) {
     return safeArray(templateDepartments).filter((row) => row.template_id === templateId && row.reparto_id).map((row) => row.reparto_id);
   }
+
+  const blockingOptions = useMemo(() => safeArray(allPhases).filter((item) => item.id && item.id !== selectedPhase?.id), [allPhases, selectedPhase?.id]);
+
+  const selectedBlocker = useMemo(() => blockingOptions.find((item) => item.id === form.bloccante_id) || null, [blockingOptions, form.bloccante_id]);
+
+  const filteredPhaseProducts = useMemo(() => {
+    const text = phaseProductQuery.trim().toLowerCase();
+    if (!text) return products;
+    return products.filter((product) => `${product.nome || ""} ${product.codice || ""} ${product.brand || ""} ${product.categoria || ""}`.toLowerCase().includes(text));
+  }, [products, phaseProductQuery]);
 
   const departmentsByPhase = useMemo(() => {
     const map = new Map();
@@ -212,6 +227,7 @@ export default function PhaseChecklistModal({
         reparto_id: safeArray(form.reparto_ids)[0] || null,
         assegnato_a: null,
         stato: form.stato || "da_evadere",
+        bloccante_id: form.bloccante_id || null,
         modificato_da: actorId,
         updated_at: now,
       };
@@ -412,6 +428,16 @@ export default function PhaseChecklistModal({
           <label>Reparti selezionati<input disabled value={safeArray(form.reparto_ids).map((id) => departments.find((d) => d.id === id)?.nome).filter(Boolean).join(", ") || "Nessun reparto"} /></label>
         </div>
 
+        <label>Fase / task bloccante
+          <select value={form.bloccante_id} onChange={(e) => setForm({ ...form, bloccante_id: e.target.value })}>
+            <option value="">Nessuna fase bloccante</option>
+            {blockingOptions.map((item) => (
+              <option key={item.id} value={item.id}>{item.titolo || "Fase senza titolo"}{item.v4_progetti?.titolo ? ` · ${item.v4_progetti.titolo}` : ""}</option>
+            ))}
+          </select>
+        </label>
+        {selectedBlocker && !isDone(selectedBlocker) && <p className="soft-alert">Fase bloccata fino al completamento di: {selectedBlocker.titolo || "fase bloccante"}</p>}
+
         <div className="checkbox-group scrollable-check-group">
           <strong>Reparti competenti sulla fase</strong>
           {availableDepartments.map((d) => (
@@ -443,7 +469,15 @@ export default function PhaseChecklistModal({
         {showPhaseProducts && (
           <div className="checkbox-group scrollable-check-group">
             <strong>Prodotti associati alla fase</strong>
-            {products.map((p) => <label key={p.id}><input type="checkbox" checked={safeArray(form.prodotti).includes(p.id)} onChange={() => togglePhaseProduct(p.id)} />{p.nome}{p.codice ? ` · ${p.codice}` : ""}</label>)}
+            <div className="task-search" style={{ margin: "8px 0" }}>
+              <Search size={18} />
+              <input placeholder="Ricerca rapida prodotto..." value={phaseProductQuery} onChange={(e) => setPhaseProductQuery(e.target.value)} />
+            </div>
+            {filteredPhaseProducts.length === 0 ? (
+              <p className="empty-text">Nessun prodotto trovato.</p>
+            ) : (
+              filteredPhaseProducts.map((p) => <label key={p.id}><input type="checkbox" checked={safeArray(form.prodotti).includes(p.id)} onChange={() => togglePhaseProduct(p.id)} />{p.nome}{p.codice ? ` · ${p.codice}` : ""}</label>)
+            )}
           </div>
         )}
 

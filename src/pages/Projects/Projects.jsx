@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
+import PhaseChecklistModal from "../../components/PhaseChecklistModal";
 
 const projectEmpty = {
   titolo: "",
@@ -32,6 +33,7 @@ const phaseEmpty = {
   reparto_ids: [],
   stato: "da_evadere",
   prodotti: [],
+  bloccante_id: "",
 };
 
 const quickProductEmpty = {
@@ -68,6 +70,11 @@ function formatDate(date) {
 
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
+}
+
+function getBlockingPhase(item, list) {
+  if (!item?.bloccante_id) return null;
+  return safeArray(list).find((phase) => phase.id === item.bloccante_id) || null;
 }
 
 export default function Projects() {
@@ -410,6 +417,7 @@ export default function Projects() {
             reparto_ids: getPhaseDepartmentIds(phase.id).length ? getPhaseDepartmentIds(phase.id) : (phase.reparto_id ? [phase.reparto_id] : []),
             stato: phase.stato || "da_evadere",
             prodotti: getPhaseProductIds(phase.id),
+            bloccante_id: phase.bloccante_id || "",
           }
         : { ...phaseEmpty, prodotti: projectProductIds, reparto_ids: projectDepartmentIds, reparto_id: projectDepartmentIds[0] || "" }
     );
@@ -651,6 +659,7 @@ export default function Projects() {
       reparto_id: safeArray(phaseForm.reparto_ids)[0] || phaseForm.reparto_id || null,
       assegnato_a: null,
       stato: phaseForm.stato || "da_evadere",
+      bloccante_id: phaseForm.bloccante_id || null,
       modificato_da: actorId,
       updated_at: new Date().toISOString(),
     };
@@ -681,6 +690,8 @@ export default function Projects() {
   }
 
   async function completePhase(phase) {
+    const blocker = getBlockingPhase(phase, phases);
+    if (blocker && !isDone(blocker)) return alert(`Questa fase è bloccata da: ${blocker.titolo || "fase bloccante"}. Completa prima la fase bloccante.`);
     if (!canManage) return alert("Non hai i permessi per completare le fasi.");
 
     const now = new Date().toISOString();
@@ -1008,6 +1019,8 @@ export default function Projects() {
 
   async function completeDepartmentPhase(phase, department) {
     if (!phase?.id || !department?.id) return;
+    const blocker = getBlockingPhase(phase, phases);
+    if (blocker && !isDone(blocker)) return alert(`Questa fase è bloccata da: ${blocker.titolo || "fase bloccante"}. Completa prima la fase bloccante.`);
 
     if (!canCompleteDepartment(department.id)) {
       return alert("Non hai i permessi per completare questo reparto.");
@@ -1171,15 +1184,19 @@ export default function Projects() {
                 </div>
 
                 <div className="phase-list">
-                  {projectPhases.map((phase) => (
-                    <div className={`phase-card ${statusClass(phase)}`} key={phase.id}>
+                  {projectPhases.map((phase) => {
+                    const blocker = getBlockingPhase(phase, phases);
+                    const blocked = blocker && !isDone(blocker);
+                    return (
+                    <div className={`phase-card ${statusClass(phase)} ${blocked ? "blocked" : ""}`} key={phase.id}>
                       <button className="phase-card-main" onClick={() => openPhase(project, phase)}>
                         <strong>{phase.titolo}</strong>
                         <span>{(departmentsByPhase.get(phase.id) || []).map((d) => d.nome).join(", ") || phase.reparti?.nome || "Reparto non impostato"}</span>
                         {(productsByPhase.get(phase.id) || []).length > 0 && (
                           <small>Prodotti: {(productsByPhase.get(phase.id) || []).map((item) => item.nome).join(", ")}</small>
                         )}
-                        <small>Deadline {formatDate(phase.deadline)} · {phase.stato || "Da evadere"}</small>
+                        <small>Deadline {formatDate(phase.deadline)} · {blocked ? "Bloccata" : phase.stato || "Da evadere"}</small>
+                        {blocker && <small className={blocked ? "danger" : "done"}>Fase bloccante: {blocker.titolo || "fase"}{blocked ? " · da completare" : " · completata"}</small>}
                       </button>
                       <div className="phase-card-actions">
                         {(departmentsByPhase.get(phase.id) || []).length > 0 ? (
@@ -1204,7 +1221,7 @@ export default function Projects() {
                                   type="button"
                                   className="complete-phase-btn"
                                   onClick={() => completeDepartmentPhase(phase, department)}
-                                  disabled={!canCompleteDepartment(department.id)}
+                                  disabled={blocked || !canCompleteDepartment(department.id)}
                                   title={!canCompleteDepartment(department.id) ? "Non puoi completare questo reparto" : `Completa ${department.nome}`}
                                 >
                                   <CheckCircle2 size={15} /> Completa {department.nome}
@@ -1215,13 +1232,14 @@ export default function Projects() {
                         ) : isDone(phase) ? (
                           <button className="reopen-phase-btn" onClick={() => reopenPhase(phase)}><Clock3 size={15} /> Riapri</button>
                         ) : (
-                          <button className="complete-phase-btn" onClick={() => completePhase(phase)}><CheckCircle2 size={15} /> Completa</button>
+                          <button className="complete-phase-btn" onClick={() => completePhase(phase)} disabled={blocked}><CheckCircle2 size={15} /> Completa</button>
                         )}
                         <button className="phase-icon-btn" onClick={() => openPhase(project, phase)} title="Modifica"><Edit3 size={15} /></button>
                         <button className="phase-icon-btn danger" onClick={() => removePhase(phase)} title="Elimina"><Trash2 size={15} /></button>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
 
                   {canManage && <button className="add-phase-inline" onClick={() => openPhase(project)}><Plus size={16} /> Aggiungi fase</button>}
                   {canManage && (
@@ -1315,245 +1333,24 @@ export default function Projects() {
         </div>
       )}
 
-      {phaseModal && (
-        <div className="modal-backdrop">
-          <form className="modal-card v4-modal large-modal" onSubmit={savePhase}>
-            <div className="modal-header">
-              <h2>{selectedPhase ? "Modifica task / fase" : "Nuova fase checklist"}</h2>
-              <button type="button" onClick={() => setPhaseModal(false)}><X size={20} /></button>
-            </div>
-
-            <label>Checklist
-              <select
-                value={phaseForm.titolo}
-                onChange={(e) => {
-                  const selectedTemplate = templates.find((item) => item.titolo === e.target.value);
-                  const templateDepartmentIds = selectedTemplate ? getTemplateDepartmentIds(selectedTemplate.id) : [];
-                  const projectDepartmentIds = selectedProject?.id ? getProjectDepartmentIds(selectedProject.id) : [];
-                  const nextDepartmentIds = templateDepartmentIds.length
-                    ? templateDepartmentIds
-                    : selectedTemplate?.reparto_id
-                      ? [selectedTemplate.reparto_id]
-                      : projectDepartmentIds;
-                  setPhaseForm({
-                    ...phaseForm,
-                    titolo: selectedTemplate?.titolo || "",
-                    reparto_ids: nextDepartmentIds,
-                    reparto_id: nextDepartmentIds[0] || "",
-                  });
-                }}
-              >
-                <option value="">Seleziona checklist...</option>
-                {phaseForm.titolo && !templates.some((item) => item.titolo === phaseForm.titolo) && (
-                  <option value={phaseForm.titolo}>{phaseForm.titolo}</option>
-                )}
-                {templates.map((item) => (
-                  <option key={item.id} value={item.titolo}>
-                    {item.titolo}{(departmentsByTemplate.get(item.id) || []).length ? ` · ${(departmentsByTemplate.get(item.id) || []).map((d) => d.nome).join(", ")}` : item.reparti?.nome ? ` · ${item.reparti.nome}` : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>Descrizione<textarea rows="3" value={phaseForm.descrizione} onChange={(e) => setPhaseForm({ ...phaseForm, descrizione: e.target.value })} /></label>
-            <label>Note<textarea rows="3" value={phaseForm.note} onChange={(e) => setPhaseForm({ ...phaseForm, note: e.target.value })} /></label>
-
-            <div className="form-grid-2">
-              <label>Stato<select value={phaseForm.stato} onChange={(e) => setPhaseForm({ ...phaseForm, stato: e.target.value })}><option value="da_evadere">Da evadere</option><option value="in_lavorazione">In lavorazione</option><option value="in_valutazione">In valutazione</option><option value="evaso">Evaso</option></select></label>
-              <label>Reparti selezionati<input disabled value={safeArray(phaseForm.reparto_ids).map((id) => departments.find((d) => d.id === id)?.nome).filter(Boolean).join(", ") || "Nessun reparto"} /></label>
-            </div>
-
-            <div className="checkbox-group scrollable-check-group">
-              <strong>Reparti competenti sulla fase</strong>
-              {(selectedProject?.id ? departments.filter((d) => getProjectDepartmentIds(selectedProject.id).includes(d.id)) : departments).map((d) => (
-                <label key={d.id}>
-                  <input
-                    type="checkbox"
-                    checked={safeArray(phaseForm.reparto_ids).includes(d.id)}
-                    onChange={() => togglePhaseDepartment(d.id)}
-                  />
-                  {d.nome}
-                </label>
-              ))}
-            </div>
-
-            {selectedPhase?.id && (departmentsByPhase.get(selectedPhase.id) || []).length > 0 && (
-              <div className="checkbox-group">
-                <strong>Completamento per reparto</strong>
-                {(departmentsByPhase.get(selectedPhase.id) || []).map((department) => (
-                  <div
-                    key={department.id}
-                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", padding: "8px 0" }}
-                  >
-                    <span>
-                      {department.completato ? "✓" : "○"} {department.nome}
-                      {department.completato_at ? ` · ${new Date(department.completato_at).toLocaleString("it-IT")}` : ""}
-                    </span>
-
-                    {department.completato ? (
-                      <button type="button" className="reopen-phase-btn" onClick={() => reopenDepartmentPhase(selectedPhase, department)}>
-                        <Clock3 size={15} /> Riapri {department.nome}
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="complete-phase-btn"
-                        onClick={() => completeDepartmentPhase(selectedPhase, department)}
-                        disabled={!canCompleteDepartment(department.id)}
-                      >
-                        <CheckCircle2 size={15} /> Completa {department.nome}
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="phase-products-toolbar" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
-              <strong>Prodotti associati alla fase: {safeArray(phaseForm.prodotti).length}</strong>
-              <button type="button" className="filter-chip" onClick={() => setShowPhaseProducts((value) => !value)}>
-                {showPhaseProducts ? "Chiudi prodotti" : safeArray(phaseForm.prodotti).length ? "Aggiungi/Modifica/Rimuovi prodotti" : "Aggiungi prodotti"}
-              </button>
-            </div>
-
-            {showPhaseProducts && (
-              <div className="checkbox-group scrollable-check-group">
-                <strong>Prodotti associati alla fase</strong>
-                {products.map((p) => (
-                  <label key={p.id}>
-                    <input
-                      type="checkbox"
-                      checked={safeArray(phaseForm.prodotti).includes(p.id)}
-                      onChange={() => togglePhaseProduct(p.id)}
-                    />
-                    {p.nome}{p.codice ? ` · ${p.codice}` : ""}
-                  </label>
-                ))}
-              </div>
-            )}
-
-            <label>Deadline<input type="date" value={phaseForm.deadline} onChange={(e) => setPhaseForm({ ...phaseForm, deadline: e.target.value })} /></label>
-
-            {selectedPhase?.id && (
-              <div className="phase-detail-extra">
-                <div className="phase-extra-title"><MessageSquare size={18} /><strong>Commenti</strong></div>
-                <div className="comments-box">
-                  {comments.length === 0 ? <p className="muted">Nessun commento.</p> : comments.map((c) => <p key={c.id}><strong>{c.creato_da === actorId ? "Tu" : "Utente"}</strong> {c.testo}<small>{new Date(c.created_at).toLocaleString("it-IT")}</small></p>)}
-                </div>
-                <div className="comment-form-inline">
-                  <input placeholder="Aggiungi commento..." value={comment} onChange={(e) => setComment(e.target.value)} />
-                  <button type="button" onClick={saveComment}><MessageSquare size={16} /> Invia</button>
-                </div>
-
-                <div className="phase-extra-title"><FileText size={18} /><strong>Allegati</strong></div>
-                <label
-                  className={`upload-box ${dragActive ? "drag-active" : ""}`}
-                  onDragEnter={handleAttachmentDrag}
-                  onDragOver={handleAttachmentDrag}
-                  onDragLeave={handleAttachmentDrag}
-                  onDrop={handleAttachmentDrop}
-                  style={{
-                    border: dragActive ? "2px dashed #0b63ce" : undefined,
-                    background: dragActive ? "rgba(11, 99, 206, 0.08)" : undefined,
-                    cursor: "pointer",
-                  }}
-                >
-                  <Paperclip size={18} />
-                  {dragActive ? "Rilascia qui gli allegati" : "Carica allegato o trascina qui i file"}
-                  <input
-                    type="file"
-                    multiple
-                    hidden
-                    onChange={async (e) => {
-                      await uploadAttachments(e.target.files);
-                      e.target.value = "";
-                    }}
-                  />
-                </label>
-
-                <div className="attachments-list">
-                  {attachments.length === 0 ? (
-                    <span>Nessun allegato.</span>
-                  ) : (
-                    attachments.map((a) => {
-                      const url = attachmentUrl(a);
-                      const image = isImageAttachment(a);
-
-                      return (
-                        <div
-                          key={a.id}
-                          className="attachment-row"
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: image ? "72px 1fr auto" : "1fr auto",
-                            gap: "12px",
-                            alignItems: "center",
-                            padding: "10px 0",
-                            borderBottom: "1px solid #eee",
-                          }}
-                        >
-                          {image && (
-                            <a href={url} target="_blank" rel="noopener noreferrer" title="Apri anteprima">
-                              <img
-                                src={url}
-                                alt={a.file_name || "Allegato"}
-                                style={{
-                                  width: "64px",
-                                  height: "64px",
-                                  objectFit: "cover",
-                                  borderRadius: "8px",
-                                  border: "1px solid #ddd",
-                                }}
-                              />
-                            </a>
-                          )}
-
-                          <div style={{ minWidth: 0 }}>
-                            <strong style={{ display: "block", wordBreak: "break-word" }}>{a.file_name || "Allegato"}</strong>
-                            <small className="muted">{formatFileSize(a.size_bytes)}</small>
-                          </div>
-
-                          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                            <a
-                              href={url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              download={a.file_name || true}
-                              className="primary-action"
-                              style={{ padding: "7px 12px", textDecoration: "none", fontSize: "13px" }}
-                            >
-                              Scarica
-                            </a>
-
-                            {canManage && (
-                              <button
-                                type="button"
-                                className="phase-icon-btn danger"
-                                onClick={() => removeAttachment(a)}
-                                title="Elimina allegato"
-                              >
-                                <Trash2 size={15} />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            )}
-
-            <div className="dashboard-message-actions">
-              {selectedPhase?.id && canManage && (
-                <button type="button" className="secondary-action danger" onClick={removeSelectedPhase} disabled={saving}>
-                  <Trash2 size={18} /> Elimina
-                </button>
-              )}
-              <button className="primary-action" disabled={saving}><Save size={18} /> {saving ? "Salvataggio..." : "Salva fase"}</button>
-            </div>
-          </form>
-        </div>
-      )}
+      <PhaseChecklistModal
+        open={phaseModal}
+        phase={selectedPhase}
+        initialDate={phaseForm.deadline || selectedProject?.deadline || todayIso()}
+        initialProjectId={selectedProject?.id || ""}
+        projects={projects}
+        departments={departments}
+        products={products}
+        phaseDepartments={phaseDepartments}
+        phaseProducts={phaseProducts}
+        templates={templates}
+        templateDepartments={templateDepartments}
+        allPhases={phases}
+        canManage={canManage}
+        canCompleteDepartment={canCompleteDepartment}
+        onClose={() => setPhaseModal(false)}
+        onSaved={loadData}
+      />
     </div>
   );
 }

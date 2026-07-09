@@ -27,8 +27,8 @@ function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
 
   const isEditing = mode === "edit" && task?.id;
   const [activeTab, setActiveTab] = useState("dettagli");
-  const [form, setForm] = useState({ titolo:"", descrizione:"", categoria_id:"", stato_id:"", progetto_id:"", prodotto_id:"", assegnato_a_id:"", deadline:"" });
-  const [opts, setOpts] = useState({ categorie:[], stati:[], progetti:[], prodotti:[], utenti:[] });
+  const [form, setForm] = useState({ titolo:"", descrizione:"", categoria_id:"", stato_id:"", progetto_id:"", prodotto_id:"", assegnato_a_id:"", deadline:"", bloccante_id:"" });
+  const [opts, setOpts] = useState({ categorie:[], stati:[], progetti:[], prodotti:[], utenti:[], tasks:[] });
   const [attivita, setAttivita] = useState([]);
   const [commenti, setCommenti] = useState([]);
   const [allegati, setAllegati] = useState([]);
@@ -45,24 +45,25 @@ function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
 
   async function init() {
     setActiveTab("dettagli");
-    const [categorie, stati, progetti, prodotti, utenti] = await Promise.all([
+    const [categorie, stati, progetti, prodotti, utenti, tasksRes] = await Promise.all([
       supabase.from("categorie_task").select("*").eq("attiva", true).order("ordine"),
       supabase.from("stati_task").select("*").eq("attiva", true).order("ordine"),
       supabase.from("progetti").select("*").order("nome"),
       supabase.from("prodotti").select("*").order("nome"),
       supabase.from("utenti").select("*").eq("attivo", true).order("nome"),
+      supabase.from("tasks").select("id,titolo,stato_id,deadline").order("deadline", { ascending: true, nullsFirst: false }).limit(1000),
     ]);
-    const nextOpts = { categorie: categorie.data || [], stati: stati.data || [], progetti: progetti.data || [], prodotti: prodotti.data || [], utenti: utenti.data || [] };
+    const nextOpts = { categorie: categorie.data || [], stati: stati.data || [], progetti: progetti.data || [], prodotti: prodotti.data || [], utenti: utenti.data || [], tasks: tasksRes.data || [] };
     setOpts(nextOpts);
     if (isEditing) {
       setForm({
         titolo: task.titolo || "", descrizione: task.descrizione || "", categoria_id: task.categoria_id || "", stato_id: task.stato_id || "",
-        progetto_id: task.progetto_id || "", prodotto_id: task.prodotto_id || "", assegnato_a_id: task.assegnato_a_id || "", deadline: task.deadline || "",
+        progetto_id: task.progetto_id || "", prodotto_id: task.prodotto_id || "", assegnato_a_id: task.assegnato_a_id || "", deadline: task.deadline || "", bloccante_id: task.bloccante_id || "",
       });
       await Promise.all([loadAttivita(), loadCommenti(), loadAllegati(), loadChecklist()]);
     } else {
       const nuova = nextOpts.stati.find(s => s.nome === "Nuova");
-      setForm({ titolo:"", descrizione:"", categoria_id:"", stato_id: nuova?.id || nextOpts.stati[0]?.id || "", progetto_id:"", prodotto_id:"", assegnato_a_id:"", deadline:"" });
+      setForm({ titolo:"", descrizione:"", categoria_id:"", stato_id: nuova?.id || nextOpts.stati[0]?.id || "", progetto_id:"", prodotto_id:"", assegnato_a_id:"", deadline:"", bloccante_id:"" });
       setAttivita([]); setCommenti([]); setAllegati([]); setChecklist([]);
     }
   }
@@ -71,6 +72,9 @@ function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
   function mapName(list, id){ return list.find(x => x.id === id)?.nome || id || ""; }
   function fmt(date){ if(!date) return "-"; return new Date(date).toLocaleString("it-IT",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}); }
   function fileSize(bytes){ if(!bytes) return "-"; if(bytes<1024) return `${bytes} B`; if(bytes<1024*1024) return `${Math.round(bytes/1024)} KB`; return `${(bytes/1024/1024).toFixed(1)} MB`; }
+  function blockerTask(){ return opts.tasks.find(x => x.id === form.bloccante_id); }
+  function isTaskClosed(t){ const state = opts.stati.find(s => s.id === t?.stato_id); return Boolean(state?.chiusa) || ["chiusa","chiuso","completata","completato"].includes(String(state?.nome || "").toLowerCase()); }
+  function isTryingToClose(){ const state = opts.stati.find(s => s.id === form.stato_id); return Boolean(state?.chiusa) || ["chiusa","chiuso","completata","completato"].includes(String(state?.nome || "").toLowerCase()); }
 
   async function loadAttivita(){ const {data,error}=await supabase.from("attivita_task").select("id,data_ora,tipo,campo,valore_precedente,valore_nuovo,note,utenti(nome)").eq("task_id",task.id).order("data_ora",{ascending:false}); if(error) console.error(error); setAttivita(data||[]); }
   async function loadCommenti(){ const {data,error}=await supabase.from("task_commenti").select("id,commento,created_at,utente_id,utenti(nome)").eq("task_id",task.id).order("created_at"); if(error) console.error(error); setCommenti(data||[]); }
@@ -82,8 +86,10 @@ function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
   async function handleSave(e){
     e.preventDefault();
     if(!form.titolo.trim()) return alert("Inserisci il titolo della task.");
+    const blocker = blockerTask();
+    if(blocker && !isTaskClosed(blocker) && isTryingToClose()) return alert(`Questa task è bloccata da: ${blocker.titolo || "task bloccante"}. Completa prima la task bloccante.`);
     setSaving(true);
-    const payload = { titolo: form.titolo.trim(), descrizione: form.descrizione.trim() || null, categoria_id: form.categoria_id || null, stato_id: form.stato_id || null, progetto_id: form.progetto_id || null, prodotto_id: form.prodotto_id || null, assegnato_a_id: form.assegnato_a_id || null, deadline: form.deadline || null };
+    const payload = { titolo: form.titolo.trim(), descrizione: form.descrizione.trim() || null, categoria_id: form.categoria_id || null, stato_id: form.stato_id || null, progetto_id: form.progetto_id || null, prodotto_id: form.prodotto_id || null, assegnato_a_id: form.assegnato_a_id || null, deadline: form.deadline || null, bloccante_id: form.bloccante_id || null };
     if(isEditing){
       const {error}=await supabase.from("tasks").update({...payload, modificato_da_id: profile?.id || null}).eq("id", task.id);
       if(error){ console.error(error); setSaving(false); return alert("Errore durante il salvataggio."); }
@@ -226,6 +232,7 @@ function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
       <div className="form-group"><label>Prodotto</label><select value={form.prodotto_id} onChange={e=>update("prodotto_id",e.target.value)}><option value="">Nessun prodotto</option>{opts.prodotti.map(x=><option key={x.id} value={x.id}>{x.nome}</option>)}</select></div>
       <div className="form-group"><label>Assegnato a</label><select value={form.assegnato_a_id} onChange={e=>update("assegnato_a_id",e.target.value)}><option value="">Non assegnata</option>{opts.utenti.map(x=><option key={x.id} value={x.id}>{x.nome}</option>)}</select></div>
       <div className="form-group"><label>Deadline</label><input type="date" value={form.deadline} onChange={e=>update("deadline",e.target.value)} /></div>
+      <div className="form-group full"><label>Task bloccante</label><select value={form.bloccante_id} onChange={e=>update("bloccante_id",e.target.value)}><option value="">Nessuna task bloccante</option>{opts.tasks.filter(x=>x.id!==task?.id).map(x=><option key={x.id} value={x.id}>{x.titolo}</option>)}</select>{blockerTask() && !isTaskClosed(blockerTask()) && <small className="form-hint">Task bloccata fino al completamento di: {blockerTask()?.titolo}</small>}</div>
       <div className="modal-actions">
         <button type="button" className="secondary-action" onClick={onClose}>Annulla</button>
         {isEditing && <button type="button" className="secondary-action danger" onClick={deleteTask} disabled={saving}><Trash2 size={16} /> Elimina</button>}

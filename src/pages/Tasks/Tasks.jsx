@@ -111,7 +111,6 @@ function PlanningColorLegend() {
     <div className="planning-calendar-legend" style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
       <strong style={{ marginRight: "4px" }}>Legenda colori</strong>
       <span className="status-pill open">Aperte</span>
-      <span className="status-pill today">Oggi</span>
       <span className="status-pill danger">Scadute / bloccate</span>
       <span className="status-pill done">Completate</span>
     </div>
@@ -131,12 +130,24 @@ function buildPlanningMonthDays(monthDate, phases, selectedDate) {
     const open = items.filter((phase) => !isDone(phase)).length;
     const overdue = items.filter((phase) => phaseStatus(phase) === "Scaduta").length;
     const done = items.filter(isDone).length;
-    return { key, date, inMonth: date.getMonth() === month, isToday: key === todayIso(), isSelected: key === selectedDate, open, overdue, done, total: items.length };
+    const departmentNames = Array.from(
+      new Set(
+        items
+          .filter((phase) => !isDone(phase) && phaseStatus(phase) !== "Scaduta")
+          .flatMap((phase) => safeArray(phase.planningDepartments).map((department) => department.nome).filter(Boolean))
+      )
+    );
+    const indicators = [
+      ...departmentNames.slice(0, 3).map((name) => ({ label: name, tone: "planned" })),
+      ...(overdue > 0 ? [{ label: `Scadute ${overdue}`, tone: "danger" }] : []),
+      ...(done > 0 ? [{ label: `Completate ${done}`, tone: "done" }] : []),
+    ].slice(0, 4);
+    return { key, date, inMonth: date.getMonth() === month, isToday: key === todayIso(), isSelected: key === selectedDate, open, overdue, done, total: items.length, indicators };
   });
 }
 
-function SixMonthPlanningOverview({ currentMonth, phases, selectedDate, onSelectDate }) {
-  const months = Array.from({ length: 6 }).map((_, index) => {
+function SixMonthPlanningOverview({ currentMonth, phases, selectedDate, onSelectDate, onMove }) {
+  const months = Array.from({ length: 4 }).map((_, index) => {
     const date = new Date(currentMonth);
     date.setMonth(currentMonth.getMonth() + index);
     return date;
@@ -144,14 +155,20 @@ function SixMonthPlanningOverview({ currentMonth, phases, selectedDate, onSelect
 
   return (
     <div className="panel six-month-overview" style={{ marginBottom: "16px" }}>
-      <div className="panel-header" style={{ alignItems: "flex-start", gap: "12px" }}>
-        <div>
-          <h3>Panoramica 6 mesi</h3>
-          <p>Vista rapida delle fasi dei prossimi sei mesi.</p>
+      <div className="panel-header" style={{ alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+        <button type="button" className="secondary-action" onClick={() => onMove(-4)}>
+          <ChevronLeft size={18} />
+        </button>
+        <div style={{ textAlign: "center" }}>
+          <h3>Panoramica 4 mesi</h3>
+          <p>Vista rapida delle fasi dei prossimi quattro mesi.</p>
         </div>
+        <button type="button" className="secondary-action" onClick={() => onMove(4)}>
+          <ChevronRight size={18} />
+        </button>
         <PlanningColorLegend />
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(150px, 1fr))", gap: "12px", overflowX: "auto" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(220px, 1fr))", gap: "12px", overflowX: "auto" }}>
         {months.map((month) => {
           const days = buildPlanningMonthDays(month, phases, selectedDate);
           return (
@@ -160,7 +177,7 @@ function SixMonthPlanningOverview({ currentMonth, phases, selectedDate, onSelect
               <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "4px", fontSize: "11px", color: "#64748b", marginBottom: "5px" }}>
                 <span>L</span><span>M</span><span>M</span><span>G</span><span>V</span><span>S</span><span>D</span>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(18px, 1fr))", gap: "4px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(34px, 1fr))", gap: "7px" }}>
                 {days.map((day) => (
                   <button
                     key={day.key}
@@ -168,7 +185,7 @@ function SixMonthPlanningOverview({ currentMonth, phases, selectedDate, onSelect
                     onClick={() => onSelectDate(day.key, month)}
                     title={`${day.key} · ${day.total} fasi`}
                     style={{
-                      minHeight: "24px",
+                      minHeight: "70px",
                       borderRadius: "8px",
                       border: day.isSelected ? "1px solid #2563eb" : "1px solid #e5e7eb",
                       background: day.overdue > 0 ? "#fee2e2" : day.done > 0 ? "#dcfce7" : day.open > 0 ? "#e0f2fe" : "#fff",
@@ -177,7 +194,31 @@ function SixMonthPlanningOverview({ currentMonth, phases, selectedDate, onSelect
                       cursor: "pointer",
                     }}
                   >
-                    {day.date.getDate()}
+                    <span style={{ display: "block", marginBottom: "4px" }}>{day.date.getDate()}</span>
+                    {day.indicators.length > 0 && (
+                      <span style={{ display: "grid", gap: "3px", width: "100%" }}>
+                        {day.indicators.map((indicator, indicatorIndex) => (
+                          <small
+                            key={`${day.key}-${indicator.label}-${indicatorIndex}`}
+                            style={{
+                              display: "block",
+                              width: "100%",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              borderRadius: "999px",
+                              padding: "2px 5px",
+                              fontSize: "9px",
+                              lineHeight: "1.1",
+                              background: indicator.tone === "danger" ? "#fee2e2" : indicator.tone === "done" ? "#dcfce7" : "#e0f2fe",
+                              color: indicator.tone === "danger" ? "#b91c1c" : indicator.tone === "done" ? "#15803d" : "#1d4ed8",
+                            }}
+                          >
+                            {indicator.label}
+                          </small>
+                        ))}
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -652,7 +693,7 @@ export default function Tasks() {
     if (!items.length) return null;
     return (
       <div className="dashboard-activity-group">
-        <h4 className={danger ? "danger" : done ? "done" : "success"}>{title}</h4>
+        <h4 className={danger ? "danger" : done ? "done" : "open"}>{title}</h4>
         {items.map((phase) => <PhaseCard key={phase.id} phase={phase} compact />)}
       </div>
     );
@@ -671,7 +712,7 @@ export default function Tasks() {
       </div>
 
       <div className="calendar-kpi-grid dashboard-activity-kpis">
-        <button type="button" className={`calendar-kpi success ${statusFilter === "aperte" ? "active" : ""}`} onClick={() => setStatusFilter("aperte")}>
+        <button type="button" className={`calendar-kpi ${statusFilter === "aperte" ? "active" : ""}`} onClick={() => setStatusFilter("aperte")}>
           <CalendarDays size={22} />
           <div><strong>{loading ? "..." : totals.open}</strong><span>Task/fasi pianificate</span></div>
         </button>
@@ -697,6 +738,11 @@ export default function Tasks() {
           setSelectedDate(dayKey);
           setCursor(new Date(monthDate));
           setView("month");
+        }}
+        onMove={(months) => {
+          const next = new Date(cursor);
+          next.setMonth(next.getMonth() + months);
+          setCursor(next);
         }}
       />
 
@@ -755,7 +801,7 @@ export default function Tasks() {
                       <span className="day-number">{day.date.getDate()}</span>
                       {items.length > 0 && (
                         <div className="dashboard-day-counts">
-                          {summary.open > 0 && <span className="dashboard-day-line success">Aperte {summary.open}</span>}
+                          {summary.open > 0 && <span className="status-pill open">Aperte {summary.open}</span>}
                           {summary.overdue > 0 && <span className="dashboard-day-line danger">Scadute {summary.overdue}</span>}
                           {summary.done > 0 && <span className="status-pill done">Completate {summary.done}</span>}
                         </div>

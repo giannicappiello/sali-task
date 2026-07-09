@@ -88,9 +88,9 @@ function DashboardColorLegend() {
   return (
     <div className="dashboard-calendar-legend" style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
       <strong style={{ marginRight: "4px" }}>Legenda colori</strong>
-      <span className="dashboard-day-line success">Pianificate</span>
-      <span className="dashboard-day-line danger">Scadute</span>
-      <span className="status-pill done">Completate / evasi</span>
+      <span style={{ borderRadius: "999px", padding: "2px 8px", background: "#e0f2fe", color: "#1d4ed8", fontSize: "12px", fontWeight: 700 }}>Pianificate / aperte</span>
+      <span style={{ borderRadius: "999px", padding: "2px 8px", background: "#fee2e2", color: "#b91c1c", fontSize: "12px", fontWeight: 700 }}>Scadute / bloccate</span>
+      <span style={{ borderRadius: "999px", padding: "2px 8px", background: "#dcfce7", color: "#15803d", fontSize: "12px", fontWeight: 700 }}>Completate / evasi</span>
     </div>
   );
 }
@@ -114,6 +114,20 @@ function buildDashboardMonthDays(monthDate, activities, selectedDate) {
     const plannedReminders = dayReminders.filter((item) => !isReminderDone(item) && !isOverdue(item)).length;
     const overdueReminders = dayReminders.filter(isOverdue).length;
     const doneItems = dayItems.filter((item) => item.tipo === "task" ? isTaskDone(item) : isReminderDone(item)).length;
+    const taskDepartments = Array.from(
+      new Set(
+        dayTasks
+          .filter((item) => !isTaskDone(item) && !isOverdue(item))
+          .map((item) => item.reparti?.nome || "Task")
+          .filter(Boolean)
+      )
+    );
+    const indicators = [
+      ...taskDepartments.slice(0, 2).map((name) => ({ label: name, tone: "planned" })),
+      ...(plannedReminders > 0 ? [{ label: `Reminder ${plannedReminders}`, tone: "planned" }] : []),
+      ...(overdueTasks + overdueReminders > 0 ? [{ label: `Scadute ${overdueTasks + overdueReminders}`, tone: "danger" }] : []),
+      ...(doneItems > 0 ? [{ label: `Completate ${doneItems}`, tone: "done" }] : []),
+    ].slice(0, 4);
 
     return {
       date: day,
@@ -125,12 +139,13 @@ function buildDashboardMonthDays(monthDate, activities, selectedDate) {
       overdue: overdueTasks + overdueReminders,
       done: doneItems,
       total: dayItems.length,
+      indicators,
     };
   });
 }
 
-function SixMonthDashboardOverview({ currentMonth, activities, selectedDate, onSelectDate }) {
-  const months = Array.from({ length: 6 }).map((_, index) => {
+function SixMonthDashboardOverview({ currentMonth, activities, selectedDate, onSelectDate, onMove }) {
+  const months = Array.from({ length: 4 }).map((_, index) => {
     const date = new Date(currentMonth);
     date.setMonth(currentMonth.getMonth() + index);
     return date;
@@ -138,14 +153,20 @@ function SixMonthDashboardOverview({ currentMonth, activities, selectedDate, onS
 
   return (
     <div className="panel six-month-overview" style={{ marginBottom: "16px" }}>
-      <div className="panel-header" style={{ alignItems: "flex-start", gap: "12px" }}>
-        <div>
-          <h3>Panoramica 6 mesi</h3>
-          <p>Vista rapida delle attività dei prossimi sei mesi.</p>
+      <div className="panel-header" style={{ alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+        <button type="button" className="secondary-action" onClick={() => onMove(-4)}>
+          <ChevronLeft size={18} />
+        </button>
+        <div style={{ textAlign: "center" }}>
+          <h3>Panoramica 4 mesi</h3>
+          <p>Vista rapida delle attività dei prossimi quattro mesi.</p>
         </div>
+        <button type="button" className="secondary-action" onClick={() => onMove(4)}>
+          <ChevronRight size={18} />
+        </button>
         <DashboardColorLegend />
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(150px, 1fr))", gap: "12px", overflowX: "auto" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(220px, 1fr))", gap: "12px", overflowX: "auto" }}>
         {months.map((month) => {
           const days = buildDashboardMonthDays(month, activities, selectedDate);
           return (
@@ -154,7 +175,7 @@ function SixMonthDashboardOverview({ currentMonth, activities, selectedDate, onS
               <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "4px", fontSize: "11px", color: "#64748b", marginBottom: "5px" }}>
                 <span>L</span><span>M</span><span>M</span><span>G</span><span>V</span><span>S</span><span>D</span>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(18px, 1fr))", gap: "4px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(34px, 1fr))", gap: "7px" }}>
                 {days.map((day) => (
                   <button
                     key={day.dateKey}
@@ -163,7 +184,7 @@ function SixMonthDashboardOverview({ currentMonth, activities, selectedDate, onS
                     title={`${day.dateKey} · ${day.total} attività`}
                     className={`mini-calendar-day ${day.inMonth ? "" : "muted"} ${day.isToday ? "today" : ""} ${day.isSelected ? "selected" : ""}`}
                     style={{
-                      minHeight: "24px",
+                      minHeight: "70px",
                       borderRadius: "8px",
                       border: day.isSelected ? "1px solid #2563eb" : "1px solid #e5e7eb",
                       background: day.overdue > 0 ? "#fee2e2" : day.done > 0 ? "#dcfce7" : day.planned > 0 ? "#e0f2fe" : "#fff",
@@ -172,7 +193,31 @@ function SixMonthDashboardOverview({ currentMonth, activities, selectedDate, onS
                       cursor: "pointer",
                     }}
                   >
-                    {day.date.getDate()}
+                    <span style={{ display: "block", marginBottom: "4px" }}>{day.date.getDate()}</span>
+                    {day.indicators.length > 0 && (
+                      <span style={{ display: "grid", gap: "3px", width: "100%" }}>
+                        {day.indicators.map((indicator, indicatorIndex) => (
+                          <small
+                            key={`${day.dateKey}-${indicator.label}-${indicatorIndex}`}
+                            style={{
+                              display: "block",
+                              width: "100%",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              borderRadius: "999px",
+                              padding: "2px 5px",
+                              fontSize: "9px",
+                              lineHeight: "1.1",
+                              background: indicator.tone === "danger" ? "#fee2e2" : indicator.tone === "done" ? "#dcfce7" : "#e0f2fe",
+                              color: indicator.tone === "danger" ? "#b91c1c" : indicator.tone === "done" ? "#15803d" : "#1d4ed8",
+                            }}
+                          >
+                            {indicator.label}
+                          </small>
+                        ))}
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -589,6 +634,11 @@ function Dashboard() {
           setCurrentMonth(new Date(monthDate));
           setActivityFilter(null);
         }}
+        onMove={(months) => {
+          const next = new Date(currentMonth);
+          next.setMonth(next.getMonth() + months);
+          setCurrentMonth(next);
+        }}
       />
 
       <div className="calendar-layout-grid">
@@ -618,9 +668,9 @@ function Dashboard() {
                     <span className="day-number">{day.date.getDate()}</span>
                     {day.items.length > 0 && (
                       <div className="dashboard-day-counts">
-                        {day.plannedTasks > 0 && <span className="dashboard-day-line success">Task {day.plannedTasks}</span>}
+                        {day.plannedTasks > 0 && <span style={{ borderRadius: "999px", padding: "2px 8px", background: "#e0f2fe", color: "#1d4ed8", fontSize: "12px", fontWeight: 700 }}>Task {day.plannedTasks}</span>}
                         {day.overdueTasks > 0 && <span className="dashboard-day-line danger">Task scad. {day.overdueTasks}</span>}
-                        {day.plannedReminders > 0 && <span className="dashboard-day-line success">Rem. {day.plannedReminders}</span>}
+                        {day.plannedReminders > 0 && <span style={{ borderRadius: "999px", padding: "2px 8px", background: "#e0f2fe", color: "#1d4ed8", fontSize: "12px", fontWeight: 700 }}>Rem. {day.plannedReminders}</span>}
                         {day.overdueReminders > 0 && <span className="dashboard-day-line danger">Rem. scad. {day.overdueReminders}</span>}
                       </div>
                     )}
@@ -712,9 +762,25 @@ function ActivityGroup({ title, items, danger = false, done = false, onOpen }) {
   if (!items.length) return null;
   return (
     <div className="dashboard-activity-group">
-      <h4 className={danger ? "danger" : done ? "done" : "success"}>{title}</h4>
+      <h4
+        className={danger ? "danger" : done ? "done" : ""}
+        style={!danger && !done ? { color: "#1d4ed8" } : undefined}
+      >
+        {title}
+      </h4>
       {items.map((item) => (
-        <button key={`${item.tipo}-${item.id}`} className={`calendar-task-card ${danger ? "overdue" : ""}`} onClick={() => onOpen(item)}>
+        <button
+          key={`${item.tipo}-${item.id}`}
+          className={`calendar-task-card ${danger ? "overdue" : ""}`}
+          style={
+            danger
+              ? { borderColor: "#fee2e2", background: "#fee2e2", color: "#b91c1c" }
+              : done
+                ? { borderColor: "#dcfce7", background: "#dcfce7", color: "#15803d" }
+                : { borderColor: "#e0f2fe", background: "#e0f2fe", color: "#1d4ed8" }
+          }
+          onClick={() => onOpen(item)}
+        >
           <strong>{item.titolo}</strong>
           <span>{item.tipo === "reminder" ? "Reminder personale" : item.v4_progetti?.titolo || "Senza progetto"}</span>
           <small>{statusLabel(item)} · {item.tipo === "task" ? item.reparti?.nome || "Reparto" : "Personale"}</small>

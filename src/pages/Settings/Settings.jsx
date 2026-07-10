@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
+import ProjectTypesSettings from "../../components/ProjectTypesSettings";
 
 const emptyDepartment = { nome: "", descrizione: "", attivo: true };
 const emptyRole = { nome: "", descrizione: "", livello: 40, permessi: [] };
@@ -324,10 +325,13 @@ export default function Settings() {
 
       <div className="settings-tabs">
         <button className={tab === "checklist" ? "active" : ""} onClick={() => setTab("checklist")}>Checklist progetto</button>
+        <button className={tab === "tipi_progetto" ? "active" : ""} onClick={() => setTab("tipi_progetto")}>Tipi di progetto</button>
         <button className={tab === "reparti" ? "active" : ""} onClick={() => setTab("reparti")}>Reparti</button>
         <button className={tab === "ruoli" ? "active" : ""} onClick={() => setTab("ruoli")}>Ruoli / permessi</button>
         <button className={tab === "utenti" ? "active" : ""} onClick={() => setTab("utenti")}>Utenti / accessi</button>
       </div>
+
+      {tab === "tipi_progetto" && <ProjectTypesSettings canManage={canManage} />}
 
       {tab === "checklist" && (
         <div className="panel settings-panel">

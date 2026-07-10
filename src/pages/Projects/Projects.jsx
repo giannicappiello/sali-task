@@ -22,6 +22,7 @@ const projectEmpty = {
   deadline: "",
   prodotti: [],
   reparti: [],
+  tipo_progetto_id: "",
 };
 
 const phaseEmpty = {
@@ -109,6 +110,8 @@ export default function Projects() {
   const [departments, setDepartments] = useState([]);
   const [users, setUsers] = useState([]);
   const [templates, setTemplates] = useState([]);
+  const [projectTypes, setProjectTypes] = useState([]);
+  const [projectTypePhases, setProjectTypePhases] = useState([]);
   const [projectProducts, setProjectProducts] = useState([]);
   const [projectDepartments, setProjectDepartments] = useState([]);
   const [phaseProducts, setPhaseProducts] = useState([]);
@@ -149,7 +152,7 @@ export default function Projects() {
 
   async function loadData() {
     setLoading(true);
-    const [projectsRes, phasesRes, productsRes, departmentsRes, usersRes, templatesRes, ppRes, prRes, fpRes, templateDepartmentsRes, phaseDepartmentsRes] = await Promise.all([
+    const [projectsRes, phasesRes, productsRes, departmentsRes, usersRes, templatesRes, ppRes, prRes, fpRes, templateDepartmentsRes, phaseDepartmentsRes, projectTypesRes, projectTypePhasesRes] = await Promise.all([
       supabase.from("v4_progetti").select("*").order("created_at", { ascending: false }),
       supabase
         .from("v4_fasi_progetto")
@@ -165,6 +168,8 @@ export default function Projects() {
       supabase.from("v4_fase_prodotti").select("id,fase_id,prodotto_id,prodotto_nome"),
       supabase.from("checklist_template_reparti").select("id,template_id,reparto_id"),
       supabase.from("v4_fase_reparti").select("id,fase_id,reparto_id,completato,completato_at,completato_da"),
+      supabase.from("tipi_progetto").select("id,nome,descrizione,attivo").order("nome"),
+      supabase.from("tipo_progetto_fasi").select("id,tipo_progetto_id,template_id,giorni_anticipo,ordine,obbligatoria").order("ordine", { ascending: true }),
     ]);
 
     if (projectsRes.error) console.error("Progetti:", projectsRes.error.message);
@@ -218,6 +223,8 @@ export default function Projects() {
     setProjectDepartments((prRes.data || []).filter((row) => visibleProjectIds.has(row.progetto_id)));
     setPhaseProducts((fpRes.data || []).filter((row) => visiblePhases.some((phase) => phase.id === row.fase_id)));
     setTemplateDepartments(templateDepartmentsRes.data || []);
+    setProjectTypes((projectTypesRes.data || []).filter((item) => item.attivo !== false));
+    setProjectTypePhases(projectTypePhasesRes.data || []);
     setPhaseDepartments((phaseDepartmentsRes.data || []).filter((row) => visiblePhases.some((phase) => phase.id === row.fase_id)));
     setLoading(false);
   }
@@ -384,6 +391,24 @@ export default function Projects() {
     return phaseDepartments.filter((row) => row.fase_id === phaseId && row.reparto_id).map((row) => row.reparto_id);
   }
 
+  function getProjectTypeDepartmentIds(projectTypeId) {
+    if (!projectTypeId) return [];
+
+    const templateIds = projectTypePhases
+      .filter((row) => row.tipo_progetto_id === projectTypeId && row.template_id)
+      .map((row) => row.template_id);
+
+    const departmentIds = templateIds.flatMap((templateId) => {
+      const ids = getTemplateDepartmentIds(templateId);
+      if (ids.length) return ids;
+
+      const template = templates.find((item) => item.id === templateId);
+      return [template?.reparto_id].filter(Boolean);
+    });
+
+    return [...new Set(departmentIds.filter(Boolean))];
+  }
+
   function openProject(project = null) {
     setSelectedProject(project);
     setProjectProductQuery("");
@@ -395,6 +420,7 @@ export default function Projects() {
             deadline: project.deadline || "",
             prodotti: getProjectProductIds(project.id),
             reparti: getProjectDepartmentIds(project.id),
+            tipo_progetto_id: project.tipo_progetto_id || "",
           }
         : { ...projectEmpty }
     );
@@ -498,6 +524,9 @@ export default function Projects() {
     e.preventDefault();
     if (!canManage) return alert("Non hai i permessi per modificare i progetti.");
     if (!projectForm.titolo.trim()) return alert("Inserisci il titolo del progetto.");
+    if (!selectedProject?.id && projectForm.tipo_progetto_id && !projectForm.deadline) {
+      return alert("Per generare le fasi dal tipo progetto devi inserire la deadline del progetto.");
+    }
 
     setSaving(true);
     const payload = {
@@ -505,6 +534,7 @@ export default function Projects() {
       descrizione: projectForm.descrizione.trim() || null,
       priorita: null,
       deadline: projectForm.deadline || null,
+      tipo_progetto_id: projectForm.tipo_progetto_id || null,
       modificato_da: actorId,
       updated_at: new Date().toISOString(),
     };
@@ -522,15 +552,70 @@ export default function Projects() {
     }
 
     const projectId = data.id;
-    await saveAssociations(projectId, projectForm.prodotti, projectForm.reparti);
+    const automaticDepartmentIds = getProjectTypeDepartmentIds(projectForm.tipo_progetto_id);
+    const projectDepartmentIds = [...new Set([
+      ...safeArray(projectForm.reparti),
+      ...automaticDepartmentIds,
+    ])];
 
-    // Creazione automatica delle fasi disabilitata:
-    // le fasi verranno aggiunte manualmente tramite "Aggiungi fase".
+    await saveAssociations(projectId, projectForm.prodotti, projectDepartmentIds);
+
+    if (!selectedProject?.id && projectForm.tipo_progetto_id) {
+      await createProjectTypePhases(projectId, projectForm.tipo_progetto_id, projectForm.deadline, projectForm.prodotti);
+    }
 
     await log("progetto", projectId, selectedProject?.id ? "modifica progetto" : "creazione progetto", payload.titolo);
     setSaving(false);
     setProjectModal(false);
     await loadData();
+  }
+
+  function subtractDaysIso(dateValue, days) {
+    if (!dateValue) return null;
+    const [year, month, day] = String(dateValue).slice(0, 10).split("-").map(Number);
+    const date = new Date(year, month - 1, day);
+    date.setDate(date.getDate() - Number(days || 0));
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
+  async function createProjectTypePhases(projectId, projectTypeId, projectDeadline, productIds) {
+    const rules = projectTypePhases
+      .filter((row) => row.tipo_progetto_id === projectTypeId)
+      .sort((a, b) => Number(a.ordine || 0) - Number(b.ordine || 0));
+
+    for (const [index, rule] of rules.entries()) {
+      const template = templates.find((item) => item.id === rule.template_id);
+      if (!template) continue;
+
+      const templateDepartmentIds = getTemplateDepartmentIds(template.id);
+      const effectiveDepartmentIds = templateDepartmentIds.length
+        ? templateDepartmentIds
+        : [template.reparto_id].filter(Boolean);
+
+      const { data, error } = await supabase
+        .from("v4_fasi_progetto")
+        .insert({
+          progetto_id: projectId,
+          titolo: template.titolo,
+          reparto_id: effectiveDepartmentIds[0] || null,
+          stato: "da_evadere",
+          priorita: null,
+          assegnato_a: null,
+          ordine: Number(rule.ordine || index + 1),
+          deadline: subtractDaysIso(projectDeadline, rule.giorni_anticipo),
+          creato_da: actorId,
+          modificato_da: actorId,
+        })
+        .select("id")
+        .single();
+
+      if (error) throw error;
+      if (data?.id && effectiveDepartmentIds.length) await savePhaseDepartments(data.id, effectiveDepartmentIds);
+      if (data?.id && safeArray(productIds).length) await savePhaseProducts(data.id, productIds);
+    }
   }
 
   async function createTemplatePhases(projectId, repartoIds) {
@@ -1266,6 +1351,13 @@ export default function Projects() {
 
             <label>Titolo<input value={projectForm.titolo} onChange={(e) => setProjectForm({ ...projectForm, titolo: e.target.value })} /></label>
             <label>Descrizione<textarea rows="4" value={projectForm.descrizione} onChange={(e) => setProjectForm({ ...projectForm, descrizione: e.target.value })} /></label>
+
+            <label>Tipo progetto
+              <select value={projectForm.tipo_progetto_id} onChange={(e) => setProjectForm({ ...projectForm, tipo_progetto_id: e.target.value })}>
+                <option value="">Nessun tipo progetto</option>
+                {projectTypes.map((type) => <option key={type.id} value={type.id}>{type.nome}</option>)}
+              </select>
+            </label>
 
             <label>Deadline<input type="date" value={projectForm.deadline} onChange={(e) => setProjectForm({ ...projectForm, deadline: e.target.value })} /></label>
 

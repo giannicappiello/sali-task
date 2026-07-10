@@ -572,6 +572,9 @@ export default function Projects() {
       if (data?.id && effectiveDepartmentIds.length) {
         await savePhaseDepartments(data.id, effectiveDepartmentIds);
       }
+      if (data?.id) {
+        await savePhaseProducts(data.id, getProjectProductIds(projectId));
+      }
     }
   }
 
@@ -1125,7 +1128,7 @@ export default function Projects() {
       <div className="page-title-row">
         <div>
           <h1>Progetti</h1>
-          <p>Ogni progetto contiene checklist, fasi, reparti, prodotti, allegati, commenti e storico.</p>
+          <p>Tutti i progetti del mio reparto.</p>
         </div>
         {canManage && (
           <button className="primary-action" onClick={() => openProject()}>
@@ -1338,6 +1341,7 @@ export default function Projects() {
         phase={selectedPhase}
         initialDate={phaseForm.deadline || selectedProject?.deadline || todayIso()}
         initialProjectId={selectedProject?.id || ""}
+        initialProductIds={selectedProject?.id ? getProjectProductIds(selectedProject.id) : []}
         projects={projects}
         departments={departments}
         products={products}

@@ -25,6 +25,7 @@ export default function PhaseChecklistModal({
   templateDepartments = [],
   allPhases = [],
   initialProjectId = "",
+  initialProductIds = [],
   canManage = true,
   canCompleteDepartment = () => true,
   onClose,
@@ -66,11 +67,16 @@ export default function PhaseChecklistModal({
       });
       loadPhaseDetails(selectedPhase.id);
     } else {
-      setForm({ ...emptyForm, progetto_id: initialProjectId || "", deadline: initialDate || todayIso() });
+      setForm({
+        ...emptyForm,
+        progetto_id: initialProjectId || "",
+        deadline: initialDate || todayIso(),
+        prodotti: [...new Set(safeArray(initialProductIds).filter(Boolean))],
+      });
       setComments([]);
       setAttachments([]);
     }
-  }, [open, selectedPhase?.id, initialDate, initialProjectId]);
+  }, [open, selectedPhase?.id, initialDate, initialProjectId, safeArray(initialProductIds).join(",")]);
 
   function getPhaseDepartmentIds(phaseId) {
     return safeArray(phaseDepartments).filter((row) => row.fase_id === phaseId && row.reparto_id).map((row) => row.reparto_id);

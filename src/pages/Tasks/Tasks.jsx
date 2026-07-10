@@ -704,7 +704,7 @@ export default function Tasks() {
       <div className="page-title-row">
         <div>
           <h1>Planning fasi</h1>
-          <p>Vista chiara delle attività per data, progetto, reparto e stato di avanzamento.</p>
+          <p>Tutte le fasi dei progetti del mio reparto.</p>
         </div>
         <button className="primary-action" type="button" onClick={() => openPhaseModal(null)}>
           <Plus size={18} /> Nuova task/fase

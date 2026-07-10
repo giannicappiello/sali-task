@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   AlertCircle,
   CalendarDays,
@@ -230,6 +231,7 @@ function SixMonthDashboardOverview({ currentMonth, activities, selectedDate, onS
 }
 
 function Dashboard() {
+  const navigate = useNavigate();
   const { profile, userDepartmentIds = [] } = useAuth();
   const [tasks, setTasks] = useState([]);
   const [reminders, setReminders] = useState([]);
@@ -468,16 +470,8 @@ function Dashboard() {
   }
 
   function openReminderEdit(item) {
-    setSelectedReminder(item);
-    setReminderForm({
-      titolo: item.titolo || "",
-      descrizione: item.descrizione || "",
-      deadline: dateOnly(item.deadline) || "",
-      prodotto_id: item.prodotto_id || "",
-      progetto_id: item.progetto_id || "",
-      stato: item.stato || "Aperto",
-    });
-    setReminderModalOpen(true);
+    if (!item?.id) return;
+    navigate(`/reminders?reminder=${item.id}&edit=1`);
   }
 
   function openActivity(item) {
@@ -597,7 +591,7 @@ function Dashboard() {
       <div className="page-title-row">
         <div>
           <h1>Le mie attività</h1>
-          <p>Task/fasi del tuo reparto e reminder personali o condivisi con il tuo reparto.</p>
+          <p>Task/fasi  e reminder del mio reparto.</p>
         </div>
         <div className="dashboard-quick-actions">
           <button className="primary-action" onClick={openNewPhase}><Plus size={18} /> Nuova task/fase</button>

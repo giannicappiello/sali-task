@@ -104,7 +104,12 @@ export default function Agenda() {
     const reminderId = params.get("reminder");
     if (!reminderId || !reminders.length) return;
     const found = reminders.find((item) => item.id === reminderId);
-    if (found) setSelected(found);
+    if (!found) return;
+
+    setSelected(found);
+    if (params.get("edit") === "1") {
+      openEdit(found);
+    }
   }, [params, reminders]);
 
   function userName(userId) {

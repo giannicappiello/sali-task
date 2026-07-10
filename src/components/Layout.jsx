@@ -22,13 +22,13 @@ import { useAuth } from "../contexts/AuthContext";
 const APP_VERSION = "4.0";
 
 const menuItems = [
-  { path: "/dashboard", label: "Le mie attività", icon: LayoutDashboard, permission: "dashboard.read" },
-  { path: "/projects", label: "Progetti", icon: Folder, permission: "projects.read" },
-  { path: "/tasks", label: "Planning fasi", icon: ClipboardList, permission: "tasks.read" },
-  { path: "/reminders", label: "Reminder", icon: BellRing, permission: "agenda.read" },
+  { path: "/dashboard", label: "Tutte le attività del reparto", icon: LayoutDashboard, permission: "dashboard.read" },
+  { path: "/reminders", label: "Reminder del mio reparto", icon: BellRing, permission: "agenda.read" },
+  { path: "/projects", label: "Progetti del mio reparto", icon: Folder, permission: "projects.read" },
+  { path: "/tasks", label: "Tutte le fasi dei progetti", icon: ClipboardList, permission: "tasks.read" },
+  { path: "/messages", label: "Messaggi", icon: MessageCircle, permission: "messages.read" },
   { path: "/products", label: "Prodotti", icon: Package, permission: "products.read" },
   { path: "/documentation", label: "Documentazione", icon: FileArchive, permission: "documentation.read" },
-  { path: "/messages", label: "Messaggi", icon: MessageCircle, permission: "messages.read" },
   { path: "/team", label: "Team", icon: Users, permission: "team.read" },
   { path: "/settings", label: "Impostazioni", icon: Settings, permission: "settings.manage" },
 ];

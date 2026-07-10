@@ -11,6 +11,7 @@ import {
   MessageCircle,
   Plus,
   Save,
+  Search,
   X,
 } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
@@ -247,6 +248,7 @@ function Dashboard() {
   const [currentMonth, setCurrentMonth] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState(todayIso());
   const [activityFilter, setActivityFilter] = useState(null);
+  const [query, setQuery] = useState("");
   const [messagesCount, setMessagesCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selectedPhase, setSelectedPhase] = useState(null);
@@ -345,6 +347,28 @@ function Dashboard() {
 
   const activities = useMemo(() => [...tasks, ...reminders], [tasks, reminders]);
 
+  const filteredActivities = useMemo(() => {
+    const text = query.trim().toLowerCase();
+    if (!text) return activities;
+
+    return activities.filter((item) => {
+      const projectTitle = item.v4_progetti?.titolo || projects.find((project) => project.id === item.progetto_id)?.titolo || "";
+      const departmentName = item.reparti?.nome || "";
+      const productName = products.find((product) => product.id === item.prodotto_id)?.nome || "";
+      const haystack = [
+        item.titolo,
+        item.descrizione,
+        item.note,
+        projectTitle,
+        departmentName,
+        productName,
+        item.tipo === "reminder" ? "reminder" : "task fase",
+      ].join(" ").toLowerCase();
+
+      return haystack.includes(text);
+    });
+  }, [activities, query, projects, products]);
+
   const calendarDays = useMemo(() => {
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
@@ -356,7 +380,7 @@ function Dashboard() {
       const day = new Date(start);
       day.setDate(start.getDate() + index);
       const dateKey = formatDateForQuery(day);
-      const dayItems = activities.filter((item) => dateOnly(item.deadline) === dateKey);
+      const dayItems = filteredActivities.filter((item) => dateOnly(item.deadline) === dateKey);
       const dayTasks = dayItems.filter((item) => item.tipo === "task");
       const dayReminders = dayItems.filter((item) => item.tipo === "reminder");
       const plannedTasks = dayTasks.filter((item) => !isTaskDone(item) && !isOverdue(item)).length;
@@ -378,7 +402,7 @@ function Dashboard() {
         hasOverdue: overdueTasks + overdueReminders > 0,
       };
     });
-  }, [activities, currentMonth, selectedDate]);
+  }, [filteredActivities, currentMonth, selectedDate]);
 
   const monthItems = useMemo(() => {
     const month = currentMonth.getMonth();
@@ -389,7 +413,7 @@ function Dashboard() {
       const d = new Date(`${deadline}T00:00:00`);
       return d.getMonth() === month && d.getFullYear() === year;
     });
-  }, [activities, currentMonth]);
+  }, [filteredActivities, currentMonth]);
 
   function filterActivities(items, filter) {
     if (filter === "plannedTasks") return items.filter((item) => item.tipo === "task" && !isTaskDone(item) && !isOverdue(item));
@@ -401,8 +425,8 @@ function Dashboard() {
 
   const selectedItems = useMemo(() => {
     if (activityFilter) return filterActivities(monthItems, activityFilter);
-    return activities.filter((item) => dateOnly(item.deadline) === selectedDate);
-  }, [activities, selectedDate, activityFilter, monthItems]);
+    return filteredActivities.filter((item) => dateOnly(item.deadline) === selectedDate);
+  }, [filteredActivities, selectedDate, activityFilter, monthItems]);
 
   const monthStats = useMemo(() => {
     const monthTasks = monthItems.filter((item) => item.tipo === "task");
@@ -625,9 +649,20 @@ function Dashboard() {
         </button>
       </div>
 
+      <div className="v4-toolbar planning-toolbar-clean">
+        <div className="task-search">
+          <Search size={18} />
+          <input
+            placeholder="Cerca task, reminder, progetto, reparto o prodotto..."
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
+      </div>
+
       <SixMonthDashboardOverview
         currentMonth={currentMonth}
-        activities={activities}
+        activities={filteredActivities}
         selectedDate={selectedDate}
         onSelectDate={(dateKey, monthDate) => {
           setSelectedDate(dateKey);

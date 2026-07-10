@@ -730,22 +730,6 @@ export default function Tasks() {
         </button>
       </div>
 
-      <SixMonthPlanningOverview
-        currentMonth={cursor}
-        phases={filtered}
-        selectedDate={selectedDate}
-        onSelectDate={(dayKey, monthDate) => {
-          setSelectedDate(dayKey);
-          setCursor(new Date(monthDate));
-          setView("month");
-        }}
-        onMove={(months) => {
-          const next = new Date(cursor);
-          next.setMonth(next.getMonth() + months);
-          setCursor(next);
-        }}
-      />
-
       <div className="v4-toolbar planning-toolbar-clean">
         <div className="task-search">
           <Search size={18} />
@@ -764,6 +748,22 @@ export default function Tasks() {
           ))}
         </div>
       </div>
+
+      <SixMonthPlanningOverview
+        currentMonth={cursor}
+        phases={filtered}
+        selectedDate={selectedDate}
+        onSelectDate={(dayKey, monthDate) => {
+          setSelectedDate(dayKey);
+          setCursor(new Date(monthDate));
+          setView("month");
+        }}
+        onMove={(months) => {
+          const next = new Date(cursor);
+          next.setMonth(next.getMonth() + months);
+          setCursor(next);
+        }}
+      />
 
       <div className="calendar-layout-grid">
         <div className="panel calendar-main-panel">

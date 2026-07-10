@@ -524,9 +524,8 @@ export default function Projects() {
     const projectId = data.id;
     await saveAssociations(projectId, projectForm.prodotti, projectForm.reparti);
 
-    if (!selectedProject?.id) {
-      await createTemplatePhases(projectId, projectForm.reparti);
-    }
+    // Creazione automatica delle fasi disabilitata:
+    // le fasi verranno aggiunte manualmente tramite "Aggiungi fase".
 
     await log("progetto", projectId, selectedProject?.id ? "modifica progetto" : "creazione progetto", payload.titolo);
     setSaving(false);

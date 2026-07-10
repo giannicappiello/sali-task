@@ -232,7 +232,8 @@ function SixMonthDashboardOverview({ currentMonth, activities, selectedDate, onS
 
 function Dashboard() {
   const navigate = useNavigate();
-  const { profile, userDepartmentIds = [] } = useAuth();
+  const { profile, userDepartmentIds = [], isAdmin } = useAuth();
+  const adminMode = Boolean(isAdmin?.());
   const [tasks, setTasks] = useState([]);
   const [reminders, setReminders] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -258,7 +259,7 @@ function Dashboard() {
 
   useEffect(() => {
     if (profile?.id) loadData();
-  }, [profile?.id, profile?.reparto_id, userDepartmentIds.join(",")]);
+  }, [profile?.id, profile?.reparto_id, userDepartmentIds.join(","), adminMode]);
 
   async function loadData() {
     setLoading(true);
@@ -296,7 +297,9 @@ function Dashboard() {
     if (messageParticipantsRes.error) console.error("Dashboard messaggi:", messageParticipantsRes.error.message);
 
     const allPhaseDepartments = phaseDepartmentsRes.data || [];
-    const visibleTasks = (phasesRes.data || []).filter((phase) => {
+    const visibleTasks = adminMode
+      ? (phasesRes.data || [])
+      : (phasesRes.data || []).filter((phase) => {
       if (!departmentIds.length) return true;
       const phaseDeps = allPhaseDepartments
         .filter((row) => row.fase_id === phase.id && row.reparto_id)
@@ -314,7 +317,9 @@ function Dashboard() {
     }).length;
 
     const allReminderDepartments = reminderDepartmentsRes.data || [];
-    const visibleReminders = (remindersRes.data || []).filter((reminder) => {
+    const visibleReminders = adminMode
+      ? (remindersRes.data || [])
+      : (remindersRes.data || []).filter((reminder) => {
       if (reminder.utente_id === profile.id) return true;
       if (!departmentIds.length) return false;
       const reminderDepartmentIds = allReminderDepartments
@@ -496,6 +501,7 @@ function Dashboard() {
   }
 
   function canCompleteDepartment(departmentId) {
+    if (adminMode) return true;
     const ids = userDepartmentIds.length ? userDepartmentIds : [profile?.reparto_id].filter(Boolean);
     if (!departmentId) return true;
     return ids.includes(departmentId);

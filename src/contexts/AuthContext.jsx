@@ -226,6 +226,8 @@ export function AuthProvider({ children }) {
     return (profile?.reparto_ids || []).includes(repartoId);
   }
 
+  const adminUser = isAdmin();
+
   const value = useMemo(
     () => ({
       session,
@@ -239,11 +241,14 @@ export function AuthProvider({ children }) {
       resetPassword,
       hasPermission,
       isAdmin,
+      isAdminUser: adminUser,
+      canReadEverything: adminUser,
+      canManageEverything: adminUser,
       canAccessDepartment,
       userDepartmentIds: profile?.reparto_ids || [],
       reloadProfile: () => authUser && loadProfile(authUser),
     }),
-    [session, authUser, profile, permissions, loading]
+    [session, authUser, profile, permissions, loading, adminUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -16,7 +16,8 @@ import { useAuth } from "../../contexts/AuthContext";
 import "./Messages.css";
 
 function Messages() {
-  const { profile } = useAuth();
+  const { profile, isAdmin } = useAuth();
+  const adminMode = Boolean(isAdmin?.());
 
   const [utenti, setUtenti] = useState([]);
   const [conversations, setConversations] = useState([]);
@@ -41,7 +42,7 @@ function Messages() {
   useEffect(() => {
     if (!profile?.id) return;
     loadInitialData();
-  }, [profile?.id]);
+  }, [profile?.id, adminMode]);
 
   useEffect(() => {
     if (!selectedConversation?.id) return;
@@ -102,30 +103,71 @@ function Messages() {
   async function loadConversations(selectFirst = false) {
     if (!profile?.id) return;
 
-    const { data: memberships, error } = await supabase
-      .from("chat_partecipanti")
-      .select(`
-        id,
-        ultimo_letto_il,
-        conversazione_id,
-        chat_conversazioni(
-          id,
-          titolo,
-          tipo,
-          created_at,
-          updated_at,
-          created_by
-        )
-      `)
-      .eq("utente_id", profile.id);
+    let memberships = [];
 
-    if (error) {
-      console.error("Errore caricamento conversazioni:", error);
-      setConversations([]);
-      return;
+    if (adminMode) {
+      const { data: allConversations, error: conversationsError } = await supabase
+        .from("chat_conversazioni")
+        .select("id,titolo,tipo,created_at,updated_at,created_by")
+        .order("updated_at", { ascending: false });
+
+      if (conversationsError) {
+        console.error("Errore caricamento conversazioni admin:", conversationsError);
+        setConversations([]);
+        return;
+      }
+
+      const { data: ownMemberships, error: ownMembershipsError } = await supabase
+        .from("chat_partecipanti")
+        .select("id,ultimo_letto_il,conversazione_id")
+        .eq("utente_id", profile.id);
+
+      if (ownMembershipsError) {
+        console.error("Errore caricamento letture admin:", ownMembershipsError);
+      }
+
+      const ownByConversation = new Map(
+        (ownMemberships || []).map((row) => [row.conversazione_id, row])
+      );
+
+      memberships = (allConversations || []).map((conversation) => {
+        const own = ownByConversation.get(conversation.id);
+        return {
+          id: own?.id || null,
+          ultimo_letto_il: own?.ultimo_letto_il || null,
+          conversazione_id: conversation.id,
+          chat_conversazioni: conversation,
+          admin_observer: !own,
+        };
+      });
+    } else {
+      const { data, error } = await supabase
+        .from("chat_partecipanti")
+        .select(`
+          id,
+          ultimo_letto_il,
+          conversazione_id,
+          chat_conversazioni(
+            id,
+            titolo,
+            tipo,
+            created_at,
+            updated_at,
+            created_by
+          )
+        `)
+        .eq("utente_id", profile.id);
+
+      if (error) {
+        console.error("Errore caricamento conversazioni:", error);
+        setConversations([]);
+        return;
+      }
+
+      memberships = data || [];
     }
 
-    const conversationIds = (memberships || []).map((membership) => membership.conversazione_id);
+    const conversationIds = memberships.map((membership) => membership.conversazione_id).filter(Boolean);
 
     if (conversationIds.length === 0) {
       setConversations([]);
@@ -158,35 +200,28 @@ function Messages() {
           .limit(500),
       ]);
 
-    if (participantsError) {
-      console.error("Errore partecipanti chat:", participantsError);
-    }
+    if (participantsError) console.error("Errore partecipanti chat:", participantsError);
+    if (messagesError) console.error("Errore messaggi chat:", messagesError);
 
-    if (messagesError) {
-      console.error("Errore messaggi chat:", messagesError);
-    }
-
-    const mapped = (memberships || []).map((membership) => {
+    const mapped = memberships.map((membership) => {
       const conversation = membership.chat_conversazioni;
       const convParticipants = (participants || []).filter(
         (participant) => participant.conversazione_id === conversation.id
       );
-
       const otherParticipants = convParticipants.filter(
         (participant) => participant.utente_id !== profile.id
       );
-
       const latestMessage = (allMessages || []).find(
         (message) => message.conversazione_id === conversation.id
       );
-
-      const unreadCount = (allMessages || []).filter((message) => {
-        if (message.conversazione_id !== conversation.id) return false;
-        if (message.mittente_id === profile.id) return false;
-        if (!membership.ultimo_letto_il) return true;
-        return new Date(message.created_at) > new Date(membership.ultimo_letto_il);
-      }).length;
-
+      const unreadCount = membership.admin_observer
+        ? 0
+        : (allMessages || []).filter((message) => {
+            if (message.conversazione_id !== conversation.id) return false;
+            if (message.mittente_id === profile.id) return false;
+            if (!membership.ultimo_letto_il) return true;
+            return new Date(message.created_at) > new Date(membership.ultimo_letto_il);
+          }).length;
       const title =
         conversation.titolo ||
         otherParticipants.map((participant) => participant.utenti?.nome).filter(Boolean).join(", ") ||
@@ -200,6 +235,7 @@ function Messages() {
         latestMessage,
         unreadCount,
         ultimo_letto_il: membership.ultimo_letto_il,
+        adminObserver: Boolean(membership.admin_observer),
       };
     });
 
@@ -215,9 +251,7 @@ function Messages() {
       setSelectedConversation(mapped[0]);
     } else if (selectedConversation) {
       const refreshedSelected = mapped.find((item) => item.id === selectedConversation.id);
-      if (refreshedSelected) {
-        setSelectedConversation(refreshedSelected);
-      }
+      if (refreshedSelected) setSelectedConversation(refreshedSelected);
     }
   }
 

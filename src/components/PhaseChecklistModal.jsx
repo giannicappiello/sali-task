@@ -90,7 +90,22 @@ export default function PhaseChecklistModal({
     return safeArray(templateDepartments).filter((row) => row.template_id === templateId && row.reparto_id).map((row) => row.reparto_id);
   }
 
-  const blockingOptions = useMemo(() => safeArray(allPhases).filter((item) => item.id && item.id !== selectedPhase?.id), [allPhases, selectedPhase?.id]);
+  const currentProjectId =
+    form.progetto_id ||
+    selectedPhase?.progetto_id ||
+    initialProjectId ||
+    "";
+
+  const blockingOptions = useMemo(
+    () =>
+      safeArray(allPhases).filter(
+        (item) =>
+          item.id &&
+          item.id !== selectedPhase?.id &&
+          item.progetto_id === currentProjectId
+      ),
+    [allPhases, selectedPhase?.id, currentProjectId]
+  );
 
   const selectedBlocker = useMemo(() => blockingOptions.find((item) => item.id === form.bloccante_id) || null, [blockingOptions, form.bloccante_id]);
 

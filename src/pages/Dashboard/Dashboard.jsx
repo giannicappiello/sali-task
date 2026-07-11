@@ -441,10 +441,10 @@ function Dashboard() {
 
   const sidePanelTitle = activityFilter
     ? {
-        plannedTasks: "Task/fasi pianificate",
-        overdueTasks: "Task/fasi scadute",
-        plannedReminders: "Reminder pianificati",
-        overdueReminders: "Reminder scaduti",
+        plannedTasks: "Task/fasi pianificate nel mese",
+        overdueTasks: "Task/fasi scadute nel mese",
+        plannedReminders: "Reminder pianificati nel mese",
+        overdueReminders: "Reminder scaduti nel mese",
       }[activityFilter]
     : formatDateHuman(selectedDate);
 

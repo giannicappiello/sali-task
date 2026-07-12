@@ -15,6 +15,7 @@ import "./Team.css";
 
 const emptyForm = {
   nome: "",
+  cognome: "",
   email: "",
   password: "",
   telefono: "",
@@ -54,6 +55,7 @@ function Team() {
           id,
           auth_user_id,
           nome,
+          cognome,
           email,
           telefono,
           avatar_url,
@@ -66,8 +68,15 @@ function Team() {
           ruoli(id, nome, livello)
         `)
         .order("nome"),
-      supabase.from("ruoli").select("id, nome, livello").order("livello", { ascending: false }),
-      supabase.from("reparti").select("id, nome").eq("attivo", true).order("nome"),
+      supabase
+        .from("ruoli")
+        .select("id, nome, livello")
+        .order("livello", { ascending: false }),
+      supabase
+        .from("reparti")
+        .select("id, nome")
+        .eq("attivo", true)
+        .order("nome"),
     ]);
 
     if (utentiRes.error) {
@@ -94,6 +103,10 @@ function Team() {
     setLoading(false);
   }
 
+  function getFullName(user) {
+    return `${user?.nome || ""} ${user?.cognome || ""}`.trim();
+  }
+
   function openCreateModal() {
     setEditingUser(null);
     setForm(emptyForm);
@@ -104,6 +117,7 @@ function Team() {
     setEditingUser(user);
     setForm({
       nome: user.nome || "",
+      cognome: user.cognome || "",
       email: user.email || "",
       password: "",
       telefono: user.telefono || "",
@@ -128,9 +142,12 @@ function Team() {
   }
 
   async function callAdminFunction(payload) {
-    const { data, error } = await supabase.functions.invoke("admin-manage-user", {
-      body: payload,
-    });
+    const { data, error } = await supabase.functions.invoke(
+      "admin-manage-user",
+      {
+        body: payload,
+      }
+    );
 
     if (error) {
       throw new Error(error.message || "Errore funzione admin.");
@@ -143,8 +160,8 @@ function Team() {
     return data;
   }
 
-  async function handleSave(e) {
-    e.preventDefault();
+  async function handleSave(event) {
+    event.preventDefault();
 
     if (!canManageTeam) {
       alert("Non hai i permessi per gestire gli utenti.");
@@ -153,6 +170,11 @@ function Team() {
 
     if (!form.nome.trim()) {
       alert("Inserisci il nome dell'utente.");
+      return;
+    }
+
+    if (!form.cognome.trim()) {
+      alert("Inserisci il cognome dell'utente.");
       return;
     }
 
@@ -178,10 +200,11 @@ function Team() {
         action: editingUser ? "update" : "create",
         id: editingUser?.id || null,
         auth_user_id: editingUser?.auth_user_id || null,
-        nome: form.nome,
-        email: form.email,
+        nome: form.nome.trim(),
+        cognome: form.cognome.trim(),
+        email: form.email.trim(),
         password: form.password,
-        telefono: form.telefono,
+        telefono: form.telefono.trim(),
         ruolo_id: form.ruolo_id || null,
         reparto_id: form.reparto_id || null,
         attivo: form.attivo,
@@ -209,7 +232,8 @@ function Team() {
     }
 
     const action = user.attivo ? "disattivare" : "riattivare";
-    const confirmed = window.confirm(`Vuoi ${action} ${user.nome}?`);
+    const fullName = getFullName(user) || user.email;
+    const confirmed = window.confirm(`Vuoi ${action} ${fullName}?`);
 
     if (!confirmed) return;
 
@@ -219,6 +243,7 @@ function Team() {
         id: user.id,
         auth_user_id: user.auth_user_id,
         nome: user.nome,
+        cognome: user.cognome || "",
         email: user.email,
         password: "",
         telefono: user.telefono || "",
@@ -230,7 +255,10 @@ function Team() {
       await loadData();
     } catch (error) {
       console.error("Errore aggiornamento stato utente:", error);
-      alert(error.message || "Errore durante l'aggiornamento dello stato utente.");
+      alert(
+        error.message ||
+          "Errore durante l'aggiornamento dello stato utente."
+      );
     }
   }
 
@@ -245,8 +273,9 @@ function Team() {
       return;
     }
 
+    const fullName = getFullName(user) || user.email;
     const confirmed = window.confirm(
-      `Vuoi eliminare ${user.nome}?\n\nL'utente verrà eliminato sia dalla tabella utenti sia da Supabase Auth se collegato.`
+      `Vuoi eliminare ${fullName}?\n\nL'utente verrà eliminato da sali-task e, se collegato, anche dalle anagrafiche Utenti/Beauty/Agenti di Beauty Days. Le giornate e le richieste di contatto resteranno archiviate.`
     );
 
     if (!confirmed) return;
@@ -277,18 +306,14 @@ function Team() {
     });
   }
 
-  function isUserOnline(user) {
-    if (!user?.attivo || !user?.ultimo_accesso) return false;
-    const lastAccess = new Date(user.ultimo_accesso).getTime();
-    if (Number.isNaN(lastAccess)) return false;
-    return Date.now() - lastAccess <= 15 * 60 * 1000;
-  }
+  function getInitials(user) {
+    const fullName = getFullName(user);
 
-  function getInitials(name) {
-    if (!name) return "UT";
+    if (!fullName) return "UT";
 
-    return name
+    return fullName
       .split(" ")
+      .filter(Boolean)
       .map((part) => part[0])
       .join("")
       .slice(0, 2)
@@ -303,6 +328,7 @@ function Team() {
     return utenti.filter((user) => {
       const text = `
         ${user.nome || ""}
+        ${user.cognome || ""}
         ${user.email || ""}
         ${user.telefono || ""}
         ${user.ruoli?.nome || ""}
@@ -333,15 +359,13 @@ function Team() {
         <div className="team-search">
           <Search size={18} />
           <input
-            placeholder="Cerca nome, email, ruolo o reparto..."
+            placeholder="Cerca nome, cognome, email, ruolo o reparto..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(event) => setSearch(event.target.value)}
           />
         </div>
 
-        <div className="team-counter">
-          {filteredUsers.length} utenti
-        </div>
+        <div className="team-counter">{filteredUsers.length} utenti</div>
       </div>
 
       <div className="panel team-panel">
@@ -364,13 +388,10 @@ function Team() {
             {filteredUsers.map((user) => (
               <div className="users-table-row" key={user.id}>
                 <div className="user-cell">
-                  <div className="user-avatar">{getInitials(user.nome)}</div>
+                  <div className="user-avatar">{getInitials(user)}</div>
                   <div>
-                    <strong>{user.nome}</strong>
+                    <strong>{getFullName(user) || user.email}</strong>
                     <small>{user.email}</small>
-                    <span className={`presence-badge ${isUserOnline(user) ? "online" : "offline"}`}>
-                      {isUserOnline(user) ? "Online" : "Offline"}
-                    </span>
                     {!user.auth_user_id && (
                       <em>Profilo non ancora collegato ad Auth</em>
                     )}
@@ -382,7 +403,11 @@ function Team() {
                 <span>{user.telefono || "-"}</span>
                 <span>{formatDateTime(user.ultimo_accesso)}</span>
 
-                <span className={`user-status ${user.attivo ? "active" : "inactive"}`}>
+                <span
+                  className={`user-status ${
+                    user.attivo ? "active" : "inactive"
+                  }`}
+                >
                   {user.attivo ? (
                     <>
                       <UserCheck size={15} />
@@ -410,7 +435,11 @@ function Team() {
                         title={user.attivo ? "Disattiva" : "Riattiva"}
                         onClick={() => toggleActive(user)}
                       >
-                        {user.attivo ? <UserX size={16} /> : <UserCheck size={16} />}
+                        {user.attivo ? (
+                          <UserX size={16} />
+                        ) : (
+                          <UserCheck size={16} />
+                        )}
                       </button>
 
                       <button
@@ -444,19 +473,36 @@ function Team() {
                 </p>
               </div>
 
-              <button className="modal-close" onClick={closeModal} type="button">
+              <button
+                className="modal-close"
+                onClick={closeModal}
+                type="button"
+              >
                 <X size={22} />
               </button>
             </div>
 
             <form className="user-form" onSubmit={handleSave}>
-              <div className="form-group full">
+              <div className="form-group">
                 <label>Nome *</label>
                 <input
                   value={form.nome}
-                  onChange={(e) => updateForm("nome", e.target.value)}
-                  placeholder="Es. Mario Rossi"
+                  onChange={(event) =>
+                    updateForm("nome", event.target.value)
+                  }
+                  placeholder="Es. Mario"
                   autoFocus
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Cognome *</label>
+                <input
+                  value={form.cognome}
+                  onChange={(event) =>
+                    updateForm("cognome", event.target.value)
+                  }
+                  placeholder="Es. Rossi"
                 />
               </div>
 
@@ -465,7 +511,9 @@ function Team() {
                 <input
                   type="email"
                   value={form.email}
-                  onChange={(e) => updateForm("email", e.target.value)}
+                  onChange={(event) =>
+                    updateForm("email", event.target.value)
+                  }
                   placeholder="nome@progre.it"
                 />
               </div>
@@ -477,7 +525,9 @@ function Team() {
                 <input
                   type="password"
                   value={form.password}
-                  onChange={(e) => updateForm("password", e.target.value)}
+                  onChange={(event) =>
+                    updateForm("password", event.target.value)
+                  }
                   placeholder={
                     editingUser
                       ? "Lascia vuoto per non cambiarla"
@@ -494,8 +544,11 @@ function Team() {
               <div className="form-group">
                 <label>Telefono</label>
                 <input
+                  type="tel"
                   value={form.telefono}
-                  onChange={(e) => updateForm("telefono", e.target.value)}
+                  onChange={(event) =>
+                    updateForm("telefono", event.target.value)
+                  }
                   placeholder="Telefono"
                 />
               </div>
@@ -504,7 +557,9 @@ function Team() {
                 <label>Ruolo</label>
                 <select
                   value={form.ruolo_id}
-                  onChange={(e) => updateForm("ruolo_id", e.target.value)}
+                  onChange={(event) =>
+                    updateForm("ruolo_id", event.target.value)
+                  }
                 >
                   <option value="">Seleziona ruolo</option>
                   {ruoli.map((ruolo) => (
@@ -519,7 +574,9 @@ function Team() {
                 <label>Reparto</label>
                 <select
                   value={form.reparto_id}
-                  onChange={(e) => updateForm("reparto_id", e.target.value)}
+                  onChange={(event) =>
+                    updateForm("reparto_id", event.target.value)
+                  }
                 >
                   <option value="">Seleziona reparto</option>
                   {reparti.map((reparto) => (
@@ -534,7 +591,9 @@ function Team() {
                 <label>Stato</label>
                 <select
                   value={form.attivo ? "true" : "false"}
-                  onChange={(e) => updateForm("attivo", e.target.value === "true")}
+                  onChange={(event) =>
+                    updateForm("attivo", event.target.value === "true")
+                  }
                 >
                   <option value="true">Attivo</option>
                   <option value="false">Disattivo</option>
@@ -542,11 +601,19 @@ function Team() {
               </div>
 
               <div className="modal-actions">
-                <button type="button" className="secondary-action" onClick={closeModal}>
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={closeModal}
+                >
                   Annulla
                 </button>
 
-                <button type="submit" className="primary-action" disabled={saving}>
+                <button
+                  type="submit"
+                  className="primary-action"
+                  disabled={saving}
+                >
                   <Save size={18} />
                   {saving ? "Salvataggio..." : "Salva utente"}
                 </button>

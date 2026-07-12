@@ -87,7 +87,7 @@ function Messages() {
   async function loadUsers() {
     const { data, error } = await supabase
       .from("utenti")
-      .select("id, nome, email, attivo, ruoli(nome), reparti(nome)")
+      .select("id, nome, cognome, email, attivo, ruoli(nome), reparti(nome)")
       .eq("attivo", true)
       .order("nome");
 
@@ -182,7 +182,7 @@ function Messages() {
           .select(`
             conversazione_id,
             utente_id,
-            utenti(id, nome, email, avatar_url)
+            utenti(id, nome, cognome, email, avatar_url)
           `)
           .in("conversazione_id", conversationIds),
         supabase
@@ -193,7 +193,7 @@ function Messages() {
             mittente_id,
             messaggio,
             created_at,
-            utenti(nome)
+            utenti(nome,cognome)
           `)
           .in("conversazione_id", conversationIds)
           .order("created_at", { ascending: false })
@@ -224,7 +224,7 @@ function Messages() {
           }).length;
       const title =
         conversation.titolo ||
-        otherParticipants.map((participant) => participant.utenti?.nome).filter(Boolean).join(", ") ||
+        otherParticipants.map((participant) => `${participant.utenti?.nome || ""} ${participant.utenti?.cognome || ""}`.trim()).filter(Boolean).join(", ") ||
         "Conversazione";
 
       return {
@@ -266,7 +266,7 @@ function Messages() {
         mittente_id,
         messaggio,
         created_at,
-        utenti(nome, avatar_url)
+        utenti(nome, cognome, avatar_url)
       `)
       .eq("conversazione_id", conversationId)
       .order("created_at", { ascending: true });
@@ -539,7 +539,7 @@ async function refreshChat() {
       const text = `
         ${conversation.title || ""}
         ${conversation.latestMessage?.messaggio || ""}
-        ${conversation.otherParticipants.map((participant) => participant.utenti?.nome || "").join(" ")}
+        ${conversation.otherParticipants.map((participant) => `${participant.utenti?.nome || ""} ${participant.utenti?.cognome || ""}`.trim()).join(" ")}
       `.toLowerCase();
 
       return text.includes(query);
@@ -653,12 +653,12 @@ async function refreshChat() {
                       >
                         {!mine && (
                           <div className="chat-message-avatar">
-                            {getInitials(message.utenti?.nome)}
+                            {getInitials(`${message.utenti?.nome || ""} ${message.utenti?.cognome || ""}`.trim())}
                           </div>
                         )}
 
                         <div className="chat-bubble">
-                          <strong>{mine ? "Tu" : message.utenti?.nome || "Utente"}</strong>
+                          <strong>{mine ? "Tu" : `${message.utenti?.nome || ""} ${message.utenti?.cognome || ""}`.trim() || "Utente"}</strong>
                           <p>{message.messaggio}</p>
                           {(attachmentsByMessage[message.id] || []).length > 0 && (
                             <div className="chat-attachments">
@@ -746,7 +746,7 @@ async function refreshChat() {
                   <option value="">Seleziona utente</option>
                   {utenti.map((utente) => (
                     <option key={utente.id} value={utente.id}>
-                      {utente.nome} - {utente.email}
+                      {`${utente.nome || ""} ${utente.cognome || ""}`.trim()} - {utente.email}
                     </option>
                   ))}
                 </select>

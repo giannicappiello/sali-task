@@ -15,6 +15,7 @@ import Team from "./pages/Team/Team";
 import Calendar from "./pages/Calendar/Calendar";
 import Reports from "./pages/Reports/Reports";
 import Settings from "./pages/Settings/Settings";
+import PharmacyModule from "./modules/pharmacy/PharmacyModule";
 
 import "./styles/App.css";
 
@@ -38,7 +39,9 @@ function App() {
             <Route path="team" element={<Team />} />
             <Route path="calendar" element={<Calendar />} />
             <Route path="reports" element={<Reports />} />
+            <Route path="analysis-data" element={<Reports />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="farmacie/*" element={<PharmacyModule />} />
           </Route>
         </Route>
 

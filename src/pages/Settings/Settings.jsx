@@ -3,6 +3,7 @@ import { Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 import ProjectTypesSettings from "../../components/ProjectTypesSettings";
+import PharmacyAccessSettings from "../../components/PharmacyAccessSettings";
 
 const emptyDepartment = { nome: "", descrizione: "", attivo: true };
 const emptyRole = { nome: "", descrizione: "", livello: 40, permessi: [] };
@@ -59,7 +60,7 @@ export default function Settings() {
       supabase.from("reparti").select("*").order("nome"),
       supabase.from("ruoli").select("*").order("livello", { ascending: false }),
       supabase.from("checklist_template").select("*,reparti(id,nome)").order("ordine", { ascending: true }),
-      supabase.from("utenti").select("id,nome,email,attivo,ruolo_id,ruoli(id,nome,livello)").order("nome"),
+      supabase.from("utenti").select("id,nome,cognome,email,attivo,ruolo_id,ruoli(id,nome,livello)").order("nome"),
       supabase.from("utenti_reparti").select("id,utente_id,reparto_id"),
       supabase.from("permessi").select("id,codice,descrizione").order("codice"),
       supabase.from("permessi_ruolo").select("ruolo_id,permesso_id,permessi(id,codice,descrizione)"),
@@ -329,9 +330,12 @@ export default function Settings() {
         <button className={tab === "reparti" ? "active" : ""} onClick={() => setTab("reparti")}>Reparti</button>
         <button className={tab === "ruoli" ? "active" : ""} onClick={() => setTab("ruoli")}>Ruoli / permessi</button>
         <button className={tab === "utenti" ? "active" : ""} onClick={() => setTab("utenti")}>Utenti / accessi</button>
+        <button className={tab === "farmacie_accessi" ? "active" : ""} onClick={() => setTab("farmacie_accessi")}>Accessi Farmacie</button>
       </div>
 
       {tab === "tipi_progetto" && <ProjectTypesSettings canManage={canManage} />}
+
+      {tab === "farmacie_accessi" && <PharmacyAccessSettings canManage={canManage} />}
 
       {tab === "checklist" && (
         <div className="panel settings-panel">
@@ -389,7 +393,7 @@ export default function Settings() {
             {users.map((item) => (
               <div className="settings-row" key={item.id}>
                 <div>
-                  <strong>{item.nome || item.email || "Utente senza nome"}</strong>
+                  <strong>{`${item.nome || ""} ${item.cognome || ""}`.trim() || item.email || "Utente senza nome"}</strong>
                   <span>{item.email || "Email non disponibile"}</span>
                   <span>Ruolo: {item.ruoli?.nome || "Nessun ruolo"}</span>
                   <span>Reparti: {getUserDepartmentNames(item.id)}</span>
@@ -406,7 +410,7 @@ export default function Settings() {
       {modal.open && (
         <div className="modal-backdrop">
           <form className="modal-card v4-modal" onSubmit={modal.type === "reparto" ? saveReparto : modal.type === "ruolo" ? saveRuolo : modal.type === "utente_accessi" ? saveUserAccess : saveTemplate}>
-            <div className="modal-header"><h2>{modal.type === "utente_accessi" ? `Accessi di ${modal.item?.nome || modal.item?.email || "utente"}` : modal.item ? "Modifica" : "Nuovo"}</h2><button type="button" onClick={closeModal}><X size={20} /></button></div>
+            <div className="modal-header"><h2>{modal.type === "utente_accessi" ? `Accessi di ${`${modal.item?.nome || ""} ${modal.item?.cognome || ""}`.trim() || modal.item?.email || "utente"}` : modal.item ? "Modifica" : "Nuovo"}</h2><button type="button" onClick={closeModal}><X size={20} /></button></div>
 
             {modal.type === "reparto" && <><label>Nome reparto<input value={departmentForm.nome} onChange={(e) => setDepartmentForm({ ...departmentForm, nome: e.target.value })} /></label><label>Descrizione<textarea rows="3" value={departmentForm.descrizione} onChange={(e) => setDepartmentForm({ ...departmentForm, descrizione: e.target.value })} /></label><label className="check-line"><input type="checkbox" checked={departmentForm.attivo} onChange={(e) => setDepartmentForm({ ...departmentForm, attivo: e.target.checked })} />Attivo</label></>}
 

@@ -130,7 +130,7 @@ export default function Agenda() {
       supabase.from("prodotti").select("id,nome,codice,attivo").order("nome").limit(5000),
       supabase.from("v4_progetti").select("id,titolo").order("created_at", { ascending: false }).limit(500),
       supabase.from("v4_progetto_reparti").select("progetto_id,reparto_id"),
-      supabase.from("utenti").select("id,nome,email,attivo").order("nome"),
+      supabase.from("utenti").select("id,nome,cognome,email,attivo").order("nome"),
       supabase.from("reparti").select("id,nome,attivo").order("nome"),
       supabase.from("agenda_reminder_reparti").select("id,reminder_id,reparto_id,completato,completato_at,completato_da,note_completamento"),
       supabase.from("agenda_reminder_prodotti").select("id,reminder_id,prodotto_id,prodotto_nome"),
@@ -577,7 +577,7 @@ export default function Agenda() {
           <select className="filter-chip" value={selectedUserId} onChange={(e) => setSelectedUserId(e.target.value)}>
             <option value="all">Tutti gli utenti</option>
             {users.map((user) => (
-              <option key={user.id} value={user.id}>{user.nome || user.email}</option>
+              <option key={user.id} value={user.id}>{`${user.nome || ""} ${user.cognome || ""}`.trim() || user.email}</option>
             ))}
           </select>
         )}

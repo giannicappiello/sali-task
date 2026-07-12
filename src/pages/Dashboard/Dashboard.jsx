@@ -633,19 +633,19 @@ function Dashboard() {
       <div className="calendar-kpi-grid dashboard-activity-kpis">
         <button type="button" className={`calendar-kpi success ${activityFilter === "plannedTasks" ? "active" : ""}`} onClick={() => setActivityFilter("plannedTasks")}>
           <ListChecks size={22} />
-          <div><strong>{loading ? "..." : monthStats.plannedTasks}</strong><span>Task/fasi pianificate</span></div>
+          <div><strong>{loading ? "..." : monthStats.plannedTasks}</strong><span>Task/fasi pianificate nel mese</span></div>
         </button>
         <button type="button" className={`calendar-kpi danger ${activityFilter === "overdueTasks" ? "active" : ""}`} onClick={() => setActivityFilter("overdueTasks")}>
           <AlertCircle size={22} />
-          <div><strong>{loading ? "..." : monthStats.overdueTasks}</strong><span>Task/fasi scadute</span></div>
+          <div><strong>{loading ? "..." : monthStats.overdueTasks}</strong><span>Task/fasi scadute nel mese</span></div>
         </button>
         <button type="button" className={`calendar-kpi success ${activityFilter === "plannedReminders" ? "active" : ""}`} onClick={() => setActivityFilter("plannedReminders")}>
           <CalendarDays size={22} />
-          <div><strong>{loading ? "..." : monthStats.plannedReminders}</strong><span>Reminder pianificati</span></div>
+          <div><strong>{loading ? "..." : monthStats.plannedReminders}</strong><span>Reminder pianificati nel mese</span></div>
         </button>
         <button type="button" className={`calendar-kpi danger ${activityFilter === "overdueReminders" ? "active" : ""}`} onClick={() => setActivityFilter("overdueReminders")}>
           <Clock size={22} />
-          <div><strong>{loading ? "..." : monthStats.overdueReminders}</strong><span>Reminder scaduti</span></div>
+          <div><strong>{loading ? "..." : monthStats.overdueReminders}</strong><span>Reminder scaduti nel mese</span></div>
         </button>
       </div>
 

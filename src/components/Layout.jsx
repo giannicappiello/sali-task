@@ -11,15 +11,15 @@ import {
   Menu,
   MessageCircle,
   Package,
+  Store,
   Search,
   Settings,
   Users,
+  ChartNoAxesCombined,
   X,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../contexts/AuthContext";
-
-const APP_VERSION = "4.0";
 
 const menuItems = [
   { path: "/dashboard", label: "Tutte le attività del reparto", icon: LayoutDashboard, permission: "dashboard.read" },
@@ -29,6 +29,8 @@ const menuItems = [
   { path: "/messages", label: "Messaggi", icon: MessageCircle, permission: "messages.read" },
   { path: "/products", label: "Prodotti", icon: Package, permission: "products.read" },
   { path: "/documentation", label: "Documentazione", icon: FileArchive, permission: "documentation.read" },
+  { path: "/analysis-data", label: "Analisi dati", icon: ChartNoAxesCombined, permission: "reports.read" },
+  { path: "/farmacie/dashboard", label: "Gestione Farmacie", icon: Store, permission: "pharmacy.read" },
   { path: "/team", label: "Team", icon: Users, permission: "team.read" },
   { path: "/settings", label: "Impostazioni", icon: Settings, permission: "settings.manage" },
 ];
@@ -41,9 +43,12 @@ const pageInfo = {
   "/tasks": { title: "Planning fasi", subtitle: "Vista mensile, settimanale e giornaliera delle fasi progettuali." },
   "/products": { title: "Prodotti", subtitle: "Prodotti, progetti collegati, documenti e storico." },
   "/documentation": { title: "Documentazione", subtitle: "Schede tecniche, SDS, certificazioni, artwork, etichette e regolatorio." },
+  "/analysis-data": { title: "Analisi dati", subtitle: "Pivot interattiva su progetti, fasi, reminder, prodotti e documenti." },
+  "/reports": { title: "Analisi dati", subtitle: "Pivot interattiva su progetti, fasi, reminder, prodotti e documenti." },
   "/messages": { title: "Messaggi", subtitle: "Conversazioni e notifiche interne." },
   "/team": { title: "Team", subtitle: "Utenti, ruoli, reparti e presenze." },
   "/settings": { title: "Impostazioni", subtitle: "Checklist preimpostate, reparti, ruoli e configurazioni." },
+  "/farmacie/dashboard": { title: "Gestione Farmacie", subtitle: "Giornate promozionali, aperture, farmacie e analisi dati." },
 };
 
 function getInitials(name) {
@@ -73,11 +78,12 @@ function getPresence(profile) {
 function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { profile, signOut, hasPermission } = useAuth();
+  const { profile, signOut, hasPermission, isAdminUser } = useAuth();
 
-  const currentPage = pageInfo[location.pathname] || pageInfo["/dashboard"];
+  const currentPage = location.pathname.startsWith("/farmacie") ? pageInfo["/farmacie/dashboard"] : (pageInfo[location.pathname] || pageInfo["/dashboard"]);
   const presence = getPresence(profile);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [pharmacyEnabled, setPharmacyEnabled] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState("");
   const [searchLoading, setSearchLoading] = useState(false);
@@ -86,7 +92,54 @@ function Layout() {
   const [notificationCount, setNotificationCount] = useState(0);
   const [notifications, setNotifications] = useState([]);
 
-  const visibleMenuItems = useMemo(() => menuItems.filter((item) => hasPermission(item.permission)), [hasPermission]);
+  useEffect(() => {
+    let active = true;
+
+    async function loadPharmacyAccess() {
+      if (!profile?.id) {
+        if (active) setPharmacyEnabled(false);
+        return;
+      }
+
+      if (isAdminUser) {
+        if (active) setPharmacyEnabled(true);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("integrazioni_utenti")
+        .select("enabled")
+        .eq("utente_id", profile.id)
+        .eq("modulo", "report_giornate")
+        .maybeSingle();
+
+      if (error) {
+        console.error("Errore caricamento accesso Gestione Farmacie:", error);
+        if (active) setPharmacyEnabled(false);
+        return;
+      }
+
+      if (active) setPharmacyEnabled(data?.enabled === true);
+    }
+
+    loadPharmacyAccess();
+
+    return () => {
+      active = false;
+    };
+  }, [profile?.id, isAdminUser]);
+
+  const visibleMenuItems = useMemo(
+    () =>
+      menuItems.filter((item) => {
+        if (item.path === "/farmacie/dashboard") {
+          return pharmacyEnabled || hasPermission("pharmacy.read");
+        }
+
+        return hasPermission(item.permission);
+      }),
+    [hasPermission, pharmacyEnabled]
+  );
 
   useEffect(() => {
     document.title = `${currentPage.title} · Progre Workspace`;
@@ -216,17 +269,23 @@ function Layout() {
         </nav>
 
         <div className="sidebar-bottom">
-          <div className="sidebar-profile-card">
+          <div className="sidebar-profile-card sidebar-profile-card-compact">
             <div className="profile-main-row">
-              <div className="avatar profile-avatar">{getInitials(profile?.nome)}</div>
+              <div className="avatar profile-avatar">{getInitials(`${profile?.nome || ""} ${profile?.cognome || ""}`.trim())}</div>
               <div className="profile-main-text">
-                <strong>{profile?.nome || "Utente"}</strong>
-                <span>{profile?.reparti?.nome || "Reparto non impostato"}</span>
+                <strong>{`${profile?.nome || ""} ${profile?.cognome || ""}`.trim() || "Utente"}</strong>
+                <span>{profile?.ruoli?.nome || "Utente"}</span>
               </div>
             </div>
-            <div className={`presence-badge ${presence.className}`}><span className="presence-dot" />{presence.label}</div>
-            <div className="profile-meta"><span>Ruolo</span><strong>{profile?.ruoli?.nome || "Utente"}</strong></div>
-            <div className="workspace-version"><span>Release</span><strong>v{APP_VERSION}</strong></div>
+
+            <div className="profile-status-row">
+              <div className={`presence-badge ${presence.className}`}>
+                <span className="presence-dot" />
+                {presence.label}
+              </div>
+              <span className="profile-department">{profile?.reparti?.nome || "Reparto non impostato"}</span>
+            </div>
+
             <button className="logout-btn" onClick={signOut}><LogOut size={18} />Esci</button>
           </div>
         </div>

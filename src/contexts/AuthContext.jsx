@@ -68,6 +68,7 @@ export function AuthProvider({ children }) {
   async function ensureProfile(user) {
     const email = user.email || "";
     const nome = user.user_metadata?.nome || user.user_metadata?.full_name || email.split("@")[0] || "Utente";
+    const cognome = user.user_metadata?.cognome || "";
 
     const { data: existingByAuth } = await supabase
       .from("utenti")
@@ -92,6 +93,7 @@ export function AuthProvider({ children }) {
       auth_user_id: user.id,
       email,
       nome,
+      cognome,
       attivo: true,
     });
   }
@@ -105,6 +107,7 @@ export function AuthProvider({ children }) {
         id,
         auth_user_id,
         nome,
+        cognome,
         email,
         telefono,
         avatar_url,
@@ -159,7 +162,8 @@ export function AuthProvider({ children }) {
       : {
           id: null,
           auth_user_id: user.id,
-          nome: user.email?.split("@")[0] || "Utente",
+          nome: user.user_metadata?.nome || user.email?.split("@")[0] || "Utente",
+          cognome: user.user_metadata?.cognome || "",
           email: user.email,
           reparti: null,
           reparti_multipli: [],

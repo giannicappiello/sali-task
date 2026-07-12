@@ -161,7 +161,7 @@ export default function Projects() {
         .order("deadline", { ascending: true, nullsFirst: false }),
       supabase.from("prodotti").select("id,nome,codice").order("nome").limit(5000),
       supabase.from("reparti").select("id,nome,attivo").order("nome"),
-      supabase.from("utenti").select("id,nome,email,reparto_id,attivo").order("nome"),
+      supabase.from("utenti").select("id,nome,cognome,email,reparto_id,attivo").order("nome"),
       supabase.from("checklist_template").select("id,titolo,reparto_id,ordine,attivo,reparti(id,nome)").order("ordine", { ascending: true }),
       supabase.from("v4_progetto_prodotti").select("id,progetto_id,prodotto_id,prodotto_nome"),
       supabase.from("v4_progetto_reparti").select("id,progetto_id,reparto_id"),
@@ -1093,7 +1093,8 @@ export default function Projects() {
   }
 
   function phaseUserName(userId) {
-    return users.find((item) => item.id === userId)?.nome || "Non assegnato";
+    const user = users.find((item) => item.id === userId);
+    return user ? `${user.nome || ""} ${user.cognome || ""}`.trim() || user.email || "Utente" : "Non assegnato";
   }
 
   function canCompleteDepartment(departmentId) {

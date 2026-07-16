@@ -321,9 +321,14 @@ function extractRows(response) {
 
 async function getAllArticles(mexal) {
   const response = await mexal.getJson("/articoli");
-  return extractRows(response)
-    .filter(isActiveArticle)
-    .sort((a, b) => normalizeCode(a.codice).localeCompare(normalizeCode(b.codice)));
+
+  const rows = extractRows(response);
+
+  console.log("PRIMO ARTICOLO MEXAL:", JSON.stringify(rows[0], null, 2));
+
+  return rows.sort((a, b) =>
+    normalizeCode(a.codice).localeCompare(normalizeCode(b.codice))
+  );
 }
 
 async function getGroupMap(mexal) {

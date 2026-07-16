@@ -7,6 +7,8 @@ import Layout from "./components/Layout";
 
 import Login from "./pages/Login/Login";
 
+const Home = lazy(() => import("./pages/Home/Home"));
+const Activities = lazy(() => import("./pages/Activities/Activities"));
 const Dashboard = lazy(() => import("./pages/Dashboard/Dashboard"));
 const Agenda = lazy(() => import("./pages/Agenda/Agenda"));
 const Tasks = lazy(() => import("./pages/Tasks/Tasks"));
@@ -54,8 +56,10 @@ function App() {
 
           <Route element={<ProtectedRoute />}>
             <Route path="/" element={<Layout />}>
-              <Route index element={<Navigate to="/dashboard" replace />} />
+              <Route index element={<Navigate to="/home" replace />} />
 
+              <Route path="home" element={<Home />} />
+              <Route path="activities" element={<Activities />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="agenda" element={<Agenda />} />
               <Route path="reminders" element={<Agenda />} />
@@ -74,7 +78,7 @@ function App() {
             </Route>
           </Route>
 
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/home" replace />} />
         </Routes>
       </Suspense>
     </AuthProvider>

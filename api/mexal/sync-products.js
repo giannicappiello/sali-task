@@ -17,11 +17,29 @@ function normalizeCode(value) {
   return String(value || "").trim().toUpperCase();
 }
 
-function getArticleCode(article) {
-  if (typeof article === "string" || typeof article === "number") {
-    return normalizeCode(article);
+function collectStrings(value, output = [], depth = 0) {
+  if (depth > 8 || value === null || value === undefined) return output;
+
+  if (typeof value === "string" || typeof value === "number") {
+    output.push(String(value));
+    return output;
   }
 
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectStrings(item, output, depth + 1));
+    return output;
+  }
+
+  if (typeof value === "object") {
+    Object.values(value).forEach((item) =>
+      collectStrings(item, output, depth + 1)
+    );
+  }
+
+  return output;
+}
+
+function getArticleCode(article) {
   const directCode = normalizeCode(
     article?.codice ||
       article?.cod_articolo ||
@@ -34,24 +52,14 @@ function getArticleCode(article) {
       ""
   );
 
-  if (directCode) return directCode;
+  if (isSupportedCode(directCode)) return directCode;
 
-  if (article && typeof article === "object") {
-    for (const value of Object.values(article)) {
-      const candidate = normalizeCode(value);
+  const candidates = collectStrings(article);
+  const match = candidates
+    .map(normalizeCode)
+    .find((value) => isSupportedCode(value));
 
-      if (
-        candidate &&
-        ARTICLE_PREFIXES.some((prefix) =>
-          candidate.startsWith(prefix)
-        )
-      ) {
-        return candidate;
-      }
-    }
-  }
-
-  return "";
+  return match || "";
 }
 
 function numberValue(value) {
@@ -479,19 +487,26 @@ async function getAllArticles(mexal) {
   const response = await mexal.getJson("/articoli");
   const rows = extractRows(response);
 
+  const codes = new Set();
+
+  for (const row of rows) {
+    const code = getArticleCode(row);
+    if (isSupportedCode(code)) codes.add(code);
+  }
+
   /*
-   * L'endpoint collection di Mexal può restituire record sintetici:
-   * su questi record non applichiamo ancora il filtro attivo/non attivo.
-   * Lo stato viene verificato dopo, sul record completo del singolo articolo.
+   * Alcune versioni Mexal restituiscono la collection con strutture annidate.
+   * Se i record sintetici non espongono direttamente il codice, cerchiamo
+   * ricorsivamente nell'intera risposta le stringhe IT*, MKT* e IMP*.
    */
-  return rows
-    .map((row) => ({
-      row,
-      code: getArticleCode(row),
-    }))
-    .filter(({ code }) => isSupportedCode(code))
-    .sort((a, b) => a.code.localeCompare(b.code))
-    .map(({ row }) => row);
+  if (codes.size === 0) {
+    for (const value of collectStrings(response)) {
+      const code = normalizeCode(value);
+      if (isSupportedCode(code)) codes.add(code);
+    }
+  }
+
+  return [...codes].sort((a, b) => a.localeCompare(b));
 }
 
 async function getGroupMap(mexal) {
@@ -692,6 +707,8 @@ export default async function handler(req, res) {
         },
         letti_mexal: articles.length,
         selezionati: articles.length,
+        campione_codici: articles.slice(0, 12),
+        filtri: ["IT*", "MKT*", "IMP*"],
         inseriti: 0,
         aggiornati: 0,
         immagini_salvate: 0,
@@ -742,6 +759,7 @@ export default async function handler(req, res) {
       inseriti: 0,
       aggiornati: 0,
       immagini_salvate: 0,
+      non_attivi_saltati: 0,
       errori: [],
     };
 
@@ -760,6 +778,7 @@ export default async function handler(req, res) {
         );
 
         if (!isActiveArticle(article)) {
+          result.non_attivi_saltati += 1;
           continue;
         }
 

@@ -115,7 +115,7 @@ export default function Products() {
       const result = await callMexalApi({ action: "test" });
       setSyncResult(result);
       setSyncTestPassed(true);
-      alert(`Test Mexal completato. Articoli attivi trovati: ${result.selezionati || 0}.`);
+      alert(`Test Mexal completato. Articoli IT*, MKT* e IMP* trovati: ${result.selezionati || 0}.`);
     } catch (error) {
       setSyncResult({ error: error.message });
       alert(error.message);
@@ -273,7 +273,7 @@ export default function Products() {
           {syncResult.error && <p style={{ color: "#b91c1c" }}>{syncResult.error}</p>}
           <div className="mini-meta">
             {syncResult.selezionati !== undefined && (
-              <span>Articoli attivi: {syncResult.selezionati}</span>
+              <span>Articoli IT*, MKT*, IMP*: {syncResult.selezionati}</span>
             )}
             {syncResult.totale !== undefined && (
               <span>

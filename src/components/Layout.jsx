@@ -3,10 +3,8 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Bell,
-  BellRing,
   ClipboardList,
   FileArchive,
-  Folder,
   LogOut,
   Menu,
   MessageCircle,
@@ -16,42 +14,39 @@ import {
   Search,
   Settings,
   Users,
-  ChartNoAxesCombined,
   X,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../contexts/AuthContext";
 
 const menuItems = [
-  { path: "/dashboard", label: "Tutte le attività del reparto", icon: LayoutDashboard, permission: "dashboard.read" },
-  { path: "/reminders", label: "Reminder del mio reparto", icon: BellRing, permission: "agenda.read" },
-  { path: "/projects", label: "Progetti del mio reparto", icon: Folder, permission: "projects.read" },
-  { path: "/tasks", label: "Tutte le fasi dei progetti", icon: ClipboardList, permission: "tasks.read" },
-  { path: "/messages", label: "Messaggi", icon: MessageCircle, permission: "messages.read" },
+  { path: "/activities", label: "Attività", icon: ClipboardList, permission: "dashboard.read" },
+  { path: "/farmacie/dashboard", label: "Beauty Days", icon: Store, permission: "pharmacy.read" },
+  { path: "/ordini", label: "Ordini", icon: ShoppingCart, permission: "orders.read" },
   { path: "/products", label: "Prodotti", icon: Package, permission: "products.read" },
-  { path: "/documentation", label: "Documentazione", icon: FileArchive, permission: "documentation.read" },
-  { path: "/analysis-data", label: "Analisi dati", icon: ChartNoAxesCombined, permission: "reports.read" },
-  { path: "/farmacie/dashboard", label: "Gestione Farmacie", icon: Store, permission: "pharmacy.read" },
-  { path: "/ordini", label: "Gestione Ordini", icon: ShoppingCart, permission: "orders.read" },
+  { path: "/documentation", label: "Documenti", icon: FileArchive, permission: "documentation.read" },
+  { path: "/messages", label: "Messaggi", icon: MessageCircle, permission: "messages.read" },
   { path: "/team", label: "Team", icon: Users, permission: "team.read" },
   { path: "/settings", label: "Impostazioni", icon: Settings, permission: "settings.manage" },
 ];
 
 const pageInfo = {
-  "/dashboard": { title: "Le mie attività", subtitle: "Task/fasi del reparto, reminder personali e messaggi." },
+  "/home": { title: "Home", subtitle: "Accesso rapido ai moduli del Workspace." },
+  "/activities": { title: "Attività", subtitle: "Task, reminder, progetti, fasi e analisi del reparto." },
+  "/dashboard": { title: "Tutte le attività del reparto", subtitle: "Task, fasi, reminder e scadenze del reparto." },
   "/agenda": { title: "Reminder", subtitle: "Reminder personali, allegati e commenti." },
-  "/reminders": { title: "Reminder", subtitle: "Reminder personali organizzati per deadline." },
-  "/projects": { title: "Progetti", subtitle: "Progetti orizzontali con checklist e fasi operative." },
-  "/tasks": { title: "Planning fasi", subtitle: "Vista mensile, settimanale e giornaliera delle fasi progettuali." },
+  "/reminders": { title: "Reminder del mio reparto", subtitle: "Reminder organizzati per deadline." },
+  "/projects": { title: "Progetti del mio reparto", subtitle: "Progetti con checklist e fasi operative." },
+  "/tasks": { title: "Tutte le fasi dei progetti", subtitle: "Planning delle fasi progettuali." },
   "/products": { title: "Prodotti", subtitle: "Catalogo articoli attivi sincronizzato da Mexal in sola lettura." },
-  "/documentation": { title: "Documentazione", subtitle: "Schede tecniche, SDS, certificazioni, artwork, etichette e regolatorio." },
-  "/analysis-data": { title: "Analisi dati", subtitle: "Pivot interattiva su progetti, fasi, reminder, prodotti e documenti." },
-  "/reports": { title: "Analisi dati", subtitle: "Pivot interattiva su progetti, fasi, reminder, prodotti e documenti." },
+  "/documentation": { title: "Documenti", subtitle: "Schede tecniche, certificazioni e documentazione aziendale." },
+  "/analysis-data": { title: "Analisi Dati Attività", subtitle: "Analisi su progetti, fasi e reminder." },
+  "/reports": { title: "Analisi Dati Attività", subtitle: "Analisi su progetti, fasi e reminder." },
   "/messages": { title: "Messaggi", subtitle: "Conversazioni e notifiche interne." },
   "/team": { title: "Team", subtitle: "Utenti, ruoli, reparti e presenze." },
-  "/settings": { title: "Impostazioni", subtitle: "Checklist preimpostate, reparti, ruoli e configurazioni." },
-  "/farmacie/dashboard": { title: "Gestione Farmacie", subtitle: "Giornate promozionali, aperture, farmacie e analisi dati." },
-  "/ordini": { title: "Gestione Ordini", subtitle: "Clienti, ordini, prodotti e materiali commerciali." },
+  "/settings": { title: "Impostazioni", subtitle: "Permessi, accessi e configurazioni." },
+  "/farmacie/dashboard": { title: "Beauty Days", subtitle: "Giornate promozionali, farmacie e analisi dati." },
+  "/ordini": { title: "Ordini", subtitle: "Clienti, ordini e attività commerciali collegate a Mexal." },
 };
 
 function getInitials(name) {
@@ -87,7 +82,7 @@ function Layout() {
     ? pageInfo["/farmacie/dashboard"]
     : location.pathname.startsWith("/ordini")
       ? pageInfo["/ordini"]
-      : (pageInfo[location.pathname] || pageInfo["/dashboard"]);
+      : (pageInfo[location.pathname] || pageInfo["/home"]);
   const presence = getPresence(profile);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [pharmacyEnabled, setPharmacyEnabled] = useState(false);

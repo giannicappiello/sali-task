@@ -18,14 +18,40 @@ function normalizeCode(value) {
 }
 
 function getArticleCode(article) {
-  return normalizeCode(
+  if (typeof article === "string" || typeof article === "number") {
+    return normalizeCode(article);
+  }
+
+  const directCode = normalizeCode(
     article?.codice ||
       article?.cod_articolo ||
       article?.codice_articolo ||
       article?.cod_art ||
       article?.codice_art ||
+      article?.articolo ||
+      article?.id_articolo ||
+      article?.codiceArticolo ||
       ""
   );
+
+  if (directCode) return directCode;
+
+  if (article && typeof article === "object") {
+    for (const value of Object.values(article)) {
+      const candidate = normalizeCode(value);
+
+      if (
+        candidate &&
+        ARTICLE_PREFIXES.some((prefix) =>
+          candidate.startsWith(prefix)
+        )
+      ) {
+        return candidate;
+      }
+    }
+  }
+
+  return "";
 }
 
 function numberValue(value) {
@@ -453,12 +479,19 @@ async function getAllArticles(mexal) {
   const response = await mexal.getJson("/articoli");
   const rows = extractRows(response);
 
+  /*
+   * L'endpoint collection di Mexal può restituire record sintetici:
+   * su questi record non applichiamo ancora il filtro attivo/non attivo.
+   * Lo stato viene verificato dopo, sul record completo del singolo articolo.
+   */
   return rows
-    .filter(isSupportedArticle)
-    .filter(isActiveArticle)
-    .sort((a, b) =>
-      getArticleCode(a).localeCompare(getArticleCode(b))
-    );
+    .map((row) => ({
+      row,
+      code: getArticleCode(row),
+    }))
+    .filter(({ code }) => isSupportedCode(code))
+    .sort((a, b) => a.code.localeCompare(b.code))
+    .map(({ row }) => row);
 }
 
 async function getGroupMap(mexal) {
@@ -665,7 +698,7 @@ export default async function handler(req, res) {
         errori: [],
         dry_run: true,
         messaggio:
-          "Connessione verificata. Trovati gli articoli attivi con codice IT, MKT e IMP.",
+          "Connessione verificata. Trovati gli articoli con codice IT*, MKT* e IMP*. Lo stato attivo viene verificato sul record completo durante la sincronizzazione.",
       });
     }
 

@@ -12,6 +12,7 @@ import {
   MessageCircle,
   Package,
   Store,
+  ShoppingCart,
   Search,
   Settings,
   Users,
@@ -31,6 +32,7 @@ const menuItems = [
   { path: "/documentation", label: "Documentazione", icon: FileArchive, permission: "documentation.read" },
   { path: "/analysis-data", label: "Analisi dati", icon: ChartNoAxesCombined, permission: "reports.read" },
   { path: "/farmacie/dashboard", label: "Gestione Farmacie", icon: Store, permission: "pharmacy.read" },
+  { path: "/ordini", label: "Gestione Ordini", icon: ShoppingCart, permission: "orders.read" },
   { path: "/team", label: "Team", icon: Users, permission: "team.read" },
   { path: "/settings", label: "Impostazioni", icon: Settings, permission: "settings.manage" },
 ];
@@ -49,6 +51,7 @@ const pageInfo = {
   "/team": { title: "Team", subtitle: "Utenti, ruoli, reparti e presenze." },
   "/settings": { title: "Impostazioni", subtitle: "Checklist preimpostate, reparti, ruoli e configurazioni." },
   "/farmacie/dashboard": { title: "Gestione Farmacie", subtitle: "Giornate promozionali, aperture, farmacie e analisi dati." },
+  "/ordini": { title: "Gestione Ordini", subtitle: "Clienti, ordini, prodotti e materiali commerciali." },
 };
 
 function getInitials(name) {
@@ -80,10 +83,15 @@ function Layout() {
   const navigate = useNavigate();
   const { profile, signOut, hasPermission, isAdminUser } = useAuth();
 
-  const currentPage = location.pathname.startsWith("/farmacie") ? pageInfo["/farmacie/dashboard"] : (pageInfo[location.pathname] || pageInfo["/dashboard"]);
+  const currentPage = location.pathname.startsWith("/farmacie")
+    ? pageInfo["/farmacie/dashboard"]
+    : location.pathname.startsWith("/ordini")
+      ? pageInfo["/ordini"]
+      : (pageInfo[location.pathname] || pageInfo["/dashboard"]);
   const presence = getPresence(profile);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [pharmacyEnabled, setPharmacyEnabled] = useState(false);
+  const [ordersEnabled, setOrdersEnabled] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState("");
   const [searchLoading, setSearchLoading] = useState(false);
@@ -129,6 +137,44 @@ function Layout() {
     };
   }, [profile?.id, isAdminUser]);
 
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadOrdersAccess() {
+      if (!profile?.id) {
+        if (active) setOrdersEnabled(false);
+        return;
+      }
+
+      if (isAdminUser) {
+        if (active) setOrdersEnabled(true);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("integrazioni_utenti")
+        .select("enabled,codice_agente_mexal")
+        .eq("utente_id", profile.id)
+        .eq("modulo", "gestione_ordini")
+        .maybeSingle();
+
+      if (error) {
+        console.error("Errore caricamento accesso Gestione Ordini:", error);
+        if (active) setOrdersEnabled(false);
+        return;
+      }
+
+      if (active) setOrdersEnabled(data?.enabled === true);
+    }
+
+    loadOrdersAccess();
+
+    return () => {
+      active = false;
+    };
+  }, [profile?.id, isAdminUser]);
+
   const visibleMenuItems = useMemo(
     () =>
       menuItems.filter((item) => {
@@ -136,9 +182,13 @@ function Layout() {
           return pharmacyEnabled || hasPermission("pharmacy.read");
         }
 
+        if (item.path === "/ordini") {
+          return ordersEnabled || hasPermission("orders.read");
+        }
+
         return hasPermission(item.permission);
       }),
-    [hasPermission, pharmacyEnabled]
+    [hasPermission, pharmacyEnabled, ordersEnabled]
   );
 
   useEffect(() => {

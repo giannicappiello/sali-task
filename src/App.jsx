@@ -23,6 +23,10 @@ const PharmacyModule = lazy(() =>
   import("./modules/pharmacy/PharmacyModule")
 );
 
+const OrdersModule = lazy(() =>
+  import("./modules/orders/OrdersModule")
+);
+
 import "./styles/App.css";
 
 function Loader() {
@@ -66,6 +70,7 @@ function App() {
               <Route path="analysis-data" element={<Reports />} />
               <Route path="settings" element={<Settings />} />
               <Route path="farmacie/*" element={<PharmacyModule />} />
+              <Route path="ordini/*" element={<OrdersModule />} />
             </Route>
           </Route>
 

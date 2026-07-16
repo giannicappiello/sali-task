@@ -4,6 +4,7 @@ import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 import ProjectTypesSettings from "../../components/ProjectTypesSettings";
 import PharmacyAccessSettings from "../../components/PharmacyAccessSettings";
+import OrdersAccessSettings from "../../components/OrdersAccessSettings";
 
 const emptyDepartment = { nome: "", descrizione: "", attivo: true };
 const emptyRole = { nome: "", descrizione: "", livello: 40, permessi: [] };
@@ -331,11 +332,14 @@ export default function Settings() {
         <button className={tab === "ruoli" ? "active" : ""} onClick={() => setTab("ruoli")}>Ruoli / permessi</button>
         <button className={tab === "utenti" ? "active" : ""} onClick={() => setTab("utenti")}>Utenti / accessi</button>
         <button className={tab === "farmacie_accessi" ? "active" : ""} onClick={() => setTab("farmacie_accessi")}>Accessi Farmacie</button>
+        <button className={tab === "ordini_accessi" ? "active" : ""} onClick={() => setTab("ordini_accessi")}>Accessi Ordini</button>
       </div>
 
       {tab === "tipi_progetto" && <ProjectTypesSettings canManage={canManage} />}
 
       {tab === "farmacie_accessi" && <PharmacyAccessSettings canManage={canManage} />}
+
+      {tab === "ordini_accessi" && <OrdersAccessSettings canManage={canManage} />}
 
       {tab === "checklist" && (
         <div className="panel settings-panel">

@@ -147,8 +147,7 @@ export default async function handler(req, res) {
 
     const mexalResponse = await requestMexal({
       url:
-        `${baseUrl}/webapi/risorse/` +
-        "dati-generali/gruppi-merceologici",
+  `${baseUrl}/webapi/risorse/articoli/IT0542?info=true`,
       headers: {
         Authorization: `Passepartout ${credential}`,
         "Coordinate-Gestionale": coordinateGestionale,

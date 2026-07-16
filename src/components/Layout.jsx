@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard,
   Bell,
   ClipboardList,
   FileArchive,
@@ -11,7 +10,6 @@ import {
   Package,
   Store,
   ShoppingCart,
-  Search,
   Settings,
   Users,
   X,
@@ -87,10 +85,6 @@ function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [pharmacyEnabled, setPharmacyEnabled] = useState(false);
   const [ordersEnabled, setOrdersEnabled] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [globalSearch, setGlobalSearch] = useState("");
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [searchResults, setSearchResults] = useState([]);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
   const [notifications, setNotifications] = useState([]);
@@ -199,11 +193,6 @@ function Layout() {
     loadNotificationCount();
   }, [profile?.id]);
 
-  useEffect(() => {
-    if (!searchOpen) return undefined;
-    const handler = window.setTimeout(() => runGlobalSearch(globalSearch), 280);
-    return () => window.clearTimeout(handler);
-  }, [globalSearch, searchOpen]);
 
   async function loadNotificationCount() {
     if (!profile?.id) return;
@@ -224,47 +213,6 @@ function Layout() {
       .order("created_at", { ascending: false })
       .limit(25);
     if (!error) setNotifications(data || []);
-  }
-
-  async function runGlobalSearch(query) {
-    const q = query.trim();
-    if (q.length < 2) {
-      setSearchResults([]);
-      return;
-    }
-    setSearchLoading(true);
-    const pattern = `%${q}%`;
-
-    const [projectsRes, phasesRes, productsRes, docsRes, remindersRes] = await Promise.all([
-      supabase.from("v4_progetti").select("id,titolo,descrizione").or(`titolo.ilike.${pattern},descrizione.ilike.${pattern}`).limit(6),
-      supabase.from("v4_fasi_progetto").select("id,titolo,descrizione,progetto_id").or(`titolo.ilike.${pattern},descrizione.ilike.${pattern},note.ilike.${pattern}`).limit(6),
-      supabase.from("prodotti").select("id,nome,codice,descrizione").or(`nome.ilike.${pattern},codice.ilike.${pattern},descrizione.ilike.${pattern}`).limit(6),
-      supabase.from("documenti").select("id,titolo,tipo_documento,tipo,codice_documento,codice").or(`titolo.ilike.${pattern},tipo.ilike.${pattern},tipo_documento.ilike.${pattern},codice.ilike.${pattern},codice_documento.ilike.${pattern}`).limit(6),
-      supabase.from("agenda_reminder").select("id,titolo,descrizione").or(`titolo.ilike.${pattern},descrizione.ilike.${pattern}`).limit(6),
-    ]);
-
-    const results = [];
-    if (!projectsRes.error) results.push(...(projectsRes.data || []).map((item) => ({ type: "Progetto", title: item.titolo, description: item.descrizione || "Progetto", path: "/projects" })));
-    if (!phasesRes.error) results.push(...(phasesRes.data || []).map((item) => ({ type: "Fase", title: item.titolo, description: item.descrizione || "Fase checklist", path: "/tasks" })));
-    if (!productsRes.error) results.push(...(productsRes.data || []).map((item) => ({ type: "Prodotto", title: item.nome, description: item.codice || "Prodotto", path: "/products" })));
-    if (!docsRes.error) results.push(...(docsRes.data || []).map((item) => ({ type: "Documento", title: item.titolo, description: item.tipo_documento || item.tipo || item.codice_documento || item.codice || "Documento", path: "/documentation" })));
-    if (!remindersRes.error) results.push(...(remindersRes.data || []).map((item) => ({ type: "Reminder", title: item.titolo, description: item.descrizione || "Agenda personale", path: "/reminders" })));
-
-    setSearchResults(results);
-    setSearchLoading(false);
-  }
-
-  function openSearch() {
-    setSearchOpen(true);
-    setGlobalSearch("");
-    setSearchResults([]);
-    setNotificationOpen(false);
-  }
-
-  function closeSearch() {
-    setSearchOpen(false);
-    setGlobalSearch("");
-    setSearchResults([]);
   }
 
   function openNotifications() {
@@ -348,7 +296,6 @@ function Layout() {
           </div>
 
           <div className="topbar-actions">
-            <button className="search-box search-box-button" onClick={openSearch}><Search size={18} /><span className="search-placeholder">Cerca tutto...</span><strong>⌘ K</strong></button>
             <button className="icon-btn notification-btn" onClick={openNotifications}><Bell size={21} />{notificationCount > 0 && <small>{notificationCount}</small>}</button>
             <button className="icon-btn notification-btn" onClick={() => navigate("/messages")}><MessageCircle size={21} /></button>
           </div>
@@ -370,20 +317,6 @@ function Layout() {
         <section className="content-area"><Outlet /></section>
       </main>
 
-      {searchOpen && (
-        <div className="global-search-backdrop" onClick={closeSearch}>
-          <div className="global-search-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="global-search-input-row"><Search size={21} /><input autoFocus placeholder="Cerca in progetti, fasi, prodotti, documenti, reminder..." value={globalSearch} onChange={(e) => setGlobalSearch(e.target.value)} /><button onClick={closeSearch}><X size={20} /></button></div>
-            <div className="global-search-results">
-              {globalSearch.trim().length < 2 ? <p className="global-search-empty">Scrivi almeno 2 caratteri per cercare.</p> : searchLoading ? <p className="global-search-empty">Ricerca in corso...</p> : searchResults.length === 0 ? <p className="global-search-empty">Nessun risultato.</p> : searchResults.map((item, index) => (
-                <button key={`${item.type}-${index}`} className="global-search-result-row" onClick={() => goToResult(item.path)}>
-                  <span>{item.type}</span><strong>{item.title}</strong><small>{item.description}</small>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

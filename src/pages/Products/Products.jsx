@@ -1,9 +1,30 @@
 import { useEffect, useMemo, useState } from "react";
-import { FileText, RefreshCw, Search, ShieldCheck } from "lucide-react";
+import { FileText, Package, RefreshCw, Search, Megaphone, Factory } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 
 const BATCH_SIZE = 8;
+
+const SECTIONS = [
+  {
+    id: "IT",
+    title: "Prodotti",
+    description: "Articoli di prodotto con codice IT*.",
+    icon: Package,
+  },
+  {
+    id: "MKT",
+    title: "Materiali Marketing",
+    description: "Materiali commerciali e promozionali con codice MKT*.",
+    icon: Megaphone,
+  },
+  {
+    id: "IMP",
+    title: "Impianti",
+    description: "Impianti e attrezzature con codice IMP*.",
+    icon: Factory,
+  },
+];
 
 function formatCurrency(value) {
   if (value === null || value === undefined || value === "") return "-";
@@ -13,10 +34,17 @@ function formatCurrency(value) {
   });
 }
 
+function getProductCode(product) {
+  return String(product?.codice_mexal || product?.codice || "")
+    .trim()
+    .toUpperCase();
+}
+
 export default function Products() {
   const { profile, isAdminUser } = useAuth();
   const [products, setProducts] = useState([]);
   const [query, setQuery] = useState("");
+  const [activeSection, setActiveSection] = useState("IT");
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
   const [canSyncMexal, setCanSyncMexal] = useState(false);
@@ -33,6 +61,7 @@ export default function Products() {
 
   async function loadProducts() {
     setLoading(true);
+
     const { data, error } = await supabase
       .from("prodotti")
       .select("*")
@@ -42,11 +71,9 @@ export default function Products() {
       .limit(5000);
 
     if (error) console.error("Prodotti Mexal:", error.message);
+
     const rows = data || [];
     setProducts(rows);
-    setSelected((current) =>
-      rows.find((item) => item.id === current?.id) || rows[0] || null
-    );
     setLoading(false);
   }
 
@@ -61,14 +88,22 @@ export default function Products() {
       return;
     }
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("integrazioni_utenti")
       .select("enabled,ruolo_ordini")
       .eq("utente_id", profile.id)
       .eq("modulo", "gestione_ordini")
       .maybeSingle();
 
-    setCanSyncMexal(data?.enabled === true && data?.ruolo_ordini === "backoffice");
+    if (error) {
+      console.error("Errore autorizzazione sincronizzazione Mexal:", error.message);
+      setCanSyncMexal(false);
+      return;
+    }
+
+    setCanSyncMexal(
+      data?.enabled === true && data?.ruolo_ordini === "backoffice"
+    );
   }
 
   async function callMexalApi(body) {
@@ -92,6 +127,7 @@ export default function Products() {
 
     const text = await response.text();
     let result;
+
     try {
       result = text ? JSON.parse(text) : {};
     } catch {
@@ -101,13 +137,16 @@ export default function Products() {
     if (!response.ok) {
       throw new Error(result.error || `Errore API (${response.status}).`);
     }
+
     return result;
   }
 
   async function synchronizeMexal() {
+    if (!canSyncMexal) return;
+
     if (
       !window.confirm(
-        "Avviare la sincronizzazione del catalogo con gli articoli attivi di Mexal?\n\n" +
+        "Avviare la sincronizzazione del catalogo con Mexal?\n\n" +
           "Sali-task aggiornerà esclusivamente la propria copia in sola lettura."
       )
     ) {
@@ -140,8 +179,11 @@ export default function Products() {
         totals.aggiornati += Number(result.aggiornati || 0);
         totals.immagini_salvate += Number(result.immagini_salvate || 0);
         totals.esclusi_non_attivi += Number(result.esclusi_non_attivi || 0);
-        totals.esclusi_fuori_produzione += Number(result.esclusi_fuori_produzione || 0);
+        totals.esclusi_fuori_produzione += Number(
+          result.esclusi_fuori_produzione || 0
+        );
         totals.errori.push(...(result.errori || []));
+
         offset = Number(result.prossimo_offset || offset + BATCH_SIZE);
 
         setSyncResult({
@@ -155,6 +197,7 @@ export default function Products() {
       }
 
       await loadProducts();
+
       alert(
         `Sincronizzazione completata.\n\n` +
           `Inseriti: ${totals.inseriti}\n` +
@@ -163,21 +206,42 @@ export default function Products() {
           `Errori: ${totals.errori.length}`
       );
     } catch (error) {
-      setSyncResult((current) => ({ ...(current || totals), error: error.message }));
+      setSyncResult((current) => ({
+        ...(current || totals),
+        error: error.message,
+      }));
       alert(error.message);
     } finally {
       setSyncingReal(false);
     }
   }
 
+  const sectionCounts = useMemo(() => {
+    const counts = { IT: 0, MKT: 0, IMP: 0 };
+
+    products.forEach((product) => {
+      const code = getProductCode(product);
+      if (code.startsWith("MKT")) counts.MKT += 1;
+      else if (code.startsWith("IMP")) counts.IMP += 1;
+      else if (code.startsWith("IT")) counts.IT += 1;
+    });
+
+    return counts;
+  }, [products]);
+
   const filtered = useMemo(() => {
     const text = query.trim().toLowerCase();
-    if (!text) return products;
 
-    return products.filter((product) =>
-      [
+    return products.filter((product) => {
+      const code = getProductCode(product);
+      if (!code.startsWith(activeSection)) return false;
+
+      if (!text) return true;
+
+      return [
         product.nome,
         product.codice_mexal,
+        product.codice,
         product.brand_mexal,
         product.linea_mexal,
         product.categoria_mexal,
@@ -186,64 +250,92 @@ export default function Products() {
       ]
         .map((value) => String(value || "").toLowerCase())
         .join(" ")
-        .includes(text)
-    );
-  }, [products, query]);
+        .includes(text);
+    });
+  }, [products, query, activeSection]);
+
+  useEffect(() => {
+    setSelected((current) => {
+      if (current && filtered.some((item) => item.id === current.id)) {
+        return current;
+      }
+      return filtered[0] || null;
+    });
+  }, [filtered]);
+
+  const activeSectionInfo =
+    SECTIONS.find((section) => section.id === activeSection) || SECTIONS[0];
 
   return (
     <div className="products-page v4-page">
       <div className="page-title-row">
         <div>
-          <h1>Prodotti</h1>
+          <h1>Catalogo Mexal</h1>
           <p>
-            Catalogo in sola lettura sincronizzato da Mexal. Sono esclusi gli articoli non attivi e quelli appartenenti a linee contenenti “Fuori Produzione”.
+            Articoli attivi organizzati per tipologia. Sono esclusi gli articoli
+            non attivi e quelli appartenenti a linee contenenti “Fuori Produzione”.
           </p>
         </div>
       </div>
 
-      <div className="v4-toolbar">
+      <div className="product-section-tabs" role="tablist" aria-label="Tipologie articolo">
+        {SECTIONS.map((section) => {
+          const Icon = section.icon;
+          const active = activeSection === section.id;
+
+          return (
+            <button
+              key={section.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              className={`product-section-tab ${active ? "active" : ""}`}
+              onClick={() => {
+                setActiveSection(section.id);
+                setQuery("");
+              }}
+            >
+              <span className="product-section-tab-icon"><Icon size={22} /></span>
+              <span className="product-section-tab-copy">
+                <strong>{section.title}</strong>
+                <small>{section.description}</small>
+              </span>
+              <span className="product-section-tab-count">{sectionCounts[section.id]}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="v4-toolbar product-toolbar">
         <div className="task-search">
           <Search size={18} />
           <input
-            placeholder="Cerca prodotto, codice, brand, linea, categoria..."
+            placeholder={`Cerca in ${activeSectionInfo.title.toLowerCase()}...`}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
 
         {canSyncMexal && (
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button
-              className="primary-action"
-              type="button"
-              onClick={synchronizeMexal}
-              disabled={syncingReal}
-            >
-              <RefreshCw size={18} className={syncingReal ? "spin" : ""} />
-              {syncingReal ? "Sincronizzazione..." : "Sincronizza Mexal"}
-            </button>
-          </div>
+          <button
+            className="primary-action"
+            type="button"
+            onClick={synchronizeMexal}
+            disabled={syncingReal}
+          >
+            <RefreshCw size={18} className={syncingReal ? "spin" : ""} />
+            {syncingReal ? "Sincronizzazione..." : "Sincronizza Mexal"}
+          </button>
         )}
-      </div>
-
-      <div className="panel" style={{ marginBottom: 18, background: "#f8fafc" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <ShieldCheck size={21} />
-          <strong>Archivio protetto</strong>
-        </div>
-        <p style={{ marginBottom: 0 }}>
-          Sali-task non può creare, modificare o eliminare articoli. Tutti i dati provengono esclusivamente da Mexal.
-        </p>
       </div>
 
       {syncResult && (
         <div className="panel" style={{ marginBottom: 18 }}>
           <h3>Risultato sincronizzazione</h3>
-          {syncResult.error && <p style={{ color: "#b91c1c" }}>{syncResult.error}</p>}
+          {syncResult.error && (
+            <p style={{ color: "#b91c1c" }}>{syncResult.error}</p>
+          )}
           <div className="mini-meta">
-            {syncResult.selezionati !== undefined && (
-              <span>Articoli IT*, MKT*, IMP*: {syncResult.selezionati}</span>
-            )}
             {syncResult.totale !== undefined && (
               <span>
                 Avanzamento: {syncResult.elaborati || 0}/{syncResult.totale}
@@ -253,7 +345,9 @@ export default function Products() {
             <span>Aggiornati: {syncResult.aggiornati || 0}</span>
             <span>Immagini catalogo: {syncResult.immagini_salvate || 0}</span>
             <span>Esclusi non attivi: {syncResult.esclusi_non_attivi || 0}</span>
-            <span>Esclusi Fuori Produzione: {syncResult.esclusi_fuori_produzione || 0}</span>
+            <span>
+              Esclusi Fuori Produzione: {syncResult.esclusi_fuori_produzione || 0}
+            </span>
             <span>Errori: {syncResult.errori?.length || 0}</span>
           </div>
         </div>
@@ -262,13 +356,15 @@ export default function Products() {
       <div className="product-layout">
         <div className="panel product-list-panel">
           <div className="panel-header">
-            <h3>Articoli attivi</h3>
+            <h3>{activeSectionInfo.title}</h3>
             <span>{filtered.length}</span>
           </div>
 
           <div className="v4-list compact-list">
-            {loading && <p>Caricamento prodotti...</p>}
-            {!loading && filtered.length === 0 && <p>Nessun prodotto disponibile.</p>}
+            {loading && <p>Caricamento articoli...</p>}
+            {!loading && filtered.length === 0 && (
+              <p>Nessun articolo disponibile in questa sezione.</p>
+            )}
             {!loading &&
               filtered.map((product) => (
                 <button
@@ -285,7 +381,11 @@ export default function Products() {
                     {product.brand_mexal || "Brand non indicato"}
                   </span>
                   <small>
-                    {[product.linea_mexal, product.categoria_mexal, product.sottocategoria_mexal]
+                    {[
+                      product.linea_mexal,
+                      product.categoria_mexal,
+                      product.sottocategoria_mexal,
+                    ]
                       .filter(Boolean)
                       .join(" · ")}
                   </small>
@@ -297,7 +397,7 @@ export default function Products() {
         <div className="product-detail-stack">
           {!selected ? (
             <div className="panel">
-              <p>Seleziona un prodotto.</p>
+              <p>Seleziona un articolo.</p>
             </div>
           ) : (
             <div className="panel product-hero">
@@ -357,10 +457,114 @@ export default function Products() {
       </div>
 
       <style>{`
-        .spin { animation: product-sync-spin 1s linear infinite; }
+        .product-section-tabs {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 14px;
+          margin-bottom: 18px;
+        }
+
+        .product-section-tab {
+          width: 100%;
+          min-width: 0;
+          display: grid;
+          grid-template-columns: auto minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 12px;
+          padding: 18px;
+          border: 1px solid #dbe3ee;
+          border-radius: 16px;
+          background: #ffffff;
+          color: #172033;
+          text-align: left;
+          cursor: pointer;
+          box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
+          transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+        }
+
+        .product-section-tab:hover {
+          transform: translateY(-1px);
+          border-color: #93c5fd;
+          box-shadow: 0 8px 22px rgba(37, 99, 235, 0.08);
+        }
+
+        .product-section-tab.active {
+          border-color: #2563eb;
+          background: #eff6ff;
+          box-shadow: 0 8px 24px rgba(37, 99, 235, 0.12);
+        }
+
+        .product-section-tab-icon {
+          width: 44px;
+          height: 44px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 12px;
+          background: #eef2ff;
+          color: #1d4ed8;
+        }
+
+        .product-section-tab-copy {
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .product-section-tab-copy strong {
+          font-size: 16px;
+        }
+
+        .product-section-tab-copy small {
+          color: #64748b;
+          line-height: 1.35;
+        }
+
+        .product-section-tab-count {
+          min-width: 38px;
+          height: 38px;
+          padding: 0 10px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 999px;
+          background: #f1f5f9;
+          color: #0f172a;
+          font-weight: 800;
+        }
+
+        .product-section-tab.active .product-section-tab-count {
+          background: #2563eb;
+          color: #ffffff;
+        }
+
+        .product-toolbar {
+          align-items: center;
+        }
+
+        .spin {
+          animation: product-sync-spin 1s linear infinite;
+        }
+
         @keyframes product-sync-spin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 900px) {
+          .product-section-tabs {
+            grid-template-columns: 1fr;
+          }
+
+          .product-toolbar {
+            align-items: stretch;
+          }
+
+          .product-toolbar .primary-action {
+            width: 100%;
+            justify-content: center;
+          }
         }
       `}</style>
     </div>

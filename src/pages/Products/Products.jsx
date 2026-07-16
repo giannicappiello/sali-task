@@ -20,9 +20,7 @@ export default function Products() {
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
   const [canSyncMexal, setCanSyncMexal] = useState(false);
-  const [syncingTest, setSyncingTest] = useState(false);
   const [syncingReal, setSyncingReal] = useState(false);
-  const [syncTestPassed, setSyncTestPassed] = useState(false);
   const [syncResult, setSyncResult] = useState(null);
 
   useEffect(() => {
@@ -106,30 +104,7 @@ export default function Products() {
     return result;
   }
 
-  async function testMexal() {
-    setSyncingTest(true);
-    setSyncResult(null);
-    setSyncTestPassed(false);
-
-    try {
-      const result = await callMexalApi({ action: "test" });
-      setSyncResult(result);
-      setSyncTestPassed(true);
-      alert(`Test Mexal completato. Articoli IT*, MKT* e IMP* trovati: ${result.selezionati || 0}.`);
-    } catch (error) {
-      setSyncResult({ error: error.message });
-      alert(error.message);
-    } finally {
-      setSyncingTest(false);
-    }
-  }
-
   async function synchronizeMexal() {
-    if (!syncTestPassed) {
-      alert("Esegui prima il test Mexal.");
-      return;
-    }
-
     if (
       !window.confirm(
         "Avviare la sincronizzazione del catalogo con gli articoli attivi di Mexal?\n\n" +
@@ -147,6 +122,8 @@ export default function Products() {
       inseriti: 0,
       aggiornati: 0,
       immagini_salvate: 0,
+      esclusi_non_attivi: 0,
+      esclusi_fuori_produzione: 0,
       errori: [],
     };
 
@@ -162,6 +139,8 @@ export default function Products() {
         totals.inseriti += Number(result.inseriti || 0);
         totals.aggiornati += Number(result.aggiornati || 0);
         totals.immagini_salvate += Number(result.immagini_salvate || 0);
+        totals.esclusi_non_attivi += Number(result.esclusi_non_attivi || 0);
+        totals.esclusi_fuori_produzione += Number(result.esclusi_fuori_produzione || 0);
         totals.errori.push(...(result.errori || []));
         offset = Number(result.prossimo_offset || offset + BATCH_SIZE);
 
@@ -217,7 +196,7 @@ export default function Products() {
         <div>
           <h1>Prodotti</h1>
           <p>
-            Catalogo in sola lettura sincronizzato da Mexal. Sono visibili esclusivamente gli articoli attivi.
+            Catalogo in sola lettura sincronizzato da Mexal. Sono esclusi gli articoli non attivi e quelli appartenenti a linee contenenti “Fuori Produzione”.
           </p>
         </div>
       </div>
@@ -235,20 +214,10 @@ export default function Products() {
         {canSyncMexal && (
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button
-              className="secondary-action"
-              type="button"
-              onClick={testMexal}
-              disabled={syncingTest || syncingReal}
-            >
-              <RefreshCw size={18} className={syncingTest ? "spin" : ""} />
-              {syncingTest ? "Test in corso..." : "Test Mexal"}
-            </button>
-
-            <button
               className="primary-action"
               type="button"
               onClick={synchronizeMexal}
-              disabled={!syncTestPassed || syncingTest || syncingReal}
+              disabled={syncingReal}
             >
               <RefreshCw size={18} className={syncingReal ? "spin" : ""} />
               {syncingReal ? "Sincronizzazione..." : "Sincronizza Mexal"}
@@ -283,6 +252,8 @@ export default function Products() {
             <span>Inseriti: {syncResult.inseriti || 0}</span>
             <span>Aggiornati: {syncResult.aggiornati || 0}</span>
             <span>Immagini catalogo: {syncResult.immagini_salvate || 0}</span>
+            <span>Esclusi non attivi: {syncResult.esclusi_non_attivi || 0}</span>
+            <span>Esclusi Fuori Produzione: {syncResult.esclusi_fuori_produzione || 0}</span>
             <span>Errori: {syncResult.errori?.length || 0}</span>
           </div>
         </div>

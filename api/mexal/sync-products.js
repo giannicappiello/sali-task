@@ -363,6 +363,13 @@ function resolveHierarchy(groupCode, groupMap) {
   };
 }
 
+function isOutOfProductionLine(lineDescription) {
+  return String(lineDescription || "")
+    .trim()
+    .toLocaleLowerCase("it-IT")
+    .includes("fuori produzione");
+}
+
 function detectImageMime(buffer, header) {
   const normalized = String(header || "").toLowerCase();
 
@@ -764,6 +771,8 @@ export default async function handler(req, res) {
       inseriti: 0,
       aggiornati: 0,
       immagini_salvate: 0,
+      esclusi_non_attivi: 0,
+      esclusi_fuori_produzione: 0,
       errori: [],
     };
 
@@ -782,6 +791,7 @@ export default async function handler(req, res) {
         );
 
         if (!isActiveArticle(article)) {
+          result.esclusi_non_attivi += 1;
           continue;
         }
 
@@ -789,6 +799,11 @@ export default async function handler(req, res) {
           article.cod_grp_merc,
           groupMap
         );
+
+        if (isOutOfProductionLine(hierarchy.linea?.descrizione)) {
+          result.esclusi_fuori_produzione += 1;
+          continue;
+        }
 
         const existing =
           await findExistingProduct(

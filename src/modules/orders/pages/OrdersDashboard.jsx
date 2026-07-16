@@ -85,7 +85,7 @@ export default function OrdersDashboard() {
           [],
           "codice_agente_mexal"
         ),
-        countTable("ordini_prodotti_cache", [["mostra_in_app", true]]),
+        countTable("prodotti", [["attivo_mexal", true], ["mostra_in_app", true]]),
         countTable(
           "ordini_testate",
           [["mese_ordine", month]],

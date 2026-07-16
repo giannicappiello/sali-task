@@ -43,7 +43,7 @@ const pageInfo = {
   "/reminders": { title: "Reminder", subtitle: "Reminder personali organizzati per deadline." },
   "/projects": { title: "Progetti", subtitle: "Progetti orizzontali con checklist e fasi operative." },
   "/tasks": { title: "Planning fasi", subtitle: "Vista mensile, settimanale e giornaliera delle fasi progettuali." },
-  "/products": { title: "Prodotti", subtitle: "Prodotti, progetti collegati, documenti e storico." },
+  "/products": { title: "Prodotti", subtitle: "Catalogo articoli attivi sincronizzato da Mexal in sola lettura." },
   "/documentation": { title: "Documentazione", subtitle: "Schede tecniche, SDS, certificazioni, artwork, etichette e regolatorio." },
   "/analysis-data": { title: "Analisi dati", subtitle: "Pivot interattiva su progetti, fasi, reminder, prodotti e documenti." },
   "/reports": { title: "Analisi dati", subtitle: "Pivot interattiva su progetti, fasi, reminder, prodotti e documenti." },
@@ -184,6 +184,10 @@ function Layout() {
 
         if (item.path === "/ordini") {
           return ordersEnabled || hasPermission("orders.read");
+        }
+
+        if (item.path === "/products") {
+          return ordersEnabled || hasPermission("products.read");
         }
 
         return hasPermission(item.permission);

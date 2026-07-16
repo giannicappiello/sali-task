@@ -2,7 +2,6 @@ import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import {
   FolderOpen,
   LayoutDashboard,
-  Package,
   ShoppingCart,
   Users,
 } from "lucide-react";
@@ -10,7 +9,6 @@ import useOrdersAccess from "./pages/useOrdersAccess";
 import OrdersDashboard from "./pages/OrdersDashboard";
 import Customers from "./pages/Customers";
 import Orders from "./pages/Orders";
-import Products from "./pages/Products";
 import Materials from "./pages/Materials";
 import "./orders-module.css";
 
@@ -18,7 +16,6 @@ const items = [
   { to: "/ordini/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/ordini/clienti", label: "Clienti", icon: Users },
   { to: "/ordini/elenco", label: "Ordini", icon: ShoppingCart },
-  { to: "/ordini/prodotti", label: "Prodotti", icon: Package },
   { to: "/ordini/materiali", label: "Materiali", icon: FolderOpen },
 ];
 
@@ -43,8 +40,7 @@ export default function OrdersModule() {
         <div>
           <h1>Gestione Ordini</h1>
           <p>
-            Clienti, ordini, prodotti e materiali commerciali collegati a
-            Mexal.
+            Clienti, ordini e materiali commerciali collegati a Mexal.
           </p>
         </div>
       </div>
@@ -71,7 +67,6 @@ export default function OrdersModule() {
         <Route path="dashboard" element={<OrdersDashboard />} />
         <Route path="clienti" element={<Customers />} />
         <Route path="elenco" element={<Orders />} />
-        <Route path="prodotti" element={<Products />} />
         <Route path="materiali" element={<Materials />} />
         <Route path="*" element={<Navigate to="dashboard" replace />} />
       </Routes>

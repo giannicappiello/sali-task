@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "api/mexal/sync-products.js": {
+      "maxDuration": 60
+    }
+  },
   "rewrites": [
     {
       "source": "/(.*)",

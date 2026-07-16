@@ -478,9 +478,7 @@ export default function Projects() {
   }
 
   function openQuickProductModal() {
-    if (!canManage) return alert("Non hai i permessi per creare prodotti.");
-    setQuickProductForm({ ...quickProductEmpty, nome: projectProductQuery.trim() });
-    setQuickProductModal(true);
+    alert("I prodotti sono sincronizzati da Mexal e non possono essere creati da Sali-task.");
   }
 
   function updateQuickProductForm(field, value) {
@@ -489,7 +487,8 @@ export default function Projects() {
 
   async function saveQuickProduct(e) {
     e.preventDefault();
-    if (!canManage) return alert("Non hai i permessi per creare prodotti.");
+    return alert("I prodotti sono sincronizzati da Mexal e non possono essere creati da Sali-task.");
+    /*
     if (!quickProductForm.nome.trim()) return alert("Inserisci il nome del prodotto.");
 
     setSavingQuickProduct(true);
@@ -518,6 +517,7 @@ export default function Projects() {
 
     setQuickProductModal(false);
     setQuickProductForm(quickProductEmpty);
+    */
   }
 
   async function saveProject(e) {
@@ -1373,9 +1373,7 @@ export default function Projects() {
                     onChange={(e) => setProjectProductQuery(e.target.value)}
                   />
                 </div>
-                <button type="button" className="secondary-action" onClick={openQuickProductModal}>
-                  <Plus size={18} /> Crea nuovo prodotto
-                </button>
+                <span className="filter-chip">Catalogo prodotti sincronizzato da Mexal · sola lettura</span>
               </div>
               {filteredProjectProducts.length === 0 ? (
                 <p className="empty-text">Nessun prodotto trovato.</p>
@@ -1399,31 +1397,6 @@ export default function Projects() {
             </div>
 
             <button className="primary-action" disabled={saving}><Save size={18} /> {saving ? "Salvataggio..." : "Salva progetto"}</button>
-          </form>
-        </div>
-      )}
-
-      {quickProductModal && (
-        <div className="modal-backdrop">
-          <form className="modal-card v4-modal" onSubmit={saveQuickProduct}>
-            <div className="modal-header">
-              <h2>Crea nuovo prodotto</h2>
-              <button type="button" onClick={() => setQuickProductModal(false)}><X size={20} /></button>
-            </div>
-
-            <label>Nome *<input value={quickProductForm.nome} onChange={(e) => updateQuickProductForm("nome", e.target.value)} autoFocus /></label>
-            <div className="form-grid-2">
-              <label>Codice<input value={quickProductForm.codice} onChange={(e) => updateQuickProductForm("codice", e.target.value)} /></label>
-              <label>Brand<input value={quickProductForm.brand} onChange={(e) => updateQuickProductForm("brand", e.target.value)} /></label>
-              <label>Categoria<input value={quickProductForm.categoria} onChange={(e) => updateQuickProductForm("categoria", e.target.value)} /></label>
-            </div>
-
-            <div className="dashboard-message-actions">
-              <button type="button" className="secondary-action" onClick={() => setQuickProductModal(false)}>Annulla</button>
-              <button type="submit" className="primary-action" disabled={savingQuickProduct}>
-                <Save size={18} /> {savingQuickProduct ? "Salvataggio..." : "Salva e associa"}
-              </button>
-            </div>
           </form>
         </div>
       )}

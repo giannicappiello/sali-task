@@ -31,10 +31,7 @@ export default function Prodotti({ utente }) {
 
   const [nomeCategoria, setNomeCategoria] = useState("");
   const [nomeSottocategoria, setNomeSottocategoria] = useState("");
-  const solaLettura =
-    utente?.ruolo === "beauty" ||
-    utente?.ruolo === "agent" ||
-    utente?.ruolo === "sales_manager";
+  const solaLettura = true;
   useEffect(() => {
     caricaDati();
   }, []);
@@ -383,7 +380,7 @@ export default function Prodotti({ utente }) {
     <div>
       <div style={headerStyle}>
         <h2>Prodotti</h2>
-        <p style={subtitleStyle}>Gestisci categorie, sottocategorie e prodotti</p>
+        <p style={subtitleStyle}>Consulta prodotti sincronizzati da Mexal</p>
       </div>
 
       <div style={tabsStyle}>

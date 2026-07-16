@@ -4,13 +4,26 @@ import { createClient } from "@supabase/supabase-js";
 const MODULE_CODE = "gestione_ordini";
 const STORAGE_BUCKET = "prodotti-mexal";
 const ARTICLE_PREFIXES = ["IT", "MKT", "IMP"];
-const DEFAULT_BATCH_SIZE = 15;
-const MAX_BATCH_SIZE = 25;
+const DEFAULT_BATCH_SIZE = 8;
+const MAX_BATCH_SIZE = 12;
 
 function requireEnv(name) {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`Variabile Vercel mancante: ${name}`);
   return value;
+}
+
+function normalizeCode(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function numberValue(value) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function round4(value) {
+  return Math.round((value + Number.EPSILON) * 10000) / 10000;
 }
 
 function requestMexal({ url, headers, binary = false }) {
@@ -41,7 +54,9 @@ function requestMexal({ url, headers, binary = false }) {
       }
     );
 
-    request.on("timeout", () => request.destroy(new Error("Timeout collegamento Mexal.")));
+    request.on("timeout", () => {
+      request.destroy(new Error("Timeout collegamento Mexal."));
+    });
     request.on("error", reject);
     request.end();
   });
@@ -74,6 +89,7 @@ function buildMexalClient() {
   const anno = requireEnv("MEXAL_ANNO");
   const magazzino = requireEnv("MEXAL_MAGAZZINO");
   const credential = Buffer.from(`${username}:${password}`, "utf8").toString("base64");
+
   const headers = {
     Authorization: `Passepartout ${credential}`,
     "Coordinate-Gestionale": `Azienda=${azienda} Anno=${anno} Magazzino=${magazzino}`,
@@ -129,16 +145,19 @@ async function verifyUser(req, supabase) {
     .maybeSingle();
 
   if (profileError || !profile || profile.attivo === false) {
-    throw Object.assign(new Error("Utente non configurato o disabilitato."), { status: 403 });
+    throw Object.assign(new Error("Utente non configurato o disabilitato."), {
+      status: 403,
+    });
   }
 
   const roleName = String(profile.ruoli?.nome || "").toLowerCase();
   const roleLevel = Number(profile.ruoli?.livello || 0);
   const isAdmin =
-    ["admin", "administrator", "amministratore", "super admin", "direzione"].includes(roleName) ||
-    roleLevel >= 80;
+    ["admin", "administrator", "amministratore", "super admin", "direzione"].includes(
+      roleName
+    ) || roleLevel >= 80;
 
-  if (isAdmin) return { profile, isAdmin: true };
+  if (isAdmin) return;
 
   const { data: integration, error: integrationError } = await supabase
     .from("integrazioni_utenti")
@@ -148,21 +167,20 @@ async function verifyUser(req, supabase) {
     .maybeSingle();
 
   if (integrationError) {
-    throw Object.assign(new Error("Errore verifica autorizzazione Gestione Ordini."), { status: 500 });
+    throw Object.assign(new Error("Errore verifica autorizzazione Gestione Ordini."), {
+      status: 500,
+    });
   }
 
-  if (!(integration?.enabled === true && integration?.ruolo_ordini === "backoffice")) {
+  const isBackoffice =
+    integration?.enabled === true && integration?.ruolo_ordini === "backoffice";
+
+  if (!isBackoffice) {
     throw Object.assign(
       new Error("Operazione riservata ad amministratori e backoffice ordini."),
       { status: 403 }
     );
   }
-
-  return { profile, isAdmin: false };
-}
-
-function normalizeCode(value) {
-  return String(value || "").trim().toUpperCase();
 }
 
 function isSupportedCode(code) {
@@ -170,20 +188,12 @@ function isSupportedCode(code) {
 }
 
 function isActiveArticle(article) {
+  const code = normalizeCode(article?.codice);
   return (
-    isSupportedCode(normalizeCode(article?.codice)) &&
+    isSupportedCode(code) &&
     String(article?.gest_annullato || "N").toUpperCase() !== "S" &&
     String(article?.gest_precanc || "N").toUpperCase() !== "S"
   );
-}
-
-function numberValue(value) {
-  const parsed = Number(value ?? 0);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function round4(value) {
-  return Math.round((value + Number.EPSILON) * 10000) / 10000;
 }
 
 function buildName(article) {
@@ -197,7 +207,9 @@ function buildName(article) {
 
 function getListPrice(prices, preferredList = 1) {
   if (!Array.isArray(prices)) return null;
-  const exact = prices.find((row) => Array.isArray(row) && Number(row[0]) === preferredList);
+  const exact = prices.find(
+    (row) => Array.isArray(row) && Number(row[0]) === preferredList
+  );
   const candidate = exact || prices.find((row) => Array.isArray(row));
   return candidate ? numberValue(candidate[1]) : null;
 }
@@ -238,7 +250,7 @@ function resolveHierarchy(groupCode, groupMap) {
     brand: chain[0] || null,
     linea: chain[1] || null,
     categoria: chain[2] || null,
-    sottocategoria: chain[3] || null,
+    sottocategoria: chain.length >= 4 ? chain[chain.length - 1] : null,
   };
 }
 
@@ -246,13 +258,16 @@ function detectImageMime(buffer, header) {
   const normalized = String(header || "").toLowerCase();
   if (normalized.includes("png")) return { mime: "image/png", extension: "png" };
   if (normalized.includes("webp")) return { mime: "image/webp", extension: "webp" };
-  if (buffer?.[0] === 0x89 && buffer?.[1] === 0x50) return { mime: "image/png", extension: "png" };
+  if (buffer?.[0] === 0x89 && buffer?.[1] === 0x50) {
+    return { mime: "image/png", extension: "png" };
+  }
   return { mime: "image/jpeg", extension: "jpg" };
 }
 
 async function ensureImageBucket(supabase) {
   const { data, error } = await supabase.storage.listBuckets();
   if (error) throw error;
+
   const bucket = data?.find((item) => item.name === STORAGE_BUCKET);
   if (!bucket) {
     const { error: createError } = await supabase.storage.createBucket(STORAGE_BUCKET, {
@@ -277,48 +292,71 @@ async function syncCatalogImage({ supabase, mexal, article, code }) {
   const response = await mexal.getBinary(
     `/articoli/${encodeURIComponent(code)}/allegati/immagine-catalogo`
   );
-  const { mime, extension } = detectImageMime(response.body, response.headers["content-type"]);
-  const path = `${code.replace(/[^a-zA-Z0-9._-]/g, "_")}/catalogo.${extension}`;
+  const { mime, extension } = detectImageMime(
+    response.body,
+    response.headers["content-type"]
+  );
+  const safeCode = code.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const storagePath = `${safeCode}/catalogo.${extension}`;
 
-  const { error } = await supabase.storage.from(STORAGE_BUCKET).upload(path, response.body, {
-    contentType: mime,
-    cacheControl: "3600",
-    upsert: true,
-  });
+  const { error } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .upload(storagePath, response.body, {
+      contentType: mime,
+      cacheControl: "3600",
+      upsert: true,
+    });
   if (error) throw error;
 
-  return supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path).data.publicUrl;
+  return supabase.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath).data.publicUrl;
+}
+
+function extractRows(response) {
+  if (Array.isArray(response)) return response;
+  if (Array.isArray(response?.dati)) return response.dati;
+  if (Array.isArray(response?.records)) return response.records;
+  if (Array.isArray(response?.items)) return response.items;
+  return [];
 }
 
 async function getAllArticles(mexal) {
   const response = await mexal.getJson("/articoli");
-  const rows = Array.isArray(response?.dati) ? response.dati : [];
-  return rows.filter(isActiveArticle).sort((a, b) =>
-    normalizeCode(a.codice).localeCompare(normalizeCode(b.codice))
-  );
+  return extractRows(response)
+    .filter(isActiveArticle)
+    .sort((a, b) => normalizeCode(a.codice).localeCompare(normalizeCode(b.codice)));
 }
 
 async function getGroupMap(mexal) {
   const response = await mexal.getJson("/dati-generali/gruppi-merceologici");
-  const groups = Array.isArray(response?.dati) ? response.dati : [];
+  const groups = extractRows(response);
   return new Map(groups.map((group) => [String(group.codice || "").trim(), group]));
 }
 
 async function loadFullArticle(mexal, code, fallback) {
-  try {
-    const response = await mexal.getJson(`/articoli/${encodeURIComponent(code)}`);
-    return response && !Array.isArray(response?.dati) ? response : fallback;
-  } catch (error) {
-    console.warn(`Dettaglio articolo ${code} non disponibile:`, error.message);
-    return fallback;
+  const response = await mexal.getJson(`/articoli/${encodeURIComponent(code)}`);
+  if (response && typeof response === "object" && !Array.isArray(response)) {
+    if (response.dati && !Array.isArray(response.dati)) return response.dati;
+    return response;
   }
+  return fallback;
 }
 
-async function upsertProduct({ supabase, article, hierarchy, imageUrl }) {
+async function findExistingProduct(supabase, code) {
+  const { data, error } = await supabase
+    .from("prodotti")
+    .select("id,immagine_catalogo_url")
+    .eq("codice_mexal", code)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+async function saveProduct({ supabase, article, hierarchy, imageUrl, existing }) {
   const code = normalizeCode(article.codice);
   const name = buildName(article) || code;
   const stock = calculateStock(article);
   const now = new Date().toISOString();
+
   const payload = {
     nome: name,
     codice: code,
@@ -335,9 +373,9 @@ async function upsertProduct({ supabase, article, hierarchy, imageUrl }) {
     prezzo_listino: getListPrice(article.prz_listino, 1),
     giacenza: stock,
     disponibilita: calculateAvailability(article, stock),
-    immagine_catalogo_url: imageUrl,
     immagine_url: null,
     icona_url: null,
+    immagine_catalogo_url: imageUrl ?? existing?.immagine_catalogo_url ?? null,
     mostra_in_app: true,
     sincronizzato_mexal: true,
     attivo_mexal: true,
@@ -347,14 +385,6 @@ async function upsertProduct({ supabase, article, hierarchy, imageUrl }) {
     json_mexal: article,
     updated_at: now,
   };
-
-  const { data: existing, error: findError } = await supabase
-    .from("prodotti")
-    .select("id")
-    .or(`codice_mexal.eq.${code},codice.eq.${code}`)
-    .limit(1)
-    .maybeSingle();
-  if (findError) throw findError;
 
   if (existing?.id) {
     const { error } = await supabase.from("prodotti").update(payload).eq("id", existing.id);
@@ -368,7 +398,9 @@ async function upsertProduct({ supabase, article, hierarchy, imageUrl }) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Metodo non consentito." });
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Metodo non consentito." });
+  }
 
   try {
     const supabase = createClient(
@@ -387,7 +419,10 @@ export default async function handler(req, res) {
       Math.max(1, Number(body.batchSize || DEFAULT_BATCH_SIZE))
     );
 
-    const [articles, groupMap] = await Promise.all([getAllArticles(mexal), getGroupMap(mexal)]);
+    const [articles, groupMap] = await Promise.all([
+      getAllArticles(mexal),
+      getGroupMap(mexal),
+    ]);
 
     if (action === "test") {
       return res.status(200).json({
@@ -404,7 +439,7 @@ export default async function handler(req, res) {
         immagini_salvate: 0,
         errori: [],
         dry_run: true,
-        messaggio: "Connessione verificata. Sono stati trovati solo articoli attivi.",
+        messaggio: "Connessione verificata. Trovati gli articoli attivi IT, MKT e IMP.",
       });
     }
 
@@ -421,7 +456,7 @@ export default async function handler(req, res) {
           mostra_in_app: false,
           stato: "Non attivo",
         })
-        .neq("id", "00000000-0000-0000-0000-000000000000");
+        .eq("sincronizzato_mexal", true);
       if (hideError) throw hideError;
       await ensureImageBucket(supabase);
     }
@@ -443,16 +478,31 @@ export default async function handler(req, res) {
       const code = normalizeCode(summary.codice);
       try {
         const article = await loadFullArticle(mexal, code, summary);
+        if (!isActiveArticle(article)) continue;
+
         const hierarchy = resolveHierarchy(article.cod_grp_merc, groupMap);
-        let imageUrl = null;
-        try {
-          imageUrl = await syncCatalogImage({ supabase, mexal, article, code });
-          if (imageUrl) result.immagini_salvate += 1;
-        } catch (imageError) {
-          result.errori.push({ codice: code, errore: `Immagine catalogo: ${imageError.message}` });
+        const existing = await findExistingProduct(supabase, code);
+        let imageUrl = existing?.immagine_catalogo_url || null;
+
+        if (String(article?.img_cat_disp || "N").toUpperCase() === "S") {
+          try {
+            imageUrl = await syncCatalogImage({ supabase, mexal, article, code });
+            if (imageUrl) result.immagini_salvate += 1;
+          } catch (imageError) {
+            result.errori.push({
+              codice: code,
+              errore: `Immagine catalogo: ${imageError.message}`,
+            });
+          }
         }
 
-        const operation = await upsertProduct({ supabase, article, hierarchy, imageUrl });
+        const operation = await saveProduct({
+          supabase,
+          article,
+          hierarchy,
+          imageUrl,
+          existing,
+        });
         if (operation === "inserted") result.inseriti += 1;
         else result.aggiornati += 1;
       } catch (error) {

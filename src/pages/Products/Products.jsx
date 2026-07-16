@@ -3,7 +3,7 @@ import { FileText, RefreshCw, Search, ShieldCheck } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 
-const BATCH_SIZE = 10;
+const BATCH_SIZE = 8;
 
 function formatCurrency(value) {
   if (value === null || value === undefined || value === "") return "-";
@@ -46,13 +46,22 @@ export default function Products() {
     if (error) console.error("Prodotti Mexal:", error.message);
     const rows = data || [];
     setProducts(rows);
-    setSelected((current) => rows.find((item) => item.id === current?.id) || rows[0] || null);
+    setSelected((current) =>
+      rows.find((item) => item.id === current?.id) || rows[0] || null
+    );
     setLoading(false);
   }
 
   async function loadSyncPermission() {
-    if (!profile?.id) return setCanSyncMexal(false);
-    if (isAdminUser) return setCanSyncMexal(true);
+    if (!profile?.id) {
+      setCanSyncMexal(false);
+      return;
+    }
+
+    if (isAdminUser) {
+      setCanSyncMexal(true);
+      return;
+    }
 
     const { data } = await supabase
       .from("integrazioni_utenti")
@@ -91,7 +100,9 @@ export default function Products() {
       result = { error: text || "Risposta API non valida." };
     }
 
-    if (!response.ok) throw new Error(result.error || `Errore API (${response.status}).`);
+    if (!response.ok) {
+      throw new Error(result.error || `Errore API (${response.status}).`);
+    }
     return result;
   }
 
@@ -99,6 +110,7 @@ export default function Products() {
     setSyncingTest(true);
     setSyncResult(null);
     setSyncTestPassed(false);
+
     try {
       const result = await callMexalApi({ action: "test" });
       setSyncResult(result);
@@ -113,17 +125,30 @@ export default function Products() {
   }
 
   async function synchronizeMexal() {
-    if (!syncTestPassed) return alert("Esegui prima il test Mexal.");
-    if (!window.confirm(
-      "Avviare la sostituzione del catalogo visibile con gli articoli attivi di Mexal?\n\n" +
-      "I prodotti precedenti non verranno cancellati fisicamente: saranno nascosti per preservare storico e collegamenti."
-    )) return;
+    if (!syncTestPassed) {
+      alert("Esegui prima il test Mexal.");
+      return;
+    }
+
+    if (
+      !window.confirm(
+        "Avviare la sincronizzazione del catalogo con gli articoli attivi di Mexal?\n\n" +
+          "Sali-task aggiornerà esclusivamente la propria copia in sola lettura."
+      )
+    ) {
+      return;
+    }
 
     setSyncingReal(true);
     setSyncResult(null);
 
     let offset = 0;
-    const totals = { inseriti: 0, aggiornati: 0, immagini_salvate: 0, errori: [] };
+    const totals = {
+      inseriti: 0,
+      aggiornati: 0,
+      immagini_salvate: 0,
+      errori: [],
+    };
 
     try {
       while (true) {
@@ -153,10 +178,10 @@ export default function Products() {
       await loadProducts();
       alert(
         `Sincronizzazione completata.\n\n` +
-        `Inseriti: ${totals.inseriti}\n` +
-        `Aggiornati: ${totals.aggiornati}\n` +
-        `Immagini catalogo: ${totals.immagini_salvate}\n` +
-        `Errori: ${totals.errori.length}`
+          `Inseriti: ${totals.inseriti}\n` +
+          `Aggiornati: ${totals.aggiornati}\n` +
+          `Immagini catalogo: ${totals.immagini_salvate}\n` +
+          `Errori: ${totals.errori.length}`
       );
     } catch (error) {
       setSyncResult((current) => ({ ...(current || totals), error: error.message }));
@@ -169,6 +194,7 @@ export default function Products() {
   const filtered = useMemo(() => {
     const text = query.trim().toLowerCase();
     if (!text) return products;
+
     return products.filter((product) =>
       [
         product.nome,
@@ -190,7 +216,9 @@ export default function Products() {
       <div className="page-title-row">
         <div>
           <h1>Prodotti</h1>
-          <p>Catalogo in sola lettura sincronizzato da Mexal. Sono visibili esclusivamente gli articoli attivi.</p>
+          <p>
+            Catalogo in sola lettura sincronizzato da Mexal. Sono visibili esclusivamente gli articoli attivi.
+          </p>
         </div>
       </div>
 
@@ -206,11 +234,22 @@ export default function Products() {
 
         {canSyncMexal && (
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button className="secondary-action" type="button" onClick={testMexal} disabled={syncingTest || syncingReal}>
+            <button
+              className="secondary-action"
+              type="button"
+              onClick={testMexal}
+              disabled={syncingTest || syncingReal}
+            >
               <RefreshCw size={18} className={syncingTest ? "spin" : ""} />
               {syncingTest ? "Test in corso..." : "Test Mexal"}
             </button>
-            <button className="primary-action" type="button" onClick={synchronizeMexal} disabled={!syncTestPassed || syncingTest || syncingReal}>
+
+            <button
+              className="primary-action"
+              type="button"
+              onClick={synchronizeMexal}
+              disabled={!syncTestPassed || syncingTest || syncingReal}
+            >
               <RefreshCw size={18} className={syncingReal ? "spin" : ""} />
               {syncingReal ? "Sincronizzazione..." : "Sincronizza Mexal"}
             </button>
@@ -233,8 +272,14 @@ export default function Products() {
           <h3>Risultato sincronizzazione</h3>
           {syncResult.error && <p style={{ color: "#b91c1c" }}>{syncResult.error}</p>}
           <div className="mini-meta">
-            {syncResult.selezionati !== undefined && <span>Articoli attivi: {syncResult.selezionati}</span>}
-            {syncResult.totale !== undefined && <span>Avanzamento: {syncResult.elaborati || 0}/{syncResult.totale}</span>}
+            {syncResult.selezionati !== undefined && (
+              <span>Articoli attivi: {syncResult.selezionati}</span>
+            )}
+            {syncResult.totale !== undefined && (
+              <span>
+                Avanzamento: {syncResult.elaborati || 0}/{syncResult.totale}
+              </span>
+            )}
             <span>Inseriti: {syncResult.inseriti || 0}</span>
             <span>Aggiornati: {syncResult.aggiornati || 0}</span>
             <span>Immagini catalogo: {syncResult.immagini_salvate || 0}</span>
@@ -249,26 +294,40 @@ export default function Products() {
             <h3>Articoli attivi</h3>
             <span>{filtered.length}</span>
           </div>
+
           <div className="v4-list compact-list">
             {loading && <p>Caricamento prodotti...</p>}
-            {!loading && filtered.map((product) => (
-              <button
-                type="button"
-                key={product.id}
-                className={`v4-list-main product-row ${selected?.id === product.id ? "active" : ""}`}
-                onClick={() => setSelected(product)}
-              >
-                <strong>{product.nome}</strong>
-                <span>{product.codice_mexal || product.codice || "-"} · {product.brand_mexal || "Brand non indicato"}</span>
-                <small>{[product.linea_mexal, product.categoria_mexal, product.sottocategoria_mexal].filter(Boolean).join(" · ")}</small>
-              </button>
-            ))}
+            {!loading && filtered.length === 0 && <p>Nessun prodotto disponibile.</p>}
+            {!loading &&
+              filtered.map((product) => (
+                <button
+                  type="button"
+                  key={product.id}
+                  className={`v4-list-main product-row ${
+                    selected?.id === product.id ? "active" : ""
+                  }`}
+                  onClick={() => setSelected(product)}
+                >
+                  <strong>{product.nome}</strong>
+                  <span>
+                    {product.codice_mexal || product.codice || "-"} ·{" "}
+                    {product.brand_mexal || "Brand non indicato"}
+                  </span>
+                  <small>
+                    {[product.linea_mexal, product.categoria_mexal, product.sottocategoria_mexal]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </small>
+                </button>
+              ))}
           </div>
         </div>
 
         <div className="product-detail-stack">
           {!selected ? (
-            <div className="panel"><p>Seleziona un prodotto.</p></div>
+            <div className="panel">
+              <p>Seleziona un prodotto.</p>
+            </div>
           ) : (
             <div className="panel product-hero">
               <span className="status-pill done">Attivo in Mexal</span>
@@ -279,7 +338,16 @@ export default function Products() {
                 <img
                   src={selected.immagine_catalogo_url}
                   alt={selected.nome}
-                  style={{ width: "100%", maxWidth: 360, maxHeight: 320, objectFit: "contain", borderRadius: 14, border: "1px solid #e5e7eb", background: "white", margin: "14px 0" }}
+                  style={{
+                    width: "100%",
+                    maxWidth: 360,
+                    maxHeight: 320,
+                    objectFit: "contain",
+                    borderRadius: 14,
+                    border: "1px solid #e5e7eb",
+                    background: "white",
+                    margin: "14px 0",
+                  }}
                 />
               )}
 
@@ -293,11 +361,22 @@ export default function Products() {
                 <span>Prezzo listino: {formatCurrency(selected.prezzo_listino)}</span>
                 <span>Giacenza: {selected.giacenza ?? "-"}</span>
                 <span>Disponibilità: {selected.disponibilita ?? "-"}</span>
-                <span>Ultimo sync: {selected.ultimo_sync_mexal ? new Date(selected.ultimo_sync_mexal).toLocaleString("it-IT") : "-"}</span>
+                <span>
+                  Ultimo sync:{" "}
+                  {selected.ultimo_sync_mexal
+                    ? new Date(selected.ultimo_sync_mexal).toLocaleString("it-IT")
+                    : "-"}
+                </span>
               </div>
 
               {selected.scheda_tecnica_url && (
-                <a className="primary-action" href={selected.scheda_tecnica_url} target="_blank" rel="noreferrer" style={{ marginTop: 18, display: "inline-flex" }}>
+                <a
+                  className="primary-action"
+                  href={selected.scheda_tecnica_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ marginTop: 18, display: "inline-flex" }}
+                >
                   <FileText size={18} /> Scheda tecnica
                 </a>
               )}
@@ -308,7 +387,10 @@ export default function Products() {
 
       <style>{`
         .spin { animation: product-sync-spin 1s linear infinite; }
-        @keyframes product-sync-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes product-sync-spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
       `}</style>
     </div>
   );

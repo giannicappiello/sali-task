@@ -468,34 +468,43 @@ export default function Products() {
       return null;
     }
 
-    const { data, error } = await supabase.functions.invoke(
-      "mexal-sync-products",
-      {
-        body: {
-          dryRun,
-          downloadImages,
-          maxArticles,
-        },
-      }
-    );
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
 
-    if (error) {
-      let message = error.message || "Errore invocazione Edge Function.";
+    if (sessionError || !session?.access_token) {
+      throw new Error("Sessione scaduta. Effettua nuovamente l'accesso.");
+    }
 
-      try {
-        const contextResponse = error.context;
-        if (contextResponse?.json) {
-          const body = await contextResponse.json();
-          message =
-            body?.error ||
-            body?.details ||
-            JSON.stringify(body);
-        }
-      } catch {
-        // Mantiene il messaggio originale.
-      }
+    const response = await fetch("/api/mexal/sync-products", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        dryRun,
+        downloadImages,
+        maxArticles,
+      }),
+    });
 
-      throw new Error(message);
+    const text = await response.text();
+    let data;
+
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { error: text || "Risposta API non valida." };
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        data?.error ||
+          data?.details ||
+          `Errore API Vercel (${response.status}).`
+      );
     }
 
     return data;
@@ -545,48 +554,10 @@ export default function Products() {
       return;
     }
 
-    const confirmed = window.confirm(
-      "Avviare la sincronizzazione reale dei primi 50 articoli Mexal?\n\n" +
-        "La funzione aggiornerà la tabella prodotti e scaricherà le immagini in Supabase Storage."
+    alert(
+      "Il collegamento Vercel → Mexal è stato verificato. " +
+        "La sincronizzazione completa di database e immagini verrà attivata nel passaggio successivo."
     );
-
-    if (!confirmed) return;
-
-    setSyncingReal(true);
-    setSyncResult(null);
-
-    try {
-      const result = await runMexalSync({
-        dryRun: false,
-        downloadImages: true,
-        maxArticles: 50,
-      });
-
-      setSyncResult(result);
-
-      alert(
-        `Sincronizzazione completata.\n\n` +
-          `Inseriti: ${result?.inseriti || 0}\n` +
-          `Aggiornati: ${result?.aggiornati || 0}\n` +
-          `Immagini salvate: ${result?.immagini_salvate || 0}\n` +
-          `Errori: ${result?.errori?.length || 0}`
-      );
-
-      await loadData();
-    } catch (error) {
-      console.error("Sincronizzazione reale Mexal:", error);
-      setSyncResult({
-        error:
-          error.message ||
-          "Errore durante la sincronizzazione reale.",
-      });
-      alert(
-        error.message ||
-          "Errore durante la sincronizzazione reale."
-      );
-    } finally {
-      setSyncingReal(false);
-    }
   }
 
   return (

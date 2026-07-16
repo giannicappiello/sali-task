@@ -1,8 +1,12 @@
-import { useEffect, useState } from "react";
-import { Navigate, NavLink, Route, Routes } from "react-router-dom";
-import { LayoutDashboard, Package, ShoppingCart, Users, FolderOpen } from "lucide-react";
-import { useAuth } from "../../contexts/AuthContext";
-import { supabase } from "../../lib/supabaseClient";
+import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import {
+  FolderOpen,
+  LayoutDashboard,
+  Package,
+  ShoppingCart,
+  Users,
+} from "lucide-react";
+import useOrdersAccess from "./pages/useOrdersAccess";
 import OrdersDashboard from "./pages/OrdersDashboard";
 import Customers from "./pages/Customers";
 import Orders from "./pages/Orders";
@@ -19,48 +23,18 @@ const items = [
 ];
 
 export default function OrdersModule() {
-  const { profile, hasPermission, isAdminUser } = useAuth();
-  const [integrationEnabled, setIntegrationEnabled] = useState(false);
-  const [checkingAccess, setCheckingAccess] = useState(true);
+  const { loading, canAccessOrders } = useOrdersAccess();
 
-  useEffect(() => {
-    let active = true;
+  if (loading) {
+    return <div className="orders-empty">Verifica autorizzazione...</div>;
+  }
 
-    async function checkAccess() {
-      if (isAdminUser) {
-        if (active) { setIntegrationEnabled(true); setCheckingAccess(false); }
-        return;
-      }
-
-      if (!profile?.id) {
-        if (active) { setIntegrationEnabled(false); setCheckingAccess(false); }
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("integrazioni_utenti")
-        .select("enabled")
-        .eq("utente_id", profile.id)
-        .eq("modulo", "gestione_ordini")
-        .maybeSingle();
-
-      if (error) console.error("Errore verifica accesso Gestione Ordini:", error);
-      if (active) {
-        setIntegrationEnabled(data?.enabled === true);
-        setCheckingAccess(false);
-      }
-    }
-
-    checkAccess();
-    return () => { active = false; };
-  }, [profile?.id, isAdminUser]);
-
-  const canAccess = isAdminUser || hasPermission("orders.read") || integrationEnabled;
-
-  if (checkingAccess) return <div className="orders-empty">Verifica autorizzazione...</div>;
-
-  if (!canAccess) {
-    return <div className="orders-empty">Non sei autorizzato ad accedere alla Gestione Ordini.</div>;
+  if (!canAccessOrders) {
+    return (
+      <div className="orders-empty">
+        Non sei autorizzato ad accedere alla Gestione Ordini.
+      </div>
+    );
   }
 
   return (
@@ -68,15 +42,23 @@ export default function OrdersModule() {
       <div className="orders-module-header">
         <div>
           <h1>Gestione Ordini</h1>
-          <p>Clienti, ordini, prodotti e materiali commerciali collegati a Mexal.</p>
+          <p>
+            Clienti, ordini, prodotti e materiali commerciali collegati a
+            Mexal.
+          </p>
         </div>
       </div>
 
       <div className="orders-tabs">
         {items.map((item) => {
           const Icon = item.icon;
+
           return (
-            <NavLink key={item.to} to={item.to} className={({ isActive }) => isActive ? "active" : ""}>
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) => (isActive ? "active" : "")}
+            >
               <Icon size={18} />
               {item.label}
             </NavLink>

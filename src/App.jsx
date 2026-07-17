@@ -8,7 +8,7 @@ import Layout from "./components/Layout";
 import Login from "./pages/Login/Login";
 
 const Home = lazy(() => import("./pages/Home/Home"));
-const Activities = lazy(() => import("./pages/Activities/Activities"));
+const ActivitiesModule = lazy(() => import("./pages/Activities/ActivitiesModule"));
 const Dashboard = lazy(() => import("./pages/Dashboard/Dashboard"));
 const Agenda = lazy(() => import("./pages/Agenda/Agenda"));
 const Tasks = lazy(() => import("./pages/Tasks/Tasks"));
@@ -59,19 +59,19 @@ function App() {
               <Route index element={<Navigate to="/home" replace />} />
 
               <Route path="home" element={<Home />} />
-              <Route path="activities" element={<Activities />} />
-              <Route path="dashboard" element={<Dashboard />} />
+              <Route path="activities/*" element={<ActivitiesModule />} />
+              <Route path="dashboard" element={<Navigate to="/activities/dashboard" replace />} />
               <Route path="agenda" element={<Agenda />} />
-              <Route path="reminders" element={<Agenda />} />
-              <Route path="tasks" element={<Tasks />} />
-              <Route path="projects" element={<Projects />} />
+              <Route path="reminders" element={<Navigate to="/activities/reminders" replace />} />
+              <Route path="tasks" element={<Navigate to="/activities/tasks" replace />} />
+              <Route path="projects" element={<Navigate to="/activities/projects" replace />} />
               <Route path="products" element={<Products />} />
               <Route path="documentation" element={<Documentation />} />
               <Route path="messages" element={<Messages />} />
               <Route path="team" element={<Team />} />
               <Route path="calendar" element={<Calendar />} />
-              <Route path="reports" element={<Reports />} />
-              <Route path="analysis-data" element={<Reports />} />
+              <Route path="reports" element={<Navigate to="/activities/analysis-data" replace />} />
+              <Route path="analysis-data" element={<Navigate to="/activities/analysis-data" replace />} />
               <Route path="settings" element={<Settings />} />
               <Route path="farmacie/*" element={<PharmacyModule />} />
               <Route path="ordini/*" element={<OrdersModule />} />

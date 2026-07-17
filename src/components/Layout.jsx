@@ -31,6 +31,11 @@ const menuItems = [
 const pageInfo = {
   "/home": { title: "Home", subtitle: "Accesso rapido ai moduli del Workspace." },
   "/activities": { title: "Attività", subtitle: "Task, reminder, progetti, fasi e analisi del reparto." },
+  "/activities/dashboard": { title: "Tutte le attività del reparto", subtitle: "Task, fasi, reminder e scadenze del reparto." },
+  "/activities/reminders": { title: "Reminder del mio reparto", subtitle: "Reminder organizzati per deadline." },
+  "/activities/projects": { title: "Progetti del mio reparto", subtitle: "Progetti con checklist e fasi operative." },
+  "/activities/tasks": { title: "Tutte le fasi dei progetti", subtitle: "Planning delle fasi progettuali." },
+  "/activities/analysis-data": { title: "Analisi Dati Attività", subtitle: "Analisi su progetti, fasi e reminder." },
   "/dashboard": { title: "Tutte le attività del reparto", subtitle: "Task, fasi, reminder e scadenze del reparto." },
   "/agenda": { title: "Reminder", subtitle: "Reminder personali, allegati e commenti." },
   "/reminders": { title: "Reminder del mio reparto", subtitle: "Reminder organizzati per deadline." },

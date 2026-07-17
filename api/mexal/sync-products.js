@@ -177,6 +177,11 @@ function buildMexalClient() {
 
 async function verifyUser(req, supabase) {
   const authorization = req.headers.authorization || "";
+  const cronSecret = process.env.CRON_SECRET?.trim();
+
+  if (cronSecret && authorization === `Bearer ${cronSecret}`) {
+    return;
+  }
 
   if (!authorization.startsWith("Bearer ")) {
     throw Object.assign(new Error("Sessione mancante."), {
@@ -729,6 +734,58 @@ export default async function handler(req, res) {
         messaggio:
           "Connessione verificata. Trovati gli articoli con codice IT*, MKT* e IMP*. Lo stato attivo viene verificato sul record completo durante la sincronizzazione.",
       });
+    }
+
+    if (action === "sync-stock-it") {
+      const itArticles = articles.filter((item) =>
+        getArticleCode(item).startsWith("IT")
+      );
+
+      const batch = itArticles.slice(offset, offset + batchSize);
+      const result = {
+        totale: itArticles.length,
+        elaborati: batch.length,
+        offset,
+        prossimo_offset: offset + batch.length,
+        completato: offset + batch.length >= itArticles.length,
+        aggiornati: 0,
+        errori: [],
+      };
+
+      for (const summary of batch) {
+        const code = getArticleCode(summary);
+
+        try {
+          const article = await loadFullArticle(mexal, code, summary);
+
+          if (!isActiveArticle(article)) {
+            continue;
+          }
+
+          const stock = calculateStock(article);
+          const now = new Date().toISOString();
+
+          const { error: updateError } = await supabase
+            .from("prodotti")
+            .update({
+              giacenza: stock,
+              disponibilita: calculateAvailability(article, stock),
+              ultimo_sync_mexal: now,
+              updated_at: now,
+            })
+            .eq("codice_mexal", code);
+
+          if (updateError) throw updateError;
+          result.aggiornati += 1;
+        } catch (error) {
+          result.errori.push({
+            codice: code || "senza codice",
+            errore: error?.message || String(error),
+          });
+        }
+      }
+
+      return res.status(200).json(result);
     }
 
     if (action !== "sync") {

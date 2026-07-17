@@ -557,6 +557,15 @@ export default function Products() {
             grid-template-columns: 1fr;
           }
 
+          .product-list-panel .compact-list {
+            max-height: 520px;
+            overflow-y: auto;
+          }
+
+          .product-list-panel .product-row {
+            min-height: 116px;
+          }
+
           .product-toolbar {
             align-items: stretch;
           }

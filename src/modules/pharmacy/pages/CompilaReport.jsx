@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { supabase } from "../services/reportSupabase";
+import { supabase as reportSupabase } from "../services/reportSupabase";
+import { supabase as primarySupabase } from "../../../lib/supabaseClient";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -21,18 +22,20 @@ export default function CompilaReport({ giornata, farmacie, beauty, onBack }) {
   }, []);
 
   async function caricaDati() {
-    const prodottiRes = await supabase
+    const prodottiRes = await primarySupabase
       .from("prodotti")
       .select("*")
-      .eq("attivo", true)
-      .order("codice", { ascending: true });
+      .eq("attivo_mexal", true)
+      .eq("mostra_in_app", true)
+      .like("codice_mexal", "IT%")
+      .order("codice_mexal", { ascending: true });
 
-    const sottocategorieRes = await supabase
+    const sottocategorieRes = await reportSupabase
       .from("sottocategorie_prodotti")
       .select("*")
       .order("nome", { ascending: true });
 
-    const venditeRes = await supabase
+    const venditeRes = await reportSupabase
       .from("vendite_prodotti")
       .select("*")
       .eq("giornata_id", giornata.id);
@@ -117,7 +120,7 @@ export default function CompilaReport({ giornata, farmacie, beauty, onBack }) {
 
     return prodotti
       .filter((p) => {
-        const testo = `${p.codice || ""} ${p.nome || ""}`.toLowerCase();
+        const testo = `${p.codice_mexal || p.codice || ""} ${p.nome || ""}`.toLowerCase();
         return testo.includes(ricerca);
       })
       .slice(0, 20);
@@ -130,16 +133,17 @@ export default function CompilaReport({ giornata, farmacie, beauty, onBack }) {
     nuoveVendite[index] = {
       ...nuoveVendite[index],
       prodotto_id: prodottoId,
-      codice_prodotto: prodotto?.codice || "",
+      codice_prodotto: prodotto?.codice_mexal || prodotto?.codice || "",
       ricerca_prodotto: prodotto
-        ? `${prodotto.codice || ""} - ${prodotto.nome || ""}`
+        ? `${prodotto.codice_mexal || prodotto.codice || ""} - ${prodotto.nome || ""}`
         : "",
       nome_prodotto: prodotto?.nome || "",
-      categoria_prodotto: prodotto?.categoria || "",
-      sottocategoria_prodotto: getSottocategoriaNome(
-        prodotto?.sottocategoria_id
-      ),
-      prezzo_unitario: Number(prodotto?.prezzo || 0),
+      categoria_prodotto: prodotto?.categoria_mexal || prodotto?.categoria || "",
+      sottocategoria_prodotto:
+        prodotto?.sottocategoria_mexal ||
+        prodotto?.sottocategoria ||
+        getSottocategoriaNome(prodotto?.sottocategoria_id),
+      prezzo_unitario: Number(prodotto?.prezzo_listino || prodotto?.prezzo || 0),
     };
 
     setVendite(nuoveVendite);
@@ -170,14 +174,14 @@ export default function CompilaReport({ giornata, farmacie, beauty, onBack }) {
   async function salvaReport(e) {
     e.preventDefault();
 
-    const { error: deleteOldVenditeError } = await supabase
+    const { error: deleteOldVenditeError } = await reportSupabase
       .from("vendite_prodotti")
       .delete()
       .eq("giornata_id", giornata.id);
 
     if (deleteOldVenditeError) return alert(deleteOldVenditeError.message);
 
-    const { error: updateError } = await supabase
+    const { error: updateError } = await reportSupabase
       .from("giornate_promozionali")
       .update({
         clienti_intervistati: clientiIntervistati || 0,
@@ -196,10 +200,10 @@ export default function CompilaReport({ giornata, farmacie, beauty, onBack }) {
     if (updateError) return alert(updateError.message);
 
     const righeVendite = vendite
-      .filter((v) => v.prodotto_id)
+      .filter((v) => v.codice_prodotto)
       .map((v) => ({
         giornata_id: giornata.id,
-        prodotto_id: v.prodotto_id,
+        prodotto_id: null,
         codice_prodotto: v.codice_prodotto,
         nome_prodotto: v.nome_prodotto,
         categoria_prodotto: v.categoria_prodotto,
@@ -211,7 +215,7 @@ export default function CompilaReport({ giornata, farmacie, beauty, onBack }) {
       }));
 
     if (righeVendite.length > 0) {
-      const { error: venditeError } = await supabase
+      const { error: venditeError } = await reportSupabase
         .from("vendite_prodotti")
         .insert(righeVendite);
 
@@ -357,14 +361,14 @@ export default function CompilaReport({ giornata, farmacie, beauty, onBack }) {
 
     if (!conferma) return;
 
-    const { error: venditeError } = await supabase
+    const { error: venditeError } = await reportSupabase
       .from("vendite_prodotti")
       .delete()
       .eq("giornata_id", giornata.id);
 
     if (venditeError) return alert(venditeError.message);
 
-    const { error: updateError } = await supabase
+    const { error: updateError } = await reportSupabase
       .from("giornate_promozionali")
       .update({
         clienti_intervistati: null,

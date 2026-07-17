@@ -1,9 +1,19 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
     "api/mexal/sync-products.js": {
-      "maxDuration": 60
+      "maxDuration": 300
+    },
+    "api/cron/mexal-products.js": {
+      "maxDuration": 300
     }
   },
+  "crons": [
+    {
+      "path": "/api/cron/mexal-products",
+      "schedule": "0 22 * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/(.*)",

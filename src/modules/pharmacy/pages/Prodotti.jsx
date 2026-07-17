@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { supabase } from "../services/reportSupabase";
+import { supabase as reportSupabase } from "../services/reportSupabase";
+import { supabase as primarySupabase } from "../../../lib/supabaseClient";
 
 export default function Prodotti({ utente }) {
   const [prodotti, setProdotti] = useState([]);
@@ -37,13 +38,19 @@ export default function Prodotti({ utente }) {
   }, []);
 
   async function caricaDati() {
-    const prodottiRes = await supabase.from("prodotti").select("*").order("nome", { ascending: true });
-    const categorieRes = await supabase.from("categorie_prodotti").select("*").order("nome", { ascending: true });
-    const sottocategorieRes = await supabase.from("sottocategorie_prodotti").select("*").order("nome", { ascending: true });
-    const venditeRes = await supabase.from("vendite_prodotti").select("*");
-    const giornateRes = await supabase.from("giornate_promozionali").select("*");
-    const farmacieRes = await supabase.from("farmacie").select("*");
-    const beautyRes = await supabase.from("beauty_consultant").select("*");
+    const prodottiRes = await primarySupabase
+      .from("prodotti")
+      .select("*")
+      .eq("attivo_mexal", true)
+      .eq("mostra_in_app", true)
+      .like("codice_mexal", "IT%")
+      .order("nome", { ascending: true });
+    const categorieRes = await reportSupabase.from("categorie_prodotti").select("*").order("nome", { ascending: true });
+    const sottocategorieRes = await reportSupabase.from("sottocategorie_prodotti").select("*").order("nome", { ascending: true });
+    const venditeRes = await reportSupabase.from("vendite_prodotti").select("*");
+    const giornateRes = await reportSupabase.from("giornate_promozionali").select("*");
+    const farmacieRes = await reportSupabase.from("farmacie").select("*");
+    const beautyRes = await reportSupabase.from("beauty_consultant").select("*");
 
     if (prodottiRes.error) return alert(prodottiRes.error.message);
     if (categorieRes.error) return alert(categorieRes.error.message);
@@ -90,7 +97,7 @@ export default function Prodotti({ utente }) {
   }
 
   const prodottiFiltrati = prodotti.filter((prodotto) => {
-    const testo = `${prodotto.nome || ""} ${prodotto.codice || ""} ${
+    const testo = `${prodotto.nome || ""} ${prodotto.codice_mexal || prodotto.codice || ""} ${
       prodotto.categoria || ""
     } ${getCategoriaNome(prodotto.categoria_id)} ${getSottocategoriaNome(
       prodotto.sottocategoria_id
@@ -103,7 +110,7 @@ export default function Prodotti({ utente }) {
     return vendite.filter(
       (v) =>
         v.prodotto_id === prodotto.id ||
-        (v.codice_prodotto && prodotto.codice && v.codice_prodotto === prodotto.codice) ||
+        (v.codice_prodotto && (prodotto.codice_mexal || prodotto.codice) && v.codice_prodotto === (prodotto.codice_mexal || prodotto.codice)) ||
         (!v.prodotto_id && v.nome_prodotto === prodotto.nome)
     );
   }
@@ -231,8 +238,8 @@ export default function Prodotti({ utente }) {
     };
 
     const response = prodottoInModifica
-      ? await supabase.from("prodotti").update(datiProdotto).eq("id", prodottoInModifica.id)
-      : await supabase.from("prodotti").insert([datiProdotto]);
+      ? await reportSupabase.from("prodotti").update(datiProdotto).eq("id", prodottoInModifica.id)
+      : await reportSupabase.from("prodotti").insert([datiProdotto]);
 
     if (response.error) return alert(response.error.message);
 
@@ -247,8 +254,8 @@ export default function Prodotti({ utente }) {
     const datiCategoria = { nome: nomeCategoria };
 
     const response = categoriaInModifica
-      ? await supabase.from("categorie_prodotti").update(datiCategoria).eq("id", categoriaInModifica.id)
-      : await supabase.from("categorie_prodotti").insert([datiCategoria]);
+      ? await reportSupabase.from("categorie_prodotti").update(datiCategoria).eq("id", categoriaInModifica.id)
+      : await reportSupabase.from("categorie_prodotti").insert([datiCategoria]);
 
     if (response.error) return alert(response.error.message);
 
@@ -267,7 +274,7 @@ export default function Prodotti({ utente }) {
           .from("sottocategorie_prodotti")
           .update(datiSottocategoria)
           .eq("id", sottocategoriaInModifica.id)
-      : await supabase.from("sottocategorie_prodotti").insert([datiSottocategoria]);
+      : await reportSupabase.from("sottocategorie_prodotti").insert([datiSottocategoria]);
 
     if (response.error) return alert(response.error.message);
 
@@ -280,7 +287,7 @@ export default function Prodotti({ utente }) {
     const conferma = window.confirm(`Vuoi eliminare "${prodotto.nome}"?`);
     if (!conferma) return;
 
-    const { error } = await supabase.from("prodotti").delete().eq("id", prodotto.id);
+    const { error } = await reportSupabase.from("prodotti").delete().eq("id", prodotto.id);
     if (error) return alert(error.message);
 
     await caricaDati();
@@ -290,7 +297,7 @@ export default function Prodotti({ utente }) {
     const conferma = window.confirm(`Vuoi eliminare "${categoria.nome}"?`);
     if (!conferma) return;
 
-    const { error } = await supabase.from("categorie_prodotti").delete().eq("id", categoria.id);
+    const { error } = await reportSupabase.from("categorie_prodotti").delete().eq("id", categoria.id);
     if (error) return alert(error.message);
 
     await caricaDati();
@@ -469,15 +476,15 @@ export default function Prodotti({ utente }) {
                 <div key={prodotto.id} style={cardStyle}>
                   <h3>{prodotto.nome}</h3>
 
-                  {prodotto.codice && (
+                  {(prodotto.codice_mexal || prodotto.codice) && (
                     <p>
-                      <span style={labelStyle}>Codice:</span> {prodotto.codice}
+                      <span style={labelStyle}>Codice:</span> {prodotto.codice_mexal || prodotto.codice}
                     </p>
                   )}
 
                   <p>
                     <span style={labelStyle}>Categoria:</span>{" "}
-                    {getCategoriaNome(prodotto.categoria_id) || prodotto.categoria || "-"}
+                    {prodotto.categoria_mexal || getCategoriaNome(prodotto.categoria_id) || prodotto.categoria || "-"}
                   </p>
 
                   <p>
@@ -486,7 +493,7 @@ export default function Prodotti({ utente }) {
                   </p>
 
                   <p>
-                    <span style={labelStyle}>Prezzo:</span> € {Number(prodotto.prezzo || 0).toFixed(2)}
+                    <span style={labelStyle}>Prezzo:</span> € {Number(prodotto.prezzo_listino || prodotto.prezzo || 0).toFixed(2)}
                   </p>
 
                   <p>

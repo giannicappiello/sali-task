@@ -466,19 +466,39 @@ async function syncCatalogImage({
   const storagePath =
     `${safeCode}/catalogo.${extension}`;
 
+  /*
+   * Opzione C:
+   * 1. elimina sempre il file precedente;
+   * 2. carica la nuova immagine con lo stesso nome;
+   * 3. aggiunge un parametro di versione all'URL pubblico
+   *    per forzare l'aggiornamento della cache su browser e smartphone.
+   */
+  const { error: removeError } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .remove([storagePath]);
+
+  if (removeError) {
+    console.warn(
+      `Impossibile eliminare l'immagine precedente ${storagePath}:`,
+      removeError.message
+    );
+  }
+
   const { error } = await supabase.storage
     .from(STORAGE_BUCKET)
     .upload(storagePath, response.body, {
       contentType: mime,
-      cacheControl: "3600",
+      cacheControl: "0",
       upsert: true,
     });
 
   if (error) throw error;
 
-  return supabase.storage
+  const publicUrl = supabase.storage
     .from(STORAGE_BUCKET)
     .getPublicUrl(storagePath).data.publicUrl;
+
+  return `${publicUrl}?v=${Date.now()}`;
 }
 
 function extractRows(response) {

@@ -5,6 +5,14 @@ import { useAuth } from "../../contexts/AuthContext";
 
 const BATCH_SIZE = 8;
 
+function getProductDisplayName(product) {
+  const raw = product?.json_mexal;
+  const description = String(raw?.descrizione || "").trimEnd();
+  const additionalDescription = String(raw?.descrizione_agg || "").trimStart();
+  const mexalName = `${description}${additionalDescription}`.replace(/\s+/g, " ").trim();
+  return mexalName || String(product?.nome || "").replace(/\s+/g, " ").trim();
+}
+
 const SECTIONS = [
   {
     id: "IT",
@@ -239,7 +247,7 @@ export default function Products() {
       if (!text) return true;
 
       return [
-        product.nome,
+        getProductDisplayName(product),
         product.codice_mexal,
         product.codice,
         product.brand_mexal,
@@ -375,7 +383,7 @@ export default function Products() {
                   }`}
                   onClick={() => setSelected(product)}
                 >
-                  <strong>{product.nome}</strong>
+                  <strong>{getProductDisplayName(product)}</strong>
                   <span>
                     {product.codice_mexal || product.codice || "-"} ·{" "}
                     {product.brand_mexal || "Brand non indicato"}
@@ -402,13 +410,13 @@ export default function Products() {
           ) : (
             <div className="panel product-hero">
               <span className="status-pill done">Attivo in Mexal</span>
-              <h2>{selected.nome}</h2>
+              <h2>{getProductDisplayName(selected)}</h2>
               <p>{selected.descrizione || "Nessuna descrizione disponibile."}</p>
 
               {selected.immagine_catalogo_url && (
                 <img
                   src={selected.immagine_catalogo_url}
-                  alt={selected.nome}
+                  alt={getProductDisplayName(selected)}
                   style={{
                     width: "100%",
                     maxWidth: 360,

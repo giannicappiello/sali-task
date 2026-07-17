@@ -302,10 +302,12 @@ function isActiveArticle(article) {
 }
 
 function buildName(article) {
-  return [article?.descrizione, article?.descrizione_agg]
-    .map((value) => String(value || "").trim())
-    .filter(Boolean)
-    .join(" ")
+  const description = String(article?.descrizione || "").trimEnd();
+  const additionalDescription = String(article?.descrizione_agg || "").trimStart();
+
+  // In Mexal descrizione_agg è la continuazione del campo descrizione.
+  // Non va inserito uno spazio artificiale tra i due segmenti.
+  return `${description}${additionalDescription}`
     .replace(/\s+/g, " ")
     .trim();
 }

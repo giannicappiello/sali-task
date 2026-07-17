@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   Clock3,
@@ -137,6 +137,35 @@ export default function Projects() {
   const [quickProductModal, setQuickProductModal] = useState(false);
   const [quickProductForm, setQuickProductForm] = useState(quickProductEmpty);
   const [savingQuickProduct, setSavingQuickProduct] = useState(false);
+  const projectBoardRef = useRef(null);
+  const projectBoardScrollbarRef = useRef(null);
+  const scrollSyncLockRef = useRef(false);
+  const [projectBoardScrollWidth, setProjectBoardScrollWidth] = useState(0);
+
+  useEffect(() => {
+    const board = projectBoardRef.current;
+    if (!board) return undefined;
+
+    const updateScrollWidth = () => {
+      setProjectBoardScrollWidth(board.scrollWidth);
+    };
+
+    updateScrollWidth();
+    const observer = new ResizeObserver(updateScrollWidth);
+    observer.observe(board);
+    Array.from(board.children).forEach((child) => observer.observe(child));
+
+    return () => observer.disconnect();
+  }, [projects, phases, query, statusFilter]);
+
+  function syncProjectBoardScroll(source, target) {
+    if (scrollSyncLockRef.current || !source || !target) return;
+    scrollSyncLockRef.current = true;
+    target.scrollLeft = source.scrollLeft;
+    requestAnimationFrame(() => {
+      scrollSyncLockRef.current = false;
+    });
+  }
 
   useEffect(() => {
     if (profile?.id) loadData();
@@ -1250,7 +1279,17 @@ export default function Projects() {
           <p>Crea un nuovo progetto o modifica i filtri di ricerca.</p>
         </div>
       ) : (
-        <div className="project-board-horizontal">
+        <div className="project-board-scroll-shell">
+          <div
+            ref={projectBoardRef}
+            className="project-board-horizontal"
+            onScroll={() =>
+              syncProjectBoardScroll(
+                projectBoardRef.current,
+                projectBoardScrollbarRef.current
+              )
+            }
+          >
           {filteredProjects.map((project) => {
             const projectPhases = phasesByProject.get(project.id) || [];
             const doneCount = projectPhases.filter(isDone).length;
@@ -1297,7 +1336,7 @@ export default function Projects() {
                                 <button
                                   key={department.id}
                                   type="button"
-                                  className="reopen-phase-btn"
+                                  className="reopen-phase-btn is-completed"
                                   onClick={() => reopenDepartmentPhase(phase, department)}
                                   title={department.completato_at ? `Completato il ${new Date(department.completato_at).toLocaleString("it-IT")}` : "Reparto completato"}
                                 >
@@ -1307,7 +1346,7 @@ export default function Projects() {
                                 <button
                                   key={department.id}
                                   type="button"
-                                  className="complete-phase-btn"
+                                  className={`complete-phase-btn ${statusClass(phase) === "danger" ? "is-overdue" : "is-open"}`}
                                   onClick={() => completeDepartmentPhase(phase, department)}
                                   disabled={blocked || !canCompleteDepartment(department.id)}
                                   title={!canCompleteDepartment(department.id) ? "Non puoi completare questo reparto" : `Completa ${department.nome}`}
@@ -1318,7 +1357,7 @@ export default function Projects() {
                             )}
                           </div>
                         ) : isDone(phase) ? (
-                          <button className="reopen-phase-btn" onClick={() => reopenPhase(phase)}><Clock3 size={15} /> Riapri</button>
+                          <button className="reopen-phase-btn is-completed" onClick={() => reopenPhase(phase)}><Clock3 size={15} /> Riapri</button>
                         ) : (
                           <button className="complete-phase-btn" onClick={() => completePhase(phase)} disabled={blocked}><CheckCircle2 size={15} /> Completa</button>
                         )}
@@ -1339,6 +1378,20 @@ export default function Projects() {
               </section>
             );
           })}
+          </div>
+          <div
+            ref={projectBoardScrollbarRef}
+            className="project-board-sticky-scroll"
+            onScroll={() =>
+              syncProjectBoardScroll(
+                projectBoardScrollbarRef.current,
+                projectBoardRef.current
+              )
+            }
+            aria-label="Scorrimento orizzontale progetti"
+          >
+            <div style={{ width: `${projectBoardScrollWidth}px` }} />
+          </div>
         </div>
       )}
 

@@ -3295,3 +3295,55 @@ body {
   height: 34px;
   margin-top: 0;
 }
+
+
+/* MODIFICHE 17/07/2026 - SOLO VISUALIZZAZIONE PROGETTI E STATI TASK */
+.projects-v4-final .project-board-scroll-shell {
+  position: relative;
+  min-width: 0;
+}
+
+.projects-v4-final .project-board-sticky-scroll {
+  position: sticky;
+  bottom: 8px;
+  z-index: 25;
+  width: 100%;
+  height: 20px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin-top: 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: rgba(248, 250, 252, 0.96);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+  scrollbar-color: #64748b #e2e8f0;
+  scrollbar-width: auto;
+}
+
+.projects-v4-final .project-board-sticky-scroll > div {
+  height: 1px;
+}
+
+.projects-v4-final .reopen-phase-btn.is-completed {
+  color: #15803d;
+  background: #f0fdf4;
+  border-color: #86efac;
+}
+
+.projects-v4-final .complete-phase-btn.is-overdue {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fca5a5;
+}
+
+.projects-v4-final .complete-phase-btn.is-open {
+  color: #0369a1;
+  background: #f0f9ff;
+  border-color: #7dd3fc;
+}
+
+@media (max-width: 980px) {
+  .projects-v4-final .project-board-sticky-scroll {
+    display: none;
+  }
+}

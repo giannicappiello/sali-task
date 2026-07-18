@@ -255,9 +255,12 @@ async function verifyUser(req, supabase) {
     );
   }
 
-  if (integration?.enabled !== true) {
+  if (
+    integration?.enabled !== true ||
+    integration?.ruolo_ordini !== "backoffice"
+  ) {
     throw Object.assign(
-      new Error("Utente non autorizzato alla Gestione Ordini."),
+      new Error("Sincronizzazione clienti riservata ad ADMIN e Backoffice."),
       { status: 403 }
     );
   }
@@ -406,6 +409,7 @@ function mapClient(client, syncDate, paymentsMap) {
       normalize(
         firstValue(client, [
           "sconto_incondizionato",
+          "sconto_icz",
           "sconto_incond",
           "sconto_cliente",
           "sconto",

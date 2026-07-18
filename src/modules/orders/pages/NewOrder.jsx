@@ -22,6 +22,36 @@ function numberValue(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+
+function customerDiscount(customer) {
+  const data = customer?.dati_mexal || customer?.json_mexal || {};
+  const raw =
+    customer?.sconto_incondizionato ??
+    data?.sconto_icz ??
+    data?.sconto_incondizionato ??
+    data?.sconto_incond ??
+    data?.sconto_cliente ??
+    data?.sconto ??
+    0;
+
+  const values = String(raw ?? "")
+    .replace(/%/g, "")
+    .split(/[+;/]/)
+    .map((value) => numberValue(value.trim(), NaN))
+    .filter((value) => Number.isFinite(value) && value >= 0 && value <= 100);
+
+  if (!values.length) return 0;
+
+  // Mexal può esprimere sconti concatenati, ad esempio 10+5.
+  // Li converte nello sconto equivalente applicabile alla riga.
+  const remaining = values.reduce(
+    (factor, value) => factor * (1 - value / 100),
+    1
+  );
+
+  return Number(((1 - remaining) * 100).toFixed(4));
+}
+
 function paymentDescription(customer) {
   const data = customer?.dati_mexal || customer?.json_mexal || {};
   return (
@@ -181,7 +211,11 @@ export default function NewOrder() {
   }, [lines]);
 
   function selectCustomer(customer) {
+    const discount = customerDiscount(customer);
     setSelectedCustomer(customer);
+    setLines((current) =>
+      current.map((line) => ({ ...line, sconto_percentuale: discount }))
+    );
     setCustomerSearch("");
   }
 
@@ -212,7 +246,7 @@ export default function NewOrder() {
             product.prezzo_listino ?? product.prezzo ?? product.prezzo_unitario,
             0
           ),
-          sconto_percentuale: 0,
+          sconto_percentuale: customerDiscount(selectedCustomer),
           disponibilita: numberValue(product.disponibilita, 0),
           unita_misura: normalize(product.unita_misura || product.um || "PZ"),
         },
@@ -376,6 +410,7 @@ export default function NewOrder() {
             <div>
               <span>Pagamento: {paymentDescription(selectedCustomer)}</span>
               <span>Listino: {selectedCustomer.codice_listino || "-"}</span>
+              <span>Sconto cliente: {customerDiscount(selectedCustomer).toLocaleString("it-IT", { maximumFractionDigits: 4 })}%</span>
             </div>
             <button className="orders-secondary" type="button" onClick={() => setSelectedCustomer(null)}>
               Cambia cliente

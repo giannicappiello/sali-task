@@ -288,33 +288,50 @@ async function requireAuthenticatedUser(supabase, token) {
   return data.user;
 }
 async function requireOrdersAdministrator(supabase, userId) {
-  const { data: profile, error } = await supabase.from("utenti").select("*").eq("auth_user_id", userId).maybeSingle();
+  const { data: profile, error } = await supabase
+    .from("utenti")
+    .select(`
+      id,
+      auth_user_id,
+      attivo,
+      ruolo_id,
+      ruoli(nome, livello)
+    `)
+    .eq("auth_user_id", userId)
+    .maybeSingle();
+
   if (error) {
-    throw new HttpError(403, `Impossibile verificare il profilo: ${error.message}`);
+    throw new HttpError(
+      403,
+      `Impossibile verificare il profilo Workspace: ${error.message}`
+    );
   }
+
   if (!profile) {
-    throw new HttpError(403, "Profilo applicativo non trovato");
+    throw new HttpError(403, "Profilo Workspace non trovato");
   }
-  const role = stringValue(
-    profile.ruolo ?? profile.role ?? profile.tipo_utente ?? profile.profilo
-  ).toLowerCase();
-  const isAdmin = profile.is_admin === true || profile.admin === true || ["admin", "amministratore", "administrator"].includes(role);
-  if (isAdmin) return;
-  const roleId = profile.ruolo_id ?? profile.role_id;
-  if (roleId) {
-    const { data: permissions } = await supabase.from("permessi_ruolo").select("permessi(codice, modulo, azione)").eq("ruolo_id", roleId);
-    const allowed = (permissions ?? []).some((row) => {
-      const permission = row.permessi ?? {};
-      const code = stringValue(permission.codice).toLowerCase();
-      const module = stringValue(permission.modulo).toLowerCase();
-      const action = stringValue(permission.azione).toLowerCase();
-      return code === "orders.admin" || code === "ordini.admin" || ["orders", "ordini"].includes(module) && ["admin", "manage", "write"].includes(action);
-    });
-    if (allowed) return;
+
+  if (profile.attivo === false) {
+    throw new HttpError(403, "Utente Workspace non attivo");
   }
+
+  const roleName = stringValue(profile.ruoli?.nome).toLowerCase();
+  const roleLevel = Number(profile.ruoli?.livello || 0);
+
+  const isWorkspaceAdmin =
+    [
+      "admin",
+      "administrator",
+      "amministratore",
+      "super admin",
+      "direzione"
+    ].includes(roleName) || roleLevel >= 80;
+
+  if (isWorkspaceAdmin) return;
+
   throw new HttpError(
     403,
-    "Operazione riservata agli amministratori del modulo Ordini"
+    "Operazione riservata agli amministratori del Workspace"
   );
 }
 function createMexalClient() {

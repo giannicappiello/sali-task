@@ -96,25 +96,30 @@ export default function NewOrder() {
       });
 
       let productRows = [];
-      const cacheResult = await supabase
-        .from("ordini_prodotti_cache")
-        .select("*")
-        .eq("mostra_in_app", true)
-        .order("descrizione", { ascending: true })
-        .limit(5000);
 
-      if (!cacheResult.error) {
-        productRows = cacheResult.data || [];
-      } else {
-        const fallback = await supabase
-          .from("prodotti")
-          .select("*")
-          .eq("mostra_in_app", true)
-          .eq("attivo", true)
-          .order("nome", { ascending: true })
-          .limit(5000);
-        if (fallback.error) throw fallback.error;
-        productRows = fallback.data || [];
+      // Prima usa la cache Mexal. Se la tabella esiste ma non contiene ancora
+      // prodotti visibili, passa comunque all'archivio prodotti principale.
+      // La versione precedente eseguiva il fallback solo in caso di errore:
+      // con una cache vuota la ricerca non poteva quindi restituire risultati.
+      try {
+        productRows = await loadPaged("ordini_prodotti_cache", (query) =>
+          query
+            .eq("mostra_in_app", true)
+            .order("descrizione", { ascending: true })
+            .order("codice_articolo", { ascending: true })
+        );
+      } catch (cacheError) {
+        console.warn("Cache prodotti ordini non disponibile:", cacheError);
+      }
+
+      if (productRows.length === 0) {
+        const fallback = await loadPaged("prodotti", (query) =>
+          query
+            .eq("mostra_in_app", true)
+            .eq("attivo", true)
+            .order("nome", { ascending: true })
+        );
+        productRows = fallback;
       }
 
       setCustomers(customerRows);
@@ -410,6 +415,14 @@ export default function NewOrder() {
               placeholder="Cerca prodotto per codice, descrizione, brand o EAN..."
             />
           </div>
+          {productSearch.trim() && products.length === 0 && (
+            <div className="orders-alert orders-alert-error">
+              Nessun prodotto disponibile nell’archivio. Verifica la sincronizzazione prodotti.
+            </div>
+          )}
+          {productSearch.trim() && products.length > 0 && filteredProducts.length === 0 && (
+            <div className="orders-empty">Nessun prodotto trovato per “{productSearch.trim()}”.</div>
+          )}
           {filteredProducts.length > 0 && (
             <div className="orders-picker-results orders-product-results">
               {filteredProducts.map((product) => {

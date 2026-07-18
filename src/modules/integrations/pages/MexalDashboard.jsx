@@ -58,7 +58,7 @@ export default function MexalDashboard() {
   const [message, setMessage] = useState(null);
   const [progress, setProgress] = useState(0);
   const [phase, setPhase] = useState("");
-  const [settings, setSettings] = useState({ mode: "full", dryRun: true, syncPayments: false });
+  const [settings, setSettings] = useState({ mode: "full", dryRun: false, syncPayments: true });
 
   const latestRun = runs[0] || null;
 
@@ -120,6 +120,13 @@ export default function MexalDashboard() {
     if (!isAdminUser) {
       setMessage({ type: "error", text: "La sincronizzazione è riservata agli amministratori." });
       return;
+    }
+
+    if (!settings.dryRun) {
+      const confirmed = window.confirm(
+        "Avviare la sincronizzazione reale? Le condizioni commerciali lette da Mexal saranno salvate in Supabase e, in modalità completa, le regole non più presenti saranno disattivate."
+      );
+      if (!confirmed) return;
     }
 
     setRunning(true);

@@ -1,0 +1,16 @@
+SPRINT 2B - INSTALLAZIONE RAPIDA
+
+1) Copia nel progetto le cartelle api e src del pacchetto.
+2) Esegui nel SQL Editor Supabase:
+   supabase/migrations/20260718195500_sprint_2b_commercial_sync_hardening.sql
+3) Esegui:
+   git add .
+   git commit -m "Sprint 2B salvataggio condizioni commerciali Mexal"
+   git push origin main
+4) Attendi il deploy Vercel.
+5) Centro Integrazioni > Mexal ERP:
+   - Dry Run: DISATTIVATO
+   - Modalità: Completa
+   - Regole pagamento: ATTIVO
+   - Sincronizza e conferma
+6) Verifica con docs/VALIDAZIONE_SPRINT_2B.sql

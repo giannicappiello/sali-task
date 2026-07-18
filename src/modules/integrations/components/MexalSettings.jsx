@@ -4,16 +4,16 @@ export default function MexalSettings({ settings, onChange, disabled }) {
   return (
     <section className="mexal-settings-panel">
       <div className="mexal-section-heading">
-        <div><h3>Parametri sincronizzazione</h3><p>Le opzioni si applicano alla prossima esecuzione.</p></div>
+        <div><h3>Parametri sincronizzazione</h3><p>Per salvare realmente i dati lascia Dry Run disattivato.</p></div>
       </div>
       <div className="mexal-settings-grid">
         <label className="mexal-toggle-row">
           <input type="checkbox" checked={settings.dryRun} onChange={(event) => update("dryRun", event.target.checked)} disabled={disabled} />
-          <span><strong>Dry Run</strong><small>Legge e valida i dati senza salvarli.</small></span>
+          <span><strong>Dry Run</strong><small>Se attivo legge e valida, ma non modifica il database.</small></span>
         </label>
         <label className="mexal-toggle-row">
           <input type="checkbox" checked={settings.syncPayments} onChange={(event) => update("syncPayments", event.target.checked)} disabled={disabled} />
-          <span><strong>Regole pagamento</strong><small>Sincronizza gli sconti pagamento quando l'endpoint è configurato.</small></span>
+          <span><strong>Regole pagamento</strong><small>Importa gli sconti pagamento quando l'endpoint Mexal è configurato; in caso contrario mantiene le regole manuali.</small></span>
         </label>
         <label className="mexal-select-row">
           <span><strong>Modalità</strong><small>Completa disattiva le regole non più presenti in Mexal.</small></span>

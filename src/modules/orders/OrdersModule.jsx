@@ -11,6 +11,7 @@ import useOrdersAccess from "./pages/useOrdersAccess";
 import OrdersDashboard from "./pages/OrdersDashboard";
 import Customers from "./pages/Customers";
 import Orders from "./pages/Orders";
+import NewOrder from "./pages/NewOrder";
 import Materials from "./pages/Materials";
 import {
   startStockSync,
@@ -108,6 +109,7 @@ export default function OrdersModule() {
         <Route path="dashboard" element={<OrdersDashboard />} />
         <Route path="clienti" element={<Customers />} />
         <Route path="elenco" element={<Orders />} />
+        <Route path="nuovo" element={<NewOrder />} />
         <Route path="materiali" element={<Materials />} />
         <Route path="*" element={<Navigate to="dashboard" replace />} />
       </Routes>

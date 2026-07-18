@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Plus, Search } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
 
 export default function Orders() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const {
     loading: accessLoading,
     visibleAgents,
@@ -29,7 +32,7 @@ export default function Orders() {
   ]);
 
   function openNewOrder() {
-    alert("La schermata Nuovo Ordine sarà attivata nella fase successiva.");
+    navigate("/ordini/nuovo");
   }
 
   async function loadOrders() {
@@ -110,6 +113,10 @@ export default function Orders() {
           </button>
         )}
       </div>
+
+      {location.state?.message && (
+        <div className="orders-alert orders-alert-success">{location.state.message}</div>
+      )}
 
       <div className="orders-panel">
         <p style={{ marginTop: 0 }}>

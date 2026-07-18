@@ -9,6 +9,9 @@
     },
     "api/mexal/sync-clients.js": {
       "maxDuration": 300
+    },
+    "api/mexal/sync-commercial-conditions.js": {
+      "maxDuration": 300
     }
   },
   "crons": [

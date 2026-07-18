@@ -1,0 +1,36 @@
+MEXAL COMMERCIAL SYNC SU VERCEL
+
+1. Copia i tre file mantenendo esattamente le cartelle:
+   api/mexal/sync-commercial-conditions.js
+   src/modules/integrations/services/mexalSyncService.js
+   vercel.json
+
+2. Non eliminare ancora la vecchia Edge Function Supabase. Dopo il collaudo potrà essere rimossa.
+
+3. Verifica nelle Environment Variables di Vercel la presenza di:
+   MEXAL_BASE_URL
+   MEXAL_USERNAME
+   MEXAL_PASSWORD
+   MEXAL_AZIENDA
+   MEXAL_ANNO
+   MEXAL_MAGAZZINO
+   SUPABASE_URL
+   SUPABASE_SERVICE_ROLE_KEY
+
+   Opzionali:
+   MEXAL_PAGE_SIZE
+   MEXAL_MAX_PAGES
+   MEXAL_PAYMENT_DISCOUNT_ENDPOINT
+
+4. Esegui:
+   git add .
+   git commit -m "Move Mexal commercial sync to Vercel"
+   git push origin main
+
+5. Attendi il completamento del deploy Vercel.
+
+6. Apri il Workspace pubblicato su Vercel e avvia prima una sincronizzazione Dry Run.
+
+NOTA
+Con npm run dev, Vite non esegue automaticamente le funzioni nella cartella api.
+Per collaudare l'endpoint usa il sito pubblicato su Vercel oppure vercel dev.

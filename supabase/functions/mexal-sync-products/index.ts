@@ -16,6 +16,9 @@ type MexalGroup = {
   codice?: string;
   descrizione?: string;
   cod_grp_merc?: string;
+  id_cat_sconto?: number;
+  nr_cat_sta?: number;
+  cod_natura?: string | number;
 };
 
 type MexalArticle = Record<string, unknown> & {
@@ -29,6 +32,9 @@ type MexalArticle = Record<string, unknown> & {
   nr_cat_sta?: number;
   sigla_cat_sta?: string;
   cod_grp_merc?: string;
+  id_cat_sconto?: number;
+  nr_cat_sta?: number;
+  cod_natura?: string | number;
   prz_listino?: Array<[number, number]>;
   qta_inventario?: number;
   qta_carico?: number;
@@ -248,6 +254,11 @@ Deno.serve(async (req) => {
             hierarchy.sottocategoria?.descrizione || null,
           ean: String(article.cod_alternativo || "").trim() || null,
           prezzo_listino: listPrice,
+          categoria_sconto_articolo: Number(article.id_cat_sconto || 0),
+          categoria_statistica_articolo: Number(article.nr_cat_sta || 0),
+          gruppo_merceologico: String(article.cod_grp_merc || "").trim() || null,
+          natura_articolo: String(article.cod_natura || "").trim() || null,
+          dati_mexal: article,
           giacenza: stock,
           disponibilita: availability,
           immagine_url: imageUrls.immagine_url,

@@ -1,0 +1,36 @@
+SPRINT 2A - CENTRO INTEGRAZIONI
+
+CONTENUTO
+- Nuovo modulo /integrations
+- Dashboard Centro Integrazioni
+- Dashboard Mexal ERP
+- Sincronizzazione condizioni commerciali collegata alla Edge Function
+- Dry Run, modalità completa/incrementale, regole pagamento
+- Barra avanzamento
+- Conteggio regole commerciali attive
+- Cronologia sincronizzazioni
+- Log dettagli ed errori
+- Accesso riservato agli amministratori
+
+INSTALLAZIONE
+1. Chiudere il server Vite, se aperto.
+2. Estrarre questo ZIP.
+3. Copiare le cartelle src e docs nella cartella C:\Progetti\sali-task.
+4. Confermare la sostituzione dei file App.jsx e Layout.jsx.
+5. Avviare:
+   npm run dev
+6. Accedere come amministratore e aprire il menu "Integrazioni".
+7. Aprire "Mexal ERP".
+8. Lasciare inizialmente attivo "Dry Run" e premere "Sincronizza" nella card Condizioni commerciali.
+
+DEPLOY SITO
+Dopo il test locale:
+   git add .
+   git commit -m "Sprint 2A centro integrazioni Mexal"
+   git push origin main
+
+NOTE
+- La Edge Function mexal-sync-commercial-conditions deve essere già distribuita.
+- Le tabelle dello Sprint 1 devono essere presenti nel database.
+- Le card Clienti, Agenti, Prodotti, Giacenze e Ordini mostrano la roadmap e saranno collegate nei prossimi sprint.
+- Il build di produzione è stato verificato con successo tramite npm run build.

@@ -9,6 +9,7 @@ import {
   Menu,
   MessageCircle,
   Package,
+  PlugZap,
   Store,
   ShoppingCart,
   Settings,
@@ -27,6 +28,7 @@ const menuItems = [
   { path: "/documentation", label: "Documenti", icon: FileArchive, permission: "documentation.read" },
   { path: "/messages", label: "Messaggi", icon: MessageCircle, permission: "messages.read" },
   { path: "/team", label: "Team", icon: Users, permission: "team.read" },
+  { path: "/integrations", label: "Integrazioni", icon: PlugZap, permission: "settings.manage", adminOnly: true },
   { path: "/settings", label: "Impostazioni", icon: Settings, permission: "settings.manage" },
 ];
 
@@ -50,6 +52,8 @@ const pageInfo = {
   "/messages": { title: "Messaggi", subtitle: "Conversazioni e notifiche interne." },
   "/team": { title: "Team", subtitle: "Utenti, ruoli, reparti e presenze." },
   "/settings": { title: "Impostazioni", subtitle: "Permessi, accessi e configurazioni." },
+  "/integrations": { title: "Centro Integrazioni", subtitle: "Connessioni con Mexal e sistemi aziendali esterni." },
+  "/integrations/mexal": { title: "Mexal ERP", subtitle: "Sincronizzazioni, storico e controllo della WebAPI Mexal." },
   "/farmacie/dashboard": { title: "Beauty Days", subtitle: "Giornate promozionali, farmacie e analisi dati." },
   "/ordini": { title: "Ordini", subtitle: "Clienti, ordini e attività commerciali collegate a Mexal." },
 };
@@ -83,7 +87,11 @@ function Layout() {
   const navigate = useNavigate();
   const { profile, signOut, hasPermission, isAdminUser } = useAuth();
 
-  const currentPage = location.pathname.startsWith("/farmacie")
+  const currentPage = location.pathname.startsWith("/integrations/mexal")
+    ? pageInfo["/integrations/mexal"]
+    : location.pathname.startsWith("/integrations")
+      ? pageInfo["/integrations"]
+      : location.pathname.startsWith("/farmacie")
     ? pageInfo["/farmacie/dashboard"]
     : location.pathname.startsWith("/ordini")
       ? pageInfo["/ordini"]
@@ -174,6 +182,8 @@ function Layout() {
   const visibleMenuItems = useMemo(
     () =>
       menuItems.filter((item) => {
+        if (item.adminOnly && !isAdminUser) return false;
+
         if (item.path === "/farmacie/dashboard") {
           return pharmacyEnabled || hasPermission("pharmacy.read");
         }
@@ -188,7 +198,7 @@ function Layout() {
 
         return hasPermission(item.permission);
       }),
-    [hasPermission, pharmacyEnabled, ordersEnabled]
+    [hasPermission, pharmacyEnabled, ordersEnabled, isAdminUser]
   );
 
   useEffect(() => {

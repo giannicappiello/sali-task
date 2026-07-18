@@ -29,6 +29,10 @@ const OrdersModule = lazy(() =>
   import("./modules/orders/OrdersModule")
 );
 
+const IntegrationsModule = lazy(() =>
+  import("./modules/integrations/IntegrationsModule")
+);
+
 import "./styles/App.css";
 
 function Loader() {
@@ -75,6 +79,7 @@ function App() {
               <Route path="settings" element={<Settings />} />
               <Route path="farmacie/*" element={<PharmacyModule />} />
               <Route path="ordini/*" element={<OrdersModule />} />
+              <Route path="integrations/*" element={<IntegrationsModule />} />
             </Route>
           </Route>
 

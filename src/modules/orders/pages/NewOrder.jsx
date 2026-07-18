@@ -3,6 +3,7 @@ import { ArrowLeft, Minus, Plus, Save, Search, ShoppingCart, Trash2 } from "luci
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
+import { calculateLineConditions } from "../services/priceEngine";
 
 const PAGE_SIZE = 1000;
 
@@ -93,6 +94,10 @@ export default function NewOrder() {
 
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
+  const [discountMatrix, setDiscountMatrix] = useState([]);
+  const [specialConditions, setSpecialConditions] = useState([]);
+  const [paymentRules, setPaymentRules] = useState([]);
+  const [selectedPayment, setSelectedPayment] = useState(null);
   const [customerSearch, setCustomerSearch] = useState("");
   const [productSearch, setProductSearch] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -152,8 +157,17 @@ export default function NewOrder() {
         productRows = fallback;
       }
 
+      const [matrixRows, particularityRows, paymentRows] = await Promise.all([
+        loadPaged("ordini_sconti_listini", (query) => query),
+        loadPaged("ordini_particolarita", (query) => query),
+        loadPaged("ordini_regole_pagamento", (query) => query),
+      ]);
+
       setCustomers(customerRows);
       setProducts(productRows);
+      setDiscountMatrix(matrixRows);
+      setSpecialConditions(particularityRows.map((row) => row.dati_mexal || row));
+      setPaymentRules(paymentRows);
     } catch (loadError) {
       console.error("Errore caricamento nuovo ordine:", loadError);
       setError(loadError.message || "Errore caricamento dati ordine.");
@@ -200,8 +214,7 @@ export default function NewOrder() {
   const totals = useMemo(() => {
     return lines.reduce(
       (result, line) => {
-        const gross = line.quantita * line.prezzo_unitario;
-        const net = gross * (1 - line.sconto_percentuale / 100);
+        const net = line.quantita * numberValue(line.prezzo_netto, line.prezzo_unitario);
         result.imponibile += net;
         result.pezzi += line.quantita;
         return result;
@@ -210,45 +223,62 @@ export default function NewOrder() {
     );
   }, [lines]);
 
+  function calculateConditions(product, quantity, customer = selectedCustomer, payment = selectedPayment) {
+    return calculateLineConditions({
+      customer,
+      product,
+      payment,
+      quantity,
+      discountMatrix,
+      specialConditions,
+      paymentRules,
+    });
+  }
+
   function selectCustomer(customer) {
-    const discount = customerDiscount(customer);
+    const payment = {
+      codice: customer.codice_pagamento || "",
+      descrizione: paymentDescription(customer),
+    };
     setSelectedCustomer(customer);
+    setSelectedPayment(payment);
     setLines((current) =>
-      current.map((line) => ({ ...line, sconto_percentuale: discount }))
+      current.map((line) => ({
+        ...line,
+        ...calculateConditions(line.prodotto_origine || line, line.quantita, customer, payment),
+      }))
     );
     setCustomerSearch("");
   }
 
   function addProduct(product) {
-    const code = normalize(
-      product.codice_articolo || product.codice_mexal || product.codice
-    );
+    const code = normalize(product.codice_articolo || product.codice_mexal || product.codice);
     if (!code) return;
 
     setLines((current) => {
       const existing = current.find((line) => line.codice_articolo === code);
       if (existing) {
+        const quantity = existing.quantita + 1;
         return current.map((line) =>
           line.codice_articolo === code
-            ? { ...line, quantita: line.quantita + 1 }
+            ? { ...line, quantita: quantity, ...calculateConditions(product, quantity) }
             : line
         );
       }
 
       const description = normalize(product.descrizione || product.nome || code);
+      const conditions = calculateConditions(product, 1);
       return [
         ...current,
         {
           codice_articolo: code,
           descrizione: description,
           quantita: 1,
-          prezzo_unitario: numberValue(
-            product.prezzo_listino ?? product.prezzo ?? product.prezzo_unitario,
-            0
-          ),
-          sconto_percentuale: customerDiscount(selectedCustomer),
+          prezzo_unitario: conditions.prezzo_base,
+          ...conditions,
           disponibilita: numberValue(product.disponibilita, 0),
           unita_misura: normalize(product.unita_misura || product.um || "PZ"),
+          prodotto_origine: product,
         },
       ];
     });
@@ -261,10 +291,15 @@ export default function NewOrder() {
         line.codice_articolo === code
           ? {
               ...line,
-              [field]:
-                field === "quantita"
-                  ? Math.max(1, numberValue(value, 1))
-                  : Math.max(0, numberValue(value, 0)),
+              ...(field === "quantita"
+                ? (() => {
+                    const quantity = Math.max(1, numberValue(value, 1));
+                    return {
+                      quantita: quantity,
+                      ...calculateConditions(line.prodotto_origine || line, quantity),
+                    };
+                  })()
+                : { [field]: Math.max(0, numberValue(value, 0)) }),
             }
           : line
       )
@@ -299,8 +334,8 @@ export default function NewOrder() {
         ragione_sociale_cliente: selectedCustomer.ragione_sociale,
         codice_agente_mexal:
           selectedCustomer.codice_agente_mexal || agentCode || null,
-        codice_pagamento: selectedCustomer.codice_pagamento || null,
-        descrizione_pagamento: paymentDescription(selectedCustomer),
+        codice_pagamento: selectedPayment?.codice || selectedCustomer.codice_pagamento || null,
+        descrizione_pagamento: selectedPayment?.descrizione || paymentDescription(selectedCustomer),
         codice_listino: selectedCustomer.codice_listino || null,
         indirizzo_spedizione: [
           selectedCustomer.indirizzo,
@@ -323,8 +358,7 @@ export default function NewOrder() {
 
       const noteMexal = `Workspace n. ${order.id}`;
       const linePayload = lines.map((line, index) => {
-        const lordo = line.quantita * line.prezzo_unitario;
-        const totale = lordo * (1 - line.sconto_percentuale / 100);
+        const totale = line.quantita * numberValue(line.prezzo_netto, line.prezzo_unitario);
         return {
           ordine_id: order.id,
           codice_articolo: line.codice_articolo,
@@ -333,9 +367,13 @@ export default function NewOrder() {
           quantita_disponibile: Math.min(line.quantita, Math.max(0, line.disponibilita)),
           quantita_ocm: Math.min(line.quantita, Math.max(0, line.disponibilita)),
           quantita_ocx: Math.max(0, line.quantita - Math.max(0, line.disponibilita)),
-          prezzo_listino: line.prezzo_unitario,
+          prezzo_listino: line.prezzo_listino,
           sconto_percentuale: line.sconto_percentuale,
-          prezzo_netto: line.prezzo_unitario * (1 - line.sconto_percentuale / 100),
+          sconto_commerciale: line.sconto_commerciale || null,
+          sconto_pagamento: line.sconto_pagamento || null,
+          origine_prezzo: line.origine_prezzo || null,
+          origine_sconto: line.origine_sconto || null,
+          prezzo_netto: line.prezzo_netto,
           totale_riga: totale,
         };
       });
@@ -410,7 +448,7 @@ export default function NewOrder() {
             <div>
               <span>Pagamento: {paymentDescription(selectedCustomer)}</span>
               <span>Listino: {selectedCustomer.codice_listino || "-"}</span>
-              <span>Sconto cliente: {customerDiscount(selectedCustomer).toLocaleString("it-IT", { maximumFractionDigits: 4 })}%</span>
+              <span>Categoria sconto: {selectedCustomer.categoria_sconto_cliente ?? selectedCustomer.cod_cat_sconti ?? "-"}</span>
             </div>
             <button className="orders-secondary" type="button" onClick={() => setSelectedCustomer(null)}>
               Cambia cliente
@@ -478,12 +516,12 @@ export default function NewOrder() {
             <thead>
               <tr>
                 <th>Codice</th><th>Prodotto</th><th>Disponibile</th><th>Quantità</th>
-                <th>Prezzo</th><th>Sconto %</th><th>Destinazione</th><th>Totale</th><th></th>
+                <th>Prezzo base</th><th>Sconto commerciale</th><th>Sconto pagamento</th><th>Netto</th><th>Destinazione</th><th>Totale</th><th></th>
               </tr>
             </thead>
             <tbody>
               {lines.map((line) => {
-                const lineTotal = line.quantita * line.prezzo_unitario * (1 - line.sconto_percentuale / 100);
+                const lineTotal = line.quantita * numberValue(line.prezzo_netto, line.prezzo_unitario);
                 const destination = line.quantita <= line.disponibilita ? "OCM" : "OCX";
                 return (
                   <tr key={line.codice_articolo}>
@@ -497,8 +535,10 @@ export default function NewOrder() {
                         <button type="button" onClick={() => updateLine(line.codice_articolo, "quantita", line.quantita + 1)}><Plus size={15} /></button>
                       </div>
                     </td>
-                    <td><input className="orders-number-input" type="number" min="0" step="0.01" value={line.prezzo_unitario} onChange={(event) => updateLine(line.codice_articolo, "prezzo_unitario", event.target.value)} /></td>
-                    <td><input className="orders-number-input" type="number" min="0" max="100" step="0.01" value={line.sconto_percentuale} onChange={(event) => updateLine(line.codice_articolo, "sconto_percentuale", event.target.value)} /></td>
+                    <td>{money(line.prezzo_base)}</td>
+                    <td>{line.sconto_commerciale || "-"}</td>
+                    <td>{line.sconto_pagamento || "-"}</td>
+                    <td>{money(line.prezzo_netto)}</td>
                     <td><span className={`orders-document-chip ${destination.toLowerCase()}`}>{destination}</span></td>
                     <td>{money(lineTotal)}</td>
                     <td><button className="orders-icon-danger" type="button" onClick={() => removeLine(line.codice_articolo)} title="Elimina riga"><Trash2 size={17} /></button></td>

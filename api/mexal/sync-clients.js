@@ -255,12 +255,9 @@ async function verifyUser(req, supabase) {
     );
   }
 
-  if (
-    integration?.enabled !== true ||
-    integration?.ruolo_ordini !== "backoffice"
-  ) {
+  if (integration?.enabled !== true) {
     throw Object.assign(
-      new Error("Sincronizzazione clienti riservata ad ADMIN e Backoffice."),
+      new Error("Utente non autorizzato alla Gestione Ordini."),
       { status: 403 }
     );
   }

@@ -1,12 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
-import {
-  FolderOpen,
-  LayoutDashboard,
-  LoaderCircle,
-  ShoppingCart,
-  Users,
-} from "lucide-react";
+import { FolderOpen, LayoutDashboard, LoaderCircle, ShoppingCart, Users } from "lucide-react";
 import useOrdersAccess from "./pages/useOrdersAccess";
 import OrdersDashboard from "./pages/OrdersDashboard";
 import Customers from "./pages/Customers";
@@ -14,10 +8,11 @@ import Orders from "./pages/Orders";
 import NewOrder from "./pages/NewOrder";
 import Materials from "./pages/Materials";
 import {
-  startStockSync,
-  subscribeToStockSyncRequest,
-  subscribeToStockSyncStatus,
-} from "./services/stockSync";
+  startAutomaticOrderSyncs,
+  startOrderSync,
+  subscribeToOrderSyncRequests,
+  subscribeToOrderSyncStatus,
+} from "./services/orderSync";
 import "./orders-module.css";
 
 const items = [
@@ -29,18 +24,21 @@ const items = [
 
 export default function OrdersModule() {
   const { loading, canAccessOrders } = useOrdersAccess();
-  const [stockStatus, setStockStatus] = useState({ running: false });
+  const [statuses, setStatuses] = useState({});
 
   useEffect(() => {
     if (loading || !canAccessOrders) return undefined;
 
-    const unsubscribeStatus = subscribeToStockSyncStatus(setStockStatus);
-    const unsubscribeRequest = subscribeToStockSyncRequest(() => {
-      startStockSync().catch(() => {});
+    const unsubscribeStatus = subscribeToOrderSyncStatus((detail) => {
+      if (!detail?.type) return;
+      setStatuses((current) => ({ ...current, [detail.type]: detail }));
     });
 
-    // Parte in background ogni volta che si entra nel modulo Ordini.
-    startStockSync().catch(() => {});
+    const unsubscribeRequest = subscribeToOrderSyncRequests(({ type, options }) => {
+      if (type) startOrderSync(type, options).catch(() => {});
+    });
+
+    startAutomaticOrderSyncs();
 
     return () => {
       unsubscribeStatus();
@@ -48,16 +46,20 @@ export default function OrdersModule() {
     };
   }, [loading, canAccessOrders]);
 
-  if (loading) {
-    return <div className="orders-empty">Verifica autorizzazione...</div>;
-  }
+  const runningLabels = useMemo(() => {
+    const labels = { giacenze: "giacenze", clienti: "clienti", prodotti: "prodotti" };
+    return Object.entries(statuses)
+      .filter(([, status]) => status?.running)
+      .map(([type]) => labels[type] || type);
+  }, [statuses]);
 
+  const hasError = Object.values(statuses).some(
+    (status) => status && status.running === false && status.success === false
+  );
+
+  if (loading) return <div className="orders-empty">Verifica autorizzazione...</div>;
   if (!canAccessOrders) {
-    return (
-      <div className="orders-empty">
-        Non sei autorizzato ad accedere alla Gestione Ordini.
-      </div>
-    );
+    return <div className="orders-empty">Non sei autorizzato ad accedere alla Gestione Ordini.</div>;
   }
 
   return (
@@ -68,21 +70,14 @@ export default function OrdersModule() {
           <p>Clienti, ordini e materiali commerciali collegati a Mexal.</p>
         </div>
 
-        <div
-          className={`orders-stock-status ${
-            stockStatus.running ? "is-running" : ""
-          } ${stockStatus.error ? "is-error" : ""}`}
-          title={stockStatus.message || ""}
-        >
-          {stockStatus.running && <LoaderCircle className="spin" size={17} />}
+        <div className={`orders-stock-status ${runningLabels.length ? "is-running" : ""} ${hasError ? "is-error" : ""}`}>
+          {runningLabels.length > 0 && <LoaderCircle className="spin" size={17} />}
           <span>
-            {stockStatus.running
-              ? "Aggiornamento disponibilità..."
-              : stockStatus.error
-                ? "Aggiornamento non riuscito"
-                : stockStatus.completedAt
-                  ? "Disponibilità aggiornate"
-                  : "Disponibilità in attesa"}
+            {runningLabels.length > 0
+              ? `Sincronizzazione ${runningLabels.join(", ")}...`
+              : hasError
+                ? "Una sincronizzazione non è riuscita"
+                : "Dati sincronizzati in background"}
           </span>
         </div>
       </div>
@@ -90,15 +85,9 @@ export default function OrdersModule() {
       <div className="orders-tabs">
         {items.map((item) => {
           const Icon = item.icon;
-
           return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) => (isActive ? "active" : "")}
-            >
-              <Icon size={18} />
-              {item.label}
+            <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? "active" : "")}>
+              <Icon size={18} />{item.label}
             </NavLink>
           );
         })}

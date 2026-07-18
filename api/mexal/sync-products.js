@@ -717,7 +717,9 @@ export default async function handler(req, res) {
     const action = body.action || "test";
 
     await verifyUser(req, supabase, {
-      allowOrdersUser: action === "sync-stock-it",
+      // Le sincronizzazioni automatiche possono essere avviate da qualunque
+      // utente abilitato al modulo. Il lock centralizzato evita duplicazioni.
+      allowOrdersUser: action === "sync-stock-it" || action === "sync",
     });
 
     const mexal = buildMexalClient();

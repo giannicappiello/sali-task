@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
+import { requestOrderSync } from "../services/orderSync";
 
 const PAGE_SIZE = 1000;
 
@@ -154,37 +155,7 @@ export default function Customers() {
     setSyncResult(null);
 
     try {
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession();
-
-      if (sessionError || !session?.access_token) {
-        throw new Error("Sessione scaduta. Effettua nuovamente l'accesso.");
-      }
-
-      const response = await fetch("/api/mexal/sync-clients", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ action: "sync" }),
-      });
-
-      const text = await response.text();
-      let result;
-
-      try {
-        result = text ? JSON.parse(text) : {};
-      } catch {
-        result = { error: text || "Risposta API non valida." };
-      }
-
-      if (!response.ok) {
-        throw new Error(result.error || `Errore API (${response.status}).`);
-      }
-
+      const result = await requestOrderSync("clienti", { force: true });
       setSyncResult(result);
       await loadCustomers();
 

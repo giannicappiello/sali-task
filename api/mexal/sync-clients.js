@@ -84,10 +84,50 @@ function parseMexalResponse(response, label) {
 
 function extractRows(response) {
   if (Array.isArray(response)) return response;
-  if (Array.isArray(response?.dati)) return response.dati;
-  if (Array.isArray(response?.records)) return response.records;
-  if (Array.isArray(response?.items)) return response.items;
+
+  const candidates = [
+    response?.dati,
+    response?.records,
+    response?.items,
+    response?.clienti,
+    response?.data,
+    response?.results,
+    response?.risultati,
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate;
+  }
+
   return [];
+}
+
+function isMetadataResponse(rows) {
+  if (!rows.length) return false;
+
+  const first = rows[0];
+  if (!first || typeof first !== "object" || Array.isArray(first)) return false;
+
+  return (
+    typeof first.nome === "string" &&
+    typeof first.descrizione === "string" &&
+    ("tipo" in first || "dimensione" in first || "obbligatorio" in first) &&
+    !getClientCode(first)
+  );
+}
+
+function getNextToken(response) {
+  const value = firstValue(response, [
+    "next",
+    "next_token",
+    "nextToken",
+    "prossimo",
+    "continuation_token",
+  ]);
+
+  return value === null || value === undefined || normalize(value) === ""
+    ? null
+    : String(value);
 }
 
 function buildMexalClient() {
@@ -300,19 +340,29 @@ function mapClient(client) {
 }
 
 async function loadAllClients(mexal) {
-  const rows = [];
+  const rawRows = [];
   let next = null;
   let page = 0;
 
   do {
     const params = new URLSearchParams();
-    params.set("info", "true");
     params.set("max", String(PAGE_SIZE));
     if (next) params.set("next", next);
 
-    const response = await mexal.get(`/clienti?${params.toString()}`);
-    rows.push(...extractRows(response));
-    next = response?.next ? String(response.next) : null;
+    // IMPORTANTE: non usare info=true. In Mexal quel parametro restituisce
+    // la descrizione dei campi dell'endpoint, non le anagrafiche clienti.
+    const query = params.toString();
+    const response = await mexal.get(`/clienti${query ? `?${query}` : ""}`);
+    const pageRows = extractRows(response);
+
+    if (isMetadataResponse(pageRows)) {
+      throw new Error(
+        "Mexal ha restituito i metadati dell'endpoint clienti invece delle anagrafiche. Verificare che la richiesta non contenga info=true."
+      );
+    }
+
+    rawRows.push(...pageRows);
+    next = getNextToken(response);
     page += 1;
 
     if (page > 200) {
@@ -320,9 +370,15 @@ async function loadAllClients(mexal) {
     }
   } while (next);
 
-  return rows
-    .map(mapClient)
-    .filter((client) => client.codice_cliente.startsWith(CLIENT_PREFIX));
+  const unique = new Map();
+
+  for (const rawClient of rawRows) {
+    const mapped = mapClient(rawClient);
+    if (!mapped.codice_cliente.startsWith(CLIENT_PREFIX)) continue;
+    unique.set(mapped.codice_cliente, mapped);
+  }
+
+  return [...unique.values()];
 }
 
 export default async function handler(req, res) {
@@ -348,12 +404,11 @@ export default async function handler(req, res) {
       errori: [],
     };
 
-    const { error: hideError } = await supabase
-      .from("ordini_clienti_cache")
-      .update({ attivo_mexal: false })
-      .eq("sincronizzato_mexal", true);
-
-    if (hideError) throw hideError;
+    if (clients.length === 0) {
+      throw new Error(
+        "Mexal non ha restituito alcun cliente con codice 501. La cache non è stata modificata per evitare disattivazioni errate."
+      );
+    }
 
     for (let index = 0; index < clients.length; index += 100) {
       const batch = clients.slice(index, index + 100);
@@ -371,12 +426,44 @@ export default async function handler(req, res) {
       }
     }
 
-    const { count: inactiveCount } = await supabase
-      .from("ordini_clienti_cache")
-      .select("*", { count: "exact", head: true })
-      .eq("attivo_mexal", false);
+    if (result.errori.length === 0) {
+      const activeCodes = clients.map((client) => client.codice_cliente);
 
-    result.disattivati = inactiveCount || 0;
+      const { data: cachedClients, error: cachedError } = await supabase
+        .from("ordini_clienti_cache")
+        .select("codice_cliente")
+        .eq("sincronizzato_mexal", true)
+        .eq("attivo_mexal", true)
+        .like("codice_cliente", `${CLIENT_PREFIX}%`);
+
+      if (cachedError) throw cachedError;
+
+      const activeCodeSet = new Set(activeCodes);
+      const missingCodes = (cachedClients || [])
+        .map((row) => normalize(row.codice_cliente))
+        .filter((code) => code && !activeCodeSet.has(code));
+
+      for (let index = 0; index < missingCodes.length; index += 100) {
+        const batch = missingCodes.slice(index, index + 100);
+        const { error } = await supabase
+          .from("ordini_clienti_cache")
+          .update({
+            attivo_mexal: false,
+            ultimo_sync_mexal: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .in("codice_cliente", batch);
+
+        if (error) {
+          result.errori.push({
+            blocco_disattivazione: `${index + 1}-${index + batch.length}`,
+            errore: error.message,
+          });
+        } else {
+          result.disattivati += batch.length;
+        }
+      }
+    }
 
     return res.status(200).json(result);
   } catch (error) {

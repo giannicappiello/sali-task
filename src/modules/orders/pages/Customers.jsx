@@ -98,6 +98,7 @@ export default function Customers() {
         `Sincronizzazione clienti completata.\n\n` +
           `Clienti 501 trovati: ${result.letti_mexal || 0}\n` +
           `Inseriti/Aggiornati: ${result.inseriti_o_aggiornati || 0}\n` +
+          `Disattivati: ${result.disattivati || 0}\n` +
           `Errori: ${result.errori?.length || 0}`
       );
     } catch (error) {
@@ -147,6 +148,7 @@ export default function Customers() {
         <div className="orders-panel orders-sync-summary">
           <strong>Ultima sincronizzazione:</strong>{" "}
           {syncResult.inseriti_o_aggiornati || 0} clienti aggiornati, {" "}
+          {syncResult.disattivati || 0} disattivati, {" "}
           {syncResult.errori?.length || 0} errori.
         </div>
       )}

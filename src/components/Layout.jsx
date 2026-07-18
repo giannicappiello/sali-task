@@ -264,7 +264,20 @@ function Layout() {
           {visibleMenuItems.map((item) => {
             const Icon = item.icon;
             return (
-              <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
+              <NavLink
+                key={item.path}
+                to={item.path}
+                onClick={() => {
+                  if (item.path === "/ordini") {
+                    window.dispatchEvent(
+                      new CustomEvent("orders:stock-sync-requested")
+                    );
+                  }
+                }}
+                className={({ isActive }) =>
+                  `nav-item ${isActive ? "active" : ""}`
+                }
+              >
                 <Icon size={21} />
                 <span>{item.label}</span>
               </NavLink>

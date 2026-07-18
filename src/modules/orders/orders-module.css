@@ -7,3 +7,6 @@
 .orders-customers-table-wrap .orders-table{min-width:1050px}
 .orders-customers-table-wrap .orders-table thead th{position:sticky;top:0;z-index:2;background:#fff;box-shadow:0 1px 0 #e2e8f0}
 @media(max-width:900px){.orders-customers-table-wrap{max-height:calc(100vh - 360px)}}
+
+/* Sincronizzazione disponibilità non bloccante del modulo Ordini. */
+.orders-stock-status{display:flex;align-items:center;gap:7px;min-height:34px;padding:7px 11px;border:1px solid #dbe2ea;border-radius:999px;background:#fff;color:#64748b;font-size:13px;white-space:nowrap}.orders-stock-status.is-running{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}.orders-stock-status.is-error{background:#fef2f2;border-color:#fecaca;color:#b91c1c}@media(max-width:700px){.orders-module-header{align-items:flex-start;gap:12px;flex-direction:column}.orders-stock-status{align-self:flex-start}}

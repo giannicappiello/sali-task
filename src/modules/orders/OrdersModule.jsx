@@ -1,7 +1,9 @@
+import { useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import {
   FolderOpen,
   LayoutDashboard,
+  LoaderCircle,
   ShoppingCart,
   Users,
 } from "lucide-react";
@@ -10,6 +12,11 @@ import OrdersDashboard from "./pages/OrdersDashboard";
 import Customers from "./pages/Customers";
 import Orders from "./pages/Orders";
 import Materials from "./pages/Materials";
+import {
+  startStockSync,
+  subscribeToStockSyncRequest,
+  subscribeToStockSyncStatus,
+} from "./services/stockSync";
 import "./orders-module.css";
 
 const items = [
@@ -21,6 +28,24 @@ const items = [
 
 export default function OrdersModule() {
   const { loading, canAccessOrders } = useOrdersAccess();
+  const [stockStatus, setStockStatus] = useState({ running: false });
+
+  useEffect(() => {
+    if (loading || !canAccessOrders) return undefined;
+
+    const unsubscribeStatus = subscribeToStockSyncStatus(setStockStatus);
+    const unsubscribeRequest = subscribeToStockSyncRequest(() => {
+      startStockSync().catch(() => {});
+    });
+
+    // Parte in background ogni volta che si entra nel modulo Ordini.
+    startStockSync().catch(() => {});
+
+    return () => {
+      unsubscribeStatus();
+      unsubscribeRequest();
+    };
+  }, [loading, canAccessOrders]);
 
   if (loading) {
     return <div className="orders-empty">Verifica autorizzazione...</div>;
@@ -39,9 +64,25 @@ export default function OrdersModule() {
       <div className="orders-module-header">
         <div>
           <h1>Gestione Ordini</h1>
-          <p>
-            Clienti, ordini e materiali commerciali collegati a Mexal.
-          </p>
+          <p>Clienti, ordini e materiali commerciali collegati a Mexal.</p>
+        </div>
+
+        <div
+          className={`orders-stock-status ${
+            stockStatus.running ? "is-running" : ""
+          } ${stockStatus.error ? "is-error" : ""}`}
+          title={stockStatus.message || ""}
+        >
+          {stockStatus.running && <LoaderCircle className="spin" size={17} />}
+          <span>
+            {stockStatus.running
+              ? "Aggiornamento disponibilità..."
+              : stockStatus.error
+                ? "Aggiornamento non riuscito"
+                : stockStatus.completedAt
+                  ? "Disponibilità aggiornate"
+                  : "Disponibilità in attesa"}
+          </span>
         </div>
       </div>
 

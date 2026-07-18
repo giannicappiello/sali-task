@@ -175,7 +175,7 @@ function buildMexalClient() {
   };
 }
 
-async function verifyUser(req, supabase) {
+async function verifyUser(req, supabase, { allowOrdersUser = false } = {}) {
   const authorization = req.headers.authorization || "";
   const cronSecret = process.env.CRON_SECRET?.trim();
 
@@ -243,9 +243,11 @@ async function verifyUser(req, supabase) {
     );
   }
 
+  const hasOrdersAccess = integration?.enabled === true;
   const isBackoffice =
-    integration?.enabled === true &&
-    integration?.ruolo_ordini === "backoffice";
+    hasOrdersAccess && integration?.ruolo_ordini === "backoffice";
+
+  if (allowOrdersUser && hasOrdersAccess) return;
 
   if (!isBackoffice) {
     throw Object.assign(
@@ -707,16 +709,18 @@ export default async function handler(req, res) {
       }
     );
 
-    await verifyUser(req, supabase);
-
-    const mexal = buildMexalClient();
-
     const body =
       typeof req.body === "object" && req.body
         ? req.body
         : {};
 
     const action = body.action || "test";
+
+    await verifyUser(req, supabase, {
+      allowOrdersUser: action === "sync-stock-it",
+    });
+
+    const mexal = buildMexalClient();
     const offset = Math.max(
       0,
       Number(body.offset || 0)

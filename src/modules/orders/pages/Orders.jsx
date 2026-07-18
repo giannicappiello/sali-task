@@ -17,7 +17,6 @@ export default function Orders() {
   const [search, setSearch] = useState("");
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [loading, setLoading] = useState(true);
-  const [updatingStock, setUpdatingStock] = useState(false);
 
   useEffect(() => {
     if (!accessLoading) loadOrders();
@@ -29,76 +28,8 @@ export default function Orders() {
     JSON.stringify(visibleAgents),
   ]);
 
-  async function callMexalApi(body) {
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
-
-    if (sessionError || !session?.access_token) {
-      throw new Error("Sessione scaduta. Effettua nuovamente l'accesso.");
-    }
-
-    const response = await fetch("/api/mexal/sync-products", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify(body),
-    });
-
-    const text = await response.text();
-    let result;
-
-    try {
-      result = text ? JSON.parse(text) : {};
-    } catch {
-      result = { error: text || "Risposta API non valida." };
-    }
-
-    if (!response.ok) {
-      throw new Error(result.error || `Errore API (${response.status}).`);
-    }
-
-    return result;
-  }
-
-  async function openNewOrder() {
-    if (updatingStock) return;
-
-    setUpdatingStock(true);
-
-    try {
-      let offset = 0;
-      const batchSize = 12;
-      let totalErrors = 0;
-
-      while (true) {
-        const result = await callMexalApi({
-          action: "sync-stock-it",
-          offset,
-          batchSize,
-        });
-
-        totalErrors += Number(result.errori?.length || 0);
-        offset = Number(result.prossimo_offset || offset + batchSize);
-
-        if (result.completato) break;
-      }
-
-      if (totalErrors > 0) {
-        console.warn(`Aggiornamento giacenze completato con ${totalErrors} errori.`);
-      }
-
-      alert(
-        "Giacenze dei prodotti IT aggiornate. La schermata Nuovo Ordine sarà attivata nella fase successiva."
-      );
-    } catch (error) {
-      alert(error.message || "Errore aggiornamento giacenze Mexal.");
-    } finally {
-      setUpdatingStock(false);
-    }
+  function openNewOrder() {
+    alert("La schermata Nuovo Ordine sarà attivata nella fase successiva.");
   }
 
   async function loadOrders() {
@@ -173,10 +104,9 @@ export default function Orders() {
             className="orders-primary"
             type="button"
             onClick={openNewOrder}
-            disabled={updatingStock}
           >
             <Plus size={18} />
-            {updatingStock ? "Aggiornamento giacenze..." : "Nuovo ordine"}
+            Nuovo ordine
           </button>
         )}
       </div>

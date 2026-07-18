@@ -23,6 +23,42 @@ function numberValue(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function positiveInteger(...values) {
+  for (const value of values) {
+    const parsed = Number.parseInt(String(value ?? "").trim(), 10);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return 0;
+}
+
+function customerDiscountCategory(customer) {
+  const data = customer?.dati_mexal || customer?.json_mexal || {};
+  return positiveInteger(
+    customer?.categoria_sconti,
+    customer?.categoria_sconto_cliente,
+    customer?.categoria_sconto,
+    customer?.cod_cat_sconti,
+    data?.categoria_sconti,
+    data?.categoria_sconto_cliente,
+    data?.cod_cat_sconti,
+    data?.id_cat_sconto
+  );
+}
+
+function productDiscountCategory(product) {
+  const data = product?.dati_mexal || product?.json_mexal || {};
+  return positiveInteger(
+    product?.categoria_sconto,
+    product?.categoria_sconto_articolo,
+    product?.id_cat_sconto,
+    product?.cod_cat_sconto,
+    data?.categoria_sconto,
+    data?.categoria_sconto_articolo,
+    data?.id_cat_sconto,
+    data?.cod_cat_sconto
+  );
+}
+
 
 function customerDiscount(customer) {
   const data = customer?.dati_mexal || customer?.json_mexal || {};
@@ -158,16 +194,22 @@ export default function NewOrder() {
       }
 
       const [matrixRows, particularityRows, paymentRows] = await Promise.all([
-        loadPaged("ordini_sconti_listini", (query) => query),
-        loadPaged("ordini_particolarita", (query) => query),
-        loadPaged("ordini_regole_pagamento", (query) => query),
+        loadPaged("ordini_sconti_listini", (query) => query.eq("is_active", true)),
+        loadPaged("ordini_particolarita", (query) => query.eq("is_active", true)),
+        loadPaged("ordini_regole_pagamento", (query) => query.eq("is_active", true)),
       ]);
 
       setCustomers(customerRows);
       setProducts(productRows);
       setDiscountMatrix(matrixRows);
-      setSpecialConditions(particularityRows.map((row) => row.dati_mexal || row));
+      setSpecialConditions(particularityRows);
       setPaymentRules(paymentRows);
+
+      if (matrixRows.length === 0) {
+        setError(
+          "La matrice sconti è vuota per l’utente collegato. Esegui la query SQL inclusa nel pacchetto per verificare RLS e dati."
+        );
+      }
     } catch (loadError) {
       console.error("Errore caricamento nuovo ordine:", loadError);
       setError(loadError.message || "Errore caricamento dati ordine.");
@@ -373,6 +415,10 @@ export default function NewOrder() {
           sconto_pagamento: line.sconto_pagamento || null,
           origine_prezzo: line.origine_prezzo || null,
           origine_sconto: line.origine_sconto || null,
+          regola_prezzo_id: line.regola_prezzo_id || null,
+          regola_sconto_id: line.regola_sconto_id || null,
+          regola_pagamento_id: line.regola_pagamento_id || null,
+          dettaglio_calcolo: line.dettaglio_calcolo || {},
           prezzo_netto: line.prezzo_netto,
           totale_riga: totale,
         };
@@ -429,6 +475,10 @@ export default function NewOrder() {
 
       {error && <div className="orders-alert orders-alert-error">{error}</div>}
 
+      <div className="orders-alert">
+        Regole caricate: matrice {discountMatrix.length}, particolarità {specialConditions.length}, pagamenti {paymentRules.length}.
+      </div>
+
       <section className="orders-panel orders-order-section">
         <h3>1. Cliente</h3>
         {selectedCustomer ? (
@@ -448,7 +498,7 @@ export default function NewOrder() {
             <div>
               <span>Pagamento: {paymentDescription(selectedCustomer)}</span>
               <span>Listino: {selectedCustomer.codice_listino || "-"}</span>
-              <span>Categoria sconto: {selectedCustomer.categoria_sconto_cliente ?? selectedCustomer.cod_cat_sconti ?? "-"}</span>
+              <span>Categoria sconto: {customerDiscountCategory(selectedCustomer) || "-"}</span>
             </div>
             <button className="orders-secondary" type="button" onClick={() => setSelectedCustomer(null)}>
               Cambia cliente
@@ -503,7 +553,7 @@ export default function NewOrder() {
                 return (
                   <button key={code} type="button" onClick={() => addProduct(product)}>
                     <strong>{product.descrizione || product.nome || code}</strong>
-                    <span>{code} · Disponibile: {product.disponibilita ?? 0} · {money(product.prezzo_listino || 0)}</span>
+                    <span>{code} · Cat. sconto: {productDiscountCategory(product) || "-"} · Disponibile: {product.disponibilita ?? 0} · {money(product.prezzo_listino || 0)}</span>
                   </button>
                 );
               })}
@@ -526,7 +576,10 @@ export default function NewOrder() {
                 return (
                   <tr key={line.codice_articolo}>
                     <td>{line.codice_articolo}</td>
-                    <td>{line.descrizione}</td>
+                    <td>
+                      <div>{line.descrizione}</div>
+                      <small>Categoria sconto articolo: {line.dettaglio_calcolo?.categoria_sconto_articolo || productDiscountCategory(line.prodotto_origine) || "-"}</small>
+                    </td>
                     <td>{line.disponibilita}</td>
                     <td>
                       <div className="orders-quantity-control">

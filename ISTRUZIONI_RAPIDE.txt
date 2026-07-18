@@ -1,16 +1,24 @@
-SPRINT 2B - INSTALLAZIONE RAPIDA
+SPRINT 2C - INSTALLAZIONE
 
-1) Copia nel progetto le cartelle api e src del pacchetto.
-2) Esegui nel SQL Editor Supabase:
-   supabase/migrations/20260718195500_sprint_2b_commercial_sync_hardening.sql
-3) Esegui:
+1) Copiare i file rispettando le cartelle del progetto.
+
+2) Supabase SQL Editor:
+   eseguire il contenuto di
+   supabase/migrations/20260718213000_sprint_2c_price_engine_audit.sql
+
+3) Avviare il progetto:
+   npm run dev
+
+4) Aprire Ordini > Nuovo ordine.
+
+5) Prova consigliata:
+   cliente 501.02487 + prodotto IT0001.
+   Lo sconto commerciale atteso è 50+35.
+   Con Bonifico Anticipato e regola pagamento configurata: 50+35+5.
+
+6) Dopo il test eseguire docs/VALIDAZIONE_SPRINT_2C.sql.
+
+7) Pubblicazione:
    git add .
-   git commit -m "Sprint 2B salvataggio condizioni commerciali Mexal"
+   git commit -m "Add Mexal price engine Sprint 2C"
    git push origin main
-4) Attendi il deploy Vercel.
-5) Centro Integrazioni > Mexal ERP:
-   - Dry Run: DISATTIVATO
-   - Modalità: Completa
-   - Regole pagamento: ATTIVO
-   - Sincronizza e conferma
-6) Verifica con docs/VALIDAZIONE_SPRINT_2B.sql

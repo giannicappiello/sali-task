@@ -1,16 +1,26 @@
-PROGRE WORKSPACE - PACCHETTO COMPLETO
+FIX SCONTO ORDINI
 
-1) Fai una copia di sicurezza della tua cartella C:\Progetti\sali-task.
-2) Estrai questo ZIP e copia i file dentro C:\Progetti\sali-task sovrascrivendo quelli esistenti.
-3) NON cancellare il tuo file .env locale. Questo ZIP contiene solo .env.example.
-4) Nel terminale:
-   npm install
+1. Sostituisci nel progetto i due file mantenendo i percorsi:
+   src/modules/orders/pages/NewOrder.jsx
+   src/modules/orders/services/priceEngine.js
+
+2. In Supabase > SQL Editor esegui per intero:
+   supabase/migrations/20260718235500_fix_categorie_sconto_ordini.sql
+
+3. Arresta Vite con Ctrl+C e riavvia:
    npm run dev
-5) Apri http://localhost:5173
-6) Se Supabase mostra dati demo, apri supabase/schema_progre_workspace.sql nel SQL Editor di Supabase ed eseguilo.
-7) Per la PWA: dopo npm run build + npm run preview, Chrome/Edge mostreranno il pulsante Installa app.
 
-Note:
-- Le pagine non sono più placeholder: Dashboard, Task, Progetti, Prodotti, Messaggi, Team, Calendario, Report e Impostazioni sono operative.
-- Se le tue tabelle Supabase hanno nomi/colonne diversi, l'app non si blocca: mostra dati demo e segnala l'errore.
-- La pagina Prodotti usa limit 1000, quindi non ha più il vincolo dei 100 record.
+4. Nel browser esegui Ctrl+F5.
+
+5. Apri Nuovo ordine. In alto comparirà il conteggio delle regole caricate.
+   Deve indicare almeno: matrice 500, particolarità 64, pagamenti 1.
+
+6. Il cliente dello screenshot deve mostrare Categoria sconto 2, non 0.
+   La riga IT0001 mostrerà anche la categoria articolo effettivamente letta.
+
+7. Per controllare i dati esegui docs/VERIFICA_FIX_SCONTO.sql.
+
+Git non serve per il test locale. Dopo la verifica positiva:
+   git add .
+   git commit -m "Fix categorie e calcolo sconti ordini"
+   git push origin main

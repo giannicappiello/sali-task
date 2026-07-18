@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 const MODULE_CODE = "gestione_ordini";
 const CLIENT_PREFIX = "501";
 const PAGE_SIZE = 500;
+const UPSERT_BATCH_SIZE = 100;
 
 function requireEnv(name) {
   const value = process.env[name]?.trim();
@@ -27,6 +28,22 @@ function firstValue(object, keys, fallback = null) {
     }
   }
   return fallback;
+}
+
+function nullableInteger(value) {
+  const text = normalize(value);
+  if (!text) return null;
+
+  const parsed = Number.parseInt(text, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function nullableNumber(value) {
+  const text = normalize(value).replace(",", ".");
+  if (!text) return null;
+
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function requestMexal({ url, headers }) {
@@ -65,6 +82,7 @@ function requestMexal({ url, headers }) {
 
 function parseMexalResponse(response, label) {
   let parsed;
+
   try {
     parsed = JSON.parse(response.body || "{}");
   } catch {
@@ -100,6 +118,28 @@ function extractRows(response) {
   }
 
   return [];
+}
+
+function getClientCode(client) {
+  const direct = firstValue(client, [
+    "codice",
+    "codice_cliente",
+    "cod_conto",
+    "codconto",
+    "conto",
+    "codiceConto",
+  ]);
+
+  if (direct) return upper(direct);
+
+  if (client && typeof client === "object") {
+    for (const value of Object.values(client)) {
+      const candidate = upper(value);
+      if (candidate.startsWith(CLIENT_PREFIX)) return candidate;
+    }
+  }
+
+  return "";
 }
 
 function isMetadataResponse(rows) {
@@ -149,10 +189,6 @@ function buildMexalClient() {
   };
 
   return {
-    baseUrl,
-    azienda,
-    anno,
-    magazzino,
     async get(path) {
       const response = await requestMexal({
         url: `${baseUrl}/webapi/risorse${path}`,
@@ -195,9 +231,13 @@ async function verifyUser(req, supabase) {
   const roleName = upper(profile.ruoli?.nome);
   const roleLevel = Number(profile.ruoli?.livello || 0);
   const isAdmin =
-    ["ADMIN", "ADMINISTRATOR", "AMMINISTRATORE", "SUPER ADMIN", "DIREZIONE"].includes(
-      roleName
-    ) || roleLevel >= 80;
+    [
+      "ADMIN",
+      "ADMINISTRATOR",
+      "AMMINISTRATORE",
+      "SUPER ADMIN",
+      "DIREZIONE",
+    ].includes(roleName) || roleLevel >= 80;
 
   if (isAdmin) return;
 
@@ -226,28 +266,6 @@ async function verifyUser(req, supabase) {
   }
 }
 
-function getClientCode(client) {
-  const direct = firstValue(client, [
-    "codice",
-    "codice_cliente",
-    "cod_conto",
-    "codconto",
-    "conto",
-    "codiceConto",
-  ]);
-
-  if (direct) return upper(direct);
-
-  if (client && typeof client === "object") {
-    for (const value of Object.values(client)) {
-      const candidate = upper(value);
-      if (candidate.startsWith(CLIENT_PREFIX)) return candidate;
-    }
-  }
-
-  return "";
-}
-
 function getAgentCode(client) {
   const raw = firstValue(client, [
     "codice_agente",
@@ -265,7 +283,7 @@ function getAgentCode(client) {
   return upper(raw);
 }
 
-function mapClient(client) {
+function mapClient(client, syncDate) {
   const code = getClientCode(client);
   const companyName = normalize(
     firstValue(client, [
@@ -278,64 +296,83 @@ function mapClient(client) {
     ])
   );
 
-  const address = normalize(
-    firstValue(client, ["indirizzo", "via", "indirizzo_sede", "indirizzo1"])
-  );
-  const postalCode = normalize(firstValue(client, ["cap", "codice_postale"]));
-  const city = normalize(
-    firstValue(client, ["localita", "citta", "comune", "località"])
-  );
-  const province = upper(firstValue(client, ["provincia", "prov", "sigla_provincia"]));
-  const country = upper(firstValue(client, ["nazione", "paese", "codice_nazione"], "IT"));
-
-  const payment = normalize(
-    firstValue(client, [
-      "codice_pagamento",
-      "pagamento",
-      "cod_pagamento",
-      "condizione_pagamento",
-    ])
-  );
-  const priceList = normalize(
-    firstValue(client, ["codice_listino", "listino", "cod_listino", "nr_listino"])
-  );
-
-  const activeFlag = upper(
+  const cancellationFlag = upper(
     firstValue(client, ["gest_annullato", "annullato", "precancellato"], "N")
   );
 
   return {
     codice_cliente: code,
     ragione_sociale: companyName || code,
-    indirizzo: address || null,
-    cap: postalCode || null,
-    localita: city || null,
-    provincia: province || null,
-    nazione: country || null,
-    partita_iva: normalize(
-      firstValue(client, ["partita_iva", "piva", "p_iva", "vat_number"])
-    ) || null,
-    codice_fiscale: normalize(
-      firstValue(client, ["codice_fiscale", "cod_fiscale", "cf"])
-    ) || null,
-    telefono: normalize(firstValue(client, ["telefono", "tel", "telefono1"])) || null,
-    email: normalize(firstValue(client, ["email", "mail", "posta_elettronica"])) || null,
-    pec: normalize(firstValue(client, ["pec", "email_pec"])) || null,
-    codice_sdi: normalize(firstValue(client, ["codice_sdi", "cod_destinatario"])) || null,
-    codice_pagamento: payment || null,
-    descrizione_pagamento: normalize(
-      firstValue(client, ["descrizione_pagamento", "desc_pagamento"])
-    ) || null,
-    codice_listino: priceList || null,
+    partita_iva:
+      normalize(firstValue(client, ["partita_iva", "piva", "p_iva", "vat_number"])) ||
+      null,
+    codice_fiscale:
+      normalize(firstValue(client, ["codice_fiscale", "cod_fiscale", "cf"])) ||
+      null,
+    indirizzo:
+      normalize(firstValue(client, ["indirizzo", "via", "indirizzo_sede", "indirizzo1"])) ||
+      null,
+    cap: normalize(firstValue(client, ["cap", "codice_postale"])) || null,
+    localita:
+      normalize(firstValue(client, ["localita", "citta", "comune", "località"])) ||
+      null,
+    provincia:
+      upper(firstValue(client, ["provincia", "prov", "sigla_provincia"])) ||
+      null,
+    telefono:
+      normalize(firstValue(client, ["telefono", "tel", "telefono1"])) || null,
+    email:
+      normalize(firstValue(client, ["email", "mail", "posta_elettronica"])) ||
+      null,
+    codice_pagamento: nullableInteger(
+      firstValue(client, [
+        "codice_pagamento",
+        "pagamento",
+        "cod_pagamento",
+        "condizione_pagamento",
+      ])
+    ),
+    codice_listino: nullableInteger(
+      firstValue(client, ["codice_listino", "listino", "cod_listino", "nr_listino"])
+    ),
+    categoria_sconti: nullableInteger(
+      firstValue(client, [
+        "categoria_sconti",
+        "cod_cat_sconti",
+        "codice_categoria_sconti",
+        "cat_sconti",
+      ])
+    ),
+    sconto_incondizionato:
+      normalize(
+        firstValue(client, [
+          "sconto_incondizionato",
+          "sconto_incond",
+          "sconto_cliente",
+          "sconto",
+        ])
+      ) || null,
     codice_agente_mexal: getAgentCode(client) || null,
-    sconto_1: Number(firstValue(client, ["sconto_1", "sconto1", "sconto_cliente_1"], 0)) || 0,
-    sconto_2: Number(firstValue(client, ["sconto_2", "sconto2", "sconto_cliente_2"], 0)) || 0,
-    sconto_3: Number(firstValue(client, ["sconto_3", "sconto3", "sconto_cliente_3"], 0)) || 0,
-    attivo_mexal: !["S", "Y", "TRUE", "1"].includes(activeFlag),
+    codice_indirizzo_spedizione:
+      normalize(
+        firstValue(client, [
+          "codice_indirizzo_spedizione",
+          "cod_ind_sped",
+          "cod_indirizzo_spedizione",
+          "indirizzo_spedizione",
+        ])
+      ) || null,
+    fido:
+      nullableNumber(firstValue(client, ["fido", "importo_fido", "affidamento"])) ||
+      0,
+    insoluti:
+      nullableNumber(firstValue(client, ["insoluti", "importo_insoluti"])) || 0,
+    dati_mexal: client,
+    sincronizzato_il: syncDate,
+    attivo_mexal: !["S", "Y", "TRUE", "1"].includes(cancellationFlag),
     sincronizzato_mexal: true,
-    ultimo_sync_mexal: new Date().toISOString(),
+    ultimo_sync_mexal: syncDate,
     json_mexal: client,
-    updated_at: new Date().toISOString(),
   };
 }
 
@@ -349,8 +386,6 @@ async function loadAllClients(mexal) {
     params.set("max", String(PAGE_SIZE));
     if (next) params.set("next", next);
 
-    // IMPORTANTE: non usare info=true. In Mexal quel parametro restituisce
-    // la descrizione dei campi dell'endpoint, non le anagrafiche clienti.
     const query = params.toString();
     const response = await mexal.get(`/clienti${query ? `?${query}` : ""}`);
     const pageRows = extractRows(response);
@@ -370,15 +405,25 @@ async function loadAllClients(mexal) {
     }
   } while (next);
 
+  const syncDate = new Date().toISOString();
   const unique = new Map();
 
   for (const rawClient of rawRows) {
-    const mapped = mapClient(rawClient);
+    const mapped = mapClient(rawClient, syncDate);
     if (!mapped.codice_cliente.startsWith(CLIENT_PREFIX)) continue;
     unique.set(mapped.codice_cliente, mapped);
   }
 
   return [...unique.values()];
+}
+
+function formatSupabaseError(error) {
+  return {
+    message: error?.message || "Errore Supabase sconosciuto",
+    code: error?.code || null,
+    details: error?.details || null,
+    hint: error?.hint || null,
+  };
 }
 
 export default async function handler(req, res) {
@@ -394,6 +439,7 @@ export default async function handler(req, res) {
     );
 
     await verifyUser(req, supabase);
+
     const mexal = buildMexalClient();
     const clients = await loadAllClients(mexal);
 
@@ -410,16 +456,28 @@ export default async function handler(req, res) {
       );
     }
 
-    for (let index = 0; index < clients.length; index += 100) {
-      const batch = clients.slice(index, index + 100);
+    for (let index = 0; index < clients.length; index += UPSERT_BATCH_SIZE) {
+      const batch = clients.slice(index, index + UPSERT_BATCH_SIZE);
+      const range = `${index + 1}-${index + batch.length}`;
+
       const { error } = await supabase
         .from("ordini_clienti_cache")
         .upsert(batch, { onConflict: "codice_cliente" });
 
       if (error) {
+        const formattedError = formatSupabaseError(error);
+        console.error("Errore upsert clienti Mexal", {
+          blocco: range,
+          primo_codice: batch[0]?.codice_cliente,
+          ultimo_codice: batch[batch.length - 1]?.codice_cliente,
+          errore: formattedError,
+        });
+
         result.errori.push({
-          blocco: `${index + 1}-${index + batch.length}`,
-          errore: error.message,
+          blocco: range,
+          primo_codice: batch[0]?.codice_cliente || null,
+          ultimo_codice: batch[batch.length - 1]?.codice_cliente || null,
+          ...formattedError,
         });
       } else {
         result.inseriti_o_aggiornati += batch.length;
@@ -427,7 +485,9 @@ export default async function handler(req, res) {
     }
 
     if (result.errori.length === 0) {
-      const activeCodes = clients.map((client) => client.codice_cliente);
+      const activeCodes = new Set(
+        clients.map((client) => client.codice_cliente)
+      );
 
       const { data: cachedClients, error: cachedError } = await supabase
         .from("ordini_clienti_cache")
@@ -438,26 +498,38 @@ export default async function handler(req, res) {
 
       if (cachedError) throw cachedError;
 
-      const activeCodeSet = new Set(activeCodes);
       const missingCodes = (cachedClients || [])
         .map((row) => normalize(row.codice_cliente))
-        .filter((code) => code && !activeCodeSet.has(code));
+        .filter((code) => code && !activeCodes.has(code));
 
-      for (let index = 0; index < missingCodes.length; index += 100) {
-        const batch = missingCodes.slice(index, index + 100);
+      for (
+        let index = 0;
+        index < missingCodes.length;
+        index += UPSERT_BATCH_SIZE
+      ) {
+        const batch = missingCodes.slice(index, index + UPSERT_BATCH_SIZE);
+        const syncDate = new Date().toISOString();
+        const range = `${index + 1}-${index + batch.length}`;
+
         const { error } = await supabase
           .from("ordini_clienti_cache")
           .update({
             attivo_mexal: false,
-            ultimo_sync_mexal: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
+            sincronizzato_il: syncDate,
+            ultimo_sync_mexal: syncDate,
           })
           .in("codice_cliente", batch);
 
         if (error) {
+          const formattedError = formatSupabaseError(error);
+          console.error("Errore disattivazione clienti Mexal", {
+            blocco: range,
+            errore: formattedError,
+          });
+
           result.errori.push({
-            blocco_disattivazione: `${index + 1}-${index + batch.length}`,
-            errore: error.message,
+            blocco_disattivazione: range,
+            ...formattedError,
           });
         } else {
           result.disattivati += batch.length;
@@ -467,6 +539,11 @@ export default async function handler(req, res) {
 
     return res.status(200).json(result);
   } catch (error) {
+    console.error("Errore generale sincronizzazione clienti Mexal", {
+      message: error?.message,
+      stack: error?.stack,
+    });
+
     return res.status(Number(error?.status || 500)).json({
       error: error?.message || "Errore sincronizzazione clienti Mexal.",
     });

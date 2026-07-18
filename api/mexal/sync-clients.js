@@ -283,7 +283,53 @@ function getAgentCode(client) {
   return upper(raw);
 }
 
-function mapClient(client, syncDate) {
+
+function getPaymentCode(payment) {
+  return nullableInteger(
+    firstValue(payment, [
+      "codice",
+      "codice_pagamento",
+      "cod_pagamento",
+      "pagamento",
+      "id",
+    ])
+  );
+}
+
+function getPaymentDescription(payment) {
+  return (
+    normalize(
+      firstValue(payment, [
+        "descrizione",
+        "descrizione_pagamento",
+        "des_pagamento",
+        "denominazione",
+        "nome",
+      ])
+    ) || null
+  );
+}
+
+async function loadPaymentsMap(mexal) {
+  try {
+    const response = await mexal.get("/dati-generali/pagamenti");
+    const rows = extractRows(response);
+    const result = new Map();
+
+    for (const row of rows) {
+      const code = getPaymentCode(row);
+      const description = getPaymentDescription(row);
+      if (code !== null && description) result.set(String(code), description);
+    }
+
+    return result;
+  } catch (error) {
+    console.error("Impossibile caricare le descrizioni dei pagamenti Mexal:", error);
+    return new Map();
+  }
+}
+
+function mapClient(client, syncDate, paymentsMap) {
   const code = getClientCode(client);
   const companyName = normalize(
     firstValue(client, [
@@ -299,6 +345,29 @@ function mapClient(client, syncDate) {
   const cancellationFlag = upper(
     firstValue(client, ["gest_annullato", "annullato", "precancellato"], "N")
   );
+
+  const paymentCode = nullableInteger(
+    firstValue(client, [
+      "codice_pagamento",
+      "pagamento",
+      "cod_pagamento",
+      "condizione_pagamento",
+    ])
+  );
+
+  const enrichedMexalData = {
+    ...client,
+    _descrizione_pagamento:
+      paymentsMap?.get(String(paymentCode)) ||
+      normalize(
+        firstValue(client, [
+          "descrizione_pagamento",
+          "des_pagamento",
+          "pagamento_descrizione",
+        ])
+      ) ||
+      null,
+  };
 
   return {
     codice_cliente: code,
@@ -324,14 +393,7 @@ function mapClient(client, syncDate) {
     email:
       normalize(firstValue(client, ["email", "mail", "posta_elettronica"])) ||
       null,
-    codice_pagamento: nullableInteger(
-      firstValue(client, [
-        "codice_pagamento",
-        "pagamento",
-        "cod_pagamento",
-        "condizione_pagamento",
-      ])
-    ),
+    codice_pagamento: paymentCode,
     codice_listino: nullableInteger(
       firstValue(client, ["codice_listino", "listino", "cod_listino", "nr_listino"])
     ),
@@ -367,16 +429,16 @@ function mapClient(client, syncDate) {
       0,
     insoluti:
       nullableNumber(firstValue(client, ["insoluti", "importo_insoluti"])) || 0,
-    dati_mexal: client,
+    dati_mexal: enrichedMexalData,
     sincronizzato_il: syncDate,
     attivo_mexal: !["S", "Y", "TRUE", "1"].includes(cancellationFlag),
     sincronizzato_mexal: true,
     ultimo_sync_mexal: syncDate,
-    json_mexal: client,
+    json_mexal: enrichedMexalData,
   };
 }
 
-async function loadAllClients(mexal) {
+async function loadAllClients(mexal, paymentsMap) {
   const rawRows = [];
   let next = null;
   let page = 0;
@@ -409,7 +471,7 @@ async function loadAllClients(mexal) {
   const unique = new Map();
 
   for (const rawClient of rawRows) {
-    const mapped = mapClient(rawClient, syncDate);
+    const mapped = mapClient(rawClient, syncDate, paymentsMap);
     if (!mapped.codice_cliente.startsWith(CLIENT_PREFIX)) continue;
     unique.set(mapped.codice_cliente, mapped);
   }
@@ -441,7 +503,8 @@ export default async function handler(req, res) {
     await verifyUser(req, supabase);
 
     const mexal = buildMexalClient();
-    const clients = await loadAllClients(mexal);
+    const paymentsMap = await loadPaymentsMap(mexal);
+    const clients = await loadAllClients(mexal, paymentsMap);
 
     const result = {
       letti_mexal: clients.length,

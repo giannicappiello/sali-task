@@ -19,7 +19,7 @@ function Login() {
     if (saved) setEmail(saved);
   }, []);
 
-  if (session) return <Navigate to={location.state?.from?.pathname || "/dashboard"} replace />;
+  if (session) return <Navigate to="/home" replace />;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -37,7 +37,7 @@ function Login() {
     }
     if (remember) window.localStorage.setItem("progre-login-email", email.trim());
     else window.localStorage.removeItem("progre-login-email");
-    navigate(location.state?.from?.pathname || "/dashboard", { replace: true });
+    navigate("/home", { replace: true });
   }
 
   async function handleResetPassword() {

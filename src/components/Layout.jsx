@@ -4,6 +4,7 @@ import {
   Bell,
   ClipboardList,
   FileArchive,
+  Home,
   LogOut,
   Menu,
   MessageCircle,
@@ -18,6 +19,7 @@ import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../contexts/AuthContext";
 
 const menuItems = [
+  { path: "/home", label: "Home", icon: Home, permission: "dashboard.read" },
   { path: "/activities", label: "Attività", icon: ClipboardList, permission: "dashboard.read" },
   { path: "/farmacie/dashboard", label: "Beauty Days", icon: Store, permission: "pharmacy.read" },
   { path: "/ordini", label: "Ordini", icon: ShoppingCart, permission: "orders.read" },

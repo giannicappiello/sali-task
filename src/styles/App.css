@@ -3055,19 +3055,38 @@ body {
   .topbar {
     height: auto;
     min-height: 74px;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 14px;
-    padding: 14px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 14px;
   }
 
-  .topbar-left,
-  .topbar-actions {
-    width: 100%;
+  .topbar-left {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .topbar-left > div {
+    min-width: 0;
+    flex: 1 1 auto;
   }
 
   .topbar-actions {
-    flex-wrap: wrap;
+    width: auto;
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    gap: 6px;
+    margin-left: auto;
+  }
+
+  .topbar-actions .icon-btn {
+    width: 42px;
+    height: 42px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .search-box,
@@ -3346,4 +3365,12 @@ body {
   .projects-v4-final .project-board-sticky-scroll {
     display: none;
   }
+}
+
+/* Mobile topbar: notifiche e messaggi allineati a destra senza sovrapposizioni */
+@media (max-width: 560px) {
+  .topbar-left { gap: 10px; }
+  .topbar-left h2 { font-size: 22px; }
+  .topbar-left p { font-size: 12px; max-width: 46vw; }
+  .topbar-actions { gap: 2px; }
 }

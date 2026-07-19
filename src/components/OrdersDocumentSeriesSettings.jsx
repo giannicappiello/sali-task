@@ -17,6 +17,7 @@ export default function OrdersDocumentSeriesSettings({ canManage }) {
   const [syncing, setSyncing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState("info");
 
   useEffect(() => { load(); }, []);
 
@@ -35,24 +36,28 @@ export default function OrdersDocumentSeriesSettings({ canManage }) {
 
   async function sync() {
     if (!canManage) return;
-    setSyncing(true); setMessage("");
+    setSyncing(true); setMessage("Sincronizzazione serie documenti avviata..."); setMessageType("info");
     try {
       const token = await accessToken();
       const response = await fetch("/api/mexal/sync-document-series", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || `Errore HTTP ${response.status}`);
-      setMessage(`${data.count || 0} serie documenti sincronizzate da Mexal.`);
+      if (!response.ok || data.success === false) {
+        throw new Error([data.error || `Errore HTTP ${response.status}`, data.details].filter(Boolean).join(" — "));
+      }
+      setMessage(`Sincronizzazione completata: ${data.received || 0} serie ricevute, ${data.imported || 0} inserite, ${data.updated || 0} aggiornate.`);
+      setMessageType("success");
       await load();
-    } catch (error) { setMessage(error.message); }
+    } catch (error) { setMessage(error.message); setMessageType("error"); }
     finally { setSyncing(false); }
   }
 
   async function save() {
     if (!canManage) return;
-    if (!config.serie_ocm || !config.serie_ocx) return setMessage("Seleziona entrambe le serie.");
-    setSaving(true); setMessage("");
+    if (!config.serie_ocm || !config.serie_ocx) { setMessageType("error"); return setMessage("Seleziona entrambe le serie."); }
+    setSaving(true); setMessage(""); setMessageType("info");
     const { error } = await supabase.from("ordini_configurazione_documenti").upsert({ id: 1, ...config, aggiornato_il: new Date().toISOString() });
     setSaving(false);
+    setMessageType(error ? "error" : "success");
     setMessage(error ? error.message : "Configurazione serie salvata.");
   }
 
@@ -71,7 +76,7 @@ export default function OrdersDocumentSeriesSettings({ canManage }) {
         <label><strong>Serie OCX</strong><select value={config.serie_ocx} disabled={!canManage} onChange={(e) => setConfig((c) => ({ ...c, serie_ocx: e.target.value }))} style={{ width: "100%", minHeight: 42, marginTop: 8 }}><option value="">Seleziona...</option>{options.map((item) => <option key={`ocx-${item.id}`} value={item.serie}>{item.sigla_documento || "DOC"} · Serie {item.serie} · {item.descrizione}</option>)}</select></label>
         <button type="button" onClick={save} disabled={!canManage || saving} style={{ minHeight: 42, display: "inline-flex", gap: 8, alignItems: "center", padding: "10px 16px" }}><Save size={17} />{saving ? "Salvataggio..." : "Salva serie"}</button>
       </div>
-      {message && <div style={{ marginTop: 14, padding: 12, background: "#f8fafc", borderRadius: 10 }}>{message}</div>}
+      {message && <div role="status" style={{ marginTop: 14, padding: 12, borderRadius: 10, background: messageType === "error" ? "#fef2f2" : messageType === "success" ? "#f0fdf4" : "#f8fafc", color: messageType === "error" ? "#991b1b" : "#334155" }}>{message}</div>}
       {!options.length && <div style={{ marginTop: 14, color: "#b45309" }}>Nessuna serie disponibile: esegui prima la sincronizzazione.</div>}
     </section>
   );

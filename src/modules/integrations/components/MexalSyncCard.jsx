@@ -11,6 +11,7 @@ export default function MexalSyncCard({
   lastRun,
   onSync,
   onOpen,
+  run,
 }) {
   return (
     <article className={`mexal-sync-card ${enabled ? "is-enabled" : "is-planned"}`}>
@@ -28,6 +29,11 @@ export default function MexalSyncCard({
         {lastRun ? <CheckCircle2 size={16} /> : <Clock3 size={16} />}
         <span>{lastRun || "Nessuna sincronizzazione"}</span>
       </div>
+      {run && (
+        <small className="mexal-sync-run-summary">
+          Stato: {run.status} · Elaborati: {run.processed || 0} · Inseriti: {run.inserted || 0} · Aggiornati: {run.updated || 0} · Errori: {run.failed || 0}
+        </small>
+      )}
       <button
         type="button"
         onClick={enabled ? onSync : onOpen}

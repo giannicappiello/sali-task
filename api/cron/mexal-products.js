@@ -1,5 +1,4 @@
 const BATCH_SIZE = 12;
-const CONCURRENCY = 4;
 
 function requireCronSecret(req) {
   const secret = process.env.CRON_SECRET?.trim();
@@ -14,7 +13,7 @@ function requireCronSecret(req) {
   return secret;
 }
 
-async function callSyncApi({ baseUrl, secret, offset, replaceStart }) {
+async function callSyncApi({ baseUrl, secret, offset, replaceStart, syncRunId }) {
   const response = await fetch(`${baseUrl}/api/mexal/sync-products`, {
     method: "POST",
     headers: {
@@ -26,6 +25,7 @@ async function callSyncApi({ baseUrl, secret, offset, replaceStart }) {
       offset,
       batchSize: BATCH_SIZE,
       replaceStart,
+      syncRunId,
     }),
   });
 
@@ -45,24 +45,6 @@ async function callSyncApi({ baseUrl, secret, offset, replaceStart }) {
   return result;
 }
 
-async function runPool(items, worker, concurrency) {
-  const queue = [...items];
-  const results = [];
-
-  async function consume() {
-    while (queue.length) {
-      const item = queue.shift();
-      results.push(await worker(item));
-    }
-  }
-
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, items.length) }, () => consume())
-  );
-
-  return results;
-}
-
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Metodo non consentito." });
@@ -78,7 +60,7 @@ export default async function handler(req, res) {
       baseUrl,
       secret,
       offset: 0,
-      replaceStart: true,
+      replaceStart: false,
     });
 
     const offsets = [];
@@ -86,17 +68,21 @@ export default async function handler(req, res) {
       offsets.push(offset);
     }
 
-    const remaining = await runPool(
-      offsets,
-      (offset) =>
-        callSyncApi({
-          baseUrl,
-          secret,
-          offset,
-          replaceStart: false,
-        }),
-      CONCURRENCY
-    );
+    // I lotti sono sequenziali per conservare contatori e run coerenti. In
+    // nessun caso l'API nasconde il catalogo prima dell'import completo.
+    const remaining = [];
+    let syncRunId = first.sync_run_id;
+    for (const offset of offsets) {
+      const item = await callSyncApi({
+        baseUrl,
+        secret,
+        offset,
+        replaceStart: false,
+        syncRunId,
+      });
+      syncRunId = item.sync_run_id || syncRunId;
+      remaining.push(item);
+    }
 
     const all = [first, ...remaining];
     const summary = all.reduce(

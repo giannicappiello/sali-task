@@ -1,12 +1,70 @@
 import { supabase } from "../../../lib/supabaseClient";
 
-async function getAccessToken() {
+export async function getAccessToken() {
   const { data, error } = await supabase.auth.getSession();
   if (error) throw error;
 
   const token = data?.session?.access_token;
   if (!token) throw new Error("Sessione scaduta. Effettua nuovamente l'accesso.");
   return token;
+}
+
+async function invokeMexalApi(path, payload) {
+  const token = await getAccessToken();
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const raw = await response.text();
+  let data;
+  try { data = raw ? JSON.parse(raw) : {}; } catch { data = { error: raw }; }
+  if (!response.ok) throw new Error(data?.error || `Errore Mexal (HTTP ${response.status})`);
+  return data;
+}
+
+export async function invokeProductsSync(onProgress = () => {}) {
+  let offset = 0;
+  let syncRunId = null;
+  const total = { processed: 0, inserted: 0, updated: 0, errors: [] };
+  while (true) {
+    const data = await invokeMexalApi("/api/mexal/sync-products", {
+      action: "sync", offset, batchSize: 8, syncRunId, origin: "integrations",
+    });
+    syncRunId = data.sync_run_id || syncRunId;
+    total.processed += Number(data.elaborati || 0);
+    total.inserted += Number(data.inseriti || 0);
+    total.updated += Number(data.aggiornati || 0);
+    total.errors.push(...(data.errori || []));
+    onProgress({ ...total, total: Number(data.totale || 0) });
+    if (data.completato) return { ...total, syncRunId };
+    const next = Number(data.prossimo_offset);
+    if (!Number.isFinite(next) || next <= offset) throw new Error("Paginazione prodotti Mexal non valida.");
+    offset = next;
+  }
+}
+
+export async function invokeClientsSync() {
+  return invokeMexalApi("/api/mexal/sync-clients", { action: "sync" });
+}
+
+export async function loadMexalRuns(type, limit = 1) {
+  const { data, error } = await supabase
+    .from("mexal_sync_runs")
+    .select("id,sync_type,status,started_at,completed_at,processed,inserted,updated,skipped,failed,error_message,metadata")
+    .eq("sync_type", type)
+    .order("started_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
+export async function loadMexalEntityCounts() {
+  const [products, clients] = await Promise.all([
+    supabase.from("prodotti").select("*", { count: "exact", head: true }).eq("attivo_mexal", true).eq("mostra_in_app", true),
+    supabase.from("ordini_clienti_cache").select("*", { count: "exact", head: true }).eq("attivo_mexal", true),
+  ]);
+  return { products: products.error ? null : products.count || 0, clients: clients.error ? null : clients.count || 0 };
 }
 
 export async function invokeCommercialConditionsSync(options = {}) {
@@ -28,11 +86,11 @@ export async function invokeCommercialConditionsSync(options = {}) {
   });
 
   const raw = await response.text();
-  let data = null;
+  let data;
   try {
-    data = raw ? JSON.parse(raw) : null;
+    data = raw ? JSON.parse(raw) : {};
   } catch {
-    data = null;
+    throw new Error(raw || "Risposta Mexal non valida.");
   }
 
   if (!response.ok) {

@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { supabase } from "../../../lib/supabaseClient";
+export { buildAvailabilityPreview } from "./availability";
 
 async function getAccessToken() {
   const { data: { session }, error } = await supabase.auth.getSession();
@@ -35,6 +36,16 @@ async function postJson(url, body) {
 export function submitOrderToMexal(orderId, { force = false } = {}) {
   return postJson("/api/mexal/submit-order", { orderId, force });
 }
+
+export function checkOrderAvailability(lines) {
+  return postJson("/api/mexal/orders/check-availability", {
+    lines: lines.map((line) => ({
+      productCode: String(line.codice_articolo || "").replace(/\s+/g, ""),
+      quantity: Number(line.quantita),
+    })),
+  });
+}
+
 
 export async function loadOrderDetail(orderId) {
   const [{ data: order, error: orderError }, { data: lines, error: linesError }] = await Promise.all([

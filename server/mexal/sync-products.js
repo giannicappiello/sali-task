@@ -18,7 +18,7 @@ function normalizeCode(value) {
   return String(value || "").trim().toUpperCase();
 }
 
-function getArticleCode(article) {
+export function getArticleCode(article) {
   if (typeof article === "string" || typeof article === "number") {
     return normalizeCode(article);
   }
@@ -148,7 +148,7 @@ function parseJsonResponse(response, label) {
   return parsed;
 }
 
-function buildMexalClient() {
+export function buildMexalClient() {
   const baseUrl = requireEnv("MEXAL_BASE_URL").replace(/\/+$/, "");
   const username = requireEnv("MEXAL_USERNAME");
   const password = requireEnv("MEXAL_PASSWORD");
@@ -201,7 +201,7 @@ function buildMexalClient() {
   };
 }
 
-async function verifyUser(req, supabase, { allowOrdersUser = false } = {}) {
+export async function verifyUser(req, supabase, { allowOrdersUser = false } = {}) {
   const authorization = req.headers.authorization || "";
   const cronSecret = process.env.CRON_SECRET?.trim();
 
@@ -355,7 +355,7 @@ function getListPrice(prices, preferredList = 1) {
   return candidate ? nullableNumber(candidate[1]) : null;
 }
 
-function calculateStock(article) {
+export function calculateStock(article) {
   return round4(
     numberValue(article?.qta_inventario) +
       numberValue(article?.qta_carico) -
@@ -363,7 +363,7 @@ function calculateStock(article) {
   );
 }
 
-function calculateAvailability(article, stock) {
+export function calculateAvailability(article, stock) {
   return round4(
     stock +
       numberValue(article?.ord_fornitori) +
@@ -624,7 +624,7 @@ async function getGroupMap(mexal) {
   );
 }
 
-async function loadFullArticle(mexal, code, fallback) {
+export async function loadFullArticle(mexal, code, fallback) {
   const response = await mexal.getJson(
     `/articoli/${encodeURIComponent(code)}`
   );

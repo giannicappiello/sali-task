@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, Download, RefreshCw, Send } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { downloadOrderPdf, loadOrderDetail, submitOrderToMexal } from "../services/orderFulfillment";
-import { refreshStockAfterMexalOrder } from "../services/orderSync";
 
 function money(value) {
   return Number(value || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
@@ -42,7 +41,6 @@ export default function OrderDetail() {
       const result = await submitOrderToMexal(orderId, { force: order?.stato_sincronizzazione === "errore" });
       setMessage(result.skipped ? result.message : `Ordine inviato a Mexal. OCM: ${result.numero_ocm || "-"} · OCX: ${result.numero_ocx || "-"}`);
       await load();
-      refreshStockAfterMexalOrder().catch(() => {});
     } catch (sendError) {
       setError(sendError.message || "Invio a Mexal non riuscito.");
       await load();

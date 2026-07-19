@@ -122,6 +122,10 @@ export async function invokeCommercialConditionsSync(options = {}) {
   return data;
 }
 
+export async function stopMexalRun(runId) {
+  return invokeMexalApi("/api/mexal/stop-sync-run", { runId });
+}
+
 export async function loadSyncRuns(limit = 25) {
   const { data, error } = await supabase.from("mexal_sync_runs")
     .select("id,sync_type,status,started_at,completed_at,processed,inserted,updated,skipped,failed,error_message,metadata")

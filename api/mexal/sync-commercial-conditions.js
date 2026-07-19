@@ -27,13 +27,14 @@ async function mainHandler(req) {
       requiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
       { auth: { persistSession: false, autoRefreshToken: false } }
     );
-    const user = await requireAuthenticatedUser(supabase, token);
-    await requireOrdersAdministrator(supabase, user.id);
+    const isCron = Boolean(process.env.CRON_SECRET) && token === process.env.CRON_SECRET;
+    const user = isCron ? null : await requireAuthenticatedUser(supabase, token);
+    if (!isCron) await requireOrdersAdministrator(supabase, user.id);
     const run = await insertOne(supabase, "ordini_sync_runs", {
       sync_type: "commercial_conditions",
       source_system: "MEXAL",
       status: "running",
-      requested_by: user.id,
+      requested_by: user?.id || null,
       parameters: { mode, dryRun, syncPayments }
     });
     runId = String(run.id);

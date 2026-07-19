@@ -22,8 +22,8 @@
   },
   "crons": [
     {
-      "path": "/api/cron/mexal-products",
-      "schedule": "0 22 * * *"
+      "path": "/api/cron/mexal-dispatcher",
+      "schedule": "0 23 * * *"
     }
   ],
   "rewrites": [

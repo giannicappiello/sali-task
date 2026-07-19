@@ -41,6 +41,7 @@ function supabaseAdmin() {
 
 async function verifyAdmin(req, supabase) {
   const authorization = req.headers.authorization || "";
+  if (process.env.CRON_SECRET && authorization === `Bearer ${process.env.CRON_SECRET}`) return;
   if (!authorization.startsWith("Bearer ")) throw Object.assign(new Error("Sessione mancante."), { status: 401 });
   const token = authorization.slice(7);
   const { data: { user }, error } = await supabase.auth.getUser(token);

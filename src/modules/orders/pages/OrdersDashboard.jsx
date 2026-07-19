@@ -3,6 +3,7 @@ import { Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
+import { runMexalEventAutomation } from "../services/mexalEventAutomation";
 
 export default function OrdersDashboard() {
   const navigate = useNavigate();
@@ -29,6 +30,7 @@ export default function OrdersDashboard() {
   });
 
   const [loading, setLoading] = useState(true);
+  const [preparing, setPreparing] = useState(false);
 
   useEffect(() => {
     if (!accessLoading) loadStats();
@@ -123,6 +125,12 @@ export default function OrdersDashboard() {
     setLoading(false);
   }
 
+  async function openNewOrder() {
+    setPreparing(true);
+    try { const result = await runMexalEventAutomation("before_new_order"); if (!result.interrupted) navigate("/ordini/nuovo"); }
+    finally { setPreparing(false); }
+  }
+
   function getAccessDescription() {
     if (isAdmin) {
       return "Accesso amministratore: tutti gli agenti, clienti e ordini.";
@@ -155,9 +163,9 @@ export default function OrdersDashboard() {
     <div className="orders-page">
       <div className="orders-toolbar">
         <div />
-        <button className="orders-primary" type="button" onClick={() => navigate("/ordini/nuovo")}>
+        <button className="orders-primary" type="button" onClick={openNewOrder} disabled={preparing}>
           <Plus size={18} />
-          Nuovo ordine
+          {preparing ? "Preparazione Mexal…" : "Nuovo ordine"}
         </button>
       </div>
       <div className="orders-kpi-grid">

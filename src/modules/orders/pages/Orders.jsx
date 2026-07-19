@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Plus, Search } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
+import { runMexalEventAutomation } from "../services/mexalEventAutomation";
 
 export default function Orders() {
   const navigate = useNavigate();
@@ -20,6 +21,8 @@ export default function Orders() {
   const [search, setSearch] = useState("");
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [loading, setLoading] = useState(true);
+  const [preparing, setPreparing] = useState(false);
+  const [prepareError, setPrepareError] = useState("");
 
   useEffect(() => {
     if (!accessLoading) loadOrders();
@@ -31,8 +34,14 @@ export default function Orders() {
     JSON.stringify(visibleAgents),
   ]);
 
-  function openNewOrder() {
-    navigate("/ordini/nuovo");
+  async function openNewOrder(continueAnyway = false) {
+    setPreparing(true); setPrepareError("");
+    try {
+      const result = await runMexalEventAutomation("before_new_order");
+      if (result.interrupted && !continueAnyway) { setPrepareError("Una preparazione obbligatoria Mexal non è riuscita. Riprova oppure annulla."); return; }
+      navigate("/ordini/nuovo");
+    } catch (error) { setPrepareError(error.message || "Impossibile preparare il nuovo ordine."); }
+    finally { setPreparing(false); }
   }
 
   async function loadOrders() {
@@ -114,6 +123,8 @@ export default function Orders() {
         )}
       </div>
 
+      {preparing && <div className="orders-alert">Preparazione nuovo ordine: esecuzione automazioni Mexal configurate…</div>}
+      {prepareError && <div className="orders-alert orders-alert-error">{prepareError}<button type="button" className="orders-primary" onClick={() => openNewOrder()}>Riprova</button><button type="button" onClick={() => setPrepareError("")}>Annulla</button></div>}
       {location.state?.message && (
         <div className="orders-alert orders-alert-success">{location.state.message}</div>
       )}

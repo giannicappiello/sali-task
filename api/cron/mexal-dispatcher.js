@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { cleanupStaleRuns } from "../mexal/lib/syncRuns.js";
 
 const DEFAULT_ORDER = ["clients", "products", "commercial_conditions", "document_series", "stocks", "orders"];
 
@@ -82,6 +83,7 @@ export default async function handler(req, res) {
   }
   try {
     const admin = createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false, autoRefreshToken: false } });
+    await cleanupStaleRuns(admin);
     const { data: schedules, error } = await admin.from("mexal_sync_schedules").select("id,sync_type,enabled,schedule_mode,batch_size,execution_order").eq("enabled", true).order("execution_order", { ascending: true });
     if (error) throw error;
     const rank = new Map(DEFAULT_ORDER.map((type, index) => [type, index]));

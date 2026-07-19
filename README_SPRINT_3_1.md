@@ -22,4 +22,4 @@ segreti, in `mexal_sync_runs.metadata.diagnostics`: endpoint, stato HTTP, tipo e
 chiavi root, array trovati, percorsi candidati e un campione limitato. L'amministratore
 può aprirla e copiarla dalla pagina **Serie documenti**. Questo è intenzionalmente lo
 strumento di verifica della forma reale quando la risposta JSON non contiene record
-riconoscibili; non vengono inventati alias per adattare oggetti estranei.
+riconoscibili; la struttura reale resta da verificare con la prima chiamata in produzione e non vengono inventati alias per adattare oggetti estranei.

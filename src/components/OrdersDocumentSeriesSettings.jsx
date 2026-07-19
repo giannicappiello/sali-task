@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Clipboard, RefreshCw, Save } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
+import { customerOrderSeriesOptions } from "./documentSeriesOptions";
 
 async function accessToken() {
   const { data, error } = await supabase.auth.getSession();
@@ -77,8 +78,8 @@ export default function OrdersDocumentSeriesSettings({ canManage }) {
     await navigator.clipboard.writeText(JSON.stringify(diagnostics, null, 2));
     setMessageType("success"); setMessage("Diagnostica copiata come JSON.");
   }
-  const ocmOptions = useMemo(() => series.filter((item) => String(item.tipo_documento || item.sigla_documento || "").toUpperCase() === "OCM"), [series]);
-  const ocxOptions = useMemo(() => series.filter((item) => String(item.tipo_documento || item.sigla_documento || "").toUpperCase() === "OCX"), [series]);
+  // OCM and OCX are choices made by the administrator: both use the same compatible OC series.
+  const orderSeriesOptions = useMemo(() => customerOrderSeriesOptions(series), [series]);
 
   if (loading) return <div style={{ padding: 20 }}>Caricamento serie documenti...</div>;
 
@@ -89,12 +90,12 @@ export default function OrdersDocumentSeriesSettings({ canManage }) {
         <button type="button" onClick={sync} disabled={!canManage || syncing} style={{ display: "inline-flex", gap: 8, alignItems: "center", padding: "10px 14px" }}><RefreshCw size={17} className={syncing ? "spin" : ""} />{syncing ? "Sincronizzazione..." : "Sincronizza da Mexal"}</button><button type="button" onClick={openDiagnostics} disabled={!canManage} style={{ padding: "10px 14px" }}>Apri diagnostica</button>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr)) auto", gap: 16, marginTop: 20, alignItems: "end" }}>
-        <label><strong>Serie OCM</strong><select value={config.serie_ocm} disabled={!canManage} onChange={(e) => setConfig((c) => ({ ...c, serie_ocm: e.target.value }))} style={{ width: "100%", minHeight: 42, marginTop: 8 }}><option value="">Seleziona...</option>{ocmOptions.map((item) => <option key={`ocm-${item.source_key}`} value={item.serie}>{item.sigla_documento || item.tipo_documento} · Serie {item.serie} · {item.descrizione}</option>)}</select></label>
-        <label><strong>Serie OCX</strong><select value={config.serie_ocx} disabled={!canManage} onChange={(e) => setConfig((c) => ({ ...c, serie_ocx: e.target.value }))} style={{ width: "100%", minHeight: 42, marginTop: 8 }}><option value="">Seleziona...</option>{ocxOptions.map((item) => <option key={`ocx-${item.source_key}`} value={item.serie}>{item.sigla_documento || item.tipo_documento} · Serie {item.serie} · {item.descrizione}</option>)}</select></label>
+        <label><strong>Serie OCM</strong><select value={config.serie_ocm} disabled={!canManage} onChange={(e) => setConfig((c) => ({ ...c, serie_ocm: e.target.value }))} style={{ width: "100%", minHeight: 42, marginTop: 8 }}><option value="">Seleziona...</option>{orderSeriesOptions.map((item) => <option key={`ocm-${item.source_key}`} value={item.serie}>{item.sigla_documento || item.tipo_documento} · Serie {item.serie} · {item.descrizione}</option>)}</select></label>
+        <label><strong>Serie OCX</strong><select value={config.serie_ocx} disabled={!canManage} onChange={(e) => setConfig((c) => ({ ...c, serie_ocx: e.target.value }))} style={{ width: "100%", minHeight: 42, marginTop: 8 }}><option value="">Seleziona...</option>{orderSeriesOptions.map((item) => <option key={`ocx-${item.source_key}`} value={item.serie}>{item.sigla_documento || item.tipo_documento} · Serie {item.serie} · {item.descrizione}</option>)}</select></label>
         <button type="button" onClick={save} disabled={!canManage || saving} style={{ minHeight: 42, display: "inline-flex", gap: 8, alignItems: "center", padding: "10px 16px" }}><Save size={17} />{saving ? "Salvataggio..." : "Salva serie"}</button>
       </div>
       {message && <div role="status" style={{ marginTop: 14, padding: 12, borderRadius: 10, background: messageType === "error" ? "#fef2f2" : messageType === "success" ? "#f0fdf4" : "#f8fafc", color: messageType === "error" ? "#991b1b" : "#334155" }}>{message}</div>}
-      {!ocmOptions.length && !ocxOptions.length && <div style={{ marginTop: 14, color: "#b45309" }}>Nessuna serie OCM/OCX disponibile: esegui prima la sincronizzazione.</div>}
+      {!orderSeriesOptions.length && <div style={{ marginTop: 14, color: "#b45309" }}>Nessuna serie OCM/OCX disponibile: esegui prima la sincronizzazione.</div>}
       {diagnosticsOpen && <div role="dialog" aria-label="Diagnostica Mexal" style={{ marginTop: 16, padding: 14, border: "1px solid #cbd5e1", borderRadius: 10, background: "#f8fafc" }}><div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}><strong>Diagnostica amministrativa Mexal</strong><button type="button" onClick={copyDiagnostics} disabled={!diagnostics} style={{ display: "inline-flex", gap: 6, alignItems: "center" }}><Clipboard size={15} />Copia JSON</button></div>{diagnostics ? <pre style={{ overflow: "auto", maxHeight: 360, whiteSpace: "pre-wrap" }}>{JSON.stringify(diagnostics, null, 2)}</pre> : <p>Nessuna diagnostica disponibile per l'ultima run.</p>}</div>}
     </section>
   );

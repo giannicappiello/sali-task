@@ -41,6 +41,7 @@ function supabaseAdmin() {
 
 async function verifyAdmin(req, supabase) {
   const authorization = req.headers.authorization || "";
+  if (process.env.CRON_SECRET && authorization === `Bearer ${process.env.CRON_SECRET}`) return null;
   if (!authorization.startsWith("Bearer ")) throw Object.assign(new Error("Sessione mancante."), { status: 401 });
   const token = authorization.slice(7);
   const { data: { user }, error } = await supabase.auth.getUser(token);
@@ -83,7 +84,7 @@ function mexalClient() {
   };
 }
 
-const SERIES_FIELDS = new Set(["serie", "numero_serie", "nr_serie", "codice_serie", "sigla", "sigla_documento", "tipo_documento", "documento", "descrizione"]);
+const SERIES_FIELDS = new Set(["serie", "numero_serie", "nr_serie", "codice_serie", "sigla", "sigla_documento", "tipo_documento", "documento", "descrizione", "descrizione_serie", "des_serie"]);
 const PREFERRED_KEYS = new Set(["data", "dati", "response", "risultati", "elenco", "righe", "documenti", "serie", "items", "records", "risorse", "result", "serie_documenti", "serie-documenti"]);
 
 function isSeriesRecord(value) {
@@ -115,7 +116,12 @@ export function extractRows(payload) {
     .map((entry) => ({ ...entry, compatible: entry.value.filter(isSeriesRecord), preferred: PREFERRED_KEYS.has(entry.path.split(".").pop()?.replace(/\[.*$/, "").toLowerCase()) }))
     .filter((entry) => entry.compatible.length);
   candidates.sort((a, b) => Number(b.preferred) - Number(a.preferred) || b.compatible.length - a.compatible.length || a.path.length - b.path.length);
-  return candidates[0]?.compatible || [];
+  if (candidates[0]?.compatible?.length) return candidates[0].compatible;
+  // Mexal può annidare una singola serie sotto uno dei contenitori supportati;
+  // raccogliamo quindi i record ricorsivamente anche quando non esiste un array.
+  const found = []; const seen = new WeakSet();
+  const visit = (value) => { if (!value || typeof value !== "object" || seen.has(value)) return; seen.add(value); if (isSeriesRecord(value)) found.push(value); Object.values(value).forEach(visit); };
+  visit(payload); return found;
 }
 
 function normalizeRow(row, index) {

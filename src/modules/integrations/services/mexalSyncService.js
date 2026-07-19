@@ -130,6 +130,20 @@ export async function loadSyncRuns(limit = 25) {
   return (data || []).map((run) => ({ ...run, records_read: run.processed, records_inserted: run.inserted, records_updated: run.updated, records_failed: run.failed, duration_ms: run.completed_at ? new Date(run.completed_at) - new Date(run.started_at) : null }));
 }
 
+export async function loadSyncSchedules() {
+  const { data, error } = await supabase.from("mexal_sync_schedules").select("*").order("sync_type");
+  if (error) throw error;
+  return data || [];
+}
+
+export async function saveSyncSchedule(schedule) {
+  // id is bigint: it is deliberately passed through untouched, never coerced to UUID.
+  const payload = { ...schedule, updated_at: new Date().toISOString() };
+  const { data, error } = await supabase.from("mexal_sync_schedules").upsert(payload, { onConflict: "sync_type" }).select().single();
+  if (error) throw error;
+  return data;
+}
+
 export async function loadRunDetails(runId) {
   if (!runId) return { details: [], errors: [] };
 

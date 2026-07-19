@@ -9,6 +9,7 @@ const [api, lifecycle, dashboard, products, clients] = await Promise.all([
   readFile("server/mexal/sync-clients.js", "utf8"),
 ]);
 assert.match(api, /cancelSyncRun/);
+assert.match(api, /isSyncRunClosedError[\s\S]*status\(409\)/);
 assert.match(lifecycle, /"cancelled"/);
 assert.match(api, /stopped_manually: true/);
 assert.match(dashboard, /ARRESTA SINCRONIZZAZIONE/);

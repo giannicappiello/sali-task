@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "../../api/mexal/lib/auth.js";
-import { cancelSyncRun } from "../../api/mexal/lib/syncRuns.js";
+import { cancelSyncRun, isSyncRunClosedError } from "../../api/mexal/lib/syncRuns.js";
 
 const STOPPED_MESSAGE = "Sincronizzazione arrestata manualmente dall’amministratore.";
 
@@ -31,6 +31,7 @@ export default async function handler(req, res) {
     if (!data) return res.status(409).json({ error: "La run è stata già chiusa." });
     return res.status(200).json({ run: data, logicalStop: true });
   } catch (error) {
+    if (isSyncRunClosedError(error)) return res.status(409).json({ error: "La run è stata già chiusa.", run: error.run });
     return res.status(Number(error.status || 500)).json({ error: error.message || "Impossibile arrestare la sincronizzazione." });
   }
 }

@@ -80,10 +80,26 @@ async function closeSyncRun(admin, id, status, values = {}) {
   const { data: current, error: readError } = await admin.from("mexal_sync_runs").select("started_at").eq("id", numericId).maybeSingle();
   if (readError) throw readError;
   if (!current) throw new Error("Run Mexal non trovata.");
-  const { error } = await admin.from("mexal_sync_runs").update(finishedValues(status, { ...values, started_at: current.started_at })).eq("id", numericId);
+  const { data, error } = await admin
+    .from("mexal_sync_runs")
+    .update(finishedValues(status, { ...values, started_at: current.started_at }))
+    .eq("id", numericId)
+    .eq("status", "running")
+    .select("id,status")
+    .maybeSingle();
   if (error) throw error;
+  if (!data) {
+    const { data: closed, error: closedError } = await admin.from("mexal_sync_runs").select("id,status").eq("id", numericId).maybeSingle();
+    if (closedError) throw closedError;
+    throw Object.assign(new Error(closed ? `La run Mexal è già stata chiusa con stato ${closed.status}.` : "Run Mexal non trovata."), {
+      status: closed ? 409 : 404,
+      code: "MEXAL_SYNC_RUN_CLOSED",
+      run: closed || null,
+    });
+  }
   return numericId;
 }
+export const isSyncRunClosedError = (error) => error?.code === "MEXAL_SYNC_RUN_CLOSED";
 export const completeSyncRun = (admin, id, values = {}) => closeSyncRun(admin, id, "completed", values);
 export const failSyncRun = (admin, id, errorMessage, values = {}) => closeSyncRun(admin, id, "failed", { ...values, failed: Math.max(1, Number(values.failed || 0)), error_message: String(errorMessage || "Errore sincronizzazione.").slice(0, 1000) });
 export const cancelSyncRun = (admin, id, values = {}) => closeSyncRun(admin, id, "cancelled", { ...values, failed: Math.max(1, Number(values.failed || 0)), error_message: String(values.error_message || "Sincronizzazione annullata.").slice(0, 1000) });

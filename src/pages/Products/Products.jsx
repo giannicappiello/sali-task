@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { FileText, Package, RefreshCw, Search, Megaphone, Factory } from "lucide-react";
+import { FileText, Package, Search, Megaphone, Factory } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
-import { useAuth } from "../../contexts/AuthContext";
-
-const BATCH_SIZE = 8;
 
 function getProductDisplayName(product) {
   const raw = product?.json_mexal;
@@ -49,23 +46,15 @@ function getProductCode(product) {
 }
 
 export default function Products() {
-  const { profile, isAdminUser } = useAuth();
   const [products, setProducts] = useState([]);
   const [query, setQuery] = useState("");
   const [activeSection, setActiveSection] = useState("IT");
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [canSyncMexal, setCanSyncMexal] = useState(false);
-  const [syncingReal, setSyncingReal] = useState(false);
-  const [syncResult, setSyncResult] = useState(null);
 
   useEffect(() => {
     loadProducts();
   }, []);
-
-  useEffect(() => {
-    loadSyncPermission();
-  }, [profile?.id, isAdminUser]);
 
   async function loadProducts() {
     setLoading(true);
@@ -83,145 +72,6 @@ export default function Products() {
     const rows = data || [];
     setProducts(rows);
     setLoading(false);
-  }
-
-  async function loadSyncPermission() {
-    if (!profile?.id) {
-      setCanSyncMexal(false);
-      return;
-    }
-
-    if (isAdminUser) {
-      setCanSyncMexal(true);
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from("integrazioni_utenti")
-      .select("enabled,ruolo_ordini")
-      .eq("utente_id", profile.id)
-      .eq("modulo", "gestione_ordini")
-      .maybeSingle();
-
-    if (error) {
-      console.error("Errore autorizzazione sincronizzazione Mexal:", error.message);
-      setCanSyncMexal(false);
-      return;
-    }
-
-    setCanSyncMexal(
-      data?.enabled === true && data?.ruolo_ordini === "backoffice"
-    );
-  }
-
-  async function callMexalApi(body) {
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
-
-    if (sessionError || !session?.access_token) {
-      throw new Error("Sessione scaduta. Effettua nuovamente l'accesso.");
-    }
-
-    const response = await fetch("/api/mexal/sync-products", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify(body),
-    });
-
-    const text = await response.text();
-    let result;
-
-    try {
-      result = text ? JSON.parse(text) : {};
-    } catch {
-      result = { error: text || "Risposta API non valida." };
-    }
-
-    if (!response.ok) {
-      throw new Error(result.error || `Errore API (${response.status}).`);
-    }
-
-    return result;
-  }
-
-  async function synchronizeMexal() {
-    if (!canSyncMexal) return;
-
-    if (
-      !window.confirm(
-        "Avviare la sincronizzazione del catalogo con Mexal?\n\n" +
-          "Sali-task aggiornerà esclusivamente la propria copia in sola lettura."
-      )
-    ) {
-      return;
-    }
-
-    setSyncingReal(true);
-    setSyncResult(null);
-
-    let offset = 0;
-    const totals = {
-      inseriti: 0,
-      aggiornati: 0,
-      immagini_salvate: 0,
-      esclusi_non_attivi: 0,
-      esclusi_fuori_produzione: 0,
-      errori: [],
-    };
-
-    try {
-      while (true) {
-        const result = await callMexalApi({
-          action: "sync",
-          offset,
-          batchSize: BATCH_SIZE,
-          replaceStart: offset === 0,
-        });
-
-        totals.inseriti += Number(result.inseriti || 0);
-        totals.aggiornati += Number(result.aggiornati || 0);
-        totals.immagini_salvate += Number(result.immagini_salvate || 0);
-        totals.esclusi_non_attivi += Number(result.esclusi_non_attivi || 0);
-        totals.esclusi_fuori_produzione += Number(
-          result.esclusi_fuori_produzione || 0
-        );
-        totals.errori.push(...(result.errori || []));
-
-        offset = Number(result.prossimo_offset || offset + BATCH_SIZE);
-
-        setSyncResult({
-          ...totals,
-          totale: result.totale,
-          elaborati: Math.min(offset, result.totale),
-          completato: result.completato,
-        });
-
-        if (result.completato) break;
-      }
-
-      await loadProducts();
-
-      alert(
-        `Sincronizzazione completata.\n\n` +
-          `Inseriti: ${totals.inseriti}\n` +
-          `Aggiornati: ${totals.aggiornati}\n` +
-          `Immagini catalogo: ${totals.immagini_salvate}\n` +
-          `Errori: ${totals.errori.length}`
-      );
-    } catch (error) {
-      setSyncResult((current) => ({
-        ...(current || totals),
-        error: error.message,
-      }));
-      alert(error.message);
-    } finally {
-      setSyncingReal(false);
-    }
   }
 
   const sectionCounts = useMemo(() => {
@@ -323,43 +173,7 @@ export default function Products() {
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
-
-        {canSyncMexal && (
-          <button
-            className="primary-action"
-            type="button"
-            onClick={synchronizeMexal}
-            disabled={syncingReal}
-          >
-            <RefreshCw size={18} className={syncingReal ? "spin" : ""} />
-            {syncingReal ? "Sincronizzazione..." : "Sincronizza Mexal"}
-          </button>
-        )}
       </div>
-
-      {syncResult && (
-        <div className="panel" style={{ marginBottom: 18 }}>
-          <h3>Risultato sincronizzazione</h3>
-          {syncResult.error && (
-            <p style={{ color: "#b91c1c" }}>{syncResult.error}</p>
-          )}
-          <div className="mini-meta">
-            {syncResult.totale !== undefined && (
-              <span>
-                Avanzamento: {syncResult.elaborati || 0}/{syncResult.totale}
-              </span>
-            )}
-            <span>Inseriti: {syncResult.inseriti || 0}</span>
-            <span>Aggiornati: {syncResult.aggiornati || 0}</span>
-            <span>Immagini catalogo: {syncResult.immagini_salvate || 0}</span>
-            <span>Esclusi non attivi: {syncResult.esclusi_non_attivi || 0}</span>
-            <span>
-              Esclusi Fuori Produzione: {syncResult.esclusi_fuori_produzione || 0}
-            </span>
-            <span>Errori: {syncResult.errori?.length || 0}</span>
-          </div>
-        </div>
-      )}
 
       <div className="product-layout">
         <div className="panel product-list-panel">

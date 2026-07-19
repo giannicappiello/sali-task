@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Save } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
-import OrdersDocumentSeriesSettings from "./OrdersDocumentSeriesSettings";
 
 const MODULE_CODE = "gestione_ordini";
 
@@ -321,7 +320,6 @@ export default function OrdersAccessSettings({ canManage }) {
 
   return (
     <div className="panel settings-panel">
-      <OrdersDocumentSeriesSettings canManage={canManage} />
       <div className="panel-header">
         <div>
           <h3>Accessi Gestione Ordini</h3>

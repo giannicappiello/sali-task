@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
+import { Plus } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
 
 export default function OrdersDashboard() {
+  const navigate = useNavigate();
   const {
     loading: accessLoading,
     visibleAgents,
@@ -150,6 +153,13 @@ export default function OrdersDashboard() {
 
   return (
     <div className="orders-page">
+      <div className="orders-toolbar">
+        <div />
+        <button className="orders-primary" type="button" onClick={() => navigate("/ordini/nuovo")}>
+          <Plus size={18} />
+          Nuovo ordine
+        </button>
+      </div>
       <div className="orders-kpi-grid">
         <Kpi label="Clienti assegnati" value={stats.clienti} />
         <Kpi label="Ordini del mese" value={stats.ordiniMese} />

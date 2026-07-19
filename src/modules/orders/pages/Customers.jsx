@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { RefreshCw, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
-import { requestOrderSync } from "../services/orderSync";
 
 const PAGE_SIZE = 1000;
 
@@ -29,16 +28,12 @@ export default function Customers() {
     visibleAgents,
     canSeeAll,
     canAccessOrders,
-    isAdmin,
-    isBackoffice,
   } = useOrdersAccess();
 
   const [rows, setRows] = useState([]);
   const [agentNames, setAgentNames] = useState({});
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState(null);
 
   useEffect(() => {
     if (!accessLoading) loadCustomers();
@@ -148,31 +143,6 @@ export default function Customers() {
     }
   }
 
-  async function syncCustomers() {
-    if (syncing || (!isAdmin && !isBackoffice)) return;
-
-    setSyncing(true);
-    setSyncResult(null);
-
-    try {
-      const result = await requestOrderSync("clienti", { force: true });
-      setSyncResult(result);
-      await loadCustomers();
-
-      alert(
-        `Sincronizzazione clienti completata.\n\n` +
-          `Clienti 501 trovati: ${result.letti_mexal || 0}\n` +
-          `Inseriti/Aggiornati: ${result.inseriti_o_aggiornati || 0}\n` +
-          `Disattivati: ${result.disattivati || 0}\n` +
-          `Errori: ${result.errori?.length || 0}`
-      );
-    } catch (error) {
-      alert(error.message || "Errore sincronizzazione clienti Mexal.");
-    } finally {
-      setSyncing(false);
-    }
-  }
-
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return rows;
@@ -199,28 +169,7 @@ export default function Customers() {
             placeholder="Cerca cliente per qualsiasi dato..."
           />
         </div>
-
-        {(isAdmin || isBackoffice) && (
-          <button
-            type="button"
-            className="orders-primary"
-            onClick={syncCustomers}
-            disabled={syncing}
-          >
-            <RefreshCw size={18} className={syncing ? "spin" : ""} />
-            {syncing ? "Sincronizzazione..." : "Sincronizza clienti Mexal"}
-          </button>
-        )}
       </div>
-
-      {syncResult && (
-        <div className="orders-panel orders-sync-summary">
-          <strong>Ultima sincronizzazione:</strong>{" "}
-          {syncResult.inseriti_o_aggiornati || 0} clienti aggiornati, {" "}
-          {syncResult.disattivati || 0} disattivati, {" "}
-          {syncResult.errori?.length || 0} errori.
-        </div>
-      )}
 
       <div className="orders-panel orders-customers-panel">
         <div className="orders-table-wrap orders-customers-table-wrap">

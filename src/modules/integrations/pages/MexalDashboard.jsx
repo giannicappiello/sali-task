@@ -27,6 +27,7 @@ import {
   loadCommercialCounts,
   invokeClientsSync,
   invokeDocumentSeriesSync,
+  invokeSyncAll,
   invokeProductsSync,
   invokeStocksSync,
   loadMexalEntityCounts,
@@ -214,14 +215,7 @@ export default function MexalDashboard() {
     } finally { setActiveSync(null); }
   }
 
-  async function runAllSync() {
-    if (!isAdminUser || activeSync) return;
-    const phases = [["clients", invokeClientsSync], ["commercial_conditions", () => invokeCommercialConditionsSync({ mode: "incremental", syncPayments: true })], ["document_series", invokeDocumentSeriesSync], ["products", invokeProductsSync], ["stocks", invokeStocksSync]];
-    setActiveSync("sync_all"); const completed = [];
-    try { for (const [type, execute] of phases) { setPhase(`Fase in corso: ${type}`); setMessage({ type: "info", text: `Sincronizza tutto: ${type}... (Agenti esclusi: endpoint non configurato)` }); await execute(); completed.push(type); } setMessage({ type: "success", text: `Sincronizza tutto completata. Fasi: ${completed.join(", ")}. Agenti esclusi: endpoint non configurato.` }); await refreshData(); }
-    catch (error) { setMessage({ type: "error", text: `Sincronizza tutto interrotta dopo ${completed.join(", ") || "nessuna fase"}: ${error.message}` }); }
-    finally { setActiveSync(null); setPhase(""); }
-  }
+  async function runAllSync() { if (!isAdminUser || activeSync) return; setActiveSync("sync_all"); try { const result = await invokeSyncAll(); setMessage({ type: "success", text: `Sincronizza tutto completata (run ${result.run_id}). ${result.excluded}` }); await refreshData(); } catch (error) { setMessage({ type: "error", text: error.message || "Sincronizza tutto fallita." }); } finally { setActiveSync(null); } }
 
   async function stopRun(run) {
     if (!isAdminUser || stoppingRunId || run?.status !== "running") return;

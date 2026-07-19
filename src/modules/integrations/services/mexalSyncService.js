@@ -202,3 +202,5 @@ export async function loadCommercialCounts() {
 
   return Object.fromEntries(results);
 }
+
+export async function invokeSyncAll() { return invokeMexalApi("/api/mexal/sync-all", {}); }

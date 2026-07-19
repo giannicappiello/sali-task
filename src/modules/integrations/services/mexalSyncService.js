@@ -26,18 +26,30 @@ async function invokeMexalApi(path, payload) {
 export async function invokeProductsSync(onProgress = () => {}) {
   let offset = 0;
   let syncRunId = null;
-  const total = { processed: 0, inserted: 0, updated: 0, errors: [] };
+  const total = { processed: 0, received: 0, filtered: 0, detailLoaded: 0, inserted: 0, updated: 0, prodottiInserted: 0, prodottiUpdated: 0, skipped: 0, errors: [], diagnostics: null };
   while (true) {
     const data = await invokeMexalApi("/api/mexal/sync-products", {
       action: "sync", offset, batchSize: 8, syncRunId, origin: "integrations",
     });
     syncRunId = data.sync_run_id || syncRunId;
     total.processed += Number(data.elaborati || 0);
-    total.inserted += Number(data.inseriti || 0);
-    total.updated += Number(data.aggiornati || 0);
+    total.received = Number(data.received ?? total.received);
+    total.filtered = Number(data.filtered ?? total.filtered);
+    total.detailLoaded += Number(data.detailLoaded || data.detail_loaded || 0);
+    total.inserted += Number((data.inserted ?? data.inseriti) || 0);
+    total.updated += Number((data.updated ?? data.aggiornati) || 0);
+    total.prodottiInserted += Number(data.prodottiInserted || 0);
+    total.prodottiUpdated += Number(data.prodottiUpdated || 0);
+    total.skipped += Number(data.skipped || 0);
+    total.diagnostics = data.diagnostics || total.diagnostics;
     total.errors.push(...(data.errori || []));
     onProgress({ ...total, total: Number(data.totale || 0) });
-    if (data.completato) return { ...total, syncRunId };
+    if (data.completato) {
+      if (total.received > 0 && total.inserted + total.updated + total.prodottiInserted + total.prodottiUpdated === 0) {
+        throw new Error("La sincronizzazione ha ricevuto articoli da Mexal ma non ha prodotto righe valide per ordini_prodotti_cache.");
+      }
+      return { ...total, syncRunId, completed: true };
+    }
     const next = Number(data.prossimo_offset);
     if (!Number.isFinite(next) || next <= offset) throw new Error("Paginazione prodotti Mexal non valida.");
     offset = next;
@@ -75,7 +87,7 @@ export async function loadMexalRuns(type, limit = 1) {
 
 export async function loadMexalEntityCounts() {
   const [products, clients, stocks, orders] = await Promise.all([
-    supabase.from("prodotti").select("*", { count: "exact", head: true }).eq("attivo_mexal", true).eq("mostra_in_app", true),
+    supabase.from("ordini_prodotti_cache").select("*", { count: "exact", head: true }).eq("attivo_mexal", true).eq("mostra_in_app", true),
     supabase.from("ordini_clienti_cache").select("*", { count: "exact", head: true }).eq("attivo_mexal", true),
     supabase.from("prodotti").select("*", { count: "exact", head: true }).not("ultimo_sync_mexal", "is", null),
     supabase.from("ordini_testate").select("*", { count: "exact", head: true }).eq("stato_sincronizzazione", "non_inviato"),

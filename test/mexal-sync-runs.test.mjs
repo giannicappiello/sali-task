@@ -1,10 +1,59 @@
 import assert from "node:assert/strict";
-import { completeSyncRun } from "../api/mexal/lib/syncRuns.js";
+import { cancelSyncRun, completeSyncRun, failSyncRun, failSyncRunUnlessClosed, isSyncRunClosedError, timeoutSyncRun } from "../api/mexal/lib/syncRuns.js";
 
-const calls = [];
-const admin = { from() { return { select() { return { eq() { return { maybeSingle: async () => ({ data: { started_at: "2026-07-19T10:00:00Z" }, error: null }) }; } }; }, update(values) { calls.push(values); return { eq(_column, id) { assert.equal(typeof id, "number"); assert.equal(id, 15); return Promise.resolve({ error: null }); } }; } }; } };
-await completeSyncRun(admin, 15, { processed: 1 });
-assert.equal(calls[0].status, "completed");
-assert.equal(calls[0].processed, 1);
-assert.ok(Number.isFinite(calls[0].duration_ms));
-console.log("mexal sync runs: runId bigint 15 read and updated without UUID casts");
+function lifecycleAdmin(initialStatus, updateError = null) {
+  const calls = [];
+  const run = { id: 15, status: initialStatus, started_at: "2026-07-19T10:00:00Z" };
+  const read = (fields) => ({
+    eq() {
+      return { maybeSingle: async () => ({ data: fields === "started_at" ? { started_at: run.started_at } : { id: run.id, status: run.status }, error: null }) };
+    },
+  });
+  return {
+    calls,
+    from() {
+      return {
+        select: read,
+        update(values) {
+          calls.push(values);
+          return {
+            eq(column, value) {
+              assert.equal(column, "id"); assert.equal(value, 15);
+              return {
+                eq(statusColumn, statusValue) {
+                  assert.equal(statusColumn, "status"); assert.equal(statusValue, "running");
+                  return { select() { return { maybeSingle: async () => {
+                    if (updateError) return { data: null, error: updateError };
+                    if (run.status !== "running") return { data: null, error: null };
+                    run.status = values.status;
+                    return { data: { id: run.id, status: run.status }, error: null };
+                  } }; } };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+}
+
+const cancelled = lifecycleAdmin("cancelled");
+assert.equal(await failSyncRunUnlessClosed(cancelled, 15, "errore durante sync"), false, "una run cancellata non viene trasformata in failed e non interrompe il catch");
+const databaseError = Object.assign(new Error("database non disponibile"), { code: "08006" });
+await assert.rejects(() => failSyncRunUnlessClosed(lifecycleAdmin("running", databaseError), 15, "errore durante sync"), databaseError, "gli errori DB reali vengono propagati");
+
+for (const [initial, close, expected] of [
+  ["completed", failSyncRun, "completed non può diventare failed"],
+  ["cancelled", completeSyncRun, "cancelled non può diventare completed"],
+  ["failed", cancelSyncRun, "failed non può diventare cancelled"],
+]) {
+  const admin = lifecycleAdmin(initial);
+  await assert.rejects(() => close(admin, 15, "errore"), (error) => isSyncRunClosedError(error) && error.status === 409, expected);
+  assert.equal(admin.calls.length, 1);
+}
+
+const running = lifecycleAdmin("running");
+await timeoutSyncRun(running, 15);
+assert.equal(running.calls[0].status, "timeout", "una run running viene chiusa correttamente");
+console.log("mexal sync runs: terminal states cannot be overwritten and running runs close atomically");

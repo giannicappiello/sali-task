@@ -1,5 +1,6 @@
 import https from "node:https";
 import { createClient } from "@supabase/supabase-js";
+import { completeSyncRun, createSyncRun, failSyncRunUnlessClosed } from "../../api/mexal/lib/syncRuns.js";
 
 const MODULE_CODE = "gestione_ordini";
 const CLIENT_PREFIX = "501";
@@ -512,12 +513,8 @@ export default async function handler(req, res) {
 
     await verifyUser(req, supabase);
 
-    const { data: run, error: runError } = await supabase
-      .from("mexal_sync_runs")
-      .insert({ sync_type: "clients", status: "running", source: "manual", metadata: { source: "manual" } })
-      .select("id")
-      .single();
-    if (runError) throw runError;
+    const run = await createSyncRun(supabase, { syncType: "clients", source: "manual" });
+    if (run.duplicate) throw Object.assign(new Error("È già presente una sincronizzazione clienti in corso."), { status: 409 });
     runId = run.id;
 
     const mexal = buildMexalClient();
@@ -630,17 +627,14 @@ export default async function handler(req, res) {
       }
     }
 
-    const status = result.errori.length ? "completed_with_errors" : "completed";
-    await supabase.from("mexal_sync_runs").update({
-      status,
-      completed_at: new Date().toISOString(),
+    await completeSyncRun(supabase, runId, {
       processed: result.letti_mexal,
       inserted: result.inseriti,
       updated: result.aggiornati,
       skipped: 0,
       failed: result.errori.length,
       error_message: result.errori.length ? "Alcuni lotti clienti non sono stati salvati." : null,
-    }).eq("id", runId);
+    });
     return res.status(200).json({ ...result, success: true, sync_run_id: runId });
   } catch (error) {
     console.error("Errore generale sincronizzazione clienti Mexal", {
@@ -649,7 +643,7 @@ export default async function handler(req, res) {
     });
 
     if (supabase && runId) {
-      await supabase.from("mexal_sync_runs").update({ status: "failed", completed_at: new Date().toISOString(), error_message: error?.message || "Errore sincronizzazione clienti." }).eq("id", runId).eq("status", "running");
+      await failSyncRunUnlessClosed(supabase, runId, error?.message || "Errore sincronizzazione clienti.");
     }
     return res.status(Number(error?.status || 500)).json({
       error: error?.message || "Errore sincronizzazione clienti Mexal.",

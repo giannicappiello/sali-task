@@ -149,12 +149,12 @@ function sendHandlerResponse(res, phase, execution) {
   return sendSuccess(res, response.statusCode, payload);
 }
 
-async function syncAll(req, res, body, admin) {
+async function syncAll(req, res, body, supabase) {
 
   const completedPhases = [];
   const results = [];
   for (const phase of SYNC_ALL_PHASES) {
-    const running = await findRunningSync(admin, phase);
+    const running = await findRunningSync(supabase, phase);
     if (running) return sendRunning(res, phase, running);
 
     const phaseRequest = { ...req, body: runPayload(body, phase) };
@@ -249,17 +249,17 @@ async function executeIdempotently(req, res, body, syncType, operation) {
 }
 
 async function createAdmin(req) {
-  const { supabase } = await requireAdmin(req, () => (
+  const { supabase, authUserId } = await requireAdmin(req, () => (
     createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false, autoRefreshToken: false } })
   ));
-  return supabase;
+  return { supabase, authUserId };
 }
 
 async function rulesGet(req, res) {
   const admin = await createAdmin(req);
   const [schedules, events] = await Promise.all([
-    admin.from("mexal_sync_schedules").select("*").order("execution_order", { ascending: true }),
-    admin.from("mexal_event_automations").select("*").order("event_key").order("execution_order", { ascending: true }),
+    admin.supabase.from("mexal_sync_schedules").select("*").order("execution_order", { ascending: true }),
+    admin.supabase.from("mexal_event_automations").select("*").order("event_key").order("execution_order", { ascending: true }),
   ]);
   if (schedules.error) throw schedules.error;
   if (events.error) throw events.error;
@@ -271,7 +271,7 @@ async function rulesSave(req, res, body) {
   const table = body.ruleType === "event" ? "mexal_event_automations" : "mexal_sync_schedules";
   const rule = body.rule && typeof body.rule === "object" ? body.rule : null;
   if (!rule) throw Object.assign(new Error("Regola automazione non valida."), { status: 400 });
-  const { data, error } = await admin.from(table).upsert(rule).select().single();
+  const { data, error } = await admin.supabase.from(table).upsert(rule).select().single();
   if (error) throw error;
   return res.status(200).json({ rule: data });
 }

@@ -1,0 +1,23 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { extractArticleRows } from "../api/mexal/sync-products.js";
+
+const payload = { dati: [{ codice: " IT0001 " }, { codice_articolo: "mkt-2" }, { codice: "IMP3" }, { codice: "NO4" }] };
+const rows = extractArticleRows(payload);
+assert.equal(rows.length, 4, "parses the real Mexal dati list wrapper");
+const api = await readFile("api/mexal/sync-products.js", "utf8");
+const service = await readFile("src/modules/integrations/services/mexalSyncService.js", "utf8");
+assert.match(api, /normalizeCode\(value\).*trim\(\)\.toUpperCase\(\)/s);
+assert.match(api, /ARTICLE_PREFIXES = \["IT", "MKT", "IMP"\]/);
+assert.match(api, /\.from\("ordini_prodotti_cache"\)/);
+assert.match(api, /onConflict: "codice_articolo"/);
+assert.match(api, /codice_articolo: code/);
+assert.match(api, /mappedByCode = new Map/);
+assert.match(api, /assertRunStillRunning[\s\S]*upsertOrdersProductsCache/);
+assert.match(api, /destinazione: "ordini_prodotti_cache"/);
+assert.match(api, /payload_type[\s\S]*root_keys[\s\S]*candidate_paths/);
+assert.doesNotMatch(api, /\.delete\(\).*ordini_prodotti_cache/s);
+assert.match(service, /ordini_prodotti_cache/);
+assert.match(service, /syncRunId = data\.sync_run_id \|\| syncRunId/);
+assert.match(service, /received > 0 && total\.inserted \+ total\.updated === 0/);
+console.log("Mexal product cache parser, filters, idempotent upsert, run continuity, stop checks and diagnostics are wired");

@@ -67,42 +67,101 @@ function createResponseCapture() {
   return response;
 }
 
+function errorDetails(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return {};
+  const { error, success, status, ok, ...details } = payload;
+  return details;
+}
+
+function normalizeDetails(details) {
+  if (!details) return {};
+  if (typeof details === "object" && !Array.isArray(details)) return details;
+  return { value: details };
+}
+
+function sendFailure(res, statusCode, phase, error, details = {}) {
+  return res.status(statusCode).json({
+    success: false,
+    status: "failed",
+    phase,
+    error: error || "Errore automazione Mexal.",
+    details: normalizeDetails(details),
+  });
+}
+
+function sendSuccess(res, statusCode, payload = {}) {
+  return res.status(statusCode).json({
+    ...payload,
+    success: true,
+    status: "completed",
+  });
+}
+
+async function executeHandler(req, runHandler) {
+  const response = createResponseCapture();
+  let handlerError;
+  try {
+    await runHandler(req, response);
+  } catch (error) {
+    handlerError = error;
+  }
+
+  const payload = response.payload;
+  const failed = Boolean(handlerError)
+    || response.statusCode < 200
+    || response.statusCode >= 300
+    || payload?.success === false
+    || payload?.ok === false;
+
+  return { response, payload, handlerError, failed };
+}
+
+function sendHandlerResponse(res, phase, execution) {
+  const { response, payload, handlerError, failed } = execution;
+  if (failed) {
+    return sendFailure(
+      res,
+      Number(handlerError?.status || response.statusCode || 500),
+      phase,
+      handlerError?.message || payload?.error || `Sincronizzazione ${phase} non riuscita.`,
+      handlerError?.details || errorDetails(payload),
+    );
+  }
+  return sendSuccess(res, response.statusCode, payload);
+}
+
 async function syncAll(req, res, body) {
   await createAdmin(req);
 
   const completedPhases = [];
   const results = [];
   for (const phase of SYNC_ALL_PHASES) {
-    const phaseResponse = createResponseCapture();
     const phaseRequest = { ...req, body: runPayload(body, phase) };
-    let handlerError = null;
-    try {
-      await RUN_HANDLERS[phase](phaseRequest, phaseResponse);
-    } catch (error) {
-      handlerError = error;
-    }
-
-    const result = phaseResponse.payload || (handlerError ? { error: handlerError.message } : undefined);
-    const failed = Boolean(handlerError) || phaseResponse.statusCode < 200 || phaseResponse.statusCode >= 300 || result?.success === false || result?.ok === false;
+    const execution = await executeHandler(phaseRequest, RUN_HANDLERS[phase]);
+    const { response, payload, handlerError, failed } = execution;
+    const result = payload || (handlerError ? { error: handlerError.message } : undefined);
     results.push({ phase, status: failed ? "failed" : "completed", result });
 
     if (failed) {
-      const error = result?.error || `Sincronizzazione ${phase} non riuscita (HTTP ${phaseResponse.statusCode}).`;
-      return res.status(500).json({
-        status: "failed",
-        processedActions: results.length,
-        failedActions: 1,
-        completedPhases,
-        failedPhase: phase,
-        results,
-        error,
-      });
+      return sendFailure(
+        res,
+        500,
+        phase,
+        handlerError?.message || result?.error || `Sincronizzazione ${phase} non riuscita (HTTP ${response.statusCode}).`,
+        {
+          processedActions: results.length,
+          failedActions: 1,
+          completedPhases,
+          failedPhase: phase,
+          results,
+          handlerDetails: normalizeDetails(handlerError?.details || errorDetails(result)),
+        },
+      );
     }
     completedPhases.push(phase);
   }
 
-  return res.status(200).json({
-    status: "completed",
+  return sendSuccess(res, 200, {
     processedActions: SYNC_ALL_PHASES.length,
     failedActions: 0,
     completedPhases,
@@ -134,42 +193,55 @@ async function rulesSave(req, res, body) {
   const admin = await createAdmin(req);
   const table = body.ruleType === "event" ? "mexal_event_automations" : "mexal_sync_schedules";
   const rule = body.rule && typeof body.rule === "object" ? body.rule : null;
-  if (!rule) return res.status(400).json({ error: "Regola automazione non valida." });
+  if (!rule) throw Object.assign(new Error("Regola automazione non valida."), { status: 400 });
   const { data, error } = await admin.from(table).upsert(rule).select().single();
   if (error) throw error;
   return res.status(200).json({ rule: data });
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Metodo non consentito." });
   const body = req.body || {};
+  const phase = body.action || "request";
+  if (req.method !== "POST") return sendFailure(res, 405, phase, "Metodo non consentito.");
   try {
     switch (body.action) {
-      case "rules_get": return await rulesGet(req, res);
-      case "rules_save": return await rulesSave(req, res, body);
+      case "rules_get": {
+        const response = createResponseCapture();
+        await rulesGet(req, response);
+        return sendSuccess(res, response.statusCode, response.payload);
+      }
+      case "rules_save": {
+        const response = createResponseCapture();
+        await rulesSave(req, response, body);
+        return sendSuccess(res, response.statusCode, response.payload);
+      }
       case "run_now": {
         const syncType = body.syncType || body.sync_type;
         const runHandler = RUN_HANDLERS[syncType];
-        if (!runHandler) return res.status(400).json({ error: "Tipo sincronizzazione non supportato." });
+        if (!runHandler) return sendFailure(res, 400, syncType || "run_now", "Tipo sincronizzazione non supportato.");
         req.body = runPayload(body, syncType);
-        return await runHandler(req, res);
+        return sendHandlerResponse(res, syncType, await executeHandler(req, runHandler));
       }
-      case "stop":
+      case "stop": {
         req.body = { runId: body.runId };
-        return await stopHandler(req, res);
+        return sendHandlerResponse(res, "stop", await executeHandler(req, stopHandler));
+      }
       case "sync_all":
         return await syncAll(req, res, body);
       case "dispatch": {
-        if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ ok: false, error: "Cron non autorizzato." });
+        if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return sendFailure(res, 401, "dispatch", "Cron non autorizzato.");
         const protocol = String(req.headers["x-forwarded-proto"] || "https").split(",")[0].trim();
         const host = req.headers["x-forwarded-host"] || req.headers.host;
         const response = await fetch(`${protocol}://${host}/api/cron/mexal-dispatcher`, { headers: { Authorization: req.headers.authorization } });
         const payload = await response.json().catch(() => ({}));
-        return res.status(response.status).json(payload);
+        if (!response.ok || payload?.success === false || payload?.ok === false) {
+          return sendFailure(res, response.status, "dispatch", payload?.error || "Dispatch Mexal non riuscito.", errorDetails(payload));
+        }
+        return sendSuccess(res, response.status, payload);
       }
-      default: return res.status(400).json({ error: "Azione automazione Mexal non supportata." });
+      default: return sendFailure(res, 400, phase, "Azione automazione Mexal non supportata.");
     }
   } catch (error) {
-    return res.status(Number(error.status || 500)).json({ error: error.message || "Errore automazione Mexal." });
+    return sendFailure(res, Number(error.status || 500), phase, error.message || "Errore automazione Mexal.", error.details || {});
   }
 }

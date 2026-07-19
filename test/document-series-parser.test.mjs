@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { extractRows, inspectPayload, prepareDocumentSeries, prepareRows } from "../api/mexal/sync-document-series.js";
+import { extractRows, inspectPayload, prepareDocumentSeries, prepareRows } from "../server/mexal/sync-document-series.js";
 
 const payload = {
   dati: [

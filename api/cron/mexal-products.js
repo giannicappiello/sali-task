@@ -14,14 +14,15 @@ function requireCronSecret(req) {
 }
 
 async function callSyncApi({ baseUrl, secret, offset, replaceStart, syncRunId }) {
-  const response = await fetch(`${baseUrl}/api/mexal/sync-products`, {
+  const response = await fetch(`${baseUrl}/api/mexal/automation`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${secret}`,
     },
     body: JSON.stringify({
-      action: "sync",
+      action: "run_now",
+      syncType: "products",
       offset,
       batchSize: BATCH_SIZE,
       replaceStart,

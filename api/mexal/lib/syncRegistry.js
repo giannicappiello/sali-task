@@ -1,10 +1,10 @@
 /** Shared sync handler registry. Handlers use the uniform server-side request contract. */
 export const syncRegistry = Object.freeze({
-  clients: { path: "/api/mexal/sync-clients", body: { action: "sync" } },
-  products: { path: "/api/mexal/sync-products", body: { action: "sync", offset: 0, batchSize: 8 } },
-  stocks: { path: "/api/mexal/sync-products", body: { action: "sync-stock-it", offset: 0, batchSize: 12 } },
-  commercial_conditions: { path: "/api/mexal/sync-commercial-conditions", body: { mode: "incremental", syncPayments: true } },
-  document_series: { path: "/api/mexal/sync-document-series", body: {} },
+  clients: { path: "/api/mexal/automation", body: { action: "run_now", syncType: "clients" } },
+  products: { path: "/api/mexal/automation", body: { action: "run_now", syncType: "products", offset: 0, batchSize: 8 } },
+  stocks: { path: "/api/mexal/automation", body: { action: "run_now", syncType: "stocks", offset: 0, batchSize: 12 } },
+  commercial_conditions: { path: "/api/mexal/automation", body: { action: "run_now", syncType: "commercial_conditions", mode: "incremental", syncPayments: true } },
+  document_series: { path: "/api/mexal/automation", body: { action: "run_now", syncType: "document_series" } },
 });
 export async function runRegisteredSync({ syncType, source = "manual", context = {}, dryRun = false, authorization, baseUrl, fetchImpl = fetch }) {
   const definition = syncRegistry[syncType];

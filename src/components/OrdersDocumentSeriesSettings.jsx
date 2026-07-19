@@ -42,7 +42,7 @@ export default function OrdersDocumentSeriesSettings({ canManage }) {
     setSyncing(true); setMessage("Sincronizzazione serie documenti avviata..."); setMessageType("info");
     try {
       const token = await accessToken();
-      const response = await fetch("/api/mexal/sync-document-series", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } });
+      const response = await fetch("/api/mexal/automation", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ action: "run_now", syncType: "document_series" }) });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || data.success === false) {
         setDiagnostics(data.diagnostics || null);

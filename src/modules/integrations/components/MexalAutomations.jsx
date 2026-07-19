@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
+import { getAccessToken } from "../services/mexalSyncService";
 
 const scheduled = [
   ["sync_clients", "Sincronizza Clienti", "clients"], ["sync_products", "Sincronizza Prodotti", "products"], ["sync_stocks", "Sincronizza Giacenze", "stocks"], ["sync_agents", "Sincronizza Agenti", "agents"], ["sync_payments", "Sincronizza Modalità di pagamento", "payments"], ["sync_series", "Sincronizza Serie documenti", "document_series"], ["sync_all", "Sincronizza tutto", "sync_all"], ["send_orders", "Invio ordini in attesa", "send_orders"], ["order_status", "Controllo esito ordini inviati", "order_status"], ["pdf", "Generazione PDF ordini", "generate_pdf"], ["email", "Invio e-mail ordini", "send_email"], ["availability", "Aggiornamento disponibilità prodotti", "stocks"],
@@ -14,9 +15,10 @@ export default function MexalAutomations({ isAdmin = false }) {
   const ruleFor = (trigger) => rules.find((rule) => rule.trigger_type === trigger);
   async function save(trigger, name, automationType, patch = {}) {
     if (!isAdmin) return;
-    const old = ruleFor(trigger); const values = { name, automation_type: automationType, trigger_type: trigger, timezone: "Europe/Rome", enabled: false, action_chain: [], frequency_type: automationType === "scheduled" ? "manual" : null, ...patch };
-    const response = old ? await supabase.from("mexal_automation_rules").update(values).eq("id", old.id) : await supabase.from("mexal_automation_rules").insert(values);
-    if (response.error) setMessage(response.error.message); else { setMessage("Configurazione salvata."); load(); }
+    const old = ruleFor(trigger);
+    const payload = { id: old?.id, name, automation_type: automationType, trigger_type: trigger, enabled: Boolean(patch.enabled), frequency_type: automationType === "scheduled" ? (patch.frequency_type || "manual") : null, action_chain: Array.isArray(patch.action_chain) ? patch.action_chain : [], configuration: patch.configuration && typeof patch.configuration === "object" ? patch.configuration : {} };
+    const response = await fetch("/api/mexal/automation-rules", { method: "POST", headers: { Authorization: `Bearer ${await getAccessToken()}`, "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const result = await response.json(); if (!response.ok) setMessage(result.error || "Impossibile salvare."); else { setMessage("Configurazione salvata."); load(); }
   }
   return <section className="mexal-settings-panel"><div className="mexal-section-heading"><div><h3>Automazioni configurabili</h3><p>Nessuna automazione è obbligatoria: tutte sono disattivate finché un amministratore non le abilita.</p></div></div>{message && <div className="mexal-alert alert-success">{message}</div>}
     <h4>Automazioni programmate</h4><div className="mexal-automation-list">{scheduled.map(([key, name, action]) => { const rule = ruleFor(key); return <div className="mexal-automation-row" key={key}><strong>{name}</strong><small>{rule?.enabled ? "Attiva" : "Disattiva"} · {rule?.last_run_at ? `Ultima esecuzione: ${new Date(rule.last_run_at).toLocaleString("it-IT")}` : "Mai eseguita"}</small><select disabled={!isAdmin} value={rule?.frequency_type || "manual"} onChange={(event) => save(key, name, "scheduled", { ...rule, frequency_type: event.target.value, action_chain: [{ type: action, blocking: true }] })}>{frequencies.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><label><input type="checkbox" disabled={!isAdmin} checked={Boolean(rule?.enabled)} onChange={(event) => save(key, name, "scheduled", { ...rule, enabled: event.target.checked, action_chain: rule?.action_chain?.length ? rule.action_chain : [{ type: action, blocking: true }] })}/> Attiva</label><button disabled={!isAdmin} onClick={() => save(key, name, "scheduled", { ...rule, enabled: rule?.enabled, action_chain: rule?.action_chain?.length ? rule.action_chain : [{ type: action, blocking: true }] })}>Modifica</button></div>; })}</div>

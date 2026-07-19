@@ -7,14 +7,14 @@ const secretEquals = (provided, expected) => Boolean(expected && provided && pro
 function baseUrl(req) { const protocol = String(req.headers["x-forwarded-proto"] || "https").split(",")[0]; return `${protocol}://${req.headers["x-forwarded-host"] || req.headers.host}`; }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Metodo non consentito." });
-  const schedulerSecret = process.env.MEXAL_AUTOMATION_SECRET;
+  if (!["GET", "POST"].includes(req.method)) return res.status(405).json({ ok: false, error: "Metodo non consentito." });
+  const schedulerSecret = process.env.CRON_SECRET;
   const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
   if (!secretEquals(token, schedulerSecret)) return res.status(401).json({ ok: false, error: "Dispatcher non autorizzato." });
   try {
     const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
     const now = new Date();
-    const { data: rules, error } = await admin.from("mexal_automation_rules").select("*").eq("enabled", true).eq("automation_type", "scheduled").lte("next_run_at", now.toISOString());
+    const { data: rules, error } = await admin.from("mexal_automation_rules").select("*").eq("enabled", true).eq("automation_type", "scheduled").neq("frequency_type", "manual").lte("next_run_at", now.toISOString());
     if (error) throw error;
     const executed = [];
     for (const rule of rules || []) {

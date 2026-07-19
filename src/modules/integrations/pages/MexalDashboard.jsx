@@ -14,6 +14,7 @@ import {
   Warehouse,
 } from "lucide-react";
 import { useAuth } from "../../../contexts/AuthContext";
+import { supabase } from "../../../lib/supabaseClient";
 import MexalHistory from "../components/MexalHistory";
 import MexalLog from "../components/MexalLog";
 import MexalProgress from "../components/MexalProgress";
@@ -72,15 +73,17 @@ export default function MexalDashboard() {
   const [activeSync, setActiveSync] = useState(null);
   const [activeTab, setActiveTab] = useState("overview");
   const [stoppingRunId, setStoppingRunId] = useState(null);
+  const [activeAutomations, setActiveAutomations] = useState(0);
 
   const latestRun = runs[0] || null;
 
   const refreshData = useCallback(async (preferredRunId = null) => {
-    const [runRows, countRows, entityCountRows, productRuns, clientRuns, stockRuns, orderRuns] = await Promise.all([loadSyncRuns(25), loadCommercialCounts(), loadMexalEntityCounts(), loadMexalRuns("products"), loadMexalRuns("clients"), loadMexalRuns("stocks"), loadMexalRuns("orders")]);
+    const [runRows, countRows, entityCountRows, productRuns, clientRuns, stockRuns, orderRuns, automationCount] = await Promise.all([loadSyncRuns(25), loadCommercialCounts(), loadMexalEntityCounts(), loadMexalRuns("products"), loadMexalRuns("clients"), loadMexalRuns("stocks"), loadMexalRuns("orders"), supabase.from("mexal_automation_rules").select("*", { count: "exact", head: true }).eq("enabled", true)]);
     setRuns(runRows);
     setCounts(countRows);
     setEntityCounts(entityCountRows);
     setEntityRuns({ products: productRuns[0] || null, clients: clientRuns[0] || null, stocks: stockRuns[0] || null, orders: orderRuns[0] || null });
+    setActiveAutomations(automationCount.error ? 0 : automationCount.count || 0);
 
     const nextSelected = preferredRunId
       ? runRows.find((run) => run.id === preferredRunId)
@@ -250,7 +253,6 @@ export default function MexalDashboard() {
   ];
   const runningRuns = runs.filter((item) => item.status === "running").length;
   const failedRuns = runs.filter((item) => ["failed", "timeout", "completed_with_errors"].includes(item.status)).length;
-  const activeAutomations = 2;
 
   if (loading) {
     return <div className="integrations-loading"><RefreshCw className="spin" size={24} /> Caricamento Centro Mexal...</div>;

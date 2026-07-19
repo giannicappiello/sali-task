@@ -70,9 +70,8 @@ export async function invokeStocksSync(onProgress = () => {}) {
   }
 }
 
-export async function invokeClientsSync() {
-  return invokeMexalApi("/api/mexal/sync-clients", { action: "sync" });
-}
+export async function invokeClientsSync() { return invokeMexalApi("/api/mexal/sync-clients", { action: "sync" }); }
+export async function invokeDocumentSeriesSync() { return invokeMexalApi("/api/mexal/sync-document-series", {}); }
 
 export async function loadMexalRuns(type, limit = 1) {
   const { data, error } = await supabase

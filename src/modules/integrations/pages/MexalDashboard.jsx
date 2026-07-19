@@ -27,6 +27,7 @@ import {
   invokeCommercialConditionsSync,
   loadCommercialCounts,
   invokeClientsSync,
+  invokeDocumentSeriesSync,
   invokeProductsSync,
   invokeStocksSync,
   loadMexalEntityCounts,
@@ -192,10 +193,10 @@ export default function MexalDashboard() {
       const result = type === "products"
         ? await invokeProductsSync(({ processed, total, inserted, updated, errors }) => setMessage({ type: "info", text: `Sincronizzazione prodotti in corso: ${processed}/${total} elaborati, ${inserted} inseriti, ${updated} aggiornati, ${errors.length} errori.` }))
         : type === "stocks" ? await invokeStocksSync(({ processed, total, updated, errors }) => setMessage({ type: "info", text: `Sincronizzazione giacenze in corso: ${processed}/${total} elaborati, ${updated} aggiornati, ${errors.length} errori.` }))
-        : await invokeClientsSync();
-      const processed = type === "products" || type === "stocks" ? result.processed : result.letti_mexal;
-      const inserted = type === "products" ? result.inserted : type === "stocks" ? 0 : result.inseriti;
-      const updated = type === "products" || type === "stocks" ? result.updated : result.aggiornati;
+        : type === "document_series" ? await invokeDocumentSeriesSync() : await invokeClientsSync();
+      const processed = type === "products" || type === "stocks" ? result.processed : type === "document_series" ? result.processed || result.elaborati : result.letti_mexal;
+      const inserted = type === "products" ? result.inserted : type === "stocks" ? 0 : type === "document_series" ? result.inserted || 0 : result.inseriti;
+      const updated = type === "products" || type === "stocks" ? result.updated : type === "document_series" ? result.updated || 0 : result.aggiornati;
       const errors = type === "products" || type === "stocks" ? result.errors.length : result.errori?.length || 0;
       const productsWithNoWrites = type === "products" && Number(result.received || 0) > 0 && Number(inserted || 0) + Number(updated || 0) + Number(result.prodottiInserted || 0) + Number(result.prodottiUpdated || 0) === 0;
       const productSummary = type === "products"
@@ -205,7 +206,7 @@ export default function MexalDashboard() {
         type: productsWithNoWrites || errors ? "warning" : "success",
         text: productsWithNoWrites
           ? "La sincronizzazione ha ricevuto articoli da Mexal ma non ha prodotto righe valide per ordini_prodotti_cache."
-          : `Sincronizzazione ${type === "products" ? "prodotti" : type === "stocks" ? "giacenze" : "clienti"} completata: ${productSummary}`,
+          : `Sincronizzazione ${type === "products" ? "prodotti" : type === "stocks" ? "giacenze" : type === "document_series" ? "serie documenti" : "clienti"} completata: ${productSummary}`,
       });
       await refreshData();
     } catch (error) {
@@ -236,20 +237,13 @@ export default function MexalDashboard() {
   }, [counts]);
 
   const cards = [
-    { icon: Users, title: "Clienti", description: "Anagrafiche, categorie commerciali e condizioni cliente.", recordLabel: "clienti attivi", recordCount: entityCounts.clients, enabled: true, onSync: () => runEntitySync("clients"), lastRunData: entityRuns.clients },
-    { icon: Building2, title: "Agenti", description: "Agenti Mexal e associazioni con Area Manager.", recordLabel: "agenti", enabled: false },
-    { icon: PackageSearch, title: "Prodotti", description: "Catalogo, categorie, immagini e schede tecniche. Import incrementale, senza disattivazioni preventive.", recordLabel: "prodotti visibili", recordCount: entityCounts.products, enabled: true, onSync: () => runEntitySync("products"), lastRunData: entityRuns.products },
-    {
-      icon: ScrollText,
-      title: "Condizioni commerciali",
-      description: "Matrice sconti, particolarità e regole pagamento.",
-      recordLabel: "regole attive",
-      recordCount: commercialCount,
-      enabled: true,
-      onSync: runCommercialSync,
-    },
-    { icon: Warehouse, title: "Giacenze", description: "Disponibilità per magazzino e controllo evasione ordini.", recordLabel: "prodotti con giacenza sincronizzata", recordCount: entityCounts.stocks, enabled: true, onSync: () => runEntitySync("stocks"), lastRunData: entityRuns.stocks },
-    { icon: ShoppingCart, title: "Ordini", description: "Invio OCM/OCX, PDF e stato sincronizzazione documenti.", recordLabel: "ordini da inviare", recordCount: entityCounts.orders, enabled: true, onSync: () => navigate("/orders"), lastRunData: entityRuns.orders },
+    { syncType: "clients", icon: Users, title: "Clienti", description: "Anagrafiche Mexal.", recordLabel: "clienti attivi", recordCount: entityCounts.clients, enabled: true, onSync: () => runEntitySync("clients"), lastRunData: entityRuns.clients },
+    { syncType: "agents", icon: Building2, title: "Agenti", description: "Non configurato: endpoint Mexal non verificato.", recordLabel: "agenti", enabled: false },
+    { syncType: "commercial_conditions", icon: ScrollText, title: "Modalità di pagamento e condizioni", description: "Matrice, particolarità e pagamenti.", recordLabel: "regole attive", recordCount: commercialCount, enabled: true, onSync: runCommercialSync },
+    { syncType: "document_series", icon: ScrollText, title: "Serie documenti", description: "Serie documenti Mexal.", recordLabel: "serie", enabled: true, onSync: () => runEntitySync("document_series") },
+    { syncType: "products", icon: PackageSearch, title: "Prodotti", description: "Catalogo prodotti.", recordLabel: "prodotti visibili", recordCount: entityCounts.products, enabled: true, onSync: () => runEntitySync("products"), lastRunData: entityRuns.products },
+    { syncType: "stocks", icon: Warehouse, title: "Giacenze", description: "Disponibilità per magazzino.", recordLabel: "prodotti con giacenza", recordCount: entityCounts.stocks, enabled: true, onSync: () => runEntitySync("stocks"), lastRunData: entityRuns.stocks },
+    { syncType: "sync_all", icon: Boxes, title: "Sincronizza tutto", description: "Non configurato: Agenti non ha un endpoint verificato; la sequenza non può essere dichiarata completa.", recordLabel: "fasi", enabled: false },
   ];
   const runningRuns = runs.filter((item) => item.status === "running").length;
   const failedRuns = runs.filter((item) => ["failed", "timeout", "completed_with_errors"].includes(item.status)).length;
@@ -286,7 +280,7 @@ export default function MexalDashboard() {
 
       <nav className="mexal-main-tabs" aria-label="Sezioni Centro Mexal">{[["overview","Panoramica"],["syncs","Sincronizzazioni"],["automations","Automazioni"],["series","Serie documenti"],["history","Cronologia"],["settings","Configurazione"]].map(([key,label]) => <button key={key} type="button" className={activeTab === key ? "active" : ""} onClick={() => setActiveTab(key)}>{label}</button>)}</nav>
       {activeTab === "overview" && <><section className="mexal-kpi-grid"><div className="mexal-kpi"><span>Connessione</span><IntegrationStatusBadge status="connected" /></div><div className="mexal-kpi"><span>Ultima sincronizzazione</span><strong>{formatDate(latestRun?.started_at)}</strong></div><div className="mexal-kpi"><span>Run in corso</span><strong>{runningRuns}</strong></div><div className="mexal-kpi"><span>Sincronizzazioni con errori</span><strong>{failedRuns}</strong></div><div className="mexal-kpi"><span>Automazioni attive</span><strong>{activeAutomations}</strong></div></section><section className="mexal-quick-actions"><h3>Azioni rapide</h3><button className="orders-primary" onClick={() => runEntitySync("products")}>Sincronizza prodotti</button><button className="orders-primary" onClick={() => runEntitySync("stocks")}>Sincronizza giacenze</button><button onClick={() => setActiveTab("automations")}>Apri automazioni</button></section></>}
-      {activeTab === "syncs" && <><MexalProgress running={running} progress={progress} phase={phase} /><section className="mexal-sync-grid">{cards.map((card) => <MexalSyncCard key={card.title} {...card} running={activeSync === (card.title === "Clienti" ? "clients" : card.title === "Prodotti" ? "products" : card.title === "Giacenze" ? "stocks" : "commercial_conditions")} lastRun={formatDate(card.lastRunData?.started_at)} run={card.lastRunData} onOpen={() => setMessage({ type: "warning", text: `${card.title}: configurazione Mexal incompleta o endpoint non verificato.` })} />)}</section><section className="mexal-table-panel"><table className="mexal-history-table"><thead><tr><th>Tipo</th><th>Stato</th><th>Inizio</th><th>Fine</th><th>Messaggio</th><th>Azioni</th></tr></thead><tbody>{runs.length === 0 ? <tr><td colSpan="6">Nessuna sincronizzazione registrata.</td></tr> : runs.map((run) => <tr key={run.id}><td>{run.sync_type}</td><td><IntegrationStatusBadge status={run.status}/></td><td>{formatDate(run.started_at)}</td><td>{formatDate(run.completed_at)}</td><td>{run.error_message || "—"}</td><td>{run.status === "running" && isAdminUser && <button type="button" className="orders-secondary" disabled={stoppingRunId === run.id} onClick={() => stopRun(run)}>{stoppingRunId === run.id ? "Arresto…" : "ARRESTA SINCRONIZZAZIONE"}</button>}<button onClick={() => { setActiveTab("history"); selectRun(run); }}>Dettaglio</button></td></tr>)}</tbody></table></section></>}
+      {activeTab === "syncs" && <><MexalProgress running={running} progress={progress} phase={phase} /><section className="mexal-sync-grid">{cards.map((card) => <MexalSyncCard key={card.title} {...card} running={activeSync === card.syncType} lastRun={formatDate(card.lastRunData?.started_at)} run={card.lastRunData} onOpen={() => setMessage({ type: "warning", text: `${card.title}: non configurato.` })} />)}</section><section className="mexal-table-panel"><table className="mexal-history-table"><thead><tr><th>Tipo</th><th>Stato</th><th>Inizio</th><th>Fine</th><th>Messaggio</th><th>Azioni</th></tr></thead><tbody>{runs.length === 0 ? <tr><td colSpan="6">Nessuna sincronizzazione registrata.</td></tr> : runs.map((run) => <tr key={run.id}><td>{run.sync_type}</td><td><IntegrationStatusBadge status={run.status}/></td><td>{formatDate(run.started_at)}</td><td>{formatDate(run.completed_at)}</td><td>{run.error_message || "—"}</td><td>{run.status === "running" && isAdminUser && <button type="button" className="orders-secondary" disabled={stoppingRunId === run.id} onClick={() => stopRun(run)}>{stoppingRunId === run.id ? "Arresto…" : "ARRESTA SINCRONIZZAZIONE"}</button>}<button onClick={() => { setActiveTab("history"); selectRun(run); }}>Dettaglio</button></td></tr>)}</tbody></table></section></>}
       {activeTab === "automations" && <MexalAutomations isAdmin={isAdminUser} />}
       {activeTab === "series" && <OrdersDocumentSeriesSettings canManage={isAdminUser} />}
       {activeTab === "history" && <><MexalHistory runs={runs} selectedRunId={selectedRun?.id} onSelect={selectRun} /><MexalLog items={logItems} /></>}

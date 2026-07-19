@@ -18,16 +18,38 @@ async function invokeMexalApi(path, payload) {
   });
   const raw = await response.text();
   let data;
-  try { data = raw ? JSON.parse(raw) : {}; } catch { data = { error: raw }; }
-  if (!response.ok) throw new Error(data?.error || `Errore Mexal (HTTP ${response.status})`);
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    throw new Error("Risposta Mexal non valida.");
+  }
+  if (!response.ok) {
+    const messages = {
+      400: "Richiesta non valida.",
+      401: "Sessione scaduta. Effettua nuovamente l'accesso.",
+      403: "Permessi insufficienti per questa operazione.",
+      409: "È già presente una sincronizzazione in corso",
+      500: "Errore interno del servizio Mexal.",
+    };
+    const error = new Error(response.status === 409 ? messages[409] : (data?.error || messages[response.status] || `Errore Mexal (HTTP ${response.status})`));
+    error.status = response.status;
+    error.details = data?.details;
+    throw error;
+  }
   return data;
 }
 
-export async function invokeProductsSync(onProgress = () => {}) {
+/** Manual controls exposed by the Sincronizzazioni tab. */
+export async function startMexalSync(syncType) {
+  return invokeMexalApi("/api/mexal/automation", { action: "run_now", syncType });
+}
+
+export async function invokeProductsSync(onProgress = () => {}, isCancelled = () => false) {
   let offset = 0;
   let syncRunId = null;
   const total = { processed: 0, received: 0, filtered: 0, detailLoaded: 0, inserted: 0, updated: 0, prodottiInserted: 0, prodottiUpdated: 0, skipped: 0, errors: [], diagnostics: null };
   while (true) {
+    if (isCancelled()) throw Object.assign(new Error("Sincronizzazione annullata."), { cancelled: true });
     const data = await invokeMexalApi("/api/mexal/automation", {
       action: "run_now", syncType: "products", offset, batchSize: 8, syncRunId, origin: "integrations",
     });
@@ -43,7 +65,8 @@ export async function invokeProductsSync(onProgress = () => {}) {
     total.skipped += Number(data.skipped || 0);
     total.diagnostics = data.diagnostics || total.diagnostics;
     total.errors.push(...(data.errori || []));
-    onProgress({ ...total, total: Number(data.totale || 0) });
+    onProgress({ ...total, total: Number(data.totale || 0), syncRunId });
+    if (isCancelled()) throw Object.assign(new Error("Sincronizzazione annullata."), { cancelled: true });
     if (data.completato) {
       if (total.received > 0 && total.inserted + total.updated + total.prodottiInserted + total.prodottiUpdated === 0) {
         throw new Error("La sincronizzazione ha ricevuto articoli da Mexal ma non ha prodotto righe valide per ordini_prodotti_cache.");
@@ -56,14 +79,16 @@ export async function invokeProductsSync(onProgress = () => {}) {
   }
 }
 
-export async function invokeStocksSync(onProgress = () => {}) {
+export async function invokeStocksSync(onProgress = () => {}, isCancelled = () => false) {
   let offset = 0; let syncRunId = null;
   const total = { processed: 0, updated: 0, errors: [] };
   while (true) {
+    if (isCancelled()) throw Object.assign(new Error("Sincronizzazione annullata."), { cancelled: true });
     const data = await invokeMexalApi("/api/mexal/automation", { action: "run_now", syncType: "stocks", offset, batchSize: 12, syncRunId, origin: "integrations" });
     syncRunId = data.sync_run_id || syncRunId;
     total.processed += Number(data.elaborati || 0); total.updated += Number(data.aggiornati || 0);
-    total.errors.push(...(data.errori || [])); onProgress({ ...total, total: Number(data.totale || 0) });
+    total.errors.push(...(data.errori || [])); onProgress({ ...total, total: Number(data.totale || 0), syncRunId });
+    if (isCancelled()) throw Object.assign(new Error("Sincronizzazione annullata."), { cancelled: true });
     if (data.completato) return { ...total, syncRunId };
     const next = Number(data.prossimo_offset); if (!Number.isFinite(next) || next <= offset) throw new Error("Paginazione giacenze Mexal non valida.");
     offset = next;

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
@@ -22,6 +22,7 @@ import MexalAutomations from "../components/MexalAutomations";
 import MexalSyncCard from "../components/MexalSyncCard";
 import IntegrationStatusBadge from "../components/IntegrationStatusBadge";
 import OrdersDocumentSeriesSettings from "../../../components/OrdersDocumentSeriesSettings";
+import { createMexalManualRunRefresh, getMexalRunId } from "../services/mexalManualRunRefresh";
 import {
   invokeCommercialConditionsSync,
   loadCommercialCounts,
@@ -32,8 +33,17 @@ import {
   loadMexalRuns,
   loadRunDetailsForRun,
   loadSyncRuns,
+  startMexalSync,
   stopMexalRun,
 } from "../services/mexalSyncService";
+
+const syncLabels = {
+  clients: "Clienti",
+  products: "Prodotti",
+  stocks: "Giacenze",
+  commercial_conditions: "Condizioni commerciali",
+  document_series: "Serie documenti",
+};
 
 function formatDate(value) {
   if (!value) return "Mai";
@@ -72,11 +82,16 @@ export default function MexalDashboard() {
   const [activeSync, setActiveSync] = useState(null);
   const [activeTab, setActiveTab] = useState("overview");
   const [stoppingRunId, setStoppingRunId] = useState(null);
+  const [manualAction, setManualAction] = useState(null);
+  const manualCancelledRef = useRef(false);
+  const manualRefreshRef = useRef(null);
+  const mountedRef = useRef(true);
 
   const latestRun = runs[0] || null;
 
   const refreshData = useCallback(async (preferredRunId = null) => {
     const [runRows, countRows, entityCountRows, productRuns, clientRuns, stockRuns, orderRuns] = await Promise.all([loadSyncRuns(25), loadCommercialCounts(), loadMexalEntityCounts(), loadMexalRuns("products"), loadMexalRuns("clients"), loadMexalRuns("stocks"), loadMexalRuns("orders")]);
+    if (!mountedRef.current) return;
     setRuns(runRows);
     setCounts(countRows);
     setEntityCounts(entityCountRows);
@@ -89,6 +104,7 @@ export default function MexalDashboard() {
     if (nextSelected) {
       setSelectedRun(nextSelected);
       const runLog = await loadRunDetailsForRun(nextSelected);
+      if (!mountedRef.current) return;
       setLogItems([
         ...runLog.details.map((item) => ({ ...item, title: item.entity_type })),
         ...runLog.errors.map((item) => ({
@@ -115,7 +131,7 @@ export default function MexalDashboard() {
         if (active) setLoading(false);
       }
     })();
-    return () => { active = false; };
+    return () => { active = false; mountedRef.current = false; manualRefreshRef.current?.stop(); };
   }, []);
 
   async function selectRun(run) {
@@ -213,8 +229,10 @@ export default function MexalDashboard() {
 
   async function stopRun(run) {
     if (!isAdminUser || stoppingRunId || run?.status !== "running") return;
-    if (!window.confirm(`Arrestare la sincronizzazione ${run.sync_type}? I dati già sincronizzati rimarranno invariati.`)) return;
+    if (!window.confirm(`Arrestare la sincronizzazione ${syncLabels[run.sync_type] || "selezionata"}? I dati già sincronizzati rimarranno invariati.`)) return;
     setStoppingRunId(run.id);
+    manualCancelledRef.current = true;
+    manualRefreshRef.current?.stop();
     try {
       const result = await stopMexalRun(run.id);
       setRuns((current) => current.map((item) => item.id === run.id ? result.run : item));
@@ -224,6 +242,66 @@ export default function MexalDashboard() {
     } catch (error) {
       setMessage({ type: "error", text: error.message || "Impossibile arrestare la sincronizzazione." });
     } finally { setStoppingRunId(null); }
+  }
+
+  async function runManualPhase(syncType, phaseIndex, phaseCount) {
+    const label = syncLabels[syncType];
+    setPhase(label);
+    setMessage({ type: "info", text: `Avvio ${label}…` });
+    const updateBatchProgress = ({ processed, total, inserted = 0, updated = 0, errors = [], syncRunId }) => {
+      if (manualCancelledRef.current) return;
+      const completed = total > 0 ? Math.min(processed / total, 1) : 0;
+      setProgress(Math.round(((phaseIndex + completed) / phaseCount) * 100));
+      setPhase(`${label}: ${processed}/${total || "?"} elaborati`);
+      setMessage({ type: "info", text: `${label} in corso: ${processed}/${total || "?"} elaborati, ${inserted} inseriti, ${updated} aggiornati, ${errors.length} errori.` });
+      if (syncRunId) manualRefreshRef.current?.refreshNow(syncRunId);
+    };
+    const result = syncType === "products"
+      ? await invokeProductsSync(updateBatchProgress, () => manualCancelledRef.current)
+      : syncType === "stocks"
+        ? await invokeStocksSync(updateBatchProgress, () => manualCancelledRef.current)
+        : await startMexalSync(syncType);
+    if (manualCancelledRef.current) throw Object.assign(new Error("Sincronizzazione annullata."), { cancelled: true });
+    setProgress(Math.round(((phaseIndex + 1) / phaseCount) * 100));
+    await manualRefreshRef.current?.refreshNow(getMexalRunId(result));
+    return result;
+  }
+
+  async function startManualSync(syncType = null) {
+    if (!isAdminUser || manualAction) return;
+    const actionKey = syncType || "all";
+    const phases = syncType ? [syncType] : ["clients", "commercial_conditions", "document_series", "products", "stocks"];
+    manualCancelledRef.current = false;
+    setManualAction(actionKey);
+    setProgress(0);
+    manualRefreshRef.current?.stop();
+    manualRefreshRef.current = createMexalManualRunRefresh({ refresh: refreshData });
+    manualRefreshRef.current.start();
+    try {
+      let result;
+      for (const [phaseIndex, phaseType] of phases.entries()) {
+        if (manualCancelledRef.current) throw Object.assign(new Error("Sincronizzazione annullata."), { cancelled: true });
+        result = await runManualPhase(phaseType, phaseIndex, phases.length);
+      }
+      setPhase("Sincronizzazione completata");
+      setMessage({ type: "success", text: result?.message || result?.statusMessage || "Sincronizzazione completata." });
+    } catch (error) {
+      if (error.cancelled) {
+        setPhase("Sincronizzazione annullata");
+        setMessage({ type: "warning", text: "Sincronizzazione annullata. Non verranno avviati altri lotti o fasi." });
+      } else if (error.status === 409) {
+        const activeRunId = Number(error.details?.syncRunId);
+        setMessage({ type: "warning", text: "È già presente una sincronizzazione in corso" });
+        await refreshData(Number.isFinite(activeRunId) ? activeRunId : null);
+      } else {
+        setMessage({ type: "error", text: error instanceof TypeError ? "Errore di rete durante l'avvio della sincronizzazione." : (error.message || "Errore di rete durante l'avvio della sincronizzazione.") });
+      }
+    } finally {
+      manualRefreshRef.current?.stop();
+      manualRefreshRef.current = null;
+      setManualAction(null);
+      window.setTimeout(() => { setProgress(0); setPhase(""); }, 700);
+    }
   }
 
   const commercialCount = useMemo(() => {
@@ -284,7 +362,7 @@ export default function MexalDashboard() {
 
       <nav className="mexal-main-tabs" aria-label="Sezioni Centro Mexal">{[["overview","Panoramica"],["syncs","Sincronizzazioni"],["automations","Automazioni"],["series","Serie documenti"],["history","Cronologia"],["settings","Configurazione"]].map(([key,label]) => <button key={key} type="button" className={activeTab === key ? "active" : ""} onClick={() => setActiveTab(key)}>{label}</button>)}</nav>
       {activeTab === "overview" && <><section className="mexal-kpi-grid"><div className="mexal-kpi"><span>Connessione</span><IntegrationStatusBadge status="connected" /></div><div className="mexal-kpi"><span>Ultima sincronizzazione</span><strong>{formatDate(latestRun?.started_at)}</strong></div><div className="mexal-kpi"><span>Run in corso</span><strong>{runningRuns}</strong></div><div className="mexal-kpi"><span>Sincronizzazioni con errori</span><strong>{failedRuns}</strong></div><div className="mexal-kpi"><span>Automazioni attive</span><strong>{activeAutomations}</strong></div></section><section className="mexal-quick-actions"><h3>Azioni rapide</h3><button className="orders-primary" onClick={() => runEntitySync("products")}>Sincronizza prodotti</button><button className="orders-primary" onClick={() => runEntitySync("stocks")}>Sincronizza giacenze</button><button onClick={() => setActiveTab("automations")}>Apri automazioni</button></section></>}
-      {activeTab === "syncs" && <><MexalProgress running={running} progress={progress} phase={phase} /><section className="mexal-table-panel"><table className="mexal-history-table"><thead><tr><th>Tipo</th><th>Stato</th><th>Inizio</th><th>Fine</th><th>Messaggio</th><th>Azioni</th></tr></thead><tbody>{runs.length === 0 ? <tr><td colSpan="6">Nessuna sincronizzazione registrata.</td></tr> : runs.map((run) => <tr key={run.id}><td>{run.sync_type}</td><td><IntegrationStatusBadge status={run.status}/></td><td>{formatDate(run.started_at)}</td><td>{formatDate(run.completed_at)}</td><td>{run.error_message || "—"}</td><td>{run.status === "running" && isAdminUser && <button type="button" className="orders-secondary" disabled={stoppingRunId === run.id} onClick={() => stopRun(run)}>{stoppingRunId === run.id ? "Arresto…" : "ARRESTA SINCRONIZZAZIONE"}</button>}<button onClick={() => { setActiveTab("history"); selectRun(run); }}>Dettaglio</button></td></tr>)}</tbody></table></section></>}
+      {activeTab === "syncs" && <><section className="mexal-manual-start"><div className="mexal-section-heading"><div><h3>Avvio manuale</h3><p>Avvia le sincronizzazioni disponibili e monitora le run appena create.</p></div></div>{isAdminUser && <div className="mexal-manual-actions">{Object.entries(syncLabels).map(([type, label]) => <button key={type} type="button" className="orders-primary" disabled={Boolean(manualAction)} onClick={() => startManualSync(type)}>{manualAction === type ? "Avvio…" : label}</button>)}<button type="button" className="orders-primary" disabled={Boolean(manualAction)} onClick={() => startManualSync()}>{manualAction === "all" ? "Avvio…" : "Sincronizza tutto"}</button></div>}</section><MexalProgress running={running || Boolean(manualAction)} progress={progress} phase={phase} /><section className="mexal-table-panel"><table className="mexal-history-table"><thead><tr><th>Tipo</th><th>Stato</th><th>Inizio</th><th>Fine</th><th>Messaggio</th><th>Azioni</th></tr></thead><tbody>{runs.length === 0 ? <tr><td colSpan="6">Nessuna sincronizzazione registrata.</td></tr> : runs.map((run) => <tr key={run.id} className={run.status === "running" ? "is-running" : ""}><td>{syncLabels[run.sync_type] || "Sincronizzazione"}</td><td><IntegrationStatusBadge status={run.status}/></td><td>{formatDate(run.started_at)}</td><td>{formatDate(run.completed_at)}</td><td>{run.error_message || "—"}</td><td>{run.status === "running" && isAdminUser && <button type="button" className="orders-secondary" disabled={stoppingRunId === run.id} onClick={() => stopRun(run)}>{stoppingRunId === run.id ? "Arresto…" : "Arresta sincronizzazione"}</button>}<button type="button" onClick={() => { setActiveTab("history"); selectRun(run); }}>Dettaglio</button></td></tr>)}</tbody></table></section></>}
       {activeTab === "automations" && <MexalAutomations canManage={isAdminUser} />}
       {activeTab === "series" && <OrdersDocumentSeriesSettings canManage={isAdminUser} />}
       {activeTab === "history" && <><MexalHistory runs={runs} selectedRunId={selectedRun?.id} onSelect={selectRun} /><MexalLog items={logItems} /></>}

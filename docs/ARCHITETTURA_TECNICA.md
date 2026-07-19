@@ -76,7 +76,7 @@ Dipendenze runtime: React/React DOM, React Router, Supabase JS, Lucide, jsPDF + 
 
 Le card **Prodotti** e **Clienti** della console Mexal sono operative esclusivamente per amministratori. Leggono i contatori reali rispettivamente da `prodotti` (`attivo_mexal` e `mostra_in_app`) e `ordini_clienti_cache` (`attivo_mexal`), e mostrano l'ultima run registrata.
 
-`20260719190000_mexal_incremental_sync_runs.sql` aggiunge `mexal_sync_runs`, con i contatori e gli stati delle sincronizzazioni Prodotti e Clienti. La sincronizzazione prodotti Vercel è incrementale: usa `codice_mexal` come chiave logica, salva lotto per lotto e non esegue più aggiornamenti globali che nascondono o disattivano il catalogo. Una run fallita lascia quindi valida la sincronizzazione precedente.
+`20260719190000_mexal_incremental_sync_runs.sql` aggiunge `mexal_sync_runs`, con i contatori e gli stati delle sincronizzazioni Prodotti e Clienti. La sincronizzazione prodotti Vercel è incrementale: usa `codice_mexal` come chiave logica, salva lotto per lotto e non esegue aggiornamenti globali all'avvio. Solo una run completa, con tutti i lotti registrati e senza errori, riconcilia i prodotti Mexal non aggiornati dopo `started_at`; una run fallita lascia quindi valida la sincronizzazione precedente.
 
 Per le serie documento, `sync-document-series` normalizza `MEXAL_BASE_URL` fino a `/webapi/risorse`, usa `Authorization: Passepartout <base64(username:password)>` con `Dominio=<MEXAL_DOMINIO>` opzionale e `Coordinate-Gestionale`. Non disattiva più tutte le serie prima dell'upsert: restituisce JSON coerente con contatori e dettagli diagnostici non sensibili.
 

@@ -695,17 +695,33 @@ async function createSyncRun(supabase, metadata) {
   const { data, error } = await supabase
     .from("mexal_sync_runs")
     .insert({ sync_type: "products", status: "running", metadata })
-    .select("id")
+    .select("id,started_at,status,processed,failed,metadata")
     .single();
   if (error) throw error;
-  return data.id;
+  return data;
+}
+
+async function getSyncRun(supabase, id) {
+  const { data, error } = await supabase
+    .from("mexal_sync_runs")
+    .select("id,started_at,status,processed,failed,metadata")
+    .eq("id", id)
+    .eq("sync_type", "products")
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) {
+    throw new Error("Run di sincronizzazione prodotti non trovata.");
+  }
+
+  return data;
 }
 
 async function updateSyncRun(supabase, id, values) {
   if (!id) return;
   const { data: current, error: readError } = await supabase
     .from("mexal_sync_runs")
-    .select("processed,inserted,updated,skipped,failed")
+    .select("processed,inserted,updated,skipped,failed,metadata")
     .eq("id", id)
     .eq("sync_type", "products")
     .maybeSingle();
@@ -716,6 +732,9 @@ async function updateSyncRun(supabase, id, values) {
   const counters = values.counters;
   const payload = { ...values };
   delete payload.counters;
+  if (payload.metadata && current) {
+    payload.metadata = { ...(current.metadata || {}), ...payload.metadata };
+  }
   if (counters && current) {
     payload.processed = Number(current.processed || 0) + Number(counters.processed || 0);
     payload.inserted = Number(current.inserted || 0) + Number(counters.inserted || 0);
@@ -731,6 +750,25 @@ async function updateSyncRun(supabase, id, values) {
   if (error) console.error("Aggiornamento run prodotti non riuscito", { runId: id, message: error.message });
 }
 
+async function reconcileStaleProducts(supabase, startedAt) {
+  const now = new Date().toISOString();
+  const { count, error } = await supabase
+    .from("prodotti")
+    .update({
+      mostra_in_app: false,
+      attivo: false,
+      attivo_mexal: false,
+      stato: "Non attivo",
+      updated_at: now,
+    }, { count: "exact" })
+    .eq("sincronizzato_mexal", true)
+    .or("codice_mexal.ilike.IT%,codice_mexal.ilike.MKT%,codice_mexal.ilike.IMP%")
+    .or(`ultimo_sync_mexal.lt.${startedAt},ultimo_sync_mexal.is.null`);
+
+  if (error) throw error;
+  return count || 0;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({
@@ -740,6 +778,7 @@ export default async function handler(req, res) {
 
   let supabase;
   let syncRunId = null;
+  let syncRun = null;
   try {
     supabase = createClient(
       requireEnv("SUPABASE_URL"),
@@ -782,10 +821,19 @@ export default async function handler(req, res) {
     if (action === "sync") {
       syncRunId = body.syncRunId || null;
       if (!syncRunId && offset === 0) {
-        syncRunId = await createSyncRun(supabase, { batch_size: batchSize, origin: body.origin || "manual" });
+        syncRun = await createSyncRun(supabase, {
+          batch_size: batchSize,
+          origin: body.origin || "manual",
+        });
+        syncRunId = syncRun.id;
+      } else if (syncRunId) {
+        syncRun = await getSyncRun(supabase, syncRunId);
       }
       if (!syncRunId) {
         throw new Error("Identificativo della sincronizzazione prodotti mancante.");
+      }
+      if (syncRun.status !== "running") {
+        throw new Error("La run di sincronizzazione prodotti non è più in esecuzione.");
       }
     }
 
@@ -896,6 +944,7 @@ export default async function handler(req, res) {
       immagini_salvate: 0,
       esclusi_non_attivi: 0,
       esclusi_fuori_produzione: 0,
+      disattivati: 0,
       errori: [],
       sync_run_id: syncRunId,
     };
@@ -991,9 +1040,31 @@ export default async function handler(req, res) {
       }
     }
 
+    const previousProcessed = Number(syncRun.processed || 0);
+    const previousFailures = Number(syncRun.failed || 0);
+    const allBatchesCompleted =
+      result.completato &&
+      previousProcessed + batch.length === result.totale;
+    const canReconcile =
+      allBatchesCompleted &&
+      previousFailures === 0 &&
+      result.errori.length === 0;
+
+    if (canReconcile) {
+      result.disattivati = await reconcileStaleProducts(
+        supabase,
+        syncRun.started_at
+      );
+    }
+
     const status = result.completato
-      ? (result.errori.length ? "completed_with_errors" : "completed")
+      ? (canReconcile ? "completed" : "completed_with_errors")
       : "running";
+    const completionError = result.completato && !allBatchesCompleted
+      ? "Lotti prodotti incompleti o non sequenziali: riconciliazione non eseguita."
+      : result.errori.length || previousFailures
+        ? "Alcuni articoli non sono stati sincronizzati: riconciliazione non eseguita."
+        : null;
     await updateSyncRun(supabase, syncRunId, {
       status,
       completed_at: result.completato ? new Date().toISOString() : null,
@@ -1004,8 +1075,13 @@ export default async function handler(req, res) {
         skipped: result.esclusi_non_attivi + result.esclusi_fuori_produzione,
         failed: result.errori.length,
       },
-      error_message: result.errori.length ? "Alcuni articoli non sono stati sincronizzati." : null,
-      metadata: { total: result.totale, last_offset: offset, images_saved: result.immagini_salvate },
+      error_message: completionError,
+      metadata: {
+        total: result.totale,
+        last_offset: offset,
+        images_saved: result.immagini_salvate,
+        disattivati: result.disattivati,
+      },
     });
     return res.status(200).json(result);
   } catch (error) {

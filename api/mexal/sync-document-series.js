@@ -22,7 +22,7 @@ function requestJson({ url, headers = {} }) {
       response.on("data", (chunk) => chunks.push(chunk));
       response.on("end", () => {
         const raw = Buffer.concat(chunks).toString("utf8");
-        let data = null;
+        let data;
         try { data = raw ? JSON.parse(raw) : null; } catch { data = raw; }
         resolve({ status: response.statusCode || 500, data, raw });
       });
@@ -75,6 +75,11 @@ function mexalClient() {
       "Coordinate-Gestionale": `Azienda=${azienda} Anno=${anno}${magazzino ? ` Magazzino=${magazzino}` : ""}`,
       Accept: "application/json",
     },
+    diagnostics: {
+      has_domain: Boolean(dominio),
+      has_magazzino: Boolean(magazzino),
+      base_url_has_resources: rawBaseUrl.endsWith("/webapi/risorse"),
+    },
   };
 }
 
@@ -112,21 +117,49 @@ export default async function handler(req, res) {
   try {
     await verifyAdmin(req, admin);
     const mexal = mexalClient();
+    console.info("Mexal serie documenti: richiesta avviata", mexal.diagnostics);
     const response = await requestJson({ url: mexal.endpoint, headers: mexal.headers });
     if (response.status < 200 || response.status >= 300) {
       const detail = response.data?.error?.["response-message"] || response.data?.error?.["response-detail"] || response.raw;
-      throw new Error(`Mexal HTTP ${response.status}: ${detail || "errore lettura serie documenti"}`);
+      const error = new Error(`Mexal HTTP ${response.status}: ${text(detail).slice(0, 500) || "errore lettura serie documenti"}`);
+      error.details = `Endpoint serie documenti raggiunto; HTTP ${response.status}. Verificare credenziali, Coordinate-Gestionale e abilitazione WebAPI.`;
+      throw error;
     }
     const rows = extractRows(response.data).map(normalizeRow).filter((row) => row.serie !== "");
-    if (!rows.length) throw new Error("Mexal non ha restituito serie documenti riconoscibili.");
+    if (!rows.length) {
+      const error = new Error("Mexal non ha restituito serie documenti riconoscibili.");
+      error.details = "La risposta JSON è valida ma non contiene un array di serie nei campi supportati.";
+      throw error;
+    }
 
-    const { error: deactivateError } = await admin.from("ordini_serie_documenti").update({ attiva: false }).neq("id", 0);
-    if (deactivateError) throw deactivateError;
+    const sourceKeys = rows.map((row) => row.source_key);
+    const { data: existing, error: existingError } = await admin
+      .from("ordini_serie_documenti")
+      .select("source_key")
+      .in("source_key", sourceKeys);
+    if (existingError) {
+      const error = new Error("Errore Supabase durante la lettura delle serie esistenti.");
+      error.details = text(existingError.message).slice(0, 500);
+      throw error;
+    }
     const { error: upsertError } = await admin.from("ordini_serie_documenti").upsert(rows, { onConflict: "source_key" });
-    if (upsertError) throw upsertError;
+    if (upsertError) {
+      const error = new Error("Errore Supabase durante il salvataggio delle serie documenti.");
+      error.details = text(upsertError.message).slice(0, 500);
+      throw error;
+    }
+    const existingKeys = new Set((existing || []).map((row) => row.source_key));
+    const updated = rows.filter((row) => existingKeys.has(row.source_key)).length;
+    const imported = rows.length - updated;
+    console.info("Mexal serie documenti: completata", { received: rows.length, imported, updated });
 
-    return res.status(200).json({ ok: true, endpoint: mexal.endpoint, count: rows.length, series: rows });
+    return res.status(200).json({ success: true, received: rows.length, imported, updated, skipped: 0, errors: [] });
   } catch (error) {
-    return res.status(error.status || 500).json({ error: error.message || "Errore sincronizzazione serie documenti." });
+    console.error("Mexal serie documenti: errore", { message: error?.message, status: error?.status || 500 });
+    return res.status(error.status || 500).json({
+      success: false,
+      error: error.message || "Errore sincronizzazione serie documenti.",
+      details: error.details || "Controllare i log Vercel per dettagli non sensibili.",
+    });
   }
 }

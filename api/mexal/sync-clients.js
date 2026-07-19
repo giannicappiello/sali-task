@@ -494,14 +494,24 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Metodo non consentito." });
   }
 
+  let supabase;
+  let runId = null;
   try {
-    const supabase = createClient(
+    supabase = createClient(
       requireEnv("SUPABASE_URL"),
       requireEnv("SUPABASE_SERVICE_ROLE_KEY"),
       { auth: { persistSession: false } }
     );
 
     await verifyUser(req, supabase);
+
+    const { data: run, error: runError } = await supabase
+      .from("mexal_sync_runs")
+      .insert({ sync_type: "clients", status: "running", metadata: { source: "vercel" } })
+      .select("id")
+      .single();
+    if (runError) throw runError;
+    runId = run.id;
 
     const mexal = buildMexalClient();
     const paymentsMap = await loadPaymentsMap(mexal);
@@ -510,6 +520,8 @@ export default async function handler(req, res) {
     const result = {
       letti_mexal: clients.length,
       inseriti_o_aggiornati: 0,
+      inseriti: 0,
+      aggiornati: 0,
       disattivati: 0,
       errori: [],
     };
@@ -524,6 +536,12 @@ export default async function handler(req, res) {
       const batch = clients.slice(index, index + UPSERT_BATCH_SIZE);
       const range = `${index + 1}-${index + batch.length}`;
 
+      const { data: existing, error: existingError } = await supabase
+        .from("ordini_clienti_cache")
+        .select("codice_cliente")
+        .in("codice_cliente", batch.map((item) => item.codice_cliente));
+      if (existingError) throw existingError;
+      const existingCodes = new Set((existing || []).map((item) => item.codice_cliente));
       const { error } = await supabase
         .from("ordini_clienti_cache")
         .upsert(batch, { onConflict: "codice_cliente" });
@@ -545,6 +563,8 @@ export default async function handler(req, res) {
         });
       } else {
         result.inseriti_o_aggiornati += batch.length;
+        result.aggiornati += batch.filter((item) => existingCodes.has(item.codice_cliente)).length;
+        result.inseriti += batch.filter((item) => !existingCodes.has(item.codice_cliente)).length;
       }
     }
 
@@ -601,13 +621,27 @@ export default async function handler(req, res) {
       }
     }
 
-    return res.status(200).json(result);
+    const status = result.errori.length ? "completed_with_errors" : "completed";
+    await supabase.from("mexal_sync_runs").update({
+      status,
+      completed_at: new Date().toISOString(),
+      processed: result.letti_mexal,
+      inserted: result.inseriti,
+      updated: result.aggiornati,
+      skipped: 0,
+      failed: result.errori.length,
+      error_message: result.errori.length ? "Alcuni lotti clienti non sono stati salvati." : null,
+    }).eq("id", runId);
+    return res.status(200).json({ ...result, success: true, sync_run_id: runId });
   } catch (error) {
     console.error("Errore generale sincronizzazione clienti Mexal", {
       message: error?.message,
       stack: error?.stack,
     });
 
+    if (supabase && runId) {
+      await supabase.from("mexal_sync_runs").update({ status: "failed", completed_at: new Date().toISOString(), error_message: error?.message || "Errore sincronizzazione clienti." }).eq("id", runId);
+    }
     return res.status(Number(error?.status || 500)).json({
       error: error?.message || "Errore sincronizzazione clienti Mexal.",
     });

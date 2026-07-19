@@ -691,6 +691,46 @@ async function saveProduct({
   return "inserted";
 }
 
+async function createSyncRun(supabase, metadata) {
+  const { data, error } = await supabase
+    .from("mexal_sync_runs")
+    .insert({ sync_type: "products", status: "running", metadata })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return data.id;
+}
+
+async function updateSyncRun(supabase, id, values) {
+  if (!id) return;
+  const { data: current, error: readError } = await supabase
+    .from("mexal_sync_runs")
+    .select("processed,inserted,updated,skipped,failed")
+    .eq("id", id)
+    .eq("sync_type", "products")
+    .maybeSingle();
+  if (readError) {
+    console.error("Lettura run prodotti non riuscita", { runId: id, message: readError.message });
+    return;
+  }
+  const counters = values.counters;
+  const payload = { ...values };
+  delete payload.counters;
+  if (counters && current) {
+    payload.processed = Number(current.processed || 0) + Number(counters.processed || 0);
+    payload.inserted = Number(current.inserted || 0) + Number(counters.inserted || 0);
+    payload.updated = Number(current.updated || 0) + Number(counters.updated || 0);
+    payload.skipped = Number(current.skipped || 0) + Number(counters.skipped || 0);
+    payload.failed = Number(current.failed || 0) + Number(counters.failed || 0);
+  }
+  const { error } = await supabase
+    .from("mexal_sync_runs")
+    .update(payload)
+    .eq("id", id)
+    .eq("sync_type", "products");
+  if (error) console.error("Aggiornamento run prodotti non riuscito", { runId: id, message: error.message });
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({
@@ -698,8 +738,10 @@ export default async function handler(req, res) {
     });
   }
 
+  let supabase;
+  let syncRunId = null;
   try {
-    const supabase = createClient(
+    supabase = createClient(
       requireEnv("SUPABASE_URL"),
       requireEnv("SUPABASE_SERVICE_ROLE_KEY"),
       {
@@ -722,7 +764,6 @@ export default async function handler(req, res) {
       allowOrdersUser: action === "sync-stock-it" || action === "sync",
     });
 
-    const mexal = buildMexalClient();
     const offset = Math.max(
       0,
       Number(body.offset || 0)
@@ -737,6 +778,18 @@ export default async function handler(req, res) {
         )
       )
     );
+
+    if (action === "sync") {
+      syncRunId = body.syncRunId || null;
+      if (!syncRunId && offset === 0) {
+        syncRunId = await createSyncRun(supabase, { batch_size: batchSize, origin: body.origin || "manual" });
+      }
+      if (!syncRunId) {
+        throw new Error("Identificativo della sincronizzazione prodotti mancante.");
+      }
+    }
+
+    const mexal = buildMexalClient();
 
     const [articles, groupMap] =
       await Promise.all([
@@ -822,24 +875,9 @@ export default async function handler(req, res) {
       });
     }
 
-    if (
-      offset === 0 &&
-      body.replaceStart === true
-    ) {
-      const { error: hideError } = await supabase
-        .from("prodotti")
-        .update({
-          attivo: false,
-          attivo_mexal: false,
-          mostra_in_app: false,
-          stato: "Non attivo",
-        })
-        .eq("sincronizzato_mexal", true);
-
-      if (hideError) throw hideError;
-
-      await ensureImageBucket(supabase);
-    }
+    // Non invalidare mai il catalogo all'avvio: ogni lotto aggiorna soltanto
+    // gli articoli ricevuti. Una sync interrotta lascia intatti i record già visibili.
+    if (offset === 0) await ensureImageBucket(supabase);
 
     const batch = articles.slice(
       offset,
@@ -859,6 +897,7 @@ export default async function handler(req, res) {
       esclusi_non_attivi: 0,
       esclusi_fuori_produzione: 0,
       errori: [],
+      sync_run_id: syncRunId,
     };
 
     for (const summary of batch) {
@@ -952,8 +991,29 @@ export default async function handler(req, res) {
       }
     }
 
+    const status = result.completato
+      ? (result.errori.length ? "completed_with_errors" : "completed")
+      : "running";
+    await updateSyncRun(supabase, syncRunId, {
+      status,
+      completed_at: result.completato ? new Date().toISOString() : null,
+      counters: {
+        processed: batch.length,
+        inserted: result.inseriti,
+        updated: result.aggiornati,
+        skipped: result.esclusi_non_attivi + result.esclusi_fuori_produzione,
+        failed: result.errori.length,
+      },
+      error_message: result.errori.length ? "Alcuni articoli non sono stati sincronizzati." : null,
+      metadata: { total: result.totale, last_offset: offset, images_saved: result.immagini_salvate },
+    });
     return res.status(200).json(result);
   } catch (error) {
+    await updateSyncRun(supabase, syncRunId, {
+      status: "failed",
+      completed_at: new Date().toISOString(),
+      error_message: error?.message || "Errore sincronizzazione prodotti.",
+    });
     return res
       .status(Number(error?.status || 500))
       .json({

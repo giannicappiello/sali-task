@@ -23,6 +23,10 @@ import IntegrationStatusBadge from "../components/IntegrationStatusBadge";
 import {
   invokeCommercialConditionsSync,
   loadCommercialCounts,
+  invokeClientsSync,
+  invokeProductsSync,
+  loadMexalEntityCounts,
+  loadMexalRuns,
   loadRunDetails,
   loadSyncRuns,
 } from "../services/mexalSyncService";
@@ -59,13 +63,18 @@ export default function MexalDashboard() {
   const [progress, setProgress] = useState(0);
   const [phase, setPhase] = useState("");
   const [settings, setSettings] = useState({ mode: "full", dryRun: false, syncPayments: true });
+  const [entityCounts, setEntityCounts] = useState({ products: null, clients: null });
+  const [entityRuns, setEntityRuns] = useState({ products: null, clients: null });
+  const [activeSync, setActiveSync] = useState(null);
 
   const latestRun = runs[0] || null;
 
   const refreshData = useCallback(async (preferredRunId = null) => {
-    const [runRows, countRows] = await Promise.all([loadSyncRuns(25), loadCommercialCounts()]);
+    const [runRows, countRows, entityCountRows, productRuns, clientRuns] = await Promise.all([loadSyncRuns(25), loadCommercialCounts(), loadMexalEntityCounts(), loadMexalRuns("products"), loadMexalRuns("clients")]);
     setRuns(runRows);
     setCounts(countRows);
+    setEntityCounts(entityCountRows);
+    setEntityRuns({ products: productRuns[0] || null, clients: clientRuns[0] || null });
 
     const nextSelected = preferredRunId
       ? runRows.find((run) => run.id === preferredRunId)
@@ -166,6 +175,26 @@ export default function MexalDashboard() {
     }
   }
 
+  async function runEntitySync(type) {
+    if (!isAdminUser || activeSync) return;
+    setActiveSync(type);
+    setMessage({ type: "info", text: `Sincronizzazione ${type === "products" ? "prodotti" : "clienti"} avviata...` });
+    try {
+      const result = type === "products"
+        ? await invokeProductsSync(({ processed, total, inserted, updated, errors }) => setMessage({ type: "info", text: `Sincronizzazione prodotti in corso: ${processed}/${total} elaborati, ${inserted} inseriti, ${updated} aggiornati, ${errors.length} errori.` }))
+        : await invokeClientsSync();
+      const processed = type === "products" ? result.processed : result.letti_mexal;
+      const inserted = type === "products" ? result.inserted : result.inseriti;
+      const updated = type === "products" ? result.updated : result.aggiornati;
+      const errors = type === "products" ? result.errors.length : result.errori?.length || 0;
+      setMessage({ type: errors ? "warning" : "success", text: `Sincronizzazione ${type === "products" ? "prodotti" : "clienti"} completata: ${processed || 0} elaborati, ${inserted || 0} inseriti, ${updated || 0} aggiornati, ${errors} errori.` });
+      await refreshData();
+    } catch (error) {
+      setMessage({ type: "error", text: error.message || "Sincronizzazione Mexal interrotta." });
+      try { await refreshData(); } catch { /* conserva il messaggio */ }
+    } finally { setActiveSync(null); }
+  }
+
   const commercialCount = useMemo(() => {
     const values = [counts.matrix, counts.particularities, counts.payments];
     if (values.some((value) => value == null)) return null;
@@ -173,9 +202,9 @@ export default function MexalDashboard() {
   }, [counts]);
 
   const cards = [
-    { icon: Users, title: "Clienti", description: "Anagrafiche, categorie commerciali e condizioni cliente.", recordLabel: "clienti", enabled: false },
+    { icon: Users, title: "Clienti", description: "Anagrafiche, categorie commerciali e condizioni cliente.", recordLabel: "clienti attivi", recordCount: entityCounts.clients, enabled: true, onSync: () => runEntitySync("clients"), lastRunData: entityRuns.clients },
     { icon: Building2, title: "Agenti", description: "Agenti Mexal e associazioni con Area Manager.", recordLabel: "agenti", enabled: false },
-    { icon: PackageSearch, title: "Prodotti", description: "Catalogo, categorie, immagini e schede tecniche.", recordLabel: "prodotti", enabled: false },
+    { icon: PackageSearch, title: "Prodotti", description: "Catalogo, categorie, immagini e schede tecniche. Import incrementale, senza disattivazioni preventive.", recordLabel: "prodotti visibili", recordCount: entityCounts.products, enabled: true, onSync: () => runEntitySync("products"), lastRunData: entityRuns.products },
     {
       icon: ScrollText,
       title: "Condizioni commerciali",
@@ -231,8 +260,9 @@ export default function MexalDashboard() {
           <MexalSyncCard
             key={card.title}
             {...card}
-            running={running && card.enabled}
-            lastRun={card.enabled && latestRun ? formatDate(latestRun.completed_at || latestRun.started_at) : null}
+            run={card.lastRunData}
+            running={card.title === "Condizioni commerciali" ? running : activeSync === (card.title === "Prodotti" ? "products" : card.title === "Clienti" ? "clients" : "")}
+            lastRun={card.lastRunData ? formatDate(card.lastRunData.completed_at || card.lastRunData.started_at) : (card.title === "Condizioni commerciali" && latestRun ? formatDate(latestRun.completed_at || latestRun.started_at) : null)}
             onOpen={() => setMessage({ type: "warning", text: `${card.title}: funzionalità prevista nei prossimi sprint.` })}
           />
         ))}

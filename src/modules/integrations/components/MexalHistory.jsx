@@ -1,53 +1,10 @@
+import { useMemo, useState } from "react";
 import IntegrationStatusBadge from "./IntegrationStatusBadge";
-
-function formatDate(value) {
-  if (!value) return "—";
-  return new Date(value).toLocaleString("it-IT", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function formatDuration(milliseconds) {
-  if (milliseconds == null) return "—";
-  const totalSeconds = Math.max(0, Math.round(milliseconds / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-}
-
+function formatDate(value) { return value ? new Date(value).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"; }
+function formatDuration(ms) { if (ms == null) return "—"; const seconds = Math.max(0, Math.round(ms / 1000)); return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`; }
+const labels = { products: "Prodotti", clients: "Clienti", stocks: "Giacenze", orders: "Ordini", commercial_conditions: "Condizioni commerciali", document_series: "Serie documenti", agents: "Agenti", payments: "Pagamenti" };
 export default function MexalHistory({ runs = [], selectedRunId, onSelect }) {
-  return (
-    <section className="mexal-history-panel">
-      <div className="mexal-section-heading">
-        <div><h3>Cronologia sincronizzazioni</h3><p>Seleziona una riga per visualizzare log ed errori.</p></div>
-      </div>
-      <div className="mexal-history-table-wrap">
-        <table className="mexal-history-table">
-          <thead><tr><th>Avvio</th><th>Tipo</th><th>Stato</th><th>Letti</th><th>Aggiornati</th><th>Durata</th></tr></thead>
-          <tbody>
-            {runs.length === 0 ? (
-              <tr><td colSpan="6"><div className="mexal-empty-state">Nessuna sincronizzazione registrata.</div></td></tr>
-            ) : runs.map((run) => (
-              <tr
-                key={run.id}
-                className={selectedRunId === run.id ? "is-selected" : ""}
-                onClick={() => onSelect(run)}
-              >
-                <td>{formatDate(run.started_at)}</td>
-                <td>{run.sync_type === "commercial_conditions" ? "Condizioni commerciali" : run.sync_type}</td>
-                <td><IntegrationStatusBadge status={run.status} /></td>
-                <td>{run.records_read || 0}</td>
-                <td>{run.records_updated || 0}</td>
-                <td>{formatDuration(run.duration_ms)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
+  const [type, setType] = useState(""); const [status, setStatus] = useState(""); const [from, setFrom] = useState(""); const [to, setTo] = useState("");
+  const filtered = useMemo(() => runs.filter((run) => (!type || run.sync_type === type) && (!status || run.status === status) && (!from || new Date(run.started_at) >= new Date(from)) && (!to || new Date(run.started_at) <= new Date(`${to}T23:59:59`))), [runs, type, status, from, to]);
+  return <section className="mexal-history-panel"><div className="mexal-section-heading"><div><h3>Cronologia sincronizzazioni</h3><p>Filtra le esecuzioni e seleziona una riga per i dettagli.</p></div></div><div className="mexal-settings-grid"><select value={type} onChange={(e) => setType(e.target.value)}><option value="">Tutti i tipi</option>{Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><select value={status} onChange={(e) => setStatus(e.target.value)}><option value="">Tutti gli stati</option><option value="completed">Completata</option><option value="completed_with_errors">Con errori</option><option value="failed">Fallita</option><option value="running">In corso</option></select><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="Da"/><input type="date" value={to} onChange={(e) => setTo(e.target.value)} aria-label="A"/></div><div className="mexal-history-table-wrap"><table className="mexal-history-table"><thead><tr><th>Avvio</th><th>Tipo</th><th>Stato</th><th>Elaborati</th><th>Inseriti</th><th>Aggiornati</th><th>Errori</th><th>Durata</th></tr></thead><tbody>{filtered.length === 0 ? <tr><td colSpan="8"><div className="mexal-empty-state">Nessuna sincronizzazione registrata.</div></td></tr> : filtered.map((run) => <tr key={run.id} className={selectedRunId === run.id ? "is-selected" : ""} onClick={() => onSelect(run)}><td>{formatDate(run.started_at)}</td><td>{labels[run.sync_type] || run.sync_type}</td><td><IntegrationStatusBadge status={run.status}/></td><td>{run.processed ?? run.records_read ?? 0}</td><td>{run.inserted ?? run.records_inserted ?? 0}</td><td>{run.updated ?? run.records_updated ?? 0}</td><td>{run.failed ?? run.records_failed ?? 0}</td><td>{formatDuration(run.duration_ms)}</td></tr>)}</tbody></table></div></section>;
 }

@@ -134,8 +134,12 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Metodo non consentito." });
   const admin = supabaseAdmin();
   let orderId = null;
+  let runId = null;
   try {
     await verifyUser(req, admin);
+    const { data: run, error: runError } = await admin.from("mexal_sync_runs").insert({ sync_type: "orders", status: "running", metadata: { source: "submit-order" } }).select("id").single();
+    if (runError) throw runError;
+    runId = run.id;
     orderId = text(req.body?.orderId);
     if (!orderId) return res.status(400).json({ error: "orderId obbligatorio." });
 
@@ -188,8 +192,10 @@ export default async function handler(req, res) {
       numero_ocx: ocx?.numero || order.numero_ocx || null,
     }).eq("id", orderId);
 
+    await admin.from("mexal_sync_runs").update({ status: "completed", completed_at: new Date().toISOString(), processed: 1, updated: 1, metadata: { source: "submit-order", documents: documents.map(({ kind, numero }) => ({ kind, numero })) } }).eq("id", runId);
     return res.status(200).json({ success: true, numero_ocm: ocm?.numero || null, numero_ocx: ocx?.numero || null, documents });
   } catch (error) {
+    if (runId) await admin.from("mexal_sync_runs").update({ status: "failed", completed_at: new Date().toISOString(), processed: orderId ? 1 : 0, failed: 1, error_message: text(error?.message).slice(0, 500) }).eq("id", runId);
     if (orderId) {
       await admin.from("ordini_testate").update({ stato_sincronizzazione: "errore", errore_sincronizzazione: error.message, ultimo_tentativo_sync: new Date().toISOString() }).eq("id", orderId);
     }

@@ -14,6 +14,7 @@ async function mainHandler(req) {
   }
   const startedAt = Date.now();
   let runId = null;
+  let centralRunId = null;
   let supabase = null;
   try {
     const token = getBearerToken(req);
@@ -36,6 +37,9 @@ async function mainHandler(req) {
       parameters: { mode, dryRun, syncPayments }
     });
     runId = String(run.id);
+    const { data: centralRun, error: centralRunError } = await supabase.from("mexal_sync_runs").insert({ sync_type: "commercial_conditions", status: "running", metadata: { mode, dryRun, syncPayments } }).select("id").single();
+    if (centralRunError) throw centralRunError;
+    centralRunId = centralRun.id;
     const mexal = createMexalClient();
     const matrixStats = { read: 0, written: 0, deactivated: 0, warnings: [] };
     const particularityStats = { read: 0, written: 0, deactivated: 0, warnings: [] };
@@ -254,6 +258,7 @@ async function mainHandler(req) {
         dryRun
       }
     }).eq("id", runId);
+    await supabase.from("mexal_sync_runs").update({ status: warnings.length ? "completed_with_errors" : "completed", completed_at: (/* @__PURE__ */ new Date()).toISOString(), processed: totals.read, updated: totals.written, skipped: totals.deactivated, failed: warnings.length, metadata: { mode, dryRun, syncPayments, warnings } }).eq("id", centralRunId);
     return jsonResponse({
       ok: true,
       runId,
@@ -267,6 +272,7 @@ async function mainHandler(req) {
   } catch (error) {
     const durationMs = Date.now() - startedAt;
     const message = errorMessage(error);
+    if (supabase && centralRunId) await supabase.from("mexal_sync_runs").update({ status: "failed", completed_at: (/* @__PURE__ */ new Date()).toISOString(), error_message: message }).eq("id", centralRunId);
     if (supabase && runId) {
       await logSyncError(supabase, runId, "commercial_conditions", null, error, false);
       await supabase.from("ordini_sync_runs").update({

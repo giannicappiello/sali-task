@@ -25,6 +25,7 @@ import {
   loadCommercialCounts,
   invokeClientsSync,
   invokeProductsSync,
+  invokeStocksSync,
   loadMexalEntityCounts,
   loadMexalRuns,
   loadRunDetails,
@@ -63,18 +64,18 @@ export default function MexalDashboard() {
   const [progress, setProgress] = useState(0);
   const [phase, setPhase] = useState("");
   const [settings, setSettings] = useState({ mode: "full", dryRun: false, syncPayments: true });
-  const [entityCounts, setEntityCounts] = useState({ products: null, clients: null });
-  const [entityRuns, setEntityRuns] = useState({ products: null, clients: null });
+  const [entityCounts, setEntityCounts] = useState({ products: null, clients: null, stocks: null, orders: null });
+  const [entityRuns, setEntityRuns] = useState({ products: null, clients: null, stocks: null, orders: null });
   const [activeSync, setActiveSync] = useState(null);
 
   const latestRun = runs[0] || null;
 
   const refreshData = useCallback(async (preferredRunId = null) => {
-    const [runRows, countRows, entityCountRows, productRuns, clientRuns] = await Promise.all([loadSyncRuns(25), loadCommercialCounts(), loadMexalEntityCounts(), loadMexalRuns("products"), loadMexalRuns("clients")]);
+    const [runRows, countRows, entityCountRows, productRuns, clientRuns, stockRuns, orderRuns] = await Promise.all([loadSyncRuns(25), loadCommercialCounts(), loadMexalEntityCounts(), loadMexalRuns("products"), loadMexalRuns("clients"), loadMexalRuns("stocks"), loadMexalRuns("orders")]);
     setRuns(runRows);
     setCounts(countRows);
     setEntityCounts(entityCountRows);
-    setEntityRuns({ products: productRuns[0] || null, clients: clientRuns[0] || null });
+    setEntityRuns({ products: productRuns[0] || null, clients: clientRuns[0] || null, stocks: stockRuns[0] || null, orders: orderRuns[0] || null });
 
     const nextSelected = preferredRunId
       ? runRows.find((run) => run.id === preferredRunId)
@@ -182,12 +183,13 @@ export default function MexalDashboard() {
     try {
       const result = type === "products"
         ? await invokeProductsSync(({ processed, total, inserted, updated, errors }) => setMessage({ type: "info", text: `Sincronizzazione prodotti in corso: ${processed}/${total} elaborati, ${inserted} inseriti, ${updated} aggiornati, ${errors.length} errori.` }))
+        : type === "stocks" ? await invokeStocksSync(({ processed, total, updated, errors }) => setMessage({ type: "info", text: `Sincronizzazione giacenze in corso: ${processed}/${total} elaborati, ${updated} aggiornati, ${errors.length} errori.` }))
         : await invokeClientsSync();
-      const processed = type === "products" ? result.processed : result.letti_mexal;
-      const inserted = type === "products" ? result.inserted : result.inseriti;
-      const updated = type === "products" ? result.updated : result.aggiornati;
-      const errors = type === "products" ? result.errors.length : result.errori?.length || 0;
-      setMessage({ type: errors ? "warning" : "success", text: `Sincronizzazione ${type === "products" ? "prodotti" : "clienti"} completata: ${processed || 0} elaborati, ${inserted || 0} inseriti, ${updated || 0} aggiornati, ${errors} errori.` });
+      const processed = type === "products" || type === "stocks" ? result.processed : result.letti_mexal;
+      const inserted = type === "products" ? result.inserted : type === "stocks" ? 0 : result.inseriti;
+      const updated = type === "products" || type === "stocks" ? result.updated : result.aggiornati;
+      const errors = type === "products" || type === "stocks" ? result.errors.length : result.errori?.length || 0;
+      setMessage({ type: errors ? "warning" : "success", text: `Sincronizzazione ${type === "products" ? "prodotti" : type === "stocks" ? "giacenze" : "clienti"} completata: ${processed || 0} elaborati, ${inserted || 0} inseriti, ${updated || 0} aggiornati, ${errors} errori.` });
       await refreshData();
     } catch (error) {
       setMessage({ type: "error", text: error.message || "Sincronizzazione Mexal interrotta." });
@@ -214,8 +216,8 @@ export default function MexalDashboard() {
       enabled: true,
       onSync: runCommercialSync,
     },
-    { icon: Warehouse, title: "Giacenze", description: "Disponibilità per magazzino e controllo evasione ordini.", recordLabel: "articoli", enabled: false },
-    { icon: ShoppingCart, title: "Ordini", description: "Invio OCM/OCX, PDF e stato sincronizzazione documenti.", recordLabel: "ordini", enabled: false },
+    { icon: Warehouse, title: "Giacenze", description: "Disponibilità per magazzino e controllo evasione ordini.", recordLabel: "prodotti con giacenza sincronizzata", recordCount: entityCounts.stocks, enabled: true, onSync: () => runEntitySync("stocks"), lastRunData: entityRuns.stocks },
+    { icon: ShoppingCart, title: "Ordini", description: "Invio OCM/OCX, PDF e stato sincronizzazione documenti.", recordLabel: "ordini da inviare", recordCount: entityCounts.orders, enabled: true, onSync: () => navigate("/orders"), lastRunData: entityRuns.orders },
   ];
 
   if (loading) {
@@ -261,7 +263,7 @@ export default function MexalDashboard() {
             key={card.title}
             {...card}
             run={card.lastRunData}
-            running={card.title === "Condizioni commerciali" ? running : activeSync === (card.title === "Prodotti" ? "products" : card.title === "Clienti" ? "clients" : "")}
+            running={card.title === "Condizioni commerciali" ? running : activeSync === (card.title === "Prodotti" ? "products" : card.title === "Clienti" ? "clients" : card.title === "Giacenze" ? "stocks" : "")}
             lastRun={card.lastRunData ? formatDate(card.lastRunData.completed_at || card.lastRunData.started_at) : (card.title === "Condizioni commerciali" && latestRun ? formatDate(latestRun.completed_at || latestRun.started_at) : null)}
             onOpen={() => setMessage({ type: "warning", text: `${card.title}: funzionalità prevista nei prossimi sprint.` })}
           />

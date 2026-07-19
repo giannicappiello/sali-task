@@ -19,12 +19,6 @@ function required(name) {
   return value;
 }
 
-function requestBaseUrl(req) {
-  const protocol = String(req.headers["x-forwarded-proto"] || "https").split(",")[0].trim();
-  const host = req.headers["x-forwarded-host"] || req.headers.host;
-  return `${protocol}://${host}`;
-}
-
 function runPayload(body, syncType) {
   const payload = { ...body, origin: body.origin || "manual" };
   delete payload.action;
@@ -33,6 +27,88 @@ function runPayload(body, syncType) {
   if (syncType === "products") payload.action = "sync";
   if (syncType === "stocks") payload.action = "sync-stock-it";
   return payload;
+}
+
+const SYNC_ALL_PHASES = Object.freeze([
+  "clients",
+  "commercial_conditions",
+  "document_series",
+  "products",
+  "stocks",
+]);
+
+function createResponseCapture() {
+  const response = {
+    statusCode: 200,
+    payload: undefined,
+    status(statusCode) {
+      this.statusCode = statusCode;
+      return this;
+    },
+    json(payload) {
+      this.payload = payload;
+      return this;
+    },
+    send(payload) {
+      if (typeof payload === "string") {
+        try {
+          this.payload = JSON.parse(payload);
+        } catch {
+          this.payload = payload;
+        }
+      } else {
+        this.payload = payload;
+      }
+      return this;
+    },
+    setHeader() {},
+  };
+  return response;
+}
+
+async function syncAll(req, res, body) {
+  await requireAdmin(req);
+
+  const completedPhases = [];
+  const results = [];
+  for (const phase of SYNC_ALL_PHASES) {
+    const phaseResponse = createResponseCapture();
+    const phaseRequest = { ...req, body: runPayload(body, phase) };
+    let handlerError = null;
+    try {
+      await RUN_HANDLERS[phase](phaseRequest, phaseResponse);
+    } catch (error) {
+      handlerError = error;
+    }
+
+    const result = phaseResponse.payload || (handlerError ? { error: handlerError.message } : undefined);
+    const failed = Boolean(handlerError) || phaseResponse.statusCode < 200 || phaseResponse.statusCode >= 300 || result?.success === false || result?.ok === false;
+    results.push({ phase, status: failed ? "failed" : "completed", result });
+
+    if (failed) {
+      const error = result?.error || `Sincronizzazione ${phase} non riuscita (HTTP ${phaseResponse.statusCode}).`;
+      return res.status(500).json({
+        status: "failed",
+        processedActions: completedPhases.length,
+        failedActions: 1,
+        completedPhases,
+        failedPhase: phase,
+        results,
+        error,
+      });
+    }
+    completedPhases.push(phase);
+  }
+
+  return res.status(200).json({
+    status: "completed",
+    processedActions: SYNC_ALL_PHASES.length,
+    failedActions: 0,
+    completedPhases,
+    failedPhase: null,
+    results,
+    error: null,
+  });
 }
 
 async function requireAdmin(req) {
@@ -88,9 +164,12 @@ export default async function handler(req, res) {
         req.body = { runId: body.runId };
         return await stopHandler(req, res);
       case "sync_all":
+        return await syncAll(req, res, body);
       case "dispatch": {
         if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ ok: false, error: "Cron non autorizzato." });
-        const response = await fetch(`${requestBaseUrl(req)}/api/cron/mexal-dispatcher`, { headers: { Authorization: req.headers.authorization } });
+        const protocol = String(req.headers["x-forwarded-proto"] || "https").split(",")[0].trim();
+        const host = req.headers["x-forwarded-host"] || req.headers.host;
+        const response = await fetch(`${protocol}://${host}/api/cron/mexal-dispatcher`, { headers: { Authorization: req.headers.authorization } });
         const payload = await response.json().catch(() => ({}));
         return res.status(response.status).json(payload);
       }

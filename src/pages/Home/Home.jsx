@@ -5,6 +5,7 @@ import {
   FileArchive,
   MessageCircle,
   Package,
+  PlugZap,
   Settings,
   ShoppingCart,
   Store,
@@ -65,6 +66,14 @@ const cards = [
     description: "Utenti, ruoli, reparti e presenze.",
     icon: Users,
     permission: "team.read",
+  },
+  {
+    path: "/integrations",
+    label: "Integrazioni",
+    description: "Connessioni con Mexal e configurazioni dei sistemi esterni.",
+    icon: PlugZap,
+    permission: "settings.manage",
+    adminOnly: true,
   },
   {
     path: "/settings",
@@ -129,6 +138,7 @@ export default function Home() {
   const visibleCards = useMemo(
     () =>
       cards.filter((card) => {
+        if (card.adminOnly && !isAdminUser) return false;
         if (card.special === "pharmacy") {
           return pharmacyEnabled || hasPermission("pharmacy.read");
         }
@@ -140,7 +150,7 @@ export default function Home() {
         }
         return hasPermission(card.permission);
       }),
-    [hasPermission, pharmacyEnabled, ordersEnabled]
+    [hasPermission, pharmacyEnabled, ordersEnabled, isAdminUser]
   );
 
   return (

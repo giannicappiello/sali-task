@@ -56,12 +56,25 @@ async function verifyAdmin(req, supabase) {
   return profile;
 }
 
-function mexalHeaders() {
+function mexalClient() {
+  const rawBaseUrl = required("MEXAL_BASE_URL").replace(/\/+$/, "");
+  const dominio = env("MEXAL_DOMINIO");
   const credential = Buffer.from(`${required("MEXAL_USERNAME")}:${required("MEXAL_PASSWORD")}`, "utf8").toString("base64");
+  const authorization = `Passepartout ${credential}` + (dominio ? ` Dominio=${dominio}` : "");
+  const baseUrl = rawBaseUrl.endsWith("/webapi/risorse")
+    ? rawBaseUrl
+    : `${rawBaseUrl}/webapi/risorse`;
+  const azienda = required("MEXAL_AZIENDA");
+  const anno = required("MEXAL_ANNO");
+  const magazzino = env("MEXAL_MAGAZZINO");
+
   return {
-    Authorization: `Passepartout ${credential}`,
-    "Coordinate-Gestionale": `Azienda=${required("MEXAL_AZIENDA")} Anno=${required("MEXAL_ANNO")} Magazzino=${required("MEXAL_MAGAZZINO")}`,
-    Accept: "application/json",
+    endpoint: `${baseUrl}/dati-generali/serie-documenti`,
+    headers: {
+      Authorization: authorization,
+      "Coordinate-Gestionale": `Azienda=${azienda} Anno=${anno}${magazzino ? ` Magazzino=${magazzino}` : ""}`,
+      Accept: "application/json",
+    },
   };
 }
 
@@ -98,9 +111,8 @@ export default async function handler(req, res) {
   const admin = supabaseAdmin();
   try {
     await verifyAdmin(req, admin);
-    const baseUrl = required("MEXAL_BASE_URL").replace(/\/+$/, "");
-    const endpoint = "/webapi/risorse/dati-generali/serie-documenti";
-    const response = await requestJson({ url: `${baseUrl}${endpoint}`, headers: mexalHeaders() });
+    const mexal = mexalClient();
+    const response = await requestJson({ url: mexal.endpoint, headers: mexal.headers });
     if (response.status < 200 || response.status >= 300) {
       const detail = response.data?.error?.["response-message"] || response.data?.error?.["response-detail"] || response.raw;
       throw new Error(`Mexal HTTP ${response.status}: ${detail || "errore lettura serie documenti"}`);
@@ -113,7 +125,7 @@ export default async function handler(req, res) {
     const { error: upsertError } = await admin.from("ordini_serie_documenti").upsert(rows, { onConflict: "source_key" });
     if (upsertError) throw upsertError;
 
-    return res.status(200).json({ ok: true, endpoint, count: rows.length, series: rows });
+    return res.status(200).json({ ok: true, endpoint: mexal.endpoint, count: rows.length, series: rows });
   } catch (error) {
     return res.status(error.status || 500).json({ error: error.message || "Errore sincronizzazione serie documenti." });
   }

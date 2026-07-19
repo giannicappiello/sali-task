@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import IntegrationsDashboard from "./pages/IntegrationsDashboard";
 import MexalDashboard from "./pages/MexalDashboard";
+import DocumentSeriesSettings from "./pages/DocumentSeriesSettings";
 import "./integrations.css";
 
 export default function IntegrationsModule() {
@@ -20,6 +21,7 @@ export default function IntegrationsModule() {
     <Routes>
       <Route index element={<IntegrationsDashboard />} />
       <Route path="mexal" element={<MexalDashboard />} />
+      <Route path="mexal/serie-documenti" element={<DocumentSeriesSettings />} />
       <Route path="*" element={<Navigate to="/integrations" replace />} />
     </Routes>
   );

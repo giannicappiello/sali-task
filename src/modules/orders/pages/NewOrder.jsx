@@ -1,10 +1,11 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ChevronDown, ChevronUp, Info, Minus, Plus, Save, Search, ShoppingCart, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
 import { calculateLineConditions } from "../services/priceEngine";
-import { buildAvailabilityPreview, checkOrderAvailability, submitOrderToMexal } from "../services/orderFulfillment";
+import { checkOrderAvailability, submitOrderToMexal } from "../services/orderFulfillment";
+import { buildAvailabilityPreview, buildAvailabilitySignature, getAvailabilityValidity, quantitiesForOrderLine } from "../services/availability";
 import { buildNewOrderInsertPayload, buildWritableOrderPayload } from "../services/orderPayload";
 
 const PAGE_SIZE = 1000;
@@ -162,8 +163,10 @@ export default function NewOrder() {
   const [availability, setAvailability] = useState(null);
   const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [availabilityInvalidated, setAvailabilityInvalidated] = useState(false);
+  const availabilityRequestId = useRef(0);
 
   function invalidateAvailability() {
+    availabilityRequestId.current += 1;
     if (availability) setAvailabilityInvalidated(true);
     setAvailability(null);
   }
@@ -385,6 +388,7 @@ export default function NewOrder() {
   }
 
   const canCheckAvailability = lines.length > 0 && lines.every((line) => normalize(line.codice_articolo) && numberValue(line.quantita) > 0) && !checkingAvailability;
+  const availabilityValidity = useMemo(() => getAvailabilityValidity({ availability, lines, customer: selectedCustomer, invalidated: availabilityInvalidated }), [availability, lines, selectedCustomer, availabilityInvalidated]);
   const availabilityByCode = useMemo(() => new Map((availability?.lines || []).map((line) => [line.productCode, line])), [availability]);
   const availabilityPreview = useMemo(() => buildAvailabilityPreview(lines, availability?.lines), [lines, availability]);
 
@@ -392,9 +396,13 @@ export default function NewOrder() {
     if (!canCheckAvailability) return;
     setCheckingAvailability(true);
     setError("");
+    const requestId = ++availabilityRequestId.current;
     try {
       const result = await checkOrderAvailability(lines);
-      setAvailability({ ...result, snapshot: lines.map((line) => ({ productCode: line.codice_articolo, quantity: line.quantita })), checkedAt: result.checkedAt });
+      // Ignore a late response for a previous cart or a superseded request.
+      if (requestId !== availabilityRequestId.current) return;
+      const resultSignature = buildAvailabilitySignature({ lines, customer: selectedCustomer, warehouse: result.warehouse });
+      setAvailability({ ...result, signature: resultSignature, checkedAt: result.checkedAt });
       setAvailabilityInvalidated(false);
     } catch (checkError) {
       setError(checkError.message || "Errore durante la verifica disponibilità.");
@@ -411,6 +419,10 @@ export default function NewOrder() {
     }
     if (!lines.length) {
       setError("Inserisci almeno un prodotto.");
+      return;
+    }
+    if (confirm && !availabilityValidity.valid) {
+      setError("Verifica nuovamente le disponibilità prima di confermare l’ordine.");
       return;
     }
 
@@ -437,16 +449,15 @@ export default function NewOrder() {
       if (orderError) throw orderError;
 
       const noteMexal = `Workspace n. ${order.id}`;
-      const linePayload = lines.map((line, index) => {
+      const linePayload = lines.map((line) => {
         const totale = line.quantita * numberValue(line.prezzo_netto, line.prezzo_unitario);
+        const quantities = quantitiesForOrderLine(line, availability, confirm);
         return {
           ordine_id: order.id,
           codice_articolo: line.codice_articolo,
           descrizione: line.descrizione,
           quantita: line.quantita,
-          quantita_disponibile: Math.min(line.quantita, Math.max(0, line.disponibilita)),
-          quantita_ocm: Math.min(line.quantita, Math.max(0, line.disponibilita)),
-          quantita_ocx: Math.max(0, line.quantita - Math.max(0, line.disponibilita)),
+          ...quantities,
           prezzo_listino: line.prezzo_listino,
           sconto_percentuale: line.sconto_percentuale,
           sconto_commerciale: line.sconto_commerciale || null,
@@ -731,9 +742,10 @@ export default function NewOrder() {
           <button className="orders-secondary" type="button" disabled={saving} onClick={() => saveOrder({ confirm: false })}>
             <Save size={18} /> Salva bozza
           </button>
-          <button className="orders-primary" type="button" disabled={saving} onClick={() => saveOrder({ confirm: true })}>
+          <button className="orders-primary" type="button" disabled={saving || checkingAvailability || !availabilityValidity.valid} onClick={() => saveOrder({ confirm: true })}>
             <ShoppingCart size={18} /> {saving ? "Salvataggio..." : "Conferma ordine"}
           </button>
+          {!availabilityValidity.valid && <small className="orders-confirmation-note">{availabilityValidity.reason}</small>}
         </div>
       </div>
     </div>

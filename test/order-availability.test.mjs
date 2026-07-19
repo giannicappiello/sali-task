@@ -8,7 +8,7 @@ import {
   normalizeLines,
   summarize,
 } from "../api/mexal/orders/check-availability.js";
-import { buildAvailabilityPreview } from "../src/modules/orders/services/availability.js";
+import { buildAvailabilityPreview, buildAvailabilitySignature, getAvailabilityValidity, quantitiesForOrderLine } from "../src/modules/orders/services/availability.js";
 
 assert.throws(() => normalizeLines([]), /obbligatorio/);
 assert.throws(() => normalizeLines([{ productCode: "IT1", quantity: 0 }]), /Quantità non valida/);
@@ -29,6 +29,19 @@ assert.ok(peak <= AVAILABILITY_CONCURRENCY && peak > 1, "le richieste sono limit
 
 assert.deepEqual(buildAvailabilityPreview([{ codice_articolo: "IT001", descrizione: "Articolo" }], [{ productCode: "IT001", requestedQuantity: 10, confirmedQuantity: 6, missingQuantity: 4 }]), { ocm: [{ productCode: "IT001", description: "Articolo", requestedQuantity: 10, quantity: 6 }], ocx: [{ productCode: "IT001", description: "Articolo", requestedQuantity: 10, quantity: 4 }] });
 
+const orderLines = [{ codice_articolo: "IT002", quantita: 2, disponibilita: 99 }, { codice_articolo: " it001 ", quantita: 10, disponibilita: 99 }];
+const customer = { codice_cliente: "C-01" };
+const signature = buildAvailabilitySignature({ lines: orderLines, customer, warehouse: 5 });
+assert.equal(signature, buildAvailabilitySignature({ lines: [...orderLines].reverse(), customer, warehouse: 5 }), "la firma è indipendente dall'ordine delle righe");
+const checked = { warehouse: 5, signature, lines: [{ productCode: "IT001", requestedQuantity: 10, confirmedQuantity: 6, missingQuantity: 4, status: "partial" }, { productCode: "IT002", requestedQuantity: 2, confirmedQuantity: 2, missingQuantity: 0, status: "available" }] };
+assert.equal(getAvailabilityValidity({ availability: checked, lines: orderLines, customer }).valid, true, "una verifica completa e identica consente la conferma");
+assert.equal(getAvailabilityValidity({ availability: null, lines: orderLines, customer }).valid, false, "la conferma è bloccata senza verifica");
+assert.equal(getAvailabilityValidity({ availability: checked, lines: [{ ...orderLines[0], quantita: 3 }, orderLines[1]], customer }).valid, false, "la conferma è bloccata dopo modifica quantità");
+assert.equal(getAvailabilityValidity({ availability: checked, lines: orderLines, customer: { codice_cliente: "C-02" } }).valid, false, "la conferma è bloccata dopo cambio cliente");
+assert.equal(getAvailabilityValidity({ availability: { ...checked, lines: [{ ...checked.lines[0], status: "error" }, checked.lines[1]] }, lines: orderLines, customer }).valid, false, "una riga errore blocca la conferma");
+assert.deepEqual(quantitiesForOrderLine(orderLines[1], checked, true), { quantita_disponibile: 6, quantita_ocm: 6, quantita_ocx: 4 }, "la conferma usa solamente il risultato puntuale, non disponibilita cache");
+assert.deepEqual(quantitiesForOrderLine(orderLines[1], null, false), { quantita_disponibile: 10, quantita_ocm: 10, quantita_ocx: 0 }, "una bozza può usare il dato indicativo cache");
+
 const endpoint = await readFile("api/mexal/orders/check-availability.js", "utf8");
 assert.match(endpoint, /verifyUser\(req, supabase, \{ allowOrdersUser: true \}\)/, "autenticazione e autorizzazione Ordini lato server");
 assert.match(endpoint, /loadFullArticle\(mexal, productCode\)/, "usa lookup articolo puntuale");
@@ -39,4 +52,10 @@ const frontend = await readFile("src/modules/orders/pages/NewOrder.jsx", "utf8")
 assert.match(frontend, /VERIFICA DISPONIBILITÀ/);
 assert.match(frontend, /disabled=\{checkingAvailability\}/);
 assert.match(frontend, /Le disponibilità devono essere verificate nuovamente/);
+assert.match(frontend, /confirm && !availabilityValidity\.valid/, "saveOrder blocca la conferma senza verifica valida");
+assert.match(frontend, /disabled=\{saving \|\| checkingAvailability \|\| !availabilityValidity\.valid\}/, "il pulsante conferma è disabilitato senza verifica valida");
+assert.match(frontend, /quantitiesForOrderLine\(line, availability, confirm\)/, "il payload confermato deriva dai risultati Mexal");
+assert.match(frontend, /availabilityRequestId\.current/, "risposte obsolete non sovrascrivono la verifica corrente");
+const submitOrder = await readFile("api/mexal/submit-order.js", "utf8");
+assert.doesNotMatch(submitOrder, /quantita_ocm.*disponibilita|quantita_ocx.*disponibilita/, "submit-order usa le quantità OCM/OCX persistite senza ricalcolo cache");
 console.log("order availability: validation, calculations, concurrency, preview, endpoint and UI safeguards verified");

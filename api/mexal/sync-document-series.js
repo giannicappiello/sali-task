@@ -1,5 +1,6 @@
 import https from "node:https";
 import { createClient } from "@supabase/supabase-js";
+import { completeSyncRun, createSyncRun, failSyncRun } from "./lib/syncRuns.js";
 
 function env(name, fallback = "") { return String(process.env[name] ?? fallback).trim(); }
 function required(name) { const value = env(name); if (!value) throw new Error(`Variabile Vercel mancante: ${name}`); return value; }
@@ -141,8 +142,8 @@ export default async function handler(req, res) {
   let runId = null;
   try {
     await verifyAdmin(req, admin);
-    const { data: run, error: runError } = await admin.from("mexal_sync_runs").insert({ sync_type: "document_series", status: "running", metadata: { source: "vercel" } }).select("id").single();
-    if (runError) throw runError;
+    const run = await createSyncRun(admin, { syncType: "document_series", source: "manual", metadata: { endpoint: "dati-generali/serie-documenti" } });
+    if (run.duplicate) throw Object.assign(new Error("È già presente una sincronizzazione serie documenti in corso."), { status: 409 });
     runId = run.id;
     const mexal = mexalClient();
     console.info("Mexal serie documenti: richiesta avviata", mexal.diagnostics);
@@ -183,11 +184,11 @@ export default async function handler(req, res) {
     const imported = rows.length - updated;
     console.info("Mexal serie documenti: completata", { received: rows.length, imported, updated });
 
-    await admin.from("mexal_sync_runs").update({ status: "completed", completed_at: new Date().toISOString(), processed: rows.length, inserted: imported, updated, skipped: 0, failed: 0 }).eq("id", runId);
-    return res.status(200).json({ success: true, received: rows.length, imported, updated, skipped: 0, errors: [] });
+    await completeSyncRun(admin, runId, { processed: rows.length, inserted: imported, updated, skipped: 0, failed: 0 });
+    return res.status(200).json({ success: true, runId, received: rows.length, imported, updated, skipped: 0, errors: [] });
   } catch (error) {
     console.error("Mexal serie documenti: errore", { message: error?.message, status: error?.status || 500 });
-    if (runId) await admin.from("mexal_sync_runs").update({ status: "failed", completed_at: new Date().toISOString(), error_message: text(error?.message).slice(0, 500) }).eq("id", runId);
+    if (runId) await failSyncRun(admin, runId, text(error?.message));
     return res.status(error.status || 500).json({
       success: false,
       error: error.message || "Errore sincronizzazione serie documenti.",

@@ -805,13 +805,13 @@ async function upsertOrdersProductsCache(supabase, rows) {
 }
 
 async function createSyncRun(supabase, metadata) {
-  const { data, error } = await supabase
-    .from("mexal_sync_runs")
-    .insert({ sync_type: "products", status: "running", source: "manual", metadata: { ...metadata, source: "manual" } })
-    .select("id,started_at,status,processed,inserted,updated,skipped,failed,metadata")
-    .single();
-  if (error) throw error;
-  return data;
+  const run = await createCentralSyncRun(supabase, {
+    syncType: "products",
+    source: "manual",
+    metadata,
+  });
+  if (run.duplicate) throw Object.assign(new Error("È già presente una sincronizzazione prodotti in corso."), { status: 409 });
+  return { ...run, processed: 0, inserted: 0, updated: 0, skipped: 0, failed: 0, metadata };
 }
 
 async function getSyncRun(supabase, id) {
@@ -850,7 +850,10 @@ async function updateSyncRun(supabase, id, values) {
   }
   const counters = values.counters;
   const payload = { ...values };
+  const terminalStatus = payload.status;
   delete payload.counters;
+  delete payload.status;
+  delete payload.completed_at;
   if (payload.metadata && current) {
     payload.metadata = { ...(current.metadata || {}), ...payload.metadata };
   }
@@ -860,6 +863,14 @@ async function updateSyncRun(supabase, id, values) {
     payload.updated = Number(current.updated || 0) + Number(counters.updated || 0);
     payload.skipped = Number(current.skipped || 0) + Number(counters.skipped || 0);
     payload.failed = Number(current.failed || 0) + Number(counters.failed || 0);
+  }
+  if (terminalStatus === "completed") {
+    await completeSyncRun(supabase, id, payload);
+    return;
+  }
+  if (terminalStatus === "failed") {
+    await failSyncRun(supabase, id, payload.error_message, payload);
+    return;
   }
   const { error } = await supabase
     .from("mexal_sync_runs")

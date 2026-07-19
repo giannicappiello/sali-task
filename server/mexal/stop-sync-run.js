@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "../../api/mexal/lib/auth.js";
+import { cancelSyncRun } from "../../api/mexal/lib/syncRuns.js";
 
 const STOPPED_MESSAGE = "Sincronizzazione arrestata manualmente dall’amministratore.";
 
@@ -21,10 +22,11 @@ export default async function handler(req, res) {
     if (readError) throw readError;
     if (!run) return res.status(404).json({ error: "Run Mexal non trovata." });
     if (run.status !== "running") return res.status(409).json({ error: "La run non è più in esecuzione.", run });
-    const { data, error } = await supabase.from("mexal_sync_runs").update({
-      status: "failed", completed_at: stoppedAt, error_message: STOPPED_MESSAGE,
+    await cancelSyncRun(supabase, id, {
+      error_message: STOPPED_MESSAGE,
       metadata: { ...(run.metadata || {}), stopped_manually: true, stopped_at: stoppedAt, stopped_by: admin.id, stopped_by_auth_user: admin.authUserId },
-    }).eq("id", id).eq("status", "running").select("id,sync_type,status,started_at,completed_at,processed,inserted,updated,skipped,failed,error_message,metadata").maybeSingle();
+    });
+    const { data, error } = await supabase.from("mexal_sync_runs").select("id,sync_type,status,started_at,completed_at,processed,inserted,updated,skipped,failed,error_message,metadata").eq("id", id).maybeSingle();
     if (error) throw error;
     if (!data) return res.status(409).json({ error: "La run è stata già chiusa." });
     return res.status(200).json({ run: data, logicalStop: true });

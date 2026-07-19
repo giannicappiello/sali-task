@@ -1,5 +1,6 @@
 import https from "node:https";
 import { createClient } from "@supabase/supabase-js";
+import { completeSyncRun, createSyncRun, failSyncRun } from "../../api/mexal/lib/syncRuns.js";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -38,8 +39,11 @@ async function mainHandler(req) {
       parameters: { mode, dryRun, syncPayments }
     });
     runId = String(run.id);
-    const { data: centralRun, error: centralRunError } = await supabase.from("mexal_sync_runs").insert({ sync_type: "commercial_conditions", status: "running", metadata: { mode, dryRun, syncPayments } }).select("id").single();
-    if (centralRunError) throw centralRunError;
+    const centralRun = await createSyncRun(supabase, {
+      syncType: "commercial_conditions",
+      metadata: { mode, dryRun, syncPayments },
+    });
+    if (centralRun.duplicate) throw new HttpError(409, "È già presente una sincronizzazione condizioni commerciali in corso.");
     centralRunId = centralRun.id;
     const mexal = createMexalClient();
     const matrixStats = { read: 0, written: 0, deactivated: 0, warnings: [] };
@@ -259,7 +263,7 @@ async function mainHandler(req) {
         dryRun
       }
     }).eq("id", runId);
-    await supabase.from("mexal_sync_runs").update({ status: warnings.length ? "completed_with_errors" : "completed", completed_at: (/* @__PURE__ */ new Date()).toISOString(), processed: totals.read, updated: totals.written, skipped: totals.deactivated, failed: warnings.length, metadata: { mode, dryRun, syncPayments, warnings } }).eq("id", centralRunId);
+    await completeSyncRun(supabase, centralRunId, { processed: totals.read, updated: totals.written, skipped: totals.deactivated, failed: warnings.length, metadata: { mode, dryRun, syncPayments, warnings } });
     return jsonResponse({
       ok: true,
       runId,
@@ -273,7 +277,7 @@ async function mainHandler(req) {
   } catch (error) {
     const durationMs = Date.now() - startedAt;
     const message = errorMessage(error);
-    if (supabase && centralRunId) await supabase.from("mexal_sync_runs").update({ status: "failed", completed_at: (/* @__PURE__ */ new Date()).toISOString(), error_message: message }).eq("id", centralRunId);
+    if (supabase && centralRunId) await failSyncRun(supabase, centralRunId, message);
     if (supabase && runId) {
       await logSyncError(supabase, runId, "commercial_conditions", null, error, false);
       await supabase.from("ordini_sync_runs").update({

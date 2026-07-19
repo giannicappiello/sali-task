@@ -1,0 +1,3 @@
+import test from "node:test"; import assert from "node:assert/strict";
+import { MEXAL_AUTOMATIONS } from "../src/shared/mexalAutomationDefinitions.js";
+test("automation definitions are complete and valid", () => { assert.ok(MEXAL_AUTOMATIONS.every(Boolean)); assert.equal(new Set(MEXAL_AUTOMATIONS.map((x) => x.key)).size, MEXAL_AUTOMATIONS.length); for (const item of MEXAL_AUTOMATIONS) { assert.ok(item.key && item.label); assert.ok(["scheduled", "event"].includes(item.automationType)); assert.equal(typeof item.supported, "boolean"); assert.ok(item.supported ? item.actionType : item.reason); } });

@@ -211,9 +211,9 @@ async function automationApi(path, body) {
   if (!response.ok) throw new Error(data.error || "Operazione automazione non riuscita.");
   return data;
 }
-export const invokeSyncAll = () => automationApi("/api/mexal/sync-all", {});
+export const invokeSyncAll = () => automationApi("/api/mexal/automation", { action: "sync_all" });
 export async function loadMexalAutomationRuns() { const { data, error } = await supabase.from("mexal_automation_runs").select("*").order("started_at", { ascending: false }); if (error) throw error; return (data || []).map((run) => ({ ...run, runSource: "automation", sync_type: run.trigger_type })); }
-export const stopMexalAutomationRun = (runId) => automationApi("/api/mexal/automation-stop", { run_id: runId });
-export async function loadMexalAutomationRules() { const { data: { session } } = await supabase.auth.getSession(); const response = await fetch("/api/mexal/automation-rules", { headers: { Authorization: `Bearer ${session?.access_token || ""}` } }); const data = await response.json(); if (!response.ok) throw new Error(data.error); return data.rules || []; }
-export const saveMexalAutomationRule = (rule) => automationApi("/api/mexal/automation-rules", rule);
-export const runMexalAutomationNow = (ruleId) => automationApi("/api/mexal/automation-run-now", { rule_id: ruleId });
+export const stopMexalAutomationRun = (runId) => automationApi("/api/mexal/automation", { action: "stop", run_id: runId });
+export async function loadMexalAutomationRules() { const { data: { session } } = await supabase.auth.getSession(); const response = await fetch("/api/mexal/automation?action=rules_get", { headers: { Authorization: `Bearer ${session?.access_token || ""}` } }); const data = await response.json(); if (!response.ok) throw new Error(data.error); return data.rules || []; }
+export const saveMexalAutomationRule = (rule) => automationApi("/api/mexal/automation", { action: "rules_save", ...rule });
+export const runMexalAutomationNow = (ruleId) => automationApi("/api/mexal/automation", { action: "run_now", rule_id: ruleId });

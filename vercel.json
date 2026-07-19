@@ -12,6 +12,9 @@
     },
     "api/mexal/sync-commercial-conditions.js": {
       "maxDuration": 300
+    },
+    "api/mexal/submit-order.js": {
+      "maxDuration": 300
     }
   },
   "crons": [

@@ -1,0 +1,16 @@
+SPRINT 3 - INSTALLAZIONE
+
+1. Copiare i file mantenendo le cartelle.
+2. Eseguire in Supabase SQL Editor:
+   supabase/migrations/20260719130000_sprint_3_mexal_order_flow.sql
+3. Controllare su Vercel le variabili indicate in README_SPRINT_3.md.
+4. Verificare le serie documento:
+   MEXAL_OCM_SERIE=M
+   MEXAL_OCX_SERIE=X
+5. Eseguire:
+   npm run build
+6. Pubblicare su Vercel. L'API /api/mexal/submit-order non è eseguita dal solo npm run dev.
+7. Aprire un ordine dall'elenco, scaricare il PDF e fare il primo invio di prova.
+8. In caso di errore, la pagina dettaglio mostra il messaggio Mexal e consente il retry.
+
+Prima del primo invio reale verificare che M e X siano le serie corrette della vostra installazione Mexal.

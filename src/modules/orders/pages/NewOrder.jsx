@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
 import { calculateLineConditions } from "../services/priceEngine";
+import { submitOrderToMexal } from "../services/orderFulfillment";
 
 const PAGE_SIZE = 1000;
 
@@ -450,19 +451,33 @@ export default function NewOrder() {
         .eq("id", order.id);
       if (noteError) throw noteError;
 
+      let mexalMessage = "";
       if (confirm) {
         const { error: confirmError } = await supabase.rpc(
           "conferma_ordine_workspace",
           { p_ordine_id: order.id }
         );
         if (confirmError) throw confirmError;
+
+        // In produzione l'invio parte subito. In sviluppo locale l'ordine resta
+        // confermato e può essere inviato dalla pagina dettaglio dopo il deploy.
+        if (window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
+          try {
+            const syncResult = await submitOrderToMexal(order.id);
+            mexalMessage = ` OCM: ${syncResult.numero_ocm || "-"} · OCX: ${syncResult.numero_ocx || "-"}.`;
+          } catch (syncError) {
+            mexalMessage = ` Ordine salvato, ma invio Mexal non riuscito: ${syncError.message}`;
+          }
+        } else {
+          mexalMessage = " In locale l'invio Mexal è disponibile dopo il deploy Vercel dalla pagina dettaglio.";
+        }
       }
 
-      navigate("/ordini/elenco", {
+      navigate(confirm ? `/ordini/elenco/${order.id}` : "/ordini/elenco", {
         replace: true,
         state: {
           message: confirm
-            ? `Ordine ${order.id} confermato. Nota Mexal: ${noteMexal}`
+            ? `Ordine ${order.id} confermato.${mexalMessage}`
             : `Bozza ordine ${order.id} salvata.`,
         },
       });

@@ -140,7 +140,7 @@ export default function Orders() {
 
             <tbody>
               {filtered.map((item) => (
-                <tr key={item.id}>
+                <tr key={item.id} className="orders-clickable-row" onClick={() => navigate(`/ordini/elenco/${item.id}`)}>
                   <td>{item.data_ordine || "-"}</td>
                   <td>{item.numero_ordine || "Bozza"}</td>
                   <td>
@@ -151,6 +151,9 @@ export default function Orders() {
                     <span className={`orders-status ${item.stato}`}>
                       {item.stato}
                     </span>
+                    <small className={`orders-sync-inline ${item.stato_sincronizzazione || "non_inviato"}`}>
+                      {item.stato_sincronizzazione || "non_inviato"}
+                    </small>
                   </td>
                   <td>
                     {Number(item.totale || 0).toLocaleString("it-IT", {

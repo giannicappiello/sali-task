@@ -6,6 +6,7 @@ import OrdersDashboard from "./pages/OrdersDashboard";
 import Customers from "./pages/Customers";
 import Orders from "./pages/Orders";
 import NewOrder from "./pages/NewOrder";
+import OrderDetail from "./pages/OrderDetail";
 import Materials from "./pages/Materials";
 import {
   startAutomaticOrderSyncs,
@@ -99,6 +100,7 @@ export default function OrdersModule() {
         <Route path="clienti" element={<Customers />} />
         <Route path="elenco" element={<Orders />} />
         <Route path="nuovo" element={<NewOrder />} />
+        <Route path="elenco/:orderId" element={<OrderDetail />} />
         <Route path="materiali" element={<Materials />} />
         <Route path="*" element={<Navigate to="dashboard" replace />} />
       </Routes>

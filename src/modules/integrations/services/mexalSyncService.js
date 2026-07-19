@@ -204,3 +204,4 @@ export async function loadCommercialCounts() {
 }
 
 export async function invokeSyncAll() { return invokeMexalApi("/api/mexal/sync-all", {}); }
+export async function stopMexalAutomationRun(runId) { return invokeMexalApi("/api/mexal/automation-stop", { run_id: runId }); }

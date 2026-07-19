@@ -1,16 +1,20 @@
 /* global process */
 import { createClient } from "@supabase/supabase-js";
+import { runRegisteredSync } from "./lib/syncRegistry.js";
 
-const ENDPOINTS = {
-  clients: ["/api/mexal/sync-clients", { action: "sync" }],
-  products: ["/api/mexal/sync-products", { action: "sync", offset: 0, batchSize: 8 }],
-  stocks: ["/api/mexal/sync-products", { action: "sync-stock-it", offset: 0, batchSize: 12 }],
-  commercial_conditions: ["/api/mexal/sync-commercial-conditions", { mode: "incremental", syncPayments: true }],
-  document_series: ["/api/mexal/sync-document-series", {}],
-};
+
 const SCOPE_KEYS = { selected_customer: "customerId", selected_product: "productId", current_order: "orderId", current_user: "userId", current_warehouse: "warehouseId" };
 function required(name) { const value = String(process.env[name] || "").trim(); if (!value) throw new Error(`Variabile Vercel mancante: ${name}`); return value; }
 function baseUrl(req) { return `${String(req.headers["x-forwarded-proto"] || "https").split(",")[0]}://${req.headers["x-forwarded-host"] || req.headers.host}`; }
+async function requireOrdersAccess(admin, userId) {
+  const { data: profile, error } = await admin.from("utenti").select("id,attivo,ruoli(nome,livello)").eq("auth_user_id", userId).maybeSingle();
+  if (error || !profile || profile.attivo === false) throw Object.assign(new Error("Utente non autorizzato."), { status: 403 });
+  const role = String(profile.ruoli?.nome || "").toLowerCase();
+  if (Number(profile.ruoli?.livello || 0) >= 80 || ["admin", "administrator", "amministratore", "super admin", "direzione"].includes(role)) return profile;
+  const { data: access } = await admin.from("integrazioni_utenti").select("enabled").eq("utente_id", profile.id).eq("modulo", "gestione_ordini").maybeSingle();
+  if (!access?.enabled) throw Object.assign(new Error("Accesso al modulo Ordini non autorizzato."), { status: 403 });
+  return profile;
+}
 function applicable(automation, context) { return automation.scope === "global" || Boolean(context?.[SCOPE_KEYS[automation.scope]]); }
 
 export async function runMexalEventAutomation({ admin, req, eventKey, context = {}, dryRun = false }) {
@@ -19,14 +23,8 @@ export async function runMexalEventAutomation({ admin, req, eventKey, context = 
   const results = []; let interrupted = false; let previousFailed = false;
   for (const automation of automations || []) {
     if (!applicable(automation, context) || (previousFailed && !automation.run_if_previous_failed)) { results.push({ id: automation.id, syncType: automation.sync_type, skipped: true }); continue; }
-    const endpoint = ENDPOINTS[automation.sync_type];
-    if (!endpoint) { results.push({ id: automation.id, syncType: automation.sync_type, skipped: true, reason: "Handler non disponibile" }); continue; }
-    if (dryRun) { results.push({ id: automation.id, syncType: automation.sync_type, success: true, dryRun: true }); continue; }
     try {
-      const [path, body] = endpoint;
-      const response = await fetch(`${baseUrl(req)}${path}`, { method: "POST", headers: { "content-type": "application/json", authorization: req.headers.authorization }, body: JSON.stringify({ ...body, origin: "event", context, eventKey }) });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload.success === false) throw new Error(payload.error || `HTTP ${response.status}`);
+      const payload = await runRegisteredSync({ syncType: automation.sync_type, source: "event", context: { ...context, eventKey }, dryRun, authorization: dryRun ? "" : `Bearer ${required("CRON_SECRET")}`, baseUrl: baseUrl(req) });
       results.push({ id: automation.id, syncType: automation.sync_type, success: true, runId: payload.runId || payload.sync_run_id || null, data: payload });
     } catch (cause) {
       previousFailed = true;
@@ -44,6 +42,7 @@ export default async function handler(req, res) {
     const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
     const { data: { user }, error } = await admin.auth.getUser(token);
     if (error || !user) return res.status(401).json({ success: false, error: "Sessione non valida." });
+    await requireOrdersAccess(admin, user.id);
     const body = req.body || {};
     return res.status(200).json(await runMexalEventAutomation({ admin, req, eventKey: body.eventKey, context: { ...body.context, userId: user.id }, dryRun: Boolean(body.dryRun) }));
   } catch (error) { return res.status(500).json({ success: false, error: error.message || "Errore automazione Mexal." }); }

@@ -18,6 +18,7 @@ import MexalHistory from "../components/MexalHistory";
 import MexalLog from "../components/MexalLog";
 import MexalProgress from "../components/MexalProgress";
 import MexalSettings from "../components/MexalSettings";
+import MexalAutomations from "../components/MexalAutomations";
 import MexalSyncCard from "../components/MexalSyncCard";
 import IntegrationStatusBadge from "../components/IntegrationStatusBadge";
 import {
@@ -283,6 +284,8 @@ export default function MexalDashboard() {
           </div>
         </section>
       </div>
+
+      <MexalAutomations />
 
       <MexalHistory runs={runs} selectedRunId={selectedRun?.id} onSelect={selectRun} />
       <MexalLog items={logItems} />

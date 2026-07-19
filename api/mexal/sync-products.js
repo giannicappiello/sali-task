@@ -1,5 +1,6 @@
 import https from "node:https";
 import { createClient } from "@supabase/supabase-js";
+import { completeSyncRun, createSyncRun as createCentralSyncRun, failSyncRun, findRunningSync } from "./lib/syncRuns.js";
 
 const MODULE_CODE = "gestione_ordini";
 const STORAGE_BUCKET = "prodotti-mexal";
@@ -779,6 +780,7 @@ export default async function handler(req, res) {
   let supabase;
   let syncRunId = null;
   let syncRun = null;
+  let action = null;
   try {
     supabase = createClient(
       requireEnv("SUPABASE_URL"),
@@ -795,7 +797,7 @@ export default async function handler(req, res) {
         ? req.body
         : {};
 
-    const action = body.action || "test";
+    action = body.action || "test";
 
     await verifyUser(req, supabase, {
       // Le sincronizzazioni automatiche possono essere avviate da qualunque
@@ -866,65 +868,31 @@ export default async function handler(req, res) {
     }
 
     if (action === "sync-stock-it") {
-      syncRunId = body.syncRunId || null;
+      syncRunId = body.syncRunId ? Number(body.syncRunId) : null;
       if (!syncRunId && offset === 0) {
-        const { data: stockRun, error: stockRunError } = await supabase.from("mexal_sync_runs").insert({ sync_type: "stocks", status: "running", metadata: { batch_size: batchSize, origin: body.origin || "manual" } }).select("id").single();
-        if (stockRunError) throw stockRunError;
+        const stockRun = await createCentralSyncRun(supabase, { syncType: "stocks", source: ["manual", "cron", "event"].includes(body.origin) ? body.origin : "manual", context: body.context || {}, metadata: { batch_size: batchSize } });
+        if (stockRun.duplicate) return res.status(409).json({ error: "È già presente una sincronizzazione giacenze in corso.", sync_run_id: Number(stockRun.id) });
         syncRunId = stockRun.id;
       }
-      const itArticles = articles.filter((item) =>
-        getArticleCode(item).startsWith("IT")
-      );
-
+      if (!Number.isSafeInteger(syncRunId)) throw new Error("Identificativo run giacenze non valido.");
+      const activeRun = await findRunningSync(supabase, "stocks");
+      if (activeRun && Number(activeRun.id) !== syncRunId) return res.status(409).json({ error: "È già presente una sincronizzazione giacenze in corso.", sync_run_id: Number(activeRun.id) });
+      const itArticles = articles.filter((item) => getArticleCode(item).startsWith("IT"));
       const batch = itArticles.slice(offset, offset + batchSize);
-      const result = {
-        totale: itArticles.length,
-        elaborati: batch.length,
-        offset,
-        prossimo_offset: offset + batch.length,
-        completato: offset + batch.length >= itArticles.length,
-        aggiornati: 0,
-        errori: [],
-      };
-
+      const result = { totale: itArticles.length, elaborati: batch.length, offset, prossimo_offset: offset + batch.length, completato: offset + batch.length >= itArticles.length, aggiornati: 0, errori: [] };
       for (const summary of batch) {
         const code = getArticleCode(summary);
-
         try {
           const article = await loadFullArticle(mexal, code, summary);
-
-          if (!isActiveArticle(article)) {
-            continue;
-          }
-
-          const stock = calculateStock(article);
-          const now = new Date().toISOString();
-
-          const { error: updateError } = await supabase
-            .from("prodotti")
-            .update({
-              giacenza: stock,
-              disponibilita: calculateAvailability(article, stock),
-              ultimo_sync_mexal: now,
-              updated_at: now,
-            })
-            .eq("codice_mexal", code);
-
+          if (!isActiveArticle(article)) continue;
+          const stock = calculateStock(article); const now = new Date().toISOString();
+          const { error: updateError } = await supabase.from("prodotti").update({ giacenza: stock, disponibilita: calculateAvailability(article, stock), ultimo_sync_mexal: now, updated_at: now }).eq("codice_mexal", code);
           if (updateError) throw updateError;
           result.aggiornati += 1;
-        } catch (error) {
-          result.errori.push({
-            codice: code || "senza codice",
-            errore: error?.message || String(error),
-          });
-        }
+        } catch (error) { result.errori.push({ codice: code || "senza codice", errore: error?.message || String(error) }); }
       }
-
-      if (syncRunId) {
-        const { data: current } = await supabase.from("mexal_sync_runs").select("processed,updated,failed").eq("id", syncRunId).maybeSingle();
-        await supabase.from("mexal_sync_runs").update({ processed: Number(current?.processed || 0) + result.elaborati, updated: Number(current?.updated || 0) + result.aggiornati, failed: Number(current?.failed || 0) + result.errori.length, status: result.completato ? (result.errori.length ? "completed_with_errors" : "completed") : "running", ...(result.completato ? { completed_at: new Date().toISOString(), error_message: result.errori.length ? "Alcune giacenze non sono state aggiornate." : null } : {}) }).eq("id", syncRunId);
-      }
-      return res.status(200).json({ ...result, sync_run_id: syncRunId });
+      if (result.completato) await completeSyncRun(supabase, syncRunId, { processed: result.elaborati, updated: result.aggiornati, failed: result.errori.length, error_message: result.errori.length ? "Alcune giacenze non sono state aggiornate." : null });
+      return res.status(200).json({ ...result, sync_run_id: Number(syncRunId) });
     }
 
     if (action !== "sync") {
@@ -1095,10 +1063,9 @@ export default async function handler(req, res) {
     });
     return res.status(200).json(result);
   } catch (error) {
-    await updateSyncRun(supabase, syncRunId, {
-      status: "failed",
-      completed_at: new Date().toISOString(),
-      error_message: error?.message || "Errore sincronizzazione prodotti.",
+    if (action === "sync-stock-it" && syncRunId) await failSyncRun(supabase, syncRunId, error?.message || "Errore sincronizzazione giacenze.");
+    else await updateSyncRun(supabase, syncRunId, {
+      status: "failed", completed_at: new Date().toISOString(), error_message: error?.message || "Errore sincronizzazione prodotti.",
     });
     return res
       .status(Number(error?.status || 500))

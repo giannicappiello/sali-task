@@ -4,6 +4,7 @@ import clientsHandler from "../../server/mexal/sync-clients.js";
 import commercialConditionsHandler from "../../server/mexal/sync-commercial-conditions.js";
 import documentSeriesHandler from "../../server/mexal/sync-document-series.js";
 import stopHandler from "../../server/mexal/stop-sync-run.js";
+import { requireAdmin } from "./lib/auth.js";
 
 const RUN_HANDLERS = Object.freeze({
   clients: clientsHandler,
@@ -67,7 +68,7 @@ function createResponseCapture() {
 }
 
 async function syncAll(req, res, body) {
-  await requireAdmin(req);
+  await createAdmin(req);
 
   const completedPhases = [];
   const results = [];
@@ -111,22 +112,15 @@ async function syncAll(req, res, body) {
   });
 }
 
-async function requireAdmin(req) {
-  const authorization = String(req.headers.authorization || "");
-  if (!authorization.startsWith("Bearer ")) throw Object.assign(new Error("Sessione mancante."), { status: 401 });
-  const admin = createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false, autoRefreshToken: false } });
-  const { data: { user }, error } = await admin.auth.getUser(authorization.slice(7));
-  if (error || !user) throw Object.assign(new Error("Sessione non valida."), { status: 401 });
-  const { data: profile, error: profileError } = await admin.from("utenti").select("id,attivo,ruoli(nome,livello)").eq("auth_user_id", user.id).maybeSingle();
-  const role = String(profile?.ruoli?.nome || "").toLowerCase();
-  if (profileError || !profile || profile.attivo === false || !(Number(profile.ruoli?.livello || 0) >= 80 || ["admin", "administrator", "amministratore", "super admin", "direzione"].includes(role))) {
-    throw Object.assign(new Error("Operazione riservata agli amministratori."), { status: 403 });
-  }
-  return admin;
+async function createAdmin(req) {
+  const { supabase } = await requireAdmin(req, () => (
+    createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false, autoRefreshToken: false } })
+  ));
+  return supabase;
 }
 
 async function rulesGet(req, res) {
-  const admin = await requireAdmin(req);
+  const admin = await createAdmin(req);
   const [schedules, events] = await Promise.all([
     admin.from("mexal_sync_schedules").select("*").order("execution_order", { ascending: true }),
     admin.from("mexal_event_automations").select("*").order("event_key").order("execution_order", { ascending: true }),
@@ -137,7 +131,7 @@ async function rulesGet(req, res) {
 }
 
 async function rulesSave(req, res, body) {
-  const admin = await requireAdmin(req);
+  const admin = await createAdmin(req);
   const table = body.ruleType === "event" ? "mexal_event_automations" : "mexal_sync_schedules";
   const rule = body.rule && typeof body.rule === "object" ? body.rule : null;
   if (!rule) return res.status(400).json({ error: "Regola automazione non valida." });

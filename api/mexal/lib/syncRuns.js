@@ -29,6 +29,43 @@ export async function findRunningSync(admin, syncType) {
   if (error) throw error;
   return data || null;
 }
+export async function findIdempotentSync(admin, { idempotencyKey, syncType, userId }) {
+  const { data, error } = await admin
+    .from("mexal_sync_idempotency")
+    .select("sync_run_id,response")
+    .eq("idempotency_key", idempotencyKey)
+    .eq("sync_type", syncType)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+export async function reserveIdempotentSync(admin, { idempotencyKey, syncType, userId }) {
+  const existing = await findIdempotentSync(admin, { idempotencyKey, syncType, userId });
+  if (existing) return { ...existing, duplicate: true };
+
+  const { data, error } = await admin
+    .from("mexal_sync_idempotency")
+    .insert({ idempotency_key: idempotencyKey, sync_type: syncType, user_id: userId })
+    .select("sync_run_id,response")
+    .single();
+  if (!error) return { ...data, duplicate: false };
+  // The unique constraint makes concurrent requests converge on the first run.
+  if (error.code === "23505") {
+    const concurrent = await findIdempotentSync(admin, { idempotencyKey, syncType, userId });
+    if (concurrent) return { ...concurrent, duplicate: true };
+  }
+  throw error;
+}
+export async function completeIdempotentSync(admin, { idempotencyKey, syncType, userId, syncRunId, response }) {
+  const { error } = await admin
+    .from("mexal_sync_idempotency")
+    .update({ sync_run_id: syncRunId || null, response })
+    .eq("idempotency_key", idempotencyKey)
+    .eq("sync_type", syncType)
+    .eq("user_id", userId);
+  if (error) throw error;
+}
 export async function createSyncRun(admin, { syncType, source = "manual", context = {}, metadata = {} }) {
   assertSyncType(syncType);
   await cleanupStaleRuns(admin, { syncType });

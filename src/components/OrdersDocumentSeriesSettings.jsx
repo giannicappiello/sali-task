@@ -49,7 +49,7 @@ export default function OrdersDocumentSeriesSettings({ canManage }) {
         throw new Error([data.error || `Errore HTTP ${response.status}`, data.details].filter(Boolean).join(" — "));
       }
       setDiagnostics(null);
-      setMessage(`Sincronizzazione completata: ${data.received || 0} serie ricevute, ${data.imported || 0} inserite, ${data.updated || 0} aggiornate.`);
+      setMessage(`Sincronizzazione completata: ${data.received_documents || 0} documenti, ${data.generated_series || 0} serie generate, ${data.inserted || 0} inserite, ${data.updated || 0} aggiornate.`);
       setMessageType("success");
       await load();
     } catch (error) { setMessage(error.message); setMessageType("error"); }

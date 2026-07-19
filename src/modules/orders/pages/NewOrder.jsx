@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Minus, Plus, Save, Search, ShoppingCart, Trash2 } from "lucide-react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { ArrowLeft, ChevronDown, ChevronUp, Info, Minus, Plus, Save, Search, ShoppingCart, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
@@ -101,6 +101,20 @@ function paymentDescription(customer) {
   );
 }
 
+function conditionLabel(line) {
+  if (line.origine_prezzo === "particolarita-prezzo") return "Prezzo speciale";
+  if (line.origine_sconto === "particolarita-sconto") return `Particolarità ${line.sconto_commerciale || ""}`.trim();
+  if (line.origine_sconto === "matrice-sconti") return `Matrice ${line.sconto_commerciale || ""}`.trim();
+  return "Nessuna condizione";
+}
+
+function conditionClass(line) {
+  if (line.origine_prezzo === "particolarita-prezzo") return "is-price";
+  if (line.origine_sconto === "particolarita-sconto") return "is-special";
+  if (line.origine_sconto === "matrice-sconti") return "is-matrix";
+  return "is-none";
+}
+
 async function loadPaged(table, buildQuery) {
   const rows = [];
   let from = 0;
@@ -142,6 +156,7 @@ export default function NewOrder() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [expandedLine, setExpandedLine] = useState("");
 
   useEffect(() => {
     if (!accessLoading) loadData();
@@ -566,7 +581,7 @@ export default function NewOrder() {
             <thead>
               <tr>
                 <th>Codice</th><th>Prodotto</th><th>Disponibile</th><th>Quantità</th>
-                <th>Prezzo base</th><th>Sconto commerciale</th><th>Sconto pagamento</th><th>Netto</th><th>Destinazione</th><th>Totale</th><th></th>
+                <th>Prezzo base</th><th>Condizione</th><th>Sconto pagamento</th><th>Netto</th><th>Destinazione</th><th>Totale</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -574,28 +589,62 @@ export default function NewOrder() {
                 const lineTotal = line.quantita * numberValue(line.prezzo_netto, line.prezzo_unitario);
                 const destination = line.quantita <= line.disponibilita ? "OCM" : "OCX";
                 return (
-                  <tr key={line.codice_articolo}>
-                    <td>{line.codice_articolo}</td>
-                    <td>
-                      <div>{line.descrizione}</div>
-                      <small>Categoria sconto articolo: {line.dettaglio_calcolo?.categoria_sconto_articolo || productDiscountCategory(line.prodotto_origine) || "-"}</small>
-                    </td>
-                    <td>{line.disponibilita}</td>
-                    <td>
-                      <div className="orders-quantity-control">
-                        <button type="button" onClick={() => updateLine(line.codice_articolo, "quantita", line.quantita - 1)}><Minus size={15} /></button>
-                        <input type="number" min="1" step="1" value={line.quantita} onChange={(event) => updateLine(line.codice_articolo, "quantita", event.target.value)} />
-                        <button type="button" onClick={() => updateLine(line.codice_articolo, "quantita", line.quantita + 1)}><Plus size={15} /></button>
-                      </div>
-                    </td>
-                    <td>{money(line.prezzo_base)}</td>
-                    <td>{line.sconto_commerciale || "-"}</td>
-                    <td>{line.sconto_pagamento || "-"}</td>
-                    <td>{money(line.prezzo_netto)}</td>
-                    <td><span className={`orders-document-chip ${destination.toLowerCase()}`}>{destination}</span></td>
-                    <td>{money(lineTotal)}</td>
-                    <td><button className="orders-icon-danger" type="button" onClick={() => removeLine(line.codice_articolo)} title="Elimina riga"><Trash2 size={17} /></button></td>
-                  </tr>
+                  <Fragment key={line.codice_articolo}>
+                    <tr>
+                      <td>{line.codice_articolo}</td>
+                      <td>
+                        <div>{line.descrizione}</div>
+                        <small>Categoria sconto articolo: {line.dettaglio_calcolo?.categoria_sconto_articolo || productDiscountCategory(line.prodotto_origine) || "-"}</small>
+                      </td>
+                      <td>{line.disponibilita}</td>
+                      <td>
+                        <div className="orders-quantity-control">
+                          <button type="button" onClick={() => updateLine(line.codice_articolo, "quantita", line.quantita - 1)}><Minus size={15} /></button>
+                          <input type="number" min="1" step="1" value={line.quantita} onChange={(event) => updateLine(line.codice_articolo, "quantita", event.target.value)} />
+                          <button type="button" onClick={() => updateLine(line.codice_articolo, "quantita", line.quantita + 1)}><Plus size={15} /></button>
+                        </div>
+                      </td>
+                      <td>{money(line.prezzo_base)}</td>
+                      <td>
+                        <button
+                          className={`orders-condition-chip ${conditionClass(line)}`}
+                          type="button"
+                          onClick={() => setExpandedLine((current) => current === line.codice_articolo ? "" : line.codice_articolo)}
+                          title="Mostra il dettaglio del calcolo"
+                        >
+                          <Info size={14} />
+                          {conditionLabel(line)}
+                          {expandedLine === line.codice_articolo ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </button>
+                      </td>
+                      <td>{line.sconto_pagamento || "-"}</td>
+                      <td>{money(line.prezzo_netto)}</td>
+                      <td><span className={`orders-document-chip ${destination.toLowerCase()}`}>{destination}</span></td>
+                      <td>{money(lineTotal)}</td>
+                      <td><button className="orders-icon-danger" type="button" onClick={() => removeLine(line.codice_articolo)} title="Elimina riga"><Trash2 size={17} /></button></td>
+                    </tr>
+                    {expandedLine === line.codice_articolo && (
+                      <tr className="orders-calculation-row" key={`${line.codice_articolo}-detail`}>
+                        <td colSpan="11">
+                          <div className="orders-calculation-detail">
+                            <div><span>Listino cliente</span><strong>{line.dettaglio_calcolo?.codice_listino || "-"}</strong></div>
+                            <div><span>Prezzo listino</span><strong>{money(line.prezzo_listino)}</strong></div>
+                            <div><span>Categoria cliente</span><strong>{line.dettaglio_calcolo?.categoria_sconto_cliente || "-"}</strong></div>
+                            <div><span>Categoria articolo</span><strong>{line.dettaglio_calcolo?.categoria_sconto_articolo || "-"}</strong></div>
+                            <div><span>Regola applicata</span><strong>{conditionLabel(line)}</strong></div>
+                            <div><span>Sconto pagamento</span><strong>{line.sconto_pagamento || "-"}</strong></div>
+                            <div><span>Prezzo netto</span><strong>{money(line.prezzo_netto)}</strong></div>
+                          </div>
+                          {line.origine_prezzo === "particolarita-prezzo" && (
+                            <p className="orders-calculation-note">Il prezzo speciale sostituisce il listino e non applica la matrice sconti. Lo sconto pagamento resta applicabile.</p>
+                          )}
+                          {line.origine_sconto === "particolarita-sconto" && (
+                            <p className="orders-calculation-note">La particolarità sconto ha priorità sulla matrice sconti.</p>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
             </tbody>

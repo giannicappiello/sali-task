@@ -1,26 +1,26 @@
-FIX SCONTO ORDINI
+SPRINT 2D - MOTORE COMMERCIALE MEXAL
 
-1. Sostituisci nel progetto i due file mantenendo i percorsi:
-   src/modules/orders/pages/NewOrder.jsx
-   src/modules/orders/services/priceEngine.js
+1. Estrarre lo ZIP nella cartella principale del progetto.
+2. Confermare la sostituzione dei file esistenti.
+3. In Supabase SQL Editor eseguire:
+   supabase/migrations/20260719090000_sprint_2d_commercial_engine.sql
+4. Fermare Vite con Ctrl+C.
+5. Eseguire npm run dev.
+6. Aggiornare il browser con Ctrl+F5.
 
-2. In Supabase > SQL Editor esegui per intero:
-   supabase/migrations/20260718235500_fix_categorie_sconto_ordini.sql
+File sostituiti:
+- src/modules/orders/pages/NewOrder.jsx
+- src/modules/orders/services/priceEngine.js
+- src/modules/orders/orders-module.css
 
-3. Arresta Vite con Ctrl+C e riavvia:
-   npm run dev
+Funzioni:
+- listino cliente
+- particolarità prezzo
+- particolarità sconto
+- matrice sconti
+- sconto pagamento
+- dettaglio calcolo espandibile per ogni riga
+- nessun margine e nessun ricarico
 
-4. Nel browser esegui Ctrl+F5.
-
-5. Apri Nuovo ordine. In alto comparirà il conteggio delle regole caricate.
-   Deve indicare almeno: matrice 500, particolarità 64, pagamenti 1.
-
-6. Il cliente dello screenshot deve mostrare Categoria sconto 2, non 0.
-   La riga IT0001 mostrerà anche la categoria articolo effettivamente letta.
-
-7. Per controllare i dati esegui docs/VERIFICA_FIX_SCONTO.sql.
-
-Git non serve per il test locale. Dopo la verifica positiva:
-   git add .
-   git commit -m "Fix categorie e calcolo sconti ordini"
-   git push origin main
+Verifica tecnica eseguita:
+- npm run build completato correttamente con Vite 8.1.3.

@@ -499,12 +499,19 @@ export function calculateLineConditions({
           integer(item.cod_cat_art) === articleDiscountCategory
       ) || null;
 
+  // Priorità commerciale:
+  // 1) particolarità prezzo: prezzo fisso, la matrice non si applica;
+  // 2) particolarità sconto: sostituisce la matrice;
+  // 3) matrice sconti;
+  // 4) sconto pagamento, applicato sempre dopo la condizione commerciale.
   const commercialChain = normalizeDiscountChain(
     discountRule
       ? ruleValue(discountRule)
-      : matrix?.sconto_esteso ??
-          matrix?.sconto ??
-          ""
+      : priceRule
+        ? ""
+        : matrix?.sconto_esteso ??
+            matrix?.sconto ??
+            ""
   );
 
   const code = paymentCode(payment, customer);
@@ -611,6 +618,20 @@ export function calculateLineConditions({
               "",
           }
         : null,
+      priorita_applicata: priceRule
+        ? "particolarita-prezzo"
+        : discountRule
+          ? "particolarita-sconto"
+          : matrix
+            ? "matrice-sconti"
+            : "nessuna-condizione",
+      descrizione_calcolo: priceRule
+        ? `Prezzo speciale ${Number(basePrice.toFixed(4))}`
+        : discountRule
+          ? `Particolarità sconto ${commercialChain || "-"}`
+          : matrix
+            ? `Matrice ${commercialChain || "-"}`
+            : "Nessuna condizione commerciale",
     },
     regola_prezzo: priceRule,
     regola_sconto: discountRule,

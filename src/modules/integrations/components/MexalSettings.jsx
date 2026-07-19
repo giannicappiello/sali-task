@@ -1,28 +1,6 @@
+import { useState } from "react";
 export default function MexalSettings({ settings, onChange, disabled }) {
+  const [advanced, setAdvanced] = useState(false);
   const update = (field, value) => onChange({ ...settings, [field]: value });
-
-  return (
-    <section className="mexal-settings-panel">
-      <div className="mexal-section-heading">
-        <div><h3>Parametri sincronizzazione</h3><p>Per salvare realmente i dati lascia Dry Run disattivato.</p></div>
-      </div>
-      <div className="mexal-settings-grid">
-        <label className="mexal-toggle-row">
-          <input type="checkbox" checked={settings.dryRun} onChange={(event) => update("dryRun", event.target.checked)} disabled={disabled} />
-          <span><strong>Dry Run</strong><small>Se attivo legge e valida, ma non modifica il database.</small></span>
-        </label>
-        <label className="mexal-toggle-row">
-          <input type="checkbox" checked={settings.syncPayments} onChange={(event) => update("syncPayments", event.target.checked)} disabled={disabled} />
-          <span><strong>Regole pagamento</strong><small>Importa gli sconti pagamento quando l'endpoint Mexal è configurato; in caso contrario mantiene le regole manuali.</small></span>
-        </label>
-        <label className="mexal-select-row">
-          <span><strong>Modalità</strong><small>Completa disattiva le regole non più presenti in Mexal.</small></span>
-          <select value={settings.mode} onChange={(event) => update("mode", event.target.value)} disabled={disabled}>
-            <option value="full">Completa</option>
-            <option value="incremental">Incrementale</option>
-          </select>
-        </label>
-      </div>
-    </section>
-  );
+  return <section className="mexal-settings-panel"><div className="mexal-section-heading"><div><h3>Parametri sincronizzazione</h3><p>Connessione Mexal attiva. Le sincronizzazioni manuali sono disponibili nelle card.</p></div></div><div className="mexal-settings-grid"><div><strong>Automazione</strong><small>Gestita dai processi del modulo Ordini.</small></div><div><strong>Frequenza</strong><small>Giacenze: controllo periodico dal modulo Ordini.</small></div></div><button type="button" onClick={() => setAdvanced(!advanced)}>{advanced ? "Nascondi opzioni avanzate" : "Opzioni avanzate"}</button>{advanced && <div className="mexal-settings-grid"><label className="mexal-toggle-row"><input type="checkbox" checked={settings.dryRun} onChange={(e) => update("dryRun", e.target.checked)} disabled={disabled}/><span><strong>Dry Run</strong><small>Solo diagnostica: non scrive nel database.</small></span></label><label className="mexal-toggle-row"><input type="checkbox" checked={settings.syncPayments} onChange={(e) => update("syncPayments", e.target.checked)} disabled={disabled}/><span><strong>Regole pagamento</strong><small>Mantiene disponibili le condizioni per il motore ordini.</small></span></label><label className="mexal-select-row"><span><strong>Modalità</strong><small>Completa può disattivare regole non più presenti.</small></span><select value={settings.mode} onChange={(e) => update("mode", e.target.value)} disabled={disabled}><option value="full">Completa</option><option value="incremental">Incrementale</option></select></label></div>}</section>;
 }

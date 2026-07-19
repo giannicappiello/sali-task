@@ -83,25 +83,48 @@ function mexalClient() {
   };
 }
 
-function extractRows(payload) {
-  if (Array.isArray(payload)) return payload;
-  if (!payload || typeof payload !== "object") return [];
-  for (const key of ["data", "items", "records", "risorse", "result", "serie_documenti", "serie-documenti"]) {
-    if (Array.isArray(payload[key])) return payload[key];
+const SERIES_FIELDS = new Set(["serie", "numero_serie", "nr_serie", "codice_serie", "sigla", "sigla_documento", "tipo_documento", "documento", "descrizione"]);
+const PREFERRED_KEYS = new Set(["data", "dati", "response", "risultati", "elenco", "righe", "documenti", "serie", "items", "records", "risorse", "result", "serie_documenti", "serie-documenti"]);
+
+function isSeriesRecord(value) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).some((key) => SERIES_FIELDS.has(key.toLowerCase())));
+}
+
+export function inspectPayload(payload) {
+  const arrays = [];
+  const seen = new WeakSet();
+  function visit(value, path, depth) {
+    if (depth > 5 || !value || typeof value !== "object") return;
+    if (seen.has(value)) return;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      arrays.push({ path, length: value.length, sample_keys: value[0] && typeof value[0] === "object" && !Array.isArray(value[0]) ? Object.keys(value[0]).slice(0, 30) : [] , value });
+      value.forEach((item, index) => visit(item, `${path}[${index}]`, depth + 1));
+      return;
+    }
+    Object.entries(value).forEach(([key, child]) => visit(child, path ? `${path}.${key}` : key, depth + 1));
   }
-  for (const value of Object.values(payload)) {
-    if (Array.isArray(value)) return value;
-  }
-  return [];
+  visit(payload, "$", 0);
+  return { payload_type: Array.isArray(payload) ? "array" : payload === null ? "null" : typeof payload, root_keys: payload && typeof payload === "object" && !Array.isArray(payload) ? Object.keys(payload).slice(0, 50) : [], arrays_found: arrays.map(({ value, ...safe }) => safe), candidates: arrays };
+}
+
+export function extractRows(payload) {
+  if (isSeriesRecord(payload)) return [payload];
+  const inspection = inspectPayload(payload);
+  const candidates = inspection.candidates
+    .map((entry) => ({ ...entry, compatible: entry.value.filter(isSeriesRecord), preferred: PREFERRED_KEYS.has(entry.path.split(".").pop()?.replace(/\[.*$/, "").toLowerCase()) }))
+    .filter((entry) => entry.compatible.length);
+  candidates.sort((a, b) => Number(b.preferred) - Number(a.preferred) || b.compatible.length - a.compatible.length || a.path.length - b.path.length);
+  return candidates[0]?.compatible || [];
 }
 
 function normalizeRow(row, index) {
   const raw = row && typeof row === "object" ? row : { valore: row };
-  const serie = text(raw.serie ?? raw.numero_serie ?? raw.nr_serie ?? raw.codice ?? raw.id ?? raw.valore);
-  const sigla = text(raw.sigla ?? raw.sigla_documento ?? raw.tipo_documento ?? raw.tipo ?? raw.documento).toUpperCase();
-  const descrizione = text(raw.descrizione ?? raw.nome ?? raw.descr ?? raw.description ?? `${sigla || "Documento"} serie ${serie}`);
+  const serie = text(raw.serie ?? raw.numero_serie ?? raw.nr_serie ?? raw.codice_serie ?? raw.num_serie ?? raw.serie_doc ?? raw.cod_serie ?? raw.codice ?? raw.id ?? raw.valore);
+  const sigla = text(raw.sigla ?? raw.sigla_documento ?? raw.sigla_doc ?? raw.tipo_documento ?? raw.tipo_doc ?? raw.tipo ?? raw.documento).toUpperCase();
+  const descrizione = text(raw.descrizione ?? raw.descrizione_serie ?? raw.des_serie ?? raw.nome ?? raw.descr ?? raw.description ?? `${sigla || "Documento"} serie ${serie}`);
   return {
-    source_key: text(raw.id ?? raw.codice ?? `${sigla}:${serie}:${index}`),
+    source_key: text(raw.id ?? raw.codice_serie ?? raw.cod_serie ?? raw.codice ?? `${sigla}:${serie}:${index}`),
     sigla_documento: sigla,
     serie,
     descrizione,
@@ -114,8 +137,12 @@ function normalizeRow(row, index) {
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Metodo non consentito." });
   const admin = supabaseAdmin();
+  let runId = null;
   try {
     await verifyAdmin(req, admin);
+    const { data: run, error: runError } = await admin.from("mexal_sync_runs").insert({ sync_type: "document_series", status: "running", metadata: { source: "vercel" } }).select("id").single();
+    if (runError) throw runError;
+    runId = run.id;
     const mexal = mexalClient();
     console.info("Mexal serie documenti: richiesta avviata", mexal.diagnostics);
     const response = await requestJson({ url: mexal.endpoint, headers: mexal.headers });
@@ -125,10 +152,12 @@ export default async function handler(req, res) {
       error.details = `Endpoint serie documenti raggiunto; HTTP ${response.status}. Verificare credenziali, Coordinate-Gestionale e abilitazione WebAPI.`;
       throw error;
     }
+    const payloadInspection = inspectPayload(response.data);
     const rows = extractRows(response.data).map(normalizeRow).filter((row) => row.serie !== "");
     if (!rows.length) {
       const error = new Error("Mexal non ha restituito serie documenti riconoscibili.");
-      error.details = "La risposta JSON è valida ma non contiene un array di serie nei campi supportati.";
+      error.details = "La risposta JSON è valida ma non contiene serie documenti nei campi supportati.";
+      error.diagnostics = { http_status: response.status, payload_type: payloadInspection.payload_type, root_keys: payloadInspection.root_keys, arrays_found: payloadInspection.arrays_found };
       throw error;
     }
 
@@ -153,13 +182,16 @@ export default async function handler(req, res) {
     const imported = rows.length - updated;
     console.info("Mexal serie documenti: completata", { received: rows.length, imported, updated });
 
+    await admin.from("mexal_sync_runs").update({ status: "completed", completed_at: new Date().toISOString(), processed: rows.length, inserted: imported, updated, skipped: 0, failed: 0 }).eq("id", runId);
     return res.status(200).json({ success: true, received: rows.length, imported, updated, skipped: 0, errors: [] });
   } catch (error) {
     console.error("Mexal serie documenti: errore", { message: error?.message, status: error?.status || 500 });
+    if (runId) await admin.from("mexal_sync_runs").update({ status: "failed", completed_at: new Date().toISOString(), error_message: text(error?.message).slice(0, 500) }).eq("id", runId);
     return res.status(error.status || 500).json({
       success: false,
       error: error.message || "Errore sincronizzazione serie documenti.",
       details: error.details || "Controllare i log Vercel per dettagli non sensibili.",
+      ...(error.diagnostics ? { diagnostics: error.diagnostics } : {}),
     });
   }
 }

@@ -866,6 +866,12 @@ export default async function handler(req, res) {
     }
 
     if (action === "sync-stock-it") {
+      syncRunId = body.syncRunId || null;
+      if (!syncRunId && offset === 0) {
+        const { data: stockRun, error: stockRunError } = await supabase.from("mexal_sync_runs").insert({ sync_type: "stocks", status: "running", metadata: { batch_size: batchSize, origin: body.origin || "manual" } }).select("id").single();
+        if (stockRunError) throw stockRunError;
+        syncRunId = stockRun.id;
+      }
       const itArticles = articles.filter((item) =>
         getArticleCode(item).startsWith("IT")
       );
@@ -914,7 +920,11 @@ export default async function handler(req, res) {
         }
       }
 
-      return res.status(200).json(result);
+      if (syncRunId) {
+        const { data: current } = await supabase.from("mexal_sync_runs").select("processed,updated,failed").eq("id", syncRunId).maybeSingle();
+        await supabase.from("mexal_sync_runs").update({ processed: Number(current?.processed || 0) + result.elaborati, updated: Number(current?.updated || 0) + result.aggiornati, failed: Number(current?.failed || 0) + result.errori.length, status: result.completato ? (result.errori.length ? "completed_with_errors" : "completed") : "running", ...(result.completato ? { completed_at: new Date().toISOString(), error_message: result.errori.length ? "Alcune giacenze non sono state aggiornate." : null } : {}) }).eq("id", syncRunId);
+      }
+      return res.status(200).json({ ...result, sync_run_id: syncRunId });
     }
 
     if (action !== "sync") {

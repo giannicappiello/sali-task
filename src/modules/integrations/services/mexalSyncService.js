@@ -44,6 +44,20 @@ export async function invokeProductsSync(onProgress = () => {}) {
   }
 }
 
+export async function invokeStocksSync(onProgress = () => {}) {
+  let offset = 0; let syncRunId = null;
+  const total = { processed: 0, updated: 0, errors: [] };
+  while (true) {
+    const data = await invokeMexalApi("/api/mexal/sync-products", { action: "sync-stock-it", offset, batchSize: 12, syncRunId, origin: "integrations" });
+    syncRunId = data.sync_run_id || syncRunId;
+    total.processed += Number(data.elaborati || 0); total.updated += Number(data.aggiornati || 0);
+    total.errors.push(...(data.errori || [])); onProgress({ ...total, total: Number(data.totale || 0) });
+    if (data.completato) return { ...total, syncRunId };
+    const next = Number(data.prossimo_offset); if (!Number.isFinite(next) || next <= offset) throw new Error("Paginazione giacenze Mexal non valida.");
+    offset = next;
+  }
+}
+
 export async function invokeClientsSync() {
   return invokeMexalApi("/api/mexal/sync-clients", { action: "sync" });
 }
@@ -60,11 +74,13 @@ export async function loadMexalRuns(type, limit = 1) {
 }
 
 export async function loadMexalEntityCounts() {
-  const [products, clients] = await Promise.all([
+  const [products, clients, stocks, orders] = await Promise.all([
     supabase.from("prodotti").select("*", { count: "exact", head: true }).eq("attivo_mexal", true).eq("mostra_in_app", true),
     supabase.from("ordini_clienti_cache").select("*", { count: "exact", head: true }).eq("attivo_mexal", true),
+    supabase.from("prodotti").select("*", { count: "exact", head: true }).not("ultimo_sync_mexal", "is", null),
+    supabase.from("ordini_testate").select("*", { count: "exact", head: true }).eq("stato_sincronizzazione", "non_inviato"),
   ]);
-  return { products: products.error ? null : products.count || 0, clients: clients.error ? null : clients.count || 0 };
+  return { products: products.error ? null : products.count || 0, clients: clients.error ? null : clients.count || 0, stocks: stocks.error ? null : stocks.count || 0, orders: orders.error ? null : orders.count || 0 };
 }
 
 export async function invokeCommercialConditionsSync(options = {}) {
@@ -107,16 +123,11 @@ export async function invokeCommercialConditionsSync(options = {}) {
 }
 
 export async function loadSyncRuns(limit = 25) {
-  const { data, error } = await supabase
-    .from("ordini_sync_runs")
-    .select(
-      "id,sync_type,source_system,status,requested_by,started_at,completed_at,duration_ms,records_read,records_inserted,records_updated,records_deactivated,records_failed,warning_count,parameters,summary,error_message"
-    )
-    .order("started_at", { ascending: false })
-    .limit(limit);
-
+  const { data, error } = await supabase.from("mexal_sync_runs")
+    .select("id,sync_type,status,started_at,completed_at,processed,inserted,updated,skipped,failed,error_message,metadata")
+    .order("started_at", { ascending: false }).limit(limit);
   if (error) throw error;
-  return data || [];
+  return (data || []).map((run) => ({ ...run, records_read: run.processed, records_inserted: run.inserted, records_updated: run.updated, records_failed: run.failed, duration_ms: run.completed_at ? new Date(run.completed_at) - new Date(run.started_at) : null }));
 }
 
 export async function loadRunDetails(runId) {

@@ -4,6 +4,24 @@ function apiError(status, message) {
   return error;
 }
 
+export const SCHEDULE_SYNC_TYPES = ["clients", "products", "commercial_conditions", "document_series", "stocks", "orders"];
+export const EVENT_SYNC_TYPES = [...SCHEDULE_SYNC_TYPES, "agents", "payments"];
+export const AUTOMATION_SECTION_COLUMNS = Object.freeze({
+  schedule: ["Tipo sincronizzazione", "Frequenza", "Ordine", "Stato", "Azioni"],
+  event: ["Evento", "Tipo sincronizzazione", "Ordine", "Stato", "Azioni"],
+});
+
+export function automationSection(type, canManage) {
+  const event = type === "event";
+  return {
+    columns: AUTOMATION_SECTION_COLUMNS[event ? "event" : "schedule"],
+    canCreate: Boolean(canManage && event),
+    syncTypes: event ? EVENT_SYNC_TYPES : SCHEDULE_SYNC_TYPES,
+  };
+}
+
+export function canManageMexalAutomations(canManage) { return Boolean(canManage); }
+
 function messageForStatus(status) {
   if (status === 401) return "Sessione scaduta o non autorizzata. Accedi di nuovo per gestire le automazioni.";
   if (status === 403) return "Non disponi dei permessi amministrativi per gestire le automazioni.";

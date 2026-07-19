@@ -143,7 +143,7 @@ export default function OrdersAccessSettings({ canManage }) {
     const [usersRes, integrationsRes] = await Promise.all([
       supabase
         .from("utenti")
-        .select("id,nome,cognome,email,attivo,ruoli(id,nome,livello)")
+        .select("id,auth_user_id,nome,cognome,email,attivo,ruoli(id,nome,livello)")
         .order("nome", { ascending: true }),
       supabase
         .from("integrazioni_utenti")
@@ -256,6 +256,11 @@ export default function OrdersAccessSettings({ canManage }) {
       return;
     }
 
+    if (!user.auth_user_id) {
+      alert("Impossibile salvare l'accesso Ordini: l'utente non è collegato a un account di autenticazione.");
+      return;
+    }
+
     const draft = drafts[user.id] || createEmptyDraft();
     const validation = getValidation(draft);
 
@@ -294,15 +299,17 @@ export default function OrdersAccessSettings({ canManage }) {
           .from("integrazioni_utenti")
           .update(payload)
           .eq("id", existing.id)
-      : supabase.from("integrazioni_utenti").insert(payload);
+          .eq("utente_id", user.id)
+          .select("id,utente_id,enabled,ruolo_ordini")
+      : supabase.from("integrazioni_utenti").insert(payload).select("id,utente_id,enabled,ruolo_ordini");
 
-    const { error } = await request;
+    const { data, error } = await request;
 
     setSavingId(null);
 
-    if (error) {
+    if (error || !data?.length || data[0].utente_id !== user.id) {
       console.error("Errore salvataggio accesso ordini:", error);
-      alert(error.message);
+      alert(error?.message || "Nessun accesso Ordini è stato aggiornato per l'utente selezionato.");
       return;
     }
 

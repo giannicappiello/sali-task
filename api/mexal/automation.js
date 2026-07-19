@@ -89,7 +89,7 @@ async function syncAll(req, res, body) {
       const error = result?.error || `Sincronizzazione ${phase} non riuscita (HTTP ${phaseResponse.statusCode}).`;
       return res.status(500).json({
         status: "failed",
-        processedActions: completedPhases.length,
+        processedActions: results.length,
         failedActions: 1,
         completedPhases,
         failedPhase: phase,

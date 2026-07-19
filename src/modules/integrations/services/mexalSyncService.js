@@ -18,9 +18,34 @@ async function invokeMexalApi(path, payload) {
   });
   const raw = await response.text();
   let data;
-  try { data = raw ? JSON.parse(raw) : {}; } catch { data = { error: raw }; }
-  if (!response.ok) throw new Error(data?.error || `Errore Mexal (HTTP ${response.status})`);
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    throw new Error("Risposta Mexal non valida.");
+  }
+  if (!response.ok) {
+    const messages = {
+      400: "Richiesta non valida.",
+      401: "Sessione scaduta. Effettua nuovamente l'accesso.",
+      403: "Permessi insufficienti per questa operazione.",
+      409: "È già presente una sincronizzazione in corso",
+      500: "Errore interno del servizio Mexal.",
+    };
+    const error = new Error(response.status === 409 ? messages[409] : (data?.error || messages[response.status] || `Errore Mexal (HTTP ${response.status})`));
+    error.status = response.status;
+    error.details = data?.details;
+    throw error;
+  }
   return data;
+}
+
+/** Manual controls exposed by the Sincronizzazioni tab. */
+export async function startMexalSync(syncType) {
+  return invokeMexalApi("/api/mexal/automation", { action: "run_now", syncType });
+}
+
+export async function startAllMexalSyncs() {
+  return invokeMexalApi("/api/mexal/automation", { action: "sync_all" });
 }
 
 export async function invokeProductsSync(onProgress = () => {}) {

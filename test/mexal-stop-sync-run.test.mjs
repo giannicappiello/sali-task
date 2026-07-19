@@ -13,7 +13,7 @@ assert.match(api, /cancelSyncRun/);
 assert.match(api, /isSyncRunClosedError[\s\S]*status\(409\)/);
 assert.match(lifecycle, /"cancelled"/);
 assert.match(api, /stopped_manually: true/);
-assert.match(dashboard, /ARRESTA SINCRONIZZAZIONE/);
+assert.match(dashboard, /Arresta sincronizzazione/);
 assert.match(dashboard, /run\.status === "running" && isAdminUser/);
 assert.match(dashboard, /stoppingRunId === run\.id/);
 assert.match(products, /assertRunStillRunning/);

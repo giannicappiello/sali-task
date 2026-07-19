@@ -201,6 +201,20 @@ export function buildMexalClient() {
   };
 }
 
+const ORDERS_ROLES = new Set(["backoffice", "area_manager", "agente"]);
+
+function authorizationError(message, status, details = {}) {
+  return Object.assign(new Error(message), { status, ...details });
+}
+
+function logOrdersAuthorization(authUserId, reason, profilesFound) {
+  console.warn("Mexal orders authorization denied", {
+    auth_user_id: authUserId || null,
+    reason,
+    profiles_found: profilesFound,
+  });
+}
+
 export async function verifyUser(req, supabase, { allowOrdersUser = false } = {}) {
   const authorization = req.headers.authorization || "";
   const cronSecret = process.env.CRON_SECRET?.trim();
@@ -209,11 +223,7 @@ export async function verifyUser(req, supabase, { allowOrdersUser = false } = {}
     return;
   }
 
-  if (!authorization.startsWith("Bearer ")) {
-    throw Object.assign(new Error("Sessione mancante."), {
-      status: 401,
-    });
-  }
+  if (!authorization.startsWith("Bearer ")) throw authorizationError("Sessione mancante.", 401);
 
   const token = authorization.slice(7);
 
@@ -222,23 +232,32 @@ export async function verifyUser(req, supabase, { allowOrdersUser = false } = {}
     error: authError,
   } = await supabase.auth.getUser(token);
 
-  if (authError || !user) {
-    throw Object.assign(new Error("Sessione non valida."), {
-      status: 401,
-    });
-  }
+  if (authError || !user) throw authorizationError("Sessione non valida.", 401);
 
-  const { data: profile, error: profileError } = await supabase
+  const { data: profiles, error: profileError } = await supabase
     .from("utenti")
     .select("id,attivo,ruoli(nome,livello)")
     .eq("auth_user_id", user.id)
-    .maybeSingle();
+    .limit(2);
 
-  if (profileError || !profile || profile.attivo === false) {
-    throw Object.assign(
-      new Error("Utente non configurato o disabilitato."),
-      { status: 403 }
-    );
+  const profilesFound = profiles?.length || 0;
+  if (profileError) {
+    console.error("Mexal orders profile lookup failed", { auth_user_id: user.id, error: profileError.message });
+    throw authorizationError("Errore verifica profilo utente.", 500);
+  }
+  if (profilesFound > 1) {
+    logOrdersAuthorization(user.id, "duplicate_profile", profilesFound);
+    throw authorizationError("Configurazione profilo utente incoerente.", 409);
+  }
+  if (!profilesFound) {
+    logOrdersAuthorization(user.id, "missing_profile", profilesFound);
+    throw authorizationError("Utente non autorizzato alla gestione ordini.", 403);
+  }
+
+  const profile = profiles[0];
+  if (profile.attivo === false) {
+    logOrdersAuthorization(user.id, "inactive_profile", profilesFound);
+    throw authorizationError("Utente disattivato.", 403);
   }
 
   const roleName = String(profile.ruoli?.nome || "").toLowerCase();
@@ -253,36 +272,41 @@ export async function verifyUser(req, supabase, { allowOrdersUser = false } = {}
       "direzione",
     ].includes(roleName) || roleLevel >= 80;
 
-  if (isAdmin) return;
+  if (isAdmin) return { authUserId: user.id, profile, isAdmin: true, integration: null };
 
-  const { data: integration, error: integrationError } = await supabase
+  const { data: integrations, error: integrationError } = await supabase
     .from("integrazioni_utenti")
     .select("enabled,ruolo_ordini")
     .eq("utente_id", profile.id)
     .eq("modulo", MODULE_CODE)
-    .maybeSingle();
+    .limit(2);
 
   if (integrationError) {
-    throw Object.assign(
-      new Error("Errore verifica autorizzazione Gestione Ordini."),
-      { status: 500 }
-    );
+    console.error("Mexal orders integration lookup failed", { auth_user_id: user.id, error: integrationError.message });
+    throw authorizationError("Errore verifica autorizzazione Gestione Ordini.", 500);
+  }
+  if ((integrations?.length || 0) > 1) {
+    logOrdersAuthorization(user.id, "duplicate_orders_access", profilesFound);
+    throw authorizationError("Configurazione accesso Ordini incoerente.", 409);
   }
 
+  const integration = integrations?.[0];
   const hasOrdersAccess = integration?.enabled === true;
-  const isBackoffice =
-    hasOrdersAccess && integration?.ruolo_ordini === "backoffice";
+  const ordersRole = String(integration?.ruolo_ordini || "").toLowerCase();
 
-  if (allowOrdersUser && hasOrdersAccess) return;
+  const isBackoffice =
+    hasOrdersAccess && ordersRole === "backoffice";
+
+  if (allowOrdersUser && hasOrdersAccess && ORDERS_ROLES.has(ordersRole)) {
+    return { authUserId: user.id, profile, isAdmin: false, integration };
+  }
 
   if (!isBackoffice) {
-    throw Object.assign(
-      new Error(
-        "Operazione riservata ad amministratori e backoffice ordini."
-      ),
-      { status: 403 }
-    );
+    logOrdersAuthorization(user.id, hasOrdersAccess ? "unsupported_orders_role" : "orders_access_disabled", profilesFound);
+    throw authorizationError("Accesso Ordini non abilitato per questo utente.", 403);
   }
+
+  return { authUserId: user.id, profile, isAdmin: false, integration };
 }
 
 function isSupportedCode(code) {

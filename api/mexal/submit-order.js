@@ -1,5 +1,6 @@
 import https from "node:https";
 import { createClient } from "@supabase/supabase-js";
+import { verifyUser } from "../../server/mexal/sync-products.js";
 
 function env(name, fallback = "") {
   return String(process.env[name] ?? fallback).trim();
@@ -53,24 +54,6 @@ function supabaseAdmin() {
   return createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-}
-
-async function verifyUser(req, supabase) {
-  const authorization = req.headers.authorization || "";
-  if (!authorization.startsWith("Bearer ")) throw Object.assign(new Error("Sessione mancante."), { status: 401 });
-  const token = authorization.slice(7);
-  const { data: { user }, error } = await supabase.auth.getUser(token);
-  if (error || !user) throw Object.assign(new Error("Sessione non valida."), { status: 401 });
-
-  const { data: profile } = await supabase
-    .from("utenti")
-    .select("id,attivo,accesso_ordini,ruoli(nome,livello)")
-    .eq("auth_user_id", user.id)
-    .maybeSingle();
-  if (!profile || profile.attivo === false || profile.accesso_ordini === false) {
-    throw Object.assign(new Error("Utente non autorizzato alla gestione ordini."), { status: 403 });
-  }
-  return profile;
 }
 
 function mexalClient() {
@@ -136,7 +119,7 @@ export default async function handler(req, res) {
   let orderId = null;
   let runId = null;
   try {
-    await verifyUser(req, admin);
+    await verifyUser(req, admin, { allowOrdersUser: true });
     const { data: run, error: runError } = await admin.from("mexal_sync_runs").insert({ sync_type: "orders", status: "running", metadata: { source: "submit-order" } }).select("id").single();
     if (runError) throw runError;
     runId = run.id;

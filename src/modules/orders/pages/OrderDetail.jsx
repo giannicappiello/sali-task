@@ -40,10 +40,18 @@ export default function OrderDetail() {
     try {
       const result = await submitOrderToMexal(orderId, { force: order?.stato_sincronizzazione === "errore" });
       setMessage(result.skipped ? result.message : `Ordine inviato a Mexal. OCM: ${result.numero_ocm || "-"} · OCX: ${result.numero_ocx || "-"}`);
-      await load();
+      if (!result.skipped) {
+        setOrder((current) => current ? {
+          ...current,
+          stato: "confermato",
+          stato_sincronizzazione: "completato",
+          numero_ocm: result.numero_ocm || current.numero_ocm || null,
+          numero_ocx: result.numero_ocx || current.numero_ocx || null,
+          errore_sincronizzazione: null,
+        } : current);
+      }
     } catch (sendError) {
       setError(sendError.message || "Invio a Mexal non riuscito.");
-      await load();
     } finally {
       setSending(false);
     }

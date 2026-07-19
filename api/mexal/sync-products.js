@@ -60,6 +60,29 @@ function numberValue(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function nullableNumber(value) {
+  if (value === null || value === undefined || String(value).trim() === "") {
+    return null;
+  }
+
+  const parsed = Number(String(value).trim().replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function nullableInteger(value) {
+  const parsed = nullableNumber(value);
+  return parsed !== null && Number.isInteger(parsed) ? parsed : null;
+}
+
+function nullableText(...values) {
+  for (const value of values) {
+    const text = String(value ?? "").trim();
+    if (text) return text;
+  }
+
+  return null;
+}
+
 function round4(value) {
   return Math.round((value + Number.EPSILON) * 10000) / 10000;
 }
@@ -329,7 +352,7 @@ function getListPrice(prices, preferredList = 1) {
   const candidate =
     exact || prices.find((row) => Array.isArray(row));
 
-  return candidate ? numberValue(candidate[1]) : null;
+  return candidate ? nullableNumber(candidate[1]) : null;
 }
 
 function calculateStock(article) {
@@ -725,23 +748,42 @@ async function saveProduct({
   return "inserted";
 }
 
-function mapArticleToOrdersCache(article, hierarchy) {
+export function mapArticleToOrdersCache(article, { imageUrl = null } = {}) {
   const code = getArticleCode(article);
   if (!code) throw new Error("Codice articolo Mexal mancante nel record completo.");
   const stock = calculateStock(article);
+
   return {
     codice_articolo: code,
     descrizione: buildName(article) || code,
-    brand: hierarchy.brand?.descrizione || null,
-    categoria: hierarchy.categoria?.descrizione || hierarchy.linea?.descrizione || null,
-    sottocategoria: hierarchy.sottocategoria?.descrizione || null,
+    descrizione_completa: nullableText(article.descr_completa),
+    codice_alternativo: nullableText(article.cod_alternativo),
+    unita_misura: nullableText(article.unita_misura, article.um, article.unita),
+    aliquota_iva: nullableText(article.aliquota_iva, article.cod_aliquota_iva),
+    categoria_sconto: nullableInteger(
+      article.id_cat_sconto ?? article.categoria_sconto ?? article.cod_cat_sconto
+    ),
+    categoria_prezzo: nullableInteger(
+      article.id_cat_prezzo ?? article.categoria_prezzo ?? article.cod_cat_prezzo
+    ),
     prezzo_listino: getListPrice(article.prz_listino, 1),
-    unita_misura: String(article.unita_misura || article.um || article.unita || "").trim() || null,
+    giacenza: stock,
+    impegnato: round4(
+      numberValue(article.impegnato ?? article.qta_impegnata ?? 0)
+    ),
     disponibilita: calculateAvailability(article, stock),
     mostra_in_app: true,
-    attivo_mexal: true,
+    immagine_url: imageUrl,
+    scheda_tecnica_url: nullableText(
+      article.scheda_tecnica_url,
+      article.url_scheda_tecnica
+    ),
+    materiale_pubblicitario_url: nullableText(
+      article.materiale_pubblicitario_url,
+      article.url_materiale_pubblicitario
+    ),
     dati_mexal: article,
-    sincronizzata_il: new Date().toISOString(),
+    sincronizzato_il: new Date().toISOString(),
   };
 }
 
@@ -1038,7 +1080,7 @@ export default async function handler(req, res) {
         if (productOperation === "inserted") result.prodotti_inseriti += 1;
         else result.prodotti_aggiornati += 1;
         // The detail code is authoritative; cache rows are deduplicated per batch.
-        const mapped = mapArticleToOrdersCache(article, hierarchy);
+        const mapped = mapArticleToOrdersCache(article, { imageUrl });
         mappedByCode.set(mapped.codice_articolo, mapped);
       } catch (error) {
         result.errori.push({ codice: code || "senza codice", errore: error.message || String(error) });

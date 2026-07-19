@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { completeSyncRun, createSyncRun as createCentralSyncRun, failSyncRun, findRunningSync } from "./lib/syncRuns.js";
 
 const MODULE_CODE = "gestione_ordini";
+const STORAGE_BUCKET = "prodotti-mexal";
 const ARTICLE_PREFIXES = ["IT", "MKT", "IMP"];
 const DEFAULT_BATCH_SIZE = 8;
 const MAX_BATCH_SIZE = 12;
@@ -399,6 +400,112 @@ function detectImageMime(buffer, header) {
   return { mime: "image/jpeg", extension: "jpg" };
 }
 
+async function ensureImageBucket(supabase) {
+  const { data, error } = await supabase.storage.listBuckets();
+
+  if (error) throw error;
+
+  const bucket = data?.find(
+    (item) => item.name === STORAGE_BUCKET
+  );
+
+  if (!bucket) {
+    const { error: createError } =
+      await supabase.storage.createBucket(STORAGE_BUCKET, {
+        public: true,
+        fileSizeLimit: 10 * 1024 * 1024,
+        allowedMimeTypes: [
+          "image/jpeg",
+          "image/png",
+          "image/webp",
+        ],
+      });
+
+    if (createError) throw createError;
+  } else if (!bucket.public) {
+    const { error: updateError } =
+      await supabase.storage.updateBucket(STORAGE_BUCKET, {
+        public: true,
+        fileSizeLimit: 10 * 1024 * 1024,
+        allowedMimeTypes: [
+          "image/jpeg",
+          "image/png",
+          "image/webp",
+        ],
+      });
+
+    if (updateError) throw updateError;
+  }
+}
+
+async function syncCatalogImage({
+  supabase,
+  mexal,
+  article,
+  code,
+}) {
+  if (
+    String(article?.img_cat_disp || "N")
+      .trim()
+      .toUpperCase() !== "S"
+  ) {
+    return null;
+  }
+
+  const response = await mexal.getBinary(
+    `/articoli/${encodeURIComponent(
+      code
+    )}/allegati/immagine-catalogo`
+  );
+
+  const { mime, extension } = detectImageMime(
+    response.body,
+    response.headers["content-type"]
+  );
+
+  const safeCode = code.replace(
+    /[^a-zA-Z0-9._-]/g,
+    "_"
+  );
+
+  const storagePath =
+    `${safeCode}/catalogo.${extension}`;
+
+  /*
+   * Opzione C:
+   * 1. elimina sempre il file precedente;
+   * 2. carica la nuova immagine con lo stesso nome;
+   * 3. aggiunge un parametro di versione all'URL pubblico
+   *    per forzare l'aggiornamento della cache su browser e smartphone.
+   */
+  const { error: removeError } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .remove([storagePath]);
+
+  if (removeError) {
+    console.warn(
+      `Impossibile eliminare l'immagine precedente ${storagePath}:`,
+      removeError.message
+    );
+  }
+
+  const { error } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .upload(storagePath, response.body, {
+      contentType: mime,
+      cacheControl: "0",
+      upsert: true,
+    });
+
+  if (error) throw error;
+
+  const publicUrl = supabase.storage
+    .from(STORAGE_BUCKET)
+    .getPublicUrl(storagePath).data.publicUrl;
+
+  return `${publicUrl}?v=${Date.now()}`;
+}
+
 export function extractArticleRows(response) {
   const candidates = [
     response,
@@ -517,6 +624,107 @@ async function loadFullArticle(mexal, code, fallback) {
   return fallback;
 }
 
+async function findExistingProduct(supabase, code) {
+  const { data, error } = await supabase
+    .from("prodotti")
+    .select("id,immagine_catalogo_url")
+    .eq("codice_mexal", code)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  return data || null;
+}
+
+async function saveProduct({
+  supabase,
+  article,
+  hierarchy,
+  imageUrl,
+  existing,
+}) {
+  const code = getArticleCode(article);
+
+  if (!code) {
+    throw new Error(
+      "Codice articolo Mexal mancante nel record completo."
+    );
+  }
+
+  const name = buildName(article) || code;
+  const stock = calculateStock(article);
+  const now = new Date().toISOString();
+
+  const payload = {
+    nome: name,
+    codice: code,
+    codice_mexal: code,
+    descrizione:
+      String(article.descr_completa || "").trim() ||
+      name,
+    brand: hierarchy.brand?.descrizione || null,
+    categoria:
+      hierarchy.categoria?.descrizione ||
+      hierarchy.linea?.descrizione ||
+      null,
+    sottocategoria:
+      hierarchy.sottocategoria?.descrizione || null,
+    brand_mexal:
+      hierarchy.brand?.descrizione || null,
+    linea_mexal:
+      hierarchy.linea?.descrizione || null,
+    categoria_mexal:
+      hierarchy.categoria?.descrizione || null,
+    sottocategoria_mexal:
+      hierarchy.sottocategoria?.descrizione || null,
+    ean:
+      String(article.cod_alternativo || "").trim() ||
+      null,
+    prezzo_listino: getListPrice(
+      article.prz_listino,
+      1
+    ),
+    giacenza: stock,
+    disponibilita: calculateAvailability(
+      article,
+      stock
+    ),
+    immagine_url: null,
+    icona_url: null,
+    immagine_catalogo_url:
+      imageUrl ??
+      existing?.immagine_catalogo_url ??
+      null,
+    mostra_in_app: true,
+    sincronizzato_mexal: true,
+    attivo_mexal: true,
+    attivo: true,
+    stato: "Attivo",
+    ultimo_sync_mexal: now,
+    json_mexal: article,
+    updated_at: now,
+  };
+
+  if (existing?.id) {
+    const { error } = await supabase
+      .from("prodotti")
+      .update(payload)
+      .eq("id", existing.id);
+
+    if (error) throw error;
+
+    return "updated";
+  }
+
+  const { error } = await supabase
+    .from("prodotti")
+    .insert(payload);
+
+  if (error) throw error;
+
+  return "inserted";
+}
+
 function mapArticleToOrdersCache(article, hierarchy) {
   const code = getArticleCode(article);
   if (!code) throw new Error("Codice articolo Mexal mancante nel record completo.");
@@ -558,7 +766,7 @@ async function createSyncRun(supabase, metadata) {
   const { data, error } = await supabase
     .from("mexal_sync_runs")
     .insert({ sync_type: "products", status: "running", source: "manual", metadata: { ...metadata, source: "manual" } })
-    .select("id,started_at,status,processed,failed,metadata")
+    .select("id,started_at,status,processed,inserted,updated,skipped,failed,metadata")
     .single();
   if (error) throw error;
   return data;
@@ -567,7 +775,7 @@ async function createSyncRun(supabase, metadata) {
 async function getSyncRun(supabase, id) {
   const { data, error } = await supabase
     .from("mexal_sync_runs")
-    .select("id,started_at,status,processed,failed,metadata")
+    .select("id,started_at,status,processed,inserted,updated,skipped,failed,metadata")
     .eq("id", id)
     .eq("sync_type", "products")
     .maybeSingle();
@@ -618,6 +826,25 @@ async function updateSyncRun(supabase, id, values) {
     .eq("sync_type", "products")
     .eq("status", "running");
   if (error) console.error("Aggiornamento run prodotti non riuscito", { runId: id, message: error.message });
+}
+
+async function reconcileStaleProducts(supabase, startedAt) {
+  const now = new Date().toISOString();
+  const { count, error } = await supabase
+    .from("prodotti")
+    .update({
+      mostra_in_app: false,
+      attivo: false,
+      attivo_mexal: false,
+      stato: "Non attivo",
+      updated_at: now,
+    }, { count: "exact" })
+    .eq("sincronizzato_mexal", true)
+    .or("codice_mexal.ilike.IT%,codice_mexal.ilike.MKT%,codice_mexal.ilike.IMP%")
+    .or(`ultimo_sync_mexal.lt.${startedAt},ultimo_sync_mexal.is.null`);
+
+  if (error) throw error;
+  return count || 0;
 }
 
 export default async function handler(req, res) {
@@ -754,6 +981,7 @@ export default async function handler(req, res) {
 
     // Non invalidare mai il catalogo all'avvio: ogni lotto aggiorna soltanto
     // gli articoli ricevuti. Una sync interrotta lascia intatti i record già visibili.
+    if (offset === 0) await ensureImageBucket(supabase);
     const batch = articles.slice(
       offset,
       offset + batchSize
@@ -768,6 +996,8 @@ export default async function handler(req, res) {
         offset + batch.length >= articles.length,
       inseriti: 0,
       aggiornati: 0,
+      prodotti_inseriti: 0,
+      prodotti_aggiornati: 0,
       immagini_salvate: 0,
       esclusi_non_attivi: 0,
       esclusi_fuori_produzione: 0,
@@ -794,7 +1024,20 @@ export default async function handler(req, res) {
         if (!isActiveArticle(article)) { result.esclusi_non_attivi += 1; continue; }
         const hierarchy = resolveHierarchy(article.cod_grp_merc, groupMap);
         if (isOutOfProductionLine(hierarchy.linea?.descrizione)) { result.esclusi_fuori_produzione += 1; continue; }
-        // The code from the detail endpoint is authoritative; normalize and deduplicate it.
+        const existing = await findExistingProduct(supabase, code);
+        let imageUrl = existing?.immagine_catalogo_url || null;
+        if (String(article?.img_cat_disp || "N").trim().toUpperCase() === "S") {
+          try {
+            imageUrl = await syncCatalogImage({ supabase, mexal, article, code });
+            if (imageUrl) result.immagini_salvate += 1;
+          } catch (imageError) {
+            result.errori.push({ codice: code, errore: `Immagine catalogo: ${imageError.message}` });
+          }
+        }
+        const productOperation = await saveProduct({ supabase, article, hierarchy, imageUrl, existing });
+        if (productOperation === "inserted") result.prodotti_inseriti += 1;
+        else result.prodotti_aggiornati += 1;
+        // The detail code is authoritative; cache rows are deduplicated per batch.
         const mapped = mapArticleToOrdersCache(article, hierarchy);
         mappedByCode.set(mapped.codice_articolo, mapped);
       } catch (error) {
@@ -803,33 +1046,36 @@ export default async function handler(req, res) {
     }
     result.righe_mappate = mappedByCode.size;
     await assertRunStillRunning(supabase, syncRunId, "products");
-    const writes = await upsertOrdersProductsCache(supabase, [...mappedByCode.values()]);
-    result.inseriti += writes.inserted;
-    result.aggiornati += writes.updated;
-    result.righe_scritte = writes.inserted + writes.updated;
+    const cacheWrites = await upsertOrdersProductsCache(supabase, [...mappedByCode.values()]);
+    result.inseriti = cacheWrites.inserted;
+    result.aggiornati = cacheWrites.updated;
+    result.righe_scritte = cacheWrites.inserted + cacheWrites.updated;
 
     const previousProcessed = Number(syncRun.processed || 0);
-    const previousFailures = Number(syncRun.failed || 0);
+    const previousInserted = Number(syncRun.inserted || 0);
+    const previousUpdated = Number(syncRun.updated || 0);
+    const previousCache = syncRun.metadata?.cache_writes || {};
+    const totals = {
+      prodotti_inseriti: Number(previousCache.prodotti_inseriti || 0) + result.prodotti_inseriti,
+      prodotti_aggiornati: Number(previousCache.prodotti_aggiornati || 0) + result.prodotti_aggiornati,
+      cache_inseriti: Number(previousCache.cache_inseriti || 0) + result.inseriti,
+      cache_aggiornati: Number(previousCache.cache_aggiornati || 0) + result.aggiornati,
+    };
     const allBatchesCompleted = result.completato && previousProcessed + batch.length === result.totale;
-    const noRowsDiagnostic = result.completato && result.totale > 0 && previousProcessed + batch.length > 0 && result.inseriti + result.aggiornati === 0;
-
-    const status = result.completato
-      ? ((result.errori.length || previousFailures || noRowsDiagnostic) ? "completed_with_errors" : "completed")
-      : "running";
-    const completionError = result.completato && !allBatchesCompleted
-      ? "Lotti prodotti incompleti o non sequenziali."
-      : noRowsDiagnostic
-        ? "La sincronizzazione ha ricevuto articoli da Mexal ma non ha prodotto righe valide per ordini_prodotti_cache."
-        : result.errori.length || previousFailures
-          ? "Alcuni articoli non sono stati sincronizzati."
-          : null;
+    const totalProductWrites = previousInserted + previousUpdated + result.prodotti_inseriti + result.prodotti_aggiornati;
+    const totalCacheWrites = totals.cache_inseriti + totals.cache_aggiornati;
+    const noRowsDiagnostic = result.completato && result.totale > 0 && totalProductWrites + totalCacheWrites === 0;
+    const status = result.completato ? (noRowsDiagnostic ? "failed" : "completed") : "running";
+    const completionError = noRowsDiagnostic
+      ? "Mexal ha restituito articoli validi ma non sono state scritte righe né in prodotti né in ordini_prodotti_cache."
+      : result.errori.length ? "Alcuni articoli non sono stati sincronizzati." : null;
     await updateSyncRun(supabase, syncRunId, {
       status,
       completed_at: result.completato ? new Date().toISOString() : null,
       counters: {
         processed: batch.length,
-        inserted: result.inseriti,
-        updated: result.aggiornati,
+        inserted: result.prodotti_inseriti,
+        updated: result.prodotti_aggiornati,
         skipped: result.esclusi_non_attivi + result.esclusi_fuori_produzione,
         failed: result.errori.length,
       },
@@ -839,6 +1085,7 @@ export default async function handler(req, res) {
         last_offset: offset,
         images_saved: result.immagini_salvate,
         disattivati: result.disattivati,
+        cache_writes: totals,
         diagnostics: result.diagnostics,
         detail_loaded: result.detail_loaded,
         mapped_rows: result.righe_mappate,
@@ -853,6 +1100,9 @@ export default async function handler(req, res) {
       detailLoaded: result.detail_loaded,
       inserted: result.inseriti,
       updated: result.aggiornati,
+      prodottiInserted: result.prodotti_inseriti,
+      prodottiUpdated: result.prodotti_aggiornati,
+      totals,
       skipped: result.esclusi_non_attivi + result.esclusi_fuori_produzione,
       failed: result.errori.length,
       completed: result.completato,

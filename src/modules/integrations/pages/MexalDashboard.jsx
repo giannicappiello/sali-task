@@ -194,9 +194,9 @@ export default function MexalDashboard() {
       const inserted = type === "products" ? result.inserted : type === "stocks" ? 0 : result.inseriti;
       const updated = type === "products" || type === "stocks" ? result.updated : result.aggiornati;
       const errors = type === "products" || type === "stocks" ? result.errors.length : result.errori?.length || 0;
-      const productsWithNoWrites = type === "products" && Number(result.received || 0) > 0 && Number(inserted || 0) + Number(updated || 0) === 0;
+      const productsWithNoWrites = type === "products" && Number(result.received || 0) > 0 && Number(inserted || 0) + Number(updated || 0) + Number(result.prodottiInserted || 0) + Number(result.prodottiUpdated || 0) === 0;
       const productSummary = type === "products"
-        ? `Ricevuti ${result.received || 0}, filtrati ${result.filtered || 0}, inseriti ${inserted || 0}, aggiornati ${updated || 0}, saltati ${result.skipped || 0}, errori ${errors}.`
+        ? `Ricevuti ${result.received || 0}, filtrati ${result.filtered || 0}, cache: ${inserted || 0} inseriti e ${updated || 0} aggiornati; catalogo: ${result.prodottiInserted || 0} inseriti e ${result.prodottiUpdated || 0} aggiornati; saltati ${result.skipped || 0}, errori ${errors}.`
         : `${processed || 0} elaborati, ${inserted || 0} inseriti, ${updated || 0} aggiornati, ${errors} errori.`;
       setMessage({
         type: productsWithNoWrites || errors ? "warning" : "success",

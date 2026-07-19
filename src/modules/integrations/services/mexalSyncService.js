@@ -26,7 +26,7 @@ async function invokeMexalApi(path, payload) {
 export async function invokeProductsSync(onProgress = () => {}) {
   let offset = 0;
   let syncRunId = null;
-  const total = { processed: 0, received: 0, filtered: 0, detailLoaded: 0, inserted: 0, updated: 0, skipped: 0, errors: [], diagnostics: null };
+  const total = { processed: 0, received: 0, filtered: 0, detailLoaded: 0, inserted: 0, updated: 0, prodottiInserted: 0, prodottiUpdated: 0, skipped: 0, errors: [], diagnostics: null };
   while (true) {
     const data = await invokeMexalApi("/api/mexal/sync-products", {
       action: "sync", offset, batchSize: 8, syncRunId, origin: "integrations",
@@ -38,12 +38,14 @@ export async function invokeProductsSync(onProgress = () => {}) {
     total.detailLoaded += Number(data.detailLoaded || data.detail_loaded || 0);
     total.inserted += Number((data.inserted ?? data.inseriti) || 0);
     total.updated += Number((data.updated ?? data.aggiornati) || 0);
+    total.prodottiInserted += Number(data.prodottiInserted || 0);
+    total.prodottiUpdated += Number(data.prodottiUpdated || 0);
     total.skipped += Number(data.skipped || 0);
     total.diagnostics = data.diagnostics || total.diagnostics;
     total.errors.push(...(data.errori || []));
     onProgress({ ...total, total: Number(data.totale || 0) });
     if (data.completato) {
-      if (total.received > 0 && total.inserted + total.updated === 0) {
+      if (total.received > 0 && total.inserted + total.updated + total.prodottiInserted + total.prodottiUpdated === 0) {
         throw new Error("La sincronizzazione ha ricevuto articoli da Mexal ma non ha prodotto righe valide per ordini_prodotti_cache.");
       }
       return { ...total, syncRunId, completed: true };

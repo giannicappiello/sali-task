@@ -22,6 +22,7 @@ import MexalAutomations from "../components/MexalAutomations";
 import MexalSyncCard from "../components/MexalSyncCard";
 import IntegrationStatusBadge from "../components/IntegrationStatusBadge";
 import OrdersDocumentSeriesSettings from "../../../components/OrdersDocumentSeriesSettings";
+import { createMexalManualRunRefresh, getMexalRunId } from "../services/mexalManualRunRefresh";
 import {
   invokeCommercialConditionsSync,
   loadCommercialCounts,
@@ -83,11 +84,14 @@ export default function MexalDashboard() {
   const [stoppingRunId, setStoppingRunId] = useState(null);
   const [manualAction, setManualAction] = useState(null);
   const manualCancelledRef = useRef(false);
+  const manualRefreshRef = useRef(null);
+  const mountedRef = useRef(true);
 
   const latestRun = runs[0] || null;
 
   const refreshData = useCallback(async (preferredRunId = null) => {
     const [runRows, countRows, entityCountRows, productRuns, clientRuns, stockRuns, orderRuns] = await Promise.all([loadSyncRuns(25), loadCommercialCounts(), loadMexalEntityCounts(), loadMexalRuns("products"), loadMexalRuns("clients"), loadMexalRuns("stocks"), loadMexalRuns("orders")]);
+    if (!mountedRef.current) return;
     setRuns(runRows);
     setCounts(countRows);
     setEntityCounts(entityCountRows);
@@ -100,6 +104,7 @@ export default function MexalDashboard() {
     if (nextSelected) {
       setSelectedRun(nextSelected);
       const runLog = await loadRunDetailsForRun(nextSelected);
+      if (!mountedRef.current) return;
       setLogItems([
         ...runLog.details.map((item) => ({ ...item, title: item.entity_type })),
         ...runLog.errors.map((item) => ({
@@ -126,7 +131,7 @@ export default function MexalDashboard() {
         if (active) setLoading(false);
       }
     })();
-    return () => { active = false; };
+    return () => { active = false; mountedRef.current = false; manualRefreshRef.current?.stop(); };
   }, []);
 
   async function selectRun(run) {
@@ -227,6 +232,7 @@ export default function MexalDashboard() {
     if (!window.confirm(`Arrestare la sincronizzazione ${syncLabels[run.sync_type] || "selezionata"}? I dati già sincronizzati rimarranno invariati.`)) return;
     setStoppingRunId(run.id);
     manualCancelledRef.current = true;
+    manualRefreshRef.current?.stop();
     try {
       const result = await stopMexalRun(run.id);
       setRuns((current) => current.map((item) => item.id === run.id ? result.run : item));
@@ -242,12 +248,13 @@ export default function MexalDashboard() {
     const label = syncLabels[syncType];
     setPhase(label);
     setMessage({ type: "info", text: `Avvio ${label}…` });
-    const updateBatchProgress = ({ processed, total, inserted = 0, updated = 0, errors = [] }) => {
+    const updateBatchProgress = ({ processed, total, inserted = 0, updated = 0, errors = [], syncRunId }) => {
       if (manualCancelledRef.current) return;
       const completed = total > 0 ? Math.min(processed / total, 1) : 0;
       setProgress(Math.round(((phaseIndex + completed) / phaseCount) * 100));
       setPhase(`${label}: ${processed}/${total || "?"} elaborati`);
       setMessage({ type: "info", text: `${label} in corso: ${processed}/${total || "?"} elaborati, ${inserted} inseriti, ${updated} aggiornati, ${errors.length} errori.` });
+      if (syncRunId) manualRefreshRef.current?.refreshNow(syncRunId);
     };
     const result = syncType === "products"
       ? await invokeProductsSync(updateBatchProgress, () => manualCancelledRef.current)
@@ -256,7 +263,7 @@ export default function MexalDashboard() {
         : await startMexalSync(syncType);
     if (manualCancelledRef.current) throw Object.assign(new Error("Sincronizzazione annullata."), { cancelled: true });
     setProgress(Math.round(((phaseIndex + 1) / phaseCount) * 100));
-    await refreshData(result.runId || result.sync_run_id || null);
+    await manualRefreshRef.current?.refreshNow(getMexalRunId(result));
     return result;
   }
 
@@ -267,6 +274,9 @@ export default function MexalDashboard() {
     manualCancelledRef.current = false;
     setManualAction(actionKey);
     setProgress(0);
+    manualRefreshRef.current?.stop();
+    manualRefreshRef.current = createMexalManualRunRefresh({ refresh: refreshData });
+    manualRefreshRef.current.start();
     try {
       let result;
       for (const [phaseIndex, phaseType] of phases.entries()) {
@@ -287,6 +297,8 @@ export default function MexalDashboard() {
         setMessage({ type: "error", text: error instanceof TypeError ? "Errore di rete durante l'avvio della sincronizzazione." : (error.message || "Errore di rete durante l'avvio della sincronizzazione.") });
       }
     } finally {
+      manualRefreshRef.current?.stop();
+      manualRefreshRef.current = null;
       setManualAction(null);
       window.setTimeout(() => { setProgress(0); setPhase(""); }, 700);
     }

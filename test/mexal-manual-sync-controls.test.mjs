@@ -21,7 +21,7 @@ assert.match(dashboard, /syncType === "stocks"[\s\S]*invokeStocksSync\(updateBat
 assert.match(service, /syncRunId = data\.sync_run_id \|\| syncRunId[\s\S]*data\.completato[\s\S]*data\.prossimo_offset/);
 assert.match(dashboard, /\["clients", "commercial_conditions", "document_series", "products", "stocks"\]/);
 assert.match(dashboard, /for \(const \[phaseIndex, phaseType\] of phases\.entries\(\)\)/);
-assert.match(dashboard, /await refreshData\(result\.runId \|\| result\.sync_run_id \|\| null\)/);
+assert.match(dashboard, /manualRefreshRef\.current\?\.refreshNow\(getMexalRunId\(result\)\)/);
 assert.match(service, /if \(isCancelled\(\)\) throw Object\.assign\(new Error\("Sincronizzazione annullata/);
 assert.match(dashboard, /manualCancelledRef\.current = true/);
 assert.match(dashboard, /run\.status === "running" && isAdminUser/);

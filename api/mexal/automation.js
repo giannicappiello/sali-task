@@ -119,9 +119,14 @@ async function executeHandler(req, runHandler) {
 function sendHandlerResponse(res, phase, execution) {
   const { response, payload, handlerError, failed } = execution;
   if (failed) {
+    const handlerStatus = Number(handlerError?.status);
+    const responseStatus = Number(response.statusCode);
+    const statusCode = handlerError
+      ? (Number.isInteger(handlerStatus) && handlerStatus >= 400 && handlerStatus <= 599 ? handlerStatus : 500)
+      : (Number.isInteger(responseStatus) && responseStatus >= 400 ? responseStatus : 500);
     return sendFailure(
       res,
-      Number(handlerError?.status || response.statusCode || 500),
+      statusCode,
       phase,
       handlerError?.message || payload?.error || `Sincronizzazione ${phase} non riuscita.`,
       handlerError?.details || errorDetails(payload),

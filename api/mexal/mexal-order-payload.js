@@ -17,19 +17,33 @@ function defined(object) {
   return Object.fromEntries(Object.entries(object).filter(([, value]) => value !== "" && value != null));
 }
 
+export class MexalOrderPayloadValidationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "MexalOrderPayloadValidationError";
+    this.status = 422;
+  }
+}
+
+function required(value, label) {
+  if (value === "" || value == null) throw new MexalOrderPayloadValidationError(`Dato obbligatorio Mexal mancante: ${label}.`);
+  return value;
+}
+
 export const MEXAL_ORDER_HEADER_FIELDS = Object.freeze(HEADER_FIELDS);
 export const MEXAL_ORDER_ROW_FIELDS = Object.freeze(ROW_FIELDS);
 
 export function buildMexalOrderPayload(order, lines, kind, documentConfig) {
   const isOcm = kind === "OCM";
-  const serie = text(isOcm ? documentConfig?.serie_ocm : documentConfig?.serie_ocx);
-  if (!serie) throw new Error(`Serie ${kind} non configurata in Impostazioni > Ordini.`);
+  const serie = required(text(isOcm ? documentConfig?.serie_ocm : documentConfig?.serie_ocx), `serie ${kind}`);
+  const conto = required(text(order.codice_cliente), "conto");
+  const dataDocumento = required(text(order.data_ordine), "data_documento");
 
   const righe = (lines || [])
     .map((line) => ({ line, quantita: numeric(isOcm ? line.quantita_ocm : line.quantita_ocx) }))
     .filter(({ quantita }) => quantita > 0)
     .map(({ line, quantita }) => defined({
-      articolo: text(line.codice_articolo),
+      articolo: required(text(line.codice_articolo), "righe[].articolo"),
       descrizione: text(line.descrizione),
       quantita,
       prezzo: numeric(line.prezzo_netto),
@@ -42,8 +56,8 @@ export function buildMexalOrderPayload(order, lines, kind, documentConfig) {
     ...defined({
       sigla: "OC",
       serie,
-      conto: text(order.codice_cliente),
-      data_documento: order.data_ordine,
+      conto,
+      data_documento: dataDocumento,
       codice_pagamento: text(order.codice_pagamento),
       codice_agente: text(order.codice_agente_mexal),
     }),

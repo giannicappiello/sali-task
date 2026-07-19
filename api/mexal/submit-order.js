@@ -20,6 +20,7 @@ export class MexalHttpError extends Error {
     this.name = "MexalHttpError";
     this.status = status;
     this.response = response;
+    this.raw = raw;
   }
 }
 
@@ -138,7 +139,11 @@ export default async function handler(req, res) {
           tipo_documento: kind,
           stato: "errore",
           payload,
-          risposta: error.response || {},
+          risposta: {
+            status_http: error.status || null,
+            json: error.response || null,
+            raw: error.raw || null,
+          },
           errore: error.message,
           iniziato_il: startedAt,
           completato_il: new Date().toISOString(),

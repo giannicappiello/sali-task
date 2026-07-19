@@ -8,15 +8,18 @@ La vecchia API `sync-products` eseguiva, al primo lotto, un aggiornamento global
 
 1. L'area Integrazioni (solo amministratori) avvia una run `mexal_sync_runs`.
 2. Mexal restituisce l'elenco paginato; sono ammessi i codici `IT*`, `MKT*` e `IMP*`.
-3. Ogni articolo completo viene cercato con la chiave stabile `prodotti.codice_mexal`, poi aggiornato oppure inserito. Non viene mai cancellato né nascosto un record preesistente.
-4. I lotti vengono salvati progressivamente. La run registra elaborati, inseriti, aggiornati, scartati, errori e stato `running`, `completed`, `completed_with_errors` o `failed`.
-5. Il cron usa gli stessi lotti in sequenza. Non esiste più il parametro con effetto di sostituzione del catalogo.
+3. Ogni articolo completo che supera i filtri viene cercato con la chiave stabile `prodotti.codice_mexal`, poi aggiornato oppure inserito. L'aggiornamento marca il record attivo e salva `ultimo_sync_mexal`.
+4. I lotti vengono salvati progressivamente. La run conserva il proprio `started_at` e registra elaborati, inseriti, aggiornati, scartati, errori e stato `running`, `completed`, `completed_with_errors` o `failed`.
+5. Solo nell'ultimo lotto, senza errori e dopo la conferma che tutti i lotti della stessa run sono stati registrati, la riconciliazione disattiva i record Mexal `IT*`, `MKT*` e `IMP*` non aggiornati dalla data di avvio della run (o senza `ultimo_sync_mexal`). Il numero è esposto come `disattivati` e salvato nei metadata della run.
+6. Un timeout, un'eccezione, errori di lotto o una run incompleta non attivano mai la riconciliazione: la visibilità precedente resta invariata.
+7. Il cron usa gli stessi lotti in sequenza. Non esiste più il parametro con effetto di sostituzione del catalogo.
 
-L'assenza di un articolo da un lotto o da una sincronizzazione incompleta non produce disattivazione automatica. La riconciliazione di articoli definitivamente rimossi da Mexal resta una procedura separata e controllata.
+L'assenza di un articolo da un lotto o da una sincronizzazione incompleta non produce disattivazione automatica. In una run completa e senza errori, invece, i record non più ammessi (annullati, precancellati, fuori produzione o assenti da Mexal) restano senza timestamp della run e vengono disattivati nella riconciliazione finale controllata.
 
 ## Garanzie e limiti
 
 - Un'interruzione dopo 100 articoli conserva tutti i record già presenti e visibili; al massimo aggiorna/inserisce i 100 ricevuti.
+- Una run completa aggiorna solo gli articoli validi e disattiva alla fine quelli Mexal ammessi ma non aggiornati durante la run.
 - Una seconda esecuzione aggiorna lo stesso `codice_mexal` e non crea duplicati nell'uso sequenziale dell'API.
 - Il database baseline deve garantire l'unicità logica di `codice_mexal`; questa migrazione non crea un vincolo unico senza prima verificare eventuali duplicati esistenti.
 - I filtri UI reali sono `attivo_mexal = true` e `mostra_in_app = true`; la sincronizzazione non li azzera più globalmente.

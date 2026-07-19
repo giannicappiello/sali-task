@@ -24,6 +24,10 @@
     {
       "path": "/api/cron/mexal-dispatcher",
       "schedule": "0 23 * * *"
+    },
+    {
+      "path": "/api/mexal/automation-dispatcher",
+      "schedule": "*/15 * * * *"
     }
   ],
   "rewrites": [

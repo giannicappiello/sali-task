@@ -1,6 +1,25 @@
-export default function MexalAutomations() {
-  return <section className="mexal-settings-panel">
-    <div className="mexal-section-heading"><div><h3>Automazioni</h3><p>Le sincronizzazioni Mexal non vengono avviate dagli eventi applicativi. Avviale manualmente dalla sezione Sincronizzazioni.</p></div></div>
-    <div className="mexal-alert alert-warning">Le eventuali pianificazioni esistenti sono disattivate: una pianificazione futura dovrà essere configurata esplicitamente da un amministratore.</div>
-  </section>;
+import { useEffect, useState } from "react";
+import { supabase } from "../../../lib/supabaseClient";
+
+const scheduled = [
+  ["sync_clients", "Sincronizza Clienti", "clients"], ["sync_products", "Sincronizza Prodotti", "products"], ["sync_stocks", "Sincronizza Giacenze", "stocks"], ["sync_agents", "Sincronizza Agenti", "agents"], ["sync_payments", "Sincronizza Modalità di pagamento", "payments"], ["sync_series", "Sincronizza Serie documenti", "document_series"], ["sync_all", "Sincronizza tutto", "sync_all"], ["send_orders", "Invio ordini in attesa", "send_orders"], ["order_status", "Controllo esito ordini inviati", "order_status"], ["pdf", "Generazione PDF ordini", "generate_pdf"], ["email", "Invio e-mail ordini", "send_email"], ["availability", "Aggiornamento disponibilità prodotti", "stocks"],
+];
+const events = [["order_created", "Ordine creato"], ["order_approved", "Ordine approvato"], ["order_sent", "Ordine inviato a Mexal"], ["order_send_failed", "Invio fallito"], ["sync_completed", "Sincronizzazione completata"], ["sync_failed", "Sincronizzazione fallita"], ["stock_updated", "Giacenza aggiornata"]];
+const frequencies = [["manual", "Solo manuale"], ["every_15_minutes", "Ogni 15 minuti"], ["every_30_minutes", "Ogni 30 minuti"], ["hourly", "Ogni ora"], ["every_2_hours", "Ogni 2 ore"], ["every_6_hours", "Ogni 6 ore"], ["every_12_hours", "Ogni 12 ore"], ["daily", "Ogni giorno"], ["weekly", "Ogni settimana"], ["custom_daily", "Orario giornaliero"]];
+
+export default function MexalAutomations({ isAdmin = false }) {
+  const [rules, setRules] = useState([]); const [message, setMessage] = useState("");
+  async function load() { const { data, error } = await supabase.from("mexal_automation_rules").select("*").order("name"); if (!error) setRules(data || []); }
+  useEffect(() => { load(); }, []);
+  const ruleFor = (trigger) => rules.find((rule) => rule.trigger_type === trigger);
+  async function save(trigger, name, automationType, patch = {}) {
+    if (!isAdmin) return;
+    const old = ruleFor(trigger); const values = { name, automation_type: automationType, trigger_type: trigger, timezone: "Europe/Rome", enabled: false, action_chain: [], frequency_type: automationType === "scheduled" ? "manual" : null, ...patch };
+    const response = old ? await supabase.from("mexal_automation_rules").update(values).eq("id", old.id) : await supabase.from("mexal_automation_rules").insert(values);
+    if (response.error) setMessage(response.error.message); else { setMessage("Configurazione salvata."); load(); }
+  }
+  return <section className="mexal-settings-panel"><div className="mexal-section-heading"><div><h3>Automazioni configurabili</h3><p>Nessuna automazione è obbligatoria: tutte sono disattivate finché un amministratore non le abilita.</p></div></div>{message && <div className="mexal-alert alert-success">{message}</div>}
+    <h4>Automazioni programmate</h4><div className="mexal-automation-list">{scheduled.map(([key, name, action]) => { const rule = ruleFor(key); return <div className="mexal-automation-row" key={key}><strong>{name}</strong><small>{rule?.enabled ? "Attiva" : "Disattiva"} · {rule?.last_run_at ? `Ultima esecuzione: ${new Date(rule.last_run_at).toLocaleString("it-IT")}` : "Mai eseguita"}</small><select disabled={!isAdmin} value={rule?.frequency_type || "manual"} onChange={(event) => save(key, name, "scheduled", { ...rule, frequency_type: event.target.value, action_chain: [{ type: action, blocking: true }] })}>{frequencies.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><label><input type="checkbox" disabled={!isAdmin} checked={Boolean(rule?.enabled)} onChange={(event) => save(key, name, "scheduled", { ...rule, enabled: event.target.checked, action_chain: rule?.action_chain?.length ? rule.action_chain : [{ type: action, blocking: true }] })}/> Attiva</label><button disabled={!isAdmin} onClick={() => save(key, name, "scheduled", { ...rule, enabled: rule?.enabled, action_chain: rule?.action_chain?.length ? rule.action_chain : [{ type: action, blocking: true }] })}>Modifica</button></div>; })}</div>
+    <h4>Automazioni su eventi</h4><div className="mexal-automation-list">{events.map(([key, name]) => { const rule = ruleFor(key); return <div className="mexal-automation-row" key={key}><strong>{name}</strong><small>{rule?.action_chain?.map((item) => item.type).join(" → ") || "Nessuna azione configurata"}</small><label><input type="checkbox" disabled={!isAdmin} checked={Boolean(rule?.enabled)} onChange={(event) => save(key, name, "event", { ...rule, enabled: event.target.checked })}/> Attiva</label><button disabled={!isAdmin} onClick={() => save(key, name, "event", { ...rule, action_chain: rule?.action_chain?.length ? rule.action_chain : [{ type: "generate_pdf", blocking: true }, { type: "send_order", blocking: true }, { type: "send_email", blocking: false }], configuration: { maxRetries: 0, retryIntervalMinutes: 5, notifyAdmin: true } })}>Configura azioni</button></div>; })}</div>
+    {!isAdmin && <div className="mexal-alert alert-warning">Solo gli amministratori possono modificare o attivare automazioni.</div>}</section>;
 }

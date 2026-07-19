@@ -7,6 +7,8 @@ const LABELS = {
   completed: "Completata",
   completed_with_warnings: "Completata con avvisi",
   failed: "Errore",
+  cancelled: "Annullata",
+  timeout: "Tempo scaduto",
 };
 
 export default function IntegrationStatusBadge({ status = "unavailable" }) {

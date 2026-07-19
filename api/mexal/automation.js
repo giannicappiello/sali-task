@@ -5,6 +5,7 @@ import commercialConditionsHandler from "../../server/mexal/sync-commercial-cond
 import documentSeriesHandler from "../../server/mexal/sync-document-series.js";
 import stopHandler from "../../server/mexal/stop-sync-run.js";
 import { requireAdmin } from "./lib/auth.js";
+import { findRunningSync } from "./lib/syncRuns.js";
 
 const RUN_HANDLERS = Object.freeze({
   clients: clientsHandler,
@@ -89,6 +90,19 @@ function sendFailure(res, statusCode, phase, error, details = {}) {
   });
 }
 
+function sendRunning(res, phase, run) {
+  return res.status(409).json({
+    success: false,
+    status: "running",
+    phase,
+    error: "Sincronizzazione già in esecuzione.",
+    details: {
+      syncRunId: String(run.id),
+      startedAt: run.started_at,
+    },
+  });
+}
+
 function sendSuccess(res, statusCode, payload = {}) {
   return res.status(statusCode).json({
     ...payload,
@@ -136,11 +150,14 @@ function sendHandlerResponse(res, phase, execution) {
 }
 
 async function syncAll(req, res, body) {
-  await createAdmin(req);
+  const admin = await createAdmin(req);
 
   const completedPhases = [];
   const results = [];
   for (const phase of SYNC_ALL_PHASES) {
+    const running = await findRunningSync(admin, phase);
+    if (running) return sendRunning(res, phase, running);
+
     const phaseRequest = { ...req, body: runPayload(body, phase) };
     const execution = await executeHandler(phaseRequest, RUN_HANDLERS[phase]);
     const { response, payload, handlerError, failed } = execution;
@@ -174,6 +191,19 @@ async function syncAll(req, res, body) {
     results,
     error: null,
   });
+}
+
+async function startSync(req, res, body, syncType, runHandler) {
+  const running = await findRunningSync(await createAdmin(req), syncType);
+  // A batch can continue only the active run of its own synchronization type.
+  const isContinuation = ["products", "stocks"].includes(syncType)
+    && body.syncRunId
+    && running
+    && String(body.syncRunId) === String(running.id);
+  if (running && !isContinuation) return sendRunning(res, syncType, running);
+
+  req.body = runPayload(body, syncType);
+  return sendHandlerResponse(res, syncType, await executeHandler(req, runHandler));
 }
 
 async function createAdmin(req) {
@@ -224,8 +254,7 @@ export default async function handler(req, res) {
         const syncType = body.syncType || body.sync_type;
         const runHandler = RUN_HANDLERS[syncType];
         if (!runHandler) return sendFailure(res, 400, syncType || "run_now", "Tipo sincronizzazione non supportato.");
-        req.body = runPayload(body, syncType);
-        return sendHandlerResponse(res, syncType, await executeHandler(req, runHandler));
+        return startSync(req, res, body, syncType, runHandler);
       }
       case "stop": {
         req.body = { runId: body.runId };

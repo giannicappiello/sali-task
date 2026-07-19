@@ -1,6 +1,6 @@
 import https from "node:https";
 import { createClient } from "@supabase/supabase-js";
-import { completeSyncRun, createSyncRun, failSyncRun } from "../../api/mexal/lib/syncRuns.js";
+import { completeSyncRun, createSyncRun, failSyncRunUnlessClosed } from "../../api/mexal/lib/syncRuns.js";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -277,7 +277,7 @@ async function mainHandler(req) {
   } catch (error) {
     const durationMs = Date.now() - startedAt;
     const message = errorMessage(error);
-    if (supabase && centralRunId) await failSyncRun(supabase, centralRunId, message);
+    if (supabase && centralRunId) await failSyncRunUnlessClosed(supabase, centralRunId, message);
     if (supabase && runId) {
       await logSyncError(supabase, runId, "commercial_conditions", null, error, false);
       await supabase.from("ordini_sync_runs").update({

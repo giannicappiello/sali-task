@@ -102,5 +102,14 @@ async function closeSyncRun(admin, id, status, values = {}) {
 export const isSyncRunClosedError = (error) => error?.code === "MEXAL_SYNC_RUN_CLOSED";
 export const completeSyncRun = (admin, id, values = {}) => closeSyncRun(admin, id, "completed", values);
 export const failSyncRun = (admin, id, errorMessage, values = {}) => closeSyncRun(admin, id, "failed", { ...values, failed: Math.max(1, Number(values.failed || 0)), error_message: String(errorMessage || "Errore sincronizzazione.").slice(0, 1000) });
+export async function failSyncRunUnlessClosed(admin, id, errorMessage, values = {}) {
+  try {
+    await failSyncRun(admin, id, errorMessage, values);
+    return true;
+  } catch (error) {
+    if (isSyncRunClosedError(error)) return false;
+    throw error;
+  }
+}
 export const cancelSyncRun = (admin, id, values = {}) => closeSyncRun(admin, id, "cancelled", { ...values, failed: Math.max(1, Number(values.failed || 0)), error_message: String(values.error_message || "Sincronizzazione annullata.").slice(0, 1000) });
 export const timeoutSyncRun = (admin, id, values = {}) => closeSyncRun(admin, id, "timeout", { ...values, error_message: values.error_message || "Tempo massimo di sincronizzazione superato." });

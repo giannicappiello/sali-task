@@ -1,6 +1,6 @@
 import https from "node:https";
 import { createClient } from "@supabase/supabase-js";
-import { completeSyncRun, createSyncRun as createCentralSyncRun, failSyncRun, findRunningSync } from "../../api/mexal/lib/syncRuns.js";
+import { completeSyncRun, createSyncRun as createCentralSyncRun, failSyncRun, failSyncRunUnlessClosed, findRunningSync, isSyncRunClosedError } from "../../api/mexal/lib/syncRuns.js";
 
 const MODULE_CODE = "gestione_ordini";
 const STORAGE_BUCKET = "prodotti-mexal";
@@ -1162,10 +1162,16 @@ export default async function handler(req, res) {
       nextOffset: result.prossimo_offset,
     });
   } catch (error) {
-    if (action === "sync-stock-it" && syncRunId) await failSyncRun(supabase, syncRunId, error?.message || "Errore sincronizzazione giacenze.");
-    else await updateSyncRun(supabase, syncRunId, {
-      status: "failed", completed_at: new Date().toISOString(), error_message: error?.message || "Errore sincronizzazione prodotti.",
-    });
+    if (action === "sync-stock-it" && syncRunId) await failSyncRunUnlessClosed(supabase, syncRunId, error?.message || "Errore sincronizzazione giacenze.");
+    else {
+      try {
+        await updateSyncRun(supabase, syncRunId, {
+          status: "failed", completed_at: new Date().toISOString(), error_message: error?.message || "Errore sincronizzazione prodotti.",
+        });
+      } catch (closeError) {
+        if (!isSyncRunClosedError(closeError)) throw closeError;
+      }
+    }
     return res
       .status(Number(error?.status || 500))
       .json({

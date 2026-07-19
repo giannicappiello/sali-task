@@ -1,6 +1,6 @@
 import https from "node:https";
 import { createClient } from "@supabase/supabase-js";
-import { completeSyncRun, createSyncRun, failSyncRun } from "../../api/mexal/lib/syncRuns.js";
+import { completeSyncRun, createSyncRun, failSyncRunUnlessClosed } from "../../api/mexal/lib/syncRuns.js";
 
 const MODULE_CODE = "gestione_ordini";
 const CLIENT_PREFIX = "501";
@@ -643,7 +643,7 @@ export default async function handler(req, res) {
     });
 
     if (supabase && runId) {
-      await failSyncRun(supabase, runId, error?.message || "Errore sincronizzazione clienti.");
+      await failSyncRunUnlessClosed(supabase, runId, error?.message || "Errore sincronizzazione clienti.");
     }
     return res.status(Number(error?.status || 500)).json({
       error: error?.message || "Errore sincronizzazione clienti Mexal.",

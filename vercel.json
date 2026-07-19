@@ -20,16 +20,16 @@
       "maxDuration": 300
     }
   },
-  "crons": [
-    {
-      "path": "/api/cron/mexal-dispatcher",
-      "schedule": "0 23 * * *"
-    }
-  ],
   "rewrites": [
     {
       "source": "/(.*)",
       "destination": "/"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/mexal-dispatcher",
+      "schedule": "0 23 * * *"
     }
   ]
 }

@@ -32,11 +32,11 @@ async function callApi(fetchImpl, baseUrl, secret, path, body) {
 
 function endpointFor(syncType) {
   switch (syncType) {
-    case "clients": return ["/api/mexal/sync-clients", { action: "sync", origin: "cron" }];
-    case "products": return ["/api/cron/mexal-products", null];
-    case "commercial_conditions": return ["/api/mexal/sync-commercial-conditions", { mode: "incremental", syncPayments: true, origin: "cron" }];
-    case "document_series": return ["/api/mexal/sync-document-series", { origin: "cron" }];
-    case "stocks": return ["/api/mexal/sync-products", { action: "sync-stock-it", offset: 0, batchSize: 12, origin: "cron" }];
+    case "clients": return ["/api/mexal/automation", { action: "run_now", syncType: "clients", origin: "cron" }];
+    case "products": return ["/api/mexal/automation", { action: "run_now", syncType: "products", offset: 0, batchSize: 8, origin: "cron" }];
+    case "commercial_conditions": return ["/api/mexal/automation", { action: "run_now", syncType: "commercial_conditions", mode: "incremental", syncPayments: true, origin: "cron" }];
+    case "document_series": return ["/api/mexal/automation", { action: "run_now", syncType: "document_series", origin: "cron" }];
+    case "stocks": return ["/api/mexal/automation", { action: "run_now", syncType: "stocks", offset: 0, batchSize: 12, origin: "cron" }];
     default: return null;
   }
 }

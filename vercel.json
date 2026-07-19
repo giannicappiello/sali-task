@@ -1,22 +1,13 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "api/mexal/sync-products.js": {
-      "maxDuration": 300
-    },
     "api/cron/mexal-products.js": {
-      "maxDuration": 300
-    },
-    "api/mexal/sync-clients.js": {
-      "maxDuration": 300
-    },
-    "api/mexal/sync-commercial-conditions.js": {
       "maxDuration": 300
     },
     "api/mexal/submit-order.js": {
       "maxDuration": 300
     },
-    "api/mexal/sync-document-series.js": {
+    "api/mexal/automation.js": {
       "maxDuration": 300
     }
   },

@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const [api, dashboard, products, clients] = await Promise.all([
-  readFile("api/mexal/stop-sync-run.js", "utf8"),
+  readFile("server/mexal/stop-sync-run.js", "utf8"),
   readFile("src/modules/integrations/pages/MexalDashboard.jsx", "utf8"),
-  readFile("api/mexal/sync-products.js", "utf8"),
-  readFile("api/mexal/sync-clients.js", "utf8"),
+  readFile("server/mexal/sync-products.js", "utf8"),
+  readFile("server/mexal/sync-clients.js", "utf8"),
 ]);
 assert.match(api, /status: "failed"/);
 assert.match(api, /completed_at: stoppedAt/);

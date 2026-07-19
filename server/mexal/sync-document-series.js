@@ -1,6 +1,6 @@
 import https from "node:https";
 import { createClient } from "@supabase/supabase-js";
-import { completeSyncRun, createSyncRun, failSyncRun } from "./lib/syncRuns.js";
+import { completeSyncRun, createSyncRun, failSyncRun } from "../../api/mexal/lib/syncRuns.js";
 
 function env(name, fallback = "") { return String(process.env[name] ?? fallback).trim(); }
 function required(name) { const value = env(name); if (!value) throw new Error(`Variabile Vercel mancante: ${name}`); return value; }

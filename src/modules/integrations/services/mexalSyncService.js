@@ -28,8 +28,8 @@ export async function invokeProductsSync(onProgress = () => {}) {
   let syncRunId = null;
   const total = { processed: 0, received: 0, filtered: 0, detailLoaded: 0, inserted: 0, updated: 0, prodottiInserted: 0, prodottiUpdated: 0, skipped: 0, errors: [], diagnostics: null };
   while (true) {
-    const data = await invokeMexalApi("/api/mexal/sync-products", {
-      action: "sync", offset, batchSize: 8, syncRunId, origin: "integrations",
+    const data = await invokeMexalApi("/api/mexal/automation", {
+      action: "run_now", syncType: "products", offset, batchSize: 8, syncRunId, origin: "integrations",
     });
     syncRunId = data.sync_run_id || syncRunId;
     total.processed += Number(data.elaborati || 0);
@@ -60,7 +60,7 @@ export async function invokeStocksSync(onProgress = () => {}) {
   let offset = 0; let syncRunId = null;
   const total = { processed: 0, updated: 0, errors: [] };
   while (true) {
-    const data = await invokeMexalApi("/api/mexal/sync-products", { action: "sync-stock-it", offset, batchSize: 12, syncRunId, origin: "integrations" });
+    const data = await invokeMexalApi("/api/mexal/automation", { action: "run_now", syncType: "stocks", offset, batchSize: 12, syncRunId, origin: "integrations" });
     syncRunId = data.sync_run_id || syncRunId;
     total.processed += Number(data.elaborati || 0); total.updated += Number(data.aggiornati || 0);
     total.errors.push(...(data.errori || [])); onProgress({ ...total, total: Number(data.totale || 0) });
@@ -71,7 +71,7 @@ export async function invokeStocksSync(onProgress = () => {}) {
 }
 
 export async function invokeClientsSync() {
-  return invokeMexalApi("/api/mexal/sync-clients", { action: "sync" });
+  return invokeMexalApi("/api/mexal/automation", { action: "run_now", syncType: "clients" });
 }
 
 export async function loadMexalRuns(type, limit = 1) {
@@ -103,14 +103,14 @@ export async function invokeCommercialConditionsSync(options = {}) {
   };
 
   const token = await getAccessToken();
-  const response = await fetch("/api/mexal/sync-commercial-conditions", {
+  const response = await fetch("/api/mexal/automation", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
       Accept: "application/json",
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ action: "run_now", syncType: "commercial_conditions", ...payload }),
   });
 
   const raw = await response.text();
@@ -135,7 +135,7 @@ export async function invokeCommercialConditionsSync(options = {}) {
 }
 
 export async function stopMexalRun(runId) {
-  return invokeMexalApi("/api/mexal/stop-sync-run", { runId });
+  return invokeMexalApi("/api/mexal/automation", { action: "stop", runId });
 }
 
 export async function loadSyncRuns(limit = 25) {

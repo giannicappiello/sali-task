@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { extractArticleRows, mapArticleToOrdersCache } from "../api/mexal/sync-products.js";
+import { extractArticleRows, mapArticleToOrdersCache } from "../server/mexal/sync-products.js";
 
 const payload = { dati: [{ codice: " IT0001 " }, { codice_articolo: "mkt-2" }, { codice: "IMP3" }, { codice: "NO4" }] };
 const rows = extractArticleRows(payload);
 assert.equal(rows.length, 4, "parses the Mexal dati list wrapper");
-const api = await readFile("api/mexal/sync-products.js", "utf8");
+const api = await readFile("server/mexal/sync-products.js", "utf8");
 const service = await readFile("src/modules/integrations/services/mexalSyncService.js", "utf8");
 assert.match(api, /normalizeCode\(value\).*trim\(\)\.toUpperCase\(\)/s);
 assert.match(api, /ARTICLE_PREFIXES = \["IT", "MKT", "IMP"\]/);

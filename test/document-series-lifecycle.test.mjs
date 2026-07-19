@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { completeSyncRun, failSyncRun } from "../api/mexal/lib/syncRuns.js";
-import { saveRows } from "../api/mexal/sync-document-series.js";
+import { saveRows } from "../server/mexal/sync-document-series.js";
 
 const updates = [];
 const lifecycleAdmin = { from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { started_at: "2026-07-19T00:00:00.000Z" }, error: null }) }) }), update: (payload) => ({ eq: async () => { updates.push(payload); return { error: null }; } }) }) };

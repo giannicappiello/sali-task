@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Search } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
 import NewOrderPreparation from "../components/NewOrderPreparation";
-import { runMexalEventAutomation } from "../services/mexalEventAutomation";
 
 export default function Orders() {
   const navigate = useNavigate();
@@ -22,16 +21,6 @@ export default function Orders() {
   const [search, setSearch] = useState("");
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [loading, setLoading] = useState(true);
-  const [moduleSyncNotice, setModuleSyncNotice] = useState("");
-  const moduleOpenExecuted = useRef(false);
-
-  useEffect(() => {
-    if (accessLoading || !canAccessOrders || moduleOpenExecuted.current) return;
-    moduleOpenExecuted.current = true;
-    runMexalEventAutomation("orders_module_open")
-      .then((result) => setModuleSyncNotice(result.failed ? "Aggiornamento Mexal completato con avvisi: il modulo resta disponibile." : "Aggiornamento Mexal in background completato."))
-      .catch(() => setModuleSyncNotice("Aggiornamento Mexal non riuscito: puoi comunque usare il modulo Ordini."));
-  }, [accessLoading, canAccessOrders]);
 
   useEffect(() => {
     if (!accessLoading) loadOrders();
@@ -118,7 +107,6 @@ export default function Orders() {
       {location.state?.message && (
         <div className="orders-alert orders-alert-success">{location.state.message}</div>
       )}
-      {moduleSyncNotice && <div className="orders-alert">{moduleSyncNotice}</div>}
 
       <div className="orders-panel">
         <p style={{ marginTop: 0 }}>

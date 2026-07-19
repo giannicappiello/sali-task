@@ -21,6 +21,7 @@ import MexalSettings from "../components/MexalSettings";
 import MexalAutomations from "../components/MexalAutomations";
 import MexalSyncCard from "../components/MexalSyncCard";
 import IntegrationStatusBadge from "../components/IntegrationStatusBadge";
+import OrdersDocumentSeriesSettings from "../../../components/OrdersDocumentSeriesSettings";
 import {
   invokeCommercialConditionsSync,
   loadCommercialCounts,
@@ -68,6 +69,7 @@ export default function MexalDashboard() {
   const [entityCounts, setEntityCounts] = useState({ products: null, clients: null, stocks: null, orders: null });
   const [entityRuns, setEntityRuns] = useState({ products: null, clients: null, stocks: null, orders: null });
   const [activeSync, setActiveSync] = useState(null);
+  const [activeTab, setActiveTab] = useState("overview");
 
   const latestRun = runs[0] || null;
 
@@ -220,6 +222,9 @@ export default function MexalDashboard() {
     { icon: Warehouse, title: "Giacenze", description: "Disponibilità per magazzino e controllo evasione ordini.", recordLabel: "prodotti con giacenza sincronizzata", recordCount: entityCounts.stocks, enabled: true, onSync: () => runEntitySync("stocks"), lastRunData: entityRuns.stocks },
     { icon: ShoppingCart, title: "Ordini", description: "Invio OCM/OCX, PDF e stato sincronizzazione documenti.", recordLabel: "ordini da inviare", recordCount: entityCounts.orders, enabled: true, onSync: () => navigate("/orders"), lastRunData: entityRuns.orders },
   ];
+  const runningRuns = runs.filter((item) => item.status === "running").length;
+  const failedRuns = runs.filter((item) => ["failed", "timeout", "completed_with_errors"].includes(item.status)).length;
+  const activeAutomations = 2;
 
   if (loading) {
     return <div className="integrations-loading"><RefreshCw className="spin" size={24} /> Caricamento Centro Mexal...</div>;
@@ -251,44 +256,13 @@ export default function MexalDashboard() {
         </div>
       )}
 
-      <section className="mexal-kpi-grid">
-        <div className="mexal-kpi"><span>Ultima sincronizzazione</span><strong>{formatDate(latestRun?.started_at)}</strong></div>
-        <div className="mexal-kpi"><span>Durata ultima esecuzione</span><strong>{formatDuration(latestRun?.duration_ms)}</strong></div>
-        <div className="mexal-kpi"><span>Record letti</span><strong>{latestRun?.records_read ?? 0}</strong></div>
-        <div className="mexal-kpi"><span>Stato ultimo processo</span><IntegrationStatusBadge status={latestRun?.status || "unavailable"} /></div>
-      </section>
-
-      <div className="mexal-sync-grid">
-        {cards.map((card) => (
-          <MexalSyncCard
-            key={card.title}
-            {...card}
-            run={card.lastRunData}
-            running={card.title === "Condizioni commerciali" ? running : activeSync === (card.title === "Prodotti" ? "products" : card.title === "Clienti" ? "clients" : card.title === "Giacenze" ? "stocks" : "")}
-            lastRun={card.lastRunData ? formatDate(card.lastRunData.completed_at || card.lastRunData.started_at) : (card.title === "Condizioni commerciali" && latestRun ? formatDate(latestRun.completed_at || latestRun.started_at) : null)}
-            onOpen={() => setMessage({ type: "warning", text: `${card.title}: funzionalità prevista nei prossimi sprint.` })}
-          />
-        ))}
-      </div>
-
-      <MexalProgress running={running} progress={progress} phase={phase} />
-
-      <div className="mexal-two-columns">
-        <MexalSettings settings={settings} onChange={setSettings} disabled={running} />
-        <section className="mexal-data-summary">
-          <div className="mexal-section-heading"><div><h3>Dati commerciali attivi</h3><p>Record presenti nel database del Workspace.</p></div></div>
-          <div className="mexal-data-summary-grid">
-            <div><span>Matrice sconti</span><strong>{counts.matrix ?? "—"}</strong></div>
-            <div><span>Particolarità</span><strong>{counts.particularities ?? "—"}</strong></div>
-            <div><span>Regole pagamento</span><strong>{counts.payments ?? "—"}</strong></div>
-          </div>
-        </section>
-      </div>
-
-      <MexalAutomations />
-
-      <MexalHistory runs={runs} selectedRunId={selectedRun?.id} onSelect={selectRun} />
-      <MexalLog items={logItems} />
+      <nav className="mexal-main-tabs" aria-label="Sezioni Centro Mexal">{[["overview","Panoramica"],["syncs","Sincronizzazioni"],["automations","Automazioni"],["series","Serie documenti"],["history","Cronologia"],["settings","Configurazione"]].map(([key,label]) => <button key={key} type="button" className={activeTab === key ? "active" : ""} onClick={() => setActiveTab(key)}>{label}</button>)}</nav>
+      {activeTab === "overview" && <><section className="mexal-kpi-grid"><div className="mexal-kpi"><span>Connessione</span><IntegrationStatusBadge status="connected" /></div><div className="mexal-kpi"><span>Ultima sincronizzazione</span><strong>{formatDate(latestRun?.started_at)}</strong></div><div className="mexal-kpi"><span>Run in corso</span><strong>{runningRuns}</strong></div><div className="mexal-kpi"><span>Sincronizzazioni con errori</span><strong>{failedRuns}</strong></div><div className="mexal-kpi"><span>Automazioni attive</span><strong>{activeAutomations}</strong></div></section><section className="mexal-quick-actions"><h3>Azioni rapide</h3><button className="orders-primary" onClick={() => runEntitySync("products")}>Sincronizza prodotti</button><button className="orders-primary" onClick={() => runEntitySync("stocks")}>Sincronizza giacenze</button><button onClick={() => setActiveTab("automations")}>Apri automazioni</button></section></>}
+      {activeTab === "syncs" && <><MexalProgress running={running} progress={progress} phase={phase} /><section className="mexal-table-panel"><table className="mexal-history-table"><thead><tr><th>Tipo</th><th>Stato</th><th>Ultima esecuzione</th><th>Elaborati</th><th>Errori</th><th>Azioni</th></tr></thead><tbody>{cards.filter((card) => card.enabled).map((card) => { const run = card.lastRunData; return <tr key={card.title}><td>{card.title}</td><td><IntegrationStatusBadge status={run?.status || "unavailable"}/></td><td>{formatDate(run?.completed_at || run?.started_at)}</td><td>{run?.processed ?? 0}</td><td>{run?.failed ?? 0}</td><td><button onClick={card.onSync}>Sincronizza</button>{run && <button onClick={() => { setActiveTab("history"); selectRun(run); }}>Dettaglio</button>}</td></tr>; })}</tbody></table></section></>}
+      {activeTab === "automations" && <MexalAutomations />}
+      {activeTab === "series" && <OrdersDocumentSeriesSettings canManage={isAdminUser} />}
+      {activeTab === "history" && <><MexalHistory runs={runs} selectedRunId={selectedRun?.id} onSelect={selectRun} /><MexalLog items={logItems} /></>}
+      {activeTab === "settings" && <div className="mexal-two-columns"><MexalSettings settings={settings} onChange={setSettings} disabled={running} /><section className="mexal-data-summary"><div className="mexal-section-heading"><div><h3>Stato ambiente</h3><p>Configurazione disponibile senza mostrare credenziali.</p></div></div><div className="mexal-data-summary-grid"><div><span>Matrice sconti</span><strong>{counts.matrix ?? "—"}</strong></div><div><span>Particolarità</span><strong>{counts.particularities ?? "—"}</strong></div><div><span>Regole pagamento</span><strong>{counts.payments ?? "—"}</strong></div></div></section></div>}
     </div>
   );
 }

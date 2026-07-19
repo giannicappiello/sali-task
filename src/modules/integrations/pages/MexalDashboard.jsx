@@ -9,7 +9,6 @@ import {
   PackageSearch,
   RefreshCw,
   ScrollText,
-  ShoppingCart,
   Users,
   Warehouse,
 } from "lucide-react";
@@ -215,6 +214,15 @@ export default function MexalDashboard() {
     } finally { setActiveSync(null); }
   }
 
+  async function runAllSync() {
+    if (!isAdminUser || activeSync) return;
+    const phases = [["clients", invokeClientsSync], ["commercial_conditions", () => invokeCommercialConditionsSync({ mode: "incremental", syncPayments: true })], ["document_series", invokeDocumentSeriesSync], ["products", invokeProductsSync], ["stocks", invokeStocksSync]];
+    setActiveSync("sync_all"); const completed = [];
+    try { for (const [type, execute] of phases) { setPhase(`Fase in corso: ${type}`); setMessage({ type: "info", text: `Sincronizza tutto: ${type}... (Agenti esclusi: endpoint non configurato)` }); await execute(); completed.push(type); } setMessage({ type: "success", text: `Sincronizza tutto completata. Fasi: ${completed.join(", ")}. Agenti esclusi: endpoint non configurato.` }); await refreshData(); }
+    catch (error) { setMessage({ type: "error", text: `Sincronizza tutto interrotta dopo ${completed.join(", ") || "nessuna fase"}: ${error.message}` }); }
+    finally { setActiveSync(null); setPhase(""); }
+  }
+
   async function stopRun(run) {
     if (!isAdminUser || stoppingRunId || run?.status !== "running") return;
     if (!window.confirm(`Arrestare la sincronizzazione ${run.sync_type}? I dati già sincronizzati rimarranno invariati.`)) return;
@@ -243,7 +251,7 @@ export default function MexalDashboard() {
     { syncType: "document_series", icon: ScrollText, title: "Serie documenti", description: "Serie documenti Mexal.", recordLabel: "serie", enabled: true, onSync: () => runEntitySync("document_series") },
     { syncType: "products", icon: PackageSearch, title: "Prodotti", description: "Catalogo prodotti.", recordLabel: "prodotti visibili", recordCount: entityCounts.products, enabled: true, onSync: () => runEntitySync("products"), lastRunData: entityRuns.products },
     { syncType: "stocks", icon: Warehouse, title: "Giacenze", description: "Disponibilità per magazzino.", recordLabel: "prodotti con giacenza", recordCount: entityCounts.stocks, enabled: true, onSync: () => runEntitySync("stocks"), lastRunData: entityRuns.stocks },
-    { syncType: "sync_all", icon: Boxes, title: "Sincronizza tutto", description: "Non configurato: Agenti non ha un endpoint verificato; la sequenza non può essere dichiarata completa.", recordLabel: "fasi", enabled: false },
+    { syncType: "sync_all", icon: Boxes, title: "Sincronizza tutto", description: "Clienti, condizioni, serie, prodotti e giacenze in sequenza. Agenti esclusi: endpoint non configurato.", recordLabel: "5 fasi", enabled: true, onSync: runAllSync },
   ];
   const runningRuns = runs.filter((item) => item.status === "running").length;
   const failedRuns = runs.filter((item) => ["failed", "timeout", "completed_with_errors"].includes(item.status)).length;

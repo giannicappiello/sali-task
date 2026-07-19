@@ -48,12 +48,14 @@ function mexalClient() {
   return { endpoint: `${baseUrl}${DOCUMENTED_SERIES_RESOURCE}`, headers: { Authorization: `Passepartout ${credential}${dominio ? ` Dominio=${dominio}` : ""}`, "Coordinate-Gestionale": `Azienda=${required("MEXAL_AZIENDA")} Anno=${required("MEXAL_ANNO")}${magazzino ? ` Magazzino=${magazzino}` : ""}`, Accept: "application/json" } };
 }
 
-// Strict allow-list for the Mexal document-series record fields; generic object aliases are intentionally excluded.
-const FIELD = Object.freeze({ type: ["tipo_documento", "tipo_doc", "codice_tipo_documento"], acronym: ["sigla_documento", "sigla_doc"], series: ["serie", "numero_serie", "nr_serie", "codice_serie", "cod_serie"], description: ["descrizione", "descrizione_serie", "des_serie"], code: ["codice_univoco", "id_serie"], active: ["attiva", "attivo"] });
-const SERIES_CONTAINER = /^(data|dati|response|risultati|elenco|righe|documenti|serie|items|records|risorse|result|serie_documenti|serie-documenti)$/i;
-const SERIES_RECORD_KEYS = new Set([...FIELD.type, ...FIELD.acronym, ...FIELD.series]);
-function firstField(raw, names) { return names.map((name) => raw[name]).find((value) => value !== undefined && value !== null); }
-function isSeriesRecord(value) { return Boolean(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).some((key) => SERIES_RECORD_KEYS.has(key.toLowerCase())) && firstField(value, FIELD.series) !== undefined); }
+const DIAGNOSTIC_ARRAY_LIMIT = 10;
+const DIAGNOSTIC_SIGNATURE_LIMIT = 20;
+
+function documentRecords(payload) {
+  if (Array.isArray(payload?.dati)) return payload.dati;
+  if (Array.isArray(payload)) return payload;
+  return [];
+}
 function safeScalar(key, value) {
   if (SENSITIVE_KEY.test(key) || value === null || typeof value === "object") return undefined;
   const rendered = text(value).slice(0, 100);
@@ -61,54 +63,95 @@ function safeScalar(key, value) {
 }
 function scalarPreview(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  return Object.fromEntries(Object.entries(value).slice(0, 30).map(([key, item]) => [key, safeScalar(key, item)]).filter(([, item]) => item !== undefined));
+  return Object.fromEntries(Object.entries(value).slice(0, 20).map(([key, item]) => [key, safeScalar(key, item)]).filter(([, item]) => item !== undefined));
 }
+/** Public, bounded diagnostic summary: it never carries the original Mexal payload. */
 export function inspectPayload(payload, endpoint = undefined, status = undefined) {
-  const arrays = []; const seen = new WeakSet();
+  const arrays = [];
+  const seen = new WeakSet();
   function visit(value, path, depth) {
-    if (depth > 6 || !value || typeof value !== "object" || seen.has(value)) return;
+    if (depth > 4 || !value || typeof value !== "object" || seen.has(value) || arrays.length >= DIAGNOSTIC_ARRAY_LIMIT) return;
     seen.add(value);
-    if (Array.isArray(value)) { arrays.push({ path, length: value.length, first_element_keys: value[0] && typeof value[0] === "object" && !Array.isArray(value[0]) ? Object.keys(value[0]).slice(0, 30) : [], first_scalar_values: scalarPreview(value[0]), value }); value.forEach((item, index) => visit(item, `${path}[${index}]`, depth + 1)); return; }
+    if (Array.isArray(value)) {
+      const first = value[0];
+      arrays.push({ path, length: value.length, first_element_keys: first && typeof first === "object" && !Array.isArray(first) ? Object.keys(first).filter((key) => !SENSITIVE_KEY.test(key)).slice(0, 20) : [], first_scalar_values: scalarPreview(first) });
+      return;
+    }
     Object.entries(value).forEach(([key, child]) => visit(child, path ? `${path}.${key}` : key, depth + 1));
   }
   visit(payload, "$", 0);
-  const safeArrays = arrays.map((entry) => ({ path: entry.path, length: entry.length, first_element_keys: entry.first_element_keys, first_scalar_values: entry.first_scalar_values }));
-  const candidate_paths = arrays.filter(({ value }) => value.some(isSeriesRecord)).map(({ path }) => path);
-  return { ...(endpoint ? { endpoint } : {}), ...(status !== undefined ? { http_status: status } : {}), payload_type: Array.isArray(payload) ? "array" : payload === null ? "null" : typeof payload, root_keys: payload && typeof payload === "object" && !Array.isArray(payload) ? Object.keys(payload).slice(0, 50) : [], arrays_found: safeArrays, candidate_paths, sample_shape: { root_scalar_values: scalarPreview(payload), arrays: safeArrays.slice(0, 10) }, candidates: arrays };
+  const documents = documentRecords(payload);
+  const signatures = documents.map((document) => text(document?.sigla_documento).toUpperCase()).filter(Boolean);
+  return {
+    ...(endpoint ? { endpoint } : {}),
+    ...(status !== undefined ? { http_status: status } : {}),
+    payload_type: Array.isArray(payload) ? "array" : payload === null ? "null" : typeof payload,
+    root_keys: payload && typeof payload === "object" && !Array.isArray(payload) ? Object.keys(payload).filter((key) => !SENSITIVE_KEY.test(key)).slice(0, 30) : [],
+    arrays_found: arrays,
+    candidate_paths: Array.isArray(payload?.dati) ? ["$.dati"] : [],
+    sample_shape: { root_scalar_values: scalarPreview(payload), arrays: arrays.slice(0, DIAGNOSTIC_ARRAY_LIMIT) },
+    document_count: documents.length,
+    generated_series_count: 0,
+    detected_document_signatures: [...new Set(signatures)].slice(0, DIAGNOSTIC_SIGNATURE_LIMIT),
+    skipped_documents: [],
+  };
 }
-function keyValueRows(payload) {
-  const rows = [];
-  function visit(value, path, seriesContext, depth) {
-    if (depth > 5 || !value || typeof value !== "object" || Array.isArray(value)) return;
-    for (const [key, child] of Object.entries(value)) {
-      const hereIsSeries = seriesContext || /serie/i.test(key);
-      if (hereIsSeries && child && typeof child === "object" && !Array.isArray(child) && !isSeriesRecord(child)) {
-        for (const [series, description] of Object.entries(child)) if (typeof description !== "object" && text(series)) rows.push({ serie: series, descrizione_serie: description, tipo_documento: key });
-      }
-      visit(child, `${path}.${key}`, hereIsSeries, depth + 1);
-    }
+function serieMassima(value) {
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  if (typeof value === "string" && !/^\d+$/.test(value.trim())) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+function descriptionMap(value) {
+  const descriptions = new Map();
+  if (!Array.isArray(value)) return descriptions;
+  for (const item of value) {
+    if (!Array.isArray(item) || item.length < 2) continue;
+    const number = serieMassima(item[0]);
+    const description = text(item[1]);
+    if (number !== null && number >= 1 && description) descriptions.set(number, description);
   }
-  visit(payload, "$", false, 0); return rows;
+  return descriptions;
 }
-export function extractRows(payload) {
-  if (isSeriesRecord(payload)) return [payload];
-  const candidates = inspectPayload(payload).candidates.map((entry) => ({ ...entry, rows: entry.value.filter(isSeriesRecord), preferred: SERIES_CONTAINER.test(entry.path.split(".").pop()?.replace(/\[.*$/, "") || "") })).filter((entry) => entry.rows.length);
-  candidates.sort((a, b) => Number(b.preferred) - Number(a.preferred) || b.rows.length - a.rows.length || a.path.length - b.path.length);
-  return candidates[0]?.rows || keyValueRows(payload);
+function isDocumentRecord(value) { return Boolean(value && typeof value === "object" && !Array.isArray(value) && "sigla_documento" in value && "serie_massima" in value); }
+export function extractRows(payload) { return documentRecords(payload).filter(isDocumentRecord); }
+export function normalizeRow(document, series, originalDescription = undefined) {
+  const sigla_documento = text(document.sigla_documento).toUpperCase();
+  const serie = String(series);
+  const source_key = `${sigla_documento}:${serie}`;
+  const descrizione = text(originalDescription) || `Documento ${sigla_documento} - Serie ${serie}`;
+  return {
+    source_key,
+    codice_univoco: source_key,
+    tipo_documento: sigla_documento,
+    sigla_documento,
+    serie,
+    descrizione,
+    attiva: true,
+    dati_mexal: { record_documento: document, numero_serie: series, ...(text(originalDescription) ? { descrizione_originale: originalDescription } : {}) },
+    sincronizzata_il: new Date().toISOString(),
+  };
 }
-export function normalizeRow(raw) {
-  const serie = text(firstField(raw, FIELD.series));
-  const tipo_documento = text(firstField(raw, FIELD.type)).toUpperCase();
-  const sigla_documento = text(firstField(raw, FIELD.acronym) ?? tipo_documento).toUpperCase();
-  const codice_univoco = text(firstField(raw, FIELD.code) ?? `${tipo_documento}:${sigla_documento}:${serie}`);
-  return { source_key: codice_univoco, codice_univoco, tipo_documento, sigla_documento, serie, descrizione: text(firstField(raw, FIELD.description) ?? `${sigla_documento || tipo_documento} serie ${serie}`), attiva: firstField(raw, FIELD.active) === false ? false : true, dati_mexal: raw, sincronizzata_il: new Date().toISOString() };
+export function prepareDocumentSeries(payload) {
+  const rowsByKey = new Map();
+  const skipped = [];
+  const documents = documentRecords(payload);
+  for (const [index, document] of documents.entries()) {
+    const sigla = text(document?.sigla_documento).toUpperCase();
+    const maximum = serieMassima(document?.serie_massima);
+    if (!document || typeof document !== "object" || Array.isArray(document) || !sigla || maximum === null) {
+      skipped.push({ index, reason: !sigla ? "sigla_documento mancante" : "serie_massima non valida" });
+      continue;
+    }
+    if (maximum === 0) { skipped.push({ index, sigla_documento: sigla, reason: "serie_massima zero" }); continue; }
+    const descriptions = descriptionMap(document.descrizione);
+    for (let series = 1; series <= maximum; series += 1) rowsByKey.set(`${sigla}:${series}`, normalizeRow(document, series, descriptions.get(series)));
+  }
+  return { rows: [...rowsByKey.values()], received_documents: documents.length, generated_series: rowsByKey.size, skipped_documents: skipped };
 }
-export function prepareRows(payload) {
-  const byKey = new Map();
-  for (const raw of extractRows(payload)) { const row = normalizeRow(raw); if (row.serie && row.source_key) byKey.set(row.source_key, row); }
-  return [...byKey.values()];
-}
+export function prepareRows(payload) { return prepareDocumentSeries(payload).rows; }
 export async function saveRows(admin, rows) {
+  if (!rows.length) return { inserted: 0, updated: 0 };
   const sourceKeys = rows.map((row) => row.source_key);
   const { data: existing, error: existingError } = await admin.from("ordini_serie_documenti").select("source_key").in("source_key", sourceKeys);
   if (existingError) throw new Error(`Errore Supabase durante la lettura delle serie esistenti: ${text(existingError.message).slice(0, 400)}`);
@@ -131,11 +174,14 @@ export default async function handler(req, res) {
     diagnostics = inspectPayload(response.data, mexal.endpoint, response.status);
     await persistDiagnostics(admin, runId, diagnostics);
     if (response.status < 200 || response.status >= 300) throw Object.assign(new Error(`Mexal HTTP ${response.status}: ${text(response.data?.error?.["response-message"] || response.data?.error?.["response-detail"] || "errore lettura serie documenti").slice(0, 500)}`), { details: "Endpoint raggiunto ma risposta Mexal non valida." });
-    const rows = prepareRows(response.data);
-    if (!rows.length) throw Object.assign(new Error("Mexal non ha restituito serie documenti riconoscibili."), { details: "La risposta JSON è valida ma non contiene record serie nei campi Mexal supportati." });
-    const counts = await saveRows(admin, rows);
-    await completeSyncRun(admin, runId, { processed: rows.length, inserted: counts.inserted, updated: counts.updated, skipped: 0, failed: 0 });
-    return res.status(200).json({ success: true, runId, received: rows.length, ...counts, skipped: 0, errors: [] });
+    const prepared = prepareDocumentSeries(response.data);
+    diagnostics.generated_series_count = prepared.generated_series;
+    diagnostics.skipped_documents = prepared.skipped_documents.slice(0, 20);
+    await persistDiagnostics(admin, runId, diagnostics);
+    if (!prepared.received_documents) throw Object.assign(new Error("Mexal non ha restituito documenti serie."), { details: "La risposta JSON è valida ma non contiene l'array dati previsto." });
+    const counts = await saveRows(admin, prepared.rows);
+    await completeSyncRun(admin, runId, { processed: prepared.generated_series, inserted: counts.inserted, updated: counts.updated, skipped: prepared.skipped_documents.length, failed: 0 });
+    return res.status(200).json({ success: true, runId, received_documents: prepared.received_documents, generated_series: prepared.generated_series, ...counts, skipped: prepared.skipped_documents.length, errors: [] });
   } catch (error) {
     if (runId) { try { await failSyncRun(admin, runId, text(error?.message)); } catch (closeError) { console.error("Mexal serie documenti: chiusura run fallita", closeError); } }
     return res.status(error.status || 500).json({ success: false, error: error.message || "Errore sincronizzazione serie documenti.", details: error.details || "Controllare la diagnostica amministrativa.", ...(diagnostics ? { diagnostics } : {}) });

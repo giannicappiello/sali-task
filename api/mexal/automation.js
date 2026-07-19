@@ -194,13 +194,13 @@ async function syncAll(req, res, body) {
 }
 
 async function startSync(req, res, body, syncType, runHandler) {
-  // Subsequent product/stock batches belong to the run already started by the
-  // initial request, so they must not be treated as a second synchronization.
-  const isContinuation = ["products", "stocks"].includes(syncType) && body.syncRunId;
-  if (!isContinuation) {
-    const running = await findRunningSync(await createAdmin(req), syncType);
-    if (running) return sendRunning(res, syncType, running);
-  }
+  const running = await findRunningSync(await createAdmin(req), syncType);
+  // A batch can continue only the active run of its own synchronization type.
+  const isContinuation = ["products", "stocks"].includes(syncType)
+    && body.syncRunId
+    && running
+    && String(body.syncRunId) === String(running.id);
+  if (running && !isContinuation) return sendRunning(res, syncType, running);
 
   req.body = runPayload(body, syncType);
   return sendHandlerResponse(res, syncType, await executeHandler(req, runHandler));

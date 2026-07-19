@@ -35,6 +35,8 @@ import {
   loadRunDetailsForRun,
   loadSyncRuns,
   stopMexalRun,
+  stopMexalAutomationRun,
+  loadMexalAutomationRuns,
 } from "../services/mexalSyncService";
 
 function formatDate(value) {
@@ -79,7 +81,8 @@ export default function MexalDashboard() {
   const latestRun = runs[0] || null;
 
   const refreshData = useCallback(async (preferredRunId = null) => {
-    const [runRows, countRows, entityCountRows, productRuns, clientRuns, stockRuns, orderRuns, automationCount] = await Promise.all([loadSyncRuns(25), loadCommercialCounts(), loadMexalEntityCounts(), loadMexalRuns("products"), loadMexalRuns("clients"), loadMexalRuns("stocks"), loadMexalRuns("orders"), supabase.from("mexal_automation_rules").select("*", { count: "exact", head: true }).eq("enabled", true)]);
+    const [normalRuns, countRows, entityCountRows, productRuns, clientRuns, stockRuns, orderRuns, automationCount, automationRuns] = await Promise.all([loadSyncRuns(25), loadCommercialCounts(), loadMexalEntityCounts(), loadMexalRuns("products"), loadMexalRuns("clients"), loadMexalRuns("stocks"), loadMexalRuns("orders"), supabase.from("mexal_automation_rules").select("*", { count: "exact", head: true }).eq("enabled", true), loadMexalAutomationRuns(25)]);
+    const runRows = [...normalRuns, ...automationRuns].sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
     setRuns(runRows);
     setCounts(countRows);
     setEntityCounts(entityCountRows);
@@ -215,14 +218,14 @@ export default function MexalDashboard() {
     } finally { setActiveSync(null); }
   }
 
-  async function runAllSync() { if (!isAdminUser || activeSync) return; setActiveSync("sync_all"); try { const result = await invokeSyncAll(); setMessage({ type: "success", text: `Sincronizza tutto completata (run ${result.run_id}). ${result.excluded}` }); await refreshData(); } catch (error) { setMessage({ type: "error", text: error.message || "Sincronizza tutto fallita." }); } finally { setActiveSync(null); } }
+  async function runAllSync() { if (!isAdminUser || activeSync) return; setActiveSync("sync_all"); try { const result = await invokeSyncAll(); setMessage(result.status === "stopped" ? { type: "warning", text: `Sincronizzazione arrestata. Run ${result.run_id}. Fasi: ${result.completedPhases.join(", ") || "nessuna"}.` } : { type: "success", text: `Sincronizzazione completa terminata. Run ${result.run_id}. Fasi: ${result.completedPhases.join(", ")}. ${result.excluded}` }); await refreshData(result.run_id); } catch (error) { setMessage({ type: "error", text: error.message || "Sincronizza tutto fallita." }); } finally { setActiveSync(null); } }
 
   async function stopRun(run) {
     if (!isAdminUser || stoppingRunId || run?.status !== "running") return;
     if (!window.confirm(`Arrestare la sincronizzazione ${run.sync_type}? I dati già sincronizzati rimarranno invariati.`)) return;
     setStoppingRunId(run.id);
     try {
-      const result = await stopMexalRun(run.id);
+      const result = run.runSource === "automation" ? await stopMexalAutomationRun(run.id) : await stopMexalRun(run.id);
       setRuns((current) => current.map((item) => item.id === run.id ? result.run : item));
       if (selectedRun?.id === run.id) setSelectedRun(result.run);
       setMessage({ type: "success", text: "Sincronizzazione arrestata logicamente. Nessun nuovo batch verrà elaborato." });

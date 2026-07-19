@@ -205,3 +205,8 @@ export async function loadCommercialCounts() {
 
 export async function invokeSyncAll() { return invokeMexalApi("/api/mexal/sync-all", {}); }
 export async function stopMexalAutomationRun(runId) { return invokeMexalApi("/api/mexal/automation-stop", { run_id: runId }); }
+export async function loadMexalAutomationRuns(limit = 25) {
+  const { data, error } = await supabase.from("mexal_automation_runs").select("*").order("started_at", { ascending: false }).limit(limit);
+  if (error) throw error;
+  return (data || []).map((run) => ({ ...run, runSource: "automation", sync_type: run.trigger_type }));
+}

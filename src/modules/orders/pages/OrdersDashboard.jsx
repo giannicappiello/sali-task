@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
-import NewOrderPreparation from "../components/NewOrderPreparation";
 
 export default function OrdersDashboard() {
   const navigate = useNavigate();
@@ -155,7 +154,7 @@ export default function OrdersDashboard() {
     <div className="orders-page">
       <div className="orders-toolbar">
         <div />
-        <NewOrderPreparation isAdmin={isAdmin} onOpen={() => navigate("/ordini/nuovo")} />
+        <button className="orders-primary" type="button" onClick={() => navigate("/ordini/nuovo")}>Nuovo ordine</button>
       </div>
       <div className="orders-kpi-grid">
         <Kpi label="Clienti assegnati" value={stats.clienti} />

@@ -222,10 +222,13 @@ export default function NewOrder() {
       setSpecialConditions(particularityRows);
       setPaymentRules(paymentRows);
 
-      if (matrixRows.length === 0) {
-        setError(
-          "La matrice sconti è vuota per l’utente collegato. Esegui la query SQL inclusa nel pacchetto per verificare RLS e dati."
-        );
+      const unavailable = [];
+      if (customerRows.length === 0) unavailable.push("clienti");
+      if (productRows.length === 0) unavailable.push("prodotti e giacenze");
+      if (unavailable.length) {
+        setError(`I dati Mexal non sono disponibili (${unavailable.join(", ")}). Eseguire la sincronizzazione dal pannello Integrazioni.`);
+      } else if (matrixRows.length === 0) {
+        setError("La matrice sconti è vuota per l’utente collegato. Eseguire la sincronizzazione dal pannello Integrazioni.");
       }
     } catch (loadError) {
       console.error("Errore caricamento nuovo ordine:", loadError);

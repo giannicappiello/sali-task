@@ -3,7 +3,6 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Search } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
-import NewOrderPreparation from "../components/NewOrderPreparation";
 
 export default function Orders() {
   const navigate = useNavigate();
@@ -100,7 +99,7 @@ export default function Orders() {
         />
 
         {canCreateOrder && (
-          <NewOrderPreparation isAdmin={isAdmin} onOpen={() => navigate("/ordini/nuovo")} />
+          <button className="orders-primary" type="button" onClick={() => navigate("/ordini/nuovo")}>Nuovo ordine</button>
         )}
       </div>
 

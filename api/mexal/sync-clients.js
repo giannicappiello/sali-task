@@ -481,6 +481,12 @@ async function loadAllClients(mexal, paymentsMap) {
   return [...unique.values()];
 }
 
+async function assertRunStillRunning(supabase, runId) {
+  const { data, error } = await supabase.from("mexal_sync_runs").select("status").eq("id", runId).maybeSingle();
+  if (error) throw error;
+  if (!data || data.status !== "running") throw new Error("La run di sincronizzazione è stata arrestata manualmente.");
+}
+
 function formatSupabaseError(error) {
   return {
     message: error?.message || "Errore Supabase sconosciuto",
@@ -508,7 +514,7 @@ export default async function handler(req, res) {
 
     const { data: run, error: runError } = await supabase
       .from("mexal_sync_runs")
-      .insert({ sync_type: "clients", status: "running", metadata: { source: "vercel" } })
+      .insert({ sync_type: "clients", status: "running", source: "manual", metadata: { source: "manual" } })
       .select("id")
       .single();
     if (runError) throw runError;
@@ -534,6 +540,7 @@ export default async function handler(req, res) {
     }
 
     for (let index = 0; index < clients.length; index += UPSERT_BATCH_SIZE) {
+      await assertRunStillRunning(supabase, runId);
       const batch = clients.slice(index, index + UPSERT_BATCH_SIZE);
       const range = `${index + 1}-${index + batch.length}`;
 
@@ -592,6 +599,7 @@ export default async function handler(req, res) {
         index < missingCodes.length;
         index += UPSERT_BATCH_SIZE
       ) {
+        await assertRunStillRunning(supabase, runId);
         const batch = missingCodes.slice(index, index + UPSERT_BATCH_SIZE);
         const syncDate = new Date().toISOString();
         const range = `${index + 1}-${index + batch.length}`;
@@ -641,7 +649,7 @@ export default async function handler(req, res) {
     });
 
     if (supabase && runId) {
-      await supabase.from("mexal_sync_runs").update({ status: "failed", completed_at: new Date().toISOString(), error_message: error?.message || "Errore sincronizzazione clienti." }).eq("id", runId);
+      await supabase.from("mexal_sync_runs").update({ status: "failed", completed_at: new Date().toISOString(), error_message: error?.message || "Errore sincronizzazione clienti." }).eq("id", runId).eq("status", "running");
     }
     return res.status(Number(error?.status || 500)).json({
       error: error?.message || "Errore sincronizzazione clienti Mexal.",

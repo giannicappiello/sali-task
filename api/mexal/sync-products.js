@@ -695,7 +695,7 @@ async function saveProduct({
 async function createSyncRun(supabase, metadata) {
   const { data, error } = await supabase
     .from("mexal_sync_runs")
-    .insert({ sync_type: "products", status: "running", metadata })
+    .insert({ sync_type: "products", status: "running", source: "manual", metadata: { ...metadata, source: "manual" } })
     .select("id,started_at,status,processed,failed,metadata")
     .single();
   if (error) throw error;
@@ -716,6 +716,12 @@ async function getSyncRun(supabase, id) {
   }
 
   return data;
+}
+
+async function assertRunStillRunning(supabase, id, syncType) {
+  const { data, error } = await supabase.from("mexal_sync_runs").select("status").eq("id", id).eq("sync_type", syncType).maybeSingle();
+  if (error) throw error;
+  if (!data || data.status !== "running") throw new Error("La run di sincronizzazione è stata arrestata manualmente.");
 }
 
 async function updateSyncRun(supabase, id, values) {
@@ -747,7 +753,8 @@ async function updateSyncRun(supabase, id, values) {
     .from("mexal_sync_runs")
     .update(payload)
     .eq("id", id)
-    .eq("sync_type", "products");
+    .eq("sync_type", "products")
+    .eq("status", "running");
   if (error) console.error("Aggiornamento run prodotti non riuscito", { runId: id, message: error.message });
 }
 
@@ -870,7 +877,7 @@ export default async function handler(req, res) {
     if (action === "sync-stock-it") {
       syncRunId = body.syncRunId ? Number(body.syncRunId) : null;
       if (!syncRunId && offset === 0) {
-        const stockRun = await createCentralSyncRun(supabase, { syncType: "stocks", source: ["manual", "cron", "event"].includes(body.origin) ? body.origin : "manual", context: body.context || {}, metadata: { batch_size: batchSize } });
+        const stockRun = await createCentralSyncRun(supabase, { syncType: "stocks", source: ["manual", "cron"].includes(body.origin) ? body.origin : "manual", context: body.context || {}, metadata: { batch_size: batchSize } });
         if (stockRun.duplicate) return res.status(409).json({ error: "È già presente una sincronizzazione giacenze in corso.", sync_run_id: Number(stockRun.id) });
         syncRunId = stockRun.id;
       }
@@ -881,6 +888,7 @@ export default async function handler(req, res) {
       const batch = itArticles.slice(offset, offset + batchSize);
       const result = { totale: itArticles.length, elaborati: batch.length, offset, prossimo_offset: offset + batch.length, completato: offset + batch.length >= itArticles.length, aggiornati: 0, errori: [] };
       for (const summary of batch) {
+        await assertRunStillRunning(supabase, syncRunId, "stocks");
         const code = getArticleCode(summary);
         try {
           const article = await loadFullArticle(mexal, code, summary);
@@ -928,6 +936,7 @@ export default async function handler(req, res) {
     };
 
     for (const summary of batch) {
+      await assertRunStillRunning(supabase, syncRunId, "products");
       const code = getArticleCode(summary);
 
       try {

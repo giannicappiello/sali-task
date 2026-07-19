@@ -1,10 +1,11 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ChevronDown, ChevronUp, Info, Minus, Plus, Save, Search, ShoppingCart, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
 import { calculateLineConditions } from "../services/priceEngine";
-import { submitOrderToMexal } from "../services/orderFulfillment";
+import { checkOrderAvailability, submitOrderToMexal } from "../services/orderFulfillment";
+import { buildAvailabilityPreview, buildAvailabilitySignature, getAvailabilityValidity, quantitiesForOrderLine } from "../services/availability";
 import { buildNewOrderInsertPayload, buildWritableOrderPayload } from "../services/orderPayload";
 
 const PAGE_SIZE = 1000;
@@ -159,6 +160,16 @@ export default function NewOrder() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [expandedLine, setExpandedLine] = useState("");
+  const [availability, setAvailability] = useState(null);
+  const [checkingAvailability, setCheckingAvailability] = useState(false);
+  const [availabilityInvalidated, setAvailabilityInvalidated] = useState(false);
+  const availabilityRequestId = useRef(0);
+
+  function invalidateAvailability() {
+    availabilityRequestId.current += 1;
+    if (availability) setAvailabilityInvalidated(true);
+    setAvailability(null);
+  }
 
   useEffect(() => {
     if (!accessLoading) loadData();
@@ -298,6 +309,7 @@ export default function NewOrder() {
   }
 
   function selectCustomer(customer) {
+    invalidateAvailability();
     const payment = {
       codice: customer.codice_pagamento || "",
       descrizione: paymentDescription(customer),
@@ -317,6 +329,7 @@ export default function NewOrder() {
     const code = normalize(product.codice_articolo || product.codice_mexal || product.codice);
     if (!code) return;
 
+    invalidateAvailability();
     setLines((current) => {
       const existing = current.find((line) => line.codice_articolo === code);
       if (existing) {
@@ -348,6 +361,7 @@ export default function NewOrder() {
   }
 
   function updateLine(code, field, value) {
+    invalidateAvailability();
     setLines((current) =>
       current.map((line) =>
         line.codice_articolo === code
@@ -369,7 +383,32 @@ export default function NewOrder() {
   }
 
   function removeLine(code) {
+    invalidateAvailability();
     setLines((current) => current.filter((line) => line.codice_articolo !== code));
+  }
+
+  const canCheckAvailability = lines.length > 0 && lines.every((line) => normalize(line.codice_articolo) && numberValue(line.quantita) > 0) && !checkingAvailability;
+  const availabilityValidity = useMemo(() => getAvailabilityValidity({ availability, lines, customer: selectedCustomer, invalidated: availabilityInvalidated }), [availability, lines, selectedCustomer, availabilityInvalidated]);
+  const availabilityByCode = useMemo(() => new Map((availability?.lines || []).map((line) => [line.productCode, line])), [availability]);
+  const availabilityPreview = useMemo(() => buildAvailabilityPreview(lines, availability?.lines), [lines, availability]);
+
+  async function verifyAvailability() {
+    if (!canCheckAvailability) return;
+    setCheckingAvailability(true);
+    setError("");
+    const requestId = ++availabilityRequestId.current;
+    try {
+      const result = await checkOrderAvailability(lines);
+      // Ignore a late response for a previous cart or a superseded request.
+      if (requestId !== availabilityRequestId.current) return;
+      const resultSignature = buildAvailabilitySignature({ lines, customer: selectedCustomer, warehouse: result.warehouse });
+      setAvailability({ ...result, signature: resultSignature, checkedAt: result.checkedAt });
+      setAvailabilityInvalidated(false);
+    } catch (checkError) {
+      setError(checkError.message || "Errore durante la verifica disponibilità.");
+    } finally {
+      setCheckingAvailability(false);
+    }
   }
 
   async function saveOrder({ confirm = false } = {}) {
@@ -380,6 +419,10 @@ export default function NewOrder() {
     }
     if (!lines.length) {
       setError("Inserisci almeno un prodotto.");
+      return;
+    }
+    if (confirm && !availabilityValidity.valid) {
+      setError("Verifica nuovamente le disponibilità prima di confermare l’ordine.");
       return;
     }
 
@@ -406,16 +449,15 @@ export default function NewOrder() {
       if (orderError) throw orderError;
 
       const noteMexal = `Workspace n. ${order.id}`;
-      const linePayload = lines.map((line, index) => {
+      const linePayload = lines.map((line) => {
         const totale = line.quantita * numberValue(line.prezzo_netto, line.prezzo_unitario);
+        const quantities = quantitiesForOrderLine(line, availability, confirm);
         return {
           ordine_id: order.id,
           codice_articolo: line.codice_articolo,
           descrizione: line.descrizione,
           quantita: line.quantita,
-          quantita_disponibile: Math.min(line.quantita, Math.max(0, line.disponibilita)),
-          quantita_ocm: Math.min(line.quantita, Math.max(0, line.disponibilita)),
-          quantita_ocx: Math.max(0, line.quantita - Math.max(0, line.disponibilita)),
+          ...quantities,
           prezzo_listino: line.prezzo_listino,
           sconto_percentuale: line.sconto_percentuale,
           sconto_commerciale: line.sconto_commerciale || null,
@@ -521,7 +563,7 @@ export default function NewOrder() {
               <span>Listino: {selectedCustomer.codice_listino || "-"}</span>
               <span>Categoria sconto: {customerDiscountCategory(selectedCustomer) || "-"}</span>
             </div>
-            <button className="orders-secondary" type="button" onClick={() => setSelectedCustomer(null)}>
+            <button className="orders-secondary" type="button" disabled={checkingAvailability} onClick={() => { invalidateAvailability(); setSelectedCustomer(null); }}>
               Cambia cliente
             </button>
           </div>
@@ -532,13 +574,14 @@ export default function NewOrder() {
               <input
                 autoFocus
                 value={customerSearch}
+                disabled={checkingAvailability}
                 onChange={(event) => setCustomerSearch(event.target.value)}
                 placeholder="Cerca cliente per codice, ragione sociale, località o P. IVA..."
               />
             </div>
             <div className="orders-picker-results">
               {filteredCustomers.map((customer) => (
-                <button key={customer.codice_cliente} type="button" onClick={() => selectCustomer(customer)}>
+                <button key={customer.codice_cliente} type="button" disabled={checkingAvailability} onClick={() => selectCustomer(customer)}>
                   <strong>{customer.ragione_sociale}</strong>
                   <span>{customer.codice_cliente} · {customer.localita || "-"} ({customer.provincia || "-"})</span>
                 </button>
@@ -555,6 +598,7 @@ export default function NewOrder() {
             <Search size={18} />
             <input
               value={productSearch}
+              disabled={checkingAvailability}
               onChange={(event) => setProductSearch(event.target.value)}
               placeholder="Cerca prodotto per codice, descrizione, brand o EAN..."
             />
@@ -572,7 +616,7 @@ export default function NewOrder() {
               {filteredProducts.map((product) => {
                 const code = product.codice_articolo || product.codice_mexal || product.codice;
                 return (
-                  <button key={code} type="button" onClick={() => addProduct(product)}>
+                  <button key={code} type="button" disabled={checkingAvailability} onClick={() => addProduct(product)}>
                     <strong>{product.descrizione || product.nome || code}</strong>
                     <span>{code} · Cat. sconto: {productDiscountCategory(product) || "-"} · Disponibile: {product.disponibilita ?? 0} · {money(product.prezzo_listino || 0)}</span>
                   </button>
@@ -593,7 +637,8 @@ export default function NewOrder() {
             <tbody>
               {lines.map((line) => {
                 const lineTotal = line.quantita * numberValue(line.prezzo_netto, line.prezzo_unitario);
-                const destination = line.quantita <= line.disponibilita ? "OCM" : "OCX";
+                const checked = availabilityByCode.get(line.codice_articolo);
+                const destination = checked?.confirmedQuantity > 0 && checked?.missingQuantity > 0 ? "OCM/OCX" : checked?.missingQuantity > 0 ? "OCX" : "OCM";
                 return (
                   <Fragment key={line.codice_articolo}>
                     <tr>
@@ -602,12 +647,12 @@ export default function NewOrder() {
                         <div>{line.descrizione}</div>
                         <small>Categoria sconto articolo: {line.dettaglio_calcolo?.categoria_sconto_articolo || productDiscountCategory(line.prodotto_origine) || "-"}</small>
                       </td>
-                      <td>{line.disponibilita}</td>
+                      <td>{checked ? checked.availableQuantity ?? "-" : line.disponibilita}</td>
                       <td>
                         <div className="orders-quantity-control">
-                          <button type="button" onClick={() => updateLine(line.codice_articolo, "quantita", line.quantita - 1)}><Minus size={15} /></button>
-                          <input type="number" min="1" step="1" value={line.quantita} onChange={(event) => updateLine(line.codice_articolo, "quantita", event.target.value)} />
-                          <button type="button" onClick={() => updateLine(line.codice_articolo, "quantita", line.quantita + 1)}><Plus size={15} /></button>
+                          <button type="button" disabled={checkingAvailability} onClick={() => updateLine(line.codice_articolo, "quantita", line.quantita - 1)}><Minus size={15} /></button>
+                          <input type="number" min="1" step="1" disabled={checkingAvailability} value={line.quantita} onChange={(event) => updateLine(line.codice_articolo, "quantita", event.target.value)} />
+                          <button type="button" disabled={checkingAvailability} onClick={() => updateLine(line.codice_articolo, "quantita", line.quantita + 1)}><Plus size={15} /></button>
                         </div>
                       </td>
                       <td>{money(line.prezzo_base)}</td>
@@ -627,7 +672,7 @@ export default function NewOrder() {
                       <td>{money(line.prezzo_netto)}</td>
                       <td><span className={`orders-document-chip ${destination.toLowerCase()}`}>{destination}</span></td>
                       <td>{money(lineTotal)}</td>
-                      <td><button className="orders-icon-danger" type="button" onClick={() => removeLine(line.codice_articolo)} title="Elimina riga"><Trash2 size={17} /></button></td>
+                      <td><button className="orders-icon-danger" type="button" disabled={checkingAvailability} onClick={() => removeLine(line.codice_articolo)} title="Elimina riga"><Trash2 size={17} /></button></td>
                     </tr>
                     {expandedLine === line.codice_articolo && (
                       <tr className="orders-calculation-row" key={`${line.codice_articolo}-detail`}>
@@ -660,10 +705,27 @@ export default function NewOrder() {
       </section>
 
       <section className="orders-panel orders-order-section">
-        <h3>3. Commenti per la mail</h3>
+        <h3>3. Disponibilità Mexal</h3>
+        {availabilityInvalidated && <div className="orders-alert">Le disponibilità devono essere verificate nuovamente.</div>}
+        <button className="orders-primary" type="button" disabled={!canCheckAvailability} onClick={verifyAvailability}>
+          {checkingAvailability ? "Verifica disponibilità…" : "VERIFICA DISPONIBILITÀ"}
+        </button>
+        {availability && <div className="orders-availability-results">
+          <p>Verifica {availability.status === "completed" ? "completata" : "completata con errori"} alle {new Date(availability.checkedAt).toLocaleString("it-IT")} · Magazzino {availability.warehouse}.</p>
+          <p>Richiesta: {availability.summary.requestedQuantity} · Confermabile: {availability.summary.confirmedQuantity} · Mancante: {availability.summary.missingQuantity} · Disponibili: {availability.summary.availableLines} · Parziali: {availability.summary.partialLines} · Non disponibili: {availability.summary.unavailableLines} · Errori: {availability.summary.errorLines}</p>
+          <table className="orders-table"><thead><tr><th>Prodotto</th><th>Richiesta</th><th>Disponibile</th><th>Confermabile</th><th>Mancante</th><th>Stato</th></tr></thead><tbody>
+            {availability.lines.map((result) => { const line = lines.find((item) => item.codice_articolo === result.productCode); const labels = { available: "Disponibile", partial: "Parzialmente disponibile", unavailable: "Non disponibile", error: "Errore di verifica" }; return <tr key={result.productCode}><td>{result.productCode} · {line?.descrizione || "-"}</td><td>{result.requestedQuantity}</td><td>{result.availableQuantity ?? "-"}</td><td>{result.confirmedQuantity}</td><td>{result.missingQuantity}</td><td>{labels[result.status]}{result.message ? ` — ${result.message}` : ""}</td></tr>; })}
+          </tbody></table>
+          <div className="orders-calculation-detail"><div><span>Disponibile — futuro OCM</span><strong>{availabilityPreview.ocm.map((item) => `${item.productCode}: ${item.quantity}`).join(" · ") || "Nessuna riga"}</strong></div><div><span>Mancante — futuro OCX</span><strong>{availabilityPreview.ocx.map((item) => `${item.productCode}: ${item.quantity}`).join(" · ") || "Nessuna riga"}</strong></div></div>
+        </div>}
+      </section>
+
+      <section className="orders-panel orders-order-section">
+        <h3>4. Commenti per la mail</h3>
         <textarea
           className="orders-comments"
           value={comments}
+          disabled={checkingAvailability}
           onChange={(event) => setComments(event.target.value)}
           placeholder="Questi commenti saranno salvati in Workspace e inseriti nel corpo della mail. Non saranno sincronizzati con Mexal."
           rows={5}
@@ -680,9 +742,10 @@ export default function NewOrder() {
           <button className="orders-secondary" type="button" disabled={saving} onClick={() => saveOrder({ confirm: false })}>
             <Save size={18} /> Salva bozza
           </button>
-          <button className="orders-primary" type="button" disabled={saving} onClick={() => saveOrder({ confirm: true })}>
+          <button className="orders-primary" type="button" disabled={saving || checkingAvailability || !availabilityValidity.valid} onClick={() => saveOrder({ confirm: true })}>
             <ShoppingCart size={18} /> {saving ? "Salvataggio..." : "Conferma ordine"}
           </button>
+          {!availabilityValidity.valid && <small className="orders-confirmation-note">{availabilityValidity.reason}</small>}
         </div>
       </div>
     </div>

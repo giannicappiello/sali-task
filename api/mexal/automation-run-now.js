@@ -1,22 +1,3 @@
-import { createAdminClient, requireAdmin } from "./lib/admin.js";
-import { runRegisteredSync, syncRegistry } from "./lib/syncRegistry.js";
-
-function baseUrl(req) { const protocol = String(req.headers["x-forwarded-proto"] || "https").split(",")[0].trim(); return `${protocol}://${req.headers["x-forwarded-host"] || req.headers.host}`; }
-export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Metodo non consentito." });
-  try {
-    const admin = createAdminClient();
-    await requireAdmin(req, admin);
-    const syncType = req.body?.sync_type;
-    const types = syncType === "sync_all" ? Object.keys(syncRegistry) : [syncType];
-    if (!types.length || types.some((type) => !syncRegistry[type])) return res.status(400).json({ error: "Tipo sincronizzazione non supportato." });
-    const results = [];
-    for (const type of types) {
-      try { results.push(await runRegisteredSync({ syncType: type, source: "manual", context: { requested_by: "automation-run-now" }, authorization: req.headers.authorization, baseUrl: baseUrl(req) })); }
-      catch (error) { results.push({ success: false, syncType: type, error: error.message || "Errore sconosciuto." }); }
-    }
-    const completed = results.filter((item) => item.success).length;
-    const failed = results.length - completed;
-    return res.status(failed ? 207 : 200).json({ ok: failed === 0, results, counters: { requested: results.length, completed, failed } });
-  } catch (error) { return res.status(Number(error.status || 500)).json({ error: error.message || "Impossibile avviare la sincronizzazione." }); }
-}
+import { createAdminClient, requireAdmin } from "./lib/admin.js"; import { executeAutomationRun } from "./lib/automationRun.js";
+const baseUrl=req=>`${String(req.headers["x-forwarded-proto"]||"https").split(",")[0]}://${req.headers["x-forwarded-host"]||req.headers.host}`;
+export default async function handler(req,res){if(req.method!=="POST")return res.status(405).json({error:"Metodo non consentito."});try{const admin=createAdminClient();const auth=await requireAdmin(req,admin);const {data:rule,error:ruleError}=await admin.from("mexal_automation_rules").select("*").eq("id",req.body?.rule_id).single();if(ruleError)throw ruleError;const {data:run,error}=await admin.from("mexal_automation_runs").insert({automation_rule_id:rule.id,trigger_type:rule.trigger_type,status:"running"}).select().single();if(error)throw error;const result=await executeAutomationRun({admin,run,actions:rule.action_chain,authorization:`Bearer ${auth.token}`,baseUrl:baseUrl(req)});const {error:updateError}=await admin.from("mexal_automation_runs").update({status:result.status,current_action:null,completed_at:new Date().toISOString(),processed_actions:result.processedActions,failed_actions:result.failedActions,result,error_message:result.error||null}).eq("id",run.id);if(updateError)throw updateError;const {error:ruleUpdate}=await admin.from("mexal_automation_rules").update({last_run_at:new Date().toISOString()}).eq("id",rule.id);if(ruleUpdate)throw ruleUpdate;return res.status(result.status==="failed"?500:200).json({run_id:run.id,...result});}catch(error){return res.status(error.status||500).json({error:error.message});}}

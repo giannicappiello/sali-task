@@ -5,6 +5,7 @@ import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
 import { calculateLineConditions } from "../services/priceEngine";
 import { submitOrderToMexal } from "../services/orderFulfillment";
+import { buildNewOrderInsertPayload, buildWritableOrderPayload } from "../services/orderPayload";
 
 const PAGE_SIZE = 1000;
 
@@ -384,28 +385,15 @@ export default function NewOrder() {
 
     try {
       const now = new Date();
-      const orderPayload = {
-        data_ordine: now.toISOString().slice(0, 10),
-        mese_ordine: now.toISOString().slice(0, 7),
-        stato: "bozza",
-        codice_cliente: selectedCustomer.codice_cliente,
-        ragione_sociale_cliente: selectedCustomer.ragione_sociale,
-        codice_agente_mexal:
-          selectedCustomer.codice_agente_mexal || agentCode || null,
-        codice_pagamento: selectedPayment?.codice || selectedCustomer.codice_pagamento || null,
-        descrizione_pagamento: selectedPayment?.descrizione || paymentDescription(selectedCustomer),
-        codice_listino: selectedCustomer.codice_listino || null,
-        indirizzo_spedizione: [
-          selectedCustomer.indirizzo,
-          selectedCustomer.cap,
-          selectedCustomer.localita,
-          selectedCustomer.provincia,
-        ]
-          .filter(Boolean)
-          .join(" "),
-        commenti: comments.trim() || null,
-        totale: totals.imponibile,
-      };
+      const orderPayload = buildNewOrderInsertPayload({
+        dataOrdine: now.toISOString().slice(0, 10),
+        customer: selectedCustomer,
+        agentCode,
+        payment: selectedPayment,
+        paymentDescription,
+        comments,
+        total: totals.imponibile,
+      });
 
       const { data: order, error: orderError } = await supabase
         .from("ordini_testate")
@@ -447,7 +435,7 @@ export default function NewOrder() {
 
       const { error: noteError } = await supabase
         .from("ordini_testate")
-        .update({ note_mexal: noteMexal })
+        .update(buildWritableOrderPayload({ note_mexal: noteMexal }))
         .eq("id", order.id);
       if (noteError) throw noteError;
 

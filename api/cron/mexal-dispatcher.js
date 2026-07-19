@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { cleanupStaleRuns } from "../mexal/lib/syncRuns.js";
+import { runRegisteredSync } from "../mexal/lib/syncRegistry.js";
 
 const DEFAULT_ORDER = ["clients", "products", "commercial_conditions", "document_series", "stocks", "orders"];
 
@@ -13,32 +14,6 @@ function requestBaseUrl(req) {
   const protocol = String(req.headers["x-forwarded-proto"] || "https").split(",")[0].trim();
   const host = req.headers["x-forwarded-host"] || req.headers.host;
   return `${protocol}://${host}`;
-}
-
-async function callApi(fetchImpl, baseUrl, secret, path, body) {
-  const response = await fetchImpl(`${baseUrl}${path}`, {
-    method: body ? "POST" : "GET",
-    headers: { Authorization: `Bearer ${secret}`, ...(body ? { "Content-Type": "application/json" } : {}) },
-    ...(body ? { body: JSON.stringify(body) } : {}),
-  });
-  const raw = await response.text();
-  let result = {};
-  try { result = raw ? JSON.parse(raw) : {}; } catch { result = { error: raw }; }
-  if (!response.ok || result.success === false || result.ok === false) {
-    throw new Error(result.error || `Sincronizzazione non riuscita (HTTP ${response.status}).`);
-  }
-  return result;
-}
-
-function endpointFor(syncType) {
-  switch (syncType) {
-    case "clients": return ["/api/mexal/sync-clients", { action: "sync", origin: "cron" }];
-    case "products": return ["/api/cron/mexal-products", null];
-    case "commercial_conditions": return ["/api/mexal/sync-commercial-conditions", { mode: "incremental", syncPayments: true, origin: "cron" }];
-    case "document_series": return ["/api/mexal/sync-document-series", { origin: "cron" }];
-    case "stocks": return ["/api/mexal/sync-products", { action: "sync-stock-it", offset: 0, batchSize: 12, origin: "cron" }];
-    default: return null;
-  }
 }
 
 export async function dispatchSchedules({ schedules, hasRunningRun, execute, updateSchedule }) {
@@ -95,12 +70,13 @@ export default async function handler(req, res) {
         if (runError) throw runError;
         return Boolean(data?.length);
       },
-      execute: async (syncType, schedule) => {
-        const endpoint = endpointFor(syncType);
-        if (!endpoint) throw new Error(`Tipo sincronizzazione non supportato: ${syncType}`);
-        const [path, body] = endpoint;
-        return callApi(fetch, requestBaseUrl(req), process.env.CRON_SECRET, path, body && { ...body, batchSize: schedule.batch_size || body.batchSize });
-      },
+      execute: async (syncType, schedule) => runRegisteredSync({
+        syncType,
+        source: "cron",
+        context: { schedule_id: schedule.id },
+        authorization: `Bearer ${process.env.CRON_SECRET}`,
+        baseUrl: requestBaseUrl(req),
+      }),
       updateSchedule: async (id, values) => {
         const { error: updateError } = await admin.from("mexal_sync_schedules").update(values).eq("id", id);
         if (updateError) throw updateError;

@@ -4,7 +4,7 @@
     "api/mexal/sync-products.js": {
       "maxDuration": 300
     },
-    "api/cron/mexal-products.js": {
+    "api/cron/mexal-dispatcher.js": {
       "maxDuration": 300
     },
     "api/mexal/sync-clients.js": {
@@ -22,8 +22,8 @@
   },
   "crons": [
     {
-      "path": "/api/cron/mexal-products",
-      "schedule": "0 22 * * *"
+      "path": "/api/cron/mexal-dispatcher",
+      "schedule": "* * * * *"
     }
   ],
   "rewrites": [

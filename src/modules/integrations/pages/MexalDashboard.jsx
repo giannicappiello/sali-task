@@ -29,6 +29,8 @@ import {
   loadMexalEntityCounts,
   loadMexalRuns,
   loadRunDetails,
+  loadSyncSchedules,
+  saveSyncSchedule,
   loadSyncRuns,
 } from "../services/mexalSyncService";
 
@@ -63,19 +65,21 @@ export default function MexalDashboard() {
   const [message, setMessage] = useState(null);
   const [progress, setProgress] = useState(0);
   const [phase, setPhase] = useState("");
-  const [settings, setSettings] = useState({ mode: "full", dryRun: false, syncPayments: true });
+  const [settings] = useState({ mode: "full", dryRun: false, syncPayments: true });
   const [entityCounts, setEntityCounts] = useState({ products: null, clients: null, stocks: null, orders: null });
   const [entityRuns, setEntityRuns] = useState({ products: null, clients: null, stocks: null, orders: null });
   const [activeSync, setActiveSync] = useState(null);
+  const [schedules, setSchedules] = useState([]);
 
   const latestRun = runs[0] || null;
 
   const refreshData = useCallback(async (preferredRunId = null) => {
-    const [runRows, countRows, entityCountRows, productRuns, clientRuns, stockRuns, orderRuns] = await Promise.all([loadSyncRuns(25), loadCommercialCounts(), loadMexalEntityCounts(), loadMexalRuns("products"), loadMexalRuns("clients"), loadMexalRuns("stocks"), loadMexalRuns("orders")]);
+    const [runRows, countRows, entityCountRows, productRuns, clientRuns, stockRuns, orderRuns, scheduleRows] = await Promise.all([loadSyncRuns(25), loadCommercialCounts(), loadMexalEntityCounts(), loadMexalRuns("products"), loadMexalRuns("clients"), loadMexalRuns("stocks"), loadMexalRuns("orders"), loadSyncSchedules()]);
     setRuns(runRows);
     setCounts(countRows);
     setEntityCounts(entityCountRows);
     setEntityRuns({ products: productRuns[0] || null, clients: clientRuns[0] || null, stocks: stockRuns[0] || null, orders: orderRuns[0] || null });
+    setSchedules(scheduleRows);
 
     const nextSelected = preferredRunId
       ? runRows.find((run) => run.id === preferredRunId)
@@ -197,6 +201,20 @@ export default function MexalDashboard() {
     } finally { setActiveSync(null); }
   }
 
+  async function saveSchedule(schedule) {
+    if (!isAdminUser) throw new Error("Modifica riservata agli amministratori.");
+    const saved = await saveSyncSchedule(schedule);
+    setSchedules((rows) => rows.map((row) => row.sync_type === saved.sync_type ? saved : row));
+    setMessage({ type: "success", text: `Programmazione ${schedule.sync_type} salvata.` });
+  }
+
+  async function runScheduleNow(type) {
+    if (type === "products" || type === "clients" || type === "stocks") return runEntitySync(type);
+    if (type === "commercial_conditions") return runCommercialSync();
+    if (type === "document_series") return navigate("/integrations/document-series");
+    setMessage({ type: "warning", text: `Esecuzione manuale ${type}: usa il modulo dedicato.` });
+  }
+
   const commercialCount = useMemo(() => {
     const values = [counts.matrix, counts.particularities, counts.payments];
     if (values.some((value) => value == null)) return null;
@@ -273,7 +291,7 @@ export default function MexalDashboard() {
       <MexalProgress running={running} progress={progress} phase={phase} />
 
       <div className="mexal-two-columns">
-        <MexalSettings settings={settings} onChange={setSettings} disabled={running} />
+        <MexalSettings schedules={schedules} onSave={saveSchedule} onRunNow={runScheduleNow} disabled={running || !isAdminUser} />
         <section className="mexal-data-summary">
           <div className="mexal-section-heading"><div><h3>Dati commerciali attivi</h3><p>Record presenti nel database del Workspace.</p></div></div>
           <div className="mexal-data-summary-grid">

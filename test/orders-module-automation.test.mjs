@@ -1,0 +1,10 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+const hook = await readFile("src/modules/orders/hooks/useOrdersModuleAutomation.js", "utf8");
+const module = await readFile("src/modules/orders/OrdersModule.jsx", "utf8");
+const orders = await readFile("src/modules/orders/pages/Orders.jsx", "utf8");
+assert.match(hook, /started\.current/);
+assert.match(hook, /runMexalEventAutomation\("orders_module_open"\)/);
+assert.match(module, /useOrdersModuleAutomation/);
+assert.doesNotMatch(orders, /orders_module_open/);
+console.log("orders module automation: container mount only, sub-routes do not duplicate it");

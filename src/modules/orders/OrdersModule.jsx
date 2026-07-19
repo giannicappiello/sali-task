@@ -15,6 +15,7 @@ import {
   subscribeToOrderSyncStatus,
 } from "./services/orderSync";
 import "./orders-module.css";
+import useOrdersModuleAutomation from "./hooks/useOrdersModuleAutomation";
 
 const items = [
   { to: "/ordini/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -26,6 +27,7 @@ const items = [
 export default function OrdersModule() {
   const { loading, canAccessOrders } = useOrdersAccess();
   const [statuses, setStatuses] = useState({});
+  const automationStatus = useOrdersModuleAutomation({ ready: !loading, enabled: canAccessOrders });
 
   useEffect(() => {
     if (loading || !canAccessOrders) return undefined;
@@ -76,8 +78,10 @@ export default function OrdersModule() {
           <span>
             {runningLabels.length > 0
               ? `Sincronizzazione ${runningLabels.join(", ")}...`
+              : automationStatus === "running"
+                ? "Aggiornamento Mexal in background..."
               : hasError
-                ? "Una sincronizzazione non è riuscita"
+                ? "Aggiornamento Mexal con avvisi"
                 : "Dati sincronizzati in background"}
           </span>
         </div>

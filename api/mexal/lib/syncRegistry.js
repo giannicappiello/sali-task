@@ -10,8 +10,18 @@ export async function runRegisteredSync({ syncType, source = "manual", context =
   const definition = syncRegistry[syncType];
   if (!definition) throw new Error(`Tipo sincronizzazione non supportato: ${syncType}`);
   if (dryRun) return { success: true, syncType, dryRun: true };
-  const response = await fetchImpl(`${baseUrl}${definition.path}`, { method: "POST", headers: { "content-type": "application/json", authorization }, body: JSON.stringify({ ...definition.body, origin: source, context }) });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok || data.success === false || data.ok === false) throw new Error(data.error || `Sincronizzazione non riuscita (HTTP ${response.status}).`);
+  let body = { ...definition.body, origin: source, context };
+  let data;
+  // Products and stocks are intentionally batched.  Event/cron callers used
+  // to invoke only offset 0, leaving the central run forever "running".
+  do {
+    const response = await fetchImpl(`${baseUrl}${definition.path}`, { method: "POST", headers: { "content-type": "application/json", authorization }, body: JSON.stringify(body) });
+    data = await response.json().catch(() => ({}));
+    if (!response.ok || data.success === false || data.ok === false) throw new Error(data.error || `Sincronizzazione non riuscita (HTTP ${response.status}).`);
+    if (!["products", "stocks"].includes(syncType) || data.completato) break;
+    const next = Number(data.prossimo_offset);
+    if (!Number.isFinite(next) || next <= Number(body.offset || 0)) throw new Error("Paginazione Mexal non valida.");
+    body = { ...body, offset: next, syncRunId: data.sync_run_id };
+  } while (true);
   return { success: true, syncType, ...data };
 }

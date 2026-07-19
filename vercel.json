@@ -15,6 +15,9 @@
     },
     "api/mexal/submit-order.js": {
       "maxDuration": 300
+    },
+    "api/mexal/sync-document-series.js": {
+      "maxDuration": 300
     }
   },
   "crons": [

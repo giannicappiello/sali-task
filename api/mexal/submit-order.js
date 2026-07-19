@@ -94,9 +94,10 @@ function mexalClient() {
   };
 }
 
-function buildDocument(order, lines, kind) {
+function buildDocument(order, lines, kind, documentConfig) {
   const isOcm = kind === "OCM";
-  const series = env(isOcm ? "MEXAL_OCM_SERIE" : "MEXAL_OCX_SERIE", isOcm ? "M" : "X");
+  const series = text(isOcm ? documentConfig?.serie_ocm : documentConfig?.serie_ocx);
+  if (!series) throw new Error(`Serie ${kind} non configurata in Impostazioni > Ordini.`);
   const rows = lines
     .map((line) => ({ ...line, quantita_documento: number(isOcm ? line.quantita_ocm : line.quantita_ocx) }))
     .filter((line) => line.quantita_documento > 0);
@@ -152,10 +153,17 @@ export default async function handler(req, res) {
 
     await admin.from("ordini_testate").update({ stato_sincronizzazione: "in_corso", errore_sincronizzazione: null, ultimo_tentativo_sync: new Date().toISOString() }).eq("id", orderId);
 
+    const { data: documentConfig, error: configError } = await admin
+      .from("ordini_configurazione_documenti")
+      .select("serie_ocm,serie_ocx")
+      .eq("id", 1)
+      .single();
+    if (configError) throw configError;
+
     const client = mexalClient();
     const documents = [];
     for (const kind of ["OCM", "OCX"]) {
-      const payload = buildDocument(order, lines, kind);
+      const payload = buildDocument(order, lines, kind, documentConfig);
       if (!payload) continue;
       const startedAt = new Date().toISOString();
       try {

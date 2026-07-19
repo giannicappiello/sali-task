@@ -1,0 +1,9 @@
+1. Copia i file mantenendo i percorsi.
+2. Esegui in Supabase la migration 20260719170000_sprint_3_1_document_series.sql.
+3. Riavvia npm run dev per verificare la build locale.
+4. Esegui git add, commit e push per pubblicare la nuova API Vercel.
+5. Dopo il deploy vai in Impostazioni > Ordini.
+6. Premi "Sincronizza da Mexal".
+7. Seleziona le serie OCM e OCX e premi "Salva serie".
+
+Nota: la sincronizzazione richiede il deploy Vercel. In locale /api/mexal/sync-document-series potrebbe non essere disponibile.

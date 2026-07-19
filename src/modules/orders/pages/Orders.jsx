@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Plus, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
+import NewOrderPreparation from "../components/NewOrderPreparation";
 import { runMexalEventAutomation } from "../services/mexalEventAutomation";
 
 export default function Orders() {
@@ -21,8 +22,16 @@ export default function Orders() {
   const [search, setSearch] = useState("");
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [loading, setLoading] = useState(true);
-  const [preparing, setPreparing] = useState(false);
-  const [prepareError, setPrepareError] = useState("");
+  const [moduleSyncNotice, setModuleSyncNotice] = useState("");
+  const moduleOpenExecuted = useRef(false);
+
+  useEffect(() => {
+    if (accessLoading || !canAccessOrders || moduleOpenExecuted.current) return;
+    moduleOpenExecuted.current = true;
+    runMexalEventAutomation("orders_module_open")
+      .then((result) => setModuleSyncNotice(result.failed ? "Aggiornamento Mexal completato con avvisi: il modulo resta disponibile." : "Aggiornamento Mexal in background completato."))
+      .catch(() => setModuleSyncNotice("Aggiornamento Mexal non riuscito: puoi comunque usare il modulo Ordini."));
+  }, [accessLoading, canAccessOrders]);
 
   useEffect(() => {
     if (!accessLoading) loadOrders();
@@ -33,16 +42,6 @@ export default function Orders() {
     month,
     JSON.stringify(visibleAgents),
   ]);
-
-  async function openNewOrder(continueAnyway = false) {
-    setPreparing(true); setPrepareError("");
-    try {
-      const result = await runMexalEventAutomation("before_new_order");
-      if (result.interrupted && !continueAnyway) { setPrepareError("Una preparazione obbligatoria Mexal non è riuscita. Riprova oppure annulla."); return; }
-      navigate("/ordini/nuovo");
-    } catch (error) { setPrepareError(error.message || "Impossibile preparare il nuovo ordine."); }
-    finally { setPreparing(false); }
-  }
 
   async function loadOrders() {
     setLoading(true);
@@ -112,22 +111,14 @@ export default function Orders() {
         />
 
         {canCreateOrder && (
-          <button
-            className="orders-primary"
-            type="button"
-            onClick={openNewOrder}
-          >
-            <Plus size={18} />
-            Nuovo ordine
-          </button>
+          <NewOrderPreparation isAdmin={isAdmin} onOpen={() => navigate("/ordini/nuovo")} />
         )}
       </div>
 
-      {preparing && <div className="orders-alert">Preparazione nuovo ordine: esecuzione automazioni Mexal configurate…</div>}
-      {prepareError && <div className="orders-alert orders-alert-error">{prepareError}<button type="button" className="orders-primary" onClick={() => openNewOrder()}>Riprova</button><button type="button" onClick={() => setPrepareError("")}>Annulla</button></div>}
       {location.state?.message && (
         <div className="orders-alert orders-alert-success">{location.state.message}</div>
       )}
+      {moduleSyncNotice && <div className="orders-alert">{moduleSyncNotice}</div>}
 
       <div className="orders-panel">
         <p style={{ marginTop: 0 }}>

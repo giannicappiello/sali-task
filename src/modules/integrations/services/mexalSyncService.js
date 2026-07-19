@@ -159,6 +159,14 @@ export async function loadRunDetails(runId) {
   };
 }
 
+// These two tables belong to the older commercial-conditions pipeline, where
+// run_id is UUID.  mexal_sync_runs.id is bigint: querying them with a run id
+// such as 23 makes PostgREST cast "23" to UUID and breaks the whole dashboard.
+export async function loadRunDetailsForRun(run) {
+  if (!run?.id || run.sync_type !== "commercial_conditions") return { details: [], errors: [] };
+  return loadRunDetails(run.id);
+}
+
 export async function loadCommercialCounts() {
   const requests = [
     ["matrix", "ordini_sconti_listini"],

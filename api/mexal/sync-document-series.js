@@ -85,7 +85,7 @@ function mexalClient() {
   };
 }
 
-const SERIES_FIELDS = new Set(["serie", "numero_serie", "nr_serie", "codice_serie", "sigla", "sigla_documento", "tipo_documento", "documento", "descrizione"]);
+const SERIES_FIELDS = new Set(["serie", "numero_serie", "nr_serie", "codice_serie", "cod_serie", "sigla", "sigla_doc", "sigla_documento", "tipo_documento", "tipo_doc", "documento", "descrizione", "descrizione_serie", "des_serie", "codice"]);
 const PREFERRED_KEYS = new Set(["data", "dati", "response", "risultati", "elenco", "righe", "documenti", "serie", "items", "records", "risorse", "result", "serie_documenti", "serie-documenti"]);
 
 function isSeriesRecord(value) {
@@ -107,7 +107,9 @@ export function inspectPayload(payload) {
     Object.entries(value).forEach(([key, child]) => visit(child, path ? `${path}.${key}` : key, depth + 1));
   }
   visit(payload, "$", 0);
-  return { payload_type: Array.isArray(payload) ? "array" : payload === null ? "null" : typeof payload, root_keys: payload && typeof payload === "object" && !Array.isArray(payload) ? Object.keys(payload).slice(0, 50) : [], arrays_found: arrays.map(({ value, ...safe }) => safe), candidates: arrays };
+  const candidate_paths = arrays.filter(({ value }) => value.some(isSeriesRecord)).map(({ path }) => path);
+  const sample_shape = arrays.map(({ path, length, sample_keys }) => ({ path, length, sample_keys })).slice(0, 10);
+  return { payload_type: Array.isArray(payload) ? "array" : payload === null ? "null" : typeof payload, root_keys: payload && typeof payload === "object" && !Array.isArray(payload) ? Object.keys(payload).slice(0, 50) : [], arrays_found: arrays.map(({ value, ...safe }) => safe), candidate_paths, sample_shape, candidates: arrays };
 }
 
 export function extractRows(payload) {
@@ -159,7 +161,8 @@ export default async function handler(req, res) {
     if (!rows.length) {
       const error = new Error("Mexal non ha restituito serie documenti riconoscibili.");
       error.details = "La risposta JSON è valida ma non contiene serie documenti nei campi supportati.";
-      error.diagnostics = { http_status: response.status, payload_type: payloadInspection.payload_type, root_keys: payloadInspection.root_keys, arrays_found: payloadInspection.arrays_found };
+      error.diagnostics = { http_status: response.status, payload_type: payloadInspection.payload_type, root_keys: payloadInspection.root_keys, arrays_found: payloadInspection.arrays_found, candidate_paths: payloadInspection.candidate_paths, sample_shape: payloadInspection.sample_shape };
+      await admin.from("mexal_sync_runs").update({ metadata: { endpoint: "dati-generali/serie-documenti", diagnostics: error.diagnostics } }).eq("id", runId);
       throw error;
     }
 

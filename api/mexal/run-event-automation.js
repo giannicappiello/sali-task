@@ -22,13 +22,13 @@ export async function runMexalEventAutomation({ admin, req, eventKey, context = 
   if (error) throw error;
   const results = []; let interrupted = false; let previousFailed = false;
   for (const automation of automations || []) {
-    if (!applicable(automation, context) || (previousFailed && !automation.run_if_previous_failed)) { results.push({ id: automation.id, syncType: automation.sync_type, skipped: true }); continue; }
+    if (!applicable(automation, context) || (previousFailed && !automation.run_if_previous_failed)) { results.push({ id: automation.id, syncType: automation.sync_type, skipped: true, allow_continue_on_error: automation.allow_continue_on_error }); continue; }
     try {
       const payload = await runRegisteredSync({ syncType: automation.sync_type, source: "event", context: { ...context, eventKey }, dryRun, authorization: dryRun ? "" : `Bearer ${required("CRON_SECRET")}`, baseUrl: baseUrl(req) });
-      results.push({ id: automation.id, syncType: automation.sync_type, success: true, runId: payload.runId || payload.sync_run_id || null, data: payload });
+      results.push({ id: automation.id, syncType: automation.sync_type, success: true, allow_continue_on_error: automation.allow_continue_on_error, runId: payload.runId || payload.sync_run_id || null, data: payload });
     } catch (cause) {
       previousFailed = true;
-      results.push({ id: automation.id, syncType: automation.sync_type, success: false, error: cause.message });
+      results.push({ id: automation.id, syncType: automation.sync_type, success: false, error: cause.message, allow_continue_on_error: automation.allow_continue_on_error });
       if (automation.blocking && !automation.allow_continue_on_error) { interrupted = true; break; }
     }
   }

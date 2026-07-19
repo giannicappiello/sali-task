@@ -29,7 +29,7 @@ import {
   invokeStocksSync,
   loadMexalEntityCounts,
   loadMexalRuns,
-  loadRunDetails,
+  loadRunDetailsForRun,
   loadSyncRuns,
 } from "../services/mexalSyncService";
 
@@ -84,7 +84,7 @@ export default function MexalDashboard() {
 
     if (nextSelected) {
       setSelectedRun(nextSelected);
-      const runLog = await loadRunDetails(nextSelected.id);
+      const runLog = await loadRunDetailsForRun(nextSelected);
       setLogItems([
         ...runLog.details.map((item) => ({ ...item, title: item.entity_type })),
         ...runLog.errors.map((item) => ({
@@ -117,7 +117,7 @@ export default function MexalDashboard() {
   async function selectRun(run) {
     setSelectedRun(run);
     try {
-      const runLog = await loadRunDetails(run.id);
+      const runLog = await loadRunDetailsForRun(run);
       setLogItems([
         ...runLog.details.map((item) => ({ ...item, title: item.entity_type })),
         ...runLog.errors.map((item) => ({ ...item, status: "error", title: item.entity_type || "Errore", message: item.error_message })),

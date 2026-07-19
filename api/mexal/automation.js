@@ -5,7 +5,7 @@ import commercialConditionsHandler from "../../server/mexal/sync-commercial-cond
 import documentSeriesHandler from "../../server/mexal/sync-document-series.js";
 import stopHandler from "../../server/mexal/stop-sync-run.js";
 import { requireAdmin } from "./lib/auth.js";
-import { findRunningSync } from "./lib/syncRuns.js";
+import { completeIdempotentSync, findRunningSync, reserveIdempotentSync } from "./lib/syncRuns.js";
 
 const RUN_HANDLERS = Object.freeze({
   clients: clientsHandler,
@@ -149,8 +149,7 @@ function sendHandlerResponse(res, phase, execution) {
   return sendSuccess(res, response.statusCode, payload);
 }
 
-async function syncAll(req, res, body) {
-  const admin = await createAdmin(req);
+async function syncAll(req, res, body, admin) {
 
   const completedPhases = [];
   const results = [];
@@ -193,8 +192,8 @@ async function syncAll(req, res, body) {
   });
 }
 
-async function startSync(req, res, body, syncType, runHandler) {
-  const running = await findRunningSync(await createAdmin(req), syncType);
+async function startSync(req, res, body, syncType, runHandler, admin) {
+  const running = await findRunningSync(admin.supabase, syncType);
   // A batch can continue only the active run of its own synchronization type.
   const isContinuation = ["products", "stocks"].includes(syncType)
     && body.syncRunId
@@ -204,6 +203,49 @@ async function startSync(req, res, body, syncType, runHandler) {
 
   req.body = runPayload(body, syncType);
   return sendHandlerResponse(res, syncType, await executeHandler(req, runHandler));
+}
+
+function idempotencyKey(body) {
+  if (body.idempotencyKey == null) return null;
+  const key = String(body.idempotencyKey).trim();
+  if (!key || key.length > 255) throw Object.assign(new Error("idempotencyKey non valida."), { status: 400 });
+  return key;
+}
+
+function syncRunId(payload) {
+  const id = payload?.sync_run_id || payload?.runId || payload?.details?.syncRunId;
+  return id == null ? null : Number(id);
+}
+
+async function executeIdempotently(req, res, body, syncType, operation) {
+  const key = idempotencyKey(body);
+  const admin = await createAdmin(req);
+  if (!key) return operation(res, admin);
+
+  const reservation = await reserveIdempotentSync(admin.supabase, { idempotencyKey: key, syncType, userId: admin.authUserId });
+  if (reservation.duplicate) {
+    if (reservation.response) return res.status(200).json(reservation.response);
+    return res.status(200).json({
+      success: true,
+      status: "running",
+      syncRunId: reservation.sync_run_id == null ? null : String(reservation.sync_run_id),
+    });
+  }
+
+  const captured = createResponseCapture();
+  try {
+    await operation(captured, admin);
+  } catch (error) {
+    sendFailure(captured, Number(error.status || 500), syncType, error.message || "Errore automazione Mexal.", error.details || {});
+  }
+  await completeIdempotentSync(admin.supabase, {
+    idempotencyKey: key,
+    syncType,
+    userId: admin.authUserId,
+    syncRunId: syncRunId(captured.payload),
+    response: captured.payload,
+  });
+  return res.status(captured.statusCode).json(captured.payload);
 }
 
 async function createAdmin(req) {
@@ -254,14 +296,14 @@ export default async function handler(req, res) {
         const syncType = body.syncType || body.sync_type;
         const runHandler = RUN_HANDLERS[syncType];
         if (!runHandler) return sendFailure(res, 400, syncType || "run_now", "Tipo sincronizzazione non supportato.");
-        return startSync(req, res, body, syncType, runHandler);
+        return executeIdempotently(req, res, body, syncType, (response, admin) => startSync(req, response, body, syncType, runHandler, admin));
       }
       case "stop": {
         req.body = { runId: body.runId };
         return sendHandlerResponse(res, "stop", await executeHandler(req, stopHandler));
       }
       case "sync_all":
-        return await syncAll(req, res, body);
+        return executeIdempotently(req, res, body, "sync_all", (response, admin) => syncAll(req, response, body, admin.supabase));
       case "dispatch": {
         if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return sendFailure(res, 401, "dispatch", "Cron non autorizzato.");
         const protocol = String(req.headers["x-forwarded-proto"] || "https").split(",")[0].trim();

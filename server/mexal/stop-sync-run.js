@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { requireAdmin } from "../../api/mexal/lib/auth.js";
 
 const STOPPED_MESSAGE = "Sincronizzazione arrestata manualmente dall’amministratore.";
 
@@ -6,19 +7,6 @@ function requireEnv(name) {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`Variabile Vercel mancante: ${name}`);
   return value;
-}
-
-async function requireAdmin(req, supabase) {
-  const authorization = req.headers.authorization || "";
-  if (!authorization.startsWith("Bearer ")) throw Object.assign(new Error("Sessione mancante."), { status: 401 });
-  const { data: { user }, error: authError } = await supabase.auth.getUser(authorization.slice(7));
-  if (authError || !user) throw Object.assign(new Error("Sessione non valida."), { status: 401 });
-  const { data: profile, error } = await supabase.from("utenti").select("id,attivo,ruoli(nome,livello)").eq("auth_user_id", user.id).maybeSingle();
-  const role = String(profile?.ruoli?.nome || "").toLowerCase();
-  if (error || !profile || profile.attivo === false || !(Number(profile.ruoli?.livello || 0) >= 80 || ["admin", "administrator", "amministratore", "super admin", "direzione"].includes(role))) {
-    throw Object.assign(new Error("Operazione riservata agli amministratori."), { status: 403 });
-  }
-  return { id: profile.id, authUserId: user.id };
 }
 
 export default async function handler(req, res) {

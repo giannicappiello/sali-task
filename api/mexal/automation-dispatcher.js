@@ -31,13 +31,13 @@ export default async function handler(req, res) {
         actions: chain,
         executeAction: async (action, order) => {
           const key = `${run.id}:${action.type}:${order}`;
-          const { data: existing } = await admin.from("mexal_automation_action_runs").select("id,status").eq("idempotency_key", key).maybeSingle();
-          if (existing?.status === "completed") return { status: "skipped", result: { reason: "idempotent" } };
-          await admin.from("mexal_automation_action_runs").insert({ automation_run_id: run.id, action_type: action.type, action_order: order, status: "running", started_at: new Date().toISOString(), idempotency_key: key });
           if (action.type === "sync_all") {
             const outcome = await runSyncAll({ db: admin, automationRunId: run.id, authorization: `Bearer ${process.env.CRON_SECRET}`, baseUrl: baseUrl(req), source: "automation", isStopped: async () => { const { data } = await admin.from("mexal_automation_runs").select("status").eq("id", run.id).single(); return data?.status === "stopped"; } });
             return { status: outcome.status, result: outcome, error: outcome.error };
           }
+          const { data: existing } = await admin.from("mexal_automation_action_runs").select("id,status").eq("idempotency_key", key).maybeSingle();
+          if (existing?.status === "completed") return { status: "skipped", result: { reason: "idempotent" } };
+          await admin.from("mexal_automation_action_runs").insert({ automation_run_id: run.id, action_type: action.type, action_order: order, status: "running", started_at: new Date().toISOString(), idempotency_key: key });
           if (!SUPPORTED_SYNCS.has(action.type)) {
             const result = { status: "skipped", result: { reason: "Configurazione incompleta: azione non collegata a un endpoint Mexal verificato." } };
             await admin.from("mexal_automation_action_runs").update({ status: result.status, completed_at: new Date().toISOString(), result: result.result }).eq("idempotency_key", key);

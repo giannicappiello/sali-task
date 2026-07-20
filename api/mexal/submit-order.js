@@ -18,6 +18,25 @@ function documentOptions(config, kind) {
 
 function extractNumber(result) { return text(result?.numero || result?.numero_documento || result?.documento?.numero || result?.id || result?.risorsa); }
 function token() { return crypto.randomUUID(); }
+function diagnosticHeaders(headers) {
+  return Object.fromEntries(Object.entries(headers || {}).map(([name, value]) => [name, /^authorization$/i.test(name) ? "[REDACTED]" : value]));
+}
+function logMexalOrderDiagnostic({ orderId, kind, diagnostic }) {
+  const entry = {
+    event: "mexal_order_document_http",
+    orderId,
+    documentType: kind,
+    ...diagnostic,
+    headers: diagnostic.headers ? diagnosticHeaders(diagnostic.headers) : undefined,
+  };
+  // Keep the exact JSON body and every date-like key in the function logs. The
+  // Authorization value is redacted because it is a reusable Mexal credential.
+  if (diagnostic.phase === "request") {
+    const payload = JSON.parse(diagnostic.body);
+    entry.dateFields = Object.fromEntries(Object.entries(payload).filter(([key]) => /data|date/i.test(key)));
+  }
+  console.info("Mexal order document HTTP diagnostic", entry);
+}
 async function stopRequested(admin, orderId, syncToken) {
   const { data, error } = await admin.from("ordini_testate").select("arresto_sync_richiesto,stato_sincronizzazione,sync_token").eq("id", orderId).single();
   if (error) throw error;
@@ -67,13 +86,15 @@ export default async function handler(req, res) {
         } catch (error) { const outcome = error.reconciliationState ? { stato: error.reconciliationState, errore: error.message } : reconciliationFailure(error, existingDocument.cod_modulo); failures.push({ kind, error: outcome?.errore || error.message }); await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, stato: outcome?.stato || "temporary_error", sigla: "OC", serie: existingDocument.serie, numero: existingDocument.numero, cod_modulo: existingDocument.cod_modulo, tentativi: Number(existingDocument.tentativi || 0) + 1, errore: outcome?.errore || error.message, aggiornato_il: new Date().toISOString() }); continue; }
       }
       const payload = buildMexalOrderDocument(order, kind, classified[kind], documentOptions(documentConfig, kind)); const startedAt = new Date().toISOString();
-      try { const result = await mexal.postJson("/documenti/ordini-clienti", payload); const numero = extractNumber(result); const options = documentOptions(documentConfig, kind); documents.push({ kind, numero }); await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, stato: "created", sigla: "OC", serie: options.serie, numero, cod_modulo: ORDER_DOCUMENTS[kind]?.moduleCode, tentativi: Number(savedDocument?.tentativi || 0) + 1, errore: null, risposta: result, creato_il: new Date().toISOString(), aggiornato_il: new Date().toISOString() }); await admin.from("ordini_sync_mexal_log").insert({ ordine_id: orderId, tipo_documento: kind, stato: "successo", payload, risposta: result, iniziato_il: startedAt, completato_il: new Date().toISOString() }); await heartbeat(admin, orderId, syncToken); }
+      try { const result = await mexal.postJson("/documenti/ordini-clienti", payload, { onDiagnostic: (diagnostic) => logMexalOrderDiagnostic({ orderId, kind, diagnostic }) }); const numero = extractNumber(result); const options = documentOptions(documentConfig, kind); documents.push({ kind, numero }); await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, stato: "created", sigla: "OC", serie: options.serie, numero, cod_modulo: ORDER_DOCUMENTS[kind]?.moduleCode, tentativi: Number(savedDocument?.tentativi || 0) + 1, errore: null, risposta: result, creato_il: new Date().toISOString(), aggiornato_il: new Date().toISOString() }); await admin.from("ordini_sync_mexal_log").insert({ ordine_id: orderId, tipo_documento: kind, stato: "successo", payload, risposta: result, iniziato_il: startedAt, completato_il: new Date().toISOString() }); await heartbeat(admin, orderId, syncToken); }
       catch (error) { failures.push({ kind, error: error.message }); console.error("Mexal order document failed", { orderId, kind, error: error.message }); await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, stato: "failed", sigla: "OC", serie: documentOptions(documentConfig, kind).serie, cod_modulo: ORDER_DOCUMENTS[kind]?.moduleCode, tentativi: Number(savedDocument?.tentativi || 0) + 1, errore: error.message, aggiornato_il: new Date().toISOString() }); await admin.from("ordini_sync_mexal_log").insert({ ordine_id: orderId, tipo_documento: kind, stato: "errore", payload, errore: error.message, iniziato_il: startedAt, completato_il: new Date().toISOString() }); }
     }
     const updatedNumbers = Object.fromEntries(documents.map(({ kind, numero }) => [`numero_${kind.toLowerCase()}`, numero || order[`numero_${kind.toLowerCase()}`] || null]));
     const stopped = await stopRequested(admin, orderId, syncToken);
     const completed = failures.length === 0 && !stopped;
-    await admin.from("ordini_testate").update({ stato: "confermato", stato_sincronizzazione: stopped ? "arrestato" : completed ? "completato" : "errore", sincronizzato_mexal_il: completed ? new Date().toISOString() : null, errore_sincronizzazione: stopped ? "Sincronizzazione arrestata; eventuali documenti già ricevuti da Mexal sono stati conservati." : failures.map((item) => `${item.kind}: ${item.error}`).join(" | ") || null, sync_token: null, ...updatedNumbers }).eq("id", orderId).eq("sync_token", syncToken);
+    const { data: finalizedOrder, error: finalizeOrderError } = await admin.from("ordini_testate").update({ stato: "confermato", stato_sincronizzazione: stopped ? "arrestato" : completed ? "completato" : "errore", sincronizzato_mexal_il: completed ? new Date().toISOString() : null, errore_sincronizzazione: stopped ? "Sincronizzazione arrestata; eventuali documenti già ricevuti da Mexal sono stati conservati." : failures.map((item) => `${item.kind}: ${item.error}`).join(" | ") || null, sync_token: null, ...updatedNumbers }).eq("id", orderId).eq("sync_token", syncToken).select("id").maybeSingle();
+    if (finalizeOrderError) throw finalizeOrderError;
+    if (!finalizedOrder) throw new Error("Aggiornamento finale della sincronizzazione ordine non applicato: sync_token non corrispondente.");
     await admin.from("mexal_sync_runs").update({ status: completed ? "completed" : "completed_with_errors", completed_at: new Date().toISOString(), processed: 1, updated: documents.length, failed: failures.length, metadata: { source: "submit-order", order_id: orderId, documents, failures } }).eq("id", runId);
     console.info("Mexal order documents completed", { orderId, documents: documents.map(({ kind, numero }) => ({ kind, numero })), failures: failures.map(({ kind }) => kind) });
     if (stopped) return res.status(200).json({ stopped: true, documents, ...updatedNumbers });

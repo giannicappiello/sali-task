@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { buildMexalOrderDocument, classifyOrderLines, formatMexalOrderDate, isImportArticle } from "../server/mexal/order-documents.js";
 
 const lines = [
@@ -23,4 +24,11 @@ assert.deepEqual(formatMexalOrderDate("2026-07-20", "typed-array-dd/mm/yyyy"), [
 assert.throws(() => formatMexalOrderDate("20/07/2026"), /YYYY-MM-DD/, "dates must use strict ISO input syntax");
 assert.throws(() => formatMexalOrderDate("2026-02-29"), /YYYY-MM-DD/, "dates must be valid calendar dates");
 assert.throws(() => formatMexalOrderDate("2026-07-20", "invalid"), /MEXAL_ORDER_DATE_FORMAT/, "unsupported date formats are rejected");
+const submitOrderSource = await readFile("api/mexal/submit-order.js", "utf8");
+const mexalClientSource = await readFile("server/mexal/sync-products.js", "utf8");
+assert.match(submitOrderSource, /logMexalOrderDiagnostic[\s\S]*?dateFields[\s\S]*?\/data\|date\/i/, "order POST diagnostics highlight every date-like payload field");
+assert.match(submitOrderSource, /postJson\("\/documenti\/ordini-clienti", payload, \{ onDiagnostic:/, "order submission forwards HTTP diagnostics from the Mexal client");
+assert.match(submitOrderSource, /finalizeOrderError[\s\S]*?if \(!finalizedOrder\) throw/, "a failed final order-state update is no longer silently ignored");
+assert.match(mexalClientSource, /onDiagnostic\?\.\(\{ phase: "request", url, method: "POST", headers: requestHeaders, body \}\)/, "the exact serialized request is logged immediately before POST");
+assert.match(mexalClientSource, /onDiagnostic\?\.\(\{ phase: "response", url, method: "POST", status: response\.status, headers: response\.headers, body: response\.body \}\)/, "the full Mexal HTTP response is logged before status parsing");
 console.log("mexal order documents: OCI classification, write payload, OCM/OCX split, and date formatting verified");

@@ -1,10 +1,43 @@
 /* global process */
 import { createClient } from "@supabase/supabase-js";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { buildMexalClient } from "../server/mexal/sync-products.js";
 import { ORDER_DOCUMENTS, buildMexalOrderDocument, classifyOrderLines } from "../server/mexal/order-documents.js";
 import { compareMexalPayloads } from "./mexal-diagnose-order.mjs";
+
+function loadEnvironmentFile(filename) {
+  const filePath = resolve(filename);
+  if (!existsSync(filePath)) return;
+
+  const content = readFileSync(filePath, "utf8");
+
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+
+    const separatorIndex = line.indexOf("=");
+    if (separatorIndex <= 0) continue;
+
+    const name = line.slice(0, separatorIndex).trim();
+    let value = line.slice(separatorIndex + 1).trim();
+
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+
+    if (!process.env[name]) process.env[name] = value;
+  }
+}
+
+function loadEnvironment() {
+  loadEnvironmentFile(".env");
+  loadEnvironmentFile(".env.local");
+
+  process.env.SUPABASE_URL ||= process.env.VITE_SUPABASE_URL;
+  process.env.SUPABASE_ANON_KEY ||= process.env.VITE_SUPABASE_ANON_KEY;
+}
 
 function required(name) {
   const value = String(process.env[name] || "").trim();
@@ -16,7 +49,22 @@ function text(value) {
   return String(value ?? "").trim();
 }
 
+function getSupabaseKey() {
+  const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+  if (serviceRoleKey) return serviceRoleKey;
+
+  const anonKey = String(process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "").trim();
+  if (!anonKey) {
+    throw new Error("Variabile ambiente mancante: SUPABASE_SERVICE_ROLE_KEY oppure VITE_SUPABASE_ANON_KEY");
+  }
+
+  console.warn("ATTENZIONE: viene usata la chiave anon. Se Supabase blocca la lettura per RLS, aggiungi SUPABASE_SERVICE_ROLE_KEY in .env.local.");
+  return anonKey;
+}
+
 async function run() {
+  loadEnvironment();
+
   const [orderId, rawKind, rawSigla, rawSerie, rawNumero] = process.argv.slice(2);
   const kind = text(rawKind).toUpperCase();
   const sigla = text(rawSigla).toUpperCase();
@@ -27,7 +75,7 @@ async function run() {
     throw new Error("Uso: npm run mexal:diagnose-order -- <orderId> <OCM|OCX|OCI> <sigla> <serie> <numero>");
   }
 
-  const supabase = createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), {
+  const supabase = createClient(required("SUPABASE_URL"), getSupabaseKey(), {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
@@ -37,15 +85,17 @@ async function run() {
     supabase.from("ordini_configurazione_documenti").select("serie_ocm,serie_ocx,serie_oci,id_magazzino").eq("id", 1).maybeSingle(),
   ]);
 
-  if (orderError) throw orderError;
-  if (linesError) throw linesError;
-  if (configError) throw configError;
+  if (orderError) throw new Error(`Lettura ordine Supabase fallita: ${orderError.message}`);
+  if (linesError) throw new Error(`Lettura righe ordine Supabase fallita: ${linesError.message}`);
+  if (configError) throw new Error(`Lettura configurazione documenti fallita: ${configError.message}`);
 
   const options = {
     serie: config?.[`serie_${kind.toLowerCase()}`] || 1,
     magazzino: config?.id_magazzino || 5,
   };
-  const postPayload = buildMexalOrderDocument(order, kind, classifyOrderLines(lines)[kind], options);
+
+  const classifiedLines = classifyOrderLines(lines || []);
+  const postPayload = buildMexalOrderDocument(order, kind, classifiedLines[kind] || [], options);
   if (!postPayload) throw new Error(`L'ordine non contiene righe per ${kind}.`);
 
   const resource = `/documenti/ordini-clienti/${encodeURIComponent(sigla)}+${encodeURIComponent(serie)}+${encodeURIComponent(numero)}`;
@@ -53,6 +103,8 @@ async function run() {
   const comparison = compareMexalPayloads(getPayload, postPayload);
   const result = {
     generated_at: new Date().toISOString(),
+    order_id: orderId,
+    document_kind: kind,
     resource,
     get_payload: getPayload,
     post_payload: postPayload,

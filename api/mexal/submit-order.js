@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { buildMexalClient, verifyUser } from "../../server/mexal/sync-products.js";
-import { ORDER_DOCUMENTS, buildMexalOrderDocument, classifyOrderLines } from "../../server/mexal/order-documents.js";
+import { ORDER_DOCUMENTS, buildMexalOrderDocument, classifyOrderLines, reconciliationFailure } from "../../server/mexal/order-documents.js";
 
 function env(name) { return String(process.env[name] ?? "").trim(); }
 function required(name) { const value = env(name); if (!value) throw new Error(`Variabile Vercel mancante: ${name}`); return value; }
@@ -41,11 +41,11 @@ export default async function handler(req, res) {
       if (savedDocument?.numero) {
         try {
           const reconciled = await mexal.getJson(`/documenti/ordini-clienti/OC+${encodeURIComponent(savedDocument.serie)}+${encodeURIComponent(savedDocument.numero)}`);
-          const actualModule = text(reconciled?.cod_modulo || reconciled?.dati?.cod_modulo || reconciled?.documento?.cod_modulo);
-          if (actualModule !== savedDocument.cod_modulo) throw new Error(`Riconciliazione ${kind}: cod_modulo Mexal ${actualModule || "mancante"}.`);
+          const outcome = reconciliationFailure(null, savedDocument.cod_modulo, reconciled);
+          if (outcome) throw Object.assign(new Error(`Riconciliazione ${kind}: ${outcome.errore}`), { reconciliationState: outcome.stato });
           await admin.from("ordini_documenti_mexal").update({ stato: "reconciled", verificato_il: new Date().toISOString(), errore: null, aggiornato_il: new Date().toISOString() }).eq("ordine_id", orderId).eq("tipo_documento", kind);
           documents.push({ kind, numero: savedDocument.numero, reconciled: true }); continue;
-        } catch (error) { failures.push({ kind, error: error.message }); await admin.from("ordini_documenti_mexal").update({ stato: "failed", errore: error.message, tentativi: Number(savedDocument.tentativi || 0) + 1, aggiornato_il: new Date().toISOString() }).eq("ordine_id", orderId).eq("tipo_documento", kind); continue; }
+        } catch (error) { const outcome = error.reconciliationState ? { stato: error.reconciliationState, errore: error.message } : reconciliationFailure(error, savedDocument.cod_modulo); failures.push({ kind, error: outcome?.errore || error.message }); await admin.from("ordini_documenti_mexal").update({ stato: outcome?.stato || "temporary_error", errore: outcome?.errore || error.message, tentativi: Number(savedDocument.tentativi || 0) + 1, aggiornato_il: new Date().toISOString() }).eq("ordine_id", orderId).eq("tipo_documento", kind); continue; }
       }
       if (done.has(kind)) { documents.push({ kind, numero: order[`numero_${kind.toLowerCase()}`], skipped: true }); continue; }
       const payload = buildMexalOrderDocument(order, kind, classified[kind], documentOptions(documentConfig, kind)); const startedAt = new Date().toISOString();

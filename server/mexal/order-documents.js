@@ -7,6 +7,16 @@ export const ORDER_DOCUMENTS = Object.freeze({
 export function normalizeArticleCode(value) { return String(value ?? "").trim().toUpperCase(); }
 export function isImportArticle(line) { return normalizeArticleCode(line?.codice_articolo ?? line?.productCode).startsWith("IMP"); }
 
+export function reconciliationFailure(error, expectedModule, response) {
+  const status = Number(error?.status || error?.httpStatus || 0);
+  if (status === 401 || status === 403) return { stato: "auth_error", errore: error.message };
+  if (status === 404) return { stato: "missing", errore: error.message };
+  if (status >= 500 || /timeout|timed? out|econnreset|eai_again/i.test(String(error?.message || ""))) return { stato: "temporary_error", errore: error.message };
+  const actualModule = text(response?.cod_modulo || response?.dati?.cod_modulo || response?.documento?.cod_modulo);
+  if (response && actualModule !== expectedModule) return { stato: "mismatch", errore: `cod_modulo Mexal ${actualModule || "mancante"}.` };
+  return null;
+}
+
 export function classifyOrderLines(lines) {
   return (lines || []).reduce((documents, line) => {
     if (isImportArticle(line)) { documents.OCI.push({ ...line, quantita_documento: Number(line.quantita) || 0 }); return documents; }

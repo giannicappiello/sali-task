@@ -139,11 +139,13 @@ function parseJsonResponse(response, label) {
   }
 
   if (response.status < 200 || response.status >= 300) {
-    throw new Error(
+    const error = new Error(
       parsed?.error?.["response-detail"] ||
         parsed?.error?.["response-message"] ||
         `${label}: HTTP ${response.status}`
     );
+    error.status = response.status;
+    throw error;
   }
 
   return parsed;

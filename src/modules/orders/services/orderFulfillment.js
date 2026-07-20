@@ -37,7 +37,9 @@ export function submitOrderToMexal(orderId) {
   return postJson("/api/mexal/submit-order", { orderId });
 }
 
-export function stopOrderSync(orderId) { return postJson(`/api/mexal/orders/${orderId}/stop-sync`, { orderId }); }
+export function stopOrderSync(orderId) {
+  return postJson("/api/mexal/orders/stop-sync", { orderId });
+}
 export function deleteOrder(orderId) { return postJson("/api/mexal/orders/delete", { orderId }); }
 export function updateOrder(orderId, testata, righe) { return postJson("/api/mexal/orders/update", { orderId, testata, righe }); }
 export function recoverOrderSync(orderId) { return postJson("/api/mexal/orders/recover-sync", { orderId }); }

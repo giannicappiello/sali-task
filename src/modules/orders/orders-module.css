@@ -2,6 +2,9 @@
 .orders-sync-summary{background:#eff6ff;border-color:#bfdbfe;color:#1e3a8a}.spin{animation:orders-spin 1s linear infinite}@keyframes orders-spin{to{transform:rotate(360deg)}}
 .orders-danger{display:inline-flex;align-items:center;gap:8px;border:0;border-radius:10px;padding:11px 15px;background:#b91c1c;color:#fff;cursor:pointer}.orders-danger:disabled{opacity:.55;cursor:not-allowed}
 
+/* Dashboard ordini */
+.orders-dashboard-list{overflow:hidden;border:1px solid #e2e8f0;border-radius:16px;background:#fff}.orders-dashboard-list-header{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px 20px;border-bottom:1px solid #e2e8f0}.orders-dashboard-brand{display:flex;align-items:center;gap:12px}.orders-dashboard-brand img{width:42px;height:42px;border-radius:12px;object-fit:cover}.orders-dashboard-brand p{margin:0 0 2px;color:#64748b;font-size:13px}.orders-dashboard-brand h2{margin:0;font-size:19px}.orders-dashboard-search{flex:0 1 370px;min-width:220px}.orders-dashboard-table-wrap{overflow:auto}.orders-dashboard-table th,.orders-dashboard-table td{padding:14px 20px}.orders-dashboard-table td:last-child{width:1%;color:#64748b}.orders-dashboard-empty{margin:0;padding:26px 20px;color:#64748b;text-align:center}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}@media(max-width:700px){.orders-dashboard-list-header{align-items:stretch;flex-direction:column}.orders-dashboard-search{flex:auto;min-width:0}.orders-dashboard-table th,.orders-dashboard-table td{padding:12px 14px}}
+
 /* Elenco clienti: area scorrevole con barra orizzontale sempre raggiungibile. */
 .orders-customers-panel{padding-bottom:12px}
 .orders-customers-table-wrap{max-height:calc(100vh - 330px);min-height:260px;overflow:auto;scrollbar-gutter:stable both-edges}

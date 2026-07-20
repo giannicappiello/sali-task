@@ -82,13 +82,16 @@ export function downloadOrderPdf(order, lines) {
 
   autoTable(doc, {
     startY: 65,
-    head: [["Codice", "Descrizione", "Q.tà", "Sconto", "Netto", "Totale", "Doc."]],
+    head: [["Codice", "Descrizione", "Q.tà", "Listino", "Sconto", "Netto", "Imponibile", "IVA", "Totale", "Doc."]],
     body: lines.map((line) => [
       line.codice_articolo,
       line.descrizione,
       Number(line.quantita || 0).toLocaleString("it-IT"),
-      [line.sconto_commerciale, line.sconto_pagamento].filter(Boolean).join(" + ") || "-",
+      money(line.prezzo_listino),
+      line.sconto_commerciale || "-",
       money(line.prezzo_netto),
+      money(line.imponibile_riga),
+      money(line.iva_riga),
       money(line.totale_riga),
       Number(line.quantita_ocx || 0) > 0 && Number(line.quantita_ocm || 0) > 0
         ? "OCM/OCX"
@@ -100,11 +103,13 @@ export function downloadOrderPdf(order, lines) {
 
   const endY = doc.lastAutoTable?.finalY || 80;
   doc.setFontSize(11);
-  doc.text(`Totale imponibile: ${money(order.totale)}`, 14, endY + 10);
+  doc.text(`Totale imponibile: ${money(order.totale_imponibile ?? order.totale)}`, 14, endY + 10);
+  doc.text(`Totale IVA: ${money(order.totale_iva)}`, 14, endY + 16);
+  doc.text(`Totale documento: ${money(order.totale_documento ?? order.totale)}`, 14, endY + 22);
   if (order.commenti) {
     doc.setFontSize(9);
-    doc.text("Note:", 14, endY + 19);
-    doc.text(doc.splitTextToSize(order.commenti, 180), 14, endY + 25);
+    doc.text("Note:", 14, endY + 31);
+    doc.text(doc.splitTextToSize(order.commenti, 180), 14, endY + 37);
   }
 
   doc.save(`ordine-${order.numero_ordine || order.id}.pdf`);

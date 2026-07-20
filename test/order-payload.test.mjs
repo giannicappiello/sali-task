@@ -25,6 +25,8 @@ const insertPayload = buildNewOrderInsertPayload({
   paymentDescription: () => "non usato",
   comments: "  consegna mattina  ",
   total: 123.45,
+  taxableTotal: 101.19,
+  vatTotal: 22.26,
 });
 
 assert.equal(insertPayload.data_ordine, "2026-07-19", "mantiene la data sorgente scrivibile");
@@ -40,6 +42,9 @@ assert.deepEqual(insertPayload, {
   indirizzo_spedizione: "Via Roma 1 20100 Milano MI",
   commenti: "consegna mattina",
   totale: 123.45,
+  totale_imponibile: 101.19,
+  totale_iva: 22.26,
+  totale_documento: 123.45,
 }, "conserva tutti i campi necessari dell'ordine");
 assert.equal("mese_ordine" in insertPayload, false, "l'insert non invia la colonna generated");
 

@@ -9,6 +9,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "test:mexal-economics": "node --test server/mexal/order-economics.test.js",
     "mexal:diagnose-order": "node scripts/mexal-diagnose-order-cli.mjs"
   },
   "dependencies": {

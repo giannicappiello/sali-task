@@ -40,7 +40,7 @@ export function submitOrderToMexal(orderId, { force = false } = {}) {
 export function checkOrderAvailability(lines) {
   return postJson("/api/mexal/orders/check-availability", {
     lines: lines.map((line) => ({
-      productCode: String(line.codice_articolo || "").replace(/\s+/g, ""),
+      productCode: String(line.codice_articolo || "").trim(),
       quantity: Number(line.quantita),
     })),
   });

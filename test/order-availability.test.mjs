@@ -14,7 +14,7 @@ assert.throws(() => normalizeLines([]), /obbligatorio/);
 assert.throws(() => normalizeLines([{ productCode: "IT1", quantity: 0 }]), /Quantità non valida/);
 assert.throws(() => normalizeLines([{ quantity: 1 }]), /Codice prodotto obbligatorio/);
 assert.throws(() => normalizeLines(Array.from({ length: MAX_ORDER_LINES + 1 }, () => ({ productCode: "IT1", quantity: 1 }))), /al massimo/);
-assert.deepEqual(normalizeLines([{ codice_articolo: " it 001 ", quantita: 2 }, { productCode: "IT001", quantity: 3 }]), [{ productCode: "IT001", requestedQuantity: 5 }]);
+assert.deepEqual(normalizeLines([{ codice_articolo: " it001 ", quantita: 2 }, { productCode: "IT001", quantity: 3 }]), [{ productCode: "IT001", requestedQuantity: 5 }]);
 
 const article = { codice: "IT001", qta_inventario: 8, qta_carico: 0, qta_scarico: 0, ord_cli_e: 2 };
 assert.deepEqual(availabilityLine("IT001", 10, article), { productCode: "IT001", requestedQuantity: 10, availableQuantity: 6, confirmedQuantity: 6, missingQuantity: 4, status: "partial", message: null });
@@ -27,7 +27,7 @@ let active = 0; let peak = 0;
 await mapWithConcurrency(Array.from({ length: 20 }, (_, index) => index), AVAILABILITY_CONCURRENCY, async (value) => { active += 1; peak = Math.max(peak, active); await new Promise((resolve) => setTimeout(resolve, 2)); active -= 1; return value; });
 assert.ok(peak <= AVAILABILITY_CONCURRENCY && peak > 1, "le richieste sono limitate ma concorrenti");
 
-assert.deepEqual(buildAvailabilityPreview([{ codice_articolo: "IT001", descrizione: "Articolo" }], [{ productCode: "IT001", requestedQuantity: 10, confirmedQuantity: 6, missingQuantity: 4 }]), { ocm: [{ productCode: "IT001", description: "Articolo", requestedQuantity: 10, quantity: 6 }], ocx: [{ productCode: "IT001", description: "Articolo", requestedQuantity: 10, quantity: 4 }] });
+assert.deepEqual(buildAvailabilityPreview([{ codice_articolo: "IT001", descrizione: "Articolo" }], [{ productCode: "IT001", requestedQuantity: 10, confirmedQuantity: 6, missingQuantity: 4 }]), { ocm: [{ productCode: "IT001", description: "Articolo", requestedQuantity: 10, quantity: 6 }], ocx: [{ productCode: "IT001", description: "Articolo", requestedQuantity: 10, quantity: 4 }], oci: [] });
 
 const orderLines = [{ codice_articolo: "IT002", quantita: 2, disponibilita: 99 }, { codice_articolo: " it001 ", quantita: 10, disponibilita: 99 }];
 const customer = { codice_cliente: "C-01" };
@@ -39,8 +39,9 @@ assert.equal(getAvailabilityValidity({ availability: null, lines: orderLines, cu
 assert.equal(getAvailabilityValidity({ availability: checked, lines: [{ ...orderLines[0], quantita: 3 }, orderLines[1]], customer }).valid, false, "la conferma è bloccata dopo modifica quantità");
 assert.equal(getAvailabilityValidity({ availability: checked, lines: orderLines, customer: { codice_cliente: "C-02" } }).valid, false, "la conferma è bloccata dopo cambio cliente");
 assert.equal(getAvailabilityValidity({ availability: { ...checked, lines: [{ ...checked.lines[0], status: "error" }, checked.lines[1]] }, lines: orderLines, customer }).valid, false, "una riga errore blocca la conferma");
-assert.deepEqual(quantitiesForOrderLine(orderLines[1], checked, true), { quantita_disponibile: 6, quantita_ocm: 6, quantita_ocx: 4 }, "la conferma usa solamente il risultato puntuale, non disponibilita cache");
-assert.deepEqual(quantitiesForOrderLine(orderLines[1], null, false), { quantita_disponibile: 10, quantita_ocm: 10, quantita_ocx: 0 }, "una bozza può usare il dato indicativo cache");
+assert.deepEqual(quantitiesForOrderLine(orderLines[1], checked, true), { quantita_disponibile: 6, quantita_ocm: 6, quantita_ocx: 4, quantita_oci: 0 }, "la conferma usa solamente il risultato puntuale, non disponibilita cache");
+assert.deepEqual(quantitiesForOrderLine(orderLines[1], null, false), { quantita_disponibile: 10, quantita_ocm: 10, quantita_ocx: 0, quantita_oci: 0 }, "una bozza può usare il dato indicativo cache");
+assert.deepEqual(quantitiesForOrderLine({ codice_articolo: " imp0012 ", quantita: 3 }, null, true), { quantita_disponibile: 0, quantita_ocm: 0, quantita_ocx: 0, quantita_oci: 3 }, "IMP bypasses warehouse allocation and retains the ordered OCI quantity");
 
 const endpoint = await readFile("api/mexal/orders/check-availability.js", "utf8");
 assert.match(endpoint, /verifyUser\(req, supabase, \{ allowOrdersUser: true \}\)/, "autenticazione e autorizzazione Ordini lato server");

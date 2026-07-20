@@ -34,7 +34,7 @@ export function normalizeLines(lines) {
   const aggregated = new Map();
   for (const line of lines) {
     const productCode = String(line?.productCode ?? line?.codice_articolo ?? line?.codiceArticolo ?? "")
-      .replace(/\s+/g, "")
+      .trim()
       .toUpperCase();
     if (!productCode) throw Object.assign(new Error("Codice prodotto obbligatorio."), { status: 400 });
     const requestedQuantity = quantity(line?.quantity ?? line?.quantita);
@@ -59,6 +59,10 @@ export function availabilityLine(productCode, requestedQuantity, article) {
     status: confirmedQuantity === requestedQuantity ? "available" : confirmedQuantity > 0 ? "partial" : "unavailable",
     message: null,
   };
+}
+
+export function importAvailabilityLine(productCode, requestedQuantity) {
+  return { productCode, requestedQuantity, availableQuantity: null, confirmedQuantity: requestedQuantity, missingQuantity: 0, status: "import", message: null };
 }
 
 export function summarize(lines) {
@@ -103,6 +107,8 @@ export function createCheckAvailabilityHandler({ supabaseFactory = defaultSupaba
       const requestedLines = normalizeLines(req.body?.lines);
       const mexal = mexalFactory();
       const lines = await mapWithConcurrency(requestedLines, AVAILABILITY_CONCURRENCY, async ({ productCode, requestedQuantity }) => {
+        // Imports are classified before stock lookup and never consume warehouse availability.
+        if (productCode.trim().toUpperCase().startsWith("IMP")) return importAvailabilityLine(productCode, requestedQuantity);
         try {
           // Same point lookup and stock formula used by sync-stock-it; no catalogue scan or writes.
           const article = await loadFullArticle(mexal, productCode);

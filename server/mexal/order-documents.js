@@ -42,6 +42,23 @@ export function formatMexalNota(value, format) {
   throw new Error("MEXAL_ORDER_NOTA_FORMAT deve essere scalar o typed-array.");
 }
 
+export function formatMexalOrderDate(value, format = "dd/mm/yyyy") {
+  const isoDate = text(value);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
+  if (!match) throw new Error("data_ordine deve essere una data valida nel formato YYYY-MM-DD.");
+  const [, year, month, day] = match;
+  const parsed = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  if (parsed.getUTCFullYear() !== Number(year) || parsed.getUTCMonth() !== Number(month) - 1 || parsed.getUTCDate() !== Number(day)) {
+    throw new Error("data_ordine deve essere una data valida nel formato YYYY-MM-DD.");
+  }
+  const italianDate = `${day}/${month}/${year}`;
+  if (format === "dd/mm/yyyy") return italianDate;
+  if (format === "yyyymmdd") return `${year}${month}${day}`;
+  if (format === "iso") return isoDate;
+  if (format === "typed-array-dd/mm/yyyy") return [[1, italianDate]];
+  throw new Error("MEXAL_ORDER_DATE_FORMAT deve essere dd/mm/yyyy, yyyymmdd, iso o typed-array-dd/mm/yyyy.");
+}
+
 // No POST schema is shipped in the repository/help material. This adapter deliberately
 // mirrors the real GET resource: each row field is a root-level, 1-indexed matrix.
 // Replace only this function after a controlled POST validates a different official shape.
@@ -60,11 +77,11 @@ export function buildRootMatrixRows(lines, magazzino) {
   ]).filter(([, values]) => values.length));
 }
 
-export function buildMexalOrderDocument(order, kind, lines, { serie = 1, magazzino = 5, notaFormat = "typed-array" } = {}) {
+export function buildMexalOrderDocument(order, kind, lines, { serie = 1, magazzino = 5, notaFormat = "typed-array", dateFormat = "dd/mm/yyyy" } = {}) {
   const document = ORDER_DOCUMENTS[kind];
   if (!document || !lines?.length) return null;
   return compact({
-    sigla: "OC", serie: number(serie), numero: 0, cod_conto: text(order.codice_cliente), data_documento: text(order.data_ordine),
+    sigla: "OC", serie: number(serie), numero: 0, cod_conto: text(order.codice_cliente), data_documento: formatMexalOrderDate(order.data_ordine, dateFormat),
     cod_modulo: document.moduleCode, id_causale: number(order.id_causale), id_magazzino: number(magazzino), codice_agente: text(order.codice_agente_mexal),
     nota: formatMexalNota(order.note_mexal || `Workspace n. ${order.id}`, notaFormat), id_ind_sped: number(order.id_ind_sped),
     cod_anag_sped: text(order.cod_anag_sped), id_pagamento: number(order.id_pagamento), ...buildRootMatrixRows(lines, magazzino),

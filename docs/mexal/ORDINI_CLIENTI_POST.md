@@ -12,3 +12,19 @@ L'unico punto da modificare se Mexal conferma un contratto diverso è `buildRoot
 `nota` usa inizialmente `[[1, testo]]`, coerente con la GET reale. Per un contratto POST verificato
 che richieda una stringa si può impostare `MEXAL_ORDER_NOTA_FORMAT=scalar`; il default è
 `typed-array` e non blocca il deployment.
+
+## `data_documento`
+
+`data_ordine` deve essere una data di calendario valida nel formato rigoroso `YYYY-MM-DD`.
+Per compatibilità con Mexal, `data_documento` viene convertita per default in `DD/MM/YYYY`.
+
+Per cambiare esclusivamente la serializzazione in uscita, impostare l'opzionale
+`MEXAL_ORDER_DATE_FORMAT` su uno dei valori seguenti:
+
+- `dd/mm/yyyy` (default): `20/07/2026`;
+- `yyyymmdd`: `20260720`;
+- `iso`: `2026-07-20`;
+- `typed-array-dd/mm/yyyy`: `[[1, "20/07/2026"]]`.
+
+Valori non supportati e date non valide bloccano la creazione del documento, evitando di inviare a
+Mexal un `data_documento` ambiguo o malformato.

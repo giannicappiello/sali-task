@@ -12,6 +12,7 @@ function documentOptions(config, kind) {
     serie: config?.[`serie_${key}`] || 1,
     magazzino: config?.id_magazzino || 5,
     notaFormat: env("MEXAL_ORDER_NOTA_FORMAT") || "typed-array",
+    dateFormat: env("MEXAL_ORDER_DATE_FORMAT") || "dd/mm/yyyy",
   };
 }
 

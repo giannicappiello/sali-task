@@ -1,5 +1,3 @@
-import { calculateOrderEconomics } from "./order-economics.js";
-
 export const ORDER_DOCUMENTS = Object.freeze({
   OCM: Object.freeze({ moduleCode: "M", quantityField: "quantita_ocm" }),
   OCX: Object.freeze({ moduleCode: "X", quantityField: "quantita_ocx" }),
@@ -79,15 +77,10 @@ export function buildRootMatrixRows(lines, magazzino) {
 export function buildMexalOrderDocument(order, kind, lines, { serie = 1, magazzino = 5, notaFormat = "typed-array", dateFormat = DEFAULT_MEXAL_ORDER_DATE_FORMAT } = {}) {
   const document = ORDER_DOCUMENTS[kind];
   if (!document || !lines?.length) return null;
-  const economics = calculateOrderEconomics(lines);
   return compact({
     sigla: "OC", serie: number(serie), numero: 0, cod_conto: text(order.codice_cliente), data_documento: formatMexalOrderDate(order.data_ordine, dateFormat),
     cod_modulo: document.moduleCode, id_causale: number(order.id_causale), id_magazzino: number(magazzino), codice_agente: text(order.codice_agente_mexal),
     nota: formatMexalNota(order.note_mexal || `Workspace n. ${order.id}`, notaFormat), id_ind_sped: number(order.id_ind_sped),
-    cod_anag_sped: text(order.cod_anag_sped), id_pagamento: number(order.id_pagamento),
-    workspace_totale_imponibile: economics.totale_imponibile,
-    workspace_totale_iva: economics.totale_iva,
-    workspace_totale_documento: economics.totale_documento,
-    ...buildRootMatrixRows(lines, magazzino),
+    cod_anag_sped: text(order.cod_anag_sped), id_pagamento: number(order.id_pagamento), ...buildRootMatrixRows(lines, magazzino),
   });
 }

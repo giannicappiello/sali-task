@@ -39,7 +39,6 @@ export default async function handler(req, res) {
     console.info("Mexal order processing", { orderId, ociLines: classified.OCI.length, ocmLines: classified.OCM.length, ocxLines: classified.OCX.length });
     const requiredKinds = Object.keys(classified).filter((kind) => classified[kind].length);
     const done = new Set(requiredKinds.filter((kind) => text(order[`numero_${kind.toLowerCase()}`])));
-    if (done.size || [order.numero_ocm, order.numero_ocx, order.numero_oci].some(Boolean)) return res.status(409).json({ error: "L'ordine contiene già documenti Mexal e deve essere riconciliato, non reinviato." });
     syncToken = token();
     const { data: started, error: startError } = await admin.rpc("avvia_sync_ordine", { p_ordine_id: orderId, p_sync_token: syncToken });
     if (startError) throw startError;
@@ -53,16 +52,20 @@ export default async function handler(req, res) {
       await heartbeat(admin, orderId, syncToken);
       const { data: savedDocument, error: savedDocumentError } = await admin.from("ordini_documenti_mexal").select("*").eq("ordine_id", orderId).eq("tipo_documento", kind).maybeSingle();
       if (savedDocumentError) throw savedDocumentError;
-      if (savedDocument?.numero) {
+      // Existing tracking records follow this reconciliation path and exit before
+      // a POST: if (savedDocument?.numero) { getJson(...); continue; }
+      // Older rows can have a header number without the tracking row: treat it
+      // as an existing document and reconcile it, never POST it again.
+      const existingDocument = savedDocument?.numero ? savedDocument : done.has(kind) ? { numero: order[`numero_${kind.toLowerCase()}`], serie: documentOptions(documentConfig, kind).serie, cod_modulo: ORDER_DOCUMENTS[kind]?.moduleCode, tentativi: 0 } : null;
+      if (existingDocument?.numero) {
         try {
-          const reconciled = await mexal.getJson(`/documenti/ordini-clienti/OC+${encodeURIComponent(savedDocument.serie)}+${encodeURIComponent(savedDocument.numero)}`);
-          const outcome = reconciliationFailure(null, savedDocument.cod_modulo, reconciled);
+          const reconciled = await mexal.getJson(`/documenti/ordini-clienti/OC+${encodeURIComponent(existingDocument.serie)}+${encodeURIComponent(existingDocument.numero)}`);
+          const outcome = reconciliationFailure(null, existingDocument.cod_modulo, reconciled);
           if (outcome) throw Object.assign(new Error(`Riconciliazione ${kind}: ${outcome.errore}`), { reconciliationState: outcome.stato });
-          await admin.from("ordini_documenti_mexal").update({ stato: "reconciled", verificato_il: new Date().toISOString(), errore: null, aggiornato_il: new Date().toISOString() }).eq("ordine_id", orderId).eq("tipo_documento", kind);
-          documents.push({ kind, numero: savedDocument.numero, reconciled: true }); continue;
-        } catch (error) { const outcome = error.reconciliationState ? { stato: error.reconciliationState, errore: error.message } : reconciliationFailure(error, savedDocument.cod_modulo); failures.push({ kind, error: outcome?.errore || error.message }); await admin.from("ordini_documenti_mexal").update({ stato: outcome?.stato || "temporary_error", errore: outcome?.errore || error.message, tentativi: Number(savedDocument.tentativi || 0) + 1, aggiornato_il: new Date().toISOString() }).eq("ordine_id", orderId).eq("tipo_documento", kind); continue; }
+          await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, stato: "reconciled", sigla: "OC", serie: existingDocument.serie, numero: existingDocument.numero, cod_modulo: existingDocument.cod_modulo, verificato_il: new Date().toISOString(), errore: null, aggiornato_il: new Date().toISOString() });
+          documents.push({ kind, numero: existingDocument.numero, reconciled: true }); continue;
+        } catch (error) { const outcome = error.reconciliationState ? { stato: error.reconciliationState, errore: error.message } : reconciliationFailure(error, existingDocument.cod_modulo); failures.push({ kind, error: outcome?.errore || error.message }); await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, stato: outcome?.stato || "temporary_error", sigla: "OC", serie: existingDocument.serie, numero: existingDocument.numero, cod_modulo: existingDocument.cod_modulo, tentativi: Number(existingDocument.tentativi || 0) + 1, errore: outcome?.errore || error.message, aggiornato_il: new Date().toISOString() }); continue; }
       }
-      if (done.has(kind)) { documents.push({ kind, numero: order[`numero_${kind.toLowerCase()}`], skipped: true }); continue; }
       const payload = buildMexalOrderDocument(order, kind, classified[kind], documentOptions(documentConfig, kind)); const startedAt = new Date().toISOString();
       try { const result = await mexal.postJson("/documenti/ordini-clienti", payload); const numero = extractNumber(result); const options = documentOptions(documentConfig, kind); documents.push({ kind, numero }); await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, stato: "created", sigla: "OC", serie: options.serie, numero, cod_modulo: ORDER_DOCUMENTS[kind]?.moduleCode, tentativi: Number(savedDocument?.tentativi || 0) + 1, errore: null, risposta: result, creato_il: new Date().toISOString(), aggiornato_il: new Date().toISOString() }); await admin.from("ordini_sync_mexal_log").insert({ ordine_id: orderId, tipo_documento: kind, stato: "successo", payload, risposta: result, iniziato_il: startedAt, completato_il: new Date().toISOString() }); await heartbeat(admin, orderId, syncToken); }
       catch (error) { failures.push({ kind, error: error.message }); console.error("Mexal order document failed", { orderId, kind, error: error.message }); await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, stato: "failed", sigla: "OC", serie: documentOptions(documentConfig, kind).serie, cod_modulo: ORDER_DOCUMENTS[kind]?.moduleCode, tentativi: Number(savedDocument?.tentativi || 0) + 1, errore: error.message, aggiornato_il: new Date().toISOString() }); await admin.from("ordini_sync_mexal_log").insert({ ordine_id: orderId, tipo_documento: kind, stato: "errore", payload, errore: error.message, iniziato_il: startedAt, completato_il: new Date().toISOString() }); }

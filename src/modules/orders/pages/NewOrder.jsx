@@ -4,7 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
 import { calculateLineConditions } from "../services/priceEngine";
-import { checkOrderAvailability, submitOrderToMexal } from "../services/orderFulfillment";
+import { checkOrderAvailability, submitOrderToMexal, updateOrder } from "../services/orderFulfillment";
 import { buildAvailabilityPreview, buildAvailabilitySignature, getAvailabilityValidity, quantitiesForOrderLine } from "../services/availability";
 import { buildNewOrderInsertPayload, buildWritableOrderPayload } from "../services/orderPayload";
 
@@ -463,9 +463,7 @@ export default function NewOrder() {
 
       let order;
       if (editingOrderId) {
-        const { data, error: orderError } = await supabase.from("ordini_testate").update({ ...orderPayload, stato_sincronizzazione: "non_avviato", errore_sincronizzazione: null, arresto_sync_richiesto: false }).eq("id", editingOrderId).select("id").single();
-        if (orderError) throw orderError; order = data;
-        const { error: clearLinesError } = await supabase.from("ordini_righe").delete().eq("ordine_id", order.id); if (clearLinesError) throw clearLinesError;
+        order = { id: editingOrderId };
       } else {
         const { data, error: orderError } = await supabase.from("ordini_testate").insert(orderPayload).select("id").single();
         if (orderError) throw orderError; order = data;
@@ -496,16 +494,14 @@ export default function NewOrder() {
         };
       });
 
-      const { error: linesError } = await supabase
-        .from("ordini_righe")
-        .insert(linePayload);
-      if (linesError) throw linesError;
-
-      const { error: noteError } = await supabase
-        .from("ordini_testate")
-        .update(buildWritableOrderPayload({ note_mexal: noteMexal }))
-        .eq("id", order.id);
-      if (noteError) throw noteError;
+      if (editingOrderId) {
+        await updateOrder(order.id, { ...orderPayload, note_mexal: noteMexal }, linePayload);
+      } else {
+        const { error: linesError } = await supabase.from("ordini_righe").insert(linePayload);
+        if (linesError) throw linesError;
+        const { error: noteError } = await supabase.from("ordini_testate").update(buildWritableOrderPayload({ note_mexal: noteMexal })).eq("id", order.id);
+        if (noteError) throw noteError;
+      }
 
       let mexalMessage = "";
       if (confirm) {

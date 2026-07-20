@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft, Download, Edit3, OctagonX, RefreshCw, Send, Trash2 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import { deleteOrder, downloadOrderPdf, loadOrderDetail, stopOrderSync, submitOrderToMexal } from "../services/orderFulfillment";
+import { deleteOrder, downloadOrderPdf, loadOrderDetail, recoverOrderSync, stopOrderSync, submitOrderToMexal } from "../services/orderFulfillment";
 
 function money(value) {
   return Number(value || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
@@ -23,6 +23,7 @@ export default function OrderDetail() {
     setLoading(true);
     setError("");
     try {
+      await recoverOrderSync(orderId);
       const result = await loadOrderDetail(orderId);
       setOrder(result.order);
       setLines(result.lines);

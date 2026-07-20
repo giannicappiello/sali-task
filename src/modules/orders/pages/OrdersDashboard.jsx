@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowUpRight, Search } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
+import { filterDashboardOrders } from "../services/dashboardOrders";
 
 export default function OrdersDashboard() {
   const navigate = useNavigate();
@@ -21,6 +22,7 @@ export default function OrdersDashboard() {
   });
   const [orders, setOrders] = useState([]);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
 
   const [loading, setLoading] = useState(true);
   const visibleAgentsKey = JSON.stringify(visibleAgents);
@@ -96,7 +98,23 @@ export default function OrdersDashboard() {
       evasi,
     });
     if (ordersResult.error) console.error("Errore caricamento ordini dashboard:", ordersResult.error);
-    setOrders(ordersResult.data || []);
+    const orderRows = ordersResult.data || [];
+    const orderIds = orderRows.map((order) => order.id);
+    let documents = [];
+    if (orderIds.length) {
+      const { data, error } = await supabase
+        .from("ordini_documenti_mexal")
+        .select("ordine_id, tipo_documento, numero")
+        .in("ordine_id", orderIds)
+        .not("numero", "is", null);
+      if (error) console.error("Errore caricamento documenti Mexal dashboard:", error);
+      documents = data || [];
+    }
+    const documentsByOrder = documents.reduce((grouped, document) => {
+      (grouped.get(document.ordine_id) || grouped.set(document.ordine_id, []).get(document.ordine_id)).push(document);
+      return grouped;
+    }, new Map());
+    setOrders(orderRows.map((order) => ({ ...order, documenti_mexal: documentsByOrder.get(order.id) || [] })));
 
     setLoading(false);
   }, [canAccessOrders, canSeeAll, countTable, visibleAgentsKey]);
@@ -105,19 +123,14 @@ export default function OrdersDashboard() {
     if (!accessLoading) loadStats();
   }, [accessLoading, loadStats]);
 
-  const filteredOrders = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return orders;
+  const filteredOrders = useMemo(
+    () => filterDashboardOrders(orders, search, statusFilter),
+    [orders, search, statusFilter]
+  );
 
-    return orders.filter((order) =>
-      [
-        order.numero_ordine,
-        order.ragione_sociale_cliente,
-        order.codice_cliente,
-        order.codice_agente_mexal,
-      ].some((value) => String(value ?? "").toLowerCase().includes(query))
-    );
-  }, [orders, search]);
+  function toggleStatusFilter(status) {
+    setStatusFilter((current) => current === status ? "" : status);
+  }
 
   if (accessLoading || loading) {
     return <div className="orders-empty">Caricamento dashboard...</div>;
@@ -130,9 +143,9 @@ export default function OrdersDashboard() {
       </div>
       <div className="orders-kpi-grid">
         <Kpi label="Ordini del mese" value={stats.ordiniMese} />
-        <Kpi label="Ordini aperti" value={stats.aperti} />
-        <Kpi label="Ordini in corso" value={stats.inCorso} />
-        <Kpi label="Ordini evasi" value={stats.evasi} />
+        <Kpi label="Ordini aperti" value={stats.aperti} status="aperto" active={statusFilter === "aperto"} onClick={toggleStatusFilter} />
+        <Kpi label="Ordini in corso" value={stats.inCorso} status="in_corso" active={statusFilter === "in_corso"} onClick={toggleStatusFilter} />
+        <Kpi label="Ordini evasi" value={stats.evasi} status="evaso" active={statusFilter === "evaso"} onClick={toggleStatusFilter} />
       </div>
 
       <section className="orders-dashboard-list">
@@ -154,10 +167,14 @@ export default function OrdersDashboard() {
             />
           </div>
         </div>
+        <div className="orders-dashboard-filter-row">
+          <button type="button" className={!statusFilter ? "active" : ""} onClick={() => setStatusFilter("")}>Tutti gli ordini</button>
+          {statusFilter && <span>Filtro attivo: {statusFilter.replaceAll("_", " ")}</span>}
+        </div>
 
         <div className="orders-dashboard-table-wrap">
           <table className="orders-table orders-dashboard-table">
-            <thead><tr><th>Data</th><th>Ordine</th><th>Cliente</th><th>Agente</th><th>Stato</th><th>Totale</th><th><span className="sr-only">Apri ordine</span></th></tr></thead>
+            <thead><tr><th>Data</th><th>Ordine</th><th>Cliente</th><th>Agente</th><th>Stato</th><th>Totale</th><th>Documenti Mexal</th><th><span className="sr-only">Apri ordine</span></th></tr></thead>
             <tbody>
               {filteredOrders.map((order) => (
                 <tr key={order.id} className="orders-clickable-row" onClick={() => navigate(`/ordini/elenco/${order.id}`)}>
@@ -167,6 +184,7 @@ export default function OrdersDashboard() {
                   <td>{order.codice_agente_mexal || "-"}</td>
                   <td><span className={`orders-status ${order.stato}`}>{order.stato || "bozza"}</span></td>
                   <td><strong>{formatCurrency(order.totale_documento ?? order.totale)}</strong></td>
+                  <td><div className="orders-dashboard-documents">{documentNumbers(order).map((number) => <span key={number}>{number}</span>)}</div></td>
                   <td><ArrowUpRight size={18} aria-hidden="true" /></td>
                 </tr>
               ))}
@@ -188,7 +206,14 @@ function formatCurrency(value) {
   return Number(value ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
 }
 
-function Kpi({ label, value }) {
+function documentNumbers(order) {
+  return [...new Set([order.numero_ocm, order.numero_ocx, order.numero_oci, ...(order.documenti_mexal || []).map((document) => document.numero)].filter(Boolean))];
+}
+
+function Kpi({ label, value, status, active, onClick }) {
+  if (status) {
+    return <button type="button" className={`orders-kpi orders-kpi-button${active ? " active" : ""}`} onClick={() => onClick(status)} aria-pressed={active}><span>{label}</span><strong>{value}</strong></button>;
+  }
   return (
     <div className="orders-kpi">
       <span>{label}</span>

@@ -543,15 +543,11 @@ export default function NewOrder() {
         </button>
         <div>
           <h2>{editingOrderId ? "Modifica ordine" : "Nuovo ordine"}</h2>
-          <p>{editingOrderId ? "Le ripartizioni saranno ricalcolate dopo una nuova verifica disponibilità." : "La nota Mexal sarà generata automaticamente dopo il primo salvataggio."}</p>
+          {editingOrderId && <p>Le ripartizioni saranno ricalcolate dopo una nuova verifica disponibilità.</p>}
         </div>
       </div>
 
       {error && <div className="orders-alert orders-alert-error">{error}</div>}
-
-      <div className="orders-alert">
-        Regole caricate: matrice {discountMatrix.length}, particolarità {specialConditions.length}, pagamenti {paymentRules.length}.
-      </div>
 
       <section className="orders-panel orders-order-section">
         <h3>1. Cliente</h3>

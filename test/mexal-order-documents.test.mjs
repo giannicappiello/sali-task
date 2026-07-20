@@ -12,8 +12,9 @@ assert.deepEqual(classified.OCI.map((line) => [line.codice_articolo, line.quanti
 assert.deepEqual(classified.OCM.map((line) => line.codice_articolo), [" IT0058 "], "IMP never enters OCM");
 assert.deepEqual(classified.OCX.map((line) => [line.codice_articolo, line.quantita_documento]), [[" IT0058 ", 4], ["IT0204", 6]], "non-IMP partial stock is split");
 
-const payload = buildMexalOrderDocument({ id: "workspace-1", codice_cliente: "C1", data_ordine: "2026-07-20", note_mexal: "nota test" }, "OCI", classified.OCI);
-assert.deepEqual(payload, { sigla: "OC", serie: 1, numero: 0, id_magazzino: 5, cod_modulo: "I", conto: "C1", data_documento: "2026-07-20", nota: "nota test", righe: [{ articolo: "IMP0012", quantita: 3, unita_misura: "PZ" }] });
-assert.equal("note" in payload, false, "the deprecated note field is never posted");
-assert.equal(buildMexalOrderDocument({}, "OCM", []), null, "empty documents are not generated");
+const payload = buildMexalOrderDocument({ id: "workspace-1", codice_cliente: "C1", data_ordine: "2026-07-20", note_mexal: "nota test", id_pagamento: 7 }, "OCI", classified.OCI, { notaFormat: "typed-array", linesField: "dettaglio", serie: 2, magazzino: 5 });
+assert.deepEqual(payload, { sigla: "OC", serie: 2, numero: 0, cod_conto: "C1", data_documento: "2026-07-20", cod_modulo: "I", id_magazzino: 5, nota: [[1, "nota test"]], id_pagamento: 7, dettaglio: [{ codice_articolo: "IMP0012", quantita: 3, id_mag_riga: 5 }] });
+for (const forbidden of ["note", "conto", "codice_pagamento", "articolo", "prezzo_netto", "righe"]) assert.equal(JSON.stringify(payload).includes(`\"${forbidden}\"`), false, `${forbidden} is never a direct WebAPI key`);
+assert.throws(() => buildMexalOrderDocument({}, "OCI", classified.OCI, { notaFormat: "scalar" }), /LINES_FIELD/);
+assert.equal(buildMexalOrderDocument({}, "OCM", [], { notaFormat: "scalar", linesField: "dettaglio" }), null, "empty documents are not generated");
 console.log("mexal order documents: OCI classification, write payload, and OCM/OCX split verified");

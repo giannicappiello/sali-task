@@ -145,6 +145,7 @@ function parseJsonResponse(response, label) {
         `${label}: HTTP ${response.status}`
     );
     error.status = response.status;
+    error.mexalResponse = response;
     throw error;
   }
 
@@ -188,11 +189,29 @@ export function buildMexalClient() {
       return payload;
     },
 
-    async postJson(path, payload) {
-      const response = await requestMexal({ url: `${baseUrl}/webapi/risorse${path}`, headers, method: "POST", body: JSON.stringify(payload) });
-      const result = parseJsonResponse(response, path);
-      this.lastHttpStatus = response.status;
-      return result;
+    async postJson(path, payload, { onDiagnostic } = {}) {
+      const url = `${baseUrl}/webapi/risorse${path}`;
+      const body = JSON.stringify(payload);
+      const requestHeaders = {
+        ...headers,
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body),
+      };
+
+      // The callback is deliberately invoked immediately before the outbound request so
+      // order diagnostics always describe the exact serialized bytes sent to Mexal.
+      onDiagnostic?.({ phase: "request", url, method: "POST", headers: requestHeaders, body });
+
+      try {
+        const response = await requestMexal({ url, headers, method: "POST", body });
+        onDiagnostic?.({ phase: "response", url, method: "POST", status: response.status, headers: response.headers, body: response.body });
+        const result = parseJsonResponse(response, path);
+        this.lastHttpStatus = response.status;
+        return result;
+      } catch (error) {
+        if (!error?.mexalResponse) onDiagnostic?.({ phase: "transport_error", url, method: "POST", error: error?.message || String(error) });
+        throw error;
+      }
     },
 
     async getBinary(path) {

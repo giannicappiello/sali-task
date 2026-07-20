@@ -33,9 +33,12 @@ async function postJson(url, body) {
   return payload;
 }
 
-export function submitOrderToMexal(orderId, { force = false } = {}) {
-  return postJson("/api/mexal/submit-order", { orderId, force });
+export function submitOrderToMexal(orderId) {
+  return postJson("/api/mexal/submit-order", { orderId });
 }
+
+export function stopOrderSync(orderId) { return postJson(`/api/mexal/orders/${orderId}/stop-sync`, { orderId }); }
+export function deleteOrder(orderId) { return postJson("/api/mexal/orders/delete", { orderId }); }
 
 export function checkOrderAvailability(lines) {
   return postJson("/api/mexal/orders/check-availability", {

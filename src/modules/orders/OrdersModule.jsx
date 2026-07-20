@@ -52,6 +52,7 @@ export default function OrdersModule() {
         <Route path="clienti" element={<Customers />} />
         <Route path="elenco" element={<Orders />} />
         <Route path="nuovo" element={<NewOrder />} />
+        <Route path="modifica/:orderId" element={<NewOrder />} />
         <Route path="elenco/:orderId" element={<OrderDetail />} />
         <Route path="materiali" element={<Materials />} />
         <Route path="*" element={<Navigate to="dashboard" replace />} />

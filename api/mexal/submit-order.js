@@ -1,18 +1,18 @@
 import { createClient } from "@supabase/supabase-js";
 import { buildMexalClient, verifyUser } from "../../server/mexal/sync-products.js";
-import { ORDER_DOCUMENTS, buildMexalOrderDocument, classifyOrderLines, reconciliationFailure } from "../../server/mexal/order-documents.js";
+import { DEFAULT_MEXAL_ORDER_DATE_FORMAT, ORDER_DOCUMENTS, buildMexalOrderDocument, classifyOrderLines, reconciliationFailure } from "../../server/mexal/order-documents.js";
 
 function env(name) { return String(process.env[name] ?? "").trim(); }
 function required(name) { const value = env(name); if (!value) throw new Error(`Variabile Vercel mancante: ${name}`); return value; }
 function text(value) { return String(value ?? "").trim(); }
 function supabaseAdmin() { return createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false, autoRefreshToken: false } }); }
-function documentOptions(config, kind) {
+export function documentOptions(config, kind) {
   const key = kind.toLowerCase();
   return {
     serie: config?.[`serie_${key}`] || 1,
     magazzino: config?.id_magazzino || 5,
     notaFormat: env("MEXAL_ORDER_NOTA_FORMAT") || "typed-array",
-    dateFormat: env("MEXAL_ORDER_DATE_FORMAT") || "dd/mm/yyyy",
+    dateFormat: env("MEXAL_ORDER_DATE_FORMAT") || DEFAULT_MEXAL_ORDER_DATE_FORMAT,
   };
 }
 
@@ -92,7 +92,7 @@ export default async function handler(req, res) {
     const updatedNumbers = Object.fromEntries(documents.map(({ kind, numero }) => [`numero_${kind.toLowerCase()}`, numero || order[`numero_${kind.toLowerCase()}`] || null]));
     const stopped = await stopRequested(admin, orderId, syncToken);
     const completed = failures.length === 0 && !stopped;
-    const { data: finalizedOrder, error: finalizeOrderError } = await admin.from("ordini_testate").update({ stato: "confermato", stato_sincronizzazione: stopped ? "arrestato" : completed ? "completato" : "errore", sincronizzato_mexal_il: completed ? new Date().toISOString() : null, errore_sincronizzazione: stopped ? "Sincronizzazione arrestata; eventuali documenti già ricevuti da Mexal sono stati conservati." : failures.map((item) => `${item.kind}: ${item.error}`).join(" | ") || null, sync_token: null, ...updatedNumbers }).eq("id", orderId).eq("sync_token", syncToken).select("id").maybeSingle();
+    const { data: finalizedOrder, error: finalizeOrderError } = await admin.from("ordini_testate").update({ stato_sincronizzazione: stopped ? "arrestato" : completed ? "completato" : "errore", sincronizzato_mexal_il: completed ? new Date().toISOString() : null, errore_sincronizzazione: stopped ? "Sincronizzazione arrestata; eventuali documenti già ricevuti da Mexal sono stati conservati." : failures.map((item) => `${item.kind}: ${item.error}`).join(" | ") || null, sync_token: null, ...updatedNumbers }).eq("id", orderId).eq("sync_token", syncToken).select("id").maybeSingle();
     if (finalizeOrderError) throw finalizeOrderError;
     if (!finalizedOrder) throw new Error("Aggiornamento finale della sincronizzazione ordine non applicato: sync_token non corrispondente.");
     await admin.from("mexal_sync_runs").update({ status: completed ? "completed" : "completed_with_errors", completed_at: new Date().toISOString(), processed: 1, updated: documents.length, failed: failures.length, metadata: { source: "submit-order", order_id: orderId, documents, failures } }).eq("id", runId);
@@ -102,7 +102,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true, documents, ...updatedNumbers });
   } catch (error) {
     if (runId) await admin.from("mexal_sync_runs").update({ status: "failed", completed_at: new Date().toISOString(), processed: orderId ? 1 : 0, failed: 1, error_message: text(error?.message).slice(0, 500) }).eq("id", runId);
-    if (orderId) await admin.from("ordini_testate").update({ stato_sincronizzazione: "errore", errore_sincronizzazione: error.message, ultimo_tentativo_sync: new Date().toISOString(), sync_token: null }).eq("id", orderId).eq("sync_token", syncToken || "00000000-0000-0000-0000-000000000000");
+    if (orderId) await admin.from("ordini_testate").update({ stato_sincronizzazione: "errore", errore_sincronizzazione: error.message, ultimo_tentativo_sync: new Date().toISOString(), sincronizzato_mexal_il: null, sync_token: null }).eq("id", orderId).eq("sync_token", syncToken || "00000000-0000-0000-0000-000000000000");
     console.error("Mexal order processing failed", { orderId, error: error?.message }); return res.status(error.status || 500).json({ error: error.message || "Errore sincronizzazione ordine." });
   }
 }

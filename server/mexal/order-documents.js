@@ -4,6 +4,8 @@ export const ORDER_DOCUMENTS = Object.freeze({
   OCI: Object.freeze({ moduleCode: "I", quantityField: "quantita_oci" }),
 });
 
+export const DEFAULT_MEXAL_ORDER_DATE_FORMAT = "typed-array-dd/mm/yyyy";
+
 export function normalizeArticleCode(value) { return String(value ?? "").trim().toUpperCase(); }
 export function isImportArticle(line) { return normalizeArticleCode(line?.codice_articolo ?? line?.productCode).startsWith("IMP"); }
 
@@ -42,7 +44,7 @@ export function formatMexalNota(value, format) {
   throw new Error("MEXAL_ORDER_NOTA_FORMAT deve essere scalar o typed-array.");
 }
 
-export function formatMexalOrderDate(value, format = "dd/mm/yyyy") {
+export function formatMexalOrderDate(value, format = DEFAULT_MEXAL_ORDER_DATE_FORMAT) {
   const isoDate = text(value);
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
   if (!match) throw new Error("data_ordine deve essere una data valida nel formato YYYY-MM-DD.");
@@ -77,7 +79,7 @@ export function buildRootMatrixRows(lines, magazzino) {
   ]).filter(([, values]) => values.length));
 }
 
-export function buildMexalOrderDocument(order, kind, lines, { serie = 1, magazzino = 5, notaFormat = "typed-array", dateFormat = "dd/mm/yyyy" } = {}) {
+export function buildMexalOrderDocument(order, kind, lines, { serie = 1, magazzino = 5, notaFormat = "typed-array", dateFormat = DEFAULT_MEXAL_ORDER_DATE_FORMAT } = {}) {
   const document = ORDER_DOCUMENTS[kind];
   if (!document || !lines?.length) return null;
   return compact({

@@ -7,9 +7,11 @@ import { buildMexalClient } from "../server/mexal/sync-products.js";
 import { ORDER_DOCUMENTS, buildMexalOrderDocument, classifyOrderLines } from "../server/mexal/order-documents.js";
 import { compareMexalPayloads } from "./mexal-diagnose-order.mjs";
 
+const loadedEnvironmentSources = new Map();
+
 function loadEnvironmentFile(filename) {
   const filePath = resolve(filename);
-  if (!existsSync(filePath)) return;
+  if (!existsSync(filePath)) return false;
 
   const content = readFileSync(filePath, "utf8");
 
@@ -27,22 +29,78 @@ function loadEnvironmentFile(filename) {
       value = value.slice(1, -1);
     }
 
-    if (!process.env[name]) process.env[name] = value;
+    if (!process.env[name]) {
+      process.env[name] = value;
+      loadedEnvironmentSources.set(name, filename);
+    }
   }
+
+  return true;
 }
 
 function loadEnvironment() {
-  loadEnvironmentFile(".env");
-  loadEnvironmentFile(".env.local");
+  const loadedFiles = [".env", ".env.local"].filter(loadEnvironmentFile);
 
-  process.env.SUPABASE_URL ||= process.env.VITE_SUPABASE_URL;
-  process.env.SUPABASE_ANON_KEY ||= process.env.VITE_SUPABASE_ANON_KEY;
+  if (!process.env.SUPABASE_URL && process.env.VITE_SUPABASE_URL) {
+    process.env.SUPABASE_URL = process.env.VITE_SUPABASE_URL;
+    loadedEnvironmentSources.set("SUPABASE_URL", loadedEnvironmentSources.get("VITE_SUPABASE_URL") || "variabile Vite");
+  }
+
+  if (!process.env.SUPABASE_ANON_KEY && process.env.VITE_SUPABASE_ANON_KEY) {
+    process.env.SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY;
+    loadedEnvironmentSources.set("SUPABASE_ANON_KEY", loadedEnvironmentSources.get("VITE_SUPABASE_ANON_KEY") || "variabile Vite");
+  }
+
+  console.log(`Configurazione locale caricata da: ${loadedFiles.length ? loadedFiles.join(", ") : "variabili di sistema"}`);
 }
 
 function required(name) {
   const value = String(process.env[name] || "").trim();
-  if (!value) throw new Error(`Variabile ambiente mancante: ${name}`);
+  if (!value) throw new Error(`Variabile locale mancante: ${name}. Aggiungila in .env.local.`);
   return value;
+}
+
+function validateConfiguration() {
+  const requiredNames = [
+    "SUPABASE_URL",
+    "MEXAL_BASE_URL",
+    "MEXAL_USERNAME",
+    "MEXAL_PASSWORD",
+    "MEXAL_AZIENDA",
+    "MEXAL_ANNO",
+    "MEXAL_MAGAZZINO",
+  ];
+
+  const missing = requiredNames.filter((name) => !String(process.env[name] || "").trim());
+  const hasSupabaseKey = Boolean(
+    String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim() ||
+      String(process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "").trim()
+  );
+
+  if (!hasSupabaseKey) missing.push("SUPABASE_SERVICE_ROLE_KEY oppure VITE_SUPABASE_ANON_KEY");
+
+  if (missing.length) {
+    throw new Error(`Configurazione locale incompleta. Variabili mancanti: ${missing.join(", ")}.`);
+  }
+
+  const visibleNames = [
+    "SUPABASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "SUPABASE_ANON_KEY",
+    "MEXAL_BASE_URL",
+    "MEXAL_USERNAME",
+    "MEXAL_PASSWORD",
+    "MEXAL_AZIENDA",
+    "MEXAL_ANNO",
+    "MEXAL_MAGAZZINO",
+  ];
+
+  console.log("Variabili disponibili:");
+  for (const name of visibleNames) {
+    if (!String(process.env[name] || "").trim()) continue;
+    const source = loadedEnvironmentSources.get(name) || "variabile di sistema";
+    console.log(`- ${name}: OK (${source})`);
+  }
 }
 
 function text(value) {
@@ -55,7 +113,7 @@ function getSupabaseKey() {
 
   const anonKey = String(process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "").trim();
   if (!anonKey) {
-    throw new Error("Variabile ambiente mancante: SUPABASE_SERVICE_ROLE_KEY oppure VITE_SUPABASE_ANON_KEY");
+    throw new Error("Variabile locale mancante: SUPABASE_SERVICE_ROLE_KEY oppure VITE_SUPABASE_ANON_KEY");
   }
 
   console.warn("ATTENZIONE: viene usata la chiave anon. Se Supabase blocca la lettura per RLS, aggiungi SUPABASE_SERVICE_ROLE_KEY in .env.local.");
@@ -64,6 +122,7 @@ function getSupabaseKey() {
 
 async function run() {
   loadEnvironment();
+  validateConfiguration();
 
   const [orderId, rawKind, rawSigla, rawSerie, rawNumero] = process.argv.slice(2);
   const kind = text(rawKind).toUpperCase();

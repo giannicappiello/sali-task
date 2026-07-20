@@ -497,7 +497,7 @@ export default function NewOrder() {
         if (window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
           try {
             const syncResult = await submitOrderToMexal(order.id);
-            mexalMessage = ` OCM: ${syncResult.numero_ocm || "-"} · OCX: ${syncResult.numero_ocx || "-"}.`;
+            mexalMessage = ` OCM: ${syncResult.numero_ocm || "-"} · OCX: ${syncResult.numero_ocx || "-"} · OCI: ${syncResult.numero_oci || "-"}.`;
           } catch (syncError) {
             mexalMessage = ` Ordine salvato, ma invio Mexal non riuscito: ${syncError.message}`;
           }

@@ -87,7 +87,7 @@ function round4(value) {
   return Math.round((value + Number.EPSILON) * 10000) / 10000;
 }
 
-function requestMexal({ url, headers, binary = false }) {
+function requestMexal({ url, headers, binary = false, method = "GET", body }) {
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
 
@@ -97,8 +97,8 @@ function requestMexal({ url, headers, binary = false }) {
         hostname: parsed.hostname,
         port: parsed.port || 443,
         path: `${parsed.pathname}${parsed.search}`,
-        method: "GET",
-        headers,
+        method,
+        headers: body ? { ...headers, "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) } : headers,
         rejectUnauthorized: false,
         timeout: 45000,
       },
@@ -124,6 +124,7 @@ function requestMexal({ url, headers, binary = false }) {
     });
 
     request.on("error", reject);
+    if (body) request.write(body);
     request.end();
   });
 }
@@ -183,6 +184,13 @@ export function buildMexalClient() {
       const payload = parseJsonResponse(response, path);
       this.lastHttpStatus = response.status;
       return payload;
+    },
+
+    async postJson(path, payload) {
+      const response = await requestMexal({ url: `${baseUrl}/webapi/risorse${path}`, headers, method: "POST", body: JSON.stringify(payload) });
+      const result = parseJsonResponse(response, path);
+      this.lastHttpStatus = response.status;
+      return result;
     },
 
     async getBinary(path) {

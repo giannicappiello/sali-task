@@ -39,7 +39,7 @@ export default function OrderDetail() {
     setMessage("");
     try {
       const result = await submitOrderToMexal(orderId, { force: order?.stato_sincronizzazione === "errore" });
-      setMessage(result.skipped ? result.message : `Ordine inviato a Mexal. OCM: ${result.numero_ocm || "-"} · OCX: ${result.numero_ocx || "-"}`);
+      setMessage(result.skipped ? result.message : `Ordine inviato a Mexal. OCM: ${result.numero_ocm || "-"} · OCX: ${result.numero_ocx || "-"} · OCI: ${result.numero_oci || "-"}`);
       if (!result.skipped) {
         setOrder((current) => current ? {
           ...current,
@@ -47,6 +47,7 @@ export default function OrderDetail() {
           stato_sincronizzazione: "completato",
           numero_ocm: result.numero_ocm || current.numero_ocm || null,
           numero_ocx: result.numero_ocx || current.numero_ocx || null,
+          numero_oci: result.numero_oci || current.numero_oci || null,
           errore_sincronizzazione: null,
         } : current);
       }
@@ -85,6 +86,7 @@ export default function OrderDetail() {
         <div><span>Stato invio</span><strong className={`orders-sync-badge ${syncStatus}`}>{syncStatus.replaceAll("_", " ")}</strong></div>
         <div><span>OCM</span><strong>{order.numero_ocm || "-"}</strong></div>
         <div><span>OCX</span><strong>{order.numero_ocx || "-"}</strong></div>
+        <div><span>OCI</span><strong>{order.numero_oci || "-"}</strong></div>
         <div><span>Totale</span><strong>{money(order.totale)}</strong></div>
       </section>
 

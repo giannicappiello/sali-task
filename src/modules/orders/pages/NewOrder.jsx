@@ -1,10 +1,10 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ChevronDown, ChevronUp, Info, Minus, Plus, Save, Search, ShoppingCart, Trash2 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
 import { calculateLineConditions } from "../services/priceEngine";
-import { checkOrderAvailability, submitOrderToMexal } from "../services/orderFulfillment";
+import { checkOrderAvailability, submitOrderToMexal, updateOrder } from "../services/orderFulfillment";
 import { buildAvailabilityPreview, buildAvailabilitySignature, getAvailabilityValidity, quantitiesForOrderLine } from "../services/availability";
 import { buildNewOrderInsertPayload, buildWritableOrderPayload } from "../services/orderPayload";
 
@@ -137,6 +137,7 @@ async function loadPaged(table, buildQuery) {
 
 export default function NewOrder() {
   const navigate = useNavigate();
+  const { orderId: editingOrderId } = useParams();
   const {
     loading: accessLoading,
     canAccessOrders,
@@ -174,6 +175,25 @@ export default function NewOrder() {
   useEffect(() => {
     if (!accessLoading) loadData();
   }, [accessLoading, canAccessOrders, canSeeAll, JSON.stringify(visibleAgents)]);
+
+  useEffect(() => {
+    if (!editingOrderId || !customers.length) return;
+    let active = true;
+    (async () => {
+      const [{ data: existing, error: orderError }, { data: existingLines, error: linesError }, { data: docs, error: docsError }] = await Promise.all([
+        supabase.from("ordini_testate").select("*").eq("id", editingOrderId).single(),
+        supabase.from("ordini_righe").select("*").eq("ordine_id", editingOrderId).order("id"),
+        supabase.from("ordini_documenti_mexal").select("numero").eq("ordine_id", editingOrderId).not("numero", "is", null),
+      ]);
+      if (orderError || linesError || docsError) { if (active) setError((orderError || linesError || docsError).message); return; }
+      if (existing.numero_ocm || existing.numero_ocx || existing.numero_oci || docs?.length || !["non_avviato", "non_inviato", "errore", "annullato", "arrestato"].includes(existing.stato_sincronizzazione || "non_inviato")) { if (active) setError("Questo ordine non è più modificabile."); return; }
+      if (!active) return;
+      setSelectedCustomer(customers.find((customer) => customer.codice_cliente === existing.codice_cliente) || { codice_cliente: existing.codice_cliente, ragione_sociale: existing.ragione_sociale_cliente });
+      setSelectedPayment({ codice: existing.codice_pagamento || "", descrizione: existing.descrizione_pagamento || "" }); setComments(existing.commenti || "");
+      setLines((existingLines || []).map((line) => ({ ...line, prodotto_origine: products.find((product) => normalize(product.codice_articolo || product.codice_mexal || product.codice) === line.codice_articolo) || line })));
+    })();
+    return () => { active = false; };
+  }, [editingOrderId, customers, products]);
 
   async function loadData() {
     setLoading(true);
@@ -441,12 +461,13 @@ export default function NewOrder() {
         total: totals.imponibile,
       });
 
-      const { data: order, error: orderError } = await supabase
-        .from("ordini_testate")
-        .insert(orderPayload)
-        .select("id")
-        .single();
-      if (orderError) throw orderError;
+      let order;
+      if (editingOrderId) {
+        order = { id: editingOrderId };
+      } else {
+        const { data, error: orderError } = await supabase.from("ordini_testate").insert(orderPayload).select("id").single();
+        if (orderError) throw orderError; order = data;
+      }
 
       const noteMexal = `Workspace n. ${order.id}`;
       const linePayload = lines.map((line) => {
@@ -457,7 +478,7 @@ export default function NewOrder() {
           codice_articolo: line.codice_articolo,
           descrizione: line.descrizione,
           quantita: line.quantita,
-          ...quantities,
+          ...(editingOrderId ? { quantita_ocm: 0, quantita_ocx: 0, quantita_oci: 0 } : quantities),
           prezzo_listino: line.prezzo_listino,
           sconto_percentuale: line.sconto_percentuale,
           sconto_commerciale: line.sconto_commerciale || null,
@@ -473,16 +494,14 @@ export default function NewOrder() {
         };
       });
 
-      const { error: linesError } = await supabase
-        .from("ordini_righe")
-        .insert(linePayload);
-      if (linesError) throw linesError;
-
-      const { error: noteError } = await supabase
-        .from("ordini_testate")
-        .update(buildWritableOrderPayload({ note_mexal: noteMexal }))
-        .eq("id", order.id);
-      if (noteError) throw noteError;
+      if (editingOrderId) {
+        await updateOrder(order.id, { ...orderPayload, note_mexal: noteMexal }, linePayload);
+      } else {
+        const { error: linesError } = await supabase.from("ordini_righe").insert(linePayload);
+        if (linesError) throw linesError;
+        const { error: noteError } = await supabase.from("ordini_testate").update(buildWritableOrderPayload({ note_mexal: noteMexal })).eq("id", order.id);
+        if (noteError) throw noteError;
+      }
 
       let mexalMessage = "";
       if (confirm) {
@@ -506,12 +525,12 @@ export default function NewOrder() {
         }
       }
 
-      navigate(confirm ? `/ordini/elenco/${order.id}` : "/ordini/elenco", {
+      navigate(confirm || editingOrderId ? `/ordini/elenco/${order.id}` : "/ordini/elenco", {
         replace: true,
         state: {
           message: confirm
             ? `Ordine ${order.id} confermato.${mexalMessage}`
-            : `Bozza ordine ${order.id} salvata.`,
+            : editingOrderId ? `Ordine ${order.id} modificato. Verifica nuovamente le disponibilità prima dell'invio.` : `Bozza ordine ${order.id} salvata.`,
         },
       });
     } catch (saveError) {
@@ -531,8 +550,8 @@ export default function NewOrder() {
           <ArrowLeft size={18} /> Torna agli ordini
         </button>
         <div>
-          <h2>Nuovo ordine</h2>
-          <p>La nota Mexal sarà generata automaticamente dopo il primo salvataggio.</p>
+          <h2>{editingOrderId ? "Modifica ordine" : "Nuovo ordine"}</h2>
+          <p>{editingOrderId ? "Le ripartizioni saranno ricalcolate dopo una nuova verifica disponibilità." : "La nota Mexal sarà generata automaticamente dopo il primo salvataggio."}</p>
         </div>
       </div>
 

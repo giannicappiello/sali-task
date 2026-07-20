@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, Download, RefreshCw, Send } from "lucide-react";
+import { ArrowLeft, Download, Edit3, OctagonX, RefreshCw, Send, Trash2 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import { downloadOrderPdf, loadOrderDetail, submitOrderToMexal } from "../services/orderFulfillment";
+import { deleteOrder, downloadOrderPdf, loadOrderDetail, recoverOrderSync, stopOrderSync, submitOrderToMexal } from "../services/orderFulfillment";
 
 function money(value) {
   return Number(value || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
@@ -14,6 +14,8 @@ export default function OrderDetail() {
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -21,6 +23,7 @@ export default function OrderDetail() {
     setLoading(true);
     setError("");
     try {
+      await recoverOrderSync(orderId);
       const result = await loadOrderDetail(orderId);
       setOrder(result.order);
       setLines(result.lines);
@@ -38,7 +41,7 @@ export default function OrderDetail() {
     setError("");
     setMessage("");
     try {
-      const result = await submitOrderToMexal(orderId, { force: order?.stato_sincronizzazione === "errore" });
+      const result = await submitOrderToMexal(orderId);
       setMessage(result.skipped ? result.message : `Ordine inviato a Mexal. OCM: ${result.numero_ocm || "-"} · OCX: ${result.numero_ocx || "-"} · OCI: ${result.numero_oci || "-"}`);
       if (!result.skipped) {
         setOrder((current) => current ? {
@@ -58,10 +61,28 @@ export default function OrderDetail() {
     }
   }
 
+  async function requestStop() {
+    if (stopping) return;
+    setStopping(true); setError("");
+    try { setMessage((await stopOrderSync(orderId)).message); await load(); }
+    catch (stopError) { setError(stopError.message || "Impossibile richiedere l'arresto."); }
+    finally { setStopping(false); }
+  }
+  async function removeOrder() {
+    if (deleting || !window.confirm("Stai per eliminare definitivamente questo ordine. L’operazione non può essere annullata.")) return;
+    setDeleting(true); setError("");
+    try { await deleteOrder(orderId); navigate("/ordini/elenco", { replace: true, state: { message: "Ordine eliminato." } }); }
+    catch (deleteError) { setError(deleteError.message || "Impossibile eliminare l'ordine."); }
+    finally { setDeleting(false); }
+  }
+
   if (loading) return <div className="orders-empty">Caricamento ordine...</div>;
   if (!order) return <div className="orders-empty">Ordine non trovato.</div>;
 
   const syncStatus = order.stato_sincronizzazione || "non_inviato";
+  const hasMexalDocument = Boolean(order.numero_ocm || order.numero_ocx || order.numero_oci);
+  const canEdit = !hasMexalDocument && ["non_avviato", "non_inviato", "errore", "annullato", "arrestato"].includes(syncStatus);
+  const canDelete = canEdit;
 
   return (
     <div className="orders-page">
@@ -84,6 +105,7 @@ export default function OrderDetail() {
         <div><span>Agente</span><strong>{order.codice_agente_mexal || "-"}</strong></div>
         <div><span>Pagamento</span><strong>{order.descrizione_pagamento || order.codice_pagamento || "-"}</strong></div>
         <div><span>Stato invio</span><strong className={`orders-sync-badge ${syncStatus}`}>{syncStatus.replaceAll("_", " ")}</strong></div>
+        <div><span>Ultimo tentativo</span><strong>{order.ultimo_tentativo_sync ? new Date(order.ultimo_tentativo_sync).toLocaleString("it-IT") : "-"}</strong></div>
         <div><span>OCM</span><strong>{order.numero_ocm || "-"}</strong></div>
         <div><span>OCX</span><strong>{order.numero_ocx || "-"}</strong></div>
         <div><span>OCI</span><strong>{order.numero_oci || "-"}</strong></div>
@@ -118,10 +140,15 @@ export default function OrderDetail() {
         <button className="orders-secondary" type="button" onClick={() => downloadOrderPdf(order, lines)}>
           <Download size={18} /> Scarica PDF
         </button>
-        <button className="orders-primary" type="button" disabled={sending || syncStatus === "in_corso" || syncStatus === "completato"} onClick={sendToMexal}>
+        {canEdit && <button className="orders-secondary" type="button" onClick={() => navigate(`/ordini/modifica/${orderId}`)}><Edit3 size={18} /> MODIFICA ORDINE</button>}
+        {canDelete && <button className="orders-danger" type="button" disabled={deleting} onClick={removeOrder}><Trash2 size={18} /> {deleting ? "Eliminazione..." : "ELIMINA ORDINE"}</button>}
+        {syncStatus === "in_corso" && <button className="orders-danger" type="button" disabled={stopping} onClick={requestStop}><OctagonX size={18} /> {stopping ? "Richiesta..." : "ARRESTA INVIO"}</button>}
+        {!["in_corso", "arresto_richiesto", "completato"].includes(syncStatus) && !hasMexalDocument && <button className="orders-primary" type="button" disabled={sending} onClick={sendToMexal}>
           {sending || syncStatus === "in_corso" ? <RefreshCw className="spin" size={18} /> : <Send size={18} />}
-          {syncStatus === "errore" ? "Riprova invio Mexal" : syncStatus === "completato" ? "Già inviato a Mexal" : "Invia a Mexal"}
+          {["errore", "arrestato"].includes(syncStatus) ? "RIPROVA INVIO" : "INVIA A MEXAL"}
         </button>
+        }
+        {syncStatus === "arresto_richiesto" && <span className="orders-sync-inline in_corso">Arresto richiesto: attesa della POST Mexal in corso.</span>}
       </div>
     </div>
   );

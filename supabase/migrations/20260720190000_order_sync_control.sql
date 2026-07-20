@@ -37,3 +37,9 @@ end $$;
 
 revoke all on function public.avvia_sync_ordine(uuid, uuid) from public;
 revoke all on function public.recupera_sync_ordine_scaduta(uuid) from public;
+revoke all on function public.avvia_sync_ordine(uuid, uuid) from anon;
+revoke all on function public.avvia_sync_ordine(uuid, uuid) from authenticated;
+revoke all on function public.recupera_sync_ordine_scaduta(uuid) from anon;
+revoke all on function public.recupera_sync_ordine_scaduta(uuid) from authenticated;
+grant execute on function public.avvia_sync_ordine(uuid, uuid) to service_role;
+grant execute on function public.recupera_sync_ordine_scaduta(uuid) to service_role;

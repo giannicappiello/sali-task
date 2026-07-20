@@ -44,3 +44,9 @@ begin
 end $$;
 revoke all on function public.aggiorna_ordine_operativo(uuid,jsonb,jsonb) from public;
 revoke all on function public.elimina_ordine_operativo(uuid) from public;
+revoke all on function public.aggiorna_ordine_operativo(uuid,jsonb,jsonb) from anon;
+revoke all on function public.aggiorna_ordine_operativo(uuid,jsonb,jsonb) from authenticated;
+revoke all on function public.elimina_ordine_operativo(uuid) from anon;
+revoke all on function public.elimina_ordine_operativo(uuid) from authenticated;
+grant execute on function public.aggiorna_ordine_operativo(uuid,jsonb,jsonb) to service_role;
+grant execute on function public.elimina_ordine_operativo(uuid) to service_role;

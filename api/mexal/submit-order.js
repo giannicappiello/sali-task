@@ -11,8 +11,7 @@ function documentOptions(config, kind) {
   return {
     serie: config?.[`serie_${key}`] || 1,
     magazzino: config?.id_magazzino || 5,
-    notaFormat: required("MEXAL_ORDER_NOTA_FORMAT"),
-    linesField: required("MEXAL_ORDER_LINES_FIELD"),
+    notaFormat: env("MEXAL_ORDER_NOTA_FORMAT") || "typed-array",
   };
 }
 

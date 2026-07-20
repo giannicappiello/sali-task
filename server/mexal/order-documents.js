@@ -29,22 +29,34 @@ export function formatMexalNota(value, format) {
   if (!note) return undefined;
   if (format === "scalar") return note;
   if (format === "typed-array") return [[1, note]];
-  throw new Error("Configurare MEXAL_ORDER_NOTA_FORMAT con un formato POST verificato (scalar o typed-array).");
+  throw new Error("MEXAL_ORDER_NOTA_FORMAT deve essere scalar o typed-array.");
 }
 
-export function buildMexalOrderDocument(order, kind, lines, { serie = 1, magazzino = 5, notaFormat, linesField } = {}) {
+// No POST schema is shipped in the repository/help material. This adapter deliberately
+// mirrors the real GET resource: each row field is a root-level, 1-indexed matrix.
+// Replace only this function after a controlled POST validates a different official shape.
+export function buildRootMatrixRows(lines, magazzino) {
+  const fields = {
+    codice_articolo: (line) => normalizeArticleCode(line.codice_articolo),
+    quantita: (line) => number(line.quantita_documento),
+    prezzo: (line) => number(line.prezzo_netto),
+    sconto: (line) => text(line.sconto_commerciale),
+    id_mag_riga: (line) => number(line.id_mag_riga ?? magazzino),
+    tp_um_articolo: (line) => text(line.tp_um_articolo ?? line.unita_misura),
+    cod_iva: (line) => text(line.cod_iva),
+  };
+  return Object.fromEntries(Object.entries(fields).map(([field, value]) => [field,
+    lines.map((line, index) => [index + 1, value(line)]).filter(([, value]) => value !== undefined && value !== ""),
+  ]).filter(([, values]) => values.length));
+}
+
+export function buildMexalOrderDocument(order, kind, lines, { serie = 1, magazzino = 5, notaFormat = "typed-array" } = {}) {
   const document = ORDER_DOCUMENTS[kind];
   if (!document || !lines?.length) return null;
-  if (!linesField) throw new Error("Configurare MEXAL_ORDER_LINES_FIELD con il contenitore righe verificato dalla documentazione Mexal.");
-  const rows = lines.map((line) => compact({
-    codice_articolo: normalizeArticleCode(line.codice_articolo), quantita: number(line.quantita_documento),
-    prezzo: number(line.prezzo_netto), sconto: text(line.sconto_commerciale),
-    id_mag_riga: number(line.id_mag_riga ?? magazzino), tp_um_articolo: text(line.tp_um_articolo ?? line.unita_misura), cod_iva: text(line.cod_iva),
-  }));
   return compact({
     sigla: "OC", serie: number(serie), numero: 0, cod_conto: text(order.codice_cliente), data_documento: text(order.data_ordine),
     cod_modulo: document.moduleCode, id_causale: number(order.id_causale), id_magazzino: number(magazzino), codice_agente: text(order.codice_agente_mexal),
     nota: formatMexalNota(order.note_mexal || `Workspace n. ${order.id}`, notaFormat), id_ind_sped: number(order.id_ind_sped),
-    cod_anag_sped: text(order.cod_anag_sped), id_pagamento: number(order.id_pagamento), [linesField]: rows,
+    cod_anag_sped: text(order.cod_anag_sped), id_pagamento: number(order.id_pagamento), ...buildRootMatrixRows(lines, magazzino),
   });
 }

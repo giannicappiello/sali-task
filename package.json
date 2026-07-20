@@ -9,7 +9,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "mexal:diagnose-order": "node scripts/mexal-diagnose-order.mjs"
+    "mexal:diagnose-order": "node scripts/mexal-diagnose-order-cli.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.0",

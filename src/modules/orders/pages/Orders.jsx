@@ -121,7 +121,7 @@ export default function Orders() {
                 <th>Cliente</th>
                 <th>Agente</th>
                 <th>Stato</th>
-                <th>Totale</th>
+                <th>Imponibile</th><th>IVA</th><th>Totale documento</th>
                 <th>OCM</th>
                 <th>OCX</th>
               </tr>
@@ -144,12 +144,9 @@ export default function Orders() {
                       {item.stato_sincronizzazione || "non_inviato"}
                     </small>
                   </td>
-                  <td>
-                    {Number(item.totale || 0).toLocaleString("it-IT", {
-                      style: "currency",
-                      currency: "EUR",
-                    })}
-                  </td>
+                  <td>{Number(item.totale_imponibile ?? item.totale ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td>
+                  <td>{Number(item.totale_iva || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td>
+                  <td>{Number(item.totale_documento ?? item.totale ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td>
                   <td>{item.numero_ocm || "-"}</td>
                   <td>{item.numero_ocx || "-"}</td>
                 </tr>

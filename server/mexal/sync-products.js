@@ -760,6 +760,8 @@ async function saveProduct({
       article.prz_listino,
       1
     ),
+    codice_iva_mexal: nullableText(article.codice_iva_mexal, article.cod_iva, article.codice_iva, article.cod_aliquota_iva),
+    aliquota_iva: nullableText(article.aliquota_iva, article.perc_iva, article.percentuale_iva),
     giacenza: stock,
     disponibilita: calculateAvailability(
       article,
@@ -812,7 +814,8 @@ export function mapArticleToOrdersCache(article, { imageUrl = null } = {}) {
     descrizione_completa: nullableText(article.descr_completa),
     codice_alternativo: nullableText(article.cod_alternativo),
     unita_misura: nullableText(article.unita_misura, article.um, article.unita),
-    aliquota_iva: nullableText(article.aliquota_iva, article.cod_aliquota_iva),
+    codice_iva_mexal: nullableText(article.codice_iva_mexal, article.cod_iva, article.codice_iva, article.cod_aliquota_iva),
+    aliquota_iva: nullableText(article.aliquota_iva, article.perc_iva, article.percentuale_iva),
     categoria_sconto: nullableInteger(
       article.id_cat_sconto ?? article.categoria_sconto ?? article.cod_cat_sconto
     ),

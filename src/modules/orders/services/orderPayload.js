@@ -14,6 +14,9 @@ const WRITABLE_ORDER_FIELDS = [
   "indirizzo_spedizione",
   "commenti",
   "totale",
+  "totale_imponibile",
+  "totale_iva",
+  "totale_documento",
   "note_mexal",
 ];
 
@@ -39,6 +42,8 @@ export function buildNewOrderInsertPayload({
   paymentDescription,
   comments,
   total,
+  taxableTotal,
+  vatTotal,
 }) {
   return buildWritableOrderPayload({
     data_ordine: dataOrdine,
@@ -57,5 +62,8 @@ export function buildNewOrderInsertPayload({
     ].filter(Boolean).join(" "),
     commenti: comments.trim() || null,
     totale: total,
+    totale_imponibile: taxableTotal,
+    totale_iva: vatTotal,
+    totale_documento: total,
   });
 }

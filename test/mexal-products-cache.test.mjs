@@ -45,7 +45,7 @@ const cacheRow = mapArticleToOrdersCache({
 }, { imageUrl: "https://example.test/catalogo.jpg" });
 const cacheColumns = [
   "codice_articolo", "descrizione", "descrizione_completa", "codice_alternativo",
-  "unita_misura", "aliquota_iva", "categoria_sconto", "categoria_prezzo",
+  "unita_misura", "codice_iva_mexal", "aliquota_iva", "categoria_sconto", "categoria_prezzo",
   "prezzo_listino", "giacenza", "impegnato", "disponibilita", "mostra_in_app",
   "immagine_url", "scheda_tecnica_url", "materiale_pubblicitario_url", "dati_mexal",
   "sincronizzato_il",

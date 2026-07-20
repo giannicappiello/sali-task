@@ -83,6 +83,14 @@ function nullableText(...values) {
   return null;
 }
 
+// Mexal returns this field in the detail endpoint as a decimal value using
+// Italian formatting (e.g. "22,0"). Keep its original representation for the
+// document payload and derive the numeric rate only once, at the boundary.
+export function getMexalVat(article = {}) {
+  const code = nullableText(article.alq_iva);
+  return { code, rate: nullableNumber(code) };
+}
+
 function round4(value) {
   return Math.round((value + Number.EPSILON) * 10000) / 10000;
 }
@@ -731,6 +739,7 @@ async function saveProduct({
   const stock = calculateStock(article);
   const now = new Date().toISOString();
 
+  const vat = getMexalVat(article);
   const payload = {
     nome: name,
     codice: code,
@@ -760,8 +769,11 @@ async function saveProduct({
       article.prz_listino,
       1
     ),
-    codice_iva_mexal: nullableText(article.codice_iva_mexal, article.cod_iva, article.codice_iva, article.cod_aliquota_iva),
-    aliquota_iva: nullableText(article.aliquota_iva, article.perc_iva, article.percentuale_iva),
+    // The complete /articoli/{codice} payload exposes the VAT value as alq_iva
+    // (for example "22,0").  It is both Mexal's VAT code and the source of
+    // the percentage; list records do not contain this authoritative value.
+    codice_iva_mexal: vat.code,
+    aliquota_iva: vat.rate,
     giacenza: stock,
     disponibilita: calculateAvailability(
       article,
@@ -808,14 +820,15 @@ export function mapArticleToOrdersCache(article, { imageUrl = null } = {}) {
   if (!code) throw new Error("Codice articolo Mexal mancante nel record completo.");
   const stock = calculateStock(article);
 
+  const vat = getMexalVat(article);
   return {
     codice_articolo: code,
     descrizione: buildName(article) || code,
     descrizione_completa: nullableText(article.descr_completa),
     codice_alternativo: nullableText(article.cod_alternativo),
     unita_misura: nullableText(article.unita_misura, article.um, article.unita),
-    codice_iva_mexal: nullableText(article.codice_iva_mexal, article.cod_iva, article.codice_iva, article.cod_aliquota_iva),
-    aliquota_iva: nullableText(article.aliquota_iva, article.perc_iva, article.percentuale_iva),
+    codice_iva_mexal: vat.code,
+    aliquota_iva: vat.rate,
     categoria_sconto: nullableInteger(
       article.id_cat_sconto ?? article.categoria_sconto ?? article.cod_cat_sconto
     ),

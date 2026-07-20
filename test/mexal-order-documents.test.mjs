@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildMexalOrderDocument, classifyOrderLines, isImportArticle } from "../server/mexal/order-documents.js";
+import { buildMexalOrderDocument, classifyOrderLines, formatMexalOrderDate, isImportArticle } from "../server/mexal/order-documents.js";
 
 const lines = [
   { codice_articolo: " IT0058 ", quantita: 12, quantita_ocm: 8, quantita_ocx: 4, prezzo_netto: 15.68, sconto_commerciale: "50+35", unita_misura: "1", cod_iva: " 22,0" },
@@ -13,7 +13,14 @@ assert.deepEqual(classified.OCM.map((line) => line.codice_articolo), [" IT0058 "
 assert.deepEqual(classified.OCX.map((line) => [line.codice_articolo, line.quantita_documento]), [[" IT0058 ", 4], ["IT0204", 6]], "non-IMP partial stock is split");
 
 const payload = buildMexalOrderDocument({ id: "workspace-1", codice_cliente: "C1", data_ordine: "2026-07-20", note_mexal: "nota test", id_pagamento: 7 }, "OCX", classified.OCX, { serie: 2, magazzino: 5 });
-assert.deepEqual(payload, { sigla: "OC", serie: 2, numero: 0, cod_conto: "C1", data_documento: "2026-07-20", cod_modulo: "X", id_magazzino: 5, nota: [[1, "nota test"]], id_pagamento: 7, codice_articolo: [[1, "IT0058"], [2, "IT0204"]], quantita: [[1, 4], [2, 6]], prezzo: [[1, 15.68], [2, 12]], sconto: [[1, "50+35"], [2, "50+35"]], id_mag_riga: [[1, 5], [2, 5]], tp_um_articolo: [[1, "1"], [2, "1"]], cod_iva: [[1, "22,0"], [2, "22,0"]] });
+assert.deepEqual(payload, { sigla: "OC", serie: 2, numero: 0, cod_conto: "C1", data_documento: "20/07/2026", cod_modulo: "X", id_magazzino: 5, nota: [[1, "nota test"]], id_pagamento: 7, codice_articolo: [[1, "IT0058"], [2, "IT0204"]], quantita: [[1, 4], [2, 6]], prezzo: [[1, 15.68], [2, 12]], sconto: [[1, "50+35"], [2, "50+35"]], id_mag_riga: [[1, 5], [2, 5]], tp_um_articolo: [[1, "1"], [2, "1"]], cod_iva: [[1, "22,0"], [2, "22,0"]] });
 for (const forbidden of ["note", "conto", "codice_pagamento", "articolo", "prezzo_netto", "righe"]) assert.equal(JSON.stringify(payload).includes(`\"${forbidden}\"`), false, `${forbidden} is never a direct WebAPI key`);
 assert.equal(buildMexalOrderDocument({}, "OCM", [], { notaFormat: "scalar" }), null, "empty documents are not generated");
-console.log("mexal order documents: OCI classification, write payload, and OCM/OCX split verified");
+assert.equal(formatMexalOrderDate("2026-07-20"), "20/07/2026", "DD/MM/YYYY is the default Mexal date format");
+assert.equal(formatMexalOrderDate("2026-07-20", "yyyymmdd"), "20260720", "compact date format is supported");
+assert.equal(formatMexalOrderDate("2026-07-20", "iso"), "2026-07-20", "ISO date format is supported");
+assert.deepEqual(formatMexalOrderDate("2026-07-20", "typed-array-dd/mm/yyyy"), [[1, "20/07/2026"]], "typed-array Italian date format is supported");
+assert.throws(() => formatMexalOrderDate("20/07/2026"), /YYYY-MM-DD/, "dates must use strict ISO input syntax");
+assert.throws(() => formatMexalOrderDate("2026-02-29"), /YYYY-MM-DD/, "dates must be valid calendar dates");
+assert.throws(() => formatMexalOrderDate("2026-07-20", "invalid"), /MEXAL_ORDER_DATE_FORMAT/, "unsupported date formats are rejected");
+console.log("mexal order documents: OCI classification, write payload, OCM/OCX split, and date formatting verified");

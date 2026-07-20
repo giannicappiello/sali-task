@@ -12,6 +12,16 @@ const STORAGE_BUCKET = "prodotti-mexal";
 const ARTICLE_PREFIXES = ["IT", "MKT", "IMP"];
 const PAGE_SIZE = 500;
 
+function nullableText(value: unknown): string | null {
+  const text = String(value ?? "").trim();
+  return text || null;
+}
+
+function parseVatRate(value: unknown): number | null {
+  const rate = Number(String(value ?? "").trim().replace(",", "."));
+  return Number.isFinite(rate) ? rate : null;
+}
+
 type MexalGroup = {
   codice?: string;
   descrizione?: string;
@@ -231,6 +241,7 @@ Deno.serve(async (req) => {
         const availability = calculateAvailability(article, stock);
         const listPrice = getListPrice(article.prz_listino, 1);
         const productName = buildProductName(article);
+        const vatCode = nullableText(article.alq_iva);
         const now = new Date().toISOString();
 
         const payload = {
@@ -254,6 +265,9 @@ Deno.serve(async (req) => {
             hierarchy.sottocategoria?.descrizione || null,
           ean: String(article.cod_alternativo || "").trim() || null,
           prezzo_listino: listPrice,
+          // /articoli/{codice}: alq_iva is the Mexal VAT code/value (e.g. 22,0).
+          codice_iva_mexal: vatCode,
+          aliquota_iva: parseVatRate(vatCode),
           categoria_sconto_articolo: Number(article.id_cat_sconto || 0),
           categoria_statistica_articolo: Number(article.nr_cat_sta || 0),
           gruppo_merceologico: String(article.cod_grp_merc || "").trim() || null,

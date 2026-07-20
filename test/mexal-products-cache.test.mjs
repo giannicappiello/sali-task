@@ -19,6 +19,7 @@ assert.match(api, /onConflict: "codice_articolo"/);
 assert.match(api, /codice_articolo: code/);
 assert.match(api, /mappedByCode = new Map/);
 assert.match(api, /saveProduct[\s\S]*mapArticleToOrdersCache/);
+assert.match(api, /codice_iva_mexal: vat\.code[\s\S]*aliquota_iva: vat\.rate/);
 assert.match(api, /assertRunStillRunning[\s\S]*upsertOrdersProductsCache/);
 assert.match(api, /cache_writes: totals/);
 assert.match(api, /previousInserted[\s\S]*totalProductWrites[\s\S]*totalCacheWrites/);
@@ -32,7 +33,7 @@ const cacheRow = mapArticleToOrdersCache({
   descr_completa: "Descrizione estesa",
   cod_alternativo: "ALT-1",
   unita_misura: "PZ",
-  cod_aliquota_iva: "22",
+  alq_iva: "22,0",
   id_cat_sconto: "7",
   id_cat_prezzo: "8",
   prz_listino: [[1, "12.50"]],
@@ -53,6 +54,8 @@ const cacheColumns = [
 assert.deepEqual(Object.keys(cacheRow).sort(), [...cacheColumns].sort(), "cache payload contains only real columns");
 assert.equal(cacheRow.codice_articolo, "IT0001");
 assert.equal(cacheRow.descrizione, "Articolo testcompleto");
+assert.equal(cacheRow.codice_iva_mexal, "22,0", "VAT code comes from the real alq_iva detail field");
+assert.equal(cacheRow.aliquota_iva, 22, "VAT percentage is parsed from alq_iva");
 assert.equal(cacheRow.mostra_in_app, true);
 assert.equal(cacheRow.sincronizzato_il !== undefined, true);
 assert.equal(cacheRow.sincronizzata_il, undefined);

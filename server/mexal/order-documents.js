@@ -33,6 +33,7 @@ export function classifyOrderLines(lines) {
 const text = (value) => String(value ?? "").trim();
 const number = (value) => { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : undefined; };
 const compact = (value) => Object.fromEntries(Object.entries(value).filter(([, item]) => item !== null && item !== undefined && item !== ""));
+const matrix = (value) => value === undefined || value === null || value === "" ? undefined : [[1, value]];
 
 export function formatMexalNota(value, format) {
   const note = text(value);
@@ -63,7 +64,7 @@ export function normalizeMexalUnitType(value) {
   return text(value) || "1";
 }
 
-export function buildRootMatrixRows(lines, magazzino) {
+export function buildRootMatrixRows(lines, magazzino, defaultAgentCode) {
   const fields = {
     id_riga: (_line, index) => index,
     tp_riga: () => "R",
@@ -76,18 +77,39 @@ export function buildRootMatrixRows(lines, magazzino) {
     cod_iva: (line) => text(line.cod_iva ?? line.codice_iva_mexal),
     tipo_stato_riga: () => "E",
   };
-  return Object.fromEntries(Object.entries(fields).map(([field, value]) => [field,
+  const result = Object.fromEntries(Object.entries(fields).map(([field, value]) => [field,
     lines.map((line, index) => [index + 1, value(line, index + 1)]).filter(([, item]) => item !== undefined && item !== ""),
   ]).filter(([, values]) => values.length));
+
+  const commissionRows = lines.map((line, index) => [index + 1, number(line.provvigione_percentuale ?? line.perc_provv)]).filter(([, value]) => value !== undefined);
+  if (commissionRows.length) {
+    result.perc_provv = commissionRows;
+    result.cod_agente = lines.map((line, index) => [index + 1, 1, text(line.codice_agente_mexal || line.cod_agente || defaultAgentCode)]).filter((row) => row[2]);
+  }
+  return result;
+}
+
+function transportFields(order) {
+  const transport = order?.trasporto_mexal && typeof order.trasporto_mexal === "object" ? order.trasporto_mexal : {};
+  const stringField = (...values) => text(values.find((value) => value !== undefined && value !== null && value !== ""));
+  const numberField = (...values) => number(values.find((value) => value !== undefined && value !== null && value !== ""));
+  return compact({
+    tp_trasporto: matrix(stringField(transport.tp_trasporto, transport.tipo_trasporto, order.tp_trasporto, order.tipo_trasporto)),
+    cod_vettore: matrix(stringField(transport.cod_vettore, transport.codice_vettore, order.cod_vettore, order.codice_vettore)),
+    tp_porto: matrix(stringField(transport.tp_porto, transport.tipo_porto, order.tp_porto, order.tipo_porto)),
+    tp_spese_sped: matrix(stringField(transport.tp_spese_sped, transport.tipo_spese_spedizione, order.tp_spese_sped, order.tipo_spese_spedizione)),
+    val_spese_sped: matrix(numberField(transport.val_spese_sped, transport.spese_spedizione, order.val_spese_sped, order.spese_spedizione)),
+  });
 }
 
 export function buildMexalOrderDocument(order, kind, lines, { serie = 1, magazzino = 5, notaFormat = "typed-array", dateFormat = DEFAULT_MEXAL_ORDER_DATE_FORMAT, causale = 1 } = {}) {
   const document = ORDER_DOCUMENTS[kind];
   if (!document || !lines?.length) return null;
+  const paymentId = number(order.id_pagamento ?? order.codice_pagamento_mexal ?? order.codice_pagamento);
   return compact({
     sigla: "OC", serie: number(serie), numero: 0, cod_conto: text(order.codice_cliente), data_documento: formatMexalOrderDate(order.data_ordine, dateFormat),
     cod_modulo: document.moduleCode, id_causale: number(causale) ? [[1, number(causale)]] : undefined, id_magazzino: number(magazzino), codice_agente: text(order.codice_agente_mexal),
     nota: formatMexalNota(order.note_mexal || `Workspace n. ${order.numero_ordine_visualizzato || order.id}`, notaFormat), id_ind_sped: number(order.id_ind_sped),
-    cod_anag_sped: text(order.cod_anag_sped), id_pagamento: number(order.id_pagamento), ...buildRootMatrixRows(lines, magazzino),
+    cod_anag_sped: text(order.cod_anag_sped), id_pagamento: paymentId, ...transportFields(order), ...buildRootMatrixRows(lines, magazzino, order.codice_agente_mexal),
   });
 }

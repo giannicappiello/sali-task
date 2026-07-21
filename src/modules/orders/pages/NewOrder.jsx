@@ -454,11 +454,13 @@ export default function NewOrder() {
       if (editingOrderId) {
         order = { id: editingOrderId };
       } else {
-        const { data, error: orderError } = await supabase.from("ordini_testate").insert(orderPayload).select("id").single();
+        const { data, error: orderError } = await supabase.from("ordini_testate").insert(orderPayload).select("id,numero_ordine_visualizzato").single();
         if (orderError) throw orderError; order = data;
       }
 
-      const noteMexal = `Workspace n. ${order.id}`;
+      // The database trigger has allocated the human number atomically. Do not
+      // overwrite it with the UUID when saving the order's Mexal note.
+      const noteMexal = `Workspace n. ${order.numero_ordine_visualizzato || order.id}`;
       const linePayload = lines.map((line) => {
         const quantities = quantitiesForOrderLine(line, availability, confirm);
         return {

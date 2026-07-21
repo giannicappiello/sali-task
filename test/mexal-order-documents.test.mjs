@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { DEFAULT_MEXAL_ORDER_DATE_FORMAT, buildMexalOrderDocument, classifyOrderLines, formatMexalOrderDate, isImportArticle } from "../server/mexal/order-documents.js";
-import { documentOptions } from "../api/mexal/submit-order.js";
+import { documentOptions, extractDocumentReference } from "../api/mexal/submit-order.js";
+
+assert.deepEqual(extractDocumentReference({ risorsa: "OC+3+125" }), { serie: "3", numero: "125" }, "the real Mexal resource reference is split into series and number");
+assert.deepEqual(extractDocumentReference({ documento: { serie: 4, numero: 99 } }), { serie: "4", numero: "99" }, "a document object response is supported");
+assert.deepEqual(extractDocumentReference({ id: "f770a164-17e5-4508-b795-e28adf6f560b" }), { serie: null, numero: null }, "an internal UUID is never mistaken for a Mexal document number");
 
 const lines = [
   { codice_articolo: " IT0058 ", quantita: 12, quantita_ocm: 8, quantita_ocx: 4, prezzo_listino: 15.68, sconto_commerciale: "50+35", unita_misura: "1", cod_iva: " 22,0" },

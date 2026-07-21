@@ -53,13 +53,15 @@ export function checkOrderAvailability(lines) {
 
 
 export async function loadOrderDetail(orderId) {
-  const [{ data: order, error: orderError }, { data: lines, error: linesError }] = await Promise.all([
+  const [{ data: order, error: orderError }, { data: lines, error: linesError }, { data: documents, error: documentsError }] = await Promise.all([
     supabase.from("ordini_testate").select("*").eq("id", orderId).single(),
     supabase.from("ordini_righe").select("*").eq("ordine_id", orderId).order("id", { ascending: true }),
+    supabase.from("ordini_documenti_mexal").select("tipo_documento,sigla,serie,numero,cod_modulo").eq("ordine_id", orderId).not("numero", "is", null),
   ]);
   if (orderError) throw orderError;
   if (linesError) throw linesError;
-  return { order, lines: lines || [] };
+  if (documentsError) throw documentsError;
+  return { order: { ...order, mexal_documents: documents || [] }, lines: lines || [] };
 }
 
 export { buildOrderPdfModel, createOrderPdf, downloadOrderPdf } from "./orderPdf.js";

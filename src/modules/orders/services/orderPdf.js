@@ -32,12 +32,12 @@ function vatSummary(lines) {
 
 export function getMexalDocumentNumbers(order = {}) {
   const documents = [
-    ["OCM", order.numero_ocm],
-    ["OCX", order.numero_ocx],
-    ["OCI", order.numero_oci],
-    ...(order.documenti_mexal || []).map((document) => [
+    ["", order.numero_ocm],
+    ["", order.numero_ocx],
+    ["", order.numero_oci],
+    ...(order.mexal_documents || order.documenti_mexal || []).map((document) => [
       String(document.tipo_documento || document.tipo || "").toUpperCase(),
-      document.numero,
+      document.numero ? `${document.serie || "-"}/${document.numero}` : null,
     ]),
   ];
 
@@ -172,12 +172,13 @@ function drawPartyBlock(doc, order, model) {
   cell(doc, 68, y + 12, 16, 12, "Valuta", order.valuta || "EUR");
   cell(doc, 84, y + 12, 35, 12, "Documento", order.tipo_documento || "ORDINE");
   cell(doc, left, y + 24, 56, 12, "Agente", order.codice_agente_mexal || order.agente);
-  cell(doc, 63, y + 24, 56, 12, "Numero", model.documents.join(" / "), { maxLines: 2, fontSize: 7, minFontSize: 5 });
+  cell(doc, 63, y + 24, 56, 12, "Numero ordine Workspace", order.numero_ordine_visualizzato || order.numero_ordine || "", { maxLines: 2, fontSize: 7, minFontSize: 5 });
   cell(doc, left, y + 36, 56, 12, "Appoggio bancario", order.appoggio_bancario);
   cell(doc, 63, y + 36, 34, 12, "Data", formatDate(order.data_ordine));
   cell(doc, 97, y + 36, 22, 12, "Pagina", "1", { align: "center" });
   cell(doc, mid, y, right - mid, 24, "Spett.le cliente", [order.ragione_sociale_cliente || order.ragione_sociale, order.indirizzo_fatturazione || order.indirizzo, [order.cap, order.comune || order.localita, order.provincia].filter(Boolean).join(" "), order.telefono].filter(Boolean).join("\n"), { maxLines: 4, fontSize: 6.6, valueHeight: 18 });
   cell(doc, mid, y + 24, right - mid, 24, "Destinazione", [order.destinazione || order.indirizzo_spedizione, order.indirizzo_destinazione, [order.cap_destinazione, order.comune_destinazione, order.provincia_destinazione].filter(Boolean).join(" ")].filter(Boolean).join("\n"), { maxLines: 3, fontSize: 6.6, valueHeight: 18 });
+  if (model.documents.length) cell(doc, mid, y + 48, right - mid, 10, "Documenti Mexal", model.documents.join(" · "), { maxLines: 2, fontSize: 6.5 });
 }
 
 function drawArticleGrid(doc, top, bottom) {

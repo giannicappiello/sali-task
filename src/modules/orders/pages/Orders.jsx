@@ -124,6 +124,7 @@ export default function Orders() {
                 <th>Imponibile</th><th>IVA</th><th>Totale documento</th>
                 <th>OCM</th>
                 <th>OCX</th>
+                <th>OCI</th>
               </tr>
             </thead>
 
@@ -131,7 +132,7 @@ export default function Orders() {
               {filtered.map((item) => (
                 <tr key={item.id} className="orders-clickable-row" onClick={() => navigate(`/ordini/elenco/${item.id}`)}>
                   <td>{item.data_ordine || "-"}</td>
-                  <td>{item.numero_ordine || "Bozza"}</td>
+                  <td>{item.numero_ordine_visualizzato || item.numero_ordine || "Bozza"}</td>
                   <td>
                     {item.ragione_sociale_cliente || item.codice_cliente}
                   </td>
@@ -149,6 +150,7 @@ export default function Orders() {
                   <td>{Number(item.totale_documento ?? item.totale ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td>
                   <td>{item.numero_ocm || "-"}</td>
                   <td>{item.numero_ocx || "-"}</td>
+                  <td>{item.numero_oci || "-"}</td>
                 </tr>
               ))}
             </tbody>

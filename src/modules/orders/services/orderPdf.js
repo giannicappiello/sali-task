@@ -30,29 +30,27 @@ function vatSummary(lines) {
   }, new Map());
 }
 
-export function getMexalDocumentNumbers(order = {}) {
-  const documents = [
-    ["", order.numero_ocm],
-    ["", order.numero_ocx],
-    ["", order.numero_oci],
-    ...(order.mexal_documents || order.documenti_mexal || []).map((document) => [
-      String(document.tipo_documento || document.tipo || "").toUpperCase(),
-      document.numero ? `${document.serie || "-"}/${document.numero}` : null,
-    ]),
-  ];
-
+export function getMexalDocuments(order = {}) {
+  // The document registry is the authoritative source: legacy numero_oc* fields
+  // lack both document type context and the actual Mexal series.
   const seen = new Set();
-  return documents
-    .filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== "")
-    .map(([type, value]) => {
-      const normalizedType = ["OCM", "OCX", "OCI"].includes(type) ? type : "";
-      const normalizedValue = String(value).trim();
-      const key = `${normalizedType}:${normalizedValue}`;
-      if (seen.has(key)) return null;
+  return (order.mexal_documents || order.documenti_mexal || [])
+    .map((document) => ({
+      type: String(document.tipo_documento || document.tipo || "").trim().toUpperCase(),
+      serie: String(document.serie ?? "").trim(),
+      numero: String(document.numero ?? "").trim(),
+    }))
+    .filter(({ type, serie, numero }) => ["OCM", "OCX", "OCI"].includes(type) && serie && numero)
+    .filter((document) => {
+      const key = `${document.type}:${document.serie}:${document.numero}`;
+      if (seen.has(key)) return false;
       seen.add(key);
-      return normalizedType ? `${normalizedType} ${normalizedValue}` : normalizedValue;
-    })
-    .filter(Boolean);
+      return true;
+    });
+}
+
+export function formatMexalDocumentNumber(document) {
+  return `${document.type} ${document.serie}/${document.numero}`;
 }
 
 export function buildOrderPdfModel(order, lines) {
@@ -62,7 +60,7 @@ export function buildOrderPdfModel(order, lines) {
     totals,
     totale_merce: totals.righe.reduce((sum, line) => sum + number(line.quantita) * number(line.prezzo_listino), 0),
     vat: [...vatSummary(totals.righe).entries()],
-    documents: getMexalDocumentNumbers(order),
+    documents: getMexalDocuments(order),
   };
 }
 
@@ -170,15 +168,15 @@ function drawPartyBlock(doc, order, model) {
   cell(doc, 84, y, 35, 12, "Codice fiscale", order.codice_fiscale);
   cell(doc, left, y + 12, 61, 12, "Condizioni pagamento", order.descrizione_pagamento || order.codice_pagamento);
   cell(doc, 68, y + 12, 16, 12, "Valuta", order.valuta || "EUR");
-  cell(doc, 84, y + 12, 35, 12, "Documento", order.tipo_documento || "ORDINE");
+  cell(doc, 84, y + 12, 35, 12, "Documento", model.document ? `Ordine cliente ${model.document.type}` : "Ordine cliente");
   cell(doc, left, y + 24, 56, 12, "Agente", order.codice_agente_mexal || order.agente);
-  cell(doc, 63, y + 24, 56, 12, "Numero ordine Workspace", order.numero_ordine_visualizzato || order.numero_ordine || "", { maxLines: 2, fontSize: 7, minFontSize: 5 });
+  cell(doc, 63, y + 24, 56, 12, "Numero documento", model.document ? formatMexalDocumentNumber(model.document) : "", { maxLines: 2, fontSize: 7, minFontSize: 5 });
   cell(doc, left, y + 36, 56, 12, "Appoggio bancario", order.appoggio_bancario);
   cell(doc, 63, y + 36, 34, 12, "Data", formatDate(order.data_ordine));
   cell(doc, 97, y + 36, 22, 12, "Pagina", "1", { align: "center" });
   cell(doc, mid, y, right - mid, 24, "Spett.le cliente", [order.ragione_sociale_cliente || order.ragione_sociale, order.indirizzo_fatturazione || order.indirizzo, [order.cap, order.comune || order.localita, order.provincia].filter(Boolean).join(" "), order.telefono].filter(Boolean).join("\n"), { maxLines: 4, fontSize: 6.6, valueHeight: 18 });
   cell(doc, mid, y + 24, right - mid, 24, "Destinazione", [order.destinazione || order.indirizzo_spedizione, order.indirizzo_destinazione, [order.cap_destinazione, order.comune_destinazione, order.provincia_destinazione].filter(Boolean).join(" ")].filter(Boolean).join("\n"), { maxLines: 3, fontSize: 6.6, valueHeight: 18 });
-  if (model.documents.length) cell(doc, mid, y + 48, right - mid, 10, "Documenti Mexal", model.documents.join(" · "), { maxLines: 2, fontSize: 6.5 });
+  if (order.numero_ordine_visualizzato || order.numero_ordine) cell(doc, mid, y + 48, right - mid, 10, "Riferimento Workspace", order.numero_ordine_visualizzato || order.numero_ordine, { maxLines: 2, fontSize: 6.5 });
 }
 
 function drawArticleGrid(doc, top, bottom) {
@@ -281,9 +279,9 @@ function drawFooter(doc, order, model) {
   line(doc, 7, 290, 203, 290);
 }
 
-export async function createOrderPdf(order, lines, { logo = null } = {}) {
+export async function createOrderPdf(order, lines, { logo = null, document = null } = {}) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
-  const model = buildOrderPdfModel(order, lines);
+  const model = { ...buildOrderPdfModel(order, lines), document };
   const companyLogo = logo === null ? await getCompanyLogo() : logo;
   const firstCapacity = Math.floor((ARTICLE.bottom - ARTICLE.top - ARTICLE.header) / ARTICLE.row);
   const continuationCapacity = Math.floor((260 - 29 - ARTICLE.header) / ARTICLE.row);
@@ -312,7 +310,19 @@ export async function createOrderPdf(order, lines, { logo = null } = {}) {
 }
 
 export async function downloadOrderPdf(order, lines) {
-  const doc = await createOrderPdf(order, lines);
-  const mexalNumber = getMexalDocumentNumbers(order)[0]?.replace(/\s+/g, "-");
-  doc.save(`ordine-${mexalNumber || "bozza"}.pdf`);
+  const documents = getMexalDocuments(order);
+  if (!documents.length) {
+    const doc = await createOrderPdf(order, lines);
+    doc.save("ordine-bozza.pdf");
+    return;
+  }
+  for (const document of documents) {
+    const kind = document.type;
+    const documentLines = lines.filter((line) => {
+      if (kind === "OCI") return String(line.codice_articolo || "").trim().toUpperCase().startsWith("IMP");
+      return Number(line[`quantita_${kind.toLowerCase()}`]) > 0;
+    }).map((line) => ({ ...line, quantita: kind === "OCI" ? line.quantita : line[`quantita_${kind.toLowerCase()}`] }));
+    const doc = await createOrderPdf(order, documentLines, { document });
+    doc.save(`ordine-${document.type}-${document.serie}-${document.numero}.pdf`);
+  }
 }

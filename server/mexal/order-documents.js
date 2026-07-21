@@ -108,8 +108,8 @@ function destinationFields(order) {
   const hasDestinationSnapshot = Object.keys(destination).length > 0;
   const addressId = explicitAddressId ?? (hasDestinationSnapshot ? 0 : undefined);
   return compact({
-    // Mexal dichiara id_ind_sped come campo array: usa la matrice radice [[indice, valore]].
-    id_ind_sped: matrix(addressId),
+    // Mexal richiede id_ind_sped come matrice e valore interno di tipo stringa.
+    id_ind_sped: addressId === undefined ? undefined : matrix(String(addressId)),
     cod_anag_sped: text(order.cod_anag_sped || destination.cod_anag_sped || (hasDestinationSnapshot ? order.codice_cliente : "")),
   });
 }

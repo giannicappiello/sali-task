@@ -29,15 +29,15 @@ test("calcola gli stessi totali del documento Mexal di riferimento", () => {
   }).coincide, true);
 });
 
-test("normalizza il tipo unità di misura Mexal come stringa", () => {
-  assert.equal(normalizeMexalUnitType(undefined), "1");
-  assert.equal(normalizeMexalUnitType("PZ"), "1");
+test("normalizza il codice unità di misura Mexal come stringa", () => {
+  assert.equal(normalizeMexalUnitType(undefined), "PZ");
+  assert.equal(normalizeMexalUnitType(" pz "), "PZ");
+  assert.equal(normalizeMexalUnitType("CF"), "CF");
   assert.equal(normalizeMexalUnitType("1"), "1");
   assert.equal(normalizeMexalUnitType(2), "2");
-  assert.equal(normalizeMexalUnitType("2"), "2");
 });
 
-test("il payload usa data YYYYMMDD, prezzo di listino, codice IVA e unità primaria stringa", () => {
+test("il payload usa data YYYYMMDD, prezzo di listino, codice IVA e unità reale", () => {
   const payload = buildMexalOrderDocument({
     id: "ordine-1",
     codice_cliente: "501.03320",
@@ -50,16 +50,17 @@ test("il payload usa data YYYYMMDD, prezzo di listino, codice IVA e unità prima
     prezzo_netto: 1.495,
     sconto_commerciale: "50+35",
     codice_iva_mexal: " 22,0",
+    unita_misura: "PZ",
   }]);
 
   assert.equal(payload.data_documento, "20260720");
   assert.deepEqual(payload.prezzo, [[1, 4.6]]);
   assert.deepEqual(payload.sconto, [[1, "50+35"]]);
   assert.deepEqual(payload.cod_iva, [[1, "22,0"]]);
-  assert.deepEqual(payload.tp_um_articolo, [[1, "1"]]);
+  assert.deepEqual(payload.tp_um_articolo, [[1, "PZ"]]);
 });
 
-test("il payload conserva l'unità secondaria come stringa solo quando esplicitamente indicata", () => {
+test("tp_um_articolo esplicito ha precedenza sull'unità di misura", () => {
   const payload = buildMexalOrderDocument({
     id: "ordine-2",
     codice_cliente: "501.03320",
@@ -69,8 +70,9 @@ test("il payload conserva l'unità secondaria come stringa solo quando esplicita
     codice_articolo: "IT0001",
     quantita_documento: 1,
     prezzo_listino: 4.6,
-    tp_um_articolo: 2,
+    unita_misura: "PZ",
+    tp_um_articolo: "CF",
   }]);
 
-  assert.deepEqual(payload.tp_um_articolo, [[1, "2"]]);
+  assert.deepEqual(payload.tp_um_articolo, [[1, "CF"]]);
 });

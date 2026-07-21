@@ -60,22 +60,23 @@ export function formatMexalOrderDate(value, format = DEFAULT_MEXAL_ORDER_DATE_FO
 }
 
 export function normalizeMexalUnitType(value) {
-  const normalized = text(value).toUpperCase();
-  return normalized || "PZ";
+  return text(value) || "1";
 }
 
 export function buildRootMatrixRows(lines, magazzino) {
   const fields = {
+    id_riga: (_line, index) => index,
+    tp_riga: () => "R",
     codice_articolo: (line) => normalizeArticleCode(line.codice_articolo),
     quantita: (line) => number(line.quantita_documento),
     prezzo: (line) => number(line.prezzo_listino ?? line.prezzo_unitario ?? line.prezzo),
     sconto: (line) => text(line.sconto_commerciale),
     id_mag_riga: (line) => number(line.id_mag_riga ?? magazzino),
-    tp_um_articolo: (line) => normalizeMexalUnitType(line.tp_um_articolo ?? line.unita_misura),
+    tp_um_articolo: (line) => normalizeMexalUnitType(line.tp_um_articolo),
     cod_iva: (line) => text(line.cod_iva ?? line.codice_iva_mexal),
   };
   return Object.fromEntries(Object.entries(fields).map(([field, value]) => [field,
-    lines.map((line, index) => [index + 1, value(line)]).filter(([, item]) => item !== undefined && item !== ""),
+    lines.map((line, index) => [index + 1, value(line, index + 1)]).filter(([, item]) => item !== undefined && item !== ""),
   ]).filter(([, values]) => values.length));
 }
 
@@ -84,7 +85,7 @@ export function buildMexalOrderDocument(order, kind, lines, { serie = 1, magazzi
   if (!document || !lines?.length) return null;
   return compact({
     sigla: "OC", serie: number(serie), numero: 0, cod_conto: text(order.codice_cliente), data_documento: formatMexalOrderDate(order.data_ordine, dateFormat),
-    cod_modulo: document.moduleCode, id_causale: number(order.id_causale), id_magazzino: number(magazzino), codice_agente: text(order.codice_agente_mexal),
+    cod_modulo: document.moduleCode, id_magazzino: number(magazzino), codice_agente: text(order.codice_agente_mexal),
     nota: formatMexalNota(order.note_mexal || `Workspace n. ${order.id}`, notaFormat), id_ind_sped: number(order.id_ind_sped),
     cod_anag_sped: text(order.cod_anag_sped), id_pagamento: number(order.id_pagamento), ...buildRootMatrixRows(lines, magazzino),
   });

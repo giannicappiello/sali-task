@@ -30,14 +30,14 @@ test("calcola gli stessi totali del documento Mexal di riferimento", () => {
 });
 
 test("normalizza il codice unità di misura Mexal come stringa", () => {
-  assert.equal(normalizeMexalUnitType(undefined), "PZ");
-  assert.equal(normalizeMexalUnitType(" pz "), "PZ");
+  assert.equal(normalizeMexalUnitType(undefined), "1");
+  assert.equal(normalizeMexalUnitType(" pz "), "pz");
   assert.equal(normalizeMexalUnitType("CF"), "CF");
   assert.equal(normalizeMexalUnitType("1"), "1");
   assert.equal(normalizeMexalUnitType(2), "2");
 });
 
-test("il payload usa data YYYYMMDD, prezzo di listino, codice IVA e unità reale", () => {
+test("una riga IT0001 usa la struttura rilevata nel documento Mexal reale", () => {
   const payload = buildMexalOrderDocument({
     id: "ordine-1",
     codice_cliente: "501.03320",
@@ -49,15 +49,14 @@ test("il payload usa data YYYYMMDD, prezzo di listino, codice IVA e unità reale
     prezzo_listino: 4.6,
     prezzo_netto: 1.495,
     sconto_commerciale: "50+35",
-    codice_iva_mexal: " 22,0",
+    cod_iva: "22,0",
     unita_misura: "PZ",
-  }]);
+  }], { magazzino: 5, dateFormat: "yyyymmdd" });
 
   assert.equal(payload.data_documento, "20260720");
-  assert.deepEqual(payload.prezzo, [[1, 4.6]]);
-  assert.deepEqual(payload.sconto, [[1, "50+35"]]);
-  assert.deepEqual(payload.cod_iva, [[1, "22,0"]]);
-  assert.deepEqual(payload.tp_um_articolo, [[1, "PZ"]]);
+  assert.deepEqual({ id_riga: payload.id_riga, tp_riga: payload.tp_riga, codice_articolo: payload.codice_articolo, tp_um_articolo: payload.tp_um_articolo, quantita: payload.quantita, prezzo: payload.prezzo, sconto: payload.sconto, cod_iva: payload.cod_iva, id_mag_riga: payload.id_mag_riga }, {
+    id_riga: [[1, 1]], tp_riga: [[1, "R"]], codice_articolo: [[1, "IT0001"]], tp_um_articolo: [[1, "1"]], quantita: [[1, 1]], prezzo: [[1, 4.6]], sconto: [[1, "50+35"]], cod_iva: [[1, "22,0"]], id_mag_riga: [[1, 5]],
+  });
 });
 
 test("tp_um_articolo esplicito ha precedenza sull'unità di misura", () => {
@@ -75,4 +74,9 @@ test("tp_um_articolo esplicito ha precedenza sull'unità di misura", () => {
   }]);
 
   assert.deepEqual(payload.tp_um_articolo, [[1, "CF"]]);
+});
+
+test("id_causale non viene inviato come scalare senza un contratto POST verificato", () => {
+  const payload = buildMexalOrderDocument({ id: "ordine-3", codice_cliente: "501.03320", data_ordine: "2026-07-20", id_causale: 1 }, "OCM", [{ codice_articolo: "IT0001", quantita_documento: 1 }]);
+  assert.equal(Object.hasOwn(payload, "id_causale"), false);
 });

@@ -85,5 +85,5 @@ export async function downloadOrderPdf(order, lines, options) {
   const documents = await loadCreatedMexalDocuments(order.id);
   const enriched = await enrichAgent(order);
   const mexalDocuments = mergeMexalDocuments(documents, enriched);
-  return createAndDownloadPdf({ ...enriched, mexal_documents: mexalDocuments }, lines, options);
+  return createAndDownloadPdf({ ...enriched, codice_agente_mexal: enriched.agente_nome, mexal_documents: mexalDocuments }, lines, options);
 }

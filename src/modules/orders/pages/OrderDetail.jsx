@@ -16,6 +16,7 @@ export default function OrderDetail() {
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -74,6 +75,18 @@ export default function OrderDetail() {
     try { await deleteOrder(orderId); navigate("/ordini/elenco", { replace: true, state: { message: "Ordine eliminato." } }); }
     catch (deleteError) { setError(deleteError.message || "Impossibile eliminare l'ordine."); }
     finally { setDeleting(false); }
+  }
+  async function downloadPdf() {
+    if (downloadingPdf) return;
+    setDownloadingPdf(true);
+    setError("");
+    try {
+      await downloadOrderPdf(order, lines);
+    } catch (pdfError) {
+      setError(pdfError.message || "Impossibile generare il PDF dell'ordine.");
+    } finally {
+      setDownloadingPdf(false);
+    }
   }
 
   if (loading) return <div className="orders-empty">Caricamento ordine...</div>;
@@ -141,8 +154,8 @@ export default function OrderDetail() {
       </section>
 
       <div className="orders-detail-actions">
-        <button className="orders-secondary" type="button" onClick={() => downloadOrderPdf(order, lines)}>
-          <Download size={18} /> Scarica PDF
+        <button className="orders-secondary orders-download-pdf-mobile" type="button" disabled={downloadingPdf} onClick={downloadPdf}>
+          <Download size={18} /> {downloadingPdf ? "Generazione PDF..." : "SCARICA PDF"}
         </button>
         {canEdit && <button className="orders-secondary" type="button" onClick={() => navigate(`/ordini/modifica/${orderId}`)}><Edit3 size={18} /> MODIFICA ORDINE</button>}
         {canDelete && <button className="orders-danger" type="button" disabled={deleting} onClick={removeOrder}><Trash2 size={18} /> {deleting ? "Eliminazione..." : "ELIMINA ORDINE"}</button>}

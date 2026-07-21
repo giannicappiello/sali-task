@@ -104,7 +104,7 @@ export default function OrderDetail() {
           <ArrowLeft size={18} /> Torna agli ordini
         </button>
         <div>
-          <h2>Ordine {order.numero_ordine || order.id}</h2>
+          <h2>Ordine {order.numero_ordine_visualizzato || order.numero_ordine || order.id}</h2>
           <p>{order.ragione_sociale_cliente || order.codice_cliente}</p>
         </div>
       </div>
@@ -119,9 +119,11 @@ export default function OrderDetail() {
         <div><span>Pagamento</span><strong>{order.descrizione_pagamento || order.codice_pagamento || "-"}</strong></div>
         <div><span>Stato invio</span><strong className={`orders-sync-badge ${syncStatus}`}>{syncStatus.replaceAll("_", " ")}</strong></div>
         <div><span>Ultimo tentativo</span><strong>{order.ultimo_tentativo_sync ? new Date(order.ultimo_tentativo_sync).toLocaleString("it-IT") : "-"}</strong></div>
-        <div><span>OCM</span><strong>{order.numero_ocm || "-"}</strong></div>
-        <div><span>OCX</span><strong>{order.numero_ocx || "-"}</strong></div>
-        <div><span>OCI</span><strong>{order.numero_oci || "-"}</strong></div>
+        {['OCM', 'OCX', 'OCI'].map((kind) => {
+          const document = order.mexal_documents?.find((item) => item.tipo_documento === kind);
+          const value = document?.numero || order[`numero_${kind.toLowerCase()}`];
+          return <div key={kind}><span>{kind}</span><strong>{value ? `${document?.serie || '-'}/${value}` : '-'}</strong></div>;
+        })}
         <div><span>Totale imponibile</span><strong>{money(order.totale_imponibile ?? order.totale)}</strong></div>
         <div><span>Totale IVA</span><strong>{money(order.totale_iva)}</strong></div>
         <div><span>Totale documento</span><strong>{money(order.totale_documento ?? order.totale)}</strong></div>

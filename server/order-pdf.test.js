@@ -15,6 +15,17 @@ test("il modello PDF usa il motore economico condiviso per quindici righe", () =
   assert.deepEqual(model.documents, ["OCM-1", "OCI-1"]);
 });
 
+test("il PDF mostra numero Workspace e soli documenti Mexal realmente creati", async () => {
+  const pdf = await createOrderPdf({ data_ordine: "2026-07-20", numero_ordine_visualizzato: "125/2026", mexal_documents: [{ tipo_documento: "OCM", serie: 3, numero: "125" }, { tipo_documento: "OCI", serie: 1, numero: "8" }] }, [{ codice_articolo: "A", quantita: 1, prezzo_listino: 1 }], { logo: false });
+  const output = pdf.output();
+  assert.match(output, /NUMERO ORDINE WORKSPACE/);
+  assert.match(output, /125\/2026/);
+  assert.match(output, /DOCUMENTI MEXAL/);
+  assert.match(output, /OCM 3\/125/);
+  assert.match(output, /OCI 1\/8/);
+  assert.doesNotMatch(output, /OCX -\//);
+});
+
 test("il PDF con almeno quindici righe gestisce più pagine e intestazioni", async () => {
   const lines = Array.from({ length: 45 }, (_, index) => ({ codice_articolo: `A-${index}`, descrizione: `Articolo molto descrittivo ${index}`, quantita: 1, prezzo_listino: 10, aliquota_iva: 22 }));
   const pdf = await createOrderPdf({ id: "ordine-test", data_ordine: "2026-07-20" }, lines, { logo: false });

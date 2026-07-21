@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { DEFAULT_MEXAL_ORDER_DATE_FORMAT, buildMexalOrderDocument, classifyOrderLines, formatMexalOrderDate, isImportArticle } from "../server/mexal/order-documents.js";
-import { documentOptions } from "../api/mexal/submit-order.js";
+import { documentOptions, extractDocumentReference, mexalLineState } from "../api/mexal/submit-order.js";
+
+assert.deepEqual(extractDocumentReference({ risorsa: "OC+3+125" }), { serie: "3", numero: "125" }, "the real Mexal resource reference is split into series and number");
+assert.deepEqual(extractDocumentReference({ documento: { serie: 4, numero: 99 } }), { serie: "4", numero: "99" }, "a document object response is supported");
+assert.deepEqual(extractDocumentReference({ id: "f770a164-17e5-4508-b795-e28adf6f560b" }), { serie: null, numero: null }, "an internal UUID is never mistaken for a Mexal document number");
+assert.equal(mexalLineState("OCM"), "E", "OCM diagnostics retain evadibile status");
+assert.equal(mexalLineState("OCX"), "S", "OCX diagnostics retain sospeso status");
+assert.equal(mexalLineState("OCI"), "S", "OCI diagnostics retain sospeso status");
 
 const lines = [
   { codice_articolo: " IT0058 ", quantita: 12, quantita_ocm: 8, quantita_ocx: 4, prezzo_listino: 15.68, sconto_commerciale: "50+35", unita_misura: "1", cod_iva: " 22,0" },
@@ -40,6 +47,7 @@ const mexalClientSource = await readFile("server/mexal/sync-products.js", "utf8"
 assert.match(submitOrderSource, /logMexalOrderDiagnostic[\s\S]*?dateFields[\s\S]*?\/data\|date\/i/, "order POST diagnostics highlight every date-like payload field");
 assert.match(submitOrderSource, /postJson\("\/documenti\/ordini-clienti", payload, \{ onDiagnostic \}\)/, "order submission forwards HTTP diagnostics from the Mexal client");
 assert.match(submitOrderSource, /finalizeOrderError[\s\S]*?if \(!finalizedOrder\) throw/, "a failed final order-state update is no longer silently ignored");
+assert.match(submitOrderSource, /statoRigaMexal/, "each document log preserves the required per-document row status without collapsing an OCM\/OCX split onto the source row");
 assert.doesNotMatch(submitOrderSource, /ordini_testate"\)\.update\(\{\s*stato:/, "Mexal finalization never changes the commercial order state");
 assert.match(submitOrderSource, /stato_sincronizzazione: "errore", errore_sincronizzazione: error\.message[\s\S]*sincronizzato_mexal_il: null[\s\S]*sync_token: null/, "error finalization records the failure and clears its sync lease without changing stato");
 assert.match(mexalClientSource, /onDiagnostic\?\.\(\{ phase: "request", url, method: "POST", headers: requestHeaders, body \}\)/, "the exact serialized request is logged immediately before POST");

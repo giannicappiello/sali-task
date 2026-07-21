@@ -86,7 +86,9 @@ export function buildMexalOrderDocument(order, kind, lines, { serie = 1, magazzi
   return compact({
     sigla: "OC", serie: number(serie), numero: 0, cod_conto: text(order.codice_cliente), data_documento: formatMexalOrderDate(order.data_ordine, dateFormat),
     cod_modulo: document.moduleCode, id_magazzino: number(magazzino), codice_agente: text(order.codice_agente_mexal),
-    nota: formatMexalNota(order.note_mexal || `Workspace n. ${order.id}`, notaFormat), id_ind_sped: number(order.id_ind_sped),
+    // `nota` is the only origin/reference field verified by the captured GET
+    // shape.  Prefer the human order number, never the internal UUID.
+    nota: formatMexalNota(order.note_mexal || `Workspace n. ${order.numero_ordine_visualizzato || order.id}`, notaFormat), id_ind_sped: number(order.id_ind_sped),
     cod_anag_sped: text(order.cod_anag_sped), id_pagamento: number(order.id_pagamento), ...buildRootMatrixRows(lines, magazzino),
   });
 }

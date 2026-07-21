@@ -16,7 +16,19 @@ export function documentOptions(config, kind) {
   };
 }
 
-function extractNumber(result) { return text(result?.numero || result?.numero_documento || result?.documento?.numero || result?.id || result?.risorsa); }
+export function extractDocumentReference(result) {
+  const document = result?.documento || result?.dati?.documento || result?.dati || result || {};
+  const directNumber = text(document.numero || document.numero_documento || result?.numero || result?.numero_documento);
+  const directSeries = text(document.serie || document.serie_documento || result?.serie || result?.serie_documento);
+  if (directNumber) return { numero: directNumber, serie: directSeries || null };
+
+  // Mexal can return the created resource rather than a document object, e.g.
+  // "OC+1+123" (also embedded at the end of a resource URL).  `risorsa` is
+  // not itself a document number, so it must be parsed before persistence.
+  const resource = text(document.risorsa || document.resource || result?.risorsa || result?.resource || result?.location);
+  const match = /(?:^|\/)(?:OC\+)?([^+/]+)\+([^/?#]+)(?:[/?#]|$)/i.exec(resource);
+  return match ? { serie: text(match[1]) || null, numero: text(match[2]) || null } : { serie: null, numero: null };
+}
 function token() { return crypto.randomUUID(); }
 function diagnosticHeaders(headers) {
   return Object.fromEntries(Object.entries(headers || {}).map(([name, value]) => [name, /^authorization$/i.test(name) ? "[REDACTED]" : value]));
@@ -64,6 +76,9 @@ function lineDiagnostic(lines) {
     id_mag_riga: line.id_mag_riga,
   }));
 }
+export function mexalLineState(kind) {
+  return kind === "OCM" ? "E" : kind === "OCX" || kind === "OCI" ? "S" : null;
+}
 async function stopRequested(admin, orderId, syncToken) {
   const { data, error } = await admin.from("ordini_testate").select("arresto_sync_richiesto,stato_sincronizzazione,sync_token").eq("id", orderId).single();
   if (error) throw error;
@@ -90,7 +105,7 @@ export default async function handler(req, res) {
     if (startError) throw startError;
     if (!started) return res.status(409).json({ error: "È già presente una sincronizzazione attiva o lo stato non consente l'invio." });
     const { data: run, error: runError } = await admin.from("mexal_sync_runs").insert({ sync_type: "orders", status: "running", metadata: { source: "submit-order", order_id: orderId } }).select("id").single(); if (runError) throw runError; runId = run.id;
-    const { data: documentConfig, error: configError } = await admin.from("ordini_configurazione_documenti").select("serie_ocm,serie_ocx,serie_oci,id_magazzino").eq("id", 1).maybeSingle();
+    const { data: documentConfig, error: configError } = await admin.from("ordini_configurazione_documenti").select("serie_ocm,serie_ocx,serie_oci,id_magazzino,id_causale_vendita_diretta").eq("id", 1).maybeSingle();
     if (configError) throw configError;
     const mexal = buildMexalClient(); const documents = []; const failures = [];
     for (const kind of requiredKinds) {
@@ -99,7 +114,7 @@ export default async function handler(req, res) {
       const { data: savedDocument, error: savedDocumentError } = await admin.from("ordini_documenti_mexal").select("*").eq("ordine_id", orderId).eq("tipo_documento", kind).maybeSingle();
       if (savedDocumentError) throw savedDocumentError;
       const existingDocument = savedDocument?.numero ? savedDocument : done.has(kind) ? { numero: order[`numero_${kind.toLowerCase()}`], serie: documentOptions(documentConfig, kind).serie, cod_modulo: ORDER_DOCUMENTS[kind]?.moduleCode, tentativi: 0 } : null;
-      if (existingDocument?.numero) {
+      if (savedDocument?.numero || done.has(kind)) {
         try {
           const reconciled = await mexal.getJson(`/documenti/ordini-clienti/OC+${encodeURIComponent(existingDocument.serie)}+${encodeURIComponent(existingDocument.numero)}`);
           const outcome = reconciliationFailure(null, existingDocument.cod_modulo, reconciled);
@@ -112,17 +127,24 @@ export default async function handler(req, res) {
       const startedAt = new Date().toISOString();
       const diagnostics = [];
       const onDiagnostic = (diagnostic) => { diagnostics.push(safeDiagnostic(diagnostic)); logMexalOrderDiagnostic({ orderId, kind, diagnostic }); };
-      console.info("Mexal order payload ready", { orderId, kind, payload, sourceLines: lineDiagnostic(classified[kind]) });
+      const sourceLines = lineDiagnostic(classified[kind]);
+      const statoRigaMexal = mexalLineState(kind);
+      console.info("Mexal order payload ready", { orderId, kind, payload, sourceLines, statoRigaMexal });
       try {
         const result = await mexal.postJson("/documenti/ordini-clienti", payload, { onDiagnostic });
-        const numero = extractNumber(result); const options = documentOptions(documentConfig, kind);
+        const reference = extractDocumentReference(result); const numero = reference.numero; const options = documentOptions(documentConfig, kind);
+        if (!numero) {
+          const error = new Error("Documento creato da Mexal ma numero documento non identificato.");
+          error.mexalResult = result;
+          throw error;
+        }
         documents.push({ kind, numero });
-        await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, stato: "created", sigla: "OC", serie: options.serie, numero, cod_modulo: ORDER_DOCUMENTS[kind]?.moduleCode, tentativi: Number(savedDocument?.tentativi || 0) + 1, errore: null, risposta: { result, diagnostics }, creato_il: new Date().toISOString(), aggiornato_il: new Date().toISOString() });
-        await admin.from("ordini_sync_mexal_log").insert({ ordine_id: orderId, tipo_documento: kind, stato: "successo", payload, risposta: { result, diagnostics, sourceLines: lineDiagnostic(classified[kind]) }, iniziato_il: startedAt, completato_il: new Date().toISOString() });
+        await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, stato: "created", sigla: "OC", serie: reference.serie || options.serie, numero, cod_modulo: ORDER_DOCUMENTS[kind]?.moduleCode, tentativi: Number(savedDocument?.tentativi || 0) + 1, errore: null, risposta: { result, diagnostics }, creato_il: new Date().toISOString(), aggiornato_il: new Date().toISOString() });
+        await admin.from("ordini_sync_mexal_log").insert({ ordine_id: orderId, tipo_documento: kind, stato: "successo", payload, risposta: { result, diagnostics, sourceLines, statoRigaMexal }, iniziato_il: startedAt, completato_il: new Date().toISOString() });
         await heartbeat(admin, orderId, syncToken);
       } catch (error) {
         const mexalResponse = error?.mexalResponse ? { status: error.mexalResponse.status, headers: diagnosticHeaders(error.mexalResponse.headers), body: parseDiagnosticBody(error.mexalResponse.body) } : null;
-        const diagnosticRecord = { diagnostics, mexalResponse, sourceLines: lineDiagnostic(classified[kind]) };
+        const diagnosticRecord = { diagnostics, mexalResponse, mexalResult: error?.mexalResult || null, sourceLines, statoRigaMexal };
         failures.push({ kind, error: error.message });
         console.error("Mexal order document failed", { orderId, kind, error: error.message, payload, ...diagnosticRecord });
         await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, stato: "failed", sigla: "OC", serie: documentOptions(documentConfig, kind).serie, cod_modulo: ORDER_DOCUMENTS[kind]?.moduleCode, tentativi: Number(savedDocument?.tentativi || 0) + 1, errore: error.message, risposta: diagnosticRecord, aggiornato_il: new Date().toISOString() });

@@ -104,15 +104,20 @@ function transportFields(order) {
 
 function destinationFields(order) {
   const destination = order?.destinazione_mexal && typeof order.destinazione_mexal === "object" ? order.destinazione_mexal : {};
-  const explicitAddressId = number(order.id_ind_sped ?? destination.id_ind_sped ?? destination.cod_ind_sped);
-  const hasDestinationSnapshot = Object.keys(destination).length > 0;
-  const addressId = explicitAddressId ?? (hasDestinationSnapshot ? 0 : undefined);
-  const customerCode = text(order.cod_anag_sped || destination.cod_anag_sped || (hasDestinationSnapshot ? order.codice_cliente : ""));
-  return compact({
-    // Mexal richiede entrambi i riferimenti destinazione come campi array/matrice.
-    id_ind_sped: addressId === undefined ? undefined : matrix(String(addressId)),
-    cod_anag_sped: customerCode ? matrix(customerCode) : undefined,
-  });
+  const addressId = number(order.id_ind_sped ?? destination.id_ind_sped ?? destination.cod_ind_sped);
+
+  // Con indice 0 si tratta dell'indirizzo principale del cliente.
+  // In questo caso Mexal ricava automaticamente il destinatario da cod_conto:
+  // inviare cod_anag_sped con lo stesso conto provoca "Conto destinatario errato".
+  if (addressId === undefined || addressId <= 0) return {};
+
+  const destinationAccount = text(order.cod_anag_sped || destination.cod_anag_sped);
+  if (!destinationAccount) return {};
+
+  return {
+    id_ind_sped: matrix(String(addressId)),
+    cod_anag_sped: matrix(destinationAccount),
+  };
 }
 
 export function buildMexalOrderDocument(order, kind, lines, { serie = 1, magazzino = 5, notaFormat = "typed-array", dateFormat = DEFAULT_MEXAL_ORDER_DATE_FORMAT, causale = 1 } = {}) {

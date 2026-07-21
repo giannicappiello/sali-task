@@ -1,10 +1,38 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft, Download, Edit3, OctagonX, RefreshCw, Send, Trash2 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
+import { supabase } from "../../../lib/supabaseClient";
 import { deleteOrder, downloadOrderPdf, loadOrderDetail, recoverOrderSync, stopOrderSync, submitOrderToMexal } from "../services/orderFulfillment";
 
 function money(value) {
   return Number(value || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
+}
+
+function normalize(value) {
+  return String(value ?? "").trim();
+}
+
+function agentFullName(agent) {
+  const fullName = normalize(
+    agent?.nome_completo ||
+    agent?.nominativo ||
+    agent?.descrizione ||
+    agent?.ragione_sociale
+  );
+  if (fullName) return fullName;
+
+  return [agent?.nome, agent?.cognome]
+    .map(normalize)
+    .filter(Boolean)
+    .join(" ");
+}
+
+function directOrderAgentName(order) {
+  return normalize(
+    order?.nome_agente ||
+    order?.agente_nome ||
+    order?.nominativo_agente
+  );
 }
 
 export default function OrderDetail() {
@@ -12,6 +40,7 @@ export default function OrderDetail() {
   const navigate = useNavigate();
   const [order, setOrder] = useState(null);
   const [lines, setLines] = useState([]);
+  const [agentName, setAgentName] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -19,6 +48,28 @@ export default function OrderDetail() {
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+
+  async function resolveAgentName(currentOrder) {
+    const directName = directOrderAgentName(currentOrder);
+    if (directName) return directName;
+
+    const code = normalize(currentOrder?.codice_agente_mexal);
+    if (!code) return "";
+
+    const { data, error: agentError } = await supabase
+      .from("ordini_agenti_cache")
+      .select("*")
+      .or(`codice_agente_mexal.eq.${code},codice_agente.eq.${code},codice.eq.${code}`)
+      .limit(1)
+      .maybeSingle();
+
+    if (agentError) {
+      console.warn("Impossibile caricare il nome agente:", agentError);
+      return "";
+    }
+
+    return agentFullName(data);
+  }
 
   async function load() {
     setLoading(true);
@@ -28,6 +79,7 @@ export default function OrderDetail() {
       const result = await loadOrderDetail(orderId);
       setOrder(result.order);
       setLines(result.lines);
+      setAgentName(await resolveAgentName(result.order));
     } catch (loadError) {
       setError(loadError.message || "Errore caricamento ordine.");
     } finally {
@@ -69,6 +121,7 @@ export default function OrderDetail() {
     catch (stopError) { setError(stopError.message || "Impossibile richiedere l'arresto."); }
     finally { setStopping(false); }
   }
+
   async function removeOrder() {
     if (deleting || !window.confirm("Stai per eliminare definitivamente questo ordine. L’operazione non può essere annullata.")) return;
     setDeleting(true); setError("");
@@ -76,12 +129,17 @@ export default function OrderDetail() {
     catch (deleteError) { setError(deleteError.message || "Impossibile eliminare l'ordine."); }
     finally { setDeleting(false); }
   }
+
   async function downloadPdf() {
     if (downloadingPdf) return;
     setDownloadingPdf(true);
     setError("");
     try {
-      await downloadOrderPdf(order, lines);
+      await downloadOrderPdf({
+        ...order,
+        codice_agente_mexal: agentName || "-",
+        agente: agentName || "-",
+      }, lines);
     } catch (pdfError) {
       setError(pdfError.message || "Impossibile generare il PDF dell'ordine.");
     } finally {
@@ -115,14 +173,14 @@ export default function OrderDetail() {
       <section className="orders-panel orders-detail-summary">
         <div><span>Data</span><strong>{order.data_ordine || "-"}</strong></div>
         <div><span>Cliente</span><strong>{order.codice_cliente || "-"}</strong></div>
-        <div><span>Agente</span><strong>{order.codice_agente_mexal || "-"}</strong></div>
+        <div><span>Agente</span><strong>{agentName || "-"}</strong></div>
         <div><span>Pagamento</span><strong>{order.descrizione_pagamento || order.codice_pagamento || "-"}</strong></div>
         <div><span>Stato invio</span><strong className={`orders-sync-badge ${syncStatus}`}>{syncStatus.replaceAll("_", " ")}</strong></div>
         <div><span>Ultimo tentativo</span><strong>{order.ultimo_tentativo_sync ? new Date(order.ultimo_tentativo_sync).toLocaleString("it-IT") : "-"}</strong></div>
-        {['OCM', 'OCX', 'OCI'].map((kind) => {
+        {["OCM", "OCX", "OCI"].map((kind) => {
           const document = order.mexal_documents?.find((item) => item.tipo_documento === kind);
           const value = document?.numero || order[`numero_${kind.toLowerCase()}`];
-          return <div key={kind}><span>{kind}</span><strong>{value ? `${document?.serie || '-'}/${value}` : '-'}</strong></div>;
+          return <div key={kind}><span>{kind}</span><strong>{value ? `${document?.serie || "-"}/${value}` : "-"}</strong></div>;
         })}
         <div><span>Totale imponibile</span><strong>{money(order.totale_imponibile ?? order.totale)}</strong></div>
         <div><span>Totale IVA</span><strong>{money(order.totale_iva)}</strong></div>

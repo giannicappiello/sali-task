@@ -31,6 +31,23 @@ function firstValue(object, keys, fallback = null) {
   return fallback;
 }
 
+function clientVatNumber(client) {
+  const vatKeys = ["partita_iva", "partitaiva", "piva", "p_iva", "vat_number", "vat"];
+  const direct = normalize(firstValue(client, vatKeys));
+  if (direct) return direct;
+
+  // Mexal installations expose the fiscal data under different nested blocks.
+  // Read those documented variants too, while preserving the raw payload.
+  for (const key of ["anagrafica", "dati_anagrafici", "dati_fiscali", "fiscale"]) {
+    const value = client?.[key];
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const nested = normalize(firstValue(value, vatKeys));
+      if (nested) return nested;
+    }
+  }
+  return "";
+}
+
 function nullableInteger(value) {
   const text = normalize(value);
   if (!text) return null;
@@ -374,9 +391,7 @@ function mapClient(client, syncDate, paymentsMap) {
   return {
     codice_cliente: code,
     ragione_sociale: companyName || code,
-    partita_iva:
-      normalize(firstValue(client, ["partita_iva", "piva", "p_iva", "vat_number"])) ||
-      null,
+    partita_iva: clientVatNumber(client) || null,
     codice_fiscale:
       normalize(firstValue(client, ["codice_fiscale", "cod_fiscale", "cf"])) ||
       null,

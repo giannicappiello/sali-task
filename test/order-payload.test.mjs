@@ -8,6 +8,7 @@ import {
 const customer = {
   codice_cliente: "C-001",
   ragione_sociale: "Cliente di prova",
+  partita_iva: "01234567890",
   codice_agente_mexal: "A-01",
   codice_pagamento: "RIBA",
   codice_listino: "L-01",
@@ -35,6 +36,7 @@ assert.deepEqual(insertPayload, {
   stato: "bozza",
   codice_cliente: "C-001",
   ragione_sociale_cliente: "Cliente di prova",
+  partita_iva: "01234567890",
   codice_agente_mexal: "A-01",
   codice_pagamento: "BON",
   descrizione_pagamento: "Bonifico",

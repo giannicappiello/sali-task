@@ -52,15 +52,41 @@ export function checkOrderAvailability(lines) {
   });
 }
 
+function legacyMexalDocuments(order = {}) {
+  const defaultSerie = String(order.serie_documento_mexal || order.serie_mexal || 1);
+  return ["OCM", "OCX", "OCI"].flatMap((type) => {
+    const numero = order[`numero_${type.toLowerCase()}`];
+    return numero ? [{ tipo_documento: type, serie: defaultSerie, numero: String(numero), stato: "legacy" }] : [];
+  });
+}
+
+function mergeMexalDocuments(documents = [], order = {}) {
+  const merged = [...documents, ...legacyMexalDocuments(order)];
+  const seen = new Set();
+  return merged.filter((document) => {
+    const type = String(document.tipo_documento || "").toUpperCase();
+    const serie = String(document.serie ?? "").trim();
+    const numero = String(document.numero ?? "").trim();
+    if (!["OCM", "OCX", "OCI"].includes(type) || !serie || !numero) return false;
+    const key = `${type}:${serie}:${numero}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
 export async function loadCreatedMexalDocuments(orderId) {
   const { data, error } = await supabase
     .from("ordini_documenti_mexal")
     .select("tipo_documento,serie,numero,stato")
     .eq("ordine_id", orderId)
-    .eq("stato", "created")
-    .not("numero", "is", null);
+    .not("numero", "is", null)
+    .order("aggiornato_il", { ascending: false });
   if (error) throw error;
+
+  // A document may have been created by Mexal and subsequently marked failed by
+  // an older reconciliation step.  The authoritative signal for the PDF is the
+  // persisted type/series/number, not the local status label.
   return data || [];
 }
 
@@ -73,14 +99,14 @@ export async function loadOrderDetail(orderId) {
   if (orderError) throw orderError;
   if (linesError) throw linesError;
   if (documentsError) throw documentsError;
-  return { order: { ...order, mexal_documents: documents || [] }, lines: lines || [] };
+  return { order: { ...order, mexal_documents: mergeMexalDocuments(documents, order) }, lines: lines || [] };
 }
 
 export { buildOrderPdfModel, createOrderPdf };
 
-// Fetch immediately before generating: the order state held by React can predate
-// the successful Mexal POST, which would otherwise incorrectly create a draft.
 export async function downloadOrderPdf(order, lines, options) {
+  if (!order?.id) throw new Error("Ordine non valido: identificativo mancante.");
   const documents = await loadCreatedMexalDocuments(order.id);
-  return createAndDownloadPdf({ ...order, mexal_documents: documents }, lines, options);
+  const mexalDocuments = mergeMexalDocuments(documents, order);
+  return createAndDownloadPdf({ ...order, mexal_documents: mexalDocuments }, lines, options);
 }

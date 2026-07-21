@@ -18,6 +18,14 @@ L'unico punto da modificare se Mexal conferma un contratto diverso è `buildRoot
 che richieda una stringa si può impostare `MEXAL_ORDER_NOTA_FORMAT=scalar`; il default è
 `typed-array` e non blocca il deployment.
 
+## `stato_riga`
+
+Lo stato delle righe usa il campo Mexal radice/matrice **`stato_riga`**, con la
+stessa forma indicizzata delle altre proprietà riga: `[[1, "E"], [2, "E"]]`.
+Il builder lo determina per ogni documento: `E` per OCM e `S` per OCX e OCI.
+Perciò, quando una riga Workspace è divisa tra OCM e OCX, i due POST contengono
+rispettivamente `stato_riga: [[1, "E"]]` e `stato_riga: [[1, "S"]]`.
+
 ## `data_documento`
 
 `data_ordine` deve essere una data di calendario valida nel formato rigoroso `YYYY-MM-DD`.

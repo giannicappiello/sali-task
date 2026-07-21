@@ -1,11 +1,30 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { DEFAULT_MEXAL_ORDER_DATE_FORMAT, buildMexalOrderDocument, classifyOrderLines, formatMexalOrderDate, isImportArticle } from "../server/mexal/order-documents.js";
-import { documentOptions, extractDocumentReference, mexalLineState } from "../api/mexal/submit-order.js";
+import { DEFAULT_MEXAL_ORDER_DATE_FORMAT, buildMexalOrderDocument, classifyOrderLines, formatMexalOrderDate, isImportArticle, mexalLineState } from "../server/mexal/order-documents.js";
+import { documentOptions, extractDocumentReference } from "../api/mexal/submit-order.js";
+import { buildMexalClient } from "../server/mexal/sync-products.js";
 
 assert.deepEqual(extractDocumentReference({ risorsa: "OC+3+125" }), { serie: "3", numero: "125" }, "the real Mexal resource reference is split into series and number");
 assert.deepEqual(extractDocumentReference({ documento: { serie: 4, numero: 99 } }), { serie: "4", numero: "99" }, "a document object response is supported");
 assert.deepEqual(extractDocumentReference({ id: "f770a164-17e5-4508-b795-e28adf6f560b" }), { serie: null, numero: null }, "an internal UUID is never mistaken for a Mexal document number");
+
+const originalMexalEnv = Object.fromEntries(["MEXAL_BASE_URL", "MEXAL_USERNAME", "MEXAL_PASSWORD", "MEXAL_AZIENDA", "MEXAL_ANNO", "MEXAL_MAGAZZINO"].map((name) => [name, process.env[name]]));
+Object.assign(process.env, { MEXAL_BASE_URL: "https://mexal.test", MEXAL_USERNAME: "user", MEXAL_PASSWORD: "password", MEXAL_AZIENDA: "1", MEXAL_ANNO: "2026", MEXAL_MAGAZZINO: "5" });
+const postedBodies = [];
+const mexalWithEmptyCreatedBody = buildMexalClient({
+  request: async ({ body }) => {
+    postedBodies.push(body);
+    return { status: 201, headers: { location: "/documenti/ordini-clienti/OC+1+16530" }, body: "{}" };
+  },
+});
+const createdDocument = await mexalWithEmptyCreatedBody.postJson("/documenti/ordini-clienti", { sigla: "OC" });
+const savedReference = extractDocumentReference(createdDocument);
+assert.deepEqual(savedReference, { serie: "1", numero: "16530" }, "an HTTP 201 with an empty body persists the series and number from Location");
+assert.equal(Object.keys(createdDocument).includes("mexalHttpResponse"), false, "HTTP metadata does not alter the legacy JSON response body");
+for (const [name, value] of Object.entries(originalMexalEnv)) {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}
 assert.equal(mexalLineState("OCM"), "E", "OCM diagnostics retain evadibile status");
 assert.equal(mexalLineState("OCX"), "S", "OCX diagnostics retain sospeso status");
 assert.equal(mexalLineState("OCI"), "S", "OCI diagnostics retain sospeso status");
@@ -22,9 +41,19 @@ assert.deepEqual(classified.OCM.map((line) => line.codice_articolo), [" IT0058 "
 assert.deepEqual(classified.OCX.map((line) => [line.codice_articolo, line.quantita_documento]), [[" IT0058 ", 4], ["IT0204", 6]], "non-IMP partial stock is split");
 
 const payload = buildMexalOrderDocument({ id: "workspace-1", codice_cliente: "C1", data_ordine: "2026-07-20", note_mexal: "nota test", id_pagamento: 7 }, "OCX", classified.OCX, { serie: 2, magazzino: 5, dateFormat: "typed-array-dd/mm/yyyy" });
-assert.deepEqual(payload, { sigla: "OC", serie: 2, numero: 0, cod_conto: "C1", data_documento: [[1, "20/07/2026"]], cod_modulo: "X", id_magazzino: 5, nota: [[1, "nota test"]], id_pagamento: 7, id_riga: [[1, 1], [2, 2]], tp_riga: [[1, "R"], [2, "R"]], codice_articolo: [[1, "IT0058"], [2, "IT0204"]], quantita: [[1, 4], [2, 6]], prezzo: [[1, 15.68], [2, 12]], sconto: [[1, "50+35"], [2, "50+35"]], id_mag_riga: [[1, 5], [2, 5]], tp_um_articolo: [[1, "1"], [2, "1"]], cod_iva: [[1, "22,0"], [2, "22,0"]] });
+assert.deepEqual(payload, { sigla: "OC", serie: 2, numero: 0, cod_conto: "C1", data_documento: [[1, "20/07/2026"]], cod_modulo: "X", id_magazzino: 5, nota: [[1, "nota test"]], id_pagamento: 7, id_riga: [[1, 1], [2, 2]], tp_riga: [[1, "R"], [2, "R"]], codice_articolo: [[1, "IT0058"], [2, "IT0204"]], quantita: [[1, 4], [2, 6]], prezzo: [[1, 15.68], [2, 12]], sconto: [[1, "50+35"], [2, "50+35"]], id_mag_riga: [[1, 5], [2, 5]], tp_um_articolo: [[1, "1"], [2, "1"]], cod_iva: [[1, "22,0"], [2, "22,0"]], stato_riga: [[1, "S"], [2, "S"]] });
 const ocmPayload = buildMexalOrderDocument({ id: "workspace-1", codice_cliente: "C1", data_ordine: "2026-07-20" }, "OCM", classified.OCM, { dateFormat: "typed-array-dd/mm/yyyy" });
 assert.deepEqual(ocmPayload.data_documento, [[1, "20/07/2026"]], "OCM sends data_documento as the required typed matrix");
+assert.deepEqual(ocmPayload.stato_riga, [[1, "E"]], "OCM sends evadibile state in the Mexal row-state matrix");
+assert.deepEqual(payload.stato_riga, [[1, "S"], [2, "S"]], "OCX sends sospeso state in the Mexal row-state matrix");
+const ociPayload = buildMexalOrderDocument({ id: "workspace-1", codice_cliente: "C1", data_ordine: "2026-07-20" }, "OCI", classified.OCI, { dateFormat: "typed-array-dd/mm/yyyy" });
+assert.deepEqual(ociPayload.stato_riga, [[1, "S"]], "OCI sends sospeso state in the Mexal row-state matrix");
+await Promise.all([ocmPayload, payload, ociPayload].map((document) => mexalWithEmptyCreatedBody.postJson("/documenti/ordini-clienti", document)));
+assert.deepEqual(postedBodies.slice(1).map((body) => JSON.parse(body).stato_riga), [[[1, "E"]], [[1, "S"], [2, "S"]], [[1, "S"]]], "the JSON passed to mexal.postJson contains each document's Mexal row-state matrix");
+const splitLine = { codice_articolo: "IT-SPLIT", quantita: 10, quantita_ocm: 6, quantita_ocx: 4, prezzo_listino: 1, cod_iva: "22,0" };
+const splitDocuments = classifyOrderLines([splitLine]);
+assert.deepEqual(buildMexalOrderDocument({ codice_cliente: "C1", data_ordine: "2026-07-20" }, "OCM", splitDocuments.OCM).stato_riga, [[1, "E"]], "the OCM half of a split Workspace line is E");
+assert.deepEqual(buildMexalOrderDocument({ codice_cliente: "C1", data_ordine: "2026-07-20" }, "OCX", splitDocuments.OCX).stato_riga, [[1, "S"]], "the OCX half of a split Workspace line is S");
 for (const forbidden of ["note", "conto", "codice_pagamento", "articolo", "prezzo_netto", "righe"]) assert.equal(JSON.stringify(payload).includes(`\"${forbidden}\"`), false, `${forbidden} is never a direct WebAPI key`);
 assert.equal(buildMexalOrderDocument({}, "OCM", [], { notaFormat: "scalar" }), null, "empty documents are not generated");
 assert.equal(DEFAULT_MEXAL_ORDER_DATE_FORMAT, "yyyymmdd", "the shared date format default remains unchanged");

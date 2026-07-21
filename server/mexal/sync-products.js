@@ -160,7 +160,7 @@ function parseJsonResponse(response, label) {
   return parsed;
 }
 
-export function buildMexalClient() {
+export function buildMexalClient({ request = requestMexal } = {}) {
   const baseUrl = requireEnv("MEXAL_BASE_URL").replace(/\/+$/, "");
   const username = requireEnv("MEXAL_USERNAME");
   const password = requireEnv("MEXAL_PASSWORD");
@@ -187,7 +187,7 @@ export function buildMexalClient() {
     magazzino,
 
     async getJson(path) {
-      const response = await requestMexal({
+      const response = await request({
         url: `${baseUrl}/webapi/risorse${path}`,
         headers,
       });
@@ -211,10 +211,21 @@ export function buildMexalClient() {
       onDiagnostic?.({ phase: "request", url, method: "POST", headers: requestHeaders, body });
 
       try {
-        const response = await requestMexal({ url, headers, method: "POST", body });
+        const response = await request({ url, headers, method: "POST", body });
         onDiagnostic?.({ phase: "response", url, method: "POST", status: response.status, headers: response.headers, body: response.body });
         const result = parseJsonResponse(response, path);
         this.lastHttpStatus = response.status;
+        // Preserve the JSON return value for existing callers while retaining the
+        // HTTP response that identifies resources created with an empty body.
+        // This is deliberately non-enumerable so response persistence/logging
+        // keeps its previous body-only shape.
+        if (result && typeof result === "object") {
+          Object.defineProperty(result, "mexalHttpResponse", {
+            value: response,
+            enumerable: false,
+            configurable: true,
+          });
+        }
         return result;
       } catch (error) {
         if (!error?.mexalResponse) onDiagnostic?.({ phase: "transport_error", url, method: "POST", error: error?.message || String(error) });
@@ -223,7 +234,7 @@ export function buildMexalClient() {
     },
 
     async getBinary(path) {
-      const response = await requestMexal({
+      const response = await request({
         url: `${baseUrl}/webapi/risorse${path}`,
         headers,
         binary: true,

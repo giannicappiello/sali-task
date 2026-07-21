@@ -8,6 +8,7 @@ export const DEFAULT_MEXAL_ORDER_DATE_FORMAT = "yyyymmdd";
 
 export function normalizeArticleCode(value) { return String(value ?? "").trim().toUpperCase(); }
 export function isImportArticle(line) { return normalizeArticleCode(line?.codice_articolo ?? line?.productCode).startsWith("IMP"); }
+export function mexalLineState(kind) { return kind === "OCM" ? "E" : kind === "OCX" || kind === "OCI" ? "S" : null; }
 
 export function reconciliationFailure(error, expectedModule, response) {
   const status = Number(error?.status || error?.httpStatus || 0);
@@ -63,7 +64,7 @@ export function normalizeMexalUnitType(value) {
   return text(value) || "1";
 }
 
-export function buildRootMatrixRows(lines, magazzino) {
+export function buildRootMatrixRows(lines, magazzino, statoRiga) {
   const fields = {
     id_riga: (_line, index) => index,
     tp_riga: () => "R",
@@ -74,6 +75,9 @@ export function buildRootMatrixRows(lines, magazzino) {
     id_mag_riga: (line) => number(line.id_mag_riga ?? magazzino),
     tp_um_articolo: (line) => normalizeMexalUnitType(line.tp_um_articolo),
     cod_iva: (line) => text(line.cod_iva ?? line.codice_iva_mexal),
+    // `stato_riga` is the indexed row-state field returned by the Mexal order
+    // resource. Keep it aligned with every other root-level line matrix.
+    stato_riga: () => statoRiga,
   };
   return Object.fromEntries(Object.entries(fields).map(([field, value]) => [field,
     lines.map((line, index) => [index + 1, value(line, index + 1)]).filter(([, item]) => item !== undefined && item !== ""),
@@ -89,6 +93,6 @@ export function buildMexalOrderDocument(order, kind, lines, { serie = 1, magazzi
     // `nota` is the only origin/reference field verified by the captured GET
     // shape.  Prefer the human order number, never the internal UUID.
     nota: formatMexalNota(order.note_mexal || `Workspace n. ${order.numero_ordine_visualizzato || order.id}`, notaFormat), id_ind_sped: number(order.id_ind_sped),
-    cod_anag_sped: text(order.cod_anag_sped), id_pagamento: number(order.id_pagamento), ...buildRootMatrixRows(lines, magazzino),
+    cod_anag_sped: text(order.cod_anag_sped), id_pagamento: number(order.id_pagamento), ...buildRootMatrixRows(lines, magazzino, mexalLineState(kind)),
   });
 }

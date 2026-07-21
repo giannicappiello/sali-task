@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { buildMexalClient, verifyUser } from "../../server/mexal/sync-products.js";
-import { DEFAULT_MEXAL_ORDER_DATE_FORMAT, ORDER_DOCUMENTS, buildMexalOrderDocument, classifyOrderLines, reconciliationFailure } from "../../server/mexal/order-documents.js";
+import { DEFAULT_MEXAL_ORDER_DATE_FORMAT, ORDER_DOCUMENTS, buildMexalOrderDocument, classifyOrderLines, mexalLineState, reconciliationFailure } from "../../server/mexal/order-documents.js";
 
 function env(name) { return String(process.env[name] ?? "").trim(); }
 function required(name) { const value = env(name); if (!value) throw new Error(`Variabile Vercel mancante: ${name}`); return value; }
@@ -27,7 +27,15 @@ export function extractDocumentReference(result) {
   // not itself a document number, so it must be parsed before persistence.
   const resource = text(document.risorsa || document.resource || result?.risorsa || result?.resource || result?.location);
   const match = /(?:^|\/)(?:OC\+)?([^+/]+)\+([^/?#]+)(?:[/?#]|$)/i.exec(resource);
-  return match ? { serie: text(match[1]) || null, numero: text(match[2]) || null } : { serie: null, numero: null };
+  if (match) return { serie: text(match[1]) || null, numero: text(match[2]) || null };
+
+  // Successful POSTs can return an empty JSON object and identify the created
+  // document only through the HTTP Location header. postJson preserves that
+  // response as non-enumerable metadata, so legacy JSON consumers are unchanged.
+  const headers = result?.mexalHttpResponse?.headers || {};
+  const location = text(headers.location || headers.Location);
+  const locationMatch = /(?:^|\/)(?:OC\+)?([^+/]+)\+([^/?#]+)(?:[/?#]|$)/i.exec(location);
+  return locationMatch ? { serie: text(locationMatch[1]) || null, numero: text(locationMatch[2]) || null } : { serie: null, numero: null };
 }
 function token() { return crypto.randomUUID(); }
 function diagnosticHeaders(headers) {
@@ -75,9 +83,6 @@ function lineDiagnostic(lines) {
     unita_misura: line.unita_misura,
     id_mag_riga: line.id_mag_riga,
   }));
-}
-export function mexalLineState(kind) {
-  return kind === "OCM" ? "E" : kind === "OCX" || kind === "OCI" ? "S" : null;
 }
 async function stopRequested(admin, orderId, syncToken) {
   const { data, error } = await admin.from("ordini_testate").select("arresto_sync_richiesto,stato_sincronizzazione,sync_token").eq("id", orderId).single();

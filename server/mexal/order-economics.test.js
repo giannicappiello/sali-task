@@ -5,7 +5,7 @@ import {
   calculateOrderEconomics,
   reconcileMexalTotals,
 } from "./order-economics.js";
-import { buildMexalOrderDocument } from "./order-documents.js";
+import { buildMexalOrderDocument, normalizeMexalUnitType } from "./order-documents.js";
 
 test("applica gli sconti commerciali in sequenza", () => {
   assert.equal(applySequentialDiscounts(4.6, "50+35"), 1.4949999999999999);
@@ -29,7 +29,15 @@ test("calcola gli stessi totali del documento Mexal di riferimento", () => {
   }).coincide, true);
 });
 
-test("il payload usa data YYYYMMDD, prezzo di listino e codice IVA", () => {
+test("normalizza il tipo unità di misura Mexal", () => {
+  assert.equal(normalizeMexalUnitType(undefined), 1);
+  assert.equal(normalizeMexalUnitType("PZ"), 1);
+  assert.equal(normalizeMexalUnitType("1"), 1);
+  assert.equal(normalizeMexalUnitType(2), 2);
+  assert.equal(normalizeMexalUnitType("2"), 2);
+});
+
+test("il payload usa data YYYYMMDD, prezzo di listino, codice IVA e unità primaria", () => {
   const payload = buildMexalOrderDocument({
     id: "ordine-1",
     codice_cliente: "501.03320",
@@ -48,4 +56,21 @@ test("il payload usa data YYYYMMDD, prezzo di listino e codice IVA", () => {
   assert.deepEqual(payload.prezzo, [[1, 4.6]]);
   assert.deepEqual(payload.sconto, [[1, "50+35"]]);
   assert.deepEqual(payload.cod_iva, [[1, "22,0"]]);
+  assert.deepEqual(payload.tp_um_articolo, [[1, 1]]);
+});
+
+test("il payload conserva l'unità secondaria solo quando esplicitamente indicata", () => {
+  const payload = buildMexalOrderDocument({
+    id: "ordine-2",
+    codice_cliente: "501.03320",
+    data_ordine: "2026-07-20",
+    codice_agente_mexal: "602.00047",
+  }, "OCM", [{
+    codice_articolo: "IT0001",
+    quantita_documento: 1,
+    prezzo_listino: 4.6,
+    tp_um_articolo: 2,
+  }]);
+
+  assert.deepEqual(payload.tp_um_articolo, [[1, 2]]);
 });

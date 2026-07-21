@@ -102,22 +102,11 @@ function transportFields(order) {
   });
 }
 
-function destinationFields(order) {
-  const destination = order?.destinazione_mexal && typeof order.destinazione_mexal === "object" ? order.destinazione_mexal : {};
-  const addressId = number(order.id_ind_sped ?? destination.id_ind_sped ?? destination.cod_ind_sped);
-
-  // Con indice 0 si tratta dell'indirizzo principale del cliente.
-  // In questo caso Mexal ricava automaticamente il destinatario da cod_conto:
-  // inviare cod_anag_sped con lo stesso conto provoca "Conto destinatario errato".
-  if (addressId === undefined || addressId <= 0) return {};
-
-  const destinationAccount = text(order.cod_anag_sped || destination.cod_anag_sped);
-  if (!destinationAccount) return {};
-
-  return {
-    id_ind_sped: matrix(String(addressId)),
-    cod_anag_sped: matrix(destinationAccount),
-  };
+function destinationFields() {
+  // Disabilitati temporaneamente: Mexal rifiuta il conto destinatario anche quando
+  // lo snapshot contiene un indice maggiore di zero. Per il test dell'indirizzo
+  // principale lasciamo che Mexal ricavi tutto esclusivamente da cod_conto.
+  return {};
 }
 
 export function buildMexalOrderDocument(order, kind, lines, { serie = 1, magazzino = 5, notaFormat = "typed-array", dateFormat = DEFAULT_MEXAL_ORDER_DATE_FORMAT, causale = 1 } = {}) {

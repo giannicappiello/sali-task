@@ -102,6 +102,17 @@ function transportFields(order) {
   });
 }
 
+function destinationFields(order) {
+  const destination = order?.destinazione_mexal && typeof order.destinazione_mexal === "object" ? order.destinazione_mexal : {};
+  const explicitAddressId = number(order.id_ind_sped ?? destination.id_ind_sped ?? destination.cod_ind_sped);
+  const hasDestinationSnapshot = Object.keys(destination).length > 0;
+  return compact({
+    // Per l'indirizzo principale Mexal usa l'anagrafica cliente con indice 0.
+    id_ind_sped: explicitAddressId ?? (hasDestinationSnapshot ? 0 : undefined),
+    cod_anag_sped: text(order.cod_anag_sped || destination.cod_anag_sped || (hasDestinationSnapshot ? order.codice_cliente : "")),
+  });
+}
+
 export function buildMexalOrderDocument(order, kind, lines, { serie = 1, magazzino = 5, notaFormat = "typed-array", dateFormat = DEFAULT_MEXAL_ORDER_DATE_FORMAT, causale = 1 } = {}) {
   const document = ORDER_DOCUMENTS[kind];
   if (!document || !lines?.length) return null;
@@ -109,7 +120,7 @@ export function buildMexalOrderDocument(order, kind, lines, { serie = 1, magazzi
   return compact({
     sigla: "OC", serie: number(serie), numero: 0, cod_conto: text(order.codice_cliente), data_documento: formatMexalOrderDate(order.data_ordine, dateFormat),
     cod_modulo: document.moduleCode, id_causale: number(causale) ? [[1, number(causale)]] : undefined, id_magazzino: number(magazzino), codice_agente: text(order.codice_agente_mexal),
-    nota: formatMexalNota(order.note_mexal || `Workspace n. ${order.numero_ordine_visualizzato || order.id}`, notaFormat), id_ind_sped: number(order.id_ind_sped),
-    cod_anag_sped: text(order.cod_anag_sped), id_pagamento: paymentId, ...transportFields(order), ...buildRootMatrixRows(lines, magazzino, order.codice_agente_mexal),
+    nota: formatMexalNota(order.note_mexal || `Workspace n. ${order.numero_ordine_visualizzato || order.id}`, notaFormat),
+    id_pagamento: paymentId, ...destinationFields(order), ...transportFields(order), ...buildRootMatrixRows(lines, magazzino, order.codice_agente_mexal),
   });
 }

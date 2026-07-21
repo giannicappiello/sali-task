@@ -104,11 +104,11 @@ function transportFields(order) {
 
 function destinationFields(order) {
   const destination = order?.destinazione_mexal && typeof order.destinazione_mexal === "object" ? order.destinazione_mexal : {};
-  const explicitAddressId = number(order.id_ind_sped ?? destination.id_ind_sped ?? destination.cod_ind_sped);
+  const explicitAddressId = text(order.id_ind_sped ?? destination.id_ind_sped ?? destination.cod_ind_sped);
   const hasDestinationSnapshot = Object.keys(destination).length > 0;
-  const addressId = explicitAddressId ?? (hasDestinationSnapshot ? 0 : undefined);
+  const addressId = explicitAddressId || (hasDestinationSnapshot ? "0" : "");
   return compact({
-    // Mexal dichiara id_ind_sped come campo array: usa la matrice radice [[indice, valore]].
+    // Mexal richiede id_ind_sped come matrice e valore stringa, ad esempio [[1, "0"]].
     id_ind_sped: matrix(addressId),
     cod_anag_sped: text(order.cod_anag_sped || destination.cod_anag_sped || (hasDestinationSnapshot ? order.codice_cliente : "")),
   });

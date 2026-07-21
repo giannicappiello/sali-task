@@ -60,8 +60,7 @@ export function formatMexalOrderDate(value, format = DEFAULT_MEXAL_ORDER_DATE_FO
 }
 
 export function normalizeMexalUnitType(value) {
-  const parsed = number(value);
-  return parsed === 2 ? 2 : 1;
+  return number(value) === 2 ? "2" : "1";
 }
 
 export function buildRootMatrixRows(lines, magazzino) {

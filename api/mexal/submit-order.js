@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { buildMexalClient, verifyUser } from "../../server/mexal/sync-products.js";
-import { DEFAULT_MEXAL_ORDER_DATE_FORMAT, ORDER_DOCUMENTS, buildMexalOrderDocument, classifyOrderLines, reconciliationFailure } from "../../server/mexal/order-documents.js";
+import { DEFAULT_MEXAL_ORDER_DATE_FORMAT, ORDER_DOCUMENTS, buildMexalOrderDocument, classifyOrderLines, mexalLineState, reconciliationFailure } from "../../server/mexal/order-documents.js";
 
 function env(name) { return String(process.env[name] ?? "").trim(); }
 function required(name) { const value = env(name); if (!value) throw new Error(`Variabile Vercel mancante: ${name}`); return value; }
@@ -83,9 +83,6 @@ function lineDiagnostic(lines) {
     unita_misura: line.unita_misura,
     id_mag_riga: line.id_mag_riga,
   }));
-}
-export function mexalLineState(kind) {
-  return kind === "OCM" ? "E" : kind === "OCX" || kind === "OCI" ? "S" : null;
 }
 async function stopRequested(admin, orderId, syncToken) {
   const { data, error } = await admin.from("ordini_testate").select("arresto_sync_richiesto,stato_sincronizzazione,sync_token").eq("id", orderId).single();

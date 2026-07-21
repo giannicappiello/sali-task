@@ -21,6 +21,18 @@ const WRITABLE_ORDER_FIELDS = [
   "note_mexal",
 ];
 
+export function normalizePaymentCode(value) {
+  if (value === null || value === undefined || String(value).trim() === "") {
+    return null;
+  }
+
+  const normalized = String(value).trim();
+  if (!/^\d+$/.test(normalized)) return null;
+
+  const numericValue = Number.parseInt(normalized, 10);
+  return Number.isSafeInteger(numericValue) ? numericValue : null;
+}
+
 /**
  * Produces the only payload shape accepted by the New Order write flow.
  *
@@ -30,7 +42,12 @@ const WRITABLE_ORDER_FIELDS = [
  */
 export function buildWritableOrderPayload(order) {
   return WRITABLE_ORDER_FIELDS.reduce((payload, field) => {
-    if (Object.hasOwn(order, field)) payload[field] = order[field];
+    if (!Object.hasOwn(order, field)) return payload;
+
+    payload[field] = field === "codice_pagamento"
+      ? normalizePaymentCode(order[field])
+      : order[field];
+
     return payload;
   }, {});
 }
@@ -53,7 +70,7 @@ export function buildNewOrderInsertPayload({
     ragione_sociale_cliente: customer.ragione_sociale,
     partita_iva: customer.partita_iva || customer.piva || null,
     codice_agente_mexal: customer.codice_agente_mexal || agentCode || null,
-    codice_pagamento: payment?.codice || customer.codice_pagamento || null,
+    codice_pagamento: payment?.codice ?? customer.codice_pagamento ?? null,
     descrizione_pagamento: payment?.descrizione || paymentDescription(customer),
     codice_listino: customer.codice_listino || null,
     indirizzo_spedizione: [

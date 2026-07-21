@@ -8,13 +8,13 @@ async function runDiagnostics(leftReference, rightReference) {
   const { data: { session }, error: sessionError } = await supabase.auth.getSession();
   if (sessionError || !session?.access_token) throw new Error("Sessione scaduta. Effettua nuovamente l'accesso.");
 
-  const response = await fetch("/api/mexal/order-contract-diagnostics", {
+  const response = await fetch("/api/mexal/orders/recover-sync", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${session.access_token}`,
     },
-    body: JSON.stringify({ leftReference, rightReference }),
+    body: JSON.stringify({ action: "order-contract-diagnostics", leftReference, rightReference }),
   });
 
   const payload = await response.json().catch(() => ({}));
@@ -71,9 +71,7 @@ export default function MexalDiagnostics() {
     URL.revokeObjectURL(url);
   }
 
-  if (!isAdminUser) {
-    return <div className="orders-empty">Diagnostica Mexal riservata agli amministratori.</div>;
-  }
+  if (!isAdminUser) return <div className="orders-empty">Diagnostica Mexal riservata agli amministratori.</div>;
 
   return (
     <div className="settings-page v4-page">
@@ -89,14 +87,8 @@ export default function MexalDiagnostics() {
 
       <section className="panel settings-panel">
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>
-          <label>
-            OCM manuale con stato E
-            <input value={leftReference} onChange={(event) => setLeftReference(event.target.value)} placeholder="OC+1+16521" />
-          </label>
-          <label>
-            OCM Workspace con stato S
-            <input value={rightReference} onChange={(event) => setRightReference(event.target.value)} placeholder="OC+1+16535" />
-          </label>
+          <label>OCM manuale con stato E<input value={leftReference} onChange={(event) => setLeftReference(event.target.value)} placeholder="OC+1+16521" /></label>
+          <label>OCM Workspace con stato S<input value={rightReference} onChange={(event) => setRightReference(event.target.value)} placeholder="OC+1+16535" /></label>
         </div>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 }}>
           <button className="primary-action" type="button" onClick={execute} disabled={loading}>
@@ -108,33 +100,20 @@ export default function MexalDiagnostics() {
         {error && <div className="orders-alert orders-alert-error" style={{ marginTop: 16 }}>{error}</div>}
       </section>
 
-      {result && (
-        <>
-          <section className="panel settings-panel">
-            <div className="panel-header"><h3>Differenze tecniche principali</h3></div>
-            <p>{result.privacy}</p>
-            <div className="orders-table-wrap">
-              <table className="orders-table">
-                <thead><tr><th>Campo</th><th>Documento E</th><th>Documento S</th></tr></thead>
-                <tbody>
-                  {(importantDifferences.length ? importantDifferences : result.differences).map((item) => (
-                    <tr key={item.field}><td>{item.field}</td><td>{String(item.left ?? "—")}</td><td>{String(item.right ?? "—")}</td></tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 16 }}>
-            <JsonPanel title={`${result.references.left} · Evadibile`} value={result.left} />
-            <JsonPanel title={`${result.references.right} · Sospeso`} value={result.right} />
-          </div>
-
-          <div style={{ marginTop: 16 }}>
-            <JsonPanel title="Contratti help.json" value={result.help} />
-          </div>
-        </>
-      )}
+      {result && <>
+        <section className="panel settings-panel">
+          <div className="panel-header"><h3>Differenze tecniche principali</h3></div>
+          <p>{result.privacy}</p>
+          <div className="orders-table-wrap"><table className="orders-table"><thead><tr><th>Campo</th><th>Documento E</th><th>Documento S</th></tr></thead><tbody>
+            {(importantDifferences.length ? importantDifferences : result.differences).map((item) => <tr key={item.field}><td>{item.field}</td><td>{String(item.left ?? "—")}</td><td>{String(item.right ?? "—")}</td></tr>)}
+          </tbody></table></div>
+        </section>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 16 }}>
+          <JsonPanel title={`${result.references.left} · Evadibile`} value={result.left} />
+          <JsonPanel title={`${result.references.right} · Sospeso`} value={result.right} />
+        </div>
+        <div style={{ marginTop: 16 }}><JsonPanel title="Contratti help.json" value={result.help} /></div>
+      </>}
     </div>
   );
 }

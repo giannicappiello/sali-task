@@ -59,9 +59,12 @@ test("il riepilogo mantiene acconto e abbuono vuoti e calcola il dovuto", async 
   assert.match(output, /122,00/);
 });
 
-test("usa una griglia IVA separata e un logo di intestazione maggiorato", async () => {
+test("usa una griglia IVA separata e un logo di intestazione realmente maggiorato", async () => {
   const source = await readFile(new URL("../src/modules/orders/services/orderPdf.js", import.meta.url), "utf8");
-  assert.match(source, /const logoMaxWidth = continuation \? 52 : 78/);
+  assert.match(source, /const logoWidth = continuation \? 64 : 102/);
+  assert.match(source, /doc\.getImageProperties\(logo\)/);
+  assert.match(source, /80128 Napoli \(NA\)/);
+  assert.doesNotMatch(source, /80122 Napoli/);
   assert.match(source, /const vatX = 52; const vatY = y \+ 20; const vatW = 104/);
   assert.match(source, /width: 16[\s\S]*width: 20[\s\S]*width: 24[\s\S]*width: 22[\s\S]*width: 22/);
   assert.doesNotMatch(source, /order\.acconto \? money\(model\.totals\.totale_documento\)/);

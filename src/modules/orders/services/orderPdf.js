@@ -116,23 +116,25 @@ function cell(doc, x, y, w, h, label, content, options = {}) {
 }
 function drawCompanyHeader(doc, logo, continuation = false) {
   const y = PAGE.top;
-  const logoMaxWidth = continuation ? 52 : 78;
-  const logoMaxHeight = continuation ? 17 : 22;
+  // The supplied PWA asset has substantial internal padding.  Render it at a
+  // deliberately generous physical size so the visible mark fills the left
+  // side of the heading instead of looking like a small app icon.
+  const logoWidth = continuation ? 64 : 102;
   if (logo) {
     const props = doc.getImageProperties(logo);
     const ratio = props.width / props.height;
-    const width = Math.min(logoMaxWidth, logoMaxHeight * ratio);
-    const height = width / ratio;
-    // Keep the unframed mark close to the left edge and centred in the header.
-    doc.addImage(logo, "PNG", PAGE.left + 0.5, y + (logoMaxHeight - height) / 2, width, height);
+    const height = logoWidth / ratio;
+    // Do not squeeze the asset into a decorative frame: its true aspect ratio
+    // is calculated from jsPDF's image metadata and therefore remains intact.
+    doc.addImage(logo, "PNG", PAGE.left + 0.5, y + (24 - height) / 2, logoWidth, height);
   } else {
     doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.text("PROGRÉ", PAGE.left + 1, y + 12);
   }
-  const x = continuation ? 66 : 91;
+  const x = continuation ? 78 : 114;
   doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.text("PROGRE’ SRL", x, y + 4);
   doc.setFont("helvetica", "normal"); doc.setFontSize(5.9);
   [
-    "Sede Legale: Via A. Omodeo, 91 - 80122 Napoli (NA)",
+    "Sede Legale: Via A. Omodeo, 91 - 80128 Napoli (NA)",
     "Sede Operativa: Via Campo di Fiume, 10 - 83030 Montefredane (AV)",
     "Tel. 0825 45 84 78 - Email: info@progre.it",
     "P.IVA 05359771218 - SDI: 5RUO82D",

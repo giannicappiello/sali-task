@@ -5,6 +5,11 @@ Non è presente nel repository né nei materiali di help disponibili un contratt
 matrici indicizzate nella radice; l'adapter corrente invia quindi quella variante, senza introdurre un
 contenitore `righe` non documentato.
 
+`id_causale` compare come matrice nella risposta GET di un documento reale, ma
+il repository non contiene un contratto POST che ne confermi l'uso. Per evitare
+di inviarlo nella forma scalare non verificata, l'adapter lo omette finché il
+contratto POST non verrà validato.
+
 Prima dell'uso in produzione il payload deve essere validato con una **POST controllata** su Mexal.
 L'unico punto da modificare se Mexal conferma un contratto diverso è `buildRootMatrixRows` in
 `server/mexal/order-documents.js`.

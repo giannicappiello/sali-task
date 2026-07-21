@@ -1,4 +1,5 @@
 import { supabase } from "../../../lib/supabaseClient.js";
+import { buildOrderPdfModel, createOrderPdf, downloadOrderPdf as createAndDownloadPdf } from "./orderPdf.js";
 export { buildAvailabilityPreview } from "./availability.js";
 
 async function getAccessToken() {
@@ -52,11 +53,22 @@ export function checkOrderAvailability(lines) {
 }
 
 
+export async function loadCreatedMexalDocuments(orderId) {
+  const { data, error } = await supabase
+    .from("ordini_documenti_mexal")
+    .select("tipo_documento,serie,numero,stato")
+    .eq("ordine_id", orderId)
+    .eq("stato", "created")
+    .not("numero", "is", null);
+  if (error) throw error;
+  return data || [];
+}
+
 export async function loadOrderDetail(orderId) {
   const [{ data: order, error: orderError }, { data: lines, error: linesError }, { data: documents, error: documentsError }] = await Promise.all([
     supabase.from("ordini_testate").select("*").eq("id", orderId).single(),
     supabase.from("ordini_righe").select("*").eq("ordine_id", orderId).order("id", { ascending: true }),
-    supabase.from("ordini_documenti_mexal").select("tipo_documento,sigla,serie,numero,cod_modulo").eq("ordine_id", orderId).not("numero", "is", null),
+    loadCreatedMexalDocuments(orderId),
   ]);
   if (orderError) throw orderError;
   if (linesError) throw linesError;
@@ -64,4 +76,11 @@ export async function loadOrderDetail(orderId) {
   return { order: { ...order, mexal_documents: documents || [] }, lines: lines || [] };
 }
 
-export { buildOrderPdfModel, createOrderPdf, downloadOrderPdf } from "./orderPdf.js";
+export { buildOrderPdfModel, createOrderPdf };
+
+// Fetch immediately before generating: the order state held by React can predate
+// the successful Mexal POST, which would otherwise incorrectly create a draft.
+export async function downloadOrderPdf(order, lines, options) {
+  const documents = await loadCreatedMexalDocuments(order.id);
+  return createAndDownloadPdf({ ...order, mexal_documents: documents }, lines, options);
+}

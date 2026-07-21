@@ -28,6 +28,13 @@ test("il PDF usa il numero completo del documento Mexal e mantiene Workspace sol
   assert.doesNotMatch(output, /NUMERO ORDINE WORKSPACE/);
 });
 
+test("il riferimento Workspace termina prima della tabella articoli", async () => {
+  const source = await readFile(new URL("../src/modules/orders/services/orderPdf.js", import.meta.url), "utf8");
+  assert.match(source, /const ARTICLE = \{ top: 94, bottom: 210, header: 6, row: 8 \}/);
+  assert.match(source, /y \+ 48, right - mid, 10, "Riferimento Workspace"/);
+  assert.match(source, /const articleTop = continuation \? 29 : ARTICLE\.top/);
+});
+
 test("i documenti OCM e OCX mantengono serie e numero distinti", async () => {
   const order = { mexal_documents: [{ tipo_documento: "OCM", serie: 1, numero: "16531" }, { tipo_documento: "OCX", serie: 2, numero: "123" }] };
   const documents = getMexalDocuments(order);

@@ -4,33 +4,21 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
 
-async function runDiagnostics(leftReference, rightReference) {
+async function postDiagnostics(body) {
   const { data: { session }, error: sessionError } = await supabase.auth.getSession();
   if (sessionError || !session?.access_token) throw new Error("Sessione scaduta. Effettua nuovamente l'accesso.");
-
   const response = await fetch("/api/mexal/orders/recover-sync", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify({ action: "order-contract-diagnostics", leftReference, rightReference }),
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+    body: JSON.stringify(body),
   });
-
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || `Errore diagnostica (${response.status}).`);
   return payload;
 }
 
 function JsonPanel({ title, value }) {
-  return (
-    <section className="panel" style={{ minWidth: 0 }}>
-      <div className="panel-header"><h3>{title}</h3></div>
-      <pre style={{ margin: 0, padding: 16, overflow: "auto", maxHeight: 520, fontSize: 12, lineHeight: 1.45, background: "#f7f7f7", borderRadius: 8 }}>
-        {JSON.stringify(value, null, 2)}
-      </pre>
-    </section>
-  );
+  return <section className="panel" style={{ minWidth: 0 }}><div className="panel-header"><h3>{title}</h3></div><pre style={{ margin: 0, padding: 16, overflow: "auto", maxHeight: 520, fontSize: 12, lineHeight: 1.45, background: "#f7f7f7", borderRadius: 8 }}>{JSON.stringify(value, null, 2)}</pre></section>;
 }
 
 export default function MexalDiagnostics() {
@@ -38,82 +26,63 @@ export default function MexalDiagnostics() {
   const { isAdminUser } = useAuth();
   const [leftReference, setLeftReference] = useState("OC+1+16521");
   const [rightReference, setRightReference] = useState("OC+1+16535");
+  const [clientCode, setClientCode] = useState("501.02677");
+  const [agentCode, setAgentCode] = useState("602.00040");
+  const [productCode, setProductCode] = useState("IT0039");
   const [result, setResult] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [commercialResult, setCommercialResult] = useState(null);
+  const [loading, setLoading] = useState("");
   const [error, setError] = useState("");
 
-  const importantDifferences = useMemo(() => (result?.differences || []).filter((item) =>
-    /(stato|sospes|evad|modulo|causale|tipo|tp_|riga|flag|pagamento|trasporto|provvig|scaden)/i.test(item.field)
-  ), [result]);
+  const importantDifferences = useMemo(() => (result?.differences || []).filter((item) => /(stato|sospes|evad|modulo|causale|tipo|tp_|riga|flag|pagamento|trasporto|provvig|scaden)/i.test(item.field)), [result]);
 
-  async function execute() {
-    setLoading(true);
-    setError("");
-    try {
-      setResult(await runDiagnostics(leftReference.trim(), rightReference.trim()));
-    } catch (diagnosticError) {
-      setError(diagnosticError.message || "Diagnostica non riuscita.");
-    } finally {
-      setLoading(false);
-    }
+  async function executeOrders() {
+    setLoading("orders"); setError("");
+    try { setResult(await postDiagnostics({ action: "order-contract-diagnostics", leftReference: leftReference.trim(), rightReference: rightReference.trim() })); }
+    catch (diagnosticError) { setError(diagnosticError.message || "Diagnostica non riuscita."); }
+    finally { setLoading(""); }
   }
 
-  function downloadJson() {
-    if (!result) return;
-    const blob = new Blob([`${JSON.stringify(result, null, 2)}\n`], { type: "application/json" });
+  async function executeCommercial() {
+    setLoading("commercial"); setError("");
+    try { setCommercialResult(await postDiagnostics({ action: "commercial-contract-diagnostics", clientCode: clientCode.trim(), agentCode: agentCode.trim(), productCode: productCode.trim() })); }
+    catch (diagnosticError) { setError(diagnosticError.message || "Diagnostica non riuscita."); }
+    finally { setLoading(""); }
+  }
+
+  function downloadJson(value, name) {
+    if (!value) return;
+    const blob = new Blob([`${JSON.stringify(value, null, 2)}\n`], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `mexal-contract-${leftReference.replaceAll("+", "-")}-${rightReference.replaceAll("+", "-")}.json`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
+    const anchor = document.createElement("a"); anchor.href = url; anchor.download = name; document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url);
   }
 
   if (!isAdminUser) return <div className="orders-empty">Diagnostica Mexal riservata agli amministratori.</div>;
 
-  return (
-    <div className="settings-page v4-page">
-      <div className="page-title-row">
-        <div>
-          <button className="orders-secondary" type="button" onClick={() => navigate("/settings")} style={{ marginBottom: 12 }}>
-            <ArrowLeft size={18} /> Torna alle impostazioni
-          </button>
-          <h1>Diagnostica contratti Mexal</h1>
-          <p>Confronta un OCM manuale evadibile con un OCM generato da Workspace. I risultati sono sanitizzati.</p>
-        </div>
+  return <div className="settings-page v4-page">
+    <div className="page-title-row"><div><button className="orders-secondary" type="button" onClick={() => navigate("/settings")} style={{ marginBottom: 12 }}><ArrowLeft size={18} /> Torna alle impostazioni</button><h1>Diagnostica contratti Mexal</h1><p>Confronta documenti e individua i campi reali di trasporto cliente e provvigione agente-prodotto.</p></div></div>
+
+    <section className="panel settings-panel">
+      <div className="panel-header"><h3>Trasporto cliente e provvigione agente-prodotto</h3></div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
+        <label>Cliente Mexal<input value={clientCode} onChange={(event) => setClientCode(event.target.value)} /></label>
+        <label>Agente Mexal<input value={agentCode} onChange={(event) => setAgentCode(event.target.value)} /></label>
+        <label>Prodotto Mexal<input value={productCode} onChange={(event) => setProductCode(event.target.value)} /></label>
       </div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 }}>
+        <button className="primary-action" type="button" onClick={executeCommercial} disabled={loading === "commercial"}>{loading === "commercial" ? <RefreshCw className="spin" size={18} /> : <Play size={18} />}{loading === "commercial" ? "Analisi in corso..." : "Analizza trasporto e provvigioni"}</button>
+        {commercialResult && <button className="orders-secondary" type="button" onClick={() => downloadJson(commercialResult, `mexal-commercial-${clientCode}-${agentCode}-${productCode}.json`)}><Download size={18} />Scarica JSON</button>}
+      </div>
+    </section>
+    {commercialResult && <><section className="panel settings-panel"><div className="panel-header"><h3>Endpoint trovati</h3></div><p>{commercialResult.privacy}</p><p>{commercialResult.successful?.length ? commercialResult.successful.join(" · ") : "Nessun endpoint candidato ha risposto correttamente."}</p></section><JsonPanel title="Contratti trasporto e provvigioni" value={commercialResult} /></>}
 
-      <section className="panel settings-panel">
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>
-          <label>OCM manuale con stato E<input value={leftReference} onChange={(event) => setLeftReference(event.target.value)} placeholder="OC+1+16521" /></label>
-          <label>OCM Workspace con stato S<input value={rightReference} onChange={(event) => setRightReference(event.target.value)} placeholder="OC+1+16535" /></label>
-        </div>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 }}>
-          <button className="primary-action" type="button" onClick={execute} disabled={loading}>
-            {loading ? <RefreshCw className="spin" size={18} /> : <Play size={18} />}
-            {loading ? "Analisi in corso..." : "Confronta documenti"}
-          </button>
-          {result && <button className="orders-secondary" type="button" onClick={downloadJson}><Download size={18} />Scarica JSON</button>}
-        </div>
-        {error && <div className="orders-alert orders-alert-error" style={{ marginTop: 16 }}>{error}</div>}
-      </section>
+    <section className="panel settings-panel" style={{ marginTop: 16 }}>
+      <div className="panel-header"><h3>Confronto documenti ordine</h3></div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}><label>OCM manuale<input value={leftReference} onChange={(event) => setLeftReference(event.target.value)} /></label><label>OCM Workspace<input value={rightReference} onChange={(event) => setRightReference(event.target.value)} /></label></div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 }}><button className="primary-action" type="button" onClick={executeOrders} disabled={loading === "orders"}>{loading === "orders" ? <RefreshCw className="spin" size={18} /> : <Play size={18} />}{loading === "orders" ? "Analisi in corso..." : "Confronta documenti"}</button>{result && <button className="orders-secondary" type="button" onClick={() => downloadJson(result, "mexal-order-contract.json")}><Download size={18} />Scarica JSON</button>}</div>
+      {error && <div className="orders-alert orders-alert-error" style={{ marginTop: 16 }}>{error}</div>}
+    </section>
 
-      {result && <>
-        <section className="panel settings-panel">
-          <div className="panel-header"><h3>Differenze tecniche principali</h3></div>
-          <p>{result.privacy}</p>
-          <div className="orders-table-wrap"><table className="orders-table"><thead><tr><th>Campo</th><th>Documento E</th><th>Documento S</th></tr></thead><tbody>
-            {(importantDifferences.length ? importantDifferences : result.differences).map((item) => <tr key={item.field}><td>{item.field}</td><td>{String(item.left ?? "—")}</td><td>{String(item.right ?? "—")}</td></tr>)}
-          </tbody></table></div>
-        </section>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 16 }}>
-          <JsonPanel title={`${result.references.left} · Evadibile`} value={result.left} />
-          <JsonPanel title={`${result.references.right} · Sospeso`} value={result.right} />
-        </div>
-        <div style={{ marginTop: 16 }}><JsonPanel title="Contratti help.json" value={result.help} /></div>
-      </>}
-    </div>
-  );
+    {result && <><section className="panel settings-panel"><div className="panel-header"><h3>Differenze tecniche principali</h3></div><p>{result.privacy}</p><div className="orders-table-wrap"><table className="orders-table"><thead><tr><th>Campo</th><th>Documento E</th><th>Documento S</th></tr></thead><tbody>{(importantDifferences.length ? importantDifferences : result.differences).map((item) => <tr key={item.field}><td>{item.field}</td><td>{String(item.left ?? "—")}</td><td>{String(item.right ?? "—")}</td></tr>)}</tbody></table></div></section><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 16 }}><JsonPanel title={`${result.references.left} · Evadibile`} value={result.left} /><JsonPanel title={`${result.references.right} · Sospeso`} value={result.right} /></div></>}
+  </div>;
 }

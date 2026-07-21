@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowUpRight, Search } from "lucide-react";
+import { ArrowUpRight, GitCompareArrows, Search } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
 import { filterDashboardOrders } from "../services/dashboardOrders";
@@ -140,6 +140,11 @@ export default function OrdersDashboard() {
     <div className="orders-page">
       <div className="orders-toolbar">
         <button className="orders-primary" type="button" onClick={() => navigate("/ordini/nuovo")}>Nuovo ordine</button>
+        {canSeeAll && (
+          <button className="orders-secondary" type="button" onClick={() => navigate("/settings/mexal-diagnostics")}>
+            <GitCompareArrows size={18} /> Confronta documenti Mexal
+          </button>
+        )}
       </div>
       <div className="orders-kpi-grid">
         <Kpi label="Ordini del mese" value={stats.ordiniMese} />

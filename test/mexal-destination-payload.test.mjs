@@ -15,7 +15,7 @@ const payload = buildMexalOrderDocument({
   prezzo_listino: 1.5,
 }], { serie: 1, magazzino: 5 });
 
-assert.deepEqual(payload.id_ind_sped, [[1, 0]], "id_ind_sped deve usare il formato array/matrice richiesto da Mexal");
+assert.deepEqual(payload.id_ind_sped, [[1, "0"]], "id_ind_sped deve usare matrice e valore stringa richiesti da Mexal");
 assert.equal(payload.cod_anag_sped, "501.02677", "cod_anag_sped resta nel formato già accettato finché Mexal non segnala un contratto diverso");
 
-console.log("Mexal destination payload: id_ind_sped matrix verified");
+console.log("Mexal destination payload: id_ind_sped string matrix verified");

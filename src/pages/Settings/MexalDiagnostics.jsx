@@ -29,8 +29,13 @@ export default function MexalDiagnostics() {
   const [clientCode, setClientCode] = useState("501.02677");
   const [agentCode, setAgentCode] = useState("602.00040");
   const [productCode, setProductCode] = useState("IT0039");
+  const [destinationYear, setDestinationYear] = useState("2026");
+  const [destinationSeries, setDestinationSeries] = useState("1");
+  const [destinationNumber, setDestinationNumber] = useState("16541");
+  const [destinationClient, setDestinationClient] = useState("501.03320");
   const [result, setResult] = useState(null);
   const [commercialResult, setCommercialResult] = useState(null);
+  const [destinationResult, setDestinationResult] = useState(null);
   const [loading, setLoading] = useState("");
   const [error, setError] = useState("");
 
@@ -50,6 +55,23 @@ export default function MexalDiagnostics() {
     finally { setLoading(""); }
   }
 
+  async function executeDestination() {
+    setLoading("destination"); setError("");
+    try {
+      setDestinationResult(await postDiagnostics({
+        action: "order-destination-diagnostics",
+        year: destinationYear.trim(),
+        series: destinationSeries.trim(),
+        number: destinationNumber.trim(),
+        clientCode: destinationClient.trim(),
+      }));
+    } catch (diagnosticError) {
+      setError(diagnosticError.message || "Lettura ordine Mexal non riuscita.");
+    } finally {
+      setLoading("");
+    }
+  }
+
   function downloadJson(value, name) {
     if (!value) return;
     const blob = new Blob([`${JSON.stringify(value, null, 2)}\n`], { type: "application/json" });
@@ -60,9 +82,28 @@ export default function MexalDiagnostics() {
   if (!isAdminUser) return <div className="orders-empty">Diagnostica Mexal riservata agli amministratori.</div>;
 
   return <div className="settings-page v4-page">
-    <div className="page-title-row"><div><button className="orders-secondary" type="button" onClick={() => navigate("/settings")} style={{ marginBottom: 12 }}><ArrowLeft size={18} /> Torna alle impostazioni</button><h1>Diagnostica contratti Mexal</h1><p>Confronta documenti e individua i campi reali di trasporto cliente e provvigione agente-prodotto.</p></div></div>
+    <div className="page-title-row"><div><button className="orders-secondary" type="button" onClick={() => navigate("/settings")} style={{ marginBottom: 12 }}><ArrowLeft size={18} /> Torna alle impostazioni</button><h1>Diagnostica contratti Mexal</h1><p>Legge ordini reali e individua i campi corretti usati da Mexal.</p></div></div>
 
     <section className="panel settings-panel">
+      <div className="panel-header"><h3>Leggi ordine manuale per la destinazione</h3></div>
+      <p>Valori già impostati sull’ordine OCM manuale indicato. Premi il pulsante per leggere direttamente il documento da Mexal.</p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
+        <label>Anno<input value={destinationYear} onChange={(event) => setDestinationYear(event.target.value)} /></label>
+        <label>Serie<input value={destinationSeries} onChange={(event) => setDestinationSeries(event.target.value)} /></label>
+        <label>Numero<input value={destinationNumber} onChange={(event) => setDestinationNumber(event.target.value)} /></label>
+        <label>Cliente Mexal<input value={destinationClient} onChange={(event) => setDestinationClient(event.target.value)} /></label>
+      </div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 }}>
+        <button className="primary-action" type="button" onClick={executeDestination} disabled={loading === "destination"}>{loading === "destination" ? <RefreshCw className="spin" size={18} /> : <Play size={18} />}{loading === "destination" ? "Lettura in corso..." : "Leggi ordine Mexal"}</button>
+        {destinationResult && <button className="orders-secondary" type="button" onClick={() => downloadJson(destinationResult, `mexal-ordine-OC-${destinationSeries}-${destinationNumber}.json`)}><Download size={18} />Scarica JSON ordine</button>}
+      </div>
+    </section>
+    {destinationResult && <>
+      <section className="panel settings-panel"><div className="panel-header"><h3>Campi destinazione trovati</h3></div><p>{destinationResult.notice}</p><div className="orders-table-wrap"><table className="orders-table"><thead><tr><th>Percorso campo</th><th>Valore</th></tr></thead><tbody>{(destinationResult.destinationFields || []).map((item, index) => <tr key={`${item.path}-${index}`}><td>{item.path}</td><td><pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{JSON.stringify(item.value)}</pre></td></tr>)}</tbody></table></div></section>
+      <JsonPanel title={`Ordine ${destinationResult.reference}`} value={destinationResult.document} />
+    </>}
+
+    <section className="panel settings-panel" style={{ marginTop: 16 }}>
       <div className="panel-header"><h3>Trasporto cliente e provvigione agente-prodotto</h3></div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
         <label>Cliente Mexal<input value={clientCode} onChange={(event) => setClientCode(event.target.value)} /></label>

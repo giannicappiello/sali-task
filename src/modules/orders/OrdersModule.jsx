@@ -29,10 +29,7 @@ export default function OrdersModule() {
       <div className="orders-module-header">
         <div>
           <h1>Gestione Ordini</h1>
-          <p>Clienti, ordini e materiali commerciali collegati a Mexal.</p>
         </div>
-
-        <div className="orders-stock-status"><span>Dati Mexal letti dalla cache. Per aggiornarli usa il pannello Integrazioni.</span></div>
       </div>
 
       <div className="orders-tabs">

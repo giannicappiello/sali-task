@@ -1,7 +1,5 @@
-import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
-import { supabase } from "../../../lib/supabaseClient";
-export { buildAvailabilityPreview } from "./availability";
+import { supabase } from "../../../lib/supabaseClient.js";
+export { buildAvailabilityPreview } from "./availability.js";
 
 async function getAccessToken() {
   const { data: { session }, error } = await supabase.auth.getSession();
@@ -64,53 +62,4 @@ export async function loadOrderDetail(orderId) {
   return { order, lines: lines || [] };
 }
 
-function money(value) {
-  return Number(value || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
-}
-
-export function downloadOrderPdf(order, lines) {
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
-  doc.setFontSize(18);
-  doc.text("PROGRE - Conferma ordine", 14, 18);
-  doc.setFontSize(10);
-  doc.text(`Ordine Workspace: ${order.numero_ordine || order.id}`, 14, 27);
-  doc.text(`Data: ${order.data_ordine || "-"}`, 14, 33);
-  doc.text(`Cliente: ${order.ragione_sociale_cliente || order.codice_cliente || "-"}`, 14, 39);
-  doc.text(`Codice cliente: ${order.codice_cliente || "-"}`, 14, 45);
-  doc.text(`Pagamento: ${order.descrizione_pagamento || order.codice_pagamento || "-"}`, 14, 51);
-  doc.text(`Agente: ${order.codice_agente_mexal || "-"}`, 14, 57);
-
-  autoTable(doc, {
-    startY: 65,
-    head: [["Codice", "Descrizione", "Q.tà", "Listino", "Sconto", "Netto", "Imponibile", "IVA", "Totale", "Doc."]],
-    body: lines.map((line) => [
-      line.codice_articolo,
-      line.descrizione,
-      Number(line.quantita || 0).toLocaleString("it-IT"),
-      money(line.prezzo_listino),
-      line.sconto_commerciale || "-",
-      money(line.prezzo_netto),
-      money(line.imponibile_riga),
-      money(line.iva_riga),
-      money(line.totale_riga),
-      Number(line.quantita_ocx || 0) > 0 && Number(line.quantita_ocm || 0) > 0
-        ? "OCM/OCX"
-        : Number(line.quantita_ocx || 0) > 0 ? "OCX" : "OCM",
-    ]),
-    styles: { fontSize: 8 },
-    headStyles: { fillColor: [15, 23, 42] },
-  });
-
-  const endY = doc.lastAutoTable?.finalY || 80;
-  doc.setFontSize(11);
-  doc.text(`Totale imponibile: ${money(order.totale_imponibile ?? order.totale)}`, 14, endY + 10);
-  doc.text(`Totale IVA: ${money(order.totale_iva)}`, 14, endY + 16);
-  doc.text(`Totale documento: ${money(order.totale_documento ?? order.totale)}`, 14, endY + 22);
-  if (order.commenti) {
-    doc.setFontSize(9);
-    doc.text("Note:", 14, endY + 31);
-    doc.text(doc.splitTextToSize(order.commenti, 180), 14, endY + 37);
-  }
-
-  doc.save(`ordine-${order.numero_ordine || order.id}.pdf`);
-}
+export { buildOrderPdfModel, createOrderPdf, downloadOrderPdf } from "./orderPdf.js";

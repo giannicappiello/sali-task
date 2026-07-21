@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import {
   buildNewOrderInsertPayload,
   buildWritableOrderPayload,
+  normalizePaymentCode,
 } from "../src/modules/orders/services/orderPayload.js";
 
 const customer = {
@@ -10,7 +11,7 @@ const customer = {
   ragione_sociale: "Cliente di prova",
   partita_iva: "01234567890",
   codice_agente_mexal: "A-01",
-  codice_pagamento: "RIBA",
+  codice_pagamento: "12",
   codice_listino: "L-01",
   indirizzo: "Via Roma 1",
   cap: "20100",
@@ -18,11 +19,16 @@ const customer = {
   provincia: "MI",
 };
 
+assert.equal(normalizePaymentCode(" 17 "), 17, "converte il codice pagamento numerico in integer");
+assert.equal(normalizePaymentCode(8), 8, "mantiene un codice pagamento già numerico");
+assert.equal(normalizePaymentCode(""), null, "un codice vuoto diventa null");
+assert.equal(normalizePaymentCode("BON"), null, "un codice non numerico non viene inviato a una colonna integer");
+
 const insertPayload = buildNewOrderInsertPayload({
   dataOrdine: "2026-07-19",
   customer,
   agentCode: "A-fallback",
-  payment: { codice: "BON", descrizione: "Bonifico" },
+  payment: { codice: "25", descrizione: "Bonifico" },
   paymentDescription: () => "non usato",
   comments: "  consegna mattina  ",
   total: 123.45,
@@ -38,7 +44,7 @@ assert.deepEqual(insertPayload, {
   ragione_sociale_cliente: "Cliente di prova",
   partita_iva: "01234567890",
   codice_agente_mexal: "A-01",
-  codice_pagamento: "BON",
+  codice_pagamento: 25,
   descrizione_pagamento: "Bonifico",
   codice_listino: "L-01",
   indirizzo_spedizione: "Via Roma 1 20100 Milano MI",
@@ -47,11 +53,12 @@ assert.deepEqual(insertPayload, {
   totale_imponibile: 101.19,
   totale_iva: 22.26,
   totale_documento: 123.45,
-}, "conserva tutti i campi necessari dell'ordine");
+}, "conserva tutti i campi necessari dell'ordine usando un codice pagamento integer");
 assert.equal("mese_ordine" in insertPayload, false, "l'insert non invia la colonna generated");
 
 const recordReadFromSupabase = {
   ...insertPayload,
+  codice_pagamento: "25",
   id: "a-generated-id",
   created_at: "2026-07-19T09:00:00Z",
   mese_ordine: "2026-07",
@@ -64,6 +71,7 @@ assert.equal("id" in upsertPayload, false, "l'upsert elimina le colonne di sola 
 assert.equal("another_generated_column" in upsertPayload, false, "l'upsert elimina le altre colonne generate");
 assert.equal(upsertPayload.data_ordine, "2026-07-19");
 assert.equal(upsertPayload.codice_cliente, "C-001");
+assert.equal(upsertPayload.codice_pagamento, 25, "anche update e retry convertono il codice in integer");
 
 const updatePayload = buildWritableOrderPayload(recordReadFromSupabase);
 assert.deepEqual(updatePayload, upsertPayload, "l'update da un record letto usa la stessa allow-list");
@@ -77,4 +85,4 @@ assert.match(newOrderSource, /await supabase\.rpc\([\s\S]*conferma_ordine_worksp
 assert.doesNotMatch(newOrderSource, /mese_ordine\s*:/,
   "New Order non costruisce più un payload con mese_ordine");
 
-console.log("order payload: generated columns are excluded from insert, upsert, and update payloads");
+console.log("order payload: generated columns are excluded and payment codes are normalized as integers");

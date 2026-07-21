@@ -107,10 +107,11 @@ function destinationFields(order) {
   const explicitAddressId = number(order.id_ind_sped ?? destination.id_ind_sped ?? destination.cod_ind_sped);
   const hasDestinationSnapshot = Object.keys(destination).length > 0;
   const addressId = explicitAddressId ?? (hasDestinationSnapshot ? 0 : undefined);
+  const customerCode = text(order.cod_anag_sped || destination.cod_anag_sped || (hasDestinationSnapshot ? order.codice_cliente : ""));
   return compact({
-    // Mexal richiede id_ind_sped come matrice e valore interno di tipo stringa.
+    // Mexal richiede entrambi i riferimenti destinazione come campi array/matrice.
     id_ind_sped: addressId === undefined ? undefined : matrix(String(addressId)),
-    cod_anag_sped: text(order.cod_anag_sped || destination.cod_anag_sped || (hasDestinationSnapshot ? order.codice_cliente : "")),
+    cod_anag_sped: customerCode ? matrix(customerCode) : undefined,
   });
 }
 

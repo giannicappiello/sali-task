@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { buildMexalClient, verifyUser } from "../../server/mexal/sync-products.js";
-import { DEFAULT_MEXAL_ORDER_DATE_FORMAT, ORDER_DOCUMENTS, buildMexalOrderDocument, classifyOrderLines, mexalLineState, reconciliationFailure } from "../../server/mexal/order-documents.js";
+import { DEFAULT_MEXAL_ORDER_DATE_FORMAT, ORDER_DOCUMENTS, buildMexalOrderDocument, classifyOrderLines, reconciliationFailure } from "../../server/mexal/order-documents.js";
 
 function env(name) { return String(process.env[name] ?? "").trim(); }
 function required(name) { const value = env(name); if (!value) throw new Error(`Variabile Vercel mancante: ${name}`); return value; }
@@ -133,8 +133,7 @@ export default async function handler(req, res) {
       const diagnostics = [];
       const onDiagnostic = (diagnostic) => { diagnostics.push(safeDiagnostic(diagnostic)); logMexalOrderDiagnostic({ orderId, kind, diagnostic }); };
       const sourceLines = lineDiagnostic(classified[kind]);
-      const statoRigaMexal = mexalLineState(kind);
-      console.info("Mexal order payload ready", { orderId, kind, payload, sourceLines, statoRigaMexal });
+      console.info("Mexal order payload ready", { orderId, kind, payload, sourceLines });
       try {
         const result = await mexal.postJson("/documenti/ordini-clienti", payload, { onDiagnostic });
         const reference = extractDocumentReference(result); const numero = reference.numero; const options = documentOptions(documentConfig, kind);
@@ -145,11 +144,11 @@ export default async function handler(req, res) {
         }
         documents.push({ kind, numero });
         await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, stato: "created", sigla: "OC", serie: reference.serie || options.serie, numero, cod_modulo: ORDER_DOCUMENTS[kind]?.moduleCode, tentativi: Number(savedDocument?.tentativi || 0) + 1, errore: null, risposta: { result, diagnostics }, creato_il: new Date().toISOString(), aggiornato_il: new Date().toISOString() });
-        await admin.from("ordini_sync_mexal_log").insert({ ordine_id: orderId, tipo_documento: kind, stato: "successo", payload, risposta: { result, diagnostics, sourceLines, statoRigaMexal }, iniziato_il: startedAt, completato_il: new Date().toISOString() });
+        await admin.from("ordini_sync_mexal_log").insert({ ordine_id: orderId, tipo_documento: kind, stato: "successo", payload, risposta: { result, diagnostics, sourceLines }, iniziato_il: startedAt, completato_il: new Date().toISOString() });
         await heartbeat(admin, orderId, syncToken);
       } catch (error) {
         const mexalResponse = error?.mexalResponse ? { status: error.mexalResponse.status, headers: diagnosticHeaders(error.mexalResponse.headers), body: parseDiagnosticBody(error.mexalResponse.body) } : null;
-        const diagnosticRecord = { diagnostics, mexalResponse, mexalResult: error?.mexalResult || null, sourceLines, statoRigaMexal };
+        const diagnosticRecord = { diagnostics, mexalResponse, mexalResult: error?.mexalResult || null, sourceLines };
         failures.push({ kind, error: error.message });
         console.error("Mexal order document failed", { orderId, kind, error: error.message, payload, ...diagnosticRecord });
         await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, stato: "failed", sigla: "OC", serie: documentOptions(documentConfig, kind).serie, cod_modulo: ORDER_DOCUMENTS[kind]?.moduleCode, tentativi: Number(savedDocument?.tentativi || 0) + 1, errore: error.message, risposta: diagnosticRecord, aggiornato_il: new Date().toISOString() });

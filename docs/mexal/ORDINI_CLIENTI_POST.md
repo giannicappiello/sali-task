@@ -18,13 +18,24 @@ L'unico punto da modificare se Mexal conferma un contratto diverso è `buildRoot
 che richieda una stringa si può impostare `MEXAL_ORDER_NOTA_FORMAT=scalar`; il default è
 `typed-array` e non blocca il deployment.
 
-## `stato_riga`
+## Stato della riga articolo — hotfix
 
-Lo stato delle righe usa il campo Mexal radice/matrice **`stato_riga`**, con la
-stessa forma indicizzata delle altre proprietà riga: `[[1, "E"], [2, "E"]]`.
-Il builder lo determina per ogni documento: `E` per OCM e `S` per OCX e OCI.
-Perciò, quando una riga Workspace è divisa tra OCM e OCX, i due POST contengono
-rispettivamente `stato_riga: [[1, "E"]]` e `stato_riga: [[1, "S"]]`.
+`stato_riga` è stato **rimosso completamente** dai payload POST: Mexal lo
+rifiuta con `6001 - errore gestionale` e `Nome campo 'stato_riga' non valido`.
+Non è stato introdotto alcun nome alternativo ipotetico.
+
+La ricognizione del repository non fornisce il contratto tecnico reale: non sono
+versionati JSON GET di OCM, OCX o OCI con il campo stato riga, né `help.json` o
+esempi POST verificati per l'endpoint ordini clienti. Le GET già considerate
+confermano soltanto che le proprietà delle righe possono essere matrici
+indicizzate alla radice; non confermano un campo E/S, la sua posizione, né una
+dipendenza da `cod_modulo` o da causale.
+
+Di conseguenza OCM, OCX e OCI continueranno temporaneamente con lo stato
+predefinito determinato da Mexal. Il requisito dello stato riga E/S **non è
+completato** e potrà essere ripreso soltanto dopo aver acquisito GET reali delle
+righe e un contratto POST/`help.json` che indichi nome tecnico, struttura e
+regole di derivazione.
 
 ## `data_documento`
 

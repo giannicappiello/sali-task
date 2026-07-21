@@ -14,6 +14,19 @@ Il campo `stato_riga` resta deliberatamente assente: l'errore Mexal già
 documentato è `6001 - Nome campo 'stato_riga' non valido`. Non viene introdotto
 alcun sinonimo ipotetico e non si dichiara completata la regola OCM=E/OCX=OCI=S.
 
+Per raccogliere l'evidenza mancante esiste lo script locale (non esposto come
+endpoint Vercel):
+
+```sh
+npm run mexal:capture-order-contract -- --ocm-e OC+1+16531 --ocm-s OC+1+16532 --ocx OC+1+16533 --oci OC+1+16534
+```
+
+Interroga i quattro documenti indicati e i due endpoint `help.json`; salva
+`diagnostics/mexal/order-contract-sanitized.json`. Il file conserva solo nomi
+dei campi, forma delle matrici e tipi primitivi: valori, dati personali,
+credenziali e header non vengono scritti. I riferimenti forniti sono usati solo
+per la richiesta e non sono inclusi nel file prodotto.
+
 ## PDF
 
 `ordini_documenti_mexal.tipo_documento`, `serie` e `numero` sono l'unica fonte

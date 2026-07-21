@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { jsPDF } from "jspdf";
-import { buildOrderPdfModel, createOrderPdf, fitTextInCell, formatMexalDocumentNumber, getMexalDocuments } from "../src/modules/orders/services/orderPdf.js";
+import { buildOrderPdfModel, createMexalDocumentPdfFiles, createOrderPdf, createZipArchive, downloadOrderPdf, fitTextInCell, formatMexalDocumentNumber, getMexalDocuments } from "../src/modules/orders/services/orderPdf.js";
 
 test("il modello PDF usa il motore economico condiviso per quindici righe", () => {
   const lines = Array.from({ length: 15 }, (_, index) => ({ codice_articolo: `A-${index}`, quantita: 2, prezzo_listino: 10, sconto_commerciale: "10", aliquota_iva: 22 }));
@@ -38,6 +38,26 @@ test("i documenti OCM e OCX mantengono serie e numero distinti", async () => {
     assert.match(output, new RegExp(formatMexalDocumentNumber(document)));
     assert.doesNotMatch(output, /PREZZO\) Tj\n\(OC[MXI]/);
   }
+});
+
+test("un solo documento scarica un PDF, più documenti un solo ZIP con tutti i PDF", async () => {
+  const one = { numero_ordine_visualizzato: "3/2026", mexal_documents: [{ tipo_documento: "OCM", serie: 1, numero: "16531" }] };
+  const multiple = { numero_ordine_visualizzato: "3/2026", mexal_documents: [{ tipo_documento: "OCM", serie: 1, numero: "16531" }, { tipo_documento: "OCX", serie: 1, numero: "16532" }, { tipo_documento: "OCI", serie: 1, numero: "16533" }] };
+  const lines = [{ codice_articolo: "IT-1", quantita: 3, quantita_ocm: 2, quantita_ocx: 1, prezzo_listino: 10 }, { codice_articolo: "IMP-1", quantita: 4, prezzo_listino: 5 }];
+  const singleDownloads = [];
+  const single = await downloadOrderPdf(one, lines, { save: (_blob, name) => singleDownloads.push(name) });
+  assert.equal(single.type, "pdf");
+  assert.deepEqual(singleDownloads, ["ordine-OCM-1-16531.pdf"]);
+  const files = await createMexalDocumentPdfFiles(multiple, lines);
+  assert.deepEqual(files.map(({ name }) => name), ["ordine-OCM-1-16531.pdf", "ordine-OCX-1-16532.pdf", "ordine-OCI-1-16533.pdf"]);
+  const archive = createZipArchive(files);
+  assert.equal(new DataView(archive.buffer).getUint32(0, true), 0x04034b50, "ZIP local header");
+  const text = new TextDecoder().decode(archive);
+  files.forEach(({ name }) => assert.match(text, new RegExp(name.replaceAll(".", "\\."))));
+  const downloads = [];
+  const result = await downloadOrderPdf(multiple, lines, { save: (_blob, name) => downloads.push(name) });
+  assert.equal(result.type, "zip");
+  assert.deepEqual(downloads, ["ordine-3-2026-documenti-mexal.zip"]);
 });
 
 test("il PDF con almeno quindici righe gestisce più pagine e intestazioni", async () => {

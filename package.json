@@ -13,7 +13,8 @@
     "test:orders-dashboard": "node --test server/orders-dashboard.test.js",
     "test:order-pdf": "node --test server/order-pdf.test.js",
     "test:new-order-ui": "node --test --test-name-pattern='messaggi rimossi' server/new-order-ui.test.js",
-    "mexal:diagnose-order": "node scripts/mexal-diagnose-order-cli.mjs"
+    "mexal:diagnose-order": "node scripts/mexal-diagnose-order-cli.mjs",
+    "mexal:capture-order-contract": "node scripts/mexal-capture-order-contract.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.0",

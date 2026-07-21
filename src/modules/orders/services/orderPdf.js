@@ -309,20 +309,85 @@ export async function createOrderPdf(order, lines, { logo = null, document = nul
   return doc;
 }
 
-export async function downloadOrderPdf(order, lines) {
-  const documents = getMexalDocuments(order);
-  if (!documents.length) {
-    const doc = await createOrderPdf(order, lines);
-    doc.save("ordine-bozza.pdf");
-    return;
+function workspaceArchiveName(order) {
+  const reference = String(order.numero_ordine_visualizzato || order.numero_ordine || "ordine").trim().replaceAll("/", "-").replace(/[^a-zA-Z0-9_-]+/g, "-");
+  return `ordine-${reference || "ordine"}-documenti-mexal.zip`;
+}
+
+function saveBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
   }
-  for (const document of documents) {
+  return (crc ^ 0xffffffff) >>> 0;
+}
+function write16(view, offset, value) { view.setUint16(offset, value, true); }
+function write32(view, offset, value) { view.setUint32(offset, value >>> 0, true); }
+
+// ZIP "store" entries need no third-party dependency and are supported by all
+// target browsers. PDFs are already compressed internally, so deflating again
+// provides negligible benefit while making the download path less reliable.
+export function createZipArchive(files) {
+  const encoder = new TextEncoder();
+  const entries = files.map(({ name, data }) => ({ nameBytes: encoder.encode(name), data: new Uint8Array(data) }));
+  const localSize = entries.reduce((size, entry) => size + 30 + entry.nameBytes.length + entry.data.length, 0);
+  const centralSize = entries.reduce((size, entry) => size + 46 + entry.nameBytes.length, 0);
+  const output = new Uint8Array(localSize + centralSize + 22);
+  const view = new DataView(output.buffer); let offset = 0;
+  entries.forEach((entry) => {
+    entry.offset = offset; entry.crc = crc32(entry.data);
+    write32(view, offset, 0x04034b50); write16(view, offset + 4, 20); write16(view, offset + 8, 0);
+    write32(view, offset + 14, entry.crc); write32(view, offset + 18, entry.data.length); write32(view, offset + 22, entry.data.length);
+    write16(view, offset + 26, entry.nameBytes.length); write16(view, offset + 28, 0); offset += 30;
+    output.set(entry.nameBytes, offset); offset += entry.nameBytes.length; output.set(entry.data, offset); offset += entry.data.length;
+  });
+  const centralOffset = offset;
+  entries.forEach((entry) => {
+    write32(view, offset, 0x02014b50); write16(view, offset + 4, 20); write16(view, offset + 6, 20); write16(view, offset + 10, 0);
+    write32(view, offset + 16, entry.crc); write32(view, offset + 20, entry.data.length); write32(view, offset + 24, entry.data.length);
+    write16(view, offset + 28, entry.nameBytes.length); write16(view, offset + 30, 0); write16(view, offset + 32, 0); write32(view, offset + 42, entry.offset); offset += 46;
+    output.set(entry.nameBytes, offset); offset += entry.nameBytes.length;
+  });
+  write32(view, offset, 0x06054b50); write16(view, offset + 8, entries.length); write16(view, offset + 10, entries.length);
+  write32(view, offset + 12, centralSize); write32(view, offset + 16, centralOffset);
+  return output;
+}
+
+export async function createMexalDocumentPdfFiles(order, lines) {
+  const documents = getMexalDocuments(order);
+  const targets = documents.length ? documents : [null];
+  return Promise.all(targets.map(async (document) => {
+    if (!document) {
+      const doc = await createOrderPdf(order, lines);
+      return { name: "ordine-bozza.pdf", data: doc.output("arraybuffer") };
+    }
     const kind = document.type;
     const documentLines = lines.filter((line) => {
       if (kind === "OCI") return String(line.codice_articolo || "").trim().toUpperCase().startsWith("IMP");
       return Number(line[`quantita_${kind.toLowerCase()}`]) > 0;
     }).map((line) => ({ ...line, quantita: kind === "OCI" ? line.quantita : line[`quantita_${kind.toLowerCase()}`] }));
     const doc = await createOrderPdf(order, documentLines, { document });
-    doc.save(`ordine-${document.type}-${document.serie}-${document.numero}.pdf`);
+    return { name: `ordine-${document.type}-${document.serie}-${document.numero}.pdf`, data: doc.output("arraybuffer") };
+  }));
+}
+
+export async function downloadOrderPdf(order, lines, { save = saveBlob } = {}) {
+  const files = await createMexalDocumentPdfFiles(order, lines);
+  if (files.length === 1) {
+    save(new Blob([files[0].data], { type: "application/pdf" }), files[0].name);
+    return { type: "pdf", files };
   }
+  const archiveName = workspaceArchiveName(order);
+  save(new Blob([createZipArchive(files)], { type: "application/zip" }), archiveName);
+  return { type: "zip", name: archiveName, files };
 }

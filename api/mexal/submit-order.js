@@ -21,21 +21,48 @@ function token() { return crypto.randomUUID(); }
 function diagnosticHeaders(headers) {
   return Object.fromEntries(Object.entries(headers || {}).map(([name, value]) => [name, /^authorization$/i.test(name) ? "[REDACTED]" : value]));
 }
+function parseDiagnosticBody(body) {
+  if (body === null || body === undefined || body === "") return null;
+  if (typeof body !== "string") return body;
+  try { return JSON.parse(body); } catch { return body; }
+}
+function safeDiagnostic(diagnostic) {
+  return {
+    phase: diagnostic.phase,
+    url: diagnostic.url,
+    method: diagnostic.method,
+    status: diagnostic.status,
+    headers: diagnostic.headers ? diagnosticHeaders(diagnostic.headers) : undefined,
+    body: parseDiagnosticBody(diagnostic.body),
+    error: diagnostic.error,
+    recordedAt: new Date().toISOString(),
+  };
+}
 function logMexalOrderDiagnostic({ orderId, kind, diagnostic }) {
   const entry = {
     event: "mexal_order_document_http",
     orderId,
     documentType: kind,
-    ...diagnostic,
-    headers: diagnostic.headers ? diagnosticHeaders(diagnostic.headers) : undefined,
+    ...safeDiagnostic(diagnostic),
   };
-  // Keep the exact JSON body and every date-like key in the function logs. The
-  // Authorization value is redacted because it is a reusable Mexal credential.
-  if (diagnostic.phase === "request") {
-    const payload = JSON.parse(diagnostic.body);
-    entry.dateFields = Object.fromEntries(Object.entries(payload).filter(([key]) => /data|date/i.test(key)));
+  if (diagnostic.phase === "request" && entry.body && typeof entry.body === "object") {
+    entry.dateFields = Object.fromEntries(Object.entries(entry.body).filter(([key]) => /data|date/i.test(key)));
   }
   console.info("Mexal order document HTTP diagnostic", entry);
+}
+function lineDiagnostic(lines) {
+  return (lines || []).map((line, index) => ({
+    row: index + 1,
+    codice_articolo: line.codice_articolo,
+    quantita_documento: line.quantita_documento,
+    prezzo_listino: line.prezzo_listino,
+    prezzo_netto: line.prezzo_netto,
+    sconto_commerciale: line.sconto_commerciale,
+    codice_iva_mexal: line.codice_iva_mexal,
+    aliquota_iva: line.aliquota_iva,
+    unita_misura: line.unita_misura,
+    id_mag_riga: line.id_mag_riga,
+  }));
 }
 async function stopRequested(admin, orderId, syncToken) {
   const { data, error } = await admin.from("ordini_testate").select("arresto_sync_richiesto,stato_sincronizzazione,sync_token").eq("id", orderId).single();
@@ -55,7 +82,7 @@ export default async function handler(req, res) {
     const [{ data: order, error: orderError }, { data: lines, error: linesError }] = await Promise.all([admin.from("ordini_testate").select("*").eq("id", orderId).single(), admin.from("ordini_righe").select("*").eq("ordine_id", orderId).order("id")]);
     if (orderError) throw orderError; if (linesError) throw linesError; if (!lines?.length) throw new Error("Ordine senza righe.");
     const classified = classifyOrderLines(lines);
-    console.info("Mexal order processing", { orderId, ociLines: classified.OCI.length, ocmLines: classified.OCM.length, ocxLines: classified.OCX.length });
+    console.info("Mexal order processing", { orderId, ociLines: classified.OCI.length, ocmLines: classified.OCM.length, ocxLines: classified.OCX.length, lines: { OCM: lineDiagnostic(classified.OCM), OCX: lineDiagnostic(classified.OCX), OCI: lineDiagnostic(classified.OCI) } });
     const requiredKinds = Object.keys(classified).filter((kind) => classified[kind].length);
     const done = new Set(requiredKinds.filter((kind) => text(order[`numero_${kind.toLowerCase()}`])));
     syncToken = token();
@@ -71,10 +98,6 @@ export default async function handler(req, res) {
       await heartbeat(admin, orderId, syncToken);
       const { data: savedDocument, error: savedDocumentError } = await admin.from("ordini_documenti_mexal").select("*").eq("ordine_id", orderId).eq("tipo_documento", kind).maybeSingle();
       if (savedDocumentError) throw savedDocumentError;
-      // Existing tracking records follow this reconciliation path and exit before
-      // a POST: if (savedDocument?.numero) { getJson(...); continue; }
-      // Older rows can have a header number without the tracking row: treat it
-      // as an existing document and reconcile it, never POST it again.
       const existingDocument = savedDocument?.numero ? savedDocument : done.has(kind) ? { numero: order[`numero_${kind.toLowerCase()}`], serie: documentOptions(documentConfig, kind).serie, cod_modulo: ORDER_DOCUMENTS[kind]?.moduleCode, tentativi: 0 } : null;
       if (existingDocument?.numero) {
         try {
@@ -85,9 +108,26 @@ export default async function handler(req, res) {
           documents.push({ kind, numero: existingDocument.numero, reconciled: true }); continue;
         } catch (error) { const outcome = error.reconciliationState ? { stato: error.reconciliationState, errore: error.message } : reconciliationFailure(error, existingDocument.cod_modulo); failures.push({ kind, error: outcome?.errore || error.message }); await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, stato: outcome?.stato || "temporary_error", sigla: "OC", serie: existingDocument.serie, numero: existingDocument.numero, cod_modulo: existingDocument.cod_modulo, tentativi: Number(existingDocument.tentativi || 0) + 1, errore: outcome?.errore || error.message, aggiornato_il: new Date().toISOString() }); continue; }
       }
-      const payload = buildMexalOrderDocument(order, kind, classified[kind], documentOptions(documentConfig, kind)); const startedAt = new Date().toISOString();
-      try { const result = await mexal.postJson("/documenti/ordini-clienti", payload, { onDiagnostic: (diagnostic) => logMexalOrderDiagnostic({ orderId, kind, diagnostic }) }); const numero = extractNumber(result); const options = documentOptions(documentConfig, kind); documents.push({ kind, numero }); await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, stato: "created", sigla: "OC", serie: options.serie, numero, cod_modulo: ORDER_DOCUMENTS[kind]?.moduleCode, tentativi: Number(savedDocument?.tentativi || 0) + 1, errore: null, risposta: result, creato_il: new Date().toISOString(), aggiornato_il: new Date().toISOString() }); await admin.from("ordini_sync_mexal_log").insert({ ordine_id: orderId, tipo_documento: kind, stato: "successo", payload, risposta: result, iniziato_il: startedAt, completato_il: new Date().toISOString() }); await heartbeat(admin, orderId, syncToken); }
-      catch (error) { failures.push({ kind, error: error.message }); console.error("Mexal order document failed", { orderId, kind, error: error.message }); await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, stato: "failed", sigla: "OC", serie: documentOptions(documentConfig, kind).serie, cod_modulo: ORDER_DOCUMENTS[kind]?.moduleCode, tentativi: Number(savedDocument?.tentativi || 0) + 1, errore: error.message, aggiornato_il: new Date().toISOString() }); await admin.from("ordini_sync_mexal_log").insert({ ordine_id: orderId, tipo_documento: kind, stato: "errore", payload, errore: error.message, iniziato_il: startedAt, completato_il: new Date().toISOString() }); }
+      const payload = buildMexalOrderDocument(order, kind, classified[kind], documentOptions(documentConfig, kind));
+      const startedAt = new Date().toISOString();
+      const diagnostics = [];
+      const onDiagnostic = (diagnostic) => { diagnostics.push(safeDiagnostic(diagnostic)); logMexalOrderDiagnostic({ orderId, kind, diagnostic }); };
+      console.info("Mexal order payload ready", { orderId, kind, payload, sourceLines: lineDiagnostic(classified[kind]) });
+      try {
+        const result = await mexal.postJson("/documenti/ordini-clienti", payload, { onDiagnostic });
+        const numero = extractNumber(result); const options = documentOptions(documentConfig, kind);
+        documents.push({ kind, numero });
+        await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, stato: "created", sigla: "OC", serie: options.serie, numero, cod_modulo: ORDER_DOCUMENTS[kind]?.moduleCode, tentativi: Number(savedDocument?.tentativi || 0) + 1, errore: null, risposta: { result, diagnostics }, creato_il: new Date().toISOString(), aggiornato_il: new Date().toISOString() });
+        await admin.from("ordini_sync_mexal_log").insert({ ordine_id: orderId, tipo_documento: kind, stato: "successo", payload, risposta: { result, diagnostics, sourceLines: lineDiagnostic(classified[kind]) }, iniziato_il: startedAt, completato_il: new Date().toISOString() });
+        await heartbeat(admin, orderId, syncToken);
+      } catch (error) {
+        const mexalResponse = error?.mexalResponse ? { status: error.mexalResponse.status, headers: diagnosticHeaders(error.mexalResponse.headers), body: parseDiagnosticBody(error.mexalResponse.body) } : null;
+        const diagnosticRecord = { diagnostics, mexalResponse, sourceLines: lineDiagnostic(classified[kind]) };
+        failures.push({ kind, error: error.message });
+        console.error("Mexal order document failed", { orderId, kind, error: error.message, payload, ...diagnosticRecord });
+        await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, stato: "failed", sigla: "OC", serie: documentOptions(documentConfig, kind).serie, cod_modulo: ORDER_DOCUMENTS[kind]?.moduleCode, tentativi: Number(savedDocument?.tentativi || 0) + 1, errore: error.message, risposta: diagnosticRecord, aggiornato_il: new Date().toISOString() });
+        await admin.from("ordini_sync_mexal_log").insert({ ordine_id: orderId, tipo_documento: kind, stato: "errore", payload, risposta: diagnosticRecord, errore: error.message, iniziato_il: startedAt, completato_il: new Date().toISOString() });
+      }
     }
     const updatedNumbers = Object.fromEntries(documents.map(({ kind, numero }) => [`numero_${kind.toLowerCase()}`, numero || order[`numero_${kind.toLowerCase()}`] || null]));
     const stopped = await stopRequested(admin, orderId, syncToken);

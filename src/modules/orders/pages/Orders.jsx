@@ -4,6 +4,49 @@ import { Search } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
 
+function normalize(value) {
+  return String(value ?? "").trim();
+}
+
+function agentCode(agent) {
+  return normalize(
+    agent?.codice_agente_mexal ||
+    agent?.codice_agente ||
+    agent?.codice ||
+    agent?.id_agente
+  ).toUpperCase();
+}
+
+function agentFullName(agent) {
+  const fullName = normalize(
+    agent?.nome_completo ||
+    agent?.nominativo ||
+    agent?.descrizione ||
+    agent?.ragione_sociale
+  );
+  if (fullName) return fullName;
+
+  return [agent?.nome, agent?.cognome]
+    .map(normalize)
+    .filter(Boolean)
+    .join(" ");
+}
+
+function orderAgentName(order, agentsByCode) {
+  const directName = agentFullName(order);
+  if (directName) return directName;
+
+  const code = normalize(order?.codice_agente_mexal).toUpperCase();
+  return agentsByCode.get(code) || "-";
+}
+
+function displayStatus(order) {
+  const syncStatus = normalize(order?.stato_sincronizzazione).toLowerCase();
+  if (syncStatus === "completato") return { label: "INVIATO", className: "inviato" };
+  if (syncStatus === "errore") return { label: "ERRORE", className: "errore" };
+  return { label: "BOZZA", className: "bozza" };
+}
+
 export default function Orders() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -17,6 +60,7 @@ export default function Orders() {
   } = useOrdersAccess();
 
   const [rows, setRows] = useState([]);
+  const [agentsByCode, setAgentsByCode] = useState(new Map());
   const [search, setSearch] = useState("");
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [loading, setLoading] = useState(true);
@@ -31,11 +75,29 @@ export default function Orders() {
     JSON.stringify(visibleAgents),
   ]);
 
+  async function loadAgents() {
+    const { data, error } = await supabase
+      .from("ordini_agenti_cache")
+      .select("*");
+
+    if (error) {
+      console.warn("Archivio agenti non disponibile:", error);
+      return new Map();
+    }
+
+    return new Map(
+      (data || [])
+        .map((agent) => [agentCode(agent), agentFullName(agent)])
+        .filter(([code, name]) => code && name)
+    );
+  }
+
   async function loadOrders() {
     setLoading(true);
 
     if (!canAccessOrders) {
       setRows([]);
+      setAgentsByCode(new Map());
       setLoading(false);
       return;
     }
@@ -44,11 +106,13 @@ export default function Orders() {
       .from("ordini_testate")
       .select("*")
       .eq("mese_ordine", month)
-      .order("data_ordine", { ascending: false });
+      .order("data_ordine", { ascending: false })
+      .order("numero_ordine", { ascending: false });
 
     if (!canSeeAll) {
       if (!visibleAgents?.length) {
         setRows([]);
+        setAgentsByCode(new Map());
         setLoading(false);
         return;
       }
@@ -56,10 +120,14 @@ export default function Orders() {
       query = query.in("codice_agente_mexal", visibleAgents);
     }
 
-    const { data, error } = await query;
+    const [{ data, error }, loadedAgents] = await Promise.all([
+      query,
+      loadAgents(),
+    ]);
 
     if (error) console.error("Errore ordini:", error);
     setRows(data || []);
+    setAgentsByCode(loadedAgents);
     setLoading(false);
   }
 
@@ -67,12 +135,13 @@ export default function Orders() {
     const q = search.trim().toLowerCase();
     if (!q) return rows;
 
-    return rows.filter((item) =>
-      Object.values(item).some((value) =>
+    return rows.filter((item) => {
+      const agentName = orderAgentName(item, agentsByCode);
+      return [...Object.values(item), agentName].some((value) =>
         String(value ?? "").toLowerCase().includes(q)
-      )
-    );
-  }, [rows, search]);
+      );
+    });
+  }, [rows, search, agentsByCode]);
 
   const canCreateOrder = canAccessOrders;
   const accessLabel =
@@ -129,30 +198,28 @@ export default function Orders() {
             </thead>
 
             <tbody>
-              {filtered.map((item) => (
-                <tr key={item.id} className="orders-clickable-row" onClick={() => navigate(`/ordini/elenco/${item.id}`)}>
-                  <td>{item.data_ordine || "-"}</td>
-                  <td>{item.numero_ordine_visualizzato || item.numero_ordine || "Bozza"}</td>
-                  <td>
-                    {item.ragione_sociale_cliente || item.codice_cliente}
-                  </td>
-                  <td>{item.codice_agente_mexal || "-"}</td>
-                  <td>
-                    <span className={`orders-status ${item.stato}`}>
-                      {item.stato}
-                    </span>
-                    <small className={`orders-sync-inline ${item.stato_sincronizzazione || "non_inviato"}`}>
-                      {item.stato_sincronizzazione || "non_inviato"}
-                    </small>
-                  </td>
-                  <td>{Number(item.totale_imponibile ?? item.totale ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td>
-                  <td>{Number(item.totale_iva || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td>
-                  <td>{Number(item.totale_documento ?? item.totale ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td>
-                  <td>{item.numero_ocm || "-"}</td>
-                  <td>{item.numero_ocx || "-"}</td>
-                  <td>{item.numero_oci || "-"}</td>
-                </tr>
-              ))}
+              {filtered.map((item) => {
+                const status = displayStatus(item);
+                return (
+                  <tr key={item.id} className="orders-clickable-row" onClick={() => navigate(`/ordini/elenco/${item.id}`)}>
+                    <td>{item.data_ordine || "-"}</td>
+                    <td>{item.numero_ordine_visualizzato || item.numero_ordine || "Bozza"}</td>
+                    <td>{item.ragione_sociale_cliente || item.codice_cliente}</td>
+                    <td>{orderAgentName(item, agentsByCode)}</td>
+                    <td>
+                      <span className={`orders-status ${status.className}`}>
+                        {status.label}
+                      </span>
+                    </td>
+                    <td>{Number(item.totale_imponibile ?? item.totale ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td>
+                    <td>{Number(item.totale_iva || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td>
+                    <td>{Number(item.totale_documento ?? item.totale ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td>
+                    <td>{item.numero_ocm || "-"}</td>
+                    <td>{item.numero_ocx || "-"}</td>
+                    <td>{item.numero_oci || "-"}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

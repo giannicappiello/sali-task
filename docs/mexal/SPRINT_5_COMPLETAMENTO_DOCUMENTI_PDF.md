@@ -30,8 +30,11 @@ per la richiesta e non sono inclusi nel file prodotto.
 ## PDF
 
 `ordini_documenti_mexal.tipo_documento`, `serie` e `numero` sono l'unica fonte
-del numero stampato. Per ogni record completo viene generato un PDF separato:
-`ordine-OCM-1-16531.pdf`, ad esempio. Le righe sono filtrate con le stesse
+del numero stampato. Subito prima del download il frontend interroga
+esplicitamente la tabella con `ordine_id`, `stato = created` e `numero IS NOT
+NULL`, selezionando anche `stato`; quindi un risultato creato non può ricadere
+in `ordine-bozza.pdf`. Per ogni record completo viene generato un PDF separato:
+`ordine-OCM-1-16532.pdf`, ad esempio. Le righe sono filtrate con le stesse
 quantità già usate per la classificazione: `quantita_ocm`, `quantita_ocx`, o
 articolo `IMP*` per OCI. Il numero Workspace non è un numero documento e può
 apparire solo nella cella `Riferimento Workspace`.
@@ -48,6 +51,19 @@ apparire solo nella cella `Riferimento Workspace`.
 | Causale Vendita Diretta | NON IMPLEMENTATO PER API MANCANTE | `id_causale` è soltanto osservato in GET | `ORDINI_CLIENTI_POST.md` | matrice in GET; POST non verificata | non inviata |
 | Agente/provvigione | NON IMPLEMENTATO PER API MANCANTE | `codice_agente` è già inviato; nessun campo provvigione verificato | adapter POST e `SPRINT_4_CONTRATTI_MANCANTI.md` | scalare testo per agente | `codice_agente: "A-01"` |
 | Trasporto/economici/altre note | NON IMPLEMENTATO PER API MANCANTE | — | mancano GET/help/POST controllato | — | non inviati |
+
+## Mappa campi richiesta
+
+| Informazione | Campo Workspace | Campo Mexal | Struttura | Fonte tecnica | Stato |
+| --- | --- | --- | --- | --- | --- |
+| Pagamento | `id_pagamento` | `id_pagamento` | scalare numerico | payload/test esistente | verificato |
+| Destinazione | `id_ind_sped`, `cod_anag_sped` | `id_ind_sped`, `cod_anag_sped` | scalare | adapter POST | verificato |
+| Causale Vendita Diretta | — | — | — | GET/help mancanti | non inviato |
+| Decorrenza, banca | `appoggio_bancario` solo PDF | — | — | nessun contratto POST | non inviato |
+| Vettore, porto, trasporto, tracking, Incoterms, spese | campi ordine solo PDF | — | — | GET/help mancanti | non inviato |
+| Colli, peso, volume, aspetto beni, inizio trasporto | campi ordine solo PDF | — | — | GET/help mancanti | non inviato |
+| Provvigione e scadenze | — | — | — | GET/help mancanti | non inviato |
+| Note/riferimenti | `note_mexal`/numero Workspace | `nota` | scalare o matrice tipizzata | GET/payload verificato | verificato |
 
 ### Payload inviati oggi (sintesi)
 

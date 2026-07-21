@@ -8,12 +8,26 @@ function argument(name) {
   return index >= 0 ? String(process.argv[index + 1] || "").trim() : "";
 }
 
+// Preserve only values that express the API contract, never business data.
+// Matrix indexes are needed to identify root-vs-row fields; E/S, module codes
+// and booleans are needed to compare order state behaviour.
+const SAFE_TECHNICAL_KEYS = new Set(["stato", "cod_modulo", "sospeso", "evadibile", "tipo_riga", "tp_riga", "indice", "index"]);
+function safeTechnicalValue(value, key, indexInMatrix) {
+  if (typeof value === "boolean") return value;
+  if (indexInMatrix && typeof value === "number" && Number.isInteger(value)) return value;
+  if (!SAFE_TECHNICAL_KEYS.has(String(key || "").toLowerCase()) || typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  return /^(?:E|S|[A-Z]{1,3}|true|false)$/i.test(normalized) ? normalized : undefined;
+}
+
 // Preserve field names, array/matrix dimensions and primitive types while never
-// writing document values, customers, addresses, credentials or headers.
-export function sanitizeMexalContract(value) {
-  if (Array.isArray(value)) return value.map(sanitizeMexalContract);
+// writing document values, customers, prices, credentials or headers.
+export function sanitizeMexalContract(value, key = "", indexInMatrix = false) {
+  if (Array.isArray(value)) return value.map((item, index) => sanitizeMexalContract(item, key, index === 0));
   if (value === null) return { type: "null" };
-  if (typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, sanitizeMexalContract(item)]));
+  if (typeof value === "object") return Object.fromEntries(Object.entries(value).map(([childKey, item]) => [childKey, sanitizeMexalContract(item, childKey)]));
+  const safe = safeTechnicalValue(value, key, indexInMatrix);
+  if (safe !== undefined) return { type: typeof value, value: safe };
   return { type: typeof value };
 }
 

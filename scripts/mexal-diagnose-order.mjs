@@ -4,6 +4,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { buildMexalClient } from "../server/mexal/sync-products.js";
 import { ORDER_DOCUMENTS, buildMexalOrderDocument, classifyOrderLines } from "../server/mexal/order-documents.js";
+import { sanitizeMexalContract } from "./mexal-capture-order-contract.mjs";
 
 function required(name) {
   const value = String(process.env[name] || "").trim();
@@ -136,7 +137,9 @@ async function main() {
   const resource = `/documenti/ordini-clienti/${encodeURIComponent(sigla)}+${encodeURIComponent(serie)}+${encodeURIComponent(numero)}`;
   const getPayload = await buildMexalClient().getJson(resource);
   const comparison = compareMexalPayloads(getPayload, postPayload);
-  const result = { generated_at: new Date().toISOString(), resource, get_payload: getPayload, post_payload: postPayload, comparison };
+  // Persist a contract, not an order: raw GET/POST objects can contain names,
+  // addresses, prices and credentials supplied by a proxy.
+  const result = { generated_at: new Date().toISOString(), resource, get_contract: sanitizeMexalContract(getPayload), post_contract: sanitizeMexalContract(postPayload), comparison };
 
   const outputDir = resolve("diagnostics", "mexal");
   await mkdir(outputDir, { recursive: true });

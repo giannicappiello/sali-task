@@ -5,7 +5,9 @@ import { calculateOrderEconomics } from "./orderEconomics.js";
 // follows the compact, ruled layout used by Mexal printouts rather than the
 // application's UI language.
 const PAGE = { width: 210, height: 297, left: 7, right: 203, top: 7, bottom: 290 };
-const ARTICLE = { top: 82, bottom: 210, header: 6, row: 8 };
+// The Workspace reference ends at y=90.  Keep a deliberate gutter before the
+// article header so it can never occupy an article-table column.
+const ARTICLE = { top: 94, bottom: 210, header: 6, row: 8 };
 const COLS = [7, 31, 101, 111, 123, 143, 164, 181, 203];
 const RULE = [54, 54, 54];
 

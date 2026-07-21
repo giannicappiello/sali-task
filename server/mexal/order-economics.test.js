@@ -29,15 +29,15 @@ test("calcola gli stessi totali del documento Mexal di riferimento", () => {
   }).coincide, true);
 });
 
-test("normalizza il tipo unità di misura Mexal", () => {
-  assert.equal(normalizeMexalUnitType(undefined), 1);
-  assert.equal(normalizeMexalUnitType("PZ"), 1);
-  assert.equal(normalizeMexalUnitType("1"), 1);
-  assert.equal(normalizeMexalUnitType(2), 2);
-  assert.equal(normalizeMexalUnitType("2"), 2);
+test("normalizza il tipo unità di misura Mexal come stringa", () => {
+  assert.equal(normalizeMexalUnitType(undefined), "1");
+  assert.equal(normalizeMexalUnitType("PZ"), "1");
+  assert.equal(normalizeMexalUnitType("1"), "1");
+  assert.equal(normalizeMexalUnitType(2), "2");
+  assert.equal(normalizeMexalUnitType("2"), "2");
 });
 
-test("il payload usa data YYYYMMDD, prezzo di listino, codice IVA e unità primaria", () => {
+test("il payload usa data YYYYMMDD, prezzo di listino, codice IVA e unità primaria stringa", () => {
   const payload = buildMexalOrderDocument({
     id: "ordine-1",
     codice_cliente: "501.03320",
@@ -56,10 +56,10 @@ test("il payload usa data YYYYMMDD, prezzo di listino, codice IVA e unità prima
   assert.deepEqual(payload.prezzo, [[1, 4.6]]);
   assert.deepEqual(payload.sconto, [[1, "50+35"]]);
   assert.deepEqual(payload.cod_iva, [[1, "22,0"]]);
-  assert.deepEqual(payload.tp_um_articolo, [[1, 1]]);
+  assert.deepEqual(payload.tp_um_articolo, [[1, "1"]]);
 });
 
-test("il payload conserva l'unità secondaria solo quando esplicitamente indicata", () => {
+test("il payload conserva l'unità secondaria come stringa solo quando esplicitamente indicata", () => {
   const payload = buildMexalOrderDocument({
     id: "ordine-2",
     codice_cliente: "501.03320",
@@ -72,5 +72,5 @@ test("il payload conserva l'unità secondaria solo quando esplicitamente indicat
     tp_um_articolo: 2,
   }]);
 
-  assert.deepEqual(payload.tp_um_articolo, [[1, 2]]);
+  assert.deepEqual(payload.tp_um_articolo, [[1, "2"]]);
 });

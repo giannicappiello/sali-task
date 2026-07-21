@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { FolderOpen, LayoutDashboard, ShoppingCart, Users } from "lucide-react";
 import useOrdersAccess from "./pages/useOrdersAccess";
@@ -19,6 +20,21 @@ const items = [
 export default function OrdersModule() {
   const { loading, canAccessOrders } = useOrdersAccess();
 
+  useEffect(() => {
+    const updateLoadingText = () => {
+      document.querySelectorAll(".orders-empty").forEach((element) => {
+        if (element.textContent?.trim().toLowerCase() === "caricamento nuovo ordine...") {
+          element.textContent = "CARICAMENTO";
+        }
+      });
+    };
+
+    updateLoadingText();
+    const observer = new MutationObserver(updateLoadingText);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
+
   if (loading) return <div className="orders-empty">Verifica autorizzazione...</div>;
   if (!canAccessOrders) {
     return <div className="orders-empty">Non sei autorizzato ad accedere alla Gestione Ordini.</div>;
@@ -26,6 +42,12 @@ export default function OrdersModule() {
 
   return (
     <div className="orders-module">
+      <style>{`
+        .orders-status.bozza { background: #e2e8f0; color: #475569; }
+        .orders-status.inviato { background: #dcfce7; color: #166534; }
+        .orders-status.errore { background: #fee2e2; color: #991b1b; }
+      `}</style>
+
       <div className="orders-module-header">
         <div>
           <h1>Gestione Ordini</h1>

@@ -17,5 +17,23 @@ test("il PDF con almeno quindici righe gestisce più pagine e intestazioni", asy
   const lines = Array.from({ length: 45 }, (_, index) => ({ codice_articolo: `A-${index}`, descrizione: `Articolo molto descrittivo ${index}`, quantita: 1, prezzo_listino: 10, aliquota_iva: 22 }));
   const pdf = await createOrderPdf({ id: "ordine-test", data_ordine: "2026-07-20" }, lines, { logo: false });
   assert.ok(pdf.internal.getNumberOfPages() > 1);
-  assert.match(pdf.output(), /Codice/);
+  const output = pdf.output();
+  assert.match(output, /ARTICOLO/);
+  assert.match(output, /FIRMA VETTORE/);
+  assert.match(output, /TOTALE DA PAGARE/);
+});
+
+test("il layout usa il listino nell'importo e non inventa dati logistici", async () => {
+  const order = { id: "ordine-listino", data_ordine: "2026-07-20", commenti: "Consegna mattina" };
+  const lines = [{ codice_articolo: "A-1", quantita: 2, prezzo_listino: 100, sconto_commerciale: "50+35+5", aliquota_iva: 22 }];
+  const model = buildOrderPdfModel(order, lines);
+  assert.equal(model.totale_merce, 200);
+  assert.equal(model.totals.totale_imponibile, 61.75);
+  const pdf = await createOrderPdf(order, lines, { logo: false });
+  const output = pdf.output();
+  assert.match(output, /200,00/);
+  assert.match(output, /50\+35/);
+  assert.match(output, /\+5/);
+  assert.match(output, /22/);
+  assert.doesNotMatch(output, /a cura del vettore \/ come da accordi/);
 });

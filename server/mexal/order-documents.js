@@ -60,7 +60,8 @@ export function formatMexalOrderDate(value, format = DEFAULT_MEXAL_ORDER_DATE_FO
 }
 
 export function normalizeMexalUnitType(value) {
-  return number(value) === 2 ? "2" : "1";
+  const normalized = text(value).toUpperCase();
+  return normalized || "PZ";
 }
 
 export function buildRootMatrixRows(lines, magazzino) {
@@ -70,7 +71,7 @@ export function buildRootMatrixRows(lines, magazzino) {
     prezzo: (line) => number(line.prezzo_listino ?? line.prezzo_unitario ?? line.prezzo),
     sconto: (line) => text(line.sconto_commerciale),
     id_mag_riga: (line) => number(line.id_mag_riga ?? magazzino),
-    tp_um_articolo: (line) => normalizeMexalUnitType(line.tp_um_articolo),
+    tp_um_articolo: (line) => normalizeMexalUnitType(line.tp_um_articolo ?? line.unita_misura),
     cod_iva: (line) => text(line.cod_iva ?? line.codice_iva_mexal),
   };
   return Object.fromEntries(Object.entries(fields).map(([field, value]) => [field,

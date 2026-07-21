@@ -30,6 +30,31 @@ function vatSummary(lines) {
   }, new Map());
 }
 
+export function getMexalDocumentNumbers(order = {}) {
+  const documents = [
+    ["OCM", order.numero_ocm],
+    ["OCX", order.numero_ocx],
+    ["OCI", order.numero_oci],
+    ...(order.documenti_mexal || []).map((document) => [
+      String(document.tipo_documento || document.tipo || "").toUpperCase(),
+      document.numero,
+    ]),
+  ];
+
+  const seen = new Set();
+  return documents
+    .filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== "")
+    .map(([type, value]) => {
+      const normalizedType = ["OCM", "OCX", "OCI"].includes(type) ? type : "";
+      const normalizedValue = String(value).trim();
+      const key = `${normalizedType}:${normalizedValue}`;
+      if (seen.has(key)) return null;
+      seen.add(key);
+      return normalizedType ? `${normalizedType} ${normalizedValue}` : normalizedValue;
+    })
+    .filter(Boolean);
+}
+
 export function buildOrderPdfModel(order, lines) {
   const totals = calculateOrderEconomics(lines);
   return {
@@ -37,22 +62,14 @@ export function buildOrderPdfModel(order, lines) {
     totals,
     totale_merce: totals.righe.reduce((sum, line) => sum + number(line.quantita) * number(line.prezzo_listino), 0),
     vat: [...vatSummary(totals.righe).entries()],
-    documents: [order.numero_ocm, order.numero_ocx, order.numero_oci].filter(Boolean),
+    documents: getMexalDocumentNumbers(order),
   };
 }
 
+const COMPANY_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAABnAQAAAACS7kLDAAADtElEQVR42u2XsY/jVBDGf+/ZSiyxUoxEscVJa1oKFFGdkFB8/B/o9k/YEqG74wHS1XRQUISOkpKOtwgJyvQ0XpTiunuLIvRysj0Uz3bsOLsJV+8rYin+MjNv5ptvJsjRUy/EaY6eOgclR2FVxO0J1irgBJg+DRafBuOtYZVKwyPewxmUiIeZiIhYVHhwsTAgIjXAlc6RFOAWgCfyaw6Si7sBSEAFa175SIQXLESknImfifiZ1Cx85FSwzJWOJ9PnYFSxAjZzph78HGWImYmB7EIcGrjMyTn3gLPwBawsXKLBWkjhDK0hLYC4BH4EnsI1kAJkRZMODSQO0DXwEkgNL0P0kDoAFBqIPYEqkgCJlaQpUcAO02ugBoiLOu1e+H75ywZXpoB2Zdav+p61HHwG4H2IB6BsPGlA1Q3S5YAqXT4ycoAhLzAA9g6GWAoDQHEfkbq4F9d3wNruuu5S0zXfPezVR74yQ++913qXo/saY/emyOX/dVZ8Eiw98AvdfVhTj8Wob03u9hYI9yYYigG+OhBl2bdWA8ihy/i0H1sC1Afuh8saDmsIpN0kB2DLwKbQp68yIJ2PUbchXsmgnoppJKacioiImzYKHvTHgXKarfrmNH17BDw7UNCo8AAXYtFMpQCiPhnbc97kbb6rqbUHOFC3tehg2bBRtkpBJCOGNKrSngkRYMw+LPG9EoIyZ7tmnexgcTnkXp4GwbibvSVAlvUD3qlER8FekF3AHUxJ12DHWmbE8sSP1dKM0fE9XV8cYHlPLW3bO18yuldPuIomTdfHrpAFr7npXX8f1uXo62w/2j1rqQ3XsyOc7ucoKQDpi0hu92FxGdJUJ8lIo4uBU+2AMo0d+2TV/RwpD/hM+/172R1MCTwDXK7KUffruv/dJ8CN4fmo9robMRjD3MCncGlaBsQlzlGhy7oZf+SWZEl1BudLKCjrgPVs0K/EgLACVkzWrOcw+RtyvBi0mOVWpWCYiTiUSBGJWBARMYAYZiI8ArhiuEd6puHRLEPN2d8tp9YDTN1s2N0n7JZw0m759mveA+wB9gA7BvuYzYplzorNCviNKuWG7T/c5lXMihuqrLX2Gn4Js+oPysesGxsxsDalGTgVgO9QP/AOXBFZ9T3wl1GXaP4E+LebYhlvUt4DqNoRLn1rP6NN77/mT711ZInmcTMQV6h2T+AcBVE7bKJmG1zxLtLMxM9gM1gyX0NwOjUAn4cBtUYyfodv29g+MltDTE6c8cGHrVA/YZLw/mB6Vhn/ASCBreueR1B5AAAAAElFTkSuQmCC";
+
 async function getCompanyLogo() {
-  try {
-    const response = await fetch("/pwa-512x512.png");
-    if (!response.ok) return null;
-    const blob = await response.blob();
-    return await new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(blob);
-    });
-  } catch { return null; }
+  return COMPANY_LOGO_DATA_URL;
 }
 
 function ruled(doc, x, y, width, height, fill = false) {
@@ -63,7 +80,7 @@ function line(doc, x1, y1, x2, y2) { doc.setDrawColor(...RULE); doc.setLineWidth
 function small(doc, text, x, y, options = {}) { doc.setFont("helvetica", "bold"); doc.setFontSize(5.8); doc.text(String(text).toUpperCase(), x, y, options); }
 function normal(doc, text, x, y, options = {}) { doc.setFont("helvetica", "normal"); doc.setFontSize(7.4); doc.text(valueOrBlank(text), x, y, options); }
 
-// Fits arbitrary values into the usable area of a ruled cell.  It starts at the
+// Fits arbitrary values into the usable area of a ruled cell. It starts at the
 // preferred size, progressively reduces it, wraps at most maxLines lines, and
 // trims only if no readable size can contain the value.
 export function fitTextInCell(doc, text, x, y, width, height, {
@@ -114,19 +131,21 @@ function cell(doc, x, y, w, h, label, content, options = {}) {
     align, fontSize, maxLines, minFontSize: options.minFontSize ?? 5,
   });
 }
+
 function drawCompanyHeader(doc, logo, continuation = false) {
   const y = PAGE.top;
-  // The supplied PWA asset has substantial internal padding.  Render it at a
-  // deliberately generous physical size so the visible mark fills the left
-  // side of the heading instead of looking like a small app icon.
-  const logoWidth = continuation ? 64 : 102;
+  const maxWidth = continuation ? 44 : 72;
+  const maxHeight = continuation ? 14 : 22;
   if (logo) {
     const props = doc.getImageProperties(logo);
     const ratio = props.width / props.height;
-    const height = logoWidth / ratio;
-    // Do not squeeze the asset into a decorative frame: its true aspect ratio
-    // is calculated from jsPDF's image metadata and therefore remains intact.
-    doc.addImage(logo, "PNG", PAGE.left + 0.5, y + (24 - height) / 2, logoWidth, height);
+    let width = maxWidth;
+    let height = width / ratio;
+    if (height > maxHeight) {
+      height = maxHeight;
+      width = height * ratio;
+    }
+    doc.addImage(logo, "PNG", PAGE.left, y + (24 - height) / 2, width, height);
   } else {
     doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.text("PROGRÉ", PAGE.left + 1, y + 12);
   }
@@ -143,9 +162,9 @@ function drawCompanyHeader(doc, logo, continuation = false) {
   ].forEach((text, index) => doc.text(text, x, y + 7.2 + index * 2.65));
   line(doc, PAGE.left, continuation ? 27 : 31, PAGE.right, continuation ? 27 : 31);
 }
-function drawPartyBlock(doc, order) {
+
+function drawPartyBlock(doc, order, model) {
   const y = 32; const left = 7; const mid = 119; const right = 203;
-  // Left accounting grid.
   cell(doc, left, y, 42, 12, "Cliente - Zona", [order.codice_cliente, order.zona].filter(Boolean).join(" - "));
   cell(doc, 49, y, 35, 12, "Partita IVA", order.partita_iva || order.piva);
   cell(doc, 84, y, 35, 12, "Codice fiscale", order.codice_fiscale);
@@ -153,11 +172,10 @@ function drawPartyBlock(doc, order) {
   cell(doc, 68, y + 12, 16, 12, "Valuta", order.valuta || "EUR");
   cell(doc, 84, y + 12, 35, 12, "Documento", order.tipo_documento || "ORDINE");
   cell(doc, left, y + 24, 56, 12, "Agente", order.codice_agente_mexal || order.agente);
-  cell(doc, 63, y + 24, 56, 12, "Numero", order.numero_ordine || order.id, { maxLines: 2, fontSize: 7, minFontSize: 5 });
+  cell(doc, 63, y + 24, 56, 12, "Numero", model.documents.join(" / "), { maxLines: 2, fontSize: 7, minFontSize: 5 });
   cell(doc, left, y + 36, 56, 12, "Appoggio bancario", order.appoggio_bancario);
   cell(doc, 63, y + 36, 34, 12, "Data", formatDate(order.data_ordine));
   cell(doc, 97, y + 36, 22, 12, "Pagina", "1", { align: "center" });
-  // Customer and delivery address follow the same boxed hierarchy.
   cell(doc, mid, y, right - mid, 24, "Spett.le cliente", [order.ragione_sociale_cliente || order.ragione_sociale, order.indirizzo_fatturazione || order.indirizzo, [order.cap, order.comune || order.localita, order.provincia].filter(Boolean).join(" "), order.telefono].filter(Boolean).join("\n"), { maxLines: 4, fontSize: 6.6, valueHeight: 18 });
   cell(doc, mid, y + 24, right - mid, 24, "Destinazione", [order.destinazione || order.indirizzo_spedizione, order.indirizzo_destinazione, [order.cap_destinazione, order.comune_destinazione, order.provincia_destinazione].filter(Boolean).join(" ")].filter(Boolean).join("\n"), { maxLines: 3, fontSize: 6.6, valueHeight: 18 });
 }
@@ -166,9 +184,12 @@ function drawArticleGrid(doc, top, bottom) {
   ruled(doc, PAGE.left, top, PAGE.right - PAGE.left, bottom - top);
   COLS.slice(1, -1).forEach((x) => line(doc, x, top, x, bottom));
   line(doc, PAGE.left, top + ARTICLE.header, PAGE.right, top + ARTICLE.header);
-  const labels = ["ARTICOLO", "DESCRIZIONE", "U.M.", "QTA", "PREZZO", "IMPORTO", "SCONTO", "ALI. IVA"];
+  const labels = ["ARTICOLO", "DESCRIZIONE", "U.M.", "QTA", "PREZZO", "IMPORTO"];
   labels.forEach((label, index) => small(doc, label, COLS[index] + 1, top + 4));
+  small(doc, "SCONTO", (COLS[6] + COLS[7]) / 2, top + 4, { align: "center" });
+  small(doc, "ALI. IVA", COLS[8] - 2.2, top + 4, { align: "right" });
 }
+
 function discountRows(lineItem) {
   const parts = valueOrBlank(lineItem.sconto_commerciale).split("+").filter(Boolean);
   const commercial = parts.reduce((rows, part, index) => {
@@ -178,8 +199,8 @@ function discountRows(lineItem) {
   const payment = lineItem.sconto_pagamento || lineItem.sconto_pagamento_percentuale;
   return payment ? [...commercial, valueOrBlank(payment)] : commercial;
 }
+
 function drawArticleRow(doc, lineItem, y) {
-  line(doc, PAGE.left, y + ARTICLE.row, PAGE.right, y + ARTICLE.row);
   normal(doc, lineItem.codice_articolo || lineItem.codice || "", COLS[0] + 1, y + 3.1, { maxWidth: 22 });
   normal(doc, lineItem.ean || "", COLS[0] + 1, y + 6.5, { maxWidth: 22 });
   normal(doc, lineItem.descrizione || lineItem.nome || "", COLS[1] + 1, y + 3.2, { maxWidth: 67 });
@@ -187,8 +208,27 @@ function drawArticleRow(doc, lineItem, y) {
   normal(doc, quantity(lineItem.quantita), COLS[4] - 1, y + 4.5, { align: "right" });
   normal(doc, money(lineItem.prezzo_listino), COLS[5] - 1, y + 4.5, { align: "right" });
   normal(doc, money(number(lineItem.quantita) * number(lineItem.prezzo_listino)), COLS[6] - 1, y + 4.5, { align: "right" });
-  discountRows(lineItem).slice(0, 2).forEach((discount, index) => normal(doc, discount, COLS[6] + 1, y + 3.2 + index * 3.2, { maxWidth: 15 }));
-  normal(doc, valueOrBlank(lineItem.aliquota_iva), COLS[8] - 1, y + 4.5, { align: "right" });
+
+  const discounts = discountRows(lineItem).slice(0, 2);
+  discounts.forEach((discount, index) => fitTextInCell(
+    doc,
+    discount,
+    (COLS[6] + COLS[7]) / 2,
+    y + 1.5 + index * 3.2,
+    COLS[7] - COLS[6] - 3,
+    3.1,
+    { align: "center", fontSize: 7.1, minFontSize: 5.8, maxLines: 1 },
+  ));
+
+  fitTextInCell(
+    doc,
+    valueOrBlank(lineItem.aliquota_iva),
+    COLS[8] - 2.2,
+    y + 2.2,
+    COLS[8] - COLS[7] - 4.2,
+    3.5,
+    { align: "right", fontSize: 7.1, minFontSize: 6, maxLines: 1 },
+  );
 }
 
 function drawFooter(doc, order, model) {
@@ -239,6 +279,7 @@ function drawFooter(doc, order, model) {
   doc.setFont("helvetica", "normal"); doc.setFontSize(5.4); doc.text("Informativa privacy disponibile presso la sede aziendale - documento generato da Workspace", 105, 288, { align: "center" });
   line(doc, 7, 290, 203, 290);
 }
+
 export async function createOrderPdf(order, lines, { logo = null } = {}) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const model = buildOrderPdfModel(order, lines);
@@ -257,7 +298,7 @@ export async function createOrderPdf(order, lines, { logo = null } = {}) {
     if (page) doc.addPage();
     const continuation = page > 0;
     drawCompanyHeader(doc, companyLogo, continuation);
-    if (!continuation) drawPartyBlock(doc, order);
+    if (!continuation) drawPartyBlock(doc, order, model);
     const articleTop = continuation ? 29 : ARTICLE.top;
     const articleBottom = continuation ? 260 : ARTICLE.bottom;
     drawArticleGrid(doc, articleTop, articleBottom);
@@ -271,5 +312,6 @@ export async function createOrderPdf(order, lines, { logo = null } = {}) {
 
 export async function downloadOrderPdf(order, lines) {
   const doc = await createOrderPdf(order, lines);
-  doc.save(`ordine-${order.numero_ordine || order.id}.pdf`);
+  const mexalNumber = getMexalDocumentNumbers(order)[0]?.replace(/\s+/g, "-");
+  doc.save(`ordine-${mexalNumber || "bozza"}.pdf`);
 }

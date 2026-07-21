@@ -27,7 +27,15 @@ export function extractDocumentReference(result) {
   // not itself a document number, so it must be parsed before persistence.
   const resource = text(document.risorsa || document.resource || result?.risorsa || result?.resource || result?.location);
   const match = /(?:^|\/)(?:OC\+)?([^+/]+)\+([^/?#]+)(?:[/?#]|$)/i.exec(resource);
-  return match ? { serie: text(match[1]) || null, numero: text(match[2]) || null } : { serie: null, numero: null };
+  if (match) return { serie: text(match[1]) || null, numero: text(match[2]) || null };
+
+  // Successful POSTs can return an empty JSON object and identify the created
+  // document only through the HTTP Location header. postJson preserves that
+  // response as non-enumerable metadata, so legacy JSON consumers are unchanged.
+  const headers = result?.mexalHttpResponse?.headers || {};
+  const location = text(headers.location || headers.Location);
+  const locationMatch = /(?:^|\/)(?:OC\+)?([^+/]+)\+([^/?#]+)(?:[/?#]|$)/i.exec(location);
+  return locationMatch ? { serie: text(locationMatch[1]) || null, numero: text(locationMatch[2]) || null } : { serie: null, numero: null };
 }
 function token() { return crypto.randomUUID(); }
 function diagnosticHeaders(headers) {

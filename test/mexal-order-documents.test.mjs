@@ -2,10 +2,25 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { DEFAULT_MEXAL_ORDER_DATE_FORMAT, buildMexalOrderDocument, classifyOrderLines, formatMexalOrderDate, isImportArticle } from "../server/mexal/order-documents.js";
 import { documentOptions, extractDocumentReference, mexalLineState } from "../api/mexal/submit-order.js";
+import { buildMexalClient } from "../server/mexal/sync-products.js";
 
 assert.deepEqual(extractDocumentReference({ risorsa: "OC+3+125" }), { serie: "3", numero: "125" }, "the real Mexal resource reference is split into series and number");
 assert.deepEqual(extractDocumentReference({ documento: { serie: 4, numero: 99 } }), { serie: "4", numero: "99" }, "a document object response is supported");
 assert.deepEqual(extractDocumentReference({ id: "f770a164-17e5-4508-b795-e28adf6f560b" }), { serie: null, numero: null }, "an internal UUID is never mistaken for a Mexal document number");
+
+const originalMexalEnv = Object.fromEntries(["MEXAL_BASE_URL", "MEXAL_USERNAME", "MEXAL_PASSWORD", "MEXAL_AZIENDA", "MEXAL_ANNO", "MEXAL_MAGAZZINO"].map((name) => [name, process.env[name]]));
+Object.assign(process.env, { MEXAL_BASE_URL: "https://mexal.test", MEXAL_USERNAME: "user", MEXAL_PASSWORD: "password", MEXAL_AZIENDA: "1", MEXAL_ANNO: "2026", MEXAL_MAGAZZINO: "5" });
+const mexalWithEmptyCreatedBody = buildMexalClient({
+  request: async () => ({ status: 201, headers: { location: "/documenti/ordini-clienti/OC+1+16530" }, body: "{}" }),
+});
+const createdDocument = await mexalWithEmptyCreatedBody.postJson("/documenti/ordini-clienti", { sigla: "OC" });
+const savedReference = extractDocumentReference(createdDocument);
+assert.deepEqual(savedReference, { serie: "1", numero: "16530" }, "an HTTP 201 with an empty body persists the series and number from Location");
+assert.equal(Object.keys(createdDocument).includes("mexalHttpResponse"), false, "HTTP metadata does not alter the legacy JSON response body");
+for (const [name, value] of Object.entries(originalMexalEnv)) {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}
 assert.equal(mexalLineState("OCM"), "E", "OCM diagnostics retain evadibile status");
 assert.equal(mexalLineState("OCX"), "S", "OCX diagnostics retain sospeso status");
 assert.equal(mexalLineState("OCI"), "S", "OCI diagnostics retain sospeso status");

@@ -30,29 +30,27 @@ function vatSummary(lines) {
   }, new Map());
 }
 
-export function getMexalDocumentNumbers(order = {}) {
-  const documents = [
-    ["", order.numero_ocm],
-    ["", order.numero_ocx],
-    ["", order.numero_oci],
-    ...(order.mexal_documents || order.documenti_mexal || []).map((document) => [
-      String(document.tipo_documento || document.tipo || "").toUpperCase(),
-      document.numero ? `${document.serie || "-"}/${document.numero}` : null,
-    ]),
-  ];
-
+export function getMexalDocuments(order = {}) {
+  // The document registry is the authoritative source: legacy numero_oc* fields
+  // lack both document type context and the actual Mexal series.
   const seen = new Set();
-  return documents
-    .filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== "")
-    .map(([type, value]) => {
-      const normalizedType = ["OCM", "OCX", "OCI"].includes(type) ? type : "";
-      const normalizedValue = String(value).trim();
-      const key = `${normalizedType}:${normalizedValue}`;
-      if (seen.has(key)) return null;
+  return (order.mexal_documents || order.documenti_mexal || [])
+    .map((document) => ({
+      type: String(document.tipo_documento || document.tipo || "").trim().toUpperCase(),
+      serie: String(document.serie ?? "").trim(),
+      numero: String(document.numero ?? "").trim(),
+    }))
+    .filter(({ type, serie, numero }) => ["OCM", "OCX", "OCI"].includes(type) && serie && numero)
+    .filter((document) => {
+      const key = `${document.type}:${document.serie}:${document.numero}`;
+      if (seen.has(key)) return false;
       seen.add(key);
-      return normalizedType ? `${normalizedType} ${normalizedValue}` : normalizedValue;
-    })
-    .filter(Boolean);
+      return true;
+    });
+}
+
+export function formatMexalDocumentNumber(document) {
+  return `${document.type} ${document.serie}/${document.numero}`;
 }
 
 export function buildOrderPdfModel(order, lines) {
@@ -62,7 +60,7 @@ export function buildOrderPdfModel(order, lines) {
     totals,
     totale_merce: totals.righe.reduce((sum, line) => sum + number(line.quantita) * number(line.prezzo_listino), 0),
     vat: [...vatSummary(totals.righe).entries()],
-    documents: getMexalDocumentNumbers(order),
+    documents: getMexalDocuments(order),
   };
 }
 
@@ -170,15 +168,15 @@ function drawPartyBlock(doc, order, model) {
   cell(doc, 84, y, 35, 12, "Codice fiscale", order.codice_fiscale);
   cell(doc, left, y + 12, 61, 12, "Condizioni pagamento", order.descrizione_pagamento || order.codice_pagamento);
   cell(doc, 68, y + 12, 16, 12, "Valuta", order.valuta || "EUR");
-  cell(doc, 84, y + 12, 35, 12, "Documento", order.tipo_documento || "ORDINE");
+  cell(doc, 84, y + 12, 35, 12, "Documento", model.document ? `Ordine cliente ${model.document.type}` : "Ordine cliente");
   cell(doc, left, y + 24, 56, 12, "Agente", order.codice_agente_mexal || order.agente);
-  cell(doc, 63, y + 24, 56, 12, "Numero ordine Workspace", order.numero_ordine_visualizzato || order.numero_ordine || "", { maxLines: 2, fontSize: 7, minFontSize: 5 });
+  cell(doc, 63, y + 24, 56, 12, "Numero documento", model.document ? formatMexalDocumentNumber(model.document) : "", { maxLines: 2, fontSize: 7, minFontSize: 5 });
   cell(doc, left, y + 36, 56, 12, "Appoggio bancario", order.appoggio_bancario);
   cell(doc, 63, y + 36, 34, 12, "Data", formatDate(order.data_ordine));
   cell(doc, 97, y + 36, 22, 12, "Pagina", "1", { align: "center" });
   cell(doc, mid, y, right - mid, 24, "Spett.le cliente", [order.ragione_sociale_cliente || order.ragione_sociale, order.indirizzo_fatturazione || order.indirizzo, [order.cap, order.comune || order.localita, order.provincia].filter(Boolean).join(" "), order.telefono].filter(Boolean).join("\n"), { maxLines: 4, fontSize: 6.6, valueHeight: 18 });
   cell(doc, mid, y + 24, right - mid, 24, "Destinazione", [order.destinazione || order.indirizzo_spedizione, order.indirizzo_destinazione, [order.cap_destinazione, order.comune_destinazione, order.provincia_destinazione].filter(Boolean).join(" ")].filter(Boolean).join("\n"), { maxLines: 3, fontSize: 6.6, valueHeight: 18 });
-  if (model.documents.length) cell(doc, mid, y + 48, right - mid, 10, "Documenti Mexal", model.documents.join(" · "), { maxLines: 2, fontSize: 6.5 });
+  if (order.numero_ordine_visualizzato || order.numero_ordine) cell(doc, mid, y + 48, right - mid, 10, "Riferimento Workspace", order.numero_ordine_visualizzato || order.numero_ordine, { maxLines: 2, fontSize: 6.5 });
 }
 
 function drawArticleGrid(doc, top, bottom) {
@@ -281,9 +279,9 @@ function drawFooter(doc, order, model) {
   line(doc, 7, 290, 203, 290);
 }
 
-export async function createOrderPdf(order, lines, { logo = null } = {}) {
+export async function createOrderPdf(order, lines, { logo = null, document = null } = {}) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
-  const model = buildOrderPdfModel(order, lines);
+  const model = { ...buildOrderPdfModel(order, lines), document };
   const companyLogo = logo === null ? await getCompanyLogo() : logo;
   const firstCapacity = Math.floor((ARTICLE.bottom - ARTICLE.top - ARTICLE.header) / ARTICLE.row);
   const continuationCapacity = Math.floor((260 - 29 - ARTICLE.header) / ARTICLE.row);
@@ -311,8 +309,85 @@ export async function createOrderPdf(order, lines, { logo = null } = {}) {
   return doc;
 }
 
-export async function downloadOrderPdf(order, lines) {
-  const doc = await createOrderPdf(order, lines);
-  const mexalNumber = getMexalDocumentNumbers(order)[0]?.replace(/\s+/g, "-");
-  doc.save(`ordine-${mexalNumber || "bozza"}.pdf`);
+function workspaceArchiveName(order) {
+  const reference = String(order.numero_ordine_visualizzato || order.numero_ordine || "ordine").trim().replaceAll("/", "-").replace(/[^a-zA-Z0-9_-]+/g, "-");
+  return `ordine-${reference || "ordine"}-documenti-mexal.zip`;
+}
+
+function saveBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+function write16(view, offset, value) { view.setUint16(offset, value, true); }
+function write32(view, offset, value) { view.setUint32(offset, value >>> 0, true); }
+
+// ZIP "store" entries need no third-party dependency and are supported by all
+// target browsers. PDFs are already compressed internally, so deflating again
+// provides negligible benefit while making the download path less reliable.
+export function createZipArchive(files) {
+  const encoder = new TextEncoder();
+  const entries = files.map(({ name, data }) => ({ nameBytes: encoder.encode(name), data: new Uint8Array(data) }));
+  const localSize = entries.reduce((size, entry) => size + 30 + entry.nameBytes.length + entry.data.length, 0);
+  const centralSize = entries.reduce((size, entry) => size + 46 + entry.nameBytes.length, 0);
+  const output = new Uint8Array(localSize + centralSize + 22);
+  const view = new DataView(output.buffer); let offset = 0;
+  entries.forEach((entry) => {
+    entry.offset = offset; entry.crc = crc32(entry.data);
+    write32(view, offset, 0x04034b50); write16(view, offset + 4, 20); write16(view, offset + 8, 0);
+    write32(view, offset + 14, entry.crc); write32(view, offset + 18, entry.data.length); write32(view, offset + 22, entry.data.length);
+    write16(view, offset + 26, entry.nameBytes.length); write16(view, offset + 28, 0); offset += 30;
+    output.set(entry.nameBytes, offset); offset += entry.nameBytes.length; output.set(entry.data, offset); offset += entry.data.length;
+  });
+  const centralOffset = offset;
+  entries.forEach((entry) => {
+    write32(view, offset, 0x02014b50); write16(view, offset + 4, 20); write16(view, offset + 6, 20); write16(view, offset + 10, 0);
+    write32(view, offset + 16, entry.crc); write32(view, offset + 20, entry.data.length); write32(view, offset + 24, entry.data.length);
+    write16(view, offset + 28, entry.nameBytes.length); write16(view, offset + 30, 0); write16(view, offset + 32, 0); write32(view, offset + 42, entry.offset); offset += 46;
+    output.set(entry.nameBytes, offset); offset += entry.nameBytes.length;
+  });
+  write32(view, offset, 0x06054b50); write16(view, offset + 8, entries.length); write16(view, offset + 10, entries.length);
+  write32(view, offset + 12, centralSize); write32(view, offset + 16, centralOffset);
+  return output;
+}
+
+export async function createMexalDocumentPdfFiles(order, lines) {
+  const documents = getMexalDocuments(order);
+  const targets = documents.length ? documents : [null];
+  return Promise.all(targets.map(async (document) => {
+    if (!document) {
+      const doc = await createOrderPdf(order, lines);
+      return { name: "ordine-bozza.pdf", data: doc.output("arraybuffer") };
+    }
+    const kind = document.type;
+    const documentLines = lines.filter((line) => {
+      if (kind === "OCI") return String(line.codice_articolo || "").trim().toUpperCase().startsWith("IMP");
+      return Number(line[`quantita_${kind.toLowerCase()}`]) > 0;
+    }).map((line) => ({ ...line, quantita: kind === "OCI" ? line.quantita : line[`quantita_${kind.toLowerCase()}`] }));
+    const doc = await createOrderPdf(order, documentLines, { document });
+    return { name: `ordine-${document.type}-${document.serie}-${document.numero}.pdf`, data: doc.output("arraybuffer") };
+  }));
+}
+
+export async function downloadOrderPdf(order, lines, { save = saveBlob } = {}) {
+  const files = await createMexalDocumentPdfFiles(order, lines);
+  if (files.length === 1) {
+    save(new Blob([files[0].data], { type: "application/pdf" }), files[0].name);
+    return { type: "pdf", files };
+  }
+  const archiveName = workspaceArchiveName(order);
+  save(new Blob([createZipArchive(files)], { type: "application/zip" }), archiveName);
+  return { type: "zip", name: archiveName, files };
 }

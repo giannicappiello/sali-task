@@ -2,28 +2,62 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { jsPDF } from "jspdf";
-import { buildOrderPdfModel, createOrderPdf, fitTextInCell } from "../src/modules/orders/services/orderPdf.js";
+import { buildOrderPdfModel, createMexalDocumentPdfFiles, createOrderPdf, createZipArchive, downloadOrderPdf, fitTextInCell, formatMexalDocumentNumber, getMexalDocuments } from "../src/modules/orders/services/orderPdf.js";
 
 test("il modello PDF usa il motore economico condiviso per quindici righe", () => {
   const lines = Array.from({ length: 15 }, (_, index) => ({ codice_articolo: `A-${index}`, quantita: 2, prezzo_listino: 10, sconto_commerciale: "10", aliquota_iva: 22 }));
-  const model = buildOrderPdfModel({ numero_ocm: "OCM-1", numero_oci: "OCI-1" }, lines);
+  const model = buildOrderPdfModel({ mexal_documents: [{ tipo_documento: "OCM", serie: 1, numero: "16531" }, { tipo_documento: "OCI", serie: 3, numero: "456" }] }, lines);
   assert.equal(model.lines.length, 15);
   assert.equal(model.totals.totale_imponibile, 270);
   assert.equal(model.totals.totale_iva, 59.4);
   assert.equal(model.totals.totale_documento, 329.4);
   assert.equal(model.vat.length, 1);
-  assert.deepEqual(model.documents, ["OCM-1", "OCI-1"]);
+  assert.deepEqual(model.documents, [{ type: "OCM", serie: "1", numero: "16531" }, { type: "OCI", serie: "3", numero: "456" }]);
 });
 
-test("il PDF mostra numero Workspace e soli documenti Mexal realmente creati", async () => {
-  const pdf = await createOrderPdf({ data_ordine: "2026-07-20", numero_ordine_visualizzato: "125/2026", mexal_documents: [{ tipo_documento: "OCM", serie: 3, numero: "125" }, { tipo_documento: "OCI", serie: 1, numero: "8" }] }, [{ codice_articolo: "A", quantita: 1, prezzo_listino: 1 }], { logo: false });
+test("il PDF usa il numero completo del documento Mexal e mantiene Workspace solo come riferimento", async () => {
+  const document = { type: "OCM", serie: "1", numero: "16531" };
+  const pdf = await createOrderPdf({ data_ordine: "2026-07-20", numero_ordine_visualizzato: "3/2026", mexal_documents: [{ tipo_documento: "OCM", serie: 1, numero: "16531" }] }, [{ codice_articolo: "A", quantita: 1, prezzo_listino: 1 }], { logo: false, document });
   const output = pdf.output();
-  assert.match(output, /NUMERO ORDINE WORKSPACE/);
-  assert.match(output, /125\/2026/);
-  assert.match(output, /DOCUMENTI MEXAL/);
-  assert.match(output, /OCM 3\/125/);
-  assert.match(output, /OCI 1\/8/);
-  assert.doesNotMatch(output, /OCX -\//);
+  assert.match(output, /DOCUMENTO/);
+  assert.match(output, /Ordine cliente OCM/);
+  assert.match(output, /NUMERO DOCUMENTO/);
+  assert.match(output, /OCM 1\/16531/);
+  assert.match(output, /RIFERIMENTO WORKSPACE/);
+  assert.match(output, /3\/2026/);
+  assert.doesNotMatch(output, /NUMERO ORDINE WORKSPACE/);
+});
+
+test("i documenti OCM e OCX mantengono serie e numero distinti", async () => {
+  const order = { mexal_documents: [{ tipo_documento: "OCM", serie: 1, numero: "16531" }, { tipo_documento: "OCX", serie: 2, numero: "123" }] };
+  const documents = getMexalDocuments(order);
+  assert.deepEqual(documents.map(formatMexalDocumentNumber), ["OCM 1/16531", "OCX 2/123"]);
+  for (const document of documents) {
+    const pdf = await createOrderPdf(order, [{ codice_articolo: "A", quantita: 1, prezzo_listino: 10 }], { logo: false, document });
+    const output = pdf.output();
+    assert.match(output, new RegExp(formatMexalDocumentNumber(document)));
+    assert.doesNotMatch(output, /PREZZO\) Tj\n\(OC[MXI]/);
+  }
+});
+
+test("un solo documento scarica un PDF, più documenti un solo ZIP con tutti i PDF", async () => {
+  const one = { numero_ordine_visualizzato: "3/2026", mexal_documents: [{ tipo_documento: "OCM", serie: 1, numero: "16531" }] };
+  const multiple = { numero_ordine_visualizzato: "3/2026", mexal_documents: [{ tipo_documento: "OCM", serie: 1, numero: "16531" }, { tipo_documento: "OCX", serie: 1, numero: "16532" }, { tipo_documento: "OCI", serie: 1, numero: "16533" }] };
+  const lines = [{ codice_articolo: "IT-1", quantita: 3, quantita_ocm: 2, quantita_ocx: 1, prezzo_listino: 10 }, { codice_articolo: "IMP-1", quantita: 4, prezzo_listino: 5 }];
+  const singleDownloads = [];
+  const single = await downloadOrderPdf(one, lines, { save: (_blob, name) => singleDownloads.push(name) });
+  assert.equal(single.type, "pdf");
+  assert.deepEqual(singleDownloads, ["ordine-OCM-1-16531.pdf"]);
+  const files = await createMexalDocumentPdfFiles(multiple, lines);
+  assert.deepEqual(files.map(({ name }) => name), ["ordine-OCM-1-16531.pdf", "ordine-OCX-1-16532.pdf", "ordine-OCI-1-16533.pdf"]);
+  const archive = createZipArchive(files);
+  assert.equal(new DataView(archive.buffer).getUint32(0, true), 0x04034b50, "ZIP local header");
+  const text = new TextDecoder().decode(archive);
+  files.forEach(({ name }) => assert.match(text, new RegExp(name.replaceAll(".", "\\."))));
+  const downloads = [];
+  const result = await downloadOrderPdf(multiple, lines, { save: (_blob, name) => downloads.push(name) });
+  assert.equal(result.type, "zip");
+  assert.deepEqual(downloads, ["ordine-3-2026-documenti-mexal.zip"]);
 });
 
 test("il PDF con almeno quindici righe gestisce più pagine e intestazioni", async () => {
@@ -72,7 +106,7 @@ test("il riepilogo mantiene acconto e abbuono vuoti e calcola il dovuto", async 
 
 test("usa una griglia IVA separata e un logo di intestazione realmente maggiorato", async () => {
   const source = await readFile(new URL("../src/modules/orders/services/orderPdf.js", import.meta.url), "utf8");
-  assert.match(source, /const logoWidth = continuation \? 64 : 102/);
+  assert.match(source, /const maxWidth = continuation \? 44 : 72/);
   assert.match(source, /doc\.getImageProperties\(logo\)/);
   assert.match(source, /80128 Napoli \(NA\)/);
   assert.doesNotMatch(source, /80122 Napoli/);

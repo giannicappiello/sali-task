@@ -106,9 +106,10 @@ function destinationFields(order) {
   const destination = order?.destinazione_mexal && typeof order.destinazione_mexal === "object" ? order.destinazione_mexal : {};
   const explicitAddressId = number(order.id_ind_sped ?? destination.id_ind_sped ?? destination.cod_ind_sped);
   const hasDestinationSnapshot = Object.keys(destination).length > 0;
+  const addressId = explicitAddressId ?? (hasDestinationSnapshot ? 0 : undefined);
   return compact({
-    // Per l'indirizzo principale Mexal usa l'anagrafica cliente con indice 0.
-    id_ind_sped: explicitAddressId ?? (hasDestinationSnapshot ? 0 : undefined),
+    // Mexal dichiara id_ind_sped come campo array: usa la matrice radice [[indice, valore]].
+    id_ind_sped: matrix(addressId),
     cod_anag_sped: text(order.cod_anag_sped || destination.cod_anag_sped || (hasDestinationSnapshot ? order.codice_cliente : "")),
   });
 }

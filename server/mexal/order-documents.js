@@ -102,11 +102,15 @@ function transportFields(order) {
   });
 }
 
-function destinationFields() {
-  // Disabilitati temporaneamente: Mexal rifiuta il conto destinatario anche quando
-  // lo snapshot contiene un indice maggiore di zero. Per il test dell'indirizzo
-  // principale lasciamo che Mexal ricavi tutto esclusivamente da cod_conto.
-  return {};
+function destinationFields(order) {
+  const destination = order?.destinazione_mexal && typeof order.destinazione_mexal === "object" ? order.destinazione_mexal : {};
+  const destinationAccount = text(order.cod_anag_sped || destination.cod_anag_sped);
+
+  // Contratto verificato su OCM manuale: cod_anag_sped e' una matrice contenente
+  // il codice anagrafico interno Mexal (es. "754"). id_ind_sped resta omesso
+  // quando la risposta GET lo espone come array vuoto.
+  if (!destinationAccount) return {};
+  return { cod_anag_sped: matrix(destinationAccount) };
 }
 
 export function buildMexalOrderDocument(order, kind, lines, { serie = 1, magazzino = 5, notaFormat = "typed-array", dateFormat = DEFAULT_MEXAL_ORDER_DATE_FORMAT, causale = 1 } = {}) {

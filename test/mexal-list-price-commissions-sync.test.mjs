@@ -51,22 +51,25 @@ test("rifiuta categorie e percentuali non valide", () => {
   assert.throws(() => normalizeListPriceCommission({ cod_cat_cli: 2, cod_cat_art: 3, provvigione: 101 }), /Percentuale/);
 });
 
-test("integra avvio manuale, pianificazione e storico condiviso", async () => {
-  const [endpoint, dispatcher, migration, service, ui] = await Promise.all([
-    fs.readFile(new URL("../api/mexal/sync-list-price-commissions.js", import.meta.url), "utf8"),
+test("integra avvio manuale, pianificazione e storico condiviso senza creare una nuova funzione Vercel", async () => {
+  const [recoverSync, dispatcher, migration, service, ui] = await Promise.all([
+    fs.readFile(new URL("../api/mexal/orders/recover-sync.js", import.meta.url), "utf8"),
     fs.readFile(new URL("../api/cron/mexal-dispatcher.js", import.meta.url), "utf8"),
     fs.readFile(new URL("../supabase/migrations/20260722130000_mexal_list_price_commissions_sync.sql", import.meta.url), "utf8"),
     fs.readFile(new URL("../src/modules/integrations/services/mexalAutomationService.js", import.meta.url), "utf8"),
     fs.readFile(new URL("../src/modules/integrations/components/MexalAutomations.jsx", import.meta.url), "utf8"),
   ]);
 
-  assert.match(endpoint, /syncListPriceCommissions/);
-  assert.match(endpoint, /CRON_SECRET/);
+  assert.match(recoverSync, /sync-list-price-commissions/);
+  assert.match(recoverSync, /syncListPriceCommissions/);
   assert.match(dispatcher, /list_price_commissions/);
+  assert.match(dispatcher, /source: "cron"/);
   assert.match(migration, /mexal_sync_schedules/);
   assert.match(migration, /list_price_commissions/);
   assert.match(service, /runListPriceCommissionsNow/);
-  assert.match(service, /\/api\/mexal\/sync-list-price-commissions/);
+  assert.match(service, /\/api\/mexal\/orders\/recover-sync/);
+  assert.match(service, /sync-list-price-commissions/);
   assert.match(ui, /Esegui ora/);
   assert.match(ui, /Provvigioni listini sincronizzate/);
+  await assert.rejects(fs.access(new URL("../api/mexal/sync-list-price-commissions.js", import.meta.url)));
 });

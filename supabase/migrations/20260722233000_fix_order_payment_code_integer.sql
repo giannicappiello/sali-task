@@ -2,6 +2,8 @@
 -- I valori letti da p_testata JSON sono text, mentre ordini_testate.codice_pagamento
 -- e ordini_testate.codice_listino sono integer. I valori vuoti restano NULL;
 -- i codici non numerici vengono rifiutati prima di modificare testata e righe.
+-- Le quantità già classificate per OCM, OCX e OCI vengono conservate quando
+-- la bozza viene salvata e riaperta.
 create or replace function public.aggiorna_ordine_operativo(
   p_ordine_id uuid,
   p_testata jsonb,
@@ -129,9 +131,9 @@ begin
       r.codice_articolo,
       r.descrizione,
       r.quantita,
-      0,
-      0,
-      0,
+      coalesce(r.quantita_ocm, 0),
+      coalesce(r.quantita_ocx, 0),
+      coalesce(r.quantita_oci, 0),
       r.prezzo_listino,
       r.sconto_percentuale,
       r.sconto_commerciale,

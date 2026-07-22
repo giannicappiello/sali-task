@@ -4,17 +4,60 @@ function normalizeCode(value) {
   return String(value || "").trim().toUpperCase();
 }
 
-function fullName(user = {}) {
-  return [user.cognome, user.nome]
-    .map((value) => String(value || "").trim())
-    .filter(Boolean)
-    .join(" ");
+function firstText(...values) {
+  for (const value of values) {
+    const normalized = String(value ?? "").trim();
+    if (normalized) return normalized;
+  }
+  return "";
 }
 
-export async function loadAgentNameMap(codes = []) {
-  const normalizedCodes = [...new Set(codes.map(normalizeCode).filter(Boolean))];
-  if (!normalizedCodes.length) return new Map();
+function agentCode(row = {}) {
+  return normalizeCode(
+    row.codice_agente_mexal ??
+    row.codice_agente ??
+    row.codice ??
+    row.cod_agente ??
+    row.id_agente
+  );
+}
 
+function fullName(row = {}) {
+  const surname = firstText(row.cognome, row.surname);
+  const name = firstText(row.nome, row.name);
+  const surnameAndName = [surname, name].filter(Boolean).join(" ");
+  if (surnameAndName) return surnameAndName;
+
+  return firstText(
+    row.cognome_nome,
+    row.cognome_nome_agente,
+    row.nome_completo,
+    row.nominativo,
+    row.descrizione,
+    row.ragione_sociale,
+    row.denominazione
+  );
+}
+
+async function loadNamesFromMexalCache(normalizedCodes) {
+  const { data, error } = await supabase
+    .from("ordini_agenti_cache")
+    .select("*");
+
+  if (error) {
+    console.warn("Cache agenti Mexal non disponibile:", error);
+    return new Map();
+  }
+
+  const requested = new Set(normalizedCodes);
+  return new Map(
+    (data || [])
+      .map((row) => [agentCode(row), fullName(row)])
+      .filter(([code, name]) => requested.has(code) && Boolean(name))
+  );
+}
+
+async function loadNamesFromLinkedUsers(normalizedCodes) {
   const { data: links, error: linksError } = await supabase
     .from("integrazioni_utenti")
     .select("utente_id,codice_agente_mexal")
@@ -39,17 +82,30 @@ export async function loadAgentNameMap(codes = []) {
   );
 }
 
+export async function loadAgentNameMap(codes = []) {
+  const normalizedCodes = [...new Set(codes.map(normalizeCode).filter(Boolean))];
+  if (!normalizedCodes.length) return new Map();
+
+  const [cacheNames, userNames] = await Promise.all([
+    loadNamesFromMexalCache(normalizedCodes),
+    loadNamesFromLinkedUsers(normalizedCodes),
+  ]);
+
+  // Il nominativo anagrafico sincronizzato da Mexal è prioritario. L'utente
+  // collegato serve come fallback per gli agenti non ancora presenti in cache.
+  return new Map([...userNames, ...cacheNames]);
+}
+
 export function agentDisplayName(order = {}, map = new Map()) {
   const code = normalizeCode(order.codice_agente_mexal);
   return (
-    String(
-      order.cognome_nome_agente ||
-      order.nome_cognome_agente ||
-      order.nome_agente ||
-      order.agente_nome ||
-      order.nominativo_agente ||
-      ""
-    ).trim() ||
+    firstText(
+      order.cognome_nome_agente,
+      order.nome_cognome_agente,
+      order.nome_agente,
+      order.agente_nome,
+      order.nominativo_agente
+    ) ||
     map.get(code) ||
     "-"
   );

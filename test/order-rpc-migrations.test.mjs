@@ -42,3 +42,33 @@ assert.match(commissionSql, /update public\.ordini_righe r set provvigione_perce
 assert.match(commissionSql, /r\.provvigione_percentuale,r\.provvigione_regola_id,r\.provvigione_dettaglio_calcolo,r\.provvigione_calcolata_il/, "order replacement RPC preserves every commission snapshot field");
 assert.match(submitOrderSource, /rpc\("salva_provvigioni_ordine"/, "submit saves commissions atomically");
 assert.doesNotMatch(submitOrderSource, /from\("ordini_righe"\)\.update\(update\)/, "submit no longer performs partial per-line commission updates");
+
+const paymentCodeFixSql = await readFile(
+  join(migrationDirectory, "20260722233000_fix_order_payment_code_integer.sql"),
+  "utf8"
+);
+assert.match(
+  paymentCodeFixSql,
+  /v_codice_pagamento_text := nullif\(btrim\(p_testata->>'codice_pagamento'\), ''\);/,
+  "draft update normalizes blank payment codes to null"
+);
+assert.match(
+  paymentCodeFixSql,
+  /v_codice_pagamento_text !~ '\^\[0-9\]\+\$'/,
+  "draft update rejects non-numeric payment codes"
+);
+assert.match(
+  paymentCodeFixSql,
+  /v_codice_pagamento := v_codice_pagamento_text::integer;/,
+  "draft update converts the JSON text payment code to integer"
+);
+assert.match(
+  paymentCodeFixSql,
+  /codice_pagamento = v_codice_pagamento/,
+  "the order header receives the normalized integer"
+);
+assert.doesNotMatch(
+  paymentCodeFixSql,
+  /codice_pagamento\s*=\s*nullif\(p_testata->>'codice_pagamento'/,
+  "the RPC no longer assigns JSON text directly to the integer column"
+);

@@ -1,7 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
 import { cleanupStaleRuns } from "../mexal/lib/syncRuns.js";
+import { buildMexalClient } from "../../server/mexal/sync-products.js";
+import { syncListPriceCommissions } from "../../server/mexal/sync-list-price-commissions.js";
 
-const DEFAULT_ORDER = ["clients", "products", "commercial_conditions", "document_series", "stocks", "orders"];
+const DEFAULT_ORDER = ["clients", "products", "commercial_conditions", "document_series", "stocks", "list_price_commissions", "orders"];
 
 function required(name) {
   const value = String(process.env[name] || "").trim();
@@ -54,8 +56,6 @@ export async function dispatchSchedules({ schedules, hasRunningRun, execute, upd
         continue;
       }
 
-      // Gli ordini restano monitorati: non esiste una coda automatica sicura
-      // che possa garantire stato previsto e assenza di reinvii.
       if (sync_type === "orders") {
         const item = { sync_type, success: true, status: "skipped", error: null };
         await updateSchedule(schedule.id, { last_run_at: now, last_status: item.status, last_error: null, updated_at: now, next_run_at: null });
@@ -96,6 +96,9 @@ export default async function handler(req, res) {
         return Boolean(data?.length);
       },
       execute: async (syncType, schedule) => {
+        if (syncType === "list_price_commissions") {
+          return syncListPriceCommissions({ mexal: buildMexalClient(), supabase: admin, source: "cron" });
+        }
         const endpoint = endpointFor(syncType);
         if (!endpoint) throw new Error(`Tipo sincronizzazione non supportato: ${syncType}`);
         const [path, body] = endpoint;

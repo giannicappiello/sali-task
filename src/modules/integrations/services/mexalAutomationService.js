@@ -37,9 +37,9 @@ async function accessTokenFor(supabase) {
   return accessToken;
 }
 
-export async function requestMexalAutomation({ supabase, action, ruleType, rule, fetchImpl = fetch }) {
+export async function requestMexalAutomation({ supabase, action, ruleType, rule, extraBody, fetchImpl = fetch }) {
   const accessToken = await accessTokenFor(supabase);
-  const body = { action };
+  const body = { action, ...(extraBody || {}) };
   if (ruleType) body.ruleType = ruleType;
   if (rule) body.rule = rule;
 
@@ -76,8 +76,27 @@ export async function runListPriceCommissionsNow({ supabase, fetchImpl = fetch }
   let payload;
   try { payload = await response.json(); }
   catch { throw apiError(response.status, "La sincronizzazione ha restituito una risposta non valida."); }
+  if (payload?.cancelled || payload?.status === "cancelled") return payload;
   if (!response.ok || payload?.success === false) throw apiError(response.status, payload?.error || "Sincronizzazione provvigioni listini non riuscita.");
   return payload;
+}
+
+export async function loadLatestListPriceCommissionRun({ supabase }) {
+  const { data, error } = await supabase
+    .from("mexal_sync_runs")
+    .select("id,sync_type,status,started_at,completed_at,processed,inserted,updated,skipped,failed,error_message,metadata")
+    .eq("sync_type", "list_price_commissions")
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+export async function stopListPriceCommissionRun({ supabase, runId, fetchImpl = fetch }) {
+  if (!runId) throw apiError(400, "Run di sincronizzazione non disponibile.");
+  const payload = await requestMexalAutomation({ supabase, action: "stop", extraBody: { runId }, fetchImpl });
+  return payload?.run || payload;
 }
 
 export async function loadMexalAutomationRules(options) {

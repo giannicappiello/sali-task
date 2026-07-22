@@ -184,8 +184,13 @@ async function mainHandler(req) {
               item.cod_pagamento
             ),
             descrizione: firstNonEmpty(item.descrizione, item.descr, item.nome),
-            sconto: firstNonEmpty(item.sconto, item.sconto_pagamento),
+            sconto: firstNonEmpty(
+              item.sconto_perc,
+              item.sconto,
+              item.sconto_pagamento
+            ),
             sconto_esteso: firstNonEmpty(
+              item.sconto_perc,
               item.sconto_esteso,
               item.sconto,
               item.sconto_pagamento

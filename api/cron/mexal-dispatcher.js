@@ -1,5 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { cleanupStaleRuns } from "../mexal/lib/syncRuns.js";
+import { buildMexalClient } from "../../server/mexal/sync-products.js";
+import { syncListPriceCommissions } from "../../server/mexal/sync-list-price-commissions.js";
 
 const DEFAULT_ORDER = ["clients", "products", "commercial_conditions", "document_series", "stocks", "list_price_commissions", "orders"];
 
@@ -37,7 +39,6 @@ function endpointFor(syncType) {
     case "commercial_conditions": return ["/api/mexal/automation", { action: "run_now", syncType: "commercial_conditions", mode: "incremental", syncPayments: true, origin: "cron" }];
     case "document_series": return ["/api/mexal/automation", { action: "run_now", syncType: "document_series", origin: "cron" }];
     case "stocks": return ["/api/mexal/automation", { action: "run_now", syncType: "stocks", offset: 0, batchSize: 12, origin: "cron" }];
-    case "list_price_commissions": return ["/api/mexal/sync-list-price-commissions", { origin: "cron" }];
     default: return null;
   }
 }
@@ -95,6 +96,9 @@ export default async function handler(req, res) {
         return Boolean(data?.length);
       },
       execute: async (syncType, schedule) => {
+        if (syncType === "list_price_commissions") {
+          return syncListPriceCommissions({ mexal: buildMexalClient(), supabase: admin, source: "cron" });
+        }
         const endpoint = endpointFor(syncType);
         if (!endpoint) throw new Error(`Tipo sincronizzazione non supportato: ${syncType}`);
         const [path, body] = endpoint;

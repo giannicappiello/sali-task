@@ -25,7 +25,21 @@ export async function cleanupStaleRuns(admin, { syncType } = {}) {
 }
 export async function findRunningSync(admin, syncType) {
   assertSyncType(syncType);
-  const { data, error } = await admin.from("mexal_sync_runs").select("id,started_at,status").eq("sync_type", syncType).eq("status", "running").order("started_at", { ascending: false }).limit(1).maybeSingle();
+  const { data, error } = await admin.from("mexal_sync_runs").select("id,started_at,status,processed,inserted,updated,skipped,failed,metadata,error_message").eq("sync_type", syncType).eq("status", "running").order("started_at", { ascending: false }).limit(1).maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+export async function getSyncRun(admin, id) {
+  const numericId = runId(id);
+  const { data, error } = await admin.from("mexal_sync_runs").select("id,sync_type,status,started_at,completed_at,duration_ms,processed,inserted,updated,skipped,failed,error_message,metadata").eq("id", numericId).maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+export async function updateSyncRunProgress(admin, id, values = {}) {
+  const numericId = runId(id);
+  const allowed = ["processed", "inserted", "updated", "skipped", "failed", "metadata"];
+  const payload = Object.fromEntries(allowed.filter((key) => values[key] !== undefined).map((key) => [key, values[key]]));
+  const { data, error } = await admin.from("mexal_sync_runs").update(payload).eq("id", numericId).eq("status", "running").select("id,status,processed,inserted,updated,skipped,failed,metadata").maybeSingle();
   if (error) throw error;
   return data || null;
 }
@@ -43,14 +57,12 @@ export async function findIdempotentSync(admin, { idempotencyKey, syncType, user
 export async function reserveIdempotentSync(admin, { idempotencyKey, syncType, userId }) {
   const existing = await findIdempotentSync(admin, { idempotencyKey, syncType, userId });
   if (existing) return { ...existing, duplicate: true };
-
   const { data, error } = await admin
     .from("mexal_sync_idempotency")
     .insert({ idempotency_key: idempotencyKey, sync_type: syncType, user_id: userId })
     .select("sync_run_id,response")
     .single();
   if (!error) return { ...data, duplicate: false };
-  // The unique constraint makes concurrent requests converge on the first run.
   if (error.code === "23505") {
     const concurrent = await findIdempotentSync(admin, { idempotencyKey, syncType, userId });
     if (concurrent) return { ...concurrent, duplicate: true };

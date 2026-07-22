@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
-import { automationSection, canManageMexalAutomations, loadMexalAutomationRules, runListPriceCommissionsNow, saveMexalAutomationRule } from "../services/mexalAutomationService";
+import {
+  automationSection,
+  canManageMexalAutomations,
+  loadLatestListPriceCommissionRun,
+  loadMexalAutomationRules,
+  runListPriceCommissionsNow,
+  saveMexalAutomationRule,
+  stopListPriceCommissionRun,
+} from "../services/mexalAutomationService";
 
 const eventKeys = ["orders_module_open", "before_new_order", "customer_selected", "before_order_save", "after_order_save", "before_order_send", "after_order_send", "product_selected", "manual"];
 
 function title(value) { return String(value || "—").replaceAll("_", " "); }
 function blankEventRule() { return { event_key: "manual", sync_type: "products", enabled: false, execution_order: 1, blocking: false, scope: "global" }; }
+function number(value) { return Number(value || 0).toLocaleString("it-IT"); }
 
 function RuleEditor({ type, rule, onClose, onSave, saving }) {
   const [draft, setDraft] = useState(rule);
@@ -27,6 +36,34 @@ function RuleEditor({ type, rule, onClose, onSave, saving }) {
   </form>;
 }
 
+function ProgressPanel({ run, stopping, onStop }) {
+  if (!run) return null;
+  const metadata = run.metadata || {};
+  const total = Number(metadata.total || 0);
+  const processed = Number(run.processed || metadata.processed || 0);
+  const percent = run.status === "completed" ? 100 : Number(metadata.progress_percent || (total ? Math.round((processed / total) * 100) : 0));
+  const running = run.status === "running";
+  const statusLabel = running ? "In esecuzione" : run.status === "cancelled" ? "Arrestata" : run.status === "completed" ? "Completata" : run.status === "failed" ? "Errore" : title(run.status);
+  return <section className="mexal-settings-panel" style={{ marginBottom: 16 }}>
+    <div className="mexal-section-heading">
+      <div><h3>Provvigioni listini — {statusLabel}</h3><p>{metadata.phase === "download" ? "Download dati da Mexal…" : `Batch ${metadata.current_batch || 0} di ${metadata.total_batches || "—"}`}</p></div>
+      {running && <button type="button" className="orders-danger" disabled={stopping} onClick={onStop}>{stopping ? "Arresto…" : "Arresta sincronizzazione"}</button>}
+    </div>
+    <div style={{ width: "100%", height: 14, borderRadius: 8, background: "rgba(127,127,127,.2)", overflow: "hidden", margin: "12px 0" }}>
+      <div style={{ width: `${Math.max(0, Math.min(100, percent))}%`, height: "100%", background: "currentColor", transition: "width .3s ease" }} />
+    </div>
+    <div className="mexal-rule-form-grid">
+      <div><strong>Avanzamento</strong><br />{percent}%</div>
+      <div><strong>Elaborati</strong><br />{number(processed)}{total ? ` / ${number(total)}` : ""}</div>
+      <div><strong>Inseriti</strong><br />{number(run.inserted)}</div>
+      <div><strong>Aggiornati</strong><br />{number(run.updated)}</div>
+      <div><strong>Invariati</strong><br />{number(run.skipped)}</div>
+      <div><strong>Errori</strong><br />{number(run.failed)}</div>
+    </div>
+    {run.error_message && <div className="mexal-alert alert-warning" style={{ marginTop: 12 }}><span>{run.error_message}</span></div>}
+  </section>;
+}
+
 function RuleSection({ type, rules, onEdit, onToggle, onNew, onRunNow, saving, runningNow }) {
   const event = type === "event";
   const { columns, canCreate } = automationSection(type, true);
@@ -38,23 +75,77 @@ export default function MexalAutomations({ canManage }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [runningNow, setRunningNow] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [activeRun, setActiveRun] = useState(null);
   const [message, setMessage] = useState(null);
   const [editor, setEditor] = useState(null);
-  const reload = useCallback(async () => { setLoading(true); setMessage(null); try { setRules(await loadMexalAutomationRules({ supabase })); } catch (error) { setMessage({ type: "error", text: error.message }); } finally { setLoading(false); } }, []);
+
+  const refreshRun = useCallback(async () => {
+    const run = await loadLatestListPriceCommissionRun({ supabase });
+    setActiveRun(run);
+    setRunningNow(run?.status === "running");
+    return run;
+  }, []);
+
+  const reload = useCallback(async () => {
+    setLoading(true); setMessage(null);
+    try {
+      const [loadedRules] = await Promise.all([loadMexalAutomationRules({ supabase }), refreshRun()]);
+      setRules(loadedRules);
+    } catch (error) { setMessage({ type: "error", text: error.message }); }
+    finally { setLoading(false); }
+  }, [refreshRun]);
+
   useEffect(() => {
     if (!canManage) return undefined;
     const timer = window.setTimeout(reload, 0);
     return () => window.clearTimeout(timer);
   }, [canManage, reload]);
-  async function save(type, rule) { setSaving(true); setMessage(null); try { await saveMexalAutomationRule({ supabase, ruleType: type, rule }); await reload(); setEditor(null); setMessage({ type: "success", text: "Regola automazione salvata correttamente." }); } catch (error) { setMessage({ type: "error", text: error.message }); } finally { setSaving(false); } }
+
+  useEffect(() => {
+    if (!canManage || activeRun?.status !== "running") return undefined;
+    const timer = window.setInterval(() => { refreshRun().catch((error) => setMessage({ type: "error", text: error.message })); }, 2000);
+    return () => window.clearInterval(timer);
+  }, [canManage, activeRun?.status, refreshRun]);
+
+  async function save(type, rule) {
+    setSaving(true); setMessage(null);
+    try { await saveMexalAutomationRule({ supabase, ruleType: type, rule }); await reload(); setEditor(null); setMessage({ type: "success", text: "Regola automazione salvata correttamente." }); }
+    catch (error) { setMessage({ type: "error", text: error.message }); }
+    finally { setSaving(false); }
+  }
+
   async function runCommissionsNow() {
     setRunningNow(true); setMessage(null);
+    const discoveryTimer = window.setInterval(() => { refreshRun().catch(() => {}); }, 1000);
     try {
       const result = await runListPriceCommissionsNow({ supabase });
-      setMessage({ type: result.errori?.length ? "warning" : "success", text: `Provvigioni listini sincronizzate: ${result.letti_da_mexal || 0} lette, ${result.inseriti || 0} inserite, ${result.aggiornati || 0} aggiornate, ${result.invariati || 0} invariate, ${result.disattivati || 0} disattivate, ${result.errori?.length || 0} errori.` });
-    } catch (error) { setMessage({ type: "error", text: error.message }); }
-    finally { setRunningNow(false); }
+      await refreshRun();
+      if (result.cancelled || result.status === "cancelled") setMessage({ type: "warning", text: "Sincronizzazione provvigioni listini arrestata manualmente." });
+      else setMessage({ type: result.errori?.length ? "warning" : "success", text: `Provvigioni listini sincronizzate: ${result.letti_da_mexal || 0} lette, ${result.inseriti || 0} inserite, ${result.aggiornati || 0} aggiornate, ${result.invariati || 0} invariate, ${result.disattivati || 0} disattivate, ${result.errori?.length || 0} errori.` });
+    } catch (error) { setMessage({ type: "error", text: error.message }); await refreshRun().catch(() => {}); }
+    finally { window.clearInterval(discoveryTimer); setRunningNow(false); }
   }
+
+  async function stopCurrentRun() {
+    if (!activeRun?.id) return;
+    setStopping(true); setMessage(null);
+    try {
+      await stopListPriceCommissionRun({ supabase, runId: activeRun.id });
+      await refreshRun();
+      setMessage({ type: "warning", text: "Richiesta di arresto registrata. Il processo si fermerà al termine del batch corrente." });
+    } catch (error) { setMessage({ type: "error", text: error.message }); }
+    finally { setStopping(false); }
+  }
+
   if (!canManageMexalAutomations(canManage)) return <section className="mexal-settings-panel"><div className="mexal-empty-state">La gestione delle automazioni è riservata agli amministratori.</div></section>;
-  return <div className="mexal-automations">{message && <div className={`mexal-alert alert-${message.type}`}><span>{message.text}</span></div>}{loading ? <section className="mexal-settings-panel"><div className="mexal-empty-state">Caricamento regole automazione…</div></section> : <><RuleSection type="schedule" rules={rules.schedules} saving={saving} runningNow={runningNow} onRunNow={runCommissionsNow} onEdit={(rule) => setEditor({ type: "schedule", rule })} onToggle={(rule) => save("schedule", { ...rule, enabled: !rule.enabled })} /><RuleSection type="event" rules={rules.events} saving={saving} runningNow={runningNow} onNew={() => setEditor({ type: "event", rule: blankEventRule() })} onEdit={(rule) => setEditor({ type: "event", rule })} onToggle={(rule) => save("event", { ...rule, enabled: !rule.enabled })} /></>}{editor && <RuleEditor type={editor.type} rule={editor.rule} saving={saving} onClose={() => setEditor(null)} onSave={(rule) => save(editor.type, rule)} />}</div>;
+  return <div className="mexal-automations">
+    {message && <div className={`mexal-alert alert-${message.type}`}><span>{message.text}</span></div>}
+    <ProgressPanel run={activeRun} stopping={stopping} onStop={stopCurrentRun} />
+    {loading ? <section className="mexal-settings-panel"><div className="mexal-empty-state">Caricamento regole automazione…</div></section> : <>
+      <RuleSection type="schedule" rules={rules.schedules} saving={saving} runningNow={runningNow} onRunNow={runCommissionsNow} onEdit={(rule) => setEditor({ type: "schedule", rule })} onToggle={(rule) => save("schedule", { ...rule, enabled: !rule.enabled })} />
+      <RuleSection type="event" rules={rules.events} saving={saving} runningNow={runningNow} onNew={() => setEditor({ type: "event", rule: blankEventRule() })} onEdit={(rule) => setEditor({ type: "event", rule })} onToggle={(rule) => save("event", { ...rule, enabled: !rule.enabled })} />
+    </>}
+    {editor && <RuleEditor type={editor.type} rule={editor.rule} saving={saving} onClose={() => setEditor(null)} onSave={(rule) => save(editor.type, rule)} />}
+  </div>;
 }

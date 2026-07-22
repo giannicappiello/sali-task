@@ -31,3 +31,7 @@ Come salvaguardia fail-closed, se il payload originale contiene un campo riconos
 `endpointVerified` resta `false` finché una singola risposta (o una sequenza documentata) non dimostra la relazione tra **categoria cliente**, **categoria prodotto** e **percentuale provvigione**. La presenza separata di `cod_cat_pr`, `id_categoria_pr` o `perc_provv` non è una prova. Il report indica risorse e campi trovati, dati mancanti e il prossimo test necessario; non avvia alcuna sincronizzazione automatica.
 
 Nessuna percentuale viene inventata. Il motore esistente e la regola verificata `2 + 3 = 7,5%` restano invariati, così come EVADIBILE/SOSPESO e la serializzazione degli ordini.
+
+## Diagnostica provvigioni listini
+
+La diagnostica separata [Provvigioni listini](DIAGNOSTICA_PROVVIGIONI_LISTINI.md) legge esclusivamente `GET /dati-generali/provvigioni-listini`, mostra una sintesi priva del payload e consente a un amministratore di scaricare la risposta JSON completa. Non usa la ricerca POST, non scrive in Supabase e non modifica categorie, regole o motore locale.

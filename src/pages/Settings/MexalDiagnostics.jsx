@@ -39,6 +39,7 @@ export default function MexalDiagnostics() {
   const [commissionResult, setCommissionResult] = useState(null);
   const [commissionRulesResult, setCommissionRulesResult] = useState(null);
   const [commissionCategoriesResult, setCommissionCategoriesResult] = useState(null);
+  const [listPriceCommissionsResult, setListPriceCommissionsResult] = useState(null);
   const [loading, setLoading] = useState("");
   const [error, setError] = useState("");
 
@@ -112,6 +113,26 @@ export default function MexalDiagnostics() {
     }
   }
 
+  async function executeListPriceCommissions() {
+    setLoading("list-price-commissions"); setError("");
+    try { setListPriceCommissionsResult(await postDiagnostics({ action: "list-price-commissions-diagnostics" })); }
+    catch (diagnosticError) { setError(diagnosticError.message || "Diagnostica provvigioni listini non riuscita."); }
+    finally { setLoading(""); }
+  }
+
+  async function downloadListPriceCommissions() {
+    setLoading("download-list-price-commissions"); setError("");
+    try {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session?.access_token) throw new Error("Sessione scaduta. Effettua nuovamente l'accesso.");
+      const response = await fetch("/api/mexal/orders/recover-sync", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify({ action: "download-list-price-commissions" }) });
+      if (!response.ok) { const payload = await response.json().catch(() => ({})); throw new Error(payload.error || `Errore download (${response.status}).`); }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = "mexal-provvigioni-listini.json"; document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url);
+    } catch (diagnosticError) { setError(diagnosticError.message || "Download provvigioni listini non riuscito."); }
+    finally { setLoading(""); }
+  }
+
   function downloadJson(value, name) {
     if (!value) return;
     const blob = new Blob([`${JSON.stringify(value, null, 2)}\n`], { type: "application/json" });
@@ -148,6 +169,22 @@ export default function MexalDiagnostics() {
       <p>Sincronizza le sole anagrafiche categorie clienti e articoli da Mexal. Le regole provvigionali locali e il motore di calcolo non vengono modificati.</p>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}><button className="primary-action" type="button" onClick={syncCommissionCategories} disabled={loading === "commission-categories"}>{loading === "commission-categories" ? <RefreshCw className="spin" size={18} /> : <Play size={18} />}{loading === "commission-categories" ? "Sincronizzazione in corso..." : "Sincronizza categorie provvigionali"}</button></div>
       {commissionCategoriesResult && <p style={{ marginTop: 16 }}>Letti {commissionCategoriesResult.letti_da_mexal}; clienti {commissionCategoriesResult.categorie_clienti}; articoli {commissionCategoriesResult.categorie_articoli}; inseriti {commissionCategoriesResult.inseriti}; aggiornati {commissionCategoriesResult.aggiornati}; invariati {commissionCategoriesResult.invariati}; errori {commissionCategoriesResult.errori?.length || 0}.</p>}
+    </section>
+
+    <section className="panel settings-panel" style={{ marginTop: 16 }}>
+      <div className="panel-header"><h3>Provvigioni listini</h3></div>
+      <p>Analizza l’endpoint Mexal delle provvigioni associate ai listini senza modificare dati o regole.</p>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <button className="primary-action" type="button" onClick={executeListPriceCommissions} disabled={loading === "list-price-commissions"}>{loading === "list-price-commissions" ? <RefreshCw className="spin" size={18} /> : <Play size={18} />}{loading === "list-price-commissions" ? "Analisi in corso..." : "Analizza provvigioni listini"}</button>
+        <button className="orders-secondary" type="button" onClick={downloadListPriceCommissions} disabled={loading === "download-list-price-commissions"}>{loading === "download-list-price-commissions" ? <RefreshCw className="spin" size={18} /> : <Download size={18} />}{loading === "download-list-price-commissions" ? "Download in corso..." : "Scarica JSON provvigioni listini"}</button>
+      </div>
+      {listPriceCommissionsResult && <div style={{ marginTop: 16 }}>
+        <p><strong>Endpoint:</strong> {listPriceCommissionsResult.endpoint} · <strong>Esito:</strong> {listPriceCommissionsResult.success ? "ok" : "errore"} · <strong>Record:</strong> {listPriceCommissionsResult.recordCount} · <strong>Tipo:</strong> {listPriceCommissionsResult.payloadType}</p>
+        <p><strong>Wrapper:</strong> {listPriceCommissionsResult.wrapper || "nessuno"} · <strong>Paginazione rilevata:</strong> {listPriceCommissionsResult.pagination?.detected ? "sì" : "no"} · <strong>Completezza garantita:</strong> {listPriceCommissionsResult.completenessGuaranteed ? "sì" : "no"}</p>
+        <p>{listPriceCommissionsResult.pagination?.note}</p>
+        <p><strong>Campi principali:</strong> {(listPriceCommissionsResult.fields?.present || []).join(", ") || "nessuno"}</p>
+        <p><strong>Campi potenzialmente collegati alle provvigioni:</strong> {Object.entries(listPriceCommissionsResult.fields?.potentiallyRelevant || {}).filter(([, fields]) => fields.length).map(([group, fields]) => `${group}: ${fields.join(", ")}`).join(" · ") || "nessuno"}</p>
+      </div>}
     </section>
 
     <section className="panel settings-panel" style={{ marginTop: 16 }}>

@@ -69,7 +69,11 @@ export function normalizeMexalUnitType(value) {
   return text(value) || "1";
 }
 
-export function buildRootMatrixRows(lines, magazzino, defaultAgentCode) {
+export function mexalOrderLineStatus(kind) {
+  return kind === "OCM" ? "E" : "S";
+}
+
+export function buildRootMatrixRows(lines, magazzino, defaultAgentCode, kind) {
   const fields = {
     id_riga: (_line, index) => index,
     tp_riga: () => "R",
@@ -80,7 +84,7 @@ export function buildRootMatrixRows(lines, magazzino, defaultAgentCode) {
     id_mag_riga: (line) => number(line.id_mag_riga ?? magazzino),
     tp_um_articolo: (line) => normalizeMexalUnitType(line.tp_um_articolo),
     cod_iva: (line) => text(line.cod_iva ?? line.codice_iva_mexal),
-    tipo_stato_riga: () => "E",
+    tipo_stato_riga: () => mexalOrderLineStatus(kind),
   };
   const result = Object.fromEntries(Object.entries(fields).map(([field, value]) => [field,
     lines.map((line, index) => [index + 1, value(line, index + 1)]).filter(([, item]) => item !== undefined && item !== ""),
@@ -129,6 +133,6 @@ export function buildMexalOrderDocument(order, kind, lines, { serie = 1, magazzi
     sigla: "OC", serie: number(serie), numero: 0, cod_conto: text(order.codice_cliente), data_documento: formatMexalOrderDate(order.data_ordine, dateFormat),
     cod_modulo: document.moduleCode, id_causale: number(causale) ? [[1, number(causale)]] : undefined, id_magazzino: number(magazzino), codice_agente: text(order.codice_agente_mexal),
     nota: formatMexalNota(order.note_mexal || `Workspace n. ${order.numero_ordine_visualizzato || order.id}`, notaFormat),
-    id_pagamento: paymentId, ...destinationFields(order), ...transportFields(order), ...buildRootMatrixRows(lines, magazzino, order.codice_agente_mexal),
+    id_pagamento: paymentId, ...destinationFields(order), ...transportFields(order), ...buildRootMatrixRows(lines, magazzino, order.codice_agente_mexal, kind),
   });
 }

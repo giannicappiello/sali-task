@@ -4,8 +4,8 @@ function normalizeCode(value) {
   return String(value || "").trim().toUpperCase();
 }
 
-function fullName(user = {}) {
-  return [user.nome, user.cognome].map((value) => String(value || "").trim()).filter(Boolean).join(" ");
+export function formatAgentName(user = {}) {
+  return [user.cognome, user.nome].map((value) => String(value || "").trim()).filter(Boolean).join(" ");
 }
 
 export async function loadAgentNameMap(codes = []) {
@@ -28,7 +28,7 @@ export async function loadAgentNameMap(codes = []) {
     .in("id", userIds);
   if (usersError) throw usersError;
 
-  const usersById = new Map((users || []).map((user) => [user.id, fullName(user)]));
+  const usersById = new Map((users || []).map((user) => [user.id, formatAgentName(user)]));
   return new Map(
     (links || [])
       .map((link) => [normalizeCode(link.codice_agente_mexal), usersById.get(link.utente_id)])
@@ -38,12 +38,7 @@ export async function loadAgentNameMap(codes = []) {
 
 export function agentDisplayName(order = {}, map = new Map()) {
   const code = normalizeCode(order.codice_agente_mexal);
-  return (
-    String(order.nome_agente || order.agente_nome || order.nome_cognome_agente || "").trim() ||
-    map.get(code) ||
-    code ||
-    "-"
-  );
+  return map.get(code) || "-";
 }
 
 export function orderNumberValue(order = {}) {

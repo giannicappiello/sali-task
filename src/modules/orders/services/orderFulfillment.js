@@ -75,7 +75,7 @@ export async function loadOrderDetail(orderId) {
   if (linesError) throw linesError;
   if (documentsError) throw documentsError;
   const enriched = await enrichAgent(order);
-  return { order: { ...enriched, mexal_documents: mergeMexalDocuments(documents, enriched) }, lines: lines || [] };
+  return { order: { ...enriched, mexal_documents: mergeMexalDocuments(documents, order) }, lines: lines || [] };
 }
 
 export { buildOrderPdfModel, createOrderPdf };
@@ -84,6 +84,6 @@ export async function downloadOrderPdf(order, lines, options) {
   if (!order?.id) throw new Error("Ordine non valido: identificativo mancante.");
   const documents = await loadCreatedMexalDocuments(order.id);
   const enriched = await enrichAgent(order);
-  const mexalDocuments = mergeMexalDocuments(documents, enriched);
-  return createAndDownloadPdf({ ...enriched, codice_agente_mexal: enriched.agente_nome, mexal_documents: mexalDocuments }, lines, options);
+  const mexalDocuments = mergeMexalDocuments(documents, order);
+  return createAndDownloadPdf({ ...enriched, mexal_documents: mexalDocuments }, lines, options);
 }

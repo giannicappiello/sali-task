@@ -2,12 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
+import { agentDisplayName, loadAgentNameMap } from "../services/agentNames";
 
 const PAGE_SIZE = 1000;
-
-function normalizeAgentCode(value) {
-  return String(value || "").trim().toUpperCase();
-}
 
 function getPaymentDescription(item) {
   const data = item?.dati_mexal || item?.json_mexal || {};
@@ -31,55 +28,13 @@ export default function Customers() {
   } = useOrdersAccess();
 
   const [rows, setRows] = useState([]);
-  const [agentNames, setAgentNames] = useState({});
+  const [agentNames, setAgentNames] = useState(new Map());
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!accessLoading) loadCustomers();
   }, [accessLoading, canSeeAll, canAccessOrders, JSON.stringify(visibleAgents)]);
-
-  async function loadAgentNames() {
-    const { data: integrations, error: integrationsError } = await supabase
-      .from("integrazioni_utenti")
-      .select("utente_id,codice_agente_mexal")
-      .eq("modulo", "gestione_ordini")
-      .not("codice_agente_mexal", "is", null);
-
-    if (integrationsError) {
-      console.error("Errore caricamento agenti:", integrationsError);
-      return {};
-    }
-
-    const userIds = [
-      ...new Set((integrations || []).map((row) => row.utente_id).filter(Boolean)),
-    ];
-
-    if (!userIds.length) return {};
-
-    const { data: users, error: usersError } = await supabase
-      .from("utenti")
-      .select("id,nome,cognome")
-      .in("id", userIds);
-
-    if (usersError) {
-      console.error("Errore caricamento nomi agenti:", usersError);
-      return {};
-    }
-
-    const usersById = new Map((users || []).map((user) => [user.id, user]));
-    const result = {};
-
-    for (const integration of integrations || []) {
-      const code = normalizeAgentCode(integration.codice_agente_mexal);
-      const user = usersById.get(integration.utente_id);
-      const fullName = [user?.cognome, user?.nome].filter(Boolean).join(" ").trim();
-
-      if (code && fullName) result[code] = fullName;
-    }
-
-    return result;
-  }
 
   async function loadAllCustomerPages() {
     const allRows = [];
@@ -118,20 +73,18 @@ export default function Customers() {
     try {
       if (!canAccessOrders) {
         setRows([]);
-        setAgentNames({});
+        setAgentNames(new Map());
         return;
       }
 
       if (!canSeeAll && !visibleAgents?.length) {
         setRows([]);
-        setAgentNames({});
+        setAgentNames(new Map());
         return;
       }
 
-      const [customers, names] = await Promise.all([
-        loadAllCustomerPages(),
-        loadAgentNames(),
-      ]);
+      const customers = await loadAllCustomerPages();
+      const names = await loadAgentNameMap(customers.map((customer) => customer.codice_agente_mexal));
 
       setRows(customers);
       setAgentNames(names);
@@ -148,8 +101,7 @@ export default function Customers() {
     if (!q) return rows;
 
     return rows.filter((item) => {
-      const agentName =
-        agentNames[normalizeAgentCode(item.codice_agente_mexal)] || "";
+      const agentName = agentDisplayName(item, agentNames);
       const paymentDescription = getPaymentDescription(item);
 
       return [...Object.values(item), agentName, paymentDescription].some((value) =>
@@ -189,8 +141,6 @@ export default function Customers() {
             <tbody>
               {!loading &&
                 filtered.map((item) => {
-                  const agentCode = normalizeAgentCode(item.codice_agente_mexal);
-
                   return (
                     <tr key={item.codice_cliente}>
                       <td>{item.codice_cliente}</td>
@@ -199,7 +149,7 @@ export default function Customers() {
                       <td>{item.provincia || "-"}</td>
                       <td>{getPaymentDescription(item)}</td>
                       <td>{item.codice_listino || "-"}</td>
-                      <td>{agentNames[agentCode] || agentCode || "-"}</td>
+                      <td>{agentDisplayName(item, agentNames)}</td>
                     </tr>
                   );
                 })}

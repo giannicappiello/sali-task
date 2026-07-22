@@ -171,7 +171,7 @@ function drawPartyBlock(doc, order, model) {
   cell(doc, left, y + 12, 61, 12, "Condizioni pagamento", order.descrizione_pagamento || order.codice_pagamento);
   cell(doc, 68, y + 12, 16, 12, "Valuta", order.valuta || "EUR");
   cell(doc, 84, y + 12, 35, 12, "Documento", model.document ? `Ordine cliente ${model.document.type}` : "Ordine cliente");
-  cell(doc, left, y + 24, 56, 12, "Agente", order.codice_agente_mexal || order.agente);
+  cell(doc, left, y + 24, 56, 12, "Agente", order.agente_nome || "-");
   cell(doc, 63, y + 24, 56, 12, "Numero documento", model.document ? formatMexalDocumentNumber(model.document) : "", { maxLines: 2, fontSize: 7, minFontSize: 5 });
   cell(doc, left, y + 36, 56, 12, "Appoggio bancario", order.appoggio_bancario);
   cell(doc, 63, y + 36, 34, 12, "Data", formatDate(order.data_ordine));

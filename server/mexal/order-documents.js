@@ -34,6 +34,11 @@ const text = (value) => String(value ?? "").trim();
 const number = (value) => { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : undefined; };
 const compact = (value) => Object.fromEntries(Object.entries(value).filter(([, item]) => item !== null && item !== undefined && item !== ""));
 const matrix = (value) => value === undefined || value === null || value === "" ? undefined : [[1, value]];
+export function formatMexalCommission(value) {
+  const parsed = number(value);
+  if (parsed === undefined) throw new Error("Percentuale provvigione non valida.");
+  return String(parsed).replace(".", ",");
+}
 
 export function formatMexalNota(value, format) {
   const note = text(value);
@@ -85,6 +90,9 @@ export function buildRootMatrixRows(lines, magazzino, defaultAgentCode) {
   if (commissionRows.length) {
     result.perc_provv = commissionRows;
     result.cod_agente = lines.map((line, index) => [index + 1, 1, text(line.codice_agente_mexal || line.cod_agente || defaultAgentCode)]).filter((row) => row[2]);
+    result.tipo_provv = commissionRows.flatMap(([index]) => [1, 2, 3, 4, 5].map((position) => [index, position, "%"]));
+    result.formula_pr = commissionRows.map(([index, percentage]) => [index, 1, formatMexalCommission(percentage)]);
+    result.calc_formula_pr = commissionRows.map(([index, percentage]) => [index, 1, percentage]);
   }
   return result;
 }

@@ -422,6 +422,7 @@ function mapClient(client, syncDate, paymentsMap) {
         "cat_sconti",
       ])
     ),
+    ...(nullableInteger(client.cod_cat_pr) !== null ? { categoria_provvigionale_mexal: nullableInteger(client.cod_cat_pr) } : {}),
     sconto_incondizionato:
       normalize(
         firstValue(client, [

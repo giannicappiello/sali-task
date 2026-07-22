@@ -59,48 +59,48 @@ begin
 end;
 $$;
 
--- Uniforma i codici numerici, evitando differenze come 010 rispetto a 10.
+create or replace function public.normalize_mexal_payment_discount()
+returns trigger
+language plpgsql
+as $$
+declare
+  resolved_discount text;
+begin
+  if new.codice_pagamento is not null
+     and new.codice_pagamento ~ '^0*[0-9]+$' then
+    new.codice_pagamento := (new.codice_pagamento::numeric)::text;
+  end if;
+
+  resolved_discount := public.mexal_first_payment_discount(new.dati_mexal);
+
+  if resolved_discount is null or resolved_discount = '' then
+    resolved_discount := new.sconto;
+  end if;
+
+  if resolved_discount is not null
+     and trim(resolved_discount) <> ''
+     and regexp_replace(resolved_discount, '[% ,.0]', '', 'g') <> ''
+     and (
+       new.sconto_esteso is null
+       or trim(new.sconto_esteso) = ''
+       or regexp_replace(new.sconto_esteso, '[% ,.0]', '', 'g') = ''
+     ) then
+    new.sconto := resolved_discount;
+    new.sconto_esteso := resolved_discount;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_normalize_mexal_payment_discount
+  on public.ordini_regole_pagamento;
+
+create trigger trg_normalize_mexal_payment_discount
+before insert or update on public.ordini_regole_pagamento
+for each row
+execute function public.normalize_mexal_payment_discount();
+
+-- Corregge immediatamente le righe già presenti.
 update public.ordini_regole_pagamento
-set codice_pagamento = (codice_pagamento::numeric)::text
-where codice_pagamento ~ '^0*[0-9]+$';
-
--- Recupera la percentuale reale dal JSON Mexal quando i campi normalizzati sono
--- vuoti oppure contengono soltanto zero.
-with resolved as (
-  select
-    id,
-    public.mexal_first_payment_discount(dati_mexal) as discount_value
-  from public.ordini_regole_pagamento
-  where origine = 'MEXAL'
-)
-update public.ordini_regole_pagamento rules
-set
-  sconto = coalesce(nullif(resolved.discount_value, ''), rules.sconto),
-  sconto_esteso = coalesce(nullif(resolved.discount_value, ''), rules.sconto),
-  updated_at = now()
-from resolved
-where rules.id = resolved.id
-  and resolved.discount_value is not null
-  and resolved.discount_value <> ''
-  and (
-    rules.sconto_esteso is null
-    or trim(rules.sconto_esteso) = ''
-    or regexp_replace(rules.sconto_esteso, '[% ,.0]', '', 'g') = ''
-  );
-
--- Anche per regole manuali o già normalizzate: se sconto_esteso vale zero ma
--- sconto contiene la percentuale, usa sconto come valore effettivo.
-update public.ordini_regole_pagamento
-set
-  sconto_esteso = sconto,
-  updated_at = now()
-where sconto is not null
-  and trim(sconto) <> ''
-  and regexp_replace(sconto, '[% ,.0]', '', 'g') <> ''
-  and (
-    sconto_esteso is null
-    or trim(sconto_esteso) = ''
-    or regexp_replace(sconto_esteso, '[% ,.0]', '', 'g') = ''
-  );
-
-drop function if exists public.mexal_first_payment_discount(jsonb);
+set codice_pagamento = codice_pagamento;

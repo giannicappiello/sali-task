@@ -22,10 +22,14 @@ export default async function handler(req, res) {
     if (readError) throw readError;
     if (!run) return res.status(404).json({ error: "Run Mexal non trovata." });
     if (run.status !== "running") return res.status(409).json({ error: "La run non è più in esecuzione.", run });
+
     await cancelSyncRun(supabase, id, {
       error_message: STOPPED_MESSAGE,
       metadata: { ...(run.metadata || {}), stopped_manually: true, stopped_at: stoppedAt, stopped_by: admin.id, stopped_by_auth_user: admin.authUserId },
     });
+
+    await supabase.from("mexal_sync_payload_rows").delete().eq("run_id", id);
+
     const { data, error } = await supabase.from("mexal_sync_runs").select("id,sync_type,status,started_at,completed_at,processed,inserted,updated,skipped,failed,error_message,metadata").eq("id", id).maybeSingle();
     if (error) throw error;
     if (!data) return res.status(409).json({ error: "La run è stata già chiusa." });

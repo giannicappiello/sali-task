@@ -37,48 +37,58 @@ async function accessTokenFor(supabase) {
   return accessToken;
 }
 
-export async function requestMexalAutomation({ supabase, action, ruleType, rule, extraBody, fetchImpl = fetch }) {
+async function postJson({ supabase, url, body, fetchImpl = fetch, invalidMessage }) {
   const accessToken = await accessTokenFor(supabase);
-  const body = { action, ...(extraBody || {}) };
-  if (ruleType) body.ruleType = ruleType;
-  if (rule) body.rule = rule;
-
   let response;
   try {
-    response = await fetchImpl("/api/mexal/automation", {
+    response = await fetchImpl(url, {
       method: "POST",
       headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
   } catch {
-    throw apiError(0, "Impossibile raggiungere il servizio automazioni Mexal. Controlla la connessione e riprova.");
+    throw apiError(0, "Impossibile raggiungere il servizio Mexal. Controlla la connessione e riprova.");
   }
 
   let payload;
   try { payload = await response.json(); }
-  catch { throw apiError(response.status, "Il servizio automazioni ha restituito una risposta non valida."); }
+  catch { throw apiError(response.status, invalidMessage || "Il servizio Mexal ha restituito una risposta non valida."); }
   if (!response.ok) throw apiError(response.status, payload?.error || messageForStatus(response.status));
   return payload;
 }
 
-export async function runListPriceCommissionsNow({ supabase, fetchImpl = fetch }) {
-  const accessToken = await accessTokenFor(supabase);
-  let response;
-  try {
-    response = await fetchImpl("/api/mexal/orders/recover-sync", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "sync-list-price-commissions" }),
-    });
-  } catch {
-    throw apiError(0, "Impossibile raggiungere la sincronizzazione provvigioni listini.");
-  }
-  let payload;
-  try { payload = await response.json(); }
-  catch { throw apiError(response.status, "La sincronizzazione ha restituito una risposta non valida."); }
-  if (payload?.cancelled || payload?.status === "cancelled") return payload;
-  if (!response.ok || payload?.success === false) throw apiError(response.status, payload?.error || "Sincronizzazione provvigioni listini non riuscita.");
-  return payload;
+export async function requestMexalAutomation({ supabase, action, ruleType, rule, extraBody, fetchImpl = fetch }) {
+  const body = { action, ...(extraBody || {}) };
+  if (ruleType) body.ruleType = ruleType;
+  if (rule) body.rule = rule;
+  return postJson({
+    supabase,
+    url: "/api/mexal/automation",
+    body,
+    fetchImpl,
+    invalidMessage: "Il servizio automazioni ha restituito una risposta non valida.",
+  });
+}
+
+export async function startListPriceCommissionsNow({ supabase, batchSize = 250, fetchImpl = fetch }) {
+  return postJson({
+    supabase,
+    url: "/api/mexal/orders/recover-sync",
+    body: { action: "start-list-price-commissions-sync", batchSize },
+    fetchImpl,
+    invalidMessage: "L’avvio della sincronizzazione ha restituito una risposta non valida.",
+  });
+}
+
+export async function processListPriceCommissionsBatchNow({ supabase, runId, fetchImpl = fetch }) {
+  if (!runId) throw apiError(400, "Run di sincronizzazione non disponibile.");
+  return postJson({
+    supabase,
+    url: "/api/mexal/orders/recover-sync",
+    body: { action: "process-list-price-commissions-batch", runId },
+    fetchImpl,
+    invalidMessage: "Il batch della sincronizzazione ha restituito una risposta non valida.",
+  });
 }
 
 export async function loadLatestListPriceCommissionRun({ supabase }) {

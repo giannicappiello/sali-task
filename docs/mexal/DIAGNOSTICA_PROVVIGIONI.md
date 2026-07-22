@@ -38,3 +38,35 @@ La funzione usa esclusivamente GET verso le risorse di dettaglio già usate dall
 sincronizzazione (`/articoli/{codice}`) e dalle diagnostiche esistenti
 (`/clienti/{codice}`, `/documenti/ordini-clienti/{riferimento}`), oltre alle
 relative risorse `help.json`. Non effettua POST a Mexal.
+
+## Regole provvigionali: stato della sincronizzazione
+
+L'analisi del repository (client WebAPI, API Vercel, Edge Function, diagnostiche e
+help JSON versionato disponibile) **non identifica un endpoint Mexal verificato**
+che restituisca una collezione di regole provvigionali. I soli campi confermati
+sono quelli già presenti nei dettagli cliente/articolo (`cod_cat_pr` e
+`id_categoria_pr`) e nei documenti ordine; sono identificativi di categoria, non
+una formula da cui derivare una percentuale. Perciò questa PR non implementa
+`sync-commission-rules` e non modifica `mexal_regole_provvigioni`.
+
+Gli amministratori possono usare **Impostazioni → Diagnostica contratti Mexal →
+Regole provvigionali → Analizza endpoint candidati**. La chiamata usa soltanto
+GET verso `/help.json` e gli help candidati per `agenti`, `condizioni-agenti`,
+`provvigioni`, `condizioni-commerciali`, `tabelle-generali` e
+`tabelle-personalizzate`. Per ogni risposta espone solo status HTTP, chiavi,
+tipi e al massimo tre record con scalari non sensibili; non registra né restituisce
+payload completi e non esegue scritture.
+
+Per completare una sincronizzazione reale serve una risposta Mexal/help che
+confermi: percorso GET, paginazione, identificativo stabile della regola,
+categoria cliente, categoria prodotto, eventuale agente, percentuale e date di
+validità/priorità. Solo allora potrà essere definita la mappatura verso
+`categoria_cliente`, `categoria_prodotto`, `codice_agente_mexal`, `percentuale`,
+`valida_dal`, `valida_al`, `origine` e `dati_mexal`, con upsert transazionale e
+disattivazione esclusivamente dopo una lettura completa riuscita.
+
+La tabella Workspace è protetta da RLS: gli amministratori possono leggerla, gli
+utenti autenticati non hanno policy di scrittura, e l'eventuale futuro sync usa
+solo la service role lato server. La precedenza già implementata resta invariata:
+una regola agente specifica precede quella generale. Nessuna percentuale viene
+inventata; la regola verificata 2 + 3 = 7,5% rimane quella introdotta in PR #81.

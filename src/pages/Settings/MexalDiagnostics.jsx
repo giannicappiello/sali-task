@@ -37,6 +37,7 @@ export default function MexalDiagnostics() {
   const [commercialResult, setCommercialResult] = useState(null);
   const [destinationResult, setDestinationResult] = useState(null);
   const [commissionResult, setCommissionResult] = useState(null);
+  const [commissionRulesResult, setCommissionRulesResult] = useState(null);
   const [loading, setLoading] = useState("");
   const [error, setError] = useState("");
 
@@ -81,6 +82,13 @@ export default function MexalDiagnostics() {
         manualReference: leftReference.trim(), workspaceReference: rightReference.trim(),
       }));
     } catch (diagnosticError) { setError(diagnosticError.message || "Diagnostica provvigioni non riuscita."); }
+    finally { setLoading(""); }
+  }
+
+  async function executeCommissionRules() {
+    setLoading("commission-rules"); setError("");
+    try { setCommissionRulesResult(await postDiagnostics({ action: "commission-rules-diagnostics" })); }
+    catch (diagnosticError) { setError(diagnosticError.message || "Diagnostica regole provvigionali non riuscita."); }
     finally { setLoading(""); }
   }
 
@@ -137,6 +145,13 @@ export default function MexalDiagnostics() {
         {commissionResult && <button className="orders-secondary" type="button" onClick={() => downloadJson(commissionResult, `mexal-provvigioni-${productCode}-${clientCode}.json`)}><Download size={18} />Scarica report JSON</button>}
       </div>
     </section>
+    <section className="panel settings-panel" style={{ marginTop: 16 }}>
+      <div className="panel-header"><h3>Regole provvigionali</h3></div>
+      <p>Non è ancora disponibile un endpoint Mexal verificato per la sincronizzazione. Questa diagnostica amministrativa usa solo GET verso help candidati, non salva dati e non mostra record completi.</p>
+      <button className="primary-action" type="button" onClick={executeCommissionRules} disabled={loading === "commission-rules"}>{loading === "commission-rules" ? <RefreshCw className="spin" size={18} /> : <Play size={18} />}{loading === "commission-rules" ? "Analisi in corso..." : "Analizza endpoint candidati"}</button>
+      {commissionRulesResult && <><p style={{ marginTop: 16 }}>{commissionRulesResult.reason}</p><div className="orders-table-wrap"><table className="orders-table"><thead><tr><th>Endpoint</th><th>Metodo</th><th>HTTP</th><th>Campi candidati</th></tr></thead><tbody>{commissionRulesResult.endpoints.map((item) => <tr key={item.endpoint}><td>{item.endpoint}</td><td>{item.method}</td><td>{item.http_status ?? "—"}</td><td>{item.error || (item.response?.candidate_fields || []).map((field) => field.path).join(", ") || "nessuno"}</td></tr>)}</tbody></table></div></>}
+    </section>
+
     {commissionResult && <>
       <section className="panel settings-panel"><div className="panel-header"><h3>Report campi candidati</h3></div><p>{commissionResult.privacy}</p><div className="orders-table-wrap"><table className="orders-table"><thead><tr><th>Origine</th><th>Percorso JSON</th><th>Tipo</th><th>Esempio reale</th><th>Affidabilità</th></tr></thead><tbody>{commissionResult.report.map((item, index) => <tr key={`${item.source}-${item.path}-${index}`}><td>{item.source}</td><td>{item.path || "—"}</td><td>{item.valueType || "—"}</td><td><pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{JSON.stringify(item.example)}</pre></td><td>{item.reliability}</td></tr>)}</tbody></table></div></section>
       <section className="panel settings-panel"><div className="panel-header"><h3>Endpoint e stato HTTP</h3></div><div className="orders-table-wrap"><table className="orders-table"><thead><tr><th>Interrogazione</th><th>Endpoint</th><th>HTTP</th><th>Esito</th></tr></thead><tbody>{commissionResult.endpoints.map((item) => <tr key={item.endpoint}><td>{item.label}</td><td>{item.endpoint}</td><td>{item.httpStatus ?? "—"}</td><td>{item.error || "verificato"}</td></tr>)}</tbody></table></div></section>

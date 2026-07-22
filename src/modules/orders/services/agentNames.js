@@ -5,7 +5,10 @@ function normalizeCode(value) {
 }
 
 function fullName(user = {}) {
-  return [user.nome, user.cognome].map((value) => String(value || "").trim()).filter(Boolean).join(" ");
+  return [user.cognome, user.nome]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .join(" ");
 }
 
 export async function loadAgentNameMap(codes = []) {
@@ -39,9 +42,15 @@ export async function loadAgentNameMap(codes = []) {
 export function agentDisplayName(order = {}, map = new Map()) {
   const code = normalizeCode(order.codice_agente_mexal);
   return (
-    String(order.nome_agente || order.agente_nome || order.nome_cognome_agente || "").trim() ||
+    String(
+      order.cognome_nome_agente ||
+      order.nome_cognome_agente ||
+      order.nome_agente ||
+      order.agente_nome ||
+      order.nominativo_agente ||
+      ""
+    ).trim() ||
     map.get(code) ||
-    code ||
     "-"
   );
 }

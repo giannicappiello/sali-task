@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { cleanupStaleRuns } from "../mexal/lib/syncRuns.js";
 
-const DEFAULT_ORDER = ["clients", "products", "commercial_conditions", "document_series", "stocks", "orders"];
+const DEFAULT_ORDER = ["clients", "products", "commercial_conditions", "document_series", "stocks", "list_price_commissions", "orders"];
 
 function required(name) {
   const value = String(process.env[name] || "").trim();
@@ -37,6 +37,7 @@ function endpointFor(syncType) {
     case "commercial_conditions": return ["/api/mexal/automation", { action: "run_now", syncType: "commercial_conditions", mode: "incremental", syncPayments: true, origin: "cron" }];
     case "document_series": return ["/api/mexal/automation", { action: "run_now", syncType: "document_series", origin: "cron" }];
     case "stocks": return ["/api/mexal/automation", { action: "run_now", syncType: "stocks", offset: 0, batchSize: 12, origin: "cron" }];
+    case "list_price_commissions": return ["/api/mexal/sync-list-price-commissions", { origin: "cron" }];
     default: return null;
   }
 }
@@ -54,8 +55,6 @@ export async function dispatchSchedules({ schedules, hasRunningRun, execute, upd
         continue;
       }
 
-      // Gli ordini restano monitorati: non esiste una coda automatica sicura
-      // che possa garantire stato previsto e assenza di reinvii.
       if (sync_type === "orders") {
         const item = { sync_type, success: true, status: "skipped", error: null };
         await updateSchedule(schedule.id, { last_run_at: now, last_status: item.status, last_error: null, updated_at: now, next_run_at: null });

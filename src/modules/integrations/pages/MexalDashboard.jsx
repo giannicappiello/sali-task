@@ -31,7 +31,6 @@ import {
   invokeStocksSync,
   loadMexalEntityCounts,
   loadMexalRuns,
-  loadRunDetailsForRun,
   loadSyncRuns,
   startMexalSync,
   stopMexalRun,
@@ -103,17 +102,7 @@ export default function MexalDashboard() {
 
     if (nextSelected) {
       setSelectedRun(nextSelected);
-      const runLog = await loadRunDetailsForRun(nextSelected);
-      if (!mountedRef.current) return;
-      setLogItems([
-        ...runLog.details.map((item) => ({ ...item, title: item.entity_type })),
-        ...runLog.errors.map((item) => ({
-          ...item,
-          status: "error",
-          title: item.entity_type || "Errore",
-          message: item.error_message,
-        })),
-      ].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)));
+      setLogItems([]);
     } else {
       setSelectedRun(null);
       setLogItems([]);
@@ -136,15 +125,7 @@ export default function MexalDashboard() {
 
   async function selectRun(run) {
     setSelectedRun(run);
-    try {
-      const runLog = await loadRunDetailsForRun(run);
-      setLogItems([
-        ...runLog.details.map((item) => ({ ...item, title: item.entity_type })),
-        ...runLog.errors.map((item) => ({ ...item, status: "error", title: item.entity_type || "Errore", message: item.error_message })),
-      ].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)));
-    } catch (error) {
-      setMessage({ type: "error", text: error.message || "Impossibile leggere il log" });
-    }
+    setLogItems([]);
   }
 
   async function runCommercialSync() {

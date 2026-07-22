@@ -1,11 +1,30 @@
 import { createClient } from "@supabase/supabase-js";
-import productsHandler from "../../server/mexal/sync-products.js";
+import productsHandler, { buildMexalClient } from "../../server/mexal/sync-products.js";
 import clientsHandler from "../../server/mexal/sync-clients.js";
 import commercialConditionsHandler from "../../server/mexal/sync-commercial-conditions.js";
 import documentSeriesHandler from "../../server/mexal/sync-document-series.js";
 import stopHandler from "../../server/mexal/stop-sync-run.js";
+import { syncListPriceCommissions } from "../../server/mexal/sync-list-price-commissions.js";
 import { requireAdmin } from "./lib/auth.js";
 import { completeIdempotentSync, findRunningSync, reserveIdempotentSync } from "./lib/syncRuns.js";
+
+function required(name) {
+  const value = String(process.env[name] || "").trim();
+  if (!value) throw new Error(`Variabile Vercel mancante: ${name}`);
+  return value;
+}
+
+async function listPriceCommissionsHandler(req, res) {
+  const admin = createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const result = await syncListPriceCommissions({
+    mexal: buildMexalClient(),
+    supabase: admin,
+    source: req.body?.origin || "manual",
+  });
+  return res.status(200).json(result);
+}
 
 const RUN_HANDLERS = Object.freeze({
   clients: clientsHandler,
@@ -13,13 +32,8 @@ const RUN_HANDLERS = Object.freeze({
   stocks: productsHandler,
   commercial_conditions: commercialConditionsHandler,
   document_series: documentSeriesHandler,
+  list_price_commissions: listPriceCommissionsHandler,
 });
-
-function required(name) {
-  const value = String(process.env[name] || "").trim();
-  if (!value) throw new Error(`Variabile Vercel mancante: ${name}`);
-  return value;
-}
 
 function runPayload(body, syncType) {
   const payload = { ...body, origin: body.origin || "manual" };
@@ -37,6 +51,7 @@ const SYNC_ALL_PHASES = Object.freeze([
   "document_series",
   "products",
   "stocks",
+  "list_price_commissions",
 ]);
 
 function createResponseCapture() {
@@ -150,7 +165,6 @@ function sendHandlerResponse(res, phase, execution) {
 }
 
 async function syncAll(req, res, body, supabase) {
-
   const completedPhases = [];
   const results = [];
   for (const phase of SYNC_ALL_PHASES) {
@@ -194,7 +208,6 @@ async function syncAll(req, res, body, supabase) {
 
 async function startSync(req, res, body, syncType, runHandler, admin) {
   const running = await findRunningSync(admin.supabase, syncType);
-  // A batch can continue only the active run of its own synchronization type.
   const isContinuation = ["products", "stocks"].includes(syncType)
     && body.syncRunId
     && running

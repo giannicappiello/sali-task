@@ -167,7 +167,14 @@ async function mainHandler(req) {
       const paymentEndpoint = optionalEnv("MEXAL_PAYMENT_DISCOUNT_ENDPOINT");
       if (paymentEndpoint) {
         try {
-          const paymentItems = await mexal.getAll(paymentEndpoint);
+          const paymentResponse = await mexal.getAllWithPayload(paymentEndpoint);
+          await writePaymentPayloadDebug(supabase, {
+            runId,
+            endpoint: paymentEndpoint,
+            payload: paymentResponse.payload,
+            error: null
+          });
+          const paymentItems = paymentResponse.items;
           paymentStats.read = paymentItems.length;
           const paymentRows = await Promise.all(
             paymentItems.map((item) => ({
@@ -216,6 +223,12 @@ async function mainHandler(req) {
           }
         } catch (error) {
           paymentStats.warnings.push(errorMessage(error));
+          await writePaymentPayloadDebug(supabase, {
+            runId,
+            endpoint: paymentEndpoint,
+            payload: error?.mexalPayload ?? null,
+            error: errorMessage(error)
+          });
           await logSyncError(
             supabase,
             runId,
@@ -422,31 +435,44 @@ function createMexalClient() {
   }
   return {
     async getAll(path) {
-      const all = [];
-      const seenHashes = /* @__PURE__ */ new Set();
-      for (let page = 1; page <= maxPages; page += 1) {
-        const body = await getPage(path, page);
-        const rows = extractRows(body);
-        if (rows.length === 0) break;
-        let added = 0;
-        for (const row of rows) {
-          const hash = stableStringify(row);
-          if (!seenHashes.has(hash)) {
-            seenHashes.add(hash);
-            all.push(row);
-            added += 1;
-          }
-        }
-        const hasExplicitPagination = body.pagina !== void 0 || body.page !== void 0 || body.numero_pagina !== void 0 || body.pagine_totali !== void 0 || body.total_pages !== void 0 || body.has_more !== void 0 || body.next !== void 0;
-        if (!hasExplicitPagination) break;
-        if (rows.length < pageSize || added === 0) break;
-        const totalPages = integer(body.pagine_totali ?? body.total_pages);
-        if (totalPages > 0 && page >= totalPages) break;
-        if (body.has_more === false || body.next === null) break;
-      }
-      return all;
+      return (await getAllWithPayload(path)).items;
+    },
+    async getAllWithPayload(path) {
+      return getAllWithPayload(path);
     }
   };
+  async function getAllWithPayload(path) {
+      const all = [];
+      const payload = [];
+      const seenHashes = /* @__PURE__ */ new Set();
+      try {
+        for (let page = 1; page <= maxPages; page += 1) {
+          const body = await getPage(path, page);
+          payload.push(body);
+          const rows = extractRows(body);
+          if (rows.length === 0) break;
+          let added = 0;
+          for (const row of rows) {
+            const hash = stableStringify(row);
+            if (!seenHashes.has(hash)) {
+              seenHashes.add(hash);
+              all.push(row);
+              added += 1;
+            }
+          }
+          const hasExplicitPagination = body.pagina !== void 0 || body.page !== void 0 || body.numero_pagina !== void 0 || body.pagine_totali !== void 0 || body.total_pages !== void 0 || body.has_more !== void 0 || body.next !== void 0;
+          if (!hasExplicitPagination) break;
+          if (rows.length < pageSize || added === 0) break;
+          const totalPages = integer(body.pagine_totali ?? body.total_pages);
+          if (totalPages > 0 && page >= totalPages) break;
+          if (body.has_more === false || body.next === null) break;
+        }
+        return { items: all, payload };
+      } catch (error) {
+        if (error && typeof error === "object") error.mexalPayload = payload;
+        throw error;
+      }
+  }
 }
 async function upsertInBatches(supabase, table, rows, onConflict) {
   const batchSize = 500;
@@ -488,6 +514,23 @@ async function writeDetail(supabase, runId, entityType, stats) {
   });
   if (error) {
     console.error("Impossibile scrivere sync detail:", error.message);
+  }
+}
+// TEMPORARY: remove this function and the getAllWithPayload call in the payment
+// sync block once the Mexal discount field has been identified.
+async function writePaymentPayloadDebug(supabase, { runId, endpoint, payload, error }) {
+  try {
+    const { error: insertError } = await supabase.from("mexal_sync_debug").insert({
+      sync_run_id: runId,
+      endpoint,
+      payload,
+      error
+    });
+    if (insertError) {
+      console.error("Impossibile scrivere diagnostica payload pagamenti Mexal:", insertError.message);
+    }
+  } catch (insertError) {
+    console.error("Impossibile scrivere diagnostica payload pagamenti Mexal:", errorMessage(insertError));
   }
 }
 async function logSyncError(supabase, runId, entityType, sourceKey, error, retryable) {

@@ -65,10 +65,10 @@ export async function runListPriceCommissionsNow({ supabase, fetchImpl = fetch }
   const accessToken = await accessTokenFor(supabase);
   let response;
   try {
-    response = await fetchImpl("/api/mexal/sync-list-price-commissions", {
+    response = await fetchImpl("/api/mexal/orders/recover-sync", {
       method: "POST",
       headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ origin: "manual" }),
+      body: JSON.stringify({ action: "sync-list-price-commissions" }),
     });
   } catch {
     throw apiError(0, "Impossibile raggiungere la sincronizzazione provvigioni listini.");

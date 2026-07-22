@@ -7,6 +7,7 @@ import { runCommissionDiagnostics } from "../../../server/mexal/commission-diagn
 import { runCommissionRulesDiagnostics } from "../../../server/mexal/commission-rules-diagnostics.js";
 import { downloadFullMexalHelp } from "../../../server/mexal/full-help-download.js";
 import { syncCommissionCategories } from "../../../server/mexal/sync-commission-categories.js";
+import { runListPriceCommissionsDiagnostics } from "../../../server/mexal/list-price-commissions-diagnostics.js";
 
 const required = (name) => {
   const value = String(process.env[name] || "").trim();
@@ -58,6 +59,20 @@ export default async function handler(req, res) {
       if (!authorization?.isAdmin) return res.status(403).json({ error: "Download help Mexal riservato agli amministratori." });
       const result = await downloadFullMexalHelp(buildMexalClient());
       return res.status(200).json(result);
+    }
+
+    if (req.body?.action === "list-price-commissions-diagnostics") {
+      if (!authorization?.isAdmin) return res.status(403).json({ error: "Diagnostica provvigioni listini riservata agli amministratori." });
+      const { summary } = await runListPriceCommissionsDiagnostics(buildMexalClient());
+      return res.status(200).json(summary);
+    }
+
+    if (req.body?.action === "download-list-price-commissions") {
+      if (!authorization?.isAdmin) return res.status(403).json({ error: "Download provvigioni listini riservato agli amministratori." });
+      const { payload } = await runListPriceCommissionsDiagnostics(buildMexalClient());
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Content-Disposition", "attachment; filename=\"mexal-provvigioni-listini.json\"");
+      return res.status(200).send(JSON.stringify(payload));
     }
 
     if (req.body?.action === "sync-commission-categories") {

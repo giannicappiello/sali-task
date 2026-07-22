@@ -36,6 +36,7 @@ export default function MexalDiagnostics() {
   const [result, setResult] = useState(null);
   const [commercialResult, setCommercialResult] = useState(null);
   const [destinationResult, setDestinationResult] = useState(null);
+  const [commissionResult, setCommissionResult] = useState(null);
   const [loading, setLoading] = useState("");
   const [error, setError] = useState("");
 
@@ -70,6 +71,17 @@ export default function MexalDiagnostics() {
     } finally {
       setLoading("");
     }
+  }
+
+  async function executeCommission() {
+    setLoading("commission"); setError("");
+    try {
+      setCommissionResult(await postDiagnostics({
+        action: "commission-diagnostics", productCode: productCode.trim(), clientCode: clientCode.trim(),
+        manualReference: leftReference.trim(), workspaceReference: rightReference.trim(),
+      }));
+    } catch (diagnosticError) { setError(diagnosticError.message || "Diagnostica provvigioni non riuscita."); }
+    finally { setLoading(""); }
   }
 
   function downloadJson(value, name) {
@@ -116,6 +128,21 @@ export default function MexalDiagnostics() {
       </div>
     </section>
     {commercialResult && <><section className="panel settings-panel"><div className="panel-header"><h3>Endpoint trovati</h3></div><p>{commercialResult.privacy}</p><p>{commercialResult.successful?.length ? commercialResult.successful.join(" · ") : "Nessun endpoint candidato ha risposto correttamente."}</p></section><JsonPanel title="Contratti trasporto e provvigioni" value={commercialResult} /></>}
+
+    <section className="panel settings-panel" style={{ marginTop: 16 }}>
+      <div className="panel-header"><h3>Analisi campi provvigionali reali</h3></div>
+      <p>Solo lettura: usa un prodotto e un cliente configurati in Mexal, un OCM manuale con provvigioni calcolate e il corrispondente OCM Workspace. Non vengono effettuati POST o modifiche a Mexal.</p>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 }}>
+        <button className="primary-action" type="button" onClick={executeCommission} disabled={loading === "commission"}>{loading === "commission" ? <RefreshCw className="spin" size={18} /> : <Play size={18} />}{loading === "commission" ? "Analisi in corso..." : "Analizza provvigioni"}</button>
+        {commissionResult && <button className="orders-secondary" type="button" onClick={() => downloadJson(commissionResult, `mexal-provvigioni-${productCode}-${clientCode}.json`)}><Download size={18} />Scarica report JSON</button>}
+      </div>
+    </section>
+    {commissionResult && <>
+      <section className="panel settings-panel"><div className="panel-header"><h3>Report campi candidati</h3></div><p>{commissionResult.privacy}</p><div className="orders-table-wrap"><table className="orders-table"><thead><tr><th>Origine</th><th>Percorso JSON</th><th>Tipo</th><th>Esempio reale</th><th>Affidabilità</th></tr></thead><tbody>{commissionResult.report.map((item, index) => <tr key={`${item.source}-${item.path}-${index}`}><td>{item.source}</td><td>{item.path || "—"}</td><td>{item.valueType || "—"}</td><td><pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{JSON.stringify(item.example)}</pre></td><td>{item.reliability}</td></tr>)}</tbody></table></div></section>
+      <section className="panel settings-panel"><div className="panel-header"><h3>Endpoint e stato HTTP</h3></div><div className="orders-table-wrap"><table className="orders-table"><thead><tr><th>Interrogazione</th><th>Endpoint</th><th>HTTP</th><th>Esito</th></tr></thead><tbody>{commissionResult.endpoints.map((item) => <tr key={item.endpoint}><td>{item.label}</td><td>{item.endpoint}</td><td>{item.httpStatus ?? "—"}</td><td>{item.error || "verificato"}</td></tr>)}</tbody></table></div></section>
+      <JsonPanel title="Analisi OCM manuale: testata, righe, provvigioni, agente e indici" value={commissionResult.manualOrderAnalysis} />
+      <JsonPanel title="Confronti strutturati e JSON reale sanitizzato" value={{ comparisons: commissionResult.comparisons, json: commissionResult.json }} />
+    </>}
 
     <section className="panel settings-panel" style={{ marginTop: 16 }}>
       <div className="panel-header"><h3>Confronto documenti ordine</h3></div>

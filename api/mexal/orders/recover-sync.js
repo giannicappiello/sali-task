@@ -3,6 +3,7 @@ import { buildMexalClient, verifyUser } from "../../../server/mexal/sync-product
 import { runOrderContractDiagnostics } from "../../../server/mexal/order-contract-diagnostics.js";
 import { runCommercialContractDiagnostics } from "../../../server/mexal/commercial-contract-diagnostics.js";
 import { runOrderDestinationDiagnostics } from "../../../server/mexal/order-destination-diagnostics.js";
+import { runCommissionDiagnostics } from "../../../server/mexal/commission-diagnostics.js";
 
 const required = (name) => {
   const value = String(process.env[name] || "").trim();
@@ -40,6 +41,17 @@ export default async function handler(req, res) {
         series: req.body?.series,
         number: req.body?.number,
         clientCode: req.body?.clientCode,
+      });
+      return res.status(200).json(result);
+    }
+
+    if (req.body?.action === "commission-diagnostics") {
+      if (!authorization?.isAdmin) return res.status(403).json({ error: "Diagnostica riservata agli amministratori." });
+      const result = await runCommissionDiagnostics(buildMexalClient(), admin, {
+        productCode: req.body?.productCode,
+        clientCode: req.body?.clientCode,
+        manualReference: req.body?.manualReference,
+        workspaceReference: req.body?.workspaceReference,
       });
       return res.status(200).json(result);
     }

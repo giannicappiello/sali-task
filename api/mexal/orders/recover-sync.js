@@ -8,7 +8,11 @@ import { runCommissionRulesDiagnostics } from "../../../server/mexal/commission-
 import { downloadFullMexalHelp } from "../../../server/mexal/full-help-download.js";
 import { syncCommissionCategories } from "../../../server/mexal/sync-commission-categories.js";
 import { runListPriceCommissionsDiagnostics } from "../../../server/mexal/list-price-commissions-diagnostics.js";
-import { syncListPriceCommissions } from "../../../server/mexal/sync-list-price-commissions.js";
+import {
+  processListPriceCommissionsBatch,
+  startListPriceCommissionsSync,
+  syncListPriceCommissions,
+} from "../../../server/mexal/sync-list-price-commissions.js";
 
 const required = (name) => {
   const value = String(process.env[name] || "").trim();
@@ -74,6 +78,25 @@ export default async function handler(req, res) {
       res.setHeader("Content-Type", "application/json");
       res.setHeader("Content-Disposition", "attachment; filename=\"mexal-provvigioni-listini.json\"");
       return res.status(200).send(JSON.stringify(payload));
+    }
+
+    if (req.body?.action === "start-list-price-commissions-sync") {
+      if (!authorization?.isAdmin) return res.status(403).json({ error: "Sincronizzazione provvigioni listini riservata agli amministratori." });
+      const result = await startListPriceCommissionsSync({
+        mexal: buildMexalClient(),
+        supabase: admin,
+        source: "manual",
+        batchSize: req.body?.batchSize,
+      });
+      return res.status(200).json(result);
+    }
+
+    if (req.body?.action === "process-list-price-commissions-batch") {
+      if (!authorization?.isAdmin) return res.status(403).json({ error: "Sincronizzazione provvigioni listini riservata agli amministratori." });
+      const runId = Number(req.body?.runId);
+      if (!Number.isSafeInteger(runId) || runId < 1) return res.status(400).json({ error: "ID run non valido." });
+      const result = await processListPriceCommissionsBatch({ supabase: admin, runId });
+      return res.status(200).json(result);
     }
 
     if (req.body?.action === "sync-list-price-commissions") {

@@ -90,7 +90,7 @@ async function disableMissingRows(supabase, activeKeys) {
   return { disabled, errors };
 }
 
-function progressMetadata({ total, processed, batchSize, currentBatch, totalBatches, phase }) {
+function progressMetadata({ total, processed, batchSize, currentBatch, totalBatches, phase, firstError = null }) {
   return {
     endpoint: ENDPOINT,
     total,
@@ -100,12 +100,25 @@ function progressMetadata({ total, processed, batchSize, currentBatch, totalBatc
     total_batches: totalBatches,
     progress_percent: total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 100,
     phase,
+    first_error: firstError,
     updated_at: new Date().toISOString(),
+  };
+}
+
+function errorSnapshot(error, row, rowNumber) {
+  return {
+    row_number: rowNumber,
+    message: text(error?.message || error).slice(0, 500),
+    code: text(error?.code).slice(0, 100) || null,
+    details: text(error?.details).slice(0, 500) || null,
+    hint: text(error?.hint).slice(0, 500) || null,
+    row: row && typeof row === "object" ? row : null,
   };
 }
 
 export async function syncListPriceCommissions({ mexal, supabase, source = "manual", now = () => new Date().toISOString(), batchSize = DEFAULT_BATCH_SIZE }) {
   let runId = null;
+  let firstError = null;
   const counters = { processed: 0, inserted: 0, updated: 0, skipped: 0, failed: 0 };
   try {
     const run = await createSyncRun(supabase, { syncType: "list_price_commissions", source, metadata: { endpoint: ENDPOINT, phase: "download" } });
@@ -122,7 +135,7 @@ export async function syncListPriceCommissions({ mexal, supabase, source = "manu
 
     await updateSyncRunProgress(supabase, runId, {
       ...counters,
-      metadata: progressMetadata({ total, processed: 0, batchSize: safeBatchSize, currentBatch: 0, totalBatches, phase: "processing" }),
+      metadata: progressMetadata({ total, processed: 0, batchSize: safeBatchSize, currentBatch: 0, totalBatches, phase: "processing", firstError }),
     });
 
     for (let offset = 0; offset < total; offset += safeBatchSize) {
@@ -132,7 +145,8 @@ export async function syncListPriceCommissions({ mexal, supabase, source = "manu
       }
 
       const batch = rawRows.slice(offset, offset + safeBatchSize);
-      for (const rawRow of batch) {
+      for (let index = 0; index < batch.length; index += 1) {
+        const rawRow = batch[index];
         try {
           const normalized = normalizeListPriceCommission(rawRow, now());
           activeKeys.add(`${normalized.categoria_cliente}:${normalized.categoria_prodotto}:${normalized.codice_agente_mexal || ""}`);
@@ -142,7 +156,9 @@ export async function syncListPriceCommissions({ mexal, supabase, source = "manu
           else counters.skipped += 1;
         } catch (error) {
           counters.failed += 1;
-          errors.push({ message: text(error?.message || error).slice(0, 300), row: rawRow });
+          const snapshot = errorSnapshot(error, rawRow, offset + index + 1);
+          if (!firstError) firstError = snapshot;
+          errors.push(snapshot);
         }
         counters.processed += 1;
       }
@@ -150,7 +166,7 @@ export async function syncListPriceCommissions({ mexal, supabase, source = "manu
       const currentBatch = Math.floor(offset / safeBatchSize) + 1;
       const progress = await updateSyncRunProgress(supabase, runId, {
         ...counters,
-        metadata: progressMetadata({ total, processed: counters.processed, batchSize: safeBatchSize, currentBatch, totalBatches, phase: "processing" }),
+        metadata: progressMetadata({ total, processed: counters.processed, batchSize: safeBatchSize, currentBatch, totalBatches, phase: "processing", firstError }),
       });
       if (!progress) {
         const stopped = await getSyncRun(supabase, runId);
@@ -166,13 +182,14 @@ export async function syncListPriceCommissions({ mexal, supabase, source = "manu
     const disabledResult = await disableMissingRows(supabase, activeKeys);
     counters.failed += disabledResult.errors.length;
     errors.push(...disabledResult.errors);
+    if (!firstError && disabledResult.errors.length) firstError = disabledResult.errors[0];
     await completeSyncRun(supabase, runId, {
       ...counters,
-      metadata: { ...progressMetadata({ total, processed: counters.processed, batchSize: safeBatchSize, currentBatch: totalBatches, totalBatches, phase: "completed" }), disabled: disabledResult.disabled },
+      metadata: { ...progressMetadata({ total, processed: counters.processed, batchSize: safeBatchSize, currentBatch: totalBatches, totalBatches, phase: "completed", firstError }), disabled: disabledResult.disabled },
     });
     return { success: errors.length === 0, status: "completed", runId, letti_da_mexal: total, validi: total - counters.failed, inseriti: counters.inserted, aggiornati: counters.updated, invariati: counters.skipped, disattivati: disabledResult.disabled, errori: errors };
   } catch (error) {
-    if (runId) await failSyncRunUnlessClosed(supabase, runId, text(error?.message || error), counters);
+    if (runId) await failSyncRunUnlessClosed(supabase, runId, text(error?.message || error), { ...counters, metadata: { first_error: firstError || errorSnapshot(error, null, null) } });
     throw error;
   }
 }

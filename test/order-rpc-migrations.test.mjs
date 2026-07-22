@@ -43,32 +43,38 @@ assert.match(commissionSql, /r\.provvigione_percentuale,r\.provvigione_regola_id
 assert.match(submitOrderSource, /rpc\("salva_provvigioni_ordine"/, "submit saves commissions atomically");
 assert.doesNotMatch(submitOrderSource, /from\("ordini_righe"\)\.update\(update\)/, "submit no longer performs partial per-line commission updates");
 
-const paymentCodeFixSql = await readFile(
+const numericCodesFixSql = await readFile(
   join(migrationDirectory, "20260722233000_fix_order_payment_code_integer.sql"),
   "utf8"
 );
-assert.match(
-  paymentCodeFixSql,
-  /v_codice_pagamento_text := nullif\(btrim\(p_testata->>'codice_pagamento'\), ''\);/,
-  "draft update normalizes blank payment codes to null"
-);
-assert.match(
-  paymentCodeFixSql,
-  /v_codice_pagamento_text !~ '\^\[0-9\]\+\$'/,
-  "draft update rejects non-numeric payment codes"
-);
-assert.match(
-  paymentCodeFixSql,
-  /v_codice_pagamento := v_codice_pagamento_text::integer;/,
-  "draft update converts the JSON text payment code to integer"
-);
-assert.match(
-  paymentCodeFixSql,
-  /codice_pagamento = v_codice_pagamento/,
-  "the order header receives the normalized integer"
-);
-assert.doesNotMatch(
-  paymentCodeFixSql,
-  /codice_pagamento\s*=\s*nullif\(p_testata->>'codice_pagamento'/,
-  "the RPC no longer assigns JSON text directly to the integer column"
-);
+
+for (const [field, variable, label] of [
+  ["codice_pagamento", "v_codice_pagamento", "payment"],
+  ["codice_listino", "v_codice_listino", "price list"],
+]) {
+  assert.match(
+    numericCodesFixSql,
+    new RegExp(`${variable}_text := nullif\\(btrim\\(p_testata->>'${field}'\\), ''\\);`),
+    `draft update normalizes blank ${label} codes to null`
+  );
+  assert.match(
+    numericCodesFixSql,
+    new RegExp(`${variable}_text !~ '\\^\\[0-9\\]\\+\\$'`),
+    `draft update rejects non-numeric ${label} codes`
+  );
+  assert.match(
+    numericCodesFixSql,
+    new RegExp(`${variable} := ${variable}_text::integer;`),
+    `draft update converts the JSON text ${label} code to integer`
+  );
+  assert.match(
+    numericCodesFixSql,
+    new RegExp(`${field} = ${variable}`),
+    `the order header receives the normalized ${label} integer`
+  );
+  assert.doesNotMatch(
+    numericCodesFixSql,
+    new RegExp(`${field}\\s*=\\s*nullif\\(p_testata->>'${field}'`),
+    `the RPC no longer assigns JSON text directly to the integer ${label} column`
+  );
+}

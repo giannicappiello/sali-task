@@ -110,7 +110,8 @@ export default async function handler(req, res) {
     if (customerError) throw customerError; if (productsError) throw productsError; if (rulesError) throw rulesError;
     const commissionedLines = calculateCommissions({ order, customer, lines, products, rules });
     const commissionUpdates = commissionedLines.map((line) => ({ id: line.id, provvigione_percentuale: line.provvigione_percentuale, provvigione_regola_id: line.provvigione_regola_id, provvigione_dettaglio_calcolo: line.provvigione_dettaglio_calcolo, provvigione_calcolata_il: new Date().toISOString() }));
-    for (const update of commissionUpdates) { const { error } = await admin.from("ordini_righe").update(update).eq("id", update.id); if (error) throw error; }
+    const { error: commissionSaveError } = await admin.rpc("salva_provvigioni_ordine", { p_ordine_id: orderId, p_aggiornamenti: commissionUpdates });
+    if (commissionSaveError) throw commissionSaveError;
     lines.splice(0, lines.length, ...commissionedLines);
     const classified = classifyOrderLines(lines);
     console.info("Mexal order processing", { orderId, ociLines: classified.OCI.length, ocmLines: classified.OCM.length, ocxLines: classified.OCX.length, lines: { OCM: lineDiagnostic(classified.OCM), OCX: lineDiagnostic(classified.OCX), OCI: lineDiagnostic(classified.OCI) } });

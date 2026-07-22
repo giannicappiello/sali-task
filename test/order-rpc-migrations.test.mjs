@@ -33,3 +33,12 @@ const submitOrderSource = await readFile(join(process.cwd(), "api", "mexal", "su
 assert.match(submitOrderSource, /SUPABASE_SERVICE_ROLE_KEY/, "submit-order deve usare il client service_role.");
 
 console.log("order RPC migrations: unique timestamps and service_role-only grants verified");
+
+const commissionSql = await readFile(join(migrationDirectory, "20260722100000_mexal_commissions.sql"), "utf8");
+assert.match(commissionSql, /pg_constraint[\s\S]*ordini_righe_provvigione_regola_fk/, "commission FK creation is idempotent");
+assert.match(commissionSql, /create or replace function public\.salva_provvigioni_ordine\(p_ordine_id uuid, p_aggiornamenti jsonb\)/, "commission updates use a dedicated atomic RPC");
+assert.match(commissionSql, /v_count <> jsonb_array_length\(p_aggiornamenti\)/, "atomic RPC rejects rows outside the order before updating any row");
+assert.match(commissionSql, /update public\.ordini_righe r set provvigione_percentuale=u\.provvigione_percentuale, provvigione_regola_id=u\.provvigione_regola_id, provvigione_dettaglio_calcolo=u\.provvigione_dettaglio_calcolo, provvigione_calcolata_il=u\.provvigione_calcolata_il/, "atomic RPC updates only commission snapshot fields");
+assert.match(commissionSql, /r\.provvigione_percentuale,r\.provvigione_regola_id,r\.provvigione_dettaglio_calcolo,r\.provvigione_calcolata_il/, "order replacement RPC preserves every commission snapshot field");
+assert.match(submitOrderSource, /rpc\("salva_provvigioni_ordine"/, "submit saves commissions atomically");
+assert.doesNotMatch(submitOrderSource, /from\("ordini_righe"\)\.update\(update\)/, "submit no longer performs partial per-line commission updates");

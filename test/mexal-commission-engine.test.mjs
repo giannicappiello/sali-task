@@ -14,3 +14,10 @@ assert.throws(() => calculateCommissions({ ...base, customer: {}, rules: [] }), 
 assert.throws(() => calculateCommissions({ ...base, rules: [{ categoria_cliente: 2, categoria_prodotto: 3, percentuale: 101, attiva: true }] }), /percentuale.*valida/);
 assert.equal(formatMexalCommission(7.5), "7,5"); assert.equal(formatMexalCommission(10), "10");
 for (const kind of ["OCM", "OCI", "OCX"]) { const document = buildMexalOrderDocument({ codice_cliente: "C", data_ordine: "2026-07-22", codice_agente_mexal: "602.00063" }, kind, [{ codice_articolo: "IT0001", quantita_documento: 1, provvigione_percentuale: 7.5 }]); assert.deepEqual(document.perc_provv, [[1, 7.5]]); assert.deepEqual(document.cod_agente, [[1, 1, "602.00063"]]); assert.deepEqual(document.tipo_provv, [[1,1,"%"],[1,2,"%"],[1,3,"%"],[1,4,"%"],[1,5,"%"]]); assert.deepEqual(document.formula_pr, [[1,1,"7,5"]]); assert.deepEqual(document.calc_formula_pr, [[1,1,7.5]]); }
+
+const splitSource = [{ codice_articolo: "IT-SPLIT", quantita: 10, quantita_ocm: 6, quantita_ocx: 4, provvigione_percentuale: 7.5 }, { codice_articolo: "IMP0001", quantita: 3, quantita_ocm: 3, quantita_ocx: 0, provvigione_percentuale: 7.5 }];
+const split = (await import("../server/mexal/order-documents.js")).classifyOrderLines(splitSource);
+assert.deepEqual(split.OCM.map(({ codice_articolo, quantita_documento }) => [codice_articolo, quantita_documento]), [["IT-SPLIT", 6]], "OCM split remains unchanged");
+assert.deepEqual(split.OCX.map(({ codice_articolo, quantita_documento }) => [codice_articolo, quantita_documento]), [["IT-SPLIT", 4]], "OCX split remains unchanged");
+assert.deepEqual(split.OCI.map(({ codice_articolo, quantita_documento }) => [codice_articolo, quantita_documento]), [["IMP0001", 3]], "OCI split remains unchanged");
+for (const documentLines of Object.values(split)) assert.ok(documentLines.every((line) => line.provvigione_percentuale === 7.5), "the commission snapshot follows every split line");

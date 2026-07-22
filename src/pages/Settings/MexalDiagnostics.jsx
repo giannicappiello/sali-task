@@ -38,6 +38,7 @@ export default function MexalDiagnostics() {
   const [destinationResult, setDestinationResult] = useState(null);
   const [commissionResult, setCommissionResult] = useState(null);
   const [commissionRulesResult, setCommissionRulesResult] = useState(null);
+  const [commissionCategoriesResult, setCommissionCategoriesResult] = useState(null);
   const [loading, setLoading] = useState("");
   const [error, setError] = useState("");
 
@@ -92,6 +93,13 @@ export default function MexalDiagnostics() {
     finally { setLoading(""); }
   }
 
+  async function syncCommissionCategories() {
+    setLoading("commission-categories"); setError("");
+    try { setCommissionCategoriesResult(await postDiagnostics({ action: "sync-commission-categories" })); }
+    catch (diagnosticError) { setError(diagnosticError.message || "Sincronizzazione categorie provvigionali non riuscita."); }
+    finally { setLoading(""); }
+  }
+
   async function downloadFullHelp() {
     setLoading("full-help-download"); setError("");
     try {
@@ -134,6 +142,13 @@ export default function MexalDiagnostics() {
       <section className="panel settings-panel"><div className="panel-header"><h3>Campi destinazione trovati</h3></div><p>{destinationResult.notice}</p><div className="orders-table-wrap"><table className="orders-table"><thead><tr><th>Percorso campo</th><th>Valore</th></tr></thead><tbody>{(destinationResult.destinationFields || []).map((item, index) => <tr key={`${item.path}-${index}`}><td>{item.path}</td><td><pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{JSON.stringify(item.value)}</pre></td></tr>)}</tbody></table></div></section>
       <JsonPanel title={`Ordine ${destinationResult.reference}`} value={destinationResult.document} />
     </>}
+
+    <section className="panel settings-panel" style={{ marginTop: 16 }}>
+      <div className="panel-header"><h3>Categorie provvigionali</h3></div>
+      <p>Sincronizza le sole anagrafiche categorie clienti e articoli da Mexal. Le regole provvigionali locali e il motore di calcolo non vengono modificati.</p>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}><button className="primary-action" type="button" onClick={syncCommissionCategories} disabled={loading === "commission-categories"}>{loading === "commission-categories" ? <RefreshCw className="spin" size={18} /> : <Play size={18} />}{loading === "commission-categories" ? "Sincronizzazione in corso..." : "Sincronizza categorie provvigionali"}</button></div>
+      {commissionCategoriesResult && <p style={{ marginTop: 16 }}>Letti {commissionCategoriesResult.letti_da_mexal}; clienti {commissionCategoriesResult.categorie_clienti}; articoli {commissionCategoriesResult.categorie_articoli}; inseriti {commissionCategoriesResult.inseriti}; aggiornati {commissionCategoriesResult.aggiornati}; invariati {commissionCategoriesResult.invariati}; errori {commissionCategoriesResult.errori?.length || 0}.</p>}
+    </section>
 
     <section className="panel settings-panel" style={{ marginTop: 16 }}>
       <div className="panel-header"><h3>Trasporto cliente e provvigione agente-prodotto</h3></div>

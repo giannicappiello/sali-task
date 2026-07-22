@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { buildMexalClient } from "../server/mexal/sync-products.js";
-import { CANDIDATE_RESOURCES, extractCommissionCatalog, runCommissionRulesDiagnostics, summarizeCommissionCandidate } from "../server/mexal/commission-rules-diagnostics.js";
+import { CANDIDATE_RESOURCES, collectionPathFromRegexp, extractCommissionCatalog, runCommissionRulesDiagnostics, summarizeCommissionCandidate } from "../server/mexal/commission-rules-diagnostics.js";
 
 const help = { resources: [{ resource: "Regole agenti", endpoint: "/regole-agenti", method: "GET", description: "Provvigioni per agente", parameters: { cliente: { required: true } }, schema: { properties: { cod_cat_pr: {}, perc_provv: {} } } }, { resource: "Regole agenti duplicate", endpoint: "/regole-agenti", method: "GET", description: "commission" }, { resource: "Scrittura", endpoint: "/regole-agenti", method: "POST", description: "provvigioni" }, { resource: "Lettura", endpoint: "/matrice", method: "GET", description: "categoria provvigionale", schema: { properties: { categoria_cliente: {}, categoria_prodotto: {}, percentuale_provvigione: {} } } }, ["agenti", { url: "/array-agenti", methods: ["GET", "DELETE"], description: "condizioni agenti" }]] };
 const catalog = extractCommissionCatalog(help);
 assert.equal(CANDIDATE_RESOURCES[0], "/help");
 assert.equal(CANDIDATE_RESOURCES.some((path) => path.includes("help.json")), false);
+assert.equal(collectionPathFromRegexp("^/dati-generali/categorie-provvigioni$"), "/dati-generali/categorie-provvigioni");
 assert.equal(catalog.filter((item) => item.endpoint === "/regole-agenti" && item.method === "GET").length, 1, "endpoint and method are deduplicated");
 assert.ok(catalog.some((item) => item.endpoint === "/array-agenti" && item.matched_terms.includes("agenti")), "arrays and textual values are scanned");
 assert.ok(catalog.some((item) => item.endpoint === "/matrice" && item.matched_terms.includes("categoria provvigionale")), "values are scanned recursively");

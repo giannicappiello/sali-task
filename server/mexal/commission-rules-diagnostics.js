@@ -18,6 +18,14 @@ function normalizedEndpoint(value) {
   const candidate = String(value || "").trim();
   return /^\/[A-Za-z0-9_./{}:-]+(?:\?[A-Za-z0-9_=&{}:-]+)?$/.test(candidate) ? candidate : null;
 }
+/** Convert actual catalogue regexp entries into safe collection paths only. */
+export function collectionPathFromRegexp(value) {
+  let path = String(value || "").trim().replace(/^\^/, "").replace(/\$$/, "").replace(/\{0,1\}/g, "");
+  // An identifier segment is never safe to probe automatically. Remove only
+  // the trailing regex group/placeholder that represents that identifier.
+  path = path.replace(/\/?\((?:\?:)?[^)]*\)\??$/, "").replace(/\/?\{(?:id|codice|identifier)[^}]*\}$/i, "");
+  return normalizedEndpoint(path);
+}
 function methodsFrom(node) {
   const values = [];
   for (const [key, value] of Object.entries(node || {})) {
@@ -57,7 +65,7 @@ export function extractCommissionCatalog(help) {
     if (Array.isArray(value)) return value.forEach((item, index) => visit(item, `${jsonPath}[${index}]`, inheritedTerms, inheritedEndpoints, inheritedMethods));
     const localText = Object.entries(value).flatMap(([key, item]) => [key, text(item)]).join(" ");
     const matched = [...new Set([...inheritedTerms, ...matchingTerms(localText)])];
-    const endpoints = [...new Set([...inheritedEndpoints, ...Object.entries(value).flatMap(([key, item]) => /^(resource|risorsa|endpoint|url|path|percorso)$/i.test(key) ? [normalizedEndpoint(item)] : []).filter(Boolean)])];
+    const endpoints = [...new Set([...inheritedEndpoints, ...Object.entries(value).flatMap(([key, item]) => /^(resource|risorsa|endpoint|url|path|percorso)$/i.test(key) ? [normalizedEndpoint(item)] : /^regexp$/i.test(key) ? [collectionPathFromRegexp(item)] : []).filter(Boolean)])];
     const methods = [...new Set([...inheritedMethods, ...methodsFrom(value)])];
     for (const endpoint of endpoints) {
       if (!matched.length) continue;

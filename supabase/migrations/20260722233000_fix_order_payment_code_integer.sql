@@ -1,7 +1,7 @@
 -- Corregge il salvataggio di una bozza dopo il cambio cliente.
--- Il valore letto da p_testata JSON e' text, mentre ordini_testate.codice_pagamento
--- e' integer. I valori vuoti restano NULL; i codici non numerici vengono rifiutati
--- con un errore esplicito prima di modificare testata e righe.
+-- I valori letti da p_testata JSON sono text, mentre ordini_testate.codice_pagamento
+-- e ordini_testate.codice_listino sono integer. I valori vuoti restano NULL;
+-- i codici non numerici vengono rifiutati prima di modificare testata e righe.
 create or replace function public.aggiorna_ordine_operativo(
   p_ordine_id uuid,
   p_testata jsonb,
@@ -16,6 +16,8 @@ declare
   r public.ordini_righe%rowtype;
   v_codice_pagamento_text text;
   v_codice_pagamento integer;
+  v_codice_listino_text text;
+  v_codice_listino integer;
 begin
   perform 1
   from public.ordini_testate
@@ -52,13 +54,20 @@ begin
   end if;
 
   v_codice_pagamento_text := nullif(btrim(p_testata->>'codice_pagamento'), '');
+  v_codice_listino_text := nullif(btrim(p_testata->>'codice_listino'), '');
 
   if v_codice_pagamento_text is not null
      and v_codice_pagamento_text !~ '^[0-9]+$' then
     raise exception 'Codice pagamento non valido.' using errcode = '22023';
   end if;
 
+  if v_codice_listino_text is not null
+     and v_codice_listino_text !~ '^[0-9]+$' then
+    raise exception 'Codice listino non valido.' using errcode = '22023';
+  end if;
+
   v_codice_pagamento := v_codice_pagamento_text::integer;
+  v_codice_listino := v_codice_listino_text::integer;
 
   update public.ordini_testate
   set
@@ -69,7 +78,7 @@ begin
     codice_agente_mexal = nullif(p_testata->>'codice_agente_mexal', ''),
     codice_pagamento = v_codice_pagamento,
     descrizione_pagamento = nullif(p_testata->>'descrizione_pagamento', ''),
-    codice_listino = nullif(p_testata->>'codice_listino', ''),
+    codice_listino = v_codice_listino,
     indirizzo_spedizione = nullif(p_testata->>'indirizzo_spedizione', ''),
     commenti = nullif(p_testata->>'commenti', ''),
     totale = coalesce((p_testata->>'totale')::numeric, 0),

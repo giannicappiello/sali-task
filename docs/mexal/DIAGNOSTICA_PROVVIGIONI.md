@@ -18,6 +18,16 @@ Sono interrogati solo endpoint documentati `GET`, senza parametri obbligatori. P
 
 Il report JSON scaricabile contiene solo questa sintesi. La route rimane riservata agli amministratori, usa solo GET e non scrive in Supabase o in Mexal.
 
+## Download catalogo Mexal completo
+
+Il risultato vuoto del report diagnostico dopo la PR #83 indica che la struttura reale del catalogo non è ancora riconosciuta dal parser. Per consentirne l'analisi senza modificare il parser alla cieca, un amministratore può usare **Scarica help Mexal completo** nella sezione **Regole provvigionali**.
+
+L'azione amministrativa `full-help-download` effettua esclusivamente `client.getJson("/help")`, quindi legge `/webapi/risorse/help`. Restituisce il payload Mexal originale e invariato nel campo `payload`, con i soli metadati esterni `downloadedAt` e `source`; non converte il catalogo in endpoint e non applica filtri, limiti o trasformazioni.
+
+Il browser genera il file `mexal-help-completo.json` solo su richiesta esplicita dell'amministratore. Non vengono effettuate scritture verso Mexal o Supabase, il file non viene salvato permanentemente sul server e il payload non viene scritto nei log. Header, credenziali, variabili d'ambiente e configurazione Vercel non sono inclusi nella risposta.
+
+Come salvaguardia fail-closed, se il payload originale contiene un campo riconoscibile come credenziale tecnica, il download viene bloccato anziché redatto: una redazione altererebbe il catalogo e deve essere esaminata separatamente.
+
 `endpointVerified` resta `false` finché una singola risposta (o una sequenza documentata) non dimostra la relazione tra **categoria cliente**, **categoria prodotto** e **percentuale provvigione**. La presenza separata di `cod_cat_pr`, `id_categoria_pr` o `perc_provv` non è una prova. Il report indica risorse e campi trovati, dati mancanti e il prossimo test necessario; non avvia alcuna sincronizzazione automatica.
 
 Nessuna percentuale viene inventata. Il motore esistente e la regola verificata `2 + 3 = 7,5%` restano invariati, così come EVADIBILE/SOSPESO e la serializzazione degli ordini.

@@ -52,29 +52,22 @@ for (const [field, variable, label] of [
   ["codice_pagamento", "v_codice_pagamento", "payment"],
   ["codice_listino", "v_codice_listino", "price list"],
 ]) {
+  assert.match(numericCodesFixSql, new RegExp(`${variable}_text := nullif\\(btrim\\(p_testata->>'${field}'\\), ''\\);`), `draft update normalizes blank ${label} codes to null`);
+  assert.match(numericCodesFixSql, new RegExp(`${variable}_text !~ '\\^\\[0-9\\]\\+\\$'`), `draft update rejects non-numeric ${label} codes`);
+  assert.match(numericCodesFixSql, new RegExp(`${variable} := ${variable}_text::integer;`), `draft update converts the JSON text ${label} code to integer`);
+  assert.match(numericCodesFixSql, new RegExp(`${field} = ${variable}`), `the order header receives the normalized ${label} integer`);
+  assert.doesNotMatch(numericCodesFixSql, new RegExp(`${field}\\s*=\\s*nullif\\(p_testata->>'${field}'`), `the RPC no longer assigns JSON text directly to the integer ${label} column`);
+}
+
+for (const field of ["quantita_ocm", "quantita_ocx", "quantita_oci"]) {
   assert.match(
     numericCodesFixSql,
-    new RegExp(`${variable}_text := nullif\\(btrim\\(p_testata->>'${field}'\\), ''\\);`),
-    `draft update normalizes blank ${label} codes to null`
-  );
-  assert.match(
-    numericCodesFixSql,
-    new RegExp(`${variable}_text !~ '\\^\\[0-9\\]\\+\\$'`),
-    `draft update rejects non-numeric ${label} codes`
-  );
-  assert.match(
-    numericCodesFixSql,
-    new RegExp(`${variable} := ${variable}_text::integer;`),
-    `draft update converts the JSON text ${label} code to integer`
-  );
-  assert.match(
-    numericCodesFixSql,
-    new RegExp(`${field} = ${variable}`),
-    `the order header receives the normalized ${label} integer`
-  );
-  assert.doesNotMatch(
-    numericCodesFixSql,
-    new RegExp(`${field}\\s*=\\s*nullif\\(p_testata->>'${field}'`),
-    `the RPC no longer assigns JSON text directly to the integer ${label} column`
+    new RegExp(`coalesce\\(r\\.${field}, 0\\)`),
+    `draft save preserves ${field} instead of resetting document classification`
   );
 }
+assert.doesNotMatch(
+  numericCodesFixSql,
+  /r\.quantita,\s*0,\s*0,\s*0,\s*r\.prezzo_listino/s,
+  "draft save must not erase all OCM/OCX/OCI quantities"
+);

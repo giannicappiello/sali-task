@@ -13,6 +13,23 @@ export function customerCommissionCategory(customer = {}) {
   return integer(customer.categoria_provvigionale_mexal ?? customer.dati_mexal?.cod_cat_pr ?? customer.json_mexal?.cod_cat_pr);
 }
 
+export function productMexalVatCode(product = {}) {
+  return text(
+    product.cod_iva ??
+    product.codice_iva_mexal ??
+    product.codice_iva ??
+    product.aliquota_iva ??
+    product.dati_mexal?.cod_iva ??
+    product.dati_mexal?.codice_iva_mexal ??
+    product.dati_mexal?.codice_iva ??
+    product.dati_mexal?.aliquota_iva ??
+    product.json_mexal?.cod_iva ??
+    product.json_mexal?.codice_iva_mexal ??
+    product.json_mexal?.codice_iva ??
+    product.json_mexal?.aliquota_iva
+  );
+}
+
 function commissionError({ customer, line, customerCategory, productCategory, agent, reason }) {
   const error = new Error(`Provvigione non calcolabile: cliente ${text(customer?.codice_cliente || customer?.codice || "sconosciuto")}, articolo ${text(line?.codice_articolo || "sconosciuto")}, categoria cliente ${customerCategory ?? "mancante"}, categoria prodotto ${productCategory ?? "mancante"}, agente ${agent || "mancante"}. ${reason}`);
   error.code = "MEXAL_COMMISSION_RULE_MISSING";
@@ -40,8 +57,12 @@ export function calculateCommissions({ order = {}, customer, lines = [], product
     if (!rule) throw commissionError({ customer, line, customerCategory, productCategory, agent, reason: "Nessuna regola provvigionale attiva configurata." });
     const percentage = Number(rule.percentuale);
     if (!Number.isFinite(percentage) || percentage < 0 || percentage > 100) throw commissionError({ customer, line, customerCategory, productCategory, agent, reason: "La percentuale della regola non è valida (deve essere tra 0 e 100)." });
+    const vatCode = text(line.cod_iva ?? line.codice_iva_mexal ?? line.aliquota_iva) || productMexalVatCode(product);
     return {
-      ...line, provvigione_percentuale: percentage, provvigione_regola_id: rule.id,
+      ...line,
+      codice_iva_mexal: vatCode || undefined,
+      provvigione_percentuale: percentage,
+      provvigione_regola_id: rule.id,
       provvigione_dettaglio_calcolo: { categoria_cliente: customerCategory, categoria_prodotto: productCategory, codice_agente_mexal: agent || null, regola_id: rule.id, origine: rule.origine || "mexal_regole_provvigioni" },
     };
   });

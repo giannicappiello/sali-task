@@ -164,85 +164,83 @@ async function mainHandler(req) {
       }
     }
     if (syncPayments) {
-      const paymentEndpoint = optionalEnv("MEXAL_PAYMENT_DISCOUNT_ENDPOINT");
-      if (paymentEndpoint) {
-        try {
-          const paymentResponse = await mexal.getAllWithPayload(paymentEndpoint);
-          await writePaymentPayloadDebug(supabase, {
-            runId,
-            endpoint: paymentEndpoint,
-            payload: paymentResponse.payload,
-            error: null
-          });
-          const paymentItems = paymentResponse.items;
-          paymentStats.read = paymentItems.length;
-          const paymentRows = await Promise.all(
-            paymentItems.map((item) => ({
-              codice_pagamento: firstNonEmpty(
-                item.codice_pagamento,
-                item.codice,
-                item.id,
-                item.cod_pagamento
-              ),
-              descrizione: firstNonEmpty(item.descrizione, item.descr, item.nome),
-              sconto: firstNonEmpty(item.sconto, item.sconto_pagamento),
-              sconto_esteso: firstNonEmpty(
-                item.sconto_esteso,
-                item.sconto,
-                item.sconto_pagamento
-              ),
-              data_inizio: parseMexalDate(item.data_inizio),
-              data_fine: parseMexalDate(item.data_fine),
-              priority: integer(item.priority) || 100,
-              origine: "MEXAL",
-              source_hash: "",
-              dati_mexal: item,
-              sync_run_id: runId,
-              is_active: true,
-              last_seen_at: now
-            })).filter((row) => row.codice_pagamento)
+      const paymentEndpoint = optionalEnv("MEXAL_PAYMENT_DISCOUNT_ENDPOINT") || "/dati-generali/pagamenti";
+      try {
+        const paymentResponse = await mexal.getAllWithPayload(paymentEndpoint);
+        await writePaymentPayloadDebug(supabase, {
+          runId,
+          endpoint: paymentEndpoint,
+          payload: paymentResponse.payload,
+          error: null
+        });
+        const paymentItems = paymentResponse.items;
+        paymentStats.read = paymentItems.length;
+        const paymentRows = await Promise.all(
+          paymentItems.map((item) => ({
+            codice_pagamento: firstNonEmpty(
+              item.codice_pagamento,
+              item.codice,
+              item.id,
+              item.cod_pagamento
+            ),
+            descrizione: firstNonEmpty(item.descrizione, item.descr, item.nome),
+            sconto: firstNonEmpty(item.sconto, item.sconto_pagamento),
+            sconto_esteso: firstNonEmpty(
+              item.sconto_esteso,
+              item.sconto,
+              item.sconto_pagamento
+            ),
+            data_inizio: parseMexalDate(item.data_inizio),
+            data_fine: parseMexalDate(item.data_fine),
+            priority: integer(item.priority) || 100,
+            origine: "MEXAL",
+            source_hash: "",
+            dati_mexal: item,
+            sync_run_id: runId,
+            is_active: true,
+            last_seen_at: now
+          })).filter((row) => row.codice_pagamento)
+        );
+        for (const row of paymentRows) {
+          row.source_hash = await sha256(stableStringify(row.dati_mexal));
+        }
+        if (!dryRun) {
+          paymentStats.written = await upsertInBatches(
+            supabase,
+            "ordini_regole_pagamento",
+            paymentRows,
+            "codice_pagamento"
           );
-          for (const row of paymentRows) {
-            row.source_hash = await sha256(stableStringify(row.dati_mexal));
-          }
-          if (!dryRun) {
-            paymentStats.written = await upsertInBatches(
+          if (mode === "full") {
+            paymentStats.deactivated = await deactivateMissing(
               supabase,
               "ordini_regole_pagamento",
-              paymentRows,
-              "codice_pagamento"
+              runId,
+              "origine=eq.MEXAL"
             );
-            if (mode === "full") {
-              paymentStats.deactivated = await deactivateMissing(
-                supabase,
-                "ordini_regole_pagamento",
-                runId,
-                "origine=eq.MEXAL"
-              );
-            }
           }
-        } catch (error) {
-          paymentStats.warnings.push(errorMessage(error));
-          await writePaymentPayloadDebug(supabase, {
-            runId,
-            endpoint: paymentEndpoint,
-            payload: error?.mexalPayload ?? null,
-            error: errorMessage(error)
-          });
-          await logSyncError(
-            supabase,
-            runId,
-            "payment_rules",
-            null,
-            error,
-            true
-          );
         }
-      } else {
-        paymentStats.warnings.push(
-          "MEXAL_PAYMENT_DISCOUNT_ENDPOINT non configurato. Le regole pagamento manuali restano attive."
+      } catch (error) {
+        paymentStats.warnings.push(errorMessage(error));
+        await writePaymentPayloadDebug(supabase, {
+          runId,
+          endpoint: paymentEndpoint,
+          payload: error?.mexalPayload ?? null,
+          error: errorMessage(error)
+        });
+        await logSyncError(
+          supabase,
+          runId,
+          "payment_rules",
+          null,
+          error,
+          true
         );
       }
+    } else {
+      paymentStats.warnings.push(
+        "Sincronizzazione regole pagamento saltata: syncPayments impostato a false."
+      );
     }
     await Promise.all([
       writeDetail(supabase, runId, "discount_matrix", matrixStats),

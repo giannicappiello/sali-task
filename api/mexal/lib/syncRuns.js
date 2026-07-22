@@ -1,5 +1,5 @@
 /** Central, bigint-safe lifecycle for public.mexal_sync_runs. */
-export const SYNC_TYPES = Object.freeze(["clients", "agents", "products", "commercial_conditions", "document_series", "stocks", "orders", "payments"]);
+export const SYNC_TYPES = Object.freeze(["clients", "agents", "products", "commercial_conditions", "document_series", "stocks", "list_price_commissions", "orders", "payments"]);
 export const RUNNING_TIMEOUT_MS = 30 * 60 * 1000;
 
 function assertSyncType(syncType) {

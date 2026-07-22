@@ -171,43 +171,6 @@ export async function loadSyncRuns(limit = 25) {
   return (data || []).map((run) => ({ ...run, records_read: run.processed, records_inserted: run.inserted, records_updated: run.updated, records_failed: run.failed, duration_ms: run.completed_at ? new Date(run.completed_at) - new Date(run.started_at) : null }));
 }
 
-export async function loadRunDetails(runId) {
-  if (!runId) return { details: [], errors: [] };
-
-  const [detailsResponse, errorsResponse] = await Promise.all([
-    supabase
-      .from("ordini_sync_run_details")
-      .select(
-        "id,run_id,entity_type,phase,status,records_read,records_written,records_deactivated,message,metadata,created_at"
-      )
-      .eq("run_id", runId)
-      .order("created_at", { ascending: true }),
-    supabase
-      .from("ordini_sync_errors")
-      .select(
-        "id,run_id,entity_type,source_key,error_code,error_message,retryable,retry_count,resolved_at,created_at"
-      )
-      .eq("run_id", runId)
-      .order("created_at", { ascending: true }),
-  ]);
-
-  if (detailsResponse.error) throw detailsResponse.error;
-  if (errorsResponse.error) throw errorsResponse.error;
-
-  return {
-    details: detailsResponse.data || [],
-    errors: errorsResponse.data || [],
-  };
-}
-
-// These two tables belong to the older commercial-conditions pipeline, where
-// run_id is UUID.  mexal_sync_runs.id is bigint: querying them with a run id
-// such as 23 makes PostgREST cast "23" to UUID and breaks the whole dashboard.
-export async function loadRunDetailsForRun(run) {
-  if (!run?.id || run.sync_type !== "commercial_conditions") return { details: [], errors: [] };
-  return loadRunDetails(run.id);
-}
-
 export async function loadCommercialCounts() {
   const requests = [
     ["matrix", "ordini_sconti_listini"],

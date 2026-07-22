@@ -92,6 +92,18 @@ export default function MexalDiagnostics() {
     finally { setLoading(""); }
   }
 
+  async function downloadFullHelp() {
+    setLoading("full-help-download"); setError("");
+    try {
+      const help = await postDiagnostics({ action: "full-help-download" });
+      downloadJson(help, "mexal-help-completo.json");
+    } catch (diagnosticError) {
+      setError(diagnosticError.message || "Download help Mexal non riuscito.");
+    } finally {
+      setLoading("");
+    }
+  }
+
   function downloadJson(value, name) {
     if (!value) return;
     const blob = new Blob([`${JSON.stringify(value, null, 2)}\n`], { type: "application/json" });
@@ -148,7 +160,7 @@ export default function MexalDiagnostics() {
     <section className="panel settings-panel" style={{ marginTop: 16 }}>
       <div className="panel-header"><h3>Regole provvigionali</h3></div>
       <p>La diagnostica analizza il catalogo Mexal reale e individua eventuali risorse collegate alle regole provvigionali. È solo lettura, non salva dati e non mostra record completi.</p>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}><button className="primary-action" type="button" onClick={executeCommissionRules} disabled={loading === "commission-rules"}>{loading === "commission-rules" ? <RefreshCw className="spin" size={18} /> : <Play size={18} />}{loading === "commission-rules" ? "Analisi in corso..." : "Analizza catalogo Mexal"}</button>{commissionRulesResult && <button className="orders-secondary" type="button" onClick={() => downloadJson(commissionRulesResult, "mexal-regole-provvigionali-report.json")}><Download size={18} />Scarica report JSON</button>}</div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}><button className="primary-action" type="button" onClick={executeCommissionRules} disabled={loading === "commission-rules"}>{loading === "commission-rules" ? <RefreshCw className="spin" size={18} /> : <Play size={18} />}{loading === "commission-rules" ? "Analisi in corso..." : "Analizza catalogo Mexal"}</button><button className="orders-secondary" type="button" onClick={downloadFullHelp} disabled={loading === "full-help-download"}>{loading === "full-help-download" ? <RefreshCw className="spin" size={18} /> : <Download size={18} />}{loading === "full-help-download" ? "Download in corso..." : "Scarica help Mexal completo"}</button>{commissionRulesResult && <button className="orders-secondary" type="button" onClick={() => downloadJson(commissionRulesResult, "mexal-regole-provvigionali-report.json")}><Download size={18} />Scarica report JSON</button>}</div>
       {commissionRulesResult && <><p style={{ marginTop: 16 }}>{commissionRulesResult.reason}</p><h4>Catalogo Mexal</h4><div className="orders-table-wrap"><table className="orders-table"><thead><tr><th>Risorsa</th><th>Endpoint</th><th>Metodo</th><th>Descrizione</th><th>Termini trovati</th><th>Parametri obbligatori</th><th>Affidabilità</th></tr></thead><tbody>{commissionRulesResult.catalog.map((item) => <tr key={`${item.endpoint}-${item.method}`}><td>{item.resource}</td><td>{item.endpoint}</td><td>{item.method}</td><td>{item.description || "—"}</td><td>{item.matched_terms.join(", ")}</td><td>{item.required_parameters.join(", ") || "nessuno"}</td><td>{item.confidence}</td></tr>)}</tbody></table></div><h4 style={{ marginTop: 16 }}>Prove endpoint</h4><div className="orders-table-wrap"><table className="orders-table"><thead><tr><th>Endpoint</th><th>Metodo</th><th>HTTP</th><th>Stato</th><th>Campi trovati</th><th>Motivo mancata interrogazione</th><th>Prossimo passo</th></tr></thead><tbody>{commissionRulesResult.endpointTests.map((item) => <tr key={`${item.endpoint}-${item.method}`}><td>{item.endpoint}</td><td>{item.method}</td><td>{item.http_status ?? "—"}</td><td>{item.status}</td><td>{item.fields_found.join(", ") || "nessuno"}</td><td>{item.skip_reason || "—"}</td><td>{item.next_step}</td></tr>)}</tbody></table></div></>}
     </section>
 

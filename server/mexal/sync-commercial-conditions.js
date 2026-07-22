@@ -164,26 +164,23 @@ async function mainHandler(req) {
       }
     }
     if (syncPayments) {
-      const paymentEndpoint = optionalEnv("MEXAL_PAYMENT_DISCOUNT_ENDPOINT");
+      const paymentEndpoint = optionalEnv("MEXAL_PAYMENT_DISCOUNT_ENDPOINT") || "/dati-generali/pagamenti";
       if (paymentEndpoint) {
         try {
           const paymentItems = await mexal.getAll(paymentEndpoint);
           paymentStats.read = paymentItems.length;
           const paymentRows = await Promise.all(
             paymentItems.map((item) => ({
-              codice_pagamento: firstNonEmpty(
+              codice_pagamento: normalizePaymentCode(firstNonEmpty(
                 item.codice_pagamento,
                 item.codice,
+                item.id_pagamento,
                 item.id,
                 item.cod_pagamento
-              ),
-              descrizione: firstNonEmpty(item.descrizione, item.descr, item.nome),
-              sconto: firstNonEmpty(item.sconto, item.sconto_pagamento),
-              sconto_esteso: firstNonEmpty(
-                item.sconto_esteso,
-                item.sconto,
-                item.sconto_pagamento
-              ),
+              )),
+              descrizione: firstNonEmpty(item.descrizione, item.descrizione_pagamento, item.descr, item.nome),
+              sconto: paymentDiscount(item),
+              sconto_esteso: paymentDiscount(item),
               data_inizio: parseMexalDate(item.data_inizio),
               data_fine: parseMexalDate(item.data_fine),
               priority: integer(item.priority) || 100,
@@ -225,10 +222,6 @@ async function mainHandler(req) {
             true
           );
         }
-      } else {
-        paymentStats.warnings.push(
-          "MEXAL_PAYMENT_DISCOUNT_ENDPOINT non configurato. Le regole pagamento manuali restano attive."
-        );
       }
     }
     await Promise.all([
@@ -560,6 +553,28 @@ function optionalEnv(name) {
 function stringValue(value) {
   return String(value ?? "").trim();
 }
+function normalizePaymentCode(value) {
+  const code = stringValue(value);
+  return /^0*\d+$/.test(code) ? String(Number(code)) : code;
+}
+
+function paymentDiscount(item) {
+  const fields = ["sconto_esteso", "sconto_pagamento", "perc_sconto_pagamento", "percentuale_sconto_pagamento", "perc_sconto", "percentuale_sconto", "sconto"];
+  const visit = (value) => {
+    if (!value || typeof value !== "object") return "";
+    for (const field of fields) {
+      const candidate = stringValue(value[field]);
+      if (candidate && /[1-9]/.test(candidate.replace(/[^0-9]/g, ""))) return candidate;
+    }
+    for (const nested of Object.values(value)) {
+      const candidate = visit(nested);
+      if (candidate) return candidate;
+    }
+    return "";
+  };
+  return visit(item);
+}
+
 function firstNonEmpty(...values) {
   for (const value of values) {
     const result = stringValue(value);

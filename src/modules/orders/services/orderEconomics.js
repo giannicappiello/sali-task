@@ -1,7 +1,12 @@
 const EPSILON = 0.009;
 
 function numeric(value, fallback = 0) {
-  const parsed = Number(String(value ?? "").replace(",", "."));
+  const parsed = Number(
+    String(value ?? "")
+      .replace(/%/g, "")
+      .replace(",", ".")
+      .trim()
+  );
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
@@ -12,6 +17,7 @@ export function roundCurrency(value) {
 export function parseDiscountSequence(value) {
   if (value === null || value === undefined || value === "") return [];
   return String(value)
+    .replace(/%/g, "")
     .replace(/,/g, ".")
     .split("+")
     .map((part) => Number(part.trim()))

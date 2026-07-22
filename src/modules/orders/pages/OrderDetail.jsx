@@ -1,38 +1,11 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft, Download, Edit3, OctagonX, RefreshCw, Send, Trash2 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import { supabase } from "../../../lib/supabaseClient";
 import { deleteOrder, downloadOrderPdf, loadOrderDetail, recoverOrderSync, stopOrderSync, submitOrderToMexal } from "../services/orderFulfillment";
+import { agentDisplayName, loadAgentNameMap } from "../services/agentNames";
 
 function money(value) {
   return Number(value || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
-}
-
-function normalize(value) {
-  return String(value ?? "").trim();
-}
-
-function agentFullName(agent) {
-  const fullName = normalize(
-    agent?.nome_completo ||
-    agent?.nominativo ||
-    agent?.descrizione ||
-    agent?.ragione_sociale
-  );
-  if (fullName) return fullName;
-
-  return [agent?.nome, agent?.cognome]
-    .map(normalize)
-    .filter(Boolean)
-    .join(" ");
-}
-
-function directOrderAgentName(order) {
-  return normalize(
-    order?.nome_agente ||
-    order?.agente_nome ||
-    order?.nominativo_agente
-  );
 }
 
 export default function OrderDetail() {
@@ -50,25 +23,8 @@ export default function OrderDetail() {
   const [message, setMessage] = useState("");
 
   async function resolveAgentName(currentOrder) {
-    const directName = directOrderAgentName(currentOrder);
-    if (directName) return directName;
-
-    const code = normalize(currentOrder?.codice_agente_mexal);
-    if (!code) return "";
-
-    const { data, error: agentError } = await supabase
-      .from("ordini_agenti_cache")
-      .select("*")
-      .or(`codice_agente_mexal.eq.${code},codice_agente.eq.${code},codice.eq.${code}`)
-      .limit(1)
-      .maybeSingle();
-
-    if (agentError) {
-      console.warn("Impossibile caricare il nome agente:", agentError);
-      return "";
-    }
-
-    return agentFullName(data);
+    const names = await loadAgentNameMap([currentOrder?.codice_agente_mexal]);
+    return agentDisplayName(currentOrder, names);
   }
 
   async function load() {
@@ -137,8 +93,9 @@ export default function OrderDetail() {
     try {
       await downloadOrderPdf({
         ...order,
-        codice_agente_mexal: agentName || "-",
-        agente: agentName || "-",
+        agente_nome: agentName,
+        nome_agente: agentName,
+        agente: agentName,
       }, lines);
     } catch (pdfError) {
       setError(pdfError.message || "Impossibile generare il PDF dell'ordine.");

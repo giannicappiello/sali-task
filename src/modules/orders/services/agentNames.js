@@ -4,14 +4,32 @@ function normalizeCode(value) {
   return String(value || "").trim().toUpperCase();
 }
 
-function fullName(user = {}) {
-  return [user.nome, user.cognome].map((value) => String(value || "").trim()).filter(Boolean).join(" ");
+function firstText(...values) {
+  for (const value of values) {
+    const normalized = String(value ?? "").trim();
+    if (normalized) return normalized;
+  }
+  return "";
 }
 
-export async function loadAgentNameMap(codes = []) {
-  const normalizedCodes = [...new Set(codes.map(normalizeCode).filter(Boolean))];
-  if (!normalizedCodes.length) return new Map();
+export function formatAgentName(row = {}) {
+  const surname = firstText(row.cognome, row.surname);
+  const name = firstText(row.nome, row.name);
+  const surnameAndName = [surname, name].filter(Boolean).join(" ");
+  if (surnameAndName) return surnameAndName;
 
+  return firstText(
+    row.cognome_nome,
+    row.cognome_nome_agente,
+    row.nome_completo,
+    row.nominativo,
+    row.descrizione,
+    row.ragione_sociale,
+    row.denominazione
+  );
+}
+
+async function loadNamesFromLinkedUsers(normalizedCodes) {
   const { data: links, error: linksError } = await supabase
     .from("integrazioni_utenti")
     .select("utente_id,codice_agente_mexal")
@@ -28,7 +46,7 @@ export async function loadAgentNameMap(codes = []) {
     .in("id", userIds);
   if (usersError) throw usersError;
 
-  const usersById = new Map((users || []).map((user) => [user.id, fullName(user)]));
+  const usersById = new Map((users || []).map((user) => [user.id, formatAgentName(user)]));
   return new Map(
     (links || [])
       .map((link) => [normalizeCode(link.codice_agente_mexal), usersById.get(link.utente_id)])
@@ -36,12 +54,25 @@ export async function loadAgentNameMap(codes = []) {
   );
 }
 
+export async function loadAgentNameMap(codes = []) {
+  const normalizedCodes = [...new Set(codes.map(normalizeCode).filter(Boolean))];
+  if (!normalizedCodes.length) return new Map();
+
+  // La fonte reale degli agenti del modulo Ordini è integrazioni_utenti → utenti.
+  return loadNamesFromLinkedUsers(normalizedCodes);
+}
+
 export function agentDisplayName(order = {}, map = new Map()) {
   const code = normalizeCode(order.codice_agente_mexal);
   return (
-    String(order.nome_agente || order.agente_nome || order.nome_cognome_agente || "").trim() ||
+    firstText(
+      order.cognome_nome_agente,
+      order.nome_cognome_agente,
+      order.nome_agente,
+      order.agente_nome,
+      order.nominativo_agente
+    ) ||
     map.get(code) ||
-    code ||
     "-"
   );
 }

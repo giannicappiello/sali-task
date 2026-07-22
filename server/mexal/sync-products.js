@@ -803,6 +803,7 @@ async function saveProduct({
     stato: "Attivo",
     ultimo_sync_mexal: now,
     json_mexal: article,
+    ...(nullableInteger(article.id_categoria_pr) !== null ? { categoria_provvigionale_mexal: nullableInteger(article.id_categoria_pr) } : {}),
     updated_at: now,
   };
 
@@ -846,6 +847,7 @@ export function mapArticleToOrdersCache(article, { imageUrl = null } = {}) {
     categoria_prezzo: nullableInteger(
       article.id_cat_prezzo ?? article.categoria_prezzo ?? article.cod_cat_prezzo
     ),
+    ...(nullableInteger(article.id_categoria_pr) !== null ? { categoria_provvigionale_mexal: nullableInteger(article.id_categoria_pr) } : {}),
     prezzo_listino: getListPrice(article.prz_listino, 1),
     giacenza: stock,
     impegnato: round4(

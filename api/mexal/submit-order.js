@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { buildMexalClient, verifyUser } from "../../server/mexal/sync-products.js";
 import { DEFAULT_MEXAL_ORDER_DATE_FORMAT, ORDER_DOCUMENTS, buildMexalOrderDocument, classifyOrderLines, reconciliationFailure } from "../../server/mexal/order-documents.js";
+import { calculateCommissions } from "../../server/mexal/commission-engine.js";
 
 function env(name) { return String(process.env[name] ?? "").trim(); }
 function required(name) { const value = env(name); if (!value) throw new Error(`Variabile Vercel mancante: ${name}`); return value; }
@@ -101,6 +102,16 @@ export default async function handler(req, res) {
     orderId = text(req.body?.orderId); if (!orderId) return res.status(400).json({ error: "orderId obbligatorio." });
     const [{ data: order, error: orderError }, { data: lines, error: linesError }] = await Promise.all([admin.from("ordini_testate").select("*").eq("id", orderId).single(), admin.from("ordini_righe").select("*").eq("ordine_id", orderId).order("id")]);
     if (orderError) throw orderError; if (linesError) throw linesError; if (!lines?.length) throw new Error("Ordine senza righe.");
+    const [{ data: customer, error: customerError }, { data: products, error: productsError }, { data: rules, error: rulesError }] = await Promise.all([
+      admin.from("ordini_clienti_cache").select("*").eq("codice_cliente", order.codice_cliente).maybeSingle(),
+      admin.from("ordini_prodotti_cache").select("*").in("codice_articolo", lines.map((line) => line.codice_articolo)),
+      admin.from("mexal_regole_provvigioni").select("*").eq("attiva", true),
+    ]);
+    if (customerError) throw customerError; if (productsError) throw productsError; if (rulesError) throw rulesError;
+    const commissionedLines = calculateCommissions({ order, customer, lines, products, rules });
+    const commissionUpdates = commissionedLines.map((line) => ({ id: line.id, provvigione_percentuale: line.provvigione_percentuale, provvigione_regola_id: line.provvigione_regola_id, provvigione_dettaglio_calcolo: line.provvigione_dettaglio_calcolo, provvigione_calcolata_il: new Date().toISOString() }));
+    for (const update of commissionUpdates) { const { error } = await admin.from("ordini_righe").update(update).eq("id", update.id); if (error) throw error; }
+    lines.splice(0, lines.length, ...commissionedLines);
     const classified = classifyOrderLines(lines);
     console.info("Mexal order processing", { orderId, ociLines: classified.OCI.length, ocmLines: classified.OCM.length, ocxLines: classified.OCX.length, lines: { OCM: lineDiagnostic(classified.OCM), OCX: lineDiagnostic(classified.OCX), OCI: lineDiagnostic(classified.OCI) } });
     const requiredKinds = Object.keys(classified).filter((kind) => classified[kind].length);

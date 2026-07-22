@@ -20,7 +20,7 @@ Il report JSON scaricabile contiene solo questa sintesi. La route rimane riserva
 
 ## Download catalogo Mexal completo
 
-Il risultato vuoto del report diagnostico dopo la PR #83 indica che la struttura reale del catalogo non è ancora riconosciuta dal parser. Per consentirne l'analisi senza modificare il parser alla cieca, un amministratore può usare **Scarica help Mexal completo** nella sezione **Regole provvigionali**.
+Il parser riconosce ora la struttura reale del catalogo: `regexp`, `descrizione`, `method` e `chiavi`. Il percorso viene ricavato da `regexp`, rimuovendo solo ancore e il gruppo finale di identificativo; quindi le collection `/dati-generali/categorie-provvigioni`, `/dati-generali/categorie-provvigioni-articoli` e `/dati-generali/provvigioni-listini` vengono mostrate correttamente. Le risorse non GET e le GET con identificativo obbligatorio restano documentate ma non interrogate.
 
 L'azione amministrativa `full-help-download` effettua esclusivamente `client.getJson("/help")`, quindi legge `/webapi/risorse/help`. Restituisce il payload Mexal originale e invariato nel campo `payload`, con i soli metadati esterni `downloadedAt` e `source`; non converte il catalogo in endpoint e non applica filtri, limiti o trasformazioni.
 

@@ -6,6 +6,7 @@ import { runOrderDestinationDiagnostics } from "../../../server/mexal/order-dest
 import { runCommissionDiagnostics } from "../../../server/mexal/commission-diagnostics.js";
 import { runCommissionRulesDiagnostics } from "../../../server/mexal/commission-rules-diagnostics.js";
 import { downloadFullMexalHelp } from "../../../server/mexal/full-help-download.js";
+import { syncCommissionCategories } from "../../../server/mexal/sync-commission-categories.js";
 
 const required = (name) => {
   const value = String(process.env[name] || "").trim();
@@ -56,6 +57,12 @@ export default async function handler(req, res) {
     if (req.body?.action === "full-help-download") {
       if (!authorization?.isAdmin) return res.status(403).json({ error: "Download help Mexal riservato agli amministratori." });
       const result = await downloadFullMexalHelp(buildMexalClient());
+      return res.status(200).json(result);
+    }
+
+    if (req.body?.action === "sync-commission-categories") {
+      if (!authorization?.isAdmin) return res.status(403).json({ error: "Sincronizzazione categorie provvigionali riservata agli amministratori." });
+      const result = await syncCommissionCategories({ mexal: buildMexalClient(), supabase: admin });
       return res.status(200).json(result);
     }
 

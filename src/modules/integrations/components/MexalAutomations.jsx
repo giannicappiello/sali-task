@@ -43,6 +43,7 @@ function ProgressPanel({ run, stopping, onStop }) {
   const processed = Number(run.processed || metadata.processed || 0);
   const percent = run.status === "completed" ? 100 : Number(metadata.progress_percent || (total ? Math.round((processed / total) * 100) : 0));
   const running = run.status === "running";
+  const firstError = metadata.first_error || null;
   const statusLabel = running ? "In esecuzione" : run.status === "cancelled" ? "Arrestata" : run.status === "completed" ? "Completata" : run.status === "failed" ? "Errore" : title(run.status);
   return <section className="mexal-settings-panel" style={{ marginBottom: 16 }}>
     <div className="mexal-section-heading">
@@ -60,6 +61,9 @@ function ProgressPanel({ run, stopping, onStop }) {
       <div><strong>Invariati</strong><br />{number(run.skipped)}</div>
       <div><strong>Errori</strong><br />{number(run.failed)}</div>
     </div>
+    {firstError && <div className="mexal-alert alert-error" style={{ marginTop: 12, alignItems: "flex-start" }}>
+      <span><strong>Primo errore reale{firstError.row_number ? ` — riga ${firstError.row_number}` : ""}</strong><br />{firstError.message || "Errore non specificato."}{firstError.code ? <><br /><small>Codice: {firstError.code}</small></> : null}{firstError.details ? <><br /><small>Dettagli: {firstError.details}</small></> : null}{firstError.hint ? <><br /><small>Suggerimento: {firstError.hint}</small></> : null}</span>
+    </div>}
     {run.error_message && <div className="mexal-alert alert-warning" style={{ marginTop: 12 }}><span>{run.error_message}</span></div>}
   </section>;
 }

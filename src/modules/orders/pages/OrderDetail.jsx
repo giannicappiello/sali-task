@@ -93,7 +93,7 @@ export default function OrderDetail() {
     try {
       await downloadOrderPdf({
         ...order,
-        codice_agente_mexal: agentName,
+        agente_nome: agentName,
         nome_agente: agentName,
         agente: agentName,
       }, lines);

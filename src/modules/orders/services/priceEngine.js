@@ -441,12 +441,13 @@ function resolveListPrice(product, customer) {
 }
 
 function paymentCode(payment, customer) {
-  return text(
+  const code = text(
     payment?.codice ??
       payment?.codice_pagamento ??
       customer?.codice_pagamento ??
       customerData(customer).codice_pagamento
   );
+  return /^0*\d+$/.test(code) ? String(Number(code)) : code;
 }
 
 export function calculateLineConditions({
@@ -522,7 +523,7 @@ export function calculateLineConditions({
       .filter(isActive)
       .filter(
         (item) =>
-          text(item.codice_pagamento) === code
+          paymentCode(item, {}) === code
       )
       .filter((item) => inDateRange(item, orderDate))
       .sort(

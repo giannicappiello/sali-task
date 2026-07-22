@@ -12,17 +12,7 @@ function firstText(...values) {
   return "";
 }
 
-function agentCode(row = {}) {
-  return normalizeCode(
-    row.codice_agente_mexal ??
-    row.codice_agente ??
-    row.codice ??
-    row.cod_agente ??
-    row.id_agente
-  );
-}
-
-function fullName(row = {}) {
+export function formatAgentName(row = {}) {
   const surname = firstText(row.cognome, row.surname);
   const name = firstText(row.nome, row.name);
   const surnameAndName = [surname, name].filter(Boolean).join(" ");
@@ -36,24 +26,6 @@ function fullName(row = {}) {
     row.descrizione,
     row.ragione_sociale,
     row.denominazione
-  );
-}
-
-async function loadNamesFromMexalCache(normalizedCodes) {
-  const { data, error } = await supabase
-    .from("ordini_agenti_cache")
-    .select("*");
-
-  if (error) {
-    console.warn("Cache agenti Mexal non disponibile:", error);
-    return new Map();
-  }
-
-  const requested = new Set(normalizedCodes);
-  return new Map(
-    (data || [])
-      .map((row) => [agentCode(row), fullName(row)])
-      .filter(([code, name]) => requested.has(code) && Boolean(name))
   );
 }
 
@@ -74,7 +46,7 @@ async function loadNamesFromLinkedUsers(normalizedCodes) {
     .in("id", userIds);
   if (usersError) throw usersError;
 
-  const usersById = new Map((users || []).map((user) => [user.id, fullName(user)]));
+  const usersById = new Map((users || []).map((user) => [user.id, formatAgentName(user)]));
   return new Map(
     (links || [])
       .map((link) => [normalizeCode(link.codice_agente_mexal), usersById.get(link.utente_id)])
@@ -86,14 +58,8 @@ export async function loadAgentNameMap(codes = []) {
   const normalizedCodes = [...new Set(codes.map(normalizeCode).filter(Boolean))];
   if (!normalizedCodes.length) return new Map();
 
-  const [cacheNames, userNames] = await Promise.all([
-    loadNamesFromMexalCache(normalizedCodes),
-    loadNamesFromLinkedUsers(normalizedCodes),
-  ]);
-
-  // Il nominativo anagrafico sincronizzato da Mexal è prioritario. L'utente
-  // collegato serve come fallback per gli agenti non ancora presenti in cache.
-  return new Map([...userNames, ...cacheNames]);
+  // La fonte reale degli agenti del modulo Ordini è integrazioni_utenti → utenti.
+  return loadNamesFromLinkedUsers(normalizedCodes);
 }
 
 export function agentDisplayName(order = {}, map = new Map()) {

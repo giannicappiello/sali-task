@@ -29,12 +29,16 @@ function messageForStatus(status) {
   return "Impossibile completare la richiesta alle automazioni Mexal.";
 }
 
-export async function requestMexalAutomation({ supabase, action, ruleType, rule, fetchImpl = fetch }) {
+async function accessTokenFor(supabase) {
   const { data, error } = await supabase.auth.getSession();
   if (error) throw apiError(401, "Impossibile recuperare la sessione corrente.");
   const accessToken = data?.session?.access_token;
   if (!accessToken) throw apiError(401, "Sessione non disponibile. Accedi di nuovo per gestire le automazioni.");
+  return accessToken;
+}
 
+export async function requestMexalAutomation({ supabase, action, ruleType, rule, fetchImpl = fetch }) {
+  const accessToken = await accessTokenFor(supabase);
   const body = { action };
   if (ruleType) body.ruleType = ruleType;
   if (rule) body.rule = rule;
@@ -51,12 +55,28 @@ export async function requestMexalAutomation({ supabase, action, ruleType, rule,
   }
 
   let payload;
-  try {
-    payload = await response.json();
-  } catch {
-    throw apiError(response.status, "Il servizio automazioni ha restituito una risposta non valida.");
-  }
+  try { payload = await response.json(); }
+  catch { throw apiError(response.status, "Il servizio automazioni ha restituito una risposta non valida."); }
   if (!response.ok) throw apiError(response.status, payload?.error || messageForStatus(response.status));
+  return payload;
+}
+
+export async function runListPriceCommissionsNow({ supabase, fetchImpl = fetch }) {
+  const accessToken = await accessTokenFor(supabase);
+  let response;
+  try {
+    response = await fetchImpl("/api/mexal/sync-list-price-commissions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ origin: "manual" }),
+    });
+  } catch {
+    throw apiError(0, "Impossibile raggiungere la sincronizzazione provvigioni listini.");
+  }
+  let payload;
+  try { payload = await response.json(); }
+  catch { throw apiError(response.status, "La sincronizzazione ha restituito una risposta non valida."); }
+  if (!response.ok || payload?.success === false) throw apiError(response.status, payload?.error || "Sincronizzazione provvigioni listini non riuscita.");
   return payload;
 }
 

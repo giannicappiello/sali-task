@@ -8,6 +8,7 @@ import Orders from "./pages/Orders";
 import NewOrder from "./pages/NewOrder";
 import OrderDetail from "./pages/OrderDetail";
 import "./orders-module.css";
+import "./orders-mobile-fixes.css";
 
 const items = [
   { to: "/ordini/dashboard", label: "Dashboard", icon: LayoutDashboard },

@@ -77,7 +77,7 @@ function Panel({ code, title, series }) {
   </section>;
 }
 
-export default function OrderModuleSettings() {
+export default function OrderModuleSettings({ moduleCode = null }) {
   const [series, setSeries] = useState([]);
   const [seriesError, setSeriesError] = useState("");
   useEffect(() => {
@@ -86,5 +86,6 @@ export default function OrderModuleSettings() {
       else setSeries(customerOrderSeriesOptions(data || []));
     });
   }, []);
-  return <div><h2>Moduli Ordini</h2><p>Le impostazioni Mexal ed email sono separate per ciascuna area.</p>{seriesError && <p role="alert">{seriesError}</p>}<div className="mexal-two-columns"><Panel code="prof" title="ORDINI PROF" series={series} /><Panel code="ph" title="ORDINI PH" series={series} /></div></div>;
+  const panels = moduleCode ? [[moduleCode, moduleCode === "ph" ? "ORDINI PH" : "ORDINI PROF"]] : [["prof", "ORDINI PROF"], ["ph", "ORDINI PH"]];
+  return <div><h2>{moduleCode ? panels[0][1] : "Moduli Ordini"}</h2><p>{moduleCode ? "Configurazione indipendente dell'integrazione ordini selezionata." : "Le impostazioni Mexal ed email sono separate per ciascuna area."}</p>{seriesError && <p role="alert">{seriesError}</p>}<div className="mexal-two-columns">{panels.map(([code, title]) => <Panel key={code} code={code} title={title} series={series} />)}</div></div>;
 }

@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Activity, Archive, Database, Fingerprint, Network } from "lucide-react";
+import { Activity, Archive, Database, Fingerprint, Network, ShoppingCart } from "lucide-react";
 import IntegrationCard from "../components/IntegrationCard";
 
 export default function IntegrationsDashboard() {
@@ -13,6 +13,22 @@ export default function IntegrationsDashboard() {
       status: "connected",
       meta: "WebAPI Mexal · ambiente configurato",
       onOpen: () => navigate("/integrations/mexal"),
+    },
+    {
+      icon: ShoppingCart,
+      title: "Ordini PROF",
+      description: "Configurazione invio Mexal, serie documenti e destinatari email per gli ordini PROF.",
+      status: "configuration",
+      meta: "Configurazione indipendente",
+      onOpen: () => navigate("/integrations/orders/prof"),
+    },
+    {
+      icon: ShoppingCart,
+      title: "Ordini PH",
+      description: "Configurazione invio Mexal, serie documenti e destinatari email per gli ordini PH.",
+      status: "configuration",
+      meta: "Configurazione indipendente",
+      onOpen: () => navigate("/integrations/orders/ph"),
     },
     {
       icon: Activity,

@@ -1,136 +1,193 @@
 .settings-page .settings-tabs {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  margin: 12px 0 30px;
+  gap: 18px 22px;
+  margin: 18px 0 34px;
   padding: 0;
+  overflow: visible;
   background: transparent;
   border: 0;
-  overflow: visible;
 }
 
 .settings-page .settings-tabs > button {
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: flex-start;
   width: 100%;
-  min-height: 104px;
-  padding: 26px 58px 26px 30px;
-  border: 1px solid #dbe3ef;
-  border-radius: 16px;
-  background: #fff;
+  min-height: 138px;
+  padding: 33px 72px 28px 126px;
+  overflow: visible;
+  border: 1px solid #d8e1ee;
+  border-radius: 17px;
+  background-color: #ffffff;
+  background-repeat: no-repeat;
+  background-position: 28px 31px, calc(100% - 28px) 50%;
+  background-size: 68px 68px, 22px 22px;
   color: #0f172a;
   text-align: left;
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 750;
-  line-height: 1.3;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
-  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
-}
-
-.settings-page .settings-tabs > button:hover {
-  transform: translateY(-2px);
-  border-color: #9bb9e8;
-  box-shadow: 0 9px 22px rgba(15, 23, 42, 0.09);
-}
-
-.settings-page .settings-tabs > button.active {
-  border-color: #2563eb;
-  background: linear-gradient(135deg, #fff 0%, #f3f7ff 100%);
-  color: #174fb7;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.11), 0 9px 22px rgba(15, 23, 42, 0.08);
+  line-height: 1.25;
+  box-shadow: 0 5px 16px rgba(15, 23, 42, 0.065);
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
 }
 
 .settings-page .settings-tabs > button::after {
   position: absolute;
-  right: 24px;
-  top: 50%;
-  content: "›";
-  transform: translateY(-54%);
-  color: #17355e;
-  font-size: 34px;
-  font-weight: 300;
-  line-height: 1;
-}
-
-.settings-page .settings-tabs > button:nth-child(5) {
-  grid-column: 1 / -1;
-  grid-row: 1;
-  margin-top: 38px;
-}
-
-.settings-page .settings-tabs > button:nth-child(5)::before {
-  position: absolute;
-  left: 4px;
-  top: -35px;
-  content: "TEAM";
-  color: #174ea6;
+  left: 126px;
+  right: 72px;
+  top: 66px;
+  color: #64748b;
   font-size: 14px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  font-weight: 450;
+  line-height: 1.5;
+  white-space: normal;
 }
 
-.settings-page .settings-tabs > button:nth-child(6) {
-  grid-column: 1;
-  grid-row: 2;
+.settings-page .settings-tabs > button:hover {
+  transform: translateY(-2px);
+  border-color: #94b6ea;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.1);
 }
 
-.settings-page .settings-tabs > button:nth-child(7) {
-  grid-column: 2;
-  grid-row: 2;
+.settings-page .settings-tabs > button.active {
+  border-color: #2563eb;
+  background-color: #f5f8ff;
+  color: #174fb7;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1), 0 10px 24px rgba(15, 23, 42, 0.08);
 }
 
-.settings-page .settings-tabs > button:nth-child(3) {
-  grid-column: 1;
-  grid-row: 3;
-  margin-top: 50px;
+.settings-page .settings-tabs > button:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.28);
+  outline-offset: 3px;
 }
 
-.settings-page .settings-tabs > button:nth-child(3)::before {
-  position: absolute;
-  left: 4px;
-  top: -35px;
-  content: "REPARTI / RUOLI";
-  color: #174ea6;
-  font-size: 14px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+/* Icona freccia comune */
+.settings-page .settings-tabs > button {
+  --settings-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2317355e' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 18 6-6-6-6'/%3E%3C/svg%3E");
 }
 
-.settings-page .settings-tabs > button:nth-child(4) {
-  grid-column: 2;
-  grid-row: 3;
-  margin-top: 50px;
-}
-
+/* VOCI DI PROGETTO */
 .settings-page .settings-tabs > button:nth-child(1) {
   grid-column: 1;
   grid-row: 4;
-  margin-top: 50px;
+  margin-top: 58px;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='68' height='68' viewBox='0 0 68 68'%3E%3Crect width='68' height='68' rx='16' fill='%23EAF2FF'/%3E%3Cg fill='none' stroke='%231D5BC6' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M29 24h19M29 34h19M29 44h19'/%3E%3Cpath d='m19 24 3 3 5-6M19 34l3 3 5-6M19 44l3 3 5-6'/%3E%3C/g%3E%3C/svg%3E"),
+    var(--settings-arrow);
 }
-
 .settings-page .settings-tabs > button:nth-child(1)::before {
   position: absolute;
-  left: 4px;
-  top: -35px;
+  left: 2px;
+  top: -39px;
   content: "VOCI DI PROGETTO";
   color: #174ea6;
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 850;
   letter-spacing: 0.12em;
+}
+.settings-page .settings-tabs > button:nth-child(1)::after {
+  content: "Gestisci le checklist utilizzate nei progetti.";
 }
 
 .settings-page .settings-tabs > button:nth-child(2) {
   grid-column: 2;
   grid-row: 4;
-  margin-top: 50px;
+  margin-top: 58px;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='68' height='68' viewBox='0 0 68 68'%3E%3Crect width='68' height='68' rx='16' fill='%23EAF2FF'/%3E%3Cg fill='none' stroke='%231D5BC6' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 24h13l4 5h15v20H18z'/%3E%3Cpath d='M18 29h32'/%3E%3C/g%3E%3C/svg%3E"),
+    var(--settings-arrow);
+}
+.settings-page .settings-tabs > button:nth-child(2)::after {
+  content: "Configura i tipi di progetto e le impostazioni associate.";
 }
 
-@media (max-width: 900px) {
+/* REPARTI / RUOLI */
+.settings-page .settings-tabs > button:nth-child(3) {
+  grid-column: 1;
+  grid-row: 3;
+  margin-top: 58px;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='68' height='68' viewBox='0 0 68 68'%3E%3Crect width='68' height='68' rx='16' fill='%23EAF2FF'/%3E%3Cg fill='none' stroke='%231D5BC6' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='20' y='17' width='28' height='34' rx='2'/%3E%3Cpath d='M27 24h2M37 24h2M27 32h2M37 32h2M27 40h2M37 40h2M33 51v-7h4v7'/%3E%3C/g%3E%3C/svg%3E"),
+    var(--settings-arrow);
+}
+.settings-page .settings-tabs > button:nth-child(3)::before {
+  position: absolute;
+  left: 2px;
+  top: -39px;
+  content: "REPARTI / RUOLI";
+  color: #174ea6;
+  font-size: 14px;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+}
+.settings-page .settings-tabs > button:nth-child(3)::after {
+  content: "Gestisci i reparti aziendali e le relative autorizzazioni.";
+}
+
+.settings-page .settings-tabs > button:nth-child(4) {
+  grid-column: 2;
+  grid-row: 3;
+  margin-top: 58px;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='68' height='68' viewBox='0 0 68 68'%3E%3Crect width='68' height='68' rx='16' fill='%23EAF2FF'/%3E%3Cpath d='M34 16 49 22v11c0 10-6 17-15 21-9-4-15-11-15-21V22z' fill='none' stroke='%231D5BC6' stroke-width='3' stroke-linejoin='round'/%3E%3Cpath d='M34 16v38' stroke='%231D5BC6' stroke-width='3'/%3E%3C/svg%3E"),
+    var(--settings-arrow);
+}
+.settings-page .settings-tabs > button:nth-child(4)::after {
+  content: "Configura i ruoli e i permessi di accesso ai moduli.";
+}
+
+/* TEAM */
+.settings-page .settings-tabs > button:nth-child(5) {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  margin-top: 42px;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='68' height='68' viewBox='0 0 68 68'%3E%3Crect width='68' height='68' rx='16' fill='%23EAF2FF'/%3E%3Cg fill='none' stroke='%231D5BC6' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='30' cy='27' r='7'/%3E%3Cpath d='M18 49v-5c0-6 5-10 12-10s12 4 12 10v5zM45 26a6 6 0 0 1 0 12M45 38c5 0 8 3 8 8v3'/%3E%3C/g%3E%3C/svg%3E"),
+    var(--settings-arrow);
+}
+.settings-page .settings-tabs > button:nth-child(5)::before {
+  position: absolute;
+  left: 2px;
+  top: -39px;
+  content: "TEAM";
+  color: #174ea6;
+  font-size: 14px;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+}
+.settings-page .settings-tabs > button:nth-child(5)::after {
+  content: "Gestisci gli utenti del Workspace e le autorizzazioni agli accessi.";
+}
+
+.settings-page .settings-tabs > button:nth-child(6) {
+  grid-column: 1;
+  grid-row: 2;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='68' height='68' viewBox='0 0 68 68'%3E%3Crect width='68' height='68' rx='16' fill='%23EAF2FF'/%3E%3Cg fill='none' stroke='%231D5BC6' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M23 22h22v30H23z'/%3E%3Cpath d='M29 22v-5h10v5M29 31h10M34 26v10M29 43h10'/%3E%3C/g%3E%3C/svg%3E"),
+    var(--settings-arrow);
+}
+.settings-page .settings-tabs > button:nth-child(6)::after {
+  content: "Configura gli utenti autorizzati al modulo Beauty Days.";
+}
+
+.settings-page .settings-tabs > button:nth-child(7) {
+  grid-column: 2;
+  grid-row: 2;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='68' height='68' viewBox='0 0 68 68'%3E%3Crect width='68' height='68' rx='16' fill='%23EAF2FF'/%3E%3Cg fill='none' stroke='%231D5BC6' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 22h5l4 21h22l4-15H26'/%3E%3Ccircle cx='31' cy='50' r='2'/%3E%3Ccircle cx='46' cy='50' r='2'/%3E%3C/g%3E%3C/svg%3E"),
+    var(--settings-arrow);
+}
+.settings-page .settings-tabs > button:nth-child(7)::after {
+  content: "Configura gli utenti autorizzati al modulo Ordini.";
+}
+
+@media (max-width: 960px) {
   .settings-page .settings-tabs {
     grid-template-columns: 1fr;
-    gap: 14px;
+    gap: 15px;
   }
 
   .settings-page .settings-tabs > button:nth-child(n) {
@@ -138,25 +195,29 @@
     margin-top: 0;
   }
 
-  .settings-page .settings-tabs > button:nth-child(5) { grid-row: 1; margin-top: 38px; }
+  .settings-page .settings-tabs > button:nth-child(5) { grid-row: 1; margin-top: 42px; }
   .settings-page .settings-tabs > button:nth-child(6) { grid-row: 2; }
   .settings-page .settings-tabs > button:nth-child(7) { grid-row: 3; }
-  .settings-page .settings-tabs > button:nth-child(3) { grid-row: 4; margin-top: 50px; }
+  .settings-page .settings-tabs > button:nth-child(3) { grid-row: 4; margin-top: 58px; }
   .settings-page .settings-tabs > button:nth-child(4) { grid-row: 5; }
-  .settings-page .settings-tabs > button:nth-child(1) { grid-row: 6; margin-top: 50px; }
+  .settings-page .settings-tabs > button:nth-child(1) { grid-row: 6; margin-top: 58px; }
   .settings-page .settings-tabs > button:nth-child(2) { grid-row: 7; }
 }
 
-@media (max-width: 560px) {
+@media (max-width: 600px) {
   .settings-page .settings-tabs > button {
-    min-height: 88px;
-    padding: 22px 48px 22px 22px;
-    border-radius: 14px;
-    font-size: 15px;
+    min-height: 124px;
+    padding: 28px 52px 24px 98px;
+    background-position: 20px 28px, calc(100% - 17px) 50%;
+    background-size: 58px 58px, 19px 19px;
+    border-radius: 15px;
+    font-size: 16px;
   }
 
   .settings-page .settings-tabs > button::after {
-    right: 17px;
-    font-size: 29px;
+    left: 98px;
+    right: 46px;
+    top: 59px;
+    font-size: 13px;
   }
 }

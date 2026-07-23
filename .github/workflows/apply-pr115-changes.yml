@@ -1,0 +1,126 @@
+name: Apply PR115 changes
+
+on:
+  push:
+    branches:
+      - fix/orders-availability-summary
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/orders-availability-summary
+      - name: Apply requested changes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          new_order = Path('src/modules/orders/pages/NewOrder.jsx')
+          text = new_order.read_text(encoding='utf-8')
+
+          old_availability = '''        {availability && <div className="orders-availability-results">
+          <p>Verifica {availability.status === "completed" ? "completata" : "completata con errori"} alle {new Date(availability.checkedAt).toLocaleString("it-IT")} · Magazzino {availability.warehouse}.</p>
+          <p>Richiesta: {availability.summary.requestedQuantity} · Confermabile: {availability.summary.confirmedQuantity} · Mancante: {availability.summary.missingQuantity} · Disponibili: {availability.summary.availableLines} · Parziali: {availability.summary.partialLines} · Non disponibili: {availability.summary.unavailableLines} · Errori: {availability.summary.errorLines}</p>
+          <table className="orders-table"><thead><tr><th>Prodotto</th><th>Richiesta</th><th>Disponibile</th><th>Confermabile</th><th>Mancante</th><th>Stato</th></tr></thead><tbody>
+            {availability.lines.map((result) => { const line = lines.find((item) => item.codice_articolo === result.productCode); const labels = { available: "Disponibile", partial: "Parzialmente disponibile", unavailable: "Non disponibile", error: "Errore di verifica" }; return <tr key={result.productCode}><td>{result.productCode} · {line?.descrizione || "-"}</td><td>{result.requestedQuantity}</td><td>{result.availableQuantity ?? "-"}</td><td>{result.confirmedQuantity}</td><td>{result.missingQuantity}</td><td>{labels[result.status]}{result.message ? ` — ${result.message}` : ""}</td></tr>; })}
+          </tbody></table>
+          <div className="orders-calculation-detail"><div><span>Disponibile — futuro OCM</span><strong>{availabilityPreview.ocm.map((item) => `${item.productCode}: ${item.quantity}`).join(" · ") || "Nessuna riga"}</strong></div><div><span>Mancante — futuro OCX</span><strong>{availabilityPreview.ocx.map((item) => `${item.productCode}: ${item.quantity}`).join(" · ") || "Nessuna riga"}</strong></div></div>
+        </div>}'''
+
+          new_availability = '''        {availability && <div className="orders-availability-results">
+          <div className="orders-availability-check">
+            <strong>✓ Verifica {availability.status === "completed" ? "completata" : "completata con errori"}</strong>
+            <span>{new Date(availability.checkedAt).toLocaleString("it-IT")}</span>
+            <span>Magazzino {availability.warehouse}</span>
+            <span className="orders-availability-errors">Errori: {availability.summary.errorLines}</span>
+          </div>
+          <table className="orders-table"><thead><tr><th>Prodotto</th><th>Richiesta</th><th>Disponibile</th><th>Confermabile</th><th>Mancante</th><th>Stato</th></tr></thead><tbody>
+            {availability.lines.map((result) => { const line = lines.find((item) => item.codice_articolo === result.productCode); const labels = { available: "Disponibile", partial: "Parzialmente disponibile", unavailable: "Non disponibile", error: "Errore di verifica" }; return <tr key={result.productCode}><td>{result.productCode} · {line?.descrizione || "-"}</td><td>{result.requestedQuantity}</td><td>{result.availableQuantity ?? "-"}</td><td>{result.confirmedQuantity}</td><td>{result.missingQuantity}</td><td>{labels[result.status]}{result.message ? ` — ${result.message}` : ""}</td></tr>; })}
+          </tbody></table>
+          <div className="orders-document-preview">
+            <div><span>Futuro OCM</span><strong>{availabilityPreview.ocm.reduce((sum, item) => sum + Number(item.quantity || 0), 0).toLocaleString("it-IT")} pezzi</strong></div>
+            <div><span>Futuro OCI</span><strong>{availabilityPreview.oci.reduce((sum, item) => sum + Number(item.quantity || 0), 0).toLocaleString("it-IT")} pezzi</strong></div>
+            <div><span>Futuro OCX</span><strong>{availabilityPreview.ocx.reduce((sum, item) => sum + Number(item.quantity || 0), 0).toLocaleString("it-IT")} pezzi</strong></div>
+          </div>
+        </div>}'''
+
+          if old_availability not in text:
+              raise SystemExit('Blocco disponibilità non trovato')
+          text = text.replace(old_availability, new_availability)
+
+          old_footer = '''        <div className="orders-order-total">
+          <span>{totals.pezzi} pezzi</span>
+          <span>Imponibile: {money(totals.totale_imponibile)} · IVA: {money(totals.totale_iva)}</span>
+          <strong>{money(totals.totale_documento)}</strong>
+          <small>Totale documento</small>
+        </div>
+        <div className="orders-order-actions">'''
+
+          new_footer = '''        <div className="orders-order-total">
+          <div><span>Totale ordine</span><strong>{Number(totals.pezzi || 0).toLocaleString("it-IT")} pezzi</strong></div>
+          <div><span>Imponibile</span><strong>{money(totals.totale_imponibile)}</strong></div>
+          <div><span>IVA</span><strong>{money(totals.totale_iva)}</strong></div>
+          <div className="orders-order-grand-total"><span>TOTALE</span><strong>{money(totals.totale_documento)}</strong></div>
+        </div>
+        <div className="orders-order-actions">
+          {availability && availabilityValidity.valid && (
+            <div className="orders-split-summary">
+              <strong>L'ordine verrà suddiviso automaticamente in:</strong>
+              <span>OCM: {availabilityPreview.ocm.reduce((sum, item) => sum + Number(item.quantity || 0), 0).toLocaleString("it-IT")} pezzi (evasione immediata)</span>
+              <span>OCI: {availabilityPreview.oci.reduce((sum, item) => sum + Number(item.quantity || 0), 0).toLocaleString("it-IT")} pezzi</span>
+              <span>OCX: {availabilityPreview.ocx.reduce((sum, item) => sum + Number(item.quantity || 0), 0).toLocaleString("it-IT")} pezzi (backorder)</span>
+            </div>
+          )}'''
+
+          if old_footer not in text:
+              raise SystemExit('Blocco totale non trovato')
+          text = text.replace(old_footer, new_footer)
+          new_order.write_text(text, encoding='utf-8')
+
+          module = Path('src/modules/orders/OrdersModule.jsx')
+          module_text = module.read_text(encoding='utf-8')
+          module_text = module_text.replace('import { Profiler, useRef } from "react";\n', '')
+          module_text = module_text.replace('''import {
+  beginNewOrderMeasurement,
+  installNewOrderPerformanceMonitor,
+  recordNewOrderRender,
+} from "./services/orderPerformanceMonitor";
+''', '')
+          module_text = module_text.replace('\ninstallNewOrderPerformanceMonitor();\n', '\n')
+          start = module_text.find('function MeasuredNewOrder() {')
+          end = module_text.find('\nexport default function OrdersModule()', start)
+          if start == -1 or end == -1:
+              raise SystemExit('Wrapper diagnostica non trovato')
+          module_text = module_text[:start] + module_text[end + 1:]
+          module_text = module_text.replace('<MeasuredNewOrder />', '<NewOrder />')
+          module.write_text(module_text, encoding='utf-8')
+
+          diagnostic = Path('src/modules/orders/services/orderPerformanceMonitor.js')
+          if diagnostic.exists():
+              diagnostic.unlink()
+
+          css = Path('src/modules/orders/orders-module.css')
+          css_text = css.read_text(encoding='utf-8')
+          styles = '''
+
+/* Riepilogo disponibilità e totali ordine */
+.orders-availability-results{display:flex;flex-direction:column;gap:16px;margin-top:16px}.orders-availability-check{display:flex;flex-direction:column;gap:4px;padding:14px 16px;border:1px solid #bbf7d0;border-radius:12px;background:#f0fdf4;color:#166534}.orders-availability-check strong{font-size:16px}.orders-availability-check span{font-size:14px}.orders-availability-errors{margin-top:6px;font-weight:700}.orders-document-preview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.orders-document-preview>div{display:flex;flex-direction:column;gap:6px;padding:14px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc}.orders-document-preview span{font-size:13px;color:#64748b}.orders-document-preview strong{font-size:18px;color:#0f172a}.orders-order-total{display:grid;grid-template-columns:repeat(4,max-content);gap:22px;align-items:end;text-align:right}.orders-order-total>div{display:flex;flex-direction:column;gap:3px}.orders-order-total span{font-size:12px;color:#64748b}.orders-order-total strong{font-size:17px;color:#0f172a}.orders-order-grand-total strong{font-size:25px}.orders-order-actions{align-items:center;flex-wrap:wrap;justify-content:flex-end}.orders-split-summary{display:flex;flex-direction:column;gap:3px;max-width:390px;margin-right:6px;padding:10px 12px;border:1px solid #dbeafe;border-radius:10px;background:#eff6ff;color:#1e3a8a;font-size:12px}.orders-split-summary strong{font-size:13px}@media(max-width:900px){.orders-document-preview{grid-template-columns:1fr}.orders-order-total{grid-template-columns:repeat(2,1fr);width:100%;text-align:left}.orders-split-summary{max-width:none;width:100%;box-sizing:border-box}}@media(max-width:650px){.orders-order-footer{max-height:72vh;overflow:auto}.orders-order-total{grid-template-columns:repeat(2,1fr);gap:10px 18px}.orders-order-actions{grid-template-columns:1fr 1fr}.orders-split-summary{grid-column:1/-1}.orders-order-grand-total strong{font-size:23px}}
+'''
+          if '/* Riepilogo disponibilità e totali ordine */' not in css_text:
+              css.write_text(css_text + styles, encoding='utf-8')
+
+          workflow = Path('.github/workflows/apply-pr115-changes.yml')
+          workflow.unlink()
+      - name: Commit final changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(orders): semplifica riepilogo disponibilità e totali"
+          git push origin fix/orders-availability-summary

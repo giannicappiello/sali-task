@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Activity, Archive, Database, FileText, Fingerprint, Network } from "lucide-react";
+import { Activity, Archive, Database, Fingerprint, Network } from "lucide-react";
 import IntegrationCard from "../components/IntegrationCard";
 
 export default function IntegrationsDashboard() {
@@ -13,14 +13,6 @@ export default function IntegrationsDashboard() {
       status: "connected",
       meta: "WebAPI Mexal · ambiente configurato",
       onOpen: () => navigate("/integrations/mexal"),
-    },
-    {
-      icon: FileText,
-      title: "Serie documenti Mexal",
-      description: "Sincronizza e configura le serie usate per gli ordini OCM e OCX.",
-      status: "connected",
-      meta: "Configurazione documenti ordini",
-      onOpen: () => navigate("/integrations/mexal/serie-documenti"),
     },
     {
       icon: Activity,
@@ -65,7 +57,7 @@ export default function IntegrationsDashboard() {
           <p>Controlla da un unico punto le connessioni tra Progre Workspace e i sistemi aziendali.</p>
         </div>
         <div className="integrations-hero-summary">
-          <strong>2</strong><span>integrazioni connesse</span>
+          <strong>1</strong><span>integrazione connessa</span>
         </div>
       </div>
 

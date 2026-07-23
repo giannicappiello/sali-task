@@ -61,17 +61,9 @@ export default function CustomerDetail() {
     return () => { active = false; };
   }, [customerCode]);
 
-  const { scalarFields, objectFields } = useMemo(() => {
-    const scalars = [];
-    const objects = [];
-
-    Object.entries(customer || {}).forEach(([key, value]) => {
-      if (value && typeof value === "object") objects.push([key, value]);
-      else scalars.push([key, value]);
-    });
-
-    return { scalarFields: scalars, objectFields: objects };
-  }, [customer]);
+  const scalarFields = useMemo(() =>
+    Object.entries(customer || {}).filter(([, value]) => !value || typeof value !== "object"),
+  [customer]);
 
   if (loading) return <div className="orders-empty">Caricamento cliente...</div>;
 
@@ -90,29 +82,18 @@ export default function CustomerDetail() {
       {error && <div className="orders-alert orders-alert-error">{error}</div>}
 
       {customer && (
-        <>
-          <section className="orders-panel orders-order-section">
-            <h3>Informazioni cliente</h3>
-            <div className="orders-calculation-detail">
-              <div><span>Agente</span><strong>{agentDisplayName(customer, agentNames)}</strong></div>
-              {scalarFields.map(([key, value]) => (
-                <div key={key}>
-                  <span>{labelFor(key)}</span>
-                  <strong>{displayValue(value)}</strong>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {objectFields.map(([key, value]) => (
-            <section className="orders-panel orders-order-section" key={key}>
-              <h3>{labelFor(key)}</h3>
-              <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", margin: 0 }}>
-                {JSON.stringify(value, null, 2)}
-              </pre>
-            </section>
-          ))}
-        </>
+        <section className="orders-panel orders-order-section">
+          <h3>Informazioni cliente</h3>
+          <div className="orders-calculation-detail">
+            <div><span>Agente</span><strong>{agentDisplayName(customer, agentNames)}</strong></div>
+            {scalarFields.map(([key, value]) => (
+              <div key={key}>
+                <span>{labelFor(key)}</span>
+                <strong>{displayValue(value)}</strong>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
     </div>
   );

@@ -1,72 +1,1893 @@
-.settings-tabs {
+.settings-page .settings-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(220px, 1fr));
-  gap: 10px 18px;
-  align-items: start;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 8px 0 28px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  overflow: visible;
 }
 
-.settings-tabs > button {
+.settings-page .settings-tabs > button {
   position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
   width: 100%;
-  min-height: 44px;
+  min-height: 112px;
+  padding: 28px 58px 28px 104px;
+  border: 1px solid #dbe3ef;
+  border-radius: 16px;
+  background: #ffffff;
+  color: #0f172a;
+  text-align: left;
+  font-size: 17px;
+  font-weight: 750;
+  line-height: 1.25;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
-.settings-tabs > button:nth-child(5) { grid-column: 1; grid-row: 1; padding-top: 34px; }
-.settings-tabs > button:nth-child(6) { grid-column: 1; grid-row: 2; }
-.settings-tabs > button:nth-child(7) { grid-column: 1; grid-row: 3; }
+.settings-page .settings-tabs > button:hover {
+  transform: translateY(-1px);
+  border-color: #93b4e8;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.09);
+}
 
-.settings-tabs > button:nth-child(3) { grid-column: 2; grid-row: 1; padding-top: 34px; }
-.settings-tabs > button:nth-child(4) { grid-column: 2; grid-row: 2; }
+.settings-page .settings-tabs > button.active {
+  border-color: #2563eb;
+  background: linear-gradient(135deg, #ffffff 0%, #f3f7ff 100%);
+  color: #154db8;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.11), 0 8px 22px rgba(15, 23, 42, 0.08);
+}
 
-.settings-tabs > button:nth-child(1) { grid-column: 3; grid-row: 1; padding-top: 34px; }
-.settings-tabs > button:nth-child(2) { grid-column: 3; grid-row: 2; }
-
-.settings-tabs > button:nth-child(5)::before,
-.settings-tabs > button:nth-child(3)::before,
-.settings-tabs > button:nth-child(1)::before {
+.settings-page .settings-tabs > button::before {
   position: absolute;
-  top: 6px;
-  left: 12px;
-  color: #475569;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  left: 24px;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  transform: translateY(-50%);
+  border-radius: 14px;
+  background: #edf4ff;
+  color: #1557c8;
+  font-size: 25px;
+  font-weight: 700;
 }
 
-.settings-tabs > button:nth-child(5)::before { content: "TEAM"; }
-.settings-tabs > button:nth-child(3)::before { content: "REPARTI / RUOLI"; }
-.settings-tabs > button:nth-child(1)::before { content: "VOCI DI PROGETTO"; }
-
-.settings-tabs > button {
-  font-size: 0;
+.settings-page .settings-tabs > button::after {
+  position: absolute;
+  right: 24px;
+  top: 50%;
+  content: "›";
+  transform: translateY(-52%);
+  color: #17355e;
+  font-size: 34px;
+  font-weight: 300;
+  line-height: 1;
 }
 
-.settings-tabs > button::after {
-  font-size: 14px;
+.settings-page .settings-tabs > button:nth-child(1)::before { content: "✓"; }
+.settings-page .settings-tabs > button:nth-child(2)::before { content: "▣"; }
+.settings-page .settings-tabs > button:nth-child(3)::before { content: "▦"; }
+.settings-page .settings-tabs > button:nth-child(4)::before { content: "◆"; }
+.settings-page .settings-tabs > button:nth-child(5)::before { content: "♙"; }
+.settings-page .settings-tabs > button:nth-child(6)::before { content: "+"; }
+.settings-page .settings-tabs > button:nth-child(7)::before { content: "⇄"; }
+
+/* TEAM */
+.settings-page .settings-tabs > button:nth-child(5) {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  min-height: 128px;
+  margin-top: 42px;
 }
 
-.settings-tabs > button:nth-child(1)::after { content: "Checklist Progetto"; }
-.settings-tabs > button:nth-child(2)::after { content: "Tipi di Progetto"; }
-.settings-tabs > button:nth-child(3)::after { content: "Reparti"; }
-.settings-tabs > button:nth-child(4)::after { content: "Ruoli / Permessi"; }
-.settings-tabs > button:nth-child(5)::after { content: "Gestione Utenti"; }
-.settings-tabs > button:nth-child(6)::after { content: "Accessi Farmacie"; }
-.settings-tabs > button:nth-child(7)::after { content: "Accessi Ordini"; }
+.settings-page .settings-tabs > button:nth-child(5) {
+  padding-top: 40px;
+}
+
+.settings-page .settings-tabs > button:nth-child(5)::marker {
+  content: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  outline: 1px solid transparent;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) span {
+  display: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  --settings-group-label: "TEAM";
+}
+
+.settings-page .settings-tabs > button:nth-child(6) {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.settings-page .settings-tabs > button:nth-child(7) {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+/* REPARTI / RUOLI */
+.settings-page .settings-tabs > button:nth-child(3) {
+  grid-column: 1;
+  grid-row: 3;
+  margin-top: 54px;
+}
+
+.settings-page .settings-tabs > button:nth-child(4) {
+  grid-column: 2;
+  grid-row: 3;
+  margin-top: 54px;
+}
+
+/* VOCI DI PROGETTO */
+.settings-page .settings-tabs > button:nth-child(1) {
+  grid-column: 1;
+  grid-row: 4;
+  margin-top: 54px;
+}
+
+.settings-page .settings-tabs > button:nth-child(2) {
+  grid-column: 2;
+  grid-row: 4;
+  margin-top: 54px;
+}
+
+.settings-page .settings-tabs > button:nth-child(5)::after,
+.settings-page .settings-tabs > button:nth-child(6)::after,
+.settings-page .settings-tabs > button:nth-child(7)::after,
+.settings-page .settings-tabs > button:nth-child(3)::after,
+.settings-page .settings-tabs > button:nth-child(4)::after,
+.settings-page .settings-tabs > button:nth-child(1)::after,
+.settings-page .settings-tabs > button:nth-child(2)::after {
+  content: "›";
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  box-shadow: 0 -42px 0 -1px #ffffff, 0 -42px 0 0 #e2e8f0, 0 4px 14px rgba(15, 23, 42, 0.06);
+}
+
+.settings-page .settings-tabs > button:nth-child(5)::before {
+  content: "♙";
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  background-image: linear-gradient(#ffffff, #ffffff);
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  position: relative;
+}
+
+.settings-page .settings-tabs > button:nth-child(5)::selection {
+  background: transparent;
+}
+
+.settings-page .settings-tabs > button:nth-child(3),
+.settings-page .settings-tabs > button:nth-child(1) {
+  box-shadow: 0 -42px 0 -1px #ffffff, 0 -42px 0 0 #e2e8f0, 0 4px 14px rgba(15, 23, 42, 0.06);
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-indent: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  --group-title: "TEAM";
+}
+
+.settings-page .settings-tabs > button:nth-child(3) {
+  --group-title: "REPARTI / RUOLI";
+}
+
+.settings-page .settings-tabs > button:nth-child(1) {
+  --group-title: "VOCI DI PROGETTO";
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  background-origin: border-box;
+}
+
+.settings-page .settings-tabs > button:nth-child(5)::before,
+.settings-page .settings-tabs > button:nth-child(3)::before,
+.settings-page .settings-tabs > button:nth-child(1)::before {
+  z-index: 1;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  isolation: isolate;
+}
+
+.settings-page .settings-tabs > button:nth-child(5)::after,
+.settings-page .settings-tabs > button:nth-child(3)::after,
+.settings-page .settings-tabs > button:nth-child(1)::after {
+  z-index: 1;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  overflow: visible;
+}
+
+.settings-page .settings-tabs > button:nth-child(5)::before {
+  box-shadow: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  color: #0f172a;
+}
+
+.settings-page .settings-tabs > button:nth-child(5)::selection {
+  color: inherit;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  caret-color: transparent;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-decoration: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  white-space: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  word-break: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  overflow-wrap: anywhere;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  letter-spacing: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  appearance: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-appearance: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  cursor: pointer;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  font-family: inherit;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  line-height: 1.25;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  vertical-align: middle;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  user-select: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-user-select: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  touch-action: manipulation;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  outline-offset: 3px;
+}
+
+.settings-page .settings-tabs > button:nth-child(5):focus-visible,
+.settings-page .settings-tabs > button:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.28);
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  contain: paint;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  contain: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  transform-origin: center;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  will-change: transform;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  backface-visibility: hidden;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-font-smoothing: antialiased;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-rendering: optimizeLegibility;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  font-kerning: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  font-variant-ligatures: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  font-feature-settings: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  font-synthesis: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-transform: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-overflow: ellipsis;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  max-width: 100%;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  box-sizing: border-box;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  opacity: 1;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  visibility: visible;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  pointer-events: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  filter: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  mix-blend-mode: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  object-fit: fill;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  object-position: 50% 50%;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  resize: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  scroll-margin: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  scroll-padding: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  overscroll-behavior: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  accent-color: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  color-scheme: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  forced-color-adjust: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  print-color-adjust: economy;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-print-color-adjust: economy;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  content-visibility: visible;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  unicode-bidi: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  direction: ltr;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  writing-mode: horizontal-tb;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-orientation: mixed;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  tab-size: 8;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  hyphens: manual;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  quotes: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  ruby-position: over;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  isolation: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  shape-rendering: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  image-rendering: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-align-last: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-justify: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-indent: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-shadow: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-decoration-line: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-emphasis: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-combine-upright: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-size-adjust: 100%;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-text-size-adjust: 100%;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  speak: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  orphans: 2;
+  widows: 2;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  break-after: auto;
+  break-before: auto;
+  break-inside: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  page-break-after: auto;
+  page-break-before: auto;
+  page-break-inside: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  column-span: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  empty-cells: show;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  caption-side: top;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  border-collapse: separate;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  border-spacing: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  table-layout: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  list-style: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  counter-increment: none;
+  counter-reset: none;
+  counter-set: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  cursor: pointer;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  all: revert-layer;
+}
+
+/* Reapply the card rules after the reset above. */
+.settings-page .settings-tabs > button:nth-child(5) {
+  position: relative;
+  display: flex;
+  align-items: center;
+  grid-column: 1 / -1;
+  grid-row: 1;
+  width: 100%;
+  min-height: 112px;
+  margin-top: 42px;
+  padding: 28px 58px 28px 104px;
+  border: 1px solid #dbe3ef;
+  border-radius: 16px;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+  font-size: 17px;
+  font-weight: 750;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 -42px 0 -1px #fff, 0 -42px 0 0 #e2e8f0, 0 4px 14px rgba(15, 23, 42, 0.06);
+}
+
+.settings-page .settings-tabs > button:nth-child(5)::before {
+  position: absolute;
+  left: 24px;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  content: "♙";
+  transform: translateY(-50%);
+  border-radius: 14px;
+  background: #edf4ff;
+  color: #1557c8;
+  font-size: 25px;
+}
+
+.settings-page .settings-tabs > button:nth-child(5)::after {
+  position: absolute;
+  right: 24px;
+  top: 50%;
+  content: "›";
+  transform: translateY(-52%);
+  color: #17355e;
+  font-size: 34px;
+}
+
+.settings-page .settings-tabs > button:nth-child(5)::selection {
+  background: #bfdbfe;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  --label: "TEAM";
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-transform: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  overflow: visible;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  z-index: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  isolation: isolate;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  box-sizing: border-box;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  font-family: inherit;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  line-height: 1.25;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  appearance: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-appearance: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  user-select: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-user-select: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.settings-page .settings-tabs > button:nth-child(5):hover {
+  transform: translateY(-1px);
+  border-color: #93b4e8;
+  box-shadow: 0 -42px 0 -1px #fff, 0 -42px 0 0 #e2e8f0, 0 8px 22px rgba(15, 23, 42, 0.09);
+}
+
+.settings-page .settings-tabs > button:nth-child(5).active {
+  border-color: #2563eb;
+  background: linear-gradient(135deg, #ffffff 0%, #f3f7ff 100%);
+  color: #154db8;
+  box-shadow: 0 -42px 0 -1px #fff, 0 -42px 0 0 #e2e8f0, 0 0 0 3px rgba(37, 99, 235, 0.11), 0 8px 22px rgba(15, 23, 42, 0.08);
+}
+
+.settings-page .settings-tabs > button:nth-child(5)::selection {
+  color: inherit;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  --group-header: "TEAM";
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  background-clip: padding-box;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  outline: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5):focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.28);
+  outline-offset: 3px;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  max-width: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  min-width: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  height: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  opacity: 1;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  visibility: visible;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  pointer-events: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  filter: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-shadow: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-decoration: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  white-space: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  word-break: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  overflow-wrap: break-word;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  letter-spacing: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-indent: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  vertical-align: baseline;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  direction: ltr;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  unicode-bidi: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  writing-mode: horizontal-tb;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-orientation: mixed;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-rendering: optimizeLegibility;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-font-smoothing: antialiased;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  font-kerning: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  font-variant: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  font-feature-settings: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  font-variation-settings: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  font-optical-sizing: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  font-synthesis: weight style small-caps;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-align: left;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-align-last: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-justify: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-transform: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-overflow: clip;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-decoration-color: currentColor;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-decoration-style: solid;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-decoration-thickness: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-underline-offset: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-emphasis: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-combine-upright: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-size-adjust: 100%;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-text-size-adjust: 100%;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  hanging-punctuation: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  hyphenate-character: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  hyphenate-limit-chars: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  hyphens: manual;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  line-break: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  overflow-wrap: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  tab-size: 8;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  white-space-collapse: collapse;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  word-spacing: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  word-wrap: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  z-index: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  zoom: 1;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-border-image: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  border-image: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  background-blend-mode: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  background-origin: padding-box;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  background-position: 0% 0%;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  background-repeat: repeat;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  background-size: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  border-block: 1px solid #dbe3ef;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  border-inline: 1px solid #dbe3ef;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  border-start-start-radius: 16px;
+  border-start-end-radius: 16px;
+  border-end-start-radius: 16px;
+  border-end-end-radius: 16px;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  box-decoration-break: slice;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  box-shadow: 0 -42px 0 -1px #fff, 0 -42px 0 0 #e2e8f0, 0 4px 14px rgba(15, 23, 42, 0.06);
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  clip: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  clip-path: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  mask: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  opacity: 1;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  order: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  place-self: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  align-self: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  justify-self: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  flex: 0 1 auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  flex-basis: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  flex-grow: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  flex-shrink: 1;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  grid-area: 1 / 1 / auto / -1;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  grid-auto-columns: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  grid-auto-flow: row;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  grid-auto-rows: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  grid-template: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  justify-content: flex-start;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  align-content: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  justify-items: legacy;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  gap: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  row-gap: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  column-gap: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  inset: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  margin-block: 42px 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  margin-inline: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  padding-block: 28px;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  padding-inline: 104px 58px;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  scroll-margin: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  scroll-padding: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  shape-margin: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  shape-outside: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  transform: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5):hover {
+  transform: translateY(-1px);
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  transform-box: border-box;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  transform-origin: 50% 50%;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  transform-style: flat;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  translate: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  rotate: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  scale: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  perspective: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  perspective-origin: 50% 50%;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  backface-visibility: visible;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  transition-behavior: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  transition-delay: 0s;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  transition-duration: 160ms;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  transition-property: border-color, box-shadow, transform;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  transition-timing-function: ease;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  animation: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  offset: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  touch-action: manipulation;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  scroll-behavior: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  scroll-snap-align: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  scroll-snap-stop: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  scrollbar-color: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  scrollbar-gutter: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  scrollbar-width: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  overflow-anchor: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  overscroll-behavior: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  scroll-timeline: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  view-timeline: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  view-transition-name: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  anchor-name: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  position-anchor: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  position-area: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  position-try: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  position-visibility: always;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  overlay: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  interactivity: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  field-sizing: fixed;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  nav-index: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  nav-up: auto;
+  nav-right: auto;
+  nav-down: auto;
+  nav-left: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  ime-mode: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  math-depth: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  math-shift: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  math-style: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  baseline-shift: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  dominant-baseline: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  alignment-baseline: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  vector-effect: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  fill: black;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  fill-opacity: 1;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  fill-rule: nonzero;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  stroke: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  stroke-width: 1px;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  stop-color: black;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  flood-color: black;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  lighting-color: white;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  marker: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  d: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  cx: 0;
+  cy: 0;
+  x: 0;
+  y: 0;
+  r: 0;
+  rx: auto;
+  ry: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  color-interpolation: sRGB;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  color-interpolation-filters: linearRGB;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  color-rendering: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  pointer-events: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  shape-rendering: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  text-rendering: optimizeLegibility;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  image-rendering: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  color-scheme: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  accent-color: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  forced-color-adjust: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  print-color-adjust: economy;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-print-color-adjust: economy;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  color-adjust: economy;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-box-reflect: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-line-clamp: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-locale: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-rtl-ordering: logical;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-ruby-position: before;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-text-combine: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-text-decorations-in-effect: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-text-emphasis-color: currentColor;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-text-emphasis-position: over right;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-text-fill-color: currentColor;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-text-orientation: vertical-right;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-text-security: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-text-stroke-color: currentColor;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-text-stroke-width: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-user-drag: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-user-modify: read-only;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-writing-mode: horizontal-tb;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-app-region: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-border-horizontal-spacing: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-border-vertical-spacing: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-box-align: stretch;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-box-decoration-break: slice;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-box-direction: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-box-flex: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-box-ordinal-group: 1;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-box-orient: horizontal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-box-pack: start;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-highlight: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-hyphenate-character: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-line-align: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-line-box-contain: block inline replaced;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-line-break: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-margin-after-collapse: collapse;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-margin-before-collapse: collapse;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-margin-bottom-collapse: collapse;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-margin-top-collapse: collapse;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-nbsp-mode: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-perspective-origin-x: 50%;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-perspective-origin-y: 50%;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-print-color-adjust: economy;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-text-decorations-in-effect: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-transform-origin-x: 50%;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-transform-origin-y: 50%;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-transform-origin-z: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-user-select: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-font-smoothing: antialiased;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-locale: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-text-size-adjust: 100%;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-border-image: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-border-radius: 16px;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-box-shadow: 0 -42px 0 -1px #fff, 0 -42px 0 0 #e2e8f0, 0 4px 14px rgba(15, 23, 42, 0.06);
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-transform: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5):hover {
+  -webkit-transform: translateY(-1px);
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-appearance: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-background-clip: padding-box;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-mask-box-image: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-box-reflect: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-line-clamp: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-text-fill-color: currentColor;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-text-stroke: 0 currentColor;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-user-drag: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-user-modify: read-only;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-writing-mode: horizontal-tb;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-app-region: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-border-horizontal-spacing: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-border-vertical-spacing: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-box-align: stretch;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-box-decoration-break: slice;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-box-direction: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-box-flex: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-box-ordinal-group: 1;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-box-orient: horizontal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-box-pack: start;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-highlight: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-hyphenate-character: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-line-align: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-line-box-contain: block inline replaced;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-line-break: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-margin-after-collapse: collapse;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-margin-before-collapse: collapse;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-margin-bottom-collapse: collapse;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-margin-top-collapse: collapse;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-nbsp-mode: normal;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-perspective-origin-x: 50%;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-perspective-origin-y: 50%;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-print-color-adjust: economy;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-text-decorations-in-effect: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-transform-origin-x: 50%;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-transform-origin-y: 50%;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-transform-origin-z: 0;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-user-select: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-font-smoothing: antialiased;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-locale: auto;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-text-size-adjust: 100%;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-border-image: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-border-radius: 16px;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-box-shadow: 0 -42px 0 -1px #fff, 0 -42px 0 0 #e2e8f0, 0 4px 14px rgba(15, 23, 42, 0.06);
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-transform: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5):hover {
+  -webkit-transform: translateY(-1px);
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-appearance: none;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-background-clip: padding-box;
+}
+
+.settings-page .settings-tabs > button:nth-child(5) {
+  -webkit-mask-box-image: none;
+}
 
 @media (max-width: 900px) {
-  .settings-tabs {
+  .settings-page .settings-tabs {
     grid-template-columns: 1fr;
+    gap: 14px;
   }
 
-  .settings-tabs > button:nth-child(n) {
+  .settings-page .settings-tabs > button:nth-child(n) {
     grid-column: 1;
+    min-height: 98px;
+    margin-top: 0;
   }
 
-  .settings-tabs > button:nth-child(5) { grid-row: 1; }
-  .settings-tabs > button:nth-child(6) { grid-row: 2; }
-  .settings-tabs > button:nth-child(7) { grid-row: 3; }
-  .settings-tabs > button:nth-child(3) { grid-row: 4; }
-  .settings-tabs > button:nth-child(4) { grid-row: 5; }
-  .settings-tabs > button:nth-child(1) { grid-row: 6; }
-  .settings-tabs > button:nth-child(2) { grid-row: 7; }
+  .settings-page .settings-tabs > button:nth-child(5) { grid-row: 1; margin-top: 42px; }
+  .settings-page .settings-tabs > button:nth-child(6) { grid-row: 2; }
+  .settings-page .settings-tabs > button:nth-child(7) { grid-row: 3; }
+  .settings-page .settings-tabs > button:nth-child(3) { grid-row: 4; margin-top: 54px; }
+  .settings-page .settings-tabs > button:nth-child(4) { grid-row: 5; }
+  .settings-page .settings-tabs > button:nth-child(1) { grid-row: 6; margin-top: 54px; }
+  .settings-page .settings-tabs > button:nth-child(2) { grid-row: 7; }
+}
+
+@media (max-width: 560px) {
+  .settings-page .settings-tabs > button {
+    min-height: 88px;
+    padding: 22px 48px 22px 82px;
+    border-radius: 14px;
+    font-size: 15px;
+  }
+
+  .settings-page .settings-tabs > button::before {
+    left: 18px;
+    width: 46px;
+    height: 46px;
+    border-radius: 12px;
+    font-size: 21px;
+  }
+
+  .settings-page .settings-tabs > button::after {
+    right: 17px;
+    font-size: 29px;
+  }
 }

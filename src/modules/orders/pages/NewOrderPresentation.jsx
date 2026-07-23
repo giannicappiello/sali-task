@@ -59,33 +59,39 @@ function enhanceAvailability(root) {
   results.dataset.ocx = String(ocx);
 }
 
+function addSplitSummary(actions, availability) {
+  if (!actions || !availability || actions.querySelector(":scope > .orders-split-summary")) return;
+  const split = document.createElement("div");
+  split.className = "orders-split-summary";
+  split.innerHTML = `<strong>L'ordine verrà suddiviso automaticamente in:</strong><span>OCM: ${formatPieces(availability.dataset.ocm)} pezzi (evasione immediata)</span><span>OCI: ${formatPieces(availability.dataset.oci)} pezzi</span><span>OCX: ${formatPieces(availability.dataset.ocx)} pezzi (backorder)</span>`;
+  actions.insertBefore(split, actions.firstChild);
+}
+
 function enhanceFooter(root) {
   const footer = root.querySelector(".orders-order-footer");
-  const oldTotal = footer?.querySelector(":scope > .orders-order-total");
   const actions = footer?.querySelector(":scope > .orders-order-actions");
   const availability = root.querySelector(".orders-availability-results[data-presentation-ready='true']");
-  if (!footer || !oldTotal || !actions || footer.dataset.presentationReady === "true") return;
+  if (!footer || !actions) return;
 
-  const values = oldTotal.querySelectorAll("span, strong");
-  const pieces = values[0]?.textContent || "0 pezzi";
-  const economics = values[1]?.textContent || "";
-  const total = oldTotal.querySelector("strong")?.textContent || "0,00 €";
-  const taxable = economics.match(/Imponibile:\s*(.+?)\s*·/i)?.[1] || "0,00 €";
-  const vat = economics.match(/IVA:\s*(.+)$/i)?.[1] || "0,00 €";
+  if (footer.dataset.presentationReady !== "true") {
+    const oldTotal = footer.querySelector(":scope > .orders-order-total");
+    if (!oldTotal) return;
+    const values = oldTotal.querySelectorAll("span, strong");
+    const pieces = values[0]?.textContent || "0 pezzi";
+    const economics = values[1]?.textContent || "";
+    const total = oldTotal.querySelector("strong")?.textContent || "0,00 €";
+    const taxable = economics.match(/Imponibile:\s*(.+?)\s*·/i)?.[1] || "0,00 €";
+    const vat = economics.match(/IVA:\s*(.+)$/i)?.[1] || "0,00 €";
 
-  oldTotal.classList.add("orders-summary-original-hidden");
-  const summary = document.createElement("div");
-  summary.className = "orders-order-total orders-order-total-enhanced";
-  summary.innerHTML = `<div><span>Totale ordine</span><strong>${pieces}</strong></div><div><span>Imponibile</span><strong>${taxable}</strong></div><div><span>IVA</span><strong>${vat}</strong></div><div class="orders-order-grand-total"><span>TOTALE</span><strong>${total}</strong></div>`;
-  footer.insertBefore(summary, actions);
-
-  if (availability) {
-    const split = document.createElement("div");
-    split.className = "orders-split-summary";
-    split.innerHTML = `<strong>L'ordine verrà suddiviso automaticamente in:</strong><span>OCM: ${formatPieces(availability.dataset.ocm)} pezzi (evasione immediata)</span><span>OCI: ${formatPieces(availability.dataset.oci)} pezzi</span><span>OCX: ${formatPieces(availability.dataset.ocx)} pezzi (backorder)</span>`;
-    actions.insertBefore(split, actions.firstChild);
+    oldTotal.classList.add("orders-summary-original-hidden");
+    const summary = document.createElement("div");
+    summary.className = "orders-order-total orders-order-total-enhanced";
+    summary.innerHTML = `<div><span>Totale ordine</span><strong>${pieces}</strong></div><div><span>Imponibile</span><strong>${taxable}</strong></div><div><span>IVA</span><strong>${vat}</strong></div><div class="orders-order-grand-total"><span>TOTALE</span><strong>${total}</strong></div>`;
+    footer.insertBefore(summary, actions);
+    footer.dataset.presentationReady = "true";
   }
-  footer.dataset.presentationReady = "true";
+
+  addSplitSummary(actions, availability);
 }
 
 export default function NewOrderPresentation() {

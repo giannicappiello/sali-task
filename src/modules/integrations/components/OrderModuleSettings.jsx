@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
-import { Save } from "lucide-react";
+import { ArrowLeft, Save, ShoppingCart } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../../contexts/AuthContext";
 import { supabase } from "../../../lib/supabaseClient";
 import { customerOrderSeriesOptions } from "../../../components/documentSeriesOptions";
+import IntegrationStatusBadge from "./IntegrationStatusBadge";
 
 const defaults = {
   invia_automaticamente_mexal: false,
@@ -60,9 +63,14 @@ function Panel({ code, title, series }) {
     setMessage(error ? error.message : "Configurazione salvata.");
   }
 
-  return <section style={{ padding: 22, border: "1px solid #dbe3ec", borderRadius: 16, background: "#fff" }}>
-    <h3 style={{ marginTop: 0 }}>{title}</h3>
-    <p style={{ color: "#64748b" }}>Impostazioni indipendenti per questa area ordini.</p>
+  return <section className="mexal-table-panel">
+    <div className="mexal-section-heading">
+      <div>
+        <h3>{title}</h3>
+        <p>Impostazioni indipendenti per questa area ordini.</p>
+      </div>
+      <IntegrationStatusBadge status="configuration" />
+    </div>
     {loading ? <p>Caricamento configurazione...</p> : <>
       <div style={{ display: "grid", gap: 16 }}>
         <Toggle label="Invio automatico a Mexal" checked={config.invia_automaticamente_mexal} onChange={(value) => set("invia_automaticamente_mexal", value)} />
@@ -78,14 +86,52 @@ function Panel({ code, title, series }) {
 }
 
 export default function OrderModuleSettings({ moduleCode = null }) {
+  const navigate = useNavigate();
+  const { profile } = useAuth();
   const [series, setSeries] = useState([]);
   const [seriesError, setSeriesError] = useState("");
+
   useEffect(() => {
     supabase.from("ordini_serie_documenti").select("*").eq("attiva", true).order("sigla_documento").order("serie").then(({ data, error }) => {
       if (error) setSeriesError(error.message);
       else setSeries(customerOrderSeriesOptions(data || []));
     });
   }, []);
+
   const panels = moduleCode ? [[moduleCode, moduleCode === "ph" ? "ORDINI PH" : "ORDINI PROF"]] : [["prof", "ORDINI PROF"], ["ph", "ORDINI PH"]];
-  return <div><h2>{moduleCode ? panels[0][1] : "Moduli Ordini"}</h2><p>{moduleCode ? "Configurazione indipendente dell'integrazione ordini selezionata." : "Le impostazioni Mexal ed email sono separate per ciascuna area."}</p>{seriesError && <p role="alert">{seriesError}</p>}<div className="mexal-two-columns">{panels.map(([code, title]) => <Panel key={code} code={code} title={title} series={series} />)}</div></div>;
+
+  if (!moduleCode) {
+    return <div>
+      <h2>Moduli Ordini</h2>
+      <p>Le impostazioni Mexal ed email sono separate per ciascuna area.</p>
+      {seriesError && <p role="alert">{seriesError}</p>}
+      <div className="mexal-two-columns">{panels.map(([code, title]) => <Panel key={code} code={code} title={title} series={series} />)}</div>
+    </div>;
+  }
+
+  const title = moduleCode === "ph" ? "Ordini PH" : "Ordini PROF";
+  const subtitle = moduleCode === "ph"
+    ? "Configurazione integrazione ordini farmacia."
+    : "Configurazione integrazione ordini professionali.";
+
+  return <div className="mexal-page">
+    <button type="button" className="integrations-back-button" onClick={() => navigate("/integrations")}><ArrowLeft size={18} /> Centro Integrazioni</button>
+
+    <section className="mexal-hero">
+      <div className="mexal-hero-main">
+        <div className="mexal-logo"><ShoppingCart size={30} /></div>
+        <div>
+          <div className="mexal-title-line"><h1>{title}</h1><IntegrationStatusBadge status="configuration" /></div>
+          <p>{subtitle}</p>
+        </div>
+      </div>
+      <div className="mexal-hero-user"><span>Operatore</span><strong>{`${profile?.nome || ""} ${profile?.cognome || ""}`.trim() || "Utente"}</strong></div>
+    </section>
+
+    {seriesError && <div className="mexal-alert alert-error"><span>{seriesError}</span></div>}
+
+    <div className="mexal-two-columns">
+      <Panel code={moduleCode} title="Configurazione" series={series} />
+    </div>
+  </div>;
 }

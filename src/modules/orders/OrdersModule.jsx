@@ -36,7 +36,7 @@ function organizeOrderLinesTable() {
   const table = document.querySelector(".orders-order-lines");
   if (!table) return;
 
-  const columns = "minmax(220px,2fr) 110px 110px 110px minmax(150px,1fr) 110px 110px 135px 135px 44px";
+  const columns = "minmax(165px,1.45fr) 120px 105px 95px minmax(135px,1fr) 95px 105px 115px 115px 44px";
   const headerCells = [...table.querySelectorAll("thead tr:first-child > th")];
   const headerOrder = [
     [1, 1, "Prodotto"],
@@ -63,6 +63,7 @@ function organizeOrderLinesTable() {
       cell.style.display = "table-cell";
       cell.style.order = String(order);
       if (cell.textContent !== label) cell.textContent = label;
+      cell.style.textAlign = index === 2 || index === 3 ? "center" : "left";
     });
   }
 
@@ -93,7 +94,14 @@ function organizeOrderLinesTable() {
       if (!cell) return;
       cell.style.display = "table-cell";
       cell.style.order = String(order);
+      cell.style.textAlign = index === 2 || index === 3 ? "center" : "left";
     });
+
+    const productCategory = cells[1]?.querySelector("small");
+    if (productCategory) productCategory.style.display = "none";
+
+    const quantityControl = cells[3]?.querySelector(".orders-quantity-control");
+    if (quantityControl) quantityControl.style.justifyContent = "center";
 
     const quantity = Number(cells[3]?.querySelector("input")?.value || 0);
     const taxable = parseCurrency(cells[8]?.textContent);
@@ -134,7 +142,7 @@ export default function OrdersModule() {
         .orders-status.bozza { background: #e2e8f0; color: #475569; }
         .orders-status.inviato { background: #dcfce7; color: #166534; }
         .orders-status.errore { background: #fee2e2; color: #991b1b; }
-        .orders-order-lines { min-width: 1220px; }
+        .orders-order-lines { min-width: 1080px; }
         .orders-order-lines thead tr,
         .orders-order-lines tbody tr:not(.orders-calculation-row) { width: 100%; }
       `}</style>

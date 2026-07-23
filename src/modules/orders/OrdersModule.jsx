@@ -5,7 +5,7 @@ import OrdersDashboard from "./pages/OrdersDashboard";
 import Customers from "./pages/Customers";
 import CustomerDetail from "./pages/CustomerDetail";
 import Orders from "./pages/Orders";
-import NewOrder from "./pages/NewOrder";
+import NewOrderPresentation from "./pages/NewOrderPresentation";
 import OrderDetail from "./pages/OrderDetail";
 import "./orders-module.css";
 import "./orders-mobile-fixes.css";
@@ -147,8 +147,8 @@ export default function OrdersModule() {
         <Route path="clienti" element={<Customers />} />
         <Route path="clienti/:customerCode" element={<CustomerDetail />} />
         <Route path="elenco" element={<Orders />} />
-        <Route path="nuovo" element={<NewOrder />} />
-        <Route path="modifica/:orderId" element={<NewOrder />} />
+        <Route path="nuovo" element={<NewOrderPresentation />} />
+        <Route path="modifica/:orderId" element={<NewOrderPresentation />} />
         <Route path="elenco/:orderId" element={<OrderDetail />} />
         <Route path="*" element={<Navigate to="dashboard" replace />} />
       </Routes>

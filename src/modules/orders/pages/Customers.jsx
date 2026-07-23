@@ -69,7 +69,7 @@ export default function Customers() {
       let query = supabase
         .from("ordini_clienti_cache")
         .select(
-          "codice_cliente,ragione_sociale,localita,provincia,codice_agente_mexal"
+          "codice_cliente,ragione_sociale,localita,provincia,partita_iva,codice_agente_mexal"
         )
         .eq("attivo_mexal", true)
         .order("ragione_sociale", { ascending: true })

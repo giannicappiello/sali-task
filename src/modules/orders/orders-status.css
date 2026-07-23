@@ -1,0 +1,5 @@
+.orders-status.boza,.orders-status.bozza,.orders-sync-badge.bozza{background:#e2e8f0;color:#475569}
+.orders-status.inviato-mexal,.orders-sync-badge.inviato-mexal{background:#dcfce7;color:#166534}
+.orders-status.spedito,.orders-sync-badge.spedito{background:#dbeafe;color:#1d4ed8}
+.orders-status.errore,.orders-sync-badge.errore{background:#fee2e2;color:#991b1b}
+.orders-status.in_corso,.orders-sync-badge.in_corso{background:#fef3c7;color:#92400e}

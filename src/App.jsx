@@ -4,6 +4,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Layout from "./components/Layout";
+import OrdersDataPreloader from "./components/OrdersDataPreloader";
 
 import Login from "./pages/Login/Login";
 
@@ -57,6 +58,7 @@ function Loader() {
 function App() {
   return (
     <AuthProvider>
+      <OrdersDataPreloader />
       <Suspense fallback={<Loader />}>
         <Routes>
           <Route path="/login" element={<Login />} />

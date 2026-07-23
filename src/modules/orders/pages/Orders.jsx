@@ -7,8 +7,9 @@ import { useOrdersModule } from "../ordersModuleContext";
 import { agentDisplayName, loadAgentNameMap, sortOrdersNewestFirst } from "../services/agentNames";
 
 function displayStatus(order) {
+  const orderStatus = String(order?.stato || "").trim().toLowerCase();
   const syncStatus = String(order?.stato_sincronizzazione || "").trim().toLowerCase();
-  if (syncStatus === "completato") return { label: "INVIATO", className: "inviato" };
+  if (orderStatus === "confermato" || syncStatus === "completato") return { label: "SPEDITO", className: "inviato" };
   if (syncStatus === "errore") return { label: "ERRORE", className: "errore" };
   return { label: "BOZZA", className: "bozza" };
 }

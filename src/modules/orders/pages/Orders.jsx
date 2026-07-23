@@ -5,14 +5,7 @@ import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
 import { useOrdersModule } from "../ordersModuleContext";
 import { agentDisplayName, loadAgentNameMap, sortOrdersNewestFirst } from "../services/agentNames";
-
-function displayStatus(order) {
-  const orderStatus = String(order?.stato || "").trim().toLowerCase();
-  const syncStatus = String(order?.stato_sincronizzazione || "").trim().toLowerCase();
-  if (orderStatus === "confermato" || syncStatus === "completato") return { label: "SPEDITO", className: "inviato" };
-  if (syncStatus === "errore") return { label: "ERRORE", className: "errore" };
-  return { label: "BOZZA", className: "bozza" };
-}
+import { getOrderDisplayStatus } from "../services/orderDisplayStatus";
 
 export default function Orders() {
   const { moduleCode, basePath } = useOrdersModule();
@@ -52,13 +45,38 @@ export default function Orders() {
     const { data, error } = await query;
     if (error) console.error("Errore ordini:", error);
     const orderedRows = sortOrdersNewestFirst(data || []);
+
+    let documents = [];
+    const orderIds = orderedRows.map((row) => row.id);
+    if (orderIds.length) {
+      const { data: documentRows, error: documentsError } = await supabase
+        .from("ordini_documenti_mexal")
+        .select("ordine_id,tipo_documento,numero")
+        .in("ordine_id", orderIds)
+        .not("numero", "is", null);
+      if (documentsError) console.error("Errore documenti Mexal elenco ordini:", documentsError);
+      documents = documentRows || [];
+    }
+
+    const documentsByOrder = documents.reduce((map, document) => {
+      const current = map.get(document.ordine_id) || [];
+      current.push(document);
+      map.set(document.ordine_id, current);
+      return map;
+    }, new Map());
+
+    const rowsWithDocuments = orderedRows.map((row) => ({
+      ...row,
+      documenti_mexal: documentsByOrder.get(row.id) || [],
+    }));
+
     let names = new Map();
     try {
-      names = await loadAgentNameMap(orderedRows.map((row) => row.codice_agente_mexal));
+      names = await loadAgentNameMap(rowsWithDocuments.map((row) => row.codice_agente_mexal));
     } catch (agentError) {
       console.warn("Errore caricamento nomi agenti:", agentError);
     }
-    setRows(orderedRows);
+    setRows(rowsWithDocuments);
     setAgentsByCode(names);
     setLoading(false);
   }
@@ -86,7 +104,7 @@ export default function Orders() {
             <thead><tr><th>Data</th><th>Numero</th><th>Cliente</th><th>Agente</th><th>Stato</th><th>Imponibile</th><th>IVA</th><th>Totale documento</th><th>OCM</th><th>OCX</th><th>OCI</th></tr></thead>
             <tbody>
               {filtered.map((item) => {
-                const status = displayStatus(item);
+                const status = getOrderDisplayStatus(item);
                 return <tr key={item.id} className="orders-clickable-row" onClick={() => navigate(`${basePath}/elenco/${item.id}`)}>
                   <td>{item.data_ordine || "-"}</td><td>{item.numero_ordine_visualizzato || item.numero_ordine || "Bozza"}</td><td>{item.ragione_sociale_cliente || item.codice_cliente}</td><td>{agentDisplayName(item, agentsByCode)}</td>
                   <td><span className={`orders-status ${status.className}`}>{status.label}</span></td>

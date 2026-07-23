@@ -19,6 +19,7 @@ function normalizeAgentCodes(values) {
 
 async function loadPaged(table, buildQuery, signal) {
   let from = 0;
+  let total = 0;
 
   while (!signal.aborted) {
     const query = buildQuery(
@@ -26,9 +27,13 @@ async function loadPaged(table, buildQuery, signal) {
     );
     const { data, error } = await query;
     if (error) throw error;
-    if ((data || []).length < PAGE_SIZE) return;
+    const pageSize = (data || []).length;
+    total += pageSize;
+    if (pageSize < PAGE_SIZE) return total;
     from += PAGE_SIZE;
   }
+
+  return total;
 }
 
 async function resolveOrdersAccess(profileId, isAdminUser) {
@@ -81,9 +86,9 @@ export default function OrdersDataPreloader() {
         const access = await resolveOrdersAccess(profile.id, isAdminUser);
         if (!access.enabled || controller.signal.aborted) return;
 
-        let productRowsAvailable = true;
+        let cachedProductCount = 0;
         try {
-          await loadPaged(
+          cachedProductCount = await loadPaged(
             "ordini_prodotti_cache",
             (query) => query
               .eq("mostra_in_app", true)
@@ -92,11 +97,10 @@ export default function OrdersDataPreloader() {
             controller.signal
           );
         } catch (error) {
-          productRowsAvailable = false;
           console.warn("Precaricamento cache prodotti Ordini non disponibile:", error);
         }
 
-        if (!productRowsAvailable && !controller.signal.aborted) {
+        if (cachedProductCount === 0 && !controller.signal.aborted) {
           await loadPaged(
             "prodotti",
             (query) => query
@@ -148,8 +152,7 @@ export default function OrdersDataPreloader() {
       }
     };
 
-    const start = () => run();
-    const timer = window.setTimeout(start, 0);
+    const timer = window.setTimeout(run, 0);
 
     return () => {
       controller.abort();

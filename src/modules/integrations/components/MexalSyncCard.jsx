@@ -13,8 +13,26 @@ export default function MexalSyncCard({
   onOpen,
   run,
 }) {
+  const action = enabled ? onSync : onOpen;
+
+  function activate() {
+    if (!running) action?.();
+  }
+
   return (
-    <article className={`mexal-sync-card ${enabled ? "is-enabled" : "is-planned"}`}>
+    <article
+      className={`mexal-sync-card ${enabled ? "is-enabled" : "is-planned"}`}
+      role="button"
+      tabIndex={0}
+      onClick={activate}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          activate();
+        }
+      }}
+      aria-disabled={running}
+    >
       <div className="mexal-sync-card-top">
         <div className="mexal-sync-icon"><Icon size={23} /></div>
         <span>{enabled ? "Disponibile" : "Pianificata"}</span>
@@ -36,8 +54,11 @@ export default function MexalSyncCard({
       )}
       <button
         type="button"
-        onClick={enabled ? onSync : onOpen}
-        disabled={enabled ? running : false}
+        onClick={(event) => {
+          event.stopPropagation();
+          activate();
+        }}
+        disabled={running}
       >
         {running ? <RefreshCw size={17} className="spin" /> : null}
         {enabled ? (running ? "Sincronizzazione..." : "Sincronizza") : "Apri roadmap"}

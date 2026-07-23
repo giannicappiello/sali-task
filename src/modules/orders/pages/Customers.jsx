@@ -1,14 +1,23 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
 import { agentDisplayName, loadAgentNameMap } from "../services/agentNames";
 
-const PAGE_SIZE = 1000;
+const RESULT_LIMIT = 100;
+const SEARCH_DELAY_MS = 300;
+
+function normalizeSearch(value) {
+  return String(value ?? "")
+    .trim()
+    .replace(/[,%()]/g, " ")
+    .replace(/\s+/g, " ");
+}
 
 export default function Customers() {
   const navigate = useNavigate();
+  const requestIdRef = useRef(0);
   const {
     loading: accessLoading,
     visibleAgents,
@@ -20,44 +29,28 @@ export default function Customers() {
   const [agentNames, setAgentNames] = useState(new Map());
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!accessLoading) loadCustomers();
-  }, [accessLoading, canSeeAll, canAccessOrders, JSON.stringify(visibleAgents)]);
+    if (accessLoading) return undefined;
 
-  async function loadAllCustomerPages() {
-    const allRows = [];
-    let from = 0;
+    const timer = window.setTimeout(() => {
+      loadCustomers(search);
+    }, search.trim() ? SEARCH_DELAY_MS : 0);
 
-    while (true) {
-      let query = supabase
-        .from("ordini_clienti_cache")
-        .select("*")
-        .eq("attivo_mexal", true)
-        .order("ragione_sociale", { ascending: true })
-        .order("codice_cliente", { ascending: true })
-        .range(from, from + PAGE_SIZE - 1);
+    return () => window.clearTimeout(timer);
+  }, [
+    accessLoading,
+    canSeeAll,
+    canAccessOrders,
+    search,
+    JSON.stringify(visibleAgents),
+  ]);
 
-      if (!canSeeAll) {
-        query = query.in("codice_agente_mexal", visibleAgents);
-      }
-
-      const { data, error } = await query;
-
-      if (error) throw error;
-
-      const page = data || [];
-      allRows.push(...page);
-
-      if (page.length < PAGE_SIZE) break;
-      from += PAGE_SIZE;
-    }
-
-    return allRows;
-  }
-
-  async function loadCustomers() {
+  async function loadCustomers(searchValue) {
+    const requestId = ++requestIdRef.current;
     setLoading(true);
+    setError("");
 
     try {
       if (!canAccessOrders) {
@@ -72,31 +65,56 @@ export default function Customers() {
         return;
       }
 
-      const customers = await loadAllCustomerPages();
-      const names = await loadAgentNameMap(customers.map((customer) => customer.codice_agente_mexal));
+      const searchTerm = normalizeSearch(searchValue);
+      let query = supabase
+        .from("ordini_clienti_cache")
+        .select(
+          "codice_cliente,ragione_sociale,localita,provincia,codice_agente_mexal"
+        )
+        .eq("attivo_mexal", true)
+        .order("ragione_sociale", { ascending: true })
+        .order("codice_cliente", { ascending: true })
+        .limit(RESULT_LIMIT);
 
+      if (!canSeeAll) {
+        query = query.in("codice_agente_mexal", visibleAgents);
+      }
+
+      if (searchTerm) {
+        const pattern = `%${searchTerm}%`;
+        query = query.or(
+          [
+            `codice_cliente.ilike.${pattern}`,
+            `ragione_sociale.ilike.${pattern}`,
+            `localita.ilike.${pattern}`,
+            `provincia.ilike.${pattern}`,
+            `partita_iva.ilike.${pattern}`,
+          ].join(",")
+        );
+      }
+
+      const { data, error: customersError } = await query;
+      if (customersError) throw customersError;
+      if (requestId !== requestIdRef.current) return;
+
+      const customers = data || [];
+      const names = await loadAgentNameMap(
+        customers.map((customer) => customer.codice_agente_mexal)
+      );
+
+      if (requestId !== requestIdRef.current) return;
       setRows(customers);
       setAgentNames(names);
-    } catch (error) {
-      console.error("Errore clienti ordini:", error);
+    } catch (loadError) {
+      if (requestId !== requestIdRef.current) return;
+      console.error("Errore clienti ordini:", loadError);
       setRows([]);
+      setAgentNames(new Map());
+      setError(loadError.message || "Errore durante il caricamento dei clienti.");
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) setLoading(false);
     }
   }
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return rows;
-
-    return rows.filter((item) => {
-      const agentName = agentDisplayName(item, agentNames);
-
-      return [...Object.values(item), agentName].some((value) =>
-        String(value ?? "").toLowerCase().includes(q)
-      );
-    });
-  }, [rows, search, agentNames]);
 
   return (
     <div className="orders-page">
@@ -106,12 +124,14 @@ export default function Customers() {
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Cerca cliente per qualsiasi dato..."
+            placeholder="Cerca per codice, ragione sociale, località, provincia o P. IVA..."
           />
         </div>
       </div>
 
       <div className="orders-panel orders-customers-panel">
+        {error && <div className="orders-alert orders-alert-error">{error}</div>}
+
         <div className="orders-table-wrap orders-customers-table-wrap">
           <table className="orders-table">
             <thead>
@@ -125,11 +145,15 @@ export default function Customers() {
 
             <tbody>
               {!loading &&
-                filtered.map((item) => (
+                rows.map((item) => (
                   <tr
                     key={item.codice_cliente}
                     className="orders-clickable-row"
-                    onClick={() => navigate(`/ordini/clienti/${encodeURIComponent(item.codice_cliente)}`)}
+                    onClick={() =>
+                      navigate(
+                        `/ordini/clienti/${encodeURIComponent(item.codice_cliente)}`
+                      )
+                    }
                   >
                     <td>{item.ragione_sociale}</td>
                     <td>{item.localita || "-"}</td>
@@ -142,8 +166,11 @@ export default function Customers() {
         </div>
 
         {loading && <p>Caricamento clienti...</p>}
-        {!loading && filtered.length === 0 && (
-          <p>Nessun cliente 501 disponibile per gli agenti autorizzati.</p>
+        {!loading && rows.length === 0 && (
+          <p>Nessun cliente disponibile per i criteri indicati.</p>
+        )}
+        {!loading && rows.length === RESULT_LIMIT && (
+          <p>Visualizzati i primi {RESULT_LIMIT} risultati. Usa la ricerca per restringere l’elenco.</p>
         )}
       </div>
     </div>

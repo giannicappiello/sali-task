@@ -36,6 +36,7 @@ const IntegrationsModule = lazy(() =>
 
 import "./styles/App.css";
 import "./styles/team-navigation-hidden.css";
+import "./styles/settings-menu-groups.css";
 
 function Loader() {
   return (

@@ -22,6 +22,10 @@ function money(value) {
   });
 }
 
+function pieces(value) {
+  return Number(value || 0).toLocaleString("it-IT");
+}
+
 function numberValue(value, fallback = 0) {
   const parsed = Number(String(value ?? "").replace(",", "."));
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -394,6 +398,11 @@ export default function NewOrder() {
   const availabilityValidity = useMemo(() => getAvailabilityValidity({ availability, lines, customer: selectedCustomer, invalidated: availabilityInvalidated }), [availability, lines, selectedCustomer, availabilityInvalidated]);
   const availabilityByCode = useMemo(() => new Map((availability?.lines || []).map((line) => [line.productCode, line])), [availability]);
   const availabilityPreview = useMemo(() => buildAvailabilityPreview(lines, availability?.lines), [lines, availability]);
+  const documentPreviewTotals = useMemo(() => ({
+    ocm: availabilityPreview.ocm.reduce((sum, item) => sum + numberValue(item.quantity), 0),
+    oci: availabilityPreview.oci.reduce((sum, item) => sum + numberValue(item.quantity), 0),
+    ocx: availabilityPreview.ocx.reduce((sum, item) => sum + numberValue(item.quantity), 0),
+  }), [availabilityPreview]);
 
   async function verifyAvailability() {
     if (!canCheckAvailability) return;
@@ -721,14 +730,22 @@ export default function NewOrder() {
         <button className="orders-primary" type="button" disabled={!canCheckAvailability} onClick={verifyAvailability}>
           {checkingAvailability ? "Verifica disponibilità…" : "VERIFICA DISPONIBILITÀ"}
         </button>
-        {availability && <div className="orders-availability-results">
-          <p>Verifica {availability.status === "completed" ? "completata" : "completata con errori"} alle {new Date(availability.checkedAt).toLocaleString("it-IT")} · Magazzino {availability.warehouse}.</p>
-          <p>Richiesta: {availability.summary.requestedQuantity} · Confermabile: {availability.summary.confirmedQuantity} · Mancante: {availability.summary.missingQuantity} · Disponibili: {availability.summary.availableLines} · Parziali: {availability.summary.partialLines} · Non disponibili: {availability.summary.unavailableLines} · Errori: {availability.summary.errorLines}</p>
-          <table className="orders-table"><thead><tr><th>Prodotto</th><th>Richiesta</th><th>Disponibile</th><th>Confermabile</th><th>Mancante</th><th>Stato</th></tr></thead><tbody>
-            {availability.lines.map((result) => { const line = lines.find((item) => item.codice_articolo === result.productCode); const labels = { available: "Disponibile", partial: "Parzialmente disponibile", unavailable: "Non disponibile", error: "Errore di verifica" }; return <tr key={result.productCode}><td>{result.productCode} · {line?.descrizione || "-"}</td><td>{result.requestedQuantity}</td><td>{result.availableQuantity ?? "-"}</td><td>{result.confirmedQuantity}</td><td>{result.missingQuantity}</td><td>{labels[result.status]}{result.message ? ` — ${result.message}` : ""}</td></tr>; })}
-          </tbody></table>
-          <div className="orders-calculation-detail"><div><span>Disponibile — futuro OCM</span><strong>{availabilityPreview.ocm.map((item) => `${item.productCode}: ${item.quantity}`).join(" · ") || "Nessuna riga"}</strong></div><div><span>Mancante — futuro OCX</span><strong>{availabilityPreview.ocx.map((item) => `${item.productCode}: ${item.quantity}`).join(" · ") || "Nessuna riga"}</strong></div></div>
-        </div>}
+        {availability && (
+          <div className="orders-availability-results orders-availability-summary">
+            <div className="orders-availability-check">
+              <strong>✓ Verifica completata</strong>
+              <span>{new Date(availability.checkedAt).toLocaleString("it-IT")}</span>
+              <span>Magazzino {availability.warehouse}</span>
+              <span className="orders-availability-errors">Errori: {availability.summary.errorLines}</span>
+            </div>
+
+            <div className="orders-document-preview">
+              <div><span>Futuro OCM</span><strong>{pieces(documentPreviewTotals.ocm)} pezzi</strong></div>
+              <div><span>Futuro OCI</span><strong>{pieces(documentPreviewTotals.oci)} pezzi</strong></div>
+              <div><span>Futuro OCX</span><strong>{pieces(documentPreviewTotals.ocx)} pezzi</strong></div>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="orders-panel orders-order-section">
@@ -744,13 +761,21 @@ export default function NewOrder() {
       </section>
 
       <div className="orders-order-footer">
-        <div className="orders-order-total">
-          <span>{totals.pezzi} pezzi</span>
-          <span>Imponibile: {money(totals.totale_imponibile)} · IVA: {money(totals.totale_iva)}</span>
-          <strong>{money(totals.totale_documento)}</strong>
-          <small>Totale documento</small>
+        <div className="orders-order-total orders-order-total-enhanced">
+          <div><span>Totale ordine</span><strong>{pieces(totals.pezzi)} pezzi</strong></div>
+          <div><span>Imponibile</span><strong>{money(totals.totale_imponibile)}</strong></div>
+          <div><span>IVA</span><strong>{money(totals.totale_iva)}</strong></div>
+          <div className="orders-order-grand-total"><span>TOTALE</span><strong>{money(totals.totale_documento)}</strong></div>
         </div>
         <div className="orders-order-actions">
+          {availability && (
+            <div className="orders-split-summary">
+              <strong>L'ordine verrà suddiviso automaticamente in:</strong>
+              <span>OCM: {pieces(documentPreviewTotals.ocm)} pezzi (evasione immediata)</span>
+              <span>OCI: {pieces(documentPreviewTotals.oci)} pezzi</span>
+              <span>OCX: {pieces(documentPreviewTotals.ocx)} pezzi (backorder)</span>
+            </div>
+          )}
           <button className="orders-secondary" type="button" disabled={saving} onClick={() => saveOrder({ confirm: false })}>
             <Save size={18} /> Salva bozza
           </button>

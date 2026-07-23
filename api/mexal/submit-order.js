@@ -102,6 +102,8 @@ export default async function handler(req, res) {
     orderId = text(req.body?.orderId); if (!orderId) return res.status(400).json({ error: "orderId obbligatorio." });
     const [{ data: order, error: orderError }, { data: lines, error: linesError }] = await Promise.all([admin.from("ordini_testate").select("*").eq("id", orderId).single(), admin.from("ordini_righe").select("*").eq("ordine_id", orderId).order("id")]);
     if (orderError) throw orderError; if (linesError) throw linesError; if (!lines?.length) throw new Error("Ordine senza righe.");
+    const requestedModule = text(req.body?.moduleCode);
+    if (requestedModule && requestedModule !== (order.modulo_ordini || "prof")) return res.status(404).json({ error: "Ordine non trovato nel modulo selezionato." });
     const [{ data: customer, error: customerError }, { data: products, error: productsError }, { data: rules, error: rulesError }] = await Promise.all([
       admin.from("ordini_clienti_cache").select("*").eq("codice_cliente", order.codice_cliente).maybeSingle(),
       admin.from("ordini_prodotti_cache").select("*").in("codice_articolo", lines.map((line) => line.codice_articolo)),
@@ -123,7 +125,9 @@ export default async function handler(req, res) {
     if (!started) return res.status(409).json({ error: "È già presente una sincronizzazione attiva o lo stato non consente l'invio." });
     const { data: run, error: runError } = await admin.from("mexal_sync_runs").insert({ sync_type: "orders", status: "running", metadata: { source: "submit-order", order_id: orderId } }).select("id").single(); if (runError) throw runError; runId = run.id;
     const { data: documentConfig, error: configError } = await admin.from("ordini_configurazione_documenti").select("serie_ocm,serie_ocx,serie_oci,id_magazzino,id_causale_vendita_diretta").eq("id", 1).maybeSingle();
-    if (configError) throw configError;
+    const { data: moduleConfig, error: moduleConfigError } = await admin.from("ordini_moduli_configurazione").select("serie_documento").eq("modulo_ordini", order.modulo_ordini || "prof").maybeSingle();
+    if (configError || moduleConfigError) throw configError || moduleConfigError;
+    if (moduleConfig?.serie_documento) { documentConfig.serie_ocm = moduleConfig.serie_documento; documentConfig.serie_ocx = moduleConfig.serie_documento; documentConfig.serie_oci = moduleConfig.serie_documento; }
     const mexal = buildMexalClient(); const documents = []; const failures = [];
     for (const kind of requiredKinds) {
       if (await stopRequested(admin, orderId, syncToken)) break;

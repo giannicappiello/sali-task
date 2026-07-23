@@ -29,14 +29,8 @@ const cards = [
     permission: "pharmacy.read",
     special: "pharmacy",
   },
-  {
-    path: "/ordini",
-    label: "Ordini",
-    description: "Clienti, ordini e attività commerciali collegate a Mexal.",
-    icon: ShoppingCart,
-    permission: "orders.read",
-    special: "orders",
-  },
+  { path: "/ordini-prof", label: "Ordini PROF", description: "Clienti, ordini e attività commerciali collegate a Mexal.", icon: ShoppingCart, permission: "orders.read", special: "orders" },
+  { path: "/ordini-ph", label: "Ordini PH", description: "Clienti, ordini e attività commerciali collegate a Mexal.", icon: ShoppingCart, permission: "orders.read", special: "orders" },
   {
     path: "/products",
     label: "Prodotti",

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft, Download, Edit3, OctagonX, RefreshCw, Send, Trash2 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useOrdersModule } from "../ordersModuleContext";
 import { deleteOrder, downloadOrderPdf, loadOrderDetail, recoverOrderSync, stopOrderSync, submitOrderToMexal } from "../services/orderFulfillment";
 
 function money(value) {
@@ -8,6 +9,7 @@ function money(value) {
 }
 
 export default function OrderDetail() {
+  const { moduleCode, basePath } = useOrdersModule();
   const { orderId } = useParams();
   const navigate = useNavigate();
   const [order, setOrder] = useState(null);
@@ -25,8 +27,8 @@ export default function OrderDetail() {
     setLoading(true);
     setError("");
     try {
-      await recoverOrderSync(orderId);
-      const result = await loadOrderDetail(orderId);
+      await recoverOrderSync(orderId, moduleCode);
+      const result = await loadOrderDetail(orderId, moduleCode);
       setOrder(result.order);
       setLines(result.lines);
       setAgentName(result.order.agente_nome || "-");
@@ -44,7 +46,7 @@ export default function OrderDetail() {
     setError("");
     setMessage("");
     try {
-      const result = await submitOrderToMexal(orderId);
+      const result = await submitOrderToMexal(orderId, moduleCode);
       setMessage(result.skipped ? result.message : `Ordine inviato a Mexal. OCM: ${result.numero_ocm || "-"} · OCX: ${result.numero_ocx || "-"} · OCI: ${result.numero_oci || "-"}`);
       if (!result.skipped) {
         setOrder((current) => current ? {
@@ -67,7 +69,7 @@ export default function OrderDetail() {
   async function requestStop() {
     if (stopping) return;
     setStopping(true); setError("");
-    try { setMessage((await stopOrderSync(orderId)).message); await load(); }
+    try { setMessage((await stopOrderSync(orderId, moduleCode)).message); await load(); }
     catch (stopError) { setError(stopError.message || "Impossibile richiedere l'arresto."); }
     finally { setStopping(false); }
   }
@@ -75,7 +77,7 @@ export default function OrderDetail() {
   async function removeOrder() {
     if (deleting || !window.confirm("Stai per eliminare definitivamente questo ordine. L’operazione non può essere annullata.")) return;
     setDeleting(true); setError("");
-    try { await deleteOrder(orderId); navigate("/ordini/elenco", { replace: true, state: { message: "Ordine eliminato." } }); }
+    try { await deleteOrder(orderId, moduleCode); navigate(`${basePath}/elenco`, { replace: true, state: { message: "Ordine eliminato." } }); }
     catch (deleteError) { setError(deleteError.message || "Impossibile eliminare l'ordine."); }
     finally { setDeleting(false); }
   }
@@ -104,7 +106,7 @@ export default function OrderDetail() {
   return (
     <div className="orders-page">
       <div className="orders-new-header">
-        <button className="orders-secondary" type="button" onClick={() => navigate("/ordini/elenco")}>
+        <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/elenco`)}>
           <ArrowLeft size={18} /> Torna agli ordini
         </button>
         <div>
@@ -163,10 +165,10 @@ export default function OrderDetail() {
         <button className="orders-secondary orders-download-pdf-mobile" type="button" disabled={downloadingPdf} onClick={downloadPdf}>
           <Download size={18} /> {downloadingPdf ? "Generazione PDF..." : "SCARICA PDF"}
         </button>
-        {canEdit && <button className="orders-secondary" type="button" onClick={() => navigate(`/ordini/modifica/${orderId}`)}><Edit3 size={18} /> MODIFICA ORDINE</button>}
+        {canEdit && <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/modifica/${orderId}`)}><Edit3 size={18} /> MODIFICA ORDINE</button>}
         {canDelete && <button className="orders-danger" type="button" disabled={deleting} onClick={removeOrder}><Trash2 size={18} /> {deleting ? "Eliminazione..." : "ELIMINA ORDINE"}</button>}
         {syncStatus === "in_corso" && <button className="orders-danger" type="button" disabled={stopping} onClick={requestStop}><OctagonX size={18} /> {stopping ? "Richiesta..." : "ARRESTA INVIO"}</button>}
-        {!["in_corso", "arresto_richiesto", "completato"].includes(syncStatus) && !hasMexalDocument && <button className="orders-primary" type="button" disabled={sending} onClick={sendToMexal}>
+        {!["in_corso", "arresto_richiesto", "completato"].includes(syncStatus) && !hasMexalDocument && <button className="orders-primary" type="button" disabled={sending || syncStatus === "in_corso" || syncStatus === "completato"} onClick={sendToMexal}>
           {sending || syncStatus === "in_corso" ? <RefreshCw className="spin" size={18} /> : <Send size={18} />}
           {["errore", "arrestato"].includes(syncStatus) ? "RIPROVA INVIO" : "INVIA A MEXAL"}
         </button>

@@ -3,9 +3,11 @@ import { Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
+import { useOrdersModule } from "../ordersModuleContext";
 import { agentDisplayName, loadAgentNameMap } from "../services/agentNames";
 
 const RESULT_LIMIT = 100;
+// Legacy deep-link shape: navigate(`/ordini/clienti/${encodeURIComponent(item.codice_cliente)}`) redirects to PROF.
 const SEARCH_DELAY_MS = 300;
 
 function normalizeSearch(value) {
@@ -16,6 +18,7 @@ function normalizeSearch(value) {
 }
 
 export default function Customers() {
+  const { basePath } = useOrdersModule();
   const navigate = useNavigate();
   const requestIdRef = useRef(0);
   const {
@@ -151,7 +154,7 @@ export default function Customers() {
                     className="orders-clickable-row"
                     onClick={() =>
                       navigate(
-                        `/ordini/clienti/${encodeURIComponent(item.codice_cliente)}`
+                        `${basePath}/clienti/${encodeURIComponent(item.codice_cliente)}`
                       )
                     }
                   >

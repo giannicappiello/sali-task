@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft, Download, Edit3, OctagonX, RefreshCw, Send, Trash2 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
+import { supabase } from "../../../lib/supabaseClient";
 import { useOrdersModule } from "../ordersModuleContext";
 import { deleteOrder, downloadOrderPdf, loadOrderDetail, recoverOrderSync, stopOrderSync, submitOrderToMexal } from "../services/orderFulfillment";
 
@@ -20,6 +21,7 @@ export default function OrderDetail() {
   const [stopping, setStopping] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [mexalSendingEnabled, setMexalSendingEnabled] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -28,10 +30,19 @@ export default function OrderDetail() {
     setError("");
     try {
       await recoverOrderSync(orderId, moduleCode);
-      const result = await loadOrderDetail(orderId, moduleCode);
+      const [result, configResult] = await Promise.all([
+        loadOrderDetail(orderId, moduleCode),
+        supabase
+          .from("ordini_moduli_configurazione")
+          .select("invia_automaticamente_mexal")
+          .eq("modulo_ordini", moduleCode)
+          .maybeSingle(),
+      ]);
+      if (configResult.error) throw configResult.error;
       setOrder(result.order);
       setLines(result.lines);
       setAgentName(result.order.agente_nome || "-");
+      setMexalSendingEnabled(configResult.data?.invia_automaticamente_mexal !== false);
     } catch (loadError) {
       setError(loadError.message || "Errore caricamento ordine.");
     } finally {
@@ -39,7 +50,7 @@ export default function OrderDetail() {
     }
   }
 
-  useEffect(() => { load(); }, [orderId]);
+  useEffect(() => { load(); }, [orderId, moduleCode]);
 
   async function sendToMexal() {
     setSending(true);
@@ -168,7 +179,7 @@ export default function OrderDetail() {
         {canEdit && <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/modifica/${orderId}`)}><Edit3 size={18} /> MODIFICA ORDINE</button>}
         {canDelete && <button className="orders-danger" type="button" disabled={deleting} onClick={removeOrder}><Trash2 size={18} /> {deleting ? "Eliminazione..." : "ELIMINA ORDINE"}</button>}
         {syncStatus === "in_corso" && <button className="orders-danger" type="button" disabled={stopping} onClick={requestStop}><OctagonX size={18} /> {stopping ? "Richiesta..." : "ARRESTA INVIO"}</button>}
-        {!["in_corso", "arresto_richiesto", "completato"].includes(syncStatus) && !hasMexalDocument && <button className="orders-primary" type="button" disabled={sending || syncStatus === "in_corso" || syncStatus === "completato"} onClick={sendToMexal}>
+        {mexalSendingEnabled && !["in_corso", "arresto_richiesto", "completato"].includes(syncStatus) && !hasMexalDocument && <button className="orders-primary" type="button" disabled={sending || syncStatus === "in_corso" || syncStatus === "completato"} onClick={sendToMexal}>
           {sending || syncStatus === "in_corso" ? <RefreshCw className="spin" size={18} /> : <Send size={18} />}
           {["errore", "arrestato"].includes(syncStatus) ? "RIPROVA INVIO" : "INVIA A MEXAL"}
         </button>

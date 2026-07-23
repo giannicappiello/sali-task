@@ -28,6 +28,7 @@ export default function OrderDetail() {
   async function load() {
     setLoading(true);
     setError("");
+    setOrder(null);
     try {
       await recoverOrderSync(orderId, moduleCode);
       const [result, configResult] = await Promise.all([
@@ -42,16 +43,26 @@ export default function OrderDetail() {
 
       const sendingEnabled = configResult.data?.invia_automaticamente_mexal !== false;
       let loadedOrder = result.order;
+      const hasConfirmedQuantities = (result.lines || []).some((line) =>
+        Number(line.quantita_ocm || 0) > 0 || Number(line.quantita_ocx || 0) > 0 || Number(line.quantita_oci || 0) > 0
+      );
 
-      // Se l'invio Mexal è disattivato, la conferma conclude il flusso interno:
-      // l'ordine diventa SPEDITO e non deve più essere modificabile o eliminabile.
-      if (!sendingEnabled && String(loadedOrder?.stato || "").toLowerCase() === "confermato") {
-        const { error: closeError } = await supabase
+      if (!sendingEnabled && hasConfirmedQuantities && loadedOrder.stato_sincronizzazione !== "completato") {
+        const moduleFilter = moduleCode === "prof"
+          ? "modulo_ordini.eq.prof,modulo_ordini.is.null"
+          : "modulo_ordini.eq.ph";
+        const { data: closedOrder, error: closeError } = await supabase
           .from("ordini_testate")
-          .update({ stato: "spedito" })
-          .eq("id", orderId);
+          .update({
+            stato_sincronizzazione: "completato",
+            errore_sincronizzazione: null,
+          })
+          .eq("id", orderId)
+          .or(moduleFilter)
+          .select("*")
+          .single();
         if (closeError) throw closeError;
-        loadedOrder = { ...loadedOrder, stato: "spedito" };
+        loadedOrder = { ...loadedOrder, ...closedOrder };
       }
 
       setOrder(loadedOrder);
@@ -59,6 +70,7 @@ export default function OrderDetail() {
       setAgentName(loadedOrder.agente_nome || "-");
       setMexalSendingEnabled(sendingEnabled);
     } catch (loadError) {
+      console.error("Errore caricamento dettaglio ordine:", loadError);
       setError(loadError.message || "Errore caricamento ordine.");
     } finally {
       setLoading(false);
@@ -77,7 +89,6 @@ export default function OrderDetail() {
       if (!result.skipped) {
         setOrder((current) => current ? {
           ...current,
-          stato: "spedito",
           stato_sincronizzazione: "completato",
           numero_ocm: result.numero_ocm || current.numero_ocm || null,
           numero_ocx: result.numero_ocx || current.numero_ocx || null,
@@ -112,37 +123,27 @@ export default function OrderDetail() {
     if (downloadingPdf) return;
     setDownloadingPdf(true);
     setError("");
-    try {
-      await downloadOrderPdf(order, lines);
-    } catch (pdfError) {
-      setError(pdfError.message || "Impossibile generare il PDF dell'ordine.");
-    } finally {
-      setDownloadingPdf(false);
-    }
+    try { await downloadOrderPdf(order, lines); }
+    catch (pdfError) { setError(pdfError.message || "Impossibile generare il PDF dell'ordine."); }
+    finally { setDownloadingPdf(false); }
   }
 
   if (loading) return <div className="orders-empty">Caricamento ordine...</div>;
-  if (!order) return <div className="orders-empty">Ordine non trovato.</div>;
+  if (!order) return <div className="orders-page"><div className="orders-alert orders-alert-error">{error || "Ordine non trovato."}</div><button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/elenco`)}><ArrowLeft size={18} /> Torna agli ordini</button></div>;
 
   const syncStatus = order.stato_sincronizzazione || "non_inviato";
-  const orderStatus = String(order.stato || "").trim().toLowerCase();
-  const isClosed = ["confermato", "spedito"].includes(orderStatus);
+  const isClosed = syncStatus === "completato";
   const hasMexalDocument = Boolean(order.numero_ocm || order.numero_ocx || order.numero_oci);
   const canEdit = !isClosed && !hasMexalDocument && ["non_avviato", "non_inviato", "errore", "annullato", "arrestato"].includes(syncStatus);
   const canDelete = canEdit;
-  const displayedStatus = isClosed ? "spedito" : syncStatus.replaceAll("_", " ");
+  const displayedStatus = isClosed ? "SPEDITO" : syncStatus.replaceAll("_", " ").toUpperCase();
   const displayedStatusClass = isClosed ? "completato" : syncStatus;
 
   return (
     <div className="orders-page">
       <div className="orders-new-header">
-        <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/elenco`)}>
-          <ArrowLeft size={18} /> Torna agli ordini
-        </button>
-        <div>
-          <h2>Ordine {order.numero_ordine_visualizzato || order.numero_ordine || order.id}</h2>
-          <p>{order.ragione_sociale_cliente || order.codice_cliente}</p>
-        </div>
+        <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/elenco`)}><ArrowLeft size={18} /> Torna agli ordini</button>
+        <div><h2>Ordine {order.numero_ordine_visualizzato || order.numero_ordine || order.id}</h2><p>{order.ragione_sociale_cliente || order.codice_cliente}</p></div>
       </div>
 
       {error && <div className="orders-alert orders-alert-error">{error}</div>}
@@ -165,44 +166,23 @@ export default function OrderDetail() {
         <div><span>Totale documento</span><strong>{money(order.totale_documento ?? order.totale)}</strong></div>
       </section>
 
-      {order.errore_sincronizzazione && (
-        <div className="orders-alert orders-alert-error">
-          <strong>Ultimo errore Mexal:</strong> {order.errore_sincronizzazione}
-        </div>
-      )}
+      {order.errore_sincronizzazione && <div className="orders-alert orders-alert-error"><strong>Ultimo errore Mexal:</strong> {order.errore_sincronizzazione}</div>}
 
       <section className="orders-panel">
         <div className="orders-table-wrap">
           <table className="orders-table">
             <thead><tr><th>Codice</th><th>Descrizione</th><th>Q.tà</th><th>OCM</th><th>OCX</th><th>Listino</th><th>Sconto commerciale</th><th>Netto</th><th>Imponibile</th><th>IVA</th><th>Totale</th></tr></thead>
-            <tbody>
-              {lines.map((line) => (
-                <tr key={line.id}>
-                  <td>{line.codice_articolo}</td><td>{line.descrizione}</td><td>{line.quantita}</td>
-                  <td>{line.quantita_ocm || 0}</td><td>{line.quantita_ocx || 0}</td>
-                  <td>{money(line.prezzo_listino)}</td>
-                  <td>{line.sconto_commerciale || "-"}</td>
-                  <td>{money(line.prezzo_netto)}</td><td>{money(line.imponibile_riga)}</td>
-                  <td>{money(line.iva_riga)} ({line.aliquota_iva || 0}%)</td><td>{money(line.totale_riga)}</td>
-                </tr>
-              ))}
-            </tbody>
+            <tbody>{lines.map((line) => <tr key={line.id}><td>{line.codice_articolo}</td><td>{line.descrizione}</td><td>{line.quantita}</td><td>{line.quantita_ocm || 0}</td><td>{line.quantita_ocx || 0}</td><td>{money(line.prezzo_listino)}</td><td>{line.sconto_commerciale || "-"}</td><td>{money(line.prezzo_netto)}</td><td>{money(line.imponibile_riga)}</td><td>{money(line.iva_riga)} ({line.aliquota_iva || 0}%)</td><td>{money(line.totale_riga)}</td></tr>)}</tbody>
           </table>
         </div>
       </section>
 
       <div className="orders-detail-actions">
-        <button className="orders-secondary orders-download-pdf-mobile" type="button" disabled={downloadingPdf} onClick={downloadPdf}>
-          <Download size={18} /> {downloadingPdf ? "Generazione PDF..." : "SCARICA PDF"}
-        </button>
+        <button className="orders-secondary orders-download-pdf-mobile" type="button" disabled={downloadingPdf} onClick={downloadPdf}><Download size={18} /> {downloadingPdf ? "Generazione PDF..." : "SCARICA PDF"}</button>
         {canEdit && <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/modifica/${orderId}`)}><Edit3 size={18} /> MODIFICA ORDINE</button>}
         {canDelete && <button className="orders-danger" type="button" disabled={deleting} onClick={removeOrder}><Trash2 size={18} /> {deleting ? "Eliminazione..." : "ELIMINA ORDINE"}</button>}
         {syncStatus === "in_corso" && <button className="orders-danger" type="button" disabled={stopping} onClick={requestStop}><OctagonX size={18} /> {stopping ? "Richiesta..." : "ARRESTA INVIO"}</button>}
-        {mexalSendingEnabled && !isClosed && !["in_corso", "arresto_richiesto", "completato"].includes(syncStatus) && !hasMexalDocument && <button className="orders-primary" type="button" disabled={sending || syncStatus === "in_corso" || syncStatus === "completato"} onClick={sendToMexal}>
-          {sending || syncStatus === "in_corso" ? <RefreshCw className="spin" size={18} /> : <Send size={18} />}
-          {["errore", "arrestato"].includes(syncStatus) ? "RIPROVA INVIO" : "INVIA A MEXAL"}
-        </button>
-        }
+        {mexalSendingEnabled && !isClosed && !["in_corso", "arresto_richiesto", "completato"].includes(syncStatus) && !hasMexalDocument && <button className="orders-primary" type="button" disabled={sending} onClick={sendToMexal}>{sending ? <RefreshCw className="spin" size={18} /> : <Send size={18} />}{["errore", "arrestato"].includes(syncStatus) ? "RIPROVA INVIO" : "INVIA A MEXAL"}</button>}
         {syncStatus === "arresto_richiesto" && <span className="orders-sync-inline in_corso">Arresto richiesto: attesa della POST Mexal in corso.</span>}
       </div>
     </div>

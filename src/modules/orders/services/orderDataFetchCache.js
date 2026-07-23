@@ -23,8 +23,21 @@ function isCacheableRequest(input, init = {}) {
   ].some((segment) => url.includes(segment));
 }
 
-function requestKey(input) {
-  return typeof input === "string" ? input : input.url;
+function shortHash(value) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function requestKey(input, init = {}) {
+  const url = typeof input === "string" ? input : input.url;
+  const headers = new Headers(input instanceof Request ? input.headers : undefined);
+  new Headers(init.headers || {}).forEach((value, name) => headers.set(name, value));
+  const authorization = headers.get("authorization") || "anonymous";
+  return `${shortHash(authorization)}::${url}`;
 }
 
 function openDatabase() {
@@ -117,7 +130,7 @@ export function installOrderDataFetchCache() {
         return originalFetch(input, init);
       }
 
-      const key = requestKey(input);
+      const key = requestKey(input, init);
       try {
         const cached = await readEntry(key);
         if (cached) {

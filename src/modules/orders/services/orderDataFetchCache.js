@@ -2,9 +2,15 @@ const DB_NAME = "progre-workspace-order-cache";
 const DB_VERSION = 1;
 const STORE_NAME = "responses";
 const CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+const REFRESH_COOLDOWN_MS = 10 * 60 * 1000;
 
 let installPromise = null;
 let originalFetch = null;
+let databasePromise = null;
+
+const memoryCache = new Map();
+const refreshesInFlight = new Map();
+const lastRefreshAt = new Map();
 
 function isCacheableRequest(input, init = {}) {
   const method = String(init.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
@@ -41,7 +47,9 @@ function requestKey(input, init = {}) {
 }
 
 function openDatabase() {
-  return new Promise((resolve, reject) => {
+  if (databasePromise) return databasePromise;
+
+  databasePromise = new Promise((resolve, reject) => {
     if (typeof indexedDB === "undefined") {
       resolve(null);
       return;
@@ -55,24 +63,35 @@ function openDatabase() {
       }
     };
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onerror = () => {
+      databasePromise = null;
+      reject(request.error);
+    };
   });
+
+  return databasePromise;
 }
 
 async function readEntry(key) {
+  const inMemory = memoryCache.get(key);
+  if (inMemory) return inMemory;
+
   const db = await openDatabase();
   if (!db) return null;
 
-  return new Promise((resolve, reject) => {
+  const entry = await new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, "readonly");
     const request = transaction.objectStore(STORE_NAME).get(key);
     request.onsuccess = () => resolve(request.result || null);
     request.onerror = () => reject(request.error);
   });
+
+  if (entry) memoryCache.set(key, entry);
+  return entry;
 }
 
-async function writeEntry(key, response) {
-  if (!response.ok) return;
+async function responseToEntry(key, response) {
+  if (!response.ok) return null;
 
   const cloned = response.clone();
   const body = await cloned.text();
@@ -81,21 +100,39 @@ async function writeEntry(key, response) {
     headers[name] = value;
   });
 
+  return {
+    key,
+    body,
+    headers,
+    status: cloned.status,
+    statusText: cloned.statusText,
+    savedAt: Date.now(),
+  };
+}
+
+async function persistEntry(entry) {
+  if (!entry) return;
+
+  memoryCache.set(entry.key, entry);
+
   const db = await openDatabase();
   if (!db) return;
 
   await new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, "readwrite");
-    transaction.objectStore(STORE_NAME).put({
-      key,
-      body,
-      headers,
-      status: cloned.status,
-      statusText: cloned.statusText,
-      savedAt: Date.now(),
-    });
+    transaction.objectStore(STORE_NAME).put(entry);
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
+  });
+}
+
+async function cacheResponse(key, response) {
+  const entry = await responseToEntry(key, response);
+  if (!entry) return;
+
+  memoryCache.set(key, entry);
+  persistEntry(entry).catch((error) => {
+    console.warn("Persistenza cache dati Ordini non riuscita:", error);
   });
 }
 
@@ -107,13 +144,29 @@ function responseFromEntry(entry) {
   });
 }
 
-async function refreshInBackground(input, init, key) {
-  try {
-    const response = await originalFetch(input, init);
-    await writeEntry(key, response);
-  } catch (error) {
-    console.warn("Aggiornamento cache dati Ordini non riuscito:", error);
-  }
+function shouldRefresh(key) {
+  const lastRefresh = Number(lastRefreshAt.get(key) || 0);
+  return Date.now() - lastRefresh >= REFRESH_COOLDOWN_MS;
+}
+
+function refreshInBackground(input, init, key) {
+  if (!shouldRefresh(key)) return;
+  if (refreshesInFlight.has(key)) return;
+
+  lastRefreshAt.set(key, Date.now());
+
+  const refreshPromise = originalFetch(input, init)
+    .then(async (response) => {
+      await cacheResponse(key, response);
+    })
+    .catch((error) => {
+      console.warn("Aggiornamento cache dati Ordini non riuscito:", error);
+    })
+    .finally(() => {
+      refreshesInFlight.delete(key);
+    });
+
+  refreshesInFlight.set(key, refreshPromise);
 }
 
 export function installOrderDataFetchCache() {
@@ -131,6 +184,16 @@ export function installOrderDataFetchCache() {
       }
 
       const key = requestKey(input, init);
+
+      const inMemory = memoryCache.get(key);
+      if (inMemory) {
+        const age = Date.now() - Number(inMemory.savedAt || 0);
+        if (age <= CACHE_MAX_AGE_MS) {
+          refreshInBackground(input, init, key);
+          return responseFromEntry(inMemory);
+        }
+      }
+
       try {
         const cached = await readEntry(key);
         if (cached) {
@@ -145,7 +208,7 @@ export function installOrderDataFetchCache() {
       }
 
       const response = await originalFetch(input, init);
-      writeEntry(key, response).catch((error) => {
+      cacheResponse(key, response).catch((error) => {
         console.warn("Scrittura cache dati Ordini non riuscita:", error);
       });
       return response;

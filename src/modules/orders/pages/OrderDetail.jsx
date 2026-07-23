@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft, Download, Edit3, OctagonX, RefreshCw, Send, Trash2 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
+import { supabase } from "../../../lib/supabaseClient";
 import { useOrdersModule } from "../ordersModuleContext";
 import { deleteOrder, downloadOrderPdf, loadOrderDetail, recoverOrderSync, stopOrderSync, submitOrderToMexal } from "../services/orderFulfillment";
 
@@ -20,6 +21,7 @@ export default function OrderDetail() {
   const [stopping, setStopping] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [mexalSendingEnabled, setMexalSendingEnabled] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -28,10 +30,34 @@ export default function OrderDetail() {
     setError("");
     try {
       await recoverOrderSync(orderId, moduleCode);
-      const result = await loadOrderDetail(orderId, moduleCode);
-      setOrder(result.order);
+      const [result, configResult] = await Promise.all([
+        loadOrderDetail(orderId, moduleCode),
+        supabase
+          .from("ordini_moduli_configurazione")
+          .select("invia_automaticamente_mexal")
+          .eq("modulo_ordini", moduleCode)
+          .maybeSingle(),
+      ]);
+      if (configResult.error) throw configResult.error;
+
+      const sendingEnabled = configResult.data?.invia_automaticamente_mexal !== false;
+      let loadedOrder = result.order;
+
+      // Se l'invio Mexal è disattivato, la conferma conclude il flusso interno:
+      // l'ordine diventa SPEDITO e non deve più essere modificabile o eliminabile.
+      if (!sendingEnabled && String(loadedOrder?.stato || "").toLowerCase() === "confermato") {
+        const { error: closeError } = await supabase
+          .from("ordini_testate")
+          .update({ stato: "spedito" })
+          .eq("id", orderId);
+        if (closeError) throw closeError;
+        loadedOrder = { ...loadedOrder, stato: "spedito" };
+      }
+
+      setOrder(loadedOrder);
       setLines(result.lines);
-      setAgentName(result.order.agente_nome || "-");
+      setAgentName(loadedOrder.agente_nome || "-");
+      setMexalSendingEnabled(sendingEnabled);
     } catch (loadError) {
       setError(loadError.message || "Errore caricamento ordine.");
     } finally {
@@ -39,7 +65,7 @@ export default function OrderDetail() {
     }
   }
 
-  useEffect(() => { load(); }, [orderId]);
+  useEffect(() => { load(); }, [orderId, moduleCode]);
 
   async function sendToMexal() {
     setSending(true);
@@ -51,7 +77,7 @@ export default function OrderDetail() {
       if (!result.skipped) {
         setOrder((current) => current ? {
           ...current,
-          stato: "confermato",
+          stato: "spedito",
           stato_sincronizzazione: "completato",
           numero_ocm: result.numero_ocm || current.numero_ocm || null,
           numero_ocx: result.numero_ocx || current.numero_ocx || null,
@@ -99,9 +125,13 @@ export default function OrderDetail() {
   if (!order) return <div className="orders-empty">Ordine non trovato.</div>;
 
   const syncStatus = order.stato_sincronizzazione || "non_inviato";
+  const orderStatus = String(order.stato || "").trim().toLowerCase();
+  const isClosed = ["confermato", "spedito"].includes(orderStatus);
   const hasMexalDocument = Boolean(order.numero_ocm || order.numero_ocx || order.numero_oci);
-  const canEdit = !hasMexalDocument && ["non_avviato", "non_inviato", "errore", "annullato", "arrestato"].includes(syncStatus);
+  const canEdit = !isClosed && !hasMexalDocument && ["non_avviato", "non_inviato", "errore", "annullato", "arrestato"].includes(syncStatus);
   const canDelete = canEdit;
+  const displayedStatus = isClosed ? "spedito" : syncStatus.replaceAll("_", " ");
+  const displayedStatusClass = isClosed ? "completato" : syncStatus;
 
   return (
     <div className="orders-page">
@@ -123,7 +153,7 @@ export default function OrderDetail() {
         <div><span>Cliente</span><strong>{order.codice_cliente || "-"}</strong></div>
         <div><span>Agente</span><strong>{agentName || "-"}</strong></div>
         <div><span>Pagamento</span><strong>{order.descrizione_pagamento || order.codice_pagamento || "-"}</strong></div>
-        <div><span>Stato invio</span><strong className={`orders-sync-badge ${syncStatus}`}>{syncStatus.replaceAll("_", " ")}</strong></div>
+        <div><span>Stato</span><strong className={`orders-sync-badge ${displayedStatusClass}`}>{displayedStatus}</strong></div>
         <div><span>Ultimo tentativo</span><strong>{order.ultimo_tentativo_sync ? new Date(order.ultimo_tentativo_sync).toLocaleString("it-IT") : "-"}</strong></div>
         {["OCM", "OCX", "OCI"].map((kind) => {
           const document = order.mexal_documents?.find((item) => item.tipo_documento === kind);
@@ -168,7 +198,7 @@ export default function OrderDetail() {
         {canEdit && <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/modifica/${orderId}`)}><Edit3 size={18} /> MODIFICA ORDINE</button>}
         {canDelete && <button className="orders-danger" type="button" disabled={deleting} onClick={removeOrder}><Trash2 size={18} /> {deleting ? "Eliminazione..." : "ELIMINA ORDINE"}</button>}
         {syncStatus === "in_corso" && <button className="orders-danger" type="button" disabled={stopping} onClick={requestStop}><OctagonX size={18} /> {stopping ? "Richiesta..." : "ARRESTA INVIO"}</button>}
-        {!["in_corso", "arresto_richiesto", "completato"].includes(syncStatus) && !hasMexalDocument && <button className="orders-primary" type="button" disabled={sending || syncStatus === "in_corso" || syncStatus === "completato"} onClick={sendToMexal}>
+        {mexalSendingEnabled && !isClosed && !["in_corso", "arresto_richiesto", "completato"].includes(syncStatus) && !hasMexalDocument && <button className="orders-primary" type="button" disabled={sending || syncStatus === "in_corso" || syncStatus === "completato"} onClick={sendToMexal}>
           {sending || syncStatus === "in_corso" ? <RefreshCw className="spin" size={18} /> : <Send size={18} />}
           {["errore", "arrestato"].includes(syncStatus) ? "RIPROVA INVIO" : "INVIA A MEXAL"}
         </button>

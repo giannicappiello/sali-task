@@ -16,20 +16,109 @@ const items = [
   { to: "/ordini/elenco", label: "Ordini", icon: ShoppingCart },
 ];
 
+function parseCurrency(value) {
+  const normalized = String(value || "")
+    .replace(/[^0-9,.-]/g, "")
+    .replaceAll(".", "")
+    .replace(",", ".");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatCurrency(value) {
+  return Number(value || 0).toLocaleString("it-IT", {
+    style: "currency",
+    currency: "EUR",
+  });
+}
+
+function organizeOrderLinesTable() {
+  const table = document.querySelector(".orders-order-lines");
+  if (!table) return;
+
+  const columns = "minmax(220px,2fr) 110px 110px 110px minmax(150px,1fr) 110px 110px 135px 135px 44px";
+  const headerCells = [...table.querySelectorAll("thead tr:first-child > th")];
+  const headerOrder = [
+    [1, 1, "Prodotto"],
+    [3, 2, "Quantità"],
+    [2, 3, "Disponibile"],
+    [4, 4, "Listino"],
+    [5, 5, "Sconto commerciale"],
+    [6, 6, "Netto"],
+    [7, 7, "Imponibile"],
+    [8, 8, "IVA"],
+    [9, 9, "Totale"],
+    [11, 10, ""],
+  ];
+
+  if (headerCells.length >= 12) {
+    const headerRow = headerCells[0].parentElement;
+    headerRow.style.display = "grid";
+    headerRow.style.gridTemplateColumns = columns;
+    headerRow.style.alignItems = "stretch";
+    headerCells.forEach((cell) => { cell.style.display = "none"; });
+    headerOrder.forEach(([index, order, label]) => {
+      const cell = headerCells[index];
+      if (!cell) return;
+      cell.style.display = "table-cell";
+      cell.style.order = String(order);
+      if (cell.textContent !== label) cell.textContent = label;
+    });
+  }
+
+  table.querySelectorAll("tbody > tr:not(.orders-calculation-row)").forEach((row) => {
+    const cells = [...row.children];
+    if (cells.length < 13) return;
+
+    row.style.display = "grid";
+    row.style.gridTemplateColumns = columns;
+    row.style.alignItems = "center";
+    cells.forEach((cell) => { cell.style.display = "none"; });
+
+    const bodyOrder = [
+      [1, 1],
+      [3, 2],
+      [2, 3],
+      [4, 4],
+      [6, 5],
+      [7, 6],
+      [8, 7],
+      [9, 8],
+      [10, 9],
+      [12, 10],
+    ];
+
+    bodyOrder.forEach(([index, order]) => {
+      const cell = cells[index];
+      if (!cell) return;
+      cell.style.display = "table-cell";
+      cell.style.order = String(order);
+    });
+
+    const quantity = Number(cells[3]?.querySelector("input")?.value || 0);
+    const taxable = parseCurrency(cells[8]?.textContent);
+    const netUnit = quantity > 0 ? taxable / quantity : 0;
+    const netCell = cells[7];
+    const expectedNet = formatCurrency(netUnit);
+    if (netCell && netCell.textContent !== expectedNet) netCell.textContent = expectedNet;
+  });
+}
+
 export default function OrdersModule() {
   const { loading, canAccessOrders } = useOrdersAccess();
 
   useEffect(() => {
-    const updateLoadingText = () => {
+    const updateOrdersPresentation = () => {
       document.querySelectorAll(".orders-empty").forEach((element) => {
         if (element.textContent?.trim().toLowerCase() === "caricamento nuovo ordine...") {
           element.textContent = "CARICAMENTO";
         }
       });
+      organizeOrderLinesTable();
     };
 
-    updateLoadingText();
-    const observer = new MutationObserver(updateLoadingText);
+    updateOrdersPresentation();
+    const observer = new MutationObserver(updateOrdersPresentation);
     observer.observe(document.body, { childList: true, subtree: true });
     return () => observer.disconnect();
   }, []);
@@ -45,6 +134,9 @@ export default function OrdersModule() {
         .orders-status.bozza { background: #e2e8f0; color: #475569; }
         .orders-status.inviato { background: #dcfce7; color: #166534; }
         .orders-status.errore { background: #fee2e2; color: #991b1b; }
+        .orders-order-lines { min-width: 1220px; }
+        .orders-order-lines thead tr,
+        .orders-order-lines tbody tr:not(.orders-calculation-row) { width: 100%; }
       `}</style>
 
       <div className="orders-module-header">

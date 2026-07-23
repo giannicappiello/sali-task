@@ -42,20 +42,40 @@ export default function OrderDetail() {
 
       const sendingEnabled = configResult.data?.invia_automaticamente_mexal !== false;
       let loadedOrder = result.order;
+      const loadedLines = result.lines || [];
+      const orderStatus = String(loadedOrder?.stato || "").trim().toLowerCase();
+      const syncStatus = String(loadedOrder?.stato_sincronizzazione || "non_inviato").trim().toLowerCase();
+      const hasMexalDocument = Boolean(loadedOrder?.numero_ocm || loadedOrder?.numero_ocx || loadedOrder?.numero_oci);
+      const hasAllocatedQuantities = loadedLines.some((line) =>
+        Number(line.quantita_ocm || 0) + Number(line.quantita_ocx || 0) + Number(line.quantita_oci || 0) > 0
+      );
+      const isConfirmedWithoutMexal =
+        !sendingEnabled &&
+        !hasMexalDocument &&
+        (orderStatus === "confermato" || orderStatus === "spedito" || hasAllocatedQuantities) &&
+        syncStatus !== "in_corso";
 
-      // Se l'invio Mexal è disattivato, la conferma conclude il flusso interno:
-      // l'ordine diventa SPEDITO e non deve più essere modificabile o eliminabile.
-      if (!sendingEnabled && String(loadedOrder?.stato || "").toLowerCase() === "confermato") {
+      if (isConfirmedWithoutMexal && (orderStatus !== "spedito" || syncStatus !== "completato")) {
         const { error: closeError } = await supabase
           .from("ordini_testate")
-          .update({ stato: "spedito" })
-          .eq("id", orderId);
+          .update({
+            stato: "spedito",
+            stato_sincronizzazione: "completato",
+            errore_sincronizzazione: null,
+          })
+          .eq("id", orderId)
+          .or(moduleCode === "prof" ? "modulo_ordini.eq.prof,modulo_ordini.is.null" : "modulo_ordini.eq.ph");
         if (closeError) throw closeError;
-        loadedOrder = { ...loadedOrder, stato: "spedito" };
+        loadedOrder = {
+          ...loadedOrder,
+          stato: "spedito",
+          stato_sincronizzazione: "completato",
+          errore_sincronizzazione: null,
+        };
       }
 
       setOrder(loadedOrder);
-      setLines(result.lines);
+      setLines(loadedLines);
       setAgentName(loadedOrder.agente_nome || "-");
       setMexalSendingEnabled(sendingEnabled);
     } catch (loadError) {
@@ -126,7 +146,7 @@ export default function OrderDetail() {
 
   const syncStatus = order.stato_sincronizzazione || "non_inviato";
   const orderStatus = String(order.stato || "").trim().toLowerCase();
-  const isClosed = ["confermato", "spedito"].includes(orderStatus);
+  const isClosed = ["confermato", "spedito"].includes(orderStatus) || syncStatus === "completato";
   const hasMexalDocument = Boolean(order.numero_ocm || order.numero_ocx || order.numero_oci);
   const canEdit = !isClosed && !hasMexalDocument && ["non_avviato", "non_inviato", "errore", "annullato", "arrestato"].includes(syncStatus);
   const canDelete = canEdit;

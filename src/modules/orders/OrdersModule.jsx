@@ -1,20 +1,19 @@
 import { useEffect } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
-import { FolderOpen, LayoutDashboard, ShoppingCart, Users } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, Users } from "lucide-react";
 import useOrdersAccess from "./pages/useOrdersAccess";
 import OrdersDashboard from "./pages/OrdersDashboard";
 import Customers from "./pages/Customers";
+import CustomerDetail from "./pages/CustomerDetail";
 import Orders from "./pages/Orders";
 import NewOrder from "./pages/NewOrder";
 import OrderDetail from "./pages/OrderDetail";
-import Materials from "./pages/Materials";
 import "./orders-module.css";
 
 const items = [
   { to: "/ordini/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/ordini/clienti", label: "Clienti", icon: Users },
   { to: "/ordini/elenco", label: "Ordini", icon: ShoppingCart },
-  { to: "/ordini/materiali", label: "Materiali", icon: FolderOpen },
 ];
 
 export default function OrdersModule() {
@@ -69,11 +68,11 @@ export default function OrdersModule() {
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<OrdersDashboard />} />
         <Route path="clienti" element={<Customers />} />
+        <Route path="clienti/:customerCode" element={<CustomerDetail />} />
         <Route path="elenco" element={<Orders />} />
         <Route path="nuovo" element={<NewOrder />} />
         <Route path="modifica/:orderId" element={<NewOrder />} />
         <Route path="elenco/:orderId" element={<OrderDetail />} />
-        <Route path="materiali" element={<Materials />} />
         <Route path="*" element={<Navigate to="dashboard" replace />} />
       </Routes>
     </div>

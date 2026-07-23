@@ -67,7 +67,7 @@ export async function loadCreatedMexalDocuments(orderId) {
 
 export async function loadOrderDetail(orderId, moduleCode) {
   const [{ data: order, error: orderError }, { data: lines, error: linesError }, { data: documents, error: documentsError }] = await Promise.all([
-    supabase.from("ordini_testate").select("*").eq("id", orderId).eq("modulo_ordini", moduleCode || "prof").single(),
+    supabase.from("ordini_testate").select("*").eq("id", orderId).or((moduleCode || "prof") === "prof" ? "modulo_ordini.eq.prof,modulo_ordini.is.null" : "modulo_ordini.eq.ph").single(),
     supabase.from("ordini_righe").select("*").eq("ordine_id", orderId).order("id", { ascending: true }),
     loadCreatedMexalDocuments(orderId),
   ]);

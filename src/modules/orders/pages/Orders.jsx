@@ -37,7 +37,7 @@ export default function Orders() {
       return;
     }
 
-    let query = supabase.from("ordini_testate").select("*").eq("modulo_ordini", moduleCode).eq("mese_ordine", month);
+    let query = supabase.from("ordini_testate").select("*").or(moduleCode === "prof" ? "modulo_ordini.eq.prof,modulo_ordini.is.null" : "modulo_ordini.eq.ph").eq("mese_ordine", month);
     if (!canSeeAll) {
       if (!visibleAgents?.length) {
         setRows([]);

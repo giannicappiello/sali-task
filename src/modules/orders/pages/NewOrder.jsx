@@ -159,7 +159,7 @@ export default function NewOrder() {
     let active = true;
     (async () => {
       const [{ data: existing, error: orderError }, { data: existingLines, error: linesError }, { data: docs, error: docsError }] = await Promise.all([
-        supabase.from("ordini_testate").select("*").eq("id", editingOrderId).eq("modulo_ordini", moduleCode).single(),
+        supabase.from("ordini_testate").select("*").eq("id", editingOrderId).or(moduleCode === "prof" ? "modulo_ordini.eq.prof,modulo_ordini.is.null" : "modulo_ordini.eq.ph").single(),
         supabase.from("ordini_righe").select("*").eq("ordine_id", editingOrderId).order("id"),
         supabase.from("ordini_documenti_mexal").select("numero").eq("ordine_id", editingOrderId).not("numero", "is", null),
       ]);

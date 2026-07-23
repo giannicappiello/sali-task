@@ -21,7 +21,7 @@ export default function OrdersDashboard() {
 
   const countTable = useCallback(async (table, filters = []) => {
     let query = supabase.from(table).select("*", { count: "exact", head: true });
-    query = query.eq("modulo_ordini", moduleCode);
+    query = query.or(moduleCode === "prof" ? "modulo_ordini.eq.prof,modulo_ordini.is.null" : "modulo_ordini.eq.ph");
     filters.forEach(([field, value]) => { query = query.eq(field, value); });
     if (!canSeeAll) {
       if (!visibleAgents?.length) return 0;
@@ -43,7 +43,7 @@ export default function OrdersDashboard() {
     }
 
     const month = new Date().toISOString().slice(0, 7);
-    let ordersQuery = supabase.from("ordini_testate").select("*").eq("modulo_ordini", moduleCode);
+    let ordersQuery = supabase.from("ordini_testate").select("*").or(moduleCode === "prof" ? "modulo_ordini.eq.prof,modulo_ordini.is.null" : "modulo_ordini.eq.ph");
     if (!canSeeAll) ordersQuery = visibleAgents?.length ? ordersQuery.in("codice_agente_mexal", visibleAgents) : null;
 
     const [ordiniMese, aperti, inCorso, evasi, ordersResult] = await Promise.all([

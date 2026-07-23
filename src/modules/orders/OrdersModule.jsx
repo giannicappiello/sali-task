@@ -9,6 +9,7 @@ import NewOrder from "./pages/NewOrder";
 import OrderDetail from "./pages/OrderDetail";
 import { OrdersModuleProvider } from "./ordersModuleContext";
 import "./orders-module.css";
+import "./orders-status.css";
 import "./orders-mobile-fixes.css";
 
 /* Legacy order-line headings retained by the shared PROF/PH renderer: "Prodotto" "Quantità" "Disponibile" "Listino" "Sconto commerciale" "Netto" "Imponibile" "IVA" "Totale".

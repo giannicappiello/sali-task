@@ -9,7 +9,6 @@ import {
   Settings,
   ShoppingCart,
   Store,
-  Users,
 } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
@@ -59,13 +58,6 @@ const cards = [
     description: "Conversazioni, allegati e notifiche interne.",
     icon: MessageCircle,
     permission: "messages.read",
-  },
-  {
-    path: "/team",
-    label: "Team",
-    description: "Utenti, ruoli, reparti e presenze.",
-    icon: Users,
-    permission: "team.read",
   },
   {
     path: "/integrations",

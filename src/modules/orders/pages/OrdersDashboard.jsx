@@ -3,10 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { ArrowUpRight, Search } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
+import { useOrdersModule } from "../ordersModuleContext";
 import { filterDashboardOrders } from "../services/dashboardOrders";
 import { agentDisplayName, loadAgentNameMap, sortOrdersNewestFirst } from "../services/agentNames";
 
 export default function OrdersDashboard() {
+  const { moduleCode, basePath } = useOrdersModule();
   const navigate = useNavigate();
   const { loading: accessLoading, visibleAgents, canSeeAll, canAccessOrders } = useOrdersAccess();
   const [stats, setStats] = useState({ ordiniMese: 0, aperti: 0, inCorso: 0, evasi: 0 });
@@ -19,6 +21,7 @@ export default function OrdersDashboard() {
 
   const countTable = useCallback(async (table, filters = []) => {
     let query = supabase.from(table).select("*", { count: "exact", head: true });
+    query = query.or(moduleCode === "prof" ? "modulo_ordini.eq.prof,modulo_ordini.is.null" : "modulo_ordini.eq.ph");
     filters.forEach(([field, value]) => { query = query.eq(field, value); });
     if (!canSeeAll) {
       if (!visibleAgents?.length) return 0;
@@ -27,7 +30,7 @@ export default function OrdersDashboard() {
     const { count, error } = await query;
     if (error) { console.error(`Errore conteggio ${table}:`, error); return 0; }
     return count || 0;
-  }, [canSeeAll, visibleAgentsKey]);
+  }, [canSeeAll, visibleAgentsKey, moduleCode]);
 
   const loadStats = useCallback(async () => {
     setLoading(true);
@@ -40,7 +43,7 @@ export default function OrdersDashboard() {
     }
 
     const month = new Date().toISOString().slice(0, 7);
-    let ordersQuery = supabase.from("ordini_testate").select("*");
+    let ordersQuery = supabase.from("ordini_testate").select("*").or(moduleCode === "prof" ? "modulo_ordini.eq.prof,modulo_ordini.is.null" : "modulo_ordini.eq.ph");
     if (!canSeeAll) ordersQuery = visibleAgents?.length ? ordersQuery.in("codice_agente_mexal", visibleAgents) : null;
 
     const [ordiniMese, aperti, inCorso, evasi, ordersResult] = await Promise.all([
@@ -82,13 +85,13 @@ export default function OrdersDashboard() {
 
   return <div className="orders-page">
     <div className="orders-toolbar">
-      <button className="orders-primary" type="button" onClick={() => navigate("/ordini/nuovo")}>Nuovo ordine</button>
+      <button className="orders-primary" type="button" onClick={() => navigate(`${basePath}/nuovo`)}>Nuovo ordine</button>
     </div>
     <div className="orders-kpi-grid"><Kpi label="Ordini del mese" value={stats.ordiniMese} /><Kpi label="Ordini aperti" value={stats.aperti} status="aperto" active={statusFilter === "aperto"} onClick={toggleStatusFilter} /><Kpi label="Ordini in corso" value={stats.inCorso} status="in_corso" active={statusFilter === "in_corso"} onClick={toggleStatusFilter} /><Kpi label="Ordini evasi" value={stats.evasi} status="evaso" active={statusFilter === "evaso"} onClick={toggleStatusFilter} /></div>
     <section className="orders-dashboard-list">
       <div className="orders-dashboard-list-header"><div className="orders-dashboard-brand"><img src="/pwa-512x512.png" alt="Logo aziendale" /><div><p>Panoramica operativa</p><h2>Ordini recenti</h2></div></div><div className="orders-search orders-dashboard-search"><Search size={18} aria-hidden="true" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cerca numero, cliente o agente" aria-label="Cerca ordini per numero, cliente o agente" /></div></div>
       <div className="orders-dashboard-filter-row"><button type="button" className={!statusFilter ? "active" : ""} onClick={() => setStatusFilter("")}>Tutti gli ordini</button>{statusFilter && <span>Filtro attivo: {statusFilter.replaceAll("_", " ")}</span>}</div>
-      <div className="orders-dashboard-table-wrap"><table className="orders-table orders-dashboard-table"><thead><tr><th>Data</th><th>Ordine</th><th>Cliente</th><th>Agente</th><th>Stato</th><th>Totale</th><th>Documenti Mexal</th><th><span className="sr-only">Apri ordine</span></th></tr></thead><tbody>{filteredOrders.map((order) => <tr key={order.id} className="orders-clickable-row" onClick={() => navigate(`/ordini/elenco/${order.id}`)}><td>{formatDate(order.data_ordine)}</td><td><strong>{order.numero_ordine_visualizzato || order.numero_ordine || "Bozza"}</strong></td><td>{order.ragione_sociale_cliente || order.codice_cliente || "-"}</td><td>{agentDisplayName(order, agentsByCode)}</td><td><span className={`orders-status ${order.stato}`}>{order.stato || "bozza"}</span></td><td><strong>{formatCurrency(order.totale_documento ?? order.totale)}</strong></td><td><div className="orders-dashboard-documents">{documentNumbers(order).map((number) => <span key={number}>{number}</span>)}</div></td><td><ArrowUpRight size={18} aria-hidden="true" /></td></tr>)}</tbody></table></div>
+      <div className="orders-dashboard-table-wrap"><table className="orders-table orders-dashboard-table"><thead><tr><th>Data</th><th>Ordine</th><th>Cliente</th><th>Agente</th><th>Stato</th><th>Totale</th><th>Documenti Mexal</th><th><span className="sr-only">Apri ordine</span></th></tr></thead><tbody>{filteredOrders.map((order) => <tr key={order.id} className="orders-clickable-row" onClick={() => navigate(`${basePath}/elenco/${order.id}`)}><td>{formatDate(order.data_ordine)}</td><td><strong>{order.numero_ordine_visualizzato || order.numero_ordine || "Bozza"}</strong></td><td>{order.ragione_sociale_cliente || order.codice_cliente || "-"}</td><td>{agentDisplayName(order, agentsByCode)}</td><td><span className={`orders-status ${order.stato}`}>{order.stato || "bozza"}</span></td><td><strong>{formatCurrency(order.totale_documento ?? order.totale)}</strong></td><td><div className="orders-dashboard-documents">{documentNumbers(order).map((number) => <span key={number}>{number}</span>)}</div></td><td><ArrowUpRight size={18} aria-hidden="true" /></td></tr>)}</tbody></table></div>
       {!filteredOrders.length && <p className="orders-dashboard-empty">{search ? "Nessun ordine corrisponde alla ricerca." : "Non ci sono ancora ordini da mostrare."}</p>}
     </section>
   </div>;

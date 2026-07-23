@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Search } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
+import { useOrdersModule } from "../ordersModuleContext";
 import { agentDisplayName, loadAgentNameMap, sortOrdersNewestFirst } from "../services/agentNames";
 
 function displayStatus(order) {
@@ -13,6 +14,7 @@ function displayStatus(order) {
 }
 
 export default function Orders() {
+  const { moduleCode, basePath } = useOrdersModule();
   const navigate = useNavigate();
   const location = useLocation();
   const { loading: accessLoading, visibleAgents, canSeeAll, canAccessOrders, isBackoffice, isAdmin } = useOrdersAccess();
@@ -35,7 +37,7 @@ export default function Orders() {
       return;
     }
 
-    let query = supabase.from("ordini_testate").select("*").eq("mese_ordine", month);
+    let query = supabase.from("ordini_testate").select("*").or(moduleCode === "prof" ? "modulo_ordini.eq.prof,modulo_ordini.is.null" : "modulo_ordini.eq.ph").eq("mese_ordine", month);
     if (!canSeeAll) {
       if (!visibleAgents?.length) {
         setRows([]);
@@ -73,7 +75,7 @@ export default function Orders() {
       <div className="orders-toolbar">
         <div className="orders-search"><Search size={18} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Ricerca rapida ordini..." /></div>
         <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
-        {canAccessOrders && <button className="orders-primary" type="button" onClick={() => navigate("/ordini/nuovo")}>Nuovo ordine</button>}
+        {canAccessOrders && <button className="orders-primary" type="button" onClick={() => navigate(`${basePath}/nuovo`)}>Nuovo ordine</button>}
       </div>
       {location.state?.message && <div className="orders-alert orders-alert-success">{location.state.message}</div>}
       <div className="orders-panel">
@@ -84,7 +86,7 @@ export default function Orders() {
             <tbody>
               {filtered.map((item) => {
                 const status = displayStatus(item);
-                return <tr key={item.id} className="orders-clickable-row" onClick={() => navigate(`/ordini/elenco/${item.id}`)}>
+                return <tr key={item.id} className="orders-clickable-row" onClick={() => navigate(`${basePath}/elenco/${item.id}`)}>
                   <td>{item.data_ordine || "-"}</td><td>{item.numero_ordine_visualizzato || item.numero_ordine || "Bozza"}</td><td>{item.ragione_sociale_cliente || item.codice_cliente}</td><td>{agentDisplayName(item, agentsByCode)}</td>
                   <td><span className={`orders-status ${status.className}`}>{status.label}</span></td>
                   <td>{Number(item.totale_imponibile ?? item.totale ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td><td>{Number(item.totale_iva || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td><td>{Number(item.totale_documento ?? item.totale ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td><td>{item.numero_ocm || "-"}</td><td>{item.numero_ocx || "-"}</td><td>{item.numero_oci || "-"}</td>

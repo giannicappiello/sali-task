@@ -19,7 +19,7 @@ async function postJson(url, body) {
   return payload;
 }
 
-export function submitOrderToMexal(orderId) { return postJson("/api/mexal/submit-order", { orderId }); }
+export function submitOrderToMexal(orderId, moduleCode) { return postJson("/api/mexal/submit-order", { orderId, moduleCode }); }
 export function stopOrderSync(orderId) { return postJson("/api/mexal/orders/stop-sync", { orderId }); }
 export function deleteOrder(orderId) { return postJson("/api/mexal/orders/delete", { orderId }); }
 export function updateOrder(orderId, testata, righe) { return postJson("/api/mexal/orders/update", { orderId, testata, righe }); }
@@ -65,9 +65,9 @@ export async function loadCreatedMexalDocuments(orderId) {
   return data || [];
 }
 
-export async function loadOrderDetail(orderId) {
+export async function loadOrderDetail(orderId, moduleCode) {
   const [{ data: order, error: orderError }, { data: lines, error: linesError }, { data: documents, error: documentsError }] = await Promise.all([
-    supabase.from("ordini_testate").select("*").eq("id", orderId).single(),
+    supabase.from("ordini_testate").select("*").eq("id", orderId).or((moduleCode || "prof") === "prof" ? "modulo_ordini.eq.prof,modulo_ordini.is.null" : "modulo_ordini.eq.ph").single(),
     supabase.from("ordini_righe").select("*").eq("ordine_id", orderId).order("id", { ascending: true }),
     loadCreatedMexalDocuments(orderId),
   ]);

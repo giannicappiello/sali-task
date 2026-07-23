@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
 import { agentDisplayName, loadAgentNameMap } from "../services/agentNames";
+import { useOrdersModule } from "../ordersModuleContext";
 
 function labelFor(key) {
   return String(key || "")
@@ -17,6 +18,7 @@ function displayValue(value) {
 }
 
 export default function CustomerDetail() {
+  const { basePath } = useOrdersModule();
   const navigate = useNavigate();
   const { customerCode } = useParams();
   const [customer, setCustomer] = useState(null);
@@ -70,7 +72,7 @@ export default function CustomerDetail() {
   return (
     <div className="orders-page">
       <div className="orders-new-header">
-        <button className="orders-secondary" type="button" onClick={() => navigate("/ordini/clienti")}>
+        <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/clienti`)}>
           <ArrowLeft size={18} /> Torna ai clienti
         </button>
         <div>

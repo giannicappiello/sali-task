@@ -23,7 +23,8 @@ const menuItems = [
   { path: "/home", label: "Home", icon: Home, permission: "dashboard.read" },
   { path: "/activities", label: "Attività", icon: ClipboardList, permission: "dashboard.read" },
   { path: "/farmacie/dashboard", label: "Beauty Days", icon: Store, permission: "pharmacy.read" },
-  { path: "/ordini", label: "Ordini", icon: ShoppingCart, permission: "orders.read" },
+  { path: "/ordini-prof", label: "Ordini PROF", icon: ShoppingCart, permission: "orders.read", special: "orders" },
+  { path: "/ordini-ph", label: "Ordini PH", icon: ShoppingCart, permission: "orders.read", special: "orders" },
   { path: "/products", label: "Prodotti", icon: Package, permission: "products.read" },
   { path: "/documentation", label: "Documenti", icon: FileArchive, permission: "documentation.read" },
   { path: "/messages", label: "Messaggi", icon: MessageCircle, permission: "messages.read" },
@@ -55,7 +56,8 @@ const pageInfo = {
   "/integrations": { title: "Centro Integrazioni", subtitle: "Connessioni con Mexal e sistemi aziendali esterni." },
   "/integrations/mexal": { title: "Mexal ERP", subtitle: "Sincronizzazioni, storico e controllo della WebAPI Mexal." },
   "/farmacie/dashboard": { title: "Beauty Days", subtitle: "Giornate promozionali, farmacie e analisi dati." },
-  "/ordini": { title: "Ordini", subtitle: "Clienti, ordini e attività commerciali collegate a Mexal." },
+  "/ordini-prof": { title: "Ordini PROF", subtitle: "Clienti, ordini e attività commerciali collegate a Mexal." },
+  "/ordini-ph": { title: "Ordini PH", subtitle: "Clienti, ordini e attività commerciali collegate a Mexal." },
 };
 
 function getInitials(name) {
@@ -93,8 +95,10 @@ function Layout() {
       ? pageInfo["/integrations"]
       : location.pathname.startsWith("/farmacie")
     ? pageInfo["/farmacie/dashboard"]
-    : location.pathname.startsWith("/ordini")
-      ? pageInfo["/ordini"]
+    : location.pathname.startsWith("/ordini-ph")
+      ? pageInfo["/ordini-ph"]
+      : location.pathname.startsWith("/ordini")
+      ? pageInfo["/ordini-prof"]
       : (pageInfo[location.pathname] || pageInfo["/home"]);
   const presence = getPresence(profile);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -188,7 +192,7 @@ function Layout() {
           return pharmacyEnabled || hasPermission("pharmacy.read");
         }
 
-        if (item.path === "/ordini") {
+        if (item.special === "orders") {
           return ordersEnabled || hasPermission("orders.read");
         }
 
@@ -278,7 +282,7 @@ function Layout() {
                 key={item.path}
                 to={item.path}
                 onClick={() => {
-                  if (item.path === "/ordini") {
+                  if (item.special === "orders") {
                     window.dispatchEvent(
                       new CustomEvent("orders:stock-sync-requested")
                     );

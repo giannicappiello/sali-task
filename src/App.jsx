@@ -84,7 +84,9 @@ function App() {
               <Route path="settings" element={<Settings />} />
               <Route path="settings/mexal-diagnostics" element={<MexalDiagnostics />} />
               <Route path="farmacie/*" element={<PharmacyModule />} />
-              <Route path="ordini/*" element={<OrdersModule />} />
+              <Route path="ordini/*" element={<Navigate to="/ordini-prof" replace />} />
+              <Route path="ordini-prof/*" element={<OrdersModule moduleCode="prof" title="Ordini PROF" basePath="/ordini-prof" />} />
+              <Route path="ordini-ph/*" element={<OrdersModule moduleCode="ph" title="Ordini PH" basePath="/ordini-ph" />} />
               <Route path="integrations/*" element={<IntegrationsModule />} />
             </Route>
           </Route>

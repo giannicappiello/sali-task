@@ -3,6 +3,7 @@ import { ArrowLeft, ChevronDown, ChevronUp, Info, Minus, Plus, Save, Search, Sho
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
+import { useOrdersModule } from "../ordersModuleContext";
 import { calculateLineConditions } from "../services/priceEngine";
 import { calculateOrderEconomics } from "../services/orderEconomics";
 import { checkOrderAvailability, submitOrderToMexal, updateOrder } from "../services/orderFulfillment";
@@ -112,6 +113,7 @@ async function loadPaged(table, buildQuery) {
 }
 
 export default function NewOrder() {
+  const { moduleCode, basePath } = useOrdersModule();
   const navigate = useNavigate();
   const { orderId: editingOrderId } = useParams();
   const {
@@ -157,7 +159,7 @@ export default function NewOrder() {
     let active = true;
     (async () => {
       const [{ data: existing, error: orderError }, { data: existingLines, error: linesError }, { data: docs, error: docsError }] = await Promise.all([
-        supabase.from("ordini_testate").select("*").eq("id", editingOrderId).single(),
+        supabase.from("ordini_testate").select("*").eq("id", editingOrderId).or(moduleCode === "prof" ? "modulo_ordini.eq.prof,modulo_ordini.is.null" : "modulo_ordini.eq.ph").single(),
         supabase.from("ordini_righe").select("*").eq("ordine_id", editingOrderId).order("id"),
         supabase.from("ordini_documenti_mexal").select("numero").eq("ordine_id", editingOrderId).not("numero", "is", null),
       ]);
@@ -463,7 +465,7 @@ export default function NewOrder() {
       if (editingOrderId) {
         order = { id: editingOrderId };
       } else {
-        const { data, error: orderError } = await supabase.from("ordini_testate").insert(orderPayload).select("id,numero_ordine_visualizzato").single();
+        const { data, error: orderError } = await supabase.from("ordini_testate").insert({ ...orderPayload, modulo_ordini: moduleCode }).select("id,numero_ordine_visualizzato").single();
         if (orderError) throw orderError; order = data;
       }
 
@@ -516,9 +518,11 @@ export default function NewOrder() {
 
         // In produzione l'invio parte subito. In sviluppo locale l'ordine resta
         // confermato e può essere inviato dalla pagina dettaglio dopo il deploy.
-        if (window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
+        const { data: moduleConfig, error: moduleConfigError } = await supabase.from("ordini_moduli_configurazione").select("invia_automaticamente_mexal").eq("modulo_ordini", moduleCode).maybeSingle();
+        if (moduleConfigError) throw moduleConfigError;
+        if (moduleConfig?.invia_automaticamente_mexal !== false && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
           try {
-            const syncResult = await submitOrderToMexal(order.id);
+            const syncResult = await submitOrderToMexal(order.id, moduleCode);
             mexalMessage = ` OCM: ${syncResult.numero_ocm || "-"} · OCX: ${syncResult.numero_ocx || "-"} · OCI: ${syncResult.numero_oci || "-"}.`;
           } catch (syncError) {
             mexalMessage = ` Ordine salvato, ma invio Mexal non riuscito: ${syncError.message}`;
@@ -528,7 +532,7 @@ export default function NewOrder() {
         }
       }
 
-      navigate(confirm || editingOrderId ? `/ordini/elenco/${order.id}` : "/ordini/elenco", {
+      navigate(confirm || editingOrderId ? `${basePath}/elenco/${order.id}` : `${basePath}/elenco`, {
         replace: true,
         state: {
           message: confirm
@@ -549,7 +553,7 @@ export default function NewOrder() {
   return (
     <div className="orders-page orders-new-order-page">
       <div className="orders-new-header">
-        <button className="orders-secondary" type="button" onClick={() => navigate("/ordini/elenco")}>
+        <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/elenco`)}>
           <ArrowLeft size={18} /> Torna agli ordini
         </button>
         <div>

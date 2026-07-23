@@ -1,25 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
 import { agentDisplayName, loadAgentNameMap } from "../services/agentNames";
 
 const PAGE_SIZE = 1000;
 
-function getPaymentDescription(item) {
-  const data = item?.dati_mexal || item?.json_mexal || {};
-
-  return (
-    data?._descrizione_pagamento ||
-    data?.descrizione_pagamento ||
-    data?.des_pagamento ||
-    data?.pagamento_descrizione ||
-    item?.codice_pagamento ||
-    "-"
-  );
-}
-
 export default function Customers() {
+  const navigate = useNavigate();
   const {
     loading: accessLoading,
     visibleAgents,
@@ -102,9 +91,8 @@ export default function Customers() {
 
     return rows.filter((item) => {
       const agentName = agentDisplayName(item, agentNames);
-      const paymentDescription = getPaymentDescription(item);
 
-      return [...Object.values(item), agentName, paymentDescription].some((value) =>
+      return [...Object.values(item), agentName].some((value) =>
         String(value ?? "").toLowerCase().includes(q)
       );
     });
@@ -128,31 +116,27 @@ export default function Customers() {
           <table className="orders-table">
             <thead>
               <tr>
-                <th>Codice</th>
                 <th>Ragione sociale</th>
                 <th>Località</th>
                 <th>Provincia</th>
-                <th>Pagamento</th>
-                <th>Listino</th>
                 <th>Agente</th>
               </tr>
             </thead>
 
             <tbody>
               {!loading &&
-                filtered.map((item) => {
-                  return (
-                    <tr key={item.codice_cliente}>
-                      <td>{item.codice_cliente}</td>
-                      <td>{item.ragione_sociale}</td>
-                      <td>{item.localita || "-"}</td>
-                      <td>{item.provincia || "-"}</td>
-                      <td>{getPaymentDescription(item)}</td>
-                      <td>{item.codice_listino || "-"}</td>
-                      <td>{agentDisplayName(item, agentNames)}</td>
-                    </tr>
-                  );
-                })}
+                filtered.map((item) => (
+                  <tr
+                    key={item.codice_cliente}
+                    className="orders-clickable-row"
+                    onClick={() => navigate(`/ordini/clienti/${encodeURIComponent(item.codice_cliente)}`)}
+                  >
+                    <td>{item.ragione_sociale}</td>
+                    <td>{item.localita || "-"}</td>
+                    <td>{item.provincia || "-"}</td>
+                    <td>{agentDisplayName(item, agentNames)}</td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>

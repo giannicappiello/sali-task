@@ -1,4 +1,3 @@
-import { Profiler, useRef } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { LayoutDashboard, ShoppingCart, Users } from "lucide-react";
 import useOrdersAccess from "./pages/useOrdersAccess";
@@ -8,35 +7,14 @@ import CustomerDetail from "./pages/CustomerDetail";
 import Orders from "./pages/Orders";
 import NewOrder from "./pages/NewOrder";
 import OrderDetail from "./pages/OrderDetail";
-import {
-  beginNewOrderMeasurement,
-  installNewOrderPerformanceMonitor,
-  recordNewOrderRender,
-} from "./services/orderPerformanceMonitor";
 import "./orders-module.css";
 import "./orders-mobile-fixes.css";
-
-installNewOrderPerformanceMonitor();
 
 const items = [
   { to: "/ordini/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/ordini/clienti", label: "Clienti", icon: Users },
   { to: "/ordini/elenco", label: "Ordini", icon: ShoppingCart },
 ];
-
-function MeasuredNewOrder() {
-  const started = useRef(false);
-  if (!started.current) {
-    started.current = true;
-    beginNewOrderMeasurement();
-  }
-
-  return (
-    <Profiler id="NewOrder" onRender={recordNewOrderRender}>
-      <NewOrder />
-    </Profiler>
-  );
-}
 
 export default function OrdersModule() {
   const { loading, canAccessOrders } = useOrdersAccess();
@@ -169,8 +147,8 @@ export default function OrdersModule() {
         <Route path="clienti" element={<Customers />} />
         <Route path="clienti/:customerCode" element={<CustomerDetail />} />
         <Route path="elenco" element={<Orders />} />
-        <Route path="nuovo" element={<MeasuredNewOrder />} />
-        <Route path="modifica/:orderId" element={<MeasuredNewOrder />} />
+        <Route path="nuovo" element={<NewOrder />} />
+        <Route path="modifica/:orderId" element={<NewOrder />} />
         <Route path="elenco/:orderId" element={<OrderDetail />} />
         <Route path="*" element={<Navigate to="dashboard" replace />} />
       </Routes>

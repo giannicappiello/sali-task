@@ -3,7 +3,7 @@ import { cleanupStaleRuns } from "../mexal/lib/syncRuns.js";
 import { buildMexalClient } from "../../server/mexal/sync-products.js";
 import { syncListPriceCommissions } from "../../server/mexal/sync-list-price-commissions.js";
 
-const DEFAULT_ORDER = ["clients", "products", "commercial_conditions", "document_series", "stocks", "list_price_commissions", "orders"];
+const DEFAULT_ORDER = ["clients", "agents", "products", "commercial_conditions", "document_series", "stocks", "list_price_commissions", "orders"];
 const RESUMABLE_TYPES = new Set(["products", "stocks"]);
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
@@ -65,6 +65,7 @@ async function callApiWithRetry(fetchImpl, baseUrl, secret, path, body) {
 function endpointFor(syncType) {
   switch (syncType) {
     case "clients": return ["/api/mexal/automation", { action: "run_now", syncType: "clients", origin: "cron" }];
+    case "agents": return ["/api/mexal/automation", { action: "run_now", syncType: "agents", origin: "cron" }];
     case "products": return ["/api/mexal/automation", { action: "run_now", syncType: "products", offset: 0, batchSize: 8, origin: "cron" }];
     case "commercial_conditions": return ["/api/mexal/automation", { action: "run_now", syncType: "commercial_conditions", mode: "incremental", syncPayments: true, origin: "cron" }];
     case "document_series": return ["/api/mexal/automation", { action: "run_now", syncType: "document_series", origin: "cron" }];
@@ -115,7 +116,7 @@ async function executeResumableSync({ fetchImpl, baseUrl, secret, path, body, ex
   throw Object.assign(new Error("Sincronizzazione interrotta: superato il numero massimo di lotti."), { details: lastResult });
 }
 
-export async function dispatchSchedules({ schedules, hasRunningRun, execute, updateSchedule }) {
+export async function dispatchSchedules({ schedules, hasRunningRun, execute, updateSchedule, recordScheduleResult = async () => {} }) {
   const executed = [];
   for (const schedule of schedules) {
     const sync_type = schedule.sync_type;
@@ -124,13 +125,15 @@ export async function dispatchSchedules({ schedules, hasRunningRun, execute, upd
       const runningRun = await hasRunningRun(sync_type);
       if (runningRun && !RESUMABLE_TYPES.has(sync_type)) {
         const item = { sync_type, success: true, status: "skipped", error: "È già presente una sincronizzazione in corso per questo tipo." };
+        await recordScheduleResult(schedule, item);
         await updateSchedule(schedule.id, { last_run_at: now, last_status: item.status, last_error: null, updated_at: now, next_run_at: null });
         executed.push(item);
         continue;
       }
 
       if (sync_type === "orders") {
-        const item = { sync_type, success: true, status: "skipped", error: null };
+        const item = { sync_type, success: true, status: "skipped", error: "Gli ordini vengono inviati dal modulo Ordini." };
+        await recordScheduleResult(schedule, item);
         await updateSchedule(schedule.id, { last_run_at: now, last_status: item.status, last_error: null, updated_at: now, next_run_at: null });
         executed.push(item);
         continue;
@@ -191,6 +194,20 @@ export default async function handler(req, res) {
       updateSchedule: async (id, values) => {
         const { error: updateError } = await admin.from("mexal_sync_schedules").update(values).eq("id", id);
         if (updateError) throw updateError;
+      },
+      recordScheduleResult: async (schedule, item) => {
+        const now = new Date().toISOString();
+        const { error: runError } = await admin.from("mexal_sync_runs").insert({
+          sync_type: schedule.sync_type,
+          status: item.status,
+          source: "cron",
+          context: { schedule_id: schedule.id },
+          started_at: now,
+          completed_at: now,
+          duration_ms: 0,
+          error_message: item.error || null,
+        });
+        if (runError) throw runError;
       },
     });
     return res.status(200).json(summary);

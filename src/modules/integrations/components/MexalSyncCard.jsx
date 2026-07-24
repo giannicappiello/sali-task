@@ -1,4 +1,4 @@
-import { CheckCircle2, Clock3, RefreshCw } from "lucide-react";
+import { CheckCircle2, Clock3, RefreshCw, Square } from "lucide-react";
 
 export default function MexalSyncCard({
   icon: Icon,
@@ -8,13 +8,16 @@ export default function MexalSyncCard({
   recordCount,
   enabled = false,
   running = false,
+  stopping = false,
   lastRun,
   onSync,
+  onStop,
   onOpen,
   run,
 }) {
   const isAgentsCard = title === "Agenti";
   const effectiveEnabled = enabled || isAgentsCard;
+  const hasRunningRun = run?.status === "running";
   const action = isAgentsCard
     ? () => { window.location.assign("/integrations/mexal/agenti"); }
     : (enabled ? onSync : onOpen);
@@ -56,17 +59,34 @@ export default function MexalSyncCard({
           Stato: {run.status} · Elaborati: {run.processed || 0} · Inseriti: {run.inserted || 0} · Aggiornati: {run.updated || 0} · Errori: {run.failed || 0}
         </small>
       )}
-      <button
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation();
-          activate();
-        }}
-        disabled={running}
-      >
-        {running ? <RefreshCw size={17} className="spin" /> : null}
-        {isAgentsCard ? "Gestisci agenti" : effectiveEnabled ? (running ? "Sincronizzazione..." : "Sincronizza") : "Apri roadmap"}
-      </button>
+      <div className="mexal-sync-actions">
+        <button
+          type="button"
+          className="mexal-sync-primary"
+          onClick={(event) => {
+            event.stopPropagation();
+            activate();
+          }}
+          disabled={running}
+        >
+          {running ? <RefreshCw size={17} className="spin" /> : null}
+          {isAgentsCard ? "Gestisci agenti" : effectiveEnabled ? (running ? "Sincronizzazione..." : "Sincronizza") : "Apri roadmap"}
+        </button>
+        {hasRunningRun && (
+          <button
+            type="button"
+            className="mexal-sync-stop"
+            onClick={(event) => {
+              event.stopPropagation();
+              onStop?.();
+            }}
+            disabled={stopping}
+          >
+            <Square size={15} />
+            {stopping ? "Arresto..." : "Arresta sincronizzazione"}
+          </button>
+        )}
+      </div>
     </article>
   );
 }

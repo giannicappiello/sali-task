@@ -156,11 +156,14 @@ function sendHandlerResponse(res, phase, execution) {
 }
 
 async function createAdmin(req) {
-  const { supabase, authUserId } = await requireAdmin(req, () => (
-    createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), {
-      auth: { persistSession: false, autoRefreshToken: false },
-    })
-  ));
+  const createSupabase = () => createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const authorization = String(req.headers.authorization || "");
+  if (process.env.CRON_SECRET && authorization === `Bearer ${process.env.CRON_SECRET}`) {
+    return { supabase: createSupabase(), authUserId: null };
+  }
+  const { supabase, authUserId } = await requireAdmin(req, createSupabase);
   return { supabase, authUserId };
 }
 

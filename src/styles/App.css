@@ -3374,3 +3374,32 @@ body {
   .topbar-left p { font-size: 12px; max-width: 46vw; }
   .topbar-actions { gap: 2px; }
 }
+
+/* Diagnostica Mexal: stessi controlli e spaziature del resto del Workspace. */
+.mexal-diagnostics-page .settings-panel { min-height: 0; }
+.mexal-diagnostics-back { margin-bottom: 12px; display: inline-flex; align-items: center; gap: 8px; }
+.mexal-diagnostics-page .settings-panel label { display: grid; gap: 7px; color: #475569; font-size: 13px; font-weight: 800; }
+.mexal-diagnostics-page .settings-panel label input,
+.mexal-diagnostics-page .settings-panel label select {
+  width: 100%;
+  height: 44px;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--text);
+  padding: 0 12px;
+  font: inherit;
+  font-weight: 500;
+}
+.mexal-diagnostics-page .primary-action,
+.mexal-diagnostics-page .secondary-action { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.mexal-diagnostics-page .primary-action:disabled,
+.mexal-diagnostics-page .secondary-action:disabled { opacity: .55; cursor: not-allowed; }
+.mexal-diagnostics-page .orders-table-wrap { width: 100%; overflow: auto; }
+.mexal-diagnostics-page .orders-table { width: 100%; border-collapse: collapse; }
+.mexal-diagnostics-page .orders-table th,
+.mexal-diagnostics-page .orders-table td { padding: 12px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.mexal-diagnostics-page .orders-table th { color: var(--muted); font-size: 12px; text-transform: uppercase; }
+.mexal-diagnostics-page .orders-alert { padding: 12px 14px; border: 1px solid; border-radius: var(--radius-sm); }
+.mexal-diagnostics-page .orders-alert-error { border-color: #fecaca; background: #fef2f2; color: #991b1b; }

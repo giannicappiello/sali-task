@@ -41,6 +41,8 @@ async function mainHandler(req) {
     runId = String(run.id);
     const centralRun = await createSyncRun(supabase, {
       syncType: "commercial_conditions",
+      source: body.origin === "cron" ? "cron" : "manual",
+      context: body.context || {},
       metadata: { mode, dryRun, syncPayments },
     });
     if (centralRun.duplicate) throw new HttpError(409, "È già presente una sincronizzazione condizioni commerciali in corso.");
@@ -283,6 +285,7 @@ async function mainHandler(req) {
     return jsonResponse({
       ok: true,
       runId,
+      sync_run_id: centralRunId,
       status,
       durationMs,
       dryRun,
@@ -304,7 +307,7 @@ async function mainHandler(req) {
         error_message: message
       }).eq("id", runId);
     }
-    return jsonResponse({ ok: false, runId, error: message }, 500);
+    return jsonResponse({ ok: false, runId, sync_run_id: centralRunId, error: message }, 500);
   }
 }
 async function requireAuthenticatedUser(supabase, token) {

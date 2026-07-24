@@ -93,7 +93,7 @@ export async function agentsAccess({ supabase, body }) {
   if (agent.workspace_utente_id) {
     const result = await supabase
       .from("utenti")
-      .select("id,auth_user_id,email,ruolo")
+      .select("id,auth_user_id,email")
       .eq("id", agent.workspace_utente_id)
       .maybeSingle();
     if (result.error) throw result.error;
@@ -103,7 +103,7 @@ export async function agentsAccess({ supabase, body }) {
   if (!workspaceUser) {
     const result = await supabase
       .from("utenti")
-      .select("id,auth_user_id,email,ruolo")
+      .select("id,auth_user_id,email")
       .eq("agent_id", agent.id)
       .maybeSingle();
     if (result.error) throw result.error;
@@ -113,7 +113,7 @@ export async function agentsAccess({ supabase, body }) {
   if (!workspaceUser) {
     const result = await supabase
       .from("utenti")
-      .select("id,auth_user_id,email,ruolo")
+      .select("id,auth_user_id,email")
       .ilike("email", email)
       .maybeSingle();
     if (result.error) throw result.error;
@@ -148,7 +148,6 @@ export async function agentsAccess({ supabase, body }) {
     auth_user_id: authUser.id,
     nome: [agent.nome, agent.cognome].filter(Boolean).join(" ") || "Agente",
     email,
-    ruolo: workspaceUser?.ruolo || "AGENTE",
     attivo: true,
     agent_id: agent.id,
     telefono: agent.telefono || null,

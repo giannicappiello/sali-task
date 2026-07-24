@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { completeSyncRun, createSyncRun, failSyncRunUnlessClosed } from "../../api/mexal/lib/syncRuns.js";
 
 const AGENT_PREFIX = "602";
+const PAGE_SIZE = 500;
 
 function required(name) {
   const value = String(process.env[name] || "").trim();
@@ -22,10 +23,14 @@ function first(object, keys) {
 
 function rowsOf(payload) {
   if (Array.isArray(payload)) return payload;
-  for (const key of ["dati", "records", "items", "agenti", "data", "results", "risultati"]) {
+  for (const key of ["dati", "records", "items", "clienti", "data", "results", "risultati"]) {
     if (Array.isArray(payload?.[key])) return payload[key];
   }
   return [];
+}
+
+function nextTokenOf(payload) {
+  return first(payload, ["next", "next_token", "nextToken", "prossimo", "continuation_token"]);
 }
 
 function request(url, headers) {
@@ -88,7 +93,7 @@ function splitName(row) {
 }
 
 function mapAgent(row, syncAt) {
-  const code = upper(first(row, ["codice", "codice_agente", "cod_agente", "codagente", "conto", "id"]));
+  const code = upper(first(row, ["codice", "codice_cliente", "cod_conto", "codconto", "conto", "codiceConto", "id"]));
   const names = splitName(row);
   return {
     codice: code,
@@ -104,19 +109,30 @@ function mapAgent(row, syncAt) {
 }
 
 async function loadAgents(mexal) {
-  const candidates = ["/dati-generali/agenti", "/agenti"];
-  let lastError;
-  for (const path of candidates) {
-    try {
-      const payload = await mexal.get(path);
-      const rows = rowsOf(payload);
-      const syncAt = new Date().toISOString();
-      const mapped = rows.map((row) => mapAgent(row, syncAt)).filter((row) => row.codice.startsWith(AGENT_PREFIX));
-      if (mapped.length) return [...new Map(mapped.map((row) => [row.codice, row])).values()];
-      lastError = new Error(`${path}: nessun agente con codice ${AGENT_PREFIX}.`);
-    } catch (error) { lastError = error; }
+  const rawRows = [];
+  let next = null;
+  let page = 0;
+  do {
+    const params = new URLSearchParams();
+    params.set("max", String(PAGE_SIZE));
+    if (next) params.set("next", String(next));
+    const payload = await mexal.get(`/clienti?${params.toString()}`);
+    rawRows.push(...rowsOf(payload));
+    next = nextTokenOf(payload);
+    page += 1;
+    if (page > 200) throw new Error("Paginazione agenti Mexal interrotta: troppe pagine.");
+  } while (next);
+
+  const syncAt = new Date().toISOString();
+  const mapped = rawRows
+    .map((row) => mapAgent(row, syncAt))
+    .filter((row) => row.codice.startsWith(AGENT_PREFIX));
+
+  if (!mapped.length) {
+    throw new Error(`Mexal non ha restituito anagrafiche con codice ${AGENT_PREFIX} dalla risorsa clienti.`);
   }
-  throw lastError || new Error("Endpoint agenti Mexal non disponibile.");
+
+  return [...new Map(mapped.map((row) => [row.codice, row])).values()];
 }
 
 export default async function handler(req, res) {
@@ -136,7 +152,7 @@ export default async function handler(req, res) {
     if (upsertError) throw upsertError;
     const inserted = agents.filter((item) => !existingCodes.has(item.codice)).length;
     const updated = agents.length - inserted;
-    await completeSyncRun(admin, runId, { processed: agents.length, inserted, updated, skipped: 0, failed: 0, metadata: { endpoint_strategy: ["/dati-generali/agenti", "/agenti"] } });
+    await completeSyncRun(admin, runId, { processed: agents.length, inserted, updated, skipped: 0, failed: 0, metadata: { endpoint: "/clienti", codice_prefix: AGENT_PREFIX } });
     return res.status(200).json({ success: true, sync_run_id: runId, letti_mexal: agents.length, inseriti: inserted, aggiornati: updated, errori: [] });
   } catch (error) {
     if (runId) await failSyncRunUnlessClosed(admin, runId, error);

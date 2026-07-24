@@ -109,9 +109,14 @@ async function saveDocumentLines(admin, documentId, lines) {
     dati_mexal: { aliquota_iva: line.aliquota_iva ?? null, provvigione_percentuale: line.provvigione_percentuale ?? null },
     aggiornato_il: new Date().toISOString(),
   }));
-  if (!rows.length) return;
-  const { error } = await admin.from("ordini_documenti_mexal_righe").upsert(rows, { onConflict: "documento_mexal_id,posizione" });
-  if (error) throw error;
+  if (rows.length) {
+    const { error } = await admin.from("ordini_documenti_mexal_righe").upsert(rows, { onConflict: "documento_mexal_id,posizione" });
+    if (error) throw error;
+  }
+  let staleRows = admin.from("ordini_documenti_mexal_righe").delete().eq("documento_mexal_id", documentId);
+  staleRows = rows.length ? staleRows.gt("posizione", rows.length) : staleRows;
+  const { error: staleRowsError } = await staleRows;
+  if (staleRowsError) throw staleRowsError;
 }
 
 export default async function handler(req, res) {

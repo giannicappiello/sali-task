@@ -102,14 +102,7 @@ function splitName(row) {
 }
 
 function isActiveMexal(row) {
-  const disabledFlag = upper(first(row, [
-    "annullato", "precancellato", "gest_annullato", "disattivato", "inattivo", "bloccato",
-  ]));
-  if (["S", "Y", "YES", "TRUE", "1"].includes(disabledFlag)) return false;
-
-  const status = upper(first(row, ["stato", "status", "stato_anagrafica", "stato_fornitore"]));
-  if (["I", "INATTIVO", "DISATTIVO", "DISATTIVATO", "DISABILITATO", "ANNULLATO", "BLOCCATO"].includes(status)) return false;
-  return true;
+  return !["S", "Y", "YES", "TRUE", "1"].includes(upper(row?.cessato));
 }
 
 function mapAgent(row, syncAt) {

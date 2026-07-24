@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
 import { useOrdersModule } from "../ordersModuleContext";
 import { deleteOrder, downloadOrderPdf, loadOrderDetail, recoverOrderSync, stopOrderSync, submitOrderToMexal } from "../services/orderFulfillment";
+import { getOrderDisplayStatus, hasMexalDocuments } from "../services/orderDisplayStatus";
 
 function money(value) {
   return Number(value || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
@@ -132,12 +133,11 @@ export default function OrderDetail() {
   if (!order) return <div className="orders-page"><div className="orders-alert orders-alert-error">{error || "Ordine non trovato."}</div><button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/elenco`)}><ArrowLeft size={18} /> Torna agli ordini</button></div>;
 
   const syncStatus = order.stato_sincronizzazione || "non_inviato";
-  const isClosed = syncStatus === "completato";
-  const hasMexalDocument = Boolean(order.numero_ocm || order.numero_ocx || order.numero_oci);
+  const displayStatus = getOrderDisplayStatus(order);
+  const isClosed = displayStatus.closed;
+  const hasMexalDocument = hasMexalDocuments(order);
   const canEdit = !isClosed && !hasMexalDocument && ["non_avviato", "non_inviato", "errore", "annullato", "arrestato"].includes(syncStatus);
   const canDelete = canEdit;
-  const displayedStatus = isClosed ? "SPEDITO" : syncStatus.replaceAll("_", " ").toUpperCase();
-  const displayedStatusClass = isClosed ? "completato" : syncStatus;
 
   return (
     <div className="orders-page">
@@ -154,7 +154,7 @@ export default function OrderDetail() {
         <div><span>Cliente</span><strong>{order.codice_cliente || "-"}</strong></div>
         <div><span>Agente</span><strong>{agentName || "-"}</strong></div>
         <div><span>Pagamento</span><strong>{order.descrizione_pagamento || order.codice_pagamento || "-"}</strong></div>
-        <div><span>Stato</span><strong className={`orders-sync-badge ${displayedStatusClass}`}>{displayedStatus}</strong></div>
+        <div><span>Stato</span><strong className={`orders-sync-badge ${displayStatus.className}`}>{displayStatus.label}</strong></div>
         <div><span>Ultimo tentativo</span><strong>{order.ultimo_tentativo_sync ? new Date(order.ultimo_tentativo_sync).toLocaleString("it-IT") : "-"}</strong></div>
         {["OCM", "OCX", "OCI"].map((kind) => {
           const document = order.mexal_documents?.find((item) => item.tipo_documento === kind);

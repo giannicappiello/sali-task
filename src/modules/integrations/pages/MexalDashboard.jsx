@@ -10,7 +10,6 @@ import {
   Percent,
   RefreshCw,
   ScrollText,
-  ShoppingCart,
   Users,
   Warehouse,
 } from "lucide-react";
@@ -231,7 +230,6 @@ export default function MexalDashboard() {
     { icon: ScrollText, title: "Condizioni commerciali", description: "Matrice sconti, particolarità e regole pagamento.", recordLabel: "regole attive", recordCount: commercialCount, enabled: true, type: "commercial_conditions", lastRunData: latestRunsByType.commercial_conditions },
     { icon: Warehouse, title: "Giacenze", description: "Disponibilità per magazzino e controllo evasione ordini.", recordLabel: "prodotti sincronizzati", recordCount: entityCounts.stocks, enabled: true, type: "stocks", lastRunData: latestRunsByType.stocks || entityRuns.stocks },
     { icon: Percent, title: "Provvigioni listini", description: "Regole provvigionali associate ai listini Mexal.", recordLabel: "regole attive", recordCount: entityCounts.listPriceCommissions, enabled: true, type: "list_price_commissions", lastRunData: latestRunsByType.list_price_commissions },
-    { icon: ShoppingCart, title: "Ordini", description: "Invio OCM/OCX, PDF e stato sincronizzazione documenti.", recordLabel: "ordini da inviare", recordCount: entityCounts.orders, enabled: true, type: "orders", lastRunData: latestRunsByType.orders || entityRuns.orders },
   ];
 
   const runningRuns = runs.filter((item) => item.status === "running").length;

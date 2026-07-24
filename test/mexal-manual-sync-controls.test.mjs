@@ -12,6 +12,7 @@ const [dashboard, syncCard, agents, history, settings, diagnostics] = await Prom
 
 assert.doesNotMatch(dashboard, /Avvio manuale|mexal-manual-start|Sincronizza tutto/);
 assert.match(dashboard, /title: "Provvigioni listini"/);
+assert.doesNotMatch(dashboard, /title: "Ordini"/);
 assert.match(dashboard, /type: "list_price_commissions"/);
 assert.equal((dashboard.match(/type="button" className="mexal-kpi"/g) || []).length, 5);
 assert.match(syncCard, /Arresta sincronizzazione/);
@@ -19,6 +20,7 @@ assert.match(syncCard, /onStop\?\.\(\)/);
 assert.match(agents, /mexal-search-control/);
 assert.match(agents, /Sincronizza agenti/);
 assert.match(agents, /Arresta sincronizzazione/);
+assert.match(agents, /mexal-agents-panel/);
 assert.match(history, /Tutte le origini/);
 assert.match(history, /Pianificata/);
 assert.match(history, /run\.error_message/);

@@ -32,4 +32,10 @@ button.mexal-kpi:focus-visible,.mexal-sync-card:focus-visible{outline:3px solid 
 .mexal-row-actions,.mexal-settings-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .mexal-row-actions .primary-action,.mexal-row-actions .secondary-action,.mexal-row-actions .mexal-danger-action{height:40px;padding:0 12px;white-space:nowrap}
 .mexal-settings-actions{margin-top:18px}
+.mexal-table-panel .mexal-toolbar .primary-action,.mexal-table-panel .mexal-row-actions .primary-action{border:0;background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff}
+.mexal-table-panel .mexal-toolbar .mexal-danger-action,.mexal-table-panel .mexal-row-actions .mexal-danger-action{border:0;background:#b91c1c;color:#fff}
+.mexal-table-panel .mexal-row-actions .secondary-action{border:1px solid var(--border);background:#fff;color:#334155}
+.mexal-agents-panel .mexal-history-table th:last-child,.mexal-agents-panel .mexal-history-table td:last-child{position:sticky;right:0;z-index:1;min-width:175px;background:#fff;box-shadow:-10px 0 16px rgba(15,23,42,.06)}
+.mexal-agents-panel .mexal-history-table thead th:last-child{z-index:2}
+.mexal-agents-panel .mexal-history-table tbody tr:hover td:last-child{background:#f2f7ff}
 @media(max-width:720px){.mexal-toolbar{align-items:stretch}.mexal-search-control{min-width:100%}.mexal-toolbar .primary-action,.mexal-toolbar .mexal-danger-action{width:100%}.mexal-history-filters{display:grid;grid-template-columns:1fr}.mexal-history-filters label{min-width:0}.mexal-row-actions{display:grid}.mexal-row-actions button{width:100%}}

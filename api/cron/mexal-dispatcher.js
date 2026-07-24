@@ -70,6 +70,7 @@ function endpointFor(syncType) {
     case "commercial_conditions": return ["/api/mexal/automation", { action: "run_now", syncType: "commercial_conditions", mode: "incremental", syncPayments: true, origin: "cron" }];
     case "document_series": return ["/api/mexal/automation", { action: "run_now", syncType: "document_series", origin: "cron" }];
     case "stocks": return ["/api/mexal/automation", { action: "run_now", syncType: "stocks", offset: 0, batchSize: 12, origin: "cron" }];
+    case "orders": return ["/api/mexal/automation", { action: "run_now", syncType: "orders", origin: "cron" }];
     default: return null;
   }
 }

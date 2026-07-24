@@ -33,6 +33,8 @@ export default function MexalDiagnostics() {
   const [destinationSeries, setDestinationSeries] = useState("1");
   const [destinationNumber, setDestinationNumber] = useState("16541");
   const [destinationClient, setDestinationClient] = useState("501.03320");
+  const [activeAgentCode, setActiveAgentCode] = useState("");
+  const [inactiveAgentCode, setInactiveAgentCode] = useState("");
   const [result, setResult] = useState(null);
   const [commercialResult, setCommercialResult] = useState(null);
   const [destinationResult, setDestinationResult] = useState(null);
@@ -42,6 +44,7 @@ export default function MexalDiagnostics() {
   const [listPriceCommissionsResult, setListPriceCommissionsResult] = useState(null);
   const [loading, setLoading] = useState("");
   const [error, setError] = useState("");
+  const [agentDownloadError, setAgentDownloadError] = useState("");
 
   const importantDifferences = useMemo(() => (result?.differences || []).filter((item) => /(stato|sospes|evad|modulo|causale|tipo|tp_|riga|flag|pagamento|trasporto|provvig|scaden)/i.test(item.field)), [result]);
 
@@ -113,6 +116,40 @@ export default function MexalDiagnostics() {
     }
   }
 
+  async function downloadAgentStatusSamples() {
+    setLoading("download-agent-status-samples"); setAgentDownloadError("");
+    try {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session?.access_token) throw new Error("Sessione scaduta. Effettua nuovamente l'accesso.");
+      const response = await fetch("/api/mexal/orders/recover-sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({
+          action: "download-agent-status-samples",
+          activeAgentCode: activeAgentCode.trim(),
+          inactiveAgentCode: inactiveAgentCode.trim(),
+        }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || `Errore download (${response.status}).`);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "mexal-agenti-attivo-disattivato.json";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (diagnosticError) {
+      setAgentDownloadError(diagnosticError.message || "Download agenti Mexal non riuscito.");
+    } finally {
+      setLoading("");
+    }
+  }
+
   async function executeListPriceCommissions() {
     setLoading("list-price-commissions"); setError("");
     try { setListPriceCommissionsResult(await postDiagnostics({ action: "list-price-commissions-diagnostics" })); }
@@ -143,9 +180,25 @@ export default function MexalDiagnostics() {
   if (!isAdminUser) return <div className="orders-empty">Diagnostica Mexal riservata agli amministratori.</div>;
 
   return <div className="settings-page v4-page">
-    <div className="page-title-row"><div><button className="orders-secondary" type="button" onClick={() => navigate("/settings")} style={{ marginBottom: 12 }}><ArrowLeft size={18} /> Torna alle impostazioni</button><h1>Diagnostica contratti Mexal</h1><p>Legge ordini reali e individua i campi corretti usati da Mexal.</p></div></div>
+    <div className="page-title-row"><div><button className="orders-secondary" type="button" onClick={() => navigate("/integrations/mexal")} style={{ marginBottom: 12 }}><ArrowLeft size={18} /> Torna a Mexal ERP</button><h1>Diagnostica Mexal</h1><p>Legge dati reali e individua i campi corretti usati da Mexal.</p></div></div>
 
     <section className="panel settings-panel">
+      <div className="panel-header"><h3>Diagnostica stato agenti Mexal</h3></div>
+      <p>Inserisci un codice agente attivo e uno disattivato. Salitask leggerà soltanto i due record originali da <code>/fornitori</code> e scaricherà un JSON di confronto, senza modificare dati in Mexal o nel Workspace.</p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
+        <label>Codice agente attivo<input value={activeAgentCode} onChange={(event) => setActiveAgentCode(event.target.value)} placeholder="602.00000" /></label>
+        <label>Codice agente disattivato<input value={inactiveAgentCode} onChange={(event) => setInactiveAgentCode(event.target.value)} placeholder="602.00000" /></label>
+      </div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 }}>
+        <button className="primary-action" type="button" onClick={downloadAgentStatusSamples} disabled={loading === "download-agent-status-samples" || !activeAgentCode.trim() || !inactiveAgentCode.trim()}>
+          {loading === "download-agent-status-samples" ? <RefreshCw className="spin" size={18} /> : <Download size={18} />}
+          {loading === "download-agent-status-samples" ? "Download in corso..." : "Scarica JSON agenti"}
+        </button>
+      </div>
+      {agentDownloadError && <div className="orders-alert orders-alert-error" style={{ marginTop: 16 }}>{agentDownloadError}</div>}
+    </section>
+
+    <section className="panel settings-panel" style={{ marginTop: 16 }}>
       <div className="panel-header"><h3>Leggi ordine manuale per la destinazione</h3></div>
       <p>Valori già impostati sull’ordine OCM manuale indicato. Premi il pulsante per leggere direttamente il documento da Mexal.</p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>

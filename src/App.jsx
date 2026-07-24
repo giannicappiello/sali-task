@@ -21,7 +21,6 @@ const Team = lazy(() => import("./pages/Team/Team"));
 const Calendar = lazy(() => import("./pages/Calendar/Calendar"));
 const Reports = lazy(() => import("./pages/Reports/Reports"));
 const Settings = lazy(() => import("./pages/Settings/Settings"));
-const MexalDiagnostics = lazy(() => import("./pages/Settings/MexalDiagnostics"));
 
 const PharmacyModule = lazy(() =>
   import("./modules/pharmacy/PharmacyModule")
@@ -82,7 +81,6 @@ function App() {
               <Route path="reports" element={<Navigate to="/activities/analysis-data" replace />} />
               <Route path="analysis-data" element={<Navigate to="/activities/analysis-data" replace />} />
               <Route path="settings" element={<Settings />} />
-              <Route path="settings/mexal-diagnostics" element={<MexalDiagnostics />} />
               <Route path="farmacie/*" element={<PharmacyModule />} />
               <Route path="ordini/*" element={<Navigate to="/ordini-prof" replace />} />
               <Route path="ordini-prof/*" element={<OrdersModule moduleCode="prof" title="Ordini PROF" basePath="/ordini-prof" />} />

@@ -132,14 +132,6 @@ export async function dispatchSchedules({ schedules, hasRunningRun, execute, upd
         continue;
       }
 
-      if (sync_type === "orders") {
-        const item = { sync_type, success: true, status: "skipped", error: "Gli ordini vengono inviati dal modulo Ordini." };
-        await recordScheduleResult(schedule, item);
-        await updateSchedule(schedule.id, { last_run_at: now, last_status: item.status, last_error: null, updated_at: now, next_run_at: null });
-        executed.push(item);
-        continue;
-      }
-
       await execute(sync_type, schedule, runningRun || null);
       const item = { sync_type, success: true, status: "completed", error: null };
       await updateSchedule(schedule.id, { last_run_at: now, last_status: item.status, last_error: null, updated_at: now, next_run_at: null });

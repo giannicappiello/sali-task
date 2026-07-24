@@ -6,6 +6,7 @@ import { runOrderDestinationDiagnostics } from "../../../server/mexal/order-dest
 import { runCommissionDiagnostics } from "../../../server/mexal/commission-diagnostics.js";
 import { runCommissionRulesDiagnostics } from "../../../server/mexal/commission-rules-diagnostics.js";
 import { downloadFullMexalHelp } from "../../../server/mexal/full-help-download.js";
+import { downloadAgentStatusSamples } from "../../../server/mexal/agent-status-download.js";
 import { syncCommissionCategories } from "../../../server/mexal/sync-commission-categories.js";
 import { runListPriceCommissionsDiagnostics } from "../../../server/mexal/list-price-commissions-diagnostics.js";
 import {
@@ -64,6 +65,17 @@ export default async function handler(req, res) {
       if (!authorization?.isAdmin) return res.status(403).json({ error: "Download help Mexal riservato agli amministratori." });
       const result = await downloadFullMexalHelp(buildMexalClient());
       return res.status(200).json(result);
+    }
+
+    if (req.body?.action === "download-agent-status-samples") {
+      if (!authorization?.isAdmin) return res.status(403).json({ error: "Download agenti Mexal riservato agli amministratori." });
+      const result = await downloadAgentStatusSamples(buildMexalClient(), {
+        activeAgentCode: req.body?.activeAgentCode,
+        inactiveAgentCode: req.body?.inactiveAgentCode,
+      });
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Content-Disposition", "attachment; filename=\"mexal-agenti-attivo-disattivato.json\"");
+      return res.status(200).send(JSON.stringify(result, null, 2));
     }
 
     if (req.body?.action === "list-price-commissions-diagnostics") {

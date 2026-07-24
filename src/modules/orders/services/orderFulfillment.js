@@ -35,7 +35,8 @@ function legacyMexalDocuments(order = {}) {
 }
 
 function mergeMexalDocuments(documents = [], order = {}) {
-  const merged = [...documents, ...legacyMexalDocuments(order)];
+  const actualTypes = new Set(documents.filter((document) => document?.numero).map((document) => String(document.tipo_documento || "").toUpperCase()));
+  const merged = [...documents, ...legacyMexalDocuments(order).filter((document) => !actualTypes.has(document.tipo_documento))];
   const seen = new Set();
   return merged.filter((document) => {
     const type = String(document.tipo_documento || "").toUpperCase();
@@ -65,6 +66,17 @@ export async function loadCreatedMexalDocuments(orderId) {
   return data || [];
 }
 
+export async function loadCreatedMexalDocumentLines(documentIds) {
+  if (!documentIds?.length) return [];
+  const { data, error } = await supabase
+    .from("ordini_documenti_mexal_righe")
+    .select("id,documento_mexal_id,ordine_riga_id,posizione,codice_articolo,descrizione,quantita,prezzo,sconto,dati_mexal")
+    .in("documento_mexal_id", documentIds)
+    .order("posizione", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
 export async function loadOrderDetail(orderId, moduleCode) {
   const [{ data: order, error: orderError }, { data: lines, error: linesError }, { data: documents, error: documentsError }] = await Promise.all([
     supabase.from("ordini_testate").select("*").eq("id", orderId).or((moduleCode || "prof") === "prof" ? "modulo_ordini.eq.prof,modulo_ordini.is.null" : "modulo_ordini.eq.ph").single(),
@@ -74,8 +86,16 @@ export async function loadOrderDetail(orderId, moduleCode) {
   if (orderError) throw orderError;
   if (linesError) throw linesError;
   if (documentsError) throw documentsError;
+  const documentLines = await loadCreatedMexalDocumentLines((documents || []).map((document) => document.id).filter(Boolean));
+  const linesByDocument = documentLines.reduce((map, line) => {
+    const current = map.get(line.documento_mexal_id) || [];
+    current.push(line);
+    map.set(line.documento_mexal_id, current);
+    return map;
+  }, new Map());
+  const childDocuments = (documents || []).map((document) => ({ ...document, righe: linesByDocument.get(document.id) || [] }));
   const enriched = await enrichAgent(order);
-  return { order: { ...enriched, mexal_documents: mergeMexalDocuments(documents, order) }, lines: lines || [] };
+  return { order: { ...enriched, mexal_documents: mergeMexalDocuments(childDocuments, order) }, lines: lines || [] };
 }
 
 export { buildOrderPdfModel, createOrderPdf };

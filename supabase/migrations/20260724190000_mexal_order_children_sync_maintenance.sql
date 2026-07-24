@@ -27,7 +27,7 @@ create table if not exists public.ordini_documenti_mexal_righe (
   documento_mexal_id uuid not null references public.ordini_documenti_mexal(id) on delete cascade,
   ordine_riga_id uuid references public.ordini_righe(id) on delete set null,
   posizione integer not null,
-  codice_articolo text, descrizione text, quantita numeric not null default 0, prezzo numeric, sconto numeric,
+  codice_articolo text, descrizione text, quantita numeric not null default 0, prezzo numeric, sconto text,
   dati_mexal jsonb not null default '{}'::jsonb,
   creato_il timestamptz not null default now(), aggiornato_il timestamptz not null default now(),
   unique(documento_mexal_id, posizione)

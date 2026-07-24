@@ -23,7 +23,7 @@ function first(object, keys) {
 
 function rowsOf(payload) {
   if (Array.isArray(payload)) return payload;
-  for (const key of ["dati", "records", "items", "agenti", "data", "results", "risultati"]) {
+  for (const key of ["dati", "records", "items", "fornitori", "suppliers", "data", "results", "risultati"]) {
     if (Array.isArray(payload?.[key])) return payload[key];
   }
   return [];
@@ -95,14 +95,14 @@ function splitName(row) {
   const directName = text(first(row, ["nome", "first_name"]));
   const directSurname = text(first(row, ["cognome", "last_name"]));
   if (directName || directSurname) return { nome: directName || null, cognome: directSurname || null };
-  const full = text(first(row, ["descrizione", "denominazione", "nominativo", "ragione_sociale"]));
+  const full = text(first(row, ["descrizione", "denominazione", "nominativo", "ragione_sociale", "rag_soc"]));
   if (!full) return { nome: null, cognome: null };
   const parts = full.split(/\s+/).filter(Boolean);
   return parts.length > 1 ? { nome: parts.slice(0, -1).join(" "), cognome: parts.at(-1) } : { nome: full, cognome: null };
 }
 
 function mapAgent(row, syncAt) {
-  const code = upper(first(row, ["codice", "codice_agente", "cod_agente", "codagente", "cod_conto", "codconto", "conto", "id"]));
+  const code = upper(first(row, ["codice", "codice_fornitore", "cod_fornitore", "cod_conto", "codconto", "conto", "codiceConto", "id"]));
   const names = splitName(row);
   return {
     codice: code,
@@ -117,41 +117,7 @@ function mapAgent(row, syncAt) {
   };
 }
 
-function normalizeResourcePath(value) {
-  const raw = text(value);
-  if (!raw) return null;
-  const marker = "/webapi/risorse";
-  const markerIndex = raw.toLowerCase().indexOf(marker);
-  let path = markerIndex >= 0 ? raw.slice(markerIndex + marker.length) : raw;
-  if (!path.startsWith("/")) return null;
-  path = path.split("?")[0].replace(/\{[^}]+\}/g, "").replace(/\/+$/, "");
-  return path || null;
-}
-
-function discoverAgentResources(helpPayload) {
-  const candidates = new Set();
-  function visit(value, key = "") {
-    if (typeof value === "string") {
-      const haystack = `${key} ${value}`.toLowerCase();
-      if (haystack.includes("agent")) {
-        const path = normalizeResourcePath(value);
-        if (path && !path.includes("/help")) candidates.add(path);
-      }
-      return;
-    }
-    if (Array.isArray(value)) {
-      value.forEach((item) => visit(item, key));
-      return;
-    }
-    if (value && typeof value === "object") {
-      for (const [childKey, childValue] of Object.entries(value)) visit(childValue, childKey);
-    }
-  }
-  visit(helpPayload);
-  return [...candidates].sort((a, b) => a.length - b.length);
-}
-
-async function loadResourceRows(mexal, resourcePath) {
+async function loadSupplierRows(mexal) {
   const rawRows = [];
   let next = null;
   let page = 0;
@@ -159,45 +125,27 @@ async function loadResourceRows(mexal, resourcePath) {
     const params = new URLSearchParams();
     params.set("max", String(PAGE_SIZE));
     if (next) params.set("next", String(next));
-    const separator = resourcePath.includes("?") ? "&" : "?";
-    const payload = await mexal.get(`${resourcePath}${separator}${params.toString()}`);
+    const payload = await mexal.get(`/fornitori?${params.toString()}`);
     rawRows.push(...rowsOf(payload));
     next = nextTokenOf(payload);
     page += 1;
-    if (page > 200) throw new Error(`Paginazione ${resourcePath} interrotta: troppe pagine.`);
+    if (page > 200) throw new Error("Paginazione fornitori Mexal interrotta: troppe pagine.");
   } while (next);
   return rawRows;
 }
 
 async function loadAgents(mexal) {
-  const helpPayload = await mexal.get("/help");
-  const discovered = discoverAgentResources(helpPayload);
-  if (!discovered.length) {
-    throw new Error("La help della WebAPI Mexal non espone alcuna risorsa contenente 'agente'. Occorre verificare che l'utenza WebAPI abbia accesso all'anagrafica agenti.");
+  const rawRows = await loadSupplierRows(mexal);
+  const syncAt = new Date().toISOString();
+  const mapped = rawRows
+    .map((row) => mapAgent(row, syncAt))
+    .filter((row) => row.codice.startsWith(AGENT_PREFIX));
+
+  if (!mapped.length) {
+    throw new Error(`Mexal ha restituito ${rawRows.length} fornitori, ma nessuno con codice iniziale ${AGENT_PREFIX}.`);
   }
 
-  const attempts = [];
-  for (const resourcePath of discovered) {
-    try {
-      const rawRows = await loadResourceRows(mexal, resourcePath);
-      const syncAt = new Date().toISOString();
-      const mapped = rawRows.map((row) => mapAgent(row, syncAt)).filter((row) => row.codice.startsWith(AGENT_PREFIX));
-      if (mapped.length) {
-        return {
-          agents: [...new Map(mapped.map((row) => [row.codice, row])).values()],
-          resourcePath,
-          discovered,
-        };
-      }
-      attempts.push(`${resourcePath}: 0 codici ${AGENT_PREFIX}`);
-    } catch (error) {
-      attempts.push(`${resourcePath}: ${error.message}`);
-    }
-  }
-
-  throw Object.assign(new Error(`Nessuna risorsa agenti dichiarata dalla help ha restituito codici ${AGENT_PREFIX}. Risorse trovate: ${discovered.join(", ")}.`), {
-    details: { discovered, attempts },
-  });
+  return [...new Map(mapped.map((row) => [row.codice, row])).values()];
 }
 
 export default async function handler(req, res) {
@@ -209,7 +157,7 @@ export default async function handler(req, res) {
     const run = await createSyncRun(admin, { syncType: "agents", source: req.body?.origin || "manual" });
     if (run.duplicate) throw Object.assign(new Error("È già presente una sincronizzazione agenti in corso."), { status: 409 });
     runId = run.id;
-    const { agents, resourcePath, discovered } = await loadAgents(buildClient());
+    const agents = await loadAgents(buildClient());
     const { data: existing, error: existingError } = await admin.from("mexal_agenti").select("codice").in("codice", agents.map((item) => item.codice));
     if (existingError) throw existingError;
     const existingCodes = new Set((existing || []).map((item) => item.codice));
@@ -217,8 +165,15 @@ export default async function handler(req, res) {
     if (upsertError) throw upsertError;
     const inserted = agents.filter((item) => !existingCodes.has(item.codice)).length;
     const updated = agents.length - inserted;
-    await completeSyncRun(admin, runId, { processed: agents.length, inserted, updated, skipped: 0, failed: 0, metadata: { endpoint: resourcePath, discovered_resources: discovered, codice_prefix: AGENT_PREFIX } });
-    return res.status(200).json({ success: true, sync_run_id: runId, letti_mexal: agents.length, inseriti: inserted, aggiornati: updated, risorsa_mexal: resourcePath, errori: [] });
+    await completeSyncRun(admin, runId, {
+      processed: agents.length,
+      inserted,
+      updated,
+      skipped: 0,
+      failed: 0,
+      metadata: { endpoint: "/fornitori", codice_prefix: AGENT_PREFIX },
+    });
+    return res.status(200).json({ success: true, sync_run_id: runId, letti_mexal: agents.length, inseriti: inserted, aggiornati: updated, risorsa_mexal: "/fornitori", errori: [] });
   } catch (error) {
     if (runId) await failSyncRunUnlessClosed(admin, runId, error);
     return res.status(Number(error.status || 500)).json({ success: false, error: error.message || "Errore sincronizzazione agenti.", details: error.details || null });

@@ -4,9 +4,9 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
 import { getAccessToken } from "../services/mexalSyncService";
 
-async function post(endpoint, body) {
+async function post(body) {
   const token = await getAccessToken();
-  const response = await fetch(endpoint, {
+  const response = await fetch("/api/mexal/automation", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -19,9 +19,6 @@ async function post(endpoint, body) {
   }
   return payload;
 }
-
-const postAutomation = (body) => post("/api/mexal/automation", body);
-const postAgentAccess = (body) => post("/api/mexal/agents-access", body);
 
 export default function MexalAgents() {
   const navigate = useNavigate();
@@ -58,7 +55,7 @@ export default function MexalAgents() {
     setBusy("sync");
     setMessage(null);
     try {
-      const result = await postAutomation({ action: "run_now", syncType: "agents", origin: "integrations" });
+      const result = await post({ action: "run_now", syncType: "agents", origin: "integrations" });
       setMessage({ type: "success", text: `Agenti sincronizzati: ${result.letti_mexal || 0}. Inseriti ${result.inseriti || 0}, aggiornati ${result.aggiornati || 0}.` });
       await load();
     } catch (error) {
@@ -72,7 +69,7 @@ export default function MexalAgents() {
     setBusy(agentId);
     setMessage(null);
     try {
-      await postAgentAccess({ accessAction: "set_responsible", agentId, responsabileUtenteId: responsabileUtenteId || null });
+      await post({ action: "agents_access", accessAction: "set_responsible", agentId, responsabileUtenteId: responsabileUtenteId || null });
       await load();
     } catch (error) {
       setMessage({ type: "error", text: error.message });
@@ -89,8 +86,7 @@ export default function MexalAgents() {
     setBusy(agent.id);
     setMessage(null);
     try {
-      const result = await postAgentAccess({ accessAction: "activate", agentId: agent.id, password });
-      if (!result.agent?.accesso_workspace_attivo && !result.updated) throw new Error("L'attivazione non ha aggiornato lo stato dell'agente.");
+      const result = await post({ action: "agents_access", accessAction: "activate", agentId: agent.id, password });
       setAgents((current) => current.map((item) => item.id === agent.id ? { ...item, ...(result.agent || {}), accesso_workspace_attivo: true } : item));
       setMessage({ type: "success", text: "Accesso Workspace attivato. Autorizzazioni e reparti sono gestibili dalla sezione Team." });
       await load();
@@ -106,7 +102,7 @@ export default function MexalAgents() {
     setBusy(agent.id);
     setMessage(null);
     try {
-      await postAgentAccess({ accessAction: "disable", agentId: agent.id });
+      await post({ action: "agents_access", accessAction: "disable", agentId: agent.id });
       setAgents((current) => current.map((item) => item.id === agent.id ? { ...item, accesso_workspace_attivo: false } : item));
       await load();
     } catch (error) {

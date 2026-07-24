@@ -4,9 +4,13 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
 import { getAccessToken } from "../services/mexalSyncService";
 
-async function post(path, body) {
+async function post(body) {
   const token = await getAccessToken();
-  const response = await fetch(path, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const response = await fetch("/api/mexal/automation", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || `Operazione non riuscita (HTTP ${response.status}).`);
   return payload;
@@ -44,20 +48,29 @@ export default function MexalAgents() {
   }, [agents, search]);
 
   async function syncAgents() {
-    setBusy("sync"); setMessage(null);
+    setBusy("sync");
+    setMessage(null);
     try {
-      const result = await post("/api/mexal/sync-agents", { origin: "integrations" });
+      const result = await post({ action: "run_now", syncType: "agents", origin: "integrations" });
       setMessage({ type: "success", text: `Agenti sincronizzati: ${result.letti_mexal || 0}. Inseriti ${result.inseriti || 0}, aggiornati ${result.aggiornati || 0}.` });
       await load();
-    } catch (error) { setMessage({ type: "error", text: error.message }); }
-    finally { setBusy(""); }
+    } catch (error) {
+      setMessage({ type: "error", text: error.message });
+    } finally {
+      setBusy("");
+    }
   }
 
   async function setResponsible(agentId, responsabileUtenteId) {
     setBusy(agentId);
-    try { await post("/api/mexal/agents-access", { action: "set_responsible", agentId, responsabileUtenteId: responsabileUtenteId || null }); await load(); }
-    catch (error) { setMessage({ type: "error", text: error.message }); }
-    finally { setBusy(""); }
+    try {
+      await post({ action: "agents_access", accessAction: "set_responsible", agentId, responsabileUtenteId: responsabileUtenteId || null });
+      await load();
+    } catch (error) {
+      setMessage({ type: "error", text: error.message });
+    } finally {
+      setBusy("");
+    }
   }
 
   async function activate(agent) {
@@ -66,17 +79,28 @@ export default function MexalAgents() {
     const confirmation = window.prompt("Conferma la password:");
     if (password !== confirmation) return setMessage({ type: "error", text: "Le password non coincidono." });
     setBusy(agent.id);
-    try { await post("/api/mexal/agents-access", { action: "activate", agentId: agent.id, password }); setMessage({ type: "success", text: "Accesso Workspace attivato. Autorizzazioni e reparti sono gestibili dalla sezione Team." }); await load(); }
-    catch (error) { setMessage({ type: "error", text: error.message }); }
-    finally { setBusy(""); }
+    try {
+      await post({ action: "agents_access", accessAction: "activate", agentId: agent.id, password });
+      setMessage({ type: "success", text: "Accesso Workspace attivato. Autorizzazioni e reparti sono gestibili dalla sezione Team." });
+      await load();
+    } catch (error) {
+      setMessage({ type: "error", text: error.message });
+    } finally {
+      setBusy("");
+    }
   }
 
   async function disable(agent) {
     if (!window.confirm(`Disattivare l'accesso Workspace di ${agent.nome || ""} ${agent.cognome || ""}?`)) return;
     setBusy(agent.id);
-    try { await post("/api/mexal/agents-access", { action: "disable", agentId: agent.id }); await load(); }
-    catch (error) { setMessage({ type: "error", text: error.message }); }
-    finally { setBusy(""); }
+    try {
+      await post({ action: "agents_access", accessAction: "disable", agentId: agent.id });
+      await load();
+    } catch (error) {
+      setMessage({ type: "error", text: error.message });
+    } finally {
+      setBusy("");
+    }
   }
 
   return <div className="mexal-page">

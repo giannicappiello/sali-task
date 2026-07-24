@@ -38,6 +38,14 @@ function isExistingAuthUserError(error) {
   return ["email_exists", "user_already_exists"].includes(error?.code);
 }
 
+function getWorkspaceEmail(value) {
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return String(value || "")
+    .split(";")
+    .map((email) => email.trim().toLowerCase())
+    .find((email) => emailPattern.test(email)) || "";
+}
+
 async function setAuthEnabled(supabase, authUserId, password, enabled) {
   if (!authUserId) return;
   const attributes = enabled
@@ -109,8 +117,10 @@ export async function agentsAccess({ supabase, body }) {
 
   const password = String(body.password || "");
   if (password.length < 8) throw httpError("La password deve contenere almeno 8 caratteri.", 400);
-  const email = String(agent.email || "").trim().toLowerCase();
-  if (!email) throw httpError("L'agente non ha un indirizzo email in Mexal.", 400);
+  const email = getWorkspaceEmail(agent.email);
+  if (!email) {
+    throw httpError("L'agente non ha un indirizzo email valido in Mexal.", 400);
+  }
 
   let workspaceUser = null;
   if (agent.workspace_utente_id) {

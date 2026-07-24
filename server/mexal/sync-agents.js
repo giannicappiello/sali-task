@@ -137,15 +137,60 @@ async function loadSupplierRows(mexal) {
 async function loadAgents(mexal) {
   const rawRows = await loadSupplierRows(mexal);
   const syncAt = new Date().toISOString();
-  const mapped = rawRows
+  const allAgents = rawRows
     .map((row) => mapAgent(row, syncAt))
     .filter((row) => row.codice.startsWith(AGENT_PREFIX));
 
-  if (!mapped.length) {
+  if (!allAgents.length) {
     throw new Error(`Mexal ha restituito ${rawRows.length} fornitori, ma nessuno con codice iniziale ${AGENT_PREFIX}.`);
   }
 
-  return [...new Map(mapped.map((row) => [row.codice, row])).values()];
+  const unique = [...new Map(allAgents.map((row) => [row.codice, row])).values()];
+  return {
+    activeAgents: unique.filter((row) => row.attivo_mexal),
+    allAgentCodes: new Set(unique.map((row) => row.codice)),
+  };
+}
+
+async function disableWorkspaceAgents(admin, activeCodes, syncAt) {
+  const { data: existingAgents, error } = await admin
+    .from("mexal_agenti")
+    .select("id,codice,workspace_utente_id,accesso_workspace_attivo,attivo_mexal");
+  if (error) throw error;
+
+  const inactive = (existingAgents || []).filter((agent) => !activeCodes.has(agent.codice));
+  if (!inactive.length) return 0;
+
+  const inactiveAgentIds = inactive.map((agent) => agent.id);
+  const workspaceIds = inactive.map((agent) => agent.workspace_utente_id).filter(Boolean);
+
+  const { error: agentUpdateError } = await admin
+    .from("mexal_agenti")
+    .update({ attivo_mexal: false, accesso_workspace_attivo: false, aggiornato_il: syncAt })
+    .in("id", inactiveAgentIds);
+  if (agentUpdateError) throw agentUpdateError;
+
+  if (workspaceIds.length) {
+    const { data: users, error: usersError } = await admin
+      .from("utenti")
+      .select("id,auth_user_id")
+      .in("id", workspaceIds);
+    if (usersError) throw usersError;
+
+    const { error: disableUsersError } = await admin
+      .from("utenti")
+      .update({ attivo: false })
+      .in("id", workspaceIds);
+    if (disableUsersError) throw disableUsersError;
+
+    for (const user of users || []) {
+      if (!user.auth_user_id) continue;
+      const { error: banError } = await admin.auth.admin.updateUserById(user.auth_user_id, { ban_duration: "876000h" });
+      if (banError) throw banError;
+    }
+  }
+
+  return inactive.length;
 }
 
 export default async function handler(req, res) {
@@ -157,23 +202,44 @@ export default async function handler(req, res) {
     const run = await createSyncRun(admin, { syncType: "agents", source: req.body?.origin || "manual" });
     if (run.duplicate) throw Object.assign(new Error("È già presente una sincronizzazione agenti in corso."), { status: 409 });
     runId = run.id;
-    const agents = await loadAgents(buildClient());
-    const { data: existing, error: existingError } = await admin.from("mexal_agenti").select("codice").in("codice", agents.map((item) => item.codice));
+
+    const { activeAgents } = await loadAgents(buildClient());
+    const activeCodes = new Set(activeAgents.map((item) => item.codice));
+    const syncAt = new Date().toISOString();
+
+    const { data: existing, error: existingError } = await admin
+      .from("mexal_agenti")
+      .select("codice")
+      .in("codice", activeAgents.map((item) => item.codice));
     if (existingError) throw existingError;
+
     const existingCodes = new Set((existing || []).map((item) => item.codice));
-    const { error: upsertError } = await admin.from("mexal_agenti").upsert(agents, { onConflict: "codice" });
+    const { error: upsertError } = await admin.from("mexal_agenti").upsert(activeAgents, { onConflict: "codice" });
     if (upsertError) throw upsertError;
-    const inserted = agents.filter((item) => !existingCodes.has(item.codice)).length;
-    const updated = agents.length - inserted;
+
+    const disabled = await disableWorkspaceAgents(admin, activeCodes, syncAt);
+    const inserted = activeAgents.filter((item) => !existingCodes.has(item.codice)).length;
+    const updated = activeAgents.length - inserted;
+
     await completeSyncRun(admin, runId, {
-      processed: agents.length,
+      processed: activeAgents.length,
       inserted,
       updated,
       skipped: 0,
       failed: 0,
-      metadata: { endpoint: "/fornitori", codice_prefix: AGENT_PREFIX },
+      metadata: { endpoint: "/fornitori", codice_prefix: AGENT_PREFIX, disattivati: disabled },
     });
-    return res.status(200).json({ success: true, sync_run_id: runId, letti_mexal: agents.length, inseriti: inserted, aggiornati: updated, risorsa_mexal: "/fornitori", errori: [] });
+
+    return res.status(200).json({
+      success: true,
+      sync_run_id: runId,
+      letti_mexal: activeAgents.length,
+      inseriti: inserted,
+      aggiornati: updated,
+      disattivati: disabled,
+      risorsa_mexal: "/fornitori",
+      errori: [],
+    });
   } catch (error) {
     if (runId) await failSyncRunUnlessClosed(admin, runId, error);
     return res.status(Number(error.status || 500)).json({ success: false, error: error.message || "Errore sincronizzazione agenti.", details: error.details || null });

@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import productsHandler, { buildMexalClient } from "../../server/mexal/sync-products.js";
 import clientsHandler from "../../server/mexal/sync-clients.js";
+import agentsHandler from "../../server/mexal/sync-agents.js";
 import commercialConditionsHandler from "../../server/mexal/sync-commercial-conditions.js";
 import documentSeriesHandler from "../../server/mexal/sync-document-series.js";
 import stopHandler from "../../server/mexal/stop-sync-run.js";
@@ -28,6 +29,7 @@ async function listPriceCommissionsHandler(req, res) {
 
 const RUN_HANDLERS = Object.freeze({
   clients: clientsHandler,
+  agents: agentsHandler,
   products: productsHandler,
   stocks: productsHandler,
   commercial_conditions: commercialConditionsHandler,
@@ -47,6 +49,7 @@ function runPayload(body, syncType) {
 
 const SYNC_ALL_PHASES = Object.freeze([
   "clients",
+  "agents",
   "commercial_conditions",
   "document_series",
   "products",
@@ -268,6 +271,92 @@ async function createAdmin(req) {
   return { supabase, authUserId };
 }
 
+async function agentsAccess(req, res, body) {
+  const { supabase } = await createAdmin(req);
+  const agentId = String(body.agentId || "").trim();
+  const accessAction = String(body.accessAction || "activate").trim();
+  if (!agentId) throw Object.assign(new Error("Agente obbligatorio."), { status: 400 });
+
+  const { data: agent, error: agentError } = await supabase.from("mexal_agenti").select("*").eq("id", agentId).single();
+  if (agentError) throw agentError;
+
+  if (accessAction === "set_responsible") {
+    const responsibleId = body.responsabileUtenteId || null;
+    const { data, error } = await supabase.from("mexal_agenti")
+      .update({ responsabile_utente_id: responsibleId, aggiornato_il: new Date().toISOString() })
+      .eq("id", agentId)
+      .select()
+      .single();
+    if (error) throw error;
+    return res.status(200).json({ agent: data });
+  }
+
+  if (accessAction === "disable") {
+    if (agent.workspace_utente_id) {
+      const { data: userRow } = await supabase.from("utenti").select("auth_user_id").eq("id", agent.workspace_utente_id).maybeSingle();
+      if (userRow?.auth_user_id) {
+        const { error: banError } = await supabase.auth.admin.updateUserById(userRow.auth_user_id, { ban_duration: "876000h" });
+        if (banError) throw banError;
+      }
+      const { error: disableError } = await supabase.from("utenti").update({ attivo: false }).eq("id", agent.workspace_utente_id);
+      if (disableError) throw disableError;
+    }
+    const { error } = await supabase.from("mexal_agenti").update({ accesso_workspace_attivo: false }).eq("id", agentId);
+    if (error) throw error;
+    return res.status(200).json({ success: true });
+  }
+
+  const password = String(body.password || "");
+  if (password.length < 8) throw Object.assign(new Error("La password deve contenere almeno 8 caratteri."), { status: 400 });
+  if (!agent.email) throw Object.assign(new Error("L'agente non ha un indirizzo email in Mexal."), { status: 400 });
+
+  if (agent.workspace_utente_id) {
+    const { data: userRow, error: userError } = await supabase.from("utenti").select("auth_user_id").eq("id", agent.workspace_utente_id).single();
+    if (userError) throw userError;
+    const { error: updateAuthError } = await supabase.auth.admin.updateUserById(userRow.auth_user_id, { password, ban_duration: "none" });
+    if (updateAuthError) throw updateAuthError;
+    const { error: userEnableError } = await supabase.from("utenti").update({ attivo: true }).eq("id", agent.workspace_utente_id);
+    if (userEnableError) throw userEnableError;
+    const { error: agentEnableError } = await supabase.from("mexal_agenti").update({ accesso_workspace_attivo: true }).eq("id", agentId);
+    if (agentEnableError) throw agentEnableError;
+    return res.status(200).json({ success: true, updated: true });
+  }
+
+  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    email: agent.email,
+    password,
+    email_confirm: true,
+    user_metadata: { nome: agent.nome, cognome: agent.cognome, codice_agente_mexal: agent.codice },
+  });
+  if (authError) throw authError;
+
+  const { data: defaultRole } = await supabase.from("ruoli").select("id").order("livello", { ascending: true }).limit(1).maybeSingle();
+  const { data: workspaceUser, error: workspaceError } = await supabase.from("utenti").insert({
+    auth_user_id: authData.user.id,
+    nome: agent.nome || "Agente",
+    cognome: agent.cognome || "",
+    email: agent.email,
+    attivo: true,
+    ruolo_id: defaultRole?.id || null,
+    mexal_agente_id: agent.id,
+    codice_agente_mexal: agent.codice,
+  }).select("id").single();
+
+  if (workspaceError) {
+    await supabase.auth.admin.deleteUser(authData.user.id);
+    throw workspaceError;
+  }
+
+  const { error: linkError } = await supabase.from("mexal_agenti").update({
+    workspace_utente_id: workspaceUser.id,
+    accesso_workspace_attivo: true,
+    aggiornato_il: new Date().toISOString(),
+  }).eq("id", agent.id);
+  if (linkError) throw linkError;
+
+  return res.status(200).json({ success: true, userId: workspaceUser.id });
+}
+
 async function rulesGet(req, res) {
   const admin = await createAdmin(req);
   const [schedules, events] = await Promise.all([
@@ -305,6 +394,8 @@ export default async function handler(req, res) {
         await rulesSave(req, response, body);
         return sendSuccess(res, response.statusCode, response.payload);
       }
+      case "agents_access":
+        return agentsAccess(req, res, body);
       case "run_now": {
         const syncType = body.syncType || body.sync_type;
         const runHandler = RUN_HANDLERS[syncType];

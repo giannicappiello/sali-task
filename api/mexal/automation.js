@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import productsHandler, { buildMexalClient } from "../../server/mexal/sync-products.js";
 import clientsHandler from "../../server/mexal/sync-clients.js";
+import agentsHandler from "../../server/mexal/sync-agents.js";
 import commercialConditionsHandler from "../../server/mexal/sync-commercial-conditions.js";
 import documentSeriesHandler from "../../server/mexal/sync-document-series.js";
 import stopHandler from "../../server/mexal/stop-sync-run.js";
@@ -28,6 +29,7 @@ async function listPriceCommissionsHandler(req, res) {
 
 const RUN_HANDLERS = Object.freeze({
   clients: clientsHandler,
+  agents: agentsHandler,
   products: productsHandler,
   stocks: productsHandler,
   commercial_conditions: commercialConditionsHandler,
@@ -47,6 +49,7 @@ function runPayload(body, syncType) {
 
 const SYNC_ALL_PHASES = Object.freeze([
   "clients",
+  "agents",
   "commercial_conditions",
   "document_series",
   "products",

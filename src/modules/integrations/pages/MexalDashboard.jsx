@@ -44,6 +44,7 @@ const syncLabels = {
   commercial_conditions: "Condizioni commerciali",
   document_series: "Serie documenti",
   list_price_commissions: "Provvigioni listini",
+  agents: "Agenti",
 };
 
 function formatDate(value) {
@@ -69,8 +70,8 @@ export default function MexalDashboard() {
   const [progress, setProgress] = useState(0);
   const [phase, setPhase] = useState("");
   const [settings, setSettings] = useState({ mode: "full", dryRun: false, syncPayments: true });
-  const [entityCounts, setEntityCounts] = useState({ products: null, clients: null, stocks: null, orders: null });
-  const [entityRuns, setEntityRuns] = useState({ products: null, clients: null, stocks: null, orders: null });
+  const [entityCounts, setEntityCounts] = useState({ products: null, clients: null, stocks: null, orders: null, agents: null });
+  const [entityRuns, setEntityRuns] = useState({ products: null, clients: null, stocks: null, orders: null, agents: null });
   const [activeSync, setActiveSync] = useState(null);
   const [activeTab, setActiveTab] = useState("syncs");
   const [configurationTab, setConfigurationTab] = useState("settings");
@@ -84,12 +85,13 @@ export default function MexalDashboard() {
   const latestRun = runs[0] || null;
 
   const refreshData = useCallback(async (preferredRunId = null) => {
-    const [runRows, countRows, entityCountRows, productRuns, clientRuns, stockRuns, orderRuns] = await Promise.all([
+    const [runRows, countRows, entityCountRows, productRuns, clientRuns, agentRuns, stockRuns, orderRuns] = await Promise.all([
       loadSyncRuns(25),
       loadCommercialCounts(),
       loadMexalEntityCounts(),
       loadMexalRuns("products"),
       loadMexalRuns("clients"),
+      loadMexalRuns("agents"),
       loadMexalRuns("stocks"),
       loadMexalRuns("orders"),
     ]);
@@ -100,6 +102,7 @@ export default function MexalDashboard() {
     setEntityRuns({
       products: productRuns[0] || null,
       clients: clientRuns[0] || null,
+      agents: agentRuns[0] || null,
       stocks: stockRuns[0] || null,
       orders: orderRuns[0] || null,
     });
@@ -215,7 +218,7 @@ export default function MexalDashboard() {
     const actionKey = syncType || "all";
     const phases = syncType
       ? [syncType]
-      : ["clients", "commercial_conditions", "document_series", "products", "stocks", "list_price_commissions"];
+      : ["clients", "agents", "commercial_conditions", "document_series", "products", "stocks", "list_price_commissions"];
     manualCancelledRef.current = false;
     setManualAction(actionKey);
     setProgress(0);
@@ -256,7 +259,7 @@ export default function MexalDashboard() {
 
   const cards = [
     { icon: Users, title: "Clienti", description: "Anagrafiche, categorie commerciali e condizioni cliente.", recordLabel: "clienti attivi", recordCount: entityCounts.clients, enabled: true, type: "clients", lastRunData: entityRuns.clients },
-    { icon: Building2, title: "Agenti", description: "Agenti Mexal e associazioni con Area Manager.", recordLabel: "agenti", enabled: false },
+    { icon: Building2, title: "Agenti", description: "Agenti attivi da fornitori Mexal (prefisso 602).", recordLabel: "agenti attivi", recordCount: entityCounts.agents, enabled: true, type: "agents", lastRunData: entityRuns.agents },
     { icon: PackageSearch, title: "Prodotti", description: "Catalogo, categorie, immagini e schede tecniche.", recordLabel: "prodotti visibili", recordCount: entityCounts.products, enabled: true, type: "products", lastRunData: entityRuns.products },
     { icon: ScrollText, title: "Condizioni commerciali", description: "Matrice sconti, particolarità e regole pagamento.", recordLabel: "regole attive", recordCount: commercialCount, enabled: true, type: "commercial_conditions" },
     { icon: Warehouse, title: "Giacenze", description: "Disponibilità per magazzino e controllo evasione ordini.", recordLabel: "prodotti sincronizzati", recordCount: entityCounts.stocks, enabled: true, type: "stocks", lastRunData: entityRuns.stocks },

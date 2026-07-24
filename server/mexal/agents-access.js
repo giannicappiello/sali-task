@@ -3,16 +3,47 @@ function httpError(message, status = 500, details = null) {
 }
 
 async function findAuthUserByEmail(supabase, email) {
-  let page = 1;
-  while (page <= 20) {
-    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
-    if (error) throw error;
-    const found = data?.users?.find((user) => String(user.email || "").toLowerCase() === email.toLowerCase());
-    if (found) return found;
-    if (!data?.nextPage || data.users.length < 1000) break;
-    page += 1;
+  const perPage = 1000;
+  const { data, error } = await supabase.auth.admin.listUsers({ page: 1, perPage });
+  if (error) throw error;
+
+  const normalizedEmail = email.toLowerCase();
+  const firstPageMatch = data?.users?.find(
+    (user) => String(user.email || "").toLowerCase() === normalizedEmail,
+  );
+  if (firstPageMatch) return firstPageMatch;
+
+  const totalPages = Math.min(20, Math.ceil(Number(data?.total || 0) / perPage));
+  const concurrency = 5;
+  for (let firstPage = 2; firstPage <= totalPages; firstPage += concurrency) {
+    const pages = Array.from(
+      { length: Math.min(concurrency, totalPages - firstPage + 1) },
+      (_, index) => firstPage + index,
+    );
+    const results = await Promise.all(
+      pages.map((page) => supabase.auth.admin.listUsers({ page, perPage })),
+    );
+    for (const result of results) {
+      if (result.error) throw result.error;
+      const found = result.data?.users?.find(
+        (user) => String(user.email || "").toLowerCase() === normalizedEmail,
+      );
+      if (found) return found;
+    }
   }
   return null;
+}
+
+function isExistingAuthUserError(error) {
+  return ["email_exists", "user_already_exists"].includes(error?.code);
+}
+
+function getWorkspaceEmail(value) {
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return String(value || "")
+    .split(";")
+    .map((email) => email.trim().toLowerCase())
+    .find((email) => emailPattern.test(email)) || "";
 }
 
 async function setAuthEnabled(supabase, authUserId, password, enabled) {
@@ -86,8 +117,10 @@ export async function agentsAccess({ supabase, body }) {
 
   const password = String(body.password || "");
   if (password.length < 8) throw httpError("La password deve contenere almeno 8 caratteri.", 400);
-  const email = String(agent.email || "").trim().toLowerCase();
-  if (!email) throw httpError("L'agente non ha un indirizzo email in Mexal.", 400);
+  const email = getWorkspaceEmail(agent.email);
+  if (!email) {
+    throw httpError("L'agente non ha un indirizzo email valido in Mexal.", 400);
+  }
 
   let workspaceUser = null;
   if (agent.workspace_utente_id) {
@@ -104,7 +137,7 @@ export async function agentsAccess({ supabase, body }) {
     const result = await supabase
       .from("utenti")
       .select("id,auth_user_id,email")
-      .eq("agent_id", agent.id)
+      .eq("mexal_agente_id", agent.id)
       .maybeSingle();
     if (result.error) throw result.error;
     workspaceUser = result.data;
@@ -120,10 +153,7 @@ export async function agentsAccess({ supabase, body }) {
     workspaceUser = result.data;
   }
 
-  let authUser = workspaceUser?.auth_user_id
-    ? { id: workspaceUser.auth_user_id }
-    : await findAuthUserByEmail(supabase, email);
-
+  let authUser = workspaceUser?.auth_user_id ? { id: workspaceUser.auth_user_id } : null;
   let createdAuthUser = false;
   if (!authUser) {
     const { data, error } = await supabase.auth.admin.createUser({
@@ -135,10 +165,17 @@ export async function agentsAccess({ supabase, body }) {
         codice_agente_mexal: agent.codice,
       },
     });
-    if (error) throw error;
-    authUser = data?.user;
-    createdAuthUser = true;
-  } else {
+    if (error) {
+      if (!isExistingAuthUserError(error)) throw error;
+      authUser = await findAuthUserByEmail(supabase, email);
+      if (!authUser) throw error;
+    } else {
+      authUser = data?.user;
+      createdAuthUser = true;
+    }
+  }
+
+  if (!createdAuthUser) {
     await setAuthEnabled(supabase, authUser.id, password, true);
   }
 
@@ -149,7 +186,8 @@ export async function agentsAccess({ supabase, body }) {
     nome: [agent.nome, agent.cognome].filter(Boolean).join(" ") || "Agente",
     email,
     attivo: true,
-    agent_id: agent.id,
+    mexal_agente_id: agent.id,
+    codice_agente_mexal: agent.codice,
     telefono: agent.telefono || null,
   };
 

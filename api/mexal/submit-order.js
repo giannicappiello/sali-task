@@ -93,6 +93,26 @@ async function stopRequested(admin, orderId, syncToken) {
 async function heartbeat(admin, orderId, syncToken) {
   await admin.from("ordini_testate").update({ sincronizzazione_heartbeat_il: new Date().toISOString() }).eq("id", orderId).eq("sync_token", syncToken);
 }
+function workspaceModule(order) {
+  return String(order?.modulo_ordini || "prof").toLowerCase() === "ph" ? "ORDINIPH" : "ORDINIPR";
+}
+async function saveDocumentLines(admin, documentId, lines) {
+  const rows = (lines || []).map((line, index) => ({
+    documento_mexal_id: documentId,
+    ordine_riga_id: line.id || null,
+    posizione: index + 1,
+    codice_articolo: line.codice_articolo || null,
+    descrizione: line.descrizione || null,
+    quantita: Number(line.quantita_documento || 0),
+    prezzo: line.prezzo_netto ?? line.prezzo_listino ?? null,
+    sconto: line.sconto_commerciale ?? line.sconto_percentuale ?? null,
+    dati_mexal: { aliquota_iva: line.aliquota_iva ?? null, provvigione_percentuale: line.provvigione_percentuale ?? null },
+    aggiornato_il: new Date().toISOString(),
+  }));
+  if (!rows.length) return;
+  const { error } = await admin.from("ordini_documenti_mexal_righe").upsert(rows, { onConflict: "documento_mexal_id,posizione" });
+  if (error) throw error;
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Metodo non consentito." });
@@ -140,7 +160,9 @@ export default async function handler(req, res) {
           const reconciled = await mexal.getJson(`/documenti/ordini-clienti/OC+${encodeURIComponent(existingDocument.serie)}+${encodeURIComponent(existingDocument.numero)}`);
           const outcome = reconciliationFailure(null, existingDocument.cod_modulo, reconciled);
           if (outcome) throw Object.assign(new Error(`Riconciliazione ${kind}: ${outcome.errore}`), { reconciliationState: outcome.stato });
-          await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, stato: "reconciled", sigla: "OC", serie: existingDocument.serie, numero: existingDocument.numero, cod_modulo: existingDocument.cod_modulo, verificato_il: new Date().toISOString(), errore: null, aggiornato_il: new Date().toISOString() });
+          const { data: reconciledDocument, error: reconciledSaveError } = await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, modulo: workspaceModule(order), anno: new Date(order.data_ordine || Date.now()).getFullYear(), stato: "reconciled", stato_operativo: "APERTO", presente_in_mexal: true, sigla: "OC", serie: existingDocument.serie, numero: existingDocument.numero, cod_modulo: existingDocument.cod_modulo, verificato_il: new Date().toISOString(), ultimo_sync_mexal: new Date().toISOString(), errore: null, aggiornato_il: new Date().toISOString() }).select("id").single();
+          if (reconciledSaveError) throw reconciledSaveError;
+          await saveDocumentLines(admin, reconciledDocument.id, classified[kind]);
           documents.push({ kind, numero: existingDocument.numero, reconciled: true }); continue;
         } catch (error) { const outcome = error.reconciliationState ? { stato: error.reconciliationState, errore: error.message } : reconciliationFailure(error, existingDocument.cod_modulo); failures.push({ kind, error: outcome?.errore || error.message }); await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, stato: outcome?.stato || "temporary_error", sigla: "OC", serie: existingDocument.serie, numero: existingDocument.numero, cod_modulo: existingDocument.cod_modulo, tentativi: Number(existingDocument.tentativi || 0) + 1, errore: outcome?.errore || error.message, aggiornato_il: new Date().toISOString() }); continue; }
       }
@@ -159,7 +181,9 @@ export default async function handler(req, res) {
           throw error;
         }
         documents.push({ kind, numero });
-        await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, stato: "created", sigla: "OC", serie: reference.serie || options.serie, numero, cod_modulo: ORDER_DOCUMENTS[kind]?.moduleCode, tentativi: Number(savedDocument?.tentativi || 0) + 1, errore: null, risposta: { result, diagnostics }, creato_il: new Date().toISOString(), aggiornato_il: new Date().toISOString() });
+        const { data: createdDocument, error: createdSaveError } = await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, modulo: workspaceModule(order), anno: new Date(order.data_ordine || Date.now()).getFullYear(), stato: "created", stato_operativo: "APERTO", presente_in_mexal: true, sigla: "OC", serie: reference.serie || options.serie, numero, cod_modulo: ORDER_DOCUMENTS[kind]?.moduleCode, tentativi: Number(savedDocument?.tentativi || 0) + 1, errore: null, risposta: { result, diagnostics }, creato_il: new Date().toISOString(), ultimo_sync_mexal: new Date().toISOString(), aggiornato_il: new Date().toISOString() }).select("id").single();
+        if (createdSaveError) throw createdSaveError;
+        await saveDocumentLines(admin, createdDocument.id, classified[kind]);
         await admin.from("ordini_sync_mexal_log").insert({ ordine_id: orderId, tipo_documento: kind, stato: "successo", payload, risposta: { result, diagnostics, sourceLines }, iniziato_il: startedAt, completato_il: new Date().toISOString() });
         await heartbeat(admin, orderId, syncToken);
       } catch (error) {
@@ -167,7 +191,7 @@ export default async function handler(req, res) {
         const diagnosticRecord = { diagnostics, mexalResponse, mexalResult: error?.mexalResult || null, sourceLines };
         failures.push({ kind, error: error.message });
         console.error("Mexal order document failed", { orderId, kind, error: error.message, payload, ...diagnosticRecord });
-        await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, stato: "failed", sigla: "OC", serie: documentOptions(documentConfig, kind).serie, cod_modulo: ORDER_DOCUMENTS[kind]?.moduleCode, tentativi: Number(savedDocument?.tentativi || 0) + 1, errore: error.message, risposta: diagnosticRecord, aggiornato_il: new Date().toISOString() });
+        await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, modulo: workspaceModule(order), anno: new Date(order.data_ordine || Date.now()).getFullYear(), stato: "failed", stato_operativo: "ERRORE", sigla: "OC", serie: documentOptions(documentConfig, kind).serie, cod_modulo: ORDER_DOCUMENTS[kind]?.moduleCode, tentativi: Number(savedDocument?.tentativi || 0) + 1, errore: error.message, risposta: diagnosticRecord, aggiornato_il: new Date().toISOString() });
         await admin.from("ordini_sync_mexal_log").insert({ ordine_id: orderId, tipo_documento: kind, stato: "errore", payload, risposta: diagnosticRecord, errore: error.message, iniziato_il: startedAt, completato_il: new Date().toISOString() });
       }
     }

@@ -13,7 +13,11 @@ export default function MexalSyncCard({
   onOpen,
   run,
 }) {
-  const action = enabled ? onSync : onOpen;
+  const isAgentsCard = title === "Agenti";
+  const effectiveEnabled = enabled || isAgentsCard;
+  const action = isAgentsCard
+    ? () => { window.location.assign("/integrations/mexal/agenti"); }
+    : (enabled ? onSync : onOpen);
 
   function activate() {
     if (!running) action?.();
@@ -21,7 +25,7 @@ export default function MexalSyncCard({
 
   return (
     <article
-      className={`mexal-sync-card ${enabled ? "is-enabled" : "is-planned"}`}
+      className={`mexal-sync-card ${effectiveEnabled ? "is-enabled" : "is-planned"}`}
       role="button"
       tabIndex={0}
       onClick={activate}
@@ -35,7 +39,7 @@ export default function MexalSyncCard({
     >
       <div className="mexal-sync-card-top">
         <div className="mexal-sync-icon"><Icon size={23} /></div>
-        <span>{enabled ? "Disponibile" : "Pianificata"}</span>
+        <span>{effectiveEnabled ? "Disponibile" : "Pianificata"}</span>
       </div>
       <h3>{title}</h3>
       <p>{description}</p>
@@ -61,7 +65,7 @@ export default function MexalSyncCard({
         disabled={running}
       >
         {running ? <RefreshCw size={17} className="spin" /> : null}
-        {enabled ? (running ? "Sincronizzazione..." : "Sincronizza") : "Apri roadmap"}
+        {isAgentsCard ? "Gestisci agenti" : effectiveEnabled ? (running ? "Sincronizzazione..." : "Sincronizza") : "Apri roadmap"}
       </button>
     </article>
   );

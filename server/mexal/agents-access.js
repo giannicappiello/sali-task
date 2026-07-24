@@ -15,6 +15,10 @@ async function findAuthUserByEmail(supabase, email) {
   return null;
 }
 
+function isExistingAuthUserError(error) {
+  return error?.code === "user_already_exists";
+}
+
 async function setAuthEnabled(supabase, authUserId, password, enabled) {
   if (!authUserId) return;
   const attributes = enabled
@@ -120,10 +124,7 @@ export async function agentsAccess({ supabase, body }) {
     workspaceUser = result.data;
   }
 
-  let authUser = workspaceUser?.auth_user_id
-    ? { id: workspaceUser.auth_user_id }
-    : await findAuthUserByEmail(supabase, email);
-
+  let authUser = workspaceUser?.auth_user_id ? { id: workspaceUser.auth_user_id } : null;
   let createdAuthUser = false;
   if (!authUser) {
     const { data, error } = await supabase.auth.admin.createUser({
@@ -135,10 +136,17 @@ export async function agentsAccess({ supabase, body }) {
         codice_agente_mexal: agent.codice,
       },
     });
-    if (error) throw error;
-    authUser = data?.user;
-    createdAuthUser = true;
-  } else {
+    if (error) {
+      if (!isExistingAuthUserError(error)) throw error;
+      authUser = await findAuthUserByEmail(supabase, email);
+      if (!authUser) throw error;
+    } else {
+      authUser = data?.user;
+      createdAuthUser = true;
+    }
+  }
+
+  if (!createdAuthUser) {
     await setAuthEnabled(supabase, authUser.id, password, true);
   }
 

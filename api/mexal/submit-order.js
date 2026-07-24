@@ -105,7 +105,7 @@ async function saveDocumentLines(admin, documentId, lines) {
     descrizione: line.descrizione || null,
     quantita: Number(line.quantita_documento || 0),
     prezzo: line.prezzo_netto ?? line.prezzo_listino ?? null,
-    sconto: line.sconto_commerciale ?? line.sconto_percentuale ?? null,
+    sconto: text(line.sconto_commerciale ?? line.sconto_percentuale) || null,
     dati_mexal: { aliquota_iva: line.aliquota_iva ?? null, provvigione_percentuale: line.provvigione_percentuale ?? null },
     aggiornato_il: new Date().toISOString(),
   }));

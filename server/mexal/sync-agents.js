@@ -1,0 +1,145 @@
+import https from "node:https";
+import { createClient } from "@supabase/supabase-js";
+import { completeSyncRun, createSyncRun, failSyncRunUnlessClosed } from "../../api/mexal/lib/syncRuns.js";
+
+const AGENT_PREFIX = "602";
+
+function required(name) {
+  const value = String(process.env[name] || "").trim();
+  if (!value) throw new Error(`Variabile Vercel mancante: ${name}`);
+  return value;
+}
+
+function text(value) { return String(value ?? "").trim(); }
+function upper(value) { return text(value).toUpperCase(); }
+function first(object, keys) {
+  for (const key of keys) {
+    const value = object?.[key];
+    if (value !== undefined && value !== null && text(value)) return value;
+  }
+  return null;
+}
+
+function rowsOf(payload) {
+  if (Array.isArray(payload)) return payload;
+  for (const key of ["dati", "records", "items", "agenti", "data", "results", "risultati"]) {
+    if (Array.isArray(payload?.[key])) return payload[key];
+  }
+  return [];
+}
+
+function request(url, headers) {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const req = https.request({ protocol: parsed.protocol, hostname: parsed.hostname, port: parsed.port || 443, path: `${parsed.pathname}${parsed.search}`, method: "GET", headers, rejectUnauthorized: false, timeout: 60000 }, (res) => {
+      const chunks = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => resolve({ status: res.statusCode || 500, body: Buffer.concat(chunks).toString("utf8") }));
+    });
+    req.on("timeout", () => req.destroy(new Error("Timeout collegamento Mexal.")));
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+function buildClient() {
+  const base = required("MEXAL_BASE_URL").replace(/\/+$/, "");
+  const credential = Buffer.from(`${required("MEXAL_USERNAME")}:${required("MEXAL_PASSWORD")}`, "utf8").toString("base64");
+  const headers = {
+    Authorization: `Passepartout ${credential}`,
+    "Coordinate-Gestionale": `Azienda=${required("MEXAL_AZIENDA")} Anno=${required("MEXAL_ANNO")} Magazzino=${required("MEXAL_MAGAZZINO")}`,
+    Accept: "application/json",
+  };
+  return {
+    async get(path) {
+      const response = await request(`${base}/webapi/risorse${path}`, headers);
+      let payload;
+      try { payload = JSON.parse(response.body || "{}"); } catch { throw new Error(`${path}: risposta JSON non valida.`); }
+      if (response.status < 200 || response.status >= 300) {
+        const detail = payload?.error?.["response-detail"] || payload?.error?.["response-message"] || `${path}: HTTP ${response.status}`;
+        throw Object.assign(new Error(detail), { status: response.status });
+      }
+      return payload;
+    },
+  };
+}
+
+async function requireAuthorized(req, admin) {
+  const authorization = req.headers.authorization || "";
+  if (process.env.CRON_SECRET && authorization === `Bearer ${process.env.CRON_SECRET}`) return;
+  if (!authorization.startsWith("Bearer ")) throw Object.assign(new Error("Sessione mancante."), { status: 401 });
+  const { data: authData, error: authError } = await admin.auth.getUser(authorization.slice(7));
+  if (authError || !authData?.user) throw Object.assign(new Error("Sessione non valida."), { status: 401 });
+  const { data: profile, error } = await admin.from("utenti").select("attivo,ruoli(nome,livello)").eq("auth_user_id", authData.user.id).maybeSingle();
+  const name = upper(profile?.ruoli?.nome);
+  if (error || !profile || profile.attivo === false || !(Number(profile.ruoli?.livello || 0) >= 80 || ["ADMIN","ADMINISTRATOR","AMMINISTRATORE","SUPER ADMIN","DIREZIONE"].includes(name))) {
+    throw Object.assign(new Error("Sincronizzazione agenti riservata agli amministratori."), { status: 403 });
+  }
+}
+
+function splitName(row) {
+  const directName = text(first(row, ["nome", "first_name"]));
+  const directSurname = text(first(row, ["cognome", "last_name"]));
+  if (directName || directSurname) return { nome: directName || null, cognome: directSurname || null };
+  const full = text(first(row, ["descrizione", "denominazione", "nominativo", "ragione_sociale"]));
+  if (!full) return { nome: null, cognome: null };
+  const parts = full.split(/\s+/).filter(Boolean);
+  return parts.length > 1 ? { nome: parts.slice(0, -1).join(" "), cognome: parts.at(-1) } : { nome: full, cognome: null };
+}
+
+function mapAgent(row, syncAt) {
+  const code = upper(first(row, ["codice", "codice_agente", "cod_agente", "codagente", "conto", "id"]));
+  const names = splitName(row);
+  return {
+    codice: code,
+    nome: names.nome,
+    cognome: names.cognome,
+    email: text(first(row, ["email", "mail", "posta_elettronica"])) || null,
+    telefono: text(first(row, ["telefono", "tel", "telefono1", "cellulare", "mobile"])) || null,
+    attivo_mexal: !["S", "Y", "TRUE", "1"].includes(upper(first(row, ["annullato", "precancellato", "gest_annullato"]))),
+    dati_mexal: row,
+    ultimo_sync_mexal: syncAt,
+    aggiornato_il: syncAt,
+  };
+}
+
+async function loadAgents(mexal) {
+  const candidates = ["/dati-generali/agenti", "/agenti"];
+  let lastError;
+  for (const path of candidates) {
+    try {
+      const payload = await mexal.get(path);
+      const rows = rowsOf(payload);
+      const syncAt = new Date().toISOString();
+      const mapped = rows.map((row) => mapAgent(row, syncAt)).filter((row) => row.codice.startsWith(AGENT_PREFIX));
+      if (mapped.length) return [...new Map(mapped.map((row) => [row.codice, row])).values()];
+      lastError = new Error(`${path}: nessun agente con codice ${AGENT_PREFIX}.`);
+    } catch (error) { lastError = error; }
+  }
+  throw lastError || new Error("Endpoint agenti Mexal non disponibile.");
+}
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Metodo non consentito." });
+  const admin = createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false, autoRefreshToken: false } });
+  let runId = null;
+  try {
+    await requireAuthorized(req, admin);
+    const run = await createSyncRun(admin, { syncType: "agents", source: req.body?.origin || "manual" });
+    if (run.duplicate) throw Object.assign(new Error("È già presente una sincronizzazione agenti in corso."), { status: 409 });
+    runId = run.id;
+    const agents = await loadAgents(buildClient());
+    const { data: existing, error: existingError } = await admin.from("mexal_agenti").select("codice").in("codice", agents.map((item) => item.codice));
+    if (existingError) throw existingError;
+    const existingCodes = new Set((existing || []).map((item) => item.codice));
+    const { error: upsertError } = await admin.from("mexal_agenti").upsert(agents, { onConflict: "codice" });
+    if (upsertError) throw upsertError;
+    const inserted = agents.filter((item) => !existingCodes.has(item.codice)).length;
+    const updated = agents.length - inserted;
+    await completeSyncRun(admin, runId, { processed: agents.length, inserted, updated, skipped: 0, failed: 0, metadata: { endpoint_strategy: ["/dati-generali/agenti", "/agenti"] } });
+    return res.status(200).json({ success: true, sync_run_id: runId, letti_mexal: agents.length, inseriti: inserted, aggiornati: updated, errori: [] });
+  } catch (error) {
+    if (runId) await failSyncRunUnlessClosed(admin, runId, error);
+    return res.status(Number(error.status || 500)).json({ success: false, error: error.message || "Errore sincronizzazione agenti." });
+  }
+}

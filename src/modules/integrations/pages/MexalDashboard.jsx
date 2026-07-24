@@ -9,6 +9,7 @@ import {
   PackageSearch,
   Percent,
   RefreshCw,
+  ShoppingCart,
   ScrollText,
   Users,
   Warehouse,
@@ -174,10 +175,16 @@ export default function MexalDashboard() {
         setProgress(percentage);
         setPhase(`${syncLabels[type] || type}: ${processed}/${total || "?"} elaborati`);
       };
-      if (type === "products") await invokeProductsSync(updateProgress);
-      else if (type === "stocks") await invokeStocksSync(updateProgress);
-      else if (type === "clients") await invokeClientsSync();
-      else await startMexalSync(type);
+      let result;
+      if (type === "products") result = await invokeProductsSync(updateProgress);
+      else if (type === "stocks") result = await invokeStocksSync(updateProgress);
+      else if (type === "clients") result = await invokeClientsSync();
+      else result = await startMexalSync(type);
+      if (result?.cancelled) {
+        setMessage({ type: "warning", text: `Sincronizzazione ${syncLabels[type] || type} arrestata.` });
+        await refreshData(result.sync_run_id || result.runId);
+        return;
+      }
       setProgress(100);
       setMessage({ type: "success", text: `Sincronizzazione ${syncLabels[type] || type} completata.` });
       await refreshData();
@@ -231,6 +238,7 @@ export default function MexalDashboard() {
     { icon: ScrollText, title: "Condizioni commerciali", description: "Matrice sconti, particolarità e regole pagamento.", recordLabel: "regole attive", recordCount: commercialCount, enabled: true, type: "commercial_conditions", lastRunData: latestRunsByType.commercial_conditions },
     { icon: Warehouse, title: "Giacenze", description: "Disponibilità per magazzino e controllo evasione ordini.", recordLabel: "prodotti sincronizzati", recordCount: entityCounts.stocks, enabled: true, type: "stocks", lastRunData: latestRunsByType.stocks || entityRuns.stocks },
     { icon: Percent, title: "Provvigioni listini", description: "Regole provvigionali associate ai listini Mexal.", recordLabel: "regole attive", recordCount: entityCounts.listPriceCommissions, enabled: true, type: "list_price_commissions", lastRunData: latestRunsByType.list_price_commissions },
+    { icon: ShoppingCart, title: "Ordini", description: "Controlla i documenti OCM, OCI e OCX di ORDINIPR e ORDINIPH.", recordLabel: "documenti controllati nell’ultimo run", recordCount: (latestRunsByType.orders || entityRuns.orders)?.processed, enabled: true, type: "orders", actionLabel: "Esegui ora", runningLabel: "Sincronizzazione...", lastRunData: latestRunsByType.orders || entityRuns.orders },
   ];
 
   const runningRuns = runs.filter((item) => item.status === "running").length;
@@ -277,7 +285,7 @@ export default function MexalDashboard() {
             stopping={stoppingRunId === card.lastRunData?.id}
             lastRun={formatDate(card.lastRunData?.started_at)}
             run={card.lastRunData}
-            onSync={() => card.type === "orders" ? navigate("/orders") : card.type === "commercial_conditions" ? runCommercialSync() : runEntitySync(card.type)}
+            onSync={() => card.type === "commercial_conditions" ? runCommercialSync() : runEntitySync(card.type)}
             onStop={() => stopRun(card.lastRunData)}
             onOpen={() => {}}
           />)}

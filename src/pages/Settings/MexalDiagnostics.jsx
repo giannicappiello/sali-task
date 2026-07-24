@@ -180,7 +180,7 @@ export default function MexalDiagnostics() {
   if (!isAdminUser) return <div className="orders-empty">Diagnostica Mexal riservata agli amministratori.</div>;
 
   return <div className="settings-page v4-page">
-    <div className="page-title-row"><div><button className="orders-secondary" type="button" onClick={() => navigate("/settings")} style={{ marginBottom: 12 }}><ArrowLeft size={18} /> Torna alle impostazioni</button><h1>Diagnostica contratti Mexal</h1><p>Legge ordini reali e individua i campi corretti usati da Mexal.</p></div></div>
+    <div className="page-title-row"><div><button className="orders-secondary" type="button" onClick={() => navigate("/integrations/mexal")} style={{ marginBottom: 12 }}><ArrowLeft size={18} /> Torna a Mexal ERP</button><h1>Diagnostica Mexal</h1><p>Legge dati reali e individua i campi corretti usati da Mexal.</p></div></div>
 
     <section className="panel settings-panel">
       <div className="panel-header"><h3>Diagnostica stato agenti Mexal</h3></div>

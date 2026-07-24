@@ -68,6 +68,9 @@ await assert.rejects(
 const api = await readFile("api/mexal/orders/recover-sync.js", "utf8");
 const page = await readFile("src/pages/Settings/MexalDiagnostics.jsx", "utf8");
 const helper = await readFile("server/mexal/agent-status-download.js", "utf8");
+const integrationsModule = await readFile("src/modules/integrations/IntegrationsModule.jsx", "utf8");
+const mexalSettings = await readFile("src/modules/integrations/components/MexalSettings.jsx", "utf8");
+const app = await readFile("src/App.jsx", "utf8");
 
 assert.match(api, /action === "download-agent-status-samples"/);
 assert.match(api, /Download agenti Mexal riservato agli amministratori/);
@@ -77,6 +80,11 @@ assert.match(page, /Diagnostica stato agenti Mexal/);
 assert.match(page, /Codice agente attivo/);
 assert.match(page, /Codice agente disattivato/);
 assert.match(page, /Scarica JSON agenti/);
+assert.match(page, /navigate\("\/integrations\/mexal"\)/);
+assert.match(integrationsModule, /path="mexal\/diagnostica"/);
+assert.match(mexalSettings, /navigate\("\/integrations\/mexal\/diagnostica"\)/);
+assert.match(mexalSettings, /Apri diagnostica Mexal/);
+assert.doesNotMatch(app, /settings\/mexal-diagnostics/);
 assert.doesNotMatch(helper, /console\.(?:log|info|warn|error)/, "i record non vengono registrati nei log");
 assert.doesNotMatch(helper, /postJson|\.from\(|\.rpc\(/, "la diagnostica non scrive a Mexal o Supabase");
 

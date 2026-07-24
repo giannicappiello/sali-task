@@ -3,20 +3,39 @@ function httpError(message, status = 500, details = null) {
 }
 
 async function findAuthUserByEmail(supabase, email) {
-  let page = 1;
-  while (page <= 20) {
-    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
-    if (error) throw error;
-    const found = data?.users?.find((user) => String(user.email || "").toLowerCase() === email.toLowerCase());
-    if (found) return found;
-    if (!data?.nextPage || data.users.length < 1000) break;
-    page += 1;
+  const perPage = 1000;
+  const { data, error } = await supabase.auth.admin.listUsers({ page: 1, perPage });
+  if (error) throw error;
+
+  const normalizedEmail = email.toLowerCase();
+  const firstPageMatch = data?.users?.find(
+    (user) => String(user.email || "").toLowerCase() === normalizedEmail,
+  );
+  if (firstPageMatch) return firstPageMatch;
+
+  const totalPages = Math.min(20, Math.ceil(Number(data?.total || 0) / perPage));
+  const concurrency = 5;
+  for (let firstPage = 2; firstPage <= totalPages; firstPage += concurrency) {
+    const pages = Array.from(
+      { length: Math.min(concurrency, totalPages - firstPage + 1) },
+      (_, index) => firstPage + index,
+    );
+    const results = await Promise.all(
+      pages.map((page) => supabase.auth.admin.listUsers({ page, perPage })),
+    );
+    for (const result of results) {
+      if (result.error) throw result.error;
+      const found = result.data?.users?.find(
+        (user) => String(user.email || "").toLowerCase() === normalizedEmail,
+      );
+      if (found) return found;
+    }
   }
   return null;
 }
 
 function isExistingAuthUserError(error) {
-  return error?.code === "user_already_exists";
+  return ["email_exists", "user_already_exists"].includes(error?.code);
 }
 
 async function setAuthEnabled(supabase, authUserId, password, enabled) {

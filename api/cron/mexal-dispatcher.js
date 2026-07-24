@@ -70,6 +70,7 @@ function endpointFor(syncType) {
     case "commercial_conditions": return ["/api/mexal/automation", { action: "run_now", syncType: "commercial_conditions", mode: "incremental", syncPayments: true, origin: "cron" }];
     case "document_series": return ["/api/mexal/automation", { action: "run_now", syncType: "document_series", origin: "cron" }];
     case "stocks": return ["/api/mexal/automation", { action: "run_now", syncType: "stocks", offset: 0, batchSize: 12, origin: "cron" }];
+    case "orders": return ["/api/mexal/automation", { action: "run_now", syncType: "orders", origin: "cron" }];
     default: return null;
   }
 }
@@ -125,14 +126,6 @@ export async function dispatchSchedules({ schedules, hasRunningRun, execute, upd
       const runningRun = await hasRunningRun(sync_type);
       if (runningRun && !RESUMABLE_TYPES.has(sync_type)) {
         const item = { sync_type, success: true, status: "skipped", error: "È già presente una sincronizzazione in corso per questo tipo." };
-        await recordScheduleResult(schedule, item);
-        await updateSchedule(schedule.id, { last_run_at: now, last_status: item.status, last_error: null, updated_at: now, next_run_at: null });
-        executed.push(item);
-        continue;
-      }
-
-      if (sync_type === "orders") {
-        const item = { sync_type, success: true, status: "skipped", error: "Gli ordini vengono inviati dal modulo Ordini." };
         await recordScheduleResult(schedule, item);
         await updateSchedule(schedule.id, { last_run_at: now, last_status: item.status, last_error: null, updated_at: now, next_run_at: null });
         executed.push(item);

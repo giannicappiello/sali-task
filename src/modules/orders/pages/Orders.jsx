@@ -51,9 +51,10 @@ export default function Orders() {
     if (orderIds.length) {
       const { data: documentRows, error: documentsError } = await supabase
         .from("ordini_documenti_mexal")
-        .select("ordine_id,tipo_documento,numero")
+        .select("ordine_id,tipo_documento,serie,numero,anno,stato_operativo,presente_in_mexal")
         .in("ordine_id", orderIds)
-        .not("numero", "is", null);
+        .not("numero", "is", null)
+        .eq("presente_in_mexal", true);
       if (documentsError) console.error("Errore documenti Mexal elenco ordini:", documentsError);
       documents = documentRows || [];
     }
@@ -108,7 +109,8 @@ export default function Orders() {
                 return <tr key={item.id} className="orders-clickable-row" onClick={() => navigate(`${basePath}/elenco/${item.id}`)}>
                   <td>{item.data_ordine || "-"}</td><td>{item.numero_ordine_visualizzato || item.numero_ordine || "Bozza"}</td><td>{item.ragione_sociale_cliente || item.codice_cliente}</td><td>{agentDisplayName(item, agentsByCode)}</td>
                   <td><span className={`orders-status ${status.className}`}>{status.label}</span></td>
-                  <td>{Number(item.totale_imponibile ?? item.totale ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td><td>{Number(item.totale_iva || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td><td>{Number(item.totale_documento ?? item.totale ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td><td>{item.numero_ocm || "-"}</td><td>{item.numero_ocx || "-"}</td><td>{item.numero_oci || "-"}</td>
+                  <td>{Number(item.totale_imponibile ?? item.totale ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td><td>{Number(item.totale_iva || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td><td>{Number(item.totale_documento ?? item.totale ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td>
+                  {["OCM", "OCX", "OCI"].map((kind) => { const document = item.documenti_mexal?.find((row) => row.tipo_documento === kind); return <td key={kind}>{document ? `${document.serie || "-"}/${document.numero}` : "-"}</td>; })}
                 </tr>;
               })}
             </tbody>

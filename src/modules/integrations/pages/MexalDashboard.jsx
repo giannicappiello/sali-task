@@ -22,6 +22,7 @@ import MexalSyncCard from "../components/MexalSyncCard";
 import IntegrationStatusBadge from "../components/IntegrationStatusBadge";
 import OrdersDocumentSeriesSettings from "../../../components/OrdersDocumentSeriesSettings";
 import OrderModuleSettings from "../components/OrderModuleSettings";
+import MexalOrderMaintenance from "../components/MexalOrderMaintenance";
 import {
   invokeCommercialConditionsSync,
   loadCommercialCounts,
@@ -293,12 +294,13 @@ export default function MexalDashboard() {
         <nav className="mexal-main-tabs" aria-label="Configurazioni Mexal">
           <button type="button" className={configurationTab === "settings" ? "active" : ""} onClick={() => setConfigurationTab("settings")}>Configurazione</button>
           <button type="button" className={configurationTab === "automations" ? "active" : ""} onClick={() => setConfigurationTab("automations")}>Automazioni</button>
-          <button type="button" className={configurationTab === "series" ? "active" : ""} onClick={() => setConfigurationTab("series")}>Serie documenti</button><button type="button" className={configurationTab === "orders" ? "active" : ""} onClick={() => setConfigurationTab("orders")}>Ordini PROF / PH</button>
+          <button type="button" className={configurationTab === "series" ? "active" : ""} onClick={() => setConfigurationTab("series")}>Serie documenti</button><button type="button" className={configurationTab === "orders" ? "active" : ""} onClick={() => setConfigurationTab("orders")}>Ordini PROF / PH</button><button type="button" className={configurationTab === "maintenance" ? "active" : ""} onClick={() => setConfigurationTab("maintenance")}>Manutenzione</button>
         </nav>
         {configurationTab === "settings" && <div className="mexal-two-columns"><MexalSettings settings={settings} onChange={setSettings} disabled={running} /><section className="mexal-data-summary"><div className="mexal-section-heading"><div><h3>Stato ambiente</h3><p>Configurazione disponibile senza mostrare credenziali.</p></div></div><div className="mexal-data-summary-grid"><div><span>Matrice sconti</span><strong>{counts.matrix ?? "—"}</strong></div><div><span>Particolarità</span><strong>{counts.particularities ?? "—"}</strong></div><div><span>Regole pagamento</span><strong>{counts.payments ?? "—"}</strong></div></div></section></div>}
         {configurationTab === "automations" && <MexalAutomations canManage={isAdminUser} />}
         {configurationTab === "series" && <OrdersDocumentSeriesSettings canManage={isAdminUser} />}
         {configurationTab === "orders" && <OrderModuleSettings />}
+        {configurationTab === "maintenance" && <MexalOrderMaintenance canManage={isAdminUser} />}
       </>}
     </div>
   );

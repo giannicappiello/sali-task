@@ -7,6 +7,7 @@ import documentSeriesHandler from "../../server/mexal/sync-document-series.js";
 import stopHandler from "../../server/mexal/stop-sync-run.js";
 import { syncListPriceCommissions } from "../../server/mexal/sync-list-price-commissions.js";
 import { agentsAccess } from "../../server/mexal/agents-access.js";
+import orderDocumentsHandler, { purgeEvictedOrderDocuments } from "../../server/mexal/sync-order-documents.js";
 import { requireAdmin } from "./lib/auth.js";
 import { completeIdempotentSync, findRunningSync, reserveIdempotentSync } from "./lib/syncRuns.js";
 
@@ -36,6 +37,7 @@ const RUN_HANDLERS = Object.freeze({
   commercial_conditions: commercialConditionsHandler,
   document_series: documentSeriesHandler,
   list_price_commissions: listPriceCommissionsHandler,
+  orders: orderDocumentsHandler,
 });
 
 const SYNC_ALL_PHASES = Object.freeze([
@@ -46,6 +48,7 @@ const SYNC_ALL_PHASES = Object.freeze([
   "products",
   "stocks",
   "list_price_commissions",
+  "orders",
 ]);
 
 function runPayload(body, syncType) {
@@ -284,6 +287,38 @@ async function rulesSave(req, body) {
   return { rule: data };
 }
 
+async function maintenanceGet(req) {
+  const admin = await createAdmin(req);
+  const { data, error } = await admin.supabase.from("mexal_ordini_manutenzione").select("*").eq("id", 1).single();
+  if (error) throw error;
+  return { settings: data };
+}
+
+async function maintenanceSave(req, body) {
+  const admin = await createAdmin(req);
+  const days = Number(body.settings?.giorni_conservazione_evasi);
+  if (!Number.isInteger(days) || days < 1 || days > 3650) throw Object.assign(new Error("I giorni di conservazione devono essere compresi tra 1 e 3650."), { status: 400 });
+  const { data, error } = await admin.supabase.from("mexal_ordini_manutenzione").upsert({
+    id: 1,
+    giorni_conservazione_evasi: days,
+    pulizia_automatica: Boolean(body.settings?.pulizia_automatica),
+    aggiornato_il: new Date().toISOString(),
+  }).select().single();
+  if (error) throw error;
+  return { settings: data };
+}
+
+async function maintenancePurge(req) {
+  const admin = await createAdmin(req);
+  const { data: settings, error } = await admin.supabase.from("mexal_ordini_manutenzione").select("*").eq("id", 1).single();
+  if (error) throw error;
+  const summary = await purgeEvictedOrderDocuments({ supabase: admin.supabase, days: settings.giorni_conservazione_evasi });
+  const now = new Date().toISOString();
+  await admin.supabase.from("mexal_ordini_manutenzione").update({ ultima_pulizia_il: now, ultimo_riepilogo: summary, aggiornato_il: now }).eq("id", 1);
+  console.info("Mexal order Workspace cleanup", summary);
+  return { summary };
+}
+
 export default async function handler(req, res) {
   const body = req.body || {};
   const phase = body.action || "request";
@@ -295,6 +330,12 @@ export default async function handler(req, res) {
         return sendSuccess(res, 200, await rulesGet(req));
       case "rules_save":
         return sendSuccess(res, 200, await rulesSave(req, body));
+      case "order_maintenance_get":
+        return sendSuccess(res, 200, await maintenanceGet(req));
+      case "order_maintenance_save":
+        return sendSuccess(res, 200, await maintenanceSave(req, body));
+      case "order_maintenance_purge":
+        return sendSuccess(res, 200, await maintenancePurge(req));
       case "agents_access": {
         const admin = await createAdmin(req);
         return sendSuccess(res, 200, await agentsAccess({ supabase: admin.supabase, body }));

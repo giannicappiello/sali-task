@@ -166,6 +166,21 @@ export default function OrderDetail() {
         <div><span>Totale documento</span><strong>{money(order.totale_documento ?? order.totale)}</strong></div>
       </section>
 
+      {order.mexal_documents?.length > 0 && <section className="orders-panel">
+        <h3>Documenti ordine Mexal</h3>
+        <p>Documenti figli separati generati dall’ordine Workspace.</p>
+        <div className="orders-table-wrap"><table className="orders-table">
+          <thead><tr><th>Modulo</th><th>Tipo</th><th>Riferimento</th><th>Stato</th><th>Ultimo controllo</th></tr></thead>
+          <tbody>{order.mexal_documents.map((document) => <tr key={document.id || document.tipo_documento}>
+            <td>{document.modulo || (moduleCode === "ph" ? "ORDINIPH" : "ORDINIPR")}</td>
+            <td>{document.tipo_documento}</td>
+            <td>{`${document.serie || "-"}/${document.numero || "-"}${document.anno ? ` · ${document.anno}` : ""}`}</td>
+            <td><span className={`orders-status ${document.stato_operativo === "APERTO" ? "inviato-mexal" : document.stato_operativo === "EVASO" ? "spedito" : "errore"}`}>{document.stato_operativo || "APERTO"}</span></td>
+            <td>{document.ultimo_sync_mexal ? new Date(document.ultimo_sync_mexal).toLocaleString("it-IT") : "-"}</td>
+          </tr>)}</tbody>
+        </table></div>
+      </section>}
+
       {order.errore_sincronizzazione && <div className="orders-alert orders-alert-error"><strong>Ultimo errore Mexal:</strong> {order.errore_sincronizzazione}</div>}
 
       <section className="orders-panel">

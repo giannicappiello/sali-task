@@ -101,6 +101,17 @@ function splitName(row) {
   return parts.length > 1 ? { nome: parts.slice(0, -1).join(" "), cognome: parts.at(-1) } : { nome: full, cognome: null };
 }
 
+function isActiveMexal(row) {
+  const disabledFlag = upper(first(row, [
+    "annullato", "precancellato", "gest_annullato", "disattivato", "inattivo", "bloccato",
+  ]));
+  if (["S", "Y", "YES", "TRUE", "1"].includes(disabledFlag)) return false;
+
+  const status = upper(first(row, ["stato", "status", "stato_anagrafica", "stato_fornitore"]));
+  if (["I", "INATTIVO", "DISATTIVO", "DISATTIVATO", "DISABILITATO", "ANNULLATO", "BLOCCATO"].includes(status)) return false;
+  return true;
+}
+
 function mapAgent(row, syncAt) {
   const code = upper(first(row, ["codice", "codice_fornitore", "cod_fornitore", "cod_conto", "codconto", "conto", "codiceConto", "id"]));
   const names = splitName(row);
@@ -110,7 +121,7 @@ function mapAgent(row, syncAt) {
     cognome: names.cognome,
     email: text(first(row, ["email", "mail", "posta_elettronica"])) || null,
     telefono: text(first(row, ["telefono", "tel", "telefono1", "cellulare", "mobile"])) || null,
-    attivo_mexal: !["S", "Y", "TRUE", "1"].includes(upper(first(row, ["annullato", "precancellato", "gest_annullato"]))),
+    attivo_mexal: isActiveMexal(row),
     dati_mexal: row,
     ultimo_sync_mexal: syncAt,
     aggiornato_il: syncAt,
@@ -146,16 +157,13 @@ async function loadAgents(mexal) {
   }
 
   const unique = [...new Map(allAgents.map((row) => [row.codice, row])).values()];
-  return {
-    activeAgents: unique.filter((row) => row.attivo_mexal),
-    allAgentCodes: new Set(unique.map((row) => row.codice)),
-  };
+  return unique.filter((row) => row.attivo_mexal);
 }
 
-async function disableWorkspaceAgents(admin, activeCodes, syncAt) {
+async function removeInactiveAgents(admin, activeCodes) {
   const { data: existingAgents, error } = await admin
     .from("mexal_agenti")
-    .select("id,codice,workspace_utente_id,accesso_workspace_attivo,attivo_mexal");
+    .select("id,codice,workspace_utente_id");
   if (error) throw error;
 
   const inactive = (existingAgents || []).filter((agent) => !activeCodes.has(agent.codice));
@@ -163,12 +171,6 @@ async function disableWorkspaceAgents(admin, activeCodes, syncAt) {
 
   const inactiveAgentIds = inactive.map((agent) => agent.id);
   const workspaceIds = inactive.map((agent) => agent.workspace_utente_id).filter(Boolean);
-
-  const { error: agentUpdateError } = await admin
-    .from("mexal_agenti")
-    .update({ attivo_mexal: false, accesso_workspace_attivo: false, aggiornato_il: syncAt })
-    .in("id", inactiveAgentIds);
-  if (agentUpdateError) throw agentUpdateError;
 
   if (workspaceIds.length) {
     const { data: users, error: usersError } = await admin
@@ -179,7 +181,7 @@ async function disableWorkspaceAgents(admin, activeCodes, syncAt) {
 
     const { error: disableUsersError } = await admin
       .from("utenti")
-      .update({ attivo: false })
+      .update({ attivo: false, agent_id: null })
       .in("id", workspaceIds);
     if (disableUsersError) throw disableUsersError;
 
@@ -189,6 +191,12 @@ async function disableWorkspaceAgents(admin, activeCodes, syncAt) {
       if (banError) throw banError;
     }
   }
+
+  const { error: deleteError } = await admin
+    .from("mexal_agenti")
+    .delete()
+    .in("id", inactiveAgentIds);
+  if (deleteError) throw deleteError;
 
   return inactive.length;
 }
@@ -203,21 +211,24 @@ export default async function handler(req, res) {
     if (run.duplicate) throw Object.assign(new Error("È già presente una sincronizzazione agenti in corso."), { status: 409 });
     runId = run.id;
 
-    const { activeAgents } = await loadAgents(buildClient());
+    const activeAgents = await loadAgents(buildClient());
     const activeCodes = new Set(activeAgents.map((item) => item.codice));
-    const syncAt = new Date().toISOString();
 
-    const { data: existing, error: existingError } = await admin
-      .from("mexal_agenti")
-      .select("codice")
-      .in("codice", activeAgents.map((item) => item.codice));
-    if (existingError) throw existingError;
+    let existing = [];
+    if (activeAgents.length) {
+      const result = await admin
+        .from("mexal_agenti")
+        .select("codice")
+        .in("codice", activeAgents.map((item) => item.codice));
+      if (result.error) throw result.error;
+      existing = result.data || [];
 
-    const existingCodes = new Set((existing || []).map((item) => item.codice));
-    const { error: upsertError } = await admin.from("mexal_agenti").upsert(activeAgents, { onConflict: "codice" });
-    if (upsertError) throw upsertError;
+      const { error: upsertError } = await admin.from("mexal_agenti").upsert(activeAgents, { onConflict: "codice" });
+      if (upsertError) throw upsertError;
+    }
 
-    const disabled = await disableWorkspaceAgents(admin, activeCodes, syncAt);
+    const existingCodes = new Set(existing.map((item) => item.codice));
+    const removed = await removeInactiveAgents(admin, activeCodes);
     const inserted = activeAgents.filter((item) => !existingCodes.has(item.codice)).length;
     const updated = activeAgents.length - inserted;
 
@@ -227,7 +238,7 @@ export default async function handler(req, res) {
       updated,
       skipped: 0,
       failed: 0,
-      metadata: { endpoint: "/fornitori", codice_prefix: AGENT_PREFIX, disattivati: disabled },
+      metadata: { endpoint: "/fornitori", codice_prefix: AGENT_PREFIX, eliminati_disattivati: removed },
     });
 
     return res.status(200).json({
@@ -236,7 +247,7 @@ export default async function handler(req, res) {
       letti_mexal: activeAgents.length,
       inseriti: inserted,
       aggiornati: updated,
-      disattivati: disabled,
+      eliminati_disattivati: removed,
       risorsa_mexal: "/fornitori",
       errori: [],
     });

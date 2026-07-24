@@ -529,7 +529,11 @@ export default async function handler(req, res) {
 
     await verifyUser(req, supabase);
 
-    const run = await createSyncRun(supabase, { syncType: "clients", source: "manual" });
+    const run = await createSyncRun(supabase, {
+      syncType: "clients",
+      source: req.body?.origin === "cron" ? "cron" : "manual",
+      context: req.body?.context || {},
+    });
     if (run.duplicate) throw Object.assign(new Error("È già presente una sincronizzazione clienti in corso."), { status: 409 });
     runId = run.id;
 

@@ -111,13 +111,20 @@ export async function loadMexalRuns(type, limit = 1) {
 }
 
 export async function loadMexalEntityCounts() {
-  const [products, clients, stocks, orders] = await Promise.all([
+  const [products, clients, stocks, orders, listPriceCommissions] = await Promise.all([
     supabase.from("ordini_prodotti_cache").select("*", { count: "exact", head: true }).eq("mostra_in_app", true),
     supabase.from("ordini_clienti_cache").select("*", { count: "exact", head: true }).eq("attivo_mexal", true),
     supabase.from("prodotti").select("*", { count: "exact", head: true }).not("ultimo_sync_mexal", "is", null),
     supabase.from("ordini_testate").select("*", { count: "exact", head: true }).eq("stato_sincronizzazione", "non_inviato"),
+    supabase.from("mexal_regole_provvigioni").select("*", { count: "exact", head: true }).eq("origine", "mexal_provvigioni_listini").eq("attiva", true),
   ]);
-  return { products: products.error ? null : products.count || 0, clients: clients.error ? null : clients.count || 0, stocks: stocks.error ? null : stocks.count || 0, orders: orders.error ? null : orders.count || 0 };
+  return {
+    products: products.error ? null : products.count || 0,
+    clients: clients.error ? null : clients.count || 0,
+    stocks: stocks.error ? null : stocks.count || 0,
+    orders: orders.error ? null : orders.count || 0,
+    listPriceCommissions: listPriceCommissions.error ? null : listPriceCommissions.count || 0,
+  };
 }
 
 export async function invokeCommercialConditionsSync(options = {}) {
@@ -165,7 +172,7 @@ export async function stopMexalRun(runId) {
 
 export async function loadSyncRuns(limit = 25) {
   const { data, error } = await supabase.from("mexal_sync_runs")
-    .select("id,sync_type,status,started_at,completed_at,processed,inserted,updated,skipped,failed,error_message,metadata")
+    .select("id,sync_type,status,source,context,started_at,completed_at,processed,inserted,updated,skipped,failed,error_message,metadata")
     .order("started_at", { ascending: false }).limit(limit);
   if (error) throw error;
   return (data || []).map((run) => ({ ...run, records_read: run.processed, records_inserted: run.inserted, records_updated: run.updated, records_failed: run.failed, duration_ms: run.completed_at ? new Date(run.completed_at) - new Date(run.started_at) : null }));

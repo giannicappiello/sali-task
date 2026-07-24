@@ -167,7 +167,12 @@ export default async function handler(req, res) {
   const admin = supabaseAdmin(); let runId = null; let diagnostics;
   try {
     await verifyAdmin(req, admin);
-    const run = await createSyncRun(admin, { syncType: "document_series", source: "manual", metadata: { endpoint: DOCUMENTED_SERIES_RESOURCE } });
+    const run = await createSyncRun(admin, {
+      syncType: "document_series",
+      source: req.body?.origin === "cron" ? "cron" : "manual",
+      context: req.body?.context || {},
+      metadata: { endpoint: DOCUMENTED_SERIES_RESOURCE },
+    });
     if (run.duplicate) throw Object.assign(new Error("È già presente una sincronizzazione serie documenti in corso."), { status: 409 });
     runId = run.id;
     const mexal = mexalClient(); const response = await requestJson({ url: mexal.endpoint, headers: mexal.headers });

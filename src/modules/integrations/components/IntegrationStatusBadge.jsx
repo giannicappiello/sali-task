@@ -5,10 +5,12 @@ const LABELS = {
   unavailable: "Non configurato",
   running: "In esecuzione",
   completed: "Completata",
+  completed_with_errors: "Completata con errori",
   completed_with_warnings: "Completata con avvisi",
   failed: "Errore",
   cancelled: "Annullata",
   timeout: "Tempo scaduto",
+  skipped: "Saltata",
 };
 
 export default function IntegrationStatusBadge({ status = "unavailable" }) {

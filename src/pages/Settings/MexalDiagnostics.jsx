@@ -142,8 +142,8 @@ export default function MexalDiagnostics() {
 
   if (!isAdminUser) return <div className="orders-empty">Diagnostica Mexal riservata agli amministratori.</div>;
 
-  return <div className="settings-page v4-page">
-    <div className="page-title-row"><div><button className="orders-secondary" type="button" onClick={() => navigate("/settings")} style={{ marginBottom: 12 }}><ArrowLeft size={18} /> Torna alle impostazioni</button><h1>Diagnostica contratti Mexal</h1><p>Legge ordini reali e individua i campi corretti usati da Mexal.</p></div></div>
+  return <div className="settings-page v4-page mexal-diagnostics-page">
+    <div className="page-title-row"><div><button className="secondary-action mexal-diagnostics-back" type="button" onClick={() => navigate("/integrations/mexal")}><ArrowLeft size={18} /> Torna a Mexal ERP</button><h1>Diagnostica Mexal</h1><p>Legge dati reali e individua i campi corretti usati da Mexal.</p></div></div>
 
     <section className="panel settings-panel">
       <div className="panel-header"><h3>Leggi ordine manuale per la destinazione</h3></div>
@@ -156,7 +156,7 @@ export default function MexalDiagnostics() {
       </div>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 }}>
         <button className="primary-action" type="button" onClick={executeDestination} disabled={loading === "destination"}>{loading === "destination" ? <RefreshCw className="spin" size={18} /> : <Play size={18} />}{loading === "destination" ? "Lettura in corso..." : "Leggi ordine Mexal"}</button>
-        {destinationResult && <button className="orders-secondary" type="button" onClick={() => downloadJson(destinationResult, `mexal-ordine-OC-${destinationSeries}-${destinationNumber}.json`)}><Download size={18} />Scarica JSON ordine</button>}
+        {destinationResult && <button className="secondary-action" type="button" onClick={() => downloadJson(destinationResult, `mexal-ordine-OC-${destinationSeries}-${destinationNumber}.json`)}><Download size={18} />Scarica JSON ordine</button>}
       </div>
     </section>
     {destinationResult && <>
@@ -176,7 +176,7 @@ export default function MexalDiagnostics() {
       <p>Analizza l’endpoint Mexal delle provvigioni associate ai listini senza modificare dati o regole.</p>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <button className="primary-action" type="button" onClick={executeListPriceCommissions} disabled={loading === "list-price-commissions"}>{loading === "list-price-commissions" ? <RefreshCw className="spin" size={18} /> : <Play size={18} />}{loading === "list-price-commissions" ? "Analisi in corso..." : "Analizza provvigioni listini"}</button>
-        <button className="orders-secondary" type="button" onClick={downloadListPriceCommissions} disabled={loading === "download-list-price-commissions"}>{loading === "download-list-price-commissions" ? <RefreshCw className="spin" size={18} /> : <Download size={18} />}{loading === "download-list-price-commissions" ? "Download in corso..." : "Scarica JSON provvigioni listini"}</button>
+        <button className="secondary-action" type="button" onClick={downloadListPriceCommissions} disabled={loading === "download-list-price-commissions"}>{loading === "download-list-price-commissions" ? <RefreshCw className="spin" size={18} /> : <Download size={18} />}{loading === "download-list-price-commissions" ? "Download in corso..." : "Scarica JSON provvigioni listini"}</button>
       </div>
       {listPriceCommissionsResult && <div style={{ marginTop: 16 }}>
         <p><strong>Endpoint:</strong> {listPriceCommissionsResult.endpoint} · <strong>Esito:</strong> {listPriceCommissionsResult.success ? "ok" : "errore"} · <strong>Record:</strong> {listPriceCommissionsResult.recordCount} · <strong>Tipo:</strong> {listPriceCommissionsResult.payloadType}</p>
@@ -196,7 +196,7 @@ export default function MexalDiagnostics() {
       </div>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 }}>
         <button className="primary-action" type="button" onClick={executeCommercial} disabled={loading === "commercial"}>{loading === "commercial" ? <RefreshCw className="spin" size={18} /> : <Play size={18} />}{loading === "commercial" ? "Analisi in corso..." : "Analizza trasporto e provvigioni"}</button>
-        {commercialResult && <button className="orders-secondary" type="button" onClick={() => downloadJson(commercialResult, `mexal-commercial-${clientCode}-${agentCode}-${productCode}.json`)}><Download size={18} />Scarica JSON</button>}
+        {commercialResult && <button className="secondary-action" type="button" onClick={() => downloadJson(commercialResult, `mexal-commercial-${clientCode}-${agentCode}-${productCode}.json`)}><Download size={18} />Scarica JSON</button>}
       </div>
     </section>
     {commercialResult && <><section className="panel settings-panel"><div className="panel-header"><h3>Endpoint trovati</h3></div><p>{commercialResult.privacy}</p><p>{commercialResult.successful?.length ? commercialResult.successful.join(" · ") : "Nessun endpoint candidato ha risposto correttamente."}</p></section><JsonPanel title="Contratti trasporto e provvigioni" value={commercialResult} /></>}
@@ -206,13 +206,13 @@ export default function MexalDiagnostics() {
       <p>Solo lettura: usa un prodotto e un cliente configurati in Mexal, un OCM manuale con provvigioni calcolate e il corrispondente OCM Workspace. Non vengono effettuati POST o modifiche a Mexal.</p>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 }}>
         <button className="primary-action" type="button" onClick={executeCommission} disabled={loading === "commission"}>{loading === "commission" ? <RefreshCw className="spin" size={18} /> : <Play size={18} />}{loading === "commission" ? "Analisi in corso..." : "Analizza provvigioni"}</button>
-        {commissionResult && <button className="orders-secondary" type="button" onClick={() => downloadJson(commissionResult, `mexal-provvigioni-${productCode}-${clientCode}.json`)}><Download size={18} />Scarica report JSON</button>}
+        {commissionResult && <button className="secondary-action" type="button" onClick={() => downloadJson(commissionResult, `mexal-provvigioni-${productCode}-${clientCode}.json`)}><Download size={18} />Scarica report JSON</button>}
       </div>
     </section>
     <section className="panel settings-panel" style={{ marginTop: 16 }}>
       <div className="panel-header"><h3>Regole provvigionali</h3></div>
       <p>La diagnostica analizza il catalogo Mexal reale e individua eventuali risorse collegate alle regole provvigionali. È solo lettura, non salva dati e non mostra record completi.</p>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}><button className="primary-action" type="button" onClick={executeCommissionRules} disabled={loading === "commission-rules"}>{loading === "commission-rules" ? <RefreshCw className="spin" size={18} /> : <Play size={18} />}{loading === "commission-rules" ? "Analisi in corso..." : "Analizza catalogo Mexal"}</button><button className="orders-secondary" type="button" onClick={downloadFullHelp} disabled={loading === "full-help-download"}>{loading === "full-help-download" ? <RefreshCw className="spin" size={18} /> : <Download size={18} />}{loading === "full-help-download" ? "Download in corso..." : "Scarica help Mexal completo"}</button>{commissionRulesResult && <button className="orders-secondary" type="button" onClick={() => downloadJson(commissionRulesResult, "mexal-regole-provvigionali-report.json")}><Download size={18} />Scarica report JSON</button>}</div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}><button className="primary-action" type="button" onClick={executeCommissionRules} disabled={loading === "commission-rules"}>{loading === "commission-rules" ? <RefreshCw className="spin" size={18} /> : <Play size={18} />}{loading === "commission-rules" ? "Analisi in corso..." : "Analizza catalogo Mexal"}</button><button className="secondary-action" type="button" onClick={downloadFullHelp} disabled={loading === "full-help-download"}>{loading === "full-help-download" ? <RefreshCw className="spin" size={18} /> : <Download size={18} />}{loading === "full-help-download" ? "Download in corso..." : "Scarica help Mexal completo"}</button>{commissionRulesResult && <button className="secondary-action" type="button" onClick={() => downloadJson(commissionRulesResult, "mexal-regole-provvigionali-report.json")}><Download size={18} />Scarica report JSON</button>}</div>
       {commissionRulesResult && <><p style={{ marginTop: 16 }}>{commissionRulesResult.reason}</p><h4>Catalogo Mexal</h4><div className="orders-table-wrap"><table className="orders-table"><thead><tr><th>Risorsa</th><th>Endpoint</th><th>Metodo</th><th>Descrizione</th><th>Termini trovati</th><th>Parametri obbligatori</th><th>Affidabilità</th></tr></thead><tbody>{commissionRulesResult.catalog.map((item) => <tr key={`${item.endpoint}-${item.method}`}><td>{item.resource}</td><td>{item.endpoint}</td><td>{item.method}</td><td>{item.description || "—"}</td><td>{item.matched_terms.join(", ")}</td><td>{item.required_parameters.join(", ") || "nessuno"}</td><td>{item.confidence}</td></tr>)}</tbody></table></div><h4 style={{ marginTop: 16 }}>Prove endpoint</h4><div className="orders-table-wrap"><table className="orders-table"><thead><tr><th>Endpoint</th><th>Metodo</th><th>HTTP</th><th>Stato</th><th>Campi trovati</th><th>Motivo mancata interrogazione</th><th>Prossimo passo</th></tr></thead><tbody>{commissionRulesResult.endpointTests.map((item) => <tr key={`${item.endpoint}-${item.method}`}><td>{item.endpoint}</td><td>{item.method}</td><td>{item.http_status ?? "—"}</td><td>{item.status}</td><td>{item.fields_found.join(", ") || "nessuno"}</td><td>{item.skip_reason || "—"}</td><td>{item.next_step}</td></tr>)}</tbody></table></div></>}
     </section>
 
@@ -226,7 +226,7 @@ export default function MexalDiagnostics() {
     <section className="panel settings-panel" style={{ marginTop: 16 }}>
       <div className="panel-header"><h3>Confronto documenti ordine</h3></div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}><label>OCM manuale<input value={leftReference} onChange={(event) => setLeftReference(event.target.value)} /></label><label>OCM Workspace<input value={rightReference} onChange={(event) => setRightReference(event.target.value)} /></label></div>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 }}><button className="primary-action" type="button" onClick={executeOrders} disabled={loading === "orders"}>{loading === "orders" ? <RefreshCw className="spin" size={18} /> : <Play size={18} />}{loading === "orders" ? "Analisi in corso..." : "Confronta documenti"}</button>{result && <button className="orders-secondary" type="button" onClick={() => downloadJson(result, "mexal-order-contract.json")}><Download size={18} />Scarica JSON</button>}</div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 }}><button className="primary-action" type="button" onClick={executeOrders} disabled={loading === "orders"}>{loading === "orders" ? <RefreshCw className="spin" size={18} /> : <Play size={18} />}{loading === "orders" ? "Analisi in corso..." : "Confronta documenti"}</button>{result && <button className="secondary-action" type="button" onClick={() => downloadJson(result, "mexal-order-contract.json")}><Download size={18} />Scarica JSON</button>}</div>
       {error && <div className="orders-alert orders-alert-error" style={{ marginTop: 16 }}>{error}</div>}
     </section>
 

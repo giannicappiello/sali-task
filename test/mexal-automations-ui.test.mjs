@@ -18,7 +18,7 @@ test("loads schedules and event automations with rules_get", async () => {
 test("schedule section permits only existing schedule types and has five aligned columns", () => {
   const schedule = automationSection("schedule", true);
   assert.equal(schedule.canCreate, false);
-  assert.deepEqual(schedule.syncTypes, ["clients", "products", "commercial_conditions", "document_series", "stocks", "orders"]);
+  assert.deepEqual(schedule.syncTypes, ["clients", "agents", "products", "commercial_conditions", "document_series", "stocks", "list_price_commissions", "orders"]);
   assert.equal(schedule.columns.length, 5);
   assert.deepEqual(schedule.columns, ["Tipo sincronizzazione", "Frequenza", "Ordine", "Stato", "Azioni"]);
 });

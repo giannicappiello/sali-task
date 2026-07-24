@@ -887,13 +887,15 @@ async function upsertOrdersProductsCache(supabase, rows) {
 }
 
 async function createSyncRun(supabase, metadata) {
+  const { origin, context, ...runMetadata } = metadata;
   const run = await createCentralSyncRun(supabase, {
     syncType: "products",
-    source: "manual",
-    metadata,
+    source: origin === "cron" ? "cron" : "manual",
+    context: context || {},
+    metadata: runMetadata,
   });
   if (run.duplicate) throw Object.assign(new Error("È già presente una sincronizzazione prodotti in corso."), { status: 409 });
-  return { ...run, processed: 0, inserted: 0, updated: 0, skipped: 0, failed: 0, metadata };
+  return { ...run, processed: 0, inserted: 0, updated: 0, skipped: 0, failed: 0, metadata: runMetadata };
 }
 
 async function getSyncRun(supabase, id) {
@@ -1038,6 +1040,7 @@ export default async function handler(req, res) {
         syncRun = await createSyncRun(supabase, {
           batch_size: batchSize,
           origin: body.origin || "manual",
+          context: body.context || {},
         });
         syncRunId = syncRun.id;
       } else if (syncRunId) {

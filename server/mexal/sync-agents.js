@@ -200,7 +200,11 @@ export default async function handler(req, res) {
   let runId = null;
   try {
     await requireAuthorized(req, admin);
-    const run = await createSyncRun(admin, { syncType: "agents", source: req.body?.origin || "manual" });
+    const run = await createSyncRun(admin, {
+      syncType: "agents",
+      source: req.body?.origin === "cron" ? "cron" : "manual",
+      context: req.body?.context || {},
+    });
     if (run.duplicate) throw Object.assign(new Error("È già presente una sincronizzazione agenti in corso."), { status: 409 });
     runId = run.id;
 

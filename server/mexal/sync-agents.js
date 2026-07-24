@@ -174,7 +174,7 @@ async function removeInactiveAgents(admin, activeCodes) {
 
     const { error: disableUsersError } = await admin
       .from("utenti")
-      .update({ attivo: false, agent_id: null })
+      .update({ attivo: false, mexal_agente_id: null, codice_agente_mexal: null })
       .in("id", workspaceIds);
     if (disableUsersError) throw disableUsersError;
 

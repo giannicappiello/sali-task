@@ -6,9 +6,9 @@ import commercialConditionsHandler from "../../server/mexal/sync-commercial-cond
 import documentSeriesHandler from "../../server/mexal/sync-document-series.js";
 import stopHandler from "../../server/mexal/stop-sync-run.js";
 import { syncListPriceCommissions } from "../../server/mexal/sync-list-price-commissions.js";
+import { agentsAccess } from "../../server/mexal/agents-access.js";
 import { requireAdmin } from "./lib/auth.js";
 import { completeIdempotentSync, findRunningSync, reserveIdempotentSync } from "./lib/syncRuns.js";
-import { agentsAccess } from "./lib/agentsAccess.js";
 
 function required(name) {
   const value = String(process.env[name] || "").trim();

@@ -3,6 +3,7 @@ import productsHandler, { buildMexalClient } from "../../server/mexal/sync-produ
 import clientsHandler from "../../server/mexal/sync-clients.js";
 import commercialConditionsHandler from "../../server/mexal/sync-commercial-conditions.js";
 import documentSeriesHandler from "../../server/mexal/sync-document-series.js";
+import agentsHandler from "../../server/mexal/sync-agents.js";
 import stopHandler from "../../server/mexal/stop-sync-run.js";
 import { syncListPriceCommissions } from "../../server/mexal/sync-list-price-commissions.js";
 import { requireAdmin } from "./lib/auth.js";
@@ -32,6 +33,7 @@ const RUN_HANDLERS = Object.freeze({
   stocks: productsHandler,
   commercial_conditions: commercialConditionsHandler,
   document_series: documentSeriesHandler,
+  agents: agentsHandler,
   list_price_commissions: listPriceCommissionsHandler,
 });
 
@@ -46,6 +48,7 @@ function runPayload(body, syncType) {
 }
 
 const SYNC_ALL_PHASES = Object.freeze([
+  "agents",
   "clients",
   "commercial_conditions",
   "document_series",

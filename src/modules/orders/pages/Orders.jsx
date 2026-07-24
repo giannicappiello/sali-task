@@ -53,8 +53,7 @@ export default function Orders() {
         .from("ordini_documenti_mexal")
         .select("ordine_id,tipo_documento,serie,numero,anno,stato_operativo,presente_in_mexal")
         .in("ordine_id", orderIds)
-        .not("numero", "is", null)
-        .eq("presente_in_mexal", true);
+        .not("numero", "is", null);
       if (documentsError) console.error("Errore documenti Mexal elenco ordini:", documentsError);
       documents = documentRows || [];
     }

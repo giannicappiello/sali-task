@@ -17,10 +17,10 @@ const summary = await dispatchSchedules({
   recordScheduleResult: async (schedule, item) => recorded.push({ schedule, item }),
 });
 
-assert.deepEqual(calls.map(({ type }) => type), ["clients", "agents", "products", "commercial_conditions", "document_series", "stocks"]);
+assert.deepEqual(calls.map(({ type }) => type), ["clients", "agents", "products", "commercial_conditions", "document_series", "stocks", "orders"]);
 assert.equal(calls.find(({ type }) => type === "stocks")?.existingRun, runningStockRun);
-assert.deepEqual(summary.executed.map(({ sync_type, status }) => [sync_type, status]), [["clients", "completed"], ["agents", "completed"], ["products", "completed"], ["commercial_conditions", "failed"], ["document_series", "completed"], ["stocks", "completed"], ["orders", "skipped"]]);
+assert.deepEqual(summary.executed.map(({ sync_type, status }) => [sync_type, status]), [["clients", "completed"], ["agents", "completed"], ["products", "completed"], ["commercial_conditions", "failed"], ["document_series", "completed"], ["stocks", "completed"], ["orders", "completed"]]);
 assert.equal(summary.ok, false);
 assert.equal(updates.length, 7);
-assert.deepEqual(recorded.map(({ schedule, item }) => [schedule.sync_type, item.status]), [["orders", "skipped"]]);
+assert.deepEqual(recorded, []);
 console.log("mexal dispatcher: sequenza, errori isolati e ripresa delle run verificati");

@@ -102,7 +102,7 @@ function splitName(row) {
 }
 
 function isActiveMexal(row) {
-  return !["S", "Y", "YES", "TRUE", "1"].includes(upper(row?.cessato));
+  return upper(row?.conto_precanc) !== "S";
 }
 
 function mapAgent(row, syncAt) {

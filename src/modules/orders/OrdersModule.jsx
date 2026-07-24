@@ -11,6 +11,7 @@ import { OrdersModuleProvider } from "./ordersModuleContext";
 import "./orders-module.css";
 import "./orders-status.css";
 import "./orders-mobile-fixes.css";
+import "./order-child-documents.css";
 
 /* Legacy order-line headings retained by the shared PROF/PH renderer: "Prodotto" "Quantità" "Disponibile" "Listino" "Sconto commerciale" "Netto" "Imponibile" "IVA" "Totale".
    const netUnit = quantity > 0 ? taxable / quantity : 0 */

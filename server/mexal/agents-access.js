@@ -104,7 +104,7 @@ export async function agentsAccess({ supabase, body }) {
     const result = await supabase
       .from("utenti")
       .select("id,auth_user_id,email")
-      .eq("agent_id", agent.id)
+      .eq("mexal_agente_id", agent.id)
       .maybeSingle();
     if (result.error) throw result.error;
     workspaceUser = result.data;
@@ -149,7 +149,8 @@ export async function agentsAccess({ supabase, body }) {
     nome: [agent.nome, agent.cognome].filter(Boolean).join(" ") || "Agente",
     email,
     attivo: true,
-    agent_id: agent.id,
+    mexal_agente_id: agent.id,
+    codice_agente_mexal: agent.codice,
     telefono: agent.telefono || null,
   };
 

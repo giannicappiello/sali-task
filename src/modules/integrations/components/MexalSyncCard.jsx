@@ -14,6 +14,8 @@ export default function MexalSyncCard({
   onStop,
   onOpen,
   run,
+  actionLabel,
+  runningLabel,
 }) {
   const isAgentsCard = title === "Agenti";
   const effectiveEnabled = enabled || isAgentsCard;
@@ -70,7 +72,7 @@ export default function MexalSyncCard({
           disabled={running}
         >
           {running ? <RefreshCw size={17} className="spin" /> : null}
-          {isAgentsCard ? "Gestisci agenti" : effectiveEnabled ? (running ? "Sincronizzazione..." : "Sincronizza") : "Apri roadmap"}
+          {isAgentsCard ? "Gestisci agenti" : effectiveEnabled ? (running ? (runningLabel || "Sincronizzazione...") : (actionLabel || "Sincronizza")) : "Apri roadmap"}
         </button>
         {hasRunningRun && (
           <button

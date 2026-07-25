@@ -24,10 +24,13 @@ for (const module of [
   mock.module(module, { exports: { default: successfulHandler } });
 }
 mock.module("../server/mexal/sync-products.js", {
-  exports: { default: successfulHandler, buildMexalClient: () => ({}) },
+  exports: { default: successfulHandler, buildMexalClient: () => ({}), verifyUser: async () => ({}) },
 });
 mock.module("../server/mexal/sync-list-price-commissions.js", {
   exports: { syncListPriceCommissions: async () => ({ success: true, runId: 17 }) },
+});
+mock.module("../server/mexal/sync-order-documents.js", {
+  exports: { default: successfulHandler, purgeEvictedOrderDocuments: async () => ({ eliminati: 0 }) },
 });
 mock.module("../server/mexal/agents-access.js", {
   exports: { agentsAccess: async () => ({ success: true }) },
@@ -138,7 +141,7 @@ test("sync_all without an idempotency key passes the Supabase client to every ph
   resetCalls();
   const res = await invoke({ action: "sync_all" });
   assert.equal(res.statusCode, 200);
-  assert.equal(calls.find.length, 7);
+  assert.equal(calls.find.length, 8);
   assert.ok(calls.find.every(({ client }) => client === supabase));
   assert.deepEqual(calls.reserve, []);
 });

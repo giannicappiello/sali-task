@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { test } from "node:test";
 import { automationSection, canManageMexalAutomations, loadMexalAutomationRules, saveMexalAutomationRule } from "../src/modules/integrations/services/mexalAutomationService.js";
+
+const orderModuleSettings = fs.readFileSync(new URL("../src/modules/integrations/components/OrderModuleSettings.jsx", import.meta.url), "utf8");
+const integrationsCss = fs.readFileSync(new URL("../src/modules/integrations/integrations.css", import.meta.url), "utf8");
+
+test("the order module configuration exposes a visible save action", () => {
+  assert.match(orderModuleSettings, /Salva configurazione/);
+  assert.match(integrationsCss, /\.mexal-table-panel \.orders-primary\{background:#126bff;color:#fff/);
+});
 
 const supabase = { auth: { getSession: async () => ({ data: { session: { access_token: "access-token" } }, error: null }) } };
 

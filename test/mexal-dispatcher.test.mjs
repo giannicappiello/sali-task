@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { dispatchSchedules } from "../api/cron/mexal-dispatcher.js";
+
+const vercel = JSON.parse(fs.readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
+assert.equal(vercel.functions["api/cron/mexal-dispatcher.js"]?.maxDuration, 300);
+assert.equal(vercel.crons.some((cron) => cron.path === "/api/cron/mexal-dispatcher"), true);
 
 const calls = [];
 const updates = [];

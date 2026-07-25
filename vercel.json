@@ -9,6 +9,9 @@
     },
     "api/mexal/automation.js": {
       "maxDuration": 300
+    },
+    "api/cron/mexal-dispatcher.js": {
+      "maxDuration": 300
     }
   },
   "crons": [

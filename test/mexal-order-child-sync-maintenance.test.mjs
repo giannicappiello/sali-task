@@ -4,7 +4,7 @@ import test from "node:test";
 
 const migration = fs.readFileSync(new URL("../supabase/migrations/20260724190000_mexal_order_children_sync_maintenance.sql", import.meta.url), "utf8");
 const automation = fs.readFileSync(new URL("../api/mexal/automation.js", import.meta.url), "utf8");
-const dispatcher = fs.readFileSync(new URL("../api/cron/mexal-dispatcher.js", import.meta.url), "utf8");
+const worker = fs.readFileSync(new URL("../supabase/functions/mexal-sync-worker/index.ts", import.meta.url), "utf8");
 const submitOrder = fs.readFileSync(new URL("../api/mexal/submit-order.js", import.meta.url), "utf8");
 const maintenance = fs.readFileSync(new URL("../src/modules/integrations/components/MexalOrderMaintenance.jsx", import.meta.url), "utf8");
 const discountFix = fs.readFileSync(new URL("../supabase/migrations/20260724203000_fix_mexal_order_line_discount_text.sql", import.meta.url), "utf8");
@@ -22,7 +22,7 @@ test("invio e automazione persistono righe e riconciliano gli ordini senza nuove
   assert.match(submitOrder, /sconto: text\(/);
   assert.match(submitOrder, /stato_operativo: "APERTO"/);
   assert.match(automation, /orders: orderDocumentsHandler/);
-  assert.match(dispatcher, /syncType: "orders"/);
+  assert.match(worker, /syncType: job\.sync_type/);
 });
 
 test("gli sconti concatenati Mexal vengono conservati come testo", () => {

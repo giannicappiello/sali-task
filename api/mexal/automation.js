@@ -167,7 +167,8 @@ async function createAdmin(req) {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const authorization = String(req.headers.authorization || "");
-  if (process.env.CRON_SECRET && authorization === `Bearer ${process.env.CRON_SECRET}`) {
+  const internalSecrets = [process.env.CRON_SECRET, process.env.WORKER_SECRET].filter(Boolean);
+  if (internalSecrets.some((secret) => authorization === `Bearer ${secret}`)) {
     return { supabase: createSupabase(), authUserId: null };
   }
   const { supabase, authUserId } = await requireAdmin(req, createSupabase);
@@ -185,9 +186,18 @@ async function startSync(req, res, body, syncType, runHandler, admin) {
   return sendHandlerResponse(res, syncType, await executeHandler(req, runHandler));
 }
 
-function requireCron(req) {
-  if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
-    throw Object.assign(new Error("Cron non autorizzato."), { status: 401 });
+function requireScheduledWorker(req) {
+  const authorization = String(req.headers.authorization || "");
+  const isCron = Boolean(process.env.CRON_SECRET) && authorization === `Bearer ${process.env.CRON_SECRET}`;
+  const isWorker = Boolean(process.env.WORKER_SECRET) && authorization === `Bearer ${process.env.WORKER_SECRET}`;
+  if (!isCron && !isWorker) {
+    throw Object.assign(new Error("Worker non autorizzato."), { status: 401 });
+  }
+  if (isWorker) {
+    if (!process.env.CRON_SECRET) {
+      throw Object.assign(new Error("CRON_SECRET non configurato per gli handler Mexal."), { status: 500 });
+    }
+    req.headers = { ...req.headers, authorization: `Bearer ${process.env.CRON_SECRET}` };
   }
 }
 
@@ -197,7 +207,7 @@ function stepCompleted(payload) {
 }
 
 async function runScheduledStep(req, res, body, syncType, runHandler) {
-  requireCron(req);
+  requireScheduledWorker(req);
   const admin = await createAdmin(req);
 
   if (syncType === "list_price_commissions") {

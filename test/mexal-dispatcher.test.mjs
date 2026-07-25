@@ -9,10 +9,12 @@ import {
 } from "../api/cron/mexal-dispatcher.js";
 
 const vercel = JSON.parse(fs.readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
+const dispatcherSource = fs.readFileSync(new URL("../api/cron/mexal-dispatcher.js", import.meta.url), "utf8");
 assert.equal(vercel.functions["api/cron/mexal-dispatcher.js"]?.maxDuration, 300);
 assert.equal(vercel.crons.some((cron) => (
   cron.path === "/api/cron/mexal-dispatcher" && cron.schedule === "0 23 * * *"
 )), true);
+assert.match(dispatcherSource, /\.rpc\("create_daily_mexal_sync_cycle"/);
 
 assert.equal(isCronAuthorized({ headers: { authorization: "Bearer test-secret" } }, "test-secret"), true);
 assert.equal(isCronAuthorized({ headers: { authorization: "Bearer wrong" } }, "test-secret"), false);

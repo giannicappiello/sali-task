@@ -228,8 +228,11 @@ export default async function handler(req, res) {
     const admin = createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), {
       auth: { persistSession: false, autoRefreshToken: false },
     });
-    const summary = await produceDailyMexalQueue({ store: createQueueStore(admin), now: new Date() });
-    return res.status(200).json(summary);
+    const { data, error } = await admin.rpc("create_daily_mexal_sync_cycle", {
+      p_scheduled_for: new Date().toISOString(),
+    });
+    if (error) throw error;
+    return res.status(200).json(data);
   } catch (error) {
     return res.status(500).json({ error: error?.message || "Creazione coda Mexal non riuscita." });
   }

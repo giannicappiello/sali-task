@@ -27,7 +27,11 @@ mock.module("../server/mexal/sync-products.js", {
   exports: { default: successfulHandler, buildMexalClient: () => ({}), verifyUser: async () => ({}) },
 });
 mock.module("../server/mexal/sync-list-price-commissions.js", {
-  exports: { syncListPriceCommissions: async () => ({ success: true, runId: 17 }) },
+  exports: {
+    syncListPriceCommissions: async () => ({ success: true, runId: 17 }),
+    startListPriceCommissionsSync: async () => ({ run: { id: 17, status: "running" } }),
+    processListPriceCommissionsBatch: async () => ({ status: "completed" }),
+  },
 });
 mock.module("../server/mexal/sync-order-documents.js", {
   exports: { default: successfulHandler, purgeEvictedOrderDocuments: async () => ({ eliminati: 0 }) },
@@ -118,6 +122,34 @@ test("the Vercel dispatcher can run with CRON_SECRET without a user session", as
     else process.env.SUPABASE_URL = previousUrl;
     if (previousServiceRole === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
     else process.env.SUPABASE_SERVICE_ROLE_KEY = previousServiceRole;
+  }
+});
+
+test("run_scheduled_step accepts WORKER_SECRET without a user session", async () => {
+  const previousSecret = process.env.WORKER_SECRET;
+  const previousCronSecret = process.env.CRON_SECRET;
+  process.env.WORKER_SECRET = "worker-secret-test";
+  process.env.CRON_SECRET = "cron-secret-test";
+  try {
+    resetCalls();
+    const res = await invoke(
+      {
+        action: "run_scheduled_step",
+        syncType: "clients",
+        origin: "worker",
+        context: { cycle_id: 1, job_id: 2, schedule_id: 3 },
+      },
+      "Bearer worker-secret-test",
+    );
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.payload.success, true);
+    assert.equal(res.payload.status, "completed");
+    assert.equal(calls.requireAdmin, 0);
+  } finally {
+    if (previousSecret === undefined) delete process.env.WORKER_SECRET;
+    else process.env.WORKER_SECRET = previousSecret;
+    if (previousCronSecret === undefined) delete process.env.CRON_SECRET;
+    else process.env.CRON_SECRET = previousCronSecret;
   }
 });
 

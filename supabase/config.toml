@@ -1,0 +1,2 @@
+[functions.mexal-sync-worker]
+verify_jwt = false

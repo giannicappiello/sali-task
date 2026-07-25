@@ -13,6 +13,10 @@ const cron = fs.readFileSync(
   new URL("../supabase/cron/mexal-sync-worker.sql", import.meta.url),
   "utf8",
 );
+const config = fs.readFileSync(
+  new URL("../supabase/config.toml", import.meta.url),
+  "utf8",
+);
 
 assert.match(migration, /create or replace function public\.create_daily_mexal_sync_cycle/i);
 assert.match(migration, /pg_advisory_xact_lock/i);
@@ -37,8 +41,9 @@ assert.doesNotMatch(migration, /grant execute[\s\S]+to authenticated/i);
 assert.match(worker, /claim_next_mexal_sync_job/);
 assert.match(worker, /WORKER_SECRET/);
 assert.match(worker, /x-mexal-worker-secret/);
-assert.match(worker, /Bearer \$\{serviceRoleKey\}/);
-assert.match(worker, /mexal_job_claimed/);
+assert.doesNotMatch(worker, /authorizationMatch/);
+assert.doesNotMatch(migration, /'Authorization',\s*'Bearer '/);
+  assert.match(worker, /job_claimed/);
 assert.match(worker, /run_scheduled_step/);
 assert.match(worker, /heartbeat_mexal_sync_job/);
 assert.match(worker, /complete_mexal_sync_job/);
@@ -49,5 +54,6 @@ assert.doesNotMatch(worker, /sync-products|MEXAL_BASE_URL/i);
 assert.match(migration, /cron\.schedule\(/);
 assert.match(migration, /'\* \* \* \* \*'/);
 assert.match(cron, /mexal-sync-worker-every-minute/);
+assert.match(config, /\[functions\.mexal-sync-worker\][\s\S]*verify_jwt\s*=\s*false/);
 
 console.log("mexal worker: infrastruttura dry-run verificata");

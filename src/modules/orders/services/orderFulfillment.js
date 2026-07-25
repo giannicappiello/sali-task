@@ -92,14 +92,14 @@ export async function loadCreatedMexalDocumentLines(documentIds) {
 }
 
 export async function loadOrderDetail(orderId, moduleCode) {
-  const [{ data: order, error: orderError }, { data: lines, error: linesError }, { data: documents, error: documentsError }] = await Promise.all([
-    supabase.from("ordini_testate").select("*").eq("id", orderId).or((moduleCode || "prof") === "prof" ? "modulo_ordini.eq.prof,modulo_ordini.is.null" : "modulo_ordini.eq.ph").single(),
+const [{ data: order, error: orderError }, { data: lines, error: linesError }, documents] = await Promise.all([
+  supabase.from("ordini_testate").select("*").eq("id", orderId).or((moduleCode || "prof") === "prof" ? "modulo_ordini.eq.prof,modulo_ordini.is.null" : "modulo_ordini.eq.ph").single(),
     supabase.from("ordini_righe").select("*").eq("ordine_id", orderId).order("id", { ascending: true }),
     loadCreatedMexalDocuments(orderId),
   ]);
   if (orderError) throw orderError;
   if (linesError) throw linesError;
-  if (documentsError) throw documentsError;
+  
   const documentLines = await loadCreatedMexalDocumentLines((documents || []).map((document) => document.id).filter(Boolean));
   const linesByDocument = documentLines.reduce((map, line) => {
     const current = map.get(line.documento_mexal_id) || [];

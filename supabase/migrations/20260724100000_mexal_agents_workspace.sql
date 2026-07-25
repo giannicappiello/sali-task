@@ -6,6 +6,10 @@ begin;
 -- ============================================================
 
 
+-- ============================================================
+-- TABELLA AGENTI MEXAL
+-- ============================================================
+
 create table if not exists public.mexal_agenti (
   id uuid primary key default gen_random_uuid(),
 
@@ -36,6 +40,7 @@ create table if not exists public.mexal_agenti (
 );
 
 
+
 -- ============================================================
 -- INDICI
 -- ============================================================
@@ -63,6 +68,7 @@ alter table public.utenti
 add column if not exists codice_agente_mexal text;
 
 
+
 create unique index if not exists utenti_mexal_agente_id_uidx
 on public.utenti(mexal_agente_id)
 where mexal_agente_id is not null;
@@ -74,17 +80,13 @@ on public.utenti(codice_agente_mexal);
 
 
 -- ============================================================
--- RLS
+-- RLS AGENTI
 -- ============================================================
 
 alter table public.mexal_agenti
 enable row level security;
 
 
-
--- ============================================================
--- LETTURA UTENTI AUTENTICATI
--- ============================================================
 
 drop policy if exists "authenticated read mexal agents"
 on public.mexal_agenti;
@@ -97,10 +99,6 @@ to authenticated
 using (true);
 
 
-
--- ============================================================
--- GESTIONE ADMIN
--- ============================================================
 
 drop policy if exists "admins manage mexal agents"
 on public.mexal_agenti;
@@ -120,7 +118,6 @@ using (
 
     where u.auth_user_id = auth.uid()
       and u.attivo is not false
-
       and (
         coalesce(r.livello,0) >= 80
         or lower(coalesce(r.nome,'')) in (
@@ -143,7 +140,6 @@ with check (
 
     where u.auth_user_id = auth.uid()
       and u.attivo is not false
-
       and (
         coalesce(r.livello,0) >= 80
         or lower(coalesce(r.nome,'')) in (
@@ -154,6 +150,33 @@ with check (
           'direzione'
         )
       )
+  )
+);
+
+
+
+-- ============================================================
+-- ALLINEAMENTO TIPI SINCRONIZZAZIONE MEXAL
+-- Necessario per aggiungere agents
+-- ============================================================
+
+alter table public.mexal_sync_schedules
+drop constraint if exists mexal_sync_schedules_sync_type_check;
+
+
+alter table public.mexal_sync_schedules
+add constraint mexal_sync_schedules_sync_type_check
+check (
+  sync_type in (
+    'products',
+    'clients',
+    'stocks',
+    'orders',
+    'commercial_conditions',
+    'document_series',
+    'agents',
+    'payments',
+    'list_price_commissions'
   )
 );
 

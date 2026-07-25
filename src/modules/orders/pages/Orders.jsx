@@ -84,7 +84,16 @@ export default function Orders() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return rows;
-    return rows.filter((item) => [...Object.values(item), agentDisplayName(item, agentsByCode)].some((value) => String(value ?? "").toLowerCase().includes(q)));
+    return rows.filter((item) => [
+      ...Object.values(item),
+      agentDisplayName(item, agentsByCode),
+      ...(item.documenti_mexal || []).flatMap((document) => [
+        document.tipo_documento,
+        document.serie,
+        document.numero,
+        document.stato_operativo,
+      ]),
+    ].some((value) => String(value ?? "").toLowerCase().includes(q)));
   }, [rows, search, agentsByCode]);
 
   const accessLabel = isAdmin || isBackoffice ? "Accesso completo" : `${visibleAgents?.length || 0} agente/i autorizzato/i`;
@@ -101,16 +110,26 @@ export default function Orders() {
         <p style={{ marginTop: 0 }}><strong>Visibilità:</strong> {accessLabel}</p>
         <div className="orders-table-wrap">
           <table className="orders-table">
-            <thead><tr><th>Data</th><th>Numero</th><th>Cliente</th><th>Agente</th><th>Stato</th><th>Imponibile</th><th>IVA</th><th>Totale documento</th><th>OCM</th><th>OCX</th><th>OCI</th></tr></thead>
+            <thead><tr><th>Tipo</th><th>Data</th><th>Numero</th><th>Rif. padre</th><th>Cliente</th><th>Agente</th><th>Stato</th><th>Imponibile</th><th>IVA</th><th>Totale documento</th></tr></thead>
             <tbody>
               {filtered.map((item) => {
                 const status = getOrderDisplayStatus(item);
-                return <tr key={item.id} className="orders-clickable-row" onClick={() => navigate(`${basePath}/elenco/${item.id}`)}>
-                  <td>{item.data_ordine || "-"}</td><td>{item.numero_ordine_visualizzato || item.numero_ordine || "Bozza"}</td><td>{item.ragione_sociale_cliente || item.codice_cliente}</td><td>{agentDisplayName(item, agentsByCode)}</td>
-                  <td><span className={`orders-status ${status.className}`}>{status.label}</span></td>
-                  <td>{Number(item.totale_imponibile ?? item.totale ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td><td>{Number(item.totale_iva || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td><td>{Number(item.totale_documento ?? item.totale ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td>
-                  {["OCM", "OCX", "OCI"].map((kind) => { const document = item.documenti_mexal?.find((row) => row.tipo_documento === kind); return <td key={kind}>{document ? `${document.serie || "-"}/${document.numero}` : "-"}</td>; })}
-                </tr>;
+                const parentReference = item.numero_ordine_visualizzato || item.numero_ordine || "Bozza";
+                return [
+                  <tr key={item.id} className="orders-clickable-row" onClick={() => navigate(`${basePath}/elenco/${item.id}`)}>
+                    <td>PADRE</td><td>{item.data_ordine || "-"}</td><td>{parentReference}</td><td>-</td><td>{item.ragione_sociale_cliente || item.codice_cliente}</td><td>{agentDisplayName(item, agentsByCode)}</td>
+                    <td><span className={`orders-status ${status.className}`}>{status.label}</span></td>
+                    <td>{Number(item.totale_imponibile ?? item.totale ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td><td>{Number(item.totale_iva || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td><td>{Number(item.totale_documento ?? item.totale ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td>
+                  </tr>,
+                  ...(item.documenti_mexal || []).map((document) => {
+                    const documentStatus = String(document.stato_operativo || "APERTO").toUpperCase();
+                    const documentStatusClass = documentStatus === "EVASO" ? "evaso" : documentStatus === "APERTO" ? "inviato-mexal" : "errore";
+                    return <tr key={`${item.id}-${document.tipo_documento}-${document.serie}-${document.numero}`} className="orders-clickable-row orders-child-order-row" onClick={() => navigate(`${basePath}/elenco/${item.id}`)}>
+                      <td>{document.tipo_documento}</td><td>{item.data_ordine || "-"}</td><td>{`${document.serie || "-"}/${document.numero}`}</td><td>{parentReference}</td><td colSpan={2}>Documento figlio Mexal</td>
+                      <td><span className={`orders-status ${documentStatusClass}`}>{documentStatus}</span></td><td>-</td><td>-</td><td>-</td>
+                    </tr>;
+                  }),
+                ];
               })}
             </tbody>
           </table>

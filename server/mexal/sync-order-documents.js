@@ -21,7 +21,7 @@ export function isOrderFullyEvicted(documents = []) {
   const persisted = documents.filter((document) => String(document?.numero || "").trim());
   return persisted.length > 0 && persisted.every((document) => document.stato_operativo === "EVASO" || document.presente_in_mexal === false);
 }
->>>>>>> origin/agent/mexal-order-children-status
+
 async function runStatus(supabase, runId) {
   const { data, error } = await supabase.from("mexal_sync_runs").select("status").eq("id", runId).maybeSingle();
   if (error) throw error;
@@ -49,7 +49,6 @@ async function updateEvictedParentOrders(supabase, orderIds) {
   if (updateError) throw updateError;
   return evictedOrderIds.length;
 }
->>>>>>> origin/agent/mexal-order-children-status
 
 export async function purgeEvictedOrderDocuments({ supabase, days }) {
   const cutoff = new Date(Date.now() - Number(days) * 86400000).toISOString();
@@ -97,9 +96,7 @@ export async function syncOrderDocuments({ supabase, mexal, origin = "manual" })
     const status = failed ? "completed_with_errors" : "completed";
     await supabase.from("mexal_sync_runs").update({ status, completed_at: new Date().toISOString(), processed, updated: open + evicted, failed, error_message: errors[0]?.message || null, metadata: { source: origin, aperti: open, evasi: evicted, ordini_evasi: parentOrdersEvicted, cleanup, errors } }).eq("id", run.id).eq("status", "running");
   }
-  return { sync_run_id: run.id, processed, aperti: open, evasi: evicted, failed, cleanup, cancelled };
   return { sync_run_id: run.id, processed, aperti: open, evasi: evicted, ordini_evasi: parentOrdersEvicted, failed, cleanup, cancelled };
->>>>>>> origin/agent/mexal-order-children-status
 }
 
 export default async function handler(req, res) {

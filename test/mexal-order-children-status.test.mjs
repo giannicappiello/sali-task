@@ -5,6 +5,7 @@ import { isMissingMexalDocument, isOrderFullyEvicted } from "../server/mexal/syn
 import { getOrderDisplayStatus } from "../src/modules/orders/services/orderDisplayStatus.js";
 
 const detail = fs.readFileSync(new URL("../src/modules/orders/pages/OrderDetail.jsx", import.meta.url), "utf8");
+const orders = fs.readFileSync(new URL("../src/modules/orders/pages/Orders.jsx", import.meta.url), "utf8");
 const fulfillment = fs.readFileSync(new URL("../src/modules/orders/services/orderFulfillment.js", import.meta.url), "utf8");
 const migration = fs.readFileSync(new URL("../supabase/migrations/20260724220000_order_children_status_and_lines.sql", import.meta.url), "utf8");
 const synchronization = fs.readFileSync(new URL("../server/mexal/sync-order-documents.js", import.meta.url), "utf8");
@@ -53,9 +54,17 @@ test("il dettaglio carica e mostra prodotti separati per ogni documento figlio",
 });
 
 test("la sincronizzazione propaga EVASO dal documento figlio all'ordine padre", () => {
+  assert.doesNotMatch(synchronization, /^(<<<<<<<|=======|>>>>>>>)/m);
   assert.match(synchronization, /updateEvictedParentOrders/);
   assert.match(synchronization, /from\("ordini_testate"\)\.update\(\{ stato: "evaso" \}\)/);
   assert.match(synchronization, /ordini_evasi: parentOrdersEvicted/);
+});
+
+test("l'elenco mostra i documenti figli con il riferimento al padre", () => {
+  assert.match(orders, /<th>Rif\. padre<\/th>/);
+  assert.match(orders, /documenti_mexal \|\| \[\]\)\.map\(\(document\)/);
+  assert.match(orders, /Documento figlio Mexal/);
+  assert.match(orders, /parentReference/);
 });
 
 test("la migrazione abilita la lettura e ricostruisce OCM OCX OCI senza cancellare ordini", () => {

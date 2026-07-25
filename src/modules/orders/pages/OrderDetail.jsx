@@ -10,6 +10,12 @@ function money(value) {
   return Number(value || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
 }
 
+function childStatusClass(document) {
+  if (document.stato_operativo === "EVASO") return "evaso";
+  if (document.stato_operativo === "APERTO") return "inviato-mexal";
+  return "errore";
+}
+
 export default function OrderDetail() {
   const { moduleCode, basePath } = useOrdersModule();
   const { orderId } = useParams();
@@ -88,14 +94,7 @@ export default function OrderDetail() {
       const result = await submitOrderToMexal(orderId, moduleCode);
       setMessage(result.skipped ? result.message : `Ordine inviato a Mexal. OCM: ${result.numero_ocm || "-"} · OCX: ${result.numero_ocx || "-"} · OCI: ${result.numero_oci || "-"}`);
       if (!result.skipped) {
-        setOrder((current) => current ? {
-          ...current,
-          stato_sincronizzazione: "completato",
-          numero_ocm: result.numero_ocm || current.numero_ocm || null,
-          numero_ocx: result.numero_ocx || current.numero_ocx || null,
-          numero_oci: result.numero_oci || current.numero_oci || null,
-          errore_sincronizzazione: null,
-        } : current);
+        await load();
       }
     } catch (sendError) {
       setError(sendError.message || "Invio a Mexal non riuscito.");
@@ -168,17 +167,33 @@ export default function OrderDetail() {
 
       {order.mexal_documents?.length > 0 && <section className="orders-panel">
         <h3>Documenti ordine Mexal</h3>
-        <p>Documenti figli separati generati dall’ordine Workspace.</p>
-        <div className="orders-table-wrap"><table className="orders-table">
-          <thead><tr><th>Modulo</th><th>Tipo</th><th>Riferimento</th><th>Stato</th><th>Ultimo controllo</th></tr></thead>
-          <tbody>{order.mexal_documents.map((document) => <tr key={document.id || document.tipo_documento}>
-            <td>{document.modulo || (moduleCode === "ph" ? "ORDINIPH" : "ORDINIPR")}</td>
-            <td>{document.tipo_documento}</td>
-            <td>{`${document.serie || "-"}/${document.numero || "-"}${document.anno ? ` · ${document.anno}` : ""}`}</td>
-            <td><span className={`orders-status ${document.stato_operativo === "APERTO" ? "inviato-mexal" : document.stato_operativo === "EVASO" ? "spedito" : "errore"}`}>{document.stato_operativo || "APERTO"}</span></td>
-            <td>{document.ultimo_sync_mexal ? new Date(document.ultimo_sync_mexal).toLocaleString("it-IT") : "-"}</td>
-          </tr>)}</tbody>
-        </table></div>
+        <p>Ogni documento figlio contiene esclusivamente i prodotti assegnati al proprio tipo OCM, OCX o OCI.</p>
+        <div className="orders-child-documents">
+          {order.mexal_documents.map((document) => <article className="orders-child-document" key={document.id || document.tipo_documento}>
+            <div className="orders-child-document-header">
+              <div>
+                <span>{document.modulo || (moduleCode === "ph" ? "ORDINIPH" : "ORDINIPR")}</span>
+                <h4>Ordine {document.tipo_documento}</h4>
+                <p>{`${document.serie || "-"}/${document.numero || "-"}${document.anno ? ` · ${document.anno}` : ""}`}</p>
+              </div>
+              <div>
+                <span className={`orders-status ${childStatusClass(document)}`}>{document.stato_operativo || "APERTO"}</span>
+                <small>{document.ultimo_sync_mexal ? `Controllato ${new Date(document.ultimo_sync_mexal).toLocaleString("it-IT")}` : "Non ancora controllato"}</small>
+              </div>
+            </div>
+            <div className="orders-table-wrap"><table className="orders-table">
+              <thead><tr><th>Codice</th><th>Descrizione</th><th>Quantità</th><th>Prezzo</th><th>Sconto</th></tr></thead>
+              <tbody>{(document.righe || []).map((line) => <tr key={line.id || `${document.tipo_documento}-${line.posizione}`}>
+                <td>{line.codice_articolo || "-"}</td>
+                <td>{line.descrizione || "-"}</td>
+                <td>{Number(line.quantita || 0).toLocaleString("it-IT")}</td>
+                <td>{money(line.prezzo)}</td>
+                <td>{line.sconto || "-"}</td>
+              </tr>)}</tbody>
+            </table></div>
+            {!document.righe?.length && <p className="orders-child-document-empty">Nessun prodotto salvato per questo documento.</p>}
+          </article>)}
+        </div>
       </section>}
 
       {order.errore_sincronizzazione && <div className="orders-alert orders-alert-error"><strong>Ultimo errore Mexal:</strong> {order.errore_sincronizzazione}</div>}
@@ -186,8 +201,8 @@ export default function OrderDetail() {
       <section className="orders-panel">
         <div className="orders-table-wrap">
           <table className="orders-table">
-            <thead><tr><th>Codice</th><th>Descrizione</th><th>Q.tà</th><th>OCM</th><th>OCX</th><th>Listino</th><th>Sconto commerciale</th><th>Netto</th><th>Imponibile</th><th>IVA</th><th>Totale</th></tr></thead>
-            <tbody>{lines.map((line) => <tr key={line.id}><td>{line.codice_articolo}</td><td>{line.descrizione}</td><td>{line.quantita}</td><td>{line.quantita_ocm || 0}</td><td>{line.quantita_ocx || 0}</td><td>{money(line.prezzo_listino)}</td><td>{line.sconto_commerciale || "-"}</td><td>{money(line.prezzo_netto)}</td><td>{money(line.imponibile_riga)}</td><td>{money(line.iva_riga)} ({line.aliquota_iva || 0}%)</td><td>{money(line.totale_riga)}</td></tr>)}</tbody>
+            <thead><tr><th>Codice</th><th>Descrizione</th><th>Q.tà</th><th>OCM</th><th>OCX</th><th>OCI</th><th>Listino</th><th>Sconto commerciale</th><th>Netto</th><th>Imponibile</th><th>IVA</th><th>Totale</th></tr></thead>
+            <tbody>{lines.map((line) => <tr key={line.id}><td>{line.codice_articolo}</td><td>{line.descrizione}</td><td>{line.quantita}</td><td>{line.quantita_ocm || 0}</td><td>{line.quantita_ocx || 0}</td><td>{line.quantita_oci || 0}</td><td>{money(line.prezzo_listino)}</td><td>{line.sconto_commerciale || "-"}</td><td>{money(line.prezzo_netto)}</td><td>{money(line.imponibile_riga)}</td><td>{money(line.iva_riga)} ({line.aliquota_iva || 0}%)</td><td>{money(line.totale_riga)}</td></tr>)}</tbody>
           </table>
         </div>
       </section>

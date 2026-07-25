@@ -61,7 +61,7 @@ export default function OrdersDashboard() {
     const orderIds = orderRows.map((order) => order.id);
     let documents = [];
     if (orderIds.length) {
-      const { data, error } = await supabase.from("ordini_documenti_mexal").select("ordine_id, tipo_documento, numero").in("ordine_id", orderIds).not("numero", "is", null);
+      const { data, error } = await supabase.from("ordini_documenti_mexal").select("ordine_id,tipo_documento,numero,stato_operativo,presente_in_mexal").in("ordine_id", orderIds).not("numero", "is", null);
       if (error) console.error("Errore caricamento documenti Mexal dashboard:", error);
       documents = data || [];
     }

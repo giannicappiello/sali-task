@@ -15,6 +15,7 @@ create table if not exists public.ordini_moduli_configurazione (
 );
 insert into public.ordini_moduli_configurazione (modulo_ordini, invia_automaticamente_mexal) values ('prof', true), ('ph', false) on conflict do nothing;
 alter table public.ordini_moduli_configurazione enable row level security;
+drop policy if exists "authenticated read order module config" on public.ordini_moduli_configurazione;
 create policy "authenticated read order module config" on public.ordini_moduli_configurazione for select to authenticated using (true);
 create policy "admins manage order module config" on public.ordini_moduli_configurazione for all to authenticated using (
   exists (select 1 from public.utenti u left join public.ruoli r on r.id = u.ruolo_id where u.auth_user_id = auth.uid() and u.attivo is not false and (coalesce(r.livello,0) >= 80 or lower(coalesce(r.nome,'')) in ('admin','administrator','amministratore','super admin','direzione'))

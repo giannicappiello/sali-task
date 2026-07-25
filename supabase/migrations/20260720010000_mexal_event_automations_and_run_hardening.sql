@@ -2,7 +2,7 @@
 alter table public.mexal_sync_runs drop constraint if exists mexal_sync_runs_sync_type_check;
 alter table public.mexal_sync_runs add constraint mexal_sync_runs_sync_type_check check (sync_type in ('products','clients','stocks','orders','commercial_conditions','document_series','agents','payments','list_price_commissions'));
 alter table public.mexal_sync_runs drop constraint if exists mexal_sync_runs_status_check;
-alter table public.mexal_sync_runs add constraint mexal_sync_runs_status_check check (status in ('running','completed','completed_with_errors','completed_with_warnings','failed','timeout','skipped'));
+alter table public.mexal_sync_runs add constraint mexal_sync_runs_status_check check (status in ('running','completed','completed_with_errors','completed_with_warnings','failed','timeout','skipped','cancelled'));
 alter table public.mexal_sync_runs add column if not exists duration_ms bigint, add column if not exists source text not null default 'manual', add column if not exists context jsonb not null default '{}'::jsonb;
 create index if not exists mexal_sync_runs_sync_type_idx on public.mexal_sync_runs(sync_type);
 create index if not exists mexal_sync_runs_status_idx on public.mexal_sync_runs(status);

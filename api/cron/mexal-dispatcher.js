@@ -1,66 +1,33 @@
 import { createClient } from "@supabase/supabase-js";
-import { cleanupStaleRuns } from "../mexal/lib/syncRuns.js";
 
-const DEFAULT_ORDER = ["clients", "agents", "products", "commercial_conditions", "document_series", "stocks", "list_price_commissions", "orders"];
-const RESUMABLE_TYPES = new Set(["products", "stocks", "list_price_commissions"]);
-const SUPPORTED_SCHEDULE_MODES = new Set(["daily_vercel_hobby"]);
-const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 1000;
-const CONTINUATION_DELAY_MS = 10 * 60 * 1000;
-const DAILY_DELAY_MS = 24 * 60 * 60 * 1000;
-const FAILURE_RETRY_DELAY_MS = 60 * 60 * 1000;
+const TIMEZONE = "Europe/Rome";
+const SCHEDULE_MODE = "daily_vercel_hobby";
+const ACTIVE_JOB_STATUSES = ["queued", "leased", "running", "retry"];
+const TERMINAL_CYCLE_STATUSES = new Set(["completed", "completed_with_errors", "failed", "cancelled"]);
 
 function required(name) {
-  const value = String(process.env[name] || "").trim();
+  const value = String(globalThis.process?.env?.[name] || "").trim();
   if (!value) throw new Error(`Variabile Vercel mancante: ${name}`);
   return value;
 }
 
-function requestBaseUrl(req) {
-  const protocol = String(req.headers["x-forwarded-proto"] || "https").split(",")[0].trim();
-  const host = req.headers["x-forwarded-host"] || req.headers.host;
-  return `${protocol}://${host}`;
+export function isCronAuthorized(req, secret = globalThis.process?.env?.CRON_SECRET) {
+  return Boolean(secret) && req?.headers?.authorization === `Bearer ${secret}`;
 }
 
-function sleep(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+export function scheduledDateInTimezone(now = new Date(), timezone = TIMEZONE) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
-async function callApi(fetchImpl, baseUrl, secret, path, body) {
-  const response = await fetchImpl(`${baseUrl}${path}`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const raw = await response.text();
-  let result = {};
-  try { result = raw ? JSON.parse(raw) : {}; } catch { result = { error: raw }; }
-  if (!response.ok || result.success === false || result.ok === false) {
-    const error = new Error(result.error || `Sincronizzazione non riuscita (HTTP ${response.status}).`);
-    error.status = response.status;
-    error.details = result;
-    throw error;
-  }
-  return result;
-}
-
-function isRetryable(error) {
-  const status = Number(error?.status || 0);
-  return !status || status === 408 || status === 425 || status === 429 || status >= 500;
-}
-
-async function callApiWithRetry(fetchImpl, baseUrl, secret, path, body) {
-  let lastError;
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
-    try {
-      return await callApi(fetchImpl, baseUrl, secret, path, body);
-    } catch (error) {
-      lastError = error;
-      if (!isRetryable(error) || attempt === MAX_RETRIES) throw error;
-      await sleep(RETRY_DELAY_MS * attempt);
-    }
-  }
-  throw lastError;
+export function cycleKeyFor(scheduledDate, timezone = TIMEZONE) {
+  return `daily:${scheduledDate}:${timezone}`;
 }
 
 function dateValue(value) {
@@ -69,172 +36,201 @@ function dateValue(value) {
   return Number.isFinite(timestamp) ? timestamp : null;
 }
 
-export function selectDueSchedule(schedules, now = new Date()) {
+export function dueSchedules(schedules, now = new Date()) {
   const nowTime = now.getTime();
-  const rank = new Map(DEFAULT_ORDER.map((type, index) => [type, index]));
   return [...(schedules || [])]
     .filter((schedule) => schedule.enabled === true)
-    .filter((schedule) => SUPPORTED_SCHEDULE_MODES.has(schedule.schedule_mode))
     .filter((schedule) => {
       const nextRun = dateValue(schedule.next_run_at);
       return nextRun === null || nextRun <= nowTime;
     })
-    .sort((left, right) => {
-      const leftNext = dateValue(left.next_run_at) ?? Number.NEGATIVE_INFINITY;
-      const rightNext = dateValue(right.next_run_at) ?? Number.NEGATIVE_INFINITY;
-      return leftNext - rightNext
-        || Number(left.execution_order) - Number(right.execution_order)
-        || (rank.get(left.sync_type) ?? 99) - (rank.get(right.sync_type) ?? 99);
-    })[0] || null;
+    .sort((left, right) => (
+      Number(left.execution_order) - Number(right.execution_order)
+      || String(left.sync_type).localeCompare(String(right.sync_type))
+      || Number(left.id) - Number(right.id)
+    ));
 }
 
-function nextRunAt(schedule, status, now) {
-  if (status === "running") return new Date(now.getTime() + CONTINUATION_DELAY_MS).toISOString();
-  if (status === "failed") return new Date(now.getTime() + FAILURE_RETRY_DELAY_MS).toISOString();
-  switch (schedule.schedule_mode) {
-    case "daily_vercel_hobby":
-      return new Date(now.getTime() + DAILY_DELAY_MS).toISOString();
-    default:
-      throw new Error(`Modalità di schedulazione non supportata: ${schedule.schedule_mode}`);
-  }
+function jobPayloadFor(schedule) {
+  return {
+    origin: "worker",
+    schedule_mode: schedule.schedule_mode,
+    configuration: schedule.sync_type === "commercial_conditions"
+      ? { mode: "incremental", syncPayments: true }
+      : {},
+  };
 }
 
-function runIdFrom(result) {
-  const value = result?.sync_run_id ?? result?.syncRunId ?? result?.runId ?? result?.details?.syncRunId;
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) ? parsed : null;
-}
-
-function isCompleted(result) {
-  if (result?.completed === false || result?.completato === false || result?.status === "running") return false;
-  return result?.completed === true || result?.completato === true || result?.status === "completed";
-}
-
-export async function dispatchNextSchedule({
-  schedules,
-  now = () => new Date(),
-  hasRunningRun,
-  executeStep,
-  updateSchedule,
-  observeRun = async () => {},
-}) {
-  const startedAt = now();
-  const schedule = selectDueSchedule(schedules, startedAt);
-  if (!schedule) return { ok: true, status: "idle", selected: null };
-
-  const timestamp = startedAt.toISOString();
-  await updateSchedule(schedule.id, {
-    last_run_at: timestamp,
-    last_status: "running",
-    last_error: null,
-    updated_at: timestamp,
-    next_run_at: new Date(startedAt.getTime() + CONTINUATION_DELAY_MS).toISOString(),
+export async function produceDailyMexalQueue({ store, now = new Date(), timezone = TIMEZONE }) {
+  const scheduledDate = scheduledDateInTimezone(now, timezone);
+  const cycleKey = cycleKeyFor(scheduledDate, timezone);
+  const { cycle, created } = await store.findOrCreateCycle({
+    cycle_key: cycleKey,
+    scheduled_date: scheduledDate,
+    scheduled_for: now.toISOString(),
+    timezone,
+    source: "vercel_cron",
+    status: "queued",
+    metadata: { producer: "vercel_cron" },
   });
 
-  try {
-    const existingRun = await hasRunningRun(schedule.sync_type);
-    if (existingRun && !RESUMABLE_TYPES.has(schedule.sync_type)) {
-      const item = {
-        sync_type: schedule.sync_type,
-        success: true,
-        status: "running",
-        completed: false,
-        runId: Number(existingRun.id),
-        error: null,
-      };
-      await updateSchedule(schedule.id, {
-        last_status: item.status,
-        last_error: null,
-        updated_at: timestamp,
-        next_run_at: nextRunAt(schedule, item.status, startedAt),
-      });
-      return { ok: true, status: item.status, selected: item };
-    }
-
-    const result = await executeStep(schedule.sync_type, schedule, existingRun || null);
-    const runId = runIdFrom(result) || Number(existingRun?.id) || null;
-    if (Number.isSafeInteger(runId)) await observeRun(runId, schedule);
-    const completed = isCompleted(result);
-    const status = completed ? "completed" : "running";
-    const item = { sync_type: schedule.sync_type, success: true, status, completed, runId, result, error: null };
-    await updateSchedule(schedule.id, {
-      last_status: status,
-      last_error: null,
-      updated_at: timestamp,
-      next_run_at: nextRunAt(schedule, status, startedAt),
-    });
-    return { ok: true, status, selected: item };
-  } catch (error) {
-    const message = error?.message || "Errore sconosciuto.";
-    const item = { sync_type: schedule.sync_type, success: false, status: "failed", completed: false, error: message };
-    await updateSchedule(schedule.id, {
-      last_status: item.status,
-      last_error: message.slice(0, 1000),
-      updated_at: timestamp,
-      next_run_at: nextRunAt(schedule, item.status, startedAt),
-    });
-    return { ok: false, status: item.status, selected: item };
+  if (TERMINAL_CYCLE_STATUSES.has(cycle.status)) {
+    const cycleJobs = await store.listCycleJobs(cycle.id);
+    return {
+      cycleId: cycle.id,
+      cycleKey,
+      created,
+      jobsCreated: 0,
+      existingJobs: cycleJobs.length,
+      skippedActive: 0,
+      unsupportedSchedules: 0,
+      waiting: false,
+    };
   }
+
+  const schedules = dueSchedules(await store.listSchedules(), now);
+  const supported = schedules.filter((schedule) => schedule.schedule_mode === SCHEDULE_MODE);
+  const unsupportedSchedules = schedules.length - supported.length;
+  const cycleJobs = await store.listCycleJobs(cycle.id);
+  const existingScheduleIds = new Set(cycleJobs.map((job) => String(job.schedule_id)));
+  const activeJobs = supported.length ? await store.listActiveJobs(supported.map((schedule) => schedule.id)) : [];
+  const activeScheduleIds = new Set(activeJobs.map((job) => String(job.schedule_id)));
+
+  const missingSchedules = [];
+  let skippedActive = 0;
+  for (const schedule of supported) {
+    const scheduleId = String(schedule.id);
+    if (existingScheduleIds.has(scheduleId)) continue;
+    if (activeScheduleIds.has(scheduleId)) {
+      skippedActive += 1;
+      continue;
+    }
+    missingSchedules.push(schedule);
+  }
+
+  const jobs = missingSchedules.map((schedule) => ({
+    cycle_id: cycle.id,
+    schedule_id: schedule.id,
+    sync_type: schedule.sync_type,
+    execution_order: Number(schedule.execution_order),
+    batch_size: schedule.batch_size || null,
+    status: "queued",
+    offset: 0,
+    attempts: 0,
+    max_attempts: 5,
+    available_at: now.toISOString(),
+    payload: jobPayloadFor(schedule),
+  }));
+  const insertedJobs = jobs.length ? await store.insertJobs(jobs) : [];
+  const insertedScheduleIds = new Set(insertedJobs.map((job) => String(job.schedule_id)));
+  const queuedSchedules = missingSchedules.filter((schedule) => insertedScheduleIds.has(String(schedule.id)));
+  if (queuedSchedules.length) {
+    await store.markSchedulesQueued(queuedSchedules.map((schedule) => schedule.id), now.toISOString());
+  }
+
+  const allCycleJobs = await store.listCycleJobs(cycle.id);
+  const totalJobs = allCycleJobs.length;
+  const waiting = totalJobs === 0 && skippedActive > 0;
+  const cycleUpdate = {
+    total_jobs: totalJobs,
+    updated_at: now.toISOString(),
+  };
+  if (created) {
+    cycleUpdate.status = totalJobs === 0 && !waiting ? "completed" : "queued";
+    cycleUpdate.completed_at = totalJobs === 0 && !waiting ? now.toISOString() : null;
+  }
+  await store.updateCycle(cycle.id, cycleUpdate);
+
+  return {
+    cycleId: cycle.id,
+    cycleKey,
+    created,
+    jobsCreated: insertedJobs.length,
+    existingJobs: cycleJobs.length,
+    skippedActive,
+    unsupportedSchedules,
+    waiting,
+  };
+}
+
+function createQueueStore(admin) {
+  return {
+    async findOrCreateCycle(values) {
+      const inserted = await admin.from("mexal_sync_cycles").insert(values).select("*").single();
+      if (!inserted.error) return { cycle: inserted.data, created: true };
+      if (inserted.error.code !== "23505") throw inserted.error;
+      const existing = await admin.from("mexal_sync_cycles").select("*").eq("cycle_key", values.cycle_key).single();
+      if (existing.error) throw existing.error;
+      return { cycle: existing.data, created: false };
+    },
+
+    async listSchedules() {
+      const { data, error } = await admin
+        .from("mexal_sync_schedules")
+        .select("id,sync_type,enabled,schedule_mode,batch_size,execution_order,next_run_at")
+        .eq("enabled", true)
+        .or(`next_run_at.is.null,next_run_at.lte.${new Date().toISOString()}`)
+        .order("execution_order", { ascending: true })
+        .order("sync_type", { ascending: true })
+        .order("id", { ascending: true });
+      if (error) throw error;
+      return data || [];
+    },
+
+    async listCycleJobs(cycleId) {
+      const { data, error } = await admin
+        .from("mexal_sync_jobs")
+        .select("id,schedule_id,status")
+        .eq("cycle_id", cycleId);
+      if (error) throw error;
+      return data || [];
+    },
+
+    async listActiveJobs(scheduleIds) {
+      const { data, error } = await admin
+        .from("mexal_sync_jobs")
+        .select("id,cycle_id,schedule_id,status")
+        .in("schedule_id", scheduleIds)
+        .in("status", ACTIVE_JOB_STATUSES);
+      if (error) throw error;
+      return data || [];
+    },
+
+    async insertJobs(jobs) {
+      const { data, error } = await admin
+        .from("mexal_sync_jobs")
+        .upsert(jobs, { onConflict: "cycle_id,schedule_id", ignoreDuplicates: true })
+        .select("id,schedule_id");
+      if (error) throw error;
+      return data || [];
+    },
+
+    async markSchedulesQueued(scheduleIds, timestamp) {
+      const { error } = await admin
+        .from("mexal_sync_schedules")
+        .update({ last_status: "queued", last_error: null, updated_at: timestamp })
+        .in("id", scheduleIds);
+      if (error) throw error;
+    },
+
+    async updateCycle(cycleId, values) {
+      const { error } = await admin.from("mexal_sync_cycles").update(values).eq("id", cycleId);
+      if (error) throw error;
+    },
+  };
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "GET") return res.status(405).json({ ok: false, error: "Metodo non consentito." });
-  if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
-    return res.status(401).json({ ok: false, error: "Cron non autorizzato." });
-  }
-  try {
-    const admin = createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false, autoRefreshToken: false } });
-    await cleanupStaleRuns(admin);
-    const { data: schedules, error } = await admin
-      .from("mexal_sync_schedules")
-      .select("id,sync_type,enabled,schedule_mode,batch_size,execution_order,next_run_at")
-      .eq("enabled", true);
-    if (error) throw error;
+  if (req.method !== "GET") return res.status(405).json({ error: "Metodo non consentito." });
+  if (!isCronAuthorized(req)) return res.status(401).json({ error: "Cron non autorizzato." });
 
-    const summary = await dispatchNextSchedule({
-      schedules: schedules || [],
-      hasRunningRun: async (syncType) => {
-        const { data, error: runError } = await admin
-          .from("mexal_sync_runs")
-          .select("id,processed,source,context,metadata,started_at,status")
-          .eq("sync_type", syncType)
-          .eq("status", "running")
-          .order("started_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (runError) throw runError;
-        return data || null;
-      },
-      executeStep: async (syncType, schedule, existingRun) => callApiWithRetry(
-        fetch,
-        requestBaseUrl(req),
-        process.env.CRON_SECRET,
-        "/api/mexal/automation",
-        {
-          action: "run_scheduled_step",
-          syncType,
-          origin: "cron",
-          batchSize: schedule.batch_size || undefined,
-          context: { schedule_id: schedule.id },
-          ...(existingRun?.id ? { syncRunId: Number(existingRun.id) } : {}),
-          ...(RESUMABLE_TYPES.has(syncType) ? { offset: Math.max(0, Number(existingRun?.processed || 0)) } : {}),
-          ...(syncType === "commercial_conditions" ? { mode: "incremental", syncPayments: true } : {}),
-        },
-      ),
-      updateSchedule: async (id, values) => {
-        const { error: updateError } = await admin.from("mexal_sync_schedules").update(values).eq("id", id);
-        if (updateError) throw updateError;
-      },
-      observeRun: async (runId, schedule) => {
-        const { error: trackingError } = await admin
-          .from("mexal_sync_runs")
-          .update({ source: "cron", context: { schedule_id: schedule.id } })
-          .eq("id", runId);
-        if (trackingError) throw trackingError;
-      },
+  try {
+    const admin = createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), {
+      auth: { persistSession: false, autoRefreshToken: false },
     });
+    const summary = await produceDailyMexalQueue({ store: createQueueStore(admin), now: new Date() });
     return res.status(200).json(summary);
   } catch (error) {
-    return res.status(500).json({ ok: false, status: "failed", selected: null, error: error?.message || "Errore dispatcher Mexal." });
+    return res.status(500).json({ error: error?.message || "Creazione coda Mexal non riuscita." });
   }
 }

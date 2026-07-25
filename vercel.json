@@ -17,7 +17,7 @@
   "crons": [
     {
       "path": "/api/cron/mexal-dispatcher",
-      "schedule": "*/10 * * * *"
+      "schedule": "0 23 * * *"
     }
   ],
   "rewrites": [

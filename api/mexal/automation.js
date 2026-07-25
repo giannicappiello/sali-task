@@ -5,7 +5,11 @@ import agentsHandler from "../../server/mexal/sync-agents.js";
 import commercialConditionsHandler from "../../server/mexal/sync-commercial-conditions.js";
 import documentSeriesHandler from "../../server/mexal/sync-document-series.js";
 import stopHandler from "../../server/mexal/stop-sync-run.js";
-import { syncListPriceCommissions } from "../../server/mexal/sync-list-price-commissions.js";
+import {
+  processListPriceCommissionsBatch,
+  startListPriceCommissionsSync,
+  syncListPriceCommissions,
+} from "../../server/mexal/sync-list-price-commissions.js";
 import { agentsAccess } from "../../server/mexal/agents-access.js";
 import orderDocumentsHandler, { purgeEvictedOrderDocuments } from "../../server/mexal/sync-order-documents.js";
 import { requireAdmin } from "./lib/auth.js";
@@ -181,6 +185,59 @@ async function startSync(req, res, body, syncType, runHandler, admin) {
   return sendHandlerResponse(res, syncType, await executeHandler(req, runHandler));
 }
 
+function requireCron(req) {
+  if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+    throw Object.assign(new Error("Cron non autorizzato."), { status: 401 });
+  }
+}
+
+function stepCompleted(payload) {
+  if (payload?.completed === false || payload?.completato === false || payload?.status === "running") return false;
+  return payload?.completed === true || payload?.completato === true || payload?.status === "completed";
+}
+
+async function runScheduledStep(req, res, body, syncType, runHandler) {
+  requireCron(req);
+  const admin = await createAdmin(req);
+
+  if (syncType === "list_price_commissions") {
+    let running = await findRunningSync(admin.supabase, syncType);
+    if (!running) {
+      const started = await startListPriceCommissionsSync({
+        mexal: buildMexalClient(),
+        supabase: admin.supabase,
+        source: "cron",
+        batchSize: body.batchSize,
+      });
+      running = started.run || (started.runId ? { id: started.runId, status: started.status } : null);
+    }
+    if (!running?.id) return sendFailure(res, 500, syncType, "Run provvigioni listini non disponibile.");
+    const result = await processListPriceCommissionsBatch({ supabase: admin.supabase, runId: Number(running.id) });
+    const completed = result.status === "completed";
+    return res.status(200).json({
+      ...result,
+      success: true,
+      status: completed ? "completed" : "running",
+      completed,
+      syncRunId: Number(running.id),
+    });
+  }
+
+  const captured = createResponseCapture();
+  await startSync(req, captured, body, syncType, runHandler, admin);
+  if (captured.statusCode < 200 || captured.statusCode >= 300 || captured.payload?.success === false) {
+    return res.status(captured.statusCode).json(captured.payload);
+  }
+  const completed = stepCompleted(captured.payload);
+  return res.status(200).json({
+    ...captured.payload,
+    success: true,
+    status: completed ? "completed" : "running",
+    completed,
+    syncRunId: syncRunId(captured.payload),
+  });
+}
+
 async function syncAll(req, res, body, supabase) {
   const completedPhases = [];
   const results = [];
@@ -347,6 +404,12 @@ export default async function handler(req, res) {
         return executeIdempotently(req, res, body, syncType, (response, admin) => (
           startSync(req, response, body, syncType, runHandler, admin)
         ));
+      }
+      case "run_scheduled_step": {
+        const syncType = body.syncType || body.sync_type;
+        const runHandler = RUN_HANDLERS[syncType];
+        if (!runHandler) return sendFailure(res, 400, syncType || "run_scheduled_step", "Tipo sincronizzazione non supportato.");
+        return runScheduledStep(req, res, body, syncType, runHandler);
       }
       case "stop":
         req.body = { runId: body.runId };

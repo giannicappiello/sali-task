@@ -1,13 +1,14 @@
 import { createClient } from "@supabase/supabase-js";
 import { cleanupStaleRuns } from "../mexal/lib/syncRuns.js";
-import { buildMexalClient } from "../../server/mexal/sync-products.js";
-import { syncListPriceCommissions } from "../../server/mexal/sync-list-price-commissions.js";
 
 const DEFAULT_ORDER = ["clients", "agents", "products", "commercial_conditions", "document_series", "stocks", "list_price_commissions", "orders"];
-const RESUMABLE_TYPES = new Set(["products", "stocks"]);
+const RESUMABLE_TYPES = new Set(["products", "stocks", "list_price_commissions"]);
+const SUPPORTED_SCHEDULE_MODES = new Set(["daily_vercel_hobby"]);
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
-const MAX_CONTINUATION_STEPS = 1000;
+const CONTINUATION_DELAY_MS = 10 * 60 * 1000;
+const DAILY_DELAY_MS = 24 * 60 * 60 * 1000;
+const FAILURE_RETRY_DELAY_MS = 60 * 60 * 1000;
 
 function required(name) {
   const value = String(process.env[name] || "").trim();
@@ -27,9 +28,9 @@ function sleep(milliseconds) {
 
 async function callApi(fetchImpl, baseUrl, secret, path, body) {
   const response = await fetchImpl(`${baseUrl}${path}`, {
-    method: body ? "POST" : "GET",
-    headers: { Authorization: `Bearer ${secret}`, ...(body ? { "Content-Type": "application/json" } : {}) },
-    ...(body ? { body: JSON.stringify(body) } : {}),
+    method: "POST",
+    headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
   const raw = await response.text();
   let result = {};
@@ -62,87 +63,118 @@ async function callApiWithRetry(fetchImpl, baseUrl, secret, path, body) {
   throw lastError;
 }
 
-function endpointFor(syncType) {
-  switch (syncType) {
-    case "clients": return ["/api/mexal/automation", { action: "run_now", syncType: "clients", origin: "cron" }];
-    case "agents": return ["/api/mexal/automation", { action: "run_now", syncType: "agents", origin: "cron" }];
-    case "products": return ["/api/mexal/automation", { action: "run_now", syncType: "products", offset: 0, batchSize: 8, origin: "cron" }];
-    case "commercial_conditions": return ["/api/mexal/automation", { action: "run_now", syncType: "commercial_conditions", mode: "incremental", syncPayments: true, origin: "cron" }];
-    case "document_series": return ["/api/mexal/automation", { action: "run_now", syncType: "document_series", origin: "cron" }];
-    case "stocks": return ["/api/mexal/automation", { action: "run_now", syncType: "stocks", offset: 0, batchSize: 12, origin: "cron" }];
-    case "orders": return ["/api/mexal/automation", { action: "run_now", syncType: "orders", origin: "cron" }];
-    default: return null;
+function dateValue(value) {
+  if (!value) return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+export function selectDueSchedule(schedules, now = new Date()) {
+  const nowTime = now.getTime();
+  const rank = new Map(DEFAULT_ORDER.map((type, index) => [type, index]));
+  return [...(schedules || [])]
+    .filter((schedule) => schedule.enabled === true)
+    .filter((schedule) => SUPPORTED_SCHEDULE_MODES.has(schedule.schedule_mode))
+    .filter((schedule) => {
+      const nextRun = dateValue(schedule.next_run_at);
+      return nextRun === null || nextRun <= nowTime;
+    })
+    .sort((left, right) => {
+      const leftNext = dateValue(left.next_run_at) ?? Number.NEGATIVE_INFINITY;
+      const rightNext = dateValue(right.next_run_at) ?? Number.NEGATIVE_INFINITY;
+      return leftNext - rightNext
+        || Number(left.execution_order) - Number(right.execution_order)
+        || (rank.get(left.sync_type) ?? 99) - (rank.get(right.sync_type) ?? 99);
+    })[0] || null;
+}
+
+function nextRunAt(schedule, status, now) {
+  if (status === "running") return new Date(now.getTime() + CONTINUATION_DELAY_MS).toISOString();
+  if (status === "failed") return new Date(now.getTime() + FAILURE_RETRY_DELAY_MS).toISOString();
+  switch (schedule.schedule_mode) {
+    case "daily_vercel_hobby":
+      return new Date(now.getTime() + DAILY_DELAY_MS).toISOString();
+    default:
+      throw new Error(`Modalità di schedulazione non supportata: ${schedule.schedule_mode}`);
   }
 }
 
 function runIdFrom(result) {
-  const value = result?.sync_run_id ?? result?.runId ?? result?.details?.syncRunId;
+  const value = result?.sync_run_id ?? result?.syncRunId ?? result?.runId ?? result?.details?.syncRunId;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
-function nextOffsetFrom(result) {
-  const value = result?.prossimo_offset ?? result?.next_offset;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+function isCompleted(result) {
+  if (result?.completed === false || result?.completato === false || result?.status === "running") return false;
+  return result?.completed === true || result?.completato === true || result?.status === "completed";
 }
 
-async function executeResumableSync({ fetchImpl, baseUrl, secret, path, body, existingRun, onRunObserved }) {
-  let payload = {
-    ...body,
-    offset: Math.max(0, Number(existingRun?.processed || body.offset || 0)),
-    ...(existingRun?.id ? { syncRunId: Number(existingRun.id) } : {}),
-  };
-  let lastOffset = -1;
-  let lastResult = null;
+export async function dispatchNextSchedule({
+  schedules,
+  now = () => new Date(),
+  hasRunningRun,
+  executeStep,
+  updateSchedule,
+  observeRun = async () => {},
+}) {
+  const startedAt = now();
+  const schedule = selectDueSchedule(schedules, startedAt);
+  if (!schedule) return { ok: true, status: "idle", selected: null };
 
-  for (let step = 0; step < MAX_CONTINUATION_STEPS; step += 1) {
-    const result = await callApiWithRetry(fetchImpl, baseUrl, secret, path, payload);
-    lastResult = result;
-    const runId = runIdFrom(result) || Number(payload.syncRunId) || null;
-    if (runId) await onRunObserved(runId);
+  const timestamp = startedAt.toISOString();
+  await updateSchedule(schedule.id, {
+    last_run_at: timestamp,
+    last_status: "running",
+    last_error: null,
+    updated_at: timestamp,
+    next_run_at: new Date(startedAt.getTime() + CONTINUATION_DELAY_MS).toISOString(),
+  });
 
-    if (result?.completato === true || result?.completed === true) return result;
-
-    const nextOffset = nextOffsetFrom(result);
-    if (nextOffset === null) return result;
-    if (nextOffset <= lastOffset || nextOffset <= Number(payload.offset || 0)) {
-      throw new Error("La sincronizzazione non avanza: offset di ripresa non valido.");
+  try {
+    const existingRun = await hasRunningRun(schedule.sync_type);
+    if (existingRun && !RESUMABLE_TYPES.has(schedule.sync_type)) {
+      const item = {
+        sync_type: schedule.sync_type,
+        success: true,
+        status: "running",
+        completed: false,
+        runId: Number(existingRun.id),
+        error: null,
+      };
+      await updateSchedule(schedule.id, {
+        last_status: item.status,
+        last_error: null,
+        updated_at: timestamp,
+        next_run_at: nextRunAt(schedule, item.status, startedAt),
+      });
+      return { ok: true, status: item.status, selected: item };
     }
 
-    lastOffset = Number(payload.offset || 0);
-    payload = { ...payload, offset: nextOffset, ...(runId ? { syncRunId: runId } : {}) };
+    const result = await executeStep(schedule.sync_type, schedule, existingRun || null);
+    const runId = runIdFrom(result) || Number(existingRun?.id) || null;
+    if (Number.isSafeInteger(runId)) await observeRun(runId, schedule);
+    const completed = isCompleted(result);
+    const status = completed ? "completed" : "running";
+    const item = { sync_type: schedule.sync_type, success: true, status, completed, runId, result, error: null };
+    await updateSchedule(schedule.id, {
+      last_status: status,
+      last_error: null,
+      updated_at: timestamp,
+      next_run_at: nextRunAt(schedule, status, startedAt),
+    });
+    return { ok: true, status, selected: item };
+  } catch (error) {
+    const message = error?.message || "Errore sconosciuto.";
+    const item = { sync_type: schedule.sync_type, success: false, status: "failed", completed: false, error: message };
+    await updateSchedule(schedule.id, {
+      last_status: item.status,
+      last_error: message.slice(0, 1000),
+      updated_at: timestamp,
+      next_run_at: nextRunAt(schedule, item.status, startedAt),
+    });
+    return { ok: false, status: item.status, selected: item };
   }
-
-  throw Object.assign(new Error("Sincronizzazione interrotta: superato il numero massimo di lotti."), { details: lastResult });
-}
-
-export async function dispatchSchedules({ schedules, hasRunningRun, execute, updateSchedule, recordScheduleResult = async () => {} }) {
-  const executed = [];
-  for (const schedule of schedules) {
-    const sync_type = schedule.sync_type;
-    const now = new Date().toISOString();
-    try {
-      const runningRun = await hasRunningRun(sync_type);
-      if (runningRun && !RESUMABLE_TYPES.has(sync_type)) {
-        const item = { sync_type, success: true, status: "skipped", error: "È già presente una sincronizzazione in corso per questo tipo." };
-        await recordScheduleResult(schedule, item);
-        await updateSchedule(schedule.id, { last_run_at: now, last_status: item.status, last_error: null, updated_at: now, next_run_at: null });
-        executed.push(item);
-        continue;
-      }
-
-      await execute(sync_type, schedule, runningRun || null);
-      const item = { sync_type, success: true, status: "completed", error: null };
-      await updateSchedule(schedule.id, { last_run_at: now, last_status: item.status, last_error: null, updated_at: now, next_run_at: null });
-      executed.push(item);
-    } catch (error) {
-      const item = { sync_type, success: false, status: "failed", error: error?.message || "Errore sconosciuto." };
-      await updateSchedule(schedule.id, { last_run_at: now, last_status: item.status, last_error: item.error.slice(0, 1000), updated_at: now, next_run_at: null });
-      executed.push(item);
-    }
-  }
-  return { ok: executed.every((item) => item.success), executed };
 }
 
 export default async function handler(req, res) {
@@ -153,58 +185,56 @@ export default async function handler(req, res) {
   try {
     const admin = createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false, autoRefreshToken: false } });
     await cleanupStaleRuns(admin);
-    const { data: schedules, error } = await admin.from("mexal_sync_schedules").select("id,sync_type,enabled,schedule_mode,batch_size,execution_order").eq("enabled", true).order("execution_order", { ascending: true });
+    const { data: schedules, error } = await admin
+      .from("mexal_sync_schedules")
+      .select("id,sync_type,enabled,schedule_mode,batch_size,execution_order,next_run_at")
+      .eq("enabled", true);
     if (error) throw error;
-    const rank = new Map(DEFAULT_ORDER.map((type, index) => [type, index]));
-    const ordered = [...(schedules || [])].sort((a, b) => Number(a.execution_order) - Number(b.execution_order) || (rank.get(a.sync_type) ?? 99) - (rank.get(b.sync_type) ?? 99));
-    const summary = await dispatchSchedules({
-      schedules: ordered,
+
+    const summary = await dispatchNextSchedule({
+      schedules: schedules || [],
       hasRunningRun: async (syncType) => {
-        const { data, error: runError } = await admin.from("mexal_sync_runs").select("id,processed,source,context,metadata,started_at,status").eq("sync_type", syncType).eq("status", "running").order("started_at", { ascending: false }).limit(1).maybeSingle();
+        const { data, error: runError } = await admin
+          .from("mexal_sync_runs")
+          .select("id,processed,source,context,metadata,started_at,status")
+          .eq("sync_type", syncType)
+          .eq("status", "running")
+          .order("started_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
         if (runError) throw runError;
         return data || null;
       },
-      execute: async (syncType, schedule, existingRun) => {
-        if (syncType === "list_price_commissions") {
-          return syncListPriceCommissions({ mexal: buildMexalClient(), supabase: admin, source: "cron" });
-        }
-        const endpoint = endpointFor(syncType);
-        if (!endpoint) throw new Error(`Tipo sincronizzazione non supportato: ${syncType}`);
-        const [path, body] = endpoint;
-        const payload = body && { ...body, batchSize: schedule.batch_size || body.batchSize, context: { schedule_id: schedule.id } };
-        const onRunObserved = async (runId) => {
-          const { error: trackingError } = await admin.from("mexal_sync_runs").update({ source: "cron", context: { schedule_id: schedule.id } }).eq("id", runId);
-          if (trackingError) throw trackingError;
-        };
-        if (RESUMABLE_TYPES.has(syncType)) {
-          return executeResumableSync({ fetchImpl: fetch, baseUrl: requestBaseUrl(req), secret: process.env.CRON_SECRET, path, body: payload, existingRun, onRunObserved });
-        }
-        const result = await callApiWithRetry(fetch, requestBaseUrl(req), process.env.CRON_SECRET, path, payload);
-        const runId = runIdFrom(result);
-        if (runId) await onRunObserved(runId);
-        return result;
-      },
+      executeStep: async (syncType, schedule, existingRun) => callApiWithRetry(
+        fetch,
+        requestBaseUrl(req),
+        process.env.CRON_SECRET,
+        "/api/mexal/automation",
+        {
+          action: "run_scheduled_step",
+          syncType,
+          origin: "cron",
+          batchSize: schedule.batch_size || undefined,
+          context: { schedule_id: schedule.id },
+          ...(existingRun?.id ? { syncRunId: Number(existingRun.id) } : {}),
+          ...(RESUMABLE_TYPES.has(syncType) ? { offset: Math.max(0, Number(existingRun?.processed || 0)) } : {}),
+          ...(syncType === "commercial_conditions" ? { mode: "incremental", syncPayments: true } : {}),
+        },
+      ),
       updateSchedule: async (id, values) => {
         const { error: updateError } = await admin.from("mexal_sync_schedules").update(values).eq("id", id);
         if (updateError) throw updateError;
       },
-      recordScheduleResult: async (schedule, item) => {
-        const now = new Date().toISOString();
-        const { error: runError } = await admin.from("mexal_sync_runs").insert({
-          sync_type: schedule.sync_type,
-          status: item.status,
-          source: "cron",
-          context: { schedule_id: schedule.id },
-          started_at: now,
-          completed_at: now,
-          duration_ms: 0,
-          error_message: item.error || null,
-        });
-        if (runError) throw runError;
+      observeRun: async (runId, schedule) => {
+        const { error: trackingError } = await admin
+          .from("mexal_sync_runs")
+          .update({ source: "cron", context: { schedule_id: schedule.id } })
+          .eq("id", runId);
+        if (trackingError) throw trackingError;
       },
     });
     return res.status(200).json(summary);
   } catch (error) {
-    return res.status(500).json({ ok: false, executed: [], error: error?.message || "Errore dispatcher Mexal." });
+    return res.status(500).json({ ok: false, status: "failed", selected: null, error: error?.message || "Errore dispatcher Mexal." });
   }
 }

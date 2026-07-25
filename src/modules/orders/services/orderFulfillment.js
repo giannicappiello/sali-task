@@ -35,20 +35,34 @@ function legacyMexalDocuments(order = {}) {
 }
 
 function mergeMexalDocuments(documents = [], order = {}) {
-  const actualTypes = new Set(documents.filter((document) => document?.numero).map((document) => String(document.tipo_documento || "").toUpperCase()));
-  const merged = [...documents, ...legacyMexalDocuments(order).filter((document) => !actualTypes.has(document.tipo_documento))];
+  const merged = [
+    ...documents,
+    ...legacyMexalDocuments(order),
+  ];
+
   const seen = new Set();
+
   return merged.filter((document) => {
     const type = String(document.tipo_documento || "").toUpperCase();
     const serie = String(document.serie ?? "").trim();
     const numero = String(document.numero ?? "").trim();
-    if (!["OCM", "OCX", "OCI"].includes(type) || !serie || !numero) return false;
+
+    if (!["OCM", "OCX", "OCI"].includes(type) || !serie || !numero) {
+      return false;
+    }
+
     const key = `${type}:${serie}:${numero}`;
-    if (seen.has(key)) return false;
+
+    if (seen.has(key)) {
+      return false;
+    }
+
     seen.add(key);
+
     return true;
   });
 }
+
 
 async function enrichAgent(order) {
   try {

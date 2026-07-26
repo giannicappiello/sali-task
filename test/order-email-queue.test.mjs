@@ -17,6 +17,12 @@ const moduleConfig = {
   invia_email_responsabile: true,
   backoffice_1_email: "ORDINI@PROGRE.IT",
   backoffice_2_email: "cliente@example.it",
+  email_cliente_oggetto_template: "Cliente {numero_ordine}",
+  email_cliente_corpo_template: "Gentile {cliente}: totale {totale}.",
+  email_agente_oggetto_template: "Agente {numero_ordine}",
+  email_agente_corpo_template: "Ciao {agente}: cliente {cliente}.",
+  email_backoffice_oggetto_template: "Backoffice {numero_ordine}",
+  email_backoffice_corpo_template: "Ordine del {data}: {cliente}, {agente}, {totale}.",
 };
 const recipients = buildConfiguredOrderEmailRecipients({
   moduleConfig,
@@ -32,13 +38,31 @@ assert.deepEqual(recipients, [
 ], "normalizes, filters and deduplicates configured recipients");
 
 const rows = buildOrderEmailQueueRows({
-  order: { id: "ordine-1", numero_ordine_visualizzato: "PR-42", modulo_ordini: "prof" },
+  order: {
+    id: "ordine-1",
+    numero_ordine_visualizzato: "PR-42",
+    modulo_ordini: "prof",
+    data_ordine: "2026-07-26",
+    totale_documento: 100,
+  },
+  customer: { ragione_sociale: "Cliente Uno" },
+  agent: { nome: "Ada", cognome: "Agente" },
   documents: [{ kind: "OCM", numero: "100" }, { kind: "OCX", numero: "101" }],
   recipients,
   moduleConfig,
 });
 assert.equal(rows.length, 4);
 assert.ok(rows.every((row) => row.evento === "order_confirmed" && row.stato === "queued"));
+assert.equal(rows[0].oggetto, "Cliente PR-42");
+assert.match(rows[0].corpo, /Gentile Cliente Uno: totale 100,00/);
+assert.equal(rows[1].oggetto, "Agente PR-42");
+assert.match(rows[1].corpo, /Ciao Ada Agente/);
+assert.equal(rows[2].oggetto, "Backoffice PR-42");
+assert.match(rows[2].corpo, /26\/07\/2026/);
+assert.equal(
+  rows[0].config_snapshot.email_templates.email_cliente_oggetto_template,
+  moduleConfig.email_cliente_oggetto_template,
+);
 assert.deepEqual(rows[0].allegati, [
   { tipo_documento: "OCM", numero: "100", stato: "da_generare" },
   { tipo_documento: "OCX", numero: "101", stato: "da_generare" },
@@ -58,7 +82,12 @@ function queryResult(data) {
 const fakeSupabase = {
   from(table) {
     if (table === "mexal_agenti") {
-      return queryResult({ email: "agente@example.it", responsabile_utente_id: "responsabile-1" });
+      return queryResult({
+        nome: "Ada",
+        cognome: "Agente",
+        email: "agente@example.it",
+        responsabile_utente_id: "responsabile-1",
+      });
     }
     if (table === "utenti") return queryResult({ email: "responsabile@example.it" });
     if (table === "ordini_email_invio") {
@@ -103,13 +132,16 @@ const queueResult = await enqueueOrderConfirmationEmails({
     numero_ordine_visualizzato: "PR-42",
     modulo_ordini: "prof",
     codice_agente_mexal: "A01",
+    data_ordine: "2026-07-26",
+    totale_documento: 100,
   },
-  customer: { email: "cliente@example.it" },
+  customer: { email: "cliente@example.it", ragione_sociale: "Cliente Uno" },
   moduleConfig,
   documents: [{ kind: "OCM", numero: "100" }],
 });
 assert.deepEqual(queueResult, { recipients: 4, queued: 4, released: 0 });
 assert.equal(queuedRows.length, 4);
+assert.ok(queuedRows.every((row) => row.corpo && row.oggetto));
 assert.deepEqual(upsertOptions, {
   onConflict: "ordine_id,evento,destinatario",
   ignoreDuplicates: true,
@@ -121,8 +153,10 @@ const reconciledQueueResult = await enqueueOrderConfirmationEmails({
     numero_ordine_visualizzato: "PR-42",
     modulo_ordini: "prof",
     codice_agente_mexal: "A01",
+    data_ordine: "2026-07-26",
+    totale_documento: 100,
   },
-  customer: { email: "cliente@example.it" },
+  customer: { email: "cliente@example.it", ragione_sociale: "Cliente Uno" },
   moduleConfig,
   documents: [{ kind: "OCM", numero: "100" }],
   releaseExisting: true,

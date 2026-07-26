@@ -1,3 +1,9 @@
+import {
+  buildOrderEmailTemplateValues,
+  orderEmailTemplateSnapshot,
+  resolveOrderEmailContent,
+} from "./order-email-template.js";
+
 function text(value) {
   return String(value ?? "").trim();
 }
@@ -44,14 +50,16 @@ export function buildOrderEmailQueueRows({
   documents = [],
   recipients = [],
   moduleConfig,
+  customer,
+  agent,
   availableAt = new Date().toISOString(),
 }) {
-  const orderNumber = text(order?.numero_ordine_visualizzato) || text(order?.id);
   const attachments = documents.map((document) => ({
     tipo_documento: document.kind,
     numero: text(document.numero) || null,
     stato: "da_generare",
   }));
+  const templateValues = buildOrderEmailTemplateValues({ order, customer, agent });
   const configSnapshot = {
     modulo_ordini: order?.modulo_ordini || "prof",
     invia_automaticamente_mexal: moduleConfig?.invia_automaticamente_mexal !== false,
@@ -60,34 +68,40 @@ export function buildOrderEmailQueueRows({
     invia_email_responsabile: Boolean(moduleConfig?.invia_email_responsabile),
     backoffice_1_email: normalizeOrderEmail(moduleConfig?.backoffice_1_email),
     backoffice_2_email: normalizeOrderEmail(moduleConfig?.backoffice_2_email),
+    email_templates: orderEmailTemplateSnapshot(moduleConfig),
   };
 
-  return recipients.map((recipient) => ({
-    ordine_id: order.id,
-    evento: ORDER_CONFIRMATION_EMAIL_EVENT,
-    tipo_destinatario: recipient.type,
-    destinatario: recipient.email,
-    stato: "queued",
-    attempts: 0,
-    max_attempts: 5,
-    available_at: availableAt,
-    oggetto: `Conferma ordine ${orderNumber}`,
-    allegati: attachments,
-    config_snapshot: configSnapshot,
-    last_error: null,
-  }));
+  return recipients.map((recipient) => {
+    const content = resolveOrderEmailContent({
+      moduleConfig,
+      recipientType: recipient.type,
+      values: templateValues,
+    });
+    return {
+      ordine_id: order.id,
+      evento: ORDER_CONFIRMATION_EMAIL_EVENT,
+      tipo_destinatario: recipient.type,
+      destinatario: recipient.email,
+      stato: "queued",
+      attempts: 0,
+      max_attempts: 5,
+      available_at: availableAt,
+      oggetto: content.subject,
+      corpo: content.body,
+      allegati: attachments,
+      config_snapshot: configSnapshot,
+      last_error: null,
+    };
+  });
 }
 
 async function loadAgentRecipients(supabase, order, moduleConfig) {
-  if (!moduleConfig?.invia_email_agente && !moduleConfig?.invia_email_responsabile) {
-    return { agent: null, responsible: null };
-  }
   const agentCode = text(order?.codice_agente_mexal);
   if (!agentCode) return { agent: null, responsible: null };
 
   const { data: agent, error: agentError } = await supabase
     .from("mexal_agenti")
-    .select("email,responsabile_utente_id")
+    .select("nome,cognome,email,responsabile_utente_id")
     .eq("codice", agentCode)
     .maybeSingle();
   if (agentError) throw agentError;
@@ -125,6 +139,8 @@ export async function enqueueOrderConfirmationEmails({
     documents,
     recipients,
     moduleConfig,
+    customer,
+    agent,
     availableAt,
   });
   if (!rows.length) return { recipients: 0, queued: 0, released: 0 };
@@ -189,7 +205,7 @@ export async function loadOrderConfirmationEmailContext({
       .maybeSingle(),
     supabase
       .from("ordini_moduli_configurazione")
-      .select("invia_automaticamente_mexal,invia_email_agente,invia_email_cliente,invia_email_responsabile,backoffice_1_email,backoffice_2_email")
+      .select("invia_automaticamente_mexal,invia_email_agente,invia_email_cliente,invia_email_responsabile,backoffice_1_email,backoffice_2_email,email_cliente_oggetto_template,email_cliente_corpo_template,email_agente_oggetto_template,email_agente_corpo_template,email_backoffice_oggetto_template,email_backoffice_corpo_template")
       .eq("modulo_ordini", order.modulo_ordini || moduleCode || "prof")
       .maybeSingle(),
     supabase

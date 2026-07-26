@@ -4,10 +4,24 @@ import { test } from "node:test";
 import { automationSection, canManageMexalAutomations, loadMexalAutomationRules, saveMexalAutomationRule } from "../src/modules/integrations/services/mexalAutomationService.js";
 
 const orderModuleSettings = fs.readFileSync(new URL("../src/modules/integrations/components/OrderModuleSettings.jsx", import.meta.url), "utf8");
+const orderEmailTemplate = fs.readFileSync(new URL("../server/orders/order-email-template.js", import.meta.url), "utf8");
 const integrationsCss = fs.readFileSync(new URL("../src/modules/integrations/integrations.css", import.meta.url), "utf8");
 
 test("the order module configuration exposes a visible save action", () => {
   assert.match(orderModuleSettings, /Salva configurazione/);
+  assert.match(orderModuleSettings, /Cliente/);
+  assert.match(orderModuleSettings, /Agente/);
+  assert.match(orderModuleSettings, /Backoffice e responsabile/);
+  assert.match(orderEmailTemplate, /email_cliente_oggetto_template/);
+  assert.match(orderEmailTemplate, /email_agente_corpo_template/);
+  assert.match(orderEmailTemplate, /email_backoffice_corpo_template/);
+  assert.match(orderModuleSettings, /<textarea/);
+  assert.match(orderModuleSettings, /ORDER_EMAIL_PLACEHOLDERS/);
+  assert.match(orderModuleSettings, /validateOrderEmailTemplate/);
+  for (const placeholder of ["cliente", "numero_ordine", "data", "agente", "totale"]) {
+    assert.match(orderEmailTemplate, new RegExp(`\\{${placeholder}\\}`));
+  }
+  assert.match(orderEmailTemplate, /placeholder non supportati/);
   assert.match(integrationsCss, /\.mexal-table-panel \.orders-primary\{background:#126bff;color:#fff/);
 });
 

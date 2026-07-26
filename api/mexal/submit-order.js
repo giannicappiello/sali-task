@@ -153,7 +153,7 @@ export default async function handler(req, res) {
     const { data: documentConfig, error: configError } = await admin.from("ordini_configurazione_documenti").select("serie_ocm,serie_ocx,serie_oci,id_magazzino,id_causale_vendita_diretta").eq("id", 1).maybeSingle();
     const { data: moduleConfig, error: moduleConfigError } = await admin
       .from("ordini_moduli_configurazione")
-      .select("serie_documento,invia_email_agente,invia_email_cliente,invia_email_responsabile,backoffice_1_email,backoffice_2_email")
+      .select("serie_documento,invia_email_agente,invia_email_cliente,invia_email_responsabile,backoffice_1_email,backoffice_2_email,email_cliente_oggetto_template,email_cliente_corpo_template,email_agente_oggetto_template,email_agente_corpo_template,email_backoffice_oggetto_template,email_backoffice_corpo_template")
       .eq("modulo_ordini", order.modulo_ordini || "prof")
       .maybeSingle();
     if (configError || moduleConfigError) throw configError || moduleConfigError;

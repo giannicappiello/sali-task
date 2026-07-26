@@ -4,6 +4,11 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../../contexts/AuthContext";
 import { supabase } from "../../../lib/supabaseClient";
 import { customerOrderSeriesOptions } from "../../../components/documentSeriesOptions";
+import {
+  ORDER_EMAIL_PLACEHOLDERS,
+  ORDER_EMAIL_TEMPLATE_DEFAULTS,
+  validateOrderEmailTemplate,
+} from "../../../../server/orders/order-email-template.js";
 import IntegrationStatusBadge from "./IntegrationStatusBadge";
 
 const defaults = {
@@ -14,13 +19,67 @@ const defaults = {
   invia_email_responsabile: false,
   backoffice_1_email: "",
   backoffice_2_email: "",
+  ...ORDER_EMAIL_TEMPLATE_DEFAULTS,
 };
+
+const templateSections = [
+  { key: "cliente", title: "Cliente" },
+  { key: "agente", title: "Agente" },
+  { key: "backoffice", title: "Backoffice e responsabile" },
+];
+
+function validateEmailTemplates(config) {
+  for (const { key, title } of templateSections) {
+    for (const [kind, maxLength] of [["oggetto", 255], ["corpo", 10000]]) {
+      const label = `${kind === "oggetto" ? "Oggetto" : "Corpo"} email ${title}`;
+      try {
+        validateOrderEmailTemplate(config[`email_${key}_${kind}_template`], {
+          label,
+          maxLength,
+        });
+      } catch (error) {
+        return error.message;
+      }
+    }
+  }
+  return "";
+}
 
 function Toggle({ label, checked, onChange }) {
   return <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
     <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
     <span>{label}: <strong>{checked ? "SI" : "NO"}</strong></span>
   </label>;
+}
+
+function TemplateFields({ section, config, onChange }) {
+  const subjectKey = `email_${section.key}_oggetto_template`;
+  const bodyKey = `email_${section.key}_corpo_template`;
+  return <fieldset style={{ border: "1px solid #dbe3ef", borderRadius: 10, padding: 14, margin: 0, display: "grid", gap: 12 }}>
+    <legend><strong>{section.title}</strong></legend>
+    <label>
+      Oggetto
+      <input
+        type="text"
+        value={config[subjectKey] || ""}
+        maxLength={255}
+        required
+        onChange={(event) => onChange(subjectKey, event.target.value)}
+        style={{ display: "block", width: "100%", minHeight: 40, marginTop: 5 }}
+      />
+    </label>
+    <label>
+      Corpo
+      <textarea
+        value={config[bodyKey] || ""}
+        maxLength={10000}
+        required
+        rows={6}
+        onChange={(event) => onChange(bodyKey, event.target.value)}
+        style={{ display: "block", width: "100%", marginTop: 5, resize: "vertical" }}
+      />
+    </label>
+  </fieldset>;
 }
 
 function Panel({ code, title, series }) {
@@ -52,8 +111,13 @@ function Panel({ code, title, series }) {
   }
 
   async function save() {
-    setSaving(true);
     setMessage("");
+    const validationError = validateEmailTemplates(config);
+    if (validationError) {
+      setMessage(validationError);
+      return;
+    }
+    setSaving(true);
     const { error } = await supabase.from("ordini_moduli_configurazione").upsert({
       ...config,
       modulo_ordini: code,
@@ -78,6 +142,15 @@ function Panel({ code, title, series }) {
         <fieldset style={{ border: 0, padding: 0, margin: 0, display: "grid", gap: 10 }}><legend><strong>Configurazione email</strong></legend><Toggle label="Email agente" checked={config.invia_email_agente} onChange={(value) => set("invia_email_agente", value)} /><Toggle label="Email cliente" checked={config.invia_email_cliente} onChange={(value) => set("invia_email_cliente", value)} /><Toggle label="Responsabile collegato" checked={config.invia_email_responsabile} onChange={(value) => set("invia_email_responsabile", value)} /></fieldset>
         <label>Backoffice 1<input type="email" value={config.backoffice_1_email || ""} onChange={(event) => set("backoffice_1_email", event.target.value)} style={{ display: "block", width: "100%", minHeight: 40, marginTop: 5 }} /></label>
         <label>Backoffice 2<input type="email" value={config.backoffice_2_email || ""} onChange={(event) => set("backoffice_2_email", event.target.value)} style={{ display: "block", width: "100%", minHeight: 40, marginTop: 5 }} /></label>
+        <div>
+          <strong>Template email</strong>
+          <p style={{ margin: "6px 0 10px" }}>
+            Placeholder disponibili: {ORDER_EMAIL_PLACEHOLDERS.map((placeholder) => <code key={placeholder} style={{ marginRight: 8 }}>{placeholder}</code>)}
+          </p>
+          <div style={{ display: "grid", gap: 14 }}>
+            {templateSections.map((section) => <TemplateFields key={section.key} section={section} config={config} onChange={set} />)}
+          </div>
+        </div>
       </div>
       <button type="button" className="orders-primary" disabled={saving} onClick={save} style={{ marginTop: 18 }}><Save size={16} /> {saving ? "Salvataggio..." : "Salva configurazione"}</button>
       {message && <p role="status">{message}</p>}

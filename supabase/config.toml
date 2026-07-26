@@ -1,2 +1,5 @@
 [functions.mexal-sync-worker]
 verify_jwt = false
+
+[functions.order-email-worker]
+verify_jwt = false

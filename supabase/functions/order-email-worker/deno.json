@@ -1,0 +1,6 @@
+{
+  "imports": {
+    "jspdf": "npm:jspdf@4.2.1",
+    "nodemailer": "npm:nodemailer@9.0.3"
+  }
+}

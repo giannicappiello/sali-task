@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { buildMexalClient, verifyUser } from "../../server/mexal/sync-products.js";
 import { DEFAULT_MEXAL_ORDER_DATE_FORMAT, ORDER_DOCUMENTS, buildMexalOrderDocument, classifyOrderLines, reconciliationFailure } from "../../server/mexal/order-documents.js";
 import { calculateCommissions } from "../../server/mexal/commission-engine.js";
+import { enqueueOrderConfirmationEmails } from "../../server/orders/order-email-queue.js";
 
 function env(name) { return String(process.env[name] ?? "").trim(); }
 function required(name) { const value = env(name); if (!value) throw new Error(`Variabile Vercel mancante: ${name}`); return value; }
@@ -150,7 +151,11 @@ export default async function handler(req, res) {
     if (!started) return res.status(409).json({ error: "È già presente una sincronizzazione attiva o lo stato non consente l'invio." });
     const { data: run, error: runError } = await admin.from("mexal_sync_runs").insert({ sync_type: "orders", status: "running", metadata: { source: "submit-order", order_id: orderId } }).select("id").single(); if (runError) throw runError; runId = run.id;
     const { data: documentConfig, error: configError } = await admin.from("ordini_configurazione_documenti").select("serie_ocm,serie_ocx,serie_oci,id_magazzino,id_causale_vendita_diretta").eq("id", 1).maybeSingle();
-    const { data: moduleConfig, error: moduleConfigError } = await admin.from("ordini_moduli_configurazione").select("serie_documento").eq("modulo_ordini", order.modulo_ordini || "prof").maybeSingle();
+    const { data: moduleConfig, error: moduleConfigError } = await admin
+      .from("ordini_moduli_configurazione")
+      .select("serie_documento,invia_email_agente,invia_email_cliente,invia_email_responsabile,backoffice_1_email,backoffice_2_email")
+      .eq("modulo_ordini", order.modulo_ordini || "prof")
+      .maybeSingle();
     if (configError || moduleConfigError) throw configError || moduleConfigError;
     if (moduleConfig?.serie_documento) { documentConfig.serie_ocm = moduleConfig.serie_documento; documentConfig.serie_ocx = moduleConfig.serie_documento; documentConfig.serie_oci = moduleConfig.serie_documento; }
     const mexal = buildMexalClient(); const documents = []; const failures = [];
@@ -210,7 +215,25 @@ export default async function handler(req, res) {
     console.info("Mexal order documents completed", { orderId, documents: documents.map(({ kind, numero }) => ({ kind, numero })), failures: failures.map(({ kind }) => kind) });
     if (stopped) return res.status(200).json({ stopped: true, documents, ...updatedNumbers });
     if (!completed) return res.status(502).json({ error: "Uno o più documenti Mexal non sono stati creati.", documents, failures });
-    return res.status(200).json({ success: true, documents, ...updatedNumbers });
+    try {
+      const emailQueue = await enqueueOrderConfirmationEmails({
+        supabase: admin,
+        order: { ...order, ...updatedNumbers, stato_sincronizzazione: "completato" },
+        customer,
+        moduleConfig,
+        documents,
+      });
+      console.info("Order confirmation emails queued", { orderId, ...emailQueue });
+      return res.status(200).json({ success: true, documents, emailQueue, ...updatedNumbers });
+    } catch (emailQueueError) {
+      console.error("Order confirmation email queue failed", { orderId, error: emailQueueError?.message });
+      return res.status(503).json({
+        error: "Documenti Mexal creati, ma accodamento email non riuscito.",
+        mexalCompleted: true,
+        documents,
+        ...updatedNumbers,
+      });
+    }
   } catch (error) {
     if (runId) await admin.from("mexal_sync_runs").update({ status: "failed", completed_at: new Date().toISOString(), processed: orderId ? 1 : 0, failed: 1, error_message: text(error?.message).slice(0, 500) }).eq("id", runId);
     if (orderId) await admin.from("ordini_testate").update({ stato_sincronizzazione: "errore", errore_sincronizzazione: error.message, ultimo_tentativo_sync: new Date().toISOString(), sincronizzato_mexal_il: null, sync_token: null }).eq("id", orderId).eq("sync_token", syncToken || "00000000-0000-0000-0000-000000000000");

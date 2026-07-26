@@ -39,6 +39,8 @@ assert.match(migration, /grant execute[\s\S]+to service_role/i);
 assert.doesNotMatch(migration, /grant execute[\s\S]+to authenticated/i);
 
 assert.match(worker, /claim_next_mexal_sync_job/);
+assert.match(worker, /p_worker_id:\s*workerId[\s\S]*p_lease_seconds:\s*JOB_LEASE_SECONDS/);
+assert.match(worker, /const JOB_LEASE_SECONDS = 300/);
 assert.match(worker, /WORKER_SECRET/);
 assert.match(worker, /x-mexal-worker-secret/);
 assert.doesNotMatch(worker, /authorizationMatch/);

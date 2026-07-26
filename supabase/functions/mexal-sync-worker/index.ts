@@ -4,6 +4,8 @@ const jsonHeaders = {
   "Content-Type": "application/json; charset=utf-8",
 };
 
+const JOB_LEASE_SECONDS = 300;
+
 Deno.serve(async (request: Request) => {
   try {
     if (request.method !== "POST") {
@@ -67,6 +69,7 @@ Deno.serve(async (request: Request) => {
         "claim_next_mexal_sync_job",
         {
           p_worker_id: workerId,
+          p_lease_seconds: JOB_LEASE_SECONDS,
         },
       );
 

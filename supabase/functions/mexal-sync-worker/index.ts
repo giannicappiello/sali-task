@@ -198,6 +198,7 @@ Deno.serve(async (request: Request) => {
           p_error: null,
           p_offset: integerOrNull(
             automationResult.nextOffset ??
+            automationResult.prossimo_offset ??
             claimedJob.offset,
           ),
           p_sync_run_id:

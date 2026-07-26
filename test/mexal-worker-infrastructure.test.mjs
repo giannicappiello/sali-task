@@ -59,6 +59,7 @@ assert.match(worker, /run_scheduled_step/);
 assert.match(worker, /heartbeat_mexal_sync_job/);
 assert.match(worker, /complete_mexal_sync_job/);
 assert.match(worker, /retry_mexal_sync_job/);
+assert.match(worker, /automationResult\.nextOffset\s*\?\?\s*automationResult\.prossimo_offset\s*\?\?\s*claimedJob\.offset/);
 assert.match(worker, /MEXAL_AUTOMATION_URL/);
 assert.doesNotMatch(worker, /sync-products|MEXAL_BASE_URL/i);
 

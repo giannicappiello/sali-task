@@ -20,6 +20,7 @@ async function postJson(url, body) {
 }
 
 export function submitOrderToMexal(orderId, moduleCode) { return postJson("/api/mexal/submit-order", { orderId, moduleCode }); }
+export function enqueueOrderConfirmationEmail(orderId, moduleCode) { return postJson("/api/mexal/orders/enqueue-confirmation-emails", { orderId, moduleCode }); }
 export function stopOrderSync(orderId) { return postJson("/api/mexal/orders/stop-sync", { orderId }); }
 export function deleteOrder(orderId) { return postJson("/api/mexal/orders/delete", { orderId }); }
 export function updateOrder(orderId, testata, righe) { return postJson("/api/mexal/orders/update", { orderId, testata, righe }); }

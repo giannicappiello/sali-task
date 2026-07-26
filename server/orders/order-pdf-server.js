@@ -12,14 +12,19 @@ export async function createOrderPdfAttachments({ order, lines, documents }) {
       serie: text(document.serie),
       numero: text(document.numero),
     }));
-  if (!mexalDocuments.length) throw new Error("Documenti Mexal non disponibili per il PDF ordine.");
-
   const files = await createMexalDocumentPdfFiles(
     { ...order, mexal_documents: mexalDocuments },
     lines || [],
   );
+  const workspaceReference = text(
+    order?.numero_ordine_visualizzato || order?.numero_ordine || order?.id || "ordine",
+  )
+    .replaceAll("/", "-")
+    .replace(/[^a-zA-Z0-9_-]+/g, "-");
   return files.map((file) => ({
-    filename: file.name,
+    filename: file.name === "ordine-bozza.pdf"
+      ? `ordine-workspace-${workspaceReference || "ordine"}.pdf`
+      : file.name,
     content: new Uint8Array(file.data),
     contentType: "application/pdf",
   }));
@@ -43,10 +48,6 @@ export async function loadOrderPdfEmailData({ supabase, orderId }) {
   if (orderError) throw orderError;
   if (linesError) throw linesError;
   if (documentsError) throw documentsError;
-  if (order?.stato_sincronizzazione !== "completato") {
-    throw new Error("Ordine non completato in Mexal: PDF email non generabile.");
-  }
-
   const attachments = await createOrderPdfAttachments({
     order,
     lines: lines || [],

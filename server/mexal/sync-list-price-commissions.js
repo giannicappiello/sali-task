@@ -4,7 +4,7 @@ import {
   failSyncRunUnlessClosed,
   getSyncRun,
   updateSyncRunProgress,
-} from "../../api/mexal/lib/syncRuns.js";
+} from "./lib/syncRuns.js";
 
 const ENDPOINT = "/dati-generali/provvigioni-listini";
 const STAGING_TABLE = "mexal_sync_payload_rows";

@@ -1,6 +1,6 @@
 import https from "node:https";
 import { createClient } from "@supabase/supabase-js";
-import { completeSyncRun, createSyncRun, failSyncRunUnlessClosed } from "../../api/mexal/lib/syncRuns.js";
+import { completeSyncRun, createSyncRun, failSyncRunUnlessClosed } from "./lib/syncRuns.js";
 
 const MODULE_CODE = "gestione_ordini";
 const CLIENT_PREFIX = "501";

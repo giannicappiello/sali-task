@@ -6,7 +6,7 @@ import useOrdersAccess from "./useOrdersAccess";
 import { useOrdersModule } from "../ordersModuleContext";
 import { calculateLineConditions } from "../services/priceEngine";
 import { calculateOrderEconomics } from "../services/orderEconomics";
-import { checkOrderAvailability, submitOrderToMexal, updateOrder } from "../services/orderFulfillment";
+import { checkOrderAvailability, enqueueOrderConfirmationEmail, submitOrderToMexal, updateOrder } from "../services/orderFulfillment";
 import { buildAvailabilityPreview, buildAvailabilitySignature, getAvailabilityValidity, quantitiesForOrderLine } from "../services/availability";
 import { buildNewOrderInsertPayload, buildWritableOrderPayload } from "../services/orderPayload";
 
@@ -516,6 +516,13 @@ export default function NewOrder() {
         );
         if (confirmError) throw confirmError;
 
+        try {
+          await enqueueOrderConfirmationEmail(order.id, moduleCode);
+        } catch (emailQueueError) {
+          console.error("Accodamento email conferma ordine non riuscito:", emailQueueError);
+          mexalMessage = ` Email non accodata: ${emailQueueError.message}.`;
+        }
+
         // In produzione l'invio parte subito. In sviluppo locale l'ordine resta
         // confermato e può essere inviato dalla pagina dettaglio dopo il deploy.
         const { data: moduleConfig, error: moduleConfigError } = await supabase.from("ordini_moduli_configurazione").select("invia_automaticamente_mexal").eq("modulo_ordini", moduleCode).maybeSingle();
@@ -523,12 +530,12 @@ export default function NewOrder() {
         if (moduleConfig?.invia_automaticamente_mexal !== false && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
           try {
             const syncResult = await submitOrderToMexal(order.id, moduleCode);
-            mexalMessage = ` OCM: ${syncResult.numero_ocm || "-"} · OCX: ${syncResult.numero_ocx || "-"} · OCI: ${syncResult.numero_oci || "-"}.`;
+            mexalMessage += ` OCM: ${syncResult.numero_ocm || "-"} · OCX: ${syncResult.numero_ocx || "-"} · OCI: ${syncResult.numero_oci || "-"}.`;
           } catch (syncError) {
-            mexalMessage = ` Ordine salvato, ma invio Mexal non riuscito: ${syncError.message}`;
+            mexalMessage += ` Ordine salvato, ma invio Mexal non riuscito: ${syncError.message}`;
           }
         } else {
-          mexalMessage = " In locale l'invio Mexal è disponibile dopo il deploy Vercel dalla pagina dettaglio.";
+          mexalMessage += " In locale l'invio Mexal è disponibile dopo il deploy Vercel dalla pagina dettaglio.";
         }
       }
 

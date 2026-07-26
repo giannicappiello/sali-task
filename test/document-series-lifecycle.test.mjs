@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { completeSyncRun, failSyncRun } from "../api/mexal/lib/syncRuns.js";
+import { completeSyncRun, failSyncRun } from "../server/mexal/lib/syncRuns.js";
 import { saveRows } from "../server/mexal/sync-document-series.js";
 
 const updates = [];

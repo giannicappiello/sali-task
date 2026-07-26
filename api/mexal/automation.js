@@ -12,8 +12,8 @@ import {
 } from "../../server/mexal/sync-list-price-commissions.js";
 import { agentsAccess } from "../../server/mexal/agents-access.js";
 import orderDocumentsHandler, { purgeEvictedOrderDocuments } from "../../server/mexal/sync-order-documents.js";
-import { requireAdmin } from "./lib/auth.js";
-import { completeIdempotentSync, findRunningSync, reserveIdempotentSync } from "./lib/syncRuns.js";
+import { requireAdmin } from "../../server/mexal/lib/auth.js";
+import { completeIdempotentSync, findRunningSync, reserveIdempotentSync } from "../../server/mexal/lib/syncRuns.js";
 
 function required(name) {
   const value = String(process.env[name] || "").trim();

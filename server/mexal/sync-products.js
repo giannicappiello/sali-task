@@ -1,6 +1,6 @@
 import https from "node:https";
 import { createClient } from "@supabase/supabase-js";
-import { completeSyncRun, createSyncRun as createCentralSyncRun, failSyncRun, failSyncRunUnlessClosed, findRunningSync, isSyncRunClosedError } from "../../api/mexal/lib/syncRuns.js";
+import { completeSyncRun, createSyncRun as createCentralSyncRun, failSyncRun, failSyncRunUnlessClosed, findRunningSync, isSyncRunClosedError } from "./lib/syncRuns.js";
 
 const MODULE_CODE = "gestione_ordini";
 const STORAGE_BUCKET = "prodotti-mexal";

@@ -39,7 +39,7 @@ mock.module("../server/mexal/sync-order-documents.js", {
 mock.module("../server/mexal/agents-access.js", {
   exports: { agentsAccess: async () => ({ success: true }) },
 });
-mock.module("../api/mexal/lib/auth.js", {
+mock.module("../server/mexal/lib/auth.js", {
   exports: {
     requireAdmin: async () => {
       calls.requireAdmin += 1;
@@ -49,7 +49,7 @@ mock.module("../api/mexal/lib/auth.js", {
     },
   },
 });
-mock.module("../api/mexal/lib/syncRuns.js", {
+mock.module("../server/mexal/lib/syncRuns.js", {
   exports: {
     findRunningSync: async (client, syncType) => {
       calls.find.push({ client, syncType });

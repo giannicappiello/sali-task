@@ -222,14 +222,16 @@ export default async function handler(req, res) {
         customer,
         moduleConfig,
         documents,
+        releaseExisting: true,
       });
       console.info("Order confirmation emails queued", { orderId, ...emailQueue });
       return res.status(200).json({ success: true, documents, emailQueue, ...updatedNumbers });
     } catch (emailQueueError) {
       console.error("Order confirmation email queue failed", { orderId, error: emailQueueError?.message });
-      return res.status(503).json({
-        error: "Documenti Mexal creati, ma accodamento email non riuscito.",
-        mexalCompleted: true,
+      return res.status(200).json({
+        success: true,
+        warning: "Documenti Mexal creati, ma accodamento email non riuscito.",
+        emailQueueError: emailQueueError?.message || "Errore accodamento email.",
         documents,
         ...updatedNumbers,
       });

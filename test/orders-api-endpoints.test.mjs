@@ -5,6 +5,7 @@ const fulfillment = await readFile("src/modules/orders/services/orderFulfillment
 
 const endpoints = [
   ["submitOrderToMexal", "/api/mexal/submit-order", "api/mexal/submit-order.js"],
+  ["enqueueOrderConfirmationEmail", "/api/mexal/orders/enqueue-confirmation-emails", "api/mexal/orders/enqueue-confirmation-emails.js"],
   ["stopOrderSync", "/api/mexal/orders/stop-sync", "api/mexal/orders/stop-sync.js"],
   ["deleteOrder", "/api/mexal/orders/delete", "api/mexal/orders/delete.js"],
   ["updateOrder", "/api/mexal/orders/update", "api/mexal/orders/update.js"],

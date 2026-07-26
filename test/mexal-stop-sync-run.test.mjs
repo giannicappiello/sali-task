@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 
 const [api, lifecycle, dashboard, syncCard, products, clients, commercial, orders] = await Promise.all([
   readFile("server/mexal/stop-sync-run.js", "utf8"),
-  readFile("api/mexal/lib/syncRuns.js", "utf8"),
+  readFile("server/mexal/lib/syncRuns.js", "utf8"),
   readFile("src/modules/integrations/pages/MexalDashboard.jsx", "utf8"),
   readFile("src/modules/integrations/components/MexalSyncCard.jsx", "utf8"),
   readFile("server/mexal/sync-products.js", "utf8"),

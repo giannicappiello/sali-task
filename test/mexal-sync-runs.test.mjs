@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cancelSyncRun, completeSyncRun, failSyncRun, failSyncRunUnlessClosed, isSyncRunClosedError, timeoutSyncRun } from "../api/mexal/lib/syncRuns.js";
+import { cancelSyncRun, completeSyncRun, failSyncRun, failSyncRunUnlessClosed, isSyncRunClosedError, timeoutSyncRun } from "../server/mexal/lib/syncRuns.js";
 
 function lifecycleAdmin(initialStatus, updateError = null) {
   const calls = [];

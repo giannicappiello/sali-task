@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
-import { requireAdmin } from "../../api/mexal/lib/auth.js";
-import { cancelSyncRun, isSyncRunClosedError } from "../../api/mexal/lib/syncRuns.js";
+import { requireAdmin } from "./lib/auth.js";
+import { cancelSyncRun, isSyncRunClosedError } from "./lib/syncRuns.js";
 
 const STOPPED_MESSAGE = "Sincronizzazione arrestata manualmente dall’amministratore.";
 

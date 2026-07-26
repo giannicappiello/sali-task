@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 
 const [migration, lifecycle, stopEndpoint, badge] = await Promise.all([
   readFile("supabase/migrations/20260720170000_fix_mexal_sync_runs_status_constraint.sql", "utf8"),
-  readFile("api/mexal/lib/syncRuns.js", "utf8"),
+  readFile("server/mexal/lib/syncRuns.js", "utf8"),
   readFile("server/mexal/stop-sync-run.js", "utf8"),
   readFile("src/modules/integrations/components/IntegrationStatusBadge.jsx", "utf8"),
 ]);

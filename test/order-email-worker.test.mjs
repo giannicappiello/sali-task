@@ -86,6 +86,25 @@ assert.equal(attachments[0].filename, "ordine-OCM-1-100.pdf");
 assert.equal(attachments[0].contentType, "application/pdf");
 assert.ok(attachments[0].content.byteLength > 100);
 
+const workspaceAttachments = await createOrderPdfAttachments({
+  order: {
+    id: "ordine-2",
+    data_ordine: "2026-07-26",
+    numero_ordine_visualizzato: "11/2026",
+  },
+  lines: [{
+    codice_articolo: "ART-2",
+    descrizione: "Articolo Workspace",
+    quantita: 1,
+    prezzo_listino: 15,
+    aliquota_iva: 22,
+  }],
+  documents: [],
+});
+assert.equal(workspaceAttachments.length, 1);
+assert.equal(workspaceAttachments[0].filename, "ordine-workspace-11-2026.pdf");
+assert.ok(workspaceAttachments[0].content.byteLength > 100);
+
 const [migration, worker, config, envExample] = await Promise.all([
   readFile("supabase/migrations/20260726130000_order_email_worker_rpcs.sql", "utf8"),
   readFile("supabase/functions/order-email-worker/index.ts", "utf8"),

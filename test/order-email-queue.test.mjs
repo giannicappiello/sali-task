@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import {
   buildConfiguredOrderEmailRecipients,
   buildOrderEmailQueueRows,
+  confirmationEmailAvailableAt,
   enqueueOrderConfirmationEmails,
   normalizeOrderEmail,
 } from "../server/orders/order-email-queue.js";
@@ -37,7 +38,7 @@ const rows = buildOrderEmailQueueRows({
   moduleConfig,
 });
 assert.equal(rows.length, 4);
-assert.ok(rows.every((row) => row.evento === "mexal_sync_completed" && row.stato === "queued"));
+assert.ok(rows.every((row) => row.evento === "order_confirmed" && row.stato === "queued"));
 assert.deepEqual(rows[0].allegati, [
   { tipo_documento: "OCM", numero: "100", stato: "da_generare" },
   { tipo_documento: "OCX", numero: "101", stato: "da_generare" },
@@ -45,6 +46,8 @@ assert.deepEqual(rows[0].allegati, [
 
 let queuedRows = null;
 let upsertOptions = null;
+let releasedUpdate = null;
+let queueWriteCount = 0;
 function queryResult(data) {
   return {
     select() { return this; },
@@ -63,9 +66,28 @@ const fakeSupabase = {
         upsert(inserted, options) {
           queuedRows = inserted;
           upsertOptions = options;
+          queueWriteCount += 1;
           return {
             async select() {
-              return { data: inserted.map((_, index) => ({ id: index + 1 })), error: null };
+              return {
+                data: queueWriteCount === 1
+                  ? inserted.map((_, index) => ({ id: index + 1 }))
+                  : [],
+                error: null,
+              };
+            },
+          };
+        },
+        update(values) {
+          releasedUpdate = values;
+          return {
+            eq() { return this; },
+            in() { return this; },
+            async select() {
+              return {
+                data: queuedRows.map((_, index) => ({ id: index + 1 })),
+                error: null,
+              };
             },
           };
         },
@@ -86,20 +108,51 @@ const queueResult = await enqueueOrderConfirmationEmails({
   moduleConfig,
   documents: [{ kind: "OCM", numero: "100" }],
 });
-assert.deepEqual(queueResult, { recipients: 4, queued: 4 });
+assert.deepEqual(queueResult, { recipients: 4, queued: 4, released: 0 });
 assert.equal(queuedRows.length, 4);
 assert.deepEqual(upsertOptions, {
   onConflict: "ordine_id,evento,destinatario",
   ignoreDuplicates: true,
 });
+const reconciledQueueResult = await enqueueOrderConfirmationEmails({
+  supabase: fakeSupabase,
+  order: {
+    id: "ordine-1",
+    numero_ordine_visualizzato: "PR-42",
+    modulo_ordini: "prof",
+    codice_agente_mexal: "A01",
+  },
+  customer: { email: "cliente@example.it" },
+  moduleConfig,
+  documents: [{ kind: "OCM", numero: "100" }],
+  releaseExisting: true,
+});
+assert.deepEqual(reconciledQueueResult, { recipients: 4, queued: 0, released: 4 });
+assert.equal(releasedUpdate.last_error, null);
+assert.deepEqual(releasedUpdate.allegati, [
+  { tipo_documento: "OCM", numero: "100", stato: "da_generare" },
+]);
+assert.equal(
+  confirmationEmailAvailableAt({ invia_automaticamente_mexal: false }, 0),
+  "1970-01-01T00:00:00.000Z",
+);
+assert.ok(
+  Date.parse(confirmationEmailAvailableAt({ invia_automaticamente_mexal: true }, 0)) > 0,
+);
 
-const [migration, submitOrder] = await Promise.all([
+const [migration, submitOrder, newOrder, fulfillment, enqueueApi] = await Promise.all([
   readFile("supabase/migrations/20260726120000_order_email_queue.sql", "utf8"),
   readFile("api/mexal/submit-order.js", "utf8"),
+  readFile("src/modules/orders/pages/NewOrder.jsx", "utf8"),
+  readFile("src/modules/orders/services/orderFulfillment.js", "utf8"),
+  readFile("api/mexal/orders/enqueue-confirmation-emails.js", "utf8"),
 ]);
 assert.match(migration, /unique \(ordine_id, evento, destinatario\)/i);
 assert.match(migration, /alter table public\.ordini_email_invio enable row level security/i);
 assert.match(submitOrder, /if \(!completed\)[\s\S]*enqueueOrderConfirmationEmails/);
 assert.doesNotMatch(submitOrder, /resend|nodemailer|smtp/i);
+assert.match(newOrder, /conferma_ordine_workspace[\s\S]*enqueueOrderConfirmationEmail\(order\.id, moduleCode\)[\s\S]*submitOrderToMexal/);
+assert.match(fulfillment, /enqueueOrderConfirmationEmail[\s\S]*\/api\/mexal\/orders\/enqueue-confirmation-emails/);
+assert.match(enqueueApi, /verifyUser[\s\S]*loadOrderConfirmationEmailContext[\s\S]*enqueueOrderConfirmationEmails/);
 
-console.log("order email queue: recipients, idempotency, post-Mexal enqueue and no provider verified");
+console.log("order email queue: confirmation enqueue, recipients, idempotency and Mexal reconciliation verified");

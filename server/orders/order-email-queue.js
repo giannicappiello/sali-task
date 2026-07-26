@@ -2,6 +2,9 @@ function text(value) {
   return String(value ?? "").trim();
 }
 
+export const ORDER_CONFIRMATION_EMAIL_EVENT = "order_confirmed";
+export const MEXAL_EMAIL_GRACE_MS = 15 * 60 * 1000;
+
 export function normalizeOrderEmail(value) {
   const email = text(value).toLowerCase();
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
@@ -41,6 +44,7 @@ export function buildOrderEmailQueueRows({
   documents = [],
   recipients = [],
   moduleConfig,
+  availableAt = new Date().toISOString(),
 }) {
   const orderNumber = text(order?.numero_ordine_visualizzato) || text(order?.id);
   const attachments = documents.map((document) => ({
@@ -50,6 +54,7 @@ export function buildOrderEmailQueueRows({
   }));
   const configSnapshot = {
     modulo_ordini: order?.modulo_ordini || "prof",
+    invia_automaticamente_mexal: moduleConfig?.invia_automaticamente_mexal !== false,
     invia_email_cliente: Boolean(moduleConfig?.invia_email_cliente),
     invia_email_agente: Boolean(moduleConfig?.invia_email_agente),
     invia_email_responsabile: Boolean(moduleConfig?.invia_email_responsabile),
@@ -59,13 +64,13 @@ export function buildOrderEmailQueueRows({
 
   return recipients.map((recipient) => ({
     ordine_id: order.id,
-    evento: "mexal_sync_completed",
+    evento: ORDER_CONFIRMATION_EMAIL_EVENT,
     tipo_destinatario: recipient.type,
     destinatario: recipient.email,
     stato: "queued",
     attempts: 0,
     max_attempts: 5,
-    available_at: new Date().toISOString(),
+    available_at: availableAt,
     oggetto: `Conferma ordine ${orderNumber}`,
     allegati: attachments,
     config_snapshot: configSnapshot,
@@ -105,6 +110,8 @@ export async function enqueueOrderConfirmationEmails({
   customer,
   moduleConfig,
   documents,
+  availableAt,
+  releaseExisting = false,
 }) {
   const { agent, responsible } = await loadAgentRecipients(supabase, order, moduleConfig);
   const recipients = buildConfiguredOrderEmailRecipients({
@@ -118,8 +125,9 @@ export async function enqueueOrderConfirmationEmails({
     documents,
     recipients,
     moduleConfig,
+    availableAt,
   });
-  if (!rows.length) return { recipients: 0, queued: 0 };
+  if (!rows.length) return { recipients: 0, queued: 0, released: 0 };
 
   const { data, error } = await supabase
     .from("ordini_email_invio")
@@ -129,5 +137,86 @@ export async function enqueueOrderConfirmationEmails({
     })
     .select("id");
   if (error) throw error;
-  return { recipients: recipients.length, queued: data?.length || 0 };
+
+  let released = 0;
+  if (releaseExisting) {
+    const { data: releasedRows, error: releaseError } = await supabase
+      .from("ordini_email_invio")
+      .update({
+        available_at: new Date().toISOString(),
+        allegati: rows[0].allegati,
+        config_snapshot: rows[0].config_snapshot,
+        last_error: null,
+      })
+      .eq("ordine_id", order.id)
+      .eq("evento", ORDER_CONFIRMATION_EMAIL_EVENT)
+      .in("destinatario", recipients.map(({ email }) => email))
+      .in("stato", ["queued", "retry"])
+      .select("id");
+    if (releaseError) throw releaseError;
+    released = releasedRows?.length || 0;
+  }
+
+  return { recipients: recipients.length, queued: data?.length || 0, released };
+}
+
+export async function loadOrderConfirmationEmailContext({
+  supabase,
+  orderId,
+  moduleCode,
+}) {
+  let orderQuery = supabase.from("ordini_testate").select("*").eq("id", orderId);
+  if (moduleCode) {
+    orderQuery = moduleCode === "prof"
+      ? orderQuery.or("modulo_ordini.eq.prof,modulo_ordini.is.null")
+      : orderQuery.eq("modulo_ordini", moduleCode);
+  }
+  const { data: order, error: orderError } = await orderQuery.single();
+  if (orderError) throw orderError;
+  if (text(order?.stato).toLowerCase() !== "aperto") {
+    throw Object.assign(new Error("L'ordine non risulta confermato."), { status: 409 });
+  }
+
+  const [
+    { data: customer, error: customerError },
+    { data: moduleConfig, error: moduleConfigError },
+    { data: documents, error: documentsError },
+  ] = await Promise.all([
+    supabase
+      .from("ordini_clienti_cache")
+      .select("*")
+      .eq("codice_cliente", order.codice_cliente)
+      .maybeSingle(),
+    supabase
+      .from("ordini_moduli_configurazione")
+      .select("invia_automaticamente_mexal,invia_email_agente,invia_email_cliente,invia_email_responsabile,backoffice_1_email,backoffice_2_email")
+      .eq("modulo_ordini", order.modulo_ordini || moduleCode || "prof")
+      .maybeSingle(),
+    supabase
+      .from("ordini_documenti_mexal")
+      .select("tipo_documento,numero")
+      .eq("ordine_id", orderId)
+      .not("numero", "is", null),
+  ]);
+  if (customerError || moduleConfigError || documentsError) {
+    throw customerError || moduleConfigError || documentsError;
+  }
+
+  return {
+    order,
+    customer,
+    moduleConfig,
+    documents: (documents || []).map((document) => ({
+      kind: document.tipo_documento,
+      numero: document.numero,
+    })),
+  };
+}
+
+export function confirmationEmailAvailableAt(moduleConfig, now = Date.now()) {
+  return new Date(
+    moduleConfig?.invia_automaticamente_mexal === false
+      ? now
+      : now + MEXAL_EMAIL_GRACE_MS,
+  ).toISOString();
 }

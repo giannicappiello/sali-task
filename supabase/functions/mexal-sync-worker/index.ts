@@ -63,6 +63,18 @@ Deno.serve(async (request: Request) => {
       workerId,
     }));
 
+    const recoveredJobs = await callLifecycle(
+      supabase,
+      "recover_expired_mexal_sync_jobs",
+      {},
+    );
+
+    if (Number(recoveredJobs) > 0) {
+      console.log(JSON.stringify({
+        event: "expired_job_leases_recovered",
+        recoveredJobs: Number(recoveredJobs),
+      }));
+    }
 
     const { data: job, error } =
       await supabase.rpc(

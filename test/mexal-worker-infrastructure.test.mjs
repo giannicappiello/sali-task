@@ -5,6 +5,10 @@ const migration = fs.readFileSync(
   new URL("../supabase/migrations/20260725190000_mexal_queue_worker_rpcs.sql", import.meta.url),
   "utf8",
 );
+const leaseRecoveryMigration = fs.readFileSync(
+  new URL("../supabase/migrations/20260726090000_recover_expired_mexal_sync_job_leases.sql", import.meta.url),
+  "utf8",
+);
 const worker = fs.readFileSync(
   new URL("../supabase/functions/mexal-sync-worker/index.ts", import.meta.url),
   "utf8",
@@ -41,6 +45,11 @@ assert.doesNotMatch(migration, /grant execute[\s\S]+to authenticated/i);
 assert.match(worker, /claim_next_mexal_sync_job/);
 assert.match(worker, /p_worker_id:\s*workerId[\s\S]*p_lease_seconds:\s*JOB_LEASE_SECONDS/);
 assert.match(worker, /const JOB_LEASE_SECONDS = 300/);
+assert.match(worker, /recover_expired_mexal_sync_jobs[\s\S]*claim_next_mexal_sync_job/);
+assert.match(leaseRecoveryMigration, /status in \('leased', 'running'\)/);
+assert.match(leaseRecoveryMigration, /lease_expires_at <= now\(\)/);
+assert.match(leaseRecoveryMigration, /set status = 'retry'/);
+assert.match(leaseRecoveryMigration, /grant execute[\s\S]+to service_role/i);
 assert.match(worker, /WORKER_SECRET/);
 assert.match(worker, /x-mexal-worker-secret/);
 assert.doesNotMatch(worker, /authorizationMatch/);

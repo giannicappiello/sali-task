@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pencil, Plus, Save, Search, Trash2, X } from "lucide-react";
+import { Building2, ClipboardList, Pencil, Plus, Save, Search, ShieldCheck, Trash2, UserRound, X } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 import ProjectTypesSettings from "../../components/ProjectTypesSettings";
-import PharmacyAccessSettings from "../../components/PharmacyAccessSettings";
-import OrdersAccessSettings from "../../components/OrdersAccessSettings";
 
 const emptyDepartment = { nome: "", descrizione: "", attivo: true };
 const emptyRole = { nome: "", descrizione: "", livello: 40, permessi: [] };
@@ -52,10 +50,10 @@ const permissionLabels = {
 };
 
 export default function Settings() {
-  const { hasPermission, reloadProfile } = useAuth();
+  const { hasPermission, profile, reloadProfile } = useAuth();
   const canManage = hasPermission("settings.manage") || hasPermission("users.manage");
 
-  const [tab, setTab] = useState("checklist");
+  const [tab, setTab] = useState("team");
   const [departments, setDepartments] = useState([]);
   const [roles, setRoles] = useState([]);
   const [templates, setTemplates] = useState([]);
@@ -132,6 +130,16 @@ export default function Settings() {
       return `${user.nome || ""} ${user.cognome || ""} ${user.email || ""} ${role} ${departmentsText}`.toLowerCase().includes(normalizedSearch);
     });
   }, [normalizedSearch, users, userDepartments, departments]);
+  const filteredDepartments = useMemo(() => departments.filter((item) => !normalizedSearch || `${item.nome || ""} ${item.descrizione || ""}`.toLowerCase().includes(normalizedSearch)), [departments, normalizedSearch]);
+  const filteredRoles = useMemo(() => roles.filter((item) => {
+    const permissionText = rolePermissions.filter((row) => row.ruolo_id === item.id).map((row) => row.permessi?.codice || "").join(" ");
+    return !normalizedSearch || `${item.nome || ""} ${item.descrizione || ""} ${permissionText}`.toLowerCase().includes(normalizedSearch);
+  }), [roles, rolePermissions, normalizedSearch]);
+  const filteredTemplates = useMemo(() => templates.filter((item) => {
+    const departmentIds = templateDepartments.filter((row) => row.template_id === item.id).map((row) => row.reparto_id);
+    const departmentText = departmentIds.map((id) => departments.find((department) => department.id === id)?.nome || "").join(" ");
+    return !normalizedSearch || `${item.titolo || ""} ${item.reparti?.nome || ""} ${departmentText}`.toLowerCase().includes(normalizedSearch);
+  }), [templates, templateDepartments, departments, normalizedSearch]);
 
   function getUserDepartmentIds(userId) {
     return userDepartments.filter((row) => row.utente_id === userId && row.reparto_id).map((row) => row.reparto_id);
@@ -461,6 +469,22 @@ export default function Settings() {
     await loadData();
   }
 
+  async function deleteUser(item) {
+    if (!canManage) return alert("Non hai i permessi.");
+    if (item.id === profile?.id) return alert("Non puoi eliminare il tuo stesso utente.");
+    const name = `${item.nome || ""} ${item.cognome || ""}`.trim() || item.email || "questo utente";
+    if (!window.confirm(`Eliminare definitivamente ${name}?\n\nVerranno rimossi l'account di accesso, il profilo workspace e gli eventuali profili collegati a Beauty Days. Le attività già registrate resteranno archiviate.`)) return;
+
+    setSaving(true);
+    const { data, error } = await supabase.functions.invoke("admin-manage-user", {
+      body: { action: "delete", id: item.id, auth_user_id: item.auth_user_id },
+    });
+    setSaving(false);
+    if (error || data?.error) return alert(error?.message || data?.error || "Eliminazione non riuscita.");
+    closeModal();
+    await loadData();
+  }
+
   return (
     <div className="settings-page v4-page">
       <div className="page-title-row">
@@ -470,106 +494,44 @@ export default function Settings() {
         </div>
       </div>
 
-      <div className="settings-tabs">
-        <button className={tab === "checklist" ? "active" : ""} onClick={() => setTab("checklist")}>Checklist progetto</button>
-        <button className={tab === "tipi_progetto" ? "active" : ""} onClick={() => setTab("tipi_progetto")}>Tipi di progetto</button>
-        <button className={tab === "reparti" ? "active" : ""} onClick={() => setTab("reparti")}>Reparti</button>
-        <button className={tab === "ruoli" ? "active" : ""} onClick={() => setTab("ruoli")}>Ruoli / permessi</button>
-        <button className={tab === "utenti" ? "active" : ""} onClick={() => setTab("utenti")}>Utenti / accessi</button>
-        <button className={tab === "farmacie_accessi" ? "active" : ""} onClick={() => setTab("farmacie_accessi")}>Accessi Beauty Days</button>
-        <button className={tab === "ordini_accessi" ? "active" : ""} onClick={() => setTab("ordini_accessi")}>Accessi Ordini</button>
+      <div className="settings-area-cards">
+        <button className={tab === "team" ? "active" : ""} onClick={() => setTab("team")}><span className="settings-area-icon"><UserRound /></span><span><strong>Team</strong><small>Utenti, accessi, moduli e relazioni</small></span></button>
+        <button className={tab === "organization" ? "active" : ""} onClick={() => setTab("organization")}><span className="settings-area-icon"><Building2 /></span><span><strong>Reparti / ruoli</strong><small>Struttura, ruoli e permessi</small></span></button>
+        <button className={tab === "projects" ? "active" : ""} onClick={() => setTab("projects")}><span className="settings-area-icon"><ClipboardList /></span><span><strong>Voci di progetto</strong><small>Checklist, tipi e fasi di progetto</small></span></button>
       </div>
 
-      {tab === "utenti" && (
-        <label className="mexal-search-control">
-          <Search size={18} />
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cerca utente, email, ruolo o reparto..." />
-        </label>
-      )}
+      <div className="settings-section-heading">
+        <div><span>{tab === "team" ? "TEAM" : tab === "organization" ? "REPARTI / RUOLI" : "VOCI DI PROGETTO"}</span><h2>{tab === "team" ? "Gestione completa del team" : tab === "organization" ? "Organizzazione e autorizzazioni" : "Configurazione dei progetti"}</h2></div>
+        <label className="settings-global-search"><Search size={19} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Ricerca rapida in questa schermata..." />{search && <button type="button" onClick={() => setSearch("")}><X size={16} /></button>}</label>
+      </div>
 
-      {tab === "tipi_progetto" && <ProjectTypesSettings canManage={canManage} />}
-
-      {tab === "farmacie_accessi" && <PharmacyAccessSettings canManage={canManage} />}
-
-      {tab === "ordini_accessi" && <OrdersAccessSettings canManage={canManage} />}
-
-      {tab === "checklist" && (
+      {tab === "team" && (
         <div className="panel settings-panel">
-          <div className="panel-header"><h3>Voci checklist preimpostate</h3>{canManage && <button className="primary-action" onClick={() => openCreate("checklist")}><Plus size={18} />Nuova voce</button>}</div>
-          <div className="settings-list">
-            {templates.map((item) => (
-              <div className="settings-row" key={item.id}>
-                <div><strong>{item.titolo}</strong><span>{getTemplateDepartmentNames(item.id, item.reparti?.nome || "Tutti i reparti")}</span></div>
-                <span className={`config-status ${item.attivo ? "active" : "inactive"}`}>{item.attivo ? "Attiva" : "Disattiva"}</span>
-                <span className="role-level">Ordine {item.ordine}</span>
-                <div className="config-actions"><button onClick={() => openEdit("checklist", item)}><Pencil size={16} /></button><button className="danger" onClick={() => remove("checklist", item)}><Trash2 size={16} /></button></div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {tab === "reparti" && (
-        <div className="panel settings-panel">
-          <div className="panel-header"><h3>Reparti</h3>{canManage && <button className="primary-action" onClick={() => openCreate("reparto")}><Plus size={18} />Nuovo reparto</button>}</div>
-          <div className="settings-list">
-            {departments.map((item) => (
-              <div className="settings-row" key={item.id}>
-                <div><strong>{item.nome}</strong><span>{item.descrizione || "Nessuna descrizione"}</span></div>
-                <span className={`config-status ${item.attivo ? "active" : "inactive"}`}>{item.attivo ? "Attivo" : "Disattivo"}</span>
-                <div className="config-actions"><button onClick={() => openEdit("reparto", item)}><Pencil size={16} /></button><button className="danger" onClick={() => remove("reparto", item)}><Trash2 size={16} /></button></div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {tab === "ruoli" && (
-        <div className="panel settings-panel">
-          <div className="panel-header"><h3>Ruoli e permessi</h3>{canManage && <button className="primary-action" onClick={() => openCreate("ruolo")}><Plus size={18} />Nuovo ruolo</button>}</div>
-          <div className="settings-list">
-            {roles.map((item) => {
-              const codes = getRolePermissionCodes(item.id);
-              return (
-                <div className="settings-row" key={item.id}>
-                  <div><strong>{item.nome}</strong><span>{item.descrizione || "Nessuna descrizione"}</span><span>Permessi: {codes.length ? codes.join(", ") : "Nessun permesso"}</span></div>
-                  <span className="role-level">Livello {item.livello}</span>
-                  <div className="config-actions"><button onClick={() => openEdit("ruolo", item)}><Pencil size={16} /></button><button className="danger" onClick={() => remove("ruolo", item)}><Trash2 size={16} /></button></div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {tab === "utenti" && (
-        <>
-        <div className="panel settings-panel">
-          <div className="panel-header"><h3>Utenti, ruoli e reparti</h3></div>
+          <div className="panel-header"><div><h3>Utenti e autorizzazioni</h3><p>Una sola scheda per ruolo, reparti, relazioni Mexal e accesso ai moduli.</p></div><ShieldCheck size={28} /></div>
           <div className="settings-list">
             {filteredUsers.map((item) => {
               const beautyAccess = integrations.find((row) => row.utente_id === item.id && row.modulo === "report_giornate");
               const ordersAccess = integrations.find((row) => row.utente_id === item.id && row.modulo === "gestione_ordini");
               const linkedAgent = mexalAgents.find((agent) => agent.workspace_utente_id === item.id);
-              return (
-              <div className="settings-row" key={item.id}>
-                <div>
-                  <strong>{`${item.nome || ""} ${item.cognome || ""}`.trim() || item.email || "Utente senza nome"}</strong>
-                  <span>{item.email || "Email non disponibile"}</span>
-                  <span>Ruolo: {item.ruoli?.nome || "Nessun ruolo"}</span>
-                  <span>Reparti: {getUserDepartmentNames(item.id)}</span>
-                  <span>Agente Mexal: {linkedAgent ? `${linkedAgent.codice} · ${`${linkedAgent.nome || ""} ${linkedAgent.cognome || ""}`.trim()}` : "Non associato"}</span>
-                  <span>Moduli: Beauty Days {beautyAccess?.enabled ? "attivo" : "non attivo"} · Ordini {ordersAccess?.enabled ? "attivo" : "non attivo"}</span>
-                </div>
-                <span className={`config-status ${item.attivo !== false ? "active" : "inactive"}`}>{item.attivo !== false ? "Attivo" : "Disattivo"}</span>
-                <div className="config-actions"><button onClick={() => openEdit("utente_accessi", item)}><Pencil size={16} /></button></div>
-              </div>
-              );
+              return <div className="settings-row" key={item.id}><div><strong>{`${item.nome || ""} ${item.cognome || ""}`.trim() || item.email || "Utente senza nome"}</strong><span>{item.email || "Email non disponibile"}</span><span>Ruolo: {item.ruoli?.nome || "Nessun ruolo"} · Reparti: {getUserDepartmentNames(item.id)}</span><span>Agente Mexal: {linkedAgent ? `${linkedAgent.codice} · ${`${linkedAgent.nome || ""} ${linkedAgent.cognome || ""}`.trim()}` : "Non associato"}</span><span>Moduli: Beauty Days {beautyAccess?.enabled ? "attivo" : "non attivo"} · Ordini {ordersAccess?.enabled ? "attivo" : "non attivo"}</span></div><span className={`config-status ${item.attivo !== false ? "active" : "inactive"}`}>{item.attivo !== false ? "Attivo" : "Disattivo"}</span><div className="config-actions"><button title="Modifica configurazione completa" onClick={() => openEdit("utente_accessi", item)}><Pencil size={16} /></button>{canManage && item.id !== profile?.id && <button title="Elimina definitivamente" className="danger" onClick={() => deleteUser(item)}><Trash2 size={16} /></button>}</div></div>;
             })}
-            {filteredUsers.length === 0 && <p>Nessun utente trovato.</p>}
+            {filteredUsers.length === 0 && <p>Nessun utente corrisponde alla ricerca.</p>}
           </div>
         </div>
-        </>
+      )}
+
+      {tab === "organization" && (
+        <div className="settings-two-columns">
+          <div className="panel settings-panel"><div className="panel-header"><div><h3>Reparti</h3><p>Struttura organizzativa del workspace.</p></div>{canManage && <button className="primary-action" onClick={() => openCreate("reparto")}><Plus size={18} />Nuovo</button>}</div><div className="settings-list">{filteredDepartments.map((item) => <div className="settings-row" key={item.id}><div><strong>{item.nome}</strong><span>{item.descrizione || "Nessuna descrizione"}</span></div><span className={`config-status ${item.attivo ? "active" : "inactive"}`}>{item.attivo ? "Attivo" : "Disattivo"}</span><div className="config-actions"><button onClick={() => openEdit("reparto", item)}><Pencil size={16} /></button><button className="danger" onClick={() => remove("reparto", item)}><Trash2 size={16} /></button></div></div>)}{filteredDepartments.length === 0 && <p>Nessun reparto corrisponde alla ricerca.</p>}</div></div>
+          <div className="panel settings-panel"><div className="panel-header"><div><h3>Ruoli, permessi e moduli</h3><p>Definisci ogni ruolo e le autorizzazioni associate.</p></div>{canManage && <button className="primary-action" onClick={() => openCreate("ruolo")}><Plus size={18} />Nuovo</button>}</div><div className="settings-list">{filteredRoles.map((item) => { const codes = getRolePermissionCodes(item.id); return <div className="settings-row" key={item.id}><div><strong>{item.nome}</strong><span>{item.descrizione || "Nessuna descrizione"}</span><span>Permessi e moduli: {codes.length ? codes.map((code) => permissionLabels[code] || code).join(", ") : "Nessuno"}</span></div><span className="role-level">Livello {item.livello}</span><div className="config-actions"><button onClick={() => openEdit("ruolo", item)}><Pencil size={16} /></button><button className="danger" onClick={() => remove("ruolo", item)}><Trash2 size={16} /></button></div></div>; })}{filteredRoles.length === 0 && <p>Nessun ruolo corrisponde alla ricerca.</p>}</div></div>
+        </div>
+      )}
+
+      {tab === "projects" && (
+        <div className="settings-project-stack">
+          <div className="panel settings-panel"><div className="panel-header"><div><h3>Voci checklist preimpostate</h3><p>Voci riutilizzabili nelle fasi dei progetti.</p></div>{canManage && <button className="primary-action" onClick={() => openCreate("checklist")}><Plus size={18} />Nuova voce</button>}</div><div className="settings-list">{filteredTemplates.map((item) => <div className="settings-row" key={item.id}><div><strong>{item.titolo}</strong><span>{getTemplateDepartmentNames(item.id, item.reparti?.nome || "Tutti i reparti")}</span></div><span className={`config-status ${item.attivo ? "active" : "inactive"}`}>{item.attivo ? "Attiva" : "Disattiva"}</span><span className="role-level">Ordine {item.ordine}</span><div className="config-actions"><button onClick={() => openEdit("checklist", item)}><Pencil size={16} /></button><button className="danger" onClick={() => remove("checklist", item)}><Trash2 size={16} /></button></div></div>)}{filteredTemplates.length === 0 && <p>Nessuna voce corrisponde alla ricerca.</p>}</div></div>
+          <ProjectTypesSettings canManage={canManage} searchTerm={search} />
+        </div>
       )}
 
       {modal.open && (

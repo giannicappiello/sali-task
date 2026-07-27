@@ -5,7 +5,7 @@ import { supabase } from "../lib/supabaseClient";
 const emptyType = { nome: "", descrizione: "", attivo: true };
 const emptyRule = { template_id: "", giorni_anticipo: 0, ordine: 1, obbligatoria: true };
 
-export default function ProjectTypesSettings({ canManage = false }) {
+export default function ProjectTypesSettings({ canManage = false, searchTerm = "" }) {
   const [types, setTypes] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [rules, setRules] = useState([]);
@@ -17,7 +17,11 @@ export default function ProjectTypesSettings({ canManage = false }) {
   const [editingRule, setEditingRule] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    loadData();
+    // Il caricamento iniziale non deve ripetersi quando cambia il tipo selezionato.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function loadData() {
     const [typesRes, templatesRes, rulesRes] = await Promise.all([
@@ -39,6 +43,12 @@ export default function ProjectTypesSettings({ canManage = false }) {
     () => rules.filter((row) => row.tipo_progetto_id === selectedType?.id).sort((a, b) => Number(a.ordine || 0) - Number(b.ordine || 0)),
     [rules, selectedType?.id]
   );
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredTypes = useMemo(() => types.filter((item) => !normalizedSearch || `${item.nome || ""} ${item.descrizione || ""}`.toLowerCase().includes(normalizedSearch)), [types, normalizedSearch]);
+  const filteredRules = useMemo(() => selectedRules.filter((rule) => {
+    const name = templates.find((item) => item.id === rule.template_id)?.titolo || "";
+    return !normalizedSearch || `${name} ${rule.giorni_anticipo || ""} ${rule.ordine || ""}`.toLowerCase().includes(normalizedSearch);
+  }), [selectedRules, templates, normalizedSearch]);
 
   function templateName(id) {
     return templates.find((item) => item.id === id)?.titolo || "Fase non disponibile";
@@ -138,7 +148,7 @@ export default function ProjectTypesSettings({ canManage = false }) {
       <div className="panel settings-panel">
         <div className="panel-header"><h3>Tipi di progetto</h3>{canManage && <button className="primary-action" onClick={openNewType}><Plus size={18} />Nuovo tipo</button>}</div>
         <div className="settings-list">
-          {types.map((item) => (
+          {filteredTypes.map((item) => (
             <div className={`settings-row ${selectedType?.id === item.id ? "active" : ""}`} key={item.id}>
               <button type="button" style={{ textAlign: "left", flex: 1, background: "none", border: 0 }} onClick={() => setSelectedType(item)}>
                 <strong>{item.nome}</strong><span>{item.descrizione || "Nessuna descrizione"}</span>
@@ -147,21 +157,21 @@ export default function ProjectTypesSettings({ canManage = false }) {
               <div className="config-actions"><button onClick={() => openEditType(item)}><Pencil size={16} /></button><button className="danger" onClick={() => deleteType(item)}><Trash2 size={16} /></button></div>
             </div>
           ))}
-          {!types.length && <p>Nessun tipo progetto configurato.</p>}
+          {!filteredTypes.length && <p>Nessun tipo progetto corrisponde alla ricerca.</p>}
         </div>
       </div>
 
       <div className="panel settings-panel">
         <div className="panel-header"><div><h3>Fasi associate</h3><p>{selectedType ? selectedType.nome : "Seleziona un tipo progetto"}</p></div>{selectedType && canManage && <button className="primary-action" onClick={openNewRule}><Plus size={18} />Aggiungi fase</button>}</div>
         <div className="settings-list">
-          {selectedType && selectedRules.map((rule) => (
+          {selectedType && filteredRules.map((rule) => (
             <div className="settings-row" key={rule.id}>
               <div><strong>{templateName(rule.template_id)}</strong><span>{rule.giorni_anticipo} giorni di anticipo</span></div>
               <span className="role-level">Ordine {rule.ordine}</span>
               <div className="config-actions"><button onClick={() => openEditRule(rule)}><Pencil size={16} /></button><button className="danger" onClick={() => deleteRule(rule)}><Trash2 size={16} /></button></div>
             </div>
           ))}
-          {selectedType && !selectedRules.length && <p>Nessuna fase associata.</p>}
+          {selectedType && !filteredRules.length && <p>Nessuna fase corrisponde alla ricerca.</p>}
           {!selectedType && <p>Seleziona un tipo progetto dalla colonna di sinistra.</p>}
         </div>
       </div>

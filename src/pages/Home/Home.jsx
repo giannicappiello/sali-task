@@ -20,6 +20,7 @@ const cards = [
     description: "Task, reminder, progetti, fasi e analisi dati del reparto.",
     icon: ClipboardList,
     permission: "dashboard.read",
+    module: "attivita",
   },
   {
     path: "/farmacie/dashboard",
@@ -28,9 +29,10 @@ const cards = [
     icon: Store,
     permission: "pharmacy.read",
     special: "pharmacy",
+    module: "beauty_days",
   },
-  { path: "/ordini-prof", label: "Ordini PR", description: "Clienti, ordini e attività commerciali collegate a Mexal.", icon: ShoppingCart, permission: "orders.read", special: "orders_pr" },
-  { path: "/ordini-ph", label: "Ordini PH", description: "Clienti, ordini e attività commerciali collegate a Mexal.", icon: ShoppingCart, permission: "orders.read", special: "orders_ph" },
+  { path: "/ordini-prof", label: "Ordini PR", description: "Clienti, ordini e attività commerciali collegate a Mexal.", icon: ShoppingCart, permission: "orders.read", special: "orders_pr", module: "ordini_pr" },
+  { path: "/ordini-ph", label: "Ordini PH", description: "Clienti, ordini e attività commerciali collegate a Mexal.", icon: ShoppingCart, permission: "orders.read", special: "orders_ph", module: "ordini_ph" },
   {
     path: "/products",
     label: "Prodotti",
@@ -38,6 +40,7 @@ const cards = [
     icon: Package,
     permission: "products.read",
     special: "products",
+    module: "prodotti",
   },
   {
     path: "/documentation",
@@ -45,6 +48,7 @@ const cards = [
     description: "Schede tecniche, certificazioni e documentazione aziendale.",
     icon: FileArchive,
     permission: "documentation.read",
+    module: "documenti",
   },
   {
     path: "/messages",
@@ -52,6 +56,7 @@ const cards = [
     description: "Conversazioni, allegati e notifiche interne.",
     icon: MessageCircle,
     permission: "messages.read",
+    module: "messaggi",
   },
   {
     path: "/integrations",
@@ -72,7 +77,7 @@ const cards = [
 
 export default function Home() {
   const navigate = useNavigate();
-  const { profile, hasPermission, isAdminUser } = useAuth();
+  const { profile, hasPermission, hasModuleAccess, isAdminUser } = useAuth();
   const [pharmacyEnabled, setPharmacyEnabled] = useState(false);
   const [ordersAccess, setOrdersAccess] = useState({ pr: false, ph: false });
 
@@ -124,8 +129,9 @@ export default function Home() {
     () =>
       cards.filter((card) => {
         if (card.adminOnly && !isAdminUser) return false;
+        if (card.module && !hasModuleAccess(card.module)) return false;
         if (card.special === "pharmacy") {
-          return pharmacyEnabled || hasPermission("pharmacy.read");
+          return pharmacyEnabled;
         }
         if (card.special === "orders_pr") return ordersAccess.pr;
         if (card.special === "orders_ph") return ordersAccess.ph;
@@ -134,7 +140,7 @@ export default function Home() {
         }
         return hasPermission(card.permission);
       }),
-    [hasPermission, pharmacyEnabled, ordersAccess, isAdminUser]
+    [hasPermission, hasModuleAccess, pharmacyEnabled, ordersAccess, isAdminUser]
   );
 
   return (

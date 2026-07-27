@@ -8,6 +8,7 @@ export function AuthProvider({ children }) {
   const [authUser, setAuthUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [permissions, setPermissions] = useState([]);
+  const [moduleAccess, setModuleAccess] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -26,6 +27,7 @@ export function AuthProvider({ children }) {
       else {
         setProfile(null);
         setPermissions([]);
+        setModuleAccess([]);
       }
 
       setLoading(false);
@@ -41,6 +43,7 @@ export function AuthProvider({ children }) {
       else {
         setProfile(null);
         setPermissions([]);
+        setModuleAccess([]);
       }
 
       setLoading(false);
@@ -126,6 +129,7 @@ export function AuthProvider({ children }) {
       console.error("Errore caricamento profilo:", error);
       setProfile(null);
       setPermissions([]);
+      setModuleAccess([]);
       return;
     }
 
@@ -156,6 +160,20 @@ export function AuthProvider({ children }) {
       reparto_ids.push(data.reparto_id);
       if (data.reparti) reparti_multipli.push(data.reparti);
     }
+
+    let nextModuleAccess = [];
+    if (reparto_ids.length) {
+      const { data: moduleRows, error: moduleError } = await supabase
+        .from("reparti_moduli")
+        .select("modulo")
+        .in("reparto_id", reparto_ids);
+      if (moduleError) {
+        console.error("Errore caricamento moduli dei reparti:", moduleError);
+      } else {
+        nextModuleAccess = [...new Set((moduleRows || []).map((row) => row.modulo).filter(Boolean))];
+      }
+    }
+    setModuleAccess(nextModuleAccess);
 
     const nextProfile = data
       ? { ...data, ultimo_accesso: now, last_seen: now, reparto_ids, reparti_multipli }
@@ -204,6 +222,7 @@ export function AuthProvider({ children }) {
     setAuthUser(null);
     setProfile(null);
     setPermissions([]);
+    setModuleAccess([]);
   }
 
   async function resetPassword(email) {
@@ -230,6 +249,12 @@ export function AuthProvider({ children }) {
     return (profile?.reparto_ids || []).includes(repartoId);
   }
 
+  function hasModuleAccess(moduleCode) {
+    if (!profile) return false;
+    if (isAdmin()) return true;
+    return moduleAccess.includes(moduleCode);
+  }
+
   const adminUser = isAdmin();
 
   const value = useMemo(
@@ -239,11 +264,13 @@ export function AuthProvider({ children }) {
       user: profile,
       profile,
       permissions,
+      moduleAccess,
       loading,
       signIn,
       signOut,
       resetPassword,
       hasPermission,
+      hasModuleAccess,
       isAdmin,
       isAdminUser: adminUser,
       canReadEverything: adminUser,
@@ -252,7 +279,7 @@ export function AuthProvider({ children }) {
       userDepartmentIds: profile?.reparto_ids || [],
       reloadProfile: () => authUser && loadProfile(authUser),
     }),
-    [session, authUser, profile, permissions, loading, adminUser]
+    [session, authUser, profile, permissions, moduleAccess, loading, adminUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

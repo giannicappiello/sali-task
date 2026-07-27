@@ -112,6 +112,23 @@ async function loadPaged(table, buildQuery) {
   }
 }
 
+async function loadPagedRpc(rpcName, buildQuery) {
+  const rows = [];
+  let from = 0;
+
+  while (true) {
+    const query = buildQuery(
+      supabase.rpc(rpcName).select("*").range(from, from + PAGE_SIZE - 1)
+    );
+    const { data, error } = await query;
+    if (error) throw error;
+    const page = data || [];
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) return rows;
+    from += PAGE_SIZE;
+  }
+}
+
 export default function NewOrder() {
   const { moduleCode, basePath } = useOrdersModule();
   const navigate = useNavigate();
@@ -183,14 +200,14 @@ export default function NewOrder() {
         throw new Error("Nessun codice agente Mexal associato all'utente.");
       }
 
-      const customerRows = await loadPaged("ordini_clienti_cache", (query) => {
-        let result = query
+      const customerRows = canSeeAll
+        ? await loadPaged("ordini_clienti_cache", (query) => query
           .eq("attivo_mexal", true)
           .order("ragione_sociale", { ascending: true })
-          .order("codice_cliente", { ascending: true });
-        if (!canSeeAll) result = result.in("codice_agente_mexal", visibleAgents);
-        return result;
-      });
+          .order("codice_cliente", { ascending: true }))
+        : await loadPagedRpc("visible_mexal_clients_for_me", (query) => query
+          .order("ragione_sociale", { ascending: true })
+          .order("codice_cliente", { ascending: true }));
 
       let productRows = [];
 

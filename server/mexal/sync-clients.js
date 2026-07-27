@@ -298,7 +298,9 @@ function getAgentCode(client) {
   ]);
 
   if (Array.isArray(raw)) {
-    const first = Array.isArray(raw[0]) ? raw[0][0] : raw[0];
+    const first = Array.isArray(raw[0])
+      ? raw[0].slice().reverse().find((value) => normalize(value) !== "")
+      : raw[0];
     if (first && typeof first === "object") {
       return upper(firstValue(first, ["codice", "codice_agente", "cod_agente", "id"]));
     }

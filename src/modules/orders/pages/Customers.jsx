@@ -34,22 +34,6 @@ export default function Customers() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    if (accessLoading) return undefined;
-
-    const timer = window.setTimeout(() => {
-      loadCustomers(search);
-    }, search.trim() ? SEARCH_DELAY_MS : 0);
-
-    return () => window.clearTimeout(timer);
-  }, [
-    accessLoading,
-    canSeeAll,
-    canAccessOrders,
-    search,
-    JSON.stringify(visibleAgents),
-  ]);
-
   async function loadCustomers(searchValue) {
     const requestId = ++requestIdRef.current;
     setLoading(true);
@@ -69,19 +53,17 @@ export default function Customers() {
       }
 
       const searchTerm = normalizeSearch(searchValue);
-      let query = supabase
-        .from("ordini_clienti_cache")
+      let query = (canSeeAll
+        ? supabase.from("ordini_clienti_cache")
+        : supabase.rpc("visible_mexal_clients_for_me"))
         .select(
           "codice_cliente,ragione_sociale,localita,provincia,partita_iva,codice_agente_mexal"
         )
-        .eq("attivo_mexal", true)
         .order("ragione_sociale", { ascending: true })
         .order("codice_cliente", { ascending: true })
         .limit(RESULT_LIMIT);
 
-      if (!canSeeAll) {
-        query = query.in("codice_agente_mexal", visibleAgents);
-      }
+      if (canSeeAll) query = query.eq("attivo_mexal", true);
 
       if (searchTerm) {
         const pattern = `%${searchTerm}%`;
@@ -118,6 +100,22 @@ export default function Customers() {
       if (requestId === requestIdRef.current) setLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (accessLoading) return undefined;
+
+    const timer = window.setTimeout(() => {
+      loadCustomers(search);
+    }, search.trim() ? SEARCH_DELAY_MS : 0);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    accessLoading,
+    canSeeAll,
+    canAccessOrders,
+    search,
+    JSON.stringify(visibleAgents),
+  ]);
 
   return (
     <div className="orders-page">

@@ -21,14 +21,14 @@ import { useAuth } from "../contexts/AuthContext";
 
 const menuItems = [
   { path: "/home", label: "Home", icon: Home, permission: "dashboard.read" },
-  { path: "/activities", label: "Attività", icon: ClipboardList, permission: "dashboard.read" },
-  { path: "/farmacie/dashboard", label: "Beauty Days", icon: Store, permission: "pharmacy.read" },
-  { path: "/ordini-prof", label: "Ordini PR", icon: ShoppingCart, permission: "orders.read", special: "orders_pr" },
-  { path: "/ordini-ph", label: "Ordini PH", icon: ShoppingCart, permission: "orders.read", special: "orders_ph" },
-  { path: "/products", label: "Prodotti", icon: Package, permission: "products.read" },
-  { path: "/documentation", label: "Documenti", icon: FileArchive, permission: "documentation.read" },
-  { path: "/messages", label: "Messaggi", icon: MessageCircle, permission: "messages.read" },
-  { path: "/team", label: "Team", icon: Users, permission: "team.read" },
+  { path: "/activities", label: "Attività", icon: ClipboardList, permission: "dashboard.read", module: "attivita" },
+  { path: "/farmacie/dashboard", label: "Beauty Days", icon: Store, permission: "pharmacy.read", module: "beauty_days" },
+  { path: "/ordini-prof", label: "Ordini PR", icon: ShoppingCart, permission: "orders.read", special: "orders_pr", module: "ordini_pr" },
+  { path: "/ordini-ph", label: "Ordini PH", icon: ShoppingCart, permission: "orders.read", special: "orders_ph", module: "ordini_ph" },
+  { path: "/products", label: "Prodotti", icon: Package, permission: "products.read", module: "prodotti" },
+  { path: "/documentation", label: "Documenti", icon: FileArchive, permission: "documentation.read", module: "documenti" },
+  { path: "/messages", label: "Messaggi", icon: MessageCircle, permission: "messages.read", module: "messaggi" },
+  { path: "/team", label: "Team", icon: Users, permission: "team.read", module: "team" },
   { path: "/integrations", label: "Integrazioni", icon: PlugZap, permission: "settings.manage", adminOnly: true },
   { path: "/settings", label: "Impostazioni", icon: Settings, permission: "settings.manage" },
 ];
@@ -87,7 +87,7 @@ function getPresence(profile) {
 function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { profile, signOut, hasPermission, isAdminUser } = useAuth();
+  const { profile, signOut, hasPermission, hasModuleAccess, isAdminUser } = useAuth();
 
   const currentPage = location.pathname.startsWith("/integrations/mexal")
     ? pageInfo["/integrations/mexal"]
@@ -189,9 +189,10 @@ function Layout() {
     () =>
       menuItems.filter((item) => {
         if (item.adminOnly && !isAdminUser) return false;
+        if (item.module && !hasModuleAccess(item.module)) return false;
 
         if (item.path === "/farmacie/dashboard") {
-          return pharmacyEnabled || hasPermission("pharmacy.read");
+          return pharmacyEnabled;
         }
 
         if (item.special === "orders_pr") return ordersAccess.pr;
@@ -203,7 +204,7 @@ function Layout() {
 
         return hasPermission(item.permission);
       }),
-    [hasPermission, pharmacyEnabled, ordersAccess, isAdminUser]
+    [hasPermission, hasModuleAccess, pharmacyEnabled, ordersAccess, isAdminUser]
   );
 
   useEffect(() => {

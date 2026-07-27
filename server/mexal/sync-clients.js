@@ -293,11 +293,19 @@ function getAgentCode(client) {
     "codagente",
     "agente_1",
     "codice_agente_1",
+    "cod_agente_1",
+    "cod_agente_2",
   ]);
 
-  if (Array.isArray(raw)) return upper(raw[0]);
+  if (Array.isArray(raw)) {
+    const first = Array.isArray(raw[0]) ? raw[0][0] : raw[0];
+    if (first && typeof first === "object") {
+      return upper(firstValue(first, ["codice", "codice_agente", "cod_agente", "id"]));
+    }
+    return upper(first);
+  }
   if (raw && typeof raw === "object") {
-    return upper(firstValue(raw, ["codice", "codice_agente", "id"]));
+    return upper(firstValue(raw, ["codice", "codice_agente", "cod_agente", "id"]));
   }
   return upper(raw);
 }

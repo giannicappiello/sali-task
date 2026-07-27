@@ -144,10 +144,14 @@ export default function Settings() {
     const departmentText = departmentIds.map((id) => departments.find((department) => department.id === id)?.nome || "").join(" ");
     return !normalizedSearch || `${item.titolo || ""} ${item.reparti?.nome || ""} ${departmentText}`.toLowerCase().includes(normalizedSearch);
   }), [templates, templateDepartments, departments, normalizedSearch]);
-  const responsibleUsers = useMemo(
-    () => users.filter((user) => user.attivo !== false && String(user.ruoli?.nome || "").trim().toLowerCase() === "responsabile"),
-    [users]
-  );
+  const responsibleUsers = useMemo(() => {
+    const responsibleRoleIds = new Set(
+      roles
+        .filter((role) => String(role.nome || "").trim().toLocaleLowerCase("it-IT") === "responsabile")
+        .map((role) => role.id)
+    );
+    return users.filter((user) => user.attivo !== false && responsibleRoleIds.has(user.ruolo_id));
+  }, [users, roles]);
 
   function getUserDepartmentIds(userId) {
     return userDepartments.filter((row) => row.utente_id === userId && row.reparto_id).map((row) => row.reparto_id);

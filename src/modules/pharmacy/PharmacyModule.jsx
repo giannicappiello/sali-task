@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
-import { BarChart3, CalendarDays, ContactRound, MapPinned, Package } from "lucide-react";
+import { BarChart3, CalendarDays, ContactRound, MapPinned } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 import Dashboard from "./pages/Dashboard";
 import ApertureContatti from "./pages/ApertureContatti";
 import Giornate from "./pages/Giornate";
 import Analisi from "./pages/Analisi";
-import Prodotti from "./pages/Prodotti";
 import "./report-style.css";
 import "./report-app.css";
 import "./pharmacy-module.css";
@@ -15,7 +14,6 @@ import "./pharmacy-module.css";
 const items = [
   ["dashboard", "Dashboard", BarChart3], ["aperture", "Aperture/Contatti", ContactRound],
   ["giornate", "Giornate", CalendarDays], ["analisi", "Analisi dati", BarChart3],
-  ["prodotti", "Prodotti", Package],
 ];
 
 export default function PharmacyModule() {
@@ -44,7 +42,7 @@ export default function PharmacyModule() {
     const externalRole = context?.external_role || (isAdminUser ? "admin" : "beauty");
 
     return {
-      id: context?.external_user_id || profile?.auth_user_id || profile?.id,
+      id: context?.external_user_id || null,
       nome: profile?.nome || profile?.email || "Utente",
       cognome: profile?.cognome || "",
       email: profile?.email,
@@ -81,7 +79,7 @@ export default function PharmacyModule() {
       <Route path="aperture" element={<ApertureContatti utente={legacyUser}/>}/>
       <Route path="giornate" element={<Giornate utente={legacyUser}/>}/>
       <Route path="analisi" element={<Analisi utente={legacyUser}/>}/>
-      <Route path="prodotti" element={<Prodotti utente={legacyUser}/>}/>
+      <Route path="prodotti" element={<Navigate to="/farmacie/dashboard" replace/>}/>
       <Route path="clienti" element={<Navigate to="/farmacie/giornate" replace/>}/>
       <Route path="farmacie" element={<Navigate to="/farmacie/giornate" replace/>}/>
       <Route path="*" element={<Navigate to="dashboard" replace/>}/>

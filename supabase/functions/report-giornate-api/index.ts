@@ -8,7 +8,7 @@ const corsHeaders = {
 const allowedTables = new Set([
   "allegati_giornata", "aperture_contatti", "beauty_consultant", "categorie_prodotti",
   "follow_up_giornate", "farmacie", "giornate_promozionali", "province", "regioni",
-  "prodotti", "sottocategorie_prodotti", "vendite_prodotti", "agent", "utenti",
+  "sottocategorie_prodotti", "vendite_prodotti", "agent", "utenti",
 ]);
 const allowedBuckets = new Set(["allegati-giornate", "allegati_giornate"]);
 
@@ -43,7 +43,7 @@ Deno.serve(async (req) => {
     const { data: integration } = await primary.from("integrazioni_utenti").select("*").eq("utente_id", profile.id).eq("modulo", "report_giornate").maybeSingle();
     if (!isAdmin && (!integration || integration.enabled === false)) return json({ error: "Non sei autorizzato ad accedere a Beauty Days" }, 403);
 
-    const access = integration || { enabled: true, access_level: "admin", external_role: "admin", allowed_pages: ["dashboard","aperture","giornate","analisi","prodotti"], data_scope: {} };
+    const access = integration || { enabled: true, access_level: "admin", external_role: "admin", allowed_pages: ["dashboard","aperture","giornate","analisi"], data_scope: {} };
     const organizationScope = await loadOrganizationScope(primary, profile, access, isAdmin);
     const report = createClient(reportUrl, reportServiceKey, { auth: { persistSession: false } });
     const body = await req.json();
@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
         visible_beauty_ids: organizationScope.visibleBeautyIds,
         access_level: isAdmin ? "admin" : access.access_level,
         allowed_pages: isAdmin
-          ? ["dashboard","aperture","giornate","analisi","prodotti"]
+          ? ["dashboard","aperture","giornate","analisi"]
           : normalizeAllowedPages(access.allowed_pages),
       });
     }
@@ -154,8 +154,8 @@ async function ensureExternalUser(report: any, body: any) {
     throw new Error("La creazione automatica è disponibile solo per Beauty e Agente.");
   }
 
-  if (!nome || !cognome || !email) {
-    throw new Error("Nome, cognome ed email sono obbligatori.");
+  if (!nome || !email) {
+    throw new Error("Nome ed email sono obbligatori.");
   }
 
   let externalAgentId = body.external_agent_id || null;
@@ -264,84 +264,9 @@ async function ensureExternalUser(report: any, body: any) {
     }
   }
 
-  let authUser = null;
-  const listed = await report.auth.admin.listUsers({ page: 1, perPage: 1000 });
-  if (listed.error) throw listed.error;
-  authUser = listed.data.users.find(
-    (user: any) => String(user.email || "").toLowerCase() === email
-  );
-
-  if (!authUser) {
-    const randomPassword = `Tmp!${crypto.randomUUID()}aA1`;
-    const created = await report.auth.admin.createUser({
-      email,
-      password: randomPassword,
-      email_confirm: true,
-      user_metadata: {
-        nome,
-        cognome,
-        full_name: `${nome} ${cognome}`.trim(),
-      },
-    });
-
-    if (created.error) throw created.error;
-    authUser = created.data.user;
-  } else {
-    const updatedAuth = await report.auth.admin.updateUserById(authUser.id, {
-      user_metadata: {
-        ...(authUser.user_metadata || {}),
-        nome,
-        cognome,
-        full_name: `${nome} ${cognome}`.trim(),
-      },
-    });
-
-    if (updatedAuth.error) throw updatedAuth.error;
-  }
-
-  const userName = `${cognome} ${nome}`.trim();
-  const existingRemoteUser = await report
-    .from("utenti")
-    .select("*")
-    .ilike("email", email)
-    .maybeSingle();
-
-  if (existingRemoteUser.error) throw existingRemoteUser.error;
-
-  let externalUserId = existingRemoteUser.data?.id || authUser.id;
-  const userPayload = {
-    nome: userName,
-    email,
-    ruolo,
-    beauty_id: ruolo === "beauty" ? externalBeautyId : null,
-    agent_id: ruolo === "agent" ? externalAgentId : null,
-    attivo: true,
-  };
-
-  if (existingRemoteUser.data) {
-    const updatedUser = await report
-      .from("utenti")
-      .update(userPayload)
-      .eq("id", existingRemoteUser.data.id)
-      .select("id")
-      .single();
-
-    if (updatedUser.error) throw updatedUser.error;
-    externalUserId = updatedUser.data.id;
-  } else {
-    const insertedUser = await report
-      .from("utenti")
-      .insert({ id: authUser.id, ...userPayload })
-      .select("id")
-      .single();
-
-    if (insertedUser.error) throw insertedUser.error;
-    externalUserId = insertedUser.data.id;
-  }
-
   return {
     success: true,
-    external_user_id: externalUserId,
+    external_user_id: null,
     external_beauty_id: externalBeautyId,
     external_agent_id: externalAgentId,
   };
@@ -463,7 +388,7 @@ function applyOrganizationScope(query: any, table: string, scope: any) {
 }
 
 function normalizeAllowedPages(value: unknown) {
-  const removed = new Set(["utenti", "farmacie", "clienti"]);
+  const removed = new Set(["utenti", "farmacie", "clienti", "prodotti"]);
   return Array.isArray(value) ? [...new Set(value.filter((page) => !removed.has(page)))] : [];
 }
 

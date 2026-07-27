@@ -26,7 +26,6 @@ const beautyPages = [
   ["aperture", "Aperture / Contatti"],
   ["giornate", "Giornate"],
   ["analisi", "Analisi dati"],
-  ["prodotti", "Prodotti"],
 ];
 
 const permissionLabels = {
@@ -336,8 +335,8 @@ export default function Settings() {
     e.preventDefault();
     if (!canManage) return alert("Non hai i permessi.");
     if (!modal.item?.id) return alert("Utente non selezionato.");
-    if (userAccessForm.beauty_enabled && userAccessForm.beauty_role === "beauty" && (!modal.item.nome?.trim() || !modal.item.cognome?.trim() || !modal.item.email?.trim())) {
-      return alert("Per abilitare Beauty Days come Beauty sono obbligatori nome, cognome ed email dell'utente. Completa prima il profilo nella sezione Team.");
+    if (userAccessForm.beauty_enabled && userAccessForm.beauty_role === "beauty" && (!modal.item.nome?.trim() || !modal.item.email?.trim())) {
+      return alert("Per abilitare Beauty Days come Beauty sono obbligatori nome ed email dell'utente.");
     }
 
     setSaving(true);

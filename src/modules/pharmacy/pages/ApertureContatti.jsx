@@ -7,7 +7,6 @@ export default function ApertureContatti({ utente }) {
   const [beauty, setBeauty] = useState([]);
   const [province, setProvince] = useState([]);
   const [records, setRecords] = useState([]);
-  const [giornate, setGiornate] = useState([]);
 
   const [mostraForm, setMostraForm] = useState(false);
   const [vistaPlanning, setVistaPlanning] = useState("mese");
@@ -31,6 +30,8 @@ export default function ApertureContatti({ utente }) {
 
   useEffect(() => {
     if (utente) caricaDati();
+    // Il caricamento deve ripetersi solo quando cambia l'utente ricevuto.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [utente]);
 
   async function caricaDati() {
@@ -67,14 +68,9 @@ export default function ApertureContatti({ utente }) {
       .select("*")
       .order("created_at", { ascending: false });
 
-    const giornateRes = await supabase
-      .from("giornate_promozionali")
-      .select("id,data");
-
     if (provinceRes.error) return alert(provinceRes.error.message);
     if (beautyRes.error) return alert(beautyRes.error.message);
     if (recordsRes.error) return alert(recordsRes.error.message);
-    if (giornateRes.error) return alert(giornateRes.error.message);
 
     const beautyData = beautyRes.data || [];
     let recordsData = recordsRes.data || [];
@@ -88,14 +84,13 @@ export default function ApertureContatti({ utente }) {
         (r) => r.operatore_id === utente.id || idsBeauty.includes(r.beauty_id)
       );
     } else if (utente?.ruolo === "beauty") {
-      recordsData = recordsData.filter((r) => r.operatore_id === utente.id);
+      recordsData = recordsData.filter((r) => r.beauty_id === utente.beauty_id);
     }
 
     setFarmacie(clientiData);
     setProvince(provinceRes.data || []);
     setBeauty(beautyData);
     setRecords(recordsData);
-    setGiornate(giornateRes.data || []);
 
     if (utente?.ruolo === "beauty") {
       setBeautyId(utente.beauty_id || "");
@@ -334,7 +329,7 @@ setRichiestaContatto(
     }
 
     const dati = {
-      operatore_id: utente?.id || null,
+      operatore_id: null,
       operatore_nome: getOperatoreNome(),
 
       beauty_id: beautyId,

@@ -12,7 +12,10 @@ function required(name) {
 
 function authorized(req) {
   const supplied = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
-  const expected = required("WORKER_SECRET");
+  const expected = String(
+    process.env.ARUBA_EMAIL_WORKER_SECRET || process.env.WORKER_SECRET || "",
+  ).trim();
+  if (!expected) throw new Error("Variabile Vercel mancante: ARUBA_EMAIL_WORKER_SECRET");
   const left = Buffer.from(supplied);
   const right = Buffer.from(expected);
   return left.length === right.length && timingSafeEqual(left, right);

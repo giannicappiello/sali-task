@@ -139,7 +139,12 @@ const queueResult = await enqueueOrderConfirmationEmails({
   moduleConfig,
   documents: [{ kind: "OCM", numero: "100" }],
 });
-assert.deepEqual(queueResult, { recipients: 4, queued: 4, released: 0 });
+assert.deepEqual(queueResult, {
+  recipients: 4,
+  queued: 4,
+  released: 0,
+  dispatch: { status: "not_configured" },
+});
 assert.equal(queuedRows.length, 4);
 assert.ok(queuedRows.every((row) => row.corpo && row.oggetto));
 assert.deepEqual(upsertOptions, {
@@ -161,7 +166,12 @@ const reconciledQueueResult = await enqueueOrderConfirmationEmails({
   documents: [{ kind: "OCM", numero: "100" }],
   releaseExisting: true,
 });
-assert.deepEqual(reconciledQueueResult, { recipients: 4, queued: 0, released: 4 });
+assert.deepEqual(reconciledQueueResult, {
+  recipients: 4,
+  queued: 0,
+  released: 4,
+  dispatch: { status: "not_configured" },
+});
 assert.equal(releasedUpdate.last_error, null);
 assert.deepEqual(releasedUpdate.allegati, [
   { tipo_documento: "OCM", numero: "100", stato: "da_generare" },

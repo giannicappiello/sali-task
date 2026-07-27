@@ -6,6 +6,7 @@ export const ORDER_EMAIL_PLACEHOLDERS = Object.freeze([
   "{data}",
   "{agente}",
   "{totale}",
+  "{commenti}",
 ]);
 
 export const ORDER_EMAIL_TEMPLATE_DEFAULTS = Object.freeze({
@@ -60,6 +61,7 @@ export function buildOrderEmailTemplateValues({ order, customer, agent } = {}) {
     data: formatDate(order?.data_ordine),
     agente: agentName(agent, order),
     totale: formatMoney(order?.totale_documento ?? order?.totale),
+    commenti: text(order?.commenti),
   };
 }
 

@@ -15,6 +15,7 @@ const values = buildOrderEmailTemplateValues({
     data_ordine: "2026-07-26",
     totale_documento: 1234.5,
     codice_cliente: "CLI-1",
+    commenti: "Consegna al mattino",
   },
   customer: { ragione_sociale: "Cliente Test" },
   agent: { nome: "Mario", cognome: "Rossi" },
@@ -26,23 +27,26 @@ assert.deepEqual(ORDER_EMAIL_PLACEHOLDERS, [
   "{data}",
   "{agente}",
   "{totale}",
+  "{commenti}",
 ]);
 assert.equal(values.cliente, "Cliente Test");
 assert.equal(values.numero_ordine, "42/2026");
 assert.equal(values.data, "26/07/2026");
 assert.equal(values.agente, "Mario Rossi");
 assert.match(values.totale, /1\.?234,50/);
+assert.equal(values.commenti, "Consegna al mattino");
 
 const content = resolveOrderEmailContent({
   moduleConfig: {
     email_cliente_oggetto_template: "Ordine {numero_ordine} per {cliente}",
-    email_cliente_corpo_template: "Data {data}; agente {agente}; totale {totale}.",
+    email_cliente_corpo_template: "Data {data}; agente {agente}; totale {totale}; commenti {commenti}.",
   },
   recipientType: "cliente",
   values,
 });
 assert.equal(content.subject, "Ordine 42/2026 per Cliente Test");
 assert.match(content.body, /Data 26\/07\/2026; agente Mario Rossi; totale 1\.?234,50/);
+assert.match(content.body, /commenti Consegna al mattino/);
 assert.equal(orderEmailTemplateCategory("responsabile"), "backoffice");
 assert.throws(
   () => validateOrderEmailTemplate("Ordine {placeholder_inesistente}"),

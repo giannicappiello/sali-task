@@ -147,6 +147,9 @@ function Panel({ code, title, series }) {
           <p style={{ margin: "6px 0 10px" }}>
             Placeholder disponibili: {ORDER_EMAIL_PLACEHOLDERS.map((placeholder) => <code key={placeholder} style={{ marginRight: 8 }}>{placeholder}</code>)}
           </p>
+          <p style={{ margin: "-4px 0 10px", color: "var(--text-muted, #64748b)" }}>
+            Inserisci <code>{"{commenti}"}</code> nel corpo per riportare i commenti scritti durante la compilazione dell&apos;ordine.
+          </p>
           <div style={{ display: "grid", gap: 14 }}>
             {templateSections.map((section) => <TemplateFields key={section.key} section={section} config={config} onChange={set} />)}
           </div>

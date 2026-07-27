@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../services/reportSupabase";
+import { ensureBeautyClientLink, loadVisibleBeautyClients } from "../services/beautyClients";
 
 export default function ApertureContatti({ utente }) {
   const [farmacie, setFarmacie] = useState([]);
@@ -33,10 +34,12 @@ export default function ApertureContatti({ utente }) {
   }, [utente]);
 
   async function caricaDati() {
-    const farmacieRes = await supabase
-      .from("farmacie")
-      .select("*")
-      .order("nome", { ascending: true });
+    let clientiData;
+    try {
+      clientiData = await loadVisibleBeautyClients(utente);
+    } catch (clientError) {
+      return alert(clientError.message);
+    }
 
     const provinceRes = await supabase
       .from("province")
@@ -68,7 +71,6 @@ export default function ApertureContatti({ utente }) {
       .from("giornate_promozionali")
       .select("id,data");
 
-    if (farmacieRes.error) return alert(farmacieRes.error.message);
     if (provinceRes.error) return alert(provinceRes.error.message);
     if (beautyRes.error) return alert(beautyRes.error.message);
     if (recordsRes.error) return alert(recordsRes.error.message);
@@ -89,7 +91,7 @@ export default function ApertureContatti({ utente }) {
       recordsData = recordsData.filter((r) => r.operatore_id === utente.id);
     }
 
-    setFarmacie(farmacieRes.data || []);
+    setFarmacie(clientiData);
     setProvince(provinceRes.data || []);
     setBeauty(beautyData);
     setRecords(recordsData);
@@ -315,10 +317,20 @@ setRichiestaContatto(
     e.preventDefault();
 
     const farmacia = getFarmacia(farmaciaId);
-    if (!farmacia) return alert("Seleziona una farmacia");
+    if (!farmacia) return alert("Seleziona un cliente Mexal");
     if (!beautyId) return alert("Seleziona una beauty");
     if (!nuovaApertura && !richiestaContatto) {
       return alert("Seleziona almeno Nuova apertura o Richiesta di contatto");
+    }
+
+    let linkedClientId = farmacia.legacy_farmacia_id || null;
+    if (!linkedClientId) {
+      try {
+        const link = await ensureBeautyClientLink(farmacia.codice_cliente);
+        linkedClientId = link.legacy_farmacia_id;
+      } catch (linkError) {
+        return alert(linkError.message || "Impossibile collegare il cliente allo storico Beauty Days.");
+      }
     }
 
     const dati = {
@@ -328,7 +340,7 @@ setRichiestaContatto(
       beauty_id: beautyId,
       beauty_nome: getBeautyNome(beautyId),
 
-      farmacia_id: farmacia.id,
+      farmacia_id: linkedClientId,
       farmacia_nome: farmacia.nome || "",
       farmacia_citta: farmacia.citta || "",
       farmacia_provincia: getProvinciaLabel(farmacia.provincia_id),
@@ -541,7 +553,7 @@ setRichiestaContatto(
       <div>
         <div style={headerStyle}>
           <h2>Nuova Apertura / Richiesta</h2>
-          <p style={subtitleStyle}>Compila i dati del contatto farmacia</p>
+          <p style={subtitleStyle}>Compila i dati del contatto cliente</p>
         </div>
 
         <button style={backButtonStyle} onClick={() => setMostraForm(false)}>
@@ -591,7 +603,7 @@ setRichiestaContatto(
             ))}
           </select>
 
-          <label style={labelStyle}>Cerca farmacia</label>
+          <label style={labelStyle}>Cerca cliente</label>
           <input
             style={inputStyle}
             placeholder="Cerca per nome, città, provincia o indirizzo..."
@@ -599,14 +611,14 @@ setRichiestaContatto(
             onChange={(e) => setRicercaFarmacia(e.target.value)}
           />
 
-          <label style={labelStyle}>Farmacia</label>
+          <label style={labelStyle}>Cliente Mexal</label>
           <select
             value={farmaciaId}
             onChange={(e) => setFarmaciaId(e.target.value)}
             style={inputStyle}
             required
           >
-            <option value="">Seleziona farmacia</option>
+            <option value="">Seleziona cliente</option>
             {farmacieFiltrate.map((f) => (
               <option key={f.id} value={f.id}>
                 {getFarmaciaLabel(f)}
@@ -614,14 +626,14 @@ setRichiestaContatto(
             ))}
           </select>
 
-          <label style={labelStyle}>Nome referente farmacia</label>
+          <label style={labelStyle}>Nome referente cliente</label>
           <input
             value={referenteNome}
             onChange={(e) => setReferenteNome(e.target.value)}
             style={inputStyle}
           />
 
-          <label style={labelStyle}>Contatto referente farmacia</label>
+          <label style={labelStyle}>Contatto referente cliente</label>
           <input
             value={referenteContatto}
             onChange={(e) => setReferenteContatto(e.target.value)}
@@ -660,7 +672,7 @@ setRichiestaContatto(
 
       <input
   style={inputStyle}
-  placeholder="Ricerca rapida per farmacia, beauty, referente, contatto, stato..."
+  placeholder="Ricerca rapida per cliente, beauty, referente, contatto, stato..."
   value={ricercaRapida}
   onChange={(e) => setRicercaRapida(e.target.value)}
 />

@@ -9,6 +9,7 @@ const emptyAccess = {
   external_user_id: "",
   external_beauty_id: "",
   external_agent_id: "",
+  mexal_agente_id: "",
   allowed_pages: ["dashboard", "aperture", "giornate", "analisi"],
 };
 
@@ -18,8 +19,7 @@ const pages = [
   ["giornate", "Giornate"],
   ["analisi", "Analisi dati"],
   ["prodotti", "Prodotti"],
-  ["farmacie", "Farmacie"],
-  ["utenti", "Utenti"],
+  ["clienti", "Clienti"],
 ];
 
 export default function PharmacyAccessSettings({ canManage }) {
@@ -51,18 +51,7 @@ export default function PharmacyAccessSettings({ canManage }) {
         .from("integrazioni_utenti")
         .select("*")
         .eq("modulo", "report_giornate"),
-      supabase.functions.invoke("report-giornate-api", {
-        body: {
-          action: "query",
-          table: "agent",
-          operation: "select",
-          columns: "id,nome,cognome,email,telefono,attivo",
-          filters: [],
-          modifiers: {
-            order: { column: "cognome", ascending: true },
-          },
-        },
-      }),
+      supabase.from("mexal_agenti").select("id,codice,nome,cognome,attivo_mexal").eq("attivo_mexal", true).order("cognome"),
     ]);
 
     if (usersRes.error) {
@@ -78,14 +67,14 @@ export default function PharmacyAccessSettings({ canManage }) {
     setUsers(usersRes.data || []);
     setRows(accessRes.data || []);
 
-    if (agentsRes.error || agentsRes.data?.error) {
+    if (agentsRes.error) {
       console.error(
         "Errore caricamento agenti Gestione Farmacie:",
-        agentsRes.data?.error || agentsRes.error
+        agentsRes.error
       );
       setAgents([]);
     } else {
-      setAgents(agentsRes.data?.data || []);
+      setAgents(agentsRes.data || []);
     }
 
     setLoading(false);
@@ -109,6 +98,7 @@ export default function PharmacyAccessSettings({ canManage }) {
             external_user_id: existing.external_user_id || "",
             external_beauty_id: existing.external_beauty_id || "",
             external_agent_id: existing.external_agent_id || "",
+            mexal_agente_id: existing.mexal_agente_id || "",
             allowed_pages: Array.isArray(existing.allowed_pages)
               ? existing.allowed_pages
               : emptyAccess.allowed_pages,
@@ -195,6 +185,7 @@ export default function PharmacyAccessSettings({ canManage }) {
           external.external_beauty_id || form.external_beauty_id || null,
         external_agent_id:
           external.external_agent_id || form.external_agent_id || null,
+        mexal_agente_id: form.mexal_agente_id || null,
         allowed_pages: form.allowed_pages,
         updated_at: new Date().toISOString(),
       };
@@ -219,7 +210,7 @@ export default function PharmacyAccessSettings({ canManage }) {
     <div className="panel settings-panel pharmacy-access-settings">
       <div className="panel-header">
         <div>
-          <h3>Accessi Gestione Farmacie</h3>
+          <h3>Accessi Beauty Days</h3>
           <p>
             Un unico login per entrambi i sistemi. Qui definisci chi accede e
             quali dati può gestire.
@@ -268,7 +259,7 @@ export default function PharmacyAccessSettings({ canManage }) {
                     setForm({ ...form, enabled: event.target.checked })
                   }
                 />
-                Abilita Gestione Farmacie
+                Abilita Beauty Days
               </label>
 
               <label>
@@ -307,7 +298,6 @@ export default function PharmacyAccessSettings({ canManage }) {
                   }
                 >
                   <option value="beauty">Beauty consultant</option>
-                  <option value="agent">Agente</option>
                   <option value="sales_manager">Sales manager</option>
                   <option value="admin">Admin</option>
                 </select>
@@ -317,32 +307,21 @@ export default function PharmacyAccessSettings({ canManage }) {
                 <label>
                   Agente da associare
                   <select
-                    value={form.external_agent_id}
+                    value={form.mexal_agente_id}
                     onChange={(event) =>
                       setForm({
                         ...form,
-                        external_agent_id: event.target.value,
+                        mexal_agente_id: event.target.value,
                       })
                     }
                   >
                     <option value="">Nessun agente</option>
                     {agents.map((agent) => (
                       <option key={agent.id} value={agent.id}>
-                        {fullName(agent) || agent.email || agent.id}
+                        {agent.codice} · {fullName(agent) || agent.id}
                       </option>
                     ))}
                   </select>
-                </label>
-              )}
-
-              {form.external_role === "agent" && (
-                <label>
-                  ID agente creato/collegato
-                  <input
-                    value={form.external_agent_id}
-                    readOnly
-                    placeholder="Compilato automaticamente al salvataggio"
-                  />
                 </label>
               )}
 

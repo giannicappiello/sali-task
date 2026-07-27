@@ -4,10 +4,6 @@ import { useAuth } from "../../../contexts/AuthContext";
 
 const MODULE_CODE = "gestione_ordini";
 
-function normalizeAgentCode(value) {
-  return String(value || "").trim().toUpperCase();
-}
-
 function normalizeAgentCodes(values) {
   const source = Array.isArray(values)
     ? values
@@ -16,7 +12,7 @@ function normalizeAgentCodes(values) {
   return [
     ...new Set(
       source
-        .map((value) => normalizeAgentCode(value))
+        .map((value) => String(value || "").trim().toUpperCase())
         .filter(Boolean)
     ),
   ];
@@ -67,29 +63,32 @@ export default function useOrdersAccess() {
         return;
       }
 
-      const { data, error: queryError } = await supabase
-        .from("integrazioni_utenti")
-        .select("enabled,codice_agente_mexal,ruolo_ordini,agenti_gestiti")
-        .eq("utente_id", profile.id)
-        .eq("modulo", MODULE_CODE)
-        .maybeSingle();
+      const [integrationResult, scopeResult] = await Promise.all([
+        supabase
+          .from("integrazioni_utenti")
+          .select("enabled,ruolo_ordini")
+          .eq("utente_id", profile.id)
+          .eq("modulo", MODULE_CODE)
+          .maybeSingle(),
+        supabase.rpc("visible_mexal_agent_codes"),
+      ]);
 
       if (!active) return;
 
-      if (queryError) {
-        console.error("Errore caricamento accesso Gestione Ordini:", queryError);
-        setError(queryError);
+      if (integrationResult.error || scopeResult.error) {
+        const accessError = integrationResult.error || scopeResult.error;
+        console.error("Errore caricamento accesso Gestione Ordini:", accessError);
+        setError(accessError);
         setAccess(emptyAccess());
         setLoading(false);
         return;
       }
 
       setAccess({
-        enabled: data?.enabled === true,
-        ruolo_ordini: data?.ruolo_ordini || "agente",
-        codice_agente_mexal:
-          normalizeAgentCode(data?.codice_agente_mexal) || null,
-        agenti_gestiti: normalizeAgentCodes(data?.agenti_gestiti),
+        enabled: integrationResult.data?.enabled === true,
+        ruolo_ordini: integrationResult.data?.ruolo_ordini || "agente",
+        codice_agente_mexal: normalizeAgentCodes(scopeResult.data)[0] || null,
+        agenti_gestiti: normalizeAgentCodes(scopeResult.data),
         admin: false,
       });
 
@@ -121,8 +120,8 @@ export default function useOrdersAccess() {
       visibleAgents = null;
     } else if (isAreaManager) {
       visibleAgents = managedAgents;
-    } else if (isAgent && agentCode) {
-      visibleAgents = [agentCode];
+    } else if (isAgent) {
+      visibleAgents = access.agenti_gestiti;
     }
 
     return {

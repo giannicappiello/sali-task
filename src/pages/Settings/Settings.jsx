@@ -5,6 +5,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import ProjectTypesSettings from "../../components/ProjectTypesSettings";
 import PharmacyAccessSettings from "../../components/PharmacyAccessSettings";
 import OrdersAccessSettings from "../../components/OrdersAccessSettings";
+import OrganizationRelationsSettings from "../../components/OrganizationRelationsSettings";
 
 const emptyDepartment = { nome: "", descrizione: "", attivo: true };
 const emptyRole = { nome: "", descrizione: "", livello: 40, permessi: [] };
@@ -331,7 +332,7 @@ export default function Settings() {
         <button className={tab === "reparti" ? "active" : ""} onClick={() => setTab("reparti")}>Reparti</button>
         <button className={tab === "ruoli" ? "active" : ""} onClick={() => setTab("ruoli")}>Ruoli / permessi</button>
         <button className={tab === "utenti" ? "active" : ""} onClick={() => setTab("utenti")}>Utenti / accessi</button>
-        <button className={tab === "farmacie_accessi" ? "active" : ""} onClick={() => setTab("farmacie_accessi")}>Accessi Farmacie</button>
+        <button className={tab === "farmacie_accessi" ? "active" : ""} onClick={() => setTab("farmacie_accessi")}>Accessi Beauty Days</button>
         <button className={tab === "ordini_accessi" ? "active" : ""} onClick={() => setTab("ordini_accessi")}>Accessi Ordini</button>
       </div>
 
@@ -391,6 +392,7 @@ export default function Settings() {
       )}
 
       {tab === "utenti" && (
+        <>
         <div className="panel settings-panel">
           <div className="panel-header"><h3>Utenti, ruoli e reparti</h3></div>
           <div className="settings-list">
@@ -409,6 +411,8 @@ export default function Settings() {
             {users.length === 0 && <p>Nessun utente trovato.</p>}
           </div>
         </div>
+        <OrganizationRelationsSettings canManage={canManage} />
+        </>
       )}
 
       {modal.open && (

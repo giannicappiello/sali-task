@@ -29,15 +29,16 @@ Deno.serve(async (req) => {
     const { data: authData, error: authError } = await primary.auth.getUser(token);
     if (authError || !authData.user) return json({ error: "Sessione non valida" }, 401);
 
-    const { data: profile } = await primary.from("utenti").select("id,nome,cognome,email,telefono,attivo,ruolo_id,ruoli(nome,livello)").eq("auth_user_id", authData.user.id).maybeSingle();
+    const { data: profile } = await primary.from("utenti").select("id,nome,cognome,email,telefono,attivo,ruolo_id,mexal_agente_id,ruoli(nome,livello)").eq("auth_user_id", authData.user.id).maybeSingle();
     if (!profile || profile.attivo === false) return json({ error: "Utente non configurato o disabilitato" }, 403);
 
     const roleName = String(profile.ruoli?.nome || "").toLowerCase();
     const isAdmin = ["admin", "administrator", "amministratore", "super admin", "direzione"].includes(roleName) || Number(profile.ruoli?.livello || 0) >= 80;
     const { data: integration } = await primary.from("integrazioni_utenti").select("*").eq("utente_id", profile.id).eq("modulo", "report_giornate").maybeSingle();
-    if (!isAdmin && (!integration || integration.enabled === false)) return json({ error: "Non sei autorizzato ad accedere a Gestione Farmacie" }, 403);
+    if (!isAdmin && (!integration || integration.enabled === false)) return json({ error: "Non sei autorizzato ad accedere a Beauty Days" }, 403);
 
-    const access = integration || { enabled: true, access_level: "admin", external_role: "admin", allowed_pages: ["dashboard","aperture","giornate","analisi","prodotti","farmacie","utenti"], data_scope: {} };
+    const access = integration || { enabled: true, access_level: "admin", external_role: "admin", allowed_pages: ["dashboard","aperture","giornate","analisi","prodotti","clienti"], data_scope: {} };
+    const organizationScope = await loadOrganizationScope(primary, profile, access, isAdmin);
     const report = createClient(reportUrl, reportServiceKey, { auth: { persistSession: false } });
     const body = await req.json();
 
@@ -48,8 +49,11 @@ Deno.serve(async (req) => {
         external_role: isAdmin ? "admin" : access.external_role,
         external_beauty_id: access.external_beauty_id,
         external_agent_id: access.external_agent_id,
+        visible_beauty_ids: organizationScope.visibleBeautyIds,
         access_level: isAdmin ? "admin" : access.access_level,
-        allowed_pages: isAdmin ? ["dashboard","aperture","giornate","analisi","prodotti","farmacie","utenti"] : (access.allowed_pages || []),
+        allowed_pages: isAdmin
+          ? ["dashboard","aperture","giornate","analisi","prodotti","clienti"]
+          : normalizeAllowedPages(access.allowed_pages),
       });
     }
 
@@ -58,6 +62,14 @@ Deno.serve(async (req) => {
       if (!isAdmin) return json({ error: "Operazione riservata agli amministratori" }, 403);
 
       const result = await ensureExternalUser(report, body);
+      return json(result);
+    }
+
+    if (body.action === "ensure-client-link") {
+      if (!isAdmin && !["write", "admin"].includes(access.access_level)) {
+        return json({ error: "Accesso in sola lettura" }, 403);
+      }
+      const result = await ensureClientLink(primary, report, body.codice_cliente, organizationScope, isAdmin);
       return json(result);
     }
 
@@ -83,6 +95,7 @@ Deno.serve(async (req) => {
       for (const f of (body.filters || [])) query = applyFilter(query, f);
       const scoped = access.data_scope?.filters?.[body.table] || {};
       if (!isAdmin) for (const [column, value] of Object.entries(scoped)) query = Array.isArray(value) ? query.in(column, value) : query.eq(column, value);
+      if (!isAdmin) query = applyOrganizationScope(query, body.table, organizationScope);
       if (body.modifiers?.order) query = query.order(body.modifiers.order.column, { ascending: body.modifiers.order.ascending });
       if (body.modifiers?.range) query = query.range(body.modifiers.range.from, body.modifiers.range.to);
       if (body.modifiers?.limit) query = query.limit(body.modifiers.limit);
@@ -328,6 +341,58 @@ async function ensureExternalUser(report: any, body: any) {
   };
 }
 
+async function ensureClientLink(primary: any, report: any, rawCode: unknown, scope: any, isAdmin: boolean) {
+  const code = clean(rawCode);
+  if (!code) throw new Error("Codice cliente mancante.");
+
+  const existing = await primary
+    .from("beauty_clienti_mexal")
+    .select("codice_cliente,legacy_farmacia_id")
+    .eq("codice_cliente", code)
+    .maybeSingle();
+  if (existing.error) throw existing.error;
+  if (existing.data?.legacy_farmacia_id) {
+    return { codice_cliente: code, legacy_farmacia_id: existing.data.legacy_farmacia_id };
+  }
+
+  const clientResult = await primary
+    .from("ordini_clienti_cache")
+    .select("codice_cliente,ragione_sociale,indirizzo,localita,telefono,email,codice_agente_mexal")
+    .eq("codice_cliente", code)
+    .eq("attivo_mexal", true)
+    .maybeSingle();
+  if (clientResult.error) throw clientResult.error;
+  if (!clientResult.data) throw new Error("Cliente Mexal non trovato o non attivo.");
+
+  if (!isAdmin) {
+    const allowedCodes = new Set(scope.visibleAgentIds || []);
+    const agentResult = await primary.from("mexal_agenti").select("id").eq("codice", clientResult.data.codice_agente_mexal).maybeSingle();
+    if (agentResult.error) throw agentResult.error;
+    if (!agentResult.data || !allowedCodes.has(agentResult.data.id)) throw new Error("Cliente fuori dal perimetro autorizzato.");
+  }
+
+  const created = await report
+    .from("farmacie")
+    .insert({
+      nome: clientResult.data.ragione_sociale || code,
+      indirizzo: clientResult.data.indirizzo || null,
+      citta: clientResult.data.localita || null,
+      telefono: clientResult.data.telefono || null,
+      email: clientResult.data.email || null,
+    })
+    .select("id")
+    .single();
+  if (created.error) throw created.error;
+
+  const saved = await primary.from("beauty_clienti_mexal").upsert({
+    codice_cliente: code,
+    legacy_farmacia_id: created.data.id,
+    aggiornato_il: new Date().toISOString(),
+  }, { onConflict: "codice_cliente" });
+  if (saved.error) throw saved.error;
+  return { codice_cliente: code, legacy_farmacia_id: created.data.id };
+}
+
 function clean(value: unknown) {
   return String(value || "").trim();
 }
@@ -342,6 +407,60 @@ function applyFilter(query: any, f: any) {
   if (f.type === "filter") return query.filter(f.column, f.operator, f.value);
   return query;
 }
+
+async function loadOrganizationScope(primary: any, profile: any, access: any, isAdmin: boolean) {
+  if (isAdmin) return { visibleAgentIds: null, visibleBeautyIds: null };
+
+  const visibleAgentIds = new Set<string>();
+  if (profile.mexal_agente_id) visibleAgentIds.add(profile.mexal_agente_id);
+  if (access.mexal_agente_id) visibleAgentIds.add(access.mexal_agente_id);
+
+  const managed = await primary
+    .from("mexal_agenti")
+    .select("id")
+    .eq("responsabile_utente_id", profile.id)
+    .eq("attivo_mexal", true);
+  if (managed.error) throw managed.error;
+  for (const agent of managed.data || []) visibleAgentIds.add(agent.id);
+
+  const ids = [...visibleAgentIds];
+  if (!ids.length) {
+    return {
+      visibleAgentIds: [],
+      visibleBeautyIds: access.external_beauty_id ? [access.external_beauty_id] : [],
+    };
+  }
+
+  const beautyLinks = await primary
+    .from("integrazioni_utenti")
+    .select("external_beauty_id")
+    .eq("modulo", "report_giornate")
+    .eq("enabled", true)
+    .in("mexal_agente_id", ids)
+    .not("external_beauty_id", "is", null);
+  if (beautyLinks.error) throw beautyLinks.error;
+
+  const visibleBeautyIds = (beautyLinks.data || []).map((row: any) => row.external_beauty_id).filter(Boolean);
+  if (access.external_beauty_id && !visibleBeautyIds.includes(access.external_beauty_id)) {
+    visibleBeautyIds.push(access.external_beauty_id);
+  }
+  return { visibleAgentIds: ids, visibleBeautyIds };
+}
+
+function applyOrganizationScope(query: any, table: string, scope: any) {
+  const beautyIds = scope.visibleBeautyIds || [];
+  const none = "00000000-0000-0000-0000-000000000000";
+  if (table === "beauty_consultant") return beautyIds.length ? query.in("id", beautyIds) : query.eq("id", none);
+  if (table === "giornate_promozionali") return beautyIds.length ? query.in("consultant_id", beautyIds) : query.eq("consultant_id", none);
+  if (table === "aperture_contatti") return beautyIds.length ? query.in("beauty_id", beautyIds) : query.eq("beauty_id", none);
+  return query;
+}
+
+function normalizeAllowedPages(value: unknown) {
+  const pages = Array.isArray(value) ? value.filter((page) => page !== "utenti") : [];
+  return [...new Set(pages.map((page) => page === "farmacie" ? "clienti" : page))];
+}
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 }

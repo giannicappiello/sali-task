@@ -5,16 +5,12 @@ import { installOrderDataFetchCache } from "../modules/orders/services/orderData
 
 const PAGE_SIZE = 1000;
 
-function normalizeAgentCode(value) {
-  return String(value || "").trim().toUpperCase();
-}
-
 function normalizeAgentCodes(values) {
   const source = Array.isArray(values)
     ? values
     : String(values || "").split(/[\n,;]+/);
 
-  return [...new Set(source.map(normalizeAgentCode).filter(Boolean))];
+  return [...new Set(source.map((value) => String(value || "").trim().toUpperCase()).filter(Boolean))];
 }
 
 async function loadPaged(table, buildQuery, signal) {
@@ -41,14 +37,12 @@ async function resolveOrdersAccess(profileId, isAdminUser) {
     return { enabled: true, canSeeAll: true, visibleAgents: null };
   }
 
-  const { data, error } = await supabase
-    .from("integrazioni_utenti")
-    .select("enabled,codice_agente_mexal,ruolo_ordini,agenti_gestiti")
-    .eq("utente_id", profileId)
-    .eq("modulo", "gestione_ordini")
-    .maybeSingle();
-
-  if (error) throw error;
+  const [integrationResult, scopeResult] = await Promise.all([
+    supabase.from("integrazioni_utenti").select("enabled,ruolo_ordini").eq("utente_id", profileId).eq("modulo", "gestione_ordini").maybeSingle(),
+    supabase.rpc("visible_mexal_agent_codes"),
+  ]);
+  if (integrationResult.error || scopeResult.error) throw integrationResult.error || scopeResult.error;
+  const data = integrationResult.data;
   if (data?.enabled !== true) return { enabled: false, canSeeAll: false, visibleAgents: [] };
 
   const role = data?.ruolo_ordini || "agente";
@@ -56,19 +50,10 @@ async function resolveOrdersAccess(profileId, isAdminUser) {
     return { enabled: true, canSeeAll: true, visibleAgents: null };
   }
 
-  if (role === "area_manager") {
-    return {
-      enabled: true,
-      canSeeAll: false,
-      visibleAgents: normalizeAgentCodes(data?.agenti_gestiti),
-    };
-  }
-
-  const code = normalizeAgentCode(data?.codice_agente_mexal);
   return {
     enabled: true,
     canSeeAll: false,
-    visibleAgents: code ? [code] : [],
+    visibleAgents: normalizeAgentCodes(scopeResult.data),
   };
 }
 

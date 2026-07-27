@@ -3,11 +3,12 @@ import { supabase } from "../services/reportSupabase";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
+import { loadVisibleBeautyClients } from "../services/beautyClients";
 
 const campiDisponibili = [
   { key: "mese", label: "Mese" },
   { key: "stato", label: "Stato giornata / richiesta" },
-  { key: "farmacia", label: "Farmacia" },
+  { key: "farmacia", label: "Cliente" },
   { key: "citta", label: "Città" },
   { key: "provincia", label: "Provincia" },
   { key: "beauty", label: "Beauty" },
@@ -77,27 +78,7 @@ export default function Analisi({ utente }) {
   }
 
   async function caricaTutteFarmacie() {
-    let tutte = [];
-    let from = 0;
-    const size = 1000;
-
-    while (true) {
-      const { data, error } = await supabase
-        .from("farmacie")
-        .select("*")
-        .order("nome", { ascending: true })
-        .range(from, from + size - 1);
-
-      if (error) throw error;
-
-      tutte = [...tutte, ...(data || [])];
-
-      if (!data || data.length < size) break;
-
-      from += size;
-    }
-
-    return tutte;
+    return loadVisibleBeautyClients(utente);
   }
 
   async function caricaDati() {
@@ -802,7 +783,7 @@ export default function Analisi({ utente }) {
             ))}
           </select>
 
-          <label style={labelStyle}>Farmacia</label>
+          <label style={labelStyle}>Cliente</label>
           <select
             style={inputStyle}
             value={farmaciaFiltro}
@@ -854,7 +835,7 @@ export default function Analisi({ utente }) {
             style={inputStyle}
             value={ricerca}
             onChange={(e) => setRicerca(e.target.value)}
-            placeholder="Cerca farmacia, prodotto, città, beauty, referente..."
+            placeholder="Cerca cliente, prodotto, città, beauty, referente..."
           />
         </div>
       </div>

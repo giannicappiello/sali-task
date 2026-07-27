@@ -4,6 +4,7 @@ import CompilaReport from "./CompilaReport.jsx";
 import SchedaFarmacia from "./SchedaFarmacia.jsx";
 import FollowUpGiornata from "./FollowUpGiornata.jsx";
 import AllegatiGiornata from "./AllegatiGiornata.jsx";
+import { ensureBeautyClientLink, loadVisibleBeautyClients } from "../services/beautyClients";
 
 export default function Giornate({ utente }) {
   const [giornate, setGiornate] = useState([]);
@@ -51,27 +52,7 @@ export default function Giornate({ utente }) {
   }, [utente]);
 
   async function caricaTutteFarmacie() {
-    let tutte = [];
-    let from = 0;
-    const size = 1000;
-
-    while (true) {
-      const { data, error } = await supabase
-        .from("farmacie")
-        .select("*")
-        .order("nome", { ascending: true })
-        .range(from, from + size - 1);
-
-      if (error) throw error;
-
-      tutte = [...tutte, ...(data || [])];
-
-      if (!data || data.length < size) break;
-
-      from += size;
-    }
-
-    return tutte;
+    return loadVisibleBeautyClients(utente);
   }
 
   async function caricaDati() {
@@ -429,9 +410,20 @@ export default function Giornate({ utente }) {
 
   async function salvaGiornata(e) {
     e.preventDefault();
+    const selectedClient = farmacie.find((client) => client.id === farmaciaId);
+    if (!selectedClient) return alert("Seleziona un cliente Mexal.");
+    let linkedClientId = selectedClient.legacy_farmacia_id || null;
+    if (!linkedClientId) {
+      try {
+        const link = await ensureBeautyClientLink(selectedClient.codice_cliente);
+        linkedClientId = link.legacy_farmacia_id;
+      } catch (linkError) {
+        return alert(linkError.message || "Impossibile collegare il cliente allo storico Beauty Days.");
+      }
+    }
 
     const datiGiornata = {
-      farmacia_id: farmaciaId,
+      farmacia_id: linkedClientId,
       consultant_id:
         ruoloUtente === "beauty" ? beautyIdUtente : consultantId,
       data,
@@ -646,7 +638,7 @@ export default function Giornate({ utente }) {
               ← Torna al planning
             </button>
 
-            <label style={labelStyle}>Filtra farmacia per provincia</label>
+            <label style={labelStyle}>Filtra cliente per provincia</label>
             <select
               style={inputStyle}
               value={provinciaFiltro}
@@ -664,22 +656,22 @@ export default function Giornate({ utente }) {
               ))}
             </select>
 
-            <label style={labelStyle}>Cerca farmacia</label>
+            <label style={labelStyle}>Cerca cliente</label>
             <input
               style={inputStyle}
-              placeholder="Nome farmacia, città o provincia..."
+              placeholder="Ragione sociale, città o provincia..."
               value={ricercaFarmacia}
               onChange={(e) => setRicercaFarmacia(e.target.value)}
             />
 
-            <label style={labelStyle}>Farmacia</label>
+            <label style={labelStyle}>Cliente Mexal</label>
             <select
               style={inputStyle}
               value={farmaciaId}
               onChange={(e) => setFarmaciaId(e.target.value)}
               required
             >
-              <option value="">Seleziona farmacia</option>
+              <option value="">Seleziona cliente</option>
               {farmacieFiltrate.map((farmacia) => (
                 <option key={farmacia.id} value={farmacia.id}>
                   {farmacia.nome} - {farmacia.citta}{" "}
@@ -833,7 +825,7 @@ export default function Giornate({ utente }) {
 
             <input
               style={inputStyle}
-              placeholder="Ricerca rapida per farmacia, beauty, stato o tipo giornata..."
+              placeholder="Ricerca rapida per cliente, beauty, stato o tipo giornata..."
               value={ricercaGiornate}
               onChange={(e) => setRicercaGiornate(e.target.value)}
             />

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
-import { BarChart3, CalendarDays, ContactRound, MapPinned, Package, ShieldCheck, Store } from "lucide-react";
+import { BarChart3, CalendarDays, ContactRound, MapPinned, Package, UsersRound } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 import Dashboard from "./pages/Dashboard";
@@ -8,8 +8,7 @@ import ApertureContatti from "./pages/ApertureContatti";
 import Giornate from "./pages/Giornate";
 import Analisi from "./pages/Analisi";
 import Prodotti from "./pages/Prodotti";
-import Farmacie from "./pages/Farmacie";
-import Utenti from "./pages/Utenti";
+import Clienti from "./pages/Clienti";
 import "./report-style.css";
 import "./report-app.css";
 import "./pharmacy-module.css";
@@ -17,7 +16,7 @@ import "./pharmacy-module.css";
 const items = [
   ["dashboard", "Dashboard", BarChart3], ["aperture", "Aperture/Contatti", ContactRound],
   ["giornate", "Giornate", CalendarDays], ["analisi", "Analisi dati", BarChart3],
-  ["prodotti", "Prodotti", Package], ["farmacie", "Farmacie", Store], ["utenti", "Utenti", ShieldCheck],
+  ["prodotti", "Prodotti", Package], ["clienti", "Clienti", UsersRound],
 ];
 
 export default function PharmacyModule() {
@@ -26,14 +25,19 @@ export default function PharmacyModule() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  useEffect(() => { loadContext(); }, [profile?.id]);
-  async function loadContext() {
-    setLoading(true); setError("");
-    const { data, error: invokeError } = await supabase.functions.invoke("report-giornate-api", { body: { action: "context" } });
-    if (invokeError || data?.error) setError(data?.error || invokeError?.message || "Accesso non configurato");
-    else setContext(data);
-    setLoading(false);
-  }
+  useEffect(() => {
+    let active = true;
+    async function loadContext() {
+      setLoading(true); setError("");
+      const { data, error: invokeError } = await supabase.functions.invoke("report-giornate-api", { body: { action: "context" } });
+      if (!active) return;
+      if (invokeError || data?.error) setError(data?.error || invokeError?.message || "Accesso non configurato");
+      else setContext(data);
+      setLoading(false);
+    }
+    const timer = window.setTimeout(loadContext, 0);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [profile?.id]);
 
   const legacyUser = useMemo(() => {
     const externalBeautyId = context?.external_beauty_id || null;
@@ -62,13 +66,13 @@ export default function PharmacyModule() {
     };
   }, [context, profile, isAdminUser]);
 
-  if (loading) return <div className="pharmacy-state panel">Caricamento Gestione Farmacie...</div>;
-  if (error) return <div className="pharmacy-state panel"><MapPinned size={36}/><h3>Accesso non disponibile</h3><p>{error}</p><p>L'amministratore deve abilitare il modulo da Impostazioni → Accessi Farmacie.</p></div>;
+  if (loading) return <div className="pharmacy-state panel">Caricamento Beauty Days...</div>;
+  if (error) return <div className="pharmacy-state panel"><MapPinned size={36}/><h3>Accesso non disponibile</h3><p>{error}</p><p>L'amministratore deve abilitare il modulo da Impostazioni → Accessi Beauty Days.</p></div>;
 
   const allowed = context?.allowed_pages || items.map(([id]) => id);
   return <div className="pharmacy-module">
     <div className="pharmacy-module-header">
-      <div><h1>Gestione Farmacie</h1><p>Giornate promozionali, aperture, farmacie e analisi.</p></div>
+      <div><h1>Beauty Days</h1><p>Giornate promozionali, attività, clienti Mexal e analisi.</p></div>
       <span className="pharmacy-access-badge">{legacyUser.ruolo} · {context?.access_level}</span>
     </div>
     <nav className="pharmacy-subnav">{items.filter(([id]) => allowed.includes(id)).map(([id,label,Icon]) => <NavLink key={id} to={`/farmacie/${id}`}><Icon size={17}/>{label}</NavLink>)}</nav>
@@ -79,8 +83,8 @@ export default function PharmacyModule() {
       <Route path="giornate" element={<Giornate utente={legacyUser}/>}/>
       <Route path="analisi" element={<Analisi utente={legacyUser}/>}/>
       <Route path="prodotti" element={<Prodotti utente={legacyUser}/>}/>
-      <Route path="farmacie" element={<Farmacie utente={legacyUser}/>}/>
-      <Route path="utenti" element={isAdminUser ? <Utenti utente={legacyUser}/> : <Navigate to="dashboard" replace/>}/>
+      <Route path="clienti" element={<Clienti utente={legacyUser}/>}/>
+      <Route path="farmacie" element={<Navigate to="/farmacie/clienti" replace/>}/>
       <Route path="*" element={<Navigate to="dashboard" replace/>}/>
     </Routes></div>
   </div>;

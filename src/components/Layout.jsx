@@ -55,7 +55,7 @@ const pageInfo = {
   "/settings": { title: "Impostazioni", subtitle: "Permessi, accessi e configurazioni." },
   "/integrations": { title: "Centro Integrazioni", subtitle: "Connessioni con Mexal e sistemi aziendali esterni." },
   "/integrations/mexal": { title: "Mexal ERP", subtitle: "Sincronizzazioni, storico e controllo della WebAPI Mexal." },
-  "/farmacie/dashboard": { title: "Beauty Days", subtitle: "Giornate promozionali, farmacie e analisi dati." },
+  "/farmacie/dashboard": { title: "Beauty Days", subtitle: "Giornate promozionali, clienti Mexal e analisi dati." },
   "/ordini-prof": { title: "Ordini PROF", subtitle: "Clienti, ordini e attività commerciali collegate a Mexal." },
   "/ordini-ph": { title: "Ordini PH", subtitle: "Clienti, ordini e attività commerciali collegate a Mexal." },
 };
@@ -130,7 +130,7 @@ function Layout() {
         .maybeSingle();
 
       if (error) {
-        console.error("Errore caricamento accesso Gestione Farmacie:", error);
+        console.error("Errore caricamento accesso Beauty Days:", error);
         if (active) setPharmacyEnabled(false);
         return;
       }

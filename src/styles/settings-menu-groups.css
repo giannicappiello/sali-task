@@ -140,7 +140,7 @@
   grid-row: 2;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='68' height='68' viewBox='0 0 68 68'%3E%3Crect width='68' height='68' rx='16' fill='%23EAF2FF'/%3E%3Cg fill='none' stroke='%231D5BC6' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M23 22h22v30H23z'/%3E%3Cpath d='M29 22v-5h10v5M29 31h10M34 26v10M29 43h10'/%3E%3C/g%3E%3C/svg%3E"), var(--settings-arrow);
 }
-.settings-page .settings-tabs > button:nth-child(6)::after { content: "Configura gli utenti autorizzati al modulo Beauty Days."; }
+.settings-page .settings-tabs > button:nth-child(6)::after { content: "Configura utenti e perimetri del modulo Beauty Days."; }
 
 .settings-page .settings-tabs > button:nth-child(7) {
   grid-column: 2;

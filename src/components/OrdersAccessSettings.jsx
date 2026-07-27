@@ -86,10 +86,6 @@ function normalizeAgentCode(value) {
   return String(value || "").trim().toUpperCase();
 }
 
-function isValidAgentCode(value) {
-  return /^602\.\d{5}$/.test(normalizeAgentCode(value));
-}
-
 function normalizeManagedAgents(value) {
   const source = Array.isArray(value)
     ? value
@@ -106,15 +102,6 @@ function normalizeManagedAgents(value) {
 
 function managedAgentsToText(value) {
   return normalizeManagedAgents(value).join("\n");
-}
-
-function validateManagedAgents(value) {
-  const codes = normalizeManagedAgents(value);
-
-  return {
-    codes,
-    valid: codes.length > 0 && codes.every(isValidAgentCode),
-  };
 }
 
 function createEmptyDraft() {
@@ -217,33 +204,7 @@ export default function OrdersAccessSettings({ canManage }) {
     });
   }
 
-  function getValidation(draft) {
-    if (!draft.enabled) {
-      return {
-        valid: true,
-        message: "",
-      };
-    }
-
-    if (draft.ruolo_ordini === "agente") {
-      const code = normalizeAgentCode(draft.codice_agente_mexal);
-
-      return {
-        valid: isValidAgentCode(code),
-        message: "Inserisci un codice agente Mexal nel formato 602.00000.",
-      };
-    }
-
-    if (draft.ruolo_ordini === "area_manager") {
-      const result = validateManagedAgents(draft.agenti_gestiti);
-
-      return {
-        valid: result.valid,
-        message:
-          "Inserisci almeno un codice agente valido, uno per riga, nel formato 602.00000.",
-      };
-    }
-
+  function getValidation() {
     return {
       valid: true,
       message: "",
@@ -271,16 +232,6 @@ export default function OrdersAccessSettings({ canManage }) {
 
     const role = draft.ruolo_ordini || "agente";
 
-    const agentCode =
-      draft.enabled && role === "agente"
-        ? normalizeAgentCode(draft.codice_agente_mexal)
-        : null;
-
-    const managedAgents =
-      draft.enabled && role === "area_manager"
-        ? normalizeManagedAgents(draft.agenti_gestiti)
-        : [];
-
     setSavingId(user.id);
 
     const payload = {
@@ -288,8 +239,8 @@ export default function OrdersAccessSettings({ canManage }) {
       modulo: MODULE_CODE,
       enabled: draft.enabled === true,
       ruolo_ordini: role,
-      codice_agente_mexal: agentCode,
-      agenti_gestiti: managedAgents,
+      codice_agente_mexal: null,
+      agenti_gestiti: [],
     };
 
     const existing = rows.find((row) => row.utente_id === user.id);
@@ -427,67 +378,6 @@ export default function OrdersAccessSettings({ canManage }) {
               </label>
 
               <div>
-                {draft.ruolo_ordini === "agente" && (
-                  <label style={labelStyle}>
-                    Codice agente Mexal
-
-                    <input
-                      type="text"
-                      value={draft.codice_agente_mexal}
-                      disabled={!canManage || !draft.enabled}
-                      placeholder="602.00000"
-                      onChange={(event) =>
-                        updateDraft(
-                          user.id,
-                          "codice_agente_mexal",
-                          event.target.value
-                        )
-                      }
-                      style={{
-                        ...inputStyle,
-                        borderColor:
-                          draft.enabled && !validation.valid
-                            ? "#dc2626"
-                            : "#cbd5e1",
-                      }}
-                    />
-                  </label>
-                )}
-
-                {draft.ruolo_ordini === "area_manager" && (
-                  <label style={labelStyle}>
-                    Agenti gestiti
-
-                    <textarea
-                      rows="5"
-                      value={draft.agenti_gestiti}
-                      disabled={!canManage || !draft.enabled}
-                      placeholder={"602.00001\n602.00002\n602.00003"}
-                      onChange={(event) =>
-                        updateDraft(
-                          user.id,
-                          "agenti_gestiti",
-                          event.target.value
-                        )
-                      }
-                      style={{
-                        ...inputStyle,
-                        minHeight: "120px",
-                        resize: "vertical",
-                        borderColor:
-                          draft.enabled && !validation.valid
-                            ? "#dc2626"
-                            : "#cbd5e1",
-                      }}
-                    />
-
-                    <small style={mutedStyle}>
-                      Inserisci un codice per riga. Sono accettati anche codici
-                      separati da virgola o punto e virgola.
-                    </small>
-                  </label>
-                )}
-
                 {draft.ruolo_ordini === "backoffice" && (
                   <div
                     style={{
@@ -511,6 +401,13 @@ export default function OrdersAccessSettings({ canManage }) {
                       Può visualizzare e modificare tutti gli agenti, i clienti,
                       i prodotti e gli ordini.
                     </span>
+                  </div>
+                )}
+
+                {["agente", "area_manager"].includes(draft.ruolo_ordini) && (
+                  <div style={{ padding: "14px", borderRadius: "12px", background: "#f8fafc", border: "1px solid #e2e8f0" }}>
+                    <strong style={{ display: "block", color: "#111827", marginBottom: "6px" }}>Perimetro automatico</strong>
+                    <span style={mutedStyle}>Il codice agente e gli agenti coordinati provengono dalla sincronizzazione Mexal e dalle relazioni configurate in Team.</span>
                   </div>
                 )}
 

@@ -12,6 +12,7 @@ import DashboardSaturazione from "../components/dashboard/DashboardSaturazione.j
 import DashboardIncomplete from "../components/dashboard/DashboardIncomplete.jsx";
 import DashboardFollowUp from "../components/dashboard/DashboardFollowUp.jsx";
 import DashboardRichieste from "../components/dashboard/DashboardRichieste.jsx";
+import { loadVisibleBeautyClients } from "../services/beautyClients";
 
 import {
   formatEuro,
@@ -67,27 +68,7 @@ export default function Dashboard({ utente }) {
   }
 
   async function caricaTutteFarmacie() {
-    let tutte = [];
-    let from = 0;
-    const size = 1000;
-
-    while (true) {
-      const { data, error } = await supabase
-        .from("farmacie")
-        .select("*")
-        .order("nome", { ascending: true })
-        .range(from, from + size - 1);
-
-      if (error) throw error;
-
-      tutte = [...tutte, ...(data || [])];
-
-      if (!data || data.length < size) break;
-
-      from += size;
-    }
-
-    return tutte;
+    return loadVisibleBeautyClients(utente);
   }
 
   async function caricaDati() {

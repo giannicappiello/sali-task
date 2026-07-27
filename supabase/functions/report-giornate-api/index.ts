@@ -37,7 +37,7 @@ Deno.serve(async (req) => {
     const { data: integration } = await primary.from("integrazioni_utenti").select("*").eq("utente_id", profile.id).eq("modulo", "report_giornate").maybeSingle();
     if (!isAdmin && (!integration || integration.enabled === false)) return json({ error: "Non sei autorizzato ad accedere a Beauty Days" }, 403);
 
-    const access = integration || { enabled: true, access_level: "admin", external_role: "admin", allowed_pages: ["dashboard","aperture","giornate","analisi","prodotti","clienti"], data_scope: {} };
+    const access = integration || { enabled: true, access_level: "admin", external_role: "admin", allowed_pages: ["dashboard","aperture","giornate","analisi","prodotti"], data_scope: {} };
     const organizationScope = await loadOrganizationScope(primary, profile, access, isAdmin);
     const report = createClient(reportUrl, reportServiceKey, { auth: { persistSession: false } });
     const body = await req.json();
@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
         visible_beauty_ids: organizationScope.visibleBeautyIds,
         access_level: isAdmin ? "admin" : access.access_level,
         allowed_pages: isAdmin
-          ? ["dashboard","aperture","giornate","analisi","prodotti","clienti"]
+          ? ["dashboard","aperture","giornate","analisi","prodotti"]
           : normalizeAllowedPages(access.allowed_pages),
       });
     }
@@ -457,8 +457,8 @@ function applyOrganizationScope(query: any, table: string, scope: any) {
 }
 
 function normalizeAllowedPages(value: unknown) {
-  const pages = Array.isArray(value) ? value.filter((page) => page !== "utenti") : [];
-  return [...new Set(pages.map((page) => page === "farmacie" ? "clienti" : page))];
+  const removed = new Set(["utenti", "farmacie", "clienti"]);
+  return Array.isArray(value) ? [...new Set(value.filter((page) => !removed.has(page)))] : [];
 }
 
 function json(body: unknown, status = 200) {

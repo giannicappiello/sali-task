@@ -1,5 +1,18 @@
 import { supabase } from "../../../lib/supabaseClient";
 
+const PAGE_SIZE = 1000;
+
+async function loadAllPages(buildQuery) {
+  const rows = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await buildQuery(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    const page = data || [];
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) return rows;
+  }
+}
+
 export async function loadVisibleBeautyClients(user) {
   const admin = user?.external_role === "admin" || user?.ruolo === "admin";
   const scopeResult = admin ? { data: null, error: null } : await supabase.rpc("visible_mexal_agent_codes");
@@ -7,22 +20,27 @@ export async function loadVisibleBeautyClients(user) {
   const visibleCodes = scopeResult.data || [];
   if (!admin && !visibleCodes.length) return [];
 
-  let query = supabase
-    .from("ordini_clienti_cache")
-    .select("codice_cliente,ragione_sociale,indirizzo,localita,provincia,telefono,email,codice_agente_mexal")
-    .eq("attivo_mexal", true)
-    .order("ragione_sociale")
-    .limit(1000);
-  if (!admin) query = query.in("codice_agente_mexal", visibleCodes);
-
-  const [clientsResult, linksResult] = await Promise.all([
-    query,
-    supabase.from("beauty_clienti_mexal").select("codice_cliente,beauty_external_id,legacy_farmacia_id"),
+  const [clients, linkRows] = await Promise.all([
+    loadAllPages((from, to) => {
+      let query = supabase
+        .from("ordini_clienti_cache")
+        .select("codice_cliente,ragione_sociale,indirizzo,localita,provincia,telefono,email,codice_agente_mexal")
+        .eq("attivo_mexal", true)
+        .order("ragione_sociale")
+        .order("codice_cliente")
+        .range(from, to);
+      if (!admin) query = query.in("codice_agente_mexal", visibleCodes);
+      return query;
+    }),
+    loadAllPages((from, to) => supabase
+      .from("beauty_clienti_mexal")
+      .select("codice_cliente,beauty_external_id,legacy_farmacia_id")
+      .order("codice_cliente")
+      .range(from, to)),
   ]);
-  if (clientsResult.error || linksResult.error) throw clientsResult.error || linksResult.error;
 
-  const links = new Map((linksResult.data || []).map((link) => [link.codice_cliente, link]));
-  return (clientsResult.data || []).map((client) => {
+  const links = new Map(linkRows.map((link) => [link.codice_cliente, link]));
+  return clients.map((client) => {
     const link = links.get(client.codice_cliente);
     return {
       id: link?.legacy_farmacia_id || client.codice_cliente,

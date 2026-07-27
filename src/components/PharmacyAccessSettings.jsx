@@ -19,7 +19,6 @@ const pages = [
   ["giornate", "Giornate"],
   ["analisi", "Analisi dati"],
   ["prodotti", "Prodotti"],
-  ["clienti", "Clienti"],
 ];
 
 export default function PharmacyAccessSettings({ canManage }) {

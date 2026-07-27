@@ -336,6 +336,9 @@ export default function Settings() {
     e.preventDefault();
     if (!canManage) return alert("Non hai i permessi.");
     if (!modal.item?.id) return alert("Utente non selezionato.");
+    if (userAccessForm.beauty_enabled && userAccessForm.beauty_role === "beauty" && (!modal.item.nome?.trim() || !modal.item.cognome?.trim() || !modal.item.email?.trim())) {
+      return alert("Per abilitare Beauty Days come Beauty sono obbligatori nome, cognome ed email dell'utente. Completa prima il profilo nella sezione Team.");
+    }
 
     setSaving(true);
 
@@ -403,7 +406,7 @@ export default function Settings() {
       external_beauty_id: beautyExisting?.external_beauty_id || null,
       external_agent_id: beautyExisting?.external_agent_id || null,
     };
-    if (userAccessForm.beauty_enabled && ["beauty", "agent"].includes(userAccessForm.beauty_role)) {
+    if (userAccessForm.beauty_enabled && userAccessForm.beauty_role === "beauty") {
       const ensureRes = await supabase.functions.invoke("report-giornate-api", {
         body: {
           action: "ensure-external-user",
@@ -417,7 +420,7 @@ export default function Settings() {
       });
       if (ensureRes.error || ensureRes.data?.error) {
         setSaving(false);
-        return alert(ensureRes.error?.message || ensureRes.data?.error);
+        return alert(await getFunctionErrorMessage(ensureRes.error, ensureRes.data?.error));
       }
       external = { ...external, ...ensureRes.data };
     }
@@ -430,9 +433,9 @@ export default function Settings() {
       external_role: userAccessForm.beauty_role,
       mexal_agente_id: userAccessForm.mexal_agente_id || null,
       allowed_pages: userAccessForm.beauty_pages,
-      external_user_id: external.external_user_id || null,
-      external_beauty_id: external.external_beauty_id || null,
-      external_agent_id: external.external_agent_id || null,
+      external_user_id: userAccessForm.beauty_role === "beauty" ? external.external_user_id || null : null,
+      external_beauty_id: userAccessForm.beauty_role === "beauty" ? external.external_beauty_id || null : null,
+      external_agent_id: null,
       updated_at: new Date().toISOString(),
     }, { onConflict: "utente_id,modulo" });
     if (beautyRes.error) {
@@ -467,6 +470,20 @@ export default function Settings() {
     const { error } = await supabase.from(table).delete().eq("id", item.id);
     if (error) return alert(error.message);
     await loadData();
+  }
+
+  async function getFunctionErrorMessage(error, fallback) {
+    if (fallback) return fallback;
+    const response = error?.context;
+    if (response && typeof response.clone === "function") {
+      try {
+        const payload = await response.clone().json();
+        if (payload?.error) return payload.error;
+      } catch {
+        // La risposta può non essere JSON: in quel caso usiamo il messaggio disponibile.
+      }
+    }
+    return error?.message || "Errore durante l'aggiornamento degli accessi.";
   }
 
   async function deleteUser(item) {

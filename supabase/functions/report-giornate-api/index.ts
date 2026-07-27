@@ -34,6 +34,12 @@ Deno.serve(async (req) => {
 
     const roleName = String(profile.ruoli?.nome || "").toLowerCase();
     const isAdmin = ["admin", "administrator", "amministratore", "super admin", "direzione"].includes(roleName) || Number(profile.ruoli?.livello || 0) >= 80;
+    const { data: permissionRows } = profile.ruolo_id
+      ? await primary.from("permessi_ruolo").select("permessi(codice)").eq("ruolo_id", profile.ruolo_id)
+      : { data: [] };
+    const canManageSettings = isAdmin || (permissionRows || []).some((row: any) =>
+      ["settings.manage", "users.manage"].includes(String(row.permessi?.codice || ""))
+    );
     const { data: integration } = await primary.from("integrazioni_utenti").select("*").eq("utente_id", profile.id).eq("modulo", "report_giornate").maybeSingle();
     if (!isAdmin && (!integration || integration.enabled === false)) return json({ error: "Non sei autorizzato ad accedere a Beauty Days" }, 403);
 
@@ -59,7 +65,7 @@ Deno.serve(async (req) => {
 
 
     if (body.action === "ensure-external-user") {
-      if (!isAdmin) return json({ error: "Operazione riservata agli amministratori" }, 403);
+      if (!canManageSettings) return json({ error: "Non hai il permesso di gestire gli accessi utenti." }, 403);
 
       const result = await ensureExternalUser(report, body);
       return json(result);

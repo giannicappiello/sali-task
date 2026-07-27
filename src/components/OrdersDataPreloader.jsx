@@ -38,15 +38,14 @@ async function resolveOrdersAccess(profileId, isAdminUser) {
   }
 
   const [integrationResult, scopeResult] = await Promise.all([
-    supabase.from("integrazioni_utenti").select("enabled,ruolo_ordini").eq("utente_id", profileId).eq("modulo", "gestione_ordini").maybeSingle(),
+    supabase.from("integrazioni_utenti").select("modulo,enabled,ruolo_ordini").eq("utente_id", profileId).in("modulo", ["gestione_ordini_pr", "gestione_ordini_ph"]),
     supabase.rpc("visible_mexal_agent_codes"),
   ]);
   if (integrationResult.error || scopeResult.error) throw integrationResult.error || scopeResult.error;
-  const data = integrationResult.data;
-  if (data?.enabled !== true) return { enabled: false, canSeeAll: false, visibleAgents: [] };
+  const enabledRows = (integrationResult.data || []).filter((row) => row.enabled === true);
+  if (!enabledRows.length) return { enabled: false, canSeeAll: false, visibleAgents: [] };
 
-  const role = data?.ruolo_ordini || "agente";
-  if (role === "backoffice") {
+  if (enabledRows.some((row) => row.ruolo_ordini === "backoffice")) {
     return { enabled: true, canSeeAll: true, visibleAgents: null };
   }
 

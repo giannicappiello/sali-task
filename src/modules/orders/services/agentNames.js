@@ -15,7 +15,7 @@ export async function loadAgentNameMap(codes = []) {
   const { data: links, error: linksError } = await supabase
     .from("integrazioni_utenti")
     .select("utente_id,codice_agente_mexal")
-    .eq("modulo", "gestione_ordini")
+    .in("modulo", ["gestione_ordini_pr", "gestione_ordini_ph"])
     .in("codice_agente_mexal", normalizedCodes);
   if (linksError) throw linksError;
 

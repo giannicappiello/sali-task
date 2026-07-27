@@ -455,12 +455,11 @@ async function requireOrdersAdministrator(
 
   if (isAdmin) return;
 
-  const { data: integration, error: integrationError } = await supabase
+  const { data: integrations, error: integrationError } = await supabase
     .from("integrazioni_utenti")
     .select("enabled,ruolo_ordini")
     .eq("utente_id", profile.id)
-    .eq("modulo", "gestione_ordini")
-    .maybeSingle();
+    .in("modulo", ["gestione_ordini_pr", "gestione_ordini_ph"]);
 
   if (integrationError) {
     throw new HttpError(
@@ -470,8 +469,10 @@ async function requireOrdersAdministrator(
   }
 
   const isBackoffice =
-    integration?.enabled === true &&
-    stringValue(integration?.ruolo_ordini).toLowerCase() === "backoffice";
+    (integrations || []).some((integration) =>
+      integration?.enabled === true &&
+      stringValue(integration?.ruolo_ordini).toLowerCase() === "backoffice"
+    );
 
   if (isBackoffice) return;
 

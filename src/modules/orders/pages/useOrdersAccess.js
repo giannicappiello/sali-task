@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 import { useAuth } from "../../../contexts/AuthContext";
 
-const MODULE_CODE = "gestione_ordini";
-
 function normalizeAgentCodes(values) {
   const source = Array.isArray(values)
     ? values
@@ -28,7 +26,7 @@ function emptyAccess() {
   };
 }
 
-export default function useOrdersAccess() {
+export default function useOrdersAccess(moduleCode = "prof") {
   const { profile, isAdminUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [access, setAccess] = useState(emptyAccess());
@@ -68,7 +66,7 @@ export default function useOrdersAccess() {
           .from("integrazioni_utenti")
           .select("enabled,ruolo_ordini")
           .eq("utente_id", profile.id)
-          .eq("modulo", MODULE_CODE)
+          .eq("modulo", moduleCode === "ph" ? "gestione_ordini_ph" : "gestione_ordini_pr")
           .maybeSingle(),
         supabase.rpc("visible_mexal_agent_codes"),
       ]);
@@ -100,7 +98,7 @@ export default function useOrdersAccess() {
     return () => {
       active = false;
     };
-  }, [profile?.id, isAdminUser]);
+  }, [profile?.id, isAdminUser, moduleCode]);
 
   const permissions = useMemo(() => {
     const enabled = access.enabled === true;

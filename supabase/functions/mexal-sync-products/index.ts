@@ -7,7 +7,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const MODULE_CODE = "gestione_ordini";
 const STORAGE_BUCKET = "prodotti-mexal";
 const ARTICLE_PREFIXES = ["IT", "MKT", "IMP"];
 const PAGE_SIZE = 500;
@@ -117,12 +116,11 @@ Deno.serve(async (req) => {
     let isBackoffice = false;
 
     if (!isAdmin) {
-      const { data: integration, error: integrationError } = await supabase
+      const { data: integrations, error: integrationError } = await supabase
         .from("integrazioni_utenti")
         .select("enabled,ruolo_ordini")
         .eq("utente_id", profile.id)
-        .eq("modulo", MODULE_CODE)
-        .maybeSingle();
+        .in("modulo", ["gestione_ordini_pr", "gestione_ordini_ph"]);
 
       if (integrationError) {
         return json(
@@ -135,8 +133,10 @@ Deno.serve(async (req) => {
       }
 
       isBackoffice =
-        integration?.enabled === true &&
-        integration?.ruolo_ordini === "backoffice";
+        (integrations || []).some((integration) =>
+          integration?.enabled === true &&
+          integration?.ruolo_ordini === "backoffice"
+        );
     }
 
     if (!isAdmin && !isBackoffice) {

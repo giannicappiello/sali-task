@@ -17,7 +17,7 @@ import "./order-child-documents.css";
    const netUnit = quantity > 0 ? taxable / quantity : 0 */
 
 export default function OrdersModule({ moduleCode = "prof", title = "Ordini PROF", basePath = "/ordini-prof" }) {
-  const { loading, canAccessOrders } = useOrdersAccess();
+  const { loading, canAccessOrders } = useOrdersAccess(moduleCode);
   const items = [
     { to: `${basePath}/dashboard`, label: "Dashboard", icon: LayoutDashboard },
     { to: `${basePath}/clienti`, label: "Clienti", icon: Users },

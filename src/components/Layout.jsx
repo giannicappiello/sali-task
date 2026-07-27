@@ -23,8 +23,8 @@ const menuItems = [
   { path: "/home", label: "Home", icon: Home, permission: "dashboard.read" },
   { path: "/activities", label: "Attività", icon: ClipboardList, permission: "dashboard.read" },
   { path: "/farmacie/dashboard", label: "Beauty Days", icon: Store, permission: "pharmacy.read" },
-  { path: "/ordini-prof", label: "Ordini PROF", icon: ShoppingCart, permission: "orders.read", special: "orders" },
-  { path: "/ordini-ph", label: "Ordini PH", icon: ShoppingCart, permission: "orders.read", special: "orders" },
+  { path: "/ordini-prof", label: "Ordini PR", icon: ShoppingCart, permission: "orders.read", special: "orders_pr" },
+  { path: "/ordini-ph", label: "Ordini PH", icon: ShoppingCart, permission: "orders.read", special: "orders_ph" },
   { path: "/products", label: "Prodotti", icon: Package, permission: "products.read" },
   { path: "/documentation", label: "Documenti", icon: FileArchive, permission: "documentation.read" },
   { path: "/messages", label: "Messaggi", icon: MessageCircle, permission: "messages.read" },
@@ -56,7 +56,7 @@ const pageInfo = {
   "/integrations": { title: "Centro Integrazioni", subtitle: "Connessioni con Mexal e sistemi aziendali esterni." },
   "/integrations/mexal": { title: "Mexal ERP", subtitle: "Sincronizzazioni, storico e controllo della WebAPI Mexal." },
   "/farmacie/dashboard": { title: "Beauty Days", subtitle: "Giornate promozionali, clienti Mexal e analisi dati." },
-  "/ordini-prof": { title: "Ordini PROF", subtitle: "Clienti, ordini e attività commerciali collegate a Mexal." },
+  "/ordini-prof": { title: "Ordini PR", subtitle: "Clienti, ordini e attività commerciali collegate a Mexal." },
   "/ordini-ph": { title: "Ordini PH", subtitle: "Clienti, ordini e attività commerciali collegate a Mexal." },
 };
 
@@ -103,7 +103,7 @@ function Layout() {
   const presence = getPresence(profile);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [pharmacyEnabled, setPharmacyEnabled] = useState(false);
-  const [ordersEnabled, setOrdersEnabled] = useState(false);
+  const [ordersAccess, setOrdersAccess] = useState({ pr: false, ph: false });
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
   const [notifications, setNotifications] = useState([]);
@@ -151,29 +151,31 @@ function Layout() {
 
     async function loadOrdersAccess() {
       if (!profile?.id) {
-        if (active) setOrdersEnabled(false);
+        if (active) setOrdersAccess({ pr: false, ph: false });
         return;
       }
 
       if (isAdminUser) {
-        if (active) setOrdersEnabled(true);
+        if (active) setOrdersAccess({ pr: true, ph: true });
         return;
       }
 
       const { data, error } = await supabase
         .from("integrazioni_utenti")
-        .select("enabled,codice_agente_mexal")
+        .select("modulo,enabled")
         .eq("utente_id", profile.id)
-        .eq("modulo", "gestione_ordini")
-        .maybeSingle();
+        .in("modulo", ["gestione_ordini_pr", "gestione_ordini_ph"]);
 
       if (error) {
         console.error("Errore caricamento accesso Gestione Ordini:", error);
-        if (active) setOrdersEnabled(false);
+        if (active) setOrdersAccess({ pr: false, ph: false });
         return;
       }
 
-      if (active) setOrdersEnabled(data?.enabled === true);
+      if (active) setOrdersAccess({
+        pr: (data || []).some((row) => row.modulo === "gestione_ordini_pr" && row.enabled === true),
+        ph: (data || []).some((row) => row.modulo === "gestione_ordini_ph" && row.enabled === true),
+      });
     }
 
     loadOrdersAccess();
@@ -192,17 +194,16 @@ function Layout() {
           return pharmacyEnabled || hasPermission("pharmacy.read");
         }
 
-        if (item.special === "orders") {
-          return ordersEnabled || hasPermission("orders.read");
-        }
+        if (item.special === "orders_pr") return ordersAccess.pr;
+        if (item.special === "orders_ph") return ordersAccess.ph;
 
         if (item.path === "/products") {
-          return ordersEnabled || hasPermission("products.read");
+          return ordersAccess.pr || ordersAccess.ph || hasPermission("products.read");
         }
 
         return hasPermission(item.permission);
       }),
-    [hasPermission, pharmacyEnabled, ordersEnabled, isAdminUser]
+    [hasPermission, pharmacyEnabled, ordersAccess, isAdminUser]
   );
 
   useEffect(() => {

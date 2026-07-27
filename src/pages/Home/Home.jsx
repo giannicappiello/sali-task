@@ -29,8 +29,8 @@ const cards = [
     permission: "pharmacy.read",
     special: "pharmacy",
   },
-  { path: "/ordini-prof", label: "Ordini PROF", description: "Clienti, ordini e attività commerciali collegate a Mexal.", icon: ShoppingCart, permission: "orders.read", special: "orders" },
-  { path: "/ordini-ph", label: "Ordini PH", description: "Clienti, ordini e attività commerciali collegate a Mexal.", icon: ShoppingCart, permission: "orders.read", special: "orders" },
+  { path: "/ordini-prof", label: "Ordini PR", description: "Clienti, ordini e attività commerciali collegate a Mexal.", icon: ShoppingCart, permission: "orders.read", special: "orders_pr" },
+  { path: "/ordini-ph", label: "Ordini PH", description: "Clienti, ordini e attività commerciali collegate a Mexal.", icon: ShoppingCart, permission: "orders.read", special: "orders_ph" },
   {
     path: "/products",
     label: "Prodotti",
@@ -74,7 +74,7 @@ export default function Home() {
   const navigate = useNavigate();
   const { profile, hasPermission, isAdminUser } = useAuth();
   const [pharmacyEnabled, setPharmacyEnabled] = useState(false);
-  const [ordersEnabled, setOrdersEnabled] = useState(false);
+  const [ordersAccess, setOrdersAccess] = useState({ pr: false, ph: false });
 
   useEffect(() => {
     let active = true;
@@ -85,7 +85,7 @@ export default function Home() {
       if (isAdminUser) {
         if (active) {
           setPharmacyEnabled(true);
-          setOrdersEnabled(true);
+          setOrdersAccess({ pr: true, ph: true });
         }
         return;
       }
@@ -94,7 +94,7 @@ export default function Home() {
         .from("integrazioni_utenti")
         .select("modulo,enabled")
         .eq("utente_id", profile.id)
-        .in("modulo", ["report_giornate", "gestione_ordini"]);
+        .in("modulo", ["report_giornate", "gestione_ordini_pr", "gestione_ordini_ph"]);
 
       if (error) {
         console.error("Accessi home:", error.message);
@@ -107,11 +107,10 @@ export default function Home() {
             (item) => item.modulo === "report_giornate" && item.enabled === true
           )
         );
-        setOrdersEnabled(
-          (data || []).some(
-            (item) => item.modulo === "gestione_ordini" && item.enabled === true
-          )
-        );
+        setOrdersAccess({
+          pr: (data || []).some((item) => item.modulo === "gestione_ordini_pr" && item.enabled === true),
+          ph: (data || []).some((item) => item.modulo === "gestione_ordini_ph" && item.enabled === true),
+        });
       }
     }
 
@@ -128,15 +127,14 @@ export default function Home() {
         if (card.special === "pharmacy") {
           return pharmacyEnabled || hasPermission("pharmacy.read");
         }
-        if (card.special === "orders") {
-          return ordersEnabled || hasPermission("orders.read");
-        }
+        if (card.special === "orders_pr") return ordersAccess.pr;
+        if (card.special === "orders_ph") return ordersAccess.ph;
         if (card.special === "products") {
-          return ordersEnabled || hasPermission("products.read");
+          return ordersAccess.pr || ordersAccess.ph || hasPermission("products.read");
         }
         return hasPermission(card.permission);
       }),
-    [hasPermission, pharmacyEnabled, ordersEnabled, isAdminUser]
+    [hasPermission, pharmacyEnabled, ordersAccess, isAdminUser]
   );
 
   return (

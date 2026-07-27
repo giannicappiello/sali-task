@@ -10,20 +10,18 @@ const [agentNames, orders, detail, fulfillment, pdf, payload] = await Promise.al
   readFile("src/modules/orders/services/orderPayload.js", "utf8"),
 ]);
 
-assert.match(agentNames, /\[user\.cognome, user\.nome\][\s\S]*\.filter\(Boolean\)\.join\(" "\)/,
-  "Mario Rossi viene formattato come Rossi Mario");
-assert.match(agentNames, /\.from\("integrazioni_utenti"\)[\s\S]*\.select\("utente_id,codice_agente_mexal"\)[\s\S]*\.in\("codice_agente_mexal", normalizedCodes\)/,
-  "il codice agente Mexal viene risolto attraverso integrazioni_utenti in una sola query");
-assert.match(agentNames, /\.from\("utenti"\)[\s\S]*\.select\("id,nome,cognome"\)[\s\S]*\.in\("id", userIds\)/,
-  "gli utenti collegati vengono recuperati in una sola query");
-assert.match(agentNames, /map\.get\(code\) \|\| "-"/,
+assert.match(agentNames, /\[user\.nome, user\.cognome\][\s\S]*\.filter\(Boolean\)\.join\(" "\)/,
+  "Mario Rossi viene formattato come Mario Rossi");
+assert.match(agentNames, /\.from\("mexal_agenti"\)[\s\S]*\.select\("codice,nome,cognome"\)[\s\S]*\.in\("codice", normalizedCodes\)/,
+  "il codice agente viene risolto direttamente dall'anagrafica unica Mexal");
+assert.match(agentNames, /order\.agente_nome[\s\S]*map\.get\(code\) \|\| "-"/,
   "un nominativo mancante restituisce - e non il codice agente");
 assert.doesNotMatch(agentNames, /map\.get\(code\) \|\|\s*code/,
   "il codice agente non e un fallback visibile");
 
 assert.match(orders, /agentDisplayName, loadAgentNameMap/,
   "l'elenco ordini usa la funzione condivisa");
-assert.match(detail, /setAgentName\(result\.order\.agente_nome \|\| "-"\)/,
+assert.match(detail, /setAgentName\(loadedOrder\.agente_nome \|\| "-"\)/,
   "il dettaglio usa il nominativo risolto dal caricamento condiviso");
 assert.match(fulfillment, /agente_nome: agentDisplayName\(order, names\)/,
   "il caricamento dettaglio risolve il nominativo con la funzione condivisa");

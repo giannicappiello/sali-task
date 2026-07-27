@@ -5,40 +5,29 @@ function normalizeCode(value) {
 }
 
 export function formatAgentName(user = {}) {
-  return [user.cognome, user.nome].map((value) => String(value || "").trim()).filter(Boolean).join(" ");
+  return [user.nome, user.cognome].map((value) => String(value || "").trim()).filter(Boolean).join(" ");
 }
 
 export async function loadAgentNameMap(codes = []) {
   const normalizedCodes = [...new Set(codes.map(normalizeCode).filter(Boolean))];
   if (!normalizedCodes.length) return new Map();
 
-  const { data: links, error: linksError } = await supabase
-    .from("integrazioni_utenti")
-    .select("utente_id,codice_agente_mexal")
-    .in("modulo", ["gestione_ordini_pr", "gestione_ordini_ph"])
-    .in("codice_agente_mexal", normalizedCodes);
-  if (linksError) throw linksError;
+  const { data: agents, error } = await supabase
+    .from("mexal_agenti")
+    .select("codice,nome,cognome")
+    .in("codice", normalizedCodes);
+  if (error) throw error;
 
-  const userIds = [...new Set((links || []).map((row) => row.utente_id).filter(Boolean))];
-  if (!userIds.length) return new Map();
-
-  const { data: users, error: usersError } = await supabase
-    .from("utenti")
-    .select("id,nome,cognome")
-    .in("id", userIds);
-  if (usersError) throw usersError;
-
-  const usersById = new Map((users || []).map((user) => [user.id, formatAgentName(user)]));
   return new Map(
-    (links || [])
-      .map((link) => [normalizeCode(link.codice_agente_mexal), usersById.get(link.utente_id)])
+    (agents || [])
+      .map((agent) => [normalizeCode(agent.codice), formatAgentName(agent)])
       .filter(([, name]) => Boolean(name))
   );
 }
 
 export function agentDisplayName(order = {}, map = new Map()) {
   const code = normalizeCode(order.codice_agente_mexal);
-  return map.get(code) || "-";
+  return String(order.agente_nome || "").trim() || map.get(code) || "-";
 }
 
 export function orderNumberValue(order = {}) {

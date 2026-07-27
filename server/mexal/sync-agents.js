@@ -194,6 +194,60 @@ async function removeInactiveAgents(admin, activeCodes) {
   return inactive.length;
 }
 
+function validEmail(value) {
+  const email = String(value || "").split(";")[0].trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
+}
+
+async function syncLinkedUserEmails(admin, activeAgents) {
+  const agentsWithEmail = activeAgents.filter((agent) => validEmail(agent.email));
+  if (!agentsWithEmail.length) return 0;
+
+  const { data: linkedAgents, error: linkedError } = await admin
+    .from("mexal_agenti")
+    .select("codice,workspace_utente_id")
+    .in("codice", agentsWithEmail.map((agent) => agent.codice))
+    .not("workspace_utente_id", "is", null);
+  if (linkedError) throw linkedError;
+
+  const workspaceIds = [...new Set((linkedAgents || []).map((agent) => agent.workspace_utente_id).filter(Boolean))];
+  if (!workspaceIds.length) return 0;
+
+  const { data: users, error: usersError } = await admin
+    .from("utenti")
+    .select("id,auth_user_id,email")
+    .in("id", workspaceIds);
+  if (usersError) throw usersError;
+
+  const agentByCode = new Map(agentsWithEmail.map((agent) => [agent.codice, agent]));
+  const codeByUser = new Map((linkedAgents || []).map((agent) => [agent.workspace_utente_id, agent.codice]));
+  let updated = 0;
+
+  for (const user of users || []) {
+    const mexalEmail = validEmail(agentByCode.get(codeByUser.get(user.id))?.email);
+    if (!mexalEmail) continue;
+
+    if (user.auth_user_id) {
+      const { error: authError } = await admin.auth.admin.updateUserById(user.auth_user_id, {
+        email: mexalEmail,
+        email_confirm: true,
+      });
+      if (authError) throw new Error(`Impossibile aggiornare l'email di accesso ${mexalEmail}: ${authError.message}`);
+    }
+
+    if (String(user.email || "").toLowerCase() !== mexalEmail) {
+      const { error: profileError } = await admin
+        .from("utenti")
+        .update({ email: mexalEmail })
+        .eq("id", user.id);
+      if (profileError) throw profileError;
+    }
+    updated += 1;
+  }
+
+  return updated;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Metodo non consentito." });
   const admin = createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false, autoRefreshToken: false } });
@@ -225,6 +279,7 @@ export default async function handler(req, res) {
     }
 
     const existingCodes = new Set(existing.map((item) => item.codice));
+    const authEmailsUpdated = await syncLinkedUserEmails(admin, activeAgents);
     const removed = await removeInactiveAgents(admin, activeCodes);
     const inserted = activeAgents.filter((item) => !existingCodes.has(item.codice)).length;
     const updated = activeAgents.length - inserted;
@@ -235,7 +290,7 @@ export default async function handler(req, res) {
       updated,
       skipped: 0,
       failed: 0,
-      metadata: { endpoint: "/fornitori", codice_prefix: AGENT_PREFIX, eliminati_disattivati: removed },
+      metadata: { endpoint: "/fornitori", codice_prefix: AGENT_PREFIX, eliminati_disattivati: removed, email_accesso_aggiornate: authEmailsUpdated },
     });
 
     return res.status(200).json({
@@ -245,6 +300,7 @@ export default async function handler(req, res) {
       inseriti: inserted,
       aggiornati: updated,
       eliminati_disattivati: removed,
+      email_accesso_aggiornate: authEmailsUpdated,
       risorsa_mexal: "/fornitori",
       errori: [],
     });

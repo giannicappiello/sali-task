@@ -15,23 +15,14 @@ async function loadAllPages(buildQuery) {
 
 export async function loadVisibleBeautyClients(user) {
   const admin = user?.external_role === "admin" || user?.ruolo === "admin";
-  const scopeResult = admin ? { data: null, error: null } : await supabase.rpc("visible_mexal_agent_codes");
-  if (scopeResult.error) throw scopeResult.error;
-  const visibleCodes = scopeResult.data || [];
-  if (!admin && !visibleCodes.length) return [];
 
   const [clients, linkRows] = await Promise.all([
-    loadAllPages((from, to) => {
-      let query = supabase
-        .from("ordini_clienti_cache")
-        .select("codice_cliente,ragione_sociale,indirizzo,localita,provincia,telefono,email,codice_agente_mexal")
-        .eq("attivo_mexal", true)
-        .order("ragione_sociale")
-        .order("codice_cliente")
-        .range(from, to);
-      if (!admin) query = query.in("codice_agente_mexal", visibleCodes);
-      return query;
-    }),
+    loadAllPages((from, to) => (admin
+      ? supabase.from("ordini_clienti_cache").select("codice_cliente,ragione_sociale,indirizzo,localita,provincia,telefono,email,codice_agente_mexal").eq("attivo_mexal", true)
+      : supabase.rpc("visible_mexal_clients_for_me"))
+      .order("ragione_sociale")
+      .order("codice_cliente")
+      .range(from, to)),
     loadAllPages((from, to) => supabase
       .from("beauty_clienti_mexal")
       .select("codice_cliente,beauty_external_id,legacy_farmacia_id")

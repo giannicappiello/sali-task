@@ -176,7 +176,13 @@ export async function agentsAccess({ supabase, body }) {
   }
 
   if (!createdAuthUser) {
-    await setAuthEnabled(supabase, authUser.id, password, true);
+    const { error: authUpdateError } = await supabase.auth.admin.updateUserById(authUser.id, {
+      email,
+      email_confirm: true,
+      password,
+      ban_duration: "none",
+    });
+    if (authUpdateError) throw authUpdateError;
   }
 
   if (!authUser?.id) throw httpError("Supabase Auth non ha restituito l'identificativo utente.");

@@ -17,6 +17,7 @@ const workspaceModules = [
   ["report", "Report"],
   ["team", "Team"],
 ];
+const RESPONSIBLE_ROLE_ID = "9b8431f9-e6f4-43a1-8de9-6bb7e9af7ed0";
 const emptyDepartment = { nome: "", descrizione: "", attivo: true, moduli: [] };
 const emptyRole = {
   nome: "",
@@ -24,6 +25,7 @@ const emptyRole = {
   livello: 40,
   ambito_dati: "propri",
   livello_accesso: "scrittura",
+  accesso_come_beauty: false,
   permessi: [],
 };
 const emptyTemplate = { titolo: "", reparto_id: "", reparto_ids: [], ordine: 1, attivo: true };
@@ -92,7 +94,7 @@ export default function Settings() {
       supabase.from("reparti").select("*").order("nome"),
       supabase.from("ruoli").select("*").order("livello", { ascending: false }),
       supabase.from("checklist_template").select("*,reparti(id,nome)").order("ordine", { ascending: true }),
-      supabase.from("utenti").select("id,auth_user_id,nome,cognome,email,telefono,attivo,reparto_id,ruolo_id,mexal_agente_id,ruoli(id,nome,livello,ambito_dati,livello_accesso)").order("nome"),
+      supabase.from("utenti").select("id,auth_user_id,nome,cognome,email,telefono,attivo,reparto_id,ruolo_id,mexal_agente_id,ruoli(id,nome,livello,ambito_dati,livello_accesso,accesso_come_beauty)").order("nome"),
       supabase.from("utenti_reparti").select("id,utente_id,reparto_id"),
       supabase.from("permessi").select("id,codice,descrizione").order("codice"),
       supabase.from("permessi_ruolo").select("ruolo_id,permesso_id,permessi(id,codice,descrizione)"),
@@ -154,13 +156,8 @@ export default function Settings() {
     return !normalizedSearch || `${item.titolo || ""} ${item.reparti?.nome || ""} ${departmentText}`.toLowerCase().includes(normalizedSearch);
   }), [templates, templateDepartments, departments, normalizedSearch]);
   const responsibleUsers = useMemo(() => {
-    const responsibleRoleIds = new Set(
-      roles
-        .filter((role) => role.ambito_dati === "team")
-        .map((role) => role.id)
-    );
-    return users.filter((user) => user.attivo !== false && responsibleRoleIds.has(user.ruolo_id));
-  }, [users, roles]);
+    return users.filter((user) => user.attivo !== false && user.ruolo_id === RESPONSIBLE_ROLE_ID);
+  }, [users]);
 
   function getUserDepartmentIds(userId) {
     const linked = userDepartments.filter((row) => row.utente_id === userId && row.reparto_id).map((row) => row.reparto_id);
@@ -239,6 +236,7 @@ export default function Settings() {
         livello: item.livello || 40,
         ambito_dati: item.ambito_dati || "propri",
         livello_accesso: item.livello_accesso || "scrittura",
+        accesso_come_beauty: item.accesso_come_beauty === true,
         permessi: getRolePermissionIds(item.id),
       });
     }
@@ -317,6 +315,7 @@ export default function Settings() {
       livello: Number(roleForm.livello) || 0,
       ambito_dati: roleForm.ambito_dati,
       livello_accesso: roleForm.livello_accesso,
+      accesso_come_beauty: roleForm.accesso_come_beauty === true,
     };
     if (!payload.nome) return alert("Inserisci il nome del ruolo.");
 
@@ -617,7 +616,7 @@ export default function Settings() {
       {tab === "organization" && (
         <div className="settings-two-columns">
           <div className="panel settings-panel"><div className="panel-header"><div><h3>Reparti e moduli</h3><p>Ogni reparto stabilisce quali moduli sono disponibili ai suoi utenti.</p></div>{canManage && <button className="primary-action" onClick={() => openCreate("reparto")}><Plus size={18} />Nuovo</button>}</div><div className="settings-list">{filteredDepartments.map((item) => { const moduleCodes = getDepartmentModuleCodes(item.id); return <div className="settings-row" key={item.id}><div><strong>{item.nome}</strong><span>{item.descrizione || "Nessuna descrizione"}</span><span>Moduli: {moduleCodes.length ? moduleCodes.map((code) => workspaceModules.find(([id]) => id === code)?.[1] || code).join(", ") : "Nessuno"}</span></div><span className={`config-status ${item.attivo ? "active" : "inactive"}`}>{item.attivo ? "Attivo" : "Disattivo"}</span><div className="config-actions"><button onClick={() => openEdit("reparto", item)}><Pencil size={16} /></button><button className="danger" onClick={() => remove("reparto", item)}><Trash2 size={16} /></button></div></div>; })}{filteredDepartments.length === 0 && <p>Nessun reparto corrisponde alla ricerca.</p>}</div></div>
-          <div className="panel settings-panel"><div className="panel-header"><div><h3>Ruoli e permessi</h3><p>Il ruolo Workspace determina livello operativo e ampiezza dei dati in tutti i moduli.</p></div>{canManage && <button className="primary-action" onClick={() => openCreate("ruolo")}><Plus size={18} />Nuovo</button>}</div><div className="settings-list">{filteredRoles.map((item) => { const codes = getRolePermissionCodes(item.id); return <div className="settings-row" key={item.id}><div><strong>{item.nome}</strong><span>{item.descrizione || "Nessuna descrizione"}</span><span>Ambito dati: {item.ambito_dati || "propri"} · Accesso: {item.livello_accesso || "scrittura"}</span><span>Permessi: {codes.length ? codes.map((code) => permissionLabels[code] || code).join(", ") : "Nessuno"}</span></div><span className="role-level">Livello {item.livello}</span><div className="config-actions"><button onClick={() => openEdit("ruolo", item)}><Pencil size={16} /></button><button className="danger" onClick={() => remove("ruolo", item)}><Trash2 size={16} /></button></div></div>; })}{filteredRoles.length === 0 && <p>Nessun ruolo corrisponde alla ricerca.</p>}</div></div>
+          <div className="panel settings-panel"><div className="panel-header"><div><h3>Ruoli e permessi</h3><p>Il ruolo Workspace determina livello operativo e ampiezza dei dati in tutti i moduli.</p></div>{canManage && <button className="primary-action" onClick={() => openCreate("ruolo")}><Plus size={18} />Nuovo</button>}</div><div className="settings-list">{filteredRoles.map((item) => { const codes = getRolePermissionCodes(item.id); return <div className="settings-row" key={item.id}><div><strong>{item.nome}</strong><span>{item.descrizione || "Nessuna descrizione"}</span><span>Ambito dati: {item.ambito_dati || "propri"} · Accesso: {item.livello_accesso || "scrittura"}</span><span>Profilo Beauty: {item.accesso_come_beauty ? "abilitato" : "non abilitato"}</span><span>Permessi: {codes.length ? codes.map((code) => permissionLabels[code] || code).join(", ") : "Nessuno"}</span></div><span className="role-level">Livello {item.livello}</span><div className="config-actions"><button onClick={() => openEdit("ruolo", item)}><Pencil size={16} /></button><button className="danger" onClick={() => remove("ruolo", item)}><Trash2 size={16} /></button></div></div>; })}{filteredRoles.length === 0 && <p>Nessun ruolo corrisponde alla ricerca.</p>}</div></div>
         </div>
       )}
 
@@ -646,7 +645,7 @@ export default function Settings() {
 
             {modal.type === "reparto" && <><label>Nome reparto<input value={departmentForm.nome} onChange={(e) => setDepartmentForm({ ...departmentForm, nome: e.target.value })} /></label><label>Descrizione<textarea rows="3" value={departmentForm.descrizione} onChange={(e) => setDepartmentForm({ ...departmentForm, descrizione: e.target.value })} /></label><div className="checkbox-group"><strong>Moduli accessibili dal reparto</strong>{workspaceModules.map(([id, label]) => <label key={id}><input type="checkbox" checked={(departmentForm.moduli || []).includes(id)} onChange={() => toggleListValue(setDepartmentForm, "moduli", id)} />{label}</label>)}</div><label className="check-line"><input type="checkbox" checked={departmentForm.attivo} onChange={(e) => setDepartmentForm({ ...departmentForm, attivo: e.target.checked })} />Attivo</label></>}
 
-            {modal.type === "ruolo" && <><label>Nome ruolo<input value={roleForm.nome} onChange={(e) => setRoleForm({ ...roleForm, nome: e.target.value })} /></label><label>Descrizione<textarea rows="3" value={roleForm.descrizione} onChange={(e) => setRoleForm({ ...roleForm, descrizione: e.target.value })} /></label><label>Livello<input type="number" value={roleForm.livello} onChange={(e) => setRoleForm({ ...roleForm, livello: e.target.value })} /></label><label>Ambito dei dati<select value={roleForm.ambito_dati} onChange={(e) => setRoleForm({ ...roleForm, ambito_dati: e.target.value })}><option value="propri">Solo dati propri e clienti associati</option><option value="team">Propri dati e team collegato</option><option value="tutti">Tutti i dati del workspace</option></select></label><label>Livello operativo<select value={roleForm.livello_accesso} onChange={(e) => setRoleForm({ ...roleForm, livello_accesso: e.target.value })}><option value="lettura">Sola lettura</option><option value="scrittura">Lettura e modifica</option><option value="amministrazione">Amministrazione</option></select></label><div className="checkbox-group scrollable-check-group"><strong>Permessi del ruolo</strong>{permissions.map((permission) => (<label key={permission.id}><input type="checkbox" checked={(roleForm.permessi || []).includes(permission.id)} onChange={() => toggleListValue(setRoleForm, "permessi", permission.id)} />{permission.codice} · {permission.descrizione || permissionLabels[permission.codice] || ""}</label>))}{permissions.length === 0 && <p>Nessun permesso disponibile.</p>}</div></>}
+            {modal.type === "ruolo" && <><label>Nome ruolo<input value={roleForm.nome} onChange={(e) => setRoleForm({ ...roleForm, nome: e.target.value })} /></label><label>Descrizione<textarea rows="3" value={roleForm.descrizione} onChange={(e) => setRoleForm({ ...roleForm, descrizione: e.target.value })} /></label><label>Livello<input type="number" value={roleForm.livello} onChange={(e) => setRoleForm({ ...roleForm, livello: e.target.value })} /></label><label>Ambito dei dati<select value={roleForm.ambito_dati} onChange={(e) => setRoleForm({ ...roleForm, ambito_dati: e.target.value })}><option value="propri">Solo dati propri e clienti associati</option><option value="team">Propri dati e team collegato</option><option value="tutti">Tutti i dati del workspace</option></select></label><label>Livello operativo<select value={roleForm.livello_accesso} onChange={(e) => setRoleForm({ ...roleForm, livello_accesso: e.target.value })}><option value="lettura">Sola lettura</option><option value="scrittura">Lettura e modifica</option><option value="amministrazione">Amministrazione</option></select></label><label className="check-line"><input type="checkbox" checked={roleForm.accesso_come_beauty === true} onChange={(e) => setRoleForm({ ...roleForm, accesso_come_beauty: e.target.checked })} />Autorizza l'accesso a Beauty Days con profilo Beauty</label><p className="muted">Per entrare, l'utente deve appartenere anche a un reparto con il modulo Beauty Days abilitato.</p><div className="checkbox-group scrollable-check-group"><strong>Permessi del ruolo</strong>{permissions.map((permission) => (<label key={permission.id}><input type="checkbox" checked={(roleForm.permessi || []).includes(permission.id)} onChange={() => toggleListValue(setRoleForm, "permessi", permission.id)} />{permission.codice} · {permission.descrizione || permissionLabels[permission.codice] || ""}</label>))}{permissions.length === 0 && <p>Nessun permesso disponibile.</p>}</div></>}
 
             {modal.type === "checklist" && <><label>Voce checklist<input value={templateForm.titolo} onChange={(e) => setTemplateForm({ ...templateForm, titolo: e.target.value })} /></label><div className="checkbox-group scrollable-check-group"><strong>Reparti collegati alla voce checklist</strong><p className="muted">Se non selezioni reparti, la voce sarà valida per tutti i reparti.</p>{activeDepartments.map((department) => (<label key={department.id}><input type="checkbox" checked={(templateForm.reparto_ids || []).includes(department.id)} onChange={() => toggleListValue(setTemplateForm, "reparto_ids", department.id)} />{department.nome}</label>))}{activeDepartments.length === 0 && <p>Nessun reparto attivo disponibile.</p>}</div><label>Ordine<input type="number" value={templateForm.ordine} onChange={(e) => setTemplateForm({ ...templateForm, ordine: e.target.value })} /></label><label className="check-line"><input type="checkbox" checked={templateForm.attivo} onChange={(e) => setTemplateForm({ ...templateForm, attivo: e.target.checked })} />Attiva</label></>}
 
@@ -659,7 +658,7 @@ export default function Settings() {
               <h3>Relazioni organizzative</h3>
               <p className="muted">L'agente e il codice agente provengono esclusivamente da Mexal. Le associazioni sono facoltative.</p>
               <label>Identità agente dell'utente<select value={userAccessForm.workspace_mexal_agente_id} onChange={(e) => setUserAccessForm({ ...userAccessForm, workspace_mexal_agente_id: e.target.value })}><option value="">Utente non agente</option>{mexalAgents.filter((agent) => agent.attivo_mexal !== false && (!agent.workspace_utente_id || agent.workspace_utente_id === modal.item?.id)).map((agent) => <option key={agent.id} value={agent.id}>{agent.codice} · {`${agent.nome || ""} ${agent.cognome || ""}`.trim()}</option>)}</select></label>
-              {userAccessForm.workspace_mexal_agente_id && <label>Responsabile dell'agente<select value={userAccessForm.responsabile_utente_id} onChange={(e) => setUserAccessForm({ ...userAccessForm, responsabile_utente_id: e.target.value })}><option value="">Nessun responsabile</option>{responsibleUsers.filter((user) => user.id !== modal.item?.id).map((user) => <option key={user.id} value={user.id}>{`${user.nome || ""} ${user.cognome || ""}`.trim() || user.email}</option>)}</select>{responsibleUsers.length === 0 && <span className="muted">Non ci sono utenti attivi con un ruolo avente ambito dati “team”.</span>}</label>}
+              {userAccessForm.workspace_mexal_agente_id && <label>Responsabile dell'agente<select value={userAccessForm.responsabile_utente_id} onChange={(e) => setUserAccessForm({ ...userAccessForm, responsabile_utente_id: e.target.value })}><option value="">Nessun responsabile</option>{responsibleUsers.filter((user) => user.id !== modal.item?.id).map((user) => <option key={user.id} value={user.id}>{`${user.nome || ""} ${user.cognome || ""}`.trim() || user.email}</option>)}</select>{responsibleUsers.length === 0 && <span className="muted">Non ci sono utenti attivi associati al ruolo Responsabile configurato.</span>}</label>}
 
               <h3>Moduli ereditati dai reparti</h3>
               <p className="muted">{selectedUserModuleCodes.length ? selectedUserModuleCodes.map((code) => workspaceModules.find(([id]) => id === code)?.[1] || code).join(", ") : "Nessun modulo abilitato. Configura i moduli nella card Reparti."}</p>

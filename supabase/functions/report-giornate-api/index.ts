@@ -43,12 +43,37 @@ Deno.serve(async (req) => {
     const { data: integration } = await primary.from("integrazioni_utenti").select("*").eq("utente_id", profile.id).eq("modulo", "report_giornate").maybeSingle();
     if (!isAdmin && (!integration || integration.enabled === false)) return json({ error: "Non sei autorizzato ad accedere a Beauty Days" }, 403);
 
-    const access = integration || { enabled: true, access_level: "admin", external_role: "admin", allowed_pages: ["dashboard","aperture","giornate","analisi"], data_scope: {} };
-    const organizationScope = await loadOrganizationScope(primary, profile, access, isAdmin);
+    let access = integration || { enabled: true, access_level: "admin", external_role: "admin", allowed_pages: ["dashboard","aperture","giornate","analisi"], data_scope: {} };
     const report = createClient(reportUrl, reportServiceKey, { auth: { persistSession: false } });
     const body = await req.json();
 
     if (body.action === "context") {
+      const expectedExternalId = access.external_role === "beauty"
+        ? access.external_beauty_id
+        : access.external_agent_id;
+      if (!isAdmin && ["beauty", "agent"].includes(access.external_role) && !expectedExternalId) {
+        const ensured = await ensureExternalUser(report, {
+          ruolo: access.external_role,
+          nome: profile.nome,
+          cognome: profile.cognome,
+          email: profile.email,
+          telefono: profile.telefono,
+          external_beauty_id: access.external_beauty_id,
+          external_agent_id: access.external_agent_id,
+        });
+        const { error: updateError } = await primary
+          .from("integrazioni_utenti")
+          .update({
+            external_user_id: ensured.external_user_id,
+            external_beauty_id: ensured.external_beauty_id,
+            external_agent_id: ensured.external_agent_id,
+          })
+          .eq("utente_id", profile.id)
+          .eq("modulo", "report_giornate");
+        if (updateError) throw updateError;
+        access = { ...access, ...ensured };
+      }
+      const organizationScope = await loadOrganizationScope(primary, profile, access, isAdmin);
       return json({
         user_id: profile.id,
         external_user_id: access.external_user_id,
@@ -75,11 +100,13 @@ Deno.serve(async (req) => {
       if (!isAdmin && !["write", "admin"].includes(access.access_level)) {
         return json({ error: "Accesso in sola lettura" }, 403);
       }
+      const organizationScope = await loadOrganizationScope(primary, profile, access, isAdmin);
       const result = await ensureClientLink(primary, report, body.codice_cliente, organizationScope, isAdmin);
       return json(result);
     }
 
     if (body.action === "query") {
+      const organizationScope = await loadOrganizationScope(primary, profile, access, isAdmin);
       if (!allowedTables.has(body.table)) return json({ error: `Tabella non autorizzata: ${body.table}` }, 403);
       const write = ["insert", "update", "delete"].includes(body.operation);
       if (write && !isAdmin && !["write", "admin"].includes(access.access_level)) return json({ error: "Accesso in sola lettura" }, 403);

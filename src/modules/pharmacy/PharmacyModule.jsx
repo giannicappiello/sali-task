@@ -7,8 +7,6 @@ import Dashboard from "./pages/Dashboard";
 import ApertureContatti from "./pages/ApertureContatti";
 import Giornate from "./pages/Giornate";
 import Analisi from "./pages/Analisi";
-import "./report-style.css";
-import "./report-app.css";
 import "./pharmacy-module.css";
 
 const items = [
@@ -67,7 +65,7 @@ export default function PharmacyModule() {
   if (error) return <div className="pharmacy-state panel"><MapPinned size={36}/><h3>Accesso non disponibile</h3><p>{error}</p><p>L'amministratore deve abilitare il modulo da Impostazioni → Accessi Beauty Days.</p></div>;
 
   const allowed = context?.allowed_pages || items.map(([id]) => id);
-  return <div className="pharmacy-module">
+  return <div className="pharmacy-module v4-page">
     <div className="pharmacy-module-header">
       <div><h1>Beauty Days</h1><p>Giornate promozionali, attività, clienti Mexal e analisi.</p></div>
       <span className="pharmacy-access-badge">{legacyUser.ruolo} · {context?.access_level}</span>

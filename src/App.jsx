@@ -5,6 +5,7 @@ import { AuthProvider } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Layout from "./components/Layout";
 import OrdersDataPreloader from "./components/OrdersDataPreloader";
+import GlobalWindowShortcuts from "./components/GlobalWindowShortcuts";
 
 import Login from "./pages/Login/Login";
 
@@ -59,6 +60,7 @@ function App() {
   return (
     <AuthProvider>
       <OrdersDataPreloader />
+      <GlobalWindowShortcuts />
       <Suspense fallback={<Loader />}>
         <Routes>
           <Route path="/login" element={<Login />} />

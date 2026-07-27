@@ -139,7 +139,7 @@ export default function NewOrder() {
     canSeeAll,
     visibleAgents,
     agentCode,
-  } = useOrdersAccess();
+  } = useOrdersAccess(moduleCode);
 
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);

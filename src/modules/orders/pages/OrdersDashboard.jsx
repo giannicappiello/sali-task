@@ -11,7 +11,7 @@ import { getOrderDisplayStatus } from "../services/orderDisplayStatus";
 export default function OrdersDashboard() {
   const { moduleCode, basePath } = useOrdersModule();
   const navigate = useNavigate();
-  const { loading: accessLoading, visibleAgents, canSeeAll, canAccessOrders } = useOrdersAccess();
+  const { loading: accessLoading, visibleAgents, canSeeAll, canAccessOrders } = useOrdersAccess(moduleCode);
   const [stats, setStats] = useState({ ordiniMese: 0, aperti: 0, inCorso: 0, evasi: 0 });
   const [orders, setOrders] = useState([]);
   const [agentsByCode, setAgentsByCode] = useState(new Map());

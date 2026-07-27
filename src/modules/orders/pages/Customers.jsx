@@ -18,7 +18,7 @@ function normalizeSearch(value) {
 }
 
 export default function Customers() {
-  const { basePath } = useOrdersModule();
+  const { moduleCode, basePath } = useOrdersModule();
   const navigate = useNavigate();
   const requestIdRef = useRef(0);
   const {
@@ -26,7 +26,7 @@ export default function Customers() {
     visibleAgents,
     canSeeAll,
     canAccessOrders,
-  } = useOrdersAccess();
+  } = useOrdersAccess(moduleCode);
 
   const [rows, setRows] = useState([]);
   const [agentNames, setAgentNames] = useState(new Map());

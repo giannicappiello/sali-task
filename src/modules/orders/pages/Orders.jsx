@@ -11,7 +11,7 @@ export default function Orders() {
   const { moduleCode, basePath } = useOrdersModule();
   const navigate = useNavigate();
   const location = useLocation();
-  const { loading: accessLoading, visibleAgents, canSeeAll, canAccessOrders, isBackoffice, isAdmin } = useOrdersAccess();
+  const { loading: accessLoading, visibleAgents, canSeeAll, canAccessOrders, isBackoffice, isAdmin } = useOrdersAccess(moduleCode);
   const [rows, setRows] = useState([]);
   const [agentsByCode, setAgentsByCode] = useState(new Map());
   const [search, setSearch] = useState("");

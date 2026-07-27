@@ -1,16 +1,35 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { Pencil, Plus, Save, Search, Trash2, X } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 import ProjectTypesSettings from "../../components/ProjectTypesSettings";
 import PharmacyAccessSettings from "../../components/PharmacyAccessSettings";
 import OrdersAccessSettings from "../../components/OrdersAccessSettings";
-import OrganizationRelationsSettings from "../../components/OrganizationRelationsSettings";
 
 const emptyDepartment = { nome: "", descrizione: "", attivo: true };
 const emptyRole = { nome: "", descrizione: "", livello: 40, permessi: [] };
 const emptyTemplate = { titolo: "", reparto_id: "", reparto_ids: [], ordine: 1, attivo: true };
-const emptyUserAccess = { ruolo_id: "", attivo: true, reparti: [] };
+const emptyUserAccess = {
+  ruolo_id: "",
+  attivo: true,
+  reparti: [],
+  mexal_agente_id: "",
+  agenti_coordinati: [],
+  beauty_enabled: false,
+  beauty_access_level: "read",
+  beauty_role: "beauty",
+  beauty_pages: ["dashboard", "aperture", "giornate", "analisi"],
+  orders_enabled: false,
+  orders_role: "agente",
+};
+
+const beautyPages = [
+  ["dashboard", "Dashboard"],
+  ["aperture", "Aperture / Contatti"],
+  ["giornate", "Giornate"],
+  ["analisi", "Analisi dati"],
+  ["prodotti", "Prodotti"],
+];
 
 const permissionLabels = {
   "projects.read": "Vede progetti dei propri reparti",
@@ -45,6 +64,9 @@ export default function Settings() {
   const [permissions, setPermissions] = useState([]);
   const [rolePermissions, setRolePermissions] = useState([]);
   const [templateDepartments, setTemplateDepartments] = useState([]);
+  const [integrations, setIntegrations] = useState([]);
+  const [mexalAgents, setMexalAgents] = useState([]);
+  const [search, setSearch] = useState("");
 
   const [modal, setModal] = useState({ open: false, type: "checklist", item: null });
   const [departmentForm, setDepartmentForm] = useState(emptyDepartment);
@@ -58,15 +80,17 @@ export default function Settings() {
   }, []);
 
   async function loadData() {
-    const [departmentsRes, rolesRes, templatesRes, usersRes, userDepartmentsRes, permissionsRes, rolePermissionsRes, templateDepartmentsRes] = await Promise.all([
+    const [departmentsRes, rolesRes, templatesRes, usersRes, userDepartmentsRes, permissionsRes, rolePermissionsRes, templateDepartmentsRes, integrationsRes, agentsRes] = await Promise.all([
       supabase.from("reparti").select("*").order("nome"),
       supabase.from("ruoli").select("*").order("livello", { ascending: false }),
       supabase.from("checklist_template").select("*,reparti(id,nome)").order("ordine", { ascending: true }),
-      supabase.from("utenti").select("id,nome,cognome,email,attivo,ruolo_id,ruoli(id,nome,livello)").order("nome"),
+      supabase.from("utenti").select("id,auth_user_id,nome,cognome,email,telefono,attivo,ruolo_id,mexal_agente_id,ruoli(id,nome,livello)").order("nome"),
       supabase.from("utenti_reparti").select("id,utente_id,reparto_id"),
       supabase.from("permessi").select("id,codice,descrizione").order("codice"),
       supabase.from("permessi_ruolo").select("ruolo_id,permesso_id,permessi(id,codice,descrizione)"),
       supabase.from("checklist_template_reparti").select("id,template_id,reparto_id"),
+      supabase.from("integrazioni_utenti").select("*").in("modulo", ["report_giornate", "gestione_ordini"]),
+      supabase.from("mexal_agenti").select("id,codice,nome,cognome,attivo_mexal,workspace_utente_id,responsabile_utente_id").order("cognome"),
     ]);
 
     if (departmentsRes.error) console.error("Errore reparti:", departmentsRes.error.message);
@@ -77,6 +101,8 @@ export default function Settings() {
     if (permissionsRes.error) console.error("Errore permessi:", permissionsRes.error.message);
     if (rolePermissionsRes.error) console.error("Errore permessi_ruolo:", rolePermissionsRes.error.message);
     if (templateDepartmentsRes.error) console.error("Errore reparti checklist:", templateDepartmentsRes.error.message);
+    if (integrationsRes.error) console.error("Errore integrazioni utenti:", integrationsRes.error.message);
+    if (agentsRes.error) console.error("Errore agenti Mexal:", agentsRes.error.message);
 
     setDepartments(departmentsRes.data || []);
     setRoles(rolesRes.data || []);
@@ -86,9 +112,26 @@ export default function Settings() {
     setPermissions(permissionsRes.data || []);
     setRolePermissions(rolePermissionsRes.data || []);
     setTemplateDepartments(templateDepartmentsRes.data || []);
+    setIntegrations(integrationsRes.data || []);
+    setMexalAgents(agentsRes.data || []);
   }
 
   const activeDepartments = useMemo(() => departments.filter((item) => item.attivo !== false), [departments]);
+  const normalizedSearch = search.trim().toLowerCase();
+  const filteredUsers = useMemo(() => {
+    if (!normalizedSearch) return users;
+    return users.filter((user) => {
+      const role = user.ruoli?.nome || "";
+      const userDepartmentIds = userDepartments
+        .filter((row) => row.utente_id === user.id && row.reparto_id)
+        .map((row) => row.reparto_id);
+      const departmentsText = userDepartmentIds
+        .map((id) => departments.find((department) => department.id === id)?.nome)
+        .filter(Boolean)
+        .join(" ");
+      return `${user.nome || ""} ${user.cognome || ""} ${user.email || ""} ${role} ${departmentsText}`.toLowerCase().includes(normalizedSearch);
+    });
+  }, [normalizedSearch, users, userDepartments, departments]);
 
   function getUserDepartmentIds(userId) {
     return userDepartments.filter((row) => row.utente_id === userId && row.reparto_id).map((row) => row.reparto_id);
@@ -158,10 +201,21 @@ export default function Settings() {
     }
 
     if (type === "utente_accessi") {
+      const beautyAccess = integrations.find((row) => row.utente_id === item.id && row.modulo === "report_giornate");
+      const ordersAccess = integrations.find((row) => row.utente_id === item.id && row.modulo === "gestione_ordini");
+      const linkedAgent = mexalAgents.find((agent) => agent.workspace_utente_id === item.id);
       setUserAccessForm({
         ruolo_id: item.ruolo_id || "",
         attivo: item.attivo !== false,
         reparti: getUserDepartmentIds(item.id),
+        mexal_agente_id: linkedAgent?.id || item.mexal_agente_id || "",
+        agenti_coordinati: mexalAgents.filter((agent) => agent.responsabile_utente_id === item.id).map((agent) => agent.id),
+        beauty_enabled: beautyAccess?.enabled === true,
+        beauty_access_level: beautyAccess?.access_level || "read",
+        beauty_role: beautyAccess?.external_role || "beauty",
+        beauty_pages: Array.isArray(beautyAccess?.allowed_pages) ? beautyAccess.allowed_pages : emptyUserAccess.beauty_pages,
+        orders_enabled: ordersAccess?.enabled === true,
+        orders_role: ordersAccess?.ruolo_ordini || "agente",
       });
     }
   }
@@ -302,6 +356,96 @@ export default function Settings() {
       }
     }
 
+    const currentLinkedAgent = mexalAgents.find((agent) => agent.workspace_utente_id === modal.item.id);
+    if (currentLinkedAgent && currentLinkedAgent.id !== userAccessForm.mexal_agente_id) {
+      const unlinkRes = await supabase.from("mexal_agenti").update({ workspace_utente_id: null }).eq("id", currentLinkedAgent.id);
+      if (unlinkRes.error) {
+        setSaving(false);
+        return alert(unlinkRes.error.message);
+      }
+    }
+    if (userAccessForm.mexal_agente_id) {
+      const linkRes = await supabase.from("mexal_agenti").update({ workspace_utente_id: modal.item.id }).eq("id", userAccessForm.mexal_agente_id);
+      if (linkRes.error) {
+        setSaving(false);
+        return alert(linkRes.error.message);
+      }
+    }
+
+    const managedNow = mexalAgents.filter((agent) => agent.responsabile_utente_id === modal.item.id);
+    const removedManagedIds = managedNow.filter((agent) => !userAccessForm.agenti_coordinati.includes(agent.id)).map((agent) => agent.id);
+    if (removedManagedIds.length) {
+      const removeManagedRes = await supabase.from("mexal_agenti").update({ responsabile_utente_id: null }).in("id", removedManagedIds);
+      if (removeManagedRes.error) {
+        setSaving(false);
+        return alert(removeManagedRes.error.message);
+      }
+    }
+    if (userAccessForm.agenti_coordinati.length) {
+      const manageRes = await supabase.from("mexal_agenti").update({ responsabile_utente_id: modal.item.id }).in("id", userAccessForm.agenti_coordinati);
+      if (manageRes.error) {
+        setSaving(false);
+        return alert(manageRes.error.message);
+      }
+    }
+
+    const beautyExisting = integrations.find((row) => row.utente_id === modal.item.id && row.modulo === "report_giornate");
+    let external = {
+      external_user_id: beautyExisting?.external_user_id || null,
+      external_beauty_id: beautyExisting?.external_beauty_id || null,
+      external_agent_id: beautyExisting?.external_agent_id || null,
+    };
+    if (userAccessForm.beauty_enabled && ["beauty", "agent"].includes(userAccessForm.beauty_role)) {
+      const ensureRes = await supabase.functions.invoke("report-giornate-api", {
+        body: {
+          action: "ensure-external-user",
+          ruolo: userAccessForm.beauty_role,
+          nome: modal.item.nome || "",
+          cognome: modal.item.cognome || "",
+          email: modal.item.email || "",
+          telefono: modal.item.telefono || "",
+          ...external,
+        },
+      });
+      if (ensureRes.error || ensureRes.data?.error) {
+        setSaving(false);
+        return alert(ensureRes.error?.message || ensureRes.data?.error);
+      }
+      external = { ...external, ...ensureRes.data };
+    }
+
+    const beautyRes = await supabase.from("integrazioni_utenti").upsert({
+      utente_id: modal.item.id,
+      modulo: "report_giornate",
+      enabled: userAccessForm.beauty_enabled,
+      access_level: userAccessForm.beauty_access_level,
+      external_role: userAccessForm.beauty_role,
+      mexal_agente_id: userAccessForm.mexal_agente_id || null,
+      allowed_pages: userAccessForm.beauty_pages,
+      external_user_id: external.external_user_id || null,
+      external_beauty_id: external.external_beauty_id || null,
+      external_agent_id: external.external_agent_id || null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "utente_id,modulo" });
+    if (beautyRes.error) {
+      setSaving(false);
+      return alert(beautyRes.error.message);
+    }
+
+    const ordersRes = await supabase.from("integrazioni_utenti").upsert({
+      utente_id: modal.item.id,
+      modulo: "gestione_ordini",
+      enabled: userAccessForm.orders_enabled,
+      ruolo_ordini: userAccessForm.orders_role,
+      codice_agente_mexal: null,
+      agenti_gestiti: [],
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "utente_id,modulo" });
+    if (ordersRes.error) {
+      setSaving(false);
+      return alert(ordersRes.error.message);
+    }
+
     setSaving(false);
     closeModal();
     await loadData();
@@ -335,6 +479,13 @@ export default function Settings() {
         <button className={tab === "farmacie_accessi" ? "active" : ""} onClick={() => setTab("farmacie_accessi")}>Accessi Beauty Days</button>
         <button className={tab === "ordini_accessi" ? "active" : ""} onClick={() => setTab("ordini_accessi")}>Accessi Ordini</button>
       </div>
+
+      {tab === "utenti" && (
+        <label className="mexal-search-control">
+          <Search size={18} />
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cerca utente, email, ruolo o reparto..." />
+        </label>
+      )}
 
       {tab === "tipi_progetto" && <ProjectTypesSettings canManage={canManage} />}
 
@@ -396,22 +547,28 @@ export default function Settings() {
         <div className="panel settings-panel">
           <div className="panel-header"><h3>Utenti, ruoli e reparti</h3></div>
           <div className="settings-list">
-            {users.map((item) => (
+            {filteredUsers.map((item) => {
+              const beautyAccess = integrations.find((row) => row.utente_id === item.id && row.modulo === "report_giornate");
+              const ordersAccess = integrations.find((row) => row.utente_id === item.id && row.modulo === "gestione_ordini");
+              const linkedAgent = mexalAgents.find((agent) => agent.workspace_utente_id === item.id);
+              return (
               <div className="settings-row" key={item.id}>
                 <div>
                   <strong>{`${item.nome || ""} ${item.cognome || ""}`.trim() || item.email || "Utente senza nome"}</strong>
                   <span>{item.email || "Email non disponibile"}</span>
                   <span>Ruolo: {item.ruoli?.nome || "Nessun ruolo"}</span>
                   <span>Reparti: {getUserDepartmentNames(item.id)}</span>
+                  <span>Agente Mexal: {linkedAgent ? `${linkedAgent.codice} · ${`${linkedAgent.nome || ""} ${linkedAgent.cognome || ""}`.trim()}` : "Non associato"}</span>
+                  <span>Moduli: Beauty Days {beautyAccess?.enabled ? "attivo" : "non attivo"} · Ordini {ordersAccess?.enabled ? "attivo" : "non attivo"}</span>
                 </div>
                 <span className={`config-status ${item.attivo !== false ? "active" : "inactive"}`}>{item.attivo !== false ? "Attivo" : "Disattivo"}</span>
                 <div className="config-actions"><button onClick={() => openEdit("utente_accessi", item)}><Pencil size={16} /></button></div>
               </div>
-            ))}
-            {users.length === 0 && <p>Nessun utente trovato.</p>}
+              );
+            })}
+            {filteredUsers.length === 0 && <p>Nessun utente trovato.</p>}
           </div>
         </div>
-        <OrganizationRelationsSettings canManage={canManage} />
         </>
       )}
 
@@ -426,7 +583,29 @@ export default function Settings() {
 
             {modal.type === "checklist" && <><label>Voce checklist<input value={templateForm.titolo} onChange={(e) => setTemplateForm({ ...templateForm, titolo: e.target.value })} /></label><div className="checkbox-group scrollable-check-group"><strong>Reparti collegati alla voce checklist</strong><p className="muted">Se non selezioni reparti, la voce sarà valida per tutti i reparti.</p>{activeDepartments.map((department) => (<label key={department.id}><input type="checkbox" checked={(templateForm.reparto_ids || []).includes(department.id)} onChange={() => toggleListValue(setTemplateForm, "reparto_ids", department.id)} />{department.nome}</label>))}{activeDepartments.length === 0 && <p>Nessun reparto attivo disponibile.</p>}</div><label>Ordine<input type="number" value={templateForm.ordine} onChange={(e) => setTemplateForm({ ...templateForm, ordine: e.target.value })} /></label><label className="check-line"><input type="checkbox" checked={templateForm.attivo} onChange={(e) => setTemplateForm({ ...templateForm, attivo: e.target.checked })} />Attiva</label></>}
 
-            {modal.type === "utente_accessi" && <><label>Ruolo<select value={userAccessForm.ruolo_id} onChange={(e) => setUserAccessForm({ ...userAccessForm, ruolo_id: e.target.value })}><option value="">Nessun ruolo</option>{roles.map((role) => <option key={role.id} value={role.id}>{role.nome} · livello {role.livello}</option>)}</select></label><label className="check-line"><input type="checkbox" checked={userAccessForm.attivo} onChange={(e) => setUserAccessForm({ ...userAccessForm, attivo: e.target.checked })} />Utente attivo</label><div className="checkbox-group scrollable-check-group"><strong>Reparti dell'utente</strong>{activeDepartments.map((department) => (<label key={department.id}><input type="checkbox" checked={(userAccessForm.reparti || []).includes(department.id)} onChange={() => toggleListValue(setUserAccessForm, "reparti", department.id)} />{department.nome}</label>))}{activeDepartments.length === 0 && <p>Nessun reparto attivo disponibile.</p>}</div></>}
+            {modal.type === "utente_accessi" && <>
+              <h3>Profilo workspace</h3>
+              <label>Ruolo<select value={userAccessForm.ruolo_id} onChange={(e) => setUserAccessForm({ ...userAccessForm, ruolo_id: e.target.value })}><option value="">Nessun ruolo</option>{roles.map((role) => <option key={role.id} value={role.id}>{role.nome} · livello {role.livello}</option>)}</select></label>
+              <label className="check-line"><input type="checkbox" checked={userAccessForm.attivo} onChange={(e) => setUserAccessForm({ ...userAccessForm, attivo: e.target.checked })} />Utente attivo</label>
+              <div className="checkbox-group scrollable-check-group"><strong>Reparti dell'utente</strong>{activeDepartments.map((department) => (<label key={department.id}><input type="checkbox" checked={(userAccessForm.reparti || []).includes(department.id)} onChange={() => toggleListValue(setUserAccessForm, "reparti", department.id)} />{department.nome}</label>))}{activeDepartments.length === 0 && <p>Nessun reparto attivo disponibile.</p>}</div>
+
+              <h3>Relazioni organizzative</h3>
+              <p className="muted">L'agente e il codice agente provengono esclusivamente da Mexal. Le associazioni sono facoltative.</p>
+              <label>Agente importato collegato<select value={userAccessForm.mexal_agente_id} onChange={(e) => setUserAccessForm({ ...userAccessForm, mexal_agente_id: e.target.value })}><option value="">Nessun agente</option>{mexalAgents.filter((agent) => agent.attivo_mexal !== false && (!agent.workspace_utente_id || agent.workspace_utente_id === modal.item?.id)).map((agent) => <option key={agent.id} value={agent.id}>{agent.codice} · {`${agent.nome || ""} ${agent.cognome || ""}`.trim()}</option>)}</select></label>
+              <div className="checkbox-group scrollable-check-group"><strong>Agenti coordinati dal responsabile</strong>{mexalAgents.filter((agent) => agent.attivo_mexal !== false && agent.workspace_utente_id !== modal.item?.id).map((agent) => (<label key={agent.id}><input type="checkbox" checked={userAccessForm.agenti_coordinati.includes(agent.id)} onChange={() => toggleListValue(setUserAccessForm, "agenti_coordinati", agent.id)} />{agent.codice} · {`${agent.nome || ""} ${agent.cognome || ""}`.trim()}</label>))}{mexalAgents.length === 0 && <p>Sincronizza prima gli agenti da Mexal.</p>}</div>
+
+              <h3>Accesso Beauty Days</h3>
+              <label className="check-line"><input type="checkbox" checked={userAccessForm.beauty_enabled} onChange={(e) => setUserAccessForm({ ...userAccessForm, beauty_enabled: e.target.checked })} />Abilita Beauty Days</label>
+              {userAccessForm.beauty_enabled && <>
+                <label>Ruolo nel modulo<select value={userAccessForm.beauty_role} onChange={(e) => setUserAccessForm({ ...userAccessForm, beauty_role: e.target.value })}><option value="beauty">Beauty</option><option value="agent">Agente</option><option value="admin">Amministratore</option></select></label>
+                <label>Livello di accesso<select value={userAccessForm.beauty_access_level} onChange={(e) => setUserAccessForm({ ...userAccessForm, beauty_access_level: e.target.value })}><option value="read">Lettura</option><option value="write">Lettura e modifica</option><option value="admin">Amministrazione</option></select></label>
+                <div className="checkbox-group"><strong>Pagine disponibili</strong>{beautyPages.map(([id, label]) => <label key={id}><input type="checkbox" checked={userAccessForm.beauty_pages.includes(id)} onChange={() => toggleListValue(setUserAccessForm, "beauty_pages", id)} />{label}</label>)}</div>
+              </>}
+
+              <h3>Accesso Gestione Ordini</h3>
+              <label className="check-line"><input type="checkbox" checked={userAccessForm.orders_enabled} onChange={(e) => setUserAccessForm({ ...userAccessForm, orders_enabled: e.target.checked })} />Abilita Gestione Ordini</label>
+              {userAccessForm.orders_enabled && <label>Ruolo nel modulo<select value={userAccessForm.orders_role} onChange={(e) => setUserAccessForm({ ...userAccessForm, orders_role: e.target.value })}><option value="agente">Agente</option><option value="area_manager">Responsabile / Area Manager</option><option value="backoffice">Backoffice</option></select></label>}
+            </>}
 
             <button className="primary-action" disabled={saving}><Save size={18} />{saving ? "Salvataggio..." : "Salva"}</button>
           </form>

@@ -1,5 +1,4 @@
 <?php
-declare(strict_types=1);
 
 return [
     // URL pubblico del Workspace, senza slash finale.

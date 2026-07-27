@@ -44,7 +44,10 @@ function requireHttpAuthorization(array $config): void
         respond(['error' => 'Metodo non consentito.'], 405);
     }
     $headers = requestHeadersLower();
-    $supplied = preg_replace('/^Bearer\s+/i', '', trim((string)($headers['authorization'] ?? '')));
+    $supplied = trim((string)($headers['x-progre-worker-secret'] ?? ''));
+    if ($supplied === '') {
+        $supplied = preg_replace('/^Bearer\s+/i', '', trim((string)($headers['authorization'] ?? '')));
+    }
     if ($supplied === '' || !hash_equals((string)$config['worker_secret'], $supplied)) {
         respond(['error' => 'Worker non autorizzato.'], 401);
     }

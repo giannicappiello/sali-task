@@ -3,6 +3,7 @@ import {
   orderEmailTemplateSnapshot,
   resolveOrderEmailContent,
 } from "./order-email-template.js";
+import { triggerArubaOrderEmailWorker } from "./order-email-dispatch.js";
 
 function text(value) {
   return String(value ?? "").trim();
@@ -173,7 +174,8 @@ export async function enqueueOrderConfirmationEmails({
     released = releasedRows?.length || 0;
   }
 
-  return { recipients: recipients.length, queued: data?.length || 0, released };
+  const dispatch = await triggerArubaOrderEmailWorker();
+  return { recipients: recipients.length, queued: data?.length || 0, released, dispatch };
 }
 
 export async function loadOrderConfirmationEmailContext({

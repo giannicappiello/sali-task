@@ -41,8 +41,6 @@ export default function Giornate({ utente }) {
   const ruoloUtente = utente?.external_role || utente?.ruolo || "";
   const beautyIdUtente =
     utente?.external_beauty_id || utente?.beauty_id || "";
-  const agentIdUtente =
-    utente?.external_agent_id || utente?.agent_id || "";
 
   const solaLettura =
     ruoloUtente === "agent" || ruoloUtente === "sales_manager";
@@ -83,16 +81,8 @@ export default function Giornate({ utente }) {
     }
 
     if (ruoloUtente === "agent") {
-      if (!agentIdUtente) {
-        alert("Profilo Agente non collegato correttamente a Gestione Farmacie.");
-        setGiornate([]);
-        setFarmacie(farmacieData);
-        setProvince(provinceRes.data || []);
-        setBeauty([]);
-        return;
-      }
-
-      beautyQuery = beautyQuery.eq("agent_id", agentIdUtente);
+      // Il perimetro agenti viene applicato centralmente dalla Edge Function
+      // usando l'associazione Mexal del workspace.
     }
 
     const beautyRes = await beautyQuery;

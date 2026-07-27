@@ -2,7 +2,6 @@ import https from "node:https";
 import { createClient } from "@supabase/supabase-js";
 import { completeSyncRun, createSyncRun, failSyncRunUnlessClosed } from "./lib/syncRuns.js";
 
-const MODULE_CODE = "gestione_ordini";
 const CLIENT_PREFIX = "501";
 const PAGE_SIZE = 500;
 const UPSERT_BATCH_SIZE = 100;
@@ -260,12 +259,11 @@ async function verifyUser(req, supabase) {
 
   if (isAdmin) return;
 
-  const { data: integration, error: integrationError } = await supabase
+  const { data: integrations, error: integrationError } = await supabase
     .from("integrazioni_utenti")
-    .select("enabled,ruolo_ordini")
+    .select("modulo,enabled,ruolo_ordini")
     .eq("utente_id", profile.id)
-    .eq("modulo", MODULE_CODE)
-    .maybeSingle();
+    .in("modulo", ["gestione_ordini_pr", "gestione_ordini_ph"]);
 
   if (integrationError) {
     throw Object.assign(
@@ -275,8 +273,10 @@ async function verifyUser(req, supabase) {
   }
 
   if (
-    integration?.enabled !== true ||
-    integration?.ruolo_ordini !== "backoffice"
+    !(integrations || []).some((integration) =>
+      integration?.enabled === true &&
+      integration?.ruolo_ordini === "backoffice"
+    )
   ) {
     throw Object.assign(
       new Error("Sincronizzazione clienti riservata ad ADMIN e Backoffice."),

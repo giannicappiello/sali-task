@@ -57,10 +57,6 @@ export default function ApertureContatti({ utente }) {
       beautyQuery = beautyQuery.eq("id", utente.beauty_id);
     }
 
-    if (utente?.ruolo === "agent") {
-      beautyQuery = beautyQuery.eq("agent_id", utente.agent_id);
-    }
-
     const beautyRes = await beautyQuery;
 
     const recordsRes = await supabase

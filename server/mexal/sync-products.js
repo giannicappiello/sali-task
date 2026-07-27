@@ -2,7 +2,6 @@ import https from "node:https";
 import { createClient } from "@supabase/supabase-js";
 import { completeSyncRun, createSyncRun as createCentralSyncRun, failSyncRun, failSyncRunUnlessClosed, findRunningSync, isSyncRunClosedError } from "./lib/syncRuns.js";
 
-const MODULE_CODE = "gestione_ordini";
 const STORAGE_BUCKET = "prodotti-mexal";
 const ARTICLE_PREFIXES = ["IT", "MKT", "IMP"];
 const DEFAULT_BATCH_SIZE = 8;
@@ -324,21 +323,15 @@ export async function verifyUser(req, supabase, { allowOrdersUser = false } = {}
 
   const { data: integrations, error: integrationError } = await supabase
     .from("integrazioni_utenti")
-    .select("enabled,ruolo_ordini")
+    .select("modulo,enabled,ruolo_ordini")
     .eq("utente_id", profile.id)
-    .eq("modulo", MODULE_CODE)
-    .limit(2);
+    .in("modulo", ["gestione_ordini_pr", "gestione_ordini_ph"]);
 
   if (integrationError) {
     console.error("Mexal orders integration lookup failed", { auth_user_id: user.id, error: integrationError.message });
     throw authorizationError("Errore verifica autorizzazione Gestione Ordini.", 500);
   }
-  if ((integrations?.length || 0) > 1) {
-    logOrdersAuthorization(user.id, "duplicate_orders_access", profilesFound);
-    throw authorizationError("Configurazione accesso Ordini incoerente.", 409);
-  }
-
-  const integration = integrations?.[0];
+  const integration = (integrations || []).find((row) => row.enabled === true);
   const hasOrdersAccess = integration?.enabled === true;
   const ordersRole = String(integration?.ruolo_ordini || "").toLowerCase();
 

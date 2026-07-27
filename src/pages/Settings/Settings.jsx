@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Building2, ClipboardList, Pencil, Plus, Save, Search, ShieldCheck, Trash2, UserRound, X } from "lucide-react";
+import { Building2, ClipboardList, Pencil, Plus, Save, Search, Trash2, UserRound, X } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 import ProjectTypesSettings from "../../components/ProjectTypesSettings";
@@ -12,7 +12,7 @@ const emptyUserAccess = {
   attivo: true,
   reparti: [],
   workspace_mexal_agente_id: "",
-  agenti_coordinati: [],
+  responsabile_utente_id: "",
   beauty_enabled: false,
   beauty_access_level: "read",
   beauty_role: "beauty",
@@ -30,6 +30,7 @@ const beautyPages = [
   ["giornate", "Giornate"],
   ["analisi", "Analisi dati"],
 ];
+const emptyNewUser = { nome: "", cognome: "", email: "", password: "", telefono: "", ruolo_id: "", reparto_id: "", attivo: true };
 
 const permissionLabels = {
   "projects.read": "Vede progetti dei propri reparti",
@@ -73,6 +74,7 @@ export default function Settings() {
   const [roleForm, setRoleForm] = useState(emptyRole);
   const [templateForm, setTemplateForm] = useState(emptyTemplate);
   const [userAccessForm, setUserAccessForm] = useState(emptyUserAccess);
+  const [newUserForm, setNewUserForm] = useState(emptyNewUser);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -142,6 +144,10 @@ export default function Settings() {
     const departmentText = departmentIds.map((id) => departments.find((department) => department.id === id)?.nome || "").join(" ");
     return !normalizedSearch || `${item.titolo || ""} ${item.reparti?.nome || ""} ${departmentText}`.toLowerCase().includes(normalizedSearch);
   }), [templates, templateDepartments, departments, normalizedSearch]);
+  const responsibleUsers = useMemo(
+    () => users.filter((user) => user.attivo !== false && String(user.ruoli?.nome || "").trim().toLowerCase() === "responsabile"),
+    [users]
+  );
 
   function getUserDepartmentIds(userId) {
     return userDepartments.filter((row) => row.utente_id === userId && row.reparto_id).map((row) => row.reparto_id);
@@ -183,6 +189,11 @@ export default function Settings() {
     setUserAccessForm(emptyUserAccess);
   }
 
+  function openCreateUser() {
+    setNewUserForm(emptyNewUser);
+    setModal({ open: true, type: "nuovo_utente", item: null });
+  }
+
   function openEdit(type, item) {
     setModal({ open: true, type, item });
 
@@ -221,7 +232,7 @@ export default function Settings() {
         attivo: item.attivo !== false,
         reparti: getUserDepartmentIds(item.id),
         workspace_mexal_agente_id: linkedAgent?.id || item.mexal_agente_id || "",
-        agenti_coordinati: mexalAgents.filter((agent) => agent.responsabile_utente_id === item.id).map((agent) => agent.id),
+        responsabile_utente_id: linkedAgent?.responsabile_utente_id || "",
         beauty_enabled: beautyAccess?.enabled === true,
         beauty_access_level: beautyAccess?.access_level || "read",
         beauty_role: beautyAccess?.external_role || "beauty",
@@ -238,6 +249,7 @@ export default function Settings() {
   function closeModal() {
     setModal({ open: false, type: "checklist", item: null });
     setUserAccessForm(emptyUserAccess);
+    setNewUserForm(emptyNewUser);
   }
 
   function toggleListValue(setter, field, value) {
@@ -383,27 +395,13 @@ export default function Settings() {
       }
     }
     if (userAccessForm.workspace_mexal_agente_id) {
-      const linkRes = await supabase.from("mexal_agenti").update({ workspace_utente_id: modal.item.id }).eq("id", userAccessForm.workspace_mexal_agente_id);
+      const linkRes = await supabase.from("mexal_agenti").update({
+        workspace_utente_id: modal.item.id,
+        responsabile_utente_id: userAccessForm.responsabile_utente_id || null,
+      }).eq("id", userAccessForm.workspace_mexal_agente_id);
       if (linkRes.error) {
         setSaving(false);
         return alert(linkRes.error.message);
-      }
-    }
-
-    const managedNow = mexalAgents.filter((agent) => agent.responsabile_utente_id === modal.item.id);
-    const removedManagedIds = managedNow.filter((agent) => !userAccessForm.agenti_coordinati.includes(agent.id)).map((agent) => agent.id);
-    if (removedManagedIds.length) {
-      const removeManagedRes = await supabase.from("mexal_agenti").update({ responsabile_utente_id: null }).in("id", removedManagedIds);
-      if (removeManagedRes.error) {
-        setSaving(false);
-        return alert(removeManagedRes.error.message);
-      }
-    }
-    if (userAccessForm.agenti_coordinati.length) {
-      const manageRes = await supabase.from("mexal_agenti").update({ responsabile_utente_id: modal.item.id }).in("id", userAccessForm.agenti_coordinati);
-      if (manageRes.error) {
-        setSaving(false);
-        return alert(manageRes.error.message);
       }
     }
 
@@ -493,6 +491,33 @@ export default function Settings() {
     await loadData();
   }
 
+  async function saveNewUser(e) {
+    e.preventDefault();
+    if (!canManage) return alert("Non hai i permessi.");
+    if (!newUserForm.nome.trim() || !newUserForm.cognome.trim() || !newUserForm.email.trim() || !newUserForm.password) {
+      return alert("Nome, cognome, email e password iniziale sono obbligatori.");
+    }
+    if (newUserForm.password.length < 8) return alert("La password deve avere almeno 8 caratteri.");
+
+    setSaving(true);
+    const { data, error } = await supabase.functions.invoke("admin-manage-user", {
+      body: {
+        action: "create",
+        ...newUserForm,
+        nome: newUserForm.nome.trim(),
+        cognome: newUserForm.cognome.trim(),
+        email: newUserForm.email.trim(),
+        telefono: newUserForm.telefono.trim(),
+        ruolo_id: newUserForm.ruolo_id || null,
+        reparto_id: newUserForm.reparto_id || null,
+      },
+    });
+    setSaving(false);
+    if (error || data?.error) return alert(await getFunctionErrorMessage(error, data?.error));
+    closeModal();
+    await loadData();
+  }
+
   async function getFunctionErrorMessage(error, fallback) {
     if (fallback) return fallback;
     const response = error?.context;
@@ -545,7 +570,7 @@ export default function Settings() {
 
       {tab === "team" && (
         <div className="panel settings-panel">
-          <div className="panel-header"><div><h3>Utenti e autorizzazioni</h3><p>Una sola scheda per ruolo, reparti, relazioni Mexal e accesso ai moduli.</p></div><ShieldCheck size={28} /></div>
+          <div className="panel-header"><div><h3>Utenti e autorizzazioni</h3><p>Una sola scheda per ruolo, reparti, relazioni Mexal e accesso ai moduli.</p></div>{canManage && <button className="primary-action" onClick={openCreateUser}><Plus size={18} />Nuovo utente</button>}</div>
           <div className="settings-list">
             {filteredUsers.map((item) => {
               const beautyAccess = integrations.find((row) => row.utente_id === item.id && row.modulo === "report_giornate");
@@ -576,8 +601,19 @@ export default function Settings() {
 
       {modal.open && (
         <div className="modal-backdrop">
-          <form className="modal-card v4-modal" onSubmit={modal.type === "reparto" ? saveReparto : modal.type === "ruolo" ? saveRuolo : modal.type === "utente_accessi" ? saveUserAccess : saveTemplate}>
-            <div className="modal-header"><h2>{modal.type === "utente_accessi" ? `Accessi di ${`${modal.item?.nome || ""} ${modal.item?.cognome || ""}`.trim() || modal.item?.email || "utente"}` : modal.item ? "Modifica" : "Nuovo"}</h2><button type="button" onClick={closeModal}><X size={20} /></button></div>
+          <form className="modal-card v4-modal" onSubmit={modal.type === "reparto" ? saveReparto : modal.type === "ruolo" ? saveRuolo : modal.type === "utente_accessi" ? saveUserAccess : modal.type === "nuovo_utente" ? saveNewUser : saveTemplate}>
+            <div className="modal-header"><h2>{modal.type === "utente_accessi" ? `Accessi di ${`${modal.item?.nome || ""} ${modal.item?.cognome || ""}`.trim() || modal.item?.email || "utente"}` : modal.type === "nuovo_utente" ? "Nuovo utente" : modal.item ? "Modifica" : "Nuovo"}</h2><button type="button" onClick={closeModal}><X size={20} /></button></div>
+
+            {modal.type === "nuovo_utente" && <>
+              <label>Nome<input value={newUserForm.nome} onChange={(e) => setNewUserForm({ ...newUserForm, nome: e.target.value })} /></label>
+              <label>Cognome<input value={newUserForm.cognome} onChange={(e) => setNewUserForm({ ...newUserForm, cognome: e.target.value })} /></label>
+              <label>Email<input type="email" value={newUserForm.email} onChange={(e) => setNewUserForm({ ...newUserForm, email: e.target.value })} /></label>
+              <label>Password iniziale<input type="password" minLength="8" value={newUserForm.password} onChange={(e) => setNewUserForm({ ...newUserForm, password: e.target.value })} /></label>
+              <label>Telefono<input value={newUserForm.telefono} onChange={(e) => setNewUserForm({ ...newUserForm, telefono: e.target.value })} /></label>
+              <label>Ruolo<select value={newUserForm.ruolo_id} onChange={(e) => setNewUserForm({ ...newUserForm, ruolo_id: e.target.value })}><option value="">Nessun ruolo</option>{roles.map((role) => <option key={role.id} value={role.id}>{role.nome}</option>)}</select></label>
+              <label>Reparto principale<select value={newUserForm.reparto_id} onChange={(e) => setNewUserForm({ ...newUserForm, reparto_id: e.target.value })}><option value="">Nessun reparto</option>{activeDepartments.map((department) => <option key={department.id} value={department.id}>{department.nome}</option>)}</select></label>
+              <label className="check-line"><input type="checkbox" checked={newUserForm.attivo} onChange={(e) => setNewUserForm({ ...newUserForm, attivo: e.target.checked })} />Utente attivo</label>
+            </>}
 
             {modal.type === "reparto" && <><label>Nome reparto<input value={departmentForm.nome} onChange={(e) => setDepartmentForm({ ...departmentForm, nome: e.target.value })} /></label><label>Descrizione<textarea rows="3" value={departmentForm.descrizione} onChange={(e) => setDepartmentForm({ ...departmentForm, descrizione: e.target.value })} /></label><label className="check-line"><input type="checkbox" checked={departmentForm.attivo} onChange={(e) => setDepartmentForm({ ...departmentForm, attivo: e.target.checked })} />Attivo</label></>}
 
@@ -594,7 +630,7 @@ export default function Settings() {
               <h3>Relazioni organizzative</h3>
               <p className="muted">L'agente e il codice agente provengono esclusivamente da Mexal. Le associazioni sono facoltative.</p>
               <label>Identità agente dell'utente<select value={userAccessForm.workspace_mexal_agente_id} onChange={(e) => setUserAccessForm({ ...userAccessForm, workspace_mexal_agente_id: e.target.value })}><option value="">Utente non agente</option>{mexalAgents.filter((agent) => agent.attivo_mexal !== false && (!agent.workspace_utente_id || agent.workspace_utente_id === modal.item?.id)).map((agent) => <option key={agent.id} value={agent.id}>{agent.codice} · {`${agent.nome || ""} ${agent.cognome || ""}`.trim()}</option>)}</select></label>
-              <div className="checkbox-group scrollable-check-group"><strong>Agenti coordinati dal responsabile</strong>{mexalAgents.filter((agent) => agent.attivo_mexal !== false && agent.workspace_utente_id !== modal.item?.id).map((agent) => (<label key={agent.id}><input type="checkbox" checked={userAccessForm.agenti_coordinati.includes(agent.id)} onChange={() => toggleListValue(setUserAccessForm, "agenti_coordinati", agent.id)} />{agent.codice} · {`${agent.nome || ""} ${agent.cognome || ""}`.trim()}</label>))}{mexalAgents.length === 0 && <p>Sincronizza prima gli agenti da Mexal.</p>}</div>
+              {userAccessForm.workspace_mexal_agente_id && <label>Responsabile dell'agente<select value={userAccessForm.responsabile_utente_id} onChange={(e) => setUserAccessForm({ ...userAccessForm, responsabile_utente_id: e.target.value })}><option value="">Nessun responsabile</option>{responsibleUsers.filter((user) => user.id !== modal.item?.id).map((user) => <option key={user.id} value={user.id}>{`${user.nome || ""} ${user.cognome || ""}`.trim() || user.email}</option>)}</select>{responsibleUsers.length === 0 && <span className="muted">Non ci sono utenti attivi con ruolo RESPONSABILE.</span>}</label>}
 
               <h3>Accesso Beauty Days</h3>
               <label className="check-line"><input type="checkbox" checked={userAccessForm.beauty_enabled} onChange={(e) => setUserAccessForm({ ...userAccessForm, beauty_enabled: e.target.checked })} />Abilita Beauty Days</label>

@@ -78,7 +78,6 @@ export default function Dashboard({ utente }) {
       const beautyAgentRes = await supabase
         .from("beauty_consultant")
         .select("id")
-        .eq("agent_id", utente.agent_id)
         .eq("attivo", true);
 
       if (beautyAgentRes.error) return alert(beautyAgentRes.error.message);
@@ -120,10 +119,6 @@ export default function Dashboard({ utente }) {
 
     if (utente?.ruolo === "beauty") {
       beautyQuery = beautyQuery.eq("id", utente.beauty_id);
-    }
-
-    if (utente?.ruolo === "agent") {
-      beautyQuery = beautyQuery.eq("agent_id", utente.agent_id);
     }
 
     const beautyRes = await beautyQuery;

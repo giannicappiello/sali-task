@@ -46,7 +46,6 @@ export default function Analisi({ utente }) {
 
   const ruoloUtente = String(utente?.external_role || utente?.ruolo || "").toLowerCase();
   const beautyIdUtente = utente?.external_beauty_id || utente?.beauty_id || "";
-  const agentIdUtente = utente?.external_agent_id || utente?.agent_id || "";
 
   const [dataDa, setDataDa] = useState("");
   const [dataA, setDataA] = useState("");
@@ -107,10 +106,8 @@ export default function Analisi({ utente }) {
     }
 
     if (ruoloUtente === "agent") {
-      if (!agentIdUtente) {
-        throw new Error("Profilo Agente non collegato correttamente a Gestione Farmacie.");
-      }
-      beautyQuery = beautyQuery.eq("agent_id", agentIdUtente);
+      // Il perimetro agenti viene applicato centralmente dalla Edge Function
+      // usando l'associazione Mexal del workspace.
     }
 
     const beautyRes = await beautyQuery;

@@ -42,7 +42,7 @@ export default function Invoices() {
     end.setMonth(end.getMonth() + 1);
     let query = supabase
       .from("mexal_fatture_vendita")
-      .select("id,sigla,serie,numero,data_documento,codice_cliente,ragione_sociale_cliente,codice_agente_mexal,agente_nome,totale_imponibile,totale_iva,totale_documento")
+      .select("id,sigla,cod_modulo,serie,numero,data_documento,codice_cliente,ragione_sociale_cliente,codice_agente_mexal,agente_nome,totale_imponibile,totale_iva,totale_documento")
       .gte("data_documento", start)
       .lt("data_documento", end.toISOString().slice(0, 10))
       .order("data_documento", { ascending: false })
@@ -69,12 +69,12 @@ export default function Invoices() {
     </div>
     <div className="orders-panel">
       <div className="orders-section-heading">
-        <div><h2>Fatture di vendita</h2><p>Documenti FTE importati da Mexal. Consultazione in sola lettura.</p></div>
+        <div><h2>Fatture di vendita</h2><p>Documenti FTE, FTS e COX importati da Mexal. Consultazione in sola lettura.</p></div>
       </div>
       {error && <div className="orders-alert orders-alert-error">{error}</div>}
       <div className="orders-table-wrap">
         <table className="orders-table">
-          <thead><tr><th>Data</th><th>Numero FTE</th><th>Cliente</th><th>Agente</th><th>Imponibile</th><th>IVA</th><th>Totale</th></tr></thead>
+          <thead><tr><th>Data</th><th>Documento</th><th>Cliente</th><th>Agente</th><th>Imponibile</th><th>IVA</th><th>Totale</th></tr></thead>
           <tbody>{filtered.map((invoice) => <tr key={invoice.id} className="orders-clickable-row" onClick={() => navigate(`${basePath}/fatture/${invoice.id}`)}>
             <td>{formatDate(invoice.data_documento)}</td>
             <td><strong>{`${invoice.sigla}${invoice.cod_modulo || "E"} ${invoice.serie}/${invoice.numero}`}</strong></td>
@@ -85,7 +85,7 @@ export default function Invoices() {
         </table>
       </div>
       {loading && <p>Caricamento fatture...</p>}
-      {!loading && !filtered.length && <p>Nessuna fattura FTE visibile nel mese selezionato.</p>}
+      {!loading && !filtered.length && <p>Nessun documento FTE, FTS o COX visibile nel mese selezionato.</p>}
     </div>
   </div>;
 }

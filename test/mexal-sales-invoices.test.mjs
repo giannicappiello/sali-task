@@ -53,6 +53,8 @@ assert.match(await readFile("supabase/migrations/20260728090000_mexal_sales_invo
 assert.match(await readFile("supabase/migrations/20260728100000_fill_sales_invoice_agent_from_client.sql", "utf8"), /ordini_clienti_cache/);
 assert.match(automation, /sales_invoices: salesInvoicesHandler/);
 assert.match(await readFile("server/mexal/sync-sales-invoices.js", "utf8"), /DETAIL_CONCURRENCY = 1/);
+assert.match(await readFile("server/mexal/sync-sales-invoices.js", "utf8"), /"FT:E", "FT:S", "CO:X"/);
+assert.match(await readFile("supabase/migrations/20260728170000_extend_sales_documents_fts_cox.sql", "utf8"), /cod_modulo in \('E', 'S'\)/);
 assert.match(moduleSource, /label: "Fatture"/);
 assert.match(moduleSource, /fatture\/:invoiceId/);
 assert.match(dashboardSource, /title: "Fatture"/);
@@ -60,4 +62,4 @@ assert.match(dashboardSource, /toggleInvoiceSchedule/);
 assert.match(syncService, /invokeSalesInvoicesSync/);
 assert.match(syncCard, /Sincronizzazione automatica/);
 
-console.log("fatture FTE: mapping righe, sicurezza, automazione e rotte verificati");
+console.log("documenti FTE, FTS e COX: mapping righe, sicurezza, automazione e rotte verificati");

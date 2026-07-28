@@ -40,7 +40,7 @@ export default function InvoiceDetail() {
     <button type="button" className="orders-secondary" onClick={() => navigate(`${basePath}/fatture`)}><ArrowLeft size={17} /> Torna alle fatture</button>
     <div className="orders-panel" style={{ marginTop: 16 }}>
       <div className="orders-section-heading">
-        <div><h2>{`FTE ${invoice.serie}/${invoice.numero}`}</h2><p>{invoice.ragione_sociale_cliente || invoice.codice_cliente}</p></div>
+        <div><h2>{`${invoice.sigla}${invoice.cod_modulo} ${invoice.serie}/${invoice.numero}`}</h2><p>{invoice.ragione_sociale_cliente || invoice.codice_cliente}</p></div>
         <span className="orders-status inviato-mexal"><LockKeyhole size={14} /> Sola lettura</span>
       </div>
       <div className="orders-summary-grid">

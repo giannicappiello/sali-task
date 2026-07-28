@@ -2,6 +2,7 @@ import { buildMexalClient } from "./sync-products.js";
 
 const PAGE_SIZE = 20;
 const DETAIL_CONCURRENCY = 1;
+const SALES_DOCUMENT_TYPES = new Set(["FT:E", "FT:S", "CO:X"]);
 
 function text(value) {
   return String(value ?? "").trim();
@@ -105,6 +106,8 @@ async function lookupNames(supabase, invoices) {
 }
 
 async function saveInvoice(supabase, summary, detail, names, now) {
+  const sigla = text(detail.sigla || summary.sigla).toUpperCase();
+  const codModulo = text(detail.cod_modulo || summary.cod_modulo).toUpperCase();
   const codiceCliente = text(detail.cod_conto || summary.cod_conto);
   const client = names.clients.get(codiceCliente);
   const codiceAgente = text(
@@ -115,8 +118,8 @@ async function saveInvoice(supabase, summary, detail, names, now) {
   const totaleDocumento = number(matrixFirst(detail.tot_documento));
   const totaleIva = number(matrixFirst(detail.tot_iva));
   const header = {
-    sigla: "FT",
-    cod_modulo: "E",
+    sigla,
+    cod_modulo: codModulo,
     serie: number(detail.serie || summary.serie),
     numero: number(detail.numero || summary.numero),
     data_documento: date(detail.data_documento || summary.data_documento),
@@ -135,7 +138,7 @@ async function saveInvoice(supabase, summary, detail, names, now) {
   };
   const { data: saved, error } = await supabase
     .from("mexal_fatture_vendita")
-    .upsert(header, { onConflict: "sigla,serie,numero,codice_cliente" })
+    .upsert(header, { onConflict: "sigla,cod_modulo,serie,numero,codice_cliente" })
     .select("id")
     .single();
   if (error) throw error;
@@ -176,9 +179,8 @@ export async function syncSalesInvoicePage({
   const params = new URLSearchParams({ max: String(PAGE_SIZE) });
   if (next) params.set("next", next);
   const collection = await mexal.getJson(`/documenti/movimenti-magazzino?${params}`);
-  const candidates = rows(collection).filter((item) => (
-    text(item.sigla).toUpperCase() === "FT"
-    && text(item.cod_modulo).toUpperCase() === "E"
+  const candidates = rows(collection).filter((item) => SALES_DOCUMENT_TYPES.has(
+    `${text(item.sigla).toUpperCase()}:${text(item.cod_modulo).toUpperCase()}`,
   ));
   const names = await lookupNames(supabase, candidates);
   const now = new Date().toISOString();
@@ -186,13 +188,15 @@ export async function syncSalesInvoicePage({
   const failures = [];
 
   await runWithConcurrency(candidates, DETAIL_CONCURRENCY, async (summary) => {
+    const sigla = text(summary.sigla).toUpperCase();
+    const codModulo = text(summary.cod_modulo).toUpperCase();
     try {
-      const path = `/documenti/movimenti-magazzino/FT+${number(summary.serie)}+${number(summary.numero)}+${encodeURIComponent(text(summary.cod_conto))}`;
+      const path = `/documenti/movimenti-magazzino/${encodeURIComponent(sigla)}+${number(summary.serie)}+${number(summary.numero)}+${encodeURIComponent(text(summary.cod_conto))}`;
       const detail = await mexal.getJson(path);
       lineCount += await saveInvoice(supabase, summary, detail, names, now);
     } catch (error) {
       failures.push({
-        reference: `FT ${summary.serie}/${summary.numero} ${summary.cod_conto}`,
+        reference: `${sigla}${codModulo} ${summary.serie}/${summary.numero} ${summary.cod_conto}`,
         error: text(error?.message || error),
       });
     }
@@ -238,7 +242,7 @@ export default async function salesInvoicesHandler(req, res) {
   } catch (error) {
     return res.status(Number(error?.status || 500)).json({
       success: false,
-      error: error?.message || "Importazione fatture FTE non riuscita.",
+      error: error?.message || "Importazione documenti FTE, FTS e COX non riuscita.",
     });
   }
 }

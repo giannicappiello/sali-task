@@ -281,7 +281,7 @@ export default function MexalDashboard() {
     { icon: Percent, title: "Provvigioni listini", description: "Regole provvigionali associate ai listini Mexal.", recordLabel: "regole attive", recordCount: entityCounts.listPriceCommissions, enabled: true, type: "list_price_commissions", lastRunData: latestRunsByType.list_price_commissions },
 
     { icon: ShoppingCart, title: "Ordini", description: "Controlla i documenti OCM, OCI e OCX di ORDINIPR e ORDINIPH.", recordLabel: "documenti controllati nell’ultimo run", recordCount: (latestRunsByType.orders || entityRuns.orders)?.processed, enabled: true, type: "orders", actionLabel: "Esegui ora", runningLabel: "Sincronizzazione...", lastRunData: latestRunsByType.orders || entityRuns.orders },
-    { icon: FileText, title: "Fatture", description: "Importa da Mexal le fatture di vendita FT/E complete di testata e righe.", recordLabel: "fatture FTE importate", recordCount: entityCounts.salesInvoices, enabled: true, type: "sales_invoices", actionLabel: "Sincronizza ora", runningLabel: "Importazione fatture...", lastRun: entityCounts.salesInvoicesLastSync, automaticEnabled: invoiceSchedule?.enabled === true, automaticSaving: savingInvoiceSchedule },
+    { icon: FileText, title: "Fatture", description: "Importa da Mexal i documenti FTE, FTS e COX completi di testata e righe.", recordLabel: "documenti importati", recordCount: entityCounts.salesInvoices, enabled: true, type: "sales_invoices", actionLabel: "Sincronizza ora", runningLabel: "Importazione documenti...", lastRun: entityCounts.salesInvoicesLastSync, automaticEnabled: invoiceSchedule?.enabled === true, automaticSaving: savingInvoiceSchedule },
   ];
 
   const runningRuns = runs.filter((item) => item.status === "running").length;

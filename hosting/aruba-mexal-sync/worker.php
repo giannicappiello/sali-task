@@ -21,6 +21,17 @@ function config(): array {
     return $value;
 }
 
+function requireHttpAuthorization(array $config): void {
+    if (PHP_SAPI === 'cli') return;
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') respond(['error' => 'Metodo non consentito.'], 405);
+    $headers = function_exists('getallheaders') ? getallheaders() : [];
+    $headers = array_change_key_case(is_array($headers) ? $headers : [], CASE_LOWER);
+    $supplied = preg_replace('/^Bearer\s+/i', '', trim((string)($headers['authorization'] ?? '')));
+    if ($supplied === '' || !hash_equals((string)$config['worker_secret'], $supplied)) {
+        respond(['error' => 'Worker non autorizzato.'], 401);
+    }
+}
+
 function callWorker(array $config): array {
     $url = rtrim((string)$config['workspace_url'], '/') . '/api/mexal/queue-worker';
     $ch = curl_init($url);
@@ -50,6 +61,7 @@ function callWorker(array $config): array {
 
 try {
     $config = config();
+    requireHttpAuthorization($config);
     $result = callWorker($config);
     respond(['status' => 'ok', 'worker' => $result]);
 } catch (Throwable $error) {

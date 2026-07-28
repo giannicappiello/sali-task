@@ -84,8 +84,13 @@ async function resumeBlockedCycles(admin) {
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Metodo non consentito." });
-  const secret = required("WORKER_SECRET");
-  if (String(req.headers.authorization || "") !== `Bearer ${secret}`) {
+  const automationSecret = required("WORKER_SECRET");
+  const acceptedSecrets = [
+    automationSecret,
+    String(globalThis.process?.env?.ARUBA_EMAIL_WORKER_SECRET || "").trim(),
+  ].filter(Boolean);
+  const authorization = String(req.headers.authorization || "");
+  if (!acceptedSecrets.some((secret) => authorization === `Bearer ${secret}`)) {
     return res.status(401).json({ error: "Worker non autorizzato." });
   }
 
@@ -108,7 +113,7 @@ export default async function handler(req, res) {
     await rpc(admin, "heartbeat_mexal_sync_job", {
       p_job_id: job.id, p_worker_id: workerId, p_lock_token: lockToken,
     });
-    const result = await callAutomation(req, job, secret);
+    const result = await callAutomation(req, job, automationSecret);
     if (completed(result)) {
       await rpc(admin, "complete_mexal_sync_job", {
         p_job_id: job.id, p_worker_id: workerId, p_lock_token: lockToken, p_result: result,

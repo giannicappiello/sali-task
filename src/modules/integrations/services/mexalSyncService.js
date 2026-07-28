@@ -31,7 +31,11 @@ async function invokeMexalApi(path, payload) {
       409: "È già presente una sincronizzazione in corso",
       500: "Errore interno del servizio Mexal.",
     };
-    const error = new Error(response.status === 409 ? messages[409] : (data?.error || messages[response.status] || `Errore Mexal (HTTP ${response.status})`));
+    const structuredError = data?.error;
+    const readableError = typeof structuredError === "string"
+      ? structuredError
+      : structuredError?.message || structuredError?.error || data?.message;
+    const error = new Error(response.status === 409 ? messages[409] : (readableError || messages[response.status] || `Errore Mexal (HTTP ${response.status})`));
     error.status = response.status;
     error.details = data?.details;
     throw error;

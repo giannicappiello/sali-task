@@ -12,6 +12,7 @@ import {
 } from "../../server/mexal/sync-list-price-commissions.js";
 import { agentsAccess } from "../../server/mexal/agents-access.js";
 import orderDocumentsHandler, { purgeEvictedOrderDocuments } from "../../server/mexal/sync-order-documents.js";
+import salesInvoicesHandler from "../../server/mexal/sync-sales-invoices.js";
 import { requireAdmin } from "../../server/mexal/lib/auth.js";
 import { completeIdempotentSync, findRunningSync, reserveIdempotentSync } from "../../server/mexal/lib/syncRuns.js";
 
@@ -42,6 +43,7 @@ const RUN_HANDLERS = Object.freeze({
   document_series: documentSeriesHandler,
   list_price_commissions: listPriceCommissionsHandler,
   orders: orderDocumentsHandler,
+  sales_invoices: salesInvoicesHandler,
 });
 
 const SYNC_ALL_PHASES = Object.freeze([
@@ -53,6 +55,7 @@ const SYNC_ALL_PHASES = Object.freeze([
   "stocks",
   "list_price_commissions",
   "orders",
+  "sales_invoices",
 ]);
 
 function runPayload(body, syncType) {
@@ -183,6 +186,7 @@ async function startSync(req, res, body, syncType, runHandler, admin) {
     && String(body.syncRunId) === String(running.id);
   if (running && !isContinuation) return sendRunning(res, syncType, running);
   req.body = runPayload(body, syncType);
+  req.supabase = admin.supabase;
   return sendHandlerResponse(res, syncType, await executeHandler(req, runHandler));
 }
 

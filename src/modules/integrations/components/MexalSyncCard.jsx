@@ -12,6 +12,7 @@ export default function MexalSyncCard({
   lastRun,
   onSync,
   onStop,
+  canStop = false,
   onOpen,
   run,
   actionLabel,
@@ -91,7 +92,7 @@ export default function MexalSyncCard({
           {running ? <RefreshCw size={17} className="spin" /> : null}
           {isAgentsCard ? "Gestisci agenti" : effectiveEnabled ? (running ? (runningLabel || "Sincronizzazione...") : (actionLabel || "Sincronizza")) : "Apri roadmap"}
         </button>
-        {hasRunningRun && (
+        {(hasRunningRun || (running && canStop)) && (
           <button
             type="button"
             className="mexal-sync-stop"

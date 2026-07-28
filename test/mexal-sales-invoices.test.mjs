@@ -58,10 +58,14 @@ assert.match(await readFile("supabase/migrations/20260728170000_extend_sales_doc
 assert.match(moduleSource, /label: "Fatture"/);
 assert.match(moduleSource, /fatture\/:invoiceId/);
 assert.match(dashboardSource, /title: "Fatture"/);
-assert.match(dashboardSource, /toggleInvoiceSchedule/);
+assert.match(dashboardSource, /toggleSyncSchedule/);
+assert.match(dashboardSource, /syncSchedules\[card\.type\]/);
+assert.match(dashboardSource, /stopInvoiceSync/);
+assert.match(dashboardSource, /cancelInvoiceSyncRef/);
 assert.match(syncService, /invokeSalesInvoicesSync/);
 assert.match(syncService, /structuredError\?\.message/);
 assert.match(await readFile("server/mexal/lib/syncRuns.js", "utf8"), /"sales_invoices"/);
 assert.match(syncCard, /Sincronizzazione automatica/);
+assert.match(syncCard, /running && canStop/);
 
 console.log("documenti FTE, FTS e COX: mapping righe, sicurezza, automazione e rotte verificati");

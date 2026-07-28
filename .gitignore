@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 
 .vercel
+
+# Local Aruba worker secrets
+hosting/aruba-mexal-sync/config.php

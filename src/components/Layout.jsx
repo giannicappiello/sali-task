@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
+  BarChart3,
   Bell,
   ClipboardList,
   FileArchive,
@@ -27,6 +28,7 @@ const menuItems = [
   { path: "/ordini-ph", label: "Ordini PH", icon: ShoppingCart, permission: "orders.read", special: "orders_ph", module: "ordini_ph" },
   { path: "/products", label: "Prodotti", icon: Package, permission: "products.read", module: "prodotti" },
   { path: "/documentation", label: "Documenti", icon: FileArchive, permission: "documentation.read", module: "documenti" },
+  { path: "/analisi-dati", label: "Analisi dati", icon: BarChart3, permission: "dashboard.read" },
   { path: "/messages", label: "Messaggi", icon: MessageCircle, permission: "messages.read", module: "messaggi" },
   { path: "/team", label: "Team", icon: Users, permission: "team.read", module: "team" },
   { path: "/integrations", label: "Integrazioni", icon: PlugZap, permission: "settings.manage", adminOnly: true },
@@ -35,6 +37,7 @@ const menuItems = [
 
 const pageInfo = {
   "/home": { title: "Home", subtitle: "Accesso rapido ai moduli del Workspace." },
+  "/analisi-dati": { title: "Analisi dati", subtitle: "Fatture, Ordini PH, Beauty Days e Attività." },
   "/activities": { title: "Attività", subtitle: "Task, reminder, progetti, fasi e analisi del reparto." },
   "/activities/dashboard": { title: "Tutte le attività del reparto", subtitle: "Task, fasi, reminder e scadenze del reparto." },
   "/activities/reminders": { title: "Reminder del mio reparto", subtitle: "Reminder organizzati per deadline." },
@@ -93,6 +96,8 @@ function Layout() {
     ? pageInfo["/integrations/mexal"]
     : location.pathname.startsWith("/integrations")
       ? pageInfo["/integrations"]
+      : location.pathname.startsWith("/analisi-dati")
+        ? pageInfo["/analisi-dati"]
       : location.pathname.startsWith("/farmacie")
     ? pageInfo["/farmacie/dashboard"]
     : location.pathname.startsWith("/ordini-ph")

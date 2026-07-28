@@ -6,12 +6,11 @@ import { useAuth } from "../../contexts/AuthContext";
 import Dashboard from "./pages/Dashboard";
 import ApertureContatti from "./pages/ApertureContatti";
 import Giornate from "./pages/Giornate";
-import Analisi from "./pages/Analisi";
 import "./pharmacy-module.css";
 
 const items = [
   ["dashboard", "Dashboard", BarChart3], ["aperture", "Aperture/Contatti", ContactRound],
-  ["giornate", "Giornate", CalendarDays], ["analisi", "Analisi dati", BarChart3],
+  ["giornate", "Giornate", CalendarDays],
 ];
 
 export default function PharmacyModule() {
@@ -76,7 +75,7 @@ export default function PharmacyModule() {
       <Route path="dashboard" element={<Dashboard utente={legacyUser}/>}/>
       <Route path="aperture" element={<ApertureContatti utente={legacyUser}/>}/>
       <Route path="giornate" element={<Giornate utente={legacyUser}/>}/>
-      <Route path="analisi" element={<Analisi utente={legacyUser}/>}/>
+      <Route path="analisi" element={<Navigate to="/analisi-dati/beauty-days" replace/>}/>
       <Route path="prodotti" element={<Navigate to="/farmacie/dashboard" replace/>}/>
       <Route path="clienti" element={<Navigate to="/farmacie/giornate" replace/>}/>
       <Route path="farmacie" element={<Navigate to="/farmacie/giornate" replace/>}/>

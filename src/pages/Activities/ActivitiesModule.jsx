@@ -2,7 +2,6 @@ import { lazy, Suspense } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import {
   BellRing,
-  ChartNoAxesCombined,
   ClipboardList,
   Folder,
   LayoutDashboard,
@@ -14,7 +13,6 @@ const Dashboard = lazy(() => import("../Dashboard/Dashboard"));
 const Agenda = lazy(() => import("../Agenda/Agenda"));
 const Projects = lazy(() => import("../Projects/Projects"));
 const Tasks = lazy(() => import("../Tasks/Tasks"));
-const Reports = lazy(() => import("../Reports/Reports"));
 
 const items = [
   {
@@ -40,12 +38,6 @@ const items = [
     label: "Fasi dei progetti",
     icon: ClipboardList,
     permission: "tasks.read",
-  },
-  {
-    to: "/activities/analysis-data",
-    label: "Analisi dati",
-    icon: ChartNoAxesCombined,
-    permission: "reports.read",
   },
 ];
 
@@ -91,7 +83,7 @@ export default function ActivitiesModule() {
           <Route path="reminders" element={<Agenda />} />
           <Route path="projects" element={<Projects />} />
           <Route path="tasks" element={<Tasks />} />
-          <Route path="analysis-data" element={<Reports />} />
+          <Route path="analysis-data" element={<Navigate to="/analisi-dati/attivita" replace />} />
           <Route path="*" element={<Navigate to={firstVisiblePath} replace />} />
         </Routes>
       </Suspense>

@@ -1,17 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
-  CalendarRange,
   Clock3,
   Download,
   FileText,
-  Filter,
   Plus,
   RefreshCw,
   RotateCcw,
   Table2,
   Trash2,
-  Users,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -828,15 +825,14 @@ function Reports() {
   }
 
   function addPdfPageNumber(doc) {
-    const pageCount = doc.internal.getNumberOfPages();
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
 
-    for (let page = 1; page <= pageCount; page += 1) {
+    for (let page = 1; page <= doc.internal.getNumberOfPages(); page += 1) {
       doc.setPage(page);
       doc.setFontSize(8);
       doc.setTextColor(107, 100, 92);
-      doc.text(`Pagina ${page} di ${pageCount}`, pageWidth - 14, pageHeight - 8, {
+      doc.text(`Pagina ${page}`, pageWidth - 14, pageHeight - 7, {
         align: "right",
       });
     }
@@ -847,21 +843,19 @@ function Reports() {
     const pageWidth = doc.internal.pageSize.getWidth();
 
     if (logo) {
-      doc.addImage(logo, "PNG", 14, 10, 25, 30);
+      doc.addImage(logo, "PNG", 14, 10, 30, 30);
     }
 
     doc.setTextColor(45, 43, 40);
-    doc.setFont("helvetica", "bold");
     doc.setFontSize(20);
-    doc.text(title, pageWidth - 14, 21, { align: "right" });
+    doc.text(title, pageWidth - 14, 23, { align: "right" });
 
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10.5);
+    doc.setFontSize(11);
     subtitleLines.forEach((line, index) => {
-      doc.text(line, pageWidth - 14, 29 + index * 6, { align: "right" });
+      doc.text(line, pageWidth - 14, 31 + index * 6, { align: "right" });
     });
 
-    const lineY = 44 + Math.max(0, subtitleLines.length - 1) * 4;
+    const lineY = 45;
     doc.setDrawColor(150, 150, 150);
     doc.setLineWidth(0.5);
     doc.line(14, lineY, pageWidth - 14, lineY);

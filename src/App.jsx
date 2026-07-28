@@ -35,6 +35,9 @@ const OrdersModule = lazy(() =>
 const IntegrationsModule = lazy(() =>
   import("./modules/integrations/IntegrationsModule")
 );
+const AnalyticsModule = lazy(() =>
+  import("./modules/analytics/AnalyticsModule")
+);
 
 import "./styles/App.css";
 import "./styles/team-navigation-hidden.css";
@@ -81,8 +84,9 @@ function App() {
               <Route path="messages" element={<Messages />} />
               <Route path="team" element={<Team />} />
               <Route path="calendar" element={<Calendar />} />
-              <Route path="reports" element={<Navigate to="/activities/analysis-data" replace />} />
-              <Route path="analysis-data" element={<Navigate to="/activities/analysis-data" replace />} />
+              <Route path="reports" element={<Navigate to="/analisi-dati/attivita" replace />} />
+              <Route path="analysis-data" element={<Navigate to="/analisi-dati/attivita" replace />} />
+              <Route path="analisi-dati/*" element={<AnalyticsModule />} />
               <Route path="settings" element={<Settings />} />
               <Route path="settings/mexal-diagnostics" element={<MexalDiagnostics />} />
               <Route path="farmacie/*" element={<PharmacyModule />} />

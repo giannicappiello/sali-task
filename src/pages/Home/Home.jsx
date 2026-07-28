@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  BarChart3,
   ClipboardList,
   FileArchive,
   MessageCircle,
@@ -49,6 +50,13 @@ const cards = [
     icon: FileArchive,
     permission: "documentation.read",
     module: "documenti",
+  },
+  {
+    path: "/analisi-dati",
+    label: "Analisi dati",
+    description: "Fatture, Ordini PH, Beauty Days e Attività con pivot ed Excel.",
+    icon: BarChart3,
+    permission: "dashboard.read",
   },
   {
     path: "/messages",

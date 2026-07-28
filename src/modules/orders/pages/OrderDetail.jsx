@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, Download, Edit3, OctagonX, RefreshCw, Send, Trash2 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
+import { useAuth } from "../../../contexts/AuthContext";
 import { useOrdersModule } from "../ordersModuleContext";
 import { deleteOrder, downloadOrderPdf, loadOrderDetail, recoverOrderSync, stopOrderSync, submitOrderToMexal } from "../services/orderFulfillment";
 import { getOrderDisplayStatus, hasMexalDocuments } from "../services/orderDisplayStatus";
@@ -18,6 +19,7 @@ function childStatusClass(document) {
 
 export default function OrderDetail() {
   const { moduleCode, basePath } = useOrdersModule();
+  const { isAdminUser } = useAuth();
   const { orderId } = useParams();
   const navigate = useNavigate();
   const [order, setOrder] = useState(null);
@@ -112,7 +114,7 @@ export default function OrderDetail() {
   }
 
   async function removeOrder() {
-    if (deleting || !window.confirm("Stai per eliminare definitivamente questo ordine. L’operazione non può essere annullata.")) return;
+    if (deleting || !window.confirm("Stai per eliminare definitivamente questo ordine e tutti i collegamenti presenti nel Workspace. L'operazione non può essere annullata. Continuare?")) return;
     setDeleting(true); setError("");
     try { await deleteOrder(orderId, moduleCode); navigate(`${basePath}/elenco`, { replace: true, state: { message: "Ordine eliminato." } }); }
     catch (deleteError) { setError(deleteError.message || "Impossibile eliminare l'ordine."); }
@@ -136,7 +138,7 @@ export default function OrderDetail() {
   const isClosed = displayStatus.closed;
   const hasMexalDocument = hasMexalDocuments(order);
   const canEdit = !isClosed && !hasMexalDocument && ["non_avviato", "non_inviato", "errore", "annullato", "arrestato"].includes(syncStatus);
-  const canDelete = canEdit;
+  const canDelete = isAdminUser;
 
   return (
     <div className="orders-page">
@@ -210,7 +212,7 @@ export default function OrderDetail() {
       <div className="orders-detail-actions">
         <button className="orders-secondary orders-download-pdf-mobile" type="button" disabled={downloadingPdf} onClick={downloadPdf}><Download size={18} /> {downloadingPdf ? "Generazione PDF..." : "SCARICA PDF"}</button>
         {canEdit && <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/modifica/${orderId}`)}><Edit3 size={18} /> MODIFICA ORDINE</button>}
-        {canDelete && <button className="orders-danger" type="button" disabled={deleting} onClick={removeOrder}><Trash2 size={18} /> {deleting ? "Eliminazione..." : "ELIMINA ORDINE"}</button>}
+        {canDelete && <button className="orders-danger" type="button" disabled={deleting} onClick={removeOrder}><Trash2 size={18} /> {deleting ? "Eliminazione definitiva..." : "ELIMINA DEFINITIVAMENTE"}</button>}
         {syncStatus === "in_corso" && <button className="orders-danger" type="button" disabled={stopping} onClick={requestStop}><OctagonX size={18} /> {stopping ? "Richiesta..." : "ARRESTA INVIO"}</button>}
         {mexalSendingEnabled && !isClosed && !["in_corso", "arresto_richiesto", "completato"].includes(syncStatus) && !hasMexalDocument && <button className="orders-primary" type="button" disabled={sending} onClick={sendToMexal}>{sending ? <RefreshCw className="spin" size={18} /> : <Send size={18} />}{["errore", "arrestato"].includes(syncStatus) ? "RIPROVA INVIO" : "INVIA A MEXAL"}</button>}
         {syncStatus === "arresto_richiesto" && <span className="orders-sync-inline in_corso">Arresto richiesto: attesa della POST Mexal in corso.</span>}

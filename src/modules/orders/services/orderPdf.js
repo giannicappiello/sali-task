@@ -72,6 +72,22 @@ async function getCompanyLogo() {
   return COMPANY_LOGO_DATA_URL;
 }
 
+async function getAnalysisReportLogo() {
+  try {
+    const response = await fetch("/logo.png");
+    if (!response.ok) throw new Error("Logo report non disponibile.");
+    const blob = await response.blob();
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return getCompanyLogo();
+  }
+}
+
 function ruled(doc, x, y, width, height, fill = false) {
   if (fill) { doc.setFillColor(238, 238, 238); doc.rect(x, y, width, height, "F"); }
   doc.setDrawColor(...RULE); doc.setLineWidth(0.18); doc.rect(x, y, width, height);
@@ -132,7 +148,7 @@ function cell(doc, x, y, w, h, label, content, options = {}) {
   });
 }
 
-function drawCompanyHeader(doc, logo, continuation = false) {
+function drawCompanyHeader(doc, logo, continuation = false, hideCompanyDetails = false) {
   const y = PAGE.top;
   const maxWidth = continuation ? 44 : 72;
   const maxHeight = continuation ? 14 : 22;
@@ -149,6 +165,7 @@ function drawCompanyHeader(doc, logo, continuation = false) {
   } else {
     doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.text("PROGRÉ", PAGE.left + 1, y + 12);
   }
+  if (hideCompanyDetails) return;
   const x = continuation ? 78 : 114;
   doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.text("PROGRE’ SRL", x, y + 4);
   doc.setFont("helvetica", "normal"); doc.setFontSize(5.9);
@@ -284,7 +301,12 @@ function drawFooter(doc, order, model) {
 export async function createOrderPdf(order, lines, { logo = null, document = null } = {}) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const model = { ...buildOrderPdfModel(order, lines), document };
-  const companyLogo = logo === null ? await getCompanyLogo() : logo;
+  const isPhOrder = String(order?.modulo_ordini || "").toLowerCase() === "ph";
+  const companyLogo = logo === null
+    ? isPhOrder
+      ? await getAnalysisReportLogo()
+      : await getCompanyLogo()
+    : logo;
   const firstCapacity = Math.floor((ARTICLE.bottom - ARTICLE.top - ARTICLE.header) / ARTICLE.row);
   const continuationCapacity = Math.floor((260 - 29 - ARTICLE.header) / ARTICLE.row);
   const pageRows = [];
@@ -298,7 +320,7 @@ export async function createOrderPdf(order, lines, { logo = null, document = nul
   for (let page = 0; page < pages; page += 1) {
     if (page) doc.addPage();
     const continuation = page > 0;
-    drawCompanyHeader(doc, companyLogo, continuation);
+    drawCompanyHeader(doc, companyLogo, continuation, isPhOrder);
     if (!continuation) drawPartyBlock(doc, order, model);
     const articleTop = continuation ? 29 : ARTICLE.top;
     const articleBottom = continuation ? 260 : ARTICLE.bottom;

@@ -126,7 +126,7 @@ export default async function handler(req, res) {
       p_lock_token: lockToken,
       p_error: null,
       p_offset: integer(result.nextOffset ?? result.prossimo_offset ?? job.offset),
-      p_sync_run_id: integer(result.syncRunId ?? result.sync_run_id ?? job.sync_run_id),
+      p_sync_run_id: null,
       p_result: result,
       p_is_failure: false,
     });
@@ -139,7 +139,7 @@ export default async function handler(req, res) {
         p_lock_token: job.lock_token,
         p_error: error?.message || "Errore worker Mexal.",
         p_offset: job.offset,
-        p_sync_run_id: job.sync_run_id,
+        p_sync_run_id: null,
         p_result: {},
         p_is_failure: true,
       });

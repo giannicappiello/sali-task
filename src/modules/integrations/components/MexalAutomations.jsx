@@ -13,7 +13,10 @@ import {
 
 const eventKeys = ["orders_module_open", "before_new_order", "customer_selected", "before_order_save", "after_order_save", "before_order_send", "after_order_send", "product_selected", "manual"];
 
-function title(value) { return String(value || "—").replaceAll("_", " "); }
+function title(value) {
+  if (value === "sales_invoices") return "Fatture";
+  return String(value || "—").replaceAll("_", " ");
+}
 function blankEventRule() { return { event_key: "manual", sync_type: "products", enabled: false, execution_order: 1, blocking: false, scope: "global" }; }
 function number(value) { return Number(value || 0).toLocaleString("it-IT"); }
 function wait(ms) { return new Promise((resolve) => window.setTimeout(resolve, ms)); }

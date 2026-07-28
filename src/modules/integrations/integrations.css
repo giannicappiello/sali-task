@@ -14,6 +14,7 @@ button.mexal-kpi:focus-visible,.mexal-sync-card:focus-visible{outline:3px solid 
 .mexal-sync-card .mexal-sync-primary{border:0;background:#126bff;color:#fff}
 .mexal-sync-card .mexal-sync-stop{border:1px solid #fecaca;background:#fff1f2;color:#b91c1c}
 .mexal-sync-card .mexal-sync-actions button:disabled{cursor:not-allowed;opacity:.6}
+.mexal-sync-card .mexal-sync-auto{margin-top:14px;padding:11px 12px;background:#f8fafc;cursor:pointer}.mexal-sync-card .mexal-sync-auto input{flex:0 0 auto}.mexal-sync-card .mexal-sync-auto strong{font-size:13px}.mexal-sync-card .mexal-sync-auto small{font-size:11px}
 .mexal-history-filters{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin-top:18px}
 .mexal-history-filters label{display:grid;gap:6px;min-width:150px;color:#475569;font-size:12px;font-weight:800}
 .mexal-history-filters select,.mexal-history-filters input{height:44px;box-sizing:border-box;border:1px solid #dbe2ea;border-radius:10px;background:#fff;padding:0 12px;color:#0f172a;font:inherit}

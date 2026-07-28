@@ -99,6 +99,24 @@ export async function invokeClientsSync() {
   return invokeMexalApi("/api/mexal/automation", { action: "run_now", syncType: "clients" });
 }
 
+export async function invokeSalesInvoicesSync(onProgress = () => {}, isCancelled = () => false) {
+  const total = { pages: 0, processed: 0, lines: 0 };
+  for (let page = 1; page <= 250; page += 1) {
+    if (isCancelled()) throw Object.assign(new Error("Sincronizzazione annullata."), { cancelled: true });
+    const data = await invokeMexalApi("/api/mexal/automation", {
+      action: "run_now",
+      syncType: "sales_invoices",
+      origin: "integrations",
+    });
+    total.pages = page;
+    total.processed += Number(data.processed || 0);
+    total.lines += Number(data.lines || 0);
+    onProgress({ ...total, completed: data.completed === true });
+    if (data.completed === true) return { ...total, completed: true };
+  }
+  throw new Error("Sincronizzazione fatture interrotta: numero massimo di pagine superato.");
+}
+
 export async function loadMexalRuns(type, limit = 1) {
   const { data, error } = await supabase
     .from("mexal_sync_runs")
@@ -111,12 +129,14 @@ export async function loadMexalRuns(type, limit = 1) {
 }
 
 export async function loadMexalEntityCounts() {
-  const [products, clients, stocks, orders, listPriceCommissions] = await Promise.all([
+  const [products, clients, stocks, orders, listPriceCommissions, salesInvoices, latestInvoice] = await Promise.all([
     supabase.from("ordini_prodotti_cache").select("*", { count: "exact", head: true }).eq("mostra_in_app", true),
     supabase.from("ordini_clienti_cache").select("*", { count: "exact", head: true }).eq("attivo_mexal", true),
     supabase.from("prodotti").select("*", { count: "exact", head: true }).not("ultimo_sync_mexal", "is", null),
     supabase.from("ordini_testate").select("*", { count: "exact", head: true }).eq("stato_sincronizzazione", "non_inviato"),
     supabase.from("mexal_regole_provvigioni").select("*", { count: "exact", head: true }).eq("origine", "mexal_provvigioni_listini").eq("attiva", true),
+    supabase.from("mexal_fatture_vendita").select("*", { count: "exact", head: true }),
+    supabase.from("mexal_fatture_vendita").select("sincronizzato_il").order("sincronizzato_il", { ascending: false }).limit(1).maybeSingle(),
   ]);
   return {
     products: products.error ? null : products.count || 0,
@@ -124,6 +144,8 @@ export async function loadMexalEntityCounts() {
     stocks: stocks.error ? null : stocks.count || 0,
     orders: orders.error ? null : orders.count || 0,
     listPriceCommissions: listPriceCommissions.error ? null : listPriceCommissions.count || 0,
+    salesInvoices: salesInvoices.error ? null : salesInvoices.count || 0,
+    salesInvoicesLastSync: latestInvoice.error ? null : latestInvoice.data?.sincronizzato_il || null,
   };
 }
 

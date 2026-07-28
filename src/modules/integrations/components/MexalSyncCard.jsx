@@ -16,6 +16,9 @@ export default function MexalSyncCard({
   run,
   actionLabel,
   runningLabel,
+  automaticEnabled,
+  automaticSaving = false,
+  onToggleAutomatic,
 }) {
   const isAgentsCard = title === "Agenti";
   const effectiveEnabled = enabled || isAgentsCard;
@@ -56,6 +59,20 @@ export default function MexalSyncCard({
         {lastRun ? <CheckCircle2 size={16} /> : <Clock3 size={16} />}
         <span>{lastRun || "Nessuna sincronizzazione"}</span>
       </div>
+      {typeof automaticEnabled === "boolean" && (
+        <label className="mexal-toggle-row mexal-sync-auto" onClick={(event) => event.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={automaticEnabled}
+            disabled={automaticSaving || running}
+            onChange={(event) => onToggleAutomatic?.(event.target.checked)}
+          />
+          <span>
+            <strong>Sincronizzazione automatica</strong>
+            <small>{automaticEnabled ? "Attiva nel ciclo giornaliero" : "Disattivata"}</small>
+          </span>
+        </label>
+      )}
       {run && (
         <small className="mexal-sync-run-summary">
           Stato: {run.status} · Elaborati: {run.processed || 0} · Inseriti: {run.inserted || 0} · Aggiornati: {run.updated || 0} · Errori: {run.failed || 0}

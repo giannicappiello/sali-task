@@ -38,10 +38,13 @@ assert.deepEqual(lines[0], {
   },
 });
 
-const [migration, automation, moduleSource] = await Promise.all([
+const [migration, automation, moduleSource, dashboardSource, syncService, syncCard] = await Promise.all([
   readFile("supabase/migrations/20260728080000_mexal_sales_invoices.sql", "utf8"),
   readFile("api/mexal/automation.js", "utf8"),
   readFile("src/modules/orders/OrdersModule.jsx", "utf8"),
+  readFile("src/modules/integrations/pages/MexalDashboard.jsx", "utf8"),
+  readFile("src/modules/integrations/services/mexalSyncService.js", "utf8"),
+  readFile("src/modules/integrations/components/MexalSyncCard.jsx", "utf8"),
 ]);
 assert.match(migration, /sigla = 'FT'/);
 assert.match(migration, /cod_modulo = 'E'/);
@@ -52,5 +55,9 @@ assert.match(automation, /sales_invoices: salesInvoicesHandler/);
 assert.match(await readFile("server/mexal/sync-sales-invoices.js", "utf8"), /DETAIL_CONCURRENCY = 1/);
 assert.match(moduleSource, /label: "Fatture"/);
 assert.match(moduleSource, /fatture\/:invoiceId/);
+assert.match(dashboardSource, /title: "Fatture"/);
+assert.match(dashboardSource, /toggleInvoiceSchedule/);
+assert.match(syncService, /invokeSalesInvoicesSync/);
+assert.match(syncCard, /Sincronizzazione automatica/);
 
 console.log("fatture FTE: mapping righe, sicurezza, automazione e rotte verificati");

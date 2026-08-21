@@ -114,7 +114,7 @@ export async function loadMexalAutomationRules(options) {
   if (!payload || !Array.isArray(payload.schedules) || !Array.isArray(payload.events)) {
     throw apiError(0, "Il servizio automazioni ha restituito dati non validi.");
   }
-  return { schedules: payload.schedules, events: payload.events };
+  return { schedules: payload.schedules, events: payload.events, diagnostics: payload.diagnostics || null };
 }
 
 export async function saveMexalAutomationRule({ supabase, ruleType, rule, fetchImpl }) {

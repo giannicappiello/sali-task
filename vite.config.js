@@ -40,7 +40,8 @@ export default defineConfig({
       workbox: {
         cleanupOutdatedCaches: true,
         clientsClaim: true,
-        skipWaiting: true
+        skipWaiting: true,
+        importScripts: ["/push-handler.js"]
       },
       devOptions: {
         enabled: false

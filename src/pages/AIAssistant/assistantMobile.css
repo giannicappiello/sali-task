@@ -1,0 +1,107 @@
+.ai-mobile-sidebar-trigger,
+.ai-mobile-sidebar-close,
+.ai-mobile-sidebar-overlay {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .ai-assistant-sidebar {
+    display: flex;
+    position: fixed;
+    inset: max(8px, env(safe-area-inset-top)) auto max(8px, env(safe-area-inset-bottom)) 8px;
+    z-index: 132;
+    width: min(330px, calc(100vw - 28px));
+    max-height: calc(100dvh - 16px);
+    overflow: hidden;
+    border: 1px solid #dce5f0;
+    border-radius: 18px;
+    box-shadow: 18px 0 55px rgba(15, 23, 42, .28);
+    transform: translateX(calc(-100% - 24px));
+    visibility: hidden;
+    pointer-events: none;
+    transition: transform .22s ease, visibility .22s ease;
+  }
+
+  .ai-assistant-sidebar.mobile-open {
+    transform: translateX(0);
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  .ai-assistant-brand {
+    padding-right: 40px;
+  }
+
+  .ai-mobile-sidebar-close {
+    display: grid;
+    place-items: center;
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 1px solid #d8e2ef;
+    border-radius: 10px;
+    background: #fff;
+    color: #26354e;
+  }
+
+  .ai-mobile-sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 131;
+    border: 0;
+    background: rgba(15, 23, 42, .48);
+    backdrop-filter: blur(2px);
+  }
+
+  .ai-mobile-sidebar-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 36px;
+    padding: 0 10px;
+    border: 1px solid #cbdcf2;
+    border-radius: 10px;
+    background: #f7faff;
+    color: #175ba9;
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .ai-grouped-history {
+    min-height: 190px;
+  }
+}
+
+@media (max-width: 620px) {
+  .ai-chat-header {
+    flex-direction: row;
+    align-items: center;
+    padding: 12px 14px;
+  }
+
+  .ai-chat-header > div {
+    min-width: 0;
+  }
+
+  .ai-chat-header h1,
+  .ai-chat-header p {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ai-mobile-sidebar-trigger span {
+    display: none;
+  }
+
+  .ai-mobile-sidebar-trigger {
+    flex: 0 0 auto;
+    width: 38px;
+    padding: 0;
+    justify-content: center;
+  }
+}

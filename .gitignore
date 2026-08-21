@@ -27,3 +27,13 @@ dist-ssr
 
 # Local Aruba worker secrets
 hosting/aruba-mexal-sync/config.php
+hosting/document-gateway/config.txt
+
+# Local snapshots, generated output, and archived files
+.tmp/
+.pnpm-store/
+tmp/
+output/
+UNUSED/
+supabase/.temp/
+hosting/*.zip

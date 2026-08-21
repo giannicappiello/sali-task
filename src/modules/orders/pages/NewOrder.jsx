@@ -1,14 +1,16 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ChevronDown, ChevronUp, Info, Minus, Plus, Save, Search, ShoppingCart, Trash2 } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
+import useBackNavigation from "../../../hooks/useBackNavigation";
 import useOrdersAccess from "./useOrdersAccess";
 import { useOrdersModule } from "../ordersModuleContext";
 import { calculateLineConditions } from "../services/priceEngine";
-import { calculateOrderEconomics } from "../services/orderEconomics";
+import { calculateOrderEconomics, calculateOrderLineEconomicsWithPayment } from "../services/orderEconomics";
 import { checkOrderAvailability, enqueueOrderConfirmationEmail, submitOrderToMexal, updateOrder } from "../services/orderFulfillment";
 import { buildAvailabilityPreview, buildAvailabilitySignature, getAvailabilityValidity, quantitiesForOrderLine } from "../services/availability";
 import { buildNewOrderInsertPayload, buildWritableOrderPayload } from "../services/orderPayload";
+import { ORDER_CUSTOMER_COLUMNS } from "../services/orderDataSelections";
 
 const PAGE_SIZE = 1000;
 
@@ -69,13 +71,14 @@ function productDiscountCategory(product) {
 }
 
 
-function paymentDescription(customer) {
+function paymentDescription(customer, paymentRules = []) {
   const data = customer?.dati_mexal || customer?.json_mexal || {};
   return (
     data?._descrizione_pagamento ||
     data?.descrizione_pagamento ||
     data?.des_pagamento ||
     data?.pagamento_descrizione ||
+    paymentRules.find((rule) => String(rule.codice_pagamento || "") === String(customer?.codice_pagamento || ""))?.descrizione ||
     customer?.codice_pagamento ||
     "-"
   );
@@ -95,13 +98,13 @@ function conditionClass(line) {
   return "is-none";
 }
 
-async function loadPaged(table, buildQuery) {
+async function loadPaged(table, buildQuery, columns = "*") {
   const rows = [];
   let from = 0;
 
   while (true) {
     const query = buildQuery(
-      supabase.from(table).select("*").range(from, from + PAGE_SIZE - 1)
+      supabase.from(table).select(columns).range(from, from + PAGE_SIZE - 1)
     );
     const { data, error } = await query;
     if (error) throw error;
@@ -112,13 +115,13 @@ async function loadPaged(table, buildQuery) {
   }
 }
 
-async function loadPagedRpc(rpcName, buildQuery) {
+async function loadPagedRpc(rpcName, buildQuery, columns = "*") {
   const rows = [];
   let from = 0;
 
   while (true) {
     const query = buildQuery(
-      supabase.rpc(rpcName).select("*").range(from, from + PAGE_SIZE - 1)
+      supabase.rpc(rpcName).select(columns).range(from, from + PAGE_SIZE - 1)
     );
     const { data, error } = await query;
     if (error) throw error;
@@ -132,10 +135,14 @@ async function loadPagedRpc(rpcName, buildQuery) {
 export default function NewOrder() {
   const { moduleCode, basePath } = useOrdersModule();
   const navigate = useNavigate();
+  const goBack = useBackNavigation(`${basePath}/elenco`);
+  const location = useLocation();
   const { orderId: editingOrderId } = useParams();
+  const requestedReservation = new URLSearchParams(location.search).get("tipo") === "prenotazione";
   const {
     loading: accessLoading,
     canAccessOrders,
+    canWriteOrders,
     canSeeAll,
     visibleAgents,
     agentCode,
@@ -149,6 +156,10 @@ export default function NewOrder() {
   const [selectedPayment, setSelectedPayment] = useState(null);
   const [customerSearch, setCustomerSearch] = useState("");
   const [productSearch, setProductSearch] = useState("");
+  const [customerResultIndex, setCustomerResultIndex] = useState(0);
+  const [productResultIndex, setProductResultIndex] = useState(0);
+  const [pendingProduct, setPendingProduct] = useState(null);
+  const [pendingQuantity, setPendingQuantity] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [lines, setLines] = useState([]);
   const [comments, setComments] = useState("");
@@ -159,7 +170,15 @@ export default function NewOrder() {
   const [availability, setAvailability] = useState(null);
   const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [availabilityInvalidated, setAvailabilityInvalidated] = useState(false);
+  const [existingOrderType, setExistingOrderType] = useState("");
+  const isReservation = editingOrderId ? existingOrderType === "prenotazione" : requestedReservation;
+  const skipAvailability = moduleCode === "ph";
   const availabilityRequestId = useRef(0);
+  const productSearchRef = useRef(null);
+  const productQuantityRef = useRef(null);
+  const customerResultRefs = useRef([]);
+  const productResultRefs = useRef([]);
+  const aiDraftAppliedRef = useRef(false);
 
   function invalidateAvailability() {
     availabilityRequestId.current += 1;
@@ -169,7 +188,7 @@ export default function NewOrder() {
 
   useEffect(() => {
     if (!accessLoading) loadData();
-  }, [accessLoading, canAccessOrders, canSeeAll, JSON.stringify(visibleAgents)]);
+  }, [accessLoading, canAccessOrders, canWriteOrders, canSeeAll, JSON.stringify(visibleAgents)]);
 
   useEffect(() => {
     if (!editingOrderId || !customers.length) return;
@@ -181,14 +200,52 @@ export default function NewOrder() {
         supabase.from("ordini_documenti_mexal").select("numero").eq("ordine_id", editingOrderId).not("numero", "is", null),
       ]);
       if (orderError || linesError || docsError) { if (active) setError((orderError || linesError || docsError).message); return; }
-      if (existing.numero_ocm || existing.numero_ocx || existing.numero_oci || docs?.length || !["non_avviato", "non_inviato", "errore", "annullato", "arrestato"].includes(existing.stato_sincronizzazione || "non_inviato")) { if (active) setError("Questo ordine non è più modificabile."); return; }
+      const isDraft = String(existing.stato || "").toLowerCase() === "bozza";
+      if (!isDraft && (existing.numero_ocm || existing.numero_ocx || existing.numero_oci || docs?.length || !["non_avviato", "non_inviato", "errore", "annullato", "arrestato"].includes(existing.stato_sincronizzazione || "non_inviato"))) { if (active) setError("Questo ordine non è più modificabile."); return; }
       if (!active) return;
       setSelectedCustomer(customers.find((customer) => customer.codice_cliente === existing.codice_cliente) || { codice_cliente: existing.codice_cliente, ragione_sociale: existing.ragione_sociale_cliente });
+      setExistingOrderType(existing.tipo_ordine || "standard");
       setSelectedPayment({ codice: existing.codice_pagamento || "", descrizione: existing.descrizione_pagamento || "" }); setComments(existing.commenti || "");
       setLines((existingLines || []).map((line) => withEconomics({ ...line, prodotto_origine: products.find((product) => normalize(product.codice_articolo || product.codice_mexal || product.codice) === line.codice_articolo) || line })));
     })();
     return () => { active = false; };
   }, [editingOrderId, customers, products]);
+
+  useEffect(() => {
+    const draft = location.state?.aiDraft;
+    if (!draft || editingOrderId || loading || aiDraftAppliedRef.current || !customers.length || !products.length) return;
+    aiDraftAppliedRef.current = true;
+    const customer = customers.find((item) => normalize(item.codice_cliente) === normalize(draft.customerCode));
+    const payment = customer ? { codice: customer.codice_pagamento || "", descrizione: paymentDescription(customer, paymentRules) } : null;
+    const importedLines = (draft.lines || []).flatMap((item) => {
+      const product = products.find((entry) => normalize(entry.codice_articolo || entry.codice_mexal || entry.codice) === normalize(item.productCode));
+      if (!product || product.is_impianto) return [];
+      const quantity = Math.max(0.01, numberValue(item.quantity, 1));
+      const code = normalize(product.codice_articolo || product.codice_mexal || product.codice);
+      const conditions = calculateConditions(product, quantity, customer || null, payment);
+      return [{
+        codice_articolo: code,
+        descrizione: normalize(product.descrizione || product.nome || code),
+        quantita: quantity,
+        prezzo_unitario: conditions.prezzo_base,
+        ...withEconomics({ ...conditions, quantita: quantity, prodotto_origine: product }),
+        disponibilita: numberValue(product.disponibilita, 0),
+        unita_misura: normalize(product.unita_misura || product.um || "PZ"),
+        prodotto_origine: product,
+      }];
+    });
+    requestAnimationFrame(() => {
+      if (customer) {
+        setSelectedCustomer(customer);
+        setSelectedPayment(payment);
+      }
+      setLines(importedLines);
+      setComments(String(draft.comments || ""));
+      if (!customer || importedLines.length < (draft.lines || []).length) {
+        setError("Bozza AI caricata: completa gli abbinamenti mancanti prima di salvare.");
+      }
+    });
+  }, [location.state, editingOrderId, loading, customers, products, discountMatrix, specialConditions, paymentRules]);
 
   async function loadData() {
     setLoading(true);
@@ -196,6 +253,7 @@ export default function NewOrder() {
 
     try {
       if (!canAccessOrders) throw new Error("Accesso al modulo Ordini non autorizzato.");
+      if (!canWriteOrders) throw new Error("Il ruolo consente soltanto la consultazione del modulo Ordini.");
       if (!canSeeAll && !visibleAgents?.length) {
         throw new Error("Nessun codice agente Mexal associato all'utente.");
       }
@@ -204,10 +262,10 @@ export default function NewOrder() {
         ? await loadPaged("ordini_clienti_cache", (query) => query
           .eq("attivo_mexal", true)
           .order("ragione_sociale", { ascending: true })
-          .order("codice_cliente", { ascending: true }))
+          .order("codice_cliente", { ascending: true }), ORDER_CUSTOMER_COLUMNS)
         : await loadPagedRpc("visible_mexal_clients_for_me", (query) => query
           .order("ragione_sociale", { ascending: true })
-          .order("codice_cliente", { ascending: true }));
+          .order("codice_cliente", { ascending: true }), ORDER_CUSTOMER_COLUMNS);
 
       let productRows = [];
 
@@ -235,6 +293,29 @@ export default function NewOrder() {
         );
         productRows = fallback;
       }
+
+      const { data: kitRows, error: kitError } = await supabase
+        .from("ordini_impianti")
+        .select("*, componenti:ordini_impianti_componenti(*)")
+        .eq("attivo", true)
+        .order("descrizione", { ascending: true });
+      if (kitError) throw kitError;
+      const productByCode = new Map(productRows.map((product) => [normalize(product.codice_articolo || product.codice_mexal || product.codice), product]));
+      const kits = (kitRows || []).map((kit) => ({
+        ...kit,
+        is_impianto: true,
+        codice_articolo: kit.codice,
+        descrizione: kit.descrizione,
+        componenti: (kit.componenti || []).map((component) => ({
+          ...component,
+          prodotto: productByCode.get(normalize(component.codice_articolo)),
+        })).filter((component) => component.prodotto),
+        prezzo_listino: (kit.componenti || []).reduce((sum, component) => {
+          const product = productByCode.get(normalize(component.codice_articolo));
+          return sum + numberValue(component.quantita) * numberValue(product?.prezzo_listino);
+        }, 0),
+      }));
+      productRows = [...kits, ...productRows];
 
       const [matrixRows, particularityRows, paymentRows] = await Promise.all([
         loadPaged("ordini_sconti_listini", (query) => query.eq("is_active", true)),
@@ -294,6 +375,7 @@ export default function NewOrder() {
           product.brand,
           product.categoria,
           product.ean,
+          product.is_impianto ? "impianto" : "",
         ].some((value) => String(value ?? "").toLowerCase().includes(query))
       )
       .slice(0, 60);
@@ -307,7 +389,7 @@ export default function NewOrder() {
 
   function withEconomics(line) {
     const product = line.prodotto_origine || line;
-    return calculateOrderEconomics([{
+    return calculateOrderLineEconomicsWithPayment({
       ...line,
       quantita: line.quantita,
       // Mexal receives the list price and the commercial discount chain. The
@@ -317,8 +399,7 @@ export default function NewOrder() {
       // Mexal blob or from an order-line fallback.
       codice_iva_mexal: product.codice_iva_mexal || null,
       aliquota_iva: product.aliquota_iva,
-      sconto_commerciale: [line.sconto_commerciale, line.sconto_pagamento].filter(Boolean).join("+"),
-    }]).righe[0];
+    });
   }
 
 
@@ -338,7 +419,7 @@ export default function NewOrder() {
     invalidateAvailability();
     const payment = {
       codice: customer.codice_pagamento || "",
-      descrizione: paymentDescription(customer),
+      descrizione: paymentDescription(customer, paymentRules),
     };
     setSelectedCustomer(customer);
     setSelectedPayment(payment);
@@ -351,15 +432,31 @@ export default function NewOrder() {
     setCustomerSearch("");
   }
 
-  function addProduct(product) {
+  function moveResultSelection(type, direction, results) {
+    if (!results.length) return;
+    const setter = type === "customer" ? setCustomerResultIndex : setProductResultIndex;
+    const refs = type === "customer" ? customerResultRefs : productResultRefs;
+    setter((current) => {
+      const next = Math.min(results.length - 1, Math.max(0, current + direction));
+      requestAnimationFrame(() => refs.current[next]?.scrollIntoView({ block: "nearest" }));
+      return next;
+    });
+  }
+
+  function addProduct(product, requestedQuantity = 1) {
+    if (product.is_impianto) {
+      addKit(product, requestedQuantity);
+      return;
+    }
     const code = normalize(product.codice_articolo || product.codice_mexal || product.codice);
     if (!code) return;
+    const addedQuantity = Math.max(1, numberValue(requestedQuantity, 1));
 
     invalidateAvailability();
     setLines((current) => {
       const existing = current.find((line) => line.codice_articolo === code);
       if (existing) {
-        const quantity = existing.quantita + 1;
+        const quantity = existing.quantita + addedQuantity;
         return current.map((line) =>
           line.codice_articolo === code
             ? withEconomics({ ...line, quantita: quantity, ...calculateConditions(product, quantity) })
@@ -368,22 +465,121 @@ export default function NewOrder() {
       }
 
       const description = normalize(product.descrizione || product.nome || code);
-      const conditions = calculateConditions(product, 1);
+      const conditions = calculateConditions(product, addedQuantity);
       return [
-        ...current,
         {
           codice_articolo: code,
           descrizione: description,
-          quantita: 1,
+          quantita: addedQuantity,
           prezzo_unitario: conditions.prezzo_base,
-          ...withEconomics({ ...conditions, quantita: 1, prodotto_origine: product }),
+          ...withEconomics({ ...conditions, quantita: addedQuantity, prodotto_origine: product }),
           disponibilita: numberValue(product.disponibilita, 0),
           unita_misura: normalize(product.unita_misura || product.um || "PZ"),
           prodotto_origine: product,
         },
+        ...current,
       ];
     });
     setProductSearch("");
+  }
+
+  function addKit(kit, requestedQuantity = 1) {
+    const kitQuantity = Math.max(1, numberValue(requestedQuantity, 1));
+    const grossKitTotal = kit.componenti.reduce((sum, component) => sum + numberValue(component.quantita) * numberValue(component.prodotto?.prezzo_listino), 0);
+    invalidateAvailability();
+    setLines((current) => {
+      let next = [...current];
+      for (const component of kit.componenti) {
+        const product = component.prodotto;
+        const code = normalize(product.codice_articolo || product.codice_mexal || product.codice);
+        const addedQuantity = numberValue(component.quantita) * kitQuantity;
+        let conditions = calculateConditions(product, addedQuantity);
+        if (kit.modalita_prezzo === "prezzo_fisso") {
+          const allocatedUnitPrice = grossKitTotal > 0 ? numberValue(kit.prezzo_fisso) * numberValue(product.prezzo_listino) / grossKitTotal : 0;
+          conditions = {
+            ...conditions,
+            prezzo_base: allocatedUnitPrice,
+            prezzo_listino: allocatedUnitPrice,
+            sconto_commerciale: "",
+            sconto_pagamento: "",
+            origine_prezzo: "impianto-prezzo-fisso",
+            origine_sconto: "impianto-prezzo-fisso",
+            dettaglio_calcolo: { ...(conditions.dettaglio_calcolo || {}), sconto_commerciale: "", sconto_pagamento: "", impianto_prezzo_fisso: numberValue(kit.prezzo_fisso) },
+          };
+        } else if (kit.modalita_prezzo === "sconto_personalizzato") {
+          const discount = String(numberValue(kit.sconto_personalizzato));
+          conditions = {
+            ...conditions,
+            sconto_commerciale: discount,
+            origine_sconto: "impianto-sconto-personalizzato",
+            dettaglio_calcolo: { ...(conditions.dettaglio_calcolo || {}), sconto_commerciale: discount },
+          };
+        }
+        const kitDetail = {
+          ...(conditions.dettaglio_calcolo || {}),
+          impianto: { id: kit.id, codice: kit.codice, descrizione: kit.descrizione, quantita: kitQuantity, modalita_prezzo: kit.modalita_prezzo },
+        };
+        const existing = next.find((line) => line.codice_articolo === code);
+        if (existing) {
+          const quantity = numberValue(existing.quantita) + addedQuantity;
+          next = next.map((line) => line.codice_articolo === code
+            ? withEconomics({ ...line, ...conditions, quantita: quantity, dettaglio_calcolo: kitDetail, prodotto_origine: product })
+            : line);
+        } else {
+          next.unshift({
+            codice_articolo: code,
+            descrizione: normalize(product.descrizione || product.nome || code),
+            quantita: addedQuantity,
+            prezzo_unitario: conditions.prezzo_base,
+            ...withEconomics({ ...conditions, quantita: addedQuantity, dettaglio_calcolo: kitDetail, prodotto_origine: product }),
+            disponibilita: numberValue(product.disponibilita, 0),
+            unita_misura: normalize(product.unita_misura || product.um || "PZ"),
+            prodotto_origine: product,
+          });
+        }
+      }
+      return next;
+    });
+    setProductSearch("");
+  }
+
+  function focusProductSearch() {
+    requestAnimationFrame(() => productSearchRef.current?.focus());
+  }
+
+  async function chooseProduct(product) {
+    if (!product) return;
+    if (window.matchMedia("(max-width: 1000px)").matches) {
+      const description = product.descrizione || product.nome || product.codice_articolo || product.codice_mexal || product.codice;
+      const value = await window.workspacePrompt?.(`Inserisci la quantità per ${description}`, "", { title: "Quantità prodotto", confirmLabel: "Aggiungi", inputType: "number", inputMode: "decimal", min: "1", step: "1" });
+      if (value === null || value === undefined) return;
+      const quantity = Number(String(value).replace(",", "."));
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        await window.workspaceAlert?.("Inserisci una quantità valida maggiore di zero.");
+        return;
+      }
+      addProduct(product, quantity);
+      focusProductSearch();
+      return;
+    }
+    setPendingProduct(product);
+    setPendingQuantity("");
+    requestAnimationFrame(() => productQuantityRef.current?.focus());
+  }
+
+  function confirmPendingProduct() {
+    if (!pendingProduct) return;
+    const quantity = Number(String(pendingQuantity).replace(",", "."));
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      setError("Inserisci una quantità valida maggiore di zero.");
+      productQuantityRef.current?.focus();
+      return;
+    }
+    addProduct(pendingProduct, quantity);
+    setPendingProduct(null);
+    setPendingQuantity("");
+    setError("");
+    focusProductSearch();
   }
 
   function updateLine(code, field, value) {
@@ -414,9 +610,8 @@ export default function NewOrder() {
 
   const canCheckAvailability = lines.length > 0 && lines.every((line) => normalize(line.codice_articolo) && numberValue(line.quantita) > 0) && !checkingAvailability;
   const productsMissingVat = useMemo(() => lines.filter((line) => !normalize(line.codice_iva_mexal) || !Number.isFinite(Number(line.aliquota_iva))), [lines]);
-  const availabilityValidity = useMemo(() => getAvailabilityValidity({ availability, lines, customer: selectedCustomer, invalidated: availabilityInvalidated }), [availability, lines, selectedCustomer, availabilityInvalidated]);
-  const availabilityByCode = useMemo(() => new Map((availability?.lines || []).map((line) => [line.productCode, line])), [availability]);
-  const availabilityPreview = useMemo(() => buildAvailabilityPreview(lines, availability?.lines), [lines, availability]);
+  const availabilityValidity = useMemo(() => getAvailabilityValidity({ availability, lines, customer: selectedCustomer, invalidated: availabilityInvalidated, reservation: isReservation, skipAvailability }), [availability, lines, selectedCustomer, availabilityInvalidated, isReservation, skipAvailability]);
+  const availabilityPreview = useMemo(() => buildAvailabilityPreview(lines, availability?.lines, { reservation: isReservation, skipAvailability }), [lines, availability, isReservation, skipAvailability]);
   const documentPreviewTotals = useMemo(() => ({
     ocm: availabilityPreview.ocm.reduce((sum, item) => sum + numberValue(item.quantity), 0),
     oci: availabilityPreview.oci.reduce((sum, item) => sum + numberValue(item.quantity), 0),
@@ -452,10 +647,6 @@ export default function NewOrder() {
       setError("Inserisci almeno un prodotto.");
       return;
     }
-    if (confirm && productsMissingVat.length) {
-      setError(`IVA mancante per: ${productsMissingVat.map((line) => `${line.codice_articolo} (${line.descrizione})`).join(", ")}. Sincronizza nuovamente i prodotti prima di confermare.`);
-      return;
-    }
     if (confirm && !availabilityValidity.valid) {
       setError("Verifica nuovamente le disponibilità prima di confermare l’ordine.");
       return;
@@ -476,6 +667,7 @@ export default function NewOrder() {
         total: totals.totale_documento,
         taxableTotal: totals.totale_imponibile,
         vatTotal: totals.totale_iva,
+        orderType: isReservation ? "prenotazione" : "standard",
       });
 
       let order;
@@ -490,13 +682,15 @@ export default function NewOrder() {
       // overwrite it with the UUID when saving the order's Mexal note.
       const noteMexal = `Workspace n. ${order.numero_ordine_visualizzato || order.id}`;
       const linePayload = lines.map((line) => {
-        const quantities = quantitiesForOrderLine(line, availability, confirm);
+        const quantities = quantitiesForOrderLine(line, availability, confirm, { reservation: isReservation, skipAvailability });
         return {
           ordine_id: order.id,
           codice_articolo: line.codice_articolo,
           descrizione: line.descrizione,
           quantita: line.quantita,
-          ...(editingOrderId ? { quantita_ocm: 0, quantita_ocx: 0, quantita_oci: 0 } : quantities),
+          ...(editingOrderId && !confirm
+            ? { quantita_ocm: 0, quantita_ocx: 0, quantita_oci: 0 }
+            : quantities),
           prezzo_listino: line.prezzo_listino,
           codice_iva_mexal: line.codice_iva_mexal || null,
           aliquota_iva: line.aliquota_iva,
@@ -577,11 +771,11 @@ export default function NewOrder() {
   return (
     <div className="orders-page orders-new-order-page">
       <div className="orders-new-header">
-        <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/elenco`)}>
+        <button className="orders-secondary" type="button" onClick={goBack}>
           <ArrowLeft size={18} /> Torna agli ordini
         </button>
         <div>
-          <h2>{editingOrderId ? "Modifica ordine" : "Nuovo ordine"}</h2>
+          <h2>{editingOrderId ? "Modifica ordine" : isReservation ? "Nuovo ordine prenotazione" : "Nuovo ordine"}</h2>
           {editingOrderId && <p>Le ripartizioni saranno ricalcolate dopo una nuova verifica disponibilità.</p>}
         </div>
       </div>
@@ -605,7 +799,7 @@ export default function NewOrder() {
               </span>
             </div>
             <div>
-              <span>Pagamento: {paymentDescription(selectedCustomer)}</span>
+              <span>Pagamento: {paymentDescription(selectedCustomer, paymentRules)}</span>
               <span>Listino: {selectedCustomer.codice_listino || "-"}</span>
               <span>Categoria sconto: {customerDiscountCategory(selectedCustomer) || "-"}</span>
             </div>
@@ -621,13 +815,18 @@ export default function NewOrder() {
                 autoFocus
                 value={customerSearch}
                 disabled={checkingAvailability}
-                onChange={(event) => setCustomerSearch(event.target.value)}
+                onChange={(event) => { setCustomerSearch(event.target.value); setCustomerResultIndex(0); }}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowDown") { event.preventDefault(); moveResultSelection("customer", 1, filteredCustomers); }
+                  else if (event.key === "ArrowUp") { event.preventDefault(); moveResultSelection("customer", -1, filteredCustomers); }
+                  else if (event.key === "Enter" && filteredCustomers[customerResultIndex]) { event.preventDefault(); selectCustomer(filteredCustomers[customerResultIndex]); }
+                }}
                 placeholder="Cerca cliente per codice, ragione sociale, località o P. IVA..."
               />
             </div>
             <div className="orders-picker-results">
-              {filteredCustomers.map((customer) => (
-                <button key={customer.codice_cliente} type="button" disabled={checkingAvailability} onClick={() => selectCustomer(customer)}>
+              {filteredCustomers.map((customer, index) => (
+                <button ref={(node) => { customerResultRefs.current[index] = node; }} className={index === customerResultIndex ? "is-keyboard-active" : ""} aria-selected={index === customerResultIndex} key={customer.codice_cliente} type="button" disabled={checkingAvailability} onMouseEnter={() => setCustomerResultIndex(index)} onClick={() => selectCustomer(customer)}>
                   <strong>{customer.ragione_sociale}</strong>
                   <span>{customer.codice_cliente} · {customer.localita || "-"} ({customer.provincia || "-"})</span>
                 </button>
@@ -639,13 +838,23 @@ export default function NewOrder() {
 
       <section className="orders-panel orders-order-section">
         <h3>2. Prodotti</h3>
+        <div className="orders-product-entry">
         <div className="orders-picker">
           <div className="orders-search">
             <Search size={18} />
             <input
+              ref={productSearchRef}
               value={productSearch}
               disabled={checkingAvailability}
-              onChange={(event) => setProductSearch(event.target.value)}
+              onChange={(event) => { setProductSearch(event.target.value); setProductResultIndex(0); setPendingProduct(null); setPendingQuantity(""); }}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowDown") { event.preventDefault(); moveResultSelection("product", 1, filteredProducts); }
+                else if (event.key === "ArrowUp") { event.preventDefault(); moveResultSelection("product", -1, filteredProducts); }
+                else if ((event.key === "Enter" || event.key === "Tab") && filteredProducts[productResultIndex]) {
+                  event.preventDefault();
+                  void chooseProduct(filteredProducts[productResultIndex]);
+                }
+              }}
               placeholder="Cerca prodotto per codice, descrizione, brand o EAN..."
             />
           </div>
@@ -659,41 +868,57 @@ export default function NewOrder() {
           )}
           {filteredProducts.length > 0 && (
             <div className="orders-picker-results orders-product-results">
-              {filteredProducts.map((product) => {
+              {filteredProducts.map((product, index) => {
                 const code = product.codice_articolo || product.codice_mexal || product.codice;
                 return (
-                  <button key={code} type="button" disabled={checkingAvailability} onClick={() => addProduct(product)}>
-                    <strong>{product.descrizione || product.nome || code}</strong>
-                    <span>{code} · Cat. sconto: {productDiscountCategory(product) || "-"} · Disponibile: {product.disponibilita ?? 0} · {money(product.prezzo_listino || 0)}</span>
+                  <button ref={(node) => { productResultRefs.current[index] = node; }} className={index === productResultIndex ? "is-keyboard-active" : ""} aria-selected={index === productResultIndex} key={code} type="button" disabled={checkingAvailability} onMouseEnter={() => setProductResultIndex(index)} onClick={() => void chooseProduct(product)} onKeyDown={(event) => { if (event.key === "Tab") { event.preventDefault(); void chooseProduct(product); } }}>
+                    <strong>{product.is_impianto ? "IMPIANTO · " : ""}{product.descrizione || product.nome || code}</strong>
+                    <span>{code} · Cat. sconto: {productDiscountCategory(product) || "-"} · {money(product.prezzo_listino || 0)}</span>
                   </button>
                 );
               })}
             </div>
           )}
         </div>
+        <label className="orders-product-quick-quantity">Quantità
+          <input
+            ref={productQuantityRef}
+            type="number"
+            min="1"
+            step="1"
+            value={pendingQuantity}
+            disabled={!pendingProduct || checkingAvailability}
+            onChange={(event) => setPendingQuantity(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === "Tab") {
+                event.preventDefault();
+                confirmPendingProduct();
+              }
+            }}
+          />
+        </label>
+        </div>
 
         <div className="orders-order-lines-wrap">
           <table className="orders-table orders-order-lines">
             <thead>
               <tr>
-                <th>Codice</th><th>Prodotto</th><th>Disponibile</th><th>Quantità</th>
-                <th>Listino</th><th>Sconto commerciale</th><th>Netto</th><th>Imponibile</th><th>IVA</th><th>Totale</th><th>Destinazione</th><th></th>
+                <th>Codice</th><th>Prodotto</th><th>Quantità</th>
+                <th>Listino</th><th>Sconto commerciale</th><th>Netto</th><th>Imponibile</th><th>IVA</th><th>Totale</th><th></th>
               </tr>
             </thead>
             <tbody>
               {lines.map((line) => {
                 const lineTotal = line.totale_riga;
-                const checked = availabilityByCode.get(line.codice_articolo);
-                const destination = checked?.confirmedQuantity > 0 && checked?.missingQuantity > 0 ? "OCM/OCX" : checked?.missingQuantity > 0 ? "OCX" : "OCM";
                 return (
                   <Fragment key={line.codice_articolo}>
                     <tr>
                       <td>{line.codice_articolo}</td>
                       <td>
                         <div>{line.descrizione}</div>
+                        {line.dettaglio_calcolo?.impianto && <small className="orders-kit-line">Impianto {line.dettaglio_calcolo.impianto.codice} · {line.dettaglio_calcolo.impianto.descrizione}</small>}
                         <small>Categoria sconto articolo: {line.dettaglio_calcolo?.categoria_sconto_articolo || productDiscountCategory(line.prodotto_origine) || "-"}</small>
                       </td>
-                      <td>{checked ? checked.availableQuantity ?? "-" : line.disponibilita}</td>
                       <td>
                         <div className="orders-quantity-control">
                           <button type="button" disabled={checkingAvailability} onClick={() => updateLine(line.codice_articolo, "quantita", line.quantita - 1)}><Minus size={15} /></button>
@@ -713,18 +938,17 @@ export default function NewOrder() {
                           {conditionLabel(line)}
                           {expandedLine === line.codice_articolo ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                         </button>
+                        <small className="orders-line-discount">{line.sconto_commerciale || "-"}</small>
                       </td>
-                      <td>{line.sconto_commerciale || "-"}</td>
-                      <td>{money(line.imponibile_riga)}</td>
+                      <td>{money(line.prezzo_netto)}</td>
                       <td>{money(line.imponibile_riga)}</td>
                       <td>{productsMissingVat.some((item) => item.codice_articolo === line.codice_articolo) ? <span className="orders-vat-missing">IVA mancante</span> : <>{money(line.iva_riga)} <small>({line.aliquota_iva}%)</small></>}</td>
                       <td>{money(lineTotal)}</td>
-                      <td><span className={`orders-document-chip ${destination.toLowerCase()}`}>{destination}</span></td>
                       <td><button className="orders-icon-danger" type="button" disabled={checkingAvailability} onClick={() => removeLine(line.codice_articolo)} title="Elimina riga"><Trash2 size={17} /></button></td>
                     </tr>
                     {expandedLine === line.codice_articolo && (
                       <tr className="orders-calculation-row" key={`${line.codice_articolo}-detail`}>
-                        <td colSpan="12">
+                        <td colSpan="10">
                           <div className="orders-calculation-detail">
                             <div><span>Listino cliente</span><strong>{line.dettaglio_calcolo?.codice_listino || "-"}</strong></div>
                             <div><span>Prezzo listino</span><strong>{money(line.prezzo_listino)}</strong></div>
@@ -753,7 +977,19 @@ export default function NewOrder() {
       </section>
 
       <section className="orders-panel orders-order-section">
-        <h3>3. Disponibilità Mexal</h3>
+        <h3>3. Commenti</h3>
+        <textarea
+          className="orders-comments"
+          value={comments}
+          disabled={checkingAvailability}
+          onChange={(event) => setComments(event.target.value)}
+          placeholder="Inserisci eventuali commenti."
+          rows={5}
+        />
+      </section>
+
+      {!isReservation && !skipAvailability && <section className="orders-panel orders-order-section">
+        <h3>4. Disponibilità Mexal</h3>
         {availabilityInvalidated && <div className="orders-alert">Le disponibilità devono essere verificate nuovamente.</div>}
         <button className="orders-primary" type="button" disabled={!canCheckAvailability} onClick={verifyAvailability}>
           {checkingAvailability ? "Verifica disponibilità…" : "VERIFICA DISPONIBILITÀ"}
@@ -774,19 +1010,8 @@ export default function NewOrder() {
             </div>
           </div>
         )}
-      </section>
-
-      <section className="orders-panel orders-order-section">
-        <h3>4. Commenti per la mail</h3>
-        <textarea
-          className="orders-comments"
-          value={comments}
-          disabled={checkingAvailability}
-          onChange={(event) => setComments(event.target.value)}
-          placeholder="Questi commenti saranno salvati in Workspace e inseriti nel corpo della mail. Non saranno sincronizzati con Mexal."
-          rows={5}
-        />
-      </section>
+      </section>}
+      {isReservation && <section className="orders-panel orders-order-section"><h3>4. Ordine prenotazione</h3><div className="orders-alert">Gli articoli saranno inseriti in OCI senza verifica delle giacenze Mexal. Gli articoli IMP saranno inseriti sempre in OCM.</div></section>}
 
       <div className="orders-order-footer">
         <div className="orders-order-total orders-order-total-enhanced">
@@ -796,7 +1021,7 @@ export default function NewOrder() {
           <div className="orders-order-grand-total"><span>TOTALE</span><strong>{money(totals.totale_documento)}</strong></div>
         </div>
         <div className="orders-order-actions">
-          {availability && (
+          {(availability || isReservation || skipAvailability) && (
             <div className="orders-split-summary">
               <strong>L'ordine verrà suddiviso automaticamente in:</strong>
               <span>OCM: {pieces(documentPreviewTotals.ocm)} pezzi (evasione immediata)</span>
@@ -810,7 +1035,7 @@ export default function NewOrder() {
           <button className="orders-primary" type="button" disabled={saving || checkingAvailability || !availabilityValidity.valid || productsMissingVat.length > 0} onClick={() => saveOrder({ confirm: true })}>
             <ShoppingCart size={18} /> {saving ? "Salvataggio..." : "Conferma ordine"}
           </button>
-          {!availabilityValidity.valid && <small className="orders-confirmation-note">{availabilityValidity.reason}</small>}
+          {!isReservation && !skipAvailability && !availabilityValidity.valid && <small className="orders-confirmation-note">{availabilityValidity.reason}</small>}
           {productsMissingVat.length > 0 && <small className="orders-confirmation-note">IVA mancante: {productsMissingVat.map((line) => line.codice_articolo).join(", ")}</small>}
         </div>
       </div>

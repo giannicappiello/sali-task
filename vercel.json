@@ -20,10 +20,14 @@
   "crons": [
     {
       "path": "/api/cron/mexal-dispatcher",
-      "schedule": "0 23 * * *"
+      "schedule": "0 22 * * *"
     }
   ],
   "rewrites": [
+    {
+      "source": "/api/ai/assistant",
+      "destination": "/api/mexal/automation?route=ai"
+    },
     {
       "source": "/((?!api/).*)",
       "destination": "/"

@@ -15,11 +15,14 @@ const eventKeys = ["orders_module_open", "before_new_order", "customer_selected"
 
 function title(value) {
   if (value === "sales_invoices") return "Fatture";
+  if (value === "product_categories") return "Categorie prodotto";
+  if (value === "daily_vercel_hobby") return "Ogni giorno dalle 23:00";
   return String(value || "—").replaceAll("_", " ");
 }
 function blankEventRule() { return { event_key: "manual", sync_type: "products", enabled: false, execution_order: 1, blocking: false, scope: "global" }; }
 function number(value) { return Number(value || 0).toLocaleString("it-IT"); }
 function wait(ms) { return new Promise((resolve) => window.setTimeout(resolve, ms)); }
+function dateTime(value) { return value ? new Date(value).toLocaleString("it-IT") : "Mai"; }
 
 function RuleEditor({ type, rule, onClose, onSave, saving }) {
   const [draft, setDraft] = useState(rule);
@@ -30,7 +33,7 @@ function RuleEditor({ type, rule, onClose, onSave, saving }) {
     <div className="mexal-rule-form-grid">
       {type === "event" && <label className="mexal-rule-field">Evento<select value={draft.event_key} onChange={(event) => setDraft({ ...draft, event_key: event.target.value })}>{eventKeys.map((value) => <option key={value} value={value}>{title(value)}</option>)}</select></label>}
       <label className="mexal-rule-field">Tipo di sincronizzazione<select value={draft.sync_type} onChange={(event) => setDraft({ ...draft, sync_type: event.target.value })}>{syncTypes.map((value) => <option key={value} value={value}>{title(value)}</option>)}</select></label>
-      {type === "schedule" && <label className="mexal-rule-field">Pianificazione<select value={draft.schedule_mode} onChange={(event) => setDraft({ ...draft, schedule_mode: event.target.value })}><option value="daily_vercel_hobby">Giornaliera (Vercel Hobby)</option></select></label>}
+      {type === "schedule" && <label className="mexal-rule-field">Pianificazione<select value={draft.schedule_mode} onChange={(event) => setDraft({ ...draft, schedule_mode: event.target.value })}><option value="daily_vercel_hobby">Ogni giorno dalle 23:00</option></select></label>}
       {type === "event" && <label className="mexal-rule-field">Ambito<select value={draft.scope} onChange={(event) => setDraft({ ...draft, scope: event.target.value })}>{["global", "selected_customer", "selected_product", "current_order", "current_user", "current_warehouse"].map((value) => <option key={value} value={value}>{title(value)}</option>)}</select></label>}
       {field("execution_order", "Ordine di esecuzione", "number")}
       {type === "schedule" && field("batch_size", "Dimensione batch", "number")}
@@ -86,7 +89,7 @@ function RuleSection({ type, rules, onEdit, onToggle, onNew, onRunNow, saving, r
 }
 
 export default function MexalAutomations({ canManage }) {
-  const [rules, setRules] = useState({ schedules: [], events: [] });
+  const [rules, setRules] = useState({ schedules: [], events: [], diagnostics: null });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [runningNow, setRunningNow] = useState(false);
@@ -196,8 +199,28 @@ export default function MexalAutomations({ canManage }) {
   }
 
   if (!canManageMexalAutomations(canManage)) return <section className="mexal-settings-panel"><div className="mexal-empty-state">La gestione delle automazioni è riservata agli amministratori.</div></section>;
+  const heartbeat = rules.diagnostics?.heartbeat;
+  const latestCycle = rules.diagnostics?.latestCycle;
+  const recentJobs = (rules.diagnostics?.jobs || []).filter((job) => !latestCycle?.id || Number(job.cycle_id) === Number(latestCycle.id));
+  const firstJobError = recentJobs.find((job) => job.last_error);
   return <div className="mexal-automations">
     {message && <div className={`mexal-alert alert-${message.type}`}><span>{message.text}</span></div>}
+    <section className="mexal-settings-panel mexal-worker-status">
+      <div className="mexal-section-heading">
+        <div><h3>Stato sincronizzazione automatica</h3><p>Un ciclo al giorno dalle 23:00, ora italiana. Il cron Aruba controlla la coda ogni 10 minuti.</p></div>
+        <span className={`mexal-rule-status ${heartbeat?.last_status === "error" ? "is-inactive" : "is-active"}`}>{heartbeat?.last_status === "error" ? "Errore" : heartbeat?.last_called_at ? "Cron attivo" : "Mai eseguito"}</span>
+      </div>
+      <div className="mexal-rule-form-grid">
+        <div><strong>Ultima chiamata cron</strong><br />{dateTime(heartbeat?.last_called_at)}</div>
+        <div><strong>Ultimo completamento</strong><br />{dateTime(heartbeat?.last_completed_at)}</div>
+        <div><strong>Durata ultima chiamata</strong><br />{heartbeat?.last_duration_ms != null ? `${Math.round(heartbeat.last_duration_ms / 1000)} secondi` : "—"}</div>
+        <div><strong>Passaggi elaborati</strong><br />{number(heartbeat?.last_jobs_processed)}</div>
+        <div><strong>Ultimo ciclo</strong><br />{latestCycle ? `${latestCycle.status} · ${dateTime(latestCycle.scheduled_for)}` : "Nessuno"}</div>
+        <div><strong>Job del ciclo</strong><br />{recentJobs.length ? `${recentJobs.filter((job) => job.status === "completed").length}/${recentJobs.length} completati` : "Nessuno"}</div>
+      </div>
+      {heartbeat?.last_error && <div className="mexal-alert alert-error" style={{ marginTop: 12 }}><span>{heartbeat.last_error}</span></div>}
+      {firstJobError && <div className="mexal-alert alert-warning" style={{ marginTop: 12 }}><span>{firstJobError.sync_type}: {firstJobError.last_error}</span></div>}
+    </section>
     <ProgressPanel run={activeRun} stopping={stopping} onStop={stopCurrentRun} />
     {loading ? <section className="mexal-settings-panel"><div className="mexal-empty-state">Caricamento regole automazione…</div></section> : <>
       <RuleSection type="schedule" rules={rules.schedules} saving={saving} runningNow={runningNow} onRunNow={runCommissionsNow} onEdit={(rule) => setEditor({ type: "schedule", rule })} onToggle={(rule) => save("schedule", { ...rule, enabled: !rule.enabled })} />

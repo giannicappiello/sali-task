@@ -11,7 +11,7 @@ function isVisible(element) {
 
 function getTopWindow() {
   const explicit = [...document.querySelectorAll(
-    '[role="dialog"], .modal-backdrop, .global-search-backdrop, .global-search-modal, .task-modal, .config-modal, .product-modal, .user-modal'
+    '[role="dialog"], .modal-backdrop, .documentation-modal, .global-search-backdrop, .global-search-modal, .task-modal, .config-modal, .product-modal, .user-modal'
   )].filter(isVisible);
   if (explicit.length) return explicit.at(-1);
 

@@ -1,26 +1,29 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Search } from "lucide-react";
+import { Search, Sparkles } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
 import { useOrdersModule } from "../ordersModuleContext";
 import { agentDisplayName, loadAgentNameMap, sortOrdersNewestFirst } from "../services/agentNames";
 import { getOrderDisplayStatus } from "../services/orderDisplayStatus";
+import AIOrderTypeDialog from "../components/AIOrderTypeDialog";
 
 export default function Orders() {
   const { moduleCode, basePath } = useOrdersModule();
   const navigate = useNavigate();
   const location = useLocation();
-  const { loading: accessLoading, visibleAgents, canSeeAll, canAccessOrders, isBackoffice, isAdmin } = useOrdersAccess(moduleCode);
+  const { loading: accessLoading, visibleAgents, canSeeAll, canAccessOrders, canWriteOrders, isBackoffice, isAdmin } = useOrdersAccess(moduleCode);
   const [rows, setRows] = useState([]);
   const [agentsByCode, setAgentsByCode] = useState(new Map());
   const [search, setSearch] = useState("");
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [loading, setLoading] = useState(true);
+  const [aiTypeDialogOpen, setAITypeDialogOpen] = useState(false);
 
-  useEffect(() => {
-    if (!accessLoading) loadOrders();
-  }, [accessLoading, canSeeAll, canAccessOrders, month, JSON.stringify(visibleAgents)]);
+  function openAIOrderImport(type) {
+    setAITypeDialogOpen(false);
+    navigate(`${basePath}/nuovo-da-documento?tipo=${type}`);
+  }
 
   async function loadOrders() {
     setLoading(true);
@@ -81,6 +84,12 @@ export default function Orders() {
     setLoading(false);
   }
 
+  useEffect(() => {
+    if (accessLoading) return undefined;
+    const timer = window.setTimeout(loadOrders, 0);
+    return () => window.clearTimeout(timer);
+  }, [accessLoading, canSeeAll, canAccessOrders, month, JSON.stringify(visibleAgents)]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return rows;
@@ -103,7 +112,8 @@ export default function Orders() {
       <div className="orders-toolbar">
         <div className="orders-search"><Search size={18} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Ricerca rapida ordini..." /></div>
         <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
-        {canAccessOrders && <button className="orders-primary" type="button" onClick={() => navigate(`${basePath}/nuovo`)}>Nuovo ordine</button>}
+        {canWriteOrders && <><button className="orders-primary" type="button" onClick={() => navigate(`${basePath}/nuovo`)}>Nuovo ordine</button><button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/nuovo?tipo=prenotazione`)}>Ordine prenotazione</button></>}
+        <button className="orders-secondary" type="button" onClick={() => setAITypeDialogOpen(true)}><Sparkles size={17} /> Genera con AI</button>
       </div>
       {location.state?.message && <div className="orders-alert orders-alert-success">{location.state.message}</div>}
       <div className="orders-panel">
@@ -137,6 +147,7 @@ export default function Orders() {
         {loading && <p>Caricamento ordini...</p>}
         {!loading && filtered.length === 0 && <p>Nessun ordine nel mese selezionato.</p>}
       </div>
+      <AIOrderTypeDialog open={aiTypeDialogOpen} onClose={() => setAITypeDialogOpen(false)} onSelect={openAIOrderImport} />
     </div>
   );
 }

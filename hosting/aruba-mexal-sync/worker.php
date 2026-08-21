@@ -32,21 +32,21 @@ function requireHttpAuthorization(array $config): void {
     }
 }
 
-function callWorker(array $config): array {
-    $url = rtrim((string)$config['workspace_url'], '/') . '/api/mexal/queue-worker';
+function callWorkspaceEndpoint(array $config, string $path, int $timeout = 280, array $payload = []): array {
+    $url = rtrim((string)$config['workspace_url'], '/') . $path;
     $ch = curl_init($url);
     if ($ch === false) throw new RuntimeException('Impossibile inizializzare HTTPS.');
     curl_setopt_array($ch, [
         CURLOPT_POST => true,
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_CONNECTTIMEOUT => 15,
-        CURLOPT_TIMEOUT => 280,
+        CURLOPT_TIMEOUT => $timeout,
         CURLOPT_HTTPHEADER => [
             'Authorization: Bearer ' . $config['worker_secret'],
             'Content-Type: application/json',
             'X-Worker-Source: aruba',
         ],
-        CURLOPT_POSTFIELDS => '{}',
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_FLAGS),
     ]);
     $body = curl_exec($ch);
     $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
@@ -62,8 +62,9 @@ function callWorker(array $config): array {
 try {
     $config = config();
     requireHttpAuthorization($config);
-    $result = callWorker($config);
-    respond(['status' => 'ok', 'worker' => $result]);
+    $result = callWorkspaceEndpoint($config, '/api/mexal/queue-worker');
+    $notifications = callWorkspaceEndpoint($config, '/api/mexal/automation', 60, ['action' => 'notification_dispatch']);
+    respond(['status' => 'ok', 'worker' => $result, 'notifications' => $notifications]);
 } catch (Throwable $error) {
     error_log('[progre-mexal-sync] ' . $error->getMessage());
     respond(['status' => 'error', 'error' => $error->getMessage()], 500);

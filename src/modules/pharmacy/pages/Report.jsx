@@ -108,7 +108,7 @@ export default function Report({ utente }) {
   });
 
   async function eliminaReport(giornata) {
-    const conferma = window.confirm(
+    const conferma = await window.workspaceConfirm(
       "Vuoi eliminare questo report? La giornata tornerà in stato pianificata."
     );
 

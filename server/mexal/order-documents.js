@@ -19,9 +19,10 @@ export function reconciliationFailure(error, expectedModule, response) {
   return null;
 }
 
-export function classifyOrderLines(lines) {
+export function classifyOrderLines(lines, { reservation = false } = {}) {
   return (lines || []).reduce((documents, line) => {
-    if (isImportArticle(line)) { documents.OCI.push({ ...line, quantita_documento: Number(line.quantita) || 0 }); return documents; }
+    if (isImportArticle(line)) { documents.OCM.push({ ...line, quantita_documento: Number(line.quantita) || 0 }); return documents; }
+    if (reservation) { documents.OCI.push({ ...line, quantita_documento: Number(line.quantita) || 0 }); return documents; }
     for (const kind of ["OCM", "OCX"]) {
       const quantity = Number(line[ORDER_DOCUMENTS[kind].quantityField]) || 0;
       if (quantity > 0) documents[kind].push({ ...line, quantita_documento: quantity });

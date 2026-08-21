@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { ArrowLeft, Download, Play, RefreshCw } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import useBackNavigation from "../../hooks/useBackNavigation";
 import { supabase } from "../../lib/supabaseClient";
 
 async function postDiagnostics(body) {
@@ -22,7 +22,7 @@ function JsonPanel({ title, value }) {
 }
 
 export default function MexalDiagnostics() {
-  const navigate = useNavigate();
+  const goBack = useBackNavigation("/integrations/mexal");
   const { isAdminUser } = useAuth();
   const [leftReference, setLeftReference] = useState("OC+1+16521");
   const [rightReference, setRightReference] = useState("OC+1+16535");
@@ -143,7 +143,7 @@ export default function MexalDiagnostics() {
   if (!isAdminUser) return <div className="orders-empty">Diagnostica Mexal riservata agli amministratori.</div>;
 
   return <div className="settings-page v4-page mexal-diagnostics-page">
-    <div className="page-title-row"><div><button className="secondary-action mexal-diagnostics-back" type="button" onClick={() => navigate("/integrations/mexal")}><ArrowLeft size={18} /> Torna a Mexal ERP</button><h1>Diagnostica Mexal</h1><p>Legge dati reali e individua i campi corretti usati da Mexal.</p></div></div>
+    <div className="page-title-row"><div><button className="secondary-action mexal-diagnostics-back" type="button" onClick={goBack}><ArrowLeft size={18} /> Torna a Mexal ERP</button><h1>Diagnostica Mexal</h1><p>Legge dati reali e individua i campi corretti usati da Mexal.</p></div></div>
 
     <section className="panel settings-panel">
       <div className="panel-header"><h3>Leggi ordine manuale per la destinazione</h3></div>

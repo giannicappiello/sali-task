@@ -1,4 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
+import { runAutomaticProgremesModuleSync } from "../../server/progremes-modules.js";
+import { runAutomaticTimeLearningScan } from "../../server/ai/assistant.js";
 
 const TIMEZONE = "Europe/Rome";
 const SCHEDULE_MODE = "daily_vercel_hobby";
@@ -225,6 +227,7 @@ export default async function handler(req, res) {
   if (!isCronAuthorized(req)) return res.status(401).json({ error: "Cron non autorizzato." });
 
   try {
+    const workerSecret = required("WORKER_SECRET");
     const admin = createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), {
       auth: { persistSession: false, autoRefreshToken: false },
     });
@@ -232,7 +235,36 @@ export default async function handler(req, res) {
       p_scheduled_for: new Date().toISOString(),
     });
     if (error) throw error;
-    return res.status(200).json(data);
+    let progremes;
+    try {
+      progremes = await runAutomaticProgremesModuleSync(admin);
+    } catch (progremesError) {
+      progremes = { due: true, error: progremesError?.message || "Sincronizzazione ProgreMES non riuscita." };
+    }
+    let autoplanning;
+    try {
+      autoplanning = await runAutomaticTimeLearningScan();
+    } catch (autoplanningError) {
+      autoplanning = { error: autoplanningError?.message || "Verifica automatica dei tempi non riuscita." };
+    }
+
+    const protocol = String(req.headers["x-forwarded-proto"] || "https").split(",")[0].trim();
+    const host = req.headers["x-forwarded-host"] || req.headers.host;
+    const workerResponse = await fetch(`${protocol}://${host}/api/mexal/queue-worker`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${workerSecret}`,
+        "Content-Type": "application/json",
+        "X-Worker-Source": "vercel-cron",
+      },
+      body: "{}",
+    });
+    const workerPayload = await workerResponse.json().catch(() => ({}));
+    if (!workerResponse.ok) {
+      throw new Error(workerPayload?.error || `Avvio worker Mexal non riuscito (HTTP ${workerResponse.status}).`);
+    }
+
+    return res.status(200).json({ scheduler: data, worker: workerPayload, progremes, autoplanning });
   } catch (error) {
     return res.status(500).json({ error: error?.message || "Creazione coda Mexal non riuscita." });
   }

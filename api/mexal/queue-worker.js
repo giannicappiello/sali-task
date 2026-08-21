@@ -1,6 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
+import { runAutomaticDocumentSync } from "../../server/document-api.js";
+import { checkAndRecordInfrastructureHealth } from "../../server/infrastructure-health.js";
 
 const LEASE_SECONDS = 300;
+const MAX_WORKER_DURATION_MS = 235000;
+const MAX_STEPS_PER_CALL = 30;
 
 function required(name) {
   const value = String(globalThis.process?.env?.[name] || "").trim();
@@ -30,6 +34,7 @@ async function rpc(admin, name, parameters) {
 async function callAutomation(req, job, secret) {
   const protocol = String(req.headers["x-forwarded-proto"] || "https").split(",")[0].trim();
   const host = req.headers["x-forwarded-host"] || req.headers.host;
+  const restartMissingRun = ["products", "stocks"].includes(job.sync_type) && !job.sync_run_id;
   const response = await fetch(`${protocol}://${host}/api/mexal/automation`, {
     method: "POST",
     headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
@@ -37,7 +42,7 @@ async function callAutomation(req, job, secret) {
       action: "run_scheduled_step",
       syncType: job.sync_type,
       syncRunId: job.sync_run_id || null,
-      offset: Number(job.offset || 0),
+      offset: restartMissingRun ? 0 : Number(job.offset || 0),
       batchSize: job.batch_size || undefined,
       origin: "worker",
       context: { cycle_id: job.cycle_id, job_id: job.id, schedule_id: job.schedule_id },
@@ -98,52 +103,113 @@ export default async function handler(req, res) {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const workerId = `aruba-mexal:${crypto.randomUUID()}`;
-  let job;
+  const startedAt = Date.now();
+  const processed = [];
+  let activeJob;
   try {
+    await admin.from("mexal_worker_heartbeat").upsert({
+      id: 1,
+      last_called_at: new Date().toISOString(),
+      last_status: "running",
+      last_error: null,
+      updated_at: new Date().toISOString(),
+    });
     await rpc(admin, "recover_expired_mexal_sync_jobs", {});
     await resumeBlockedCycles(admin);
-    await rpc(admin, "create_daily_mexal_sync_cycle", { p_scheduled_for: new Date().toISOString() });
-    job = asJob(await rpc(admin, "claim_next_mexal_sync_job", {
-      p_worker_id: workerId,
-      p_lease_seconds: LEASE_SECONDS,
-    }));
-    if (!job) return res.status(200).json({ status: "idle" });
-
-    const lockToken = String(job.lock_token || "");
-    await rpc(admin, "heartbeat_mexal_sync_job", {
-      p_job_id: job.id, p_worker_id: workerId, p_lock_token: lockToken,
-    });
-    const result = await callAutomation(req, job, automationSecret);
-    if (completed(result)) {
-      await rpc(admin, "complete_mexal_sync_job", {
-        p_job_id: job.id, p_worker_id: workerId, p_lock_token: lockToken, p_result: result,
-      });
-      return res.status(200).json({ status: "completed", job_id: job.id, sync_type: job.sync_type });
+    let infrastructureHealth;
+    try {
+      infrastructureHealth = await checkAndRecordInfrastructureHealth(admin);
+    } catch (monitorError) {
+      infrastructureHealth = {
+        status: "error",
+        error: monitorError?.message || "Controllo infrastruttura non riuscito.",
+      };
+      console.error("Infrastructure health monitor failed", infrastructureHealth);
     }
-    await rpc(admin, "retry_mexal_sync_job", {
-      p_job_id: job.id,
-      p_worker_id: workerId,
-      p_lock_token: lockToken,
-      p_error: null,
-      p_offset: integer(result.nextOffset ?? result.prossimo_offset ?? job.offset),
-      p_sync_run_id: null,
-      p_result: result,
-      p_is_failure: false,
-    });
-    return res.status(200).json({ status: "progress", job_id: job.id, sync_type: job.sync_type });
-  } catch (error) {
-    if (job?.id && job?.lock_token) {
-      await admin.rpc("retry_mexal_sync_job", {
-        p_job_id: job.id,
+    const producer = await rpc(admin, "create_daily_mexal_sync_cycle", { p_scheduled_for: new Date().toISOString() });
+    let documentSync = { status: "not_checked" };
+    try {
+      documentSync = await runAutomaticDocumentSync(admin);
+    } catch (documentError) {
+      documentSync = { status: "error", error: documentError?.message || "Sincronizzazione documentale non riuscita." };
+    }
+
+    while (processed.length < MAX_STEPS_PER_CALL && Date.now() - startedAt < MAX_WORKER_DURATION_MS) {
+      activeJob = asJob(await rpc(admin, "claim_next_mexal_sync_job", {
         p_worker_id: workerId,
-        p_lock_token: job.lock_token,
+        p_lease_seconds: LEASE_SECONDS,
+      }));
+      if (!activeJob) break;
+
+      const lockToken = String(activeJob.lock_token || "");
+      await rpc(admin, "heartbeat_mexal_sync_job", {
+        p_job_id: activeJob.id, p_worker_id: workerId, p_lock_token: lockToken,
+      });
+      const result = await callAutomation(req, activeJob, automationSecret);
+      if (completed(result)) {
+        await rpc(admin, "complete_mexal_sync_job", {
+          p_job_id: activeJob.id, p_worker_id: workerId, p_lock_token: lockToken, p_result: result,
+        });
+        processed.push({ job_id: activeJob.id, sync_type: activeJob.sync_type, status: "completed" });
+      } else {
+        const nextSyncRunId = integer(result.sync_run_id ?? result.syncRunId ?? result.runId ?? result.details?.syncRunId);
+        await rpc(admin, "retry_mexal_sync_job", {
+          p_job_id: activeJob.id,
+          p_worker_id: workerId,
+          p_lock_token: lockToken,
+          p_error: null,
+          p_offset: integer(result.nextOffset ?? result.prossimo_offset ?? activeJob.offset),
+          p_sync_run_id: nextSyncRunId,
+          p_result: result,
+          p_is_failure: false,
+        });
+        processed.push({ job_id: activeJob.id, sync_type: activeJob.sync_type, status: "progress" });
+      }
+      activeJob = null;
+    }
+
+    const duration = Date.now() - startedAt;
+    const status = processed.length ? "completed_steps" : producer?.status === "waiting" ? "waiting_2300" : "idle";
+    await admin.from("mexal_worker_heartbeat").upsert({
+      id: 1,
+      last_completed_at: new Date().toISOString(),
+      last_status: status,
+      last_error: null,
+      last_duration_ms: duration,
+      last_jobs_processed: processed.length,
+      updated_at: new Date().toISOString(),
+    });
+    return res.status(200).json({
+      status,
+      producer,
+      documentSync,
+      infrastructureHealth,
+      steps: processed.length,
+      processed,
+      duration_ms: duration,
+    });
+  } catch (error) {
+    if (activeJob?.id && activeJob?.lock_token) {
+      await admin.rpc("retry_mexal_sync_job", {
+        p_job_id: activeJob.id,
+        p_worker_id: workerId,
+        p_lock_token: activeJob.lock_token,
         p_error: error?.message || "Errore worker Mexal.",
-        p_offset: job.offset,
+        p_offset: activeJob.offset,
         p_sync_run_id: null,
         p_result: {},
         p_is_failure: true,
       });
     }
+    await admin.from("mexal_worker_heartbeat").upsert({
+      id: 1,
+      last_completed_at: new Date().toISOString(),
+      last_status: "error",
+      last_error: error?.message || "Worker Mexal non riuscito.",
+      last_duration_ms: Date.now() - startedAt,
+      last_jobs_processed: processed.length,
+      updated_at: new Date().toISOString(),
+    });
     return res.status(502).json({ status: "error", error: error?.message || "Worker Mexal non riuscito." });
   }
 }

@@ -130,7 +130,7 @@ export default function OrdersAccessSettings({ canManage }) {
     const [usersRes, integrationsRes] = await Promise.all([
       supabase
         .from("utenti")
-        .select("id,auth_user_id,nome,cognome,email,attivo,ruoli(id,nome,livello)")
+        .select("id,auth_user_id,nome,cognome,email,attivo,ruoli(id,nome,amministratore_workspace)")
         .order("nome", { ascending: true }),
       supabase
         .from("integrazioni_utenti")

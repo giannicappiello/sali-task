@@ -1,0 +1,18 @@
+export const ORDER_CUSTOMER_COLUMNS = [
+  "codice_cliente",
+  "ragione_sociale",
+  "partita_iva",
+  "indirizzo",
+  "cap",
+  "localita",
+  "provincia",
+  "telefono",
+  "email",
+  "codice_pagamento",
+  "codice_listino",
+  "categoria_sconti",
+  "categoria_sconto_cliente",
+  "categoria_statistica_cliente",
+  "codice_agente_mexal",
+  "attivo_mexal",
+].join(",");

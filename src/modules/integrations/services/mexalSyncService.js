@@ -133,8 +133,9 @@ export async function loadMexalRuns(type, limit = 1) {
 }
 
 export async function loadMexalEntityCounts() {
-  const [products, clients, stocks, orders, listPriceCommissions, salesInvoices, latestInvoice] = await Promise.all([
+  const [products, productCategories, clients, stocks, orders, listPriceCommissions, salesInvoices, latestInvoice] = await Promise.all([
     supabase.from("ordini_prodotti_cache").select("*", { count: "exact", head: true }).eq("mostra_in_app", true),
+    supabase.from("mexal_categorie_prodotti").select("*", { count: "exact", head: true }).eq("attiva", true),
     supabase.from("ordini_clienti_cache").select("*", { count: "exact", head: true }).eq("attivo_mexal", true),
     supabase.from("prodotti").select("*", { count: "exact", head: true }).not("ultimo_sync_mexal", "is", null),
     supabase.from("ordini_testate").select("*", { count: "exact", head: true }).eq("stato_sincronizzazione", "non_inviato"),
@@ -144,6 +145,7 @@ export async function loadMexalEntityCounts() {
   ]);
   return {
     products: products.error ? null : products.count || 0,
+    productCategories: productCategories.error ? null : productCategories.count || 0,
     clients: clients.error ? null : clients.count || 0,
     stocks: stocks.error ? null : stocks.count || 0,
     orders: orders.error ? null : orders.count || 0,

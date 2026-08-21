@@ -57,9 +57,9 @@ function formatDate(value) {
 
 export default function Agenda() {
   const [params, setParams] = useSearchParams();
-  const { profile, hasPermission, isAdmin } = useAuth();
-  const adminMode = Boolean(isAdmin?.() || hasPermission?.("agenda.read.all"));
-  const canWriteAgenda = Boolean(hasPermission?.("agenda.write") || adminMode);
+  const { profile, isAdmin, canUseModule, dataScope, canViewScopedData } = useAuth();
+  const adminMode = Boolean(isAdmin?.() || dataScope?.mode === "tutti");
+  const canWriteAgenda = Boolean(canUseModule("attivita", "scrittura", "self") || adminMode);
 
   const [query, setQuery] = useState("");
   const [selectedUserId, setSelectedUserId] = useState("all");
@@ -83,14 +83,17 @@ export default function Agenda() {
 
   useEffect(() => {
     loadData();
-  }, [profile?.id, adminMode]);
+  }, [profile?.id, adminMode, dataScope?.mode, dataScope?.userIds?.join(","), dataScope?.departmentIds?.join(",")]);
 
   useEffect(() => {
-    if (selected?.id) loadDetail(selected.id);
-    else {
-      setComments([]);
-      setAttachments([]);
-    }
+    const timer = window.setTimeout(() => {
+      if (selected?.id) loadDetail(selected.id);
+      else {
+        setComments([]);
+        setAttachments([]);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [selected?.id]);
 
   useEffect(() => {
@@ -106,10 +109,11 @@ export default function Agenda() {
     const found = reminders.find((item) => item.id === reminderId);
     if (!found) return;
 
-    setSelected(found);
-    if (params.get("edit") === "1") {
-      openEdit(found);
-    }
+    const timer = window.setTimeout(() => {
+      setSelected(found);
+      if (params.get("edit") === "1") openEdit(found);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [params, reminders]);
 
   function userName(userId) {
@@ -121,14 +125,12 @@ export default function Agenda() {
     if (!profile?.id) return;
     setLoading(true);
 
-    const userDepartmentIds = profile?.reparto_ids || [];
-
     let reminderQuery = supabase.from("agenda_reminder").select("*");
 
     const [remRes, prodRes, projRes, projectDepartmentsRes, usersRes, departmentsRes, reminderDepartmentsRes, reminderProductsRes] = await Promise.all([
       reminderQuery.order("deadline", { ascending: true, nullsFirst: false }),
       supabase.from("prodotti").select("id,nome,codice,attivo").order("nome").limit(5000),
-      supabase.from("v4_progetti").select("id,titolo").order("created_at", { ascending: false }).limit(500),
+      supabase.from("v4_progetti").select("id,titolo,creato_da").order("created_at", { ascending: false }).limit(500),
       supabase.from("v4_progetto_reparti").select("progetto_id,reparto_id"),
       supabase.from("utenti").select("id,nome,cognome,email,attivo").order("nome"),
       supabase.from("reparti").select("id,nome,attivo").order("nome"),
@@ -147,32 +149,28 @@ export default function Agenda() {
 
     const allProjects = projRes.data || [];
     const projectDepartments = projectDepartmentsRes.data || [];
-    const visibleProjects = adminMode
-      ? allProjects
-      : allProjects.filter((project) => {
+    const visibleProjects = allProjects.filter((project) => {
           const deps = projectDepartments
             .filter((row) => row.progetto_id === project.id)
             .map((row) => row.reparto_id)
             .filter(Boolean);
-          return deps.length === 0 || deps.some((id) => userDepartmentIds.includes(id));
+          return canViewScopedData({ ownerId: project.creato_da, departmentIds: deps });
         });
 
     const allReminderDepartments = reminderDepartmentsRes.data || [];
     const allReminderProducts = reminderProductsRes.data || [];
-    const visibleReminders = adminMode
-      ? (remRes.data || [])
-      : (remRes.data || []).filter((item) => {
-          if (item.utente_id === profile.id) return true;
+    const visibleReminders = (remRes.data || []).filter((item) => {
           const ids = allReminderDepartments.filter((row) => row.reminder_id === item.id).map((row) => row.reparto_id).filter(Boolean);
-          return ids.some((id) => userDepartmentIds.includes(id));
+          return canViewScopedData({ ownerId: item.utente_id, departmentIds: ids });
         });
     const visibleReminderIds = new Set(visibleReminders.map((item) => item.id));
+    const selectableDepartmentIds = new Set([...(profile?.reparto_ids || []), ...(dataScope?.departmentIds || [])]);
 
     setReminders(visibleReminders);
     setProducts((prodRes.data || []).filter((item) => item.attivo !== false));
     setProjects(visibleProjects);
-    setUsers((usersRes.data || []).filter((item) => item.attivo !== false));
-    setDepartments((departmentsRes.data || []).filter((item) => item.attivo !== false));
+    setUsers((usersRes.data || []).filter((item) => item.attivo !== false && (dataScope?.mode === "tutti" || dataScope?.userIds?.includes(item.id))));
+    setDepartments((departmentsRes.data || []).filter((item) => item.attivo !== false && (dataScope?.mode === "tutti" || selectableDepartmentIds.has(item.id))));
     setReminderDepartments(allReminderDepartments.filter((row) => visibleReminderIds.has(row.reminder_id)));
     setReminderProducts(allReminderProducts.filter((row) => visibleReminderIds.has(row.reminder_id)));
     setLoading(false);
@@ -402,7 +400,7 @@ export default function Agenda() {
 
   async function deleteReminder(item) {
     if (!canEditReminder(item)) return alert("Non hai i permessi per eliminare questo reminder.");
-    if (!confirm("Eliminare questo reminder?\n\nVerranno eliminati anche commenti, allegati e file collegati.")) return;
+    if (!await window.workspaceConfirm("Eliminare questo reminder?\n\nVerranno eliminati anche commenti, allegati e file collegati.")) return;
 
     const { data: files, error: filesError } = await supabase
       .from("agenda_allegati")

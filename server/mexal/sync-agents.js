@@ -1,5 +1,6 @@
 import https from "node:https";
 import { createClient } from "@supabase/supabase-js";
+import { requirePermission } from "./lib/auth.js";
 import { completeSyncRun, createSyncRun, failSyncRunUnlessClosed } from "./lib/syncRuns.js";
 
 const AGENT_PREFIX = "602";
@@ -82,13 +83,7 @@ async function requireAuthorized(req, admin) {
   const authorization = req.headers.authorization || "";
   if (process.env.CRON_SECRET && authorization === `Bearer ${process.env.CRON_SECRET}`) return;
   if (!authorization.startsWith("Bearer ")) throw Object.assign(new Error("Sessione mancante."), { status: 401 });
-  const { data: authData, error: authError } = await admin.auth.getUser(authorization.slice(7));
-  if (authError || !authData?.user) throw Object.assign(new Error("Sessione non valida."), { status: 401 });
-  const { data: profile, error } = await admin.from("utenti").select("attivo,ruoli(nome,livello)").eq("auth_user_id", authData.user.id).maybeSingle();
-  const name = upper(profile?.ruoli?.nome);
-  if (error || !profile || profile.attivo === false || !(Number(profile.ruoli?.livello || 0) >= 80 || ["ADMIN", "ADMINISTRATOR", "AMMINISTRATORE", "SUPER ADMIN", "DIREZIONE"].includes(name))) {
-    throw Object.assign(new Error("Sincronizzazione agenti riservata agli amministratori."), { status: 403 });
-  }
+  await requirePermission(req, admin, "integrations.sync.agents");
 }
 
 function splitName(row) {

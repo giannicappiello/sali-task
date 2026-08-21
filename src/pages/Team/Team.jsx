@@ -43,40 +43,57 @@ function Team() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [profile?.id]);
 
   async function loadData() {
     setLoading(true);
 
+    const visibilityPromise = supabase.rpc("visible_workspace_team_user_ids");
+    const rolesPromise = supabase
+      .from("ruoli")
+      .select("id, nome, amministratore_workspace")
+      .order("nome");
+    const departmentsPromise = supabase
+      .from("reparti")
+      .select("id, nome")
+      .eq("attivo", true)
+      .order("nome");
+
+    const visibilityRes = await visibilityPromise;
+    if (visibilityRes.error) {
+      console.error("Errore visibilità Team:", visibilityRes.error);
+    }
+    const visibleUserIds = visibilityRes.error
+      ? [profile?.id].filter(Boolean)
+      : [...new Set((visibilityRes.data || []).filter(Boolean))];
+
+    let usersQuery = supabase
+      .from("utenti")
+      .select(`
+        id,
+        auth_user_id,
+        nome,
+        cognome,
+        email,
+        telefono,
+        avatar_url,
+        attivo,
+        ultimo_accesso,
+        created_at,
+        reparto_id,
+        ruolo_id,
+        reparti(id, nome),
+        ruoli(id, nome, amministratore_workspace)
+      `)
+      .order("nome");
+    usersQuery = visibleUserIds.length
+      ? usersQuery.in("id", visibleUserIds)
+      : usersQuery.eq("id", profile?.id || "00000000-0000-0000-0000-000000000000");
+
     const [utentiRes, ruoliRes, repartiRes] = await Promise.all([
-      supabase
-        .from("utenti")
-        .select(`
-          id,
-          auth_user_id,
-          nome,
-          cognome,
-          email,
-          telefono,
-          avatar_url,
-          attivo,
-          ultimo_accesso,
-          created_at,
-          reparto_id,
-          ruolo_id,
-          reparti(id, nome),
-          ruoli(id, nome, livello)
-        `)
-        .order("nome"),
-      supabase
-        .from("ruoli")
-        .select("id, nome, livello")
-        .order("livello", { ascending: false }),
-      supabase
-        .from("reparti")
-        .select("id, nome")
-        .eq("attivo", true)
-        .order("nome"),
+      usersQuery,
+      rolesPromise,
+      departmentsPromise,
     ]);
 
     if (utentiRes.error) {
@@ -233,7 +250,7 @@ function Team() {
 
     const action = user.attivo ? "disattivare" : "riattivare";
     const fullName = getFullName(user) || user.email;
-    const confirmed = window.confirm(`Vuoi ${action} ${fullName}?`);
+    const confirmed = await window.workspaceConfirm(`Vuoi ${action} ${fullName}?`);
 
     if (!confirmed) return;
 
@@ -274,7 +291,7 @@ function Team() {
     }
 
     const fullName = getFullName(user) || user.email;
-    const confirmed = window.confirm(
+    const confirmed = await window.workspaceConfirm(
       `Vuoi eliminare ${fullName}?\n\nL'utente verrà eliminato da sali-task e, se collegato, anche dalle anagrafiche Utenti/Beauty/Agenti di Beauty Days. Le giornate e le richieste di contatto resteranno archiviate.`
     );
 

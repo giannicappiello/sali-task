@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Building2,
+  Check,
   Download,
   MessageCircle,
   Paperclip,
@@ -8,18 +10,29 @@ import {
   Send,
   Trash2,
   User,
+  UsersRound,
   X,
   RefreshCw,
 } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
+import { clearConversationPushNotifications, dispatchMessagePush } from "../../lib/pushNotifications";
 import { useAuth } from "../../contexts/AuthContext";
+import { useSearchParams } from "react-router-dom";
 import "./Messages.css";
 
 function Messages() {
-  const { profile, isAdmin } = useAuth();
+  const { profile, isAdmin, canUseModule } = useAuth();
   const adminMode = Boolean(isAdmin?.());
+  // L'invio personale è una funzione di base del Workspace per ogni utente autenticato.
+  const canWriteMessages = Boolean(profile?.id);
+  // L'amministratore conserva sempre tutte le funzioni operative, anche se il
+  // livello del modulo non è ancora stato configurato nel relativo profilo.
+  const canOrganizeDepartmentChats = adminMode || canUseModule("messaggi", "scrittura");
+  const canManageMessages = canUseModule("messaggi", "amministrazione");
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [utenti, setUtenti] = useState([]);
+  const [reparti, setReparti] = useState([]);
   const [conversations, setConversations] = useState([]);
   const [messages, setMessages] = useState([]);
   const [attachmentsByMessage, setAttachmentsByMessage] = useState({});
@@ -30,7 +43,10 @@ function Messages() {
   const [pendingFiles, setPendingFiles] = useState([]);
 
   const [newChatOpen, setNewChatOpen] = useState(false);
+  const [newChatType, setNewChatType] = useState("direct");
   const [selectedUserId, setSelectedUserId] = useState("");
+  const [groupTitle, setGroupTitle] = useState("");
+  const [selectedDepartmentIds, setSelectedDepartmentIds] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [messagesLoading, setMessagesLoading] = useState(false);
@@ -38,11 +54,39 @@ function Messages() {
   const [creatingChat, setCreatingChat] = useState(false);
 
   const bottomRef = useRef(null);
+  const realtimeRefreshRef = useRef(null);
 
   useEffect(() => {
     if (!profile?.id) return;
     loadInitialData();
   }, [profile?.id, adminMode]);
+
+  useEffect(() => {
+    if (!profile?.id) return undefined;
+    const refreshFromRealtime = (change) => {
+      window.clearTimeout(realtimeRefreshRef.current);
+      realtimeRefreshRef.current = window.setTimeout(async () => {
+        await loadConversations(false);
+        const conversationId = change?.new?.conversazione_id || change?.old?.conversazione_id;
+        if (conversationId && selectedConversation?.id === conversationId) {
+          await loadMessages(conversationId);
+          if (change.eventType === "INSERT" && change.new?.mittente_id !== profile.id) {
+            await markConversationAsRead(conversationId);
+          }
+        }
+      }, 80);
+    };
+    const channel = supabase
+      .channel(`chat-workspace-${profile.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "chat_messaggi" }, refreshFromRealtime)
+      .on("postgres_changes", { event: "*", schema: "public", table: "chat_conversazioni" }, refreshFromRealtime)
+      .on("postgres_changes", { event: "*", schema: "public", table: "chat_partecipanti" }, refreshFromRealtime)
+      .subscribe();
+    return () => {
+      window.clearTimeout(realtimeRefreshRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.id, selectedConversation?.id]);
 
   useEffect(() => {
     if (!selectedConversation?.id) return;
@@ -67,6 +111,29 @@ function Messages() {
           await markConversationAsRead(selectedConversation.id);
         }
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "chat_partecipanti",
+          filter: `conversazione_id=eq.${selectedConversation.id}`,
+        },
+        (change) => {
+          setSelectedConversation((current) => {
+            if (!current || current.id !== selectedConversation.id) return current;
+            return {
+              ...current,
+              participants: (current.participants || []).map((participant) => (
+                participant.utente_id === change.new.utente_id
+                  ? { ...participant, ultimo_letto_il: change.new.ultimo_letto_il }
+                  : participant
+              )),
+            };
+          });
+          loadConversations(false);
+        }
+      )
       .subscribe();
 
     return () => {
@@ -80,16 +147,21 @@ function Messages() {
 
   async function loadInitialData() {
     setLoading(true);
-    await Promise.all([loadUsers(), loadConversations(true)]);
+    await Promise.all([loadUsers(), loadDepartments(), loadConversations(true)]);
     setLoading(false);
   }
 
   async function loadUsers() {
-    const { data, error } = await supabase
-      .from("utenti")
-      .select("id, nome, cognome, email, attivo, ruoli(nome), reparti(nome)")
-      .eq("attivo", true)
-      .order("nome");
+    const [{ data, error }, { data: assignments, error: assignmentsError }] = await Promise.all([
+      supabase
+        .from("utenti")
+        .select("id, nome, cognome, email, attivo, reparto_id, ruoli(nome), reparti(nome)")
+        .eq("attivo", true)
+        .order("nome"),
+      supabase
+        .from("utenti_reparti")
+        .select("utente_id,reparto_id"),
+    ]);
 
     if (error) {
       console.error("Errore caricamento utenti:", error);
@@ -97,13 +169,43 @@ function Messages() {
       return;
     }
 
-    setUtenti((data || []).filter((utente) => utente.id !== profile?.id));
+    if (assignmentsError) {
+      console.error("Errore caricamento assegnazioni reparti:", assignmentsError);
+    }
+
+    const assignmentsByUser = new Map();
+    (assignments || []).forEach((assignment) => {
+      const current = assignmentsByUser.get(assignment.utente_id) || [];
+      current.push(assignment);
+      assignmentsByUser.set(assignment.utente_id, current);
+    });
+
+    setUtenti((data || []).map((utente) => ({
+      ...utente,
+      utenti_reparti: assignmentsByUser.get(utente.id) || [],
+    })));
+  }
+
+  async function loadDepartments() {
+    const { data, error } = await supabase
+      .from("reparti")
+      .select("id,nome")
+      .eq("attivo", true)
+      .order("nome");
+
+    if (error) {
+      console.error("Errore caricamento reparti:", error);
+      setReparti([]);
+      return;
+    }
+
+    setReparti(data || []);
   }
 
   async function loadConversations(selectFirst = false) {
     if (!profile?.id) return;
 
-    let memberships = [];
+    let memberships;
 
     if (adminMode) {
       const { data: allConversations, error: conversationsError } = await supabase
@@ -182,6 +284,7 @@ function Messages() {
           .select(`
             conversazione_id,
             utente_id,
+            ultimo_letto_il,
             utenti(id, nome, cognome, email, avatar_url)
           `)
           .in("conversazione_id", conversationIds),
@@ -246,8 +349,14 @@ function Messages() {
     });
 
     setConversations(mapped);
+    const requestedConversationId = searchParams.get("conversation");
+    const requestedConversation = requestedConversationId
+      ? mapped.find((item) => item.id === requestedConversationId)
+      : null;
 
-    if (selectFirst && mapped.length > 0 && !selectedConversation) {
+    if (requestedConversation) {
+      setSelectedConversation(requestedConversation);
+    } else if (selectFirst && mapped.length > 0 && !selectedConversation) {
       setSelectedConversation(mapped[0]);
     } else if (selectedConversation) {
       const refreshedSelected = mapped.find((item) => item.id === selectedConversation.id);
@@ -312,11 +421,17 @@ function Messages() {
     return;
   }
 
+  const { error: clearError } = await supabase.rpc("chat_clear_read_notifications", {
+    p_conversazione_id: conversationId,
+  });
+  if (clearError) console.error("Errore pulizia notifiche chat:", clearError);
+  await clearConversationPushNotifications(conversationId);
   window.dispatchEvent(new CustomEvent("chat-read-updated"));
+  window.dispatchEvent(new CustomEvent("workspace:notifications-changed"));
 }
 
-async function refreshChat() {
-  await loadUsers();
+  async function refreshChat() {
+  await Promise.all([loadUsers(), loadDepartments()]);
   await loadConversations(false);
 
   if (selectedConversation?.id) {
@@ -325,19 +440,96 @@ async function refreshChat() {
   }
 }
 
+  async function deleteConversation() {
+    if (!selectedConversation?.id) return;
+    const confirmed = await window.workspaceConfirm(`Eliminare definitivamente la chat con ${selectedTitle}? Verranno eliminati anche messaggi e allegati.`);
+    if (!confirmed) return;
+    const conversationId = selectedConversation.id;
+    const { error } = await supabase.rpc("chat_elimina_conversazione", {
+      p_conversazione_id: conversationId,
+    });
+    if (error) {
+      await window.workspaceAlert(error.message || "Impossibile eliminare la chat.");
+      return;
+    }
+    setSelectedConversation(null);
+    setMessages([]);
+    setAttachmentsByMessage({});
+    setSearchParams({});
+    await loadConversations(false);
+    window.dispatchEvent(new CustomEvent("workspace:notifications-changed"));
+  }
+
+  async function deleteMessage(message) {
+    const confirmed = await window.workspaceConfirm("Eliminare definitivamente questo messaggio?");
+    if (!confirmed) return;
+    const { error } = await supabase.rpc("chat_elimina_messaggio", {
+      p_messaggio_id: message.id,
+    });
+    if (error) {
+      await window.workspaceAlert(error.message || "Impossibile eliminare il messaggio.");
+      return;
+    }
+    setMessages((current) => current.filter((item) => item.id !== message.id));
+    setAttachmentsByMessage((current) => {
+      const next = { ...current };
+      delete next[message.id];
+      return next;
+    });
+    await loadConversations(false);
+  }
+
   async function createConversation(e) {
     e.preventDefault();
+    if (newChatType === "group" && !canOrganizeDepartmentChats) {
+      alert("Il ruolo non consente di organizzare chat di reparto.");
+      return;
+    }
 
-    if (!selectedUserId) {
+    if (newChatType === "direct" && !selectedUserId) {
       alert("Seleziona un destinatario.");
       return;
     }
 
+    if (newChatType === "group" && !groupTitle.trim()) {
+      alert("Inserisci il nome della chat di gruppo.");
+      return;
+    }
+
+    if (newChatType === "group" && selectedDepartmentIds.length === 0) {
+      alert("Seleziona almeno un reparto.");
+      return;
+    }
+
+    const creatingGroup = newChatType === "group";
+    const createdGroupTitle = groupTitle.trim();
+    const createdGroupMembers = creatingGroup
+      ? selectedDepartmentMembers.map((utente) => ({
+          conversazione_id: null,
+          utente_id: utente.id,
+          ultimo_letto_il: null,
+          utenti: utente,
+        }))
+      : [];
+    if (creatingGroup && !createdGroupMembers.some((participant) => participant.utente_id === profile.id)) {
+      createdGroupMembers.push({
+        conversazione_id: null,
+        utente_id: profile.id,
+        ultimo_letto_il: null,
+        utenti: profile,
+      });
+    }
+
     setCreatingChat(true);
 
-    const { data: conversationId, error } = await supabase.rpc("chat_create_direct", {
-      p_other_user_id: selectedUserId,
-    });
+    const { data: conversationId, error } = creatingGroup
+      ? await supabase.rpc("chat_create_department_group", {
+          p_titolo: groupTitle.trim(),
+          p_reparto_ids: selectedDepartmentIds,
+        })
+      : await supabase.rpc("chat_create_direct", {
+          p_other_user_id: selectedUserId,
+        });
 
     setCreatingChat(false);
 
@@ -349,6 +541,10 @@ async function refreshChat() {
 
     setNewChatOpen(false);
     setSelectedUserId("");
+    setGroupTitle("");
+    setSelectedDepartmentIds([]);
+    setNewChatType("direct");
+    setSearchParams({ conversation: conversationId });
 
     await loadConversations(false);
 
@@ -375,9 +571,9 @@ async function refreshChat() {
       const otherUser = utenti.find((utente) => utente.id === selectedUserId);
       setSelectedConversation({
         ...memberships.chat_conversazioni,
-        title: otherUser?.nome || "Conversazione",
-        participants: [],
-        otherParticipants: [],
+        title: memberships.chat_conversazioni.titolo || (creatingGroup ? createdGroupTitle : `${otherUser?.nome || ""} ${otherUser?.cognome || ""}`.trim()) || "Conversazione",
+        participants: createdGroupMembers.map((participant) => ({ ...participant, conversazione_id: conversationId })),
+        otherParticipants: createdGroupMembers.filter((participant) => participant.utente_id !== profile.id),
         latestMessage: null,
         unreadCount: 0,
       });
@@ -492,6 +688,8 @@ async function refreshChat() {
     try {
       const messageId = await createMessageRecord(messageText);
       await uploadMessageAttachments(messageId, pendingFiles);
+      dispatchMessagePush(messageId, selectedConversation.id)
+        .catch((pushError) => console.error("Notifica push immediata non riuscita:", pushError));
 
       setNewMessage("");
       setPendingFiles([]);
@@ -546,26 +744,72 @@ async function refreshChat() {
     });
   }, [conversations, search]);
 
+  const directRecipients = useMemo(
+    () => utenti.filter((utente) => utente.id !== profile?.id),
+    [utenti, profile?.id]
+  );
+
+  const selectedDepartmentMembers = useMemo(() => {
+    const selected = new Set(selectedDepartmentIds);
+    if (!selected.size) return [];
+    return utenti.filter((utente) => {
+      if (selected.has(utente.reparto_id)) return true;
+      return (utente.utenti_reparti || []).some((row) => selected.has(row.reparto_id));
+    });
+  }, [utenti, selectedDepartmentIds]);
+
+  function toggleDepartment(departmentId) {
+    setSelectedDepartmentIds((current) => (
+      current.includes(departmentId)
+        ? current.filter((id) => id !== departmentId)
+        : [...current, departmentId]
+    ));
+  }
+
+  function closeNewChat() {
+    setNewChatOpen(false);
+    setNewChatType("direct");
+    setSelectedUserId("");
+    setGroupTitle("");
+    setSelectedDepartmentIds([]);
+  }
+
+  function openNewChat(type = "direct") {
+    setSelectedUserId("");
+    setGroupTitle("");
+    setSelectedDepartmentIds([]);
+    setNewChatType(type === "group" && canOrganizeDepartmentChats ? "group" : "direct");
+    setNewChatOpen(true);
+  }
+
   const selectedTitle = selectedConversation?.title || "Seleziona una chat";
+  const otherReadTimes = (selectedConversation?.participants || [])
+    .filter((participant) => participant.utente_id !== profile?.id)
+    .map((participant) => participant.ultimo_letto_il)
+    .filter(Boolean);
 
   return (
     <div className="messages-page">
-      <div className="page-title-row">
-        <div>
-          <h1>Messaggi</h1>
-          <p>Chat diretta tra utenti del workspace.</p>
-        </div>
-
+      <div className="messages-toolbar" aria-label="Azioni chat">
         <div className="messages-title-actions">
           <button className="secondary-action" onClick={refreshChat}>
             <RefreshCw size={18} />
             Aggiorna
           </button>
 
-          <button className="primary-action" onClick={() => setNewChatOpen(true)}>
-            <Plus size={18} />
-            Nuova chat
-          </button>
+          {canWriteMessages && (
+            <button className="secondary-action" onClick={() => openNewChat("direct")}>
+              <Plus size={18} />
+              Nuova chat
+            </button>
+          )}
+
+          {canOrganizeDepartmentChats && (
+            <button className="primary-action" onClick={() => openNewChat("group")}>
+              <UsersRound size={18} />
+              Nuova chat di gruppo
+            </button>
+          )}
         </div>
       </div>
 
@@ -592,7 +836,10 @@ async function refreshChat() {
                   className={`conversation-row ${
                     selectedConversation?.id === conversation.id ? "active" : ""
                   }`}
-                  onClick={() => setSelectedConversation(conversation)}
+                  onClick={() => {
+                    setSelectedConversation(conversation);
+                    setSearchParams({ conversation: conversation.id });
+                  }}
                 >
                   <div className="conversation-avatar">
                     {getInitials(conversation.title)}
@@ -622,16 +869,22 @@ async function refreshChat() {
                   {getInitials(selectedTitle)}
                 </div>
 
-                <div>
-                  <h3>{selectedTitle}</h3>
+                 <div>
+                   <h3>{selectedTitle}</h3>
                   <p>
-                    {selectedConversation.otherParticipants
-                      ?.map((participant) => participant.utenti?.email)
-                      .filter(Boolean)
-                      .join(", ") || "Conversazione diretta"}
-                  </p>
-                </div>
-              </div>
+                    {selectedConversation.tipo === "gruppo"
+                      ? `${selectedConversation.participants?.length || 1} partecipanti`
+                      : selectedConversation.otherParticipants
+                          ?.map((participant) => participant.utenti?.email)
+                          .filter(Boolean)
+                          .join(", ") || "Conversazione diretta"}
+                   </p>
+                 </div>
+                 {canManageMessages && <button type="button" className="chat-delete-action" onClick={deleteConversation} title="Elimina definitivamente la chat">
+                   <Trash2 size={18} />
+                   Elimina chat
+                 </button>}
+               </div>
 
               <div className="chat-body">
                 {messagesLoading ? (
@@ -671,7 +924,16 @@ async function refreshChat() {
                               ))}
                             </div>
                           )}
-                          <span>{formatTime(message.created_at)}</span>
+                          <span className="chat-message-meta">
+                            {formatTime(message.created_at)}
+                            {mine && <span className={`chat-read-check${otherReadTimes.length && otherReadTimes.every((readAt) => new Date(readAt) >= new Date(message.created_at)) ? " read" : ""}`} title={otherReadTimes.length && otherReadTimes.every((readAt) => new Date(readAt) >= new Date(message.created_at)) ? "Letto" : "Consegnato"}>
+                              {otherReadTimes.length && otherReadTimes.every((readAt) => new Date(readAt) >= new Date(message.created_at)) ? "✓✓" : "✓"}
+                            </span>}
+                            {canWriteMessages && (mine || canManageMessages) && <button type="button" className="chat-message-delete" onClick={() => deleteMessage(message)} title="Elimina definitivamente il messaggio">
+                              <Trash2 size={13} />
+                              Elimina
+                            </button>}
+                          </span>
                         </div>
                       </div>
                     );
@@ -681,7 +943,7 @@ async function refreshChat() {
                 <div ref={bottomRef} />
               </div>
 
-              <form className="chat-compose" onSubmit={sendMessage}>
+              {canWriteMessages ? <form className="chat-compose" onSubmit={sendMessage}>
                 {pendingFiles.length > 0 && (
                   <div className="chat-pending-files">
                     {pendingFiles.map((file, index) => (
@@ -710,13 +972,13 @@ async function refreshChat() {
                   <Send size={18} />
                   {sending ? "Invio..." : "Invia"}
                 </button>
-              </form>
+              </form> : <p className="messages-empty">Il ruolo consente soltanto la consultazione dei messaggi.</p>}
             </>
           ) : (
             <div className="chat-empty whole">
               <MessageCircle size={42} />
               <h4>Seleziona una conversazione</h4>
-              <p>Oppure crea una nuova chat con un utente.</p>
+              <p>Oppure crea una chat diretta o una chat di gruppo.</p>
             </div>
           )}
         </section>
@@ -728,41 +990,85 @@ async function refreshChat() {
             <div className="modal-header">
               <div>
                 <h2>Nuova chat</h2>
-                <p>Seleziona una persona a cui inviare un messaggio.</p>
+                <p>Scegli una persona oppure coinvolgi uno o più reparti.</p>
               </div>
 
-              <button className="modal-close" onClick={() => setNewChatOpen(false)} type="button">
+              <button className="modal-close" onClick={closeNewChat} type="button">
                 <X size={22} />
               </button>
             </div>
 
             <form className="new-chat-form" onSubmit={createConversation}>
-              <div className="form-group full">
-                <label>Invia messaggio a</label>
-                <select
-                  value={selectedUserId}
-                  onChange={(e) => setSelectedUserId(e.target.value)}
-                >
-                  <option value="">Seleziona utente</option>
-                  {utenti.map((utente) => (
-                    <option key={utente.id} value={utente.id}>
-                      {`${utente.nome || ""} ${utente.cognome || ""}`.trim()} - {utente.email}
-                    </option>
-                  ))}
-                </select>
+              <div className="new-chat-type-switch" role="tablist" aria-label="Tipo di chat">
+                <button type="button" className={newChatType === "direct" ? "active" : ""} onClick={() => setNewChatType("direct")}>
+                  <User size={18} />
+                  Chat diretta
+                </button>
+                {canOrganizeDepartmentChats && <button type="button" className={newChatType === "group" ? "active" : ""} onClick={() => setNewChatType("group")}>
+                  <UsersRound size={18} />
+                  Chat di gruppo
+                </button>}
               </div>
+
+              {newChatType === "direct" ? (
+                <div className="form-group full">
+                  <label>Invia messaggio a</label>
+                  <select value={selectedUserId} onChange={(e) => setSelectedUserId(e.target.value)}>
+                    <option value="">Seleziona utente</option>
+                    {directRecipients.map((utente) => (
+                      <option key={utente.id} value={utente.id}>
+                        {`${utente.nome || ""} ${utente.cognome || ""}`.trim()} - {utente.email}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <>
+                  <div className="form-group full">
+                    <label>Nome della chat</label>
+                    <input value={groupTitle} onChange={(e) => setGroupTitle(e.target.value)} maxLength={120} placeholder="Es. Coordinamento Commerciale" />
+                  </div>
+
+                  <fieldset className="department-picker">
+                    <legend>Reparti da coinvolgere</legend>
+                    <p>Tutti gli utenti attivi dei reparti selezionati saranno aggiunti automaticamente.</p>
+                    <div className="department-options">
+                      {reparti.map((reparto) => {
+                        const checked = selectedDepartmentIds.includes(reparto.id);
+                        return (
+                          <button key={reparto.id} type="button" className={checked ? "selected" : ""} onClick={() => toggleDepartment(reparto.id)} aria-pressed={checked}>
+                            <span className="department-check">{checked ? <Check size={15} /> : <Building2 size={15} />}</span>
+                            {reparto.nome}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </fieldset>
+
+                  {selectedDepartmentIds.length > 0 && (
+                    <div className="group-members-preview">
+                      <strong>Membri coinvolti: {selectedDepartmentMembers.length + (selectedDepartmentMembers.some((utente) => utente.id === profile?.id) ? 0 : 1)}</strong>
+                      <span>
+                        {selectedDepartmentMembers.slice(0, 6).map((utente) => `${utente.nome || ""} ${utente.cognome || ""}`.trim()).join(", ")}
+                        {selectedDepartmentMembers.length > 6 ? ` e altri ${selectedDepartmentMembers.length - 6}` : ""}
+                        {!selectedDepartmentMembers.some((utente) => utente.id === profile?.id) ? `${selectedDepartmentMembers.length ? ", " : ""}tu` : ""}
+                      </span>
+                    </div>
+                  )}
+                </>
+              )}
 
               <div className="modal-actions">
                 <button
                   type="button"
                   className="secondary-action"
-                  onClick={() => setNewChatOpen(false)}
+                  onClick={closeNewChat}
                 >
                   Annulla
                 </button>
 
                 <button className="primary-action" disabled={creatingChat}>
-                  <User size={18} />
+                  {newChatType === "group" ? <UsersRound size={18} /> : <User size={18} />}
                   {creatingChat ? "Creazione..." : "Crea chat"}
                 </button>
               </div>

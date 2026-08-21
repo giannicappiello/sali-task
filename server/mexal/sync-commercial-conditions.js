@@ -325,7 +325,7 @@ async function requireOrdersAdministrator(supabase, userId) {
       auth_user_id,
       attivo,
       ruolo_id,
-      ruoli(nome, livello)
+      ruoli(nome, amministratore_workspace)
     `)
     .eq("auth_user_id", userId)
     .maybeSingle();
@@ -345,17 +345,7 @@ async function requireOrdersAdministrator(supabase, userId) {
     throw new HttpError(403, "Utente Workspace non attivo");
   }
 
-  const roleName = stringValue(profile.ruoli?.nome).toLowerCase();
-  const roleLevel = Number(profile.ruoli?.livello || 0);
-
-  const isWorkspaceAdmin =
-    [
-      "admin",
-      "administrator",
-      "amministratore",
-      "super admin",
-      "direzione"
-    ].includes(roleName) || roleLevel >= 80;
+  const isWorkspaceAdmin = profile.ruoli?.amministratore_workspace === true;
 
   if (isWorkspaceAdmin) return;
 

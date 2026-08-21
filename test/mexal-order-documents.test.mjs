@@ -33,24 +33,30 @@ const lines = [
 ];
 const classified = classifyOrderLines(lines);
 assert.equal(isImportArticle(lines[2]), true, "IMP uses trimmed, case-insensitive article code");
-assert.deepEqual(classified.OCI.map((line) => [line.codice_articolo, line.quantita_documento]), [[" imp0012 ", 3]], "IMP is sent only to OCI at ordered quantity");
-assert.deepEqual(classified.OCM.map((line) => line.codice_articolo), [" IT0058 "], "IMP never enters OCM");
+assert.deepEqual(classified.OCI.map((line) => [line.codice_articolo, line.quantita_documento]), [], "standard orders do not send IMP to OCI");
+assert.deepEqual(classified.OCM.map((line) => line.codice_articolo), [" IT0058 ", " imp0012 "], "IMP always enters OCM");
 assert.deepEqual(classified.OCX.map((line) => [line.codice_articolo, line.quantita_documento]), [[" IT0058 ", 4], ["IT0204", 6]], "non-IMP partial stock is split");
+const reservation = classifyOrderLines(lines, { reservation: true });
+assert.deepEqual(reservation.OCI.map((line) => line.codice_articolo), [" IT0058 ", "IT0204"], "reservation articles enter OCI without stock splitting");
+assert.deepEqual(reservation.OCM.map((line) => line.codice_articolo), [" imp0012 "], "reservation IMP articles remain in OCM");
 
 const payload = buildMexalOrderDocument({ id: "workspace-1", codice_cliente: "C1", data_ordine: "2026-07-20", note_mexal: "nota test", id_pagamento: 7 }, "OCX", classified.OCX, { serie: 2, magazzino: 5, dateFormat: "typed-array-dd/mm/yyyy" });
 // These fields are existing buildMexalOrderDocument defaults, not commission behavior.
 assert.deepEqual(payload, { sigla: "OC", serie: 2, numero: 0, cod_conto: "C1", data_documento: [[1, "20/07/2026"]], cod_modulo: "X", id_causale: [[1, 1]], id_magazzino: 5, nota: [[1, "nota test"]], id_pagamento: 7, id_riga: [[1, 1], [2, 2]], tp_riga: [[1, "R"], [2, "R"]], codice_articolo: [[1, "IT0058"], [2, "IT0204"]], quantita: [[1, 4], [2, 6]], prezzo: [[1, 15.68], [2, 12]], sconto: [[1, "50+35"], [2, "50+35"]], id_mag_riga: [[1, 5], [2, 5]], tp_um_articolo: [[1, "1"], [2, "1"]], cod_iva: [[1, "22,0"], [2, "22,0"]], tipo_stato_riga: [[1, "S"], [2, "S"]] });
 const ocmPayload = buildMexalOrderDocument({ id: "workspace-1", codice_cliente: "C1", data_ordine: "2026-07-20" }, "OCM", classified.OCM, { dateFormat: "typed-array-dd/mm/yyyy" });
 assert.deepEqual(ocmPayload.data_documento, [[1, "20/07/2026"]], "OCM sends data_documento as the required typed matrix");
-assert.deepEqual(ocmPayload.tipo_stato_riga, [[1, "E"]], "OCM product rows remain evadibile");
-const ociPayload = buildMexalOrderDocument({ id: "workspace-1", codice_cliente: "C1", data_ordine: "2026-07-20" }, "OCI", classified.OCI, { dateFormat: "typed-array-dd/mm/yyyy" });
-assert.deepEqual(ociPayload.tipo_stato_riga, [[1, "S"]], "OCI product rows are suspended");
+assert.deepEqual(ocmPayload.tipo_stato_riga, [[1, "E"], [2, "E"]], "OCM product rows, including IMP, remain evadibile");
+const ociPayload = buildMexalOrderDocument({ id: "workspace-1", codice_cliente: "C1", data_ordine: "2026-07-20" }, "OCI", reservation.OCI, { dateFormat: "typed-array-dd/mm/yyyy" });
+assert.deepEqual(ociPayload.tipo_stato_riga, [[1, "S"], [2, "S"]], "OCI reservation product rows are suspended");
 assert.deepEqual(payload.tipo_stato_riga, [[1, "S"], [2, "S"]], "OCX product rows are suspended");
 await Promise.all([ocmPayload, payload, ociPayload].map((document) => mexalWithEmptyCreatedBody.postJson("/documenti/ordini-clienti", document)));
 assert.deepEqual(postedBodies.slice(1).map((body) => Object.hasOwn(JSON.parse(body), "stato_riga")), [false, false, false], "OCM, OCX, and OCI POST payloads omit the rejected stato_riga field");
 const splitLine = { codice_articolo: "IT-SPLIT", quantita: 10, quantita_ocm: 6, quantita_ocx: 4, prezzo_listino: 1, cod_iva: "22,0" };
 const splitDocuments = classifyOrderLines([splitLine]);
-for (const kind of ["OCM", "OCX", "OCI"]) assert.equal(Object.hasOwn(buildMexalOrderDocument({ codice_cliente: "C1", data_ordine: "2026-07-20" }, kind, splitDocuments[kind]?.length ? splitDocuments[kind] : classified[kind]), "stato_riga"), false, `${kind} document payload omits the rejected row-state field`);
+for (const kind of ["OCM", "OCX", "OCI"]) {
+  const sourceLines = splitDocuments[kind]?.length ? splitDocuments[kind] : kind === "OCI" ? reservation.OCI : classified[kind];
+  assert.equal(Object.hasOwn(buildMexalOrderDocument({ codice_cliente: "C1", data_ordine: "2026-07-20" }, kind, sourceLines), "stato_riga"), false, `${kind} document payload omits the rejected row-state field`);
+}
 for (const forbidden of ["note", "conto", "codice_pagamento", "articolo", "prezzo_netto", "righe"]) assert.equal(JSON.stringify(payload).includes(`\"${forbidden}\"`), false, `${forbidden} is never a direct WebAPI key`);
 assert.equal(buildMexalOrderDocument({}, "OCM", [], { notaFormat: "scalar" }), null, "empty documents are not generated");
 assert.equal(DEFAULT_MEXAL_ORDER_DATE_FORMAT, "yyyymmdd", "the shared date format default remains unchanged");

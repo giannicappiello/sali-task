@@ -1,0 +1,5 @@
+allowBuilds:
+  core-js: true
+minimumReleaseAgeExclude:
+  - '@ai-sdk/gateway@4.0.53'
+  - ai@7.0.67

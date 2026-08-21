@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
+import useBackNavigation from "../../../hooks/useBackNavigation";
 import { agentDisplayName, loadAgentNameMap } from "../services/agentNames";
 import { useOrdersModule } from "../ordersModuleContext";
 
@@ -19,7 +20,7 @@ function displayValue(value) {
 
 export default function CustomerDetail() {
   const { basePath } = useOrdersModule();
-  const navigate = useNavigate();
+  const goBack = useBackNavigation(`${basePath}/clienti`);
   const { customerCode } = useParams();
   const [customer, setCustomer] = useState(null);
   const [agentNames, setAgentNames] = useState(new Map());
@@ -72,7 +73,7 @@ export default function CustomerDetail() {
   return (
     <div className="orders-page">
       <div className="orders-new-header">
-        <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/clienti`)}>
+        <button className="orders-secondary" type="button" onClick={goBack}>
           <ArrowLeft size={18} /> Torna ai clienti
         </button>
         <div>

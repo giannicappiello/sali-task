@@ -1,0 +1,89 @@
+.ai-pdf-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 9px;
+  padding: 9px 13px;
+  border: 0;
+  border-radius: 9px;
+  background: #126bff;
+  color: #fff;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 5px 14px rgba(18, 107, 255, 0.2);
+}
+
+.ai-pdf-download:hover {
+  background: #0a58c7;
+}
+
+.ai-generated-artifacts {
+  display: grid;
+  gap: 9px;
+  margin-top: 10px;
+}
+
+.ai-artifact-card {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 22px;
+  align-items: center;
+  gap: 11px;
+  min-width: min(360px, 72vw);
+  padding: 11px;
+  border: 1px solid #d8e1ed;
+  border-radius: 12px;
+  background: #fff;
+  color: #1d2939;
+  text-decoration: none;
+  box-shadow: 0 4px 14px rgba(16, 24, 40, 0.07);
+}
+
+.ai-artifact-card:hover {
+  border-color: #126bff;
+  box-shadow: 0 7px 18px rgba(18, 107, 255, 0.13);
+}
+
+.ai-artifact-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: #fff0f0;
+  color: #d92d20;
+}
+
+.ai-artifact-icon.chart {
+  background: #eaf3ff;
+  color: #126bff;
+}
+
+.ai-artifact-card > span:nth-child(2) {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ai-artifact-card strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-artifact-card small {
+  color: #667085;
+  font-size: 11px;
+}
+
+.ai-artifact-loading,
+.ai-artifact-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #667085;
+  font-size: 12px;
+}
+
+.ai-artifact-error { color: #b42318; }

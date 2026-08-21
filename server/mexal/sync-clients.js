@@ -235,7 +235,7 @@ async function verifyUser(req, supabase) {
 
   const { data: profile, error: profileError } = await supabase
     .from("utenti")
-    .select("id,attivo,ruoli(nome,livello)")
+    .select("id,attivo,ruoli(nome,amministratore_workspace)")
     .eq("auth_user_id", user.id)
     .maybeSingle();
 
@@ -246,16 +246,7 @@ async function verifyUser(req, supabase) {
     );
   }
 
-  const roleName = upper(profile.ruoli?.nome);
-  const roleLevel = Number(profile.ruoli?.livello || 0);
-  const isAdmin =
-    [
-      "ADMIN",
-      "ADMINISTRATOR",
-      "AMMINISTRATORE",
-      "SUPER ADMIN",
-      "DIREZIONE",
-    ].includes(roleName) || roleLevel >= 80;
+  const isAdmin = profile.ruoli?.amministratore_workspace === true;
 
   if (isAdmin) return;
 

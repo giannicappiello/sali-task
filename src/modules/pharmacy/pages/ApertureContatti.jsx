@@ -435,7 +435,7 @@ setRichiestaContatto(
   async function eliminaAperturaContatto(record) {
   if (utente?.ruolo !== "admin") return;
 
-  const conferma = window.confirm(
+  const conferma = await window.workspaceConfirm(
     `Vuoi eliminare definitivamente questa apertura/richiesta?\n\nID: ${record.id}`
   );
 
@@ -641,10 +641,6 @@ setRichiestaContatto(
 
   return (
     <div>
-      <div style={headerStyle}>
-        <h2>Aperture / Contatti</h2>
-      </div>
-
       <button
   style={saveButtonStyle}
   onClick={() => {

@@ -15,7 +15,8 @@ export function buildAvailabilitySignature({ lines, customer, warehouse }) {
   });
 }
 
-export function getAvailabilityValidity({ availability, lines, customer, invalidated = false }) {
+export function getAvailabilityValidity({ availability, lines, customer, invalidated = false, reservation = false, skipAvailability = false }) {
+  if (reservation || skipAvailability) return { valid: true, reason: "" };
   if (!availability) return { valid: false, reason: "Verifica nuovamente le disponibilità prima di confermare l’ordine." };
   if (invalidated) return { valid: false, reason: "Verifica nuovamente le disponibilità prima di confermare l’ordine." };
   const currentSignature = buildAvailabilitySignature({ lines, customer, warehouse: availability.warehouse });
@@ -29,8 +30,11 @@ export function getAvailabilityValidity({ availability, lines, customer, invalid
   return { valid: true, reason: "" };
 }
 
-export function quantitiesForOrderLine(line, availability, confirm) {
-  if (isImportLine(line)) return { quantita_disponibile: 0, quantita_ocm: 0, quantita_ocx: 0, quantita_oci: Number(line.quantita) || 0 };
+export function quantitiesForOrderLine(line, availability, confirm, { reservation = false, skipAvailability = false } = {}) {
+  const orderedQuantity = Number(line.quantita) || 0;
+  if (isImportLine(line)) return { quantita_disponibile: 0, quantita_ocm: orderedQuantity, quantita_ocx: 0, quantita_oci: 0 };
+  if (reservation) return { quantita_disponibile: 0, quantita_ocm: 0, quantita_ocx: 0, quantita_oci: orderedQuantity };
+  if (skipAvailability) return { quantita_disponibile: 0, quantita_ocm: orderedQuantity, quantita_ocx: 0, quantita_oci: 0 };
   if (!confirm) {
     const confirmed = Math.min(Number(line.quantita), Math.max(0, Number(line.disponibilita)));
     return { quantita_disponibile: confirmed, quantita_ocm: confirmed, quantita_ocx: Math.max(0, Number(line.quantita) - confirmed), quantita_oci: 0 };
@@ -40,13 +44,15 @@ export function quantitiesForOrderLine(line, availability, confirm) {
   return { quantita_disponibile: result.confirmedQuantity, quantita_ocm: result.confirmedQuantity, quantita_ocx: result.missingQuantity, quantita_oci: 0 };
 }
 
-export function buildAvailabilityPreview(orderLines, resultLines) {
+export function buildAvailabilityPreview(orderLines, resultLines, { reservation = false, skipAvailability = false } = {}) {
   const results = new Map((resultLines || []).map((line) => [line.productCode, line]));
   return orderLines.reduce((preview, line) => {
     const result = results.get(String(line.codice_articolo || "").replace(/\s+/g, "").toUpperCase());
+    const item = { productCode: result?.productCode || productCode(line.codice_articolo), description: line.descrizione, requestedQuantity: result?.requestedQuantity || Number(line.quantita) || 0 };
+    if (isImportLine(line)) { preview.ocm.push({ ...item, quantity: Number(line.quantita) || 0 }); return preview; }
+    if (reservation) { preview.oci.push({ ...item, quantity: Number(line.quantita) || 0 }); return preview; }
+    if (skipAvailability) { preview.ocm.push({ ...item, quantity: Number(line.quantita) || 0 }); return preview; }
     if (!result) return preview;
-    const item = { productCode: result.productCode, description: line.descrizione, requestedQuantity: result.requestedQuantity };
-    if (isImportLine(line)) { preview.oci.push({ ...item, quantity: Number(line.quantita) || 0 }); return preview; }
     if (result.confirmedQuantity > 0) preview.ocm.push({ ...item, quantity: result.confirmedQuantity });
     if (result.missingQuantity > 0) preview.ocx.push({ ...item, quantity: result.missingQuantity });
     return preview;

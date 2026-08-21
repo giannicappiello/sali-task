@@ -6,7 +6,7 @@ import {
   Folder,
   LayoutDashboard,
 } from "lucide-react";
-import { useAuth } from "../../contexts/AuthContext";
+import useOrderedModuleScreens from "../../hooks/useOrderedModuleScreens";
 import "./activities-module.css";
 
 const Dashboard = lazy(() => import("../Dashboard/Dashboard"));
@@ -16,28 +16,28 @@ const Tasks = lazy(() => import("../Tasks/Tasks"));
 
 const items = [
   {
+    screenCode: "attivita.dashboard",
     to: "/activities/dashboard",
     label: "Tutte le attività",
     icon: LayoutDashboard,
-    permission: "dashboard.read",
   },
   {
+    screenCode: "attivita.reminder",
     to: "/activities/reminders",
     label: "Reminder",
     icon: BellRing,
-    permission: "agenda.read",
   },
   {
+    screenCode: "attivita.progetti",
     to: "/activities/projects",
     label: "Progetti",
     icon: Folder,
-    permission: "projects.read",
   },
   {
+    screenCode: "attivita.fasi",
     to: "/activities/tasks",
     label: "Fasi dei progetti",
     icon: ClipboardList,
-    permission: "tasks.read",
   },
 ];
 
@@ -46,19 +46,11 @@ function Loader() {
 }
 
 export default function ActivitiesModule() {
-  const { hasPermission } = useAuth();
-  const visibleItems = items.filter((item) => hasPermission(item.permission));
-  const firstVisiblePath = visibleItems[0]?.to || "/home";
+  const { items: visibleItems, defaultItem } = useOrderedModuleScreens("attivita", items);
+  const firstVisiblePath = defaultItem?.to || visibleItems[0]?.to || "/home";
 
   return (
     <div className="activities-module">
-      <div className="activities-module-header">
-        <div>
-          <h1>Attività</h1>
-          <p>Task, reminder, progetti, fasi e analisi del reparto.</p>
-        </div>
-      </div>
-
       <div className="activities-tabs" aria-label="Menu attività">
         {visibleItems.map((item) => {
           const Icon = item.icon;

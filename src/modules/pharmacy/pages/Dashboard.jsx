@@ -411,7 +411,7 @@ export default function Dashboard({ utente }) {
   }
 
   async function rimandaFollowUp(item) {
-    const nuovaData = window.prompt(
+    const nuovaData = await window.workspacePrompt(
       "Inserisci nuova data follow-up nel formato YYYY-MM-DD",
       item.data_followup || ""
     );
@@ -672,11 +672,6 @@ async function confermaEvasione() {
 
   return (
     <div>
-      <div style={headerStyle}>
-        <h2>Dashboard</h2>
-        <p style={subtitleStyle}>KPI e analisi dati giornate beauty</p>
-      </div>
-
       <DashboardFilters
         dataDa={dataDa}
         dataA={dataA}
@@ -817,17 +812,6 @@ async function confermaEvasione() {
     </div>
   );
 }
-
-const headerStyle = {
-  textAlign: "center",
-  marginBottom: "22px",
-};
-
-const subtitleStyle = {
-  fontSize: "14px",
-  color: "#6B645C",
-  marginTop: "6px",
-};
 
 const overlayStyle = {
   position: "fixed",

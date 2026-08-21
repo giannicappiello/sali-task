@@ -84,19 +84,22 @@ export default function OrdersDocumentSeriesSettings({ canManage }) {
   if (loading) return <div style={{ padding: 20 }}>Caricamento serie documenti...</div>;
 
   return (
-    <section style={{ marginBottom: 28, padding: 22, border: "1px solid #dbe3ec", borderRadius: 16, background: "#fff" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
-        <div><h3 style={{ margin: 0 }}>Serie documenti Mexal</h3><p style={{ margin: "6px 0 0", color: "#64748b" }}>Sincronizza le serie reali e scegli quelle usate per OCM e OCX.</p></div>
-        <button type="button" onClick={sync} disabled={!canManage || syncing} style={{ display: "inline-flex", gap: 8, alignItems: "center", padding: "10px 14px" }}><RefreshCw size={17} className={syncing ? "spin" : ""} />{syncing ? "Sincronizzazione..." : "Sincronizza da Mexal"}</button><button type="button" onClick={openDiagnostics} disabled={!canManage} style={{ padding: "10px 14px" }}>Apri diagnostica</button>
+    <section className="mexal-table-panel document-series-panel">
+      <div className="mexal-section-heading document-series-heading">
+        <div><h3>Serie documenti Mexal</h3><p>Sincronizza le serie reali e scegli quelle usate per OCM e OCX.</p></div>
+        <div className="document-series-actions">
+          <button className="primary-action" type="button" onClick={sync} disabled={!canManage || syncing}><RefreshCw size={17} className={syncing ? "spin" : ""} />{syncing ? "Sincronizzazione..." : "Sincronizza da Mexal"}</button>
+          <button className="secondary-action" type="button" onClick={openDiagnostics} disabled={!canManage}>Apri diagnostica</button>
+        </div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr)) auto", gap: 16, marginTop: 20, alignItems: "end" }}>
-        <label><strong>Serie OCM</strong><select value={config.serie_ocm} disabled={!canManage} onChange={(e) => setConfig((c) => ({ ...c, serie_ocm: e.target.value }))} style={{ width: "100%", minHeight: 42, marginTop: 8 }}><option value="">Seleziona...</option>{orderSeriesOptions.map((item) => <option key={`ocm-${item.source_key}`} value={item.serie}>{item.sigla_documento || item.tipo_documento} · Serie {item.serie} · {item.descrizione}</option>)}</select></label>
-        <label><strong>Serie OCX</strong><select value={config.serie_ocx} disabled={!canManage} onChange={(e) => setConfig((c) => ({ ...c, serie_ocx: e.target.value }))} style={{ width: "100%", minHeight: 42, marginTop: 8 }}><option value="">Seleziona...</option>{orderSeriesOptions.map((item) => <option key={`ocx-${item.source_key}`} value={item.serie}>{item.sigla_documento || item.tipo_documento} · Serie {item.serie} · {item.descrizione}</option>)}</select></label>
-        <button type="button" onClick={save} disabled={!canManage || saving} style={{ minHeight: 42, display: "inline-flex", gap: 8, alignItems: "center", padding: "10px 16px" }}><Save size={17} />{saving ? "Salvataggio..." : "Salva serie"}</button>
+      <div className="document-series-grid">
+        <label><strong>Serie OCM</strong><select value={config.serie_ocm} disabled={!canManage} onChange={(e) => setConfig((c) => ({ ...c, serie_ocm: e.target.value }))}><option value="">Seleziona...</option>{orderSeriesOptions.map((item) => <option key={`ocm-${item.source_key}`} value={item.serie}>{item.sigla_documento || item.tipo_documento} · Serie {item.serie} · {item.descrizione}</option>)}</select></label>
+        <label><strong>Serie OCX</strong><select value={config.serie_ocx} disabled={!canManage} onChange={(e) => setConfig((c) => ({ ...c, serie_ocx: e.target.value }))}><option value="">Seleziona...</option>{orderSeriesOptions.map((item) => <option key={`ocx-${item.source_key}`} value={item.serie}>{item.sigla_documento || item.tipo_documento} · Serie {item.serie} · {item.descrizione}</option>)}</select></label>
+        <button className="primary-action document-series-save" type="button" onClick={save} disabled={!canManage || saving}><Save size={17} />{saving ? "Salvataggio..." : "Salva serie"}</button>
       </div>
-      {message && <div role="status" style={{ marginTop: 14, padding: 12, borderRadius: 10, background: messageType === "error" ? "#fef2f2" : messageType === "success" ? "#f0fdf4" : "#f8fafc", color: messageType === "error" ? "#991b1b" : "#334155" }}>{message}</div>}
-      {!orderSeriesOptions.length && <div style={{ marginTop: 14, color: "#b45309" }}>Nessuna serie OCM/OCX disponibile: esegui prima la sincronizzazione.</div>}
-      {diagnosticsOpen && <div role="dialog" aria-label="Diagnostica Mexal" style={{ marginTop: 16, padding: 14, border: "1px solid #cbd5e1", borderRadius: 10, background: "#f8fafc" }}><div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}><strong>Diagnostica amministrativa Mexal</strong><button type="button" onClick={copyDiagnostics} disabled={!diagnostics} style={{ display: "inline-flex", gap: 6, alignItems: "center" }}><Clipboard size={15} />Copia JSON</button></div>{diagnostics ? <pre style={{ overflow: "auto", maxHeight: 360, whiteSpace: "pre-wrap" }}>{JSON.stringify(diagnostics, null, 2)}</pre> : <p>Nessuna diagnostica disponibile per l'ultima run.</p>}</div>}
+      {message && <div className={`document-series-message ${messageType}`} role="status">{message}</div>}
+      {!orderSeriesOptions.length && <div className="document-series-empty">Nessuna serie OCM/OCX disponibile: esegui prima la sincronizzazione.</div>}
+      {diagnosticsOpen && <div className="document-series-diagnostics" role="dialog" aria-label="Diagnostica Mexal"><div><strong>Diagnostica amministrativa Mexal</strong><button className="secondary-action" type="button" onClick={copyDiagnostics} disabled={!diagnostics}><Clipboard size={15} />Copia JSON</button></div>{diagnostics ? <pre>{JSON.stringify(diagnostics, null, 2)}</pre> : <p>Nessuna diagnostica disponibile per l'ultima run.</p>}</div>}
     </section>
   );
 }

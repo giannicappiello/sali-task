@@ -92,6 +92,7 @@
 
 .settings-project-stack { display: grid; gap: 18px; }
 .settings-page .settings-panel { margin-top: 0; }
+.settings-hub-back { display: inline-flex; align-items: center; gap: 7px; margin-bottom: 10px; padding: 0; border: 0; background: transparent; color: #1769aa; font: inherit; font-weight: 750; text-decoration: none; cursor: pointer; }
 .settings-page .settings-row > div:first-child { min-width: 0; }
 .settings-page .settings-row > div:first-child span { line-height: 1.45; }
 .settings-page .v4-modal > h3 { margin: 22px 0 10px; padding-top: 18px; border-top: 1px solid #e5eaf1; color: #17355e; }

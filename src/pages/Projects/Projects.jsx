@@ -79,10 +79,9 @@ function getBlockingPhase(item, list) {
 }
 
 export default function Projects() {
-  const { profile, hasPermission, isAdmin, userDepartmentIds = [] } = useAuth();
+  const { profile, hasPermission, isAdmin, userDepartmentIds = [], dataScope, canViewScopedData } = useAuth();
   const canManage = hasPermission("projects.write");
-  const canReadAllProjects = hasPermission("projects.read.all") || isAdmin?.();
-  const canReadAllTasksInVisibleProjects = canReadAllProjects || hasPermission("tasks.read.project_departments") || hasPermission("tasks.read.all");
+  const canReadAllProjects = dataScope?.mode === "tutti" || isAdmin?.();
   const actorId = profile?.id || null;
 
   async function getCurrentUtenteId() {
@@ -169,7 +168,7 @@ export default function Projects() {
 
   useEffect(() => {
     if (profile?.id) loadData();
-  }, [profile?.id, userDepartmentIds.join(",")]);
+  }, [profile?.id, userDepartmentIds.join(","), dataScope?.mode, dataScope?.userIds?.join(","), dataScope?.departmentIds?.join(",")]);
 
   useEffect(() => {
     if (selectedPhase?.id) loadPhaseDetails(selectedPhase.id);
@@ -209,44 +208,53 @@ export default function Projects() {
     const allProjects = projectsRes.data || [];
     const allPhases = phasesRes.data || [];
     const allProjectDepartments = prRes.data || [];
-    const allowedDepartmentIds = userDepartmentIds || [];
-
+    const allPhaseDepartments = phaseDepartmentsRes.data || [];
+    const selectableDepartmentIds = new Set([...(userDepartmentIds || []), ...(dataScope?.departmentIds || [])]);
+    const projectDepartmentIdsByProject = new Map();
+    allProjectDepartments.forEach((row) => {
+      if (!row.progetto_id || !row.reparto_id) return;
+      const ids = projectDepartmentIdsByProject.get(row.progetto_id) || [];
+      ids.push(row.reparto_id);
+      projectDepartmentIdsByProject.set(row.progetto_id, ids);
+    });
+    const phaseDepartmentIdsByPhase = new Map();
+    allPhaseDepartments.forEach((row) => {
+      if (!row.fase_id || !row.reparto_id) return;
+      const ids = phaseDepartmentIdsByPhase.get(row.fase_id) || [];
+      ids.push(row.reparto_id);
+      phaseDepartmentIdsByPhase.set(row.fase_id, ids);
+    });
+    const directlyVisiblePhases = canReadAllProjects
+      ? allPhases
+      : allPhases.filter((phase) => {
+          const phaseDepartmentIds = phaseDepartmentIdsByPhase.get(phase.id) || [];
+          return canViewScopedData({
+            ownerId: phase.creato_da,
+            departmentIds: phaseDepartmentIds.length ? phaseDepartmentIds : [phase.reparto_id].filter(Boolean),
+          });
+        });
+    const projectsWithVisiblePhases = new Set(directlyVisiblePhases.map((phase) => phase.progetto_id).filter(Boolean));
     const visibleProjectIds = new Set(
       canReadAllProjects
         ? allProjects.map((project) => project.id)
         : allProjects
             .filter((project) => {
-              const projectDepartmentIds = allProjectDepartments
-                .filter((row) => row.progetto_id === project.id)
-                .map((row) => row.reparto_id)
-                .filter(Boolean);
+              const projectDepartmentIds = projectDepartmentIdsByProject.get(project.id) || [];
 
-              if (projectDepartmentIds.length === 0) return true;
-              return projectDepartmentIds.some((repartoId) => allowedDepartmentIds.includes(repartoId));
+              return projectsWithVisiblePhases.has(project.id)
+                || canViewScopedData({ ownerId: project.creato_da, departmentIds: projectDepartmentIds });
             })
             .map((project) => project.id)
     );
 
     const visibleProjects = allProjects.filter((project) => visibleProjectIds.has(project.id));
-    const allPhaseDepartments = phaseDepartmentsRes.data || [];
-    const visiblePhases = (canReadAllProjects || canReadAllTasksInVisibleProjects)
-      ? allPhases.filter((phase) => visibleProjectIds.has(phase.progetto_id))
-      : allPhases.filter((phase) => {
-          if (!visibleProjectIds.has(phase.progetto_id)) return false;
-          const phaseDepartmentIds = allPhaseDepartments
-            .filter((row) => row.fase_id === phase.id)
-            .map((row) => row.reparto_id)
-            .filter(Boolean);
-          if (phaseDepartmentIds.length > 0) return phaseDepartmentIds.some((id) => allowedDepartmentIds.includes(id));
-          if (!phase.reparto_id) return true;
-          return allowedDepartmentIds.includes(phase.reparto_id);
-        });
+    const visiblePhases = directlyVisiblePhases.filter((phase) => !phase.progetto_id || visibleProjectIds.has(phase.progetto_id));
 
     setProjects(visibleProjects);
     setPhases(visiblePhases);
     setProducts((productsRes.data || []).filter((item) => item.id));
-    setDepartments((departmentsRes.data || []).filter((item) => item.attivo !== false));
-    setUsers((usersRes.data || []).filter((item) => item.attivo !== false));
+    setDepartments((departmentsRes.data || []).filter((item) => item.attivo !== false && (dataScope?.mode === "tutti" || selectableDepartmentIds.has(item.id))));
+    setUsers((usersRes.data || []).filter((item) => item.attivo !== false && (dataScope?.mode === "tutti" || dataScope?.userIds?.includes(item.id))));
     setTemplates((templatesRes.data || []).filter((item) => item.attivo !== false));
     setProjectProducts((ppRes.data || []).filter((row) => visibleProjectIds.has(row.progetto_id)));
     setProjectDepartments((prRes.data || []).filter((row) => visibleProjectIds.has(row.progetto_id)));
@@ -951,7 +959,7 @@ export default function Projects() {
   async function removeAttachment(attachment) {
     if (!canManage) return alert("Non hai i permessi per eliminare gli allegati.");
     if (!attachment?.id) return;
-    if (!window.confirm(`Vuoi eliminare l'allegato "${attachment.file_name || "file"}"?`)) return;
+    if (!await window.workspaceConfirm(`Vuoi eliminare l'allegato "${attachment.file_name || "file"}"?`)) return;
 
     if (attachment.file_path) {
       const storageDelete = await supabase.storage.from("allegati").remove([attachment.file_path]);
@@ -1098,7 +1106,7 @@ export default function Projects() {
 
   async function removePhase(phase) {
     if (!canManage) return alert("Non hai i permessi.");
-    if (!window.confirm("Vuoi eliminare questa fase?\n\nVerranno eliminati anche commenti, allegati, reparti, prodotti, storico e file fisici collegati.")) return;
+    if (!await window.workspaceConfirm("Vuoi eliminare questa fase?\n\nVerranno eliminati anche commenti, allegati, reparti, prodotti, storico e file fisici collegati.")) return;
     await deletePhaseCompletely(phase);
   }
 
@@ -1106,14 +1114,14 @@ export default function Projects() {
     if (!canManage) return alert("Non hai i permessi.");
     if (!project?.id) return;
     const projectPhases = phases.filter((phase) => phase.progetto_id === project.id);
-    if (!window.confirm(`Vuoi eliminare il progetto "${project.titolo || "senza titolo"}"?\n\nVerranno eliminate anche ${projectPhases.length} fasi/task collegate, tutti i commenti, allegati, reparti, prodotti, storico e file fisici delle fasi.\n\nOperazione non reversibile.`)) return;
+    if (!await window.workspaceConfirm(`Vuoi eliminare il progetto "${project.titolo || "senza titolo"}"?\n\nVerranno eliminate anche ${projectPhases.length} fasi/task collegate, tutti i commenti, allegati, reparti, prodotti, storico e file fisici delle fasi.\n\nOperazione non reversibile.`)) return;
     await deleteProjectCompletely(project);
   }
 
   async function removeSelectedPhase() {
     if (!canManage) return alert("Non hai i permessi.");
     if (!selectedPhase?.id) return;
-    if (!window.confirm("Vuoi eliminare questa fase?\n\nVerranno eliminati anche commenti, allegati, reparti, prodotti, storico e file fisici collegati.")) return;
+    if (!await window.workspaceConfirm("Vuoi eliminare questa fase?\n\nVerranno eliminati anche commenti, allegati, reparti, prodotti, storico e file fisici collegati.")) return;
     await deletePhaseCompletely(selectedPhase, { closeModal: true });
   }
 

@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { completeSyncRun, createSyncRun as createCentralSyncRun, failSyncRun, failSyncRunUnlessClosed, findRunningSync, isSyncRunClosedError } from "./lib/syncRuns.js";
 
 const STORAGE_BUCKET = "prodotti-mexal";
-const ARTICLE_PREFIXES = ["IT", "MKT", "IMP"];
+const ARTICLE_PREFIXES = ["IT", "MKT"];
 const DEFAULT_BATCH_SIZE = 8;
 const MAX_BATCH_SIZE = 12;
 
@@ -283,7 +283,7 @@ export async function verifyUser(req, supabase, { allowOrdersUser = false } = {}
 
   const { data: profiles, error: profileError } = await supabase
     .from("utenti")
-    .select("id,attivo,ruoli(nome,livello)")
+    .select("id,attivo,ruoli(nome,amministratore_workspace)")
     .eq("auth_user_id", user.id)
     .limit(2);
 
@@ -307,17 +307,7 @@ export async function verifyUser(req, supabase, { allowOrdersUser = false } = {}
     throw authorizationError("Utente disattivato.", 403);
   }
 
-  const roleName = String(profile.ruoli?.nome || "").toLowerCase();
-  const roleLevel = Number(profile.ruoli?.livello || 0);
-
-  const isAdmin =
-    [
-      "admin",
-      "administrator",
-      "amministratore",
-      "super admin",
-      "direzione",
-    ].includes(roleName) || roleLevel >= 80;
+  const isAdmin = profile.ruoli?.amministratore_workspace === true;
 
   if (isAdmin) return { authUserId: user.id, profile, isAdmin: true, integration: null };
 
@@ -661,7 +651,7 @@ async function getAllArticles(mexal) {
   } while (next);
 
   /*
-   * Il filtro IT*, MKT* e IMP* va applicato dopo aver letto tutte le pagine.
+   * Il filtro IT* e MKT* va applicato dopo aver letto tutte le pagine.
    * Lo stato attivo viene poi verificato nuovamente sul record completo durante
    * la sincronizzazione, così gli articoli annullati o precancellati non entrano.
    */
@@ -970,7 +960,7 @@ async function reconcileStaleProducts(supabase, startedAt) {
       updated_at: now,
     }, { count: "exact" })
     .eq("sincronizzato_mexal", true)
-    .or("codice_mexal.ilike.IT%,codice_mexal.ilike.MKT%,codice_mexal.ilike.IMP%")
+    .or("codice_mexal.ilike.IT%,codice_mexal.ilike.MKT%")
     .or(`ultimo_sync_mexal.lt.${startedAt},ultimo_sync_mexal.is.null`);
 
   if (error) throw error;
@@ -1071,7 +1061,7 @@ export default async function handler(req, res) {
         errori: [],
         dry_run: true,
         messaggio:
-          "Connessione verificata. Trovati gli articoli con codice IT*, MKT* e IMP*. Lo stato attivo viene verificato sul record completo durante la sincronizzazione.",
+          "Connessione verificata. Trovati gli articoli con codice IT* e MKT*. Lo stato attivo viene verificato sul record completo durante la sincronizzazione.",
       });
     }
 

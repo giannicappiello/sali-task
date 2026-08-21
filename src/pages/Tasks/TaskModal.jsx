@@ -111,7 +111,7 @@ function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
     setNewComment(""); await Promise.all([loadCommenti(), loadAttivita()]);
   }
 
-  async function deleteComment(id){ if(!confirm("Eliminare questo commento?")) return; await supabase.from("task_commenti").delete().eq("id",id); await loadCommenti(); }
+  async function deleteComment(id){ if(!await window.workspaceConfirm("Eliminare questo commento?")) return; await supabase.from("task_commenti").delete().eq("id",id); await loadCommenti(); }
 
   async function addChecklist(e){
     e.preventDefault(); if(!newChecklist.trim()) return;
@@ -129,7 +129,7 @@ function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
     await loadChecklist();
   }
 
-  async function deleteChecklist(id){ if(!confirm("Eliminare questo punto checklist?")) return; await supabase.from("task_checklist").delete().eq("id",id); await loadChecklist(); }
+  async function deleteChecklist(id){ if(!await window.workspaceConfirm("Eliminare questo punto checklist?")) return; await supabase.from("task_checklist").delete().eq("id",id); await loadChecklist(); }
 
   async function uploadAttachment(e){
     const file = e.target.files?.[0]; if(!file) return;
@@ -160,7 +160,7 @@ function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
   }
 
   async function deleteAttachment(a){
-    if(!confirm(`Eliminare l'allegato "${a.nome_file}"?`)) return;
+    if(!await window.workspaceConfirm(`Eliminare l'allegato "${a.nome_file}"?`)) return;
     if(a.storage_path) await supabase.storage.from("task-attachments").remove([a.storage_path]);
     await supabase.from("task_allegati").delete().eq("id",a.id);
     await loadAllegati();
@@ -168,7 +168,7 @@ function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
 
   async function deleteTask(){
     if(!isEditing || !task?.id) return;
-    if(!confirm("Eliminare questa task?\n\nVerranno eliminati anche commenti, checklist, storico attività, allegati e file fisici collegati.")) return;
+    if(!await window.workspaceConfirm("Eliminare questa task?\n\nVerranno eliminati anche commenti, checklist, storico attività, allegati e file fisici collegati.")) return;
 
     setSaving(true);
 

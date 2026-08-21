@@ -231,7 +231,7 @@ function SixMonthPlanningOverview({ currentMonth, phases, selectedDate, onSelect
 }
 
 export default function Tasks() {
-  const { profile, hasPermission, isAdmin, userDepartmentIds = [] } = useAuth();
+  const { profile, hasPermission, isAdmin, userDepartmentIds = [], dataScope, canViewScopedData } = useAuth();
   const [params, setParams] = useSearchParams();
   const [view, setView] = useState("month");
   const [cursor, setCursor] = useState(() => new Date());
@@ -253,12 +253,11 @@ export default function Tasks() {
   const [loading, setLoading] = useState(true);
 
   const actorId = profile?.id || null;
-  const canReadAllProjects = hasPermission?.("projects.read.all") || hasPermission?.("tasks.read.all") || isAdmin?.();
-  const canReadAllTasksInVisibleProjects = canReadAllProjects || hasPermission?.("tasks.read.project_departments");
+  const canReadAllProjects = dataScope?.mode === "tutti" || isAdmin?.();
 
   useEffect(() => {
     if (profile?.id) loadPlanning();
-  }, [profile?.id, userDepartmentIds.join(",")]);
+  }, [profile?.id, userDepartmentIds.join(","), dataScope?.mode, dataScope?.userIds?.join(","), dataScope?.departmentIds?.join(",")]);
 
   useEffect(() => {
     if (params.get("new") === "1") {
@@ -278,7 +277,7 @@ export default function Tasks() {
     setLoading(true);
 
     const [projectsRes, phasesRes, projectDepartmentsRes, phaseDepartmentsRes, departmentsRes, phaseProductsRes, productsRes, templatesRes, templateDepartmentsRes] = await Promise.all([
-      supabase.from("v4_progetti").select("id,titolo,descrizione,deadline,priorita,stato,created_at").order("created_at", { ascending: false }),
+      supabase.from("v4_progetti").select("id,titolo,descrizione,deadline,priorita,stato,created_at,creato_da").order("created_at", { ascending: false }),
       supabase
         .from("v4_fasi_progetto")
         .select("*,v4_progetti(id,titolo,descrizione),reparti(id,nome)")
@@ -302,34 +301,49 @@ export default function Tasks() {
     const allPhases = phasesRes.data || [];
     const allProjectDepartments = projectDepartmentsRes.data || [];
     const allPhaseDepartments = phaseDepartmentsRes.data || [];
-    const allowedDepartmentIds = safeArray(userDepartmentIds);
-
+    const selectableDepartmentIds = new Set([...(userDepartmentIds || []), ...(dataScope?.departmentIds || [])]);
+    const projectDepartmentIdsByProject = new Map();
+    allProjectDepartments.forEach((row) => {
+      if (!row.progetto_id || !row.reparto_id) return;
+      const ids = projectDepartmentIdsByProject.get(row.progetto_id) || [];
+      ids.push(row.reparto_id);
+      projectDepartmentIdsByProject.set(row.progetto_id, ids);
+    });
+    const phaseDepartmentIdsByPhase = new Map();
+    allPhaseDepartments.forEach((row) => {
+      if (!row.fase_id || !row.reparto_id) return;
+      const ids = phaseDepartmentIdsByPhase.get(row.fase_id) || [];
+      ids.push(row.reparto_id);
+      phaseDepartmentIdsByPhase.set(row.fase_id, ids);
+    });
+    const directlyVisiblePhases = canReadAllProjects
+      ? allPhases
+      : allPhases.filter((phase) => {
+          const ids = phaseDepartmentIdsByPhase.get(phase.id) || [];
+          return canViewScopedData({
+            ownerId: phase.creato_da,
+            departmentIds: ids.length ? ids : [phase.reparto_id].filter(Boolean),
+          });
+        });
+    const projectsWithVisiblePhases = new Set(directlyVisiblePhases.map((phase) => phase.progetto_id).filter(Boolean));
     const visibleProjectIds = new Set(
       canReadAllProjects
         ? allProjects.map((project) => project.id)
         : allProjects
             .filter((project) => {
-              const ids = allProjectDepartments.filter((row) => row.progetto_id === project.id).map((row) => row.reparto_id).filter(Boolean);
-              if (!ids.length) return true;
-              return ids.some((id) => allowedDepartmentIds.includes(id));
+              const ids = projectDepartmentIdsByProject.get(project.id) || [];
+              return projectsWithVisiblePhases.has(project.id)
+                || canViewScopedData({ ownerId: project.creato_da, departmentIds: ids });
             })
             .map((project) => project.id)
     );
 
-    const visiblePhases = (canReadAllProjects || canReadAllTasksInVisibleProjects)
-      ? allPhases.filter((phase) => !phase.progetto_id || visibleProjectIds.has(phase.progetto_id))
-      : allPhases.filter((phase) => {
-          if (phase.progetto_id && !visibleProjectIds.has(phase.progetto_id)) return false;
-          const ids = allPhaseDepartments.filter((row) => row.fase_id === phase.id).map((row) => row.reparto_id).filter(Boolean);
-          if (ids.length) return ids.some((id) => allowedDepartmentIds.includes(id));
-          if (!phase.reparto_id) return true;
-          return allowedDepartmentIds.includes(phase.reparto_id);
-        });
+    const visiblePhases = directlyVisiblePhases.filter((phase) => !phase.progetto_id || visibleProjectIds.has(phase.progetto_id));
 
     const visiblePhaseIds = new Set(visiblePhases.map((phase) => phase.id));
     setProjects(allProjects.filter((project) => visibleProjectIds.has(project.id)));
     setPhases(visiblePhases);
-    setDepartments((departmentsRes.data || []).filter((item) => item.attivo !== false));
+    setDepartments((departmentsRes.data || []).filter((item) => item.attivo !== false && (dataScope?.mode === "tutti" || selectableDepartmentIds.has(item.id))));
     setPhaseDepartments(allPhaseDepartments.filter((row) => visiblePhaseIds.has(row.fase_id)));
     setPhaseProducts((phaseProductsRes.data || []).filter((row) => visiblePhaseIds.has(row.fase_id)));
     setProducts(productsRes.data || []);

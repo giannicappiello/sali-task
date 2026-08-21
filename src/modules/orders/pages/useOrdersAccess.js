@@ -27,7 +27,8 @@ function emptyAccess() {
 }
 
 export default function useOrdersAccess(moduleCode = "prof") {
-  const { profile, isAdminUser } = useAuth();
+  const { profile, isAdminUser, canUseModule } = useAuth();
+  const workspaceModuleCode = moduleCode === "ph" ? "ordini_ph" : "ordini_pr";
   const [loading, setLoading] = useState(true);
   const [access, setAccess] = useState(emptyAccess());
   const [error, setError] = useState(null);
@@ -101,7 +102,10 @@ export default function useOrdersAccess(moduleCode = "prof") {
   }, [profile?.id, isAdminUser, moduleCode]);
 
   const permissions = useMemo(() => {
-    const enabled = access.enabled === true;
+    const canReadModule = canUseModule(workspaceModuleCode, "lettura");
+    const canWriteModule = canUseModule(workspaceModuleCode, "scrittura");
+    const canManageModule = canUseModule(workspaceModuleCode, "amministrazione");
+    const enabled = access.enabled === true && canReadModule;
     const role = access.ruolo_ordini;
 
     const isAdmin = access.admin === true;
@@ -133,10 +137,12 @@ export default function useOrdersAccess(moduleCode = "prof") {
       managedAgents,
       visibleAgents,
       canSeeAll: isAdmin || isBackoffice,
-      canWriteAll: isAdmin || isBackoffice,
+      canWriteAll: canWriteModule && (isAdmin || isBackoffice),
       canAccessOrders: isAdmin || enabled,
+      canWriteOrders: isAdmin || (enabled && canWriteModule),
+      canManageOrders: isAdmin || (enabled && canManageModule),
     };
-  }, [access]);
+  }, [access, canUseModule, workspaceModuleCode]);
 
   return {
     loading,

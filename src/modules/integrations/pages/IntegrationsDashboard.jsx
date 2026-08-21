@@ -1,87 +1,86 @@
-import { useNavigate } from "react-router-dom";
-import { Activity, Archive, Database, Fingerprint, Network, ShoppingCart } from "lucide-react";
-import IntegrationCard from "../components/IntegrationCard";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Archive, Bot, Database, FileCog, PlugZap, ShoppingCart, UserRound } from "lucide-react";
+import ModuleContainerLayout from "../../../components/ModuleContainerLayout";
+import { getModuleIcon } from "../../../config/moduleIcons";
+import { useAuth } from "../../../contexts/AuthContext";
+import { supabase } from "../../../lib/supabaseClient";
+
+const SCREEN_ICONS = Object.freeze({
+  "integrazioni.mexal": Database,
+  "integrazioni.mexal_agenti": UserRound,
+  "integrazioni.serie_documenti": FileCog,
+  "integrazioni.ordini_pr": ShoppingCart,
+  "integrazioni.ordini_ph": ShoppingCart,
+  "integrazioni.documentale": Archive,
+  "integrazioni.progremes": Bot,
+});
 
 export default function IntegrationsDashboard() {
-  const navigate = useNavigate();
+  const { hasPermission, hasScreenAccess, isAdminUser } = useAuth();
+  const [catalog, setCatalog] = useState({ module: null, screens: [], links: [] });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const integrations = [
-    {
-      icon: Database,
-      title: "Mexal ERP",
-      description: "Sincronizzazione di clienti, prodotti, condizioni commerciali, giacenze e ordini.",
-      status: "connected",
-      meta: "WebAPI Mexal · ambiente configurato",
-      onOpen: () => navigate("/integrations/mexal"),
-    },
-    {
-      icon: ShoppingCart,
-      title: "Ordini PROF",
-      description: "Configurazione invio Mexal, serie documenti e destinatari email per gli ordini PROF.",
-      status: "configuration",
-      meta: "Configurazione indipendente",
-      onOpen: () => navigate("/integrations/orders/prof"),
-    },
-    {
-      icon: ShoppingCart,
-      title: "Ordini PH",
-      description: "Configurazione invio Mexal, serie documenti e destinatari email per gli ordini PH.",
-      status: "configuration",
-      meta: "Configurazione indipendente",
-      onOpen: () => navigate("/integrations/orders/ph"),
-    },
-    {
-      icon: Activity,
-      title: "Gestione Farmacie",
-      description: "Collegamento con il modulo Beauty Days e i dati delle giornate promozionali.",
-      status: "active",
-      meta: "Modulo interno Workspace",
-      disabled: true,
-    },
-    {
-      icon: Archive,
-      title: "Documentale",
-      description: "Accesso centralizzato a schede tecniche, certificazioni e materiali aziendali.",
-      status: "configuration",
-      meta: "Repository cloud in configurazione",
-      disabled: true,
-    },
-    {
-      icon: Fingerprint,
-      title: "Presenze",
-      description: "Integrazione futura con dispositivi RFID, impronta digitale e controllo accessi.",
-      status: "unavailable",
-      meta: "Hardware non ancora collegato",
-      disabled: true,
-    },
-    {
-      icon: Network,
-      title: "API Esterne",
-      description: "Area per connettori, webhook e servizi esterni del Workspace.",
-      status: "unavailable",
-      meta: "Nessuna API aggiuntiva configurata",
-      disabled: true,
-    },
-  ];
+  const loadSections = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const [moduleResult, screensResult, linksResult] = await Promise.all([
+        supabase.from("workspace_moduli").select("codice,nome,descrizione,icona").eq("codice", "integrazioni").eq("attivo", true).maybeSingle(),
+        supabase.from("workspace_schermate").select("codice,nome,descrizione,percorso,attiva,icona,metadati").eq("attiva", true),
+        supabase.from("workspace_moduli_schermate").select("schermata_codice,ordine,visibile_menu").eq("modulo_codice", "integrazioni").eq("visibile_menu", true).order("ordine"),
+      ]);
+      const loadError = moduleResult.error || screensResult.error || linksResult.error;
+      if (loadError) throw loadError;
+      setCatalog({ module: moduleResult.data, screens: screensResult.data || [], links: linksResult.data || [] });
+    } catch (loadError) {
+      setError(loadError?.message || "Caricamento delle integrazioni non riuscito.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  return (
-    <div className="integrations-page">
-      <div className="integrations-hero">
-        <div>
-          <span className="integrations-eyebrow">AMMINISTRAZIONE</span>
-          <h1>Centro Integrazioni</h1>
-          <p>Controlla da un unico punto le connessioni tra Progre Workspace e i sistemi aziendali.</p>
-        </div>
-        <div className="integrations-hero-summary">
-          <strong>1</strong><span>integrazione connessa</span>
-        </div>
-      </div>
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadSections(), 0);
+    const refresh = () => void loadSections();
+    window.addEventListener("workspace:module-catalog-changed", refresh);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("workspace:module-catalog-changed", refresh);
+    };
+  }, [loadSections]);
 
-      <div className="integrations-grid">
-        {integrations.map((integration) => (
-          <IntegrationCard key={integration.title} {...integration} />
-        ))}
-      </div>
-    </div>
-  );
+  const sections = useMemo(() => {
+    const screenByCode = new Map(catalog.screens.map((screen) => [screen.codice, screen]));
+    return catalog.links
+      .map((link) => ({ ...screenByCode.get(link.schermata_codice), ordine: link.ordine }))
+      .filter((screen) => screen.codice && screen.metadati?.kind !== "topic")
+      .filter((screen) => hasScreenAccess(screen.codice, "integrazioni"))
+      .filter((screen) => {
+        const required = Array.isArray(screen.metadati?.required_permissions) ? screen.metadati.required_permissions : [];
+        return isAdminUser || !required.length || required.some((permission) => hasPermission(permission));
+      });
+  }, [catalog.links, catalog.screens, hasPermission, hasScreenAccess, isAdminUser]);
+
+  const ModuleIcon = getModuleIcon(catalog.module?.icona, PlugZap);
+
+  return <ModuleContainerLayout
+    icon={ModuleIcon}
+    eyebrow="Amministrazione Workspace"
+    title={catalog.module?.nome || "Integrazioni"}
+    description={catalog.module?.descrizione || "Connessioni, sincronizzazioni e servizi esterni del Workspace."}
+    items={sections.map((section) => ({
+      code: section.codice,
+      name: section.nome,
+      description: section.descrizione,
+      to: section.percorso,
+      icon: getModuleIcon(section.icona,SCREEN_ICONS[section.codice] || PlugZap),
+    }))}
+    loading={loading}
+    error={error}
+    onRetry={loadSections}
+    ariaLabel="Aree delle integrazioni"
+    emptyTitle="Nessuna integrazione disponibile"
+    emptyDescription="Il modulo è attivo, ma non contiene schermate visibili per questo utente."
+  />;
 }

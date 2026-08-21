@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { FileText, Package, Search, Megaphone, Factory } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
+import ImplantsManager from "../../modules/orders/pages/Products";
+import "../../modules/orders/orders-module.css";
 
 function getProductDisplayName(product) {
   const raw = product?.json_mexal;
@@ -45,15 +47,27 @@ function getProductCode(product) {
     .toUpperCase();
 }
 
+async function documentApi(action, extra = {}) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const response = await fetch("/api/mexal/automation", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token || ""}` }, body: JSON.stringify({ action: `document_${action}`, ...extra }) });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error || "Archivio documentale non disponibile.");
+  return body;
+}
+
 export default function Products() {
   const [products, setProducts] = useState([]);
   const [query, setQuery] = useState("");
   const [activeSection, setActiveSection] = useState("IT");
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [productDocuments, setProductDocuments] = useState([]);
+  const [documentSections, setDocumentSections] = useState([]);
+  const [documentUrls, setDocumentUrls] = useState({});
 
   useEffect(() => {
     loadProducts();
+    documentApi("list").then((result) => { setProductDocuments(result.documents || []); setDocumentSections(result.sections || []); }).catch((error) => console.error("Documenti prodotti:", error.message));
   }, []);
 
   async function loadProducts() {
@@ -123,6 +137,16 @@ export default function Products() {
 
   const activeSectionInfo =
     SECTIONS.find((section) => section.id === activeSection) || SECTIONS[0];
+  const selectedDocuments = useMemo(() => {
+    if (!selected) return [];
+    const category = String(selected.categoria_mexal || "").trim().toLocaleLowerCase("it");
+    const brand = String(selected.brand_mexal || "").trim().toLocaleLowerCase("it");
+    const line = String(selected.linea_mexal || "").trim().toLocaleLowerCase("it");
+    const matches = (values, target) => target && (values || []).some((value) => String(value).trim().toLocaleLowerCase("it") === target);
+    return productDocuments.filter((document) => document.prodotto_id === selected.id || matches(document.categorie_prodotto, category) || matches(document.brand_prodotti, brand) || matches(document.linee_prodotto, line));
+  }, [productDocuments, selected]);
+  const selectedDocumentIds = selectedDocuments.map((document) => document.id).join(",");
+  useEffect(() => { if (!selectedDocumentIds) { setDocumentUrls({}); return; } documentApi("urls", { ids: selectedDocumentIds.split(",").slice(0, 100) }).then((result) => setDocumentUrls(result.urls || {})).catch(() => setDocumentUrls({})); }, [selectedDocumentIds]);
 
   return (
     <div className="products-page v4-page">
@@ -164,7 +188,7 @@ export default function Products() {
         })}
       </div>
 
-      <div className="v4-toolbar product-toolbar">
+      {activeSection !== "IMP" && <div className="v4-toolbar product-toolbar">
         <div className="task-search">
           <Search size={18} />
           <input
@@ -173,9 +197,9 @@ export default function Products() {
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
-      </div>
+      </div>}
 
-      <div className="product-layout">
+      {activeSection === "IMP" ? <ImplantsManager implantsOnly /> : <div className="product-layout">
         <div className="panel product-list-panel">
           <div className="panel-header">
             <h3>{activeSectionInfo.title}</h3>
@@ -227,8 +251,10 @@ export default function Products() {
               <h2>{getProductDisplayName(selected)}</h2>
               <p>{selected.descrizione || "Nessuna descrizione disponibile."}</p>
 
+              <div className={`product-primary-details ${selected.immagine_catalogo_url ? "has-image" : ""}`}>
               {selected.immagine_catalogo_url && (
                 <img
+                  className="product-detail-image"
                   src={selected.immagine_catalogo_url}
                   alt={getProductDisplayName(selected)}
                   style={{
@@ -244,7 +270,7 @@ export default function Products() {
                 />
               )}
 
-              <div className="mini-meta">
+              <div className="mini-meta product-detail-meta">
                 <span>Codice: {selected.codice_mexal || "-"}</span>
                 <span>Brand: {selected.brand_mexal || "-"}</span>
                 <span>Linea: {selected.linea_mexal || "-"}</span>
@@ -261,6 +287,9 @@ export default function Products() {
                     : "-"}
                 </span>
               </div>
+              </div>
+
+              {selectedDocuments.length > 0 && <section className="product-linked-documents"><h3>Documenti e contenuti collegati</h3><div className="product-document-grid">{selectedDocuments.map((document) => { const url = documentUrls[document.id]; const sectionName = documentSections.find((section) => section.id === document.sezione_id)?.nome || "Documento"; return <button type="button" key={document.id} onClick={() => url && window.open(url, "_blank", "noopener,noreferrer")} disabled={!url} className="product-document-card">{url && document.mime_group === "immagine" ? <img src={url} alt="" loading="lazy" /> : url && document.mime_group === "video" ? <video src={url} muted preload="metadata" /> : url && document.mime_group === "pdf" ? <iframe src={`${url}#page=1&toolbar=0&navpanes=0`} title="" tabIndex="-1" /> : <span><FileText size={28} /></span>}<div><strong>Apri {sectionName.toLocaleLowerCase("it")}</strong><small>{document.titolo}</small></div></button>; })}</div></section>}
 
               {selected.scheda_tecnica_url && (
                 <a
@@ -276,7 +305,7 @@ export default function Products() {
             </div>
           )}
         </div>
-      </div>
+      </div>}
 
       <style>{`
         .product-section-tabs {
@@ -374,7 +403,27 @@ export default function Products() {
           to { transform: rotate(360deg); }
         }
 
+        .product-primary-details { margin: 18px 0 8px; }
+        .product-primary-details.has-image { display: grid; grid-template-columns: minmax(260px, 360px) minmax(0, 1fr); gap: 24px; align-items: start; }
+        .product-detail-image { width: 100% !important; max-width: none !important; height: 320px; margin: 0 !important; }
+        .product-detail-meta { align-content: start; margin: 0; }
+        .product-primary-details.has-image .product-detail-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+        .product-primary-details.has-image .product-detail-meta span { border-radius: 10px; min-height: 42px; }
+        .product-linked-documents { margin-top: 22px; border-top: 1px solid #e2e8f0; padding-top: 18px; }
+        .product-linked-documents h3 { margin: 0 0 12px; }
+        .product-document-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+        .product-document-card { display: grid; grid-template-columns: 74px minmax(0,1fr); align-items: center; gap: 11px; padding: 9px; border: 1px solid #dbe3ec; border-radius: 12px; background: #fff; text-align: left; cursor: pointer; overflow: hidden; }
+        .product-document-card:hover { border-color: #60a5fa; background: #f8fbff; }
+        .product-document-card img,.product-document-card video,.product-document-card iframe,.product-document-card>span { width: 74px; height: 58px; border: 0; border-radius: 8px; object-fit: cover; background: #eef2f7; pointer-events: none; }
+        .product-document-card>span { display: grid; place-items: center; color: #2563eb; }
+        .product-document-card div { min-width: 0; display: grid; gap: 4px; }
+        .product-document-card strong,.product-document-card small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .product-document-card small { color: #64748b; }
+
         @media (max-width: 900px) {
+          .product-primary-details.has-image { display: block; }
+          .product-detail-image { height: auto; max-height: 320px; margin-bottom: 14px !important; }
+          .product-primary-details.has-image .product-detail-meta { display: flex; }
           .product-section-tabs {
             grid-template-columns: 1fr;
           }

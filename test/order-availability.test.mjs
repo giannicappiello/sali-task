@@ -41,7 +41,9 @@ assert.equal(getAvailabilityValidity({ availability: checked, lines: orderLines,
 assert.equal(getAvailabilityValidity({ availability: { ...checked, lines: [{ ...checked.lines[0], status: "error" }, checked.lines[1]] }, lines: orderLines, customer }).valid, false, "una riga errore blocca la conferma");
 assert.deepEqual(quantitiesForOrderLine(orderLines[1], checked, true), { quantita_disponibile: 6, quantita_ocm: 6, quantita_ocx: 4, quantita_oci: 0 }, "la conferma usa solamente il risultato puntuale, non disponibilita cache");
 assert.deepEqual(quantitiesForOrderLine(orderLines[1], null, false), { quantita_disponibile: 10, quantita_ocm: 10, quantita_ocx: 0, quantita_oci: 0 }, "una bozza può usare il dato indicativo cache");
-assert.deepEqual(quantitiesForOrderLine({ codice_articolo: " imp0012 ", quantita: 3 }, null, true), { quantita_disponibile: 0, quantita_ocm: 0, quantita_ocx: 0, quantita_oci: 3 }, "IMP bypasses warehouse allocation and retains the ordered OCI quantity");
+assert.deepEqual(quantitiesForOrderLine({ codice_articolo: " imp0012 ", quantita: 3 }, null, true), { quantita_disponibile: 0, quantita_ocm: 3, quantita_ocx: 0, quantita_oci: 0 }, "IMP bypasses warehouse allocation and is always assigned to OCM");
+assert.deepEqual(quantitiesForOrderLine({ codice_articolo: "IT001", quantita: 3 }, null, true, { reservation: true }), { quantita_disponibile: 0, quantita_ocm: 0, quantita_ocx: 0, quantita_oci: 3 }, "reservation lines bypass availability and are assigned to OCI");
+assert.equal(getAvailabilityValidity({ availability: null, lines: orderLines, customer, reservation: true }).valid, true, "reservation orders do not require availability verification");
 
 const endpoint = await readFile("api/mexal/orders/check-availability.js", "utf8");
 assert.match(endpoint, /verifyUser\(req, supabase, \{ allowOrdersUser: true \}\)/, "autenticazione e autorizzazione Ordini lato server");

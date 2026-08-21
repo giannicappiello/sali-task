@@ -48,6 +48,24 @@ export function calculateOrderLineEconomics(line) {
   };
 }
 
+export function calculateOrderLineEconomicsWithPayment(line) {
+  const commercialDiscount = String(
+    line?.dettaglio_calcolo?.sconto_commerciale ?? line?.sconto_commerciale ?? ""
+  ).trim();
+  const paymentDiscount = String(
+    line?.dettaglio_calcolo?.sconto_pagamento ?? line?.sconto_pagamento ?? ""
+  ).trim();
+  const calculated = calculateOrderLineEconomics({
+    ...line,
+    sconto_commerciale: [commercialDiscount, paymentDiscount].filter(Boolean).join("+"),
+  });
+  return {
+    ...calculated,
+    sconto_commerciale: commercialDiscount,
+    sconto_pagamento: paymentDiscount,
+  };
+}
+
 export function calculateOrderEconomics(lines) {
   const righe = (lines || []).map(calculateOrderLineEconomics);
   const totaleImponibile = roundCurrency(righe.reduce((sum, line) => sum + line.imponibile_riga, 0));

@@ -24,12 +24,12 @@ const impCommissioned = calculateCommissions({
   products: [{ codice_articolo: "IMP0001", dati_mexal: { id_categoria_pr: 3, cod_iva: "22,0" } }],
   rules: [{ id: "generic", categoria_cliente: 2, categoria_prodotto: 3, percentuale: 7.5, attiva: true }],
 });
-const impDocument = buildMexalOrderDocument({ codice_cliente: "C", data_ordine: "2026-07-22", codice_agente_mexal: "602.00063" }, "OCI", [{ ...impCommissioned[0], quantita_documento: 3 }]);
-assert.deepEqual(impDocument.cod_iva, [[1, "22,0"]], "OCI invia l'aliquota IVA obbligatoria della riga IMP");
+const impDocument = buildMexalOrderDocument({ codice_cliente: "C", data_ordine: "2026-07-22", codice_agente_mexal: "602.00063" }, "OCM", [{ ...impCommissioned[0], quantita_documento: 3 }]);
+assert.deepEqual(impDocument.cod_iva, [[1, "22,0"]], "OCM invia l'aliquota IVA obbligatoria della riga IMP");
 
 const splitSource = [{ codice_articolo: "IT-SPLIT", quantita: 10, quantita_ocm: 6, quantita_ocx: 4, provvigione_percentuale: 7.5 }, { codice_articolo: "IMP0001", quantita: 3, quantita_ocm: 3, quantita_ocx: 0, provvigione_percentuale: 7.5 }];
 const split = (await import("../server/mexal/order-documents.js")).classifyOrderLines(splitSource);
-assert.deepEqual(split.OCM.map(({ codice_articolo, quantita_documento }) => [codice_articolo, quantita_documento]), [["IT-SPLIT", 6]], "OCM split remains unchanged");
+assert.deepEqual(split.OCM.map(({ codice_articolo, quantita_documento }) => [codice_articolo, quantita_documento]), [["IT-SPLIT", 6], ["IMP0001", 3]], "OCM includes IMP at the full ordered quantity");
 assert.deepEqual(split.OCX.map(({ codice_articolo, quantita_documento }) => [codice_articolo, quantita_documento]), [["IT-SPLIT", 4]], "OCX split remains unchanged");
-assert.deepEqual(split.OCI.map(({ codice_articolo, quantita_documento }) => [codice_articolo, quantita_documento]), [["IMP0001", 3]], "OCI split remains unchanged");
+assert.deepEqual(split.OCI.map(({ codice_articolo, quantita_documento }) => [codice_articolo, quantita_documento]), [], "IMP is no longer assigned to OCI");
 for (const documentLines of Object.values(split)) assert.ok(documentLines.every((line) => line.provvigione_percentuale === 7.5), "the commission snapshot follows every split line");

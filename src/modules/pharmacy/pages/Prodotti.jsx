@@ -284,7 +284,7 @@ export default function Prodotti({ utente }) {
   }
 
   async function eliminaProdotto(prodotto) {
-    const conferma = window.confirm(`Vuoi eliminare "${prodotto.nome}"?`);
+    const conferma = await window.workspaceConfirm(`Vuoi eliminare "${prodotto.nome}"?`);
     if (!conferma) return;
 
     const { error } = await reportSupabase.from("prodotti").delete().eq("id", prodotto.id);
@@ -294,7 +294,7 @@ export default function Prodotti({ utente }) {
   }
 
   async function eliminaCategoria(categoria) {
-    const conferma = window.confirm(`Vuoi eliminare "${categoria.nome}"?`);
+    const conferma = await window.workspaceConfirm(`Vuoi eliminare "${categoria.nome}"?`);
     if (!conferma) return;
 
     const { error } = await reportSupabase.from("categorie_prodotti").delete().eq("id", categoria.id);
@@ -304,7 +304,7 @@ export default function Prodotti({ utente }) {
   }
 
   async function eliminaSottocategoria(sottocategoria) {
-    const conferma = window.confirm(`Vuoi eliminare "${sottocategoria.nome}"?`);
+    const conferma = await window.workspaceConfirm(`Vuoi eliminare "${sottocategoria.nome}"?`);
     if (!conferma) return;
 
     const { error } = await supabase

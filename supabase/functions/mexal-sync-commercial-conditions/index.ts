@@ -426,7 +426,7 @@ async function requireOrdersAdministrator(
 ) {
   const { data: profile, error: profileError } = await supabase
     .from("utenti")
-    .select("id,attivo,ruolo_id,ruoli(nome,livello)")
+    .select("id,attivo,ruolo_id,ruoli(nome,amministratore_workspace)")
     .eq("auth_user_id", userId)
     .maybeSingle();
 
@@ -442,16 +442,7 @@ async function requireOrdersAdministrator(
   }
 
   const role = profile.ruoli as JsonRecord | null;
-  const roleName = stringValue(role?.nome).toLowerCase();
-  const roleLevel = integer(role?.livello);
-  const isAdmin =
-    [
-      "admin",
-      "administrator",
-      "amministratore",
-      "super admin",
-      "direzione",
-    ].includes(roleName) || roleLevel >= 80;
+  const isAdmin = role?.amministratore_workspace === true;
 
   if (isAdmin) return;
 

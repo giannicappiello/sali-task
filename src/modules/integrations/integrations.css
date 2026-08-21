@@ -40,3 +40,142 @@ button.mexal-kpi:focus-visible,.mexal-sync-card:focus-visible{outline:3px solid 
 .mexal-agents-panel .mexal-history-table thead th:last-child{z-index:2}
 .mexal-agents-panel .mexal-history-table tbody tr:hover td:last-child{background:#f2f7ff}
 @media(max-width:720px){.mexal-toolbar{align-items:stretch}.mexal-search-control{min-width:100%}.mexal-toolbar .primary-action,.mexal-toolbar .mexal-danger-action{width:100%}.mexal-history-filters{display:grid;grid-template-columns:1fr}.mexal-history-filters label{min-width:0}.mexal-row-actions{display:grid}.mexal-row-actions button{width:100%}}
+
+/* Import moduli ProgreMES: layout coerente con le schermate Workspace. */
+.progremes-settings-page{gap:18px}
+.progremes-summary-strip{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:18px 20px;border:1px solid var(--border);border-radius:16px;background:#fff;box-shadow:var(--shadow-soft)}
+.progremes-summary-title{display:flex;align-items:center;gap:13px;min-width:0}
+.progremes-summary-title>span{display:grid;place-items:center;flex:0 0 auto;width:46px;height:46px;border-radius:13px;background:#eaf2ff;color:#126bff}
+.progremes-summary-title h2{margin:0 0 4px;font-size:21px}
+.progremes-summary-title p,.progremes-control-card p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}
+.progremes-summary-metrics{display:flex;align-items:stretch;gap:8px}
+.progremes-summary-metrics>div{display:grid;min-width:98px;padding:9px 14px;border-left:1px solid var(--border)}
+.progremes-summary-metrics strong{font-size:18px;color:#172033}
+.progremes-summary-metrics strong.is-running{color:#126bff}
+.progremes-summary-metrics strong.is-ready{color:#16804b}
+.progremes-summary-metrics span{margin-top:2px;color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.progremes-control-panel{padding:20px}
+.progremes-control-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:17px}
+.progremes-control-card{display:flex;flex-direction:column;justify-content:space-between;gap:16px;min-width:0;padding:16px;border:1px solid var(--border);border-radius:13px;background:#f8fafc}
+.progremes-control-card h4{margin:0 0 5px;font-size:16px}
+.progremes-control-card .mexal-settings-actions{margin-top:0}
+.progremes-schedule-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:10px;align-items:stretch}
+.progremes-schedule-grid .mexal-toggle-row,.progremes-schedule-grid .mexal-select-row{min-width:0;padding:11px;background:#fff}
+.progremes-schedule-grid .mexal-select-row input{width:70px;min-height:38px;border:1px solid var(--border);border-radius:9px;padding:0 9px;background:#fff;font:inherit}
+.progremes-schedule-grid>.primary-action{align-self:stretch;white-space:nowrap}
+.progremes-settings-page .mexal-table-panel{padding:20px;overflow:auto}
+.progremes-settings-page .mexal-history-table code{padding:4px 7px;border-radius:7px;background:#f1f5f9;color:#334155;font-size:12px}
+.progremes-status{display:inline-flex;align-items:center;padding:5px 9px;border-radius:999px;font-size:11px;font-weight:800;white-space:nowrap;text-transform:capitalize}
+.progremes-status.active{background:#e8f8f0;color:#117a4c}
+.progremes-status.inactive{background:#f1f5f9;color:#64748b}
+.progremes-status.running{background:#e8f1ff;color:#126bff}
+@media(max-width:1050px){.progremes-control-grid{grid-template-columns:1fr}.progremes-schedule-grid{grid-template-columns:1fr 1fr}.progremes-schedule-grid>.primary-action{grid-column:1/-1;justify-self:start}}
+@media(max-width:720px){.progremes-summary-strip{align-items:flex-start;flex-direction:column}.progremes-summary-metrics{width:100%}.progremes-summary-metrics>div{flex:1;min-width:0;padding-inline:10px}.progremes-summary-metrics>div:first-child{border-left:0}.progremes-schedule-grid{grid-template-columns:1fr}.progremes-schedule-grid>.primary-action{grid-column:auto;width:100%}.progremes-control-card .mexal-settings-actions{display:grid}.progremes-control-card .mexal-settings-actions button{width:100%}}
+
+/* Schermate della voce Sincronizzazioni: una sola intestazione Workspace,
+   pannelli fluidi e comandi sempre fuori dalle aree di scorrimento. */
+.workspace-screen-content>.mexal-page,
+.workspace-screen-content>.integrations-page{
+  width:100%;
+  min-width:0;
+  display:grid;
+  gap:18px;
+}
+.workspace-screen-content>.mexal-page>.integrations-back-button,
+.workspace-screen-content>.integrations-page>.integrations-back-button,
+.workspace-screen-content>.mexal-page>.mexal-hero,
+.workspace-screen-content>.integrations-page>.integrations-hero,
+.workspace-screen-content>.document-integration-page>.mexal-hero{
+  display:none;
+}
+.workspace-screen-content .mexal-two-columns,
+.workspace-screen-content .integration-single-panel,
+.workspace-screen-content .mexal-kpi-grid,
+.workspace-screen-content .mexal-sync-grid,
+.workspace-screen-content .mexal-settings-panel,
+.workspace-screen-content .mexal-table-panel,
+.workspace-screen-content .mexal-data-summary{
+  min-width:0;
+  max-width:100%;
+}
+.integration-single-panel{display:grid;grid-template-columns:minmax(0,1fr);width:100%}
+.integration-single-panel>.mexal-table-panel{width:100%;box-sizing:border-box}
+.workspace-screen-content .mexal-table-panel{
+  padding:20px;
+}
+.workspace-screen-content .mexal-history-table-wrap,
+.workspace-screen-content .mexal-table-scroll{
+  width:100%;
+  max-width:100%;
+  overflow-x:auto;
+  overscroll-behavior-inline:contain;
+}
+.workspace-screen-content .mexal-section-heading{
+  align-items:flex-start;
+  flex-wrap:wrap;
+}
+.workspace-screen-content .mexal-section-heading>div:first-child{
+  min-width:0;
+  flex:1 1 320px;
+}
+.workspace-screen-content .mexal-section-heading>button,
+.workspace-screen-content .mexal-section-heading>.document-sync-actions,
+.workspace-screen-content .mexal-section-heading>.document-series-actions{
+  flex:0 1 auto;
+}
+.workspace-screen-content .mexal-toolbar{
+  position:relative;
+  z-index:2;
+  align-items:center;
+  flex-wrap:wrap;
+}
+.workspace-screen-content .mexal-toolbar .mexal-search-control{
+  flex:1 1 280px;
+  min-width:min(280px,100%);
+}
+.workspace-screen-content .primary-action,
+.workspace-screen-content .secondary-action,
+.workspace-screen-content .mexal-danger-action,
+.workspace-screen-content .danger-action,
+.workspace-screen-content .orders-primary{
+  position:relative;
+  z-index:1;
+  white-space:normal;
+}
+.document-series-panel{margin:0}
+.document-series-heading{gap:16px}
+.document-series-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.document-series-actions button,.document-series-save{min-height:44px;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.document-series-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr)) auto;gap:16px;margin-top:20px;align-items:end}
+.document-series-grid label{display:grid;min-width:0;gap:8px;color:#334155}
+.document-series-grid select{width:100%;min-width:0;min-height:44px;border:1px solid var(--border);border-radius:10px;background:#fff;padding:0 11px;color:#172033;font:inherit}
+.document-series-message,.document-series-empty{margin-top:14px;padding:12px;border-radius:10px;background:#f8fafc;color:#334155}
+.document-series-message.error{background:#fef2f2;color:#991b1b}.document-series-message.success{background:#f0fdf4;color:#166534}.document-series-empty{color:#b45309}
+.document-series-diagnostics{margin-top:16px;padding:14px;border:1px solid #cbd5e1;border-radius:12px;background:#f8fafc;overflow:hidden}
+.document-series-diagnostics>div{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.document-series-diagnostics pre{max-width:100%;max-height:360px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+.document-list-controls{display:flex;align-items:stretch;justify-content:flex-end;gap:10px;flex:1 1 520px;min-width:0;flex-wrap:wrap}
+.document-list-controls .document-unlinked-filter{flex:0 1 280px;min-width:240px;padding:9px 12px;background:#f8fafc}
+.document-list-controls .document-admin-search{flex:1 1 260px;min-width:220px;max-width:380px}
+@media(max-width:900px){
+  .workspace-screen-content .mexal-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .document-series-grid{grid-template-columns:1fr 1fr}
+  .document-series-save{grid-column:1/-1;justify-self:start}
+}
+@media(max-width:720px){
+  .workspace-screen-content .mexal-kpi-grid,
+  .workspace-screen-content .mexal-sync-grid,
+  .workspace-screen-content .mexal-two-columns,
+  .document-series-grid{grid-template-columns:1fr}
+  .workspace-screen-content .mexal-section-heading>button,
+  .workspace-screen-content .document-sync-actions,
+  .workspace-screen-content .document-series-actions,
+  .workspace-screen-content .document-series-actions button,
+  .workspace-screen-content .mexal-toolbar .primary-action,
+  .workspace-screen-content .mexal-toolbar .mexal-danger-action,
+  .document-series-save{width:100%}
+  .document-series-save{grid-column:auto}
+  .document-list-controls{width:100%;display:grid;grid-template-columns:1fr}
+  .document-list-controls .document-unlinked-filter,
+  .document-list-controls .document-admin-search{width:100%;max-width:none;min-width:0}
+}

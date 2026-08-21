@@ -1,0 +1,16 @@
+.git
+.tmp
+.pnpm-store
+dist
+node_modules
+supabase/.temp
+hosting/progre-document-gateway.zip
+k.includes('SUPABASE')))
+*.log
+UNUSED
+tmp
+output
+.env
+.env.*
+**/config.php
+**/config.txt

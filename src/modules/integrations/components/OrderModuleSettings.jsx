@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, Save, ShoppingCart } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import { useAuth } from "../../../contexts/AuthContext";
+import { Save } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
 import { customerOrderSeriesOptions } from "../../../components/documentSeriesOptions";
 import {
@@ -162,8 +160,6 @@ function Panel({ code, title, series }) {
 }
 
 export default function OrderModuleSettings({ moduleCode = null }) {
-  const navigate = useNavigate();
-  const { profile } = useAuth();
   const [series, setSeries] = useState([]);
   const [seriesError, setSeriesError] = useState("");
 
@@ -185,28 +181,9 @@ export default function OrderModuleSettings({ moduleCode = null }) {
     </div>;
   }
 
-  const title = moduleCode === "ph" ? "Ordini PH" : "Ordini PROF";
-  const subtitle = moduleCode === "ph"
-    ? "Configurazione integrazione ordini farmacia."
-    : "Configurazione integrazione ordini professionali.";
-
   return <div className="mexal-page">
-    <button type="button" className="integrations-back-button" onClick={() => navigate("/integrations")}><ArrowLeft size={18} /> Centro Integrazioni</button>
-
-    <section className="mexal-hero">
-      <div className="mexal-hero-main">
-        <div className="mexal-logo"><ShoppingCart size={30} /></div>
-        <div>
-          <div className="mexal-title-line"><h1>{title}</h1><IntegrationStatusBadge status="configuration" /></div>
-          <p>{subtitle}</p>
-        </div>
-      </div>
-      <div className="mexal-hero-user"><span>Operatore</span><strong>{`${profile?.nome || ""} ${profile?.cognome || ""}`.trim() || "Utente"}</strong></div>
-    </section>
-
     {seriesError && <div className="mexal-alert alert-error"><span>{seriesError}</span></div>}
-
-    <div className="mexal-two-columns">
+    <div className="integration-single-panel">
       <Panel code={moduleCode} title="Configurazione" series={series} />
     </div>
   </div>;

@@ -1,9 +1,23 @@
 import { createClient } from "@supabase/supabase-js";
 import { buildMexalClient, verifyUser } from "./sync-products.js";
+import {
+  normalizeWarehouseReasonCode,
+  warehouseReasonDescription,
+} from "../../shared/mexalWarehouseReasons.js";
 
 function required(name) { const value = String(process.env[name] || "").trim(); if (!value) throw new Error(`Variabile Vercel mancante: ${name}`); return value; }
 function adminClient() { return createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false, autoRefreshToken: false } }); }
 function referencePath(document) { return `/documenti/ordini-clienti/${encodeURIComponent(document.sigla || "OC")}+${encodeURIComponent(document.serie)}+${encodeURIComponent(document.numero)}`; }
+function text(value) { return String(value ?? "").trim(); }
+function matrixFirst(value) { return Array.isArray(value) && Array.isArray(value[0]) ? value[0][value[0].length - 1] : value; }
+function warehouseReason(detail) {
+  const code = normalizeWarehouseReasonCode(matrixFirst(detail?.id_causale ?? detail?.codice_causale ?? detail?.cod_causale ?? detail?.causale));
+  const apiDescription = text(matrixFirst(detail?.descr_causale ?? detail?.descrizione_causale ?? detail?.causale_descrizione ?? detail?.desc_causale));
+  return {
+    causale_magazzino_codice: code || null,
+    causale_magazzino_descrizione: warehouseReasonDescription(code, apiDescription) || null,
+  };
+}
 function missing(error) { return Number(error?.status || error?.mexalResponse?.status) === 404 || /\b(404|1004)\b|non trovata|not found/i.test(String(error?.message || "")); }
 
 function errorResponseText(error) {
@@ -70,8 +84,11 @@ export async function syncOrderDocuments({ supabase, mexal, origin = "manual" })
     }
     const now = new Date().toISOString();
     try {
-      await mexal.getJson(referencePath(document));
-      const { error: updateError } = await supabase.from("ordini_documenti_mexal").update({ stato_operativo: "APERTO", presente_in_mexal: true, ultimo_sync_mexal: now, verificato_il: now, errore: null, aggiornato_il: now }).eq("id", document.id);
+      const detail = await mexal.getJson(referencePath(document));
+      const requestedFields = document.tipo_documento === "OCX"
+        ? { ...warehouseReason(detail), dati_mexal: detail }
+        : {};
+      const { error: updateError } = await supabase.from("ordini_documenti_mexal").update({ stato_operativo: "APERTO", presente_in_mexal: true, ultimo_sync_mexal: now, verificato_il: now, errore: null, aggiornato_il: now, ...requestedFields }).eq("id", document.id);
       if (updateError) throw updateError; open += 1;
     } catch (syncError) {
       if (isMissingMexalDocument(syncError)) {

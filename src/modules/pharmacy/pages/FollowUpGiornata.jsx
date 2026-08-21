@@ -88,7 +88,7 @@ export default function FollowUpGiornata({
   }
 
   async function eliminaFollowUp(item) {
-    const conferma = window.confirm("Vuoi eliminare questa azione commerciale?");
+    const conferma = await window.workspaceConfirm("Vuoi eliminare questa azione commerciale?");
     if (!conferma) return;
 
     const { error } = await supabase

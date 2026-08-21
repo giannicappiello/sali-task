@@ -13,8 +13,47 @@ import {
 import { agentsAccess } from "../../server/mexal/agents-access.js";
 import orderDocumentsHandler, { purgeEvictedOrderDocuments } from "../../server/mexal/sync-order-documents.js";
 import salesInvoicesHandler from "../../server/mexal/sync-sales-invoices.js";
-import { requireAdmin } from "../../server/mexal/lib/auth.js";
+import productCategoriesHandler from "../../server/mexal/sync-product-categories.js";
+import { requireAdmin, requirePermission } from "../../server/mexal/lib/auth.js";
 import { completeIdempotentSync, findRunningSync, reserveIdempotentSync } from "../../server/mexal/lib/syncRuns.js";
+import { dispatchWorkspaceNotifications } from "../../server/notifications/dispatch.js";
+import documentApiHandler from "../../server/document-api.js";
+import { consumeProgremesTicket, issueProgremesTicket, listUserProgremesSections } from "../../server/progremes-sso.js";
+import { listProgremesIntegration, saveProgremesSyncConfig, stopProgremesModulesSync, syncProgremesModules } from "../../server/progremes-modules.js";
+import { handleAIAssistant } from "../../server/ai/assistant.js";
+import { handleAIOrderDocument } from "../../server/ai/order-document.js";
+
+async function dispatchMessageNotification(req, body) {
+  const token = String(req.headers.authorization || "").trim().replace(/^Bearer\s+/i, "");
+  if (!token) throw Object.assign(new Error("Autenticazione richiesta."), { status: 401 });
+  const supabase = createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data: authData, error: authError } = await supabase.auth.getUser(token);
+  if (authError || !authData?.user?.id) throw Object.assign(new Error("Sessione non valida."), { status: 401 });
+  const { data: profile, error: profileError } = await supabase.from("utenti").select("id").eq("auth_user_id", authData.user.id).single();
+  if (profileError || !profile?.id) throw Object.assign(new Error("Profilo Workspace non valido."), { status: 403 });
+  const messageId = String(body.messageId || "").trim();
+  const conversationId = String(body.conversationId || "").trim();
+  if (!messageId || !conversationId) throw Object.assign(new Error("Messaggio e conversazione obbligatori."), { status: 400 });
+  const { data: message, error: messageError } = await supabase.from("chat_messaggi")
+    .select("id,conversazione_id,mittente_id,created_at")
+    .eq("id", messageId)
+    .eq("conversazione_id", conversationId)
+    .single();
+  if (messageError || message?.mittente_id !== profile.id) throw Object.assign(new Error("Invio non autorizzato."), { status: 403 });
+  const { data: notifications, error: notificationsError } = await supabase.from("notifiche")
+    .select("id")
+    .eq("chat_conversazione_id", conversationId)
+    .neq("utente_id", profile.id)
+    .gte("created_at", new Date(new Date(message.created_at).getTime() - 2000).toISOString());
+  if (notificationsError) throw notificationsError;
+  if (!(notifications || []).length) return { success: true, processed: 0, sent: 0, failed: 0 };
+  return dispatchWorkspaceNotifications(supabase, {
+    notificationIds: notifications.map((item) => item.id),
+    generateDeadlines: false,
+  });
+}
 
 function required(name) {
   const value = String(process.env[name] || "").trim();
@@ -38,6 +77,7 @@ const RUN_HANDLERS = Object.freeze({
   clients: clientsHandler,
   agents: agentsHandler,
   products: productsHandler,
+  product_categories: productCategoriesHandler,
   stocks: productsHandler,
   commercial_conditions: commercialConditionsHandler,
   document_series: documentSeriesHandler,
@@ -52,6 +92,7 @@ const SYNC_ALL_PHASES = Object.freeze([
   "commercial_conditions",
   "document_series",
   "products",
+  "product_categories",
   "stocks",
   "list_price_commissions",
   "orders",
@@ -165,7 +206,7 @@ function sendHandlerResponse(res, phase, execution) {
   );
 }
 
-async function createAdmin(req) {
+async function createAdmin(req, permissionCode = null) {
   const createSupabase = () => createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), {
     auth: { persistSession: false, autoRefreshToken: false },
   });
@@ -174,7 +215,10 @@ async function createAdmin(req) {
   if (internalSecrets.some((secret) => authorization === `Bearer ${secret}`)) {
     return { supabase: createSupabase(), authUserId: null };
   }
-  const { supabase, authUserId } = await requireAdmin(req, createSupabase);
+  const authorizationResult = permissionCode
+    ? await requirePermission(req, createSupabase, permissionCode)
+    : await requireAdmin(req, createSupabase);
+  const { supabase, authUserId } = authorizationResult;
   return { supabase, authUserId };
 }
 
@@ -304,7 +348,7 @@ function syncRunId(payload) {
 
 async function executeIdempotently(req, res, body, syncType, operation) {
   const key = idempotencyKey(body);
-  const admin = await createAdmin(req);
+  const admin = await createAdmin(req, `integrations.sync.${syncType}`);
   if (!key) return operation(res, admin);
 
   const reservation = await reserveIdempotentSync(admin.supabase, {
@@ -338,35 +382,48 @@ async function executeIdempotently(req, res, body, syncType, operation) {
 }
 
 async function rulesGet(req) {
-  const admin = await createAdmin(req);
-  const [schedules, events] = await Promise.all([
+  const admin = await createAdmin(req, "integrations.configure");
+  const [schedules, events, heartbeat, cycle, jobs] = await Promise.all([
     admin.supabase.from("mexal_sync_schedules").select("*").order("execution_order", { ascending: true }),
     admin.supabase.from("mexal_event_automations").select("*").order("event_key").order("execution_order", { ascending: true }),
+    admin.supabase.from("mexal_worker_heartbeat").select("*").eq("id", 1).maybeSingle(),
+    admin.supabase.from("mexal_sync_cycles").select("*").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    admin.supabase.from("mexal_sync_jobs").select("id,cycle_id,sync_type,status,attempts,last_error,created_at,updated_at").order("created_at", { ascending: false }).limit(30),
   ]);
   if (schedules.error) throw schedules.error;
   if (events.error) throw events.error;
-  return { schedules: schedules.data || [], events: events.data || [] };
+  if (heartbeat.error) throw heartbeat.error;
+  if (cycle.error) throw cycle.error;
+  if (jobs.error) throw jobs.error;
+  return {
+    schedules: schedules.data || [],
+    events: events.data || [],
+    diagnostics: { heartbeat: heartbeat.data || null, latestCycle: cycle.data || null, jobs: jobs.data || [] },
+  };
 }
 
 async function rulesSave(req, body) {
-  const admin = await createAdmin(req);
+  const admin = await createAdmin(req, "integrations.configure");
   const table = body.ruleType === "event" ? "mexal_event_automations" : "mexal_sync_schedules";
   const rule = body.rule && typeof body.rule === "object" ? body.rule : null;
   if (!rule) throw Object.assign(new Error("Regola automazione non valida."), { status: 400 });
-  const { data, error } = await admin.supabase.from(table).upsert(rule).select().single();
+  const normalizedRule = body.ruleType === "schedule"
+    ? { ...rule, schedule_mode: "daily_vercel_hobby", hour: 23, minute: 0, frequency_minutes: null }
+    : rule;
+  const { data, error } = await admin.supabase.from(table).upsert(normalizedRule).select().single();
   if (error) throw error;
   return { rule: data };
 }
 
 async function maintenanceGet(req) {
-  const admin = await createAdmin(req);
+  const admin = await createAdmin(req, "integrations.configure");
   const { data, error } = await admin.supabase.from("mexal_ordini_manutenzione").select("*").eq("id", 1).single();
   if (error) throw error;
   return { settings: data };
 }
 
 async function maintenanceSave(req, body) {
-  const admin = await createAdmin(req);
+  const admin = await createAdmin(req, "integrations.configure");
   const days = Number(body.settings?.giorni_conservazione_evasi);
   if (!Number.isInteger(days) || days < 1 || days > 3650) throw Object.assign(new Error("I giorni di conservazione devono essere compresi tra 1 e 3650."), { status: 400 });
   const { data, error } = await admin.supabase.from("mexal_ordini_manutenzione").upsert({
@@ -380,7 +437,7 @@ async function maintenanceSave(req, body) {
 }
 
 async function maintenancePurge(req) {
-  const admin = await createAdmin(req);
+  const admin = await createAdmin(req, "integrations.configure");
   const { data: settings, error } = await admin.supabase.from("mexal_ordini_manutenzione").select("*").eq("id", 1).single();
   if (error) throw error;
   const summary = await purgeEvictedOrderDocuments({ supabase: admin.supabase, days: settings.giorni_conservazione_evasi });
@@ -391,12 +448,64 @@ async function maintenancePurge(req) {
 }
 
 export default async function handler(req, res) {
+  if (req.query?.route === "ai") {
+    try {
+      const result = await handleAIAssistant(req);
+      return res.status(200).json({ success: true, ...result });
+    } catch (error) {
+      const status = Number(error?.status || 500);
+      if (status >= 500) console.error("Assistente AI:", error);
+      return res.status(status >= 400 && status <= 599 ? status : 500).json({
+        success: false,
+        error: error?.message || "Richiesta AI non riuscita.",
+      });
+    }
+  }
   const body = req.body || {};
   const phase = body.action || "request";
   if (req.method !== "POST") return sendFailure(res, 405, phase, "Metodo non consentito.");
 
+  if (String(body.action || "").startsWith("document_")) {
+    req.query = { ...(req.query || {}), action: String(body.action).slice("document_".length) };
+    return documentApiHandler(req, res);
+  }
+
   try {
     switch (body.action) {
+      case "ai_order_capabilities":
+      case "ai_order_document":
+        return sendSuccess(res, 200, await handleAIOrderDocument(req));
+      case "progremes_sso":
+        return sendSuccess(res, 200, await issueProgremesTicket(req, body));
+      case "progremes_user_sections":
+        return sendSuccess(res, 200, await listUserProgremesSections(req));
+      case "progremes_consume":
+        return sendSuccess(res, 200, await consumeProgremesTicket(body));
+      case "progremes_modules_list": {
+        const admin = await createAdmin(req);
+        return sendSuccess(res, 200, await listProgremesIntegration(req, admin.supabase));
+      }
+      case "progremes_modules_sync": {
+        const admin = await createAdmin(req);
+        return sendSuccess(res, 200, await syncProgremesModules(req, admin.supabase, "manuale"));
+      }
+      case "progremes_modules_stop": {
+        const admin = await createAdmin(req);
+        return sendSuccess(res, 200, await stopProgremesModulesSync(req, admin.supabase));
+      }
+      case "progremes_sync_config_save": {
+        const admin = await createAdmin(req);
+        return sendSuccess(res, 200, await saveProgremesSyncConfig(req, admin.supabase, body));
+      }
+      case "notification_public_key":
+        return sendSuccess(res, 200, { publicKey: required("VAPID_PUBLIC_KEY") });
+      case "notification_dispatch": {
+        requireScheduledWorker(req);
+        const admin = await createAdmin(req);
+        return sendSuccess(res, 200, await dispatchWorkspaceNotifications(admin.supabase));
+      }
+      case "notification_dispatch_message":
+        return sendSuccess(res, 200, await dispatchMessageNotification(req, body));
       case "rules_get":
         return sendSuccess(res, 200, await rulesGet(req));
       case "rules_save":

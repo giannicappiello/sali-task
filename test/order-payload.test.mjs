@@ -53,6 +53,7 @@ assert.deepEqual(insertPayload, {
   totale_imponibile: 101.19,
   totale_iva: 22.26,
   totale_documento: 123.45,
+  tipo_ordine: "standard",
 }, "conserva tutti i campi necessari dell'ordine usando un codice pagamento integer");
 assert.equal("mese_ordine" in insertPayload, false, "l'insert non invia la colonna generated");
 

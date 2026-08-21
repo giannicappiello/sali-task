@@ -1,47 +1,152 @@
-import { useEffect, useMemo, useState } from "react";
-import { Download, FileText, Search } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Boxes, Plus, Save, Search, Trash2, X } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
+import { useAuth } from "../../../contexts/AuthContext";
 
-const columns = [
-  ["codice_articolo", "Codice"], ["descrizione", "Prodotto"], ["prezzo_listino", "Listino"],
-  ["codice_iva_mexal", "Codice IVA"], ["aliquota_iva", "Aliquota IVA (%)"], ["disponibilita", "Disponibile"],
-];
-const vatMissing = (product) => !String(product.codice_iva_mexal || "").trim() || !Number.isFinite(Number(product.aliquota_iva));
 const money = (value) => Number(value || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
+const emptyForm = { id: null, codice: "", descrizione: "", modalita_prezzo: "sconto_ordine", prezzo_fisso: "", sconto_personalizzato: "", componenti: [] };
 
-export default function Products() {
-  const [rows, setRows] = useState([]);
+export default function Products({ implantsOnly = false }) {
+  const { profile, isAdminUser } = useAuth();
+  const [tab, setTab] = useState(implantsOnly ? "impianti" : "prodotti");
+  const [products, setProducts] = useState([]);
+  const [kits, setKits] = useState([]);
   const [search, setSearch] = useState("");
+  const [form, setForm] = useState(null);
+  const [componentSearch, setComponentSearch] = useState("");
+  const [componentResultIndex, setComponentResultIndex] = useState(0);
+  const [pendingComponent, setPendingComponent] = useState(null);
+  const [pendingComponentQuantity, setPendingComponentQuantity] = useState("");
   const [loading, setLoading] = useState(true);
-  const [sort, setSort] = useState({ key: "descrizione", direction: "asc" });
-  const [selected, setSelected] = useState(null);
+  const [message, setMessage] = useState("");
+  const componentResultRefs = useRef([]);
+  const componentQuantityRef = useRef(null);
 
-  useEffect(() => { loadProducts(); }, []);
-  async function loadProducts() {
+  useEffect(() => { void loadData(); }, []);
+  async function loadData() {
     setLoading(true);
-    const { data, error } = await supabase.from("ordini_prodotti_cache").select("*").eq("mostra_in_app", true).limit(5000);
-    if (error) console.error("Errore prodotti ordini:", error);
-    setRows(data || []); setLoading(false);
+    const [{ data: productRows, error: productError }, { data: kitRows, error: kitError }] = await Promise.all([
+      supabase.from("ordini_prodotti_cache").select("*").eq("mostra_in_app", true).order("descrizione").limit(10000),
+      supabase.from("ordini_impianti").select("*, componenti:ordini_impianti_componenti(*)").eq("attivo", true).order("descrizione"),
+    ]);
+    if (productError || kitError) setMessage((productError || kitError).message);
+    setProducts(productRows || []);
+    setKits(kitRows || []);
+    setLoading(false);
   }
-  const filtered = useMemo(() => {
+
+  const productMap = useMemo(() => new Map(products.map((item) => [item.codice_articolo, item])), [products]);
+  const kitTotal = (kit) => (kit.componenti || []).reduce((sum, row) => sum + Number(row.quantita || 0) * Number(productMap.get(row.codice_articolo)?.prezzo_listino || 0), 0);
+  const filteredProducts = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const results = q ? rows.filter((item) => Object.values(item).some((value) => String(value ?? "").toLowerCase().includes(q))) : rows;
-    return [...results].sort((a, b) => {
-      const av = a[sort.key] ?? ""; const bv = b[sort.key] ?? "";
-      const comparison = typeof av === "number" || typeof bv === "number" ? Number(av) - Number(bv) : String(av).localeCompare(String(bv), "it");
-      return sort.direction === "asc" ? comparison : -comparison;
+    return (q ? products.filter((item) => [item.codice_articolo, item.descrizione, item.ean, item.brand].some((value) => String(value || "").toLowerCase().includes(q))) : products).slice(0, 500);
+  }, [products, search]);
+  const filteredKits = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return q ? kits.filter((item) => `${item.codice} ${item.descrizione}`.toLowerCase().includes(q)) : kits;
+  }, [kits, search]);
+  const componentResults = useMemo(() => {
+    const q = componentSearch.trim().toLowerCase();
+    if (!q) return [];
+    const selected = new Set(form?.componenti.map((item) => item.codice_articolo));
+    return products.filter((item) => !selected.has(item.codice_articolo) && `${item.codice_articolo} ${item.descrizione}`.toLowerCase().includes(q)).slice(0, 30);
+  }, [componentSearch, products, form]);
+
+  function editKit(kit) {
+    setForm({ ...kit, prezzo_fisso: kit.prezzo_fisso ?? "", sconto_personalizzato: kit.sconto_personalizzato ?? "", componenti: [...(kit.componenti || [])].sort((a, b) => a.posizione - b.posizione) });
+    setMessage("");
+  }
+  async function addComponent(product) {
+    if (window.matchMedia("(max-width: 1000px)").matches) {
+      const value = await window.workspacePrompt?.(`Inserisci la quantità per ${product.descrizione || product.codice_articolo}`, "", { title: "Quantità prodotto", confirmLabel: "Aggiungi", inputType: "number", inputMode: "decimal", min: ".001", step: ".001" });
+      if (value === null || value === undefined) return;
+      const quantity = Number(String(value).replace(",", "."));
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        setMessage("Inserisci una quantità valida maggiore di zero.");
+        return;
+      }
+      setForm((current) => ({ ...current, componenti: [...current.componenti, { codice_articolo: product.codice_articolo, quantita: quantity }] }));
+      setComponentSearch("");
+      setMessage("");
+      return;
+    }
+    setPendingComponent(product);
+    setPendingComponentQuantity("");
+    setComponentSearch("");
+    requestAnimationFrame(() => componentQuantityRef.current?.focus());
+  }
+  function confirmComponent() {
+    const quantity = Number(String(pendingComponentQuantity).replace(",", "."));
+    if (!pendingComponent || !Number.isFinite(quantity) || quantity <= 0) {
+      setMessage("Inserisci una quantità valida maggiore di zero.");
+      componentQuantityRef.current?.focus();
+      return;
+    }
+    setForm((current) => ({ ...current, componenti: [...current.componenti, { codice_articolo: pendingComponent.codice_articolo, quantita: quantity }] }));
+    setPendingComponent(null);
+    setPendingComponentQuantity("");
+    setMessage("");
+  }
+  function moveComponentSelection(direction) {
+    if (!componentResults.length) return;
+    setComponentResultIndex((current) => {
+      const next = Math.min(componentResults.length - 1, Math.max(0, current + direction));
+      requestAnimationFrame(() => componentResultRefs.current[next]?.scrollIntoView({ block: "nearest" }));
+      return next;
     });
-  }, [rows, search, sort]);
-  const toggleSort = (key) => setSort((current) => ({ key, direction: current.key === key && current.direction === "asc" ? "desc" : "asc" }));
+  }
+  async function saveKit() {
+    const codice = form.codice.trim().toUpperCase();
+    const descrizione = form.descrizione.trim();
+    if (!codice || !descrizione || !form.componenti.length) return setMessage("Inserisci codice, descrizione e almeno un prodotto.");
+    if (form.modalita_prezzo === "prezzo_fisso" && Number(form.prezzo_fisso) < 0) return setMessage("Inserisci un prezzo fisso valido.");
+    if (form.modalita_prezzo === "sconto_personalizzato" && (Number(form.sconto_personalizzato) < 0 || Number(form.sconto_personalizzato) > 100)) return setMessage("Lo sconto deve essere compreso tra 0 e 100.");
+    const payload = {
+      codice, descrizione, modalita_prezzo: form.modalita_prezzo,
+      prezzo_fisso: form.modalita_prezzo === "prezzo_fisso" ? Number(form.prezzo_fisso) : null,
+      sconto_personalizzato: form.modalita_prezzo === "sconto_personalizzato" ? Number(form.sconto_personalizzato) : null,
+      creato_da: form.id ? undefined : profile?.id,
+    };
+    const { data: kit, error } = form.id
+      ? await supabase.from("ordini_impianti").update(payload).eq("id", form.id).select().single()
+      : await supabase.from("ordini_impianti").insert(payload).select().single();
+    if (error) return setMessage(error.message);
+    if (form.id) {
+      const { error: deleteError } = await supabase.from("ordini_impianti_componenti").delete().eq("impianto_id", kit.id);
+      if (deleteError) return setMessage(deleteError.message);
+    }
+    const { error: componentError } = await supabase.from("ordini_impianti_componenti").insert(form.componenti.map((item, index) => ({ impianto_id: kit.id, codice_articolo: item.codice_articolo, quantita: Number(item.quantita), posizione: index })));
+    if (componentError) return setMessage(componentError.message);
+    setForm(null); setMessage("Impianto salvato."); await loadData();
+  }
+  async function deactivateKit(id) {
+    if (!(await window.workspaceConfirm?.("Eliminare questo impianto?", { title: "Elimina impianto" }))) return;
+    const { error } = await supabase.from("ordini_impianti").update({ attivo: false }).eq("id", id);
+    if (error) setMessage(error.message); else await loadData();
+  }
 
   return <div className="orders-page">
-    <div className="orders-toolbar"><div className="orders-search"><Search size={18} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cerca prodotto, codice IVA o aliquota..." /></div></div>
-    <div className="orders-table-wrap"><table className="orders-table orders-products-table"><thead><tr>{columns.map(([key, label]) => <th key={key}><button type="button" onClick={() => toggleSort(key)}>{label}{sort.key === key ? (sort.direction === "asc" ? " ↑" : " ↓") : ""}</button></th>)}</tr></thead><tbody>
-      {filtered.map((item) => <tr key={item.codice_articolo} className="orders-clickable-row" onClick={() => setSelected(item)}>
-        <td>{item.codice_articolo}</td><td>{item.descrizione}{vatMissing(item) && <span className="orders-vat-missing">IVA mancante</span>}</td><td>{money(item.prezzo_listino)}</td><td>{item.codice_iva_mexal || "-"}</td><td>{item.aliquota_iva ?? "-"}</td><td>{item.disponibilita ?? "-"}</td>
-      </tr>)}
-    </tbody></table></div>
-    {selected && <section className="orders-panel orders-product-detail"><div><h3>{selected.descrizione}</h3><p>{selected.descrizione_completa || selected.codice_articolo}</p></div><div className="orders-detail-summary"><div><span>Codice IVA</span><strong>{selected.codice_iva_mexal || "-"}</strong></div><div><span>Aliquota IVA (%)</span><strong>{selected.aliquota_iva ?? "-"}</strong></div><div><span>Listino</span><strong>{money(selected.prezzo_listino)}</strong></div></div>{vatMissing(selected) && <span className="orders-vat-missing">IVA mancante</span>}<div className="orders-product-actions">{selected.scheda_tecnica_url && <a href={selected.scheda_tecnica_url} target="_blank" rel="noreferrer"><FileText size={16} />Scheda tecnica</a>}{selected.materiale_pubblicitario_url && <a href={selected.materiale_pubblicitario_url} target="_blank" rel="noreferrer"><Download size={16} />Materiale</a>}</div></section>}
-    {loading && <div className="orders-empty">Caricamento prodotti...</div>}{!loading && filtered.length === 0 && <div className="orders-empty">Nessun prodotto con MOSTRA_IN_APP attivo.</div>}
+    {!implantsOnly && <div className="orders-products-tabs">
+      <button className={tab === "prodotti" ? "active" : ""} onClick={() => setTab("prodotti")}>Prodotti</button>
+      <button className={tab === "impianti" ? "active" : ""} onClick={() => setTab("impianti")}><Boxes size={17}/> Impianti</button>
+    </div>}
+    <div className="orders-toolbar">
+      <div className="orders-search"><Search size={18}/><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`Cerca ${tab === "impianti" ? "impianto" : "prodotto"}...`}/></div>
+      {tab === "impianti" && isAdminUser && <button className="orders-primary" onClick={() => setForm({ ...emptyForm, componenti: [] })}><Plus size={17}/> Nuovo impianto</button>}
+    </div>
+    {message && <div className="orders-alert">{message}</div>}
+    {tab === "prodotti" ? <div className="orders-table-wrap"><table className="orders-table"><thead><tr><th>Codice</th><th>Prodotto</th><th>Listino</th><th>IVA</th><th>Disponibile</th></tr></thead><tbody>{filteredProducts.map((item) => <tr key={item.codice_articolo}><td>{item.codice_articolo}</td><td>{item.descrizione}</td><td>{money(item.prezzo_listino)}</td><td>{item.aliquota_iva ?? "-"}</td><td>{item.disponibilita ?? "-"}</td></tr>)}</tbody></table></div>
+    : <div className="orders-products-grid">{filteredKits.map((kit) => <article className="orders-product-card" key={kit.id}><div><strong>{kit.codice}</strong><h3>{kit.descrizione}</h3></div><p>{kit.componenti.length} prodotti · valore prodotti {money(kitTotal(kit))}</p><div className="orders-product-meta"><span>{kit.modalita_prezzo === "sconto_ordine" ? "Scontistica ordine" : kit.modalita_prezzo === "prezzo_fisso" ? `Prezzo fisso ${money(kit.prezzo_fisso)}` : `Sconto ${kit.sconto_personalizzato}%`}</span></div>{isAdminUser && <div className="orders-product-actions"><button className="orders-secondary" onClick={() => editKit(kit)}>Modifica</button><button className="orders-icon-danger" onClick={() => deactivateKit(kit.id)}><Trash2 size={17}/></button></div>}</article>)}</div>}
+    {loading && <div className="orders-empty">Caricamento...</div>}
+    {form && <div className="orders-kit-overlay"><section className="orders-kit-dialog"><div className="orders-kit-title"><div><h2>{form.id ? "Modifica impianto" : "Nuovo impianto"}</h2><p>Componi l’impianto usando i prodotti esistenti.</p></div><button className="orders-icon-danger" onClick={() => setForm(null)}><X/></button></div>
+      <div className="orders-kit-fields"><label>Codice<input value={form.codice} onChange={(e) => setForm({...form, codice:e.target.value})}/></label><label>Descrizione<input value={form.descrizione} onChange={(e) => setForm({...form, descrizione:e.target.value})}/></label></div>
+      <div className="orders-product-entry"><label className="orders-kit-label">Cerca prodotto<div className="orders-search"><Search size={17}/><input value={componentSearch} onChange={(e) => { setComponentSearch(e.target.value); setComponentResultIndex(0); setPendingComponent(null); setPendingComponentQuantity(""); }} onKeyDown={(e) => { if(e.key==="ArrowDown"){e.preventDefault();moveComponentSelection(1);}else if(e.key==="ArrowUp"){e.preventDefault();moveComponentSelection(-1);}else if((e.key==="Enter"||e.key==="Tab")&&componentResults[componentResultIndex]){e.preventDefault();addComponent(componentResults[componentResultIndex]);} }} placeholder="Codice o descrizione..."/></div></label>
+      <label className="orders-product-quick-quantity">Quantità<input ref={componentQuantityRef} type="number" min=".001" step=".001" disabled={!pendingComponent} value={pendingComponentQuantity} onChange={(e)=>setPendingComponentQuantity(e.target.value)} onKeyDown={(e)=>{if(e.key==="Enter"||e.key==="Tab"){e.preventDefault();confirmComponent();}}}/></label></div>
+      {componentResults.length > 0 && <div className="orders-picker-results">{componentResults.map((product,index) => <button ref={(node)=>{componentResultRefs.current[index]=node;}} className={index===componentResultIndex?"is-keyboard-active":""} key={product.codice_articolo} onMouseEnter={()=>setComponentResultIndex(index)} onClick={() => addComponent(product)}><strong>{product.descrizione}</strong><span>{product.codice_articolo} · {money(product.prezzo_listino)}</span></button>)}</div>}
+      <div className="orders-table-wrap"><table className="orders-table"><thead><tr><th>Prodotto</th><th>Prezzo</th><th>Quantità</th><th>Totale</th><th></th></tr></thead><tbody>{form.componenti.map((row) => { const product=productMap.get(row.codice_articolo)||{}; return <tr key={row.codice_articolo}><td><strong>{row.codice_articolo}</strong><br/>{product.descrizione}</td><td>{money(product.prezzo_listino)}</td><td><input className="orders-number-input" type="number" min=".001" step=".001" value={row.quantita} onChange={(e) => setForm({...form, componenti:form.componenti.map((item)=>item.codice_articolo===row.codice_articolo?{...item,quantita:e.target.value}:item)})}/></td><td>{money(Number(row.quantita)*Number(product.prezzo_listino||0))}</td><td><button className="orders-icon-danger" onClick={() => setForm({...form,componenti:form.componenti.filter((item)=>item.codice_articolo!==row.codice_articolo)})}><Trash2 size={17}/></button></td></tr>})}</tbody></table></div>
+      <div className="orders-kit-total"><span>Somma prodotti</span><strong>{money(kitTotal(form))}</strong></div>
+      <div className="orders-kit-pricing"><label><input type="radio" checked={form.modalita_prezzo==="sconto_ordine"} onChange={()=>setForm({...form,modalita_prezzo:"sconto_ordine"})}/> Stessa scontistica dell’ordine</label><label><input type="radio" checked={form.modalita_prezzo==="prezzo_fisso"} onChange={()=>setForm({...form,modalita_prezzo:"prezzo_fisso"})}/> Prezzo fisso <input type="number" min="0" step=".01" value={form.prezzo_fisso} onChange={(e)=>setForm({...form,prezzo_fisso:e.target.value})}/></label><label><input type="radio" checked={form.modalita_prezzo==="sconto_personalizzato"} onChange={()=>setForm({...form,modalita_prezzo:"sconto_personalizzato"})}/> Sconto diverso (%) <input type="number" min="0" max="100" step=".01" value={form.sconto_personalizzato} onChange={(e)=>setForm({...form,sconto_personalizzato:e.target.value})}/></label></div>
+      <div className="orders-kit-actions"><button className="orders-secondary" onClick={()=>setForm(null)}>Annulla</button><button className="orders-primary" onClick={saveKit}><Save size={17}/> Salva impianto</button></div>
+    </section></div>}
   </div>;
 }

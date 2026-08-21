@@ -85,7 +85,7 @@ export default function ProjectTypesSettings({ canManage = false, searchTerm = "
 
   async function deleteType(item) {
     if (!canManage) return alert("Non hai i permessi.");
-    if (!confirm(`Eliminare il tipo progetto "${item.nome}" e tutte le sue associazioni?`)) return;
+    if (!await window.workspaceConfirm(`Eliminare il tipo progetto "${item.nome}" e tutte le sue associazioni?`)) return;
     const { error } = await supabase.from("tipi_progetto").delete().eq("id", item.id);
     if (error) return alert(error.message);
     if (selectedType?.id === item.id) setSelectedType(null);
@@ -137,7 +137,7 @@ export default function ProjectTypesSettings({ canManage = false, searchTerm = "
 
   async function deleteRule(rule) {
     if (!canManage) return alert("Non hai i permessi.");
-    if (!confirm("Eliminare questa fase dal tipo progetto?")) return;
+    if (!await window.workspaceConfirm("Eliminare questa fase dal tipo progetto?")) return;
     const { error } = await supabase.from("tipo_progetto_fasi").delete().eq("id", rule.id);
     if (error) return alert(error.message);
     await loadData();

@@ -1,63 +1,29 @@
 .pharmacy-module {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
   min-width: 0;
   color: var(--text);
   font-family: inherit;
-}
-
-.pharmacy-module-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 18px;
-  margin-bottom: 18px;
-}
-
-.pharmacy-module-header h1 {
-  margin: 0;
-  font-size: clamp(28px, 4vw, 42px);
-  letter-spacing: -.035em;
-}
-
-.pharmacy-module-header p {
-  margin: 6px 0 0;
-  color: var(--muted);
-}
-
-.pharmacy-access-badge {
-  background: #eef4ff;
-  border: 1px solid #cbdcf8;
-  color: var(--primary-dark);
-  border-radius: 999px;
-  padding: 8px 12px;
-  font-size: 12px;
-  font-weight: 800;
-  text-transform: capitalize;
 }
 
 .pharmacy-subnav {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-  margin-bottom: 22px;
-  padding: 6px;
-  width: fit-content;
-  max-width: 100%;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--card);
-  box-shadow: 0 8px 24px rgba(15, 23, 42, .04);
 }
 
 .pharmacy-subnav a {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 10px 13px;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid #e2e8f0;
   border-radius: 10px;
-  color: var(--muted);
+  color: #334155;
+  background: #fff;
   text-decoration: none;
-  font-weight: 800;
-  font-size: 13px;
+  font-weight: 600;
 }
 
 .pharmacy-subnav a:hover {
@@ -66,18 +32,13 @@
 }
 
 .pharmacy-subnav a.active {
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  border-color: #0f172a;
+  background: #0f172a;
   color: #fff;
-  box-shadow: 0 7px 16px rgba(37, 99, 235, .22);
 }
 
 .pharmacy-content {
   min-width: 0;
-  padding: clamp(18px, 2.5vw, 28px);
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  box-shadow: 0 12px 34px rgba(15, 23, 42, .06);
 }
 
 .pharmacy-content > div {
@@ -178,24 +139,15 @@
 }
 
 @media (max-width: 700px) {
-  .pharmacy-module-header {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
   .pharmacy-subnav {
-    width: 100%;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    padding-bottom: 6px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .pharmacy-subnav a {
-    white-space: nowrap;
-  }
-
-  .pharmacy-content {
-    padding: 14px;
-    border-radius: 16px;
+    justify-content: center;
+    padding: 11px 8px;
+    font-size: 12px;
+    text-align: center;
   }
 }

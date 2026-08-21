@@ -167,7 +167,7 @@ export default function Utenti() {
 
   async function elimina(tipo, item) {
     const nomeItem = tipo === "utente" ? item.nome : nomeCompleto(item);
-    if (!window.confirm(`Vuoi eliminare "${nomeItem}"?`)) return;
+    if (!await window.workspaceConfirm(`Vuoi eliminare "${nomeItem}"?`)) return;
 
     const { data, error } = await supabase.functions.invoke(
       "delete-user-profile",

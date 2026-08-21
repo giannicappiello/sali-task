@@ -2,12 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
-  ArrowLeft,
   Boxes,
   Building2,
-  Database,
   FileText,
   PackageSearch,
+  Tags,
   Percent,
   RefreshCw,
   ShoppingCart,
@@ -48,6 +47,7 @@ const syncLabels = {
   clients: "Clienti",
   agents: "Agenti",
   products: "Prodotti",
+  product_categories: "Categorie prodotto",
   stocks: "Giacenze",
   commercial_conditions: "Condizioni commerciali",
   document_series: "Serie documenti",
@@ -69,7 +69,9 @@ function formatDate(value) {
 
 export default function MexalDashboard() {
   const navigate = useNavigate();
-  const { profile, isAdminUser } = useAuth();
+  const { hasPermission } = useAuth();
+  const canConfigure = hasPermission("integrations.configure");
+  const canSync = useCallback((type) => hasPermission(`integrations.sync.${type}`), [hasPermission]);
   const [runs, setRuns] = useState([]);
   const [counts, setCounts] = useState({ matrix: null, particularities: null, payments: null });
   const [selectedRun, setSelectedRun] = useState(null);
@@ -108,7 +110,7 @@ export default function MexalDashboard() {
     setRuns(runRows);
     setCounts(countRows);
     setEntityCounts(entityCountRows);
-    if (isAdminUser) {
+    if (canConfigure) {
       try {
         const automationRules = await loadMexalAutomationRules({ supabase });
         setSyncSchedules(Object.fromEntries(
@@ -128,7 +130,7 @@ export default function MexalDashboard() {
       ? runRows.find((run) => Number(run.id) === Number(preferredRunId))
       : runRows[0];
     setSelectedRun(nextSelected || null);
-  }, [isAdminUser]);
+  }, [canConfigure]);
 
   useEffect(() => {
     let active = true;
@@ -162,8 +164,8 @@ export default function MexalDashboard() {
   }, [activeSync, running]);
 
   async function runCommercialSync() {
-    if (!isAdminUser) return;
-    if (!settings.dryRun && !window.confirm("Avviare la sincronizzazione reale delle condizioni commerciali?")) return;
+    if (!canSync("commercial_conditions")) return;
+    if (!settings.dryRun && !await window.workspaceConfirm("Avviare la sincronizzazione reale delle condizioni commerciali?")) return;
     setRunning(true);
     setMessage(null);
     setProgress(10);
@@ -187,7 +189,7 @@ export default function MexalDashboard() {
   }
 
   async function runEntitySync(type) {
-    if (!isAdminUser || activeSync) return;
+    if (!canSync(type) || activeSync) return;
     setActiveSync(type);
     setProgress(5);
     setPhase(syncLabels[type] || type);
@@ -236,9 +238,9 @@ export default function MexalDashboard() {
     }
   }
 
-  function stopInvoiceSync() {
+  async function stopInvoiceSync() {
     if (activeSync !== "sales_invoices" || stoppingInvoiceSync) return;
-    if (!window.confirm("Arrestare la sincronizzazione Fatture? I documenti già elaborati verranno conservati.")) return;
+    if (!await window.workspaceConfirm("Arrestare la sincronizzazione Fatture? I documenti già elaborati verranno conservati.")) return;
     cancelInvoiceSyncRef.current = true;
     setStoppingInvoiceSync(true);
     setPhase("Arresto sincronizzazione Fatture in corso...");
@@ -246,7 +248,7 @@ export default function MexalDashboard() {
 
   async function toggleSyncSchedule(syncType, enabled) {
     const schedule = syncSchedules[syncType];
-    if (!isAdminUser || !schedule || savingScheduleType) return;
+    if (!canConfigure || !schedule || savingScheduleType) return;
     setSavingScheduleType(syncType);
     try {
       const saved = await saveMexalAutomationRule({
@@ -264,8 +266,8 @@ export default function MexalDashboard() {
   }
 
   async function stopRun(run) {
-    if (!isAdminUser || stoppingRunId || run?.status !== "running") return;
-    if (!window.confirm(`Arrestare la sincronizzazione ${syncLabels[run.sync_type] || "selezionata"}?`)) return;
+    if (!canSync(run?.sync_type) || stoppingRunId || run?.status !== "running") return;
+    if (!await window.workspaceConfirm(`Arrestare la sincronizzazione ${syncLabels[run.sync_type] || "selezionata"}?`)) return;
     setStoppingRunId(run.id);
     try {
       await stopMexalRun(run.id);
@@ -298,6 +300,7 @@ export default function MexalDashboard() {
     { icon: Users, title: "Clienti", description: "Anagrafiche, categorie commerciali e condizioni cliente.", recordLabel: "clienti attivi", recordCount: entityCounts.clients, enabled: true, type: "clients", lastRunData: latestRunsByType.clients || entityRuns.clients },
     { icon: Building2, title: "Agenti", description: "Agenti Mexal e associazioni con Area Manager.", recordLabel: "agenti", enabled: false, type: "agents", lastRunData: latestRunsByType.agents },
     { icon: PackageSearch, title: "Prodotti", description: "Catalogo, categorie, immagini e schede tecniche.", recordLabel: "prodotti visibili", recordCount: entityCounts.products, enabled: true, type: "products", lastRunData: latestRunsByType.products || entityRuns.products },
+    { icon: Tags, title: "Categorie prodotto", description: "Categorie ricavate dagli articoli Mexal sincronizzati.", recordLabel: "categorie attive", recordCount: entityCounts.productCategories, enabled: true, type: "product_categories", lastRunData: latestRunsByType.product_categories },
     { icon: ScrollText, title: "Condizioni commerciali", description: "Matrice sconti, particolarità e regole pagamento.", recordLabel: "regole attive", recordCount: commercialCount, enabled: true, type: "commercial_conditions", lastRunData: latestRunsByType.commercial_conditions },
     { icon: Warehouse, title: "Giacenze", description: "Disponibilità per magazzino e controllo evasione ordini.", recordLabel: "prodotti sincronizzati", recordCount: entityCounts.stocks, enabled: true, type: "stocks", lastRunData: latestRunsByType.stocks || entityRuns.stocks },
     { icon: Percent, title: "Provvigioni listini", description: "Regole provvigionali associate ai listini Mexal.", recordLabel: "regole attive", recordCount: entityCounts.listPriceCommissions, enabled: true, type: "list_price_commissions", lastRunData: latestRunsByType.list_price_commissions },
@@ -313,19 +316,6 @@ export default function MexalDashboard() {
 
   return (
     <div className="mexal-page">
-      <button type="button" className="integrations-back-button" onClick={() => navigate("/integrations")}><ArrowLeft size={18} /> Centro Integrazioni</button>
-
-      <section className="mexal-hero">
-        <div className="mexal-hero-main">
-          <div className="mexal-logo"><Database size={30} /></div>
-          <div>
-            <div className="mexal-title-line"><h1>Mexal ERP</h1><IntegrationStatusBadge status="connected" /></div>
-            <p>Console di controllo della sincronizzazione tra Progre Workspace e Passepartout Mexal.</p>
-          </div>
-        </div>
-        <div className="mexal-hero-user"><span>Operatore</span><strong>{`${profile?.nome || ""} ${profile?.cognome || ""}`.trim() || "Utente"}</strong></div>
-      </section>
-
       {message && <div className={`mexal-alert alert-${message.type}`}>{message.type === "error" || message.type === "warning" ? <AlertTriangle size={19} /> : <Boxes size={19} />}<span>{message.text}</span><button type="button" onClick={() => setMessage(null)}>×</button></div>}
 
       <nav className="mexal-main-tabs" aria-label="Sezioni Centro Mexal">
@@ -343,17 +333,17 @@ export default function MexalDashboard() {
         </section>
 
         <section className="mexal-sync-grid">
-          {cards.map((card) => <MexalSyncCard
+          {cards.filter((card) => canSync(card.type)).map((card) => <MexalSyncCard
             key={card.title}
             {...card}
             running={activeSync === card.type || (card.type === "commercial_conditions" && running) || card.lastRunData?.status === "running"}
             stopping={card.type === "sales_invoices" ? stoppingInvoiceSync : stoppingRunId === card.lastRunData?.id}
-            canStop={card.type === "sales_invoices"}
+            canStop={card.type === "sales_invoices" || card.type === "product_categories"}
             lastRun={formatDate(card.lastRun || card.lastRunData?.started_at)}
             run={card.lastRunData}
             onSync={() => card.type === "commercial_conditions" ? runCommercialSync() : runEntitySync(card.type)}
             onStop={() => card.type === "sales_invoices" ? stopInvoiceSync() : stopRun(card.lastRunData)}
-            onOpen={() => {}}
+            onOpen={() => card.type === "agents" && navigate("/integrations/mexal/agenti")}
             automaticEnabled={syncSchedules[card.type] ? syncSchedules[card.type].enabled === true : undefined}
             automaticSaving={savingScheduleType === card.type}
             onToggleAutomatic={(enabled) => toggleSyncSchedule(card.type, enabled)}
@@ -374,10 +364,10 @@ export default function MexalDashboard() {
           <button type="button" className={configurationTab === "series" ? "active" : ""} onClick={() => setConfigurationTab("series")}>Serie documenti</button><button type="button" className={configurationTab === "orders" ? "active" : ""} onClick={() => setConfigurationTab("orders")}>Ordini PROF / PH</button><button type="button" className={configurationTab === "maintenance" ? "active" : ""} onClick={() => setConfigurationTab("maintenance")}>Manutenzione</button>
         </nav>
         {configurationTab === "settings" && <div className="mexal-two-columns"><MexalSettings settings={settings} onChange={setSettings} disabled={running} /><section className="mexal-data-summary"><div className="mexal-section-heading"><div><h3>Stato ambiente</h3><p>Configurazione disponibile senza mostrare credenziali.</p></div></div><div className="mexal-data-summary-grid"><div><span>Matrice sconti</span><strong>{counts.matrix ?? "—"}</strong></div><div><span>Particolarità</span><strong>{counts.particularities ?? "—"}</strong></div><div><span>Regole pagamento</span><strong>{counts.payments ?? "—"}</strong></div></div></section></div>}
-        {configurationTab === "automations" && <MexalAutomations canManage={isAdminUser} />}
-        {configurationTab === "series" && <OrdersDocumentSeriesSettings canManage={isAdminUser} />}
+        {configurationTab === "automations" && <MexalAutomations canManage={canConfigure} />}
+        {configurationTab === "series" && <OrdersDocumentSeriesSettings canManage={canConfigure} />}
         {configurationTab === "orders" && <OrderModuleSettings />}
-        {configurationTab === "maintenance" && <MexalOrderMaintenance canManage={isAdminUser} />}
+        {configurationTab === "maintenance" && <MexalOrderMaintenance canManage={canConfigure} />}
       </>}
     </div>
   );

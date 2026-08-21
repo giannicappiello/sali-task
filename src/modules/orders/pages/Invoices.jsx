@@ -42,7 +42,7 @@ export default function Invoices() {
     end.setMonth(end.getMonth() + 1);
     let query = supabase
       .from("mexal_fatture_vendita")
-      .select("id,sigla,cod_modulo,serie,numero,data_documento,codice_cliente,ragione_sociale_cliente,codice_agente_mexal,agente_nome,totale_imponibile,totale_iva,totale_documento")
+      .select("id,sigla,cod_modulo,serie,numero,data_documento,codice_cliente,ragione_sociale_cliente,codice_agente_mexal,agente_nome,causale_magazzino_codice,causale_magazzino_descrizione,totale_imponibile,totale_iva,totale_documento")
       .gte("data_documento", start)
       .lt("data_documento", end.toISOString().slice(0, 10))
       .order("data_documento", { ascending: false })
@@ -69,7 +69,7 @@ export default function Invoices() {
     </div>
     <div className="orders-panel">
       <div className="orders-section-heading">
-        <div><h2>Fatture di vendita</h2><p>Documenti FTE, FTS e COX importati da Mexal. Consultazione in sola lettura.</p></div>
+        <div><h2>Fatture di vendita</h2><p>Tutte le varianti FT e i documenti OCX/COX importati da Mexal. Consultazione in sola lettura.</p></div>
       </div>
       {error && <div className="orders-alert orders-alert-error">{error}</div>}
       <div className="orders-table-wrap">
@@ -85,7 +85,7 @@ export default function Invoices() {
         </table>
       </div>
       {loading && <p>Caricamento fatture...</p>}
-      {!loading && !filtered.length && <p>Nessun documento FTE, FTS o COX visibile nel mese selezionato.</p>}
+      {!loading && !filtered.length && <p>Nessun documento FT o OCX/COX visibile nel mese selezionato.</p>}
     </div>
   </div>;
 }

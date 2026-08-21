@@ -1,0 +1,43 @@
+.ai-autoplanning-link {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #c9d8eb;
+  border-radius: 12px;
+  background: #fff;
+  color: #26354e;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ai-autoplanning-link:hover,
+.ai-autoplanning-link.active { border-color: #75a9ed; background: #eef5ff; }
+.ai-autoplanning-link > span strong,
+.ai-autoplanning-link > span small { display: block; }
+.ai-autoplanning-link > span strong { font-size: 11px; letter-spacing: .06em; }
+.ai-autoplanning-link > span small { margin-top: 3px; color: #718096; font-size: 11px; }
+.ai-autoplanning-link > b {
+  display: grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #e53935;
+  color: #fff;
+  font-size: 12px;
+}
+
+.ai-autoplanning-panel { overflow: auto; padding: 24px; background: #f8faff; }
+.ai-autoplanning-intro { display: flex; align-items: flex-start; gap: 13px; padding: 18px; border: 1px solid #d9e5f3; border-radius: 15px; background: #fff; }
+.ai-autoplanning-intro > svg { color: #126bff; }
+.ai-autoplanning-intro h2 { margin: 0; font-size: 19px; }
+.ai-autoplanning-intro p { margin: 5px 0 0; color: #68778d; }
+.ai-autoplanning-panel > .ai-proposal-card { max-width: 1000px; margin-top: 16px; }
+.ai-autoplanning-empty { display: grid; justify-items: center; gap: 7px; margin-top: 24px; padding: 35px; border: 1px dashed #c8d5e5; border-radius: 15px; color: #64748b; text-align: center; }
+.ai-autoplanning-empty svg { color: #20a866; }
+.ai-autoplanning-empty strong { color: #26354e; }

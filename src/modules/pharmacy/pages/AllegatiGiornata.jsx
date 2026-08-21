@@ -71,7 +71,7 @@ export default function AllegatiGiornata({ giornata, onBack }) {
   }
 
   async function eliminaAllegato(allegato) {
-    const conferma = window.confirm(`Vuoi eliminare "${allegato.nome_file}"?`);
+    const conferma = await window.workspaceConfirm(`Vuoi eliminare "${allegato.nome_file}"?`);
     if (!conferma) return;
 
     await supabase.storage.from(bucket).remove([allegato.path_file]);

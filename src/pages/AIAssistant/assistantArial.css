@@ -1,0 +1,7 @@
+.ai-chat-messages,
+.ai-message-content,
+.ai-message-content > p,
+.ai-history-group-chats,
+.ai-history-chat > button:first-child > span {
+  font-family: Arial, Helvetica, sans-serif;
+}

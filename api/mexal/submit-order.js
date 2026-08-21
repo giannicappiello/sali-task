@@ -141,7 +141,7 @@ export default async function handler(req, res) {
     const { error: commissionSaveError } = await admin.rpc("salva_provvigioni_ordine", { p_ordine_id: orderId, p_aggiornamenti: commissionUpdates });
     if (commissionSaveError) throw commissionSaveError;
     lines.splice(0, lines.length, ...commissionedLines);
-    const classified = classifyOrderLines(lines);
+    const classified = classifyOrderLines(lines, { reservation: order.tipo_ordine === "prenotazione" });
     console.info("Mexal order processing", { orderId, ociLines: classified.OCI.length, ocmLines: classified.OCM.length, ocxLines: classified.OCX.length, lines: { OCM: lineDiagnostic(classified.OCM), OCX: lineDiagnostic(classified.OCX), OCI: lineDiagnostic(classified.OCI) } });
     const requiredKinds = Object.keys(classified).filter((kind) => classified[kind].length);
     const done = new Set(requiredKinds.filter((kind) => text(order[`numero_${kind.toLowerCase()}`])));

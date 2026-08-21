@@ -233,8 +233,8 @@ function SixMonthDashboardOverview({ currentMonth, activities, selectedDate, onS
 
 function Dashboard() {
   const navigate = useNavigate();
-  const { profile, userDepartmentIds = [], isAdmin } = useAuth();
-  const adminMode = Boolean(isAdmin?.());
+  const { profile, userDepartmentIds = [], isAdmin, dataScope, canViewScopedData } = useAuth();
+  const adminMode = Boolean(isAdmin?.() || dataScope?.mode === "tutti");
   const [tasks, setTasks] = useState([]);
   const [reminders, setReminders] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -261,17 +261,15 @@ function Dashboard() {
 
   useEffect(() => {
     if (profile?.id) loadData();
-  }, [profile?.id, profile?.reparto_id, userDepartmentIds.join(","), adminMode]);
+  }, [profile?.id, profile?.reparto_id, userDepartmentIds.join(","), dataScope?.mode, dataScope?.userIds?.join(","), dataScope?.departmentIds?.join(","), adminMode]);
 
   async function loadData() {
     setLoading(true);
 
-    const departmentIds = userDepartmentIds.length ? userDepartmentIds : [profile?.reparto_id].filter(Boolean);
-
-    const [phasesRes, phaseDepartmentsRes, phaseProductsRes, remindersRes, reminderDepartmentsRes, messageParticipantsRes, projectsRes, departmentsRes, productsRes, templatesRes, templateDepartmentsRes] = await Promise.all([
+    const [phasesRes, phaseDepartmentsRes, phaseProductsRes, remindersRes, reminderDepartmentsRes, messageParticipantsRes, projectsRes, projectDepartmentsRes, departmentsRes, productsRes, templatesRes, templateDepartmentsRes] = await Promise.all([
       supabase
         .from("v4_fasi_progetto")
-        .select("id,titolo,descrizione,note,stato,deadline,reparto_id,progetto_id,completato_at,v4_progetti(id,titolo),reparti(id,nome)")
+        .select("id,titolo,descrizione,note,stato,deadline,reparto_id,progetto_id,completato_at,creato_da,v4_progetti(id,titolo),reparti(id,nome)")
         .order("deadline", { ascending: true, nullsFirst: false }),
       supabase.from("v4_fase_reparti").select("id,fase_id,reparto_id,completato,completato_at,completato_da,reparti(id,nome)"),
       supabase.from("v4_fase_prodotti").select("id,fase_id,prodotto_id,prodotto_nome"),
@@ -284,7 +282,8 @@ function Dashboard() {
         .from("chat_partecipanti")
         .select("id,ultimo_letto_at,conversazione_id,chat_conversazioni(updated_at)")
         .eq("utente_id", profile.id),
-      supabase.from("v4_progetti").select("id,titolo").order("created_at", { ascending: false }).limit(500),
+      supabase.from("v4_progetti").select("id,titolo,creato_da").order("created_at", { ascending: false }).limit(500),
+      supabase.from("v4_progetto_reparti").select("progetto_id,reparto_id"),
       supabase.from("reparti").select("id,nome,attivo").order("nome"),
       supabase.from("prodotti").select("id,nome,codice").order("nome").limit(5000),
       supabase.from("checklist_template").select("id,titolo,reparto_id,ordine,attivo,reparti(id,nome)").eq("attivo", true).order("ordine", { ascending: true }),
@@ -297,18 +296,18 @@ function Dashboard() {
     if (remindersRes.error) console.error("Dashboard reminder:", remindersRes.error.message);
     if (reminderDepartmentsRes.error) console.error("Dashboard reparti reminder:", reminderDepartmentsRes.error.message);
     if (messageParticipantsRes.error) console.error("Dashboard messaggi:", messageParticipantsRes.error.message);
+    if (projectsRes.error) console.error("Dashboard progetti:", projectsRes.error.message);
+    if (projectDepartmentsRes.error) console.error("Dashboard reparti progetto:", projectDepartmentsRes.error.message);
 
     const allPhaseDepartments = phaseDepartmentsRes.data || [];
-    const visibleTasks = adminMode
-      ? (phasesRes.data || [])
-      : (phasesRes.data || []).filter((phase) => {
-      if (!departmentIds.length) return true;
+    const visibleTasks = (phasesRes.data || []).filter((phase) => {
       const phaseDeps = allPhaseDepartments
         .filter((row) => row.fase_id === phase.id && row.reparto_id)
         .map((row) => row.reparto_id);
-      if (phaseDeps.length) return phaseDeps.some((id) => departmentIds.includes(id));
-      if (!phase.reparto_id) return true;
-      return departmentIds.includes(phase.reparto_id);
+      return canViewScopedData({
+        ownerId: phase.creato_da,
+        departmentIds: phaseDeps.length ? phaseDeps : [phase.reparto_id].filter(Boolean),
+      });
     });
 
     const unreadMessages = (messageParticipantsRes.data || []).filter((row) => {
@@ -319,25 +318,30 @@ function Dashboard() {
     }).length;
 
     const allReminderDepartments = reminderDepartmentsRes.data || [];
-    const visibleReminders = adminMode
-      ? (remindersRes.data || [])
-      : (remindersRes.data || []).filter((reminder) => {
-      if (reminder.utente_id === profile.id) return true;
-      if (!departmentIds.length) return false;
+    const visibleReminders = (remindersRes.data || []).filter((reminder) => {
       const reminderDepartmentIds = allReminderDepartments
         .filter((row) => row.reminder_id === reminder.id && row.reparto_id)
         .map((row) => row.reparto_id);
-      return reminderDepartmentIds.some((id) => departmentIds.includes(id));
+      return canViewScopedData({ ownerId: reminder.utente_id, departmentIds: reminderDepartmentIds });
     });
     const visibleReminderIds = new Set(visibleReminders.map((reminder) => reminder.id));
+    const allProjectDepartments = projectDepartmentsRes.data || [];
+    const visibleProjects = (projectsRes.data || []).filter((project) => {
+      const projectDepartmentIds = allProjectDepartments
+        .filter((row) => row.progetto_id === project.id && row.reparto_id)
+        .map((row) => row.reparto_id);
+      return canViewScopedData({ ownerId: project.creato_da, departmentIds: projectDepartmentIds });
+    });
+    const visiblePhaseIds = new Set(visibleTasks.map((phase) => phase.id));
+    const selectableDepartmentIds = new Set([...(userDepartmentIds || []), ...(dataScope?.departmentIds || [])]);
 
     setTasks(visibleTasks.map((item) => ({ ...item, tipo: "task" })));
     setReminders(visibleReminders.map((item) => ({ ...item, tipo: "reminder" })));
-    setPhaseDepartments(allPhaseDepartments);
+    setPhaseDepartments(allPhaseDepartments.filter((row) => visiblePhaseIds.has(row.fase_id)));
     setReminderDepartments(allReminderDepartments.filter((row) => visibleReminderIds.has(row.reminder_id)));
-    setPhaseProducts(phaseProductsRes.data || []);
-    setProjects(projectsRes.data || []);
-    setDepartments((departmentsRes.data || []).filter((item) => item.attivo !== false));
+    setPhaseProducts((phaseProductsRes.data || []).filter((row) => visiblePhaseIds.has(row.fase_id)));
+    setProjects(visibleProjects);
+    setDepartments((departmentsRes.data || []).filter((item) => item.attivo !== false && (dataScope?.mode === "tutti" || selectableDepartmentIds.has(item.id))));
     setProducts(productsRes.data || []);
     setTemplates(templatesRes.data || []);
     setTemplateDepartments(templateDepartmentsRes.data || []);

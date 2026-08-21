@@ -440,7 +440,7 @@ export default function Giornate({ utente }) {
   }
 
   async function annullaGiornata(giornata) {
-    const motivo = window.prompt("Inserisci il motivo dell'annullamento:");
+    const motivo = await window.workspacePrompt("Inserisci il motivo dell'annullamento:");
     if (!motivo) return;
 
     const { error } = await supabase
@@ -457,7 +457,7 @@ export default function Giornate({ utente }) {
   }
 
   async function eliminaGiornataDefinitiva(giornata) {
-    const conferma = window.confirm(
+    const conferma = await window.workspaceConfirm(
       `Vuoi eliminare definitivamente la giornata del ${formatDataIt(
         giornata.data
       )}?`
@@ -605,7 +605,7 @@ export default function Giornate({ utente }) {
 
   return (
     <div>
-      <div style={headerStyle}>
+      {(mostraForm || giornataDettaglio) && <div style={headerStyle}>
         <h2>
           {mostraForm
             ? giornataInModifica
@@ -615,7 +615,7 @@ export default function Giornate({ utente }) {
             ? "Dettaglio giornata"
             : "Planning"}
         </h2>
-      </div>
+      </div>}
 
       {mostraForm && (
         <div style={formWrapperStyle}>

@@ -8,7 +8,7 @@ assert.equal(rows.length, 4, "parses the Mexal dati list wrapper");
 const api = await readFile("server/mexal/sync-products.js", "utf8");
 const service = await readFile("src/modules/integrations/services/mexalSyncService.js", "utf8");
 assert.match(api, /normalizeCode\(value\).*trim\(\)\.toUpperCase\(\)/s);
-assert.match(api, /ARTICLE_PREFIXES = \["IT", "MKT", "IMP"\]/);
+assert.match(api, /ARTICLE_PREFIXES = \["IT", "MKT"\]/);
 assert.match(api, /async function findExistingProduct[\s\S]*\.from\("prodotti"/);
 assert.match(api, /async function saveProduct[\s\S]*\.from\("prodotti"/);
 assert.match(api, /async function saveProduct[\s\S]*brand_mexal:[\s\S]*linea_mexal:[\s\S]*categoria_mexal:[\s\S]*sottocategoria_mexal:/);

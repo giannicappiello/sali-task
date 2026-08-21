@@ -94,7 +94,7 @@ Deno.serve(async (req) => {
 
     const { data: profile, error: profileError } = await supabase
       .from("utenti")
-      .select("id,attivo,ruoli(nome,livello)")
+      .select("id,attivo,ruoli(nome,amministratore_workspace)")
       .eq("auth_user_id", authData.user.id)
       .maybeSingle();
 
@@ -102,16 +102,7 @@ Deno.serve(async (req) => {
       return json({ error: "Utente non configurato o disabilitato" }, 403);
     }
 
-    const roleName = String(profile.ruoli?.nome || "").toLowerCase();
-    const roleLevel = Number(profile.ruoli?.livello || 0);
-    const isAdmin =
-      [
-        "admin",
-        "administrator",
-        "amministratore",
-        "super admin",
-        "direzione",
-      ].includes(roleName) || roleLevel >= 80;
+    const isAdmin = profile.ruoli?.amministratore_workspace === true;
 
     let isBackoffice = false;
 

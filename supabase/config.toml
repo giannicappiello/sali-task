@@ -3,3 +3,7 @@ verify_jwt = false
 
 [functions.order-email-worker]
 verify_jwt = false
+
+[functions.report-giornate-api]
+# Il Bearer token viene validato direttamente con auth.getUser nella funzione.
+verify_jwt = false

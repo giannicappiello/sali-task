@@ -19,6 +19,7 @@ const WRITABLE_ORDER_FIELDS = [
   "totale_iva",
   "totale_documento",
   "note_mexal",
+  "tipo_ordine",
 ];
 
 export function normalizePaymentCode(value) {
@@ -62,6 +63,7 @@ export function buildNewOrderInsertPayload({
   total,
   taxableTotal,
   vatTotal,
+  orderType = "standard",
 }) {
   return buildWritableOrderPayload({
     data_ordine: dataOrdine,
@@ -84,5 +86,6 @@ export function buildNewOrderInsertPayload({
     totale_imponibile: taxableTotal,
     totale_iva: vatTotal,
     totale_documento: total,
+    tipo_ordine: orderType,
   });
 }

@@ -1,0 +1,11 @@
+create table if not exists public.mexal_categorie_prodotti (nome text primary key, numero_prodotti integer not null default 0, attiva boolean not null default true, sincronizzata_il timestamptz not null default now());
+alter table public.mexal_categorie_prodotti enable row level security;
+create policy "authenticated read mexal product categories" on public.mexal_categorie_prodotti for select to authenticated using (true);
+grant select on public.mexal_categorie_prodotti to authenticated;
+alter table public.mexal_sync_schedules drop constraint if exists mexal_sync_schedules_sync_type_check;
+alter table public.mexal_sync_schedules add constraint mexal_sync_schedules_sync_type_check check (sync_type in ('clients','agents','products','product_categories','commercial_conditions','document_series','stocks','orders','payments','list_price_commissions','sales_invoices'));
+alter table public.mexal_sync_runs drop constraint if exists mexal_sync_runs_sync_type_check;
+alter table public.mexal_sync_runs add constraint mexal_sync_runs_sync_type_check check (sync_type in ('products','product_categories','clients','stocks','orders','commercial_conditions','document_series','agents','payments','list_price_commissions','sales_invoices'));
+alter table public.mexal_sync_jobs drop constraint if exists mexal_sync_jobs_sync_type_check;
+alter table public.mexal_sync_jobs add constraint mexal_sync_jobs_sync_type_check check (sync_type in ('clients','agents','products','product_categories','commercial_conditions','document_series','stocks','list_price_commissions','orders','payments','sales_invoices'));
+insert into public.mexal_sync_schedules(sync_type,enabled,schedule_mode,batch_size,execution_order) values ('product_categories',false,'daily_vercel_hobby',500,4) on conflict(sync_type) do nothing;

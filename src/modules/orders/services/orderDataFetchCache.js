@@ -38,12 +38,28 @@ function shortHash(value) {
   return (hash >>> 0).toString(36);
 }
 
+function authorizationScope(authorization) {
+  const token = String(authorization || "").replace(/^Bearer\s+/i, "");
+  const encodedPayload = token.split(".")[1];
+  if (encodedPayload) {
+    try {
+      const base64 = encodedPayload.replace(/-/g, "+").replace(/_/g, "/")
+        .padEnd(Math.ceil(encodedPayload.length / 4) * 4, "=");
+      const subject = JSON.parse(atob(base64))?.sub;
+      if (subject) return `user:${subject}`;
+    } catch {
+      // Token non JWT: manteniamo l'isolamento usando l'hash dell'intero valore.
+    }
+  }
+  return `token:${shortHash(authorization || "anonymous")}`;
+}
+
 function requestKey(input, init = {}) {
   const url = typeof input === "string" ? input : input.url;
   const headers = new Headers(input instanceof Request ? input.headers : undefined);
   new Headers(init.headers || {}).forEach((value, name) => headers.set(name, value));
   const authorization = headers.get("authorization") || "anonymous";
-  return `${shortHash(authorization)}::${url}`;
+  return `${authorizationScope(authorization)}::${url}`;
 }
 
 function openDatabase() {

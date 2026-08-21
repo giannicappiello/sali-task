@@ -1,8 +1,17 @@
 import { buildMexalClient } from "./sync-products.js";
+import {
+  normalizeWarehouseReasonCode,
+  warehouseReasonDescription,
+} from "../../shared/mexalWarehouseReasons.js";
+import {
+  invoiceLines,
+  isRequestedSalesDocument,
+} from "./invoice-line-economics.js";
+
+export { invoiceLines, isRequestedSalesDocument } from "./invoice-line-economics.js";
 
 const PAGE_SIZE = 20;
 const DETAIL_CONCURRENCY = 1;
-const SALES_DOCUMENT_TYPES = new Set(["FT:E", "FT:S", "CO:X"]);
 
 function text(value) {
   return String(value ?? "").trim();
@@ -11,6 +20,12 @@ function text(value) {
 function number(value) {
   const parsed = Number(String(value ?? "").trim().replace(",", "."));
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function nullableNumber(value) {
+  if (value === null || value === undefined || text(value) === "") return null;
+  const parsed = Number(text(value).replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function date(value) {
@@ -26,48 +41,29 @@ function rows(payload) {
   return [];
 }
 
-function matrixMap(value, valueIndex = 1) {
-  const result = new Map();
-  if (!Array.isArray(value)) return result;
-  for (const row of value) {
-    if (!Array.isArray(row) || row.length <= valueIndex) continue;
-    result.set(Number(row[0]), row[valueIndex]);
-  }
-  return result;
-}
-
 function matrixFirst(value) {
   return Array.isArray(value) && Array.isArray(value[0])
     ? value[0][value[0].length - 1]
     : value;
 }
 
-export function invoiceLines(detail) {
-  const ids = matrixMap(detail.id_riga);
-  const fields = {
-    tipo_riga: matrixMap(detail.tp_riga),
-    codice_articolo: matrixMap(detail.codice_articolo),
-    descrizione: matrixMap(detail.descr_articolo),
-    quantita: matrixMap(detail.quantita),
-    prezzo_unitario: matrixMap(detail.prezzo),
-    sconto: matrixMap(detail.sconto),
-    aliquota_iva: matrixMap(detail.cod_iva),
-    codice_agente_mexal: matrixMap(detail.cod_agente, 2),
+function warehouseReason(detail) {
+  const code = normalizeWarehouseReasonCode(matrixFirst(
+    detail.id_causale
+    ?? detail.codice_causale
+    ?? detail.cod_causale
+    ?? detail.causale,
+  ));
+  const apiDescription = text(matrixFirst(
+    detail.descr_causale
+    ?? detail.descrizione_causale
+    ?? detail.causale_descrizione
+    ?? detail.desc_causale,
+  ));
+  return {
+    causale_magazzino_codice: code || null,
+    causale_magazzino_descrizione: warehouseReasonDescription(code, apiDescription) || null,
   };
-  return [...ids.keys()].sort((a, b) => a - b).map((position) => ({
-    posizione: position,
-    tipo_riga: text(fields.tipo_riga.get(position)) || null,
-    codice_articolo: text(fields.codice_articolo.get(position)) || null,
-    descrizione: text(fields.descrizione.get(position)) || null,
-    quantita: number(fields.quantita.get(position)),
-    prezzo_unitario: number(fields.prezzo_unitario.get(position)),
-    sconto: text(fields.sconto.get(position)) || null,
-    aliquota_iva: number(fields.aliquota_iva.get(position)) || null,
-    codice_agente_mexal: text(fields.codice_agente_mexal.get(position)) || text(detail.codice_agente) || null,
-    dati_mexal: Object.fromEntries(
-      Object.entries(fields).map(([key, values]) => [key, values.get(position) ?? null]),
-    ),
-  }));
 }
 
 async function runWithConcurrency(items, limit, worker) {
@@ -127,7 +123,8 @@ async function saveInvoice(supabase, summary, detail, names, now) {
     ragione_sociale_cliente: client?.ragione_sociale || codiceCliente,
     codice_agente_mexal: codiceAgente || null,
     agente_nome: names.agents.get(codiceAgente) || codiceAgente || null,
-    id_pagamento: number(detail.id_pagamento) || null,
+    ...warehouseReason(detail),
+    id_pagamento: nullableNumber(matrixFirst(detail.id_pagamento)),
     nota: text(matrixFirst(detail.nota)) || null,
     totale_imponibile: Math.round((totaleDocumento - totaleIva) * 10000) / 10000,
     totale_iva: totaleIva,
@@ -179,9 +176,7 @@ export async function syncSalesInvoicePage({
   const params = new URLSearchParams({ max: String(PAGE_SIZE) });
   if (next) params.set("next", next);
   const collection = await mexal.getJson(`/documenti/movimenti-magazzino?${params}`);
-  const candidates = rows(collection).filter((item) => SALES_DOCUMENT_TYPES.has(
-    `${text(item.sigla).toUpperCase()}:${text(item.cod_modulo).toUpperCase()}`,
-  ));
+  const candidates = rows(collection).filter(isRequestedSalesDocument);
   const names = await lookupNames(supabase, candidates);
   const now = new Date().toISOString();
   let lineCount = 0;
@@ -242,7 +237,7 @@ export default async function salesInvoicesHandler(req, res) {
   } catch (error) {
     return res.status(Number(error?.status || 500)).json({
       success: false,
-      error: error?.message || "Importazione documenti FTE, FTS e COX non riuscita.",
+      error: error?.message || "Importazione documenti FT e OCX non riuscita.",
     });
   }
 }

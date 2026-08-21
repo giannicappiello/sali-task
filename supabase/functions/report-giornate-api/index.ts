@@ -29,18 +29,24 @@ Deno.serve(async (req) => {
     const { data: authData, error: authError } = await primary.auth.getUser(token);
     if (authError || !authData.user) return json({ error: "Sessione non valida" }, 401);
 
-    const { data: profile } = await primary.from("utenti").select("id,nome,cognome,email,telefono,attivo,ruolo_id,mexal_agente_id,ruoli(nome,livello)").eq("auth_user_id", authData.user.id).maybeSingle();
+    const { data: profile } = await primary.from("utenti").select("id,nome,cognome,email,telefono,attivo,ruolo_id,mexal_agente_id,ruoli(nome,amministratore_workspace)").eq("auth_user_id", authData.user.id).maybeSingle();
     if (!profile || profile.attivo === false) return json({ error: "Utente non configurato o disabilitato" }, 403);
 
-    const roleName = String(profile.ruoli?.nome || "").toLowerCase();
-    const isAdmin = ["admin", "administrator", "amministratore", "super admin", "direzione"].includes(roleName) || Number(profile.ruoli?.livello || 0) >= 80;
+    const role = Array.isArray(profile.ruoli) ? profile.ruoli[0] : profile.ruoli;
+    const { data: canonicalAdmin } = await primary.rpc("workspace_user_is_admin", {
+      target_auth_user_id: authData.user.id,
+    });
+    const roleName = String(role?.nome || "").toLowerCase();
+    const isAdmin = canonicalAdmin === true || role?.amministratore_workspace === true;
     const { data: permissionRows } = profile.ruolo_id
-      ? await primary.from("permessi_ruolo").select("permessi(codice)").eq("ruolo_id", profile.ruolo_id)
+      ? await primary.from("permessi_utente").select("permessi(codice)").eq("utente_id", profile.id)
       : { data: [] };
     const canManageSettings = isAdmin || (permissionRows || []).some((row: any) =>
       ["settings.manage", "users.manage"].includes(String(row.permessi?.codice || ""))
     );
-    const { data: integration } = await primary.from("integrazioni_utenti").select("*").eq("utente_id", profile.id).eq("modulo", "report_giornate").maybeSingle();
+    const { data: integration } = isAdmin
+      ? { data: null }
+      : await primary.from("integrazioni_utenti").select("*").eq("utente_id", profile.id).eq("modulo", "report_giornate").maybeSingle();
     if (!isAdmin && (!integration || integration.enabled === false)) return json({ error: "Non sei autorizzato ad accedere a Beauty Days" }, 403);
 
     let access = integration || { enabled: true, access_level: "admin", external_role: "admin", allowed_pages: ["dashboard","aperture","giornate","analisi"], data_scope: {} };

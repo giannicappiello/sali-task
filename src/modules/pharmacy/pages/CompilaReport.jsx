@@ -355,7 +355,7 @@ export default function CompilaReport({ giornata, farmacie, beauty, onBack }) {
   }
 
   async function eliminaReport() {
-    const conferma = window.confirm(
+    const conferma = await window.workspaceConfirm(
       "Vuoi eliminare il report di questa giornata? La giornata tornerà in stato pianificata."
     );
 

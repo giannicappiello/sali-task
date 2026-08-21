@@ -1,0 +1,21 @@
+.settings-hub-page { display: grid; gap: 24px; }
+.settings-hub-hero { display: flex; align-items: center; gap: 20px; padding: 26px 28px; border: 1px solid #dbe5f0; border-radius: 20px; background: linear-gradient(135deg, #f8fbff 0%, #eef6ff 100%); box-shadow: var(--shadow-soft); }
+.settings-hub-hero-icon, .settings-hub-card-icon { display: grid; place-items: center; flex: 0 0 auto; color: #fff; background: linear-gradient(135deg, #1769aa, #0b8f83); box-shadow: 0 10px 24px rgba(23, 105, 170, .2); }
+.settings-hub-hero-icon { width: 62px; height: 62px; border-radius: 18px; }
+.settings-hub-eyebrow { color: #1769aa; font-size: .76rem; font-weight: 800; letter-spacing: .1em; }
+.settings-hub-hero h1 { margin: 3px 0 6px; color: #10182c; font-size: clamp(1.55rem, 3vw, 2.15rem); }
+.settings-hub-hero p, .settings-hub-card p, .settings-hub-empty p { margin: 0; color: #687892; line-height: 1.55; }
+.settings-hub-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 18px; }
+.settings-hub-card { display: grid; grid-template-columns: auto 1fr; gap: 16px; min-height: 220px; padding: 22px; border: 1px solid #dbe5f0; border-radius: 18px; background: #fff; box-shadow: var(--shadow-soft); transition: transform .18s ease, box-shadow .18s ease; }
+.settings-hub-card:hover { transform: translateY(-2px); box-shadow: 0 14px 34px rgba(7, 27, 54, .1); }
+.settings-hub-card-icon { width: 46px; height: 46px; border-radius: 14px; }
+.settings-hub-card-copy h2 { margin: 2px 0 8px; color: #10182c; font-size: 1.08rem; }
+.settings-hub-card > a { grid-column: 1 / -1; align-self: end; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 11px 14px; border-radius: 11px; color: #fff; background: #1769aa; font-weight: 750; text-decoration: none; }
+.settings-hub-message, .settings-hub-loading { display: flex; align-items: center; gap: 13px; padding: 16px 18px; border-radius: 13px; }
+.settings-hub-message { justify-content: space-between; color: #8a2e2e; border: 1px solid #f0c5c5; background: #fff5f5; }
+.settings-hub-message button { display: inline-flex; align-items: center; gap: 7px; border: 0; color: #8a2e2e; background: transparent; font-weight: 750; cursor: pointer; }
+.settings-hub-loading { color: #687892; border: 1px solid #dbe5f0; background: #fff; }
+.settings-hub-loading .auth-spinner { width: 26px; height: 26px; }
+.settings-hub-empty { display: grid; justify-items: center; gap: 12px; padding: 54px 24px; border: 1px dashed #cbd8e6; border-radius: 18px; background: #fff; text-align: center; }
+.settings-hub-empty h2 { margin: 4px 0 0; color: #10182c; }
+@media (max-width: 640px) { .settings-hub-hero { align-items: flex-start; padding: 21px; } .settings-hub-hero-icon { width: 52px; height: 52px; } .settings-hub-grid { grid-template-columns: 1fr; } }

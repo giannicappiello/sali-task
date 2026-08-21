@@ -1,0 +1,21 @@
+.workspace-screen-layout { display: grid; gap: 20px; color: #172033; }
+.workspace-screen-header { display: flex; align-items: flex-start; gap: 18px; padding: 28px; border-radius: 22px; background: linear-gradient(135deg,#102a56,#1b5aaa); color: #fff; }
+.workspace-screen-header-icon { display: grid; flex: 0 0 58px; width: 58px; height: 58px; place-items: center; border-radius: 17px; background: rgba(255,255,255,.14); }
+.workspace-screen-header-copy { min-width: 0; }
+.workspace-screen-header-copy > span { display: block; margin-top: 18px; font-size: 12px; font-weight: 800; letter-spacing: .13em; opacity: .75; }
+.workspace-screen-header h1 { margin: 6px 0; font-size: 32px; }
+.workspace-screen-header p { max-width: 720px; margin: 0; color: #d8e8ff; line-height: 1.5; }
+.workspace-screen-back { display: inline-flex; align-items: center; gap: 7px; padding: 0; border: 0; background: transparent; color: #fff; font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
+.workspace-screen-content { min-width: 0; }
+.workspace-screen-content .page-title-row { display: none; }
+.workspace-screen-content .page-title-row:has(> :not(:first-child)) { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 12px; margin: 0 0 20px; }
+.workspace-screen-content .page-title-row > :first-child { display: none; }
+.workspace-screen-content .page-title-row > :not(:first-child) { flex: 0 0 auto; max-width: 100%; margin-left: auto; }
+@media (max-width: 620px) {
+  .workspace-screen-header { padding: 22px; }
+  .workspace-screen-header-icon { width: 50px; height: 50px; flex-basis: 50px; }
+  .workspace-screen-header h1 { font-size: 27px; }
+  .workspace-screen-content .page-title-row:has(> :not(:first-child)) { align-items: stretch; }
+  .workspace-screen-content .page-title-row > :not(:first-child) { width: 100%; margin-left: 0; }
+  .workspace-screen-content .page-title-row > button { justify-content: center; }
+}

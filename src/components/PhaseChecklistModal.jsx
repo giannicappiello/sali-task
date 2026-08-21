@@ -336,7 +336,7 @@ export default function PhaseChecklistModal({
   async function removeAttachment(attachment) {
     if (!canManage) return alert("Non hai i permessi per eliminare gli allegati.");
     if (!attachment?.id || !selectedPhase?.id) return;
-    if (!window.confirm(`Vuoi eliminare l'allegato "${attachment.file_name || "file"}"?`)) return;
+    if (!await window.workspaceConfirm(`Vuoi eliminare l'allegato "${attachment.file_name || "file"}"?`)) return;
     if (attachment.file_path) {
       const storageDelete = await supabase.storage.from("allegati").remove([attachment.file_path]);
       if (storageDelete.error) return alert(`Errore eliminazione file: ${storageDelete.error.message}`);
@@ -349,7 +349,7 @@ export default function PhaseChecklistModal({
   async function deletePhase() {
     if (!canManage) return alert("Non hai i permessi per eliminare le fasi.");
     if (!selectedPhase?.id) return;
-    if (!window.confirm("Eliminare questa task/fase?\n\nVerranno eliminati anche commenti, reparti, prodotti, allegati, storico e file fisici collegati.")) return;
+    if (!await window.workspaceConfirm("Eliminare questa task/fase?\n\nVerranno eliminati anche commenti, reparti, prodotti, allegati, storico e file fisici collegati.")) return;
 
     setSaving(true);
 

@@ -3,9 +3,13 @@ import { ArrowLeft, Download, Edit3, OctagonX, RefreshCw, Send, Trash2 } from "l
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
 import { useAuth } from "../../../contexts/AuthContext";
+import useBackNavigation from "../../../hooks/useBackNavigation";
 import { useOrdersModule } from "../ordersModuleContext";
-import { deleteOrder, downloadOrderPdf, loadOrderDetail, recoverOrderSync, stopOrderSync, submitOrderToMexal } from "../services/orderFulfillment";
+import { deleteOrder, downloadOrderPdf, enqueueOrderConfirmationEmail, loadOrderDetail, recoverOrderSync, stopOrderSync, submitOrderToMexal, updateOrder } from "../services/orderFulfillment";
 import { getOrderDisplayStatus, hasMexalDocuments } from "../services/orderDisplayStatus";
+import { quantitiesForOrderLine } from "../services/availability";
+import { buildWritableOrderPayload } from "../services/orderPayload";
+import useOrdersAccess from "./useOrdersAccess";
 
 function money(value) {
   return Number(value || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
@@ -20,13 +24,16 @@ function childStatusClass(document) {
 export default function OrderDetail() {
   const { moduleCode, basePath } = useOrdersModule();
   const { isAdminUser } = useAuth();
+  const { canWriteOrders } = useOrdersAccess(moduleCode);
   const { orderId } = useParams();
   const navigate = useNavigate();
+  const goBack = useBackNavigation(`${basePath}/elenco`);
   const [order, setOrder] = useState(null);
   const [lines, setLines] = useState([]);
   const [agentName, setAgentName] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
@@ -56,7 +63,8 @@ export default function OrderDetail() {
         Number(line.quantita_ocm || 0) > 0 || Number(line.quantita_ocx || 0) > 0 || Number(line.quantita_oci || 0) > 0
       );
 
-      if (!sendingEnabled && hasConfirmedQuantities && loadedOrder.stato_sincronizzazione !== "completato") {
+      const isDraft = String(loadedOrder.stato || "").trim().toLowerCase() === "bozza";
+      if (canWriteOrders && !isDraft && !sendingEnabled && hasConfirmedQuantities && loadedOrder.stato_sincronizzazione !== "completato") {
         const moduleFilter = moduleCode === "prof"
           ? "modulo_ordini.eq.prof,modulo_ordini.is.null"
           : "modulo_ordini.eq.ph";
@@ -86,7 +94,10 @@ export default function OrderDetail() {
     }
   }
 
-  useEffect(() => { load(); }, [orderId, moduleCode]);
+  useEffect(() => {
+    const timer = window.setTimeout(load, 0);
+    return () => window.clearTimeout(timer);
+  }, [orderId, moduleCode, canWriteOrders]);
 
   async function sendToMexal() {
     setSending(true);
@@ -105,6 +116,58 @@ export default function OrderDetail() {
     }
   }
 
+  async function confirmDraft() {
+    if (confirming || !isDraft) return;
+    if (!await window.workspaceConfirm("Confermare e inviare questo ordine PH senza modificarlo?")) return;
+    setConfirming(true);
+    setError("");
+    setMessage("");
+    try {
+      const reservation = order.tipo_ordine === "prenotazione";
+      const confirmedLines = lines.map((line) => ({
+        ordine_id: orderId,
+        codice_articolo: line.codice_articolo,
+        descrizione: line.descrizione,
+        quantita: line.quantita,
+        ...quantitiesForOrderLine(line, null, true, { reservation, skipAvailability: true }),
+        prezzo_listino: line.prezzo_listino,
+        codice_iva_mexal: line.codice_iva_mexal || null,
+        aliquota_iva: line.aliquota_iva,
+        imponibile_riga: line.imponibile_riga,
+        iva_riga: line.iva_riga,
+        sconto_percentuale: line.sconto_percentuale,
+        sconto_commerciale: line.sconto_commerciale || null,
+        sconto_pagamento: line.sconto_pagamento || null,
+        origine_prezzo: line.origine_prezzo || null,
+        origine_sconto: line.origine_sconto || null,
+        regola_prezzo_id: line.regola_prezzo_id || null,
+        regola_sconto_id: line.regola_sconto_id || null,
+        regola_pagamento_id: line.regola_pagamento_id || null,
+        dettaglio_calcolo: line.dettaglio_calcolo || {},
+        prezzo_netto: line.prezzo_netto,
+        totale_riga: line.totale_riga,
+      }));
+      await updateOrder(orderId, buildWritableOrderPayload(order), confirmedLines);
+      const { error: confirmError } = await supabase.rpc("conferma_ordine_workspace", { p_ordine_id: orderId });
+      if (confirmError) throw confirmError;
+      try {
+        await enqueueOrderConfirmationEmail(orderId, moduleCode);
+      } catch (emailError) {
+        console.error("Accodamento email conferma ordine non riuscito:", emailError);
+      }
+      const result = await submitOrderToMexal(orderId, moduleCode);
+      setMessage(result.skipped
+        ? result.message
+        : `Ordine confermato e inviato a Mexal. OCM: ${result.numero_ocm || "-"} · OCX: ${result.numero_ocx || "-"} · OCI: ${result.numero_oci || "-"}`);
+      await load();
+    } catch (confirmError) {
+      setError(confirmError.message || "Conferma e invio dell'ordine non riusciti.");
+      await load();
+    } finally {
+      setConfirming(false);
+    }
+  }
+
   async function requestStop() {
     if (stopping) return;
     setStopping(true); setError("");
@@ -114,7 +177,7 @@ export default function OrderDetail() {
   }
 
   async function removeOrder() {
-    if (deleting || !window.confirm("Stai per eliminare definitivamente questo ordine e tutti i collegamenti presenti nel Workspace. L'operazione non può essere annullata. Continuare?")) return;
+    if (deleting || !await window.workspaceConfirm("Stai per eliminare definitivamente questo ordine e tutti i collegamenti presenti nel Workspace. L'operazione non può essere annullata. Continuare?")) return;
     setDeleting(true); setError("");
     try { await deleteOrder(orderId, moduleCode); navigate(`${basePath}/elenco`, { replace: true, state: { message: "Ordine eliminato." } }); }
     catch (deleteError) { setError(deleteError.message || "Impossibile eliminare l'ordine."); }
@@ -131,19 +194,20 @@ export default function OrderDetail() {
   }
 
   if (loading) return <div className="orders-empty">Caricamento ordine...</div>;
-  if (!order) return <div className="orders-page"><div className="orders-alert orders-alert-error">{error || "Ordine non trovato."}</div><button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/elenco`)}><ArrowLeft size={18} /> Torna agli ordini</button></div>;
+  if (!order) return <div className="orders-page"><div className="orders-alert orders-alert-error">{error || "Ordine non trovato."}</div><button className="orders-secondary" type="button" onClick={goBack}><ArrowLeft size={18} /> Torna agli ordini</button></div>;
 
   const syncStatus = order.stato_sincronizzazione || "non_inviato";
   const displayStatus = getOrderDisplayStatus(order);
   const isClosed = displayStatus.closed;
   const hasMexalDocument = hasMexalDocuments(order);
-  const canEdit = !isClosed && !hasMexalDocument && ["non_avviato", "non_inviato", "errore", "annullato", "arrestato"].includes(syncStatus);
+  const isDraft = String(order.stato || "").trim().toLowerCase() === "bozza";
+  const canEdit = canWriteOrders && (isDraft || (!isClosed && !hasMexalDocument && ["non_avviato", "non_inviato", "errore", "annullato", "arrestato"].includes(syncStatus)));
   const canDelete = isAdminUser;
 
   return (
     <div className="orders-page">
       <div className="orders-new-header">
-        <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/elenco`)}><ArrowLeft size={18} /> Torna agli ordini</button>
+        <button className="orders-secondary" type="button" onClick={goBack}><ArrowLeft size={18} /> Torna agli ordini</button>
         <div><h2>Ordine {order.numero_ordine_visualizzato || order.numero_ordine || order.id}</h2><p>{order.ragione_sociale_cliente || order.codice_cliente}</p></div>
       </div>
 
@@ -212,9 +276,10 @@ export default function OrderDetail() {
       <div className="orders-detail-actions">
         <button className="orders-secondary orders-download-pdf-mobile" type="button" disabled={downloadingPdf} onClick={downloadPdf}><Download size={18} /> {downloadingPdf ? "Generazione PDF..." : "SCARICA PDF"}</button>
         {canEdit && <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/modifica/${orderId}`)}><Edit3 size={18} /> MODIFICA ORDINE</button>}
+        {canWriteOrders && moduleCode === "ph" && isDraft && <button className="orders-primary" type="button" disabled={confirming} onClick={confirmDraft}>{confirming ? <RefreshCw className="spin" size={18} /> : <Send size={18} />}{confirming ? "CONFERMA E INVIO..." : "CONFERMA ORDINE"}</button>}
         {canDelete && <button className="orders-danger" type="button" disabled={deleting} onClick={removeOrder}><Trash2 size={18} /> {deleting ? "Eliminazione definitiva..." : "ELIMINA DEFINITIVAMENTE"}</button>}
-        {syncStatus === "in_corso" && <button className="orders-danger" type="button" disabled={stopping} onClick={requestStop}><OctagonX size={18} /> {stopping ? "Richiesta..." : "ARRESTA INVIO"}</button>}
-        {mexalSendingEnabled && !isClosed && !["in_corso", "arresto_richiesto", "completato"].includes(syncStatus) && !hasMexalDocument && <button className="orders-primary" type="button" disabled={sending} onClick={sendToMexal}>{sending ? <RefreshCw className="spin" size={18} /> : <Send size={18} />}{["errore", "arrestato"].includes(syncStatus) ? "RIPROVA INVIO" : "INVIA A MEXAL"}</button>}
+        {canWriteOrders && syncStatus === "in_corso" && <button className="orders-danger" type="button" disabled={stopping} onClick={requestStop}><OctagonX size={18} /> {stopping ? "Richiesta..." : "ARRESTA INVIO"}</button>}
+        {canWriteOrders && mexalSendingEnabled && !isClosed && !["in_corso", "arresto_richiesto", "completato"].includes(syncStatus) && !hasMexalDocument && <button className="orders-primary" type="button" disabled={sending} onClick={sendToMexal}>{sending ? <RefreshCw className="spin" size={18} /> : <Send size={18} />}{["errore", "arrestato"].includes(syncStatus) ? "RIPROVA INVIO" : "INVIA A MEXAL"}</button>}
         {syncStatus === "arresto_richiesto" && <span className="orders-sync-inline in_corso">Arresto richiesto: attesa della POST Mexal in corso.</span>}
       </div>
     </div>

@@ -61,7 +61,7 @@ Deno.serve(async (req) => {
         nome,
         cognome,
         email,
-        ruoli(nome, livello)
+        ruoli(nome, amministratore_workspace)
       `)
       .eq("auth_user_id", user.id)
       .maybeSingle();
@@ -75,7 +75,7 @@ Deno.serve(async (req) => {
     const isAdmin =
       ["admin", "administrator", "amministratore", "super admin"].includes(
         roleName
-      ) || Number(callerProfile.ruoli?.livello || 0) >= 100;
+      ) || callerProfile.ruoli?.amministratore_workspace === true;
 
     if (!isAdmin) {
       return json(
@@ -121,6 +121,7 @@ async function createUser(adminClient, body) {
   const telefono = clean(body.telefono) || null;
   const ruolo_id = body.ruolo_id || null;
   const reparto_id = body.reparto_id || null;
+  const responsabile_utente_id = body.responsabile_utente_id || null;
   const attivo = body.attivo !== false;
 
   if (!nome || !cognome || !email || !password) {
@@ -170,6 +171,7 @@ async function createUser(adminClient, body) {
         telefono,
         ruolo_id,
         reparto_id,
+        responsabile_utente_id,
         attivo,
       },
       { onConflict: "email" }
@@ -205,6 +207,7 @@ async function updateUser(adminClient, body) {
   const telefono = clean(body.telefono) || null;
   const ruolo_id = body.ruolo_id || null;
   const reparto_id = body.reparto_id || null;
+  const responsabile_utente_id = body.responsabile_utente_id || null;
   const attivo = body.attivo !== false;
 
   if (!id || !nome || !cognome || !email) {
@@ -261,6 +264,7 @@ async function updateUser(adminClient, body) {
       telefono,
       ruolo_id,
       reparto_id,
+      responsabile_utente_id,
       attivo,
     })
     .eq("id", id);

@@ -34,9 +34,8 @@ async function verifyAdmin(req, supabase) {
   if (!authorization.startsWith("Bearer ")) throw Object.assign(new Error("Sessione mancante."), { status: 401 });
   const { data: { user }, error } = await supabase.auth.getUser(authorization.slice(7));
   if (error || !user) throw Object.assign(new Error("Sessione non valida."), { status: 401 });
-  const { data: profile } = await supabase.from("utenti").select("id,attivo,ruoli(nome,livello)").eq("auth_user_id", user.id).maybeSingle();
-  const roleName = text(profile?.ruoli?.nome).toLowerCase();
-  const allowed = profile?.attivo !== false && (Number(profile?.ruoli?.livello || 0) >= 80 || ["admin", "administrator", "amministratore", "super admin", "direzione"].includes(roleName));
+  const { data: profile } = await supabase.from("utenti").select("id,attivo,ruoli(nome,amministratore_workspace)").eq("auth_user_id", user.id).maybeSingle();
+  const allowed = profile?.attivo !== false && profile?.ruoli?.amministratore_workspace === true;
   if (!allowed) throw Object.assign(new Error("Operazione riservata agli amministratori."), { status: 403 });
 }
 function mexalClient() {

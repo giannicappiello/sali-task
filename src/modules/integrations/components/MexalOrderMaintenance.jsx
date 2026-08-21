@@ -19,7 +19,7 @@ export default function MexalOrderMaintenance({ canManage }) {
   }, [load]);
   async function save() { setBusy(true); setMessage(null); try { const result = await invoke({ action: "order_maintenance_save", settings }); setSettings(result.settings); setMessage({ type: "success", text: "Impostazioni di manutenzione salvate." }); } catch (error) { setMessage({ type: "error", text: error.message }); } finally { setBusy(false); } }
   async function purge() {
-    if (!window.confirm(`Eliminare definitivamente SOLO da Workspace i documenti EVASI da più di ${settings.giorni_conservazione_evasi} giorni e le relative righe? Mexal non verrà modificato.`)) return;
+    if (!await window.workspaceConfirm(`Eliminare definitivamente SOLO da Workspace i documenti EVASI da più di ${settings.giorni_conservazione_evasi} giorni e le relative righe? Mexal non verrà modificato.`)) return;
     setBusy(true); setMessage(null);
     try { const result = await invoke({ action: "order_maintenance_purge" }); const summary = result.summary; setMessage({ type: "success", text: `Pulizia completata: ${summary.eliminati} documenti eliminati (${summary.ordinipr} ORDINIPR, ${summary.ordiniph} ORDINIPH).` }); await load(); }
     catch (error) { setMessage({ type: "error", text: error.message }); } finally { setBusy(false); }

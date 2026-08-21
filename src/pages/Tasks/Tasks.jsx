@@ -701,14 +701,16 @@ export default function Tasks() {
 
   return (
     <div className="tasks-page v4-page planning-clean-page">
-      <div className="page-title-row">
-        <div>
+      <div className="page-title-row page-title-row--stacked">
+        <div className="page-title-copy">
           <h1>Planning fasi</h1>
           <p>Tutte le fasi dei progetti del mio reparto.</p>
         </div>
-        <button className="primary-action" type="button" onClick={() => openPhaseModal(null)}>
-          <Plus size={18} /> Nuova task/fase
-        </button>
+        <div className="page-title-actions">
+          <button className="primary-action" type="button" onClick={() => openPhaseModal(null)}>
+            <Plus size={18} /> Nuova task/fase
+          </button>
+        </div>
       </div>
 
       <div className="calendar-kpi-grid dashboard-activity-kpis">

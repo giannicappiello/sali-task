@@ -556,15 +556,17 @@ export default function Agenda() {
 
   return (
     <div className="agenda-page v4-page">
-      <div className="page-title-row">
-        <div>
+      <div className="page-title-row page-title-row--stacked">
+        <div className="page-title-copy">
           <h1>Reminder</h1>
           <p>Elenco dei reminder organizzati per data deadline.</p>
         </div>
         {canWriteAgenda && (
-          <button className="primary-action" onClick={openNew}>
-            <Plus size={18} /> Nuovo reminder
-          </button>
+          <div className="page-title-actions">
+            <button className="primary-action" onClick={openNew}>
+              <Plus size={18} /> Nuovo reminder
+            </button>
+          </div>
         )}
       </div>
 

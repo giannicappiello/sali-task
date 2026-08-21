@@ -341,17 +341,19 @@ function Team() {
 
   return (
     <div className="team-page">
-      <div className="page-title-row">
-        <div>
+      <div className="page-title-row page-title-row--stacked">
+        <div className="page-title-copy">
           <h1>Team</h1>
           <p>Gestione utenti, password, ruoli, reparti e stato accesso.</p>
         </div>
 
         {canManageTeam && (
-          <button className="primary-action" onClick={openCreateModal}>
-            <Plus size={18} />
-            Nuovo utente
-          </button>
+          <div className="page-title-actions">
+            <button className="primary-action" onClick={openCreateModal}>
+              <Plus size={18} />
+              Nuovo utente
+            </button>
+          </div>
         )}
       </div>
 

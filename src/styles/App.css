@@ -119,9 +119,59 @@ button:disabled { opacity: 0.65; cursor: not-allowed; }
 .panel h3 { margin: 0; font-size: 20px; }
 .empty-text { color: var(--muted); margin: 14px 0 0; }
 
-.page-title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; }
-.page-title-row h1 { margin: 0; font-size: 32px; }
-.page-title-row p { margin: 6px 0 0; color: var(--muted); }
+.page-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px 20px;
+  max-width: 100%;
+  min-width: 0;
+  margin-bottom: 22px;
+}
+.page-title-row > :first-child {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+.page-title-row > :not(:first-child) {
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+.page-title-row h1 {
+  margin: 0;
+  font-size: 32px;
+  overflow-wrap: anywhere;
+}
+.page-title-row p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.page-title-row > button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.page-title-row--stacked {
+  align-items: flex-start;
+}
+.page-title-row--stacked > .page-title-copy {
+  flex-basis: 100%;
+  width: 100%;
+}
+.page-title-actions {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+.page-title-actions > button {
+  flex: 0 0 auto;
+  max-width: 100%;
+  white-space: nowrap;
+}
 
 .primary-action {
   height: 46px; border: 0; border-radius: var(--radius-sm); background: linear-gradient(135deg, var(--primary), var(--primary-dark));
@@ -1595,6 +1645,23 @@ body {
     align-items: stretch !important;
     flex-direction: column !important;
     gap: 14px !important;
+  }
+
+  .page-title-row > * {
+    width: 100%;
+  }
+
+  .page-title-row > button {
+    justify-content: center;
+  }
+
+  .page-title-actions {
+    justify-content: stretch;
+  }
+
+  .page-title-actions > button {
+    width: 100%;
+    justify-content: center;
   }
 
   .page-title-row h1 {

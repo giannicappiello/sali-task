@@ -1239,15 +1239,17 @@ export default function Projects() {
 
   return (
     <div className="projects-page v4-page projects-v4-final">
-      <div className="page-title-row">
-        <div>
+      <div className="page-title-row page-title-row--stacked">
+        <div className="page-title-copy">
           <h1>Progetti</h1>
           <p>Tutti i progetti del mio reparto.</p>
         </div>
         {canManage && (
-          <button className="primary-action" onClick={() => openProject()}>
-            <Plus size={18} /> Nuovo progetto
-          </button>
+          <div className="page-title-actions">
+            <button className="primary-action" onClick={() => openProject()}>
+              <Plus size={18} /> Nuovo progetto
+            </button>
+          </div>
         )}
       </div>
 

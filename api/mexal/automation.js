@@ -15,6 +15,8 @@ import orderDocumentsHandler, { purgeEvictedOrderDocuments } from "../../server/
 import salesInvoicesHandler from "../../server/mexal/sync-sales-invoices.js";
 import { requireAdmin } from "../../server/mexal/lib/auth.js";
 import { completeIdempotentSync, findRunningSync, reserveIdempotentSync } from "../../server/mexal/lib/syncRuns.js";
+import { consumeProgremesTicket, issueProgremesTicket, listUserProgremesSections } from "../../server/progremes-sso.js";
+import { listProgremesIntegration, saveProgremesSyncConfig, stopProgremesModulesSync, syncProgremesModules } from "../../server/progremes-modules.js";
 
 function required(name) {
   const value = String(process.env[name] || "").trim();
@@ -397,6 +399,28 @@ export default async function handler(req, res) {
 
   try {
     switch (body.action) {
+      case "progremes_sso":
+        return sendSuccess(res, 200, await issueProgremesTicket(req, body));
+      case "progremes_user_sections":
+        return sendSuccess(res, 200, await listUserProgremesSections(req));
+      case "progremes_consume":
+        return sendSuccess(res, 200, await consumeProgremesTicket(body));
+      case "progremes_modules_list": {
+        const admin = await createAdmin(req);
+        return sendSuccess(res, 200, await listProgremesIntegration(req, admin.supabase));
+      }
+      case "progremes_modules_sync": {
+        const admin = await createAdmin(req);
+        return sendSuccess(res, 200, await syncProgremesModules(req, admin.supabase, "manuale"));
+      }
+      case "progremes_modules_stop": {
+        const admin = await createAdmin(req);
+        return sendSuccess(res, 200, await stopProgremesModulesSync(req, admin.supabase));
+      }
+      case "progremes_sync_config_save": {
+        const admin = await createAdmin(req);
+        return sendSuccess(res, 200, await saveProgremesSyncConfig(req, admin.supabase, body));
+      }
       case "rules_get":
         return sendSuccess(res, 200, await rulesGet(req));
       case "rules_save":

@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { runAutomaticProgremesModuleSync } from "../../server/progremes-modules.js";
 
 const TIMEZONE = "Europe/Rome";
 const SCHEDULE_MODE = "daily_vercel_hobby";
@@ -232,7 +233,13 @@ export default async function handler(req, res) {
       p_scheduled_for: new Date().toISOString(),
     });
     if (error) throw error;
-    return res.status(200).json(data);
+    let progremes;
+    try {
+      progremes = await runAutomaticProgremesModuleSync(admin);
+    } catch (progremesError) {
+      progremes = { due: true, error: progremesError?.message || "Sincronizzazione ProgreMES non riuscita." };
+    }
+    return res.status(200).json({ scheduler: data, progremes });
   } catch (error) {
     return res.status(500).json({ error: error?.message || "Creazione coda Mexal non riuscita." });
   }

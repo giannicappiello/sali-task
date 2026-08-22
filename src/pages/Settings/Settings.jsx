@@ -66,6 +66,7 @@ const permissionLabels = {
   "integrations.sync.list_price_commissions": "Sincronizza provvigioni listini",
   "integrations.sync.orders": "Sincronizza ordini",
   "integrations.sync.sales_invoices": "Sincronizza fatture",
+  "integrations.sync.oct_orders": "Importa ordini cliente OCT",
   "integrations.sync.documents": "Sincronizza documenti",
   "integrations.sync.progremes_modules": "Sincronizza moduli ProgreMES",
 };

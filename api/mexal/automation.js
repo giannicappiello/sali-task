@@ -23,6 +23,8 @@ import { listProgremesIntegration, saveProgremesSyncConfig, stopProgremesModules
 import { handleProgremesReadonlyRequest } from "../../server/progremes-readonly-api.js";
 import { handleAIAssistant } from "../../server/ai/assistant.js";
 import { handleAIOrderDocument } from "../../server/ai/order-document.js";
+import { confirmProductionProposal, handleProductionEvent, sendProductionRequest } from "../../server/progremes-production-api.js";
+import { createOctOrdersRunHandler } from "../../server/mexal/sync-oct-orders.js";
 
 async function dispatchMessageNotification(req, body) {
   const token = String(req.headers.authorization || "").trim().replace(/^Bearer\s+/i, "");
@@ -74,6 +76,11 @@ async function listPriceCommissionsHandler(req, res) {
   return res.status(200).json(result);
 }
 
+const octOrdersHandler = createOctOrdersRunHandler({
+  createMexalClient: buildMexalClient,
+  createSupabaseClient: () => createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY")),
+});
+
 const RUN_HANDLERS = Object.freeze({
   clients: clientsHandler,
   agents: agentsHandler,
@@ -85,6 +92,7 @@ const RUN_HANDLERS = Object.freeze({
   list_price_commissions: listPriceCommissionsHandler,
   orders: orderDocumentsHandler,
   sales_invoices: salesInvoicesHandler,
+  oct_orders: octOrdersHandler,
 });
 
 const SYNC_ALL_PHASES = Object.freeze([
@@ -449,6 +457,9 @@ async function maintenancePurge(req) {
 }
 
 export default async function handler(req, res) {
+  if (req.query?.route === "progremes-production-events") {
+    return handleProductionEvent(req, res);
+  }
   if (req.query?.route === "progremes-readonly") {
     return handleProgremesReadonlyRequest(req, res);
   }
@@ -488,6 +499,14 @@ export default async function handler(req, res) {
       case "progremes_modules_list": {
         const admin = await createAdmin(req);
         return sendSuccess(res, 200, await listProgremesIntegration(req, admin.supabase));
+      }
+      case "progremes_production_request": {
+        const admin = await createAdmin(req, "integrations.configure");
+        return sendProductionRequest(req, res, { admin: admin.supabase });
+      }
+      case "progremes_production_confirm": {
+        const admin = await createAdmin(req, "integrations.configure");
+        return confirmProductionProposal(req, res, { admin: admin.supabase });
       }
       case "progremes_modules_sync": {
         const admin = await createAdmin(req);

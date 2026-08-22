@@ -4,8 +4,8 @@ function apiError(status, message) {
   return error;
 }
 
-export const SCHEDULE_SYNC_TYPES = ["clients", "agents", "products", "commercial_conditions", "document_series", "stocks", "list_price_commissions", "orders", "sales_invoices"];
-export const EVENT_SYNC_TYPES = [...SCHEDULE_SYNC_TYPES, "payments"];
+export const SCHEDULE_SYNC_TYPES = ["clients", "agents", "products", "commercial_conditions", "document_series", "stocks", "list_price_commissions", "orders", "sales_invoices", "oct_orders"];
+export const EVENT_SYNC_TYPES = [...SCHEDULE_SYNC_TYPES.filter((syncType) => syncType !== "oct_orders"), "payments"];
 export const AUTOMATION_SECTION_COLUMNS = Object.freeze({
   schedule: ["Tipo sincronizzazione", "Frequenza", "Ordine", "Stato", "Azioni"],
   event: ["Evento", "Tipo sincronizzazione", "Ordine", "Stato", "Azioni"],

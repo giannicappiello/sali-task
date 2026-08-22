@@ -6,6 +6,7 @@ export const syncRegistry = Object.freeze({
   commercial_conditions: { path: "/api/mexal/automation", body: { action: "run_now", syncType: "commercial_conditions", mode: "incremental", syncPayments: true } },
   document_series: { path: "/api/mexal/automation", body: { action: "run_now", syncType: "document_series" } },
   sales_invoices: { path: "/api/mexal/automation", body: { action: "run_now", syncType: "sales_invoices" } },
+  oct_orders: { path: "/api/mexal/automation", body: { action: "run_now", syncType: "oct_orders" } },
 });
 export async function runRegisteredSync({ syncType, source = "manual", context = {}, dryRun = false, authorization, baseUrl, fetchImpl = fetch }) {
   const definition = syncRegistry[syncType];

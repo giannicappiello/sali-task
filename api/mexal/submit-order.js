@@ -129,6 +129,10 @@ export default async function handler(req, res) {
     const [{ data: order, error: orderError }, { data: lines, error: linesError }] = await Promise.all([admin.from("ordini_testate").select("*").eq("id", orderId).single(), admin.from("ordini_righe").select("*").eq("ordine_id", orderId).order("id")]);
     if (orderError) throw orderError; if (linesError) throw linesError; if (!lines?.length) throw new Error("Ordine senza righe.");
     const requestedModule = text(req.body?.moduleCode);
+    if (order?.origine === "mexal_oct") {
+      return res.status(409).json({ error: "Un OCT importato da Mexal non può essere reinviato a Mexal.",
+        code: "MEXAL_OCT_OUTBOUND_FORBIDDEN" });
+    }
     if (requestedModule && requestedModule !== (order.modulo_ordini || "prof")) return res.status(404).json({ error: "Ordine non trovato nel modulo selezionato." });
     const [{ data: customer, error: customerError }, { data: products, error: productsError }, { data: rules, error: rulesError }] = await Promise.all([
       admin.from("ordini_clienti_cache").select("*").eq("codice_cliente", order.codice_cliente).maybeSingle(),

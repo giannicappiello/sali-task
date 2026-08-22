@@ -28,6 +28,22 @@ export interface Client {
   attivo: boolean;
 }
 
+export interface Supplier {
+  id: number;
+  codiceMexal: string;
+  ragioneSociale: string;
+  partitaIva: string;
+  codiceFiscale: string;
+  indirizzo: string;
+  cap: string;
+  localita: string;
+  provincia: string;
+  telefono: string;
+  email: string;
+  pec: string;
+  attivo: boolean;
+}
+
 export interface Article {
   id: number;
   codice: string;
@@ -101,6 +117,7 @@ export interface PlanningItem {
 export type ProgremesResource =
   | "status"
   | "clients"
+  | "suppliers"
   | "articles"
   | "production-orders"
   | "production-progress"

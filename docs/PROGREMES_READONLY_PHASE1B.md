@@ -14,7 +14,7 @@ consolidata `api/mexal/automation.js`, che:
 5. valida e proietta la risposta sui soli DTO pubblici previsti.
 
 Non sono presenti operazioni `POST`, `PUT`, `PATCH` o `DELETE` verso
-ProgreMES. `suppliers` non appartiene all'allow-list.
+ProgreMES. Anche `suppliers` appartiene all'allow-list read-only.
 
 ## Configurazione Vercel
 
@@ -40,6 +40,7 @@ Tutti gli endpoint richiedono `Authorization: Bearer <sessione Workspace>`.
 | --- | --- | --- |
 | `GET /api/progremes/status` | `/status` | nessuno |
 | `GET /api/progremes/clients` | `/clients` | `page`, `pageSize`, `search`, `active`, `updatedAfter` |
+| `GET /api/progremes/suppliers` | `/suppliers` | `page`, `pageSize`, `search`, `active`, `updatedAfter` |
 | `GET /api/progremes/articles` | `/articles` | `page`, `pageSize`, `search`, `active`, `updatedAfter` |
 | `GET /api/progremes/production-orders` | `/production-orders` | `page`, `pageSize`, `search`, `status`, `from`, `to` |
 | `GET /api/progremes/production-progress` | `/production-progress` | `page`, `pageSize`, `search`, `status`, `from`, `to` |
@@ -49,6 +50,10 @@ Tutti gli endpoint richiedono `Authorization: Bearer <sessione Workspace>`.
 `pageSize` e limitato a 500, `page` a 100000, `search` a 200 caratteri e
 `status` a 64 caratteri. Parametri sconosciuti, ripetuti o non validi vengono
 rifiutati. Il browser non puo specificare URL o path MES arbitrari.
+
+L'endpoint anagrafico `/articles` mantiene l'esclusione applicativa MES degli
+articoli il cui codice inizia per `FP`. I codici `FP*` possono invece comparire
+nei dati operativi di ordini, avanzamento e planning.
 
 ## Toolchain e controlli statici
 
@@ -68,9 +73,9 @@ un compilatore TypeScript aggiuntivo al progetto.
 Il confronto isolato sul commit `b9edd2a` di `main` ha prodotto:
 
 - `main`: 206 test, 188 superati, 18 falliti;
-- branch Fase 1B: 235 test, 217 superati, 18 falliti.
+- branch Fase 1B: 236 test, 218 superati, 18 falliti.
 
-I nomi delle 18 failure sono identici nei due ambienti. La Fase 1B aggiunge 29
+I nomi delle 18 failure sono identici nei due ambienti. La Fase 1B aggiunge 30
 test tutti superati e non introduce nuove failure nella suite globale.
 
 ## Collegamento di rete

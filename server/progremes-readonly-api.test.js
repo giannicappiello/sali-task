@@ -45,18 +45,20 @@ test("internal API accepts GET only and never invokes authorization for other me
   assert.equal(authorized, false);
 });
 
-test("internal API forwards only an allow-listed resource and does not expose the MES secret", async () => {
+test("internal API forwards Suppliers as an allow-listed resource without exposing the MES secret", async () => {
   const res = responseCapture();
   const serverSecret = "never-return-this-secret";
   let requestedResource;
+  let requestedQuery;
   await handleProgremesReadonlyRequest(
-    { method: "GET", query: { resource: "clients", page: "1" }, headers: { authorization: "Bearer workspace-session" } },
+    { method: "GET", query: { resource: "suppliers", page: "1", active: "true" }, headers: { authorization: "Bearer workspace-session" } },
     res,
     {
       authorize: async () => ({ id: "workspace-user" }),
       clientFactory: () => ({
-        request: async (resource) => {
+        request: async (resource, query) => {
           requestedResource = resource;
+          requestedQuery = query;
           return { page: 1, pageSize: 100, total: 0, items: [] };
         },
       }),
@@ -64,12 +66,13 @@ test("internal API forwards only an allow-listed resource and does not expose th
   );
 
   assert.equal(res.statusCode, 200);
-  assert.equal(requestedResource, "clients");
+  assert.equal(requestedResource, "suppliers");
+  assert.deepEqual(requestedQuery, { resource: "suppliers", page: "1", active: "true" });
   assert.equal(JSON.stringify(res.payload).includes(serverSecret), false);
 });
 
-test("internal API rejects Suppliers and arbitrary resources before creating the MES client", async () => {
-  for (const resource of ["suppliers", "https://evil.example/path"]) {
+test("internal API rejects arbitrary resources before creating the MES client", async () => {
+  for (const resource of ["https://evil.example/path"]) {
     const res = responseCapture();
     let clientCreated = false;
     await handleProgremesReadonlyRequest(

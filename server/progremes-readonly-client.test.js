@@ -22,6 +22,30 @@ function pagedClientPayload(extra = {}) {
   };
 }
 
+function pagedSupplierPayload(extra = {}) {
+  return {
+    page: 1,
+    pageSize: 50,
+    total: 1,
+    items: [{
+      id: 11,
+      codiceMexal: "F011",
+      ragioneSociale: "Fornitore Test",
+      partitaIva: "IT00000000000",
+      codiceFiscale: "00000000000",
+      indirizzo: "Via Test 1",
+      cap: "00100",
+      localita: "Roma",
+      provincia: "RM",
+      telefono: "+3900000000",
+      email: "fornitore@example.test",
+      pec: "fornitore@pec.example.test",
+      attivo: true,
+      ...extra,
+    }],
+  };
+}
+
 test("builds only allow-listed ProgreMES URLs and validated query strings", () => {
   const url = buildProgremesUrl("clients", {
     page: "2",
@@ -36,7 +60,7 @@ test("builds only allow-listed ProgreMES URLs and validated query strings", () =
   assert.equal(url.searchParams.get("pageSize"), "25");
   assert.equal(url.searchParams.get("search"), "Cliente & Figli");
   assert.equal(url.searchParams.get("active"), "true");
-  assert.equal(PROGREMES_ALLOWED_RESOURCES.includes("suppliers"), false);
+  assert.equal(PROGREMES_ALLOWED_RESOURCES.includes("suppliers"), true);
 });
 
 test("adds X-Workspace-Secret server-side and returns a sanitized paged response", async () => {
@@ -55,6 +79,28 @@ test("adds X-Workspace-Secret server-side and returns a sanitized paged response
   assert.equal(capturedHeaders["X-Workspace-Secret"], secret);
   assert.deepEqual(result, pagedClientPayload());
   assert.equal(JSON.stringify(result).includes(secret), false);
+  assert.equal(JSON.stringify(result).includes("internalOnly"), false);
+});
+
+test("calls /suppliers with MES filters and projects only the public supplier DTO", async () => {
+  let capturedUrl;
+  const client = createProgremesClient({
+    baseUrl,
+    secret,
+    logger: silentLogger,
+    fetchFn: async (url) => {
+      capturedUrl = String(url);
+      return new Response(JSON.stringify(pagedSupplierPayload({ internalOnly: "remove-me" })), { status: 200 });
+    },
+  });
+
+  const result = await client.request("suppliers", { page: "1", pageSize: "50", search: "Fornitore", active: "true", updatedAfter: "2026-08-01T00:00:00Z" });
+  const url = new URL(capturedUrl);
+  assert.equal(url.pathname, "/api/workspace/v1/suppliers");
+  assert.equal(url.searchParams.get("search"), "Fornitore");
+  assert.equal(url.searchParams.get("active"), "true");
+  assert.equal(url.searchParams.get("updatedAfter"), "2026-08-01T00:00:00Z");
+  assert.deepEqual(result, pagedSupplierPayload());
   assert.equal(JSON.stringify(result).includes("internalOnly"), false);
 });
 
@@ -90,7 +136,7 @@ test("reuses the existing ProgreMES URL and integration secret", async () => {
   }
 });
 
-test("validates status metadata and requires Suppliers to remain disabled", async (t) => {
+test("validates status metadata including enabled Suppliers", async (t) => {
   const validStatus = {
     source: "ProgreMES",
     apiVersion: 1,
@@ -98,7 +144,7 @@ test("validates status metadata and requires Suppliers to remain disabled", asyn
     generatedAt: "2026-08-22T10:00:00.000Z",
     modules: {
       clients: true,
-      suppliers: false,
+      suppliers: true,
       articles: true,
       orders: true,
       productionSummary: true,
@@ -116,16 +162,16 @@ test("validates status metadata and requires Suppliers to remain disabled", asyn
       fetchFn: async () => new Response(JSON.stringify(validStatus), { status: 200 }),
     });
     const result = await client.request("status");
-    assert.equal(result.modules.suppliers, false);
+    assert.equal(result.modules.suppliers, true);
     assert.equal("internalOnly" in result, false);
   });
 
-  await t.test("rejects a status response that enables Suppliers", async () => {
+  await t.test("rejects a status response with a non-boolean Suppliers flag", async () => {
     const client = createProgremesClient({
       baseUrl,
       secret,
       logger: silentLogger,
-      fetchFn: async () => new Response(JSON.stringify({ ...validStatus, modules: { ...validStatus.modules, suppliers: true } }), { status: 200 }),
+      fetchFn: async () => new Response(JSON.stringify({ ...validStatus, modules: { ...validStatus.modules, suppliers: "true" } }), { status: 200 }),
     });
     await assert.rejects(client.request("status"), (error) => error.code === "INVALID_RESPONSE");
   });
@@ -195,7 +241,6 @@ test("aborts requests that exceed the configured timeout", async () => {
 });
 
 test("rejects arbitrary resources, unknown filters and unsafe pagination", () => {
-  assert.throws(() => buildProgremesUrl("suppliers", {}, baseUrl), (error) => error.code === "RESOURCE_NOT_ALLOWED");
   assert.throws(() => buildProgremesUrl("https://evil.example", {}, baseUrl), (error) => error.code === "RESOURCE_NOT_ALLOWED");
   assert.throws(() => validateProgremesQuery("clients", { url: "https://evil.example" }), (error) => error.code === "INVALID_QUERY");
   assert.throws(() => validateProgremesQuery("clients", { pageSize: "501" }), (error) => error.code === "INVALID_QUERY");

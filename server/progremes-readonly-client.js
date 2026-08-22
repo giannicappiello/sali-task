@@ -21,6 +21,14 @@ const RESOURCE_DEFINITIONS = Object.freeze({
     parameters: Object.freeze([...COMMON_PAGED_PARAMETERS, "active", "updatedAfter"]),
     fields: Object.freeze(["id", "codiceMexal", "ragioneSociale", "attivo"]),
   }),
+  suppliers: Object.freeze({
+    path: "suppliers",
+    parameters: Object.freeze([...COMMON_PAGED_PARAMETERS, "active", "updatedAfter"]),
+    fields: Object.freeze([
+      "id", "codiceMexal", "ragioneSociale", "partitaIva", "codiceFiscale",
+      "indirizzo", "cap", "localita", "provincia", "telefono", "email", "pec", "attivo",
+    ]),
+  }),
   articles: Object.freeze({
     path: "articles",
     parameters: Object.freeze([...COMMON_PAGED_PARAMETERS, "active", "updatedAfter"]),
@@ -206,7 +214,6 @@ function sanitizeStatus(payload) {
   const apiVersion = typeof value.apiVersion === "number" ? value.apiVersion : Number.NaN;
   const generatedAt = typeof value.generatedAt === "string" ? value.generatedAt : "";
   if (!source || !Number.isInteger(apiVersion) || apiVersion < 1 || !Number.isFinite(Date.parse(generatedAt))) return null;
-  if (moduleValue.suppliers !== false) return null;
   return {
     source,
     apiVersion,

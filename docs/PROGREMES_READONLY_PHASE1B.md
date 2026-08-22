@@ -48,6 +48,29 @@ Tutti gli endpoint richiedono `Authorization: Bearer <sessione Workspace>`.
 `status` a 64 caratteri. Parametri sconosciuti, ripetuti o non validi vengono
 rifiutati. Il browser non puo specificare URL o path MES arbitrari.
 
+## Toolchain e controlli statici
+
+La Fase 1B resta allineata alla toolchain JavaScript gia presente e non aggiunge
+dipendenze dirette da TypeScript o `@types/node`. Il controllo usa:
+
+- annotazioni JSDoc `@ts-check` nei moduli server;
+- dichiarazioni DTO in `server/progremes-readonly-types.d.ts`;
+- ESLint mirato tramite `pnpm lint:progremes`;
+- import e test runtime Node dei moduli, oltre alla build Vite completa.
+
+Il file `.d.ts` documenta il contratto per i consumer, ma non viene compilato da
+un compilatore TypeScript aggiuntivo al progetto.
+
+## Baseline test globale
+
+Il confronto isolato sul commit `b9edd2a` di `main` ha prodotto:
+
+- `main`: 206 test, 188 superati, 18 falliti;
+- branch Fase 1B: 234 test, 216 superati, 18 falliti.
+
+I nomi delle 18 failure sono identici nei due ambienti. La Fase 1B aggiunge 28
+test tutti superati e non introduce nuove failure nella suite globale.
+
 ## Collegamento di rete
 
 Non e stata applicata alcuna configurazione di rete. Le alternative valutate

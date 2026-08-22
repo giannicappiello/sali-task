@@ -25,6 +25,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/progremes/:resource",
+      "destination": "/api/mexal/automation?route=progremes-readonly&resource=:resource"
+    },
+    {
       "source": "/api/ai/assistant",
       "destination": "/api/mexal/automation?route=ai"
     },

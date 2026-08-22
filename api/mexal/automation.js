@@ -20,6 +20,7 @@ import { dispatchWorkspaceNotifications } from "../../server/notifications/dispa
 import documentApiHandler from "../../server/document-api.js";
 import { consumeProgremesTicket, issueProgremesTicket, listUserProgremesSections } from "../../server/progremes-sso.js";
 import { listProgremesIntegration, saveProgremesSyncConfig, stopProgremesModulesSync, syncProgremesModules } from "../../server/progremes-modules.js";
+import { handleProgremesReadonlyRequest } from "../../server/progremes-readonly-api.js";
 import { handleAIAssistant } from "../../server/ai/assistant.js";
 import { handleAIOrderDocument } from "../../server/ai/order-document.js";
 
@@ -448,6 +449,9 @@ async function maintenancePurge(req) {
 }
 
 export default async function handler(req, res) {
+  if (req.query?.route === "progremes-readonly") {
+    return handleProgremesReadonlyRequest(req, res);
+  }
   if (req.query?.route === "ai") {
     try {
       const result = await handleAIAssistant(req);

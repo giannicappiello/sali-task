@@ -11,6 +11,9 @@
     "build": "vite build",
     "deploy:production": "node scripts/deploy-production.mjs",
     "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.progremes.json",
+    "test:progremes": "node --test server/progremes-readonly-auth.test.js server/progremes-readonly-client.test.js server/progremes-readonly-api.test.js",
+    "check:progremes-secrets": "node scripts/check-progremes-secret-boundary.mjs",
     "preview": "vite preview",
     "test:mexal-economics": "node --test server/mexal/order-economics.test.js",
     "test:orders-dashboard": "node --test server/orders-dashboard.test.js",
@@ -36,6 +39,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/node": "^26.2.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
@@ -43,6 +47,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.3",
     "globals": "^17.7.0",
+    "typescript": "^7.0.2",
     "vite": "^8.1.1",
     "vite-plugin-pwa": "^1.3.0"
   }

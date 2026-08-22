@@ -166,7 +166,7 @@ function normalizeBaseUrl(baseUrl) {
   try {
     parsed = new URL(baseUrl);
   } catch {
-    throw new ProgremesClientError("INVALID_CONFIGURATION", "PROGREMES_API_BASE_URL non e valido.", { status: 500 });
+    throw new ProgremesClientError("INVALID_CONFIGURATION", "PROGREMES_URL non e valido.", { status: 500 });
   }
   const loopback = ["localhost", "127.0.0.1", "::1"].includes(parsed.hostname);
   if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback)) {
@@ -251,6 +251,7 @@ function sanitizeResponse(resource, payload) {
 
 /**
  * @param {{
+ *   progremesUrl?: string,
  *   baseUrl?: string,
  *   secret?: string,
  *   timeoutMs?: number,
@@ -259,13 +260,15 @@ function sanitizeResponse(resource, payload) {
  * }} [options]
  */
 export function createProgremesClient(options = {}) {
-  const baseUrl = String(options.baseUrl ?? globalThis.process.env.PROGREMES_API_BASE_URL ?? "").trim();
-  const secret = String(options.secret ?? globalThis.process.env.PROGREMES_WORKSPACE_SECRET ?? "").trim();
+  const progremesUrl = String(options.progremesUrl ?? globalThis.process.env.PROGREMES_URL ?? "").trim();
+  const derivedBaseUrl = progremesUrl ? `${progremesUrl.replace(/\/+$/, "")}/api/workspace/v1/` : "";
+  const baseUrl = String(options.baseUrl ?? derivedBaseUrl).trim();
+  const secret = String(options.secret ?? globalThis.process.env.PROGREMES_INTEGRATION_SECRET ?? "").trim();
   if (!baseUrl) {
-    throw new ProgremesClientError("MISSING_CONFIGURATION", "PROGREMES_API_BASE_URL non configurato.", { status: 500 });
+    throw new ProgremesClientError("MISSING_CONFIGURATION", "PROGREMES_URL non configurato.", { status: 500 });
   }
   if (!secret) {
-    throw new ProgremesClientError("MISSING_CONFIGURATION", "PROGREMES_WORKSPACE_SECRET non configurato.", { status: 500 });
+    throw new ProgremesClientError("MISSING_CONFIGURATION", "PROGREMES_INTEGRATION_SECRET non configurato.", { status: 500 });
   }
 
   const configuredTimeout = Number(options.timeoutMs ?? globalThis.process.env.PROGREMES_API_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS);

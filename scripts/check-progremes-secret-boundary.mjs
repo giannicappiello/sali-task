@@ -2,8 +2,8 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 const roots = ["src", "dist"];
-const forbiddenMarkers = ["PROGREMES_WORKSPACE_SECRET", "X-Workspace-Secret"];
-const configuredSecret = String(process.env.PROGREMES_WORKSPACE_SECRET || "");
+const forbiddenMarkers = ["PROGREMES_INTEGRATION_SECRET", "X-Workspace-Secret"];
+const configuredSecret = String(process.env.PROGREMES_INTEGRATION_SECRET || "");
 const failures = [];
 
 async function filesUnder(root) {

@@ -18,17 +18,19 @@ ProgreMES. `suppliers` non appartiene all'allow-list.
 
 ## Configurazione Vercel
 
-Configurare nel pannello Vercel, con scope separato per Preview e Production:
+La Fase 1B riusa esclusivamente le variabili server-side gia usate da catalogo,
+SSO e integrazione AI:
 
-- `PROGREMES_API_BASE_URL`: base completa, per esempio
-  `https://mes.example.invalid/api/workspace/v1/`;
-- `PROGREMES_WORKSPACE_SECRET`: secret machine-to-machine ProgreMES;
+- `PROGREMES_URL`: origine ProgreMES condivisa, senza il path della singola API;
+- `PROGREMES_INTEGRATION_SECRET`: secret machine-to-machine condiviso;
 - `PROGREMES_API_TIMEOUT_MS`: opzionale, default `10000`, intervallo
   consentito `1000-30000` millisecondi.
 
-Queste variabili sono esclusivamente server-side. Non usare il prefisso
-`VITE_`, non copiarle in file versionati e non inserirle nei log. In assenza
-del base URL o del secret il client rifiuta la richiesta.
+La base read-only viene derivata come
+`${PROGREMES_URL}/api/workspace/v1/`. Non servono nuove variabili o modifiche a
+Vercel. Le variabili restano esclusivamente server-side: non usare il prefisso
+`VITE_`, non copiarne i valori in file versionati e non inserirli nei log. In
+assenza dell'URL o del secret condiviso il client rifiuta la richiesta.
 
 ## Endpoint interni predisposti
 
@@ -66,54 +68,23 @@ un compilatore TypeScript aggiuntivo al progetto.
 Il confronto isolato sul commit `b9edd2a` di `main` ha prodotto:
 
 - `main`: 206 test, 188 superati, 18 falliti;
-- branch Fase 1B: 234 test, 216 superati, 18 falliti.
+- branch Fase 1B: 235 test, 217 superati, 18 falliti.
 
-I nomi delle 18 failure sono identici nei due ambienti. La Fase 1B aggiunge 28
+I nomi delle 18 failure sono identici nei due ambienti. La Fase 1B aggiunge 29
 test tutti superati e non introduce nuove failure nella suite globale.
 
 ## Collegamento di rete
 
-Non e stata applicata alcuna configurazione di rete. Le alternative valutate
-sono:
+Il collegamento Workspace -> ProgreMES e gia operativo con questo percorso:
 
-1. **Endpoint HTTPS pubblico dietro reverse proxy**: semplice, ma espone un
-   ingresso Internet da proteggere con TLS, rate limiting, autenticazione forte
-   e monitoraggio. L'allow-list IP e fragile con l'egress Vercel standard, che
-   usa indirizzi dinamici; IP statici richiedono funzionalita Vercel dedicate.
-2. **Tunnel outbound**: un connettore sul server MES apre soltanto connessioni
-   in uscita e pubblica un hostname HTTPS senza esporre direttamente l'IP o
-   aprire porte inbound. Cloudflare Tunnel documenta questo modello
-   outbound-only e supporta piu connettori per alta disponibilita:
-   <https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/>.
-3. **VPN/site-to-site**: adeguata se esiste gia una rete privata fra hosting e
-   azienda. Vercel Secure Compute offre connettivita privata dedicata, ma e una
-   scelta Enterprise; gli IP statici sono una soluzione distinta per semplice
-   allow-list egress:
-   <https://examples.vercel.com/kb/guide/can-i-get-a-fixed-ip-address>.
-4. **Relay applicativo**: evita ingresso diretto sul MES, ma aggiunge un nuovo
-   servizio, stato operativo, code, osservabilita e potenziale persistenza dei
-   dati. Non e giustificato per semplici letture sincrone se il tunnel e
-   disponibile.
+`https://mes.progredocumenti.it -> Cloudflare Tunnel -> localhost:5050 -> ProgreMES`
 
-### Soluzione consigliata
+La Fase 1B usa lo stesso hostname e lo stesso secret gia impiegati dalle API di
+catalogo moduli, SSO e pianificazione AI.
 
-Usare un **Cloudflare Tunnel outbound** dedicato all'API read-only, con hostname
-separato e Cloudflare Access davanti al tunnel. L'identita machine-to-machine di
-Vercel dovrebbe essere un **Access Service Token**, revocabile e ruotabile,
-oltre al gia previsto `X-Workspace-Secret`. I service token sono progettati per
-client automatici e richiedono una policy `Service Auth`:
-<https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/>.
+La verifica pubblica di `/api/workspace/v1/status` senza secret restituisce
+`401`, confermando che l'origine richiede l'autenticazione machine-to-machine.
 
-Motivazioni:
-
-- nessuna porta inbound o IP pubblico sul server MES;
-- TLS e policy applicati prima di raggiungere l'origine;
-- doppio controllo: identita del backend Workspace e secret applicativo MES;
-- revoca e rotazione indipendenti;
-- log e policy centralizzati;
-- possibilita di eseguire piu connettori per resilienza.
-
-Prima dell'attivazione serviranno una decisione infrastrutturale esplicita,
-l'installazione gestita del connettore e un piccolo hardening del client per i
-due header Access, conservati come ulteriori variabili server-side Vercel.
-Queste operazioni non fanno parte della Fase 1B corrente.
+Questa modifica non installa o configura tunnel, Cloudflare, Vercel, DNS o
+firewall e non aggiunge ulteriori header di rete: continua a inviare soltanto
+`X-Workspace-Secret` dal backend Workspace.

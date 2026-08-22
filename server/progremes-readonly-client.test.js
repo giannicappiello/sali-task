@@ -58,6 +58,38 @@ test("adds X-Workspace-Secret server-side and returns a sanitized paged response
   assert.equal(JSON.stringify(result).includes("internalOnly"), false);
 });
 
+test("reuses the existing ProgreMES URL and integration secret", async () => {
+  const environment = globalThis.process.env;
+  const previous = {
+    PROGREMES_URL: environment.PROGREMES_URL,
+    PROGREMES_INTEGRATION_SECRET: environment.PROGREMES_INTEGRATION_SECRET,
+  };
+  environment.PROGREMES_URL = "https://mes.shared.example/";
+  environment.PROGREMES_INTEGRATION_SECRET = "existing-integration-secret";
+
+  try {
+    let capturedUrl;
+    let capturedHeaders;
+    const client = createProgremesClient({
+      logger: silentLogger,
+      fetchFn: async (url, init) => {
+        capturedUrl = String(url);
+        capturedHeaders = init.headers;
+        return new Response(JSON.stringify(pagedClientPayload()), { status: 200 });
+      },
+    });
+
+    await client.request("clients", { page: "2", pageSize: "25" });
+    assert.equal(capturedUrl, "https://mes.shared.example/api/workspace/v1/clients?page=2&pageSize=25");
+    assert.equal(capturedHeaders["X-Workspace-Secret"], "existing-integration-secret");
+  } finally {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete environment[name];
+      else environment[name] = value;
+    }
+  }
+});
+
 test("validates status metadata and requires Suppliers to remain disabled", async (t) => {
   const validStatus = {
     source: "ProgreMES",

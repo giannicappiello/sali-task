@@ -71,24 +71,6 @@ create table if not exists public.workspace_production_event_inbox (
   unique (external_id, sequence)
 );
 
-create or replace function public.impedisci_reinvio_mexal_oct()
-returns trigger language plpgsql as $$
-begin
-  if old.origine = 'mexal_oct' and (
-    new.numero_ocm is distinct from old.numero_ocm or
-    new.numero_ocx is distinct from old.numero_ocx or
-    new.numero_oci is distinct from old.numero_oci or
-    new.sync_token is distinct from old.sync_token
-  ) then
-    raise exception 'Un OCT importato da Mexal non può essere reinviato a Mexal.' using errcode = 'P0001';
-  end if;
-  return new;
-end $$;
-
-drop trigger if exists trg_impedisci_reinvio_mexal_oct on public.ordini_testate;
-create trigger trg_impedisci_reinvio_mexal_oct
-before update on public.ordini_testate
-for each row execute function public.impedisci_reinvio_mexal_oct();
 
 alter table public.workspace_production_requests enable row level security;
 alter table public.workspace_production_proposals enable row level security;

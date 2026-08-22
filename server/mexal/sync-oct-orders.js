@@ -83,4 +83,18 @@ export async function syncOctOrders({ mexal, supabase, env = process.env }) {
     imported++;
   }
   return { enabled: true, imported, skipped };
+
+}
+export function createOctOrdersRunHandler({ createMexalClient, createSupabaseClient, env = process.env }) {
+  if (typeof createMexalClient !== "function" || typeof createSupabaseClient !== "function")
+    throw new TypeError("Dipendenze handler OCT non valide.");
+  return async function octOrdersRunHandler(_req, res) {
+    const enabled = String(env.MEXAL_OCT_IMPORT_ENABLED || "").toLowerCase() === "true";
+    const result = await syncOctOrders({
+      mexal: enabled ? createMexalClient() : null,
+      supabase: enabled ? createSupabaseClient() : null,
+      env,
+    });
+    return res.status(200).json(result);
+  };
 }

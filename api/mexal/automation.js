@@ -24,7 +24,7 @@ import { handleProgremesReadonlyRequest } from "../../server/progremes-readonly-
 import { handleAIAssistant } from "../../server/ai/assistant.js";
 import { handleAIOrderDocument } from "../../server/ai/order-document.js";
 import { confirmProductionProposal, handleProductionEvent, sendProductionRequest } from "../../server/progremes-production-api.js";
-import { syncOctOrders } from "../../server/mexal/sync-oct-orders.js";
+import { createOctOrdersRunHandler } from "../../server/mexal/sync-oct-orders.js";
 
 async function dispatchMessageNotification(req, body) {
   const token = String(req.headers.authorization || "").trim().replace(/^Bearer\s+/i, "");
@@ -76,6 +76,11 @@ async function listPriceCommissionsHandler(req, res) {
   return res.status(200).json(result);
 }
 
+const octOrdersHandler = createOctOrdersRunHandler({
+  createMexalClient: buildMexalClient,
+  createSupabaseClient: () => createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY")),
+});
+
 const RUN_HANDLERS = Object.freeze({
   clients: clientsHandler,
   agents: agentsHandler,
@@ -87,7 +92,7 @@ const RUN_HANDLERS = Object.freeze({
   list_price_commissions: listPriceCommissionsHandler,
   orders: orderDocumentsHandler,
   sales_invoices: salesInvoicesHandler,
-  oct_orders: async (req, res) => res.status(200).json(await syncOctOrders({ mexal: buildMexalClient(), supabase: createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY")) })),
+  oct_orders: octOrdersHandler,
 });
 
 const SYNC_ALL_PHASES = Object.freeze([

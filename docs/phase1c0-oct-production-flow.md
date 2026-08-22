@@ -20,7 +20,7 @@ Workspace non riceve formula, versione, componenti, FP tecnici, distinta, impian
 
 L'importer inbound è separato da `ORDER_DOCUMENTS`, che continua a descrivere esclusivamente OCM/OCX/OCI outbound. Riusa `ordini_testate` e `ordini_righe`, imposta `origine=mexal_oct` e usa `sigla+serie+numero` come identità Mexal. Cliente, PB/FP e righe descrittive vengono conservati anche quando non risolti localmente; solo le righe con codice e quantità positiva possono generare una RdP.
 
-L'identificazione `OC + cod_modulo=T` resta **NON VERIFICATA** nel payload reale. Per questo l'import è OFF e richiede sia `MEXAL_OCT_MODULE_CODE` sia `MEXAL_OCT_LIST_PATH`; M/X/I sono sempre esclusi. Un trigger DB e un controllo applicativo impediscono a `origine=mexal_oct` di passare nel flusso `submit-order`.
+L'identificazione `OC + cod_modulo=T` resta **NON VERIFICATA** nel payload reale. Per questo l'import è OFF e richiede sia `MEXAL_OCT_MODULE_CODE` sia `MEXAL_OCT_LIST_PATH`; M/X/I sono sempre esclusi. Oltre al controllo applicativo, il CHECK PostgreSQL `phase1c0_mexal_oct_outbound_guard_check` consente agli OCT solo lo stato inbound `importato_mexal` senza `sync_token`. La RPC storica fallisce quindi atomicamente prima che `submit-order` costruisca il client o chiami Mexal, anche dopo rollback del codice applicativo.
 
 ## Affidabilità e sicurezza
 
@@ -39,6 +39,13 @@ L'identificazione `OC + cod_modulo=T` resta **NON VERIFICATA** nel payload reale
 - `PROGREMES_PRODUCTION_CONFIRMATIONS_ENABLED`
 
 Il merge non abilita scritture in Production. `MEXAL_OCT_MODULE_CODE` e `MEXAL_OCT_LIST_PATH` vanno valorizzati solo dopo verifica del contratto reale.
+
+## Migrazione controllata
+
+`oct_orders` viene registrato nei run, job, schedule e permessi, ma la schedule è inserita con `enabled=false` e `MEXAL_OCT_IMPORT_ENABLED` resta `false`. La migrazione aggiorna i CHECK PostgreSQL necessari (incluso lo stato `importato_mexal`) e richiede quindi un breve lock sulle relative tabelle. Gli indici 1C.0 sono creati in modo ordinario: `CONCURRENTLY` non è usato perché il runner non garantisce l'esecuzione fuori transazione. Applicare in finestra controllata, poi verificare i flag ancora OFF prima dello smoke test.
+
+Nessuna funzione o trigger preesistente viene sostituito. Il nuovo CHECK è feature-specific e non interferisce con gli aggiornamenti degli ordini non OCT.
+
 
 ## Migrazioni e rollback
 

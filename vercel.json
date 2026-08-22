@@ -25,6 +25,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/progremes-production/events",
+      "destination": "/api/mexal/automation?route=progremes-production-events"
+    },
+    {
       "source": "/api/progremes/:resource",
       "destination": "/api/mexal/automation?route=progremes-readonly&resource=:resource"
     },

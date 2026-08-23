@@ -5,12 +5,6 @@ import { completeSyncRun, createSyncRun as createCentralSyncRun, failSyncRun, fa
 const STORAGE_BUCKET = "prodotti-mexal";
 export const PRODUCT_UI_PREFIXES = ["IT", "MKT"];
 export const STOCK_WAREHOUSE = 5;
-
-export function assertStockWarehouse(value) {
-  if (Number(value) !== STOCK_WAREHOUSE) {
-    throw new Error("La sincronizzazione giacenze richiede il magazzino " + STOCK_WAREHOUSE + ".");
-  }
-}
 const DEFAULT_BATCH_SIZE = 8;
 const MAX_BATCH_SIZE = 12;
 
@@ -149,13 +143,16 @@ function parseJsonResponse(response, label) {
   return parsed;
 }
 
-export function buildMexalClient({ request = requestMexal } = {}) {
+export function buildMexalClient({ request = requestMexal, warehouse } = {}) {
   const baseUrl = requireEnv("MEXAL_BASE_URL").replace(/\/+$/, "");
   const username = requireEnv("MEXAL_USERNAME");
   const password = requireEnv("MEXAL_PASSWORD");
   const azienda = requireEnv("MEXAL_AZIENDA");
   const anno = requireEnv("MEXAL_ANNO");
-  const magazzino = requireEnv("MEXAL_MAGAZZINO");
+  const configuredWarehouse = requireEnv("MEXAL_MAGAZZINO");
+  // An explicit null omits Magazzino from Coordinate-Gestionale, so Mexal
+  // returns progressives for the complete warehouse scope.
+  const magazzino = warehouse === undefined ? configuredWarehouse : warehouse;
 
   const credential = Buffer.from(
     `${username}:${password}`,
@@ -165,7 +162,7 @@ export function buildMexalClient({ request = requestMexal } = {}) {
   const headers = {
     Authorization: `Passepartout ${credential}`,
     "Coordinate-Gestionale":
-      `Azienda=${azienda} Anno=${anno} Magazzino=${magazzino}`,
+      `Azienda=${azienda} Anno=${anno}${magazzino === null ? "" : ` Magazzino=${magazzino}`}`,
     Accept: "application/json",
   };
 
@@ -338,6 +335,15 @@ export function isWorkspaceProductCode(code) {
   );
 }
 
+export function getAvailabilityWarehouse(code) {
+  return isWorkspaceProductCode(code) ? STOCK_WAREHOUSE : null;
+}
+
+export function selectAvailabilityClient(code, clients) {
+  return getAvailabilityWarehouse(code) === STOCK_WAREHOUSE
+    ? clients.warehouse5
+    : clients.allWarehouses;
+}
 export function isActiveArticle(article) {
   const annulled = String(
     article?.gest_annullato ??
@@ -1019,6 +1025,12 @@ export default async function handler(req, res) {
     }
 
     const mexal = buildMexalClient();
+    const availabilityClients = {
+      warehouse5: Number(mexal.magazzino) === STOCK_WAREHOUSE
+        ? mexal
+        : buildMexalClient({ warehouse: STOCK_WAREHOUSE }),
+      allWarehouses: buildMexalClient({ warehouse: null }),
+    };
 
     const [articles, groupMap] =
       await Promise.all([
@@ -1047,7 +1059,6 @@ export default async function handler(req, res) {
     }
 
     if (action === "sync-stock-it") {
-      assertStockWarehouse(mexal.magazzino);
       syncRunId = body.syncRunId ? Number(body.syncRunId) : null;
       if (!syncRunId && offset === 0) {
         const stockRun = await createCentralSyncRun(supabase, { syncType: "stocks", source: ["manual", "cron"].includes(body.origin) ? body.origin : "manual", context: body.context || {}, metadata: { batch_size: batchSize } });
@@ -1064,7 +1075,8 @@ export default async function handler(req, res) {
         await assertRunStillRunning(supabase, syncRunId, "stocks");
         const code = getArticleCode(summary);
         try {
-          const article = await loadFullArticle(mexal, code, summary);
+          const availabilityMexal = selectAvailabilityClient(code, availabilityClients);
+          const article = await loadFullArticle(availabilityMexal, code, summary);
           if (!isActiveArticle(article)) continue;
           const stock = calculateStock(article); const now = new Date().toISOString();
           const { data: updatedRows, error: updateError } = await supabase.from("prodotti").update({ giacenza: stock, disponibilita: calculateAvailability(article, stock), ultimo_sync_mexal: now, updated_at: now }).eq("codice_mexal", code).eq("sincronizzato_mexal", true).eq("attivo_mexal", true).select("id");
@@ -1122,7 +1134,8 @@ export default async function handler(req, res) {
       const code = getArticleCode(summary);
       try {
         if (!code) continue;
-        const article = await loadFullArticle(mexal, code, summary);
+        const availabilityMexal = selectAvailabilityClient(code, availabilityClients);
+        const article = await loadFullArticle(availabilityMexal, code, summary);
         result.detail_loaded += 1;
         if (!isActiveArticle(article)) { result.esclusi_non_attivi += 1; continue; }
         const hierarchy = resolveHierarchy(article.cod_grp_merc, groupMap);
@@ -1131,7 +1144,7 @@ export default async function handler(req, res) {
         let imageUrl = existing?.immagine_catalogo_url || null;
         if (String(article?.img_cat_disp || "N").trim().toUpperCase() === "S") {
           try {
-            imageUrl = await syncCatalogImage({ supabase, mexal, article, code });
+            imageUrl = await syncCatalogImage({ supabase, mexal: availabilityMexal, article, code });
             if (imageUrl) result.immagini_salvate += 1;
           } catch (imageError) {
             result.errori.push({ codice: code, errore: `Immagine catalogo: ${imageError.message}` });

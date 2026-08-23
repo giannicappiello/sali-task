@@ -113,7 +113,7 @@ function runPayload(body, syncType) {
   delete payload.action;
   delete payload.syncType;
   delete payload.sync_type;
-  if (syncType === "products") payload.action = "sync";
+  if (syncType === "products") payload.action = body.dryRun === true ? "test" : "sync";
   if (syncType === "stocks") payload.action = "sync-stock-it";
   return payload;
 }

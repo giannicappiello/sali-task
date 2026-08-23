@@ -48,7 +48,13 @@ export async function startMexalSync(syncType) {
   return invokeMexalApi("/api/mexal/automation", { action: "run_now", syncType });
 }
 
-export async function invokeProductsSync(onProgress = () => {}, isCancelled = () => false) {
+export async function invokeProductsDryRun(articlePrefix = "PB") {
+  return invokeMexalApi("/api/mexal/automation", {
+    action: "run_now", syncType: "products", dryRun: true, articlePrefix, origin: "integrations",
+  });
+}
+
+export async function invokeProductsSync(onProgress = () => {}, isCancelled = () => false, { articlePrefix = null } = {}) {
   let offset = 0;
   let syncRunId = null;
   const total = { processed: 0, received: 0, filtered: 0, detailLoaded: 0, inserted: 0, updated: 0, prodottiInserted: 0, prodottiUpdated: 0, skipped: 0, errors: [], diagnostics: null };
@@ -56,6 +62,7 @@ export async function invokeProductsSync(onProgress = () => {}, isCancelled = ()
     if (isCancelled()) throw Object.assign(new Error("Sincronizzazione annullata."), { cancelled: true });
     const data = await invokeMexalApi("/api/mexal/automation", {
       action: "run_now", syncType: "products", offset, batchSize: 8, syncRunId, origin: "integrations",
+      ...(articlePrefix ? { articlePrefix } : {}),
     });
     syncRunId = data.sync_run_id || syncRunId;
     total.processed += Number(data.elaborati || 0);

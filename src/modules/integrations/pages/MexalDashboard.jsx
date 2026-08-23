@@ -28,6 +28,7 @@ import {
   invokeCommercialConditionsSync,
   loadCommercialCounts,
   invokeClientsSync,
+  invokeProductsDryRun,
   invokeProductsSync,
   invokeStocksSync,
   invokeSalesInvoicesSync,
@@ -84,6 +85,7 @@ export default function MexalDashboard() {
   const [entityCounts, setEntityCounts] = useState({ products: null, clients: null, stocks: null, orders: null, listPriceCommissions: null, salesInvoices: null, salesInvoicesLastSync: null });
   const [entityRuns, setEntityRuns] = useState({ products: null, clients: null, stocks: null, orders: null });
   const [activeSync, setActiveSync] = useState(null);
+  const [pbPreview, setPbPreview] = useState(null);
   const [activeTab, setActiveTab] = useState("syncs");
   const [configurationTab, setConfigurationTab] = useState("settings");
   const [stoppingRunId, setStoppingRunId] = useState(null);
@@ -238,6 +240,48 @@ export default function MexalDashboard() {
     }
   }
 
+  async function runPbDryRun() {
+    if (!canConfigure || !canSync("products") || activeSync) return;
+    setActiveSync("products_pb_dry_run");
+    setMessage({ type: "info", text: "Dry-run articoli PB in corso..." });
+    try {
+      const result = await invokeProductsDryRun("PB");
+      if (result?.dry_run !== true || result?.prefisso_articoli !== "PB") {
+        throw new Error("Il servizio non ha confermato il dry-run PB.");
+      }
+      setPbPreview(result);
+      setMessage({ type: "success", text: "Dry-run PB completato: " + (result.selezionati || 0) + " codici selezionati, nessuna scrittura." });
+    } catch (error) {
+      setPbPreview(null);
+      setMessage({ type: "error", text: error.message || "Dry-run PB non riuscito." });
+    } finally {
+      setActiveSync(null);
+    }
+  }
+
+  async function runPbSync() {
+    if (!canConfigure || !canSync("products") || activeSync || pbPreview?.prefisso_articoli !== "PB") return;
+    if (!await window.workspaceConfirm("Sincronizzare esclusivamente i " + (pbPreview.selezionati || 0) + " codici PB selezionati dal dry-run? Gli articoli non attivi saranno esclusi.")) return;
+    setActiveSync("products_pb");
+    setProgress(5);
+    setMessage({ type: "info", text: "Sincronizzazione controllata PB avviata..." });
+    try {
+      const result = await invokeProductsSync(({ processed, total }) => {
+        setProgress(total > 0 ? Math.min(95, Math.round((processed / total) * 100)) : 10);
+        setPhase("Articoli PB: " + processed + "/" + (total || "?") + " elaborati");
+      }, () => false, { articlePrefix: "PB" });
+      setProgress(100);
+      setMessage({ type: "success", text: "Sincronizzazione PB completata: " + result.prodottiInserted + " creati, " + result.prodottiUpdated + " aggiornati, " + result.skipped + " esclusi." });
+      await refreshData(result.syncRunId);
+    } catch (error) {
+      setMessage({ type: "error", text: error.message || "Sincronizzazione PB interrotta." });
+      await refreshData();
+    } finally {
+      setActiveSync(null);
+      window.setTimeout(() => { setProgress(0); setPhase(""); }, 500);
+    }
+  }
+
   async function stopInvoiceSync() {
     if (activeSync !== "sales_invoices" || stoppingInvoiceSync) return;
     if (!await window.workspaceConfirm("Arrestare la sincronizzazione Fatture? I documenti già elaborati verranno conservati.")) return;
@@ -324,6 +368,7 @@ export default function MexalDashboard() {
       </nav>
 
       {activeTab === "syncs" && <>
+        {canConfigure && canSync("products") && <section className="mexal-quick-actions"><h3>Collaudo articoli PB</h3><button type="button" disabled={Boolean(activeSync)} onClick={runPbDryRun}>Dry-run PB</button><button type="button" className="orders-primary" disabled={Boolean(activeSync) || pbPreview?.prefisso_articoli !== "PB"} onClick={runPbSync}>Sincronizza PB</button>{pbPreview && <span>{pbPreview.selezionati || 0} codici PB selezionati · nessuna scrittura nel dry-run</span>}</section>}
         <section className="mexal-kpi-grid mexal-summary-grid">
           <button type="button" className="mexal-kpi" onClick={() => setActiveTab("configuration")}><span>Connessione</span><IntegrationStatusBadge status="connected" /></button>
           <button type="button" className="mexal-kpi" onClick={() => openHistory()}><span>Ultima sincronizzazione</span><strong>{formatDate(latestRun?.started_at)}</strong></button>

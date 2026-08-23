@@ -5,6 +5,7 @@ import { completeSyncRun, createSyncRun as createCentralSyncRun, failSyncRun, fa
 const STORAGE_BUCKET = "prodotti-mexal";
 export const PRODUCT_UI_PREFIXES = ["IT", "MKT"];
 export const STOCK_WAREHOUSE = 5;
+export const TARGETED_SYNC_PREFIXES = ["PB"];
 const DEFAULT_BATCH_SIZE = 8;
 const MAX_BATCH_SIZE = 12;
 
@@ -16,6 +17,32 @@ function requireEnv(name) {
 
 function normalizeCode(value) {
   return String(value || "").trim().toUpperCase();
+}
+
+export function normalizeTargetedArticlePrefix(value) {
+  const prefix = normalizeCode(value);
+  if (!prefix) return null;
+  if (!TARGETED_SYNC_PREFIXES.includes(prefix)) {
+    throw Object.assign(
+      new Error("Prefisso sincronizzazione articoli non consentito."),
+      { status: 400 },
+    );
+  }
+  return prefix;
+}
+
+export function filterArticlesByPrefix(articles, value) {
+  const prefix = normalizeTargetedArticlePrefix(value);
+  if (!prefix) return articles;
+  const filtered = articles.filter((article) =>
+    getArticleCode(article).startsWith(prefix)
+  );
+  filtered.diagnostics = {
+    ...(articles.diagnostics || {}),
+    article_prefix: prefix,
+    selected_by_prefix: filtered.length,
+  };
+  return filtered;
 }
 
 export function getArticleCode(article) {
@@ -983,11 +1010,27 @@ export default async function handler(req, res) {
 
     action = body.action || "test";
 
-    await verifyUser(req, supabase, {
+    const authorization = await verifyUser(req, supabase, {
       // Le sincronizzazioni automatiche possono essere avviate da qualunque
       // utente abilitato al modulo. Il lock centralizzato evita duplicazioni.
       allowOrdersUser: action === "sync-stock-it" || action === "sync",
     });
+
+    const articlePrefix = normalizeTargetedArticlePrefix(
+      body.articlePrefix ?? body.prefix
+    );
+    if (articlePrefix && !["test", "sync"].includes(action)) {
+      throw Object.assign(
+        new Error("Il prefisso articolo è ammesso solo per test o sincronizzazione prodotti."),
+        { status: 400 },
+      );
+    }
+    if (articlePrefix && authorization?.isAdmin !== true) {
+      throw Object.assign(
+        new Error("La sincronizzazione mirata articoli richiede un amministratore Workspace."),
+        { status: 403 },
+      );
+    }
 
     const offset = Math.max(
       0,
@@ -1009,6 +1052,7 @@ export default async function handler(req, res) {
       if (!syncRunId && offset === 0) {
         syncRun = await createSyncRun(supabase, {
           batch_size: batchSize,
+          article_prefix: articlePrefix,
           origin: body.origin || "manual",
           context: body.context || {},
         });
@@ -1022,6 +1066,15 @@ export default async function handler(req, res) {
       if (syncRun.status !== "running") {
         throw new Error("La run di sincronizzazione prodotti non è più in esecuzione.");
       }
+      const runPrefix = normalizeTargetedArticlePrefix(
+        syncRun.metadata?.article_prefix
+      );
+      if (runPrefix !== articlePrefix) {
+        throw Object.assign(
+          new Error("Il prefisso articolo non coincide con quello della run avviata."),
+          { status: 409 },
+        );
+      }
     }
 
     const mexal = buildMexalClient();
@@ -1032,11 +1085,12 @@ export default async function handler(req, res) {
       allWarehouses: buildMexalClient({ warehouse: null }),
     };
 
-    const [articles, groupMap] =
+    const [allArticles, groupMap] =
       await Promise.all([
         getAllArticles(mexal),
         getGroupMap(mexal),
       ]);
+    const articles = filterArticlesByPrefix(allArticles, articlePrefix);
 
     if (action === "test") {
       return res.status(200).json({
@@ -1046,8 +1100,9 @@ export default async function handler(req, res) {
           anno: mexal.anno,
           magazzino: mexal.magazzino,
         },
-        letti_mexal: articles.length,
+        letti_mexal: allArticles.length,
         selezionati: articles.length,
+        prefisso_articoli: articlePrefix,
         inseriti: 0,
         aggiornati: 0,
         immagini_salvate: 0,
@@ -1119,8 +1174,9 @@ export default async function handler(req, res) {
       disattivati: 0,
       errori: [],
       sync_run_id: syncRunId,
-      received: articles.length,
+      received: allArticles.length,
       filtered: articles.length,
+      prefisso_articoli: articlePrefix,
       detail_loaded: 0,
       righe_mappate: 0,
       righe_scritte: 0,

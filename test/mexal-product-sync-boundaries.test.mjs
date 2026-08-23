@@ -3,10 +3,12 @@ import { readFile } from "node:fs/promises";
 import {
   STOCK_WAREHOUSE,
   buildMexalClient,
+  filterArticlesByPrefix,
   getAllArticles,
   getAvailabilityWarehouse,
   isActiveArticle,
   isWorkspaceProductCode,
+  normalizeTargetedArticlePrefix,
   selectAvailabilityClient,
 } from "../server/mexal/sync-products.js";
 
@@ -62,8 +64,35 @@ assert.deepEqual(
   "all coded articles cross the paginated master-data boundary",
 );
 
+assert.equal(normalizeTargetedArticlePrefix("pb"), "PB");
+assert.equal(normalizeTargetedArticlePrefix(""), null);
+assert.throws(
+  () => normalizeTargetedArticlePrefix("IT"),
+  { status: 400 },
+  "only the explicitly approved PB scope is accepted",
+);
+assert.equal(
+  filterArticlesByPrefix(articles, null),
+  articles,
+  "an unscoped automatic synchronization keeps the complete article set",
+);
+const pbArticles = filterArticlesByPrefix(articles, "PB");
+assert.deepEqual(
+  pbArticles.map((article) => article.codice),
+  ["PB0004"],
+  "the controlled PB synchronization cannot write other code families",
+);
+assert.equal(pbArticles.diagnostics.article_prefix, "PB");
+assert.equal(pbArticles.diagnostics.selected_by_prefix, 1);
+
 const api = await readFile("server/mexal/sync-products.js", "utf8");
 const productsPage = await readFile("src/pages/Products/Products.jsx", "utf8");
+
+assert.equal(
+  api.includes("articlePrefix && authorization?.isAdmin !== true"),
+  true,
+  "targeted product synchronization is restricted to Workspace administrators",
+);
 
 assert.equal(
   productsPage.includes('.eq("attivo_mexal", true)') &&

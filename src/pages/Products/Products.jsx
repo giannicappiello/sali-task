@@ -78,6 +78,7 @@ export default function Products() {
       .select("*")
       .eq("attivo_mexal", true)
       .eq("mostra_in_app", true)
+      .or("codice_mexal.ilike.IT%,codice_mexal.ilike.MKT%")
       .order("nome")
       .limit(5000);
 

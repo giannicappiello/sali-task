@@ -3,7 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 import { completeSyncRun, createSyncRun as createCentralSyncRun, failSyncRun, failSyncRunUnlessClosed, findRunningSync, isSyncRunClosedError } from "./lib/syncRuns.js";
 
 const STORAGE_BUCKET = "prodotti-mexal";
-const ARTICLE_PREFIXES = ["IT", "MKT"];
+export const PRODUCT_UI_PREFIXES = ["IT", "MKT"];
+export const STOCK_WAREHOUSE = 5;
 const DEFAULT_BATCH_SIZE = 8;
 const MAX_BATCH_SIZE = 12;
 
@@ -34,24 +35,7 @@ export function getArticleCode(article) {
       ""
   );
 
-  if (directCode) return directCode;
-
-  if (article && typeof article === "object") {
-    for (const value of Object.values(article)) {
-      const candidate = normalizeCode(value);
-
-      if (
-        candidate &&
-        ARTICLE_PREFIXES.some((prefix) =>
-          candidate.startsWith(prefix)
-        )
-      ) {
-        return candidate;
-      }
-    }
-  }
-
-  return "";
+  return directCode;
 }
 
 function numberValue(value) {
@@ -159,13 +143,16 @@ function parseJsonResponse(response, label) {
   return parsed;
 }
 
-export function buildMexalClient({ request = requestMexal } = {}) {
+export function buildMexalClient({ request = requestMexal, warehouse } = {}) {
   const baseUrl = requireEnv("MEXAL_BASE_URL").replace(/\/+$/, "");
   const username = requireEnv("MEXAL_USERNAME");
   const password = requireEnv("MEXAL_PASSWORD");
   const azienda = requireEnv("MEXAL_AZIENDA");
   const anno = requireEnv("MEXAL_ANNO");
-  const magazzino = requireEnv("MEXAL_MAGAZZINO");
+  const configuredWarehouse = requireEnv("MEXAL_MAGAZZINO");
+  // An explicit null omits Magazzino from Coordinate-Gestionale, so Mexal
+  // returns progressives for the complete warehouse scope.
+  const magazzino = warehouse === undefined ? configuredWarehouse : warehouse;
 
   const credential = Buffer.from(
     `${username}:${password}`,
@@ -175,7 +162,7 @@ export function buildMexalClient({ request = requestMexal } = {}) {
   const headers = {
     Authorization: `Passepartout ${credential}`,
     "Coordinate-Gestionale":
-      `Azienda=${azienda} Anno=${anno} Magazzino=${magazzino}`,
+      `Azienda=${azienda} Anno=${anno}${magazzino === null ? "" : ` Magazzino=${magazzino}`}`,
     Accept: "application/json",
   };
 
@@ -340,19 +327,24 @@ export async function verifyUser(req, supabase, { allowOrdersUser = false } = {}
   return { authUserId: user.id, profile, isAdmin: false, integration };
 }
 
-function isSupportedCode(code) {
+export function isWorkspaceProductCode(code) {
   const normalized = normalizeCode(code);
 
-  return ARTICLE_PREFIXES.some((prefix) =>
+  return PRODUCT_UI_PREFIXES.some((prefix) =>
     normalized.startsWith(prefix)
   );
 }
 
-function isSupportedArticle(article) {
-  return isSupportedCode(getArticleCode(article));
+export function getAvailabilityWarehouse(code) {
+  return isWorkspaceProductCode(code) ? STOCK_WAREHOUSE : null;
 }
 
-function isActiveArticle(article) {
+export function selectAvailabilityClient(code, clients) {
+  return getAvailabilityWarehouse(code) === STOCK_WAREHOUSE
+    ? clients.warehouse5
+    : clients.allWarehouses;
+}
+export function isActiveArticle(article) {
   const annulled = String(
     article?.gest_annullato ??
       article?.annullato ??
@@ -372,7 +364,7 @@ function isActiveArticle(article) {
     .toUpperCase();
 
   return (
-    isSupportedArticle(article) &&
+    Boolean(getArticleCode(article)) &&
     annulled !== "S" &&
     annulled !== "Y" &&
     annulled !== "TRUE" &&
@@ -616,7 +608,7 @@ function listDiagnostics({ endpoint, status, payload, rows }) {
   };
 }
 
-async function getAllArticles(mexal) {
+export async function getAllArticles(mexal) {
   const allRows = [];
   let next = null;
   let page = 0;
@@ -650,14 +642,11 @@ async function getAllArticles(mexal) {
     }
   } while (next);
 
-  /*
-   * Il filtro IT* e MKT* va applicato dopo aver letto tutte le pagine.
-   * Lo stato attivo viene poi verificato nuovamente sul record completo durante
-   * la sincronizzazione, così gli articoli annullati o precancellati non entrano.
-   */
+  // The master-data sync must include every article code. Active state is
+  // checked on the complete detail record before either destination is written.
   const filtered = allRows
     .map((row) => ({ row, code: getArticleCode(row) }))
-    .filter(({ code }) => isSupportedCode(code))
+    .filter(({ code }) => Boolean(code))
     .sort((a, b) => a.code.localeCompare(b.code))
     .map(({ row }) => row);
   filtered.diagnostics = { ...(allRows.diagnostics || {}), allowed_by_filters: filtered.length };
@@ -960,13 +949,11 @@ async function reconcileStaleProducts(supabase, startedAt) {
       updated_at: now,
     }, { count: "exact" })
     .eq("sincronizzato_mexal", true)
-    .or("codice_mexal.ilike.IT%,codice_mexal.ilike.MKT%")
     .or(`ultimo_sync_mexal.lt.${startedAt},ultimo_sync_mexal.is.null`);
 
   if (error) throw error;
   return count || 0;
 }
-
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({
@@ -1038,6 +1025,12 @@ export default async function handler(req, res) {
     }
 
     const mexal = buildMexalClient();
+    const availabilityClients = {
+      warehouse5: Number(mexal.magazzino) === STOCK_WAREHOUSE
+        ? mexal
+        : buildMexalClient({ warehouse: STOCK_WAREHOUSE }),
+      allWarehouses: buildMexalClient({ warehouse: null }),
+    };
 
     const [articles, groupMap] =
       await Promise.all([
@@ -1061,7 +1054,7 @@ export default async function handler(req, res) {
         errori: [],
         dry_run: true,
         messaggio:
-          "Connessione verificata. Trovati gli articoli con codice IT* e MKT*. Lo stato attivo viene verificato sul record completo durante la sincronizzazione.",
+          "Connessione verificata. Trovati gli articoli con codice valido. Lo stato attivo viene verificato sul record completo durante la sincronizzazione.",
       });
     }
 
@@ -1075,19 +1068,20 @@ export default async function handler(req, res) {
       if (!Number.isSafeInteger(syncRunId)) throw new Error("Identificativo run giacenze non valido.");
       const activeRun = await findRunningSync(supabase, "stocks");
       if (activeRun && Number(activeRun.id) !== syncRunId) return res.status(409).json({ error: "È già presente una sincronizzazione giacenze in corso.", sync_run_id: Number(activeRun.id) });
-      const itArticles = articles.filter((item) => getArticleCode(item).startsWith("IT"));
-      const batch = itArticles.slice(offset, offset + batchSize);
-      const result = { totale: itArticles.length, elaborati: batch.length, offset, prossimo_offset: offset + batch.length, completato: offset + batch.length >= itArticles.length, aggiornati: 0, errori: [] };
+      const stockArticles = articles;
+      const batch = stockArticles.slice(offset, offset + batchSize);
+      const result = { totale: stockArticles.length, elaborati: batch.length, offset, prossimo_offset: offset + batch.length, completato: offset + batch.length >= stockArticles.length, aggiornati: 0, errori: [] };
       for (const summary of batch) {
         await assertRunStillRunning(supabase, syncRunId, "stocks");
         const code = getArticleCode(summary);
         try {
-          const article = await loadFullArticle(mexal, code, summary);
+          const availabilityMexal = selectAvailabilityClient(code, availabilityClients);
+          const article = await loadFullArticle(availabilityMexal, code, summary);
           if (!isActiveArticle(article)) continue;
           const stock = calculateStock(article); const now = new Date().toISOString();
-          const { error: updateError } = await supabase.from("prodotti").update({ giacenza: stock, disponibilita: calculateAvailability(article, stock), ultimo_sync_mexal: now, updated_at: now }).eq("codice_mexal", code);
+          const { data: updatedRows, error: updateError } = await supabase.from("prodotti").update({ giacenza: stock, disponibilita: calculateAvailability(article, stock), ultimo_sync_mexal: now, updated_at: now }).eq("codice_mexal", code).eq("sincronizzato_mexal", true).eq("attivo_mexal", true).select("id");
           if (updateError) throw updateError;
-          result.aggiornati += 1;
+          result.aggiornati += updatedRows?.length || 0;
         } catch (error) { result.errori.push({ codice: code || "senza codice", errore: error?.message || String(error) }); }
       }
       if (result.completato) await completeSyncRun(supabase, syncRunId, { processed: result.elaborati, updated: result.aggiornati, failed: result.errori.length, error_message: result.errori.length ? "Alcune giacenze non sono state aggiornate." : null });
@@ -1139,8 +1133,9 @@ export default async function handler(req, res) {
       await assertRunStillRunning(supabase, syncRunId, "products");
       const code = getArticleCode(summary);
       try {
-        if (!code || !isSupportedCode(code)) continue;
-        const article = await loadFullArticle(mexal, code, summary);
+        if (!code) continue;
+        const availabilityMexal = selectAvailabilityClient(code, availabilityClients);
+        const article = await loadFullArticle(availabilityMexal, code, summary);
         result.detail_loaded += 1;
         if (!isActiveArticle(article)) { result.esclusi_non_attivi += 1; continue; }
         const hierarchy = resolveHierarchy(article.cod_grp_merc, groupMap);
@@ -1149,7 +1144,7 @@ export default async function handler(req, res) {
         let imageUrl = existing?.immagine_catalogo_url || null;
         if (String(article?.img_cat_disp || "N").trim().toUpperCase() === "S") {
           try {
-            imageUrl = await syncCatalogImage({ supabase, mexal, article, code });
+            imageUrl = await syncCatalogImage({ supabase, mexal: availabilityMexal, article, code });
             if (imageUrl) result.immagini_salvate += 1;
           } catch (imageError) {
             result.errori.push({ codice: code, errore: `Immagine catalogo: ${imageError.message}` });

@@ -680,6 +680,16 @@ export async function getAllArticles(mexal) {
   return filtered;
 }
 
+export function buildArticleDetailPath(code) {
+  const resourceCode = encodeURIComponent(String(code));
+
+  // The Mexal HTTP gateway decodes the path once before routing the resource.
+  // Protect the already encoded resource key for that transport boundary, so
+  // reserved characters reach /articoli/{codice} without becoming separators.
+  const transportCode = resourceCode.replaceAll("%", "%25");
+  return `/articoli/${transportCode}`;
+}
+
 async function getGroupMap(mexal) {
   const response = await mexal.getJson(
     "/dati-generali/gruppi-merceologici"
@@ -696,9 +706,7 @@ async function getGroupMap(mexal) {
 }
 
 export async function loadFullArticle(mexal, code, fallback) {
-  const response = await mexal.getJson(
-    `/articoli/${encodeURIComponent(code)}`
-  );
+  const response = await mexal.getJson(buildArticleDetailPath(code));
 
   if (
     response &&

@@ -3,9 +3,43 @@ function text(value) { return String(value ?? "").trim(); }
 function upper(value) { return text(value).toUpperCase(); }
 function number(value) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : null; }
 function first(object, names) { for (const name of names) if (object?.[name] !== undefined) return object[name]; return null; }
+function matrixFirst(value) {
+  return Array.isArray(value) && Array.isArray(value[0]) ? value[0][value[0].length - 1] : value;
+}
+function matrixMap(value) {
+  const result = new Map();
+  if (!Array.isArray(value)) return result;
+  for (const entry of value) {
+    if (!Array.isArray(entry) || entry.length < 2) continue;
+    const rawPosition = entry[0];
+    const numericPosition = number(rawPosition);
+    result.set(numericPosition ?? rawPosition, entry[entry.length - 1]);
+  }
+  return result;
+}
+function parallelRowsOf(document) {
+  const fields = {
+    id_riga: matrixMap(document?.id_riga),
+    tp_riga: matrixMap(document?.tp_riga),
+    codice_articolo: matrixMap(first(document, ["codice_articolo", "cod_articolo", "articolo"])),
+    descr_riga: matrixMap(first(document, ["descr_riga", "descr_articolo", "descrizione"])),
+    quantita: matrixMap(first(document, ["quantita", "qta"])),
+    dt_sca_riga: matrixMap(first(document, ["dt_sca_riga", "data_consegna_riga", "data_scadenza_riga"])),
+  };
+  const positions = [...new Set(Object.values(fields).flatMap((values) => [...values.keys()]))];
+  return positions
+    .sort((left, right) => {
+      if (typeof left === "number" && typeof right === "number") return left - right;
+      return String(left).localeCompare(String(right));
+    })
+    .map((position) => Object.fromEntries([
+      ["_matrix_position", position],
+      ...Object.entries(fields).map(([name, values]) => [name, values.get(position)]),
+    ]));
+}
 function rowsOf(document) {
   for (const value of [document?.righe, document?.dati?.righe, document?.documento?.righe]) if (Array.isArray(value)) return value;
-  return [];
+  return parallelRowsOf(document);
 }
 function documentsOf(payload) {
   if (Array.isArray(payload)) return payload;
@@ -35,19 +69,19 @@ export function normalizeOct(document) {
       mexal_serie: serie, mexal_numero: numero, mexal_anno: number(first(document, ["anno"])),
       mexal_chiave: key, mexal_cod_conto: text(first(document, ["cod_conto", "codice_cliente"])),
       codice_cliente: text(first(document, ["cod_conto", "codice_cliente"])),
-      data_ordine: first(document, ["data_documento", "data"]),
-      data_consegna: first(document, ["data_consegna", "data_scadenza"]),
+      data_ordine: matrixFirst(first(document, ["data_documento", "data"])),
+      data_consegna: matrixFirst(first(document, ["data_consegna", "data_scadenza"])),
       mexal_sincronizzato_il: new Date().toISOString(), stato_sincronizzazione: "importato_mexal",
     },
     lines: rowsOf(document).map((line, index) => {
       const code = text(first(line, ["codice_articolo", "cod_articolo", "codice", "articolo"]));
       return {
-        mexal_posizione: number(first(line, ["id_riga", "posizione", "indice_riga", "riga"])) ?? index + 1,
+        mexal_posizione: number(first(line, ["id_riga", "posizione", "indice_riga", "riga", "_matrix_position"])) ?? index + 1,
         codice_articolo: code || null,
         descrizione: text(first(line, ["descr_articolo", "descr_riga", "descrizione"])),
         quantita: number(first(line, ["quantita", "qta"])) ?? 0,
-        data_consegna: first(line, ["data_consegna", "data_scadenza"]),
-        mexal_tipo_riga: text(first(line, ["tipo_riga", "tipo"])) || null,
+        data_consegna: first(line, ["dt_sca_riga", "data_consegna_riga", "data_scadenza_riga", "data_consegna", "data_scadenza"]),
+        mexal_tipo_riga: text(first(line, ["tp_riga", "tipo_riga", "tipo"])) || null,
         riga_descrittiva: !code,
       };
     }),

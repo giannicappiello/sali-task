@@ -1,0 +1,15 @@
+{
+  "sigla": "OC",
+  "cod_modulo": "T",
+  "serie": 2,
+  "numero": 412,
+  "anno": 2026,
+  "cod_conto": "501.00159",
+  "data_documento": [[1, "2026-08-06"]],
+  "id_riga": [[1, 1], [2, 2], [3, 3]],
+  "tp_riga": [[1, "R"], [2, "D"], [3, "D"]],
+  "codice_articolo": [[1, "PB0004"]],
+  "descr_riga": [[2, "Prima nota descrittiva"], [3, "Seconda nota descrittiva"]],
+  "quantita": [[1, 7000]],
+  "dt_sca_riga": [[1, "2026-09-15"]]
+}

@@ -22,6 +22,7 @@ import { consumeProgremesTicket, issueProgremesTicket, listUserProgremesSections
 import { listProgremesIntegration, saveProgremesSyncConfig, stopProgremesModulesSync, syncProgremesModules } from "../../server/progremes-modules.js";
 import { handleProgremesReadonlyRequest } from "../../server/progremes-readonly-api.js";
 import { handleAIAssistant } from "../../server/ai/assistant.js";
+import { handleCrmBrief } from "../../server/ai/crm-brief.js";
 import { handleAIOrderDocument } from "../../server/ai/order-document.js";
 import { confirmProductionProposal, handleProductionEvent, sendProductionRequest } from "../../server/progremes-production-api.js";
 import { createOctOrdersRunHandler } from "../../server/mexal/sync-oct-orders.js";
@@ -477,6 +478,18 @@ export default async function handler(req, res) {
       return res.status(status >= 400 && status <= 599 ? status : 500).json({
         success: false,
         error: error?.message || "Richiesta AI non riuscita.",
+      });
+    }
+  }
+  if (req.query?.route === "crm-ai") {
+    try {
+      const result = await handleCrmBrief(req);
+      return res.status(200).json({ success: true, ...result });
+    } catch (error) {
+      const status = Number(error?.status || 500);
+      if (status >= 500) console.error("CRM AI Brief:", error);
+      return res.status(status >= 400 && status <= 599 ? status : 500).json({
+        success: false, error: error?.message || "Richiesta CRM AI non riuscita.",
       });
     }
   }

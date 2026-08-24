@@ -181,7 +181,6 @@ await assert.rejects(
 const handlerSource = await readFile("server/mexal/sync-products.js", "utf8");
 const automationSource = await readFile("api/mexal/automation.js", "utf8");
 const runsSource = await readFile("server/mexal/lib/syncRuns.js", "utf8");
-const clientSource = await readFile("src/modules/integrations/services/mexalSyncService.js", "utf8");
 assert.match(handlerSource, /checkpointSyncRunProgress\(supabase, syncRunId/);
 assert.match(handlerSource, /result\.completato && persistedState\.failed > 0[\s\S]*failSyncRun\(supabase, syncRunId/, "gli errori reali chiudono la run in failed");
 assert.match(handlerSource, /\.eq\("codice_mexal", code\)\.eq\("sincronizzato_mexal", true\)\.eq\("attivo_mexal", true\)/, "gli update restano idempotenti e limitati agli articoli ammessi");
@@ -189,6 +188,5 @@ assert.match(automationSource, /syncType === "stocks" && body\.resume === true/,
 assert.match(automationSource, /resumeFailedSync\(admin\.supabase/, "una run stocks failed per timeout viene riaperta con lo stesso id");
 assert.match(automationSource, /if \(running && !isContinuation\) return sendRunning/, "una seconda run concorrente resta bloccata");
 assert.match(runsSource, /if \(syncType === "stocks"\) return/, "una run stocks stale resta riprendibile e continua a fungere da lock");
-assert.match(clientSource, /response\.status === 401[\s\S]*request\(true\)/, "una sessione scaduta viene aggiornata una sola volta senza cambiare i permessi");
 
 console.log("Mexal stocks resume, retry, stale detection and concurrency boundaries are enforced");

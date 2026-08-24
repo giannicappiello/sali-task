@@ -6,6 +6,7 @@ import {
   withTransientMexalRetry,
 } from "../server/mexal/lib/transientRetry.js";
 import { buildMexalClient } from "../server/mexal/sync-products.js";
+import { mexalAuthenticatedRequest } from "../src/modules/integrations/services/mexalAuthenticatedRequest.js";
 
 function timeout(message = "upstream request timeout") {
   return Object.assign(new Error(message), { status: 504 });
@@ -126,4 +127,26 @@ test("un errore permanente non viene ritentato", async () => {
   }, { sleep: async () => {} }), /richiesta non valida/);
   assert.equal(attempts, 1);
   assert.equal(isTransientMexalError(Object.assign(new Error("non trovato"), { status: 404 })), false);
+});
+
+test("un 401 aggiorna la sessione una sola volta e ripete la stessa richiesta", async () => {
+  const refreshes = [];
+  const requests = [];
+  const response = await mexalAuthenticatedRequest("/api/mexal/automation", { syncRunId: 435, resume: true }, {
+    getToken: async ({ refresh }) => {
+      refreshes.push(refresh);
+      return refresh ? "token-nuovo" : "token-scaduto";
+    },
+    fetchImpl: async (path, options) => {
+      requests.push({ path, options });
+      return { status: requests.length === 1 ? 401 : 200 };
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(refreshes, [false, true]);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].options.headers.Authorization, "Bearer token-scaduto");
+  assert.equal(requests[1].options.headers.Authorization, "Bearer token-nuovo");
+  assert.equal(requests[0].options.body, requests[1].options.body, "il refresh non cambia run o payload");
 });

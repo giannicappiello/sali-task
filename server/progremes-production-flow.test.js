@@ -106,7 +106,7 @@ test("run_now/oct_orders è registrato, resta OFF e non importa OCM/OCX/OCI", as
   };
   const handler = createOctOrdersRunHandler({
     createMexalClient: () => ({
-      getJson: async (path) => path === "/oct"
+      getJson: async (path) => path === "/oct?max=200"
         ? [...details.keys()].map((numero) => ({ sigla: "OC", serie: 2, numero }))
         : details.get(Number(decodeURIComponent(path).split("+").at(-1))),
     }),

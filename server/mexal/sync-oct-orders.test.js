@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { normalizeOct, precheckOctOrders } from "./sync-oct-orders.js";
+import {
+  normalizeOct,
+  precheckOctOrders,
+  readMexalCollectionPages,
+  syncOctOrders,
+} from "./sync-oct-orders.js";
 
 const oct2412 = JSON.parse(fs.readFileSync(
   new URL("./fixtures/oct-2-412.parallel.json", import.meta.url),
@@ -129,7 +134,7 @@ async function runReadonlyPrecheck() {
   ]);
   const mexal = {
     async getJson(path) {
-      if (path === "/oct") return { documenti: [{ sigla: "OC", serie: 2, numero: 412 }, { sigla: "OC", serie: 2, numero: 413 }] };
+      if (path === "/oct?max=200") return { documenti: [{ sigla: "OC", serie: 2, numero: 412 }, { sigla: "OC", serie: 2, numero: 413 }] };
       if (details.has(path)) return details.get(path);
       throw new Error(`Percorso Mexal inatteso: ${path}`);
     },
@@ -187,4 +192,117 @@ test("precheck preserva quantità, data ordine e dt_sca_riga", async () => {
     { codice: missingLine.codice_articolo, quantita: missingLine.quantita, dtSCA: missingLine.dt_sca_riga },
     { codice: missingCode, quantita: 2, dtSCA: "2026-09-20" },
   );
+});
+
+function summary(numero) {
+  return { sigla: "OC", serie: 2, numero };
+}
+
+test("paginator legge una pagina senza next", async () => {
+  const paths = [];
+  const result = await readMexalCollectionPages({
+    mexal: { getJson: async (path) => { paths.push(path); return { dati: [summary(1)] }; } },
+    path: "/documenti/ordini-clienti",
+  });
+
+  assert.deepEqual(paths, ["/documenti/ordini-clienti?max=200"]);
+  assert.deepEqual(result.records, [summary(1)]);
+  assert.deepEqual(
+    { pagesRead: result.pagesRead, recordsRead: result.recordsRead, duplicatesSkipped: result.duplicatesSkipped },
+    { pagesRead: 1, recordsRead: 1, duplicatesSkipped: 0 },
+  );
+});
+
+test("paginator segue next, conserva l'ordine e deduplica i documenti", async () => {
+  const pages = new Map([
+    ["/documenti/ordini-clienti?max=200", { dati: [summary(1), summary(2)], next: "pagina 2" }],
+    ["/documenti/ordini-clienti?max=200&next=pagina+2", { dati: [summary(2), summary(3)] }],
+  ]);
+  const paths = [];
+  const result = await readMexalCollectionPages({
+    mexal: { getJson: async (path) => { paths.push(path); return pages.get(path); } },
+    path: "/documenti/ordini-clienti",
+  });
+
+  assert.deepEqual(paths, [...pages.keys()]);
+  assert.deepEqual(result.records.map((record) => record.numero), [1, 2, 3]);
+  assert.equal(result.pagesRead, 2);
+  assert.equal(result.recordsRead, 4);
+  assert.equal(result.duplicatesSkipped, 1);
+});
+
+test("paginator considera next vuoto o whitespace come fine collection", async () => {
+  for (const next of ["", "   "]) {
+    let calls = 0;
+    const result = await readMexalCollectionPages({
+      mexal: { getJson: async () => { calls += 1; return { dati: [summary(1)], next }; } },
+      path: "/documenti/ordini-clienti",
+    });
+    assert.equal(calls, 1);
+    assert.equal(result.pagesRead, 1);
+  }
+});
+
+test("paginator interrompe un token next ripetuto con errore controllato", async () => {
+  let calls = 0;
+  await assert.rejects(
+    readMexalCollectionPages({
+      mexal: { getJson: async () => { calls += 1; return { dati: [summary(calls)], next: "stesso-token" }; } },
+      path: "/documenti/ordini-clienti",
+    }),
+    /token next ripetuto/i,
+  );
+  assert.equal(calls, 2);
+});
+
+test("paginator legge oltre 1000 documenti su più pagine", async () => {
+  const allRecords = Array.from({ length: 1205 }, (_, index) => summary(index + 1));
+  const requestedMax = [];
+  const result = await readMexalCollectionPages({
+    mexal: {
+      async getJson(path) {
+        const url = new URL(path, "https://mexal.test");
+        const max = Number(url.searchParams.get("max"));
+        const offset = Number(url.searchParams.get("next") || 0);
+        requestedMax.push(max);
+        const end = Math.min(offset + max, allRecords.length);
+        return { dati: allRecords.slice(offset, end), next: end < allRecords.length ? String(end) : "" };
+      },
+    },
+    path: "/documenti/ordini-clienti",
+  });
+
+  assert.equal(result.records.length, 1205);
+  assert.equal(result.recordsRead, 1205);
+  assert.equal(result.pagesRead, 7);
+  assert.ok(requestedMax.every((max) => max === 200));
+  assert.deepEqual([result.records[0].numero, result.records.at(-1).numero], [1, 1205]);
+});
+
+test("precheck e import usano lo stesso paginator multi-pagina", async () => {
+  async function execute(operation) {
+    const paths = [];
+    const mexal = {
+      async getJson(path) {
+        paths.push(path);
+        if (path === "/documenti/ordini-clienti?max=200") return { dati: [{ sigla: "XX", serie: 1, numero: 1 }], next: "due" };
+        if (path === "/documenti/ordini-clienti?max=200&next=due") return { dati: [{ sigla: "XX", serie: 1, numero: 2 }] };
+        throw new Error(`Percorso inatteso: ${path}`);
+      },
+    };
+    const env = { MEXAL_OCT_IMPORT_ENABLED: "true", MEXAL_OCT_MODULE_CODE: "T", MEXAL_OCT_LIST_PATH: "/documenti/ordini-clienti" };
+    const result = operation === "precheck"
+      ? await precheckOctOrders({ mexal, supabase: {}, env })
+      : await syncOctOrders({ mexal, supabase: {}, env });
+    return { paths, result };
+  }
+
+  const precheck = await execute("precheck");
+  const imported = await execute("import");
+
+  assert.deepEqual(imported.paths, precheck.paths);
+  assert.equal(precheck.result.source_pages, 2);
+  assert.equal(precheck.result.source_records_read, 2);
+  assert.equal(imported.result.pages_read, 2);
+  assert.equal(imported.result.records_read, 2);
 });

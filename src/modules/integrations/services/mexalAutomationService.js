@@ -122,3 +122,11 @@ export async function saveMexalAutomationRule({ supabase, ruleType, rule, fetchI
   if (!payload || !payload.rule) throw apiError(0, "Il servizio automazioni non ha confermato il salvataggio della regola.");
   return payload.rule;
 }
+
+export async function runOctPrecheck({ supabase, fetchImpl }) {
+  const payload = await requestMexalAutomation({ supabase, action: "oct_precheck", fetchImpl });
+  if (payload?.dry_run !== true || payload?.read_only !== true) {
+    throw apiError(0, "Il servizio OCT non ha confermato la modalità read-only.");
+  }
+  return payload;
+}

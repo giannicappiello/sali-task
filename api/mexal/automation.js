@@ -24,7 +24,7 @@ import { handleProgremesReadonlyRequest } from "../../server/progremes-readonly-
 import { handleAIAssistant } from "../../server/ai/assistant.js";
 import { handleAIOrderDocument } from "../../server/ai/order-document.js";
 import { confirmProductionProposal, handleProductionEvent, sendProductionRequest } from "../../server/progremes-production-api.js";
-import { createOctOrdersRunHandler } from "../../server/mexal/sync-oct-orders.js";
+import { createOctOrdersRunHandler, precheckOctOrders } from "../../server/mexal/sync-oct-orders.js";
 
 async function dispatchMessageNotification(req, body) {
   const token = String(req.headers.authorization || "").trim().replace(/^Bearer\s+/i, "");
@@ -556,6 +556,14 @@ export default async function handler(req, res) {
       case "agents_access": {
         const admin = await createAdmin(req);
         return sendSuccess(res, 200, await agentsAccess({ supabase: admin.supabase, body }));
+      }
+      case "oct_precheck": {
+        const admin = await createAdmin(req, "integrations.sync.oct_orders");
+        return sendSuccess(res, 200, await precheckOctOrders({
+          mexal: buildMexalClient(),
+          supabase: admin.supabase,
+          env: process.env,
+        }));
       }
       case "run_now": {
         const syncType = body.syncType || body.sync_type;

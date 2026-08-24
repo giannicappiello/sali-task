@@ -6,6 +6,7 @@ import {
   loadLatestListPriceCommissionRun,
   loadMexalAutomationRules,
   processListPriceCommissionsBatchNow,
+  runOctPrecheck,
   saveMexalAutomationRule,
   startListPriceCommissionsNow,
   stopListPriceCommissionRun,
@@ -82,6 +83,37 @@ function ProgressPanel({ run, stopping, onStop }) {
   </section>;
 }
 
+function OctPrecheckPanel({ result, running, onRun }) {
+  const missing = result?.workspace_articles_missing || [];
+  const parsingErrors = result?.parsing_errors || [];
+  const duplicateCount = (result?.header_duplicates?.length || 0) + (result?.line_duplicates?.length || 0) + (result?.workspace_product_duplicates?.length || 0);
+  return <section className="mexal-settings-panel" style={{ marginBottom: 16 }}>
+    <div className="mexal-section-heading">
+      <div><h3>Precheck OCT</h3><p>Legge e normalizza gli OCT senza creare o modificare testate, righe o dati di produzione.</p></div>
+      <button type="button" className="orders-primary" disabled={running} onClick={onRun}>{running ? "Precheck in corso…" : "Precheck OCT"}</button>
+    </div>
+    {result && <>
+      <div className="mexal-rule-form-grid">
+        <div><strong>OCT candidati</strong><br />{number(result.candidate_oct_count)}</div>
+        <div><strong>Righe totali</strong><br />{number(result.total_rows)}</div>
+        <div><strong>Righe articolo</strong><br />{number(result.article_rows)}</div>
+        <div><strong>Righe descrittive</strong><br />{number(result.descriptive_rows)}</div>
+        <div><strong>Codici distinti</strong><br />{number(result.distinct_article_codes_count)}</div>
+        <div><strong>Presenti</strong><br />{number(result.workspace_articles_present_count)}</div>
+        <div><strong>Mancanti</strong><br />{number(result.workspace_articles_missing_count)}</div>
+        <div><strong>Già in Workspace</strong><br />{number(result.already_in_workspace_count)}</div>
+        <div><strong>Duplicati</strong><br />{number(duplicateCount)}</div>
+        <div><strong>Errori parsing</strong><br />{number(parsingErrors.length)}</div>
+      </div>
+      <div className={`mexal-alert ${result.has_blocking_anomalies ? "alert-warning" : "alert-success"}`} style={{ marginTop: 12 }}>
+        <span><strong>{result.has_blocking_anomalies ? "Precheck con anomalie bloccanti" : "Precheck completato senza anomalie bloccanti"}</strong><br />Modalità confermata: sola lettura.</span>
+      </div>
+      {missing.length > 0 && <div className="mexal-alert alert-error" style={{ marginTop: 12, alignItems: "flex-start" }}><span><strong>Articoli mancanti</strong><br />{missing.join(", ")}</span></div>}
+      {parsingErrors.length > 0 && <div className="mexal-alert alert-warning" style={{ marginTop: 12, alignItems: "flex-start" }}><span><strong>Errori di lettura o normalizzazione</strong><br />{parsingErrors.map((error) => `${error.reference || `indice ${error.summary_index}`}: ${error.message}`).join(" · ")}</span></div>}
+    </>}
+  </section>;
+}
+
 function RuleSection({ type, rules, onEdit, onToggle, onNew, onRunNow, saving, runningNow }) {
   const event = type === "event";
   const { columns, canCreate } = automationSection(type, true);
@@ -94,6 +126,8 @@ export default function MexalAutomations({ canManage }) {
   const [saving, setSaving] = useState(false);
   const [runningNow, setRunningNow] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [precheckingOct, setPrecheckingOct] = useState(false);
+  const [octPrecheck, setOctPrecheck] = useState(null);
   const [activeRun, setActiveRun] = useState(null);
   const [message, setMessage] = useState(null);
   const [editor, setEditor] = useState(null);
@@ -198,6 +232,21 @@ export default function MexalAutomations({ canManage }) {
     finally { setStopping(false); }
   }
 
+  async function precheckOct() {
+    setPrecheckingOct(true); setMessage(null);
+    try {
+      const result = await runOctPrecheck({ supabase });
+      setOctPrecheck(result);
+      setMessage({
+        type: result.has_blocking_anomalies ? "warning" : "success",
+        text: result.has_blocking_anomalies
+          ? "Precheck OCT completato in sola lettura: sono presenti anomalie da verificare."
+          : "Precheck OCT completato in sola lettura senza anomalie bloccanti.",
+      });
+    } catch (error) { setMessage({ type: "error", text: error.message }); }
+    finally { setPrecheckingOct(false); }
+  }
+
   if (!canManageMexalAutomations(canManage)) return <section className="mexal-settings-panel"><div className="mexal-empty-state">La gestione delle automazioni è riservata agli amministratori.</div></section>;
   const heartbeat = rules.diagnostics?.heartbeat;
   const latestCycle = rules.diagnostics?.latestCycle;
@@ -221,6 +270,7 @@ export default function MexalAutomations({ canManage }) {
       {heartbeat?.last_error && <div className="mexal-alert alert-error" style={{ marginTop: 12 }}><span>{heartbeat.last_error}</span></div>}
       {firstJobError && <div className="mexal-alert alert-warning" style={{ marginTop: 12 }}><span>{firstJobError.sync_type}: {firstJobError.last_error}</span></div>}
     </section>
+    <OctPrecheckPanel result={octPrecheck} running={precheckingOct} onRun={precheckOct} />
     <ProgressPanel run={activeRun} stopping={stopping} onStop={stopCurrentRun} />
     {loading ? <section className="mexal-settings-panel"><div className="mexal-empty-state">Caricamento regole automazione…</div></section> : <>
       <RuleSection type="schedule" rules={rules.schedules} saving={saving} runningNow={runningNow} onRunNow={runCommissionsNow} onEdit={(rule) => setEditor({ type: "schedule", rule })} onToggle={(rule) => save("schedule", { ...rule, enabled: !rule.enabled })} />

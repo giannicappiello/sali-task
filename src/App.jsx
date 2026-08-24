@@ -97,7 +97,7 @@ function App() {
               <Route path="projects" element={<Navigate to="/activities/projects" replace />} />
               <Route path="products" element={<Products />} />
               <Route path="documentation" element={<Documentation />} />
-              <Route path="manuali-uso" element={<WorkspaceAccessGuard moduleCode="documenti"><ManualiUso /></WorkspaceAccessGuard>} />
+              <Route path="manuali-uso" element={<WorkspaceAccessGuard moduleCode="manuali_uso"><ManualiUso /></WorkspaceAccessGuard>} />
               <Route path="messages" element={<Messages />} />
               <Route path="team" element={<WorkspaceAccessGuard moduleCode="team"><Team /></WorkspaceAccessGuard>} />
               <Route path="calendar" element={<Calendar />} />

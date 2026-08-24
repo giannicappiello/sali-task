@@ -2,6 +2,7 @@ import https from "node:https";
 import { createClient } from "@supabase/supabase-js";
 import { checkpointSyncRunProgress, completeSyncRun, createSyncRun as createCentralSyncRun, failSyncRun, failSyncRunUnlessClosed, findRunningSync, getSyncRun as getCentralSyncRun, isSyncRunClosedError } from "./lib/syncRuns.js";
 import { shouldReplayStockCheckpoint, stockBatchCheckpoint, stockRunState } from "./lib/stockRunState.js";
+import { withTransientMexalRetry } from "./lib/transientRetry.js";
 
 const STORAGE_BUCKET = "prodotti-mexal";
 export const PRODUCT_UI_PREFIXES = ["IT", "MKT"];
@@ -171,7 +172,7 @@ function parseJsonResponse(response, label) {
   return parsed;
 }
 
-export function buildMexalClient({ request = requestMexal, warehouse } = {}) {
+export function buildMexalClient({ request = requestMexal, warehouse, retryOptions } = {}) {
   const baseUrl = requireEnv("MEXAL_BASE_URL").replace(/\/+$/, "");
   const username = requireEnv("MEXAL_USERNAME");
   const password = requireEnv("MEXAL_PASSWORD");
@@ -201,14 +202,15 @@ export function buildMexalClient({ request = requestMexal, warehouse } = {}) {
     magazzino,
 
     async getJson(path) {
-      const response = await request({
-        url: `${baseUrl}/webapi/risorse${path}`,
-        headers,
-      });
-
-      const payload = parseJsonResponse(response, path);
-      this.lastHttpStatus = response.status;
-      return payload;
+      const execute = async () => {
+        const response = await request({ url: `${baseUrl}/webapi/risorse${path}`, headers });
+        const payload = parseJsonResponse(response, path);
+        this.lastHttpStatus = response.status;
+        return payload;
+      };
+      return retryOptions
+        ? withTransientMexalRetry(execute, retryOptions)
+        : execute();
     },
 
     async postJson(path, payload, { onDiagnostic } = {}) {
@@ -1086,12 +1088,13 @@ export default async function handler(req, res) {
       }
     }
 
-    const mexal = buildMexalClient();
+    const stockRetryOptions = action === "sync-stock-it" ? {} : undefined;
+    const mexal = buildMexalClient({ retryOptions: stockRetryOptions });
     const availabilityClients = {
       warehouse5: Number(mexal.magazzino) === STOCK_WAREHOUSE
         ? mexal
-        : buildMexalClient({ warehouse: STOCK_WAREHOUSE }),
-      allWarehouses: buildMexalClient({ warehouse: null }),
+        : buildMexalClient({ warehouse: STOCK_WAREHOUSE, retryOptions: stockRetryOptions }),
+      allWarehouses: buildMexalClient({ warehouse: null, retryOptions: stockRetryOptions }),
     };
 
     const [allArticles, groupMap] =
@@ -1172,7 +1175,10 @@ export default async function handler(req, res) {
           const { data: updatedRows, error: updateError } = await supabase.from("prodotti").update({ giacenza: stock, disponibilita: calculateAvailability(article, stock), ultimo_sync_mexal: now, updated_at: now }).eq("codice_mexal", code).eq("sincronizzato_mexal", true).eq("attivo_mexal", true).select("id");
           if (updateError) throw updateError;
           result.aggiornati += updatedRows?.length || 0;
-        } catch (error) { result.errori.push({ codice: code || "senza codice", errore: error?.message || String(error) }); }
+        } catch (error) {
+          if (error?.retryable === true) throw error;
+          result.errori.push({ codice: code || "senza codice", errore: error?.message || String(error) });
+        }
       }
       const checkpoint = stockBatchCheckpoint(currentRun, { processed: result.elaborati, updated: result.aggiornati, skipped: result.esclusi, failed: result.errori.length }, { total: stockArticles.length, batchSize: state.batchSize });
       const persisted = await checkpointSyncRunProgress(supabase, syncRunId, checkpoint.expectedProcessed, checkpoint.values);
@@ -1330,7 +1336,30 @@ export default async function handler(req, res) {
       nextOffset: result.prossimo_offset,
     });
   } catch (error) {
-    if (action === "sync-stock-it" && syncRunId) await failSyncRunUnlessClosed(supabase, syncRunId, error?.message || "Errore sincronizzazione giacenze.");
+    if (action === "sync-stock-it" && syncRunId) {
+      const current = await getCentralSyncRun(supabase, syncRunId).catch(() => null);
+      const state = stockRunState(current || {});
+      const retryable = error?.retryable === true;
+      const metadata = {
+        ...(current?.metadata || {}),
+        recovery: {
+          ...(current?.metadata?.recovery || {}),
+          retryable,
+          checkpoint_processed: state.processed,
+          checkpoint_failed: state.failed,
+          failed_at: new Date().toISOString(),
+          last_error: String(error?.message || "Errore sincronizzazione giacenze.").slice(0, 500),
+          attempts: Number(error?.retryAttempts || 1),
+        },
+      };
+      await failSyncRunUnlessClosed(supabase, syncRunId, error?.message || "Errore sincronizzazione giacenze.", {
+        processed: state.processed,
+        updated: state.updated,
+        skipped: state.skipped,
+        failed: Math.max(1, state.failed),
+        metadata,
+      });
+    }
     else {
       try {
         await updateSyncRun(supabase, syncRunId, {

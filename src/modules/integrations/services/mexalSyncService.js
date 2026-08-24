@@ -1,7 +1,9 @@
 import { supabase } from "../../../lib/supabaseClient";
 
-export async function getAccessToken() {
-  const { data, error } = await supabase.auth.getSession();
+export async function getAccessToken({ refresh = false } = {}) {
+  const { data, error } = refresh
+    ? await supabase.auth.refreshSession()
+    : await supabase.auth.getSession();
   if (error) throw error;
 
   const token = data?.session?.access_token;
@@ -10,12 +12,16 @@ export async function getAccessToken() {
 }
 
 async function invokeMexalApi(path, payload) {
-  const token = await getAccessToken();
-  const response = await fetch(path, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify(payload),
-  });
+  const request = async (refresh = false) => {
+    const token = await getAccessToken({ refresh });
+    return fetch(path, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(payload),
+    });
+  };
+  let response = await request();
+  if (response.status === 401) response = await request(true);
   const raw = await response.text();
   let data;
   try {

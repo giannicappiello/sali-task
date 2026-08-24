@@ -15,7 +15,7 @@ import orderDocumentsHandler, { purgeEvictedOrderDocuments } from "../../server/
 import salesInvoicesHandler from "../../server/mexal/sync-sales-invoices.js";
 import productCategoriesHandler from "../../server/mexal/sync-product-categories.js";
 import { requireAdmin, requirePermission } from "../../server/mexal/lib/auth.js";
-import { completeIdempotentSync, findRunningSync, reserveIdempotentSync } from "../../server/mexal/lib/syncRuns.js";
+import { completeIdempotentSync, findResumableSync, findRunningSync, reserveIdempotentSync, resumeFailedSync } from "../../server/mexal/lib/syncRuns.js";
 import { dispatchWorkspaceNotifications } from "../../server/notifications/dispatch.js";
 import documentApiHandler from "../../server/document-api.js";
 import { consumeProgremesTicket, issueProgremesTicket, listUserProgremesSections } from "../../server/progremes-sso.js";
@@ -233,9 +233,19 @@ async function createAdmin(req, permissionCode = null) {
 }
 
 async function startSync(req, res, body, syncType, runHandler, admin) {
-  const running = await findRunningSync(admin.supabase, syncType);
+  let running = await findRunningSync(admin.supabase, syncType);
   if (syncType === "stocks" && body.resume === true && running && !body.syncRunId) {
     body.syncRunId = Number(running.id);
+  }
+  if (syncType === "stocks" && body.resume === true && !running) {
+    const failed = body.syncRunId
+      ? await admin.supabase.from("mexal_sync_runs").select("id").eq("id", Number(body.syncRunId)).eq("sync_type", "stocks").eq("status", "failed").maybeSingle()
+      : { data: await findResumableSync(admin.supabase, syncType), error: null };
+    if (failed.error) throw failed.error;
+    if (failed.data?.id) {
+      running = await resumeFailedSync(admin.supabase, failed.data.id, { syncType });
+      body.syncRunId = Number(running.id);
+    }
   }
   const isContinuation = ["products", "stocks"].includes(syncType)
     && body.syncRunId

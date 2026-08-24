@@ -1,7 +1,7 @@
 import https from "node:https";
 import { createClient } from "@supabase/supabase-js";
 import { checkpointSyncRunProgress, completeSyncRun, createSyncRun as createCentralSyncRun, failSyncRun, failSyncRunUnlessClosed, findRunningSync, getSyncRun as getCentralSyncRun, isSyncRunClosedError } from "./lib/syncRuns.js";
-import { shouldReplayStockCheckpoint, stockBatchCheckpoint, stockRunState } from "./lib/stockRunState.js";
+import { shouldReplayStockCheckpoint, stockBatchCheckpoint, stockRunState, stockUpdateDiagnostics } from "./lib/stockRunState.js";
 import { withTransientMexalRetry } from "./lib/transientRetry.js";
 
 const STORAGE_BUCKET = "prodotti-mexal";
@@ -1164,6 +1164,7 @@ export default async function handler(req, res) {
       const authoritativeOffset = state.nextOffset;
       const batch = stockArticles.slice(authoritativeOffset, authoritativeOffset + state.batchSize);
       const result = { totale: stockArticles.length, elaborati: batch.length, offset: authoritativeOffset, prossimo_offset: authoritativeOffset + batch.length, completato: authoritativeOffset + batch.length >= stockArticles.length, aggiornati: 0, esclusi: 0, errori: [] };
+      const updateOperations = [];
       for (const summary of batch) {
         await assertRunStillRunning(supabase, syncRunId, "stocks");
         const code = getArticleCode(summary);
@@ -1175,12 +1176,17 @@ export default async function handler(req, res) {
           const { data: updatedRows, error: updateError } = await supabase.from("prodotti").update({ giacenza: stock, disponibilita: calculateAvailability(article, stock), ultimo_sync_mexal: now, updated_at: now }).eq("codice_mexal", code).eq("sincronizzato_mexal", true).eq("attivo_mexal", true).select("id");
           if (updateError) throw updateError;
           result.aggiornati += updatedRows?.length || 0;
+          for (const row of updatedRows || []) updateOperations.push({ id: row.id, code });
         } catch (error) {
-          if (error?.retryable === true) throw error;
+          if (error?.retryable === true) {
+            error.stockUpdateDiagnostics = stockUpdateDiagnostics(currentRun.metadata, updateOperations);
+            throw error;
+          }
           result.errori.push({ codice: code || "senza codice", errore: error?.message || String(error) });
         }
       }
-      const checkpoint = stockBatchCheckpoint(currentRun, { processed: result.elaborati, updated: result.aggiornati, skipped: result.esclusi, failed: result.errori.length }, { total: stockArticles.length, batchSize: state.batchSize });
+      const updateAudit = stockUpdateDiagnostics(currentRun.metadata, updateOperations);
+      const checkpoint = stockBatchCheckpoint(currentRun, { processed: result.elaborati, updated: result.aggiornati, skipped: result.esclusi, failed: result.errori.length }, { total: stockArticles.length, batchSize: state.batchSize, metadata: { stock_update_diagnostics: updateAudit } });
       const persisted = await checkpointSyncRunProgress(supabase, syncRunId, checkpoint.expectedProcessed, checkpoint.values);
       if (!persisted.advanced) {
         const concurrent = stockRunState(persisted.run, { batchSize: state.batchSize, total: stockArticles.length });
@@ -1195,7 +1201,8 @@ export default async function handler(req, res) {
         return res.status(422).json({ ...result, error: message, elaborati_totali: persistedState.processed, aggiornati_totali: persistedState.updated, errori_totali: persistedState.failed, sync_run_id: Number(syncRunId), stato_run: "failed" });
       }
       if (result.completato) await completeSyncRun(supabase, syncRunId, { processed: persistedState.processed, updated: persistedState.updated, skipped: persistedState.skipped, failed: 0, metadata: persisted.run.metadata, error_message: null });
-      return res.status(200).json({ ...result, elaborati_totali: persistedState.processed, aggiornati_totali: persistedState.updated, errori_totali: persistedState.failed, sync_run_id: Number(syncRunId), stale: state.stale, resumed: state.processed > 0 || state.legacy });
+      const persistedAudit = persisted.run.metadata?.stock_update_diagnostics || updateAudit;
+      return res.status(200).json({ ...result, elaborati_totali: persistedState.processed, aggiornati_totali: persistedState.updated, operazioni_aggiornamento_totali: Number(persistedAudit.update_operations_total || persistedState.updated), prodotti_aggiornati_univoci: Number(persistedAudit.unique_product_ids_count || 0), update_ripetuti: Number(persistedAudit.repeated_update_operations || 0), errori_totali: persistedState.failed, sync_run_id: Number(syncRunId), stale: state.stale, resumed: state.processed > 0 || state.legacy });
     }
 
     if (action !== "sync") {
@@ -1342,6 +1349,7 @@ export default async function handler(req, res) {
       const retryable = error?.retryable === true;
       const metadata = {
         ...(current?.metadata || {}),
+        ...(error?.stockUpdateDiagnostics ? { stock_update_diagnostics: error.stockUpdateDiagnostics } : {}),
         recovery: {
           ...(current?.metadata?.recovery || {}),
           retryable,

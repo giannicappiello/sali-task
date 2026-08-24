@@ -47,6 +47,62 @@ function documentsOf(payload) {
   return [];
 }
 
+function sourceConfig(env) {
+  const moduleCode = text(env.MEXAL_OCT_MODULE_CODE);
+  const listPath = text(env.MEXAL_OCT_LIST_PATH);
+  if (!moduleCode || !listPath) throw new Error("Configurazione importer OCT incompleta.");
+  return { moduleCode, listPath };
+}
+
+function summaryIdentity(summary) {
+  const sigla = upper(first(summary, ["sigla", "sigla_documento"]));
+  const serie = number(first(summary, ["serie"]));
+  const numero = number(first(summary, ["numero"]));
+  if (sigla !== "OC" || !Number.isInteger(serie) || !Number.isInteger(numero)) return null;
+  return { sigla, serie, numero, reference: [sigla, serie, numero].join("+") };
+}
+
+async function readOctSummary({ mexal, summary, moduleCode }) {
+  const identity = summaryIdentity(summary);
+  if (!identity) return { status: "skipped", reason: "Identità documento non valida o sigla diversa da OC." };
+  const detailPath = "/documenti/ordini-clienti/" + encodeURIComponent(identity.reference);
+  const detail = await mexal.getJson(detailPath);
+  if (!isOctDocument(detail, { moduleCode })) {
+    return { status: "skipped", reason: "Documento fuori dal modulo OCT configurato.", identity };
+  }
+  return { status: "candidate", identity, normalized: normalizeOct(detail) };
+}
+
+function chunks(values, size = 100) {
+  const result = [];
+  for (let index = 0; index < values.length; index += size) result.push(values.slice(index, index + size));
+  return result;
+}
+
+async function selectInChunks({ supabase, table, columns, column, values, configure = (query) => query }) {
+  const rows = [];
+  for (const batch of chunks(values)) {
+    const { data, error } = await configure(supabase.from(table).select(columns)).in(column, batch);
+    if (error) throw error;
+    rows.push(...(data || []));
+  }
+  return rows;
+}
+
+function groupedDuplicates(rows, keyOf, shape) {
+  const grouped = new Map();
+  for (const row of rows) {
+    const key = keyOf(row);
+    if (!key) continue;
+    const values = grouped.get(key) || [];
+    values.push(row);
+    grouped.set(key, values);
+  }
+  return [...grouped.entries()]
+    .filter(([, values]) => values.length > 1)
+    .map(([key, values]) => shape(key, values));
+}
+
 export function isOctDocument(document, { moduleCode }) {
   const expected = upper(moduleCode);
   if (!expected) throw new Error("MEXAL_OCT_MODULE_CODE deve essere configurato esplicitamente.");
@@ -88,22 +144,192 @@ export function normalizeOct(document) {
   };
 }
 
+export async function precheckOctOrders({ mexal, supabase, env = process.env }) {
+  if (!mexal || !supabase) throw new TypeError("Dipendenze precheck OCT non valide.");
+  const { moduleCode, listPath } = sourceConfig(env);
+  const summaries = documentsOf(await mexal.getJson(listPath));
+  const documents = [];
+  const parsingErrors = [];
+  let skipped = 0;
+  let candidateCount = 0;
+
+  for (let index = 0; index < summaries.length; index += 1) {
+    const summary = summaries[index];
+    try {
+      const read = await readOctSummary({ mexal, summary, moduleCode });
+      if (read.status !== "candidate") {
+        skipped += 1;
+        continue;
+      }
+      candidateCount += 1;
+      documents.push(read.normalized);
+    } catch (error) {
+      const identity = summaryIdentity(summary);
+      parsingErrors.push({
+        summary_index: index,
+        reference: identity?.reference || null,
+        stage: identity ? "detail_or_normalization" : "summary_identity",
+        message: error?.message || String(error),
+      });
+    }
+  }
+
+  const sourceHeaderDuplicates = groupedDuplicates(
+    documents,
+    (document) => document.key,
+    (key, values) => ({ scope: "mexal_source", key, occurrences: values.length }),
+  );
+  const sourceLineDuplicates = documents.flatMap((document) => groupedDuplicates(
+    document.lines,
+    (line) => `${document.key}:${line.mexal_posizione}`,
+    (_key, values) => ({
+      scope: "mexal_source",
+      key: document.key,
+      serie: document.header.mexal_serie,
+      numero: document.header.mexal_numero,
+      mexal_posizione: values[0].mexal_posizione,
+      occurrences: values.length,
+    }),
+  ));
+
+  const articleCodes = [...new Set(documents.flatMap((document) => document.lines)
+    .filter((line) => !line.riga_descrittiva && text(line.codice_articolo))
+    .map((line) => upper(line.codice_articolo)))];
+  const documentKeys = [...new Set(documents.map((document) => document.key))];
+
+  const productRows = articleCodes.length ? await selectInChunks({
+    supabase,
+    table: "prodotti",
+    columns: "id,codice_mexal,attivo_mexal,mostra_in_app,linea_mexal,sincronizzato_mexal",
+    column: "codice_mexal",
+    values: articleCodes,
+  }) : [];
+  const productsByCode = new Map();
+  for (const product of productRows) {
+    const code = upper(product.codice_mexal);
+    const values = productsByCode.get(code) || [];
+    values.push(product);
+    productsByCode.set(code, values);
+  }
+
+  const existingHeaders = documentKeys.length ? await selectInChunks({
+    supabase,
+    table: "ordini_testate",
+    columns: "id,mexal_sigla,mexal_serie,mexal_numero,mexal_chiave",
+    column: "mexal_chiave",
+    values: documentKeys,
+    configure: (query) => query.eq("origine", "mexal_oct"),
+  }) : [];
+  const headerIds = existingHeaders.map((header) => header.id).filter(Boolean);
+  const existingLines = headerIds.length ? await selectInChunks({
+    supabase,
+    table: "ordini_righe",
+    columns: "id,ordine_id,mexal_posizione",
+    column: "ordine_id",
+    values: headerIds,
+  }) : [];
+  const headersByKey = new Map();
+  for (const header of existingHeaders) {
+    const key = text(header.mexal_chiave) || [upper(header.mexal_sigla), number(header.mexal_serie), number(header.mexal_numero)].join("+");
+    const values = headersByKey.get(key) || [];
+    values.push(header);
+    headersByKey.set(key, values);
+  }
+
+  const presentArticleCodes = articleCodes.filter((code) => productsByCode.has(code));
+  const missingArticleCodes = articleCodes.filter((code) => !productsByCode.has(code));
+  const inactiveArticles = presentArticleCodes.flatMap((code) => productsByCode.get(code)
+    .filter((product) => product.attivo_mexal !== true || product.mostra_in_app === false || product.sincronizzato_mexal === false)
+    .map((product) => ({ code, product_id: product.id, attivo_mexal: product.attivo_mexal, mostra_in_app: product.mostra_in_app, sincronizzato_mexal: product.sincronizzato_mexal })));
+  const outOfProductionArticles = presentArticleCodes.flatMap((code) => productsByCode.get(code)
+    .filter((product) => /fuori\s+produzione/i.test(text(product.linea_mexal)))
+    .map((product) => ({ code, product_id: product.id, linea_mexal: product.linea_mexal })));
+  const workspaceProductDuplicates = groupedDuplicates(
+    productRows,
+    (product) => upper(product.codice_mexal),
+    (code, values) => ({ code, product_ids: values.map((product) => product.id), occurrences: values.length }),
+  );
+  const workspaceHeaderDuplicates = groupedDuplicates(
+    existingHeaders,
+    (header) => text(header.mexal_chiave) || [upper(header.mexal_sigla), number(header.mexal_serie), number(header.mexal_numero)].join("+"),
+    (key, values) => ({ scope: "workspace", key, order_ids: values.map((header) => header.id), occurrences: values.length }),
+  );
+  const workspaceLineDuplicates = groupedDuplicates(
+    existingLines,
+    (line) => `${line.ordine_id}:${line.mexal_posizione}`,
+    (_key, values) => ({ scope: "workspace", order_id: values[0].ordine_id, mexal_posizione: values[0].mexal_posizione, line_ids: values.map((line) => line.id), occurrences: values.length }),
+  );
+
+  const reportDocuments = documents.map((document) => {
+    const existing = headersByKey.get(document.key) || [];
+    return {
+      key: document.key,
+      sigla: document.header.mexal_sigla,
+      modulo: document.header.mexal_cod_modulo,
+      serie: document.header.mexal_serie,
+      numero: document.header.mexal_numero,
+      cliente: document.header.mexal_cod_conto,
+      data_ordine: document.header.data_ordine,
+      data_consegna: document.header.data_consegna,
+      already_in_workspace: existing.length > 0,
+      workspace_order_ids: existing.map((header) => header.id),
+      lines: document.lines.map((line) => ({
+        posizione: line.mexal_posizione,
+        tipo: line.mexal_tipo_riga,
+        codice_articolo: line.codice_articolo,
+        descrizione: line.descrizione,
+        quantita: line.quantita,
+        dt_sca_riga: line.data_consegna,
+        riga_descrittiva: line.riga_descrittiva,
+      })),
+    };
+  });
+  const totalLines = reportDocuments.reduce((total, document) => total + document.lines.length, 0);
+  const descriptiveLines = reportDocuments.reduce((total, document) => total + document.lines.filter((line) => line.riga_descrittiva).length, 0);
+  const articleLines = totalLines - descriptiveLines;
+  const alreadyInWorkspace = reportDocuments.filter((document) => document.already_in_workspace);
+  const headerDuplicates = [...sourceHeaderDuplicates, ...workspaceHeaderDuplicates];
+  const lineDuplicates = [...sourceLineDuplicates, ...workspaceLineDuplicates];
+
+  return {
+    dry_run: true,
+    read_only: true,
+    source_documents: summaries.length,
+    candidate_oct_count: candidateCount,
+    normalized_oct_count: reportDocuments.length,
+    skipped_documents: skipped,
+    total_rows: totalLines,
+    article_rows: articleLines,
+    descriptive_rows: descriptiveLines,
+    distinct_article_codes_count: articleCodes.length,
+    distinct_article_codes: articleCodes,
+    workspace_articles_present_count: presentArticleCodes.length,
+    workspace_articles_present: presentArticleCodes,
+    workspace_articles_missing_count: missingArticleCodes.length,
+    workspace_articles_missing: missingArticleCodes,
+    inactive_articles: inactiveArticles,
+    out_of_production_articles: outOfProductionArticles,
+    already_in_workspace_count: alreadyInWorkspace.length,
+    already_in_workspace: alreadyInWorkspace.map((document) => ({ key: document.key, serie: document.serie, numero: document.numero, workspace_order_ids: document.workspace_order_ids })),
+    header_duplicates: headerDuplicates,
+    line_duplicates: lineDuplicates,
+    workspace_product_duplicates: workspaceProductDuplicates,
+    parsing_errors: parsingErrors,
+    documents: reportDocuments,
+    has_blocking_anomalies: missingArticleCodes.length > 0 || parsingErrors.length > 0 || headerDuplicates.length > 0 || lineDuplicates.length > 0 || workspaceProductDuplicates.length > 0,
+  };
+}
+
 export async function syncOctOrders({ mexal, supabase, env = process.env }) {
   if (String(env.MEXAL_OCT_IMPORT_ENABLED || "").toLowerCase() !== "true")
     return { enabled: false, imported: 0, skipped: 0 };
-  const moduleCode = text(env.MEXAL_OCT_MODULE_CODE);
-  const listPath = text(env.MEXAL_OCT_LIST_PATH);
-  if (!moduleCode || !listPath) throw new Error("Configurazione importer OCT incompleta.");
+  const { moduleCode, listPath } = sourceConfig(env);
   const summaries = documentsOf(await mexal.getJson(listPath));
   let imported = 0; let skipped = 0;
   for (const summary of summaries) {
-    const sigla = upper(first(summary, ["sigla", "sigla_documento"]));
-    const serie = number(summary.serie); const numero = number(summary.numero);
-    if (sigla !== "OC" || !Number.isInteger(serie) || !Number.isInteger(numero)) { skipped++; continue; }
-    const reference = [sigla, serie, numero].join("+");
-    const detail = await mexal.getJson("/documenti/ordini-clienti/" + encodeURIComponent(reference));
-    if (!isOctDocument(detail, { moduleCode })) { skipped++; continue; }
-    const normalized = normalizeOct(detail);
+    const read = await readOctSummary({ mexal, summary, moduleCode });
+    if (read.status !== "candidate") { skipped++; continue; }
+    const normalized = read.normalized;
     const { data: customer } = await supabase.from("ordini_clienti_cache").select("codice_cliente").eq("codice_cliente", normalized.header.mexal_cod_conto).maybeSingle();
     normalized.header.cliente_mexal_risolto = Boolean(customer);
     const { data: order, error } = await supabase.from("ordini_testate")

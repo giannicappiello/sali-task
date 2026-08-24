@@ -14,6 +14,10 @@ import {
   X,
 } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
+import {
+  MANUALS_SECTION_FOLDER,
+  scopeDocumentLibrary,
+} from "./documentSectionScope";
 import "./Documentation.css";
 import "./DocumentationSections.css";
 
@@ -34,8 +38,7 @@ async function documentApi(action, extra = {}) {
   return body;
 }
 
-const iconFor = (type) =>
-  type === "video" ? Film : type === "immagine" ? Image : FileText;
+
 const sectionIcon = (name) =>
   /video/i.test(name)
     ? Film
@@ -65,11 +68,16 @@ const hasDocumentAssociation = (document) =>
   );
 
 function DocumentThumbnail({ document, url }) {
-  const Icon = iconFor(document.mime_group);
   if (!url)
     return (
       <span className={`documentation-file-icon ${document.mime_group}`}>
-        <Icon size={26} />
+        {document.mime_group === "video" ? (
+          <Film size={26} />
+        ) : document.mime_group === "immagine" ? (
+          <Image size={26} />
+        ) : (
+          <FileText size={26} />
+        )}
       </span>
     );
   if (document.mime_group === "immagine")
@@ -100,7 +108,14 @@ function DocumentThumbnail({ document, url }) {
   );
 }
 
-export default function Documentation() {
+export default function Documentation({
+  includeSectionFolder = null,
+  excludeSectionFolder = MANUALS_SECTION_FOLDER,
+  title = "Documenti",
+  description = "Consulta schede tecniche, cataloghi e video aziendali.",
+  searchPlaceholder = "Ricerca rapida in tutti i documenti...",
+}) {
+  const singleSectionMode = Boolean(includeSectionFolder);
   const [documents, setDocuments] = useState([]),
     [sections, setSections] = useState([]),
     [selectedSection, setSelectedSection] = useState(null);
@@ -118,8 +133,17 @@ export default function Documentation() {
   useEffect(() => {
     documentApi("list")
       .then(async (result) => {
-        setDocuments(result.documents || []);
-        setSections(result.sections || []);
+        const scoped = scopeDocumentLibrary(
+          result.sections || [],
+          result.documents || [],
+          {
+            includeFolder: includeSectionFolder,
+            excludeFolder: includeSectionFolder ? null : excludeSectionFolder,
+          },
+        );
+        setDocuments(scoped.documents);
+        setSections(scoped.sections);
+        if (singleSectionMode) setSelectedSection(scoped.sections[0] || null);
         setIsAdmin(result.isAdmin === true);
         if (result.isAdmin === true) {
           const { data, error: productsError } = await supabase
@@ -135,7 +159,7 @@ export default function Documentation() {
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [excludeSectionFolder, includeSectionFolder, singleSectionMode]);
 
   const counts = useMemo(
     () =>
@@ -320,8 +344,8 @@ export default function Documentation() {
         <div className="documentation-heading">
           <Library size={30} />
           <div>
-            <h1>Documenti</h1>
-            <p>Consulta schede tecniche, cataloghi e video aziendali.</p>
+            <h1>{title}</h1>
+            <p>{description}</p>
           </div>
         </div>
       </div>
@@ -331,7 +355,7 @@ export default function Documentation() {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Ricerca rapida in tutti i documenti..."
+            placeholder={searchPlaceholder}
           />
         </label>
         <label className="documentation-unlinked-filter">
@@ -345,7 +369,7 @@ export default function Documentation() {
         </label>
       </div>
       {error && <div className="documentation-error">{error}</div>}
-      {!selectedSection && !query && !onlyUnlinked && (
+      {!singleSectionMode && !selectedSection && !query && !onlyUnlinked && (
         <div className="documentation-sections">
           {sections.map((section) => {
             const Icon = sectionIcon(section.nome);
@@ -369,10 +393,10 @@ export default function Documentation() {
           })}
         </div>
       )}
-      {(selectedSection || query || onlyUnlinked) && (
+      {(singleSectionMode || selectedSection || query || onlyUnlinked) && (
         <>
           <div className="documentation-list-heading">
-            {selectedSection ? (
+            {selectedSection && !singleSectionMode ? (
               <button
                 type="button"
                 className="secondary-action"
@@ -388,7 +412,7 @@ export default function Documentation() {
               <span />
             )}
             <strong>
-              {selectedSection?.nome ||
+              {(singleSectionMode ? title : selectedSection?.nome) ||
                 (onlyUnlinked
                   ? "Materiali non associati"
                   : "Risultati della ricerca")} ·{" "}

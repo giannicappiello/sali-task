@@ -44,6 +44,16 @@ function group(extension) {
   return "altro";
 }
 
+export function findDocumentSection(sections = [], path = "") {
+  const normalizedPath = String(path).replaceAll("\\", "/").toLocaleLowerCase("it");
+  return [...sections]
+    .sort((a, b) => b.cartella_nas.length - a.cartella_nas.length)
+    .find((section) => {
+      const folder = String(section.cartella_nas || "").replace(/^\/+|\/+$/g, "").toLocaleLowerCase("it");
+      return normalizedPath === folder || normalizedPath.startsWith(`${folder}/`);
+    });
+}
+
 function nextRome2300(now = new Date()) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Rome", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23", timeZoneName: "longOffset" }).formatToParts(now).map((part) => [part.type, part.value]));
   const offsetMatch = String(parts.timeZoneName || "GMT+01:00").match(/GMT([+-])(\d{2}):(\d{2})/);
@@ -75,15 +85,9 @@ async function sync(admin, { runId = null } = {}) {
   const productCodes = (products || []).map((product) => ({ ...product, code: String(product.codice_mexal || product.codice || "").trim().toUpperCase() })).filter((product) => product.code.startsWith("IT")).sort((a, b) => b.code.length - a.code.length);
   const rows = (manifest.files || []).map((file) => {
     const current = byPath.get(file.path);
-    const normalizedPath = String(file.path || "").replaceAll("\\", "/").toLocaleLowerCase("it");
     const compactFileName = String(file.name || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
     const matchedProduct = productCodes.find((product) => compactFileName.includes(product.code.replace(/[^A-Z0-9]/g, "")));
-    const matchedSection = [...(sections || [])]
-      .sort((a, b) => b.cartella_nas.length - a.cartella_nas.length)
-      .find((section) => {
-        const folder = String(section.cartella_nas || "").replace(/^\/+|\/+$/g, "").toLocaleLowerCase("it");
-        return normalizedPath === folder || normalizedPath.startsWith(`${folder}/`);
-      });
+    const matchedSection = findDocumentSection(sections || [], file.path);
     return {
       percorso: file.path,
       nome_file: file.name,

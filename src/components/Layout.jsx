@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   BarChart3,
   Bell,
+  BookOpen,
   Bot,
   Blocks,
   ChevronDown,
@@ -35,6 +36,7 @@ const baseMenuItems = [
   { path: "/ordini-ph", label: "Ordini PH", icon: ShoppingCart, permission: "orders.read", special: "orders_ph", module: "ordini_ph" },
   { path: "/products", label: "Prodotti", icon: Package, module: "prodotti" },
   { path: "/documentation", label: "Documenti", icon: FileArchive, module: "documenti" },
+  { path: "/manuali-uso", label: "Manuali d'uso", icon: BookOpen, accessModule: "documenti" },
   { path: "/assistente-ai", label: "Assistente AI", icon: Bot, module: "assistente_ai" },
   { path: "/progremes", label: "ProgreMES APS", icon: Factory, module: "progremes" },
   { path: "/produzione", label: "Produzione", icon: Workflow, accessModule: "progremes", persistent: true },
@@ -62,6 +64,7 @@ const pageInfo = {
   "/tasks": { title: "Tutte le fasi dei progetti", subtitle: "Planning delle fasi progettuali." },
   "/products": { title: "Prodotti", subtitle: "Catalogo articoli attivi sincronizzato da Mexal in sola lettura." },
   "/documentation": { title: "Documenti", subtitle: "Schede tecniche, certificazioni e documentazione aziendale." },
+  "/manuali-uso": { title: "Manuali d'uso", subtitle: "Manuali d'uso e guide operative." },
   "/assistente-ai": { title: "Assistente AI", subtitle: "Dati interni, ricerca Web e pianificazione controllata." },
   "/settings/ai": { title: "Configurazione AI", subtitle: "Capacità, limiti e accessi per reparto." },
   "/settings/users": { title: "Utenti e accessi", subtitle: "Dati, organizzazione, autorizzazioni personali e AI." },
@@ -197,6 +200,11 @@ function Layout() {
     const productionItem = baseMenuItems.find((item) => item.path === "/produzione");
     const progremesIndex = configured.findIndex((item) => item.module === "progremes");
     const withProduction = [...configured];
+    const manualsItem = baseMenuItems.find((item) => item.path === "/manuali-uso");
+    const documentationIndex = withProduction.findIndex((item) => item.module === "documenti");
+    if (manualsItem && !withProduction.some((item) => item.path === manualsItem.path)) {
+      withProduction.splice(documentationIndex >= 0 ? documentationIndex + 1 : withProduction.length, 0, manualsItem);
+    }
     if (!withProduction.some((item) => item.path === "/produzione")) {
       withProduction.splice(progremesIndex >= 0 ? progremesIndex + 1 : withProduction.length, 0, productionItem);
     }
@@ -333,7 +341,7 @@ function Layout() {
     const itemByModule = new Map(visibleModuleItems
       .filter((item) => item.catalogModule || item.module)
       .map((item) => [item.catalogModule || item.module,item]));
-    return configuredMenu.entries.map((entry) => {
+    const composedItems = configuredMenu.entries.map((entry) => {
       const members = configuredMenu.links
         .filter((link) => link.voce_codice === entry.codice)
         .map((link) => itemByModule.get(link.modulo_codice))
@@ -344,6 +352,13 @@ function Layout() {
       }
       return { path:`/menu/${entry.codice}`, label:entry.nome, description:entry.descrizione || "Apri i moduli disponibili.", icon:getModuleIcon(entry.icona,Blocks), menuCode:entry.codice, members };
     }).filter(Boolean);
+    const manualsItem = visibleModuleItems.find((item) => item.path === "/manuali-uso");
+    if (!manualsItem) return composedItems;
+    const documentationIndex = composedItems.findIndex((item) =>
+      item.path === "/documentation" || item.members?.some((member) => member.path === "/documentation")
+    );
+    composedItems.splice(documentationIndex >= 0 ? documentationIndex + 1 : composedItems.length, 0, manualsItem);
+    return composedItems;
   }, [configuredMenu,visibleModuleItems]);
 
   const activeNavigation = useMemo(() => {

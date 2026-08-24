@@ -47,6 +47,75 @@ function documentsOf(payload) {
   return [];
 }
 
+const DEFAULT_COLLECTION_PAGE_SIZE = 200;
+const MAX_COLLECTION_PAGE_SIZE = 1000;
+
+function collectionPageSize(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_COLLECTION_PAGE_SIZE;
+  return Math.min(MAX_COLLECTION_PAGE_SIZE, Math.max(1, Math.trunc(parsed)));
+}
+
+function collectionPagePath(path, { pageSize, next }) {
+  const [resource, query = ""] = text(path).split("?", 2);
+  const params = new URLSearchParams(query);
+  params.set("max", String(collectionPageSize(pageSize)));
+  if (text(next)) params.set("next", text(next));
+  else params.delete("next");
+  return `${resource}?${params.toString()}`;
+}
+
+function defaultCollectionKey(record) {
+  const identity = summaryIdentity(record);
+  return identity?.reference || JSON.stringify(record);
+}
+
+export async function readMexalCollectionPages({
+  mexal,
+  path,
+  pageSize = DEFAULT_COLLECTION_PAGE_SIZE,
+  keyOf = defaultCollectionKey,
+}) {
+  if (!mexal?.getJson || !text(path)) throw new TypeError("Configurazione collection Mexal non valida.");
+  const records = [];
+  const seenRecords = new Set();
+  const seenNextTokens = new Set();
+  let next = null;
+  let pagesRead = 0;
+  let recordsRead = 0;
+  let duplicatesSkipped = 0;
+
+  do {
+    const payload = await mexal.getJson(collectionPagePath(path, { pageSize, next }));
+    const pageRecords = documentsOf(payload);
+    pagesRead += 1;
+    recordsRead += pageRecords.length;
+
+    for (const record of pageRecords) {
+      const key = keyOf(record);
+      if (seenRecords.has(key)) {
+        duplicatesSkipped += 1;
+        continue;
+      }
+      seenRecords.add(key);
+      records.push(record);
+    }
+
+    const returnedNext = text(payload?.next);
+    if (!returnedNext) {
+      next = null;
+      continue;
+    }
+    if (seenNextTokens.has(returnedNext)) {
+      throw new Error("Paginazione Mexal non valida: token next ripetuto.");
+    }
+    seenNextTokens.add(returnedNext);
+    next = returnedNext;
+  } while (next !== null);
+
+  return { records, pagesRead, recordsRead, duplicatesSkipped };
+}
+
 function sourceConfig(env) {
   const moduleCode = text(env.MEXAL_OCT_MODULE_CODE);
   const listPath = text(env.MEXAL_OCT_LIST_PATH);
@@ -147,7 +216,12 @@ export function normalizeOct(document) {
 export async function precheckOctOrders({ mexal, supabase, env = process.env }) {
   if (!mexal || !supabase) throw new TypeError("Dipendenze precheck OCT non valide.");
   const { moduleCode, listPath } = sourceConfig(env);
-  const summaries = documentsOf(await mexal.getJson(listPath));
+  const collection = await readMexalCollectionPages({
+    mexal,
+    path: listPath,
+    pageSize: env.MEXAL_OCT_PAGE_SIZE,
+  });
+  const summaries = collection.records;
   const documents = [];
   const parsingErrors = [];
   let skipped = 0;
@@ -294,6 +368,9 @@ export async function precheckOctOrders({ mexal, supabase, env = process.env }) 
   return {
     dry_run: true,
     read_only: true,
+    source_pages: collection.pagesRead,
+    source_records_read: collection.recordsRead,
+    source_duplicates_skipped: collection.duplicatesSkipped,
     source_documents: summaries.length,
     candidate_oct_count: candidateCount,
     normalized_oct_count: reportDocuments.length,
@@ -324,7 +401,12 @@ export async function syncOctOrders({ mexal, supabase, env = process.env }) {
   if (String(env.MEXAL_OCT_IMPORT_ENABLED || "").toLowerCase() !== "true")
     return { enabled: false, imported: 0, skipped: 0 };
   const { moduleCode, listPath } = sourceConfig(env);
-  const summaries = documentsOf(await mexal.getJson(listPath));
+  const collection = await readMexalCollectionPages({
+    mexal,
+    path: listPath,
+    pageSize: env.MEXAL_OCT_PAGE_SIZE,
+  });
+  const summaries = collection.records;
   let imported = 0; let skipped = 0;
   for (const summary of summaries) {
     const read = await readOctSummary({ mexal, summary, moduleCode });
@@ -342,7 +424,15 @@ export async function syncOctOrders({ mexal, supabase, env = process.env }) {
     }
     imported++;
   }
-  return { enabled: true, imported, skipped };
+  return {
+    enabled: true,
+    imported,
+    skipped,
+    pages_read: collection.pagesRead,
+    records_read: collection.recordsRead,
+    unique_records: summaries.length,
+    duplicate_records_skipped: collection.duplicatesSkipped,
+  };
 
 }
 export function createOctOrdersRunHandler({ createMexalClient, createSupabaseClient, env = process.env }) {

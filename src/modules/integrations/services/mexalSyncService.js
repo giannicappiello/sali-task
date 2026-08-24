@@ -1,5 +1,6 @@
 import { supabase } from "../../../lib/supabaseClient";
 import { mexalAuthenticatedRequest } from "./mexalAuthenticatedRequest";
+import { stockSyncRequestPayload } from "./stockResumeUi";
 
 export async function getAccessToken({ refresh = false } = {}) {
   const { data, error } = refresh
@@ -88,12 +89,15 @@ export async function invokeProductsSync(onProgress = () => {}, isCancelled = ()
   }
 }
 
-export async function invokeStocksSync(onProgress = () => {}, isCancelled = () => false) {
-  let offset = 0; let syncRunId = null;
+export async function invokeStocksSync(onProgress = () => {}, isCancelled = () => false, { resumeRunId = null } = {}) {
+  let offset = 0;
+  let syncRunId = resumeRunId == null ? null : Number(resumeRunId);
+  let firstRequest = true;
   const total = { processed: 0, updated: 0, errors: [] };
   while (true) {
     if (isCancelled()) throw Object.assign(new Error("Sincronizzazione annullata."), { cancelled: true });
-    const data = await invokeMexalApi("/api/mexal/automation", { action: "run_now", syncType: "stocks", offset, batchSize: 12, syncRunId, resume: syncRunId === null, origin: "integrations" });
+    const data = await invokeMexalApi("/api/mexal/automation", stockSyncRequestPayload({ offset, syncRunId, resume: firstRequest }));
+    firstRequest = false;
     syncRunId = data.sync_run_id || syncRunId;
     total.processed = Number(data.elaborati_totali ?? (total.processed + Number(data.elaborati || 0)));
     total.updated = Number(data.aggiornati_totali ?? (total.updated + Number(data.aggiornati || 0)));

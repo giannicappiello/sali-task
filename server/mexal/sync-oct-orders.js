@@ -24,6 +24,8 @@ function parallelRowsOf(document) {
     codice_articolo: matrixMap(first(document, ["codice_articolo", "cod_articolo", "articolo"])),
     descr_riga: matrixMap(first(document, ["descr_riga", "descr_articolo", "descrizione"])),
     quantita: matrixMap(first(document, ["quantita", "qta"])),
+    unita_misura: matrixMap(first(document, ["unita_misura", "um", "sigla_um"])),
+    tp_um_articolo: matrixMap(first(document, ["tp_um_articolo", "tipo_unita_misura"])),
     dt_sca_riga: matrixMap(first(document, ["dt_sca_riga", "data_consegna_riga", "data_scadenza_riga"])),
   };
   const positions = [...new Set(Object.values(fields).flatMap((values) => [...values.keys()]))];
@@ -205,6 +207,8 @@ export function normalizeOct(document) {
         codice_articolo: code || null,
         descrizione: text(first(line, ["descr_articolo", "descr_riga", "descrizione"])),
         quantita: number(first(line, ["quantita", "qta"])) ?? 0,
+        unita_misura_oct: upper(first(line, ["unita_misura", "um", "sigla_um"])) || null,
+        tipo_unita_misura_mexal: text(first(line, ["tp_um_articolo", "tipo_unita_misura"])) || null,
         data_consegna: first(line, ["dt_sca_riga", "data_consegna_riga", "data_scadenza_riga", "data_consegna", "data_scadenza"]),
         mexal_tipo_riga: text(first(line, ["tp_riga", "tipo_riga", "tipo"])) || null,
         riga_descrittiva: !code,
@@ -353,6 +357,8 @@ export async function precheckOctOrders({ mexal, supabase, env = process.env }) 
         codice_articolo: line.codice_articolo,
         descrizione: line.descrizione,
         quantita: line.quantita,
+        unita_misura_oct: line.unita_misura_oct,
+        tipo_unita_misura_mexal: line.tipo_unita_misura_mexal,
         dt_sca_riga: line.data_consegna,
         riga_descrittiva: line.riga_descrittiva,
       })),

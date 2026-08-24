@@ -1,4 +1,6 @@
 export type WorkspaceProductionStatus =
+  | "PRONTA"
+  | "COPERTA_DA_SCORTA"
   | "IN_ATTESA_DI_FORMULA"
   | "OP_GENERATI"
   | "PRODUCIBILE"
@@ -15,6 +17,21 @@ export interface WorkspaceProductionRequestPayload {
   oct: { externalId: string; lineExternalId: string; mexalKey: string };
   commercialArticleCode: string;
   quantity: number;
+  unitOfMeasure: string;
+  quantityContext: {
+    requested: { value: number; unitOfMeasure: string };
+    requestedInProductionUnit: { value: number; unitOfMeasure: string };
+    availableFinishedProduct: { value: number; unitOfMeasure: string };
+    coveredFromStock: { value: number; unitOfMeasure: string };
+    toProduce: { value: number; unitOfMeasure: string };
+    conversion: { from: string; to: string; factor: number; source: string } | null;
+  };
+  availabilitySnapshot: {
+    id: number;
+    hash: string;
+    capturedAt: string;
+    warehouseRule: { code: string; warehouses: number[] | null; description: string };
+  };
   orderDate: string;
   requestedDeliveryDate: string | null;
   customerMexalCode: string;

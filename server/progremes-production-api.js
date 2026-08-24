@@ -4,6 +4,7 @@ import process from "node:process";
 import { createClient } from "@supabase/supabase-js";
 import { verifyProductionMessage } from "./progremes-production-hmac.js";
 import { createProductionPayload, createProgremesProductionClient } from "./progremes-production-client.js";
+import { prepareProductionNetting, productionNettingContract } from "./production-netting.js";
 
 const EVENT_PATH = "/api/progremes-production/events";
 function required(name) { const value = String(process.env[name] || "").trim(); if (!value) throw new Error(`Configurazione server mancante: ${name}`); return value; }
@@ -34,25 +35,26 @@ export async function sendProductionRequest(req, res, { admin = adminClient(), c
   if (req.method !== "POST") return res.status(405).json({ error: "Metodo non consentito." });
   if (!client.requestEnabled()) return res.status(403).json({ error: "Invio RdP disabilitato.", code: "MODULE_DISABLED" });
   const lineId = String(req.body?.lineId || "").trim();
-  const { data: line, error: lineError } = await admin.from("ordini_righe").select("*").eq("id", lineId).single();
-  if (lineError || !line || line.riga_descrittiva || !line.codice_articolo || Number(line.quantita) <= 0)
-    return res.status(400).json({ error: "Riga OCT non produttiva.", code: "INVALID_OCT_LINE" });
-  const { data: order, error: orderError } = await admin.from("ordini_testate").select("*").eq("id", line.ordine_id).single();
-  if (orderError || order?.origine !== "mexal_oct") return res.status(400).json({ error: "La riga non appartiene a un OCT.", code: "INVALID_OCT" });
-  let { data: productionRequest } = await admin.from("workspace_production_requests").select("*").eq("ordine_riga_id", line.id).maybeSingle();
-  if (!productionRequest) {
-    const { data, error } = await admin.from("workspace_production_requests")
-      .insert({ ordine_id: order.id, ordine_riga_id: line.id }).select("*").single();
-    if (error) throw error; productionRequest = data;
+  let prepared;
+  try {
+    prepared = await prepareProductionNetting({ admin, lineId, mode: "send", expectedSnapshotId: req.body?.snapshotId ?? null });
+  } catch (error) {
+    return res.status(error?.status || 500).json({ error: error?.message || "Nettificazione non riuscita.", code: error?.code || "NETTING_FAILED" });
   }
-  const payload = createProductionPayload({ request: productionRequest, order, line });
+  if (req.body?.snapshotId && prepared.changedFromExpected)
+    return res.status(409).json({ error: "La disponibilità è cambiata dalla preview. Ripetere la verifica prima dell'invio.", code: "AVAILABILITY_CHANGED", snapshot: prepared.snapshot, netting: productionNettingContract(prepared.netting) });
+  if (prepared.netting.fullyCovered)
+    return res.status(200).json({ status: "COPERTA_DA_SCORTA", workspaceStatus: "COPERTA_DA_SCORTA", sent: false, externalId: prepared.request.external_id, snapshot: prepared.snapshot, netting: productionNettingContract(prepared.netting), proposals: [] });
+  const payload = createProductionPayload({ request: prepared.request, order: prepared.source.order, line: prepared.source.line, snapshot: prepared.snapshot, netting: prepared.netting });
   const { result, payloadHash } = await client.sendRequest(payload);
-  await admin.from("workspace_production_requests").update({ payload_hash: payloadHash, stato: result.status,
-    workspace_status: result.workspaceStatus, attempt_count: Number(productionRequest.attempt_count || 0) + 1,
-    updated_at: new Date().toISOString() }).eq("id", productionRequest.id);
+  const { error: requestUpdateError } = await admin.from("workspace_production_requests").update({ payload_hash: payloadHash, stato: result.status,
+    workspace_status: result.workspaceStatus, attempt_count: prepared.request.attempt_count + 1,
+    sent_availability_snapshot_id: prepared.snapshot.id, sent_quantita_da_produrre: prepared.netting.quantityToProduce,
+    sent_unita_misura: prepared.netting.effectiveUnitOfMeasure, updated_at: new Date().toISOString() }).eq("id", prepared.request.id);
+  if (requestUpdateError) throw requestUpdateError;
   if (Array.isArray(result.proposals) && result.proposals.length) {
     const rows = result.proposals.map((proposal) => ({
-      production_request_id: productionRequest.id,
+      production_request_id: prepared.request.id,
       mes_proposal_id: proposal.id,
       production_index: proposal.productionIndex,
       quantita: proposal.quantity,
@@ -66,7 +68,18 @@ export async function sendProductionRequest(req, res, { admin = adminClient(), c
     const { error } = await admin.from("workspace_production_proposals").upsert(rows, { onConflict: "mes_proposal_id" });
     if (error) throw error;
   }
-  return res.status(200).json(result);
+  return res.status(200).json({ ...result, sent: true, snapshot: prepared.snapshot, netting: productionNettingContract(prepared.netting) });
+}
+
+export async function previewProductionRequest(req, res, { admin = adminClient() } = {}) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Metodo non consentito." });
+  try {
+    const prepared = await prepareProductionNetting({ admin, lineId: String(req.body?.lineId || "").trim(), mode: "preview" });
+    return res.status(200).json({ readOnlyExternal: true, sent: false, externalId: prepared.request.external_id,
+      snapshot: prepared.snapshot, netting: productionNettingContract(prepared.netting), status: prepared.netting.fullyCovered ? "COPERTA_DA_SCORTA" : "PRONTA" });
+  } catch (error) {
+    return res.status(error?.status || 500).json({ error: error?.message || "Preview nettificazione non riuscita.", code: error?.code || "NETTING_FAILED" });
+  }
 }
 
 export async function confirmProductionProposal(req, res, { admin = adminClient(), client = createProgremesProductionClient() } = {}) {
@@ -75,6 +88,25 @@ export async function confirmProductionProposal(req, res, { admin = adminClient(
   const proposalId = Number(req.body?.proposalId);
   if (!Number.isSafeInteger(proposalId) || proposalId <= 0)
     return res.status(400).json({ error: "OP non valida.", code: "INVALID_PROPOSAL" });
+  const { data: proposal, error: proposalError } = await admin.from("workspace_production_proposals")
+    .select("id,production_request_id").eq("id", proposalId).single();
+  if (proposalError || !proposal) return res.status(404).json({ error: "OP non trovata.", code: "NOT_FOUND" });
+  const { data: productionRequest, error: requestError } = await admin.from("workspace_production_requests")
+    .select("*").eq("id", proposal.production_request_id).single();
+  if (requestError || !productionRequest?.sent_availability_snapshot_id)
+    return res.status(409).json({ error: "La proposta non dispone di una nettificazione inviata e rivalidabile.", code: "NETTING_REQUIRED" });
+  let revalidated;
+  try {
+    revalidated = await prepareProductionNetting({ admin, lineId: productionRequest.ordine_riga_id, mode: "confirm",
+      expectedSnapshotId: productionRequest.sent_availability_snapshot_id });
+  } catch (error) {
+    return res.status(error?.status || 500).json({ error: error?.message || "Rivalidazione non riuscita.", code: error?.code || "NETTING_FAILED" });
+  }
+  if (revalidated.changedFromExpected || Number(revalidated.netting.quantityToProduce) !== Number(productionRequest.sent_quantita_da_produrre) ||
+      revalidated.netting.effectiveUnitOfMeasure !== productionRequest.sent_unita_misura) {
+    return res.status(409).json({ error: "Disponibilità o UDM cambiate dopo l'invio: rigenerare la proposta dalla riga OCT.",
+      code: "AVAILABILITY_CHANGED", snapshot: revalidated.snapshot, netting: productionNettingContract(revalidated.netting) });
+  }
   const { data, error } = await admin.rpc("reserve_workspace_production_confirmation", {
     p_proposal_id: proposalId, p_external_id: randomUUID(),
   });

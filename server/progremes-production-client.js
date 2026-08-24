@@ -13,13 +13,25 @@ function required(name, env) {
 function enabled(name, env) { return String(env[name] || "").trim().toLowerCase() === "true"; }
 function hash(body) { return createHash("sha256").update(body).digest("hex"); }
 
-export function createProductionPayload({ request, order, line }) {
+export function createProductionPayload({ request, order, line, snapshot, netting }) {
+  if (!snapshot?.id || !netting || Number(netting.quantityToProduce) <= 0)
+    throw new Error("Nettificazione RdP mancante o quantità da produrre non valida.");
   return {
     schemaVersion: 1,
     externalId: request.external_id,
     oct: { externalId: order.id, lineExternalId: line.id, mexalKey: order.mexal_chiave },
     commercialArticleCode: line.codice_articolo,
-    quantity: Number(line.quantita),
+    quantity: Number(netting.quantityToProduce),
+    unitOfMeasure: netting.effectiveUnitOfMeasure,
+    quantityContext: {
+      requested: { value: netting.requestedQuantity, unitOfMeasure: netting.lineUnitOfMeasure || netting.productUnitOfMeasure },
+      requestedInProductionUnit: { value: netting.requestedQuantityInProductUom, unitOfMeasure: netting.productUnitOfMeasure },
+      availableFinishedProduct: { value: netting.availableQuantity, unitOfMeasure: netting.productUnitOfMeasure },
+      coveredFromStock: { value: netting.coveredQuantity, unitOfMeasure: netting.productUnitOfMeasure },
+      toProduce: { value: netting.quantityToProduce, unitOfMeasure: netting.productUnitOfMeasure },
+      conversion: netting.conversion,
+    },
+    availabilitySnapshot: { id: snapshot.id, hash: snapshot.hash, capturedAt: snapshot.capturedAt, warehouseRule: snapshot.warehouseRule },
     orderDate: order.data_ordine,
     requestedDeliveryDate: line.data_consegna || order.data_consegna || null,
     customerMexalCode: order.mexal_cod_conto,

@@ -46,7 +46,7 @@ test("formato legacy righe[] resta supportato incluso dt_sca_riga", () => {
     numero: 413,
     data_documento: "2026-08-07",
     righe: [
-      { id_riga: 10, tp_riga: "R", codice_articolo: "FP123", descr_riga: "Articolo legacy", quantita: 2, dt_sca_riga: "2026-09-20" },
+      { id_riga: 10, tp_riga: "R", codice_articolo: "FP123", descr_riga: "Articolo legacy", quantita: 2, unita_misura: "PZ", tp_um_articolo: "1", dt_sca_riga: "2026-09-20" },
       { id_riga: 20, tp_riga: "D", descr_riga: "Nota legacy" },
     ],
   });
@@ -57,6 +57,8 @@ test("formato legacy righe[] resta supportato incluso dt_sca_riga", () => {
       codice_articolo: "FP123",
       descrizione: "Articolo legacy",
       quantita: 2,
+      unita_misura_oct: "PZ",
+      tipo_unita_misura_mexal: "1",
       data_consegna: "2026-09-20",
       mexal_tipo_riga: "R",
       riga_descrittiva: false,
@@ -66,6 +68,8 @@ test("formato legacy righe[] resta supportato incluso dt_sca_riga", () => {
       codice_articolo: null,
       descrizione: "Nota legacy",
       quantita: 0,
+      unita_misura_oct: null,
+      tipo_unita_misura_mexal: null,
       data_consegna: null,
       mexal_tipo_riga: "D",
       riga_descrittiva: true,

@@ -127,8 +127,13 @@ test("run_now/oct_orders è registrato, resta OFF e non importa OCM/OCX/OCI", as
 
 test("payload RdP usa UUID stabili e non espone dati tecnici MES", () => {
   const payload = createProductionPayload({ request: { external_id: "r" }, order: { id: "o", mexal_chiave: "OC+2+412", data_ordine: "2026-08-06", mexal_cod_conto: "501.00159" },
-    line: { id: "l", codice_articolo: "PB0004", quantita: 7000 } });
-  assert.deepEqual(Object.keys(payload), ["schemaVersion", "externalId", "oct", "commercialArticleCode", "quantity", "orderDate", "requestedDeliveryDate", "customerMexalCode"]);
+    line: { id: "l", codice_articolo: "PB0004", quantita: 7000 },
+    snapshot: { id: 12, snapshotHash: "hash", capturedAt: "2026-08-24T20:00:00.000Z", warehouseRule: { code: "ALL_WAREHOUSES", warehouseIds: null } },
+    netting: { requestedQuantity: 7000, requestedQuantityInProductUom: 7000, availableQuantity: 2500, coveredQuantity: 2500, quantityToProduce: 4500, lineUnitOfMeasure: "PZ", productUnitOfMeasure: "PZ", effectiveUnitOfMeasure: "PZ", conversion: null },
+  });
+  assert.deepEqual(Object.keys(payload), ["schemaVersion", "externalId", "oct", "commercialArticleCode", "quantity", "unitOfMeasure", "quantityContext", "availabilitySnapshot", "orderDate", "requestedDeliveryDate", "customerMexalCode"]);
+  assert.equal(payload.quantity, 4500);
+  assert.equal(payload.unitOfMeasure, "PZ");
   assert.equal(JSON.stringify(payload).includes("formula"), false);
   assert.equal(JSON.stringify(payload).includes("lotto"), false);
 });

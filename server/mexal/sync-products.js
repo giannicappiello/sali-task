@@ -1,6 +1,7 @@
 import https from "node:https";
 import { createClient } from "@supabase/supabase-js";
-import { completeSyncRun, createSyncRun as createCentralSyncRun, failSyncRun, failSyncRunUnlessClosed, findRunningSync, isSyncRunClosedError } from "./lib/syncRuns.js";
+import { checkpointSyncRunProgress, completeSyncRun, createSyncRun as createCentralSyncRun, failSyncRun, failSyncRunUnlessClosed, findRunningSync, getSyncRun as getCentralSyncRun, isSyncRunClosedError } from "./lib/syncRuns.js";
+import { shouldReplayStockCheckpoint, stockBatchCheckpoint, stockRunState } from "./lib/stockRunState.js";
 
 const STORAGE_BUCKET = "prodotti-mexal";
 export const PRODUCT_UI_PREFIXES = ["IT", "MKT"];
@@ -1124,31 +1125,71 @@ export default async function handler(req, res) {
     if (action === "sync-stock-it") {
       syncRunId = body.syncRunId ? Number(body.syncRunId) : null;
       if (!syncRunId && offset === 0) {
-        const stockRun = await createCentralSyncRun(supabase, { syncType: "stocks", source: ["manual", "cron"].includes(body.origin) ? body.origin : "manual", context: body.context || {}, metadata: { batch_size: batchSize } });
+        const stockRun = await createCentralSyncRun(supabase, { syncType: "stocks", source: ["manual", "cron"].includes(body.origin) ? body.origin : "manual", context: body.context || {}, metadata: { stock_state_version: 2, batch_size: batchSize, next_offset: 0, checkpointed_at: new Date().toISOString() } });
         if (stockRun.duplicate) return res.status(409).json({ error: "È già presente una sincronizzazione giacenze in corso.", sync_run_id: Number(stockRun.id) });
         syncRunId = stockRun.id;
       }
       if (!Number.isSafeInteger(syncRunId)) throw new Error("Identificativo run giacenze non valido.");
       const activeRun = await findRunningSync(supabase, "stocks");
       if (activeRun && Number(activeRun.id) !== syncRunId) return res.status(409).json({ error: "È già presente una sincronizzazione giacenze in corso.", sync_run_id: Number(activeRun.id) });
+      const currentRun = activeRun && Number(activeRun.id) === syncRunId ? activeRun : await getCentralSyncRun(supabase, syncRunId);
+      if (!currentRun) throw Object.assign(new Error("Run giacenze non trovata."), { status: 404 });
+      if (currentRun.status !== "running") {
+        const terminalPayload = {
+          totale: Number(currentRun.metadata?.total || currentRun.processed || 0),
+          elaborati: 0,
+          elaborati_totali: Number(currentRun.processed || 0),
+          offset: Number(currentRun.processed || 0),
+          prossimo_offset: Number(currentRun.processed || 0),
+          completato: currentRun.status === "completed",
+          aggiornati: 0,
+          aggiornati_totali: Number(currentRun.updated || 0),
+          errori: [],
+          errori_totali: Number(currentRun.failed || 0),
+          sync_run_id: Number(syncRunId),
+          stato_run: currentRun.status,
+          replay: true,
+        };
+        if (currentRun.status !== "completed") return res.status(409).json({ ...terminalPayload, error: currentRun.error_message || `Run giacenze chiusa con stato ${currentRun.status}.` });
+        return res.status(200).json(terminalPayload);
+      }
       const stockArticles = articles;
-      const batch = stockArticles.slice(offset, offset + batchSize);
-      const result = { totale: stockArticles.length, elaborati: batch.length, offset, prossimo_offset: offset + batch.length, completato: offset + batch.length >= stockArticles.length, aggiornati: 0, errori: [] };
+      const state = stockRunState(currentRun, { batchSize, total: stockArticles.length });
+      if (shouldReplayStockCheckpoint({ requestedOffset: offset, resume: body.resume === true, state })) {
+        return res.status(200).json({ totale: stockArticles.length, elaborati: 0, elaborati_totali: state.processed, offset: state.nextOffset, prossimo_offset: state.nextOffset, completato: state.nextOffset >= stockArticles.length, aggiornati: 0, aggiornati_totali: state.updated, errori: [], errori_totali: state.failed, sync_run_id: Number(syncRunId), replay: true, stale: state.stale });
+      }
+      const authoritativeOffset = state.nextOffset;
+      const batch = stockArticles.slice(authoritativeOffset, authoritativeOffset + state.batchSize);
+      const result = { totale: stockArticles.length, elaborati: batch.length, offset: authoritativeOffset, prossimo_offset: authoritativeOffset + batch.length, completato: authoritativeOffset + batch.length >= stockArticles.length, aggiornati: 0, esclusi: 0, errori: [] };
       for (const summary of batch) {
         await assertRunStillRunning(supabase, syncRunId, "stocks");
         const code = getArticleCode(summary);
         try {
           const availabilityMexal = selectAvailabilityClient(code, availabilityClients);
           const article = await loadFullArticle(availabilityMexal, code, summary);
-          if (!isActiveArticle(article)) continue;
+          if (!isActiveArticle(article)) { result.esclusi += 1; continue; }
           const stock = calculateStock(article); const now = new Date().toISOString();
           const { data: updatedRows, error: updateError } = await supabase.from("prodotti").update({ giacenza: stock, disponibilita: calculateAvailability(article, stock), ultimo_sync_mexal: now, updated_at: now }).eq("codice_mexal", code).eq("sincronizzato_mexal", true).eq("attivo_mexal", true).select("id");
           if (updateError) throw updateError;
           result.aggiornati += updatedRows?.length || 0;
         } catch (error) { result.errori.push({ codice: code || "senza codice", errore: error?.message || String(error) }); }
       }
-      if (result.completato) await completeSyncRun(supabase, syncRunId, { processed: result.elaborati, updated: result.aggiornati, failed: result.errori.length, error_message: result.errori.length ? "Alcune giacenze non sono state aggiornate." : null });
-      return res.status(200).json({ ...result, sync_run_id: Number(syncRunId) });
+      const checkpoint = stockBatchCheckpoint(currentRun, { processed: result.elaborati, updated: result.aggiornati, skipped: result.esclusi, failed: result.errori.length }, { total: stockArticles.length, batchSize: state.batchSize });
+      const persisted = await checkpointSyncRunProgress(supabase, syncRunId, checkpoint.expectedProcessed, checkpoint.values);
+      if (!persisted.advanced) {
+        const concurrent = stockRunState(persisted.run, { batchSize: state.batchSize, total: stockArticles.length });
+        return res.status(200).json({ totale: stockArticles.length, elaborati: 0, elaborati_totali: concurrent.processed, offset: concurrent.nextOffset, prossimo_offset: concurrent.nextOffset, completato: persisted.run.status === "completed" || concurrent.nextOffset >= stockArticles.length, aggiornati: 0, aggiornati_totali: concurrent.updated, errori: [], errori_totali: concurrent.failed, sync_run_id: Number(syncRunId), replay: true, stale: concurrent.stale });
+      }
+      const persistedState = stockRunState(persisted.run, { total: stockArticles.length });
+      result.prossimo_offset = persistedState.nextOffset;
+      result.completato = persistedState.nextOffset >= stockArticles.length;
+      if (result.completato && persistedState.failed > 0) {
+        const message = "Sincronizzazione giacenze completata con errori reali.";
+        await failSyncRun(supabase, syncRunId, message, { processed: persistedState.processed, updated: persistedState.updated, skipped: persistedState.skipped, failed: persistedState.failed, metadata: persisted.run.metadata });
+        return res.status(422).json({ ...result, error: message, elaborati_totali: persistedState.processed, aggiornati_totali: persistedState.updated, errori_totali: persistedState.failed, sync_run_id: Number(syncRunId), stato_run: "failed" });
+      }
+      if (result.completato) await completeSyncRun(supabase, syncRunId, { processed: persistedState.processed, updated: persistedState.updated, skipped: persistedState.skipped, failed: 0, metadata: persisted.run.metadata, error_message: null });
+      return res.status(200).json({ ...result, elaborati_totali: persistedState.processed, aggiornati_totali: persistedState.updated, errori_totali: persistedState.failed, sync_run_id: Number(syncRunId), stale: state.stale, resumed: state.processed > 0 || state.legacy });
     }
 
     if (action !== "sync") {

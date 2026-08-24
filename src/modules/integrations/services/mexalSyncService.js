@@ -95,9 +95,10 @@ export async function invokeStocksSync(onProgress = () => {}, isCancelled = () =
   const total = { processed: 0, updated: 0, errors: [] };
   while (true) {
     if (isCancelled()) throw Object.assign(new Error("Sincronizzazione annullata."), { cancelled: true });
-    const data = await invokeMexalApi("/api/mexal/automation", { action: "run_now", syncType: "stocks", offset, batchSize: 12, syncRunId, origin: "integrations" });
+    const data = await invokeMexalApi("/api/mexal/automation", { action: "run_now", syncType: "stocks", offset, batchSize: 12, syncRunId, resume: syncRunId === null, origin: "integrations" });
     syncRunId = data.sync_run_id || syncRunId;
-    total.processed += Number(data.elaborati || 0); total.updated += Number(data.aggiornati || 0);
+    total.processed = Number(data.elaborati_totali ?? (total.processed + Number(data.elaborati || 0)));
+    total.updated = Number(data.aggiornati_totali ?? (total.updated + Number(data.aggiornati || 0)));
     total.errors.push(...(data.errori || [])); onProgress({ ...total, total: Number(data.totale || 0), syncRunId });
     if (isCancelled()) throw Object.assign(new Error("Sincronizzazione annullata."), { cancelled: true });
     if (data.completato) return { ...total, syncRunId };

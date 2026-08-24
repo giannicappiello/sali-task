@@ -17,6 +17,10 @@ function finishedValues(status, values = {}) {
 }
 
 export async function cleanupStaleRuns(admin, { syncType } = {}) {
+  // Stocks are checkpointed and resumable: an abandoned run remains the lock
+  // and must be resumed (or fail because of a real server error), never timed
+  // out merely from its age. This also keeps legacy run recovery possible.
+  if (syncType === "stocks") return;
   const cutoff = new Date(Date.now() - RUNNING_TIMEOUT_MS).toISOString();
   let query = admin.from("mexal_sync_runs").update({ status: "timeout", completed_at: new Date().toISOString(), error_message: "Run chiusa automaticamente dopo 30 minuti senza completamento." }).eq("status", "running").lt("started_at", cutoff);
   if (syncType) { assertSyncType(syncType); query = query.eq("sync_type", syncType); }
@@ -42,6 +46,21 @@ export async function updateSyncRunProgress(admin, id, values = {}) {
   const { data, error } = await admin.from("mexal_sync_runs").update(payload).eq("id", numericId).eq("status", "running").select("id,status,processed,inserted,updated,skipped,failed,metadata").maybeSingle();
   if (error) throw error;
   return data || null;
+}
+export async function checkpointSyncRunProgress(admin, id, expectedProcessed, values = {}) {
+  const numericId = runId(id);
+  const expected = Number(expectedProcessed);
+  if (!Number.isSafeInteger(expected) || expected < 0) throw new Error("Checkpoint run Mexal non valido.");
+  const allowed = ["processed", "inserted", "updated", "skipped", "failed", "metadata"];
+  const payload = Object.fromEntries(allowed.filter((key) => values[key] !== undefined).map((key) => [key, values[key]]));
+  const { data, error } = await admin.from("mexal_sync_runs").update(payload)
+    .eq("id", numericId).eq("status", "running").eq("processed", expected)
+    .select("id,sync_type,status,started_at,processed,inserted,updated,skipped,failed,metadata").maybeSingle();
+  if (error) throw error;
+  if (data) return { run: data, advanced: true };
+  const current = await getSyncRun(admin, numericId);
+  if (!current) throw Object.assign(new Error("Run Mexal non trovata."), { status: 404 });
+  return { run: current, advanced: false };
 }
 export async function findIdempotentSync(admin, { idempotencyKey, syncType, userId }) {
   const { data, error } = await admin

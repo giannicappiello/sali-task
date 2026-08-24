@@ -11,6 +11,7 @@ import {
   shouldReplayStockCheckpoint,
   stockBatchCheckpoint,
   stockRunState,
+  stockUpdateDiagnostics,
 } from "../server/mexal/lib/stockRunState.js";
 
 function runningRun(overrides = {}) {
@@ -110,6 +111,44 @@ const retry = await checkpointSyncRunProgress(concurrentAdmin, 9, 0, { processed
 assert.equal(first.advanced, true);
 assert.equal(retry.advanced, false, "due richieste concorrenti non possono confermare due volte lo stesso offset");
 assert.equal(concurrentAdmin.current().updated, 2, "il retry dello stesso batch non duplica i conteggi logici");
+
+const firstAudit = stockUpdateDiagnostics({}, [
+  { id: "p-1", code: "IT0001" },
+  { id: "p-2", code: "MKT0001" },
+]);
+assert.deepEqual(
+  { operations: firstAudit.update_operations_total, unique: firstAudit.unique_product_ids_count, repeated: firstAudit.repeated_update_operations },
+  { operations: 2, unique: 2, repeated: 0 },
+);
+const repeatedAudit = stockUpdateDiagnostics({ stock_update_diagnostics: firstAudit }, [
+  { id: "p-2", code: "MKT0001" },
+  { id: "p-3", code: "PB0004" },
+]);
+assert.deepEqual(
+  { operations: repeatedAudit.update_operations_total, unique: repeatedAudit.unique_product_ids_count, repeated: repeatedAudit.repeated_update_operations },
+  { operations: 4, unique: 3, repeated: 1 },
+  "la diagnostica separa operazioni totali e prodotti univoci",
+);
+assert.deepEqual(repeatedAudit.repeated_product_ids, ["p-2"]);
+
+const failedBatchAudit = stockUpdateDiagnostics({ stock_update_diagnostics: firstAudit }, [
+  { id: "p-3", code: "PB0004" },
+]);
+const resumedBatchAudit = stockUpdateDiagnostics({ stock_update_diagnostics: failedBatchAudit }, [
+  { id: "p-3", code: "PB0004" },
+]);
+assert.deepEqual(
+  { operations: resumedBatchAudit.update_operations_total, unique: resumedBatchAudit.unique_product_ids_count, repeated: resumedBatchAudit.repeated_update_operations },
+  { operations: 4, unique: 3, repeated: 1 },
+  "gli update fisici completati prima di un timeout restano diagnosticabili dopo il resume",
+);
+
+const auditedCheckpoint = stockBatchCheckpoint(
+  runningRun({ metadata: { stock_state_version: 2, next_offset: 0 } }),
+  { processed: 2, updated: 2 },
+  { total: 2, batchSize: 2, metadata: { stock_update_diagnostics: firstAudit } },
+);
+assert.equal(auditedCheckpoint.values.metadata.stock_update_diagnostics.unique_product_ids_count, 2, "la diagnostica viene persistita insieme al checkpoint atomico");
 
 const failed435 = runningRun({
   status: "failed",

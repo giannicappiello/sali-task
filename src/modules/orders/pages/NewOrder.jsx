@@ -5,6 +5,12 @@ import { supabase } from "../../../lib/supabaseClient";
 import useBackNavigation from "../../../hooks/useBackNavigation";
 import useOrdersAccess from "./useOrdersAccess";
 import { useOrdersModule } from "../ordersModuleContext";
+import {
+  findMexalProductByCode,
+  PRODUCT_OPTION_KIND,
+  productOptionKey,
+  productOptionTypeLabel,
+} from "../lib/productOptionIdentity";
 import { calculateLineConditions } from "../services/priceEngine";
 import { calculateOrderEconomics, calculateOrderLineEconomicsWithPayment } from "../services/orderEconomics";
 import { checkOrderAvailability, enqueueOrderConfirmationEmail, submitOrderToMexal, updateOrder } from "../services/orderFulfillment";
@@ -206,7 +212,7 @@ export default function NewOrder() {
       setSelectedCustomer(customers.find((customer) => customer.codice_cliente === existing.codice_cliente) || { codice_cliente: existing.codice_cliente, ragione_sociale: existing.ragione_sociale_cliente });
       setExistingOrderType(existing.tipo_ordine || "standard");
       setSelectedPayment({ codice: existing.codice_pagamento || "", descrizione: existing.descrizione_pagamento || "" }); setComments(existing.commenti || "");
-      setLines((existingLines || []).map((line) => withEconomics({ ...line, prodotto_origine: products.find((product) => normalize(product.codice_articolo || product.codice_mexal || product.codice) === line.codice_articolo) || line })));
+      setLines((existingLines || []).map((line) => withEconomics({ ...line, prodotto_origine: findMexalProductByCode(products, line.codice_articolo) || line })));
     })();
     return () => { active = false; };
   }, [editingOrderId, customers, products]);
@@ -218,8 +224,8 @@ export default function NewOrder() {
     const customer = customers.find((item) => normalize(item.codice_cliente) === normalize(draft.customerCode));
     const payment = customer ? { codice: customer.codice_pagamento || "", descrizione: paymentDescription(customer, paymentRules) } : null;
     const importedLines = (draft.lines || []).flatMap((item) => {
-      const product = products.find((entry) => normalize(entry.codice_articolo || entry.codice_mexal || entry.codice) === normalize(item.productCode));
-      if (!product || product.is_impianto) return [];
+      const product = findMexalProductByCode(products, item.productCode);
+      if (!product) return [];
       const quantity = Math.max(0.01, numberValue(item.quantity, 1));
       const code = normalize(product.codice_articolo || product.codice_mexal || product.codice);
       const conditions = calculateConditions(product, quantity, customer || null, payment);
@@ -304,6 +310,7 @@ export default function NewOrder() {
       const kits = (kitRows || []).map((kit) => ({
         ...kit,
         is_impianto: true,
+        option_kind: PRODUCT_OPTION_KIND.LOCAL_IMPLANT,
         codice_articolo: kit.codice,
         descrizione: kit.descrizione,
         componenti: (kit.componenti || []).map((component) => ({
@@ -315,7 +322,10 @@ export default function NewOrder() {
           return sum + numberValue(component.quantita) * numberValue(product?.prezzo_listino);
         }, 0),
       }));
-      productRows = [...kits, ...productRows];
+      productRows = [
+        ...kits,
+        ...productRows.map((product) => ({ ...product, option_kind: PRODUCT_OPTION_KIND.MEXAL })),
+      ];
 
       const [matrixRows, particularityRows, paymentRows] = await Promise.all([
         loadPaged("ordini_sconti_listini", (query) => query.eq("is_active", true)),
@@ -871,9 +881,9 @@ export default function NewOrder() {
               {filteredProducts.map((product, index) => {
                 const code = product.codice_articolo || product.codice_mexal || product.codice;
                 return (
-                  <button ref={(node) => { productResultRefs.current[index] = node; }} className={index === productResultIndex ? "is-keyboard-active" : ""} aria-selected={index === productResultIndex} key={code} type="button" disabled={checkingAvailability} onMouseEnter={() => setProductResultIndex(index)} onClick={() => void chooseProduct(product)} onKeyDown={(event) => { if (event.key === "Tab") { event.preventDefault(); void chooseProduct(product); } }}>
-                    <strong>{product.is_impianto ? "IMPIANTO · " : ""}{product.descrizione || product.nome || code}</strong>
-                    <span>{code} · Cat. sconto: {productDiscountCategory(product) || "-"} · {money(product.prezzo_listino || 0)}</span>
+                  <button ref={(node) => { productResultRefs.current[index] = node; }} className={index === productResultIndex ? "is-keyboard-active" : ""} aria-selected={index === productResultIndex} key={productOptionKey(product)} type="button" disabled={checkingAvailability} onMouseEnter={() => setProductResultIndex(index)} onClick={() => void chooseProduct(product)} onKeyDown={(event) => { if (event.key === "Tab") { event.preventDefault(); void chooseProduct(product); } }}>
+                    <strong>{productOptionTypeLabel(product)} · {product.descrizione || product.nome || code}</strong>
+                    <span>{code} · Entità: {productOptionTypeLabel(product).toLowerCase()} · Cat. sconto: {productDiscountCategory(product) || "-"} · {money(product.prezzo_listino || 0)}</span>
                   </button>
                 );
               })}

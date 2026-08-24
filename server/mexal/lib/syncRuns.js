@@ -1,3 +1,5 @@
+import { isTransientMexalError } from "./transientRetry.js";
+
 /** Central, bigint-safe lifecycle for public.mexal_sync_runs. */
 export const SYNC_TYPES = Object.freeze(["clients", "agents", "products", "product_categories", "commercial_conditions", "document_series", "stocks", "list_price_commissions", "orders", "payments", "sales_invoices", "oct_orders"]);
 export const RUNNING_TIMEOUT_MS = 30 * 60 * 1000;
@@ -32,6 +34,63 @@ export async function findRunningSync(admin, syncType) {
   const { data, error } = await admin.from("mexal_sync_runs").select("id,started_at,status,processed,inserted,updated,skipped,failed,metadata,error_message").eq("sync_type", syncType).eq("status", "running").order("started_at", { ascending: false }).limit(1).maybeSingle();
   if (error) throw error;
   return data || null;
+}
+export function isResumableSyncRun(run) {
+  const recordedRetryable = run?.metadata?.recovery?.retryable;
+  return run?.sync_type === "stocks"
+    && run?.status === "failed"
+    && (recordedRetryable === true
+      || (recordedRetryable === undefined && isTransientMexalError(new Error(run?.error_message || ""))));
+}
+export async function findResumableSync(admin, syncType) {
+  assertSyncType(syncType);
+  if (syncType !== "stocks") return null;
+  const { data, error } = await admin.from("mexal_sync_runs")
+    .select("id,sync_type,status,started_at,completed_at,processed,inserted,updated,skipped,failed,metadata,error_message")
+    .eq("sync_type", syncType).eq("status", "failed")
+    .order("started_at", { ascending: false }).limit(10);
+  if (error) throw error;
+  return (data || []).find(isResumableSyncRun) || null;
+}
+export async function resumeFailedSync(admin, id, { syncType = "stocks" } = {}) {
+  const numericId = runId(id);
+  assertSyncType(syncType);
+  const current = await getSyncRun(admin, numericId);
+  if (!current) throw Object.assign(new Error("Run Mexal non trovata."), { status: 404 });
+  if (current.sync_type !== syncType || !isResumableSyncRun(current)) {
+    throw Object.assign(new Error("La run Mexal non è recuperabile da un errore transitorio."), { status: 409 });
+  }
+  const running = await findRunningSync(admin, syncType);
+  if (running) {
+    throw Object.assign(new Error("È già presente una sincronizzazione giacenze in corso."), {
+      status: 409,
+      syncRunId: Number(running.id),
+    });
+  }
+  const checkpointFailed = Number.isSafeInteger(Number(current.metadata?.recovery?.checkpoint_failed))
+    ? Math.max(0, Number(current.metadata.recovery.checkpoint_failed))
+    : Math.max(0, Number(current.failed || 0) - 1);
+  const now = new Date().toISOString();
+  const metadata = {
+    ...(current.metadata || {}),
+    recovery: {
+      ...(current.metadata?.recovery || {}),
+      last_resumed_at: now,
+      resume_count: Number(current.metadata?.recovery?.resume_count || 0) + 1,
+    },
+  };
+  const { data, error } = await admin.from("mexal_sync_runs").update({
+    status: "running",
+    completed_at: null,
+    duration_ms: null,
+    failed: checkpointFailed,
+    error_message: null,
+    metadata,
+  }).eq("id", numericId).eq("sync_type", syncType).eq("status", "failed")
+    .select("id,sync_type,status,started_at,processed,inserted,updated,skipped,failed,metadata,error_message").maybeSingle();
+  if (error) throw error;
+  if (!data) throw Object.assign(new Error("La run Mexal è già cambiata durante il recovery."), { status: 409 });
+  return data;
 }
 export async function getSyncRun(admin, id) {
   const numericId = runId(id);

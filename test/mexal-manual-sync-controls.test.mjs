@@ -14,7 +14,7 @@ assert.doesNotMatch(dashboard, /Avvio manuale|mexal-manual-start|Sincronizza tut
 assert.match(dashboard, /title: "Provvigioni listini"/);
 assert.match(dashboard, /title: "Ordini"/);
 assert.match(dashboard, /actionLabel: "Esegui ora"/);
-assert.match(dashboard, /runEntitySync\(card\.type\)/);
+assert.match(dashboard, /runEntitySync\(card\.type(?:,|\))/);
 assert.match(dashboard, /type: "list_price_commissions"/);
 assert.equal((dashboard.match(/type="button" className="mexal-kpi"/g) || []).length, 5);
 assert.match(syncCard, /Arresta sincronizzazione/);

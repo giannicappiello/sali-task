@@ -38,6 +38,7 @@ import {
   startMexalSync,
   stopMexalRun,
 } from "../services/mexalSyncService";
+import { claimSyncStart, releaseSyncStart, stockResumeUiState } from "../services/stockResumeUi";
 import { supabase } from "../../../lib/supabaseClient";
 import {
   loadMexalAutomationRules,
@@ -95,6 +96,7 @@ export default function MexalDashboard() {
   const historyRef = useRef(null);
   const mountedRef = useRef(true);
   const cancelInvoiceSyncRef = useRef(false);
+  const syncStartLockRef = useRef(null);
 
   const latestRun = runs[0] || null;
 
@@ -152,8 +154,10 @@ export default function MexalDashboard() {
     };
   }, [refreshData]);
 
+  const hasRegisteredRunningRun = runs.some((run) => run.status === "running");
+
   useEffect(() => {
-    if (!activeSync && !running) return undefined;
+    if (!activeSync && !running && !hasRegisteredRunningRun) return undefined;
     const timer = window.setInterval(async () => {
       try {
         const runRows = await loadSyncRuns(100);
@@ -163,7 +167,7 @@ export default function MexalDashboard() {
       }
     }, 1500);
     return () => window.clearInterval(timer);
-  }, [activeSync, running]);
+  }, [activeSync, hasRegisteredRunningRun, running]);
 
   async function runCommercialSync() {
     if (!canSync("commercial_conditions")) return;
@@ -190,8 +194,8 @@ export default function MexalDashboard() {
     }
   }
 
-  async function runEntitySync(type) {
-    if (!canSync(type) || activeSync) return;
+  async function runEntitySync(type, { resumeRunId = null } = {}) {
+    if (!canSync(type) || activeSync || !claimSyncStart(syncStartLockRef, type)) return;
     setActiveSync(type);
     setProgress(5);
     setPhase(syncLabels[type] || type);
@@ -208,7 +212,7 @@ export default function MexalDashboard() {
       };
       let result;
       if (type === "products") result = await invokeProductsSync(updateProgress);
-      else if (type === "stocks") result = await invokeStocksSync(updateProgress);
+      else if (type === "stocks") result = await invokeStocksSync(updateProgress, () => false, { resumeRunId });
       else if (type === "clients") result = await invokeClientsSync();
       else if (type === "sales_invoices") result = await invokeSalesInvoicesSync(({ pages, processed }) => {
         setProgress(Math.min(95, 5 + pages));
@@ -232,6 +236,7 @@ export default function MexalDashboard() {
       await refreshData();
     } finally {
       if (type === "sales_invoices") setStoppingInvoiceSync(false);
+      releaseSyncStart(syncStartLockRef, type);
       setActiveSync(null);
       window.setTimeout(() => {
         setProgress(0);
@@ -378,21 +383,33 @@ export default function MexalDashboard() {
         </section>
 
         <section className="mexal-sync-grid">
-          {cards.filter((card) => canSync(card.type)).map((card) => <MexalSyncCard
-            key={card.title}
-            {...card}
-            running={activeSync === card.type || (card.type === "commercial_conditions" && running) || card.lastRunData?.status === "running"}
-            stopping={card.type === "sales_invoices" ? stoppingInvoiceSync : stoppingRunId === card.lastRunData?.id}
-            canStop={card.type === "sales_invoices" || card.type === "product_categories"}
-            lastRun={formatDate(card.lastRun || card.lastRunData?.started_at)}
-            run={card.lastRunData}
-            onSync={() => card.type === "commercial_conditions" ? runCommercialSync() : runEntitySync(card.type)}
-            onStop={() => card.type === "sales_invoices" ? stopInvoiceSync() : stopRun(card.lastRunData)}
-            onOpen={() => card.type === "agents" && navigate("/integrations/mexal/agenti")}
-            automaticEnabled={syncSchedules[card.type] ? syncSchedules[card.type].enabled === true : undefined}
-            automaticSaving={savingScheduleType === card.type}
-            onToggleAutomatic={(enabled) => toggleSyncSchedule(card.type, enabled)}
-          />)}
+          {cards.filter((card) => canSync(card.type)).map((card) => {
+            const clientActive = activeSync === card.type || (card.type === "commercial_conditions" && running);
+            const stockResume = card.type === "stocks"
+              ? stockResumeUiState(card.lastRunData, { clientActive })
+              : null;
+            const cardRunning = stockResume?.registeredRunning
+              ? stockResume.running
+              : clientActive || card.lastRunData?.status === "running";
+            return <MexalSyncCard
+              key={card.title}
+              {...card}
+              actionLabel={stockResume?.actionLabel || card.actionLabel}
+              running={cardRunning}
+              stopping={card.type === "sales_invoices" ? stoppingInvoiceSync : stoppingRunId === card.lastRunData?.id}
+              canStop={card.type === "sales_invoices" || card.type === "product_categories"}
+              lastRun={formatDate(card.lastRun || card.lastRunData?.started_at)}
+              run={card.lastRunData}
+              onSync={() => card.type === "commercial_conditions"
+                ? runCommercialSync()
+                : runEntitySync(card.type, { resumeRunId: stockResume?.canResume ? card.lastRunData?.id : null })}
+              onStop={() => card.type === "sales_invoices" ? stopInvoiceSync() : stopRun(card.lastRunData)}
+              onOpen={() => card.type === "agents" && navigate("/integrations/mexal/agenti")}
+              automaticEnabled={syncSchedules[card.type] ? syncSchedules[card.type].enabled === true : undefined}
+              automaticSaving={savingScheduleType === card.type}
+              onToggleAutomatic={(enabled) => toggleSyncSchedule(card.type, enabled)}
+            />;
+          })}
         </section>
 
         <MexalProgress running={running || Boolean(activeSync)} progress={progress} phase={phase} />

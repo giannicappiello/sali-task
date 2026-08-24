@@ -178,7 +178,8 @@ function sendRunning(res, phase, run) {
 }
 
 function sendSuccess(res, statusCode, payload = {}) {
-  return res.status(statusCode).json({ ...payload, success: true, status: "completed" });
+  const status = payload.completed === false || payload.completato === false ? "running" : "completed";
+  return res.status(statusCode).json({ ...payload, success: true, status });
 }
 
 async function executeHandler(req, runHandler) {
@@ -233,6 +234,9 @@ async function createAdmin(req, permissionCode = null) {
 
 async function startSync(req, res, body, syncType, runHandler, admin) {
   const running = await findRunningSync(admin.supabase, syncType);
+  if (syncType === "stocks" && body.resume === true && running && !body.syncRunId) {
+    body.syncRunId = Number(running.id);
+  }
   const isContinuation = ["products", "stocks"].includes(syncType)
     && body.syncRunId
     && running

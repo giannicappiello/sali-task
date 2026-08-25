@@ -57,8 +57,8 @@ test("scheda cliente espone lifetime e periodo senza aggregare migliaia di righe
 test("pipeline supporta kanban, lista, valore ponderato, scadenze e storico fase", () => {
   assert.match(migration, /crm_opportunity_stage_history/);
   assert.match(migration, /crm_record_opportunity_stage_change/);
-  assert.match(crm, /setView\("kanban"\)/);
-  assert.match(crm, /setView\("list"\)/);
+  assert.match(crm, /updatePipelineParam\("view", "kanban"\)/);
+  assert.match(crm, /updatePipelineParam\("view", "list"\)/);
   assert.match(crm, /Valore ponderato/);
   assert.match(crm, /Giorni nello stato/);
   assert.match(crm, /Chiusura prevista/);

@@ -41,7 +41,8 @@ test("il pannello Admin usa il catalogo leggero canonico", () => {
 });
 test("le liste combinano clienti canonici e soli prospect CRM-only", () => {
   assert.match(crm, /from\("crm_classified_customers"\)/);
-  assert.match(crm, /\.is\("codice_cliente_mexal", null\)/);
+  assert.match(crm, /crm_prospect_customer_details/);
+  assert.match(crm, /p_customer_status: customerStatus/);
   assert.match(crm, /source: "Workspace\/Mexal"/);
   assert.match(crm, /source: "Prospect CRM-only"/);
   assert.match(crm, /codice_cliente_mexal: null, fonte: "crm_only"/);

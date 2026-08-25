@@ -261,4 +261,8 @@ test("migration separa testata, righe e snapshot e non contiene nettificazione W
   assert.doesNotMatch(migration, /quantita_da_produrre/);
   assert.doesNotMatch(migration, /quantita_disponibile_pf/);
   assert.doesNotMatch(migration, /AVAILABILITY_CHANGED/);
+  assert.doesNotMatch(migration, /\bdrop\b/i);
+  assert.doesNotMatch(migration, /alter\s+column\s+ordine_(?:id|riga_id)\s+drop\s+not\s+null/i);
+  assert.match(migration, /\(p_snapshot->'items'->0\)->>'orderId'/);
+  assert.match(migration, /\(p_snapshot->'items'->0\)->>'lineId'/);
 });

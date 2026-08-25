@@ -7,17 +7,10 @@ alter table if exists public.ordini_righe
   add column if not exists tipo_unita_misura_mexal text;
 
 alter table if exists public.workspace_production_requests
-  alter column ordine_id drop not null,
-  alter column ordine_riga_id drop not null;
-
-alter table if exists public.workspace_production_requests
-  drop constraint if exists workspace_production_requests_ordine_riga_id_key;
-
-alter table if exists public.workspace_production_requests
   add column if not exists idempotency_key text,
   add column if not exists demand_hash text,
-  add column if not exists contract_version integer not null default 2,
-  add column if not exists request_kind text not null default 'MULTI_OCT_PRODUCTION_DEMAND',
+  add column if not exists contract_version integer not null default 1,
+  add column if not exists request_kind text not null default 'SINGLE_OCT_LINE_LEGACY',
   add column if not exists requested_by uuid,
   add column if not exists demand_snapshot_id bigint,
   add column if not exists sent_demand_snapshot_id bigint,
@@ -149,7 +142,9 @@ begin
         ordine_id, ordine_riga_id, idempotency_key, demand_hash,
         contract_version, request_kind, requested_by, stato, workspace_status
       ) values (
-        null, null, p_idempotency_key, p_demand_hash,
+        ((p_snapshot->'items'->0)->>'orderId')::uuid,
+        ((p_snapshot->'items'->0)->>'lineId')::uuid,
+        p_idempotency_key, p_demand_hash,
         2, 'MULTI_OCT_PRODUCTION_DEMAND', p_requested_by, 'PRONTA', 'PRONTA'
       ) returning * into v_request;
     end if;

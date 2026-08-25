@@ -1,3 +1,4 @@
+/* global Buffer, process */
 import https from "node:https";
 import { createClient } from "@supabase/supabase-js";
 import { requirePermission } from "./lib/auth.js";
@@ -148,7 +149,7 @@ async function loadAgents(mexal) {
   return unique.filter((row) => row.attivo_mexal);
 }
 
-async function removeInactiveAgents(admin, activeCodes) {
+export async function removeInactiveAgents(admin, activeCodes) {
   const { data: existingAgents, error } = await admin
     .from("mexal_agenti")
     .select("id,codice,workspace_utente_id");
@@ -169,7 +170,11 @@ async function removeInactiveAgents(admin, activeCodes) {
 
     const { error: disableUsersError } = await admin
       .from("utenti")
-      .update({ attivo: false, agent_id: null })
+      .update({
+        attivo: false,
+        mexal_agente_id: null,
+        codice_agente_mexal: null,
+      })
       .in("id", workspaceIds);
     if (disableUsersError) throw disableUsersError;
 

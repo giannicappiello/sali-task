@@ -8,7 +8,7 @@ import { getModuleIcon } from "../config/moduleIcons";
 import ModuleContainerLayout from "./ModuleContainerLayout";
 import "./workspace-screen-layout.css";
 
-const BUILT_IN_CONTAINER_PATHS = new Set(["/home", "/settings", "/analisi-dati", "/produzione"]);
+const BUILT_IN_CONTAINER_PATHS = new Set(["/home", "/settings", "/analisi-dati", "/produzione", "/crm"]);
 
 export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescription, children }) {
   const location = useLocation();

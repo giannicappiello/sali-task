@@ -7,6 +7,7 @@ import DocumentSeriesSettings from "./pages/DocumentSeriesSettings";
 import OrderModuleSettings from "./components/OrderModuleSettings";
 import DocumentGatewaySettings from "./pages/DocumentGatewaySettings";
 import ProgremesSettings from "./pages/ProgremesSettings";
+import DigitalIntegrationStatus from "./pages/DigitalIntegrationStatus";
 import "./integrations.css";
 import "./document-gateway.css";
 import "./document-sync.css";
@@ -33,6 +34,7 @@ export default function IntegrationsModule() {
       <Route path="orders/ph" element={<IntegrationPermissionGate any={["integrations.configure"]}><OrderModuleSettings moduleCode="ph" /></IntegrationPermissionGate>} />
       <Route path="documentale" element={<IntegrationPermissionGate any={["integrations.configure","integrations.sync.documents"]}><DocumentGatewaySettings /></IntegrationPermissionGate>} />
       <Route path="progremes" element={<IntegrationPermissionGate any={["integrations.configure","integrations.sync.progremes_modules"]}><ProgremesSettings /></IntegrationPermissionGate>} />
+      <Route path="crm-digital" element={<IntegrationPermissionGate any={["integrations.configure"]}><DigitalIntegrationStatus /></IntegrationPermissionGate>} />
       <Route path="*" element={<Navigate to="/integrations" replace />} />
     </Routes>
   );

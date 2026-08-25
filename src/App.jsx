@@ -33,11 +33,13 @@ const ModuleManagement = lazy(() => import("./pages/Settings/ModuleManagement"))
 const MenuManagement = lazy(() => import("./pages/Settings/MenuManagement"));
 const WorkspaceMenuContainer = lazy(() => import("./pages/Modules/WorkspaceMenuContainer"));
 const AISettings = lazy(() => import("./pages/Settings/AISettings"));
+const DigitalConnectionsSettings = lazy(() => import("./pages/Settings/DigitalConnectionsSettings"));
 const Notifications = lazy(() => import("./pages/Notifications/Notifications"));
 const AIAssistant = lazy(() => import("./pages/AIAssistant/AIAssistant"));
 const Production = lazy(() => import("./pages/Production/Production"));
 const WorkspaceModuleContainer = lazy(() => import("./pages/Modules/WorkspaceModuleContainer"));
 const ProgreMesLaunch = lazy(() => import("./pages/ProgreMes/ProgreMesLaunch"));
+const CrmModule = lazy(() => import("./modules/crm/CrmModule"));
 
 const PharmacyModule = lazy(() =>
   import("./modules/pharmacy/PharmacyModule")
@@ -116,6 +118,7 @@ function App() {
               <Route path="settings/modules" element={<SettingsAccessGuard adminOnly><ModuleManagement /></SettingsAccessGuard>} />
               <Route path="settings/menu" element={<SettingsAccessGuard adminOnly><MenuManagement /></SettingsAccessGuard>} />
               <Route path="settings/ai" element={<SettingsAccessGuard any={["settings.manage"]}><AISettings /></SettingsAccessGuard>} />
+              <Route path="settings/crm-digital" element={<SettingsAccessGuard adminOnly><DigitalConnectionsSettings /></SettingsAccessGuard>} />
               <Route path="notifications" element={<Notifications />} />
               <Route path="assistente-ai" element={<WorkspaceAccessGuard moduleCode="assistente_ai"><AIAssistant /></WorkspaceAccessGuard>} />
               <Route path="produzione/*" element={<WorkspaceAccessGuard moduleCode="progremes"><Production /></WorkspaceAccessGuard>} />
@@ -128,6 +131,7 @@ function App() {
               <Route path="ordini-prof/*" element={<WorkspaceAccessGuard moduleCode="ordini_pr"><OrdersModule moduleCode="prof" title="Ordini PR" basePath="/ordini-prof" /></WorkspaceAccessGuard>} />
               <Route path="ordini-ph/*" element={<WorkspaceAccessGuard moduleCode="ordini_ph"><OrdersModule moduleCode="ph" title="Ordini PH" basePath="/ordini-ph" /></WorkspaceAccessGuard>} />
               <Route path="integrations/*" element={<IntegrationsModule />} />
+              <Route path="crm/*" element={<CrmModule />} />
             </Route>
           </Route>
 

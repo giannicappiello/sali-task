@@ -1,3 +1,4 @@
+/* global process */
 import { createClient } from "@supabase/supabase-js";
 import productsHandler, { buildMexalClient } from "../../server/mexal/sync-products.js";
 import clientsHandler from "../../server/mexal/sync-clients.js";
@@ -22,9 +23,11 @@ import { consumeProgremesTicket, issueProgremesTicket, listUserProgremesSections
 import { listProgremesIntegration, saveProgremesSyncConfig, stopProgremesModulesSync, syncProgremesModules } from "../../server/progremes-modules.js";
 import { handleProgremesReadonlyRequest } from "../../server/progremes-readonly-api.js";
 import { handleAIAssistant } from "../../server/ai/assistant.js";
+import { handleCrmBrief } from "../../server/ai/crm-brief.js";
 import { handleAIOrderDocument } from "../../server/ai/order-document.js";
 import { confirmProductionProposal, handleProductionEvent, previewProductionRequest, sendProductionRequest } from "../../server/progremes-production-api.js";
 import { createOctOrdersRunHandler, precheckOctOrders } from "../../server/mexal/sync-oct-orders.js";
+import { handleDigitalConnectionManager } from "../../server/crm/digital-connection-manager.js";
 
 async function dispatchMessageNotification(req, body) {
   const token = String(req.headers.authorization || "").trim().replace(/^Bearer\s+/i, "");
@@ -144,7 +147,11 @@ function createResponseCapture() {
 
 function errorDetails(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return {};
-  const { error, success, status, ok, ...details } = payload;
+  const details = { ...payload };
+  delete details.error;
+  delete details.success;
+  delete details.status;
+  delete details.ok;
   return details;
 }
 
@@ -471,6 +478,9 @@ async function maintenancePurge(req) {
 }
 
 export default async function handler(req, res) {
+  if (req.query?.route === "crm-digital") {
+    return handleDigitalConnectionManager(req, res);
+  }
   if (req.query?.route === "progremes-production-events") {
     return handleProductionEvent(req, res);
   }
@@ -487,6 +497,18 @@ export default async function handler(req, res) {
       return res.status(status >= 400 && status <= 599 ? status : 500).json({
         success: false,
         error: error?.message || "Richiesta AI non riuscita.",
+      });
+    }
+  }
+  if (req.query?.route === "crm-ai") {
+    try {
+      const result = await handleCrmBrief(req);
+      return res.status(200).json({ success: true, ...result });
+    } catch (error) {
+      const status = Number(error?.status || 500);
+      if (status >= 500) console.error("CRM AI Brief:", error);
+      return res.status(status >= 400 && status <= 599 ? status : 500).json({
+        success: false, error: error?.message || "Richiesta CRM AI non riuscita.",
       });
     }
   }

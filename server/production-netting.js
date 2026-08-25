@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { getAvailabilityWarehouse } from "./mexal/sync-products.js";
 
 const QUANTITY_SCALE = 6;
 const STOCK_WAREHOUSE = 5;
@@ -6,6 +7,8 @@ const STOCK_WAREHOUSE = 5;
 function text(value) { return String(value ?? "").trim(); }
 function upper(value) { return text(value).toUpperCase(); }
 function finite(value, label) {
+  if (value === null || value === undefined || text(value) === "")
+    throw Object.assign(new Error(`${label} non disponibile.`), { code: "QUANTITY_MISSING" });
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) throw Object.assign(new Error(`${label} non valida.`), { code: "INVALID_QUANTITY" });
   return parsed;
@@ -22,8 +25,7 @@ export function normalizeUnitOfMeasure(value) {
 }
 
 export function finishedProductWarehouseRule(articleCode) {
-  const code = upper(articleCode);
-  const warehouse5Only = code.startsWith("IT") || code.startsWith("MKT");
+  const warehouse5Only = getAvailabilityWarehouse(articleCode) === STOCK_WAREHOUSE;
   return warehouse5Only
     ? { code: "WAREHOUSE_5_ONLY", warehouses: [STOCK_WAREHOUSE], description: "Articoli IT/MKT: disponibilità Mexal del solo magazzino 5." }
     : { code: "ALL_WAREHOUSES", warehouses: null, description: "Altri articoli: disponibilità Mexal aggregata su tutti i magazzini." };
@@ -42,14 +44,26 @@ export function calculateProductionNetting({
   conversions = [],
 }) {
   const requested = quantity(requestedQuantity, "Quantità OCT");
-  const available = quantity(Math.max(0, finite(availableQuantity ?? 0, "Disponibilità prodotto")), "Disponibilità prodotto");
+  let rawAvailable;
+  try { rawAvailable = finite(availableQuantity, "Disponibilità prodotto"); }
+  catch (error) {
+    throw Object.assign(new Error("Disponibilità prodotto non determinabile."), {
+      code: "AVAILABILITY_UNAVAILABLE",
+      cause: error,
+    });
+  }
+  const warnings = rawAvailable < 0
+    ? [{ code: "NEGATIVE_AVAILABILITY_CLAMPED", message: "Disponibilità negativa trattata come zero." }]
+    : [];
+  const available = quantity(Math.max(0, rawAvailable), "Disponibilità prodotto");
   const lineUom = normalizeUnitOfMeasure(lineUnitOfMeasure);
   const productUom = normalizeUnitOfMeasure(productUnitOfMeasure);
+  if (!lineUom) throw Object.assign(new Error("UDM della riga OCT non disponibile."), { code: "OCT_UOM_MISSING" });
   if (!productUom) throw Object.assign(new Error("UDM dell'articolo non disponibile."), { code: "PRODUCT_UOM_MISSING" });
 
   let requestedInProductUom = requested;
   let conversion = null;
-  if (lineUom && lineUom !== productUom) {
+  if (lineUom !== productUom) {
     conversion = explicitConversion(conversions, lineUom, productUom);
     const factor = Number(conversion?.factor);
     if (!conversion || !Number.isFinite(factor) || factor <= 0) {
@@ -71,10 +85,11 @@ export function calculateProductionNetting({
     coveredQuantity: covered,
     quantityToProduce: toProduce,
     fullyCovered: toProduce === 0,
-    lineUnitOfMeasure: lineUom || null,
+    lineUnitOfMeasure: lineUom,
     productUnitOfMeasure: productUom,
     effectiveUnitOfMeasure: productUom,
-    unitSource: lineUom ? "OCT" : "PRODUCT_FALLBACK",
+    unitSource: "OCT",
+    warnings,
     conversion: conversion ? {
       from: lineUom,
       to: productUom,
@@ -119,6 +134,7 @@ export async function prepareProductionNetting({ admin, lineId, mode = "preview"
   const capturedAt = new Date().toISOString();
   const snapshot = {
     version: 1,
+    ruleVersion: "PF_NETTING_V1",
     mode,
     orderId: source.order.id,
     lineId: source.line.id,
@@ -129,10 +145,17 @@ export async function prepareProductionNetting({ admin, lineId, mode = "preview"
     productAvailabilityUpdatedAt: source.product.updated_at,
     productLastMexalSyncAt: source.product.ultimo_sync_mexal,
     productCatalogSyncedAt: source.catalog?.sincronizzato_il || null,
+    sources: {
+      order: "MEXAL_OCT",
+      availability: "MEXAL_SYNCED_PRODUCT",
+      productUnitOfMeasure: "MEXAL_PRODUCT_CACHE",
+    },
+    blockingReasons: [],
     capturedAt,
   };
   const snapshotHash = hash({ ...snapshot, capturedAt: undefined, mode: undefined });
   const { data, error } = await admin.rpc("record_workspace_production_netting", {
+    p_create_request: mode !== "preview",
     p_ordine_id: source.order.id,
     p_ordine_riga_id: source.line.id,
     p_codice_articolo: source.code,
@@ -159,10 +182,12 @@ export async function prepareProductionNetting({ admin, lineId, mode = "preview"
     });
   }
   const recorded = Array.isArray(data) ? data[0] : data;
-  if (!recorded?.request_id || !recorded?.snapshot_id) throw new Error("Snapshot nettificazione non confermata dal database.");
+  if (!recorded?.snapshot_id || (mode !== "preview" && !recorded?.request_id))
+    throw new Error("Snapshot nettificazione non confermata dal database.");
   const changedFromExpected = expectedSnapshotId !== null && Number(expectedSnapshotId) !== Number(recorded.snapshot_id);
   return {
-    request: { id: recorded.request_id, external_id: recorded.external_id, attempt_count: Number(recorded.attempt_count || 0) },
+    request: recorded.request_id ? { id: recorded.request_id, external_id: recorded.external_id,
+      attempt_count: Number(recorded.attempt_count || 0) } : null,
     snapshot: { ...snapshot, capturedAt: recorded.snapshot_captured_at || capturedAt,
       id: Number(recorded.snapshot_id), hash: snapshotHash, reused: recorded.reused === true },
     netting,
@@ -179,5 +204,6 @@ export function productionNettingContract(netting) {
     coveredFromStock: { value: netting.coveredQuantity, unitOfMeasure: netting.productUnitOfMeasure },
     toProduce: { value: netting.quantityToProduce, unitOfMeasure: netting.productUnitOfMeasure },
     conversion: netting.conversion,
+    warnings: netting.warnings,
   };
 }

@@ -25,6 +25,7 @@ export interface WorkspaceProductionRequestPayload {
     coveredFromStock: { value: number; unitOfMeasure: string };
     toProduce: { value: number; unitOfMeasure: string };
     conversion: { from: string; to: string; factor: number; source: string } | null;
+    warnings: Array<{ code: string; message: string }>;
   };
   availabilitySnapshot: {
     id: number;

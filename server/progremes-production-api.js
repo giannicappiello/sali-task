@@ -75,7 +75,7 @@ export async function previewProductionRequest(req, res, { admin = adminClient()
   if (req.method !== "POST") return res.status(405).json({ error: "Metodo non consentito." });
   try {
     const prepared = await prepareProductionNetting({ admin, lineId: String(req.body?.lineId || "").trim(), mode: "preview" });
-    return res.status(200).json({ readOnlyExternal: true, sent: false, externalId: prepared.request.external_id,
+    return res.status(200).json({ readOnlyExternal: true, sent: false, externalId: prepared.request?.external_id || null,
       snapshot: prepared.snapshot, netting: productionNettingContract(prepared.netting), status: prepared.netting.fullyCovered ? "COPERTA_DA_SCORTA" : "PRONTA" });
   } catch (error) {
     return res.status(error?.status || 500).json({ error: error?.message || "Preview nettificazione non riuscita.", code: error?.code || "NETTING_FAILED" });

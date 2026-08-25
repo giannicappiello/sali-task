@@ -516,11 +516,11 @@ export default async function handler(req, res) {
       }
       case "progremes_production_request": {
         const admin = await createAdmin(req, "integrations.configure");
-        return sendProductionRequest(req, res, { admin: admin.supabase });
+        return sendProductionRequest(req, res, { admin: admin.supabase, requestedBy: admin.authUserId });
       }
       case "progremes_production_preview": {
         const admin = await createAdmin(req, "integrations.configure");
-        return previewProductionRequest(req, res, { admin: admin.supabase });
+        return previewProductionRequest(req, res, { admin: admin.supabase, requestedBy: admin.authUserId });
       }
       case "progremes_production_confirm": {
         const admin = await createAdmin(req, "integrations.configure");

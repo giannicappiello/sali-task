@@ -1,8 +1,7 @@
 export type WorkspaceProductionStatus =
   | "PRONTA"
-  | "COPERTA_DA_SCORTA"
-  | "IN_ATTESA_DI_FORMULA"
-  | "OP_GENERATI"
+  | "RICEVUTA"
+  | "IN_ANALISI"
   | "PRODUCIBILE"
   | "PARZIALMENTE_PRODUCIBILE"
   | "IN_ATTESA_MERCE"
@@ -11,35 +10,49 @@ export type WorkspaceProductionStatus =
   | "IN_PRODUZIONE"
   | "COMPLETATO";
 
-export interface WorkspaceProductionRequestPayload {
-  schemaVersion: 1;
-  externalId: string;
-  oct: { externalId: string; lineExternalId: string; mexalKey: string };
-  commercialArticleCode: string;
-  quantity: number;
-  unitOfMeasure: string;
-  quantityContext: {
-    requested: { value: number; unitOfMeasure: string };
-    requestedInProductionUnit: { value: number; unitOfMeasure: string };
-    availableFinishedProduct: { value: number; unitOfMeasure: string };
-    coveredFromStock: { value: number; unitOfMeasure: string };
-    toProduce: { value: number; unitOfMeasure: string };
-    conversion: { from: string; to: string; factor: number; source: string } | null;
-    warnings: Array<{ code: string; message: string }>;
-  };
-  availabilitySnapshot: {
-    id: number;
-    hash: string;
-    capturedAt: string;
-    warehouseRule: { code: string; warehouses: number[] | null; description: string };
-  };
+export interface WorkspaceOctReference {
+  orderId: string;
+  mexalKey: string;
+  sigla: string;
+  serie: number;
+  numero: number;
+  customerTechnicalReference: string | null;
   orderDate: string;
   requestedDeliveryDate: string | null;
-  customerMexalCode: string;
+}
+
+export interface WorkspaceProductionDemandItem {
+  itemIndex: number;
+  itemExternalKey: string;
+  oct: {
+    externalId: string;
+    lineExternalId: string;
+    mexalKey: string;
+    position: number | null;
+  };
+  commercialArticleCode: string;
+  productionArticleCode: string | null;
+  mappingStatus: "TO_RESOLVE_IN_MES" | "RESOLVED";
+  requested: { value: number; unitOfMeasure: string };
+  requestedInProductionUnit: { value: number; unitOfMeasure: string };
+  conversion: { from: string; to: string; factor: number; source: string } | null;
+  requestedDeliveryDate: string | null;
+}
+
+export interface WorkspaceProductionRequestPayload {
+  schemaVersion: 2;
+  externalId: string;
+  requestType: "MULTI_OCT_PRODUCTION_DEMAND";
+  idempotencyKey: string;
+  availabilityOwner: "PROGREMES";
+  demandSnapshot: { id: number; hash: string; capturedAt: string };
+  orders: WorkspaceOctReference[];
+  items: WorkspaceProductionDemandItem[];
 }
 
 export interface WorkspaceProductionProposalDto {
   id: number;
+  itemExternalKey: string;
   productionIndex: number;
   quantity: number;
   status: "DaVerificare" | "Producibile" | "InAttesaMerce" | "Confermata";
@@ -50,7 +63,7 @@ export interface WorkspaceProductionProposalDto {
 }
 
 export interface WorkspaceProductionEvent {
-  schemaVersion: 1;
+  schemaVersion: 2;
   eventId: string;
   externalId: string;
   sequence: number;

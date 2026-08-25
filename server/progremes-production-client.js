@@ -13,28 +13,34 @@ function required(name, env) {
 function enabled(name, env) { return String(env[name] || "").trim().toLowerCase() === "true"; }
 function hash(body) { return createHash("sha256").update(body).digest("hex"); }
 
-export function createProductionPayload({ request, order, line, snapshot, netting }) {
-  if (!snapshot?.id || !netting || Number(netting.quantityToProduce) <= 0)
-    throw new Error("Nettificazione RdP mancante o quantità da produrre non valida.");
+export function createProductionPayload({ request, snapshot, demand }) {
+  if (!request?.external_id || !snapshot?.id || !Array.isArray(demand?.items) || !demand.items.length)
+    throw new Error("Domanda RdP multi-OCT incompleta.");
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     externalId: request.external_id,
-    oct: { externalId: order.id, lineExternalId: line.id, mexalKey: order.mexal_chiave },
-    commercialArticleCode: line.codice_articolo,
-    quantity: Number(netting.quantityToProduce),
-    unitOfMeasure: netting.effectiveUnitOfMeasure,
-    quantityContext: {
-      requested: { value: netting.requestedQuantity, unitOfMeasure: netting.lineUnitOfMeasure || netting.productUnitOfMeasure },
-      requestedInProductionUnit: { value: netting.requestedQuantityInProductUom, unitOfMeasure: netting.productUnitOfMeasure },
-      availableFinishedProduct: { value: netting.availableQuantity, unitOfMeasure: netting.productUnitOfMeasure },
-      coveredFromStock: { value: netting.coveredQuantity, unitOfMeasure: netting.productUnitOfMeasure },
-      toProduce: { value: netting.quantityToProduce, unitOfMeasure: netting.productUnitOfMeasure },
-      conversion: netting.conversion,
-    },
-    availabilitySnapshot: { id: snapshot.id, hash: snapshot.hash, capturedAt: snapshot.capturedAt, warehouseRule: snapshot.warehouseRule },
-    orderDate: order.data_ordine,
-    requestedDeliveryDate: line.data_consegna || order.data_consegna || null,
-    customerMexalCode: order.mexal_cod_conto,
+    requestType: "MULTI_OCT_PRODUCTION_DEMAND",
+    idempotencyKey: request.idempotency_key,
+    demandSnapshot: { id: snapshot.id, hash: snapshot.hash, capturedAt: snapshot.capturedAt },
+    availabilityOwner: "PROGREMES",
+    orders: demand.orders,
+    items: demand.items.map((item) => ({
+      itemIndex: item.itemIndex,
+      itemExternalKey: item.itemExternalKey,
+      oct: {
+        externalId: item.orderId,
+        lineExternalId: item.lineId,
+        mexalKey: item.mexalOrderKey,
+        position: item.mexalLinePosition,
+      },
+      commercialArticleCode: item.commercialArticleCode,
+      productionArticleCode: item.productionArticleCode,
+      mappingStatus: item.mappingStatus,
+      requested: { value: item.requestedQuantity, unitOfMeasure: item.requestedUnitOfMeasure },
+      requestedInProductionUnit: { value: item.productionQuantity, unitOfMeasure: item.productionUnitOfMeasure },
+      conversion: item.conversion,
+      requestedDeliveryDate: item.requestedDeliveryDate,
+    })),
   };
 }
 

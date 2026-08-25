@@ -1,197 +1,264 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { calculateProductionNetting, finishedProductWarehouseRule, prepareProductionNetting } from "./production-netting.js";
-import { confirmProductionProposal, previewProductionRequest, sendProductionRequest } from "./progremes-production-api.js";
+import {
+  buildProductionDemand,
+  prepareDemandQuantity,
+  prepareProductionDemand,
+  productionDemandContract,
+} from "./production-netting.js";
+import { previewProductionRequest, sendProductionRequest } from "./progremes-production-api.js";
+import { createProductionRequestSubmitter } from "../src/modules/orders/services/productionRequest.js";
 
-test("quantità totalmente coperta produce residuo zero senza valori negativi", () => {
-  const value = calculateProductionNetting({ requestedQuantity: 10, availableQuantity: 15, lineUnitOfMeasure: "PZ", productUnitOfMeasure: "pz" });
-  assert.deepEqual([value.coveredQuantity, value.quantityToProduce, value.fullyCovered], [10, 0, true]);
+const ORDERS = [
+  { id: "00000000-0000-4000-8000-000000000101", origine: "mexal_oct", mexal_chiave: "OC+2+412", mexal_sigla: "OC", mexal_serie: 2, mexal_numero: 412, mexal_cod_conto: "C1", data_ordine: "2026-08-06", data_consegna: "2026-09-01" },
+  { id: "00000000-0000-4000-8000-000000000102", origine: "mexal_oct", mexal_chiave: "OC+2+430", mexal_sigla: "OC", mexal_serie: 2, mexal_numero: 430, mexal_cod_conto: "C2", data_ordine: "2026-08-07", data_consegna: "2026-09-02" },
+];
+const LINES = [
+  { id: "00000000-0000-4000-8000-000000000201", ordine_id: ORDERS[0].id, mexal_posizione: 10, codice_articolo: "PB0004", quantita: 10.25, unita_misura_oct: "PZ", data_consegna: "2026-08-30", riga_descrittiva: false },
+  { id: "00000000-0000-4000-8000-000000000202", ordine_id: ORDERS[0].id, mexal_posizione: 20, codice_articolo: null, quantita: 0, unita_misura_oct: null, riga_descrittiva: true },
+  { id: "00000000-0000-4000-8000-000000000204", ordine_id: ORDERS[0].id, mexal_posizione: 30, codice_articolo: "PB0005", quantita: 3.5, unita_misura_oct: "KG", riga_descrittiva: false },
+  { id: "00000000-0000-4000-8000-000000000203", ordine_id: ORDERS[1].id, mexal_posizione: 10, codice_articolo: "PB0004", quantita: 4, unita_misura_oct: "PZ", riga_descrittiva: false },
+];
+
+function queryRows(rows) {
+  let current = [...rows];
+  const query = {
+    select() { return query; },
+    in(column, values) { current = current.filter((row) => values.includes(String(row[column]))); return Promise.resolve({ data: current, error: null }); },
+  };
+  return query;
+}
+
+function catalogQuery(catalogs) {
+  let code;
+  const query = {
+    select() { return query; },
+    eq(_column, value) { code = value; return query; },
+    async maybeSingle() { return { data: catalogs[code] || null, error: null }; },
+  };
+  return query;
+}
+
+function makeAdmin({ rpcResult, rpcError = null, onRpc = () => {}, onUpdate = () => {}, onProposal = () => {}, requestItems = [] } = {}) {
+  const catalogs = {
+    PB0004: { codice_articolo: "PB0004", unita_misura: "PZ", sincronizzato_il: "2026-08-24T20:00:00Z" },
+    PB0005: { codice_articolo: "PB0005", unita_misura: "KG", sincronizzato_il: "2026-08-24T20:00:00Z" },
+  };
+  return {
+    from(table) {
+      if (table === "ordini_righe") return queryRows(LINES);
+      if (table === "ordini_testate") return queryRows(ORDERS);
+      if (table === "ordini_prodotti_cache") return catalogQuery(catalogs);
+      if (table === "workspace_production_requests") return {
+        update(value) { onUpdate(value); return { eq: async () => ({ error: null }) }; },
+      };
+      if (table === "workspace_production_request_items") {
+        const query = { select() { return query; }, async eq() { return { data: requestItems, error: null }; } };
+        return query;
+      }
+      if (table === "workspace_production_proposals") return { upsert: async (rows) => { onProposal(rows); return { error: null }; } };
+      throw new Error(`Tabella inattesa: ${table}`);
+    },
+    async rpc(name, args) {
+      onRpc(name, args);
+      return { data: rpcResult ?? [{ request_id: null, external_id: null, snapshot_id: 12, snapshot_hash: "snapshot-hash", snapshot_captured_at: "2026-08-24T20:00:00Z", reused: false, attempt_count: 0 }], error: rpcError };
+    },
+  };
+}
+
+function responseRecorder() {
+  const value = { status: null, payload: null };
+  return {
+    value,
+    response: { status(status) { value.status = status; return { json(payload) { value.payload = payload; return payload; } }; } },
+  };
+}
+
+test("quantità OCT decimali sono preservate integralmente e non nettificate", () => {
+  const value = prepareDemandQuantity({ requestedQuantity: 10.275, lineUnitOfMeasure: " pz. ", productUnitOfMeasure: "PZ" });
+  assert.equal(value.requestedQuantity, 10.275);
+  assert.equal(value.productionQuantity, 10.275);
+  assert.equal("availableQuantity" in value, false);
+  assert.equal("quantityToProduce" in value, false);
 });
 
-test("quantità parzialmente coperta produce soltanto il residuo", () => {
-  const value = calculateProductionNetting({ requestedQuantity: 10, availableQuantity: 3, lineUnitOfMeasure: "PZ", productUnitOfMeasure: "PZ" });
-  assert.deepEqual([value.availableQuantity, value.coveredQuantity, value.quantityToProduce], [3, 3, 7]);
+test("UDM incoerente blocca senza conversione autorevole", () => {
+  assert.throws(() => prepareDemandQuantity({ requestedQuantity: 2, lineUnitOfMeasure: "CF", productUnitOfMeasure: "PZ" }), { code: "UOM_MISMATCH" });
+  assert.throws(() => prepareDemandQuantity({ requestedQuantity: 2, lineUnitOfMeasure: null, productUnitOfMeasure: "PZ" }), { code: "OCT_UOM_MISSING" });
 });
 
-test("nessuna disponibilità mantiene l'intera quantità da produrre", () => {
-  const value = calculateProductionNetting({ requestedQuantity: 8, availableQuantity: 0, lineUnitOfMeasure: "PZ", productUnitOfMeasure: "PZ" });
-  assert.deepEqual([value.coveredQuantity, value.quantityToProduce, value.unitSource], [0, 8, "OCT"]);
-});
-
-test("disponibilità uguale alla richiesta produce residuo zero", () => {
-  const value = calculateProductionNetting({ requestedQuantity: 1000, availableQuantity: 1000, lineUnitOfMeasure: "PZ", productUnitOfMeasure: "PZ" });
-  assert.deepEqual([value.coveredQuantity, value.quantityToProduce, value.fullyCovered], [1000, 0, true]);
-});
-
-test("quantità o disponibilità non determinabili bloccano il calcolo", () => {
-  assert.throws(() => calculateProductionNetting({ requestedQuantity: null, availableQuantity: 0, lineUnitOfMeasure: "PZ", productUnitOfMeasure: "PZ" }), { code: "QUANTITY_MISSING" });
-  assert.throws(() => calculateProductionNetting({ requestedQuantity: 1, availableQuantity: null, lineUnitOfMeasure: "PZ", productUnitOfMeasure: "PZ" }), { code: "AVAILABILITY_UNAVAILABLE" });
-});
-
-test("quantità decimali sono preservate con precisione deterministica", () => {
-  const value = calculateProductionNetting({ requestedQuantity: 3.275, availableQuantity: 1.125, lineUnitOfMeasure: "KG", productUnitOfMeasure: "KG" });
-  assert.deepEqual([value.coveredQuantity, value.quantityToProduce], [1.125, 2.15]);
-});
-
-test("disponibilità negativa viene protetta a zero con warning e quantità OCT negativa è rifiutata", () => {
-  const anomalous = calculateProductionNetting({ requestedQuantity: 2, availableQuantity: -5, lineUnitOfMeasure: "PZ", productUnitOfMeasure: "PZ" });
-  assert.equal(anomalous.availableQuantity, 0);
-  assert.deepEqual(anomalous.warnings.map((warning) => warning.code), ["NEGATIVE_AVAILABILITY_CLAMPED"]);
-  assert.throws(() => calculateProductionNetting({ requestedQuantity: -1, availableQuantity: 0, lineUnitOfMeasure: "PZ", productUnitOfMeasure: "PZ" }), { code: "NEGATIVE_QUANTITY" });
-});
-
-test("UDM coerente passa, UDM mancante o mismatch senza conversione esplicita vengono bloccati", () => {
-  assert.equal(calculateProductionNetting({ requestedQuantity: 2, availableQuantity: 0, lineUnitOfMeasure: " pz. ", productUnitOfMeasure: "PZ" }).effectiveUnitOfMeasure, "PZ");
-  assert.throws(() => calculateProductionNetting({ requestedQuantity: 2, availableQuantity: 0, productUnitOfMeasure: "PZ" }), { code: "OCT_UOM_MISSING" });
-  assert.throws(() => calculateProductionNetting({ requestedQuantity: 2, availableQuantity: 0, lineUnitOfMeasure: "CF", productUnitOfMeasure: "PZ" }), { code: "UOM_MISMATCH" });
-});
-
-test("conversioni sono applicate solo se esplicite e tracciate", () => {
-  const value = calculateProductionNetting({ requestedQuantity: 2, availableQuantity: 3, lineUnitOfMeasure: "CF", productUnitOfMeasure: "PZ",
+test("conversione esplicita preserva quantità originale e fonte tecnica", () => {
+  const value = prepareDemandQuantity({ requestedQuantity: 2, lineUnitOfMeasure: "CF", productUnitOfMeasure: "PZ",
     conversions: [{ from: "CF", to: "PZ", factor: 6, source: "MASTER_DATA_APPROVED" }] });
-  assert.deepEqual([value.requestedQuantityInProductUom, value.coveredQuantity, value.quantityToProduce], [12, 3, 9]);
+  assert.deepEqual([value.requestedQuantity, value.productionQuantity], [2, 12]);
   assert.equal(value.conversion.source, "MASTER_DATA_APPROVED");
 });
 
-test("regola magazzini è esplicita per IT/MKT e per gli altri articoli", () => {
-  assert.deepEqual(finishedProductWarehouseRule("IT001").warehouses, [5]);
-  assert.deepEqual(finishedProductWarehouseRule("MKT-1").warehouses, [5]);
-  assert.equal(finishedProductWarehouseRule("PB0004").warehouses, null);
+test("una RdP contiene più OCT, conserva righe omonime ed esclude descrizioni", async () => {
+  const demand = await buildProductionDemand({ admin: makeAdmin(), orderIds: ORDERS.map((order) => order.id) });
+  assert.equal(demand.orders.length, 2);
+  assert.equal(demand.items.length, 3);
+  assert.deepEqual(demand.items.map((item) => item.commercialArticleCode), ["PB0004", "PB0005", "PB0004"]);
+  assert.deepEqual(demand.items.map((item) => item.mexalOrderKey), ["OC+2+412", "OC+2+412", "OC+2+430"]);
+  assert.deepEqual(demand.items.map((item) => item.requestedQuantity), [10.25, 3.5, 4]);
+  assert.notEqual(demand.items[0].itemExternalKey, demand.items[2].itemExternalKey);
 });
 
-function query(data) {
-  const chain = { select: () => chain, eq: () => chain, single: async () => ({ data, error: null }), maybeSingle: async () => ({ data, error: null }) };
-  return chain;
-}
+test("una RdP con un solo OCT conserva tutte le sue righe articolo", async () => {
+  const demand = await buildProductionDemand({ admin: makeAdmin(), orderIds: [ORDERS[0].id] });
+  assert.equal(demand.orders.length, 1);
+  assert.equal(demand.items.length, 2);
+  assert.deepEqual(demand.items.map((item) => item.mexalLinePosition), [10, 30]);
+});
 
-function fakeAdmin({ availability = 4, snapshotIds = [31, 31] } = {}) {
-  let rpcCalls = 0;
-  const rows = {
-    ordini_righe: { id: "line-1", ordine_id: "order-1", codice_articolo: "PB0004", quantita: 10, unita_misura_oct: "PZ", riga_descrittiva: false },
-    ordini_testate: { id: "order-1", origine: "mexal_oct", mexal_chiave: "OC+2+412", data_ordine: "2026-08-06", mexal_cod_conto: "C1" },
-    prodotti: { id: "product-1", codice_mexal: "PB0004", disponibilita: availability, sincronizzato_mexal: true, attivo_mexal: true, updated_at: "2026-08-24T20:00:00Z", ultimo_sync_mexal: "2026-08-24T19:00:00Z" },
-    ordini_prodotti_cache: { codice_articolo: "PB0004", unita_misura: "PZ", sincronizzato_il: "2026-08-24T18:00:00Z" },
+test("contratto dichiara ProgreMES master della nettificazione", async () => {
+  const demand = await buildProductionDemand({ admin: makeAdmin(), orderIds: [ORDERS[0].id] });
+  const contract = productionDemandContract(demand);
+  assert.equal(contract.items[0].nettingOwner, "PROGREMES");
+  assert.equal(contract.items[0].workspaceAvailabilityAuthoritative, false);
+  assert.equal(JSON.stringify(contract).includes("quantityToProduce"), false);
+  assert.equal(JSON.stringify(contract).includes("availableFinishedProduct"), false);
+});
+
+test("preview registra solo snapshot della domanda e non crea una RdP", async () => {
+  let rpcArgs;
+  const recorder = responseRecorder();
+  await previewProductionRequest({ method: "POST", body: { orderIds: [ORDERS[0].id, ORDERS[1].id] } }, recorder.response, {
+    admin: makeAdmin({ onRpc: (_name, args) => { rpcArgs = args; } }),
+    requestedBy: "00000000-0000-4000-8000-000000000301",
+  });
+  assert.equal(recorder.value.status, 200);
+  assert.equal(recorder.value.payload.sent, false);
+  assert.equal(recorder.value.payload.demand.orderCount, 2);
+  assert.equal(rpcArgs.p_create_request, false);
+  assert.equal(rpcArgs.p_snapshot.availability.authoritative, false);
+  assert.equal(rpcArgs.p_snapshot.availability.included, false);
+});
+
+test("invio usa stessa RdP, schema v2 e quantità OCT complete", async () => {
+  let outbound;
+  let update;
+  const recorder = responseRecorder();
+  const requestId = "00000000-0000-4000-8000-000000000401";
+  const externalId = "00000000-0000-4000-8000-000000000402";
+  const admin = makeAdmin({
+    rpcResult: [{ request_id: requestId, external_id: externalId, snapshot_id: 12, snapshot_hash: "snapshot-hash", snapshot_captured_at: "2026-08-24T20:00:00Z", reused: true, attempt_count: 1 }],
+    onUpdate: (value) => { update = value; },
+  });
+  const client = {
+    requestEnabled: () => true,
+    async sendRequest(payload) { outbound = payload; return { result: { status: "RICEVUTA", workspaceStatus: "RICEVUTA", proposals: [] }, payloadHash: "payload-hash" }; },
   };
-  return {
-    get rpcCalls() { return rpcCalls; },
-    from: (table) => query(rows[table]),
-    rpc: async (_name, payload) => {
-      const index = rpcCalls++;
-      assert.equal(payload.p_quantita_da_produrre, Math.max(0, 10 - availability));
-      return { data: [{ request_id: payload.p_create_request ? "request-1" : null,
-        external_id: payload.p_create_request ? "external-1" : null,
-        snapshot_id: snapshotIds[index] ?? snapshotIds.at(-1),
-        snapshot_captured_at: "2026-08-24T20:00:00Z", reused: index > 0, attempt_count: 0 }], error: null };
+  await sendProductionRequest({ method: "POST", body: { orderIds: ORDERS.map((order) => order.id), snapshotId: 12 } }, recorder.response, { admin, client });
+  assert.equal(recorder.value.status, 200);
+  assert.equal(outbound.schemaVersion, 2);
+  assert.equal(outbound.requestType, "MULTI_OCT_PRODUCTION_DEMAND");
+  assert.equal(outbound.items.length, 3);
+  assert.deepEqual(outbound.items.map((item) => item.requested.value), [10.25, 3.5, 4]);
+  assert.equal(outbound.availabilityOwner, "PROGREMES");
+  assert.equal(JSON.stringify(outbound).includes("availableFinishedProduct"), false);
+  assert.equal(update.sent_demand_snapshot_id, 12);
+});
+
+test("snapshot cambiato tra preview e invio blocca prima della chiamata MES", async () => {
+  let calls = 0;
+  const recorder = responseRecorder();
+  const admin = makeAdmin({ rpcResult: [{ request_id: "r", external_id: "e", snapshot_id: 13, snapshot_hash: "new", reused: false, attempt_count: 0 }] });
+  const client = { requestEnabled: () => true, async sendRequest() { calls += 1; } };
+  await sendProductionRequest({ method: "POST", body: { orderIds: [ORDERS[0].id], snapshotId: 12 } }, recorder.response, { admin, client });
+  assert.equal(recorder.value.status, 409);
+  assert.equal(recorder.value.payload.code, "DEMAND_CHANGED");
+  assert.equal(calls, 0);
+});
+
+test("errore di invio conserva tentativo e codice senza perdere la RdP", async () => {
+  let update;
+  const recorder = responseRecorder();
+  const admin = makeAdmin({
+    rpcResult: [{ request_id: "r", external_id: "e", snapshot_id: 12, snapshot_hash: "hash", reused: true, attempt_count: 2 }],
+    onUpdate: (value) => { update = value; },
+  });
+  const client = {
+    requestEnabled: () => true,
+    async sendRequest() { throw Object.assign(new Error("timeout"), { code: "UPSTREAM_TIMEOUT" }); },
+  };
+  await assert.rejects(() => sendProductionRequest({ method: "POST", body: { orderIds: [ORDERS[0].id] } }, recorder.response, { admin, client }), /timeout/);
+  assert.equal(update.last_error_code, "UPSTREAM_TIMEOUT");
+  assert.equal(update.attempt_count, 3);
+});
+
+test("proposta MES viene persistita con collegamento alla riga OCT originaria", async () => {
+  let proposals;
+  const recorder = responseRecorder();
+  const requestId = "00000000-0000-4000-8000-000000000401";
+  const key = "OC+2+412:10";
+  const admin = makeAdmin({
+    rpcResult: [{ request_id: requestId, external_id: "e", snapshot_id: 12, snapshot_hash: "hash", reused: true, attempt_count: 0 }],
+    requestItems: [{ id: "00000000-0000-4000-8000-000000000501", item_external_key: key }],
+    onProposal: (rows) => { proposals = rows; },
+  });
+  const client = {
+    requestEnabled: () => true,
+    async sendRequest() {
+      return { result: { status: "IN_ANALISI", workspaceStatus: "IN_ANALISI", proposals: [{ id: 7, itemExternalKey: key, productionIndex: 1,
+        quantity: 10.25, status: "DaVerificare", materialStatus: "DA_VERIFICARE", expectedMaterialAvailability: null,
+        productionOrderId: null, productionOrderNumber: null }] }, payloadHash: "payload-hash" };
     },
   };
-}
-
-test("retry della stessa preview riusa lo snapshot senza creare RdP", async () => {
-  const admin = fakeAdmin();
-  const first = await prepareProductionNetting({ admin, lineId: "line-1" });
-  const retry = await prepareProductionNetting({ admin, lineId: "line-1" });
-  assert.equal(first.request, null);
-  assert.equal(retry.request, null);
-  assert.equal(first.snapshot.id, retry.snapshot.id);
-  assert.equal(retry.snapshot.reused, true);
-  assert.equal(admin.rpcCalls, 2);
+  await sendProductionRequest({ method: "POST", body: { lineIds: [LINES[0].id] } }, recorder.response, { admin, client });
+  assert.equal(proposals.length, 1);
+  assert.equal(proposals[0].item_external_key, key);
+  assert.equal(proposals[0].production_request_item_id, "00000000-0000-4000-8000-000000000501");
 });
 
-test("endpoint preview registra solo lo snapshot e non invia o crea RdP", async () => {
-  const admin = fakeAdmin();
-  let status; let payload;
-  await previewProductionRequest({ method: "POST", body: { lineId: "line-1" } }, {
-    status(value) { status = value; return { json(value2) { payload = value2; } }; },
-  }, { admin });
-  assert.equal(status, 200);
-  assert.equal(payload.externalId, null);
-  assert.equal(payload.sent, false);
-  assert.equal(payload.netting.toProduce.value, 6);
-  assert.equal(payload.snapshot.sources.availability, "MEXAL_SYNCED_PRODUCT");
-  assert.deepEqual(payload.snapshot.blockingReasons, []);
+test("conflitto idempotente viene restituito come errore controllato", async () => {
+  await assert.rejects(() => prepareProductionDemand({
+    admin: makeAdmin({ rpcError: { message: "IDEMPOTENCY_CONFLICT" } }),
+    orderIds: [ORDERS[0].id],
+    mode: "send",
+  }), { code: "IDEMPOTENCY_CONFLICT", status: 409 });
 });
 
-test("retry della preparazione invio riusa la stessa RdP e lo stesso snapshot", async () => {
-  const admin = fakeAdmin();
-  const first = await prepareProductionNetting({ admin, lineId: "line-1", mode: "send" });
-  const retry = await prepareProductionNetting({ admin, lineId: "line-1", mode: "send" });
-  assert.equal(first.request.id, retry.request.id);
-  assert.equal(first.request.external_id, retry.request.external_id);
-  assert.equal(first.snapshot.id, retry.snapshot.id);
+test("flag invio OFF blocca prima di qualsiasi lettura o scrittura", async () => {
+  let touched = false;
+  const recorder = responseRecorder();
+  await sendProductionRequest({ method: "POST", body: { orderIds: [ORDERS[0].id] } }, recorder.response, {
+    admin: { from() { touched = true; }, rpc() { touched = true; } },
+    client: { requestEnabled: () => false },
+  });
+  assert.equal(recorder.value.status, 403);
+  assert.equal(recorder.value.payload.code, "MODULE_DISABLED");
+  assert.equal(touched, false);
 });
 
-test("articolo non trovato blocca la preview prima dello snapshot", async () => {
-  const rows = {
-    ordini_righe: { id: "line-1", ordine_id: "order-1", codice_articolo: "MISSING", quantita: 10, unita_misura_oct: "PZ", riga_descrittiva: false },
-    ordini_testate: { id: "order-1", origine: "mexal_oct" },
-    prodotti: null,
-  };
-  const admin = {
-    from: (table) => query(rows[table]),
-    rpc: async () => { throw new Error("RPC non deve essere chiamata"); },
-  };
-  await assert.rejects(() => prepareProductionNetting({ admin, lineId: "line-1" }), { code: "PRODUCT_NOT_AVAILABLE" });
+test("doppio click concorrente produce una sola richiesta client con più OCT", async () => {
+  let calls = 0;
+  let release;
+  const wait = new Promise((resolve) => { release = resolve; });
+  const submit = createProductionRequestSubmitter(async (payload) => {
+    calls += 1;
+    await wait;
+    return payload;
+  });
+  const selection = { orderIds: ORDERS.map((order) => order.id), snapshotId: 12 };
+  const first = submit(selection);
+  const second = submit(selection);
+  release();
+  const [left, right] = await Promise.all([first, second]);
+  assert.equal(calls, 1);
+  assert.deepEqual(left, right);
+  assert.equal(left.action, "progremes_production_request");
+  assert.equal(left.orderIds.length, 2);
 });
 
-test("snapshot diverso tra preview e rivalidazione segnala disponibilità cambiata", async () => {
-  const admin = fakeAdmin({ snapshotIds: [31, 32] });
-  const preview = await prepareProductionNetting({ admin, lineId: "line-1" });
-  const confirm = await prepareProductionNetting({ admin, lineId: "line-1", mode: "confirm", expectedSnapshotId: preview.snapshot.id });
-  assert.equal(confirm.changedFromExpected, true);
-});
-
-test("disponibilità cambiata tra invio e conferma blocca la conferma prima di ProgreMES", async () => {
-  let reserveCalls = 0;
-  let outboundCalls = 0;
-  const rows = {
-    workspace_production_proposals: { id: 9, production_request_id: "request-1" },
-    workspace_production_requests: { id: "request-1", ordine_riga_id: "line-1", sent_availability_snapshot_id: 31,
-      sent_quantita_da_produrre: 6, sent_unita_misura: "PZ" },
-    ordini_righe: { id: "line-1", ordine_id: "order-1", codice_articolo: "PB0004", quantita: 10, unita_misura_oct: "PZ", riga_descrittiva: false },
-    ordini_testate: { id: "order-1", origine: "mexal_oct", mexal_chiave: "OC+2+412" },
-    prodotti: { id: "product-1", codice_mexal: "PB0004", disponibilita: 5, sincronizzato_mexal: true, attivo_mexal: true,
-      updated_at: "2026-08-24T20:30:00Z", ultimo_sync_mexal: "2026-08-24T20:00:00Z" },
-    ordini_prodotti_cache: { codice_articolo: "PB0004", unita_misura: "PZ", sincronizzato_il: "2026-08-24T18:00:00Z" },
-  };
-  const admin = {
-    from: (table) => query(rows[table]),
-    rpc: async (name) => {
-      if (name === "reserve_workspace_production_confirmation") reserveCalls++;
-      return { data: [{ request_id: "request-1", external_id: "external-1", snapshot_id: 32,
-        snapshot_captured_at: "2026-08-24T20:31:00Z", reused: false, attempt_count: 1 }], error: null };
-    },
-  };
-  const client = { confirmationEnabled: () => true, confirmProposal: async () => { outboundCalls++; } };
-  let status; let payload;
-  await confirmProductionProposal({ method: "POST", body: { proposalId: 9 } }, { status(value) { status = value; return { json(value2) { payload = value2; } }; } }, { admin, client });
-  assert.equal(status, 409);
-  assert.equal(payload.code, "AVAILABILITY_CHANGED");
-  assert.equal(reserveCalls, 0);
-  assert.equal(outboundCalls, 0);
-});
-
-test("riga totalmente coperta non invia alcuna RdP a ProgreMES", async () => {
-  const admin = fakeAdmin({ availability: 20, snapshotIds: [41] });
-  let outboundCalls = 0;
-  const client = { requestEnabled: () => true, sendRequest: async () => { outboundCalls++; throw new Error("non deve essere chiamato"); } };
-  let status; let payload;
-  await sendProductionRequest({ method: "POST", body: { lineId: "line-1" } }, { status(value) { status = value; return { json(value2) { payload = value2; } }; } }, { admin, client });
-  assert.equal(status, 200);
-  assert.equal(payload.status, "COPERTA_DA_SCORTA");
-  assert.equal(payload.sent, false);
-  assert.equal(outboundCalls, 0);
-});
-
-test("migration conserva snapshot append-only senza creare RdP in preview, lock prodotto e vincoli non negativi", () => {
+test("migration separa testata, righe e snapshot e non contiene nettificazione Workspace", () => {
   const migration = fs.readFileSync(new URL("../supabase/migrations/20260824220000_phase1_pf_netting_udm.sql", import.meta.url), "utf8");
-  assert.match(migration, /workspace_production_availability_snapshots/);
-  assert.match(migration, /unique \(ordine_riga_id, snapshot_hash\)/i);
-  assert.match(migration, /if p_create_request then\s+insert into public\.workspace_production_requests/is);
-  assert.match(migration, /production_request_id uuid references/i);
-  assert.match(migration, /for update/i);
-  assert.match(migration, /AVAILABILITY_CHANGED/);
-  assert.match(migration, /check \(quantita_da_produrre >= 0\)/i);
-  assert.match(migration, /sent_availability_snapshot_id is not null then workspace_status/i);
-  assert.doesNotMatch(migration, /insert\s+into\s+public\.(ordini_testate|ordini_righe|prodotti)/i);
+  assert.match(migration, /workspace_production_request_items/);
+  assert.match(migration, /workspace_production_demand_snapshots/);
+  assert.match(migration, /record_workspace_production_demand/);
+  assert.match(migration, /IDEMPOTENCY_CONFLICT/);
+  assert.doesNotMatch(migration, /quantita_da_produrre/);
+  assert.doesNotMatch(migration, /quantita_disponibile_pf/);
+  assert.doesNotMatch(migration, /AVAILABILITY_CHANGED/);
 });

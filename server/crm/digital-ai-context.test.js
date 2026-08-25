@@ -22,14 +22,14 @@ test("i dettagli per canale rispettano i moduli assegnati all'utente", () => {
 });
 
 test("il prompt vieta dati personali, segreti e interpretazioni di null come zero", () => {
-  assert.match(source, /esclusivamente aggregati degli ultimi 90 giorni/);
+  assert.match(source, /esclusivamente aggregati nel periodo dichiarato/);
   assert.match(source, /clienti, email, consensi, identificativi personali, credenziali o segreti/);
   assert.match(source, /valori null indicano dati insufficienti, non risultati pari a zero/);
 });
 test("il ramo CRM Online invia soltanto brief e aggregati Digital", () => {
   const onlineStart = source.indexOf('if (crmType === "online")');
   const onlineBranch = source.slice(onlineStart, source.indexOf("} else {", onlineStart));
-  assert.match(onlineBranch, /digitalAggregateQueries\(auth\)/);
+  assert.match(onlineBranch, /digitalAggregateQueries\(auth, period\)/);
   assert.doesNotMatch(onlineBranch, /crm_campaigns|crm_creators|crm_accounts|prodotti|v4_progetti/);
 });
 

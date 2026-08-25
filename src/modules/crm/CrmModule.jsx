@@ -7,6 +7,7 @@ import { getModuleIcon } from "../../config/moduleIcons";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
 import CrmAIBrief from "./CrmAIBrief";
+import CrmPeriodFilter, { useCrmPeriod } from "./CrmPeriodFilter";
 import CustomerClassificationPanel from "./CustomerClassificationPanel";
 import { DigitalChannel, DigitalDashboard, DigitalHome, DigitalJourney } from "./DigitalCommerce";
 import { crmTypeConfig, formatDate, formatMoney } from "./crmConfig";
@@ -90,57 +91,51 @@ function CrmOverview() {
 return <ModuleContainerLayout icon={getModuleIcon(overview.icon, BriefcaseBusiness)} eyebrow="Workspace" title={overview.name} description={overview.description} items={overview.items} loading={loading} error={error} onRetry={loadOverview} emptyTitle="Nessuna area CRM disponibile" emptyDescription="L’amministratore può assegnare i moduli CRM dal catalogo Workspace."><CustomerClassificationPanel /></ModuleContainerLayout>;
 }
 
-function Kpi({ label, value, note }) {
-  return <article className="kpi-card crm-kpi"><span>{label}</span><strong>{value}</strong>{note ? <small>{note}</small> : null}</article>;
+function Kpi({ label, value, note, to }) {
+  const content = <><span>{label}</span><strong>{value}</strong>{note ? <small>{note}</small> : null}{to ? <em>Apri dettaglio →</em> : null}</>;
+  return to ? <Link className="kpi-card crm-kpi" to={to} aria-label={`${label}: ${value}. Apri dettaglio`}>{content}</Link> : <article className="kpi-card crm-kpi">{content}</article>;
 }
 
 function CrmDashboard({ type }) {
   const config = crmTypeConfig(type);
-  const [data, setData] = useState({ accounts: [], opportunities: [], activities: [], briefs: [], campaigns: [], creators: [] });
+  const period = useCrmPeriod();
+  const [data, setData] = useState({});
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [days, setDays] = useState("90");
   const load = useCallback(async () => {
     setLoading(true); setError("");
-    const since = new Date(Date.now() - Number(days) * 86400000).toISOString();
-    const queries = [
-      supabase.from("crm_accounts").select("id,stato,valore_cliente,creato_il,prossima_attivita_il").eq("tipo", type).gte("creato_il", since),
-      supabase.from("crm_opportunities").select("id,valore,stage_id,chiusura_prevista,crm_opportunity_stages(finale,vinta),crm_accounts!inner(tipo)").eq("crm_accounts.tipo", type),
-      supabase.from("crm_activities").select("id,stato,data_attivita").eq("crm_tipo", type),
-      supabase.from("crm_briefs").select("id,stato").eq("crm_tipo", type),
-    ];
-    if (type === "online") queries.push(supabase.from("crm_campaigns").select("id,stato,budget,data_fine"), supabase.from("crm_creators").select("id,costi,vendite_attribuite"));
-    const results = await Promise.all(queries);
-    const failure = results.find((result) => result.error)?.error;
-    if (failure) setError(failure.message);
-    else setData({ accounts: results[0].data || [], opportunities: results[1].data || [], activities: results[2].data || [], briefs: results[3].data || [], campaigns: results[4]?.data || [], creators: results[5]?.data || [] });
+    const { data: metrics, error: metricsError } = await supabase.rpc("crm_dashboard_metrics", {
+      p_crm_type: type, p_from: period.from, p_to: period.to, p_inactivity_days: 90,
+    });
+    if (metricsError) setError(metricsError.message); else setData(metrics || {});
     setLoading(false);
-  }, [days, type]);
+  }, [period.from, period.to, type]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
-  const [now] = useState(() => Date.now());
-  const openOpportunities = data.opportunities.filter((item) => !item.crm_opportunity_stages?.finale);
-  const pipelineValue = openOpportunities.reduce((sum, item) => sum + Number(item.valore || 0), 0);
-  const overdue = data.activities.filter((item) => item.stato !== "completata" && item.data_attivita && new Date(item.data_attivita).getTime() < now).length;
-  const activeCampaigns = data.campaigns.filter((item) => item.stato === "attiva").length;
+
   const navigation = type === "conto_terzi"
     ? [["Clienti", `${config.basePath}/clienti`], ["Pipeline", `${config.basePath}/pipeline`], ["Brief", `${config.basePath}/brief`]]
     : type === "b2b"
       ? [["Clienti", `${config.basePath}/clienti`], ["Pipeline", `${config.basePath}/pipeline`]]
       : [["Clienti", `${config.basePath}/clienti`], ["Campagne", `${config.basePath}/campagne`], ["Creator", `${config.basePath}/creators`], ["Customer Journey", `${config.basePath}/journey`]];
   return <div className="crm-page">
-    <div className="crm-toolbar"><div><h2>Dashboard {config.label}</h2><p>I valori riflettono soltanto i record compresi nel tuo ambito dati.</p></div><label>Intervallo<select value={days} onChange={(event) => setDays(event.target.value)}><option value="30">30 giorni</option><option value="90">90 giorni</option><option value="365">12 mesi</option></select></label></div>
-    <nav className="crm-quick-nav" aria-label={`Aree CRM ${config.label}`}>{navigation.map(([label, to]) => <Link key={to} to={to}>{label}</Link>)}</nav>
+    <div className="crm-toolbar"><div><h2>Dashboard {config.label}</h2><p>KPI reali nel tuo ambito dati. Ordinato Workspace e fatturato Mexal restano metriche distinte.</p></div><CrmPeriodFilter period={period} /></div>
+    <nav className="crm-quick-nav" aria-label={`Aree CRM ${config.label}`}>{navigation.map(([label, to]) => <Link key={to} to={period.withPeriod(to)}>{label}</Link>)}</nav>
     <ErrorBox error={error} retry={load} />
     {loading ? <div className="crm-loading">Caricamento KPI...</div> : <div className="crm-kpi-grid">
-      <Kpi label={type === "online" ? "Clienti ecommerce" : "Clienti attivi"} value={data.accounts.filter((item) => item.stato === "attivo" || item.stato === "cliente_attivo").length} />
-      <Kpi label="Nuovi clienti / prospect" value={data.accounts.length} note={`Ultimi ${days} giorni`} />
-      <Kpi label="Opportunità aperte" value={openOpportunities.length} />
-      <Kpi label="Valore pipeline" value={formatMoney(pipelineValue)} />
-      <Kpi label="Brief aperti" value={data.briefs.filter((item) => !["archiviato", "trasformato_in_progetto"].includes(item.stato)).length} />
-      <Kpi label="Follow-up scaduti" value={overdue} />
-      {type === "online" ? <><Kpi label="Campagne attive" value={activeCampaigns} /><Kpi label="ROAS" value="Dato non disponibile" note="Richiede connettore ADV autorizzato" /><Kpi label="CAC / LTV" value="Dato non disponibile" note="Richiede costi marketing ed ecommerce" /></> : null}
-      {type === "b2b" ? <><Kpi label="Fatturato" value="Dato da Mexal" note="Disponibile nelle schede collegate" /><Kpi label="Clienti senza riordino" value="Dato non disponibile" note="Richiede soglia temporale configurata" /></> : null}
+      <Kpi label="Clienti classificati" value={Number(data.customers || 0).toLocaleString("it-IT")} to={period.withPeriod(`${config.basePath}/clienti`)} />
+      <Kpi label="Clienti attivi nel periodo" value={Number(data.customers_with_activity || 0).toLocaleString("it-IT")} note="Almeno un ordine o una fattura" to={period.withPeriod(`${config.basePath}/clienti`, { metric: "active" })} />
+      <Kpi label="Nuovi clienti" value={Number(data.new_customers || 0).toLocaleString("it-IT")} note="Prima vendita documentata nel periodo" to={period.withPeriod(`${config.basePath}/clienti`, { metric: "new" })} />
+      <Kpi label="Fatturato" value={formatMoney(data.invoice_total)} note={`${data.invoice_count || 0} fatture Mexal`} to={period.withPeriod(`${config.basePath}/clienti`, { metric: "invoiced" })} />
+      <Kpi label="Ordinato" value={formatMoney(data.order_total)} note={`${data.order_count || 0} ordini Workspace`} to={period.withPeriod(`${config.basePath}/clienti`, { metric: "ordered" })} />
+      <Kpi label="Valore medio ordine" value={formatMoney(data.average_order_value)} note="Solo ordini Workspace nel periodo" to={period.withPeriod(`${config.basePath}/clienti`, { metric: "ordered" })} />
+      <Kpi label="Clienti inattivi" value={Number(data.inactive_customers || 0).toLocaleString("it-IT")} note="Nessun documento negli ultimi 90 giorni" to={period.withPeriod(`${config.basePath}/clienti`, { metric: "inactive" })} />
+      <Kpi label="Opportunità aperte" value={Number(data.open_opportunities || 0).toLocaleString("it-IT")} to={period.withPeriod(`${config.basePath}/pipeline`, { status: "open" })} />
+      <Kpi label="Valore pipeline" value={formatMoney(data.pipeline_value)} to={period.withPeriod(`${config.basePath}/pipeline`)} />
+      <Kpi label="Pipeline ponderata" value={formatMoney(data.weighted_pipeline)} note="Valore × probabilità" to={period.withPeriod(`${config.basePath}/pipeline`)} />
+      <Kpi label="Opportunità scadute" value={Number(data.overdue_opportunities || 0).toLocaleString("it-IT")} to={period.withPeriod(`${config.basePath}/pipeline`, { overdue: "1" })} />
+      <Kpi label="Follow-up scaduti" value={Number(data.overdue_followups || 0).toLocaleString("it-IT")} to={period.withPeriod(`${config.basePath}/pipeline`, { followup: "overdue" })} />
     </div>}
+    {!loading && !error ? <div className="crm-source-notes"><p><strong>Fatturato:</strong> {data.invoice_source_note}</p><p><strong>Ordinato:</strong> {data.order_source_note}</p></div> : null}
   </div>;
 }
 
@@ -174,82 +169,70 @@ function aggregatePurchasedProducts(lines) {
 
 function AccountsPage({ type }) {
   const config = crmTypeConfig(type);
+  const period = useCrmPeriod();
+  const metric = period.getParam("metric") || "all";
   const { profile, canUseModule } = useAuth();
   const canWrite = canUseModule(config.moduleCode, "scrittura");
   const [rows, setRows] = useState([]); const [search, setSearch] = useState(""); const [status, setStatus] = useState(""); const [page, setPage] = useState(0); const [canonicalTotal, setCanonicalTotal] = useState(0); const [prospectTotal, setProspectTotal] = useState(0);
-  const [form, setForm] = useState(EMPTY_ACCOUNT); const [open, setOpen] = useState(false); const [error, setError] = useState("");
+  const [form, setForm] = useState(EMPTY_ACCOUNT); const [open, setOpen] = useState(false); const [error, setError] = useState(""); const [loading, setLoading] = useState(true);
   const load = useCallback(async () => {
+    setLoading(true);
     const term = search.trim().replaceAll(",", " ");
-    let canonicalQuery = supabase
-      .from("crm_classified_customers")
-      .select("codice_cliente,ragione_sociale,agente_classificazione,area_crm,origine_classificazione,modalita,attivo_mexal,stato_crm,valore_cliente,ultima_attivita_il,prossima_attivita_il,opportunita_count,ultimo_ordine_il,fatturato")
-      .eq("area_crm", type)
-      .order("ragione_sociale")
-      .range(page * CRM_CUSTOMER_PAGE_SIZE, page * CRM_CUSTOMER_PAGE_SIZE + CRM_CUSTOMER_PAGE_SIZE - 1);
     let prospectQuery = supabase
       .from("crm_accounts")
       .select("id,nome,stato,stato_relazione,valore_cliente,email,telefono,ultima_attivita_il,prossima_attivita_il,crm_opportunities(count)", { count: "exact" })
-      .eq("tipo", type)
-      .is("codice_cliente_mexal", null)
-      .order("aggiornato_il", { ascending: false })
-      .limit(CRM_CUSTOMER_PAGE_SIZE);
-    if (term) {
-      canonicalQuery = canonicalQuery.or(`ragione_sociale.ilike.%${term}%,codice_cliente.ilike.%${term}%,agente_classificazione.ilike.%${term}%`);
-      prospectQuery = prospectQuery.or(`nome.ilike.%${term}%,email.ilike.%${term}%`);
-    }
+      .eq("tipo", type).is("codice_cliente_mexal", null)
+      .order("aggiornato_il", { ascending: false }).limit(CRM_CUSTOMER_PAGE_SIZE);
+    if (term) prospectQuery = prospectQuery.or(`nome.ilike.%${term}%,email.ilike.%${term}%`);
     if (status) prospectQuery = prospectQuery.eq("stato", status);
-    const canonicalCountQuery = supabase.from("crm_customer_classifications")
-      .select("codice_cliente", { count: "exact", head: true })
-      .eq("area_crm", type);
-    const [canonicalResult, canonicalCountResult, prospectResult] = await Promise.all([canonicalQuery, canonicalCountQuery, prospectQuery]);
-    const loadError = canonicalResult.error || canonicalCountResult.error || prospectResult.error;
-    if (loadError) return setError(loadError.message);
+    const [canonicalResult, prospectResult] = await Promise.all([
+      supabase.rpc("crm_customer_metric_details", {
+        p_crm_type: type, p_from: period.from, p_to: period.to, p_metric: metric,
+        p_search: term || null, p_limit: CRM_CUSTOMER_PAGE_SIZE, p_offset: page * CRM_CUSTOMER_PAGE_SIZE,
+      }),
+      page === 0 && metric === "all" ? prospectQuery : Promise.resolve({ data: [], count: 0, error: null }),
+    ]);
+    const loadError = canonicalResult.error || prospectResult.error;
+    if (loadError) { setError(loadError.message); setLoading(false); return; }
     const canonicalRows = (canonicalResult.data || []).map((row) => ({
-      ...row,
-      entityKey: `mexal:${row.codice_cliente}`,
-      routeId: customerRouteId("mexal", row.codice_cliente),
-      source: "Workspace/Mexal",
-      nome: row.ragione_sociale,
-      codice: row.codice_cliente,
-      stato: row.stato_crm || (row.attivo_mexal ? "attivo" : "inattivo"),
-      opportunities: row.opportunita_count || 0,
+      ...row, entityKey: `mexal:${row.codice_cliente}`, routeId: customerRouteId("mexal", row.codice_cliente),
+      source: "Workspace/Mexal", nome: row.ragione_sociale, codice: row.codice_cliente,
+      stato: row.stato_crm || (row.attivo_mexal ? "attivo" : "inattivo"), opportunities: row.opportunita_count || 0,
     }));
     const prospectRows = (prospectResult.data || []).map((row) => ({
-      ...row,
-      entityKey: `crm:${row.id}`,
-      routeId: customerRouteId("crm", row.id),
-      source: "Prospect CRM-only",
-      codice: row.email || "—",
-      agente_classificazione: null,
-      area_crm: type,
-      origine_classificazione: "crm_only",
+      ...row, entityKey: `crm:${row.id}`, routeId: customerRouteId("crm", row.id), source: "Prospect CRM-only",
+      codice: row.email || "—", agente_classificazione: null, origine_classificazione: "crm_only",
       opportunities: row.crm_opportunities?.[0]?.count || 0,
     }));
-    setRows([...canonicalRows, ...(page === 0 ? prospectRows : [])].filter((row) => !status || row.stato === status));
-    setCanonicalTotal(canonicalCountResult.count || 0);
+    setRows([...canonicalRows, ...prospectRows].filter((row) => !status || row.stato === status));
+    setCanonicalTotal(Number(canonicalResult.data?.[0]?.total_count || 0));
     setProspectTotal(prospectResult.count || 0);
-    setError("");
-  }, [page, search, status, type]);
+    setError(""); setLoading(false);
+  }, [metric, page, period.from, period.to, search, status, type]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 180); return () => window.clearTimeout(timer); }, [load]);
+
   async function save(event) {
     event.preventDefault(); if (!canWrite) return;
     const payload = { ...form, tipo: type, nome: form.nome.trim(), responsabile_id: profile.id, reparto_id: profile.reparto_ids?.[0] || profile.reparto_id || null, creato_da: profile.id, codice_cliente_mexal: null, fonte: "crm_only" };
     const { error: saveError } = await supabase.from("crm_accounts").insert(payload); if (saveError) return setError(saveError.message);
     setForm(EMPTY_ACCOUNT); setOpen(false); await load();
   }
-  return <div className="crm-page"><div className="crm-toolbar"><div><h2>Clienti {config.label}</h2><p>{canonicalTotal} clienti Workspace/Mexal · {prospectTotal} prospect CRM-only nel perimetro autorizzato.</p></div>{canWrite ? <button className="primary-action crm-primary" type="button" onClick={() => setOpen(true)}><Plus size={17} />Nuovo prospect</button> : null}</div>
+
+  const metricLabels = { all: "Tutti i clienti", active: "Attivi nel periodo", new: "Nuovi nel periodo", invoiced: "Con fatture nel periodo", ordered: "Con ordini nel periodo", inactive: "Inattivi da almeno 90 giorni" };
+  return <div className="crm-page">
+    <div className="crm-toolbar"><div><h2>Clienti {config.label}</h2><p>{canonicalTotal} clienti nel dettaglio “{metricLabels[metric] || metric}” · {prospectTotal} prospect CRM-only.</p></div><div className="crm-toolbar-actions"><CrmPeriodFilter period={period} compact />{canWrite ? <button className="primary-action crm-primary" type="button" onClick={() => setOpen(true)}><Plus size={17} />Nuovo prospect</button> : null}</div></div>
     <div className="crm-filters"><label><Search size={16} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0); }} placeholder="Ragione sociale, agente, email o codice" /></label><select value={status} onChange={(event) => { setStatus(event.target.value); setPage(0); }}><option value="">Tutti gli stati</option><option value="prospect">Prospect</option><option value="attivo">Attivo</option><option value="inattivo">Inattivo</option></select></div>
     <ErrorBox error={error} retry={load} />
-    <div className="crm-table-wrap"><table className="crm-table crm-customer-table"><thead><tr><th>Cliente</th><th>Agente</th><th>Area / origine</th><th>Stato CRM</th><th>Ultimo ordine</th>{type === "b2b" ? <th>Fatturato</th> : null}<th>Ultima attività</th><th>Prossima attività</th><th>Opportunità</th></tr></thead><tbody>{rows.map((row) => <tr key={row.entityKey}><td><Link to={`${config.basePath}/clienti/${row.routeId}`}><strong>{row.nome}</strong><small>{row.codice}</small></Link><span className={`crm-source-badge ${row.source === "Workspace/Mexal" ? "canonical" : "prospect"}`}>{row.source}</span></td><td>{row.agente_classificazione || "—"}</td><td><strong>{config.label}</strong><small>{row.origine_classificazione}</small></td><td><span className="crm-status">{row.stato}</span></td><td>{formatDate(row.ultimo_ordine_il)}</td>{type === "b2b" ? <td>{formatMoney(row.fatturato)}</td> : null}<td>{formatDate(row.ultima_attivita_il)}</td><td>{formatDate(row.prossima_attivita_il)}</td><td>{row.opportunities}</td></tr>)}</tbody></table>{!rows.length ? <div className="crm-empty">Nessun cliente canonico o prospect CRM-only visibile con i filtri correnti.</div> : null}</div>
-    <div className="crm-pagination"><button type="button" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>Precedente</button><span>Pagina {page + 1} · {canonicalTotal} clienti canonici</span><button type="button" disabled={(page + 1) * CRM_CUSTOMER_PAGE_SIZE >= canonicalTotal} onClick={() => setPage((value) => value + 1)}>Successiva</button></div>
+    {loading ? <div className="crm-loading">Caricamento clienti...</div> : <div className="crm-table-wrap"><table className="crm-table crm-customer-table"><thead><tr><th>Cliente</th><th>Agente</th><th>Stato</th><th>Fatturato periodo</th><th>Ordinato periodo</th><th>Ultimo ordine</th><th>Prossima attività</th><th>Opportunità</th></tr></thead><tbody>{rows.map((row) => <tr key={row.entityKey}><td><Link to={period.withPeriod(`${config.basePath}/clienti/${row.routeId}`)}><strong>{row.nome}</strong><small>{row.codice}</small></Link><span className={`crm-source-badge ${row.source === "Workspace/Mexal" ? "canonical" : "prospect"}`}>{row.source}</span></td><td>{row.agente_classificazione || "—"}</td><td><span className="crm-status">{row.stato}</span><small>{row.origine_classificazione}</small></td><td><strong>{formatMoney(row.invoice_total)}</strong><small>{row.invoice_count || 0} fatture</small></td><td><strong>{formatMoney(row.order_total)}</strong><small>{row.order_count || 0} ordini</small></td><td>{formatDate(row.ultimo_ordine_il)}</td><td>{formatDate(row.prossima_attivita_il)}</td><td>{row.opportunities}</td></tr>)}</tbody></table>{!rows.length ? <div className="crm-empty">Nessun cliente compone questo KPI nel periodo selezionato.</div> : null}</div>}
+    <div className="crm-pagination"><button type="button" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>Precedente</button><span>Pagina {page + 1} · {canonicalTotal} clienti</span><button type="button" disabled={(page + 1) * CRM_CUSTOMER_PAGE_SIZE >= canonicalTotal} onClick={() => setPage((value) => value + 1)}>Successiva</button></div>
     {open ? <div className="crm-modal-backdrop"><form className="crm-modal" onSubmit={save}><h3>Nuovo prospect CRM-only {config.label}</h3><p>Il prospect resta nel layer CRM e non crea né duplica un cliente Workspace/Mexal.</p><label>Nome<input required value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} /></label><div className="crm-form-grid"><label>Stato<select value={form.stato} onChange={(e) => setForm({ ...form, stato: e.target.value })}><option value="prospect">Prospect</option><option value="attivo">Attivo</option></select></label><label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label><label>Telefono<input value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} /></label></div><div className="crm-modal-actions"><button type="button" onClick={() => setOpen(false)}>Annulla</button><button className="primary-action crm-primary">Salva prospect</button></div></form></div> : null}
   </div>;
 }
 
 function AccountDetail({ type }) {
-  const { id } = useParams(); const config = crmTypeConfig(type); const { profile, canUseModule } = useAuth();
+  const { id } = useParams(); const config = crmTypeConfig(type); const period = useCrmPeriod(); const { profile, canUseModule } = useAuth();
   const canWrite = canUseModule(config.moduleCode, "scrittura");
-  const [account, setAccount] = useState(null); const [related, setRelated] = useState({ contacts: [], opportunities: [], activities: [], briefs: [], orders: [], invoices: [], products: [], consents: [], events: [], externalOrders: [] }); const [error, setError] = useState(""); const [warning, setWarning] = useState("");
+  const [account, setAccount] = useState(null); const [metrics, setMetrics] = useState({}); const [related, setRelated] = useState({ contacts: [], opportunities: [], activities: [], briefs: [], orders: [], invoices: [], products: [], consents: [], events: [], externalOrders: [] }); const [error, setError] = useState(""); const [warning, setWarning] = useState("");
   const [activity, setActivity] = useState({ tipo: "telefonata", titolo: "", data_attivita: "" });
   const load = useCallback(async () => {
     setError(""); setWarning("");
@@ -274,13 +257,17 @@ function AccountDetail({ type }) {
     const crmAccountId = current.crm_account_id;
     const customerCode = current.codice_cliente_mexal;
     const emptyResult = { data: [], error: null };
+    if (customerCode) {
+      const metricResult = await supabase.rpc("crm_customer_period_metrics", { p_customer_code: customerCode, p_crm_type: type, p_from: period.from, p_to: period.to });
+      if (metricResult.error) setWarning(metricResult.error.message); else setMetrics(metricResult.data || {});
+    } else setMetrics({});
     const [contactsResult, opportunitiesResult, activitiesResult, briefsResult, ordersResult, invoicesResult, externalOrdersResult, consentsResult, eventsResult] = await Promise.all([
       crmAccountId ? supabase.from("crm_contacts").select("*").eq("account_id", crmAccountId) : emptyResult,
       crmAccountId ? supabase.from("crm_opportunities").select("*,crm_opportunity_stages(nome)").eq("account_id", crmAccountId) : emptyResult,
       crmAccountId ? supabase.from("crm_activities").select("*").eq("account_id", crmAccountId).order("data_attivita", { ascending: false }) : emptyResult,
       crmAccountId ? supabase.from("crm_briefs").select("id,titolo,stato,aggiornato_il").eq("account_id", crmAccountId) : emptyResult,
-      customerCode ? supabase.from("ordini_testate").select("id,numero_ordine_visualizzato,data_ordine,stato,totale_documento").eq("codice_cliente", customerCode).order("data_ordine", { ascending: false }).limit(50) : emptyResult,
-      customerCode ? supabase.from("mexal_fatture_vendita").select("id,sigla,serie,numero,data_documento,totale_documento").eq("codice_cliente", customerCode).order("data_documento", { ascending: false }).limit(50) : emptyResult,
+      customerCode ? supabase.from("ordini_testate").select("id,numero_ordine_visualizzato,data_ordine,stato,totale_documento").eq("codice_cliente", customerCode).gte("data_ordine", period.from).lte("data_ordine", period.to).order("data_ordine", { ascending: false }).limit(50) : emptyResult,
+      customerCode ? supabase.from("mexal_fatture_vendita").select("id,sigla,serie,numero,data_documento,totale_documento").eq("codice_cliente", customerCode).gte("data_documento", period.from).lte("data_documento", period.to).order("data_documento", { ascending: false }).limit(50) : emptyResult,
       type === "online" && crmAccountId ? supabase.from("crm_external_orders").select("id,external_id,ordered_at,stato,net_revenue,attribution_method").eq("account_id", crmAccountId).order("ordered_at", { ascending: false }).limit(50) : emptyResult,
       type === "online" && crmAccountId ? supabase.from("crm_marketing_consents").select("id,purpose,status,legal_basis,source,captured_at,withdrawn_at").eq("account_id", crmAccountId).order("captured_at", { ascending: false }).limit(50) : emptyResult,
       type === "online" && crmAccountId ? supabase.from("crm_customer_events").select("id,fase,avvenuto_il,fonte").eq("account_id", crmAccountId).order("avvenuto_il", { ascending: false }).limit(50) : emptyResult,
@@ -291,7 +278,7 @@ function AccountDetail({ type }) {
     if (invoiceLinesResult.error) failures.push(invoiceLinesResult.error.message);
     setWarning([...new Set(failures)].join(" · "));
     setRelated({ contacts: contactsResult.data || [], opportunities: opportunitiesResult.data || [], activities: activitiesResult.data || [], briefs: briefsResult.data || [], orders: ordersResult.data || [], invoices: invoicesResult.data || [], products: aggregatePurchasedProducts(invoiceLinesResult.data || []), consents: consentsResult.data || [], events: eventsResult.data || [], externalOrders: externalOrdersResult.data || [] });
-  }, [id, type]);
+  }, [id, period.from, period.to, type]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
   async function addActivity(event) {
     event.preventDefault(); if (!canWrite || !activity.titolo.trim()) return;
@@ -303,8 +290,16 @@ function AccountDetail({ type }) {
   }
   if (error) return <ErrorBox error={error} retry={load} />; if (!account) return <div className="crm-loading">Caricamento cliente...</div>;
   return <div className="crm-page">
-    <div className="crm-toolbar"><div><span className="crm-eyebrow">{config.label}</span><h2>{account.nome}</h2><p>{account.codice_cliente_mexal ? `Cliente Workspace/Mexal ${account.codice_cliente_mexal}` : "Prospect CRM-only"}</p><span className={`crm-source-badge ${account.entity_kind}`}>{account.entity_kind === "canonical" ? "Anagrafica canonica" : "CRM-only"}</span></div><Link className="secondary-action crm-secondary" to={`${config.basePath}/clienti`}>Torna ai clienti</Link></div>
+    <div className="crm-toolbar"><div><span className="crm-eyebrow">{config.label}</span><h2>{account.nome}</h2><p>{account.codice_cliente_mexal ? `Cliente Workspace/Mexal ${account.codice_cliente_mexal}` : "Prospect CRM-only"}</p><span className={`crm-source-badge ${account.entity_kind}`}>{account.entity_kind === "canonical" ? "Anagrafica canonica" : "CRM-only"}</span></div><Link className="secondary-action crm-secondary" to={period.withPeriod(`${config.basePath}/clienti`)}>Torna ai clienti</Link></div>
     {warning ? <div className="crm-message warning">Alcuni dati collegati non sono disponibili nel perimetro corrente: {warning}</div> : null}
+    {account.codice_cliente_mexal ? <div className="crm-kpi-grid crm-customer-metrics">
+      <Kpi label="Fatturato nel periodo" value={formatMoney(metrics.invoice_period_total)} note={`${metrics.invoice_period_count || 0} fatture Mexal`} to="#invoices" />
+      <Kpi label="Fatturato lifetime" value={formatMoney(metrics.invoice_lifetime_total)} note={`${metrics.invoice_lifetime_count || 0} fatture`} to="#invoices" />
+      <Kpi label="Ordinato nel periodo" value={formatMoney(metrics.order_period_total)} note={`${metrics.order_period_count || 0} ordini Workspace`} to="#orders" />
+      <Kpi label="Ordinato lifetime" value={formatMoney(metrics.order_lifetime_total)} note={`${metrics.order_lifetime_count || 0} ordini Workspace`} to="#orders" />
+      <Kpi label="Valore medio ordine" value={formatMoney(metrics.average_order_value)} note="Periodo selezionato" to="#orders" />
+      <Kpi label="Ultimo documento" value={formatDate(metrics.last_invoice_date || metrics.last_order_date)} to="#invoices" />
+    </div> : null}
     <div className="crm-detail-grid">
       <section className="panel crm-panel"><h3>Anagrafica</h3><dl><div><dt>Codice cliente</dt><dd>{account.codice_cliente_mexal || "—"}</dd></div><div><dt>Stato</dt><dd>{account.stato}</dd></div><div><dt>Agente Workspace/Mexal</dt><dd>{account.agente_nome || "—"}</dd></div><div><dt>Area CRM</dt><dd>{config.label}</dd></div><div><dt>Classificazione</dt><dd>{account.origine_classificazione ? `${account.origine_classificazione} · ${account.modalita_classificazione}` : "CRM-only"}</dd></div><div><dt>Partita IVA</dt><dd>{account.partita_iva || "—"}</dd></div><div><dt>Email</dt><dd>{account.email || "—"}</dd></div><div><dt>Telefono</dt><dd>{account.telefono || "—"}</dd></div><div><dt>Indirizzo</dt><dd>{[account.indirizzo, account.cap, account.citta, account.provincia].filter(Boolean).join(" · ") || "—"}</dd></div><div><dt>Valore CRM</dt><dd>{formatMoney(account.valore_cliente)}</dd></div></dl></section>
       <section className="panel crm-panel"><h3>AI Summary</h3><p>La sintesi AI viene generata soltanto su richiesta dall’AI Business Assistant e nel perimetro autorizzato.</p><Link to="/crm/ai" state={{ accountId: account.crm_account_id || null, customerCode: account.codice_cliente_mexal || null, crmType: type }}>Apri AI Brief</Link></section>
@@ -314,8 +309,8 @@ function AccountDetail({ type }) {
       <section className="panel crm-panel"><h3>Opportunità</h3>{related.opportunities.map((item) => <div className="crm-row-card" key={item.id}><strong>{item.titolo}</strong><span>{item.crm_opportunity_stages?.nome || "Senza fase"} · {formatMoney(item.valore)}</span></div>)}{!related.opportunities.length ? <p>Nessuna opportunità disponibile.</p> : null}</section>
       <section className="panel crm-panel"><h3>Attività e contatti CRM</h3>{related.contacts.map((item) => <div className="crm-row-card" key={item.id}><strong>{[item.nome, item.cognome].filter(Boolean).join(" ")}</strong><span>{item.ruolo || "Contatto"} · {item.email || item.telefono || "—"}</span></div>)}{!related.contacts.length ? <p>Nessun contatto CRM disponibile.</p> : null}</section>
       <section className="panel crm-panel"><h3>Brief</h3>{related.briefs.map((item) => <div className="crm-row-card" key={item.id}><strong>{item.titolo}</strong><span>{item.stato}</span></div>)}{!related.briefs.length ? <p>Nessun brief disponibile.</p> : null}</section>
-      {account.codice_cliente_mexal ? <><section className="panel crm-panel"><h3>Ordini Workspace/Mexal</h3>{related.orders.map((item) => <div className="crm-row-card" key={item.id}><strong>{item.numero_ordine_visualizzato || item.id}</strong><span>{formatDate(item.data_ordine)} · {formatMoney(item.totale_documento)} · {item.stato}</span></div>)}{!related.orders.length ? <p>Nessun ordine disponibile nel perimetro autorizzato.</p> : null}</section>
-      <section className="panel crm-panel"><h3>Fatture Mexal</h3>{related.invoices.map((item) => <div className="crm-row-card" key={item.id}><strong>{item.sigla} {item.serie}/{item.numero}</strong><span>{formatDate(item.data_documento)} · {formatMoney(item.totale_documento)}</span></div>)}{!related.invoices.length ? <p>Nessuna fattura disponibile nel perimetro autorizzato.</p> : null}</section>
+      {account.codice_cliente_mexal ? <><section id="orders" className="panel crm-panel"><h3>Ordini Workspace/Mexal · periodo selezionato</h3>{related.orders.map((item) => <div className="crm-row-card" key={item.id}><strong>{item.numero_ordine_visualizzato || item.id}</strong><span>{formatDate(item.data_ordine)} · {formatMoney(item.totale_documento)} · {item.stato}</span></div>)}{!related.orders.length ? <p>Nessun ordine disponibile nel perimetro autorizzato.</p> : null}</section>
+      <section id="invoices" className="panel crm-panel"><h3>Fatture Mexal · periodo selezionato</h3>{related.invoices.map((item) => <div className="crm-row-card" key={item.id}><strong>{item.sigla} {item.serie}/{item.numero}</strong><span>{formatDate(item.data_documento)} · {formatMoney(item.totale_documento)}</span></div>)}{!related.invoices.length ? <p>Nessuna fattura disponibile nel perimetro autorizzato.</p> : null}</section>
       <section className="panel crm-panel"><h3>Prodotti acquistati</h3>{related.products.slice(0, 100).map((item) => <div className="crm-row-card" key={item.code || item.description}><strong>{item.description}</strong><span>{item.code || "Senza codice"} · Q.tà {item.quantity.toLocaleString("it-IT")} · {formatMoney(item.value)}</span></div>)}{!related.products.length ? <p>Nessun prodotto derivabile dalle fatture visibili.</p> : null}</section></> : null}
       <section className="panel crm-panel"><h3>Note e documenti</h3><p>{account.metadati?.note || "Nessuna nota CRM disponibile."}</p><p>I documenti restano nella libreria Workspace e vengono mostrati solo quando esiste un collegamento autorizzato.</p></section>
     </div>
@@ -324,14 +319,111 @@ function AccountDetail({ type }) {
 }
 
 function Pipeline({ type }) {
-  const config = crmTypeConfig(type); const { profile, canUseModule } = useAuth(); const canWrite = canUseModule(config.moduleCode, "scrittura");
-  const [stages, setStages] = useState([]); const [items, setItems] = useState([]); const [accounts, setAccounts] = useState([]); const [error, setError] = useState("");
-  const [form, setForm] = useState({ titolo: "", account_id: "", valore: "" });
-  const load = useCallback(async () => { const [s, o, a] = await Promise.all([supabase.from("crm_opportunity_stages").select("*").eq("crm_tipo", type).eq("attiva", true).order("ordine"), supabase.from("crm_opportunities").select("*,crm_accounts!inner(nome,tipo)").eq("crm_accounts.tipo", type), supabase.from("crm_accounts").select("id,nome").eq("tipo", type).order("nome")]); const failure = s.error || o.error || a.error; if (failure) setError(failure.message); else { setStages(s.data || []); setItems(o.data || []); setAccounts(a.data || []); } }, [type]);
+  const config = crmTypeConfig(type); const period = useCrmPeriod(); const { profile, canUseModule } = useAuth(); const canWrite = canUseModule(config.moduleCode, "scrittura");
+  const [stages, setStages] = useState([]); const [items, setItems] = useState([]); const [accounts, setAccounts] = useState([]); const [customers, setCustomers] = useState([]); const [error, setError] = useState(""); const [loading, setLoading] = useState(true);
+  const [view, setView] = useState("kanban"); const [stageFilter, setStageFilter] = useState(""); const [search, setSearch] = useState(""); const [customerSearch, setCustomerSearch] = useState(""); const [selected, setSelected] = useState(null);
+  const [form, setForm] = useState({ titolo: "", customer_ref: "", valore: "", probabilita: "20", chiusura_prevista: "" });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [s, o, a] = await Promise.all([
+      supabase.from("crm_opportunity_stages").select("*").eq("crm_tipo", type).eq("attiva", true).order("ordine"),
+      supabase.from("crm_opportunities").select("*,crm_accounts!inner(nome,tipo,codice_cliente_mexal),crm_opportunity_stages(nome,finale,vinta),crm_opportunity_stage_history(changed_at),crm_activities(id,titolo,stato,data_attivita)").eq("crm_accounts.tipo", type).order("aggiornato_il", { ascending: false }).limit(1000),
+      supabase.from("crm_accounts").select("id,nome,codice_cliente_mexal").eq("tipo", type).order("nome").limit(500),
+    ]);
+    const failure = s.error || o.error || a.error;
+    if (failure) setError(failure.message); else { setStages(s.data || []); setItems(o.data || []); setAccounts(a.data || []); setError(""); }
+    setLoading(false);
+  }, [type]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
-  async function create(event) { event.preventDefault(); const first = stages[0]; if (!first) return; const { error: e } = await supabase.from("crm_opportunities").insert({ ...form, valore: form.valore ? Number(form.valore) : null, stage_id: first.id, responsabile_id: profile.id, reparto_id: profile.reparto_ids?.[0] || null, creato_da: profile.id }); if (e) setError(e.message); else { setForm({ titolo: "", account_id: "", valore: "" }); await load(); } }
-  async function move(id, stageId) { if (!canWrite) return; const { error: e } = await supabase.from("crm_opportunities").update({ stage_id: stageId }).eq("id", id); if (e) setError(e.message); else await load(); }
-  return <div className="crm-page"><div className="crm-toolbar"><div><h2>Pipeline {config.label}</h2><p>Le fasi sono configurate nel database e non nel componente.</p></div></div><ErrorBox error={error} retry={load} />{canWrite ? <form className="crm-inline-form" onSubmit={create}><input required placeholder="Titolo opportunità" value={form.titolo} onChange={(e) => setForm({ ...form, titolo: e.target.value })} /><select required value={form.account_id} onChange={(e) => setForm({ ...form, account_id: e.target.value })}><option value="">Cliente</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}</select><input type="number" min="0" step="0.01" placeholder="Valore" value={form.valore} onChange={(e) => setForm({ ...form, valore: e.target.value })} /><button className="primary-action crm-primary"><Plus size={16} />Crea</button></form> : null}<div className="crm-kanban">{stages.map((stage) => <section key={stage.id} onDragOver={(e) => e.preventDefault()} onDrop={(e) => void move(e.dataTransfer.getData("text/plain"), stage.id)}><header><strong>{stage.nome}</strong><span>{items.filter((item) => item.stage_id === stage.id).length}</span></header>{items.filter((item) => item.stage_id === stage.id).map((item) => <article draggable={canWrite} onDragStart={(e) => e.dataTransfer.setData("text/plain", item.id)} key={item.id}><strong>{item.titolo}</strong><span>{item.crm_accounts?.nome}</span><small>{formatMoney(item.valore)}</small></article>)}</section>)}</div></div>;
+
+  useEffect(() => {
+    const term = customerSearch.trim();
+    if (term.length < 2) return undefined;
+    const timer = window.setTimeout(async () => {
+      const { data, error: customerError } = await supabase.rpc("crm_customer_metric_details", {
+        p_crm_type: type, p_from: period.from, p_to: period.to, p_metric: "all",
+        p_search: term, p_limit: 50, p_offset: 0,
+      });
+      if (customerError) setError(customerError.message); else setCustomers(data || []);
+    }, 220);
+    return () => window.clearTimeout(timer);
+  }, [customerSearch, period.from, period.to, type]);
+
+  async function ensureAccount(customerRef) {
+    if (customerRef.startsWith("crm:")) return customerRef.slice(4);
+    const customerCode = customerRef.slice(6);
+    const existing = accounts.find((item) => item.codice_cliente_mexal === customerCode);
+    if (existing) return existing.id;
+    const customer = customers.find((item) => item.codice_cliente === customerCode);
+    const { data, error: accountError } = await supabase.from("crm_accounts").insert({
+      tipo: type, nome: customer?.ragione_sociale || customerCode, codice_cliente_mexal: customerCode,
+      stato: "prospect", fonte: "workspace_mexal", responsabile_id: profile.id,
+      reparto_id: profile.reparto_ids?.[0] || profile.reparto_id || null, creato_da: profile.id,
+    }).select("id").single();
+    if (accountError) throw accountError;
+    return data.id;
+  }
+
+  async function create(event) {
+    event.preventDefault(); const first = stages[0]; if (!first || !canWrite) return;
+    try {
+      const accountId = await ensureAccount(form.customer_ref);
+      const { error: createError } = await supabase.from("crm_opportunities").insert({
+        titolo: form.titolo.trim(), account_id: accountId, valore: form.valore ? Number(form.valore) : null,
+        probabilita: form.probabilita ? Number(form.probabilita) : null, chiusura_prevista: form.chiusura_prevista || null,
+        stage_id: first.id, responsabile_id: profile.id, reparto_id: profile.reparto_ids?.[0] || profile.reparto_id || null, creato_da: profile.id,
+      });
+      if (createError) throw createError;
+      setForm({ titolo: "", customer_ref: "", valore: "", probabilita: "20", chiusura_prevista: "" }); await load();
+    } catch (createError) { setError(createError.message); }
+  }
+  async function move(id, stageId) {
+    if (!canWrite) return;
+    const { error: moveError } = await supabase.from("crm_opportunities").update({ stage_id: stageId }).eq("id", id);
+    if (moveError) setError(moveError.message); else await load();
+  }
+
+  const [now] = useState(() => Date.now());
+  const visibleItems = items.filter((item) => (!stageFilter || item.stage_id === stageFilter) && (!search || `${item.titolo} ${item.crm_accounts?.nome}`.toLowerCase().includes(search.toLowerCase())));
+  const openItems = items.filter((item) => !item.crm_opportunity_stages?.finale);
+  const pipelineValue = openItems.reduce((sum, item) => sum + Number(item.valore || 0), 0);
+  const weightedValue = openItems.reduce((sum, item) => sum + Number(item.valore || 0) * Number(item.probabilita || 0) / 100, 0);
+  const overdueItems = openItems.filter((item) => item.chiusura_prevista && new Date(item.chiusura_prevista).getTime() < now);
+  function stageAge(item) {
+    const changes = item.crm_opportunity_stage_history || [];
+    const last = changes.reduce((latest, row) => !latest || row.changed_at > latest ? row.changed_at : latest, null);
+    return Math.max(0, Math.floor((now - new Date(last || item.creato_il).getTime()) / 86400000));
+  }
+  function nextActivity(item) {
+    return (item.crm_activities || []).filter((activity) => activity.stato !== "completata" && activity.data_attivita).sort((a, b) => a.data_attivita.localeCompare(b.data_attivita))[0];
+  }
+
+  return <div className="crm-page">
+    <div className="crm-toolbar"><div><h2>Pipeline {config.label}</h2><p>Snapshot corrente; il periodo resta condiviso per il contesto commerciale e i drill-down.</p></div><CrmPeriodFilter period={period} compact /></div>
+    <ErrorBox error={error} retry={load} />
+    <div className="crm-kpi-grid">
+      <Kpi label="Opportunità aperte" value={openItems.length} />
+      <Kpi label="Valore pipeline" value={formatMoney(pipelineValue)} />
+      <Kpi label="Valore ponderato" value={formatMoney(weightedValue)} note="Valore × probabilità" />
+      <Kpi label="Scadute" value={overdueItems.length} note="Chiusura prevista superata" />
+    </div>
+    {canWrite ? <form className="crm-card-form crm-opportunity-form" onSubmit={create}>
+      <input required placeholder="Titolo opportunità" value={form.titolo} onChange={(event) => setForm({ ...form, titolo: event.target.value })} />
+      <input placeholder="Cerca cliente (almeno 2 caratteri)" value={customerSearch} onChange={(event) => { setCustomerSearch(event.target.value); setCustomers([]); setForm({ ...form, customer_ref: "" }); }} />
+      <select required value={form.customer_ref} onChange={(event) => setForm({ ...form, customer_ref: event.target.value })}><option value="">Cliente / prospect</option>
+        {accounts.filter((account) => !account.codice_cliente_mexal).map((account) => <option key={account.id} value={`crm:${account.id}`}>{account.nome} · CRM-only</option>)}
+        {customers.map((customer) => <option key={customer.codice_cliente} value={`mexal:${customer.codice_cliente}`}>{customer.ragione_sociale} · {customer.codice_cliente}</option>)}
+      </select>
+      <input type="number" min="0" step="0.01" placeholder="Valore" value={form.valore} onChange={(event) => setForm({ ...form, valore: event.target.value })} />
+      <input type="number" min="0" max="100" placeholder="Probabilità %" value={form.probabilita} onChange={(event) => setForm({ ...form, probabilita: event.target.value })} />
+      <input type="date" aria-label="Chiusura prevista" value={form.chiusura_prevista} onChange={(event) => setForm({ ...form, chiusura_prevista: event.target.value })} />
+      <button className="primary-action crm-primary"><Plus size={16} />Crea opportunità</button>
+    </form> : null}
+    <div className="crm-filters crm-pipeline-filters"><label><Search size={16} /><input placeholder="Cerca opportunità o cliente" value={search} onChange={(event) => setSearch(event.target.value)} /></label><select value={stageFilter} onChange={(event) => setStageFilter(event.target.value)}><option value="">Tutte le fasi</option>{stages.map((stage) => <option key={stage.id} value={stage.id}>{stage.nome}</option>)}</select><div className="crm-view-toggle"><button type="button" className={view === "kanban" ? "active" : ""} onClick={() => setView("kanban")}>Kanban</button><button type="button" className={view === "list" ? "active" : ""} onClick={() => setView("list")}>Lista</button></div></div>
+    {loading ? <div className="crm-loading">Caricamento pipeline...</div> : !visibleItems.length ? <div className="crm-empty"><strong>Nessuna opportunità nel perimetro corrente.</strong><p>Crea la prima opportunità da un cliente Workspace/Mexal o da un prospect CRM-only.</p></div> : view === "kanban" ? <div className="crm-kanban">{stages.filter((stage) => !stageFilter || stage.id === stageFilter).map((stage) => <section key={stage.id} onDragOver={(event) => event.preventDefault()} onDrop={(event) => void move(event.dataTransfer.getData("text/plain"), stage.id)}><header><strong>{stage.nome}</strong><span>{visibleItems.filter((item) => item.stage_id === stage.id).length}</span></header>{visibleItems.filter((item) => item.stage_id === stage.id).map((item) => <article role="button" tabIndex={0} draggable={canWrite} onClick={() => setSelected(item)} onKeyDown={(event) => event.key === "Enter" && setSelected(item)} onDragStart={(event) => event.dataTransfer.setData("text/plain", item.id)} key={item.id}><strong>{item.titolo}</strong><span>{item.crm_accounts?.nome}</span><small>{formatMoney(item.valore)} · {item.probabilita || 0}% · {stageAge(item)} gg nello stato</small>{nextActivity(item) ? <small>Prossima: {formatDate(nextActivity(item).data_attivita)}</small> : <small>Nessuna prossima attività</small>}</article>)}</section>)}</div> : <div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Opportunità</th><th>Cliente</th><th>Fase</th><th>Valore</th><th>Ponderato</th><th>Giorni fase</th><th>Chiusura</th><th>Prossima attività</th></tr></thead><tbody>{visibleItems.map((item) => <tr key={item.id} onClick={() => setSelected(item)}><td><button type="button" className="crm-table-link">{item.titolo}</button></td><td>{item.crm_accounts?.nome}</td><td>{item.crm_opportunity_stages?.nome}</td><td>{formatMoney(item.valore)}</td><td>{formatMoney(Number(item.valore || 0) * Number(item.probabilita || 0) / 100)}</td><td>{stageAge(item)}</td><td>{formatDate(item.chiusura_prevista)}</td><td>{nextActivity(item)?.titolo || "—"}</td></tr>)}</tbody></table></div>}
+    {selected ? <div className="crm-modal-backdrop" role="presentation" onMouseDown={() => setSelected(null)}><section className="crm-modal crm-opportunity-detail" role="dialog" aria-modal="true" aria-label="Dettaglio opportunità" onMouseDown={(event) => event.stopPropagation()}><div className="crm-toolbar"><div><span className="crm-eyebrow">{selected.crm_opportunity_stages?.nome}</span><h3>{selected.titolo}</h3><p>{selected.crm_accounts?.nome}</p></div><button type="button" onClick={() => setSelected(null)}>Chiudi</button></div><dl><div><dt>Valore</dt><dd>{formatMoney(selected.valore)}</dd></div><div><dt>Probabilità</dt><dd>{selected.probabilita || 0}%</dd></div><div><dt>Valore ponderato</dt><dd>{formatMoney(Number(selected.valore || 0) * Number(selected.probabilita || 0) / 100)}</dd></div><div><dt>Giorni nello stato</dt><dd>{stageAge(selected)}</dd></div><div><dt>Chiusura prevista</dt><dd>{formatDate(selected.chiusura_prevista)}</dd></div><div><dt>Prossima attività</dt><dd>{nextActivity(selected)?.titolo || "Non pianificata"}</dd></div></dl><p>{selected.descrizione || "Nessuna descrizione disponibile."}</p></section></div> : null}
+  </div>;
 }
 
 function BriefsPage() {
@@ -342,12 +434,22 @@ function BriefsPage() {
 }
 
 function OnlineManager({ entity }) {
+  const period = useCrmPeriod();
   const { profile, canUseModule } = useAuth(); const canWrite = canUseModule("crm_online", "scrittura"); const campaign = entity === "campaigns"; const creator = entity === "creators"; const table = campaign ? "crm_campaigns" : creator ? "crm_creators" : "crm_customer_events";
   const [rows, setRows] = useState([]); const [accounts, setAccounts] = useState([]); const [form, setForm] = useState(campaign ? { nome: "", obiettivo: "", canale: "", budget: "", stato: "bozza" } : creator ? { nome: "", piattaforma: "", profilo: "", nicchia: "", follower: "" } : { account_id: "", fase: "lead", fonte: "", consenso_riferimento: "" }); const [error, setError] = useState("");
-  const load = useCallback(async () => { const [r, a] = await Promise.all([supabase.from(table).select(entity === "journey" ? "*,crm_accounts(nome)" : "*").order(entity === "journey" ? "avvenuto_il" : "creato_il", { ascending: false }).limit(500), supabase.from("crm_accounts").select("id,nome").eq("tipo", "online").order("nome")]); if (r.error) setError(r.error.message); else { setRows(r.data || []); setAccounts(a.data || []); } }, [entity, table]); useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
+  const load = useCallback(async () => {
+    const dateColumn = entity === "journey" ? "avvenuto_il" : "creato_il";
+    const rowQuery = supabase.from(table).select(entity === "journey" ? "*,crm_accounts(nome)" : "*")
+      .gte(dateColumn, period.from).lte(dateColumn, period.to + "T23:59:59.999Z")
+      .order(dateColumn, { ascending: false }).limit(500);
+    const [rowResult, accountResult] = await Promise.all([rowQuery, supabase.from("crm_accounts").select("id,nome").eq("tipo", "online").order("nome")]);
+    const loadError = rowResult.error || accountResult.error;
+    if (loadError) setError(loadError.message); else { setRows(rowResult.data || []); setAccounts(accountResult.data || []); setError(""); }
+  }, [entity, period.from, period.to, table]);
+  useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
   async function save(e) { e.preventDefault(); const payload = campaign ? { ...form, canali: form.canale.split(",").map((value) => value.trim()).filter(Boolean), budget: form.budget ? Number(form.budget) : null, responsabile_id: profile.id, reparto_id: profile.reparto_ids?.[0] || null, creato_da: profile.id } : creator ? { ...form, follower: form.follower ? Number(form.follower) : null, responsabile_id: profile.id, reparto_id: profile.reparto_ids?.[0] || null, creato_da: profile.id } : { ...form, creato_da: profile.id }; const { error: x } = await supabase.from(table).insert(payload); if (x) setError(x.message); else { await load(); } }
   const title = campaign ? "Campaign Manager" : creator ? "Creator Management" : "Customer Journey";
-  return <div className="crm-page"><div className="crm-toolbar"><div><h2>{title}</h2><p>{campaign ? "Obiettivi, canali, budget e KPI senza inventare fonti dati." : creator ? "Collaborazioni, contenuti, costi e vendite attribuite." : "Eventi minimali e autorizzati; nessun tracking invasivo."}</p></div></div><ErrorBox error={error} />{canWrite ? <form className="crm-card-form" onSubmit={save}>{campaign ? <><input required placeholder="Nome campagna" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} /><input placeholder="Obiettivo" value={form.obiettivo} onChange={(e) => setForm({ ...form, obiettivo: e.target.value })} /><input placeholder="Canale" value={form.canale} onChange={(e) => setForm({ ...form, canale: e.target.value })} /><input type="number" placeholder="Budget" value={form.budget} onChange={(e) => setForm({ ...form, budget: e.target.value })} /></> : creator ? <><input required placeholder="Nome creator" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} /><input placeholder="Piattaforma" value={form.piattaforma} onChange={(e) => setForm({ ...form, piattaforma: e.target.value })} /><input placeholder="Profilo / canale" value={form.profilo} onChange={(e) => setForm({ ...form, profilo: e.target.value })} /><input type="number" placeholder="Follower" value={form.follower} onChange={(e) => setForm({ ...form, follower: e.target.value })} /></> : <><select required value={form.account_id} onChange={(e) => setForm({ ...form, account_id: e.target.value })}><option value="">Cliente online</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}</select><select value={form.fase} onChange={(e) => setForm({ ...form, fase: e.target.value })}>{["lead","visita","interesse","iscrizione","carrello","acquisto","riacquisto","recensione","loyalty"].map((v) => <option key={v}>{v}</option>)}</select><input placeholder="Fonte autorizzata" value={form.fonte} onChange={(e) => setForm({ ...form, fonte: e.target.value })} /><input placeholder="Riferimento consenso" value={form.consenso_riferimento} onChange={(e) => setForm({ ...form, consenso_riferimento: e.target.value })} /></>}<button className="primary-action crm-primary"><Plus size={16} />Aggiungi</button></form> : null}<div className="crm-list-grid">{rows.map((row) => <article className="crm-list-card" key={row.id}><span>{row.stato || row.stato_collaborazione || row.fase}</span><h3>{row.nome || row.crm_accounts?.nome || row.fase}</h3><p>{row.obiettivo || row.piattaforma || row.fonte || "Informazioni da completare"}</p><small>{campaign ? formatMoney(row.budget) : creator ? `${row.follower || 0} follower` : formatDate(row.avvenuto_il)}</small></article>)}</div></div>;
+  return <div className="crm-page"><div className="crm-toolbar"><div><h2>{title}</h2><p>{campaign ? "Obiettivi, canali, budget e KPI senza inventare fonti dati." : creator ? "Collaborazioni, contenuti, costi e vendite attribuite." : "Eventi minimali e autorizzati; nessun tracking invasivo."}</p></div><CrmPeriodFilter period={period} compact /></div><ErrorBox error={error} />{canWrite ? <form className="crm-card-form" onSubmit={save}>{campaign ? <><input required placeholder="Nome campagna" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} /><input placeholder="Obiettivo" value={form.obiettivo} onChange={(e) => setForm({ ...form, obiettivo: e.target.value })} /><input placeholder="Canale" value={form.canale} onChange={(e) => setForm({ ...form, canale: e.target.value })} /><input type="number" placeholder="Budget" value={form.budget} onChange={(e) => setForm({ ...form, budget: e.target.value })} /></> : creator ? <><input required placeholder="Nome creator" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} /><input placeholder="Piattaforma" value={form.piattaforma} onChange={(e) => setForm({ ...form, piattaforma: e.target.value })} /><input placeholder="Profilo / canale" value={form.profilo} onChange={(e) => setForm({ ...form, profilo: e.target.value })} /><input type="number" placeholder="Follower" value={form.follower} onChange={(e) => setForm({ ...form, follower: e.target.value })} /></> : <><select required value={form.account_id} onChange={(e) => setForm({ ...form, account_id: e.target.value })}><option value="">Cliente online</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}</select><select value={form.fase} onChange={(e) => setForm({ ...form, fase: e.target.value })}>{["lead","visita","interesse","iscrizione","carrello","acquisto","riacquisto","recensione","loyalty"].map((v) => <option key={v}>{v}</option>)}</select><input placeholder="Fonte autorizzata" value={form.fonte} onChange={(e) => setForm({ ...form, fonte: e.target.value })} /><input placeholder="Riferimento consenso" value={form.consenso_riferimento} onChange={(e) => setForm({ ...form, consenso_riferimento: e.target.value })} /></>}<button className="primary-action crm-primary"><Plus size={16} />Aggiungi</button></form> : null}<div className="crm-list-grid">{rows.map((row) => <article className="crm-list-card" key={row.id}><span>{row.stato || row.stato_collaborazione || row.fase}</span><h3>{row.nome || row.crm_accounts?.nome || row.fase}</h3><p>{row.obiettivo || row.piattaforma || row.fonte || "Informazioni da completare"}</p><small>{campaign ? formatMoney(row.budget) : creator ? `${row.follower || 0} follower` : formatDate(row.avvenuto_il)}</small></article>)}</div></div>;
 }
 
 function renderCrmView(route) {

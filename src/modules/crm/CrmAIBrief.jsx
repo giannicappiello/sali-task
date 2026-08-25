@@ -3,6 +3,7 @@ import { Bot, CheckCircle2, FilePenLine, RefreshCw, Send, Sparkles, XCircle } fr
 import { useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
+import CrmPeriodFilter, { useCrmPeriod } from "./CrmPeriodFilter";
 
 async function crmAIRequest(payload) {
   const { data } = await supabase.auth.getSession();
@@ -42,6 +43,7 @@ function PlanPreview({ decision, busy, onApprove, onRegenerate, onCancel }) {
 
 export default function CrmAIBrief() {
   const location = useLocation();
+  const period = useCrmPeriod();
   const { canUseModule } = useAuth();
   const [briefs, setBriefs] = useState([]);
   const [briefId, setBriefId] = useState("");
@@ -78,7 +80,7 @@ export default function CrmAIBrief() {
     if (!text || !canWrite) return;
     setBusy(true); setError(""); setResult(null);
     try {
-      const response = await crmAIRequest({ action: "analyze", briefId: briefId || null, crmType, accountId: location.state?.accountId || null, prompt: text });
+      const response = await crmAIRequest({ action: "analyze", briefId: briefId || null, crmType, accountId: location.state?.accountId || null, from: period.from, to: period.to, prompt: text });
       setBriefId(response.briefId); setMessages(response.messages || []); setDecision(response.decision || null); setPrompt(""); await loadBriefs();
     } catch (requestError) { setError(requestError.message); } finally { setBusy(false); }
   }
@@ -99,7 +101,7 @@ export default function CrmAIBrief() {
   }
 
   return <div className="crm-page">
-    <div className="crm-toolbar"><div><h2>AI Business Assistant</h2><p>BRIEF → ANALISI → DECISIONE UMANA → PIANO → PROGETTO → FASI → REMINDER</p></div></div>
+    <div className="crm-toolbar"><div><h2>AI Business Assistant</h2><p>BRIEF → ANALISI → DECISIONE UMANA → PIANO → PROGETTO → FASI → REMINDER</p></div><CrmPeriodFilter period={period} compact /></div>
     {error ? <div className="crm-message error">{error}</div> : null}
     <div className="crm-ai-shell">
       <aside className="crm-ai-sidebar"><button className="primary-action crm-primary" type="button" onClick={() => { setBriefId(""); setMessages([]); setDecision(null); setResult(null); }}><FilePenLine size={17} />Nuovo brief</button><h3>Brief salvati</h3><div className="crm-brief-list">{briefs.map((item) => <button type="button" className={briefId === item.id ? "active" : ""} key={item.id} onClick={() => void loadBrief(item.id)}><strong>{item.titolo}</strong><span>{item.crm_tipo} · {item.stato}</span></button>)}</div></aside>

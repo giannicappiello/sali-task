@@ -99,44 +99,48 @@ async function queryRows(query, label) {
   return { label, rows: data || [] };
 }
 
-function digitalAggregateQueries(auth) {
-  const targetTo = new Date();
-  const targetFrom = new Date(targetTo);
-  targetFrom.setUTCDate(targetFrom.getUTCDate() - 89);
-  const baseParams = {
-    target_from: targetFrom.toISOString().slice(0, 10),
-    target_to: targetTo.toISOString().slice(0, 10),
-    target_marketplace: null,
-  };
+function requestPeriod(body) {
+  const fallbackTo = new Date();
+  const fallbackFrom = new Date(fallbackTo);
+  fallbackFrom.setUTCDate(fallbackFrom.getUTCDate() - 89);
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(String(body.from || "")) ? String(body.from) : fallbackFrom.toISOString().slice(0, 10);
+  const to = /^\d{4}-\d{2}-\d{2}$/.test(String(body.to || "")) ? String(body.to) : fallbackTo.toISOString().slice(0, 10);
+  if (from > to) throw Object.assign(new Error("Intervallo CRM non valido."), { status: 400 });
+  return { from, to };
+}
+
+function digitalAggregateQueries(auth, period) {
+  const baseParams = { target_from: period.from, target_to: period.to, target_marketplace: null };
   const allowedModules = new Set(auth.access?.modules || []);
   const queries = [
-    queryRows(auth.scoped.rpc("crm_digital_dashboard", { ...baseParams, target_channel: null }), "digitalAggregates90d"),
+    queryRows(auth.scoped.rpc("crm_digital_dashboard", { ...baseParams, target_channel: null }), "digitalAggregates"),
   ];
   for (const [channel, moduleCode] of Object.entries(DIGITAL_CHANNEL_MODULE)) {
     if (!auth.isAdmin && !allowedModules.has(moduleCode)) continue;
-    queries.push(queryRows(auth.scoped.rpc("crm_digital_dashboard", { ...baseParams, target_channel: channel }), `digitalAggregate_${channel}_90d`));
+    queries.push(queryRows(auth.scoped.rpc("crm_digital_dashboard", { ...baseParams, target_channel: channel }), `digitalAggregate_${channel}`));
   }
   return queries;
 }
 
-async function buildAuthorizedContext(auth, crmType, accountId) {
+async function buildAuthorizedContext(auth, crmType, accountId, period) {
   const queries = [
     queryRows(auth.scoped.from("crm_briefs").select("titolo,stato,obiettivo,target,categoria,budget:dati->budget").eq("crm_tipo", crmType).limit(60), "briefs"),
   ];
   if (crmType === "online") {
-    queries.push(...digitalAggregateQueries(auth));
+    queries.push(...digitalAggregateQueries(auth, period));
   } else {
     queries.push(
+      queryRows(auth.scoped.rpc("crm_dashboard_metrics", { p_crm_type: crmType, p_from: period.from, p_to: period.to, p_inactivity_days: 90 }), "crmPeriodMetrics"),
       queryRows(auth.scoped.from("crm_accounts").select("id,nome,stato,stato_relazione,valore_cliente,segmenti,codice_cliente_mexal,ultima_attivita_il,prossima_attivita_il").eq("tipo", crmType).limit(80), "accounts"),
-      queryRows(auth.scoped.from("crm_opportunities").select("id,titolo,valore,probabilita,chiusura_prevista,crm_accounts!inner(nome,tipo),crm_opportunity_stages(nome,finale,vinta)").eq("crm_accounts.tipo", crmType).limit(100), "opportunities"),
-      queryRows(auth.scoped.from("crm_activities").select("tipo,titolo,stato,data_attivita").eq("crm_tipo", crmType).order("data_attivita", { ascending: false }).limit(100), "activities"),
+      queryRows(auth.scoped.from("crm_opportunities").select("id,titolo,valore,probabilita,chiusura_prevista,crm_accounts!inner(nome,tipo),crm_opportunity_stages(nome,finale,vinta)").eq("crm_accounts.tipo", crmType).gte("aggiornato_il", period.from).lte("aggiornato_il", `${period.to}T23:59:59.999Z`).limit(100), "opportunities"),
+      queryRows(auth.scoped.from("crm_activities").select("tipo,titolo,stato,data_attivita").eq("crm_tipo", crmType).gte("data_attivita", period.from).lte("data_attivita", `${period.to}T23:59:59.999Z`).order("data_attivita", { ascending: false }).limit(100), "activities"),
       queryRows(auth.scoped.from("prodotti").select("id,codice,nome,brand,categoria").eq("attivo", true).limit(100), "products"),
     );
     if (accountId) queries.push(queryRows(auth.scoped.from("crm_accounts").select("*").eq("id", accountId).eq("tipo", crmType).limit(1), "selectedAccount"));
     if ((auth.access?.modules || []).includes("attivita") || auth.isAdmin) queries.push(queryRows(auth.scoped.from("v4_progetti").select("titolo,descrizione,deadline,stato").order("created_at", { ascending: false }).limit(50), "workspaceProjects"));
   }
   const results = await Promise.all(queries);
-  return Object.fromEntries(results.map((item) => [item.label, item.unavailable ? { unavailable: item.unavailable } : item.rows]));
+  return { period, ...Object.fromEntries(results.map((item) => [item.label, item.unavailable ? { unavailable: item.unavailable } : item.rows])) };
 }
 
 function systemPrompt(crmType, context) {
@@ -144,7 +148,7 @@ function systemPrompt(crmType, context) {
 Usa esclusivamente il contesto autorizzato fornito. Non dedurre dati personali o commerciali assenti.
 Prima di dichiarare readyForApproval=true verifica obiettivo, target, budget, scadenza, vincoli e responsabilita. Se mancano, inserisci domande concise e readyForApproval=false.
 Per il CRM online separa sempre Fatti, Dati mancanti, Interpretazioni, Raccomandazioni, Rischi e Piano operativo nei campi strutturati previsti.
-I dati Digital Commerce & Marketing nel contesto sono esclusivamente aggregati degli ultimi 90 giorni, gia filtrati dalle RLS e dai moduli dell'utente. Non richiedere, ricostruire o inferire ordini, clienti, email, consensi, identificativi personali, credenziali o segreti.
+I dati Digital Commerce & Marketing nel contesto sono esclusivamente aggregati nel periodo dichiarato nel contesto, gia filtrati dalle RLS e dai moduli dell'utente. Non richiedere, ricostruire o inferire ordini, clienti, email, consensi, identificativi personali, credenziali o segreti.
 Un canale Digital assente dal contesto puo essere non autorizzato: non trarre conclusioni sulla sua esistenza. dataStatus=not_available e valori null indicano dati insufficienti, non risultati pari a zero.
 Non trattare un valore assente come zero e non proporre azioni automatiche su campagne, budget, newsletter, Amazon o social.
 Proponi alternative e rischi. Il piano deve essere operativo ma non applicato: la decisione resta umana.
@@ -171,7 +175,7 @@ async function analyze(auth, body, crmType) {
   const brief = await ensureBrief(auth, body, crmType, prompt);
   const { data: history, error: historyError } = await auth.scoped.from("crm_brief_messages").select("ruolo,contenuto").eq("brief_id", brief.id).order("creato_il").limit(30);
   if (historyError) throw historyError;
-  const context = await buildAuthorizedContext(auth, crmType, brief.account_id || body.accountId || null);
+  const context = await buildAuthorizedContext(auth, crmType, brief.account_id || body.accountId || null, requestPeriod(body));
   const model = process.env.AI_MODEL || DEFAULT_MODEL;
   const messages = [...(history || []).map((item) => ({ role: item.ruolo === "assistant" ? "assistant" : "user", content: item.contenuto })), { role: "user", content: prompt }];
   const result = await generateText({ model, system: systemPrompt(crmType, context), messages, output: Output.object({ schema: STRATEGIC_PLAN_SCHEMA }), maxOutputTokens: 3600, providerOptions: { gateway: { user: auth.profile.id, metadata: { feature: "crm-strategic-brief", crmType } } } });

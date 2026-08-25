@@ -91,8 +91,8 @@ export default function AIOrderImport() {
       if (!response.ok || payload.success === false) throw new Error(payload.error || "Lettura AI non riuscita.");
       const extraction = payload.extraction;
       setResult({ ...extraction, usage: payload.usage });
-      setCustomerCode(extraction.customerCandidates?.[0]?.code || "");
-      setLineChoices(extraction.lines.map((line) => ({ code: line.productCandidates?.[0]?.code || "", quantity: line.quantity })));
+      setCustomerCode(extraction.customerMatch?.status === "matched" ? extraction.customerMatch.proposedId || "" : "");
+      setLineChoices(extraction.lines.map((line) => ({ code: line.productMatch?.status === "matched" ? line.productMatch.proposedId || "" : "", quantity: line.quantity })));
       setOrderType(extraction.documentType || "NON_DETERMINATO");
     } catch (requestError) {
       setError(requestError.message || "Lettura AI non riuscita.");
@@ -136,6 +136,11 @@ export default function AIOrderImport() {
       <section className="orders-panel ai-order-review">
         <h3>Cliente riconosciuto</h3>
         <p><strong>Letto:</strong> {result.customer.name || "Nome non leggibile"} {result.customer.vatNumber ? `· P. IVA ${result.customer.vatNumber}` : ""}</p>
+        <div className={`orders-alert ai-match-status ${result.customerMatch?.status || "unmatched"}`}>
+          <strong>{result.customerMatch?.status || "unmatched"}</strong>
+          <span>{Math.round(Number(result.customerMatch?.confidence || 0) * 100)}% · {result.customerMatch?.reason || "Nessuna motivazione disponibile."}</span>
+          {result.customerMatch?.status !== "matched" ? <small>Conferma esplicitamente uno dei candidati; non verrà creato alcun nuovo cliente.</small> : null}
+        </div>
         <select value={customerCode} onChange={(event) => setCustomerCode(event.target.value)}>
           <option value="">Da selezionare manualmente nel formulario</option>
           {(result.customerCandidates || []).map((item) => <option key={item.code} value={item.code}>{item.code} · {item.name} · corrispondenza {Math.round(item.score * 100)}%</option>)}
@@ -145,6 +150,7 @@ export default function AIOrderImport() {
         <h3>Prodotti e quantità</h3>
         <div className="ai-order-lines">{result.lines.map((line, index) => <div className="ai-order-line" key={`${line.sourceText}-${index}`}>
           <div><strong>{line.description || line.sourceText}</strong><span>Testo letto: {line.sourceText}</span></div>
+          <div className={`ai-match-status ${line.productMatch?.status || "unmatched"}`}><strong>{line.productMatch?.status || "unmatched"}</strong><span>{Math.round(Number(line.productMatch?.confidence || 0) * 100)}% · {line.productMatch?.reason || "Nessun abbinamento affidabile."}</span></div>
           <label>Prodotto<select value={lineChoices[index]?.code || ""} onChange={(event) => setLineChoices((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, code: event.target.value } : item))}>
             <option value="">Non abbinato</option>{(line.productCandidates || []).map((item) => <option key={item.code} value={item.code}>{item.code} · {item.description} · {Math.round(item.score * 100)}%</option>)}
           </select></label>

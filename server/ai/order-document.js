@@ -6,6 +6,8 @@ import {
   failAIGeneration,
   startAIGeneration,
 } from "./assistant.js";
+import { applyDirectMexalProductFilters } from "../../shared/directProductCatalog.js";
+import { matchCustomer, matchProduct } from "../../shared/orderDocumentMatching.js";
 
 const DEFAULT_MODEL = "openai/gpt-5.6-luna";
 const MAX_FILE_BYTES = 2_800_000;
@@ -25,9 +27,9 @@ const ORDER_DOCUMENT_SCHEMA = jsonSchema({
     customer: {
       type: "object",
       additionalProperties: false,
-      required: ["code", "name", "vatNumber", "taxCode", "address", "city", "confidence"],
+      required: ["code", "name", "alias", "vatNumber", "taxCode", "email", "address", "city", "confidence"],
       properties: {
-        code: { type: "string" }, name: { type: "string" }, vatNumber: { type: "string" }, taxCode: { type: "string" },
+        code: { type: "string" }, name: { type: "string" }, alias: { type: "string" }, vatNumber: { type: "string" }, taxCode: { type: "string" }, email: { type: "string" },
         address: { type: "string" }, city: { type: "string" }, confidence: { type: "number", minimum: 0, maximum: 1 },
       },
     },
@@ -37,9 +39,9 @@ const ORDER_DOCUMENT_SCHEMA = jsonSchema({
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["sourceText", "productCode", "ean", "description", "quantity", "unit", "confidence"],
+        required: ["sourceText", "productCode", "ean", "sku", "description", "format", "package", "quantity", "unit", "confidence"],
         properties: {
-          sourceText: { type: "string" }, productCode: { type: "string" }, ean: { type: "string" }, description: { type: "string" },
+          sourceText: { type: "string" }, productCode: { type: "string" }, ean: { type: "string" }, sku: { type: "string" }, description: { type: "string" }, format: { type: "string" }, package: { type: "string" },
           quantity: { type: "number", exclusiveMinimum: 0 }, unit: { type: "string" }, confidence: { type: "number", minimum: 0, maximum: 1 },
         },
       },
@@ -48,60 +50,6 @@ const ORDER_DOCUMENT_SCHEMA = jsonSchema({
     warnings: { type: "array", items: { type: "string" } },
   },
 });
-
-function normalized(value) {
-  return String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
-}
-
-function compact(value) {
-  return normalized(value).replace(/\s+/g, "");
-}
-
-function fiscalKey(value) {
-  const key = compact(value);
-  return /^IT\d{11}$/.test(key) ? key.slice(2) : key;
-}
-
-function tokenSimilarity(left, right) {
-  const a = new Set(normalized(left).split(" ").filter((token) => token.length > 1));
-  const b = new Set(normalized(right).split(" ").filter((token) => token.length > 1));
-  if (!a.size || !b.size) return 0;
-  const shared = [...a].filter((token) => b.has(token)).length;
-  return shared / Math.max(a.size, b.size);
-}
-
-export function rankCustomerCandidates(extracted, customers) {
-  const sourceCode = compact(extracted?.code);
-  const sourceVat = fiscalKey(extracted?.vatNumber);
-  const sourceTax = compact(extracted?.taxCode);
-  return (customers || []).map((customer) => {
-    const code = compact(customer.codice_cliente);
-    const vat = fiscalKey(customer.partita_iva);
-    const tax = compact(customer.codice_fiscale);
-    let score = tokenSimilarity(extracted?.name, customer.ragione_sociale);
-    if (sourceCode && sourceCode === code) score = Math.max(score, 1);
-    if (sourceVat && sourceVat === vat) score = Math.max(score, 0.99);
-    if (sourceTax && sourceTax === tax) score = Math.max(score, 0.98);
-    return { code: customer.codice_cliente, name: customer.ragione_sociale, city: customer.localita || "", vatNumber: customer.partita_iva || "", score };
-  }).filter((item) => item.score >= 0.2).sort((a, b) => b.score - a.score).slice(0, 5);
-}
-
-export function rankProductCandidates(extracted, products) {
-  const sourceCode = compact(extracted?.productCode);
-  const sourceEan = compact(extracted?.ean);
-  const sourceText = compact([extracted?.sourceText, extracted?.description].filter(Boolean).join(" "));
-  return (products || []).map((product) => {
-    const code = product.codice_articolo || product.codice_mexal || product.codice;
-    const productCode = compact(code);
-    const productEan = compact(product.ean);
-    let score = tokenSimilarity(extracted?.description || extracted?.sourceText, product.descrizione || product.nome);
-    if (sourceCode && sourceCode === productCode) score = Math.max(score, 1);
-    if (sourceEan && sourceEan === productEan) score = Math.max(score, 1);
-    if (productEan.length >= 8 && sourceText.includes(productEan)) score = Math.max(score, 0.99);
-    if (productCode.length >= 3 && sourceText.includes(productCode)) score = Math.max(score, 0.97);
-    return { code, description: product.descrizione || product.nome || code, ean: product.ean || "", score };
-  }).filter((item) => item.code && item.score >= 0.18).sort((a, b) => b.score - a.score).slice(0, 5);
-}
 
 function parseFile(body) {
   const mediaType = String(body.mediaType || "").toLowerCase();
@@ -135,22 +83,22 @@ async function assertOrderAISafetyLimit(auth) {
 
 async function visibleCatalog(auth) {
   const customersPromise = auth.scoped.rpc("visible_mexal_clients_for_me");
-  let productsResult = await auth.scoped
-    .from("ordini_prodotti_cache")
-    .select("codice_articolo,descrizione,ean")
-    .eq("mostra_in_app", true)
-    .limit(10000);
-  if (productsResult.error && /(?:column|schema cache).*\bean\b|\bean\b.*does not exist/i.test(productsResult.error.message || "")) {
-    productsResult = await auth.scoped
-      .from("ordini_prodotti_cache")
-      .select("codice_articolo,descrizione")
-      .eq("mostra_in_app", true)
-      .limit(10000);
-  }
-  const customersResult = await customersPromise;
+  const productsPromise = applyDirectMexalProductFilters(auth.scoped
+    .from("prodotti")
+    .select("id,codice_mexal,codice,nome,ean,json_mexal"))
+    .order("nome").limit(10000);
+  const implantsPromise = auth.scoped.from("ordini_impianti")
+    .select("id,codice,descrizione")
+    .eq("attivo", true).order("descrizione");
+  const [customersResult, productsResult, implantsResult] = await Promise.all([customersPromise, productsPromise, implantsPromise]);
   if (customersResult.error) throw customersResult.error;
   if (productsResult.error) throw productsResult.error;
-  return { customers: customersResult.data || [], products: productsResult.data || [] };
+  if (implantsResult.error) throw implantsResult.error;
+  const products = [
+    ...(productsResult.data || []).map((item) => ({ ...item, codice_articolo: item.codice_mexal || item.codice, descrizione: item.nome })),
+    ...(implantsResult.data || []).filter((item) => String(item.codice || "").trim().toUpperCase().startsWith("IMP")).map((item) => ({ ...item, codice_articolo: item.codice, is_impianto: true })),
+  ];
+  return { customers: customersResult.data || [], products };
 }
 
 export async function handleAIOrderDocument(req) {
@@ -187,10 +135,15 @@ export async function handleAIOrderDocument(req) {
     const extraction = result.output;
     if (extraction.pageCount > HARD_MAX_DOCUMENT_PAGES) throw Object.assign(new Error(`Il documento contiene ${extraction.pageCount} pagine; la soglia tecnica è ${HARD_MAX_DOCUMENT_PAGES}.`), { status: 400 });
     const catalog = await visibleCatalog(auth);
+    const customerResolution = matchCustomer(extraction.customer, catalog.customers);
     const matched = {
       ...extraction,
-      customerCandidates: rankCustomerCandidates(extraction.customer, catalog.customers),
-      lines: extraction.lines.map((line) => ({ ...line, productCandidates: rankProductCandidates(line, catalog.products) })),
+      customerCandidates: customerResolution.candidates,
+      customerMatch: customerResolution.match,
+      lines: extraction.lines.map((line) => {
+        const productResolution = matchProduct(line, catalog.products);
+        return { ...line, productCandidates: productResolution.candidates, productMatch: productResolution.match };
+      }),
     };
     const usage = await completeAIGeneration(auth.admin, { generationId, profileId: auth.profile.id, result });
     await auth.admin.from("ai_ordini_acquisizioni").update({ stato: "completata", esito: matched, completata_il: new Date().toISOString() }).eq("id", acquisition.id);

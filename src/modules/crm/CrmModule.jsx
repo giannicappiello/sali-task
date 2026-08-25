@@ -323,6 +323,9 @@ function Pipeline({ type }) {
   const [stages, setStages] = useState([]); const [items, setItems] = useState([]); const [accounts, setAccounts] = useState([]); const [customers, setCustomers] = useState([]); const [error, setError] = useState(""); const [loading, setLoading] = useState(true);
   const [view, setView] = useState("kanban"); const [stageFilter, setStageFilter] = useState(""); const [search, setSearch] = useState(""); const [customerSearch, setCustomerSearch] = useState(""); const [selected, setSelected] = useState(null);
   const [form, setForm] = useState({ titolo: "", customer_ref: "", valore: "", probabilita: "20", chiusura_prevista: "" });
+  const overdueFilter = period.getParam("overdue") === "1";
+  const followupFilter = period.getParam("followup") === "overdue";
+  const openFilter = period.getParam("status") === "open";
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -385,7 +388,13 @@ function Pipeline({ type }) {
   }
 
   const [now] = useState(() => Date.now());
-  const visibleItems = items.filter((item) => (!stageFilter || item.stage_id === stageFilter) && (!search || `${item.titolo} ${item.crm_accounts?.nome}`.toLowerCase().includes(search.toLowerCase())));
+  const visibleItems = items.filter((item) => {
+    const next = nextActivity(item);
+    const matchesOpen = !openFilter || !item.crm_opportunity_stages?.finale;
+    const matchesOverdue = !overdueFilter || (!item.crm_opportunity_stages?.finale && item.chiusura_prevista && new Date(item.chiusura_prevista).getTime() < now);
+    const matchesFollowup = !followupFilter || (next && new Date(next.data_attivita).getTime() < now);
+    return (!stageFilter || item.stage_id === stageFilter) && (!search || `${item.titolo} ${item.crm_accounts?.nome}`.toLowerCase().includes(search.toLowerCase())) && matchesOpen && matchesOverdue && matchesFollowup;
+  });
   const openItems = items.filter((item) => !item.crm_opportunity_stages?.finale);
   const pipelineValue = openItems.reduce((sum, item) => sum + Number(item.valore || 0), 0);
   const weightedValue = openItems.reduce((sum, item) => sum + Number(item.valore || 0) * Number(item.probabilita || 0) / 100, 0);
@@ -403,10 +412,10 @@ function Pipeline({ type }) {
     <div className="crm-toolbar"><div><h2>Pipeline {config.label}</h2><p>Snapshot corrente; il periodo resta condiviso per il contesto commerciale e i drill-down.</p></div><CrmPeriodFilter period={period} compact /></div>
     <ErrorBox error={error} retry={load} />
     <div className="crm-kpi-grid">
-      <Kpi label="Opportunità aperte" value={openItems.length} />
-      <Kpi label="Valore pipeline" value={formatMoney(pipelineValue)} />
-      <Kpi label="Valore ponderato" value={formatMoney(weightedValue)} note="Valore × probabilità" />
-      <Kpi label="Scadute" value={overdueItems.length} note="Chiusura prevista superata" />
+      <Kpi label="Opportunità aperte" value={openItems.length} to={period.withPeriod(`${config.basePath}/pipeline`, { status: "open" })} />
+      <Kpi label="Valore pipeline" value={formatMoney(pipelineValue)} to={period.withPeriod(`${config.basePath}/pipeline`, { status: "open" })} />
+      <Kpi label="Valore ponderato" value={formatMoney(weightedValue)} note="Valore × probabilità" to={period.withPeriod(`${config.basePath}/pipeline`, { status: "open" })} />
+      <Kpi label="Scadute" value={overdueItems.length} note="Chiusura prevista superata" to={period.withPeriod(`${config.basePath}/pipeline`, { overdue: "1" })} />
     </div>
     {canWrite ? <form className="crm-card-form crm-opportunity-form" onSubmit={create}>
       <input required placeholder="Titolo opportunità" value={form.titolo} onChange={(event) => setForm({ ...form, titolo: event.target.value })} />

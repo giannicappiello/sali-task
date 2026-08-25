@@ -6,8 +6,9 @@ const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
 test("l'icona del modulo è configurabile e alimenta menu e contenitore", async () => {
-  const [settings, layout, container, screenLayout, registry, migration] = await Promise.all([
+  const [settings, controls, layout, container, screenLayout, registry, migration] = await Promise.all([
     read("src/pages/Settings/ModuleManagement.jsx"),
+    read("src/pages/Settings/WorkspaceCatalogControls.jsx"),
     read("src/components/Layout.jsx"),
     read("src/pages/Modules/WorkspaceModuleContainer.jsx"),
     read("src/components/WorkspaceScreenLayout.jsx"),
@@ -15,7 +16,9 @@ test("l'icona del modulo è configurabile e alimenta menu e contenitore", async 
     read("supabase/migrations/20260819242000_workspace_module_icons.sql"),
   ]);
 
-  assert.match(settings, /MODULE_ICON_OPTIONS\.map/);
+  assert.match(settings, /WorkspaceIconPicker/);
+  assert.match(controls, /MODULE_ICON_OPTIONS/);
+  assert.match(controls, /options\.map/);
   assert.match(settings, /icona: cleanText\(form\.icona\)/);
   assert.match(layout, /ordine,icona/);
   assert.match(layout, /getModuleIcon\(module\.icona/);

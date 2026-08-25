@@ -161,7 +161,7 @@ test("ProgreMES integration remains a synchronization service", async () => {
     read("src/modules/integrations/pages/ProgremesSettings.jsx"),
     read("server/progremes-modules.js"),
   ]);
-  assert.match(settings, /La composizione si gestisce in Impostazioni → Moduli/);
+  assert.match(settings, /La composizione dei moduli e delle schermate si gestisce in Impostazioni → Moduli/);
   assert.match(service, /workspace_schermate/);
   assert.match(service, /provider: "progremes"/);
 });

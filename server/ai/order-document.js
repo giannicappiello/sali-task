@@ -7,13 +7,19 @@ import {
   startAIGeneration,
 } from "./assistant.js";
 import { applyDirectMexalProductFilters } from "../../shared/directProductCatalog.js";
-import { matchCustomer, matchProduct } from "../../shared/orderDocumentMatching.js";
+import { distinctiveCustomerTokens, matchCustomer, matchProduct } from "../../shared/orderDocumentMatching.js";
+import { parseOrderWorkbook } from "./order-excel.js";
 
 const DEFAULT_MODEL = "openai/gpt-5.6-luna";
 const MAX_FILE_BYTES = 2_800_000;
 const HARD_DAILY_DOCUMENT_LIMIT = Math.max(1, Number(process.env.AI_ORDER_HARD_DAILY_LIMIT || 25));
 const HARD_MAX_DOCUMENT_PAGES = Math.max(1, Number(process.env.AI_ORDER_HARD_MAX_PAGES || 20));
-const ALLOWED_MEDIA_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
+const EXCEL_MEDIA_BY_EXTENSION = new Map([
+  [".xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+  [".xls", "application/vnd.ms-excel"],
+  [".xlsm", "application/vnd.ms-excel.sheet.macroenabled.12"],
+]);
+const ALLOWED_MEDIA_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf", ...EXCEL_MEDIA_BY_EXTENSION.values()]);
 
 const ORDER_DOCUMENT_SCHEMA = jsonSchema({
   type: "object",
@@ -52,13 +58,16 @@ const ORDER_DOCUMENT_SCHEMA = jsonSchema({
 });
 
 function parseFile(body) {
-  const mediaType = String(body.mediaType || "").toLowerCase();
-  if (!ALLOWED_MEDIA_TYPES.has(mediaType)) throw Object.assign(new Error("Formato non supportato. Usa JPG, PNG, WebP o PDF."), { status: 400 });
+  const filename = String(body.fileName || "documento").replace(/[^a-zA-Z0-9._ -]/g, "").slice(0, 120) || "documento";
+  const extension = filename.toLowerCase().match(/\.[a-z0-9]+$/)?.[0] || "";
+  const declaredMediaType = String(body.mediaType || "").toLowerCase();
+  const mediaType = EXCEL_MEDIA_BY_EXTENSION.get(extension) || declaredMediaType;
+  if (!ALLOWED_MEDIA_TYPES.has(mediaType)) throw Object.assign(new Error("Formato non supportato. Usa JPG, PNG, WebP, PDF, XLSX, XLS o XLSM."), { status: 400 });
   const raw = String(body.fileBase64 || "").replace(/^data:[^;]+;base64,/, "");
   if (!raw) throw Object.assign(new Error("Seleziona una foto o un documento."), { status: 400 });
   const data = Buffer.from(raw, "base64");
   if (!data.length || data.length > MAX_FILE_BYTES) throw Object.assign(new Error("Il file supera il limite di 2,8 MB. Riduci la foto o il PDF e riprova."), { status: 413 });
-  return { data, mediaType, filename: String(body.fileName || "documento").replace(/[^a-zA-Z0-9._ -]/g, "").slice(0, 120) || "documento" };
+  return { data, mediaType, filename, isExcel: EXCEL_MEDIA_BY_EXTENSION.has(extension) };
 }
 
 function assertOrderModuleAllowed(auth, moduleCode) {
@@ -81,8 +90,46 @@ async function assertOrderAISafetyLimit(auth) {
   }
 }
 
-async function visibleCatalog(auth) {
-  const customersPromise = auth.scoped.rpc("visible_mexal_clients_for_me");
+function cleanSearchValue(value) { return String(value || "").replace(/[%_*,()]/g, " ").replace(/\s+/g, " ").trim(); }
+
+async function visibleCustomerShortlist(auth, extractions) {
+  const requests = [];
+  const seen = new Set();
+  const add = (key, builder) => {
+    if (!key || seen.has(key)) return;
+    seen.add(key); requests.push(builder());
+  };
+  for (const extraction of extractions) {
+    const customer = extraction?.customer || {};
+    const code = cleanSearchValue(customer.code); const vat = cleanSearchValue(customer.vatNumber); const tax = cleanSearchValue(customer.taxCode); const email = cleanSearchValue(customer.email);
+    if (code) add(`code:${code}`, () => auth.scoped.rpc("visible_mexal_clients_for_me").eq("codice_cliente", code).limit(5));
+    if (vat) {
+      const compactVat = vat.replace(/\s+/g, "").replace(/^IT/i, "");
+      add(`vat:${compactVat}`, () => auth.scoped.rpc("visible_mexal_clients_for_me").ilike("partita_iva", `%${compactVat}%`).limit(10));
+    }
+    if (tax) {
+      add(`tax-json:${tax}`, () => auth.scoped.rpc("visible_mexal_clients_for_me").contains("json_mexal", { codice_fiscale: tax }).limit(10));
+      add(`tax-data:${tax}`, () => auth.scoped.rpc("visible_mexal_clients_for_me").contains("dati_mexal", { codice_fiscale: tax }).limit(10));
+    }
+    if (email) add(`email:${email}`, () => auth.scoped.rpc("visible_mexal_clients_for_me").ilike("email", email).limit(10));
+    distinctiveCustomerTokens([customer.name, customer.alias].filter(Boolean).join(" ")).slice(0, 3).forEach((token) => {
+      const safe = cleanSearchValue(token);
+      add(`name:${safe}`, () => auth.scoped.rpc("visible_mexal_clients_for_me").ilike("ragione_sociale", `%${safe}%`).limit(60));
+    });
+  }
+  if (!requests.length) return [];
+  const results = await Promise.all(requests);
+  const error = results.find((result) => result.error)?.error;
+  if (error) throw error;
+  const shortlisted = [...new Map(results.flatMap((result) => result.data || []).map((customer) => [customer.codice_cliente, customer])).values()];
+  if (shortlisted.length) return shortlisted;
+  const fallback = await auth.scoped.rpc("visible_mexal_clients_for_me").limit(5000);
+  if (fallback.error) throw fallback.error;
+  return fallback.data || [];
+}
+
+async function visibleCatalog(auth, extractions) {
+  const customersPromise = visibleCustomerShortlist(auth, extractions);
   const productsPromise = applyDirectMexalProductFilters(auth.scoped
     .from("prodotti")
     .select("id,codice_mexal,codice,nome,ean,json_mexal"))
@@ -90,15 +137,27 @@ async function visibleCatalog(auth) {
   const implantsPromise = auth.scoped.from("ordini_impianti")
     .select("id,codice,descrizione")
     .eq("attivo", true).order("descrizione");
-  const [customersResult, productsResult, implantsResult] = await Promise.all([customersPromise, productsPromise, implantsPromise]);
-  if (customersResult.error) throw customersResult.error;
+  const [customers, productsResult, implantsResult] = await Promise.all([customersPromise, productsPromise, implantsPromise]);
   if (productsResult.error) throw productsResult.error;
   if (implantsResult.error) throw implantsResult.error;
   const products = [
     ...(productsResult.data || []).map((item) => ({ ...item, codice_articolo: item.codice_mexal || item.codice, descrizione: item.nome })),
     ...(implantsResult.data || []).filter((item) => String(item.codice || "").trim().toUpperCase().startsWith("IMP")).map((item) => ({ ...item, codice_articolo: item.codice, is_impianto: true })),
   ];
-  return { customers: customersResult.data || [], products };
+  return { customers, products };
+}
+
+function resolveExtraction(extraction, catalog) {
+  const customerResolution = matchCustomer(extraction.customer, catalog.customers);
+  return {
+    ...extraction,
+    customerCandidates: customerResolution.candidates,
+    customerMatch: customerResolution.match,
+    lines: extraction.lines.map((line) => {
+      const productResolution = matchProduct(line, catalog.products);
+      return { ...line, productCandidates: productResolution.candidates, productMatch: productResolution.match };
+    }),
+  };
 }
 
 export async function handleAIOrderDocument(req) {
@@ -116,11 +175,23 @@ export async function handleAIOrderDocument(req) {
     utente_id: auth.profile.id, modulo_codice: moduleCode, nome_file: file.filename, tipo_file: file.mediaType, dimensione_byte: file.data.length,
   }).select("id").single();
   if (acquisitionError) throw acquisitionError;
-  const generationId = await startAIGeneration(auth.admin, { profileId: auth.profile.id, conversationId: null, type: "riconoscimento_ordine", model });
-  await auth.admin.from("ai_ordini_acquisizioni").update({ generazione_id: generationId }).eq("id", acquisition.id);
+  let generationId = null;
+  if (!file.isExcel) {
+    generationId = await startAIGeneration(auth.admin, { profileId: auth.profile.id, conversationId: null, type: "riconoscimento_ordine", model });
+    await auth.admin.from("ai_ordini_acquisizioni").update({ generazione_id: generationId }).eq("id", acquisition.id);
+  }
 
   let result;
   try {
+    if (file.isExcel) {
+      const workbook = parseOrderWorkbook(file.data, { fileName: file.filename });
+      if (!workbook.orders.length) throw Object.assign(new Error("Nel workbook non sono state trovate righe prodotto utilizzabili."), { status: 400, details: workbook.excludedSheets });
+      const catalog = await visibleCatalog(auth, workbook.orders);
+      const matchedOrders = workbook.orders.map((order) => resolveExtraction(order, catalog));
+      const matched = { ...matchedOrders[0], orders: matchedOrders, workbook: { includedSheets: workbook.includedSheets, excludedSheets: workbook.excludedSheets }, warnings: [...workbook.warnings, ...(matchedOrders[0]?.warnings || [])] };
+      await auth.admin.from("ai_ordini_acquisizioni").update({ stato: "completata", esito: matched, completata_il: new Date().toISOString() }).eq("id", acquisition.id);
+      return { acquisitionId: acquisition.id, extraction: matched, usage: null };
+    }
     result = await generateText({
       model,
       system: "Leggi il documento commerciale senza inventare dati. Estrai cliente, righe prodotto e quantità. Usa stringhe vuote per i campi assenti. Il tipo è OCI solo per prenotazioni esplicite; OCM per evasione immediata esplicita; OCX per backorder esplicito; altrimenti NON_DETERMINATO. Le quantità devono essere positive. Segnala dubbi e testo illeggibile nelle warnings.",
@@ -134,22 +205,13 @@ export async function handleAIOrderDocument(req) {
     });
     const extraction = result.output;
     if (extraction.pageCount > HARD_MAX_DOCUMENT_PAGES) throw Object.assign(new Error(`Il documento contiene ${extraction.pageCount} pagine; la soglia tecnica è ${HARD_MAX_DOCUMENT_PAGES}.`), { status: 400 });
-    const catalog = await visibleCatalog(auth);
-    const customerResolution = matchCustomer(extraction.customer, catalog.customers);
-    const matched = {
-      ...extraction,
-      customerCandidates: customerResolution.candidates,
-      customerMatch: customerResolution.match,
-      lines: extraction.lines.map((line) => {
-        const productResolution = matchProduct(line, catalog.products);
-        return { ...line, productCandidates: productResolution.candidates, productMatch: productResolution.match };
-      }),
-    };
+    const catalog = await visibleCatalog(auth, [extraction]);
+    const matched = resolveExtraction(extraction, catalog);
     const usage = await completeAIGeneration(auth.admin, { generationId, profileId: auth.profile.id, result });
     await auth.admin.from("ai_ordini_acquisizioni").update({ stato: "completata", esito: matched, completata_il: new Date().toISOString() }).eq("id", acquisition.id);
     return { acquisitionId: acquisition.id, extraction: matched, usage };
   } catch (error) {
-    await failAIGeneration(auth.admin, generationId, error);
+    if (generationId) await failAIGeneration(auth.admin, generationId, error);
     await auth.admin.from("ai_ordini_acquisizioni").update({ stato: "errore", errore: String(error?.message || "Errore").slice(0, 1000), completata_il: new Date().toISOString() }).eq("id", acquisition.id);
     throw error;
   }

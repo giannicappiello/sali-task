@@ -6,6 +6,7 @@ import useBackNavigation from "../../../hooks/useBackNavigation";
 import { useOrdersModule } from "../ordersModuleContext";
 
 const MAX_BYTES = 2_800_000;
+const EXCEL_EXTENSIONS = new Set(["xlsx", "xls", "xlsm"]);
 
 function readAsDataUrl(file) {
   return new Promise((resolve, reject) => {
@@ -43,8 +44,9 @@ async function prepareImage(file) {
 async function prepareFile(file) {
   if (!file) throw new Error("Seleziona un file.");
   if (file.type.startsWith("image/")) return prepareImage(file);
-  if (file.type !== "application/pdf") throw new Error("Usa una foto JPG/PNG/WebP oppure un PDF.");
-  if (file.size > MAX_BYTES) throw new Error("Il PDF supera 2,8 MB. Riducilo e riprova.");
+  const extension = file.name.toLowerCase().split(".").pop();
+  if (file.type !== "application/pdf" && !EXCEL_EXTENSIONS.has(extension)) throw new Error("Usa una foto JPG/PNG/WebP, un PDF oppure un file Excel XLSX/XLS/XLSM.");
+  if (file.size > MAX_BYTES) throw new Error("Il documento supera 2,8 MB. Riducilo e riprova.");
   return { file, preview: "" };
 }
 
@@ -57,9 +59,10 @@ export default function AIOrderImport() {
   const [document, setDocument] = useState(null);
   const [preview, setPreview] = useState("");
   const [result, setResult] = useState(null);
-  const [customerCode, setCustomerCode] = useState("");
-  const [lineChoices, setLineChoices] = useState([]);
-  const [orderType, setOrderType] = useState("NON_DETERMINATO");
+  const [orderPreviews, setOrderPreviews] = useState([]);
+  const [activeOrder, setActiveOrder] = useState(0);
+  const [reviewStates, setReviewStates] = useState([]);
+  const [workbookReport, setWorkbookReport] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const workspaceModuleCode = moduleCode === "ph" ? "ordini_ph" : "ordini_pr";
@@ -67,7 +70,7 @@ export default function AIOrderImport() {
   const requestedOrderLabel = requestedOrderType === "prenotazione" ? "Ordine prenotazione" : "Nuovo ordine";
 
   async function chooseFile(file) {
-    setError(""); setResult(null);
+    setError(""); setResult(null); setOrderPreviews([]); setReviewStates([]); setWorkbookReport(null); setActiveOrder(0);
     try {
       const prepared = await prepareFile(file);
       if (prepared.file.size > MAX_BYTES) throw new Error("La foto è ancora troppo grande. Inquadrala più da vicino e riprova.");
@@ -90,16 +93,28 @@ export default function AIOrderImport() {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload.success === false) throw new Error(payload.error || "Lettura AI non riuscita.");
       const extraction = payload.extraction;
-      setResult({ ...extraction, usage: payload.usage });
-      setCustomerCode(extraction.customerMatch?.status === "matched" ? extraction.customerMatch.proposedId || "" : "");
-      setLineChoices(extraction.lines.map((line) => ({ code: line.productMatch?.status === "matched" ? line.productMatch.proposedId || "" : "", quantity: line.quantity })));
-      setOrderType(extraction.documentType || "NON_DETERMINATO");
+      const previews = (extraction.orders?.length ? extraction.orders : [extraction]).map((order) => ({ ...order, usage: payload.usage }));
+      const states = previews.map((order) => ({
+        customerCode: order.customerMatch?.status === "matched" ? order.customerMatch.proposedId || "" : "",
+        lineChoices: order.lines.map((line) => ({ code: line.productMatch?.status === "matched" ? line.productMatch.proposedId || "" : "", quantity: line.quantity })),
+        orderType: order.documentType || "NON_DETERMINATO",
+      }));
+      setOrderPreviews(previews); setReviewStates(states); setWorkbookReport(extraction.workbook || null); setActiveOrder(0); setResult(previews[0]);
     } catch (requestError) {
       setError(requestError.message || "Lettura AI non riuscita.");
     } finally {
       setLoading(false);
     }
   }
+
+  const reviewState = reviewStates[activeOrder] || { customerCode: "", lineChoices: [], orderType: "NON_DETERMINATO" };
+  const customerCode = reviewState.customerCode;
+  const lineChoices = reviewState.lineChoices;
+  const orderType = reviewState.orderType;
+  function updateReview(patch) {
+    setReviewStates((current) => current.map((item, index) => index === activeOrder ? { ...item, ...patch } : item));
+  }
+  function selectOrder(index) { setActiveOrder(index); setResult(orderPreviews[index]); }
 
   const selectedLines = useMemo(() => (result?.lines || []).map((line, index) => ({
     productCode: lineChoices[index]?.code || "", quantity: Math.max(0, Number(lineChoices[index]?.quantity || 0)), sourceText: line.sourceText,
@@ -123,16 +138,28 @@ export default function AIOrderImport() {
       <div className="ai-order-requested-type"><span>Tipo di ordine da generare</span><strong>{requestedOrderLabel}</strong></div>
       <div className="ai-order-upload-actions">
         <label className="orders-primary"><Camera size={19} /> Scatta foto<input hidden type="file" accept="image/*" capture="environment" onChange={(event) => void chooseFile(event.target.files?.[0])} /></label>
-        <label className="orders-secondary"><FileUp size={19} /> Carica foto o PDF<input hidden type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(event) => void chooseFile(event.target.files?.[0])} /></label>
+        <label className="orders-secondary"><FileUp size={19} /> Carica documento<input hidden type="file" accept="image/jpeg,image/png,image/webp,application/pdf,.xlsx,.xls,.xlsm" onChange={(event) => void chooseFile(event.target.files?.[0])} /></label>
       </div>
       {document && <div className="ai-order-selected-file">{preview ? <img src={preview} alt="Anteprima documento" /> : <FileUp size={36} />}<div><strong>{document.name}</strong><span>{(document.size / 1024).toLocaleString("it-IT", { maximumFractionDigits: 0 })} KB</span></div></div>}
       <button className="orders-primary" type="button" disabled={!document || loading} onClick={analyze}>{loading ? "Lettura in corso…" : "Riconosci cliente e prodotti"}</button>
-      <small>Formati: JPG, PNG, WebP o PDF fino a 2,8 MB. Il file viene usato per la lettura e non viene archiviato.</small>
+      <small>Formati: JPG, PNG, WebP, PDF, XLSX, XLS o XLSM fino a 2,8 MB. Tutti i fogli Excel utili vengono analizzati; il file non viene archiviato.</small>
     </section>
 
     {error && <div className="orders-alert"><AlertTriangle size={18} /> {error}</div>}
 
     {result && <>
+      {orderPreviews.length > 1 && <section className="orders-panel ai-order-workbook-orders">
+        <h3>Ordini distinti nel workbook</h3>
+        <p>I fogli con cliente, numero o data ordine differenti restano separati. Controlla una preview alla volta.</p>
+        <div>{orderPreviews.map((order, index) => <button type="button" className={activeOrder === index ? "orders-primary" : "orders-secondary"} key={order.previewId || index} onClick={() => selectOrder(index)}>Ordine {index + 1}{order.documentNumber ? ` · ${order.documentNumber}` : ""}</button>)}</div>
+      </section>}
+      {workbookReport && <section className="orders-panel ai-order-workbook-report">
+        <h3>Fogli analizzati</h3>
+        <div className="ai-order-sheet-grid">
+          {(workbookReport.includedSheets || []).map((sheet) => <div className="status-badge success" key={`included-${sheet.sheetName}`}><strong>{sheet.sheetName}</strong><span>{sheet.lineCount} righe incluse{sheet.hidden ? " · foglio nascosto analizzato" : ""}</span></div>)}
+          {(workbookReport.excludedSheets || []).map((sheet) => <div className="status-badge neutral" key={`excluded-${sheet.sheetName}`}><strong>{sheet.sheetName}</strong><span>Escluso: {sheet.reason}</span></div>)}
+        </div>
+      </section>}
       <section className="orders-panel ai-order-review">
         <h3>Cliente riconosciuto</h3>
         <p><strong>Letto:</strong> {result.customer.name || "Nome non leggibile"} {result.customer.vatNumber ? `· P. IVA ${result.customer.vatNumber}` : ""}</p>
@@ -141,7 +168,8 @@ export default function AIOrderImport() {
           <span>{Math.round(Number(result.customerMatch?.confidence || 0) * 100)}% · {result.customerMatch?.reason || "Nessuna motivazione disponibile."}</span>
           {result.customerMatch?.status !== "matched" ? <small>Conferma esplicitamente uno dei candidati; non verrà creato alcun nuovo cliente.</small> : null}
         </div>
-        <select value={customerCode} onChange={(event) => setCustomerCode(event.target.value)}>
+        {(result.customerMatch?.alternatives || []).length > 0 && <ul className="ai-match-alternatives">{result.customerMatch.alternatives.map((item) => <li key={item.identifier}><strong>{item.identifier} · {item.label}</strong><span>{Math.round(item.confidence * 100)}% · {item.reason}</span></li>)}</ul>}
+        <select value={customerCode} onChange={(event) => updateReview({ customerCode: event.target.value })}>
           <option value="">Da selezionare manualmente nel formulario</option>
           {(result.customerCandidates || []).map((item) => <option key={item.code} value={item.code}>{item.code} · {item.name} · corrispondenza {Math.round(item.score * 100)}%</option>)}
         </select>
@@ -149,21 +177,22 @@ export default function AIOrderImport() {
       <section className="orders-panel ai-order-review">
         <h3>Prodotti e quantità</h3>
         <div className="ai-order-lines">{result.lines.map((line, index) => <div className="ai-order-line" key={`${line.sourceText}-${index}`}>
-          <div><strong>{line.description || line.sourceText}</strong><span>Testo letto: {line.sourceText}</span></div>
-          <div className={`ai-match-status ${line.productMatch?.status || "unmatched"}`}><strong>{line.productMatch?.status || "unmatched"}</strong><span>{Math.round(Number(line.productMatch?.confidence || 0) * 100)}% · {line.productMatch?.reason || "Nessun abbinamento affidabile."}</span></div>
-          <label>Prodotto<select value={lineChoices[index]?.code || ""} onChange={(event) => setLineChoices((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, code: event.target.value } : item))}>
+          <div><strong>{line.description || line.sourceText}</strong><span>Testo letto: {line.sourceText}</span><small>Codice: {line.productCode || "—"} · EAN: {line.ean || "—"}{line.sheetName ? ` · ${line.sheetName}, riga ${line.rowNumber}` : ""}</small></div>
+          <div className={`ai-match-status ${line.productMatch?.status || "unmatched"}`}><strong>{line.productMatch?.status || "unmatched"}</strong><span>{Math.round(Number(line.productMatch?.confidence || 0) * 100)}% · {line.productMatch?.reason || "Nessun abbinamento affidabile."}</span><small>Proposto: {line.productMatch?.proposedId || "nessuno"}</small></div>
+          {(line.productMatch?.alternatives || []).length > 0 && <ul className="ai-match-alternatives">{line.productMatch.alternatives.map((item) => <li key={item.identifier}><strong>{item.identifier} · {item.label}</strong><span>{Math.round(item.confidence * 100)}% · {item.reason}</span></li>)}</ul>}
+          <label>Prodotto<select value={lineChoices[index]?.code || ""} onChange={(event) => updateReview({ lineChoices: lineChoices.map((item, itemIndex) => itemIndex === index ? { ...item, code: event.target.value } : item) })}>
             <option value="">Non abbinato</option>{(line.productCandidates || []).map((item) => <option key={item.code} value={item.code}>{item.code} · {item.description} · {Math.round(item.score * 100)}%</option>)}
           </select></label>
-          <label>Quantità<input type="number" min="0.01" step="0.01" value={lineChoices[index]?.quantity ?? ""} onChange={(event) => setLineChoices((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, quantity: event.target.value } : item))} /></label>
+          <label>Quantità<input type="number" min="0.01" step="0.01" value={lineChoices[index]?.quantity ?? ""} onChange={(event) => updateReview({ lineChoices: lineChoices.map((item, itemIndex) => itemIndex === index ? { ...item, quantity: event.target.value } : item) })} /></label>
         </div>)}</div>
       </section>
       <section className="orders-panel ai-order-review">
         <h3>Tipo documento rilevato</h3>
-        <select value={orderType} onChange={(event) => setOrderType(event.target.value)}><option value="NON_DETERMINATO">Non determinato</option><option value="OCM">OCM</option><option value="OCX">OCX</option><option value="OCI">OCI · prenotazione</option></select>
+        <select value={orderType} onChange={(event) => updateReview({ orderType: event.target.value })}><option value="NON_DETERMINATO">Non determinato</option><option value="OCM">OCM</option><option value="OCX">OCX</option><option value="OCI">OCI · prenotazione</option></select>
         <p className="orders-alert">Il tipo rilevato descrive il documento acquisito. La bozza manterrà la scelta “{requestedOrderLabel}” effettuata prima del caricamento.</p>
         {(result.warnings || []).length > 0 && <ul>{result.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}
         <button className="orders-primary" type="button" onClick={openDraft}>Apri e controlla la bozza</button>
-        <small>Costo di questa lettura: {Number(result.usage?.cost || 0).toLocaleString("it-IT", { style: "currency", currency: "USD", minimumFractionDigits: 4 })}</small>
+        {result.usage ? <small>Costo di questa lettura: {Number(result.usage?.cost || 0).toLocaleString("it-IT", { style: "currency", currency: "USD", minimumFractionDigits: 4 })}</small> : <small>Import Excel deterministico: nessun costo AI.</small>}
       </section>
     </>}
   </div>;

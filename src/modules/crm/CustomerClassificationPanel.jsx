@@ -3,6 +3,9 @@ import { CheckSquare, Pencil, RefreshCw, RotateCcw, Search, SlidersHorizontal, U
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
+import CrmCustomerLink from "./CrmCustomerLink";
+import { CrmCustomerStatusBadge, CrmCustomerStatusDialog, CrmCustomerStatusFilter } from "./CrmCustomerStatus";
+import { setCrmCustomerActive, useCrmCustomerStatus } from "./crmCustomerStatusModel";
 import "./customer-classification.css";
 
 const PAGE_SIZE = 50;
@@ -25,12 +28,13 @@ export default function CustomerClassificationPanel() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(() => Math.max(0, Number(searchParams.get("classification_page") || 0)));
   const [search, setSearch] = useState(() => searchParams.get("classification_search") || "");
   const [area, setArea] = useState(() => searchParams.get("classification_area") || "");
   const [agent, setAgent] = useState(() => searchParams.get("classification_agent") || "");
   const [mode, setMode] = useState(() => searchParams.get("classification_mode") || "");
-  const [summary, setSummary] = useState({ total: 0, conto_terzi: 0, b2b: 0, online: 0, overrides: 0 });
+  const [customerStatus, setCustomerStatus] = useCrmCustomerStatus("all");
+  const [summary, setSummary] = useState({ total: 0, conto_terzi: 0, b2b: 0, online: 0, overrides: 0, active: 0, inactive: 0 });
   const [selected, setSelected] = useState([]);
   const [bulkArea, setBulkArea] = useState("b2b");
   const [editing, setEditing] = useState(null);
@@ -39,12 +43,13 @@ export default function CustomerClassificationPanel() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [statusCustomer, setStatusCustomer] = useState(null);
 
   const load = useCallback(async () => {
     if (!isAdminUser) return;
     setLoading(true);
     setError("");
-    const applyFilters = (source, { targetArea = area, targetMode = mode } = {}) => {
+    const applyFilters = (source, { targetArea = area, targetMode = mode, targetStatus = customerStatus } = {}) => {
       let filtered = source;
       if (targetArea) filtered = filtered.eq("area_crm", targetArea);
       if (targetMode === "automatico") filtered = filtered.is("area_override", null);
@@ -54,23 +59,27 @@ export default function CustomerClassificationPanel() {
         const term = search.trim().replaceAll(",", " ");
         filtered = filtered.or(`codice_cliente.ilike.%${term}%,ragione_sociale.ilike.%${term}%`);
       }
+      if (targetStatus === "active") filtered = filtered.eq("crm_active", true);
+      if (targetStatus === "inactive") filtered = filtered.eq("crm_active", false);
       return filtered;
     };
     let query = supabase
       .from("crm_customer_classification_catalog")
-      .select("codice_cliente,ragione_sociale,codice_agente_mexal,agente_classificazione,area_automatica,area_override,area_crm,origine_classificazione,modalita,classificata_il,override_il,override_note,attivo_mexal", { count: "exact" })
+      .select("codice_cliente,ragione_sociale,codice_agente_mexal,agente_classificazione,area_automatica,area_override,area_crm,origine_classificazione,modalita,classificata_il,override_il,override_note,attivo_mexal,crm_active,crm_status_changed_at,crm_status_reason", { count: "exact" })
       .order("ragione_sociale")
       .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
     query = applyFilters(query);
-    const countQuery = (targetArea = area, targetMode = mode) => applyFilters(
+    const countQuery = (targetArea = area, targetMode = mode, targetStatus = customerStatus) => applyFilters(
       supabase.from("crm_customer_classification_catalog").select("codice_cliente", { count: "exact", head: true }),
-      { targetArea, targetMode }
+      { targetArea, targetMode, targetStatus }
     );
     const [rowsResult, totalResult, ...areaResults] = await Promise.all([
       query,
       countQuery(),
       ...AREA_OPTIONS.map(([value]) => countQuery(value)),
       countQuery(area, "manuale"),
+      countQuery(area, mode, "active"),
+      countQuery(area, mode, "inactive"),
     ]);
     const { data, error: loadError, count } = rowsResult;
     const aggregateError = totalResult.error || areaResults.find((result) => result.error)?.error;
@@ -83,20 +92,22 @@ export default function CustomerClassificationPanel() {
         total: totalResult.count || 0,
         ...Object.fromEntries(AREA_OPTIONS.map(([value], index) => [value, areaResults[index]?.count || 0])),
         overrides: areaResults[AREA_OPTIONS.length]?.count || 0,
+        active: areaResults[AREA_OPTIONS.length + 1]?.count || 0,
+        inactive: areaResults[AREA_OPTIONS.length + 2]?.count || 0,
       });
       setSelected((current) => current.filter((code) => (data || []).some((row) => row.codice_cliente === code)));
     }
     setLoading(false);
-  }, [agent, area, isAdminUser, mode, page, search]);
+  }, [agent, area, customerStatus, isAdminUser, mode, page, search]);
 
   useEffect(() => {
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
-      const values = { classification_search: search, classification_area: area, classification_agent: agent, classification_mode: mode };
+      const values = { classification_search: search, classification_area: area, classification_agent: agent, classification_mode: mode, classification_page: page ? String(page) : "" };
       Object.entries(values).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key));
       return next;
     }, { replace: true });
-  }, [agent, area, mode, search, setSearchParams]);
+  }, [agent, area, mode, page, search, setSearchParams]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 180);
@@ -152,6 +163,16 @@ export default function CustomerClassificationPanel() {
     setBusy("");
   }
 
+  async function changeCustomerStatus({ active, reason }) {
+    if (!statusCustomer) return;
+    setBusy("status"); setError("");
+    try {
+      await setCrmCustomerActive({ customerKey: `mexal:${statusCustomer.codice_cliente}`, crmType: statusCustomer.area_crm, active, reason });
+      setStatusCustomer(null); setMessage(`${statusCustomer.ragione_sociale}: stato CRM aggiornato.`); await load();
+    } catch (statusError) { setError(statusError.message); }
+    finally { setBusy(""); }
+  }
+
   if (!isAdminUser) return null;
 
   return (
@@ -169,6 +190,8 @@ export default function CustomerClassificationPanel() {
 
       <div className="crm-classification-kpis" aria-label="Riepilogo intero dataset filtrato">
         <button type="button" className="kpi-card" onClick={() => { setArea(""); setPage(0); }}><div><span>Clienti filtrati</span><strong>{summary.total}</strong><p>intero dataset</p></div></button>
+        <button type="button" className="kpi-card" onClick={() => { setCustomerStatus("active"); setPage(0); }}><div><span>Clienti CRM attivi</span><strong>{summary.active}</strong><p>apri Attivi</p></div></button>
+        <button type="button" className="kpi-card" onClick={() => { setCustomerStatus("inactive"); setPage(0); }}><div><span>Clienti CRM non attivi</span><strong>{summary.inactive}</strong><p>apri Non attivi</p></div></button>
         {datasetSummary.map((item) => <button type="button" className="kpi-card" key={item.value} onClick={() => { setArea(item.value); setPage(0); }}><div><span>{item.label}</span><strong>{item.count}</strong><p>apri elenco filtrato</p></div></button>)}
         <button type="button" className="kpi-card" onClick={() => { setMode("manuale"); setPage(0); }}><div><span>Override</span><strong>{summary.overrides}</strong><p>apri override filtrati</p></div></button>
       </div>
@@ -178,6 +201,7 @@ export default function CustomerClassificationPanel() {
         <select aria-label="Filtra per area CRM" value={area} onChange={(event) => { setArea(event.target.value); setPage(0); }}><option value="">Tutte le aree</option>{AREA_OPTIONS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
         <label><SlidersHorizontal size={17} /><input value={agent} onChange={(event) => { setAgent(event.target.value); setPage(0); }} placeholder="Agente" /></label>
         <select aria-label="Filtra classificazione automatica o manuale" value={mode} onChange={(event) => { setMode(event.target.value); setPage(0); }}><option value="">Automatiche e manuali</option><option value="automatico">Automatiche</option><option value="manuale">Override manuali</option></select>
+        <CrmCustomerStatusFilter value={customerStatus} onChange={(value) => { setCustomerStatus(value); setPage(0); }} id="classification-customer-status" />
       </div>
 
       {selected.length ? <div className="crm-selection-toolbar" role="region" aria-label="Azioni massive">
@@ -195,13 +219,13 @@ export default function CustomerClassificationPanel() {
           <thead><tr><th><input type="checkbox" aria-label="Seleziona la pagina" checked={allPageSelected} onChange={togglePage} /></th><th>Cliente</th><th>Agente</th><th>Area CRM</th><th>Origine</th><th>Ultima classificazione</th><th>Stato</th><th>Azioni</th></tr></thead>
           <tbody>{rows.map((row) => <tr key={row.codice_cliente}>
             <td><input type="checkbox" aria-label={`Seleziona ${row.ragione_sociale}`} checked={selected.includes(row.codice_cliente)} onChange={() => toggle(row.codice_cliente)} /></td>
-            <td><strong>{row.ragione_sociale}</strong><small>{row.codice_cliente}</small></td>
+            <td><CrmCustomerLink crmType={row.area_crm} customerCode={row.codice_cliente} name={row.ragione_sociale}><strong>{row.ragione_sociale}</strong></CrmCustomerLink><small>{row.codice_cliente}</small></td>
             <td><strong>{row.agente_classificazione || "Nessun agente"}</strong><small>{row.codice_agente_mexal || "—"}</small></td>
             <td><span className={`status-badge crm-area-${row.area_crm}`}>{areaLabel(row.area_crm)}</span>{row.area_override ? <small>Automatico: {areaLabel(row.area_automatica)}</small> : null}</td>
             <td><span className={`crm-status ${row.modalita}`}>{row.modalita === "manuale" ? "Override manuale" : "agent_rule"}</span>{row.override_note ? <small>{row.override_note}</small> : null}</td>
             <td>{formatDateTime(row.classificata_il)}{row.override_il ? <small>Override: {formatDateTime(row.override_il)}</small> : null}</td>
-            <td><span className={`status-badge ${row.attivo_mexal ? "success" : "neutral"}`}>{row.attivo_mexal ? "Attivo" : "Non attivo"}</span></td>
-            <td><button className="crm-icon-action" type="button" onClick={() => { setEditing(row); setNote(row.override_note || ""); }}><Pencil size={16} />Modifica</button></td>
+            <td><CrmCustomerStatusBadge active={row.crm_active !== false} /><small>Anagrafica Mexal: {row.attivo_mexal ? "attiva" : "non attiva"}</small></td>
+            <td><div className="crm-row-inline-actions"><button className="crm-icon-action" type="button" onClick={() => { setEditing(row); setNote(row.override_note || ""); }}><Pencil size={16} />Modifica area</button><button className={row.crm_active !== false ? "danger-action" : "secondary-action"} type="button" onClick={() => setStatusCustomer(row)}>{row.crm_active !== false ? "Disattiva" : "Riattiva"}</button></div></td>
           </tr>)}</tbody>
         </table>
         {loading ? <div className="crm-loading">Caricamento classificazioni...</div> : null}
@@ -222,6 +246,7 @@ export default function CustomerClassificationPanel() {
           <div className="crm-modal-actions"><button type="button" onClick={() => setEditing(null)}>Annulla</button><button className="crm-primary" disabled={Boolean(busy)}>Salva override</button></div>
         </form>
       </div> : null}
+      <CrmCustomerStatusDialog customer={statusCustomer ? { ...statusCustomer, nome: statusCustomer.ragione_sociale, crm_active: statusCustomer.crm_active !== false } : null} busy={busy === "status"} onClose={() => setStatusCustomer(null)} onConfirm={(change) => void changeCustomerStatus(change)} />
     </section>
   );
 }

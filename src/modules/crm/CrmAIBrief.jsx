@@ -4,6 +4,7 @@ import { useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
 import CrmPeriodFilter, { useCrmPeriod } from "./CrmPeriodFilter";
+import { CrmPageHeader } from "./CrmWorkspaceUI";
 
 async function crmAIRequest(payload) {
   const { data } = await supabase.auth.getSession();
@@ -101,7 +102,7 @@ export default function CrmAIBrief() {
   }
 
   return <div className="crm-page">
-    <div className="crm-toolbar"><div><h2>AI Business Assistant</h2><p>BRIEF → ANALISI → DECISIONE UMANA → PIANO → PROGETTO → FASI → REMINDER</p></div><CrmPeriodFilter period={period} compact /></div>
+    <CrmPageHeader eyebrow="CRM Platform AI" title="AI Business Assistant" description="BRIEF → ANALISI → DECISIONE UMANA → PIANO → PROGETTO → FASI → REMINDER" actions={<CrmPeriodFilter period={period} compact />} />
     {error ? <div className="crm-message error">{error}</div> : null}
     <div className="crm-ai-shell">
       <aside className="crm-ai-sidebar"><button className="primary-action crm-primary" type="button" onClick={() => { setBriefId(""); setMessages([]); setDecision(null); setResult(null); }}><FilePenLine size={17} />Nuovo brief</button><h3>Brief salvati</h3><div className="crm-brief-list">{briefs.map((item) => <button type="button" className={briefId === item.id ? "active" : ""} key={item.id} onClick={() => void loadBrief(item.id)}><strong>{item.titolo}</strong><span>{item.crm_tipo} · {item.stato}</span></button>)}</div></aside>

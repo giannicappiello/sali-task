@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { BarChart3, Bot, Mail, Megaphone, RefreshCw, ShoppingBag, Store, UsersRound, Workflow } from "lucide-react";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
 import { DATA_STATUS, DIGITAL_CONNECTIONS, connectionDataStatus, metricValue } from "./digitalConfig";
 import { formatDate, formatMoney } from "./crmConfig";
+import CrmCustomerLink from "./CrmCustomerLink";
 import CrmPeriodFilter, { useCrmPeriod } from "./CrmPeriodFilter";
 
 import "./digital.css";
@@ -123,9 +124,20 @@ export function DigitalChannel({ channel }) {
 
 export function DigitalJourney() {
   const period = useCrmPeriod();
-  const [rows, setRows] = useState([]); const [page, setPage] = useState(0); const [phase, setPhase] = useState(""); const [error, setError] = useState("");
-  const load = useCallback(async () => { let query = supabase.from("crm_customer_events").select("id,fase,avvenuto_il,fonte,consenso_riferimento,crm_accounts(nome)").gte("avvenuto_il", period.from).lte("avvenuto_il", period.to + "T23:59:59.999Z").order("avvenuto_il", { ascending: false }).range(page * 50, page * 50 + 49); if (phase) query = query.eq("fase", phase); const { data, error: loadError } = await query; if (loadError) setError(loadError.message); else { setRows(data || []); setError(""); } }, [page, period.from, period.to, phase]);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const page = Math.max(0, Number(searchParams.get("journeyPage") || 0));
+  const phase = searchParams.get("journeyPhase") || "";
+  const [rows, setRows] = useState([]); const [error, setError] = useState("");
+  const updateJourneyParam = useCallback((name, value, resetPage = true) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (value === null || value === undefined || value === "") next.delete(name); else next.set(name, String(value));
+      if (resetPage) next.delete("journeyPage");
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+  const load = useCallback(async () => { let query = supabase.from("crm_customer_events").select("id,fase,avvenuto_il,fonte,consenso_riferimento,crm_accounts(id,nome,codice_cliente_mexal)").gte("avvenuto_il", period.from).lte("avvenuto_il", period.to + "T23:59:59.999Z").order("avvenuto_il", { ascending: false }).range(page * 50, page * 50 + 49); if (phase) query = query.eq("fase", phase); const { data, error: loadError } = await query; if (loadError) setError(loadError.message); else { setRows(data || []); setError(""); } }, [page, period.from, period.to, phase]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
   const phases = useMemo(() => ["session","product_view","lead","newsletter_signup","email_sent","email_open","email_click","add_to_cart","checkout_started","purchase","repeat_purchase","ad_click","creator_touch","review","return","refund","loyalty"], []);
-  return <div className="crm-page"><div className="crm-toolbar"><div><h2>Customer Journey</h2><p>Solo eventi realmente disponibili, minimizzati e filtrati server-side.</p></div><div className="crm-toolbar-actions"><CrmPeriodFilter period={period} compact /><label>Evento<select value={phase} onChange={(event) => { setPhase(event.target.value); setPage(0); }}><option value="">Tutti</option>{phases.map((item) => <option key={item}>{item}</option>)}</select></label></div></div>{error ? <div className="crm-message error">{error}</div> : null}<div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Cliente</th><th>Evento</th><th>Data</th><th>Fonte</th><th>Consenso</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.crm_accounts?.nome || "Identità non collegata"}</td><td>{row.fase}</td><td>{new Date(row.avvenuto_il).toLocaleString("it-IT")}</td><td>{row.fonte || "unknown"}</td><td>{row.consenso_riferimento || "Non richiesto / non disponibile"}</td></tr>)}</tbody></table>{!rows.length ? <div className="crm-empty">Nessun evento autorizzato disponibile.</div> : null}</div><div className="crm-pagination"><button type="button" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>Precedente</button><span>Pagina {page + 1}</span><button type="button" disabled={rows.length < 50} onClick={() => setPage((value) => value + 1)}>Successiva</button></div></div>;
+  return <div className="crm-page"><div className="crm-toolbar"><div><h2>Customer Journey</h2><p>Solo eventi realmente disponibili, minimizzati e filtrati server-side.</p></div><div className="crm-toolbar-actions"><CrmPeriodFilter period={period} compact /><label>Evento<select value={phase} onChange={(event) => updateJourneyParam("journeyPhase", event.target.value)}><option value="">Tutti</option>{phases.map((item) => <option key={item}>{item}</option>)}</select></label></div></div>{error ? <div className="crm-message error">{error}</div> : null}<div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Cliente</th><th>Evento</th><th>Data</th><th>Fonte</th><th>Consenso</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.crm_accounts ? <CrmCustomerLink crmType="online" customerCode={row.crm_accounts.codice_cliente_mexal} accountId={row.crm_accounts.id} name={row.crm_accounts.nome} period={period}>{row.crm_accounts.nome}</CrmCustomerLink> : "Identità non collegata"}</td><td>{row.fase}</td><td>{new Date(row.avvenuto_il).toLocaleString("it-IT")}</td><td>{row.fonte || "unknown"}</td><td>{row.consenso_riferimento || "Non richiesto / non disponibile"}</td></tr>)}</tbody></table>{!rows.length ? <div className="crm-empty">Nessun evento autorizzato disponibile.</div> : null}</div><div className="crm-pagination"><button type="button" disabled={page === 0} onClick={() => updateJourneyParam("journeyPage", page - 1, false)}>Precedente</button><span>Pagina {page + 1}</span><button type="button" disabled={rows.length < 50} onClick={() => updateJourneyParam("journeyPage", page + 1, false)}>Successiva</button></div></div>;
 }

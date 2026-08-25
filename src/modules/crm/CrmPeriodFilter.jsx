@@ -58,9 +58,16 @@ export function useCrmPeriod() {
   }, [setSearchParams]);
 
   const withPeriod = useCallback((path, extras = {}) => {
-    const params = new URLSearchParams({ from, to, period: preset, ...extras });
+    const params = new URLSearchParams(searchParams);
+    params.set("from", from);
+    params.set("to", to);
+    params.set("period", preset);
+    Object.entries(extras).forEach(([key, value]) => {
+      if (value === null || value === undefined || value === "") params.delete(key);
+      else params.set(key, String(value));
+    });
     return `${path}?${params.toString()}`;
-  }, [from, preset, to]);
+  }, [from, preset, searchParams, to]);
 
   return { from, to, preset, update, withPeriod, getParam: (name) => searchParams.get(name) };
 }

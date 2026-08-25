@@ -125,10 +125,22 @@ test("run_now/oct_orders è registrato, resta OFF e non importa OCM/OCX/OCI", as
   assert.equal(lines.length, 1);
 });
 
-test("payload RdP usa UUID stabili e non espone dati tecnici MES", () => {
-  const payload = createProductionPayload({ request: { external_id: "r" }, order: { id: "o", mexal_chiave: "OC+2+412", data_ordine: "2026-08-06", mexal_cod_conto: "501.00159" },
-    line: { id: "l", codice_articolo: "PB0004", quantita: 7000 } });
-  assert.deepEqual(Object.keys(payload), ["schemaVersion", "externalId", "oct", "commercialArticleCode", "quantity", "orderDate", "requestedDeliveryDate", "customerMexalCode"]);
+test("payload RdP multi-OCT conserva la domanda completa e non espone logica tecnica MES", () => {
+  const payload = createProductionPayload({
+    request: { external_id: "r", idempotency_key: "rdp:v2:key" },
+    snapshot: { id: 12, hash: "hash", capturedAt: "2026-08-24T20:00:00.000Z" },
+    demand: {
+      orders: [{ orderId: "o", mexalKey: "OC+2+412", sigla: "OC", serie: 2, numero: 412 }],
+      items: [{ itemIndex: 1, itemExternalKey: "OC+2+412:10", orderId: "o", lineId: "l", mexalOrderKey: "OC+2+412", mexalLinePosition: 10,
+        commercialArticleCode: "PB0004", productionArticleCode: null, mappingStatus: "TO_RESOLVE_IN_MES", requestedQuantity: 7000,
+        requestedUnitOfMeasure: "PZ", productionQuantity: 7000, productionUnitOfMeasure: "PZ", conversion: null, requestedDeliveryDate: "2026-09-01" }],
+    },
+  });
+  assert.deepEqual(Object.keys(payload), ["schemaVersion", "externalId", "requestType", "idempotencyKey", "demandSnapshot", "availabilityOwner", "orders", "items"]);
+  assert.equal(payload.schemaVersion, 2);
+  assert.equal(payload.items[0].requested.value, 7000);
+  assert.equal(payload.availabilityOwner, "PROGREMES");
+  assert.equal(JSON.stringify(payload).includes("availableFinishedProduct"), false);
   assert.equal(JSON.stringify(payload).includes("formula"), false);
   assert.equal(JSON.stringify(payload).includes("lotto"), false);
 });

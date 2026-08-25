@@ -4,6 +4,7 @@ import process from "node:process";
 import { createClient } from "@supabase/supabase-js";
 import { verifyProductionMessage } from "./progremes-production-hmac.js";
 import { createProductionPayload, createProgremesProductionClient } from "./progremes-production-client.js";
+import { prepareProductionDemand, productionDemandContract } from "./production-netting.js";
 
 const EVENT_PATH = "/api/progremes-production/events";
 function required(name) { const value = String(process.env[name] || "").trim(); if (!value) throw new Error(`Configurazione server mancante: ${name}`); return value; }
@@ -19,7 +20,7 @@ export async function handleProductionEvent(req, res, { admin = adminClient() } 
     secret: required("PROGREMES_INTEGRATION_SECRET") }))
     return res.status(401).json({ error: "Autenticazione non valida.", code: "INVALID_SIGNATURE" });
   const event = req.body;
-  if (event?.schemaVersion !== 1 || !event?.eventId || !event?.externalId || !Number.isSafeInteger(event?.sequence))
+  if (![1, 2].includes(event?.schemaVersion) || !event?.eventId || !event?.externalId || !Number.isSafeInteger(event?.sequence))
     return res.status(400).json({ error: "Evento MES non valido.", code: "INVALID_REQUEST" });
   const payloadHash = createHash("sha256").update(body).digest("hex");
   const { data, error } = await admin.rpc("process_workspace_production_event", {
@@ -30,29 +31,61 @@ export async function handleProductionEvent(req, res, { admin = adminClient() } 
   return res.status(200).json({ status: data });
 }
 
-export async function sendProductionRequest(req, res, { admin = adminClient(), client = createProgremesProductionClient() } = {}) {
+function selection(body) {
+  return {
+    orderIds: Array.isArray(body?.orderIds) ? body.orderIds : [],
+    lineIds: Array.isArray(body?.lineIds) ? body.lineIds : (body?.lineId ? [body.lineId] : []),
+  };
+}
+
+export async function sendProductionRequest(req, res, {
+  admin = adminClient(),
+  client = createProgremesProductionClient(),
+  requestedBy = null,
+} = {}) {
   if (req.method !== "POST") return res.status(405).json({ error: "Metodo non consentito." });
   if (!client.requestEnabled()) return res.status(403).json({ error: "Invio RdP disabilitato.", code: "MODULE_DISABLED" });
-  const lineId = String(req.body?.lineId || "").trim();
-  const { data: line, error: lineError } = await admin.from("ordini_righe").select("*").eq("id", lineId).single();
-  if (lineError || !line || line.riga_descrittiva || !line.codice_articolo || Number(line.quantita) <= 0)
-    return res.status(400).json({ error: "Riga OCT non produttiva.", code: "INVALID_OCT_LINE" });
-  const { data: order, error: orderError } = await admin.from("ordini_testate").select("*").eq("id", line.ordine_id).single();
-  if (orderError || order?.origine !== "mexal_oct") return res.status(400).json({ error: "La riga non appartiene a un OCT.", code: "INVALID_OCT" });
-  let { data: productionRequest } = await admin.from("workspace_production_requests").select("*").eq("ordine_riga_id", line.id).maybeSingle();
-  if (!productionRequest) {
-    const { data, error } = await admin.from("workspace_production_requests")
-      .insert({ ordine_id: order.id, ordine_riga_id: line.id }).select("*").single();
-    if (error) throw error; productionRequest = data;
+  let prepared;
+  try {
+    prepared = await prepareProductionDemand({
+      admin,
+      ...selection(req.body),
+      mode: "send",
+      expectedSnapshotId: req.body?.snapshotId ?? null,
+      requestedBy,
+    });
+  } catch (error) {
+    return res.status(error?.status || 500).json({ error: error?.message || "Preparazione RdP non riuscita.", code: error?.code || "DEMAND_PREPARATION_FAILED" });
   }
-  const payload = createProductionPayload({ request: productionRequest, order, line });
-  const { result, payloadHash } = await client.sendRequest(payload);
-  await admin.from("workspace_production_requests").update({ payload_hash: payloadHash, stato: result.status,
-    workspace_status: result.workspaceStatus, attempt_count: Number(productionRequest.attempt_count || 0) + 1,
-    updated_at: new Date().toISOString() }).eq("id", productionRequest.id);
+  if (req.body?.snapshotId && prepared.changedFromExpected)
+    return res.status(409).json({ error: "La domanda OCT è cambiata dalla preview. Ripetere la verifica prima dell'invio.", code: "DEMAND_CHANGED", snapshot: prepared.snapshot, demand: productionDemandContract(prepared.demand) });
+  const payload = createProductionPayload({ request: prepared.request, snapshot: prepared.snapshot, demand: prepared.demand });
+  let sent;
+  try {
+    sent = await client.sendRequest(payload);
+  } catch (error) {
+    await admin.from("workspace_production_requests").update({
+      last_error_code: error?.code || "PROGREMES_REQUEST_FAILED",
+      attempt_count: prepared.request.attempt_count + 1,
+      updated_at: new Date().toISOString(),
+    }).eq("id", prepared.request.id);
+    throw error;
+  }
+  const { result, payloadHash } = sent;
+  const { error: requestUpdateError } = await admin.from("workspace_production_requests").update({ payload_hash: payloadHash, stato: result.status,
+    workspace_status: result.workspaceStatus, attempt_count: prepared.request.attempt_count + 1,
+    sent_demand_snapshot_id: prepared.snapshot.id, last_response: result, last_error_code: null,
+    updated_at: new Date().toISOString() }).eq("id", prepared.request.id);
+  if (requestUpdateError) throw requestUpdateError;
   if (Array.isArray(result.proposals) && result.proposals.length) {
+    const { data: requestItems, error: requestItemsError } = await admin.from("workspace_production_request_items")
+      .select("id,item_external_key").eq("production_request_id", prepared.request.id);
+    if (requestItemsError) throw requestItemsError;
+    const requestItemByKey = new Map((requestItems || []).map((item) => [item.item_external_key, item.id]));
     const rows = result.proposals.map((proposal) => ({
-      production_request_id: productionRequest.id,
+      production_request_id: prepared.request.id,
+      production_request_item_id: requestItemByKey.get(proposal.itemExternalKey) || null,
+      item_external_key: proposal.itemExternalKey || null,
       mes_proposal_id: proposal.id,
       production_index: proposal.productionIndex,
       quantita: proposal.quantity,
@@ -63,10 +96,23 @@ export async function sendProductionRequest(req, res, { admin = adminClient(), c
       mes_production_order_number: proposal.productionOrderNumber,
       updated_at: new Date().toISOString(),
     }));
+    if (rows.some((row) => !row.production_request_item_id))
+      throw Object.assign(new Error("ProgreMES ha restituito una proposta non riconciliabile con le righe OCT."), { code: "INVALID_MES_RESPONSE" });
     const { error } = await admin.from("workspace_production_proposals").upsert(rows, { onConflict: "mes_proposal_id" });
     if (error) throw error;
   }
-  return res.status(200).json(result);
+  return res.status(200).json({ ...result, sent: true, snapshot: prepared.snapshot, demand: productionDemandContract(prepared.demand) });
+}
+
+export async function previewProductionRequest(req, res, { admin = adminClient(), requestedBy = null } = {}) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Metodo non consentito." });
+  try {
+    const prepared = await prepareProductionDemand({ admin, ...selection(req.body), mode: "preview", requestedBy });
+    return res.status(200).json({ readOnlyExternal: true, sent: false, externalId: prepared.request?.external_id || null,
+      snapshot: prepared.snapshot, demand: productionDemandContract(prepared.demand), status: "PRONTA" });
+  } catch (error) {
+    return res.status(error?.status || 500).json({ error: error?.message || "Preview RdP non riuscita.", code: error?.code || "DEMAND_PREPARATION_FAILED" });
+  }
 }
 
 export async function confirmProductionProposal(req, res, { admin = adminClient(), client = createProgremesProductionClient() } = {}) {
@@ -75,6 +121,13 @@ export async function confirmProductionProposal(req, res, { admin = adminClient(
   const proposalId = Number(req.body?.proposalId);
   if (!Number.isSafeInteger(proposalId) || proposalId <= 0)
     return res.status(400).json({ error: "OP non valida.", code: "INVALID_PROPOSAL" });
+  const { data: proposal, error: proposalError } = await admin.from("workspace_production_proposals")
+    .select("id,production_request_id").eq("id", proposalId).single();
+  if (proposalError || !proposal) return res.status(404).json({ error: "OP non trovata.", code: "NOT_FOUND" });
+  const { data: productionRequest, error: requestError } = await admin.from("workspace_production_requests")
+    .select("*").eq("id", proposal.production_request_id).single();
+  if (requestError || !productionRequest?.sent_demand_snapshot_id)
+    return res.status(409).json({ error: "La proposta non dispone di una domanda RdP inviata e auditabile.", code: "DEMAND_REQUIRED" });
   const { data, error } = await admin.rpc("reserve_workspace_production_confirmation", {
     p_proposal_id: proposalId, p_external_id: randomUUID(),
   });

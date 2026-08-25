@@ -23,7 +23,7 @@ import { listProgremesIntegration, saveProgremesSyncConfig, stopProgremesModules
 import { handleProgremesReadonlyRequest } from "../../server/progremes-readonly-api.js";
 import { handleAIAssistant } from "../../server/ai/assistant.js";
 import { handleAIOrderDocument } from "../../server/ai/order-document.js";
-import { confirmProductionProposal, handleProductionEvent, sendProductionRequest } from "../../server/progremes-production-api.js";
+import { confirmProductionProposal, handleProductionEvent, previewProductionRequest, sendProductionRequest } from "../../server/progremes-production-api.js";
 import { createOctOrdersRunHandler, precheckOctOrders } from "../../server/mexal/sync-oct-orders.js";
 
 async function dispatchMessageNotification(req, body) {
@@ -516,7 +516,11 @@ export default async function handler(req, res) {
       }
       case "progremes_production_request": {
         const admin = await createAdmin(req, "integrations.configure");
-        return sendProductionRequest(req, res, { admin: admin.supabase });
+        return sendProductionRequest(req, res, { admin: admin.supabase, requestedBy: admin.authUserId });
+      }
+      case "progremes_production_preview": {
+        const admin = await createAdmin(req, "integrations.configure");
+        return previewProductionRequest(req, res, { admin: admin.supabase, requestedBy: admin.authUserId });
       }
       case "progremes_production_confirm": {
         const admin = await createAdmin(req, "integrations.configure");

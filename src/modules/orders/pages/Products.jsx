@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Boxes, Plus, Save, Search, Trash2, X } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
 import { useAuth } from "../../../contexts/AuthContext";
+import { loadDirectProductCatalog } from "../services/directProductCatalog";
 
 const money = (value) => Number(value || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
 const emptyForm = { id: null, codice: "", descrizione: "", modalita_prezzo: "sconto_ordine", prezzo_fisso: "", sconto_personalizzato: "", componenti: [] };
@@ -25,13 +26,15 @@ export default function Products({ implantsOnly = false }) {
   useEffect(() => { void loadData(); }, []);
   async function loadData() {
     setLoading(true);
-    const [{ data: productRows, error: productError }, { data: kitRows, error: kitError }] = await Promise.all([
-      supabase.from("ordini_prodotti_cache").select("*").eq("mostra_in_app", true).order("descrizione").limit(10000),
-      supabase.from("ordini_impianti").select("*, componenti:ordini_impianti_componenti(*)").eq("attivo", true).order("descrizione"),
-    ]);
-    if (productError || kitError) setMessage((productError || kitError).message);
-    setProducts(productRows || []);
-    setKits(kitRows || []);
+    try {
+      const catalog = await loadDirectProductCatalog(supabase, { includeEconomics: true });
+      setProducts(catalog.products);
+      setKits(catalog.implants);
+    } catch (error) {
+      setMessage(error.message);
+      setProducts([]);
+      setKits([]);
+    }
     setLoading(false);
   }
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { FileText, Package, Search, Megaphone, Factory } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import ImplantsManager from "../../modules/orders/pages/Products";
+import { loadDirectProductCatalog } from "../../modules/orders/services/directProductCatalog";
 import "../../modules/orders/orders-module.css";
 
 function getProductDisplayName(product) {
@@ -57,40 +58,36 @@ async function documentApi(action, extra = {}) {
 
 export default function Products() {
   const [products, setProducts] = useState([]);
+  const [implantCount, setImplantCount] = useState(0);
   const [query, setQuery] = useState("");
   const [activeSection, setActiveSection] = useState("IT");
-  const [selected, setSelected] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [productDocuments, setProductDocuments] = useState([]);
   const [documentSections, setDocumentSections] = useState([]);
   const [documentUrls, setDocumentUrls] = useState({});
 
-  useEffect(() => {
-    loadProducts();
-    documentApi("list").then((result) => { setProductDocuments(result.documents || []); setDocumentSections(result.sections || []); }).catch((error) => console.error("Documenti prodotti:", error.message));
-  }, []);
-
   async function loadProducts() {
-    setLoading(true);
-
-    const { data, error } = await supabase
-      .from("prodotti")
-      .select("*")
-      .eq("attivo_mexal", true)
-      .eq("mostra_in_app", true)
-      .or("codice_mexal.ilike.IT%,codice_mexal.ilike.MKT%")
-      .order("nome")
-      .limit(5000);
-
-    if (error) console.error("Prodotti Mexal:", error.message);
-
-    const rows = data || [];
-    setProducts(rows);
+    try {
+      const catalog = await loadDirectProductCatalog(supabase);
+      setProducts(catalog.products);
+      setImplantCount(catalog.implants.length);
+    } catch (error) {
+      console.error("Prodotti Mexal:", error.message);
+      setProducts([]);
+      setImplantCount(0);
+    }
     setLoading(false);
   }
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadProducts(), 0);
+    documentApi("list").then((result) => { setProductDocuments(result.documents || []); setDocumentSections(result.sections || []); }).catch((error) => console.error("Documenti prodotti:", error.message));
+    return () => window.clearTimeout(timer);
+  }, []);
+
   const sectionCounts = useMemo(() => {
-    const counts = { IT: 0, MKT: 0, IMP: 0 };
+    const counts = { IT: 0, MKT: 0, IMP: implantCount };
 
     products.forEach((product) => {
       const code = getProductCode(product);
@@ -100,7 +97,7 @@ export default function Products() {
     });
 
     return counts;
-  }, [products]);
+  }, [implantCount, products]);
 
   const filtered = useMemo(() => {
     const text = query.trim().toLowerCase();
@@ -127,14 +124,7 @@ export default function Products() {
     });
   }, [products, query, activeSection]);
 
-  useEffect(() => {
-    setSelected((current) => {
-      if (current && filtered.some((item) => item.id === current.id)) {
-        return current;
-      }
-      return filtered[0] || null;
-    });
-  }, [filtered]);
+  const selected = filtered.find((item) => item.id === selectedId) || filtered[0] || null;
 
   const activeSectionInfo =
     SECTIONS.find((section) => section.id === activeSection) || SECTIONS[0];
@@ -147,7 +137,14 @@ export default function Products() {
     return productDocuments.filter((document) => document.prodotto_id === selected.id || matches(document.categorie_prodotto, category) || matches(document.brand_prodotti, brand) || matches(document.linee_prodotto, line));
   }, [productDocuments, selected]);
   const selectedDocumentIds = selectedDocuments.map((document) => document.id).join(",");
-  useEffect(() => { if (!selectedDocumentIds) { setDocumentUrls({}); return; } documentApi("urls", { ids: selectedDocumentIds.split(",").slice(0, 100) }).then((result) => setDocumentUrls(result.urls || {})).catch(() => setDocumentUrls({})); }, [selectedDocumentIds]);
+  useEffect(() => {
+    if (!selectedDocumentIds) return undefined;
+    let active = true;
+    documentApi("urls", { ids: selectedDocumentIds.split(",").slice(0, 100) })
+      .then((result) => { if (active) setDocumentUrls(result.urls || {}); })
+      .catch(() => { if (active) setDocumentUrls({}); });
+    return () => { active = false; };
+  }, [selectedDocumentIds]);
 
   return (
     <div className="products-page v4-page">
@@ -220,7 +217,7 @@ export default function Products() {
                   className={`v4-list-main product-row ${
                     selected?.id === product.id ? "active" : ""
                   }`}
-                  onClick={() => setSelected(product)}
+                  onClick={() => setSelectedId(product.id)}
                 >
                   <strong>{getProductDisplayName(product)}</strong>
                   <span>

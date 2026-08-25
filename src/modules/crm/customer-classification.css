@@ -4,6 +4,8 @@
 .crm-classification-kpis .kpi-card{min-height:116px;padding:18px}
 .crm-classification-kpis .kpi-card strong{font-size:1.75rem}
 .crm-classification-kpis .kpi-card p{margin-top:6px;color:var(--muted)}
+.crm-classification-kpis button.kpi-card{width:100%;font:inherit;text-align:left;cursor:pointer;color:inherit;transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease}
+.crm-classification-kpis button.kpi-card:hover,.crm-classification-kpis button.kpi-card:focus-visible{transform:translateY(-2px);border-color:var(--primary);box-shadow:var(--shadow-md);outline:2px solid color-mix(in srgb,var(--primary) 30%,transparent);outline-offset:2px}
 .crm-classification-filters>label{min-width:210px}
 .crm-selection-toolbar{position:sticky;top:12px;z-index:4;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px;border:1px solid #bfdbfe;border-radius:var(--radius-sm);background:#eff6ff;box-shadow:var(--shadow-soft)}
 .crm-selection-toolbar>span{display:inline-flex;align-items:center;gap:7px;margin-right:auto;color:#0f3d85;font-weight:800}

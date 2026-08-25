@@ -195,3 +195,8 @@
   .ai-order-selected-file>div{min-width:0;overflow:hidden}
   .ai-order-selected-file strong{display:block;max-width:100%;font-size:.9rem;overflow-wrap:anywhere;word-break:break-word}
 }
+.ai-match-status{display:grid;gap:4px}
+.ai-match-status>strong{text-transform:uppercase;font-size:.75rem;letter-spacing:.04em}
+.ai-match-status.matched>strong{color:var(--success,#15803d)}
+.ai-match-status.probable>strong{color:var(--warning,#b45309)}
+.ai-match-status.ambiguous>strong,.ai-match-status.unmatched>strong{color:var(--danger,#b91c1c)}

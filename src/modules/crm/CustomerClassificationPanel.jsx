@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckSquare, Pencil, RefreshCw, RotateCcw, Search, SlidersHorizontal, UsersRound } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
 import "./customer-classification.css";
@@ -21,13 +22,15 @@ function formatDateTime(value) {
 
 export default function CustomerClassificationPanel() {
   const { isAdminUser } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
-  const [search, setSearch] = useState("");
-  const [area, setArea] = useState("");
-  const [agent, setAgent] = useState("");
-  const [mode, setMode] = useState("");
+  const [search, setSearch] = useState(() => searchParams.get("classification_search") || "");
+  const [area, setArea] = useState(() => searchParams.get("classification_area") || "");
+  const [agent, setAgent] = useState(() => searchParams.get("classification_agent") || "");
+  const [mode, setMode] = useState(() => searchParams.get("classification_mode") || "");
+  const [summary, setSummary] = useState({ total: 0, conto_terzi: 0, b2b: 0, online: 0, overrides: 0 });
   const [selected, setSelected] = useState([]);
   const [bulkArea, setBulkArea] = useState("b2b");
   const [editing, setEditing] = useState(null);
@@ -41,28 +44,59 @@ export default function CustomerClassificationPanel() {
     if (!isAdminUser) return;
     setLoading(true);
     setError("");
+    const applyFilters = (source, { targetArea = area, targetMode = mode } = {}) => {
+      let filtered = source;
+      if (targetArea) filtered = filtered.eq("area_crm", targetArea);
+      if (targetMode === "automatico") filtered = filtered.is("area_override", null);
+      if (targetMode === "manuale") filtered = filtered.not("area_override", "is", null);
+      if (agent.trim()) filtered = filtered.ilike("agente_classificazione", `%${agent.trim().replaceAll(",", " ")}%`);
+      if (search.trim()) {
+        const term = search.trim().replaceAll(",", " ");
+        filtered = filtered.or(`codice_cliente.ilike.%${term}%,ragione_sociale.ilike.%${term}%`);
+      }
+      return filtered;
+    };
     let query = supabase
       .from("crm_customer_classification_catalog")
       .select("codice_cliente,ragione_sociale,codice_agente_mexal,agente_classificazione,area_automatica,area_override,area_crm,origine_classificazione,modalita,classificata_il,override_il,override_note,attivo_mexal", { count: "exact" })
       .order("ragione_sociale")
       .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
-    if (area) query = query.eq("area_crm", area);
-    if (mode === "automatico") query = query.is("area_override", null);
-    if (mode === "manuale") query = query.not("area_override", "is", null);
-    if (agent.trim()) query = query.ilike("agente_classificazione", `%${agent.trim().replaceAll(",", " ")}%`);
-    if (search.trim()) {
-      const term = search.trim().replaceAll(",", " ");
-      query = query.or(`codice_cliente.ilike.%${term}%,ragione_sociale.ilike.%${term}%`);
-    }
-    const { data, error: loadError, count } = await query;
+    query = applyFilters(query);
+    const countQuery = (targetArea = area, targetMode = mode) => applyFilters(
+      supabase.from("crm_customer_classification_catalog").select("codice_cliente", { count: "exact", head: true }),
+      { targetArea, targetMode }
+    );
+    const [rowsResult, totalResult, ...areaResults] = await Promise.all([
+      query,
+      countQuery(),
+      ...AREA_OPTIONS.map(([value]) => countQuery(value)),
+      countQuery(area, "manuale"),
+    ]);
+    const { data, error: loadError, count } = rowsResult;
+    const aggregateError = totalResult.error || areaResults.find((result) => result.error)?.error;
     if (loadError) setError(loadError.message);
+    else if (aggregateError) setError(aggregateError.message);
     else {
       setRows(data || []);
       setTotal(count || 0);
+      setSummary({
+        total: totalResult.count || 0,
+        ...Object.fromEntries(AREA_OPTIONS.map(([value], index) => [value, areaResults[index]?.count || 0])),
+        overrides: areaResults[AREA_OPTIONS.length]?.count || 0,
+      });
       setSelected((current) => current.filter((code) => (data || []).some((row) => row.codice_cliente === code)));
     }
     setLoading(false);
   }, [agent, area, isAdminUser, mode, page, search]);
+
+  useEffect(() => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      const values = { classification_search: search, classification_area: area, classification_agent: agent, classification_mode: mode };
+      Object.entries(values).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key));
+      return next;
+    }, { replace: true });
+  }, [agent, area, mode, search, setSearchParams]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 180);
@@ -70,11 +104,11 @@ export default function CustomerClassificationPanel() {
   }, [load]);
 
   const allPageSelected = rows.length > 0 && rows.every((row) => selected.includes(row.codice_cliente));
-  const pageSummary = useMemo(() => AREA_OPTIONS.map(([value, label]) => ({
+  const datasetSummary = useMemo(() => AREA_OPTIONS.map(([value, label]) => ({
     value,
     label,
-    count: rows.filter((row) => row.area_crm === value).length,
-  })), [rows]);
+    count: summary[value] || 0,
+  })), [summary]);
 
   function toggle(code) {
     setSelected((current) => current.includes(code) ? current.filter((item) => item !== code) : [...current, code]);
@@ -133,9 +167,10 @@ export default function CustomerClassificationPanel() {
         </button>
       </div>
 
-      <div className="crm-classification-kpis" aria-label="Riepilogo pagina corrente">
-        <article className="kpi-card"><div><span>Clienti filtrati</span><strong>{total}</strong><p>Pagina {page + 1}</p></div></article>
-        {pageSummary.map((item) => <article className="kpi-card" key={item.value}><div><span>{item.label}</span><strong>{item.count}</strong><p>nella pagina corrente</p></div></article>)}
+      <div className="crm-classification-kpis" aria-label="Riepilogo intero dataset filtrato">
+        <button type="button" className="kpi-card" onClick={() => { setArea(""); setPage(0); }}><div><span>Clienti filtrati</span><strong>{summary.total}</strong><p>intero dataset</p></div></button>
+        {datasetSummary.map((item) => <button type="button" className="kpi-card" key={item.value} onClick={() => { setArea(item.value); setPage(0); }}><div><span>{item.label}</span><strong>{item.count}</strong><p>apri elenco filtrato</p></div></button>)}
+        <button type="button" className="kpi-card" onClick={() => { setMode("manuale"); setPage(0); }}><div><span>Override</span><strong>{summary.overrides}</strong><p>apri override filtrati</p></div></button>
       </div>
 
       <div className="crm-filters crm-classification-filters">

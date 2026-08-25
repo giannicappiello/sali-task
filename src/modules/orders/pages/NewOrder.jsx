@@ -17,6 +17,7 @@ import { checkOrderAvailability, enqueueOrderConfirmationEmail, submitOrderToMex
 import { buildAvailabilityPreview, buildAvailabilitySignature, getAvailabilityValidity, quantitiesForOrderLine } from "../services/availability";
 import { buildNewOrderInsertPayload, buildWritableOrderPayload } from "../services/orderPayload";
 import { ORDER_CUSTOMER_COLUMNS } from "../services/orderDataSelections";
+import { loadDirectProductCatalog } from "../services/directProductCatalog";
 
 const PAGE_SIZE = 1000;
 
@@ -273,39 +274,9 @@ export default function NewOrder() {
           .order("ragione_sociale", { ascending: true })
           .order("codice_cliente", { ascending: true }), ORDER_CUSTOMER_COLUMNS);
 
-      let productRows = [];
-
-      // Prima usa la cache Mexal. Se la tabella esiste ma non contiene ancora
-      // prodotti visibili, passa comunque all'archivio prodotti principale.
-      // La versione precedente eseguiva il fallback solo in caso di errore:
-      // con una cache vuota la ricerca non poteva quindi restituire risultati.
-      try {
-        productRows = await loadPaged("ordini_prodotti_cache", (query) =>
-          query
-            .eq("mostra_in_app", true)
-            .order("descrizione", { ascending: true })
-            .order("codice_articolo", { ascending: true })
-        );
-      } catch (cacheError) {
-        console.warn("Cache prodotti ordini non disponibile:", cacheError);
-      }
-
-      if (productRows.length === 0) {
-        const fallback = await loadPaged("prodotti", (query) =>
-          query
-            .eq("mostra_in_app", true)
-            .eq("attivo", true)
-            .order("nome", { ascending: true })
-        );
-        productRows = fallback;
-      }
-
-      const { data: kitRows, error: kitError } = await supabase
-        .from("ordini_impianti")
-        .select("*, componenti:ordini_impianti_componenti(*)")
-        .eq("attivo", true)
-        .order("descrizione", { ascending: true });
-      if (kitError) throw kitError;
+      const directCatalog = await loadDirectProductCatalog(supabase, { includeEconomics: true });
+      let productRows = directCatalog.products;
+      const kitRows = directCatalog.implants;
       const productByCode = new Map(productRows.map((product) => [normalize(product.codice_articolo || product.codice_mexal || product.codice), product]));
       const kits = (kitRows || []).map((kit) => ({
         ...kit,

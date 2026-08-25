@@ -20,4 +20,4 @@
 .menu-module-picker small { margin-top: 2px; color: #66758b; }
 .module-fields .check-line { display: flex; align-items: center; align-self: end; min-height: 42px; }
 .module-fields .check-line input { width: auto; }
-@media (max-width: 620px) { .menu-settings-page .module-catalog-list > button { grid-template-columns: 42px minmax(0,1fr); } .menu-settings-page .module-catalog-list > button .status-on,.menu-settings-page .module-catalog-list > button .status-off { display: none; } .menu-module-row { align-items: flex-start; flex-direction: column; } .menu-module-order { width: 100%; justify-content: space-between; } }
+@media (max-width: 620px) { .menu-settings-page .module-catalog-list > button { grid-template-columns: 42px minmax(0,1fr) auto; gap: 8px; } .menu-settings-page .module-catalog-list > button .status-on,.menu-settings-page .module-catalog-list > button .status-off { display: none; } .menu-module-row { align-items: flex-start; flex-direction: column; } .menu-module-order { width: 100%; justify-content: space-between; } }

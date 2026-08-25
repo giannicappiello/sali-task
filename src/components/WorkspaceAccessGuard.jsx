@@ -11,7 +11,7 @@ export default function WorkspaceAccessGuard({ moduleCode, screenCode, featureCo
       ? hasWorkspaceFeature(featureCode)
       : false;
 
-  const [catalogAllowed, setCatalogAllowed] = useState(screenCode ? null : true);
+  const [catalogState, setCatalogState] = useState(screenCode ? "checking" : "available");
 
   useEffect(() => {
     if (!screenCode) return undefined;
@@ -23,7 +23,10 @@ export default function WorkspaceAccessGuard({ moduleCode, screenCode, featureCo
           ? supabase.from("workspace_moduli_schermate").select("schermata_codice").eq("modulo_codice", moduleCode).eq("schermata_codice", screenCode).maybeSingle()
           : Promise.resolve({ data: true, error: null }),
       ]);
-      if (active) setCatalogAllowed(!screenResult.error && !linkResult.error && Boolean(screenResult.data) && Boolean(linkResult.data));
+      if (!active) return;
+      if (screenResult.error || linkResult.error) setCatalogState("error");
+      else if (!screenResult.data || !linkResult.data) setCatalogState("missing");
+      else setCatalogState("available");
     };
     void verify();
     const refresh = () => void verify();
@@ -34,7 +37,17 @@ export default function WorkspaceAccessGuard({ moduleCode, screenCode, featureCo
     };
   }, [moduleCode, screenCode]);
 
-  if (catalogAllowed === null) return <div className="workspace-route-loading">Verifica autorizzazioni...</div>;
-  const allowed = moduleAllowed && catalogAllowed && (!screenCode || hasScreenAccess(screenCode, moduleCode));
-  return allowed ? children : <Navigate to={redirectTo} replace />;
+  if (!moduleAllowed || (screenCode && catalogState === "available" && !hasScreenAccess(screenCode, moduleCode))) {
+    return <Navigate to={redirectTo} replace />;
+  }
+  if (catalogState === "checking") return <div className="workspace-route-loading">Verifica autorizzazioni...</div>;
+  if (catalogState !== "available") {
+    return (
+      <section className="workspace-route-error" role="alert">
+        <h2>Schermata Workspace non configurata</h2>
+        <p>{catalogState === "error" ? "Il catalogo non è al momento verificabile." : `La schermata ${screenCode} non è collegata al modulo ${moduleCode}.`}</p>
+      </section>
+    );
+  }
+  return children;
 }

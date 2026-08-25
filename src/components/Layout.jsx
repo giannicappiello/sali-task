@@ -26,6 +26,7 @@ import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../contexts/AuthContext";
 import WorkspaceScreenLayout from "./WorkspaceScreenLayout";
 import { getModuleIcon } from "../config/moduleIcons";
+import { resolveCatalogModuleDestination } from "../config/workspaceNavigation";
 
 const baseMenuItems = [
   { path: "/home", label: "Home", icon: Home, module: "home" },
@@ -154,7 +155,7 @@ function Layout() {
         supabase.from("workspace_menu_voci").select("codice,nome,descrizione,icona,ordine,attiva").eq("attiva", true).order("ordine"),
         supabase.from("workspace_menu_moduli").select("voce_codice,modulo_codice,ordine").order("ordine"),
         supabase.from("workspace_schermate").select("codice,percorso,attiva").eq("attiva", true),
-        supabase.from("workspace_moduli_schermate").select("modulo_codice,schermata_codice"),
+        supabase.from("workspace_moduli_schermate").select("modulo_codice,schermata_codice,ordine,predefinita,visibile_menu"),
       ]);
         if (!active) return;
         if (modulesResult.error) {
@@ -189,7 +190,7 @@ function Layout() {
     const templates = new Map(baseMenuItems.filter((item) => item.module).map((item) => [item.module, item]));
     const configured = configuredModules.map((module) => ({
       ...(templates.get(module.codice) || {}),
-      path: module.percorso || templates.get(module.codice)?.path || "/home",
+      path: resolveCatalogModuleDestination(module, templates.get(module.codice), configuredMenu?.screens, configuredMenu?.screenLinks),
       label: module.nome,
       description: module.descrizione || "Apri il modulo del Workspace.",
       icon: getModuleIcon(module.icona, templates.get(module.codice)?.icon || (module.provider === "progremes" ? Factory : Blocks)),
@@ -197,7 +198,7 @@ function Layout() {
       module: templates.get(module.codice)?.feature ? undefined : module.codice,
       provider: module.provider,
       order: module.ordine,
-    }));
+    })).filter((item) => item.path);
     const productionItem = baseMenuItems.find((item) => item.path === "/produzione");
     const progremesIndex = configured.findIndex((item) => item.module === "progremes");
     const withProduction = [...configured];
@@ -211,7 +212,7 @@ function Layout() {
       || item === canonicalSettings
       || item.label?.trim().toLocaleLowerCase("it-IT") !== "impostazioni"
     ));
-  }, [configuredModules]);
+  }, [configuredMenu, configuredModules]);
 
   const launchProgremes = useCallback((screenCode = "", workspacePath = "") => {
     if (!hasModuleAccess("progremes")) {

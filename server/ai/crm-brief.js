@@ -5,14 +5,26 @@ import { generateText, jsonSchema, Output } from "ai";
 const DEFAULT_MODEL = "openai/gpt-5.6-luna";
 const MODULE_BY_TYPE = Object.freeze({ conto_terzi: "crm_conto_terzi", b2b: "crm_b2b", online: "crm_online" });
 const LEVEL_RANK = Object.freeze({ nessuno: 0, lettura: 1, scrittura: 2, amministrazione: 3 });
+const DIGITAL_CHANNEL_MODULE = Object.freeze({
+  ecommerce: "crm_online_ecommerce",
+  mailing: "crm_online_mailing",
+  amazon_seller: "crm_online_amazon",
+  amazon_ads: "crm_online_amazon",
+  meta_ads: "crm_online_adv",
+  google_ads: "crm_online_adv",
+});
 
 const STRATEGIC_PLAN_SCHEMA = jsonSchema({
   type: "object",
   additionalProperties: false,
-  required: ["title", "summary", "strategy", "questions", "alternatives", "risks", "readyForApproval", "project", "phases"],
+  required: ["title", "summary", "facts", "missingData", "interpretations", "recommendations", "strategy", "questions", "alternatives", "risks", "readyForApproval", "project", "phases"],
   properties: {
     title: { type: "string" },
     summary: { type: "string" },
+    facts: { type: "array", items: { type: "string" } },
+    missingData: { type: "array", items: { type: "string" } },
+    interpretations: { type: "array", items: { type: "string" } },
+    recommendations: { type: "array", items: { type: "string" } },
     strategy: { type: "string" },
     questions: { type: "array", items: { type: "string" } },
     alternatives: { type: "array", items: { type: "string" } },
@@ -87,17 +99,42 @@ async function queryRows(query, label) {
   return { label, rows: data || [] };
 }
 
+function digitalAggregateQueries(auth) {
+  const targetTo = new Date();
+  const targetFrom = new Date(targetTo);
+  targetFrom.setUTCDate(targetFrom.getUTCDate() - 89);
+  const baseParams = {
+    target_from: targetFrom.toISOString().slice(0, 10),
+    target_to: targetTo.toISOString().slice(0, 10),
+    target_marketplace: null,
+  };
+  const allowedModules = new Set(auth.access?.modules || []);
+  const queries = [
+    queryRows(auth.scoped.rpc("crm_digital_dashboard", { ...baseParams, target_channel: null }), "digitalAggregates90d"),
+  ];
+  for (const [channel, moduleCode] of Object.entries(DIGITAL_CHANNEL_MODULE)) {
+    if (!auth.isAdmin && !allowedModules.has(moduleCode)) continue;
+    queries.push(queryRows(auth.scoped.rpc("crm_digital_dashboard", { ...baseParams, target_channel: channel }), `digitalAggregate_${channel}_90d`));
+  }
+  return queries;
+}
+
 async function buildAuthorizedContext(auth, crmType, accountId) {
   const queries = [
-    queryRows(auth.scoped.from("crm_accounts").select("id,nome,stato,stato_relazione,valore_cliente,segmenti,codice_cliente_mexal,ultima_attivita_il,prossima_attivita_il").eq("tipo", crmType).limit(80), "accounts"),
-    queryRows(auth.scoped.from("crm_opportunities").select("id,titolo,valore,probabilita,chiusura_prevista,crm_accounts!inner(nome,tipo),crm_opportunity_stages(nome,finale,vinta)").eq("crm_accounts.tipo", crmType).limit(100), "opportunities"),
-    queryRows(auth.scoped.from("crm_activities").select("tipo,titolo,stato,data_attivita").eq("crm_tipo", crmType).order("data_attivita", { ascending: false }).limit(100), "activities"),
     queryRows(auth.scoped.from("crm_briefs").select("titolo,stato,obiettivo,target,categoria,budget:dati->budget").eq("crm_tipo", crmType).limit(60), "briefs"),
-    queryRows(auth.scoped.from("prodotti").select("id,codice,nome,brand,categoria").eq("attivo", true).limit(100), "products"),
   ];
-  if (crmType === "online") queries.push(queryRows(auth.scoped.from("crm_campaigns").select("nome,obiettivo,canale,target,budget,data_inizio,data_fine,stato,kpi_target,kpi_effettivi").limit(80), "campaigns"), queryRows(auth.scoped.from("crm_creators").select("nome,piattaforma,nicchia,follower,stato_collaborazione,costi,vendite_attribuite").limit(80), "creators"));
-  if (accountId) queries.push(queryRows(auth.scoped.from("crm_accounts").select("*").eq("id", accountId).eq("tipo", crmType).limit(1), "selectedAccount"));
-  if ((auth.access?.modules || []).includes("attivita") || auth.isAdmin) queries.push(queryRows(auth.scoped.from("v4_progetti").select("titolo,descrizione,deadline,stato").order("created_at", { ascending: false }).limit(50), "workspaceProjects"));
+  if (crmType === "online") {
+    queries.push(...digitalAggregateQueries(auth));
+  } else {
+    queries.push(
+      queryRows(auth.scoped.from("crm_accounts").select("id,nome,stato,stato_relazione,valore_cliente,segmenti,codice_cliente_mexal,ultima_attivita_il,prossima_attivita_il").eq("tipo", crmType).limit(80), "accounts"),
+      queryRows(auth.scoped.from("crm_opportunities").select("id,titolo,valore,probabilita,chiusura_prevista,crm_accounts!inner(nome,tipo),crm_opportunity_stages(nome,finale,vinta)").eq("crm_accounts.tipo", crmType).limit(100), "opportunities"),
+      queryRows(auth.scoped.from("crm_activities").select("tipo,titolo,stato,data_attivita").eq("crm_tipo", crmType).order("data_attivita", { ascending: false }).limit(100), "activities"),
+      queryRows(auth.scoped.from("prodotti").select("id,codice,nome,brand,categoria").eq("attivo", true).limit(100), "products"),
+    );
+    if (accountId) queries.push(queryRows(auth.scoped.from("crm_accounts").select("*").eq("id", accountId).eq("tipo", crmType).limit(1), "selectedAccount"));
+    if ((auth.access?.modules || []).includes("attivita") || auth.isAdmin) queries.push(queryRows(auth.scoped.from("v4_progetti").select("titolo,descrizione,deadline,stato").order("created_at", { ascending: false }).limit(50), "workspaceProjects"));
+  }
   const results = await Promise.all(queries);
   return Object.fromEntries(results.map((item) => [item.label, item.unavailable ? { unavailable: item.unavailable } : item.rows]));
 }
@@ -106,6 +143,10 @@ function systemPrompt(crmType, context) {
   return `Sei AI Business Assistant di Progre Workspace, specializzato nel CRM ${crmType}.
 Usa esclusivamente il contesto autorizzato fornito. Non dedurre dati personali o commerciali assenti.
 Prima di dichiarare readyForApproval=true verifica obiettivo, target, budget, scadenza, vincoli e responsabilita. Se mancano, inserisci domande concise e readyForApproval=false.
+Per il CRM online separa sempre Fatti, Dati mancanti, Interpretazioni, Raccomandazioni, Rischi e Piano operativo nei campi strutturati previsti.
+I dati Digital Commerce & Marketing nel contesto sono esclusivamente aggregati degli ultimi 90 giorni, gia filtrati dalle RLS e dai moduli dell'utente. Non richiedere, ricostruire o inferire ordini, clienti, email, consensi, identificativi personali, credenziali o segreti.
+Un canale Digital assente dal contesto puo essere non autorizzato: non trarre conclusioni sulla sua esistenza. dataStatus=not_available e valori null indicano dati insufficienti, non risultati pari a zero.
+Non trattare un valore assente come zero e non proporre azioni automatiche su campagne, budget, newsletter, Amazon o social.
 Proponi alternative e rischi. Il piano deve essere operativo ma non applicato: la decisione resta umana.
 Non inventare KPI o fonti. Le fasi saranno trasformate in fasi progetto Workspace e i task in ulteriori fasi operative/reminder.
 Contesto autorizzato:\n${JSON.stringify(context)}`;

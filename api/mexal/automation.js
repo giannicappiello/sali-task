@@ -1,3 +1,4 @@
+/* global process */
 import { createClient } from "@supabase/supabase-js";
 import productsHandler, { buildMexalClient } from "../../server/mexal/sync-products.js";
 import clientsHandler from "../../server/mexal/sync-clients.js";
@@ -26,6 +27,7 @@ import { handleCrmBrief } from "../../server/ai/crm-brief.js";
 import { handleAIOrderDocument } from "../../server/ai/order-document.js";
 import { confirmProductionProposal, handleProductionEvent, sendProductionRequest } from "../../server/progremes-production-api.js";
 import { createOctOrdersRunHandler } from "../../server/mexal/sync-oct-orders.js";
+import { handleDigitalConnectionManager } from "../../server/crm/digital-connection-manager.js";
 
 async function dispatchMessageNotification(req, body) {
   const token = String(req.headers.authorization || "").trim().replace(/^Bearer\s+/i, "");
@@ -145,7 +147,11 @@ function createResponseCapture() {
 
 function errorDetails(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return {};
-  const { error, success, status, ok, ...details } = payload;
+  const details = { ...payload };
+  delete details.error;
+  delete details.success;
+  delete details.status;
+  delete details.ok;
   return details;
 }
 
@@ -462,6 +468,9 @@ async function maintenancePurge(req) {
 }
 
 export default async function handler(req, res) {
+  if (req.query?.route === "crm-digital") {
+    return handleDigitalConnectionManager(req, res);
+  }
   if (req.query?.route === "progremes-production-events") {
     return handleProductionEvent(req, res);
   }

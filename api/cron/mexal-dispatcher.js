@@ -250,7 +250,7 @@ export default async function handler(req, res) {
 
     const protocol = String(req.headers["x-forwarded-proto"] || "https").split(",")[0].trim();
     const host = req.headers["x-forwarded-host"] || req.headers.host;
-    const workerResponse = await fetch(`${protocol}://${host}/api/mexal/queue-worker`, {
+    const workerRequest = fetch(`${protocol}://${host}/api/mexal/queue-worker`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${workerSecret}`,
@@ -258,13 +258,30 @@ export default async function handler(req, res) {
         "X-Worker-Source": "vercel-cron",
       },
       body: "{}",
-    });
-    const workerPayload = await workerResponse.json().catch(() => ({}));
+    }).then(async (response) => ({ response, payload: await response.json().catch(() => ({})) }));
+    const digitalRequest = fetch(`${protocol}://${host}/api/mexal/automation?route=crm-digital&action=dispatch`, {
+      method: "GET",
+      headers: {
+        Authorization: req.headers.authorization,
+        "X-Worker-Source": "vercel-cron",
+      },
+    }).then(async (response) => ({ response, payload: await response.json().catch(() => ({})) }));
+    const [workerResult, digitalResult] = await Promise.allSettled([workerRequest, digitalRequest]);
+    if (workerResult.status === "rejected") throw workerResult.reason;
+    const { response: workerResponse, payload: workerPayload } = workerResult.value;
     if (!workerResponse.ok) {
       throw new Error(workerPayload?.error || `Avvio worker Mexal non riuscito (HTTP ${workerResponse.status}).`);
     }
+    const digital = digitalResult.status === "fulfilled" && digitalResult.value.response.ok
+      ? digitalResult.value.payload
+      : {
+          success: false,
+          error: digitalResult.status === "rejected"
+            ? digitalResult.reason?.message || "Dispatch Digital non raggiungibile."
+            : digitalResult.value.payload?.error || `Dispatch Digital non riuscito (HTTP ${digitalResult.value.response.status}).`,
+        };
 
-    return res.status(200).json({ scheduler: data, worker: workerPayload, progremes, autoplanning });
+    return res.status(200).json({ scheduler: data, worker: workerPayload, digital, progremes, autoplanning });
   } catch (error) {
     return res.status(500).json({ error: error?.message || "Creazione coda Mexal non riuscita." });
   }

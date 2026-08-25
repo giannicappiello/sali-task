@@ -41,6 +41,14 @@
       "destination": "/api/mexal/automation?route=crm-ai"
     },
     {
+      "source": "/api/crm/digital-connections",
+      "destination": "/api/mexal/automation?route=crm-digital"
+    },
+    {
+      "source": "/api/crm/digital-connections/oauth/callback",
+      "destination": "/api/mexal/automation?route=crm-digital&action=oauth_callback"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/"
     }

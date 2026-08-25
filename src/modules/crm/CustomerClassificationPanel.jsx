@@ -3,9 +3,11 @@ import { CheckSquare, Pencil, RefreshCw, RotateCcw, Search, SlidersHorizontal, U
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
+import { useDatasetTableControls, usePaginatedDataset, useResetPageCallback } from "../../components/useDatasetTableControls";
 import CrmCustomerLink from "./CrmCustomerLink";
 import { CrmCustomerStatusBadge, CrmCustomerStatusDialog, CrmCustomerStatusFilter } from "./CrmCustomerStatus";
 import { setCrmCustomerActive, useCrmCustomerStatus } from "./crmCustomerStatusModel";
+import { loadAllQueryRows } from "./crmDataset";
 import "./customer-classification.css";
 
 const PAGE_SIZE = 50;
@@ -23,11 +25,21 @@ function formatDateTime(value) {
   return value ? new Date(value).toLocaleString("it-IT") : "—";
 }
 
+const CLASSIFICATION_COLUMNS = [
+  { value: (row) => row.__selected ? "Selezionato" : "Non selezionato" },
+  { value: (row) => `${row.ragione_sociale} ${row.codice_cliente}` },
+  { value: (row) => `${row.agente_classificazione || "Nessun agente"} ${row.codice_agente_mexal || "—"}` },
+  { value: (row) => `${areaLabel(row.area_crm)} ${row.area_override ? `Automatico ${areaLabel(row.area_automatica)}` : ""}` },
+  { value: (row) => `${row.modalita === "manuale" ? "Override manuale" : "agent_rule"} ${row.override_note || ""}` },
+  { value: (row) => `${formatDateTime(row.classificata_il)} ${row.override_il ? `Override ${formatDateTime(row.override_il)}` : ""}` },
+  { value: (row) => `${row.crm_active !== false ? "Attivo" : "Non attivo"} Anagrafica Mexal ${row.attivo_mexal ? "attiva" : "non attiva"}` },
+  { value: (row) => `${row.crm_active !== false ? "Disattiva" : "Riattiva"} Modifica area` },
+];
+
 export default function CustomerClassificationPanel() {
   const { isAdminUser } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [rows, setRows] = useState([]);
-  const [total, setTotal] = useState(0);
   const [page, setPage] = useState(() => Math.max(0, Number(searchParams.get("classification_page") || 0)));
   const [search, setSearch] = useState(() => searchParams.get("classification_search") || "");
   const [area, setArea] = useState(() => searchParams.get("classification_area") || "");
@@ -44,6 +56,13 @@ export default function CustomerClassificationPanel() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [statusCustomer, setStatusCustomer] = useState(null);
+  const resetPage = useResetPageCallback(setPage);
+  const [tableRef, tableQuery] = useDatasetTableControls({ onQueryChange: resetPage });
+  const tableRows = useMemo(
+    () => rows.map((row) => ({ ...row, __selected: selected.includes(row.codice_cliente) })),
+    [rows, selected],
+  );
+  const { pageRows, total: queriedTotal } = usePaginatedDataset(tableRows, CLASSIFICATION_COLUMNS, tableQuery, page, PAGE_SIZE);
 
   const load = useCallback(async () => {
     if (!isAdminUser) return;
@@ -63,31 +82,29 @@ export default function CustomerClassificationPanel() {
       if (targetStatus === "inactive") filtered = filtered.eq("crm_active", false);
       return filtered;
     };
-    let query = supabase
+    const rowsPromise = loadAllQueryRows((from, to) => applyFilters(supabase
       .from("crm_customer_classification_catalog")
-      .select("codice_cliente,ragione_sociale,codice_agente_mexal,agente_classificazione,area_automatica,area_override,area_crm,origine_classificazione,modalita,classificata_il,override_il,override_note,attivo_mexal,crm_active,crm_status_changed_at,crm_status_reason", { count: "exact" })
+      .select("codice_cliente,ragione_sociale,codice_agente_mexal,agente_classificazione,area_automatica,area_override,area_crm,origine_classificazione,modalita,classificata_il,override_il,override_note,attivo_mexal,crm_active,crm_status_changed_at,crm_status_reason"))
       .order("ragione_sociale")
-      .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
-    query = applyFilters(query);
+      .range(from, to));
     const countQuery = (targetArea = area, targetMode = mode, targetStatus = customerStatus) => applyFilters(
       supabase.from("crm_customer_classification_catalog").select("codice_cliente", { count: "exact", head: true }),
       { targetArea, targetMode, targetStatus }
     );
     const [rowsResult, totalResult, ...areaResults] = await Promise.all([
-      query,
+      rowsPromise,
       countQuery(),
       ...AREA_OPTIONS.map(([value]) => countQuery(value)),
       countQuery(area, "manuale"),
       countQuery(area, mode, "active"),
       countQuery(area, mode, "inactive"),
     ]);
-    const { data, error: loadError, count } = rowsResult;
+    const { data, error: loadError } = rowsResult;
     const aggregateError = totalResult.error || areaResults.find((result) => result.error)?.error;
     if (loadError) setError(loadError.message);
     else if (aggregateError) setError(aggregateError.message);
     else {
       setRows(data || []);
-      setTotal(count || 0);
       setSummary({
         total: totalResult.count || 0,
         ...Object.fromEntries(AREA_OPTIONS.map(([value], index) => [value, areaResults[index]?.count || 0])),
@@ -98,7 +115,7 @@ export default function CustomerClassificationPanel() {
       setSelected((current) => current.filter((code) => (data || []).some((row) => row.codice_cliente === code)));
     }
     setLoading(false);
-  }, [agent, area, customerStatus, isAdminUser, mode, page, search]);
+  }, [agent, area, customerStatus, isAdminUser, mode, search]);
 
   useEffect(() => {
     setSearchParams((current) => {
@@ -114,7 +131,7 @@ export default function CustomerClassificationPanel() {
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  const allPageSelected = rows.length > 0 && rows.every((row) => selected.includes(row.codice_cliente));
+  const allPageSelected = pageRows.length > 0 && pageRows.every((row) => selected.includes(row.codice_cliente));
   const datasetSummary = useMemo(() => AREA_OPTIONS.map(([value, label]) => ({
     value,
     label,
@@ -126,7 +143,10 @@ export default function CustomerClassificationPanel() {
   }
 
   function togglePage() {
-    setSelected(allPageSelected ? [] : rows.map((row) => row.codice_cliente));
+    const pageCodes = pageRows.map((row) => row.codice_cliente);
+    setSelected((current) => allPageSelected
+      ? current.filter((code) => !pageCodes.includes(code))
+      : [...new Set([...current, ...pageCodes])]);
   }
 
   async function applyOverride(codes, targetArea, overrideNote = "") {
@@ -215,9 +235,9 @@ export default function CustomerClassificationPanel() {
       {error ? <div className="crm-message error" role="alert"><span>{error}</span><button type="button" onClick={() => void load()}>Riprova</button></div> : null}
 
       <div className="crm-table-wrap">
-        <table className="crm-table crm-classification-table">
+        <table ref={tableRef} data-column-controls-mode="dataset" className="crm-table crm-classification-table">
           <thead><tr><th><input type="checkbox" aria-label="Seleziona la pagina" checked={allPageSelected} onChange={togglePage} /></th><th>Cliente</th><th>Agente</th><th>Area CRM</th><th>Origine</th><th>Ultima classificazione</th><th>Stato</th><th>Azioni</th></tr></thead>
-          <tbody>{rows.map((row) => <tr key={row.codice_cliente}>
+          <tbody>{pageRows.map((row) => <tr key={row.codice_cliente}>
             <td><input type="checkbox" aria-label={`Seleziona ${row.ragione_sociale}`} checked={selected.includes(row.codice_cliente)} onChange={() => toggle(row.codice_cliente)} /></td>
             <td><CrmCustomerLink crmType={row.area_crm} customerCode={row.codice_cliente} name={row.ragione_sociale}><strong>{row.ragione_sociale}</strong></CrmCustomerLink><small>{row.codice_cliente}</small></td>
             <td><strong>{row.agente_classificazione || "Nessun agente"}</strong><small>{row.codice_agente_mexal || "—"}</small></td>
@@ -229,13 +249,13 @@ export default function CustomerClassificationPanel() {
           </tr>)}</tbody>
         </table>
         {loading ? <div className="crm-loading">Caricamento classificazioni...</div> : null}
-        {!loading && !rows.length ? <div className="crm-empty">Nessun cliente corrisponde ai filtri oppure il popolamento iniziale non è ancora stato eseguito.</div> : null}
+        {!loading && !pageRows.length ? <div className="crm-empty">Nessun cliente corrisponde ai filtri oppure il popolamento iniziale non è ancora stato eseguito.</div> : null}
       </div>
 
       <div className="crm-pagination">
         <button type="button" disabled={page === 0 || loading} onClick={() => setPage((value) => value - 1)}>Precedente</button>
-        <span>Pagina {page + 1} · {total} clienti</span>
-        <button type="button" disabled={(page + 1) * PAGE_SIZE >= total || loading} onClick={() => setPage((value) => value + 1)}>Successiva</button>
+        <span>Pagina {page + 1} · {queriedTotal} clienti</span>
+        <button type="button" disabled={(page + 1) * PAGE_SIZE >= queriedTotal || loading} onClick={() => setPage((value) => value + 1)}>Successiva</button>
       </div>
 
       {editing ? <div className="crm-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditing(null); }}>

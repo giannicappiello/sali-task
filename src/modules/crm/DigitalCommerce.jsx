@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { BarChart3, Bot, Mail, Megaphone, RefreshCw, ShoppingBag, Store, UsersRound, Workflow } from "lucide-react";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
+import { useDatasetTableControls, usePaginatedDataset, useResetPageCallback } from "../../components/useDatasetTableControls";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
 import { DATA_STATUS, DIGITAL_CONNECTIONS, connectionDataStatus, metricValue } from "./digitalConfig";
 import { formatDate, formatMoney } from "./crmConfig";
 import CrmCustomerLink from "./CrmCustomerLink";
 import CrmPeriodFilter, { useCrmPeriod } from "./CrmPeriodFilter";
+import { loadAllQueryRows } from "./crmDataset";
 
 import "./digital.css";
 const CHANNEL_META = Object.freeze({
@@ -16,6 +18,32 @@ const CHANNEL_META = Object.freeze({
   amazon: { title: "Amazon", icon: Store, types: ["amazon_seller", "amazon_ads"], moduleCode: "crm_online_amazon" },
   adv: { title: "ADV", icon: Megaphone, types: ["meta_ads", "google_ads"], moduleCode: "crm_online_adv" },
 });
+
+const DIGITAL_PAGE_SIZE = 50;
+const METRIC_COLUMNS = [
+  { value: (row) => formatDate(row.metric_date) },
+  { value: (row) => row.channel },
+  { value: (row) => row.marketplace || "—" },
+  { value: (row) => formatMoney(row.spend) },
+  { value: (row) => formatMoney(row.revenue) },
+  { value: (row) => row.orders },
+  { value: (row) => row.attribution_method },
+];
+const ORDER_COLUMNS = [
+  { value: (row) => row.external_id },
+  { value: (row) => formatDate(row.ordered_at) },
+  { value: (row) => row.marketplace || "Sito" },
+  { value: (row) => row.stato || "—" },
+  { value: (row) => formatMoney(row.net_revenue) },
+  { value: (row) => row.attribution_method },
+];
+const JOURNEY_COLUMNS = [
+  { value: (row) => row.crm_accounts?.nome || "Identità non collegata" },
+  { value: (row) => row.fase },
+  { value: (row) => new Date(row.avvenuto_il).toLocaleString("it-IT") },
+  { value: (row) => row.fonte || "unknown" },
+  { value: (row) => row.consenso_riferimento || "Non richiesto / non disponibile" },
+];
 
 function StatusPill({ status }) {
   const definition = DATA_STATUS[status] || DATA_STATUS.not_available;
@@ -94,8 +122,15 @@ export function DigitalChannel({ channel }) {
   const [orders, setOrders] = useState([]);
   const [metrics, setMetrics] = useState([]);
   const [mappings, setMappings] = useState([]);
-  const [page, setPage] = useState(0);
+  const [metricPage, setMetricPage] = useState(0);
+  const [orderPage, setOrderPage] = useState(0);
   const [error, setError] = useState("");
+  const resetMetricPage = useResetPageCallback(setMetricPage);
+  const resetOrderPage = useResetPageCallback(setOrderPage);
+  const [metricTableRef, metricQuery] = useDatasetTableControls({ onQueryChange: resetMetricPage });
+  const [orderTableRef, orderQuery] = useDatasetTableControls({ onQueryChange: resetOrderPage });
+  const { pageRows: metricRows, total: metricTotal } = usePaginatedDataset(metrics, METRIC_COLUMNS, metricQuery, metricPage, DIGITAL_PAGE_SIZE);
+  const { pageRows: orderRows, total: orderTotal } = usePaginatedDataset(orders, ORDER_COLUMNS, orderQuery, orderPage, DIGITAL_PAGE_SIZE);
   const load = useCallback(async () => {
     setError("");
     const connectionResult = await supabase.from("crm_external_connections").select("id,tipo,nome,provider,stato,abilitata,ultimo_sync_il,prossima_run_il,ultimo_errore,marketplace_ids").in("tipo", definition.types);
@@ -103,22 +138,21 @@ export function DigitalChannel({ channel }) {
     const ids = (connectionResult.data || []).map((item) => item.id);
     setConnections(connectionResult.data || []);
     if (!ids.length) { setOrders([]); setMetrics([]); setMappings([]); return; }
-    const requests = [supabase.from("crm_external_metrics").select("id,metric_date,channel,marketplace,impressions,clicks,spend,revenue,orders,conversions,attribution_method").in("connection_id", ids).gte("metric_date", period.from).lte("metric_date", period.to).order("metric_date", { ascending: false }).range(page * 50, page * 50 + 49)];
-    if (["ecommerce", "amazon"].includes(channel)) requests.push(supabase.from("crm_external_orders").select("id,external_id,marketplace,stato,ordered_at,net_revenue,attribution_method").in("connection_id", ids).gte("ordered_at", period.from).lte("ordered_at", period.to + "T23:59:59.999Z").order("ordered_at", { ascending: false }).range(page * 50, page * 50 + 49));
-    if (channel === "amazon") requests.push(supabase.from("crm_product_mappings").select("id,marketplace,external_sku,asin,codice_mexal,status,prodotti(nome,codice)").in("connection_id", ids).order("aggiornato_il", { ascending: false }).limit(100));
+    const requests = [loadAllQueryRows((from, to) => supabase.from("crm_external_metrics").select("id,metric_date,channel,marketplace,impressions,clicks,spend,revenue,orders,conversions,attribution_method").in("connection_id", ids).gte("metric_date", period.from).lte("metric_date", period.to).order("metric_date", { ascending: false }).range(from, to))];
+    if (["ecommerce", "amazon"].includes(channel)) requests.push(loadAllQueryRows((from, to) => supabase.from("crm_external_orders").select("id,external_id,marketplace,stato,ordered_at,net_revenue,attribution_method").in("connection_id", ids).gte("ordered_at", period.from).lte("ordered_at", period.to + "T23:59:59.999Z").order("ordered_at", { ascending: false }).range(from, to)));
+    if (channel === "amazon") requests.push(loadAllQueryRows((from, to) => supabase.from("crm_product_mappings").select("id,marketplace,external_sku,asin,codice_mexal,status,prodotti(nome,codice)").in("connection_id", ids).order("aggiornato_il", { ascending: false }).range(from, to)));
     const results = await Promise.all(requests); const failure = results.find((item) => item.error)?.error;
     if (failure) setError(failure.message); else { setMetrics(results[0].data || []); setOrders(results[1]?.data || []); setMappings(channel === "amazon" ? results[2]?.data || [] : []); }
-  }, [channel, definition.types, page, period.from, period.to]);
+  }, [channel, definition.types, period.from, period.to]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
   const Icon = definition.icon;
   const sourceDefinitions = DIGITAL_CONNECTIONS.filter((item) => definition.types.includes(item.type));
   return <div className="crm-page"><div className="crm-toolbar"><div><span className="crm-eyebrow"><Icon size={16} /> CRM Online</span><h2>{definition.title}</h2><p>Layer provider-agnostic: nessuna azione esterna automatica.</p></div><div className="crm-toolbar-actions"><CrmPeriodFilter period={period} compact /><Link className="secondary-action crm-secondary" to="/settings/crm-digital">Configura in Impostazioni</Link></div></div>
     {error ? <div className="crm-message error">{error}</div> : null}
     <div className="crm-connection-grid">{sourceDefinitions.map((source) => { const current = connections.find((item) => item.tipo === source.type); return <article key={source.type}><div><strong>{source.label}</strong><StatusPill status={connectionDataStatus(current)} /></div><p>{current?.provider || "Provider non identificato"}</p><small>{current?.ultimo_errore || source.sourceNeeded}</small></article>; })}</div>
-    <section className="panel crm-panel"><h3>Metriche disponibili</h3><div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Data</th><th>Canale</th><th>Marketplace</th><th>Spend</th><th>Revenue</th><th>Ordini</th><th>Attribuzione</th></tr></thead><tbody>{metrics.map((row) => <tr key={row.id}><td>{formatDate(row.metric_date)}</td><td>{row.channel}</td><td>{row.marketplace || "—"}</td><td>{metricValue(row.spend, formatMoney)}</td><td>{metricValue(row.revenue, formatMoney)}</td><td>{metricValue(row.orders)}</td><td>{row.attribution_method}</td></tr>)}</tbody></table>{!metrics.length ? <div className="crm-empty">Dato non sincronizzato: configura il provider reale e avvia una sincronizzazione autorizzata.</div> : null}</div></section>
-    {orders.length || ["ecommerce", "amazon"].includes(channel) ? <section className="panel crm-panel"><h3>Ordini</h3><div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Ordine</th><th>Data</th><th>Marketplace</th><th>Stato</th><th>Revenue netta</th><th>Attribuzione</th></tr></thead><tbody>{orders.map((row) => <tr key={row.id}><td>{row.external_id}</td><td>{formatDate(row.ordered_at)}</td><td>{row.marketplace || "Sito"}</td><td>{row.stato || "—"}</td><td>{metricValue(row.net_revenue, formatMoney)}</td><td>{row.attribution_method}</td></tr>)}</tbody></table>{!orders.length ? <div className="crm-empty">Nessun ordine sincronizzato.</div> : null}</div></section> : null}
+    <section className="panel crm-panel"><h3>Metriche disponibili</h3><div className="crm-table-wrap"><table ref={metricTableRef} data-column-controls-mode="dataset" className="crm-table"><thead><tr><th>Data</th><th>Canale</th><th>Marketplace</th><th>Spend</th><th>Revenue</th><th>Ordini</th><th>Attribuzione</th></tr></thead><tbody>{metricRows.map((row) => <tr key={row.id}><td>{formatDate(row.metric_date)}</td><td>{row.channel}</td><td>{row.marketplace || "—"}</td><td>{metricValue(row.spend, formatMoney)}</td><td>{metricValue(row.revenue, formatMoney)}</td><td>{metricValue(row.orders)}</td><td>{row.attribution_method}</td></tr>)}</tbody></table>{!metricRows.length ? <div className="crm-empty">Dato non sincronizzato: configura il provider reale e avvia una sincronizzazione autorizzata.</div> : null}</div><div className="crm-pagination"><button type="button" disabled={metricPage === 0} onClick={() => setMetricPage((value) => value - 1)}>Precedente</button><span>Pagina {metricPage + 1} · {metricTotal} righe</span><button type="button" disabled={(metricPage + 1) * DIGITAL_PAGE_SIZE >= metricTotal} onClick={() => setMetricPage((value) => value + 1)}>Successiva</button></div></section>
+    {orders.length || ["ecommerce", "amazon"].includes(channel) ? <section className="panel crm-panel"><h3>Ordini</h3><div className="crm-table-wrap"><table ref={orderTableRef} data-column-controls-mode="dataset" className="crm-table"><thead><tr><th>Ordine</th><th>Data</th><th>Marketplace</th><th>Stato</th><th>Revenue netta</th><th>Attribuzione</th></tr></thead><tbody>{orderRows.map((row) => <tr key={row.id}><td>{row.external_id}</td><td>{formatDate(row.ordered_at)}</td><td>{row.marketplace || "Sito"}</td><td>{row.stato || "—"}</td><td>{metricValue(row.net_revenue, formatMoney)}</td><td>{row.attribution_method}</td></tr>)}</tbody></table>{!orderRows.length ? <div className="crm-empty">Nessun ordine sincronizzato.</div> : null}</div><div className="crm-pagination"><button type="button" disabled={orderPage === 0} onClick={() => setOrderPage((value) => value - 1)}>Precedente</button><span>Pagina {orderPage + 1} · {orderTotal} righe</span><button type="button" disabled={(orderPage + 1) * DIGITAL_PAGE_SIZE >= orderTotal} onClick={() => setOrderPage((value) => value + 1)}>Successiva</button></div></section> : null}
     {channel === "amazon" ? <section className="panel crm-panel"><h3>Mapping Amazon ↔ Prodotti Workspace/Mexal</h3><div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Marketplace</th><th>SKU</th><th>ASIN</th><th>Prodotto</th><th>Stato</th></tr></thead><tbody>{mappings.map((row) => <tr key={row.id}><td>{row.marketplace || "—"}</td><td>{row.external_sku}</td><td>{row.asin || "—"}</td><td>{row.prodotti?.nome || row.codice_mexal || "Non mappato"}</td><td><StatusPill status={row.status === "matched" ? "available" : row.status === "probable" ? "partial" : "not_available"} /></td></tr>)}</tbody></table>{!mappings.length ? <div className="crm-empty">Nessun mapping disponibile; non viene creato un secondo catalogo prodotti.</div> : null}</div></section> : null}
-    <div className="crm-pagination"><button type="button" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>Precedente</button><span>Pagina {page + 1}</span><button type="button" disabled={metrics.length < 50 && orders.length < 50} onClick={() => setPage((value) => value + 1)}>Successiva</button></div>
   </div>;
 }
 
@@ -136,8 +170,18 @@ export function DigitalJourney() {
       return next;
     }, { replace: true });
   }, [setSearchParams]);
-  const load = useCallback(async () => { let query = supabase.from("crm_customer_events").select("id,fase,avvenuto_il,fonte,consenso_riferimento,crm_accounts(id,nome,codice_cliente_mexal)").gte("avvenuto_il", period.from).lte("avvenuto_il", period.to + "T23:59:59.999Z").order("avvenuto_il", { ascending: false }).range(page * 50, page * 50 + 49); if (phase) query = query.eq("fase", phase); const { data, error: loadError } = await query; if (loadError) setError(loadError.message); else { setRows(data || []); setError(""); } }, [page, period.from, period.to, phase]);
+  const resetJourneyPage = useCallback(() => updateJourneyParam("journeyPage", "", false), [updateJourneyParam]);
+  const [tableRef, tableQuery] = useDatasetTableControls({ onQueryChange: resetJourneyPage });
+  const { pageRows, total } = usePaginatedDataset(rows, JOURNEY_COLUMNS, tableQuery, page, DIGITAL_PAGE_SIZE);
+  const load = useCallback(async () => {
+    const result = await loadAllQueryRows((from, to) => {
+      let query = supabase.from("crm_customer_events").select("id,fase,avvenuto_il,fonte,consenso_riferimento,crm_accounts(id,nome,codice_cliente_mexal)").gte("avvenuto_il", period.from).lte("avvenuto_il", period.to + "T23:59:59.999Z").order("avvenuto_il", { ascending: false }).range(from, to);
+      if (phase) query = query.eq("fase", phase);
+      return query;
+    });
+    if (result.error) setError(result.error.message); else { setRows(result.data || []); setError(""); }
+  }, [period.from, period.to, phase]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
   const phases = useMemo(() => ["session","product_view","lead","newsletter_signup","email_sent","email_open","email_click","add_to_cart","checkout_started","purchase","repeat_purchase","ad_click","creator_touch","review","return","refund","loyalty"], []);
-  return <div className="crm-page"><div className="crm-toolbar"><div><h2>Customer Journey</h2><p>Solo eventi realmente disponibili, minimizzati e filtrati server-side.</p></div><div className="crm-toolbar-actions"><CrmPeriodFilter period={period} compact /><label>Evento<select value={phase} onChange={(event) => updateJourneyParam("journeyPhase", event.target.value)}><option value="">Tutti</option>{phases.map((item) => <option key={item}>{item}</option>)}</select></label></div></div>{error ? <div className="crm-message error">{error}</div> : null}<div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Cliente</th><th>Evento</th><th>Data</th><th>Fonte</th><th>Consenso</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.crm_accounts ? <CrmCustomerLink crmType="online" customerCode={row.crm_accounts.codice_cliente_mexal} accountId={row.crm_accounts.id} name={row.crm_accounts.nome} period={period}>{row.crm_accounts.nome}</CrmCustomerLink> : "Identità non collegata"}</td><td>{row.fase}</td><td>{new Date(row.avvenuto_il).toLocaleString("it-IT")}</td><td>{row.fonte || "unknown"}</td><td>{row.consenso_riferimento || "Non richiesto / non disponibile"}</td></tr>)}</tbody></table>{!rows.length ? <div className="crm-empty">Nessun evento autorizzato disponibile.</div> : null}</div><div className="crm-pagination"><button type="button" disabled={page === 0} onClick={() => updateJourneyParam("journeyPage", page - 1, false)}>Precedente</button><span>Pagina {page + 1}</span><button type="button" disabled={rows.length < 50} onClick={() => updateJourneyParam("journeyPage", page + 1, false)}>Successiva</button></div></div>;
+  return <div className="crm-page"><div className="crm-toolbar"><div><h2>Customer Journey</h2><p>Solo eventi realmente disponibili, minimizzati e filtrati server-side.</p></div><div className="crm-toolbar-actions"><CrmPeriodFilter period={period} compact /><label>Evento<select value={phase} onChange={(event) => updateJourneyParam("journeyPhase", event.target.value)}><option value="">Tutti</option>{phases.map((item) => <option key={item}>{item}</option>)}</select></label></div></div>{error ? <div className="crm-message error">{error}</div> : null}<div className="crm-table-wrap"><table ref={tableRef} data-column-controls-mode="dataset" className="crm-table"><thead><tr><th>Cliente</th><th>Evento</th><th>Data</th><th>Fonte</th><th>Consenso</th></tr></thead><tbody>{pageRows.map((row) => <tr key={row.id}><td>{row.crm_accounts ? <CrmCustomerLink crmType="online" customerCode={row.crm_accounts.codice_cliente_mexal} accountId={row.crm_accounts.id} name={row.crm_accounts.nome} period={period}>{row.crm_accounts.nome}</CrmCustomerLink> : "Identità non collegata"}</td><td>{row.fase}</td><td>{new Date(row.avvenuto_il).toLocaleString("it-IT")}</td><td>{row.fonte || "unknown"}</td><td>{row.consenso_riferimento || "Non richiesto / non disponibile"}</td></tr>)}</tbody></table>{!pageRows.length ? <div className="crm-empty">Nessun evento autorizzato disponibile.</div> : null}</div><div className="crm-pagination"><button type="button" disabled={page === 0} onClick={() => updateJourneyParam("journeyPage", page - 1, false)}>Precedente</button><span>Pagina {page + 1} · {total} eventi</span><button type="button" disabled={(page + 1) * DIGITAL_PAGE_SIZE >= total} onClick={() => updateJourneyParam("journeyPage", page + 1, false)}>Successiva</button></div></div>;
 }

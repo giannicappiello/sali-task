@@ -6,6 +6,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import Layout from "./components/Layout";
 import OrdersDataPreloader from "./components/OrdersDataPreloader";
 import GlobalWindowShortcuts from "./components/GlobalWindowShortcuts";
+import GlobalTableColumnControls from "./components/GlobalTableColumnControls";
 import BrandedDialogProvider from "./components/BrandedDialogProvider";
 import NotificationManager from "./components/NotificationManager";
 import WorkspaceAccessGuard from "./components/WorkspaceAccessGuard";
@@ -81,6 +82,7 @@ function App() {
       <BrandedDialogProvider />
       <OrdersDataPreloader />
       <GlobalWindowShortcuts />
+      <GlobalTableColumnControls />
       <NotificationManager />
       <Suspense fallback={<Loader />}>
         <Routes>

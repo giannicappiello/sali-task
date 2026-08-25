@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  applyDatasetTableQuery,
   compareTableValues,
   normalizeTableText,
   stableSortTableRows,
@@ -38,6 +39,32 @@ test("l'ordinamento crescente e decrescente resta stabile", () => {
     stableSortTableRows(rows, (row) => row.value, "desc").map((row) => row.id),
     ["a", "b", "c"],
   );
+});
+
+test("filtri e ordinamento vengono applicati prima della paginazione", () => {
+  const rows = [
+    { name: "Gamma", status: "Aperto" },
+    { name: "Alfa", status: "Chiuso" },
+    { name: "Beta", status: "Aperto" },
+  ];
+  const columns = [
+    { value: (row) => row.name },
+    { value: (row) => row.status },
+  ];
+  const queried = applyDatasetTableQuery(rows, columns, {
+    direction: "desc",
+    filters: { 1: "aperto" },
+    sortColumn: 0,
+  });
+
+  assert.deepEqual(queried.map((row) => row.name), ["Gamma", "Beta"]);
+  assert.deepEqual(queried.slice(0, 2).map((row) => row.name), ["Gamma", "Beta"]);
+});
+
+test("la modalità dataset non riordina soltanto le righe DOM visibili", async () => {
+  const source = await readFile(new URL("../src/components/GlobalTableColumnControls.jsx", import.meta.url), "utf8");
+  assert.match(source, /columnControlsMode === "dataset"/);
+  assert.match(source, /TABLE_COLUMN_QUERY_EVENT/);
 });
 
 test("i controlli sono montati globalmente e coprono ogni tabella nativa", async () => {

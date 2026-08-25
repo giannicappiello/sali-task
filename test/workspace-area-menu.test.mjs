@@ -45,7 +45,7 @@ test("custom menu entries can contain multiple modules and drive Home", async ()
   assert.match(layout, /catalogModule: module\.codice/);
   assert.match(layout, /item\.catalogModule \|\| item\.module/);
   assert.match(layout, /`\/menu\/\$\{entry\.codice\}`/);
-  assert.match(menuEditor, /Un modulo selezionato viene spostato qui dalle altre voci/);
+  assert.match(menuEditor, /Lo stesso modulo può essere presente anche in altre voci di menu/);
   assert.match(menuContainer, /workspace_menu_moduli/);
   assert.match(menuContainer, /hasWorkspaceFeature\("analisi_dati"\)/);
   assert.match(home, /useOutletContext/);
@@ -65,7 +65,7 @@ test("screens and menu entries expose configurable icons throughout the workspac
   ]);
   assert.match(migration, /add column if not exists icona text not null default 'blocks'/);
   assert.match(migration, /icona=coalesce\(nullif\(btrim\(target_screen->>'icona'\)/);
-  assert.match(editor, /Icona della schermata/);
+  assert.match(editor, /WorkspaceIconPicker value=\{screenForm\.icona \|\| "blocks"\}/);
   assert.match(editor, /icona: cleanText\(screenForm\.icona\)/);
   assert.match(menuEditor, /Usata nel menu laterale, nella Home e nel contenitore della voce/);
   assert.match(moduleContainer, /getModuleIcon\(screen\.icona,LayoutGrid\)/);

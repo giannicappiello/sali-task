@@ -3,6 +3,7 @@ import { Link, Navigate, Route, Routes, useParams, useSearchParams } from "react
 import { Bot, BriefcaseBusiness, Plus, Search } from "lucide-react";
 import WorkspaceAccessGuard from "../../components/WorkspaceAccessGuard";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
+import { useDatasetTableControls, usePaginatedDataset, useResetPageCallback } from "../../components/useDatasetTableControls";
 import { getModuleIcon } from "../../config/moduleIcons";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
@@ -15,6 +16,7 @@ import { CrmPageHeader, CrmSectionNav } from "./CrmWorkspaceUI";
 import CustomerClassificationPanel from "./CustomerClassificationPanel";
 import { DigitalChannel, DigitalDashboard, DigitalHome, DigitalJourney } from "./DigitalCommerce";
 import { crmTypeConfig, formatDate, formatMoney } from "./crmConfig";
+import { loadAllRpcRows } from "./crmDataset";
 import { CRM_ROUTE_ALIASES, CRM_ROUTE_CATALOG, selectAuthorizedCrmModules } from "./crmRouteCatalog";
 import "./crm.css";
 import "./workspace-alignment.css";
@@ -100,6 +102,30 @@ function Kpi({ label, value, note, to }) {
   return to ? <Link className="kpi-card crm-kpi" to={to} aria-label={`${label}: ${value}. Apri dettaglio`}>{content}</Link> : <article className="kpi-card crm-kpi">{content}</article>;
 }
 
+const DASHBOARD_CUSTOMER_COLUMNS = [
+  { value: (row) => row.name },
+  { value: (row) => row.code },
+  { value: (row) => row.agente_classificazione || "—" },
+  { value: (row) => row.areaLabel },
+  { value: (row) => row.crm_active ? "Attivo" : "Non attivo" },
+  { value: (row) => formatDate(row.ultimo_ordine_il) },
+  { value: (row) => formatMoney(row.invoice_total) },
+  { value: (row) => formatMoney(row.order_total) },
+];
+
+const ACCOUNT_COLUMNS = [
+  { value: (row) => `${row.nome} ${row.source}` },
+  { value: (row) => row.codice },
+  { value: (row) => row.agente_classificazione || "—" },
+  { value: (row) => row.areaLabel },
+  { value: (row) => `${row.crm_active ? "Attivo" : "Non attivo"} ${row.crm_status_reason || ""}` },
+  { value: (row) => formatDate(row.ultimo_ordine_il) },
+  { value: (row) => `${formatMoney(row.invoice_total)} ${row.invoice_count || 0} fatture` },
+  { value: (row) => `${formatMoney(row.order_total)} ${row.order_count || 0} ordini` },
+  { value: (row) => formatDate(row.prossima_attivita_il) },
+  { value: (row) => row.crm_active ? "Apri cliente Nuova attività Nuova opportunità Disattiva" : "Apri cliente Nuova attività Nuova opportunità Riattiva" },
+];
+
 function CrmDashboardCustomerList({ type, period }) {
   const config = crmTypeConfig(type);
   const [customerStatus, setCustomerStatus] = useCrmCustomerStatus("active");
@@ -109,35 +135,36 @@ function CrmDashboardCustomerList({ type, period }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const pageSize = 10;
+  const resetPage = useResetPageCallback(setPage);
+  const [tableRef, tableQuery] = useDatasetTableControls({ onQueryChange: resetPage });
+  const { pageRows, total: filteredTotal } = usePaginatedDataset(rows, DASHBOARD_CUSTOMER_COLUMNS, tableQuery, page, pageSize);
   const load = useCallback(async () => {
     setLoading(true); setError("");
     const [canonicalResult, prospectResult] = await Promise.all([
-      supabase.rpc("crm_customer_metric_details", {
+      loadAllRpcRows("crm_customer_metric_details", {
         p_crm_type: type, p_from: period.from, p_to: period.to, p_metric: "all",
-        p_search: null, p_limit: pageSize, p_offset: page * pageSize,
-        p_customer_status: customerStatus,
+        p_search: null, p_customer_status: customerStatus,
       }),
-      supabase.rpc("crm_prospect_customer_details", {
-        p_crm_type: type, p_search: null, p_limit: pageSize,
-        p_offset: page * pageSize, p_customer_status: customerStatus,
+      loadAllRpcRows("crm_prospect_customer_details", {
+        p_crm_type: type, p_search: null, p_customer_status: customerStatus,
       }),
     ]);
     const loadError = canonicalResult.error || prospectResult.error;
     if (loadError) setError(loadError.message);
     else {
       const canonicalRows = (canonicalResult.data || []).map((row) => ({
-        ...row, customerKey: `mexal:${row.codice_cliente}`, name: row.ragione_sociale,
+        ...row, customerKey: `mexal:${row.codice_cliente}`, name: row.ragione_sociale, areaLabel: config.label,
         code: row.codice_cliente, crm_active: row.crm_active !== false,
       }));
       const prospectRows = (prospectResult.data || []).map((row) => ({
-        ...row, customerKey: `crm:${row.id}`, name: row.nome, code: row.email || "—",
+        ...row, customerKey: `crm:${row.id}`, name: row.nome, code: row.email || "—", areaLabel: config.label,
         crm_active: row.crm_active !== false,
       }));
       setRows([...canonicalRows, ...prospectRows]);
-      setTotal(Number(canonicalResult.data?.[0]?.total_count || 0) + Number(prospectResult.data?.[0]?.total_count || 0));
+      setTotal(canonicalRows.length + prospectRows.length);
     }
     setLoading(false);
-  }, [customerStatus, page, period.from, period.to, type]);
+  }, [config.label, customerStatus, period.from, period.to, type]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
   return (
     <section className="panel crm-panel crm-dashboard-customers" aria-labelledby={`dashboard-customers-${type}`}>
@@ -146,8 +173,8 @@ function CrmDashboardCustomerList({ type, period }) {
         <CrmCustomerStatusFilter value={customerStatus} onChange={(value) => { setCustomerStatus(value); setPage(0); }} id={`dashboard-customer-status-${type}`} />
       </div>
       <ErrorBox error={error} retry={load} />
-      {loading ? <div className="crm-loading">Caricamento clienti...</div> : <div className="crm-table-wrap"><table className="crm-table crm-dashboard-customer-table"><thead><tr><th>Cliente</th><th>Codice</th><th>Agente</th><th>Area CRM</th><th>Stato CRM</th><th>Ultimo ordine</th><th>Fatturato periodo</th><th>Ordinato periodo</th></tr></thead><tbody>{rows.map((row) => <tr key={row.customerKey}><td><CrmCustomerLink crmType={type} customerKey={row.customerKey} name={row.name} period={period}>{row.name}</CrmCustomerLink></td><td>{row.code}</td><td>{row.agente_classificazione || "—"}</td><td>{config.label}</td><td><CrmCustomerStatusBadge active={row.crm_active} /></td><td>{formatDate(row.ultimo_ordine_il)}</td><td>{formatMoney(row.invoice_total)}</td><td>{formatMoney(row.order_total)}</td></tr>)}</tbody></table>{!rows.length ? <div className="crm-empty">Nessun cliente {customerStatus === "inactive" ? "non attivo" : "attivo"} in questa area CRM.</div> : null}</div>}
-      <div className="crm-pagination"><button type="button" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>Precedente</button><span>Pagina {page + 1} · {total} clienti</span><button type="button" disabled={(page + 1) * pageSize >= total} onClick={() => setPage((value) => value + 1)}>Successiva</button></div>
+      {loading ? <div className="crm-loading">Caricamento clienti...</div> : null}<div className="crm-table-wrap"><table ref={tableRef} data-column-controls-mode="dataset" className="crm-table crm-dashboard-customer-table"><thead><tr><th>Cliente</th><th>Codice</th><th>Agente</th><th>Area CRM</th><th>Stato CRM</th><th>Ultimo ordine</th><th>Fatturato periodo</th><th>Ordinato periodo</th></tr></thead><tbody>{pageRows.map((row) => <tr key={row.customerKey}><td><CrmCustomerLink crmType={type} customerKey={row.customerKey} name={row.name} period={period}>{row.name}</CrmCustomerLink></td><td>{row.code}</td><td>{row.agente_classificazione || "—"}</td><td>{config.label}</td><td><CrmCustomerStatusBadge active={row.crm_active} /></td><td>{formatDate(row.ultimo_ordine_il)}</td><td>{formatMoney(row.invoice_total)}</td><td>{formatMoney(row.order_total)}</td></tr>)}</tbody></table>{!loading && !pageRows.length ? <div className="crm-empty">Nessun cliente {customerStatus === "inactive" ? "non attivo" : "attivo"} in questa area CRM.</div> : null}</div>
+      <div className="crm-pagination"><button type="button" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>Precedente</button><span>Pagina {page + 1} · {filteredTotal} clienti</span><button type="button" disabled={(page + 1) * pageSize >= filteredTotal} onClick={() => setPage((value) => value + 1)}>Successiva</button></div>
     </section>
   );
 }
@@ -250,37 +277,38 @@ function AccountsPage({ type }) {
       return next;
     }, { replace: true });
   }, [setSearchParams]);
+  const resetCustomerPage = useCallback(() => updateCustomerParam("customerPage", "", false), [updateCustomerParam]);
+  const [tableRef, tableQuery] = useDatasetTableControls({ onQueryChange: resetCustomerPage });
+  const { pageRows, total: filteredTotal } = usePaginatedDataset(rows, ACCOUNT_COLUMNS, tableQuery, page, CRM_CUSTOMER_PAGE_SIZE);
   const load = useCallback(async () => {
     setLoading(true);
     const term = search.trim().replaceAll(",", " ");
     const [canonicalResult, prospectResult] = await Promise.all([
-      supabase.rpc("crm_customer_metric_details", {
+      loadAllRpcRows("crm_customer_metric_details", {
         p_crm_type: type, p_from: period.from, p_to: period.to, p_metric: metric,
-        p_search: term || null, p_limit: CRM_CUSTOMER_PAGE_SIZE, p_offset: page * CRM_CUSTOMER_PAGE_SIZE,
-        p_customer_status: customerStatus,
+        p_search: term || null, p_customer_status: customerStatus,
       }),
-      metric === "all" ? supabase.rpc("crm_prospect_customer_details", {
-        p_crm_type: type, p_search: term || null, p_limit: CRM_CUSTOMER_PAGE_SIZE,
-        p_offset: page * CRM_CUSTOMER_PAGE_SIZE, p_customer_status: customerStatus,
+      metric === "all" ? loadAllRpcRows("crm_prospect_customer_details", {
+        p_crm_type: type, p_search: term || null, p_customer_status: customerStatus,
       }) : Promise.resolve({ data: [], error: null }),
     ]);
     const loadError = canonicalResult.error || prospectResult.error;
     if (loadError) { setError(loadError.message); setLoading(false); return; }
     const canonicalRows = (canonicalResult.data || []).map((row) => ({
       ...row, entityKey: `mexal:${row.codice_cliente}`, routeId: customerRouteId("mexal", row.codice_cliente),
-      source: "Workspace/Mexal", nome: row.ragione_sociale, codice: row.codice_cliente,
+      source: "Workspace/Mexal", nome: row.ragione_sociale, codice: row.codice_cliente, areaLabel: config.label,
       crm_active: row.crm_active !== false, opportunities: row.opportunita_count || 0,
     }));
     const prospectRows = (prospectResult.data || []).map((row) => ({
       ...row, entityKey: `crm:${row.id}`, routeId: customerRouteId("crm", row.id), source: "Prospect CRM-only",
-      codice: row.email || "—", agente_classificazione: null, origine_classificazione: "crm_only",
+      codice: row.email || "—", agente_classificazione: null, origine_classificazione: "crm_only", areaLabel: config.label,
       crm_active: row.crm_active !== false, opportunities: row.opportunita_count || 0,
     }));
     setRows([...canonicalRows, ...prospectRows]);
-    setCanonicalTotal(Number(canonicalResult.data?.[0]?.total_count || 0));
-    setProspectTotal(Number(prospectResult.data?.[0]?.total_count || 0));
+    setCanonicalTotal(canonicalRows.length);
+    setProspectTotal(prospectRows.length);
     setError(""); setLoading(false);
-  }, [customerStatus, metric, page, period.from, period.to, search, type]);
+  }, [config.label, customerStatus, metric, period.from, period.to, search, type]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 180); return () => window.clearTimeout(timer); }, [load]);
 
   async function save(event) {
@@ -312,8 +340,8 @@ function AccountsPage({ type }) {
     </CrmPageHeader>
     <div className="crm-filters"><label><Search size={16} /><input value={search} onChange={(event) => updateCustomerParam("customerSearch", event.target.value)} placeholder="Ragione sociale, agente, email o codice" /></label><CrmCustomerStatusFilter value={customerStatus} onChange={(value) => { setCustomerStatus(value); updateCustomerParam("customerPage", "", false); }} id={`customer-status-${type}`} /></div>
     <ErrorBox error={error} retry={load} />
-    {loading ? <div className="crm-loading">Caricamento clienti...</div> : <div className="crm-table-wrap"><table className="crm-table crm-customer-table"><thead><tr><th>Cliente</th><th>Codice</th><th>Agente</th><th>Area CRM</th><th>Stato CRM</th><th>Ultimo ordine</th><th>Fatturato periodo</th><th>Ordinato periodo</th><th>Prossima attività</th><th>Azioni</th></tr></thead><tbody>{rows.map((row) => <tr key={row.entityKey}><td><CrmCustomerLink crmType={type} customerKey={row.entityKey} name={row.nome} period={period}><strong>{row.nome}</strong></CrmCustomerLink><span className={`crm-source-badge ${row.source === "Workspace/Mexal" ? "canonical" : "prospect"}`}>{row.source}</span></td><td>{row.codice}</td><td>{row.agente_classificazione || "—"}</td><td>{config.label}</td><td><CrmCustomerStatusBadge active={row.crm_active} />{row.crm_status_reason ? <small>{row.crm_status_reason}</small> : null}</td><td>{formatDate(row.ultimo_ordine_il)}</td><td><strong>{formatMoney(row.invoice_total)}</strong><small>{row.invoice_count || 0} fatture</small></td><td><strong>{formatMoney(row.order_total)}</strong><small>{row.order_count || 0} ordini</small></td><td>{formatDate(row.prossima_attivita_il)}</td><td><details className="crm-row-actions"><summary>Azioni</summary><div><CrmCustomerLink crmType={type} customerKey={row.entityKey} name={row.nome} period={period}>Apri cliente</CrmCustomerLink><CrmCustomerLink crmType={type} customerKey={row.entityKey} name={row.nome} period={period}>Nuova attività</CrmCustomerLink><CrmCustomerLink crmType={type} customerKey={row.entityKey} name={row.nome} period={period}>Nuova opportunità</CrmCustomerLink>{canWrite ? <button type="button" className={row.crm_active ? "danger-action" : "secondary-action"} onClick={() => setStatusCustomer(row)}>{row.crm_active ? "Disattiva" : "Riattiva"}</button> : null}</div></details></td></tr>)}</tbody></table>{!rows.length ? <div className="crm-empty">Nessun cliente corrisponde allo stato CRM e ai filtri selezionati.</div> : null}</div>}
-    <div className="crm-pagination"><button type="button" disabled={page === 0} onClick={() => updateCustomerParam("customerPage", page - 1, false)}>Precedente</button><span>Pagina {page + 1} · {canonicalTotal + prospectTotal} clienti</span><button type="button" disabled={(page + 1) * CRM_CUSTOMER_PAGE_SIZE >= Math.max(canonicalTotal, prospectTotal)} onClick={() => updateCustomerParam("customerPage", page + 1, false)}>Successiva</button></div>
+    {loading ? <div className="crm-loading">Caricamento clienti...</div> : null}<div className="crm-table-wrap"><table ref={tableRef} data-column-controls-mode="dataset" className="crm-table crm-customer-table"><thead><tr><th>Cliente</th><th>Codice</th><th>Agente</th><th>Area CRM</th><th>Stato CRM</th><th>Ultimo ordine</th><th>Fatturato periodo</th><th>Ordinato periodo</th><th>Prossima attività</th><th>Azioni</th></tr></thead><tbody>{pageRows.map((row) => <tr key={row.entityKey}><td><CrmCustomerLink crmType={type} customerKey={row.entityKey} name={row.nome} period={period}><strong>{row.nome}</strong></CrmCustomerLink><span className={`crm-source-badge ${row.source === "Workspace/Mexal" ? "canonical" : "prospect"}`}>{row.source}</span></td><td>{row.codice}</td><td>{row.agente_classificazione || "—"}</td><td>{config.label}</td><td><CrmCustomerStatusBadge active={row.crm_active} />{row.crm_status_reason ? <small>{row.crm_status_reason}</small> : null}</td><td>{formatDate(row.ultimo_ordine_il)}</td><td><strong>{formatMoney(row.invoice_total)}</strong><small>{row.invoice_count || 0} fatture</small></td><td><strong>{formatMoney(row.order_total)}</strong><small>{row.order_count || 0} ordini</small></td><td>{formatDate(row.prossima_attivita_il)}</td><td><details className="crm-row-actions"><summary>Azioni</summary><div><CrmCustomerLink crmType={type} customerKey={row.entityKey} name={row.nome} period={period}>Apri cliente</CrmCustomerLink><CrmCustomerLink crmType={type} customerKey={row.entityKey} name={row.nome} period={period}>Nuova attività</CrmCustomerLink><CrmCustomerLink crmType={type} customerKey={row.entityKey} name={row.nome} period={period}>Nuova opportunità</CrmCustomerLink>{canWrite ? <button type="button" className={row.crm_active ? "danger-action" : "secondary-action"} onClick={() => setStatusCustomer(row)}>{row.crm_active ? "Disattiva" : "Riattiva"}</button> : null}</div></details></td></tr>)}</tbody></table>{!loading && !pageRows.length ? <div className="crm-empty">Nessun cliente corrisponde allo stato CRM e ai filtri selezionati.</div> : null}</div>
+    <div className="crm-pagination"><button type="button" disabled={page === 0} onClick={() => updateCustomerParam("customerPage", page - 1, false)}>Precedente</button><span>Pagina {page + 1} · {filteredTotal} clienti</span><button type="button" disabled={(page + 1) * CRM_CUSTOMER_PAGE_SIZE >= filteredTotal} onClick={() => updateCustomerParam("customerPage", page + 1, false)}>Successiva</button></div>
     {open ? <div className="crm-modal-backdrop"><form className="crm-modal" onSubmit={save}><h3>Nuovo prospect CRM-only {config.label}</h3><p>Il prospect resta nel layer CRM e non crea né duplica un cliente Workspace/Mexal.</p><label>Nome<input required value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} /></label><div className="crm-form-grid"><label>Stato<select value={form.stato} onChange={(e) => setForm({ ...form, stato: e.target.value })}><option value="prospect">Prospect</option><option value="attivo">Attivo</option></select></label><label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label><label>Telefono<input value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} /></label></div><div className="crm-modal-actions"><button type="button" onClick={() => setOpen(false)}>Annulla</button><button className="primary-action crm-primary">Salva prospect</button></div></form></div> : null}
     <CrmCustomerStatusDialog customer={statusCustomer} busy={statusBusy} onClose={() => setStatusCustomer(null)} onConfirm={(change) => void changeCustomerStatus(change)} />
   </div>;

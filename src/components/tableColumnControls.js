@@ -3,6 +3,8 @@ const italianCollator = new Intl.Collator("it", {
   sensitivity: "base",
 });
 
+export const TABLE_COLUMN_QUERY_EVENT = "workspace:table-column-query";
+
 export function normalizeTableText(value) {
   return String(value ?? "")
     .normalize("NFD")
@@ -88,5 +90,17 @@ export function stableSortTableRows(rows, valueForRow, direction = "asc") {
         : comparison * multiplier;
     })
     .map(({ row }) => row);
+}
+
+export function applyDatasetTableQuery(rows, columns, query) {
+  const filtered = rows.filter((row) => Object.entries(query.filters).every(([index, value]) => {
+    const column = columns[Number(index)];
+    return !column || tableValueMatches(column.value(row), value);
+  }));
+
+  const column = query.sortColumn === null ? null : columns[query.sortColumn];
+  return column
+    ? stableSortTableRows(filtered, column.value, query.direction)
+    : filtered;
 }
 

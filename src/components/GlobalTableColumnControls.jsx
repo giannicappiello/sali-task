@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import {
   stableSortTableRows,
+  TABLE_COLUMN_QUERY_EVENT,
   tableValueMatches,
 } from "./tableColumnControls";
 import "./global-table-column-controls.css";
@@ -57,7 +58,22 @@ function syncSortIndicators(state) {
   });
 }
 
+function notifyDatasetQuery(table, state) {
+  table.dispatchEvent(new CustomEvent(TABLE_COLUMN_QUERY_EVENT, {
+    detail: {
+      direction: state.direction,
+      filters: Object.fromEntries(state.filters),
+      sortColumn: state.sortColumn,
+    },
+  }));
+  syncSortIndicators(state);
+}
+
 function applyTableState(table, state) {
+  if (table.dataset.columnControlsMode === "dataset") {
+    notifyDatasetQuery(table, state);
+    return;
+  }
   const bodies = Array.from(table.tBodies || []);
   if (!bodies.length) return;
 
@@ -172,7 +188,8 @@ function ensureTableControls(table) {
   }
 
   table.classList.add("workspace-table-column-enabled");
-  applyTableState(table, state);
+  if (table.dataset.columnControlsMode === "dataset") syncSortIndicators(state);
+  else applyTableState(table, state);
 }
 
 export default function GlobalTableColumnControls() {

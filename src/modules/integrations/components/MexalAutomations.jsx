@@ -251,6 +251,7 @@ export default function MexalAutomations({ canManage }) {
   const heartbeat = rules.diagnostics?.heartbeat;
   const latestCycle = rules.diagnostics?.latestCycle;
   const recentJobs = (rules.diagnostics?.jobs || []).filter((job) => !latestCycle?.id || Number(job.cycle_id) === Number(latestCycle.id));
+  const octJob = recentJobs.find((job) => job.sync_type === "oct_orders");
   const firstJobError = recentJobs.find((job) => job.last_error);
   return <div className="mexal-automations">
     {message && <div className={`mexal-alert alert-${message.type}`}><span>{message.text}</span></div>}
@@ -264,8 +265,11 @@ export default function MexalAutomations({ canManage }) {
         <div><strong>Ultimo completamento</strong><br />{dateTime(heartbeat?.last_completed_at)}</div>
         <div><strong>Durata ultima chiamata</strong><br />{heartbeat?.last_duration_ms != null ? `${Math.round(heartbeat.last_duration_ms / 1000)} secondi` : "—"}</div>
         <div><strong>Passaggi elaborati</strong><br />{number(heartbeat?.last_jobs_processed)}</div>
+        <div><strong>Origine trigger</strong><br />{heartbeat?.last_source || latestCycle?.source || "—"}</div>
+        <div><strong>Data business</strong><br />{heartbeat?.last_business_date || latestCycle?.scheduled_date || "—"}</div>
         <div><strong>Ultimo ciclo</strong><br />{latestCycle ? `${latestCycle.status} · ${dateTime(latestCycle.scheduled_for)}` : "Nessuno"}</div>
-        <div><strong>Job del ciclo</strong><br />{recentJobs.length ? `${recentJobs.filter((job) => job.status === "completed").length}/${recentJobs.length} completati` : "Nessuno"}</div>
+        <div><strong>Job del ciclo</strong><br />{recentJobs.length ? `${recentJobs.filter((job) => job.status === "completed").length}/${recentJobs.length} completati · ${recentJobs.filter((job) => job.status === "failed").length} falliti · ${recentJobs.filter((job) => ["queued", "leased", "running", "retry"].includes(job.status)).length} attivi` : "Nessuno"}</div>
+        <div><strong>oct_orders</strong><br />{octJob ? `${octJob.status} · ordine ${octJob.execution_order}` : "Assente"}</div>
       </div>
       {heartbeat?.last_error && <div className="mexal-alert alert-error" style={{ marginTop: 12 }}><span>{heartbeat.last_error}</span></div>}
       {firstJobError && <div className="mexal-alert alert-warning" style={{ marginTop: 12 }}><span>{firstJobError.sync_type}: {firstJobError.last_error}</span></div>}

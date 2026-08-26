@@ -418,7 +418,7 @@ async function rulesGet(req) {
     admin.supabase.from("mexal_event_automations").select("*").order("event_key").order("execution_order", { ascending: true }),
     admin.supabase.from("mexal_worker_heartbeat").select("*").eq("id", 1).maybeSingle(),
     admin.supabase.from("mexal_sync_cycles").select("*").order("created_at", { ascending: false }).limit(1).maybeSingle(),
-    admin.supabase.from("mexal_sync_jobs").select("id,cycle_id,sync_type,status,attempts,last_error,created_at,updated_at").order("created_at", { ascending: false }).limit(30),
+    admin.supabase.from("mexal_sync_jobs").select("id,cycle_id,sync_type,execution_order,status,attempts,last_error,created_at,updated_at").order("created_at", { ascending: false }).limit(30),
   ]);
   if (schedules.error) throw schedules.error;
   if (events.error) throw events.error;

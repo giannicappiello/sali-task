@@ -4,6 +4,7 @@ import fs from "node:fs";
 import { produceDailyMexalQueue } from "../../api/cron/mexal-dispatcher.js";
 
 const MIGRATION_URL = new URL("../../supabase/migrations/20260825080000_fix_daily_mexal_cycle_oct_jobs.sql", import.meta.url);
+const HARDENING_MIGRATION_URL = new URL("../../supabase/migrations/20260826070000_harden_daily_mexal_cycle_dispatch.sql", import.meta.url);
 const BASE_TYPES = [
   "clients",
   "agents",
@@ -95,6 +96,24 @@ test("doppia creazione dello stesso ciclo non duplica i job", async () => {
   assert.equal(store.state.jobs.length, 11);
 });
 
+test("Aruba e Vercel convergono sullo stesso ciclo senza duplicati", async () => {
+  const store = createStore([...baseSchedules(), schedule("oct_orders", 90)]);
+  const aruba = await produceDailyMexalQueue({
+    store,
+    now: new Date("2026-08-25T21:00:00.000Z"),
+    source: "aruba_cron",
+  });
+  const vercel = await produceDailyMexalQueue({
+    store,
+    now: new Date("2026-08-25T22:30:00.000Z"),
+    source: "vercel_cron",
+  });
+  assert.equal(aruba.cycleKey, "daily-2300:2026-08-25:Europe/Rome");
+  assert.equal(vercel.cycleKey, aruba.cycleKey);
+  assert.equal(vercel.jobsCreated, 0);
+  assert.equal(store.state.jobs.length, 11);
+});
+
 test("una seconda chiamata inserisce soltanto oct_orders mancante", async () => {
   const store = createStore(baseSchedules());
   await produceDailyMexalQueue({ store, now });
@@ -121,4 +140,18 @@ test("migration non ridefinisce claim, heartbeat o retry", () => {
   assert.doesNotMatch(migration, /create or replace function public\.heartbeat_mexal_sync_job/i);
   assert.doesNotMatch(migration, /create or replace function public\.retry_mexal_sync_job/i);
   assert.doesNotMatch(migration, /create or replace function public\.recover_expired_mexal_sync_jobs/i);
+});
+
+test("hardening usa business date Europe/Rome, lock e origine esplicita", () => {
+  const migration = fs.readFileSync(HARDENING_MIGRATION_URL, "utf8");
+  assert.match(migration, /p_trigger_source text/i);
+  assert.match(migration, /v_local_timestamp::time < time '23:00' then 1 else 0/i);
+  assert.match(migration, /pg_advisory_xact_lock/i);
+  assert.match(migration, /on conflict \(cycle_key\) do nothing/i);
+  assert.match(migration, /on conflict \(cycle_id, schedule_id\) do nothing/i);
+  assert.match(migration, /last_business_date/i);
+  assert.match(migration, /last_source/i);
+  assert.doesNotMatch(migration, /backfill_mexal_sync_cycle_job/i);
+  assert.doesNotMatch(migration, /claim_next_mexal_sync_job/i);
+  assert.doesNotMatch(migration, /retry_mexal_sync_job/i);
 });

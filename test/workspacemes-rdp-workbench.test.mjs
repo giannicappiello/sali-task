@@ -33,10 +33,18 @@ test("deep link conserva solo contesto MES allow-listed", () => {
 });
 
 test("UI impedisce doppio click e separa dati commerciali da analisi MES", () => {
-  assert.match(ui, /if \(!preview \|\| busy\) return/);
+  assert.match(ui, /if \(!sendEnabled \|\| !preview \|\| busy\) return/);
   assert.match(ui, /disabled=\{busy\}/);
   assert.match(ui, /Dati commerciali OCT/);
   assert.match(ui, /Analisi produttiva MES/);
   for (const field of ["PhysicalQuantity", "CommittedQuantity", "FreeQuantity", "MissingQuantity", "ProducibleQuantity", "PlannableQuantity", "BlockCode"]) assert.match(ui, new RegExp(field));
   assert.match(ui, /OCT MODIFICATO IN MEXAL/);
+});
+
+test("UI disabilita preview e Crea RdP quando il gate Production non è ON", () => {
+  assert.match(ui, /productionGates\?\.allOn === true/);
+  assert.match(ui, /disabled=\{busy \|\| !sendEnabled\}/);
+  assert.match(ui, /Invio RdP Production non disponibile/);
+  assert.match(production, /Invio RdP Workspace/);
+  assert.match(production, /Gate Production/);
 });

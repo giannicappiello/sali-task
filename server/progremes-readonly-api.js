@@ -2,6 +2,7 @@
 
 import { createProgremesClient, ProgremesClientError, PROGREMES_ALLOWED_RESOURCES } from "./progremes-readonly-client.js";
 import { requireProgremesReadonlyAccess } from "./progremes-readonly-auth.js";
+import { decorateProductionHealth } from "./workspace-production-gates.js";
 
 /** @param {unknown} value */
 function singleResource(value) {
@@ -12,7 +13,7 @@ function singleResource(value) {
 /**
  * @param {import("node:http").IncomingMessage & { method?: string, query?: Record<string, unknown> }} req
  * @param {{ status(code: number): any, json(payload: unknown): any, setHeader(name: string, value: string): void }} res
- * @param {{ authorize?: (request: unknown) => Promise<unknown>, clientFactory?: () => { request(resource: any, query?: Record<string, unknown>): Promise<unknown> }, logger?: Pick<Console, "error"> }} [dependencies]
+ * @param {{ authorize?: (request: unknown) => Promise<unknown>, clientFactory?: () => { request(resource: any, query?: Record<string, unknown>): Promise<unknown> }, logger?: Pick<Console, "error">, env?: Record<string, string | undefined> }} [dependencies]
  */
 export async function handleProgremesReadonlyRequest(req, res, dependencies = {}) {
   res.setHeader("Cache-Control", "private, no-store");
@@ -34,7 +35,10 @@ export async function handleProgremesReadonlyRequest(req, res, dependencies = {}
     }
     const resource = /** @type {import("./progremes-readonly-types").ProgremesResource} */ (requestedResource);
     const client = clientFactory();
-    const payload = await client.request(resource, req.query ?? {});
+    const upstreamPayload = await client.request(resource, req.query ?? {});
+    const payload = resource === "diagnostics-health"
+      ? decorateProductionHealth(upstreamPayload, dependencies.env ?? globalThis.process.env)
+      : upstreamPayload;
     return res.status(200).json(payload);
   } catch (error) {
     const status = error instanceof ProgremesClientError

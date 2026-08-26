@@ -91,3 +91,22 @@ test("internal API rejects arbitrary resources before creating the MES client", 
     assert.equal(clientCreated, false);
   }
 });
+
+test("diagnostics health espone i gate Workspace e fallisce chiuso quando Production è OFF", async () => {
+  const res = responseCapture();
+  await handleProgremesReadonlyRequest(
+    { method: "GET", query: { resource: "diagnostics-health" }, headers: { authorization: "Bearer workspace-session" } },
+    res,
+    {
+      authorize: async () => ({ id: "workspace-user" }),
+      clientFactory: () => ({ request: async () => ({
+        globalStatus: "GREEN", blocking: 0, receiveRdp: true, receiveDecisions: true,
+        executeProduction: true, createLots: true,
+      }) }), env: {},
+    },
+  );
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.payload.globalStatus, "RED");
+  assert.equal(res.payload.blocking, 1);
+  assert.equal(res.payload.productionGates.allOn, false);
+});

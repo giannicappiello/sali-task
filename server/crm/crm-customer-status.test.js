@@ -80,19 +80,17 @@ test("filtri active inactive all persistono nella query string con default opera
   assert.match(migration, /count\(\*\) over\(\)::bigint total_count/);
 });
 
-test("le dashboard Conto Terzi B2B e Online includono liste isolate server-side", () => {
-  assert.match(crm, /function CrmDashboardCustomerList\(\{ type, period \}\)/);
+test("gli elenchi clienti restano nelle schermate Clienti e non appesantiscono le dashboard", () => {
+  assert.doesNotMatch(crm, /function CrmDashboardCustomerList\(\{ type, period \}\)/);
   assert.match(crm, /p_crm_type: type/);
   assert.match(crm, /crm_customer_status_counts/);
-  assert.match(crm, /<CrmDashboardCustomerList type=\{type\} period=\{period\} \/>/);
-  assert.match(crm, /function CrmOnlineHome\(\)/);
-  assert.match(crm, /<CrmDashboardCustomerList type="online" period=\{period\} \/>/);
-  assert.match(crm, /case "online-home": return <CrmOnlineHome \/>/);
+  assert.doesNotMatch(crm, /<CrmDashboardCustomerList/);
+  assert.match(crm, /case "online-home": return <DigitalHome \/>/);
   assert.match(routeCatalog, /path: "conto-terzi"[^\n]+view: "dashboard"[^\n]+type: "conto_terzi"/);
   assert.match(routeCatalog, /path: "b2b"[^\n]+view: "dashboard"[^\n]+type: "b2b"/);
   assert.match(routeCatalog, /path: "online"[^\n]+view: "online-home"/);
   assert.match(crm, /crm_prospect_customer_details/);
-  assert.match(crm, /total_count/);
+  assert.match(crm, /function AccountsPage\(\{ type \}\)/);
 });
 
 test("KPI e tabelle distinguono stato CRM da inattività commerciale", () => {

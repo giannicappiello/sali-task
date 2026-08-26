@@ -3,7 +3,7 @@ import { Link, Navigate, Route, Routes, useParams, useSearchParams } from "react
 import { Bot, BriefcaseBusiness, Plus, Search } from "lucide-react";
 import WorkspaceAccessGuard from "../../components/WorkspaceAccessGuard";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
-import { useDatasetTableControls, usePaginatedDataset, useResetPageCallback } from "../../components/useDatasetTableControls";
+import { useDatasetTableControls, usePaginatedDataset } from "../../components/useDatasetTableControls";
 import { getModuleIcon } from "../../config/moduleIcons";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
@@ -13,7 +13,6 @@ import { CrmCustomerStatusBadge, CrmCustomerStatusDialog, CrmCustomerStatusFilte
 import { setCrmCustomerActive, useCrmCustomerStatus } from "./crmCustomerStatusModel";
 import CrmPeriodFilter, { useCrmPeriod } from "./CrmPeriodFilter";
 import { CrmPageHeader, CrmSectionNav } from "./CrmWorkspaceUI";
-import CustomerClassificationPanel from "./CustomerClassificationPanel";
 import { DigitalChannel, DigitalDashboard, DigitalHome, DigitalJourney } from "./DigitalCommerce";
 import { crmTypeConfig, formatDate, formatMoney } from "./crmConfig";
 import { loadAllRpcRows } from "./crmDataset";
@@ -94,24 +93,13 @@ function CrmOverview() {
     };
   }, [loadOverview]);
 
-return <ModuleContainerLayout icon={getModuleIcon(overview.icon, BriefcaseBusiness)} eyebrow="Workspace" title={overview.name} description={overview.description} items={overview.items} loading={loading} error={error} onRetry={loadOverview} emptyTitle="Nessuna area CRM disponibile" emptyDescription="L’amministratore può assegnare i moduli CRM dal catalogo Workspace."><CustomerClassificationPanel /></ModuleContainerLayout>;
+return <ModuleContainerLayout icon={getModuleIcon(overview.icon, BriefcaseBusiness)} eyebrow="Workspace" title={overview.name} description={overview.description} items={overview.items} loading={loading} error={error} onRetry={loadOverview} emptyTitle="Nessuna area CRM disponibile" emptyDescription="L’amministratore può assegnare i moduli CRM dal catalogo Workspace." />;
 }
 
 function Kpi({ label, value, note, to }) {
   const content = <><span>{label}</span><strong>{value}</strong>{note ? <small>{note}</small> : null}{to ? <em>Apri dettaglio →</em> : null}</>;
   return to ? <Link className="kpi-card crm-kpi" to={to} aria-label={`${label}: ${value}. Apri dettaglio`}>{content}</Link> : <article className="kpi-card crm-kpi">{content}</article>;
 }
-
-const DASHBOARD_CUSTOMER_COLUMNS = [
-  { value: (row) => row.name },
-  { value: (row) => row.code },
-  { value: (row) => row.agente_classificazione || "—" },
-  { value: (row) => row.areaLabel },
-  { value: (row) => row.crm_active ? "Attivo" : "Non attivo" },
-  { value: (row) => formatDate(row.ultimo_ordine_il) },
-  { value: (row) => formatMoney(row.invoice_total) },
-  { value: (row) => formatMoney(row.order_total) },
-];
 
 const ACCOUNT_COLUMNS = [
   { value: (row) => `${row.nome} ${row.source}` },
@@ -125,59 +113,6 @@ const ACCOUNT_COLUMNS = [
   { value: (row) => formatDate(row.prossima_attivita_il) },
   { value: (row) => row.crm_active ? "Apri cliente Nuova attività Nuova opportunità Disattiva" : "Apri cliente Nuova attività Nuova opportunità Riattiva" },
 ];
-
-function CrmDashboardCustomerList({ type, period }) {
-  const config = crmTypeConfig(type);
-  const [customerStatus, setCustomerStatus] = useCrmCustomerStatus("active");
-  const [page, setPage] = useState(0);
-  const [rows, setRows] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
-  const pageSize = 10;
-  const resetPage = useResetPageCallback(setPage);
-  const [tableRef, tableQuery] = useDatasetTableControls({ onQueryChange: resetPage });
-  const { pageRows, total: filteredTotal } = usePaginatedDataset(rows, DASHBOARD_CUSTOMER_COLUMNS, tableQuery, page, pageSize);
-  const load = useCallback(async () => {
-    setLoading(true); setError("");
-    const [canonicalResult, prospectResult] = await Promise.all([
-      loadAllRpcRows("crm_customer_metric_details", {
-        p_crm_type: type, p_from: period.from, p_to: period.to, p_metric: "all",
-        p_search: null, p_customer_status: customerStatus,
-      }),
-      loadAllRpcRows("crm_prospect_customer_details", {
-        p_crm_type: type, p_search: null, p_customer_status: customerStatus,
-      }),
-    ]);
-    const loadError = canonicalResult.error || prospectResult.error;
-    if (loadError) setError(loadError.message);
-    else {
-      const canonicalRows = (canonicalResult.data || []).map((row) => ({
-        ...row, customerKey: `mexal:${row.codice_cliente}`, name: row.ragione_sociale, areaLabel: config.label,
-        code: row.codice_cliente, crm_active: row.crm_active !== false,
-      }));
-      const prospectRows = (prospectResult.data || []).map((row) => ({
-        ...row, customerKey: `crm:${row.id}`, name: row.nome, code: row.email || "—", areaLabel: config.label,
-        crm_active: row.crm_active !== false,
-      }));
-      setRows([...canonicalRows, ...prospectRows]);
-      setTotal(canonicalRows.length + prospectRows.length);
-    }
-    setLoading(false);
-  }, [config.label, customerStatus, period.from, period.to, type]);
-  useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
-  return (
-    <section className="panel crm-panel crm-dashboard-customers" aria-labelledby={`dashboard-customers-${type}`}>
-      <div className="crm-toolbar">
-        <div><h3 id={`dashboard-customers-${type}`}>Clienti {config.label}</h3><p>{total} clienti nell’intero dataset filtrato; area canonica {config.label}.</p></div>
-        <CrmCustomerStatusFilter value={customerStatus} onChange={(value) => { setCustomerStatus(value); setPage(0); }} id={`dashboard-customer-status-${type}`} />
-      </div>
-      <ErrorBox error={error} retry={load} />
-      {loading ? <div className="crm-loading">Caricamento clienti...</div> : null}<div className="crm-table-wrap"><table ref={tableRef} data-column-controls-mode="dataset" className="crm-table crm-dashboard-customer-table"><thead><tr><th>Cliente</th><th>Codice</th><th>Agente</th><th>Area CRM</th><th>Stato CRM</th><th>Ultimo ordine</th><th>Fatturato periodo</th><th>Ordinato periodo</th></tr></thead><tbody>{pageRows.map((row) => <tr key={row.customerKey}><td><CrmCustomerLink crmType={type} customerKey={row.customerKey} name={row.name} period={period}>{row.name}</CrmCustomerLink></td><td>{row.code}</td><td>{row.agente_classificazione || "—"}</td><td>{config.label}</td><td><CrmCustomerStatusBadge active={row.crm_active} /></td><td>{formatDate(row.ultimo_ordine_il)}</td><td>{formatMoney(row.invoice_total)}</td><td>{formatMoney(row.order_total)}</td></tr>)}</tbody></table>{!loading && !pageRows.length ? <div className="crm-empty">Nessun cliente {customerStatus === "inactive" ? "non attivo" : "attivo"} in questa area CRM.</div> : null}</div>
-      <div className="crm-pagination"><button type="button" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>Precedente</button><span>Pagina {page + 1} · {filteredTotal} clienti</span><button type="button" disabled={(page + 1) * pageSize >= filteredTotal} onClick={() => setPage((value) => value + 1)}>Successiva</button></div>
-    </section>
-  );
-}
 
 function CrmDashboard({ type }) {
   const config = crmTypeConfig(type);
@@ -224,7 +159,6 @@ function CrmDashboard({ type }) {
       <Kpi label="Follow-up scaduti" value={Number(data.overdue_followups || 0).toLocaleString("it-IT")} to={period.withPeriod(`${config.basePath}/pipeline`, { followup: "overdue" })} />
     </div>}
     {!loading && !error ? <div className="crm-source-notes"><p><strong>Fatturato:</strong> {data.invoice_source_note}</p><p><strong>Ordinato:</strong> {data.order_source_note}</p></div> : null}
-    <CrmDashboardCustomerList type={type} period={period} />
   </div>;
 }
 
@@ -617,11 +551,6 @@ function OnlineManager({ entity }) {
   return <div className="crm-page"><CrmPageHeader eyebrow="CRM Online" title={title} description={campaign ? "Obiettivi, canali, budget e KPI senza inventare fonti dati." : creator ? "Collaborazioni, contenuti, costi e vendite attribuite." : "Eventi minimali e autorizzati; nessun tracking invasivo."} actions={<CrmPeriodFilter period={period} compact />} /><ErrorBox error={error} />{canWrite ? <form className="crm-card-form panel" onSubmit={save}>{campaign ? <><input required placeholder="Nome campagna" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} /><input placeholder="Obiettivo" value={form.obiettivo} onChange={(e) => setForm({ ...form, obiettivo: e.target.value })} /><input placeholder="Canale" value={form.canale} onChange={(e) => setForm({ ...form, canale: e.target.value })} /><input type="number" placeholder="Budget" value={form.budget} onChange={(e) => setForm({ ...form, budget: e.target.value })} /></> : creator ? <><input required placeholder="Nome creator" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} /><input placeholder="Piattaforma" value={form.piattaforma} onChange={(e) => setForm({ ...form, piattaforma: e.target.value })} /><input placeholder="Profilo / canale" value={form.profilo} onChange={(e) => setForm({ ...form, profilo: e.target.value })} /><input type="number" placeholder="Follower" value={form.follower} onChange={(e) => setForm({ ...form, follower: e.target.value })} /></> : <><select required value={form.account_id} onChange={(e) => setForm({ ...form, account_id: e.target.value })}><option value="">Cliente online</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}</select><select value={form.fase} onChange={(e) => setForm({ ...form, fase: e.target.value })}>{["lead","visita","interesse","iscrizione","carrello","acquisto","riacquisto","recensione","loyalty"].map((v) => <option key={v}>{v}</option>)}</select><input placeholder="Fonte autorizzata" value={form.fonte} onChange={(e) => setForm({ ...form, fonte: e.target.value })} /><input placeholder="Riferimento consenso" value={form.consenso_riferimento} onChange={(e) => setForm({ ...form, consenso_riferimento: e.target.value })} /></>}<button className="primary-action crm-primary"><Plus size={16} />Aggiungi</button></form> : null}<div className="crm-list-grid">{rows.map((row) => <article className="crm-list-card" key={row.id}><span>{row.stato || row.stato_collaborazione || row.fase}</span><h3>{row.nome || row.fase}</h3>{row.crm_accounts ? <CrmCustomerLink crmType="online" customerCode={row.crm_accounts.codice_cliente_mexal} accountId={row.crm_accounts.id} name={row.crm_accounts.nome} period={period}>{row.crm_accounts.nome}</CrmCustomerLink> : <p>{row.obiettivo || row.piattaforma || row.fonte || "Informazioni da completare"}</p>}<small>{campaign ? formatMoney(row.budget) : creator ? `${row.follower || 0} follower` : formatDate(row.avvenuto_il)}</small></article>)}</div></div>;
 }
 
-function CrmOnlineHome() {
-  const period = useCrmPeriod();
-  return <div className="crm-page crm-online-home"><DigitalHome /><CrmDashboardCustomerList type="online" period={period} /></div>;
-}
-
 function renderCrmView(route) {
   switch (route.view) {
     case "overview": return <CrmOverview />;
@@ -630,7 +559,7 @@ function renderCrmView(route) {
     case "account": return <AccountDetail type={route.type} />;
     case "pipeline": return <Pipeline type={route.type} />;
     case "briefs": return <BriefsPage />;
-    case "online-home": return <CrmOnlineHome />;
+    case "online-home": return <DigitalHome />;
     case "digital-dashboard": return <DigitalDashboard />;
     case "digital-channel": return <DigitalChannel channel={route.channel} />;
     case "online-manager": return <OnlineManager entity={route.entity} />;

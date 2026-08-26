@@ -67,7 +67,7 @@ test("legacy activity screens inherit the shared module and screen layouts", asy
     read("src/components/WorkspaceScreenLayout.jsx"),
   ]);
   assert.doesNotMatch(activityModule, /activities-module-header/);
-  assert.match(screenLayout, /defaultModuleScreen/);
-  assert.match(screenLayout, /ModuleContainerLayout/);
+  assert.match(screenLayout, /navigationParent/);
+  assert.doesNotMatch(screenLayout, /defaultModuleScreen/);
   assert.match(screenLayout, /workspace-screen-content/);
 });

@@ -1,5 +1,6 @@
-import { ArrowRight, ArrowUpRight, LayoutGrid, RefreshCw } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUpRight, LayoutGrid, RefreshCw } from "lucide-react";
 import { Link } from "react-router-dom";
+import useBackNavigation from "../hooks/useBackNavigation";
 import "./module-container-layout.css";
 
 export default function ModuleContainerLayout({
@@ -16,13 +17,21 @@ export default function ModuleContainerLayout({
   openLabel = "Apri area",
   emptyTitle = "Nessuna area disponibile",
   emptyDescription = "Non risultano aree disponibili per questo utente.",
+  backFallback = "/home",
+  backLabel = "Indietro",
+  showBack = true,
   children = null,
 }) {
+  const goBack = useBackNavigation(backFallback);
+
   return (
     <div className="module-container-page">
       <section className="module-container-hero">
         <div className="module-container-hero-icon"><HeroIcon size={31} /></div>
-        <div><span className="module-container-eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div>
+        <div className="module-container-hero-copy">
+          {showBack ? <button type="button" className="module-container-back" onClick={goBack}><ArrowLeft size={17} />{backLabel}</button> : null}
+          <span className="module-container-eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p>
+        </div>
       </section>
 
       {error ? <div className="module-container-message error"><span>{error}</span>{onRetry ? <button type="button" onClick={onRetry}><RefreshCw size={16} />Riprova</button> : null}</div> : null}

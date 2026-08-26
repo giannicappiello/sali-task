@@ -55,8 +55,8 @@ test("azioni, tabelle, modali e contenuto restano raggiungibili fino a 390px", (
   assert.match(classificationCss, /@media\(max-width:640px\)/);
 });
 
-test("la classificazione è integrata nella Panoramica senza introdurre una nuova route", () => {
-  assert.match(crm, /<CustomerClassificationPanel \/>/);
+test("la Panoramica resta un hub leggero senza ripetere la tabella amministrativa", () => {
+  assert.doesNotMatch(crm, /<CustomerClassificationPanel \/>/);
   assert.doesNotMatch(CRM_ROUTE_CATALOG.map((route) => route.catalogPath).join("\n"), /classificazione/);
   assert.match(crm, /\/creators/);
   assert.match(crm, /\/journey/);

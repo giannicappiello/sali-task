@@ -41,6 +41,7 @@ export default function Home() {
     }), [visibleMenuItems]);
 
   return <ModuleContainerLayout
+    showBack={false}
     icon={HomeIcon}
     eyebrow="Workspace"
     title="Home"

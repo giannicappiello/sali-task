@@ -2,6 +2,10 @@
 .module-container-hero { display: flex; align-items: center; gap: 20px; padding: 26px 28px; border: 1px solid #dbe5f0; border-radius: 20px; background: linear-gradient(135deg, #f8fbff 0%, #eef6ff 100%); box-shadow: var(--shadow-soft); }
 .module-container-hero-icon, .module-container-card-icon { display: grid; place-items: center; flex: 0 0 auto; color: #fff; background: linear-gradient(135deg, #1769aa, #0b8f83); box-shadow: 0 10px 24px rgba(23, 105, 170, .2); }
 .module-container-hero-icon { width: 62px; height: 62px; border-radius: 18px; }
+.module-container-hero-copy { min-width: 0; }
+.module-container-back { display: inline-flex; align-items: center; gap: 7px; margin: 0 0 8px; padding: 0; border: 0; background: transparent; color: #1769aa; font: inherit; font-weight: 750; cursor: pointer; }
+.module-container-back:hover { color: #0f4f86; text-decoration: underline; text-underline-offset: 3px; }
+.module-container-back:focus-visible { border-radius: 5px; outline: 3px solid rgba(23,105,170,.25); outline-offset: 3px; }
 .module-container-eyebrow { color: #1769aa; font-size: .76rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 .module-container-hero h1 { margin: 3px 0 6px; color: #10182c; font-size: clamp(1.55rem, 3vw, 2.15rem); }
 .module-container-hero p, .module-container-card p, .module-container-empty p { margin: 0; color: #687892; line-height: 1.55; }

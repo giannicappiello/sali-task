@@ -5,7 +5,6 @@ import useBackNavigation from "../hooks/useBackNavigation";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabaseClient";
 import { getModuleIcon } from "../config/moduleIcons";
-import ModuleContainerLayout from "./ModuleContainerLayout";
 import "./workspace-screen-layout.css";
 
 const BUILT_IN_CONTAINER_PATHS = new Set(["/home", "/settings", "/analisi-dati", "/produzione", "/crm"]);
@@ -39,9 +38,10 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
   const presentation = useMemo(() => {
     const pathname = location.pathname.replace(/\/$/, "") || "/";
     const exactModule = catalog.modules.find((module) => (module.percorso || "").replace(/\/$/, "") === pathname);
+    const exactScreen = catalog.screens.find((screen) => (screen.percorso || "").replace(/\/$/, "") === pathname);
     const isContainer = BUILT_IN_CONTAINER_PATHS.has(pathname)
       || /^\/moduli\/[^/]+$/.test(pathname)
-      || exactModule?.tipo === "contenitore";
+      || (exactModule?.tipo === "contenitore" && !exactScreen);
     if (isContainer || pathname === "/settings/modules" || pathname === "/settings/menu") return { container: true, denied: Boolean(exactModule && (!hasModuleAccess(exactModule.codice) || (exactModule.area && !hasAreaAccess(exactModule.area)))) };
 
     const screen = catalog.screens
@@ -62,41 +62,30 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
       .toSorted((left, right) => right.percorso.length - left.percorso.length)[0]
       || parentModules.find((module) => module.tipo === "contenitore")
       || parentModules[0];
-    const parentPath = parentModule?.percorso && parentModule.percorso !== pathname ? parentModule.percorso : "";
-    const isDefaultModuleScreen = Boolean(screen && parentModule && catalog.links.some((link) => (
-      link.modulo_codice === parentModule.codice
-      && link.schermata_codice === screen.codice
-      && link.predefinita === true
-    )));
+    const containerParent = catalog.modules
+      .filter((module) => module.tipo === "contenitore" && module.percorso && module.percorso !== pathname && pathname.startsWith(`${module.percorso.replace(/\/$/, "")}/`))
+      .toSorted((left, right) => right.percorso.length - left.percorso.length)[0];
+    const navigationParent = parentModule?.percorso && parentModule.percorso !== pathname ? parentModule : containerParent;
+    const parentPath = navigationParent?.percorso || "";
 
     return {
       container: false,
       denied: Boolean((screen && !hasScreenAccess(screen.codice, parentModule?.codice)) || (screen?.area && !hasAreaAccess(screen.area))),
-      defaultModuleScreen: isDefaultModuleScreen,
       moduleTitle: parentModule?.nome || "Modulo Workspace",
       moduleDescription: parentModule?.descrizione || "Accedi alle funzioni disponibili in base alle tue autorizzazioni.",
       moduleIcon: parentModule?.icona || "",
       screenIcon: screen?.icona || "",
       title: screen?.nome || fallbackTitle || "Schermata Workspace",
       description: screen?.descrizione || fallbackDescription || "Funzioni e dati disponibili in base alle autorizzazioni dell’utente.",
-      parentName: parentModule?.nome || "",
+      parentName: navigationParent?.nome || "",
       parentPath,
     };
   }, [catalog, fallbackDescription, fallbackTitle, hasAreaAccess, hasModuleAccess, hasScreenAccess, location.pathname, location.state]);
   const goBack = useBackNavigation(presentation.parentPath || "/home");
-  const ModuleIcon = getModuleIcon(presentation.moduleIcon, LayoutGrid);
   const screenIcon = createElement(getModuleIcon(presentation.screenIcon, LayoutGrid), { size:29 });
 
   if (presentation.denied) return <Navigate to="/home" replace />;
   if (presentation.container) return children;
-
-  if (presentation.defaultModuleScreen) {
-    return (
-      <ModuleContainerLayout title={presentation.moduleTitle} description={presentation.moduleDescription} icon={ModuleIcon}>
-        <div className="workspace-screen-content">{children}</div>
-      </ModuleContainerLayout>
-    );
-  }
 
   return (
     <div className="workspace-screen-layout">

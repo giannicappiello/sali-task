@@ -33,7 +33,6 @@ function DiagnosticsCenter() {
   const [filters, setFilters] = useState({ severity: "", status: "", search: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const goBack = useBackNavigation("/produzione");
 
   async function load() {
     setLoading(true); setError("");
@@ -63,7 +62,6 @@ function DiagnosticsCenter() {
   const lamp = health?.globalStatus || "UNAVAILABLE";
   const gates = health?.productionGates;
   return <div className="production-page diagnostics-center">
-    <button type="button" className="diagnostics-back" onClick={goBack}>← Gestione produzione</button>
     <section className={`diagnostics-summary diagnostics-${lamp.toLowerCase()}`}>
       {lamp === "GREEN" ? <ShieldCheck /> : <AlertTriangle />}
       <div><span>Stato globale WorkspaceMES</span><h1>{lamp}</h1><p>Blocking {health?.blocking ?? "—"} · Critical {health?.critical ?? "—"} · Warning {health?.warning ?? "—"} · Outbox {health?.pendingOutbox ?? "—"}</p></div>
@@ -120,7 +118,7 @@ function SectionLauncher({ sectionCode }) {
       <h2>{error ? "Apertura non riuscita" : "Apertura area di produzione..."}</h2>
       <p>{error || "Verifica dell’identità Workspace e collegamento sicuro in corso."}</p>
       {error ? <button type="button" className="primary-action" onClick={launch}><RefreshCw size={17} />Riprova</button> : <div className="auth-spinner" aria-label="Caricamento" />}
-      <button type="button" onClick={goBack}>Torna a Gestione produzione</button>
+      <button type="button" onClick={goBack}>Torna a Gestione Produzione</button>
     </div>
   );
 }
@@ -164,17 +162,17 @@ export default function Production() {
   }, [accessToken, sectionPath]);
 
   if (sectionPath === "diagnostica") return <DiagnosticsCenter />;
-  if (sectionPath === "rdp-workbench") return <RdpWorkbench onBack={() => window.location.assign("/produzione")} />;
+  if (sectionPath === "rdp-workbench") return <RdpWorkbench />;
   if (sectionPath) return <SectionLauncher sectionCode={decodeURIComponent(sectionPath)} />;
 
   const visibleSections = [...sections];
-  if (hasPermission?.("diagnostics.view")) visibleSections.unshift({ code: "diagnostica", name: "Centro Diagnostico WorkspaceMES", description: "Stato globale, alert operativi e integrazioni senza esporre configurazioni riservate.", workspaceLocal: true });
+  if (hasPermission?.("diagnostics.view")) visibleSections.unshift({ code: "diagnostica", name: "Centro Diagnostico", description: "Stato globale, alert operativi e integrazioni senza esporre configurazioni riservate.", workspaceLocal: true });
   if (hasPermission?.("rdp.view")) visibleSections.unshift({ code: "rdp-workbench", name: "RdP Workbench", description: "Gestione OCT, richieste di produzione, analisi MES e decisioni operative.", workspaceLocal: true, icon: ClipboardList });
 
   return <ModuleContainerLayout
     icon={Workflow}
     eyebrow="Area operativa"
-    title="Gestione produzione"
+    title="Gestione Produzione"
     description="Accedi direttamente alle sezioni autorizzate. Ogni area si apre autonomamente in una nuova scheda."
     items={visibleSections.map((section) => ({ code: section.code, name: section.name, description: section.description, to: `/produzione/${encodeURIComponent(section.code)}`, external: !section.workspaceLocal, icon: section.icon || (section.workspaceLocal ? AlertTriangle : Factory) }))}
     loading={loading}

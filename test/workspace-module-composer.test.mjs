@@ -135,8 +135,8 @@ test("all workspace screens use the shared Modules and screens presentation", as
   assert.match(screenLayout, /SCHERMATA WORKSPACE/);
   assert.match(screenLayout, /workspace_moduli_schermate/);
   assert.match(screenLayout, /predefinita/);
-  assert.match(screenLayout, /defaultModuleScreen/);
-  assert.match(screenLayout, /<ModuleContainerLayout title=\{presentation\.moduleTitle\}/);
+  assert.match(screenLayout, /exactModule\?\.tipo === "contenitore" && !exactScreen/);
+  assert.doesNotMatch(screenLayout, /defaultModuleScreen/);
   assert.match(screenLayout, /BUILT_IN_CONTAINER_PATHS/);
   assert.match(styles, /linear-gradient\(135deg,#102a56,#1b5aaa\)/);
   assert.match(styles, /\.workspace-screen-content \.page-title-row \{ display: none; \}/);

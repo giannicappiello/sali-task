@@ -36,14 +36,14 @@ test("periodo CRM è condiviso, personalizzabile e persistito nella query string
   assert.match(aiServer, /crm_dashboard_metrics/);
 });
 
-test("KPI aprono drill-down reali e la lista è paginata dalla RPC", () => {
+test("KPI aprono drill-down reali e la lista pagina il dataset completo filtrabile", () => {
   assert.match(crm, /aria-label=.*Apri dettaglio/);
   assert.match(crm, /crm_customer_metric_details/);
   assert.match(crm, /metric: "invoiced"/);
   assert.match(crm, /metric: "ordered"/);
   assert.match(crm, /metric: "inactive"/);
-  assert.match(crm, /p_limit: CRM_CUSTOMER_PAGE_SIZE/);
-  assert.match(crm, /p_offset: page \* CRM_CUSTOMER_PAGE_SIZE/);
+  assert.match(crm, /loadAllRpcRows\("crm_customer_metric_details"/);
+  assert.match(crm, /usePaginatedDataset\(rows, ACCOUNT_COLUMNS, tableQuery, page, CRM_CUSTOMER_PAGE_SIZE\)/);
 });
 
 test("scheda cliente espone lifetime e periodo senza aggregare migliaia di righe nel browser", () => {

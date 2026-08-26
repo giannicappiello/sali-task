@@ -543,6 +543,11 @@ export default async function handler(req, res) {
         const admin = await createAdmin(req, "rdp.create");
         return sendProductionRequest(req, res, { admin: admin.supabase, requestedBy: admin.authUserId });
       }
+      case "progremes_production_retry": {
+        const admin = await createAdmin(req, "rdp.create");
+        req.body = { requestId: body.requestId };
+        return sendProductionRequest(req, res, { admin: admin.supabase, requestedBy: admin.authUserId });
+      }
       case "progremes_production_preview": {
         const admin = await createAdmin(req, "rdp.create");
         return previewProductionRequest(req, res, { admin: admin.supabase, requestedBy: admin.authUserId });

@@ -51,9 +51,25 @@ function snapshotQuery(snapshots) {
   return query;
 }
 
+function productionRequestQuery(requests, onUpdate) {
+  let id;
+  let updateValue = null;
+  const query = {
+    select() { return query; },
+    update(value) { updateValue = value; return query; },
+    eq(_column, value) {
+      id = String(value);
+      if (updateValue) { onUpdate(updateValue); return Promise.resolve({ error: null }); }
+      return query;
+    },
+    async maybeSingle() { return { data: requests[id] || null, error: null }; },
+  };
+  return query;
+}
+
 function makeAdmin({ rpcResult, rpcError = null, onRpc = () => {}, onUpdate = () => {}, onProposal = () => {},
   onResponseRpc = () => {},
-  onItemUpdate = () => {}, requestItems = [], lineRows = LINES, catalogRows = null, snapshots = {} } = {}) {
+  onItemUpdate = () => {}, requestItems = [], lineRows = LINES, catalogRows = null, snapshots = {}, productionRequests = {} } = {}) {
   const catalogs = catalogRows || {
     PB0004: { codice_articolo: "PB0004", unita_misura: "PZ", sincronizzato_il: "2026-08-24T20:00:00Z" },
     PB0005: { codice_articolo: "PB0005", unita_misura: "KG", sincronizzato_il: "2026-08-24T20:00:00Z" },
@@ -64,9 +80,7 @@ function makeAdmin({ rpcResult, rpcError = null, onRpc = () => {}, onUpdate = ()
       if (table === "ordini_testate") return queryRows(ORDERS);
       if (table === "ordini_prodotti_cache") return catalogQuery(catalogs);
       if (table === "workspace_production_demand_snapshots") return snapshotQuery(snapshots);
-      if (table === "workspace_production_requests") return {
-        update(value) { onUpdate(value); return { eq: async () => ({ error: null }) }; },
-      };
+      if (table === "workspace_production_requests") return productionRequestQuery(productionRequests, onUpdate);
       if (table === "workspace_production_request_items") {
         let updateValue = null;
         const query = {
@@ -250,6 +264,62 @@ test("snapshot equivalente con ID diverso tra preview e invio raggiunge il MES",
   await sendProductionRequest({ method: "POST", body: { orderIds: [ORDERS[0].id], snapshotId: 12 } }, recorder.response, { admin, client });
   assert.equal(recorder.value.status, 200);
   assert.equal(outbound.workspaceExternalId, externalId);
+});
+
+test("retry usa esclusivamente RdP e snapshot persistiti senza creare una nuova domanda", async () => {
+  const requestId = "00000000-0000-4000-8000-000000000401";
+  const externalId = "00000000-0000-4000-8000-000000000402";
+  const snapshotId = 44;
+  const built = await buildProductionDemand({ admin: makeAdmin(), orderIds: [ORDERS[0].id] });
+  const demand = { ...built, orders: built.orders.map((order) => ({ ...order, commercialRevision: 1 })) };
+  const snapshot = {
+    version: 2,
+    kind: "MULTI_OCT_PRODUCTION_DEMAND",
+    requestedBy: "00000000-0000-4000-8000-000000000301",
+    ...productionDemandContract(demand),
+    capturedAt: "2026-08-26T19:34:00Z",
+  };
+  const rpcNames = [];
+  let outbound;
+  let responseRpc;
+  const admin = makeAdmin({
+    productionRequests: { [requestId]: { id: requestId, external_id: externalId, idempotency_key: "rdp:v2:stable", demand_snapshot_id: snapshotId, sent_demand_snapshot_id: null, last_response: null, contract_version: 2, attempt_count: 0 } },
+    snapshots: { [snapshotId]: { id: snapshotId, snapshot_hash: "snapshot-hash", demand_hash: "demand-hash", captured_at: snapshot.capturedAt, snapshot } },
+    onRpc: (name) => rpcNames.push(name),
+    onResponseRpc: (args) => { responseRpc = args; },
+  });
+  const recorder = responseRecorder();
+  const client = {
+    requestEnabled: () => true,
+    async sendRequest(payload) {
+      outbound = payload;
+      return { result: { status: "RICEVUTA", workspaceStatus: "RICEVUTA", proposals: [] }, payloadHash: "payload-hash" };
+    },
+  };
+  await sendProductionRequest({ method: "POST", body: { requestId } }, recorder.response, { admin, client });
+  assert.equal(recorder.value.status, 200);
+  assert.equal(outbound.workspaceExternalId, externalId);
+  assert.equal(responseRpc.p_request_id, requestId);
+  assert.equal(responseRpc.p_snapshot_id, snapshotId);
+  assert.equal(rpcNames.includes("record_workspace_production_demand"), false);
+});
+
+test("retry rifiuta una RdP già inviata e qualsiasi override del payload", async () => {
+  const requestId = "00000000-0000-4000-8000-000000000401";
+  let calls = 0;
+  const client = { requestEnabled: () => true, async sendRequest() { calls += 1; } };
+  const alreadySent = responseRecorder();
+  await sendProductionRequest({ method: "POST", body: { requestId } }, alreadySent.response, {
+    admin: makeAdmin({ productionRequests: { [requestId]: { id: requestId, sent_demand_snapshot_id: 44, last_response: { status: "RICEVUTA" } } } }),
+    client,
+  });
+  assert.equal(alreadySent.value.status, 409);
+  assert.equal(alreadySent.value.payload.code, "ALREADY_SENT");
+  const override = responseRecorder();
+  await sendProductionRequest({ method: "POST", body: { requestId, orderIds: [ORDERS[0].id] } }, override.response, { admin: makeAdmin(), client });
+  assert.equal(override.value.status, 400);
+  assert.equal(override.value.payload.code, "INVALID_RETRY_PAYLOAD");
+  assert.equal(calls, 0);
 });
 
 test("errore di invio conserva tentativo e codice senza perdere la RdP", async () => {

@@ -38,6 +38,48 @@ function selection(body) {
   };
 }
 
+async function loadPersistedProductionRequest(admin, requestId) {
+  const id = String(requestId || "").trim();
+  if (!id) throw Object.assign(new Error("RdP obbligatoria."), { code: "INVALID_REQUEST", status: 400 });
+  const { data: request, error: requestError } = await admin.from("workspace_production_requests")
+    .select("*").eq("id", id).maybeSingle();
+  if (requestError) throw requestError;
+  if (!request) throw Object.assign(new Error("RdP non trovata."), { code: "NOT_FOUND", status: 404 });
+  if (request.sent_demand_snapshot_id || request.last_response)
+    throw Object.assign(new Error("La RdP risulta già inviata a ProgreMES."), { code: "ALREADY_SENT", status: 409 });
+  if (!request.demand_snapshot_id || Number(request.contract_version || 2) !== 2)
+    throw Object.assign(new Error("La RdP non dispone di uno snapshot v2 retryable."), { code: "DEMAND_REQUIRED", status: 409 });
+  const { data: snapshotRow, error: snapshotError } = await admin.from("workspace_production_demand_snapshots")
+    .select("id,snapshot_hash,demand_hash,captured_at,snapshot")
+    .eq("id", request.demand_snapshot_id).maybeSingle();
+  if (snapshotError) throw snapshotError;
+  const snapshot = snapshotRow?.snapshot;
+  if (!snapshotRow || snapshot?.version !== 2 || snapshot?.kind !== "MULTI_OCT_PRODUCTION_DEMAND" ||
+      !Array.isArray(snapshot.orders) || !snapshot.orders.length || !Array.isArray(snapshot.items) || !snapshot.items.length)
+    throw Object.assign(new Error("Snapshot persistito della RdP non valido."), { code: "INVALID_DEMAND_SNAPSHOT", status: 409 });
+  return {
+    request: {
+      id: request.id,
+      external_id: request.external_id,
+      idempotency_key: request.idempotency_key,
+      attempt_count: Number(request.attempt_count || 0),
+    },
+    snapshot: {
+      ...snapshot,
+      id: Number(snapshotRow.id),
+      hash: snapshotRow.snapshot_hash,
+      capturedAt: snapshotRow.captured_at || snapshot.capturedAt,
+      reused: true,
+    },
+    demand: {
+      contractVersion: snapshot.contractVersion,
+      orders: snapshot.orders,
+      items: snapshot.items,
+    },
+    changedFromExpected: false,
+  };
+}
+
 export async function sendProductionRequest(req, res, {
   admin = adminClient(),
   client = createProgremesProductionClient(),
@@ -47,13 +89,19 @@ export async function sendProductionRequest(req, res, {
   if (!client.requestEnabled()) return res.status(403).json({ error: "Invio RdP disabilitato.", code: "MODULE_DISABLED" });
   let prepared;
   try {
-    prepared = await prepareProductionDemand({
-      admin,
-      ...selection(req.body),
-      mode: "send",
-      expectedSnapshotId: req.body?.snapshotId ?? null,
-      requestedBy,
-    });
+    if (req.body?.requestId) {
+      if (req.body?.snapshotId || selection(req.body).orderIds.length || selection(req.body).lineIds.length)
+        return res.status(400).json({ error: "Il retry accetta esclusivamente il requestId persistito.", code: "INVALID_RETRY_PAYLOAD" });
+      prepared = await loadPersistedProductionRequest(admin, req.body.requestId);
+    } else {
+      prepared = await prepareProductionDemand({
+        admin,
+        ...selection(req.body),
+        mode: "send",
+        expectedSnapshotId: req.body?.snapshotId ?? null,
+        requestedBy,
+      });
+    }
   } catch (error) {
     return res.status(error?.status || 500).json({ error: error?.message || "Preparazione RdP non riuscita.", code: error?.code || "DEMAND_PREPARATION_FAILED" });
   }

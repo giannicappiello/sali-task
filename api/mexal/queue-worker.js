@@ -140,6 +140,14 @@ export default async function handler(req, res) {
       p_scheduled_for: new Date().toISOString(),
       p_trigger_source: triggerSource,
     });
+    await admin.from("mexal_worker_heartbeat").upsert({
+      id: 1,
+      last_source: triggerSource,
+      last_business_date: producer?.businessDate || null,
+      last_cycle_id: producer?.cycleId || null,
+      last_jobs_created: Number(producer?.jobsCreated || 0),
+      updated_at: new Date().toISOString(),
+    });
     let documentSync = { status: "not_checked" };
     try {
       documentSync = await runAutomaticDocumentSync(admin);

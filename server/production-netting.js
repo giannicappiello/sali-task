@@ -19,6 +19,30 @@ function finiteQuantity(value, label) {
 }
 function hash(value) { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
 
+async function matchesExpectedSnapshot(admin, {
+  expectedSnapshotId,
+  recordedSnapshotId,
+  recordedSnapshotHash,
+  demandHash,
+}) {
+  if (expectedSnapshotId === null || expectedSnapshotId === undefined) return true;
+  if (Number(expectedSnapshotId) === Number(recordedSnapshotId)) return true;
+  const { data, error } = await admin.from("workspace_production_demand_snapshots")
+    .select("id,snapshot_hash,demand_hash")
+    .eq("id", expectedSnapshotId)
+    .maybeSingle();
+  if (error) {
+    throw Object.assign(new Error("Snapshot di anteprima non verificabile."), {
+      code: "DEMAND_SNAPSHOT_LOOKUP_FAILED",
+      status: 500,
+      cause: error,
+    });
+  }
+  return Boolean(data &&
+    text(data.snapshot_hash) === text(recordedSnapshotHash) &&
+    text(data.demand_hash) === text(demandHash));
+}
+
 export function normalizeUnitOfMeasure(value) {
   return upper(value).replaceAll(".", "").replace(/\s+/g, " ");
 }
@@ -318,7 +342,13 @@ export async function prepareProductionDemand({
   const recorded = Array.isArray(data) ? data[0] : data;
   if (!recorded?.snapshot_id || (mode !== "preview" && !recorded?.request_id))
     throw new Error("Snapshot della domanda non confermato dal database.");
-  const changedFromExpected = expectedSnapshotId !== null && Number(expectedSnapshotId) !== Number(recorded.snapshot_id);
+  const recordedSnapshotHash = recorded.snapshot_hash || snapshotHash;
+  const changedFromExpected = !await matchesExpectedSnapshot(admin, {
+    expectedSnapshotId,
+    recordedSnapshotId: recorded.snapshot_id,
+    recordedSnapshotHash,
+    demandHash,
+  });
   return {
     request: recorded.request_id ? {
       id: recorded.request_id,
@@ -329,7 +359,7 @@ export async function prepareProductionDemand({
     snapshot: {
       ...snapshot,
       id: Number(recorded.snapshot_id),
-      hash: recorded.snapshot_hash || snapshotHash,
+      hash: recordedSnapshotHash,
       capturedAt: recorded.snapshot_captured_at || capturedAt,
       reused: recorded.reused === true,
     },

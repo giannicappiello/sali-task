@@ -41,9 +41,19 @@ function catalogQuery(catalogs) {
   return query;
 }
 
+function snapshotQuery(snapshots) {
+  let id;
+  const query = {
+    select() { return query; },
+    eq(_column, value) { id = String(value); return query; },
+    async maybeSingle() { return { data: snapshots[id] || null, error: null }; },
+  };
+  return query;
+}
+
 function makeAdmin({ rpcResult, rpcError = null, onRpc = () => {}, onUpdate = () => {}, onProposal = () => {},
   onResponseRpc = () => {},
-  onItemUpdate = () => {}, requestItems = [], lineRows = LINES, catalogRows = null } = {}) {
+  onItemUpdate = () => {}, requestItems = [], lineRows = LINES, catalogRows = null, snapshots = {} } = {}) {
   const catalogs = catalogRows || {
     PB0004: { codice_articolo: "PB0004", unita_misura: "PZ", sincronizzato_il: "2026-08-24T20:00:00Z" },
     PB0005: { codice_articolo: "PB0005", unita_misura: "KG", sincronizzato_il: "2026-08-24T20:00:00Z" },
@@ -53,6 +63,7 @@ function makeAdmin({ rpcResult, rpcError = null, onRpc = () => {}, onUpdate = ()
       if (table === "ordini_righe") return queryRows(lineRows);
       if (table === "ordini_testate") return queryRows(ORDERS);
       if (table === "ordini_prodotti_cache") return catalogQuery(catalogs);
+      if (table === "workspace_production_demand_snapshots") return snapshotQuery(snapshots);
       if (table === "workspace_production_requests") return {
         update(value) { onUpdate(value); return { eq: async () => ({ error: null }) }; },
       };
@@ -199,12 +210,46 @@ test("invio usa stessa RdP, schema v2 e quantità OCT complete", async () => {
 test("snapshot cambiato tra preview e invio blocca prima della chiamata MES", async () => {
   let calls = 0;
   const recorder = responseRecorder();
-  const admin = makeAdmin({ rpcResult: [{ request_id: "r", external_id: "e", snapshot_id: 13, snapshot_hash: "new", reused: false, attempt_count: 0 }] });
+  const admin = makeAdmin({
+    rpcResult: [{ request_id: "r", external_id: "e", snapshot_id: 13, snapshot_hash: "new", reused: false, attempt_count: 0 }],
+    snapshots: { 12: { id: 12, snapshot_hash: "old", demand_hash: "old-demand" } },
+  });
   const client = { requestEnabled: () => true, async sendRequest() { calls += 1; } };
   await sendProductionRequest({ method: "POST", body: { orderIds: [ORDERS[0].id], snapshotId: 12 } }, recorder.response, { admin, client });
   assert.equal(recorder.value.status, 409);
   assert.equal(recorder.value.payload.code, "DEMAND_CHANGED");
   assert.equal(calls, 0);
+});
+
+test("snapshot equivalente con ID diverso tra preview e invio raggiunge il MES", async () => {
+  let outbound;
+  const recorder = responseRecorder();
+  const requestId = "00000000-0000-4000-8000-000000000401";
+  const externalId = "00000000-0000-4000-8000-000000000402";
+  let recordedDemandHash;
+  const admin = makeAdmin({
+    onRpc: (name, args) => {
+      if (name === "record_workspace_production_demand") recordedDemandHash = args.p_demand_hash;
+    },
+    rpcResult: [{ request_id: requestId, external_id: externalId, snapshot_id: 13, snapshot_hash: "same-snapshot", reused: false, attempt_count: 0 }],
+    snapshots: new Proxy({}, {
+      get(_target, key) {
+        return String(key) === "12"
+          ? { id: 12, snapshot_hash: "same-snapshot", demand_hash: recordedDemandHash }
+          : undefined;
+      },
+    }),
+  });
+  const client = {
+    requestEnabled: () => true,
+    async sendRequest(payload) {
+      outbound = payload;
+      return { result: { status: "RICEVUTA", workspaceStatus: "RICEVUTA", proposals: [] }, payloadHash: "payload-hash" };
+    },
+  };
+  await sendProductionRequest({ method: "POST", body: { orderIds: [ORDERS[0].id], snapshotId: 12 } }, recorder.response, { admin, client });
+  assert.equal(recorder.value.status, 200);
+  assert.equal(outbound.workspaceExternalId, externalId);
 });
 
 test("errore di invio conserva tentativo e codice senza perdere la RdP", async () => {

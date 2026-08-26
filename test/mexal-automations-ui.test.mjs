@@ -93,6 +93,10 @@ test("admin OCT precheck uses only the dedicated read-only action", async () => 
   assert.deepEqual(bodies, [{ action: "oct_precheck" }]);
   assert.equal(result.read_only, true);
   assert.match(mexalAutomations, />Precheck OCT</);
+  assert.match(mexalAutomations, /Origine trigger/);
+  assert.match(mexalAutomations, /Data business/);
+  assert.match(mexalAutomations, /oct_orders/);
+  assert.match(mexalAutomations, /execution_order/);
 });
 
 test("admin OCT precheck rejects responses that do not confirm read-only mode", async () => {

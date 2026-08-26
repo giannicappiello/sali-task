@@ -25,6 +25,14 @@ function integer(value) {
   return Number.isInteger(parsed) ? parsed : null;
 }
 
+export function workerSource(req) {
+  const supplied = String(req?.headers?.["x-worker-source"] || "").trim().toLowerCase();
+  if (supplied === "aruba" || supplied === "aruba_cron") return "aruba_cron";
+  if (supplied === "vercel-cron" || supplied === "vercel_cron") return "vercel_cron";
+  if (supplied === "supabase-cron" || supplied === "supabase_cron") return "supabase_cron";
+  return "worker_api";
+}
+
 async function rpc(admin, name, parameters) {
   const { data, error } = await admin.rpc(name, parameters);
   if (error) throw new Error(`${name}: ${error.message}`);
@@ -103,6 +111,7 @@ export default async function handler(req, res) {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const workerId = `aruba-mexal:${crypto.randomUUID()}`;
+  const triggerSource = workerSource(req);
   const startedAt = Date.now();
   const processed = [];
   let activeJob;
@@ -111,6 +120,7 @@ export default async function handler(req, res) {
       id: 1,
       last_called_at: new Date().toISOString(),
       last_status: "running",
+      last_source: triggerSource,
       last_error: null,
       updated_at: new Date().toISOString(),
     });
@@ -126,7 +136,10 @@ export default async function handler(req, res) {
       };
       console.error("Infrastructure health monitor failed", infrastructureHealth);
     }
-    const producer = await rpc(admin, "create_daily_mexal_sync_cycle", { p_scheduled_for: new Date().toISOString() });
+    const producer = await rpc(admin, "create_daily_mexal_sync_cycle", {
+      p_scheduled_for: new Date().toISOString(),
+      p_trigger_source: triggerSource,
+    });
     let documentSync = { status: "not_checked" };
     try {
       documentSync = await runAutomaticDocumentSync(admin);
@@ -174,6 +187,10 @@ export default async function handler(req, res) {
       id: 1,
       last_completed_at: new Date().toISOString(),
       last_status: status,
+      last_source: triggerSource,
+      last_business_date: producer?.businessDate || null,
+      last_cycle_id: producer?.cycleId || null,
+      last_jobs_created: Number(producer?.jobsCreated || 0),
       last_error: null,
       last_duration_ms: duration,
       last_jobs_processed: processed.length,
@@ -205,6 +222,7 @@ export default async function handler(req, res) {
       id: 1,
       last_completed_at: new Date().toISOString(),
       last_status: "error",
+      last_source: triggerSource,
       last_error: error?.message || "Worker Mexal non riuscito.",
       last_duration_ms: Date.now() - startedAt,
       last_jobs_processed: processed.length,

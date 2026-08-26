@@ -28,8 +28,28 @@ export function scheduledDateInTimezone(now = new Date(), timezone = TIMEZONE) {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
+function addDays(date, days) {
+  const value = new Date(`${date}T12:00:00.000Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
+export function businessDateInTimezone(now = new Date(), timezone = TIMEZONE) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const localDate = `${values.year}-${values.month}-${values.day}`;
+  return Number(values.hour) >= 23 ? localDate : addDays(localDate, -1);
+}
+
 export function cycleKeyFor(scheduledDate, timezone = TIMEZONE) {
-  return `daily:${scheduledDate}:${timezone}`;
+  return `daily-2300:${scheduledDate}:${timezone}`;
 }
 
 function dateValue(value) {
@@ -63,17 +83,17 @@ function jobPayloadFor(schedule) {
   };
 }
 
-export async function produceDailyMexalQueue({ store, now = new Date(), timezone = TIMEZONE }) {
-  const scheduledDate = scheduledDateInTimezone(now, timezone);
+export async function produceDailyMexalQueue({ store, now = new Date(), timezone = TIMEZONE, source = "vercel_cron" }) {
+  const scheduledDate = businessDateInTimezone(now, timezone);
   const cycleKey = cycleKeyFor(scheduledDate, timezone);
   const { cycle, created } = await store.findOrCreateCycle({
     cycle_key: cycleKey,
     scheduled_date: scheduledDate,
     scheduled_for: now.toISOString(),
     timezone,
-    source: "vercel_cron",
+    source,
     status: "queued",
-    metadata: { producer: "vercel_cron" },
+    metadata: { producer: source, businessDate: scheduledDate },
   });
 
   if (TERMINAL_CYCLE_STATUSES.has(cycle.status)) {
@@ -227,15 +247,37 @@ export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "Metodo non consentito." });
   if (!isCronAuthorized(req)) return res.status(401).json({ error: "Cron non autorizzato." });
 
+  let admin;
+  const calledAt = new Date().toISOString();
+  const triggerSource = "vercel_cron";
   try {
-    const workerSecret = required("WORKER_SECRET");
-    const admin = createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), {
+    admin = createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), {
       auth: { persistSession: false, autoRefreshToken: false },
     });
+    await admin.from("mexal_worker_heartbeat").upsert({
+      id: 1,
+      last_called_at: calledAt,
+      last_status: "dispatching",
+      last_source: triggerSource,
+      last_error: null,
+      updated_at: calledAt,
+    });
+    const workerSecret = required("WORKER_SECRET");
     const { data, error } = await admin.rpc("create_daily_mexal_sync_cycle", {
-      p_scheduled_for: new Date().toISOString(),
+      p_scheduled_for: calledAt,
+      p_trigger_source: triggerSource,
     });
     if (error) throw error;
+    await admin.from("mexal_worker_heartbeat").upsert({
+      id: 1,
+      last_status: data?.status || "dispatched",
+      last_source: triggerSource,
+      last_business_date: data?.businessDate || null,
+      last_cycle_id: data?.cycleId || null,
+      last_jobs_created: Number(data?.jobsCreated || 0),
+      last_error: null,
+      updated_at: new Date().toISOString(),
+    });
     let progremes;
     try {
       progremes = await runAutomaticProgremesModuleSync(admin);
@@ -284,6 +326,16 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ scheduler: data, worker: workerPayload, digital, progremes, autoplanning });
   } catch (error) {
+    if (admin) {
+      await admin.from("mexal_worker_heartbeat").upsert({
+        id: 1,
+        last_completed_at: new Date().toISOString(),
+        last_status: "error",
+        last_source: triggerSource,
+        last_error: error?.message || "Creazione coda Mexal non riuscita.",
+        updated_at: new Date().toISOString(),
+      });
+    }
     return res.status(500).json({ error: error?.message || "Creazione coda Mexal non riuscita." });
   }
 }

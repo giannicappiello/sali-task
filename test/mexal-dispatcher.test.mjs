@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
+  businessDateInTimezone,
   cycleKeyFor,
   dueSchedules,
   isCronAuthorized,
@@ -17,6 +18,8 @@ assert.equal(vercel.crons.some((cron) => (
 assert.match(dispatcherSource, /\.rpc\("create_daily_mexal_sync_cycle"/);
 assert.match(dispatcherSource, /\/api\/mexal\/queue-worker/);
 assert.match(dispatcherSource, /WORKER_SECRET/);
+assert.match(dispatcherSource, /p_trigger_source:\s*triggerSource/);
+assert.match(dispatcherSource, /last_business_date/);
 
 assert.equal(isCronAuthorized({ headers: { authorization: "Bearer test-secret" } }, "test-secret"), true);
 assert.equal(isCronAuthorized({ headers: { authorization: "Bearer wrong" } }, "test-secret"), false);
@@ -24,7 +27,22 @@ assert.equal(isCronAuthorized({ headers: {} }, ""), false);
 
 const now = new Date("2026-07-25T22:30:00.000Z");
 assert.equal(scheduledDateInTimezone(now), "2026-07-26");
-assert.equal(cycleKeyFor("2026-07-26"), "daily:2026-07-26:Europe/Rome");
+assert.equal(businessDateInTimezone(now), "2026-07-25");
+assert.equal(cycleKeyFor("2026-07-25"), "daily-2300:2026-07-25:Europe/Rome");
+
+// CEST: 22:00 UTC è mezzanotte italiana e deve recuperare il giorno concluso.
+assert.equal(businessDateInTimezone(new Date("2026-08-25T21:00:00.000Z")), "2026-08-25");
+assert.equal(businessDateInTimezone(new Date("2026-08-25T22:00:00.000Z")), "2026-08-25");
+assert.equal(businessDateInTimezone(new Date("2026-08-26T04:00:00.000Z")), "2026-08-25");
+// CET: 22:00 UTC sono le 23:00 italiane dello stesso giorno.
+assert.equal(businessDateInTimezone(new Date("2026-01-25T21:59:59.000Z")), "2026-01-24");
+assert.equal(businessDateInTimezone(new Date("2026-01-25T22:00:00.000Z")), "2026-01-25");
+assert.equal(businessDateInTimezone(new Date("2026-01-25T23:30:00.000Z")), "2026-01-25");
+// I due cambi d'ora mantengono la stessa business date maturata alle 23:00 locali.
+assert.equal(businessDateInTimezone(new Date("2026-03-29T21:00:00.000Z")), "2026-03-29");
+assert.equal(businessDateInTimezone(new Date("2026-03-29T22:30:00.000Z")), "2026-03-29");
+assert.equal(businessDateInTimezone(new Date("2026-10-25T22:00:00.000Z")), "2026-10-25");
+assert.equal(businessDateInTimezone(new Date("2026-10-25T23:30:00.000Z")), "2026-10-25");
 
 const schedules = [
   { id: 1, sync_type: "clients", enabled: false, schedule_mode: "daily_vercel_hobby", execution_order: 1, batch_size: 100, next_run_at: null },
@@ -78,7 +96,7 @@ function queueStore() {
 
 const store = queueStore();
 const first = await produceDailyMexalQueue({ store, now });
-assert.equal(first.cycleKey, "daily:2026-07-26:Europe/Rome");
+assert.equal(first.cycleKey, "daily-2300:2026-07-25:Europe/Rome");
 assert.equal(first.created, true);
 assert.equal(first.jobsCreated, 2);
 assert.equal(first.existingJobs, 0);
@@ -155,7 +173,7 @@ assert.equal(Boolean(emptyStore.state.cycles[0].completed_at), true);
 const terminalStore = queueStore();
 terminalStore.state.cycles.push({
   id: 1,
-  cycle_key: "daily:2026-07-26:Europe/Rome",
+  cycle_key: "daily-2300:2026-07-25:Europe/Rome",
   status: "completed",
   completed_jobs: 2,
   failed_jobs: 0,

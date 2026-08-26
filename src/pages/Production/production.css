@@ -24,3 +24,11 @@
 .production-launch-state .primary-action { display: inline-flex; align-items: center; gap: 8px; }
 .production-launch-state > button:not(.primary-action) { padding: 0; border: 0; background: transparent; color: #1769aa; font: inherit; font-weight: 700; cursor: pointer; }
 @media (max-width: 640px) { .production-hero { align-items: flex-start; padding: 21px; } .production-hero-icon { width: 52px; height: 52px; } .production-section-grid { grid-template-columns: 1fr; } }
+.diagnostics-back { justify-self: start; border: 0; background: transparent; color: #1769aa; font-weight: 750; cursor: pointer; }
+.diagnostics-summary { display: flex; align-items: center; gap: 16px; padding: 20px; border-radius: 16px; color: #fff; }
+.diagnostics-summary h1 { margin: 2px 0; }.diagnostics-summary p,.diagnostics-summary span { margin: 0; opacity: .92; }
+.diagnostics-summary button { margin-left: auto; display: inline-flex; gap: 7px; align-items: center; padding: 9px 12px; border: 1px solid rgba(255,255,255,.5); border-radius: 10px; color: inherit; background: transparent; }
+.diagnostics-green { background: #147d64; }.diagnostics-yellow { background: #a66a00; }.diagnostics-red { background: #a63535; }.diagnostics-unavailable { background: #414a58; }
+.diagnostics-integrations,.diagnostics-filters { display: flex; flex-wrap: wrap; gap: 12px; padding: 14px 16px; border: 1px solid #dbe5f0; border-radius: 13px; background: #fff; }
+.diagnostics-integrations span { padding-left: 12px; border-left: 1px solid #dbe5f0; }.diagnostics-filters > * { min-width: 180px; flex: 1; padding: 9px; border: 1px solid #cbd8e6; border-radius: 9px; }
+.diagnostics-table-wrap { overflow: auto; border: 1px solid #dbe5f0; border-radius: 14px; background: #fff; }.diagnostics-table { width: 100%; border-collapse: collapse; }.diagnostics-table th,.diagnostics-table td { padding: 12px; border-bottom: 1px solid #e7edf4; text-align: left; vertical-align: top; }.diagnostics-table small,.diagnostics-table em { display: block; margin-top: 4px; color: #687892; font-style: normal; }.diagnostics-table .severity-blocking { background: #fff1f1; }.diagnostics-table .severity-critical { color: #fff; background: #2f343d; }.diagnostics-table .severity-warning { background: #fff8e7; }

@@ -254,3 +254,32 @@ test("requires HTTPS except for explicit local loopback development", () => {
     "http://127.0.0.1:5150/api/workspace/v1/status",
   );
 });
+
+test("diagnostics use the v2 read-only endpoint and strip unknown technical fields", async () => {
+  const row = {
+    diagnosticId: "00000000-0000-4000-8000-000000000001", severity: "Blocking", errorCode: "BOM_MISSING",
+    sourceSystem: "ProgreMES", phase: "ANALYSIS", entityType: "OCT_LINE", entityId: "line-1",
+    workspaceRdpV2Id: 3, workspaceCommercialOctId: 4, workspaceOctLineRevisionId: 5, ordineProduzioneId: null,
+    articleCode: "DR-BC07", formulaCode: "", stationCode: "", fillingCode: "", title: "Distinta mancante",
+    description: "Configurazione tecnica incompleta", firstSeenAt: "2026-08-26T10:00:00Z", lastSeenAt: "2026-08-26T10:01:00Z",
+    occurrenceCount: 2, status: "Open", actionRequired: "Configurare distinta", correlationId: "corr-1",
+    retryable: false, automaticRetryAttempted: false, technicalDetail: "must-not-cross-boundary",
+  };
+  let requested;
+  const client = createProgremesClient({ baseUrl, secret, logger: silentLogger, fetchFn: async (url) => { requested = new URL(url); return new Response(JSON.stringify([row]), { status: 200 }); } });
+  const result = await client.request("diagnostics");
+  assert.equal(requested.pathname, "/api/workspace/v2/diagnostics");
+  assert.equal(result[0].errorCode, "BOM_MISSING");
+  assert.equal("technicalDetail" in result[0], false);
+});
+
+test("diagnostics health exposes flags and counts but no configuration secrets", async () => {
+  const health = { globalStatus: "GREEN", open: 0, info: 0, warning: 0, blocking: 0, critical: 0,
+    generatedAt: "2026-08-26T10:00:00Z", database: true, workspaceCallbacks: true, pendingOutbox: 0,
+    lastMexalSuccess: null, lastMexalError: null, receiveRdp: false, receiveDecisions: false, executeProduction: false, createLots: false,
+    connectionString: "must-not-cross-boundary" };
+  const client = createProgremesClient({ baseUrl, secret, logger: silentLogger, fetchFn: async () => new Response(JSON.stringify(health), { status: 200 }) });
+  const result = await client.request("diagnostics-health");
+  assert.equal(result.globalStatus, "GREEN");
+  assert.equal("connectionString" in result, false);
+});

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Factory, RefreshCw, Workflow } from "lucide-react";
+import { AlertTriangle, Factory, RefreshCw, ShieldCheck, Workflow } from "lucide-react";
 import { useParams } from "react-router-dom";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
 import { useAuth } from "../../contexts/AuthContext";
@@ -15,6 +15,69 @@ async function requestProgremes(action, accessToken, extra = {}) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || "Operazione di produzione non riuscita.");
   return payload;
+}
+
+async function readProgremes(resource, accessToken) {
+  const response = await fetch(`/api/progremes/${resource}`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || "Diagnostica ProgreMES non disponibile.");
+  return payload;
+}
+
+function DiagnosticsCenter() {
+  const { session } = useAuth();
+  const accessToken = session?.access_token;
+  const [health, setHealth] = useState(null);
+  const [rows, setRows] = useState([]);
+  const [filters, setFilters] = useState({ severity: "", status: "", search: "" });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const goBack = useBackNavigation("/produzione");
+
+  async function load() {
+    setLoading(true); setError("");
+    try {
+      const [nextHealth, nextRows] = await Promise.all([
+        readProgremes("diagnostics-health", accessToken), readProgremes("diagnostics", accessToken),
+      ]);
+      setHealth(nextHealth); setRows(nextRows);
+    } catch (loadError) { setError(loadError?.message || "Centro Diagnostico non disponibile."); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => {
+    if (!accessToken) return undefined;
+    let active = true;
+    Promise.all([readProgremes("diagnostics-health", accessToken), readProgremes("diagnostics", accessToken)])
+      .then(([nextHealth, nextRows]) => { if (active) { setHealth(nextHealth); setRows(nextRows); } })
+      .catch((loadError) => { if (active) setError(loadError?.message || "Centro Diagnostico non disponibile."); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [accessToken]);
+  const visible = rows.filter((row) => {
+    if (filters.severity && row.severity !== filters.severity) return false;
+    if (filters.status && row.status !== filters.status) return false;
+    const text = `${row.errorCode} ${row.entityId} ${row.articleCode} ${row.title} ${row.phase} ${row.sourceSystem}`.toLowerCase();
+    return !filters.search || text.includes(filters.search.toLowerCase());
+  });
+  const lamp = health?.globalStatus || "UNAVAILABLE";
+  return <div className="production-page diagnostics-center">
+    <button type="button" className="diagnostics-back" onClick={goBack}>← Gestione produzione</button>
+    <section className={`diagnostics-summary diagnostics-${lamp.toLowerCase()}`}>
+      {lamp === "GREEN" ? <ShieldCheck /> : <AlertTriangle />}
+      <div><span>Stato globale WorkspaceMES</span><h1>{lamp}</h1><p>Blocking {health?.blocking ?? "—"} · Critical {health?.critical ?? "—"} · Warning {health?.warning ?? "—"} · Outbox {health?.pendingOutbox ?? "—"}</p></div>
+      <button type="button" onClick={load}><RefreshCw size={17} />Aggiorna</button>
+    </section>
+    <section className="diagnostics-integrations">
+      <strong>Integrazioni</strong><span>Database: {health?.database ? "OK" : "KO"}</span><span>Workspace ↔ ProgreMES: {health?.workspaceCallbacks ? "OK" : "KO"}</span><span>Ultimo Mexal OK: {health?.lastMexalSuccess ? new Date(health.lastMexalSuccess).toLocaleString("it-IT") : "non disponibile"}</span>
+    </section>
+    <div className="diagnostics-filters">
+      <select value={filters.severity} onChange={(event) => setFilters({ ...filters, severity: event.target.value })}><option value="">Tutte le severità</option>{["Info", "Warning", "Blocking", "Critical"].map((value) => <option key={value}>{value}</option>)}</select>
+      <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">Tutti gli stati</option>{["Open", "Acknowledged", "Resolved", "Ignored"].map((value) => <option key={value}>{value}</option>)}</select>
+      <input value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} placeholder="OCT, RdP, articolo, OdP, errore, fase..." />
+    </div>
+    {error && <div className="production-message">{error}<button onClick={load}>Riprova</button></div>}
+    {loading ? <div className="production-loading">Caricamento diagnostica...</div> : <div className="diagnostics-table-wrap"><table className="diagnostics-table"><thead><tr><th>Severità</th><th>Stato</th><th>Codice</th><th>Entità</th><th>Messaggio</th><th>Ultima occorrenza</th></tr></thead><tbody>{visible.map((row) => <tr key={row.diagnosticId} className={`severity-${row.severity.toLowerCase()}`}><td>{row.severity}</td><td>{row.status}</td><td><code>{row.errorCode}</code><small>{row.sourceSystem} / {row.phase}</small></td><td>{row.entityType} {row.entityId}<small>{row.articleCode || ""} {row.ordineProduzioneId ? `· OdP ${row.ordineProduzioneId}` : ""}</small></td><td><strong>{row.title}</strong><small>{row.description}</small><em>{row.actionRequired}</em></td><td>{new Date(row.lastSeenAt).toLocaleString("it-IT")}<small>× {row.occurrenceCount}</small></td></tr>)}</tbody></table></div>}
+  </div>;
 }
 
 function SectionLauncher({ sectionCode }) {
@@ -60,7 +123,7 @@ function SectionLauncher({ sectionCode }) {
 
 export default function Production() {
   const { "*": sectionPath } = useParams();
-  const { session } = useAuth();
+  const { session, hasPermission } = useAuth();
   const accessToken = session?.access_token;
   const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -96,14 +159,18 @@ export default function Production() {
     return () => { active = false; };
   }, [accessToken, sectionPath]);
 
+  if (sectionPath === "diagnostica") return <DiagnosticsCenter />;
   if (sectionPath) return <SectionLauncher sectionCode={decodeURIComponent(sectionPath)} />;
+
+  const visibleSections = [...sections];
+  if (hasPermission?.("diagnostics.view")) visibleSections.unshift({ code: "diagnostica", name: "Centro Diagnostico WorkspaceMES", description: "Stato globale, alert operativi e integrazioni senza esporre configurazioni riservate.", workspaceLocal: true });
 
   return <ModuleContainerLayout
     icon={Workflow}
     eyebrow="Area operativa"
     title="Gestione produzione"
     description="Accedi direttamente alle sezioni autorizzate. Ogni area si apre autonomamente in una nuova scheda."
-    items={sections.map((section) => ({ code: section.code, name: section.name, description: section.description, to: `/produzione/${encodeURIComponent(section.code)}`, external: true, icon: Factory }))}
+    items={visibleSections.map((section) => ({ code: section.code, name: section.name, description: section.description, to: `/produzione/${encodeURIComponent(section.code)}`, external: !section.workspaceLocal, icon: section.workspaceLocal ? AlertTriangle : Factory }))}
     loading={loading}
     error={error}
     onRetry={loadSections}

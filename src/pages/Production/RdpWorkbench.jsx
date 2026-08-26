@@ -44,7 +44,7 @@ function AnalysisGrid({ analysis, proposal }) {
 function DetailPanel({ detail, onClose, onDiagnostics, canDecide, onDecision }) {
   const [openLine, setOpenLine] = useState(null);
   if (!detail) return null;
-  return <section className="rdp-detail" aria-label="Dettaglio RdP e OCT">
+  return <div className="rdp-detail-backdrop" role="presentation" onMouseDown={onClose}><section className="rdp-detail" role="dialog" aria-modal="true" aria-label="Dettaglio RdP e OCT" onMouseDown={(event) => event.stopPropagation()}>
     <header><div><span className="rdp-eyebrow">Lineage commerciale e produttivo</span><h2>{detail.request ? `RdP ${detail.request.external_id}` : detail.orders.map((item) => item.label).join(", ")}</h2><p>{detail.orders.map((item) => `${item.label} · ${item.customer || "cliente non disponibile"}`).join(" | ")}</p></div><button type="button" className="rdp-icon-button" onClick={onClose} aria-label="Chiudi dettaglio"><X /></button></header>
     {detail.request && <div className="rdp-request-meta"><span>Stato {badge(detail.request.workspace_status || detail.request.stato, detail.request.stage === "blocked" ? "red" : "blue")}</span><span>Creata {formatDate(detail.request.created_at, true)}</span><span>Tentativi {detail.request.attempt_count ?? 0}</span><span>Contratto v{detail.request.contract_version || 2}</span></div>}
     {detail.revision?.modified && <div className="rdp-revision-alert"><AlertTriangle/><div><strong>OCT MODIFICATO IN MEXAL</strong><p>Aggiunte {detail.revision.added.length} · rimosse {detail.revision.removed.length} · quantità/UDM modificate {detail.revision.changed.length} · consegna {detail.revision.deliveryChanged ? "modificata" : "invariata"}.</p><small>Le opzioni “mantieni pianificazione + delta” e “integra e ripianifica” saranno abilitate soltanto quando esposte dal contratto MES.</small></div></div>}
@@ -62,7 +62,7 @@ function DetailPanel({ detail, onClose, onDiagnostics, canDecide, onDecision }) 
     </article>)}</div>
     {detail.request && canDecide && detail.lines.some((line) => line.proposal && !line.proposal.confirmation_external_id) && <section className="rdp-decisions"><h3>Decisioni operatore disponibili</h3><p>Il backend attuale espone la pianificazione completa. Le altre decisioni saranno mostrate solo quando disponibili nel contratto MES.</p>{detail.lines.filter((line) => line.proposal && !line.proposal.confirmation_external_id).map((line) => <button type="button" className="primary-action" key={line.proposal.id} onClick={() => onDecision(line)}><Factory size={16}/>Pianificazione completa · {line.articleCode}</button>)}</section>}
     {detail.request && <nav className="rdp-deep-links" aria-label="Apri schermate MES nel contesto"><span>Apri nel contesto:</span>{[["planning","Planning"],["produzione","Produzione"],["operatore-produzione","Operatore produzione"],["confezionamento","Confezionamento"],["magazzino","Magazzino"],["documenti","Documenti"]].map(([code,label]) => <a key={code} href={`/produzione/${code}?rdpId=${encodeURIComponent(detail.request.external_id)}`}>{label}<ArrowUpRight size={14}/></a>)}</nav>}
-  </section>;
+  </section></div>;
 }
 
 function PreviewDialog({ preview, busy, sendEnabled, onCancel, onConfirm }) {

@@ -3,11 +3,12 @@ import test from "node:test";
 import { readFile } from "node:fs/promises";
 import { appendProgremesContext } from "../server/progremes-sso.js";
 
-const [ui, production, api, migration] = await Promise.all([
+const [ui, production, api, migration, workbench] = await Promise.all([
   readFile("src/pages/Production/RdpWorkbench.jsx", "utf8"),
   readFile("src/pages/Production/Production.jsx", "utf8"),
   readFile("api/mexal/automation.js", "utf8"),
   readFile("supabase/migrations/20260826170000_workspacemes_rdp_create_permission.sql", "utf8"),
+  readFile("server/workspacemes-workbench.js", "utf8"),
 ]);
 
 test("Workbench espone lista OCT, multi-select e stati operativi senza duplicare le schermate MES", () => {
@@ -47,4 +48,13 @@ test("UI disabilita preview e Crea RdP quando il gate Production non è ON", () 
   assert.match(ui, /Invio RdP Production non disponibile/);
   assert.match(production, /Invio RdP Workspace/);
   assert.match(production, /Gate Production/);
+});
+
+test("Workbench mostra la ragione sociale cliente e apre il dettaglio in un dialog visibile", () => {
+  assert.match(workbench, /ordini_clienti_cache/);
+  assert.match(workbench, /ragione_sociale/);
+  assert.match(workbench, /customerName\(order, customersByCode\)/);
+  assert.match(ui, /rdp-detail-backdrop/);
+  assert.match(ui, /role="dialog"/);
+  assert.match(ui, /aria-modal="true"/);
 });

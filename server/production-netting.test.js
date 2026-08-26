@@ -349,6 +349,12 @@ test("migration separa testata, righe e snapshot e non contiene nettificazione W
   assert.match(migration, /\(p_snapshot->'items'->0\)->>'lineId'/);
 });
 
+test("snapshot lookup qualifica i nomi che collidono con RETURNS TABLE", () => {
+  const migration = fs.readFileSync(new URL("../supabase/migrations/20260826204125_fix_workspace_demand_snapshot_ambiguity.sql", import.meta.url), "utf8");
+  assert.match(migration, /demand_snapshot\.snapshot_hash\s*=\s*p_snapshot_hash/);
+  assert.doesNotMatch(migration, /\band snapshot_hash\s*=\s*p_snapshot_hash/);
+});
+
 test("migration revisioni OCT è additiva, monotona e non modifica righe o cicli storici", () => {
   const migration = fs.readFileSync(new URL("../supabase/migrations/20260826123000_workspacemes_rdp_v2_oct_revisions.sql", import.meta.url), "utf8");
   assert.match(migration, /workspace_oct_contract_revisions/);

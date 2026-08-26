@@ -45,7 +45,7 @@ async function loadPersistedProductionRequest(admin, requestId) {
     .select("*").eq("id", id).maybeSingle();
   if (requestError) throw requestError;
   if (!request) throw Object.assign(new Error("RdP non trovata."), { code: "NOT_FOUND", status: 404 });
-  if (request.sent_demand_snapshot_id || request.last_response)
+  if (request.sent_demand_snapshot_id)
     throw Object.assign(new Error("La RdP risulta già inviata a ProgreMES."), { code: "ALREADY_SENT", status: 409 });
   if (!request.demand_snapshot_id || Number(request.contract_version || 2) !== 2)
     throw Object.assign(new Error("La RdP non dispone di uno snapshot v2 retryable."), { code: "DEMAND_REQUIRED", status: 409 });

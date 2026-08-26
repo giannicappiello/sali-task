@@ -283,7 +283,7 @@ test("retry usa esclusivamente RdP e snapshot persistiti senza creare una nuova 
   let outbound;
   let responseRpc;
   const admin = makeAdmin({
-    productionRequests: { [requestId]: { id: requestId, external_id: externalId, idempotency_key: "rdp:v2:stable", demand_snapshot_id: snapshotId, sent_demand_snapshot_id: null, last_response: null, contract_version: 2, attempt_count: 0 } },
+    productionRequests: { [requestId]: { id: requestId, external_id: externalId, idempotency_key: "rdp:v2:stable", demand_snapshot_id: snapshotId, sent_demand_snapshot_id: null, last_response: { code: "DEMAND_CHANGED" }, contract_version: 2, attempt_count: 0 } },
     snapshots: { [snapshotId]: { id: snapshotId, snapshot_hash: "snapshot-hash", demand_hash: "demand-hash", captured_at: snapshot.capturedAt, snapshot } },
     onRpc: (name) => rpcNames.push(name),
     onResponseRpc: (args) => { responseRpc = args; },

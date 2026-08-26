@@ -1,3 +1,4 @@
+/* global process */
 import { createHash, randomBytes } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { ensureProgremesCatalogFresh } from "./progremes-modules.js";
@@ -83,6 +84,17 @@ export function isProgremesScreenAuthorized(isAdmin, authorizedCodes, metadata) 
   return isAdmin || authorizedCodes?.has(progremesModuleCodeFromMetadata(metadata)) === true;
 }
 
+export function appendProgremesContext(returnUrl, context = {}) {
+  if (!returnUrl?.startsWith("/") || returnUrl.startsWith("//")) return returnUrl;
+  const allowed = { rdpId: "rdpId", octId: "octId", odpId: "odpId", article: "article", lot: "lot" };
+  const url = new URL(returnUrl, "https://progremes.invalid");
+  for (const [input, output] of Object.entries(allowed)) {
+    const value = String(context?.[input] || "").trim();
+    if (value && value.length <= 120) url.searchParams.set(output, value);
+  }
+  return `${url.pathname}${url.search}`;
+}
+
 export async function listUserProgremesSections(req) {
   const admin = adminClient();
   const identity = await getWorkspaceIdentity(req, admin);
@@ -151,7 +163,7 @@ export async function issueProgremesTicket(req, body = {}) {
       }
     }
     const requestedRoute = String(screen.metadati?.external_route || "").trim();
-    if (requestedRoute.startsWith("/") && !requestedRoute.startsWith("//")) returnUrl = requestedRoute;
+    if (requestedRoute.startsWith("/") && !requestedRoute.startsWith("//")) returnUrl = appendProgremesContext(requestedRoute, body?.context);
   }
 
   const ticket = randomBytes(32).toString("base64url");

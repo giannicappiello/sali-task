@@ -22,12 +22,14 @@ import documentApiHandler from "../../server/document-api.js";
 import { consumeProgremesTicket, issueProgremesTicket, listUserProgremesSections } from "../../server/progremes-sso.js";
 import { listProgremesIntegration, saveProgremesSyncConfig, stopProgremesModulesSync, syncProgremesModules } from "../../server/progremes-modules.js";
 import { handleProgremesReadonlyRequest } from "../../server/progremes-readonly-api.js";
+import { createProgremesClient } from "../../server/progremes-readonly-client.js";
 import { handleAIAssistant } from "../../server/ai/assistant.js";
 import { handleCrmBrief } from "../../server/ai/crm-brief.js";
 import { handleAIOrderDocument } from "../../server/ai/order-document.js";
 import { confirmProductionProposal, handleProductionEvent, previewProductionRequest, sendProductionRequest } from "../../server/progremes-production-api.js";
 import { createOctOrdersRunHandler, precheckOctOrders } from "../../server/mexal/sync-oct-orders.js";
 import { handleDigitalConnectionManager } from "../../server/crm/digital-connection-manager.js";
+import { listProductionWorkbench, productionWorkbenchDetail } from "../../server/workspacemes-workbench.js";
 
 async function dispatchMessageNotification(req, body) {
   const token = String(req.headers.authorization || "").trim().replace(/^Bearer\s+/i, "");
@@ -229,7 +231,7 @@ async function createAdmin(req, permissionCode = null) {
   });
   const authorization = String(req.headers.authorization || "");
   const internalSecrets = [process.env.CRON_SECRET, process.env.WORKER_SECRET].filter(Boolean);
-  if (internalSecrets.some((secret) => authorization === `Bearer ${secret}`)) {
+  if (!permissionCode && internalSecrets.some((secret) => authorization === `Bearer ${secret}`)) {
     return { supabase: createSupabase(), authUserId: null };
   }
   const authorizationResult = permissionCode
@@ -537,15 +539,25 @@ export default async function handler(req, res) {
         return sendSuccess(res, 200, await listProgremesIntegration(req, admin.supabase));
       }
       case "progremes_production_request": {
-        const admin = await createAdmin(req, "integrations.configure");
+        const admin = await createAdmin(req, "rdp.create");
         return sendProductionRequest(req, res, { admin: admin.supabase, requestedBy: admin.authUserId });
       }
       case "progremes_production_preview": {
-        const admin = await createAdmin(req, "integrations.configure");
+        const admin = await createAdmin(req, "rdp.create");
         return previewProductionRequest(req, res, { admin: admin.supabase, requestedBy: admin.authUserId });
       }
+      case "progremes_workbench_list": {
+        const admin = await createAdmin(req, "rdp.view");
+        const diagnostics = await createProgremesClient().request("diagnostics").catch(() => []);
+        return sendSuccess(res, 200, await listProductionWorkbench({ admin: admin.supabase, diagnostics }));
+      }
+      case "progremes_workbench_detail": {
+        const admin = await createAdmin(req, "rdp.view");
+        const diagnostics = await createProgremesClient().request("diagnostics").catch(() => []);
+        return sendSuccess(res, 200, await productionWorkbenchDetail({ admin: admin.supabase, orderId: body.orderId, requestId: body.requestId, diagnostics }));
+      }
       case "progremes_production_confirm": {
-        const admin = await createAdmin(req, "integrations.configure");
+        const admin = await createAdmin(req, "rdp.decide");
         return confirmProductionProposal(req, res, { admin: admin.supabase });
       }
       case "progremes_modules_sync": {

@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Factory, RefreshCw, ShieldCheck, Workflow } from "lucide-react";
-import { useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, ClipboardList, Factory, RefreshCw, ShieldCheck, Workflow } from "lucide-react";
+import { useLocation, useParams } from "react-router-dom";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
 import { useAuth } from "../../contexts/AuthContext";
 import useBackNavigation from "../../hooks/useBackNavigation";
 import "./production.css";
+import RdpWorkbench from "./RdpWorkbench";
 
 async function requestProgremes(action, accessToken, extra = {}) {
   const response = await fetch("/api/mexal/automation", {
@@ -86,12 +87,14 @@ function SectionLauncher({ sectionCode }) {
   const [error, setError] = useState("");
   const launched = useRef(false);
   const goBack = useBackNavigation("/produzione");
+  const location = useLocation();
+  const context = useMemo(() => Object.fromEntries(new URLSearchParams(location.search)), [location.search]);
 
   async function launch() {
     setError("");
     try {
       if (!accessToken) throw new Error("Sessione Workspace non disponibile.");
-      const payload = await requestProgremes("progremes_sso", accessToken, { screenCode: sectionCode });
+      const payload = await requestProgremes("progremes_sso", accessToken, { screenCode: sectionCode, context });
       if (!payload.url) throw new Error("Impossibile aprire l’area di produzione.");
       window.location.assign(payload.url);
     } catch (launchError) {
@@ -102,13 +105,13 @@ function SectionLauncher({ sectionCode }) {
   useEffect(() => {
     if (launched.current || !accessToken) return;
     launched.current = true;
-    requestProgremes("progremes_sso", accessToken, { screenCode: sectionCode })
+    requestProgremes("progremes_sso", accessToken, { screenCode: sectionCode, context })
       .then((payload) => {
         if (!payload.url) throw new Error("Impossibile aprire l’area di produzione.");
         window.location.assign(payload.url);
       })
       .catch((launchError) => setError(launchError?.message || "Collegamento alla gestione produzione non riuscito."));
-  }, [accessToken, sectionCode]);
+  }, [accessToken, sectionCode, context]);
 
   return (
     <div className="production-launch-state">
@@ -160,17 +163,19 @@ export default function Production() {
   }, [accessToken, sectionPath]);
 
   if (sectionPath === "diagnostica") return <DiagnosticsCenter />;
+  if (sectionPath === "rdp-workbench") return <RdpWorkbench onBack={() => window.location.assign("/produzione")} />;
   if (sectionPath) return <SectionLauncher sectionCode={decodeURIComponent(sectionPath)} />;
 
   const visibleSections = [...sections];
   if (hasPermission?.("diagnostics.view")) visibleSections.unshift({ code: "diagnostica", name: "Centro Diagnostico WorkspaceMES", description: "Stato globale, alert operativi e integrazioni senza esporre configurazioni riservate.", workspaceLocal: true });
+  if (hasPermission?.("rdp.view")) visibleSections.unshift({ code: "rdp-workbench", name: "RdP Workbench", description: "Gestione OCT, richieste di produzione, analisi MES e decisioni operative.", workspaceLocal: true, icon: ClipboardList });
 
   return <ModuleContainerLayout
     icon={Workflow}
     eyebrow="Area operativa"
     title="Gestione produzione"
     description="Accedi direttamente alle sezioni autorizzate. Ogni area si apre autonomamente in una nuova scheda."
-    items={visibleSections.map((section) => ({ code: section.code, name: section.name, description: section.description, to: `/produzione/${encodeURIComponent(section.code)}`, external: !section.workspaceLocal, icon: section.workspaceLocal ? AlertTriangle : Factory }))}
+    items={visibleSections.map((section) => ({ code: section.code, name: section.name, description: section.description, to: `/produzione/${encodeURIComponent(section.code)}`, external: !section.workspaceLocal, icon: section.icon || (section.workspaceLocal ? AlertTriangle : Factory) }))}
     loading={loading}
     error={error}
     onRetry={loadSections}

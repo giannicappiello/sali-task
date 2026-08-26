@@ -61,6 +61,7 @@ function DiagnosticsCenter() {
     return !filters.search || text.includes(filters.search.toLowerCase());
   });
   const lamp = health?.globalStatus || "UNAVAILABLE";
+  const gates = health?.productionGates;
   return <div className="production-page diagnostics-center">
     <button type="button" className="diagnostics-back" onClick={goBack}>← Gestione produzione</button>
     <section className={`diagnostics-summary diagnostics-${lamp.toLowerCase()}`}>
@@ -69,7 +70,7 @@ function DiagnosticsCenter() {
       <button type="button" onClick={load}><RefreshCw size={17} />Aggiorna</button>
     </section>
     <section className="diagnostics-integrations">
-      <strong>Integrazioni</strong><span>Database: {health?.database ? "OK" : "KO"}</span><span>Workspace ↔ ProgreMES: {health?.workspaceCallbacks ? "OK" : "KO"}</span><span>Ultimo Mexal OK: {health?.lastMexalSuccess ? new Date(health.lastMexalSuccess).toLocaleString("it-IT") : "non disponibile"}</span>
+      <strong>Integrazioni</strong><span>Database: {health?.database ? "OK" : "KO"}</span><span>Workspace ↔ ProgreMES: {health?.workspaceCallbacks ? "OK" : "KO"}</span><span>Invio RdP Workspace: {gates?.workspace?.requests ? "ON" : "OFF"}</span><span>Gate Production: {gates?.allOn ? "ON" : "OFF"}</span><span>Ultimo Mexal OK: {health?.lastMexalSuccess ? new Date(health.lastMexalSuccess).toLocaleString("it-IT") : "non disponibile"}</span>
     </section>
     <div className="diagnostics-filters">
       <select value={filters.severity} onChange={(event) => setFilters({ ...filters, severity: event.target.value })}><option value="">Tutte le severità</option>{["Info", "Warning", "Blocking", "Critical"].map((value) => <option key={value}>{value}</option>)}</select>

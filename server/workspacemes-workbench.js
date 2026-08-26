@@ -5,6 +5,23 @@ function octLabel(order) {
   return [text(order.mexal_sigla), text(order.mexal_serie), text(order.mexal_numero)].filter(Boolean).join("/");
 }
 
+function customerCode(order) {
+  return text(order.mexal_cod_conto || order.codice_cliente);
+}
+
+function customerName(order, customersByCode) {
+  const code = customerCode(order);
+  return text(order.ragione_sociale_cliente || customersByCode.get(code)?.ragione_sociale) || code || "—";
+}
+
+async function loadCustomers(admin, orders) {
+  const codes = [...new Set((orders || []).map(customerCode).filter(Boolean))];
+  if (!codes.length) return new Map();
+  const result = await admin.from("ordini_clienti_cache").select("codice_cliente,ragione_sociale").in("codice_cliente", codes);
+  if (result.error) throw result.error;
+  return new Map((result.data || []).map((row) => [text(row.codice_cliente), row]));
+}
+
 function requestStage(request) {
   const status = text(request?.workspace_status || request?.stato || "").toUpperCase();
   if (["EVASO", "COMPLETED", "PRODUCTIONCOMPLETED"].includes(status)) return "completed";
@@ -28,6 +45,7 @@ export async function listProductionWorkbench({ admin, diagnostics = [] }) {
     admin.from("workspace_production_requests").select("*").order("created_at", { ascending: false }).limit(500),
   ]);
   if (orderError || lineError || requestError) throw orderError || lineError || requestError;
+  const customersByCode = await loadCustomers(admin, orders);
   const orderIds = new Set((orders || []).map((row) => text(row.id)));
   const relevantLines = (lines || []).filter((row) => orderIds.has(text(row.ordine_id)));
   const requestByOrder = new Map();
@@ -48,7 +66,7 @@ export async function listProductionWorkbench({ admin, diagnostics = [] }) {
     const orderDiagnostics = diagnostics.filter((row) => [row.workspaceCommercialOctId, row.entityId].map(text).includes(text(order.id)));
     return {
       id: order.id, label: octLabel(order), sigla: order.mexal_sigla, serie: order.mexal_serie, numero: order.mexal_numero,
-      customer: order.ragione_sociale_cliente || order.mexal_cod_conto || order.codice_cliente || "—",
+      customer: customerName(order, customersByCode),
       orderDate: order.data_ordine, deliveryDate: order.data_consegna,
       sourceTimestamp: order.updated_at || order.mexal_sincronizzato_il || order.created_at,
       status: request?.workspace_status || request?.stato || order.stato || "DA_VALUTARE", stage: requestStage(request),
@@ -79,6 +97,7 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
     admin.from("ordini_righe").select("*").in("ordine_id", relatedOrderIds).order("mexal_posizione"),
   ]);
   if (ordersError || linesError) throw ordersError || linesError;
+  const customersByCode = await loadCustomers(admin, orders);
   let proposals = [];
   if (request) {
     const result = await admin.from("workspace_production_proposals").select("*").eq("production_request_id", request.id).order("production_index");
@@ -121,7 +140,7 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
     return previous && text(previous.requestedDeliveryDate) !== text(order.data_consegna);
   });
   return {
-    orders: (orders || []).map((order) => ({ id: order.id, label: octLabel(order), customer: order.ragione_sociale_cliente || order.mexal_cod_conto || order.codice_cliente, orderDate: order.data_ordine, deliveryDate: order.data_consegna })),
+    orders: (orders || []).map((order) => ({ id: order.id, label: octLabel(order), customer: customerName(order, customersByCode), orderDate: order.data_ordine, deliveryDate: order.data_consegna })),
     request: request ? { ...request, stage: requestStage(request) } : null,
     revision: { modified: Boolean(sentSnapshot && (delta.added.length || delta.removed.length || delta.changed.length || deliveryChanged)), deliveryChanged, ...delta },
     lines: (lines || []).map((line) => {

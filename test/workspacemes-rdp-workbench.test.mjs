@@ -3,11 +3,12 @@ import test from "node:test";
 import { readFile } from "node:fs/promises";
 import { appendProgremesContext } from "../server/progremes-sso.js";
 
-const [ui, production, api, migration] = await Promise.all([
+const [ui, production, api, migration, workbench] = await Promise.all([
   readFile("src/pages/Production/RdpWorkbench.jsx", "utf8"),
   readFile("src/pages/Production/Production.jsx", "utf8"),
   readFile("api/mexal/automation.js", "utf8"),
   readFile("supabase/migrations/20260826170000_workspacemes_rdp_create_permission.sql", "utf8"),
+  readFile("server/workspacemes-workbench.js", "utf8"),
 ]);
 
 test("Workbench espone lista OCT, multi-select e stati operativi senza duplicare le schermate MES", () => {
@@ -33,10 +34,27 @@ test("deep link conserva solo contesto MES allow-listed", () => {
 });
 
 test("UI impedisce doppio click e separa dati commerciali da analisi MES", () => {
-  assert.match(ui, /if \(!preview \|\| busy\) return/);
+  assert.match(ui, /if \(!sendEnabled \|\| !preview \|\| busy\) return/);
   assert.match(ui, /disabled=\{busy\}/);
   assert.match(ui, /Dati commerciali OCT/);
   assert.match(ui, /Analisi produttiva MES/);
   for (const field of ["PhysicalQuantity", "CommittedQuantity", "FreeQuantity", "MissingQuantity", "ProducibleQuantity", "PlannableQuantity", "BlockCode"]) assert.match(ui, new RegExp(field));
   assert.match(ui, /OCT MODIFICATO IN MEXAL/);
+});
+
+test("UI disabilita preview e Crea RdP quando il gate Production non è ON", () => {
+  assert.match(ui, /productionGates\?\.allOn === true/);
+  assert.match(ui, /disabled=\{busy \|\| !sendEnabled\}/);
+  assert.match(ui, /Invio RdP Production non disponibile/);
+  assert.match(production, /Invio RdP Workspace/);
+  assert.match(production, /Gate Production/);
+});
+
+test("Workbench mostra la ragione sociale cliente e apre il dettaglio in un dialog visibile", () => {
+  assert.match(workbench, /ordini_clienti_cache/);
+  assert.match(workbench, /ragione_sociale/);
+  assert.match(workbench, /customerName\(order, customersByCode\)/);
+  assert.match(ui, /rdp-detail-backdrop/);
+  assert.match(ui, /role="dialog"/);
+  assert.match(ui, /aria-modal="true"/);
 });

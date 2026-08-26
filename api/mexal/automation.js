@@ -30,6 +30,7 @@ import { confirmProductionProposal, handleProductionEvent, previewProductionRequ
 import { createOctOrdersRunHandler, precheckOctOrders } from "../../server/mexal/sync-oct-orders.js";
 import { handleDigitalConnectionManager } from "../../server/crm/digital-connection-manager.js";
 import { listProductionWorkbench, productionWorkbenchDetail } from "../../server/workspacemes-workbench.js";
+import { productionGoLiveGates } from "../../server/workspace-production-gates.js";
 
 async function dispatchMessageNotification(req, body) {
   const token = String(req.headers.authorization || "").trim().replace(/^Bearer\s+/i, "");
@@ -548,8 +549,13 @@ export default async function handler(req, res) {
       }
       case "progremes_workbench_list": {
         const admin = await createAdmin(req, "rdp.view");
-        const diagnostics = await createProgremesClient().request("diagnostics").catch(() => []);
-        return sendSuccess(res, 200, await listProductionWorkbench({ admin: admin.supabase, diagnostics }));
+        const client = createProgremesClient();
+        const [diagnostics, health] = await Promise.all([
+          client.request("diagnostics").catch(() => []),
+          client.request("diagnostics-health").catch(() => null),
+        ]);
+        const workbench = await listProductionWorkbench({ admin: admin.supabase, diagnostics });
+        return sendSuccess(res, 200, { ...workbench, productionGates: productionGoLiveGates(health) });
       }
       case "progremes_workbench_detail": {
         const admin = await createAdmin(req, "rdp.view");

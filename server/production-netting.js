@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { authoritativeArticleUnit, resolveOctUnitOfMeasure } from "./mexal/unit-of-measure.js";
 
 const QUANTITY_SCALE = 6;
 const CONTRACT_VERSION = 2;
@@ -95,6 +96,12 @@ async function loadLines(admin, { orderIds, lineIds }) {
   const orders = rawOrders || [];
   if (orders.length !== sourceOrderIds.length || orders.some((order) => order.origine !== "mexal_oct"))
     throw Object.assign(new Error("La selezione contiene righe che non appartengono a OCT Mexal."), { code: "INVALID_OCT", status: 400 });
+  if (orders.some((order) => !text(order.mexal_cod_conto || order.codice_cliente)))
+    throw Object.assign(new Error("Uno o più OCT non hanno un riferimento cliente valido."), { code: "OCT_CUSTOMER_MISSING", status: 409 });
+  if (orders.some((order) => !text(order.data_ordine)))
+    throw Object.assign(new Error("Uno o più OCT non hanno una data ordine valida."), { code: "OCT_ORDER_DATE_MISSING", status: 409 });
+  if (orders.some((order) => !text(order.updated_at || order.created_at || order.mexal_sincronizzato_il)))
+    throw Object.assign(new Error("Uno o più OCT non hanno un timestamp sorgente auditabile."), { code: "OCT_SOURCE_TIMESTAMP_MISSING", status: 409 });
 
   const orderRank = new Map((selectedOrderIds.length ? selectedOrderIds : sourceOrderIds).map((id, index) => [id, index]));
   const lineRank = new Map(selectedLineIds.map((id, index) => [id, index]));
@@ -108,7 +115,7 @@ async function loadLines(admin, { orderIds, lineIds }) {
 
 async function loadProductUnit(admin, code) {
   const { data, error } = await admin.from("ordini_prodotti_cache")
-    .select("codice_articolo,unita_misura,sincronizzato_il")
+    .select("codice_articolo,unita_misura,sincronizzato_il,dati_mexal")
     .eq("codice_articolo", code)
     .maybeSingle();
   if (error) throw error;
@@ -130,6 +137,59 @@ function orderIdentity(order) {
     customerTechnicalReference: order.mexal_cod_conto || order.codice_cliente || null,
     orderDate: order.data_ordine,
     requestedDeliveryDate: order.data_consegna || null,
+    sourceTimestamp: order.updated_at || order.created_at || order.mexal_sincronizzato_il || null,
+  };
+}
+
+export function octVersionHash(order, items) {
+  return hash({
+    mexalKey: order.mexalKey,
+    sigla: order.sigla,
+    serie: order.serie,
+    numero: order.numero,
+    customerTechnicalReference: order.customerTechnicalReference,
+    orderDate: order.orderDate,
+    requestedDeliveryDate: order.requestedDeliveryDate,
+    lines: items.map((item) => ({
+      lineId: item.lineId,
+      position: item.mexalLinePosition,
+      articleCode: item.commercialArticleCode,
+      quantity: item.requestedQuantity,
+      octUnit: item.requestedUnitOfMeasure,
+      articleUnit: item.productionUnitOfMeasure,
+      conversion: item.conversion,
+      requestedDeliveryDate: item.requestedDeliveryDate,
+    })),
+  });
+}
+
+async function reserveOctRevisions(admin, demand, commit) {
+  const octs = demand.orders.map((order) => ({
+    orderId: order.orderId,
+    versionHash: order.versionHash,
+    sourceTimestamp: order.sourceTimestamp,
+  }));
+  const { data, error } = await admin.rpc("reserve_workspace_oct_contract_revisions", {
+    p_octs: octs,
+    p_commit: commit,
+  });
+  if (error) throw Object.assign(new Error(error.message), { code: "OCT_REVISION_RESERVATION_FAILED", status: 500 });
+  const rows = Array.isArray(data) ? data : [];
+  if (rows.length !== demand.orders.length)
+    throw Object.assign(new Error("Revisioni OCT non confermate dal database."), { code: "OCT_REVISION_RESERVATION_FAILED", status: 500 });
+  const byOrder = new Map(rows.map((row) => [text(row.order_id), row]));
+  return {
+    ...demand,
+    orders: demand.orders.map((order) => {
+      const revision = byOrder.get(text(order.orderId));
+      if (!revision || Number(revision.commercial_revision) <= 0)
+        throw Object.assign(new Error("Revisione OCT non valida."), { code: "OCT_REVISION_RESERVATION_FAILED", status: 500 });
+      return {
+        ...order,
+        commercialRevision: Number(revision.commercial_revision),
+        sourceTimestamp: revision.source_timestamp || order.sourceTimestamp,
+      };
+    }),
   };
 }
 
@@ -142,10 +202,17 @@ export async function buildProductionDemand({ admin, orderIds = [], lineIds = []
     const line = lines[index];
     const code = upper(line.codice_articolo);
     if (!catalogs.has(code)) catalogs.set(code, await loadProductUnit(admin, code));
+    const product = catalogs.get(code);
+    const productUnitOfMeasure = authoritativeArticleUnit(product) || authoritativeArticleUnit(product?.dati_mexal);
+    const resolvedOctUnit = resolveOctUnitOfMeasure({
+      explicitUnit: line.unita_misura_oct,
+      mexalUnitType: line.tipo_unita_misura_mexal,
+      article: { unita_misura: productUnitOfMeasure },
+    });
     const quantity = prepareDemandQuantity({
       requestedQuantity: line.quantita,
-      lineUnitOfMeasure: line.unita_misura_oct,
-      productUnitOfMeasure: catalogs.get(code)?.unita_misura,
+      lineUnitOfMeasure: resolvedOctUnit.unit,
+      productUnitOfMeasure,
       conversions,
     });
     const order = orderById.get(text(line.ordine_id));
@@ -161,15 +228,24 @@ export async function buildProductionDemand({ admin, orderIds = [], lineIds = []
       mappingStatus: "TO_RESOLVE_IN_MES",
       requestedQuantity: quantity.requestedQuantity,
       requestedUnitOfMeasure: quantity.requestedUnitOfMeasure,
+      requestedUnitSource: resolvedOctUnit.source,
       productionQuantity: quantity.productionQuantity,
       productionUnitOfMeasure: quantity.productionUnitOfMeasure,
       conversion: quantity.conversion,
       requestedDeliveryDate: line.data_consegna || order.data_consegna || null,
     });
   }
-  const orderIdsInDemand = unique(items.map((item) => item.orderId));
-  const orders = orderIdsInDemand.map((id) => orderIdentity(orderById.get(id)));
-  return { contractVersion: CONTRACT_VERSION, orders, items };
+  const canonicalItems = items
+    .sort((left, right) => text(left.orderId).localeCompare(text(right.orderId)) ||
+      (Number(left.mexalLinePosition ?? Number.MAX_SAFE_INTEGER) - Number(right.mexalLinePosition ?? Number.MAX_SAFE_INTEGER)) ||
+      text(left.lineId).localeCompare(text(right.lineId)))
+    .map((item, index) => ({ ...item, itemIndex: index + 1 }));
+  const orderIdsInDemand = unique(canonicalItems.map((item) => item.orderId));
+  const orders = orderIdsInDemand.map((id) => {
+    const order = orderIdentity(orderById.get(id));
+    return { ...order, versionHash: octVersionHash(order, canonicalItems.filter((item) => item.orderId === id)) };
+  });
+  return { contractVersion: CONTRACT_VERSION, orders, items: canonicalItems };
 }
 
 export function productionDemandContract(demand) {
@@ -195,7 +271,8 @@ export async function prepareProductionDemand({
   expectedSnapshotId = null,
   requestedBy = null,
 }) {
-  const demand = await buildProductionDemand({ admin, orderIds, lineIds, conversions });
+  const builtDemand = await buildProductionDemand({ admin, orderIds, lineIds, conversions });
+  const demand = await reserveOctRevisions(admin, builtDemand, mode !== "preview");
   const capturedAt = new Date().toISOString();
   const stableDemand = productionDemandContract(demand);
   const demandHash = hash(stableDemand);
@@ -203,7 +280,14 @@ export async function prepareProductionDemand({
   const selectionIdentity = selectedOrderIds.length
     ? { kind: "orders", ids: [...selectedOrderIds].sort() }
     : { kind: "lines", ids: [...demand.items.map((item) => item.lineId)].sort() };
-  const idempotencyKey = `rdp:v2:${hash(selectionIdentity)}`;
+  const idempotencyKey = `rdp:v2:${hash({
+    selectionIdentity,
+    revisions: demand.orders.map((order) => ({
+      orderId: order.orderId,
+      commercialRevision: order.commercialRevision,
+      versionHash: order.versionHash,
+    })).sort((left, right) => text(left.orderId).localeCompare(text(right.orderId))),
+  })}`;
   const snapshot = {
     version: 2,
     kind: "MULTI_OCT_PRODUCTION_DEMAND",

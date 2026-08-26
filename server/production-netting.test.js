@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
   buildProductionDemand,
+  octVersionHash,
   prepareDemandQuantity,
   prepareProductionDemand,
   productionDemandContract,
@@ -11,8 +12,8 @@ import { previewProductionRequest, sendProductionRequest } from "./progremes-pro
 import { createProductionRequestSubmitter } from "../src/modules/orders/services/productionRequest.js";
 
 const ORDERS = [
-  { id: "00000000-0000-4000-8000-000000000101", origine: "mexal_oct", mexal_chiave: "OC+2+412", mexal_sigla: "OC", mexal_serie: 2, mexal_numero: 412, mexal_cod_conto: "C1", data_ordine: "2026-08-06", data_consegna: "2026-09-01" },
-  { id: "00000000-0000-4000-8000-000000000102", origine: "mexal_oct", mexal_chiave: "OC+2+430", mexal_sigla: "OC", mexal_serie: 2, mexal_numero: 430, mexal_cod_conto: "C2", data_ordine: "2026-08-07", data_consegna: "2026-09-02" },
+  { id: "00000000-0000-4000-8000-000000000101", origine: "mexal_oct", mexal_chiave: "OC+2+412", mexal_sigla: "OC", mexal_serie: 2, mexal_numero: 412, mexal_cod_conto: "C1", data_ordine: "2026-08-06", data_consegna: "2026-09-01", created_at: "2026-08-24T20:00:00Z" },
+  { id: "00000000-0000-4000-8000-000000000102", origine: "mexal_oct", mexal_chiave: "OC+2+430", mexal_sigla: "OC", mexal_serie: 2, mexal_numero: 430, mexal_cod_conto: "C2", data_ordine: "2026-08-07", data_consegna: "2026-09-02", created_at: "2026-08-24T20:00:00Z" },
 ];
 const LINES = [
   { id: "00000000-0000-4000-8000-000000000201", ordine_id: ORDERS[0].id, mexal_posizione: 10, codice_articolo: "PB0004", quantita: 10.25, unita_misura_oct: "PZ", data_consegna: "2026-08-30", riga_descrittiva: false },
@@ -40,21 +41,31 @@ function catalogQuery(catalogs) {
   return query;
 }
 
-function makeAdmin({ rpcResult, rpcError = null, onRpc = () => {}, onUpdate = () => {}, onProposal = () => {}, requestItems = [] } = {}) {
-  const catalogs = {
+function makeAdmin({ rpcResult, rpcError = null, onRpc = () => {}, onUpdate = () => {}, onProposal = () => {},
+  onResponseRpc = () => {},
+  onItemUpdate = () => {}, requestItems = [], lineRows = LINES, catalogRows = null } = {}) {
+  const catalogs = catalogRows || {
     PB0004: { codice_articolo: "PB0004", unita_misura: "PZ", sincronizzato_il: "2026-08-24T20:00:00Z" },
     PB0005: { codice_articolo: "PB0005", unita_misura: "KG", sincronizzato_il: "2026-08-24T20:00:00Z" },
   };
   return {
     from(table) {
-      if (table === "ordini_righe") return queryRows(LINES);
+      if (table === "ordini_righe") return queryRows(lineRows);
       if (table === "ordini_testate") return queryRows(ORDERS);
       if (table === "ordini_prodotti_cache") return catalogQuery(catalogs);
       if (table === "workspace_production_requests") return {
         update(value) { onUpdate(value); return { eq: async () => ({ error: null }) }; },
       };
       if (table === "workspace_production_request_items") {
-        const query = { select() { return query; }, async eq() { return { data: requestItems, error: null }; } };
+        let updateValue = null;
+        const query = {
+          select() { return query; },
+          update(value) { updateValue = value; return query; },
+          async eq() {
+            if (updateValue) { onItemUpdate(updateValue); return { error: null }; }
+            return { data: requestItems, error: null };
+          },
+        };
         return query;
       }
       if (table === "workspace_production_proposals") return { upsert: async (rows) => { onProposal(rows); return { error: null }; } };
@@ -62,6 +73,14 @@ function makeAdmin({ rpcResult, rpcError = null, onRpc = () => {}, onUpdate = ()
     },
     async rpc(name, args) {
       onRpc(name, args);
+      if (name === "reserve_workspace_oct_contract_revisions") {
+        return { data: args.p_octs.map((oct) => ({ order_id: oct.orderId, commercial_revision: 1,
+          version_hash: oct.versionHash, source_timestamp: oct.sourceTimestamp || "2026-08-24T20:00:00Z" })), error: null };
+      }
+      if (name === "record_workspace_production_v2_response") {
+        onResponseRpc(args);
+        return { data: null, error: null };
+      }
       return { data: rpcResult ?? [{ request_id: null, external_id: null, snapshot_id: 12, snapshot_hash: "snapshot-hash", snapshot_captured_at: "2026-08-24T20:00:00Z", reused: false, attempt_count: 0 }], error: rpcError };
     },
   };
@@ -86,6 +105,20 @@ test("quantità OCT decimali sono preservate integralmente e non nettificate", (
 test("UDM incoerente blocca senza conversione autorevole", () => {
   assert.throws(() => prepareDemandQuantity({ requestedQuantity: 2, lineUnitOfMeasure: "CF", productUnitOfMeasure: "PZ" }), { code: "UOM_MISMATCH" });
   assert.throws(() => prepareDemandQuantity({ requestedQuantity: 2, lineUnitOfMeasure: null, productUnitOfMeasure: "PZ" }), { code: "OCT_UOM_MISSING" });
+});
+
+test("tp_um_articolo 1 risolve la UDM principale reale senza fallback arbitrario", async () => {
+  const line = { ...LINES[0], unita_misura_oct: null, tipo_unita_misura_mexal: "1" };
+  const demand = await buildProductionDemand({
+    admin: makeAdmin({
+      lineRows: [line],
+      catalogRows: { PB0004: { codice_articolo: "PB0004", unita_misura: null, dati_mexal: { um_principale: "PZ" } } },
+    }),
+    lineIds: [line.id],
+  });
+  assert.equal(demand.items[0].requestedUnitOfMeasure, "PZ");
+  assert.equal(demand.items[0].productionUnitOfMeasure, "PZ");
+  assert.equal(demand.items[0].requestedUnitSource, "MEXAL_PRIMARY_ARTICLE_UNIT");
 });
 
 test("conversione esplicita preserva quantità originale e fonte tecnica", () => {
@@ -138,13 +171,13 @@ test("preview registra solo snapshot della domanda e non crea una RdP", async ()
 
 test("invio usa stessa RdP, schema v2 e quantità OCT complete", async () => {
   let outbound;
-  let update;
+  let responseRpc;
   const recorder = responseRecorder();
   const requestId = "00000000-0000-4000-8000-000000000401";
   const externalId = "00000000-0000-4000-8000-000000000402";
   const admin = makeAdmin({
     rpcResult: [{ request_id: requestId, external_id: externalId, snapshot_id: 12, snapshot_hash: "snapshot-hash", snapshot_captured_at: "2026-08-24T20:00:00Z", reused: true, attempt_count: 1 }],
-    onUpdate: (value) => { update = value; },
+    onResponseRpc: (args) => { responseRpc = args; },
   });
   const client = {
     requestEnabled: () => true,
@@ -152,13 +185,15 @@ test("invio usa stessa RdP, schema v2 e quantità OCT complete", async () => {
   };
   await sendProductionRequest({ method: "POST", body: { orderIds: ORDERS.map((order) => order.id), snapshotId: 12 } }, recorder.response, { admin, client });
   assert.equal(recorder.value.status, 200);
-  assert.equal(outbound.schemaVersion, 2);
-  assert.equal(outbound.requestType, "MULTI_OCT_PRODUCTION_DEMAND");
-  assert.equal(outbound.items.length, 3);
-  assert.deepEqual(outbound.items.map((item) => item.requested.value), [10.25, 3.5, 4]);
-  assert.equal(outbound.availabilityOwner, "PROGREMES");
+  assert.equal(outbound.contractVersion, 2);
+  assert.equal(outbound.octs.length, 2);
+  assert.equal(outbound.octs.flatMap((oct) => oct.lines).length, 3);
+  assert.deepEqual(outbound.octs.flatMap((oct) => oct.lines).map((item) => item.quantity), [10.25, 3.5, 4]);
+  assert.deepEqual(outbound.octs.map((oct) => oct.commercialRevision), [1, 1]);
   assert.equal(JSON.stringify(outbound).includes("availableFinishedProduct"), false);
-  assert.equal(update.sent_demand_snapshot_id, 12);
+  assert.equal(responseRpc.p_request_id, requestId);
+  assert.equal(responseRpc.p_snapshot_id, 12);
+  assert.equal(responseRpc.p_payload_hash, "payload-hash");
 });
 
 test("snapshot cambiato tra preview e invio blocca prima della chiamata MES", async () => {
@@ -210,6 +245,53 @@ test("proposta MES viene persistita con collegamento alla riga OCT originaria", 
   assert.equal(proposals.length, 1);
   assert.equal(proposals[0].item_external_key, key);
   assert.equal(proposals[0].production_request_item_id, "00000000-0000-4000-8000-000000000501");
+});
+
+test("ordine della selezione non cambia domanda canonica o chiave idempotente", async () => {
+  const calls = [];
+  const admin = makeAdmin({ onRpc: (name, args) => {
+    if (name === "record_workspace_production_demand") calls.push(args);
+  } });
+  const first = await prepareProductionDemand({ admin, orderIds: [ORDERS[1].id, ORDERS[0].id], mode: "preview" });
+  const second = await prepareProductionDemand({ admin, orderIds: [ORDERS[0].id, ORDERS[1].id], mode: "preview" });
+  assert.deepEqual(first.demand, second.demand);
+  assert.equal(calls[0].p_idempotency_key, calls[1].p_idempotency_key);
+  assert.equal(calls[0].p_demand_hash, calls[1].p_demand_hash);
+});
+
+test("version hash OCT è stabile e cambia con quantità o UDM", () => {
+  const order = { mexalKey: "OC+2+412", sigla: "OC", serie: 2, numero: 412, customerTechnicalReference: "C1",
+    orderDate: "2026-08-06", requestedDeliveryDate: "2026-09-01" };
+  const item = { lineId: LINES[0].id, mexalLinePosition: 10, commercialArticleCode: "PB0004",
+    requestedQuantity: 10.25, requestedUnitOfMeasure: "PZ", productionUnitOfMeasure: "PZ", conversion: null,
+    requestedDeliveryDate: "2026-09-01" };
+  assert.equal(octVersionHash(order, [item]), octVersionHash(order, [{ ...item }]));
+  assert.notEqual(octVersionHash(order, [item]), octVersionHash(order, [{ ...item, requestedQuantity: 11 }]));
+  assert.notEqual(octVersionHash(order, [item]), octVersionHash(order, [{ ...item, requestedUnitOfMeasure: "KG" }]));
+});
+
+test("analisi RdP v2 viene riconciliata sulla riga OCT senza creare OdP", async () => {
+  let responseRpc;
+  const recorder = responseRecorder();
+  const requestId = "00000000-0000-4000-8000-000000000401";
+  const admin = makeAdmin({
+    rpcResult: [{ request_id: requestId, external_id: "00000000-0000-4000-8000-000000000402", snapshot_id: 12,
+      snapshot_hash: "hash", reused: true, attempt_count: 0 }],
+    requestItems: [{ id: "00000000-0000-4000-8000-000000000501", ordine_riga_id: LINES[0].id }],
+    onResponseRpc: (args) => { responseRpc = args; },
+  });
+  const client = {
+    requestEnabled: () => true,
+    async sendRequest() {
+      return { result: { workspaceExternalId: "00000000-0000-4000-8000-000000000402", status: "AwaitingDecision",
+        productionMutationsEnabled: false, octs: [], analyses: [{ workspaceLineId: LINES[0].id, blockCode: "", requested: 10.25 }] },
+      payloadHash: "payload-hash" };
+    },
+  };
+  await sendProductionRequest({ method: "POST", body: { lineIds: [LINES[0].id] } }, recorder.response, { admin, client });
+  assert.equal(responseRpc.p_response.analyses[0].workspaceLineId, LINES[0].id);
+  assert.equal(responseRpc.p_request_id, requestId);
+  assert.equal(recorder.value.payload.productionMutationsEnabled, false);
 });
 
 test("conflitto idempotente viene restituito come errore controllato", async () => {
@@ -265,4 +347,22 @@ test("migration separa testata, righe e snapshot e non contiene nettificazione W
   assert.doesNotMatch(migration, /alter\s+column\s+ordine_(?:id|riga_id)\s+drop\s+not\s+null/i);
   assert.match(migration, /\(p_snapshot->'items'->0\)->>'orderId'/);
   assert.match(migration, /\(p_snapshot->'items'->0\)->>'lineId'/);
+});
+
+test("migration revisioni OCT è additiva, monotona e non modifica righe o cicli storici", () => {
+  const migration = fs.readFileSync(new URL("../supabase/migrations/20260826123000_workspacemes_rdp_v2_oct_revisions.sql", import.meta.url), "utf8");
+  assert.match(migration, /workspace_oct_contract_revisions/);
+  assert.match(migration, /pg_advisory_xact_lock/);
+  assert.match(migration, /v_current\.commercial_revision, 0\) \+ 1/);
+  assert.match(migration, /p_commit/);
+  assert.match(migration, /DUPLICATE_OCT_REVISION/);
+  assert.match(migration, /v_source_timestamp is null/);
+  assert.match(migration, /record_workspace_production_v2_response/);
+  assert.match(migration, /for update/);
+  assert.match(migration, /INCOMPLETE_MES_ANALYSIS/);
+  assert.match(migration, /DUPLICATE_MES_ANALYSIS/);
+  assert.match(migration, /productionMutationsEnabled/);
+  assert.doesNotMatch(migration, /\bdrop\b/i);
+  assert.doesNotMatch(migration, /update\s+public\.ordini_(?:testate|righe)/i);
+  assert.doesNotMatch(migration, /mexal_daily_(?:cycles|jobs)/i);
 });

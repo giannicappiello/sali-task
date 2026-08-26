@@ -19,35 +19,63 @@ export interface WorkspaceOctReference {
   customerTechnicalReference: string | null;
   orderDate: string;
   requestedDeliveryDate: string | null;
+  sourceTimestamp: string | null;
+  commercialRevision: number;
+  versionHash: string;
 }
 
 export interface WorkspaceProductionDemandItem {
   itemIndex: number;
   itemExternalKey: string;
-  oct: {
-    externalId: string;
-    lineExternalId: string;
-    mexalKey: string;
-    position: number | null;
-  };
+  orderId: string;
+  lineId: string;
+  mexalOrderKey: string;
+  mexalLinePosition: number | null;
   commercialArticleCode: string;
   productionArticleCode: string | null;
   mappingStatus: "TO_RESOLVE_IN_MES" | "RESOLVED";
-  requested: { value: number; unitOfMeasure: string };
-  requestedInProductionUnit: { value: number; unitOfMeasure: string };
+  requestedQuantity: number;
+  requestedUnitOfMeasure: string;
+  requestedUnitSource: "OCT_EXPLICIT" | "MEXAL_PRIMARY_ARTICLE_UNIT";
+  productionQuantity: number;
+  productionUnitOfMeasure: string;
   conversion: { from: string; to: string; factor: number; source: string } | null;
   requestedDeliveryDate: string | null;
 }
 
 export interface WorkspaceProductionRequestPayload {
-  schemaVersion: 2;
-  externalId: string;
-  requestType: "MULTI_OCT_PRODUCTION_DEMAND";
+  contractVersion: 2;
+  workspaceExternalId: string;
   idempotencyKey: string;
-  availabilityOwner: "PROGREMES";
-  demandSnapshot: { id: number; hash: string; capturedAt: string };
-  orders: WorkspaceOctReference[];
-  items: WorkspaceProductionDemandItem[];
+  timestamp: string;
+  requestedBy: string;
+  octs: Array<{
+    workspaceOctId: string;
+    mexalExternalId: string;
+    sigla: string;
+    serie: string;
+    numero: string;
+    customerReference: string;
+    orderDate: string;
+    requestedDeliveryDate: string | null;
+    commercialRevision: number;
+    versionHash: string;
+    sourceTimestamp: string;
+    lines: Array<{
+      workspaceLineId: string;
+      mexalPosition: string;
+      isDescriptive: boolean;
+      commercialArticleCode: string;
+      quantity: number;
+      octUom: string;
+      articleUom: string;
+      authoritativeConversionFactor: number | null;
+      conversionSource: string | null;
+      requestedDate: string | null;
+      priority: number | null;
+      idempotencyKey: string;
+    }>;
+  }>;
 }
 
 export interface WorkspaceProductionProposalDto {

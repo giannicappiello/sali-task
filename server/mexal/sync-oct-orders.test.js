@@ -127,7 +127,7 @@ async function runReadonlyPrecheck() {
   const calls = [];
   const supabase = readonlySupabase({
     prodotti: [{ id: "product-pb0004", codice_mexal: "PB0004", attivo_mexal: true, mostra_in_app: true, sincronizzato_mexal: true, linea_mexal: "Standard" }],
-    ordini_prodotti_cache: [{ codice_articolo: "PB0004" }],
+    ordini_prodotti_cache: [{ codice_articolo: "PB0004", unita_misura: null, dati_mexal: { um_principale: "PZ" } }],
     ordini_testate: [{ id: "order-2-412", origine: "mexal_oct", mexal_sigla: "OC", mexal_serie: 2, mexal_numero: 412, mexal_chiave: "OC+2+412" }],
     ordini_righe: [
       { id: "line-1", ordine_id: "order-2-412", mexal_posizione: 1 },
@@ -271,7 +271,7 @@ test("articolo dismesso assente dalla cache segue la stessa diagnostica fail-clo
 
 function writableSupabase() {
   const state = {
-    ordini_prodotti_cache: [{ codice_articolo: "PB0004" }],
+    ordini_prodotti_cache: [{ codice_articolo: "PB0004", unita_misura: null, dati_mexal: { um_principale: "PZ" } }],
     ordini_clienti_cache: [{ codice_cliente: "C1" }],
     ordini_testate: [],
     ordini_righe: [],
@@ -323,7 +323,7 @@ function mixedImportMexal() {
   const document = {
     sigla: "OC", cod_modulo: "T", serie: 2, numero: 500, cod_conto: "C1",
     righe: [
-      { id_riga: 1, tp_riga: "R", codice_articolo: "PB0004", quantita: 2 },
+      { id_riga: 1, tp_riga: "R", codice_articolo: "PB0004", quantita: 2, tp_um_articolo: "1" },
       { id_riga: 2, tp_riga: "R", codice_articolo: "IT0064", quantita: 3 },
       { id_riga: 3, tp_riga: "D", descr_riga: "Nota auditabile" },
     ],
@@ -352,6 +352,7 @@ test("import misto conserva record validi e descrittivi, telemetra l'anomalo e n
   assert.equal(result.anomaly_count, 1);
   assert.equal(result.anomalies[0].article_code, "IT0064");
   assert.deepEqual(supabase.state.ordini_righe.map((row) => row.codice_articolo), ["PB0004", null]);
+  assert.equal(supabase.state.ordini_righe[0].unita_misura_oct, "PZ");
   assert.ok(supabase.state.ordini_righe.every((row) => row.riga_descrittiva || row.codice_articolo === "PB0004"));
 });
 

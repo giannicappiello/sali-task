@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { checkpointSyncRunProgress, completeSyncRun, createSyncRun as createCentralSyncRun, failSyncRun, failSyncRunUnlessClosed, findRunningSync, getSyncRun as getCentralSyncRun, isSyncRunClosedError } from "./lib/syncRuns.js";
 import { shouldReplayStockCheckpoint, stockBatchCheckpoint, stockRunState, stockUpdateDiagnostics } from "./lib/stockRunState.js";
 import { withTransientMexalRetry } from "./lib/transientRetry.js";
+import { authoritativeArticleUnit } from "./unit-of-measure.js";
 
 const STORAGE_BUCKET = "prodotti-mexal";
 export const PRODUCT_UI_PREFIXES = ["IT", "MKT"];
@@ -848,7 +849,7 @@ export function mapArticleToOrdersCache(article, { imageUrl = null } = {}) {
     descrizione: buildName(article) || code,
     descrizione_completa: nullableText(article.descr_completa),
     codice_alternativo: nullableText(article.cod_alternativo),
-    unita_misura: nullableText(article.unita_misura, article.um, article.unita),
+    unita_misura: authoritativeArticleUnit(article),
     codice_iva_mexal: vat.code,
     aliquota_iva: vat.rate,
     categoria_sconto: nullableInteger(

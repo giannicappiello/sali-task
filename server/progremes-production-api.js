@@ -72,11 +72,14 @@ export async function sendProductionRequest(req, res, {
     throw error;
   }
   const { result, payloadHash } = sent;
-  const { error: requestUpdateError } = await admin.from("workspace_production_requests").update({ payload_hash: payloadHash, stato: result.status,
-    workspace_status: result.workspaceStatus, attempt_count: prepared.request.attempt_count + 1,
-    sent_demand_snapshot_id: prepared.snapshot.id, last_response: result, last_error_code: null,
-    updated_at: new Date().toISOString() }).eq("id", prepared.request.id);
-  if (requestUpdateError) throw requestUpdateError;
+  const { error: responseError } = await admin.rpc("record_workspace_production_v2_response", {
+    p_request_id: prepared.request.id,
+    p_payload_hash: payloadHash,
+    p_snapshot_id: prepared.snapshot.id,
+    p_response: result,
+  });
+  if (responseError)
+    throw Object.assign(new Error("Risposta ProgreMES non registrata atomicamente."), { code: "MES_RESPONSE_PERSIST_FAILED", cause: responseError });
   if (Array.isArray(result.proposals) && result.proposals.length) {
     const { data: requestItems, error: requestItemsError } = await admin.from("workspace_production_request_items")
       .select("id,item_external_key").eq("production_request_id", prepared.request.id);

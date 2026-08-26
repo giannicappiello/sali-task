@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import process from "node:process";
 import { HMAC_HEADERS, signProductionMessage } from "./progremes-production-hmac.js";
 
-const REQUEST_PATH = "/api/workspace/v1/production-order-requests";
+const REQUEST_PATH = "/api/workspace/v2/production-requests";
 const CONFIRM_PATH = (id) => `/api/workspace/v1/production-proposals/${id}/confirmations`;
 
 function required(name, env) {
@@ -12,36 +12,103 @@ function required(name, env) {
 }
 function enabled(name, env) { return String(env[name] || "").trim().toLowerCase() === "true"; }
 function hash(body) { return createHash("sha256").update(body).digest("hex"); }
+function text(value) { return String(value ?? "").trim(); }
+function positive(value) { return Number.isFinite(Number(value)) && Number(value) > 0; }
+function nonNegative(value) { return Number.isFinite(Number(value)) && Number(value) >= 0; }
 
 export function createProductionPayload({ request, snapshot, demand }) {
-  if (!request?.external_id || !snapshot?.id || !Array.isArray(demand?.items) || !demand.items.length)
+  if (!request?.external_id || !request?.idempotency_key || !snapshot?.id || !snapshot?.capturedAt ||
+      !Array.isArray(demand?.orders) || !demand.orders.length || !Array.isArray(demand?.items) || !demand.items.length)
     throw new Error("Domanda RdP multi-OCT incompleta.");
+  const itemsByOrder = new Map();
+  for (const item of demand.items) {
+    if (!item?.orderId || !item.lineId || !item.commercialArticleCode || !positive(item.requestedQuantity) ||
+        !item.requestedUnitOfMeasure || !item.productionUnitOfMeasure ||
+        ((item.mexalLinePosition === null || item.mexalLinePosition === undefined) && !item.itemIndex))
+      throw new Error("Riga OCT incompleta nel payload RdP v2.");
+    const values = itemsByOrder.get(item.orderId) || [];
+    values.push(item);
+    itemsByOrder.set(item.orderId, values);
+  }
+  const orderIds = new Set();
+  const lineIds = new Set();
+  for (const order of demand.orders || []) {
+    if (!order?.orderId || !order.mexalKey || !order.sigla || order.serie === null || order.serie === undefined ||
+        order.numero === null || order.numero === undefined || !order.customerTechnicalReference || !order.orderDate ||
+        !order.sourceTimestamp || !Number.isSafeInteger(order.commercialRevision) || order.commercialRevision <= 0 ||
+        !/^[0-9a-f]{64}$/.test(String(order.versionHash || "")) || !(itemsByOrder.get(order.orderId)?.length))
+      throw new Error("Identità o revisione OCT incompleta nel payload RdP v2.");
+    if (orderIds.has(order.orderId)) throw new Error("OCT duplicato nel payload RdP v2.");
+    orderIds.add(order.orderId);
+    for (const item of itemsByOrder.get(order.orderId)) {
+      if (lineIds.has(item.lineId)) throw new Error("Riga OCT duplicata nel payload RdP v2.");
+      lineIds.add(item.lineId);
+    }
+  }
+  if (orderIds.size !== itemsByOrder.size)
+    throw new Error("Una o più righe OCT non appartengono agli OCT dichiarati.");
   return {
-    schemaVersion: 2,
-    externalId: request.external_id,
-    requestType: "MULTI_OCT_PRODUCTION_DEMAND",
+    contractVersion: 2,
+    workspaceExternalId: request.external_id,
     idempotencyKey: request.idempotency_key,
-    demandSnapshot: { id: snapshot.id, hash: snapshot.hash, capturedAt: snapshot.capturedAt },
-    availabilityOwner: "PROGREMES",
-    orders: demand.orders,
-    items: demand.items.map((item) => ({
-      itemIndex: item.itemIndex,
-      itemExternalKey: item.itemExternalKey,
-      oct: {
-        externalId: item.orderId,
-        lineExternalId: item.lineId,
-        mexalKey: item.mexalOrderKey,
-        position: item.mexalLinePosition,
-      },
-      commercialArticleCode: item.commercialArticleCode,
-      productionArticleCode: item.productionArticleCode,
-      mappingStatus: item.mappingStatus,
-      requested: { value: item.requestedQuantity, unitOfMeasure: item.requestedUnitOfMeasure },
-      requestedInProductionUnit: { value: item.productionQuantity, unitOfMeasure: item.productionUnitOfMeasure },
-      conversion: item.conversion,
-      requestedDeliveryDate: item.requestedDeliveryDate,
+    timestamp: snapshot.capturedAt,
+    requestedBy: snapshot.requestedBy || "workspace",
+    octs: demand.orders.map((order) => ({
+      workspaceOctId: order.orderId,
+      mexalExternalId: order.mexalKey,
+      sigla: order.sigla,
+      serie: String(order.serie),
+      numero: String(order.numero),
+      customerReference: order.customerTechnicalReference,
+      orderDate: order.orderDate,
+      requestedDeliveryDate: order.requestedDeliveryDate,
+      commercialRevision: order.commercialRevision,
+      versionHash: order.versionHash,
+      sourceTimestamp: order.sourceTimestamp || snapshot.capturedAt,
+      lines: (itemsByOrder.get(order.orderId) || []).map((item) => ({
+        workspaceLineId: item.lineId,
+        mexalPosition: String(item.mexalLinePosition ?? item.itemIndex),
+        isDescriptive: false,
+        commercialArticleCode: item.commercialArticleCode,
+        quantity: item.requestedQuantity,
+        octUom: item.requestedUnitOfMeasure,
+        articleUom: item.productionUnitOfMeasure,
+        authoritativeConversionFactor: item.conversion?.factor ?? null,
+        conversionSource: item.conversion?.source ?? null,
+        requestedDate: item.requestedDeliveryDate,
+        priority: null,
+        idempotencyKey: `${request.idempotency_key}:${item.lineId}:${order.commercialRevision}`,
+      })),
     })),
   };
+}
+
+export function validateProductionResponse(result, payload) {
+  if (!result || typeof result !== "object" || Array.isArray(result) ||
+      text(result.workspaceExternalId) !== text(payload.workspaceExternalId) || !text(result.status) ||
+      result.productionMutationsEnabled !== false || !Array.isArray(result.octs) || !Array.isArray(result.analyses))
+    throw Object.assign(new Error("Risposta RdP v2 di ProgreMES non valida."), { code: "INVALID_MES_RESPONSE" });
+  const expectedOcts = new Map(payload.octs.map((oct) => [text(oct.workspaceOctId), oct]));
+  if (result.octs.length !== expectedOcts.size)
+    throw Object.assign(new Error("Risposta RdP v2 incompleta per gli OCT inviati."), { code: "INVALID_MES_RESPONSE" });
+  for (const oct of result.octs) {
+    const expected = expectedOcts.get(text(oct.workspaceOctId));
+    if (!expected || Number(oct.revision) !== expected.commercialRevision || text(oct.versionHash) !== expected.versionHash)
+      throw Object.assign(new Error("Risposta RdP v2 non riconciliabile con la revisione OCT."), { code: "INVALID_MES_RESPONSE" });
+    expectedOcts.delete(text(oct.workspaceOctId));
+  }
+  const expectedLines = new Set(payload.octs.flatMap((oct) => oct.lines.map((line) => text(line.workspaceLineId))));
+  if (result.analyses.length !== expectedLines.size)
+    throw Object.assign(new Error("Risposta RdP v2 incompleta per le righe OCT inviate."), { code: "INVALID_MES_RESPONSE" });
+  for (const analysis of result.analyses) {
+    const lineId = text(analysis?.workspaceLineId);
+    if (!expectedLines.delete(lineId) || !text(analysis?.snapshotHash) || typeof analysis?.blockCode !== "string" ||
+        !positive(analysis?.requested) || typeof analysis?.materialCovered !== "boolean" ||
+        !["physical", "committed", "free", "incoming", "missing", "producible", "plannable"]
+          .every((field) => nonNegative(analysis?.[field])))
+      throw Object.assign(new Error("Analisi RdP v2 non riconciliabile con le righe OCT."), { code: "INVALID_MES_RESPONSE" });
+  }
+  return result;
 }
 
 export function createProgremesProductionClient({ env = process.env, fetchImpl = fetch, now = () => Date.now() } = {}) {
@@ -51,7 +118,7 @@ export function createProgremesProductionClient({ env = process.env, fetchImpl =
     const secret = required("PROGREMES_INTEGRATION_SECRET", env);
     const body = JSON.stringify(payload);
     const timestamp = Math.floor(now() / 1000);
-    const eventId = payload.externalId;
+    const eventId = payload.workspaceExternalId || payload.externalId;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), Math.min(30_000, Math.max(1_000, Number(env.PROGREMES_API_TIMEOUT_MS) || 10_000)));
     try {
@@ -72,7 +139,10 @@ export function createProgremesProductionClient({ env = process.env, fetchImpl =
   return {
     requestEnabled: () => enabled("PROGREMES_PRODUCTION_REQUESTS_ENABLED", env),
     confirmationEnabled: () => enabled("PROGREMES_PRODUCTION_CONFIRMATIONS_ENABLED", env),
-    sendRequest: (payload) => call(REQUEST_PATH, payload),
+    sendRequest: async (payload) => {
+      const sent = await call(REQUEST_PATH, payload);
+      return { ...sent, result: validateProductionResponse(sent.result, payload) };
+    },
     confirmProposal: (proposalId, externalId = randomUUID()) => call(CONFIRM_PATH(proposalId), { schemaVersion: 1, externalId, proposalId }),
   };
 }

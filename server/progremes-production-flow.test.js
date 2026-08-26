@@ -3,7 +3,7 @@ import { Buffer } from "node:buffer";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { HMAC_HEADERS, signProductionMessage, verifyProductionMessage } from "./progremes-production-hmac.js";
-import { createProductionPayload, createProgremesProductionClient, REQUEST_PATH } from "./progremes-production-client.js";
+import { createProductionPayload, createProgremesProductionClient, validateProductionResponse, REQUEST_PATH } from "./progremes-production-client.js";
 import { createOctOrdersRunHandler, isOctDocument, normalizeOct } from "./mexal/sync-oct-orders.js";
 import { SYNC_TYPES } from "./mexal/lib/syncRuns.js";
 import { runRegisteredSync } from "./mexal/lib/syncRegistry.js";
@@ -20,16 +20,49 @@ test("HMAC autentica body e metadati esatti e rifiuta payload alterati", () => {
 
 test("client RdP riusa PROGREMES_URL e PROGREMES_INTEGRATION_SECRET, HTTPS e redirect error", async () => {
   let call;
+  const payload = {
+    contractVersion: 2,
+    workspaceExternalId: "00000000-0000-4000-8000-000000000001",
+    octs: [{ workspaceOctId: "00000000-0000-4000-8000-000000000101", commercialRevision: 1,
+      versionHash: "a".repeat(64), lines: [{ workspaceLineId: "00000000-0000-4000-8000-000000000201" }] }],
+  };
+  const analysis = { workspaceLineId: payload.octs[0].lines[0].workspaceLineId, snapshotHash: "snapshot", blockCode: "",
+    requested: 1, materialCovered: true, physical: 0, committed: 0, free: 0, incoming: 0, missing: 1, producible: 1, plannable: 1 };
   const client = createProgremesProductionClient({
     env: { PROGREMES_URL: "https://mes.example.test", PROGREMES_INTEGRATION_SECRET: "server-secret", PROGREMES_PRODUCTION_REQUESTS_ENABLED: "true" },
     now: () => 1_800_000_000_000,
-    fetchImpl: async (url, init) => { call = { url: String(url), init }; return { ok: true, json: async () => ({ status: "Ricevuta" }) }; },
+    fetchImpl: async (url, init) => { call = { url: String(url), init }; return { ok: true, json: async () => ({
+      workspaceExternalId: payload.workspaceExternalId, status: "Ricevuta", productionMutationsEnabled: false,
+      octs: [{ workspaceOctId: payload.octs[0].workspaceOctId, revision: 1, versionHash: "a".repeat(64) }], analyses: [analysis],
+    }) }; },
   });
-  await client.sendRequest({ schemaVersion: 1, externalId: "00000000-0000-4000-8000-000000000001" });
+  await client.sendRequest(payload);
   assert.equal(call.url, `https://mes.example.test${REQUEST_PATH}`);
   assert.equal(call.init.redirect, "error");
   assert.ok(call.init.headers[HMAC_HEADERS.signature]);
   assert.equal("authorization" in call.init.headers, false);
+});
+
+test("risposta RdP v2 deve riconciliare identità, revisioni e analisi complete", () => {
+  const payload = {
+    workspaceExternalId: "00000000-0000-4000-8000-000000000001",
+    octs: [{ workspaceOctId: "00000000-0000-4000-8000-000000000101", commercialRevision: 2,
+      versionHash: "b".repeat(64), lines: [{ workspaceLineId: "00000000-0000-4000-8000-000000000201" }] }],
+  };
+  const analysis = { workspaceLineId: payload.octs[0].lines[0].workspaceLineId, snapshotHash: "snapshot", blockCode: "",
+    requested: 4, materialCovered: false, physical: 0, committed: 0, free: 0, incoming: 0, missing: 4, producible: 4, plannable: 4 };
+  const response = { workspaceExternalId: payload.workspaceExternalId, status: "AwaitingDecision", productionMutationsEnabled: false,
+    octs: [{ workspaceOctId: payload.octs[0].workspaceOctId, revision: 2, versionHash: "b".repeat(64) }], analyses: [analysis] };
+  assert.equal(validateProductionResponse(response, payload), response);
+  for (const invalid of [
+    { ...response, workspaceExternalId: "00000000-0000-4000-8000-000000000999" },
+    { ...response, octs: [{ ...response.octs[0], revision: 3 }] },
+    { ...response, octs: [{ ...response.octs[0], versionHash: "c".repeat(64) }] },
+    { ...response, analyses: [] },
+    { ...response, analyses: [analysis, analysis] },
+    { ...response, analyses: [{ ...analysis, free: -1 }] },
+    { ...response, productionMutationsEnabled: true },
+  ]) assert.throws(() => validateProductionResponse(invalid, payload), { code: "INVALID_MES_RESPONSE" });
 });
 
 test("tutte le mutazioni restano disabilitate se i flag non esistono", () => {
@@ -132,21 +165,38 @@ test("run_now/oct_orders è registrato, resta OFF e non importa OCM/OCX/OCI", as
 test("payload RdP multi-OCT conserva la domanda completa e non espone logica tecnica MES", () => {
   const payload = createProductionPayload({
     request: { external_id: "r", idempotency_key: "rdp:v2:key" },
-    snapshot: { id: 12, hash: "hash", capturedAt: "2026-08-24T20:00:00.000Z" },
+    snapshot: { id: 12, hash: "hash", capturedAt: "2026-08-24T20:00:00.000Z", requestedBy: "operator" },
     demand: {
-      orders: [{ orderId: "o", mexalKey: "OC+2+412", sigla: "OC", serie: 2, numero: 412 }],
-      items: [{ itemIndex: 1, itemExternalKey: "OC+2+412:10", orderId: "o", lineId: "l", mexalOrderKey: "OC+2+412", mexalLinePosition: 10,
+      orders: [{ orderId: "00000000-0000-4000-8000-000000000101", mexalKey: "OC+2+412", sigla: "OC", serie: 2, numero: 412,
+        customerTechnicalReference: "C1", orderDate: "2026-08-06", requestedDeliveryDate: "2026-09-01",
+        commercialRevision: 1, versionHash: "a".repeat(64), sourceTimestamp: "2026-08-24T20:00:00.000Z" }],
+      items: [{ itemIndex: 1, itemExternalKey: "OC+2+412:10", orderId: "00000000-0000-4000-8000-000000000101",
+        lineId: "00000000-0000-4000-8000-000000000201", mexalOrderKey: "OC+2+412", mexalLinePosition: 10,
         commercialArticleCode: "PB0004", productionArticleCode: null, mappingStatus: "TO_RESOLVE_IN_MES", requestedQuantity: 7000,
         requestedUnitOfMeasure: "PZ", productionQuantity: 7000, productionUnitOfMeasure: "PZ", conversion: null, requestedDeliveryDate: "2026-09-01" }],
     },
   });
-  assert.deepEqual(Object.keys(payload), ["schemaVersion", "externalId", "requestType", "idempotencyKey", "demandSnapshot", "availabilityOwner", "orders", "items"]);
-  assert.equal(payload.schemaVersion, 2);
-  assert.equal(payload.items[0].requested.value, 7000);
-  assert.equal(payload.availabilityOwner, "PROGREMES");
+  assert.deepEqual(Object.keys(payload), ["contractVersion", "workspaceExternalId", "idempotencyKey", "timestamp", "requestedBy", "octs"]);
+  assert.equal(payload.contractVersion, 2);
+  assert.equal(payload.octs[0].lines[0].quantity, 7000);
+  assert.equal(payload.octs[0].commercialRevision, 1);
   assert.equal(JSON.stringify(payload).includes("availableFinishedProduct"), false);
   assert.equal(JSON.stringify(payload).includes("formula"), false);
   assert.equal(JSON.stringify(payload).includes("lotto"), false);
+});
+
+test("payload RdP v2 rifiuta OCT, righe duplicate e righe orfane", () => {
+  const request = { external_id: "r", idempotency_key: "rdp:v2:key" };
+  const snapshot = { id: 12, capturedAt: "2026-08-24T20:00:00.000Z" };
+  const order = { orderId: "00000000-0000-4000-8000-000000000101", mexalKey: "OC+2+412", sigla: "OC", serie: 2, numero: 412,
+    customerTechnicalReference: "C1", orderDate: "2026-08-06", commercialRevision: 1, versionHash: "a".repeat(64),
+    sourceTimestamp: "2026-08-24T20:00:00.000Z" };
+  const item = { itemIndex: 1, orderId: order.orderId, lineId: "00000000-0000-4000-8000-000000000201", mexalLinePosition: 10,
+    commercialArticleCode: "PB0004", requestedQuantity: 1, requestedUnitOfMeasure: "PZ", productionUnitOfMeasure: "PZ" };
+  assert.throws(() => createProductionPayload({ request, snapshot, demand: { orders: [order, order], items: [item] } }), /OCT duplicato/);
+  assert.throws(() => createProductionPayload({ request, snapshot, demand: { orders: [order], items: [item, item] } }), /Riga OCT duplicata/);
+  assert.throws(() => createProductionPayload({ request, snapshot, demand: { orders: [order], items: [item, { ...item,
+    lineId: "00000000-0000-4000-8000-000000000299", orderId: "00000000-0000-4000-8000-000000000999" }] } }), /non appartengono/);
 });
 
 test("guard-rail outbound e rewrite evento sono specifici", () => {

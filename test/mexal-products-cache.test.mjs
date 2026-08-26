@@ -53,6 +53,10 @@ const cacheColumns = [
 ];
 assert.deepEqual(Object.keys(cacheRow).sort(), [...cacheColumns].sort(), "cache payload contains only real columns");
 assert.equal(cacheRow.codice_articolo, "IT0001");
+assert.equal(mapArticleToOrdersCache({ codice: "IT0003", um_principale: " pz " }).unita_misura, "PZ",
+  "the real Mexal um_principale field is authoritative for the order cache");
+assert.equal(mapArticleToOrdersCache({ codice: "IT0004", unita_misura: "", um_principale: " pz " }).unita_misura, "PZ",
+  "an empty alias does not hide the authoritative Mexal primary unit");
 assert.equal(cacheRow.descrizione, "Articolo testcompleto");
 assert.equal(cacheRow.codice_iva_mexal, "22,0", "VAT code comes from the real alq_iva detail field");
 assert.equal(cacheRow.aliquota_iva, 22, "VAT percentage is parsed from alq_iva");

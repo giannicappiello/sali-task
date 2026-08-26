@@ -1,4 +1,5 @@
 import process from "node:process";
+import { authoritativeArticleUnit, resolveOctUnitOfMeasure } from "./unit-of-measure.js";
 function text(value) { return String(value ?? "").trim(); }
 function upper(value) { return text(value).toUpperCase(); }
 function number(value) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : null; }
@@ -180,17 +181,34 @@ function orderArticleCodes(documents) {
     .map((line) => text(line.codice_articolo)))];
 }
 
-async function readAvailableOrderArticleCodes(supabase, documents) {
+async function readAvailableOrderArticleCatalog(supabase, documents) {
   const articleCodes = orderArticleCodes(documents);
-  if (!articleCodes.length) return new Set();
+  if (!articleCodes.length) return new Map();
   const rows = await selectInChunks({
     supabase,
     table: "ordini_prodotti_cache",
-    columns: "codice_articolo",
+    columns: "codice_articolo,unita_misura,dati_mexal",
     column: "codice_articolo",
     values: articleCodes,
   });
-  return new Set(rows.map((row) => text(row.codice_articolo)).filter(Boolean));
+  return new Map(rows.map((row) => [text(row.codice_articolo), row]).filter(([code]) => code));
+}
+
+function resolveDocumentUnits(document, catalog) {
+  return {
+    ...document,
+    lines: document.lines.map((line) => {
+      if (line.riga_descrittiva || line.unita_misura_oct) return line;
+      const article = catalog.get(text(line.codice_articolo));
+      const primaryUnit = authoritativeArticleUnit(article) || authoritativeArticleUnit(article?.dati_mexal);
+      const resolved = resolveOctUnitOfMeasure({
+        explicitUnit: line.unita_misura_oct,
+        mexalUnitType: line.tipo_unita_misura_mexal,
+        article: { unita_misura: primaryUnit },
+      });
+      return { ...line, unita_misura_oct: resolved.unit };
+    }),
+  };
 }
 
 function anomalyContext(context = {}) {
@@ -351,7 +369,10 @@ export async function precheckOctOrders({ mexal, supabase, env = process.env }) 
     column: "codice_mexal",
     values: articleCodes,
   }) : [];
-  const availableOrderArticleCodes = await readAvailableOrderArticleCodes(supabase, documents);
+  const availableOrderArticleCatalog = await readAvailableOrderArticleCatalog(supabase, documents);
+  for (let index = 0; index < documents.length; index += 1)
+    documents[index] = resolveDocumentUnits(documents[index], availableOrderArticleCatalog);
+  const availableOrderArticleCodes = new Set(availableOrderArticleCatalog.keys());
   const productsByCode = new Map();
   for (const product of productRows) {
     const code = upper(product.codice_mexal);
@@ -506,10 +527,12 @@ export async function syncOctOrders({ mexal, supabase, env = process.env, contex
       skipped++;
     }
   }
-  const availableArticleCodes = await readAvailableOrderArticleCodes(supabase, documents);
+  const availableArticleCatalog = await readAvailableOrderArticleCatalog(supabase, documents);
+  const availableArticleCodes = new Set(availableArticleCatalog.keys());
   let importedLines = 0;
   let skippedArticleLines = 0;
-  for (const normalized of documents) {
+  for (const rawNormalized of documents) {
+    const normalized = resolveDocumentUnits(rawNormalized, availableArticleCatalog);
     const { data: customer } = await supabase.from("ordini_clienti_cache").select("codice_cliente").eq("codice_cliente", normalized.header.mexal_cod_conto).maybeSingle();
     normalized.header.cliente_mexal_risolto = Boolean(customer);
     const { data: order, error } = await supabase.from("ordini_testate")

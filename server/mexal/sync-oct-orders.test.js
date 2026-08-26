@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
+  classifyOctLines,
+  createOctOrdersRunHandler,
   normalizeOct,
   precheckOctOrders,
   readMexalCollectionPages,
@@ -125,6 +127,7 @@ async function runReadonlyPrecheck() {
   const calls = [];
   const supabase = readonlySupabase({
     prodotti: [{ id: "product-pb0004", codice_mexal: "PB0004", attivo_mexal: true, mostra_in_app: true, sincronizzato_mexal: true, linea_mexal: "Standard" }],
+    ordini_prodotti_cache: [{ codice_articolo: "PB0004" }],
     ordini_testate: [{ id: "order-2-412", origine: "mexal_oct", mexal_sigla: "OC", mexal_serie: 2, mexal_numero: 412, mexal_chiave: "OC+2+412" }],
     ordini_righe: [
       { id: "line-1", ordine_id: "order-2-412", mexal_posizione: 1 },
@@ -196,6 +199,210 @@ test("precheck preserva quantità, data ordine e dt_sca_riga", async () => {
     { codice: missingLine.codice_articolo, quantita: missingLine.quantita, dtSCA: missingLine.dt_sca_riga },
     { codice: missingCode, quantita: 2, dtSCA: "2026-09-20" },
   );
+});
+
+function line(overrides = {}) {
+  return {
+    mexal_posizione: 1,
+    codice_articolo: "PB0004",
+    descrizione: "Articolo valido",
+    quantita: 2,
+    unita_misura_oct: "PZ",
+    tipo_unita_misura_mexal: "1",
+    data_consegna: "2026-09-20",
+    mexal_tipo_riga: "R",
+    riga_descrittiva: false,
+    ...overrides,
+  };
+}
+
+test("classificazione accetta un articolo presente nella cache FK", () => {
+  const result = classifyOctLines({ key: "OC+2+1", lines: [line()] }, new Set(["PB0004"]));
+  assert.equal(result.valid.length, 1);
+  assert.deepEqual(result.anomalies, []);
+});
+
+test("classificazione scarta fail-closed un articolo mancante senza inventare mapping", () => {
+  const result = classifyOctLines({ key: "OC+2+1", lines: [line({ codice_articolo: "MISS-1" })] }, new Set(["PB0004"]), {
+    context: { cycle_id: 152, job_id: 1411 },
+    timestamp: "2026-08-26T10:00:00.000Z",
+  });
+  assert.deepEqual(result.valid, []);
+  assert.deepEqual(result.anomalies, [{
+    cycle_id: 152,
+    job_id: 1411,
+    oct: "OC+2+1",
+    oct_line: 1,
+    article_code: "MISS-1",
+    line_type: "R",
+    error_code: "OCT_ARTICLE_NOT_IN_ORDER_CACHE",
+    message: "Articolo OCT non presente nell'anagrafica ordini sincronizzata.",
+    timestamp: "2026-08-26T10:00:00.000Z",
+  }]);
+});
+
+test("classificazione conserva righe descrittive e codici vuoti normalizzati come descrittivi", () => {
+  const normalized = normalizeOct({
+    sigla: "OC", cod_modulo: "T", serie: 2, numero: 2,
+    righe: [{ id_riga: 1, tp_riga: "D", codice_articolo: "   ", descr_riga: "Nota" }],
+  });
+  const result = classifyOctLines(normalized, new Set());
+  assert.equal(normalized.lines[0].codice_articolo, null);
+  assert.equal(normalized.lines[0].riga_descrittiva, true);
+  assert.equal(result.valid.length, 1);
+  assert.deepEqual(result.anomalies, []);
+});
+
+test("normalizzazione applica trim senza cambiare semanticamente il case del codice", () => {
+  const normalized = normalizeOct({
+    sigla: "OC", cod_modulo: "T", serie: 2, numero: 3,
+    righe: [{ id_riga: 1, tp_riga: "R", codice_articolo: "  It0064  ", quantita: 1 }],
+  });
+  assert.equal(normalized.lines[0].codice_articolo, "It0064");
+  assert.equal(classifyOctLines(normalized, new Set(["It0064"])).valid.length, 1);
+});
+
+test("articolo dismesso assente dalla cache segue la stessa diagnostica fail-closed", () => {
+  const result = classifyOctLines({ key: "OC+2+208", lines: [line({ codice_articolo: "IT0064" })] }, new Set());
+  assert.equal(result.valid.length, 0);
+  assert.equal(result.anomalies[0].article_code, "IT0064");
+  assert.equal(result.anomalies[0].error_code, "OCT_ARTICLE_NOT_IN_ORDER_CACHE");
+});
+
+function writableSupabase() {
+  const state = {
+    ordini_prodotti_cache: [{ codice_articolo: "PB0004" }],
+    ordini_clienti_cache: [{ codice_cliente: "C1" }],
+    ordini_testate: [],
+    ordini_righe: [],
+  };
+  let nextOrder = 1;
+  return {
+    state,
+    from(table) {
+      let operation = "select";
+      let payload;
+      let filters = [];
+      const query = {
+        select() { return query; },
+        eq(column, value) { filters.push((row) => row[column] === value); return query; },
+        in(column, values) { filters.push((row) => values.includes(row[column])); return query; },
+        upsert(value) { operation = "upsert"; payload = value; return query; },
+        maybeSingle() { return execute(true); },
+        single() { return execute(true); },
+        then(resolve, reject) { return execute(false).then(resolve, reject); },
+      };
+      async function execute(single) {
+        if (operation === "select") {
+          const rows = (state[table] || []).filter((row) => filters.every((filter) => filter(row)));
+          return { data: single ? rows[0] || null : rows, error: null };
+        }
+        if (table === "ordini_testate") {
+          const existing = state.ordini_testate.find((row) => row.mexal_chiave === payload.mexal_chiave);
+          if (existing) Object.assign(existing, payload);
+          else state.ordini_testate.push({ ...payload, id: `order-${nextOrder++}` });
+          const row = state.ordini_testate.find((item) => item.mexal_chiave === payload.mexal_chiave);
+          return { data: single ? row : [row], error: null };
+        }
+        if (table === "ordini_righe") {
+          for (const incoming of payload) {
+            const existing = state.ordini_righe.find((row) => row.ordine_id === incoming.ordine_id && row.mexal_posizione === incoming.mexal_posizione);
+            if (existing) Object.assign(existing, incoming);
+            else state.ordini_righe.push({ ...incoming, id: `line-${state.ordini_righe.length + 1}` });
+          }
+          return { data: payload, error: null };
+        }
+        throw new Error(`Upsert inatteso su ${table}`);
+      }
+      return query;
+    },
+  };
+}
+
+function mixedImportMexal() {
+  const document = {
+    sigla: "OC", cod_modulo: "T", serie: 2, numero: 500, cod_conto: "C1",
+    righe: [
+      { id_riga: 1, tp_riga: "R", codice_articolo: "PB0004", quantita: 2 },
+      { id_riga: 2, tp_riga: "R", codice_articolo: "IT0064", quantita: 3 },
+      { id_riga: 3, tp_riga: "D", descr_riga: "Nota auditabile" },
+    ],
+  };
+  return {
+    async getJson(path) {
+      if (path === "/oct?max=200") return { dati: [{ sigla: "OC", serie: 2, numero: 500 }] };
+      if (path === "/documenti/ordini-clienti/OC%2B2%2B500") return document;
+      throw new Error(`Percorso inatteso: ${path}`);
+    },
+  };
+}
+
+test("import misto conserva record validi e descrittivi, telemetra l'anomalo e non viola FK", async () => {
+  const supabase = writableSupabase();
+  const result = await syncOctOrders({
+    mexal: mixedImportMexal(), supabase,
+    env: { MEXAL_OCT_IMPORT_ENABLED: "true", MEXAL_OCT_MODULE_CODE: "T", MEXAL_OCT_LIST_PATH: "/oct" },
+    context: { cycle_id: 152, job_id: 1411 },
+  });
+  assert.equal(result.completed, true);
+  assert.equal(result.status, "completed");
+  assert.equal(result.imported, 1);
+  assert.equal(result.imported_lines, 2);
+  assert.equal(result.skipped_article_lines, 1);
+  assert.equal(result.anomaly_count, 1);
+  assert.equal(result.anomalies[0].article_code, "IT0064");
+  assert.deepEqual(supabase.state.ordini_righe.map((row) => row.codice_articolo), ["PB0004", null]);
+  assert.ok(supabase.state.ordini_righe.every((row) => row.riga_descrittiva || row.codice_articolo === "PB0004"));
+});
+
+test("retry dello stesso OCT è idempotente e non crea duplicati", async () => {
+  const supabase = writableSupabase();
+  const input = {
+    mexal: mixedImportMexal(), supabase,
+    env: { MEXAL_OCT_IMPORT_ENABLED: "true", MEXAL_OCT_MODULE_CODE: "T", MEXAL_OCT_LIST_PATH: "/oct" },
+  };
+  await syncOctOrders(input);
+  await syncOctOrders(input);
+  assert.equal(supabase.state.ordini_testate.length, 1);
+  assert.equal(supabase.state.ordini_righe.length, 2);
+});
+
+test("un documento temporaneamente illeggibile non blocca gli OCT validi e non espone l'utente Mexal", async () => {
+  const supabase = writableSupabase();
+  const valid = mixedImportMexal();
+  const mexal = {
+    async getJson(path) {
+      if (path === "/oct?max=200") return { dati: [{ sigla: "OC", serie: 2, numero: 417 }, { sigla: "OC", serie: 2, numero: 500 }] };
+      if (path === "/documenti/ordini-clienti/OC%2B2%2B417") throw new Error("Documento in uso dall'utente MARIO sul terminale 14");
+      return valid.getJson(path);
+    },
+  };
+  const result = await syncOctOrders({
+    mexal, supabase,
+    env: { MEXAL_OCT_IMPORT_ENABLED: "true", MEXAL_OCT_MODULE_CODE: "T", MEXAL_OCT_LIST_PATH: "/oct" },
+  });
+  assert.equal(result.completed, true);
+  assert.equal(result.imported, 1);
+  assert.equal(result.skipped, 1);
+  const readFailure = result.anomalies.find((item) => item.error_code === "OCT_DOCUMENT_READ_FAILED");
+  assert.equal(readFailure.oct, "OC+2+417");
+  assert.match(readFailure.message, /utente \[redacted\]/i);
+  assert.doesNotMatch(readFailure.message, /MARIO/);
+});
+
+test("handler propaga cycle_id e job_id nella telemetria del job", async () => {
+  const supabase = writableSupabase();
+  const handler = createOctOrdersRunHandler({
+    createMexalClient: mixedImportMexal,
+    createSupabaseClient: () => supabase,
+    env: { MEXAL_OCT_IMPORT_ENABLED: "true", MEXAL_OCT_MODULE_CODE: "T", MEXAL_OCT_LIST_PATH: "/oct" },
+  });
+  let response;
+  await handler({ body: { context: { cycle_id: 153, job_id: 1422 } } }, { status: () => ({ json: (value) => { response = value; return value; } }) });
+  assert.equal(response.cycle_id, 153);
+  assert.equal(response.job_id, 1422);
+  assert.equal(response.anomalies[0].cycle_id, 153);
+  assert.equal(response.anomalies[0].job_id, 1422);
 });
 
 function summary(numero) {

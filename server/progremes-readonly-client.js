@@ -16,6 +16,24 @@ const RESOURCE_DEFINITIONS = Object.freeze({
     parameters: Object.freeze([]),
     fields: null,
   }),
+  diagnostics: Object.freeze({
+    path: "../v2/diagnostics",
+    parameters: Object.freeze([]),
+    fields: Object.freeze([
+      "diagnosticId", "severity", "errorCode", "sourceSystem", "phase", "entityType", "entityId",
+      "workspaceRdpV2Id", "workspaceCommercialOctId", "workspaceOctLineRevisionId", "ordineProduzioneId",
+      "articleCode", "formulaCode", "stationCode", "fillingCode", "title", "description",
+      "firstSeenAt", "lastSeenAt", "occurrenceCount", "status", "actionRequired", "correlationId",
+      "retryable", "automaticRetryAttempted",
+    ]),
+    collection: true,
+  }),
+  "diagnostics-health": Object.freeze({
+    path: "../v2/diagnostics/health",
+    parameters: Object.freeze([]),
+    fields: null,
+    health: true,
+  }),
   clients: Object.freeze({
     path: "clients",
     parameters: Object.freeze([...COMMON_PAGED_PARAMETERS, "active", "updatedAfter"]),
@@ -247,12 +265,32 @@ function sanitizePaged(payload, fields) {
   return { page: value.page, pageSize: value.pageSize, total: value.total, items };
 }
 
+function sanitizeCollection(payload, fields) {
+  if (!Array.isArray(payload)) return null;
+  return payload.map((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw new ProgremesClientError("INVALID_RESPONSE", "Riga diagnostica ProgreMES non valida.", { status: 502 });
+    const row = /** @type {Record<string, unknown>} */ (item);
+    if (fields.some((field) => !(field in row))) throw new ProgremesClientError("INVALID_RESPONSE", "Contratto diagnostico ProgreMES incompleto.", { status: 502 });
+    return Object.fromEntries(fields.map((field) => [field, row[field]]));
+  });
+}
+
+function sanitizeHealth(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const value = /** @type {Record<string, unknown>} */ (payload);
+  const fields = ["globalStatus", "open", "info", "warning", "blocking", "critical", "generatedAt", "database", "workspaceCallbacks", "pendingOutbox", "lastMexalSuccess", "lastMexalError", "receiveRdp", "receiveDecisions", "executeProduction", "createLots"];
+  if (fields.some((field) => !(field in value))) return null;
+  return Object.fromEntries(fields.map((field) => [field, value[field]]));
+}
+
 /**
  * @param {keyof typeof RESOURCE_DEFINITIONS} resource
  * @param {unknown} payload
  */
 function sanitizeResponse(resource, payload) {
   const definition = RESOURCE_DEFINITIONS[resource];
+  if (definition.health) return sanitizeHealth(payload);
+  if (definition.collection) return sanitizeCollection(payload, definition.fields);
   return definition.fields === null ? sanitizeStatus(payload) : sanitizePaged(payload, definition.fields);
 }
 

@@ -122,4 +122,6 @@ export type ProgremesResource =
   | "production-orders"
   | "production-progress"
   | "inventory"
-  | "planning";
+  | "planning"
+  | "diagnostics"
+  | "diagnostics-health";

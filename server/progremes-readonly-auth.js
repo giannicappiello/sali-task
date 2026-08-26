@@ -29,7 +29,7 @@ export async function requireProgremesReadonlyAccess(req, dependencies = {}) {
 
   const { data: profile, error: profileError } = await admin
     .from("utenti")
-    .select("id,attivo")
+    .select("id,attivo,ruoli(amministratore_workspace,livello_accesso)")
     .eq("auth_user_id", user.id)
     .maybeSingle();
   if (profileError) throw profileError;
@@ -44,6 +44,16 @@ export async function requireProgremesReadonlyAccess(req, dependencies = {}) {
   if (accessError) throw accessError;
   if (enabled !== true) {
     throw Object.assign(new Error("Accesso al modulo ProgreMES non autorizzato."), { status: 403 });
+  }
+  if (["diagnostics", "diagnostics-health"].includes(String(req.query?.resource || ""))) {
+    const isAdmin = profile.ruoli?.amministratore_workspace === true || profile.ruoli?.livello_accesso === "amministrazione";
+    if (!isAdmin) {
+      const { data: permissions, error: permissionError } = await admin.from("permessi_utente")
+        .select("permessi!inner(codice)").eq("utente_id", profile.id)
+        .in("permessi.codice", ["diagnostics.view"]).limit(1);
+      if (permissionError) throw permissionError;
+      if (!permissions?.length) throw Object.assign(new Error("Permesso diagnostics.view non concesso."), { status: 403 });
+    }
   }
   return { authUserId: user.id, profileId: profile.id };
 }

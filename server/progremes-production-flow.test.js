@@ -89,6 +89,10 @@ test("run_now/oct_orders è registrato, resta OFF e non importa OCM/OCX/OCI", as
   ]);
   const supabase = {
     from(table) {
+      if (table === "ordini_prodotti_cache") {
+        const chain = { select: () => chain, in: async () => ({ data: [{ codice_articolo: "PB1" }], error: null }) };
+        return chain;
+      }
       if (table === "ordini_clienti_cache") {
         const chain = { select: () => chain, eq: () => chain, maybeSingle: async () => ({ data: { codice_cliente: "C1" } }) };
         return chain;

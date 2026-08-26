@@ -174,6 +174,77 @@ function groupedDuplicates(rows, keyOf, shape) {
     .map(([key, values]) => shape(key, values));
 }
 
+function orderArticleCodes(documents) {
+  return [...new Set(documents.flatMap((document) => document.lines)
+    .filter((line) => !line.riga_descrittiva && text(line.codice_articolo))
+    .map((line) => text(line.codice_articolo)))];
+}
+
+async function readAvailableOrderArticleCodes(supabase, documents) {
+  const articleCodes = orderArticleCodes(documents);
+  if (!articleCodes.length) return new Set();
+  const rows = await selectInChunks({
+    supabase,
+    table: "ordini_prodotti_cache",
+    columns: "codice_articolo",
+    column: "codice_articolo",
+    values: articleCodes,
+  });
+  return new Set(rows.map((row) => text(row.codice_articolo)).filter(Boolean));
+}
+
+function anomalyContext(context = {}) {
+  return {
+    cycle_id: number(context.cycle_id),
+    job_id: number(context.job_id),
+  };
+}
+
+function safeOperationalError(error) {
+  return text(error?.message || error)
+    .replace(/utente\s+[^\s\]]+/giu, "utente [redacted]")
+    .slice(0, 500);
+}
+
+export function classifyOctLines(document, availableArticleCodes, { context = {}, timestamp = new Date().toISOString() } = {}) {
+  const available = availableArticleCodes instanceof Set
+    ? availableArticleCodes
+    : new Set((availableArticleCodes || []).map((value) => text(value)).filter(Boolean));
+  const valid = [];
+  const anomalies = [];
+  for (const line of document.lines || []) {
+    const code = text(line.codice_articolo);
+    if (line.riga_descrittiva || (code && available.has(code))) {
+      valid.push(line);
+      continue;
+    }
+    if (!code) {
+      anomalies.push({
+        ...anomalyContext(context),
+        oct: document.key,
+        oct_line: line.mexal_posizione,
+        article_code: null,
+        line_type: line.mexal_tipo_riga,
+        error_code: "OCT_ARTICLE_CODE_EMPTY",
+        message: "Riga articolo OCT priva di codice articolo.",
+        timestamp,
+      });
+      continue;
+    }
+    anomalies.push({
+      ...anomalyContext(context),
+      oct: document.key,
+      oct_line: line.mexal_posizione,
+      article_code: code,
+      line_type: line.mexal_tipo_riga,
+      error_code: "OCT_ARTICLE_NOT_IN_ORDER_CACHE",
+      message: "Articolo OCT non presente nell'anagrafica ordini sincronizzata.",
+      timestamp,
+    });
+  }
+  return { valid, anomalies };
+}
+
 export function isOctDocument(document, { moduleCode }) {
   const expected = upper(moduleCode);
   if (!expected) throw new Error("MEXAL_OCT_MODULE_CODE deve essere configurato esplicitamente.");
@@ -270,9 +341,7 @@ export async function precheckOctOrders({ mexal, supabase, env = process.env }) 
     }),
   ));
 
-  const articleCodes = [...new Set(documents.flatMap((document) => document.lines)
-    .filter((line) => !line.riga_descrittiva && text(line.codice_articolo))
-    .map((line) => upper(line.codice_articolo)))];
+  const articleCodes = orderArticleCodes(documents).map(upper);
   const documentKeys = [...new Set(documents.map((document) => document.key))];
 
   const productRows = articleCodes.length ? await selectInChunks({
@@ -282,6 +351,7 @@ export async function precheckOctOrders({ mexal, supabase, env = process.env }) 
     column: "codice_mexal",
     values: articleCodes,
   }) : [];
+  const availableOrderArticleCodes = await readAvailableOrderArticleCodes(supabase, documents);
   const productsByCode = new Map();
   for (const product of productRows) {
     const code = upper(product.codice_mexal);
@@ -314,9 +384,9 @@ export async function precheckOctOrders({ mexal, supabase, env = process.env }) 
     headersByKey.set(key, values);
   }
 
-  const presentArticleCodes = articleCodes.filter((code) => productsByCode.has(code));
-  const missingArticleCodes = articleCodes.filter((code) => !productsByCode.has(code));
-  const inactiveArticles = presentArticleCodes.flatMap((code) => productsByCode.get(code)
+  const presentArticleCodes = articleCodes.filter((code) => availableOrderArticleCodes.has(code));
+  const missingArticleCodes = articleCodes.filter((code) => !availableOrderArticleCodes.has(code));
+  const inactiveArticles = articleCodes.flatMap((code) => (productsByCode.get(code) || [])
     .filter((product) => product.attivo_mexal !== true || product.mostra_in_app === false || product.sincronizzato_mexal === false)
     .map((product) => ({ code, product_id: product.id, attivo_mexal: product.attivo_mexal, mostra_in_app: product.mostra_in_app, sincronizzato_mexal: product.sincronizzato_mexal })));
   const outOfProductionArticles = presentArticleCodes.flatMap((code) => productsByCode.get(code)
@@ -403,7 +473,7 @@ export async function precheckOctOrders({ mexal, supabase, env = process.env }) 
   };
 }
 
-export async function syncOctOrders({ mexal, supabase, env = process.env }) {
+export async function syncOctOrders({ mexal, supabase, env = process.env, context = {} }) {
   if (String(env.MEXAL_OCT_IMPORT_ENABLED || "").toLowerCase() !== "true")
     return { enabled: false, imported: 0, skipped: 0 };
   const { moduleCode, listPath } = sourceConfig(env);
@@ -413,27 +483,63 @@ export async function syncOctOrders({ mexal, supabase, env = process.env }) {
     pageSize: env.MEXAL_OCT_PAGE_SIZE,
   });
   const summaries = collection.records;
+  const documents = [];
+  const anomalies = [];
   let imported = 0; let skipped = 0;
   for (const summary of summaries) {
-    const read = await readOctSummary({ mexal, summary, moduleCode });
-    if (read.status !== "candidate") { skipped++; continue; }
-    const normalized = read.normalized;
+    try {
+      const read = await readOctSummary({ mexal, summary, moduleCode });
+      if (read.status !== "candidate") { skipped++; continue; }
+      documents.push(read.normalized);
+    } catch (error) {
+      const identity = summaryIdentity(summary);
+      anomalies.push({
+        ...anomalyContext(context),
+        oct: identity?.reference || null,
+        oct_line: null,
+        article_code: null,
+        line_type: null,
+        error_code: "OCT_DOCUMENT_READ_FAILED",
+        message: safeOperationalError(error),
+        timestamp: new Date().toISOString(),
+      });
+      skipped++;
+    }
+  }
+  const availableArticleCodes = await readAvailableOrderArticleCodes(supabase, documents);
+  let importedLines = 0;
+  let skippedArticleLines = 0;
+  for (const normalized of documents) {
     const { data: customer } = await supabase.from("ordini_clienti_cache").select("codice_cliente").eq("codice_cliente", normalized.header.mexal_cod_conto).maybeSingle();
     normalized.header.cliente_mexal_risolto = Boolean(customer);
     const { data: order, error } = await supabase.from("ordini_testate")
       .upsert(normalized.header, { onConflict: "mexal_sigla,mexal_serie,mexal_numero" }).select("id").single();
     if (error) throw error;
-    const rows = normalized.lines.map((line) => ({ ...line, ordine_id: order.id }));
+    const classified = classifyOctLines(normalized, availableArticleCodes, { context });
+    anomalies.push(...classified.anomalies);
+    skippedArticleLines += classified.anomalies.length;
+    const rows = classified.valid.map((line) => ({ ...line, ordine_id: order.id }));
     if (rows.length) {
       const { error: lineError } = await supabase.from("ordini_righe").upsert(rows, { onConflict: "ordine_id,mexal_posizione" });
       if (lineError) throw lineError;
+      importedLines += rows.length;
     }
     imported++;
   }
+  for (const anomaly of anomalies) console.warn(JSON.stringify({ level: "warn", event: "mexal_oct_import_anomaly", ...anomaly }));
   return {
     enabled: true,
+    success: true,
+    completed: true,
+    status: "completed",
+    ...anomalyContext(context),
+    processed: imported,
     imported,
     skipped,
+    imported_lines: importedLines,
+    skipped_article_lines: skippedArticleLines,
+    anomaly_count: anomalies.length,
+    anomalies,
     pages_read: collection.pagesRead,
     records_read: collection.recordsRead,
     unique_records: summaries.length,
@@ -444,12 +550,13 @@ export async function syncOctOrders({ mexal, supabase, env = process.env }) {
 export function createOctOrdersRunHandler({ createMexalClient, createSupabaseClient, env = process.env }) {
   if (typeof createMexalClient !== "function" || typeof createSupabaseClient !== "function")
     throw new TypeError("Dipendenze handler OCT non valide.");
-  return async function octOrdersRunHandler(_req, res) {
+  return async function octOrdersRunHandler(req, res) {
     const enabled = String(env.MEXAL_OCT_IMPORT_ENABLED || "").toLowerCase() === "true";
     const result = await syncOctOrders({
       mexal: enabled ? createMexalClient() : null,
       supabase: enabled ? createSupabaseClient() : null,
       env,
+      context: req?.body?.context || {},
     });
     return res.status(200).json(result);
   };

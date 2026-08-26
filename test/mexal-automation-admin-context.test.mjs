@@ -19,6 +19,8 @@ for (const module of [
   "../server/mexal/sync-agents.js",
   "../server/mexal/sync-commercial-conditions.js",
   "../server/mexal/sync-document-series.js",
+  "../server/mexal/sync-product-categories.js",
+  "../server/mexal/sync-sales-invoices.js",
   "../server/mexal/stop-sync-run.js",
 ]) {
   mock.module(module, { exports: { default: successfulHandler } });
@@ -47,6 +49,12 @@ mock.module("../server/mexal/lib/auth.js", {
       calls.adminContexts.push(admin);
       return admin;
     },
+    requirePermission: async () => {
+      calls.requireAdmin += 1;
+      const admin = { supabase, authUserId: "auth-user-42" };
+      calls.adminContexts.push(admin);
+      return admin;
+    },
   },
 });
 mock.module("../server/mexal/lib/syncRuns.js", {
@@ -55,6 +63,8 @@ mock.module("../server/mexal/lib/syncRuns.js", {
       calls.find.push({ client, syncType });
       return null;
     },
+    findResumableSync: async () => null,
+    resumeFailedSync: async () => null,
     reserveIdempotentSync: async (client, values) => {
       calls.reserve.push({ client, values });
       return { duplicate: false, sync_run_id: null, response: null };
@@ -173,7 +183,7 @@ test("sync_all without an idempotency key passes the Supabase client to every ph
   resetCalls();
   const res = await invoke({ action: "sync_all" });
   assert.equal(res.statusCode, 200);
-  assert.equal(calls.find.length, 8);
+  assert.equal(calls.find.length, 10);
   assert.ok(calls.find.every(({ client }) => client === supabase));
   assert.deepEqual(calls.reserve, []);
 });

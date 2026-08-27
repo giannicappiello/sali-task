@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Ban, CheckCircle2, ChevronRight, Factory, RefreshCw, Search, Send, ShieldAlert, X } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
-import { confirmedProductionOrder, diagnosticCanBeArchived, diagnosticIsManageable } from "./rdp-workbench-state.js";
+import { confirmedProductionOrder, diagnosticCanBeArchived, diagnosticIsManageable, productionOrderProgremesPath } from "./rdp-workbench-state.js";
 
 const TABS = [
   ["evaluation", "OCT da valutare"], ["rdp", "RdP"], ["production", "In produzione"],
@@ -175,8 +175,7 @@ export default function RdpWorkbench() {
   useEffect(() => {
     if (result?.kind !== "production_order") return undefined;
     const timer = window.setTimeout(() => {
-      const query = result.productionOrder?.id ? `productionOrderId=${encodeURIComponent(result.productionOrder.id)}` : `rdpId=${encodeURIComponent(result.externalId)}`;
-      window.location.assign(`/produzione/produzione?${query}`);
+      window.location.assign(productionOrderProgremesPath(result));
     }, 1800);
     return () => window.clearTimeout(timer);
   }, [result]);
@@ -251,7 +250,7 @@ export default function RdpWorkbench() {
   async function createPreview() { if (!sendEnabled || !selected.length || busy) return; setBusy(true); setError(""); try { setPreview(await callWorkbench(accessToken, "progremes_production_preview", { orderIds: selected })); } catch (e) { setError(e.message); } finally { setBusy(false); } }
   async function sendRequest() { if (!sendEnabled || !preview || busy) return; setBusy(true); setError(""); try { const response = await callWorkbench(accessToken, "progremes_production_request", { orderIds: selected, snapshotId: preview.snapshot.id }); setResult(response); setPreview(null); setSelected([]); await load(); } catch (e) { setError(e.code === "DEMAND_CHANGED" ? "L’OCT è cambiato dopo l’anteprima: ripetere il precheck." : e.code === "RDP_IDEMPOTENCY_CONFLICT" ? "La selezione appartiene a una precedente generazione RdP. Aggiorna la schermata e crea una nuova anteprima." : e.message); } finally { setBusy(false); } }
   async function retryRequest() { if (!sendEnabled || !detail?.request?.id || busy) return; setBusy(true); setError(""); try { const response = await callWorkbench(accessToken, "progremes_production_retry", { requestId: detail.request.id }); setResult(response); setDetail(await callWorkbench(accessToken, "progremes_workbench_detail", { requestId: detail.request.id })); await load(); } catch (e) { setError(e.message); } finally { setBusy(false); } }
-  async function confirmDecision(reason = "") { if ((!decision?.proposal?.id && decision?.kind !== "v2") || busy) return; setBusy(true); setError(""); try { const response = decision.kind === "v2" ? await callWorkbench(accessToken, "progremes_production_decide_v2", { requestId: decision.request.id, decision: "CompletePlanning", reason }) : await callWorkbench(accessToken, "progremes_production_confirm", { proposalId: decision.proposal.id }); const productionOrder = decision.kind === "v2" ? null : confirmedProductionOrder(response); if (decision.kind !== "v2" && !productionOrder) throw new Error("ProgreMES ha confermato la decisione senza restituire l’OP generato."); if (decision.kind === "v2" && response.productionCreated !== true) throw new Error("ProgreMES non ha confermato la generazione degli OP."); setDecision(null); setResult({ kind: "production_order", status: response.workspaceStatus || response.status || "Planned", externalId: detail?.request?.external_id, productionOrder }); setDetail(await callWorkbench(accessToken, "progremes_workbench_detail", { requestId: detail.request.id })); await load(); } catch (e) { setError(e.message); } finally { setBusy(false); } }
+  async function confirmDecision(reason = "") { if ((!decision?.proposal?.id && decision?.kind !== "v2") || busy) return; setBusy(true); setError(""); try { const response = decision.kind === "v2" ? await callWorkbench(accessToken, "progremes_production_decide_v2", { requestId: decision.request.id, decision: "CompletePlanning", reason }) : await callWorkbench(accessToken, "progremes_production_confirm", { proposalId: decision.proposal.id }); const productionOrder = confirmedProductionOrder(response); if (!productionOrder) throw new Error("ProgreMES ha confermato la decisione senza restituire l’OP generato."); setDecision(null); setResult({ kind: "production_order", status: response.workspaceStatus || response.status || "Planned", externalId: detail?.request?.external_id, productionOrder }); setDetail(await callWorkbench(accessToken, "progremes_workbench_detail", { requestId: detail.request.id })); await load(); } catch (e) { setError(e.message); } finally { setBusy(false); } }
   async function cancelRequest(reason) { if (!cancelTarget?.id || !canCancel || busy) return; setBusy(true); setError(""); try { const response = await callWorkbench(accessToken, "progremes_production_cancel", { requestId: cancelTarget.id, reason }); setCancelTarget(null); setResult({ ...response, kind: "cancelled" }); setDetail(await callWorkbench(accessToken, "progremes_workbench_detail", { requestId: cancelTarget.id })); await load(); } catch (e) { setError(e.message); } finally { setBusy(false); } }
   function openDiagnostic(row) { setDiagnosticTarget(row); }
   async function applyDiagnosticAction(row, diagnosticAction, reason) {

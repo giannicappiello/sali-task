@@ -1,8 +1,9 @@
 // @ts-check
 
 import { createProgremesClient, ProgremesClientError, PROGREMES_ALLOWED_RESOURCES } from "./progremes-readonly-client.js";
-import { requireProgremesReadonlyAccess } from "./progremes-readonly-auth.js";
+import { createProgremesReadonlyAdmin, requireProgremesReadonlyAccess } from "./progremes-readonly-auth.js";
 import { decorateProductionHealth } from "./workspace-production-gates.js";
+import { effectiveDiagnosticsHealth, effectiveWorkspaceDiagnostics } from "./workspace-effective-diagnostics.js";
 
 /** @param {unknown} value */
 function singleResource(value) {
@@ -13,7 +14,7 @@ function singleResource(value) {
 /**
  * @param {import("node:http").IncomingMessage & { method?: string, query?: Record<string, unknown> }} req
  * @param {{ status(code: number): any, json(payload: unknown): any, setHeader(name: string, value: string): void }} res
- * @param {{ authorize?: (request: unknown) => Promise<unknown>, clientFactory?: () => { request(resource: any, query?: Record<string, unknown>): Promise<unknown> }, logger?: Pick<Console, "error">, env?: Record<string, string | undefined> }} [dependencies]
+ * @param {{ authorize?: (request: unknown, dependencies?: { admin?: any }) => Promise<unknown>, adminFactory?: () => any, clientFactory?: () => { request(resource: any, query?: Record<string, unknown>): Promise<unknown> }, logger?: Pick<Console, "error">, env?: Record<string, string | undefined> }} [dependencies]
  */
 export async function handleProgremesReadonlyRequest(req, res, dependencies = {}) {
   res.setHeader("Cache-Control", "private, no-store");
@@ -28,17 +29,23 @@ export async function handleProgremesReadonlyRequest(req, res, dependencies = {}
   const logger = dependencies.logger ?? console;
 
   try {
-    await authorize(req);
     const requestedResource = singleResource(req.query?.resource);
+    const diagnosticsResource = ["diagnostics", "diagnostics-health"].includes(requestedResource);
+    const admin = diagnosticsResource ? (dependencies.adminFactory?.() ?? createProgremesReadonlyAdmin()) : null;
+    await authorize(req, admin ? { admin } : undefined);
     if (!PROGREMES_ALLOWED_RESOURCES.includes(requestedResource)) {
       throw new ProgremesClientError("RESOURCE_NOT_ALLOWED", "Risorsa ProgreMES non consentita.", { status: 404 });
     }
     const resource = /** @type {import("./progremes-readonly-types").ProgremesResource} */ (requestedResource);
     const client = clientFactory();
     const upstreamPayload = await client.request(resource, req.query ?? {});
-    const payload = resource === "diagnostics-health"
-      ? decorateProductionHealth(upstreamPayload, dependencies.env ?? globalThis.process.env)
-      : upstreamPayload;
+    let payload = upstreamPayload;
+    if (resource === "diagnostics") payload = await effectiveWorkspaceDiagnostics({ admin, diagnostics: upstreamPayload });
+    if (resource === "diagnostics-health") {
+      const upstreamDiagnostics = await client.request("diagnostics");
+      const diagnostics = await effectiveWorkspaceDiagnostics({ admin, diagnostics: upstreamDiagnostics });
+      payload = decorateProductionHealth(effectiveDiagnosticsHealth(upstreamPayload, diagnostics), dependencies.env ?? globalThis.process.env);
+    }
     return res.status(200).json(payload);
   } catch (error) {
     const status = error instanceof ProgremesClientError

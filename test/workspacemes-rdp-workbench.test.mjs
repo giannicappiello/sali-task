@@ -78,6 +78,8 @@ test("UI impedisce doppio click e separa dati commerciali da analisi MES", () =>
   assert.match(ui, /Analisi produttiva MES/);
   for (const field of ["PhysicalQuantity", "CommittedQuantity", "FreeQuantity", "MissingQuantity", "ProducibleQuantity", "PlannableQuantity", "BlockCode"]) assert.match(ui, new RegExp(field));
   assert.match(ui, /OCT MODIFICATO IN MEXAL/);
+  assert.match(ui, /ULTIMO INVIO NON RIUSCITO/);
+  assert.match(ui, /last_error_code/);
 });
 
 test("UI disabilita preview e Crea RdP quando il gate Production non è ON", () => {

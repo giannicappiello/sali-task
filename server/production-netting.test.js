@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
   buildProductionDemand,
-  nextRdpIdempotencyKey,
   octVersionHash,
   prepareDemandQuantity,
   prepareProductionDemand,
@@ -22,6 +21,7 @@ const LINES = [
   { id: "00000000-0000-4000-8000-000000000204", ordine_id: ORDERS[0].id, mexal_posizione: 30, codice_articolo: "PB0005", quantita: 3.5, unita_misura_oct: "KG", riga_descrittiva: false },
   { id: "00000000-0000-4000-8000-000000000203", ordine_id: ORDERS[1].id, mexal_posizione: 10, codice_articolo: "PB0004", quantita: 4, unita_misura_oct: "PZ", riga_descrittiva: false },
 ];
+const TEST_GENERATION = "0123456789abcdef0123456789abcdef";
 
 function queryRows(rows) {
   let current = [...rows];
@@ -74,37 +74,22 @@ function productionRequestQuery(requests, onUpdate) {
   return query;
 }
 
-test("una nuova RdP dopo annullamento riceve una generazione idempotente distinta", () => {
-  const base = `rdp:v2:${"a".repeat(64)}`;
-  assert.equal(nextRdpIdempotencyKey(base, []), base);
-  assert.equal(nextRdpIdempotencyKey(base, [{ idempotency_key: base, workspace_status: "Cancelled" }]), `${base}:g1`);
-  assert.equal(nextRdpIdempotencyKey(base, [
-    { idempotency_key: base, workspace_status: "Cancelled" },
-    { idempotency_key: `${base}:g1`, workspace_status: "Cancelled" },
-  ]), `${base}:g2`);
-});
-
-test("preview e retry conservano la chiave della generazione RdP attiva", () => {
-  const base = `rdp:v2:${"b".repeat(64)}`;
-  assert.equal(nextRdpIdempotencyKey(base, [
-    { idempotency_key: base, workspace_status: "Cancelled" },
-    { idempotency_key: `${base}:g1`, workspace_status: "PRONTA" },
-  ]), `${base}:g1`);
-});
-
 function makeAdmin({ rpcResult, rpcError = null, onRpc = () => {}, onUpdate = () => {}, onProposal = () => {},
   onResponseRpc = () => {},
-  onItemUpdate = () => {}, requestItems = [], lineRows = LINES, catalogRows = null, snapshots = {}, productionRequests = {} } = {}) {
+  onItemUpdate = () => {}, requestItems = [], lineRows = LINES, catalogRows = null, snapshots = null, productionRequests = {} } = {}) {
   const catalogs = catalogRows || {
     PB0004: { codice_articolo: "PB0004", unita_misura: "PZ", sincronizzato_il: "2026-08-24T20:00:00Z" },
     PB0005: { codice_articolo: "PB0005", unita_misura: "KG", sincronizzato_il: "2026-08-24T20:00:00Z" },
+  };
+  const effectiveSnapshots = snapshots || {
+    12: { id: 12, snapshot_hash: "snapshot-hash", demand_hash: "demand-hash", snapshot: { requestGeneration: TEST_GENERATION } },
   };
   return {
     from(table) {
       if (table === "ordini_righe") return queryRows(lineRows);
       if (table === "ordini_testate") return queryRows(ORDERS);
       if (table === "ordini_prodotti_cache") return catalogQuery(catalogs);
-      if (table === "workspace_production_demand_snapshots") return snapshotQuery(snapshots);
+      if (table === "workspace_production_demand_snapshots") return snapshotQuery(effectiveSnapshots);
       if (table === "workspace_production_requests") return productionRequestQuery(productionRequests, onUpdate);
       if (table === "workspace_production_request_items") {
         let updateValue = null;
@@ -236,6 +221,8 @@ test("invio usa stessa RdP, schema v2 e quantità OCT complete", async () => {
   await sendProductionRequest({ method: "POST", body: { orderIds: ORDERS.map((order) => order.id), snapshotId: 12 } }, recorder.response, { admin, client });
   assert.equal(recorder.value.status, 200);
   assert.equal(outbound.contractVersion, 2);
+  assert.match(outbound.idempotencyKey, new RegExp(`:r${TEST_GENERATION}$`));
+  assert.ok(outbound.octs.every((oct) => oct.lines.every((line) => line.idempotencyKey.length <= 120)));
   assert.equal(outbound.octs.length, 2);
   assert.equal(outbound.octs.flatMap((oct) => oct.lines).length, 3);
   assert.deepEqual(outbound.octs.flatMap((oct) => oct.lines).map((item) => item.quantity), [10.25, 3.5, 4]);
@@ -251,7 +238,7 @@ test("snapshot cambiato tra preview e invio blocca prima della chiamata MES", as
   const recorder = responseRecorder();
   const admin = makeAdmin({
     rpcResult: [{ request_id: "r", external_id: "e", snapshot_id: 13, snapshot_hash: "new", reused: false, attempt_count: 0 }],
-    snapshots: { 12: { id: 12, snapshot_hash: "old", demand_hash: "old-demand" } },
+    snapshots: { 12: { id: 12, snapshot_hash: "old", demand_hash: "old-demand", snapshot: { requestGeneration: TEST_GENERATION } } },
   });
   const client = { requestEnabled: () => true, async sendRequest() { calls += 1; } };
   await sendProductionRequest({ method: "POST", body: { orderIds: [ORDERS[0].id], snapshotId: 12 } }, recorder.response, { admin, client });
@@ -284,7 +271,7 @@ test("snapshot equivalente con ID diverso tra preview e invio raggiunge il MES",
     snapshots: new Proxy({}, {
       get(_target, key) {
         return String(key) === "12"
-          ? { id: 12, snapshot_hash: "same-snapshot", demand_hash: recordedDemandHash }
+          ? { id: 12, snapshot_hash: "same-snapshot", demand_hash: recordedDemandHash, snapshot: { requestGeneration: TEST_GENERATION } }
           : undefined;
       },
     }),
@@ -368,11 +355,18 @@ test("errore di invio conserva tentativo e codice e restituisce JSON controllato
     requestEnabled: () => true,
     async sendRequest() { throw Object.assign(new Error("timeout"), { code: "UPSTREAM_TIMEOUT" }); },
   };
-  await sendProductionRequest({ method: "POST", body: { orderIds: [ORDERS[0].id] } }, recorder.response, { admin, client });
+  await sendProductionRequest({ method: "POST", body: { orderIds: [ORDERS[0].id], snapshotId: 12 } }, recorder.response, { admin, client });
   assert.equal(update.last_error_code, "UPSTREAM_TIMEOUT");
   assert.equal(update.attempt_count, 3);
   assert.equal(recorder.value.status, 502);
   assert.equal(recorder.value.payload.code, "UPSTREAM_TIMEOUT");
+});
+
+test("un'anteprima precedente al nuovo contratto richiede una nuova verifica", async () => {
+  await assert.rejects(() => prepareProductionDemand({
+    admin: makeAdmin({ snapshots: { 12: { id: 12, snapshot_hash: "legacy", demand_hash: "legacy", snapshot: {} } } }),
+    orderIds: [ORDERS[0].id], mode: "send", expectedSnapshotId: 12,
+  }), { code: "RDP_PREVIEW_REFRESH_REQUIRED", status: 409 });
 });
 
 test("proposta MES viene persistita con collegamento alla riga OCT originaria", async () => {
@@ -393,7 +387,7 @@ test("proposta MES viene persistita con collegamento alla riga OCT originaria", 
         productionOrderId: null, productionOrderNumber: null }] }, payloadHash: "payload-hash" };
     },
   };
-  await sendProductionRequest({ method: "POST", body: { lineIds: [LINES[0].id] } }, recorder.response, { admin, client });
+  await sendProductionRequest({ method: "POST", body: { lineIds: [LINES[0].id], snapshotId: 12 } }, recorder.response, { admin, client });
   assert.equal(proposals.length, 1);
   assert.equal(proposals[0].item_external_key, key);
   assert.equal(proposals[0].production_request_item_id, "00000000-0000-4000-8000-000000000501");
@@ -404,28 +398,29 @@ test("ordine della selezione non cambia domanda canonica o chiave idempotente", 
   const admin = makeAdmin({ onRpc: (name, args) => {
     if (name === "record_workspace_production_demand") calls.push(args);
   } });
-  const first = await prepareProductionDemand({ admin, orderIds: [ORDERS[1].id, ORDERS[0].id], mode: "preview" });
-  const second = await prepareProductionDemand({ admin, orderIds: [ORDERS[0].id, ORDERS[1].id], mode: "preview" });
+  const first = await prepareProductionDemand({ admin, orderIds: [ORDERS[1].id, ORDERS[0].id], mode: "preview", generateRequestGeneration: () => TEST_GENERATION });
+  const second = await prepareProductionDemand({ admin, orderIds: [ORDERS[0].id, ORDERS[1].id], mode: "preview", generateRequestGeneration: () => TEST_GENERATION });
   assert.deepEqual(first.demand, second.demand);
   assert.equal(calls[0].p_idempotency_key, calls[1].p_idempotency_key);
   assert.equal(calls[0].p_demand_hash, calls[1].p_demand_hash);
 });
 
-test("la preparazione successiva a una RdP annullata usa la generazione seguente", async () => {
-  let baseKey;
+test("ogni nuova anteprima usa una generazione persistibile indipendente dallo storico MES", async () => {
+  let firstKey;
   await prepareProductionDemand({
-    admin: makeAdmin({ onRpc: (name, args) => { if (name === "record_workspace_production_demand") baseKey = args.p_idempotency_key; } }),
-    orderIds: [ORDERS[0].id], mode: "preview",
+    admin: makeAdmin({ onRpc: (name, args) => { if (name === "record_workspace_production_demand") firstKey = args.p_idempotency_key; } }),
+    orderIds: [ORDERS[0].id], mode: "preview", generateRequestGeneration: () => "11111111111111111111111111111111",
   });
-  let generatedKey;
+  let secondKey;
   await prepareProductionDemand({
     admin: makeAdmin({
-      productionRequests: { old: { idempotency_key: baseKey, workspace_status: "Cancelled" } },
-      onRpc: (name, args) => { if (name === "record_workspace_production_demand") generatedKey = args.p_idempotency_key; },
+      onRpc: (name, args) => { if (name === "record_workspace_production_demand") secondKey = args.p_idempotency_key; },
     }),
-    orderIds: [ORDERS[0].id], mode: "preview",
+    orderIds: [ORDERS[0].id], mode: "preview", generateRequestGeneration: () => "22222222222222222222222222222222",
   });
-  assert.equal(generatedKey, `${baseKey}:g1`);
+  assert.notEqual(firstKey, secondKey);
+  assert.match(firstKey, /:r11111111111111111111111111111111$/);
+  assert.match(secondKey, /:r22222222222222222222222222222222$/);
 });
 
 test("version hash OCT è stabile e cambia con quantità o UDM", () => {
@@ -457,7 +452,7 @@ test("analisi RdP v2 viene riconciliata sulla riga OCT senza creare OdP", async 
       payloadHash: "payload-hash" };
     },
   };
-  await sendProductionRequest({ method: "POST", body: { lineIds: [LINES[0].id] } }, recorder.response, { admin, client });
+  await sendProductionRequest({ method: "POST", body: { lineIds: [LINES[0].id], snapshotId: 12 } }, recorder.response, { admin, client });
   assert.equal(responseRpc.p_response.analyses[0].workspaceLineId, LINES[0].id);
   assert.equal(responseRpc.p_request_id, requestId);
   assert.equal(recorder.value.payload.productionMutationsEnabled, false);
@@ -468,6 +463,7 @@ test("conflitto idempotente viene restituito come errore controllato", async () 
     admin: makeAdmin({ rpcError: { message: "IDEMPOTENCY_CONFLICT" } }),
     orderIds: [ORDERS[0].id],
     mode: "send",
+    expectedSnapshotId: 12,
   }), { code: "IDEMPOTENCY_CONFLICT", status: 409 });
 });
 

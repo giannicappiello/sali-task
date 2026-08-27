@@ -3,7 +3,7 @@ import { Buffer } from "node:buffer";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { HMAC_HEADERS, signProductionMessage, verifyProductionMessage } from "./progremes-production-hmac.js";
-import { createLineIdempotencyKey, createProductionPayload, createProgremesProductionClient, validateProductionResponse, REQUEST_PATH } from "./progremes-production-client.js";
+import { aggregateWorkspaceHashes, createLineIdempotencyKey, createProductionPayload, createProgremesProductionClient, DECISION_PATH, validateDecisionResponse, validateProductionResponse, REQUEST_PATH } from "./progremes-production-client.js";
 import { createOctOrdersRunHandler, isOctDocument, normalizeOct } from "./mexal/sync-oct-orders.js";
 import { SYNC_TYPES } from "./mexal/lib/syncRuns.js";
 import { runRegisteredSync } from "./mexal/lib/syncRegistry.js";
@@ -63,6 +63,25 @@ test("risposta RdP v2 deve riconciliare identità, revisioni e analisi complete"
     { ...response, analyses: [{ ...analysis, free: -1 }] },
     { ...response, productionMutationsEnabled: true },
   ]) assert.throws(() => validateProductionResponse(invalid, payload), { code: "INVALID_MES_RESPONSE" });
+});
+
+test("decisione v2 usa hash aggregati compatibili e contratto HMAC dedicato", async () => {
+  let call;
+  const workspaceExternalId = "00000000-0000-4000-8000-000000000001";
+  const payload = { contractVersion: 2, externalId: "00000000-0000-4000-8000-000000000002", decision: "CompletePlanning",
+    expectedAnalysisHash: aggregateWorkspaceHashes(["b", "a"]), expectedOctVersionHash: aggregateWorkspaceHashes(["d", "c"]),
+    approvedQuantity: null, reason: "Pianificazione approvata", decidedBy: "workspace:user" };
+  assert.equal(payload.expectedAnalysisHash, aggregateWorkspaceHashes(["a", "b"]));
+  const client = createProgremesProductionClient({
+    env: { PROGREMES_URL: "https://mes.example.test", PROGREMES_INTEGRATION_SECRET: "server-secret", PROGREMES_PRODUCTION_CONFIRMATIONS_ENABLED: "true" },
+    now: () => 1_800_000_000_000,
+    fetchImpl: async (url, init) => { call = { url: String(url), init }; return { ok: true, json: async () => ({ externalId: payload.externalId, status: "Planned", productionCreated: true, message: "OdP creati" }) }; },
+  });
+  const response = await client.decideRequest(workspaceExternalId, payload);
+  assert.equal(call.url, `https://mes.example.test${DECISION_PATH(workspaceExternalId)}`);
+  assert.ok(call.init.headers[HMAC_HEADERS.signature]);
+  assert.equal(response.result.productionCreated, true);
+  assert.throws(() => validateDecisionResponse({ ...response.result, externalId: "altro" }, payload), { code: "INVALID_MES_RESPONSE" });
 });
 
 test("tutte le mutazioni restano disabilitate se i flag non esistono", () => {

@@ -4,6 +4,7 @@ import { HMAC_HEADERS, signProductionMessage } from "./progremes-production-hmac
 
 const REQUEST_PATH = "/api/workspace/v2/production-requests";
 const CONFIRM_PATH = (id) => `/api/workspace/v1/production-proposals/${id}/confirmations`;
+const DECISION_PATH = (externalId) => `/api/workspace/v2/production-requests/${externalId}/decisions`;
 
 function required(name, env) {
   const value = String(env[name] || "").trim();
@@ -18,6 +19,9 @@ export function createLineIdempotencyKey(requestKey, lineId, commercialRevision)
 function text(value) { return String(value ?? "").trim(); }
 function positive(value) { return Number.isFinite(Number(value)) && Number(value) > 0; }
 function nonNegative(value) { return Number.isFinite(Number(value)) && Number(value) >= 0; }
+export function aggregateWorkspaceHashes(hashes = []) {
+  return hash(JSON.stringify([...hashes].map(text).filter(Boolean).sort()));
+}
 
 export function createProductionPayload({ request, snapshot, demand }) {
   if (!request?.external_id || !request?.idempotency_key || !snapshot?.id || !snapshot?.capturedAt ||
@@ -114,6 +118,14 @@ export function validateProductionResponse(result, payload) {
   return result;
 }
 
+export function validateDecisionResponse(result, payload) {
+  if (!result || typeof result !== "object" || Array.isArray(result) ||
+      text(result.externalId) !== text(payload.externalId) || !text(result.status) ||
+      typeof result.productionCreated !== "boolean" || !text(result.message))
+    throw Object.assign(new Error("Risposta decisione RdP v2 di ProgreMES non valida."), { code: "INVALID_MES_RESPONSE" });
+  return result;
+}
+
 export function createProgremesProductionClient({ env = process.env, fetchImpl = fetch, now = () => Date.now() } = {}) {
   const call = async (path, payload) => {
     const origin = new URL(required("PROGREMES_URL", env));
@@ -146,8 +158,12 @@ export function createProgremesProductionClient({ env = process.env, fetchImpl =
       const sent = await call(REQUEST_PATH, payload);
       return { ...sent, result: validateProductionResponse(sent.result, payload) };
     },
+    decideRequest: async (workspaceExternalId, payload) => {
+      const sent = await call(DECISION_PATH(workspaceExternalId), payload);
+      return { ...sent, result: validateDecisionResponse(sent.result, payload) };
+    },
     confirmProposal: (proposalId, externalId = randomUUID()) => call(CONFIRM_PATH(proposalId), { schemaVersion: 1, externalId, proposalId }),
   };
 }
 
-export { REQUEST_PATH, CONFIRM_PATH };
+export { REQUEST_PATH, CONFIRM_PATH, DECISION_PATH };

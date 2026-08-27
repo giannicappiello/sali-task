@@ -11,3 +11,7 @@ export function confirmedProductionOrder(payload = {}) {
 export function diagnosticIsManageable(diagnostic = {}) {
   return !["RESOLVED", "IGNORED", "ARCHIVED"].includes(String(diagnostic?.status || "").toUpperCase());
 }
+
+export function diagnosticCanBeArchived(diagnostic = {}) {
+  return String(diagnostic?.status || "").toUpperCase() !== "ARCHIVED";
+}

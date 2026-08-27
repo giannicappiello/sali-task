@@ -3,7 +3,7 @@ import { Buffer } from "node:buffer";
 import process from "node:process";
 import { createClient } from "@supabase/supabase-js";
 import { verifyProductionMessage } from "./progremes-production-hmac.js";
-import { createProductionPayload, createProgremesProductionClient } from "./progremes-production-client.js";
+import { aggregateWorkspaceHashes, createProductionPayload, createProgremesProductionClient } from "./progremes-production-client.js";
 import { prepareProductionDemand, productionDemandContract } from "./production-netting.js";
 
 const EVENT_PATH = "/api/progremes-production/events";
@@ -219,6 +219,50 @@ export async function confirmProductionProposal(req, res, { admin = adminClient(
   await admin.from("workspace_production_proposals").update({ confirmation_payload_hash: response.payloadHash,
     updated_at: new Date().toISOString() }).eq("id", proposalId);
   return res.status(200).json(response.result);
+}
+
+export async function decideProductionRequestV2(req, res, { admin = adminClient(), client = createProgremesProductionClient(), requestedBy = null } = {}) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Metodo non consentito." });
+  if (!client.confirmationEnabled()) return res.status(403).json({ error: "Decisioni RdP disabilitate.", code: "MODULE_DISABLED" });
+  const requestId = String(req.body?.requestId || "").trim();
+  const decision = String(req.body?.decision || "").trim();
+  const reason = String(req.body?.reason || "").trim();
+  if (!requestId || decision !== "CompletePlanning" || reason.length < 5)
+    return res.status(400).json({ error: "Decisione o motivazione non valida.", code: "INVALID_DECISION" });
+
+  const { data: request, error: requestError } = await admin.from("workspace_production_requests")
+    .select("id,external_id,contract_version,stato,workspace_status,sent_demand_snapshot_id")
+    .eq("id", requestId).maybeSingle();
+  if (requestError || !request) return res.status(404).json({ error: "RdP non trovata.", code: "NOT_FOUND" });
+  if (Number(request.contract_version || 0) !== 2 || !request.sent_demand_snapshot_id ||
+      String(request.workspace_status || request.stato).toUpperCase() !== "AWAITINGDECISION")
+    return res.status(409).json({ error: "La RdP non è in attesa di decisione v2.", code: "INVALID_STATE" });
+
+  const [{ data: items, error: itemsError }, { data: snapshotRow, error: snapshotError }] = await Promise.all([
+    admin.from("workspace_production_request_items").select("mes_payload").eq("production_request_id", request.id),
+    admin.from("workspace_production_demand_snapshots").select("snapshot").eq("id", request.sent_demand_snapshot_id).maybeSingle(),
+  ]);
+  if (itemsError || snapshotError || !snapshotRow) return res.status(409).json({ error: "Analisi RdP non disponibile.", code: "ANALYSIS_REQUIRED" });
+  const analyses = (items || []).map((item) => item.mes_payload).filter(Boolean);
+  const analysisHashes = analyses.map((item) => String(item.snapshotHash || "").trim()).filter(Boolean);
+  const octHashes = (snapshotRow.snapshot?.orders || []).map((item) => String(item.versionHash || "").trim()).filter(Boolean);
+  if (!analyses.length || analyses.length !== analysisHashes.length || analyses.some((item) => String(item.blockCode || "").trim()) || !octHashes.length)
+    return res.status(409).json({ error: "L’analisi RdP non è completa o contiene blocchi.", code: "ANALYSIS_BLOCKED" });
+
+  const command = {
+    contractVersion: 2,
+    externalId: randomUUID(),
+    decision,
+    expectedAnalysisHash: aggregateWorkspaceHashes(analysisHashes),
+    expectedOctVersionHash: aggregateWorkspaceHashes(octHashes),
+    approvedQuantity: null,
+    reason,
+    decidedBy: `workspace:${requestedBy || "service"}`,
+  };
+  const response = await client.decideRequest(request.external_id, command);
+  if (response.result.productionCreated !== true)
+    return res.status(409).json({ error: "Decisione registrata ma OP non generato.", code: "PRODUCTION_NOT_CREATED", result: response.result });
+  return res.status(200).json({ ...response.result, requestId: request.id, workspaceExternalId: request.external_id });
 }
 
 export { EVENT_PATH };

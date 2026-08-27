@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { activeOctLines, diagnosticBlocks, requestStage, resolveWorkbenchOctUnit, resolveWorkbenchUnits, workbenchDetailLines } from "./workspacemes-workbench.js";
+import { activeOctLines, diagnosticBlocks, requestStage, resolveWorkbenchOctUnit, resolveWorkbenchUnits, v2DecisionAvailability, visibleDiagnostic, workbenchDetailLines } from "./workspacemes-workbench.js";
 
 test("una RdP annullata è storico e non resta tra i bloccati", () => {
   assert.equal(requestStage({ workspace_status: "Cancelled" }), "history");
@@ -12,6 +12,18 @@ test("solo diagnostiche operative aperte bloccano una nuova RdP", () => {
   assert.equal(diagnosticBlocks({ severity: "Critical", status: "Acknowledged" }), true);
   assert.equal(diagnosticBlocks({ severity: "Blocking", status: "Resolved" }), false);
   assert.equal(diagnosticBlocks({ severity: "Blocking", status: "Archived" }), false);
+});
+
+test("le diagnostiche archiviate spariscono dal dettaglio operativo", () => {
+  assert.equal(visibleDiagnostic({ status: "Resolved" }), true);
+  assert.equal(visibleDiagnostic({ status: "Archived" }), false);
+});
+
+test("AwaitingDecision espone la decisione v2 solo con analisi complete e senza blocchi", () => {
+  const request = { contract_version: 2, workspace_status: "AwaitingDecision" };
+  assert.equal(v2DecisionAvailability(request, [{ mes_payload: { snapshotHash: "a", blockCode: "" } }]).available, true);
+  assert.equal(v2DecisionAvailability(request, [{ mes_payload: { snapshotHash: "a", blockCode: "BOM_MISSING" } }]).available, false);
+  assert.equal(v2DecisionAvailability(request, []).available, false);
 });
 
 test("il Workbench corrente nasconde le righe ritirate preservandole nel record sorgente", () => {

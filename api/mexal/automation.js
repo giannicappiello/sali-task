@@ -27,7 +27,7 @@ import { createProgremesDiagnosticManager } from "../../server/progremes-diagnos
 import { handleAIAssistant } from "../../server/ai/assistant.js";
 import { handleCrmBrief } from "../../server/ai/crm-brief.js";
 import { handleAIOrderDocument } from "../../server/ai/order-document.js";
-import { cancelProductionRequest, confirmProductionProposal, handleProductionEvent, previewProductionRequest, sendProductionRequest } from "../../server/progremes-production-api.js";
+import { cancelProductionRequest, confirmProductionProposal, decideProductionRequestV2, handleProductionEvent, previewProductionRequest, sendProductionRequest } from "../../server/progremes-production-api.js";
 import { createOctOrdersRunHandler, precheckOctOrders } from "../../server/mexal/sync-oct-orders.js";
 import { handleDigitalConnectionManager } from "../../server/crm/digital-connection-manager.js";
 import { listProductionWorkbench, productionWorkbenchDetail } from "../../server/workspacemes-workbench.js";
@@ -609,6 +609,10 @@ export default async function handler(req, res) {
       case "progremes_production_confirm": {
         const admin = await createAdmin(req, "rdp.decide");
         return confirmProductionProposal(req, res, { admin: admin.supabase });
+      }
+      case "progremes_production_decide_v2": {
+        const admin = await createAdmin(req, "rdp.decide");
+        return decideProductionRequestV2(req, res, { admin: admin.supabase, requestedBy: admin.authUserId });
       }
       case "progremes_production_cancel": {
         const admin = await createAdmin(req, "rdp.cancel");

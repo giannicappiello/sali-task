@@ -75,9 +75,24 @@ function cancelled(request) {
 
 function publicDiagnostic(row) {
   return {
-    diagnosticId: row.diagnosticId, severity: row.severity, errorCode: row.errorCode, phase: row.phase,
+    diagnosticId: row.diagnosticId, severity: row.severity, errorCode: row.errorCode, sourceSystem: row.sourceSystem, phase: row.phase,
     entityType: row.entityType, entityId: row.entityId, articleCode: row.articleCode,
     title: row.title, description: row.description, actionRequired: row.actionRequired, status: row.status,
+  };
+}
+
+export function visibleDiagnostic(row) {
+  return text(row?.status).toUpperCase() !== "ARCHIVED";
+}
+
+export function v2DecisionAvailability(request, requestItems = []) {
+  if (!request || Number(request.contract_version || 0) !== 2) return null;
+  const analyses = requestItems.map((item) => item.mes_payload).filter(Boolean);
+  return {
+    available: text(request.workspace_status || request.stato).toUpperCase() === "AWAITINGDECISION" &&
+      analyses.length > 0 && analyses.every((analysis) => !text(analysis.blockCode)),
+    analysisCount: analyses.length,
+    blocked: analyses.some((analysis) => Boolean(text(analysis.blockCode))),
   };
 }
 
@@ -116,7 +131,7 @@ export async function listProductionWorkbench({ admin, diagnostics = [] }) {
     const orderLines = relevantLines.filter((line) => text(line.ordine_id) === text(order.id));
     const productive = orderLines.filter((line) => !line.riga_descrittiva && text(line.codice_articolo) && number(line.quantita) > 0);
     const request = requestByOrder.get(text(order.id)) || null;
-    const orderDiagnostics = diagnostics.filter((row) => [row.workspaceCommercialOctId, row.entityId].map(text).includes(text(order.id)));
+    const orderDiagnostics = diagnostics.filter((row) => visibleDiagnostic(row) && [row.workspaceCommercialOctId, row.entityId].map(text).includes(text(order.id)));
     return {
       id: order.id, label: octLabel(order), sigla: order.mexal_sigla, serie: order.mexal_serie, numero: order.mexal_numero,
       customer: customerName(order, customersByCode),
@@ -234,10 +249,12 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
     const previous = (sentSnapshot?.snapshot?.orders || []).find((item) => text(item.orderId) === text(order.id));
     return previous && text(previous.requestedDeliveryDate) !== text(order.data_consegna);
   });
+  const v2Decision = v2DecisionAvailability(request, requestItemsResult.data || []);
   return {
     orders: (orders || []).map((order) => ({ id: order.id, label: octLabel(order), customer: customerName(order, customersByCode), orderDate: order.data_ordine, deliveryDate: order.data_consegna })),
     request: request ? { ...request, stage: requestStage(request) } : null,
     cancellation: evaluateProductionRequestCancellation({ request, proposals, events: productionEvents }),
+    v2Decision,
     revision: { modified: Boolean(sentSnapshot && (delta.added.length || delta.removed.length || delta.changed.length || deliveryChanged)), deliveryChanged, ...delta },
     lines: visibleLines.map((line) => {
       const product = productByCode.get(text(line.codice_articolo).toUpperCase());
@@ -250,7 +267,7 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
         mappingStatus: requestItem?.mapping_status || "TO_RESOLVE_IN_MES", conversion: requestItem?.conversione || null,
         mesStatus: requestItem?.mes_status || proposal?.stato || null, mesAnalysis: requestItem?.mes_payload || null,
         proposal: proposal || null,
-        diagnostics: diagnostics.filter((row) => (row.articleCode && text(row.articleCode).toUpperCase() === text(line.codice_articolo).toUpperCase()) || [row.workspaceOctLineRevisionId, row.entityId].map(text).includes(text(line.id))).map(publicDiagnostic),
+        diagnostics: diagnostics.filter((row) => visibleDiagnostic(row) && ((row.articleCode && text(row.articleCode).toUpperCase() === text(line.codice_articolo).toUpperCase()) || [row.workspaceOctLineRevisionId, row.entityId].map(text).includes(text(line.id)))).map(publicDiagnostic),
       };
     }),
   };

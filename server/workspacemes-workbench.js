@@ -1,5 +1,16 @@
+import { authoritativeArticleUnit, resolveOctUnitOfMeasure } from "./mexal/unit-of-measure.js";
+
 function text(value) { return String(value ?? "").trim(); }
 function number(value) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : 0; }
+
+export function resolveWorkbenchOctUnit(line, product) {
+  const productUnit = authoritativeArticleUnit(product) || authoritativeArticleUnit(product?.dati_mexal);
+  return resolveOctUnitOfMeasure({
+    explicitUnit: line?.unita_misura_oct,
+    mexalUnitType: line?.tipo_unita_misura_mexal,
+    article: { unita_misura: productUnit },
+  }).unit;
+}
 
 function octLabel(order) {
   return [text(order.mexal_sigla), text(order.mexal_serie), text(order.mexal_numero)].filter(Boolean).join("/");
@@ -118,6 +129,10 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
     products = result.data || [];
   }
   const productByCode = new Map(products.map((row) => [text(row.codice_articolo).toUpperCase(), row]));
+  const currentOctUnit = (line) => resolveWorkbenchOctUnit(
+    line,
+    productByCode.get(text(line.codice_articolo).toUpperCase()),
+  );
   const requestItemByLine = new Map((requestItemsResult.data || []).map((row) => [text(row.ordine_riga_id), row]));
   const proposalByItem = new Map(proposals.map((row) => [text(row.production_request_item_id), row]));
   const currentProductive = (lines || []).filter((line) => !line.riga_descrittiva && text(line.codice_articolo) && number(line.quantita) > 0);
@@ -125,12 +140,12 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
   const previousByLine = new Map(previousItems.map((item) => [text(item.lineId), item]));
   const currentByLine = new Map(currentProductive.map((line) => [text(line.id), line]));
   const delta = {
-    added: currentProductive.filter((line) => !previousByLine.has(text(line.id))).map((line) => ({ lineId: line.id, articleCode: line.codice_articolo, quantity: line.quantita, uom: line.unita_misura_oct || line.tipo_unita_misura_mexal })),
+    added: currentProductive.filter((line) => !previousByLine.has(text(line.id))).map((line) => ({ lineId: line.id, articleCode: line.codice_articolo, quantity: line.quantita, uom: currentOctUnit(line) })),
     removed: previousItems.filter((item) => !currentByLine.has(text(item.lineId))).map((item) => ({ lineId: item.lineId, articleCode: item.commercialArticleCode, quantity: item.requestedQuantity, uom: item.requestedUnitOfMeasure })),
     changed: currentProductive.flatMap((line) => {
       const previous = previousByLine.get(text(line.id));
       if (!previous) return [];
-      const uom = text(line.unita_misura_oct || line.tipo_unita_misura_mexal).toUpperCase();
+      const uom = text(currentOctUnit(line)).toUpperCase();
       const changed = number(line.quantita) !== number(previous.requestedQuantity) || uom !== text(previous.requestedUnitOfMeasure).toUpperCase();
       return changed ? [{ lineId: line.id, articleCode: line.codice_articolo, fromQuantity: previous.requestedQuantity, toQuantity: line.quantita, fromUom: previous.requestedUnitOfMeasure, toUom: uom }] : [];
     }),
@@ -150,7 +165,7 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
       return {
         id: line.id, orderId: line.ordine_id, position: line.mexal_posizione, descriptive: line.riga_descrittiva === true,
         articleCode: line.codice_articolo, description: line.descrizione || product?.descrizione, quantity: line.quantita,
-        octUom: line.unita_misura_oct || line.tipo_unita_misura_mexal, productionUom: requestItem?.unita_misura_produzione || product?.unita_misura,
+        octUom: resolveWorkbenchOctUnit(line, product), productionUom: requestItem?.unita_misura_produzione || authoritativeArticleUnit(product) || authoritativeArticleUnit(product?.dati_mexal),
         mappingStatus: requestItem?.mapping_status || "TO_RESOLVE_IN_MES", conversion: requestItem?.conversione || null,
         mesStatus: requestItem?.mes_status || proposal?.stato || null, mesAnalysis: requestItem?.mes_payload || null,
         proposal: proposal || null,

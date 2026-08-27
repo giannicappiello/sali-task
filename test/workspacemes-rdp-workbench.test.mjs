@@ -3,11 +3,12 @@ import test from "node:test";
 import { readFile } from "node:fs/promises";
 import { appendProgremesContext } from "../server/progremes-sso.js";
 
-const [ui, production, api, migration, workbench] = await Promise.all([
+const [ui, production, api, migration, cancellationMigration, workbench] = await Promise.all([
   readFile("src/pages/Production/RdpWorkbench.jsx", "utf8"),
   readFile("src/pages/Production/Production.jsx", "utf8"),
   readFile("api/mexal/automation.js", "utf8"),
   readFile("supabase/migrations/20260826170000_workspacemes_rdp_create_permission.sql", "utf8"),
+  readFile("supabase/migrations/20260827100000_workspacemes_rdp_controlled_cancellation.sql", "utf8"),
   readFile("server/workspacemes-workbench.js", "utf8"),
 ]);
 
@@ -18,6 +19,26 @@ test("Workbench espone lista OCT, multi-select e stati operativi senza duplicare
   assert.match(ui, /NESSUNA NETTIFICAZIONE WORKSPACE/);
   for (const screen of ["Planning", "Produzione", "Operatore produzione", "Confezionamento", "Magazzino", "Documenti"]) assert.match(ui, new RegExp(screen));
   assert.match(production, /RdP Workbench/);
+});
+
+test("annullo RdP richiede permesso, motivo e conferma esplicita", () => {
+  assert.match(api, /progremes_production_cancel[\s\S]*?rdp\.cancel/);
+  assert.match(ui, /Annulla RdP/);
+  assert.match(ui, /Motivo obbligatorio/);
+  assert.match(ui, /Confermo di voler annullare logicamente/);
+  assert.match(ui, /reason\.trim\(\)\.length >= 5/);
+  assert.match(cancellationMigration, /rdp\.cancel/);
+});
+
+test("annullo è logico, auditato e fail-closed sugli effetti produttivi", () => {
+  assert.match(cancellationMigration, /set stato = 'Cancelled', workspace_status = 'Cancelled'/);
+  assert.match(cancellationMigration, /workspace_production_request_audit/);
+  assert.match(cancellationMigration, /on delete restrict/);
+  assert.match(cancellationMigration, /IRREVERSIBLE_EFFECTS/);
+  assert.match(cancellationMigration, /mes_production_order_id is not null/);
+  assert.match(cancellationMigration, /confirmation_external_id is not null/);
+  assert.match(cancellationMigration, /CANCELLED_PRODUCTION_REQUEST_IMMUTABLE/);
+  assert.doesNotMatch(cancellationMigration, /delete\s+from\s+public\.(workspace_production_requests|ordini_testate)/i);
 });
 
 test("preview, invio e decisione applicano permessi RdP dedicati", () => {

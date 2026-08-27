@@ -45,6 +45,8 @@ async function loadPersistedProductionRequest(admin, requestId) {
     .select("*").eq("id", id).maybeSingle();
   if (requestError) throw requestError;
   if (!request) throw Object.assign(new Error("RdP non trovata."), { code: "NOT_FOUND", status: 404 });
+  if (String(request.workspace_status || request.stato || "").trim().toUpperCase() === "CANCELLED")
+    throw Object.assign(new Error("La RdP è annullata e non può essere reinviata."), { code: "REQUEST_CANCELLED", status: 409 });
   if (request.sent_demand_snapshot_id)
     throw Object.assign(new Error("La RdP risulta già inviata a ProgreMES."), { code: "ALREADY_SENT", status: 409 });
   if (!request.demand_snapshot_id || Number(request.contract_version || 2) !== 2)
@@ -78,6 +80,30 @@ async function loadPersistedProductionRequest(admin, requestId) {
     },
     changedFromExpected: false,
   };
+}
+
+export async function cancelProductionRequest(req, res, { admin = adminClient(), requestedBy = null } = {}) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Metodo non consentito." });
+  const requestId = String(req.body?.requestId || "").trim();
+  const reason = String(req.body?.reason || "").trim();
+  if (!requestId) return res.status(400).json({ error: "RdP obbligatoria.", code: "INVALID_REQUEST" });
+  if (reason.length < 5 || reason.length > 1000)
+    return res.status(400).json({ error: "Il motivo è obbligatorio e deve contenere da 5 a 1000 caratteri.", code: "INVALID_CANCELLATION_REASON" });
+  const { data, error } = await admin.rpc("cancel_workspace_production_request", {
+    p_request_id: requestId,
+    p_reason: reason,
+    p_cancelled_by: requestedBy,
+  });
+  if (error) {
+    const message = String(error.message || "");
+    const code = message.includes("IRREVERSIBLE_EFFECTS") ? "IRREVERSIBLE_EFFECTS"
+      : message.includes("INVALID_STATUS") ? "INVALID_STATUS"
+        : message.includes("NOT_FOUND") ? "NOT_FOUND" : "CANCELLATION_FAILED";
+    const status = code === "NOT_FOUND" ? 404 : 409;
+    return res.status(status).json({ error: message.split(":").slice(1).join(":").trim() || "Annullamento RdP non consentito.", code });
+  }
+  const cancelled = data?.[0];
+  return res.status(200).json({ cancelled: true, id: cancelled?.id || requestId, externalId: cancelled?.external_id, status: "Cancelled", cancelledAt: cancelled?.cancelled_at });
 }
 
 export async function sendProductionRequest(req, res, {

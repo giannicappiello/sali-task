@@ -12,6 +12,9 @@ function required(name, env) {
 }
 function enabled(name, env) { return String(env[name] || "").trim().toLowerCase() === "true"; }
 function hash(body) { return createHash("sha256").update(body).digest("hex"); }
+export function createLineIdempotencyKey(requestKey, lineId, commercialRevision) {
+  return `rdp-line:v2:${hash(JSON.stringify({ requestKey, lineId, commercialRevision }))}`;
+}
 function text(value) { return String(value ?? "").trim(); }
 function positive(value) { return Number.isFinite(Number(value)) && Number(value) > 0; }
 function nonNegative(value) { return Number.isFinite(Number(value)) && Number(value) >= 0; }
@@ -77,7 +80,7 @@ export function createProductionPayload({ request, snapshot, demand }) {
         conversionSource: item.conversion?.source ?? null,
         requestedDate: item.requestedDeliveryDate,
         priority: null,
-        idempotencyKey: `${request.idempotency_key}:${item.lineId}:${order.commercialRevision}`,
+        idempotencyKey: createLineIdempotencyKey(request.idempotency_key, item.lineId, order.commercialRevision),
       })),
     })),
   };

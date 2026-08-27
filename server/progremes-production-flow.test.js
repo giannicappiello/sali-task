@@ -3,7 +3,7 @@ import { Buffer } from "node:buffer";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { HMAC_HEADERS, signProductionMessage, verifyProductionMessage } from "./progremes-production-hmac.js";
-import { createProductionPayload, createProgremesProductionClient, validateProductionResponse, REQUEST_PATH } from "./progremes-production-client.js";
+import { createLineIdempotencyKey, createProductionPayload, createProgremesProductionClient, validateProductionResponse, REQUEST_PATH } from "./progremes-production-client.js";
 import { createOctOrdersRunHandler, isOctDocument, normalizeOct } from "./mexal/sync-oct-orders.js";
 import { SYNC_TYPES } from "./mexal/lib/syncRuns.js";
 import { runRegisteredSync } from "./mexal/lib/syncRegistry.js";
@@ -180,6 +180,8 @@ test("payload RdP multi-OCT conserva la domanda completa e non espone logica tec
   assert.equal(payload.contractVersion, 2);
   assert.equal(payload.octs[0].lines[0].quantity, 7000);
   assert.equal(payload.octs[0].commercialRevision, 1);
+  assert.equal(payload.octs[0].lines[0].idempotencyKey, createLineIdempotencyKey("rdp:v2:key", "00000000-0000-4000-8000-000000000201", 1));
+  assert.ok(payload.octs[0].lines[0].idempotencyKey.length <= 120);
   assert.equal(JSON.stringify(payload).includes("availableFinishedProduct"), false);
   assert.equal(JSON.stringify(payload).includes("formula"), false);
   assert.equal(JSON.stringify(payload).includes("lotto"), false);

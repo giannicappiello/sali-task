@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { authoritativeArticleUnit, resolveOctUnitOfMeasure } from "./mexal/unit-of-measure.js";
 
 const QUANTITY_SCALE = 6;
@@ -19,28 +19,18 @@ function finiteQuantity(value, label) {
 }
 function hash(value) { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
 
-export function nextRdpIdempotencyKey(baseKey, requests = []) {
-  const prefix = `${baseKey}:g`;
-  const family = (requests || []).flatMap((request) => {
-    const key = text(request.idempotency_key);
-    const generation = key === baseKey ? 0
-      : key.startsWith(prefix) && /^\d+$/.test(key.slice(prefix.length)) ? Number(key.slice(prefix.length)) : null;
-    return generation === null ? [] : [{ request, key, generation }];
-  });
-  const active = family
-    .filter(({ request }) => text(request.workspace_status || request.stato).toUpperCase() !== "CANCELLED")
-    .sort((left, right) => right.generation - left.generation)[0];
-  if (active) return active.key;
-  if (!family.length) return baseKey;
-  return `${baseKey}:g${Math.max(...family.map(({ generation }) => generation)) + 1}`;
-}
-
-async function resolveRdpIdempotencyKey(admin, baseKey) {
-  const { data, error } = await admin.from("workspace_production_requests")
-    .select("idempotency_key,workspace_status,stato")
-    .like("idempotency_key", `${baseKey}%`);
-  if (error) throw error;
-  return nextRdpIdempotencyKey(baseKey, data || []);
+async function expectedRequestGeneration(admin, expectedSnapshotId) {
+  if (expectedSnapshotId === null || expectedSnapshotId === undefined)
+    throw Object.assign(new Error("Creare una nuova anteprima prima dell'invio RdP."), { code: "RDP_PREVIEW_REQUIRED", status: 409 });
+  const { data, error } = await admin.from("workspace_production_demand_snapshots")
+    .select("id,snapshot")
+    .eq("id", expectedSnapshotId)
+    .maybeSingle();
+  if (error) throw Object.assign(new Error("Anteprima RdP non verificabile."), { code: "RDP_PREVIEW_LOOKUP_FAILED", status: 500, cause: error });
+  const generation = text(data?.snapshot?.requestGeneration);
+  if (!/^[0-9a-f]{32}$/.test(generation))
+    throw Object.assign(new Error("L'anteprima appartiene a una versione precedente. Crearne una nuova."), { code: "RDP_PREVIEW_REFRESH_REQUIRED", status: 409 });
+  return generation;
 }
 
 async function matchesExpectedSnapshot(admin, {
@@ -318,6 +308,7 @@ export async function prepareProductionDemand({
   conversions = [],
   expectedSnapshotId = null,
   requestedBy = null,
+  generateRequestGeneration = () => randomBytes(16).toString("hex"),
 }) {
   const builtDemand = await buildProductionDemand({ admin, orderIds, lineIds, conversions });
   const demand = await reserveOctRevisions(admin, builtDemand, mode !== "preview");
@@ -336,10 +327,16 @@ export async function prepareProductionDemand({
       versionHash: order.versionHash,
     })).sort((left, right) => text(left.orderId).localeCompare(text(right.orderId))),
   })}`;
-  const idempotencyKey = await resolveRdpIdempotencyKey(admin, baseIdempotencyKey);
+  const requestGeneration = mode === "preview"
+    ? text(generateRequestGeneration())
+    : await expectedRequestGeneration(admin, expectedSnapshotId);
+  if (!/^[0-9a-f]{32}$/.test(requestGeneration))
+    throw Object.assign(new Error("Generazione RdP non valida."), { code: "INVALID_RDP_GENERATION", status: 500 });
+  const idempotencyKey = `${baseIdempotencyKey}:r${requestGeneration}`;
   const snapshot = {
     version: 2,
     kind: "MULTI_OCT_PRODUCTION_DEMAND",
+    requestGeneration,
     requestedBy: requestedBy || null,
     ...stableDemand,
     sources: { orders: "MEXAL_OCT", unitsOfMeasure: "MEXAL_OCT_AND_PRODUCT_CACHE" },

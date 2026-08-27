@@ -5,6 +5,7 @@ import { useAuth } from "../../contexts/AuthContext";
 const TABS = [
   ["evaluation", "OCT da valutare"], ["rdp", "RdP"], ["production", "In produzione"],
   ["completed", "Completati / evasi"], ["blocked", "Bloccati"],
+  ["history", "Storico RdP"],
 ];
 
 async function callWorkbench(accessToken, action, extra = {}) {
@@ -65,6 +66,8 @@ function DetailPanel({ detail, onClose, onDiagnostics, canDecide, canCancel, onD
   </section></div>;
 }
 
+function workbenchRows(payload) { return [...(payload.items || []), ...(payload.history || [])]; }
+
 function CancelRequestDialog({ request, busy, onClose, onConfirm }) {
   const [reason, setReason] = useState("");
   const [confirmed, setConfirmed] = useState(false);
@@ -105,12 +108,12 @@ export default function RdpWorkbench() {
   const [productionGates, setProductionGates] = useState(null);
   const sendEnabled = productionGates?.allOn === true;
 
-  async function load() { setLoading(true); setError(""); try { const payload = await callWorkbench(accessToken, "progremes_workbench_list"); setData(payload.items || []); setProductionGates(payload.productionGates || null); } catch (e) { setProductionGates(null); setError(e.message); } finally { setLoading(false); } }
+  async function load() { setLoading(true); setError(""); try { const payload = await callWorkbench(accessToken, "progremes_workbench_list"); setData(workbenchRows(payload)); setProductionGates(payload.productionGates || null); } catch (e) { setProductionGates(null); setError(e.message); } finally { setLoading(false); } }
   useEffect(() => {
     if (!accessToken) return undefined;
     let active = true;
     callWorkbench(accessToken, "progremes_workbench_list")
-      .then((payload) => { if (active) { setData(payload.items || []); setProductionGates(payload.productionGates || null); } })
+      .then((payload) => { if (active) { setData(workbenchRows(payload)); setProductionGates(payload.productionGates || null); } })
       .catch((loadError) => { if (active) { setProductionGates(null); setError(loadError.message); } })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
@@ -128,7 +131,7 @@ export default function RdpWorkbench() {
   const selectionBlocked = selectedRows.some((row) => !row.ready || blocking(row.diagnostics));
 
   function toggle(row) { setSelected((current) => current.includes(row.id) ? current.filter((id) => id !== row.id) : [...current, row.id]); setPreview(null); setResult(null); }
-  async function openDetail(row) { setError(""); try { setDetail(await callWorkbench(accessToken, "progremes_workbench_detail", { orderId: row.id, requestId: row.requestId })); } catch (e) { setError(e.message); } }
+  async function openDetail(row) { setError(""); try { setDetail(await callWorkbench(accessToken, "progremes_workbench_detail", { orderId: row.orderId || row.id, requestId: row.requestId })); } catch (e) { setError(e.message); } }
   async function createPreview() { if (!sendEnabled || !selected.length || busy) return; setBusy(true); setError(""); try { setPreview(await callWorkbench(accessToken, "progremes_production_preview", { orderIds: selected })); } catch (e) { setError(e.message); } finally { setBusy(false); } }
   async function sendRequest() { if (!sendEnabled || !preview || busy) return; setBusy(true); setError(""); try { const response = await callWorkbench(accessToken, "progremes_production_request", { orderIds: selected, snapshotId: preview.snapshot.id }); setResult(response); setPreview(null); setSelected([]); await load(); } catch (e) { setError(e.code === "DEMAND_CHANGED" ? "L’OCT è cambiato dopo l’anteprima: ripetere il precheck." : e.message); } finally { setBusy(false); } }
   async function retryRequest() { if (!sendEnabled || !detail?.request?.id || busy) return; setBusy(true); setError(""); try { const response = await callWorkbench(accessToken, "progremes_production_retry", { requestId: detail.request.id }); setResult(response); setDetail(await callWorkbench(accessToken, "progremes_workbench_detail", { requestId: detail.request.id })); await load(); } catch (e) { setError(e.message); } finally { setBusy(false); } }
@@ -143,7 +146,7 @@ export default function RdpWorkbench() {
     {error && <div className="production-message" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")}><X size={16}/>Chiudi</button></div>}
     {result && <div className="rdp-success"><CheckCircle2/><div><strong>{result.kind === "cancelled" ? "RdP annullata logicamente" : "RdP ricevuta da ProgreMES"}</strong><p>ID {result.externalId || result.id || "registrato"} · Stato {result.status || "Received"}</p></div></div>}
     {tab === "evaluation" && <div className="rdp-selection-bar"><span><strong>{selected.length}</strong> OCT selezionati · lineage e quantità complete preservati</span><button type="button" className="primary-action" onClick={createPreview} disabled={!canCreate || !sendEnabled || !selected.length || selectionBlocked || busy}>{busy ? "Verifica…" : "Verifica e crea anteprima"}</button>{!canCreate && <small>Permesso rdp.create richiesto.</small>}{!sendEnabled && <small>Invio RdP Production non disponibile: verificare i gate nel Centro Diagnostico.</small>}{selectionBlocked && <small>Rimuovere gli OCT bloccati prima di creare la RdP.</small>}</div>}
-    {loading ? <div className="production-loading">Caricamento OCT e RdP…</div> : <div className="rdp-table-wrap"><table className="rdp-table"><thead><tr>{tab === "evaluation" && <th>Seleziona</th>}<th>OCT</th><th>Cliente</th><th>Date</th><th>Righe / quantità</th><th>Stato</th><th>Diagnostica</th><th /></tr></thead><tbody>{visible.map((row) => <tr key={row.id} className={!row.ready ? "blocked" : ""}>{tab === "evaluation" && <td><input type="checkbox" checked={selected.includes(row.id)} disabled={!row.ready} onChange={() => toggle(row)} aria-label={`Seleziona ${row.label}`}/></td>}<td><strong>{row.label}</strong><small>Rev. sorgente {formatDate(row.sourceTimestamp, true)}</small></td><td>{row.customer}</td><td><span>Ordine {formatDate(row.orderDate)}</span><small>Consegna {formatDate(row.deliveryDate)}</small></td><td><strong>{row.productiveLineCount}/{row.lineCount} righe</strong><small>{row.quantity} {row.units.join(", ")}</small></td><td>{badge(row.ready ? row.status : "BLOCCATO", row.ready ? "green" : "red")}</td><td><Diagnostics rows={row.diagnostics} onOpen={openDiagnostic}/></td><td><button type="button" className="rdp-open" onClick={() => openDetail(row)}>Apri<ChevronRight size={16}/></button></td></tr>)}</tbody></table>{!visible.length && <div className="rdp-empty">Nessun elemento per i filtri e lo stato selezionati.</div>}</div>}
+    {loading ? <div className="production-loading">Caricamento OCT e RdP…</div> : <div className="rdp-table-wrap"><table className="rdp-table"><thead><tr>{tab === "evaluation" && <th>Seleziona</th>}<th>OCT</th><th>Cliente</th><th>Date</th><th>Righe / quantità</th><th>Stato</th><th>Diagnostica</th><th /></tr></thead><tbody>{visible.map((row) => <tr key={row.id} className={!row.ready && row.stage !== "history" ? "blocked" : ""}>{tab === "evaluation" && <td><input type="checkbox" checked={selected.includes(row.id)} disabled={!row.ready} onChange={() => toggle(row)} aria-label={`Seleziona ${row.label}`}/></td>}<td><strong>{row.label}</strong><small>Rev. sorgente {formatDate(row.sourceTimestamp, true)}</small></td><td>{row.customer}</td><td><span>Ordine {formatDate(row.orderDate)}</span><small>Consegna {formatDate(row.deliveryDate)}</small></td><td><strong>{row.productiveLineCount}/{row.lineCount} righe</strong><small>{row.quantity} {row.units.join(", ")}</small></td><td>{badge(row.stage === "history" ? "Annullata" : (row.ready ? row.status : "BLOCCATO"), row.stage === "history" ? "neutral" : (row.ready ? "green" : "red"))}</td><td><Diagnostics rows={row.diagnostics} onOpen={openDiagnostic}/></td><td><button type="button" className="rdp-open" onClick={() => openDetail(row)}>Apri<ChevronRight size={16}/></button></td></tr>)}</tbody></table>{!visible.length && <div className="rdp-empty">Nessun elemento per i filtri e lo stato selezionati.</div>}</div>}
     <DetailPanel detail={detail} onClose={() => setDetail(null)} onDiagnostics={openDiagnostic} canDecide={canDecide} canCancel={canCancel} onDecision={setDecision} onRetry={retryRequest} onCancel={() => setCancelTarget(detail.request)} busy={busy}/>
     <PreviewDialog preview={preview} busy={busy} sendEnabled={sendEnabled} onCancel={() => setPreview(null)} onConfirm={sendRequest}/>
     <CancelRequestDialog request={cancelTarget} busy={busy} onClose={() => setCancelTarget(null)} onConfirm={cancelRequest}/>

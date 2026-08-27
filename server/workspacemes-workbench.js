@@ -51,12 +51,17 @@ async function loadProductsByCode(admin, lines) {
   return new Map((result.data || []).map((row) => [text(row.codice_articolo).toUpperCase(), row]));
 }
 
-function requestStage(request) {
+export function requestStage(request) {
   const status = text(request?.workspace_status || request?.stato || "").toUpperCase();
+  if (status === "CANCELLED") return "history";
   if (["EVASO", "COMPLETED", "PRODUCTIONCOMPLETED"].includes(status)) return "completed";
   if (["INPRODUCTION", "PLANNED", "PARTIALLYPLANNED"].includes(status)) return "production";
-  if (["BLOCKED", "REJECTED", "CANCELLED", "FAILED"].includes(status)) return "blocked";
+  if (["BLOCKED", "REJECTED", "FAILED"].includes(status)) return "blocked";
   return request ? "rdp" : "evaluation";
+}
+
+function cancelled(request) {
+  return text(request?.workspace_status || request?.stato).toUpperCase() === "CANCELLED";
 }
 
 function publicDiagnostic(row) {
@@ -79,17 +84,20 @@ export async function listProductionWorkbench({ admin, diagnostics = [] }) {
   const relevantLines = (lines || []).filter((row) => orderIds.has(text(row.ordine_id)));
   const productsByCode = await loadProductsByCode(admin, relevantLines);
   const requestByOrder = new Map();
-  for (const request of requests || []) if (request.ordine_id && !requestByOrder.has(text(request.ordine_id))) requestByOrder.set(text(request.ordine_id), request);
+  const requestById = new Map((requests || []).map((request) => [text(request.id), request]));
+  const orderIdsByRequest = new Map((requests || []).map((request) => [text(request.id), new Set([request.ordine_id].filter(Boolean).map(text))]));
+  for (const request of requests || []) if (!cancelled(request) && request.ordine_id && !requestByOrder.has(text(request.ordine_id))) requestByOrder.set(text(request.ordine_id), request);
   const requestIds = (requests || []).map((row) => row.id);
   if (requestIds.length) {
     const result = await admin.from("workspace_production_request_items").select("production_request_id,ordine_id").in("production_request_id", requestIds);
     if (result.error) throw result.error;
-    for (const item of result.data || []) if (!requestByOrder.has(text(item.ordine_id))) {
-      const request = (requests || []).find((row) => text(row.id) === text(item.production_request_id));
-      if (request) requestByOrder.set(text(item.ordine_id), request);
+    for (const item of result.data || []) {
+      const request = requestById.get(text(item.production_request_id));
+      orderIdsByRequest.get(text(item.production_request_id))?.add(text(item.ordine_id));
+      if (request && !cancelled(request) && !requestByOrder.has(text(item.ordine_id))) requestByOrder.set(text(item.ordine_id), request);
     }
   }
-  return { generatedAt: new Date().toISOString(), items: (orders || []).map((order) => {
+  const items = (orders || []).map((order) => {
     const orderLines = relevantLines.filter((line) => text(line.ordine_id) === text(order.id));
     const productive = orderLines.filter((line) => !line.riga_descrittiva && text(line.codice_articolo) && number(line.quantita) > 0);
     const request = requestByOrder.get(text(order.id)) || null;
@@ -107,7 +115,28 @@ export async function listProductionWorkbench({ admin, diagnostics = [] }) {
       requestId: request?.id || null, requestExternalId: request?.external_id || null,
       diagnostics: orderDiagnostics.map(publicDiagnostic),
     };
-  }) };
+  });
+  const orderById = new Map((orders || []).map((order) => [text(order.id), order]));
+  const history = (requests || []).filter(cancelled).map((request) => {
+    const historicalOrders = [...(orderIdsByRequest.get(text(request.id)) || [])].map((id) => orderById.get(id)).filter(Boolean);
+    const historicalOrderIds = new Set(historicalOrders.map((order) => text(order.id)));
+    const historicalLines = relevantLines.filter((line) => historicalOrderIds.has(text(line.ordine_id)));
+    const productive = historicalLines.filter((line) => !line.riga_descrittiva && text(line.codice_articolo) && number(line.quantita) > 0);
+    const labels = historicalOrders.map(octLabel).filter(Boolean);
+    const customers = [...new Set(historicalOrders.map((order) => customerName(order, customersByCode)).filter(Boolean))];
+    return {
+      id: `history:${request.id}`, orderId: historicalOrders[0]?.id || request.ordine_id,
+      label: labels.join(", ") || "RdP storica", customer: customers.join(", ") || "—",
+      orderDate: historicalOrders[0]?.data_ordine, deliveryDate: historicalOrders[0]?.data_consegna,
+      sourceTimestamp: request.cancelled_at || request.updated_at || request.created_at,
+      status: "Cancelled", stage: "history", ready: false,
+      lineCount: historicalLines.length, productiveLineCount: productive.length,
+      quantity: productive.reduce((total, line) => total + number(line.quantita), 0),
+      units: resolveWorkbenchUnits(productive, productsByCode),
+      requestId: request.id, requestExternalId: request.external_id, diagnostics: [],
+    };
+  });
+  return { generatedAt: new Date().toISOString(), items, history };
 }
 
 export async function productionWorkbenchDetail({ admin, orderId = null, requestId = null, diagnostics = [] }) {

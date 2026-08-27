@@ -24,6 +24,11 @@ export function activeOctLines(lines) {
   return (lines || []).filter((line) => line?.mexal_attiva !== false);
 }
 
+export function workbenchDetailLines(lines, requestItems = []) {
+  const requestedLineIds = new Set((requestItems || []).map((item) => text(item.ordine_riga_id)).filter(Boolean));
+  return (lines || []).filter((line) => line?.mexal_attiva !== false || requestedLineIds.has(text(line.id)));
+}
+
 function octLabel(order) {
   return [text(order.mexal_sigla), text(order.mexal_serie), text(order.mexal_numero)].filter(Boolean).join("/");
 }
@@ -116,6 +121,23 @@ export async function listProductionWorkbench({ admin, diagnostics = [] }) {
       lineCount: orderLines.length, productiveLineCount: productive.length,
       quantity: productive.reduce((total, line) => total + number(line.quantita), 0),
       units: resolveWorkbenchUnits(productive, productsByCode),
+      lines: productive.map((line) => {
+        const product = productsByCode.get(text(line.codice_articolo).toUpperCase());
+        const orderedQuantity = number(line.quantita);
+        const fulfilledQuantity = Math.min(orderedQuantity, Math.max(0, number(line.quantita_evasa)));
+        return {
+          id: line.id,
+          position: line.mexal_posizione,
+          articleCode: line.codice_articolo,
+          description: line.descrizione || product?.descrizione || "—",
+          orderedQuantity,
+          fulfilledQuantity,
+          residualQuantity: Math.max(0, orderedQuantity - fulfilledQuantity),
+          unit: resolveWorkbenchOctUnit(line, product),
+          deliveryDate: line.data_consegna || order.data_consegna,
+          productionStatus: request ? (request.workspace_status || request.stato || "RdP") : "Da generare",
+        };
+      }),
       ready: productive.length > 0 && order.cliente_mexal_risolto !== false && !orderDiagnostics.some((row) => ["Blocking", "Critical"].includes(row.severity) && row.status !== "Resolved"),
       requestId: request?.id || null, requestExternalId: request?.external_id || null,
       diagnostics: orderDiagnostics.map(publicDiagnostic),
@@ -161,7 +183,8 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
     admin.from("ordini_righe").select("*").in("ordine_id", relatedOrderIds).order("mexal_posizione"),
   ]);
   if (ordersError || linesError) throw ordersError || linesError;
-  const visibleLines = request ? (lines || []) : activeOctLines(lines);
+  const currentLines = activeOctLines(lines);
+  const visibleLines = request ? workbenchDetailLines(lines, requestItemsResult.data || []) : currentLines;
   const customersByCode = await loadCustomers(admin, orders);
   let proposals = [];
   let productionEvents = [];
@@ -187,7 +210,7 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
   );
   const requestItemByLine = new Map((requestItemsResult.data || []).map((row) => [text(row.ordine_riga_id), row]));
   const proposalByItem = new Map(proposals.map((row) => [text(row.production_request_item_id), row]));
-  const currentProductive = visibleLines.filter((line) => !line.riga_descrittiva && text(line.codice_articolo) && number(line.quantita) > 0);
+  const currentProductive = currentLines.filter((line) => !line.riga_descrittiva && text(line.codice_articolo) && number(line.quantita) > 0);
   const previousItems = Array.isArray(sentSnapshot?.snapshot?.items) ? sentSnapshot.snapshot.items : [];
   const previousByLine = new Map(previousItems.map((item) => [text(item.lineId), item]));
   const currentByLine = new Map(currentProductive.map((line) => [text(line.id), line]));

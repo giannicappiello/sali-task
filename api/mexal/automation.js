@@ -570,6 +570,31 @@ export default async function handler(req, res) {
         const effectiveDiagnostics = await effectiveWorkspaceDiagnostics({ admin: admin.supabase, diagnostics });
         return sendSuccess(res, 200, await productionWorkbenchDetail({ admin: admin.supabase, orderId: body.orderId, requestId: body.requestId, diagnostics: effectiveDiagnostics }));
       }
+      case "progremes_oct_refresh": {
+        const admin = await createAdmin(req, "rdp.view");
+        const { data, error } = await admin.supabase.rpc("enqueue_workbench_oct_refresh", {
+          p_requested_by: admin.authUserId,
+          p_requested_at: new Date().toISOString(),
+        });
+        if (error) throw error;
+        return sendSuccess(res, 202, { refresh: data });
+      }
+      case "progremes_oct_refresh_status": {
+        const admin = await createAdmin(req, "rdp.view");
+        const jobId = Number(body.jobId);
+        if (!Number.isSafeInteger(jobId) || jobId < 1) {
+          return sendFailure(res, 400, "progremes_oct_refresh_status", "Job OCT non valido.");
+        }
+        const { data, error } = await admin.supabase
+          .from("mexal_sync_jobs")
+          .select("id,cycle_id,status,attempts,started_at,completed_at,last_error,last_result")
+          .eq("id", jobId)
+          .eq("sync_type", "oct_orders")
+          .maybeSingle();
+        if (error) throw error;
+        if (!data) return sendFailure(res, 404, "progremes_oct_refresh_status", "Job OCT Workbench non trovato.");
+        return sendSuccess(res, 200, { refresh: data });
+      }
       case "progremes_production_confirm": {
         const admin = await createAdmin(req, "rdp.decide");
         return confirmProductionProposal(req, res, { admin: admin.supabase });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowUpRight, Ban, CheckCircle2, ChevronRight, Factory, RefreshCw, Search, Send, ShieldAlert, X } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 
@@ -106,16 +106,61 @@ export default function RdpWorkbench() {
   const [decision, setDecision] = useState(null);
   const [cancelTarget, setCancelTarget] = useState(null);
   const [productionGates, setProductionGates] = useState(null);
+  const [octRefresh, setOctRefresh] = useState(null);
+  const refreshGeneration = useRef(0);
   const sendEnabled = productionGates?.allOn === true;
 
   async function load() { setLoading(true); setError(""); try { const payload = await callWorkbench(accessToken, "progremes_workbench_list"); setData(workbenchRows(payload)); setProductionGates(payload.productionGates || null); } catch (e) { setProductionGates(null); setError(e.message); } finally { setLoading(false); } }
   useEffect(() => {
     if (!accessToken) return undefined;
     let active = true;
-    callWorkbench(accessToken, "progremes_workbench_list")
-      .then((payload) => { if (active) { setData(workbenchRows(payload)); setProductionGates(payload.productionGates || null); } })
-      .catch((loadError) => { if (active) { setProductionGates(null); setError(loadError.message); } })
-      .finally(() => { if (active) setLoading(false); });
+    const generation = ++refreshGeneration.current;
+    async function initialize() {
+      try {
+        const initial = await callWorkbench(accessToken, "progremes_workbench_list");
+        if (active && generation === refreshGeneration.current) {
+          setData(workbenchRows(initial));
+          setProductionGates(initial.productionGates || null);
+        }
+      } catch (loadError) {
+        if (active && generation === refreshGeneration.current) {
+          setProductionGates(null);
+          setError(loadError.message);
+        }
+      } finally {
+        if (active && generation === refreshGeneration.current) setLoading(false);
+      }
+      if (!active || generation !== refreshGeneration.current) return;
+      try {
+        const payload = await callWorkbench(accessToken, "progremes_oct_refresh");
+        const jobId = Number(payload.refresh?.jobId);
+        if (!active || generation !== refreshGeneration.current || !Number.isSafeInteger(jobId)) return;
+        setOctRefresh({ jobId, status: payload.refresh?.status || "queued" });
+        while (active && generation === refreshGeneration.current) {
+          await new Promise((resolve) => window.setTimeout(resolve, 5000));
+          if (!active || generation !== refreshGeneration.current) return;
+          const statusPayload = await callWorkbench(accessToken, "progremes_oct_refresh_status", { jobId });
+          const refresh = statusPayload.refresh || {};
+          if (!active || generation !== refreshGeneration.current) return;
+          setOctRefresh({ jobId, ...refresh });
+          if (["completed", "failed", "cancelled"].includes(refresh.status)) {
+            if (refresh.status === "completed") {
+              const refreshed = await callWorkbench(accessToken, "progremes_workbench_list");
+              if (active && generation === refreshGeneration.current) {
+                setData(workbenchRows(refreshed));
+                setProductionGates(refreshed.productionGates || null);
+              }
+            }
+            return;
+          }
+        }
+      } catch (refreshError) {
+        if (active && generation === refreshGeneration.current) {
+          setOctRefresh({ status: "failed", last_error: refreshError.message });
+        }
+      }
+    }
+    initialize();
     return () => { active = false; };
   }, [accessToken]);
   const visible = useMemo(() => data.filter((row) => {
@@ -141,6 +186,9 @@ export default function RdpWorkbench() {
 
   return <div className="production-page rdp-workbench">
     <header className="rdp-header"><div><span className="rdp-eyebrow">WorkspaceMES</span><h1>RdP Workbench</h1><p>Gestione OCT, richieste di produzione, analisi MES e decisioni operative.</p></div><button type="button" className="secondary-action" onClick={load} disabled={loading}><RefreshCw className={loading ? "rdp-spin" : ""} size={17}/>Aggiorna</button></header>
+    {octRefresh && !["completed", "failed", "cancelled"].includes(octRefresh.status) && <div className="rdp-background-sync" role="status"><RefreshCw className="rdp-spin" size={16}/><span>Sincronizzazione OCT in background · la schermata resta utilizzabile.</span></div>}
+    {octRefresh?.status === "completed" && <div className="rdp-background-sync rdp-background-sync-complete" role="status"><CheckCircle2 size={16}/><span>OCT aggiornati da Mexal.</span></div>}
+    {octRefresh?.status === "failed" && <div className="rdp-background-sync rdp-background-sync-failed" role="alert"><AlertTriangle size={16}/><span>Sincronizzazione OCT non riuscita: {octRefresh.last_error || "consultare il Centro Diagnostico"}.</span></div>}
     <nav className="rdp-tabs" aria-label="Stati Workbench">{TABS.map(([code,label]) => <button type="button" key={code} className={tab === code ? "active" : ""} onClick={() => setTab(code)}>{label}<span>{data.filter((row) => row.stage === code).length}</span></button>)}</nav>
     <section className="rdp-toolbar"><label><Search size={17}/><input value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} placeholder="Cerca OCT, cliente, stato…"/></label><input value={filters.customer} onChange={(e) => setFilters({ ...filters, customer: e.target.value })} placeholder="Filtra cliente"/><select value={filters.ready} onChange={(e) => setFilters({ ...filters, ready: e.target.value })}><option value="">Pronti e bloccati</option><option value="ready">Solo pronti</option><option value="blocked">Solo bloccati</option></select></section>
     {error && <div className="production-message" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")}><X size={16}/>Chiudi</button></div>}

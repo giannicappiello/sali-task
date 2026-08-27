@@ -75,13 +75,15 @@ test("decisione v2 usa hash aggregati compatibili e contratto HMAC dedicato", as
   const client = createProgremesProductionClient({
     env: { PROGREMES_URL: "https://mes.example.test", PROGREMES_INTEGRATION_SECRET: "server-secret", PROGREMES_PRODUCTION_CONFIRMATIONS_ENABLED: "true" },
     now: () => 1_800_000_000_000,
-    fetchImpl: async (url, init) => { call = { url: String(url), init }; return { ok: true, json: async () => ({ externalId: payload.externalId, status: "Planned", productionCreated: true, message: "OdP creati" }) }; },
+    fetchImpl: async (url, init) => { call = { url: String(url), init }; return { ok: true, json: async () => ({ externalId: payload.externalId, status: "Planned", productionCreated: true, message: "OdP creati", productionOrders: [{ id: 42, number: "WV2-42" }] }) }; },
   });
   const response = await client.decideRequest(workspaceExternalId, payload);
   assert.equal(call.url, `https://mes.example.test${DECISION_PATH(workspaceExternalId)}`);
   assert.ok(call.init.headers[HMAC_HEADERS.signature]);
   assert.equal(response.result.productionCreated, true);
+  assert.deepEqual(response.result.productionOrders, [{ id: 42, number: "WV2-42" }]);
   assert.throws(() => validateDecisionResponse({ ...response.result, externalId: "altro" }, payload), { code: "INVALID_MES_RESPONSE" });
+  assert.throws(() => validateDecisionResponse({ ...response.result, productionOrders: [] }, payload), { code: "INVALID_MES_RESPONSE" });
 });
 
 test("il client propaga l'errore MES sicuro e conserva status e code", async () => {

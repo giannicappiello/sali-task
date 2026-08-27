@@ -127,6 +127,9 @@ export function validateDecisionResponse(result, payload) {
       text(result.externalId) !== text(payload.externalId) || !text(result.status) ||
       typeof result.productionCreated !== "boolean" || !text(result.message))
     throw Object.assign(new Error("Risposta decisione RdP v2 di ProgreMES non valida."), { code: "INVALID_MES_RESPONSE" });
+  if (result.productionCreated === true && (!Array.isArray(result.productionOrders) || !result.productionOrders.length ||
+      result.productionOrders.some((order) => !Number.isSafeInteger(Number(order?.id)) || Number(order.id) <= 0 || !text(order?.number))))
+    throw Object.assign(new Error("ProgreMES ha dichiarato la creazione senza restituire OP persistiti."), { code: "INVALID_MES_RESPONSE" });
   return result;
 }
 

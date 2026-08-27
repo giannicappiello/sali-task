@@ -531,6 +531,7 @@ export async function syncOctOrders({ mexal, supabase, env = process.env, contex
   const availableArticleCodes = new Set(availableArticleCatalog.keys());
   let importedLines = 0;
   let skippedArticleLines = 0;
+  let retiredLines = 0;
   for (const rawNormalized of documents) {
     const normalized = resolveDocumentUnits(rawNormalized, availableArticleCatalog);
     const { data: customer } = await supabase.from("ordini_clienti_cache").select("codice_cliente").eq("codice_cliente", normalized.header.mexal_cod_conto).maybeSingle();
@@ -541,11 +542,34 @@ export async function syncOctOrders({ mexal, supabase, env = process.env, contex
     const classified = classifyOctLines(normalized, availableArticleCodes, { context });
     anomalies.push(...classified.anomalies);
     skippedArticleLines += classified.anomalies.length;
-    const rows = classified.valid.map((line) => ({ ...line, ordine_id: order.id }));
+    const rows = classified.valid.map((line) => ({
+      ...line,
+      ordine_id: order.id,
+      mexal_attiva: true,
+      mexal_ritirata_il: null,
+    }));
     if (rows.length) {
       const { error: lineError } = await supabase.from("ordini_righe").upsert(rows, { onConflict: "ordine_id,mexal_posizione" });
       if (lineError) throw lineError;
       importedLines += rows.length;
+    }
+    const { data: storedLines, error: storedLinesError } = await supabase.from("ordini_righe")
+      .select("id,mexal_posizione,mexal_attiva")
+      .eq("ordine_id", order.id);
+    if (storedLinesError) throw storedLinesError;
+    // Only accepted source rows remain eligible for a future RdP. A source row
+    // rejected by validation must fail closed instead of reviving stale data.
+    const sourcePositions = new Set(rows.map((line) => String(line.mexal_posizione)));
+    const staleLineIds = (storedLines || [])
+      .filter((line) => line.mexal_attiva !== false && !sourcePositions.has(String(line.mexal_posizione)))
+      .map((line) => line.id)
+      .filter(Boolean);
+    if (staleLineIds.length) {
+      const { error: retireError } = await supabase.from("ordini_righe")
+        .update({ mexal_attiva: false, mexal_ritirata_il: new Date().toISOString() })
+        .in("id", staleLineIds);
+      if (retireError) throw retireError;
+      retiredLines += staleLineIds.length;
     }
     imported++;
   }
@@ -560,6 +584,7 @@ export async function syncOctOrders({ mexal, supabase, env = process.env, contex
     imported,
     skipped,
     imported_lines: importedLines,
+    retired_lines: retiredLines,
     skipped_article_lines: skippedArticleLines,
     anomaly_count: anomalies.length,
     anomalies,

@@ -20,6 +20,10 @@ export function resolveWorkbenchUnits(lines, productsByCode) {
   )).filter(Boolean))];
 }
 
+export function activeOctLines(lines) {
+  return (lines || []).filter((line) => line?.mexal_attiva !== false);
+}
+
 function octLabel(order) {
   return [text(order.mexal_sigla), text(order.mexal_serie), text(order.mexal_numero)].filter(Boolean).join("/");
 }
@@ -81,7 +85,8 @@ export async function listProductionWorkbench({ admin, diagnostics = [] }) {
   if (orderError || lineError || requestError) throw orderError || lineError || requestError;
   const customersByCode = await loadCustomers(admin, orders);
   const orderIds = new Set((orders || []).map((row) => text(row.id)));
-  const relevantLines = (lines || []).filter((row) => orderIds.has(text(row.ordine_id)));
+  const relevantLines = activeOctLines(lines).filter((row) => orderIds.has(text(row.ordine_id)));
+  const allRelevantLines = (lines || []).filter((row) => orderIds.has(text(row.ordine_id)));
   const productsByCode = await loadProductsByCode(admin, relevantLines);
   const requestByOrder = new Map();
   const requestById = new Map((requests || []).map((request) => [text(request.id), request]));
@@ -120,7 +125,7 @@ export async function listProductionWorkbench({ admin, diagnostics = [] }) {
   const history = (requests || []).filter(cancelled).map((request) => {
     const historicalOrders = [...(orderIdsByRequest.get(text(request.id)) || [])].map((id) => orderById.get(id)).filter(Boolean);
     const historicalOrderIds = new Set(historicalOrders.map((order) => text(order.id)));
-    const historicalLines = relevantLines.filter((line) => historicalOrderIds.has(text(line.ordine_id)));
+    const historicalLines = allRelevantLines.filter((line) => historicalOrderIds.has(text(line.ordine_id)));
     const productive = historicalLines.filter((line) => !line.riga_descrittiva && text(line.codice_articolo) && number(line.quantita) > 0);
     const labels = historicalOrders.map(octLabel).filter(Boolean);
     const customers = [...new Set(historicalOrders.map((order) => customerName(order, customersByCode)).filter(Boolean))];
@@ -156,6 +161,7 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
     admin.from("ordini_righe").select("*").in("ordine_id", relatedOrderIds).order("mexal_posizione"),
   ]);
   if (ordersError || linesError) throw ordersError || linesError;
+  const visibleLines = request ? (lines || []) : activeOctLines(lines);
   const customersByCode = await loadCustomers(admin, orders);
   let proposals = [];
   let productionEvents = [];
@@ -174,14 +180,14 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
     if (result.error) throw result.error;
     sentSnapshot = result.data;
   }
-  const productByCode = await loadProductsByCode(admin, lines);
+  const productByCode = await loadProductsByCode(admin, visibleLines);
   const currentOctUnit = (line) => resolveWorkbenchOctUnit(
     line,
     productByCode.get(text(line.codice_articolo).toUpperCase()),
   );
   const requestItemByLine = new Map((requestItemsResult.data || []).map((row) => [text(row.ordine_riga_id), row]));
   const proposalByItem = new Map(proposals.map((row) => [text(row.production_request_item_id), row]));
-  const currentProductive = (lines || []).filter((line) => !line.riga_descrittiva && text(line.codice_articolo) && number(line.quantita) > 0);
+  const currentProductive = visibleLines.filter((line) => !line.riga_descrittiva && text(line.codice_articolo) && number(line.quantita) > 0);
   const previousItems = Array.isArray(sentSnapshot?.snapshot?.items) ? sentSnapshot.snapshot.items : [];
   const previousByLine = new Map(previousItems.map((item) => [text(item.lineId), item]));
   const currentByLine = new Map(currentProductive.map((line) => [text(line.id), line]));
@@ -205,7 +211,7 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
     request: request ? { ...request, stage: requestStage(request) } : null,
     cancellation: evaluateProductionRequestCancellation({ request, proposals, events: productionEvents }),
     revision: { modified: Boolean(sentSnapshot && (delta.added.length || delta.removed.length || delta.changed.length || deliveryChanged)), deliveryChanged, ...delta },
-    lines: (lines || []).map((line) => {
+    lines: visibleLines.map((line) => {
       const product = productByCode.get(text(line.codice_articolo).toUpperCase());
       const requestItem = requestItemByLine.get(text(line.id));
       const proposal = proposalByItem.get(text(requestItem?.id));

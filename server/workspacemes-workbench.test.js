@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { requestStage, resolveWorkbenchOctUnit, resolveWorkbenchUnits } from "./workspacemes-workbench.js";
+import { activeOctLines, requestStage, resolveWorkbenchOctUnit, resolveWorkbenchUnits } from "./workspacemes-workbench.js";
 
 test("una RdP annullata è storico e non resta tra i bloccati", () => {
   assert.equal(requestStage({ workspace_status: "Cancelled" }), "history");
   assert.equal(requestStage({ workspace_status: "Blocked" }), "blocked");
+});
+
+test("il Workbench corrente nasconde le righe ritirate preservandole nel record sorgente", () => {
+  const lines = [{ id: "current", mexal_attiva: true }, { id: "historical", mexal_attiva: false }];
+  assert.deepEqual(activeOctLines(lines).map((line) => line.id), ["current"]);
+  assert.equal(lines.length, 2);
 });
 
 test("il tipo UDM Mexal 1 usa la UDM principale autorevole anche nel dettaglio Workbench", () => {

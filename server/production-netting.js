@@ -105,7 +105,7 @@ async function loadLines(admin, { orderIds, lineIds }) {
   if (lineError) throw lineError;
 
   const productiveLines = (rawLines || []).filter((line) =>
-    !line.riga_descrittiva && text(line.codice_articolo) && Number(line.quantita) > 0);
+    line.mexal_attiva !== false && !line.riga_descrittiva && text(line.codice_articolo) && Number(line.quantita) > 0);
   if (!productiveLines.length)
     throw Object.assign(new Error("La selezione non contiene righe OCT produttive."), { code: "NO_PRODUCTIVE_LINES", status: 400 });
   const productiveOrderIds = new Set(productiveLines.map((line) => text(line.ordine_id)));

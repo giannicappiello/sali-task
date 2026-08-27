@@ -235,6 +235,16 @@ test("snapshot cambiato tra preview e invio blocca prima della chiamata MES", as
   assert.equal(calls, 0);
 });
 
+test("le righe ritirate dal documento Mexal non entrano in una nuova RdP", async () => {
+  const lineRows = [
+    { ...LINES[0], mexal_attiva: true },
+    { ...LINES[2], mexal_attiva: false },
+  ];
+  const demand = await buildProductionDemand({ admin: makeAdmin({ lineRows }), orderIds: [ORDERS[0].id] });
+  assert.equal(demand.items.length, 1);
+  assert.equal(demand.items[0].commercialArticleCode, "PB0004");
+});
+
 test("snapshot equivalente con ID diverso tra preview e invio raggiunge il MES", async () => {
   let outbound;
   const recorder = responseRecorder();

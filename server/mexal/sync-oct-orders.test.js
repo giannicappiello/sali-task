@@ -288,6 +288,7 @@ function writableSupabase() {
         eq(column, value) { filters.push((row) => row[column] === value); return query; },
         in(column, values) { filters.push((row) => values.includes(row[column])); return query; },
         upsert(value) { operation = "upsert"; payload = value; return query; },
+        update(value) { operation = "update"; payload = value; return query; },
         maybeSingle() { return execute(true); },
         single() { return execute(true); },
         then(resolve, reject) { return execute(false).then(resolve, reject); },
@@ -296,6 +297,11 @@ function writableSupabase() {
         if (operation === "select") {
           const rows = (state[table] || []).filter((row) => filters.every((filter) => filter(row)));
           return { data: single ? rows[0] || null : rows, error: null };
+        }
+        if (operation === "update") {
+          const rows = (state[table] || []).filter((row) => filters.every((filter) => filter(row)));
+          for (const row of rows) Object.assign(row, payload);
+          return { data: rows, error: null };
         }
         if (table === "ordini_testate") {
           const existing = state.ordini_testate.find((row) => row.mexal_chiave === payload.mexal_chiave);
@@ -366,6 +372,38 @@ test("retry dello stesso OCT è idempotente e non crea duplicati", async () => {
   await syncOctOrders(input);
   assert.equal(supabase.state.ordini_testate.length, 1);
   assert.equal(supabase.state.ordini_righe.length, 2);
+});
+
+test("una riga rimossa da Mexal viene ritirata logicamente senza perdere lineage", async () => {
+  const supabase = writableSupabase();
+  const document = {
+    sigla: "OC", cod_modulo: "T", serie: 2, numero: 206, cod_conto: "C1",
+    righe: [
+      { id_riga: 1, tp_riga: "R", codice_articolo: "PB0004", quantita: 3000, tp_um_articolo: "1" },
+      { id_riga: 2, tp_riga: "R", codice_articolo: "PB0004", quantita: 3000, tp_um_articolo: "1" },
+    ],
+  };
+  const mexal = {
+    async getJson(path) {
+      if (path === "/oct?max=200") return { dati: [{ sigla: "OC", serie: 2, numero: 206 }] };
+      if (path === "/documenti/ordini-clienti/OC%2B2%2B206") return document;
+      throw new Error(`Percorso inatteso: ${path}`);
+    },
+  };
+  const input = {
+    mexal, supabase,
+    env: { MEXAL_OCT_IMPORT_ENABLED: "true", MEXAL_OCT_MODULE_CODE: "T", MEXAL_OCT_LIST_PATH: "/oct" },
+  };
+  await syncOctOrders(input);
+  document.righe = [document.righe[0]];
+  const result = await syncOctOrders(input);
+
+  assert.equal(supabase.state.ordini_righe.length, 2);
+  assert.equal(supabase.state.ordini_righe[0].mexal_attiva, true);
+  assert.equal(supabase.state.ordini_righe[0].mexal_ritirata_il, null);
+  assert.equal(supabase.state.ordini_righe[1].mexal_attiva, false);
+  assert.match(supabase.state.ordini_righe[1].mexal_ritirata_il, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(result.retired_lines, 1);
 });
 
 test("un documento temporaneamente illeggibile non blocca gli OCT validi e non espone l'utente Mexal", async () => {

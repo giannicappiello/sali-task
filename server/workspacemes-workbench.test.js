@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveWorkbenchOctUnit, resolveWorkbenchUnits } from "./workspacemes-workbench.js";
+import { requestStage, resolveWorkbenchOctUnit, resolveWorkbenchUnits } from "./workspacemes-workbench.js";
+
+test("una RdP annullata è storico e non resta tra i bloccati", () => {
+  assert.equal(requestStage({ workspace_status: "Cancelled" }), "history");
+  assert.equal(requestStage({ workspace_status: "Blocked" }), "blocked");
+});
 
 test("il tipo UDM Mexal 1 usa la UDM principale autorevole anche nel dettaglio Workbench", () => {
   assert.equal(resolveWorkbenchOctUnit(

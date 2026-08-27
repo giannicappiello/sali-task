@@ -3,13 +3,14 @@ import test from "node:test";
 import { readFile } from "node:fs/promises";
 import { appendProgremesContext } from "../server/progremes-sso.js";
 
-const [ui, production, api, migration, cancellationMigration, cancellationRefinementMigration, workbench] = await Promise.all([
+const [ui, production, api, migration, cancellationMigration, cancellationRefinementMigration, reopenMigration, workbench] = await Promise.all([
   readFile("src/pages/Production/RdpWorkbench.jsx", "utf8"),
   readFile("src/pages/Production/Production.jsx", "utf8"),
   readFile("api/mexal/automation.js", "utf8"),
   readFile("supabase/migrations/20260826170000_workspacemes_rdp_create_permission.sql", "utf8"),
   readFile("supabase/migrations/20260827100000_workspacemes_rdp_controlled_cancellation.sql", "utf8"),
   readFile("supabase/migrations/20260827103000_refine_rdp_cancellation_effect_events.sql", "utf8"),
+  readFile("supabase/migrations/20260827110000_reopen_orders_after_cancelled_rdp.sql", "utf8"),
   readFile("server/workspacemes-workbench.js", "utf8"),
 ]);
 
@@ -20,6 +21,19 @@ test("Workbench espone lista OCT, multi-select e stati operativi senza duplicare
   assert.match(ui, /NESSUNA NETTIFICAZIONE WORKSPACE/);
   for (const screen of ["Planning", "Produzione", "Operatore produzione", "Confezionamento", "Magazzino", "Documenti"]) assert.match(ui, new RegExp(screen));
   assert.match(production, /RdP Workbench/);
+});
+
+test("RdP annullate restano nello storico e gli OCT tornano lavorabili", () => {
+  assert.match(ui, /Storico RdP/);
+  assert.match(ui, /payload\.history/);
+  assert.match(ui, /row\.orderId \|\| row\.id/);
+  assert.match(workbench, /!cancelled\(request\)/);
+  assert.match(workbench, /history:\$\{request\.id\}/);
+  assert.match(reopenMigration, /workspace_production_requests_active_idempotency_uniq/);
+  assert.match(reopenMigration, /workspace_production_requests_active_first_line_uniq/);
+  assert.match(reopenMigration, /<> 'CANCELLED'/);
+  assert.match(reopenMigration, /pg_advisory_xact_lock/);
+  assert.doesNotMatch(reopenMigration, /delete\s+from/i);
 });
 
 test("annullo RdP richiede permesso, motivo e conferma esplicita", () => {

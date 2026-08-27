@@ -12,6 +12,13 @@ export function resolveWorkbenchOctUnit(line, product) {
   }).unit;
 }
 
+export function resolveWorkbenchUnits(lines, productsByCode) {
+  return [...new Set((lines || []).map((line) => resolveWorkbenchOctUnit(
+    line,
+    productsByCode.get(text(line.codice_articolo).toUpperCase()),
+  )).filter(Boolean))];
+}
+
 function octLabel(order) {
   return [text(order.mexal_sigla), text(order.mexal_serie), text(order.mexal_numero)].filter(Boolean).join("/");
 }
@@ -31,6 +38,16 @@ async function loadCustomers(admin, orders) {
   const result = await admin.from("ordini_clienti_cache").select("codice_cliente,ragione_sociale").in("codice_cliente", codes);
   if (result.error) throw result.error;
   return new Map((result.data || []).map((row) => [text(row.codice_cliente), row]));
+}
+
+async function loadProductsByCode(admin, lines) {
+  const codes = [...new Set((lines || []).map((line) => text(line.codice_articolo).toUpperCase()).filter(Boolean))];
+  if (!codes.length) return new Map();
+  const result = await admin.from("ordini_prodotti_cache")
+    .select("codice_articolo,descrizione,unita_misura,dati_mexal")
+    .in("codice_articolo", codes);
+  if (result.error) throw result.error;
+  return new Map((result.data || []).map((row) => [text(row.codice_articolo).toUpperCase(), row]));
 }
 
 function requestStage(request) {
@@ -59,6 +76,7 @@ export async function listProductionWorkbench({ admin, diagnostics = [] }) {
   const customersByCode = await loadCustomers(admin, orders);
   const orderIds = new Set((orders || []).map((row) => text(row.id)));
   const relevantLines = (lines || []).filter((row) => orderIds.has(text(row.ordine_id)));
+  const productsByCode = await loadProductsByCode(admin, relevantLines);
   const requestByOrder = new Map();
   for (const request of requests || []) if (request.ordine_id && !requestByOrder.has(text(request.ordine_id))) requestByOrder.set(text(request.ordine_id), request);
   const requestIds = (requests || []).map((row) => row.id);
@@ -83,7 +101,7 @@ export async function listProductionWorkbench({ admin, diagnostics = [] }) {
       status: request?.workspace_status || request?.stato || order.stato || "DA_VALUTARE", stage: requestStage(request),
       lineCount: orderLines.length, productiveLineCount: productive.length,
       quantity: productive.reduce((total, line) => total + number(line.quantita), 0),
-      units: [...new Set(productive.map((line) => text(line.unita_misura_oct || line.tipo_unita_misura_mexal)).filter(Boolean))],
+      units: resolveWorkbenchUnits(productive, productsByCode),
       ready: productive.length > 0 && order.cliente_mexal_risolto !== false && !orderDiagnostics.some((row) => ["Blocking", "Critical"].includes(row.severity) && row.status !== "Resolved"),
       requestId: request?.id || null, requestExternalId: request?.external_id || null,
       diagnostics: orderDiagnostics.map(publicDiagnostic),
@@ -121,14 +139,7 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
     if (result.error) throw result.error;
     sentSnapshot = result.data;
   }
-  const articleCodes = [...new Set((lines || []).map((line) => text(line.codice_articolo).toUpperCase()).filter(Boolean))];
-  let products = [];
-  if (articleCodes.length) {
-    const result = await admin.from("ordini_prodotti_cache").select("codice_articolo,descrizione,unita_misura,dati_mexal").in("codice_articolo", articleCodes);
-    if (result.error) throw result.error;
-    products = result.data || [];
-  }
-  const productByCode = new Map(products.map((row) => [text(row.codice_articolo).toUpperCase(), row]));
+  const productByCode = await loadProductsByCode(admin, lines);
   const currentOctUnit = (line) => resolveWorkbenchOctUnit(
     line,
     productByCode.get(text(line.codice_articolo).toUpperCase()),

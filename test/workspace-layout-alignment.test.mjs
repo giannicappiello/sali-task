@@ -4,15 +4,19 @@ import test from "node:test";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("module containers expose the keyboard-accessible Workspace back navigation", async () => {
-  const [container, screen, home] = await Promise.all([
+test("Workspace headers expose consistently aligned keyboard-accessible back navigation", async () => {
+  const [container, containerStyles, screen, screenStyles, home] = await Promise.all([
     read("src/components/ModuleContainerLayout.jsx"),
+    read("src/components/module-container-layout.css"),
     read("src/components/WorkspaceScreenLayout.jsx"),
+    read("src/components/workspace-screen-layout.css"),
     read("src/pages/Home/Home.jsx"),
   ]);
   assert.match(container, /useBackNavigation\(backFallback\)/);
   assert.match(container, /className="module-container-back"/);
+  assert.match(containerStyles, /\.module-container-back\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;[^}]*gap:\s*12px;[^}]*line-height:\s*1;/s);
   assert.match(screen, /className="workspace-screen-back"/);
+  assert.match(screenStyles, /\.workspace-screen-back\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;[^}]*gap:\s*12px;[^}]*line-height:\s*1;/s);
   assert.match(home, /showBack=\{false\}/);
 });
 

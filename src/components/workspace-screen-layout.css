@@ -5,7 +5,7 @@
 .workspace-screen-header-copy > span { display: block; margin-top: 18px; font-size: 12px; font-weight: 800; letter-spacing: .13em; opacity: .75; }
 .workspace-screen-header h1 { margin: 6px 0; font-size: 32px; }
 .workspace-screen-header p { max-width: 720px; margin: 0; color: #d8e8ff; line-height: 1.5; }
-.workspace-screen-back { display: inline-flex; align-items: center; gap: 7px; padding: 0; border: 0; background: transparent; color: #fff; font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
+.workspace-screen-back { display: inline-flex; align-items: center; gap: 12px; padding: 0; border: 0; background: transparent; color: #fff; font: inherit; font-weight: 700; line-height: 1; text-decoration: none; cursor: pointer; }
 .workspace-screen-content { min-width: 0; }
 .workspace-screen-content .page-title-row { display: none; }
 .workspace-screen-content .page-title-row:has(> :not(:first-child)) { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 12px; margin: 0 0 20px; }

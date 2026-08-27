@@ -19,6 +19,30 @@ function finiteQuantity(value, label) {
 }
 function hash(value) { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
 
+export function nextRdpIdempotencyKey(baseKey, requests = []) {
+  const prefix = `${baseKey}:g`;
+  const family = (requests || []).flatMap((request) => {
+    const key = text(request.idempotency_key);
+    const generation = key === baseKey ? 0
+      : key.startsWith(prefix) && /^\d+$/.test(key.slice(prefix.length)) ? Number(key.slice(prefix.length)) : null;
+    return generation === null ? [] : [{ request, key, generation }];
+  });
+  const active = family
+    .filter(({ request }) => text(request.workspace_status || request.stato).toUpperCase() !== "CANCELLED")
+    .sort((left, right) => right.generation - left.generation)[0];
+  if (active) return active.key;
+  if (!family.length) return baseKey;
+  return `${baseKey}:g${Math.max(...family.map(({ generation }) => generation)) + 1}`;
+}
+
+async function resolveRdpIdempotencyKey(admin, baseKey) {
+  const { data, error } = await admin.from("workspace_production_requests")
+    .select("idempotency_key,workspace_status,stato")
+    .like("idempotency_key", `${baseKey}%`);
+  if (error) throw error;
+  return nextRdpIdempotencyKey(baseKey, data || []);
+}
+
 async function matchesExpectedSnapshot(admin, {
   expectedSnapshotId,
   recordedSnapshotId,
@@ -304,7 +328,7 @@ export async function prepareProductionDemand({
   const selectionIdentity = selectedOrderIds.length
     ? { kind: "orders", ids: [...selectedOrderIds].sort() }
     : { kind: "lines", ids: [...demand.items.map((item) => item.lineId)].sort() };
-  const idempotencyKey = `rdp:v2:${hash({
+  const baseIdempotencyKey = `rdp:v2:${hash({
     selectionIdentity,
     revisions: demand.orders.map((order) => ({
       orderId: order.orderId,
@@ -312,6 +336,7 @@ export async function prepareProductionDemand({
       versionHash: order.versionHash,
     })).sort((left, right) => text(left.orderId).localeCompare(text(right.orderId))),
   })}`;
+  const idempotencyKey = await resolveRdpIdempotencyKey(admin, baseIdempotencyKey);
   const snapshot = {
     version: 2,
     kind: "MULTI_OCT_PRODUCTION_DEMAND",

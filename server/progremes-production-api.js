@@ -143,7 +143,12 @@ export async function sendProductionRequest(req, res, {
       attempt_count: prepared.request.attempt_count + 1,
       updated_at: new Date().toISOString(),
     }).eq("id", prepared.request.id);
-    throw error;
+    const upstreamStatus = Number(error?.status);
+    const status = Number.isInteger(upstreamStatus) && upstreamStatus >= 400 && upstreamStatus <= 599 ? upstreamStatus : 502;
+    return res.status(status).json({
+      error: error?.message || "ProgreMES non ha accettato la RdP.",
+      code: error?.code || "PROGREMES_REQUEST_FAILED",
+    });
   }
   const { result, payloadHash } = sent;
   const { error: responseError } = await admin.rpc("record_workspace_production_v2_response", {

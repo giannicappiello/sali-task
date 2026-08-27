@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
   buildProductionDemand,
+  nextRdpIdempotencyKey,
   octVersionHash,
   prepareDemandQuantity,
   prepareProductionDemand,
@@ -54,6 +55,7 @@ function snapshotQuery(snapshots) {
 function productionRequestQuery(requests, onUpdate) {
   let id;
   let updateValue = null;
+  let current = Object.values(requests);
   const query = {
     select() { return query; },
     update(value) { updateValue = value; return query; },
@@ -62,10 +64,33 @@ function productionRequestQuery(requests, onUpdate) {
       if (updateValue) { onUpdate(updateValue); return Promise.resolve({ error: null }); }
       return query;
     },
+    like(column, pattern) {
+      const prefix = String(pattern).replace(/%$/, "");
+      current = current.filter((row) => String(row[column] || "").startsWith(prefix));
+      return Promise.resolve({ data: current, error: null });
+    },
     async maybeSingle() { return { data: requests[id] || null, error: null }; },
   };
   return query;
 }
+
+test("una nuova RdP dopo annullamento riceve una generazione idempotente distinta", () => {
+  const base = `rdp:v2:${"a".repeat(64)}`;
+  assert.equal(nextRdpIdempotencyKey(base, []), base);
+  assert.equal(nextRdpIdempotencyKey(base, [{ idempotency_key: base, workspace_status: "Cancelled" }]), `${base}:g1`);
+  assert.equal(nextRdpIdempotencyKey(base, [
+    { idempotency_key: base, workspace_status: "Cancelled" },
+    { idempotency_key: `${base}:g1`, workspace_status: "Cancelled" },
+  ]), `${base}:g2`);
+});
+
+test("preview e retry conservano la chiave della generazione RdP attiva", () => {
+  const base = `rdp:v2:${"b".repeat(64)}`;
+  assert.equal(nextRdpIdempotencyKey(base, [
+    { idempotency_key: base, workspace_status: "Cancelled" },
+    { idempotency_key: `${base}:g1`, workspace_status: "PRONTA" },
+  ]), `${base}:g1`);
+});
 
 function makeAdmin({ rpcResult, rpcError = null, onRpc = () => {}, onUpdate = () => {}, onProposal = () => {},
   onResponseRpc = () => {},
@@ -332,7 +357,7 @@ test("retry rifiuta una RdP già inviata e qualsiasi override del payload", asyn
   assert.equal(calls, 0);
 });
 
-test("errore di invio conserva tentativo e codice senza perdere la RdP", async () => {
+test("errore di invio conserva tentativo e codice e restituisce JSON controllato", async () => {
   let update;
   const recorder = responseRecorder();
   const admin = makeAdmin({
@@ -343,9 +368,11 @@ test("errore di invio conserva tentativo e codice senza perdere la RdP", async (
     requestEnabled: () => true,
     async sendRequest() { throw Object.assign(new Error("timeout"), { code: "UPSTREAM_TIMEOUT" }); },
   };
-  await assert.rejects(() => sendProductionRequest({ method: "POST", body: { orderIds: [ORDERS[0].id] } }, recorder.response, { admin, client }), /timeout/);
+  await sendProductionRequest({ method: "POST", body: { orderIds: [ORDERS[0].id] } }, recorder.response, { admin, client });
   assert.equal(update.last_error_code, "UPSTREAM_TIMEOUT");
   assert.equal(update.attempt_count, 3);
+  assert.equal(recorder.value.status, 502);
+  assert.equal(recorder.value.payload.code, "UPSTREAM_TIMEOUT");
 });
 
 test("proposta MES viene persistita con collegamento alla riga OCT originaria", async () => {
@@ -382,6 +409,23 @@ test("ordine della selezione non cambia domanda canonica o chiave idempotente", 
   assert.deepEqual(first.demand, second.demand);
   assert.equal(calls[0].p_idempotency_key, calls[1].p_idempotency_key);
   assert.equal(calls[0].p_demand_hash, calls[1].p_demand_hash);
+});
+
+test("la preparazione successiva a una RdP annullata usa la generazione seguente", async () => {
+  let baseKey;
+  await prepareProductionDemand({
+    admin: makeAdmin({ onRpc: (name, args) => { if (name === "record_workspace_production_demand") baseKey = args.p_idempotency_key; } }),
+    orderIds: [ORDERS[0].id], mode: "preview",
+  });
+  let generatedKey;
+  await prepareProductionDemand({
+    admin: makeAdmin({
+      productionRequests: { old: { idempotency_key: baseKey, workspace_status: "Cancelled" } },
+      onRpc: (name, args) => { if (name === "record_workspace_production_demand") generatedKey = args.p_idempotency_key; },
+    }),
+    orderIds: [ORDERS[0].id], mode: "preview",
+  });
+  assert.equal(generatedKey, `${baseKey}:g1`);
 });
 
 test("version hash OCT è stabile e cambia con quantità o UDM", () => {

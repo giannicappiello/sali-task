@@ -30,6 +30,39 @@ function Diagnostics({ rows, onOpen }) {
   return <div className="rdp-inline-diagnostics">{rows.slice(0, 3).map((row) => <button type="button" key={row.diagnosticId} className={`rdp-alert-${String(row.severity).toLowerCase()}`} onClick={() => onOpen(row)}><AlertTriangle size={14} />{row.errorCode}</button>)}</div>;
 }
 
+function formatQuantity(value) {
+  return new Intl.NumberFormat("it-IT", { minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(Number(value) || 0);
+}
+
+function OctOrderCard({ row, selectable, selected, onToggle, onOpen, onDiagnostic }) {
+  const status = row.stage === "history" ? "Annullata" : (row.ready ? row.status : "BLOCCATO");
+  const tone = row.stage === "history" ? "neutral" : (row.ready ? "green" : "red");
+  return <article className={`rdp-oct-card ${!row.ready && row.stage !== "history" ? "blocked" : ""}`}>
+    <header className="rdp-oct-card-header">
+      <div className="rdp-oct-identity"><strong>{row.label}</strong><span>{row.customer}</span></div>
+      <div className="rdp-oct-actions">
+        {badge(status, tone)}
+        {selectable && <label className="rdp-oct-select"><input type="checkbox" checked={selected} disabled={!row.ready} onChange={onToggle}/><span>{selected ? "Selezionato" : "Seleziona per RdP"}</span></label>}
+        <button type="button" className="rdp-open-card" onClick={onOpen}>Apri dettaglio<ChevronRight size={16}/></button>
+      </div>
+    </header>
+    <div className="rdp-oct-meta">Ordine: {formatDate(row.orderDate)} · Consegna: {formatDate(row.deliveryDate)} · Revisione sorgente: {formatDate(row.sourceTimestamp, true)}</div>
+    <div className="rdp-oct-lines" role="table" aria-label={`Righe ${row.label}`}>
+      <div className="rdp-oct-line rdp-oct-line-head" role="row"><span>Articolo</span><span>Ordinato</span><span>Evaso</span><span>Residuo</span><span>Consegna</span><span>Produzione</span></div>
+      {(row.lines || []).map((line) => <div className="rdp-oct-line" role="row" key={line.id}>
+        <span><strong>{line.articleCode}</strong><small>{line.description}</small></span>
+        <span>{formatQuantity(line.orderedQuantity)} {line.unit}</span>
+        <span>{formatQuantity(line.fulfilledQuantity)} {line.unit}</span>
+        <span>{formatQuantity(line.residualQuantity)} {line.unit}</span>
+        <span>{formatDate(line.deliveryDate)}</span>
+        <span>{badge(line.productionStatus, row.ready ? "neutral" : "red")}</span>
+      </div>)}
+      {!row.lines?.length && <div className="rdp-oct-line-empty">Righe conservate nello storico della RdP.</div>}
+    </div>
+    <footer><Diagnostics rows={row.diagnostics} onOpen={onDiagnostic}/></footer>
+  </article>;
+}
+
 function AnalysisGrid({ analysis, proposal }) {
   const source = analysis || proposal || {};
   const fields = [
@@ -194,7 +227,7 @@ export default function RdpWorkbench() {
     {error && <div className="production-message" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")}><X size={16}/>Chiudi</button></div>}
     {result && <div className="rdp-success"><CheckCircle2/><div><strong>{result.kind === "cancelled" ? "RdP annullata logicamente" : "RdP ricevuta da ProgreMES"}</strong><p>ID {result.externalId || result.id || "registrato"} · Stato {result.status || "Received"}</p></div></div>}
     {tab === "evaluation" && <div className="rdp-selection-bar"><span><strong>{selected.length}</strong> OCT selezionati · lineage e quantità complete preservati</span><button type="button" className="primary-action" onClick={createPreview} disabled={!canCreate || !sendEnabled || !selected.length || selectionBlocked || busy}>{busy ? "Verifica…" : "Verifica e crea anteprima"}</button>{!canCreate && <small>Permesso rdp.create richiesto.</small>}{!sendEnabled && <small>Invio RdP Production non disponibile: verificare i gate nel Centro Diagnostico.</small>}{selectionBlocked && <small>Rimuovere gli OCT bloccati prima di creare la RdP.</small>}</div>}
-    {loading ? <div className="production-loading">Caricamento OCT e RdP…</div> : <div className="rdp-table-wrap"><table className="rdp-table"><thead><tr>{tab === "evaluation" && <th>Seleziona</th>}<th>OCT</th><th>Cliente</th><th>Date</th><th>Righe / quantità</th><th>Stato</th><th>Diagnostica</th><th /></tr></thead><tbody>{visible.map((row) => <tr key={row.id} className={!row.ready && row.stage !== "history" ? "blocked" : ""}>{tab === "evaluation" && <td><input type="checkbox" checked={selected.includes(row.id)} disabled={!row.ready} onChange={() => toggle(row)} aria-label={`Seleziona ${row.label}`}/></td>}<td><strong>{row.label}</strong><small>Rev. sorgente {formatDate(row.sourceTimestamp, true)}</small></td><td>{row.customer}</td><td><span>Ordine {formatDate(row.orderDate)}</span><small>Consegna {formatDate(row.deliveryDate)}</small></td><td><strong>{row.productiveLineCount}/{row.lineCount} righe</strong><small>{row.quantity} {row.units.join(", ")}</small></td><td>{badge(row.stage === "history" ? "Annullata" : (row.ready ? row.status : "BLOCCATO"), row.stage === "history" ? "neutral" : (row.ready ? "green" : "red"))}</td><td><Diagnostics rows={row.diagnostics} onOpen={openDiagnostic}/></td><td><button type="button" className="rdp-open" onClick={() => openDetail(row)}>Apri<ChevronRight size={16}/></button></td></tr>)}</tbody></table>{!visible.length && <div className="rdp-empty">Nessun elemento per i filtri e lo stato selezionati.</div>}</div>}
+    {loading ? <div className="production-loading">Caricamento OCT e RdP…</div> : <div className="rdp-oct-cards">{visible.map((row) => <OctOrderCard key={row.id} row={row} selectable={tab === "evaluation"} selected={selected.includes(row.id)} onToggle={() => toggle(row)} onOpen={() => openDetail(row)} onDiagnostic={openDiagnostic}/>) }{!visible.length && <div className="rdp-empty">Nessun elemento per i filtri e lo stato selezionati.</div>}</div>}
     <DetailPanel detail={detail} onClose={() => setDetail(null)} onDiagnostics={openDiagnostic} canDecide={canDecide} canCancel={canCancel} onDecision={setDecision} onRetry={retryRequest} onCancel={() => setCancelTarget(detail.request)} busy={busy}/>
     <PreviewDialog preview={preview} busy={busy} sendEnabled={sendEnabled} onCancel={() => setPreview(null)} onConfirm={sendRequest}/>
     <CancelRequestDialog request={cancelTarget} busy={busy} onClose={() => setCancelTarget(null)} onConfirm={cancelRequest}/>

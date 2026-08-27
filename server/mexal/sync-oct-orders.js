@@ -278,6 +278,22 @@ export function normalizeOct(document) {
   const numero = number(first(document, ["numero"]));
   if (!sigla || !Number.isInteger(serie) || !Number.isInteger(numero)) throw new Error("Identità documento OCT incompleta.");
   const key = `${sigla}+${serie}+${numero}`;
+  const lines = rowsOf(document).map((line, index) => {
+    const code = text(first(line, ["codice_articolo", "cod_articolo", "codice", "articolo"]));
+    return {
+      mexal_posizione: number(first(line, ["id_riga", "posizione", "indice_riga", "riga", "_matrix_position"])) ?? index + 1,
+      codice_articolo: code || null,
+      descrizione: text(first(line, ["descr_articolo", "descr_riga", "descrizione"])),
+      quantita: number(first(line, ["quantita", "qta"])) ?? 0,
+      unita_misura_oct: upper(first(line, ["unita_misura", "um", "sigla_um"])) || null,
+      tipo_unita_misura_mexal: text(first(line, ["tp_um_articolo", "tipo_unita_misura"])) || null,
+      data_consegna: matrixFirst(first(line, ["dt_sca_riga", "data_consegna_riga", "data_scadenza_riga", "data_consegna", "data_scadenza"])),
+      mexal_tipo_riga: text(first(line, ["tp_riga", "tipo_riga", "tipo"])) || null,
+      riga_descrittiva: !code,
+    };
+  });
+  const headerDeliveryDate = matrixFirst(first(document, ["data_consegna", "data_scadenza", "dt_sca", "dt_consegna"]));
+  const lineDeliveryDates = lines.filter((line) => !line.riga_descrittiva && line.data_consegna).map((line) => line.data_consegna).sort();
   return {
     key,
     header: {
@@ -286,23 +302,10 @@ export function normalizeOct(document) {
       mexal_chiave: key, mexal_cod_conto: text(first(document, ["cod_conto", "codice_cliente"])),
       codice_cliente: text(first(document, ["cod_conto", "codice_cliente"])),
       data_ordine: matrixFirst(first(document, ["data_documento", "data"])),
-      data_consegna: matrixFirst(first(document, ["data_consegna", "data_scadenza"])),
+      data_consegna: headerDeliveryDate || lineDeliveryDates[0] || null,
       mexal_sincronizzato_il: new Date().toISOString(), stato_sincronizzazione: "importato_mexal",
     },
-    lines: rowsOf(document).map((line, index) => {
-      const code = text(first(line, ["codice_articolo", "cod_articolo", "codice", "articolo"]));
-      return {
-        mexal_posizione: number(first(line, ["id_riga", "posizione", "indice_riga", "riga", "_matrix_position"])) ?? index + 1,
-        codice_articolo: code || null,
-        descrizione: text(first(line, ["descr_articolo", "descr_riga", "descrizione"])),
-        quantita: number(first(line, ["quantita", "qta"])) ?? 0,
-        unita_misura_oct: upper(first(line, ["unita_misura", "um", "sigla_um"])) || null,
-        tipo_unita_misura_mexal: text(first(line, ["tp_um_articolo", "tipo_unita_misura"])) || null,
-        data_consegna: first(line, ["dt_sca_riga", "data_consegna_riga", "data_scadenza_riga", "data_consegna", "data_scadenza"]),
-        mexal_tipo_riga: text(first(line, ["tp_riga", "tipo_riga", "tipo"])) || null,
-        riga_descrittiva: !code,
-      };
-    }),
+    lines,
   };
 }
 

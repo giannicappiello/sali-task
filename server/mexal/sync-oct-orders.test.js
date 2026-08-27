@@ -38,6 +38,17 @@ test("OCT 2/412 ricostruisce testata e matrici di riga sparse per indice", () =>
   assert.deepEqual(normalized.lines.map((line) => line.quantita), [7000, 0, 0]);
   assert.deepEqual(normalized.lines.map((line) => line.riga_descrittiva), [false, true, true]);
   assert.equal(normalized.lines[0].data_consegna, "2026-09-15");
+  assert.equal(normalized.header.data_consegna, "2026-09-15");
+});
+
+test("la consegna esplicita di testata prevale sulle scadenze delle righe", () => {
+  const normalized = normalizeOct({
+    sigla: "OC", cod_modulo: "T", serie: 2, numero: 414,
+    data_documento: "2026-08-07", data_consegna: "2026-10-01",
+    righe: [{ id_riga: 1, codice_articolo: "FP123", quantita: 2, dt_sca_riga: "2026-09-20" }],
+  });
+  assert.equal(normalized.header.data_consegna, "2026-10-01");
+  assert.equal(normalized.lines[0].data_consegna, "2026-09-20");
 });
 
 test("formato legacy righe[] resta supportato incluso dt_sca_riga", () => {

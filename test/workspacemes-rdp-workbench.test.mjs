@@ -3,12 +3,13 @@ import test from "node:test";
 import { readFile } from "node:fs/promises";
 import { appendProgremesContext } from "../server/progremes-sso.js";
 
-const [ui, production, api, migration, cancellationMigration, workbench] = await Promise.all([
+const [ui, production, api, migration, cancellationMigration, cancellationRefinementMigration, workbench] = await Promise.all([
   readFile("src/pages/Production/RdpWorkbench.jsx", "utf8"),
   readFile("src/pages/Production/Production.jsx", "utf8"),
   readFile("api/mexal/automation.js", "utf8"),
   readFile("supabase/migrations/20260826170000_workspacemes_rdp_create_permission.sql", "utf8"),
   readFile("supabase/migrations/20260827100000_workspacemes_rdp_controlled_cancellation.sql", "utf8"),
+  readFile("supabase/migrations/20260827103000_refine_rdp_cancellation_effect_events.sql", "utf8"),
   readFile("server/workspacemes-workbench.js", "utf8"),
 ]);
 
@@ -38,6 +39,8 @@ test("annullo è logico, auditato e fail-closed sugli effetti produttivi", () =>
   assert.match(cancellationMigration, /mes_production_order_id is not null/);
   assert.match(cancellationMigration, /confirmation_external_id is not null/);
   assert.match(cancellationMigration, /CANCELLED_PRODUCTION_REQUEST_IMMUTABLE/);
+  assert.match(cancellationRefinementMigration, /MATERIAL\.\*\(CONSUMED\|MOVEMENT\)/);
+  assert.doesNotMatch(cancellationRefinementMigration, /\|MATERIAL\|/);
   assert.doesNotMatch(cancellationMigration, /delete\s+from\s+public\.(workspace_production_requests|ordini_testate)/i);
 });
 

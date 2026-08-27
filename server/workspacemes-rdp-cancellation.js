@@ -1,6 +1,6 @@
 const CANCELLABLE_STATUSES = new Set(["BLOCKED", "FAILED", "REJECTED", "NON_INVIATA", "PRONTA", "READY"]);
 const IRREVERSIBLE_PROPOSAL_STATUSES = new Set(["CONFIRMED", "PLANNED", "INPRODUCTION", "IN_PRODUCTION", "COMPLETED", "PRODUCTIONCOMPLETED"]);
-const IRREVERSIBLE_EVENT_PATTERN = /(PRODUCTION_ORDER|PLANN|LOT|MATERIAL|MOVEMENT|STOCK|CONSUM|LOAD|UNLOAD)/i;
+const IRREVERSIBLE_EVENT_PATTERN = /(PRODUCTION.?ORDER.*(CREATED|CONFIRMED)|PLANNING.*(CREATED|CONFIRMED)|LOT.*CREATED|MATERIAL.*(CONSUMED|MOVEMENT)|STOCK.*MOVEMENT|INVENTORY.*MOVEMENT|(LOAD|UNLOAD).*CREATED)/i;
 
 function normalized(value) { return String(value ?? "").trim().toUpperCase(); }
 
@@ -23,4 +23,3 @@ export function evaluateProductionRequestCancellation({ request, proposals = [],
 
   return { allowed: true, code: "CANCELLABLE", reason: "La RdP può essere annullata senza cancellare dati o lineage." };
 }
-

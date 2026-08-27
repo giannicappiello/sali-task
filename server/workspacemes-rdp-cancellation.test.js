@@ -19,8 +19,14 @@ test("OdP, conferma, pianificazione e lotti bloccano l'annullo", () => {
   assert.equal(evaluateProductionRequestCancellation({ request: blocked, events: [{ event_type: "LotCreated" }] }).code, "IRREVERSIBLE_EFFECTS");
 });
 
+test("eventi di sola analisi materiali non sono scambiati per effetti produttivi", () => {
+  assert.equal(evaluateProductionRequestCancellation({ request: blocked, events: [
+    { event_type: "MaterialShortageDetected" },
+    { event_type: "ProductionRequestBlocked" },
+  ] }).allowed, true);
+});
+
 test("una RdP annullata o in produzione non è annullabile", () => {
   assert.equal(evaluateProductionRequestCancellation({ request: { workspace_status: "Cancelled" } }).code, "ALREADY_CANCELLED");
   assert.equal(evaluateProductionRequestCancellation({ request: { workspace_status: "InProduction" } }).code, "INVALID_STATUS");
 });
-

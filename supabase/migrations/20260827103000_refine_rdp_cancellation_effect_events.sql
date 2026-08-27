@@ -1,0 +1,62 @@
+begin;
+
+create or replace function public.cancel_workspace_production_request(
+  p_request_id uuid,
+  p_reason text,
+  p_cancelled_by uuid default null
+) returns table(id uuid, external_id uuid, cancelled_at timestamptz)
+language plpgsql security definer set search_path = public as $$
+declare
+  v_request public.workspace_production_requests%rowtype;
+  v_reason text := btrim(coalesce(p_reason, ''));
+  v_status text;
+begin
+  if length(v_reason) < 5 or length(v_reason) > 1000 then
+    raise exception 'INVALID_REASON: il motivo deve contenere da 5 a 1000 caratteri';
+  end if;
+
+  select * into v_request from public.workspace_production_requests where workspace_production_requests.id = p_request_id for update;
+  if not found then raise exception 'NOT_FOUND: RdP non trovata'; end if;
+  v_status := upper(coalesce(v_request.workspace_status, v_request.stato, ''));
+  if v_status = 'CANCELLED' then
+    return query select v_request.id, v_request.external_id, v_request.cancelled_at;
+    return;
+  end if;
+  if v_status not in ('BLOCKED', 'FAILED', 'REJECTED', 'NON_INVIATA', 'PRONTA', 'READY') then
+    raise exception 'INVALID_STATUS: lo stato % non consente l''annullo', v_status;
+  end if;
+
+  if exists (
+    select 1 from public.workspace_production_proposals p
+    where p.production_request_id = p_request_id
+      and (p.confirmation_external_id is not null or p.mes_production_order_id is not null
+        or nullif(btrim(p.mes_production_order_number), '') is not null
+        or upper(coalesce(p.stato, '')) in ('CONFIRMED','PLANNED','INPRODUCTION','IN_PRODUCTION','COMPLETED','PRODUCTIONCOMPLETED'))
+  ) or exists (
+    select 1 from public.workspace_production_event_inbox e
+    where e.external_id = v_request.external_id
+      and e.event_type ~* '(PRODUCTION.?ORDER.*(CREATED|CONFIRMED)|PLANNING.*(CREATED|CONFIRMED)|LOT.*CREATED|MATERIAL.*(CONSUMED|MOVEMENT)|STOCK.*MOVEMENT|INVENTORY.*MOVEMENT|(LOAD|UNLOAD).*CREATED)'
+  ) then
+    raise exception 'IRREVERSIBLE_EFFECTS: esistono già effetti produttivi non annullabili';
+  end if;
+
+  update public.workspace_production_requests
+  set stato = 'Cancelled', workspace_status = 'Cancelled', cancellation_reason = v_reason,
+      cancelled_at = now(), cancelled_by = p_cancelled_by, updated_at = now()
+  where workspace_production_requests.id = p_request_id
+  returning workspace_production_requests.id, workspace_production_requests.external_id, workspace_production_requests.cancelled_at
+  into v_request.id, v_request.external_id, v_request.cancelled_at;
+
+  insert into public.workspace_production_request_audit
+    (production_request_id, action, previous_status, new_status, reason, actor_id, details)
+  values (p_request_id, 'CANCEL', v_status, 'Cancelled', v_reason, p_cancelled_by,
+    jsonb_build_object('attemptCount', v_request.attempt_count, 'lastErrorCode', v_request.last_error_code));
+
+  return query select v_request.id, v_request.external_id, v_request.cancelled_at;
+end;
+$$;
+
+revoke all on function public.cancel_workspace_production_request(uuid, text, uuid) from public, anon, authenticated;
+grant execute on function public.cancel_workspace_production_request(uuid, text, uuid) to service_role;
+
+commit;

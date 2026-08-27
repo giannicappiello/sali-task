@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowUpRight, CheckCircle2, ChevronRight, Factory, RefreshCw, Search, Send, ShieldAlert, X } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, Ban, CheckCircle2, ChevronRight, Factory, RefreshCw, Search, Send, ShieldAlert, X } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 
 const TABS = [
@@ -41,12 +41,12 @@ function AnalysisGrid({ analysis, proposal }) {
   return <div className="rdp-analysis-grid">{fields.map(([label, key]) => <div key={key}><span>{label}</span><strong>{source[key] ?? "—"}</strong></div>)}</div>;
 }
 
-function DetailPanel({ detail, onClose, onDiagnostics, canDecide, onDecision, onRetry, busy }) {
+function DetailPanel({ detail, onClose, onDiagnostics, canDecide, canCancel, onDecision, onRetry, onCancel, busy }) {
   const [openLine, setOpenLine] = useState(null);
   if (!detail) return null;
   return <div className="rdp-detail-backdrop" role="presentation" onMouseDown={onClose}><section className="rdp-detail" role="dialog" aria-modal="true" aria-label="Dettaglio RdP e OCT" onMouseDown={(event) => event.stopPropagation()}>
     <header><div><span className="rdp-eyebrow">Lineage commerciale e produttivo</span><h2>{detail.request ? `RdP ${detail.request.external_id}` : detail.orders.map((item) => item.label).join(", ")}</h2><p>{detail.orders.map((item) => `${item.label} · ${item.customer || "cliente non disponibile"}`).join(" | ")}</p></div><button type="button" className="rdp-icon-button" onClick={onClose} aria-label="Chiudi dettaglio"><X /></button></header>
-    {detail.request && <div className="rdp-request-meta"><span>Stato {badge(detail.request.workspace_status || detail.request.stato, detail.request.stage === "blocked" ? "red" : "blue")}</span><span>Creata {formatDate(detail.request.created_at, true)}</span><span>Tentativi {detail.request.attempt_count ?? 0}</span><span>Contratto v{detail.request.contract_version || 2}</span>{!detail.request.sent_demand_snapshot_id ? <button type="button" className="secondary-action" onClick={onRetry} disabled={busy}>{busy ? "Retry in corso…" : "Riprendi invio RdP"}</button> : null}</div>}
+    {detail.request && <div className="rdp-request-meta"><span>Stato {badge(detail.request.workspace_status || detail.request.stato, detail.request.stage === "blocked" ? "red" : "blue")}</span><span>Creata {formatDate(detail.request.created_at, true)}</span><span>Tentativi {detail.request.attempt_count ?? 0}</span><span>Contratto v{detail.request.contract_version || 2}</span>{!detail.request.sent_demand_snapshot_id && String(detail.request.workspace_status || detail.request.stato).toUpperCase() !== "CANCELLED" ? <button type="button" className="secondary-action" onClick={onRetry} disabled={busy}>{busy ? "Retry in corso…" : "Riprendi invio RdP"}</button> : null}{detail.cancellation?.allowed && <button type="button" className="rdp-cancel-action" onClick={onCancel} disabled={busy || !canCancel}><Ban size={16}/>Annulla RdP</button>}{detail.cancellation?.allowed && !canCancel && <small>Permesso rdp.cancel richiesto.</small>}</div>}
     {detail.revision?.modified && <div className="rdp-revision-alert"><AlertTriangle/><div><strong>OCT MODIFICATO IN MEXAL</strong><p>Aggiunte {detail.revision.added.length} · rimosse {detail.revision.removed.length} · quantità/UDM modificate {detail.revision.changed.length} · consegna {detail.revision.deliveryChanged ? "modificata" : "invariata"}.</p><small>Le opzioni “mantieni pianificazione + delta” e “integra e ripianifica” saranno abilitate soltanto quando esposte dal contratto MES.</small></div></div>}
     <div className="rdp-line-list">{detail.lines.map((line) => <article key={line.id} className={line.descriptive ? "rdp-line descriptive" : "rdp-line"}>
       <button type="button" className="rdp-line-summary" onClick={() => setOpenLine(openLine === line.id ? null : line.id)}>
@@ -62,6 +62,20 @@ function DetailPanel({ detail, onClose, onDiagnostics, canDecide, onDecision, on
     </article>)}</div>
     {detail.request && canDecide && detail.lines.some((line) => line.proposal && !line.proposal.confirmation_external_id) && <section className="rdp-decisions"><h3>Decisioni operatore disponibili</h3><p>Il backend attuale espone la pianificazione completa. Le altre decisioni saranno mostrate solo quando disponibili nel contratto MES.</p>{detail.lines.filter((line) => line.proposal && !line.proposal.confirmation_external_id).map((line) => <button type="button" className="primary-action" key={line.proposal.id} onClick={() => onDecision(line)}><Factory size={16}/>Pianificazione completa · {line.articleCode}</button>)}</section>}
     {detail.request && <nav className="rdp-deep-links" aria-label="Apri schermate MES nel contesto"><span>Apri nel contesto:</span>{[["planning","Planning"],["produzione","Produzione"],["operatore-produzione","Operatore produzione"],["confezionamento","Confezionamento"],["magazzino","Magazzino"],["documenti","Documenti"]].map(([code,label]) => <a key={code} href={`/produzione/${code}?rdpId=${encodeURIComponent(detail.request.external_id)}`}>{label}<ArrowUpRight size={14}/></a>)}</nav>}
+  </section></div>;
+}
+
+function CancelRequestDialog({ request, busy, onClose, onConfirm }) {
+  const [reason, setReason] = useState("");
+  const [confirmed, setConfirmed] = useState(false);
+  if (!request) return null;
+  const validReason = reason.trim().length >= 5;
+  return <div className="rdp-dialog-backdrop" role="presentation"><section className="rdp-dialog rdp-cancel-dialog" role="dialog" aria-modal="true" aria-label="Conferma annullamento RdP">
+    <header><div><span className="rdp-eyebrow">Annullamento controllato</span><h2>Annulla RdP</h2></div><button type="button" onClick={onClose} disabled={busy} aria-label="Chiudi"><X/></button></header>
+    <div className="rdp-cancel-warning"><ShieldAlert/><div><strong>RdP {request.external_id}</strong><p>Lo stato diventerà Annullata. OCT, tentativi, diagnostica, audit e lineage saranno conservati; non verrà creata una nuova RdP.</p></div></div>
+    <label className="rdp-cancel-reason"><span>Motivo obbligatorio</span><textarea value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} maxLength={1000} rows={4} placeholder="Indica il motivo dell’annullamento…" required/></label>
+    <label className="rdp-cancel-confirm"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)}/><span>Confermo di voler annullare logicamente questa RdP senza cancellare i dati.</span></label>
+    <div className="rdp-dialog-actions"><button type="button" className="secondary-action" onClick={onClose} disabled={busy}>Torna indietro</button><button type="button" className="rdp-cancel-action" onClick={() => onConfirm(reason.trim())} disabled={busy || !validReason || !confirmed}>{busy ? "Annullamento…" : "Conferma annullamento"}</button></div>
   </section></div>;
 }
 
@@ -82,10 +96,12 @@ export default function RdpWorkbench() {
   const accessToken = session?.access_token;
   const canCreate = hasPermission?.("rdp.create");
   const canDecide = hasPermission?.("rdp.decide");
+  const canCancel = hasPermission?.("rdp.cancel");
   const [data, setData] = useState([]); const [tab, setTab] = useState("evaluation"); const [selected, setSelected] = useState([]);
   const [filters, setFilters] = useState({ search: "", customer: "", ready: "" }); const [detail, setDetail] = useState(null);
   const [preview, setPreview] = useState(null); const [busy, setBusy] = useState(false); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [result, setResult] = useState(null);
   const [decision, setDecision] = useState(null);
+  const [cancelTarget, setCancelTarget] = useState(null);
   const [productionGates, setProductionGates] = useState(null);
   const sendEnabled = productionGates?.allOn === true;
 
@@ -117,6 +133,7 @@ export default function RdpWorkbench() {
   async function sendRequest() { if (!sendEnabled || !preview || busy) return; setBusy(true); setError(""); try { const response = await callWorkbench(accessToken, "progremes_production_request", { orderIds: selected, snapshotId: preview.snapshot.id }); setResult(response); setPreview(null); setSelected([]); await load(); } catch (e) { setError(e.code === "DEMAND_CHANGED" ? "L’OCT è cambiato dopo l’anteprima: ripetere il precheck." : e.message); } finally { setBusy(false); } }
   async function retryRequest() { if (!sendEnabled || !detail?.request?.id || busy) return; setBusy(true); setError(""); try { const response = await callWorkbench(accessToken, "progremes_production_retry", { requestId: detail.request.id }); setResult(response); setDetail(await callWorkbench(accessToken, "progremes_workbench_detail", { requestId: detail.request.id })); await load(); } catch (e) { setError(e.message); } finally { setBusy(false); } }
   async function confirmDecision() { if (!decision?.proposal?.id || busy) return; setBusy(true); setError(""); try { await callWorkbench(accessToken, "progremes_production_confirm", { proposalId: decision.proposal.id }); setDecision(null); setResult({ status: "Planned", externalId: detail?.request?.external_id }); setDetail(await callWorkbench(accessToken, "progremes_workbench_detail", { requestId: detail.request.id })); await load(); } catch (e) { setError(e.message); } finally { setBusy(false); } }
+  async function cancelRequest(reason) { if (!cancelTarget?.id || !canCancel || busy) return; setBusy(true); setError(""); try { const response = await callWorkbench(accessToken, "progremes_production_cancel", { requestId: cancelTarget.id, reason }); setCancelTarget(null); setResult({ ...response, kind: "cancelled" }); setDetail(await callWorkbench(accessToken, "progremes_workbench_detail", { requestId: cancelTarget.id })); await load(); } catch (e) { setError(e.message); } finally { setBusy(false); } }
   function openDiagnostic(row) { window.location.assign(`/produzione/diagnostica?diagnosticId=${encodeURIComponent(row.diagnosticId)}`); }
 
   return <div className="production-page rdp-workbench">
@@ -124,11 +141,12 @@ export default function RdpWorkbench() {
     <nav className="rdp-tabs" aria-label="Stati Workbench">{TABS.map(([code,label]) => <button type="button" key={code} className={tab === code ? "active" : ""} onClick={() => setTab(code)}>{label}<span>{data.filter((row) => row.stage === code).length}</span></button>)}</nav>
     <section className="rdp-toolbar"><label><Search size={17}/><input value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} placeholder="Cerca OCT, cliente, stato…"/></label><input value={filters.customer} onChange={(e) => setFilters({ ...filters, customer: e.target.value })} placeholder="Filtra cliente"/><select value={filters.ready} onChange={(e) => setFilters({ ...filters, ready: e.target.value })}><option value="">Pronti e bloccati</option><option value="ready">Solo pronti</option><option value="blocked">Solo bloccati</option></select></section>
     {error && <div className="production-message" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")}><X size={16}/>Chiudi</button></div>}
-    {result && <div className="rdp-success"><CheckCircle2/><div><strong>RdP ricevuta da ProgreMES</strong><p>ID {result.externalId || result.id || "registrato"} · Stato {result.status || "Received"}</p></div></div>}
+    {result && <div className="rdp-success"><CheckCircle2/><div><strong>{result.kind === "cancelled" ? "RdP annullata logicamente" : "RdP ricevuta da ProgreMES"}</strong><p>ID {result.externalId || result.id || "registrato"} · Stato {result.status || "Received"}</p></div></div>}
     {tab === "evaluation" && <div className="rdp-selection-bar"><span><strong>{selected.length}</strong> OCT selezionati · lineage e quantità complete preservati</span><button type="button" className="primary-action" onClick={createPreview} disabled={!canCreate || !sendEnabled || !selected.length || selectionBlocked || busy}>{busy ? "Verifica…" : "Verifica e crea anteprima"}</button>{!canCreate && <small>Permesso rdp.create richiesto.</small>}{!sendEnabled && <small>Invio RdP Production non disponibile: verificare i gate nel Centro Diagnostico.</small>}{selectionBlocked && <small>Rimuovere gli OCT bloccati prima di creare la RdP.</small>}</div>}
     {loading ? <div className="production-loading">Caricamento OCT e RdP…</div> : <div className="rdp-table-wrap"><table className="rdp-table"><thead><tr>{tab === "evaluation" && <th>Seleziona</th>}<th>OCT</th><th>Cliente</th><th>Date</th><th>Righe / quantità</th><th>Stato</th><th>Diagnostica</th><th /></tr></thead><tbody>{visible.map((row) => <tr key={row.id} className={!row.ready ? "blocked" : ""}>{tab === "evaluation" && <td><input type="checkbox" checked={selected.includes(row.id)} disabled={!row.ready} onChange={() => toggle(row)} aria-label={`Seleziona ${row.label}`}/></td>}<td><strong>{row.label}</strong><small>Rev. sorgente {formatDate(row.sourceTimestamp, true)}</small></td><td>{row.customer}</td><td><span>Ordine {formatDate(row.orderDate)}</span><small>Consegna {formatDate(row.deliveryDate)}</small></td><td><strong>{row.productiveLineCount}/{row.lineCount} righe</strong><small>{row.quantity} {row.units.join(", ")}</small></td><td>{badge(row.ready ? row.status : "BLOCCATO", row.ready ? "green" : "red")}</td><td><Diagnostics rows={row.diagnostics} onOpen={openDiagnostic}/></td><td><button type="button" className="rdp-open" onClick={() => openDetail(row)}>Apri<ChevronRight size={16}/></button></td></tr>)}</tbody></table>{!visible.length && <div className="rdp-empty">Nessun elemento per i filtri e lo stato selezionati.</div>}</div>}
-    <DetailPanel detail={detail} onClose={() => setDetail(null)} onDiagnostics={openDiagnostic} canDecide={canDecide} onDecision={setDecision} onRetry={retryRequest} busy={busy}/>
+    <DetailPanel detail={detail} onClose={() => setDetail(null)} onDiagnostics={openDiagnostic} canDecide={canDecide} canCancel={canCancel} onDecision={setDecision} onRetry={retryRequest} onCancel={() => setCancelTarget(detail.request)} busy={busy}/>
     <PreviewDialog preview={preview} busy={busy} sendEnabled={sendEnabled} onCancel={() => setPreview(null)} onConfirm={sendRequest}/>
+    <CancelRequestDialog request={cancelTarget} busy={busy} onClose={() => setCancelTarget(null)} onConfirm={cancelRequest}/>
     {decision && <div className="rdp-dialog-backdrop"><section className="rdp-dialog" role="dialog" aria-modal="true" aria-label="Conferma pianificazione"><header><div><span className="rdp-eyebrow">Decisione operatore</span><h2>Pianificazione completa</h2></div><button type="button" onClick={() => setDecision(null)} disabled={busy}><X/></button></header><div className="rdp-no-netting"><ShieldAlert/><div><strong>Impatto produttivo</strong><p>ProgreMES creerà o confermerà la pianificazione per {decision.articleCode}, quantità {decision.quantity} {decision.productionUom || decision.octUom}. L’operazione sarà auditata dal flusso MES.</p></div></div><div className="rdp-dialog-actions"><button type="button" className="secondary-action" onClick={() => setDecision(null)} disabled={busy}>Annulla</button><button type="button" className="primary-action" onClick={confirmDecision} disabled={busy}>{busy ? "Conferma…" : "Conferma pianificazione"}</button></div></section></div>}
   </div>;
 }

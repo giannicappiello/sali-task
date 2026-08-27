@@ -1,4 +1,5 @@
 import { authoritativeArticleUnit, resolveOctUnitOfMeasure } from "./mexal/unit-of-measure.js";
+import { evaluateProductionRequestCancellation } from "./workspacemes-rdp-cancellation.js";
 
 function text(value) { return String(value ?? "").trim(); }
 function number(value) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : 0; }
@@ -128,10 +129,15 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
   if (ordersError || linesError) throw ordersError || linesError;
   const customersByCode = await loadCustomers(admin, orders);
   let proposals = [];
+  let productionEvents = [];
   if (request) {
-    const result = await admin.from("workspace_production_proposals").select("*").eq("production_request_id", request.id).order("production_index");
-    if (result.error) throw result.error;
-    proposals = result.data || [];
+    const [proposalResult, eventResult] = await Promise.all([
+      admin.from("workspace_production_proposals").select("*").eq("production_request_id", request.id).order("production_index"),
+      admin.from("workspace_production_event_inbox").select("event_type").eq("external_id", request.external_id),
+    ]);
+    if (proposalResult.error || eventResult.error) throw proposalResult.error || eventResult.error;
+    proposals = proposalResult.data || [];
+    productionEvents = eventResult.data || [];
   }
   let sentSnapshot = null;
   if (request?.sent_demand_snapshot_id) {
@@ -168,6 +174,7 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
   return {
     orders: (orders || []).map((order) => ({ id: order.id, label: octLabel(order), customer: customerName(order, customersByCode), orderDate: order.data_ordine, deliveryDate: order.data_consegna })),
     request: request ? { ...request, stage: requestStage(request) } : null,
+    cancellation: evaluateProductionRequestCancellation({ request, proposals, events: productionEvents }),
     revision: { modified: Boolean(sentSnapshot && (delta.added.length || delta.removed.length || delta.changed.length || deliveryChanged)), deliveryChanged, ...delta },
     lines: (lines || []).map((line) => {
       const product = productByCode.get(text(line.codice_articolo).toUpperCase());

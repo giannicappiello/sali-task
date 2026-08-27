@@ -81,6 +81,11 @@ function publicDiagnostic(row) {
   };
 }
 
+export function diagnosticBlocks(row) {
+  return ["BLOCKING", "CRITICAL"].includes(text(row?.severity).toUpperCase()) &&
+    ["OPEN", "ACKNOWLEDGED"].includes(text(row?.status).toUpperCase());
+}
+
 export async function listProductionWorkbench({ admin, diagnostics = [] }) {
   const [{ data: orders, error: orderError }, { data: lines, error: lineError }, { data: requests, error: requestError }] = await Promise.all([
     admin.from("ordini_testate").select("*").eq("origine", "mexal_oct").order("data_consegna", { ascending: true }).limit(500),
@@ -138,7 +143,7 @@ export async function listProductionWorkbench({ admin, diagnostics = [] }) {
           productionStatus: request ? (request.workspace_status || request.stato || "RdP") : "Da generare",
         };
       }),
-      ready: productive.length > 0 && order.cliente_mexal_risolto !== false && !orderDiagnostics.some((row) => ["Blocking", "Critical"].includes(row.severity) && row.status !== "Resolved"),
+      ready: productive.length > 0 && order.cliente_mexal_risolto !== false && !orderDiagnostics.some(diagnosticBlocks),
       requestId: request?.id || null, requestExternalId: request?.external_id || null,
       diagnostics: orderDiagnostics.map(publicDiagnostic),
     };

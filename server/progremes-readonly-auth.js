@@ -9,6 +9,12 @@ function required(name) {
   return value;
 }
 
+export function createProgremesReadonlyAdmin() {
+  return createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
 /**
  * Applica le stesse regole del modulo ProgreMES Workspace: sessione Supabase
  * valida, profilo attivo e modulo `progremes` abilitato per l'utente.
@@ -21,9 +27,7 @@ export async function requireProgremesReadonlyAccess(req, dependencies = {}) {
     throw Object.assign(new Error("Sessione Workspace mancante."), { status: 401 });
   }
 
-  const admin = dependencies.admin ?? createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+  const admin = dependencies.admin ?? createProgremesReadonlyAdmin();
   const { data: { user }, error: authError } = await admin.auth.getUser(authorization.slice(7));
   if (authError || !user) throw Object.assign(new Error("Sessione Workspace non valida."), { status: 401 });
 

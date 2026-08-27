@@ -55,7 +55,7 @@ function DiagnosticsCenter() {
   }, [accessToken]);
   const visible = rows.filter((row) => {
     if (filters.severity && row.severity !== filters.severity) return false;
-    if (filters.status && row.status !== filters.status) return false;
+    if (filters.status && (row.workspaceDisposition || row.status) !== filters.status) return false;
     const text = `${row.errorCode} ${row.entityId} ${row.articleCode} ${row.title} ${row.phase} ${row.sourceSystem}`.toLowerCase();
     return !filters.search || text.includes(filters.search.toLowerCase());
   });
@@ -72,11 +72,11 @@ function DiagnosticsCenter() {
     </section>
     <div className="diagnostics-filters">
       <select value={filters.severity} onChange={(event) => setFilters({ ...filters, severity: event.target.value })}><option value="">Tutte le severità</option>{["Info", "Warning", "Blocking", "Critical"].map((value) => <option key={value}>{value}</option>)}</select>
-      <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">Tutti gli stati</option>{["Open", "Acknowledged", "Resolved", "Ignored"].map((value) => <option key={value}>{value}</option>)}</select>
+      <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">Tutti gli stati</option>{["Open", "Acknowledged", "Resolved", "Ignored", "Historical"].map((value) => <option key={value}>{value}</option>)}</select>
       <input value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} placeholder="OCT, RdP, articolo, OdP, errore, fase..." />
     </div>
     {error && <div className="production-message">{error}<button onClick={load}>Riprova</button></div>}
-    {loading ? <div className="production-loading">Caricamento diagnostica...</div> : <div className="diagnostics-table-wrap"><table className="diagnostics-table"><thead><tr><th>Severità</th><th>Stato</th><th>Codice</th><th>Entità</th><th>Messaggio</th><th>Ultima occorrenza</th></tr></thead><tbody>{visible.map((row) => <tr key={row.diagnosticId} className={`severity-${row.severity.toLowerCase()}`}><td>{row.severity}</td><td>{row.status}</td><td><code>{row.errorCode}</code><small>{row.sourceSystem} / {row.phase}</small></td><td>{row.entityType} {row.entityId}<small>{row.articleCode || ""} {row.ordineProduzioneId ? `· OdP ${row.ordineProduzioneId}` : ""}</small></td><td><strong>{row.title}</strong><small>{row.description}</small><em>{row.actionRequired}</em></td><td>{new Date(row.lastSeenAt).toLocaleString("it-IT")}<small>× {row.occurrenceCount}</small></td></tr>)}</tbody></table></div>}
+    {loading ? <div className="production-loading">Caricamento diagnostica...</div> : <div className="diagnostics-table-wrap"><table className="diagnostics-table"><thead><tr><th>Severità</th><th>Stato</th><th>Codice</th><th>Entità</th><th>Messaggio</th><th>Ultima occorrenza</th></tr></thead><tbody>{visible.map((row) => <tr key={row.diagnosticId} className={`severity-${row.severity.toLowerCase()}`}><td>{row.severity}</td><td>{row.workspaceDisposition || row.status}</td><td><code>{row.errorCode}</code><small>{row.sourceSystem} / {row.phase}</small></td><td>{row.entityType} {row.entityId}<small>{row.articleCode || ""} {row.ordineProduzioneId ? `· OdP ${row.ordineProduzioneId}` : ""}</small></td><td><strong>{row.title}</strong><small>{row.description}</small><em>{row.actionRequired}</em></td><td>{new Date(row.lastSeenAt).toLocaleString("it-IT")}<small>× {row.occurrenceCount}</small></td></tr>)}</tbody></table></div>}
   </div>;
 }
 

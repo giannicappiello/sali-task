@@ -99,9 +99,10 @@ test("diagnostics health espone i gate Workspace e fallisce chiuso quando Produc
     res,
     {
       authorize: async () => ({ id: "workspace-user" }),
-      clientFactory: () => ({ request: async () => ({
-        globalStatus: "GREEN", blocking: 0, receiveRdp: true, receiveDecisions: true,
-        executeProduction: true, createLots: true,
+      adminFactory: () => ({ from: () => ({ select: () => ({ in: async () => ({ data: [], error: null }) }) }) }),
+      clientFactory: () => ({ request: async (resource) => resource === "diagnostics" ? [] : ({
+        globalStatus: "GREEN", database: true, workspaceCallbacks: true, pendingOutbox: 0,
+        blocking: 0, receiveRdp: true, receiveDecisions: true, executeProduction: true, createLots: true,
       }) }), env: {},
     },
   );

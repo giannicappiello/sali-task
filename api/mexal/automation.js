@@ -31,6 +31,7 @@ import { createOctOrdersRunHandler, precheckOctOrders } from "../../server/mexal
 import { handleDigitalConnectionManager } from "../../server/crm/digital-connection-manager.js";
 import { listProductionWorkbench, productionWorkbenchDetail } from "../../server/workspacemes-workbench.js";
 import { productionGoLiveGates } from "../../server/workspace-production-gates.js";
+import { effectiveWorkspaceDiagnostics } from "../../server/workspace-effective-diagnostics.js";
 
 async function dispatchMessageNotification(req, body) {
   const token = String(req.headers.authorization || "").trim().replace(/^Bearer\s+/i, "");
@@ -559,13 +560,15 @@ export default async function handler(req, res) {
           client.request("diagnostics").catch(() => []),
           client.request("diagnostics-health").catch(() => null),
         ]);
-        const workbench = await listProductionWorkbench({ admin: admin.supabase, diagnostics });
+        const effectiveDiagnostics = await effectiveWorkspaceDiagnostics({ admin: admin.supabase, diagnostics });
+        const workbench = await listProductionWorkbench({ admin: admin.supabase, diagnostics: effectiveDiagnostics });
         return sendSuccess(res, 200, { ...workbench, productionGates: productionGoLiveGates(health) });
       }
       case "progremes_workbench_detail": {
         const admin = await createAdmin(req, "rdp.view");
         const diagnostics = await createProgremesClient().request("diagnostics").catch(() => []);
-        return sendSuccess(res, 200, await productionWorkbenchDetail({ admin: admin.supabase, orderId: body.orderId, requestId: body.requestId, diagnostics }));
+        const effectiveDiagnostics = await effectiveWorkspaceDiagnostics({ admin: admin.supabase, diagnostics });
+        return sendSuccess(res, 200, await productionWorkbenchDetail({ admin: admin.supabase, orderId: body.orderId, requestId: body.requestId, diagnostics: effectiveDiagnostics }));
       }
       case "progremes_production_confirm": {
         const admin = await createAdmin(req, "rdp.decide");

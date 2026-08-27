@@ -23,6 +23,7 @@ import { consumeProgremesTicket, issueProgremesTicket, listUserProgremesSections
 import { listProgremesIntegration, saveProgremesSyncConfig, stopProgremesModulesSync, syncProgremesModules } from "../../server/progremes-modules.js";
 import { handleProgremesReadonlyRequest } from "../../server/progremes-readonly-api.js";
 import { createProgremesClient } from "../../server/progremes-readonly-client.js";
+import { createProgremesDiagnosticManager } from "../../server/progremes-diagnostics-client.js";
 import { handleAIAssistant } from "../../server/ai/assistant.js";
 import { handleCrmBrief } from "../../server/ai/crm-brief.js";
 import { handleAIOrderDocument } from "../../server/ai/order-document.js";
@@ -569,6 +570,16 @@ export default async function handler(req, res) {
         const diagnostics = await createProgremesClient().request("diagnostics").catch(() => []);
         const effectiveDiagnostics = await effectiveWorkspaceDiagnostics({ admin: admin.supabase, diagnostics });
         return sendSuccess(res, 200, await productionWorkbenchDetail({ admin: admin.supabase, orderId: body.orderId, requestId: body.requestId, diagnostics: effectiveDiagnostics }));
+      }
+      case "progremes_diagnostic_action": {
+        const admin = await createAdmin(req, "diagnostics.manage");
+        const result = await createProgremesDiagnosticManager().changeStatus({
+          diagnosticId: body.diagnosticId,
+          action: body.diagnosticAction,
+          reason: body.reason,
+          actor: `workspace:${admin.authUserId || "service"}`,
+        });
+        return sendSuccess(res, 200, { diagnostic: result });
       }
       case "progremes_oct_refresh": {
         const admin = await createAdmin(req, "rdp.view");

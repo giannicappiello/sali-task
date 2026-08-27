@@ -61,7 +61,7 @@ export async function effectiveWorkspaceDiagnostics({ admin, diagnostics = [] })
 }
 
 export function effectiveDiagnosticsHealth(health, diagnostics = []) {
-  const active = diagnostics.filter((row) => !["RESOLVED", "IGNORED"].includes(upper(row.status)));
+  const active = diagnostics.filter((row) => !["RESOLVED", "IGNORED", "ARCHIVED"].includes(upper(row.status)));
   const count = (severity) => active.filter((row) => upper(row.severity) === severity).length;
   const info = count("INFO");
   const warning = count("WARNING");

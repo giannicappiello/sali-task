@@ -26,13 +26,32 @@ async function readProgremes(resource, accessToken) {
 }
 
 function DiagnosticsCenter() {
-  const { session } = useAuth();
+  const { session, hasPermission } = useAuth();
   const accessToken = session?.access_token;
   const [health, setHealth] = useState(null);
   const [rows, setRows] = useState([]);
   const [filters, setFilters] = useState({ severity: "", status: "", search: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [busyDiagnosticId, setBusyDiagnosticId] = useState("");
+  const [archiveDiagnosticId, setArchiveDiagnosticId] = useState("");
+  const [reasons, setReasons] = useState({});
+  const canManage = hasPermission?.("diagnostics.manage");
+
+  async function applyDiagnosticAction(row, diagnosticAction) {
+    const reason = String(reasons[row.diagnosticId] || "").trim();
+    if (diagnosticAction === "archive" && !reason) {
+      setError("Inserire una motivazione prima di eliminare la diagnostica dalla vista operativa.");
+      return;
+    }
+    setBusyDiagnosticId(row.diagnosticId); setError("");
+    try {
+      await requestProgremes("progremes_diagnostic_action", accessToken, { diagnosticId: row.diagnosticId, diagnosticAction, reason });
+      setArchiveDiagnosticId("");
+      await load();
+    } catch (actionError) { setError(actionError?.message || "Aggiornamento diagnostica non riuscito."); }
+    finally { setBusyDiagnosticId(""); }
+  }
 
   async function load() {
     setLoading(true); setError("");
@@ -70,13 +89,23 @@ function DiagnosticsCenter() {
     <section className="diagnostics-integrations">
       <strong>Integrazioni</strong><span>Database: {health?.database ? "OK" : "KO"}</span><span>Workspace ↔ ProgreMES: {health?.workspaceCallbacks ? "OK" : "KO"}</span><span>Invio RdP Workspace: {gates?.workspace?.requests ? "ON" : "OFF"}</span><span>Gate Production: {gates?.allOn ? "ON" : "OFF"}</span><span>Ultimo Mexal OK: {health?.lastMexalSuccess ? new Date(health.lastMexalSuccess).toLocaleString("it-IT") : "non disponibile"}</span>
     </section>
+    {canManage && <p className="diagnostics-help"><strong>Prendi in carico</strong> riconosce l’errore senza chiuderlo; <strong>Risolvi</strong> lo chiude mantenendo audit e storico; <strong>Elimina</strong> lo archivia dalla vista operativa dopo conferma e motivazione.</p>}
     <div className="diagnostics-filters">
       <select value={filters.severity} onChange={(event) => setFilters({ ...filters, severity: event.target.value })}><option value="">Tutte le severità</option>{["Info", "Warning", "Blocking", "Critical"].map((value) => <option key={value}>{value}</option>)}</select>
-      <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">Tutti gli stati</option>{["Open", "Acknowledged", "Resolved", "Ignored", "Historical"].map((value) => <option key={value}>{value}</option>)}</select>
+      <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">Tutti gli stati</option>{["Open", "Acknowledged", "Resolved", "Ignored", "Archived", "Historical"].map((value) => <option key={value}>{value}</option>)}</select>
       <input value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} placeholder="OCT, RdP, articolo, OdP, errore, fase..." />
     </div>
     {error && <div className="production-message">{error}<button onClick={load}>Riprova</button></div>}
-    {loading ? <div className="production-loading">Caricamento diagnostica...</div> : <div className="diagnostics-table-wrap"><table className="diagnostics-table"><thead><tr><th>Severità</th><th>Stato</th><th>Codice</th><th>Entità</th><th>Messaggio</th><th>Ultima occorrenza</th></tr></thead><tbody>{visible.map((row) => <tr key={row.diagnosticId} className={`severity-${row.severity.toLowerCase()}`}><td>{row.severity}</td><td>{row.workspaceDisposition || row.status}</td><td><code>{row.errorCode}</code><small>{row.sourceSystem} / {row.phase}</small></td><td>{row.entityType} {row.entityId}<small>{row.articleCode || ""} {row.ordineProduzioneId ? `· OdP ${row.ordineProduzioneId}` : ""}</small></td><td><strong>{row.title}</strong><small>{row.description}</small><em>{row.actionRequired}</em></td><td>{new Date(row.lastSeenAt).toLocaleString("it-IT")}<small>× {row.occurrenceCount}</small></td></tr>)}</tbody></table></div>}
+    {loading ? <div className="production-loading">Caricamento diagnostica...</div> : <div className="diagnostics-table-wrap"><table className="diagnostics-table"><thead><tr><th>Severità</th><th>Stato</th><th>Codice</th><th>Entità</th><th>Messaggio</th><th>Ultima occorrenza</th>{canManage && <th>Gestione</th>}</tr></thead><tbody>{visible.map((row) => {
+      const disposition = row.workspaceDisposition || row.status;
+      const manageable = canManage && disposition !== "Historical" && row.status !== "Archived";
+      const busy = busyDiagnosticId === row.diagnosticId;
+      const confirmingArchive = archiveDiagnosticId === row.diagnosticId;
+      return <tr key={row.diagnosticId} className={`severity-${row.severity.toLowerCase()}`}><td>{row.severity}</td><td>{disposition}</td><td><code>{row.errorCode}</code><small>{row.sourceSystem} / {row.phase}</small></td><td>{row.entityType} {row.entityId}<small>{row.articleCode || ""} {row.ordineProduzioneId ? `· OdP ${row.ordineProduzioneId}` : ""}</small></td><td><strong>{row.title}</strong><small>{row.description}</small><em>{row.actionRequired}</em></td><td>{new Date(row.lastSeenAt).toLocaleString("it-IT")}<small>× {row.occurrenceCount}</small></td>{canManage && <td className="diagnostics-management">{manageable ? <>
+        <input aria-label={`Motivazione ${row.errorCode}`} value={reasons[row.diagnosticId] || ""} onChange={(event) => setReasons({ ...reasons, [row.diagnosticId]: event.target.value })} placeholder="Motivazione (obbligatoria per elimina)" disabled={busy} />
+        {confirmingArchive ? <><small>Resterà nello storico con audit.</small><div><button type="button" className="danger-action" disabled={busy} onClick={() => applyDiagnosticAction(row, "archive")}>Conferma elimina</button><button type="button" disabled={busy} onClick={() => setArchiveDiagnosticId("")}>Annulla</button></div></> : <div><button type="button" disabled={busy} onClick={() => applyDiagnosticAction(row, "acknowledge")}>Prendi in carico</button><button type="button" disabled={busy} onClick={() => applyDiagnosticAction(row, "resolve")}>Risolvi</button><button type="button" disabled={busy} onClick={() => setArchiveDiagnosticId(row.diagnosticId)}>Elimina</button></div>}
+      </> : <small>Solo storico</small>}</td>}</tr>;
+    })}</tbody></table></div>}
   </div>;
 }
 

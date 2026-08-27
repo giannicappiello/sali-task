@@ -1,6 +1,7 @@
-import { ArrowLeft, ArrowRight, ArrowUpRight, LayoutGrid, RefreshCw } from "lucide-react";
+import { ArrowRight, ArrowUpRight, LayoutGrid, RefreshCw } from "lucide-react";
 import { Link } from "react-router-dom";
 import useBackNavigation from "../hooks/useBackNavigation";
+import WorkspacePageHeader from "./WorkspacePageHeader";
 import "./module-container-layout.css";
 
 export default function ModuleContainerLayout({
@@ -26,13 +27,15 @@ export default function ModuleContainerLayout({
 
   return (
     <div className="module-container-page">
-      <section className="module-container-hero">
-        <div className="module-container-hero-icon"><HeroIcon size={31} /></div>
-        <div className="module-container-hero-copy">
-          {showBack ? <button type="button" className="module-container-back" onClick={goBack}><ArrowLeft size={17} />{backLabel}</button> : null}
-          <span className="module-container-eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p>
-        </div>
-      </section>
+      <WorkspacePageHeader
+        className="module-container-hero"
+        icon={<HeroIcon size={31} />}
+        backLabel={showBack ? backLabel : ""}
+        onBack={showBack ? goBack : undefined}
+        eyebrow={eyebrow}
+        title={title}
+        description={description}
+      />
 
       {error ? <div className="module-container-message error"><span>{error}</span>{onRetry ? <button type="button" onClick={onRetry}><RefreshCw size={16} />Riprova</button> : null}</div> : null}
       {loading ? <div className="module-container-loading"><div className="auth-spinner" /><span>{loadingLabel}</span></div> : null}

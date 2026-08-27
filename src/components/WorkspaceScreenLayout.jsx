@@ -1,10 +1,11 @@
 import { createElement, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, LayoutGrid } from "lucide-react";
+import { LayoutGrid } from "lucide-react";
 import { Navigate, useLocation } from "react-router-dom";
 import useBackNavigation from "../hooks/useBackNavigation";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabaseClient";
 import { getModuleIcon } from "../config/moduleIcons";
+import WorkspacePageHeader from "./WorkspacePageHeader";
 import "./workspace-screen-layout.css";
 
 const BUILT_IN_CONTAINER_PATHS = new Set(["/home", "/settings", "/analisi-dati", "/produzione", "/crm"]);
@@ -42,7 +43,7 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
     const isContainer = BUILT_IN_CONTAINER_PATHS.has(pathname)
       || /^\/moduli\/[^/]+$/.test(pathname)
       || (exactModule?.tipo === "contenitore" && !exactScreen);
-    if (isContainer || pathname === "/settings/modules" || pathname === "/settings/menu") return { container: true, denied: Boolean(exactModule && (!hasModuleAccess(exactModule.codice) || (exactModule.area && !hasAreaAccess(exactModule.area)))) };
+    if (isContainer) return { container: true, denied: Boolean(exactModule && (!hasModuleAccess(exactModule.codice) || (exactModule.area && !hasAreaAccess(exactModule.area)))) };
 
     const screen = catalog.screens
       .filter((item) => item.percorso && (pathname === item.percorso || pathname.startsWith(`${item.percorso}/`)))
@@ -89,15 +90,13 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
 
   return (
     <div className="workspace-screen-layout">
-      <header className="workspace-screen-header">
-        <div className="workspace-screen-header-icon">{screenIcon}</div>
-        <div className="workspace-screen-header-copy">
-          {presentation.parentPath ? <button type="button" className="workspace-screen-back" onClick={goBack}><ArrowLeft size={17} />{presentation.parentName}</button> : null}
-          <span>SCHERMATA WORKSPACE</span>
-          <h1>{presentation.title}</h1>
-          <p>{presentation.description}</p>
-        </div>
-      </header>
+      <WorkspacePageHeader
+        icon={screenIcon}
+        backLabel={presentation.parentPath ? presentation.parentName : ""}
+        onBack={presentation.parentPath ? goBack : undefined}
+        title={presentation.title}
+        description={presentation.description}
+      />
       <div className="workspace-screen-content">{children}</div>
     </div>
   );

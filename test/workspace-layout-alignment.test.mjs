@@ -4,20 +4,34 @@ import test from "node:test";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("Workspace headers expose consistently aligned keyboard-accessible back navigation", async () => {
-  const [container, containerStyles, screen, screenStyles, home] = await Promise.all([
+test("containers and screens render the same single Workspace page header", async () => {
+  const [header, container, screen, screenStyles, home] = await Promise.all([
+    read("src/components/WorkspacePageHeader.jsx"),
     read("src/components/ModuleContainerLayout.jsx"),
-    read("src/components/module-container-layout.css"),
     read("src/components/WorkspaceScreenLayout.jsx"),
     read("src/components/workspace-screen-layout.css"),
     read("src/pages/Home/Home.jsx"),
   ]);
   assert.match(container, /useBackNavigation\(backFallback\)/);
-  assert.match(container, /className="module-container-back"/);
-  assert.match(containerStyles, /\.module-container-back\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;[^}]*gap:\s*12px;[^}]*line-height:\s*1;/s);
-  assert.match(screen, /className="workspace-screen-back"/);
-  assert.match(screenStyles, /\.workspace-screen-back\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;[^}]*gap:\s*12px;[^}]*line-height:\s*1;/s);
+  assert.match(container, /<WorkspacePageHeader/);
+  assert.match(screen, /<WorkspacePageHeader/);
+  assert.equal((header.match(/<h1>/g) || []).length, 1);
+  assert.doesNotMatch(container, /<h1>/);
+  assert.doesNotMatch(screen, /<h1>/);
+  assert.match(screenStyles, /\.workspace-page-header\s*\{[^}]*min-height:\s*228px;[^}]*padding:\s*34px;/s);
+  assert.match(screenStyles, /\.workspace-page-header-back\s*\{[^}]*align-items:\s*center;[^}]*gap:\s*12px;[^}]*line-height:\s*1;/s);
   assert.match(home, /showBack=\{false\}/);
+});
+
+test("specialist content headers are reduced to toolbars below the shared header", async () => {
+  const styles = await read("src/components/workspace-screen-layout.css");
+  assert.match(styles, /\.workspace-screen-content \.crm-page-header-copy/);
+  assert.match(styles, /\.workspace-screen-content \.documentation-hero/);
+  assert.match(styles, /\.workspace-screen-content \.orders-new-header/);
+  assert.match(styles, /\.workspace-screen-content \.crm-toolbar > :first-child:has\(> h2\)/);
+  assert.match(styles, /\.workspace-screen-content \.progremes-summary-title/);
+  assert.match(styles, /\.workspace-screen-content \.rdp-header > :first-child/);
+  assert.match(styles, /\.workspace-screen-content \.commercial-analysis-fullscreen/);
 });
 
 test("CRM dashboards sharing a module route render as standard Workspace screens", async () => {

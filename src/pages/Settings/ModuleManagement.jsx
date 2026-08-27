@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Blocks, ExternalLink, Monitor, Pencil, Plus, Save, ShieldCheck, Trash2 } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import useBackNavigation from "../../hooks/useBackNavigation";
 import { supabase } from "../../lib/supabaseClient";
@@ -44,7 +44,6 @@ const screenRouteSummary = (screen) => screen.provider === "progremes"
   ? `${screenDestination(screen)} · ProgreMES`
   : `${screen.percorso} · Workspace`;
 
-const modulePreviewRoute = (module) => cleanText(module.percorso) || `/moduli/${module.codice}`;
 const screenPreviewRoute = (screen) => cleanText(screen.percorso);
 
 export default function ModuleManagement() {
@@ -330,7 +329,11 @@ export default function ModuleManagement() {
               const menuAssociations = associations.moduleMenus.get(item.codice) || [];
               const associated = screenAssociations.length + menuAssociations.length > 0;
               const ModuleIcon = getModuleIcon(item.icona, item.protetto ? ShieldCheck : Blocks);
-              return <div className={`module-catalog-item catalog-with-associations ${selectedCode === item.codice ? "active" : ""}`} key={item.codice}><button type="button" className="module-catalog-select" onClick={() => editModule(item)}><span className="module-list-icon"><ModuleIcon /></span><span><strong>{item.nome}</strong><small>{item.codice} · {associations.areaByCode.get(item.area)?.nome || item.area} · {item.provider}</small><span className="catalog-relations">Schermate: {screenAssociations.slice(0,2).map((link) => link.screen?.nome).filter(Boolean).join(", ") || "nessuna"}{screenAssociations.length > 2 ? ` · + ${screenAssociations.length - 2}` : ""} · Menu: {menuAssociations.slice(0,2).map((link) => link.menu?.nome).filter(Boolean).join(", ") || "nessuno"}</span></span><AssociationBadge associated={associated}/><Pencil size={16} /></button><a className="module-preview-link" href={modulePreviewRoute(item)} target="_blank" rel="noreferrer" title={`Apri il modulo ${item.nome}`}><ExternalLink size={16} /><span>Apri</span></a></div>;
+              const defaultScreen = screenAssociations.find((link) => link.predefinita)?.screen || screenAssociations[0]?.screen;
+              const builderTarget = item.tipo === "contenitore" || !defaultScreen
+                ? `/settings/layout-builder/module/${encodeURIComponent(item.codice)}`
+                : `/settings/layout-builder/screen/${encodeURIComponent(defaultScreen.codice)}`;
+              return <div className={`module-catalog-item catalog-with-associations ${selectedCode === item.codice ? "active" : ""}`} key={item.codice}><button type="button" className="module-catalog-select" onClick={() => editModule(item)}><span className="module-list-icon"><ModuleIcon /></span><span><strong>{item.nome}</strong><small>{item.codice} · {associations.areaByCode.get(item.area)?.nome || item.area} · {item.provider}</small><span className="catalog-relations">Schermate: {screenAssociations.slice(0,2).map((link) => link.screen?.nome).filter(Boolean).join(", ") || "nessuna"}{screenAssociations.length > 2 ? ` · + ${screenAssociations.length - 2}` : ""} · Menu: {menuAssociations.slice(0,2).map((link) => link.menu?.nome).filter(Boolean).join(", ") || "nessuno"}</span></span><AssociationBadge associated={associated}/><Pencil size={16} /></button><Link className="module-preview-link" to={builderTarget} title={`Modifica la struttura di ${defaultScreen && item.tipo !== "contenitore" ? defaultScreen.nome : item.nome}`}><ExternalLink size={16} /><span>Apri</span></Link></div>;
             })}
             {visibleModules.length === 0 ? <p className="catalog-empty">Nessun modulo corrisponde ai filtri.</p> : null}
           </section>
@@ -372,7 +375,7 @@ export default function ModuleManagement() {
       ) : (
         <div className="module-composer-grid">
           <section className="module-catalog-list">
-            {visibleScreens.map((screen) => { const moduleAssociations=associations.screenLinks.get(screen.codice)||[]; const ScreenIcon=getModuleIcon(screen.icona,screen.protetta?ShieldCheck:Monitor); const previewRoute=screenPreviewRoute(screen); return <div className={`module-catalog-item catalog-with-associations ${screenForm?.codice === screen.codice ? "active" : ""}`} key={screen.codice}><button type="button" className="module-catalog-select" onClick={() => editScreen(screen)}><span className="module-list-icon"><ScreenIcon /></span><span><strong>{screen.nome}</strong><small>{screen.codice} · {screenRouteSummary(screen)}</small><span className="catalog-relations">Moduli: {moduleAssociations.slice(0,2).map((link)=>link.module?.nome).filter(Boolean).join(", ")||"nessuno"}{moduleAssociations.length>2?` · + ${moduleAssociations.length-2}`:""}</span></span><AssociationBadge associated={moduleAssociations.length>0} orphanLabel="Non raggiungibile"/><Pencil size={16} /></button>{previewRoute ? <a className="module-preview-link" href={previewRoute} target="_blank" rel="noreferrer" title={`Apri la schermata ${screen.nome}`}><ExternalLink size={16} /><span>Apri</span></a> : <span className="module-preview-link disabled" title="Collegamento non disponibile"><ExternalLink size={16} /><span>Nessun link</span></span>}</div>; })}
+            {visibleScreens.map((screen) => { const moduleAssociations=associations.screenLinks.get(screen.codice)||[]; const ScreenIcon=getModuleIcon(screen.icona,screen.protetta?ShieldCheck:Monitor); return <div className={`module-catalog-item catalog-with-associations ${screenForm?.codice === screen.codice ? "active" : ""}`} key={screen.codice}><button type="button" className="module-catalog-select" onClick={() => editScreen(screen)}><span className="module-list-icon"><ScreenIcon /></span><span><strong>{screen.nome}</strong><small>{screen.codice} · {screenRouteSummary(screen)}</small><span className="catalog-relations">Moduli: {moduleAssociations.slice(0,2).map((link)=>link.module?.nome).filter(Boolean).join(", ")||"nessuno"}{moduleAssociations.length>2?` · + ${moduleAssociations.length-2}`:""}</span></span><AssociationBadge associated={moduleAssociations.length>0} orphanLabel="Non raggiungibile"/><Pencil size={16} /></button><Link className="module-preview-link" to={`/settings/layout-builder/screen/${encodeURIComponent(screen.codice)}`} title={`Modifica la struttura della schermata ${screen.nome}`}><ExternalLink size={16} /><span>Apri</span></Link></div>; })}
             {visibleScreens.length === 0 ? <p className="catalog-empty">Nessuna schermata corrisponde ai filtri.</p> : null}
           </section>
           <form className="module-editor" onSubmit={saveScreen}>

@@ -120,6 +120,10 @@ function Layout() {
 
   const currentPage = location.pathname.startsWith("/produzione")
     ? pageInfo["/produzione"]
+    : location.pathname.startsWith("/settings/layout-builder/")
+      ? { title: "Editor schermata", subtitle: "Composizione visuale, anteprima e versioni del layout." }
+    : location.pathname.startsWith("/workspace/schermate/")
+      ? { title: "Schermata Workspace", subtitle: "Schermata configurata dal Workspace Screen Builder." }
     : location.pathname.startsWith("/crm")
       ? pageInfo["/crm"]
     : location.pathname.startsWith("/moduli/")

@@ -1,0 +1,16 @@
+.workspace-composition { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 18px; min-width: 0; }
+.workspace-composition-block { min-width: 0; }
+.workspace-composition-block.width-full { grid-column: 1/-1; }
+.workspace-composition-block.width-half { grid-column: span 3; }
+.workspace-composition-block.width-third { grid-column: span 2; }
+.workspace-composition-block h2 { margin: 0 0 7px; color: #172033; font-size: clamp(1.15rem,2vw,1.45rem); }
+.workspace-composition-block p { margin: 0; color: #66758b; line-height: 1.55; }
+.workspace-composition-panel,.workspace-composition-block:not(.system-content):has(>h2) { padding: 20px; border: 1px solid #dce5ef; border-radius: 16px; background: #fff; box-shadow: var(--shadow-soft); }
+.workspace-composition-action { display: flex; align-items: center; }
+.workspace-composition-action a { width: fit-content; text-decoration: none; }
+.workspace-composition-links { padding: 18px; border: 1px solid #dce5ef; border-radius: 16px; background: #fff; }
+.workspace-composition-links>div { display: flex; flex-wrap: wrap; gap: 10px; }
+.workspace-composition-links a { display: inline-flex; align-items: center; gap: 7px; text-decoration: none; }
+.workspace-composition-divider { height: 1px; margin: 4px 0; background: #dbe4ee; }
+.workspace-composition.is-preview { align-content: start; }
+@media(max-width:768px){.workspace-composition-block.width-half,.workspace-composition-block.width-third{grid-column:1/-1}}

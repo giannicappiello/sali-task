@@ -32,6 +32,8 @@ const MexalDiagnostics = lazy(() => import("./pages/Settings/MexalDiagnostics"))
 const NotificationSettings = lazy(() => import("./pages/Settings/NotificationSettings"));
 const ModuleManagement = lazy(() => import("./pages/Settings/ModuleManagement"));
 const MenuManagement = lazy(() => import("./pages/Settings/MenuManagement"));
+const ScreenBuilder = lazy(() => import("./pages/Settings/ScreenBuilder"));
+const ConfigurableWorkspaceScreen = lazy(() => import("./pages/Settings/ConfigurableWorkspaceScreen"));
 const WorkspaceMenuContainer = lazy(() => import("./pages/Modules/WorkspaceMenuContainer"));
 const AISettings = lazy(() => import("./pages/Settings/AISettings"));
 const DigitalConnectionsSettings = lazy(() => import("./pages/Settings/DigitalConnectionsSettings"));
@@ -119,6 +121,7 @@ function App() {
               <Route path="settings/notifications" element={<NotificationSettings />} />
               <Route path="settings/modules" element={<SettingsAccessGuard adminOnly><ModuleManagement /></SettingsAccessGuard>} />
               <Route path="settings/menu" element={<SettingsAccessGuard adminOnly><MenuManagement /></SettingsAccessGuard>} />
+              <Route path="settings/layout-builder/:targetType/:targetCode" element={<SettingsAccessGuard adminOnly><ScreenBuilder /></SettingsAccessGuard>} />
               <Route path="settings/ai" element={<SettingsAccessGuard any={["settings.manage"]}><AISettings /></SettingsAccessGuard>} />
               <Route path="settings/crm-digital" element={<SettingsAccessGuard adminOnly><DigitalConnectionsSettings /></SettingsAccessGuard>} />
               <Route path="notifications" element={<Notifications />} />
@@ -126,6 +129,7 @@ function App() {
               <Route path="produzione/*" element={<WorkspaceAccessGuard moduleCode="progremes"><Production /></WorkspaceAccessGuard>} />
               <Route path="moduli/:moduleCode" element={<WorkspaceModuleContainer />} />
               <Route path="menu/:menuCode" element={<WorkspaceMenuContainer />} />
+              <Route path="workspace/schermate/:screenCode" element={<ConfigurableWorkspaceScreen />} />
               <Route path="progremes/accesso" element={<WorkspaceAccessGuard moduleCode="progremes"><ProgreMesLaunch /></WorkspaceAccessGuard>} />
               <Route path="progremes" element={<Navigate to="/home" replace />} />
               <Route path="farmacie/*" element={<WorkspaceAccessGuard moduleCode="beauty_days"><PharmacyModule /></WorkspaceAccessGuard>} />

@@ -6,6 +6,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabaseClient";
 import { getModuleIcon } from "../config/moduleIcons";
 import WorkspacePageHeader from "./WorkspacePageHeader";
+import WorkspaceScreenComposition from "./WorkspaceScreenComposition";
 import "./workspace-screen-layout.css";
 
 const BUILT_IN_CONTAINER_PATHS = new Set([
@@ -19,18 +20,28 @@ const BUILT_IN_CONTAINER_PATHS = new Set([
 ]);
 
 const isDynamicContainerPath = (pathname) => /^\/(?:menu|moduli)\/[^/]+$/.test(pathname);
+const CONTAINER_TARGETS = Object.freeze({
+  "/home": ["module", "home"],
+  "/settings": ["module", "impostazioni"],
+  "/analisi-dati": ["module", "analisi_dati"],
+  "/produzione": ["module", "progremes"],
+  "/integrations": ["module", "integrazioni"],
+  "/crm": ["module", "crm"],
+  "/crm/online": ["module", "crm_online"],
+});
 
 export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescription, children }) {
   const location = useLocation();
   const { hasAreaAccess, hasModuleAccess, hasScreenAccess } = useAuth();
   const [catalog, setCatalog] = useState({ modules: [], screens: [], links: [] });
+  const [builderLayout, setBuilderLayout] = useState(null);
 
   useEffect(() => {
     let active = true;
     const load = async () => {
       const [modulesResult, screensResult, linksResult] = await Promise.all([
         supabase.from("workspace_moduli").select("codice,nome,descrizione,tipo,percorso,attivo,icona,area").eq("attivo", true),
-        supabase.from("workspace_schermate").select("codice,nome,descrizione,percorso,attiva,area,icona").eq("attiva", true),
+        supabase.from("workspace_schermate").select("codice,nome,descrizione,percorso,attiva,area,icona,chiave_componente").eq("attiva", true),
         supabase.from("workspace_moduli_schermate").select("modulo_codice,schermata_codice,predefinita"),
       ]);
       const error = modulesResult.error || screensResult.error || linksResult.error;
@@ -53,7 +64,16 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
     const isContainer = BUILT_IN_CONTAINER_PATHS.has(pathname)
       || isDynamicContainerPath(pathname)
       || (exactModule?.tipo === "contenitore" && !exactScreen);
-    if (isContainer) return { container: true, denied: Boolean(exactModule && (!hasModuleAccess(exactModule.codice) || (exactModule.area && !hasAreaAccess(exactModule.area)))) };
+    if (isContainer) {
+      const dynamicMatch = pathname.match(/^\/(menu|moduli)\/([^/]+)$/);
+      const staticTarget = CONTAINER_TARGETS[pathname];
+      return {
+        container: true,
+        denied: Boolean(exactModule && (!hasModuleAccess(exactModule.codice) || (exactModule.area && !hasAreaAccess(exactModule.area)))),
+        layoutTargetType: dynamicMatch?.[1] === "menu" ? "menu" : "module",
+        layoutTargetCode: dynamicMatch?.[2] || exactModule?.codice || staticTarget?.[1] || "",
+      };
+    }
 
     const screen = catalog.screens
       .filter((item) => item.percorso && (pathname === item.percorso || pathname.startsWith(`${item.percorso}/`)))
@@ -90,13 +110,35 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
       description: screen?.descrizione || fallbackDescription || "Funzioni e dati disponibili in base alle autorizzazioni dell’utente.",
       parentName: navigationParent?.nome || "",
       parentPath,
+      layoutTargetType: "screen",
+      layoutTargetCode: screen?.codice || "",
+      layoutRequiresSystemContent: screen?.chiave_componente !== "screen-builder",
     };
   }, [catalog, fallbackDescription, fallbackTitle, hasAreaAccess, hasModuleAccess, hasScreenAccess, location.pathname, location.state]);
   const goBack = useBackNavigation(presentation.parentPath || "/home");
   const screenIcon = createElement(getModuleIcon(presentation.screenIcon, LayoutGrid), { size:29 });
 
+  useEffect(() => {
+    let active = true;
+    const loadLayout = async () => {
+      setBuilderLayout(null);
+      if (!presentation.layoutTargetCode) return;
+      const { data, error } = await supabase.from("workspace_builder_layouts").select("layout").eq("target_type", presentation.layoutTargetType).eq("target_code", presentation.layoutTargetCode).maybeSingle();
+      if (error) throw error;
+      if (active) setBuilderLayout(data?.layout || null);
+    };
+    const refresh = () => void loadLayout().catch(() => { if (active) setBuilderLayout(null); });
+    refresh();
+    window.addEventListener("workspace:builder-layout-changed", refresh);
+    return () => { active = false; window.removeEventListener("workspace:builder-layout-changed", refresh); };
+  }, [presentation.layoutTargetCode, presentation.layoutTargetType]);
+
+  const composedContent = builderLayout
+    ? <WorkspaceScreenComposition layout={builderLayout} requireSystemContent={presentation.layoutRequiresSystemContent !== false}>{children}</WorkspaceScreenComposition>
+    : children;
+
   if (presentation.denied) return <Navigate to="/home" replace />;
-  if (presentation.container) return children;
+  if (presentation.container) return composedContent;
 
   return (
     <div className="workspace-screen-layout">
@@ -107,7 +149,7 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
         title={presentation.title}
         description={presentation.description}
       />
-      <div className="workspace-screen-content">{children}</div>
+      <div className="workspace-screen-content">{composedContent}</div>
     </div>
   );
 }

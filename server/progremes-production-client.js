@@ -13,6 +13,10 @@ function required(name, env) {
 }
 function enabled(name, env) { return String(env[name] || "").trim().toLowerCase() === "true"; }
 function hash(body) { return createHash("sha256").update(body).digest("hex"); }
+function mesErrorMessage(result) {
+  const message = text(result?.error).replace(/[\r\n\t]+/g, " ").slice(0, 500);
+  return message || "ProgreMES ha rifiutato la richiesta.";
+}
 export function createLineIdempotencyKey(requestKey, lineId, commercialRevision) {
   return `rdp-line:v2:${hash(JSON.stringify({ requestKey, lineId, commercialRevision }))}`;
 }
@@ -147,7 +151,7 @@ export function createProgremesProductionClient({ env = process.env, fetchImpl =
         },
       });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw Object.assign(new Error("ProgreMES ha rifiutato la richiesta."), { status: response.status, code: result.code });
+      if (!response.ok) throw Object.assign(new Error(mesErrorMessage(result)), { status: response.status, code: text(result.code) || undefined });
       return { result, payloadHash: hash(body) };
     } finally { clearTimeout(timer); }
   };

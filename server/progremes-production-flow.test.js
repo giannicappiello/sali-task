@@ -84,6 +84,36 @@ test("decisione v2 usa hash aggregati compatibili e contratto HMAC dedicato", as
   assert.throws(() => validateDecisionResponse({ ...response.result, externalId: "altro" }, payload), { code: "INVALID_MES_RESPONSE" });
 });
 
+test("il client propaga l'errore MES sicuro e conserva status e code", async () => {
+  const client = createProgremesProductionClient({
+    env: { PROGREMES_URL: "https://mes.example.test", PROGREMES_INTEGRATION_SECRET: "server-secret" },
+    fetchImpl: async () => ({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: "Preview RdP non più valida.\nRicaricare l'analisi.", code: "STALE_PREVIEW" }),
+    }),
+  });
+
+  await assert.rejects(
+    () => client.decideRequest("00000000-0000-4000-8000-000000000001", { externalId: "00000000-0000-4000-8000-000000000002" }),
+    (error) => error.message === "Preview RdP non più valida. Ricaricare l'analisi."
+      && error.status === 409
+      && error.code === "STALE_PREVIEW",
+  );
+});
+
+test("il client usa un messaggio generico se MES non restituisce un errore contrattuale", async () => {
+  const client = createProgremesProductionClient({
+    env: { PROGREMES_URL: "https://mes.example.test", PROGREMES_INTEGRATION_SECRET: "server-secret" },
+    fetchImpl: async () => ({ ok: false, status: 500, json: async () => ({ traceId: "internal" }) }),
+  });
+
+  await assert.rejects(
+    () => client.decideRequest("00000000-0000-4000-8000-000000000001", { externalId: "00000000-0000-4000-8000-000000000002" }),
+    { message: "ProgreMES ha rifiutato la richiesta.", status: 500 },
+  );
+});
+
 test("tutte le mutazioni restano disabilitate se i flag non esistono", () => {
   const client = createProgremesProductionClient({ env: {} });
   assert.equal(client.requestEnabled(), false);

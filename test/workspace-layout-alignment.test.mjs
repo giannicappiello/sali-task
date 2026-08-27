@@ -37,6 +37,9 @@ test("specialist content headers are reduced to toolbars below the shared header
 test("CRM dashboards sharing a module route render as standard Workspace screens", async () => {
   const screen = await read("src/components/WorkspaceScreenLayout.jsx");
   assert.match(screen, /exactModule\?\.tipo === "contenitore" && !exactScreen/);
+  assert.match(screen, /\(\?:menu\|moduli\)/);
+  assert.match(screen, /"\/integrations"/);
+  assert.match(screen, /"\/crm\/online"/);
   assert.match(screen, /const navigationParent = parentModule\?\.percorso/);
   assert.doesNotMatch(screen, /defaultModuleScreen/);
 });

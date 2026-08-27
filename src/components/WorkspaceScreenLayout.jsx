@@ -8,7 +8,17 @@ import { getModuleIcon } from "../config/moduleIcons";
 import WorkspacePageHeader from "./WorkspacePageHeader";
 import "./workspace-screen-layout.css";
 
-const BUILT_IN_CONTAINER_PATHS = new Set(["/home", "/settings", "/analisi-dati", "/produzione", "/crm"]);
+const BUILT_IN_CONTAINER_PATHS = new Set([
+  "/home",
+  "/settings",
+  "/analisi-dati",
+  "/produzione",
+  "/integrations",
+  "/crm",
+  "/crm/online",
+]);
+
+const isDynamicContainerPath = (pathname) => /^\/(?:menu|moduli)\/[^/]+$/.test(pathname);
 
 export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescription, children }) {
   const location = useLocation();
@@ -41,7 +51,7 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
     const exactModule = catalog.modules.find((module) => (module.percorso || "").replace(/\/$/, "") === pathname);
     const exactScreen = catalog.screens.find((screen) => (screen.percorso || "").replace(/\/$/, "") === pathname);
     const isContainer = BUILT_IN_CONTAINER_PATHS.has(pathname)
-      || /^\/moduli\/[^/]+$/.test(pathname)
+      || isDynamicContainerPath(pathname)
       || (exactModule?.tipo === "contenitore" && !exactScreen);
     if (isContainer) return { container: true, denied: Boolean(exactModule && (!hasModuleAccess(exactModule.codice) || (exactModule.area && !hasAreaAccess(exactModule.area)))) };
 

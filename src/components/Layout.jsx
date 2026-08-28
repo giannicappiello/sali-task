@@ -37,6 +37,7 @@ const baseMenuItems = [
   { path: "/ordini-ph", label: "Ordini PH", icon: ShoppingCart, permission: "orders.read", special: "orders_ph", module: "ordini_ph" },
   { path: "/products", label: "Prodotti", icon: Package, module: "prodotti" },
   { path: "/magazzino", label: "Magazzino", icon: Warehouse, module: "magazzino" },
+  { path: "/magazzino-dashboard", label: "Dashboard magazzino", icon: BarChart3, module: "magazzino" },
   { path: "/documentation", label: "Documenti", icon: FileArchive, module: "documenti" },
   { path: "/assistente-ai", label: "Assistente AI", icon: Bot, module: "assistente_ai" },
   { path: "/progremes", label: "ProgreMES APS", icon: Factory, module: "progremes" },
@@ -65,6 +66,7 @@ const pageInfo = {
   "/tasks": { title: "Tutte le fasi dei progetti", subtitle: "Planning delle fasi progettuali." },
   "/products": { title: "Prodotti", subtitle: "Catalogo articoli attivi sincronizzato da Mexal in sola lettura." },
   "/magazzino": { title: "Magazzino", subtitle: "Giacenze, disponibilità e valorizzazione economica del database Workspace." },
+  "/magazzino-dashboard": { title: "Dashboard Magazzino", subtitle: "Resoconto quantitativo ed economico delle giacenze Workspace." },
   "/documentation": { title: "Documenti", subtitle: "Schede tecniche, certificazioni e documentazione aziendale." },
   "/manuali-uso": { title: "Manuali d'uso", subtitle: "Manuali d'uso e guide operative." },
   "/assistente-ai": { title: "Assistente AI", subtitle: "Dati interni, ricerca Web e pianificazione controllata." },
@@ -209,10 +211,15 @@ function Layout() {
       order: module.ordine,
     })).filter((item) => item.path);
     const productionItem = baseMenuItems.find((item) => item.path === "/produzione");
+    const warehouseDashboardItem = baseMenuItems.find((item) => item.path === "/magazzino-dashboard");
     const progremesIndex = configured.findIndex((item) => item.module === "progremes");
     const withProduction = [...configured];
     if (!withProduction.some((item) => item.path === "/produzione")) {
       withProduction.splice(progremesIndex >= 0 ? progremesIndex + 1 : withProduction.length, 0, productionItem);
+    }
+    if (warehouseDashboardItem && !withProduction.some((item) => item.path === "/magazzino-dashboard")) {
+      const warehouseIndex = withProduction.findIndex((item) => item.module === "magazzino");
+      withProduction.splice(warehouseIndex >= 0 ? warehouseIndex + 1 : withProduction.length, 0, warehouseDashboardItem);
     }
     if (settingsItem && !withProduction.some((item) => item.module === "impostazioni")) withProduction.push(settingsItem);
     const canonicalSettings = withProduction.find((item) => item.module === "impostazioni");

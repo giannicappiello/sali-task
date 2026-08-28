@@ -25,8 +25,11 @@ test("Workbench espone lista OCT, multi-select e stati operativi senza duplicare
   assert.doesNotMatch(ui, /ProgreMES è il master dell’analisi produttiva/);
   assert.doesNotMatch(ui, /Filtra cliente/);
   assert.match(ui, /rdp-header-actions/);
+  assert.match(ui, /rdp-header-controls/);
   assert.match(ui, /rdp-toolbar-evaluation/);
-  assert.match(productionCss, /\.rdp-toolbar-evaluation\s*\{[^}]*position:\s*sticky/);
+  assert.match(ui, /className="rdp-oct-scroll"/);
+  assert.match(productionCss, /\.rdp-oct-scroll\s*\{[^}]*overflow-y:\s*auto/);
+  assert.match(productionCss, /\.rdp-oct-meta\s*\{[^}]*font-size:\s*\.72rem/);
   assert.match(productionCss, /\.rdp-request-meta \.rdp-cancel-action\s*\{[^}]*margin-left:\s*auto/);
   assert.match(ui, /requestId: response\.requestId/);
   assert.match(ui, /setDetail\(outcome\)/);

@@ -18,7 +18,8 @@ test("Workbench espone lista OCT, multi-select e stati operativi senza duplicare
   for (const label of ["OCT da valutare", "RdP", "In produzione", "Completati / evasi", "Bloccati"]) assert.match(ui, new RegExp(label, "i"));
   assert.match(ui, /type="checkbox"/);
   assert.match(ui, /orderIds: selected/);
-  assert.match(ui, /NESSUNA NETTIFICAZIONE WORKSPACE/);
+  assert.doesNotMatch(ui, /NESSUNA NETTIFICAZIONE WORKSPACE/);
+  assert.doesNotMatch(ui, /ProgreMES è il master dell’analisi produttiva/);
   assert.match(ui, /WorkspaceMES V3 · fabbisogni e produzione/);
   assert.match(ui, /DIRECT calcolati da Workspace, MP certificate da ProgreMES/);
   assert.doesNotMatch(ui, /Apri nel contesto/);

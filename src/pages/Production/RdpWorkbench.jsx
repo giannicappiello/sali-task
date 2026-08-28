@@ -169,7 +169,6 @@ function PreviewDialog({ preview, busy, sendEnabled, onCancel, onConfirm }) {
   if (!preview) return null;
   return <div className="rdp-dialog-backdrop" role="presentation"><section className="rdp-dialog" role="dialog" aria-modal="true" aria-label="Anteprima RdP">
     <header><div><span className="rdp-eyebrow">Conferma controllata</span><h2>Anteprima RdP multi-OCT</h2></div><button type="button" onClick={onCancel} disabled={busy}><X /></button></header>
-    <div className="rdp-no-netting"><ShieldAlert /><div><strong>NESSUNA NETTIFICAZIONE WORKSPACE</strong><p>ProgreMES è il master dell’analisi produttiva, di materiali, formule, Station e Filling.</p></div></div>
     <dl className="rdp-preview-summary"><div><dt>OCT</dt><dd>{preview.demand.orderCount}</dd></div><div><dt>Righe produttive</dt><dd>{preview.demand.itemCount}</dd></div><div><dt>Snapshot</dt><dd>#{preview.snapshot.id}</dd></div><div><dt>Stato</dt><dd>{preview.status}</dd></div></dl>
     <div className="rdp-preview-items">{preview.demand.orders.map((order) => <article key={order.orderId}><strong>{order.sigla}/{order.serie}/{order.numero}</strong><span>Revisione {order.commercialRevision}</span><span>Consegna {formatDate(order.requestedDeliveryDate)}</span></article>)}</div>
     {!sendEnabled && <div className="rdp-gate-off" role="alert"><ShieldAlert/><div><strong>Invio RdP Production non disponibile</strong><p>Uno o più gate WorkspaceMES/ProgreMES sono OFF. Verificare il Centro Diagnostico.</p></div></div>}

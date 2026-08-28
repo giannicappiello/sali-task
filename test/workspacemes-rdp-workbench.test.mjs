@@ -38,7 +38,10 @@ test("Workbench espone lista OCT, multi-select e stati operativi senza duplicare
   assert.match(progressiveMigration, /workspace_production_rdp_number_seq/);
   assert.match(progressiveMigration, /rdp_number set not null/);
   assert.match(progressiveMigration, /unique index if not exists workspace_production_requests_rdp_number_uniq/);
-  assert.match(ui, /WorkspaceMES V3 · fabbisogni e produzione/);
+  assert.match(ui, /RICALCOLA RDP/);
+  assert.doesNotMatch(ui, /WorkspaceMES V3 · fabbisogni e produzione/);
+  assert.doesNotMatch(ui, /La distinta prodotto finito Mexal sarà esplosa/);
+  assert.match(productionCss, /\.rdp-v3-recalculate\s*\{[^}]*width:\s*100%[^}]*background:\s*#18b76a/);
   assert.match(ui, /DIRECT calcolati da Workspace, MP certificate da ProgreMES/);
   assert.doesNotMatch(ui, /Apri nel contesto/);
   assert.match(production, /RdP Workbench/);
@@ -63,6 +66,7 @@ test("annullo RdP richiede permesso, motivo e conferma esplicita", () => {
   assert.match(ui, /Motivo obbligatorio/);
   assert.match(ui, /Confermo di voler annullare logicamente/);
   assert.match(ui, /reason\.trim\(\)\.length >= 5/);
+  assert.match(ui, /setCancelTarget\(null\);\s*setDetail\(null\);\s*setTab\("evaluation"\);\s*setSelected\(\[\]\);/);
   assert.match(cancellationMigration, /rdp\.cancel/);
   assert.match(legacyCancellationMigration, /AWAITINGDECISION/);
   assert.match(legacyCancellationMigration, /AWAITING_DECISION/);

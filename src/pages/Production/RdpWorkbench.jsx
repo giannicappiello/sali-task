@@ -93,8 +93,7 @@ function V3Panel({ v3, canDecide, busy, onPreview, onConfirm }) {
   if (!v3) return null;
   const preview = v3.preview;
   return <section className="rdp-decisions rdp-v3-panel">
-    <h3>WorkspaceMES V3 · fabbisogni e produzione</h3>
-    {!preview && <><p>La distinta prodotto finito Mexal sarà esplosa in DIRECT e FP; soltanto gli FP saranno analizzati da ProgreMES. La preview non crea impegni.</p><button type="button" className="secondary-action" onClick={onPreview} disabled={busy || !v3.flags?.["workspacemes.v3.preview"]}>Crea preview V3</button></>}
+    <button type="button" className="primary-action rdp-v3-recalculate" onClick={onPreview} disabled={busy || !v3.flags?.["workspacemes.v3.preview"]}>{busy ? "RICALCOLO RDP…" : "RICALCOLA RDP"}</button>
     {preview && <>
       <p>Preview <strong>{preview.status}</strong> · DIRECT calcolati da Workspace, MP certificate da ProgreMES.</p>
       <div className="rdp-analysis-grid">{(v3.components || []).map((row) => <div key={row.id}>
@@ -288,7 +287,21 @@ export default function RdpWorkbench() {
   async function retryRequest() { if (!sendEnabled || !detail?.request?.id || busy) return; setBusy(true); setError(""); try { const response = await callWorkbench(accessToken, "progremes_production_retry", { requestId: detail.request.id }); setResult(response); setDetail(await callWorkbench(accessToken, "progremes_workbench_detail", { requestId: detail.request.id })); await load(); } catch (e) { setError(e.message); } finally { setBusy(false); } }
   async function createV3Preview() { if (!detail?.request?.id || busy) return; setBusy(true); setError(""); try { await callWorkbench(accessToken, "workspacemes_v3_preview", { requestId: detail.request.id }); setDetail(await callWorkbench(accessToken, "progremes_workbench_detail", { requestId: detail.request.id })); } catch (e) { setError(e.message); } finally { setBusy(false); } }
   async function confirmDecision(reason = "") { if ((!decision?.proposal?.id && !["v2", "v3"].includes(decision?.kind)) || busy) return; setBusy(true); setError(""); try { const response = decision.kind === "v3" ? await callWorkbench(accessToken, "workspacemes_v3_confirm", { previewId: decision.preview.id, reason }) : decision.kind === "v2" ? await callWorkbench(accessToken, "progremes_production_decide_v2", { requestId: decision.request.id, decision: "CompletePlanning", reason }) : await callWorkbench(accessToken, "progremes_production_confirm", { proposalId: decision.proposal.id }); const productionOrder = decision.kind === "v3" ? response.mes?.productionOrders?.[0] : confirmedProductionOrder(response); if (!productionOrder) throw new Error("ProgreMES ha confermato la decisione senza restituire l’OP generato."); setDecision(null); setResult({ kind: "production_order", status: response.workspaceStatus || response.status || response.mes?.status || "Planned", externalId: detail?.request?.external_id, productionOrder }); setDetail(await callWorkbench(accessToken, "progremes_workbench_detail", { requestId: detail.request.id })); await load(); } catch (e) { setError(e.message); } finally { setBusy(false); } }
-  async function cancelRequest(reason) { if (!cancelTarget?.id || !canCancel || busy) return; setBusy(true); setError(""); try { const response = await callWorkbench(accessToken, "progremes_production_cancel", { requestId: cancelTarget.id, reason }); setCancelTarget(null); setResult({ ...response, kind: "cancelled", rdpNumber: detail?.request?.rdp_number }); setDetail(await callWorkbench(accessToken, "progremes_workbench_detail", { requestId: cancelTarget.id })); await load(); } catch (e) { setError(e.message); } finally { setBusy(false); } }
+  async function cancelRequest(reason) {
+    if (!cancelTarget?.id || !canCancel || busy) return;
+    setBusy(true); setError("");
+    try {
+      const response = await callWorkbench(accessToken, "progremes_production_cancel", { requestId: cancelTarget.id, reason });
+      const rdpNumber = cancelTarget.rdp_number ?? detail?.request?.rdp_number;
+      setCancelTarget(null);
+      setDetail(null);
+      setTab("evaluation");
+      setSelected([]);
+      setResult({ ...response, kind: "cancelled", rdpNumber });
+      await load();
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  }
   function openDiagnostic(row) { setDiagnosticTarget(row); }
   async function applyDiagnosticAction(row, diagnosticAction, reason) {
     if (!canManageDiagnostics || busy) return;

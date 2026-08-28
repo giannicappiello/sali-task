@@ -141,8 +141,8 @@ export function validateV3PreviewResponse(result, payload) {
     throw Object.assign(new Error("Risposta preview WorkspaceMES V3 non valida."), { code: "INVALID_MES_V3_RESPONSE" });
   for (const formula of result.formulas) {
     if (!text(formula.workspaceLineId) || !text(formula.fpCode) || !positive(formula.quantity) ||
-      !text(formula.unitOfMeasure) || !Array.isArray(formula.materials) || formula.materials.some((material) =>
-      !text(material.articleCode) || !text(material.unitOfMeasure) || !nonNegative(material.required) ||
+      (!text(formula.unitOfMeasure) && !text(formula.blocker)) || !Array.isArray(formula.materials) || formula.materials.some((material) =>
+      !text(material.articleCode) || (!text(material.unitOfMeasure) && !text(material.blockCode)) || !nonNegative(material.required) ||
       !nonNegative(material.physical) || !nonNegative(material.committed) || !nonNegative(material.incoming) ||
       !nonNegative(material.uncovered) || !/^[a-f0-9]{64}$/.test(text(material.certifiedHash))))
       throw Object.assign(new Error("Snapshot MP V3 non certificabile."), { code: "INVALID_MES_V3_RESPONSE" });

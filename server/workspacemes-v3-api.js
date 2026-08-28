@@ -82,6 +82,16 @@ function bomFor(revision, lines) {
   };
 }
 
+export function createFormulaDemand({ component, sources, requestId }) {
+  return {
+    workspaceLineId: component.workspaceLineId,
+    fpCode: component.articleCode,
+    quantity: component.requiredQuantity,
+    octRevision: sources.find((source) => clean(source.order_line_id) === clean(component.workspaceLineId))?.oct_revision || 1,
+    rdpRevision: clean(requestId),
+  };
+}
+
 export async function createWorkspaceV3Preview({ admin, requestId, requestedBy, client = createProgremesProductionClient() }) {
   if (!client.v3PreviewEnabled()) throw fail("Preview WorkspaceMES V3 disabilitata.", "V3_PREVIEW_DISABLED", 403);
   const input = await loadPreviewInputs(admin, requestId);
@@ -144,16 +154,13 @@ export async function createWorkspaceV3Preview({ admin, requestId, requestedBy, 
     expectedOctHash: octHash, finishedBomHash: bomHash, availabilityVersion,
     requiredAt: sources.map((source) => orderById.get(clean(source.order_id))?.requestedDeliveryDate).filter(Boolean).sort()[0] || new Date().toISOString(),
     correlationId, causationId: input.request.external_id,
-    formulaDemands: formulaComponents.map((component) => ({ workspaceLineId: component.workspaceLineId,
-      fpCode: component.articleCode, quantity: component.requiredQuantity, unitOfMeasure: component.unitOfMeasure,
-      octRevision: sources.find((source) => clean(source.order_line_id) === clean(component.workspaceLineId))?.oct_revision || 1,
-      rdpRevision: clean(requestId) })) };
+    formulaDemands: formulaComponents.map((component) => createFormulaDemand({ component, sources, requestId })) };
   const mes = await client.previewV3(mesCommand);
   const formulaByLine = new Map((mes.result.formulas || []).map((formula) => [`${clean(formula.workspaceLineId)}:${upper(formula.fpCode)}`, formula]));
   const formulaRows = formulaComponents.flatMap((component) => {
     const formula = formulaByLine.get(`${clean(component.workspaceLineId)}:${component.articleCode}`);
     const parent = { bomLineId: component.bomLineId, componentKind: "FORMULA_COMPONENT", articleCode: component.articleCode,
-      unitOfMeasure: component.unitOfMeasure, requiredQuantity: component.requiredQuantity, onHandQuantity: 0,
+      unitOfMeasure: upper(formula?.unitOfMeasure), requiredQuantity: component.requiredQuantity, onHandQuantity: 0,
       committedQuantity: 0, incomingQuantity: 0, uncoveredQuantity: 0, expectedAvailableAt: null,
       requiredAt: component.requiredAt,
       calculationOwner: "PROGREMES", formulaCode: formula?.formulaCode || null, formulaRevision: formula?.formulaRevision || null,

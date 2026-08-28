@@ -53,6 +53,9 @@ test("Workbench espone lista OCT, multi-select e stati operativi senza duplicare
   assert.doesNotMatch(ui, /WorkspaceMES V3 · fabbisogni e produzione/);
   assert.doesNotMatch(ui, /La distinta prodotto finito Mexal sarà esplosa/);
   assert.match(productionCss, /\.rdp-v3-recalculate\s*\{[^}]*width:\s*100%[^}]*background:\s*#18b76a/);
+  assert.match(ui, /primary-action rdp-preview-action/);
+  assert.match(productionCss, /\.rdp-workbench \.rdp-preview-action\s*\{[^}]*background:\s*#18b76a/);
+  assert.match(productionCss, /\.rdp-workbench \.rdp-oct-select\s*\{[^}]*background:\s*#18b76a/);
   assert.match(ui, /DIRECT calcolati da Workspace, MP certificate da ProgreMES/);
   assert.doesNotMatch(ui, /Apri nel contesto/);
   assert.match(production, /RdP Workbench/);

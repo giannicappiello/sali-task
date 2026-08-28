@@ -618,6 +618,14 @@ export default async function handler(req, res) {
       }
       case "workspacemes_v3_preview": {
         const admin = await createAdmin(req, "rdp.create");
+        // The V3 preview must use the current authoritative Mexal BOM and
+        // supplier-order snapshots.  Keeping this in the normal preview path
+        // avoids the unsafe operational dependency on the admin-only manual
+        // sync action while preserving the append-only preview semantics.
+        await syncWorkspaceV3MexalContracts({
+          mexal: buildMexalClient(),
+          supabase: admin.supabase,
+        });
         return sendSuccess(res, 200, await createWorkspaceV3Preview({
           admin: admin.supabase,
           requestId: String(body.requestId || "").trim(),

@@ -9,6 +9,7 @@ const DESCRIPTION_BY_PATH = Object.freeze({
   "/ordini-prof": "Clienti, ordini e attività commerciali collegate a Mexal.",
   "/ordini-ph": "Clienti, ordini e attività commerciali collegate a Mexal.",
   "/products": "Catalogo articoli attivi sincronizzato da Mexal.",
+  "/magazzino": "Giacenze, disponibilità e valorizzazione economica Workspace.",
   "/documentation": "Schede tecniche, certificazioni e documentazione aziendale.",
   "/analisi-dati": "Cruscotti e analisi disponibili in base agli accessi dell’utente.",
   "/progremes": "Accesso transitorio alla pianificazione e gestione della produzione.",

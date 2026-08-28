@@ -104,6 +104,12 @@ export function getMexalVat(article = {}) {
   return { code, rate: nullableNumber(code) };
 }
 
+// Contratto reale gia usato da ProgreMES: Mexal espone il costo ultimo come
+// costo_ult e, in alcune versioni, tramite l'alias cos_ult.
+export function getLastCost(article = {}) {
+  return Math.max(0, nullableNumber(article.costo_ult ?? article.cos_ult) ?? 0);
+}
+
 function round4(value) {
   return Math.round((value + Number.EPSILON) * 10000) / 10000;
 }
@@ -791,6 +797,7 @@ async function saveProduct({
       article.prz_listino,
       1
     ),
+    costo_ultimo: getLastCost(article),
     // The complete /articoli/{codice} payload exposes the VAT value as alq_iva
     // (for example "22,0").  It is both Mexal's VAT code and the source of
     // the percentage; list records do not contain this authoritative value.
@@ -860,6 +867,7 @@ export function mapArticleToOrdersCache(article, { imageUrl = null } = {}) {
     ),
     ...(nullableInteger(article.id_categoria_pr) !== null ? { categoria_provvigionale_mexal: nullableInteger(article.id_categoria_pr) } : {}),
     prezzo_listino: getListPrice(article.prz_listino, 1),
+    costo_ultimo: getLastCost(article),
     giacenza: stock,
     impegnato: round4(
       numberValue(article.impegnato ?? article.qta_impegnata ?? 0)
@@ -1174,8 +1182,14 @@ export default async function handler(req, res) {
           const article = await loadFullArticle(availabilityMexal, code, summary);
           if (!isActiveArticle(article)) { result.esclusi += 1; continue; }
           const stock = calculateStock(article); const now = new Date().toISOString();
-          const { data: updatedRows, error: updateError } = await supabase.from("prodotti").update({ giacenza: stock, disponibilita: calculateAvailability(article, stock), ultimo_sync_mexal: now, updated_at: now }).eq("codice_mexal", code).eq("sincronizzato_mexal", true).eq("attivo_mexal", true).select("id");
+          const availability = calculateAvailability(article, stock);
+          const lastCost = getLastCost(article);
+          const committed = round4(numberValue(article.impegnato ?? article.qta_impegnata ?? 0));
+          const unit = authoritativeArticleUnit(article);
+          const { data: updatedRows, error: updateError } = await supabase.from("prodotti").update({ giacenza: stock, disponibilita: availability, costo_ultimo: lastCost, ultimo_sync_mexal: now, updated_at: now }).eq("codice_mexal", code).eq("sincronizzato_mexal", true).eq("attivo_mexal", true).select("id");
           if (updateError) throw updateError;
+          const { error: cacheUpdateError } = await supabase.from("ordini_prodotti_cache").update({ giacenza: stock, impegnato: committed, disponibilita: availability, costo_ultimo: lastCost, unita_misura: unit, dati_mexal: article, sincronizzato_il: now }).eq("codice_articolo", code);
+          if (cacheUpdateError) throw cacheUpdateError;
           result.aggiornati += updatedRows?.length || 0;
           for (const row of updatedRows || []) updateOperations.push({ id: row.id, code });
         } catch (error) {

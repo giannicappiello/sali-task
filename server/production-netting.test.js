@@ -286,6 +286,8 @@ test("snapshot equivalente con ID diverso tra preview e invio raggiunge il MES",
   await sendProductionRequest({ method: "POST", body: { orderIds: [ORDERS[0].id], snapshotId: 12 } }, recorder.response, { admin, client });
   assert.equal(recorder.value.status, 200);
   assert.equal(outbound.workspaceExternalId, externalId);
+  assert.equal(recorder.value.payload.requestId, requestId);
+  assert.equal(recorder.value.payload.workspaceExternalId, externalId);
 });
 
 test("retry usa esclusivamente RdP e snapshot persistiti senza creare una nuova domanda", async () => {

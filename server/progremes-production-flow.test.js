@@ -188,7 +188,14 @@ test("run_now/oct_orders è registrato, resta OFF e non importa OCM/OCX/OCI", as
           return chain;
         } };
       }
-      if (table === "ordini_righe") return { upsert: async (value) => { lines.push(...value); return { error: null }; } };
+      if (table === "ordini_righe") {
+        const chain = {
+          upsert: async (value) => { lines.push(...value); return { error: null }; },
+          select: () => chain,
+          eq: async () => ({ data: lines.map((line, index) => ({ id: `line-${index + 1}`, mexal_posizione: line.mexal_posizione, mexal_attiva: true })), error: null }),
+        };
+        return chain;
+      }
       throw new Error("Tabella inattesa: " + table);
     },
   };

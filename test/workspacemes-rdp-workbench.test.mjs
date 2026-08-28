@@ -19,7 +19,9 @@ test("Workbench espone lista OCT, multi-select e stati operativi senza duplicare
   assert.match(ui, /type="checkbox"/);
   assert.match(ui, /orderIds: selected/);
   assert.match(ui, /NESSUNA NETTIFICAZIONE WORKSPACE/);
-  for (const screen of ["Planning", "Produzione", "Operatore produzione", "Confezionamento", "Magazzino", "Documenti"]) assert.match(ui, new RegExp(screen));
+  assert.match(ui, /WorkspaceMES V3 · fabbisogni e produzione/);
+  assert.match(ui, /DIRECT calcolati da Workspace, MP certificate da ProgreMES/);
+  assert.doesNotMatch(ui, /Apri nel contesto/);
   assert.match(production, /RdP Workbench/);
 });
 
@@ -62,6 +64,9 @@ test("preview, invio e decisione applicano permessi RdP dedicati", () => {
   assert.match(api, /progremes_production_preview[\s\S]*?rdp\.create/);
   assert.match(api, /progremes_production_request[\s\S]*?rdp\.create/);
   assert.match(api, /progremes_production_confirm[\s\S]*?rdp\.decide/);
+  assert.match(api, /workspacemes_v3_preview[\s\S]*?rdp\.create/);
+  assert.match(api, /workspacemes_v3_confirm[\s\S]*?rdp\.decide/);
+  assert.match(api, /workspacemes_v3_purchase_document[\s\S]*?purchases\.manage/);
   assert.match(migration, /rdp\.create/);
   assert.match(api, /if \(!permissionCode && internalSecrets/);
 });

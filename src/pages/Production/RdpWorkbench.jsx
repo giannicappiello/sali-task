@@ -31,6 +31,14 @@ function Diagnostics({ rows, onOpen }) {
   return <div className="rdp-inline-diagnostics">{rows.slice(0, 3).map((row) => <button type="button" key={row.diagnosticId} className={`rdp-alert-${String(row.severity).toLowerCase()}`} onClick={() => onOpen(row)}><AlertTriangle size={14} />{row.errorCode}</button>)}</div>;
 }
 
+function BackgroundSyncStatus({ refresh }) {
+  if (!refresh) return null;
+  if (refresh.status === "completed") return <div className="rdp-background-sync rdp-background-sync-complete" role="status"><CheckCircle2 size={16}/><span>OCT aggiornati da Mexal.</span></div>;
+  if (refresh.status === "failed") return <div className="rdp-background-sync rdp-background-sync-failed" role="alert" title={refresh.last_error || "Consultare il Centro Diagnostico"}><AlertTriangle size={16}/><span>Sincronizzazione OCT non riuscita.</span></div>;
+  if (refresh.status === "cancelled") return null;
+  return <div className="rdp-background-sync" role="status"><RefreshCw className="rdp-spin" size={16}/><span>Sincronizzazione OCT in background.</span></div>;
+}
+
 function formatQuantity(value) {
   return new Intl.NumberFormat("it-IT", { minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(Number(value) || 0);
 }
@@ -184,7 +192,7 @@ export default function RdpWorkbench() {
   const canCancel = hasPermission?.("rdp.cancel");
   const canManageDiagnostics = hasPermission?.("diagnostics.manage");
   const [data, setData] = useState([]); const [tab, setTab] = useState("evaluation"); const [selected, setSelected] = useState([]);
-  const [filters, setFilters] = useState({ search: "", customer: "", ready: "" }); const [detail, setDetail] = useState(null);
+  const [filters, setFilters] = useState({ search: "", ready: "" }); const [detail, setDetail] = useState(null);
   const [preview, setPreview] = useState(null); const [busy, setBusy] = useState(false); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [result, setResult] = useState(null);
   const [decision, setDecision] = useState(null);
   const [cancelTarget, setCancelTarget] = useState(null);
@@ -259,7 +267,6 @@ export default function RdpWorkbench() {
     if (row.stage !== tab) return false;
     const haystack = `${row.label} ${row.customer} ${row.status}`.toLowerCase();
     if (filters.search && !haystack.includes(filters.search.toLowerCase())) return false;
-    if (filters.customer && !String(row.customer).toLowerCase().includes(filters.customer.toLowerCase())) return false;
     if (filters.ready === "ready" && !row.ready) return false;
     if (filters.ready === "blocked" && row.ready) return false;
     return true;
@@ -290,15 +297,11 @@ export default function RdpWorkbench() {
   }
 
   return <div className="production-page rdp-workbench">
-    <header className="rdp-header"><div><span className="rdp-eyebrow">WorkspaceMES</span><h1>RdP Workbench</h1><p>Gestione OCT, richieste di produzione, analisi MES e decisioni operative.</p></div><button type="button" className="secondary-action" onClick={load} disabled={loading}><RefreshCw className={loading ? "rdp-spin" : ""} size={17}/>Aggiorna</button></header>
-    {octRefresh && !["completed", "failed", "cancelled"].includes(octRefresh.status) && <div className="rdp-background-sync" role="status"><RefreshCw className="rdp-spin" size={16}/><span>Sincronizzazione OCT in background · la schermata resta utilizzabile.</span></div>}
-    {octRefresh?.status === "completed" && <div className="rdp-background-sync rdp-background-sync-complete" role="status"><CheckCircle2 size={16}/><span>OCT aggiornati da Mexal.</span></div>}
-    {octRefresh?.status === "failed" && <div className="rdp-background-sync rdp-background-sync-failed" role="alert"><AlertTriangle size={16}/><span>Sincronizzazione OCT non riuscita: {octRefresh.last_error || "consultare il Centro Diagnostico"}.</span></div>}
+    <header className="rdp-header"><div><span className="rdp-eyebrow">WorkspaceMES</span><h1>RdP Workbench</h1><p>Gestione OCT, richieste di produzione, analisi MES e decisioni operative.</p></div><div className="rdp-header-actions"><BackgroundSyncStatus refresh={octRefresh}/><button type="button" className="secondary-action" onClick={load} disabled={loading}><RefreshCw className={loading ? "rdp-spin" : ""} size={17}/>Aggiorna</button></div></header>
     <nav className="rdp-tabs" aria-label="Stati Workbench">{TABS.map(([code,label]) => <button type="button" key={code} className={tab === code ? "active" : ""} onClick={() => setTab(code)}>{label}<span>{data.filter((row) => row.stage === code).length}</span></button>)}</nav>
-    <section className="rdp-toolbar"><label><Search size={17}/><input value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} placeholder="Cerca OCT, cliente, stato…"/></label><input value={filters.customer} onChange={(e) => setFilters({ ...filters, customer: e.target.value })} placeholder="Filtra cliente"/><select value={filters.ready} onChange={(e) => setFilters({ ...filters, ready: e.target.value })}><option value="">Pronti e bloccati</option><option value="ready">Solo pronti</option><option value="blocked">Solo bloccati</option></select></section>
+    <section className={`rdp-toolbar ${tab === "evaluation" ? "rdp-toolbar-evaluation" : ""}`}><label><Search size={17}/><input value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} placeholder="Cerca OCT, cliente, stato…"/></label><select value={filters.ready} onChange={(e) => setFilters({ ...filters, ready: e.target.value })}><option value="">Pronti e bloccati</option><option value="ready">Solo pronti</option><option value="blocked">Solo bloccati</option></select>{tab === "evaluation" && <div className="rdp-selection-bar"><span><strong>{selected.length}</strong> OCT selezionati</span><button type="button" className="primary-action" onClick={createPreview} disabled={!canCreate || !sendEnabled || !selected.length || selectionBlocked || busy}>{busy ? "Verifica…" : "Verifica e crea anteprima"}</button>{!canCreate && <small>Permesso rdp.create richiesto.</small>}{!sendEnabled && <small>Invio RdP Production non disponibile: verificare i gate nel Centro Diagnostico.</small>}{selectionBlocked && <small>Rimuovere gli OCT bloccati prima di creare la RdP.</small>}</div>}</section>
     {error && <div className="production-message" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")}><X size={16}/>Chiudi</button></div>}
     {result && <div className="rdp-success"><CheckCircle2/><div><strong>{result.kind === "cancelled" ? "RdP annullata logicamente" : result.kind === "production_order" ? "RdP andata a buon fine, OP generato." : "RdP ricevuta da ProgreMES"}</strong><p>{result.kind === "production_order" ? `${result.productionOrder?.number || result.productionOrder?.id ? `OP ${result.productionOrder.number || result.productionOrder.id} · ` : ""}apertura ordini di produzione…` : `ID ${result.externalId || result.id || "registrato"} · Stato ${result.status || "Received"}`}</p></div></div>}
-    {tab === "evaluation" && <div className="rdp-selection-bar"><span><strong>{selected.length}</strong> OCT selezionati · lineage e quantità complete preservati</span><button type="button" className="primary-action" onClick={createPreview} disabled={!canCreate || !sendEnabled || !selected.length || selectionBlocked || busy}>{busy ? "Verifica…" : "Verifica e crea anteprima"}</button>{!canCreate && <small>Permesso rdp.create richiesto.</small>}{!sendEnabled && <small>Invio RdP Production non disponibile: verificare i gate nel Centro Diagnostico.</small>}{selectionBlocked && <small>Rimuovere gli OCT bloccati prima di creare la RdP.</small>}</div>}
     {loading ? <div className="production-loading">Caricamento OCT e RdP…</div> : <div className="rdp-oct-cards">{visible.map((row) => <OctOrderCard key={row.id} row={row} selectable={tab === "evaluation"} selected={selected.includes(row.id)} onToggle={() => toggle(row)} onOpen={() => openDetail(row)} onDiagnostic={openDiagnostic}/>) }{!visible.length && <div className="rdp-empty">Nessun elemento per i filtri e lo stato selezionati.</div>}</div>}
     <DetailPanel detail={detail} onClose={() => setDetail(null)} onDiagnostics={openDiagnostic} canDecide={canDecide} canCancel={canCancel} onDecision={setDecision} onRetry={retryRequest} onCancel={() => setCancelTarget(detail.request)} onV3Preview={createV3Preview} onV3Confirm={() => setDecision({ kind: "v3", preview: detail.v3.preview, request: detail.request })} busy={busy}/>
     <DiagnosticActionDialog key={diagnosticTarget?.diagnosticId || "none"} diagnostic={diagnosticTarget} busy={busy} canManage={canManageDiagnostics} onClose={() => setDiagnosticTarget(null)} onApply={applyDiagnosticAction}/>

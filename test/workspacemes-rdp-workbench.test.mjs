@@ -3,8 +3,9 @@ import test from "node:test";
 import { readFile } from "node:fs/promises";
 import { appendProgremesContext } from "../server/progremes-sso.js";
 
-const [ui, production, api, migration, cancellationMigration, cancellationRefinementMigration, legacyCancellationMigration, reopenMigration, workbench] = await Promise.all([
+const [ui, productionCss, production, api, migration, cancellationMigration, cancellationRefinementMigration, legacyCancellationMigration, reopenMigration, workbench] = await Promise.all([
   readFile("src/pages/Production/RdpWorkbench.jsx", "utf8"),
+  readFile("src/pages/Production/production.css", "utf8"),
   readFile("src/pages/Production/Production.jsx", "utf8"),
   readFile("api/mexal/automation.js", "utf8"),
   readFile("supabase/migrations/20260826170000_workspacemes_rdp_create_permission.sql", "utf8"),
@@ -21,6 +22,10 @@ test("Workbench espone lista OCT, multi-select e stati operativi senza duplicare
   assert.match(ui, /orderIds: selected/);
   assert.doesNotMatch(ui, /NESSUNA NETTIFICAZIONE WORKSPACE/);
   assert.doesNotMatch(ui, /ProgreMES è il master dell’analisi produttiva/);
+  assert.doesNotMatch(ui, /Filtra cliente/);
+  assert.match(ui, /rdp-header-actions/);
+  assert.match(ui, /rdp-toolbar-evaluation/);
+  assert.match(productionCss, /\.rdp-toolbar-evaluation\s*\{[^}]*position:\s*sticky/);
   assert.match(ui, /WorkspaceMES V3 · fabbisogni e produzione/);
   assert.match(ui, /DIRECT calcolati da Workspace, MP certificate da ProgreMES/);
   assert.doesNotMatch(ui, /Apri nel contesto/);

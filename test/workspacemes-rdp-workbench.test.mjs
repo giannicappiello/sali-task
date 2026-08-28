@@ -57,6 +57,10 @@ test("Workbench espone lista OCT, multi-select e stati operativi senza duplicare
   assert.match(ui, /primary-action rdp-preview-action/);
   assert.match(productionCss, /\.rdp-workbench \.rdp-preview-action\s*\{[^}]*background:\s*#18b76a/);
   assert.match(productionCss, /\.rdp-workbench \.rdp-oct-select\s*\{[^}]*background:\s*#18b76a/);
+  assert.match(ui, /rdp-dialog-actions rdp-preview-actions/);
+  assert.match(ui, /primary-action rdp-create-action/);
+  assert.match(productionCss, /\.rdp-preview-actions\s*\{[^}]*grid-template-columns:\s*repeat\(2,minmax\(0,1fr\)\)[^}]*width:\s*100%/);
+  assert.match(productionCss, /\.rdp-preview-actions \.rdp-create-action\s*\{[^}]*background:\s*#18b76a/);
   assert.match(ui, /DIRECT calcolati da Workspace, MP certificate da ProgreMES/);
   assert.doesNotMatch(ui, /Apri nel contesto/);
   assert.match(production, /RdP Workbench/);

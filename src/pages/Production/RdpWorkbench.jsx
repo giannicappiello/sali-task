@@ -189,7 +189,7 @@ function PreviewDialog({ preview, busy, sendEnabled, onCancel, onConfirm }) {
     <dl className="rdp-preview-summary"><div><dt>OCT</dt><dd>{preview.demand.orderCount}</dd></div><div><dt>Righe produttive</dt><dd>{preview.demand.itemCount}</dd></div><div><dt>Snapshot</dt><dd>#{preview.snapshot.id}</dd></div><div><dt>Stato</dt><dd>{preview.status}</dd></div></dl>
     <div className="rdp-preview-items">{preview.demand.orders.map((order) => <article key={order.orderId}><strong>{order.sigla}/{order.serie}/{order.numero}</strong><span>Revisione {order.commercialRevision}</span><span>Consegna {formatDate(order.requestedDeliveryDate)}</span></article>)}</div>
     {!sendEnabled && <div className="rdp-gate-off" role="alert"><ShieldAlert/><div><strong>Invio RdP Production non disponibile</strong><p>Uno o più gate WorkspaceMES/ProgreMES sono OFF. Verificare il Centro Diagnostico.</p></div></div>}
-    <div className="rdp-dialog-actions"><button type="button" className="secondary-action" onClick={onCancel} disabled={busy}>Annulla</button><button type="button" className="primary-action" onClick={onConfirm} disabled={busy || !sendEnabled}>{busy ? <><RefreshCw className="rdp-spin" size={17}/>Invio in corso…</> : <><Send size={17}/>Crea RdP</>}</button></div>
+    <div className="rdp-dialog-actions rdp-preview-actions"><button type="button" className="secondary-action" onClick={onCancel} disabled={busy}>Annulla</button><button type="button" className="primary-action rdp-create-action" onClick={onConfirm} disabled={busy || !sendEnabled}>{busy ? <><RefreshCw className="rdp-spin" size={17}/>Invio in corso…</> : <><Send size={17}/>Crea RdP</>}</button></div>
   </section></div>;
 }
 

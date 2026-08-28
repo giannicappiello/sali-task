@@ -43,6 +43,13 @@ test("Workbench espone lista OCT, multi-select e stati operativi senza duplicare
   assert.match(progressiveMigration, /rdp_number set not null/);
   assert.match(progressiveMigration, /unique index if not exists workspace_production_requests_rdp_number_uniq/);
   assert.match(ui, /RICALCOLA RDP/);
+  assert.match(ui, /OK · NON PRODUTTIVA/);
+  assert.match(ui, /Riga esclusa correttamente/);
+  assert.match(ui, /V3 · DISTINTA ESPLOSA/);
+  assert.match(ui, /Distinta prodotto finito elaborata/);
+  assert.match(ui, /!line\.descriptive && !hasV3Preview && \(blocking\(line\.diagnostics\)/);
+  assert.match(ui, /"workspacemes_v3_preview", \{ requestId: response\.requestId \}/);
+  assert.match(ui, /RdP creata, ma il ricalcolo V3 non è riuscito/);
   assert.doesNotMatch(ui, /WorkspaceMES V3 · fabbisogni e produzione/);
   assert.doesNotMatch(ui, /La distinta prodotto finito Mexal sarà esplosa/);
   assert.match(productionCss, /\.rdp-v3-recalculate\s*\{[^}]*width:\s*100%[^}]*background:\s*#18b76a/);

@@ -29,6 +29,11 @@ export function workbenchDetailLines(lines, requestItems = []) {
   return (lines || []).filter((line) => line?.mexal_attiva !== false || requestedLineIds.has(text(line.id)));
 }
 
+export function workbenchLineMappingStatus(line, requestItem = null) {
+  if (line?.riga_descrittiva === true) return "NOT_APPLICABLE";
+  return requestItem?.mapping_status || "TO_RESOLVE_IN_MES";
+}
+
 function octLabel(order) {
   return [text(order.mexal_sigla), text(order.mexal_serie), text(order.mexal_numero)].filter(Boolean).join("/");
 }
@@ -307,10 +312,10 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
       return {
         id: line.id, orderId: line.ordine_id, position: line.mexal_posizione, descriptive: line.riga_descrittiva === true,
         articleCode: line.codice_articolo, description: line.descrizione || product?.descrizione, quantity: line.quantita,
-        octUom: resolveWorkbenchOctUnit(line, product), productionUom: requestItem?.unita_misura_produzione || authoritativeArticleUnit(product) || authoritativeArticleUnit(product?.dati_mexal),
-        mappingStatus: requestItem?.mapping_status || "TO_RESOLVE_IN_MES", conversion: requestItem?.conversione || null,
-        mesStatus: requestItem?.mes_status || proposal?.stato || null, mesAnalysis: requestItem?.mes_payload || null,
-        proposal: proposal || null,
+        octUom: resolveWorkbenchOctUnit(line, product), productionUom: line.riga_descrittiva === true ? null : requestItem?.unita_misura_produzione || authoritativeArticleUnit(product) || authoritativeArticleUnit(product?.dati_mexal),
+        mappingStatus: workbenchLineMappingStatus(line, requestItem), conversion: line.riga_descrittiva === true ? null : requestItem?.conversione || null,
+        mesStatus: line.riga_descrittiva === true ? null : requestItem?.mes_status || proposal?.stato || null, mesAnalysis: line.riga_descrittiva === true ? null : requestItem?.mes_payload || null,
+        proposal: line.riga_descrittiva === true ? null : proposal || null,
         diagnostics: diagnostics.filter((row) => visibleDiagnostic(row) && ((row.articleCode && text(row.articleCode).toUpperCase() === text(line.codice_articolo).toUpperCase()) || [row.workspaceOctLineRevisionId, row.entityId].map(text).includes(text(line.id)))).map(publicDiagnostic),
       };
     }),

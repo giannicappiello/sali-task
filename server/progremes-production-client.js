@@ -140,7 +140,8 @@ export function validateV3PreviewResponse(result, payload) {
       !["Ready", "Blocked"].includes(text(result.status)) || result.mutatesProduction !== false || !Array.isArray(result.formulas))
     throw Object.assign(new Error("Risposta preview WorkspaceMES V3 non valida."), { code: "INVALID_MES_V3_RESPONSE" });
   for (const formula of result.formulas) {
-    if (!text(formula.fpCode) || !Array.isArray(formula.materials) || formula.materials.some((material) =>
+    if (!text(formula.workspaceLineId) || !text(formula.fpCode) || !positive(formula.quantity) ||
+      !text(formula.unitOfMeasure) || !Array.isArray(formula.materials) || formula.materials.some((material) =>
       !text(material.articleCode) || !text(material.unitOfMeasure) || !nonNegative(material.required) ||
       !nonNegative(material.physical) || !nonNegative(material.committed) || !nonNegative(material.incoming) ||
       !nonNegative(material.uncovered) || !/^[a-f0-9]{64}$/.test(text(material.certifiedHash))))

@@ -250,11 +250,55 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
     return previous && text(previous.requestedDeliveryDate) !== text(order.data_consegna);
   });
   const v2Decision = v2DecisionAvailability(request, requestItemsResult.data || []);
+  let v3 = null;
+  if (request) {
+    const [flagsResult, previewResult] = await Promise.all([
+      admin.from("workspace_v3_feature_flags").select("key,enabled").in("key", ["workspacemes.v3.preview", "workspacemes.v3.confirm"]),
+      admin.from("workspace_v3_previews").select("*").eq("production_request_id", request.id)
+        .order("captured_at", { ascending: false }).limit(1),
+    ]);
+    if (flagsResult.error || previewResult.error) throw flagsResult.error || previewResult.error;
+    const flags = Object.fromEntries((flagsResult.data || []).map((row) => [row.key, row.enabled === true]));
+    const preview = previewResult.data?.[0] || null;
+    let components = []; let saga = null; let commitments = []; let requirements = []; let purchaseDocuments = [];
+    if (preview) {
+      const componentResult = await admin.from("workspace_v3_preview_components").select("*")
+        .eq("preview_id", preview.id).order("id");
+      if (componentResult.error) throw componentResult.error;
+      components = componentResult.data || [];
+      const sagaResult = await admin.from("workspace_v3_confirmation_sagas").select("*")
+        .eq("preview_id", preview.id).order("started_at", { ascending: false }).limit(1);
+      if (sagaResult.error) throw sagaResult.error;
+      saga = sagaResult.data?.[0] || null;
+      if (saga) {
+        const [commitmentResult, requirementResult] = await Promise.all([
+          admin.from("workspace_v3_material_commitments").select("*").eq("saga_id", saga.id).order("id"),
+          admin.from("workspace_v3_purchase_requirements").select("*").eq("saga_id", saga.id).order("id"),
+        ]);
+        if (commitmentResult.error || requirementResult.error) throw commitmentResult.error || requirementResult.error;
+        commitments = commitmentResult.data || []; requirements = requirementResult.data || [];
+        if (requirements.length) {
+          const documentLines = await admin.from("workspace_v3_purchase_document_lines").select("document_id,requirement_id")
+            .in("requirement_id", requirements.map((row) => row.id));
+          if (documentLines.error) throw documentLines.error;
+          const ids = [...new Set((documentLines.data || []).map((row) => row.document_id))];
+          if (ids.length) {
+            const documents = await admin.from("workspace_v3_purchase_documents").select("*").in("id", ids).order("id");
+            if (documents.error) throw documents.error;
+            purchaseDocuments = documents.data || [];
+          }
+        }
+      }
+    }
+    v3 = { flags, preview, components, saga, commitments, requirements, purchaseDocuments,
+      blockers: components.filter((row) => text(row.blocker_code)).map((row) => ({ articleCode: row.article_code, code: row.blocker_code, owner: row.calculation_owner })) };
+  }
   return {
     orders: (orders || []).map((order) => ({ id: order.id, label: octLabel(order), customer: customerName(order, customersByCode), orderDate: order.data_ordine, deliveryDate: order.data_consegna })),
     request: request ? { ...request, stage: requestStage(request) } : null,
     cancellation: evaluateProductionRequestCancellation({ request, proposals, events: productionEvents }),
     v2Decision,
+    v3,
     revision: { modified: Boolean(sentSnapshot && (delta.added.length || delta.removed.length || delta.changed.length || deliveryChanged)), deliveryChanged, ...delta },
     lines: visibleLines.map((line) => {
       const product = productByCode.get(text(line.codice_articolo).toUpperCase());

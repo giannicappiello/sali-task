@@ -33,6 +33,9 @@ import { handleDigitalConnectionManager } from "../../server/crm/digital-connect
 import { listProductionWorkbench, productionWorkbenchDetail } from "../../server/workspacemes-workbench.js";
 import { productionGoLiveGates } from "../../server/workspace-production-gates.js";
 import { effectiveWorkspaceDiagnostics } from "../../server/workspace-effective-diagnostics.js";
+import { syncWorkspaceV3MexalContracts } from "../../server/mexal/sync-workspacemes-v3.js";
+import { confirmWorkspaceV3, createWorkspaceV3Preview } from "../../server/workspacemes-v3-api.js";
+import { createWorkspaceV3PurchaseDocument } from "../../server/workspacemes-v3-purchasing.js";
 
 async function dispatchMessageNotification(req, body) {
   const token = String(req.headers.authorization || "").trim().replace(/^Bearer\s+/i, "");
@@ -605,6 +608,38 @@ export default async function handler(req, res) {
         if (error) throw error;
         if (!data) return sendFailure(res, 404, "progremes_oct_refresh_status", "Job OCT Workbench non trovato.");
         return sendSuccess(res, 200, { refresh: data });
+      }
+      case "workspacemes_v3_mexal_sync": {
+        const admin = await createAdmin(req, "integrations.sync.products");
+        return sendSuccess(res, 200, await syncWorkspaceV3MexalContracts({
+          mexal: buildMexalClient(),
+          supabase: admin.supabase,
+        }));
+      }
+      case "workspacemes_v3_preview": {
+        const admin = await createAdmin(req, "rdp.create");
+        return sendSuccess(res, 200, await createWorkspaceV3Preview({
+          admin: admin.supabase,
+          requestId: String(body.requestId || "").trim(),
+          requestedBy: admin.authUserId,
+        }));
+      }
+      case "workspacemes_v3_confirm": {
+        const admin = await createAdmin(req, "rdp.decide");
+        return sendSuccess(res, 200, await confirmWorkspaceV3({
+          admin: admin.supabase,
+          previewId: Number(body.previewId),
+          reason: body.reason,
+          requestedBy: admin.authUserId,
+        }));
+      }
+      case "workspacemes_v3_purchase_document": {
+        const admin = await createAdmin(req, "purchases.manage");
+        return sendSuccess(res, 200, await createWorkspaceV3PurchaseDocument({
+          admin: admin.supabase,
+          input: body,
+          actor: `workspace:${admin.authUserId || "service"}`,
+        }));
       }
       case "progremes_production_confirm": {
         const admin = await createAdmin(req, "rdp.decide");

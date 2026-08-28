@@ -155,18 +155,22 @@ async function loadArticleMap(supabase) {
   }]));
 }
 
-export async function syncWorkspaceV3MexalContracts({ mexal, supabase, capturedAt = new Date().toISOString() }) {
+export async function syncWorkspaceV3MexalContracts({ mexal, supabase, capturedAt = new Date().toISOString(), finishedArticleCodes = null }) {
+  const targetFinishedCodes = new Set((finishedArticleCodes || []).map(upper).filter(Boolean));
+  const targeted = targetFinishedCodes.size > 0;
   const articlesByCode = await loadArticleMap(supabase);
   const { data: currentBomRows, error: currentBomError } = await supabase.from("workspace_finished_bom_revisions")
     .select("finished_article_code,unit_of_measure").eq("is_current", true);
   if (currentBomError) throw currentBomError;
   const currentBoms = new Map((currentBomRows || []).map((row) => [upper(row.finished_article_code), row]));
   const bomRows = [];
-  for (const prefix of PROGREMES_FINISHED_BOM_PREFIXES) {
+  const searchPrefixes = targeted ? [...targetFinishedCodes] : PROGREMES_FINISHED_BOM_PREFIXES;
+  for (const prefix of searchPrefixes) {
     bomRows.push(...await pagedSearch(mexal, MEXAL_V3_CONTRACT.finishedBom,
       "codice,codice_mp,qta_utilizzo,nr_unita_misura", { campo: "codice", condizione: "inizia_per", valore: prefix }));
   }
-  const boms = normalizeFinishedBomRows(bomRows, articlesByCode);
+  const scopedBomRows = targeted ? bomRows.filter((row) => targetFinishedCodes.has(upper(row.codice))) : bomRows;
+  const boms = normalizeFinishedBomRows(scopedBomRows, articlesByCode);
   const bomResults = [];
   for (const [finishedCode, lines] of boms) {
     const finished = articlesByCode.get(finishedCode);
@@ -186,7 +190,8 @@ export async function syncWorkspaceV3MexalContracts({ mexal, supabase, capturedA
     bomResults.push({ finishedCode, result: data?.[0] || null });
   }
   for (const [finishedCode, previous] of currentBoms) {
-    if (boms.has(finishedCode) || !PROGREMES_FINISHED_BOM_PREFIXES.some((prefix) => finishedCode.startsWith(prefix))) continue;
+    const inScope = targeted ? targetFinishedCodes.has(finishedCode) : PROGREMES_FINISHED_BOM_PREFIXES.some((prefix) => finishedCode.startsWith(prefix));
+    if (boms.has(finishedCode) || !inScope) continue;
     const canonical = { endpoint: MEXAL_V3_CONTRACT.finishedBom, finishedCode, finishedUnit: previous.unit_of_measure,
       baseQuantity: 1, lines: [], tombstone: true };
     const { data, error } = await supabase.rpc("apply_workspace_finished_bom_snapshot", {
@@ -203,7 +208,9 @@ export async function syncWorkspaceV3MexalContracts({ mexal, supabase, capturedA
     pagedGet(mexal, MEXAL_V3_CONTRACT.suppliers, "codice,ragione_sociale"),
   ]);
   const suppliersByCode = new Map(suppliers.map((row) => [upper(row.codice), row]));
-  const normalizedSupplierLines = normalizeSupplierOrders({ headers, lines: supplierLines, articlesByCode, suppliersByCode });
+  const relevantComponents = new Set([...boms.values()].flat().map((row) => upper(row.articleCode)));
+  const scopedSupplierLines = targeted ? supplierLines.filter((row) => relevantComponents.has(upper(row.codice_articolo))) : supplierLines;
+  const normalizedSupplierLines = normalizeSupplierOrders({ headers, lines: scopedSupplierLines, articlesByCode, suppliersByCode });
   const supplierCanonical = { endpoints: [MEXAL_V3_CONTRACT.supplierOrders, MEXAL_V3_CONTRACT.supplierOrderLines], receiptSemantics: MEXAL_V3_CONTRACT.receiptSemantics, lines: normalizedSupplierLines };
   const { data: supplierResult, error: supplierError } = await supabase.rpc("apply_workspace_supplier_order_snapshot", {
     p_snapshot_hash: payloadHash(supplierCanonical),

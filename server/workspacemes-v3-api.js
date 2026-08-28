@@ -8,6 +8,17 @@ const positive = (value) => Number.isFinite(Number(value)) && Number(value) > 0;
 const fail = (message, code, status = 409) => Object.assign(new Error(message), { code, status });
 const ensure = (result) => { if (result.error) throw result.error; return result.data || []; };
 
+export async function workspaceV3FinishedArticleCodes(admin, requestId) {
+  const requests = ensure(await admin.from("workspace_production_requests")
+    .select("sent_demand_snapshot_id").eq("id", requestId).limit(1));
+  if (!requests[0]?.sent_demand_snapshot_id) throw fail("La RdP v2 inviata è necessaria per il lineage V3.", "V3_RDP_REQUIRED");
+  const snapshots = ensure(await admin.from("workspace_production_demand_snapshots")
+    .select("snapshot").eq("id", requests[0].sent_demand_snapshot_id).limit(1));
+  const items = snapshots[0]?.snapshot?.items;
+  if (!Array.isArray(items) || !items.length) throw fail("Snapshot domanda v2 incompleto.", "V3_DEMAND_REQUIRED");
+  return [...new Set(items.map((item) => upper(item.commercialArticleCode)).filter(Boolean))];
+}
+
 async function loadPreviewInputs(admin, requestId) {
   const requestRows = ensure(await admin.from("workspace_production_requests")
     .select("id,external_id,contract_version,sent_demand_snapshot_id,workspace_status,stato")

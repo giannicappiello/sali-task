@@ -5,6 +5,8 @@ import { HMAC_HEADERS, signProductionMessage } from "./progremes-production-hmac
 const REQUEST_PATH = "/api/workspace/v2/production-requests";
 const CONFIRM_PATH = (id) => `/api/workspace/v1/production-proposals/${id}/confirmations`;
 const DECISION_PATH = (externalId) => `/api/workspace/v2/production-requests/${externalId}/decisions`;
+const V3_PREVIEW_PATH = "/api/workspace/v3/production-previews";
+const V3_CONFIRM_PATH = (externalId) => `/api/workspace/v3/production-requests/${externalId}/confirmations`;
 
 function required(name, env) {
   const value = String(env[name] || "").trim();
@@ -133,6 +135,28 @@ export function validateDecisionResponse(result, payload) {
   return result;
 }
 
+export function validateV3PreviewResponse(result, payload) {
+  if (!result || text(result.externalId) !== text(payload.externalId) || !text(result.snapshotHash) ||
+      !["Ready", "Blocked"].includes(text(result.status)) || result.mutatesProduction !== false || !Array.isArray(result.formulas))
+    throw Object.assign(new Error("Risposta preview WorkspaceMES V3 non valida."), { code: "INVALID_MES_V3_RESPONSE" });
+  for (const formula of result.formulas) {
+    if (!text(formula.fpCode) || !Array.isArray(formula.materials) || formula.materials.some((material) =>
+      !text(material.articleCode) || !text(material.unitOfMeasure) || !nonNegative(material.required) ||
+      !nonNegative(material.physical) || !nonNegative(material.committed) || !nonNegative(material.incoming) ||
+      !nonNegative(material.uncovered) || !/^[a-f0-9]{64}$/.test(text(material.certifiedHash))))
+      throw Object.assign(new Error("Snapshot MP V3 non certificabile."), { code: "INVALID_MES_V3_RESPONSE" });
+  }
+  return result;
+}
+
+export function validateV3ConfirmResponse(result, payload) {
+  if (!result || text(result.externalId) !== text(payload.externalId) || !text(result.status) ||
+      typeof result.productionCreated !== "boolean" || !Array.isArray(result.productionOrders) ||
+      !Number.isSafeInteger(Number(result.materialCommitments)) || Number(result.materialCommitments) < 0)
+    throw Object.assign(new Error("Risposta conferma WorkspaceMES V3 non valida."), { code: "INVALID_MES_V3_RESPONSE" });
+  return result;
+}
+
 export function createProgremesProductionClient({ env = process.env, fetchImpl = fetch, now = () => Date.now() } = {}) {
   const call = async (path, payload) => {
     const origin = new URL(required("PROGREMES_URL", env));
@@ -161,6 +185,8 @@ export function createProgremesProductionClient({ env = process.env, fetchImpl =
   return {
     requestEnabled: () => enabled("PROGREMES_PRODUCTION_REQUESTS_ENABLED", env),
     confirmationEnabled: () => enabled("PROGREMES_PRODUCTION_CONFIRMATIONS_ENABLED", env),
+    v3PreviewEnabled: () => enabled("WORKSPACEMES_V3_PREVIEW_ENABLED", env),
+    v3ConfirmationEnabled: () => enabled("WORKSPACEMES_V3_CONFIRM_ENABLED", env),
     sendRequest: async (payload) => {
       const sent = await call(REQUEST_PATH, payload);
       return { ...sent, result: validateProductionResponse(sent.result, payload) };
@@ -169,8 +195,16 @@ export function createProgremesProductionClient({ env = process.env, fetchImpl =
       const sent = await call(DECISION_PATH(workspaceExternalId), payload);
       return { ...sent, result: validateDecisionResponse(sent.result, payload) };
     },
+    previewV3: async (payload) => {
+      const sent = await call(V3_PREVIEW_PATH, payload);
+      return { ...sent, result: validateV3PreviewResponse(sent.result, payload) };
+    },
+    confirmV3: async (workspaceExternalId, payload) => {
+      const sent = await call(V3_CONFIRM_PATH(workspaceExternalId), payload);
+      return { ...sent, result: validateV3ConfirmResponse(sent.result, payload) };
+    },
     confirmProposal: (proposalId, externalId = randomUUID()) => call(CONFIRM_PATH(proposalId), { schemaVersion: 1, externalId, proposalId }),
   };
 }
 
-export { REQUEST_PATH, CONFIRM_PATH, DECISION_PATH };
+export { REQUEST_PATH, CONFIRM_PATH, DECISION_PATH, V3_PREVIEW_PATH, V3_CONFIRM_PATH };

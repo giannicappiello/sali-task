@@ -55,7 +55,6 @@ export default function Warehouse() {
       return true;
     });
   }, [filter, query, rows]);
-  const visibleRows = useMemo(() => filtered.slice(0, 250), [filtered]);
 
   return (
     <ModuleContainerLayout icon={Boxes} eyebrow="Modulo Workspace" title="Magazzino" description="Giacenze, disponibilità e valorizzazione economica registrate nel database Workspace." backFallback="/home">
@@ -85,10 +84,9 @@ export default function Warehouse() {
       {error ? <div className="warehouse-message error" role="alert">{error}</div> : null}
       <section className="warehouse-table-card" aria-label="Giacenze Workspace">
         <header><div><strong>Giacenze Workspace</strong><span>{filtered.length} risultati</span></div><small>I valori economici utilizzano il costo ultimo Mexal salvato in Workspace.</small></header>
-        {!loading && filtered.length > visibleRows.length ? <div className="warehouse-result-limit">Mostrate le prime {visibleRows.length} righe. Usa ricerca e filtro per restringere l’elenco.</div> : null}
         {loading ? <div className="warehouse-message">Caricamento giacenze...</div> : null}
         {!loading && !error && filtered.length === 0 ? <div className="warehouse-message">Nessuna giacenza corrisponde ai filtri.</div> : null}
-        {!loading && !error && visibleRows.length > 0 ? <div className="warehouse-table-scroll"><table><thead><tr><th>Articolo</th><th>UDM</th><th>Giacenza</th><th>Impegnato</th><th>Disponibile</th><th>Prezzo unitario<br /><small>(costo ultimo)</small></th><th>Totale</th><th>Totale disponibile</th><th>Stato</th><th>Aggiornato</th></tr></thead><tbody>{visibleRows.map((row) => { const status = stockStatus(row); return <tr key={row.codice_articolo}><td><strong>{row.codice_articolo}</strong><small>{row.descrizione || "Descrizione non disponibile"}</small></td><td>{row.unita_misura || "—"}</td><td>{numberFormat.format(row.onHand)}</td><td>{numberFormat.format(row.committed)}</td><td><strong>{numberFormat.format(row.available)}</strong></td><td>{row.unitCost > 0 ? costFormat.format(row.unitCost) : <span className="warehouse-missing-cost">Da valorizzare</span>}</td><td><strong>{valueFormat.format(row.stockValue)}</strong></td><td>{valueFormat.format(row.availableValue)}</td><td><span className={`warehouse-status ${status.tone}`}>{status.label}</span></td><td>{formatDate(row.sincronizzato_il)}</td></tr>; })}</tbody></table></div> : null}
+        {!loading && !error && filtered.length > 0 ? <div className="warehouse-table-scroll"><table><thead><tr><th>Articolo</th><th>UDM</th><th>Giacenza</th><th>Impegnato</th><th>Disponibile</th><th>Prezzo unitario<br /><small>(costo ultimo)</small></th><th>Totale</th><th>Totale disponibile</th><th>Stato</th><th>Aggiornato</th></tr></thead><tbody>{filtered.map((row) => { const status = stockStatus(row); return <tr key={row.codice_articolo}><td><strong>{row.codice_articolo}</strong><small>{row.descrizione || "Descrizione non disponibile"}</small></td><td>{row.unita_misura || "—"}</td><td>{numberFormat.format(row.onHand)}</td><td>{numberFormat.format(row.committed)}</td><td><strong>{numberFormat.format(row.available)}</strong></td><td>{row.unitCost > 0 ? costFormat.format(row.unitCost) : <span className="warehouse-missing-cost">Da valorizzare</span>}</td><td><strong>{valueFormat.format(row.stockValue)}</strong></td><td>{valueFormat.format(row.availableValue)}</td><td><span className={`warehouse-status ${status.tone}`}>{status.label}</span></td><td>{formatDate(row.sincronizzato_il)}</td></tr>; })}</tbody></table></div> : null}
       </section>
     </ModuleContainerLayout>
   );

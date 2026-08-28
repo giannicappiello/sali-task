@@ -21,6 +21,7 @@ import {
   Truck,
   Users,
   Workflow,
+  Warehouse,
 } from "lucide-react";
 
 export const MODULE_ICON_OPTIONS = Object.freeze([
@@ -28,6 +29,7 @@ export const MODULE_ICON_OPTIONS = Object.freeze([
   { code: "shopping-cart", label: "Carrello", Icon: ShoppingCart },
   { code: "shopping-bag", label: "Borsa acquisti", Icon: ShoppingBag },
   { code: "package", label: "Prodotti", keywords: ["prodotto", "articolo", "catalogo", "merce"], Icon: Package },
+  { code: "warehouse", label: "Magazzino", keywords: ["giacenza", "disponibilità", "scorta", "costo"], Icon: Warehouse },
   { code: "store", label: "Negozio", Icon: Store },
   { code: "briefcase", label: "Valigetta", Icon: BriefcaseBusiness },
   { code: "users", label: "Team", Icon: Users },

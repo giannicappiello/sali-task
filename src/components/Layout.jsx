@@ -20,6 +20,7 @@ import {
   Settings,
   Users,
   Workflow,
+  Warehouse,
   X,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
@@ -35,6 +36,7 @@ const baseMenuItems = [
   { path: "/ordini-prof", label: "Ordini PR", icon: ShoppingCart, permission: "orders.read", special: "orders_pr", module: "ordini_pr" },
   { path: "/ordini-ph", label: "Ordini PH", icon: ShoppingCart, permission: "orders.read", special: "orders_ph", module: "ordini_ph" },
   { path: "/products", label: "Prodotti", icon: Package, module: "prodotti" },
+  { path: "/magazzino", label: "Magazzino", icon: Warehouse, module: "magazzino" },
   { path: "/documentation", label: "Documenti", icon: FileArchive, module: "documenti" },
   { path: "/assistente-ai", label: "Assistente AI", icon: Bot, module: "assistente_ai" },
   { path: "/progremes", label: "ProgreMES APS", icon: Factory, module: "progremes" },
@@ -62,6 +64,7 @@ const pageInfo = {
   "/projects": { title: "Progetti del mio reparto", subtitle: "Progetti con checklist e fasi operative." },
   "/tasks": { title: "Tutte le fasi dei progetti", subtitle: "Planning delle fasi progettuali." },
   "/products": { title: "Prodotti", subtitle: "Catalogo articoli attivi sincronizzato da Mexal in sola lettura." },
+  "/magazzino": { title: "Magazzino", subtitle: "Giacenze, disponibilità e valorizzazione economica del database Workspace." },
   "/documentation": { title: "Documenti", subtitle: "Schede tecniche, certificazioni e documentazione aziendale." },
   "/manuali-uso": { title: "Manuali d'uso", subtitle: "Manuali d'uso e guide operative." },
   "/assistente-ai": { title: "Assistente AI", subtitle: "Dati interni, ricerca Web e pianificazione controllata." },

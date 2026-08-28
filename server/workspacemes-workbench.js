@@ -159,7 +159,7 @@ export async function listProductionWorkbench({ admin, diagnostics = [] }) {
         };
       }),
       ready: productive.length > 0 && order.cliente_mexal_risolto !== false && !orderDiagnostics.some(diagnosticBlocks),
-      requestId: request?.id || null, requestExternalId: request?.external_id || null,
+      requestId: request?.id || null, requestExternalId: request?.external_id || null, rdpNumber: request?.rdp_number || null,
       diagnostics: orderDiagnostics.map(publicDiagnostic),
     };
   });
@@ -180,7 +180,7 @@ export async function listProductionWorkbench({ admin, diagnostics = [] }) {
       lineCount: historicalLines.length, productiveLineCount: productive.length,
       quantity: productive.reduce((total, line) => total + number(line.quantita), 0),
       units: resolveWorkbenchUnits(productive, productsByCode),
-      requestId: request.id, requestExternalId: request.external_id, diagnostics: [],
+      requestId: request.id, requestExternalId: request.external_id, rdpNumber: request.rdp_number || null, diagnostics: [],
     };
   });
   return { generatedAt: new Date().toISOString(), items, history };

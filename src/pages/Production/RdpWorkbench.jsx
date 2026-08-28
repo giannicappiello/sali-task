@@ -43,19 +43,22 @@ function formatQuantity(value) {
   return new Intl.NumberFormat("it-IT", { minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(Number(value) || 0);
 }
 
-function rdpLabel(request) {
-  const progressive = Number(request?.rdp_number);
+function rdpProgressiveLabel(value) {
+  const progressive = Number(value);
   return Number.isSafeInteger(progressive) && progressive > 0
     ? `RDP${progressive}`
-    : "RdP";
+    : null;
 }
+
+function rdpLabel(request) { return rdpProgressiveLabel(request?.rdp_number) || "RdP"; }
 
 function OctOrderCard({ row, selectable, selected, onToggle, onOpen, onDiagnostic }) {
   const status = row.stage === "history" ? "Annullata" : (row.ready ? row.status : "BLOCCATO");
   const tone = row.stage === "history" ? "neutral" : (row.ready ? "green" : "red");
+  const rowRdpLabel = rdpProgressiveLabel(row.rdpNumber);
   return <article className={`rdp-oct-card ${!row.ready && row.stage !== "history" ? "blocked" : ""}`}>
     <header className="rdp-oct-card-header">
-      <div className="rdp-oct-identity"><strong>{row.label}</strong><span>{row.customer}</span><small className="rdp-oct-meta">Ordine: {formatDate(row.orderDate)} · Consegna: {formatDate(row.deliveryDate)} · Revisione sorgente: {formatDate(row.sourceTimestamp, true)}</small></div>
+      <div className="rdp-oct-identity"><div className="rdp-oct-reference"><strong>{row.label}</strong>{rowRdpLabel && <span className="rdp-oct-rdp">{rowRdpLabel}</span>}</div><span>{row.customer}</span><small className="rdp-oct-meta">Ordine: {formatDate(row.orderDate)} · Consegna: {formatDate(row.deliveryDate)} · Revisione sorgente: {formatDate(row.sourceTimestamp, true)}</small></div>
       <div className="rdp-oct-actions">
         {badge(status, tone)}
         {selectable && <label className="rdp-oct-select"><input type="checkbox" checked={selected} disabled={!row.ready} onChange={onToggle}/><span>{selected ? "Selezionato" : "Seleziona per RdP"}</span></label>}

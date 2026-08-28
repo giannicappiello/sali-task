@@ -26,6 +26,10 @@ test("Workbench espone lista OCT, multi-select e stati operativi senza duplicare
   assert.doesNotMatch(ui, /Filtra cliente/);
   assert.match(ui, /rdp-header-actions/);
   assert.match(ui, /rdp-header-controls/);
+  assert.match(ui, /rowRdpLabel && <span className="rdp-oct-rdp">\{rowRdpLabel\}<\/span>/);
+  assert.match(workbench, /rdpNumber: request\?\.rdp_number \|\| null/);
+  assert.match(workbench, /rdpNumber: request\.rdp_number \|\| null/);
+  assert.match(productionCss, /\.rdp-oct-reference\s*\{[^}]*white-space:\s*nowrap/);
   assert.match(ui, /rdp-toolbar-evaluation/);
   assert.match(ui, /className="rdp-oct-scroll"/);
   assert.match(productionCss, /\.rdp-oct-scroll\s*\{[^}]*overflow-y:\s*auto/);

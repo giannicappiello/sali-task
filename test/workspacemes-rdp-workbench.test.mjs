@@ -71,6 +71,10 @@ test("preview, invio e decisione applicano permessi RdP dedicati", () => {
   assert.match(api, /if \(!permissionCode && internalSecrets/);
 });
 
+test("preview V3 aggiorna prima i contratti Mexal autorevoli nel normale flusso", () => {
+  assert.match(api, /case "workspacemes_v3_preview"[\s\S]*?syncWorkspaceV3MexalContracts\([\s\S]*?createWorkspaceV3Preview\(/);
+});
+
 test("deep link conserva solo contesto MES allow-listed", () => {
   assert.equal(appendProgremesContext("/Planning", { rdpId: "rdp-1", octId: "oct-2", secret: "no" }), "/Planning?rdpId=rdp-1&octId=oct-2");
   assert.equal(appendProgremesContext("//evil.example", { rdpId: "x" }), "//evil.example");

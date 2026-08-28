@@ -12,6 +12,12 @@ test("una RdP bloccata senza effetti produttivi è annullabile", () => {
   });
 });
 
+test("una RdP legacy AwaitingDecision senza effetti produttivi è annullabile", () => {
+  for (const workspaceStatus of ["AwaitingDecision", "Awaiting_Decision"]) {
+    assert.equal(evaluateProductionRequestCancellation({ request: { workspace_status: workspaceStatus } }).allowed, true);
+  }
+});
+
 test("OdP, conferma, pianificazione e lotti bloccano l'annullo", () => {
   assert.equal(evaluateProductionRequestCancellation({ request: blocked, proposals: [{ mes_production_order_id: 12 }] }).code, "IRREVERSIBLE_EFFECTS");
   assert.equal(evaluateProductionRequestCancellation({ request: blocked, proposals: [{ confirmation_external_id: "confirmation-1" }] }).code, "IRREVERSIBLE_EFFECTS");

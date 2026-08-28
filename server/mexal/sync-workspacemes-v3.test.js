@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MEXAL_V3_CONTRACT, normalizeFinishedBomRows, normalizeSupplierOrders } from "./sync-workspacemes-v3.js";
+import { MES_FORMULA_UNIT, MEXAL_V3_CONTRACT, normalizeFinishedBomRows, normalizeSupplierOrders } from "./sync-workspacemes-v3.js";
 
 const articles = new Map([
   ["DR-BC07", { codice_articolo: "DR-BC07", descrizione: "Crema", dati_mexal: { um_principale: "PZ" } }],
@@ -16,8 +16,27 @@ test("contratto DB reale riusa endpoint e campi ProgreMES e classifica FP senza 
   ], articles);
   assert.deepEqual(boms.get("DR-BC07").map((row) => [row.articleCode, row.quantity, row.unitOfMeasure, row.componentKind]), [
     ["AS100", 1, "PZ", "DIRECT_COMPONENT"],
-    ["FP041C", 0.2, "KG", "FORMULA_COMPONENT"],
+    ["FP041C", 0.2, MES_FORMULA_UNIT, "FORMULA_COMPONENT"],
   ]);
+});
+
+test("gli FP sono riferimenti formula MES e non dipendono dalla cache articoli Mexal", () => {
+  const withoutFpArticle = new Map([...articles].filter(([code]) => code !== "FP041C"));
+  const boms = normalizeFinishedBomRows([
+    { codice: "DR-BC07", codice_mp: "FP041C", qta_utilizzo: "0,2", nr_unita_misura: "1" },
+  ], withoutFpArticle);
+  const formula = boms.get("DR-BC07")[0];
+  assert.equal(formula.articleCode, "FP041C");
+  assert.equal(formula.formulaExternalRef, "FP041C");
+  assert.equal(formula.unitOfMeasure, MES_FORMULA_UNIT);
+  assert.equal(formula.componentKind, "FORMULA_COMPONENT");
+});
+
+test("i componenti DIRECT restano fail-closed senza UDM Mexal certificata", () => {
+  const withoutDirectArticle = new Map([...articles].filter(([code]) => code !== "AS100"));
+  assert.throws(() => normalizeFinishedBomRows([
+    { codice: "DR-BC07", codice_mp: "AS100", qta_utilizzo: 1, nr_unita_misura: "1" },
+  ], withoutDirectArticle), (error) => error.code === "MEXAL_PRIMARY_UOM_MISSING");
 });
 
 test("UDM distinta diversa dalla primaria blocca senza inventare conversioni", () => {

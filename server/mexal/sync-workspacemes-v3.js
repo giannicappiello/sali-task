@@ -2,6 +2,7 @@ import { payloadHash, classifyComponent, COMPONENT_KIND } from "../workspacemes-
 import { authoritativeArticleUnit } from "./unit-of-measure.js";
 
 export const PROGREMES_FINISHED_BOM_PREFIXES = Object.freeze(["IT", "DC", "CO", "BT", "DD", "CW", "DR"]);
+export const MES_FORMULA_UNIT = "MES_MANAGED";
 export const MEXAL_V3_CONTRACT = Object.freeze({
   finishedBom: "/distinte-base/componenti/ricerca",
   supplierOrders: "/documenti/ordini-fornitori",
@@ -84,9 +85,16 @@ export function normalizeFinishedBomRows(rows, articlesByCode) {
     const componentCode = upper(raw.codice_mp);
     const quantity = number(raw.qta_utilizzo);
     if (!finishedCode || !componentCode || quantity <= 0) continue;
-    const article = articlesByCode.get(componentCode);
-    const { unit, sourceType } = certifiedUnit(raw, article, `${finishedCode}/${componentCode}`);
     const classification = classifyComponent({ articleCode: componentCode });
+    const article = articlesByCode.get(componentCode);
+    // Gli FP sono riferimenti esterni alla tabella Formule autonoma di MES.
+    // Workspace conserva quantità e lineage Mexal, ma non richiede né deduce
+    // l'UDM dall'anagrafica articolo FP: codice, descrizione, UDM e revisioni
+    // operative della formula appartengono a ProgreMES.
+    const sourceType = upper(raw?.nr_unita_misura) || null;
+    const unit = classification.kind === COMPONENT_KIND.FORMULA
+      ? MES_FORMULA_UNIT
+      : certifiedUnit(raw, article, `${finishedCode}/${componentCode}`).unit;
     const key = [componentCode, unit, classification.kind].join("|");
     const values = grouped.get(finishedCode) || new Map();
     const existing = values.get(key);
@@ -100,7 +108,8 @@ export function normalizeFinishedBomRows(rows, articlesByCode) {
       componentKind: classification.kind,
       classificationSource: classification.kind === COMPONENT_KIND.FORMULA ? "PROGREMES_MEXAL_FP_RULE" : classification.source,
       formulaExternalRef: classification.kind === COMPONENT_KIND.FORMULA ? componentCode : null,
-      metadata: { mexalFields: ["codice", "codice_mp", "qta_utilizzo", "nr_unita_misura"] },
+      metadata: { mexalFields: ["codice", "codice_mp", "qta_utilizzo", "nr_unita_misura"],
+        formulaUnitOwner: classification.kind === COMPONENT_KIND.FORMULA ? "PROGREMES" : null },
     });
     grouped.set(finishedCode, values);
   }

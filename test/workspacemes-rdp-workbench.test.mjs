@@ -3,13 +3,14 @@ import test from "node:test";
 import { readFile } from "node:fs/promises";
 import { appendProgremesContext } from "../server/progremes-sso.js";
 
-const [ui, production, api, migration, cancellationMigration, cancellationRefinementMigration, reopenMigration, workbench] = await Promise.all([
+const [ui, production, api, migration, cancellationMigration, cancellationRefinementMigration, legacyCancellationMigration, reopenMigration, workbench] = await Promise.all([
   readFile("src/pages/Production/RdpWorkbench.jsx", "utf8"),
   readFile("src/pages/Production/Production.jsx", "utf8"),
   readFile("api/mexal/automation.js", "utf8"),
   readFile("supabase/migrations/20260826170000_workspacemes_rdp_create_permission.sql", "utf8"),
   readFile("supabase/migrations/20260827100000_workspacemes_rdp_controlled_cancellation.sql", "utf8"),
   readFile("supabase/migrations/20260827103000_refine_rdp_cancellation_effect_events.sql", "utf8"),
+  readFile("supabase/migrations/20260828170000_allow_legacy_awaiting_decision_cancellation.sql", "utf8"),
   readFile("supabase/migrations/20260827110000_reopen_orders_after_cancelled_rdp.sql", "utf8"),
   readFile("server/workspacemes-workbench.js", "utf8"),
 ]);
@@ -46,6 +47,8 @@ test("annullo RdP richiede permesso, motivo e conferma esplicita", () => {
   assert.match(ui, /Confermo di voler annullare logicamente/);
   assert.match(ui, /reason\.trim\(\)\.length >= 5/);
   assert.match(cancellationMigration, /rdp\.cancel/);
+  assert.match(legacyCancellationMigration, /AWAITINGDECISION/);
+  assert.match(legacyCancellationMigration, /AWAITING_DECISION/);
 });
 
 test("annullo è logico, auditato e fail-closed sugli effetti produttivi", () => {

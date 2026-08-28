@@ -183,7 +183,14 @@ export async function sendProductionRequest(req, res, {
     const { error } = await admin.from("workspace_production_proposals").upsert(rows, { onConflict: "mes_proposal_id" });
     if (error) throw error;
   }
-  return res.status(200).json({ ...result, sent: true, snapshot: prepared.snapshot, demand: productionDemandContract(prepared.demand) });
+  return res.status(200).json({
+    ...result,
+    sent: true,
+    requestId: prepared.request.id,
+    workspaceExternalId: prepared.request.external_id,
+    snapshot: prepared.snapshot,
+    demand: productionDemandContract(prepared.demand),
+  });
 }
 
 export async function previewProductionRequest(req, res, { admin = adminClient(), requestedBy = null } = {}) {

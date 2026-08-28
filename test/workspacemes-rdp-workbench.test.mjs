@@ -3,7 +3,7 @@ import test from "node:test";
 import { readFile } from "node:fs/promises";
 import { appendProgremesContext } from "../server/progremes-sso.js";
 
-const [ui, productionCss, production, api, migration, cancellationMigration, cancellationRefinementMigration, legacyCancellationMigration, reopenMigration, workbench] = await Promise.all([
+const [ui, productionCss, production, api, migration, cancellationMigration, cancellationRefinementMigration, legacyCancellationMigration, reopenMigration, progressiveMigration, workbench] = await Promise.all([
   readFile("src/pages/Production/RdpWorkbench.jsx", "utf8"),
   readFile("src/pages/Production/production.css", "utf8"),
   readFile("src/pages/Production/Production.jsx", "utf8"),
@@ -13,6 +13,7 @@ const [ui, productionCss, production, api, migration, cancellationMigration, can
   readFile("supabase/migrations/20260827103000_refine_rdp_cancellation_effect_events.sql", "utf8"),
   readFile("supabase/migrations/20260828170000_allow_legacy_awaiting_decision_cancellation.sql", "utf8"),
   readFile("supabase/migrations/20260827110000_reopen_orders_after_cancelled_rdp.sql", "utf8"),
+  readFile("supabase/migrations/20260828184500_workspace_rdp_progressive_number.sql", "utf8"),
   readFile("server/workspacemes-workbench.js", "utf8"),
 ]);
 
@@ -26,6 +27,14 @@ test("Workbench espone lista OCT, multi-select e stati operativi senza duplicare
   assert.match(ui, /rdp-header-actions/);
   assert.match(ui, /rdp-toolbar-evaluation/);
   assert.match(productionCss, /\.rdp-toolbar-evaluation\s*\{[^}]*position:\s*sticky/);
+  assert.match(productionCss, /\.rdp-request-meta \.rdp-cancel-action\s*\{[^}]*margin-left:\s*auto/);
+  assert.match(ui, /requestId: response\.requestId/);
+  assert.match(ui, /setDetail\(outcome\)/);
+  assert.match(ui, /const outcomeLine = detail\?\.lines\?\.find/);
+  assert.match(ui, /`RDP\$\{progressive\}`/);
+  assert.match(progressiveMigration, /workspace_production_rdp_number_seq/);
+  assert.match(progressiveMigration, /rdp_number set not null/);
+  assert.match(progressiveMigration, /unique index if not exists workspace_production_requests_rdp_number_uniq/);
   assert.match(ui, /WorkspaceMES V3 · fabbisogni e produzione/);
   assert.match(ui, /DIRECT calcolati da Workspace, MP certificate da ProgreMES/);
   assert.doesNotMatch(ui, /Apri nel contesto/);

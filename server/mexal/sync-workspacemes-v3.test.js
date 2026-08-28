@@ -49,3 +49,10 @@ test("ordini fornitore conservano chiavi reali, scadenza riga e ricevuto non esp
   assert.equal(rows[0].expected_at, "2026-08-30T00:00:00.000Z");
   assert.equal(MEXAL_V3_CONTRACT.receiptSemantics, "NOT_EXPOSED_BY_MEXAL_ENDPOINT");
 });
+
+test("la sincronizzazione preview può essere limitata agli articoli finiti della RdP", async () => {
+  const source = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("./sync-workspacemes-v3.js", import.meta.url), "utf8"));
+  assert.match(source, /finishedArticleCodes = null/);
+  assert.match(source, /targetFinishedCodes\.has\(upper\(row\.codice\)\)/);
+  assert.match(source, /relevantComponents\.has\(upper\(row\.codice_articolo\)\)/);
+});

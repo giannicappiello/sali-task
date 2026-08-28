@@ -72,7 +72,7 @@ test("preview, invio e decisione applicano permessi RdP dedicati", () => {
 });
 
 test("preview V3 aggiorna prima i contratti Mexal autorevoli nel normale flusso", () => {
-  assert.match(api, /case "workspacemes_v3_preview"[\s\S]*?syncWorkspaceV3MexalContracts\([\s\S]*?createWorkspaceV3Preview\(/);
+  assert.match(api, /case "workspacemes_v3_preview"[\s\S]*?workspaceV3FinishedArticleCodes[\s\S]*?syncWorkspaceV3MexalContracts\([\s\S]*?finishedArticleCodes[\s\S]*?createWorkspaceV3Preview\(/);
 });
 
 test("deep link conserva solo contesto MES allow-listed", () => {

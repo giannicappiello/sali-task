@@ -34,7 +34,7 @@ import { listProductionWorkbench, productionWorkbenchDetail } from "../../server
 import { productionGoLiveGates } from "../../server/workspace-production-gates.js";
 import { effectiveWorkspaceDiagnostics } from "../../server/workspace-effective-diagnostics.js";
 import { syncWorkspaceV3MexalContracts } from "../../server/mexal/sync-workspacemes-v3.js";
-import { confirmWorkspaceV3, createWorkspaceV3Preview } from "../../server/workspacemes-v3-api.js";
+import { confirmWorkspaceV3, createWorkspaceV3Preview, workspaceV3FinishedArticleCodes } from "../../server/workspacemes-v3-api.js";
 import { createWorkspaceV3PurchaseDocument } from "../../server/workspacemes-v3-purchasing.js";
 
 async function dispatchMessageNotification(req, body) {
@@ -618,6 +618,8 @@ export default async function handler(req, res) {
       }
       case "workspacemes_v3_preview": {
         const admin = await createAdmin(req, "rdp.create");
+        const requestId = String(body.requestId || "").trim();
+        const finishedArticleCodes = await workspaceV3FinishedArticleCodes(admin.supabase, requestId);
         // The V3 preview must use the current authoritative Mexal BOM and
         // supplier-order snapshots.  Keeping this in the normal preview path
         // avoids the unsafe operational dependency on the admin-only manual
@@ -625,10 +627,11 @@ export default async function handler(req, res) {
         await syncWorkspaceV3MexalContracts({
           mexal: buildMexalClient(),
           supabase: admin.supabase,
+          finishedArticleCodes,
         });
         return sendSuccess(res, 200, await createWorkspaceV3Preview({
           admin: admin.supabase,
-          requestId: String(body.requestId || "").trim(),
+          requestId,
           requestedBy: admin.authUserId,
         }));
       }

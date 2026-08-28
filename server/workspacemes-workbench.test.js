@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { activeOctLines, diagnosticBlocks, requestStage, resolveWorkbenchOctUnit, resolveWorkbenchUnits, v2DecisionAvailability, visibleDiagnostic, workbenchDetailLines } from "./workspacemes-workbench.js";
+import { activeOctLines, diagnosticBlocks, requestStage, resolveWorkbenchOctUnit, resolveWorkbenchUnits, v2DecisionAvailability, visibleDiagnostic, workbenchDetailLines, workbenchLineMappingStatus } from "./workspacemes-workbench.js";
 
 test("una RdP annullata è storico e non resta tra i bloccati", () => {
   assert.equal(requestStage({ workspace_status: "Cancelled" }), "history");
@@ -40,6 +40,12 @@ test("il dettaglio RdP mostra righe attive e righe storiche appartenenti a quell
   ];
   const requestItems = [{ ordine_riga_id: "current" }, { ordine_riga_id: "retired-from-request" }];
   assert.deepEqual(workbenchDetailLines(lines, requestItems).map((line) => line.id), ["current", "retired-from-request"]);
+});
+
+test("le righe descrittive sono non produttive e non richiedono risoluzione MES", () => {
+  assert.equal(workbenchLineMappingStatus({ riga_descrittiva: true }), "NOT_APPLICABLE");
+  assert.equal(workbenchLineMappingStatus({ riga_descrittiva: false }), "TO_RESOLVE_IN_MES");
+  assert.equal(workbenchLineMappingStatus({ riga_descrittiva: false }, { mapping_status: "RESOLVED" }), "RESOLVED");
 });
 
 test("il tipo UDM Mexal 1 usa la UDM principale autorevole anche nel dettaglio Workbench", () => {

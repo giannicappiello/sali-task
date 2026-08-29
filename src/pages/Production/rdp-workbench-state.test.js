@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { confirmedProductionOrder, diagnosticCanBeArchived, diagnosticIsManageable, productionOrderProgremesPath, v3RecalculationFailure } from "./rdp-workbench-state.js";
+import { confirmedProductionOrder, diagnosticCanBeArchived, diagnosticIsManageable, productionOrderProgremesPath, v3RecalculationFailure, v3RecalculationOutcomeFailure } from "./rdp-workbench-state.js";
 
 test("riconosce l'OP realmente generato dalla conferma MES", () => {
   assert.deepEqual(confirmedProductionOrder({ proposals: [
@@ -51,4 +51,22 @@ test("una preview V3 bloccata produce un errore esplicito con i blocker univoci"
     message: "La preview è stata elaborata, ma contiene blocchi e non può essere confermata.",
   });
   assert.equal(v3RecalculationFailure({ status: "READY" }), null);
+});
+
+test("il ricalcolo V3 è fail-closed finché la preview persistita non è READY", () => {
+  assert.equal(v3RecalculationOutcomeFailure(
+    { status: "completed" },
+    { v3: { preview: { status: "READY" }, components: [] } },
+  ), null);
+  assert.deepEqual(v3RecalculationOutcomeFailure(
+    { status: "completed" },
+    { v3: { preview: { status: "BLOCKED" }, components: [{ blocker_code: "FORMULA_UOM_MISSING" }] } },
+  ), {
+    code: "FORMULA_UOM_MISSING",
+    message: "La preview è stata elaborata, ma contiene blocchi e non può essere confermata.",
+  });
+  assert.deepEqual(v3RecalculationOutcomeFailure({ status: "completed" }, {}), {
+    code: "V3_PREVIEW_STATUS_UNKNOWN",
+    message: "Il ricalcolo non ha prodotto una preview READY e la RdP non può proseguire.",
+  });
 });

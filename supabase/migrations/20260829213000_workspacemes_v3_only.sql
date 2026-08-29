@@ -1,15 +1,28 @@
 begin;
 
--- La rimozione storica V2 è stata autorizzata, ma resta fail-closed:
--- nessuna RdP non annullata può essere eliminata implicitamente.
+-- La rimozione storica V2 è stata autorizzata. Sono eliminabili soltanto
+-- stati pre-produzione/errore; qualunque stato produttivo resta fail-closed.
 do $$
 begin
   if exists (
     select 1 from public.workspace_production_requests
     where contract_version = 2
-      and upper(coalesce(workspace_status, stato, '')) <> 'CANCELLED'
+      and upper(coalesce(workspace_status, stato, '')) not in
+        ('CANCELLED','BLOCKED','FAILED','REJECTED','PRONTA','PREVIEWING','AWAITINGDECISION','RICEVUTA','RECEIVED')
   ) then
-    raise exception 'V2_PURGE_BLOCKED_NON_CANCELLED_REQUESTS';
+    raise exception 'V2_PURGE_BLOCKED_PRODUCTION_STATUS';
+  end if;
+  if exists (
+    select 1 from public.workspace_production_proposals p
+    join public.workspace_production_requests r on r.id=p.production_request_id
+    where r.contract_version=2 and (p.mes_production_order_id is not null or p.confirmation_external_id is not null)
+  ) or exists (
+    select 1 from public.workspace_v3_confirmation_sagas s
+    join public.workspace_v3_previews p on p.id=s.preview_id
+    join public.workspace_production_requests r on r.id=p.production_request_id
+    where r.contract_version=2
+  ) then
+    raise exception 'V2_PURGE_BLOCKED_IRREVERSIBLE_EFFECTS';
   end if;
 end $$;
 

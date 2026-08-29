@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createFormulaDemand, createPreviewRecalculationIdentity } from "./workspacemes-v3-api.js";
+import { createFormulaDemand, createPreviewRecalculationIdentity, formulaPreviewBlocker } from "./workspacemes-v3-api.js";
 
 test("il contratto formula invia prodotto finito, codice FP e quantità senza UDM FP Mexal", () => {
   const demand = createFormulaDemand({
@@ -33,4 +33,11 @@ test("ogni ricalcolo volontario usa una nuova preview, mentre il retry dello ste
 
   assert.deepEqual(retry, first);
   assert.notDeepEqual(recalculation, first);
+});
+
+test("una formula MES presente senza blocker è pronta e non diventa preview mancante", () => {
+  assert.equal(formulaPreviewBlocker({ blocker: "" }), null);
+  assert.equal(formulaPreviewBlocker({ blocker: null }), null);
+  assert.equal(formulaPreviewBlocker({ blocker: "MATERIAL_MAPPING_MISSING" }), "MATERIAL_MAPPING_MISSING");
+  assert.equal(formulaPreviewBlocker(null), "MES_FORMULA_PREVIEW_MISSING");
 });

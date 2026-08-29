@@ -99,6 +99,10 @@ export function createPreviewRecalculationIdentity({ requestId, octHash, bomHash
   return previewCommandIdentity({ requestId, octHash, bomHash, availabilityVersion, previewAttemptId });
 }
 
+export function formulaPreviewBlocker(formula) {
+  return formula ? clean(formula.blocker) || null : "MES_FORMULA_PREVIEW_MISSING";
+}
+
 export async function createWorkspaceV3Preview({ admin, requestId, requestedBy, client = createProgremesProductionClient() }) {
   if (!client.v3PreviewEnabled()) throw fail("Preview WorkspaceMES V3 disabilitata.", "V3_PREVIEW_DISABLED", 403);
   const input = await loadPreviewInputs(admin, requestId);
@@ -172,7 +176,7 @@ export async function createWorkspaceV3Preview({ admin, requestId, requestedBy, 
       requiredAt: component.requiredAt,
       calculationOwner: "PROGREMES", formulaCode: formula?.formulaCode || null, formulaRevision: formula?.formulaRevision || null,
       formulaSnapshotHash: mes.result.snapshotHash, batch: formula?.batch || null, station: formula?.station || null,
-      filling: formula?.filling || null, blockerCode: formula?.blocker || "MES_FORMULA_PREVIEW_MISSING", certifiedPayload: formula || {} };
+      filling: formula?.filling || null, blockerCode: formulaPreviewBlocker(formula), certifiedPayload: formula || {} };
     const materials = (formula?.materials || []).map((material) => ({ bomLineId: component.bomLineId,
       parentArticleCode: component.articleCode, componentKind: "FORMULA_MATERIAL", articleCode: material.articleCode,
       unitOfMeasure: material.unitOfMeasure, requiredQuantity: material.required, onHandQuantity: material.physical,

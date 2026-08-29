@@ -66,6 +66,15 @@ test("Workbench espone lista OCT, multi-select e stati operativi senza duplicare
   assert.match(production, /RdP Workbench/);
 });
 
+test("conferma V3 usa il pulsante verde esteso e il resoconto MP non espone metadati formula o stazione", () => {
+  assert.match(ui, /Conferma, genera OP e fabbisogni/);
+  assert.doesNotMatch(ui, /Conferma V3, genera OP e fabbisogni/);
+  assert.match(ui, /className="primary-action rdp-v3-recalculate" onClick=\{onConfirm\}/);
+  assert.match(ui, /row\.component_kind !== "FORMULA_MATERIAL"/);
+  assert.match(ui, /Conferma produttiva non abilitata: verificare i gate Workspace e ProgreMES nel Centro Diagnostico/);
+  assert.match(productionCss, /\.rdp-v3-recalculate\s*\{[^}]*width:\s*100%[^}]*background:\s*#18b76a/);
+});
+
 test("RdP annullate restano nello storico e gli OCT tornano lavorabili", () => {
   assert.match(ui, /Storico RdP/);
   assert.match(ui, /payload\.history/);

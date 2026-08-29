@@ -110,6 +110,7 @@ function FinishedBomDetails({ bom }) {
 function V3Panel({ v3, canDecide, busy, onPreview, onConfirm }) {
   if (!v3) return null;
   const preview = v3.preview;
+  const confirmEnabled = v3.flags?.["workspacemes.v3.confirm"] === true;
   return <section className="rdp-decisions rdp-v3-panel">
     <button type="button" className="primary-action rdp-v3-recalculate" onClick={onPreview} disabled={busy || !v3.flags?.["workspacemes.v3.preview"]}>{busy ? "RICALCOLO RDP…" : "RICALCOLA RDP"}</button>
     {preview && <>
@@ -118,11 +119,14 @@ function V3Panel({ v3, canDecide, busy, onPreview, onConfirm }) {
         <span>{row.component_kind} · {row.calculation_owner}</span>
         <strong>{row.article_code} · {formatQuantity(row.required_quantity)} {row.unit_of_measure}</strong>
         <small>Disponibile {formatQuantity(row.on_hand_quantity)} · impegnato {formatQuantity(row.committed_quantity)} · arrivo {formatQuantity(row.incoming_quantity)} · scoperto {formatQuantity(row.uncovered_quantity)}</small>
-        {row.formula_code && <small>Formula {row.formula_code} rev. {row.formula_revision} · batch {row.batch || "—"} · Station {row.station || "—"} · Filling {row.filling || "—"}</small>}
+        {row.formula_code && row.component_kind !== "FORMULA_MATERIAL" && <small>Formula {row.formula_code} rev. {row.formula_revision} · batch {row.batch || "—"} · Station {row.station || "—"} · Filling {row.filling || "—"}</small>}
         {row.blocker_code && <small className="rdp-alert-blocking">{row.blocker_code}</small>}
       </div>)}</div>
       {!!v3.requirements?.length && <p>Fabbisogni automatici: {v3.requirements.length} · impegni: {v3.commitments?.length || 0}.</p>}
-      {preview.status === "READY" && !v3.saga && canDecide && <button type="button" className="primary-action" onClick={onConfirm} disabled={busy || !v3.flags?.["workspacemes.v3.confirm"]}><Factory size={16}/>Conferma V3, genera OP e fabbisogni</button>}
+      {preview.status === "READY" && !v3.saga && canDecide && <>
+        <button type="button" className="primary-action rdp-v3-recalculate" onClick={onConfirm} disabled={busy || !confirmEnabled}><Factory size={16}/>Conferma, genera OP e fabbisogni</button>
+        {!confirmEnabled && <small className="rdp-v3-gate-warning" role="status">Conferma produttiva non abilitata: verificare i gate Workspace e ProgreMES nel Centro Diagnostico.</small>}
+      </>}
     </>}
   </section>;
 }

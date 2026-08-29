@@ -154,6 +154,11 @@ export default async function handler(req, res) {
     const classified = privateOrder ? classifyPrivateOrderLines(lines) : classifyOrderLines(lines, { reservation: order.tipo_ordine === "prenotazione" });
     console.info("Mexal order processing", { orderId, module: order.modulo_ordini || "prof", lines: Object.fromEntries(Object.entries(classified).map(([kind, rows]) => [kind, lineDiagnostic(rows)])) });
     const requiredKinds = Object.keys(classified).filter((kind) => classified[kind].length);
+    const allowedKinds = privateOrder ? ["OCT"] : ["OCM", "OCX", "OCI"];
+    const forbiddenKinds = requiredKinds.filter((kind) => !allowedKinds.includes(kind));
+    if (forbiddenKinds.length) {
+      throw new Error(`Contratto documentale non valido per ${privateOrder ? "OrdiniPrivate" : "OrdiniPR/PH"}: ${forbiddenKinds.join(", ")}.`);
+    }
     const done = new Set(requiredKinds.filter((kind) => text(order[`numero_${kind.toLowerCase()}`])));
     syncToken = token();
     const { data: started, error: startError } = await admin.rpc("avvia_sync_ordine", { p_ordine_id: orderId, p_sync_token: syncToken });

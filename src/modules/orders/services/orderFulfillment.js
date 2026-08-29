@@ -1,7 +1,7 @@
 import { supabase } from "../../../lib/supabaseClient.js";
 import { agentDisplayName, loadAgentNameMap } from "./agentNames.js";
 import { buildOrderPdfModel, createOrderPdf, downloadOrderPdf as createAndDownloadPdf } from "./orderPdf.js";
-import { orderModuleFilter } from "./orderModules.js";
+import { filterOrderModuleDocuments, orderModuleCodeFromOrder, orderModuleDocumentTypes, orderModuleFilter } from "./orderModules.js";
 export { buildAvailabilityPreview } from "./availability.js";
 
 async function getAccessToken() {
@@ -28,18 +28,18 @@ export function updateOrder(orderId, testata, righe) { return postJson("/api/mex
 export function recoverOrderSync(orderId) { return postJson("/api/mexal/orders/recover-sync", { orderId }); }
 export function checkOrderAvailability(lines) { return postJson("/api/mexal/orders/check-availability", { lines: lines.map((line) => ({ productCode: String(line.codice_articolo || "").trim(), quantity: Number(line.quantita) })) }); }
 
-function legacyMexalDocuments(order = {}) {
+function legacyMexalDocuments(order = {}, moduleCode = orderModuleCodeFromOrder(order)) {
   const defaultSerie = String(order.serie_documento_mexal || order.serie_mexal || 1);
-  return ["OCM", "OCX", "OCI", "OCT"].flatMap((type) => {
+  return orderModuleDocumentTypes(moduleCode).flatMap((type) => {
     const numero = order[`numero_${type.toLowerCase()}`];
     return numero ? [{ tipo_documento: type, serie: defaultSerie, numero: String(numero), stato: "legacy" }] : [];
   });
 }
 
-function mergeMexalDocuments(documents = [], order = {}) {
+function mergeMexalDocuments(documents = [], order = {}, moduleCode = orderModuleCodeFromOrder(order)) {
   const merged = [
-    ...documents,
-    ...legacyMexalDocuments(order),
+    ...filterOrderModuleDocuments(moduleCode, documents),
+    ...legacyMexalDocuments(order, moduleCode),
   ];
 
   const seen = new Set();
@@ -49,7 +49,7 @@ function mergeMexalDocuments(documents = [], order = {}) {
     const serie = String(document.serie ?? "").trim();
     const numero = String(document.numero ?? "").trim();
 
-    if (!["OCM", "OCX", "OCI", "OCT"].includes(type) || !serie || !numero) {
+    if (!orderModuleDocumentTypes(moduleCode).includes(type) || !serie || !numero) {
       return false;
     }
 
@@ -76,8 +76,8 @@ async function enrichAgent(order) {
   }
 }
 
-export async function loadCreatedMexalDocuments(orderId) {
-  const { data, error } = await supabase.from("ordini_documenti_mexal").select("id,tipo_documento,modulo,serie,numero,anno,stato,stato_operativo,presente_in_mexal,evaso_il,ultimo_sync_mexal").eq("ordine_id", orderId).not("numero", "is", null).order("aggiornato_il", { ascending: false });
+export async function loadCreatedMexalDocuments(orderId, moduleCode = "prof") {
+  const { data, error } = await supabase.from("ordini_documenti_mexal").select("id,tipo_documento,modulo,serie,numero,anno,stato,stato_operativo,presente_in_mexal,evaso_il,ultimo_sync_mexal").eq("ordine_id", orderId).in("tipo_documento", orderModuleDocumentTypes(moduleCode)).not("numero", "is", null).order("aggiornato_il", { ascending: false });
   if (error) throw error;
   return data || [];
 }
@@ -97,7 +97,7 @@ export async function loadOrderDetail(orderId, moduleCode) {
 const [{ data: order, error: orderError }, { data: lines, error: linesError }, documents] = await Promise.all([
   supabase.from("ordini_testate").select("*").eq("id", orderId).or(orderModuleFilter(moduleCode)).single(),
     supabase.from("ordini_righe").select("*").eq("ordine_id", orderId).order("id", { ascending: true }),
-    loadCreatedMexalDocuments(orderId),
+    loadCreatedMexalDocuments(orderId, moduleCode),
   ]);
   if (orderError) throw orderError;
   if (linesError) throw linesError;
@@ -111,15 +111,16 @@ const [{ data: order, error: orderError }, { data: lines, error: linesError }, d
   }, new Map());
   const childDocuments = (documents || []).map((document) => ({ ...document, righe: linesByDocument.get(document.id) || [] }));
   const enriched = await enrichAgent(order);
-  return { order: { ...enriched, mexal_documents: mergeMexalDocuments(childDocuments, order) }, lines: lines || [] };
+  return { order: { ...enriched, mexal_documents: mergeMexalDocuments(childDocuments, order, moduleCode) }, lines: lines || [] };
 }
 
 export { buildOrderPdfModel, createOrderPdf };
 
 export async function downloadOrderPdf(order, lines, options) {
   if (!order?.id) throw new Error("Ordine non valido: identificativo mancante.");
-  const documents = await loadCreatedMexalDocuments(order.id);
+  const moduleCode = orderModuleCodeFromOrder(order);
+  const documents = await loadCreatedMexalDocuments(order.id, moduleCode);
   const enriched = await enrichAgent(order);
-  const mexalDocuments = mergeMexalDocuments(documents, order);
+  const mexalDocuments = mergeMexalDocuments(documents, order, moduleCode);
   return createAndDownloadPdf({ ...enriched, mexal_documents: mexalDocuments }, lines, options);
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Search, Sparkles } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
@@ -7,7 +7,7 @@ import { useOrdersModule } from "../ordersModuleContext";
 import { agentDisplayName, loadAgentNameMap, sortOrdersNewestFirst } from "../services/agentNames";
 import { getOrderDisplayStatus } from "../services/orderDisplayStatus";
 import AIOrderTypeDialog from "../components/AIOrderTypeDialog";
-import { isPrivateOrderModule, orderModuleFilter } from "../services/orderModules";
+import { isPrivateOrderModule, orderModuleDocumentTypes, orderModuleFilter } from "../services/orderModules";
 
 export default function Orders() {
   const { moduleCode, basePath } = useOrdersModule();
@@ -26,7 +26,7 @@ export default function Orders() {
     navigate(`${basePath}/nuovo-da-documento?tipo=${type}`);
   }
 
-  async function loadOrders() {
+  const loadOrders = useCallback(async () => {
     setLoading(true);
     if (!canAccessOrders) {
       setRows([]);
@@ -57,6 +57,7 @@ export default function Orders() {
         .from("ordini_documenti_mexal")
         .select("ordine_id,tipo_documento,serie,numero,anno,stato_operativo,presente_in_mexal")
         .in("ordine_id", orderIds)
+        .in("tipo_documento", orderModuleDocumentTypes(moduleCode))
         .not("numero", "is", null);
       if (documentsError) console.error("Errore documenti Mexal elenco ordini:", documentsError);
       documents = documentRows || [];
@@ -83,13 +84,13 @@ export default function Orders() {
     setRows(rowsWithDocuments);
     setAgentsByCode(names);
     setLoading(false);
-  }
+  }, [canAccessOrders, canSeeAll, moduleCode, month, visibleAgents]);
 
   useEffect(() => {
     if (accessLoading) return undefined;
     const timer = window.setTimeout(loadOrders, 0);
     return () => window.clearTimeout(timer);
-  }, [accessLoading, canSeeAll, canAccessOrders, month, JSON.stringify(visibleAgents)]);
+  }, [accessLoading, loadOrders]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

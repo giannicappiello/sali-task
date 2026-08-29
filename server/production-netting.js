@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { authoritativeArticleUnit, resolveOctUnitOfMeasure } from "./mexal/unit-of-measure.js";
 
 const QUANTITY_SCALE = 6;
-const CONTRACT_VERSION = 3;
+const CONTRACT_VERSION = 4;
 
 function text(value) { return String(value ?? "").trim(); }
 function upper(value) { return text(value).toUpperCase(); }
@@ -295,7 +295,7 @@ export function productionDemandContract(demand) {
     items: demand.items.map((item) => ({
       ...item,
       workspaceAvailabilityAuthoritative: false,
-      nettingOwner: "WORKSPACE_DIRECT_AND_PROGREMES_FP",
+      nettingOwner: "PROGREMES",
     })),
   };
 }
@@ -319,7 +319,7 @@ export async function prepareProductionDemand({
   const selectionIdentity = selectedOrderIds.length
     ? { kind: "orders", ids: [...selectedOrderIds].sort() }
     : { kind: "lines", ids: [...demand.items.map((item) => item.lineId)].sort() };
-  const baseIdempotencyKey = `rdp:v3:${hash({
+  const baseIdempotencyKey = `rdp:v4:${hash({
     selectionIdentity,
     revisions: demand.orders.map((order) => ({
       orderId: order.orderId,
@@ -334,13 +334,13 @@ export async function prepareProductionDemand({
     throw Object.assign(new Error("Generazione RdP non valida."), { code: "INVALID_RDP_GENERATION", status: 500 });
   const idempotencyKey = `${baseIdempotencyKey}:r${requestGeneration}`;
   const snapshot = {
-    version: 3,
+    version: 4,
     kind: "MULTI_OCT_PRODUCTION_DEMAND",
     requestGeneration,
     requestedBy: requestedBy || null,
     ...stableDemand,
     sources: { orders: "MEXAL_OCT", unitsOfMeasure: "MEXAL_OCT_AND_PRODUCT_CACHE" },
-    availability: { authoritative: false, included: false, owner: "WORKSPACE_DIRECT_AND_PROGREMES_FP" },
+    availability: { authoritative: false, included: false, owner: "PROGREMES" },
     capturedAt,
   };
   const snapshotHash = hash({ ...snapshot, capturedAt: undefined });

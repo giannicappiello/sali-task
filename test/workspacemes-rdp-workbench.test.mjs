@@ -45,11 +45,10 @@ test("Workbench espone lista OCT, multi-select e stati operativi senza duplicare
   assert.match(ui, /RICALCOLA RDP/);
   assert.match(ui, /OK · NON PRODUTTIVA/);
   assert.match(ui, /Riga esclusa correttamente/);
-  assert.match(ui, /V3 · DISTINTA ESPLOSA/);
-  assert.match(ui, /Distinta prodotto finito elaborata/);
-  assert.match(ui, /!line\.descriptive && !hasV3Preview && \(blocking\(line\.diagnostics\)/);
-  assert.match(ui, /"workspacemes_v3_preview", \{ requestId: response\.requestId \}/);
-  assert.match(ui, /RdP creata, ma il ricalcolo V3 non è riuscito/);
+  assert.match(ui, /V4 · DISTINTA MES/);
+  assert.match(ui, /Calcolo produttivo certificato/);
+  assert.match(ui, /"workspacemes_v4_preview"/);
+  assert.match(ui, /RdP V4 creata ma non elaborata/);
   assert.doesNotMatch(ui, /WorkspaceMES V3 · fabbisogni e produzione/);
   assert.doesNotMatch(ui, /La distinta prodotto finito Mexal sarà esplosa/);
   assert.match(productionCss, /\.rdp-v3-recalculate\s*\{[^}]*width:\s*100%[^}]*background:\s*#18b76a/);
@@ -61,16 +60,17 @@ test("Workbench espone lista OCT, multi-select e stati operativi senza duplicare
   assert.match(ui, /primary-action rdp-create-action/);
   assert.match(productionCss, /\.rdp-preview-actions\s*\{[^}]*grid-template-columns:\s*repeat\(2,minmax\(0,1fr\)\)[^}]*width:\s*100%/);
   assert.match(productionCss, /\.rdp-preview-actions \.rdp-create-action\s*\{[^}]*background:\s*#18b76a/);
-  assert.match(ui, /DIRECT calcolati da Workspace, MP certificate da ProgreMES/);
+  assert.match(ui, /distinta, disponibilità, FIFO, impegni e fabbisogni certificati da ProgreMES/);
   assert.doesNotMatch(ui, /Apri nel contesto/);
   assert.match(production, /RdP Workbench/);
 });
 
-test("conferma V3 usa il pulsante verde esteso e il resoconto MP non espone metadati formula o stazione", () => {
+test("conferma V4 usa il pulsante verde esteso e il resoconto è certificato MES", () => {
   assert.match(ui, /Conferma, genera OP e fabbisogni/);
   assert.doesNotMatch(ui, /Conferma V3, genera OP e fabbisogni/);
   assert.match(ui, /className="primary-action rdp-v3-recalculate" onClick=\{onConfirm\}/);
-  assert.match(ui, /row\.component_kind !== "FORMULA_MATERIAL"/);
+  assert.doesNotMatch(ui, /row\.formula_code|row\.station|row\.filling/);
+  assert.match(ui, /WITH_SHORTAGES/);
   assert.match(ui, /Conferma produttiva non abilitata: verificare i gate Workspace e ProgreMES nel Centro Diagnostico/);
   assert.match(productionCss, /\.rdp-v3-recalculate\s*\{[^}]*width:\s*100%[^}]*background:\s*#18b76a/);
 });
@@ -114,19 +114,17 @@ test("annullo è logico, auditato e fail-closed sugli effetti produttivi", () =>
 });
 
 test("preview, invio e decisione applicano permessi RdP dedicati", () => {
-  assert.match(api, /progremes_production_preview[\s\S]*?rdp\.create/);
-  assert.match(api, /progremes_production_request[\s\S]*?rdp\.create/);
-  assert.match(api, /progremes_production_confirm[\s\S]*?rdp\.decide/);
-  assert.match(api, /workspacemes_v3_preview[\s\S]*?rdp\.create/);
-  assert.match(api, /workspacemes_v3_confirm[\s\S]*?rdp\.decide/);
-  assert.match(api, /workspacemes_v3_purchase_document[\s\S]*?purchases\.manage/);
+  assert.match(api, /workspacemes_v4_request[\s\S]*?rdp\.create/);
+  assert.match(api, /workspacemes_v4_preview[\s\S]*?rdp\.create/);
+  assert.match(api, /workspacemes_v4_confirm[\s\S]*?rdp\.decide/);
   assert.match(migration, /rdp\.create/);
   assert.match(api, /if \(!permissionCode && internalSecrets/);
 });
 
-test("preview V3 aggiorna prima i contratti Mexal autorevoli nel normale flusso", () => {
-  assert.match(api, /case "workspacemes_v3_preview"[\s\S]*?workspaceV3FinishedArticleCodes[\s\S]*?syncWorkspaceV3MexalContracts\([\s\S]*?finishedArticleCodes[\s\S]*?createWorkspaceV3Preview\(/);
-  assert.match(api, /previewStatus:\s*v3Preview\.status/);
+test("preview V4 delega distinta e netting a ProgreMES", () => {
+  assert.match(api, /case "workspacemes_v4_preview"[\s\S]*?createWorkspaceV4Preview\(/);
+  assert.doesNotMatch(api, /workspaceV3FinishedArticleCodes|syncWorkspaceV3MexalContracts/);
+  assert.match(api, /previewStatus:\s*v4Preview\.status/);
 });
 
 test("deep link conserva solo contesto MES allow-listed", () => {
@@ -146,7 +144,7 @@ test("UI impedisce doppio click e separa dati commerciali da analisi MES", () =>
 });
 
 test("UI disabilita preview e Crea RdP quando il gate Production non è ON", () => {
-  assert.match(ui, /productionGates\?\.allOn === true/);
+  assert.match(ui, /productionGates\?\.previewOn === true/);
   assert.match(ui, /disabled=\{busy \|\| !sendEnabled\}/);
   assert.match(ui, /Invio RdP Production non disponibile/);
   assert.match(production, /Invio RdP Workspace/);

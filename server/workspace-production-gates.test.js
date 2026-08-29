@@ -10,8 +10,8 @@ const runtimeHealth = {
   receiveDecisions: true,
   executeProduction: true,
   createLots: true,
-  receiveV3Previews: true,
-  confirmV3Production: true,
+  receiveV4Previews: true,
+  confirmV4Production: true,
 };
 
 const enabledEnv = {
@@ -20,6 +20,8 @@ const enabledEnv = {
   PROGREMES_PRODUCTION_REQUESTS_ENABLED: "true",
   PROGREMES_PRODUCTION_CALLBACKS_ENABLED: "true",
   PROGREMES_PRODUCTION_CONFIRMATIONS_ENABLED: "true",
+  WORKSPACEMES_V4_PREVIEW_ENABLED: "true",
+  WORKSPACEMES_V4_CONFIRM_ENABLED: "true",
 };
 
 test("gate Workspace Production fallisce chiuso quando un flag o una configurazione manca", () => {
@@ -31,9 +33,9 @@ test("gate Workspace Production fallisce chiuso quando un flag o una configurazi
   }
 });
 
-test("GO-LIVE richiede i gate V3, esecuzione e lotti ProgreMES", () => {
+test("GO-LIVE richiede i gate V4, esecuzione e lotti ProgreMES", () => {
   assert.equal(productionGoLiveGates(runtimeHealth, enabledEnv).allOn, true);
-  for (const key of ["receiveV3Previews", "confirmV3Production", "executeProduction", "createLots"]) {
+  for (const key of ["receiveV4Previews", "confirmV4Production", "executeProduction", "createLots"]) {
     assert.equal(productionGoLiveGates({ ...runtimeHealth, [key]: false }, enabledEnv).allOn, false, key);
   }
 });

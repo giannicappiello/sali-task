@@ -278,7 +278,7 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
     productionEvents = eventResult.data || [];
   }
   let sentSnapshot = null;
-  const lineageSnapshotId = Number(request?.contract_version) === 3 ? request?.demand_snapshot_id : request?.sent_demand_snapshot_id;
+  const lineageSnapshotId = [3, 4].includes(Number(request?.contract_version)) ? request?.demand_snapshot_id : request?.sent_demand_snapshot_id;
   if (lineageSnapshotId) {
     const result = await admin.from("workspace_production_demand_snapshots").select("snapshot,captured_at").eq("id", lineageSnapshotId).maybeSingle();
     if (result.error) throw result.error;
@@ -315,8 +315,8 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
   let v3 = null;
   if (request) {
     const [flagsResult, previewResult] = await Promise.all([
-      admin.from("workspace_v3_feature_flags").select("key,enabled").in("key", ["workspacemes.v3.preview", "workspacemes.v3.confirm"]),
-      admin.from("workspace_v3_previews").select("*").eq("production_request_id", request.id)
+      admin.from("workspace_v4_feature_flags").select("key,enabled").in("key", ["workspacemes.v4.preview", "workspacemes.v4.confirm"]),
+      admin.from("workspace_v4_previews").select("*").eq("production_request_id", request.id)
         .order("captured_at", { ascending: false }).limit(1),
     ]);
     if (flagsResult.error || previewResult.error) throw flagsResult.error || previewResult.error;
@@ -324,36 +324,25 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
     const preview = previewResult.data?.[0] || null;
     let components = []; let saga = null; let commitments = []; let requirements = []; let purchaseDocuments = [];
     if (preview) {
-      const componentResult = await admin.from("workspace_v3_preview_components").select("*")
+      const componentResult = await admin.from("workspace_v4_preview_materials").select("*")
         .eq("preview_id", preview.id).order("id");
       if (componentResult.error) throw componentResult.error;
       components = componentResult.data || [];
-      const sagaResult = await admin.from("workspace_v3_confirmation_sagas").select("*")
-        .eq("preview_id", preview.id).order("started_at", { ascending: false }).limit(1);
+      const sagaResult = await admin.from("workspace_v4_confirmation_mirrors").select("*")
+        .eq("preview_id", preview.id).order("created_at", { ascending: false }).limit(1);
       if (sagaResult.error) throw sagaResult.error;
       saga = sagaResult.data?.[0] || null;
       if (saga) {
         const [commitmentResult, requirementResult] = await Promise.all([
-          admin.from("workspace_v3_material_commitments").select("*").eq("saga_id", saga.id).order("id"),
-          admin.from("workspace_v3_purchase_requirements").select("*").eq("saga_id", saga.id).order("id"),
+          Promise.resolve({ data: [], error: null }),
+          admin.from("workspace_v4_purchase_requirements").select("*").eq("confirmation_id", saga.id).order("id"),
         ]);
         if (commitmentResult.error || requirementResult.error) throw commitmentResult.error || requirementResult.error;
         commitments = commitmentResult.data || []; requirements = requirementResult.data || [];
-        if (requirements.length) {
-          const documentLines = await admin.from("workspace_v3_purchase_document_lines").select("document_id,requirement_id")
-            .in("requirement_id", requirements.map((row) => row.id));
-          if (documentLines.error) throw documentLines.error;
-          const ids = [...new Set((documentLines.data || []).map((row) => row.document_id))];
-          if (ids.length) {
-            const documents = await admin.from("workspace_v3_purchase_documents").select("*").in("id", ids).order("id");
-            if (documents.error) throw documents.error;
-            purchaseDocuments = documents.data || [];
-          }
-        }
       }
     }
     v3 = { flags, preview, components, saga, commitments, requirements, purchaseDocuments,
-      blockers: components.filter((row) => text(row.blocker_code)).map((row) => ({ articleCode: row.article_code, code: row.blocker_code, owner: row.calculation_owner })) };
+      blockers: components.filter((row) => text(row.block_code)).map((row) => ({ articleCode: row.article_code, code: row.block_code, owner: "PROGREMES" })) };
   }
   return {
     orders: (orders || []).map((order) => ({ id: order.id, label: octLabel(order), customer: customerName(order, customersByCode), orderDate: order.data_ordine, deliveryDate: order.data_consegna })),

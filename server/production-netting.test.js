@@ -180,10 +180,11 @@ test("una RdP con un solo OCT conserva tutte le sue righe articolo", async () =>
   assert.deepEqual(demand.items.map((item) => item.mexalLinePosition), [10, 30]);
 });
 
-test("contratto V3 separa nettificazione DIRECT Workspace e FP ProgreMES", async () => {
+test("contratto V4 delega tutta la nettificazione a ProgreMES", async () => {
   const demand = await buildProductionDemand({ admin: makeAdmin(), orderIds: [ORDERS[0].id] });
   const contract = productionDemandContract(demand);
-  assert.equal(contract.items[0].nettingOwner, "WORKSPACE_DIRECT_AND_PROGREMES_FP");
+  assert.equal(contract.contractVersion, 4);
+  assert.equal(contract.items[0].nettingOwner, "PROGREMES");
   assert.equal(contract.items[0].workspaceAvailabilityAuthoritative, false);
   assert.equal(JSON.stringify(contract).includes("quantityToProduce"), false);
   assert.equal(JSON.stringify(contract).includes("availableFinishedProduct"), false);

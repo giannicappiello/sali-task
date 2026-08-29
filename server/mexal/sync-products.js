@@ -110,6 +110,72 @@ export function getLastCost(article = {}) {
   return Math.max(0, nullableNumber(article.costo_ult ?? article.cos_ult) ?? 0);
 }
 
+function catalogCollectionPath(value) {
+  const path = String(value || "").trim().replace(/^\^/, "").replace(/\$$/, "").replace(/\{0,1\}/g, "")
+    .replace(/\/?\((?:\?:)?[^)]*\)\??$/, "").replace(/\/?\{(?:id|codice|identifier)[^}]*\}$/i, "");
+  return /^\/[A-Za-z0-9_./-]+$/.test(path) ? path : null;
+}
+
+/**
+ * Mexal is authoritative for the list of warehouses. The importer only accepts
+ * a GET collection path published by the live /help catalogue and never guesses
+ * a resource name or a numeric warehouse range.
+ */
+export function discoverWarehouseCollection(help) {
+  const candidates = new Set();
+  const visit = (value) => {
+    if (!value || typeof value !== "object") return;
+    if (Array.isArray(value)) return value.forEach(visit);
+    const descriptor = Object.entries(value).flatMap(([key, item]) => [key, typeof item === "string" ? item : ""]).join(" ");
+    const methods = Object.entries(value)
+      .filter(([key]) => /^(method|http_method|methods|verbi|verb)$/i.test(key))
+      .flatMap(([, item]) => Array.isArray(item) ? item : [item])
+      .map((item) => String(item).toUpperCase());
+    if (/magazzin/i.test(descriptor) && (!methods.length || methods.includes("GET"))) {
+      for (const [key, item] of Object.entries(value)) {
+        if (!/^(regexp|resource|risorsa|endpoint|url|path|percorso)$/i.test(key)) continue;
+        const path = catalogCollectionPath(item);
+        if (path && /magazzin/i.test(path)) candidates.add(path);
+      }
+    }
+    Object.values(value).forEach(visit);
+  };
+  visit(help);
+  const exactCollections = [...candidates].filter((path) => /\/magazzini$/i.test(path));
+  if (exactCollections.length !== 1) {
+    throw new Error("Catalogo Mexal: risorsa GET univoca dei magazzini non disponibile.");
+  }
+  return exactCollections[0];
+}
+
+export function extractWarehouseRows(payload) {
+  const candidates = [payload, payload?.dati, payload?.magazzini, payload?.records, payload?.items,
+    payload?.data, payload?.data?.magazzini, payload?.data?.dati, payload?.risposta?.magazzini, payload?.risposta?.dati];
+  return candidates.find(Array.isArray) || [];
+}
+
+export function normalizeMexalWarehouse(row = {}) {
+  const warehouseNumber = nullableInteger(row.id_magazzino ?? row.numero_magazzino ?? row.cod_magazzino ?? row.id_mag ?? row.magazzino ?? row.id ?? row.codice);
+  if (!warehouseNumber || warehouseNumber <= 0) return null;
+  return {
+    number: warehouseNumber,
+    name: nullableText(row.descrizione, row.nome, row.des_magazzino, row.descrizione_magazzino),
+  };
+}
+
+export async function loadMexalWarehouses(mexal) {
+  const help = await mexal.getJson("/help");
+  const endpoint = discoverWarehouseCollection(help);
+  const payload = await mexal.getJson(endpoint);
+  const byNumber = new Map();
+  for (const row of extractWarehouseRows(payload)) {
+    const warehouse = normalizeMexalWarehouse(row);
+    if (warehouse) byNumber.set(warehouse.number, warehouse);
+  }
+  if (!byNumber.size) throw new Error("Mexal non ha restituito alcun magazzino certificabile.");
+  return [...byNumber.values()].sort((left, right) => left.number - right.number);
+}
+
 function round4(value) {
   return Math.round((value + Number.EPSILON) * 10000) / 10000;
 }
@@ -888,6 +954,39 @@ export function mapArticleToOrdersCache(article, { imageUrl = null } = {}) {
   };
 }
 
+export function mapArticleWarehouseStock(article, warehouse, { fallback = {}, syncRunId = null, synchronizedAt = new Date().toISOString() } = {}) {
+  const code = getArticleCode(article) || getArticleCode(fallback);
+  if (!code) throw new Error("Codice articolo mancante nel progressivo di magazzino Mexal.");
+  const stock = calculateStock(article);
+  const committed = round4(numberValue(article.impegnato ?? article.qta_impegnata ?? 0));
+  return {
+    article_code: code,
+    warehouse_number: warehouse.number,
+    warehouse_name: warehouse.name,
+    unit_of_measure: authoritativeArticleUnit(article) || authoritativeArticleUnit(fallback),
+    on_hand: stock,
+    committed,
+    available: calculateAvailability(article, stock),
+    unit_cost: getLastCost(article) || getLastCost(fallback),
+    source_payload: article,
+    sync_run_id: syncRunId,
+    synchronized_at: synchronizedAt,
+    is_current: true,
+  };
+}
+
+async function saveArticleWarehouseStocks(supabase, articleCode, rows) {
+  if (!rows.length) throw new Error(`Nessun progressivo per magazzino ricevuto per ${articleCode}.`);
+  const { error: upsertError } = await supabase.from("workspace_warehouse_stock")
+    .upsert(rows, { onConflict: "article_code,warehouse_number" });
+  if (upsertError) throw upsertError;
+  const currentNumbers = rows.map((row) => row.warehouse_number);
+  const { error: staleError } = await supabase.from("workspace_warehouse_stock")
+    .update({ is_current: false }).eq("article_code", articleCode)
+    .not("warehouse_number", "in", `(${currentNumbers.join(",")})`);
+  if (staleError) throw staleError;
+}
+
 async function upsertOrdersProductsCache(supabase, rows) {
   if (!rows.length) return { inserted: 0, updated: 0 };
   const codes = rows.map((row) => row.codice_articolo);
@@ -1105,6 +1204,15 @@ export default async function handler(req, res) {
         : buildMexalClient({ warehouse: STOCK_WAREHOUSE, retryOptions: stockRetryOptions }),
       allWarehouses: buildMexalClient({ warehouse: null, retryOptions: stockRetryOptions }),
     };
+    let warehouseCatalog = [];
+    let warehouseClients = new Map();
+    if (action === "sync-stock-it") {
+      warehouseCatalog = await loadMexalWarehouses(availabilityClients.allWarehouses);
+      warehouseClients = new Map(warehouseCatalog.map((warehouse) => [
+        warehouse.number,
+        buildMexalClient({ warehouse: warehouse.number, retryOptions: stockRetryOptions }),
+      ]));
+    }
 
     const [allArticles, groupMap] =
       await Promise.all([
@@ -1186,6 +1294,17 @@ export default async function handler(req, res) {
           const lastCost = getLastCost(article);
           const committed = round4(numberValue(article.impegnato ?? article.qta_impegnata ?? 0));
           const unit = authoritativeArticleUnit(article);
+          const synchronizedAt = new Date().toISOString();
+          const warehouseRows = [];
+          for (const warehouse of warehouseCatalog) {
+            const warehouseArticle = await loadFullArticle(warehouseClients.get(warehouse.number), code, summary);
+            warehouseRows.push(mapArticleWarehouseStock(warehouseArticle, warehouse, {
+              fallback: article,
+              syncRunId,
+              synchronizedAt,
+            }));
+          }
+          await saveArticleWarehouseStocks(supabase, code, warehouseRows);
           const { data: updatedRows, error: updateError } = await supabase.from("prodotti").update({ giacenza: stock, disponibilita: availability, costo_ultimo: lastCost, ultimo_sync_mexal: now, updated_at: now }).eq("codice_mexal", code).eq("sincronizzato_mexal", true).eq("attivo_mexal", true).select("id");
           if (updateError) throw updateError;
           const { error: cacheUpdateError } = await supabase.from("ordini_prodotti_cache").update({ giacenza: stock, impegnato: committed, disponibilita: availability, costo_ultimo: lastCost, unita_misura: unit, dati_mexal: article, sincronizzato_il: now }).eq("codice_articolo", code);

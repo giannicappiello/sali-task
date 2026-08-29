@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { getLastCost, mapArticleToOrdersCache } from "./mexal/sync-products.js";
-import { warehouseArticleType, warehouseBreakdown, warehouseRow, warehouseSummary } from "../src/pages/Warehouse/warehouseData.js";
+import { nonNegativeWarehouseRows, warehouseArticleType, warehouseBreakdown, warehouseLocation, warehouseRow, warehouseSummary } from "../src/pages/Warehouse/warehouseData.js";
 
 test("il costo ultimo usa esclusivamente il contratto reale Mexal", () => {
   assert.equal(getLastCost({ costo_ult: "12,345678" }), 12.345678);
@@ -20,6 +20,22 @@ test("dashboard classifica i prefissi e non somma quantità di UDM differenti", 
   assert.equal(result.byType.find((item) => item.type === "MP").value, 30);
   assert.equal(result.byUnit.length, 2);
   assert.equal(result.byUnit.find((item) => item.unit === "KG").quantity, 10);
+  assert.equal(result.byWarehouse.find((item) => item.type === "MAG-5").articles, 1);
+});
+
+test("il magazzino usa i dati reali disponibili senza inventare ubicazioni", () => {
+  assert.equal(warehouseLocation({ codice_articolo: "MP001", dati_mexal: { id_magazzino: 8 } }), "MAG-8");
+  assert.equal(warehouseLocation({ codice_articolo: "IT001" }), "MAG-5");
+  assert.equal(warehouseLocation({ codice_articolo: "MP001" }), "Aggregato");
+});
+
+test("i riepiloghi escludono le giacenze negative mantenendole nell'elenco", () => {
+  const eligible = nonNegativeWarehouseRows([
+    { codice_articolo: "MP001", giacenza: 5, costo_ultimo: 2 },
+    { codice_articolo: "MP002", giacenza: -3, costo_ultimo: 7 },
+  ]);
+  assert.equal(eligible.length, 1);
+  assert.equal(warehouseSummary(eligible).stockValue, 10);
 });
 
 test("la cache Workspace conserva costo, UDM e quantità di magazzino", () => {

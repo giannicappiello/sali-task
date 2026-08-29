@@ -5,7 +5,7 @@ export async function loadWorkspaceWarehouse(db) {
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await db
       .from("ordini_prodotti_cache")
-      .select("codice_articolo,descrizione,unita_misura,giacenza,impegnato,disponibilita,costo_ultimo,sincronizzato_il")
+      .select("codice_articolo,descrizione,unita_misura,giacenza,impegnato,disponibilita,costo_ultimo,sincronizzato_il,dati_mexal")
       .eq("mostra_in_app", true)
       .order("codice_articolo", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
@@ -30,7 +30,24 @@ export function warehouseRow(row = {}) {
     unitCost,
     stockValue: onHand * unitCost,
     availableValue: available * unitCost,
+    warehouse: warehouseLocation(row),
   };
+}
+
+function positiveWarehouse(value) {
+  const raw = Array.isArray(value) ? value.find((item) => Number(item) > 0) : value;
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+export function warehouseLocation(row = {}) {
+  const source = row.dati_mexal || row.json_mexal || {};
+  const number = positiveWarehouse(row.numero_magazzino ?? row.id_magazzino ?? row.magazzino
+    ?? source.id_magazzino ?? source.numero_magazzino ?? source.cod_magazzino ?? source.magazzino ?? source.id_mag);
+  if (number) return `MAG-${number}`;
+  const code = String(row.codice_articolo || row.codice_mexal || row.codice || "").trim().toUpperCase();
+  if (code.startsWith("IT") || code.startsWith("MKT")) return "MAG-5";
+  return "Aggregato";
 }
 
 export function warehouseSummary(rows = []) {
@@ -46,6 +63,10 @@ export function warehouseSummary(rows = []) {
   }, { articles: 0, valuedArticles: 0, availableArticles: 0, stockValue: 0, availableValue: 0, lastSync: null });
 }
 
+export function nonNegativeWarehouseRows(rows = []) {
+  return rows.map(warehouseRow).filter((row) => row.onHand >= 0);
+}
+
 const ARTICLE_TYPES = ["MP", "IT", "CN", "FP", "AS", "TB"];
 
 export function warehouseArticleType(code) {
@@ -56,6 +77,7 @@ export function warehouseArticleType(code) {
 export function warehouseBreakdown(rows = []) {
   const byType = new Map();
   const byUnit = new Map();
+  const byWarehouse = new Map();
   for (const raw of rows) {
     const row = warehouseRow(raw);
     const type = warehouseArticleType(row.codice_articolo);
@@ -74,9 +96,15 @@ export function warehouseBreakdown(rows = []) {
     unitItem.available += row.available;
     unitItem.value += row.stockValue;
     byUnit.set(unit, unitItem);
+    const warehouseItem = byWarehouse.get(row.warehouse) || { type: row.warehouse, articles: 0, quantity: 0, value: 0 };
+    warehouseItem.articles += 1;
+    warehouseItem.quantity += row.onHand;
+    warehouseItem.value += row.stockValue;
+    byWarehouse.set(row.warehouse, warehouseItem);
   }
   return {
     byType: [...byType.values()].sort((a, b) => b.value - a.value || a.type.localeCompare(b.type)),
     byUnit: [...byUnit.values()].sort((a, b) => b.value - a.value || a.unit.localeCompare(b.unit)),
+    byWarehouse: [...byWarehouse.values()].sort((a, b) => b.articles - a.articles || a.type.localeCompare(b.type)),
   };
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Save } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
-import { customerOrderSeriesOptions } from "../../../components/documentSeriesOptions";
+import { customerOrderSeriesOptions, octOrderSeriesOptions } from "../../../components/documentSeriesOptions";
 import {
   ORDER_EMAIL_PLACEHOLDERS,
   ORDER_EMAIL_TEMPLATE_DEFAULTS,
@@ -82,6 +82,7 @@ function TemplateFields({ section, config, onChange }) {
 
 function Panel({ code, title, series }) {
   const isPrivate = code === "private";
+  const availableSeries = isPrivate ? octOrderSeriesOptions(series) : series;
   const [config, setConfig] = useState(defaults);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -141,7 +142,7 @@ function Panel({ code, title, series }) {
     {loading ? <p>Caricamento configurazione...</p> : <>
       <div style={{ display: "grid", gap: 16 }}>
         <Toggle label="Invio automatico a Mexal" checked={config.invia_automaticamente_mexal} onChange={(value) => set("invia_automaticamente_mexal", value)} />
-        <label><strong>{isPrivate ? "Serie OCT" : "Serie documenti"}</strong><select value={config.serie_documento} onChange={(event) => set("serie_documento", event.target.value)} style={{ display: "block", width: "100%", minHeight: 40, marginTop: 6 }}><option value="">{isPrivate ? "Seleziona la serie OCT (obbligatoria)" : "Usa la configurazione Mexal predefinita"}</option>{series.map((item) => <option key={item.source_key} value={item.serie}>{item.sigla_documento || item.tipo_documento} · Serie {item.serie} · {item.descrizione}</option>)}</select></label>
+        <label><strong>{isPrivate ? "Serie OCT" : "Serie documenti"}</strong><select value={config.serie_documento} onChange={(event) => set("serie_documento", event.target.value)} style={{ display: "block", width: "100%", minHeight: 40, marginTop: 6 }}><option value="">{isPrivate ? "Seleziona la serie OCT (obbligatoria)" : "Usa la configurazione Mexal predefinita"}</option>{availableSeries.map((item) => <option key={item.source_key} value={item.serie}>{item.sigla_documento || item.tipo_documento} · Serie {item.serie} · {item.descrizione}</option>)}</select></label>
         <fieldset style={{ border: 0, padding: 0, margin: 0, display: "grid", gap: 10 }}><legend><strong>Configurazione email</strong></legend><Toggle label="Email agente" checked={config.invia_email_agente} onChange={(value) => set("invia_email_agente", value)} /><Toggle label="Email cliente" checked={config.invia_email_cliente} onChange={(value) => set("invia_email_cliente", value)} /><Toggle label="Responsabile collegato" checked={config.invia_email_responsabile} onChange={(value) => set("invia_email_responsabile", value)} /></fieldset>
         <label>Backoffice 1<input type="email" value={config.backoffice_1_email || ""} onChange={(event) => set("backoffice_1_email", event.target.value)} style={{ display: "block", width: "100%", minHeight: 40, marginTop: 5 }} /></label>
         <label>Backoffice 2<input type="email" value={config.backoffice_2_email || ""} onChange={(event) => set("backoffice_2_email", event.target.value)} style={{ display: "block", width: "100%", minHeight: 40, marginTop: 5 }} /></label>

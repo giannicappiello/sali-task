@@ -153,15 +153,32 @@ export function normalizeSupplierOrders({ headers, lines, articlesByCode, suppli
 }
 
 async function loadArticleMap(supabase) {
-  const [cacheResult, activeResult] = await Promise.all([
+  const [cacheResult, activeResult, warehouseResult] = await Promise.all([
     supabase.from("ordini_prodotti_cache").select("codice_articolo,descrizione,unita_misura,dati_mexal"),
     supabase.from("prodotti").select("codice_mexal,attivo,attivo_mexal"),
+    supabase.from("workspace_warehouse_stock").select("article_code,unit_of_measure").eq("is_current", true),
   ]);
-  if (cacheResult.error || activeResult.error) throw cacheResult.error || activeResult.error;
+  if (cacheResult.error || activeResult.error || warehouseResult.error) throw cacheResult.error || activeResult.error || warehouseResult.error;
   const activeByCode = new Map((activeResult.data || []).map((row) => [upper(row.codice_mexal), row.attivo !== false && row.attivo_mexal !== false]));
-  return new Map((cacheResult.data || []).map((row) => [upper(row.codice_articolo), {
-    ...row, activeMexal: activeByCode.has(upper(row.codice_articolo)) ? activeByCode.get(upper(row.codice_articolo)) : null,
-  }]));
+  const warehouseUnits = new Map();
+  for (const row of warehouseResult.data || []) {
+    const code = upper(row.article_code); const unit = upper(row.unit_of_measure);
+    if (!code || !unit) continue;
+    if (!warehouseUnits.has(code)) warehouseUnits.set(code, new Set());
+    warehouseUnits.get(code).add(unit);
+  }
+  const rowsByCode = new Map((cacheResult.data || []).map((row) => [upper(row.codice_articolo), row]));
+  for (const code of warehouseUnits.keys()) if (!rowsByCode.has(code)) rowsByCode.set(code, { codice_articolo: code, descrizione: null, unita_misura: null, dati_mexal: {} });
+  return new Map([...rowsByCode].map(([code, row]) => {
+    const units = [...(warehouseUnits.get(code) || [])];
+    if (!articleUnit(row) && units.length > 1) throw Object.assign(new Error(`UDM Mexal discordanti nei magazzini per ${code}: ${units.join(", ")}.`), { code: "MEXAL_PRIMARY_UOM_CONFLICT" });
+    return [code, {
+      ...row,
+      unita_misura: articleUnit(row) || units[0] || null,
+      activeMexal: activeByCode.has(code) ? activeByCode.get(code) : null,
+      unitSource: articleUnit(row) ? "MEXAL_PRODUCT_CACHE" : units.length === 1 ? "MEXAL_WAREHOUSE_CONSENSUS" : null,
+    }];
+  }));
 }
 
 export async function syncWorkspaceV3MexalContracts({ mexal, supabase, capturedAt = new Date().toISOString(), finishedArticleCodes = null, includeSupplierOrders = true }) {

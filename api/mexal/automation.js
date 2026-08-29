@@ -27,7 +27,8 @@ import { createProgremesDiagnosticManager } from "../../server/progremes-diagnos
 import { handleAIAssistant } from "../../server/ai/assistant.js";
 import { handleCrmBrief } from "../../server/ai/crm-brief.js";
 import { handleAIOrderDocument } from "../../server/ai/order-document.js";
-import { cancelProductionRequest, confirmProductionProposal, decideProductionRequestV2, handleProductionEvent, previewProductionRequest, sendProductionRequest } from "../../server/progremes-production-api.js";
+import { cancelProductionRequest, confirmProductionProposal, handleProductionEvent, previewProductionRequest } from "../../server/progremes-production-api.js";
+import { prepareProductionDemand } from "../../server/production-netting.js";
 import { createOctOrdersRunHandler, precheckOctOrders } from "../../server/mexal/sync-oct-orders.js";
 import { handleDigitalConnectionManager } from "../../server/crm/digital-connection-manager.js";
 import { listProductionWorkbench, productionWorkbenchDetail } from "../../server/workspacemes-workbench.js";
@@ -544,16 +545,39 @@ export default async function handler(req, res) {
         const admin = await createAdmin(req);
         return sendSuccess(res, 200, await listProgremesIntegration(req, admin.supabase));
       }
-      case "progremes_production_request": {
+      case "workspacemes_v3_request": {
         const admin = await createAdmin(req, "rdp.create");
-        return sendProductionRequest(req, res, { admin: admin.supabase, requestedBy: admin.authUserId });
+        const prepared = await prepareProductionDemand({
+          admin: admin.supabase,
+          orderIds: Array.isArray(body.orderIds) ? body.orderIds : [],
+          lineIds: Array.isArray(body.lineIds) ? body.lineIds : [],
+          expectedSnapshotId: body.snapshotId,
+          requestedBy: admin.authUserId,
+          mode: "create",
+        });
+        const requestId = prepared.request?.id;
+        if (!requestId) throw Object.assign(new Error("Creazione RdP V3 non confermata."), { code: "V3_REQUEST_FAILED" });
+        try {
+          const finishedArticleCodes = await workspaceV3FinishedArticleCodes(admin.supabase, requestId);
+          await syncWorkspaceV3MexalContracts({ mexal: buildMexalClient(), supabase: admin.supabase, finishedArticleCodes });
+          const v3Preview = await createWorkspaceV3Preview({ admin: admin.supabase, requestId, requestedBy: admin.authUserId });
+          await admin.supabase.from("workspace_production_requests").update({
+            stato: v3Preview.status, workspace_status: v3Preview.status, last_error_code: null,
+            last_response: { contractVersion: 3, previewId: v3Preview.preview_id, status: v3Preview.status },
+            updated_at: new Date().toISOString(),
+          }).eq("id", requestId);
+          return sendSuccess(res, 200, { requestId, externalId: prepared.request.external_id, status: v3Preview.status, v3Preview });
+        } catch (previewError) {
+          await admin.supabase.from("workspace_production_requests").update({
+            stato: "BLOCKED", workspace_status: "BLOCKED", last_error_code: previewError.code || "V3_PREVIEW_FAILED",
+            last_response: { contractVersion: 3, error: previewError.message, code: previewError.code || "V3_PREVIEW_FAILED" },
+            updated_at: new Date().toISOString(),
+          }).eq("id", requestId);
+          return sendSuccess(res, 200, { requestId, externalId: prepared.request.external_id, status: "BLOCKED",
+            previewError: { code: previewError.code || "V3_PREVIEW_FAILED", message: previewError.message } });
+        }
       }
-      case "progremes_production_retry": {
-        const admin = await createAdmin(req, "rdp.create");
-        req.body = { requestId: body.requestId };
-        return sendProductionRequest(req, res, { admin: admin.supabase, requestedBy: admin.authUserId });
-      }
-      case "progremes_production_preview": {
+      case "workspacemes_v3_precheck": {
         const admin = await createAdmin(req, "rdp.create");
         return previewProductionRequest(req, res, { admin: admin.supabase, requestedBy: admin.authUserId });
       }
@@ -660,10 +684,6 @@ export default async function handler(req, res) {
       case "progremes_production_confirm": {
         const admin = await createAdmin(req, "rdp.decide");
         return confirmProductionProposal(req, res, { admin: admin.supabase });
-      }
-      case "progremes_production_decide_v2": {
-        const admin = await createAdmin(req, "rdp.decide");
-        return decideProductionRequestV2(req, res, { admin: admin.supabase, requestedBy: admin.authUserId });
       }
       case "progremes_production_cancel": {
         const admin = await createAdmin(req, "rdp.cancel");

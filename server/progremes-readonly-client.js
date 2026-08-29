@@ -280,7 +280,9 @@ function sanitizeHealth(payload) {
   const value = /** @type {Record<string, unknown>} */ (payload);
   const fields = ["globalStatus", "open", "info", "warning", "blocking", "critical", "generatedAt", "database", "workspaceCallbacks", "pendingOutbox", "lastMexalSuccess", "lastMexalError", "receiveRdp", "receiveDecisions", "executeProduction", "createLots"];
   if (fields.some((field) => !(field in value))) return null;
-  return Object.fromEntries(fields.map((field) => [field, value[field]]));
+  return { ...Object.fromEntries(fields.map((field) => [field, value[field]])),
+    receiveV3Previews: value.receiveV3Previews === true,
+    confirmV3Production: value.confirmV3Production === true };
 }
 
 /**

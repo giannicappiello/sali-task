@@ -278,8 +278,9 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
     productionEvents = eventResult.data || [];
   }
   let sentSnapshot = null;
-  if (request?.sent_demand_snapshot_id) {
-    const result = await admin.from("workspace_production_demand_snapshots").select("snapshot,captured_at").eq("id", request.sent_demand_snapshot_id).maybeSingle();
+  const lineageSnapshotId = Number(request?.contract_version) === 3 ? request?.demand_snapshot_id : request?.sent_demand_snapshot_id;
+  if (lineageSnapshotId) {
+    const result = await admin.from("workspace_production_demand_snapshots").select("snapshot,captured_at").eq("id", lineageSnapshotId).maybeSingle();
     if (result.error) throw result.error;
     sentSnapshot = result.data;
   }
@@ -310,7 +311,7 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
     const previous = (sentSnapshot?.snapshot?.orders || []).find((item) => text(item.orderId) === text(order.id));
     return previous && text(previous.requestedDeliveryDate) !== text(order.data_consegna);
   });
-  const v2Decision = v2DecisionAvailability(request, requestItemsResult.data || []);
+  const v2Decision = null;
   let v3 = null;
   if (request) {
     const [flagsResult, previewResult] = await Promise.all([

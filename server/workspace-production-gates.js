@@ -25,9 +25,12 @@ export function productionGoLiveGates(health, env = globalThis.process.env) {
     receiveDecisions: health?.receiveDecisions === true,
     executeProduction: health?.executeProduction === true,
     createLots: health?.createLots === true,
+    receiveV3Previews: health?.receiveV3Previews === true,
+    confirmV3Production: health?.confirmV3Production === true,
   };
-  progremes.allOn = Object.values(progremes).every((value) => value === true);
-  return { workspace, progremes, allOn: workspace.allOn && progremes.allOn };
+  progremes.allOn = progremes.receiveV3Previews && progremes.confirmV3Production && progremes.executeProduction && progremes.createLots;
+  const previewOn = workspace.requests && workspace.endpointConfigured && workspace.authenticationConfigured && progremes.receiveV3Previews;
+  return { workspace, progremes, previewOn, allOn: workspace.allOn && progremes.allOn };
 }
 
 export function decorateProductionHealth(health, env = globalThis.process.env) {

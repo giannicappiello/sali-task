@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createFormulaDemand } from "./workspacemes-v3-api.js";
 
-test("il contratto formula invia a MES codice e quantità senza UDM articolo FP Mexal", () => {
+test("il contratto formula invia prodotto finito, codice FP e quantità senza UDM FP Mexal", () => {
   const demand = createFormulaDemand({
     component: {
       workspaceLineId: "00000000-0000-4000-8000-000000000001",
@@ -10,12 +10,13 @@ test("il contratto formula invia a MES codice e quantità senza UDM articolo FP 
       requiredQuantity: 125.5,
       unitOfMeasure: "MES_MANAGED",
     },
-    sources: [{ order_line_id: "00000000-0000-4000-8000-000000000001", oct_revision: 4 }],
+    sources: [{ order_line_id: "00000000-0000-4000-8000-000000000001", finished_article_code: "CW0001", oct_revision: 4 }],
     requestId: "00000000-0000-4000-8000-000000000010",
   });
 
   assert.deepEqual(demand, {
     workspaceLineId: "00000000-0000-4000-8000-000000000001",
+    finishedArticleCode: "CW0001",
     fpCode: "FP120C",
     quantity: 125.5,
     octRevision: 4,

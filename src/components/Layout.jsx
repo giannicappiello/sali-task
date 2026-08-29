@@ -36,8 +36,7 @@ const baseMenuItems = [
   { path: "/ordini-prof", label: "Ordini PR", icon: ShoppingCart, permission: "orders.read", special: "orders_pr", module: "ordini_pr" },
   { path: "/ordini-ph", label: "Ordini PH", icon: ShoppingCart, permission: "orders.read", special: "orders_ph", module: "ordini_ph" },
   { path: "/products", label: "Prodotti", icon: Package, module: "prodotti" },
-  { path: "/magazzino", label: "Magazzino", icon: Warehouse, module: "magazzino" },
-  { path: "/magazzino-dashboard", label: "Dashboard magazzino", icon: BarChart3, module: "magazzino" },
+  { path: "/magazzino-dashboard", label: "Magazzino", icon: Warehouse, module: "magazzino" },
   { path: "/documentation", label: "Documenti", icon: FileArchive, module: "documenti" },
   { path: "/assistente-ai", label: "Assistente AI", icon: Bot, module: "assistente_ai" },
   { path: "/progremes", label: "ProgreMES APS", icon: Factory, module: "progremes" },
@@ -211,15 +210,10 @@ function Layout() {
       order: module.ordine,
     })).filter((item) => item.path);
     const productionItem = baseMenuItems.find((item) => item.path === "/produzione");
-    const warehouseDashboardItem = baseMenuItems.find((item) => item.path === "/magazzino-dashboard");
     const progremesIndex = configured.findIndex((item) => item.module === "progremes");
     const withProduction = [...configured];
     if (!withProduction.some((item) => item.path === "/produzione")) {
       withProduction.splice(progremesIndex >= 0 ? progremesIndex + 1 : withProduction.length, 0, productionItem);
-    }
-    if (warehouseDashboardItem && !withProduction.some((item) => item.path === "/magazzino-dashboard")) {
-      const warehouseIndex = withProduction.findIndex((item) => item.module === "magazzino");
-      withProduction.splice(warehouseIndex >= 0 ? warehouseIndex + 1 : withProduction.length, 0, warehouseDashboardItem);
     }
     if (settingsItem && !withProduction.some((item) => item.module === "impostazioni")) withProduction.push(settingsItem);
     const canonicalSettings = withProduction.find((item) => item.module === "impostazioni");

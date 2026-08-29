@@ -18,7 +18,6 @@ const Home = lazy(() => import("./pages/Home/Home"));
 const ActivitiesModule = lazy(() => import("./pages/Activities/ActivitiesModule"));
 const Agenda = lazy(() => import("./pages/Agenda/Agenda"));
 const Products = lazy(() => import("./pages/Products/Products"));
-const Warehouse = lazy(() => import("./pages/Warehouse/Warehouse"));
 const WarehouseDashboard = lazy(() => import("./pages/Warehouse/WarehouseDashboard"));
 const Documentation = lazy(() => import("./pages/Documentation/Documentation"));
 const ManualiUso = lazy(() => import("./pages/Documentation/ManualiUso"));
@@ -104,7 +103,7 @@ function App() {
               <Route path="tasks" element={<Navigate to="/activities/tasks" replace />} />
               <Route path="projects" element={<Navigate to="/activities/projects" replace />} />
               <Route path="products" element={<Products />} />
-              <Route path="magazzino" element={<WorkspaceAccessGuard moduleCode="magazzino"><Warehouse /></WorkspaceAccessGuard>} />
+              <Route path="magazzino" element={<Navigate to="/magazzino-dashboard" replace />} />
               <Route path="magazzino-dashboard" element={<WorkspaceAccessGuard moduleCode="magazzino"><WarehouseDashboard /></WorkspaceAccessGuard>} />
               <Route path="documentation" element={<Documentation />} />
               <Route path="manuali-uso" element={<WorkspaceAccessGuard moduleCode="manuali_uso"><ManualiUso /></WorkspaceAccessGuard>} />

@@ -180,10 +180,10 @@ test("una RdP con un solo OCT conserva tutte le sue righe articolo", async () =>
   assert.deepEqual(demand.items.map((item) => item.mexalLinePosition), [10, 30]);
 });
 
-test("contratto dichiara ProgreMES master della nettificazione", async () => {
+test("contratto V3 separa nettificazione DIRECT Workspace e FP ProgreMES", async () => {
   const demand = await buildProductionDemand({ admin: makeAdmin(), orderIds: [ORDERS[0].id] });
   const contract = productionDemandContract(demand);
-  assert.equal(contract.items[0].nettingOwner, "PROGREMES");
+  assert.equal(contract.items[0].nettingOwner, "WORKSPACE_DIRECT_AND_PROGREMES_FP");
   assert.equal(contract.items[0].workspaceAvailabilityAuthoritative, false);
   assert.equal(JSON.stringify(contract).includes("quantityToProduce"), false);
   assert.equal(JSON.stringify(contract).includes("availableFinishedProduct"), false);
@@ -204,7 +204,7 @@ test("preview registra solo snapshot della domanda e non crea una RdP", async ()
   assert.equal(rpcArgs.p_snapshot.availability.included, false);
 });
 
-test("invio usa stessa RdP, schema v2 e quantità OCT complete", async () => {
+test("il client V2 legacy isolato conserva il proprio schema", async () => {
   let outbound;
   let responseRpc;
   const recorder = responseRecorder();

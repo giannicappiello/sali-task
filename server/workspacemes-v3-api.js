@@ -10,27 +10,27 @@ const ensure = (result) => { if (result.error) throw result.error; return result
 
 export async function workspaceV3FinishedArticleCodes(admin, requestId) {
   const requests = ensure(await admin.from("workspace_production_requests")
-    .select("sent_demand_snapshot_id").eq("id", requestId).limit(1));
-  if (!requests[0]?.sent_demand_snapshot_id) throw fail("La RdP v2 inviata è necessaria per il lineage V3.", "V3_RDP_REQUIRED");
+    .select("contract_version,demand_snapshot_id").eq("id", requestId).limit(1));
+  if (!requests[0]?.demand_snapshot_id || Number(requests[0].contract_version) !== 3) throw fail("La RdP V3 è necessaria per il lineage produttivo.", "V3_RDP_REQUIRED");
   const snapshots = ensure(await admin.from("workspace_production_demand_snapshots")
-    .select("snapshot").eq("id", requests[0].sent_demand_snapshot_id).limit(1));
+    .select("snapshot").eq("id", requests[0].demand_snapshot_id).limit(1));
   const items = snapshots[0]?.snapshot?.items;
-  if (!Array.isArray(items) || !items.length) throw fail("Snapshot domanda v2 incompleto.", "V3_DEMAND_REQUIRED");
+  if (!Array.isArray(items) || !items.length) throw fail("Snapshot domanda V3 incompleto.", "V3_DEMAND_REQUIRED");
   return [...new Set(items.map((item) => upper(item.commercialArticleCode)).filter(Boolean))];
 }
 
 async function loadPreviewInputs(admin, requestId) {
   const requestRows = ensure(await admin.from("workspace_production_requests")
-    .select("id,external_id,contract_version,sent_demand_snapshot_id,workspace_status,stato")
+    .select("id,external_id,contract_version,demand_snapshot_id,workspace_status,stato")
     .eq("id", requestId).limit(1));
   const request = requestRows[0];
-  if (!request?.sent_demand_snapshot_id || Number(request.contract_version) !== 2)
-    throw fail("La RdP v2 inviata è necessaria per il lineage V3.", "V3_RDP_REQUIRED");
+  if (!request?.demand_snapshot_id || Number(request.contract_version) !== 3)
+    throw fail("La RdP V3 è necessaria per il lineage produttivo.", "V3_RDP_REQUIRED");
   const snapshotRows = ensure(await admin.from("workspace_production_demand_snapshots")
-    .select("snapshot,captured_at").eq("id", request.sent_demand_snapshot_id).limit(1));
+    .select("snapshot,captured_at").eq("id", request.demand_snapshot_id).limit(1));
   const demand = snapshotRows[0]?.snapshot;
   if (!Array.isArray(demand?.items) || !demand.items.length || !Array.isArray(demand?.orders) || !demand.orders.length)
-    throw fail("Snapshot domanda v2 incompleto.", "V3_DEMAND_REQUIRED");
+    throw fail("Snapshot domanda V3 incompleto.", "V3_DEMAND_REQUIRED");
 
   const articleCodes = [...new Set(demand.items.map((item) => upper(item.commercialArticleCode)).filter(Boolean))];
   const bomRevisions = ensure(await admin.from("workspace_finished_bom_revisions").select("*")
@@ -83,11 +83,14 @@ function bomFor(revision, lines) {
 }
 
 export function createFormulaDemand({ component, sources, requestId }) {
+  const source = sources.find((item) => clean(item.order_line_id) === clean(component.workspaceLineId));
+  if (!source?.finished_article_code) throw fail(`Lineage prodotto finito mancante per ${component.articleCode}.`, "V3_FINISHED_LINEAGE_MISSING");
   return {
     workspaceLineId: component.workspaceLineId,
+    finishedArticleCode: source?.finished_article_code,
     fpCode: component.articleCode,
     quantity: component.requiredQuantity,
-    octRevision: sources.find((source) => clean(source.order_line_id) === clean(component.workspaceLineId))?.oct_revision || 1,
+    octRevision: source?.oct_revision || 1,
     rdpRevision: clean(requestId),
   };
 }
@@ -195,21 +198,23 @@ export async function confirmWorkspaceV3({ admin, previewId, reason, requestedBy
   const previews = ensure(await admin.from("workspace_v3_previews").select("*").eq("id", previewId).limit(1));
   const preview = previews[0];
   if (!preview || preview.status !== "READY") throw fail("Preview V3 non confermabile.", "V3_PREVIEW_NOT_READY");
-  const requests = ensure(await admin.from("workspace_production_requests").select("id,external_id,sent_demand_snapshot_id")
+  const requests = ensure(await admin.from("workspace_production_requests").select("id,external_id,demand_snapshot_id")
     .eq("id", preview.production_request_id).limit(1));
   const request = requests[0];
   const [items, snapshots] = await Promise.all([
     admin.from("workspace_production_request_items").select("mes_payload").eq("production_request_id", request.id),
-    admin.from("workspace_production_demand_snapshots").select("snapshot").eq("id", request.sent_demand_snapshot_id).limit(1),
+    admin.from("workspace_production_demand_snapshots").select("snapshot").eq("id", request.demand_snapshot_id).limit(1),
   ]);
   const itemRows = ensure(items); const snapshotRows = ensure(snapshots);
   const analysisHashes = itemRows.map((row) => clean(row.mes_payload?.snapshotHash)).filter(Boolean);
   const octHashes = (snapshotRows[0]?.snapshot?.orders || []).map((order) => clean(order.versionHash)).filter(Boolean);
-  if (!analysisHashes.length || !octHashes.length) throw fail("Hash analisi v2 necessari alla conferma V3 mancanti.", "V3_ANALYSIS_HASH_MISSING");
+  const previewAnalysisHashes = (preview.snapshot?.components || []).map((row) => clean(row.formulaSnapshotHash)).filter(Boolean);
+  const effectiveAnalysisHashes = analysisHashes.length ? analysisHashes : previewAnalysisHashes;
+  if (!effectiveAnalysisHashes.length || !octHashes.length) throw fail("Hash certificati V3 necessari alla conferma mancanti.", "V3_ANALYSIS_HASH_MISSING");
   const externalId = randomUUID();
   const command = { contractVersion: 3, externalId, previewExternalId: preview.external_id,
     idempotencyKey: confirmationIdempotencyKey({ previewHash: preview.preview_hash }), expectedPreviewHash: preview.snapshot?.mes?.snapshotHash,
-    expectedAnalysisHash: aggregateWorkspaceHashes(analysisHashes), expectedOctVersionHash: aggregateWorkspaceHashes(octHashes),
+    expectedAnalysisHash: aggregateWorkspaceHashes(effectiveAnalysisHashes), expectedOctVersionHash: aggregateWorkspaceHashes(octHashes),
     reason: clean(reason), decidedBy: `workspace:${requestedBy || "service"}`, correlationId: preview.correlation_id,
     causationId: preview.external_id };
   const mes = await client.confirmV3(request.external_id, command);

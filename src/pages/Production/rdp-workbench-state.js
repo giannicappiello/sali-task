@@ -31,7 +31,8 @@ export function diagnosticCanBeArchived(diagnostic = {}) {
 }
 
 export function v3RecalculationFailure(payload = {}) {
-  if (String(payload?.status || "").toUpperCase() !== "BLOCKED") return null;
+  const previewStatus = payload?.previewStatus || payload?.workspaceStatus || payload?.status;
+  if (String(previewStatus || "").toUpperCase() !== "BLOCKED") return null;
   const components = Array.isArray(payload?.components) ? payload.components : [];
   const codes = [...new Set(components
     .map((component) => String(component?.blockerCode || component?.blocker_code || "").trim())

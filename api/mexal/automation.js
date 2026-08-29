@@ -671,7 +671,10 @@ export default async function handler(req, res) {
             updated_at: new Date().toISOString(),
           }).eq("id", requestId);
           if (updateError) throw updateError;
-          return sendSuccess(res, 200, v3Preview);
+          return sendSuccess(res, 200, {
+            ...v3Preview,
+            previewStatus: v3Preview.status,
+          });
         } catch (previewError) {
           await admin.supabase.from("workspace_production_requests").update({
             stato: "BLOCKED",

@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { activeOctLines, diagnosticBlocks, diagnosticMatchesWorkbenchLine, requestStage, resolveWorkbenchOctUnit, resolveWorkbenchUnits, v2DecisionAvailability, visibleDiagnostic, workbenchBomComponent, workbenchDetailLines, workbenchLineMappingStatus } from "./workspacemes-workbench.js";
+
+test("il dettaglio Workbench legge la data reale della revisione distinta", async () => {
+  const source = await readFile(new URL("./workspacemes-workbench.js", import.meta.url), "utf8");
+  assert.match(source, /workspace_finished_bom_revisions[\s\S]*unit_of_measure,effective_from/);
+  assert.match(source, /capturedAt:\s*revision\.effective_from/);
+  assert.doesNotMatch(source, /workspace_finished_bom_revisions[\s\S]{0,250}unit_of_measure,captured_at/);
+});
 
 test("una RdP annullata è storico e non resta tra i bloccati", () => {
   assert.equal(requestStage({ workspace_status: "Cancelled" }), "history");

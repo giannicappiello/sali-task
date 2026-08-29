@@ -98,7 +98,7 @@ async function loadCurrentFinishedBoms(admin, lines) {
   const codes = [...new Set((lines || []).filter((line) => line?.riga_descrittiva !== true)
     .map((line) => text(line.codice_articolo).toUpperCase()).filter(Boolean))];
   if (!codes.length) return new Map();
-  const revisionsResult = await admin.from("workspace_finished_bom_revisions").select("id,finished_article_code,revision,source_hash,base_quantity,unit_of_measure,captured_at")
+  const revisionsResult = await admin.from("workspace_finished_bom_revisions").select("id,finished_article_code,revision,source_hash,base_quantity,unit_of_measure,effective_from")
     .in("finished_article_code", codes).eq("is_current", true);
   if (revisionsResult.error) throw revisionsResult.error;
   const revisions = revisionsResult.data || [];
@@ -115,7 +115,7 @@ async function loadCurrentFinishedBoms(admin, lines) {
     sourceHash: revision.source_hash,
     baseQuantity: number(revision.base_quantity),
     unitOfMeasure: revision.unit_of_measure,
-    capturedAt: revision.captured_at,
+    capturedAt: revision.effective_from,
     components: componentsByRevision.get(revision.id) || [],
   }]));
 }

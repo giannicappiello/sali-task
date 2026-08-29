@@ -42,3 +42,23 @@ export function v3RecalculationFailure(payload = {}) {
     message: "La preview è stata elaborata, ma contiene blocchi e non può essere confermata.",
   };
 }
+
+export function v3RecalculationOutcomeFailure(response = {}, refreshedDetail = {}) {
+  const persisted = {
+    status: refreshedDetail?.v3?.preview?.status,
+    components: refreshedDetail?.v3?.components,
+  };
+  const knownFailure = v3RecalculationFailure(response) || v3RecalculationFailure(persisted);
+  if (knownFailure) return knownFailure;
+
+  const status = String(persisted.status || response?.previewStatus || response?.workspaceStatus || "").toUpperCase();
+  if (status === "READY") return null;
+  const components = Array.isArray(persisted.components) ? persisted.components : [];
+  const codes = [...new Set(components
+    .map((component) => String(component?.blockerCode || component?.blocker_code || "").trim())
+    .filter(Boolean))];
+  return {
+    code: codes.join(" · ") || (status ? `V3_PREVIEW_${status}` : "V3_PREVIEW_STATUS_UNKNOWN"),
+    message: "Il ricalcolo non ha prodotto una preview READY e la RdP non può proseguire.",
+  };
+}

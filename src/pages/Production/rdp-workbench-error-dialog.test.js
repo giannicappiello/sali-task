@@ -10,9 +10,7 @@ test("il Workbench mostra un alertdialog quando ricalcolo, creazione o conferma 
   assert.match(source, /role="alertdialog"/);
   assert.match(source, /RdP non andata a buon fine/);
   assert.match(source, /Errore: \{failure\.code/);
-  assert.match(source, /v3RecalculationFailure\(response\)/);
-  assert.match(source, /refreshedDetail\?\.v3\?\.preview\?\.status/);
-  assert.match(source, /components: refreshedDetail\?\.v3\?\.components/);
+  assert.match(source, /v3RecalculationOutcomeFailure\(response, refreshedDetail\)/);
   assert.match(source, /setRdpFailure\(\{ code: e\.code \|\| "V3_PREVIEW_FAILED"/);
   assert.match(css, /\.rdp-error-dialog/);
   assert.match(css, /\.rdp-error-summary/);

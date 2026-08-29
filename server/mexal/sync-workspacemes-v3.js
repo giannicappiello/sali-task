@@ -14,6 +14,7 @@ export const MEXAL_V3_CONTRACT = Object.freeze({
 
 const clean = (value) => String(value ?? "").trim();
 const upper = (value) => clean(value).toUpperCase();
+const SUPABASE_PAGE_SIZE = 1000;
 const number = (value) => {
   if (typeof value === "string" && value.includes(",")) value = value.replace(/\./g, "").replace(",", ".");
   const parsed = Number(value);
@@ -152,22 +153,31 @@ export function normalizeSupplierOrders({ headers, lines, articlesByCode, suppli
   return normalized.sort((a, b) => a.line_external_key.localeCompare(b.line_external_key));
 }
 
-async function loadArticleMap(supabase) {
-  const [cacheResult, activeResult, warehouseResult] = await Promise.all([
-    supabase.from("ordini_prodotti_cache").select("codice_articolo,descrizione,unita_misura,dati_mexal"),
-    supabase.from("prodotti").select("codice_mexal,attivo,attivo_mexal"),
-    supabase.from("workspace_warehouse_stock").select("article_code,unit_of_measure").eq("is_current", true),
+async function pagedSupabaseRows(queryFactory) {
+  const rows = [];
+  for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
+    const { data, error } = await queryFactory().range(offset, offset + SUPABASE_PAGE_SIZE - 1);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < SUPABASE_PAGE_SIZE) return rows;
+  }
+}
+
+export async function loadArticleMap(supabase) {
+  const [cacheRows, activeRows, warehouseRows] = await Promise.all([
+    pagedSupabaseRows(() => supabase.from("ordini_prodotti_cache").select("codice_articolo,descrizione,unita_misura,dati_mexal")),
+    pagedSupabaseRows(() => supabase.from("prodotti").select("codice_mexal,attivo,attivo_mexal")),
+    pagedSupabaseRows(() => supabase.from("workspace_warehouse_stock").select("article_code,unit_of_measure").eq("is_current", true)),
   ]);
-  if (cacheResult.error || activeResult.error || warehouseResult.error) throw cacheResult.error || activeResult.error || warehouseResult.error;
-  const activeByCode = new Map((activeResult.data || []).map((row) => [upper(row.codice_mexal), row.attivo !== false && row.attivo_mexal !== false]));
+  const activeByCode = new Map(activeRows.map((row) => [upper(row.codice_mexal), row.attivo !== false && row.attivo_mexal !== false]));
   const warehouseUnits = new Map();
-  for (const row of warehouseResult.data || []) {
+  for (const row of warehouseRows) {
     const code = upper(row.article_code); const unit = upper(row.unit_of_measure);
     if (!code || !unit) continue;
     if (!warehouseUnits.has(code)) warehouseUnits.set(code, new Set());
     warehouseUnits.get(code).add(unit);
   }
-  const rowsByCode = new Map((cacheResult.data || []).map((row) => [upper(row.codice_articolo), row]));
+  const rowsByCode = new Map(cacheRows.map((row) => [upper(row.codice_articolo), row]));
   for (const code of warehouseUnits.keys()) if (!rowsByCode.has(code)) rowsByCode.set(code, { codice_articolo: code, descrizione: null, unita_misura: null, dati_mexal: {} });
   return new Map([...rowsByCode].map(([code, row]) => {
     const units = [...(warehouseUnits.get(code) || [])];

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const migrationUrl = new URL("../supabase/migrations/20260828120000_workspacemes_v3_end_to_end.sql", import.meta.url);
+const previewAmbiguityMigrationUrl = new URL("../supabase/migrations/20260829223000_fix_workspace_v3_preview_id_ambiguity.sql", import.meta.url);
 
 test("migration V3 è additiva, fail-closed e preserva v1/v2", async () => {
   const sql = await readFile(migrationUrl, "utf8");
@@ -22,4 +23,13 @@ test("migration V3 è additiva, fail-closed e preserva v1/v2", async () => {
   assert.doesNotMatch(sql, /drop\s+(?:table|column|schema)/i);
   assert.doesNotMatch(sql, /delete\s+from/i);
   assert.doesNotMatch(sql, /update\s+public\.workspace_production_/i);
+});
+
+test("persist preview V3 qualifica preview_id e gli altri nomi collidenti", async () => {
+  const sql = await readFile(previewAmbiguityMigrationUrl, "utf8");
+  assert.match(sql, /preview_component\.preview_id\s*=\s*v_preview\.id/);
+  assert.match(sql, /preview_component\.component_kind\s*=\s*'FORMULA_COMPONENT'/);
+  assert.match(sql, /preview_component\.bom_line_id\s*=\s*\(v_item->>'bomLineId'\)::bigint/);
+  assert.doesNotMatch(sql, /\bwhere\s+preview_id\s*=\s*v_preview\.id/i);
+  assert.match(sql, /grant execute on function public\.persist_workspace_v3_preview[\s\S]*to service_role/i);
 });

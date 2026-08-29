@@ -648,21 +648,40 @@ export default async function handler(req, res) {
       case "workspacemes_v3_preview": {
         const admin = await createAdmin(req, "rdp.create");
         const requestId = String(body.requestId || "").trim();
-        const finishedArticleCodes = await workspaceV3FinishedArticleCodes(admin.supabase, requestId);
-        // The V3 preview must use the current authoritative Mexal BOM and
-        // supplier-order snapshots.  Keeping this in the normal preview path
-        // avoids the unsafe operational dependency on the admin-only manual
-        // sync action while preserving the append-only preview semantics.
-        await syncWorkspaceV3MexalContracts({
-          mexal: buildMexalClient(),
-          supabase: admin.supabase,
-          finishedArticleCodes,
-        });
-        return sendSuccess(res, 200, await createWorkspaceV3Preview({
-          admin: admin.supabase,
-          requestId,
-          requestedBy: admin.authUserId,
-        }));
+        try {
+          const finishedArticleCodes = await workspaceV3FinishedArticleCodes(admin.supabase, requestId);
+          // The V3 preview must use the current authoritative Mexal BOM and
+          // supplier-order snapshots. Keeping this in the normal preview path
+          // preserves the append-only preview semantics.
+          await syncWorkspaceV3MexalContracts({
+            mexal: buildMexalClient(),
+            supabase: admin.supabase,
+            finishedArticleCodes,
+          });
+          const v3Preview = await createWorkspaceV3Preview({
+            admin: admin.supabase,
+            requestId,
+            requestedBy: admin.authUserId,
+          });
+          const { error: updateError } = await admin.supabase.from("workspace_production_requests").update({
+            stato: v3Preview.status,
+            workspace_status: v3Preview.status,
+            last_error_code: null,
+            last_response: { contractVersion: 3, previewId: v3Preview.preview_id, status: v3Preview.status },
+            updated_at: new Date().toISOString(),
+          }).eq("id", requestId);
+          if (updateError) throw updateError;
+          return sendSuccess(res, 200, v3Preview);
+        } catch (previewError) {
+          await admin.supabase.from("workspace_production_requests").update({
+            stato: "BLOCKED",
+            workspace_status: "BLOCKED",
+            last_error_code: previewError.code || "V3_PREVIEW_FAILED",
+            last_response: { contractVersion: 3, error: previewError.message, code: previewError.code || "V3_PREVIEW_FAILED" },
+            updated_at: new Date().toISOString(),
+          }).eq("id", requestId);
+          throw previewError;
+        }
       }
       case "workspacemes_v3_confirm": {
         const admin = await createAdmin(req, "rdp.decide");

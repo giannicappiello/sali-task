@@ -92,6 +92,21 @@ function AnalysisGrid({ analysis, proposal }) {
   return <div className="rdp-analysis-grid">{fields.map(([label, keys]) => { const value = keys.map((key) => source[key]).find((item) => item !== undefined && item !== null && item !== ""); return <div key={label}><span>{label}</span><strong>{typeof value === "boolean" ? (value ? "Sì" : "No") : value ?? "—"}</strong></div>; })}</div>;
 }
 
+function FinishedBomDetails({ bom }) {
+  return <section className="rdp-bom-detail">
+    <header><div><h3>Distinta base articolo finito</h3><p>Revisione {bom.revision} · origine Mexal</p></div><span>{bom.components.length} componenti</span></header>
+    <div className="rdp-bom-components">{bom.components.map((component) => {
+      const formula = component.componentKind === "FORMULA_COMPONENT";
+      return <article key={component.id || `${component.lineNumber}:${component.articleCode}`}>
+        <span className="rdp-bom-position">{component.lineNumber ?? "—"}</span>
+        <span><strong>{component.articleCode}</strong><small>{component.description || (formula ? "Formula ProgreMES" : "Componente diretto")}</small></span>
+        <span><strong>{formatQuantity(component.requiredQuantity)} {component.unitOfMeasure === "MES_MANAGED" ? "UDM MES" : component.unitOfMeasure}</strong><small>{formula ? "Formula FP" : "Componente diretto"}</small></span>
+        {badge(component.status, formula ? "neutral" : "green")}
+      </article>;
+    })}</div>
+  </section>;
+}
+
 function V3Panel({ v3, canDecide, busy, onPreview, onConfirm }) {
   if (!v3) return null;
   const preview = v3.preview;
@@ -133,7 +148,7 @@ function DiagnosticActionDialog({ diagnostic, busy, canManage, onClose, onApply 
 
 function DetailPanel({ detail, onClose, onDiagnostics, canDecide, canCancel, onDecision, onRetry, onCancel, onV3Preview, onV3Confirm, busy }) {
   const hasV3Preview = Boolean(detail?.v3?.preview);
-  const outcomeLine = detail?.lines?.find((line) => !line.descriptive && !hasV3Preview && (blocking(line.diagnostics) || /BLOCKED|TO_RESOLVE/.test(String(line.mesStatus || line.mappingStatus || "").toUpperCase())));
+  const outcomeLine = detail?.lines?.find((line) => !line.descriptive && !line.finishedBom?.components?.length && !hasV3Preview && (blocking(line.diagnostics) || /BLOCKED|TO_RESOLVE/.test(String(line.mesStatus || line.mappingStatus || "").toUpperCase())));
   const [openLine, setOpenLine] = useState(outcomeLine?.id || detail?.lines?.[0]?.id || null);
   if (!detail) return null;
   return <div className="rdp-detail-backdrop" role="presentation" onMouseDown={onClose}><section className="rdp-detail" role="dialog" aria-modal="true" aria-label="Dettaglio RdP e OCT" onMouseDown={(event) => event.stopPropagation()}>
@@ -141,17 +156,17 @@ function DetailPanel({ detail, onClose, onDiagnostics, canDecide, canCancel, onD
     {detail.request && <div className="rdp-request-meta"><span>Stato {badge(detail.request.workspace_status || detail.request.stato, detail.request.stage === "blocked" ? "red" : "blue")}</span><span>Creata {formatDate(detail.request.created_at, true)}</span><span>Tentativi {detail.request.attempt_count ?? 0}</span><span>Contratto v{detail.request.contract_version || 2}</span>{!detail.request.sent_demand_snapshot_id && String(detail.request.workspace_status || detail.request.stato).toUpperCase() !== "CANCELLED" ? <button type="button" className="secondary-action" onClick={onRetry} disabled={busy}>{busy ? "Retry in corso…" : "Riprendi invio RdP"}</button> : null}{detail.cancellation?.allowed && <button type="button" className="rdp-cancel-action" onClick={onCancel} disabled={busy || !canCancel}><Ban size={16}/>Annulla RdP</button>}{detail.cancellation?.allowed && !canCancel && <small>Permesso rdp.cancel richiesto.</small>}</div>}
     {detail.request?.last_error_code && <div className="rdp-revision-alert"><AlertTriangle/><div><strong>ULTIMO INVIO NON RIUSCITO · {detail.request.last_error_code}</strong><p>La RdP è conservata senza duplicazioni. Consultare il Centro Diagnostico prima di un nuovo tentativo.</p></div></div>}
     {detail.revision?.modified && <div className="rdp-revision-alert"><AlertTriangle/><div><strong>OCT MODIFICATO IN MEXAL</strong><p>Aggiunte {detail.revision.added.length} · rimosse {detail.revision.removed.length} · quantità/UDM modificate {detail.revision.changed.length} · consegna {detail.revision.deliveryChanged ? "modificata" : "invariata"}.</p><small>Le opzioni “mantieni pianificazione + delta” e “integra e ripianifica” saranno abilitate soltanto quando esposte dal contratto MES.</small></div></div>}
-    <div className="rdp-line-list">{detail.lines.map((line) => <article key={line.id} className={line.descriptive ? "rdp-line descriptive" : "rdp-line"}>
+    <div className="rdp-line-list">{detail.lines.map((line) => { const hasFinishedBom = Boolean(line.finishedBom?.components?.length); return <article key={line.id} className={line.descriptive ? "rdp-line descriptive" : "rdp-line"}>
       <button type="button" className="rdp-line-summary" onClick={() => setOpenLine(openLine === line.id ? null : line.id)}>
         <span className="rdp-position">{line.position ?? "—"}</span><span><strong>{line.descriptive ? "Riga descrittiva" : line.articleCode}</strong><small>{line.description || "—"}</small></span>
         <span>{line.descriptive ? <><strong>Non produttiva</strong><small>Nessuna quantità da elaborare</small></> : <><strong>{line.quantity ?? "—"} {line.octUom || ""}</strong><small>UDM produzione {line.productionUom || "da risolvere"}</small></>}</span>
-        {line.descriptive ? badge("OK · NON PRODUTTIVA", "green") : hasV3Preview ? badge("V3 · DISTINTA ESPLOSA", "green") : badge(line.mesStatus || line.mappingStatus, blocking(line.diagnostics) ? "red" : "neutral")}<ChevronRight size={18} />
+        {line.descriptive ? badge("OK · NON PRODUTTIVA", "green") : hasFinishedBom ? badge(hasV3Preview ? "V3 · DISTINTA ESPLOSA" : "DISTINTA ESPLOSA", "green") : badge(line.mesStatus || line.mappingStatus, blocking(line.diagnostics) ? "red" : "neutral")}<ChevronRight size={18} />
       </button>
       {openLine === line.id && <div className="rdp-line-body">
         <div className="rdp-commercial"><h3>Dati commerciali OCT</h3><dl><div><dt>Posizione Mexal</dt><dd>{line.position ?? "—"}</dd></div><div><dt>Quantità completa</dt><dd>{line.descriptive ? "Non applicabile" : `${line.quantity ?? "—"} ${line.octUom || ""}`}</dd></div><div><dt>ProductionUom</dt><dd>{line.descriptive ? "Non applicabile" : line.productionUom || "da risolvere in MES"}</dd></div><div><dt>Conversione</dt><dd>{line.descriptive ? "Non applicabile" : line.conversion ? `${line.conversion.factor} · ${line.conversion.source}` : "Nessuna"}</dd></div></dl></div>
-        {line.descriptive ? <div className="rdp-descriptive-ok"><CheckCircle2/><div><strong>Riga esclusa correttamente</strong><p>Testo informativo Mexal: non richiede mapping, UDM, analisi MES o lavorazione produttiva.</p></div></div> : hasV3Preview ? <div className="rdp-descriptive-ok"><CheckCircle2/><div><strong>Distinta prodotto finito elaborata</strong><p>Workspace ha esploso la distinta Mexal. I componenti DIRECT e gli FP analizzati da ProgreMES sono riportati nel ricalcolo V3.</p></div></div> : <><div className="rdp-mes"><h3>Analisi produttiva MES</h3><AnalysisGrid analysis={line.mesAnalysis} proposal={line.proposal} /></div><Diagnostics rows={line.diagnostics} onOpen={onDiagnostics} /></>}
+        {line.descriptive ? <div className="rdp-descriptive-ok"><CheckCircle2/><div><strong>Riga esclusa correttamente</strong><p>Testo informativo Mexal: non richiede mapping, UDM, analisi MES o lavorazione produttiva.</p></div></div> : hasFinishedBom ? <FinishedBomDetails bom={line.finishedBom} /> : hasV3Preview ? <div className="rdp-descriptive-ok"><CheckCircle2/><div><strong>Distinta prodotto finito elaborata</strong><p>Workspace ha esploso la distinta Mexal. I componenti DIRECT e gli FP analizzati da ProgreMES sono riportati nel ricalcolo V3.</p></div></div> : <><div className="rdp-mes"><h3>Analisi produttiva MES</h3><AnalysisGrid analysis={line.mesAnalysis} proposal={line.proposal} /></div><Diagnostics rows={line.diagnostics} onOpen={onDiagnostics} /></>}
       </div>}
-    </article>)}</div>
+    </article>; })}</div>
     {detail.request && canDecide && detail.lines.some((line) => line.proposal && !line.proposal.confirmation_external_id) && <section className="rdp-decisions"><h3>Decisioni operatore disponibili</h3><p>Il backend attuale espone la pianificazione completa. Le altre decisioni saranno mostrate solo quando disponibili nel contratto MES.</p>{detail.lines.filter((line) => line.proposal && !line.proposal.confirmation_external_id).map((line) => <button type="button" className="primary-action" key={line.proposal.id} onClick={() => onDecision(line)}><Factory size={16}/>Pianificazione completa · {line.articleCode}</button>)}</section>}
     {detail.request && canDecide && detail.v2Decision?.available && <section className="rdp-decisions"><h3>Decisione operatore richiesta</h3><p>L’analisi produttiva v2 è completa e senza blocchi. La conferma creerà gli ordini di produzione attraverso il normale contratto ProgreMES.</p><button type="button" className="primary-action" onClick={() => onDecision({ kind: "v2", request: detail.request })}><Factory size={16}/>Genera ordini di produzione</button></section>}
     {detail.request && <V3Panel v3={detail.v3} canDecide={canDecide} busy={busy} onPreview={onV3Preview} onConfirm={onV3Confirm}/>}

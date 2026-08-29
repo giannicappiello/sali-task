@@ -72,6 +72,8 @@ test("ordini fornitore conservano chiavi reali, scadenza riga e ricevuto non esp
 test("la sincronizzazione preview può essere limitata agli articoli finiti della RdP", async () => {
   const source = await import("node:fs/promises").then(({ readFile }) => readFile(new URL("./sync-workspacemes-v3.js", import.meta.url), "utf8"));
   assert.match(source, /finishedArticleCodes = null/);
+  assert.match(source, /includeSupplierOrders = true/);
+  assert.match(source, /if \(!includeSupplierOrders\)/);
   assert.match(source, /targetFinishedCodes\.has\(upper\(row\.codice\)\)/);
   assert.match(source, /relevantComponents\.has\(upper\(row\.codice_articolo\)\)/);
 });

@@ -572,7 +572,21 @@ export default async function handler(req, res) {
         const admin = await createAdmin(req, "rdp.view");
         const diagnostics = await createProgremesClient().request("diagnostics").catch(() => []);
         const effectiveDiagnostics = await effectiveWorkspaceDiagnostics({ admin: admin.supabase, diagnostics });
-        return sendSuccess(res, 200, await productionWorkbenchDetail({ admin: admin.supabase, orderId: body.orderId, requestId: body.requestId, diagnostics: effectiveDiagnostics }));
+        const initialDetail = await productionWorkbenchDetail({ admin: admin.supabase, orderId: body.orderId, requestId: body.requestId, diagnostics: effectiveDiagnostics });
+        const finishedArticleCodes = [...new Set(initialDetail.lines.filter((line) => !line.descriptive)
+          .map((line) => String(line.articleCode || "").trim().toUpperCase()).filter(Boolean))];
+        if (finishedArticleCodes.length) {
+          await syncWorkspaceV3MexalContracts({
+            mexal: buildMexalClient(),
+            supabase: admin.supabase,
+            finishedArticleCodes,
+            includeSupplierOrders: false,
+          });
+        }
+        const detail = finishedArticleCodes.length
+          ? await productionWorkbenchDetail({ admin: admin.supabase, orderId: body.orderId, requestId: body.requestId, diagnostics: effectiveDiagnostics })
+          : initialDetail;
+        return sendSuccess(res, 200, detail);
       }
       case "progremes_diagnostic_action": {
         const admin = await createAdmin(req, "diagnostics.manage");

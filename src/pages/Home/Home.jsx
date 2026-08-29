@@ -8,6 +8,7 @@ const DESCRIPTION_BY_PATH = Object.freeze({
   "/farmacie/dashboard": "Giornate promozionali, farmacie, consulenti e report.",
   "/ordini-prof": "Clienti, ordini e attività commerciali collegate a Mexal.",
   "/ordini-ph": "Clienti, ordini e attività commerciali collegate a Mexal.",
+  "/ordini-private": "Creazione e invio degli ordini cliente OCT a Mexal.",
   "/products": "Catalogo articoli attivi sincronizzato da Mexal.",
   "/magazzino": "Giacenze, disponibilità e valorizzazione economica Workspace.",
   "/documentation": "Schede tecniche, certificazioni e documentazione aziendale.",

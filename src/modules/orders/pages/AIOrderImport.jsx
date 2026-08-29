@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../../contexts/AuthContext";
 import useBackNavigation from "../../../hooks/useBackNavigation";
 import { useOrdersModule } from "../ordersModuleContext";
+import { isPrivateOrderModule, orderModuleDefinition } from "../services/orderModules";
 
 const MAX_BYTES = 2_800_000;
 const EXCEL_EXTENSIONS = new Set(["xlsx", "xls", "xlsm"]);
@@ -65,9 +66,10 @@ export default function AIOrderImport() {
   const [workbookReport, setWorkbookReport] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const workspaceModuleCode = moduleCode === "ph" ? "ordini_ph" : "ordini_pr";
+  const workspaceModuleCode = orderModuleDefinition(moduleCode).workspaceCode;
+  const privateOrder = isPrivateOrderModule(moduleCode);
   const requestedOrderType = new URLSearchParams(location.search).get("tipo") === "prenotazione" ? "prenotazione" : "standard";
-  const requestedOrderLabel = requestedOrderType === "prenotazione" ? "Ordine prenotazione" : "Nuovo ordine";
+  const requestedOrderLabel = privateOrder ? "Nuovo OCT" : requestedOrderType === "prenotazione" ? "Ordine prenotazione" : "Nuovo ordine";
 
   async function chooseFile(file) {
     setError(""); setResult(null); setOrderPreviews([]); setReviewStates([]); setWorkbookReport(null); setActiveOrder(0);
@@ -97,7 +99,7 @@ export default function AIOrderImport() {
       const states = previews.map((order) => ({
         customerCode: order.customerMatch?.status === "matched" ? order.customerMatch.proposedId || "" : "",
         lineChoices: order.lines.map((line) => ({ code: line.productMatch?.status === "matched" ? line.productMatch.proposedId || "" : "", quantity: line.quantity })),
-        orderType: order.documentType || "NON_DETERMINATO",
+        orderType: privateOrder ? "OCT" : order.documentType || "NON_DETERMINATO",
       }));
       setOrderPreviews(previews); setReviewStates(states); setWorkbookReport(extraction.workbook || null); setActiveOrder(0); setResult(previews[0]);
     } catch (requestError) {
@@ -188,7 +190,7 @@ export default function AIOrderImport() {
       </section>
       <section className="orders-panel ai-order-review">
         <h3>Tipo documento rilevato</h3>
-        <select value={orderType} onChange={(event) => updateReview({ orderType: event.target.value })}><option value="NON_DETERMINATO">Non determinato</option><option value="OCM">OCM</option><option value="OCX">OCX</option><option value="OCI">OCI · prenotazione</option></select>
+        {privateOrder ? <strong>OCT</strong> : <select value={orderType} onChange={(event) => updateReview({ orderType: event.target.value })}><option value="NON_DETERMINATO">Non determinato</option><option value="OCM">OCM</option><option value="OCX">OCX</option><option value="OCI">OCI · prenotazione</option></select>}
         <p className="orders-alert">Il tipo rilevato descrive il documento acquisito. La bozza manterrà la scelta “{requestedOrderLabel}” effettuata prima del caricamento.</p>
         {(result.warnings || []).length > 0 && <ul>{result.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}
         <button className="orders-primary" type="button" onClick={openDraft}>Apri e controlla la bozza</button>

@@ -11,6 +11,7 @@ const SCREEN_ICONS = Object.freeze({
   "integrazioni.serie_documenti": FileCog,
   "integrazioni.ordini_pr": ShoppingCart,
   "integrazioni.ordini_ph": ShoppingCart,
+  "integrazioni.ordini_private": ShoppingCart,
   "integrazioni.documentale": Archive,
   "integrazioni.progremes": Bot,
 });

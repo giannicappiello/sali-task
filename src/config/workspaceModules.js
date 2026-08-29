@@ -10,6 +10,7 @@ export const WORKSPACE_MODULES = Object.freeze({
   beauty_days: { code: "beauty_days", label: "Beauty Days", kind: "business", departmentAssignable: true, roleConfigurable: true },
   ordini_pr: { code: "ordini_pr", label: "Ordini PR", kind: "business", departmentAssignable: true, roleConfigurable: true },
   ordini_ph: { code: "ordini_ph", label: "Ordini PH", kind: "business", departmentAssignable: true, roleConfigurable: true },
+  ordini_private: { code: "ordini_private", label: "OrdiniPrivate", kind: "business", departmentAssignable: true, roleConfigurable: true },
   progremes: { code: "progremes", label: "ProgreMES APS", kind: "business", departmentAssignable: true, transitional: true },
   team: { code: "team", label: "Team", kind: "business", departmentAssignable: true, roleConfigurable: true },
   integrazioni: { code: "integrazioni", label: "Integrazioni", kind: "administration", roleConfigurable: true },

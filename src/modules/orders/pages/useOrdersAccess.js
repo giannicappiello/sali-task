@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 import { useAuth } from "../../../contexts/AuthContext";
+import { orderModuleDefinition } from "../services/orderModules";
 
 function normalizeAgentCodes(values) {
   const source = Array.isArray(values)
@@ -28,7 +29,8 @@ function emptyAccess() {
 
 export default function useOrdersAccess(moduleCode = "prof") {
   const { profile, isAdminUser, canUseModule } = useAuth();
-  const workspaceModuleCode = moduleCode === "ph" ? "ordini_ph" : "ordini_pr";
+  const moduleDefinition = orderModuleDefinition(moduleCode);
+  const workspaceModuleCode = moduleDefinition.workspaceCode;
   const [loading, setLoading] = useState(true);
   const [access, setAccess] = useState(emptyAccess());
   const [error, setError] = useState(null);
@@ -67,7 +69,7 @@ export default function useOrdersAccess(moduleCode = "prof") {
           .from("integrazioni_utenti")
           .select("enabled,ruolo_ordini")
           .eq("utente_id", profile.id)
-          .eq("modulo", moduleCode === "ph" ? "gestione_ordini_ph" : "gestione_ordini_pr")
+          .eq("modulo", moduleDefinition.integrationCode)
           .maybeSingle(),
         supabase.rpc("visible_mexal_agent_codes"),
       ]);
@@ -99,7 +101,7 @@ export default function useOrdersAccess(moduleCode = "prof") {
     return () => {
       active = false;
     };
-  }, [profile?.id, isAdminUser, moduleCode]);
+  }, [profile?.id, isAdminUser, moduleDefinition.integrationCode]);
 
   const permissions = useMemo(() => {
     const canReadModule = canUseModule(workspaceModuleCode, "lettura");

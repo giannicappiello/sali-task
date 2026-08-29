@@ -122,7 +122,7 @@ export default function Settings({ section = "team" }) {
       supabase.from("permessi").select("id,codice,descrizione").order("codice"),
       supabase.from("permessi_utente").select("utente_id,permesso_id,permessi(id,codice,descrizione)"),
       supabase.from("checklist_template_reparti").select("id,template_id,reparto_id"),
-      supabase.from("integrazioni_utenti").select("*").in("modulo", ["report_giornate", "gestione_ordini", "gestione_ordini_pr", "gestione_ordini_ph"]),
+      supabase.from("integrazioni_utenti").select("*").in("modulo", ["report_giornate", "gestione_ordini", "gestione_ordini_pr", "gestione_ordini_ph", "gestione_ordini_private"]),
       supabase.from("mexal_agenti").select("id,codice,nome,cognome,attivo_mexal,workspace_utente_id,responsabile_utente_id").order("cognome"),
       supabase.from("reparti_moduli").select("reparto_id,modulo"),
       supabase.from("progremes_moduli").select("codice,nome,descrizione,attivo,ordine").order("ordine").order("nome"),

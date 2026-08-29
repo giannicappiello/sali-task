@@ -405,7 +405,7 @@ export async function verifyUser(req, supabase, { allowOrdersUser = false } = {}
     .from("integrazioni_utenti")
     .select("modulo,enabled,ruolo_ordini")
     .eq("utente_id", profile.id)
-    .in("modulo", ["gestione_ordini_pr", "gestione_ordini_ph"]);
+    .in("modulo", ["gestione_ordini_pr", "gestione_ordini_ph", "gestione_ordini_private"]);
 
   if (integrationError) {
     console.error("Mexal orders integration lookup failed", { auth_user_id: user.id, error: integrationError.message });

@@ -26,7 +26,7 @@ const ORDER_DOCUMENT_SCHEMA = jsonSchema({
   additionalProperties: false,
   required: ["documentType", "customer", "lines", "documentDate", "documentNumber", "notes", "warnings", "pageCount"],
   properties: {
-    documentType: { type: "string", enum: ["OCM", "OCX", "OCI", "NON_DETERMINATO"] },
+    documentType: { type: "string", enum: ["OCT", "OCM", "OCX", "OCI", "NON_DETERMINATO"] },
     documentDate: { type: "string" },
     documentNumber: { type: "string" },
     pageCount: { type: "integer", minimum: 1 },
@@ -160,11 +160,16 @@ function resolveExtraction(extraction, catalog) {
   };
 }
 
+function forRequestedOrderModule(extraction, moduleCode) {
+  return moduleCode === "ordini_private" ? { ...extraction, documentType: "OCT" } : extraction;
+}
+
 export async function handleAIOrderDocument(req) {
   if (req.method !== "POST") throw Object.assign(new Error("Metodo non consentito."), { status: 405 });
   const auth = await authorizeAIRequest(req, { bypassAIEntitlements: true });
   const body = req.body || {};
-  const moduleCode = body.moduleCode === "ordini_ph" ? "ordini_ph" : "ordini_pr";
+  const requestedModule = String(body.moduleCode || "").trim();
+  const moduleCode = ["ordini_pr", "ordini_ph", "ordini_private"].includes(requestedModule) ? requestedModule : "ordini_pr";
   assertOrderModuleAllowed(auth, moduleCode);
   if (body.action === "ai_order_capabilities") return { allowed: true, limits: { maxFileBytes: MAX_FILE_BYTES, dailyDocuments: HARD_DAILY_DOCUMENT_LIMIT, maxPages: HARD_MAX_DOCUMENT_PAGES } };
 
@@ -187,14 +192,16 @@ export async function handleAIOrderDocument(req) {
       const workbook = parseOrderWorkbook(file.data, { fileName: file.filename });
       if (!workbook.orders.length) throw Object.assign(new Error("Nel workbook non sono state trovate righe prodotto utilizzabili."), { status: 400, details: workbook.excludedSheets });
       const catalog = await visibleCatalog(auth, workbook.orders);
-      const matchedOrders = workbook.orders.map((order) => resolveExtraction(order, catalog));
+      const matchedOrders = workbook.orders.map((order) => resolveExtraction(forRequestedOrderModule(order, moduleCode), catalog));
       const matched = { ...matchedOrders[0], orders: matchedOrders, workbook: { includedSheets: workbook.includedSheets, excludedSheets: workbook.excludedSheets }, warnings: [...workbook.warnings, ...(matchedOrders[0]?.warnings || [])] };
       await auth.admin.from("ai_ordini_acquisizioni").update({ stato: "completata", esito: matched, completata_il: new Date().toISOString() }).eq("id", acquisition.id);
       return { acquisitionId: acquisition.id, extraction: matched, usage: null };
     }
     result = await generateText({
       model,
-      system: "Leggi il documento commerciale senza inventare dati. Estrai cliente, righe prodotto e quantità. Usa stringhe vuote per i campi assenti. Il tipo è OCI solo per prenotazioni esplicite; OCM per evasione immediata esplicita; OCX per backorder esplicito; altrimenti NON_DETERMINATO. Le quantità devono essere positive. Segnala dubbi e testo illeggibile nelle warnings.",
+      system: moduleCode === "ordini_private"
+        ? "Leggi il documento commerciale senza inventare dati. Estrai cliente, righe prodotto e quantità. Questo flusso crea esclusivamente un OCT: imposta sempre documentType a OCT e non classificare le righe in altri documenti. Usa stringhe vuote per i campi assenti. Le quantità devono essere positive. Segnala dubbi e testo illeggibile nelle warnings."
+        : "Leggi il documento commerciale senza inventare dati. Estrai cliente, righe prodotto e quantità. Usa stringhe vuote per i campi assenti. Il tipo è OCI solo per prenotazioni esplicite; OCM per evasione immediata esplicita; OCX per backorder esplicito; altrimenti NON_DETERMINATO. Le quantità devono essere positive. Segnala dubbi e testo illeggibile nelle warnings.",
       messages: [{ role: "user", content: [
         { type: "text", text: "Estrai i dati necessari per preparare una bozza d’ordine nel gestionale." },
         { type: "file", mediaType: file.mediaType, data: file.data, filename: file.filename },
@@ -203,7 +210,7 @@ export async function handleAIOrderDocument(req) {
       maxOutputTokens: 2200,
       providerOptions: { gateway: { user: auth.profile.id, tags: ["app:sali-task", "feature:riconoscimento-ordine", `module:${moduleCode}`] } },
     });
-    const extraction = result.output;
+    const extraction = forRequestedOrderModule(result.output, moduleCode);
     if (extraction.pageCount > HARD_MAX_DOCUMENT_PAGES) throw Object.assign(new Error(`Il documento contiene ${extraction.pageCount} pagine; la soglia tecnica è ${HARD_MAX_DOCUMENT_PAGES}.`), { status: 400 });
     const catalog = await visibleCatalog(auth, [extraction]);
     const matched = resolveExtraction(extraction, catalog);

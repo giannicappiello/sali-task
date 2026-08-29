@@ -1,6 +1,7 @@
 import { supabase } from "../../../lib/supabaseClient.js";
 import { agentDisplayName, loadAgentNameMap } from "./agentNames.js";
 import { buildOrderPdfModel, createOrderPdf, downloadOrderPdf as createAndDownloadPdf } from "./orderPdf.js";
+import { orderModuleFilter } from "./orderModules.js";
 export { buildAvailabilityPreview } from "./availability.js";
 
 async function getAccessToken() {
@@ -13,7 +14,7 @@ async function postJson(url, body) {
   const token = await getAccessToken();
   const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
   const raw = await response.text();
-  let payload = {};
+  let payload;
   try { payload = raw ? JSON.parse(raw) : {}; } catch { payload = { error: raw || "Risposta API non valida." }; }
   if (!response.ok) throw new Error(payload.error || `Errore API (${response.status}).`);
   return payload;
@@ -29,7 +30,7 @@ export function checkOrderAvailability(lines) { return postJson("/api/mexal/orde
 
 function legacyMexalDocuments(order = {}) {
   const defaultSerie = String(order.serie_documento_mexal || order.serie_mexal || 1);
-  return ["OCM", "OCX", "OCI"].flatMap((type) => {
+  return ["OCM", "OCX", "OCI", "OCT"].flatMap((type) => {
     const numero = order[`numero_${type.toLowerCase()}`];
     return numero ? [{ tipo_documento: type, serie: defaultSerie, numero: String(numero), stato: "legacy" }] : [];
   });
@@ -48,7 +49,7 @@ function mergeMexalDocuments(documents = [], order = {}) {
     const serie = String(document.serie ?? "").trim();
     const numero = String(document.numero ?? "").trim();
 
-    if (!["OCM", "OCX", "OCI"].includes(type) || !serie || !numero) {
+    if (!["OCM", "OCX", "OCI", "OCT"].includes(type) || !serie || !numero) {
       return false;
     }
 
@@ -94,7 +95,7 @@ export async function loadCreatedMexalDocumentLines(documentIds) {
 
 export async function loadOrderDetail(orderId, moduleCode) {
 const [{ data: order, error: orderError }, { data: lines, error: linesError }, documents] = await Promise.all([
-  supabase.from("ordini_testate").select("*").eq("id", orderId).or((moduleCode || "prof") === "prof" ? "modulo_ordini.eq.prof,modulo_ordini.is.null" : "modulo_ordini.eq.ph").single(),
+  supabase.from("ordini_testate").select("*").eq("id", orderId).or(orderModuleFilter(moduleCode)).single(),
     supabase.from("ordini_righe").select("*").eq("ordine_id", orderId).order("id", { ascending: true }),
     loadCreatedMexalDocuments(orderId),
   ]);

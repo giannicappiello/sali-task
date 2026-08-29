@@ -1,6 +1,6 @@
 // Stato visuale condiviso tra dashboard, elenco e dettaglio ordine.
 export function hasMexalDocuments(order = {}) {
-  if (order.numero_ocm || order.numero_ocx || order.numero_oci) return true;
+  if (order.numero_ocm || order.numero_ocx || order.numero_oci || order.numero_oct) return true;
   const documents = order.mexal_documents || order.documenti_mexal || [];
   return documents.some((document) => document?.numero);
 }

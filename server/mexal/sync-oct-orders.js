@@ -539,8 +539,19 @@ export async function syncOctOrders({ mexal, supabase, env = process.env, contex
     const normalized = resolveDocumentUnits(rawNormalized, availableArticleCatalog);
     const { data: customer } = await supabase.from("ordini_clienti_cache").select("codice_cliente").eq("codice_cliente", normalized.header.mexal_cod_conto).maybeSingle();
     normalized.header.cliente_mexal_risolto = Boolean(customer);
-    const { data: order, error } = await supabase.from("ordini_testate")
-      .upsert(normalized.header, { onConflict: "mexal_sigla,mexal_serie,mexal_numero" }).select("id").single();
+    const { data: outboundDocument, error: outboundLookupError } = await supabase
+      .from("ordini_documenti_mexal")
+      .select("ordine_id")
+      .eq("tipo_documento", "OCT")
+      .eq("sigla", normalized.header.mexal_sigla)
+      .eq("serie", normalized.header.mexal_serie)
+      .eq("numero", String(normalized.header.mexal_numero))
+      .maybeSingle();
+    if (outboundLookupError) throw outboundLookupError;
+    const orderQuery = outboundDocument?.ordine_id
+      ? supabase.from("ordini_testate").update(normalized.header).eq("id", outboundDocument.ordine_id)
+      : supabase.from("ordini_testate").upsert(normalized.header, { onConflict: "mexal_sigla,mexal_serie,mexal_numero" });
+    const { data: order, error } = await orderQuery.select("id").single();
     if (error) throw error;
     const classified = classifyOctLines(normalized, availableArticleCodes, { context });
     anomalies.push(...classified.anomalies);

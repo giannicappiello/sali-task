@@ -35,6 +35,7 @@ const baseMenuItems = [
   { path: "/farmacie/dashboard", label: "Beauty Days", icon: Store, permission: "pharmacy.read", module: "beauty_days" },
   { path: "/ordini-prof", label: "Ordini PR", icon: ShoppingCart, permission: "orders.read", special: "orders_pr", module: "ordini_pr" },
   { path: "/ordini-ph", label: "Ordini PH", icon: ShoppingCart, permission: "orders.read", special: "orders_ph", module: "ordini_ph" },
+  { path: "/ordini-private", label: "OrdiniPrivate", icon: ShoppingCart, permission: "orders.read", special: "orders_private", module: "ordini_private" },
   { path: "/products", label: "Prodotti", icon: Package, module: "prodotti" },
   { path: "/magazzino-dashboard", label: "Magazzino", icon: Warehouse, module: "magazzino" },
   { path: "/documentation", label: "Documenti", icon: FileArchive, module: "documenti" },
@@ -91,6 +92,7 @@ const pageInfo = {
   "/farmacie/dashboard": { title: "Beauty Days", subtitle: "Giornate promozionali, clienti Mexal e analisi dati." },
   "/ordini-prof": { title: "Ordini PR", subtitle: "Clienti, ordini e attività commerciali collegate a Mexal." },
   "/ordini-ph": { title: "Ordini PH", subtitle: "Clienti, ordini e attività commerciali collegate a Mexal." },
+  "/ordini-private": { title: "OrdiniPrivate", subtitle: "Creazione e invio degli ordini cliente OCT a Mexal." },
 };
 
 function getInitials(name) {
@@ -140,6 +142,8 @@ function Layout() {
         ? pageInfo["/analisi-dati"]
       : location.pathname.startsWith("/farmacie")
     ? pageInfo["/farmacie/dashboard"]
+    : location.pathname.startsWith("/ordini-private")
+      ? pageInfo["/ordini-private"]
     : location.pathname.startsWith("/ordini-ph")
       ? pageInfo["/ordini-ph"]
       : location.pathname.startsWith("/ordini")
@@ -148,7 +152,7 @@ function Layout() {
   const presence = getPresence(profile);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [pharmacyEnabled, setPharmacyEnabled] = useState(false);
-  const [ordersAccess, setOrdersAccess] = useState({ pr: false, ph: false });
+  const [ordersAccess, setOrdersAccess] = useState({ pr: false, ph: false, private: false });
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
   const [notifications, setNotifications] = useState([]);
@@ -289,12 +293,12 @@ function Layout() {
 
     async function loadOrdersAccess() {
       if (!profile?.id) {
-        if (active) setOrdersAccess({ pr: false, ph: false });
+        if (active) setOrdersAccess({ pr: false, ph: false, private: false });
         return;
       }
 
       if (isAdminUser) {
-        if (active) setOrdersAccess({ pr: true, ph: true });
+        if (active) setOrdersAccess({ pr: true, ph: true, private: true });
         return;
       }
 
@@ -302,17 +306,18 @@ function Layout() {
         .from("integrazioni_utenti")
         .select("modulo,enabled")
         .eq("utente_id", profile.id)
-        .in("modulo", ["gestione_ordini_pr", "gestione_ordini_ph"]);
+        .in("modulo", ["gestione_ordini_pr", "gestione_ordini_ph", "gestione_ordini_private"]);
 
       if (error) {
         console.error("Errore caricamento accesso Gestione Ordini:", error);
-        if (active) setOrdersAccess({ pr: false, ph: false });
+        if (active) setOrdersAccess({ pr: false, ph: false, private: false });
         return;
       }
 
       if (active) setOrdersAccess({
         pr: (data || []).some((row) => row.modulo === "gestione_ordini_pr" && row.enabled === true),
         ph: (data || []).some((row) => row.modulo === "gestione_ordini_ph" && row.enabled === true),
+        private: (data || []).some((row) => row.modulo === "gestione_ordini_private" && row.enabled === true),
       });
     }
 
@@ -337,6 +342,7 @@ function Layout() {
 
         if (item.special === "orders_pr") return ordersAccess.pr;
         if (item.special === "orders_ph") return ordersAccess.ph;
+        if (item.special === "orders_private") return ordersAccess.private;
 
         return item.permission ? hasPermission(item.permission) : true;
       }),

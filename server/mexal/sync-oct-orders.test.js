@@ -284,6 +284,7 @@ function writableSupabase() {
   const state = {
     ordini_prodotti_cache: [{ codice_articolo: "PB0004", unita_misura: null, dati_mexal: { um_principale: "PZ" } }],
     ordini_clienti_cache: [{ codice_cliente: "C1" }],
+    ordini_documenti_mexal: [],
     ordini_testate: [],
     ordini_righe: [],
   };
@@ -383,6 +384,23 @@ test("retry dello stesso OCT è idempotente e non crea duplicati", async () => {
   await syncOctOrders(input);
   assert.equal(supabase.state.ordini_testate.length, 1);
   assert.equal(supabase.state.ordini_righe.length, 2);
+});
+
+test("un OCT creato da OrdiniPrivate aggiorna la testata sorgente senza duplicarla", async () => {
+  const supabase = writableSupabase();
+  supabase.state.ordini_testate.push({ id: "private-order-1", modulo_ordini: "private", origine: "workspace", codice_cliente: "C1" });
+  supabase.state.ordini_documenti_mexal.push({ ordine_id: "private-order-1", tipo_documento: "OCT", sigla: "OC", serie: 2, numero: "500" });
+
+  await syncOctOrders({
+    mexal: mixedImportMexal(), supabase,
+    env: { MEXAL_OCT_IMPORT_ENABLED: "true", MEXAL_OCT_MODULE_CODE: "T", MEXAL_OCT_LIST_PATH: "/oct" },
+  });
+
+  assert.equal(supabase.state.ordini_testate.length, 1);
+  assert.equal(supabase.state.ordini_testate[0].id, "private-order-1");
+  assert.equal(supabase.state.ordini_testate[0].modulo_ordini, "private");
+  assert.equal(supabase.state.ordini_testate[0].origine, "mexal_oct");
+  assert.equal(supabase.state.ordini_testate[0].mexal_chiave, "OC+2+500");
 });
 
 test("una riga rimossa da Mexal viene ritirata logicamente senza perdere lineage", async () => {

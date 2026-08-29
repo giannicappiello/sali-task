@@ -81,6 +81,7 @@ function TemplateFields({ section, config, onChange }) {
 }
 
 function Panel({ code, title, series }) {
+  const isPrivate = code === "private";
   const [config, setConfig] = useState(defaults);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -110,6 +111,10 @@ function Panel({ code, title, series }) {
 
   async function save() {
     setMessage("");
+    if (isPrivate && !String(config.serie_documento || "").trim()) {
+      setMessage("Seleziona la serie OCT prima di salvare la configurazione OrdiniPrivate.");
+      return;
+    }
     const validationError = validateEmailTemplates(config);
     if (validationError) {
       setMessage(validationError);
@@ -129,14 +134,14 @@ function Panel({ code, title, series }) {
     <div className="mexal-section-heading">
       <div>
         <h3>{title}</h3>
-        <p>Impostazioni indipendenti per questa area ordini.</p>
+        <p>{isPrivate ? "Creazione e invio di un unico OCT a Mexal, senza documenti OCM, OCX o OCI." : "Impostazioni indipendenti per questa area ordini."}</p>
       </div>
       <IntegrationStatusBadge status="configuration" />
     </div>
     {loading ? <p>Caricamento configurazione...</p> : <>
       <div style={{ display: "grid", gap: 16 }}>
         <Toggle label="Invio automatico a Mexal" checked={config.invia_automaticamente_mexal} onChange={(value) => set("invia_automaticamente_mexal", value)} />
-        <label><strong>Serie documenti</strong><select value={config.serie_documento} onChange={(event) => set("serie_documento", event.target.value)} style={{ display: "block", width: "100%", minHeight: 40, marginTop: 6 }}><option value="">Usa la configurazione Mexal predefinita</option>{series.map((item) => <option key={item.source_key} value={item.serie}>{item.sigla_documento || item.tipo_documento} · Serie {item.serie} · {item.descrizione}</option>)}</select></label>
+        <label><strong>{isPrivate ? "Serie OCT" : "Serie documenti"}</strong><select value={config.serie_documento} onChange={(event) => set("serie_documento", event.target.value)} style={{ display: "block", width: "100%", minHeight: 40, marginTop: 6 }}><option value="">{isPrivate ? "Seleziona la serie OCT (obbligatoria)" : "Usa la configurazione Mexal predefinita"}</option>{series.map((item) => <option key={item.source_key} value={item.serie}>{item.sigla_documento || item.tipo_documento} · Serie {item.serie} · {item.descrizione}</option>)}</select></label>
         <fieldset style={{ border: 0, padding: 0, margin: 0, display: "grid", gap: 10 }}><legend><strong>Configurazione email</strong></legend><Toggle label="Email agente" checked={config.invia_email_agente} onChange={(value) => set("invia_email_agente", value)} /><Toggle label="Email cliente" checked={config.invia_email_cliente} onChange={(value) => set("invia_email_cliente", value)} /><Toggle label="Responsabile collegato" checked={config.invia_email_responsabile} onChange={(value) => set("invia_email_responsabile", value)} /></fieldset>
         <label>Backoffice 1<input type="email" value={config.backoffice_1_email || ""} onChange={(event) => set("backoffice_1_email", event.target.value)} style={{ display: "block", width: "100%", minHeight: 40, marginTop: 5 }} /></label>
         <label>Backoffice 2<input type="email" value={config.backoffice_2_email || ""} onChange={(event) => set("backoffice_2_email", event.target.value)} style={{ display: "block", width: "100%", minHeight: 40, marginTop: 5 }} /></label>
@@ -170,7 +175,8 @@ export default function OrderModuleSettings({ moduleCode = null }) {
     });
   }, []);
 
-  const panels = moduleCode ? [[moduleCode, moduleCode === "ph" ? "ORDINI PH" : "ORDINI PROF"]] : [["prof", "ORDINI PROF"], ["ph", "ORDINI PH"]];
+  const titles = { prof: "ORDINI PROF", ph: "ORDINI PH", private: "ORDINI PRIVATE · OCT" };
+  const panels = moduleCode ? [[moduleCode, titles[moduleCode] || titles.prof]] : [["prof", titles.prof], ["ph", titles.ph], ["private", titles.private]];
 
   if (!moduleCode) {
     return <div>

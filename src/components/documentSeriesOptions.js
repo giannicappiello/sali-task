@@ -12,3 +12,9 @@ export function isCustomerOrderSeries(record) {
 export function customerOrderSeriesOptions(series) {
   return (series || []).filter(isCustomerOrderSeries);
 }
+
+export function octOrderSeriesOptions(series) {
+  return (series || []).filter((record) => value(record, "sigla_documento") === "OC" || (
+    !value(record, "sigla_documento") && value(record, "tipo_documento") === "OC"
+  ));
+}

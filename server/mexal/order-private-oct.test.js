@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildMexalOrderDocument, classifyPrivateOrderLines } from "./order-documents.js";
+import { octOrderSeriesOptions } from "../../src/components/documentSeriesOptions.js";
 
 test("OrdiniPrivate mantiene tutte le righe in un unico OCT", () => {
   const result = classifyPrivateOrderLines([
@@ -35,4 +36,14 @@ test("payload OCT fallisce se il codice modulo Mexal non è certificato", () => 
     [{ codice_articolo: "IT0001", quantita_documento: 1 }],
     { serie: 2 },
   ), /Codice modulo Mexal mancante per OCT/);
+});
+
+test("configurazione OrdiniPrivate propone soltanto serie OC", () => {
+  const series = octOrderSeriesOptions([
+    { source_key: "oc-1", sigla_documento: "OC", serie: 1 },
+    { source_key: "ox-1", sigla_documento: "OX", serie: 1 },
+    { source_key: "ocm-1", tipo_documento: "OCM", serie: 1 },
+    { source_key: "oci-1", tipo_documento: "OCI", serie: 1 },
+  ]);
+  assert.deepEqual(series.map((item) => item.source_key), ["oc-1"]);
 });

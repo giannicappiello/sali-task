@@ -29,9 +29,38 @@ export function workbenchDetailLines(lines, requestItems = []) {
   return (lines || []).filter((line) => line?.mexal_attiva !== false || requestedLineIds.has(text(line.id)));
 }
 
-export function workbenchLineMappingStatus(line, requestItem = null) {
+export function workbenchLineMappingStatus(line, requestItem = null, finishedBom = null) {
   if (line?.riga_descrittiva === true) return "NOT_APPLICABLE";
-  return requestItem?.mapping_status || "TO_RESOLVE_IN_MES";
+  if (finishedBom?.components?.length) return "BOM_EXPLODED";
+  return requestItem?.mapping_status || "BOM_PENDING_IN_WORKSPACE";
+}
+
+export function workbenchBomComponent(row, finishedQuantity, baseQuantity = 1) {
+  const kind = text(row?.component_kind).toUpperCase();
+  const multiplier = number(baseQuantity) > 0 ? number(finishedQuantity) / number(baseQuantity) : 0;
+  return {
+    id: row?.id,
+    lineNumber: row?.line_number,
+    articleCode: text(row?.article_code).toUpperCase(),
+    description: text(row?.description),
+    componentKind: kind,
+    quantityPerBase: number(row?.quantity),
+    requiredQuantity: Number((number(row?.quantity) * multiplier).toFixed(6)),
+    unitOfMeasure: text(row?.unit_of_measure).toUpperCase(),
+    owner: kind === "FORMULA_COMPONENT" ? "PROGREMES" : "WORKSPACE",
+    status: kind === "FORMULA_COMPONENT" ? "TO_RESOLVE_IN_MES" : "TO_NET_IN_WORKSPACE",
+  };
+}
+
+export function diagnosticMatchesWorkbenchLine(row, line, request = null) {
+  const lineId = text(line?.id);
+  const requestIds = new Set([text(request?.id), text(request?.external_id)].filter(Boolean));
+  const linkedLineIds = [row?.workspaceOctLineRevisionId,
+    text(row?.entityType).toUpperCase().includes("OCT_LINE") ? row?.entityId : null].map(text).filter(Boolean);
+  if (linkedLineIds.length) return linkedLineIds.includes(lineId);
+  const linkedRequestIds = [row?.workspaceRdpV2Id,
+    text(row?.entityType).toUpperCase().includes("RDP") ? row?.entityId : null].map(text).filter(Boolean);
+  return linkedRequestIds.some((id) => requestIds.has(id)) && text(row?.articleCode).toUpperCase() === text(line?.codice_articolo).toUpperCase();
 }
 
 function octLabel(order) {
@@ -63,6 +92,32 @@ async function loadProductsByCode(admin, lines) {
     .in("codice_articolo", codes);
   if (result.error) throw result.error;
   return new Map((result.data || []).map((row) => [text(row.codice_articolo).toUpperCase(), row]));
+}
+
+async function loadCurrentFinishedBoms(admin, lines) {
+  const codes = [...new Set((lines || []).filter((line) => line?.riga_descrittiva !== true)
+    .map((line) => text(line.codice_articolo).toUpperCase()).filter(Boolean))];
+  if (!codes.length) return new Map();
+  const revisionsResult = await admin.from("workspace_finished_bom_revisions").select("id,finished_article_code,revision,source_hash,base_quantity,unit_of_measure,captured_at")
+    .in("finished_article_code", codes).eq("is_current", true);
+  if (revisionsResult.error) throw revisionsResult.error;
+  const revisions = revisionsResult.data || [];
+  if (!revisions.length) return new Map();
+  const linesResult = await admin.from("workspace_finished_bom_lines")
+    .select("id,revision_id,line_number,article_code,description,quantity,unit_of_measure,component_kind,classification_source,formula_external_ref")
+    .in("revision_id", revisions.map((row) => row.id)).eq("is_removed", false).order("line_number");
+  if (linesResult.error) throw linesResult.error;
+  const componentsByRevision = new Map();
+  for (const row of linesResult.data || []) componentsByRevision.set(row.revision_id, [...(componentsByRevision.get(row.revision_id) || []), row]);
+  return new Map(revisions.map((revision) => [text(revision.finished_article_code).toUpperCase(), {
+    id: revision.id,
+    revision: revision.revision,
+    sourceHash: revision.source_hash,
+    baseQuantity: number(revision.base_quantity),
+    unitOfMeasure: revision.unit_of_measure,
+    capturedAt: revision.captured_at,
+    components: componentsByRevision.get(revision.id) || [],
+  }]));
 }
 
 export function requestStage(request) {
@@ -229,6 +284,7 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
     sentSnapshot = result.data;
   }
   const productByCode = await loadProductsByCode(admin, visibleLines);
+  const finishedBomByCode = await loadCurrentFinishedBoms(admin, visibleLines);
   const currentOctUnit = (line) => resolveWorkbenchOctUnit(
     line,
     productByCode.get(text(line.codice_articolo).toUpperCase()),
@@ -309,14 +365,20 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
       const product = productByCode.get(text(line.codice_articolo).toUpperCase());
       const requestItem = requestItemByLine.get(text(line.id));
       const proposal = proposalByItem.get(text(requestItem?.id));
+      const finishedBomSource = finishedBomByCode.get(text(line.codice_articolo).toUpperCase());
+      const finishedBom = finishedBomSource ? {
+        ...finishedBomSource,
+        components: finishedBomSource.components.map((component) => workbenchBomComponent(component, line.quantita, finishedBomSource.baseQuantity)),
+      } : null;
       return {
         id: line.id, orderId: line.ordine_id, position: line.mexal_posizione, descriptive: line.riga_descrittiva === true,
         articleCode: line.codice_articolo, description: line.descrizione || product?.descrizione, quantity: line.quantita,
         octUom: resolveWorkbenchOctUnit(line, product), productionUom: line.riga_descrittiva === true ? null : requestItem?.unita_misura_produzione || authoritativeArticleUnit(product) || authoritativeArticleUnit(product?.dati_mexal),
-        mappingStatus: workbenchLineMappingStatus(line, requestItem), conversion: line.riga_descrittiva === true ? null : requestItem?.conversione || null,
+        mappingStatus: workbenchLineMappingStatus(line, requestItem, finishedBom), conversion: line.riga_descrittiva === true ? null : requestItem?.conversione || null,
+        finishedBom,
         mesStatus: line.riga_descrittiva === true ? null : requestItem?.mes_status || proposal?.stato || null, mesAnalysis: line.riga_descrittiva === true ? null : requestItem?.mes_payload || null,
         proposal: line.riga_descrittiva === true ? null : proposal || null,
-        diagnostics: diagnostics.filter((row) => visibleDiagnostic(row) && ((row.articleCode && text(row.articleCode).toUpperCase() === text(line.codice_articolo).toUpperCase()) || [row.workspaceOctLineRevisionId, row.entityId].map(text).includes(text(line.id)))).map(publicDiagnostic),
+        diagnostics: diagnostics.filter((row) => visibleDiagnostic(row) && diagnosticMatchesWorkbenchLine(row, line, request)).map(publicDiagnostic),
       };
     }),
   };

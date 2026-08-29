@@ -164,7 +164,7 @@ async function loadArticleMap(supabase) {
   }]));
 }
 
-export async function syncWorkspaceV3MexalContracts({ mexal, supabase, capturedAt = new Date().toISOString(), finishedArticleCodes = null }) {
+export async function syncWorkspaceV3MexalContracts({ mexal, supabase, capturedAt = new Date().toISOString(), finishedArticleCodes = null, includeSupplierOrders = true }) {
   const targetFinishedCodes = new Set((finishedArticleCodes || []).map(upper).filter(Boolean));
   const targeted = targetFinishedCodes.size > 0;
   const articlesByCode = await loadArticleMap(supabase);
@@ -209,6 +209,10 @@ export async function syncWorkspaceV3MexalContracts({ mexal, supabase, capturedA
     });
     if (error) throw error;
     bomResults.push({ finishedCode, tombstone: true, result: data?.[0] || null });
+  }
+
+  if (!includeSupplierOrders) {
+    return { capturedAt, boms: bomResults, supplierOrders: null, contract: MEXAL_V3_CONTRACT };
   }
 
   const [headers, supplierLines, suppliers] = await Promise.all([

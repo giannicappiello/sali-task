@@ -54,7 +54,8 @@ const syncLabels = {
   commercial_conditions: "Condizioni commerciali",
   document_series: "Serie documenti",
   list_price_commissions: "Provvigioni listini",
-  orders: "Ordini",
+  orders: "Ordini e OCT",
+  oct_orders: "OCT",
   sales_invoices: "Fatture",
 };
 
@@ -218,7 +219,12 @@ export default function MexalDashboard() {
         setProgress(Math.min(95, 5 + pages));
         setPhase(`Fatture: pagina ${pages}, ${processed} documenti elaborati`);
       }, () => cancelInvoiceSyncRef.current);
-      else result = await startMexalSync(type);
+      else if (type === "orders") {
+        await startMexalSync("orders");
+        setProgress(55);
+        setPhase("OCT: sincronizzazione ordini cliente");
+        result = await startMexalSync("oct_orders");
+      } else result = await startMexalSync(type);
       if (result?.cancelled) {
         setMessage({ type: "warning", text: `Sincronizzazione ${syncLabels[type] || type} arrestata.` });
         await refreshData(result.sync_run_id || result.runId);
@@ -296,18 +302,36 @@ export default function MexalDashboard() {
   }
 
   async function toggleSyncSchedule(syncType, enabled) {
-    const schedule = syncSchedules[syncType];
-    if (!canConfigure || !schedule || savingScheduleType) return;
+    const syncTypes = syncType === "orders" ? ["orders", "oct_orders"] : [syncType];
+    const schedules = syncTypes.map((type) => syncSchedules[type]);
+    if (!canConfigure || schedules.some((schedule) => !schedule) || savingScheduleType) return;
     setSavingScheduleType(syncType);
+    const savedRules = [];
     try {
-      const saved = await saveMexalAutomationRule({
-        supabase,
-        ruleType: "schedule",
-        rule: { ...schedule, enabled },
-      });
-      setSyncSchedules((current) => ({ ...current, [syncType]: saved }));
-      setMessage({ type: "success", text: `Sincronizzazione automatica ${syncLabels[syncType] || syncType} ${enabled ? "attivata" : "disattivata"}.` });
+      for (const schedule of schedules) {
+        savedRules.push(await saveMexalAutomationRule({
+          supabase,
+          ruleType: "schedule",
+          rule: { ...schedule, enabled },
+        }));
+      }
+      setSyncSchedules((current) => ({
+        ...current,
+        ...Object.fromEntries(savedRules.map((rule) => [rule.sync_type, rule])),
+      }));
+      const label = syncType === "orders" ? "Ordini e OCT" : syncLabels[syncType] || syncType;
+      setMessage({ type: "success", text: `Sincronizzazione automatica ${label} ${enabled ? "attivata" : "disattivata"}.` });
     } catch (error) {
+      for (const savedRule of savedRules.toReversed()) {
+        const originalRule = syncSchedules[savedRule.sync_type];
+        if (!originalRule) continue;
+        try {
+          await saveMexalAutomationRule({ supabase, ruleType: "schedule", rule: originalRule });
+        } catch {
+          // Il refresh seguente riallinea la UI allo stato autorevole del server.
+        }
+      }
+      await refreshData();
       setMessage({ type: "error", text: error.message || "Impossibile aggiornare la pianificazione." });
     } finally {
       setSavingScheduleType(null);
@@ -354,7 +378,7 @@ export default function MexalDashboard() {
     { icon: Warehouse, title: "Giacenze", description: "Disponibilità per magazzino e controllo evasione ordini.", recordLabel: "prodotti sincronizzati", recordCount: entityCounts.stocks, enabled: true, type: "stocks", lastRunData: latestRunsByType.stocks || entityRuns.stocks },
     { icon: Percent, title: "Provvigioni listini", description: "Regole provvigionali associate ai listini Mexal.", recordLabel: "regole attive", recordCount: entityCounts.listPriceCommissions, enabled: true, type: "list_price_commissions", lastRunData: latestRunsByType.list_price_commissions },
 
-    { icon: ShoppingCart, title: "Ordini", description: "Controlla i documenti OCM, OCI e OCX di ORDINIPR e ORDINIPH.", recordLabel: "documenti controllati nell’ultimo run", recordCount: (latestRunsByType.orders || entityRuns.orders)?.processed, enabled: true, type: "orders", actionLabel: "Esegui ora", runningLabel: "Sincronizzazione...", lastRunData: latestRunsByType.orders || entityRuns.orders },
+    { icon: ShoppingCart, title: "Ordini e OCT", description: "Controlla i documenti OCM, OCI e OCX di ORDINIPR e ORDINIPH e sincronizza gli ordini cliente OCT.", recordLabel: "documenti controllati nell’ultimo run", recordCount: (latestRunsByType.orders || entityRuns.orders)?.processed, enabled: true, type: "orders", actionLabel: "Esegui ora", runningLabel: "Sincronizzazione Ordini e OCT...", lastRunData: latestRunsByType.orders || entityRuns.orders },
     { icon: FileText, title: "Fatture", description: "Importa da Mexal i documenti FTE, FTS e COX completi di testata e righe.", recordLabel: "documenti importati", recordCount: entityCounts.salesInvoices, enabled: true, type: "sales_invoices", actionLabel: "Sincronizza ora", runningLabel: "Importazione documenti...", lastRun: entityCounts.salesInvoicesLastSync },
   ];
 
@@ -405,7 +429,11 @@ export default function MexalDashboard() {
                 : runEntitySync(card.type, { resumeRunId: stockResume?.canResume ? card.lastRunData?.id : null })}
               onStop={() => card.type === "sales_invoices" ? stopInvoiceSync() : stopRun(card.lastRunData)}
               onOpen={() => card.type === "agents" && navigate("/integrations/mexal/agenti")}
-              automaticEnabled={syncSchedules[card.type] ? syncSchedules[card.type].enabled === true : undefined}
+              automaticEnabled={card.type === "orders"
+                ? syncSchedules.orders && syncSchedules.oct_orders
+                  ? syncSchedules.orders.enabled === true && syncSchedules.oct_orders.enabled === true
+                  : undefined
+                : syncSchedules[card.type] ? syncSchedules[card.type].enabled === true : undefined}
               automaticSaving={savingScheduleType === card.type}
               onToggleAutomatic={(enabled) => toggleSyncSchedule(card.type, enabled)}
             />;

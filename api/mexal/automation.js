@@ -572,21 +572,12 @@ export default async function handler(req, res) {
         const admin = await createAdmin(req, "rdp.view");
         const diagnostics = await createProgremesClient().request("diagnostics").catch(() => []);
         const effectiveDiagnostics = await effectiveWorkspaceDiagnostics({ admin: admin.supabase, diagnostics });
-        const initialDetail = await productionWorkbenchDetail({ admin: admin.supabase, orderId: body.orderId, requestId: body.requestId, diagnostics: effectiveDiagnostics });
-        const finishedArticleCodes = [...new Set(initialDetail.lines.filter((line) => !line.descriptive)
-          .map((line) => String(line.articleCode || "").trim().toUpperCase()).filter(Boolean))];
-        if (finishedArticleCodes.length) {
-          await syncWorkspaceV3MexalContracts({
-            mexal: buildMexalClient(),
-            supabase: admin.supabase,
-            finishedArticleCodes,
-            includeSupplierOrders: false,
-          });
-        }
-        const detail = finishedArticleCodes.length
-          ? await productionWorkbenchDetail({ admin: admin.supabase, orderId: body.orderId, requestId: body.requestId, diagnostics: effectiveDiagnostics })
-          : initialDetail;
-        return sendSuccess(res, 200, detail);
+        return sendSuccess(res, 200, await productionWorkbenchDetail({
+          admin: admin.supabase,
+          orderId: body.orderId,
+          requestId: body.requestId,
+          diagnostics: effectiveDiagnostics,
+        }));
       }
       case "progremes_diagnostic_action": {
         const admin = await createAdmin(req, "diagnostics.manage");
@@ -600,7 +591,7 @@ export default async function handler(req, res) {
       }
       case "progremes_oct_refresh": {
         const admin = await createAdmin(req, "rdp.view");
-        const { data, error } = await admin.supabase.rpc("enqueue_workbench_oct_refresh", {
+        const { data, error } = await admin.supabase.rpc("enqueue_manual_workbench_oct_refresh", {
           p_requested_by: admin.authUserId,
           p_requested_at: new Date().toISOString(),
         });

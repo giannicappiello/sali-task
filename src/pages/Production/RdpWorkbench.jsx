@@ -225,6 +225,7 @@ export default function RdpWorkbench() {
   const [octRefresh, setOctRefresh] = useState(null);
   const refreshGeneration = useRef(0);
   const sendEnabled = productionGates?.allOn === true;
+  const octRefreshRunning = ["queued", "leased", "running", "retry"].includes(octRefresh?.status);
 
   useEffect(() => {
     if (result?.kind !== "production_order") return undefined;
@@ -240,6 +241,8 @@ export default function RdpWorkbench() {
     let active = true;
     const generation = ++refreshGeneration.current;
     async function initialize() {
+      setLoading(true);
+      setError("");
       try {
         const initial = await callWorkbench(accessToken, "progremes_workbench_list");
         if (active && generation === refreshGeneration.current) {
@@ -254,39 +257,44 @@ export default function RdpWorkbench() {
       } finally {
         if (active && generation === refreshGeneration.current) setLoading(false);
       }
-      if (!active || generation !== refreshGeneration.current) return;
-      try {
-        const payload = await callWorkbench(accessToken, "progremes_oct_refresh");
-        const jobId = Number(payload.refresh?.jobId);
-        if (!active || generation !== refreshGeneration.current || !Number.isSafeInteger(jobId)) return;
-        setOctRefresh({ jobId, status: payload.refresh?.status || "queued" });
-        while (active && generation === refreshGeneration.current) {
-          await new Promise((resolve) => window.setTimeout(resolve, 5000));
-          if (!active || generation !== refreshGeneration.current) return;
-          const statusPayload = await callWorkbench(accessToken, "progremes_oct_refresh_status", { jobId });
-          const refresh = statusPayload.refresh || {};
-          if (!active || generation !== refreshGeneration.current) return;
-          setOctRefresh({ jobId, ...refresh });
-          if (["completed", "failed", "cancelled"].includes(refresh.status)) {
-            if (refresh.status === "completed") {
-              const refreshed = await callWorkbench(accessToken, "progremes_workbench_list");
-              if (active && generation === refreshGeneration.current) {
-                setData(workbenchRows(refreshed));
-                setProductionGates(refreshed.productionGates || null);
-              }
-            }
-            return;
-          }
-        }
-      } catch (refreshError) {
-        if (active && generation === refreshGeneration.current) {
-          setOctRefresh({ status: "failed", last_error: refreshError.message });
-        }
-      }
     }
     initialize();
-    return () => { active = false; };
+    return () => { active = false; refreshGeneration.current += 1; };
   }, [accessToken]);
+
+  async function refreshOctOrders() {
+    if (!accessToken || loading || octRefreshRunning) return;
+    const generation = ++refreshGeneration.current;
+    setError("");
+    try {
+      const payload = await callWorkbench(accessToken, "progremes_oct_refresh");
+      const jobId = Number(payload.refresh?.jobId);
+      if (!Number.isSafeInteger(jobId)) throw new Error("Il servizio OCT non ha restituito un job valido.");
+      setOctRefresh({ jobId, status: payload.refresh?.status || "queued" });
+      while (generation === refreshGeneration.current) {
+        await new Promise((resolve) => window.setTimeout(resolve, 5000));
+        if (generation !== refreshGeneration.current) return;
+        const statusPayload = await callWorkbench(accessToken, "progremes_oct_refresh_status", { jobId });
+        const refresh = statusPayload.refresh || {};
+        setOctRefresh({ jobId, ...refresh });
+        if (["completed", "failed", "cancelled"].includes(refresh.status)) {
+          if (refresh.status === "completed") {
+            const refreshed = await callWorkbench(accessToken, "progremes_workbench_list");
+            if (generation === refreshGeneration.current) {
+              setData(workbenchRows(refreshed));
+              setProductionGates(refreshed.productionGates || null);
+            }
+          } else if (refresh.last_error) setError(refresh.last_error);
+          return;
+        }
+      }
+    } catch (refreshError) {
+      if (generation === refreshGeneration.current) {
+        setOctRefresh({ status: "failed", last_error: refreshError.message });
+        setError(refreshError.message);
+      }
+    }
+  }
   const visible = useMemo(() => data.filter((row) => {
     if (row.stage !== tab) return false;
     const haystack = `${row.label} ${row.customer} ${row.status}`.toLowerCase();
@@ -335,7 +343,7 @@ export default function RdpWorkbench() {
   }
 
   return <div className="production-page rdp-workbench">
-    <header className="rdp-header"><div><span className="rdp-eyebrow">WorkspaceMES</span><h1>RdP Workbench</h1><p>Gestione OCT, richieste di produzione, analisi MES e decisioni operative.</p></div><div className="rdp-header-controls"><nav className="rdp-tabs" aria-label="Stati Workbench">{TABS.map(([code,label]) => <button type="button" key={code} className={tab === code ? "active" : ""} onClick={() => setTab(code)}>{label}<span>{data.filter((row) => row.stage === code).length}</span></button>)}</nav><div className="rdp-header-actions"><BackgroundSyncStatus refresh={octRefresh}/><button type="button" className="secondary-action" onClick={load} disabled={loading}><RefreshCw className={loading ? "rdp-spin" : ""} size={17}/>Aggiorna</button></div></div></header>
+    <header className="rdp-header"><div><span className="rdp-eyebrow">WorkspaceMES</span><h1>RdP Workbench</h1><p>Gestione OCT, richieste di produzione, analisi MES e decisioni operative.</p></div><div className="rdp-header-controls"><nav className="rdp-tabs" aria-label="Stati Workbench">{TABS.map(([code,label]) => <button type="button" key={code} className={tab === code ? "active" : ""} onClick={() => setTab(code)}>{label}<span>{data.filter((row) => row.stage === code).length}</span></button>)}</nav><div className="rdp-header-actions"><BackgroundSyncStatus refresh={octRefresh}/><button type="button" className="secondary-action" onClick={refreshOctOrders} disabled={loading || octRefreshRunning}><RefreshCw className={loading || octRefreshRunning ? "rdp-spin" : ""} size={17}/>Aggiorna</button></div></div></header>
     <section className={`rdp-toolbar ${tab === "evaluation" ? "rdp-toolbar-evaluation" : ""}`}><label><Search size={17}/><input value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} placeholder="Cerca OCT, cliente, stato…"/></label><select value={filters.ready} onChange={(e) => setFilters({ ...filters, ready: e.target.value })}><option value="">Pronti e bloccati</option><option value="ready">Solo pronti</option><option value="blocked">Solo bloccati</option></select>{tab === "evaluation" && <div className="rdp-selection-bar"><span><strong>{selected.length}</strong> OCT selezionati</span><button type="button" className="primary-action rdp-preview-action" onClick={createPreview} disabled={!canCreate || !sendEnabled || !selected.length || selectionBlocked || busy}>{busy ? "Verifica…" : "Verifica e crea anteprima"}</button>{!canCreate && <small>Permesso rdp.create richiesto.</small>}{!sendEnabled && <small>Invio RdP Production non disponibile: verificare i gate nel Centro Diagnostico.</small>}{selectionBlocked && <small>Rimuovere gli OCT bloccati prima di creare la RdP.</small>}</div>}</section>
     {error && <div className="production-message" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")}><X size={16}/>Chiudi</button></div>}
     {result && <div className="rdp-success"><CheckCircle2/><div><strong>{result.kind === "cancelled" ? "RdP annullata logicamente" : result.kind === "production_order" ? "RdP andata a buon fine, OP generato." : "RdP ricevuta da ProgreMES"}</strong><p>{result.kind === "production_order" ? `${result.productionOrder?.number || result.productionOrder?.id ? `OP ${result.productionOrder.number || result.productionOrder.id} · ` : ""}apertura ordini di produzione…` : `${result.rdpNumber ? `RDP${result.rdpNumber}` : "RdP"} · Stato ${result.kind === "cancelled" ? "Annullata" : result.status || "Received"}`}</p></div></div>}

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import test from "node:test";
 
 const migrationUrl = new URL("../../supabase/migrations/20260827143000_enqueue_workbench_oct_refresh.sql", import.meta.url);
+const manualMigrationUrl = new URL("../../supabase/migrations/20260829103000_link_orders_oct_and_manual_workbench_refresh.sql", import.meta.url);
 const apiUrl = new URL("../../api/mexal/automation.js", import.meta.url);
 const uiUrl = new URL("../../src/pages/Production/RdpWorkbench.jsx", import.meta.url);
 
@@ -29,11 +30,24 @@ test("l'RPC è service-role only e fallisce se lo schedule OCT è disabilitato",
 test("API e UI avviano il refresh in background e seguono soltanto job OCT", () => {
   const api = fs.readFileSync(apiUrl, "utf8");
   const ui = fs.readFileSync(uiUrl, "utf8");
+  const initialEffect = ui.slice(ui.indexOf("useEffect(() => {", ui.indexOf("async function load()")), ui.indexOf("async function refreshOctOrders"));
   assert.match(api, /case "progremes_oct_refresh"[\s\S]*createAdmin\(req, "rdp\.view"\)/i);
-  assert.match(api, /enqueue_workbench_oct_refresh/i);
+  assert.match(api, /enqueue_manual_workbench_oct_refresh/i);
   assert.match(api, /case "progremes_oct_refresh_status"[\s\S]*\.eq\("sync_type", "oct_orders"\)/i);
   assert.match(ui, /callWorkbench\(accessToken, "progremes_workbench_list"\)/i);
   assert.match(ui, /callWorkbench\(accessToken, "progremes_oct_refresh"\)/i);
+  assert.match(ui, /onClick=\{refreshOctOrders\}/i);
+  assert.doesNotMatch(initialEffect, /progremes_oct_refresh/i);
   assert.match(ui, /Sincronizzazione OCT in background/i);
   assert.match(ui, /progremes_oct_refresh_status/i);
+});
+
+test("il refresh manuale corregge il lineage e allinea lo schedule OCT a Ordini", () => {
+  const migration = fs.readFileSync(manualMigrationUrl, "utf8");
+  assert.match(migration, /oct_schedule\.sync_type = 'oct_orders'/i);
+  assert.match(migration, /orders_schedule\.sync_type = 'orders'/i);
+  assert.match(migration, /oct_schedule\.enabled is distinct from orders_schedule\.enabled/i);
+  assert.match(migration, /enqueue_workbench_oct_refresh\(p_requested_by, p_requested_at\)/i);
+  assert.match(migration, /workbench_manual_refresh/i);
+  assert.match(migration, /grant execute[\s\S]*to service_role/i);
 });

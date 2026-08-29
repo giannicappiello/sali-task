@@ -88,3 +88,13 @@ test("il riepilogo Workbench non espone il codice tecnico 1 come una seconda UDM
     { codice_articolo: "DR-BC07", unita_misura_oct: null, tipo_unita_misura_mexal: "1" },
   ], products), ["PZ"]);
 });
+
+test("Apri dettaglio non avvia una sincronizzazione Mexal", async () => {
+  const source = await readFile(new URL("../api/mexal/automation.js", import.meta.url), "utf8");
+  const detailCase = source.slice(
+    source.indexOf('case "progremes_workbench_detail"'),
+    source.indexOf('case "progremes_diagnostic_action"'),
+  );
+  assert.match(detailCase, /productionWorkbenchDetail/);
+  assert.doesNotMatch(detailCase, /syncWorkspaceV3MexalContracts|buildMexalClient/);
+});

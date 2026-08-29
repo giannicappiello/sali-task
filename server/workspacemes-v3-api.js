@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { aggregateWorkspaceHashes, createProgremesProductionClient } from "./progremes-production-client.js";
 import { COMPONENT_KIND, confirmationIdempotencyKey, deterministicUuid, explodeFinishedBom, netDirectComponent, payloadHash, previewCommandIdentity } from "./workspacemes-v3.js";
 
@@ -94,6 +95,10 @@ export function createFormulaDemand({ component, sources, requestId }) {
   };
 }
 
+export function createPreviewRecalculationIdentity({ requestId, octHash, bomHash, availabilityVersion, previewAttemptId = randomUUID() }) {
+  return previewCommandIdentity({ requestId, octHash, bomHash, availabilityVersion, previewAttemptId });
+}
+
 export async function createWorkspaceV3Preview({ admin, requestId, requestedBy, client = createProgremesProductionClient() }) {
   if (!client.v3PreviewEnabled()) throw fail("Preview WorkspaceMES V3 disabilitata.", "V3_PREVIEW_DISABLED", 403);
   const input = await loadPreviewInputs(admin, requestId);
@@ -149,7 +154,7 @@ export async function createWorkspaceV3Preview({ admin, requestId, requestedBy, 
   const bomHash = aggregateWorkspaceHashes(sources.map((source) => source.bom_hash));
   const availabilityVersion = payloadHash({ products: [...input.productByCode.values()].map((row) => [row.codice_articolo,row.giacenza,row.impegnato,row.sincronizzato_il]),
     commitments: [...input.committedByCode], supplierSnapshotHash: input.supplierSnapshot?.snapshot_hash || null });
-  const commandIdentity = previewCommandIdentity({ requestId, octHash, bomHash, availabilityVersion });
+  const commandIdentity = createPreviewRecalculationIdentity({ requestId, octHash, bomHash, availabilityVersion });
   const { externalId, correlationId, idempotencyKey } = commandIdentity;
   const mesCommand = { contractVersion: 3, workspaceRdpExternalId: input.request.external_id, externalId,
     idempotencyKey,

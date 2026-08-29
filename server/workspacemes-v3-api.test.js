@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createFormulaDemand } from "./workspacemes-v3-api.js";
+import { createFormulaDemand, createPreviewRecalculationIdentity } from "./workspacemes-v3-api.js";
 
 test("il contratto formula invia prodotto finito, codice FP e quantità senza UDM FP Mexal", () => {
   const demand = createFormulaDemand({
@@ -23,4 +23,14 @@ test("il contratto formula invia prodotto finito, codice FP e quantità senza UD
     rdpRevision: "00000000-0000-4000-8000-000000000010",
   });
   assert.equal(Object.hasOwn(demand, "unitOfMeasure"), false);
+});
+
+test("ogni ricalcolo volontario usa una nuova preview, mentre il retry dello stesso tentativo resta idempotente", () => {
+  const input = { requestId: "rdp-15", octHash: "oct", bomHash: "bom", availabilityVersion: "stock" };
+  const first = createPreviewRecalculationIdentity({ ...input, previewAttemptId: "attempt-1" });
+  const retry = createPreviewRecalculationIdentity({ ...input, previewAttemptId: "attempt-1" });
+  const recalculation = createPreviewRecalculationIdentity({ ...input, previewAttemptId: "attempt-2" });
+
+  assert.deepEqual(retry, first);
+  assert.notDeepEqual(recalculation, first);
 });

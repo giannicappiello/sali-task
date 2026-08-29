@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Ban, CheckCircle2, ChevronRight, Factory, RefreshCw, Search, Send, ShieldAlert, X } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
-import { confirmedProductionOrder, diagnosticCanBeArchived, diagnosticIsManageable, productionOrderProgremesPath } from "./rdp-workbench-state.js";
+import { confirmedProductionOrder, diagnosticCanBeArchived, diagnosticIsManageable, productionOrderProgremesPath, v3RecalculationFailure } from "./rdp-workbench-state.js";
 
 const TABS = [
   ["evaluation", "OCT da valutare"], ["rdp", "RdP"], ["production", "In produzione"],
@@ -127,6 +127,16 @@ function V3Panel({ v3, canDecide, busy, onPreview, onConfirm }) {
   </section>;
 }
 
+function RdpFailureDialog({ failure, onClose }) {
+  if (!failure) return null;
+  return <div className="rdp-dialog-backdrop" role="presentation" onMouseDown={onClose}><section className="rdp-dialog rdp-error-dialog" role="alertdialog" aria-modal="true" aria-labelledby="rdp-error-title" onMouseDown={(event) => event.stopPropagation()}>
+    <header><div><span className="rdp-eyebrow">Elaborazione conclusa con errore</span><h2 id="rdp-error-title">RdP non andata a buon fine</h2></div><button type="button" onClick={onClose} aria-label="Chiudi errore RdP"><X/></button></header>
+    <div className="rdp-error-summary"><AlertTriangle/><div><strong>Errore: {failure.code || "V3_PREVIEW_FAILED"}</strong><p>{failure.message || "L’elaborazione della RdP non è stata completata."}</p></div></div>
+    <p className="rdp-error-safety">Non è stata eseguita alcuna decisione produttiva. Correggere il problema indicato e premere nuovamente RICALCOLA RDP.</p>
+    <div className="rdp-dialog-actions"><button type="button" className="primary-action" onClick={onClose}>Ho capito</button></div>
+  </section></div>;
+}
+
 function DiagnosticActionDialog({ diagnostic, busy, canManage, onClose, onApply }) {
   const [reason, setReason] = useState("");
   const [confirmArchive, setConfirmArchive] = useState(false);
@@ -219,6 +229,7 @@ export default function RdpWorkbench() {
   const [decision, setDecision] = useState(null);
   const [cancelTarget, setCancelTarget] = useState(null);
   const [diagnosticTarget, setDiagnosticTarget] = useState(null);
+  const [rdpFailure, setRdpFailure] = useState(null);
   const [productionGates, setProductionGates] = useState(null);
   const [octRefresh, setOctRefresh] = useState(null);
   const refreshGeneration = useRef(0);
@@ -307,9 +318,9 @@ export default function RdpWorkbench() {
   function toggle(row) { setSelected((current) => current.includes(row.id) ? current.filter((id) => id !== row.id) : [...current, row.id]); setPreview(null); setResult(null); }
   async function openDetail(row) { setError(""); try { setDetail(await callWorkbench(accessToken, "progremes_workbench_detail", { orderId: row.orderId || row.id, requestId: row.requestId })); } catch (e) { setError(e.message); } }
   async function createPreview() { if (!sendEnabled || !selected.length || busy) return; setBusy(true); setError(""); try { setPreview(await callWorkbench(accessToken, "workspacemes_v3_precheck", { orderIds: selected })); } catch (e) { setError(e.message); } finally { setBusy(false); } }
-  async function sendRequest() { if (!sendEnabled || !preview || busy) return; setBusy(true); setError(""); try { const response = await callWorkbench(accessToken, "workspacemes_v3_request", { orderIds: selected, snapshotId: preview.snapshot.id }); if (!response.requestId) throw new Error("Workspace non ha restituito il riferimento RdP V3."); setPreview(null); setSelected([]); await load(); const outcome = await callWorkbench(accessToken, "progremes_workbench_detail", { requestId: response.requestId }); setResult({ ...response, rdpNumber: outcome.request?.rdp_number }); setDetail(outcome); if (response.previewError) setError(`RdP V3 creata ma bloccata: ${response.previewError.message}`); } catch (e) { setError(e.code === "DEMAND_CHANGED" ? "L’OCT è cambiato dopo l’anteprima: ripetere il precheck." : e.code === "RDP_IDEMPOTENCY_CONFLICT" ? "La selezione appartiene a una precedente generazione RdP. Aggiorna la schermata e crea una nuova anteprima." : e.message); } finally { setBusy(false); } }
-  async function createV3Preview() { if (!detail?.request?.id || busy) return; setBusy(true); setError(""); try { await callWorkbench(accessToken, "workspacemes_v3_preview", { requestId: detail.request.id }); setDetail(await callWorkbench(accessToken, "progremes_workbench_detail", { requestId: detail.request.id })); } catch (e) { setError(e.message); } finally { setBusy(false); } }
-  async function confirmDecision(reason = "") { if ((!decision?.proposal?.id && decision?.kind !== "v3") || busy) return; setBusy(true); setError(""); try { const response = decision.kind === "v3" ? await callWorkbench(accessToken, "workspacemes_v3_confirm", { previewId: decision.preview.id, reason }) : await callWorkbench(accessToken, "progremes_production_confirm", { proposalId: decision.proposal.id }); const productionOrder = decision.kind === "v3" ? response.mes?.productionOrders?.[0] : confirmedProductionOrder(response); if (!productionOrder) throw new Error("ProgreMES ha confermato la decisione senza restituire l’OP generato."); setDecision(null); setResult({ kind: "production_order", status: response.workspaceStatus || response.status || response.mes?.status || "Planned", externalId: detail?.request?.external_id, productionOrder }); setDetail(await callWorkbench(accessToken, "progremes_workbench_detail", { requestId: detail.request.id })); await load(); } catch (e) { setError(e.message); } finally { setBusy(false); } }
+  async function sendRequest() { if (!sendEnabled || !preview || busy) return; setBusy(true); setError(""); setRdpFailure(null); try { const response = await callWorkbench(accessToken, "workspacemes_v3_request", { orderIds: selected, snapshotId: preview.snapshot.id }); if (!response.requestId) throw new Error("Workspace non ha restituito il riferimento RdP V3."); setPreview(null); setSelected([]); await load(); const outcome = await callWorkbench(accessToken, "progremes_workbench_detail", { requestId: response.requestId }); setResult({ ...response, rdpNumber: outcome.request?.rdp_number }); setDetail(outcome); const failure = response.previewError ? { code: response.previewError.code || "V3_PREVIEW_FAILED", message: response.previewError.message } : v3RecalculationFailure(response.v3Preview); if (failure) { setError(`RdP V3 creata ma bloccata: ${failure.message}`); setRdpFailure(failure); } } catch (e) { const message = e.code === "DEMAND_CHANGED" ? "L’OCT è cambiato dopo l’anteprima: ripetere il precheck." : e.code === "RDP_IDEMPOTENCY_CONFLICT" ? "La selezione appartiene a una precedente generazione RdP. Aggiorna la schermata e crea una nuova anteprima." : e.message; setError(message); setRdpFailure({ code: e.code || "V3_REQUEST_FAILED", message }); } finally { setBusy(false); } }
+  async function createV3Preview() { if (!detail?.request?.id || busy) return; setBusy(true); setError(""); setRdpFailure(null); try { const response = await callWorkbench(accessToken, "workspacemes_v3_preview", { requestId: detail.request.id }); setDetail(await callWorkbench(accessToken, "progremes_workbench_detail", { requestId: detail.request.id })); const failure = v3RecalculationFailure(response); if (failure) setRdpFailure(failure); } catch (e) { setError(e.message); setRdpFailure({ code: e.code || "V3_PREVIEW_FAILED", message: e.message }); } finally { setBusy(false); } }
+  async function confirmDecision(reason = "") { if ((!decision?.proposal?.id && decision?.kind !== "v3") || busy) return; setBusy(true); setError(""); setRdpFailure(null); try { const response = decision.kind === "v3" ? await callWorkbench(accessToken, "workspacemes_v3_confirm", { previewId: decision.preview.id, reason }) : await callWorkbench(accessToken, "progremes_production_confirm", { proposalId: decision.proposal.id }); const productionOrder = decision.kind === "v3" ? response.mes?.productionOrders?.[0] : confirmedProductionOrder(response); if (!productionOrder) throw new Error("ProgreMES ha confermato la decisione senza restituire l’OP generato."); setDecision(null); setResult({ kind: "production_order", status: response.workspaceStatus || response.status || response.mes?.status || "Planned", externalId: detail?.request?.external_id, productionOrder }); setDetail(await callWorkbench(accessToken, "progremes_workbench_detail", { requestId: detail.request.id })); await load(); } catch (e) { setError(e.message); setRdpFailure({ code: e.code || "V3_CONFIRM_FAILED", message: e.message }); } finally { setBusy(false); } }
   async function cancelRequest(reason) {
     if (!cancelTarget?.id || !canCancel || busy) return;
     setBusy(true); setError("");
@@ -350,5 +361,6 @@ export default function RdpWorkbench() {
     <PreviewDialog preview={preview} busy={busy} sendEnabled={sendEnabled} onCancel={() => setPreview(null)} onConfirm={sendRequest}/>
     <CancelRequestDialog request={cancelTarget} busy={busy} onClose={() => setCancelTarget(null)} onConfirm={cancelRequest}/>
     <DecisionDialog key={decision?.kind || decision?.proposal?.id || "none"} decision={decision} busy={busy} onClose={() => setDecision(null)} onConfirm={confirmDecision}/>
+    <RdpFailureDialog failure={rdpFailure} onClose={() => setRdpFailure(null)}/>
   </div>;
 }

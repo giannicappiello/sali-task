@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { confirmedProductionOrder, diagnosticCanBeArchived, diagnosticIsManageable, productionOrderProgremesPath } from "./rdp-workbench-state.js";
+import { confirmedProductionOrder, diagnosticCanBeArchived, diagnosticIsManageable, productionOrderProgremesPath, v3RecalculationFailure } from "./rdp-workbench-state.js";
 
 test("riconosce l'OP realmente generato dalla conferma MES", () => {
   assert.deepEqual(confirmedProductionOrder({ proposals: [
@@ -33,4 +33,16 @@ test("una diagnostica risolta può essere eliminata dalla vista operativa", () =
   assert.equal(diagnosticCanBeArchived({ status: "Resolved" }), true);
   assert.equal(diagnosticCanBeArchived({ status: "Ignored" }), true);
   assert.equal(diagnosticCanBeArchived({ status: "Archived" }), false);
+});
+
+test("una preview V3 bloccata produce un errore esplicito con i blocker univoci", () => {
+  assert.deepEqual(v3RecalculationFailure({ status: "BLOCKED", components: [
+    { blockerCode: "FORMULA_UOM_MISSING" },
+    { blocker_code: "FORMULA_UOM_MISSING" },
+    { blockerCode: "FORMULA_NOT_FOUND" },
+  ] }), {
+    code: "FORMULA_UOM_MISSING · FORMULA_NOT_FOUND",
+    message: "La preview è stata elaborata, ma contiene blocchi e non può essere confermata.",
+  });
+  assert.equal(v3RecalculationFailure({ status: "READY" }), null);
 });

@@ -29,3 +29,15 @@ export function diagnosticIsManageable(diagnostic = {}) {
 export function diagnosticCanBeArchived(diagnostic = {}) {
   return String(diagnostic?.status || "").toUpperCase() !== "ARCHIVED";
 }
+
+export function v3RecalculationFailure(payload = {}) {
+  if (String(payload?.status || "").toUpperCase() !== "BLOCKED") return null;
+  const components = Array.isArray(payload?.components) ? payload.components : [];
+  const codes = [...new Set(components
+    .map((component) => String(component?.blockerCode || component?.blocker_code || "").trim())
+    .filter(Boolean))];
+  return {
+    code: codes.join(" · ") || "V3_PREVIEW_BLOCKED",
+    message: "La preview è stata elaborata, ma contiene blocchi e non può essere confermata.",
+  };
+}

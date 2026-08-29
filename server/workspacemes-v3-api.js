@@ -1,6 +1,5 @@
-import { randomUUID } from "node:crypto";
 import { aggregateWorkspaceHashes, createProgremesProductionClient } from "./progremes-production-client.js";
-import { COMPONENT_KIND, confirmationIdempotencyKey, explodeFinishedBom, netDirectComponent, payloadHash } from "./workspacemes-v3.js";
+import { COMPONENT_KIND, confirmationIdempotencyKey, deterministicUuid, explodeFinishedBom, netDirectComponent, payloadHash, previewCommandIdentity } from "./workspacemes-v3.js";
 
 const clean = (value) => String(value ?? "").trim();
 const upper = (value) => clean(value).toUpperCase();
@@ -61,7 +60,7 @@ async function loadPreviewInputs(admin, requestId) {
     .eq("snapshot_id", supplierSnapshot.id).eq("active", true)) : [];
   const suppliesByCode = new Map();
   for (const row of supplierLines) suppliesByCode.set(upper(row.article_code), [...(suppliesByCode.get(upper(row.article_code)) || []), row]);
-  return { request, demand, revisionByCode, linesByRevision, productByCode, committedByCode, supplierSnapshot, suppliesByCode };
+  return { request, demand, demandCapturedAt: snapshotRows[0]?.captured_at, revisionByCode, linesByRevision, productByCode, committedByCode, supplierSnapshot, suppliesByCode };
 }
 
 function bomFor(revision, lines) {
@@ -150,12 +149,12 @@ export async function createWorkspaceV3Preview({ admin, requestId, requestedBy, 
   const bomHash = aggregateWorkspaceHashes(sources.map((source) => source.bom_hash));
   const availabilityVersion = payloadHash({ products: [...input.productByCode.values()].map((row) => [row.codice_articolo,row.giacenza,row.impegnato,row.sincronizzato_il]),
     commitments: [...input.committedByCode], supplierSnapshotHash: input.supplierSnapshot?.snapshot_hash || null });
-  const externalId = randomUUID();
-  const correlationId = randomUUID();
+  const commandIdentity = previewCommandIdentity({ requestId, octHash, bomHash, availabilityVersion });
+  const { externalId, correlationId, idempotencyKey } = commandIdentity;
   const mesCommand = { contractVersion: 3, workspaceRdpExternalId: input.request.external_id, externalId,
-    idempotencyKey: `workspacemes:v3:preview:${payloadHash({ requestId, octHash, bomHash, availabilityVersion })}`,
+    idempotencyKey,
     expectedOctHash: octHash, finishedBomHash: bomHash, availabilityVersion,
-    requiredAt: sources.map((source) => orderById.get(clean(source.order_id))?.requestedDeliveryDate).filter(Boolean).sort()[0] || new Date().toISOString(),
+    requiredAt: sources.map((source) => orderById.get(clean(source.order_id))?.requestedDeliveryDate).filter(Boolean).sort()[0] || input.demandCapturedAt || "1970-01-01T00:00:00.000Z",
     correlationId, causationId: input.request.external_id,
     formulaDemands: formulaComponents.map((component) => createFormulaDemand({ component, sources, requestId })) };
   const mes = await client.previewV3(mesCommand);
@@ -211,9 +210,10 @@ export async function confirmWorkspaceV3({ admin, previewId, reason, requestedBy
   const previewAnalysisHashes = (preview.snapshot?.components || []).map((row) => clean(row.formulaSnapshotHash)).filter(Boolean);
   const effectiveAnalysisHashes = analysisHashes.length ? analysisHashes : previewAnalysisHashes;
   if (!effectiveAnalysisHashes.length || !octHashes.length) throw fail("Hash certificati V3 necessari alla conferma mancanti.", "V3_ANALYSIS_HASH_MISSING");
-  const externalId = randomUUID();
+  const idempotencyKey = confirmationIdempotencyKey({ previewHash: preview.preview_hash });
+  const externalId = deterministicUuid({ purpose: "confirmation", idempotencyKey });
   const command = { contractVersion: 3, externalId, previewExternalId: preview.external_id,
-    idempotencyKey: confirmationIdempotencyKey({ previewHash: preview.preview_hash }), expectedPreviewHash: preview.snapshot?.mes?.snapshotHash,
+    idempotencyKey, expectedPreviewHash: preview.snapshot?.mes?.snapshotHash,
     expectedAnalysisHash: aggregateWorkspaceHashes(effectiveAnalysisHashes), expectedOctVersionHash: aggregateWorkspaceHashes(octHashes),
     reason: clean(reason), decidedBy: `workspace:${requestedBy || "service"}`, correlationId: preview.correlation_id,
     causationId: preview.external_id };

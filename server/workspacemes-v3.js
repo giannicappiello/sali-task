@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 export const WORKSPACEMES_V3_CONTRACT = 3;
+export const WORKSPACEMES_V3_PREVIEW_IDEMPOTENCY_REVISION = 2;
 export const COMPONENT_KIND = Object.freeze({ DIRECT: "DIRECT_COMPONENT", FORMULA: "FORMULA_COMPONENT" });
 
 const clean = (value) => String(value ?? "").trim();
@@ -15,6 +16,22 @@ export function stableJson(value) {
 
 export function payloadHash(value) {
   return createHash("sha256").update(stableJson(value)).digest("hex");
+}
+
+export function deterministicUuid(value) {
+  const digest = payloadHash(value);
+  const variant = ((Number.parseInt(digest[16], 16) & 0x3) | 0x8).toString(16);
+  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(13, 16)}-${variant}${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+}
+
+export function previewCommandIdentity(identity) {
+  const digest = payloadHash({ revision: WORKSPACEMES_V3_PREVIEW_IDEMPOTENCY_REVISION, ...identity });
+  const idempotencyKey = `workspacemes:v3:preview:${digest}`;
+  return {
+    idempotencyKey,
+    externalId: deterministicUuid({ purpose: "preview", idempotencyKey }),
+    correlationId: deterministicUuid({ purpose: "preview-correlation", idempotencyKey }),
+  };
 }
 
 export function classifyComponent(component, policy = {}) {

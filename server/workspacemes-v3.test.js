@@ -1,10 +1,21 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { COMPONENT_KIND, assertPreviewCurrent, buildV3Preview, classifyComponent, confirmationIdempotencyKey, netDirectComponent } from "./workspacemes-v3.js";
+import { COMPONENT_KIND, assertPreviewCurrent, buildV3Preview, classifyComponent, confirmationIdempotencyKey, deterministicUuid, netDirectComponent, previewCommandIdentity } from "./workspacemes-v3.js";
 
 test("metadata autorevole prevale sul prefisso FP", () => {
   assert.equal(classifyComponent({ articleCode: "FP001", componentKind: "DIRECT_COMPONENT" }).kind, COMPONENT_KIND.DIRECT);
   assert.equal(classifyComponent({ articleCode: "XX001", metadata: { isFormula: true } }).kind, COMPONENT_KIND.FORMULA);
+});
+
+test("retry preview V3 conserva chiave, externalId e correlationId per lo stesso payload", () => {
+  const input = { requestId: "rdp-15", octHash: "oct", bomHash: "bom", availabilityVersion: "stock" };
+  const first = previewCommandIdentity(input);
+  const retry = previewCommandIdentity(input);
+  assert.deepEqual(retry, first);
+  assert.match(first.idempotencyKey, /^workspacemes:v3:preview:[a-f0-9]{64}$/);
+  assert.match(first.externalId, /^[a-f0-9]{8}-[a-f0-9]{4}-5[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/);
+  assert.notDeepEqual(previewCommandIdentity({ ...input, availabilityVersion: "stock-2" }), first);
+  assert.equal(deterministicUuid({ purpose: "confirmation", idempotencyKey: "key" }), deterministicUuid({ purpose: "confirmation", idempotencyKey: "key" }));
 });
 
 test("nettificazione DIRECT non conta due volte impegni e scarta arrivi tardivi", () => {

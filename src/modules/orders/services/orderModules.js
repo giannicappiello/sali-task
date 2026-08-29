@@ -9,7 +9,18 @@ export function orderModuleDefinition(moduleCode = "prof") {
 }
 
 export function orderModuleFilter(moduleCode = "prof") {
-  return moduleCode === "prof" ? "modulo_ordini.eq.prof,modulo_ordini.is.null" : `modulo_ordini.eq.${moduleCode}`;
+  const resolvedModule = ORDER_MODULE_DEFINITIONS[moduleCode] ? moduleCode : "prof";
+  return `modulo_ordini.eq.${resolvedModule}`;
+}
+
+export function orderBelongsToModule(moduleCode = "prof", order = {}) {
+  const storedModule = String(order.modulo_ordini || "").trim().toLowerCase();
+  if (storedModule !== moduleCode) return false;
+  return moduleCode !== "prof" || String(order.origine || "").trim().toLowerCase() !== "mexal_oct";
+}
+
+export function filterOrderModuleRows(moduleCode = "prof", rows = []) {
+  return rows.filter((order) => orderBelongsToModule(moduleCode, order));
 }
 
 export function isPrivateOrderModule(moduleCode) {

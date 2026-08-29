@@ -5,10 +5,10 @@ import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
 import { useOrdersModule } from "../ordersModuleContext";
 import { filterDashboardOrders, getDashboardOrderMonth } from "../services/dashboardOrders";
-import { agentDisplayName, loadAgentNameMap, sortOrdersNewestFirst } from "../services/agentNames";
+import { agentDisplayName, customerDisplayName, loadAgentNameMap, loadCustomerDirectory, sortOrdersNewestFirst } from "../services/agentNames";
 import { getOrderDisplayStatus } from "../services/orderDisplayStatus";
 import AIOrderTypeDialog from "../components/AIOrderTypeDialog";
-import { filterOrderModuleDocuments, isPrivateOrderModule, orderModuleDocumentTypes, orderModuleFilter } from "../services/orderModules";
+import { filterOrderModuleDocuments, filterOrderModuleRows, isPrivateOrderModule, orderModuleDocumentTypes, orderModuleFilter } from "../services/orderModules";
 
 export default function OrdersDashboard() {
   const { moduleCode, basePath } = useOrdersModule();
@@ -18,6 +18,8 @@ export default function OrdersDashboard() {
   const [stats, setStats] = useState({ ordiniMese: 0, aperti: 0, inCorso: 0, evasi: 0 });
   const [orders, setOrders] = useState([]);
   const [agentsByCode, setAgentsByCode] = useState(new Map());
+  const [customersByCode, setCustomersByCode] = useState(new Map());
+  const [agentsByCustomer, setAgentsByCustomer] = useState(new Map());
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [monthFilter, setMonthFilter] = useState("");
@@ -59,7 +61,7 @@ export default function OrdersDashboard() {
 
     setStats({ ordiniMese, aperti, inCorso, evasi });
     if (ordersResult.error) console.error("Errore caricamento ordini dashboard:", ordersResult.error);
-    const orderRows = sortOrdersNewestFirst(ordersResult.data || []);
+    const orderRows = sortOrdersNewestFirst(filterOrderModuleRows(moduleCode, ordersResult.data || []));
     const orderIds = orderRows.map((order) => order.id);
     let documents = [];
     if (orderIds.length) {
@@ -72,10 +74,16 @@ export default function OrdersDashboard() {
       return grouped;
     }, new Map());
     let names = new Map();
-    try { names = await loadAgentNameMap(orderRows.map((order) => order.codice_agente_mexal)); }
-    catch (error) { console.warn("Errore caricamento nomi agenti dashboard:", error); }
+    let customerDirectory = { namesByCode: new Map(), agentsByCustomer: new Map() };
+    try {
+      customerDirectory = await loadCustomerDirectory(orderRows.map((order) => order.codice_cliente));
+      names = await loadAgentNameMap(orderRows.map((order) => order.codice_agente_mexal || customerDirectory.agentsByCustomer.get(String(order.codice_cliente || "").trim().toUpperCase())));
+    }
+    catch (error) { console.warn("Errore caricamento anagrafiche cliente/agente dashboard:", error); }
     setAgentsByCode(names);
-    setOrders(orderRows.map((order) => ({ ...order, documenti_mexal: documentsByOrder.get(order.id) || [], agente_visualizzato: agentDisplayName(order, names) })));
+    setCustomersByCode(customerDirectory.namesByCode);
+    setAgentsByCustomer(customerDirectory.agentsByCustomer);
+    setOrders(orderRows.map((order) => ({ ...order, documenti_mexal: documentsByOrder.get(order.id) || [], agente_visualizzato: agentDisplayName(order, names, customerDirectory.agentsByCustomer) })));
     setLoading(false);
   }, [canAccessOrders, canSeeAll, countTable, moduleCode, visibleAgents]);
 
@@ -104,7 +112,7 @@ export default function OrdersDashboard() {
       <div className="orders-dashboard-filter-row"><button type="button" className={!statusFilter ? "active" : ""} onClick={() => setStatusFilter("")}>Tutti gli ordini</button>{statusFilter && <span>Stato: {statusFilter.replaceAll("_", " ")}</span>}{monthFilter && <span>Mese: {formatMonth(monthFilter)}</span>}</div>
       <div className="orders-dashboard-table-wrap"><table className="orders-table orders-dashboard-table"><thead><tr><th>Data</th><th>Ordine</th><th>Cliente</th><th>Agente</th><th>Stato</th><th>Totale</th><th>Documenti Mexal</th><th><span className="sr-only">Apri ordine</span></th></tr></thead><tbody>{filteredOrders.map((order) => {
         const status = getOrderDisplayStatus(order);
-        return <tr key={order.id} className="orders-clickable-row" onClick={() => navigate(`${basePath}/elenco/${order.id}`)}><td>{formatDate(order.data_ordine)}</td><td><strong>{order.numero_ordine_visualizzato || order.numero_ordine || "Bozza"}</strong></td><td>{order.ragione_sociale_cliente || order.codice_cliente || "-"}</td><td>{agentDisplayName(order, agentsByCode)}</td><td><span className={`orders-status ${status.className}`}>{status.label}</span></td><td><strong>{formatCurrency(order.totale_documento ?? order.totale)}</strong></td><td><div className="orders-dashboard-documents">{documentNumbers(order).map((number) => <span key={number}>{number}</span>)}</div></td><td><ArrowUpRight size={18} aria-hidden="true" /></td></tr>;
+        return <tr key={order.id} className="orders-clickable-row" onClick={() => navigate(`${basePath}/elenco/${order.id}`)}><td>{formatDate(order.data_ordine)}</td><td><strong>{order.numero_ordine_visualizzato || order.numero_ordine || "Bozza"}</strong></td><td>{customerDisplayName(order, customersByCode)}</td><td>{agentDisplayName(order, agentsByCode, agentsByCustomer)}</td><td><span className={`orders-status ${status.className}`}>{status.label}</span></td><td><strong>{formatCurrency(order.totale_documento ?? order.totale)}</strong></td><td><div className="orders-dashboard-documents">{documentNumbers(order).map((number) => <span key={number}>{number}</span>)}</div></td><td><ArrowUpRight size={18} aria-hidden="true" /></td></tr>;
       })}</tbody></table></div>
       {!filteredOrders.length && <p className="orders-dashboard-empty">{search || statusFilter || monthFilter ? "Nessun ordine corrisponde ai filtri selezionati." : "Non ci sono ancora ordini da mostrare."}</p>}
     </section>

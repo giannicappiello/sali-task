@@ -297,7 +297,7 @@ export function normalizeOct(document) {
   return {
     key,
     header: {
-      origine: "mexal_oct", mexal_sigla: sigla, mexal_cod_modulo: codModulo,
+      origine: "mexal_oct", modulo_ordini: "private", mexal_sigla: sigla, mexal_cod_modulo: codModulo,
       mexal_serie: serie, mexal_numero: numero, mexal_anno: number(first(document, ["anno"])),
       mexal_chiave: key, mexal_cod_conto: text(first(document, ["cod_conto", "codice_cliente"])),
       codice_cliente: text(first(document, ["cod_conto", "codice_cliente"])),
@@ -537,8 +537,10 @@ export async function syncOctOrders({ mexal, supabase, env = process.env, contex
   let retiredLines = 0;
   for (const rawNormalized of documents) {
     const normalized = resolveDocumentUnits(rawNormalized, availableArticleCatalog);
-    const { data: customer } = await supabase.from("ordini_clienti_cache").select("codice_cliente").eq("codice_cliente", normalized.header.mexal_cod_conto).maybeSingle();
+    const { data: customer } = await supabase.from("ordini_clienti_cache").select("codice_cliente,ragione_sociale,codice_agente_mexal").eq("codice_cliente", normalized.header.mexal_cod_conto).maybeSingle();
     normalized.header.cliente_mexal_risolto = Boolean(customer);
+    normalized.header.ragione_sociale_cliente = text(customer?.ragione_sociale) || normalized.header.mexal_cod_conto || null;
+    normalized.header.codice_agente_mexal = text(customer?.codice_agente_mexal) || null;
     const { data: outboundDocument, error: outboundLookupError } = await supabase
       .from("ordini_documenti_mexal")
       .select("ordine_id")

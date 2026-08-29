@@ -2,6 +2,7 @@ export const ORDER_DOCUMENTS = Object.freeze({
   OCM: Object.freeze({ moduleCode: "M", quantityField: "quantita_ocm" }),
   OCX: Object.freeze({ moduleCode: "X", quantityField: "quantita_ocx" }),
   OCI: Object.freeze({ moduleCode: "I", quantityField: "quantita_oci" }),
+  OCT: Object.freeze({ moduleCode: null, quantityField: "quantita" }),
 });
 
 export const DEFAULT_MEXAL_ORDER_DATE_FORMAT = "yyyymmdd";
@@ -29,6 +30,14 @@ export function classifyOrderLines(lines, { reservation = false } = {}) {
     }
     return documents;
   }, { OCM: [], OCX: [], OCI: [] });
+}
+
+export function classifyPrivateOrderLines(lines) {
+  const oct = (lines || []).map((line) => ({ ...line, quantita_documento: Number(line.quantita) || 0 }));
+  if (!oct.length) throw new Error("OCT senza righe.");
+  const invalid = oct.find((line) => !normalizeArticleCode(line.codice_articolo) || line.quantita_documento <= 0);
+  if (invalid) throw new Error(`Riga OCT non valida: ${invalid.codice_articolo || "codice articolo mancante"}.`);
+  return { OCT: oct };
 }
 
 const text = (value) => String(value ?? "").trim();
@@ -126,13 +135,15 @@ function destinationFields(order) {
   return { cod_anag_sped: matrix(destinationAccount) };
 }
 
-export function buildMexalOrderDocument(order, kind, lines, { serie = 1, magazzino = 5, notaFormat = "typed-array", dateFormat = DEFAULT_MEXAL_ORDER_DATE_FORMAT, causale = 1 } = {}) {
+export function buildMexalOrderDocument(order, kind, lines, { serie = 1, magazzino = 5, notaFormat = "typed-array", dateFormat = DEFAULT_MEXAL_ORDER_DATE_FORMAT, causale = 1, moduleCode } = {}) {
   const document = ORDER_DOCUMENTS[kind];
   if (!document || !lines?.length) return null;
+  const resolvedModuleCode = text(moduleCode || document.moduleCode);
+  if (!resolvedModuleCode) throw new Error(`Codice modulo Mexal mancante per ${kind}.`);
   const paymentId = number(order.id_pagamento ?? order.codice_pagamento_mexal ?? order.codice_pagamento);
   return compact({
     sigla: "OC", serie: number(serie), numero: 0, cod_conto: text(order.codice_cliente), data_documento: formatMexalOrderDate(order.data_ordine, dateFormat),
-    cod_modulo: document.moduleCode, id_causale: number(causale) ? [[1, number(causale)]] : undefined, id_magazzino: number(magazzino), codice_agente: text(order.codice_agente_mexal),
+    cod_modulo: resolvedModuleCode, id_causale: number(causale) ? [[1, number(causale)]] : undefined, id_magazzino: number(magazzino), codice_agente: text(order.codice_agente_mexal),
     nota: formatMexalNota(order.note_mexal || `Workspace n. ${order.numero_ordine_visualizzato || order.id}`, notaFormat),
     id_pagamento: paymentId, ...destinationFields(order), ...transportFields(order), ...buildRootMatrixRows(lines, magazzino, order.codice_agente_mexal, kind),
   });

@@ -274,7 +274,13 @@ async function buildActivitiesContext(scoped, access, isAdmin) {
 
 async function buildOrdersContext(scoped, access, isAdmin) {
   const modules = new Set(access.modules || []);
-  const allowedModules = isAdmin ? ["prof", "ph"] : [modules.has("ordini_pr") && "prof", modules.has("ordini_ph") && "ph"].filter(Boolean);
+  const allowedModules = isAdmin
+    ? ["prof", "ph", "private"]
+    : [
+        modules.has("ordini_pr") && "prof",
+        modules.has("ordini_ph") && "ph",
+        modules.has("ordini_private") && "private",
+      ].filter(Boolean);
   if (!allowedModules.length) return { note: "Nessun modulo ordini autorizzato." };
   const [{ data: integrations }, { data: agentCodes }] = await Promise.all([
     scoped.from("integrazioni_utenti").select("modulo,enabled,ruolo_ordini"),
@@ -284,10 +290,14 @@ async function buildOrdersContext(scoped, access, isAdmin) {
   const codes = (Array.isArray(agentCodes) ? agentCodes : []).map((value) => String(value || "").trim()).filter(Boolean);
   const results = [];
   for (const moduleCode of allowedModules) {
-    const integrationCode = moduleCode === "ph" ? "gestione_ordini_ph" : "gestione_ordini_pr";
+    const integrationCode = moduleCode === "private"
+      ? "gestione_ordini_private"
+      : moduleCode === "ph" ? "gestione_ordini_ph" : "gestione_ordini_pr";
     const integration = integrationByModule.get(integrationCode);
     if (!isAdmin && integration?.enabled !== true) continue;
-    let query = scoped.from("ordini_testate").select("*").or(moduleCode === "prof" ? "modulo_ordini.eq.prof,modulo_ordini.is.null" : "modulo_ordini.eq.ph").order("data_ordine", { ascending: false }).limit(80);
+    let query = scoped.from("ordini_testate").select("*").or(
+      moduleCode === "prof" ? "modulo_ordini.eq.prof,modulo_ordini.is.null" : `modulo_ordini.eq.${moduleCode}`,
+    ).order("data_ordine", { ascending: false }).limit(80);
     if (!isAdmin && integration?.ruolo_ordini !== "backoffice") {
       if (!codes.length) continue;
       query = query.in("codice_agente_mexal", codes);

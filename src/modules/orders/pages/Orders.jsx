@@ -7,6 +7,7 @@ import { useOrdersModule } from "../ordersModuleContext";
 import { agentDisplayName, loadAgentNameMap, sortOrdersNewestFirst } from "../services/agentNames";
 import { getOrderDisplayStatus } from "../services/orderDisplayStatus";
 import AIOrderTypeDialog from "../components/AIOrderTypeDialog";
+import { isPrivateOrderModule, orderModuleFilter } from "../services/orderModules";
 
 export default function Orders() {
   const { moduleCode, basePath } = useOrdersModule();
@@ -34,7 +35,7 @@ export default function Orders() {
       return;
     }
 
-    let query = supabase.from("ordini_testate").select("*").or(moduleCode === "prof" ? "modulo_ordini.eq.prof,modulo_ordini.is.null" : "modulo_ordini.eq.ph").eq("mese_ordine", month);
+    let query = supabase.from("ordini_testate").select("*").or(orderModuleFilter(moduleCode)).eq("mese_ordine", month);
     if (!canSeeAll) {
       if (!visibleAgents?.length) {
         setRows([]);
@@ -112,8 +113,8 @@ export default function Orders() {
       <div className="orders-toolbar">
         <div className="orders-search"><Search size={18} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Ricerca rapida ordini..." /></div>
         <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
-        {canWriteOrders && <><button className="orders-primary" type="button" onClick={() => navigate(`${basePath}/nuovo`)}>Nuovo ordine</button><button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/nuovo?tipo=prenotazione`)}>Ordine prenotazione</button></>}
-        <button className="orders-secondary" type="button" onClick={() => setAITypeDialogOpen(true)}><Sparkles size={17} /> Genera con AI</button>
+        {canWriteOrders && <><button className="orders-primary" type="button" onClick={() => navigate(`${basePath}/nuovo`)}>{isPrivateOrderModule(moduleCode) ? "Nuovo OCT" : "Nuovo ordine"}</button>{!isPrivateOrderModule(moduleCode) && <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/nuovo?tipo=prenotazione`)}>Ordine prenotazione</button>}</>}
+        <button className="orders-secondary" type="button" onClick={() => isPrivateOrderModule(moduleCode) ? openAIOrderImport("standard") : setAITypeDialogOpen(true)}><Sparkles size={17} /> Genera con AI</button>
       </div>
       {location.state?.message && <div className="orders-alert orders-alert-success">{location.state.message}</div>}
       <div className="orders-panel">

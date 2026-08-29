@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
+import process from "node:process";
 import { buildMexalClient, verifyUser } from "../../server/mexal/sync-products.js";
-import { DEFAULT_MEXAL_ORDER_DATE_FORMAT, ORDER_DOCUMENTS, buildMexalOrderDocument, classifyOrderLines, reconciliationFailure } from "../../server/mexal/order-documents.js";
+import { DEFAULT_MEXAL_ORDER_DATE_FORMAT, ORDER_DOCUMENTS, buildMexalOrderDocument, classifyOrderLines, classifyPrivateOrderLines, reconciliationFailure } from "../../server/mexal/order-documents.js";
 import { calculateCommissions } from "../../server/mexal/commission-engine.js";
 import { enqueueOrderConfirmationEmails } from "../../server/orders/order-email-queue.js";
 
@@ -10,11 +11,13 @@ function text(value) { return String(value ?? "").trim(); }
 function supabaseAdmin() { return createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false, autoRefreshToken: false } }); }
 export function documentOptions(config, kind) {
   const key = kind.toLowerCase();
+  const privateOct = kind === "OCT";
   return {
-    serie: config?.[`serie_${key}`] || 1,
+    serie: config?.[`serie_${key}`] || (privateOct ? null : 1),
     magazzino: config?.id_magazzino || 5,
     notaFormat: env("MEXAL_ORDER_NOTA_FORMAT") || "typed-array",
     dateFormat: env("MEXAL_ORDER_DATE_FORMAT") || DEFAULT_MEXAL_ORDER_DATE_FORMAT,
+    moduleCode: privateOct ? env("MEXAL_OCT_MODULE_CODE") : ORDER_DOCUMENTS[kind]?.moduleCode,
   };
 }
 
@@ -95,7 +98,9 @@ async function heartbeat(admin, orderId, syncToken) {
   await admin.from("ordini_testate").update({ sincronizzazione_heartbeat_il: new Date().toISOString() }).eq("id", orderId).eq("sync_token", syncToken);
 }
 function workspaceModule(order) {
-  return String(order?.modulo_ordini || "prof").toLowerCase() === "ph" ? "ORDINIPH" : "ORDINIPR";
+  const moduleCode = String(order?.modulo_ordini || "prof").toLowerCase();
+  if (moduleCode === "private") return "ORDINIPRIVATE";
+  return moduleCode === "ph" ? "ORDINIPH" : "ORDINIPR";
 }
 async function saveDocumentLines(admin, documentId, lines) {
   const rows = (lines || []).map((line, index) => ({
@@ -145,8 +150,9 @@ export default async function handler(req, res) {
     const { error: commissionSaveError } = await admin.rpc("salva_provvigioni_ordine", { p_ordine_id: orderId, p_aggiornamenti: commissionUpdates });
     if (commissionSaveError) throw commissionSaveError;
     lines.splice(0, lines.length, ...commissionedLines);
-    const classified = classifyOrderLines(lines, { reservation: order.tipo_ordine === "prenotazione" });
-    console.info("Mexal order processing", { orderId, ociLines: classified.OCI.length, ocmLines: classified.OCM.length, ocxLines: classified.OCX.length, lines: { OCM: lineDiagnostic(classified.OCM), OCX: lineDiagnostic(classified.OCX), OCI: lineDiagnostic(classified.OCI) } });
+    const privateOrder = String(order.modulo_ordini || "prof").toLowerCase() === "private";
+    const classified = privateOrder ? classifyPrivateOrderLines(lines) : classifyOrderLines(lines, { reservation: order.tipo_ordine === "prenotazione" });
+    console.info("Mexal order processing", { orderId, module: order.modulo_ordini || "prof", lines: Object.fromEntries(Object.entries(classified).map(([kind, rows]) => [kind, lineDiagnostic(rows)])) });
     const requiredKinds = Object.keys(classified).filter((kind) => classified[kind].length);
     const done = new Set(requiredKinds.filter((kind) => text(order[`numero_${kind.toLowerCase()}`])));
     syncToken = token();
@@ -154,21 +160,31 @@ export default async function handler(req, res) {
     if (startError) throw startError;
     if (!started) return res.status(409).json({ error: "È già presente una sincronizzazione attiva o lo stato non consente l'invio." });
     const { data: run, error: runError } = await admin.from("mexal_sync_runs").insert({ sync_type: "orders", status: "running", metadata: { source: "submit-order", order_id: orderId } }).select("id").single(); if (runError) throw runError; runId = run.id;
-    const { data: documentConfig, error: configError } = await admin.from("ordini_configurazione_documenti").select("serie_ocm,serie_ocx,serie_oci,id_magazzino,id_causale_vendita_diretta").eq("id", 1).maybeSingle();
+    const { data: baseDocumentConfig, error: configError } = await admin.from("ordini_configurazione_documenti").select("serie_ocm,serie_ocx,serie_oci,id_magazzino,id_causale_vendita_diretta").eq("id", 1).maybeSingle();
     const { data: moduleConfig, error: moduleConfigError } = await admin
       .from("ordini_moduli_configurazione")
       .select("serie_documento,invia_email_agente,invia_email_cliente,invia_email_responsabile,backoffice_1_email,backoffice_2_email,email_cliente_oggetto_template,email_cliente_corpo_template,email_agente_oggetto_template,email_agente_corpo_template,email_backoffice_oggetto_template,email_backoffice_corpo_template")
       .eq("modulo_ordini", order.modulo_ordini || "prof")
       .maybeSingle();
     if (configError || moduleConfigError) throw configError || moduleConfigError;
-    if (moduleConfig?.serie_documento) { documentConfig.serie_ocm = moduleConfig.serie_documento; documentConfig.serie_ocx = moduleConfig.serie_documento; documentConfig.serie_oci = moduleConfig.serie_documento; }
+    const documentConfig = { ...(baseDocumentConfig || {}) };
+    if (privateOrder) {
+      if (!moduleConfig?.serie_documento) throw new Error("Configurazione OrdiniPrivate incompleta: selezionare la serie OCT.");
+      if (!env("MEXAL_OCT_MODULE_CODE")) throw new Error("Variabile Vercel mancante: MEXAL_OCT_MODULE_CODE");
+      documentConfig.serie_oct = moduleConfig.serie_documento;
+    } else if (moduleConfig?.serie_documento) {
+      documentConfig.serie_ocm = moduleConfig.serie_documento;
+      documentConfig.serie_ocx = moduleConfig.serie_documento;
+      documentConfig.serie_oci = moduleConfig.serie_documento;
+    }
     const mexal = buildMexalClient(); const documents = []; const failures = [];
     for (const kind of requiredKinds) {
       if (await stopRequested(admin, orderId, syncToken)) break;
       await heartbeat(admin, orderId, syncToken);
       const { data: savedDocument, error: savedDocumentError } = await admin.from("ordini_documenti_mexal").select("*").eq("ordine_id", orderId).eq("tipo_documento", kind).maybeSingle();
       if (savedDocumentError) throw savedDocumentError;
-      const existingDocument = savedDocument?.numero ? savedDocument : done.has(kind) ? { numero: order[`numero_${kind.toLowerCase()}`], serie: documentOptions(documentConfig, kind).serie, cod_modulo: ORDER_DOCUMENTS[kind]?.moduleCode, tentativi: 0 } : null;
+      const options = documentOptions(documentConfig, kind);
+      const existingDocument = savedDocument?.numero ? savedDocument : done.has(kind) ? { numero: order[`numero_${kind.toLowerCase()}`], serie: options.serie, cod_modulo: options.moduleCode, tentativi: 0 } : null;
       if (savedDocument?.numero || done.has(kind)) {
         try {
           const reconciled = await mexal.getJson(`/documenti/ordini-clienti/OC+${encodeURIComponent(existingDocument.serie)}+${encodeURIComponent(existingDocument.numero)}`);
@@ -195,7 +211,7 @@ export default async function handler(req, res) {
           throw error;
         }
         documents.push({ kind, numero });
-        const { data: createdDocument, error: createdSaveError } = await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, modulo: workspaceModule(order), anno: new Date(order.data_ordine || Date.now()).getFullYear(), stato: "created", stato_operativo: "APERTO", presente_in_mexal: true, sigla: "OC", serie: reference.serie || options.serie, numero, cod_modulo: ORDER_DOCUMENTS[kind]?.moduleCode, tentativi: Number(savedDocument?.tentativi || 0) + 1, errore: null, risposta: { result, diagnostics }, creato_il: new Date().toISOString(), ultimo_sync_mexal: new Date().toISOString(), aggiornato_il: new Date().toISOString() }).select("id").single();
+        const { data: createdDocument, error: createdSaveError } = await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, modulo: workspaceModule(order), anno: new Date(order.data_ordine || Date.now()).getFullYear(), stato: "created", stato_operativo: "APERTO", presente_in_mexal: true, sigla: "OC", serie: reference.serie || options.serie, numero, cod_modulo: options.moduleCode, tentativi: Number(savedDocument?.tentativi || 0) + 1, errore: null, risposta: { result, diagnostics }, creato_il: new Date().toISOString(), ultimo_sync_mexal: new Date().toISOString(), aggiornato_il: new Date().toISOString() }).select("id").single();
         if (createdSaveError) throw createdSaveError;
         await saveDocumentLines(admin, createdDocument.id, classified[kind]);
         await admin.from("ordini_sync_mexal_log").insert({ ordine_id: orderId, tipo_documento: kind, stato: "successo", payload, risposta: { result, diagnostics, sourceLines }, iniziato_il: startedAt, completato_il: new Date().toISOString() });
@@ -205,7 +221,8 @@ export default async function handler(req, res) {
         const diagnosticRecord = { diagnostics, mexalResponse, mexalResult: error?.mexalResult || null, sourceLines };
         failures.push({ kind, error: error.message });
         console.error("Mexal order document failed", { orderId, kind, error: error.message, payload, ...diagnosticRecord });
-        await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, modulo: workspaceModule(order), anno: new Date(order.data_ordine || Date.now()).getFullYear(), stato: "failed", stato_operativo: "ERRORE", sigla: "OC", serie: documentOptions(documentConfig, kind).serie, cod_modulo: ORDER_DOCUMENTS[kind]?.moduleCode, tentativi: Number(savedDocument?.tentativi || 0) + 1, errore: error.message, risposta: diagnosticRecord, aggiornato_il: new Date().toISOString() });
+        const options = documentOptions(documentConfig, kind);
+        await admin.from("ordini_documenti_mexal").upsert({ ordine_id: orderId, tipo_documento: kind, modulo: workspaceModule(order), anno: new Date(order.data_ordine || Date.now()).getFullYear(), stato: "failed", stato_operativo: "ERRORE", sigla: "OC", serie: options.serie, cod_modulo: options.moduleCode, tentativi: Number(savedDocument?.tentativi || 0) + 1, errore: error.message, risposta: diagnosticRecord, aggiornato_il: new Date().toISOString() });
         await admin.from("ordini_sync_mexal_log").insert({ ordine_id: orderId, tipo_documento: kind, stato: "errore", payload, risposta: diagnosticRecord, errore: error.message, iniziato_il: startedAt, completato_il: new Date().toISOString() });
       }
     }

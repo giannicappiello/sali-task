@@ -10,6 +10,7 @@ import { getOrderDisplayStatus, hasMexalDocuments } from "../services/orderDispl
 import { quantitiesForOrderLine } from "../services/availability";
 import { buildWritableOrderPayload } from "../services/orderPayload";
 import useOrdersAccess from "./useOrdersAccess";
+import { isPrivateOrderModule, orderModuleDefinition, orderModuleFilter } from "../services/orderModules";
 
 function money(value) {
   return Number(value || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
@@ -26,6 +27,7 @@ export default function OrderDetail() {
   const { isAdminUser } = useAuth();
   const { canWriteOrders } = useOrdersAccess(moduleCode);
   const { orderId } = useParams();
+  const privateOrder = isPrivateOrderModule(moduleCode);
   const navigate = useNavigate();
   const goBack = useBackNavigation(`${basePath}/elenco`);
   const [order, setOrder] = useState(null);
@@ -59,15 +61,13 @@ export default function OrderDetail() {
 
       const sendingEnabled = configResult.data?.invia_automaticamente_mexal !== false;
       let loadedOrder = result.order;
-      const hasConfirmedQuantities = (result.lines || []).some((line) =>
-        Number(line.quantita_ocm || 0) > 0 || Number(line.quantita_ocx || 0) > 0 || Number(line.quantita_oci || 0) > 0
-      );
+      const hasConfirmedQuantities = (result.lines || []).some((line) => privateOrder
+        ? Number(line.quantita || 0) > 0
+        : Number(line.quantita_ocm || 0) > 0 || Number(line.quantita_ocx || 0) > 0 || Number(line.quantita_oci || 0) > 0);
 
       const isDraft = String(loadedOrder.stato || "").trim().toLowerCase() === "bozza";
-      if (canWriteOrders && !isDraft && !sendingEnabled && hasConfirmedQuantities && loadedOrder.stato_sincronizzazione !== "completato") {
-        const moduleFilter = moduleCode === "prof"
-          ? "modulo_ordini.eq.prof,modulo_ordini.is.null"
-          : "modulo_ordini.eq.ph";
+      if (canWriteOrders && !privateOrder && !isDraft && !sendingEnabled && hasConfirmedQuantities && loadedOrder.stato_sincronizzazione !== "completato") {
+        const moduleFilter = orderModuleFilter(moduleCode);
         const { data: closedOrder, error: closeError } = await supabase
           .from("ordini_testate")
           .update({
@@ -105,7 +105,9 @@ export default function OrderDetail() {
     setMessage("");
     try {
       const result = await submitOrderToMexal(orderId, moduleCode);
-      setMessage(result.skipped ? result.message : `Ordine inviato a Mexal. OCM: ${result.numero_ocm || "-"} · OCX: ${result.numero_ocx || "-"} · OCI: ${result.numero_oci || "-"}`);
+      setMessage(result.skipped ? result.message : privateOrder
+        ? `OCT inviato a Mexal: ${result.numero_oct || "-"}`
+        : `Ordine inviato a Mexal. OCM: ${result.numero_ocm || "-"} · OCX: ${result.numero_ocx || "-"} · OCI: ${result.numero_oci || "-"}`);
       if (!result.skipped) {
         await load();
       }
@@ -118,7 +120,7 @@ export default function OrderDetail() {
 
   async function confirmDraft() {
     if (confirming || !isDraft) return;
-    if (!await window.workspaceConfirm("Confermare e inviare questo ordine PH senza modificarlo?")) return;
+    if (!await window.workspaceConfirm(`Confermare e inviare questo ${privateOrder ? "OCT" : "ordine PH"} senza modificarlo?`)) return;
     setConfirming(true);
     setError("");
     setMessage("");
@@ -129,7 +131,9 @@ export default function OrderDetail() {
         codice_articolo: line.codice_articolo,
         descrizione: line.descrizione,
         quantita: line.quantita,
-        ...quantitiesForOrderLine(line, null, true, { reservation, skipAvailability: true }),
+        ...(privateOrder
+          ? { quantita_disponibile: 0, quantita_ocm: 0, quantita_ocx: 0, quantita_oci: 0 }
+          : quantitiesForOrderLine(line, null, true, { reservation, skipAvailability: true })),
         prezzo_listino: line.prezzo_listino,
         codice_iva_mexal: line.codice_iva_mexal || null,
         aliquota_iva: line.aliquota_iva,
@@ -158,7 +162,9 @@ export default function OrderDetail() {
       const result = await submitOrderToMexal(orderId, moduleCode);
       setMessage(result.skipped
         ? result.message
-        : `Ordine confermato e inviato a Mexal. OCM: ${result.numero_ocm || "-"} · OCX: ${result.numero_ocx || "-"} · OCI: ${result.numero_oci || "-"}`);
+        : privateOrder
+          ? `OCT confermato e inviato a Mexal: ${result.numero_oct || "-"}`
+          : `Ordine confermato e inviato a Mexal. OCM: ${result.numero_ocm || "-"} · OCX: ${result.numero_ocx || "-"} · OCI: ${result.numero_oci || "-"}`);
       await load();
     } catch (confirmError) {
       setError(confirmError.message || "Conferma e invio dell'ordine non riusciti.");
@@ -221,7 +227,7 @@ export default function OrderDetail() {
         <div><span>Pagamento</span><strong>{order.descrizione_pagamento || order.codice_pagamento || "-"}</strong></div>
         <div><span>Stato</span><strong className={`orders-sync-badge ${displayStatus.className}`}>{displayStatus.label}</strong></div>
         <div><span>Ultimo tentativo</span><strong>{order.ultimo_tentativo_sync ? new Date(order.ultimo_tentativo_sync).toLocaleString("it-IT") : "-"}</strong></div>
-        {["OCM", "OCX", "OCI"].map((kind) => {
+        {(privateOrder ? ["OCT"] : ["OCM", "OCX", "OCI"]).map((kind) => {
           const document = order.mexal_documents?.find((item) => item.tipo_documento === kind);
           const value = document?.numero || order[`numero_${kind.toLowerCase()}`];
           return <div key={kind}><span>{kind}</span><strong>{value ? `${document?.serie || "-"}/${value}` : "-"}</strong></div>;
@@ -233,12 +239,12 @@ export default function OrderDetail() {
 
       {order.mexal_documents?.length > 0 && <section className="orders-panel">
         <h3>Documenti ordine Mexal</h3>
-        <p>Ogni documento figlio contiene esclusivamente i prodotti assegnati al proprio tipo OCM, OCX o OCI.</p>
+        <p>{privateOrder ? "Il documento OCT contiene tutte le righe confermate nell’ordine Private." : "Ogni documento figlio contiene esclusivamente i prodotti assegnati al proprio tipo OCM, OCX o OCI."}</p>
         <div className="orders-child-documents">
           {order.mexal_documents.map((document) => <article className="orders-child-document" key={document.id || document.tipo_documento}>
             <div className="orders-child-document-header">
               <div>
-                <span>{document.modulo || (moduleCode === "ph" ? "ORDINIPH" : "ORDINIPR")}</span>
+                <span>{document.modulo || orderModuleDefinition(moduleCode).mexalModule}</span>
                 <h4>Ordine {document.tipo_documento}</h4>
                 <p>{`${document.serie || "-"}/${document.numero || "-"}${document.anno ? ` · ${document.anno}` : ""}`}</p>
               </div>
@@ -267,8 +273,8 @@ export default function OrderDetail() {
       <section className="orders-panel">
         <div className="orders-table-wrap">
           <table className="orders-table">
-            <thead><tr><th>Codice</th><th>Descrizione</th><th>Q.tà</th><th>OCM</th><th>OCX</th><th>OCI</th><th>Listino</th><th>Sconto commerciale</th><th>Netto</th><th>Imponibile</th><th>IVA</th><th>Totale</th></tr></thead>
-            <tbody>{lines.map((line) => <tr key={line.id}><td>{line.codice_articolo}</td><td>{line.descrizione}</td><td>{line.quantita}</td><td>{line.quantita_ocm || 0}</td><td>{line.quantita_ocx || 0}</td><td>{line.quantita_oci || 0}</td><td>{money(line.prezzo_listino)}</td><td>{line.sconto_commerciale || "-"}</td><td>{money(line.prezzo_netto)}</td><td>{money(line.imponibile_riga)}</td><td>{money(line.iva_riga)} ({line.aliquota_iva || 0}%)</td><td>{money(line.totale_riga)}</td></tr>)}</tbody>
+            <thead><tr><th>Codice</th><th>Descrizione</th><th>Q.tà</th>{!privateOrder && <><th>OCM</th><th>OCX</th><th>OCI</th></>}<th>Listino</th><th>Sconto commerciale</th><th>Netto</th><th>Imponibile</th><th>IVA</th><th>Totale</th></tr></thead>
+            <tbody>{lines.map((line) => <tr key={line.id}><td>{line.codice_articolo}</td><td>{line.descrizione}</td><td>{line.quantita}</td>{!privateOrder && <><td>{line.quantita_ocm || 0}</td><td>{line.quantita_ocx || 0}</td><td>{line.quantita_oci || 0}</td></>}<td>{money(line.prezzo_listino)}</td><td>{line.sconto_commerciale || "-"}</td><td>{money(line.prezzo_netto)}</td><td>{money(line.imponibile_riga)}</td><td>{money(line.iva_riga)} ({line.aliquota_iva || 0}%)</td><td>{money(line.totale_riga)}</td></tr>)}</tbody>
           </table>
         </div>
       </section>
@@ -276,10 +282,10 @@ export default function OrderDetail() {
       <div className="orders-detail-actions">
         <button className="orders-secondary orders-download-pdf-mobile" type="button" disabled={downloadingPdf} onClick={downloadPdf}><Download size={18} /> {downloadingPdf ? "Generazione PDF..." : "SCARICA PDF"}</button>
         {canEdit && <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/modifica/${orderId}`)}><Edit3 size={18} /> MODIFICA ORDINE</button>}
-        {canWriteOrders && moduleCode === "ph" && isDraft && <button className="orders-primary" type="button" disabled={confirming} onClick={confirmDraft}>{confirming ? <RefreshCw className="spin" size={18} /> : <Send size={18} />}{confirming ? "CONFERMA E INVIO..." : "CONFERMA ORDINE"}</button>}
+        {canWriteOrders && ["ph", "private"].includes(moduleCode) && isDraft && <button className="orders-primary" type="button" disabled={confirming} onClick={confirmDraft}>{confirming ? <RefreshCw className="spin" size={18} /> : <Send size={18} />}{confirming ? "CONFERMA E INVIO..." : privateOrder ? "CONFERMA E CREA OCT" : "CONFERMA ORDINE"}</button>}
         {canDelete && <button className="orders-danger" type="button" disabled={deleting} onClick={removeOrder}><Trash2 size={18} /> {deleting ? "Eliminazione definitiva..." : "ELIMINA DEFINITIVAMENTE"}</button>}
         {canWriteOrders && syncStatus === "in_corso" && <button className="orders-danger" type="button" disabled={stopping} onClick={requestStop}><OctagonX size={18} /> {stopping ? "Richiesta..." : "ARRESTA INVIO"}</button>}
-        {canWriteOrders && mexalSendingEnabled && !isClosed && !["in_corso", "arresto_richiesto", "completato"].includes(syncStatus) && !hasMexalDocument && <button className="orders-primary" type="button" disabled={sending} onClick={sendToMexal}>{sending ? <RefreshCw className="spin" size={18} /> : <Send size={18} />}{["errore", "arrestato"].includes(syncStatus) ? "RIPROVA INVIO" : "INVIA A MEXAL"}</button>}
+        {canWriteOrders && (privateOrder || mexalSendingEnabled) && !isClosed && !["in_corso", "arresto_richiesto", "completato"].includes(syncStatus) && !hasMexalDocument && <button className="orders-primary" type="button" disabled={sending} onClick={sendToMexal}>{sending ? <RefreshCw className="spin" size={18} /> : <Send size={18} />}{["errore", "arrestato"].includes(syncStatus) ? "RIPROVA INVIO" : privateOrder ? "CREA E INVIA OCT" : "INVIA A MEXAL"}</button>}
         {syncStatus === "arresto_richiesto" && <span className="orders-sync-inline in_corso">Arresto richiesto: attesa della POST Mexal in corso.</span>}
       </div>
     </div>

@@ -254,7 +254,7 @@ async function verifyUser(req, supabase) {
     .from("integrazioni_utenti")
     .select("modulo,enabled,ruolo_ordini")
     .eq("utente_id", profile.id)
-    .in("modulo", ["gestione_ordini_pr", "gestione_ordini_ph"]);
+    .in("modulo", ["gestione_ordini_pr", "gestione_ordini_ph", "gestione_ordini_private"]);
 
   if (integrationError) {
     throw Object.assign(

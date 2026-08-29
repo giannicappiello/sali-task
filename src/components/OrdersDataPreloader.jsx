@@ -21,7 +21,7 @@ async function resolveOrdersAccess(profileId, isAdminUser) {
   const { data, error } = await supabase.from("integrazioni_utenti")
     .select("modulo,enabled,ruolo_ordini")
     .eq("utente_id", profileId)
-    .in("modulo", ["gestione_ordini_pr", "gestione_ordini_ph"]);
+    .in("modulo", ["gestione_ordini_pr", "gestione_ordini_ph", "gestione_ordini_private"]);
   if (error) throw error;
   const enabledRows = (data || []).filter((row) => row.enabled === true);
   return {
@@ -32,7 +32,7 @@ async function resolveOrdersAccess(profileId, isAdminUser) {
 
 export default function OrdersDataPreloader() {
   const { profile, isAdminUser, hasModuleAccess } = useAuth();
-  const canPreloadOrders = hasModuleAccess("ordini_pr") || hasModuleAccess("ordini_ph");
+  const canPreloadOrders = hasModuleAccess("ordini_pr") || hasModuleAccess("ordini_ph") || hasModuleAccess("ordini_private");
 
   useEffect(() => {
     if (!profile?.id || !canPreloadOrders) return undefined;

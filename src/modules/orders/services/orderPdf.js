@@ -42,7 +42,7 @@ export function getMexalDocuments(order = {}) {
       serie: String(document.serie ?? "").trim(),
       numero: String(document.numero ?? "").trim(),
     }))
-    .filter(({ type, serie, numero }) => ["OCM", "OCX", "OCI"].includes(type) && serie && numero)
+    .filter(({ type, serie, numero }) => ["OCM", "OCX", "OCI", "OCT"].includes(type) && serie && numero)
     .filter((document) => {
       const key = `${document.type}:${document.serie}:${document.numero}`;
       if (seen.has(key)) return false;
@@ -397,9 +397,10 @@ export async function createMexalDocumentPdfFiles(order, lines) {
     }
     const kind = document.type;
     const documentLines = lines.filter((line) => {
+      if (kind === "OCT") return true;
       if (kind === "OCI") return String(line.codice_articolo || "").trim().toUpperCase().startsWith("IMP");
       return Number(line[`quantita_${kind.toLowerCase()}`]) > 0;
-    }).map((line) => ({ ...line, quantita: kind === "OCI" ? line.quantita : line[`quantita_${kind.toLowerCase()}`] }));
+    }).map((line) => ({ ...line, quantita: ["OCI", "OCT"].includes(kind) ? line.quantita : line[`quantita_${kind.toLowerCase()}`] }));
     const doc = await createOrderPdf(order, documentLines, { document });
     return { name: `ordine-${document.type}-${document.serie}-${document.numero}.pdf`, data: doc.output("arraybuffer") };
   }));

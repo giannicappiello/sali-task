@@ -18,6 +18,7 @@ import { buildAvailabilityPreview, buildAvailabilitySignature, getAvailabilityVa
 import { buildNewOrderInsertPayload, buildWritableOrderPayload } from "../services/orderPayload";
 import { ORDER_CUSTOMER_COLUMNS } from "../services/orderDataSelections";
 import { loadDirectProductCatalog } from "../services/directProductCatalog";
+import { isPrivateOrderModule, orderModuleFilter } from "../services/orderModules";
 
 const PAGE_SIZE = 1000;
 
@@ -178,8 +179,9 @@ export default function NewOrder() {
   const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [availabilityInvalidated, setAvailabilityInvalidated] = useState(false);
   const [existingOrderType, setExistingOrderType] = useState("");
-  const isReservation = editingOrderId ? existingOrderType === "prenotazione" : requestedReservation;
-  const skipAvailability = moduleCode === "ph";
+  const isReservation = !isPrivateOrderModule(moduleCode) && (editingOrderId ? existingOrderType === "prenotazione" : requestedReservation);
+  const privateOrder = isPrivateOrderModule(moduleCode);
+  const skipAvailability = moduleCode === "ph" || privateOrder;
   const availabilityRequestId = useRef(0);
   const productSearchRef = useRef(null);
   const productQuantityRef = useRef(null);
@@ -202,13 +204,13 @@ export default function NewOrder() {
     let active = true;
     (async () => {
       const [{ data: existing, error: orderError }, { data: existingLines, error: linesError }, { data: docs, error: docsError }] = await Promise.all([
-        supabase.from("ordini_testate").select("*").eq("id", editingOrderId).or(moduleCode === "prof" ? "modulo_ordini.eq.prof,modulo_ordini.is.null" : "modulo_ordini.eq.ph").single(),
+        supabase.from("ordini_testate").select("*").eq("id", editingOrderId).or(orderModuleFilter(moduleCode)).single(),
         supabase.from("ordini_righe").select("*").eq("ordine_id", editingOrderId).order("id"),
         supabase.from("ordini_documenti_mexal").select("numero").eq("ordine_id", editingOrderId).not("numero", "is", null),
       ]);
       if (orderError || linesError || docsError) { if (active) setError((orderError || linesError || docsError).message); return; }
       const isDraft = String(existing.stato || "").toLowerCase() === "bozza";
-      if (!isDraft && (existing.numero_ocm || existing.numero_ocx || existing.numero_oci || docs?.length || !["non_avviato", "non_inviato", "errore", "annullato", "arrestato"].includes(existing.stato_sincronizzazione || "non_inviato"))) { if (active) setError("Questo ordine non è più modificabile."); return; }
+      if (!isDraft && (existing.numero_ocm || existing.numero_ocx || existing.numero_oci || existing.numero_oct || docs?.length || !["non_avviato", "non_inviato", "errore", "annullato", "arrestato"].includes(existing.stato_sincronizzazione || "non_inviato"))) { if (active) setError("Questo ordine non è più modificabile."); return; }
       if (!active) return;
       setSelectedCustomer(customers.find((customer) => customer.codice_cliente === existing.codice_cliente) || { codice_cliente: existing.codice_cliente, ragione_sociale: existing.ragione_sociale_cliente });
       setExistingOrderType(existing.tipo_ordine || "standard");
@@ -663,7 +665,9 @@ export default function NewOrder() {
       // overwrite it with the UUID when saving the order's Mexal note.
       const noteMexal = `Workspace n. ${order.numero_ordine_visualizzato || order.id}`;
       const linePayload = lines.map((line) => {
-        const quantities = quantitiesForOrderLine(line, availability, confirm, { reservation: isReservation, skipAvailability });
+        const quantities = privateOrder
+          ? { quantita_disponibile: 0, quantita_ocm: 0, quantita_ocx: 0, quantita_oci: 0 }
+          : quantitiesForOrderLine(line, availability, confirm, { reservation: isReservation, skipAvailability });
         return {
           ordine_id: order.id,
           codice_articolo: line.codice_articolo,
@@ -722,7 +726,9 @@ export default function NewOrder() {
         if (moduleConfig?.invia_automaticamente_mexal !== false && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
           try {
             const syncResult = await submitOrderToMexal(order.id, moduleCode);
-            mexalMessage += ` OCM: ${syncResult.numero_ocm || "-"} · OCX: ${syncResult.numero_ocx || "-"} · OCI: ${syncResult.numero_oci || "-"}.`;
+            mexalMessage += privateOrder
+              ? ` OCT: ${syncResult.numero_oct || "-"}.`
+              : ` OCM: ${syncResult.numero_ocm || "-"} · OCX: ${syncResult.numero_ocx || "-"} · OCI: ${syncResult.numero_oci || "-"}.`;
           } catch (syncError) {
             mexalMessage += ` Ordine salvato, ma invio Mexal non riuscito: ${syncError.message}`;
           }
@@ -756,7 +762,7 @@ export default function NewOrder() {
           <ArrowLeft size={18} /> Torna agli ordini
         </button>
         <div>
-          <h2>{editingOrderId ? "Modifica ordine" : isReservation ? "Nuovo ordine prenotazione" : "Nuovo ordine"}</h2>
+          <h2>{editingOrderId ? `Modifica ${privateOrder ? "OCT" : "ordine"}` : privateOrder ? "Nuovo OCT" : isReservation ? "Nuovo ordine prenotazione" : "Nuovo ordine"}</h2>
           {editingOrderId && <p>Le ripartizioni saranno ricalcolate dopo una nuova verifica disponibilità.</p>}
         </div>
       </div>
@@ -992,7 +998,7 @@ export default function NewOrder() {
           </div>
         )}
       </section>}
-      {isReservation && <section className="orders-panel orders-order-section"><h3>4. Ordine prenotazione</h3><div className="orders-alert">Gli articoli saranno inseriti in OCI senza verifica delle giacenze Mexal. Gli articoli IMP saranno inseriti sempre in OCM.</div></section>}
+      {isReservation && !privateOrder && <section className="orders-panel orders-order-section"><h3>4. Ordine prenotazione</h3><div className="orders-alert">Gli articoli saranno inseriti in OCI senza verifica delle giacenze Mexal. Gli articoli IMP saranno inseriti sempre in OCM.</div></section>}
 
       <div className="orders-order-footer">
         <div className="orders-order-total orders-order-total-enhanced">
@@ -1004,17 +1010,19 @@ export default function NewOrder() {
         <div className="orders-order-actions">
           {(availability || isReservation || skipAvailability) && (
             <div className="orders-split-summary">
-              <strong>L'ordine verrà suddiviso automaticamente in:</strong>
-              <span>OCM: {pieces(documentPreviewTotals.ocm)} pezzi (evasione immediata)</span>
-              <span>OCI: {pieces(documentPreviewTotals.oci)} pezzi</span>
-              <span>OCX: {pieces(documentPreviewTotals.ocx)} pezzi (backorder)</span>
+              {privateOrder ? <><strong>Il modulo creerà un unico OCT:</strong><span>OCT: {pieces(totals.pezzi)} pezzi</span></> : <>
+                <strong>L'ordine verrà suddiviso automaticamente in:</strong>
+                <span>OCM: {pieces(documentPreviewTotals.ocm)} pezzi (evasione immediata)</span>
+                <span>OCI: {pieces(documentPreviewTotals.oci)} pezzi</span>
+                <span>OCX: {pieces(documentPreviewTotals.ocx)} pezzi (backorder)</span>
+              </>}
             </div>
           )}
           <button className="orders-secondary" type="button" disabled={saving} onClick={() => saveOrder({ confirm: false })}>
             <Save size={18} /> Salva bozza
           </button>
           <button className="orders-primary" type="button" disabled={saving || checkingAvailability || !availabilityValidity.valid || productsMissingVat.length > 0} onClick={() => saveOrder({ confirm: true })}>
-            <ShoppingCart size={18} /> {saving ? "Salvataggio..." : "Conferma ordine"}
+            <ShoppingCart size={18} /> {saving ? "Salvataggio..." : privateOrder ? "Conferma e crea OCT" : "Conferma ordine"}
           </button>
           {!isReservation && !skipAvailability && !availabilityValidity.valid && <small className="orders-confirmation-note">{availabilityValidity.reason}</small>}
           {productsMissingVat.length > 0 && <small className="orders-confirmation-note">IVA mancante: {productsMissingVat.map((line) => line.codice_articolo).join(", ")}</small>}

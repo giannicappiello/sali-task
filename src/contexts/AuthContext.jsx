@@ -25,7 +25,7 @@ function permissionModuleCodes(code) {
   if (code.startsWith("messages.")) return ["messaggi"];
   if (code.startsWith("team.")) return ["team"];
   if (code.startsWith("pharmacy.")) return ["beauty_days"];
-  if (code.startsWith("orders.")) return ["ordini_pr", "ordini_ph"];
+  if (code.startsWith("orders.")) return ["ordini_pr", "ordini_ph", "ordini_private"];
   if (code.startsWith("integrations.")) return ["integrazioni"];
   return [];
 }

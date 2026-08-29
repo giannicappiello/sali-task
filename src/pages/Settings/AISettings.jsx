@@ -31,7 +31,7 @@ const CAPABILITIES = [
   { key: "riconoscimento_immagini", label: "Immagini e documenti", description: "Abilita fotocamera, scansioni, PDF ed estrazione strutturata.", icon: Camera },
 ];
 
-const AI_MODULE_CODES = new Set(["attivita", "prodotti", "documenti", "beauty_days", "ordini_pr", "ordini_ph", "progremes"]);
+const AI_MODULE_CODES = new Set(["attivita", "prodotti", "documenti", "beauty_days", "ordini_pr", "ordini_ph", "ordini_private", "progremes"]);
 const MODULE_OVERRIDE_OPTIONS = [{ value: "inherit", label: "Eredita dal reparto" }, { value: "allow", label: "Consentito" }, { value: "deny", label: "Bloccato" }];
 
 const optionalNumber = (value) => value === "" || value === null || value === undefined ? null : Number(value);

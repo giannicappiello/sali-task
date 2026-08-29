@@ -139,6 +139,7 @@ function App() {
               <Route path="ordini/*" element={<Navigate to="/ordini-prof" replace />} />
               <Route path="ordini-prof/*" element={<WorkspaceAccessGuard moduleCode="ordini_pr"><OrdersModule moduleCode="prof" title="Ordini PR" basePath="/ordini-prof" /></WorkspaceAccessGuard>} />
               <Route path="ordini-ph/*" element={<WorkspaceAccessGuard moduleCode="ordini_ph"><OrdersModule moduleCode="ph" title="Ordini PH" basePath="/ordini-ph" /></WorkspaceAccessGuard>} />
+              <Route path="ordini-private/*" element={<WorkspaceAccessGuard moduleCode="ordini_private"><OrdersModule moduleCode="private" title="OrdiniPrivate" basePath="/ordini-private" /></WorkspaceAccessGuard>} />
               <Route path="integrations/*" element={<IntegrationsModule />} />
               <Route path="crm/*" element={<CrmModule />} />
             </Route>

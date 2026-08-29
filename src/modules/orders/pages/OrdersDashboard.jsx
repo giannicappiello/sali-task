@@ -8,6 +8,7 @@ import { filterDashboardOrders, getDashboardOrderMonth } from "../services/dashb
 import { agentDisplayName, loadAgentNameMap, sortOrdersNewestFirst } from "../services/agentNames";
 import { getOrderDisplayStatus } from "../services/orderDisplayStatus";
 import AIOrderTypeDialog from "../components/AIOrderTypeDialog";
+import { isPrivateOrderModule, orderModuleFilter } from "../services/orderModules";
 
 export default function OrdersDashboard() {
   const { moduleCode, basePath } = useOrdersModule();
@@ -25,7 +26,7 @@ export default function OrdersDashboard() {
 
   const countTable = useCallback(async (table, filters = []) => {
     let query = supabase.from(table).select("*", { count: "exact", head: true });
-    query = query.or(moduleCode === "prof" ? "modulo_ordini.eq.prof,modulo_ordini.is.null" : "modulo_ordini.eq.ph");
+    query = query.or(orderModuleFilter(moduleCode));
     filters.forEach(([field, value]) => { query = query.eq(field, value); });
     if (!canSeeAll) {
       if (!visibleAgents?.length) return 0;
@@ -47,7 +48,7 @@ export default function OrdersDashboard() {
     }
 
     const month = new Date().toISOString().slice(0, 7);
-    let ordersQuery = supabase.from("ordini_testate").select("*").or(moduleCode === "prof" ? "modulo_ordini.eq.prof,modulo_ordini.is.null" : "modulo_ordini.eq.ph");
+    let ordersQuery = supabase.from("ordini_testate").select("*").or(orderModuleFilter(moduleCode));
     if (!canSeeAll) ordersQuery = visibleAgents?.length ? ordersQuery.in("codice_agente_mexal", visibleAgents) : null;
 
     const [ordiniMese, aperti, inCorso, evasi, ordersResult] = await Promise.all([
@@ -95,9 +96,9 @@ export default function OrdersDashboard() {
 
   return <div className="orders-page">
     <div className="orders-toolbar">
-      {canWriteOrders && <><button className="orders-primary" type="button" onClick={() => navigate(`${basePath}/nuovo`)}>Nuovo ordine</button>
-      <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/nuovo?tipo=prenotazione`)}>Ordine prenotazione</button></>}
-      <button className="orders-secondary" type="button" onClick={() => setAITypeDialogOpen(true)}><Sparkles size={17} /> Genera con AI</button>
+      {canWriteOrders && <><button className="orders-primary" type="button" onClick={() => navigate(`${basePath}/nuovo`)}>{isPrivateOrderModule(moduleCode) ? "Nuovo OCT" : "Nuovo ordine"}</button>
+      {!isPrivateOrderModule(moduleCode) && <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/nuovo?tipo=prenotazione`)}>Ordine prenotazione</button>}</>}
+      <button className="orders-secondary" type="button" onClick={() => isPrivateOrderModule(moduleCode) ? openAIOrderImport("standard") : setAITypeDialogOpen(true)}><Sparkles size={17} /> Genera con AI</button>
     </div>
     <div className="orders-kpi-grid"><Kpi label="Ordini del mese" value={stats.ordiniMese} /><Kpi label="Ordini aperti" value={stats.aperti} status="aperto" active={statusFilter === "aperto"} onClick={toggleStatusFilter} /><Kpi label="Ordini in corso" value={stats.inCorso} status="in_corso" active={statusFilter === "in_corso"} onClick={toggleStatusFilter} /><Kpi label="Ordini evasi" value={stats.evasi} status="evaso" active={statusFilter === "evaso"} onClick={toggleStatusFilter} /></div>
     <section className="orders-dashboard-list">
@@ -116,5 +117,5 @@ export default function OrdersDashboard() {
 function formatDate(value) { if (!value) return "-"; return new Intl.DateTimeFormat("it-IT", { dateStyle: "medium" }).format(new Date(`${value}T00:00:00`)); }
 function formatMonth(value) { return new Intl.DateTimeFormat("it-IT", { month: "long", year: "numeric" }).format(new Date(`${value}-01T00:00:00`)); }
 function formatCurrency(value) { return Number(value ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" }); }
-function documentNumbers(order) { return [...new Set([order.numero_ocm, order.numero_ocx, order.numero_oci, ...(order.documenti_mexal || []).map((document) => document.numero)].filter(Boolean))]; }
+function documentNumbers(order) { return [...new Set([order.numero_ocm, order.numero_ocx, order.numero_oci, order.numero_oct, ...(order.documenti_mexal || []).map((document) => document.numero)].filter(Boolean))]; }
 function Kpi({ label, value, status, active, onClick }) { if (status) return <button type="button" className={`orders-kpi orders-kpi-button${active ? " active" : ""}`} onClick={() => onClick(status)} aria-pressed={active}><span>{label}</span><strong>{value}</strong></button>; return <div className="orders-kpi"><span>{label}</span><strong>{value}</strong></div>; }

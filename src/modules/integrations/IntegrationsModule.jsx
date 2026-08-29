@@ -32,6 +32,7 @@ export default function IntegrationsModule() {
       <Route path="mexal/serie-documenti" element={<IntegrationPermissionGate any={["integrations.configure","integrations.sync.document_series"]}><DocumentSeriesSettings /></IntegrationPermissionGate>} />
       <Route path="orders/prof" element={<IntegrationPermissionGate any={["integrations.configure"]}><OrderModuleSettings moduleCode="prof" /></IntegrationPermissionGate>} />
       <Route path="orders/ph" element={<IntegrationPermissionGate any={["integrations.configure"]}><OrderModuleSettings moduleCode="ph" /></IntegrationPermissionGate>} />
+      <Route path="orders/private" element={<IntegrationPermissionGate any={["integrations.configure"]}><OrderModuleSettings moduleCode="private" /></IntegrationPermissionGate>} />
       <Route path="documentale" element={<IntegrationPermissionGate any={["integrations.configure","integrations.sync.documents"]}><DocumentGatewaySettings /></IntegrationPermissionGate>} />
       <Route path="progremes" element={<IntegrationPermissionGate any={["integrations.configure","integrations.sync.progremes_modules"]}><ProgremesSettings /></IntegrationPermissionGate>} />
       <Route path="crm-digital" element={<IntegrationPermissionGate any={["integrations.configure"]}><DigitalIntegrationStatus /></IntegrationPermissionGate>} />

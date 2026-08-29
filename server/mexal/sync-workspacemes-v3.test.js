@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MES_FORMULA_UNIT, MEXAL_V3_CONTRACT, normalizeFinishedBomRows, normalizeSupplierOrders } from "./sync-workspacemes-v3.js";
+import { MES_FORMULA_UNIT, MEXAL_V3_CONTRACT, loadArticleMap, normalizeFinishedBomRows, normalizeSupplierOrders } from "./sync-workspacemes-v3.js";
 
 const articles = new Map([
   ["DR-BC07", { codice_articolo: "DR-BC07", descrizione: "Crema", dati_mexal: { um_principale: "PZ" } }],
@@ -76,4 +76,33 @@ test("la sincronizzazione preview può essere limitata agli articoli finiti dell
   assert.match(source, /if \(!includeSupplierOrders\)/);
   assert.match(source, /targetFinishedCodes\.has\(upper\(row\.codice\)\)/);
   assert.match(source, /relevantComponents\.has\(upper\(row\.codice_articolo\)\)/);
+});
+
+test("la cache articoli viene letta oltre il limite Supabase di 1000 righe", async () => {
+  const cache = Array.from({ length: 1000 }, (_, index) => ({
+    codice_articolo: `AS${String(index).padStart(4, "0")}`,
+    descrizione: `Articolo ${index}`,
+    unita_misura: "PZ",
+    dati_mexal: {},
+  }));
+  cache.push({ codice_articolo: "CW0001", descrizione: "Prodotto finito", unita_misura: "PZ", dati_mexal: {} });
+  const tables = { ordini_prodotti_cache: cache, prodotti: [], workspace_warehouse_stock: [] };
+  const supabase = {
+    from(table) {
+      return {
+        select() {
+          let rows = tables[table] || [];
+          const query = {
+            eq(column, value) { rows = rows.filter((row) => row[column] === value); return query; },
+            async range(from, to) { return { data: rows.slice(from, to + 1), error: null }; },
+          };
+          return query;
+        },
+      };
+    },
+  };
+
+  const articleMap = await loadArticleMap(supabase);
+  assert.equal(articleMap.size, 1001);
+  assert.equal(articleMap.get("CW0001")?.unita_misura, "PZ");
 });

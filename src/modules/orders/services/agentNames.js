@@ -1,11 +1,32 @@
-import { supabase } from "../../../lib/supabaseClient";
+import { supabase } from "../../../lib/supabaseClient.js";
+import { agentDisplayName, customerDisplayName, formatAgentName, normalizeOrderPartyCode } from "./orderPartyNames.js";
 
 function normalizeCode(value) {
-  return String(value || "").trim().toUpperCase();
+  return normalizeOrderPartyCode(value);
 }
 
-export function formatAgentName(user = {}) {
-  return [user.nome, user.cognome].map((value) => String(value || "").trim()).filter(Boolean).join(" ");
+export { agentDisplayName, customerDisplayName, formatAgentName };
+
+export async function loadCustomerDirectory(codes = []) {
+  const normalizedCodes = [...new Set(codes.map(normalizeCode).filter(Boolean))];
+  if (!normalizedCodes.length) return { namesByCode: new Map(), agentsByCustomer: new Map() };
+
+  const { data: customers, error } = await supabase
+    .from("ordini_clienti_cache")
+    .select("codice_cliente,ragione_sociale,codice_agente_mexal")
+    .in("codice_cliente", normalizedCodes);
+  if (error) throw error;
+
+  const namesByCode = new Map();
+  const agentsByCustomer = new Map();
+  for (const customer of customers || []) {
+    const code = normalizeCode(customer.codice_cliente);
+    const name = String(customer.ragione_sociale || "").trim();
+    const agentCode = normalizeCode(customer.codice_agente_mexal);
+    if (code && name && normalizeCode(name) !== code) namesByCode.set(code, name);
+    if (code && agentCode) agentsByCustomer.set(code, agentCode);
+  }
+  return { namesByCode, agentsByCustomer };
 }
 
 export async function loadAgentNameMap(codes = []) {
@@ -23,11 +44,6 @@ export async function loadAgentNameMap(codes = []) {
       .map((agent) => [normalizeCode(agent.codice), formatAgentName(agent)])
       .filter(([, name]) => Boolean(name))
   );
-}
-
-export function agentDisplayName(order = {}, map = new Map()) {
-  const code = normalizeCode(order.codice_agente_mexal);
-  return String(order.agente_nome || "").trim() || map.get(code) || "-";
 }
 
 export function orderNumberValue(order = {}) {

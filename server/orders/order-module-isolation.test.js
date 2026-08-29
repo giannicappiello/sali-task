@@ -3,7 +3,9 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   filterOrderModuleDocuments,
+  filterOrderModuleRows,
   orderModuleAcceptsDocument,
+  orderModuleFilter,
   orderModuleDocumentTypes,
 } from "../../src/modules/orders/services/orderModules.js";
 import { hasMexalDocuments } from "../../src/modules/orders/services/orderDisplayStatus.js";
@@ -13,6 +15,15 @@ test("OrdiniPR e OrdiniPH accettano soltanto OCM, OCX e OCI", () => {
   assert.deepEqual(orderModuleDocumentTypes("ph"), ["OCM", "OCX", "OCI"]);
   assert.equal(orderModuleAcceptsDocument("prof", "OCT"), false);
   assert.equal(orderModuleAcceptsDocument("ph", "OCT"), false);
+});
+
+test("OrdiniPR esclude sempre le testate OCT e non include più righe senza modulo", () => {
+  assert.equal(orderModuleFilter("prof"), "modulo_ordini.eq.prof");
+  assert.deepEqual(filterOrderModuleRows("prof", [
+    { id: "pr", modulo_ordini: "prof", origine: "workspace" },
+    { id: "oct-legacy", modulo_ordini: "prof", origine: "mexal_oct" },
+    { id: "null", modulo_ordini: null, origine: "workspace" },
+  ]).map((row) => row.id), ["pr"]);
 });
 
 test("OrdiniPrivate accetta soltanto OCT", () => {
@@ -49,4 +60,15 @@ test("migration e riconciliazione applicano il contratto documentale", async () 
   assert.match(migration, /ordini_private\.clienti/);
   assert.match(migration, /ordini_private\.fatture/);
   assert.match(syncSource, /\.eq\("modulo", "ORDINIPRIVATE"\)/);
+});
+
+test("l'importatore e il backfill classificano gli OCT come OrdiniPrivate", async () => {
+  const [migration, syncSource] = await Promise.all([
+    readFile(new URL("../../supabase/migrations/20260829201500_reclassify_oct_and_order_names.sql", import.meta.url), "utf8"),
+    readFile(new URL("../mexal/sync-oct-orders.js", import.meta.url), "utf8"),
+  ]);
+  assert.match(syncSource, /modulo_ordini:\s*"private"/);
+  assert.match(migration, /where origine = 'mexal_oct'/);
+  assert.match(migration, /tipo_documento = 'OCT'/);
+  assert.match(migration, /ragione_sociale_cliente = c\.ragione_sociale/);
 });

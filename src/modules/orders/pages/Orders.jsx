@@ -4,10 +4,10 @@ import { Search, Sparkles } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
 import { useOrdersModule } from "../ordersModuleContext";
-import { agentDisplayName, loadAgentNameMap, sortOrdersNewestFirst } from "../services/agentNames";
+import { agentDisplayName, customerDisplayName, loadAgentNameMap, loadCustomerDirectory, sortOrdersNewestFirst } from "../services/agentNames";
 import { getOrderDisplayStatus } from "../services/orderDisplayStatus";
 import AIOrderTypeDialog from "../components/AIOrderTypeDialog";
-import { isPrivateOrderModule, orderModuleDocumentTypes, orderModuleFilter } from "../services/orderModules";
+import { filterOrderModuleRows, isPrivateOrderModule, orderModuleDocumentTypes, orderModuleFilter } from "../services/orderModules";
 
 export default function Orders() {
   const { moduleCode, basePath } = useOrdersModule();
@@ -16,6 +16,8 @@ export default function Orders() {
   const { loading: accessLoading, visibleAgents, canSeeAll, canAccessOrders, canWriteOrders, isBackoffice, isAdmin } = useOrdersAccess(moduleCode);
   const [rows, setRows] = useState([]);
   const [agentsByCode, setAgentsByCode] = useState(new Map());
+  const [customersByCode, setCustomersByCode] = useState(new Map());
+  const [agentsByCustomer, setAgentsByCustomer] = useState(new Map());
   const [search, setSearch] = useState("");
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [loading, setLoading] = useState(true);
@@ -48,7 +50,7 @@ export default function Orders() {
 
     const { data, error } = await query;
     if (error) console.error("Errore ordini:", error);
-    const orderedRows = sortOrdersNewestFirst(data || []);
+    const orderedRows = sortOrdersNewestFirst(filterOrderModuleRows(moduleCode, data || []));
 
     let documents = [];
     const orderIds = orderedRows.map((row) => row.id);
@@ -76,13 +78,18 @@ export default function Orders() {
     }));
 
     let names = new Map();
+    let customerDirectory = { namesByCode: new Map(), agentsByCustomer: new Map() };
     try {
-      names = await loadAgentNameMap(rowsWithDocuments.map((row) => row.codice_agente_mexal));
+      customerDirectory = await loadCustomerDirectory(rowsWithDocuments.map((row) => row.codice_cliente));
+      const agentCodes = rowsWithDocuments.map((row) => row.codice_agente_mexal || customerDirectory.agentsByCustomer.get(String(row.codice_cliente || "").trim().toUpperCase()));
+      names = await loadAgentNameMap(agentCodes);
     } catch (agentError) {
-      console.warn("Errore caricamento nomi agenti:", agentError);
+      console.warn("Errore caricamento anagrafiche cliente/agente:", agentError);
     }
     setRows(rowsWithDocuments);
     setAgentsByCode(names);
+    setCustomersByCode(customerDirectory.namesByCode);
+    setAgentsByCustomer(customerDirectory.agentsByCustomer);
     setLoading(false);
   }, [canAccessOrders, canSeeAll, moduleCode, month, visibleAgents]);
 
@@ -97,7 +104,8 @@ export default function Orders() {
     if (!q) return rows;
     return rows.filter((item) => [
       ...Object.values(item),
-      agentDisplayName(item, agentsByCode),
+      customerDisplayName(item, customersByCode),
+      agentDisplayName(item, agentsByCode, agentsByCustomer),
       ...(item.documenti_mexal || []).flatMap((document) => [
         document.tipo_documento,
         document.serie,
@@ -105,7 +113,7 @@ export default function Orders() {
         document.stato_operativo,
       ]),
     ].some((value) => String(value ?? "").toLowerCase().includes(q)));
-  }, [rows, search, agentsByCode]);
+  }, [rows, search, agentsByCode, agentsByCustomer, customersByCode]);
 
   const accessLabel = isAdmin || isBackoffice ? "Accesso completo" : `${visibleAgents?.length || 0} agente/i autorizzato/i`;
 
@@ -129,7 +137,7 @@ export default function Orders() {
                 const parentReference = item.numero_ordine_visualizzato || item.numero_ordine || "Bozza";
                 return [
                   <tr key={item.id} className="orders-clickable-row" onClick={() => navigate(`${basePath}/elenco/${item.id}`)}>
-                    <td>PADRE</td><td>{item.data_ordine || "-"}</td><td>{parentReference}</td><td>-</td><td>{item.ragione_sociale_cliente || item.codice_cliente}</td><td>{agentDisplayName(item, agentsByCode)}</td>
+                    <td>PADRE</td><td>{item.data_ordine || "-"}</td><td>{parentReference}</td><td>-</td><td>{customerDisplayName(item, customersByCode)}</td><td>{agentDisplayName(item, agentsByCode, agentsByCustomer)}</td>
                     <td><span className={`orders-status ${status.className}`}>{status.label}</span></td>
                     <td>{Number(item.totale_imponibile ?? item.totale ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td><td>{Number(item.totale_iva || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td><td>{Number(item.totale_documento ?? item.totale ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td>
                   </tr>,

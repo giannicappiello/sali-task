@@ -543,6 +543,7 @@ export async function syncOctOrders({ mexal, supabase, env = process.env, contex
       .from("ordini_documenti_mexal")
       .select("ordine_id")
       .eq("tipo_documento", "OCT")
+      .eq("modulo", "ORDINIPRIVATE")
       .eq("sigla", normalized.header.mexal_sigla)
       .eq("serie", normalized.header.mexal_serie)
       .eq("numero", String(normalized.header.mexal_numero))

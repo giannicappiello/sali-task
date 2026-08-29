@@ -8,7 +8,7 @@ import { filterDashboardOrders, getDashboardOrderMonth } from "../services/dashb
 import { agentDisplayName, loadAgentNameMap, sortOrdersNewestFirst } from "../services/agentNames";
 import { getOrderDisplayStatus } from "../services/orderDisplayStatus";
 import AIOrderTypeDialog from "../components/AIOrderTypeDialog";
-import { isPrivateOrderModule, orderModuleFilter } from "../services/orderModules";
+import { filterOrderModuleDocuments, isPrivateOrderModule, orderModuleDocumentTypes, orderModuleFilter } from "../services/orderModules";
 
 export default function OrdersDashboard() {
   const { moduleCode, basePath } = useOrdersModule();
@@ -22,8 +22,6 @@ export default function OrdersDashboard() {
   const [statusFilter, setStatusFilter] = useState("");
   const [monthFilter, setMonthFilter] = useState("");
   const [loading, setLoading] = useState(true);
-  const visibleAgentsKey = JSON.stringify(visibleAgents);
-
   const countTable = useCallback(async (table, filters = []) => {
     let query = supabase.from(table).select("*", { count: "exact", head: true });
     query = query.or(orderModuleFilter(moduleCode));
@@ -35,7 +33,7 @@ export default function OrdersDashboard() {
     const { count, error } = await query;
     if (error) { console.error(`Errore conteggio ${table}:`, error); return 0; }
     return count || 0;
-  }, [canSeeAll, visibleAgentsKey, moduleCode]);
+  }, [canSeeAll, moduleCode, visibleAgents]);
 
   const loadStats = useCallback(async () => {
     setLoading(true);
@@ -65,7 +63,7 @@ export default function OrdersDashboard() {
     const orderIds = orderRows.map((order) => order.id);
     let documents = [];
     if (orderIds.length) {
-      const { data, error } = await supabase.from("ordini_documenti_mexal").select("ordine_id,tipo_documento,numero,stato_operativo,presente_in_mexal").in("ordine_id", orderIds).not("numero", "is", null);
+      const { data, error } = await supabase.from("ordini_documenti_mexal").select("ordine_id,tipo_documento,numero,stato_operativo,presente_in_mexal").in("ordine_id", orderIds).in("tipo_documento", orderModuleDocumentTypes(moduleCode)).not("numero", "is", null);
       if (error) console.error("Errore caricamento documenti Mexal dashboard:", error);
       documents = data || [];
     }
@@ -79,7 +77,7 @@ export default function OrdersDashboard() {
     setAgentsByCode(names);
     setOrders(orderRows.map((order) => ({ ...order, documenti_mexal: documentsByOrder.get(order.id) || [], agente_visualizzato: agentDisplayName(order, names) })));
     setLoading(false);
-  }, [canAccessOrders, canSeeAll, countTable, visibleAgentsKey]);
+  }, [canAccessOrders, canSeeAll, countTable, moduleCode, visibleAgents]);
 
   useEffect(() => {
     if (accessLoading) return undefined;
@@ -117,5 +115,9 @@ export default function OrdersDashboard() {
 function formatDate(value) { if (!value) return "-"; return new Intl.DateTimeFormat("it-IT", { dateStyle: "medium" }).format(new Date(`${value}T00:00:00`)); }
 function formatMonth(value) { return new Intl.DateTimeFormat("it-IT", { month: "long", year: "numeric" }).format(new Date(`${value}-01T00:00:00`)); }
 function formatCurrency(value) { return Number(value ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" }); }
-function documentNumbers(order) { return [...new Set([order.numero_ocm, order.numero_ocx, order.numero_oci, order.numero_oct, ...(order.documenti_mexal || []).map((document) => document.numero)].filter(Boolean))]; }
+function documentNumbers(order) {
+  const types = orderModuleDocumentTypes(order.modulo_ordini || "prof");
+  const stored = filterOrderModuleDocuments(order.modulo_ordini || "prof", order.documenti_mexal || []);
+  return [...new Set([...types.map((type) => order[`numero_${type.toLowerCase()}`]), ...stored.map((document) => document.numero)].filter(Boolean))];
+}
 function Kpi({ label, value, status, active, onClick }) { if (status) return <button type="button" className={`orders-kpi orders-kpi-button${active ? " active" : ""}`} onClick={() => onClick(status)} aria-pressed={active}><span>{label}</span><strong>{value}</strong></button>; return <div className="orders-kpi"><span>{label}</span><strong>{value}</strong></div>; }

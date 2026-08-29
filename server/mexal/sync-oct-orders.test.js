@@ -389,7 +389,7 @@ test("retry dello stesso OCT è idempotente e non crea duplicati", async () => {
 test("un OCT creato da OrdiniPrivate aggiorna la testata sorgente senza duplicarla", async () => {
   const supabase = writableSupabase();
   supabase.state.ordini_testate.push({ id: "private-order-1", modulo_ordini: "private", origine: "workspace", codice_cliente: "C1" });
-  supabase.state.ordini_documenti_mexal.push({ ordine_id: "private-order-1", tipo_documento: "OCT", sigla: "OC", serie: 2, numero: "500" });
+  supabase.state.ordini_documenti_mexal.push({ ordine_id: "private-order-1", tipo_documento: "OCT", modulo: "ORDINIPRIVATE", sigla: "OC", serie: 2, numero: "500" });
 
   await syncOctOrders({
     mexal: mixedImportMexal(), supabase,

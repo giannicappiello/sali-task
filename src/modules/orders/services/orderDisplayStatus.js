@@ -1,12 +1,15 @@
+import { filterOrderModuleDocuments, orderModuleCodeFromOrder, orderModuleDocumentTypes } from "./orderModules.js";
+
 // Stato visuale condiviso tra dashboard, elenco e dettaglio ordine.
 export function hasMexalDocuments(order = {}) {
-  if (order.numero_ocm || order.numero_ocx || order.numero_oci || order.numero_oct) return true;
-  const documents = order.mexal_documents || order.documenti_mexal || [];
+  const moduleCode = orderModuleCodeFromOrder(order);
+  if (orderModuleDocumentTypes(moduleCode).some((type) => order[`numero_${type.toLowerCase()}`])) return true;
+  const documents = filterOrderModuleDocuments(moduleCode, order.mexal_documents || order.documenti_mexal || []);
   return documents.some((document) => document?.numero);
 }
 
 export function hasOnlyEvictedMexalDocuments(order = {}) {
-  const documents = (order.mexal_documents || order.documenti_mexal || [])
+  const documents = filterOrderModuleDocuments(orderModuleCodeFromOrder(order), order.mexal_documents || order.documenti_mexal || [])
     .filter((document) => document?.numero && (document?.id || document?.stato_operativo || document?.presente_in_mexal !== undefined));
   return documents.length > 0 && documents.every((document) =>
     String(document.stato_operativo || "").toUpperCase() === "EVASO" || document.presente_in_mexal === false

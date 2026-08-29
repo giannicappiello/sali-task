@@ -14,6 +14,24 @@ test("nettificazione DIRECT non conta due volte impegni e scarta arrivi tardivi"
   ] }), { required: 100, onHand: 80, committed: 30, usable: 50, confirmedSupply: 20, uncovered: 30, owner: "WORKSPACE", mutatesInventory: false });
 });
 
+test("giacenza Mexal negativa resta auditabile ma non diventa disponibilità utilizzabile", () => {
+  assert.deepEqual(netDirectComponent({
+    requiredQuantity: 25,
+    onHandQuantity: -4,
+    committedQuantity: 3,
+    supplies: [],
+  }), {
+    required: 25,
+    onHand: -4,
+    committed: 3,
+    usable: 0,
+    confirmedSupply: 0,
+    uncovered: 25,
+    owner: "WORKSPACE",
+    mutatesInventory: false,
+  });
+});
+
 test("preview aggrega DIRECT e FP/MP senza mutazioni", () => {
   const preview = buildV3Preview({
     identity: { octRevision: 2, octHash: "oct", availabilityVersion: "stock-1", requiredAt: "2026-09-01" },

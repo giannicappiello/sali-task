@@ -29,9 +29,9 @@ export function classifyComponent(component, policy = {}) {
   return { kind: COMPONENT_KIND.DIRECT, source: "DEFAULT_NON_FORMULA" };
 }
 
-function quantity(value, label, { allowZero = true } = {}) {
+function quantity(value, label, { allowZero = true, allowNegative = false } = {}) {
   const parsed = Number(value ?? 0);
-  if (!Number.isFinite(parsed) || parsed < 0 || (!allowZero && parsed === 0)) {
+  if (!Number.isFinite(parsed) || (!allowNegative && parsed < 0) || (!allowZero && parsed === 0)) {
     const error = new Error(`${label} non valida.`);
     error.code = "INVALID_QUANTITY";
     throw error;
@@ -41,7 +41,9 @@ function quantity(value, label, { allowZero = true } = {}) {
 
 export function netDirectComponent(input) {
   const required = quantity(input.requiredQuantity, "Quantità necessaria", { allowZero: false });
-  const onHand = quantity(input.onHandQuantity, "Giacenza");
+  // Una giacenza Mexal negativa è una situazione reale da conservare in audit,
+  // ma non genera disponibilità utilizzabile per la nuova richiesta.
+  const onHand = quantity(input.onHandQuantity, "Giacenza", { allowNegative: true });
   const committed = quantity(input.committedQuantity, "Impegnato");
   const usable = Math.max(0, round(onHand - committed));
   const needAt = input.requiredAt ? new Date(input.requiredAt) : null;

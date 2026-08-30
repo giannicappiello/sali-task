@@ -3509,6 +3509,27 @@ body,
   margin: 0;
   padding: 20px 24px 24px;
   overflow: auto;
+  overflow-x: scroll;
+  scrollbar-gutter: stable;
+}
+
+/* Le aree operative larghe mantengono sempre disponibile la barra orizzontale. */
+.content-area :where(
+  .rdp-tabs,
+  .rdp-table-wrap,
+  .rdp-oct-lines,
+  .purchase-table-wrap,
+  .warehouse-table-scroll,
+  .crm-table-wrap,
+  .analytics-table-wrap,
+  .mexal-history-table-wrap,
+  .mexal-table-panel,
+  .tasks-panel,
+  .project-board-horizontal,
+  .table-responsive
+) {
+  overflow-x: scroll;
+  scrollbar-gutter: stable;
 }
 
 .content-area > *,

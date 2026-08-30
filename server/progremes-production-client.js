@@ -19,8 +19,11 @@ function required(name, env) {
 function enabled(name, env) { return String(env[name] || "").trim().toLowerCase() === "true"; }
 function hash(body) { return createHash("sha256").update(body).digest("hex"); }
 function mesErrorMessage(result) {
-  const message = text(result?.error).replace(/[\r\n\t]+/g, " ").slice(0, 500);
-  return message || "ProgreMES ha rifiutato la richiesta.";
+  const message = [result?.error, result?.message, result?.detail, result?.title]
+    .map((value) => text(value).replace(/[\r\n\t]+/g, " ").slice(0, 500))
+    .find(Boolean);
+  const code = text(result?.code).slice(0, 120);
+  return message || (code ? `ProgreMES ha rifiutato la richiesta (${code}).` : "ProgreMES ha rifiutato la richiesta.");
 }
 export function createLineIdempotencyKey(requestKey, lineId, commercialRevision) {
   return `rdp-line:v2:${hash(JSON.stringify({ requestKey, lineId, commercialRevision }))}`;
@@ -211,7 +214,17 @@ export function createProgremesProductionClient({ env = process.env, fetchImpl =
         },
       });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw Object.assign(new Error(mesErrorMessage(result)), { status: response.status, code: text(result.code) || undefined });
+      if (!response.ok) {
+        const upstreamCode = text(result.code) || `PROGREMES_HTTP_${response.status}`;
+        console.error("ProgreMES production request rejected", {
+          path, upstreamStatus: response.status, upstreamCode,
+        });
+        throw Object.assign(new Error(mesErrorMessage(result)), {
+          status: response.status,
+          code: upstreamCode,
+          details: { upstreamStatus: response.status, upstreamCode },
+        });
+      }
       return { result, payloadHash: hash(body) };
     } finally { clearTimeout(timer); }
   };

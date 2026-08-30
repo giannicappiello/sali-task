@@ -16,3 +16,22 @@ test("client V4 invia solo domanda PF e valida il netting completo MES", async (
   assert.equal(calls[1].url,`https://mes.example.test${V4_CONFIRM_PATH(requestId)}`);
   assert.deepEqual(Object.keys(calls[0].body.demands[0]).sort(),["finishedArticleCode","quantity","requiredAt","unitOfMeasure","workspaceLineId"].sort());
 });
+
+test("client V4 conserva codice e stato dei rifiuti MES privi di messaggio", async () => {
+  const requestId = "00000000-0000-4000-8000-000000000001";
+  const client = createProgremesProductionClient({
+    env: {
+      PROGREMES_URL: "https://mes.example.test",
+      PROGREMES_INTEGRATION_SECRET: "secret",
+      WORKSPACEMES_V4_CONFIRM_ENABLED: "true",
+    },
+    fetchImpl: async () => ({ ok: false, status: 401, json: async () => ({ code: "INVALID_SIGNATURE" }) }),
+  });
+  await assert.rejects(
+    client.confirmV4(requestId, { externalId: "00000000-0000-4000-8000-000000000003" }),
+    (error) => error.code === "INVALID_SIGNATURE"
+      && error.status === 401
+      && error.details?.upstreamStatus === 401
+      && /INVALID_SIGNATURE/.test(error.message),
+  );
+});

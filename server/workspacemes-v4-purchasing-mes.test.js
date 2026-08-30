@@ -7,14 +7,15 @@ test("calcola cronologicamente giacenze, arrivi e lotto di riordino", () => {
     stocks: [{ articleId: 1, availableQuantity: 40 }], existingPf: [],
     arrivals: [{ articleId: 1, expectedAt: "2026-09-20", residualQuantity: 30, supplierOrderNumber: "OF1", supplierId: 9, supplierName: "Fornitore" }],
     demands: [
-      { productionOrderId: 1, productionOrderNumber: "RDP16", requiredAt: "2026-09-10", priority: 1, articleId: 1, articleCode: "MP1", description: "Materia", unitOfMeasure: "KG", articleType: "MateriaPrima", quantity: 60, reorderLot: 25, leadTimeDays: 10 },
-      { productionOrderId: 2, productionOrderNumber: "RDP17", requiredAt: "2026-09-25", priority: 1, articleId: 1, articleCode: "MP1", description: "Materia", unitOfMeasure: "KG", articleType: "MateriaPrima", quantity: 20, reorderLot: 25, leadTimeDays: 10 },
+      { productionOrderId: 1, productionOrderNumber: "RDP16", octReferences: "OC/2/427", requiredAt: "2026-09-10", priority: 1, articleId: 1, articleCode: "MP1", description: "Materia", unitOfMeasure: "KG", articleType: "MateriaPrima", quantity: 60, reorderLot: 25, leadTimeDays: 10 },
+      { productionOrderId: 2, productionOrderNumber: "RDP17", octReferences: "OC/2/428", requiredAt: "2026-09-25", priority: 1, articleId: 1, articleCode: "MP1", description: "Materia", unitOfMeasure: "KG", articleType: "MateriaPrima", quantity: 20, reorderLot: 25, leadTimeDays: 10 },
     ] });
   assert.equal(rows.length, 1);
   assert.equal(rows[0].netRequirement, 20);
   assert.equal(rows[0].quantityToOrder, 25);
   assert.equal(rows[0].status, "TO_ORDER");
   assert.equal(rows[0].supplierId, 9);
+  assert.equal(rows[0].octReferences, "OC/2/427, OC/2/428");
 });
 
 test("un PF esistente viene mostrato ma non incrementa la disponibilità", () => {

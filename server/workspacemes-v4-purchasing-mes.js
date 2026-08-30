@@ -122,6 +122,7 @@ export function calculateWorkspaceV4PurchaseRequirements(source) {
         supplierId: suggested?.supplierId ?? null, supplierName: suggested?.supplierName || "",
         supplierOrders: [...new Set(arrivals.map((item) => `${item.supplierOrderNumber} (${new Date(item.expectedAt).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })})`))].join(", "),
         productionOrders: [...new Set(monthDemands.map((item) => item.productionOrderNumber))].slice(0, 4).join(", "),
+        octReferences: [...new Set(monthDemands.map((item) => clean(item.octReferences)).filter(Boolean))].join(", "),
         pfQuantity: pf.reduce((total, item) => total + number(item.quantity), 0), pfDocuments: [...new Set(pf.map((item) => item.documentNumber))].join(", "),
         status: quantityToOrder > 0 ? (day(orderBy) < day(new Date()) ? "ORDER_LATE" : "TO_ORDER") : allIncoming > 0 ? "COVERED_BY_ARRIVALS" : "COVERED_BY_STOCK" } );
     }

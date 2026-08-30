@@ -34,8 +34,7 @@ where codice = 'documenti';
 
 update public.workspace_schermate
 set nome = 'Documenti Direct',
-    descrizione = 'Archivio documentale Direct riservato ai reparti autorizzati.',
-    aggiornato_il = now()
+    descrizione = 'Archivio documentale Direct riservato ai reparti autorizzati.'
 where codice = 'documenti' or percorso = '/documentation';
 
 drop policy if exists "active users read workspace documents" on public.documenti_workspace;

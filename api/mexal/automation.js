@@ -118,6 +118,7 @@ const SYNC_ALL_PHASES = Object.freeze([
   "list_price_commissions",
   "orders",
   "sales_invoices",
+  "oct_orders",
 ]);
 
 function runPayload(body, syncType) {

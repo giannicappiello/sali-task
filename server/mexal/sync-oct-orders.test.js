@@ -75,6 +75,13 @@ test("formato legacy righe[] resta supportato incluso dt_sca_riga", () => {
       data_consegna: "2026-09-20",
       mexal_tipo_riga: "R",
       riga_descrittiva: false,
+      prezzo_listino: 0,
+      sconto_commerciale: null,
+      prezzo_netto: 0,
+      aliquota_iva: 0,
+      imponibile_riga: 0,
+      iva_riga: 0,
+      totale_riga: 0,
     },
     {
       mexal_posizione: 20,
@@ -86,8 +93,29 @@ test("formato legacy righe[] resta supportato incluso dt_sca_riga", () => {
       data_consegna: null,
       mexal_tipo_riga: "D",
       riga_descrittiva: true,
+      prezzo_listino: 0,
+      sconto_commerciale: null,
+      prezzo_netto: 0,
+      aliquota_iva: 0,
+      imponibile_riga: 0,
+      iva_riga: 0,
+      totale_riga: 0,
     },
   ]);
+});
+
+test("OCT importato conserva prezzi, sconti e totali per i KPI CRM", () => {
+  const normalized = normalizeOct({
+    sigla: "OC", cod_modulo: "T", serie: 2, numero: 415,
+    cod_conto: "501.00159", data_documento: "2026-08-08",
+    id_riga: [[1, 1]], codice_articolo: [[1, "PB0004"]], quantita: [[1, 10]],
+    prezzo: [[1, "12,50"]], sconto: [[1, "10+5"]], cod_iva: [[1, 22]],
+  });
+
+  assert.equal(normalized.lines[0].prezzo_netto, 10.6875);
+  assert.equal(normalized.lines[0].imponibile_riga, 106.88);
+  assert.equal(normalized.header.totale_imponibile, 106.88);
+  assert.equal(normalized.header.totale_documento, 130.39);
 });
 
 function readonlySupabase(tables, calls) {

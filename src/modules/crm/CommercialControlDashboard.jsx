@@ -107,7 +107,8 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const lastAutomaticRequest = useRef("");
+  const activeRequest = useRef(null);
+  const requestSequence = useRef(0);
   const compare = searchParams.get("compare") || "previous_period";
   const business = searchParams.get("business") || "";
   const market = searchParams.get("market") || "";
@@ -134,25 +135,36 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
     return `?${next.toString()}`;
   }, [searchParams]);
 
+  const requestArguments = useMemo(() => ({
+    p_scope: scope, p_from: period.from, p_to: period.to, p_compare: compare,
+    p_business: scope === "global" ? business || null : scope === "private" ? "PRIVATE" : "DIRECT",
+    p_market: market || null, p_country: country || null, p_agent: agent || null,
+    p_channel: scope === "direct" ? channel || null : null, p_customer: customer || null,
+    p_granularity: granularity,
+  }), [agent, business, channel, compare, country, customer, granularity, market, period.from, period.to, scope]);
+  const automaticRequestKey = useMemo(() => JSON.stringify(requestArguments), [requestArguments]);
+
   const load = useCallback(async () => {
+    activeRequest.current?.abort();
+    const controller = new AbortController();
+    const sequence = ++requestSequence.current;
+    activeRequest.current = controller;
     setLoading(true); setError("");
-    const { data: dashboard, error: dashboardError } = await supabase.rpc("crm_commercial_control_dashboard", {
-      p_scope: scope, p_from: period.from, p_to: period.to, p_compare: compare,
-      p_business: scope === "global" ? business || null : scope === "private" ? "PRIVATE" : "DIRECT",
-      p_market: market || null, p_country: country || null, p_agent: agent || null,
-      p_channel: scope === "direct" ? channel || null : null, p_customer: customer || null,
-      p_granularity: granularity,
-    });
+    let request = supabase.rpc("crm_commercial_control_dashboard", requestArguments);
+    if (typeof request.abortSignal === "function") request = request.abortSignal(controller.signal);
+    const { data: dashboard, error: dashboardError } = await request;
+    if (sequence !== requestSequence.current || controller.signal.aborted) return;
+    activeRequest.current = null;
     if (dashboardError) setError(dashboardError.message); else setData(dashboard || {});
     setLoading(false);
-  }, [agent, business, channel, compare, country, customer, granularity, market, period.from, period.to, scope]);
+  }, [requestArguments]);
 
-  const automaticRequestKey = [scope, period.from, period.to, compare, business, market, country, agent, channel, customer, granularity].join("|");
   useEffect(() => {
-    if (lastAutomaticRequest.current === automaticRequestKey) return;
-    lastAutomaticRequest.current = automaticRequestKey;
     const timer = window.setTimeout(() => void load(), 220);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      activeRequest.current?.abort();
+    };
   }, [automaticRequestKey, load]);
 
   const totals = useMemo(() => data?.totals || {}, [data?.totals]);

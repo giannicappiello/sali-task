@@ -23,10 +23,32 @@ function upper(value) {
   return normalize(value).toUpperCase();
 }
 
-function normalizeCountryCode(value) {
-  const country = upper(value);
+function scalarValue(value) {
+  if (!Array.isArray(value)) return value;
+  if (!value.length) return null;
+  return scalarValue(value[value.length - 1]);
+}
+
+export function normalizeCountryCode(value) {
+  const country = upper(scalarValue(value));
   if (["IT", "ITA", "ITALIA", "ITALY", "380"].includes(country)) return "IT";
   return country || null;
+}
+
+export function clientCountryCode(client) {
+  const keys = [
+    "cod_paese", "codice_paese", "paese", "cod_nazione", "codice_nazione",
+    "nazione", "sigla_nazione", "codice_iso", "cod_iso", "iso_paese", "country_code",
+  ];
+  const direct = normalizeCountryCode(firstValue(client, keys));
+  if (direct) return direct;
+  for (const container of ["anagrafica", "dati_anagrafici", "dati_fiscali", "fiscale", "sede", "indirizzo_sede"]) {
+    const nested = client?.[container];
+    if (!nested || typeof nested !== "object" || Array.isArray(nested)) continue;
+    const country = normalizeCountryCode(firstValue(nested, keys));
+    if (country) return country;
+  }
+  return null;
 }
 
 function firstValue(object, keys, fallback = null) {
@@ -411,16 +433,7 @@ function mapClient(client, syncDate, paymentsMap) {
     provincia:
       upper(firstValue(client, ["provincia", "prov", "sigla_provincia"])) ||
       null,
-    paese:
-      normalizeCountryCode(firstValue(client, [
-        "cod_paese",
-        "codice_paese",
-        "paese",
-        "cod_nazione",
-        "codice_nazione",
-        "nazione",
-        "sigla_nazione",
-      ])) || null,
+    paese: clientCountryCode(client),
     telefono:
       normalize(firstValue(client, ["telefono", "tel", "telefono1"])) || null,
     email:

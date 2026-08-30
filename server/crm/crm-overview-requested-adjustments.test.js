@@ -9,8 +9,12 @@ const syncClients = read("server/mexal/sync-clients.js");
 const migration = read("supabase/migrations/20260830210000_crm_overview_requested_adjustments.sql");
 
 test("la CRM Overview non ripete richieste automatiche identiche", () => {
-  assert.match(dashboard, /lastAutomaticRequest/);
-  assert.match(dashboard, /lastAutomaticRequest\.current === automaticRequestKey/);
+  assert.match(dashboard, /const requestArguments = useMemo/);
+  assert.match(dashboard, /const automaticRequestKey = useMemo\(\(\) => JSON\.stringify\(requestArguments\)/);
+  assert.match(dashboard, /activeRequest\.current\?\.abort\(\)/);
+  assert.match(dashboard, /requestSequence\.current/);
+  assert.match(dashboard, /request\.abortSignal\(controller\.signal\)/);
+  assert.doesNotMatch(dashboard, /lastAutomaticRequest/);
   assert.doesNotMatch(dashboard, /setInterval|visibilitychange/);
 });
 

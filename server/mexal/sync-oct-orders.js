@@ -1,8 +1,19 @@
 import process from "node:process";
+import { calculateOrderLineEconomics } from "./order-economics.js";
 import { authoritativeArticleUnit, resolveOctUnitOfMeasure } from "./unit-of-measure.js";
 function text(value) { return String(value ?? "").trim(); }
 function upper(value) { return text(value).toUpperCase(); }
 function number(value) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : null; }
+function localizedNumber(value) {
+  const raw = text(value);
+  if (!raw) return null;
+  const normalized = raw.includes(",")
+    ? raw.replace(/\./g, "").replace(",", ".")
+    : raw;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+function money(value) { return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100; }
 function first(object, names) { for (const name of names) if (object?.[name] !== undefined) return object[name]; return null; }
 function matrixFirst(value) {
   return Array.isArray(value) && Array.isArray(value[0]) ? value[0][value[0].length - 1] : value;
@@ -25,6 +36,11 @@ function parallelRowsOf(document) {
     codice_articolo: matrixMap(first(document, ["codice_articolo", "cod_articolo", "articolo"])),
     descr_riga: matrixMap(first(document, ["descr_riga", "descr_articolo", "descrizione"])),
     quantita: matrixMap(first(document, ["quantita", "qta"])),
+    prezzo: matrixMap(first(document, ["prezzo", "prezzo_unitario", "prezzo_listino"])),
+    prezzo_netto: matrixMap(first(document, ["prezzo_netto", "prezzo_scontato"])),
+    sconto: matrixMap(first(document, ["sconto", "sconto_riga", "sconto_commerciale"])),
+    imponibile_riga: matrixMap(first(document, ["imponibile_riga", "importo_netto_riga", "valore_netto_riga"])),
+    aliquota_iva: matrixMap(first(document, ["cod_iva", "aliquota_iva", "iva_percentuale"])),
     unita_misura: matrixMap(first(document, ["unita_misura", "um", "sigla_um"])),
     tp_um_articolo: matrixMap(first(document, ["tp_um_articolo", "tipo_unita_misura"])),
     dt_sca_riga: matrixMap(first(document, ["dt_sca_riga", "data_consegna_riga", "data_scadenza_riga"])),
@@ -280,20 +296,51 @@ export function normalizeOct(document) {
   const key = `${sigla}+${serie}+${numero}`;
   const lines = rowsOf(document).map((line, index) => {
     const code = text(first(line, ["codice_articolo", "cod_articolo", "codice", "articolo"]));
+    const descriptive = !code;
+    const rawPrice = localizedNumber(first(line, ["prezzo", "prezzo_unitario", "prezzo_listino"]));
+    const rawNetPrice = localizedNumber(first(line, ["prezzo_netto", "prezzo_scontato"]));
+    const rawNetAmount = localizedNumber(first(line, ["imponibile_riga", "importo_netto_riga", "valore_netto_riga"]));
+    const discount = text(first(line, ["sconto", "sconto_riga", "sconto_commerciale"]));
+    const quantity = localizedNumber(first(line, ["quantita", "qta"])) ?? 0;
+    const vatRate = localizedNumber(first(line, ["cod_iva", "aliquota_iva", "iva_percentuale"])) ?? 0;
+    const calculated = calculateOrderLineEconomics({
+      quantita: quantity,
+      prezzo_listino: rawPrice ?? rawNetPrice ?? 0,
+      sconto_commerciale: rawNetPrice === null ? discount : "",
+      aliquota_iva: vatRate,
+    });
+    const netUnitPrice = rawNetPrice ?? calculated.prezzo_netto;
+    const taxableAmount = rawNetAmount ?? money(quantity * netUnitPrice);
+    const vatAmount = money(taxableAmount * vatRate / 100);
     return {
       mexal_posizione: number(first(line, ["id_riga", "posizione", "indice_riga", "riga", "_matrix_position"])) ?? index + 1,
       codice_articolo: code || null,
       descrizione: text(first(line, ["descr_articolo", "descr_riga", "descrizione"])),
-      quantita: number(first(line, ["quantita", "qta"])) ?? 0,
+      quantita: quantity,
       unita_misura_oct: upper(first(line, ["unita_misura", "um", "sigla_um"])) || null,
       tipo_unita_misura_mexal: text(first(line, ["tp_um_articolo", "tipo_unita_misura"])) || null,
       data_consegna: matrixFirst(first(line, ["dt_sca_riga", "data_consegna_riga", "data_scadenza_riga", "data_consegna", "data_scadenza"])),
       mexal_tipo_riga: text(first(line, ["tp_riga", "tipo_riga", "tipo"])) || null,
-      riga_descrittiva: !code,
+      riga_descrittiva: descriptive,
+      prezzo_listino: descriptive ? 0 : rawPrice ?? rawNetPrice ?? 0,
+      sconto_commerciale: descriptive ? null : discount || null,
+      prezzo_netto: descriptive ? 0 : netUnitPrice,
+      aliquota_iva: descriptive ? 0 : vatRate,
+      imponibile_riga: descriptive ? 0 : taxableAmount,
+      iva_riga: descriptive ? 0 : vatAmount,
+      totale_riga: descriptive ? 0 : money(taxableAmount + vatAmount),
     };
   });
   const headerDeliveryDate = matrixFirst(first(document, ["data_consegna", "data_scadenza", "dt_sca", "dt_consegna"]));
   const lineDeliveryDates = lines.filter((line) => !line.riga_descrittiva && line.data_consegna).map((line) => line.data_consegna).sort();
+  const calculatedTaxable = money(lines.reduce((sum, line) => sum + Number(line.imponibile_riga || 0), 0));
+  const calculatedVat = money(lines.reduce((sum, line) => sum + Number(line.iva_riga || 0), 0));
+  const explicitTaxable = localizedNumber(matrixFirst(first(document, ["totale_imponibile", "tot_imponibile", "imponibile", "tot_merce"])));
+  const explicitVat = localizedNumber(matrixFirst(first(document, ["totale_iva", "tot_iva", "iva_documento"])));
+  const explicitDocumentTotal = localizedNumber(matrixFirst(first(document, ["totale_documento", "tot_documento", "totale", "importo_documento"])));
+  const totalTaxable = explicitTaxable ?? calculatedTaxable;
+  const totalVat = explicitVat ?? calculatedVat;
+  const documentTotal = explicitDocumentTotal ?? money(totalTaxable + totalVat);
   return {
     key,
     header: {
@@ -303,6 +350,10 @@ export function normalizeOct(document) {
       codice_cliente: text(first(document, ["cod_conto", "codice_cliente"])),
       data_ordine: matrixFirst(first(document, ["data_documento", "data"])),
       data_consegna: headerDeliveryDate || lineDeliveryDates[0] || null,
+      totale: documentTotal,
+      totale_imponibile: totalTaxable,
+      totale_iva: totalVat,
+      totale_documento: documentTotal,
       mexal_sincronizzato_il: new Date().toISOString(), stato_sincronizzazione: "importato_mexal",
     },
     lines,
@@ -453,9 +504,16 @@ export async function precheckOctOrders({ mexal, supabase, env = process.env }) 
         quantita: line.quantita,
         unita_misura_oct: line.unita_misura_oct,
         tipo_unita_misura_mexal: line.tipo_unita_misura_mexal,
-        dt_sca_riga: line.data_consegna,
-        riga_descrittiva: line.riga_descrittiva,
+      dt_sca_riga: line.data_consegna,
+      riga_descrittiva: line.riga_descrittiva,
+      prezzo_listino: line.prezzo_listino,
+      sconto_commerciale: line.sconto_commerciale,
+      prezzo_netto: line.prezzo_netto,
+      imponibile_riga: line.imponibile_riga,
+      totale_riga: line.totale_riga,
       })),
+      totale_imponibile: document.header.totale_imponibile,
+      totale_documento: document.header.totale_documento,
     };
   });
   const totalLines = reportDocuments.reduce((total, document) => total + document.lines.length, 0);

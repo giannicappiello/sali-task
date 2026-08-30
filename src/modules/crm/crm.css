@@ -38,6 +38,13 @@ a.crm-kpi:hover,a.crm-kpi:focus-visible{transform:translateY(-2px);box-shadow:va
 .crm-opportunity-detail dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .crm-opportunity-detail dl div{display:grid;gap:3px}.crm-opportunity-detail dt{font-size:.72rem;color:var(--muted)}.crm-opportunity-detail dd{margin:0;font-weight:750}
 #orders,#invoices{scroll-margin-top:20px}
+.crm-expandable-card{padding:0;overflow:hidden}
+.crm-expandable-card>summary{display:flex;min-height:138px;align-items:flex-start;justify-content:space-between;gap:18px;padding:20px;list-style:none;cursor:pointer}
+.crm-expandable-card>summary::-webkit-details-marker{display:none}
+.crm-expandable-card>summary:hover,.crm-expandable-card>summary:focus-visible{background:color-mix(in srgb,var(--primary) 5%,var(--card));outline:2px solid color-mix(in srgb,var(--primary) 35%,transparent);outline-offset:-2px}
+.crm-expandable-heading{display:grid;gap:10px;min-width:0}.crm-expandable-heading>strong{font-size:1.08rem}.crm-expandable-heading>span{display:-webkit-box;overflow:hidden;color:var(--muted);line-height:1.55;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.crm-expandable-action{flex:0 0 auto;color:var(--primary);font-size:.8rem;font-weight:750}.crm-expandable-action .when-open{display:none}.crm-expandable-action .when-closed::after{content:" +"}.crm-expandable-card[open] .crm-expandable-action .when-closed{display:none}.crm-expandable-card[open] .crm-expandable-action .when-open{display:inline}.crm-expandable-action .when-open::after{content:" −"}
+.crm-expandable-content{padding:0 20px 20px;border-top:1px solid var(--border)}.crm-expandable-content>:first-child{margin-top:18px}.crm-expandable-grid{align-items:start}
 @media(max-width:1024px){.crm-period-filter{width:100%;flex-wrap:wrap}.crm-toolbar-actions{width:100%;justify-content:flex-start}}
 @media(max-width:768px){.crm-period-filter label{flex:1;min-width:150px}.crm-opportunity-detail dl{grid-template-columns:1fr}}
 @media(max-width:480px){.crm-period-filter{display:grid;grid-template-columns:1fr}.crm-period-filter label{width:100%;min-width:0}.crm-toolbar-actions{display:grid}.crm-toolbar-actions>*{width:100%}.crm-source-notes{display:grid;gap:7px}}

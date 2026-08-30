@@ -105,7 +105,7 @@ function App() {
               <Route path="products" element={<Products />} />
               <Route path="magazzino" element={<Navigate to="/magazzino-dashboard" replace />} />
               <Route path="magazzino-dashboard" element={<WorkspaceAccessGuard moduleCode="magazzino"><WarehouseDashboard /></WorkspaceAccessGuard>} />
-              <Route path="documentation" element={<Documentation />} />
+              <Route path="documentation" element={<WorkspaceAccessGuard moduleCode="documenti"><Documentation /></WorkspaceAccessGuard>} />
               <Route path="manuali-uso" element={<WorkspaceAccessGuard moduleCode="manuali_uso"><ManualiUso /></WorkspaceAccessGuard>} />
               <Route path="messages" element={<Messages />} />
               <Route path="team" element={<WorkspaceAccessGuard moduleCode="team"><Team /></WorkspaceAccessGuard>} />

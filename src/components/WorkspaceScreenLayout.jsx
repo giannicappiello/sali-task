@@ -62,10 +62,9 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
   const presentation = useMemo(() => {
     const pathname = location.pathname.replace(/\/$/, "") || "/";
     const exactModule = catalog.modules.find((module) => (module.percorso || "").replace(/\/$/, "") === pathname);
-    const exactScreen = catalog.screens.find((screen) => (screen.percorso || "").replace(/\/$/, "") === pathname);
     const isContainer = BUILT_IN_CONTAINER_PATHS.has(pathname)
       || isDynamicContainerPath(pathname)
-      || (exactModule?.tipo === "contenitore" && !exactScreen);
+      || exactModule?.tipo === "contenitore";
     if (isContainer) {
       const dynamicMatch = pathname.match(/^\/(menu|moduli)\/([^/]+)$/);
       const staticTarget = CONTAINER_TARGETS[pathname];

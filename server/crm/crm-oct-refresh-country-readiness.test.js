@@ -6,6 +6,10 @@ const migration = readFileSync(
   new URL("../../supabase/migrations/20260830220000_crm_oct_economics_refresh_country.sql", import.meta.url),
   "utf8",
 );
+const dashboardMigration = readFileSync(
+  new URL("../../supabase/migrations/20260830210000_crm_overview_requested_adjustments.sql", import.meta.url),
+  "utf8",
+);
 const octSync = readFileSync(new URL("../mexal/sync-oct-orders.js", import.meta.url), "utf8");
 const dashboard = readFileSync(new URL("../../src/modules/crm/CommercialControlDashboard.jsx", import.meta.url), "utf8");
 const automation = readFileSync(new URL("../../api/mexal/automation.js", import.meta.url), "utf8");
@@ -21,8 +25,8 @@ test("la sorgente KPI conta ogni testata una volta e conserva il lineage Mexal",
   assert.match(migration, /create or replace view public\.crm_order_kpi_source/);
   assert.match(migration, /document\.tipo_documento in \('OCT', 'OCM', 'OCI', 'OCX'\)/);
   assert.match(migration, /when order_header\.origine = 'mexal_oct' then 'mexal_oct'/);
-  assert.match(migration, /public\.crm_order_kpi_source customer_order/);
-  assert.match(migration, /customer_order\.origine = 'mexal_oct' and customer_order\.totale_imponibile is not null/);
+  assert.match(dashboardMigration, /public\.crm_order_kpi_source customer_order/);
+  assert.doesNotMatch(migration, /pg_get_functiondef|execute definition/);
 });
 
 test("il refresh usa argomenti primitivi stabili e annulla richieste superate", () => {

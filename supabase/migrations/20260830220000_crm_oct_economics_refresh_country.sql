@@ -106,51 +106,6 @@ left join lateral (
 
 grant select on public.crm_order_kpi_source to authenticated, service_role;
 
-do $migration$
-declare
-  function_oid regprocedure := 'public.crm_commercial_control_dashboard(text,date,date,text,text,text,text,text,text,text,text)'::regprocedure;
-  definition text;
-begin
-  select pg_get_functiondef(function_oid) into definition;
-
-  definition := replace(
-    definition,
-    $$upper(coalesce(nullif(btrim(customer.paese), ''), nullif(btrim(coalesce(customer.json_mexal, customer.dati_mexal) ->> 'cod_paese'), ''), nullif(btrim(coalesce(customer.json_mexal, customer.dati_mexal) ->> 'codice_paese'), ''), nullif(btrim(coalesce(customer.json_mexal, customer.dati_mexal) ->> 'paese'), ''), nullif(btrim(coalesce(customer.json_mexal, customer.dati_mexal) ->> 'cod_nazione'), ''), nullif(btrim(coalesce(customer.json_mexal, customer.dati_mexal) ->> 'nazione'), ''), 'ND')) country_code$$,
-    $$coalesce(public.crm_normalize_country_code(customer.paese, coalesce(customer.json_mexal, customer.dati_mexal)), 'ND') country_code$$
-  );
-  definition := replace(
-    definition,
-    $$upper(coalesce(nullif(btrim(paese), ''), nullif(btrim(coalesce(json_mexal, dati_mexal) ->> 'cod_paese'), ''), nullif(btrim(coalesce(json_mexal, dati_mexal) ->> 'codice_paese'), ''), nullif(btrim(coalesce(json_mexal, dati_mexal) ->> 'paese'), ''), nullif(btrim(coalesce(json_mexal, dati_mexal) ->> 'cod_nazione'), ''), nullif(btrim(coalesce(json_mexal, dati_mexal) ->> 'nazione'), ''), 'ND')) country_code$$,
-    $$coalesce(public.crm_normalize_country_code(paese, coalesce(json_mexal, dati_mexal)), 'ND') country_code$$
-  );
-  definition := replace(
-    definition,
-    'from public.crm_order_kpi_source customer_order' || chr(10) || '    join customers customer using (codice_cliente)',
-    'from public.crm_order_kpi_source customer_order' || chr(10) || '    join customers customer on customer.codice_cliente = btrim(customer_order.codice_cliente)'
-  );
-  definition := replace(
-    definition,
-    $$coalesce(sum(coalesce(line.totale_riga, line.imponibile_riga, line.quantita * line.prezzo_netto, 0))
-        filter (where not coalesce(line.riga_descrittiva, false) and coalesce(line.mexal_attiva, true)), customer_order.totale_imponibile, customer_order.totale_documento, 0)::numeric amount$$,
-    $$case
-        when customer_order.origine = 'mexal_oct' and customer_order.totale_imponibile is not null
-          then customer_order.totale_imponibile
-        else coalesce(sum(coalesce(line.totale_riga, line.imponibile_riga, line.quantita * line.prezzo_netto, 0))
-          filter (where not coalesce(line.riga_descrittiva, false) and coalesce(line.mexal_attiva, true)), customer_order.totale_imponibile, customer_order.totale_documento, 0)
-      end::numeric amount$$
-  );
-
-  if definition not like '%public.crm_order_kpi_source customer_order%'
-    or definition not like '%crm_normalize_country_code(customer.paese%'
-    or definition not like '%btrim(customer_order.codice_cliente)%'
-    or definition not like $assert$%customer_order.origine = 'mexal_oct'%$assert$ then
-    raise exception 'Definizione CRM Overview non riconosciuta: correzioni OCT/Paese annullate.';
-  end if;
-
-  execute definition;
-end;
-$migration$;
-
 comment on view public.crm_order_kpi_source is
   'Sorgente KPI ordine deduplicata: testate Workspace e OCT inbound; OCM/OCI/OCX restano lineage della stessa testata.';
 comment on function public.crm_normalize_country_code(text, jsonb) is

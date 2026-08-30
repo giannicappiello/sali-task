@@ -36,6 +36,7 @@ import { productionGoLiveGates } from "../../server/workspace-production-gates.j
 import { effectiveWorkspaceDiagnostics } from "../../server/workspace-effective-diagnostics.js";
 import { confirmWorkspaceV4, createWorkspaceV4Preview } from "../../server/workspacemes-v4-api.js";
 import { createWorkspaceV4PurchaseDocument, listWorkspaceV4Purchasing } from "../../server/workspacemes-v4-purchasing.js";
+import { calculateWorkspaceV4PurchaseRequirements, executeWorkspaceV4PurchasingAction, readWorkspaceV4PurchasingSource } from "../../server/workspacemes-v4-purchasing-mes.js";
 
 async function dispatchMessageNotification(req, body) {
   const token = String(req.headers.authorization || "").trim().replace(/^Bearer\s+/i, "");
@@ -685,11 +686,30 @@ export default async function handler(req, res) {
       }
       case "workspacemes_v4_purchasing_list": {
         const admin = await createAdmin(req, "rdp.view");
-        const suppliersResult = await createProgremesClient().request("suppliers", { page: 1, pageSize: 500, active: true })
-          .catch(() => ({ items: [] }));
-        return sendSuccess(res, 200, await listWorkspaceV4Purchasing({
+        const client = createProgremesClient();
+        const [suppliersResult, source] = await Promise.all([
+          client.request("suppliers", { page: 1, pageSize: 500, active: true }).catch(() => ({ items: [] })),
+          readWorkspaceV4PurchasingSource(),
+        ]);
+        const current = await listWorkspaceV4Purchasing({
           admin: admin.supabase,
           suppliers: suppliersResult?.items || [],
+        });
+        return sendSuccess(res, 200, { ...current,
+          requirements: calculateWorkspaceV4PurchaseRequirements(source),
+          sourceGeneratedAt: source.generatedAt,
+          calculationOwner: "WORKSPACE",
+          calculationVersion: 4,
+        });
+      }
+      case "workspacemes_v4_purchasing_action": {
+        await createAdmin(req, "purchases.manage");
+        const action = String(body.purchasingAction || "").trim().toUpperCase();
+        const allowed = new Set(["IMPORT_SUPPLIER_ORDERS", "GENERATE_SALI_DI_ISCHIA", "CREATE_PF", "GENERATE_PF_AUTOMATIC"]);
+        if (!allowed.has(action)) return sendFailure(res, 400, "workspacemes_v4_purchasing_action", "Operazione acquisti non valida.");
+        return sendSuccess(res, 200, await executeWorkspaceV4PurchasingAction({
+          action, supplierId: body.supplierId || null, month: body.month || null,
+          lines: Array.isArray(body.lines) ? body.lines : [], ignoreDuplicates: body.ignoreDuplicates === true,
         }));
       }
       case "workspacemes_v4_purchase_document_create": {

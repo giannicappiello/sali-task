@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ClipboardList, Factory, RefreshCw, ShieldCheck, Workflow } from "lucide-react";
+import { AlertTriangle, ClipboardList, Factory, RefreshCw, ShieldCheck, ShoppingCart, Workflow } from "lucide-react";
 import { useLocation, useParams } from "react-router-dom";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
 import { useAuth } from "../../contexts/AuthContext";
 import useBackNavigation from "../../hooks/useBackNavigation";
 import "./production.css";
 import RdpWorkbench from "./RdpWorkbench";
+import PurchaseRequirements from "./PurchaseRequirements";
 
 async function requestProgremes(action, accessToken, extra = {}) {
   const response = await fetch("/api/mexal/automation", {
@@ -192,11 +193,13 @@ export default function Production() {
 
   if (sectionPath === "diagnostica") return <DiagnosticsCenter />;
   if (sectionPath === "rdp-workbench") return <RdpWorkbench />;
+  if (sectionPath === "fabbisogni-acquisto") return <PurchaseRequirements />;
   if (sectionPath) return <SectionLauncher sectionCode={decodeURIComponent(sectionPath)} />;
 
   const visibleSections = [...sections];
   if (hasPermission?.("diagnostics.view")) visibleSections.unshift({ code: "diagnostica", name: "Centro Diagnostico", description: "Stato globale, alert operativi e integrazioni senza esporre configurazioni riservate.", workspaceLocal: true });
   if (hasPermission?.("rdp.view")) visibleSections.unshift({ code: "rdp-workbench", name: "RdP Workbench", description: "Gestione OCT, richieste di produzione, analisi MES e decisioni operative.", workspaceLocal: true, icon: ClipboardList });
+  if (hasPermission?.("rdp.view")) visibleSections.splice(1, 0, { code: "fabbisogni-acquisto", name: "Fabbisogni acquisto", description: "Calcolo mensile, coperture, fornitori e creazione controllata dei PF Mexal.", workspaceLocal: true, icon: ShoppingCart });
 
   return <ModuleContainerLayout
     icon={Workflow}

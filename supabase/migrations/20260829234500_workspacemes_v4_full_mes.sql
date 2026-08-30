@@ -9,7 +9,7 @@ insert into public.workspace_v4_feature_flags(key,enabled,description) values
  ('workspacemes.v4.confirm',true,'Conferma atomica V4 su ProgreMES'),
  ('workspacemes.v4.purchasing',true,'Fabbisogni acquisto derivati dalle carenze MES')
 on conflict(key) do update set enabled=excluded.enabled,description=excluded.description,updated_at=now();
-update public.workspace_v3_feature_flags set enabled=false,updated_at=now(),updated_by='migration:v4-cutover';
+update public.workspace_v3_feature_flags set enabled=false,updated_at=now(),updated_by=null;
 
 create table if not exists public.workspace_v4_previews (
  id bigserial primary key, external_id uuid not null unique, production_request_id uuid not null references public.workspace_production_requests(id) on delete restrict,

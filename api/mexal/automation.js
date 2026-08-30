@@ -34,9 +34,7 @@ import { handleDigitalConnectionManager } from "../../server/crm/digital-connect
 import { listProductionWorkbench, productionWorkbenchDetail } from "../../server/workspacemes-workbench.js";
 import { productionGoLiveGates } from "../../server/workspace-production-gates.js";
 import { effectiveWorkspaceDiagnostics } from "../../server/workspace-effective-diagnostics.js";
-import { syncWorkspaceV3MexalContracts } from "../../server/mexal/sync-workspacemes-v3.js";
-import { confirmWorkspaceV3, createWorkspaceV3Preview, workspaceV3FinishedArticleCodes } from "../../server/workspacemes-v3-api.js";
-import { createWorkspaceV3PurchaseDocument } from "../../server/workspacemes-v3-purchasing.js";
+import { confirmWorkspaceV4, createWorkspaceV4Preview } from "../../server/workspacemes-v4-api.js";
 
 async function dispatchMessageNotification(req, body) {
   const token = String(req.headers.authorization || "").trim().replace(/^Bearer\s+/i, "");
@@ -545,7 +543,7 @@ export default async function handler(req, res) {
         const admin = await createAdmin(req);
         return sendSuccess(res, 200, await listProgremesIntegration(req, admin.supabase));
       }
-      case "workspacemes_v3_request": {
+      case "workspacemes_v4_request": {
         const admin = await createAdmin(req, "rdp.create");
         const prepared = await prepareProductionDemand({
           admin: admin.supabase,
@@ -556,28 +554,26 @@ export default async function handler(req, res) {
           mode: "create",
         });
         const requestId = prepared.request?.id;
-        if (!requestId) throw Object.assign(new Error("Creazione RdP V3 non confermata."), { code: "V3_REQUEST_FAILED" });
+        if (!requestId) throw Object.assign(new Error("Creazione RdP V4 non confermata."), { code: "V4_REQUEST_FAILED" });
         try {
-          const finishedArticleCodes = await workspaceV3FinishedArticleCodes(admin.supabase, requestId);
-          await syncWorkspaceV3MexalContracts({ mexal: buildMexalClient(), supabase: admin.supabase, finishedArticleCodes });
-          const v3Preview = await createWorkspaceV3Preview({ admin: admin.supabase, requestId, requestedBy: admin.authUserId });
+          const v4Preview = await createWorkspaceV4Preview({ admin: admin.supabase, requestId, requestedBy: admin.authUserId });
           await admin.supabase.from("workspace_production_requests").update({
-            stato: v3Preview.status, workspace_status: v3Preview.status, last_error_code: null,
-            last_response: { contractVersion: 3, previewId: v3Preview.preview_id, status: v3Preview.status },
+            stato: v4Preview.status, workspace_status: v4Preview.status, last_error_code: null,
+            last_response: { contractVersion: 4, previewId: v4Preview.id, status: v4Preview.status },
             updated_at: new Date().toISOString(),
           }).eq("id", requestId);
-          return sendSuccess(res, 200, { requestId, externalId: prepared.request.external_id, status: v3Preview.status, v3Preview });
+          return sendSuccess(res, 200, { requestId, externalId: prepared.request.external_id, status: v4Preview.status, v4Preview });
         } catch (previewError) {
           await admin.supabase.from("workspace_production_requests").update({
-            stato: "BLOCKED", workspace_status: "BLOCKED", last_error_code: previewError.code || "V3_PREVIEW_FAILED",
-            last_response: { contractVersion: 3, error: previewError.message, code: previewError.code || "V3_PREVIEW_FAILED" },
+            stato: "BLOCKED", workspace_status: "BLOCKED", last_error_code: previewError.code || "V4_PREVIEW_FAILED",
+            last_response: { contractVersion: 4, error: previewError.message, code: previewError.code || "V4_PREVIEW_FAILED" },
             updated_at: new Date().toISOString(),
           }).eq("id", requestId);
           return sendSuccess(res, 200, { requestId, externalId: prepared.request.external_id, status: "BLOCKED",
-            previewError: { code: previewError.code || "V3_PREVIEW_FAILED", message: previewError.message } });
+            previewError: { code: previewError.code || "V4_PREVIEW_FAILED", message: previewError.message } });
         }
       }
-      case "workspacemes_v3_precheck": {
+      case "workspacemes_v4_precheck": {
         const admin = await createAdmin(req, "rdp.create");
         return previewProductionRequest(req, res, { admin: admin.supabase, requestedBy: admin.authUserId });
       }
@@ -638,69 +634,46 @@ export default async function handler(req, res) {
         if (!data) return sendFailure(res, 404, "progremes_oct_refresh_status", "Job OCT Workbench non trovato.");
         return sendSuccess(res, 200, { refresh: data });
       }
-      case "workspacemes_v3_mexal_sync": {
-        const admin = await createAdmin(req, "integrations.sync.products");
-        return sendSuccess(res, 200, await syncWorkspaceV3MexalContracts({
-          mexal: buildMexalClient(),
-          supabase: admin.supabase,
-        }));
-      }
-      case "workspacemes_v3_preview": {
+      case "workspacemes_v4_preview": {
         const admin = await createAdmin(req, "rdp.create");
         const requestId = String(body.requestId || "").trim();
         try {
-          const finishedArticleCodes = await workspaceV3FinishedArticleCodes(admin.supabase, requestId);
-          // The V3 preview must use the current authoritative Mexal BOM and
-          // supplier-order snapshots. Keeping this in the normal preview path
-          // preserves the append-only preview semantics.
-          await syncWorkspaceV3MexalContracts({
-            mexal: buildMexalClient(),
-            supabase: admin.supabase,
-            finishedArticleCodes,
-          });
-          const v3Preview = await createWorkspaceV3Preview({
+          const v4Preview = await createWorkspaceV4Preview({
             admin: admin.supabase,
             requestId,
             requestedBy: admin.authUserId,
           });
           const { error: updateError } = await admin.supabase.from("workspace_production_requests").update({
-            stato: v3Preview.status,
-            workspace_status: v3Preview.status,
+            stato: v4Preview.status,
+            workspace_status: v4Preview.status,
             last_error_code: null,
-            last_response: { contractVersion: 3, previewId: v3Preview.preview_id, status: v3Preview.status },
+            last_response: { contractVersion: 4, previewId: v4Preview.id, status: v4Preview.status },
             updated_at: new Date().toISOString(),
           }).eq("id", requestId);
           if (updateError) throw updateError;
           return sendSuccess(res, 200, {
-            ...v3Preview,
-            previewStatus: v3Preview.status,
+            ...v4Preview,
+            previewStatus: v4Preview.status,
           });
         } catch (previewError) {
           await admin.supabase.from("workspace_production_requests").update({
             stato: "BLOCKED",
             workspace_status: "BLOCKED",
-            last_error_code: previewError.code || "V3_PREVIEW_FAILED",
-            last_response: { contractVersion: 3, error: previewError.message, code: previewError.code || "V3_PREVIEW_FAILED" },
+            last_error_code: previewError.code || "V4_PREVIEW_FAILED",
+            last_response: { contractVersion: 4, error: previewError.message, code: previewError.code || "V4_PREVIEW_FAILED" },
             updated_at: new Date().toISOString(),
           }).eq("id", requestId);
           throw previewError;
         }
       }
-      case "workspacemes_v3_confirm": {
+      case "workspacemes_v4_confirm": {
         const admin = await createAdmin(req, "rdp.decide");
-        return sendSuccess(res, 200, await confirmWorkspaceV3({
+        return sendSuccess(res, 200, await confirmWorkspaceV4({
           admin: admin.supabase,
           previewId: Number(body.previewId),
+          decision: body.decision,
           reason: body.reason,
           requestedBy: admin.authUserId,
-        }));
-      }
-      case "workspacemes_v3_purchase_document": {
-        const admin = await createAdmin(req, "purchases.manage");
-        return sendSuccess(res, 200, await createWorkspaceV3PurchaseDocument({
-          admin: admin.supabase,
-          input: body,
-          actor: `workspace:${admin.authUserId || "service"}`,
         }));
       }
       case "progremes_production_confirm": {

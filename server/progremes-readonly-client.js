@@ -281,8 +281,8 @@ function sanitizeHealth(payload) {
   const fields = ["globalStatus", "open", "info", "warning", "blocking", "critical", "generatedAt", "database", "workspaceCallbacks", "pendingOutbox", "lastMexalSuccess", "lastMexalError", "receiveRdp", "receiveDecisions", "executeProduction", "createLots"];
   if (fields.some((field) => !(field in value))) return null;
   return { ...Object.fromEntries(fields.map((field) => [field, value[field]])),
-    receiveV3Previews: value.receiveV3Previews === true,
-    confirmV3Production: value.confirmV3Production === true };
+    receiveV4Previews: value.receiveV4Previews === true,
+    confirmV4Production: value.confirmV4Production === true };
 }
 
 /**

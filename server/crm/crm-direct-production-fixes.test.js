@@ -19,6 +19,8 @@ test("Documenti Direct è protetto dalla route e assegnabile ai reparti", () => 
   assert.match(migration, /nome = 'Documenti Direct'/);
   assert.match(migration, /sempre_disponibile = false/);
   assert.match(migration, /assegnabile_reparto = true/);
+  assert.match(migration, /old\.codice <> 'documenti'/);
+  assert.match(migration, /tg_op = 'DELETE' and old\.protetto/);
   assert.match(migration, /workspace_module_enabled_for_user\(current_user_profile\.id, 'documenti'\)/);
 });
 

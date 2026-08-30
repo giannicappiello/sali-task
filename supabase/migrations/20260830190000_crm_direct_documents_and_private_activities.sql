@@ -2,13 +2,33 @@ begin;
 
 -- Documenti Direct è un modulo operativo: gli amministratori lo vedono sempre,
 -- gli altri utenti soltanto quando il loro reparto lo ha ricevuto.
+-- Il record resta protetto da cancellazione/disattivazione; l'unica eccezione
+-- ammessa è la nuova disponibilità per reparto del modulo documenti.
+create or replace function public.protect_workspace_catalog_records()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if tg_op = 'DELETE' and old.protetto then
+    raise exception 'Il modulo % è protetto e non può essere eliminato.', old.codice;
+  end if;
+  if tg_op = 'UPDATE' and old.protetto and (
+    new.attivo is false
+    or (new.sempre_disponibile is false and old.codice <> 'documenti')
+  ) then
+    raise exception 'Il modulo % deve restare attivo e disponibile.', old.codice;
+  end if;
+  return case when tg_op = 'DELETE' then old else new end;
+end;
+$$;
+
 update public.workspace_moduli
 set nome = 'Documenti Direct',
     descrizione = 'Archivio documentale Direct assegnabile ai reparti autorizzati.',
     sempre_disponibile = false,
     assegnabile_reparto = true,
     configurabile_ruolo = true,
-    protetto = false,
     aggiornato_il = now()
 where codice = 'documenti';
 

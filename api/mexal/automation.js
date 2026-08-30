@@ -172,12 +172,14 @@ function sendFailure(res, statusCode, phase, error, details = {}) {
   const safeStatus = Number.isInteger(Number(statusCode)) && Number(statusCode) >= 400 && Number(statusCode) <= 599
     ? Number(statusCode)
     : 500;
+  const normalizedDetails = normalizeDetails(details);
   return res.status(safeStatus).json({
     success: false,
     status: "failed",
     phase,
+    code: normalizedDetails.code || normalizedDetails.upstreamCode || undefined,
     error: error || "Errore automazione Mexal.",
-    details: normalizeDetails(details),
+    details: normalizedDetails,
   });
 }
 
@@ -767,6 +769,13 @@ export default async function handler(req, res) {
         return sendFailure(res, 400, phase, "Azione automazione Mexal non supportata.");
     }
   } catch (error) {
-    return sendFailure(res, Number(error.status || 500), phase, error.message || "Errore automazione Mexal.", error.details || {});
+    const details = { ...(error.details || {}), code: error.code || undefined };
+    if (phase === "workspacemes_v4_confirm") console.error("WorkspaceMES V4 confirmation failed", {
+      code: error.code || "V4_CONFIRM_FAILED",
+      status: Number(error.status || 500),
+      upstreamStatus: details.upstreamStatus,
+      upstreamCode: details.upstreamCode,
+    });
+    return sendFailure(res, Number(error.status || 500), phase, error.message || "Errore automazione Mexal.", details);
   }
 }

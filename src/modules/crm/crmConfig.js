@@ -1,7 +1,7 @@
 export const CRM_TYPES = Object.freeze({
-  conto_terzi: { moduleCode: "crm_conto_terzi", label: "Conto Terzi", basePath: "/crm/conto-terzi" },
-  b2b: { moduleCode: "crm_b2b", label: "B2B", basePath: "/crm/b2b" },
-  online: { moduleCode: "crm_online", label: "Online", basePath: "/crm/online" },
+  conto_terzi: { moduleCode: "crm_conto_terzi", label: "PRIVATE", basePath: "/crm/conto-terzi" },
+  b2b: { moduleCode: "crm_b2b", label: "DIRECT · BtoB", basePath: "/crm/b2b" },
+  online: { moduleCode: "crm_online", label: "DIRECT · BtoC", basePath: "/crm/online" },
 });
 
 export function crmTypeConfig(type) {

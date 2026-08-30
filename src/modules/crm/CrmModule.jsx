@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, Navigate, Route, Routes, useParams, useSearchParams } from "react-router-dom";
-import { Bot, BriefcaseBusiness, Plus, Search } from "lucide-react";
+import { Bot, BriefcaseBusiness, Network, Plus, Search, ShoppingBag, Store } from "lucide-react";
 import WorkspaceAccessGuard from "../../components/WorkspaceAccessGuard";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
 import { useDatasetTableControls, usePaginatedDataset } from "../../components/useDatasetTableControls";
@@ -94,6 +94,15 @@ function CrmOverview() {
   }, [loadOverview]);
 
 return <ModuleContainerLayout icon={getModuleIcon(overview.icon, BriefcaseBusiness)} eyebrow="Workspace" title={overview.name} description={overview.description} items={overview.items} loading={loading} error={error} onRetry={loadOverview} emptyTitle="Nessuna area CRM disponibile" emptyDescription="L’amministratore può assegnare i moduli CRM dal catalogo Workspace." />;
+}
+
+function CrmDirectOverview() {
+  const { hasModuleAccess } = useAuth();
+  const items = [
+    { code: "crm_b2b", name: "BtoB", description: "Clienti DIRECT con nome_ricerca_cf BtoB.", to: "/crm/b2b", icon: Store },
+    { code: "crm_online", name: "BtoC / Online", description: "Clienti DIRECT con nome_ricerca_cf BtoC.", to: "/crm/online", icon: ShoppingBag },
+  ].filter((item) => hasModuleAccess(item.code));
+  return <ModuleContainerLayout icon={Network} eyebrow="CRM DIRECT" title="Clienti DIRECT" description="I clienti DIRECT sono separati automaticamente nei canali BtoB e BtoC usando il valore Mexal nome_ricerca_cf." items={items} emptyTitle="Nessun canale DIRECT disponibile" emptyDescription="L’amministratore può assegnare i moduli CRM BtoB e Online dal catalogo Workspace." />;
 }
 
 function Kpi({ label, value, note, to }) {
@@ -554,6 +563,7 @@ function OnlineManager({ entity }) {
 function renderCrmView(route) {
   switch (route.view) {
     case "overview": return <CrmOverview />;
+    case "direct-overview": return <CrmDirectOverview />;
     case "dashboard": return <CrmDashboard type={route.type} />;
     case "accounts": return <AccountsPage type={route.type} />;
     case "account": return <AccountDetail type={route.type} />;

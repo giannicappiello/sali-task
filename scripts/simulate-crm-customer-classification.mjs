@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { createClient } from "@supabase/supabase-js";
 
 function loadEnvironmentFile(fileName) {
   try {
@@ -29,16 +28,13 @@ function normalize(value) {
   return String(value || "").trim().replace(/\s+/g, " ").toLocaleUpperCase("it-IT");
 }
 
-export function classifyCustomerAgent(value) {
-  const agent = normalize(value);
-  if (!agent || agent === "MARIA RIPA") return "conto_terzi";
-  if (agent === "AMAZON" || agent === "ONLINE") return "online";
-  return "b2b";
-}
-
-function agentLabel(agent) {
-  const fullName = [agent?.nome, agent?.cognome].map((value) => String(value || "").trim()).filter(Boolean).join(" ");
-  return fullName || String(agent?.codice || "").trim();
+export function classifyMexalCustomer(customer = {}) {
+  const alternativeCode = normalize(customer.cod_alternativo);
+  const searchName = normalize(customer.nome_ricerca_cf);
+  if (alternativeCode === "PRIVATE") return "conto_terzi";
+  if (alternativeCode === "DIRECT" && searchName === "BTOB") return "b2b";
+  if (alternativeCode === "DIRECT" && searchName === "BTOC") return "online";
+  return null;
 }
 
 async function readAll(queryFactory, pageSize = 1000) {
@@ -51,16 +47,13 @@ async function readAll(queryFactory, pageSize = 1000) {
   }
 }
 
-export function summarizeCustomers(customers, agents) {
-  const agentsByCode = new Map(agents.map((agent) => [normalize(agent.codice), agentLabel(agent)]));
+export function summarizeCustomers(customers) {
   const summary = {
     totalCustomers: customers.length,
     duplicateCustomerCodes: 0,
-    emptyOrNullAgent: 0,
-    mariaRipa: 0,
-    amazon: 0,
-    online: 0,
-    otherAgents: 0,
+    private: 0,
+    directBtoB: 0,
+    directBtoC: 0,
     expected: { contoTerzi: 0, b2b: 0, online: 0, unclassified: 0 },
     suspiciousValues: [],
   };
@@ -71,46 +64,34 @@ export function summarizeCustomers(customers, agents) {
     const customerCode = normalize(customer.codice_cliente);
     if (customerCodes.has(customerCode)) summary.duplicateCustomerCodes += 1;
     else customerCodes.add(customerCode);
-    const rawCode = String(customer.codice_agente_mexal || "").trim();
-    const resolvedAgent = agentsByCode.get(normalize(rawCode)) || rawCode;
-    const normalizedAgent = normalize(resolvedAgent);
-    const area = classifyCustomerAgent(resolvedAgent);
+    const area = classifyMexalCustomer(customer);
 
-    if (!normalizedAgent) summary.emptyOrNullAgent += 1;
-    else if (normalizedAgent === "MARIA RIPA") summary.mariaRipa += 1;
-    else if (normalizedAgent === "AMAZON") summary.amazon += 1;
-    else if (normalizedAgent === "ONLINE") summary.online += 1;
-    else summary.otherAgents += 1;
-
-    if (area === "conto_terzi") summary.expected.contoTerzi += 1;
-    else if (area === "online") summary.expected.online += 1;
-    else if (area === "b2b") summary.expected.b2b += 1;
-    else summary.expected.unclassified += 1;
-
-    if (rawCode && !agentsByCode.has(normalize(rawCode))) {
-      const key = normalize(rawCode);
+    if (area === "conto_terzi") { summary.expected.contoTerzi += 1; summary.private += 1; }
+    else if (area === "online") { summary.expected.online += 1; summary.directBtoC += 1; }
+    else if (area === "b2b") { summary.expected.b2b += 1; summary.directBtoB += 1; }
+    else {
+      summary.expected.unclassified += 1;
+      const key = `${normalize(customer.cod_alternativo) || "VUOTO"} / ${normalize(customer.nome_ricerca_cf) || "VUOTO"}`;
       unusual.set(key, (unusual.get(key) || 0) + 1);
     }
   }
 
   summary.suspiciousValues = [...unusual.entries()]
-    .map(([value, customersCount]) => ({ value, customers: customersCount, reason: "codice agente non risolto in mexal_agenti" }))
+    .map(([value, customersCount]) => ({ value, customers: customersCount, reason: "combinazione Mexal non classificabile" }))
     .sort((left, right) => right.customers - left.customers || left.value.localeCompare(right.value));
   return summary;
 }
 
 async function main() {
+  const { createClient } = await import("@supabase/supabase-js");
   loadEnvironmentFile(".env");
   loadEnvironmentFile(".env.local");
   const url = required("SUPABASE_URL", "VITE_SUPABASE_URL");
   const key = required("SUPABASE_SERVICE_ROLE_KEY");
   const supabase = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 
-  const [customers, agents] = await Promise.all([
-    readAll((from, to) => supabase.from("ordini_clienti_cache").select("codice_cliente,codice_agente_mexal").order("codice_cliente").range(from, to)),
-    readAll((from, to) => supabase.from("mexal_agenti").select("codice,nome,cognome,attivo_mexal").eq("attivo_mexal", true).order("codice").range(from, to)),
-  ]);
-  const summary = summarizeCustomers(customers, agents);
+  const customers = await readAll((from, to) => supabase.from("ordini_clienti_cache").select("codice_cliente,cod_alternativo,nome_ricerca_cf").eq("attivo_mexal", true).order("codice_cliente").range(from, to));
+  const summary = summarizeCustomers(customers);
   console.log(JSON.stringify({ mode: "read-only", generatedAt: new Date().toISOString(), ...summary }, null, 2));
   if (summary.expected.unclassified !== 0) process.exitCode = 2;
 }

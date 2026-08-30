@@ -1,7 +1,9 @@
+/* global Buffer, process */
 import https from "node:https";
 import { createClient } from "@supabase/supabase-js";
 import { filterExcludedClients } from "./customer-exclusions.js";
 import { completeSyncRun, createSyncRun, failSyncRunUnlessClosed } from "./lib/syncRuns.js";
+import { isMexalClientActive } from "./client-status.js";
 
 const CLIENT_PREFIX = "501";
 const PAGE_SIZE = 500;
@@ -363,10 +365,6 @@ function mapClient(client, syncDate, paymentsMap) {
     ])
   );
 
-  const cancellationFlag = upper(
-    firstValue(client, ["gest_annullato", "annullato", "precancellato"], "N")
-  );
-
   const paymentCode = nullableInteger(
     firstValue(client, [
       "codice_pagamento",
@@ -436,6 +434,10 @@ function mapClient(client, syncDate, paymentsMap) {
         ])
       ) || null,
     codice_agente_mexal: getAgentCode(client) || null,
+    cod_alternativo:
+      upper(firstValue(client, ["cod_alternativo", "codice_alternativo"])) || null,
+    nome_ricerca_cf:
+      normalize(firstValue(client, ["nome_ricerca_cf", "nome_ricerca"])) || null,
     codice_indirizzo_spedizione:
       normalize(
         firstValue(client, [
@@ -452,7 +454,7 @@ function mapClient(client, syncDate, paymentsMap) {
       nullableNumber(firstValue(client, ["insoluti", "importo_insoluti"])) || 0,
     dati_mexal: enrichedMexalData,
     sincronizzato_il: syncDate,
-    attivo_mexal: !["S", "Y", "TRUE", "1"].includes(cancellationFlag),
+    attivo_mexal: isMexalClientActive(client),
     sincronizzato_mexal: true,
     ultimo_sync_mexal: syncDate,
     json_mexal: enrichedMexalData,
@@ -494,6 +496,10 @@ async function loadAllClients(mexal, paymentsMap) {
   for (const rawClient of rawRows) {
     const mapped = mapClient(rawClient, syncDate, paymentsMap);
     if (!mapped.codice_cliente.startsWith(CLIENT_PREFIX)) continue;
+    // In Workspace importiamo soltanto le anagrafiche attive. I clienti
+    // precancellati restano fuori dall'upsert e vengono disattivati dalla
+    // riconciliazione finale se erano gia presenti nella cache.
+    if (!mapped.attivo_mexal) continue;
     unique.set(mapped.codice_cliente, mapped);
   }
 

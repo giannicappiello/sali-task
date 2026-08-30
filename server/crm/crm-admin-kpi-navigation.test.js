@@ -8,17 +8,17 @@ const crm = read("src/modules/crm/CrmModule.jsx");
 const digital = read("src/modules/crm/DigitalCommerce.jsx");
 const layout = read("src/components/Layout.jsx");
 
-test("KPI amministrazione CRM usano count server-side sull'intero dataset", () => {
-  assert.match(classification, /select\("codice_cliente", \{ count: "exact", head: true \}\)/);
-  assert.match(classification, /Promise\.all/);
-  assert.doesNotMatch(classification, /rows\.filter\(\(row\) => row\.area_crm/);
+test("KPI amministrazione CRM usano l'intero dataset filtrato", () => {
+  assert.match(classification, /loadAllQueryRows/);
+  assert.match(classification, /query\.range\(from, to\)/);
+  assert.match(classification, /DistributionChart/);
   assert.match(classification, /intero dataset/);
 });
 
 test("card CRM aprono drill-down e persistono i filtri in query string", () => {
   assert.match(classification, /classification_area/);
-  assert.match(classification, /classification_agent/);
-  assert.match(classification, /classification_mode/);
+  assert.match(classification, /classification_macro/);
+  assert.match(classification, /CrmCustomerStatusFilter/);
   assert.match(classification, /apri elenco filtrato/);
   assert.match(crm, /period\.withPeriod\(`\$\{config\.basePath\}\/pipeline`/);
   assert.match(digital, /drilldown\("\/crm\/online\/clienti", "identified"\)/);

@@ -76,7 +76,7 @@ test("tp_um_articolo esplicito ha precedenza sull'unità di misura", () => {
   assert.deepEqual(payload.tp_um_articolo, [[1, "CF"]]);
 });
 
-test("id_causale non viene inviato come scalare senza un contratto POST verificato", () => {
+test("id_causale viene inviato con il contratto matrice Mexal verificato", () => {
   const payload = buildMexalOrderDocument({ id: "ordine-3", codice_cliente: "501.03320", data_ordine: "2026-07-20", id_causale: 1 }, "OCM", [{ codice_articolo: "IT0001", quantita_documento: 1 }]);
-  assert.equal(Object.hasOwn(payload, "id_causale"), false);
+  assert.deepEqual(payload.id_causale, [[1, 1]]);
 });

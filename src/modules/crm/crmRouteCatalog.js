@@ -1,5 +1,6 @@
 export const CRM_ROUTE_CATALOG = Object.freeze([
   { index: true, path: "", catalogPath: "/crm", moduleCode: "crm", screenCode: "crm.dashboard", view: "overview" },
+  { path: "direct", catalogPath: "/crm/direct", moduleCode: "crm_direct", screenCode: "crm.direct.dashboard", view: "direct-overview" },
   { path: "conto-terzi", catalogPath: "/crm/conto-terzi", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.dashboard", view: "dashboard", type: "conto_terzi" },
   { path: "conto-terzi/clienti", catalogPath: "/crm/conto-terzi/clienti", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.clienti", view: "accounts", type: "conto_terzi" },
   { path: "conto-terzi/clienti/:id", catalogPath: "/crm/conto-terzi/clienti/:id", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.cliente", view: "account", type: "conto_terzi" },

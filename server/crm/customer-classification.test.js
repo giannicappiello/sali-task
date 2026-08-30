@@ -1,40 +1,34 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { classifyCustomerAgent, summarizeCustomers } from "../../scripts/simulate-crm-customer-classification.mjs";
+import { classifyMexalCustomer, summarizeCustomers } from "../../scripts/simulate-crm-customer-classification.mjs";
 
-const migration = readFileSync(new URL("../../supabase/migrations/20260825100000_crm_customer_classification.sql", import.meta.url), "utf8");
+const migration = readFileSync(new URL("../../supabase/migrations/20260830120000_mexal_active_clients_crm_hierarchy.sql", import.meta.url), "utf8");
 
-test("classifica gli agenti con trim e confronto case-insensitive", () => {
-  assert.equal(classifyCustomerAgent(null), "conto_terzi");
-  assert.equal(classifyCustomerAgent("   "), "conto_terzi");
-  assert.equal(classifyCustomerAgent(" maria   ripa "), "conto_terzi");
-  assert.equal(classifyCustomerAgent("amazon"), "online");
-  assert.equal(classifyCustomerAgent(" Online "), "online");
-  assert.equal(classifyCustomerAgent("Qualsiasi altro agente"), "b2b");
+test("classifica soltanto le combinazioni Mexal previste", () => {
+  assert.equal(classifyMexalCustomer({ cod_alternativo: " private " }), "conto_terzi");
+  assert.equal(classifyMexalCustomer({ cod_alternativo: "DIRECT", nome_ricerca_cf: "BtoB" }), "b2b");
+  assert.equal(classifyMexalCustomer({ cod_alternativo: "direct", nome_ricerca_cf: "btoc" }), "online");
+  assert.equal(classifyMexalCustomer({ cod_alternativo: "DIRECT" }), null);
+  assert.equal(classifyMexalCustomer({ cod_alternativo: "ALTRO", nome_ricerca_cf: "BtoB" }), null);
 });
 
-test("la simulazione copre ogni cliente una sola volta e segnala codici irrisolti", () => {
+test("la simulazione separa PRIVATE, DIRECT BtoB, DIRECT BtoC e non classificati", () => {
   const summary = summarizeCustomers([
-    { codice_cliente: "1", codice_agente_mexal: null },
-    { codice_cliente: "2", codice_agente_mexal: "MR" },
-    { codice_cliente: "3", codice_agente_mexal: "AMZ" },
-    { codice_cliente: "4", codice_agente_mexal: "ONL" },
-    { codice_cliente: "5", codice_agente_mexal: "X" },
-  ], [
-    { codice: "MR", nome: "Maria", cognome: "Ripa" },
-    { codice: "AMZ", nome: "Amazon", cognome: "" },
-    { codice: "ONL", nome: "Online", cognome: "" },
+    { codice_cliente: "1", cod_alternativo: "PRIVATE" },
+    { codice_cliente: "2", cod_alternativo: "DIRECT", nome_ricerca_cf: "BtoB" },
+    { codice_cliente: "3", cod_alternativo: "DIRECT", nome_ricerca_cf: "BtoC" },
+    { codice_cliente: "4", cod_alternativo: "DIRECT", nome_ricerca_cf: null },
   ]);
-  assert.deepEqual(summary.expected, { contoTerzi: 2, b2b: 1, online: 2, unclassified: 0 });
-  assert.deepEqual(summary.suspiciousValues, [{ value: "X", customers: 1, reason: "codice agente non risolto in mexal_agenti" }]);
+  assert.deepEqual(summary.expected, { contoTerzi: 1, b2b: 1, online: 1, unclassified: 1 });
+  assert.deepEqual(summary.suspiciousValues, [{ value: "DIRECT / VUOTO", customers: 1, reason: "combinazione Mexal non classificabile" }]);
 });
 
-test("la migrazione conserva un solo riferimento al cliente canonico e protegge gli override", () => {
-  assert.match(migration, /codice_cliente text primary key\s+references public\.ordini_clienti_cache/);
-  assert.match(migration, /area_crm text generated always as \(coalesce\(area_override, area_automatica\)\) stored/);
-  assert.match(migration, /on conflict \(codice_cliente\) do update/);
-  assert.match(migration, /workspace_user_is_admin\(\)/);
-  assert.match(migration, /crm_customer_classifications\.area_automatica is distinct from excluded\.area_automatica/);
-  assert.doesNotMatch(migration, /ragione_sociale\s+text/);
+test("la migrazione azzera il vecchio metodo e ricostruisce solo clienti attivi", () => {
+  assert.match(migration, /delete from public\.crm_customer_classifications/);
+  assert.match(migration, /crm_customer_area_from_mexal_fields/);
+  assert.match(migration, /customer\.attivo_mexal is true/);
+  assert.match(migration, /origine_classificazione = 'mexal_fields'/);
+  assert.match(migration, /'crm_direct','CRM DIRECT'/);
+  assert.doesNotMatch(migration, /crm_customer_area_from_agent/);
 });

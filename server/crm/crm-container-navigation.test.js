@@ -30,8 +30,9 @@ test("la panoramica deriva aree e destinazioni dal catalogo", () => {
   assert.match(crm, /to: module\.percorso/);
 });
 
-test("il catalogo canonico collega CRM soltanto a /crm", () => {
+test("il catalogo canonico collega CRM a /crm e include il contenitore DIRECT", () => {
   const migration = read("supabase/migrations/20260824131000_fix_crm_container_navigation.sql");
+  const hierarchyMigration = read("supabase/migrations/20260830120000_mexal_active_clients_crm_hierarchy.sql");
 
   assert.match(migration, /percorso = '\/crm'/);
   assert.match(migration, /dipendenze_alternative = array\['crm_conto_terzi','crm_b2b','crm_online','crm_ai'\]/);
@@ -44,11 +45,13 @@ test("il catalogo canonico collega CRM soltanto a /crm", () => {
   assert.ok(matrix, "matrice route SQL non trovata");
   const catalogRoutes = [...matrix[1].matchAll(/\('([^']+)','([^']+)'\)/g)]
     .map((match) => ({ screenCode: match[1], catalogPath: match[2] }))
+    .concat([{ screenCode: "crm.direct.dashboard", catalogPath: "/crm/direct" }])
     .toSorted((left, right) => left.screenCode.localeCompare(right.screenCode));
   const reactRoutes = CRM_ROUTE_CATALOG
     .map(({ screenCode, catalogPath }) => ({ screenCode, catalogPath }))
     .toSorted((left, right) => left.screenCode.localeCompare(right.screenCode));
   assert.deepEqual(reactRoutes, catalogRoutes);
+  assert.match(hierarchyMigration, /dipendenze_alternative=array\['crm_conto_terzi','crm_direct','crm_ai'\]/);
 });
 
 test("il menu risolve il catalogo senza fallback a Home", () => {

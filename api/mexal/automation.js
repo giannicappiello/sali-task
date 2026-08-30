@@ -671,7 +671,6 @@ export default async function handler(req, res) {
         return sendSuccess(res, 200, await confirmWorkspaceV4({
           admin: admin.supabase,
           previewId: Number(body.previewId),
-          decision: body.decision,
           reason: body.reason,
           requestedBy: admin.authUserId,
         }));

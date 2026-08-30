@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { AlertTriangle, RefreshCw, TrendingUp } from "lucide-react";
+import { AlertTriangle, RefreshCw } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import CrmPeriodFilter, { useCrmPeriod } from "./CrmPeriodFilter";
 import { CrmPageHeader, CrmSectionNav } from "./CrmWorkspaceUI";
@@ -53,11 +53,11 @@ function customerPath(row) {
   return `${base}/clienti/${encodeURIComponent(`mexal:${row.codice_cliente}`)}`;
 }
 
-function MetricCard({ label, value, note, to, delta }) {
-  return <Link className="crm-control-kpi" to={to}>
+function MetricCard({ label, value, note, onActivate, delta }) {
+  return <button className="crm-control-kpi" type="button" onClick={onActivate}>
     <span>{label}</span><strong>{value}</strong>
     {delta != null ? <small className={delta >= 0 ? "positive" : "negative"}>{percentage(delta)} vs confronto</small> : note ? <small>{note}</small> : null}
-  </Link>;
+  </button>;
 }
 
 function Empty({ children = "Nessun dato reale disponibile nel perimetro selezionato." }) {
@@ -65,15 +65,14 @@ function Empty({ children = "Nessun dato reale disponibile nel perimetro selezio
 }
 
 function Trend({ rows }) {
-  const max = Math.max(1, ...(rows || []).flatMap((row) => [Number(row.invoice_total || 0), Number(row.order_total || 0)]));
+  const max = Math.max(1, ...(rows || []).map((row) => Number(row.invoice_total || 0)));
   if (!rows?.length) return <Empty />;
-  return <div className="crm-control-trend" role="img" aria-label="Andamento fatturato e ordinato">
-    {rows.map((row) => <div className="crm-control-trend-row" key={row.bucket}>
+  return <div className="crm-control-trend" role="img" aria-label="Composizione del fatturato tra PRIVATE e DIRECT">
+    {rows.map((row) => { const total = Number(row.invoice_total || 0); const privateValue = Number(row.private_invoice_total || 0); const directValue = Number(row.direct_invoice_total || 0); return <div className="crm-control-trend-row" key={row.bucket}>
       <time>{formatDate(row.bucket)}</time>
-      <div><i className="invoice" style={{ width: `${Math.max(1, Number(row.invoice_total || 0) / max * 100)}%` }} /><span>{formatMoney(row.invoice_total)}</span></div>
-      <div><i className="order" style={{ width: `${Math.max(1, Number(row.order_total || 0) / max * 100)}%` }} /><span>{formatMoney(row.order_total)}</span></div>
-    </div>)}
-    <footer><span><i className="invoice" />Fatturato Mexal</span><span><i className="order" />Ordinato Workspace</span></footer>
+      <div className="crm-control-composition" style={{ width: `${Math.max(1, total / max * 100)}%` }}><i className="private" style={{ width: `${total ? privateValue / total * 100 : 0}%` }} /><i className="direct" style={{ width: `${total ? directValue / total * 100 : 0}%` }} /><span>{formatMoney(total)}</span></div>
+    </div>; })}
+    <footer><span><i className="private" />PRIVATE</span><span><i className="direct" />DIRECT</span></footer>
   </div>;
 }
 
@@ -108,6 +107,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const lastAutomaticRequest = useRef("");
   const compare = searchParams.get("compare") || "previous_period";
   const business = searchParams.get("business") || "";
   const market = searchParams.get("market") || "";
@@ -147,7 +147,13 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
     setLoading(false);
   }, [agent, business, channel, compare, country, customer, granularity, market, period.from, period.to, scope]);
 
-  useEffect(() => { const timer = window.setTimeout(() => void load(), 220); return () => window.clearTimeout(timer); }, [load]);
+  const automaticRequestKey = [scope, period.from, period.to, compare, business, market, country, agent, channel, customer, granularity].join("|");
+  useEffect(() => {
+    if (lastAutomaticRequest.current === automaticRequestKey) return;
+    lastAutomaticRequest.current = automaticRequestKey;
+    const timer = window.setTimeout(() => void load(), 220);
+    return () => window.clearTimeout(timer);
+  }, [automaticRequestKey, load]);
 
   const totals = useMemo(() => data?.totals || {}, [data?.totals]);
   const comparison = data?.comparison || {};
@@ -157,10 +163,21 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
   const nav = scope === "private" ? [["Clienti", "/crm/conto-terzi/clienti"], ["Pipeline", "/crm/conto-terzi/pipeline"], ["Brief", "/crm/conto-terzi/brief"]]
     : scope === "direct" ? [["BtoB", "/crm/b2b"], ["BtoC / Online", "/crm/online"]] : [];
 
+  const activateCard = useCallback((target) => {
+    const targetByScope = {
+      global: { top: "business", portfolio: "business", new: "attention", "reorder-lost": "attention" },
+      private: { top: "top", portfolio: "top", new: "top", "reorder-lost": "reorders" },
+      direct: { top: "attention", portfolio: "attention", new: "direct-origin", "reorder-lost": "reorders" },
+    };
+    const sectionId = targetByScope[scope]?.[target] || target;
+    setFilter("focus", sectionId);
+    window.requestAnimationFrame(() => document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }, [scope, setFilter]);
+
   const kpis = useMemo(() => {
     const common = [
       ["Fatturato", formatMoney(totals.invoice_total), `${totals.invoice_count || 0} fatture Mexal`, "top", invoiceDelta],
-      ["Ordinato", formatMoney(totals.order_total), `${totals.order_count || 0} ordini Workspace`, "top", orderDelta],
+      ["Ordinato", formatMoney(totals.order_total), `${totals.order_count || 0} ordini Workspace/Mexal, inclusi OCT`, "top", orderDelta],
       ["Portafoglio ordini", formatMoney(totals.portfolio_total), `${totals.portfolio_orders || 0} ordini aperti monitorati`, "portfolio"],
       ["Clienti Mexal attivi", number(totals.mexal_active_customers), "Stato anagrafico Mexal", "top"],
       ["Nuovi clienti", number(totals.new_customers), "Prima vendita documentata nel periodo", "new"],
@@ -172,7 +189,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
       ["Riordini attesi", number(totals.reorders_due), "Frequenza storica individuale", "reorders"]];
     return [...common,
       ["Riordini", number(totals.reorders_due), "Attesi o in ritardo", "reorders"],
-      ["Ordine medio", formatMoney(totals.average_order_value), "Ordini Workspace nel periodo", "top"],
+      ["Ordine medio", formatMoney(totals.average_order_value), "Ordini Workspace/Mexal nel periodo", "top"],
       ["Frequenza media", totals.average_reorder_days ? `${number(totals.average_reorder_days, 1)} gg` : "—", "Solo clienti con storico sufficiente", "reorders"],
       ["Clienti da recuperare", number((data?.attention || []).filter((row) => ["late", "risk"].includes(row.reorder_status)).length), "Elenco operativo disponibile", "attention"],
       ["Clienti persi", number(totals.lost_customers), "Oltre 2,5× la frequenza individuale", "reorder-lost"],
@@ -196,11 +213,11 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
     <p className="crm-control-updated">Ultimo aggiornamento: {updated}. Nessun polling automatico.</p>
     {error ? <div className="crm-message error"><span>{error}</span><button type="button" onClick={load}>Riprova</button></div> : null}
     {loading ? <div className="crm-loading">Calcolo server-side sull’intero dataset filtrato...</div> : <>
-      <div className={`crm-control-kpis ${scope === "direct" ? "wide" : ""}`}>{kpis.map(([label, value, note, target, delta]) => <MetricCard key={label} label={label} value={value} note={note} delta={delta} to={linkFor(target)} />)}</div>
+      <div className={`crm-control-kpis ${scope === "direct" ? "wide" : ""}`}>{kpis.map(([label, value, note, target, delta]) => <MetricCard key={label} label={label} value={value} note={note} delta={delta} onActivate={() => activateCard(target)} />)}</div>
 
-      {scope === "global" ? <section className="crm-control-panel" id="business"><header><div><span>Composizione business</span><h3>PRIVATE vs DIRECT</h3></div></header><div className="crm-control-business">{(data?.business || []).map((row) => <Link key={row.business} to={row.business === "PRIVATE" ? period.withPeriod("/crm/conto-terzi") : period.withPeriod("/crm/direct")}><strong>{row.business}</strong><span>{formatMoney(row.invoice_total)} fatturato</span><span>{formatMoney(row.order_total)} ordinato</span><span>{number(row.customers)} clienti</span></Link>)}</div></section> : null}
+      {scope === "global" ? <section className="crm-control-panel" id="business"><header><div><span>Composizione business</span><h3>PRIVATE vs DIRECT</h3></div></header><div className="crm-control-business crm-business-summary">{(data?.business || []).map((row) => <Link key={row.business} to={row.business === "PRIVATE" ? period.withPeriod("/crm/conto-terzi") : period.withPeriod("/crm/direct")}><strong>{row.business}</strong><span>{formatMoney(row.invoice_total)} fatturato</span><span>{formatMoney(row.order_total)} ordinato</span><span>{number(row.customers)} clienti</span>{row.business === "DIRECT" ? <small>BtoB {formatMoney(data?.direct_breakdown?.btob_invoice_total)} · BtoC {formatMoney(data?.direct_breakdown?.btoc_invoice_total)} · Estero {formatMoney(data?.direct_breakdown?.foreign_invoice_total)}</small> : null}</Link>)}</div></section> : null}
 
-      <section className="crm-control-panel" id="trend"><header><div><span>Andamento</span><h3>Fatturato e ordinato</h3></div><select aria-label="Raggruppamento andamento" value={granularity} onChange={(event) => setFilter("granularity", event.target.value)}><option value="day">Giorno</option><option value="week">Settimana</option><option value="month">Mese</option></select></header><Trend rows={data?.trend || []} /></section>
+      <section className="crm-control-panel" id="trend"><header><div><span>Andamento</span><h3>Composizione fatturato PRIVATE / DIRECT</h3></div><select aria-label="Raggruppamento andamento" value={granularity} onChange={(event) => setFilter("granularity", event.target.value)}><option value="day">Giorno</option><option value="week">Settimana</option><option value="month">Mese</option></select></header><Trend rows={data?.trend || []} /></section>
 
       {scope === "private" ? <>
         <section className="crm-control-panel" id="top"><header><div><span>Valore cliente</span><h3>Top clienti PRIVATE</h3></div></header><CustomerTable rows={data?.top_customers || []} period={period} privateMode /></section>
@@ -209,14 +226,13 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
       </> : null}
 
       {scope === "direct" ? <>
-        <section className="crm-control-panel"><header><div><span>Nuovi clienti vs riordini</span><h3>Origine dell’ordinato DIRECT</h3></div></header><div className="crm-control-business">{[["Nuovi clienti", data?.acquisition?.new_customer_orders], ["Riordini", data?.acquisition?.reorder_orders], ["Altre vendite", data?.acquisition?.other_orders]].map(([label, value]) => <Link key={label} to={linkFor(label === "Nuovi clienti" ? "new" : "reorders")}><strong>{label}</strong><span>{formatMoney(value)}</span><span>{totals.order_total ? percentage(Number(value || 0) / Number(totals.order_total) * 100) : "—"}</span></Link>)}</div></section>
+        <section className="crm-control-panel" id="direct-origin"><header><div><span>Nuovi clienti vs riordini</span><h3>Origine dell’ordinato DIRECT</h3></div></header><div className="crm-control-business">{[["Nuovi clienti", data?.acquisition?.new_customer_orders], ["Riordini", data?.acquisition?.reorder_orders], ["Altre vendite", data?.acquisition?.other_orders]].map(([label, value]) => <Link key={label} to={linkFor(label === "Nuovi clienti" ? "new" : "reorders")}><strong>{label}</strong><span>{formatMoney(value)}</span><span>{totals.order_total ? percentage(Number(value || 0) / Number(totals.order_total) * 100) : "—"}</span></Link>)}</div></section>
         <section className="crm-control-panel"><header><div><span>Dimensione reale Mexal</span><h3>Performance agenti</h3></div></header><div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Agente</th><th>Fatturato</th><th>Ordinato</th><th>Clienti</th><th>Nuovi</th><th>In calo</th><th>Tasso riordino</th></tr></thead><tbody>{(data?.agents || []).map((row) => <tr key={row.agent_code || row.agent_name}><td><button type="button" className="crm-table-link" onClick={() => setFilter("agent", row.agent_code || "")}>{row.agent_name}</button><small>{row.agent_code || "Senza codice"}</small></td><td>{formatMoney(row.invoice_total)}</td><td>{formatMoney(row.order_total)}</td><td>{number(row.customers)}</td><td>{number(row.new_customers)}</td><td>{number(row.declining_customers)}</td><td>{row.reorder_rate == null ? "—" : percentage(Number(row.reorder_rate) * 100)}</td></tr>)}</tbody></table></div></section>
         <section className="crm-control-split"><article className="crm-control-panel"><header><div><span>Estero</span><h3>Performance per Paese</h3></div></header><div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Paese</th><th>Fatturato</th><th>Ordinato</th><th>Clienti</th><th>Agenti</th></tr></thead><tbody>{(data?.countries || []).map((row) => <tr key={row.country_code}><td><button type="button" className="crm-table-link" onClick={() => setFilter("country", row.country_code)}>{row.country_code}</button></td><td>{formatMoney(row.invoice_total)}</td><td>{formatMoney(row.order_total)}</td><td>{number(row.customers)}</td><td>{number(row.agents)}</td></tr>)}</tbody></table></div></article><article className="crm-control-panel" id="reorders"><header><div><span>Salute portafoglio</span><h3>Riordini DIRECT</h3></div></header><ReorderHealth rows={data?.reorder_health || []} linkFor={linkFor} /></article></section>
       </> : null}
 
       <section className="crm-control-panel" id="attention"><header><div><span>Attenzione commerciale</span><h3>{scope === "private" ? "Clienti PRIVATE da recuperare" : "Clienti che richiedono attenzione"}</h3></div><AlertTriangle size={20} /></header><CustomerTable rows={(data?.attention || []).filter((row) => !focus.startsWith("reorder-") || row.reorder_status === focus.slice(8))} period={period} privateMode={scope === "private"} /></section>
 
-      {(data?.data_gaps || []).some((gap) => !gap.available) ? <section className="crm-control-gaps"><TrendingUp size={18} /><div><strong>Dimensioni non esposte senza mapping affidabile</strong>{(data.data_gaps || []).filter((gap) => !gap.available).map((gap) => <p key={gap.dimension}>{gap.reason}</p>)}</div></section> : null}
     </>}
   </section>;
 

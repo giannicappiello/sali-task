@@ -8,6 +8,13 @@ const positive = (value) => Number.isFinite(Number(value)) && Number(value) > 0;
 const fail = (message, code, status = 409) => Object.assign(new Error(message), { code, status });
 const ensure = (result) => { if (result.error) throw result.error; return result.data || []; };
 
+export function automaticWorkspaceV4Decision(preview, materials = []) {
+  const hasShortages = materials.some((material) => Number(material?.shortage_quantity) > 0);
+  if (upper(preview?.status) === "BLOCKED" && !hasShortages)
+    throw fail("La preview contiene blocchi non riconducibili a fabbisogni di acquisto.", "V4_NON_SHORTAGE_BLOCK", 409);
+  return hasShortages ? "WITH_SHORTAGES" : "COMPLETE";
+}
+
 async function loadDemand(admin, requestId) {
   const requests = ensure(await admin.from("workspace_production_requests")
     .select("id,external_id,contract_version,demand_snapshot_id,workspace_status,stato")
@@ -80,17 +87,16 @@ export async function createWorkspaceV4Preview({ admin, requestId, requestedBy, 
     status, demands: sent.result.demands, materials, mutatesProduction: false };
 }
 
-export async function confirmWorkspaceV4({ admin, previewId, decision = "COMPLETE", reason, requestedBy,
+export async function confirmWorkspaceV4({ admin, previewId, reason, requestedBy,
   client = createProgremesProductionClient() }) {
   if (!client.v4ConfirmationEnabled()) throw fail("Conferma WorkspaceMES V4 disabilitata.", "V4_CONFIRM_DISABLED", 403);
-  const normalizedDecision = upper(decision);
-  if (!["COMPLETE", "WITH_SHORTAGES"].includes(normalizedDecision)) throw fail("Decisione V4 non valida.", "INVALID_V4_DECISION", 400);
   if (clean(reason).length < 5) throw fail("Motivazione obbligatoria.", "INVALID_REASON", 400);
   const previews = ensure(await admin.from("workspace_v4_previews").select("*").eq("id", previewId).limit(1));
   const preview = previews[0];
   if (!preview || !["READY", "BLOCKED"].includes(preview.status)) throw fail("Preview V4 non confermabile.", "V4_PREVIEW_NOT_CONFIRMABLE");
-  if (preview.status === "BLOCKED" && normalizedDecision !== "WITH_SHORTAGES")
-    throw fail("La preview contiene carenze: scegliere conferma con carenze.", "V4_SHORTAGE_DECISION_REQUIRED");
+  const materials = ensure(await admin.from("workspace_v4_preview_materials")
+    .select("shortage_quantity,block_code").eq("preview_id", preview.id));
+  const normalizedDecision = automaticWorkspaceV4Decision(preview, materials);
   const request = ensure(await admin.from("workspace_production_requests").select("id,external_id")
     .eq("id", preview.production_request_id).limit(1))[0];
   const idempotencyKey = `workspacemes:v4:confirm:${payloadHash({ previewHash: preview.preview_hash, decision: normalizedDecision })}`;

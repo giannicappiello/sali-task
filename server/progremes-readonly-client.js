@@ -63,6 +63,7 @@ const RESOURCE_DEFINITIONS = Object.freeze({
       "id", "numeroOrdine", "articoloId", "codiceArticolo", "descrizioneArticolo",
       "nomeCliente", "quantita", "dataOrdine", "dataConsegna", "dataPrevistaConsegna",
       "priorita", "stato", "dataPianificataCorrente", "giorniRitardoPianificazione",
+      "riferimentoOct", "riferimentoRdp",
     ]),
   }),
   "production-progress": Object.freeze({

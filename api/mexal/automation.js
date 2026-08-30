@@ -31,7 +31,7 @@ import { cancelProductionRequest, confirmProductionProposal, handleProductionEve
 import { prepareProductionDemand } from "../../server/production-netting.js";
 import { createOctOrdersRunHandler, precheckOctOrders } from "../../server/mexal/sync-oct-orders.js";
 import { handleDigitalConnectionManager } from "../../server/crm/digital-connection-manager.js";
-import { listProductionWorkbench, productionWorkbenchDetail } from "../../server/workspacemes-workbench.js";
+import { listProductionWorkbench, loadAllProductionOrders, productionWorkbenchDetail } from "../../server/workspacemes-workbench.js";
 import { productionGoLiveGates } from "../../server/workspace-production-gates.js";
 import { effectiveWorkspaceDiagnostics } from "../../server/workspace-effective-diagnostics.js";
 import { confirmWorkspaceV4, createWorkspaceV4Preview } from "../../server/workspacemes-v4-api.js";
@@ -584,16 +584,16 @@ export default async function handler(req, res) {
       case "progremes_workbench_list": {
         const admin = await createAdmin(req, "rdp.view");
         const client = createProgremesClient();
-        const [diagnostics, health, productionOrdersResult] = await Promise.all([
+        const [diagnostics, health, productionOrders] = await Promise.all([
           client.request("diagnostics").catch(() => []),
           client.request("diagnostics-health").catch(() => null),
-          client.request("production-orders", { page: 1, pageSize: 500 }).catch(() => ({ items: [] })),
+          loadAllProductionOrders(client).catch(() => []),
         ]);
         const effectiveDiagnostics = await effectiveWorkspaceDiagnostics({ admin: admin.supabase, diagnostics });
         const workbench = await listProductionWorkbench({
           admin: admin.supabase,
           diagnostics: effectiveDiagnostics,
-          productionOrders: productionOrdersResult?.items || [],
+          productionOrders,
         });
         return sendSuccess(res, 200, { ...workbench, productionGates: productionGoLiveGates(health) });
       }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { activeOctLines, diagnosticBlocks, diagnosticMatchesWorkbenchLine, rdpProductionState, requestStage, resolveWorkbenchOctUnit, resolveWorkbenchUnits, v2DecisionAvailability, visibleDiagnostic, workbenchBomComponent, workbenchDetailLines, workbenchLineMappingStatus } from "./workspacemes-workbench.js";
+import { activeOctLines, diagnosticBlocks, diagnosticMatchesWorkbenchLine, loadAllProductionOrders, rdpProductionState, requestStage, resolveWorkbenchOctUnit, resolveWorkbenchUnits, v2DecisionAvailability, visibleDiagnostic, workbenchBomComponent, workbenchDetailLines, workbenchLineMappingStatus } from "./workspacemes-workbench.js";
 
 test("il dettaglio Workbench legge la data reale della revisione distinta", async () => {
   const source = await readFile(new URL("./workspacemes-workbench.js", import.meta.url), "utf8");
@@ -26,6 +26,30 @@ test("lo stato operativo segue il vero stato degli OdP ProgreMES", () => {
   assert.equal(planned.stage, "planned");
   assert.equal(planned.plannedCompletionDate, "2026-12-01T12:00:00.000Z");
   assert.equal(rdpProductionState(request, [{ numeroOrdine: "RDP16", stato: "InProduzione" }]).stage, "production");
+});
+
+test("gli OdP precedenti a V4 aggiornano l'OCT collegato", () => {
+  const state = rdpProductionState(null, [{
+    numeroOrdine: "OC/2/425-01",
+    riferimentoOct: "OC/2/425",
+    stato: "InProduzione",
+  }], "OC / 2 / 425");
+  assert.equal(state.stage, "production");
+  assert.equal(state.status, "IN PRODUZIONE");
+  assert.equal(state.orders.length, 1);
+});
+
+test("il Workbench carica tutte le pagine degli OdP MES", async () => {
+  const calls = [];
+  const client = { request: async (_resource, query) => {
+    calls.push(query.page);
+    return query.page === 1
+      ? { page: 1, pageSize: 2, total: 3, items: [{ id: 1 }, { id: 2 }] }
+      : { page: 2, pageSize: 2, total: 3, items: [{ id: 3 }] };
+  } };
+  const items = await loadAllProductionOrders(client, 2);
+  assert.deepEqual(calls, [1, 2]);
+  assert.deepEqual(items.map((item) => item.id), [1, 2, 3]);
 });
 
 test("solo diagnostiche operative aperte bloccano una nuova RdP", () => {

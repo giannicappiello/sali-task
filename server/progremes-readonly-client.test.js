@@ -104,6 +104,28 @@ test("calls /suppliers with MES filters and projects only the public supplier DT
   assert.equal(JSON.stringify(result).includes("internalOnly"), false);
 });
 
+test("production orders retain OCT and RdP lineage while stripping unknown fields", async () => {
+  const payload = {
+    page: 1, pageSize: 50, total: 1,
+    items: [{
+      id: 31, numeroOrdine: "OC/2/425-01", articoloId: 8,
+      codiceArticolo: "CW0001", descrizioneArticolo: "Shampoo", nomeCliente: "Miluet",
+      quantita: 18750, dataOrdine: "2026-08-30", dataConsegna: "2026-12-01",
+      dataPrevistaConsegna: null, priorita: "Normale", stato: "InProduzione",
+      dataPianificataCorrente: null, giorniRitardoPianificazione: 0,
+      riferimentoOct: "OC/2/425", riferimentoRdp: "", internalOnly: "remove-me",
+    }],
+  };
+  const client = createProgremesClient({
+    baseUrl, secret, logger: silentLogger,
+    fetchFn: async () => new Response(JSON.stringify(payload), { status: 200 }),
+  });
+  const result = await client.request("production-orders", { page: "1", pageSize: "50" });
+  assert.equal(result.items[0].riferimentoOct, "OC/2/425");
+  assert.equal(result.items[0].riferimentoRdp, "");
+  assert.equal("internalOnly" in result.items[0], false);
+});
+
 test("reuses the existing ProgreMES URL and integration secret", async () => {
   const environment = globalThis.process.env;
   const previous = {

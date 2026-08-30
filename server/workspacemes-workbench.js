@@ -135,14 +135,39 @@ function mesOrderStatus(value) {
   return text(value).toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
-export function rdpProductionState(request, productionOrders = []) {
-  if (!request) return { stage: "evaluation", status: null, plannedCompletionDate: null, orders: [] };
-  const progressive = Number(request.rdp_number);
+function canonicalReference(value) {
+  return text(value).toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function productionOrderMatchesOct(order, octReference) {
+  const expected = canonicalReference(octReference);
+  if (!expected) return false;
+  return [order?.riferimentoOct, order?.octReference, order?.riferimentiOct]
+    .flatMap((value) => text(value).split(/[;,|]/))
+    .some((value) => canonicalReference(value) === expected);
+}
+
+export async function loadAllProductionOrders(client, pageSize = 500) {
+  const items = [];
+  for (let page = 1; page <= 100; page += 1) {
+    const result = await client.request("production-orders", { page, pageSize });
+    const pageItems = Array.isArray(result?.items) ? result.items : [];
+    items.push(...pageItems);
+    const total = Number(result?.total);
+    if (!pageItems.length || !Number.isFinite(total) || items.length >= total) break;
+  }
+  return items;
+}
+
+export function rdpProductionState(request, productionOrders = [], octReference = null) {
+  const progressive = Number(request?.rdp_number);
   const prefix = Number.isSafeInteger(progressive) && progressive > 0 ? `RDP${progressive}` : "";
-  const matching = prefix ? (productionOrders || []).filter((order) => {
+  const matching = (productionOrders || []).filter((order) => {
     const numberValue = text(order?.numeroOrdine).toUpperCase();
-    return numberValue === prefix || numberValue.startsWith(`${prefix}-`);
-  }) : [];
+    const matchesRdp = prefix && (numberValue === prefix || numberValue.startsWith(`${prefix}-`));
+    return mesOrderStatus(order?.stato) !== "ANNULLATO" &&
+      (matchesRdp || productionOrderMatchesOct(order, octReference));
+  });
   if (!matching.length) return { stage: requestStage(request), status: null, plannedCompletionDate: null, orders: [] };
   const statuses = matching.map((order) => mesOrderStatus(order.stato));
   const dates = matching.map((order) => order.dataPrevistaConsegna).filter((value) => Number.isFinite(Date.parse(value)));
@@ -223,7 +248,7 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
     const productive = orderLines.filter((line) => !line.riga_descrittiva && text(line.codice_articolo) && number(line.quantita) > 0);
     const request = requestByOrder.get(text(order.id)) || null;
     const orderDiagnostics = diagnostics.filter((row) => visibleDiagnostic(row) && [row.workspaceCommercialOctId, row.entityId].map(text).includes(text(order.id)));
-    const productionState = rdpProductionState(request, productionOrders);
+    const productionState = rdpProductionState(request, productionOrders, octLabel(order));
     return {
       id: order.id, label: octLabel(order), sigla: order.mexal_sigla, serie: order.mexal_serie, numero: order.mexal_numero,
       customer: customerName(order, customersByCode),

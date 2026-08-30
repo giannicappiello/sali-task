@@ -77,6 +77,8 @@ export interface ProductionOrder {
   stato: string;
   dataPianificataCorrente: string | null;
   giorniRitardoPianificazione: number;
+  riferimentoOct: string;
+  riferimentoRdp: string;
 }
 
 export interface ProductionProgress {

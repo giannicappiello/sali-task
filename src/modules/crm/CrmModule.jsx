@@ -9,6 +9,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
 import CrmAIBrief from "./CrmAIBrief";
 import CrmCustomerLink from "./CrmCustomerLink";
+import CustomerClassificationPanel from "./CustomerClassificationPanel";
 import { CrmCustomerStatusBadge, CrmCustomerStatusDialog, CrmCustomerStatusFilter } from "./CrmCustomerStatus";
 import { setCrmCustomerActive, useCrmCustomerStatus } from "./crmCustomerStatusModel";
 import CrmPeriodFilter, { useCrmPeriod } from "./CrmPeriodFilter";
@@ -93,7 +94,7 @@ function CrmOverview() {
     };
   }, [loadOverview]);
 
-return <ModuleContainerLayout icon={getModuleIcon(overview.icon, BriefcaseBusiness)} eyebrow="Workspace" title={overview.name} description={overview.description} items={overview.items} loading={loading} error={error} onRetry={loadOverview} emptyTitle="Nessuna area CRM disponibile" emptyDescription="L’amministratore può assegnare i moduli CRM dal catalogo Workspace." />;
+return <ModuleContainerLayout icon={getModuleIcon(overview.icon, BriefcaseBusiness)} eyebrow="Workspace" title={overview.name} description={overview.description} items={overview.items} loading={loading} error={error} onRetry={loadOverview} emptyTitle="Nessuna area CRM disponibile" emptyDescription="L’amministratore può assegnare i moduli CRM dal catalogo Workspace."><CustomerClassificationPanel /></ModuleContainerLayout>;
 }
 
 function CrmDirectOverview() {

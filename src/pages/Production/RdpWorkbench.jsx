@@ -134,10 +134,18 @@ function V3Panel({ v3, canDecide, busy, onPreview, onConfirm }) {
 function RdpFailureDialog({ failure, onClose }) {
   if (!failure) return null;
   const confirmationFailure = failure.phase === "confirm";
+  const stalePreview = failure.code === "STALE_V4_PREVIEW";
+  const eyebrow = stalePreview ? "Anteprima non più valida" : confirmationFailure ? "Conferma conclusa con errore" : "Elaborazione conclusa con errore";
+  const title = stalePreview ? "RdP da ricalcolare" : confirmationFailure ? "Ordine di produzione non confermato" : "RdP non andata a buon fine";
+  const safetyMessage = stalePreview
+    ? "Non è stato creato alcun ordine di produzione. Chiudere questo messaggio e premere RICALCOLA RDP, quindi verificare la nuova anteprima."
+    : confirmationFailure
+      ? "Non ripetere la conferma e non ricalcolare la RdP: verificare il codice indicato e lo stato della conferma in ProgreMES."
+      : "Non è stata eseguita alcuna decisione produttiva. Correggere il problema indicato e premere nuovamente RICALCOLA RDP.";
   return <div className="rdp-dialog-backdrop" role="presentation" onMouseDown={onClose}><section className="rdp-dialog rdp-error-dialog" role="alertdialog" aria-modal="true" aria-labelledby="rdp-error-title" onMouseDown={(event) => event.stopPropagation()}>
-    <header><div><span className="rdp-eyebrow">{confirmationFailure ? "Conferma conclusa con errore" : "Elaborazione conclusa con errore"}</span><h2 id="rdp-error-title">{confirmationFailure ? "Ordine di produzione non confermato" : "RdP non andata a buon fine"}</h2></div><button type="button" onClick={onClose} aria-label="Chiudi errore RdP"><X/></button></header>
+    <header><div><span className="rdp-eyebrow">{eyebrow}</span><h2 id="rdp-error-title">{title}</h2></div><button type="button" onClick={onClose} aria-label="Chiudi errore RdP"><X/></button></header>
     <div className="rdp-error-summary"><AlertTriangle/><div><strong>Errore: {failure.code || "V4_PREVIEW_FAILED"}</strong><p>{failure.message || "L’elaborazione della RdP non è stata completata."}</p></div></div>
-    <p className="rdp-error-safety">{confirmationFailure ? "Non ripetere la conferma e non ricalcolare la RdP: verificare il codice indicato e lo stato della conferma in ProgreMES." : "Non è stata eseguita alcuna decisione produttiva. Correggere il problema indicato e premere nuovamente RICALCOLA RDP."}</p>
+    <p className="rdp-error-safety">{safetyMessage}</p>
     <div className="rdp-dialog-actions"><button type="button" className="primary-action" onClick={onClose}>Ho capito</button></div>
   </section></div>;
 }

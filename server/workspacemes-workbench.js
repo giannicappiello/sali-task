@@ -124,9 +124,40 @@ export function requestStage(request) {
   const status = text(request?.workspace_status || request?.stato || "").toUpperCase();
   if (status === "CANCELLED") return "history";
   if (["EVASO", "COMPLETED", "PRODUCTIONCOMPLETED"].includes(status)) return "completed";
-  if (["CONFIRMED", "INPRODUCTION", "PLANNED", "PARTIALLYPLANNED"].includes(status)) return "production";
+  if (["INPRODUCTION"].includes(status)) return "production";
+  if (["PLANNED", "PARTIALLYPLANNED"].includes(status)) return "planned";
+  if (status === "CONFIRMED") return "scheduling";
   if (["BLOCKED", "REJECTED", "FAILED"].includes(status)) return "blocked";
   return request ? "rdp" : "evaluation";
+}
+
+function mesOrderStatus(value) {
+  return text(value).toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+export function rdpProductionState(request, productionOrders = []) {
+  if (!request) return { stage: "evaluation", status: null, plannedCompletionDate: null, orders: [] };
+  const progressive = Number(request.rdp_number);
+  const prefix = Number.isSafeInteger(progressive) && progressive > 0 ? `RDP${progressive}` : "";
+  const matching = prefix ? (productionOrders || []).filter((order) => {
+    const numberValue = text(order?.numeroOrdine).toUpperCase();
+    return numberValue === prefix || numberValue.startsWith(`${prefix}-`);
+  }) : [];
+  if (!matching.length) return { stage: requestStage(request), status: null, plannedCompletionDate: null, orders: [] };
+  const statuses = matching.map((order) => mesOrderStatus(order.stato));
+  const dates = matching.map((order) => order.dataPrevistaConsegna).filter((value) => Number.isFinite(Date.parse(value)));
+  const plannedCompletionDate = dates.length
+    ? new Date(Math.max(...dates.map((value) => Date.parse(value)))).toISOString()
+    : null;
+  let stage = "scheduling";
+  if (statuses.some((status) => status === "INPRODUZIONE")) stage = "production";
+  else if (statuses.length && statuses.every((status) => ["COMPLETATO", "CHIUSO"].includes(status))) stage = "completed";
+  else if (statuses.some((status) => status === "PIANIFICATO") || plannedCompletionDate) stage = "planned";
+  const status = stage === "scheduling" ? "IN PIANIFICAZIONE"
+    : stage === "planned" ? "PIANIFICATO"
+      : stage === "production" ? "IN PRODUZIONE"
+        : stage === "completed" ? "COMPLETATO" : null;
+  return { stage, status, plannedCompletionDate, orders: matching };
 }
 
 function cancelled(request) {
@@ -161,7 +192,7 @@ export function diagnosticBlocks(row) {
     ["OPEN", "ACKNOWLEDGED"].includes(text(row?.status).toUpperCase());
 }
 
-export async function listProductionWorkbench({ admin, diagnostics = [] }) {
+export async function listProductionWorkbench({ admin, diagnostics = [], productionOrders = [] }) {
   const [{ data: orders, error: orderError }, { data: lines, error: lineError }, { data: requests, error: requestError }] = await Promise.all([
     admin.from("ordini_testate").select("*").eq("origine", "mexal_oct").order("data_consegna", { ascending: true }).limit(500),
     admin.from("ordini_righe").select("*").order("mexal_posizione", { ascending: true }).limit(5000),
@@ -192,12 +223,15 @@ export async function listProductionWorkbench({ admin, diagnostics = [] }) {
     const productive = orderLines.filter((line) => !line.riga_descrittiva && text(line.codice_articolo) && number(line.quantita) > 0);
     const request = requestByOrder.get(text(order.id)) || null;
     const orderDiagnostics = diagnostics.filter((row) => visibleDiagnostic(row) && [row.workspaceCommercialOctId, row.entityId].map(text).includes(text(order.id)));
+    const productionState = rdpProductionState(request, productionOrders);
     return {
       id: order.id, label: octLabel(order), sigla: order.mexal_sigla, serie: order.mexal_serie, numero: order.mexal_numero,
       customer: customerName(order, customersByCode),
       orderDate: order.data_ordine, deliveryDate: order.data_consegna,
       sourceTimestamp: order.updated_at || order.mexal_sincronizzato_il || order.created_at,
-      status: request?.workspace_status || request?.stato || order.stato || "DA_VALUTARE", stage: requestStage(request),
+      status: productionState.status || request?.workspace_status || request?.stato || order.stato || "DA_VALUTARE", stage: productionState.stage,
+      plannedCompletionDate: productionState.plannedCompletionDate,
+      productionOrders: productionState.orders,
       lineCount: orderLines.length, productiveLineCount: productive.length,
       quantity: productive.reduce((total, line) => total + number(line.quantita), 0),
       units: resolveWorkbenchUnits(productive, productsByCode),
@@ -215,7 +249,7 @@ export async function listProductionWorkbench({ admin, diagnostics = [] }) {
           residualQuantity: Math.max(0, orderedQuantity - fulfilledQuantity),
           unit: resolveWorkbenchOctUnit(line, product),
           deliveryDate: line.data_consegna || order.data_consegna,
-          productionStatus: request ? (request.workspace_status || request.stato || "RdP") : "Da generare",
+          productionStatus: productionState.status || (request ? (request.workspace_status || request.stato || "RdP") : "Da generare"),
         };
       }),
       ready: productive.length > 0 && order.cliente_mexal_risolto !== false && !orderDiagnostics.some(diagnosticBlocks),

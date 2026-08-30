@@ -1,5 +1,6 @@
 import https from "node:https";
 import { createClient } from "@supabase/supabase-js";
+import { filterExcludedClients } from "./customer-exclusions.js";
 import { completeSyncRun, createSyncRun, failSyncRunUnlessClosed } from "./lib/syncRuns.js";
 
 const CLIENT_PREFIX = "501";
@@ -541,9 +542,16 @@ export default async function handler(req, res) {
     const mexal = buildMexalClient();
     const paymentsMap = await loadPaymentsMap(mexal);
     const clients = await loadAllClients(mexal, paymentsMap);
+    const { data: excludedRows, error: excludedError } = await supabase
+      .from("workspace_mexal_customer_exclusions")
+      .select("codice_cliente");
+    if (excludedError) throw excludedError;
+    const excludedCodes = new Set((excludedRows || []).map((row) => normalize(row.codice_cliente)));
+    const eligibleClients = filterExcludedClients(clients, excludedCodes);
 
     const result = {
       letti_mexal: clients.length,
+      esclusi_sincronizzazione: clients.length - eligibleClients.length,
       inseriti_o_aggiornati: 0,
       inseriti: 0,
       aggiornati: 0,
@@ -557,9 +565,9 @@ export default async function handler(req, res) {
       );
     }
 
-    for (let index = 0; index < clients.length; index += UPSERT_BATCH_SIZE) {
+    for (let index = 0; index < eligibleClients.length; index += UPSERT_BATCH_SIZE) {
       await assertRunStillRunning(supabase, runId);
-      const batch = clients.slice(index, index + UPSERT_BATCH_SIZE);
+      const batch = eligibleClients.slice(index, index + UPSERT_BATCH_SIZE);
       const range = `${index + 1}-${index + batch.length}`;
 
       const { data: existing, error: existingError } = await supabase
@@ -596,7 +604,7 @@ export default async function handler(req, res) {
 
     if (result.errori.length === 0) {
       const activeCodes = new Set(
-        clients.map((client) => client.codice_cliente)
+        eligibleClients.map((client) => client.codice_cliente)
       );
 
       const { data: cachedClients, error: cachedError } = await supabase

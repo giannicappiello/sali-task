@@ -50,14 +50,18 @@ test("il dettaglio RdP mostra righe attive e righe storiche appartenenti a quell
   assert.deepEqual(workbenchDetailLines(lines, requestItems).map((line) => line.id), ["current", "retired-from-request"]);
 });
 
-test("solo le formule FP richiedono risoluzione MES", () => {
+test("V4 assegna a ProgreMES risoluzione formule e nettificazione dei componenti diretti", () => {
   assert.equal(workbenchLineMappingStatus({ riga_descrittiva: true }), "NOT_APPLICABLE");
   assert.equal(workbenchLineMappingStatus({ riga_descrittiva: false }), "BOM_PENDING_IN_WORKSPACE");
   assert.equal(workbenchLineMappingStatus({ riga_descrittiva: false }, { mapping_status: "RESOLVED" }), "RESOLVED");
   const bom = { components: [{ articleCode: "AS001" }, { articleCode: "FP120C" }] };
   assert.equal(workbenchLineMappingStatus({ riga_descrittiva: false }, null, bom), "BOM_EXPLODED");
-  assert.equal(workbenchBomComponent({ id: 1, line_number: 1, article_code: "AS001", quantity: 2, unit_of_measure: "PZ", component_kind: "DIRECT_COMPONENT" }, 100, 1).status, "TO_NET_IN_WORKSPACE");
-  assert.equal(workbenchBomComponent({ id: 2, line_number: 2, article_code: "FP120C", quantity: .5, unit_of_measure: "MES_MANAGED", component_kind: "FORMULA_COMPONENT" }, 100, 1).status, "TO_RESOLVE_IN_MES");
+  const direct = workbenchBomComponent({ id: 1, line_number: 1, article_code: "AS001", quantity: 2, unit_of_measure: "PZ", component_kind: "DIRECT_COMPONENT" }, 100, 1);
+  const formula = workbenchBomComponent({ id: 2, line_number: 2, article_code: "FP120C", quantity: .5, unit_of_measure: "MES_MANAGED", component_kind: "FORMULA_COMPONENT" }, 100, 1);
+  assert.equal(direct.owner, "PROGREMES");
+  assert.equal(direct.status, "TO_NET_IN_MES");
+  assert.equal(formula.owner, "PROGREMES");
+  assert.equal(formula.status, "TO_RESOLVE_IN_MES");
 });
 
 test("una diagnostica di un altro OCT non viene associata soltanto per codice articolo", () => {

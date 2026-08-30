@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { confirmedProductionOrder, diagnosticCanBeArchived, diagnosticIsManageable, productionOrderProgremesPath, v3RecalculationFailure, v3RecalculationOutcomeFailure } from "./rdp-workbench-state.js";
+import { bomComponentStatusLabel, confirmedProductionOrder, diagnosticCanBeArchived, diagnosticIsManageable, productionOrderProgremesPath, v3RecalculationFailure, v3RecalculationOutcomeFailure } from "./rdp-workbench-state.js";
 
 test("riconosce l'OP realmente generato dalla conferma MES", () => {
   assert.deepEqual(confirmedProductionOrder({ proposals: [
@@ -33,6 +33,11 @@ test("una diagnostica risolta può essere eliminata dalla vista operativa", () =
   assert.equal(diagnosticCanBeArchived({ status: "Resolved" }), true);
   assert.equal(diagnosticCanBeArchived({ status: "Ignored" }), true);
   assert.equal(diagnosticCanBeArchived({ status: "Archived" }), false);
+});
+
+test("il dettaglio distinta traduce gli stati tecnici V4 senza mostrare codici interni", () => {
+  assert.equal(bomComponentStatusLabel("TO_NET_IN_MES"), "DA NETTIFICARE IN MES");
+  assert.equal(bomComponentStatusLabel("TO_RESOLVE_IN_MES"), "DA RISOLVERE IN MES");
 });
 
 test("una preview V3 bloccata produce un errore esplicito con i blocker univoci", () => {

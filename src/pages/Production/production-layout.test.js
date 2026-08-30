@@ -1,0 +1,29 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+
+test("il Workbench mantiene corpo, filtri e aggiornamento entro la testata", async () => {
+  const [source, css] = await Promise.all([
+    readFile(new URL("./RdpWorkbench.jsx", import.meta.url), "utf8"),
+    readFile(new URL("./production.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(source, /className="secondary-action rdp-toolbar-refresh"/);
+  assert.match(source, /className="rdp-quick-search"/);
+  assert.match(css, /\.rdp-workbench \{[^}]*max-width: 100%[^}]*overflow-x: hidden/);
+  assert.match(css, /\.rdp-oct-line \{[^}]*minmax\(210px,1\.65fr\)/);
+});
+
+test("i fabbisogni mostrano nota e comandi in linea con tabella compatta e scrollbar", async () => {
+  const [source, css] = await Promise.all([
+    readFile(new URL("./PurchaseRequirements.jsx", import.meta.url), "utf8"),
+    readFile(new URL("./production.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(source, /className="purchase-command-row"/);
+  assert.match(source, /purchase-material-column/);
+  assert.match(source, /purchase-status-column/);
+  assert.match(css, /\.purchase-table-wrap\{[^}]*overflow-x:scroll[^}]*scrollbar-gutter:stable/);
+  assert.match(css, /\.purchase-table-wrap table\{[^}]*table-layout:fixed[^}]*font-size:\.75rem/);
+  assert.match(css, /\.purchase-command-row \.purchase-calculation-note\{[^}]*font-size:\.76rem/);
+});

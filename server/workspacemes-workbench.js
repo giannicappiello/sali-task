@@ -47,8 +47,8 @@ export function workbenchBomComponent(row, finishedQuantity, baseQuantity = 1) {
     quantityPerBase: number(row?.quantity),
     requiredQuantity: Number((number(row?.quantity) * multiplier).toFixed(6)),
     unitOfMeasure: text(row?.unit_of_measure).toUpperCase(),
-    owner: kind === "FORMULA_COMPONENT" ? "PROGREMES" : "WORKSPACE",
-    status: kind === "FORMULA_COMPONENT" ? "TO_RESOLVE_IN_MES" : "TO_NET_IN_WORKSPACE",
+    owner: "PROGREMES",
+    status: kind === "FORMULA_COMPONENT" ? "TO_RESOLVE_IN_MES" : "TO_NET_IN_MES",
   };
 }
 

@@ -30,6 +30,16 @@ export function diagnosticCanBeArchived(diagnostic = {}) {
   return String(diagnostic?.status || "").toUpperCase() !== "ARCHIVED";
 }
 
+export function bomComponentStatusLabel(status) {
+  const labels = {
+    TO_NET_IN_MES: "DA NETTIFICARE IN MES",
+    TO_RESOLVE_IN_MES: "DA RISOLVERE IN MES",
+    RESOLVED: "RISOLTO IN MES",
+  };
+  const normalized = String(status || "").trim().toUpperCase();
+  return labels[normalized] || normalized.replaceAll("_", " ") || "—";
+}
+
 export function v3RecalculationFailure(payload = {}) {
   const previewStatus = payload?.previewStatus || payload?.workspaceStatus || payload?.status;
   if (String(previewStatus || "").toUpperCase() !== "BLOCKED") return null;

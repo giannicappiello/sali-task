@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Ban, CheckCircle2, ChevronRight, Factory, RefreshCw, Search, Send, ShieldAlert, X } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
-import { confirmedProductionOrder, diagnosticCanBeArchived, diagnosticIsManageable, productionOrderProgremesPath } from "./rdp-workbench-state.js";
+import { bomComponentStatusLabel, confirmedProductionOrder, diagnosticCanBeArchived, diagnosticIsManageable, productionOrderProgremesPath } from "./rdp-workbench-state.js";
 
 const TABS = [
   ["evaluation", "OCT da valutare"], ["rdp", "RdP"], ["production", "In produzione"],
@@ -101,7 +101,7 @@ function FinishedBomDetails({ bom }) {
         <span className="rdp-bom-position">{component.lineNumber ?? "—"}</span>
         <span><strong>{component.articleCode}</strong><small>{component.description || (formula ? "Formula ProgreMES" : "Componente diretto")}</small></span>
         <span><strong>{formatQuantity(component.requiredQuantity)} {component.unitOfMeasure === "MES_MANAGED" ? "UDM MES" : component.unitOfMeasure}</strong><small>{formula ? "Formula FP" : "Componente diretto"}</small></span>
-        {badge(component.status, formula ? "neutral" : "green")}
+        {badge(bomComponentStatusLabel(component.status), formula ? "neutral" : "green")}
       </article>;
     })}</div>
   </section>;

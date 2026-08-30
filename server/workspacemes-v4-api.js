@@ -53,8 +53,10 @@ export async function createWorkspaceV4Preview({ admin, requestId, requestedBy, 
     const unitOfMeasure = upper(item.productionUnitOfMeasure || item.requestedUnitOfMeasure);
     if (!item.lineId || !upper(item.commercialArticleCode) || !positive(quantity) || !unitOfMeasure)
       throw fail("Riga prodotto finito V4 incompleta.", "INVALID_V4_DEMAND", 400);
+    const octReference = [order?.sigla, order?.serie, order?.numero].map(clean).filter(Boolean).join("/");
     return { workspaceLineId: item.lineId, finishedArticleCode: upper(item.commercialArticleCode), quantity,
-      unitOfMeasure, requiredAt: item.requestedDeliveryDate || order?.requestedDeliveryDate || input.capturedAt };
+      unitOfMeasure, requiredAt: item.requestedDeliveryDate || order?.requestedDeliveryDate || input.capturedAt,
+      octReference, customerTechnicalReference: clean(order?.customerTechnicalReference) };
   });
   const octHash = aggregateWorkspaceHashes(input.demand.orders.map((order) => order.versionHash));
   if (!octHash) throw fail("Hash OCT V4 mancante.", "V4_OCT_HASH_MISSING");

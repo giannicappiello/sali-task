@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { activeOctLines, diagnosticBlocks, diagnosticMatchesWorkbenchLine, requestStage, resolveWorkbenchOctUnit, resolveWorkbenchUnits, v2DecisionAvailability, visibleDiagnostic, workbenchBomComponent, workbenchDetailLines, workbenchLineMappingStatus } from "./workspacemes-workbench.js";
+import { activeOctLines, diagnosticBlocks, diagnosticMatchesWorkbenchLine, rdpProductionState, requestStage, resolveWorkbenchOctUnit, resolveWorkbenchUnits, v2DecisionAvailability, visibleDiagnostic, workbenchBomComponent, workbenchDetailLines, workbenchLineMappingStatus } from "./workspacemes-workbench.js";
 
 test("il dettaglio Workbench legge la data reale della revisione distinta", async () => {
   const source = await readFile(new URL("./workspacemes-workbench.js", import.meta.url), "utf8");
@@ -15,8 +15,17 @@ test("una RdP annullata è storico e non resta tra i bloccati", () => {
   assert.equal(requestStage({ workspace_status: "Blocked" }), "blocked");
 });
 
-test("una RdP V4 confermata passa in produzione e non resta nella preview operativa", () => {
-  assert.equal(requestStage({ workspace_status: "CONFIRMED" }), "production");
+test("una RdP V4 confermata passa in pianificazione e non risulta già in produzione", () => {
+  assert.equal(requestStage({ workspace_status: "CONFIRMED" }), "scheduling");
+});
+
+test("lo stato operativo segue il vero stato degli OdP ProgreMES", () => {
+  const request = { workspace_status: "CONFIRMED", rdp_number: 16 };
+  assert.equal(rdpProductionState(request, [{ numeroOrdine: "RDP16", stato: "Nuovo" }]).stage, "scheduling");
+  const planned = rdpProductionState(request, [{ numeroOrdine: "RDP16", stato: "Pianificato", dataPrevistaConsegna: "2026-12-01T12:00:00Z" }]);
+  assert.equal(planned.stage, "planned");
+  assert.equal(planned.plannedCompletionDate, "2026-12-01T12:00:00.000Z");
+  assert.equal(rdpProductionState(request, [{ numeroOrdine: "RDP16", stato: "InProduzione" }]).stage, "production");
 });
 
 test("solo diagnostiche operative aperte bloccano una nuova RdP", () => {

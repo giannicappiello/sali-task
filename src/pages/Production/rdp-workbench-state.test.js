@@ -13,8 +13,8 @@ test("riconosce l'OP realmente generato dalla conferma MES", () => {
 
 test("apre l'OP nella schermata ProgreMES registrata usando il contesto odpId", () => {
   assert.equal(
-    productionOrderProgremesPath({ productionOrder: { id: 42 }, externalId: "rdp-123" }),
-    "/produzione/progremes.Ordini.Produzione?odpId=42&rdpId=rdp-123",
+    productionOrderProgremesPath({ productionOrder: { id: 42 }, externalId: "rdp-123", rdpNumber: 16 }),
+    "/produzione/progremes.Ordini.Produzione?odpId=42&rdp=RDP16&rdpId=rdp-123",
   );
   assert.equal(
     productionOrderProgremesPath({ externalId: "rdp-123" }),

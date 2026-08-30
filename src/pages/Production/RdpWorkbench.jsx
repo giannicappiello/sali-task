@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Ban, CheckCircle2, ChevronRight, Factory, RefreshCw, Search, Send, ShieldAlert, X } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { bomComponentStatusLabel, confirmedProductionOrder, diagnosticCanBeArchived, diagnosticIsManageable, productionOrderProgremesPath } from "./rdp-workbench-state.js";
 
 const TABS = [
-  ["evaluation", "OCT da valutare"], ["rdp", "RdP"], ["production", "In produzione"],
-  ["completed", "Completati / evasi"], ["blocked", "Bloccati"],
+  ["evaluation", "OCT da valutare"], ["rdp", "RdP"], ["scheduling", "In pianificazione"],
+  ["planned", "Pianificati"], ["production", "In produzione"],
+  ["completed", "Completati / evasi"], ["blocked", "Bloccati"], ["purchasing", "Fabbisogni acquisto"],
   ["history", "Storico RdP"],
 ];
 
@@ -58,7 +59,7 @@ function OctOrderCard({ row, selectable, selected, onToggle, onOpen, onDiagnosti
   const rowRdpLabel = rdpProgressiveLabel(row.rdpNumber);
   return <article className={`rdp-oct-card ${!row.ready && row.stage !== "history" ? "blocked" : ""}`}>
     <header className="rdp-oct-card-header">
-      <div className="rdp-oct-identity"><div className="rdp-oct-reference"><strong>{row.label}</strong>{rowRdpLabel && <span className="rdp-oct-rdp">{rowRdpLabel}</span>}</div><span>{row.customer}</span><small className="rdp-oct-meta">Ordine: {formatDate(row.orderDate)} · Consegna: {formatDate(row.deliveryDate)} · Revisione sorgente: {formatDate(row.sourceTimestamp, true)}</small></div>
+      <div className="rdp-oct-identity"><div className="rdp-oct-reference"><strong>{row.label}</strong>{rowRdpLabel && <span className="rdp-oct-rdp">{rowRdpLabel}</span>}</div><span>{row.customer}</span><small className="rdp-oct-meta">Ordine: {formatDate(row.orderDate)} · Consegna: {formatDate(row.deliveryDate)} · Ultimazione pianificata: {row.plannedCompletionDate ? formatDate(row.plannedCompletionDate, true) : "Da pianificare"} · Revisione sorgente: {formatDate(row.sourceTimestamp, true)}</small></div>
       <div className="rdp-oct-actions">
         {badge(status, tone)}
         {selectable && <label className="rdp-oct-select"><input type="checkbox" checked={selected} disabled={!row.ready} onChange={onToggle}/><span>{selected ? "Selezionato" : "Seleziona per RdP"}</span></label>}
@@ -79,6 +80,49 @@ function OctOrderCard({ row, selectable, selected, onToggle, onOpen, onDiagnosti
     </div>
     <footer><Diagnostics rows={row.diagnostics} onOpen={onDiagnostic}/></footer>
   </article>;
+}
+
+function PurchasingPanel({ data, loading, busy, canManage, onReload, onCreate }) {
+  const [suppliers, setSuppliers] = useState({});
+  if (loading) return <div className="production-loading">Caricamento fabbisogni e preventivi…</div>;
+  const requirements = data?.requirements || [];
+  const documents = data?.documents || [];
+  const supplierOptions = data?.suppliers || [];
+  const documentAction = (document) => {
+    const line = document.lines?.[0];
+    if (!line) return;
+    if (document.document_type === "RFQ") {
+      const number = window.prompt("Numero del preventivo ricevuto:", "");
+      if (number === null) return;
+      const unitPrice = window.prompt("Prezzo unitario del preventivo:", "0");
+      if (unitPrice === null) return;
+      onCreate({ documentType: "QUOTE", parentDocumentId: document.id, supplierExternalRef: document.supplier_external_ref,
+        supplierName: document.supplier_name, documentNumber: number, currency: "EUR",
+        lines: [{ requirementId: line.requirement_id, quantity: line.quantity, unitPrice }] });
+    } else if (document.document_type === "QUOTE") {
+      const number = window.prompt("Numero ordine fornitore:", "");
+      if (number === null) return;
+      onCreate({ documentType: "SUPPLIER_ORDER", parentDocumentId: document.id,
+        supplierExternalRef: document.supplier_external_ref, supplierName: document.supplier_name,
+        documentNumber: number, currency: document.currency || "EUR",
+        lines: document.lines.map((item) => ({ requirementId: item.requirement_id, quantity: item.quantity,
+          unitPrice: item.unit_price, expectedAt: item.expected_at })) });
+    }
+  };
+  return <section className="rdp-purchasing" aria-label="Fabbisogni acquisto Workspace V4">
+    <header><div><h2>Fabbisogni e preventivi</h2><p>Quantità calcolate da Workspace sui dati certificati MES. Nessun documento viene inviato automaticamente a Mexal.</p></div><button type="button" className="secondary-action" onClick={onReload} disabled={busy}><RefreshCw size={16}/>Aggiorna</button></header>
+    <div className="rdp-purchase-grid">
+      {requirements.map((requirement) => <article key={requirement.id}>
+        <span className="rdp-eyebrow">{requirement.status}</span><h3>{requirement.article_code}</h3><p>{requirement.description || "Materia prima"}</p>
+        <strong>{formatQuantity(requirement.required_quantity)} {requirement.unit_of_measure}</strong><small>Necessario entro {formatDate(requirement.required_at)}</small>
+        {requirement.status === "OPEN" && <div className="rdp-purchase-actions"><select value={suppliers[requirement.id] || ""} onChange={(event) => setSuppliers((current) => ({ ...current, [requirement.id]: event.target.value }))}><option value="">Seleziona fornitore…</option>{supplierOptions.map((supplier) => <option key={supplier.codiceMexal || supplier.id} value={supplier.codiceMexal}>{supplier.ragioneSociale} · {supplier.codiceMexal}</option>)}</select><button type="button" className="primary-action" disabled={!canManage || busy || !suppliers[requirement.id]} onClick={() => { const code = suppliers[requirement.id]; const supplier = supplierOptions.find((item) => item.codiceMexal === code); onCreate({ documentType: "RFQ", supplierExternalRef: code, supplierName: supplier?.ragioneSociale, lines: [{ requirementId: requirement.id, quantity: requirement.required_quantity }] }); }}>Richiedi preventivo</button></div>}
+      </article>)}
+      {!requirements.length && <div className="rdp-empty">Nessun fabbisogno di acquisto aperto.</div>}
+    </div>
+    <h2>Documenti acquisto</h2>
+    <div className="rdp-purchase-documents">{documents.map((document) => <article key={document.id}><div><span className="rdp-eyebrow">{document.document_type}</span><strong>{document.document_number || `Documento ${document.id}`}</strong><small>{document.supplier_name || document.supplier_external_ref} · {formatDate(document.created_at, true)}</small></div>{["RFQ", "QUOTE"].includes(document.document_type) && <button type="button" className="secondary-action" disabled={!canManage || busy} onClick={() => documentAction(document)}>{document.document_type === "RFQ" ? "Registra preventivo" : "Genera ordine fornitore"}</button>}</article>)}</div>
+    {!canManage && <p className="rdp-diagnostic-readonly">Permesso purchases.manage richiesto per creare preventivi e ordini.</p>}
+  </section>;
 }
 
 function AnalysisGrid({ analysis, proposal }) {
@@ -236,6 +280,7 @@ export default function RdpWorkbench() {
   const canDecide = hasPermission?.("rdp.decide");
   const canCancel = hasPermission?.("rdp.cancel");
   const canManageDiagnostics = hasPermission?.("diagnostics.manage");
+  const canManagePurchases = hasPermission?.("purchases.manage");
   const [data, setData] = useState([]); const [tab, setTab] = useState("evaluation"); const [selected, setSelected] = useState([]);
   const [filters, setFilters] = useState({ search: "", ready: "" }); const [detail, setDetail] = useState(null);
   const [preview, setPreview] = useState(null); const [busy, setBusy] = useState(false); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [result, setResult] = useState(null);
@@ -245,6 +290,8 @@ export default function RdpWorkbench() {
   const [rdpFailure, setRdpFailure] = useState(null);
   const [productionGates, setProductionGates] = useState(null);
   const [octRefresh, setOctRefresh] = useState(null);
+  const [purchasing, setPurchasing] = useState({ requirements: [], documents: [], suppliers: [] });
+  const [purchaseLoading, setPurchaseLoading] = useState(false);
   const refreshGeneration = useRef(0);
   const sendEnabled = productionGates?.previewOn === true;
   const octRefreshRunning = ["queued", "leased", "running", "retry"].includes(octRefresh?.status);
@@ -283,6 +330,22 @@ export default function RdpWorkbench() {
     initialize();
     return () => { active = false; refreshGeneration.current += 1; };
   }, [accessToken]);
+
+  const loadPurchasing = useCallback(async () => {
+    if (!accessToken) return;
+    setPurchaseLoading(true); setError("");
+    try { setPurchasing(await callWorkbench(accessToken, "workspacemes_v4_purchasing_list")); }
+    catch (e) { setError(e.message); }
+    finally { setPurchaseLoading(false); }
+  }, [accessToken]);
+
+  async function createPurchaseDocument(input) {
+    if (!canManagePurchases || busy) return;
+    setBusy(true); setError("");
+    try { await callWorkbench(accessToken, "workspacemes_v4_purchase_document_create", input); await loadPurchasing(); }
+    catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  }
 
   async function refreshOctOrders() {
     if (!accessToken || loading || octRefreshRunning) return;
@@ -333,7 +396,7 @@ export default function RdpWorkbench() {
   async function createPreview() { if (!sendEnabled || !selected.length || busy) return; setBusy(true); setError(""); try { setPreview(await callWorkbench(accessToken, "workspacemes_v4_precheck", { orderIds: selected })); } catch (e) { setError(e.message); } finally { setBusy(false); } }
   async function sendRequest() { if (!sendEnabled || !preview || busy) return; setBusy(true); setError(""); setRdpFailure(null); try { const response = await callWorkbench(accessToken, "workspacemes_v4_request", { orderIds: selected, snapshotId: preview.snapshot.id }); if (!response.requestId) throw new Error("Workspace non ha restituito il riferimento RdP V4."); setPreview(null); setSelected([]); await load(); const outcome = await callWorkbench(accessToken, "progremes_workbench_detail", { requestId: response.requestId }); setResult({ ...response, rdpNumber: outcome.request?.rdp_number }); setDetail(outcome); if (response.previewError) { const failure = { code: response.previewError.code || "V4_PREVIEW_FAILED", message: response.previewError.message }; setError(`RdP V4 creata ma non elaborata: ${failure.message}`); setRdpFailure(failure); } } catch (e) { const message = e.code === "DEMAND_CHANGED" ? "L’OCT è cambiato dopo l’anteprima: ripetere il precheck." : e.code === "RDP_IDEMPOTENCY_CONFLICT" ? "La selezione appartiene a una precedente generazione RdP. Aggiorna la schermata e crea una nuova anteprima." : e.message; setError(message); setRdpFailure({ code: e.code || "V4_REQUEST_FAILED", message }); } finally { setBusy(false); } }
   async function createV3Preview() { if (!detail?.request?.id || busy) return; setBusy(true); setError(""); setRdpFailure(null); try { await callWorkbench(accessToken, "workspacemes_v4_preview", { requestId: detail.request.id }); const refreshedDetail = await callWorkbench(accessToken, "progremes_workbench_detail", { requestId: detail.request.id }); setDetail(refreshedDetail); } catch (e) { setError(e.message); setRdpFailure({ code: e.code || "V4_PREVIEW_FAILED", message: e.message }); } finally { setBusy(false); } }
-  async function confirmDecision(reason = "") { if ((!decision?.proposal?.id && decision?.kind !== "v4") || busy) return; setBusy(true); setError(""); setRdpFailure(null); try { const response = decision.kind === "v4" ? await callWorkbench(accessToken, "workspacemes_v4_confirm", { previewId: decision.preview.id, reason }) : await callWorkbench(accessToken, "progremes_production_confirm", { proposalId: decision.proposal.id }); const productionOrder = decision.kind === "v4" ? response.mes?.productionOrders?.[0] : confirmedProductionOrder(response); if (!productionOrder) throw new Error("ProgreMES ha confermato la decisione senza restituire l’OP generato."); setDecision(null); setResult({ kind: "production_order", status: response.workspaceStatus || response.status || response.mes?.status || "Planned", externalId: detail?.request?.external_id, productionOrder }); setDetail(null); setPreview(null); setSelected([]); setTab("production"); await load(); } catch (e) { setError(e.message); setRdpFailure({ phase: "confirm", code: e.code || "V4_CONFIRM_FAILED", message: e.message }); } finally { setBusy(false); } }
+  async function confirmDecision(reason = "") { if ((!decision?.proposal?.id && decision?.kind !== "v4") || busy) return; setBusy(true); setError(""); setRdpFailure(null); try { const response = decision.kind === "v4" ? await callWorkbench(accessToken, "workspacemes_v4_confirm", { previewId: decision.preview.id, reason }) : await callWorkbench(accessToken, "progremes_production_confirm", { proposalId: decision.proposal.id }); const productionOrder = decision.kind === "v4" ? response.mes?.productionOrders?.[0] : confirmedProductionOrder(response); if (!productionOrder) throw new Error("ProgreMES ha confermato la decisione senza restituire l’OP generato."); const rdpNumber = detail?.request?.rdp_number; setDecision(null); setResult({ kind: "production_order", status: response.workspaceStatus || response.status || response.mes?.status || "Confirmed", externalId: detail?.request?.external_id, rdpNumber, productionOrder }); setDetail(null); setPreview(null); setSelected([]); setTab("scheduling"); await load(); } catch (e) { setError(e.message); setRdpFailure({ phase: "confirm", code: e.code || "V4_CONFIRM_FAILED", message: e.message }); } finally { setBusy(false); } }
   async function cancelRequest(reason) {
     if (!cancelTarget?.id || !canCancel || busy) return;
     setBusy(true); setError("");
@@ -364,11 +427,11 @@ export default function RdpWorkbench() {
   }
 
   return <div className="production-page rdp-workbench">
-    <header className="rdp-header"><div><span className="rdp-eyebrow">WorkspaceMES</span><h1>RdP Workbench</h1><p>Gestione OCT, richieste di produzione, analisi MES e decisioni operative.</p></div><div className="rdp-header-controls"><nav className="rdp-tabs" aria-label="Stati Workbench">{TABS.map(([code,label]) => <button type="button" key={code} className={tab === code ? "active" : ""} onClick={() => setTab(code)}>{label}<span>{data.filter((row) => row.stage === code).length}</span></button>)}</nav><div className="rdp-header-actions"><BackgroundSyncStatus refresh={octRefresh}/><button type="button" className="secondary-action" onClick={refreshOctOrders} disabled={loading || octRefreshRunning}><RefreshCw className={loading || octRefreshRunning ? "rdp-spin" : ""} size={17}/>Aggiorna</button></div></div></header>
-    <section className={`rdp-toolbar ${tab === "evaluation" ? "rdp-toolbar-evaluation" : ""}`}><label><Search size={17}/><input value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} placeholder="Cerca OCT, cliente, stato…"/></label><select value={filters.ready} onChange={(e) => setFilters({ ...filters, ready: e.target.value })}><option value="">Pronti e bloccati</option><option value="ready">Solo pronti</option><option value="blocked">Solo bloccati</option></select>{tab === "evaluation" && <div className="rdp-selection-bar"><span><strong>{selected.length}</strong> OCT selezionati</span><button type="button" className="primary-action rdp-preview-action" onClick={createPreview} disabled={!canCreate || !sendEnabled || !selected.length || selectionBlocked || busy}>{busy ? "Verifica…" : "Verifica e crea anteprima"}</button>{!canCreate && <small>Permesso rdp.create richiesto.</small>}{!sendEnabled && <small>Invio RdP Production non disponibile: verificare i gate nel Centro Diagnostico.</small>}{selectionBlocked && <small>Rimuovere gli OCT bloccati prima di creare la RdP.</small>}</div>}</section>
+    <header className="rdp-header"><div><span className="rdp-eyebrow">WorkspaceMES</span><h1>RdP Workbench</h1><p>Gestione OCT, richieste di produzione, analisi MES e decisioni operative.</p></div><div className="rdp-header-controls"><nav className="rdp-tabs" aria-label="Stati Workbench">{TABS.map(([code,label]) => <button type="button" key={code} className={tab === code ? "active" : ""} onClick={() => { setTab(code); if (code === "purchasing") loadPurchasing(); }}>{label}<span>{code === "purchasing" ? purchasing.requirements.filter((item) => item.status !== "RECEIVED" && item.status !== "CANCELLED").length : data.filter((row) => row.stage === code).length}</span></button>)}</nav><div className="rdp-header-actions"><BackgroundSyncStatus refresh={octRefresh}/><button type="button" className="secondary-action" onClick={refreshOctOrders} disabled={loading || octRefreshRunning}><RefreshCw className={loading || octRefreshRunning ? "rdp-spin" : ""} size={17}/>Aggiorna</button></div></div></header>
+    {tab !== "purchasing" && <section className={`rdp-toolbar ${tab === "evaluation" ? "rdp-toolbar-evaluation" : ""}`}><label><Search size={17}/><input value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} placeholder="Cerca OCT, cliente, stato…"/></label><select value={filters.ready} onChange={(e) => setFilters({ ...filters, ready: e.target.value })}><option value="">Pronti e bloccati</option><option value="ready">Solo pronti</option><option value="blocked">Solo bloccati</option></select>{tab === "evaluation" && <div className="rdp-selection-bar"><span><strong>{selected.length}</strong> OCT selezionati</span><button type="button" className="primary-action rdp-preview-action" onClick={createPreview} disabled={!canCreate || !sendEnabled || !selected.length || selectionBlocked || busy}>{busy ? "Verifica…" : "Verifica e crea anteprima"}</button>{!canCreate && <small>Permesso rdp.create richiesto.</small>}{!sendEnabled && <small>Invio RdP Production non disponibile: verificare i gate nel Centro Diagnostico.</small>}{selectionBlocked && <small>Rimuovere gli OCT bloccati prima di creare la RdP.</small>}</div>}</section>}
     {error && <div className="production-message" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")}><X size={16}/>Chiudi</button></div>}
     {result && <div className="rdp-success"><CheckCircle2/><div><strong>{result.kind === "cancelled" ? "RdP annullata logicamente" : result.kind === "production_order" ? "RdP andata a buon fine, OP generato." : "RdP ricevuta da ProgreMES"}</strong><p>{result.kind === "production_order" ? `${result.productionOrder?.number || result.productionOrder?.id ? `OP ${result.productionOrder.number || result.productionOrder.id} · ` : ""}apertura ordini di produzione…` : `${result.rdpNumber ? `RDP${result.rdpNumber}` : "RdP"} · Stato ${result.kind === "cancelled" ? "Annullata" : result.status || "Received"}`}</p></div></div>}
-    <section className="rdp-oct-scroll" role="region" aria-label="Elenco OCT e RdP" tabIndex={0}>{loading ? <div className="production-loading">Caricamento OCT e RdP…</div> : <div className="rdp-oct-cards">{visible.map((row) => <OctOrderCard key={row.id} row={row} selectable={tab === "evaluation"} selected={selected.includes(row.id)} onToggle={() => toggle(row)} onOpen={() => openDetail(row)} onDiagnostic={openDiagnostic}/>) }{!visible.length && <div className="rdp-empty">Nessun elemento per i filtri e lo stato selezionati.</div>}</div>}</section>
+    {tab === "purchasing" ? <PurchasingPanel data={purchasing} loading={purchaseLoading} busy={busy} canManage={canManagePurchases} onReload={loadPurchasing} onCreate={createPurchaseDocument}/> : <section className="rdp-oct-scroll" role="region" aria-label="Elenco OCT e RdP" tabIndex={0}>{loading ? <div className="production-loading">Caricamento OCT e RdP…</div> : <div className="rdp-oct-cards">{visible.map((row) => <OctOrderCard key={row.id} row={row} selectable={tab === "evaluation"} selected={selected.includes(row.id)} onToggle={() => toggle(row)} onOpen={() => openDetail(row)} onDiagnostic={openDiagnostic}/>) }{!visible.length && <div className="rdp-empty">Nessun elemento per i filtri e lo stato selezionati.</div>}</div>}</section>}
     <DetailPanel key={detail?.request?.id || detail?.orders?.map((order) => order.id).join(":") || "none"} detail={detail} onClose={() => setDetail(null)} onDiagnostics={openDiagnostic} canDecide={canDecide} canCancel={canCancel} onDecision={setDecision} onCancel={() => setCancelTarget(detail.request)} onV3Preview={createV3Preview} onV3Confirm={() => setDecision({ kind: "v4", preview: detail.v3.preview, request: detail.request })} busy={busy}/>
     <DiagnosticActionDialog key={diagnosticTarget?.diagnosticId || "none"} diagnostic={diagnosticTarget} busy={busy} canManage={canManageDiagnostics} onClose={() => setDiagnosticTarget(null)} onApply={applyDiagnosticAction}/>
     <PreviewDialog preview={preview} busy={busy} sendEnabled={sendEnabled} onCancel={() => setPreview(null)} onConfirm={sendRequest}/>

@@ -16,6 +16,8 @@ export function productionOrderProgremesPath(result = {}) {
   const params = new URLSearchParams();
   const productionOrderId = Number(result?.productionOrder?.id);
   if (Number.isSafeInteger(productionOrderId) && productionOrderId > 0) params.set("odpId", String(productionOrderId));
+  const rdpNumber = Number(result?.rdpNumber);
+  if (Number.isSafeInteger(rdpNumber) && rdpNumber > 0) params.set("rdp", `RDP${rdpNumber}`);
   const rdpId = String(result?.externalId || "").trim();
   if (rdpId) params.set("rdpId", rdpId);
   const query = params.toString();

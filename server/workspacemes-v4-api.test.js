@@ -30,3 +30,9 @@ test("l'API V4 non accetta più una scelta manuale sui fabbisogni", async () => 
   assert.doesNotMatch(source, /INVALID_V4_DECISION|V4_SHORTAGE_DECISION_REQUIRED/);
   assert.match(source, /automaticWorkspaceV4Decision\(preview, materials\)/);
 });
+
+test("la conferma V4 trasferisce a ProgreMES il progressivo RdP Workspace", async () => {
+  const source = await readFile(new URL("./workspacemes-v4-api.js", import.meta.url), "utf8");
+  assert.match(source, /workspaceRdpNumber:\s*Number\(request\.rdp_number\)/);
+  assert.match(source, /V4_RDP_NUMBER_REQUIRED/);
+});

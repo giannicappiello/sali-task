@@ -15,6 +15,10 @@ test("una RdP annullata è storico e non resta tra i bloccati", () => {
   assert.equal(requestStage({ workspace_status: "Blocked" }), "blocked");
 });
 
+test("una RdP V4 confermata passa in produzione e non resta nella preview operativa", () => {
+  assert.equal(requestStage({ workspace_status: "CONFIRMED" }), "production");
+});
+
 test("solo diagnostiche operative aperte bloccano una nuova RdP", () => {
   assert.equal(diagnosticBlocks({ severity: "Blocking", status: "Open" }), true);
   assert.equal(diagnosticBlocks({ severity: "Critical", status: "Acknowledged" }), true);

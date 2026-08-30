@@ -70,7 +70,7 @@ test("conferma V4 usa il pulsante verde esteso e il resoconto è certificato MES
   assert.doesNotMatch(ui, /Conferma V3, genera OP e fabbisogni/);
   assert.match(ui, /className="primary-action rdp-v3-recalculate" onClick=\{onConfirm\}/);
   assert.doesNotMatch(ui, /row\.formula_code|row\.station|row\.filling/);
-  assert.match(ui, /WITH_SHORTAGES/);
+  assert.doesNotMatch(ui, /WITH_SHORTAGES|COMPLETE/);
   assert.match(ui, /Conferma produttiva non abilitata: verificare i gate Workspace e ProgreMES nel Centro Diagnostico/);
   assert.match(productionCss, /\.rdp-v3-recalculate\s*\{[^}]*width:\s*100%[^}]*background:\s*#18b76a/);
 });

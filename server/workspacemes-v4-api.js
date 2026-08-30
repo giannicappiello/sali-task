@@ -17,7 +17,7 @@ export function automaticWorkspaceV4Decision(preview, materials = []) {
 
 async function loadDemand(admin, requestId) {
   const requests = ensure(await admin.from("workspace_production_requests")
-    .select("id,external_id,contract_version,demand_snapshot_id,workspace_status,stato")
+    .select("id,external_id,rdp_number,contract_version,demand_snapshot_id,workspace_status,stato")
     .eq("id", requestId).limit(1));
   const request = requests[0];
   if (!request?.demand_snapshot_id || Number(request.contract_version) !== 4)
@@ -97,12 +97,15 @@ export async function confirmWorkspaceV4({ admin, previewId, reason, requestedBy
   const materials = ensure(await admin.from("workspace_v4_preview_materials")
     .select("shortage_quantity,block_code").eq("preview_id", preview.id));
   const normalizedDecision = automaticWorkspaceV4Decision(preview, materials);
-  const request = ensure(await admin.from("workspace_production_requests").select("id,external_id")
+  const request = ensure(await admin.from("workspace_production_requests").select("id,external_id,rdp_number")
     .eq("id", preview.production_request_id).limit(1))[0];
+  if (!Number.isSafeInteger(Number(request?.rdp_number)) || Number(request.rdp_number) <= 0)
+    throw fail("Progressivo RdP Workspace non valido.", "V4_RDP_NUMBER_REQUIRED", 409);
   const idempotencyKey = `workspacemes:v4:confirm:${payloadHash({ previewHash: preview.preview_hash, decision: normalizedDecision })}`;
   const externalId = deterministicUuid({ purpose: "v4-confirmation", idempotencyKey });
   const command = { contractVersion: 4, externalId, previewExternalId: preview.external_id,
-    idempotencyKey, expectedPreviewHash: preview.preview_hash, decision: normalizedDecision,
+    idempotencyKey, expectedPreviewHash: preview.preview_hash, workspaceRdpNumber: Number(request.rdp_number),
+    decision: normalizedDecision,
     reason: clean(reason), decidedBy: `workspace:${requestedBy || "service"}`,
     correlationId: preview.correlation_id, causationId: preview.external_id };
   const sent = await client.confirmV4(request.external_id, command);

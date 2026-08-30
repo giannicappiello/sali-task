@@ -124,7 +124,7 @@ export function requestStage(request) {
   const status = text(request?.workspace_status || request?.stato || "").toUpperCase();
   if (status === "CANCELLED") return "history";
   if (["EVASO", "COMPLETED", "PRODUCTIONCOMPLETED"].includes(status)) return "completed";
-  if (["INPRODUCTION", "PLANNED", "PARTIALLYPLANNED"].includes(status)) return "production";
+  if (["CONFIRMED", "INPRODUCTION", "PLANNED", "PARTIALLYPLANNED"].includes(status)) return "production";
   if (["BLOCKED", "REJECTED", "FAILED"].includes(status)) return "blocked";
   return request ? "rdp" : "evaluation";
 }

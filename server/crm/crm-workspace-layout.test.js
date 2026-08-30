@@ -56,7 +56,7 @@ test("azioni, tabelle, modali e contenuto restano raggiungibili fino a 390px", (
 });
 
 test("la Panoramica include la dashboard globale clienti senza introdurre una nuova route", () => {
-  assert.match(crm, /<CustomerClassificationPanel \/>/);
+  assert.match(crm, /<CommercialControlDashboard scope="global" embedded \/>/);
   assert.doesNotMatch(CRM_ROUTE_CATALOG.map((route) => route.catalogPath).join("\n"), /classificazione/);
   assert.match(crm, /\/creators/);
   assert.match(crm, /\/journey/);

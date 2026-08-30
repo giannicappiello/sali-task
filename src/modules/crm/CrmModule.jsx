@@ -8,8 +8,8 @@ import { getModuleIcon } from "../../config/moduleIcons";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
 import CrmAIBrief from "./CrmAIBrief";
+import CommercialControlDashboard from "./CommercialControlDashboard";
 import CrmCustomerLink from "./CrmCustomerLink";
-import CustomerClassificationPanel from "./CustomerClassificationPanel";
 import { CrmCustomerStatusBadge, CrmCustomerStatusDialog, CrmCustomerStatusFilter } from "./CrmCustomerStatus";
 import { setCrmCustomerActive, useCrmCustomerStatus } from "./crmCustomerStatusModel";
 import CrmPeriodFilter, { useCrmPeriod } from "./CrmPeriodFilter";
@@ -94,7 +94,7 @@ function CrmOverview() {
     };
   }, [loadOverview]);
 
-return <ModuleContainerLayout icon={getModuleIcon(overview.icon, BriefcaseBusiness)} eyebrow="Workspace" title={overview.name} description={overview.description} items={overview.items} loading={loading} error={error} onRetry={loadOverview} emptyTitle="Nessuna area CRM disponibile" emptyDescription="L’amministratore può assegnare i moduli CRM dal catalogo Workspace."><CustomerClassificationPanel /></ModuleContainerLayout>;
+return <ModuleContainerLayout icon={getModuleIcon(overview.icon, BriefcaseBusiness)} eyebrow="Workspace" title={overview.name} description={overview.description} items={overview.items} loading={loading} error={error} onRetry={loadOverview} emptyTitle="Nessuna area CRM disponibile" emptyDescription="L’amministratore può assegnare i moduli CRM dal catalogo Workspace."><CommercialControlDashboard scope="global" embedded /></ModuleContainerLayout>;
 }
 
 function CrmDirectOverview() {
@@ -103,7 +103,7 @@ function CrmDirectOverview() {
     { code: "crm_b2b", name: "BtoB", description: "Clienti DIRECT con nome_ricerca_cf BtoB.", to: "/crm/b2b", icon: Store },
     { code: "crm_online", name: "BtoC / Online", description: "Clienti DIRECT con nome_ricerca_cf BtoC.", to: "/crm/online", icon: ShoppingBag },
   ].filter((item) => hasModuleAccess(item.code));
-  return <ModuleContainerLayout icon={Network} eyebrow="CRM DIRECT" title="Clienti DIRECT" description="I clienti DIRECT sono separati automaticamente nei canali BtoB e BtoC usando il valore Mexal nome_ricerca_cf." items={items} emptyTitle="Nessun canale DIRECT disponibile" emptyDescription="L’amministratore può assegnare i moduli CRM BtoB e Online dal catalogo Workspace." />;
+  return <ModuleContainerLayout icon={Network} eyebrow="CRM DIRECT" title="Clienti DIRECT" description="I clienti DIRECT sono separati automaticamente nei canali BtoB e BtoC usando il valore Mexal nome_ricerca_cf." items={items} emptyTitle="Nessun canale DIRECT disponibile" emptyDescription="L’amministratore può assegnare i moduli CRM BtoB e Online dal catalogo Workspace."><CommercialControlDashboard scope="direct" embedded /></ModuleContainerLayout>;
 }
 
 function Kpi({ label, value, note, to }) {
@@ -565,7 +565,7 @@ function renderCrmView(route) {
   switch (route.view) {
     case "overview": return <CrmOverview />;
     case "direct-overview": return <CrmDirectOverview />;
-    case "dashboard": return <CrmDashboard type={route.type} />;
+    case "dashboard": return route.type === "conto_terzi" ? <CommercialControlDashboard scope="private" /> : <CrmDashboard type={route.type} />;
     case "accounts": return <AccountsPage type={route.type} />;
     case "account": return <AccountDetail type={route.type} />;
     case "pipeline": return <Pipeline type={route.type} />;

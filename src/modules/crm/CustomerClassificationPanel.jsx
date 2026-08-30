@@ -13,7 +13,6 @@ import { formatMoney } from "./crmConfig";
 import "./customer-classification.css";
 
 const PAGE_SIZE = 50;
-const AUTO_REFRESH_MS = 30_000;
 const AREA_OPTIONS = [["conto_terzi", "PRIVATE"], ["b2b", "DIRECT · BtoB"], ["online", "DIRECT · BtoC"]];
 const EMPTY_SALES = { totals: {}, categories: [], subcategories: [] };
 
@@ -131,24 +130,12 @@ export default function CustomerClassificationPanel() {
 
   useEffect(() => { const timer = window.setTimeout(() => void load(), 180); return () => window.clearTimeout(timer); }, [load]);
 
-  useEffect(() => {
-    const refresh = () => { if (document.visibilityState === "visible") void load(true); };
-    const interval = window.setInterval(refresh, AUTO_REFRESH_MS);
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", refresh);
-    return () => {
-      window.clearInterval(interval);
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", refresh);
-    };
-  }, [load]);
-
   const distribution = useMemo(() => AREA_OPTIONS.map(([value, label], index) => ({ key: index === 0 ? "private" : value, label, count: rows.filter((row) => row.area_crm === value).length })), [rows]);
   const salesTotals = sales.totals || {};
   if (!isAdminUser) return null;
 
   return <section className="crm-panel crm-classification" aria-labelledby="crm-classification-title">
-    <div className="crm-toolbar"><div><span className="crm-eyebrow"><UsersRound size={16} /> Dashboard globale CRM</span><h2 id="crm-classification-title">Parco clienti Workspace</h2><p>Solo clienti Mexal attivi, classificati dai campi cod_alternativo e nome_ricerca_cf.</p>{lastUpdated ? <small className="crm-auto-refresh" aria-live="polite">Aggiornamento automatico ogni 30 secondi · ultimo aggiornamento {lastUpdated.toLocaleTimeString("it-IT")}</small> : null}</div><button className="secondary-action" type="button" onClick={() => void load(false)} disabled={loading}><RefreshCw size={17} />Aggiorna</button></div>
+    <div className="crm-toolbar"><div><span className="crm-eyebrow"><UsersRound size={16} /> Dashboard globale CRM</span><h2 id="crm-classification-title">Parco clienti Workspace</h2><p>Solo clienti Mexal attivi, classificati dai campi cod_alternativo e nome_ricerca_cf.</p>{lastUpdated ? <small className="crm-auto-refresh" aria-live="polite">Ultimo aggiornamento manuale {lastUpdated.toLocaleTimeString("it-IT")}</small> : null}</div><button className="secondary-action" type="button" onClick={() => void load(false)} disabled={loading}><RefreshCw size={17} />Aggiorna</button></div>
     <div className="crm-classification-kpis"><button type="button" className="kpi-card" onClick={() => { setMacro(""); setArea(""); setPage(0); }}><div><span>Clienti filtrati</span><strong>{total}</strong><p>intero dataset</p></div></button>{distribution.map((item) => <button type="button" className="kpi-card" key={item.key} onClick={() => { setMacro(item.key === "private" ? "private" : "direct"); setArea(item.key === "private" ? "conto_terzi" : item.key); setPage(0); }}><div><span>{item.label}</span><strong>{item.count}</strong><p>apri elenco filtrato</p></div></button>)}</div>
     <DistributionChart rows={distribution} />
     <section className="crm-commercial-dashboard" aria-labelledby="crm-commercial-title">

@@ -33,6 +33,9 @@ test("Workbench espone lista OCT, multi-select e stati operativi senza duplicare
   assert.match(ui, /rdp-toolbar-evaluation/);
   assert.match(ui, /className="rdp-oct-scroll"/);
   assert.match(productionCss, /\.rdp-oct-scroll\s*\{[^}]*overflow-y:\s*auto/);
+  assert.match(ui, /<span>Ultimazione prevista<\/span><span>Produzione<\/span>/);
+  assert.match(ui, /row\.plannedCompletionDate \? formatDate\(row\.plannedCompletionDate, true\) : "Da pianificare"/);
+  assert.match(productionCss, /\.rdp-oct-line\s*\{[^}]*grid-template-columns:\s*minmax\(185px,1\.2fr\)/);
   assert.match(productionCss, /\.rdp-oct-meta\s*\{[^}]*font-size:\s*\.72rem/);
   assert.match(productionCss, /\.rdp-request-meta \.rdp-cancel-action\s*\{[^}]*margin-left:\s*auto/);
   assert.match(ui, /requestId: response\.requestId/);

@@ -68,13 +68,14 @@ function OctOrderCard({ row, selectable, selected, onToggle, onOpen, onDiagnosti
       </div>
     </header>
     <div className="rdp-oct-lines" role="table" aria-label={`Righe ${row.label}`}>
-      <div className="rdp-oct-line rdp-oct-line-head" role="row"><span>Articolo</span><span>Ordinato</span><span>Evaso</span><span>Residuo</span><span>Consegna</span><span>Produzione</span></div>
+      <div className="rdp-oct-line rdp-oct-line-head" role="row"><span>Articolo</span><span>Ordinato</span><span>Evaso</span><span>Residuo</span><span>Consegna</span><span>Ultimazione prevista</span><span>Produzione</span></div>
       {(row.lines || []).map((line) => <div className="rdp-oct-line" role="row" key={line.id}>
         <span><strong>{line.articleCode}</strong><small>{line.description}</small></span>
         <span>{formatQuantity(line.orderedQuantity)} {line.unit}</span>
         <span>{formatQuantity(line.fulfilledQuantity)} {line.unit}</span>
         <span>{formatQuantity(line.residualQuantity)} {line.unit}</span>
         <span>{formatDate(line.deliveryDate)}</span>
+        <span>{row.plannedCompletionDate ? formatDate(row.plannedCompletionDate, true) : "Da pianificare"}</span>
         <span>{badge(line.productionStatus, row.ready ? "neutral" : "red")}</span>
       </div>)}
       {!row.lines?.length && <div className="rdp-oct-line-empty">Righe conservate nello storico della RdP.</div>}

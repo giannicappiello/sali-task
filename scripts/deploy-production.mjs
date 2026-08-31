@@ -8,7 +8,8 @@ function run(command, args, { allowCurrentProduction = false } = {}) {
     cwd: process.cwd(),
     env: { ...process.env, CI: "1", NO_COLOR: "1" },
     encoding: "utf8",
-    shell: false,
+    // Su Windows npm.cmd/npx.cmd richiedono il command processor con Node 24.
+    shell: process.platform === "win32",
   });
   const output = `${result.stdout || ""}${result.stderr || ""}`;
   process.stdout.write(output);

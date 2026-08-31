@@ -131,6 +131,11 @@ export function requestStage(request) {
   return request ? "rdp" : "evaluation";
 }
 
+export function confirmedV4ProductionRequest(request, confirmedRequestIds = new Set()) {
+  if (!request || !confirmedRequestIds.has(text(request.id))) return request;
+  return { ...request, stato: "CONFIRMED", workspace_status: "CONFIRMED" };
+}
+
 function mesOrderStatus(value) {
   return text(value).toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
@@ -236,19 +241,24 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
   const orderIdsByRequest = new Map((requests || []).map((request) => [text(request.id), new Set([request.ordine_id].filter(Boolean).map(text))]));
   for (const request of requests || []) if (!cancelled(request) && request.ordine_id && !requestByOrder.has(text(request.ordine_id))) requestByOrder.set(text(request.ordine_id), request);
   const requestIds = (requests || []).map((row) => row.id);
+  const confirmedV4RequestIds = new Set();
   if (requestIds.length) {
-    const result = await admin.from("workspace_production_request_items").select("production_request_id,ordine_id").in("production_request_id", requestIds);
-    if (result.error) throw result.error;
-    for (const item of result.data || []) {
+    const [itemsResult, confirmationsResult] = await Promise.all([
+      admin.from("workspace_production_request_items").select("production_request_id,ordine_id").in("production_request_id", requestIds),
+      admin.from("workspace_v4_previews").select("production_request_id,status").in("production_request_id", requestIds).eq("status", "CONFIRMED"),
+    ]);
+    if (itemsResult.error || confirmationsResult.error) throw itemsResult.error || confirmationsResult.error;
+    for (const item of itemsResult.data || []) {
       const request = requestById.get(text(item.production_request_id));
       orderIdsByRequest.get(text(item.production_request_id))?.add(text(item.ordine_id));
       if (request && !cancelled(request) && !requestByOrder.has(text(item.ordine_id))) requestByOrder.set(text(item.ordine_id), request);
     }
+    for (const preview of confirmationsResult.data || []) confirmedV4RequestIds.add(text(preview.production_request_id));
   }
   const items = (orders || []).map((order) => {
     const orderLines = relevantLines.filter((line) => text(line.ordine_id) === text(order.id));
     const productive = orderLines.filter((line) => !line.riga_descrittiva && text(line.codice_articolo) && number(line.quantita) > 0);
-    const request = requestByOrder.get(text(order.id)) || null;
+    const request = confirmedV4ProductionRequest(requestByOrder.get(text(order.id)) || null, confirmedV4RequestIds);
     const orderDiagnostics = diagnostics.filter((row) => visibleDiagnostic(row) && [row.workspaceCommercialOctId, row.entityId].map(text).includes(text(order.id)));
     const productionState = rdpProductionState(request, productionOrders, octLabel(order));
     return {

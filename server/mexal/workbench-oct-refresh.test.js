@@ -42,6 +42,12 @@ test("API e UI avviano il refresh in background e seguono soltanto job OCT", () 
   assert.match(ui, /progremes_oct_refresh_status/i);
 });
 
+test("il tab Planning apre la schermata ProgreMES registrata", () => {
+  const ui = fs.readFileSync(uiUrl, "utf8");
+  assert.match(ui, /navigate\("\/produzione\/progremes\.Planning"\)/);
+  assert.doesNotMatch(ui, /navigate\("\/produzione\/Planning"\)/);
+});
+
 test("il refresh manuale corregge il lineage e allinea lo schedule OCT a Ordini", () => {
   const migration = fs.readFileSync(manualMigrationUrl, "utf8");
   assert.match(migration, /oct_schedule\.sync_type = 'oct_orders'/i);

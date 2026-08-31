@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { activeOctLines, diagnosticBlocks, diagnosticMatchesWorkbenchLine, loadAllProductionOrders, rdpProductionState, requestStage, resolveWorkbenchOctUnit, resolveWorkbenchUnits, v2DecisionAvailability, visibleDiagnostic, workbenchBomComponent, workbenchDetailLines, workbenchLineMappingStatus } from "./workspacemes-workbench.js";
+import { activeOctLines, confirmedV4ProductionRequest, diagnosticBlocks, diagnosticMatchesWorkbenchLine, loadAllProductionOrders, rdpProductionState, requestStage, resolveWorkbenchOctUnit, resolveWorkbenchUnits, v2DecisionAvailability, visibleDiagnostic, workbenchBomComponent, workbenchDetailLines, workbenchLineMappingStatus } from "./workspacemes-workbench.js";
 
 test("il dettaglio Workbench legge la data reale della revisione distinta", async () => {
   const source = await readFile(new URL("./workspacemes-workbench.js", import.meta.url), "utf8");
@@ -17,6 +17,13 @@ test("una RdP annullata è storico e non resta tra i bloccati", () => {
 
 test("una RdP V4 confermata passa in pianificazione e non risulta già in produzione", () => {
   assert.equal(requestStage({ workspace_status: "CONFIRMED" }), "scheduling");
+});
+
+test("una preview V4 confermata prevale sullo stato READY rimasto sulla richiesta", () => {
+  const request = { id: "rdp-17", workspace_status: "READY", stato: "READY" };
+  const effective = confirmedV4ProductionRequest(request, new Set(["rdp-17"]));
+  assert.equal(effective.workspace_status, "CONFIRMED");
+  assert.equal(requestStage(effective), "scheduling");
 });
 
 test("lo stato operativo segue il vero stato degli OdP ProgreMES", () => {

@@ -588,7 +588,10 @@ export default async function handler(req, res) {
         const [diagnostics, health, productionOrders] = await Promise.all([
           client.request("diagnostics").catch(() => []),
           client.request("diagnostics-health").catch(() => null),
-          loadAllProductionOrders(client).catch(() => []),
+          loadAllProductionOrders(client).catch((error) => {
+            console.error("WorkspaceMES production order refresh failed", { error: error?.message || String(error) });
+            return [];
+          }),
         ]);
         const effectiveDiagnostics = await effectiveWorkspaceDiagnostics({ admin: admin.supabase, diagnostics });
         const workbench = await listProductionWorkbench({

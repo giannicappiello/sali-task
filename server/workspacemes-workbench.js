@@ -243,17 +243,26 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
   const requestIds = (requests || []).map((row) => row.id);
   const confirmedV4RequestIds = new Set();
   if (requestIds.length) {
-    const [itemsResult, confirmationsResult] = await Promise.all([
+    const [itemsResult, previewsResult] = await Promise.all([
       admin.from("workspace_production_request_items").select("production_request_id,ordine_id").in("production_request_id", requestIds),
-      admin.from("workspace_v4_previews").select("production_request_id,status").in("production_request_id", requestIds).eq("status", "CONFIRMED"),
+      admin.from("workspace_v4_previews").select("id,production_request_id").in("production_request_id", requestIds),
     ]);
-    if (itemsResult.error || confirmationsResult.error) throw itemsResult.error || confirmationsResult.error;
+    if (itemsResult.error || previewsResult.error) throw itemsResult.error || previewsResult.error;
     for (const item of itemsResult.data || []) {
       const request = requestById.get(text(item.production_request_id));
       orderIdsByRequest.get(text(item.production_request_id))?.add(text(item.ordine_id));
       if (request && !cancelled(request) && !requestByOrder.has(text(item.ordine_id))) requestByOrder.set(text(item.ordine_id), request);
     }
-    for (const preview of confirmationsResult.data || []) confirmedV4RequestIds.add(text(preview.production_request_id));
+    const requestIdByPreview = new Map((previewsResult.data || []).map((preview) => [text(preview.id), text(preview.production_request_id)]));
+    const previewIds = [...requestIdByPreview.keys()];
+    if (previewIds.length) {
+      const confirmationsResult = await admin.from("workspace_v4_confirmation_mirrors").select("preview_id").in("preview_id", previewIds);
+      if (confirmationsResult.error) throw confirmationsResult.error;
+      for (const confirmation of confirmationsResult.data || []) {
+        const confirmedRequestId = requestIdByPreview.get(text(confirmation.preview_id));
+        if (confirmedRequestId) confirmedV4RequestIds.add(confirmedRequestId);
+      }
+    }
   }
   const items = (orders || []).map((order) => {
     const orderLines = relevantLines.filter((line) => text(line.ordine_id) === text(order.id));

@@ -26,6 +26,13 @@ test("una preview V4 confermata prevale sullo stato READY rimasto sulla richiest
   assert.equal(requestStage(effective), "scheduling");
 });
 
+test("il Workbench riconcilia la RdP dalla conferma V4 persistita, non dallo stato transitorio della preview", async () => {
+  const source = await readFile(new URL("./workspacemes-workbench.js", import.meta.url), "utf8");
+  assert.match(source, /workspace_v4_confirmation_mirrors/);
+  assert.match(source, /requestIdByPreview/);
+  assert.doesNotMatch(source, /workspace_v4_previews[^\n]+\.eq\("status", "CONFIRMED"\)/);
+});
+
 test("lo stato operativo segue il vero stato degli OdP ProgreMES", () => {
   const request = { workspace_status: "CONFIRMED", rdp_number: 16 };
   assert.equal(rdpProductionState(request, [{ numeroOrdine: "RDP16", stato: "Nuovo" }]).stage, "scheduling");

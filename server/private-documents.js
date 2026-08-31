@@ -25,7 +25,7 @@ async function authorize(req, { upload = false } = {}) {
 
   const isAdmin = profile.ruoli?.amministratore_workspace === true || profile.ruoli?.livello_accesso === "amministrazione";
   const { data: moduleEnabled, error: moduleError } = await admin.rpc("workspace_module_enabled_for_user", {
-    target_user_id: profile.id, target_module: "documenti",
+    target_user_id: profile.id, target_module: "progremes_formule",
   });
   if (moduleError) throw moduleError;
   if (!isAdmin && moduleEnabled !== true) throw Object.assign(new Error("Accesso a Documenti Private non autorizzato."), { status: 403 });

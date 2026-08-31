@@ -22,7 +22,7 @@ export default function PurchaseRequirements() {
   const { session, hasPermission } = useAuth();
   const accessToken = session?.access_token;
   const canManage = hasPermission?.("purchases.manage");
-  const [data, setData] = useState({ requirements: [], suppliers: [] });
+  const [data, setData] = useState({ requirements: [], suppliers: [], saliDiIschiaProposals: [] });
   const [selected, setSelected] = useState(new Set());
   const [supplierByMonth, setSupplierByMonth] = useState({});
   const [confirmMonth, setConfirmMonth] = useState("");
@@ -86,6 +86,7 @@ export default function PurchaseRequirements() {
   }
 
   const toOrder = data.requirements.filter((row) => row.quantityToOrder > 0);
+  const latestSaliProposal = data.saliDiIschiaProposals?.[0] || null;
   return <div className="production-page purchase-requirements-page">
     <div className="purchase-command-row">
       <div className="purchase-calculation-note"><strong>Come viene calcolato.</strong><span>Workspace applica i criteri MES ai dati certificati: giacenze disponibili dei magazzini 1 e 8, domande degli OP nuovi o pianificati e quantità residue degli ordini fornitore. Gli arrivi coprono soltanto necessità successive alla loro data.</span></div>
@@ -98,6 +99,11 @@ export default function PurchaseRequirements() {
     </div>
     {message && <div className="purchase-feedback success" role="status"><CheckCircle2 size={18}/><span>{message}</span><button onClick={() => setMessage("")} aria-label="Chiudi"><X size={16}/></button></div>}
     {error && <div className="purchase-feedback error" role="alert"><span>{error}</span><button onClick={() => setError("")} aria-label="Chiudi"><X size={16}/></button></div>}
+    {latestSaliProposal && <section className="purchase-sali-proposal" aria-label="Ultima proposta Sali di Ischia">
+      <header><div><span>Riassortimento Workspace</span><h2>Proposta Sali di Ischia del {date(latestSaliProposal.proposal_date)}</h2></div><strong>{latestSaliProposal.status}</strong></header>
+      <p>Calcolo autonomo Workspace su vendite sincronizzate MEXAL, giacenza del magazzino {latestSaliProposal.warehouse_number} e lead time configurati.</p>
+      <div>{(latestSaliProposal.lines || []).map((line) => <article key={line.id}><div><strong>{line.article_code}</strong><small>{line.description}</small></div><span>{quantity(line.proposed_quantity)} {line.unit_of_measure}</span><small>Giacenza {quantity(line.available_stock)} · consumo stimato {quantity(line.estimated_monthly_consumption)}/mese · {line.lead_time_days} gg</small></article>)}</div>
+    </section>}
     {loading ? <div className="production-loading">Calcolo dei fabbisogni in corso…</div> : <>
       <div className="purchase-summary"><article><span>Articoli da approvvigionare</span><strong className="danger">{toOrder.length}</strong></article><article><span>Articoli coperti da arrivi</span><strong>{data.requirements.filter((row) => row.status === "COVERED_BY_ARRIVALS").length}</strong></article><article><span>Fabbisogni totali</span><strong>{data.requirements.length}</strong></article></div>
       <section className="purchase-toolbar"><div><strong>Suddivisione mensile</strong><span>I materiali sono raggruppati per data di necessità.</span></div><label><input type="checkbox" checked={onlyToOrder} onChange={(event) => setOnlyToOrder(event.target.checked)}/>Mostra solo da ordinare</label></section>

@@ -37,6 +37,7 @@ import { effectiveWorkspaceDiagnostics } from "../../server/workspace-effective-
 import { confirmWorkspaceV4, createWorkspaceV4Preview } from "../../server/workspacemes-v4-api.js";
 import { createWorkspaceV4PurchaseDocument, listWorkspaceV4Purchasing } from "../../server/workspacemes-v4-purchasing.js";
 import { calculateWorkspaceV4PurchaseRequirements, executeWorkspaceV4PurchasingAction, readWorkspaceV4PurchasingSource } from "../../server/workspacemes-v4-purchasing-mes.js";
+import { generateSaliDiIschiaProposal, listSaliDiIschiaProposals } from "../../server/sali-di-ischia-proposal.js";
 
 async function dispatchMessageNotification(req, body) {
   const token = String(req.headers.authorization || "").trim().replace(/^Bearer\s+/i, "");
@@ -700,6 +701,7 @@ export default async function handler(req, res) {
           suppliers: suppliersResult?.items || [],
         });
         return sendSuccess(res, 200, { ...current,
+          saliDiIschiaProposals: await listSaliDiIschiaProposals(admin.supabase),
           requirements: calculateWorkspaceV4PurchaseRequirements(source),
           sourceGeneratedAt: source.generatedAt,
           calculationOwner: "WORKSPACE",
@@ -707,10 +709,17 @@ export default async function handler(req, res) {
         });
       }
       case "workspacemes_v4_purchasing_action": {
-        await createAdmin(req, "purchases.manage");
+        const admin = await createAdmin(req, "purchases.manage");
         const action = String(body.purchasingAction || "").trim().toUpperCase();
         const allowed = new Set(["IMPORT_SUPPLIER_ORDERS", "GENERATE_SALI_DI_ISCHIA", "CREATE_PF", "GENERATE_PF_AUTOMATIC"]);
         if (!allowed.has(action)) return sendFailure(res, 400, "workspacemes_v4_purchasing_action", "Operazione acquisti non valida.");
+        if (action === "GENERATE_SALI_DI_ISCHIA") {
+          const result = await generateSaliDiIschiaProposal({
+            admin: admin.supabase,
+            actor: `workspace:${admin.authUserId || "service"}`,
+          });
+          return sendSuccess(res, 200, result);
+        }
         return sendSuccess(res, 200, await executeWorkspaceV4PurchasingAction({
           action, supplierId: body.supplierId || null, month: body.month || null,
           lines: Array.isArray(body.lines) ? body.lines : [], ignoreDuplicates: body.ignoreDuplicates === true,

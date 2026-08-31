@@ -11,6 +11,10 @@ const workspacePurchasingMigration = new URL(
   "../supabase/migrations/20260830180000_workspacemes_v4_workspace_purchasing.sql",
   import.meta.url,
 );
+const saliReplenishmentMigration = new URL(
+  "../supabase/migrations/20260831190000_workspace_sali_replenishment.sql",
+  import.meta.url,
+);
 
 test("migration V4 conserva solo mirror MES e fabbisogni acquisto Workspace", async () => {
   const sql = await readFile(fullFlowMigration, "utf8");
@@ -35,6 +39,16 @@ test("la revisione V4 calcola fabbisogni e documenti acquisto in Workspace", asy
   assert.match(sql, /workspace_v4_purchase_documents/i);
   assert.match(sql, /workspace_v4_purchase_document_lines/i);
   assert.match(sql, /create_workspace_v4_purchase_document/i);
+});
+
+test("il riassortimento Sali di Ischia appartiene a Workspace e non alle tabelle OC legacy", async () => {
+  const sql = await readFile(saliReplenishmentMigration, "utf8");
+  assert.match(sql, /workspace_sali_replenishment_proposals/i);
+  assert.match(sql, /workspace_sali_replenishment_proposal_lines/i);
+  assert.match(sql, /create_workspace_sali_replenishment_proposal/i);
+  assert.match(sql, /governate esclusivamente da Workspace/i);
+  assert.doesNotMatch(sql, /ordini_clienti|ordine_cliente/i);
+  assert.doesNotMatch(sql, /references public\.ordini_prodotti_cache/i);
 });
 
 test("la funzione V4 qualifica snapshot_hash e le colonne della richiesta", async () => {

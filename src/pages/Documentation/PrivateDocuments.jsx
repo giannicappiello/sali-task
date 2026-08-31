@@ -9,11 +9,8 @@ async function workspaceAction(token, action, extra = {}) {
   if (!response.ok) throw new Error(payload.error || `Errore ${response.status}`);
   return payload;
 }
-async function mesRequest(accessToken, path, options = {}) {
-  const [resource, query = ""] = path.split("?", 2);
-  const parameters = new URLSearchParams(query);
-  parameters.set("path", resource);
-  const response = await fetch(`/api/private-documents?${parameters}`, { ...options, headers: { Authorization: `Bearer ${accessToken}`, ...(options.headers || {}) } });
+async function mesRequest(session, path, options = {}) {
+  const response = await fetch(new URL(path, session.endpoint), { ...options, headers: { Authorization: `Bearer ${session.token}`, ...(options.headers || {}) } });
   if (options.raw) return response;
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || `Archivio documentale non disponibile (${response.status}).`);
@@ -25,26 +22,26 @@ const date = (value) => value ? new Date(value).toLocaleDateString("it-IT") : "â
 export default function PrivateDocuments() {
   const { session: authSession } = useAuth();
   const accessToken = authSession?.access_token;
-  const [canUpload, setCanUpload] = useState(false);
+  const [mesSession, setMesSession] = useState(null), [canUpload, setCanUpload] = useState(false);
   const [articles, setArticles] = useState([]), [selected, setSelected] = useState(null);
   const [query, setQuery] = useState(""), [loading, setLoading] = useState(true), [error, setError] = useState("");
   const [uploadOpen, setUploadOpen] = useState(false), [syncInfo, setSyncInfo] = useState(null);
 
   const establishSession = useCallback(async () => {
-    const view = await workspaceAction(accessToken, "private_documents_session");
+    const view = await workspaceAction(accessToken, "private_documents_session"); setMesSession(view);
     workspaceAction(accessToken, "private_documents_session", { upload: true }).then(() => setCanUpload(true)).catch(() => setCanUpload(false));
     return view;
   }, [accessToken]);
   const load = useCallback(async (search = "") => {
     if (!accessToken) return; setLoading(true); setError("");
-    try { await establishSession(); setArticles(await mesRequest(accessToken, `articles?search=${encodeURIComponent(search.trim())}`) || []); workspaceAction(accessToken, "private_documents_sync").then(setSyncInfo).catch(() => {}); }
+    try { const active = mesSession || await establishSession(); setArticles(await mesRequest(active, `articles?search=${encodeURIComponent(search.trim())}`) || []); workspaceAction(accessToken, "private_documents_sync").then(setSyncInfo).catch(() => {}); }
     catch (loadError) { setError(loadError.message); } finally { setLoading(false); }
-  }, [accessToken, establishSession]);
+  }, [accessToken, establishSession, mesSession]);
   useEffect(() => { const pending = window.setTimeout(() => load(""), 0); return () => window.clearTimeout(pending); }, [accessToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function openArticle(article) { setLoading(true); setError(""); try { setSelected(await mesRequest(accessToken, `articles/${article.articleId}`)); } catch (cause) { setError(cause.message); } finally { setLoading(false); } }
-  async function download(document) { setError(""); try { const response = await mesRequest(accessToken, `documents/${document.externalId}`, { raw: true }); if (!response.ok) throw new Error("Documento non disponibile o non autorizzato."); const blob = await response.blob(); const url = URL.createObjectURL(blob); const anchor = window.document.createElement("a"); anchor.href = url; anchor.download = document.originalFileName || "documento"; anchor.click(); URL.revokeObjectURL(url); } catch (cause) { setError(cause.message); } }
-  async function upload(event) { event.preventDefault(); setError(""); try { await workspaceAction(accessToken, "private_documents_session", { upload: true }); await mesRequest(accessToken, "documents", { method: "POST", body: new FormData(event.currentTarget) }); setUploadOpen(false); await workspaceAction(accessToken, "private_documents_sync"); await openArticle(selected.article); } catch (cause) { setError(cause.message); } }
+  async function openArticle(article) { setLoading(true); setError(""); try { setSelected(await mesRequest(mesSession || await establishSession(), `articles/${article.articleId}`)); } catch (cause) { setError(cause.message); } finally { setLoading(false); } }
+  async function download(document) { setError(""); try { const response = await mesRequest(mesSession || await establishSession(), `documents/${document.externalId}`, { raw: true }); if (!response.ok) throw new Error("Documento non disponibile o non autorizzato."); const blob = await response.blob(); const url = URL.createObjectURL(blob); const anchor = window.document.createElement("a"); anchor.href = url; anchor.download = document.originalFileName || "documento"; anchor.click(); URL.revokeObjectURL(url); } catch (cause) { setError(cause.message); } }
+  async function upload(event) { event.preventDefault(); setError(""); try { const uploadSession = await workspaceAction(accessToken, "private_documents_session", { upload: true }); await mesRequest(uploadSession, "documents", { method: "POST", body: new FormData(event.currentTarget) }); setUploadOpen(false); await workspaceAction(accessToken, "private_documents_sync"); await openArticle(selected.article); } catch (cause) { setError(cause.message); } }
 
   const lotOptions = useMemo(() => { if (!selected) return []; const id = selected.article.articleId; const rows = []; selected.genealogy.forEach((row) => { if (row.productArticleId === id) rows.push({ type: row.destinationLotType === "Bulk" ? "LottoBulk" : "LottoProdotto", lot: row.destinationLot, orderId: row.productionOrderId, stockId: "" }); if (row.rawMaterialArticleId === id) rows.push({ type: "LottoMateriaPrima", lot: row.sourceLot, orderId: "", stockId: row.sourceStockLotId }); }); return [...new Map(rows.map((row) => [`${row.type}:${row.lot}:${row.orderId}:${row.stockId}`, row])).values()]; }, [selected]);
 

@@ -27,12 +27,11 @@ test("la migrazione conserva in Workspace documenti e genealogia SL", async () =
 });
 
 test("Documenti Private apre la pagina Workspace e non il contenitore MES legacy", async () => {
-  const [migration, app, authorization, layout, proxy] = await Promise.all([
+  const [migration, app, authorization, layout] = await Promise.all([
     readFile(new URL("../supabase/migrations/20260831224000_repoint_private_documents_module.sql", import.meta.url), "utf8"),
     readFile(new URL("../src/App.jsx", import.meta.url), "utf8"),
     readFile(new URL("./private-documents.js", import.meta.url), "utf8"),
     readFile(new URL("../src/components/WorkspaceScreenLayout.jsx", import.meta.url), "utf8"),
-    readFile(new URL("../api/private-documents.js", import.meta.url), "utf8"),
   ]);
   assert.match(migration, /new\.percorso := '\/documentation\/private'/);
   assert.match(migration, /new\.tipo := 'modulo'/);
@@ -40,6 +39,4 @@ test("Documenti Private apre la pagina Workspace e non il contenitore MES legacy
   assert.match(app, /moduleCode="progremes_formule"/);
   assert.match(authorization, /target_module: "progremes_formule"/);
   assert.match(layout, /"\/documentation\/private"/);
-  assert.match(proxy, /bodyParser: false/);
-  assert.match(proxy, /proxyPrivateDocuments/);
 });

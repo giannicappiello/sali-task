@@ -65,46 +65,6 @@ function issueToken(identity, operations) {
 
 function endpoint() { return new URL("/api/workspace/v1/private-documents/", required("PROGREMES_URL")).toString(); }
 
-const allowedProxyPath = /^(?:articles(?:\/\d+)?|documents(?:\/[0-9a-f-]+)?)$/i;
-
-async function readRequestBody(req, maximumBytes = 50 * 1024 * 1024) {
-  const chunks = [];
-  let total = 0;
-  for await (const chunk of req) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    total += buffer.length;
-    if (total > maximumBytes) throw Object.assign(new Error("Il file supera il limite di 50 MB."), { status: 413 });
-    chunks.push(buffer);
-  }
-  return Buffer.concat(chunks);
-}
-
-export async function proxyPrivateDocuments(req, res) {
-  const method = String(req.method || "GET").toUpperCase();
-  if (!['GET', 'POST'].includes(method)) throw Object.assign(new Error("Metodo non consentito."), { status: 405 });
-  const requestUrl = new URL(req.url || "/api/private-documents", "http://workspace.local");
-  const path = String(requestUrl.searchParams.get("path") || "").replace(/^\/+|\/+$/g, "");
-  if (!allowedProxyPath.test(path)) throw Object.assign(new Error("Percorso Documenti Private non valido."), { status: 400 });
-
-  const identity = await authorize(req, { upload: method === "POST" });
-  const target = new URL(path, endpoint());
-  for (const [name, value] of requestUrl.searchParams.entries()) if (name !== "path") target.searchParams.append(name, value);
-  const headers = { Authorization: `Bearer ${issueToken(identity, method === "POST" ? ["view", "upload"] : ["view"])}` };
-  const contentType = String(req.headers["content-type"] || "");
-  if (contentType) headers["Content-Type"] = contentType;
-  const upstream = await fetch(target, {
-    method,
-    headers,
-    body: method === "POST" ? await readRequestBody(req) : undefined,
-    signal: AbortSignal.timeout(60_000),
-  });
-  for (const name of ["content-type", "content-disposition", "cache-control"]) {
-    const value = upstream.headers.get(name);
-    if (value) res.setHeader(name, value);
-  }
-  res.status(upstream.status).send(Buffer.from(await upstream.arrayBuffer()));
-}
-
 export async function privateDocumentsSession(req, body = {}) {
   const upload = body?.upload === true;
   const identity = await authorize(req, { upload });

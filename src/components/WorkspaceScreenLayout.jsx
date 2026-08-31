@@ -18,6 +18,7 @@ const BUILT_IN_CONTAINER_PATHS = new Set([
   "/integrations",
   "/crm",
   "/crm/online",
+  "/documentation/private",
 ]);
 
 const isDynamicContainerPath = (pathname) => /^\/(?:menu|moduli)\/[^/]+$/.test(pathname);

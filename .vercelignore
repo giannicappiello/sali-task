@@ -10,6 +10,11 @@ k.includes('SUPABASE')))
 UNUSED
 tmp
 output
+.tools
+.worktrees
+_progremes_v3_fix
+artifact.md
+tools
 .env
 .env.*
 **/config.php

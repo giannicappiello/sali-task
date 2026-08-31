@@ -61,6 +61,25 @@ test("gli OdP precedenti a V4 aggiornano l'OCT collegato", () => {
   assert.equal(state.orders.length, 1);
 });
 
+test("l'OdP generato dalla RdP prevale su un vecchio ordine OCT con stato pianificato", () => {
+  const state = rdpProductionState({ workspace_status: "CONFIRMED", rdp_number: 16 }, [{
+    numeroOrdine: "RDP4-20260830105630-01",
+    riferimentoRdp: "RDP4-20260830105630",
+    riferimentoOct: "OC/2/427",
+    stato: "Nuovo",
+  }, {
+    numeroOrdine: "OC/2/427",
+    riferimentoOct: "OC/2/427",
+    stato: "Pianificato",
+    dataPrevistaConsegna: "2026-09-25T12:34:00Z",
+  }], "OC/2/427");
+
+  assert.equal(state.stage, "scheduling");
+  assert.equal(state.status, "IN PIANIFICAZIONE");
+  assert.equal(state.plannedCompletionDate, null);
+  assert.deepEqual(state.orders.map((order) => order.numeroOrdine), ["RDP4-20260830105630-01"]);
+});
+
 test("il Workbench carica tutte le pagine degli OdP MES", async () => {
   const calls = [];
   const client = { request: async (_resource, query) => {

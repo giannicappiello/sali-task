@@ -152,6 +152,11 @@ function productionOrderMatchesOct(order, octReference) {
     .some((value) => canonicalReference(value) === expected);
 }
 
+function isWorkspaceRdpProductionOrder(order) {
+  return [order?.numeroOrdine, order?.riferimentoRdp, order?.rdpReference]
+    .some((value) => /^RDP/i.test(text(value)));
+}
+
 export async function loadAllProductionOrders(client, pageSize = 500) {
   const items = [];
   for (let page = 1; page <= 100; page += 1) {
@@ -167,12 +172,14 @@ export async function loadAllProductionOrders(client, pageSize = 500) {
 export function rdpProductionState(request, productionOrders = [], octReference = null) {
   const progressive = Number(request?.rdp_number);
   const prefix = Number.isSafeInteger(progressive) && progressive > 0 ? `RDP${progressive}` : "";
-  const matching = (productionOrders || []).filter((order) => {
+  const candidates = (productionOrders || []).filter((order) => {
     const numberValue = text(order?.numeroOrdine).toUpperCase();
     const matchesRdp = prefix && (numberValue === prefix || numberValue.startsWith(`${prefix}-`));
     return mesOrderStatus(order?.stato) !== "ANNULLATO" &&
       (matchesRdp || productionOrderMatchesOct(order, octReference));
   });
+  const rdpOrders = candidates.filter(isWorkspaceRdpProductionOrder);
+  const matching = rdpOrders.length ? rdpOrders : candidates;
   if (!matching.length) return { stage: requestStage(request), status: null, plannedCompletionDate: null, orders: [] };
   const statuses = matching.map((order) => mesOrderStatus(order.stato));
   let stage = "scheduling";

@@ -2,6 +2,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { ensureProgremesCatalogFresh } from "./progremes-modules.js";
+import { progremesDirectOperationalRoute } from "./progremes-sso-routes.js";
 
 const required = (name) => {
   const value = String(process.env[name] || "").trim();
@@ -135,6 +136,7 @@ export async function issueProgremesTicket(req, body = {}) {
   const screenCode = String(body?.screenCode || "").trim();
   let returnUrl = "";
   if (screenCode) {
+    const directOperationalRoute = progremesDirectOperationalRoute(screenCode);
     const { data: moduleLinks, error: moduleLinkError } = await admin
       .from("workspace_moduli_schermate")
       .select("modulo_codice,schermata_codice")
@@ -146,7 +148,9 @@ export async function issueProgremesTicket(req, body = {}) {
       ? await admin.from("workspace_moduli").select("codice").in("codice", linkedModuleCodes).eq("attivo", true)
       : { data: [], error: null };
     if (linkedModulesError) throw linkedModulesError;
-    if (!(linkedModules || []).length) throw Object.assign(new Error("Schermata non inclusa in un modulo Workspace attivo."), { status: 404 });
+    if (!(linkedModules || []).length && !directOperationalRoute) {
+      throw Object.assign(new Error("Schermata non inclusa in un modulo Workspace attivo."), { status: 404 });
+    }
     const { data: screen, error: screenError } = await admin
       .from("workspace_schermate")
       .select("metadati")
@@ -162,7 +166,7 @@ export async function issueProgremesTicket(req, body = {}) {
         throw Object.assign(new Error("Schermata ProgreMES non autorizzata."), { status: 403 });
       }
     }
-    const requestedRoute = String(screen.metadati?.external_route || "").trim();
+    const requestedRoute = String(directOperationalRoute || screen.metadati?.external_route || "").trim();
     if (requestedRoute.startsWith("/") && !requestedRoute.startsWith("//")) returnUrl = appendProgremesContext(requestedRoute, body?.context);
   }
 

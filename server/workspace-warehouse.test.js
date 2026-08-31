@@ -79,7 +79,7 @@ test("un articolo aggregato conserva il dettaglio reale per ogni magazzino", () 
 });
 
 test("i magazzini sono accettati solo dal catalogo GET Mexal reale", () => {
-  const help = { risorse: [{ regexp: "^/dati-generali/magazzini$", descrizione: "Magazzini aziendali", method: "GET" }] };
+  const help = { risorse: [{ regexp: "^/dati-generali/magazzini/{0,1}$", descrizione: "Magazzini aziendali", method: "GET" }] };
   assert.equal(discoverWarehouseCollection(help), "/dati-generali/magazzini");
   assert.deepEqual(normalizeMexalWarehouse({ id_magazzino: 5, descrizione: "Principale" }), { number: 5, name: "Principale" });
   assert.throws(() => discoverWarehouseCollection({ risorse: [] }), /univoca/);

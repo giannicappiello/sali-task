@@ -112,7 +112,7 @@ export function getLastCost(article = {}) {
 
 function catalogCollectionPath(value) {
   const path = String(value || "").trim().replace(/^\^/, "").replace(/\$$/, "").replace(/\{0,1\}/g, "")
-    .replace(/\/?\((?:\?:)?[^)]*\)\??$/, "").replace(/\/?\{(?:id|codice|identifier)[^}]*\}$/i, "");
+    .replace(/\/?\((?:\?:)?[^)]*\)\??$/, "").replace(/\/?\{(?:id|codice|identifier)[^}]*\}$/i, "").replace(/\/+$/, "");
   return /^\/[A-Za-z0-9_./-]+$/.test(path) ? path : null;
 }
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Download, FileLock2, FileUp, RefreshCw, Search, ShieldCheck, X } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import "./PrivateDocuments.css";
@@ -13,7 +13,7 @@ async function mesRequest(session, path, options = {}) {
   const response = await fetch(new URL(path, session.endpoint), { ...options, headers: { Authorization: `Bearer ${session.token}`, ...(options.headers || {}) } });
   if (options.raw) return response;
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || `Archivio documentale non disponibile (${response.status}).`);
+  if (!response.ok) throw new Error(payload.error || payload.detail || `Archivio documentale non disponibile (${response.status}).`);
   return payload;
 }
 const size = (bytes) => `${(Number(bytes || 0) / 1048576).toLocaleString("it-IT", { maximumFractionDigits: 2 })} MB`;
@@ -26,6 +26,7 @@ export default function PrivateDocuments() {
   const [articles, setArticles] = useState([]), [selected, setSelected] = useState(null);
   const [query, setQuery] = useState(""), [loading, setLoading] = useState(true), [error, setError] = useState("");
   const [uploadOpen, setUploadOpen] = useState(false), [syncInfo, setSyncInfo] = useState(null);
+  const searchSequence = useRef(0);
 
   const establishSession = useCallback(async () => {
     const view = await workspaceAction(accessToken, "private_documents_session"); setMesSession(view);
@@ -33,11 +34,11 @@ export default function PrivateDocuments() {
     return view;
   }, [accessToken]);
   const load = useCallback(async (search = "") => {
-    if (!accessToken) return; setLoading(true); setError("");
-    try { const active = mesSession || await establishSession(); setArticles(await mesRequest(active, `articles?search=${encodeURIComponent(search.trim())}`) || []); workspaceAction(accessToken, "private_documents_sync").then(setSyncInfo).catch(() => {}); }
-    catch (loadError) { setError(loadError.message); } finally { setLoading(false); }
+    if (!accessToken) return; const sequence = ++searchSequence.current; setLoading(true); setError("");
+    try { const active = mesSession || await establishSession(); const result = await mesRequest(active, `articles?search=${encodeURIComponent(search.trim())}`) || []; if (sequence === searchSequence.current) setArticles(result); workspaceAction(accessToken, "private_documents_sync").then(setSyncInfo).catch(() => {}); }
+    catch (loadError) { if (sequence === searchSequence.current) setError(loadError.message); } finally { if (sequence === searchSequence.current) setLoading(false); }
   }, [accessToken, establishSession, mesSession]);
-  useEffect(() => { const pending = window.setTimeout(() => load(""), 0); return () => window.clearTimeout(pending); }, [accessToken]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!accessToken) return undefined; const pending = window.setTimeout(() => load(query), 250); return () => window.clearTimeout(pending); }, [accessToken, load, query]);
 
   async function openArticle(article) { setLoading(true); setError(""); try { setSelected(await mesRequest(mesSession || await establishSession(), `articles/${article.articleId}`)); } catch (cause) { setError(cause.message); } finally { setLoading(false); } }
   async function download(document) { setError(""); try { const response = await mesRequest(mesSession || await establishSession(), `documents/${document.externalId}`, { raw: true }); if (!response.ok) throw new Error("Documento non disponibile o non autorizzato."); const blob = await response.blob(); const url = URL.createObjectURL(blob); const anchor = window.document.createElement("a"); anchor.href = url; anchor.download = document.originalFileName || "documento"; anchor.click(); URL.revokeObjectURL(url); } catch (cause) { setError(cause.message); } }
@@ -48,7 +49,7 @@ export default function PrivateDocuments() {
   return <div className="private-documents-page">
     <header className="private-documents-hero"><div className="private-documents-icon"><FileLock2 /></div><div><span>DOCUMENTI PRIVATE</span><h1>Articoli, lotti e certificati</h1><p>Archivio protetto sul NAS con genealogia dei lotti ricostruita dagli scarichi SL.</p></div><div className="private-documents-security"><ShieldCheck size={18}/><span>Accesso tracciato</span></div></header>
     {error && <div className="private-documents-error">{error}<button onClick={() => setError("")}><X size={16}/></button></div>}
-    {!selected ? <><div className="private-documents-toolbar"><label><Search size={19}/><input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => event.key === "Enter" && load(query)} placeholder="Cerca articolo, descrizione o codice…"/></label><button onClick={() => load(query)}><Search size={17}/>Cerca</button><button className="secondary-action" onClick={() => load(query)}><RefreshCw size={17}/>Aggiorna</button></div>{syncInfo && <small className="private-documents-sync">Traccia Workspace aggiornata: {syncInfo.documents} documenti · {syncInfo.slRows} righe SL</small>}{loading ? <div className="private-documents-loading">Caricamento archivio…</div> : <div className="private-article-grid">{articles.map((article) => <button key={article.articleId} onClick={() => openArticle(article)} className="private-article-card"><span>{article.articleType}</span><strong>{article.articleCode}</strong><p>{article.description}</p><small>{article.customers?.length ? `Clienti: ${article.customers.join(", ")}` : "Nessun cliente collegato"}</small><div><b>{article.documentCount} documenti</b><b>{article.lotCount} lotti</b></div></button>)}</div>}{!loading && !articles.length && <div className="private-documents-loading">Nessun articolo trovato nel perimetro autorizzato.</div>}</> : <>
+    {!selected ? <><div className="private-documents-toolbar"><label><Search size={19}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ricerca immediata: articolo, cliente, lotto, OP, OCT, RdP o documento…"/></label><button onClick={() => load(query)}><Search size={17}/>Cerca</button><button className="secondary-action" onClick={() => load(query)}><RefreshCw size={17}/>Aggiorna</button></div>{syncInfo && <small className="private-documents-sync">Traccia Workspace aggiornata: {syncInfo.documents} documenti · {syncInfo.slRows} righe SL</small>}{loading ? <div className="private-documents-loading">Caricamento archivio…</div> : <div className="private-article-grid">{articles.map((article) => <button key={article.articleId} onClick={() => openArticle(article)} className="private-article-card"><span>{article.articleType}</span><strong>{article.articleCode}</strong><p>{article.description}</p><small>{article.customers?.length ? `Clienti: ${article.customers.join(", ")}` : "Nessun cliente collegato"}</small><div><b>{article.documentCount} documenti</b><b>{article.lotCount} lotti</b></div></button>)}</div>}{!loading && !articles.length && <div className="private-documents-loading">Nessun articolo trovato nel perimetro autorizzato.</div>}</> : <>
       <div className="private-detail-heading"><button onClick={() => setSelected(null)}><ArrowLeft size={18}/>Torna agli articoli</button><div><span>{selected.article.articleType}</span><h2>{selected.article.articleCode} · {selected.article.description}</h2><p>{selected.article.customers?.join(", ") || "Nessun cliente collegato"}</p></div>{canUpload && <button className="primary-action" onClick={() => setUploadOpen(true)}><FileUp size={18}/>Carica documento</button>}</div>
       <section className="private-document-section"><h3>Documenti disponibili</h3><div className="private-document-list">{selected.documents.map((document) => <article key={`${document.externalId}-${document.associationType}-${document.lotCode}`}><FileLock2/><div><strong>{document.title}</strong><span>{document.type} · Rev. {document.revision} · {document.associationType}{document.lotCode ? ` · Lotto ${document.lotCode}` : ""}</span><small>{document.originalFileName} · {size(document.sizeBytes)} · caricato il {date(document.uploadedAt)}</small></div><button onClick={() => download(document)}><Download size={17}/>Scarica</button></article>)}{!selected.documents.length && <p>Nessun documento associato.</p>}</div></section>
       <section className="private-document-section"><h3>Genealogia lotti e scarichi SL</h3><div className="private-genealogy-wrap"><table><thead><tr><th>OP / OCT / RdP</th><th>Lotto prodotto</th><th>Materia prima</th><th>Lotto utilizzato</th><th>Quantità</th><th>Documento SL</th></tr></thead><tbody>{selected.genealogy.map((row) => <tr key={row.mesId}><td><strong>{row.productionOrderNumber}</strong><small>{row.octReference} · {row.rdpReference}</small></td><td>{row.productArticleCode}<small>{row.destinationLot}</small></td><td>{row.rawMaterialArticleCode}<small>{row.rawMaterialDescription}</small></td><td>{row.sourceLot}</td><td>{Number(row.quantity).toLocaleString("it-IT")} {row.unitOfMeasure}</td><td>{row.slDocument || "—"}</td></tr>)}</tbody></table></div></section>

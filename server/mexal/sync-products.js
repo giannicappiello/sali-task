@@ -975,6 +975,17 @@ export function mapArticleWarehouseStock(article, warehouse, { fallback = {}, sy
   };
 }
 
+export function warehouseSnapshotDate(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) throw new Error("Data snapshot giacenze non valida.");
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Rome",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
 async function saveArticleWarehouseStocks(supabase, articleCode, rows) {
   if (!rows.length) throw new Error(`Nessun progressivo per magazzino ricevuto per ${articleCode}.`);
   const { error: upsertError } = await supabase.from("workspace_warehouse_stock")
@@ -985,6 +996,24 @@ async function saveArticleWarehouseStocks(supabase, articleCode, rows) {
     .update({ is_current: false }).eq("article_code", articleCode)
     .not("warehouse_number", "in", `(${currentNumbers.join(",")})`);
   if (staleError) throw staleError;
+  const historyRows = rows.map((row) => ({
+    snapshot_date: warehouseSnapshotDate(row.synchronized_at),
+    article_code: row.article_code,
+    warehouse_number: row.warehouse_number,
+    warehouse_name: row.warehouse_name,
+    unit_of_measure: row.unit_of_measure,
+    on_hand: row.on_hand,
+    committed: row.committed,
+    available: row.available,
+    unit_cost: row.unit_cost,
+    source: "mexal_progressive",
+    source_payload: row.source_payload,
+    sync_run_id: row.sync_run_id,
+    captured_at: row.synchronized_at,
+  }));
+  const { error: historyError } = await supabase.from("workspace_warehouse_stock_history")
+    .upsert(historyRows, { onConflict: "snapshot_date,article_code,warehouse_number" });
+  if (historyError) throw historyError;
 }
 
 async function upsertOrdersProductsCache(supabase, rows) {

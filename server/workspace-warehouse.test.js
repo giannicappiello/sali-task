@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { discoverWarehouseCollection, getAvailabilityWarehouse, getLastCost, mapArticleToOrdersCache, mapArticleWarehouseStock, normalizeMexalWarehouse } from "./mexal/sync-products.js";
+import { discoverWarehouseCollection, getAvailabilityWarehouse, getLastCost, mapArticleToOrdersCache, mapArticleWarehouseStock, normalizeMexalWarehouse, warehouseSnapshotDate } from "./mexal/sync-products.js";
+import { reconstructWarehouseSnapshots, warehouseMovementLines } from "./mexal/warehouse-history.js";
 import { nonNegativeWarehouseRows, warehouseArticleType, warehouseBreakdown, warehouseLocation, warehouseRow, warehouseScopedRows, warehouseSummary } from "../src/pages/Warehouse/warehouseData.js";
 
 test("il costo ultimo usa esclusivamente il contratto reale Mexal", () => {
@@ -93,4 +94,40 @@ test("il progressivo per magazzino non cambia il contratto disponibilità prodot
   assert.equal(mapped.warehouse_number, 7);
   assert.equal(mapped.on_hand, 11);
   assert.equal(mapped.unit_cost, 4);
+});
+
+test("la data snapshot usa il giorno inventariale italiano e non sincronizzato_il come filtro", () => {
+  assert.equal(warehouseSnapshotDate("2026-08-30T22:30:00.000Z"), "2026-08-31");
+});
+
+test("29, 30 e 31 agosto sono ricostruiti invertendo i movimenti reali successivi", () => {
+  const current = [
+    { article_code: "MP001", warehouse_number: 1, on_hand: 10, committed: 0, available: 10, unit_cost: 2, captured_at: "2026-08-31T18:00:00Z" },
+    { article_code: "MP001", warehouse_number: 5, on_hand: 20, committed: 1, available: 19, unit_cost: 2, captured_at: "2026-08-31T18:00:00Z" },
+  ];
+  const movements = [
+    { movementDate: "2026-08-31", articleCode: "MP001", quantity: 3, fromWarehouse: 5, toWarehouse: null },
+    { movementDate: "2026-08-31", articleCode: "MP001", quantity: 2, fromWarehouse: 1, toWarehouse: 5 },
+  ];
+  const snapshots = reconstructWarehouseSnapshots(current, movements, ["2026-08-29", "2026-08-30", "2026-08-31"]);
+  const quantity = (date, warehouse) => snapshots.find((row) => row.snapshot_date === date && row.warehouse_number === warehouse).on_hand;
+  assert.equal(quantity("2026-08-29", 1), 12);
+  assert.equal(quantity("2026-08-30", 1), 12);
+  assert.equal(quantity("2026-08-31", 1), 10);
+  assert.equal(quantity("2026-08-29", 5), 21);
+  assert.equal(quantity("2026-08-31", 5), 20);
+  assert.equal(snapshots.find((row) => row.snapshot_date === "2026-08-30").available, null);
+});
+
+test("i movimenti Mexal mantengono articolo, data, magazzino origine e destinazione", () => {
+  const lines = warehouseMovementLines({
+    data_documento: "20260831",
+    id_magazzino: 5,
+    codice_articolo: [[1, "MP001"], [2, ""]],
+    quantita: [[1, 4], [2, 1]],
+    tp_riga: [[1, "R"], [2, "D"]],
+    id_mag_da_riga: [[1, 5]],
+    id_mag_a_riga: [[1, 7]],
+  });
+  assert.deepEqual(lines, [{ movementDate: "2026-08-31", articleCode: "MP001", quantity: 4, fromWarehouse: 5, toWarehouse: 7 }]);
 });

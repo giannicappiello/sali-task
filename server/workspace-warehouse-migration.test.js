@@ -18,3 +18,27 @@ test("il dettaglio per magazzino è additivo e non altera la cache ordini", asyn
   assert.match(sql, /for select to authenticated using \(true\)/i);
   assert.doesNotMatch(sql, /alter table public\.ordini_prodotti_cache|delete\s+from/i);
 });
+
+test("la dashboard storica usa un solo dataset filtrato per righe KPI e grafici", async () => {
+  const sql = await readFile("supabase/migrations/20260831225000_workspace_warehouse_historical_dashboard.sql", "utf8");
+  assert.match(sql, /create table if not exists public\.workspace_warehouse_stock_history/i);
+  assert.match(sql, /primary key \(snapshot_date, article_code, warehouse_number\)/i);
+  assert.match(sql, /join parameters on history\.snapshot_date = parameters\.inventory_date/i);
+  assert.match(sql, /filtered as[\s\S]*p_warehouse is null or inventory\.warehouse_number = p_warehouse/i);
+  assert.match(sql, /from filtered group by article_type/i);
+  assert.match(sql, /from filtered group by warehouse_number/i);
+  assert.match(sql, /from filtered[\s\S]*limit \(select page_limit from parameters\)[\s\S]*offset \(select page_offset from parameters\)/i);
+  assert.match(sql, /case when on_hand > 0 then on_hand \* unit_cost else 0 end/i);
+  assert.match(sql, /negative_articles/i);
+  assert.doesNotMatch(sql, /drop\s+(table|column)|truncate|delete\s+from/i);
+});
+
+test("l'interfaccia distingue data inventariale e ultimo aggiornamento e spiega i KPI", async () => {
+  const page = await readFile("src/pages/Warehouse/WarehouseDashboard.jsx", "utf8");
+  assert.match(page, /Giacenza al giorno/);
+  assert.match(page, /Ultimo aggiornamento/);
+  assert.match(page, /Articoli con giacenza negativa/);
+  assert.match(page, /function InfoTip/);
+  assert.match(page, /tabIndex=\{0\}/);
+  assert.doesNotMatch(page, /Aggiornati dal|Aggiornati al|isoDay\(row\.sincronizzato_il\)/);
+});

@@ -1,34 +1,18 @@
-const PAGE_SIZE = 1000;
-
-export async function loadWorkspaceWarehouse(db) {
-  const rows = [];
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await db
-      .from("ordini_prodotti_cache")
-      .select("codice_articolo,descrizione,unita_misura,giacenza,impegnato,disponibilita,costo_ultimo,sincronizzato_il,dati_mexal")
-      .eq("mostra_in_app", true)
-      .order("codice_articolo", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
-    if (error) throw error;
-    rows.push(...(data || []));
-    if ((data || []).length < PAGE_SIZE) break;
-  }
-  const details = [];
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await db.from("workspace_warehouse_stock")
-      .select("article_code,warehouse_number,warehouse_name,unit_of_measure,on_hand,committed,available,unit_cost,synchronized_at")
-      .eq("is_current", true).order("article_code", { ascending: true }).order("warehouse_number", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
-    if (error) throw error;
-    details.push(...(data || []));
-    if ((data || []).length < PAGE_SIZE) break;
-  }
-  const byArticle = new Map();
-  for (const detail of details) {
-    const code = String(detail.article_code || "").trim().toUpperCase();
-    byArticle.set(code, [...(byArticle.get(code) || []), detail]);
-  }
-  return rows.map((row) => ({ ...row, warehouse_details: byArticle.get(String(row.codice_articolo || "").trim().toUpperCase()) || [] }));
+export async function loadWorkspaceWarehouse(db, filters = {}, { signal } = {}) {
+  let request = db.rpc("workspace_warehouse_dashboard", {
+    p_as_of_date: filters.asOfDate,
+    p_warehouse: filters.warehouse === "TUTTI" ? null : Number(String(filters.warehouse || "").replace("MAG-", "")),
+    p_article_type: filters.type || "TOTALE",
+    p_unit: filters.unit || "TUTTE",
+    p_query: filters.query || null,
+    p_stock_filter: filters.stockFilter || "all",
+    p_limit: filters.pageSize || 100,
+    p_offset: Math.max(0, (Number(filters.page || 1) - 1) * Number(filters.pageSize || 100)),
+  });
+  if (signal && typeof request.abortSignal === "function") request = request.abortSignal(signal);
+  const { data, error } = await request;
+  if (error) throw error;
+  return data || { rows: [], summary: {}, breakdown: {}, totalRows: 0, availableDates: [] };
 }
 
 export function warehouseRow(row = {}) {

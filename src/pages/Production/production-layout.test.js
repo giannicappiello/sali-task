@@ -10,8 +10,10 @@ test("il Workbench mantiene corpo, filtri e aggiornamento entro la testata", asy
 
   assert.match(source, /className="secondary-action rdp-toolbar-refresh"/);
   assert.match(source, /className="rdp-quick-search"/);
+  assert.match(source, /Ordini produzione MES/);
+  assert.match(source, /\/produzione\/progremes\.Ordini\.Produzione/);
   assert.match(css, /\.rdp-workbench \{[^}]*max-width: 100%[^}]*overflow-x: hidden/);
-  assert.match(css, /\.rdp-oct-line \{[^}]*minmax\(210px,1\.65fr\)/);
+  assert.match(css, /\.rdp-oct-line \{[^}]*minmax\(185px,1\.2fr\)/);
 });
 
 test("i fabbisogni mostrano nota e comandi in linea con tabella compatta e scrollbar", async () => {

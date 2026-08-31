@@ -12,7 +12,7 @@
     "deploy:production": "node scripts/deploy-production.mjs",
     "lint": "eslint .",
     "lint:progremes": "eslint server/progremes-readonly-*.js server/progremes-production-*.js server/production-netting*.js server/mexal/sync-oct-orders.js server/mexal/unit-of-measure.js src/modules/orders/services/productionRequest.js scripts/check-progremes-secret-boundary.mjs",
-    "test:progremes": "node --test server/progremes-readonly-auth.test.js server/progremes-readonly-client.test.js server/progremes-readonly-api.test.js server/progremes-readonly-dispatch.test.js server/progremes-diagnostics-client.test.js server/progremes-production-flow.test.js server/production-netting.test.js server/workspace-production-gates.test.js",
+    "test:progremes": "node --test server/progremes-readonly-auth.test.js server/progremes-readonly-client.test.js server/progremes-readonly-api.test.js server/progremes-readonly-dispatch.test.js server/progremes-diagnostics-client.test.js server/progremes-production-flow.test.js server/production-netting.test.js server/workspace-production-gates.test.js server/private-documents.test.js",
     "check:progremes-secrets": "node scripts/check-progremes-secret-boundary.mjs",
     "preview": "vite preview",
     "test:mexal-economics": "node --test server/mexal/order-economics.test.js",

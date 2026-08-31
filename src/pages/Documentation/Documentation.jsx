@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   ArrowLeft,
   BookOpen,
@@ -348,6 +349,7 @@ export default function Documentation({
             <p>{description}</p>
           </div>
         </div>
+        {!singleSectionMode && <Link className="documentation-private-link" to="/documentation/private"><FileText size={18}/>Documenti Private</Link>}
       </div>
       <div className="documentation-material-toolbar">
         <label className="documentation-search documentation-global-search">

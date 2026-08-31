@@ -38,6 +38,7 @@ import { confirmWorkspaceV4, createWorkspaceV4Preview } from "../../server/works
 import { createWorkspaceV4PurchaseDocument, listWorkspaceV4Purchasing } from "../../server/workspacemes-v4-purchasing.js";
 import { calculateWorkspaceV4PurchaseRequirements, executeWorkspaceV4PurchasingAction, readWorkspaceV4PurchasingSource } from "../../server/workspacemes-v4-purchasing-mes.js";
 import { generateSaliDiIschiaProposal, listSaliDiIschiaProposals } from "../../server/sali-di-ischia-proposal.js";
+import { privateDocumentsSession, syncPrivateDocuments } from "../../server/private-documents.js";
 
 async function dispatchMessageNotification(req, body) {
   const token = String(req.headers.authorization || "").trim().replace(/^Bearer\s+/i, "");
@@ -543,6 +544,10 @@ export default async function handler(req, res) {
         return sendSuccess(res, 200, await issueProgremesTicket(req, body));
       case "progremes_user_sections":
         return sendSuccess(res, 200, await listUserProgremesSections(req));
+      case "private_documents_session":
+        return sendSuccess(res, 200, await privateDocumentsSession(req, body));
+      case "private_documents_sync":
+        return sendSuccess(res, 200, await syncPrivateDocuments(req));
       case "progremes_consume":
         return sendSuccess(res, 200, await consumeProgremesTicket(body));
       case "progremes_modules_list": {

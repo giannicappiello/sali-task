@@ -170,14 +170,16 @@ export function rdpProductionState(request, productionOrders = [], octReference 
   });
   if (!matching.length) return { stage: requestStage(request), status: null, plannedCompletionDate: null, orders: [] };
   const statuses = matching.map((order) => mesOrderStatus(order.stato));
-  const dates = matching.map((order) => order.dataPrevistaConsegna).filter((value) => Number.isFinite(Date.parse(value)));
-  const plannedCompletionDate = dates.length
-    ? new Date(Math.max(...dates.map((value) => Date.parse(value)))).toISOString()
-    : null;
   let stage = "scheduling";
   if (statuses.some((status) => status === "INPRODUZIONE")) stage = "production";
   else if (statuses.length && statuses.every((status) => ["COMPLETATO", "CHIUSO"].includes(status))) stage = "completed";
-  else if (statuses.some((status) => status === "PIANIFICATO") || plannedCompletionDate) stage = "planned";
+  else if (statuses.some((status) => status === "PIANIFICATO")) stage = "planned";
+  const dates = stage === "scheduling"
+    ? []
+    : matching.map((order) => order.dataPrevistaConsegna).filter((value) => Number.isFinite(Date.parse(value)));
+  const plannedCompletionDate = dates.length
+    ? new Date(Math.max(...dates.map((value) => Date.parse(value)))).toISOString()
+    : null;
   const status = stage === "scheduling" ? "IN PIANIFICAZIONE"
     : stage === "planned" ? "PIANIFICATO"
       : stage === "production" ? "IN PRODUZIONE"

@@ -22,6 +22,14 @@ test("una RdP V4 confermata passa in pianificazione e non risulta già in produz
 test("lo stato operativo segue il vero stato degli OdP ProgreMES", () => {
   const request = { workspace_status: "CONFIRMED", rdp_number: 16 };
   assert.equal(rdpProductionState(request, [{ numeroOrdine: "RDP16", stato: "Nuovo" }]).stage, "scheduling");
+  const newWithRequestedDate = rdpProductionState(request, [{
+    numeroOrdine: "RDP16",
+    stato: "Nuovo",
+    dataPrevistaConsegna: "2026-09-25T14:34:00Z",
+  }]);
+  assert.equal(newWithRequestedDate.stage, "scheduling");
+  assert.equal(newWithRequestedDate.status, "IN PIANIFICAZIONE");
+  assert.equal(newWithRequestedDate.plannedCompletionDate, null);
   const planned = rdpProductionState(request, [{ numeroOrdine: "RDP16", stato: "Pianificato", dataPrevistaConsegna: "2026-12-01T12:00:00Z" }]);
   assert.equal(planned.stage, "planned");
   assert.equal(planned.plannedCompletionDate, "2026-12-01T12:00:00.000Z");

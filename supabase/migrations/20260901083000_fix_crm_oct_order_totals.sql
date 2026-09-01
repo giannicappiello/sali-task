@@ -403,7 +403,7 @@ revoke all on function public.crm_commercial_control_dashboard(text,date,date,te
 
 grant execute on function public.crm_commercial_control_dashboard(text,date,date,text,text,text,text,text,text,text,text)
   to authenticated, service_role;
-grant execute on function public.crm_commercial_control_order_dataset(text,date,date,text,text,text,text,text,text,text)
+grant execute on function public.crm_commercial_control_order_dataset(text,date,date,text,text,text,text,text,text)
   to service_role;
 grant execute on function public.crm_commercial_control_order_metrics(text,date,date,text,text,text,text,text,text,text,text)
   to service_role;

@@ -14,6 +14,10 @@ test("l'elenco OdP MES ha una sola destinazione operativa diretta consentita", (
 
 test("il collegamento COA usa soltanto la destinazione Documenti autorizzata", () => {
   assert.equal(
+    progremesContextualRoute("progremes.Documenti", { destination: "coa-produzioni", productionId: 42 }, "/documenti"),
+    "/documenti/coa/compila/42",
+  );
+  assert.equal(
     progremesContextualRoute("progremes.Documenti", { destination: "coa-produzioni" }, "/documenti"),
     "/documenti/coa/compila",
   );

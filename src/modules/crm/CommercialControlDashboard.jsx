@@ -170,11 +170,27 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
     activeRequest.current = controller;
     setLoading(true); setError("");
     let request = supabase.rpc("crm_commercial_control_dashboard", requestArguments);
+    let countryRequest = supabase.rpc("crm_customer_country_catalog", { p_crm_type: null });
     if (typeof request.abortSignal === "function") request = request.abortSignal(controller.signal);
-    const { data: dashboard, error: dashboardError } = await request;
+    if (typeof countryRequest.abortSignal === "function") countryRequest = countryRequest.abortSignal(controller.signal);
+    const [dashboardResult, countryResult] = await Promise.all([request, countryRequest]);
     if (sequence !== requestSequence.current || controller.signal.aborted) return;
     activeRequest.current = null;
-    if (dashboardError) setError(dashboardError.message); else setData(dashboard || {});
+    const loadError = dashboardResult.error || countryResult.error;
+    if (loadError) {
+      setError(loadError.message);
+    } else {
+      const countries = new Map((countryResult.data || []).map((row) => [row.entity_key, row.country_code]));
+      const withCountry = (rows = []) => rows.map((row) => ({
+        ...row,
+        country_code: row.country_code || countries.get(`mexal:${row.codice_cliente}`) || null,
+      }));
+      setData({
+        ...(dashboardResult.data || {}),
+        attention: withCountry(dashboardResult.data?.attention),
+        top_customers: withCountry(dashboardResult.data?.top_customers),
+      });
+    }
     setLoading(false);
   }, [requestArguments]);
 

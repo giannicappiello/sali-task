@@ -116,6 +116,14 @@ export default function AIOrderImport() {
   function updateReview(patch) {
     setReviewStates((current) => current.map((item, index) => index === activeOrder ? { ...item, ...patch } : item));
   }
+  function selectCustomer(code) {
+    updateReview({ customerCode: code });
+  }
+  function updateLineChoice(lineIndex, patch) {
+    updateReview({
+      lineChoices: lineChoices.map((item, itemIndex) => itemIndex === lineIndex ? { ...item, ...patch } : item),
+    });
+  }
   function selectOrder(index) { setActiveOrder(index); setResult(orderPreviews[index]); }
 
   const selectedLines = useMemo(() => (result?.lines || []).map((line, index) => ({
@@ -170,8 +178,8 @@ export default function AIOrderImport() {
           <span>{Math.round(Number(result.customerMatch?.confidence || 0) * 100)}% · {result.customerMatch?.reason || "Nessuna motivazione disponibile."}</span>
           {result.customerMatch?.status !== "matched" ? <small>Conferma esplicitamente uno dei candidati; non verrà creato alcun nuovo cliente.</small> : null}
         </div>
-        {(result.customerMatch?.alternatives || []).length > 0 && <ul className="ai-match-alternatives">{result.customerMatch.alternatives.map((item) => <li key={item.identifier}><strong>{item.identifier} · {item.label}</strong><span>{Math.round(item.confidence * 100)}% · {item.reason}</span></li>)}</ul>}
-        <select value={customerCode} onChange={(event) => updateReview({ customerCode: event.target.value })}>
+        {(result.customerCandidates || []).length > 0 && <ul className="ai-match-alternatives ai-match-options" aria-label="Clienti suggeriti">{result.customerCandidates.map((item) => <li key={item.code}><button type="button" className={customerCode === item.code ? "selected" : ""} aria-pressed={customerCode === item.code} aria-label={`Seleziona cliente ${item.code}, ${item.name}`} onClick={() => selectCustomer(item.code)}><strong>{item.code} · {item.name}</strong><span>{Math.round(item.score * 100)}% · {item.reason}</span><small>{customerCode === item.code ? "Cliente selezionato" : "Clicca per selezionare"}</small></button></li>)}</ul>}
+        <select aria-label="Seleziona cliente dall'elenco dei suggerimenti" value={customerCode} onChange={(event) => selectCustomer(event.target.value)}>
           <option value="">Da selezionare manualmente nel formulario</option>
           {(result.customerCandidates || []).map((item) => <option key={item.code} value={item.code}>{item.code} · {item.name} · corrispondenza {Math.round(item.score * 100)}%</option>)}
         </select>
@@ -181,11 +189,11 @@ export default function AIOrderImport() {
         <div className="ai-order-lines">{result.lines.map((line, index) => <div className="ai-order-line" key={`${line.sourceText}-${index}`}>
           <div><strong>{line.description || line.sourceText}</strong><span>Testo letto: {line.sourceText}</span><small>Codice: {line.productCode || "—"} · EAN: {line.ean || "—"}{line.sheetName ? ` · ${line.sheetName}, riga ${line.rowNumber}` : ""}</small></div>
           <div className={`ai-match-status ${line.productMatch?.status || "unmatched"}`}><strong>{line.productMatch?.status || "unmatched"}</strong><span>{Math.round(Number(line.productMatch?.confidence || 0) * 100)}% · {line.productMatch?.reason || "Nessun abbinamento affidabile."}</span><small>Proposto: {line.productMatch?.proposedId || "nessuno"}</small></div>
-          {(line.productMatch?.alternatives || []).length > 0 && <ul className="ai-match-alternatives">{line.productMatch.alternatives.map((item) => <li key={item.identifier}><strong>{item.identifier} · {item.label}</strong><span>{Math.round(item.confidence * 100)}% · {item.reason}</span></li>)}</ul>}
-          <label>Prodotto<select value={lineChoices[index]?.code || ""} onChange={(event) => updateReview({ lineChoices: lineChoices.map((item, itemIndex) => itemIndex === index ? { ...item, code: event.target.value } : item) })}>
+          {(line.productCandidates || []).length > 0 && <ul className="ai-match-alternatives ai-match-options" aria-label={`Prodotti suggeriti per ${line.description || line.sourceText}`}>{line.productCandidates.map((item) => <li key={item.code}><button type="button" className={lineChoices[index]?.code === item.code ? "selected" : ""} aria-pressed={lineChoices[index]?.code === item.code} aria-label={`Seleziona prodotto ${item.code}, ${item.description}`} onClick={() => updateLineChoice(index, { code: item.code })}><strong>{item.code} · {item.description}</strong><span>{Math.round(item.score * 100)}% · {item.reason}</span><small>{lineChoices[index]?.code === item.code ? "Prodotto selezionato" : "Clicca per selezionare"}</small></button></li>)}</ul>}
+          <label>Prodotto<select aria-label={`Seleziona prodotto per ${line.description || line.sourceText}`} value={lineChoices[index]?.code || ""} onChange={(event) => updateLineChoice(index, { code: event.target.value })}>
             <option value="">Non abbinato</option>{(line.productCandidates || []).map((item) => <option key={item.code} value={item.code}>{item.code} · {item.description} · {Math.round(item.score * 100)}%</option>)}
           </select></label>
-          <label>Quantità<input type="number" min="0.01" step="0.01" value={lineChoices[index]?.quantity ?? ""} onChange={(event) => updateReview({ lineChoices: lineChoices.map((item, itemIndex) => itemIndex === index ? { ...item, quantity: event.target.value } : item) })} /></label>
+          <label>Quantità<input type="number" min="0.01" step="0.01" value={lineChoices[index]?.quantity ?? ""} onChange={(event) => updateLineChoice(index, { quantity: event.target.value })} /></label>
         </div>)}</div>
       </section>
       <section className="orders-panel ai-order-review">

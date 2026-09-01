@@ -26,3 +26,12 @@ test("UI supporta Excel multi-foglio e preview di ordini distinti", () => {
   assert.match(source, /sheetName/);
   assert.match(source, /rowNumber/);
 });
+
+test("cliente e prodotti suggeriti sono selezionabili direttamente nella preview AI", () => {
+  assert.match(source, /aria-label="Clienti suggeriti"/);
+  assert.match(source, /onClick=\{\(\) => selectCustomer\(item\.code\)\}/);
+  assert.match(source, /aria-label=\{`Prodotti suggeriti per/);
+  assert.match(source, /onClick=\{\(\) => updateLineChoice\(index, \{ code: item\.code \}\)\}/);
+  assert.match(source, /aria-pressed=\{customerCode === item\.code\}/);
+  assert.match(source, /aria-pressed=\{lineChoices\[index\]\?\.code === item\.code\}/);
+});

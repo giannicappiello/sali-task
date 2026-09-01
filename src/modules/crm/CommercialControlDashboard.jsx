@@ -183,7 +183,9 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
       const countries = new Map((countryResult.data || []).map((row) => [row.entity_key, row.country_code]));
       const withCountry = (rows = []) => rows.map((row) => ({
         ...row,
-        country_code: row.country_code || countries.get(`mexal:${row.codice_cliente}`) || null,
+        country_code: row.country_code && row.country_code !== "ND"
+          ? row.country_code
+          : countries.get(`mexal:${row.codice_cliente}`) || null,
       }));
       setData({
         ...(dashboardResult.data || {}),

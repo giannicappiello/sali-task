@@ -39,4 +39,5 @@ test("il catalogo Paese copre tutti i clienti visibili senza dipendere dalla pag
   assert.match(dashboard, /supabase\.rpc\("crm_customer_country_catalog"/);
   assert.match(dashboard, /attention: withCountry/);
   assert.match(dashboard, /top_customers: withCountry/);
+  assert.match(dashboard, /row\.country_code !== "ND"/);
 });

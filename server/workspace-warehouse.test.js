@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { discoverWarehouseCollection, getAvailabilityWarehouse, getLastCost, mapArticleToOrdersCache, mapArticleWarehouseStock, normalizeMexalWarehouse, warehouseSnapshotDate } from "./mexal/sync-products.js";
+import { calculateAvailability, discoverWarehouseCollection, getAvailabilityWarehouse, getLastCost, mapArticleToOrdersCache, mapArticleToProduct, mapArticleWarehouseStock, mexalNetAvailability, normalizeMexalWarehouse, warehouseSnapshotDate } from "./mexal/sync-products.js";
 import { reconstructWarehouseSnapshots, warehouseMovementLines } from "./mexal/warehouse-history.js";
 import { nonNegativeWarehouseRows, warehouseArticleType, warehouseBreakdown, warehouseLocation, warehouseRow, warehouseScopedRows, warehouseSummary } from "../src/pages/Warehouse/warehouseData.js";
 
@@ -94,6 +94,42 @@ test("il progressivo per magazzino non cambia il contratto disponibilità prodot
   assert.equal(mapped.warehouse_number, 7);
   assert.equal(mapped.on_hand, 11);
   assert.equal(mapped.unit_cost, 4);
+});
+
+test("Disponibile netto Mexal ha priorità in prodotti, cache e magazzino", () => {
+  const article = {
+    codice: "IT0001",
+    descrizione: "Detergente Intimo Mentolato 250ml",
+    qta_inventario: 3705,
+    qta_ord_imp: 336,
+    ord_cli_e: 999,
+    qta_ord_dimp: 7,
+    ord_cli_sps: 7,
+  };
+  assert.equal(calculateAvailability(article, 3705), 2699);
+  assert.deepEqual(mexalNetAvailability(article, 3705), {
+    value: 3369,
+    source: "qta_ord_imp",
+    fallback: false,
+  });
+  assert.equal(mapArticleToProduct(article).disponibilita, 3369);
+  assert.equal(mapArticleToOrdersCache(article).disponibilita, 3369);
+  const warehouse = mapArticleWarehouseStock(article, { number: 5, name: "Principale" });
+  assert.equal(warehouse.warehouse_number, 5);
+  assert.equal(warehouse.available, 3369);
+});
+
+test("il dettaglio articolo usa ord_cli_e e il fallback precedente è esplicito", () => {
+  assert.deepEqual(mexalNetAvailability({ ord_cli_e: 336 }, 3705), {
+    value: 3369,
+    source: "ord_cli_e",
+    fallback: false,
+  });
+  assert.deepEqual(mexalNetAvailability({ ord_cli_sps: 7 }, 3705), {
+    value: 3698,
+    source: "calculateAvailability",
+    fallback: true,
+  });
 });
 
 test("la data snapshot usa il giorno inventariale italiano e non sincronizzato_il come filtro", () => {

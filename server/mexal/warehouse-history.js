@@ -1,4 +1,4 @@
-import { calculateAvailability, calculateStock, getLastCost } from "./sync-products.js";
+import { calculateStock, getLastCost, mexalNetAvailability } from "./sync-products.js";
 
 const ARTICLE_FIELDS = [
   "codice", "um_principale", "qta_inventario", "qta_carico", "qta_scarico",
@@ -108,7 +108,7 @@ export async function loadWarehouseProgressives(mexal, warehouse, activeCodes) {
       unit_of_measure: text(article.um_principale) || null,
       on_hand: onHand,
       committed,
-      available: calculateAvailability(article, onHand),
+      available: mexalNetAvailability(article, onHand).value,
       unit_cost: getLastCost(article),
       source_payload: article,
       captured_at: new Date().toISOString(),

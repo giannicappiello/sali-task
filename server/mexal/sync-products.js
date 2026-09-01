@@ -524,6 +524,33 @@ export function calculateAvailability(article, stock) {
   );
 }
 
+/**
+ * Mexal's live progressives expose the net customer commitment as qta_ord_imp;
+ * the article detail exposes the same quantity as ord_cli_e. Disponibile netto
+ * is stock minus that commitment. Suspended commitments (qta_ord_dimp /
+ * ord_cli_sps) belong to a different progressive and must not reduce it.
+ *
+ * The legacy Workspace formula remains an explicit fallback only for payloads
+ * that do not contain either authoritative Mexal commitment field.
+ */
+export function mexalNetAvailability(article, stock = calculateStock(article)) {
+  const candidates = [
+    ["qta_ord_imp", article?.qta_ord_imp],
+    ["ord_cli_e", article?.ord_cli_e],
+  ];
+  for (const [source, rawValue] of candidates) {
+    const value = nullableNumber(rawValue);
+    if (value !== null) {
+      return { value: round4(stock - value), source, fallback: false };
+    }
+  }
+  return {
+    value: calculateAvailability(article, stock),
+    source: "calculateAvailability",
+    fallback: true,
+  };
+}
+
 function resolveHierarchy(groupCode, groupMap) {
   const chain = [];
   const visited = new Set();
@@ -814,13 +841,12 @@ async function findExistingProduct(supabase, code) {
   return data || null;
 }
 
-async function saveProduct({
-  supabase,
-  article,
-  hierarchy,
-  imageUrl,
-  existing,
-}) {
+export function mapArticleToProduct(article, {
+  hierarchy = {},
+  imageUrl = null,
+  existing = null,
+  synchronizedAt = new Date().toISOString(),
+} = {}) {
   const code = getArticleCode(article);
 
   if (!code) {
@@ -831,10 +857,8 @@ async function saveProduct({
 
   const name = buildName(article) || code;
   const stock = calculateStock(article);
-  const now = new Date().toISOString();
-
   const vat = getMexalVat(article);
-  const payload = {
+  return {
     nome: name,
     codice: code,
     codice_mexal: code,
@@ -870,10 +894,7 @@ async function saveProduct({
     codice_iva_mexal: vat.code,
     aliquota_iva: vat.rate,
     giacenza: stock,
-    disponibilita: calculateAvailability(
-      article,
-      stock
-    ),
+    disponibilita: mexalNetAvailability(article, stock).value,
     immagine_url: null,
     icona_url: null,
     immagine_catalogo_url:
@@ -885,11 +906,21 @@ async function saveProduct({
     attivo_mexal: true,
     attivo: true,
     stato: "Attivo",
-    ultimo_sync_mexal: now,
+    ultimo_sync_mexal: synchronizedAt,
     json_mexal: article,
     ...(nullableInteger(article.id_categoria_pr) !== null ? { categoria_provvigionale_mexal: nullableInteger(article.id_categoria_pr) } : {}),
-    updated_at: now,
+    updated_at: synchronizedAt,
   };
+}
+
+async function saveProduct({
+  supabase,
+  article,
+  hierarchy,
+  imageUrl,
+  existing,
+}) {
+  const payload = mapArticleToProduct(article, { hierarchy, imageUrl, existing });
 
   if (existing?.id) {
     const { error } = await supabase
@@ -938,7 +969,7 @@ export function mapArticleToOrdersCache(article, { imageUrl = null } = {}) {
     impegnato: round4(
       numberValue(article.impegnato ?? article.qta_impegnata ?? 0)
     ),
-    disponibilita: calculateAvailability(article, stock),
+    disponibilita: mexalNetAvailability(article, stock).value,
     mostra_in_app: true,
     immagine_url: imageUrl,
     scheda_tecnica_url: nullableText(
@@ -966,7 +997,7 @@ export function mapArticleWarehouseStock(article, warehouse, { fallback = {}, sy
     unit_of_measure: authoritativeArticleUnit(article) || authoritativeArticleUnit(fallback),
     on_hand: stock,
     committed,
-    available: calculateAvailability(article, stock),
+    available: mexalNetAvailability(article, stock).value,
     unit_cost: getLastCost(article) || getLastCost(fallback),
     source_payload: article,
     sync_run_id: syncRunId,
@@ -1319,7 +1350,7 @@ export default async function handler(req, res) {
           const article = await loadFullArticle(availabilityMexal, code, summary);
           if (!isActiveArticle(article)) { result.esclusi += 1; continue; }
           const stock = calculateStock(article); const now = new Date().toISOString();
-          const availability = calculateAvailability(article, stock);
+          const availability = mexalNetAvailability(article, stock).value;
           const lastCost = getLastCost(article);
           const committed = round4(numberValue(article.impegnato ?? article.qta_impegnata ?? 0));
           const unit = authoritativeArticleUnit(article);

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ClipboardCheck, Download, FileLock2, FileUp, RefreshCw, Search, ShieldCheck, X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import { productionCoaWorkspacePath } from "./private-documents-navigation";
 import "./PrivateDocuments.css";
 import "./PrivateDocumentsActions.css";
 
@@ -32,6 +34,7 @@ function DocumentList({ documents, onDownload, emptyText = "Nessun documento ass
 
 export default function PrivateDocuments() {
   const { session: authSession } = useAuth();
+  const navigate = useNavigate();
   const accessToken = authSession?.access_token;
   const [mesSession, setMesSession] = useState(null), [canUpload, setCanUpload] = useState(false), [customerScoped, setCustomerScoped] = useState(false);
   const [articles, setArticles] = useState([]), [selected, setSelected] = useState(null), [selectedLot, setSelectedLot] = useState(null);
@@ -55,7 +58,7 @@ export default function PrivateDocuments() {
   async function openArticle(article) { setLoading(true); setError(""); setSelectedLot(null); try { setSelected(await mesRequest(mesSession || await establishSession(), `articles/${article.articleId}`)); } catch (cause) { setError(cause.message); } finally { setLoading(false); } }
   async function download(document) { setError(""); try { const response = await mesRequest(mesSession || await establishSession(), `documents/${document.externalId}`, { raw: true }); if (!response.ok) throw new Error("Documento non disponibile o non autorizzato."); const blob = await response.blob(); const url = URL.createObjectURL(blob); const anchor = window.document.createElement("a"); anchor.href = url; anchor.download = document.originalFileName || "documento"; anchor.click(); URL.revokeObjectURL(url); } catch (cause) { setError(cause.message); } }
   async function upload(event) { event.preventDefault(); setError(""); try { const uploadSession = await workspaceAction(accessToken, "private_documents_session", { upload: true }); await mesRequest(uploadSession, "documents", { method: "POST", body: new FormData(event.currentTarget) }); setUploadOpen(false); await workspaceAction(accessToken, "private_documents_sync"); await openArticle(selected.article); } catch (cause) { setError(cause.message); } }
-  async function openCoa(lot) { setError(""); const target = window.open("about:blank", "_blank"); if (!target) { setError("Il browser ha bloccato la nuova finestra MES."); return; } try { const result = await workspaceAction(accessToken, "progremes_sso", { screenCode: "progremes.Documenti", context: { destination: "coa-produzioni", productionId: lot.productionId || "", article: selected?.article?.articleCode || "", lot: lot.lotCode, odpId: lot.productionOrderId || "" } }); if (!result.url) throw new Error("Collegamento alla schermata COA non disponibile."); target.location.assign(result.url); } catch (cause) { target.close(); setError(cause.message); } }
+  function openCoa(lot) { setError(""); navigate(productionCoaWorkspacePath({ productionId: lot.productionId, articleCode: selected?.article?.articleCode, lotCode: lot.lotCode, productionOrderId: lot.productionOrderId })); }
 
   const lotOptions = useMemo(() => (selected?.lots || []).map((row) => ({ type: row.lotType, lot: row.lotCode, orderId: row.productionOrderId || "", stockId: row.stockLotId || "" })), [selected]);
   const lotDocuments = useMemo(() => selectedLot ? documentsForLot(selected?.documents, selectedLot) : [], [selected, selectedLot]);

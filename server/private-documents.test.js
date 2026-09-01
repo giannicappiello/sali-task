@@ -4,6 +4,7 @@ import { createHmac } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { createPrivateDocumentToken } from "./private-documents.js";
+import { productionCoaWorkspacePath } from "../src/pages/Documentation/private-documents-navigation.js";
 
 test("il ticket Documenti Private è firmato, breve e contiene il perimetro cliente", () => {
   const secret = "workspace-private-documents-secret-123456789";
@@ -53,4 +54,24 @@ test("il cliente naviga da articolo a lotto e vede documenti comuni e specifici"
   assert.match(page, /!customerScoped.*Emetti CoA/);
   assert.match(service, /CustomerOrderIdsForArticleAsync/);
   assert.match(service, /allowedOrderIds\.Contains\(lot\.ProductionOrderId\.Value\)/);
+});
+
+test("Emetti CoA segue la navigazione interna Workspace e conserva il contesto MES", async () => {
+  assert.equal(
+    productionCoaWorkspacePath({
+      productionId: 42,
+      articleCode: "BT0001",
+      lotCode: "400100035",
+      productionOrderId: 17,
+    }),
+    "/produzione/progremes.Documenti?destination=coa-produzioni&productionId=42&article=BT0001&lot=400100035&odpId=17",
+  );
+  assert.equal(
+    productionCoaWorkspacePath({ articleCode: "IT 0084", lotCode: "Lotto 1+2" }),
+    "/produzione/progremes.Documenti?destination=coa-produzioni&article=IT+0084&lot=Lotto+1%2B2",
+  );
+
+  const page = await readFile(new URL("../src/pages/Documentation/PrivateDocuments.jsx", import.meta.url), "utf8");
+  assert.match(page, /navigate\(productionCoaWorkspacePath/);
+  assert.doesNotMatch(page, /window\.open\("about:blank"/);
 });

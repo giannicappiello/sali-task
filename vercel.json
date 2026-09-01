@@ -25,6 +25,14 @@
   ],
   "rewrites": [
     {
+      "source": "/api/company-documents/compose",
+      "destination": "/api/mexal/automation?route=company-document-compose"
+    },
+    {
+      "source": "/api/company-letterheads/mes/resolve",
+      "destination": "/api/mexal/automation?route=company-letterheads-mes"
+    },
+    {
       "source": "/api/progremes-production/events",
       "destination": "/api/mexal/automation?route=progremes-production-events"
     },

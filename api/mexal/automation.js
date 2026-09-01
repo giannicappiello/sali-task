@@ -27,6 +27,7 @@ import { createProgremesDiagnosticManager } from "../../server/progremes-diagnos
 import { handleAIAssistant } from "../../server/ai/assistant.js";
 import { handleCrmBrief } from "../../server/ai/crm-brief.js";
 import { handleAIOrderDocument } from "../../server/ai/order-document.js";
+import { handleWorkspaceDocumentCompose } from "../../server/company-document-composer.js";
 import { cancelProductionRequest, confirmProductionProposal, handleProductionEvent, previewProductionRequest } from "../../server/progremes-production-api.js";
 import { prepareProductionDemand } from "../../server/production-netting.js";
 import { createOctOrdersRunHandler, precheckOctOrders } from "../../server/mexal/sync-oct-orders.js";
@@ -39,6 +40,7 @@ import { createWorkspaceV4PurchaseDocument, listWorkspaceV4Purchasing } from "..
 import { calculateWorkspaceV4PurchaseRequirements, executeWorkspaceV4PurchasingAction, readWorkspaceV4PurchasingSource } from "../../server/workspacemes-v4-purchasing-mes.js";
 import { generateSaliDiIschiaProposal, listSaliDiIschiaProposals } from "../../server/sali-di-ischia-proposal.js";
 import { privateDocumentsSession, syncPrivateDocuments } from "../../server/private-documents.js";
+import { handleMesHeadingResolve } from "../../server/company-letterheads-mes-api.js";
 
 async function dispatchMessageNotification(req, body) {
   const token = String(req.headers.authorization || "").trim().replace(/^Bearer\s+/i, "");
@@ -492,6 +494,8 @@ async function maintenancePurge(req) {
 }
 
 export default async function handler(req, res) {
+  if (req.query?.route === "company-letterheads-mes") return handleMesHeadingResolve(req, res);
+  if (req.query?.route === "company-document-compose") return handleWorkspaceDocumentCompose(req, res);
   if (req.query?.route === "crm-digital") {
     return handleDigitalConnectionManager(req, res);
   }

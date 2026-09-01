@@ -1,6 +1,11 @@
 import { jsPDF } from "jspdf";
 import { calculateOrderEconomics } from "./orderEconomics.js";
 
+async function composeWorkspacePdf(input) {
+  const service = await import("../../../services/companyDocuments.js");
+  return service.composeWorkspacePdf(input);
+}
+
 // All measurements in this file are millimetres: the document deliberately
 // follows the compact, ruled layout used by Mexal printouts rather than the
 // application's UI language.
@@ -298,7 +303,7 @@ function drawFooter(doc, order, model) {
   line(doc, 7, 290, 203, 290);
 }
 
-export async function createOrderPdf(order, lines, { logo = null, document = null } = {}) {
+export async function createOrderPdf(order, lines, { logo = null, document = null, managedLetterhead = false } = {}) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const model = { ...buildOrderPdfModel(order, lines), document };
   const isPhOrder = String(order?.modulo_ordini || "").toLowerCase() === "ph";
@@ -320,7 +325,7 @@ export async function createOrderPdf(order, lines, { logo = null, document = nul
   for (let page = 0; page < pages; page += 1) {
     if (page) doc.addPage();
     const continuation = page > 0;
-    drawCompanyHeader(doc, companyLogo, continuation, isPhOrder);
+    if (!managedLetterhead) drawCompanyHeader(doc, companyLogo, continuation, isPhOrder);
     if (!continuation) drawPartyBlock(doc, order, model);
     const articleTop = continuation ? 29 : ARTICLE.top;
     const articleBottom = continuation ? 260 : ARTICLE.bottom;
@@ -390,10 +395,23 @@ export function createZipArchive(files) {
 export async function createMexalDocumentPdfFiles(order, lines) {
   const documents = getMexalDocuments(order);
   const targets = documents.length ? documents : [null];
+  const managedCompositionAvailable = typeof import.meta.env !== "undefined";
   return Promise.all(targets.map(async (document) => {
     if (!document) {
-      const doc = await createOrderPdf(order, lines);
-      return { name: "ordine-bozza.pdf", data: doc.output("arraybuffer") };
+      const doc = await createOrderPdf(order, lines, { managedLetterhead: managedCompositionAvailable });
+      if (!managedCompositionAvailable) return { name: "ordine-bozza.pdf", data: doc.output("arraybuffer"), headingSnapshot: null };
+      try {
+        const composed = await composeWorkspacePdf({
+          pdf: doc.output("arraybuffer"), documentTypeCode: "ORDINE_CLIENTE",
+          documentExternalId: `workspace-order:${order.id || order.numero_ordine || "draft"}:draft`,
+          brand: order.company_brand || order.brand || "PROGRE", businessArea: "ordini", language: "it",
+        });
+        return { name: "ordine-bozza.pdf", data: await composed.blob.arrayBuffer(), headingSnapshot: composed.snapshot };
+      } catch (error) {
+        if (error?.code !== "LETTERHEAD_NOT_CONFIGURED") throw error;
+        const legacy = await createOrderPdf(order, lines);
+        return { name: "ordine-bozza.pdf", data: legacy.output("arraybuffer"), headingSnapshot: null };
+      }
     }
     const kind = document.type;
     const documentLines = lines.filter((line) => {
@@ -401,8 +419,20 @@ export async function createMexalDocumentPdfFiles(order, lines) {
       if (kind === "OCI") return String(line.codice_articolo || "").trim().toUpperCase().startsWith("IMP");
       return Number(line[`quantita_${kind.toLowerCase()}`]) > 0;
     }).map((line) => ({ ...line, quantita: ["OCI", "OCT"].includes(kind) ? line.quantita : line[`quantita_${kind.toLowerCase()}`] }));
-    const doc = await createOrderPdf(order, documentLines, { document });
-    return { name: `ordine-${document.type}-${document.serie}-${document.numero}.pdf`, data: doc.output("arraybuffer") };
+    const doc = await createOrderPdf(order, documentLines, { document, managedLetterhead: managedCompositionAvailable });
+    if (!managedCompositionAvailable) return { name: `ordine-${document.type}-${document.serie}-${document.numero}.pdf`, data: doc.output("arraybuffer"), headingSnapshot: null };
+    try {
+      const composed = await composeWorkspacePdf({
+        pdf: doc.output("arraybuffer"), documentTypeCode: "ORDINE_CLIENTE",
+        documentExternalId: `workspace-order:${order.id || order.numero_ordine || "unknown"}:${document.type}:${document.serie}:${document.numero}`,
+        brand: order.company_brand || order.brand || "PROGRE", businessArea: "ordini", language: "it",
+      });
+      return { name: `ordine-${document.type}-${document.serie}-${document.numero}.pdf`, data: await composed.blob.arrayBuffer(), headingSnapshot: composed.snapshot };
+    } catch (error) {
+      if (error?.code !== "LETTERHEAD_NOT_CONFIGURED") throw error;
+      const legacy = await createOrderPdf(order, documentLines, { document });
+      return { name: `ordine-${document.type}-${document.serie}-${document.numero}.pdf`, data: legacy.output("arraybuffer"), headingSnapshot: null };
+    }
   }));
 }
 

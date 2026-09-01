@@ -1,6 +1,11 @@
 import { assistantReportFilename, assistantReportTitle, buildAssistantPdf } from "./assistantPdf.js";
 import { buildAssistantChartSvg } from "./assistantChart.js";
 
+async function composeWorkspacePdf(input) {
+  const service = await import("../../services/companyDocuments.js");
+  return service.composeWorkspacePdf(input);
+}
+
 export function buildAssistantArtifactFile(artifact, content) {
   if (artifact?.kind === "chart") {
     const blob = new Blob([buildAssistantChartSvg(content)], { type: "image/svg+xml;charset=utf-8" });
@@ -68,10 +73,21 @@ export async function buildAssistantArtifactFileAsync(artifact, content) {
     } catch {
       // Il PDF usa il marchio testuale di riserva quando il logo non è raggiungibile.
     }
-    const doc = buildAssistantPdf({ content, author: "Progre AI", includeChart: artifact?.includeChart === true, logoDataUrl });
+    const doc = buildAssistantPdf({ content, author: "Progre AI", includeChart: artifact?.includeChart === true, logoDataUrl, managedLetterhead: true });
     const requestedName = artifact?.fileName;
     const fileName = !requestedName || requestedName === "report-assistente-ai.pdf" ? assistantReportFilename(assistantReportTitle(content)) : requestedName;
-    return { blob: doc.output("blob"), fileName, mediaType: "application/pdf" };
+    try {
+      const composed = await composeWorkspacePdf({
+        pdf: doc.output("arraybuffer"), documentTypeCode: "REPORT_ASSISTENTE_AI",
+        documentExternalId: `assistant-report:${artifact?.id || crypto.randomUUID()}`,
+        brand: "PROGRE", businessArea: "assistente_ai", language: "it",
+      });
+      return { blob: composed.blob, fileName, mediaType: "application/pdf", headingSnapshot: composed.snapshot };
+    } catch (error) {
+      if (error?.code !== "LETTERHEAD_NOT_CONFIGURED") throw error;
+      const legacy = buildAssistantPdf({ content, author: "Progre AI", includeChart: artifact?.includeChart === true, logoDataUrl });
+      return { blob: legacy.output("blob"), fileName, mediaType: "application/pdf", headingSnapshot: null };
+    }
   }
   return buildAssistantArtifactFile(artifact, content);
 }

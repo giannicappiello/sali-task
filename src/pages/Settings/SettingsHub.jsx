@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BellRing, Blocks, Bot, ClipboardList, Eye, FolderTree, Settings, SlidersHorizontal, Stethoscope, UserRound } from "lucide-react";
+import { BellRing, Blocks, Bot, ClipboardList, Eye, FileText, FolderTree, Settings, SlidersHorizontal, Stethoscope, UserRound } from "lucide-react";
 import { Navigate } from "react-router-dom";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
 import { useAuth } from "../../contexts/AuthContext";
@@ -14,6 +14,7 @@ const FALLBACK_SECTIONS = Object.freeze([
   { codice: "impostazioni.moduli", nome: "Moduli e schermate", descrizione: "Catalogo e composizione dei moduli Workspace e ProgreMES.", percorso: "/settings/modules", ordine: 50, metadati: { admin_only: true } },
   { codice: "impostazioni.menu", nome: "Aree e menu", descrizione: "Aree di accesso e composizione personalizzata del menu Workspace.", percorso: "/settings/menu", ordine: 45, metadati: { admin_only: true } },
   { codice: "impostazioni.ai", nome: "Configurazione AI", descrizione: "Capacità, accessi, Web e limiti dell’assistente.", percorso: "/settings/ai", ordine: 50, metadati: { required_permissions: ["settings.manage"] } },
+  { codice: "impostazioni.intestazioni_aziendali", nome: "Intestazioni aziendali", descrizione: "Archivio ufficiale, versioni e associazioni dei modelli documentali.", percorso: "/settings/company-letterheads", ordine: 55, metadati: { required_permissions: ["settings.manage"] } },
   { codice: "impostazioni.notifiche", nome: "Notifiche", descrizione: "Dispositivi, suoni, preferenze ed eventi.", percorso: "/settings/notifications", ordine: 60 },
   { codice: "impostazioni.diagnostica_mexal", nome: "Diagnostica Mexal", descrizione: "Controlli tecnici e verifica delle sincronizzazioni Mexal.", percorso: "/settings/mexal-diagnostics", ordine: 70, metadati: { required_permissions: ["settings.manage"] } },
 ]);
@@ -26,6 +27,7 @@ const ICON_BY_CODE = Object.freeze({
   "impostazioni.moduli": Blocks,
   "impostazioni.menu": FolderTree,
   "impostazioni.ai": Bot,
+  "impostazioni.intestazioni_aziendali": FileText,
   "impostazioni.notifiche": BellRing,
   "impostazioni.diagnostica_mexal": Stethoscope,
 });

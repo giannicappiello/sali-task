@@ -153,15 +153,21 @@ function drawContentPageFrame(doc, logoDataUrl = null) {
   doc.rect(16, 23, 12, 1.5, "F");
 }
 
-export function buildAssistantPdf({ content, generatedAt = new Date(), author = "Progre AI", includeChart = false, logoDataUrl = null }) {
+export function buildAssistantPdf({ content, generatedAt = new Date(), author = "Progre AI", includeChart = false, logoDataUrl = null, managedLetterhead = false }) {
   const title = assistantReportTitle(content);
   const subtitle = firstBodyLine(content, title).slice(0, 180);
   const doc = new jsPDF({ unit: "mm", format: "a4", compress: true });
   const lines = String(content || "").split(/\r?\n/);
 
-  drawCover(doc, { title, subtitle, generatedAt, author, logoDataUrl });
+  if (managedLetterhead) {
+    doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(...BRAND.navy); doc.text("REPORT AI", 24, 92);
+    doc.setFontSize(25); doc.text(doc.splitTextToSize(title, 156), 24, 108);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(11); doc.text(doc.splitTextToSize(subtitle, 156), 24, 145);
+    doc.setFontSize(9.5); doc.text(`Data di elaborazione: ${generatedAt.toLocaleDateString("it-IT")}`, 24, 220);
+    doc.text(`Preparato da: ${author}`, 24, 232);
+  } else drawCover(doc, { title, subtitle, generatedAt, author, logoDataUrl });
   doc.addPage();
-  drawContentPageFrame(doc, logoDataUrl);
+  if (!managedLetterhead) drawContentPageFrame(doc, logoDataUrl);
 
   let y = 32;
   if (includeChart) y = (drawAssistantChartPdf(doc, content, 16, y, 178, 72) || y) + 7;
@@ -188,7 +194,7 @@ export function buildAssistantPdf({ content, generatedAt = new Date(), author = 
         styles: { font: "helvetica", fontSize: 7.5, cellPadding: 2, textColor: [31, 45, 68], lineColor: [214, 225, 239] },
         headStyles: { fillColor: BRAND.navy, textColor: 255, fontStyle: "bold" },
         alternateRowStyles: { fillColor: BRAND.pale },
-        didDrawPage: () => drawContentPageFrame(doc, logoDataUrl),
+        didDrawPage: () => { if (!managedLetterhead) drawContentPageFrame(doc, logoDataUrl); },
       });
       y = (doc.lastAutoTable?.finalY || y) + 6;
       continue;

@@ -22,6 +22,22 @@ test("il collegamento COA usa soltanto la destinazione Documenti autorizzata", (
     "/documenti/coa/compila",
   );
   assert.equal(
+    progremesContextualRoute("progremes.Documenti", {
+      destination: "coa-produzioni",
+      article: "BT0001",
+      lot: "400100035",
+    }, "/documenti"),
+    "/documenti/coa/compila?article=BT0001&lot=400100035",
+  );
+  assert.equal(
+    progremesContextualRoute("progremes.Documenti", {
+      destination: "coa-produzioni",
+      article: "IT 0084/PROVA",
+      lot: "Lotto 1+2",
+    }, "/documenti"),
+    "/documenti/coa/compila?article=IT+0084%2FPROVA&lot=Lotto+1%2B2",
+  );
+  assert.equal(
     progremesContextualRoute("progremes.Ordini", { destination: "coa-produzioni" }, "/gestione-ordini"),
     "/gestione-ordini",
   );

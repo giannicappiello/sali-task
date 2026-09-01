@@ -5,3 +5,11 @@ const DIRECT_OPERATIONAL_SCREEN_ROUTES = Object.freeze({
 export function progremesDirectOperationalRoute(screenCode) {
   return DIRECT_OPERATIONAL_SCREEN_ROUTES[String(screenCode || "").trim()] || "";
 }
+
+export function progremesContextualRoute(screenCode, context = {}, fallback = "") {
+  if (String(screenCode || "").trim() === "progremes.Documenti"
+      && String(context?.destination || "").trim() === "coa-produzioni") {
+    return "/documenti/coa/compila";
+  }
+  return fallback;
+}

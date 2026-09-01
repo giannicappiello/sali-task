@@ -1,0 +1,26 @@
+.private-lot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.private-lot-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 9px;
+  border: 1px solid #b9cde2;
+  border-radius: 9px;
+  background: #fff;
+  color: #155da4;
+  font-size: .72rem;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.private-lot-actions button:last-child {
+  border-color: #b7dfc8;
+  background: #effaf4;
+  color: #157247;
+}

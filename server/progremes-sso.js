@@ -2,7 +2,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { ensureProgremesCatalogFresh } from "./progremes-modules.js";
-import { progremesDirectOperationalRoute } from "./progremes-sso-routes.js";
+import { progremesContextualRoute, progremesDirectOperationalRoute } from "./progremes-sso-routes.js";
 
 const required = (name) => {
   const value = String(process.env[name] || "").trim();
@@ -166,7 +166,8 @@ export async function issueProgremesTicket(req, body = {}) {
         throw Object.assign(new Error("Schermata ProgreMES non autorizzata."), { status: 403 });
       }
     }
-    const requestedRoute = String(directOperationalRoute || screen.metadati?.external_route || "").trim();
+    const requestedRoute = String(progremesContextualRoute(screenCode, body?.context,
+      directOperationalRoute || screen.metadati?.external_route || "")).trim();
     if (requestedRoute.startsWith("/") && !requestedRoute.startsWith("//")) returnUrl = appendProgremesContext(requestedRoute, body?.context);
   }
 

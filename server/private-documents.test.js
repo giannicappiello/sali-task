@@ -40,3 +40,17 @@ test("Documenti Private apre la pagina Workspace e non il contenitore MES legacy
   assert.match(authorization, /target_module: "progremes_formule"/);
   assert.match(layout, /"\/documentation\/private"/);
 });
+
+test("il cliente naviga da articolo a lotto e vede documenti comuni e specifici", async () => {
+  const [page, service] = await Promise.all([
+    readFile(new URL("../src/pages/Documentation/PrivateDocuments.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../_progremes_v3_fix/Modules/Documenti/Services/PrivateDocumentService.cs", import.meta.url), "utf8"),
+  ]);
+  assert.match(page, /documentsForLot/);
+  assert.match(page, /document\.associationType === "Articolo"/);
+  assert.match(page, /Apri lotto/);
+  assert.match(page, /Documenti disponibili per il lotto/);
+  assert.match(page, /!customerScoped.*Emetti CoA/);
+  assert.match(service, /CustomerOrderIdsForArticleAsync/);
+  assert.match(service, /allowedOrderIds\.Contains\(lot\.ProductionOrderId\.Value\)/);
+});

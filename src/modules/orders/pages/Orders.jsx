@@ -7,6 +7,7 @@ import { useOrdersModule } from "../ordersModuleContext";
 import { agentDisplayName, customerDisplayName, loadAgentNameMap, loadCustomerDirectory, sortOrdersNewestFirst } from "../services/agentNames";
 import { getOrderDisplayStatus } from "../services/orderDisplayStatus";
 import AIOrderTypeDialog from "../components/AIOrderTypeDialog";
+import OrdersStatusFilter from "../components/OrdersStatusFilter";
 import { filterOrderModuleRows, isPrivateOrderModule, orderModuleDocumentTypes, orderModuleFilter } from "../services/orderModules";
 
 export default function Orders() {
@@ -20,6 +21,7 @@ export default function Orders() {
   const [agentsByCustomer, setAgentsByCustomer] = useState(new Map());
   const [search, setSearch] = useState("");
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [statusFilter, setStatusFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [aiTypeDialogOpen, setAITypeDialogOpen] = useState(false);
 
@@ -101,19 +103,22 @@ export default function Orders() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((item) => [
-      ...Object.values(item),
-      customerDisplayName(item, customersByCode),
-      agentDisplayName(item, agentsByCode, agentsByCustomer),
-      ...(item.documenti_mexal || []).flatMap((document) => [
-        document.tipo_documento,
-        document.serie,
-        document.numero,
-        document.stato_operativo,
-      ]),
-    ].some((value) => String(value ?? "").toLowerCase().includes(q)));
-  }, [rows, search, agentsByCode, agentsByCustomer, customersByCode]);
+    return rows.filter((item) => {
+      if (statusFilter && getOrderDisplayStatus(item).className !== statusFilter) return false;
+      if (!q) return true;
+      return [
+        ...Object.values(item),
+        customerDisplayName(item, customersByCode),
+        agentDisplayName(item, agentsByCode, agentsByCustomer),
+        ...(item.documenti_mexal || []).flatMap((document) => [
+          document.tipo_documento,
+          document.serie,
+          document.numero,
+          document.stato_operativo,
+        ]),
+      ].some((value) => String(value ?? "").toLowerCase().includes(q));
+    });
+  }, [rows, search, statusFilter, agentsByCode, agentsByCustomer, customersByCode]);
 
   const accessLabel = isAdmin || isBackoffice ? "Accesso completo" : `${visibleAgents?.length || 0} agente/i autorizzato/i`;
 
@@ -122,6 +127,7 @@ export default function Orders() {
       <div className="orders-toolbar">
         <div className="orders-search"><Search size={18} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Ricerca rapida ordini..." /></div>
         <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
+        <OrdersStatusFilter value={statusFilter} onChange={setStatusFilter} />
         {canWriteOrders && <><button className="orders-primary" type="button" onClick={() => navigate(`${basePath}/nuovo`)}>{isPrivateOrderModule(moduleCode) ? "Nuovo OCT" : "Nuovo ordine"}</button>{!isPrivateOrderModule(moduleCode) && <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/nuovo?tipo=prenotazione`)}>Ordine prenotazione</button>}</>}
         <button className="orders-secondary" type="button" onClick={() => isPrivateOrderModule(moduleCode) ? openAIOrderImport("standard") : setAITypeDialogOpen(true)}><Sparkles size={17} /> Genera con AI</button>
       </div>

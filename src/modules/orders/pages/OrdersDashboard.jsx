@@ -9,7 +9,14 @@ import { filterDashboardOrders, getDashboardOrderMonth } from "../services/dashb
 import { agentDisplayName, customerDisplayName, loadAgentNameMap, loadCustomerDirectory, sortOrdersNewestFirst } from "../services/agentNames";
 import { getOrderDisplayStatus } from "../services/orderDisplayStatus";
 import AIOrderTypeDialog from "../components/AIOrderTypeDialog";
+import OrdersStatusFilter from "../components/OrdersStatusFilter";
 import { filterOrderModuleDocuments, filterOrderModuleRows, isPrivateOrderModule, orderModuleDocumentTypes, orderModuleFilter } from "../services/orderModules";
+
+const DASHBOARD_STATUS_OPTIONS = Object.freeze([
+  Object.freeze({ value: "aperto", label: "Aperto" }),
+  Object.freeze({ value: "in_corso", label: "In corso" }),
+  Object.freeze({ value: "evaso", label: "Evaso" }),
+]);
 
 export default function OrdersDashboard() {
   const { moduleCode, basePath } = useOrdersModule();
@@ -109,7 +116,7 @@ export default function OrdersDashboard() {
     </div>
     <div className="orders-kpi-grid"><Kpi label="Ordini del mese" value={stats.ordiniMese} /><Kpi label="Ordini aperti" value={stats.aperti} status="aperto" active={statusFilter === "aperto"} onClick={toggleStatusFilter} /><Kpi label="Ordini in corso" value={stats.inCorso} status="in_corso" active={statusFilter === "in_corso"} onClick={toggleStatusFilter} /><Kpi label="Ordini evasi" value={stats.evasi} status="evaso" active={statusFilter === "evaso"} onClick={toggleStatusFilter} /></div>
     <section className="orders-dashboard-list">
-      <div className="orders-dashboard-list-header"><div className="orders-dashboard-brand"><img src="/pwa-512x512.png" alt="Logo aziendale" /><div><p>Panoramica operativa</p><h2>Ordini recenti</h2></div></div><div className="orders-dashboard-controls"><label className="orders-dashboard-month"><span>Mese</span><select value={monthFilter} onChange={(event) => setMonthFilter(event.target.value)} aria-label="Filtra ordini per mese"><option value="">Tutti i mesi</option>{monthOptions.map((month) => <option key={month} value={month}>{formatMonth(month)}</option>)}</select></label><div className="orders-search orders-dashboard-search"><Search size={18} aria-hidden="true" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cerca numero, cliente o agente" aria-label="Cerca ordini per numero, cliente o agente" /></div></div></div>
+      <div className="orders-dashboard-list-header"><div className="orders-dashboard-brand"><img src="/pwa-512x512.png" alt="Logo aziendale" /><div><p>Panoramica operativa</p><h2>Ordini recenti</h2></div></div><div className="orders-dashboard-controls"><label className="orders-dashboard-month"><span>Mese</span><select value={monthFilter} onChange={(event) => setMonthFilter(event.target.value)} aria-label="Filtra ordini per mese"><option value="">Tutti i mesi</option>{monthOptions.map((month) => <option key={month} value={month}>{formatMonth(month)}</option>)}</select></label><OrdersStatusFilter value={statusFilter} onChange={setStatusFilter} options={DASHBOARD_STATUS_OPTIONS} /><div className="orders-search orders-dashboard-search"><Search size={18} aria-hidden="true" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cerca numero, cliente o agente" aria-label="Cerca ordini per numero, cliente o agente" /></div></div></div>
       <div className="orders-dashboard-filter-row"><button type="button" className={!statusFilter ? "active" : ""} onClick={() => setStatusFilter("")}>Tutti gli ordini</button>{statusFilter && <span>Stato: {statusFilter.replaceAll("_", " ")}</span>}{monthFilter && <span>Mese: {formatMonth(monthFilter)}</span>}</div>
       <div className="orders-dashboard-table-wrap"><table className="orders-table orders-dashboard-table"><thead><tr><th>Data</th><th>Ordine</th><th>Cliente</th><th>Agente</th><th>Stato</th><th>Totale</th><th>Documenti Mexal</th><th><span className="sr-only">Apri ordine</span></th></tr></thead><tbody>{filteredOrders.map((order) => {
         const status = getOrderDisplayStatus(order);

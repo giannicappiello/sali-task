@@ -22,6 +22,7 @@ const BUILT_IN_CONTAINER_PATHS = new Set([
 ]);
 
 const isDynamicContainerPath = (pathname) => /^\/(?:menu|moduli)\/[^/]+$/.test(pathname);
+const isOrdersPath = (pathname) => /^\/ordini-(?:prof|ph|private)(?:\/|$)/.test(pathname);
 const CONTAINER_TARGETS = Object.freeze({
   "/home": ["module", "home"],
   "/settings": ["module", "impostazioni"],
@@ -99,7 +100,7 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
       .filter((module) => module.tipo === "contenitore" && module.percorso && module.percorso !== pathname && pathname.startsWith(`${module.percorso.replace(/\/$/, "")}/`))
       .toSorted((left, right) => right.percorso.length - left.percorso.length)[0];
     const navigationParent = parentModule?.percorso && parentModule.percorso !== pathname ? parentModule : containerParent;
-    const parentPath = navigationParent?.percorso || "";
+    const parentPath = navigationParent?.percorso || (isOrdersPath(pathname) ? "/home" : "");
 
     return {
       container: false,
@@ -110,7 +111,7 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
       screenIcon: screen?.icona || "",
       title: screen?.nome || fallbackTitle || "Schermata Workspace",
       description: screen?.descrizione || fallbackDescription || "Funzioni e dati disponibili in base alle autorizzazioni dell’utente.",
-      parentName: navigationParent?.nome || "",
+      parentName: navigationParent?.nome || (isOrdersPath(pathname) ? "Home" : ""),
       parentPath,
       layoutTargetType: "screen",
       layoutTargetCode: screen?.codice || "",

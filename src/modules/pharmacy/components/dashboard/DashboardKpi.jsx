@@ -1,4 +1,5 @@
 import { formatEuro } from "../../utils/dashboardUtils";
+import InfoTooltip from "../../../../components/InfoTooltip";
 
 export default function DashboardKpi({
   fatturatoPeriodo,
@@ -14,42 +15,42 @@ export default function DashboardKpi({
     <div style={kpiGridStyle}>
       <div style={kpiCardStyle}>
         <h3>{formatEuro(fatturatoPeriodo)}</h3>
-        <p>Fatturato periodo</p>
+        <p>Fatturato periodo<InfoTooltip label="Fatturato periodo" text="Somma del fatturato registrato nelle giornate eseguite comprese nel periodo selezionato." /></p>
       </div>
 
       <div style={kpiCardStyle}>
         <h3>{richiesteContattoPeriodo}</h3>
-        <p>Richieste di contatto</p>
+        <p>Richieste di contatto<InfoTooltip label="Richieste di contatto" text="Numero di richieste di contatto registrate nel periodo selezionato." /></p>
       </div>
 
       <div style={kpiCardStyle}>
         <h3>{giornateEseguite}</h3>
-        <p>Giornate eseguite</p>
+        <p>Giornate eseguite<InfoTooltip label="Giornate eseguite" text="Numero di giornate farmacia concluse nel periodo selezionato." /></p>
       </div>
 
       <div style={kpiCardStyle}>
         <h3>{giornatePianificate}</h3>
-        <p>Giornate pianificate</p>
+        <p>Giornate pianificate<InfoTooltip label="Giornate pianificate" text="Numero di giornate farmacia programmate nel periodo selezionato." /></p>
       </div>
 
       <div style={kpiCardStyle}>
         <h3>{nuoveAperturePeriodo}</h3>
-        <p>Nuove aperture</p>
+        <p>Nuove aperture<InfoTooltip label="Nuove aperture" text="Numero di nuove aperture registrate nel periodo selezionato." /></p>
       </div>
 
       <div style={kpiCardStyle}>
         <h3>{pezziVenduti}</h3>
-        <p>Pezzi venduti</p>
+        <p>Pezzi venduti<InfoTooltip label="Pezzi venduti" text="Somma delle quantità vendute registrate nelle giornate del periodo." /></p>
       </div>
 
       <div style={kpiCardStyle}>
         <h3>{conversione.toFixed(1)}%</h3>
-        <p>Conversione clienti</p>
+        <p>Conversione clienti<InfoTooltip label="Conversione clienti" text="Rapporto percentuale tra clienti convertiti e contatti utili registrati nel periodo." /></p>
       </div>
 
       <div style={kpiCardStyle}>
         <h3>{formatEuro(mediaFatturato)}</h3>
-        <p>Fatturato medio per giornata eseguita</p>
+        <p>Fatturato medio per giornata eseguita<InfoTooltip label="Fatturato medio" text="Fatturato totale del periodo diviso per il numero di giornate eseguite." /></p>
       </div>
     </div>
   );

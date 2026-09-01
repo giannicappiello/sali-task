@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../services/reportSupabase";
+import InfoTooltip from "../../../components/InfoTooltip";
 
 export default function SchedaFarmacia({ farmacia, beauty, onBack }) {
   const [giornate, setGiornate] = useState([]);
@@ -124,27 +125,27 @@ export default function SchedaFarmacia({ farmacia, beauty, onBack }) {
       <div style={kpiGridStyle}>
         <div style={kpiCardStyle}>
           <h3>{giornate.length}</h3>
-          <p>Giornate totali</p>
+          <p>Giornate totali<InfoTooltip label="Giornate totali" text="Numero complessivo di giornate pianificate o eseguite per la farmacia." /></p>
         </div>
 
         <div style={kpiCardStyle}>
           <h3>{giornateEseguite.length}</h3>
-          <p>Giornate eseguite</p>
+          <p>Giornate eseguite<InfoTooltip label="Giornate eseguite" text="Numero di giornate della farmacia concluse con stato eseguito." /></p>
         </div>
 
         <div style={kpiCardStyle}>
           <h3>€ {fatturatoTotale.toFixed(2)}</h3>
-          <p>Fatturato totale</p>
+          <p>Fatturato totale<InfoTooltip label="Fatturato totale" text="Somma del fatturato registrato nelle giornate eseguite della farmacia." /></p>
         </div>
 
         <div style={kpiCardStyle}>
           <h3>€ {fatturatoMedio.toFixed(2)}</h3>
-          <p>Fatturato medio</p>
+          <p>Fatturato medio<InfoTooltip label="Fatturato medio" text="Fatturato totale diviso per il numero di giornate eseguite della farmacia." /></p>
         </div>
 
         <div style={kpiCardStyle}>
           <h3>{pezziVenduti}</h3>
-          <p>Pezzi venduti</p>
+          <p>Pezzi venduti<InfoTooltip label="Pezzi venduti" text="Somma delle quantità vendute registrate per la farmacia." /></p>
         </div>
       </div>
 

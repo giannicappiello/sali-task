@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../services/reportSupabase";
+import InfoTooltip from "../../../components/InfoTooltip";
 
 export default function StoricoFarmacia({ farmacia, onBack }) {
   const [giornate, setGiornate] = useState([]);
@@ -126,17 +127,17 @@ export default function StoricoFarmacia({ farmacia, onBack }) {
       <div style={kpiGridStyle}>
         <div style={kpiCardStyle}>
           <h3>{giornateEseguite.length}</h3>
-          <p>Giornate fatte</p>
+          <p>Giornate fatte<InfoTooltip label="Giornate fatte" text="Numero di giornate concluse per la farmacia selezionata." /></p>
         </div>
 
         <div style={kpiCardStyle}>
           <h3>€ {fatturatoTotale.toFixed(2)}</h3>
-          <p>Fatturato totale</p>
+          <p>Fatturato totale<InfoTooltip label="Fatturato totale" text="Somma del fatturato registrato in tutte le giornate concluse della farmacia." /></p>
         </div>
 
         <div style={kpiCardStyle}>
           <h3>€ {mediaFatturato.toFixed(2)}</h3>
-          <p>Media giornata</p>
+          <p>Media giornata<InfoTooltip label="Media giornata" text="Fatturato totale diviso per il numero di giornate concluse della farmacia." /></p>
         </div>
       </div>
 

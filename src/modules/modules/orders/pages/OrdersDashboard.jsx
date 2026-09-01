@@ -1,6 +1,16 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
+import InfoTooltip from "../../../components/InfoTooltip";
 import useOrdersAccess from "./useOrdersAccess";
+
+const ORDER_KPI_INFO = {
+  "Clienti assegnati": "Numero di clienti distinti visibili all’agente o all’amministratore corrente.",
+  "Ordini del mese": "Numero di ordini distinti con mese ordine uguale al mese corrente.",
+  "Ordini aperti": "Numero di ordini distinti con stato aperto.",
+  "Ordini in corso": "Numero di ordini distinti con stato in corso.",
+  "Ordini evasi": "Numero di ordini distinti con stato evaso.",
+  "Prodotti visibili": "Numero di prodotti abilitati alla visualizzazione nell’applicazione.",
+};
 
 export default function OrdersDashboard() {
   const { loading: accessLoading, agentCode, isAdmin } = useOrdersAccess();
@@ -63,5 +73,5 @@ export default function OrdersDashboard() {
 }
 
 function Kpi({ label, value }) {
-  return <div className="orders-kpi"><span>{label}</span><strong>{value}</strong></div>;
+  return <div className="orders-kpi"><span>{label}<InfoTooltip label={label} text={ORDER_KPI_INFO[label]} /></span><strong>{value}</strong></div>;
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { KeyRound, RefreshCw, Search, ShieldCheck } from "lucide-react";
+import InfoTooltip from "../../../components/InfoTooltip";
 import { supabase } from "../../../lib/supabaseClient";
 import { getAccessToken } from "../services/mexalSyncService";
 
@@ -130,7 +131,7 @@ export default function MexalAgents() {
 
   return <div className="mexal-page">
     {message && <div className={`mexal-alert alert-${message.type}`}><span>{message.text}</span><button type="button" onClick={() => setMessage(null)}>×</button></div>}
-    <section className="mexal-kpi-grid"><div className="mexal-kpi"><span>Agenti importati</span><strong>{agents.length}</strong></div><div className="mexal-kpi"><span>Accessi attivi</span><strong>{agents.filter((item) => item.accesso_workspace_attivo).length}</strong></div><div className="mexal-kpi"><span>Ultima sincronizzazione</span><strong>{runs[0]?.started_at ? new Date(runs[0].started_at).toLocaleString("it-IT") : "Mai"}</strong></div></section>
+    <section className="mexal-kpi-grid"><div className="mexal-kpi"><span>Agenti importati<InfoTooltip label="Agenti importati" text="Numero di anagrafiche agente attualmente importate da Mexal." /></span><strong>{agents.length}</strong></div><div className="mexal-kpi"><span>Accessi attivi<InfoTooltip label="Accessi attivi" text="Numero di agenti importati con accesso Workspace abilitato." /></span><strong>{agents.filter((item) => item.accesso_workspace_attivo).length}</strong></div><div className="mexal-kpi"><span>Ultima sincronizzazione<InfoTooltip label="Ultima sincronizzazione" text="Data e ora di avvio dell’esecuzione Mexal più recente disponibile." /></span><strong>{runs[0]?.started_at ? new Date(runs[0].started_at).toLocaleString("it-IT") : "Mai"}</strong></div></section>
     <section className="mexal-table-panel mexal-agents-panel"><div className="mexal-section-heading"><div><h3>Elenco agenti</h3><p>Nome, cognome, codice, email e telefono vengono aggiornati da Mexal. Ruoli, responsabili e autorizzazioni si gestiscono nelle Impostazioni.</p></div></div>
       <div className="mexal-toolbar">
         <label className="mexal-search-control"><Search size={18} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cerca in tutti i campi..." /></label>

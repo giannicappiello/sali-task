@@ -22,6 +22,7 @@ import MexalAutomations from "../components/MexalAutomations";
 import MexalSyncCard from "../components/MexalSyncCard";
 import IntegrationStatusBadge from "../components/IntegrationStatusBadge";
 import OrdersDocumentSeriesSettings from "../../../components/OrdersDocumentSeriesSettings";
+import InfoTooltip from "../../../components/InfoTooltip";
 import OrderModuleSettings from "../components/OrderModuleSettings";
 import MexalOrderMaintenance from "../components/MexalOrderMaintenance";
 import {
@@ -399,11 +400,11 @@ export default function MexalDashboard() {
       {activeTab === "syncs" && <>
         {canConfigure && canSync("products") && <section className="mexal-quick-actions"><h3>Collaudo articoli PB</h3><button type="button" disabled={Boolean(activeSync)} onClick={runPbDryRun}>Dry-run PB</button><button type="button" className="orders-primary" disabled={Boolean(activeSync) || pbPreview?.prefisso_articoli !== "PB"} onClick={runPbSync}>Sincronizza PB</button>{pbPreview && <span>{pbPreview.selezionati || 0} codici PB selezionati · nessuna scrittura nel dry-run</span>}</section>}
         <section className="mexal-kpi-grid mexal-summary-grid">
-          <button type="button" className="mexal-kpi" onClick={() => setActiveTab("configuration")}><span>Connessione</span><IntegrationStatusBadge status="connected" /></button>
-          <button type="button" className="mexal-kpi" onClick={() => openHistory()}><span>Ultima sincronizzazione</span><strong>{formatDate(latestRun?.started_at)}</strong></button>
-          <button type="button" className="mexal-kpi" onClick={() => openHistory()}><span>Run in corso</span><strong>{runningRuns}</strong></button>
-          <button type="button" className="mexal-kpi" onClick={() => openHistory()}><span>Sincronizzazioni con errori</span><strong>{failedRuns}</strong></button>
-          <button type="button" className="mexal-kpi" onClick={() => openHistory()}><span>Cronologia sincronizzazioni</span><strong>{runs.length}</strong></button>
+          <button type="button" className="mexal-kpi" onClick={() => setActiveTab("configuration")}><span>Connessione<InfoTooltip label="Connessione" text="Stato corrente della configurazione e raggiungibilità del servizio Mexal." /></span><IntegrationStatusBadge status="connected" /></button>
+          <button type="button" className="mexal-kpi" onClick={() => openHistory()}><span>Ultima sincronizzazione<InfoTooltip label="Ultima sincronizzazione" text="Data e ora di avvio dell’esecuzione Mexal più recente." /></span><strong>{formatDate(latestRun?.started_at)}</strong></button>
+          <button type="button" className="mexal-kpi" onClick={() => openHistory()}><span>Run in corso<InfoTooltip label="Run in corso" text="Numero di sincronizzazioni Mexal attualmente in stato avviato o in esecuzione." /></span><strong>{runningRuns}</strong></button>
+          <button type="button" className="mexal-kpi" onClick={() => openHistory()}><span>Sincronizzazioni con errori<InfoTooltip label="Sincronizzazioni con errori" text="Numero di esecuzioni nella cronologia corrente terminate con stato di errore." /></span><strong>{failedRuns}</strong></button>
+          <button type="button" className="mexal-kpi" onClick={() => openHistory()}><span>Cronologia sincronizzazioni<InfoTooltip label="Cronologia sincronizzazioni" text="Numero totale di esecuzioni Mexal caricate nella cronologia visualizzata." /></span><strong>{runs.length}</strong></button>
         </section>
 
         <section className="mexal-sync-grid">
@@ -453,7 +454,7 @@ export default function MexalDashboard() {
           <button type="button" className={configurationTab === "automations" ? "active" : ""} onClick={() => setConfigurationTab("automations")}>Automazioni</button>
           <button type="button" className={configurationTab === "series" ? "active" : ""} onClick={() => setConfigurationTab("series")}>Serie documenti</button><button type="button" className={configurationTab === "orders" ? "active" : ""} onClick={() => setConfigurationTab("orders")}>Ordini PROF / PH</button><button type="button" className={configurationTab === "maintenance" ? "active" : ""} onClick={() => setConfigurationTab("maintenance")}>Manutenzione</button>
         </nav>
-        {configurationTab === "settings" && <div className="mexal-two-columns"><MexalSettings settings={settings} onChange={setSettings} disabled={running} /><section className="mexal-data-summary"><div className="mexal-section-heading"><div><h3>Stato ambiente</h3><p>Configurazione disponibile senza mostrare credenziali.</p></div></div><div className="mexal-data-summary-grid"><div><span>Matrice sconti</span><strong>{counts.matrix ?? "—"}</strong></div><div><span>Particolarità</span><strong>{counts.particularities ?? "—"}</strong></div><div><span>Regole pagamento</span><strong>{counts.payments ?? "—"}</strong></div></div></section></div>}
+        {configurationTab === "settings" && <div className="mexal-two-columns"><MexalSettings settings={settings} onChange={setSettings} disabled={running} /><section className="mexal-data-summary"><div className="mexal-section-heading"><div><h3>Stato ambiente</h3><p>Configurazione disponibile senza mostrare credenziali.</p></div></div><div className="mexal-data-summary-grid"><div><span>Matrice sconti<InfoTooltip label="Matrice sconti" text="Numero di righe della matrice sconti Mexal attualmente disponibili nel Workspace." /></span><strong>{counts.matrix ?? "—"}</strong></div><div><span>Particolarità<InfoTooltip label="Particolarità" text="Numero di condizioni particolari cliente/articolo importate da Mexal." /></span><strong>{counts.particularities ?? "—"}</strong></div><div><span>Regole pagamento<InfoTooltip label="Regole pagamento" text="Numero di regole o condizioni di pagamento importate da Mexal." /></span><strong>{counts.payments ?? "—"}</strong></div></div></section></div>}
         {configurationTab === "automations" && <MexalAutomations canManage={canConfigure} />}
         {configurationTab === "series" && <OrdersDocumentSeriesSettings canManage={canConfigure} />}
         {configurationTab === "orders" && <OrderModuleSettings />}

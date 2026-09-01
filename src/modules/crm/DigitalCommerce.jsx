@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { BarChart3, Bot, Mail, Megaphone, RefreshCw, ShoppingBag, Store, UsersRound, Workflow } from "lucide-react";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
+import InfoTooltip from "../../components/InfoTooltip";
 import { useDatasetTableControls, usePaginatedDataset, useResetPageCallback } from "../../components/useDatasetTableControls";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
@@ -44,6 +45,16 @@ const JOURNEY_COLUMNS = [
   { value: (row) => row.fonte || "unknown" },
   { value: (row) => row.consenso_riferimento || "Non richiesto / non disponibile" },
 ];
+const DIGITAL_KPI_INFO = {
+  Revenue: "Somma dei ricavi netti attribuiti ai canali, marketplace e periodo selezionati.",
+  Ordini: "Numero di ordini distinti acquisiti dalle fonti autorizzate nel periodo selezionato.",
+  "Clienti identificati": "Numero di identità cliente distinte collegate tramite matching autorizzato.",
+  AOV: "Valore medio ordine: revenue divisa per il numero di ordini del periodo.",
+  "Marketing spend": "Somma della spesa pubblicitaria importata dalle connessioni ADV selezionate.",
+  ROAS: "Ritorno sulla spesa pubblicitaria: revenue attribuita divisa per marketing spend.",
+  LTV: "Valore economico medio generato dal cliente lungo lo storico disponibile.",
+  "Conversion rate": "Rapporto percentuale tra conversioni e sessioni o visite tracciate.",
+};
 
 function StatusPill({ status }) {
   const definition = DATA_STATUS[status] || DATA_STATUS.not_available;
@@ -51,7 +62,7 @@ function StatusPill({ status }) {
 }
 
 function DigitalKpi({ label, value, status, note, to }) {
-  const content = <><span>{label}</span><strong>{value}</strong><StatusPill status={status} />{note ? <small>{note}</small> : null}{to ? <em>Apri dettaglio →</em> : null}</>;
+  const content = <><span>{label}<InfoTooltip label={label} text={DIGITAL_KPI_INFO[label] || note || `Indicatore ${label} calcolato sui filtri correnti.`} /></span><strong>{value}</strong><StatusPill status={status} />{note ? <small>{note}</small> : null}{to ? <em>Apri dettaglio →</em> : null}</>;
   return to ? <Link className="crm-kpi" to={to} aria-label={`${label}: ${value}. Apri dettaglio`}>{content}</Link> : <article className="crm-kpi">{content}</article>;
 }
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, FilePlus2, RefreshCw, ShoppingCart, X } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
+import InfoTooltip from "../../components/InfoTooltip";
 
 async function callPurchasing(accessToken, action, extra = {}) {
   const response = await fetch("/api/mexal/automation", { method: "POST",
@@ -105,7 +106,7 @@ export default function PurchaseRequirements() {
       <div>{(latestSaliProposal.lines || []).map((line) => <article key={line.id}><div><strong>{line.article_code}</strong><small>{line.description}</small></div><span>{quantity(line.proposed_quantity)} {line.unit_of_measure}</span><small>Giacenza {quantity(line.available_stock)} · consumo stimato {quantity(line.estimated_monthly_consumption)}/mese · {line.lead_time_days} gg</small></article>)}</div>
     </section>}
     {loading ? <div className="production-loading">Calcolo dei fabbisogni in corso…</div> : <>
-      <div className="purchase-summary"><article><span>Articoli da approvvigionare</span><strong className="danger">{toOrder.length}</strong></article><article><span>Articoli coperti da arrivi</span><strong>{data.requirements.filter((row) => row.status === "COVERED_BY_ARRIVALS").length}</strong></article><article><span>Fabbisogni totali</span><strong>{data.requirements.length}</strong></article></div>
+      <div className="purchase-summary"><article><span>Articoli da approvvigionare<InfoTooltip label="Articoli da approvvigionare" text="Numero di fabbisogni con quantità da ordinare maggiore di zero dopo giacenze e arrivi previsti." /></span><strong className="danger">{toOrder.length}</strong></article><article><span>Articoli coperti da arrivi<InfoTooltip label="Articoli coperti da arrivi" text="Numero di fabbisogni coperti, alla data necessaria, dalle consegne fornitore già previste." /></span><strong>{data.requirements.filter((row) => row.status === "COVERED_BY_ARRIVALS").length}</strong></article><article><span>Fabbisogni totali<InfoTooltip label="Fabbisogni totali" text="Numero complessivo di righe materiale richieste dalle produzioni nuove o pianificate." /></span><strong>{data.requirements.length}</strong></article></div>
       <section className="purchase-toolbar"><div><strong>Suddivisione mensile</strong><span>I materiali sono raggruppati per data di necessità.</span></div><label><input type="checkbox" checked={onlyToOrder} onChange={(event) => setOnlyToOrder(event.target.checked)}/>Mostra solo da ordinare</label></section>
       <nav className="purchase-month-index" aria-label="Vai al mese">{groups.map((group) => <a key={group.key} href={`#${monthId(group.month)}`}><span>{monthTitle(group.month)}</span><strong>{group.rows.length}</strong></a>)}</nav>
       <div className="purchase-months">{groups.map((group) => {

@@ -9,6 +9,7 @@ import {
   Clock,
 } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
+import InfoTooltip from "../../components/InfoTooltip";
 
 function formatDateForQuery(date) {
   const year = date.getFullYear();
@@ -176,7 +177,7 @@ function Calendar() {
           <CalendarDays size={22} />
           <div>
             <strong>{monthStats.total}</strong>
-            <span>Task nel mese</span>
+            <span>Task nel mese<InfoTooltip label="Task nel mese" text="Numero totale di task con data compresa nel mese visualizzato." /></span>
           </div>
         </div>
 
@@ -184,7 +185,7 @@ function Calendar() {
           <Clock size={22} />
           <div>
             <strong>{monthStats.open}</strong>
-            <span>Aperte</span>
+            <span>Aperte<InfoTooltip label="Task aperti" text="Task del mese che non risultano completati o chiusi." /></span>
           </div>
         </div>
 
@@ -192,7 +193,7 @@ function Calendar() {
           <CheckCircle2 size={22} />
           <div>
             <strong>{monthStats.closed}</strong>
-            <span>Chiuse</span>
+            <span>Chiuse<InfoTooltip label="Task chiusi" text="Task del mese con stato completato o chiuso." /></span>
           </div>
         </div>
 
@@ -200,7 +201,7 @@ function Calendar() {
           <AlertCircle size={22} />
           <div>
             <strong>{monthStats.overdue}</strong>
-            <span>Scadute</span>
+            <span>Scadute<InfoTooltip label="Task scaduti" text="Task non completati con scadenza precedente a oggi." /></span>
           </div>
         </div>
       </div>

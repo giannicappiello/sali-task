@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowUpRight, Search, Sparkles } from "lucide-react";
+import InfoTooltip from "../../../components/InfoTooltip";
 import { supabase } from "../../../lib/supabaseClient";
 import useOrdersAccess from "./useOrdersAccess";
 import { useOrdersModule } from "../ordersModuleContext";
@@ -128,4 +129,10 @@ function documentNumbers(order) {
   const stored = filterOrderModuleDocuments(order.modulo_ordini || "prof", order.documenti_mexal || []);
   return [...new Set([...types.map((type) => order[`numero_${type.toLowerCase()}`]), ...stored.map((document) => document.numero)].filter(Boolean))];
 }
-function Kpi({ label, value, status, active, onClick }) { if (status) return <button type="button" className={`orders-kpi orders-kpi-button${active ? " active" : ""}`} onClick={() => onClick(status)} aria-pressed={active}><span>{label}</span><strong>{value}</strong></button>; return <div className="orders-kpi"><span>{label}</span><strong>{value}</strong></div>; }
+const ORDER_KPI_INFO = {
+  "Ordini del mese": "Numero di ordini distinti con mese ordine uguale al mese corrente, nel perimetro autorizzato.",
+  "Ordini aperti": "Numero di ordini distinti con stato aperto nel perimetro autorizzato.",
+  "Ordini in corso": "Numero di ordini distinti con stato in corso nel perimetro autorizzato.",
+  "Ordini evasi": "Numero di ordini distinti con stato evaso nel perimetro autorizzato.",
+};
+function Kpi({ label, value, status, active, onClick }) { const title = <span>{label}<InfoTooltip label={label} text={ORDER_KPI_INFO[label]} /></span>; if (status) return <button type="button" className={`orders-kpi orders-kpi-button${active ? " active" : ""}`} onClick={() => onClick(status)} aria-pressed={active}>{title}<strong>{value}</strong></button>; return <div className="orders-kpi">{title}<strong>{value}</strong></div>; }

@@ -1,4 +1,5 @@
 import { formatEuro } from "../../utils/dashboardUtils";
+import InfoTooltip from "../../../../components/InfoTooltip";
 
 export default function DashboardObiettivi({
   raggiungimentoObiettivi,
@@ -18,22 +19,22 @@ export default function DashboardObiettivi({
       <div style={kpiGridStyle}>
         <div style={kpiCardStyle}>
           <h3>{raggiungimentoObiettivi.toFixed(1)}%</h3>
-          <p>Raggiungimento obiettivi</p>
+          <p>Raggiungimento obiettivi<InfoTooltip label="Raggiungimento obiettivi" text="Fatturato sulle giornate con obiettivo diviso per l’obiettivo totale, moltiplicato per 100." /></p>
         </div>
 
         <div style={kpiCardStyle}>
           <h3>{formatEuro(totaleObiettivi)}</h3>
-          <p>Obiettivo totale</p>
+          <p>Obiettivo totale<InfoTooltip label="Obiettivo totale" text="Somma degli obiettivi economici assegnati alle giornate considerate." /></p>
         </div>
 
         <div style={kpiCardStyle}>
           <h3>{formatEuro(fatturatoSuObiettivi)}</h3>
-          <p>Fatturato su giornate con obiettivo</p>
+          <p>Fatturato su giornate con obiettivo<InfoTooltip label="Fatturato su giornate con obiettivo" text="Somma del fatturato delle sole giornate alle quali è stato assegnato un obiettivo." /></p>
         </div>
 
         <div style={kpiCardStyle}>
           <h3>{formatEuro(scostamentoTotale)}</h3>
-          <p>Scostamento totale</p>
+          <p>Scostamento totale<InfoTooltip label="Scostamento totale" text="Fatturato sulle giornate con obiettivo meno la somma degli obiettivi assegnati." /></p>
         </div>
       </div>
 

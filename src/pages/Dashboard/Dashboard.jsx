@@ -17,6 +17,7 @@ import {
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 import PhaseChecklistModal from "../../components/PhaseChecklistModal";
+import InfoTooltip from "../../components/InfoTooltip";
 
 const CLOSED_STATES = ["evaso", "evasa", "completato", "completata", "chiuso", "chiusa"];
 const emptyPhaseForm = { titolo: "", descrizione: "", note: "", progetto_id: "", deadline: "", reparto_ids: [], prodotti: [], stato: "da_evadere" };
@@ -637,19 +638,19 @@ function Dashboard() {
       <div className="calendar-kpi-grid dashboard-activity-kpis">
         <button type="button" className={`calendar-kpi success ${activityFilter === "plannedTasks" ? "active" : ""}`} onClick={() => setActivityFilter("plannedTasks")}>
           <ListChecks size={22} />
-          <div><strong>{loading ? "..." : monthStats.plannedTasks}</strong><span>Task/fasi pianificate nel mese</span></div>
+          <div><strong>{loading ? "..." : monthStats.plannedTasks}</strong><span>Task/fasi pianificate nel mese<InfoTooltip label="Task e fasi pianificate" text="Numero di task e fasi non completati con data compresa nel mese visualizzato." /></span></div>
         </button>
         <button type="button" className={`calendar-kpi danger ${activityFilter === "overdueTasks" ? "active" : ""}`} onClick={() => setActivityFilter("overdueTasks")}>
           <AlertCircle size={22} />
-          <div><strong>{loading ? "..." : monthStats.overdueTasks}</strong><span>Task/fasi scadute nel mese</span></div>
+          <div><strong>{loading ? "..." : monthStats.overdueTasks}</strong><span>Task/fasi scadute nel mese<InfoTooltip label="Task e fasi scadute" text="Task e fasi non completati la cui scadenza è già trascorsa nel mese visualizzato." /></span></div>
         </button>
         <button type="button" className={`calendar-kpi success ${activityFilter === "plannedReminders" ? "active" : ""}`} onClick={() => setActivityFilter("plannedReminders")}>
           <CalendarDays size={22} />
-          <div><strong>{loading ? "..." : monthStats.plannedReminders}</strong><span>Reminder pianificati nel mese</span></div>
+          <div><strong>{loading ? "..." : monthStats.plannedReminders}</strong><span>Reminder pianificati nel mese<InfoTooltip label="Reminder pianificati" text="Numero di reminder non completati con data compresa nel mese visualizzato." /></span></div>
         </button>
         <button type="button" className={`calendar-kpi danger ${activityFilter === "overdueReminders" ? "active" : ""}`} onClick={() => setActivityFilter("overdueReminders")}>
           <Clock size={22} />
-          <div><strong>{loading ? "..." : monthStats.overdueReminders}</strong><span>Reminder scaduti nel mese</span></div>
+          <div><strong>{loading ? "..." : monthStats.overdueReminders}</strong><span>Reminder scaduti nel mese<InfoTooltip label="Reminder scaduti" text="Reminder non completati con scadenza precedente a oggi nel mese visualizzato." /></span></div>
         </button>
       </div>
 

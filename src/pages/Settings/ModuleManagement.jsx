@@ -5,6 +5,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import useBackNavigation from "../../hooks/useBackNavigation";
 import { supabase } from "../../lib/supabaseClient";
 import { getModuleIcon } from "../../config/moduleIcons";
+import InfoTooltip from "../../components/InfoTooltip";
 import { AssociationBadge, AssociationLinks, WorkspaceAssociationFilter, WorkspaceIconPicker, WorkspaceQuickSearch } from "./WorkspaceCatalogControls";
 import { buildWorkspaceAssociations, filterKeepingSelected, matchesAssociationStatus, matchesWorkspaceSearch } from "./workspaceCatalog";
 import "./modules-settings.css";
@@ -303,7 +304,7 @@ export default function ModuleManagement() {
           <h1>Moduli e schermate</h1>
           <p>Componi i moduli con schermate Workspace e ProgreMES senza modificare le route applicative.</p>
         </div>
-        <div className="module-settings-summary"><strong>{modules.filter((item) => item.attivo).length}</strong><span>moduli attivi</span><strong>{screens.filter((item) => item.attiva).length}</strong><span>schermate disponibili</span></div>
+        <div className="module-settings-summary"><strong>{modules.filter((item) => item.attivo).length}</strong><span>moduli attivi<InfoTooltip label="Moduli attivi" text="Numero di moduli del catalogo Workspace con stato attivo." /></span><strong>{screens.filter((item) => item.attiva).length}</strong><span>schermate disponibili<InfoTooltip label="Schermate disponibili" text="Numero di schermate del catalogo Workspace con stato attivo." /></span></div>
       </header>
 
       {message ? <div className={`module-message ${message.type}`}>{message.text}</div> : null}

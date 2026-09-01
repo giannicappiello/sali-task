@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase as reportSupabase } from "../services/reportSupabase";
 import { supabase as primarySupabase } from "../../../lib/supabaseClient";
+import InfoTooltip from "../../../components/InfoTooltip";
 
 export default function Prodotti({ utente }) {
   const [prodotti, setProdotti] = useState([]);
@@ -337,17 +338,17 @@ export default function Prodotti({ utente }) {
         <div style={kpiGridStyle}>
           <div style={kpiCardStyle}>
             <h3>{performance.pezziTotali}</h3>
-            <p>Pezzi venduti totali</p>
+            <p>Pezzi venduti totali<InfoTooltip label="Pezzi venduti totali" text="Somma delle quantità vendute registrate per il prodotto selezionato." /></p>
           </div>
 
           <div style={kpiCardStyle}>
             <h3>{performance.numeroFarmacie}</h3>
-            <p>Farmacie che l'hanno venduto</p>
+            <p>Farmacie che l'hanno venduto<InfoTooltip label="Farmacie venditrici" text="Numero di farmacie distinte con almeno una vendita registrata del prodotto." /></p>
           </div>
 
           <div style={kpiCardStyle}>
             <h3>{performance.beautyMigliore?.pezzi || 0}</h3>
-            <p>Beauty migliore: {performance.beautyMigliore?.nome || "-"}</p>
+            <p>Beauty migliore: {performance.beautyMigliore?.nome || "-"}<InfoTooltip label="Beauty migliore" text="Beauty con il maggior numero di pezzi venduti del prodotto nel perimetro analizzato." /></p>
           </div>
         </div>
 

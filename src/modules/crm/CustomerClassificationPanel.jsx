@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
 import { useDatasetTableControls, usePaginatedDataset, useResetPageCallback } from "../../components/useDatasetTableControls";
+import InfoTooltip from "../../components/InfoTooltip";
 import CrmCustomerLink from "./CrmCustomerLink";
 import { CrmCustomerStatusBadge, CrmCustomerStatusFilter } from "./CrmCustomerStatus";
 import { useCrmCustomerStatus } from "./crmCustomerStatusModel";
@@ -136,16 +137,16 @@ export default function CustomerClassificationPanel() {
 
   return <section className="crm-panel crm-classification" aria-labelledby="crm-classification-title">
     <div className="crm-toolbar"><div><span className="crm-eyebrow"><UsersRound size={16} /> Dashboard globale CRM</span><h2 id="crm-classification-title">Parco clienti Workspace</h2><p>Solo clienti Mexal attivi, classificati dai campi cod_alternativo e nome_ricerca_cf.</p>{lastUpdated ? <small className="crm-auto-refresh" aria-live="polite">Ultimo aggiornamento manuale {lastUpdated.toLocaleTimeString("it-IT")}</small> : null}</div><button className="secondary-action" type="button" onClick={() => void load(false)} disabled={loading}><RefreshCw size={17} />Aggiorna</button></div>
-    <div className="crm-classification-kpis"><button type="button" className="kpi-card" onClick={() => { setMacro(""); setArea(""); setPage(0); }}><div><span>Clienti filtrati</span><strong>{total}</strong><p>intero dataset</p></div></button>{distribution.map((item) => <button type="button" className="kpi-card" key={item.key} onClick={() => { setMacro(item.key === "private" ? "private" : "direct"); setArea(item.key === "private" ? "conto_terzi" : item.key); setPage(0); }}><div><span>{item.label}</span><strong>{item.count}</strong><p>apri elenco filtrato</p></div></button>)}</div>
+    <div className="crm-classification-kpis"><button type="button" className="kpi-card" onClick={() => { setMacro(""); setArea(""); setPage(0); }}><div><span>Clienti filtrati<InfoTooltip label="Clienti filtrati" text="Numero di clienti distinti nell’intero dataset che rispettano stato CRM, periodo e filtri correnti." /></span><strong>{total}</strong><p>intero dataset</p></div></button>{distribution.map((item) => <button type="button" className="kpi-card" key={item.key} onClick={() => { setMacro(item.key === "private" ? "private" : "direct"); setArea(item.key === "private" ? "conto_terzi" : item.key); setPage(0); }}><div><span>{item.label}<InfoTooltip label={item.label} text={`Numero di clienti distinti classificati nell’area ${item.label} che rispettano i filtri correnti.`} /></span><strong>{item.count}</strong><p>apri elenco filtrato</p></div></button>)}</div>
     <DistributionChart rows={distribution} />
     <section className="crm-commercial-dashboard" aria-labelledby="crm-commercial-title">
       <div className="crm-toolbar crm-commercial-heading"><div><span className="crm-eyebrow">Vendite globali</span><h2 id="crm-commercial-title">Fatturato e ordinato per prodotto</h2><p>Fatturato dalle fatture Mexal; ordinato dagli ordini Workspace. Importi e pezzi restano distinti.</p></div><CrmPeriodFilter period={period} compact /></div>
       <div className="crm-commercial-kpis">
-        <article className="kpi-card"><span>Fatturato</span><strong>{formatMoney(salesTotals.invoice_total)}</strong><p>{Number(salesTotals.invoice_count || 0).toLocaleString("it-IT")} fatture Mexal</p></article>
-        <article className="kpi-card"><span>Ordinato</span><strong>{formatMoney(salesTotals.order_total)}</strong><p>ordini Workspace</p></article>
-        <article className="kpi-card"><span>Numero ordini</span><strong>{Number(salesTotals.order_count || 0).toLocaleString("it-IT")}</strong><p>nel periodo selezionato</p></article>
-        <article className="kpi-card"><span>Pezzi fatturati</span><strong>{formatPieces(salesTotals.invoice_pieces)}</strong><p>righe fattura Mexal</p></article>
-        <article className="kpi-card"><span>Pezzi ordinati</span><strong>{formatPieces(salesTotals.order_pieces)}</strong><p>righe ordine Workspace</p></article>
+        <article className="kpi-card"><span>Fatturato<InfoTooltip label="Fatturato" text="Somma degli imponibili delle fatture Mexal nel periodo e nei filtri correnti." /></span><strong>{formatMoney(salesTotals.invoice_total)}</strong><p>{Number(salesTotals.invoice_count || 0).toLocaleString("it-IT")} fatture Mexal</p></article>
+        <article className="kpi-card"><span>Ordinato<InfoTooltip label="Ordinato" text="Somma del valore degli ordini Workspace nel periodo e nei filtri correnti." /></span><strong>{formatMoney(salesTotals.order_total)}</strong><p>ordini Workspace</p></article>
+        <article className="kpi-card"><span>Numero ordini<InfoTooltip label="Numero ordini" text="Conteggio degli ordini distinti compresi nel periodo e nei filtri correnti." /></span><strong>{Number(salesTotals.order_count || 0).toLocaleString("it-IT")}</strong><p>nel periodo selezionato</p></article>
+        <article className="kpi-card"><span>Pezzi fatturati<InfoTooltip label="Pezzi fatturati" text="Somma delle quantità presenti nelle righe delle fatture Mexal filtrate." /></span><strong>{formatPieces(salesTotals.invoice_pieces)}</strong><p>righe fattura Mexal</p></article>
+        <article className="kpi-card"><span>Pezzi ordinati<InfoTooltip label="Pezzi ordinati" text="Somma delle quantità presenti nelle righe degli ordini Workspace filtrati." /></span><strong>{formatPieces(salesTotals.order_pieces)}</strong><p>righe ordine Workspace</p></article>
       </div>
       <div className="crm-sales-charts">
         <SalesDistributionChart title="Distribuzione per categoria" description="Prime 12 categorie per valore commerciale." rows={sales.categories || []} />

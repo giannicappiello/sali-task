@@ -14,6 +14,7 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { supabase } from "../../lib/supabaseClient";
+import InfoTooltip from "../../components/InfoTooltip";
 import "./Reports.css";
 import "./ReportsRitardi.css";
 
@@ -1432,27 +1433,27 @@ function Reports() {
             <>
               <div className="delay-kpi-grid">
                 <div className="delay-kpi-card">
-                  <span>Fasi completate</span>
+                  <span>Fasi completate<InfoTooltip label="Fasi completate" text="Numero di fasi con stato completato incluse nel periodo e nei filtri del report." /></span>
                   <strong>{delayStats.completed}</strong>
                 </div>
                 <div className="delay-kpi-card warning">
-                  <span>Completate in ritardo</span>
+                  <span>Completate in ritardo<InfoTooltip label="Completate in ritardo" text="Fasi completate dopo la rispettiva data di scadenza." /></span>
                   <strong>{delayStats.late}</strong>
                 </div>
                 <div className="delay-kpi-card success">
-                  <span>Completate nei tempi</span>
+                  <span>Completate nei tempi<InfoTooltip label="Completate nei tempi" text="Fasi completate entro la rispettiva data di scadenza." /></span>
                   <strong>{delayStats.onTime}</strong>
                 </div>
                 <div className="delay-kpi-card">
-                  <span>% completate in ritardo</span>
+                  <span>% completate in ritardo<InfoTooltip label="Percentuale completate in ritardo" text="Fasi completate in ritardo divise per il totale delle fasi completate, moltiplicato per 100." /></span>
                   <strong>{formatMetric(delayStats.latePercentage)}%</strong>
                 </div>
                 <div className="delay-kpi-card">
-                  <span>Ritardo medio</span>
+                  <span>Ritardo medio<InfoTooltip label="Ritardo medio" text="Media dei giorni di ritardo calcolata sulle sole fasi completate oltre la scadenza." /></span>
                   <strong>{formatMetric(delayStats.averageDelay)} giorni</strong>
                 </div>
                 <div className="delay-kpi-card">
-                  <span>Ritardo massimo</span>
+                  <span>Ritardo massimo<InfoTooltip label="Ritardo massimo" text="Numero massimo di giorni di ritardo rilevato tra le fasi completate oltre la scadenza." /></span>
                   <strong>{delayStats.maxDelay} giorni</strong>
                 </div>
               </div>

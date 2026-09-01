@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { AlertTriangle, RefreshCw } from "lucide-react";
+import InfoTooltip from "../../components/InfoTooltip";
 import { supabase } from "../../lib/supabaseClient";
 import CrmPeriodFilter, { useCrmPeriod } from "./CrmPeriodFilter";
 import { CrmPageHeader, CrmSectionNav } from "./CrmWorkspaceUI";
@@ -34,6 +35,24 @@ const REORDER_LABELS = {
   insufficient: "Storico insufficiente",
 };
 
+const CONTROL_KPI_INFO = {
+  Fatturato: "Somma degli imponibili delle fatture Mexal nel periodo e nei filtri correnti.",
+  Ordinato: "Somma del valore degli ordini Workspace e Mexal, inclusi gli OCT, nel periodo e nei filtri correnti.",
+  "Portafoglio ordini": "Somma del valore residuo degli ordini aperti monitorati.",
+  "Clienti Mexal attivi": "Numero di clienti distinti con anagrafica Mexal attiva nel perimetro selezionato.",
+  "Nuovi clienti": "Clienti la cui prima vendita documentata ricade nel periodo selezionato.",
+  "Clienti persi": "Clienti senza riordino da oltre 2,5 volte la propria frequenza storica individuale.",
+  Pipeline: "Somma del valore nominale delle opportunità CRM aperte.",
+  "Forecast ponderato": "Somma del valore di ogni opportunità moltiplicato per la relativa probabilità.",
+  Forecast: "Somma del valore di ogni opportunità moltiplicato per la relativa probabilità.",
+  "Riordini attesi": "Clienti che hanno raggiunto la propria data di riordino prevista in base alla frequenza storica.",
+  Riordini: "Clienti con riordino atteso o già in ritardo rispetto alla frequenza storica.",
+  "Ordine medio": "Valore totale degli ordini diviso per il numero di ordini del periodo.",
+  "Frequenza media": "Media dei giorni intercorsi fra ordini consecutivi dei clienti con storico sufficiente.",
+  "Clienti da recuperare": "Clienti classificati in ritardo o a rischio secondo la frequenza individuale di riordino.",
+  "Crescita fatturato": "Variazione percentuale del fatturato rispetto al periodo di confronto selezionato.",
+};
+
 function number(value, decimals = 0) {
   return new Intl.NumberFormat("it-IT", { maximumFractionDigits: decimals }).format(Number(value || 0));
 }
@@ -55,7 +74,7 @@ function customerPath(row) {
 
 function MetricCard({ label, value, note, onActivate, delta }) {
   return <button className="crm-control-kpi" type="button" onClick={onActivate}>
-    <span>{label}</span><strong>{value}</strong>
+    <span>{label}<InfoTooltip label={label} text={CONTROL_KPI_INFO[label] || note || `Indicatore ${label} calcolato sui filtri correnti.`} /></span><strong>{value}</strong>
     {delta != null ? <small className={delta >= 0 ? "positive" : "negative"}>{percentage(delta)} vs confronto</small> : note ? <small>{note}</small> : null}
   </button>;
 }

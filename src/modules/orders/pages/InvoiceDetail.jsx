@@ -4,6 +4,7 @@ import { useParams } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
 import useBackNavigation from "../../../hooks/useBackNavigation";
 import { useOrdersModule } from "../ordersModuleContext";
+import InfoTooltip from "../../../components/InfoTooltip";
 
 function money(value) {
   return Number(value || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
@@ -66,9 +67,9 @@ export default function InvoiceDetail() {
         </table>
       </div>
       <div className="orders-totals">
-        <div><span>Imponibile</span><strong>{money(invoice.totale_imponibile)}</strong></div>
-        <div><span>IVA</span><strong>{money(invoice.totale_iva)}</strong></div>
-        <div><span>Totale fattura</span><strong>{money(invoice.totale_documento)}</strong></div>
+        <div><span>Imponibile<InfoTooltip label="Imponibile" text="Somma dei valori netti delle righe fattura prima dell’IVA." /></span><strong>{money(invoice.totale_imponibile)}</strong></div>
+        <div><span>IVA<InfoTooltip label="IVA" text="Somma dell’imposta calcolata sulle righe della fattura secondo le rispettive aliquote." /></span><strong>{money(invoice.totale_iva)}</strong></div>
+        <div><span>Totale fattura<InfoTooltip label="Totale fattura" text="Imponibile totale più IVA e gli eventuali ulteriori importi inclusi dal documento Mexal." /></span><strong>{money(invoice.totale_documento)}</strong></div>
       </div>
     </div>
   </div>;

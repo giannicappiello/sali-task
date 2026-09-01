@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Factory, RefreshCw, Save, Square } from "lucide-react";
 import { useAuth } from "../../../contexts/AuthContext";
+import InfoTooltip from "../../../components/InfoTooltip";
 
 export default function ProgremesSettings() {
   const { session, hasPermission } = useAuth();
@@ -35,7 +36,7 @@ export default function ProgremesSettings() {
   return <div className="mexal-page progremes-settings-page">
     <section className="progremes-summary-strip">
       <div className="progremes-summary-title"><span><Factory size={24} /></span><div><h2>Catalogo ProgreMES</h2><p>Stato della sincronizzazione con il Workspace.</p></div></div>
-      <div className="progremes-summary-metrics"><div><strong>{data.modules.length}</strong><span>Moduli</span></div><div><strong>{(data.screens || []).length}</strong><span>Schermate</span></div><div><strong className={running ? "is-running" : "is-ready"}>{running ? "In corso" : "Pronto"}</strong><span>Stato</span></div></div>
+      <div className="progremes-summary-metrics"><div><strong>{data.modules.length}</strong><span>Moduli<InfoTooltip label="Moduli" text="Numero di moduli tecnici ProgreMES presenti nel catalogo sincronizzato." /></span></div><div><strong>{(data.screens || []).length}</strong><span>Schermate<InfoTooltip label="Schermate" text="Numero di schermate ProgreMES presenti nel catalogo sincronizzato." /></span></div><div><strong className={running ? "is-running" : "is-ready"}>{running ? "In corso" : "Pronto"}</strong><span>Stato<InfoTooltip label="Stato sincronizzazione" text="In corso quando esiste una sincronizzazione in coda o in esecuzione; altrimenti pronto." /></span></div></div>
     </section>
     {message && <div className={`mexal-alert alert-${message.type}`}>{message.text}</div>}
     <section className="mexal-settings-panel progremes-control-panel"><div className="mexal-section-heading"><div><h3>Sincronizzazione moduli</h3><p>I moduli rimossi da ProgreMES vengono disattivati senza cancellare le assegnazioni ai reparti.</p></div></div>

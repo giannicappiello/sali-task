@@ -4,6 +4,7 @@ import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Plus, Sa
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 import PhaseChecklistModal from "../../components/PhaseChecklistModal";
+import InfoTooltip from "../../components/InfoTooltip";
 
 const CLOSED_STATES = ["evaso", "evasa", "completato", "completata", "chiuso", "chiusa"];
 
@@ -728,19 +729,19 @@ export default function Tasks() {
       <div className="calendar-kpi-grid dashboard-activity-kpis">
         <button type="button" className={`calendar-kpi ${statusFilter === "aperte" ? "active" : ""}`} onClick={() => setStatusFilter("aperte")}>
           <CalendarDays size={22} />
-          <div><strong>{loading ? "..." : totals.open}</strong><span>Task/fasi pianificate</span></div>
+          <div><strong>{loading ? "..." : totals.open}</strong><span>Task/fasi pianificate<InfoTooltip label="Task e fasi pianificate" text="Numero di task e fasi non completati che rispettano i filtri correnti." /></span></div>
         </button>
         <button type="button" className={`calendar-kpi danger ${statusFilter === "scadute" ? "active" : ""}`} onClick={() => setStatusFilter("scadute")}>
           <Clock3 size={22} />
-          <div><strong>{loading ? "..." : totals.overdue}</strong><span>Task/fasi scadute</span></div>
+          <div><strong>{loading ? "..." : totals.overdue}</strong><span>Task/fasi scadute<InfoTooltip label="Task e fasi scadute" text="Task e fasi non completati con scadenza precedente a oggi." /></span></div>
         </button>
         <button type="button" className={`calendar-kpi success ${statusFilter === "completate" ? "active" : ""}`} onClick={() => setStatusFilter("completate")}>
           <CheckCircle2 size={22} />
-          <div><strong>{loading ? "..." : totals.done}</strong><span>Task/fasi completate</span></div>
+          <div><strong>{loading ? "..." : totals.done}</strong><span>Task/fasi completate<InfoTooltip label="Task e fasi completate" text="Numero di task e fasi con stato completato nei filtri correnti." /></span></div>
         </button>
         <button type="button" className={`calendar-kpi ${statusFilter === "oggi" ? "active" : ""}`} onClick={() => setStatusFilter("oggi")}>
           <CalendarDays size={22} />
-          <div><strong>{loading ? "..." : totals.today}</strong><span>Task/fasi oggi</span></div>
+          <div><strong>{loading ? "..." : totals.today}</strong><span>Task/fasi oggi<InfoTooltip label="Task e fasi oggi" text="Task e fasi con data o scadenza uguale alla giornata odierna." /></span></div>
         </button>
       </div>
 

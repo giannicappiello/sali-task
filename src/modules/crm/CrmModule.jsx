@@ -3,6 +3,7 @@ import { Link, Navigate, Route, Routes, useParams, useSearchParams } from "react
 import { Bot, BriefcaseBusiness, Network, Plus, Search, ShoppingBag, Store } from "lucide-react";
 import WorkspaceAccessGuard from "../../components/WorkspaceAccessGuard";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
+import InfoTooltip from "../../components/InfoTooltip";
 import { useDatasetTableControls, usePaginatedDataset } from "../../components/useDatasetTableControls";
 import { getModuleIcon } from "../../config/moduleIcons";
 import { useAuth } from "../../contexts/AuthContext";
@@ -116,8 +117,33 @@ function CrmDirectOverview() {
   return <ModuleContainerLayout icon={Network} eyebrow="CRM DIRECT" title="Clienti DIRECT" description="I clienti DIRECT sono separati automaticamente nei canali BtoB e BtoC usando il valore Mexal nome_ricerca_cf." items={items} emptyTitle="Nessun canale DIRECT disponibile" emptyDescription="L’amministratore può assegnare i moduli CRM BtoB e Online dal catalogo Workspace."><CommercialControlDashboard scope="direct" embedded /></ModuleContainerLayout>;
 }
 
+const CRM_KPI_INFO = {
+  "Clienti totali": "Numero di clienti canonici dell’area CRM, indipendentemente dallo stato CRM attivo o non attivo.",
+  "Clienti CRM attivi": "Clienti dell’area con stato CRM attivo, quindi inclusi nelle viste operative.",
+  "Clienti CRM non attivi": "Clienti dell’area con stato CRM non attivo. Lo storico commerciale resta conservato.",
+  "Clienti attivi nel periodo": "Clienti distinti con almeno un ordine o una fattura nel periodo selezionato; non coincide con lo stato CRM.",
+  "Nuovi clienti": "Clienti la cui prima vendita documentata ricade nel periodo selezionato.",
+  Fatturato: "Somma degli imponibili delle fatture Mexal nel periodo e nel perimetro CRM selezionati.",
+  Ordinato: "Somma del valore degli ordini Workspace e Mexal inclusi nel periodo e nel perimetro selezionati.",
+  "Valore medio ordine": "Valore totale degli ordini diviso per il numero di ordini del periodo selezionato.",
+  "Clienti senza attività nel periodo": "Clienti senza ordini né fatture nel periodo di inattività commerciale; non indica una disattivazione CRM.",
+  "Opportunità aperte": "Numero di opportunità CRM non chiuse nel perimetro corrente.",
+  "Valore pipeline": "Somma del valore nominale delle opportunità comprese nella pipeline corrente.",
+  "Pipeline ponderata": "Somma, per ogni opportunità, del valore moltiplicato per la probabilità di chiusura.",
+  "Valore ponderato": "Somma, per ogni opportunità, del valore moltiplicato per la probabilità di chiusura.",
+  "Opportunità scadute": "Opportunità aperte con data di chiusura prevista già superata.",
+  Scadute: "Opportunità aperte con data di chiusura prevista già superata.",
+  "Follow-up scaduti": "Attività di follow-up non completate con scadenza già superata.",
+  "Fatturato nel periodo": "Somma delle fatture Mexal del cliente comprese nel periodo selezionato.",
+  "Fatturato lifetime": "Somma di tutte le fatture Mexal disponibili per il cliente, senza limite di periodo.",
+  "Ordinato nel periodo": "Somma degli ordini Workspace e Mexal del cliente nel periodo selezionato.",
+  "Ordinato lifetime": "Somma di tutti gli ordini Workspace e Mexal disponibili per il cliente.",
+  "Ultimo documento": "Data più recente tra l’ultima fattura e l’ultimo ordine disponibili per il cliente.",
+};
+
 function Kpi({ label, value, note, to }) {
-  const content = <><span>{label}</span><strong>{value}</strong>{note ? <small>{note}</small> : null}{to ? <em>Apri dettaglio →</em> : null}</>;
+  const info = CRM_KPI_INFO[label] || note || `Indicatore ${label} calcolato sul perimetro e sui filtri correnti.`;
+  const content = <><span>{label}<InfoTooltip label={label} text={info} /></span><strong>{value}</strong>{note ? <small>{note}</small> : null}{to ? <em>Apri dettaglio →</em> : null}</>;
   return to ? <Link className="kpi-card crm-kpi" to={to} aria-label={`${label}: ${value}. Apri dettaglio`}>{content}</Link> : <article className="kpi-card crm-kpi">{content}</article>;
 }
 

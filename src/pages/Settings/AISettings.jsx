@@ -3,6 +3,7 @@ import { CalendarClock, Camera, CircleDollarSign, Coins, Database, Factory, Gaug
 import { useAuth } from "../../contexts/AuthContext";
 import useBackNavigation from "../../hooks/useBackNavigation";
 import { supabase } from "../../lib/supabaseClient";
+import InfoTooltip from "../../components/InfoTooltip";
 import "./ai-settings.css";
 
 const EMPTY_POLICY = Object.freeze({
@@ -253,9 +254,9 @@ export default function AISettings() {
             <label><CalendarClock size={18} /><span>Mese</span><input type="month" value={reportMonth} onChange={(event) => setReportMonth(event.target.value)} /></label>
           </div>
           <div className="ai-cost-kpis">
-            <article><CircleDollarSign size={23} /><span>Spesa totale</span><strong>{formatUsd(reportTotals.cost)}</strong></article>
-            <article><Gauge size={23} /><span>Richieste</span><strong>{formatTokens(reportTotals.requests)}</strong></article>
-            <article><Coins size={23} /><span>Token complessivi</span><strong>{formatTokens(reportTotals.tokens)}</strong></article>
+            <article><CircleDollarSign size={23} /><span>Spesa totale<InfoTooltip label="Spesa totale" text="Somma dei costi effettivi in USD comunicati da AI Gateway per il mese selezionato." /></span><strong>{formatUsd(reportTotals.cost)}</strong></article>
+            <article><Gauge size={23} /><span>Richieste<InfoTooltip label="Richieste" text="Numero totale di chiamate AI rendicontate nel mese selezionato." /></span><strong>{formatTokens(reportTotals.requests)}</strong></article>
+            <article><Coins size={23} /><span>Token complessivi<InfoTooltip label="Token complessivi" text="Somma dei token di input e output consumati dalle richieste AI del mese selezionato." /></span><strong>{formatTokens(reportTotals.tokens)}</strong></article>
             <article><Users size={23} /><span>Utenti rendicontati</span><strong>{reportRows.filter((row) => Number(row.richieste || 0) > 0).length}</strong></article>
           </div>
           <div className="ai-cost-table-wrap">

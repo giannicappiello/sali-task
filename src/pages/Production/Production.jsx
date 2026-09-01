@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ClipboardList, Factory, RefreshCw, ShieldCheck, ShoppingCart, Workflow } from "lucide-react";
 import { useLocation, useParams } from "react-router-dom";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
+import InfoTooltip from "../../components/InfoTooltip";
 import { useAuth } from "../../contexts/AuthContext";
 import useBackNavigation from "../../hooks/useBackNavigation";
 import "./production.css";
@@ -84,7 +85,7 @@ function DiagnosticsCenter() {
   return <div className="production-page diagnostics-center">
     <section className={`diagnostics-summary diagnostics-${lamp.toLowerCase()}`}>
       {lamp === "GREEN" ? <ShieldCheck /> : <AlertTriangle />}
-      <div><span>Stato globale WorkspaceMES</span><h1>{lamp}</h1><p>Blocking {health?.blocking ?? "—"} · Critical {health?.critical ?? "—"} · Warning {health?.warning ?? "—"} · Outbox {health?.pendingOutbox ?? "—"}</p></div>
+      <div><span>Stato globale WorkspaceMES<InfoTooltip label="Stato globale WorkspaceMES" text="Indicatore derivato dalle diagnostiche aperte: i servizi centrali indisponibili e le anomalie bloccanti determinano lo stato complessivo." /></span><h1>{lamp}</h1><p>Blocking {health?.blocking ?? "—"} · Critical {health?.critical ?? "—"} · Warning {health?.warning ?? "—"} · Outbox {health?.pendingOutbox ?? "—"}</p></div>
       <button type="button" onClick={load}><RefreshCw size={17} />Aggiorna</button>
     </section>
     <section className="diagnostics-integrations">

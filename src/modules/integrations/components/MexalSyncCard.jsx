@@ -1,4 +1,5 @@
 import { CheckCircle2, Clock3, RefreshCw, Square } from "lucide-react";
+import InfoTooltip from "../../../components/InfoTooltip";
 
 export default function MexalSyncCard({
   icon: Icon,
@@ -54,7 +55,7 @@ export default function MexalSyncCard({
       <p>{description}</p>
       <div className="mexal-sync-metric">
         <strong>{recordCount ?? "—"}</strong>
-        <span>{recordLabel}</span>
+        <span>{recordLabel}<InfoTooltip label={recordLabel} text={`Numero di record ${String(recordLabel || "sincronizzati").toLowerCase()} attualmente disponibili dopo l’ultima sincronizzazione completata.`} /></span>
       </div>
       <div className="mexal-sync-last-run">
         {lastRun ? <CheckCircle2 size={16} /> : <Clock3 size={16} />}

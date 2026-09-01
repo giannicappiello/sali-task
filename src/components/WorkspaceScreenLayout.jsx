@@ -66,7 +66,7 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
     const exactModule = catalog.modules.find((module) => (module.percorso || "").replace(/\/$/, "") === pathname);
     const isContainer = BUILT_IN_CONTAINER_PATHS.has(pathname)
       || isDynamicContainerPath(pathname)
-      || exactModule?.tipo === "contenitore";
+      || (exactModule?.tipo === "contenitore" && !isOrdersPath(pathname));
     if (isContainer) {
       const dynamicMatch = pathname.match(/^\/(menu|moduli)\/([^/]+)$/);
       const staticTarget = CONTAINER_TARGETS[pathname];

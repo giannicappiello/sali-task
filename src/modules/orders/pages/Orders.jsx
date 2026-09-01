@@ -124,7 +124,7 @@ export default function Orders() {
 
   return (
     <div className="orders-page">
-      <div className="orders-toolbar">
+      <div className="orders-toolbar orders-list-toolbar">
         <div className="orders-search"><Search size={18} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Ricerca rapida ordini..." /></div>
         <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
         <OrdersStatusFilter value={statusFilter} onChange={setStatusFilter} />

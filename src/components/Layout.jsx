@@ -71,6 +71,7 @@ const pageInfo = {
   "/manuali-uso": { title: "Manuali d'uso", subtitle: "Manuali d'uso e guide operative." },
   "/assistente-ai": { title: "Assistente AI", subtitle: "Dati interni, ricerca Web e pianificazione controllata." },
   "/settings/ai": { title: "Configurazione AI", subtitle: "Capacità, limiti e accessi per reparto." },
+  "/settings/company-letterheads": { title: "Intestazioni aziendali", subtitle: "Modelli ufficiali, versioni e associazioni documentali." },
   "/settings/users": { title: "Utenti e accessi", subtitle: "Dati, organizzazione, autorizzazioni personali e AI." },
   "/settings/access-rules": { title: "Regole e profili", subtitle: "Aree, reparti, ruoli e livelli operativi." },
   "/settings/access-check": { title: "Verifica accessi", subtitle: "Controllo motivato della visibilità effettiva." },

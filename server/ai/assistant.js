@@ -2,6 +2,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { generateText, isStepCount, jsonSchema, Output } from "ai";
 import { openai } from "@ai-sdk/openai";
+import { decideHeadingAction, executeHeadingModelTool, HEADING_AI_TOOLS, HEADING_TOOL_SCHEMAS, interpretHeadingCommand } from "./company-letterhead-actions.js";
 
 const DEFAULT_MODEL = "openai/gpt-5.6-luna";
 const MAX_HISTORY_MESSAGES = 14;
@@ -389,6 +390,8 @@ Regole obbligatorie:
 - rispetta i moduli autorizzati indicati nel contesto;
 - distingui sempre dati aziendali, ipotesi e informazioni Web;
 - non dichiarare mai di aver modificato ordini o piani: puoi solo proporre e simulare;
+- per richieste su intestazioni, associazioni e firme usa sempre gli strumenti strutturati disponibili; non dedurre identificativi e non rispondere solo dal prompt;
+- gli strumenti intestazioni con rischio write preparano esclusivamente una proposta: comunica che serve la conferma esplicita mostrata dall'interfaccia e non dichiarare la modifica già eseguita;
 - segnala esplicitamente quando il connettore ProgreMES non è disponibile;
 - per confrontare il carico di Station e impianti usa progremes.planning.data.resources e workloadSummary, specificando se il confronto è per minuti pianificati o percentuale di utilizzo;
 - nella modalità Dati interni valuta insieme tutti i dati autorizzati disponibili da Workspace/Mexal e ProgreMES, indicando per ogni conclusione quali fonti interne sono state utilizzate;
@@ -732,7 +735,17 @@ async function chat(auth, body) {
   const messages = [...persistedMessages, userModelMessage(prompt, attachments)].slice(-MAX_HISTORY_MESSAGES);
   const requestText = [...memory, ...persistedMessages.map((message) => message.content), prompt].join("\n");
   const context = await buildInternalContext(auth, requestText, memory);
-  const tools = mode === "web" ? { web_search: openai.tools.webSearch({ externalWebAccess: true, searchContextSize: "medium" }) } : undefined;
+  const mesLevel = String(auth.access?.module_levels?.progremes || "nessuno").toLowerCase();
+  const canWriteMes = auth.profile?.ruoli?.amministratore_workspace === true || ["scrittura", "amministrazione"].includes(mesLevel);
+  const availableHeadingTools = Object.keys(HEADING_AI_TOOLS).filter((toolName) => toolName !== "MES_DOCUMENT_GENERATE" || (auth.capabilities?.progremes === true && canWriteMes));
+  const headingTools = Object.fromEntries(availableHeadingTools.map((toolName) => [toolName, {
+    description: `Azione controllata intestazioni aziendali ${toolName}. Le azioni write preparano soltanto una proposta e non scrivono senza conferma utente.`,
+    inputSchema: jsonSchema(HEADING_TOOL_SCHEMAS[toolName]),
+    execute: (input) => executeHeadingModelTool(auth, toolName, input, { correlationId: body.correlationId }),
+  }]));
+  const tools = mode === "web"
+    ? { ...headingTools, web_search: openai.tools.webSearch({ externalWebAccess: true, searchContextSize: "medium" }) }
+    : headingTools;
   const model = process.env.AI_MODEL || DEFAULT_MODEL;
   const generationId = await startAIGeneration(auth.admin, {
     profileId: auth.profile.id,
@@ -747,7 +760,7 @@ async function chat(auth, body) {
       system: systemPrompt(mode, context),
       messages,
       tools,
-      stopWhen: tools ? isStepCount(6) : undefined,
+      stopWhen: isStepCount(6),
       maxOutputTokens: 1800,
       providerOptions: gatewayOptions(auth.profile.id, mode),
     });
@@ -757,11 +770,15 @@ async function chat(auth, body) {
   }
   const usage = await completeAIGeneration(auth.admin, { generationId, profileId: auth.profile.id, result });
   const sources = sourceList(result);
+  const allToolResults = (result.steps || []).flatMap((step) => step.toolResults || []);
+  const allToolCalls = (result.steps || []).flatMap((step) => step.toolCalls || []);
+  const headingAction = allToolResults.map((item) => item.output).find((output) => output?.headingAction)?.headingAction || null;
   const artifacts = requestedArtifacts(prompt, generationId);
   const downloadablePdf = artifacts.some((artifact) => artifact.kind === "pdf");
   const storedAttachments = attachmentMetadata(attachments);
-  await saveExchange(auth.admin, conversationId, displayedPrompt(prompt, attachments), result.text, sources, { model, mode, generationId, costUsd: usage.cost, downloadablePdf, artifacts }, { attachments: storedAttachments });
-  return { conversationId, answer: result.text, sources, usage, capabilities: auth.capabilities, downloadablePdf, artifacts };
+  const answer = result.text || (headingAction ? "Ho preparato l’azione richiesta. Verifica l’anteprima e conferma per applicarla." : "Operazione completata tramite gli strumenti autorizzati.");
+  await saveExchange(auth.admin, conversationId, displayedPrompt(prompt, attachments), answer, sources, { model, mode, generationId, costUsd: usage.cost, downloadablePdf, artifacts, headingToolCalls: allToolCalls.map((item) => item.toolName) }, { attachments: storedAttachments });
+  return { conversationId, answer, sources, usage, capabilities: auth.capabilities, downloadablePdf, artifacts, headingAction };
 }
 
 async function createProposal(auth, body) {
@@ -889,6 +906,8 @@ export async function handleAIAssistant(req) {
   const auth = await authorizeAIRequest(req);
   const body = req.body && typeof req.body === "object" ? req.body : {};
   if (body.action === "capabilities") return { capabilities: auth.capabilities };
+  if (body.action === "heading_command") return { ...(await interpretHeadingCommand(auth, body)), capabilities: auth.capabilities };
+  if (body.action === "heading_decide") return { ...(await decideHeadingAction(auth, body)), capabilities: auth.capabilities };
   if (body.action === "list_conversations") return listConversations(auth);
   if (body.action === "create_topic") return createTopic(auth, body);
   if (body.action === "delete_conversation") return deleteConversation(auth, body);

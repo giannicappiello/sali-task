@@ -36,6 +36,10 @@ function inferredPlanType(text) {
   return "piano_attivita";
 }
 
+function isHeadingRequest(text) {
+  return /intestazion|carta intestata|letterhead|\bfirma|firmatari|certificat.*analisi|report.*senza.*intestaz/i.test(String(text || ""));
+}
+
 async function requestAI(token, body) {
   const response = await fetch("/api/ai/assistant", {
     method: "POST",
@@ -98,6 +102,8 @@ export default function AIAssistant() {
         void confirmStaleConversationDeletion(historyPayload.retention);
       }
       const requestedConversation = new URLSearchParams(window.location.search).get("conversation");
+      const contextualPrompt = new URLSearchParams(window.location.search).get("prompt");
+      if (contextualPrompt) setPrompt(contextualPrompt.slice(0, 4000));
       const initialConversationId = requestedConversation || recentConversations[0]?.id || "";
       if (initialConversationId) void openConversation(initialConversationId);
     }).catch((requestError) => setError(requestError.message));
@@ -303,17 +309,18 @@ export default function AIAssistant() {
     try {
       const history = messages.filter((message) => message.id !== "welcome").map(({ role, content }) => ({ role, content }));
       const serializedAttachments = await serializeAssistantAttachments(attachments);
-      const planningRequested = activeMode === "interno" && capabilities?.planning === true && isPlanningRequest(requestText);
+      const headingRequested = activeMode === "interno" && isHeadingRequest(requestText);
+      const planningRequested = !headingRequested && activeMode === "interno" && capabilities?.planning === true && isPlanningRequest(requestText);
       const payload = planningRequested
         ? await callAI({ action: "proposal", prompt: requestText, attachments: serializedAttachments, proposalType: inferredPlanType(requestText), conversationId, topicId: selectedTopicId })
-        : await callAI({ action: "chat", mode: activeMode, prompt: requestText, attachments: serializedAttachments, conversationId, topicId: selectedTopicId, messages: [...history, { role: "user", content: requestText }] });
+        : await callAI({ action: "chat", mode: activeMode, prompt: requestText, attachments: serializedAttachments, conversationId, topicId: selectedTopicId, correlationId: crypto.randomUUID(), messages: [...history, { role: "user", content: requestText }] });
       const activeConversationId = payload.conversationId || conversationId;
       setConversationId(activeConversationId);
       if (activeConversationId) setConversationInUrl(activeConversationId);
       setCapabilities(payload.capabilities || capabilities);
       if (payload.proposal) setProposal(payload.proposal);
       const responseArtifacts = payload.artifacts?.length ? payload.artifacts : ((payload.downloadablePdf === true || pdfRequested) ? [{ id: `pdf-${Date.now()}`, kind: "pdf", fileName: "report-assistente-ai.pdf", mediaType: "application/pdf" }] : []);
-      setMessages((current) => [...current, { id: `assistant-${Date.now()}`, role: "assistant", content: payload.answer, sources: payload.sources || [], proposal: payload.proposal || null, artifacts: responseArtifacts }]);
+      setMessages((current) => [...current, { id: `assistant-${Date.now()}`, role: "assistant", content: payload.answer, sources: payload.sources || [], proposal: payload.proposal || null, headingAction: payload.headingAction || null, artifacts: responseArtifacts }]);
       setPrompt("");
       attachments.forEach((item) => item.preview && URL.revokeObjectURL(item.preview));
       setAttachments([]);
@@ -334,6 +341,22 @@ export default function AIAssistant() {
       setProposal((current) => current?.id === targetProposal.id ? ({ ...current, state: payload.state }) : current);
       setAutoProposals((current) => current.map((item) => item.id === targetProposal.id ? ({ ...item, state: payload.state }) : item));
       if (!autoPlanningOpen) setMessages((current) => [...current, { id: `decision-${Date.now()}`, role: "assistant", content: payload.message, sources: [] }]);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setDecisionBusy(false);
+    }
+  }
+
+  async function decideHeading(messageId, action, decision) {
+    if (!action?.id || decisionBusy) return;
+    setDecisionBusy(true);
+    setError("");
+    try {
+      const payload = await callAI({ action: "heading_decide", proposalId: action.id, decision });
+      setMessages((current) => current.map((message) => message.id === messageId
+        ? { ...message, content: payload.answer, headingAction: { ...action, state: payload.headingAction?.state || "rejected" } }
+        : message));
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -420,6 +443,7 @@ export default function AIAssistant() {
                 {message.artifacts?.length > 0 && <div className="ai-generated-artifacts">{message.artifacts.map((artifact) => <AssistantArtifactCard key={artifact.id || artifact.fileName} artifact={artifact} content={message.content} />)}</div>}
                 {message.sources?.length > 0 && <div className="ai-message-sources"><strong>Fonti Web</strong>{message.sources.map((source) => <a key={source.id || source.url} href={source.url} target="_blank" rel="noreferrer">{source.title}<ExternalLink size={13} /></a>)}</div>}
                 {message.proposal && <ProposalCard proposal={{ ...message.proposal, state: proposal?.id === message.proposal.id ? proposal.state : message.proposal.state }} canDecide={capabilities?.apply_plans === true} busy={decisionBusy} onApprove={() => decide("approve")} onReject={() => decide("reject")} />}
+                {message.headingAction && <HeadingActionCard action={message.headingAction} busy={decisionBusy} onConfirm={() => decideHeading(message.id, message.headingAction, "confirm")} onReject={() => decideHeading(message.id, message.headingAction, "reject")} />}
               </div>
             </article>
           ))}
@@ -461,12 +485,21 @@ export default function AIAssistant() {
   );
 }
 
+function HeadingActionCard({ action, busy, onConfirm, onReject }) {
+  const pending = action.state === "proposed";
+  const mesDocument = action.tool === "MES_DOCUMENT_GENERATE";
+  return <section className="ai-heading-action" aria-label={mesDocument ? "Proposta generazione documento MES" : "Proposta associazione intestazione"}>
+    <div><FileText size={20} /><strong>{mesDocument ? "Generazione documento MES" : "Associazione intestazione"}</strong><span className={`status-badge ${pending ? "warning" : action.state === "executed" ? "success" : "neutral"}`}>{action.state}</span></div>
+    {action.preview && <dl><div><dt>Tipo documento</dt><dd>{action.preview.documentType?.name || action.preview.documentTypeCode}</dd></div>{mesDocument ? <div><dt>Produzione MES</dt><dd>{action.preview.targetId}</dd></div> : <><div><dt>Intestazione</dt><dd>{action.preview.heading?.name}</dd></div><div><dt>Ambito</dt><dd>{action.preview.scope}</dd></div></>}</dl>}
+    {pending && <div className="ai-heading-actions"><button type="button" className="secondary-action" disabled={busy} onClick={onReject}>Rifiuta</button><button type="button" className="primary-action" disabled={busy} onClick={onConfirm}>{busy ? "Applicazione..." : "Conferma e applica"}</button></div>}
+  </section>;
+}
+
 function AssistantArtifactCard({ artifact, content }) {
   const [download, setDownload] = useState({ loading: true, error: "" });
   useEffect(() => {
     let active = true;
     let objectUrl = "";
-    setDownload({ loading: true, error: "" });
     void buildAssistantArtifactFileAsync(artifact, content).then((file) => {
       if (!active) return;
       objectUrl = URL.createObjectURL(file.blob);

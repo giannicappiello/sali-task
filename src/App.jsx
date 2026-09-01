@@ -39,6 +39,7 @@ const ConfigurableWorkspaceScreen = lazy(() => import("./pages/Settings/Configur
 const WorkspaceMenuContainer = lazy(() => import("./pages/Modules/WorkspaceMenuContainer"));
 const AISettings = lazy(() => import("./pages/Settings/AISettings"));
 const DigitalConnectionsSettings = lazy(() => import("./pages/Settings/DigitalConnectionsSettings"));
+const CompanyLetterheads = lazy(() => import("./pages/Settings/CompanyLetterheads"));
 const Notifications = lazy(() => import("./pages/Notifications/Notifications"));
 const AIAssistant = lazy(() => import("./pages/AIAssistant/AIAssistant"));
 const Production = lazy(() => import("./pages/Production/Production"));
@@ -128,6 +129,7 @@ function App() {
               <Route path="settings/menu" element={<SettingsAccessGuard adminOnly><MenuManagement /></SettingsAccessGuard>} />
               <Route path="settings/layout-builder/:targetType/:targetCode" element={<SettingsAccessGuard adminOnly><ScreenBuilder /></SettingsAccessGuard>} />
               <Route path="settings/ai" element={<SettingsAccessGuard any={["settings.manage"]}><AISettings /></SettingsAccessGuard>} />
+              <Route path="settings/company-letterheads" element={<SettingsAccessGuard any={["settings.manage"]}><CompanyLetterheads /></SettingsAccessGuard>} />
               <Route path="settings/crm-digital" element={<SettingsAccessGuard adminOnly><DigitalConnectionsSettings /></SettingsAccessGuard>} />
               <Route path="notifications" element={<Notifications />} />
               <Route path="assistente-ai" element={<WorkspaceAccessGuard moduleCode="assistente_ai"><AIAssistant /></WorkspaceAccessGuard>} />

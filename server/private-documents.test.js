@@ -66,12 +66,11 @@ test("Emetti CoA segue la navigazione interna Workspace e conserva il contesto M
     }),
     "/produzione/progremes.Documenti?destination=coa-produzioni&productionId=42&article=BT0001&lot=400100035&odpId=17",
   );
-  assert.equal(
-    productionCoaWorkspacePath({ articleCode: "IT 0084", lotCode: "Lotto 1+2" }),
-    "/produzione/progremes.Documenti?destination=coa-produzioni&article=IT+0084&lot=Lotto+1%2B2",
-  );
+  assert.equal(productionCoaWorkspacePath({ articleCode: "IT 0084", lotCode: "Lotto 1+2" }), null);
 
   const page = await readFile(new URL("../src/pages/Documentation/PrivateDocuments.jsx", import.meta.url), "utf8");
-  assert.match(page, /navigate\(productionCoaWorkspacePath/);
+  assert.match(page, /const path = productionCoaWorkspacePath/);
+  assert.match(page, /navigate\(path\)/);
+  assert.match(page, /Produzione non identificata/);
   assert.doesNotMatch(page, /window\.open\("about:blank"/);
 });

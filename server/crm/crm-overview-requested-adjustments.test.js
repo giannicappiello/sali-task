@@ -10,12 +10,12 @@ const migration = read("supabase/migrations/20260830210000_crm_overview_requeste
 
 test("la CRM Overview non ripete richieste automatiche identiche", () => {
   assert.match(dashboard, /const requestArguments = useMemo/);
-  assert.match(dashboard, /const automaticRequestKey = useMemo\(\(\) => JSON\.stringify\(requestArguments\)/);
+  assert.match(dashboard, /const requestKey = useMemo\(\(\) => JSON\.stringify\(requestArguments\)/);
   assert.match(dashboard, /activeRequest\.current\?\.abort\(\)/);
   assert.match(dashboard, /requestSequence\.current/);
   assert.match(dashboard, /request\.abortSignal\(controller\.signal\)/);
   assert.doesNotMatch(dashboard, /lastAutomaticRequest/);
-  assert.doesNotMatch(dashboard, /setInterval|visibilitychange/);
+  assert.doesNotMatch(dashboard, /setInterval|setTimeout|visibilitychange/);
 });
 
 test("l'avviso tecnico sulle dimensioni non esposte non viene renderizzato", () => {

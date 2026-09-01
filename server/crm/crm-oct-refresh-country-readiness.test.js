@@ -33,7 +33,7 @@ test("il refresh usa argomenti primitivi stabili e annulla richieste superate", 
   assert.match(dashboard, /JSON\.stringify\(requestArguments\)/);
   assert.match(dashboard, /new AbortController\(\)/);
   assert.match(dashboard, /sequence !== requestSequence\.current/);
-  assert.doesNotMatch(dashboard, /setInterval|lastAutomaticRequest/);
+  assert.doesNotMatch(dashboard, /setInterval|setTimeout|lastAutomaticRequest|visibilitychange/);
 });
 
 test("Paese viene normalizzato e sottoposto a backfill senza inventare valori", () => {

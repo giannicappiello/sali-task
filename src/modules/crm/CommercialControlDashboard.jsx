@@ -161,7 +161,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
     p_channel: scope === "direct" ? channel || null : null, p_customer: customer || null,
     p_granularity: granularity,
   }), [agent, business, channel, compare, country, customer, granularity, market, period.from, period.to, scope]);
-  const automaticRequestKey = useMemo(() => JSON.stringify(requestArguments), [requestArguments]);
+  const requestKey = useMemo(() => JSON.stringify(requestArguments), [requestArguments]);
 
   const load = useCallback(async () => {
     activeRequest.current?.abort();
@@ -179,12 +179,15 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
   }, [requestArguments]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void load(), 220);
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (!cancelled) void load();
+    });
     return () => {
-      window.clearTimeout(timer);
+      cancelled = true;
       activeRequest.current?.abort();
     };
-  }, [automaticRequestKey, load]);
+  }, [requestKey, load]);
 
   const totals = useMemo(() => data?.totals || {}, [data?.totals]);
   const comparison = data?.comparison || {};

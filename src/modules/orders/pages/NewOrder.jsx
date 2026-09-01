@@ -546,8 +546,12 @@ export default function NewOrder() {
       return;
     }
     setPendingProduct(product);
-    setPendingQuantity("");
-    requestAnimationFrame(() => productQuantityRef.current?.focus());
+    setPendingQuantity("1");
+    setProductSearch("");
+    requestAnimationFrame(() => {
+      productQuantityRef.current?.focus();
+      productQuantityRef.current?.select();
+    });
   }
 
   function confirmPendingProduct() {
@@ -867,7 +871,8 @@ export default function NewOrder() {
             </div>
           )}
         </div>
-        <label className="orders-product-quick-quantity">Quantità
+        <label className="orders-product-quick-quantity">
+          <span>Quantità{pendingProduct ? ` · ${normalize(pendingProduct.codice_articolo || pendingProduct.codice_mexal || pendingProduct.codice)}` : ""}</span>
           <input
             ref={productQuantityRef}
             type="number"
@@ -993,7 +998,7 @@ export default function NewOrder() {
             <div className="orders-document-preview">
               <div><span>Futuro OCM</span><strong>{pieces(documentPreviewTotals.ocm)} pezzi</strong></div>
               <div><span>Futuro OCI</span><strong>{pieces(documentPreviewTotals.oci)} pezzi</strong></div>
-              <div><span>Futuro OCX</span><strong>{pieces(documentPreviewTotals.ocx)} pezzi</strong></div>
+              <div><span>Futuro OCX</span><strong>{pieces(documentPreviewTotals.ocx)} pezzi</strong><OcxProductSummary items={availabilityPreview.ocx} /></div>
             </div>
           </div>
         )}
@@ -1015,6 +1020,7 @@ export default function NewOrder() {
                 <span>OCM: {pieces(documentPreviewTotals.ocm)} pezzi (evasione immediata)</span>
                 <span>OCI: {pieces(documentPreviewTotals.oci)} pezzi</span>
                 <span>OCX: {pieces(documentPreviewTotals.ocx)} pezzi (backorder)</span>
+                <OcxProductSummary items={availabilityPreview.ocx} compact />
               </>}
             </div>
           )}
@@ -1028,6 +1034,24 @@ export default function NewOrder() {
           {productsMissingVat.length > 0 && <small className="orders-confirmation-note">IVA mancante: {productsMissingVat.map((line) => line.codice_articolo).join(", ")}</small>}
         </div>
       </div>
+    </div>
+  );
+}
+
+function OcxProductSummary({ items = [], compact = false }) {
+  if (!items.length) return <span className="orders-ocx-empty">Nessun prodotto destinato a OCX.</span>;
+  return (
+    <div className={`orders-ocx-detail${compact ? " is-compact" : ""}`}>
+      <span>Prodotti destinati a OCX</span>
+      <ul>
+        {items.map((item, index) => (
+          <li key={`${item.productCode}-${index}`}>
+            <strong>{item.productCode}</strong>
+            <span>{item.description || "Prodotto"}</span>
+            <b>{pieces(item.quantity)} pezzi</b>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

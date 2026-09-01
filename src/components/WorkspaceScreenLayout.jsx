@@ -23,6 +23,15 @@ const BUILT_IN_CONTAINER_PATHS = new Set([
 
 const isDynamicContainerPath = (pathname) => /^\/(?:menu|moduli)\/[^/]+$/.test(pathname);
 const isOrdersPath = (pathname) => /^\/ordini-(?:prof|ph|private)(?:\/|$)/.test(pathname);
+function ordersBackTarget(pathname) {
+  const match = pathname.match(/^(\/ordini-(?:prof|ph|private))(?:\/(.*))?$/);
+  if (!match) return null;
+  const [, basePath, childPath = ""] = match;
+  if (/^(?:nuovo|nuovo-da-documento|modifica\/|elenco\/)/.test(childPath)) return { path: `${basePath}/elenco`, name: "Ordini" };
+  if (/^clienti\//.test(childPath)) return { path: `${basePath}/clienti`, name: "Clienti" };
+  if (/^fatture\//.test(childPath)) return { path: `${basePath}/fatture`, name: "Fatture" };
+  return { path: "/home", name: "Home" };
+}
 const CONTAINER_TARGETS = Object.freeze({
   "/home": ["module", "home"],
   "/settings": ["module", "impostazioni"],
@@ -100,7 +109,8 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
       .filter((module) => module.tipo === "contenitore" && module.percorso && module.percorso !== pathname && pathname.startsWith(`${module.percorso.replace(/\/$/, "")}/`))
       .toSorted((left, right) => right.percorso.length - left.percorso.length)[0];
     const navigationParent = parentModule?.percorso && parentModule.percorso !== pathname ? parentModule : containerParent;
-    const parentPath = navigationParent?.percorso || (isOrdersPath(pathname) ? "/home" : "");
+    const orderBackTarget = ordersBackTarget(pathname);
+    const parentPath = orderBackTarget?.path || navigationParent?.percorso || "";
 
     return {
       container: false,
@@ -111,7 +121,7 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
       screenIcon: screen?.icona || "",
       title: screen?.nome || fallbackTitle || "Schermata Workspace",
       description: screen?.descrizione || fallbackDescription || "Funzioni e dati disponibili in base alle autorizzazioni dell’utente.",
-      parentName: navigationParent?.nome || (isOrdersPath(pathname) ? "Home" : ""),
+      parentName: orderBackTarget?.name || navigationParent?.nome || "",
       parentPath,
       layoutTargetType: "screen",
       layoutTargetCode: screen?.codice || "",

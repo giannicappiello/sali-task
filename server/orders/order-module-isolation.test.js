@@ -135,3 +135,24 @@ test("il cliente può creare solo il proprio OCT Private e non usare l'importazi
   assert.match(migration, /lower\(coalesce\(modulo_ordini, ''\)\) = 'private'/);
   assert.match(migration, /workspace_customer_data_visible\(codice_cliente\)/);
 });
+
+test("OrdiniPrivate cliente nasconde Clienti e carica solo articoli associati", async () => {
+  const [routes, newOrder, catalog, migration] = await Promise.all([
+    readFile(new URL("../../src/modules/orders/OrdersModule.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../../src/modules/orders/pages/NewOrder.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../../src/modules/orders/services/directProductCatalog.js", import.meta.url), "utf8"),
+    readFile(new URL("../../supabase/migrations/20260902172000_customer_private_order_product_catalog.sql", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(routes, /customerPrivateView = moduleCode === "private" && isCustomer/);
+  assert.match(routes, /MODULE_NAVIGATION\.filter\(\(item\) => !hideCustomers \|\| item\.path !== "clienti"\)/);
+  assert.match(routes, /path="clienti" element=\{customerPrivateView \? <Navigate/);
+  assert.match(newOrder, /customerScoped: Boolean\(customerCode\)/);
+  assert.match(catalog, /customerScoped \? "workspace_customer_orderable_products" : "prodotti"/);
+  assert.match(catalog, /customerScoped \? "workspace_customer_orderable_product_economics" : "ordini_prodotti_cache"/);
+  assert.match(catalog, /customerScoped[\s\S]*Promise\.resolve\(\{ data: \[\], error: null \}\)/);
+  assert.match(migration, /workspace_customer_article_codes[\s\S]*join public\.ordini_righe/i);
+  assert.match(migration, /workspace_customer_article_codes[\s\S]*join public\.mexal_fatture_vendita_righe/i);
+  assert.match(migration, /with \(security_invoker = true\)/i);
+  assert.doesNotMatch(migration, /drop\s+(table|column)|truncate|delete\s+from/i);
+});

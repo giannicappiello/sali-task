@@ -277,7 +277,10 @@ export default function NewOrder() {
           .order("ragione_sociale", { ascending: true })
           .order("codice_cliente", { ascending: true }), ORDER_CUSTOMER_COLUMNS);
 
-      const directCatalog = await loadDirectProductCatalog(supabase, { includeEconomics: true });
+      const directCatalog = await loadDirectProductCatalog(supabase, {
+        includeEconomics: true,
+        customerScoped: Boolean(customerCode),
+      });
       let productRows = directCatalog.products;
       const kitRows = directCatalog.implants;
       const productByCode = new Map(productRows.map((product) => [normalize(product.codice_articolo || product.codice_mexal || product.codice), product]));

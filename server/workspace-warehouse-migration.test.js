@@ -54,3 +54,21 @@ test("il Magazzino limita server-side gli account cliente ai propri articoli", a
   assert.match(sql, /'customerScoped', customer_scope\.customer_code is not null/i);
   assert.doesNotMatch(sql, /drop\s+(table|column)|truncate|delete\s+from/i);
 });
+
+test("la vista cliente aggrega per articolo e non espone riferimenti ai magazzini", async () => {
+  const [sql, page] = await Promise.all([
+    readFile("supabase/migrations/20260902171000_customer_warehouse_without_locations.sql", "utf8"),
+    readFile("src/pages/Warehouse/WarehouseDashboard.jsx", "utf8"),
+  ]);
+
+  assert.match(sql, /where scope\.customer_code is not null[\s\S]*group by raw\.snapshot_date, raw\.article_code, raw\.unit_of_measure, raw\.article_type/i);
+  assert.match(sql, /sum\(raw\.on_hand\)::numeric as on_hand/i);
+  assert.match(sql, /scope\.customer_code is not null or p_warehouse is null/i);
+  assert.match(sql, /where scope\.customer_code is null[\s\S]*group by warehouse_number/i);
+  assert.match(sql, /to_jsonb\(item\) - 'warehouse_number' - 'warehouse_name' - 'source'/i);
+  assert.match(page, /\{!customerScoped && <label><span>Magazzino<\/span>/);
+  assert.match(page, /\{!customerScoped && <WarehouseKpis/);
+  assert.match(page, /\{!customerScoped && <Donut title="Articoli per magazzino"/);
+  assert.match(page, /\{!customerScoped && <th>Magazzino<\/th>\}/);
+  assert.doesNotMatch(sql, /drop\s+(table|column)|truncate|delete\s+from/i);
+});

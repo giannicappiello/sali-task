@@ -23,16 +23,20 @@ function displayName(product) {
   return mexal || String(product?.nome || "").replace(/\s+/g, " ").trim();
 }
 
-export async function loadDirectProductCatalog(db, { includeEconomics = false } = {}) {
+export async function loadDirectProductCatalog(db, { includeEconomics = false, customerScoped = false } = {}) {
+  const productsSource = customerScoped ? "workspace_customer_orderable_products" : "prodotti";
+  const economicsSource = customerScoped ? "workspace_customer_orderable_product_economics" : "ordini_prodotti_cache";
   const mexalProductsPromise = loadAll((from, to) => applyDirectMexalProductFilters(
-    db.from("prodotti").select("*").range(from, to)
+    db.from(productsSource).select("*").range(from, to)
   ).order("nome", { ascending: true }).order("codice_mexal", { ascending: true }));
-  const implantsPromise = db.from("ordini_impianti")
-    .select("*, componenti:ordini_impianti_componenti(*)")
-    .eq("attivo", true)
-    .order("descrizione", { ascending: true });
+  const implantsPromise = customerScoped
+    ? Promise.resolve({ data: [], error: null })
+    : db.from("ordini_impianti")
+      .select("*, componenti:ordini_impianti_componenti(*)")
+      .eq("attivo", true)
+      .order("descrizione", { ascending: true });
   const economicsPromise = includeEconomics
-    ? loadAll((from, to) => db.from("ordini_prodotti_cache").select("*")
+    ? loadAll((from, to) => db.from(economicsSource).select("*")
       .eq("mostra_in_app", true).range(from, to))
     : Promise.resolve([]);
 

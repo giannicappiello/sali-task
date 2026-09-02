@@ -8,6 +8,7 @@ import { composeDocx, composePdf } from "../server/company-document-composer.js"
 
 const migration = await readFile(new URL("../supabase/migrations/20260901180000_company_letterheads_controlled_actions.sql", import.meta.url), "utf8");
 const signatureActivationMigration = await readFile(new URL("../supabase/migrations/20260901183000_activate_versioned_company_signatures.sql", import.meta.url), "utf8");
+const adminEditMigration = await readFile(new URL("../supabase/migrations/20260902120000_company_letterheads_admin_edit.sql", import.meta.url), "utf8");
 const page = await readFile(new URL("../src/pages/Settings/CompanyLetterheads.jsx", import.meta.url), "utf8");
 const assistant = await readFile(new URL("../src/pages/AIAssistant/AIAssistant.jsx", import.meta.url), "utf8");
 const mesApi = await readFile(new URL("../server/company-letterheads-mes-api.js", import.meta.url), "utf8");
@@ -39,6 +40,18 @@ test("UI valida DOCX/PDF, rifiuta DOCM e conserva ogni nuova versione", () => {
   assert.match(page, /company_signature_add_version/);
   assert.match(page, /company_letterhead_attach_signature/);
   assert.match(page, /Configura con AI/);
+});
+
+test("UI usa un solo layout, filtra le card e consente modifica e pubblicazione", () => {
+  assert.doesNotMatch(page, /WorkspaceScreenLayout/);
+  assert.match(page, /showDataset\("unassociated"\)/);
+  assert.match(page, /showDataset\("rules"\)/);
+  assert.match(page, /showDataset\("signatures"\)/);
+  assert.match(page, /company_letterhead_update/);
+  assert.match(page, /Pubblica e attiva/);
+  assert.match(adminEditMigration, /company_letterhead_can_manage\(\)/);
+  assert.match(adminEditMigration, /'updated','letterhead'/);
+  assert.doesNotMatch(adminEditMigration, /grant .* on all tables in schema public/);
 });
 
 test("la prima versione valida rende la firma utilizzabile dal resolver", () => {

@@ -14,6 +14,11 @@ test("Documenti Private usa categorie articolo e layout master-detail", async ()
   assert.match(page, /articleSection\(article\) === activeSection/);
   assert.match(page, /catalog\.reduce/);
   assert.match(page, /appliedQuery \? articles/);
+  assert.match(page, /CATALOG_ARTICLE_TYPES/);
+  assert.match(page, /Promise\.all\(CATALOG_ARTICLE_TYPES\.map/);
+  assert.match(page, /rows\.filter\(\(article\) => article\.articleType === type\)/);
+  assert.match(page, /window\.setTimeout\(\(\) => \{/);
+  assert.match(page, /}, 250\)/);
   assert.match(page, /Ricerca rapida in tutti gli articoli/);
   assert.doesNotMatch(page, /private_documents_sync"\)\.then/);
   assert.match(page, /private-documents-master-detail/);

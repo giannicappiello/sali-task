@@ -35,6 +35,7 @@ const ARTICLE_SECTIONS = [
   { id: "raw", title: "Materie prime", description: "Materie prime impiegate nelle formule.", icon: Boxes },
   { id: "other", title: "Altro", description: "Articoli non compresi nelle altre tipologie.", icon: Shapes },
 ];
+const CATALOG_ARTICLE_TYPES = ["ProdottoFinito", "Semilavorato", "MateriaPrima", "Packaging", "Accessorio", "Servizio"];
 
 function articleSection(article) {
   const type = String(article?.articleType || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -61,21 +62,45 @@ export default function PrivateDocuments() {
   const [nasListing, setNasListing] = useState(null), [nasPath, setNasPath] = useState(""), [nasLoading, setNasLoading] = useState(false);
   const searchSequence = useRef(0);
   const mesSessionRef = useRef(null);
+  const activeSearchRef = useRef("");
 
   const establishSession = useCallback(async () => {
     const view = await workspaceAction(accessToken, "private_documents_session"); mesSessionRef.current = view; setMesSession(view); setCustomerScoped(view.customerScoped === true);
     workspaceAction(accessToken, "private_documents_session", { upload: true }).then(() => setCanUpload(true)).catch(() => setCanUpload(false));
     return view;
   }, [accessToken]);
-  const load = useCallback(async (search = "", updateCatalog = false) => {
+  const loadSearch = useCallback(async (search) => {
     if (!accessToken) return; const sequence = ++searchSequence.current; setLoading(true); setError("");
-    try { const active = mesSessionRef.current || await establishSession(); const result = await mesRequest(active, `articles?search=${encodeURIComponent(search.trim())}`) || []; if (sequence === searchSequence.current) { setArticles(result); if (updateCatalog || !search.trim()) setCatalog(result); } }
+    try { const active = mesSessionRef.current || await establishSession(); const result = await mesRequest(active, `articles?search=${encodeURIComponent(search.trim())}`) || []; if (sequence === searchSequence.current) setArticles(result); }
     catch (loadError) { if (sequence === searchSequence.current) setError(loadError.message); } finally { if (sequence === searchSequence.current) setLoading(false); }
   }, [accessToken, establishSession]);
-  useEffect(() => { if (!accessToken) return undefined; const pending = window.setTimeout(() => void load("", true), 0); return () => window.clearTimeout(pending); }, [accessToken, load]);
+  const loadCatalog = useCallback(async () => {
+    if (!accessToken) return; setLoading(true); setError("");
+    try {
+      const active = mesSessionRef.current || await establishSession();
+      const groups = await Promise.all(CATALOG_ARTICLE_TYPES.map(async (type) => {
+        const rows = await mesRequest(active, `articles?search=${encodeURIComponent(type)}`) || [];
+        return rows.filter((article) => article.articleType === type);
+      }));
+      const completeCatalog = [...new Map(groups.flat().map((article) => [article.articleId, article])).values()]
+        .sort((left, right) => String(left.articleCode).localeCompare(String(right.articleCode), "it", { numeric: true }));
+      setCatalog(completeCatalog);
+      if (!activeSearchRef.current) setArticles(completeCatalog);
+    } catch (loadError) { setError(loadError.message); } finally { setLoading(false); }
+  }, [accessToken, establishSession]);
+  useEffect(() => { if (!accessToken) return undefined; const pending = window.setTimeout(() => void loadCatalog(), 0); return () => window.clearTimeout(pending); }, [accessToken, loadCatalog]);
+  useEffect(() => {
+    const search = query.trim();
+    if (search === appliedQuery) return undefined;
+    const pending = window.setTimeout(() => {
+      activeSearchRef.current = search; setAppliedQuery(search); setSelected(null); setSelectedLot(null);
+      if (search) void loadSearch(search); else setArticles(catalog);
+    }, 250);
+    return () => window.clearTimeout(pending);
+  }, [appliedQuery, catalog, loadSearch, query]);
 
-  async function applySearch(event) { event?.preventDefault(); const search = query.trim(); setSelected(null); setSelectedLot(null); setAppliedQuery(search); if (!search) { setArticles(catalog); return; } await load(search); }
-  async function refreshArchive() { setError(""); try { setSyncInfo(await workspaceAction(accessToken, "private_documents_sync")); await load("", true); setAppliedQuery(""); setQuery(""); setSelected(null); setSelectedLot(null); } catch (cause) { setError(cause.message); } }
+  async function applySearch(event) { event?.preventDefault(); const search = query.trim(); activeSearchRef.current = search; setSelected(null); setSelectedLot(null); setAppliedQuery(search); if (!search) { setArticles(catalog); return; } await loadSearch(search); }
+  async function refreshArchive() { activeSearchRef.current = ""; setAppliedQuery(""); setQuery(""); setSelected(null); setSelectedLot(null); setError(""); try { setSyncInfo(await workspaceAction(accessToken, "private_documents_sync")); await loadCatalog(); } catch (cause) { setError(cause.message); } }
 
   async function openArticle(article) { setDetailLoading(true); setError(""); setSelectedLot(null); try { setSelected(await mesRequest(mesSession || await establishSession(), `articles/${article.articleId}`)); } catch (cause) { setError(cause.message); } finally { setDetailLoading(false); } }
   async function download(document) { setError(""); try { const response = await mesRequest(mesSession || await establishSession(), `documents/${document.externalId}`, { raw: true }); if (!response.ok) throw new Error("Documento non disponibile o non autorizzato."); const blob = await response.blob(); const url = URL.createObjectURL(blob); const anchor = window.document.createElement("a"); anchor.href = url; anchor.download = document.originalFileName || "documento"; anchor.click(); URL.revokeObjectURL(url); } catch (cause) { setError(cause.message); } }
@@ -96,8 +121,8 @@ export default function PrivateDocuments() {
   return <div className="private-documents-page">
     <header className="private-documents-hero"><div className="private-documents-icon"><FileLock2 /></div><div><span>DOCUMENTI PRIVATE</span><h1>Articoli, lotti e certificati</h1><p>Archivio protetto sul NAS con genealogia dei lotti ricostruita dagli scarichi SL.</p></div><div className="private-documents-security"><ShieldCheck size={18}/><span>Accesso tracciato</span></div></header>
     {error && <div className="private-documents-error">{error}<button onClick={() => setError("")}><X size={16}/></button></div>}
-    <div className="private-document-sections" role="tablist" aria-label="Tipologie articolo">{ARTICLE_SECTIONS.map((section) => { const Icon = section.icon; const active = !appliedQuery && activeSection === section.id; return <button key={section.id} type="button" role="tab" aria-selected={active} className={active ? "active" : ""} onClick={() => { setActiveSection(section.id); setQuery(""); setAppliedQuery(""); setArticles(catalog); setSelected(null); setSelectedLot(null); }}><span className="private-document-section-icon"><Icon size={22}/></span><span><strong>{section.title}</strong><small>{section.description}</small></span><b>{sectionCounts[section.id]}</b></button>; })}</div>
-    <form className="private-documents-toolbar" onSubmit={applySearch}><label><Search size={19}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ricerca rapida in tutti gli articoli, lotti e documenti…"/></label><button type="submit"><Search size={17}/>Cerca</button><button type="button" className="secondary-action" onClick={refreshArchive}><RefreshCw size={17}/>Aggiorna archivio</button></form>
+    <div className="private-document-sections" role="tablist" aria-label="Tipologie articolo">{ARTICLE_SECTIONS.map((section) => { const Icon = section.icon; const active = !appliedQuery && activeSection === section.id; return <button key={section.id} type="button" role="tab" aria-selected={active} className={active ? "active" : ""} onClick={() => { activeSearchRef.current = ""; setActiveSection(section.id); setQuery(""); setAppliedQuery(""); setArticles(catalog); setSelected(null); setSelectedLot(null); }}><span className="private-document-section-icon"><Icon size={22}/></span><span><strong>{section.title}</strong><small>{section.description}</small></span><b>{sectionCounts[section.id]}</b></button>; })}</div>
+    <form className="private-documents-toolbar" onSubmit={applySearch}><label><Search size={19}/><input value={query} onChange={(event) => { activeSearchRef.current = event.target.value.trim(); setQuery(event.target.value); }} placeholder="Ricerca rapida in tutti gli articoli, lotti e documenti…"/></label><button type="submit"><Search size={17}/>Cerca</button><button type="button" className="secondary-action" onClick={refreshArchive}><RefreshCw size={17}/>Aggiorna archivio</button></form>
     {syncInfo && <small className="private-documents-sync">Traccia Workspace aggiornata: {syncInfo.documents} documenti · {syncInfo.slRows} righe SL</small>}
     <div className="private-documents-master-detail">
       <section className="private-article-list-panel"><header><h2>{appliedQuery ? `Risultati per “${appliedQuery}”` : activeSectionInfo.title}</h2><span>{filteredArticles.length}</span></header>{loading ? <div className="private-documents-loading">Caricamento archivio…</div> : <div className="private-article-list">{filteredArticles.map((article) => <button key={article.articleId} type="button" onClick={() => openArticle(article)} className={selected?.article?.articleId === article.articleId ? "active" : ""}><span>{article.articleType}</span><strong>{article.articleCode}</strong><p>{article.description}</p><small>{article.documentCount} documenti · {article.lotCount} lotti</small></button>)}</div>}{!loading && !filteredArticles.length && <p className="private-panel-empty">{appliedQuery ? "Nessun articolo corrisponde alla ricerca globale." : "Nessun articolo disponibile in questa tipologia."}</p>}</section>

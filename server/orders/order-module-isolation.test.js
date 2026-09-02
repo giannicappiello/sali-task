@@ -85,3 +85,16 @@ test("l'importatore e il backfill classificano gli OCT come OrdiniPrivate", asyn
   assert.match(migration, /tipo_documento = 'OCT'/);
   assert.match(migration, /ragione_sociale_cliente = c\.ragione_sociale/);
 });
+
+test("l'accesso OrdiniPrivate viene sincronizzato senza abilitare Ordini PR o PH", async () => {
+  const migration = await readFile(
+    new URL("../../supabase/migrations/20260902163000_sync_private_order_access_independently.sql", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(migration, /'gestione_ordini_private',[\s\S]*workspace_module_enabled_for_user\(target_user_id, 'ordini_private'\)/);
+  assert.match(migration, /'gestione_ordini_pr',[\s\S]*workspace_module_enabled_for_user\(target_user_id, 'ordini_pr'\)/);
+  assert.match(migration, /'gestione_ordini_ph',[\s\S]*workspace_module_enabled_for_user\(target_user_id, 'ordini_ph'\)/);
+  assert.match(migration, /private_orders\.modulo = 'ordini_private'/);
+  assert.doesNotMatch(migration, /select[\s\S]*'gestione_ordini_private'[\s\S]*from public\.integrazioni_utenti[\s\S]*gestione_ordini_ph/);
+});

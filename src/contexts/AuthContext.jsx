@@ -257,8 +257,9 @@ export function AuthProvider({ children }) {
       customerCodes: Array.isArray(scopeContext?.customer_codes) ? scopeContext.customer_codes.filter(Boolean) : [],
     });
 
-    let nextModuleAccess = Array.isArray(accessContext?.modules) ? accessContext.modules.filter(Boolean) : [];
-    if (!nextModuleAccess.length && reparto_ids.length) {
+    const hasAuthoritativeModuleContext = Array.isArray(accessContext?.modules);
+    let nextModuleAccess = hasAuthoritativeModuleContext ? accessContext.modules.filter(Boolean) : [];
+    if (!hasAuthoritativeModuleContext && reparto_ids.length) {
       const { data: moduleRows, error: moduleError } = await supabase
         .from("reparti_moduli")
         .select("modulo")

@@ -8,7 +8,8 @@ const money = (value) => Number(value || 0).toLocaleString("it-IT", { style: "cu
 const emptyForm = { id: null, codice: "", descrizione: "", modalita_prezzo: "sconto_ordine", prezzo_fisso: "", sconto_personalizzato: "", componenti: [] };
 
 export default function Products({ implantsOnly = false }) {
-  const { profile, isAdminUser } = useAuth();
+  const { profile, canUseModule } = useAuth();
+  const canManageImplants = canUseModule("prodotti", "amministrazione");
   const [tab, setTab] = useState(implantsOnly ? "impianti" : "prodotti");
   const [products, setProducts] = useState([]);
   const [kits, setKits] = useState([]);
@@ -135,11 +136,11 @@ export default function Products({ implantsOnly = false }) {
     </div>}
     <div className="orders-toolbar">
       <div className="orders-search"><Search size={18}/><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`Cerca ${tab === "impianti" ? "impianto" : "prodotto"}...`}/></div>
-      {tab === "impianti" && isAdminUser && <button className="orders-primary" onClick={() => setForm({ ...emptyForm, componenti: [] })}><Plus size={17}/> Nuovo impianto</button>}
+      {tab === "impianti" && canManageImplants && <button className="orders-primary" onClick={() => setForm({ ...emptyForm, componenti: [] })}><Plus size={17}/> Nuovo impianto</button>}
     </div>
     {message && <div className="orders-alert">{message}</div>}
     {tab === "prodotti" ? <div className="orders-table-wrap"><table className="orders-table"><thead><tr><th>Codice</th><th>Prodotto</th><th>Listino</th><th>IVA</th><th>Disponibile</th></tr></thead><tbody>{filteredProducts.map((item) => <tr key={item.codice_articolo}><td>{item.codice_articolo}</td><td>{item.descrizione}</td><td>{money(item.prezzo_listino)}</td><td>{item.aliquota_iva ?? "-"}</td><td>{item.disponibilita ?? "-"}</td></tr>)}</tbody></table></div>
-    : <div className="orders-products-grid">{filteredKits.map((kit) => <article className="orders-product-card" key={kit.id}><div><strong>{kit.codice}</strong><h3>{kit.descrizione}</h3></div><p>{kit.componenti.length} prodotti · valore prodotti {money(kitTotal(kit))}</p><div className="orders-product-meta"><span>{kit.modalita_prezzo === "sconto_ordine" ? "Scontistica ordine" : kit.modalita_prezzo === "prezzo_fisso" ? `Prezzo fisso ${money(kit.prezzo_fisso)}` : `Sconto ${kit.sconto_personalizzato}%`}</span></div>{isAdminUser && <div className="orders-product-actions"><button className="orders-secondary" onClick={() => editKit(kit)}>Modifica</button><button className="orders-icon-danger" onClick={() => deactivateKit(kit.id)}><Trash2 size={17}/></button></div>}</article>)}</div>}
+    : <div className="orders-products-grid">{filteredKits.map((kit) => <article className="orders-product-card" key={kit.id}><div><strong>{kit.codice}</strong><h3>{kit.descrizione}</h3></div><p>{kit.componenti.length} prodotti · valore prodotti {money(kitTotal(kit))}</p><div className="orders-product-meta"><span>{kit.modalita_prezzo === "sconto_ordine" ? "Scontistica ordine" : kit.modalita_prezzo === "prezzo_fisso" ? `Prezzo fisso ${money(kit.prezzo_fisso)}` : `Sconto ${kit.sconto_personalizzato}%`}</span></div>{canManageImplants && <div className="orders-product-actions"><button className="orders-secondary" onClick={() => editKit(kit)}>Modifica</button><button className="orders-icon-danger" onClick={() => deactivateKit(kit.id)}><Trash2 size={17}/></button></div>}</article>)}</div>}
     {loading && <div className="orders-empty">Caricamento...</div>}
     {form && <div className="orders-kit-overlay"><section className="orders-kit-dialog"><div className="orders-kit-title"><div><h2>{form.id ? "Modifica impianto" : "Nuovo impianto"}</h2><p>Componi l’impianto usando i prodotti esistenti.</p></div><button className="orders-icon-danger" onClick={() => setForm(null)}><X/></button></div>
       <div className="orders-kit-fields"><label>Codice<input value={form.codice} onChange={(e) => setForm({...form, codice:e.target.value})}/></label><label>Descrizione<input value={form.descrizione} onChange={(e) => setForm({...form, descrizione:e.target.value})}/></label></div>

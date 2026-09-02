@@ -1,0 +1,9 @@
+.private-nas-picker{display:grid;gap:10px;padding:12px;border:1px solid #cfdbe7;border-radius:12px;background:#f8fbff}
+.private-nas-picker>header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.private-nas-picker>header div{display:grid;gap:3px}
+.private-nas-picker>header small,.private-nas-picker>small{color:#60738d;font-weight:500}
+.private-nas-picker>header button{display:flex;align-items:center;gap:5px;padding:7px 10px;border:1px solid #cbd9e8;border-radius:8px;background:#fff}
+.private-nas-entries{display:grid;max-height:260px;overflow:auto;border:1px solid #dce6f0;border-radius:9px;background:#fff}
+.private-nas-entries button{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:9px;padding:10px 12px;border:0;border-bottom:1px solid #edf1f6;background:#fff;text-align:left;cursor:pointer}
+.private-nas-entries button:hover,.private-nas-entries button.selected{background:#eaf4ff;color:#155da4}
+.private-nas-entries button small{color:#718199}

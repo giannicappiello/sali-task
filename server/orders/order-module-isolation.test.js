@@ -137,12 +137,13 @@ test("il cliente può creare solo il proprio OCT Private e non usare l'importazi
 });
 
 test("OrdiniPrivate cliente nasconde Clienti e carica solo articoli associati", async () => {
-  const [routes, newOrder, catalog, migration, rlsBridge] = await Promise.all([
+  const [routes, newOrder, catalog, migration, rlsBridge, historyBridge] = await Promise.all([
     readFile(new URL("../../src/modules/orders/OrdersModule.jsx", import.meta.url), "utf8"),
     readFile(new URL("../../src/modules/orders/pages/NewOrder.jsx", import.meta.url), "utf8"),
     readFile(new URL("../../src/modules/orders/services/directProductCatalog.js", import.meta.url), "utf8"),
     readFile(new URL("../../supabase/migrations/20260902172000_customer_private_order_product_catalog.sql", import.meta.url), "utf8"),
     readFile(new URL("../../supabase/migrations/20260902173000_customer_private_order_catalog_rls_bridge.sql", import.meta.url), "utf8"),
+    readFile(new URL("../../supabase/migrations/20260902174000_customer_article_history_rls_bridge.sql", import.meta.url), "utf8"),
   ]);
 
   assert.match(routes, /customerPrivateView = moduleCode === "private" && isCustomer/);
@@ -160,5 +161,8 @@ test("OrdiniPrivate cliente nasconde Clienti e carica solo articoli associati", 
   assert.match(rlsBridge, /with \(security_barrier = true, security_invoker = false\)/i);
   assert.match(rlsBridge, /join public\.workspace_customer_article_codes linked/i);
   assert.doesNotMatch(rlsBridge, /grant select on (public\.)?(prodotti|ordini_prodotti_cache)/i);
+  assert.match(historyBridge, /workspace_current_customer_code\(\) is not null/i);
+  assert.match(historyBridge, /workspace_customer_data_visible\((header|invoice)\.codice_cliente\)/i);
+  assert.match(historyBridge, /with \(security_barrier = true, security_invoker = false\)/i);
   assert.doesNotMatch(migration, /drop\s+(table|column)|truncate|delete\s+from/i);
 });

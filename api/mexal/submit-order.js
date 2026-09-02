@@ -139,6 +139,9 @@ export default async function handler(req, res) {
         code: "MEXAL_OCT_OUTBOUND_FORBIDDEN" });
     }
     if (requestedModule && requestedModule !== (order.modulo_ordini || "prof")) return res.status(404).json({ error: "Ordine non trovato nel modulo selezionato." });
+    if (String(order.modulo_ordini || "prof").toLowerCase() === "ph") {
+      return res.status(200).json({ success: true, skipped: true, message: "Gli Ordini PH non prevedono invio o riconciliazione con Mexal." });
+    }
     const [{ data: customer, error: customerError }, { data: products, error: productsError }, { data: rules, error: rulesError }] = await Promise.all([
       admin.from("ordini_clienti_cache").select("*").eq("codice_cliente", order.codice_cliente).maybeSingle(),
       admin.from("ordini_prodotti_cache").select("*").in("codice_articolo", lines.map((line) => line.codice_articolo)),

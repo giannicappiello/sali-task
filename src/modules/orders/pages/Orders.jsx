@@ -10,6 +10,16 @@ import AIOrderTypeDialog from "../components/AIOrderTypeDialog";
 import OrdersStatusFilter from "../components/OrdersStatusFilter";
 import { filterOrderModuleRows, isPrivateOrderModule, orderModuleDocumentTypes, orderModuleFilter } from "../services/orderModules";
 
+const INTERNAL_ORDER_STATUS_OPTIONS = Object.freeze([
+  Object.freeze({ value: "bozza", label: "Bozza" }),
+  Object.freeze({ value: "aperto", label: "Aperto" }),
+  Object.freeze({ value: "in_corso", label: "In corso" }),
+  Object.freeze({ value: "spedito", label: "Spedito" }),
+  Object.freeze({ value: "evaso", label: "Evaso" }),
+  Object.freeze({ value: "annullato", label: "Annullato" }),
+  Object.freeze({ value: "errore", label: "Errore" }),
+]);
+
 export default function Orders() {
   const { moduleCode, basePath } = useOrdersModule();
   const navigate = useNavigate();
@@ -58,12 +68,13 @@ export default function Orders() {
 
     let documents = [];
     const orderIds = orderedRows.map((row) => row.id);
-    if (orderIds.length) {
+    const documentTypes = orderModuleDocumentTypes(moduleCode);
+    if (orderIds.length && documentTypes.length) {
       const { data: documentRows, error: documentsError } = await supabase
         .from("ordini_documenti_mexal")
         .select("ordine_id,tipo_documento,serie,numero,anno,stato_operativo,presente_in_mexal")
         .in("ordine_id", orderIds)
-        .in("tipo_documento", orderModuleDocumentTypes(moduleCode))
+        .in("tipo_documento", documentTypes)
         .not("numero", "is", null);
       if (documentsError) console.error("Errore documenti Mexal elenco ordini:", documentsError);
       documents = documentRows || [];
@@ -129,7 +140,7 @@ export default function Orders() {
       <div className="orders-toolbar orders-list-toolbar">
         <div className="orders-search"><Search size={18} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Ricerca rapida ordini..." /></div>
         <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
-        <OrdersStatusFilter value={statusFilter} onChange={setStatusFilter} />
+        <OrdersStatusFilter value={statusFilter} onChange={setStatusFilter} options={moduleCode === "ph" ? INTERNAL_ORDER_STATUS_OPTIONS : undefined} />
         {canWriteOrders && <><button className="orders-primary" type="button" onClick={() => navigate(`${basePath}/nuovo`)}>{isPrivateOrderModule(moduleCode) ? "Nuovo OCT" : "Nuovo ordine"}</button>{!isPrivateOrderModule(moduleCode) && <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/nuovo?tipo=prenotazione`)}>Ordine prenotazione</button>}</>}
         {canWriteOrders && <button className="orders-secondary" type="button" onClick={() => isPrivateOrderModule(moduleCode) ? openAIOrderImport("standard") : setAITypeDialogOpen(true)}><Sparkles size={17} /> Genera con AI</button>}
       </div>

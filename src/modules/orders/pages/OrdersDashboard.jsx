@@ -10,7 +10,7 @@ import { agentDisplayName, customerDisplayName, loadAgentNameMap, loadCustomerDi
 import { getOrderDisplayStatus } from "../services/orderDisplayStatus";
 import AIOrderTypeDialog from "../components/AIOrderTypeDialog";
 import OrdersStatusFilter from "../components/OrdersStatusFilter";
-import { filterOrderModuleDocuments, filterOrderModuleRows, isPrivateOrderModule, orderModuleDocumentTypes, orderModuleFilter } from "../services/orderModules";
+import { filterOrderModuleDocuments, filterOrderModuleRows, isPrivateOrderModule, orderModuleDocumentTypes, orderModuleFilter, orderModuleUsesMexalReconciliation } from "../services/orderModules";
 
 const DASHBOARD_STATUS_OPTIONS = Object.freeze([
   Object.freeze({ value: "aperto", label: "Aperto" }),
@@ -20,6 +20,7 @@ const DASHBOARD_STATUS_OPTIONS = Object.freeze([
 
 export default function OrdersDashboard() {
   const { moduleCode, basePath } = useOrdersModule();
+  const usesMexalReconciliation = orderModuleUsesMexalReconciliation(moduleCode);
   const navigate = useNavigate();
   const { loading: accessLoading, visibleAgents, customerCode, canSeeAll, canAccessOrders, canWriteOrders } = useOrdersAccess(moduleCode);
   const [aiTypeDialogOpen, setAITypeDialogOpen] = useState(false);
@@ -75,8 +76,9 @@ export default function OrdersDashboard() {
     const orderRows = sortOrdersNewestFirst(filterOrderModuleRows(moduleCode, ordersResult.data || []));
     const orderIds = orderRows.map((order) => order.id);
     let documents = [];
-    if (orderIds.length) {
-      const { data, error } = await supabase.from("ordini_documenti_mexal").select("ordine_id,tipo_documento,numero,stato_operativo,presente_in_mexal").in("ordine_id", orderIds).in("tipo_documento", orderModuleDocumentTypes(moduleCode)).not("numero", "is", null);
+    const documentTypes = orderModuleDocumentTypes(moduleCode);
+    if (orderIds.length && documentTypes.length) {
+      const { data, error } = await supabase.from("ordini_documenti_mexal").select("ordine_id,tipo_documento,numero,stato_operativo,presente_in_mexal").in("ordine_id", orderIds).in("tipo_documento", documentTypes).not("numero", "is", null);
       if (error) console.error("Errore caricamento documenti Mexal dashboard:", error);
       documents = data || [];
     }
@@ -122,9 +124,9 @@ export default function OrdersDashboard() {
     <section className="orders-dashboard-list">
       <div className="orders-dashboard-list-header"><div className="orders-dashboard-brand"><img src="/pwa-512x512.png" alt="Logo aziendale" /><div><p>Panoramica operativa</p><h2>Ordini recenti</h2></div></div><div className="orders-dashboard-controls"><label className="orders-dashboard-month"><span>Mese</span><select value={monthFilter} onChange={(event) => setMonthFilter(event.target.value)} aria-label="Filtra ordini per mese"><option value="">Tutti i mesi</option>{monthOptions.map((month) => <option key={month} value={month}>{formatMonth(month)}</option>)}</select></label><OrdersStatusFilter value={statusFilter} onChange={setStatusFilter} options={DASHBOARD_STATUS_OPTIONS} /><div className="orders-search orders-dashboard-search"><Search size={18} aria-hidden="true" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cerca numero, cliente o agente" aria-label="Cerca ordini per numero, cliente o agente" /></div></div></div>
       <div className="orders-dashboard-filter-row"><button type="button" className={!statusFilter ? "active" : ""} onClick={() => setStatusFilter("")}>Tutti gli ordini</button>{statusFilter && <span>Stato: {statusFilter.replaceAll("_", " ")}</span>}{monthFilter && <span>Mese: {formatMonth(monthFilter)}</span>}</div>
-      <div className="orders-dashboard-table-wrap"><table className="orders-table orders-dashboard-table"><thead><tr><th>Data</th><th>Ordine</th><th>Cliente</th><th>Agente</th><th>Stato</th><th>Totale</th><th>Documenti Mexal</th><th><span className="sr-only">Apri ordine</span></th></tr></thead><tbody>{filteredOrders.map((order) => {
+      <div className="orders-dashboard-table-wrap"><table className="orders-table orders-dashboard-table"><thead><tr><th>Data</th><th>Ordine</th><th>Cliente</th><th>Agente</th><th>Stato</th><th>Totale</th>{usesMexalReconciliation && <th>Documenti Mexal</th>}<th><span className="sr-only">Apri ordine</span></th></tr></thead><tbody>{filteredOrders.map((order) => {
         const status = getOrderDisplayStatus(order);
-        return <tr key={order.id} className="orders-clickable-row" onClick={() => navigate(`${basePath}/elenco/${order.id}`)}><td>{formatDate(order.data_ordine)}</td><td><strong>{order.numero_ordine_visualizzato || order.numero_ordine || "Bozza"}</strong></td><td>{customerDisplayName(order, customersByCode)}</td><td>{agentDisplayName(order, agentsByCode, agentsByCustomer)}</td><td><span className={`orders-status ${status.className}`}>{status.label}</span></td><td><strong>{formatCurrency(order.totale_documento ?? order.totale)}</strong></td><td><div className="orders-dashboard-documents">{documentNumbers(order).map((number) => <span key={number}>{number}</span>)}</div></td><td><ArrowUpRight size={18} aria-hidden="true" /></td></tr>;
+        return <tr key={order.id} className="orders-clickable-row" onClick={() => navigate(`${basePath}/elenco/${order.id}`)}><td>{formatDate(order.data_ordine)}</td><td><strong>{order.numero_ordine_visualizzato || order.numero_ordine || "Bozza"}</strong></td><td>{customerDisplayName(order, customersByCode)}</td><td>{agentDisplayName(order, agentsByCode, agentsByCustomer)}</td><td><span className={`orders-status ${status.className}`}>{status.label}</span></td><td><strong>{formatCurrency(order.totale_documento ?? order.totale)}</strong></td>{usesMexalReconciliation && <td><div className="orders-dashboard-documents">{documentNumbers(order).map((number) => <span key={number}>{number}</span>)}</div></td>}<td><ArrowUpRight size={18} aria-hidden="true" /></td></tr>;
       })}</tbody></table></div>
       {!filteredOrders.length && <p className="orders-dashboard-empty">{search || statusFilter || monthFilter ? "Nessun ordine corrisponde ai filtri selezionati." : "Non ci sono ancora ordini da mostrare."}</p>}
     </section>

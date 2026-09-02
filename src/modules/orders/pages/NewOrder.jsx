@@ -723,11 +723,13 @@ export default function NewOrder() {
           mexalMessage = ` Email non accodata: ${emailQueueError.message}.`;
         }
 
-        // In produzione l'invio parte subito. In sviluppo locale l'ordine resta
-        // confermato e può essere inviato dalla pagina dettaglio dopo il deploy.
+        // Per PR e Private l'invio parte subito in produzione. PH resta interno
+        // al Workspace e non avvia mai una sincronizzazione Mexal.
         const { data: moduleConfig, error: moduleConfigError } = await supabase.from("ordini_moduli_configurazione").select("invia_automaticamente_mexal").eq("modulo_ordini", moduleCode).maybeSingle();
         if (moduleConfigError) throw moduleConfigError;
-        if (moduleConfig?.invia_automaticamente_mexal !== false && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
+        if (moduleCode === "ph") {
+          mexalMessage += " Ordine PH confermato senza invio a Mexal.";
+        } else if (moduleConfig?.invia_automaticamente_mexal !== false && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
           try {
             const syncResult = await submitOrderToMexal(order.id, moduleCode);
             mexalMessage += privateOrder

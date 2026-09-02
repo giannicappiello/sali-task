@@ -48,7 +48,7 @@ export default function OrderDetail() {
     setError("");
     setOrder(null);
     try {
-      await recoverOrderSync(orderId, moduleCode);
+      if (moduleCode !== "ph") await recoverOrderSync(orderId, moduleCode);
       const [result, configResult] = await Promise.all([
         loadOrderDetail(orderId, moduleCode),
         supabase
@@ -66,7 +66,7 @@ export default function OrderDetail() {
         : Number(line.quantita_ocm || 0) > 0 || Number(line.quantita_ocx || 0) > 0 || Number(line.quantita_oci || 0) > 0);
 
       const isDraft = String(loadedOrder.stato || "").trim().toLowerCase() === "bozza";
-      if (canWriteOrders && !privateOrder && !isDraft && !sendingEnabled && hasConfirmedQuantities && loadedOrder.stato_sincronizzazione !== "completato") {
+      if (canWriteOrders && moduleCode === "prof" && !isDraft && !sendingEnabled && hasConfirmedQuantities && loadedOrder.stato_sincronizzazione !== "completato") {
         const moduleFilter = orderModuleFilter(moduleCode);
         const { data: closedOrder, error: closeError } = await supabase
           .from("ordini_testate")
@@ -120,7 +120,9 @@ export default function OrderDetail() {
 
   async function confirmDraft() {
     if (confirming || !isDraft) return;
-    if (!await window.workspaceConfirm(`Confermare e inviare questo ${privateOrder ? "OCT" : "ordine PH"} senza modificarlo?`)) return;
+    if (!await window.workspaceConfirm(privateOrder
+      ? "Confermare e inviare questo OCT senza modificarlo?"
+      : "Confermare questo ordine PH senza modificarlo?")) return;
     setConfirming(true);
     setError("");
     setMessage("");
@@ -159,15 +161,19 @@ export default function OrderDetail() {
       } catch (emailError) {
         console.error("Accodamento email conferma ordine non riuscito:", emailError);
       }
-      const result = await submitOrderToMexal(orderId, moduleCode);
-      setMessage(result.skipped
-        ? result.message
-        : privateOrder
-          ? `OCT confermato e inviato a Mexal: ${result.numero_oct || "-"}`
-          : `Ordine confermato e inviato a Mexal. OCM: ${result.numero_ocm || "-"} · OCX: ${result.numero_ocx || "-"} · OCI: ${result.numero_oci || "-"}`);
+      if (moduleCode === "ph") {
+        setMessage("Ordine PH confermato senza invio a Mexal.");
+      } else {
+        const result = await submitOrderToMexal(orderId, moduleCode);
+        setMessage(result.skipped
+          ? result.message
+          : privateOrder
+            ? `OCT confermato e inviato a Mexal: ${result.numero_oct || "-"}`
+            : `Ordine confermato e inviato a Mexal. OCM: ${result.numero_ocm || "-"} · OCX: ${result.numero_ocx || "-"} · OCI: ${result.numero_oci || "-"}`);
+      }
       await load();
     } catch (confirmError) {
-      setError(confirmError.message || "Conferma e invio dell'ordine non riusciti.");
+      setError(confirmError.message || (moduleCode === "ph" ? "Conferma dell'ordine non riuscita." : "Conferma e invio dell'ordine non riusciti."));
       await load();
     } finally {
       setConfirming(false);
@@ -226,8 +232,8 @@ export default function OrderDetail() {
         <div><span>Agente</span><strong>{agentName || "-"}</strong></div>
         <div><span>Pagamento</span><strong>{order.descrizione_pagamento || order.codice_pagamento || "-"}</strong></div>
         <div><span>Stato</span><strong className={`orders-sync-badge ${displayStatus.className}`}>{displayStatus.label}</strong></div>
-        <div><span>Ultimo tentativo</span><strong>{order.ultimo_tentativo_sync ? new Date(order.ultimo_tentativo_sync).toLocaleString("it-IT") : "-"}</strong></div>
-        {(privateOrder ? ["OCT"] : ["OCM", "OCX", "OCI"]).map((kind) => {
+        {moduleCode !== "ph" && <div><span>Ultimo tentativo</span><strong>{order.ultimo_tentativo_sync ? new Date(order.ultimo_tentativo_sync).toLocaleString("it-IT") : "-"}</strong></div>}
+        {moduleCode !== "ph" && (privateOrder ? ["OCT"] : ["OCM", "OCX", "OCI"]).map((kind) => {
           const document = order.mexal_documents?.find((item) => item.tipo_documento === kind);
           const value = document?.numero || order[`numero_${kind.toLowerCase()}`];
           return <div key={kind}><span>{kind}</span><strong>{value ? `${document?.serie || "-"}/${value}` : "-"}</strong></div>;
@@ -237,7 +243,7 @@ export default function OrderDetail() {
         <div><span>Totale documento</span><strong>{money(order.totale_documento ?? order.totale)}</strong></div>
       </section>
 
-      {order.mexal_documents?.length > 0 && <section className="orders-panel">
+      {moduleCode !== "ph" && order.mexal_documents?.length > 0 && <section className="orders-panel">
         <h3>Documenti ordine Mexal</h3>
         <p>{privateOrder ? "Il documento OCT contiene tutte le righe confermate nell’ordine Private." : "Ogni documento figlio contiene esclusivamente i prodotti assegnati al proprio tipo OCM, OCX o OCI."}</p>
         <div className="orders-child-documents">
@@ -268,7 +274,7 @@ export default function OrderDetail() {
         </div>
       </section>}
 
-      {order.errore_sincronizzazione && <div className="orders-alert orders-alert-error"><strong>Ultimo errore Mexal:</strong> {order.errore_sincronizzazione}</div>}
+      {moduleCode !== "ph" && order.errore_sincronizzazione && <div className="orders-alert orders-alert-error"><strong>Ultimo errore Mexal:</strong> {order.errore_sincronizzazione}</div>}
 
       <section className="orders-panel">
         <div className="orders-table-wrap">
@@ -282,11 +288,11 @@ export default function OrderDetail() {
       <div className="orders-detail-actions">
         <button className="orders-secondary orders-download-pdf-mobile" type="button" disabled={downloadingPdf} onClick={downloadPdf}><Download size={18} /> {downloadingPdf ? "Generazione PDF..." : "SCARICA PDF"}</button>
         {canEdit && <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/modifica/${orderId}`)}><Edit3 size={18} /> MODIFICA ORDINE</button>}
-        {canWriteOrders && ["ph", "private"].includes(moduleCode) && isDraft && <button className="orders-primary" type="button" disabled={confirming} onClick={confirmDraft}>{confirming ? <RefreshCw className="spin" size={18} /> : <Send size={18} />}{confirming ? "CONFERMA E INVIO..." : privateOrder ? "CONFERMA E CREA OCT" : "CONFERMA ORDINE"}</button>}
+        {canWriteOrders && ["ph", "private"].includes(moduleCode) && isDraft && <button className="orders-primary" type="button" disabled={confirming} onClick={confirmDraft}>{confirming ? <RefreshCw className="spin" size={18} /> : <Send size={18} />}{confirming ? (privateOrder ? "CONFERMA E INVIO..." : "CONFERMA...") : privateOrder ? "CONFERMA E CREA OCT" : "CONFERMA ORDINE"}</button>}
         {canDelete && <button className="orders-danger" type="button" disabled={deleting} onClick={removeOrder}><Trash2 size={18} /> {deleting ? "Eliminazione definitiva..." : "ELIMINA DEFINITIVAMENTE"}</button>}
-        {canWriteOrders && syncStatus === "in_corso" && <button className="orders-danger" type="button" disabled={stopping} onClick={requestStop}><OctagonX size={18} /> {stopping ? "Richiesta..." : "ARRESTA INVIO"}</button>}
-        {canWriteOrders && (privateOrder || mexalSendingEnabled) && !isClosed && !["in_corso", "arresto_richiesto", "completato"].includes(syncStatus) && !hasMexalDocument && <button className="orders-primary" type="button" disabled={sending} onClick={sendToMexal}>{sending ? <RefreshCw className="spin" size={18} /> : <Send size={18} />}{["errore", "arrestato"].includes(syncStatus) ? "RIPROVA INVIO" : privateOrder ? "CREA E INVIA OCT" : "INVIA A MEXAL"}</button>}
-        {syncStatus === "arresto_richiesto" && <span className="orders-sync-inline in_corso">Arresto richiesto: attesa della POST Mexal in corso.</span>}
+        {canWriteOrders && moduleCode !== "ph" && syncStatus === "in_corso" && <button className="orders-danger" type="button" disabled={stopping} onClick={requestStop}><OctagonX size={18} /> {stopping ? "Richiesta..." : "ARRESTA INVIO"}</button>}
+        {canWriteOrders && moduleCode !== "ph" && (privateOrder || mexalSendingEnabled) && !isClosed && !["in_corso", "arresto_richiesto", "completato"].includes(syncStatus) && !hasMexalDocument && <button className="orders-primary" type="button" disabled={sending} onClick={sendToMexal}>{sending ? <RefreshCw className="spin" size={18} /> : <Send size={18} />}{["errore", "arrestato"].includes(syncStatus) ? "RIPROVA INVIO" : privateOrder ? "CREA E INVIA OCT" : "INVIA A MEXAL"}</button>}
+        {moduleCode !== "ph" && syncStatus === "arresto_richiesto" && <span className="orders-sync-inline in_corso">Arresto richiesto: attesa della POST Mexal in corso.</span>}
       </div>
     </div>
   );

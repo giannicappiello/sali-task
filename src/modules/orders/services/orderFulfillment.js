@@ -77,7 +77,9 @@ async function enrichAgent(order) {
 }
 
 export async function loadCreatedMexalDocuments(orderId, moduleCode = "prof") {
-  const { data, error } = await supabase.from("ordini_documenti_mexal").select("id,tipo_documento,modulo,serie,numero,anno,stato,stato_operativo,presente_in_mexal,evaso_il,ultimo_sync_mexal").eq("ordine_id", orderId).in("tipo_documento", orderModuleDocumentTypes(moduleCode)).not("numero", "is", null).order("aggiornato_il", { ascending: false });
+  const documentTypes = orderModuleDocumentTypes(moduleCode);
+  if (!documentTypes.length) return [];
+  const { data, error } = await supabase.from("ordini_documenti_mexal").select("id,tipo_documento,modulo,serie,numero,anno,stato,stato_operativo,presente_in_mexal,evaso_il,ultimo_sync_mexal").eq("ordine_id", orderId).in("tipo_documento", documentTypes).not("numero", "is", null).order("aggiornato_il", { ascending: false });
   if (error) throw error;
   return data || [];
 }

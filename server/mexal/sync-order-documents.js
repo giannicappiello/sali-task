@@ -75,7 +75,7 @@ export async function purgeEvictedOrderDocuments({ supabase, days }) {
 }
 
 export async function syncOrderDocuments({ supabase, mexal, origin = "manual" }) {
-  const { data: documents, error } = await supabase.from("ordini_documenti_mexal").select("id,ordine_id,tipo_documento,modulo,sigla,serie,numero,anno,stato_operativo").not("numero", "is", null).neq("stato_operativo", "EVASO");
+  const { data: documents, error } = await supabase.from("ordini_documenti_mexal").select("id,ordine_id,tipo_documento,modulo,sigla,serie,numero,anno,stato_operativo").not("numero", "is", null).neq("stato_operativo", "EVASO").neq("modulo", "ORDINIPH");
   if (error) throw error;
   const { data: run, error: runError } = await supabase.from("mexal_sync_runs").insert({ sync_type: "orders", status: "running", metadata: { source: origin, document_count: documents?.length || 0 } }).select("id").single();
   if (runError) throw runError;

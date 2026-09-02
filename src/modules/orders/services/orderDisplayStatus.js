@@ -1,5 +1,16 @@
 import { filterOrderModuleDocuments, orderModuleCodeFromOrder, orderModuleDocumentTypes } from "./orderModules.js";
 
+const PH_INTERNAL_STATUSES = Object.freeze({
+  bozza: Object.freeze({ label: "BOZZA", className: "bozza", closed: false }),
+  aperto: Object.freeze({ label: "APERTO", className: "aperto", closed: false }),
+  confermato: Object.freeze({ label: "CONFERMATO", className: "aperto", closed: true }),
+  in_corso: Object.freeze({ label: "IN CORSO", className: "in_corso", closed: false }),
+  spedito: Object.freeze({ label: "SPEDITO", className: "spedito", closed: true }),
+  evaso: Object.freeze({ label: "EVASO", className: "evaso", closed: true }),
+  annullato: Object.freeze({ label: "ANNULLATO", className: "annullato", closed: true }),
+  errore: Object.freeze({ label: "ERRORE", className: "errore", closed: false }),
+});
+
 // Stato visuale condiviso tra dashboard, elenco e dettaglio ordine.
 export function hasMexalDocuments(order = {}) {
   const moduleCode = orderModuleCodeFromOrder(order);
@@ -19,6 +30,12 @@ export function hasOnlyMissingMexalDocuments(order = {}) {
 export function getOrderDisplayStatus(order = {}) {
   const orderStatus = String(order.stato || "").trim().toLowerCase();
   const syncStatus = String(order.stato_sincronizzazione || "").trim().toLowerCase();
+  const moduleCode = orderModuleCodeFromOrder(order);
+
+  if (moduleCode === "ph") {
+    return PH_INTERNAL_STATUSES[orderStatus] || PH_INTERNAL_STATUSES.bozza;
+  }
+
   const hasDocuments = hasMexalDocuments(order);
 
   if (hasOnlyMissingMexalDocuments(order) || syncStatus === "annullato") {

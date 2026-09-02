@@ -1,7 +1,7 @@
 export const ORDER_MODULE_DEFINITIONS = Object.freeze({
-  prof: Object.freeze({ workspaceCode: "ordini_pr", integrationCode: "gestione_ordini_pr", mexalModule: "ORDINIPR", title: "Ordini PR", documentTypes: Object.freeze(["OCM", "OCX", "OCI"]) }),
-  ph: Object.freeze({ workspaceCode: "ordini_ph", integrationCode: "gestione_ordini_ph", mexalModule: "ORDINIPH", title: "Ordini PH", documentTypes: Object.freeze(["OCM", "OCX", "OCI"]) }),
-  private: Object.freeze({ workspaceCode: "ordini_private", integrationCode: "gestione_ordini_private", mexalModule: "ORDINIPRIVATE", title: "OrdiniPrivate", documentTypes: Object.freeze(["OCT"]) }),
+  prof: Object.freeze({ workspaceCode: "ordini_pr", integrationCode: "gestione_ordini_pr", mexalModule: "ORDINIPR", title: "Ordini PR", documentTypes: Object.freeze(["OCM", "OCX", "OCI"]), mexalReconciliation: true }),
+  ph: Object.freeze({ workspaceCode: "ordini_ph", integrationCode: "gestione_ordini_ph", mexalModule: "ORDINIPH", title: "Ordini PH", documentTypes: Object.freeze([]), mexalReconciliation: false }),
+  private: Object.freeze({ workspaceCode: "ordini_private", integrationCode: "gestione_ordini_private", mexalModule: "ORDINIPRIVATE", title: "OrdiniPrivate", documentTypes: Object.freeze(["OCT"]), mexalReconciliation: true }),
 });
 
 export function orderModuleDefinition(moduleCode = "prof") {
@@ -25,6 +25,10 @@ export function filterOrderModuleRows(moduleCode = "prof", rows = []) {
 
 export function isPrivateOrderModule(moduleCode) {
   return moduleCode === "private";
+}
+
+export function orderModuleUsesMexalReconciliation(moduleCode = "prof") {
+  return orderModuleDefinition(moduleCode).mexalReconciliation;
 }
 
 export function orderModuleDocumentTypes(moduleCode = "prof") {

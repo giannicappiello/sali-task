@@ -10,11 +10,26 @@ import {
 } from "../../src/modules/orders/services/orderModules.js";
 import { getOrderDisplayStatus, hasMexalDocuments } from "../../src/modules/orders/services/orderDisplayStatus.js";
 
-test("OrdiniPR e OrdiniPH accettano soltanto OCM, OCX e OCI", () => {
+test("solo OrdiniPR usa OCM, OCX e OCI; OrdiniPH non usa documenti Mexal", () => {
   assert.deepEqual(orderModuleDocumentTypes("prof"), ["OCM", "OCX", "OCI"]);
-  assert.deepEqual(orderModuleDocumentTypes("ph"), ["OCM", "OCX", "OCI"]);
+  assert.deepEqual(orderModuleDocumentTypes("ph"), []);
   assert.equal(orderModuleAcceptsDocument("prof", "OCT"), false);
   assert.equal(orderModuleAcceptsDocument("ph", "OCT"), false);
+});
+
+test("OrdiniPH mostra soltanto lo stato operativo interno", () => {
+  assert.equal(getOrderDisplayStatus({ modulo_ordini: "ph", stato: "evaso", stato_sincronizzazione: "annullato" }).label, "EVASO");
+  assert.equal(getOrderDisplayStatus({ modulo_ordini: "ph", stato: "aperto", stato_sincronizzazione: "completato" }).label, "APERTO");
+  assert.equal(getOrderDisplayStatus({ modulo_ordini: "ph", stato: "bozza", documenti_mexal: [{ tipo_documento: "OCM", numero: "1", presente_in_mexal: false }] }).label, "BOZZA");
+});
+
+test("OrdiniPH non viene inviato né incluso nella riconciliazione Mexal", async () => {
+  const [submitSource, syncSource] = await Promise.all([
+    readFile(new URL("../../api/mexal/submit-order.js", import.meta.url), "utf8"),
+    readFile(new URL("../mexal/sync-order-documents.js", import.meta.url), "utf8"),
+  ]);
+  assert.match(submitSource, /modulo_ordini[\s\S]*=== "ph"[\s\S]*skipped: true/);
+  assert.match(syncSource, /\.neq\("modulo", "ORDINIPH"\)/);
 });
 
 test("OrdiniPR esclude sempre le testate OCT e non include più righe senza modulo", () => {

@@ -149,7 +149,7 @@ export default function Orders() {
                   </tr>,
                   ...(item.documenti_mexal || []).map((document) => {
                     const documentStatus = String(document.stato_operativo || "APERTO").toUpperCase();
-                    const documentStatusClass = documentStatus === "EVASO" ? "evaso" : documentStatus === "APERTO" ? "inviato-mexal" : "errore";
+                    const documentStatusClass = documentStatus === "EVASO" ? "evaso" : documentStatus === "APERTO" ? "inviato-mexal" : documentStatus === "ANNULLATO" ? "annullato" : "errore";
                     return <tr key={`${item.id}-${document.tipo_documento}-${document.serie}-${document.numero}`} className="orders-clickable-row orders-child-order-row" onClick={() => navigate(`${basePath}/elenco/${item.id}`)}>
                       <td>{document.tipo_documento}</td><td>{item.data_ordine || "-"}</td><td>{`${document.serie || "-"}/${document.numero}`}</td><td>{parentReference}</td><td colSpan={2}>Documento figlio Mexal</td>
                       <td><span className={`orders-status ${documentStatusClass}`}>{documentStatus}</span></td><td>-</td><td>-</td><td>-</td>

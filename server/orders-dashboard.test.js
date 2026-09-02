@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { filterDashboardOrders } from "../src/modules/orders/services/dashboardOrders.js";
 
 const orders = [
@@ -22,4 +23,10 @@ test("il filtro mese si combina con ricerca e stato", () => {
   assert.deepEqual(filterDashboardOrders(orders, "", "", "2026-07").map(({ id }) => id), ["1"]);
   assert.deepEqual(filterDashboardOrders(orders, "", "evaso", "2026-08").map(({ id }) => id), ["2"]);
   assert.equal(filterDashboardOrders(orders, "alfa", "", "2026-08").length, 0);
+});
+
+test("la card Ordini del mese applica il filtro del mese corrente", async () => {
+  const source = await readFile(new URL("../src/modules/orders/pages/OrdersDashboard.jsx", import.meta.url), "utf8");
+  assert.match(source, /label="Ordini del mese"[\s\S]*setMonthFilter/);
+  assert.match(source, /monthFilter === currentMonth/);
 });

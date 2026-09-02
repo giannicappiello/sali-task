@@ -8,7 +8,7 @@ import {
   orderModuleFilter,
   orderModuleDocumentTypes,
 } from "../../src/modules/orders/services/orderModules.js";
-import { hasMexalDocuments } from "../../src/modules/orders/services/orderDisplayStatus.js";
+import { getOrderDisplayStatus, hasMexalDocuments } from "../../src/modules/orders/services/orderDisplayStatus.js";
 
 test("OrdiniPR e OrdiniPH accettano soltanto OCM, OCX e OCI", () => {
   assert.deepEqual(orderModuleDocumentTypes("prof"), ["OCM", "OCX", "OCI"]);
@@ -41,6 +41,19 @@ test("lo stato dell'ordine ignora documenti appartenenti all'altro modulo", () =
   assert.equal(hasMexalDocuments({ modulo_ordini: "private", numero_oct: "2" }), true);
   assert.equal(hasMexalDocuments({ modulo_ordini: "prof", numero_oct: "2" }), false);
   assert.equal(hasMexalDocuments({ modulo_ordini: "prof", numero_oci: "3" }), true);
+});
+
+test("un ordine assente da Mexal non risulta spedito o evaso", () => {
+  assert.equal(getOrderDisplayStatus({
+    modulo_ordini: "prof",
+    stato_sincronizzazione: "completato",
+    documenti_mexal: [{ id: "d1", tipo_documento: "OCM", numero: "11", stato_operativo: "ANNULLATO", presente_in_mexal: false }],
+  }).label, "NON PRESENTE IN MEXAL");
+
+  assert.equal(getOrderDisplayStatus({
+    modulo_ordini: "prof",
+    stato_sincronizzazione: "completato",
+  }).label, "NON RICONCILIATO");
 });
 
 test("la navigazione OrdiniPrivate espone Dashboard, Clienti, Ordini e Fatture", async () => {

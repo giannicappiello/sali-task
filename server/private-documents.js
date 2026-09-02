@@ -40,10 +40,15 @@ async function authorize(req, { upload = false } = {}) {
     if (!direct && !role) throw Object.assign(new Error("Caricamento Documenti Private non autorizzato."), { status: 403 });
   }
 
-  const { data: customerRows, error: customerError } = await admin.from("workspace_private_document_customer_access")
-    .select("codice_cliente").eq("utente_id", profile.id);
-  if (customerError) throw customerError;
-  const customerCodes = (customerRows || []).map((row) => String(row.codice_cliente || "").trim()).filter(Boolean);
+  const [canonicalAccess, legacyAccess] = await Promise.all([
+    admin.from("workspace_customer_user_links").select("customer_code").eq("user_id", profile.id),
+    admin.from("workspace_private_document_customer_access").select("codice_cliente").eq("utente_id", profile.id),
+  ]);
+  if (canonicalAccess.error) throw canonicalAccess.error;
+  if (legacyAccess.error) throw legacyAccess.error;
+  const canonicalCodes = (canonicalAccess.data || []).map((row) => String(row.customer_code || "").trim()).filter(Boolean);
+  const legacyCodes = (legacyAccess.data || []).map((row) => String(row.codice_cliente || "").trim()).filter(Boolean);
+  const customerCodes = [...new Set(canonicalCodes.length ? canonicalCodes : legacyCodes)];
   const externalRole = /client|cliente|portal/i.test(String(profile.ruoli?.nome || ""));
   if (externalRole && customerCodes.length === 0) throw Object.assign(new Error("Nessun cliente associato all’account Workspace."), { status: 403 });
   return { admin, user, profile, customerCodes: customerCodes.length ? customerCodes : ["*"] };

@@ -104,7 +104,7 @@ function App() {
               <Route path="reminders" element={<Navigate to="/activities/reminders" replace />} />
               <Route path="tasks" element={<Navigate to="/activities/tasks" replace />} />
               <Route path="projects" element={<Navigate to="/activities/projects" replace />} />
-              <Route path="products" element={<Products />} />
+              <Route path="products" element={<WorkspaceAccessGuard moduleCode="prodotti"><Products /></WorkspaceAccessGuard>} />
               <Route path="magazzino" element={<Navigate to="/magazzino-dashboard" replace />} />
               <Route path="magazzino-dashboard" element={<WorkspaceAccessGuard moduleCode="magazzino"><WarehouseDashboard /></WorkspaceAccessGuard>} />
               <Route path="documentation" element={<WorkspaceAccessGuard moduleCode="documenti"><Documentation /></WorkspaceAccessGuard>} />

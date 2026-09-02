@@ -1,9 +1,9 @@
 export const WORKSPACE_MODULES = Object.freeze({
   home: { code: "home", label: "Home", kind: "system", alwaysAvailable: true },
   attivita: { code: "attivita", label: "Attività", kind: "business", alwaysAvailable: true, roleConfigurable: true, selfServiceLevel: "scrittura" },
-  prodotti: { code: "prodotti", label: "Prodotti", kind: "business", alwaysAvailable: true, roleConfigurable: true },
+  prodotti: { code: "prodotti", label: "Prodotti Direct", kind: "business", departmentAssignable: true, roleConfigurable: true },
   magazzino: { code: "magazzino", label: "Magazzino", kind: "business", alwaysAvailable: true, roleConfigurable: true },
-  documenti: { code: "documenti", label: "Documenti", kind: "business", alwaysAvailable: true, roleConfigurable: true },
+  documenti: { code: "documenti", label: "Documenti Direct", kind: "business", departmentAssignable: true, roleConfigurable: true },
   assistente_ai: { code: "assistente_ai", label: "Assistente AI", kind: "business", departmentAssignable: true, roleConfigurable: true },
   messaggi: { code: "messaggi", label: "Messaggi", kind: "business", alwaysAvailable: true, roleConfigurable: true, selfServiceLevel: "scrittura" },
   notifiche: { code: "notifiche", label: "Notifiche", kind: "system", alwaysAvailable: true },

@@ -8,6 +8,9 @@ const app = read("src/App.jsx");
 const crm = read("src/modules/crm/CrmModule.jsx");
 const css = read("src/modules/crm/crm.css");
 const migration = read("supabase/migrations/20260830190000_crm_direct_documents_and_private_activities.sql");
+const departmentModulesMigration = read("supabase/migrations/20260902150000_direct_modules_department_assignment.sql");
+const moduleConfig = read("src/config/workspaceModules.js");
+const privateDocuments = read("server/private-documents.js");
 
 test("un modulo contenitore con schermata esatta non riceve una seconda testata", () => {
   assert.match(layout, /exactModule\?\.tipo === "contenitore"/);
@@ -22,6 +25,22 @@ test("Documenti Direct è protetto dalla route e assegnabile ai reparti", () => 
   assert.match(migration, /old\.codice <> 'documenti'/);
   assert.match(migration, /tg_op = 'DELETE' and old\.protetto/);
   assert.match(migration, /workspace_module_enabled_for_user\(current_user_profile\.id, 'documenti'\)/);
+});
+
+test("Documenti Direct e Prodotti Direct sono realmente assegnabili ai reparti", () => {
+  assert.match(departmentModulesMigration, /codice in \('documenti', 'prodotti'\)/);
+  assert.match(departmentModulesMigration, /assegnabile_reparto = true/);
+  assert.match(departmentModulesMigration, /sempre_disponibile = false/);
+  assert.match(moduleConfig, /prodotti: \{[^\n]+departmentAssignable: true/);
+  assert.match(moduleConfig, /documenti: \{[^\n]+departmentAssignable: true/);
+  assert.match(app, /path="products" element=\{<WorkspaceAccessGuard moduleCode="prodotti">/);
+  assert.doesNotMatch(moduleConfig, /prodotti: \{[^\n]+alwaysAvailable: true/);
+  assert.doesNotMatch(moduleConfig, /documenti: \{[^\n]+alwaysAvailable: true/);
+});
+
+test("Documenti Private usa prima l'associazione cliente canonica", () => {
+  assert.match(privateDocuments, /workspace_customer_user_links/);
+  assert.match(privateDocuments, /canonicalCodes\.length \? canonicalCodes : legacyCodes/);
 });
 
 test("le attività PRIVATE inizializzano soltanto l'estensione CRM canonica", () => {

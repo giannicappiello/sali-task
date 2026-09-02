@@ -74,3 +74,13 @@ test("Emetti CoA segue la navigazione interna Workspace e conserva il contesto M
   assert.match(page, /Produzione non identificata/);
   assert.doesNotMatch(page, /window\.open\("about:blank"/);
 });
+
+test("l'associazione prodotto seleziona un file NAS esistente senza caricarlo", async () => {
+  const page = await readFile(new URL("../src/pages/Documentation/PrivateDocuments.jsx", import.meta.url), "utf8");
+  assert.match(page, /nas\?directory=/);
+  assert.match(page, /documents\/reference/);
+  assert.match(page, /name="nasPath"/);
+  assert.match(page, /Il file resta nella posizione attuale/);
+  assert.doesNotMatch(page, /name="nasDirectory"/);
+  assert.doesNotMatch(page, /name="file"/);
+});

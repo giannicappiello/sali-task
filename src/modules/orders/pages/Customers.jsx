@@ -24,6 +24,7 @@ export default function Customers() {
   const {
     loading: accessLoading,
     visibleAgents,
+    customerCode,
     canSeeAll,
     canAccessOrders,
   } = useOrdersAccess(moduleCode);
@@ -46,14 +47,14 @@ export default function Customers() {
         return;
       }
 
-      if (!canSeeAll && !visibleAgents?.length) {
+      if (!customerCode && !canSeeAll && !visibleAgents?.length) {
         setRows([]);
         setAgentNames(new Map());
         return;
       }
 
       const searchTerm = normalizeSearch(searchValue);
-      let query = (canSeeAll
+      let query = (canSeeAll || customerCode
         ? supabase.from("ordini_clienti_cache")
         : supabase.rpc("visible_mexal_clients_for_me"))
         .select(
@@ -63,7 +64,8 @@ export default function Customers() {
         .order("codice_cliente", { ascending: true })
         .limit(RESULT_LIMIT);
 
-      if (canSeeAll) query = query.eq("attivo_mexal", true);
+      if (canSeeAll || customerCode) query = query.eq("attivo_mexal", true);
+      if (customerCode) query = query.eq("codice_cliente", customerCode);
 
       if (searchTerm) {
         const pattern = `%${searchTerm}%`;
@@ -113,6 +115,7 @@ export default function Customers() {
     accessLoading,
     canSeeAll,
     canAccessOrders,
+    customerCode,
     search,
     JSON.stringify(visibleAgents),
   ]);

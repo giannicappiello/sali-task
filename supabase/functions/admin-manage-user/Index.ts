@@ -88,11 +88,11 @@ Deno.serve(async (req) => {
     const action = body.action;
 
     if (action === "create") {
-      return await createUser(adminClient, body);
+      return await createUser(adminClient, body, callerProfile.id);
     }
 
     if (action === "update") {
-      return await updateUser(adminClient, body);
+      return await updateUser(adminClient, body, callerProfile.id);
     }
 
     if (action === "delete") {
@@ -113,7 +113,7 @@ Deno.serve(async (req) => {
   }
 });
 
-async function createUser(adminClient, body) {
+async function createUser(adminClient, body, callerProfileId) {
   const nome = clean(body.nome);
   const cognome = clean(body.cognome);
   const email = clean(body.email).toLowerCase();
@@ -122,6 +122,7 @@ async function createUser(adminClient, body) {
   const ruolo_id = body.ruolo_id || null;
   const reparto_id = body.reparto_id || null;
   const responsabile_utente_id = body.responsabile_utente_id || null;
+  const customer_code = clean(body.customer_code) || null;
   const attivo = body.attivo !== false;
 
   if (!nome || !cognome || !email || !password) {
@@ -190,6 +191,19 @@ async function createUser(adminClient, body) {
     );
   }
 
+  const customerLinkError = await saveCustomerLink(
+    adminClient,
+    profile.id,
+    customer_code,
+    ruolo_id,
+    callerProfileId
+  );
+
+  if (customerLinkError) {
+    await adminClient.auth.admin.deleteUser(authUserId);
+    return json({ error: customerLinkError }, 400);
+  }
+
   return json({
     success: true,
     user_id: profile.id,
@@ -197,7 +211,7 @@ async function createUser(adminClient, body) {
   });
 }
 
-async function updateUser(adminClient, body) {
+async function updateUser(adminClient, body, callerProfileId) {
   const id = body.id;
   const auth_user_id = body.auth_user_id || null;
   const nome = clean(body.nome);
@@ -208,6 +222,7 @@ async function updateUser(adminClient, body) {
   const ruolo_id = body.ruolo_id || null;
   const reparto_id = body.reparto_id || null;
   const responsabile_utente_id = body.responsabile_utente_id || null;
+  const customer_code = clean(body.customer_code) || null;
   const attivo = body.attivo !== false;
 
   if (!id || !nome || !cognome || !email) {
@@ -273,7 +288,72 @@ async function updateUser(adminClient, body) {
     return json({ error: profileError.message }, 400);
   }
 
+  const customerLinkError = await saveCustomerLink(
+    adminClient,
+    id,
+    customer_code,
+    ruolo_id,
+    callerProfileId
+  );
+
+  if (customerLinkError) {
+    return json({ error: customerLinkError }, 400);
+  }
+
   return json({ success: true });
+}
+
+async function saveCustomerLink(
+  adminClient,
+  userId,
+  customerCode,
+  roleId,
+  callerProfileId
+) {
+  const { data: role, error: roleError } = roleId
+    ? await adminClient.from("ruoli").select("nome").eq("id", roleId).maybeSingle()
+    : { data: null, error: null };
+
+  if (roleError) return roleError.message;
+
+  const customerRole = /(^|\s)(cliente|customer)(\s|$)/i.test(clean(role?.nome));
+
+  if (customerRole && !customerCode) {
+    return "Per un utente Cliente è obbligatorio selezionare l'anagrafica cliente associata.";
+  }
+
+  if (!customerCode) {
+    const { error } = await adminClient
+      .from("workspace_customer_user_links")
+      .delete()
+      .eq("user_id", userId);
+    return error?.message || null;
+  }
+
+  const { data: customer, error: customerError } = await adminClient
+    .from("ordini_clienti_cache")
+    .select("codice_cliente,attivo_mexal")
+    .ilike("codice_cliente", customerCode)
+    .maybeSingle();
+
+  if (customerError) return customerError.message;
+  if (!customer) return "Il cliente selezionato non esiste nell'anagrafica Workspace/Mexal.";
+  if (customer.attivo_mexal === false) return "Il cliente selezionato non è attivo nell'anagrafica Workspace/Mexal.";
+
+  const { error } = await adminClient
+    .from("workspace_customer_user_links")
+    .upsert(
+      {
+        user_id: userId,
+        customer_code: customer.codice_cliente,
+        linked_by: callerProfileId,
+        linked_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id" }
+    );
+
+  return error?.message || null;
 }
 
 async function deleteUser(adminClient, body) {

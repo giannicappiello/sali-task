@@ -10,7 +10,7 @@ import {
 } from "../config/workspaceModules";
 
 const AuthContext = createContext(null);
-const EMPTY_DATA_SCOPE = Object.freeze({ mode: "propri", userIds: [], departmentIds: [], agentIds: [] });
+const EMPTY_DATA_SCOPE = Object.freeze({ mode: "propri", userIds: [], departmentIds: [], agentIds: [], customerCode: null, customerCodes: [] });
 const WORKSPACE_ADMIN_ROLE_NAMES = new Set(["admin"]);
 
 function workspaceRoleIsAdmin(role) {
@@ -253,6 +253,8 @@ export function AuthProvider({ children }) {
         ? scopeContext.department_ids.filter(Boolean)
         : (fallbackScopeMode === "team" ? reparto_ids : []),
       agentIds: Array.isArray(scopeContext?.agent_ids) ? scopeContext.agent_ids.filter(Boolean) : [],
+      customerCode: scopeContext?.customer_code || null,
+      customerCodes: Array.isArray(scopeContext?.customer_codes) ? scopeContext.customer_codes.filter(Boolean) : [],
     });
 
     let nextModuleAccess = Array.isArray(accessContext?.modules) ? accessContext.modules.filter(Boolean) : [];

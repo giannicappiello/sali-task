@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
@@ -18,21 +18,17 @@ function formatDate(value) {
 export default function Invoices() {
   const navigate = useNavigate();
   const { basePath, moduleCode } = useOrdersModule();
-  const { loading: accessLoading, canAccessOrders, canSeeAll, visibleAgents } = useOrdersAccess(moduleCode);
+  const { loading: accessLoading, canAccessOrders, canSeeAll, visibleAgents, customerCode } = useOrdersAccess(moduleCode);
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [search, setSearch] = useState("");
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    if (!accessLoading) loadInvoices();
-  }, [accessLoading, canAccessOrders, canSeeAll, month, JSON.stringify(visibleAgents)]);
-
-  async function loadInvoices() {
+  const loadInvoices = useCallback(async () => {
     setLoading(true);
     setError("");
-    if (!canAccessOrders || (!canSeeAll && !visibleAgents?.length)) {
+    if (!canAccessOrders || (!customerCode && !canSeeAll && !visibleAgents?.length)) {
       setInvoices([]);
       setLoading(false);
       return;
@@ -47,12 +43,19 @@ export default function Invoices() {
       .lt("data_documento", end.toISOString().slice(0, 10))
       .order("data_documento", { ascending: false })
       .order("numero", { ascending: false });
-    if (!canSeeAll) query = query.in("codice_agente_mexal", visibleAgents);
+    if (customerCode) query = query.eq("codice_cliente", customerCode);
+    else if (!canSeeAll) query = query.in("codice_agente_mexal", visibleAgents);
     const { data, error: queryError } = await query;
     if (queryError) setError(queryError.message);
     setInvoices(data || []);
     setLoading(false);
-  }
+  }, [canAccessOrders, canSeeAll, customerCode, month, visibleAgents]);
+
+  useEffect(() => {
+    if (accessLoading) return undefined;
+    const timer = window.setTimeout(() => void loadInvoices(), 0);
+    return () => window.clearTimeout(timer);
+  }, [accessLoading, loadInvoices]);
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();

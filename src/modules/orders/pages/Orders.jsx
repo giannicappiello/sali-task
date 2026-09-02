@@ -14,7 +14,7 @@ export default function Orders() {
   const { moduleCode, basePath } = useOrdersModule();
   const navigate = useNavigate();
   const location = useLocation();
-  const { loading: accessLoading, visibleAgents, canSeeAll, canAccessOrders, canWriteOrders, isBackoffice, isAdmin } = useOrdersAccess(moduleCode);
+  const { loading: accessLoading, visibleAgents, customerCode, canSeeAll, canAccessOrders, canWriteOrders, isBackoffice, isAdmin } = useOrdersAccess(moduleCode);
   const [rows, setRows] = useState([]);
   const [agentsByCode, setAgentsByCode] = useState(new Map());
   const [customersByCode, setCustomersByCode] = useState(new Map());
@@ -40,7 +40,9 @@ export default function Orders() {
     }
 
     let query = supabase.from("ordini_testate").select("*").or(orderModuleFilter(moduleCode)).eq("mese_ordine", month);
-    if (!canSeeAll) {
+    if (customerCode) {
+      query = query.eq("codice_cliente", customerCode);
+    } else if (!canSeeAll) {
       if (!visibleAgents?.length) {
         setRows([]);
         setAgentsByCode(new Map());
@@ -93,7 +95,7 @@ export default function Orders() {
     setCustomersByCode(customerDirectory.namesByCode);
     setAgentsByCustomer(customerDirectory.agentsByCustomer);
     setLoading(false);
-  }, [canAccessOrders, canSeeAll, moduleCode, month, visibleAgents]);
+  }, [canAccessOrders, canSeeAll, customerCode, moduleCode, month, visibleAgents]);
 
   useEffect(() => {
     if (accessLoading) return undefined;
@@ -120,7 +122,7 @@ export default function Orders() {
     });
   }, [rows, search, statusFilter, agentsByCode, agentsByCustomer, customersByCode]);
 
-  const accessLabel = isAdmin || isBackoffice ? "Accesso completo" : `${visibleAgents?.length || 0} agente/i autorizzato/i`;
+  const accessLabel = customerCode ? `Solo cliente ${customerCode}` : isAdmin || isBackoffice ? "Accesso completo" : `${visibleAgents?.length || 0} agente/i autorizzato/i`;
 
   return (
     <div className="orders-page">
@@ -129,7 +131,7 @@ export default function Orders() {
         <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
         <OrdersStatusFilter value={statusFilter} onChange={setStatusFilter} />
         {canWriteOrders && <><button className="orders-primary" type="button" onClick={() => navigate(`${basePath}/nuovo`)}>{isPrivateOrderModule(moduleCode) ? "Nuovo OCT" : "Nuovo ordine"}</button>{!isPrivateOrderModule(moduleCode) && <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/nuovo?tipo=prenotazione`)}>Ordine prenotazione</button>}</>}
-        <button className="orders-secondary" type="button" onClick={() => isPrivateOrderModule(moduleCode) ? openAIOrderImport("standard") : setAITypeDialogOpen(true)}><Sparkles size={17} /> Genera con AI</button>
+        {canWriteOrders && <button className="orders-secondary" type="button" onClick={() => isPrivateOrderModule(moduleCode) ? openAIOrderImport("standard") : setAITypeDialogOpen(true)}><Sparkles size={17} /> Genera con AI</button>}
       </div>
       {location.state?.message && <div className="orders-alert orders-alert-success">{location.state.message}</div>}
       <div className="orders-panel">

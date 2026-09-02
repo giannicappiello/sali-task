@@ -28,9 +28,10 @@ function emptyAccess() {
 }
 
 export default function useOrdersAccess(moduleCode = "prof") {
-  const { profile, isAdminUser, canUseModule } = useAuth();
+  const { profile, isAdminUser, canUseModule, dataScope } = useAuth();
   const moduleDefinition = orderModuleDefinition(moduleCode);
   const workspaceModuleCode = moduleDefinition.workspaceCode;
+  const customerCode = dataScope?.customerCode || null;
   const [loading, setLoading] = useState(true);
   const [access, setAccess] = useState(emptyAccess());
   const [error, setError] = useState(null);
@@ -58,6 +59,20 @@ export default function useOrdersAccess(moduleCode = "prof") {
             codice_agente_mexal: null,
             agenti_gestiti: [],
             admin: true,
+          });
+          setLoading(false);
+        }
+        return;
+      }
+
+      if (customerCode) {
+        if (active) {
+          setAccess({
+            enabled: true,
+            ruolo_ordini: "cliente",
+            codice_agente_mexal: null,
+            agenti_gestiti: [],
+            admin: false,
           });
           setLoading(false);
         }
@@ -101,7 +116,7 @@ export default function useOrdersAccess(moduleCode = "prof") {
     return () => {
       active = false;
     };
-  }, [profile?.id, isAdminUser, moduleDefinition.integrationCode]);
+  }, [profile?.id, isAdminUser, customerCode, moduleDefinition.integrationCode]);
 
   const permissions = useMemo(() => {
     const canReadModule = canUseModule(workspaceModuleCode, "lettura");
@@ -114,6 +129,7 @@ export default function useOrdersAccess(moduleCode = "prof") {
     const isBackoffice = enabled && role === "backoffice";
     const isAreaManager = enabled && role === "area_manager";
     const isAgent = enabled && role === "agente";
+    const isCustomer = enabled && role === "cliente";
 
     const agentCode = isAgent ? access.codice_agente_mexal : null;
     const managedAgents = isAreaManager ? access.agenti_gestiti : [];
@@ -135,16 +151,18 @@ export default function useOrdersAccess(moduleCode = "prof") {
       isBackoffice,
       isAreaManager,
       isAgent,
+      isCustomer,
+      customerCode,
       agentCode,
       managedAgents,
       visibleAgents,
       canSeeAll: isAdmin || isBackoffice,
-      canWriteAll: canWriteModule && (isAdmin || isBackoffice),
+      canWriteAll: !isCustomer && canWriteModule && (isAdmin || isBackoffice),
       canAccessOrders: isAdmin || enabled,
-      canWriteOrders: isAdmin || (enabled && canWriteModule),
-      canManageOrders: isAdmin || (enabled && canManageModule),
+      canWriteOrders: !isCustomer && (isAdmin || (enabled && canWriteModule)),
+      canManageOrders: !isCustomer && (isAdmin || (enabled && canManageModule)),
     };
-  }, [access, canUseModule, workspaceModuleCode]);
+  }, [access, canUseModule, customerCode, workspaceModuleCode]);
 
   return {
     loading,

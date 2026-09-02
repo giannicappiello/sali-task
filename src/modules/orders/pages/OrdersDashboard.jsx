@@ -21,7 +21,7 @@ const DASHBOARD_STATUS_OPTIONS = Object.freeze([
 export default function OrdersDashboard() {
   const { moduleCode, basePath } = useOrdersModule();
   const navigate = useNavigate();
-  const { loading: accessLoading, visibleAgents, canSeeAll, canAccessOrders, canWriteOrders } = useOrdersAccess(moduleCode);
+  const { loading: accessLoading, visibleAgents, customerCode, canSeeAll, canAccessOrders, canWriteOrders } = useOrdersAccess(moduleCode);
   const [aiTypeDialogOpen, setAITypeDialogOpen] = useState(false);
   const [stats, setStats] = useState({ ordiniMese: 0, aperti: 0, inCorso: 0, evasi: 0 });
   const [orders, setOrders] = useState([]);
@@ -36,14 +36,16 @@ export default function OrdersDashboard() {
     let query = supabase.from(table).select("*", { count: "exact", head: true });
     query = query.or(orderModuleFilter(moduleCode));
     filters.forEach(([field, value]) => { query = query.eq(field, value); });
-    if (!canSeeAll) {
+    if (customerCode) {
+      query = query.eq("codice_cliente", customerCode);
+    } else if (!canSeeAll) {
       if (!visibleAgents?.length) return 0;
       query = query.in("codice_agente_mexal", visibleAgents);
     }
     const { count, error } = await query;
     if (error) { console.error(`Errore conteggio ${table}:`, error); return 0; }
     return count || 0;
-  }, [canSeeAll, moduleCode, visibleAgents]);
+  }, [canSeeAll, customerCode, moduleCode, visibleAgents]);
 
   const loadStats = useCallback(async () => {
     setLoading(true);
@@ -57,7 +59,8 @@ export default function OrdersDashboard() {
 
     const month = new Date().toISOString().slice(0, 7);
     let ordersQuery = supabase.from("ordini_testate").select("*").or(orderModuleFilter(moduleCode));
-    if (!canSeeAll) ordersQuery = visibleAgents?.length ? ordersQuery.in("codice_agente_mexal", visibleAgents) : null;
+    if (customerCode) ordersQuery = ordersQuery.eq("codice_cliente", customerCode);
+    else if (!canSeeAll) ordersQuery = visibleAgents?.length ? ordersQuery.in("codice_agente_mexal", visibleAgents) : null;
 
     const [ordiniMese, aperti, inCorso, evasi, ordersResult] = await Promise.all([
       countTable("ordini_testate", [["mese_ordine", month]]),
@@ -93,7 +96,7 @@ export default function OrdersDashboard() {
     setAgentsByCustomer(customerDirectory.agentsByCustomer);
     setOrders(orderRows.map((order) => ({ ...order, documenti_mexal: documentsByOrder.get(order.id) || [], agente_visualizzato: agentDisplayName(order, names, customerDirectory.agentsByCustomer) })));
     setLoading(false);
-  }, [canAccessOrders, canSeeAll, countTable, moduleCode, visibleAgents]);
+  }, [canAccessOrders, canSeeAll, customerCode, countTable, moduleCode, visibleAgents]);
 
   useEffect(() => {
     if (accessLoading) return undefined;
@@ -113,7 +116,7 @@ export default function OrdersDashboard() {
     <div className="orders-toolbar">
       {canWriteOrders && <><button className="orders-primary" type="button" onClick={() => navigate(`${basePath}/nuovo`)}>{isPrivateOrderModule(moduleCode) ? "Nuovo OCT" : "Nuovo ordine"}</button>
       {!isPrivateOrderModule(moduleCode) && <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/nuovo?tipo=prenotazione`)}>Ordine prenotazione</button>}</>}
-      <button className="orders-secondary" type="button" onClick={() => isPrivateOrderModule(moduleCode) ? openAIOrderImport("standard") : setAITypeDialogOpen(true)}><Sparkles size={17} /> Genera con AI</button>
+      {canWriteOrders && <button className="orders-secondary" type="button" onClick={() => isPrivateOrderModule(moduleCode) ? openAIOrderImport("standard") : setAITypeDialogOpen(true)}><Sparkles size={17} /> Genera con AI</button>}
     </div>
     <div className="orders-kpi-grid"><Kpi label="Ordini del mese" value={stats.ordiniMese} active={monthFilter === currentMonth} onClick={() => setMonthFilter((value) => value === currentMonth ? "" : currentMonth)} /><Kpi label="Ordini aperti" value={stats.aperti} active={statusFilter === "aperto"} onClick={() => toggleStatusFilter("aperto")} /><Kpi label="Ordini in corso" value={stats.inCorso} active={statusFilter === "in_corso"} onClick={() => toggleStatusFilter("in_corso")} /><Kpi label="Ordini evasi" value={stats.evasi} active={statusFilter === "evaso"} onClick={() => toggleStatusFilter("evaso")} /></div>
     <section className="orders-dashboard-list">

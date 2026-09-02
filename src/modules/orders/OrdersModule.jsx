@@ -19,13 +19,13 @@ import "./order-child-documents.css";
    const netUnit = quantity > 0 ? taxable / quantity : 0 */
 
 export default function OrdersModule({ moduleCode = "prof", title = "Ordini PROF", basePath = "/ordini-prof" }) {
-  const { loading, canAccessOrders } = useOrdersAccess(moduleCode);
+  const { loading, canAccessOrders, canWriteOrders } = useOrdersAccess(moduleCode);
   if (loading) return <div className="orders-empty">Verifica autorizzazione...</div>;
   if (!canAccessOrders) return <div className="orders-empty">Non sei autorizzato ad accedere a {title}.</div>;
   return <OrdersModuleProvider value={{ moduleCode, title, basePath }}><div className="orders-module">
     <OrdersModuleNavigation title={title} basePath={basePath} />
     <Routes>
-      <Route index element={<Navigate to="dashboard" replace />} /><Route path="dashboard" element={<OrdersDashboard />} /><Route path="clienti" element={<Customers />} /><Route path="clienti/:customerCode" element={<CustomerDetail />} /><Route path="elenco" element={<Orders />} /><Route path="nuovo" element={<NewOrder />} /><Route path="nuovo-da-documento" element={<AIOrderImport />} /><Route path="modifica/:orderId" element={<NewOrder />} /><Route path="elenco/:orderId" element={<OrderDetail />} /><Route path="fatture" element={<Invoices />} /><Route path="fatture/:invoiceId" element={<InvoiceDetail />} /><Route path="*" element={<Navigate to="dashboard" replace />} />
+      <Route index element={<Navigate to="dashboard" replace />} /><Route path="dashboard" element={<OrdersDashboard />} /><Route path="clienti" element={<Customers />} /><Route path="clienti/:customerCode" element={<CustomerDetail />} /><Route path="elenco" element={<Orders />} /><Route path="nuovo" element={canWriteOrders ? <NewOrder /> : <Navigate to={`${basePath}/elenco`} replace />} /><Route path="nuovo-da-documento" element={canWriteOrders ? <AIOrderImport /> : <Navigate to={`${basePath}/elenco`} replace />} /><Route path="modifica/:orderId" element={canWriteOrders ? <NewOrder /> : <Navigate to={`${basePath}/elenco`} replace />} /><Route path="elenco/:orderId" element={<OrderDetail />} /><Route path="fatture" element={<Invoices />} /><Route path="fatture/:invoiceId" element={<InvoiceDetail />} /><Route path="*" element={<Navigate to="dashboard" replace />} />
     </Routes>
   </div></OrdersModuleProvider>;
 }

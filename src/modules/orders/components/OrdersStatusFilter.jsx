@@ -5,6 +5,7 @@ const ORDER_STATUS_OPTIONS = Object.freeze([
   Object.freeze({ value: "in_corso", label: "In corso" }),
   Object.freeze({ value: "spedito", label: "Spedito" }),
   Object.freeze({ value: "inviato-mexal", label: "Inviato a Mexal" }),
+  Object.freeze({ value: "annullato", label: "Non presente in Mexal" }),
   Object.freeze({ value: "evaso", label: "Evaso" }),
   Object.freeze({ value: "errore", label: "Errore" }),
 ]);

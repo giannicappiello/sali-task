@@ -8,11 +8,11 @@ export function hasMexalDocuments(order = {}) {
   return documents.some((document) => document?.numero);
 }
 
-export function hasOnlyEvictedMexalDocuments(order = {}) {
+export function hasOnlyMissingMexalDocuments(order = {}) {
   const documents = filterOrderModuleDocuments(orderModuleCodeFromOrder(order), order.mexal_documents || order.documenti_mexal || [])
     .filter((document) => document?.numero && (document?.id || document?.stato_operativo || document?.presente_in_mexal !== undefined));
   return documents.length > 0 && documents.every((document) =>
-    String(document.stato_operativo || "").toUpperCase() === "EVASO" || document.presente_in_mexal === false
+    String(document.stato_operativo || "").toUpperCase() === "ANNULLATO" || document.presente_in_mexal === false
   );
 }
 
@@ -21,7 +21,11 @@ export function getOrderDisplayStatus(order = {}) {
   const syncStatus = String(order.stato_sincronizzazione || "").trim().toLowerCase();
   const hasDocuments = hasMexalDocuments(order);
 
-  if (orderStatus === "evaso" || hasOnlyEvictedMexalDocuments(order)) {
+  if (hasOnlyMissingMexalDocuments(order) || syncStatus === "annullato") {
+    return { label: "NON PRESENTE IN MEXAL", className: "annullato", closed: false };
+  }
+
+  if (orderStatus === "evaso") {
     return { label: "EVASO", className: "evaso", closed: true };
   }
 
@@ -30,7 +34,7 @@ export function getOrderDisplayStatus(order = {}) {
   }
 
   if (syncStatus === "completato" || orderStatus === "confermato") {
-    return { label: "SPEDITO", className: "spedito", closed: true };
+    return { label: "NON RICONCILIATO", className: "errore", closed: false };
   }
 
   if (syncStatus === "errore") {

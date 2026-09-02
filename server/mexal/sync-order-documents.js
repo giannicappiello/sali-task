@@ -5,7 +5,7 @@ import {
   warehouseReasonDescription,
 } from "../../shared/mexalWarehouseReasons.js";
 
-function required(name) { const value = String(process.env[name] || "").trim(); if (!value) throw new Error(`Variabile Vercel mancante: ${name}`); return value; }
+function required(name) { const value = String(globalThis.process?.env?.[name] || "").trim(); if (!value) throw new Error(`Variabile Vercel mancante: ${name}`); return value; }
 function adminClient() { return createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false, autoRefreshToken: false } }); }
 function referencePath(document) { return `/documenti/ordini-clienti/${encodeURIComponent(document.sigla || "OC")}+${encodeURIComponent(document.serie)}+${encodeURIComponent(document.numero)}`; }
 function text(value) { return String(value ?? "").trim(); }
@@ -18,8 +18,6 @@ function warehouseReason(detail) {
     causale_magazzino_descrizione: warehouseReasonDescription(code, apiDescription) || null,
   };
 }
-function missing(error) { return Number(error?.status || error?.mexalResponse?.status) === 404 || /\b(404|1004)\b|non trovata|not found/i.test(String(error?.message || "")); }
-
 function errorResponseText(error) {
   const body = error?.mexalResponse?.body;
   if (body === undefined || body === null) return "";
@@ -31,9 +29,11 @@ export function isMissingMexalDocument(error) {
   const details = `${String(error?.message || "")} ${errorResponseText(error)}`;
   return status === 404 || status === 410 || /\b(404|410|1004)\b|non trovat[oa]|not found|risorsa specificata non.*trovat/i.test(details);
 }
-export function isOrderFullyEvicted(documents = []) {
+export function isOrderFullyMissingFromMexal(documents = []) {
   const persisted = documents.filter((document) => String(document?.numero || "").trim());
-  return persisted.length > 0 && persisted.every((document) => document.stato_operativo === "EVASO" || document.presente_in_mexal === false);
+  return persisted.length > 0 && persisted.every((document) =>
+    document.stato_operativo === "ANNULLATO" || document.presente_in_mexal === false
+  );
 }
 
 async function runStatus(supabase, runId) {
@@ -42,7 +42,7 @@ async function runStatus(supabase, runId) {
   return data?.status || null;
 }
 
-async function updateEvictedParentOrders(supabase, orderIds) {
+async function updateMissingParentOrders(supabase, orderIds) {
   const ids = [...new Set((orderIds || []).filter(Boolean))];
   if (!ids.length) return 0;
   const { data, error } = await supabase
@@ -57,11 +57,14 @@ async function updateEvictedParentOrders(supabase, orderIds) {
     map.set(document.ordine_id, current);
     return map;
   }, new Map());
-  const evictedOrderIds = ids.filter((orderId) => isOrderFullyEvicted(grouped.get(orderId) || []));
-  if (!evictedOrderIds.length) return 0;
-  const { error: updateError } = await supabase.from("ordini_testate").update({ stato: "evaso" }).in("id", evictedOrderIds);
+  const missingOrderIds = ids.filter((orderId) => isOrderFullyMissingFromMexal(grouped.get(orderId) || []));
+  if (!missingOrderIds.length) return 0;
+  const { error: updateError } = await supabase
+    .from("ordini_testate")
+    .update({ stato_sincronizzazione: "annullato", sincronizzato_mexal_il: null })
+    .in("id", missingOrderIds);
   if (updateError) throw updateError;
-  return evictedOrderIds.length;
+  return missingOrderIds.length;
 }
 
 export async function purgeEvictedOrderDocuments({ supabase, days }) {
@@ -76,7 +79,7 @@ export async function syncOrderDocuments({ supabase, mexal, origin = "manual" })
   if (error) throw error;
   const { data: run, error: runError } = await supabase.from("mexal_sync_runs").insert({ sync_type: "orders", status: "running", metadata: { source: origin, document_count: documents?.length || 0 } }).select("id").single();
   if (runError) throw runError;
-  let open = 0; let evicted = 0; let failed = 0; let cancelled = false; const errors = [];
+  let open = 0; let missingFromMexal = 0; let failed = 0; let cancelled = false; const errors = [];
   for (const document of documents || []) {
     if (await runStatus(supabase, run.id) !== "running") {
       cancelled = true;
@@ -92,15 +95,15 @@ export async function syncOrderDocuments({ supabase, mexal, origin = "manual" })
       if (updateError) throw updateError; open += 1;
     } catch (syncError) {
       if (isMissingMexalDocument(syncError)) {
-        const { error: updateError } = await supabase.from("ordini_documenti_mexal").update({ stato_operativo: "EVASO", presente_in_mexal: false, evaso_il: now, ultimo_sync_mexal: now, verificato_il: now, errore: null, aggiornato_il: now }).eq("id", document.id);
-        if (updateError) throw updateError; evicted += 1;
+        const { error: updateError } = await supabase.from("ordini_documenti_mexal").update({ stato_operativo: "ANNULLATO", presente_in_mexal: false, evaso_il: null, ultimo_sync_mexal: now, verificato_il: now, errore: null, aggiornato_il: now }).eq("id", document.id);
+        if (updateError) throw updateError; missingFromMexal += 1;
       } else {
         failed += 1; errors.push({ id: document.id, message: syncError.message });
         await supabase.from("ordini_documenti_mexal").update({ stato_operativo: "ERRORE", ultimo_sync_mexal: now, errore: String(syncError.message || "Errore Mexal").slice(0, 500), aggiornato_il: now }).eq("id", document.id);
       }
     }
   }
-  const parentOrdersEvicted = await updateEvictedParentOrders(supabase, (documents || []).map((document) => document.ordine_id));
+  const parentOrdersMissingFromMexal = await updateMissingParentOrders(supabase, (documents || []).map((document) => document.ordine_id));
   cancelled = cancelled || await runStatus(supabase, run.id) !== "running";
   const { data: maintenance } = cancelled ? { data: null } : await supabase.from("mexal_ordini_manutenzione").select("*").eq("id", 1).maybeSingle();
   let cleanup = null;
@@ -108,12 +111,12 @@ export async function syncOrderDocuments({ supabase, mexal, origin = "manual" })
     cleanup = await purgeEvictedOrderDocuments({ supabase, days: maintenance.giorni_conservazione_evasi });
     await supabase.from("mexal_ordini_manutenzione").update({ ultima_pulizia_il: new Date().toISOString(), ultimo_riepilogo: cleanup, aggiornato_il: new Date().toISOString() }).eq("id", 1);
   }
-  const processed = open + evicted + failed;
+  const processed = open + missingFromMexal + failed;
   if (!cancelled) {
     const status = failed ? "completed_with_errors" : "completed";
-    await supabase.from("mexal_sync_runs").update({ status, completed_at: new Date().toISOString(), processed, updated: open + evicted, failed, error_message: errors[0]?.message || null, metadata: { source: origin, aperti: open, evasi: evicted, ordini_evasi: parentOrdersEvicted, cleanup, errors } }).eq("id", run.id).eq("status", "running");
+    await supabase.from("mexal_sync_runs").update({ status, completed_at: new Date().toISOString(), processed, updated: open + missingFromMexal, failed, error_message: errors[0]?.message || null, metadata: { source: origin, aperti: open, assenti_mexal: missingFromMexal, ordini_assenti_mexal: parentOrdersMissingFromMexal, cleanup, errors } }).eq("id", run.id).eq("status", "running");
   }
-  return { sync_run_id: run.id, processed, aperti: open, evasi: evicted, ordini_evasi: parentOrdersEvicted, failed, cleanup, cancelled };
+  return { sync_run_id: run.id, processed, aperti: open, assenti_mexal: missingFromMexal, ordini_assenti_mexal: parentOrdersMissingFromMexal, failed, cleanup, cancelled };
 }
 
 export default async function handler(req, res) {

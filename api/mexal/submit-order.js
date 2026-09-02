@@ -146,9 +146,13 @@ export default async function handler(req, res) {
     ]);
     if (customerError) throw customerError; if (productsError) throw productsError; if (rulesError) throw rulesError;
     const commissionedLines = calculateCommissions({ order, customer, lines, products, rules });
-    const commissionUpdates = commissionedLines.map((line) => ({ id: line.id, provvigione_percentuale: line.provvigione_percentuale, provvigione_regola_id: line.provvigione_regola_id, provvigione_dettaglio_calcolo: line.provvigione_dettaglio_calcolo, provvigione_calcolata_il: new Date().toISOString() }));
-    const { error: commissionSaveError } = await admin.rpc("salva_provvigioni_ordine", { p_ordine_id: orderId, p_aggiornamenti: commissionUpdates });
-    if (commissionSaveError) throw commissionSaveError;
+    const commissionUpdates = commissionedLines
+      .filter((line) => line.provvigione_percentuale !== null && line.provvigione_percentuale !== undefined && Number.isFinite(Number(line.provvigione_percentuale)))
+      .map((line) => ({ id: line.id, provvigione_percentuale: line.provvigione_percentuale, provvigione_regola_id: line.provvigione_regola_id, provvigione_dettaglio_calcolo: line.provvigione_dettaglio_calcolo, provvigione_calcolata_il: new Date().toISOString() }));
+    if (commissionUpdates.length) {
+      const { error: commissionSaveError } = await admin.rpc("salva_provvigioni_ordine", { p_ordine_id: orderId, p_aggiornamenti: commissionUpdates });
+      if (commissionSaveError) throw commissionSaveError;
+    }
     lines.splice(0, lines.length, ...commissionedLines);
     const privateOrder = String(order.modulo_ordini || "prof").toLowerCase() === "private";
     const classified = privateOrder ? classifyPrivateOrderLines(lines) : classifyOrderLines(lines, { reservation: order.tipo_ordine === "prenotazione" });

@@ -9,7 +9,7 @@ import {
 } from "../src/config/workspaceModules.js";
 
 test("common workspace modules are always available", () => {
-  for (const code of ["home", "attivita", "prodotti", "documenti", "messaggi", "notifiche"]) {
+  for (const code of ["home", "attivita", "messaggi", "notifiche"]) {
     assert.equal(moduleIsAvailable(code, [], false), true, code);
   }
 });
@@ -28,12 +28,15 @@ test("the analytics container is available through the always-visible activities
 test("only explicitly assignable modules are offered to departments", () => {
   assert.deepEqual(
     DEPARTMENT_ASSIGNABLE_MODULES.map(({ code }) => code),
-    ["assistente_ai", "beauty_days", "ordini_pr", "ordini_ph", "progremes", "team"]
+    ["prodotti", "magazzino", "documenti", "assistente_ai", "beauty_days", "ordini_pr", "ordini_ph", "ordini_private", "progremes", "team"]
   );
 });
 
 test("module visibility and role operativity remain separate", () => {
-  assert.equal(moduleIsAvailable("prodotti", [], false), true);
+  assert.equal(moduleIsAvailable("prodotti", [], false), false);
+  assert.equal(moduleIsAvailable("prodotti", ["prodotti"], false), true);
+  assert.equal(moduleIsAvailable("magazzino", [], false), false);
+  assert.equal(moduleIsAvailable("magazzino", ["magazzino"], false), true);
   assert.equal(moduleLevelAllows("lettura", "scrittura"), false);
   assert.equal(moduleLevelAllows("scrittura", "scrittura"), true);
   assert.equal(moduleLevelAllows("amministrazione", "scrittura"), true);

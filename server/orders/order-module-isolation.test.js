@@ -113,3 +113,25 @@ test("l'accesso OrdiniPrivate viene sincronizzato senza abilitare Ordini PR o PH
   assert.match(migration, /private_orders\.modulo = 'ordini_private'/);
   assert.doesNotMatch(migration, /select[\s\S]*'gestione_ordini_private'[\s\S]*from public\.integrazioni_utenti[\s\S]*gestione_ordini_ph/);
 });
+
+test("il cliente può creare solo il proprio OCT Private e non usare l'importazione AI", async () => {
+  const [access, routes, newOrder, submit, update, migration] = await Promise.all([
+    readFile(new URL("../../src/modules/orders/pages/useOrdersAccess.js", import.meta.url), "utf8"),
+    readFile(new URL("../../src/modules/orders/OrdersModule.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../../src/modules/orders/pages/NewOrder.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../../api/mexal/submit-order.js", import.meta.url), "utf8"),
+    readFile(new URL("../../api/mexal/orders/update.js", import.meta.url), "utf8"),
+    readFile(new URL("../../supabase/migrations/20260902170000_customer_private_orders_and_warehouse_scope.sql", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(access, /canCreateCustomerPrivateOrder = isCustomer && workspaceModuleCode === "ordini_private"/);
+  assert.match(access, /canUseAIOrderGeneration: !isCustomer/);
+  assert.match(routes, /path="nuovo-da-documento" element=\{canUseAIOrderGeneration/);
+  assert.match(newOrder, /if \(!customerCode && !canSeeAll && !visibleAgents\?\.length\)/);
+  assert.match(submit, /allowCustomerPrivateOrder: true/);
+  assert.match(submit, /Il cliente può inviare soltanto i propri ordini OCT Private/);
+  assert.match(update, /Il cliente può modificare soltanto le proprie bozze OCT Private/);
+  assert.match(migration, /linked customer creates own private drafts/);
+  assert.match(migration, /lower\(coalesce\(modulo_ordini, ''\)\) = 'private'/);
+  assert.match(migration, /workspace_customer_data_visible\(codice_cliente\)/);
+});

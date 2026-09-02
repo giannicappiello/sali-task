@@ -23,6 +23,9 @@ test("Documenti Private usa categorie articolo e layout master-detail", async ()
   assert.doesNotMatch(page, /private_documents_sync"\)\.then/);
   assert.match(page, /private-documents-master-detail/);
   assert.match(page, /I lotti e i documenti disponibili compariranno qui/);
+  assert.match(page, /view\.customerScoped === true\) setCanUpload\(false\)/);
+  assert.match(page, /!customerScoped && canUpload && <button className="primary-action"/);
+  assert.match(page, /uploadOpen && selected && canUpload && !customerScoped/);
   const lotsTable = page.match(/<h3>Lotti disponibili<\/h3>([\s\S]*?)<\/section>/)?.[1] || "";
   assert.doesNotMatch(lotsTable, /<th>Origine<\/th>/);
   assert.doesNotMatch(lotsTable, /<th>Magazzino \/ ubicazione<\/th>/);

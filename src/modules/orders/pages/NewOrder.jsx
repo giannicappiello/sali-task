@@ -154,6 +154,7 @@ export default function NewOrder() {
     canSeeAll,
     visibleAgents,
     agentCode,
+    customerCode,
   } = useOrdersAccess(moduleCode);
 
   const [customers, setCustomers] = useState([]);
@@ -197,7 +198,7 @@ export default function NewOrder() {
 
   useEffect(() => {
     if (!accessLoading) loadData();
-  }, [accessLoading, canAccessOrders, canWriteOrders, canSeeAll, JSON.stringify(visibleAgents)]);
+  }, [accessLoading, canAccessOrders, canWriteOrders, canSeeAll, customerCode, JSON.stringify(visibleAgents)]);
 
   useEffect(() => {
     if (!editingOrderId || !customers.length) return;
@@ -263,7 +264,7 @@ export default function NewOrder() {
     try {
       if (!canAccessOrders) throw new Error("Accesso al modulo Ordini non autorizzato.");
       if (!canWriteOrders) throw new Error("Il ruolo consente soltanto la consultazione del modulo Ordini.");
-      if (!canSeeAll && !visibleAgents?.length) {
+      if (!customerCode && !canSeeAll && !visibleAgents?.length) {
         throw new Error("Nessun codice agente Mexal associato all'utente.");
       }
 
@@ -651,7 +652,7 @@ export default function NewOrder() {
       const orderPayload = buildNewOrderInsertPayload({
         dataOrdine: now.toISOString().slice(0, 10),
         customer: selectedCustomer,
-        agentCode,
+        agentCode: agentCode || selectedCustomer.codice_agente_mexal || null,
         payment: selectedPayment,
         paymentDescription,
         comments,

@@ -30,16 +30,6 @@ async function authorize(req, { upload = false } = {}) {
   if (moduleError) throw moduleError;
   if (!isAdmin && moduleEnabled !== true) throw Object.assign(new Error("Accesso a Documenti Private non autorizzato."), { status: 403 });
 
-  if (upload && !isAdmin) {
-    const [{ data: direct }, { data: role }] = await Promise.all([
-      admin.from("permessi_utente").select("permessi!inner(codice)").eq("utente_id", profile.id)
-        .eq("permessi.codice", "documentation.private.upload").limit(1).maybeSingle(),
-      admin.from("permessi_ruolo").select("permessi!inner(codice)").eq("ruolo_id", profile.ruolo_id)
-        .eq("permessi.codice", "documentation.private.upload").limit(1).maybeSingle(),
-    ]);
-    if (!direct && !role) throw Object.assign(new Error("Caricamento Documenti Private non autorizzato."), { status: 403 });
-  }
-
   const [canonicalAccess, legacyAccess] = await Promise.all([
     admin.from("workspace_customer_user_links").select("customer_code").eq("user_id", profile.id),
     admin.from("workspace_private_document_customer_access").select("codice_cliente").eq("utente_id", profile.id),
@@ -51,6 +41,17 @@ async function authorize(req, { upload = false } = {}) {
   const customerCodes = [...new Set(canonicalCodes.length ? canonicalCodes : legacyCodes)];
   const externalRole = /client|cliente|portal/i.test(String(profile.ruoli?.nome || ""));
   if (externalRole && customerCodes.length === 0) throw Object.assign(new Error("Nessun cliente associato all’account Workspace."), { status: 403 });
+  if (upload && customerCodes.length) throw Object.assign(new Error("I clienti possono consultare i Documenti Private ma non associarli."), { status: 403 });
+
+  if (upload && !isAdmin) {
+    const [{ data: direct }, { data: role }] = await Promise.all([
+      admin.from("permessi_utente").select("permessi!inner(codice)").eq("utente_id", profile.id)
+        .eq("permessi.codice", "documentation.private.upload").limit(1).maybeSingle(),
+      admin.from("permessi_ruolo").select("permessi!inner(codice)").eq("ruolo_id", profile.ruolo_id)
+        .eq("permessi.codice", "documentation.private.upload").limit(1).maybeSingle(),
+    ]);
+    if (!direct && !role) throw Object.assign(new Error("Caricamento Documenti Private non autorizzato."), { status: 403 });
+  }
   return { admin, user, profile, customerCodes: customerCodes.length ? customerCodes : ["*"] };
 }
 

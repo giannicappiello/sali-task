@@ -42,6 +42,12 @@ test("Documenti Private apre la pagina Workspace e non il contenitore MES legacy
   assert.match(layout, /"\/documentation\/private"/);
 });
 
+test("un account cliente non può ottenere un ticket di associazione documenti", async () => {
+  const authorization = await readFile(new URL("./private-documents.js", import.meta.url), "utf8");
+  assert.match(authorization, /if \(upload && customerCodes\.length\) throw Object\.assign\(new Error\("I clienti possono consultare i Documenti Private ma non associarli\."\)/);
+  assert.ok(authorization.indexOf("if (upload && customerCodes.length)") < authorization.indexOf("if (upload && !isAdmin)"));
+});
+
 test("il cliente naviga da articolo a lotto e vede documenti comuni e specifici", async () => {
   const [page, service] = await Promise.all([
     readFile(new URL("../src/pages/Documentation/PrivateDocuments.jsx", import.meta.url), "utf8"),

@@ -8,6 +8,7 @@ import { enqueueOrderConfirmationEmails } from "../../server/orders/order-email-
 function env(name) { return String(process.env[name] ?? "").trim(); }
 function required(name) { const value = env(name); if (!value) throw new Error(`Variabile Vercel mancante: ${name}`); return value; }
 function text(value) { return String(value ?? "").trim(); }
+function normalizeCustomerCode(value) { return text(value).toUpperCase(); }
 function supabaseAdmin() { return createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false, autoRefreshToken: false } }); }
 export function documentOptions(config, kind) {
   const key = kind.toLowerCase();
@@ -129,10 +130,16 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Metodo non consentito." });
   const admin = supabaseAdmin(); let orderId = null; let runId = null; let syncToken = null;
   try {
-    await verifyUser(req, admin, { allowOrdersUser: true });
+    const authorization = await verifyUser(req, admin, { allowOrdersUser: true, allowCustomerPrivateOrder: true });
     orderId = text(req.body?.orderId); if (!orderId) return res.status(400).json({ error: "orderId obbligatorio." });
     const [{ data: order, error: orderError }, { data: lines, error: linesError }] = await Promise.all([admin.from("ordini_testate").select("*").eq("id", orderId).single(), admin.from("ordini_righe").select("*").eq("ordine_id", orderId).order("id")]);
     if (orderError) throw orderError; if (linesError) throw linesError; if (!lines?.length) throw new Error("Ordine senza righe.");
+    if (authorization?.customerCode && (
+      String(order.modulo_ordini || "").toLowerCase() !== "private"
+      || normalizeCustomerCode(order.codice_cliente) !== normalizeCustomerCode(authorization.customerCode)
+    )) {
+      return res.status(403).json({ error: "Il cliente può inviare soltanto i propri ordini OCT Private." });
+    }
     const requestedModule = text(req.body?.moduleCode);
     if (order?.origine === "mexal_oct") {
       return res.status(409).json({ error: "Un OCT importato da Mexal non può essere reinviato a Mexal.",

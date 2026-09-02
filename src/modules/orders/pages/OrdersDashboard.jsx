@@ -22,7 +22,7 @@ export default function OrdersDashboard() {
   const { moduleCode, basePath } = useOrdersModule();
   const usesMexalReconciliation = orderModuleUsesMexalReconciliation(moduleCode);
   const navigate = useNavigate();
-  const { loading: accessLoading, visibleAgents, customerCode, canSeeAll, canAccessOrders, canWriteOrders } = useOrdersAccess(moduleCode);
+  const { loading: accessLoading, visibleAgents, customerCode, canSeeAll, canAccessOrders, canWriteOrders, canUseAIOrderGeneration } = useOrdersAccess(moduleCode);
   const [aiTypeDialogOpen, setAITypeDialogOpen] = useState(false);
   const [stats, setStats] = useState({ ordiniMese: 0, aperti: 0, inCorso: 0, evasi: 0 });
   const [orders, setOrders] = useState([]);
@@ -118,7 +118,7 @@ export default function OrdersDashboard() {
     <div className="orders-toolbar">
       {canWriteOrders && <><button className="orders-primary" type="button" onClick={() => navigate(`${basePath}/nuovo`)}>{isPrivateOrderModule(moduleCode) ? "Nuovo OCT" : "Nuovo ordine"}</button>
       {!isPrivateOrderModule(moduleCode) && <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/nuovo?tipo=prenotazione`)}>Ordine prenotazione</button>}</>}
-      {canWriteOrders && <button className="orders-secondary" type="button" onClick={() => isPrivateOrderModule(moduleCode) ? openAIOrderImport("standard") : setAITypeDialogOpen(true)}><Sparkles size={17} /> Genera con AI</button>}
+      {canUseAIOrderGeneration && <button className="orders-secondary" type="button" onClick={() => isPrivateOrderModule(moduleCode) ? openAIOrderImport("standard") : setAITypeDialogOpen(true)}><Sparkles size={17} /> Genera con AI</button>}
     </div>
     <div className="orders-kpi-grid"><Kpi label="Ordini del mese" value={stats.ordiniMese} active={monthFilter === currentMonth} onClick={() => setMonthFilter((value) => value === currentMonth ? "" : currentMonth)} /><Kpi label="Ordini aperti" value={stats.aperti} active={statusFilter === "aperto"} onClick={() => toggleStatusFilter("aperto")} /><Kpi label="Ordini in corso" value={stats.inCorso} active={statusFilter === "in_corso"} onClick={() => toggleStatusFilter("in_corso")} /><Kpi label="Ordini evasi" value={stats.evasi} active={statusFilter === "evaso"} onClick={() => toggleStatusFilter("evaso")} /></div>
     <section className="orders-dashboard-list">

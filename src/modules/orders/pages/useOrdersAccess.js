@@ -130,6 +130,7 @@ export default function useOrdersAccess(moduleCode = "prof") {
     const isAreaManager = enabled && role === "area_manager";
     const isAgent = enabled && role === "agente";
     const isCustomer = enabled && role === "cliente";
+    const canCreateCustomerPrivateOrder = isCustomer && workspaceModuleCode === "ordini_private";
 
     const agentCode = isAgent ? access.codice_agente_mexal : null;
     const managedAgents = isAreaManager ? access.agenti_gestiti : [];
@@ -159,7 +160,8 @@ export default function useOrdersAccess(moduleCode = "prof") {
       canSeeAll: isAdmin || isBackoffice,
       canWriteAll: !isCustomer && canWriteModule && (isAdmin || isBackoffice),
       canAccessOrders: isAdmin || enabled,
-      canWriteOrders: !isCustomer && (isAdmin || (enabled && canWriteModule)),
+      canWriteOrders: canCreateCustomerPrivateOrder || (!isCustomer && (isAdmin || (enabled && canWriteModule))),
+      canUseAIOrderGeneration: !isCustomer && (isAdmin || (enabled && canWriteModule)),
       canManageOrders: !isCustomer && (isAdmin || (enabled && canManageModule)),
     };
   }, [access, canUseModule, customerCode, workspaceModuleCode]);

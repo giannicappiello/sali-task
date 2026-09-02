@@ -352,7 +352,7 @@ function logOrdersAuthorization(authUserId, reason, profilesFound) {
   });
 }
 
-export async function verifyUser(req, supabase, { allowOrdersUser = false } = {}) {
+export async function verifyUser(req, supabase, { allowOrdersUser = false, allowCustomerPrivateOrder = false } = {}) {
   const authorization = req.headers.authorization || "";
   const cronSecret = process.env.CRON_SECRET?.trim();
 
@@ -400,6 +400,21 @@ export async function verifyUser(req, supabase, { allowOrdersUser = false } = {}
   const isAdmin = profile.ruoli?.amministratore_workspace === true;
 
   if (isAdmin) return { authUserId: user.id, profile, isAdmin: true, integration: null };
+
+  if (allowCustomerPrivateOrder) {
+    const [{ data: customerLink, error: customerLinkError }, { data: privateModuleEnabled, error: privateModuleError }] = await Promise.all([
+      supabase.from("workspace_customer_user_links").select("customer_code").eq("user_id", profile.id).maybeSingle(),
+      supabase.rpc("workspace_module_enabled_for_user", { target_user_id: profile.id, target_module: "ordini_private" }),
+    ]);
+    if (customerLinkError || privateModuleError) {
+      console.error("Customer private order authorization failed", { auth_user_id: user.id, error: (customerLinkError || privateModuleError)?.message });
+      throw authorizationError("Errore verifica autorizzazione OrdiniPrivate.", 500);
+    }
+    const customerCode = String(customerLink?.customer_code || "").trim();
+    if (customerCode && privateModuleEnabled === true) {
+      return { authUserId: user.id, profile, isAdmin: false, integration: null, customerCode };
+    }
+  }
 
   const { data: integrations, error: integrationError } = await supabase
     .from("integrazioni_utenti")

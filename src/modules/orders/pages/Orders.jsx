@@ -24,7 +24,7 @@ export default function Orders() {
   const { moduleCode, basePath } = useOrdersModule();
   const navigate = useNavigate();
   const location = useLocation();
-  const { loading: accessLoading, visibleAgents, customerCode, canSeeAll, canAccessOrders, canWriteOrders, isBackoffice, isAdmin } = useOrdersAccess(moduleCode);
+  const { loading: accessLoading, visibleAgents, customerCode, canSeeAll, canAccessOrders, canWriteOrders, canUseAIOrderGeneration, isBackoffice, isAdmin } = useOrdersAccess(moduleCode);
   const [rows, setRows] = useState([]);
   const [agentsByCode, setAgentsByCode] = useState(new Map());
   const [customersByCode, setCustomersByCode] = useState(new Map());
@@ -142,7 +142,7 @@ export default function Orders() {
         <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
         <OrdersStatusFilter value={statusFilter} onChange={setStatusFilter} options={moduleCode === "ph" ? INTERNAL_ORDER_STATUS_OPTIONS : undefined} />
         {canWriteOrders && <><button className="orders-primary" type="button" onClick={() => navigate(`${basePath}/nuovo`)}>{isPrivateOrderModule(moduleCode) ? "Nuovo OCT" : "Nuovo ordine"}</button>{!isPrivateOrderModule(moduleCode) && <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/nuovo?tipo=prenotazione`)}>Ordine prenotazione</button>}</>}
-        {canWriteOrders && <button className="orders-secondary" type="button" onClick={() => isPrivateOrderModule(moduleCode) ? openAIOrderImport("standard") : setAITypeDialogOpen(true)}><Sparkles size={17} /> Genera con AI</button>}
+        {canUseAIOrderGeneration && <button className="orders-secondary" type="button" onClick={() => isPrivateOrderModule(moduleCode) ? openAIOrderImport("standard") : setAITypeDialogOpen(true)}><Sparkles size={17} /> Genera con AI</button>}
       </div>
       {location.state?.message && <div className="orders-alert orders-alert-success">{location.state.message}</div>}
       <div className="orders-panel">

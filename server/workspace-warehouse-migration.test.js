@@ -42,3 +42,15 @@ test("l'interfaccia distingue data inventariale e ultimo aggiornamento e spiega 
   assert.match(page, /tabIndex=\{0\}/);
   assert.doesNotMatch(page, /Aggiornati dal|Aggiornati al|isoDay\(row\.sincronizzato_il\)/);
 });
+
+test("il Magazzino limita server-side gli account cliente ai propri articoli", async () => {
+  const sql = await readFile("supabase/migrations/20260902170000_customer_private_orders_and_warehouse_scope.sql", "utf8");
+  assert.match(sql, /customer_scope as materialized[\s\S]*workspace_current_customer_code\(\)/i);
+  assert.match(sql, /customer_articles as materialized[\s\S]*join public\.ordini_righe/i);
+  assert.match(sql, /customer_articles as materialized[\s\S]*join public\.mexal_fatture_vendita_righe/i);
+  assert.match(sql, /scope\.customer_code is null[\s\S]*history\.article_code[\s\S]*customer_articles/i);
+  assert.match(sql, /from filtered group by article_type/i);
+  assert.match(sql, /from filtered group by warehouse_number/i);
+  assert.match(sql, /'customerScoped', customer_scope\.customer_code is not null/i);
+  assert.doesNotMatch(sql, /drop\s+(table|column)|truncate|delete\s+from/i);
+});

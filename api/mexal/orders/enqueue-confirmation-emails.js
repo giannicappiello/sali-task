@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import process from "node:process";
 import { verifyUser } from "../../../server/mexal/sync-products.js";
 import {
   confirmationEmailAvailableAt,
@@ -27,7 +28,7 @@ export default async function handler(req, res) {
 
   try {
     const supabase = adminClient();
-    await verifyUser(req, supabase, { allowOrdersUser: true });
+    const authorization = await verifyUser(req, supabase, { allowOrdersUser: true, allowCustomerPrivateOrder: true });
     const orderId = String(req.body?.orderId || "").trim();
     const moduleCode = String(req.body?.moduleCode || "").trim().toLowerCase();
     if (!orderId) return res.status(400).json({ error: "orderId obbligatorio." });
@@ -37,6 +38,12 @@ export default async function handler(req, res) {
       orderId,
       moduleCode,
     });
+    if (authorization?.customerCode && (
+      String(context.order?.modulo_ordini || "").toLowerCase() !== "private"
+      || String(context.order?.codice_cliente || "").trim().toUpperCase() !== String(authorization.customerCode).trim().toUpperCase()
+    )) {
+      return res.status(403).json({ error: "Il cliente può gestire soltanto le notifiche dei propri ordini OCT Private." });
+    }
     const result = await enqueueOrderConfirmationEmails({
       supabase,
       ...context,

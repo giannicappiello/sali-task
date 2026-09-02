@@ -12,8 +12,15 @@ test("Documenti Private usa categorie articolo e layout master-detail", async ()
     assert.match(page, new RegExp(label.replace("/", "\\/"), "i"));
   }
   assert.match(page, /articleSection\(article\) === activeSection/);
+  assert.match(page, /catalog\.reduce/);
+  assert.match(page, /appliedQuery \? articles/);
+  assert.match(page, /Ricerca rapida in tutti gli articoli/);
+  assert.doesNotMatch(page, /private_documents_sync"\)\.then/);
   assert.match(page, /private-documents-master-detail/);
   assert.match(page, /I lotti e i documenti disponibili compariranno qui/);
+  const lotsTable = page.match(/<h3>Lotti disponibili<\/h3>([\s\S]*?)<\/section>/)?.[1] || "";
+  assert.doesNotMatch(lotsTable, /<th>Origine<\/th>/);
+  assert.doesNotMatch(lotsTable, /<th>Magazzino \/ ubicazione<\/th>/);
   assert.match(styles, /\.private-documents-master-detail\{display:grid/);
   assert.match(styles, /grid-template-columns:minmax\(300px,.8fr\) minmax\(0,1.7fr\)/);
 });

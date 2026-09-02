@@ -26,9 +26,13 @@ function displayName(product) {
 export async function loadDirectProductCatalog(db, { includeEconomics = false, customerScoped = false } = {}) {
   const productsSource = customerScoped ? "workspace_customer_orderable_products" : "prodotti";
   const economicsSource = customerScoped ? "workspace_customer_orderable_product_economics" : "ordini_prodotti_cache";
-  const mexalProductsPromise = loadAll((from, to) => applyDirectMexalProductFilters(
-    db.from(productsSource).select("*").range(from, to)
-  ).order("nome", { ascending: true }).order("codice_mexal", { ascending: true }));
+  const mexalProductsPromise = loadAll((from, to) => {
+    const source = db.from(productsSource).select("*").range(from, to);
+    const filtered = customerScoped
+      ? source.eq("attivo_mexal", true).eq("mostra_in_app", true)
+      : applyDirectMexalProductFilters(source);
+    return filtered.order("nome", { ascending: true }).order("codice_mexal", { ascending: true });
+  });
   const implantsPromise = customerScoped
     ? Promise.resolve({ data: [], error: null })
     : db.from("ordini_impianti")
@@ -49,7 +53,7 @@ export async function loadDirectProductCatalog(db, { includeEconomics = false, c
     normalizeDirectProductCode(item.codice_articolo), item,
   ]));
   const products = mexalProducts
-    .filter((product) => isDirectMexalProductCode(product.codice_mexal || product.codice))
+    .filter((product) => customerScoped || isDirectMexalProductCode(product.codice_mexal || product.codice))
     .map((product) => {
       const code = normalizeDirectProductCode(product.codice_mexal || product.codice);
       return {

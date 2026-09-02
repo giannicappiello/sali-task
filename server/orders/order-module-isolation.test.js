@@ -137,11 +137,12 @@ test("il cliente può creare solo il proprio OCT Private e non usare l'importazi
 });
 
 test("OrdiniPrivate cliente nasconde Clienti e carica solo articoli associati", async () => {
-  const [routes, newOrder, catalog, migration] = await Promise.all([
+  const [routes, newOrder, catalog, migration, rlsBridge] = await Promise.all([
     readFile(new URL("../../src/modules/orders/OrdersModule.jsx", import.meta.url), "utf8"),
     readFile(new URL("../../src/modules/orders/pages/NewOrder.jsx", import.meta.url), "utf8"),
     readFile(new URL("../../src/modules/orders/services/directProductCatalog.js", import.meta.url), "utf8"),
     readFile(new URL("../../supabase/migrations/20260902172000_customer_private_order_product_catalog.sql", import.meta.url), "utf8"),
+    readFile(new URL("../../supabase/migrations/20260902173000_customer_private_order_catalog_rls_bridge.sql", import.meta.url), "utf8"),
   ]);
 
   assert.match(routes, /customerPrivateView = moduleCode === "private" && isCustomer/);
@@ -150,9 +151,14 @@ test("OrdiniPrivate cliente nasconde Clienti e carica solo articoli associati", 
   assert.match(newOrder, /customerScoped: Boolean\(customerCode\)/);
   assert.match(catalog, /customerScoped \? "workspace_customer_orderable_products" : "prodotti"/);
   assert.match(catalog, /customerScoped \? "workspace_customer_orderable_product_economics" : "ordini_prodotti_cache"/);
+  assert.match(catalog, /customerScoped[\s\S]*source\.eq\("attivo_mexal", true\)\.eq\("mostra_in_app", true\)[\s\S]*applyDirectMexalProductFilters\(source\)/);
+  assert.match(catalog, /customerScoped \|\| isDirectMexalProductCode/);
   assert.match(catalog, /customerScoped[\s\S]*Promise\.resolve\(\{ data: \[\], error: null \}\)/);
   assert.match(migration, /workspace_customer_article_codes[\s\S]*join public\.ordini_righe/i);
   assert.match(migration, /workspace_customer_article_codes[\s\S]*join public\.mexal_fatture_vendita_righe/i);
   assert.match(migration, /with \(security_invoker = true\)/i);
+  assert.match(rlsBridge, /with \(security_barrier = true, security_invoker = false\)/i);
+  assert.match(rlsBridge, /join public\.workspace_customer_article_codes linked/i);
+  assert.doesNotMatch(rlsBridge, /grant select on (public\.)?(prodotti|ordini_prodotti_cache)/i);
   assert.doesNotMatch(migration, /drop\s+(table|column)|truncate|delete\s+from/i);
 });

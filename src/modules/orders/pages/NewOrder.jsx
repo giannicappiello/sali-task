@@ -289,10 +289,11 @@ export default function NewOrder() {
         componenti: (kit.componenti || []).map((component) => ({
           ...component,
           prodotto: productByCode.get(normalize(component.codice_articolo)),
+          prezzo_unitario: component.prezzo_unitario ?? productByCode.get(normalize(component.codice_articolo))?.prezzo_listino,
         })).filter((component) => component.prodotto),
         prezzo_listino: (kit.componenti || []).reduce((sum, component) => {
           const product = productByCode.get(normalize(component.codice_articolo));
-          return sum + numberValue(component.quantita) * numberValue(product?.prezzo_listino);
+          return sum + numberValue(component.quantita) * numberValue(component.prezzo_unitario ?? product?.prezzo_listino);
         }, 0),
       }));
       productRows = [
@@ -468,12 +469,15 @@ export default function NewOrder() {
 
   function addKit(kit, requestedQuantity = 1) {
     const kitQuantity = Math.max(1, numberValue(requestedQuantity, 1));
-    const grossKitTotal = kit.componenti.reduce((sum, component) => sum + numberValue(component.quantita) * numberValue(component.prodotto?.prezzo_listino), 0);
+    const grossKitTotal = kit.componenti.reduce((sum, component) => sum + numberValue(component.quantita) * numberValue(component.prezzo_unitario ?? component.prodotto?.prezzo_listino), 0);
     invalidateAvailability();
     setLines((current) => {
       let next = [...current];
       for (const component of kit.componenti) {
-        const product = component.prodotto;
+        const product = {
+          ...component.prodotto,
+          prezzo_listino: numberValue(component.prezzo_unitario ?? component.prodotto?.prezzo_listino),
+        };
         const code = normalize(product.codice_articolo || product.codice_mexal || product.codice);
         const addedQuantity = numberValue(component.quantita) * kitQuantity;
         let conditions = calculateConditions(product, addedQuantity);

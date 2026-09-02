@@ -6,6 +6,16 @@ import { loadDirectProductCatalog } from "../services/directProductCatalog";
 
 const money = (value) => Number(value || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
 const emptyForm = { id: null, codice: "", descrizione: "", modalita_prezzo: "sconto_ordine", prezzo_fisso: "", sconto_personalizzato: "", componenti: [] };
+const numericPrice = (value, fallback = 0) => {
+  const normalized = String(value ?? "").trim().replace(",", ".");
+  if (!normalized) return fallback;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+};
+const isValidPrice = (value) => {
+  const normalized = String(value ?? "").trim().replace(",", ".");
+  return normalized !== "" && Number.isFinite(Number(normalized)) && Number(normalized) >= 0;
+};
 
 export default function Products({ implantsOnly = false }) {
   const { profile, canUseModule } = useAuth();
@@ -40,7 +50,8 @@ export default function Products({ implantsOnly = false }) {
   }
 
   const productMap = useMemo(() => new Map(products.map((item) => [item.codice_articolo, item])), [products]);
-  const kitTotal = (kit) => (kit.componenti || []).reduce((sum, row) => sum + Number(row.quantita || 0) * Number(productMap.get(row.codice_articolo)?.prezzo_listino || 0), 0);
+  const componentPrice = (row) => numericPrice(row.prezzo_unitario, numericPrice(productMap.get(row.codice_articolo)?.prezzo_listino));
+  const kitTotal = (kit) => (kit.componenti || []).reduce((sum, row) => sum + Number(row.quantita || 0) * componentPrice(row), 0);
   const filteredProducts = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (q ? products.filter((item) => [item.codice_articolo, item.descrizione, item.ean, item.brand].some((value) => String(value || "").toLowerCase().includes(q))) : products).slice(0, 500);
@@ -57,7 +68,7 @@ export default function Products({ implantsOnly = false }) {
   }, [componentSearch, products, form]);
 
   function editKit(kit) {
-    setForm({ ...kit, prezzo_fisso: kit.prezzo_fisso ?? "", sconto_personalizzato: kit.sconto_personalizzato ?? "", componenti: [...(kit.componenti || [])].sort((a, b) => a.posizione - b.posizione) });
+    setForm({ ...kit, prezzo_fisso: kit.prezzo_fisso ?? "", sconto_personalizzato: kit.sconto_personalizzato ?? "", componenti: [...(kit.componenti || [])].sort((a, b) => a.posizione - b.posizione).map((item) => ({ ...item, prezzo_unitario: item.prezzo_unitario ?? productMap.get(item.codice_articolo)?.prezzo_listino ?? "" })) });
     setMessage("");
   }
   async function addComponent(product) {
@@ -69,7 +80,7 @@ export default function Products({ implantsOnly = false }) {
         setMessage("Inserisci una quantità valida maggiore di zero.");
         return;
       }
-      setForm((current) => ({ ...current, componenti: [...current.componenti, { codice_articolo: product.codice_articolo, quantita: quantity }] }));
+      setForm((current) => ({ ...current, componenti: [...current.componenti, { codice_articolo: product.codice_articolo, quantita: quantity, prezzo_unitario: numericPrice(product.prezzo_listino) }] }));
       setComponentSearch("");
       setMessage("");
       return;
@@ -86,7 +97,7 @@ export default function Products({ implantsOnly = false }) {
       componentQuantityRef.current?.focus();
       return;
     }
-    setForm((current) => ({ ...current, componenti: [...current.componenti, { codice_articolo: pendingComponent.codice_articolo, quantita: quantity }] }));
+    setForm((current) => ({ ...current, componenti: [...current.componenti, { codice_articolo: pendingComponent.codice_articolo, quantita: quantity, prezzo_unitario: numericPrice(pendingComponent.prezzo_listino) }] }));
     setPendingComponent(null);
     setPendingComponentQuantity("");
     setMessage("");
@@ -103,6 +114,7 @@ export default function Products({ implantsOnly = false }) {
     const codice = form.codice.trim().toUpperCase();
     const descrizione = form.descrizione.trim();
     if (!codice || !descrizione || !form.componenti.length) return setMessage("Inserisci codice, descrizione e almeno un prodotto.");
+    if (form.componenti.some((item) => !isValidPrice(item.prezzo_unitario))) return setMessage("Inserisci un prezzo valido per ogni prodotto dell’impianto.");
     if (form.modalita_prezzo === "prezzo_fisso" && Number(form.prezzo_fisso) < 0) return setMessage("Inserisci un prezzo fisso valido.");
     if (form.modalita_prezzo === "sconto_personalizzato" && (Number(form.sconto_personalizzato) < 0 || Number(form.sconto_personalizzato) > 100)) return setMessage("Lo sconto deve essere compreso tra 0 e 100.");
     const payload = {
@@ -119,7 +131,7 @@ export default function Products({ implantsOnly = false }) {
       const { error: deleteError } = await supabase.from("ordini_impianti_componenti").delete().eq("impianto_id", kit.id);
       if (deleteError) return setMessage(deleteError.message);
     }
-    const { error: componentError } = await supabase.from("ordini_impianti_componenti").insert(form.componenti.map((item, index) => ({ impianto_id: kit.id, codice_articolo: item.codice_articolo, quantita: Number(item.quantita), posizione: index })));
+    const { error: componentError } = await supabase.from("ordini_impianti_componenti").insert(form.componenti.map((item, index) => ({ impianto_id: kit.id, codice_articolo: item.codice_articolo, quantita: Number(item.quantita), prezzo_unitario: numericPrice(item.prezzo_unitario), posizione: index })));
     if (componentError) return setMessage(componentError.message);
     setForm(null); setMessage("Impianto salvato."); await loadData();
   }
@@ -147,7 +159,7 @@ export default function Products({ implantsOnly = false }) {
       <div className="orders-product-entry"><label className="orders-kit-label">Cerca prodotto<div className="orders-search"><Search size={17}/><input value={componentSearch} onChange={(e) => { setComponentSearch(e.target.value); setComponentResultIndex(0); setPendingComponent(null); setPendingComponentQuantity(""); }} onKeyDown={(e) => { if(e.key==="ArrowDown"){e.preventDefault();moveComponentSelection(1);}else if(e.key==="ArrowUp"){e.preventDefault();moveComponentSelection(-1);}else if((e.key==="Enter"||e.key==="Tab")&&componentResults[componentResultIndex]){e.preventDefault();addComponent(componentResults[componentResultIndex]);} }} placeholder="Codice o descrizione..."/></div></label>
       <label className="orders-product-quick-quantity">Quantità<input ref={componentQuantityRef} type="number" min=".001" step=".001" disabled={!pendingComponent} value={pendingComponentQuantity} onChange={(e)=>setPendingComponentQuantity(e.target.value)} onKeyDown={(e)=>{if(e.key==="Enter"||e.key==="Tab"){e.preventDefault();confirmComponent();}}}/></label></div>
       {componentResults.length > 0 && <div className="orders-picker-results">{componentResults.map((product,index) => <button ref={(node)=>{componentResultRefs.current[index]=node;}} className={index===componentResultIndex?"is-keyboard-active":""} key={product.codice_articolo} onMouseEnter={()=>setComponentResultIndex(index)} onClick={() => addComponent(product)}><strong>{product.descrizione}</strong><span>{product.codice_articolo} · {money(product.prezzo_listino)}</span></button>)}</div>}
-      <div className="orders-table-wrap"><table className="orders-table"><thead><tr><th>Prodotto</th><th>Prezzo</th><th>Quantità</th><th>Totale</th><th></th></tr></thead><tbody>{form.componenti.map((row) => { const product=productMap.get(row.codice_articolo)||{}; return <tr key={row.codice_articolo}><td><strong>{row.codice_articolo}</strong><br/>{product.descrizione}</td><td>{money(product.prezzo_listino)}</td><td><input className="orders-number-input" type="number" min=".001" step=".001" value={row.quantita} onChange={(e) => setForm({...form, componenti:form.componenti.map((item)=>item.codice_articolo===row.codice_articolo?{...item,quantita:e.target.value}:item)})}/></td><td>{money(Number(row.quantita)*Number(product.prezzo_listino||0))}</td><td><button className="orders-icon-danger" onClick={() => setForm({...form,componenti:form.componenti.filter((item)=>item.codice_articolo!==row.codice_articolo)})}><Trash2 size={17}/></button></td></tr>})}</tbody></table></div>
+      <div className="orders-table-wrap"><table className="orders-table"><thead><tr><th>Prodotto</th><th>Prezzo unitario</th><th>Quantità</th><th>Totale</th><th></th></tr></thead><tbody>{form.componenti.map((row) => { const product=productMap.get(row.codice_articolo)||{}; return <tr key={row.codice_articolo}><td><strong>{row.codice_articolo}</strong><br/>{product.descrizione}</td><td><input className="orders-number-input" aria-label={`Prezzo unitario ${row.codice_articolo}`} type="number" min="0" step=".01" value={row.prezzo_unitario} onChange={(e) => setForm({...form, componenti:form.componenti.map((item)=>item.codice_articolo===row.codice_articolo?{...item,prezzo_unitario:e.target.value}:item)})}/></td><td><input className="orders-number-input" type="number" min=".001" step=".001" value={row.quantita} onChange={(e) => setForm({...form, componenti:form.componenti.map((item)=>item.codice_articolo===row.codice_articolo?{...item,quantita:e.target.value}:item)})}/></td><td>{money(Number(row.quantita)*componentPrice(row))}</td><td><button className="orders-icon-danger" onClick={() => setForm({...form,componenti:form.componenti.filter((item)=>item.codice_articolo!==row.codice_articolo)})}><Trash2 size={17}/></button></td></tr>})}</tbody></table></div>
       <div className="orders-kit-total"><span>Somma prodotti</span><strong>{money(kitTotal(form))}</strong></div>
       <div className="orders-kit-pricing"><label><input type="radio" checked={form.modalita_prezzo==="sconto_ordine"} onChange={()=>setForm({...form,modalita_prezzo:"sconto_ordine"})}/> Stessa scontistica dell’ordine</label><label><input type="radio" checked={form.modalita_prezzo==="prezzo_fisso"} onChange={()=>setForm({...form,modalita_prezzo:"prezzo_fisso"})}/> Prezzo fisso <input type="number" min="0" step=".01" value={form.prezzo_fisso} onChange={(e)=>setForm({...form,prezzo_fisso:e.target.value})}/></label><label><input type="radio" checked={form.modalita_prezzo==="sconto_personalizzato"} onChange={()=>setForm({...form,modalita_prezzo:"sconto_personalizzato"})}/> Sconto diverso (%) <input type="number" min="0" max="100" step=".01" value={form.sconto_personalizzato} onChange={(e)=>setForm({...form,sconto_personalizzato:e.target.value})}/></label></div>
       <div className="orders-kit-actions"><button className="orders-secondary" onClick={()=>setForm(null)}>Annulla</button><button className="orders-primary" onClick={saveKit}><Save size={17}/> Salva impianto</button></div>

@@ -22,10 +22,11 @@ test("l'avviso tecnico sulle dimensioni non esposte non viene renderizzato", () 
   assert.doesNotMatch(dashboard, /Dimensioni non esposte senza mapping affidabile|crm-control-gaps|TrendingUp/);
 });
 
-test("le KPI card sono pulsanti attivi e portano alla sezione di dettaglio", () => {
-  assert.match(dashboard, /<button className="crm-control-kpi"/);
-  assert.match(dashboard, /scrollIntoView/);
-  assert.match(dashboard, /onActivate=\{\(\) => activateCard\(target\)\}/);
+test("le KPI card sono link completi e portano a dati filtrati", () => {
+  assert.match(dashboard, /<Link className="crm-control-kpi"/);
+  assert.match(dashboard, /cardDestination/);
+  assert.match(dashboard, /metric: customerMetric/);
+  assert.match(dashboard, /to=\{cardDestination\(label, target\)\}/);
 });
 
 test("font e resoconti PRIVATE DIRECT sono più compatti con dettaglio DIRECT", () => {

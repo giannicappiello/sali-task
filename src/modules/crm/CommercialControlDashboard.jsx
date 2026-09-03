@@ -73,11 +73,12 @@ function customerPath(row) {
   return `${base}/clienti/${encodeURIComponent(`mexal:${row.codice_cliente}`)}`;
 }
 
-function MetricCard({ label, value, note, onActivate, delta }) {
-  return <button className="crm-control-kpi" type="button" onClick={onActivate}>
+function MetricCard({ label, value, note, to, delta }) {
+  return <Link className="crm-control-kpi" to={to} aria-label={`${label}: ${value}. Apri dettaglio filtrato`}>
     <span>{label}<InfoTooltip label={label} text={CONTROL_KPI_INFO[label] || note || `Indicatore ${label} calcolato sui filtri correnti.`} /></span><strong>{value}</strong>
     {delta != null ? <small className={delta >= 0 ? "positive" : "negative"}>{percentage(delta)} vs confronto</small> : note ? <small>{note}</small> : null}
-  </button>;
+    <em>Apri dettaglio →</em>
+  </Link>;
 }
 
 function Empty({ children = "Nessun dato reale disponibile nel perimetro selezionato." }) {
@@ -216,16 +217,19 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
   const nav = scope === "private" ? [["Clienti", "/crm/conto-terzi/clienti"], ["Pipeline", "/crm/conto-terzi/pipeline"], ["Attività", "/crm/conto-terzi/attivita"], ["Brief", "/crm/conto-terzi/brief"], ["Analisi", "/crm/conto-terzi/analisi"]]
     : scope === "direct" ? [["BtoB", "/crm/b2b"], ["BtoC / Online", "/crm/online"]] : [];
 
-  const activateCard = useCallback((target) => {
+  const cardDestination = useCallback((label, target) => {
+    if (scope === "private") {
+      const customerMetric = { Fatturato: "invoiced", Ordinato: "ordered", "Portafoglio ordini": "ordered", "Clienti Mexal attivi": "all", "Nuovi clienti": "new" }[label];
+      if (customerMetric) return period.withPeriod("/crm/conto-terzi/clienti", { metric: customerMetric, ...(label === "Clienti Mexal attivi" ? { customerStatus: "active" } : {}) });
+      if (["Pipeline", "Forecast ponderato"].includes(label)) return period.withPeriod("/crm/conto-terzi/pipeline", { status: "open", view: "list" });
+    }
     const targetByScope = {
       global: { top: "business", portfolio: "business", new: "attention", "reorder-lost": "attention" },
       private: { top: "top", portfolio: "top", new: "top", "reorder-lost": "reorders" },
       direct: { top: "attention", portfolio: "attention", new: "direct-origin", "reorder-lost": "reorders" },
     };
-    const sectionId = targetByScope[scope]?.[target] || target;
-    setFilter("focus", sectionId);
-    window.requestAnimationFrame(() => document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" }));
-  }, [scope, setFilter]);
+    return linkFor(targetByScope[scope]?.[target] || target);
+  }, [linkFor, period, scope]);
 
   const kpis = useMemo(() => {
     const common = [
@@ -266,7 +270,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
     <p className="crm-control-updated">Ultimo aggiornamento: {updated}. Nessun polling automatico.</p>
     {error ? <div className="crm-message error"><span>{error}</span><button type="button" onClick={load}>Riprova</button></div> : null}
     {loading ? <div className="crm-loading">Calcolo server-side sull’intero dataset filtrato...</div> : <>
-      <div className={`crm-control-kpis ${scope === "direct" ? "wide" : ""}`}>{kpis.map(([label, value, note, target, delta]) => <MetricCard key={label} label={label} value={value} note={note} delta={delta} onActivate={() => activateCard(target)} />)}</div>
+      <div className={`crm-control-kpis ${scope === "direct" ? "wide" : ""}`}>{kpis.map(([label, value, note, target, delta]) => <MetricCard key={label} label={label} value={value} note={note} delta={delta} to={cardDestination(label, target)} />)}</div>
 
       {scope === "global" ? <section className="crm-control-panel" id="business"><header><div><span>Composizione business</span><h3>PRIVATE vs DIRECT</h3></div></header><div className="crm-control-business crm-business-summary">{(data?.business || []).map((row) => <Link key={row.business} to={row.business === "PRIVATE" ? period.withPeriod("/crm/conto-terzi") : period.withPeriod("/crm/direct")}><strong>{row.business}</strong><span>{formatMoney(row.invoice_total)} fatturato</span><span>{formatMoney(row.order_total)} ordinato</span><span>{number(row.customers)} clienti</span>{row.business === "DIRECT" ? <small>BtoB {formatMoney(data?.direct_breakdown?.btob_invoice_total)} · BtoC {formatMoney(data?.direct_breakdown?.btoc_invoice_total)} · Estero {formatMoney(data?.direct_breakdown?.foreign_invoice_total)}</small> : null}</Link>)}</div></section> : null}
 

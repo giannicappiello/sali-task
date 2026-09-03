@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { CheckCircle2, FolderKanban, Plus } from "lucide-react";
+import { Link, useLocation, useParams } from "react-router-dom";
+import { CheckCircle2, FolderKanban, ListChecks, Plus } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
 import CrmCustomerLink from "./CrmCustomerLink";
@@ -20,9 +20,10 @@ function nextOpenActivity(activities) {
 
 export default function CrmOpportunityDetail({ type }) {
   const { opportunityId } = useParams();
+  const pageLocation = useLocation();
   const config = crmTypeConfig(type);
   const period = useCrmPeriod();
-  const { profile, canUseModule } = useAuth();
+  const { profile, canUseModule, isAdmin, userDepartmentIds = [] } = useAuth();
   const canWrite = canUseModule(config.moduleCode, "scrittura");
   const [opportunity, setOpportunity] = useState(null);
   const [stages, setStages] = useState([]);
@@ -32,9 +33,15 @@ export default function CrmOpportunityDetail({ type }) {
   const [stageHistory, setStageHistory] = useState([]);
   const [links, setLinks] = useState([]);
   const [projects, setProjects] = useState([]);
+  const [activityTypes, setActivityTypes] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [operationalActivities, setOperationalActivities] = useState([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [activity, setActivity] = useState({ tipo: "follow_up", titolo: "", data_attivita: "", priorita: "normale" });
+  const [operationalDraft, setOperationalDraft] = useState({ activity_type_id: "", titolo: "", descrizione: "", deadline: "", reparto_id: "", responsabile_id: "" });
+  const [operationalPreview, setOperationalPreview] = useState(null);
   const [completion, setCompletion] = useState(null);
   const [now] = useState(() => Date.now());
   const [transition, setTransition] = useState({ stage_id: "", valore_finale: "", motivo_perdita_id: "", motivo_perdita: "", concorrente: "", data_ricontatto: "" });
@@ -50,16 +57,21 @@ export default function CrmOpportunityDetail({ type }) {
       return;
     }
     const current = opportunityResult.data;
-    const [stageResult, reasonResult, activityResult, contactResult, historyResult, linkResult, projectResult] = await Promise.all([
+    const [stageResult, reasonResult, activityResult, contactResult, historyResult, linkResult, projectResult, typeResult, departmentResult, userResult, userDepartmentsResult, operationalResult] = await Promise.all([
       supabase.from("crm_opportunity_stages").select("*").eq("crm_tipo", type).eq("attiva", true).order("ordine"),
       supabase.from("crm_loss_reasons").select("*").eq("crm_tipo", type).eq("attivo", true).order("ordine"),
-      supabase.from("crm_activities").select("*,crm_contacts(nome,cognome)").eq("opportunity_id", opportunityId).order("data_attivita", { ascending: false }),
+      supabase.from("crm_activities").select("*,crm_contacts(nome,cognome),responsabile:responsabile_id(nome,cognome)").eq("opportunity_id", opportunityId).order("data_attivita", { ascending: false }),
       supabase.from("crm_contacts").select("id,nome,cognome,ruolo,email,telefono,principale").eq("account_id", current.account_id).order("principale", { ascending: false }),
       supabase.from("crm_opportunity_stage_history").select("*,from_stage:from_stage_id(nome),to_stage:to_stage_id(nome)").eq("opportunity_id", opportunityId).order("changed_at", { ascending: false }),
       supabase.from("crm_workspace_links").select("*").eq("crm_entity_type", "opportunity").eq("crm_entity_id", opportunityId),
       supabase.from("v4_progetti").select("id,titolo,stato,deadline").order("created_at", { ascending: false }).limit(200),
+      supabase.from("crm_activity_types").select("*").eq("crm_tipo", type).eq("attivo", true).order("ordine"),
+      supabase.from("reparti").select("id,nome").eq("attivo", true).order("nome"),
+      supabase.from("utenti").select("id,nome,cognome,reparto_id").eq("attivo", true).order("nome"),
+      supabase.from("utenti_reparti").select("utente_id,reparto_id"),
+      supabase.rpc("crm_opportunity_operational_progress", { p_opportunity_id: opportunityId }),
     ]);
-    const failure = stageResult.error || reasonResult.error || activityResult.error || contactResult.error || historyResult.error || linkResult.error || projectResult.error;
+    const failure = stageResult.error || reasonResult.error || activityResult.error || contactResult.error || historyResult.error || linkResult.error || projectResult.error || typeResult.error || departmentResult.error || userResult.error || userDepartmentsResult.error || operationalResult.error;
     if (failure) setError(failure.message);
     setOpportunity(current);
     setStages(stageResult.data || []);
@@ -69,13 +81,21 @@ export default function CrmOpportunityDetail({ type }) {
     setStageHistory(historyResult.data || []);
     setLinks(linkResult.data || []);
     setProjects(projectResult.data || []);
+    setActivityTypes(typeResult.data || []);
+    const allowedDepartmentIds = new Set(userDepartmentIds);
+    setDepartments((departmentResult.data || []).filter((item) => isAdmin || allowedDepartmentIds.has(item.id)));
+    const memberships = userDepartmentsResult.data || [];
+    setUsers((userResult.data || []).filter((item) => isAdmin || item.id === profile?.id || allowedDepartmentIds.has(item.reparto_id) || memberships.some((membership) => membership.utente_id === item.id && allowedDepartmentIds.has(membership.reparto_id))));
+    setOperationalActivities(operationalResult.data || []);
     setTransition((value) => ({ ...value, stage_id: current.stage_id || "", valore_finale: current.valore_finale ?? current.valore ?? "", motivo_perdita_id: current.motivo_perdita_id || "", motivo_perdita: current.motivo_perdita || "", concorrente: current.concorrente || "", data_ricontatto: current.data_ricontatto || "" }));
-  }, [opportunityId, type]);
+  }, [isAdmin, opportunityId, profile?.id, type, userDepartmentIds]);
 
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
 
   const selectedStage = stages.find((stage) => stage.id === transition.stage_id);
   const next = useMemo(() => nextOpenActivity(activities), [activities]);
+  const nextIsOverdue = Boolean(next?.data_attivita && new Date(next.data_attivita).getTime() < now);
+  const nextOwner = next?.responsabile ? `${next.responsabile.nome || ""} ${next.responsabile.cognome || ""}`.trim() : "Responsabile non assegnato";
   const stageEnteredAt = stageHistory[0]?.changed_at || opportunity?.creato_il;
   const stageAge = stageEnteredAt ? Math.max(0, Math.floor((now - new Date(stageEnteredAt).getTime()) / 86400000)) : 0;
   const agingThreshold = opportunity?.crm_opportunity_stages?.soglia_aging_giorni;
@@ -132,6 +152,44 @@ export default function CrmOpportunityDetail({ type }) {
     setBusy(false);
   }
 
+  async function previewOperationalActivity(event) {
+    event.preventDefault();
+    if (!canWrite || !operationalDraft.activity_type_id || !operationalDraft.titolo.trim() || !operationalDraft.deadline) return;
+    setBusy(true); setError("");
+    const { data, error: previewError } = await supabase.rpc("crm_preview_operational_activity", {
+      p_activity_type_id: operationalDraft.activity_type_id,
+      p_deadline: operationalDraft.deadline,
+      p_department_id: operationalDraft.reparto_id || null,
+      p_responsible_id: operationalDraft.responsabile_id || null,
+    });
+    if (previewError) setError(previewError.message); else setOperationalPreview(data);
+    setBusy(false);
+  }
+
+  async function confirmOperationalActivity() {
+    if (!operationalPreview || !canWrite) return;
+    setBusy(true); setError("");
+    const idempotencyKey = `crm:${opportunityId}:${operationalDraft.activity_type_id}:${operationalDraft.deadline}:${operationalDraft.titolo.trim().toLowerCase()}`;
+    const { error: creationError } = await supabase.rpc("crm_create_operational_activity", {
+      p_account_id: opportunity.account_id,
+      p_opportunity_id: opportunityId,
+      p_activity_type_id: operationalDraft.activity_type_id,
+      p_title: operationalDraft.titolo.trim(),
+      p_description: operationalDraft.descrizione || null,
+      p_deadline: operationalDraft.deadline,
+      p_department_id: operationalDraft.reparto_id || null,
+      p_responsible_id: operationalDraft.responsabile_id || null,
+      p_idempotency_key: idempotencyKey,
+    });
+    if (creationError) setError(creationError.message);
+    else {
+      setOperationalPreview(null);
+      setOperationalDraft({ activity_type_id: "", titolo: "", descrizione: "", deadline: "", reparto_id: "", responsabile_id: "" });
+      await load();
+    }
+    setBusy(false);
+  }
+
   async function linkProject(projectId) {
     if (!canWrite || !projectId) return;
     setBusy(true); setError("");
@@ -165,8 +223,9 @@ export default function CrmOpportunityDetail({ type }) {
       <div><span>Fase</span><strong>{opportunity.crm_opportunity_stages?.nome || "Senza fase"}</strong></div>
       <div><span>Valore</span><strong>{formatMoney(opportunity.valore)}</strong></div>
       <div><span>Ponderato</span><strong>{formatMoney(Number(opportunity.valore || 0) * Number(opportunity.probabilita || 0) / 100)}</strong></div>
-      <div><span>Prossimo passo</span><strong>{next ? `${next.titolo} · ${formatDate(next.data_attivita)}` : "Mancante"}</strong></div>
+      <div className={nextIsOverdue || !next ? "crm-aging-alert" : ""}><span>Prossimo passo</span><strong>{next ? `${nextIsOverdue ? "ATTIVITÀ SCADUTA" : "PROSSIMA ATTIVITÀ"} · ${next.titolo}` : "NESSUNA ATTIVITÀ PIANIFICATA"}</strong>{next ? <small>{nextOwner} · {formatDate(next.data_attivita)}</small> : null}</div>
       <div className={agingThreshold && stageAge > agingThreshold ? "crm-aging-alert" : ""}><span>Tempo nella fase</span><strong>{stageAge} giorni{agingThreshold ? ` / soglia ${agingThreshold}` : ""}</strong></div>
+      {canWrite ? <Link className="secondary-action" to="/crm/ai" state={{ accountId: account.id, opportunityId, crmType: type }}>Pianifica con AI</Link> : null}
     </div>
     <div className="crm-detail-grid">
       <form className="panel crm-panel crm-card-form" onSubmit={saveDetails}><h3>Dati opportunità</h3>
@@ -184,6 +243,27 @@ export default function CrmOpportunityDetail({ type }) {
         {canWrite ? <button className="primary-action crm-primary" disabled={busy}>Conferma fase</button> : null}
       </form>
     </div>
+    <section className="panel crm-panel crm-operational-section">
+      <div className="crm-operational-heading"><div><h3>Attività operative</h3><p>Task e progetti Workspace collegati all’opportunità. L’avanzamento deriva dagli stati reali delle task.</p></div><ListChecks size={22} /></div>
+      {operationalActivities.length ? <div className="crm-operational-grid">{operationalActivities.map((item) => <article className="crm-operational-card" key={item.activity_id}>
+        <div><span>{item.activity_class === "strutturata" ? "Attività strutturata" : "Attività semplice"}</span><strong>{item.activity_title}</strong></div>
+        <div className="crm-progress-track" aria-label={`Avanzamento ${item.progress || 0}%`}><i style={{ width: `${Math.min(100, Number(item.progress || 0))}%` }} /></div>
+        <b>{Number(item.progress || 0).toLocaleString("it-IT")}%</b>
+        <small>{item.completed_tasks}/{item.total_tasks} completate · {item.in_progress_tasks} in corso · {item.blocked_tasks} bloccate · {item.overdue_tasks} scadute</small>
+        <small>Deadline {formatDate(item.deadline)} · Reparti: {(item.department_names || []).join(", ") || "non indicati"}</small>
+        <small>Prossimo step: {item.next_task_title || "nessuno"}</small>
+        <div className="crm-operational-links">{item.project_id ? <Link to={`/activities/projects?project=${item.project_id}&returnTo=${encodeURIComponent(pageLocation.pathname + pageLocation.search)}`}>Apri progetto</Link> : null}{item.next_task_id ? <Link to={`/activities/tasks?task=${item.next_task_id}&returnTo=${encodeURIComponent(pageLocation.pathname + pageLocation.search)}`}>Apri task</Link> : null}</div>
+      </article>)}</div> : <div className="crm-empty">Nessuna attività operativa collegata.</div>}
+      {canWrite ? <form className="crm-operational-form" onSubmit={previewOperationalActivity}>
+        <select required value={operationalDraft.activity_type_id} onChange={(event) => setOperationalDraft({ ...operationalDraft, activity_type_id: event.target.value })}><option value="">Tipo attività CRM</option>{activityTypes.map((item) => <option key={item.id} value={item.id}>{item.nome} · {item.classe}</option>)}</select>
+        <input required value={operationalDraft.titolo} onChange={(event) => setOperationalDraft({ ...operationalDraft, titolo: event.target.value })} placeholder="Attività da realizzare" />
+        <input required type="date" value={operationalDraft.deadline} onChange={(event) => setOperationalDraft({ ...operationalDraft, deadline: event.target.value })} aria-label="Deadline attività operativa" />
+        <select value={operationalDraft.reparto_id} onChange={(event) => setOperationalDraft({ ...operationalDraft, reparto_id: event.target.value })}><option value="">Reparto dell’opportunità</option>{departments.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select>
+        <select value={operationalDraft.responsabile_id} onChange={(event) => setOperationalDraft({ ...operationalDraft, responsabile_id: event.target.value })}><option value="">Responsabile dell’opportunità</option>{users.map((item) => <option key={item.id} value={item.id}>{`${item.nome || ""} ${item.cognome || ""}`.trim()}</option>)}</select>
+        <textarea value={operationalDraft.descrizione} onChange={(event) => setOperationalDraft({ ...operationalDraft, descrizione: event.target.value })} placeholder="Descrizione operativa" />
+        <button className="primary-action crm-primary" disabled={busy}><Plus size={16} />Anteprima creazione</button>
+      </form> : null}
+    </section>
     <section className="panel crm-panel"><h3>Attività e prossimo passo</h3>
       {canWrite ? <form className="crm-inline-form" onSubmit={addActivity}><select value={activity.tipo} onChange={(event) => setActivity({ ...activity, tipo: event.target.value })}>{["telefonata","email","visita","videocall","presentazione","formazione","campionatura","sviluppo_formula","preventivo","follow_up"].map((value) => <option key={value} value={value}>{value.replaceAll("_", " ")}</option>)}</select><input required value={activity.titolo} onChange={(event) => setActivity({ ...activity, titolo: event.target.value })} placeholder="Prossima azione" /><input type="datetime-local" value={activity.data_attivita} onChange={(event) => setActivity({ ...activity, data_attivita: event.target.value })} /><select value={activity.priorita} onChange={(event) => setActivity({ ...activity, priorita: event.target.value })}><option value="bassa">Bassa</option><option value="normale">Normale</option><option value="alta">Alta</option></select><button className="primary-action crm-primary" disabled={busy}><Plus size={16} />Aggiungi</button></form> : null}
       <ul className="crm-timeline">{activities.map((item) => <li key={item.id}><strong>{item.titolo}</strong><span>{item.tipo.replaceAll("_", " ")} · {formatDate(item.data_attivita)} · {item.stato}</span>{item.esito ? <small>Esito: {item.esito}</small> : null}{canWrite && item.stato !== "completata" ? <button type="button" className="secondary-action" onClick={() => setCompletion({ id: item.id, esito: "", prossima_azione: "", prossima_data: "" })}><CheckCircle2 size={15} />Completa</button> : null}</li>)}</ul>
@@ -191,5 +271,6 @@ export default function CrmOpportunityDetail({ type }) {
     {type === "conto_terzi" && opportunity.crm_opportunity_stages?.vinta ? <section className="panel crm-panel"><h3>Progetto Workspace</h3><p>Una opportunità vinta può creare un progetto oppure collegarne uno esistente, senza duplicarlo.</p><form className="crm-inline-form" onSubmit={createProject}><input value={projectTitle} onChange={(event) => setProjectTitle(event.target.value)} placeholder="Titolo nuovo progetto" /><button className="primary-action crm-primary" disabled={!canWrite || busy}><Plus size={16} />Crea progetto</button></form><select defaultValue="" onChange={(event) => void linkProject(event.target.value)} disabled={!canWrite || busy}><option value="">Collega progetto esistente</option>{projects.filter((item) => !linkedProjectIds.has(item.id)).map((item) => <option key={item.id} value={item.id}>{item.titolo}</option>)}</select>{projects.filter((item) => linkedProjectIds.has(item.id)).map((item) => <Link className="crm-row-card" key={item.id} to="/activities/projects"><FolderKanban size={18} /><strong>{item.titolo}</strong><span>{item.stato || "Progetto Workspace"}</span></Link>)}</section> : null}
     <section className="panel crm-panel"><h3>Storico fasi</h3><ul className="crm-timeline">{stageHistory.map((item) => <li key={item.id}><strong>{item.to_stage?.nome || "Fase aggiornata"}</strong><span>{formatDate(item.changed_at)}{item.from_stage?.nome ? ` · da ${item.from_stage.nome}` : ""}</span></li>)}</ul></section>
     {completion ? <div className="crm-modal-backdrop"><form className="crm-modal" onSubmit={completeActivity}><h3>Completa attività</h3><textarea value={completion.esito} onChange={(event) => setCompletion({ ...completion, esito: event.target.value })} placeholder="Esito" /><input value={completion.prossima_azione} onChange={(event) => setCompletion({ ...completion, prossima_azione: event.target.value })} placeholder="Prossima azione (opzionale)" /><input type="datetime-local" value={completion.prossima_data} onChange={(event) => setCompletion({ ...completion, prossima_data: event.target.value })} /><div className="crm-modal-actions"><button type="button" onClick={() => setCompletion(null)}>Annulla</button><button className="primary-action crm-primary" disabled={busy}>Completa e pianifica</button></div></form></div> : null}
+    {operationalPreview ? <div className="crm-modal-backdrop"><div className="crm-modal crm-workflow-preview" role="dialog" aria-modal="true" aria-labelledby="crm-workflow-preview-title"><h3 id="crm-workflow-preview-title">Anteprima attività operativa</h3><p>Verrà creato: <strong>{operationalPreview.project_count} progetto</strong>, <strong>{operationalPreview.task_count} task</strong>, <strong>{operationalPreview.department_count} reparti coinvolti</strong>.</p><ol>{(operationalPreview.tasks || []).map((item, index) => <li key={item.rule_id || index}><strong>{item.title}</strong><span>{formatDate(item.deadline)} · {item.priority || "normale"}{item.mandatory ? " · obbligatoria" : ""}</span></li>)}</ol><div className="crm-modal-actions"><button type="button" onClick={() => setOperationalPreview(null)}>Annulla</button><button type="button" className="primary-action crm-primary" onClick={confirmOperationalActivity} disabled={busy}>{busy ? "Creazione..." : "Conferma e crea"}</button></div></div></div> : null}
   </div>;
 }

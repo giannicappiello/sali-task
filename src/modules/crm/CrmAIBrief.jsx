@@ -26,15 +26,16 @@ function PlanPreview({ decision, busy, onApprove, onRegenerate, onCancel }) {
     <span className="crm-eyebrow">Preview obbligatoria</span>
     <h3>{plan.project?.title || decision.title}</h3>
     <p>{plan.strategy || decision.summary}</p>
+    {plan.activityTypeCode ? <p><strong>Tipo attività configurato:</strong> {plan.activityTypeCode}</p> : null}
     {plan.facts?.length ? <div><strong>Fatti</strong><ul>{plan.facts.map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
     {plan.missingData?.length ? <div><strong>Dati mancanti</strong><ul>{plan.missingData.map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
     {plan.interpretations?.length ? <div><strong>Interpretazioni</strong><ul>{plan.interpretations.map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
     {plan.recommendations?.length ? <div><strong>Raccomandazioni</strong><ul>{plan.recommendations.map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
     {plan.questions?.length ? <div><strong>Informazioni mancanti</strong><ul>{plan.questions.map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
     {plan.risks?.length ? <div><strong>Rischi</strong><ul>{plan.risks.map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
-    {plan.phases?.length ? <div><strong>Piano operativo</strong><ol>{plan.phases.map((phase) => <li key={phase.title}><strong>{phase.title}</strong>{phase.tasks?.length ? <ul>{phase.tasks.map((task) => <li key={task.title}>{task.title}{task.owner ? ` · ${task.owner}` : ""}</li>)}</ul> : null}</li>)}</ol></div> : null}
+    {plan.operationalPreview?.tasks?.length ? <div><strong>Workflow Workspace configurato</strong><p>Verrà creato: {plan.operationalPreview.project_count} progetto, {plan.operationalPreview.task_count} task, {plan.operationalPreview.department_count} reparti.</p><ol>{plan.operationalPreview.tasks.map((task, index) => <li key={task.rule_id || index}><strong>{task.title}</strong> · {task.deadline}</li>)}</ol></div> : plan.phases?.length ? <div><strong>Piano operativo proposto</strong><ol>{plan.phases.map((phase) => <li key={phase.title}><strong>{phase.title}</strong>{phase.tasks?.length ? <ul>{phase.tasks.map((task) => <li key={task.title}>{task.title}{task.owner ? ` · ${task.owner}` : ""}</li>)}</ul> : null}</li>)}</ol></div> : null}
     <div className="crm-plan-actions">
-      <button className="primary-action crm-primary" type="button" disabled={busy || plan.readyForApproval === false} onClick={onApprove}><CheckCircle2 size={17} />Approva e crea progetto</button>
+      <button className="primary-action crm-primary" type="button" disabled={busy || plan.readyForApproval === false} onClick={onApprove}><CheckCircle2 size={17} />Conferma e crea</button>
       <button className="secondary-action crm-secondary" type="button" disabled={busy} onClick={onRegenerate}><RefreshCw size={17} />Rigenera</button>
       <button className="secondary-action crm-secondary" type="button" disabled={busy} onClick={onCancel}><XCircle size={17} />Annulla</button>
     </div>
@@ -81,7 +82,7 @@ export default function CrmAIBrief() {
     if (!text || !canWrite) return;
     setBusy(true); setError(""); setResult(null);
     try {
-      const response = await crmAIRequest({ action: "analyze", briefId: briefId || null, crmType, accountId: location.state?.accountId || null, from: period.from, to: period.to, prompt: text });
+      const response = await crmAIRequest({ action: "analyze", briefId: briefId || null, crmType, accountId: location.state?.accountId || null, opportunityId: location.state?.opportunityId || null, from: period.from, to: period.to, prompt: text });
       setBriefId(response.briefId); setMessages(response.messages || []); setDecision(response.decision || null); setPrompt(""); await loadBriefs();
     } catch (requestError) { setError(requestError.message); } finally { setBusy(false); }
   }

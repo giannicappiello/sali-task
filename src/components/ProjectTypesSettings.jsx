@@ -3,12 +3,14 @@ import { Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
 const emptyType = { nome: "", descrizione: "", attivo: true };
-const emptyRule = { template_id: "", giorni_anticipo: 0, ordine: 1, obbligatoria: true };
+const emptyRule = { template_id: "", giorni_anticipo: 0, ordine: 1, obbligatoria: true, responsabile_id: "", dipende_da_id: "", durata_giorni: 1, priorita: "normale" };
+const emptyCrmType = { crm_tipo: "conto_terzi", codice: "", nome: "", descrizione: "", classe: "semplice", tipo_progetto_id: "", priorita_default: "normale", attivo: true, ordine: 10 };
 
 export default function ProjectTypesSettings({ canManage = false, searchTerm = "" }) {
   const [types, setTypes] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [rules, setRules] = useState([]);
+  const [users, setUsers] = useState([]);
   const [selectedType, setSelectedType] = useState(null);
   const [typeModal, setTypeModal] = useState(false);
   const [ruleModal, setRuleModal] = useState(false);
@@ -16,6 +18,10 @@ export default function ProjectTypesSettings({ canManage = false, searchTerm = "
   const [ruleForm, setRuleForm] = useState(emptyRule);
   const [editingRule, setEditingRule] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [crmTypes, setCrmTypes] = useState([]);
+  const [crmTypeModal, setCrmTypeModal] = useState(false);
+  const [editingCrmType, setEditingCrmType] = useState(null);
+  const [crmTypeForm, setCrmTypeForm] = useState(emptyCrmType);
 
   useEffect(() => {
     loadData();
@@ -24,18 +30,24 @@ export default function ProjectTypesSettings({ canManage = false, searchTerm = "
   }, []);
 
   async function loadData() {
-    const [typesRes, templatesRes, rulesRes] = await Promise.all([
+    const [typesRes, templatesRes, rulesRes, crmTypesRes, usersRes] = await Promise.all([
       supabase.from("tipi_progetto").select("*").order("nome"),
       supabase.from("checklist_template").select("id,titolo,attivo").eq("attivo", true).order("ordine", { ascending: true }),
       supabase.from("tipo_progetto_fasi").select("*").order("ordine", { ascending: true }),
+      supabase.from("crm_activity_types").select("*").eq("crm_tipo", "conto_terzi").order("ordine", { ascending: true }),
+      supabase.from("utenti").select("id,nome,cognome").eq("attivo", true).order("nome"),
     ]);
     if (typesRes.error) console.error(typesRes.error.message);
     if (templatesRes.error) console.error(templatesRes.error.message);
     if (rulesRes.error) console.error(rulesRes.error.message);
+    if (crmTypesRes.error) console.error(crmTypesRes.error.message);
+    if (usersRes.error) console.error(usersRes.error.message);
     const loadedTypes = typesRes.data || [];
     setTypes(loadedTypes);
     setTemplates(templatesRes.data || []);
     setRules(rulesRes.data || []);
+    setCrmTypes(crmTypesRes.data || []);
+    setUsers(usersRes.data || []);
     if (selectedType) setSelectedType(loadedTypes.find((item) => item.id === selectedType.id) || null);
   }
 
@@ -106,6 +118,10 @@ export default function ProjectTypesSettings({ canManage = false, searchTerm = "
       giorni_anticipo: Number(rule.giorni_anticipo || 0),
       ordine: Number(rule.ordine || 1),
       obbligatoria: rule.obbligatoria !== false,
+      responsabile_id: rule.responsabile_id || "",
+      dipende_da_id: rule.dipende_da_id || "",
+      durata_giorni: Number(rule.durata_giorni || 1),
+      priorita: rule.priorita || "normale",
     });
     setRuleModal(true);
   }
@@ -124,6 +140,10 @@ export default function ProjectTypesSettings({ canManage = false, searchTerm = "
       giorni_anticipo: Math.max(0, Number(ruleForm.giorni_anticipo || 0)),
       ordine: Math.max(1, Number(ruleForm.ordine || 1)),
       obbligatoria: Boolean(ruleForm.obbligatoria),
+      responsabile_id: ruleForm.responsabile_id || null,
+      dipende_da_id: ruleForm.dipende_da_id || null,
+      durata_giorni: Math.max(1, Number(ruleForm.durata_giorni || 1)),
+      priorita: ruleForm.priorita || "normale",
     };
     const request = editingRule?.id
       ? supabase.from("tipo_progetto_fasi").update(payload).eq("id", editingRule.id)
@@ -143,9 +163,30 @@ export default function ProjectTypesSettings({ canManage = false, searchTerm = "
     await loadData();
   }
 
+  function openCrmType(item = null) {
+    setEditingCrmType(item);
+    setCrmTypeForm(item ? { ...emptyCrmType, ...item, tipo_progetto_id: item.tipo_progetto_id || "" } : { ...emptyCrmType });
+    setCrmTypeModal(true);
+  }
+
+  async function saveCrmType(event) {
+    event.preventDefault();
+    if (!canManage) return alert("Non hai i permessi.");
+    if (!crmTypeForm.nome.trim() || !crmTypeForm.codice.trim()) return alert("Nome e codice sono obbligatori.");
+    if (crmTypeForm.classe === "strutturata" && !crmTypeForm.tipo_progetto_id) return alert("Collega una tipologia progetto al workflow strutturato.");
+    setSaving(true);
+    const payload = { ...crmTypeForm, nome: crmTypeForm.nome.trim(), codice: crmTypeForm.codice.trim().toLowerCase().replaceAll(" ", "_"), descrizione: crmTypeForm.descrizione.trim() || null, tipo_progetto_id: crmTypeForm.classe === "strutturata" ? crmTypeForm.tipo_progetto_id : null, ordine: Number(crmTypeForm.ordine || 0) };
+    const request = editingCrmType?.id ? supabase.from("crm_activity_types").update(payload).eq("id", editingCrmType.id) : supabase.from("crm_activity_types").insert(payload);
+    const { error } = await request;
+    setSaving(false);
+    if (error) return alert(error.message);
+    setCrmTypeModal(false);
+    await loadData();
+  }
+
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "minmax(280px, .8fr) minmax(420px, 1.2fr)", gap: "16px" }}>
-      <div className="panel settings-panel">
+    <div className="project-types-settings-grid">
+      <div className="panel settings-panel" style={{ order: 1 }}>
         <div className="panel-header"><h3>Tipi di progetto</h3>{canManage && <button className="primary-action" onClick={openNewType}><Plus size={18} />Nuovo tipo</button>}</div>
         <div className="settings-list">
           {filteredTypes.map((item) => (
@@ -161,7 +202,12 @@ export default function ProjectTypesSettings({ canManage = false, searchTerm = "
         </div>
       </div>
 
-      <div className="panel settings-panel">
+      <div className="panel settings-panel" style={{ gridColumn: "1 / -1", order: 3 }}>
+        <div className="panel-header"><div><h3>Tipi attività CRM PRIVATE</h3><p>Le attività strutturate riusano una tipologia progetto e le sue fasi configurate.</p></div>{canManage && <button className="primary-action" onClick={() => openCrmType()}><Plus size={18} />Nuovo tipo attività</button>}</div>
+        <div className="settings-list">{crmTypes.map((item) => <div className="settings-row" key={item.id}><div><strong>{item.nome}</strong><span>{item.classe === "strutturata" ? `Strutturata · ${types.find((type) => type.id === item.tipo_progetto_id)?.nome || "workflow da collegare"}` : "Attività semplice · task Workspace"}</span></div><span className={`config-status ${item.attivo ? "active" : "inactive"}`}>{item.attivo ? "Attivo" : "Disattivo"}</span>{canManage ? <div className="config-actions"><button onClick={() => openCrmType(item)}><Pencil size={16} /></button></div> : null}</div>)}</div>
+      </div>
+
+      <div className="panel settings-panel" style={{ order: 2 }}>
         <div className="panel-header"><div><h3>Fasi associate</h3><p>{selectedType ? selectedType.nome : "Seleziona un tipo progetto"}</p></div>{selectedType && canManage && <button className="primary-action" onClick={openNewRule}><Plus size={18} />Aggiungi fase</button>}</div>
         <div className="settings-list">
           {selectedType && filteredRules.map((rule) => (
@@ -178,7 +224,9 @@ export default function ProjectTypesSettings({ canManage = false, searchTerm = "
 
       {typeModal && <div className="modal-backdrop"><form className="modal-card v4-modal" onSubmit={saveType}><div className="modal-header"><h2>{selectedType?.id ? "Modifica tipo progetto" : "Nuovo tipo progetto"}</h2><button type="button" onClick={() => setTypeModal(false)}><X size={20} /></button></div><label>Nome<input value={typeForm.nome} onChange={(e) => setTypeForm({ ...typeForm, nome: e.target.value })} /></label><label>Descrizione<textarea rows="4" value={typeForm.descrizione} onChange={(e) => setTypeForm({ ...typeForm, descrizione: e.target.value })} /></label><label className="check-line"><input type="checkbox" checked={typeForm.attivo} onChange={(e) => setTypeForm({ ...typeForm, attivo: e.target.checked })} />Attivo</label><button className="primary-action" disabled={saving}><Save size={18} />{saving ? "Salvataggio..." : "Salva"}</button></form></div>}
 
-      {ruleModal && <div className="modal-backdrop"><form className="modal-card v4-modal" onSubmit={saveRule}><div className="modal-header"><h2>{editingRule ? "Modifica fase associata" : "Aggiungi fase"}</h2><button type="button" onClick={() => setRuleModal(false)}><X size={20} /></button></div><label>Fase<select value={ruleForm.template_id} onChange={(e) => setRuleForm({ ...ruleForm, template_id: e.target.value })}><option value="">Seleziona fase...</option>{templates.map((item) => <option key={item.id} value={item.id}>{item.titolo}</option>)}</select></label><label>Giorni di anticipo<input type="number" min="0" value={ruleForm.giorni_anticipo} onChange={(e) => setRuleForm({ ...ruleForm, giorni_anticipo: e.target.value })} /></label><label>Ordine<input type="number" min="1" value={ruleForm.ordine} onChange={(e) => setRuleForm({ ...ruleForm, ordine: e.target.value })} /></label><label className="check-line"><input type="checkbox" checked={ruleForm.obbligatoria} onChange={(e) => setRuleForm({ ...ruleForm, obbligatoria: e.target.checked })} />Obbligatoria</label><button className="primary-action" disabled={saving}><Save size={18} />{saving ? "Salvataggio..." : "Salva"}</button></form></div>}
+      {ruleModal && <div className="modal-backdrop"><form className="modal-card v4-modal" onSubmit={saveRule}><div className="modal-header"><h2>{editingRule ? "Modifica fase associata" : "Aggiungi fase"}</h2><button type="button" onClick={() => setRuleModal(false)}><X size={20} /></button></div><label>Fase<select value={ruleForm.template_id} onChange={(e) => setRuleForm({ ...ruleForm, template_id: e.target.value })}><option value="">Seleziona fase...</option>{templates.map((item) => <option key={item.id} value={item.id}>{item.titolo}</option>)}</select></label><label>Giorni di anticipo<input type="number" min="0" value={ruleForm.giorni_anticipo} onChange={(e) => setRuleForm({ ...ruleForm, giorni_anticipo: e.target.value })} /></label><label>Durata prevista (giorni)<input type="number" min="1" value={ruleForm.durata_giorni} onChange={(e) => setRuleForm({ ...ruleForm, durata_giorni: e.target.value })} /></label><label>Ordine<input type="number" min="1" value={ruleForm.ordine} onChange={(e) => setRuleForm({ ...ruleForm, ordine: e.target.value })} /></label><label>Priorità<select value={ruleForm.priorita} onChange={(e) => setRuleForm({ ...ruleForm, priorita: e.target.value })}><option value="bassa">Bassa</option><option value="normale">Normale</option><option value="alta">Alta</option></select></label><label>Responsabile opzionale<select value={ruleForm.responsabile_id} onChange={(e) => setRuleForm({ ...ruleForm, responsabile_id: e.target.value })}><option value="">Da assegnare</option>{users.map((item) => <option key={item.id} value={item.id}>{`${item.nome || ""} ${item.cognome || ""}`.trim()}</option>)}</select></label><label>Dipende da<select value={ruleForm.dipende_da_id} onChange={(e) => setRuleForm({ ...ruleForm, dipende_da_id: e.target.value })}><option value="">Fase precedente</option>{selectedRules.filter((item) => item.id !== editingRule?.id).map((item) => <option key={item.id} value={item.id}>{templateName(item.template_id)}</option>)}</select></label><label className="check-line"><input type="checkbox" checked={ruleForm.obbligatoria} onChange={(e) => setRuleForm({ ...ruleForm, obbligatoria: e.target.checked })} />Obbligatoria</label><button className="primary-action" disabled={saving}><Save size={18} />{saving ? "Salvataggio..." : "Salva"}</button></form></div>}
+
+      {crmTypeModal && <div className="modal-backdrop"><form className="modal-card v4-modal" onSubmit={saveCrmType}><div className="modal-header"><h2>{editingCrmType ? "Modifica tipo attività CRM" : "Nuovo tipo attività CRM"}</h2><button type="button" onClick={() => setCrmTypeModal(false)}><X size={20} /></button></div><label>Nome<input value={crmTypeForm.nome} onChange={(e) => setCrmTypeForm({ ...crmTypeForm, nome: e.target.value })} /></label><label>Codice<input value={crmTypeForm.codice} onChange={(e) => setCrmTypeForm({ ...crmTypeForm, codice: e.target.value })} /></label><label>Descrizione<textarea value={crmTypeForm.descrizione} onChange={(e) => setCrmTypeForm({ ...crmTypeForm, descrizione: e.target.value })} /></label><label>Classe<select value={crmTypeForm.classe} onChange={(e) => setCrmTypeForm({ ...crmTypeForm, classe: e.target.value })}><option value="semplice">Attività semplice</option><option value="strutturata">Attività strutturata</option></select></label>{crmTypeForm.classe === "strutturata" ? <label>Workflow / tipologia progetto<select value={crmTypeForm.tipo_progetto_id} onChange={(e) => setCrmTypeForm({ ...crmTypeForm, tipo_progetto_id: e.target.value })}><option value="">Seleziona...</option>{types.filter((item) => item.attivo !== false).map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label> : null}<label>Priorità predefinita<select value={crmTypeForm.priorita_default} onChange={(e) => setCrmTypeForm({ ...crmTypeForm, priorita_default: e.target.value })}><option value="bassa">Bassa</option><option value="normale">Normale</option><option value="alta">Alta</option></select></label><label>Ordine<input type="number" min="0" value={crmTypeForm.ordine} onChange={(e) => setCrmTypeForm({ ...crmTypeForm, ordine: e.target.value })} /></label><label className="check-line"><input type="checkbox" checked={crmTypeForm.attivo} onChange={(e) => setCrmTypeForm({ ...crmTypeForm, attivo: e.target.checked })} />Attivo</label><button className="primary-action" disabled={saving}><Save size={18} />{saving ? "Salvataggio..." : "Salva tipo"}</button></form></div>}
     </div>
   );
 }

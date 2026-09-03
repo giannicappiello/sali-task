@@ -17,7 +17,7 @@ const DIGITAL_CHANNEL_MODULE = Object.freeze({
 const STRATEGIC_PLAN_SCHEMA = jsonSchema({
   type: "object",
   additionalProperties: false,
-  required: ["title", "summary", "facts", "missingData", "interpretations", "recommendations", "strategy", "questions", "alternatives", "risks", "readyForApproval", "project", "phases"],
+  required: ["title", "summary", "facts", "missingData", "interpretations", "recommendations", "strategy", "questions", "alternatives", "risks", "readyForApproval", "activityTypeCode", "project", "phases"],
   properties: {
     title: { type: "string" },
     summary: { type: "string" },
@@ -30,6 +30,7 @@ const STRATEGIC_PLAN_SCHEMA = jsonSchema({
     alternatives: { type: "array", items: { type: "string" } },
     risks: { type: "array", items: { type: "string" } },
     readyForApproval: { type: "boolean" },
+    activityTypeCode: { type: ["string", "null"] },
     project: {
       type: "object", additionalProperties: false,
       required: ["title", "description", "objectives", "priority", "deadline"],
@@ -135,6 +136,7 @@ async function buildAuthorizedContext(auth, crmType, accountId, period) {
       queryRows(auth.scoped.from("crm_opportunities").select("id,titolo,valore,probabilita,chiusura_prevista,crm_accounts!inner(nome,tipo),crm_opportunity_stages(nome,finale,vinta)").eq("crm_accounts.tipo", crmType).gte("aggiornato_il", period.from).lte("aggiornato_il", `${period.to}T23:59:59.999Z`).limit(100), "opportunities"),
       queryRows(auth.scoped.from("crm_activities").select("tipo,titolo,stato,data_attivita").eq("crm_tipo", crmType).gte("data_attivita", period.from).lte("data_attivita", `${period.to}T23:59:59.999Z`).order("data_attivita", { ascending: false }).limit(100), "activities"),
       queryRows(auth.scoped.from("prodotti").select("id,codice,nome,brand,categoria").eq("attivo", true).limit(100), "products"),
+      queryRows(auth.scoped.from("crm_activity_types").select("id,codice,nome,descrizione,classe,tipo_progetto_id,priorita_default").eq("crm_tipo", crmType).eq("attivo", true).order("ordine"), "configuredActivityTypes"),
     );
     if (accountId) {
       queries.push(
@@ -143,7 +145,12 @@ async function buildAuthorizedContext(auth, crmType, accountId, period) {
         queryRows(auth.scoped.rpc("crm_account_journey", { p_account_id: accountId }), "selectedAccountJourney"),
       );
     }
-    if ((auth.access?.modules || []).includes("attivita") || auth.isAdmin) queries.push(queryRows(auth.scoped.from("v4_progetti").select("titolo,descrizione,deadline,stato").order("created_at", { ascending: false }).limit(50), "workspaceProjects"));
+    if ((auth.access?.modules || []).includes("attivita") || auth.isAdmin) {
+      queries.push(
+        queryRows(auth.scoped.from("v4_progetti").select("titolo,descrizione,deadline,stato").order("created_at", { ascending: false }).limit(50), "workspaceProjects"),
+        queryRows(auth.scoped.from("tipo_progetto_fasi").select("id,tipo_progetto_id,ordine,giorni_anticipo,durata_giorni,priorita,obbligatoria,responsabile_id,dipende_da_id,checklist_template(id,titolo,reparto_id,checklist_template_reparti(reparto_id))").order("ordine"), "configuredWorkflowRules")
+      );
+    }
   }
   const results = await Promise.all(queries);
   return { period, ...Object.fromEntries(results.map((item) => [item.label, item.unavailable ? { unavailable: item.unavailable } : item.rows])) };
@@ -159,6 +166,7 @@ Un canale Digital assente dal contesto puo essere non autorizzato: non trarre co
 Non trattare un valore assente come zero e non proporre azioni automatiche su campagne, budget, newsletter, Amazon o social.
 Proponi alternative e rischi. Il piano deve essere operativo ma non applicato: la decisione resta umana.
 Non inventare KPI o fonti. Le fasi saranno trasformate in fasi progetto Workspace e i task in ulteriori fasi operative/reminder.
+Quando la richiesta descrive un'attivita operativa CRM, seleziona esclusivamente uno dei configuredActivityTypes e restituisci il suo codice in activityTypeCode. Non inventare tipi o workflow: la preview e la creazione useranno la configurazione Workspace associata. Usa null quando non e una richiesta operativa collegabile a un tipo configurato.
 Lo snapshot commerciale e il customer journey, quando presenti, sono dati read-only gia autorizzati. Distingui sempre fatti, dati mancanti, interpretazioni e raccomandazioni; non eseguire aggiornamenti CRM senza approvazione umana esplicita.
 Contesto autorizzato:\n${JSON.stringify(context)}`;
 }
@@ -171,7 +179,18 @@ async function ensureBrief(auth, body, crmType, prompt) {
     return data;
   }
   const title = prompt.split(/[.!?\n]/)[0].trim().slice(0, 120) || "Nuovo brief strategico";
-  const { data, error } = await auth.scoped.from("crm_briefs").insert({ crm_tipo: crmType, titolo: title, stato: "in_analisi", account_id: body.accountId || null, responsabile_id: auth.profile.id, creato_da: auth.profile.id }).select("*").single();
+  let association = { account_id: body.accountId || null, opportunity_id: null, reparto_id: null, responsabile_id: auth.profile.id };
+  if (body.opportunityId) {
+    const { data: opportunity, error: opportunityError } = await auth.scoped.from("crm_opportunities")
+      .select("id,account_id,reparto_id,responsabile_id,crm_accounts!inner(tipo)")
+      .eq("id", body.opportunityId)
+      .eq("crm_accounts.tipo", crmType)
+      .maybeSingle();
+    if (opportunityError || !opportunity) throw Object.assign(new Error("Opportunità non trovata o non autorizzata."), { status: 404 });
+    if (body.accountId && body.accountId !== opportunity.account_id) throw Object.assign(new Error("Cliente e opportunità non corrispondono."), { status: 409 });
+    association = { account_id: opportunity.account_id, opportunity_id: opportunity.id, reparto_id: opportunity.reparto_id || null, responsabile_id: opportunity.responsabile_id || auth.profile.id };
+  }
+  const { data, error } = await auth.scoped.from("crm_briefs").insert({ crm_tipo: crmType, titolo: title, stato: "in_analisi", ...association, creato_da: auth.profile.id }).select("*").single();
   if (error) throw error;
   return data;
 }
@@ -186,7 +205,24 @@ async function analyze(auth, body, crmType) {
   const model = process.env.AI_MODEL || DEFAULT_MODEL;
   const messages = [...(history || []).map((item) => ({ role: item.ruolo === "assistant" ? "assistant" : "user", content: item.contenuto })), { role: "user", content: prompt }];
   const result = await generateText({ model, system: systemPrompt(crmType, context), messages, output: Output.object({ schema: STRATEGIC_PLAN_SCHEMA }), maxOutputTokens: 3600, providerOptions: { gateway: { user: auth.profile.id, metadata: { feature: "crm-strategic-brief", crmType } } } });
-  const plan = result.output;
+  let plan = result.output;
+  if (plan.activityTypeCode && /^\d{4}-\d{2}-\d{2}$/.test(String(plan.project?.deadline || ""))) {
+    const { data: configuredType, error: configuredTypeError } = await auth.scoped.from("crm_activity_types")
+      .select("id,codice")
+      .eq("crm_tipo", crmType)
+      .eq("codice", String(plan.activityTypeCode))
+      .eq("attivo", true)
+      .maybeSingle();
+    if (configuredTypeError || !configuredType) throw Object.assign(new Error("Il piano AI non corrisponde a un tipo attività configurato."), { status: 409 });
+    const { data: operationalPreview, error: previewError } = await auth.scoped.rpc("crm_preview_operational_activity", {
+      p_activity_type_id: configuredType.id,
+      p_deadline: plan.project.deadline,
+      p_department_id: brief.reparto_id || null,
+      p_responsible_id: brief.responsabile_id || auth.profile.id,
+    });
+    if (previewError) throw previewError;
+    plan = { ...plan, operationalPreview };
+  }
   const versionResult = await auth.scoped.from("crm_ai_decisions").select("versione").eq("brief_id", brief.id).order("versione", { ascending: false }).limit(1);
   const version = Number(versionResult.data?.[0]?.versione || 0) + 1;
   const [{ error: userMessageError }, { error: assistantMessageError }, decisionResult] = await Promise.all([
@@ -207,6 +243,35 @@ async function applyPlan(auth, brief, decision) {
   const activitiesLevel = auth.isAdmin ? "amministrazione" : auth.access?.module_levels?.attivita || "nessuno";
   if (!auth.isAdmin && (!(auth.access?.modules || []).includes("attivita") || (LEVEL_RANK[activitiesLevel] || 0) < LEVEL_RANK.scrittura)) {
     throw Object.assign(new Error("Per creare il progetto serve il livello scrittura nel modulo Attività."), { status: 403 });
+  }
+  if (plan.activityTypeCode && brief.account_id && brief.opportunity_id) {
+    const { data: activityType, error: typeError } = await auth.scoped.from("crm_activity_types")
+      .select("id,codice,classe")
+      .eq("crm_tipo", brief.crm_tipo)
+      .eq("codice", String(plan.activityTypeCode))
+      .eq("attivo", true)
+      .maybeSingle();
+    if (typeError || !activityType) throw Object.assign(new Error("Il tipo attività proposto dall'AI non è più disponibile."), { status: 409 });
+    const deadline = plan.project?.deadline;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(deadline || ""))) throw Object.assign(new Error("La conferma richiede una deadline valida."), { status: 409 });
+    const { data: application, error: applicationError } = await auth.scoped.rpc("crm_create_operational_activity", {
+      p_account_id: brief.account_id,
+      p_opportunity_id: brief.opportunity_id,
+      p_activity_type_id: activityType.id,
+      p_title: plan.project?.title || decision.titolo,
+      p_description: plan.project?.description || decision.riepilogo,
+      p_deadline: deadline,
+      p_department_id: brief.reparto_id || null,
+      p_responsible_id: brief.responsabile_id || auth.profile.id,
+      p_idempotency_key: `crm-ai:${decision.id}`,
+    });
+    if (applicationError) throw applicationError;
+    const projectId = application?.project_id || null;
+    const { error: decisionUpdateError } = await auth.scoped.from("crm_ai_decisions").update({ stato: "applicata", approvata_da: auth.profile.id, approvata_il: new Date().toISOString(), progetto_id: projectId, errore: null }).eq("id", decision.id);
+    if (decisionUpdateError) throw decisionUpdateError;
+    await auth.scoped.from("crm_briefs").update({ stato: "trasformato_in_progetto" }).eq("id", brief.id);
+    await auth.scoped.from("crm_audit_log").insert({ utente_id: auth.profile.id, entita_tipo: "brief", entita_id: brief.id, operazione: "decisione_ai_attivita_operativa_confermata", dettagli: { decision_id: decision.id, activity_type: activityType.codice, application } });
+    return application;
   }
   const { data, error } = await auth.scoped.rpc("crm_apply_ai_decision", {
     target_brief_id: brief.id,

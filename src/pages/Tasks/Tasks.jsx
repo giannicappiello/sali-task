@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Plus, Save, Search, X } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 import PhaseChecklistModal from "../../components/PhaseChecklistModal";
 import InfoTooltip from "../../components/InfoTooltip";
+import WorkspaceTaskKanban from "./WorkspaceTaskKanban";
 
 const CLOSED_STATES = ["evaso", "evasa", "completato", "completata", "chiuso", "chiusa"];
 
@@ -25,6 +26,10 @@ function normalize(value) {
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function weekEndIso() {
+  return iso(addDays(new Date(`${todayIso()}T00:00:00`), 6));
 }
 
 function addDays(date, days) {
@@ -68,6 +73,7 @@ function isBlockedByOpenPhase(item, list) {
 function phaseStatus(item) {
   const deadline = dateOnly(item?.deadline);
   if (isDone(item)) return "Completata";
+  if (normalize(item?.stato) === "bloccata") return "Bloccata";
   if (deadline && deadline < todayIso()) return "Scaduta";
   if (deadline === todayIso()) return "Oggi";
   if (normalize(item?.stato) === "in_lavorazione") return "In lavorazione";
@@ -78,7 +84,7 @@ function phaseStatus(item) {
 function statusClass(item) {
   const status = phaseStatus(item);
   if (status === "Completata") return "done";
-  if (status === "Scaduta") return "danger";
+  if (status === "Scaduta" || status === "Bloccata") return "danger";
   if (status === "Oggi") return "today";
   return "open";
 }
@@ -234,11 +240,18 @@ function SixMonthPlanningOverview({ currentMonth, phases, selectedDate, onSelect
 export default function Tasks() {
   const { profile, hasPermission, isAdmin, userDepartmentIds = [], dataScope, canViewScopedData } = useAuth();
   const [params, setParams] = useSearchParams();
+  const requestedReturnTo = params.get("returnTo") || "";
+  const safeReturnTo = requestedReturnTo.startsWith("/") && !requestedReturnTo.startsWith("//") ? requestedReturnTo : "";
+  const requestedTaskId = params.get("task") || "";
   const [view, setView] = useState("month");
+  const [displayMode, setDisplayMode] = useState(params.get("view") || "calendar");
   const [cursor, setCursor] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState(params.get("date") || todayIso());
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState(params.get("filter") || "tutte");
+  const [originFilter, setOriginFilter] = useState(params.get("origin") || "all");
+  const [departmentFilter, setDepartmentFilter] = useState(params.get("department") || "all");
+  const [mineOnly, setMineOnly] = useState(params.get("mine") === "1");
   const [projects, setProjects] = useState([]);
   const [phases, setPhases] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -271,8 +284,14 @@ export default function Tasks() {
     const nextParams = {};
     if (selectedDate) nextParams.date = selectedDate;
     if (statusFilter !== "tutte") nextParams.filter = statusFilter;
+    if (displayMode !== "calendar") nextParams.view = displayMode;
+    if (originFilter !== "all") nextParams.origin = originFilter;
+    if (departmentFilter !== "all") nextParams.department = departmentFilter;
+    if (mineOnly) nextParams.mine = "1";
+    if (safeReturnTo) nextParams.returnTo = safeReturnTo;
+    if (requestedTaskId) nextParams.task = requestedTaskId;
     setParams(nextParams, { replace: true });
-  }, [selectedDate, statusFilter]);
+  }, [selectedDate, statusFilter, displayMode, originFilter, departmentFilter, mineOnly, requestedTaskId, safeReturnTo]);
 
   async function loadPlanning() {
     setLoading(true);
@@ -281,7 +300,7 @@ export default function Tasks() {
       supabase.from("v4_progetti").select("id,titolo,descrizione,deadline,priorita,stato,created_at,creato_da").order("created_at", { ascending: false }),
       supabase
         .from("v4_fasi_progetto")
-        .select("*,v4_progetti(id,titolo,descrizione),reparti(id,nome)")
+        .select("*,v4_progetti(id,titolo,descrizione),reparti(id,nome),responsabile:utenti!v4_fasi_progetto_assegnato_a_fkey(id,nome,cognome)")
         .order("deadline", { ascending: true, nullsFirst: false })
         .order("ordine", { ascending: true }),
       supabase.from("v4_progetto_reparti").select("id,progetto_id,reparto_id"),
@@ -410,9 +429,15 @@ export default function Tasks() {
   const filtered = useMemo(() => {
     const text = query.trim().toLowerCase();
     return enrichedPhases.filter((phase) => {
+      if (originFilter === "crm" && phase.source_type !== "crm_activity") return false;
+      if (originFilter === "workspace" && phase.source_type === "crm_activity") return false;
+      if (departmentFilter !== "all" && !phase.planningDepartments.some((item) => item.id === departmentFilter) && phase.reparto_id !== departmentFilter) return false;
+      if (mineOnly && phase.assegnato_a !== actorId && phase.creato_da !== actorId) return false;
       if (statusFilter === "aperte" && isDone(phase)) return false;
       if (statusFilter === "oggi" && !(phase.deadline_day === todayIso() && !isDone(phase))) return false;
+      if (statusFilter === "settimana" && !(phase.deadline_day && phase.deadline_day >= todayIso() && phase.deadline_day <= weekEndIso() && !isDone(phase))) return false;
       if (statusFilter === "scadute" && !(phase.deadline_day && phase.deadline_day < todayIso() && !isDone(phase))) return false;
+      if (statusFilter === "bloccate" && !isBlockedByOpenPhase(phase, enrichedPhases) && normalize(phase.stato) !== "bloccata") return false;
       if (statusFilter === "completate" && !isDone(phase)) return false;
       if (!text) return true;
 
@@ -427,7 +452,7 @@ export default function Tasks() {
       ].join(" ").toLowerCase();
       return haystack.includes(text);
     });
-  }, [enrichedPhases, query, statusFilter]);
+  }, [enrichedPhases, query, statusFilter, originFilter, departmentFilter, mineOnly, actorId]);
 
   const days = useMemo(() => {
     if (view === "day") return [{ key: selectedDate, date: new Date(`${selectedDate}T00:00:00`), inMonth: true }];
@@ -509,6 +534,25 @@ export default function Tasks() {
 
     if (error) return alert(error.message);
     await log("fase_progetto", phase.id, "fase evasa", phase.titolo);
+    await loadPlanning();
+  }
+
+  async function moveKanbanTask(taskId, targetStatus) {
+    const phase = enrichedPhases.find((item) => item.id === taskId);
+    if (!phase || targetStatus === "bloccata") return;
+    const blocker = getBlockingPhase(phase, enrichedPhases);
+    if (blocker && !isDone(blocker)) return alert(`Task bloccata da: ${blocker.titolo}. Completa prima la dipendenza.`);
+    const done = targetStatus === "evaso";
+    const now = new Date().toISOString();
+    const { error } = await supabase.from("v4_fasi_progetto").update({
+      stato: targetStatus,
+      completato_at: done ? now : null,
+      completato_da: done ? actorId : null,
+      modificato_da: actorId,
+      updated_at: now,
+    }).eq("id", taskId);
+    if (error) return alert(error.message);
+    await log("fase_progetto", taskId, "cambio stato kanban", targetStatus);
     await loadPlanning();
   }
 
@@ -680,6 +724,8 @@ export default function Tasks() {
           {blocker && <small className={blocked ? "danger" : "done"}>Fase bloccante: {blocker.titolo || "fase"}{blocked ? " · da completare" : " · completata"}</small>}
         </button>
 
+        {phase.crm_customer_key || phase.crm_opportunity_id ? <div className="planning-crm-links">{phase.crm_customer_key ? <Link to={`/crm/conto-terzi/clienti/${encodeURIComponent(phase.crm_customer_key)}`}>Cliente CRM · {phase.crm_customer_key}</Link> : null}{phase.crm_opportunity_id ? <Link to={`/crm/conto-terzi/pipeline/${phase.crm_opportunity_id}`}>Apri opportunità CRM</Link> : null}</div> : null}
+
         <div className="planning-department-actions">
           {departments.length > 0 ? (
             departments.map((department) =>
@@ -718,6 +764,7 @@ export default function Tasks() {
     <div className="tasks-page v4-page planning-clean-page">
       <div className="page-title-row">
         <div>
+          {safeReturnTo ? <Link className="planning-return-link" to={safeReturnTo}>← Torna all’opportunità CRM</Link> : null}
           <h1>Planning fasi</h1>
           <p>Tutte le fasi dei progetti del mio reparto.</p>
         </div>
@@ -756,15 +803,23 @@ export default function Tasks() {
             ["tutte", "Tutte"],
             ["aperte", "Aperte"],
             ["oggi", "Oggi"],
+            ["settimana", "Questa settimana"],
             ["scadute", "Scadute"],
+            ["bloccate", "Bloccate"],
             ["completate", "Completate"],
           ].map(([value, label]) => (
             <button key={value} className={statusFilter === value ? "active" : ""} onClick={() => setStatusFilter(value)}>{label}</button>
           ))}
         </div>
+        <div className="status-tabs" aria-label="Vista attività">
+          {[['list','Lista'],['calendar','Calendario'],['kanban','Kanban']].map(([value, label]) => <button type="button" key={value} className={displayMode === value ? "active" : ""} onClick={() => setDisplayMode(value)}>{label}</button>)}
+        </div>
+        <select value={originFilter} onChange={(event) => setOriginFilter(event.target.value)} aria-label="Filtra per origine"><option value="all">Tutte le origini</option><option value="crm">CRM</option><option value="workspace">Workspace e altri moduli</option></select>
+        <select value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)} aria-label="Filtra per reparto"><option value="all">Tutti i reparti</option>{departments.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select>
+        <label className="planning-mine-toggle"><input type="checkbox" checked={mineOnly} onChange={(event) => setMineOnly(event.target.checked)} />Il mio lavoro</label>
       </div>
 
-      <SixMonthPlanningOverview
+      {displayMode === "calendar" ? <><SixMonthPlanningOverview
         currentMonth={cursor}
         phases={filtered}
         selectedDate={selectedDate}
@@ -851,9 +906,9 @@ export default function Tasks() {
             </div>
           )}
         </div>
-      </div>
+      </div></> : displayMode === "kanban" ? <WorkspaceTaskKanban items={filtered} onMove={moveKanbanTask} onOpen={openPhaseModal} /> : <section className="panel planning-list-view"><div className="planning-task-list">{filtered.map((phase) => <PhaseCard key={phase.id} phase={phase} />)}</div>{!filtered.length ? <p className="table-message">Nessuna task corrisponde ai filtri.</p> : null}</section>}
 
-      {undatedItems.length > 0 && (
+      {displayMode === "calendar" && undatedItems.length > 0 && (
         <section className="panel">
           <div className="panel-header"><h3>Attività senza deadline</h3></div>
           <div className="planning-task-list">{undatedItems.map((phase) => <PhaseCard key={phase.id} phase={phase} />)}</div>
@@ -874,7 +929,14 @@ export default function Tasks() {
         allPhases={enrichedPhases}
         canManage={true}
         canCompleteDepartment={canCompleteDepartment}
-        onClose={() => setPhaseModalOpen(false)}
+        onClose={() => {
+          setPhaseModalOpen(false);
+          setParams((current) => {
+            const next = new URLSearchParams(current);
+            next.delete("task");
+            return next;
+          }, { replace: true });
+        }}
         onSaved={loadPlanning}
       />
     </div>

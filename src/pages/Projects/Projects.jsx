@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   CheckCircle2,
   Clock3,
@@ -15,6 +16,7 @@ import {
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 import PhaseChecklistModal from "../../components/PhaseChecklistModal";
+import WorkspaceTaskKanban from "../Tasks/WorkspaceTaskKanban";
 
 const projectEmpty = {
   titolo: "",
@@ -79,6 +81,10 @@ function getBlockingPhase(item, list) {
 }
 
 export default function Projects() {
+  const [routeParams] = useSearchParams();
+  const requestedProjectId = routeParams.get("project") || "";
+  const requestedReturnTo = routeParams.get("returnTo") || "";
+  const safeReturnTo = requestedReturnTo.startsWith("/") && !requestedReturnTo.startsWith("//") ? requestedReturnTo : "";
   const { profile, hasPermission, isAdmin, userDepartmentIds = [], dataScope, canViewScopedData } = useAuth();
   const canManage = hasPermission("projects.write");
   const canReadAllProjects = dataScope?.mode === "tutti" || isAdmin?.();
@@ -119,6 +125,7 @@ export default function Projects() {
 
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("tutti");
+  const [projectView, setProjectView] = useState("list");
   const [selectedProject, setSelectedProject] = useState(null);
   const [selectedPhase, setSelectedPhase] = useState(null);
   const [projectModal, setProjectModal] = useState(false);
@@ -184,7 +191,7 @@ export default function Projects() {
       supabase.from("v4_progetti").select("*").order("created_at", { ascending: false }),
       supabase
         .from("v4_fasi_progetto")
-        .select("*,v4_progetti(titolo),reparti(id,nome)")
+        .select("*,v4_progetti(titolo),reparti(id,nome),responsabile:utenti!v4_fasi_progetto_assegnato_a_fkey(id,nome,cognome)")
         .order("ordine", { ascending: true })
         .order("deadline", { ascending: true, nullsFirst: false }),
       supabase.from("prodotti").select("id,nome,codice").order("nome").limit(5000),
@@ -197,7 +204,7 @@ export default function Projects() {
       supabase.from("checklist_template_reparti").select("id,template_id,reparto_id"),
       supabase.from("v4_fase_reparti").select("id,fase_id,reparto_id,completato,completato_at,completato_da"),
       supabase.from("tipi_progetto").select("id,nome,descrizione,attivo").order("nome"),
-      supabase.from("tipo_progetto_fasi").select("id,tipo_progetto_id,template_id,giorni_anticipo,ordine,obbligatoria").order("ordine", { ascending: true }),
+      supabase.from("tipo_progetto_fasi").select("id,tipo_progetto_id,template_id,giorni_anticipo,ordine,obbligatoria,responsabile_id,dipende_da_id,durata_giorni,priorita").order("ordine", { ascending: true }),
     ]);
 
     if (projectsRes.error) console.error("Progetti:", projectsRes.error.message);
@@ -372,6 +379,7 @@ export default function Projects() {
   const filteredProjects = useMemo(() => {
     const text = query.trim().toLowerCase();
     return projects.filter((project) => {
+      if (requestedProjectId && project.id !== requestedProjectId) return false;
       const projectPhases = phasesByProject.get(project.id) || [];
       const hasOpen = projectPhases.some((phase) => !isDone(phase));
       const hasOverdue = projectPhases.some((phase) => statusClass(phase) === "danger");
@@ -396,7 +404,25 @@ export default function Projects() {
         .toLowerCase()
         .includes(text);
     });
-  }, [projects, phasesByProject, productsByProject, departmentsByProject, productsByPhase, query, statusFilter]);
+  }, [projects, phasesByProject, productsByProject, departmentsByProject, productsByPhase, query, requestedProjectId, statusFilter]);
+
+  const kanbanPhases = useMemo(() => {
+    const allowed = new Set(filteredProjects.map((item) => item.id));
+    return phases.filter((phase) => allowed.has(phase.progetto_id)).map((phase) => ({ ...phase, planningDepartments: departmentsByPhase.get(phase.id) || [] }));
+  }, [filteredProjects, phases, departmentsByPhase]);
+
+  async function moveProjectKanbanTask(taskId, targetStatus) {
+    const phase = phases.find((item) => item.id === taskId);
+    if (!phase || targetStatus === "bloccata") return;
+    const blocker = getBlockingPhase(phase, phases);
+    if (blocker && !isDone(blocker)) return alert(`Fase bloccata da: ${blocker.titolo}.`);
+    const done = targetStatus === "evaso";
+    const now = new Date().toISOString();
+    const { error } = await supabase.from("v4_fasi_progetto").update({ stato: targetStatus, completato_at: done ? now : null, completato_da: done ? actorId : null, modificato_da: actorId, updated_at: now }).eq("id", taskId);
+    if (error) return alert(error.message);
+    await log("fase_progetto", taskId, "cambio stato kanban progetto", targetStatus);
+    await loadData();
+  }
 
   const filteredProjectProducts = useMemo(() => {
     const text = projectProductQuery.trim().toLowerCase();
@@ -623,6 +649,9 @@ export default function Projects() {
       .filter((row) => row.tipo_progetto_id === projectTypeId)
       .sort((a, b) => Number(a.ordine || 0) - Number(b.ordine || 0));
 
+    const createdByRule = new Map();
+    let previousPhaseId = null;
+
     for (const [index, rule] of rules.entries()) {
       const template = templates.find((item) => item.id === rule.template_id);
       if (!template) continue;
@@ -631,6 +660,9 @@ export default function Projects() {
       const effectiveDepartmentIds = templateDepartmentIds.length
         ? templateDepartmentIds
         : [template.reparto_id].filter(Boolean);
+      const blockingPhaseId = rule.dipende_da_id
+        ? createdByRule.get(rule.dipende_da_id) || null
+        : previousPhaseId;
 
       const { data, error } = await supabase
         .from("v4_fasi_progetto")
@@ -638,9 +670,10 @@ export default function Projects() {
           progetto_id: projectId,
           titolo: template.titolo,
           reparto_id: effectiveDepartmentIds[0] || null,
-          stato: "da_evadere",
-          priorita: null,
-          assegnato_a: null,
+          stato: blockingPhaseId ? "bloccata" : "da_evadere",
+          priorita: rule.priorita || "normale",
+          assegnato_a: rule.responsabile_id || null,
+          bloccante_id: blockingPhaseId,
           ordine: Number(rule.ordine || index + 1),
           deadline: subtractDaysIso(projectDeadline, rule.giorni_anticipo),
           creato_da: actorId,
@@ -652,6 +685,10 @@ export default function Projects() {
       if (error) throw error;
       if (data?.id && effectiveDepartmentIds.length) await savePhaseDepartments(data.id, effectiveDepartmentIds);
       if (data?.id && safeArray(productIds).length) await savePhaseProducts(data.id, productIds);
+      if (data?.id) {
+        createdByRule.set(rule.id, data.id);
+        previousPhaseId = data.id;
+      }
     }
   }
 
@@ -1249,6 +1286,7 @@ export default function Projects() {
     <div className="projects-page v4-page projects-v4-final">
       <div className="page-title-row">
         <div>
+          {safeReturnTo ? <Link className="planning-return-link" to={safeReturnTo}>← Torna all’opportunità CRM</Link> : null}
           <h1>Progetti</h1>
           <p>Tutti i progetti del mio reparto.</p>
         </div>
@@ -1277,10 +1315,17 @@ export default function Projects() {
             </button>
           ))}
         </div>
+        <div className="status-tabs" aria-label="Vista progetto">
+          <button type="button" className={projectView === "list" ? "active" : ""} onClick={() => setProjectView("list")}>Lista</button>
+          <Link to="/activities/tasks?view=calendar">Planning</Link>
+          <button type="button" className={projectView === "kanban" ? "active" : ""} onClick={() => setProjectView("kanban")}>Kanban</button>
+        </div>
       </div>
 
       {loading ? (
         <div className="panel"><p>Caricamento progetti...</p></div>
+      ) : projectView === "kanban" ? (
+        <WorkspaceTaskKanban items={kanbanPhases} onMove={moveProjectKanbanTask} onOpen={(phase) => openPhase(projects.find((item) => item.id === phase.progetto_id), phase)} />
       ) : filteredProjects.length === 0 ? (
         <div className="empty-state panel">
           <h3>Nessun progetto trovato</h3>

@@ -5,6 +5,7 @@ import { supabase } from "../../lib/supabaseClient";
 import CrmPeriodFilter, { useCrmPeriod } from "./CrmPeriodFilter";
 import { CrmPageHeader, CrmSectionNav } from "./CrmWorkspaceUI";
 import { crmTypeConfig, formatMoney } from "./crmConfig";
+import { crmNavigation } from "./crmNavigation";
 
 function Metric({ label, value, text }) {
   return <article className="kpi-card crm-kpi"><span>{label}<InfoTooltip label={label} text={text} /></span><strong>{value}</strong></article>;
@@ -27,7 +28,7 @@ export default function CrmAnalyticsPage({ type }) {
     if (failure) setError(failure.message); else { setMetrics(analytics.data || {}); setStages(stageRows.data || []); setSettings(workflow.data || null); setLossReasons(reasons.data || []); }
   }, [period.from, period.to, type]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
-  const navigation = [["Clienti", `${config.basePath}/clienti`], ["Pipeline", `${config.basePath}/pipeline`], ["Attività", `${config.basePath}/attivita`], ["Analisi", `${config.basePath}/analisi`], ...(type === "conto_terzi" ? [["Brief", `${config.basePath}/brief`]] : [])];
+  const navigation = crmNavigation(type);
   async function saveSettings(event) { event.preventDefault(); const { error: saveError } = await supabase.from("crm_workflow_settings").update(settings).eq("crm_tipo", type); if (saveError) setError(saveError.message); else await load(); }
   async function saveStage(stage) { const { error: saveError } = await supabase.from("crm_opportunity_stages").update({ probabilita_default: stage.probabilita_default, soglia_aging_giorni: stage.soglia_aging_giorni }).eq("id", stage.id); if (saveError) setError(saveError.message); else await load(); }
   async function addLossReason(event) { event.preventDefault(); const name = newReason.trim(); if (!name) return; const code = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, ""); const { error: saveError } = await supabase.from("crm_loss_reasons").insert({ crm_tipo: type, codice: code, nome: name, ordine: Number(lossReasons.at(-1)?.ordine || 0) + 10 }); if (saveError) setError(saveError.message); else { setNewReason(""); await load(); } }

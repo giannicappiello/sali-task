@@ -7,6 +7,7 @@ import CrmCustomerLink from "./CrmCustomerLink";
 import CrmPeriodFilter, { useCrmPeriod } from "./CrmPeriodFilter";
 import { CrmPageHeader, CrmSectionNav } from "./CrmWorkspaceUI";
 import { crmTypeConfig, formatDate, formatMoney } from "./crmConfig";
+import { crmNavigation } from "./crmNavigation";
 
 function message(error) {
   return error ? <div className="crm-message error">{error}</div> : null;
@@ -37,6 +38,7 @@ export default function CrmOpportunityDetail({ type }) {
   const [departments, setDepartments] = useState([]);
   const [users, setUsers] = useState([]);
   const [operationalActivities, setOperationalActivities] = useState([]);
+  const [briefs, setBriefs] = useState([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [activity, setActivity] = useState({ tipo: "follow_up", titolo: "", data_attivita: "", priorita: "normale" });
@@ -46,6 +48,7 @@ export default function CrmOpportunityDetail({ type }) {
   const [now] = useState(() => Date.now());
   const [transition, setTransition] = useState({ stage_id: "", valore_finale: "", motivo_perdita_id: "", motivo_perdita: "", concorrente: "", data_ricontatto: "" });
   const [projectTitle, setProjectTitle] = useState("");
+  const [briefDraft, setBriefDraft] = useState({ categoria: "", tipo_prodotto: "", quantita: "", packaging: "", prezzo_target: "", mercati: "", certificazioni: "", formula: "da_sviluppare", claim: "", note: "" });
 
   const load = useCallback(async () => {
     setError("");
@@ -57,7 +60,7 @@ export default function CrmOpportunityDetail({ type }) {
       return;
     }
     const current = opportunityResult.data;
-    const [stageResult, reasonResult, activityResult, contactResult, historyResult, linkResult, projectResult, typeResult, departmentResult, userResult, userDepartmentsResult, operationalResult] = await Promise.all([
+    const [stageResult, reasonResult, activityResult, contactResult, historyResult, linkResult, projectResult, typeResult, departmentResult, userResult, userDepartmentsResult, operationalResult, briefResult] = await Promise.all([
       supabase.from("crm_opportunity_stages").select("*").eq("crm_tipo", type).eq("attiva", true).order("ordine"),
       supabase.from("crm_loss_reasons").select("*").eq("crm_tipo", type).eq("attivo", true).order("ordine"),
       supabase.from("crm_activities").select("*,crm_contacts(nome,cognome),responsabile:responsabile_id(nome,cognome)").eq("opportunity_id", opportunityId).order("data_attivita", { ascending: false }),
@@ -70,8 +73,9 @@ export default function CrmOpportunityDetail({ type }) {
       supabase.from("utenti").select("id,nome,cognome,reparto_id").eq("attivo", true).order("nome"),
       supabase.from("utenti_reparti").select("utente_id,reparto_id"),
       supabase.rpc("crm_opportunity_operational_progress", { p_opportunity_id: opportunityId }),
+      supabase.from("crm_briefs").select("*").eq("opportunity_id", opportunityId).order("aggiornato_il", { ascending: false }),
     ]);
-    const failure = stageResult.error || reasonResult.error || activityResult.error || contactResult.error || historyResult.error || linkResult.error || projectResult.error || typeResult.error || departmentResult.error || userResult.error || userDepartmentsResult.error || operationalResult.error;
+    const failure = stageResult.error || reasonResult.error || activityResult.error || contactResult.error || historyResult.error || linkResult.error || projectResult.error || typeResult.error || departmentResult.error || userResult.error || userDepartmentsResult.error || operationalResult.error || briefResult.error;
     if (failure) setError(failure.message);
     setOpportunity(current);
     setStages(stageResult.data || []);
@@ -87,6 +91,7 @@ export default function CrmOpportunityDetail({ type }) {
     const memberships = userDepartmentsResult.data || [];
     setUsers((userResult.data || []).filter((item) => isAdmin || item.id === profile?.id || allowedDepartmentIds.has(item.reparto_id) || memberships.some((membership) => membership.utente_id === item.id && allowedDepartmentIds.has(membership.reparto_id))));
     setOperationalActivities(operationalResult.data || []);
+    setBriefs(briefResult.data || []);
     setTransition((value) => ({ ...value, stage_id: current.stage_id || "", valore_finale: current.valore_finale ?? current.valore ?? "", motivo_perdita_id: current.motivo_perdita_id || "", motivo_perdita: current.motivo_perdita || "", concorrente: current.concorrente || "", data_ricontatto: current.data_ricontatto || "" }));
   }, [isAdmin, opportunityId, profile?.id, type, userDepartmentIds]);
 
@@ -138,6 +143,28 @@ export default function CrmOpportunityDetail({ type }) {
       reparto_id: opportunity.reparto_id || profile.reparto_ids?.[0] || profile.reparto_id || null, creato_da: profile.id,
     });
     if (activityError) setError(activityError.message); else { setActivity({ tipo: "follow_up", titolo: "", data_attivita: "", priorita: "normale" }); await load(); }
+    setBusy(false);
+  }
+
+  async function createTechnicalBrief(event) {
+    event.preventDefault();
+    if (!canWrite || type !== "conto_terzi" || !briefDraft.tipo_prodotto.trim()) return;
+    setBusy(true); setError("");
+    const { error: briefError } = await supabase.from("crm_briefs").insert({
+      crm_tipo: type, titolo: `Brief tecnico · ${opportunity.titolo}`, account_id: opportunity.account_id,
+      opportunity_id: opportunityId, categoria: briefDraft.categoria || null, tipo_prodotto: briefDraft.tipo_prodotto.trim(),
+      quantita: briefDraft.quantita === "" ? null : Number(briefDraft.quantita), packaging: briefDraft.packaging || null,
+      prezzo_target: briefDraft.prezzo_target === "" ? null : Number(briefDraft.prezzo_target),
+      mercati: briefDraft.mercati.split(",").map((value) => value.trim()).filter(Boolean),
+      certificazioni: briefDraft.certificazioni.split(",").map((value) => value.trim()).filter(Boolean),
+      claim: briefDraft.claim || null, note: briefDraft.note || null,
+      dati: { formula: briefDraft.formula }, responsabile_id: opportunity.responsabile_id || profile.id,
+      reparto_id: opportunity.reparto_id || profile.reparto_ids?.[0] || profile.reparto_id || null, creato_da: profile.id,
+    });
+    if (briefError) setError(briefError.message); else {
+      setBriefDraft({ categoria: "", tipo_prodotto: "", quantita: "", packaging: "", prezzo_target: "", mercati: "", certificazioni: "", formula: "da_sviluppare", claim: "", note: "" });
+      await load();
+    }
     setBusy(false);
   }
 
@@ -214,7 +241,7 @@ export default function CrmOpportunityDetail({ type }) {
   const account = opportunity.crm_accounts;
   return <div className="crm-page">
     <CrmPageHeader eyebrow={config.label} title={opportunity.titolo} description="Scheda operativa completa dell’opportunità, con attività, chiusura e collegamenti Workspace." actions={<CrmPeriodFilter period={period} compact />}>
-      <CrmSectionNav items={[["Clienti", `${config.basePath}/clienti`], ["Pipeline", `${config.basePath}/pipeline`], ["Attività", `${config.basePath}/attivita`], ...(type === "conto_terzi" ? [["Brief", `${config.basePath}/brief`]] : []), ["Analisi", `${config.basePath}/analisi`]]} period={period} label={`Navigazione ${config.label}`} />
+      <CrmSectionNav items={crmNavigation(type)} period={period} label={`Navigazione ${config.label}`} />
     </CrmPageHeader>
     {message(error)}
     <div className="crm-opportunity-summary panel">
@@ -243,6 +270,10 @@ export default function CrmOpportunityDetail({ type }) {
         {canWrite ? <button className="primary-action crm-primary" disabled={busy}>Conferma fase</button> : null}
       </form>
     </div>
+    {type === "conto_terzi" ? <section className="panel crm-panel"><div className="panel-header"><div><h3>Richiesta cliente e brief tecnico</h3><p>Specifiche di prodotto collegate all’opportunità; alimentano campionatura e progetto senza confondere gli oggetti CRM.</p></div></div>
+      {briefs.length ? <div className="crm-list-grid">{briefs.map((brief) => <article className="crm-list-card" key={brief.id}><span>{brief.stato}</span><h3>{brief.tipo_prodotto || brief.titolo}</h3><p>{[brief.categoria, brief.packaging, brief.quantita ? `Q.tà ${Number(brief.quantita).toLocaleString("it-IT")}` : null].filter(Boolean).join(" · ")}</p><small>{brief.prezzo_target != null ? `Target ${formatMoney(brief.prezzo_target)} · ` : ""}{brief.dati?.formula?.replaceAll("_", " ") || "Formula non indicata"}</small></article>)}</div> : <p>Nessun brief tecnico collegato.</p>}
+      {canWrite ? <form className="crm-technical-brief-form" onSubmit={createTechnicalBrief}><label>Categoria prodotto<input value={briefDraft.categoria} onChange={(event) => setBriefDraft({ ...briefDraft, categoria: event.target.value })} /></label><label>Tipo prodotto<input required value={briefDraft.tipo_prodotto} onChange={(event) => setBriefDraft({ ...briefDraft, tipo_prodotto: event.target.value })} /></label><label>Quantità indicativa<input type="number" min="0" step="0.001" value={briefDraft.quantita} onChange={(event) => setBriefDraft({ ...briefDraft, quantita: event.target.value })} /></label><label>Formato / packaging<input value={briefDraft.packaging} onChange={(event) => setBriefDraft({ ...briefDraft, packaging: event.target.value })} /></label><label>Target prezzo<input type="number" min="0" step="0.01" value={briefDraft.prezzo_target} onChange={(event) => setBriefDraft({ ...briefDraft, prezzo_target: event.target.value })} /></label><label>Formula<select value={briefDraft.formula} onChange={(event) => setBriefDraft({ ...briefDraft, formula: event.target.value })}><option value="cliente">Formula cliente</option><option value="progre">Formula PROGRE</option><option value="da_sviluppare">Da sviluppare</option></select></label><label>Mercati<input value={briefDraft.mercati} onChange={(event) => setBriefDraft({ ...briefDraft, mercati: event.target.value })} placeholder="Italia, UE" /></label><label>Certificazioni<input value={briefDraft.certificazioni} onChange={(event) => setBriefDraft({ ...briefDraft, certificazioni: event.target.value })} placeholder="ISO, Bio..." /></label><label className="crm-form-wide">Claim richiesti<input value={briefDraft.claim} onChange={(event) => setBriefDraft({ ...briefDraft, claim: event.target.value })} /></label><label className="crm-form-wide">Note tecniche<textarea value={briefDraft.note} onChange={(event) => setBriefDraft({ ...briefDraft, note: event.target.value })} /></label><button className="primary-action crm-primary" disabled={busy}><Plus size={16} />Crea brief tecnico</button></form> : null}
+    </section> : null}
     <section className="panel crm-panel crm-operational-section">
       <div className="panel-header crm-operational-heading"><div><h3>Attività operative</h3><p>Task e progetti Workspace collegati all’opportunità. L’avanzamento deriva dagli stati reali delle task.</p></div><ListChecks size={22} /></div>
       {operationalActivities.length ? <div className="crm-operational-grid">{operationalActivities.map((item) => <article className="panel crm-operational-card" key={item.activity_id}>

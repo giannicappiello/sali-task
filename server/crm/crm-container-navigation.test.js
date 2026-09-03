@@ -48,7 +48,7 @@ test("il catalogo canonico collega CRM a /crm e include il contenitore DIRECT", 
     .concat([{ screenCode: "crm.direct.dashboard", catalogPath: "/crm/direct" }])
     .toSorted((left, right) => left.screenCode.localeCompare(right.screenCode));
   const reactRoutes = CRM_ROUTE_CATALOG
-    .filter((route) => !["opportunity", "activities", "analytics"].includes(route.view))
+    .filter((route) => !["opportunity", "opportunities", "activities", "analytics", "developments", "projects", "follow-up", "reorders", "beautydays"].includes(route.view))
     .map(({ screenCode, catalogPath }) => ({ screenCode, catalogPath }))
     .toSorted((left, right) => left.screenCode.localeCompare(right.screenCode));
   assert.deepEqual(reactRoutes, catalogRoutes);

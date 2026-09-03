@@ -14,6 +14,7 @@ const integration = read("src/modules/integrations/pages/DigitalIntegrationStatu
 const structureCss = read("src/modules/crm/crm.css");
 const workspaceCss = read("src/modules/crm/workspace-alignment.css");
 const classificationCss = read("src/modules/crm/customer-classification.css");
+const navigation = read("src/modules/crm/crmNavigation.js");
 
 test("tutte le destinazioni CRM passano dal layout e dalla guardia Workspace", () => {
   assert.ok(CRM_ROUTE_CATALOG.length >= 31);
@@ -60,8 +61,8 @@ test("azioni, tabelle, modali e contenuto restano raggiungibili fino a 390px", (
 test("la Panoramica include la dashboard globale clienti senza introdurre una nuova route", () => {
   assert.match(crm, /<CommercialControlDashboard scope="global" embedded \/>/);
   assert.doesNotMatch(CRM_ROUTE_CATALOG.map((route) => route.catalogPath).join("\n"), /classificazione/);
-  assert.match(crm, /\/creators/);
-  assert.match(crm, /\/journey/);
+  assert.match(navigation, /\/creators/);
+  assert.match(navigation, /\/journey/);
   assert.doesNotMatch(crm, /basePath}\/creator`/);
   assert.doesNotMatch(crm, /basePath}\/customer-journey`/);
 });

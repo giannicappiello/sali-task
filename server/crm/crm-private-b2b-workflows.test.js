@@ -9,6 +9,7 @@ const crm = read("src/modules/crm/CrmModule.jsx");
 const opportunity = read("src/modules/crm/CrmOpportunityDetail.jsx");
 const activities = read("src/modules/crm/CrmActivitiesPage.jsx");
 const analytics = read("src/modules/crm/CrmAnalyticsPage.jsx");
+const navigation = read("src/modules/crm/crmNavigation.js");
 const beauty = read("src/modules/crm/CrmBeautyDays.jsx");
 const edge = read("supabase/functions/report-giornate-api/index.ts");
 const ai = read("server/ai/crm-brief.js");
@@ -59,8 +60,8 @@ test("il brief PRIVATE espone i campi strutturati già presenti nello schema", (
     assert.match(crm, new RegExp(`['\"]${field}['\"]`));
   }
   assert.match(crm, /opportunity_id/);
-  assert.match(crm, /Attività/);
-  assert.match(crm, /Analisi/);
+  assert.match(navigation, /Attività/);
+  assert.match(navigation, /Analisi/);
 });
 
 test("BeautyDays riusa sorgente reale e mapping canonico senza copia dati", () => {

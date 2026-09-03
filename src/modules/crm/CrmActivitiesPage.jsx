@@ -6,6 +6,7 @@ import CrmCustomerLink from "./CrmCustomerLink";
 import CrmPeriodFilter, { useCrmPeriod } from "./CrmPeriodFilter";
 import { CrmPageHeader, CrmSectionNav } from "./CrmWorkspaceUI";
 import { crmTypeConfig, formatDate } from "./crmConfig";
+import { crmNavigation } from "./crmNavigation";
 
 export default function CrmActivitiesPage({ type }) {
   const config = crmTypeConfig(type); const period = useCrmPeriod();
@@ -25,7 +26,7 @@ export default function CrmActivitiesPage({ type }) {
     setLoading(false);
   }, [activityType, search, status, type]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 150); return () => window.clearTimeout(timer); }, [load]);
-  const navigation = [["Clienti", `${config.basePath}/clienti`], ["Pipeline", `${config.basePath}/pipeline`], ["Attività", `${config.basePath}/attivita`], ["Analisi", `${config.basePath}/analisi`], ...(type === "conto_terzi" ? [["Brief", `${config.basePath}/brief`]] : [])];
+  const navigation = crmNavigation(type);
   return <div className="crm-page"><CrmPageHeader eyebrow={config.label} title={`Attività ${config.label}`} description="Agenda CRM centralizzata: scadute, prossime, completate e prive di scadenza." actions={<CrmPeriodFilter period={period} compact />}><CrmSectionNav items={navigation} period={period} label={`Navigazione ${config.label}`} /></CrmPageHeader>
     {error ? <div className="crm-message error">{error}</div> : null}
     <div className="crm-filters"><label><Search size={16} /><input value={search} onChange={(event) => updateParam("activitySearch", event.target.value)} placeholder="Cerca attività o cliente" /></label><select value={status} onChange={(event) => updateParam("activityStatus", event.target.value)}><option value="open">Aperte</option><option value="completed">Completate</option><option value="all">Tutte</option></select><select value={activityType} onChange={(event) => updateParam("activityType", event.target.value)}><option value="">Tutti i tipi</option>{["telefonata","email","visita","videocall","presentazione","formazione","campionatura","sviluppo_formula","preventivo","follow_up"].map((value) => <option key={value} value={value}>{value.replaceAll("_", " ")}</option>)}</select></div>

@@ -6,6 +6,7 @@ const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), "
 const panel = read("src/modules/crm/CustomerClassificationPanel.jsx");
 const dashboard = read("src/modules/crm/CommercialControlDashboard.jsx");
 const crm = read("src/modules/crm/CrmModule.jsx");
+const workflowPages = read("src/modules/crm/CrmWorkflowPages.jsx");
 const css = read("src/modules/crm/customer-classification.css");
 const dashboardCss = read("src/modules/crm/commercial-control-dashboard.css");
 const migration = read("supabase/migrations/20260830153000_crm_global_sales_distribution.sql");
@@ -31,7 +32,8 @@ test("KPI e grafici distinguono fatturato, ordinato, ordini e pezzi", () => {
 
 test("Globale, PRIVATE e DIRECT sono dashboard distinte con filtri persistenti", () => {
   assert.match(crm, /CommercialControlDashboard scope="global" embedded/);
-  assert.match(crm, /CommercialControlDashboard scope="private"/);
+  assert.match(crm, /<CrmPrivateDashboard \/>/);
+  assert.match(workflowPages, /CRM PRIVATE · Conto Terzi/);
   assert.match(crm, /CommercialControlDashboard scope="direct" embedded/);
   for (const field of ["business", "market", "country", "agent", "channel", "customer", "granularity", "compare"]) assert.match(dashboard, new RegExp(`setFilter\\("${field}"`));
   assert.match(dashboard, /useSearchParams/);

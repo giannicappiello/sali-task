@@ -33,18 +33,22 @@ export default function Invoices() {
       setLoading(false);
       return;
     }
-    const start = `${month}-01`;
-    const end = new Date(`${month}-01T00:00:00`);
-    end.setMonth(end.getMonth() + 1);
     let query = supabase
       .from("mexal_fatture_vendita")
       .select("id,sigla,cod_modulo,serie,numero,data_documento,codice_cliente,ragione_sociale_cliente,codice_agente_mexal,agente_nome,causale_magazzino_codice,causale_magazzino_descrizione,totale_imponibile,totale_iva,totale_documento")
-      .gte("data_documento", start)
-      .lt("data_documento", end.toISOString().slice(0, 10))
       .order("data_documento", { ascending: false })
       .order("numero", { ascending: false });
-    if (customerCode) query = query.eq("codice_cliente", customerCode);
-    else if (!canSeeAll) query = query.in("codice_agente_mexal", visibleAgents);
+    if (customerCode) {
+      query = query.eq("codice_cliente", customerCode);
+    } else {
+      const start = `${month}-01`;
+      const end = new Date(`${month}-01T00:00:00`);
+      end.setMonth(end.getMonth() + 1);
+      query = query
+        .gte("data_documento", start)
+        .lt("data_documento", end.toISOString().slice(0, 10));
+      if (!canSeeAll) query = query.in("codice_agente_mexal", visibleAgents);
+    }
     const { data, error: queryError } = await query;
     if (queryError) setError(queryError.message);
     setInvoices(data || []);
@@ -68,11 +72,11 @@ export default function Invoices() {
   return <div className="orders-page">
     <div className="orders-toolbar">
       <div className="orders-search"><Search size={18} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Ricerca rapida fatture..." /></div>
-      <input type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
+      {!customerCode && <input type="month" value={month} onChange={(event) => setMonth(event.target.value)} />}
     </div>
     <div className="orders-panel">
       <div className="orders-section-heading">
-        <div><h2>Fatture di vendita</h2><p>Tutte le varianti FT e i documenti OCX/COX importati da Mexal. Consultazione in sola lettura.</p></div>
+        <div><h2>Fatture di vendita</h2><p>{customerCode ? "Storico completo delle fatture del cliente importate da Mexal. Consultazione in sola lettura." : "Tutte le varianti FT e i documenti OCX/COX importati da Mexal. Consultazione in sola lettura."}</p></div>
       </div>
       {error && <div className="orders-alert orders-alert-error">{error}</div>}
       <div className="orders-table-wrap">
@@ -88,7 +92,7 @@ export default function Invoices() {
         </table>
       </div>
       {loading && <p>Caricamento fatture...</p>}
-      {!loading && !filtered.length && <p>Nessun documento FT o OCX/COX visibile nel mese selezionato.</p>}
+      {!loading && !filtered.length && <p>{customerCode ? "Nessuna fattura visibile per il cliente associato." : "Nessun documento FT o OCX/COX visibile nel mese selezionato."}</p>}
     </div>
   </div>;
 }

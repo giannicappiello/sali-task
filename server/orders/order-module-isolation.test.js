@@ -166,3 +166,15 @@ test("OrdiniPrivate cliente nasconde Clienti e carica solo articoli associati", 
   assert.match(historyBridge, /with \(security_barrier = true, security_invoker = false\)/i);
   assert.doesNotMatch(migration, /drop\s+(table|column)|truncate|delete\s+from/i);
 });
+
+test("OrdiniPrivate cliente vede lo storico completo delle proprie fatture", async () => {
+  const source = await readFile(
+    new URL("../../src/modules/orders/pages/Invoices.jsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /if \(customerCode\) \{[\s\S]*query = query\.eq\("codice_cliente", customerCode\)/);
+  assert.match(source, /else \{[\s\S]*\.gte\("data_documento", start\)[\s\S]*\.lt\("data_documento"/);
+  assert.match(source, /!customerCode && <input type="month"/);
+  assert.match(source, /Storico completo delle fatture del cliente importate da Mexal/);
+});

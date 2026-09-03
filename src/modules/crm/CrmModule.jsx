@@ -714,8 +714,8 @@ function catalogRouteElement(route) {
 export default function CrmModule() {
   return <Routes>
     {CRM_ROUTE_CATALOG.map((route) => route.index
-      ? <Route key={route.screenCode} index element={catalogRouteElement(route)} />
-      : <Route key={route.screenCode} path={route.path} element={catalogRouteElement(route)} />)}
+      ? <Route key={route.catalogPath} index element={catalogRouteElement(route)} />
+      : <Route key={route.catalogPath} path={route.path} element={catalogRouteElement(route)} />)}
     {CRM_ROUTE_ALIASES.map((alias) => <Route key={alias.path} path={alias.path} element={<Navigate to={alias.to} replace />} />)}
     <Route path="*" element={<Navigate to="/crm" replace />} />
   </Routes>;

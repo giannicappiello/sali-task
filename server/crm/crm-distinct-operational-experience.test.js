@@ -8,6 +8,7 @@ const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), "
 const migration = read("supabase/migrations/20260903170000_crm_distinct_operational_experience.sql");
 const pages = read("src/modules/crm/CrmWorkflowPages.jsx");
 const opportunity = read("src/modules/crm/CrmOpportunityDetail.jsx");
+const crmModule = read("src/modules/crm/CrmModule.jsx");
 
 test("PRIVATE e B2B espongono menu e route realmente distinti", () => {
   const privateLabels = crmNavigation("conto_terzi").map(([label]) => label);
@@ -16,6 +17,13 @@ test("PRIVATE e B2B espongono menu e route realmente distinti", () => {
   assert.deepEqual(b2bLabels, ["Dashboard", "Clienti / Prospect", "Pipeline acquisizione", "Attività", "Clienti da seguire", "Riordini", "BeautyDays", "Analisi"]);
   for (const view of ["opportunities", "developments", "projects"]) assert.ok(CRM_ROUTE_CATALOG.some((route) => route.type === "conto_terzi" && route.view === view));
   for (const view of ["follow-up", "reorders", "beautydays"]) assert.ok(CRM_ROUTE_CATALOG.some((route) => route.type === "b2b" && route.view === view));
+});
+
+test("ogni route CRM usa una chiave React univoca", () => {
+  const catalogPaths = CRM_ROUTE_CATALOG.map((route) => route.catalogPath);
+  assert.equal(new Set(catalogPaths).size, catalogPaths.length);
+  assert.match(crmModule, /<Route key=\{route\.catalogPath\}/);
+  assert.doesNotMatch(crmModule, /<Route key=\{route\.screenCode\}/);
 });
 
 test("dashboard PRIVATE rappresenta il ciclo prodotto-progetto", () => {

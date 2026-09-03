@@ -15,11 +15,31 @@ function initials(user) {
   return `${user?.nome?.[0] || ""}${user?.cognome?.[0] || ""}`.toUpperCase() || "NU";
 }
 
+function managedUserState(value) {
+  return {
+    nome: value.nome || "", cognome: value.cognome || "", email: value.email || "", telefono: value.telefono || "",
+    ruolo_id: value.ruolo_id || "", reparto_id: value.reparto_ids?.[0] || "", responsabile_utente_id: value.responsabile_utente_id || "",
+    customer_code: value.customer_code || "", attivo: value.attivo !== false,
+  };
+}
+
+async function edgeErrorMessage(error, response) {
+  if (response?.error) return response.error;
+  try {
+    const payload = await error?.context?.clone?.().json();
+    if (payload?.error) return payload.error;
+  } catch {
+    // La risposta può non avere un body JSON; usa il messaggio SDK come fallback.
+  }
+  return error?.message || "Salvataggio non riuscito.";
+}
+
 export default function AccessUsers() {
   const { profile, isAdminUser, reloadProfile } = useAuth();
   const [data, setData] = useState({ users: [], roles: [], departments: [], userDepartments: [], agents: [], integrations: [], exceptions: [], aiOverrides: [], modules: [], areas: [], screens: [], customers: [], customerLinks: [] });
   const [selectedId, setSelectedId] = useState("");
   const [form, setForm] = useState(EMPTY_USER);
+  const [savedManagedForm, setSavedManagedForm] = useState(EMPTY_USER);
   const [tab, setTab] = useState("dati");
   const [search, setSearch] = useState("");
   const [exceptionDraft, setExceptionDraft] = useState({ ambito: "modulo", codice: "", decisione: "consenti", livello_accesso: "", motivazione: "", valida_fino_a: "" });
@@ -67,6 +87,7 @@ export default function AccessUsers() {
     /* eslint-disable react-hooks/set-state-in-effect */
     if (isCreating) {
       setForm(EMPTY_USER);
+      setSavedManagedForm(EMPTY_USER);
       setUserExceptions([]);
       setAiLevels({});
       return;
@@ -77,11 +98,13 @@ export default function AccessUsers() {
     const customerLink = data.customerLinks.find((item) => item.user_id === selectedUser.id);
     const departmentIds = data.userDepartments.filter((row) => row.utente_id === selectedUser.id).map((row) => row.reparto_id);
     if (selectedUser.reparto_id && !departmentIds.includes(selectedUser.reparto_id)) departmentIds.unshift(selectedUser.reparto_id);
-    setForm({
+    const nextForm = {
       nome: selectedUser.nome || "", cognome: selectedUser.cognome || "", email: selectedUser.email || "", telefono: selectedUser.telefono || "", password: "",
       ruolo_id: selectedUser.ruolo_id || "", reparto_ids: [...new Set(departmentIds)], responsabile_utente_id: selectedUser.responsabile_utente_id || linkedAgent?.responsabile_utente_id || "",
       mexal_agente_id: linkedAgent?.id || "", beauty_mexal_agente_id: beauty?.mexal_agente_id || "", customer_code: customerLink?.customer_code || "", attivo: selectedUser.attivo !== false,
-    });
+    };
+    setForm(nextForm);
+    setSavedManagedForm(nextForm);
     setUserExceptions(data.exceptions.filter((item) => item.utente_id === selectedUser.id));
     setAiLevels(Object.fromEntries(data.aiOverrides.filter((item) => item.utente_id === selectedUser.id).map((item) => [item.modulo_codice, { consentito: item.consentito, riconoscimento_immagini: item.riconoscimento_immagini }])));
     /* eslint-enable react-hooks/set-state-in-effect */
@@ -117,21 +140,26 @@ export default function AccessUsers() {
 
   async function saveUser() {
     if (!isAdminUser) return setMessage({ type: "error", text: "Operazione riservata all'amministratore." });
-    if (!form.nome.trim() || !form.cognome.trim() || !form.email.trim()) return setMessage({ type: "error", text: "Nome, cognome ed email sono obbligatori." });
+    const managedChanged = isCreating || form.password || JSON.stringify(managedUserState(form)) !== JSON.stringify(managedUserState(savedManagedForm));
+    if (managedChanged && (!form.nome.trim() || !form.cognome.trim() || !form.email.trim())) return setMessage({ type: "error", text: "Nome, cognome ed email sono obbligatori quando modifichi i dati o l'organizzazione dell'utente." });
     if (isCreating && form.password.length < 8) return setMessage({ type: "error", text: "Per il nuovo utente inserisci una password di almeno 8 caratteri." });
     const customerRole = /(^|\s)(cliente|customer)(\s|$)/i.test(selectedRole?.nome || "");
     if (customerRole && !form.customer_code) return setMessage({ type: "error", text: "Per un utente Cliente è obbligatorio selezionare l'anagrafica cliente associata." });
     setSaving(true);
     setMessage(null);
-    const action = isCreating ? "create" : "update";
-    const primaryDepartment = form.reparto_ids[0] || null;
-    const { data: response, error: userError } = await supabase.functions.invoke("admin-manage-user", { body: {
-      action, id: selectedUser?.id, auth_user_id: selectedUser?.auth_user_id, nome: form.nome.trim(), cognome: form.cognome.trim(), email: form.email.trim(), telefono: form.telefono.trim(),
-      password: form.password, ruolo_id: form.ruolo_id || null, reparto_id: primaryDepartment, responsabile_utente_id: form.responsabile_utente_id || null, customer_code: form.customer_code || null, attivo: form.attivo,
-    } });
-    if (userError || response?.error) {
-      setSaving(false);
-      return setMessage({ type: "error", text: userError?.message || response?.error || "Salvataggio non riuscito." });
+    let response = null;
+    if (managedChanged) {
+      const action = isCreating ? "create" : "update";
+      const primaryDepartment = form.reparto_ids[0] || null;
+      const invocation = await supabase.functions.invoke("admin-manage-user", { body: {
+        action, id: selectedUser?.id, auth_user_id: selectedUser?.auth_user_id, nome: form.nome.trim(), cognome: form.cognome.trim(), email: form.email.trim(), telefono: form.telefono.trim(),
+        password: form.password, ruolo_id: form.ruolo_id || null, reparto_id: primaryDepartment, responsabile_utente_id: form.responsabile_utente_id || null, customer_code: form.customer_code || null, attivo: form.attivo,
+      } });
+      response = invocation.data;
+      if (invocation.error || response?.error) {
+        setSaving(false);
+        return setMessage({ type: "error", text: await edgeErrorMessage(invocation.error, response) });
+      }
     }
     const userId = selectedUser?.id || response?.user_id;
     const operations = [];

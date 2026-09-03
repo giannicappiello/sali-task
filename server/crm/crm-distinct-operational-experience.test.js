@@ -6,6 +6,7 @@ import { CRM_ROUTE_CATALOG } from "../../src/modules/crm/crmRouteCatalog.js";
 
 const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
 const migration = read("supabase/migrations/20260903170000_crm_distinct_operational_experience.sql");
+const screenCatalogMigration = read("supabase/migrations/20260903180000_crm_distinct_screen_catalog.sql");
 const pages = read("src/modules/crm/CrmWorkflowPages.jsx");
 const opportunity = read("src/modules/crm/CrmOpportunityDetail.jsx");
 const crmModule = read("src/modules/crm/CrmModule.jsx");
@@ -24,6 +25,18 @@ test("ogni route CRM usa una chiave React univoca", () => {
   assert.equal(new Set(catalogPaths).size, catalogPaths.length);
   assert.match(crmModule, /<Route key=\{route\.catalogPath\}/);
   assert.doesNotMatch(crmModule, /<Route key=\{route\.screenCode\}/);
+});
+
+test("le esperienze operative hanno schermate Workspace dedicate", () => {
+  for (const screenCode of [
+    "crm.conto_terzi.opportunita", "crm.conto_terzi.attivita", "crm.conto_terzi.sviluppi",
+    "crm.conto_terzi.progetti", "crm.conto_terzi.analisi", "crm.b2b.attivita",
+    "crm.b2b.da_seguire", "crm.b2b.riordini", "crm.b2b.beautydays", "crm.b2b.analisi",
+  ]) {
+    assert.ok(CRM_ROUTE_CATALOG.some((route) => route.screenCode === screenCode));
+    assert.match(screenCatalogMigration, new RegExp(screenCode.replaceAll(".", "\\.")));
+  }
+  assert.doesNotMatch(screenCatalogMigration, /\b(update|delete|truncate)\b\s+public\.(crm_|v4_)/i);
 });
 
 test("dashboard PRIVATE rappresenta il ciclo prodotto-progetto", () => {

@@ -71,6 +71,7 @@ test("CRM PRIVATE usa la testata unica e la griglia responsive standard Workspac
   assert.match(commercialControl, /<ModuleContainerLayout/);
   assert.match(commercialControl, /backLabel="CRM Overview"/);
   assert.match(commercialControl, /className="panel crm-control-navigation"/);
+  assert.match(commercialControlCss, /\.crm-control-navigation\{min-height:0/);
   assert.match(commercialControlCss, /\.scope-private \.crm-control-kpis\{grid-template-columns:repeat\(4/);
   assert.match(commercialControlCss, /@media\(max-width:560px\)\{\.scope-private \.crm-control-kpis\{grid-template-columns:1fr/);
 });

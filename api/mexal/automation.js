@@ -754,7 +754,14 @@ export default async function handler(req, res) {
           const generatedAt = new Date().toISOString();
           const horizonDays = 60;
           const source = await readWorkspaceV4PurchasingSource();
-          const lines = automaticPfLines(calculateWorkspaceV4PurchaseRequirements(source), { generatedAt, horizonDays });
+          const selectedKeys = Array.isArray(body.selectedKeys)
+            ? new Set(body.selectedKeys.slice(0, 2000).map((value) => String(value || "").trim()).filter(Boolean))
+            : null;
+          const requirements = calculateWorkspaceV4PurchaseRequirements(source);
+          const selectedRequirements = selectedKeys
+            ? requirements.filter((row) => selectedKeys.has(String(row.key)))
+            : requirements;
+          const lines = automaticPfLines(selectedRequirements, { generatedAt, horizonDays });
           if (!lines.length) return sendSuccess(res, 200, { message: "Nessun nuovo PF da generare nei prossimi 60 giorni." });
           return sendSuccess(res, 200, await executeWorkspaceV4PurchasingAction({
             action, generatedAt, horizonDays, lines, ignoreDuplicates: true,

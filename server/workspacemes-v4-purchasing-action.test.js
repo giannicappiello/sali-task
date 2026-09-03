@@ -6,7 +6,9 @@ test("l'azione PF automatica è server-side, limitata a 60 giorni e idempotente"
   const source = await readFile(new URL("../api/mexal/automation.js", import.meta.url), "utf8");
   assert.match(source, /action === "GENERATE_PF_AUTOMATIC"/);
   assert.match(source, /const horizonDays = 60/);
-  assert.match(source, /automaticPfLines\(calculateWorkspaceV4PurchaseRequirements\(source\)/);
+  assert.match(source, /const selectedKeys = Array\.isArray\(body\.selectedKeys\)/);
+  assert.match(source, /requirements\.filter\(\(row\) => selectedKeys\.has\(String\(row\.key\)\)\)/);
+  assert.match(source, /automaticPfLines\(selectedRequirements, \{ generatedAt, horizonDays \}\)/);
   assert.match(source, /action, generatedAt, horizonDays, lines, ignoreDuplicates: true/);
 });
 

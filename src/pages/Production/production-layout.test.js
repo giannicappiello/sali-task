@@ -28,7 +28,10 @@ test("i fabbisogni usano ricerca totale, azioni PF in linea e tabella compatta",
   assert.match(source, /data-column-controls="off"/);
   assert.match(source, /Ricerca rapida totale/);
   assert.match(source, /Genera PF da selezionati/);
-  assert.match(source, /Conferma e genera PF/);
+  assert.match(source, /Prepara PF Mexal/);
+  assert.match(source, /Genera PF manuale/);
+  assert.match(source, /run\("GENERATE_PF_AUTOMATIC", \{ selectedKeys: rowsToSend\.map/);
+  assert.match(source, /PF Mexal manuale preparato/);
   assert.match(source, /Genera PF automatico/);
   assert.match(source, /applySummaryFilter\("to_order"\)/);
   assert.match(source, /applySummaryFilter\("covered_arrivals"\)/);

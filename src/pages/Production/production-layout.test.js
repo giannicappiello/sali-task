@@ -28,8 +28,15 @@ test("i fabbisogni usano ricerca totale, azioni PF in linea e tabella compatta",
   assert.match(source, /data-column-controls="off"/);
   assert.match(source, /Ricerca rapida totale/);
   assert.match(source, /Genera PF da selezionati/);
+  assert.match(source, /Conferma e genera PF/);
   assert.match(source, /Genera PF automatico/);
+  assert.match(source, /applySummaryFilter\("to_order"\)/);
+  assert.match(source, /applySummaryFilter\("covered_arrivals"\)/);
+  assert.match(source, /aria-pressed=\{summaryFilter/);
+  assert.match(source, /purchase-button-info/);
   assert.match(css, /\.purchase-table-wrap table\{[^}]*min-width:1145px[^}]*font-size:\.69rem/);
+  assert.match(css, /\.purchase-table-wrap \.number\{text-align:left/);
+  assert.match(css, /\.purchase-summary button\.active/);
   assert.match(css, /\.purchase-month-actions>select\{[^}]*max-width:220px/);
   assert.match(css, /\.purchase-command-row \.purchase-calculation-note\{[^}]*font-size:\.76rem/);
 });

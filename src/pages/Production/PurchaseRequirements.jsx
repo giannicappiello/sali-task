@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, FilePlus2, RefreshCw, Search, ShoppingCart, X } from "lucide-react";
+import { CheckCircle2, FilePlus2, Info, RefreshCw, Search, ShoppingCart, X } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
-import InfoTooltip from "../../components/InfoTooltip";
 
 async function callPurchasing(accessToken, action, extra = {}) {
   const response = await fetch("/api/mexal/automation", { method: "POST",
@@ -21,6 +20,7 @@ const typeLabel = (value) => ({ Packaging: "Packaging", MateriaPrima: "Materia p
 const searchText = (row) => [row.articleCode, row.description, typeLabel(row.articleType), row.requiredAt, row.orderBy,
   row.unitOfMeasure, row.pfDocuments, row.supplierOrders, row.supplierName, row.octReferences,
   row.productionOrders, statusLabel(row.status)].join(" ").toLocaleLowerCase("it-IT");
+const ButtonInfo = ({ text }) => <span className="purchase-button-info" title={text} aria-hidden="true"><Info size={13}/></span>;
 
 export default function PurchaseRequirements() {
   const { session, hasPermission } = useAuth();
@@ -32,6 +32,7 @@ export default function PurchaseRequirements() {
   const [searchByMonth, setSearchByMonth] = useState({});
   const [confirmMonth, setConfirmMonth] = useState("");
   const [onlyToOrder, setOnlyToOrder] = useState(false);
+  const [summaryFilter, setSummaryFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -54,7 +55,11 @@ export default function PurchaseRequirements() {
     return () => { active = false; };
   }, [accessToken]);
 
-  const rows = useMemo(() => onlyToOrder ? data.requirements.filter((row) => row.quantityToOrder > 0) : data.requirements, [data.requirements, onlyToOrder]);
+  const rows = useMemo(() => data.requirements.filter((row) => {
+    if (summaryFilter === "to_order" && row.quantityToOrder <= 0) return false;
+    if (summaryFilter === "covered_arrivals" && row.status !== "COVERED_BY_ARRIVALS") return false;
+    return !onlyToOrder || row.quantityToOrder > 0;
+  }), [data.requirements, onlyToOrder, summaryFilter]);
   const groups = useMemo(() => Object.values(rows.reduce((result, row) => {
     const key = String(row.month || "");
     result[key] ||= { key, month: row.month, rows: [] };
@@ -69,6 +74,10 @@ export default function PurchaseRequirements() {
     setConfirmMonth("");
   }
   const selectedRows = (group) => group.rows.filter((row) => row.quantityToOrder > 0 && selected.has(row.key));
+  function applySummaryFilter(filter) {
+    setSummaryFilter(filter);
+    setOnlyToOrder(filter === "to_order");
+  }
 
   async function run(purchasingAction, extra = {}, successReload = true) {
     setBusy(purchasingAction); setError(""); setMessage("");
@@ -96,9 +105,9 @@ export default function PurchaseRequirements() {
     <div className="purchase-command-row">
       <div className="purchase-calculation-note"><strong>Come viene calcolato.</strong><span>Workspace applica i criteri MES ai dati certificati: giacenze disponibili dei magazzini 1 e 8, domande degli OP nuovi o pianificati e quantità residue degli ordini fornitore. Gli arrivi coprono soltanto necessità successive alla loro data.</span></div>
       <div className="purchase-command-bar">
-        <button type="button" className="secondary-action" disabled={!canManage || Boolean(busy)} onClick={() => run("IMPORT_SUPPLIER_ORDERS")}><RefreshCw size={16}/>Importa ordini fornitore</button>
-        <button type="button" className="secondary-action" disabled={!canManage || Boolean(busy)} onClick={() => run("GENERATE_SALI_DI_ISCHIA")}><ShoppingCart size={16}/>Genera proposta Sali di Ischia</button>
-        <button type="button" className="primary-action" disabled={Boolean(busy)} onClick={load}><RefreshCw className={loading ? "rdp-spin" : ""} size={16}/>Ricalcola lista</button>
+        <button type="button" className="secondary-action" disabled={!canManage || Boolean(busy)} onClick={() => run("IMPORT_SUPPLIER_ORDERS")} title="Importa dal MES gli ordini fornitore aggiornati"><RefreshCw size={16}/>Importa ordini fornitore<ButtonInfo text="Aggiorna nel Workspace gli ordini fornitore presenti nel MES."/></button>
+        <button type="button" className="secondary-action" disabled={!canManage || Boolean(busy)} onClick={() => run("GENERATE_SALI_DI_ISCHIA")} title="Calcola la proposta di riassortimento Sali di Ischia"><ShoppingCart size={16}/>Genera proposta Sali di Ischia<ButtonInfo text="Calcola una proposta dai consumi, dalle giacenze e dai tempi di consegna configurati."/></button>
+        <button type="button" className="primary-action" disabled={Boolean(busy)} onClick={load} title="Ricalcola tutti i fabbisogni visualizzati"><RefreshCw className={loading ? "rdp-spin" : ""} size={16}/>Ricalcola lista<ButtonInfo text="Rilegge i dati certificati del MES e aggiorna fabbisogni e coperture."/></button>
       </div>
     </div>
     {message && <div className="purchase-feedback success" role="status"><CheckCircle2 size={18}/><span>{message}</span><button onClick={() => setMessage("")} aria-label="Chiudi"><X size={16}/></button></div>}
@@ -109,8 +118,8 @@ export default function PurchaseRequirements() {
       <div>{(latestSaliProposal.lines || []).map((line) => <article key={line.id}><div><strong>{line.article_code}</strong><small>{line.description}</small></div><span>{quantity(line.proposed_quantity)} {line.unit_of_measure}</span><small>Giacenza {quantity(line.available_stock)} · consumo stimato {quantity(line.estimated_monthly_consumption)}/mese · {line.lead_time_days} gg</small></article>)}</div>
     </section>}
     {loading ? <div className="production-loading">Calcolo dei fabbisogni in corso…</div> : <>
-      <div className="purchase-summary"><article><span>Articoli da approvvigionare<InfoTooltip label="Articoli da approvvigionare" text="Numero di fabbisogni con quantità da ordinare maggiore di zero dopo giacenze e arrivi previsti." /></span><strong className="danger">{toOrder.length}</strong></article><article><span>Articoli coperti da arrivi<InfoTooltip label="Articoli coperti da arrivi" text="Numero di fabbisogni coperti, alla data necessaria, dalle consegne fornitore già previste." /></span><strong>{data.requirements.filter((row) => row.status === "COVERED_BY_ARRIVALS").length}</strong></article><article><span>Fabbisogni totali<InfoTooltip label="Fabbisogni totali" text="Numero complessivo di righe materiale richieste dalle produzioni nuove o pianificate." /></span><strong>{data.requirements.length}</strong></article></div>
-      <section className="purchase-toolbar"><div><strong>Suddivisione mensile</strong><span>I materiali sono raggruppati per data di necessità.</span></div><label><input type="checkbox" checked={onlyToOrder} onChange={(event) => setOnlyToOrder(event.target.checked)}/>Mostra solo da ordinare</label></section>
+      <div className="purchase-summary" aria-label="Filtri riepilogo fabbisogni"><button type="button" className={summaryFilter === "to_order" ? "active" : ""} aria-pressed={summaryFilter === "to_order"} onClick={() => applySummaryFilter("to_order")} title="Mostra i materiali con quantità da ordinare"><span>Articoli da approvvigionare<ButtonInfo text="Mostra i fabbisogni con quantità da ordinare maggiore di zero dopo giacenze e arrivi previsti."/></span><strong className="danger">{toOrder.length}</strong></button><button type="button" className={summaryFilter === "covered_arrivals" ? "active" : ""} aria-pressed={summaryFilter === "covered_arrivals"} onClick={() => applySummaryFilter("covered_arrivals")} title="Mostra i materiali coperti da consegne previste"><span>Articoli coperti da arrivi<ButtonInfo text="Mostra i fabbisogni coperti, alla data necessaria, dalle consegne fornitore già previste."/></span><strong>{data.requirements.filter((row) => row.status === "COVERED_BY_ARRIVALS").length}</strong></button><button type="button" className={summaryFilter === "all" ? "active" : ""} aria-pressed={summaryFilter === "all"} onClick={() => applySummaryFilter("all")} title="Mostra tutti i fabbisogni"><span>Fabbisogni totali<ButtonInfo text="Mostra tutte le righe materiale richieste dalle produzioni nuove o pianificate."/></span><strong>{data.requirements.length}</strong></button></div>
+      <section className="purchase-toolbar"><div><strong>Suddivisione mensile</strong><span>I materiali sono raggruppati per data di necessità.</span></div><label><input type="checkbox" checked={onlyToOrder} onChange={(event) => { setOnlyToOrder(event.target.checked); setSummaryFilter(event.target.checked ? "to_order" : "all"); }}/>Mostra solo da ordinare</label></section>
       <nav className="purchase-month-index" aria-label="Vai al mese">{groups.map((group) => <a key={group.key} href={`#${monthId(group.month)}`}><span>{monthTitle(group.month)}</span><strong>{group.rows.length}</strong></a>)}</nav>
       <div className="purchase-months">{groups.map((group) => {
         const query = String(searchByMonth[group.key] || "").trim().toLocaleLowerCase("it-IT");
@@ -123,14 +132,13 @@ export default function PurchaseRequirements() {
         return <section className="purchase-month-card" id={monthId(group.month)} key={group.key}>
           <header><div><span>Fabbisogni del mese</span><h2>{monthTitle(group.month)}</h2></div><div><b>{group.rows.filter((row) => row.quantityToOrder > 0).length}</b> da ordinare · <b>{group.rows.filter((row) => row.quantityToOrder <= 0).length}</b> coperti</div></header>
           <div className="purchase-month-actions">
-            <button type="button" className="secondary-action" disabled={!groupToOrder.length} onClick={() => toggleGroup({ ...group, rows: visibleRows })}>{allSelected ? "Deseleziona visibili" : "Seleziona da ordinare"}</button>
+            <button type="button" className="secondary-action" disabled={!groupToOrder.length} onClick={() => toggleGroup({ ...group, rows: visibleRows })} title="Seleziona o deseleziona i materiali ordinabili visibili">{allSelected ? "Deseleziona visibili" : "Seleziona da ordinare"}<ButtonInfo text="Applica la selezione alle sole righe visibili che hanno una quantità da ordinare."/></button>
             <select aria-label={`Fornitore PF ${monthTitle(group.month)}`} value={supplierId} onChange={(event) => { setSupplierByMonth((current) => ({ ...current, [group.key]: event.target.value })); setConfirmMonth(""); }}><option value="">Seleziona fornitore PF…</option>{data.suppliers.map((item) => <option value={item.id} key={item.id}>{item.ragioneSociale} ({item.codiceMexal})</option>)}</select>
             <label className="purchase-quick-search"><Search size={16} aria-hidden="true"/><input type="search" value={searchByMonth[group.key] || ""} onChange={(event) => setSearchByMonth((current) => ({ ...current, [group.key]: event.target.value }))} placeholder="Ricerca rapida totale" aria-label={`Ricerca rapida nei fabbisogni di ${monthTitle(group.month)}`}/></label>
-            <button type="button" className="secondary-action" disabled={!canManage || !supplierId || !selectedForGroup.length || Boolean(busy)} onClick={() => setConfirmMonth(group.key)}>Prepara PF Mexal</button>
-            <button type="button" className="primary-action" disabled={!canManage || confirmMonth !== group.key || !supplierId || !selectedForGroup.length || Boolean(busy)} onClick={() => createPf(group)}><FilePlus2 size={16}/>{busy === "CREATE_PF" ? "Generazione…" : "Genera PF da selezionati"}</button>
-            <button type="button" className="secondary-action" disabled={!canManage || Boolean(busy) || !toOrder.length} onClick={() => run("GENERATE_PF_AUTOMATIC")} title="Genera una sola volta i PF necessari entro 60 giorni da oggi"><FilePlus2 size={16}/>Genera PF automatico</button>
+            <button type="button" className="primary-action" disabled={!canManage || !supplierId || !selectedForGroup.length || Boolean(busy)} onClick={() => confirmMonth === group.key ? createPf(group) : setConfirmMonth(group.key)} title="Verifica e genera un PF per le righe selezionate"><FilePlus2 size={16}/>{busy === "CREATE_PF" ? "Generazione…" : confirmMonth === group.key ? "Conferma e genera PF" : "Genera PF da selezionati"}<ButtonInfo text="Mostra prima il riepilogo; al secondo click conferma e crea il PF per il fornitore scelto."/></button>
+            <button type="button" className="secondary-action" disabled={!canManage || Boolean(busy) || !toOrder.length} onClick={() => run("GENERATE_PF_AUTOMATIC")} title="Genera una sola volta i PF necessari entro 60 giorni da oggi"><FilePlus2 size={16}/>Genera PF automatico<ButtonInfo text="Raggruppa automaticamente i fabbisogni dei prossimi 60 giorni evitando PF duplicati."/></button>
           </div>
-          {confirmMonth === group.key && <div className="purchase-confirm"><div><strong>PF Mexal preparato</strong><span>Fornitore <b>{supplier?.ragioneSociale}</b> · <b>{selectedForGroup.length}</b> materiali · consegne previste in {monthTitle(group.month)}. Usa “Genera PF da selezionati” per confermare.</span></div><div><button type="button" className="secondary-action" onClick={() => setConfirmMonth("")} disabled={Boolean(busy)}>Annulla preparazione</button></div></div>}
+          {confirmMonth === group.key && <div className="purchase-confirm"><div><strong>Conferma generazione PF Mexal</strong><span>Fornitore <b>{supplier?.ragioneSociale}</b> · <b>{selectedForGroup.length}</b> materiali · consegne previste in {monthTitle(group.month)}. Usa “Conferma e genera PF” per procedere.</span></div><div><button type="button" className="secondary-action" onClick={() => setConfirmMonth("")} disabled={Boolean(busy)}>Annulla</button></div></div>}
           <div className="purchase-table-wrap" data-column-controls="off"><table><colgroup><col className="purchase-select-column"/><col className="purchase-material-column"/><col className="purchase-type-column"/><col className="purchase-required-column"/><col className="purchase-order-by-column"/><col className="purchase-demand-column"/><col className="purchase-stock-column"/><col className="purchase-arrival-column"/><col className="purchase-order-column"/><col className="purchase-pf-column"/><col className="purchase-supplier-column"/><col className="purchase-oct-column"/><col className="purchase-production-column"/><col className="purchase-status-column"/></colgroup><thead><tr><th className="purchase-select-cell" aria-label="Seleziona"></th><th>Materiale</th><th>Tipo</th><th>Necessario entro</th><th>Ordina entro</th><th>Fabbisogno</th><th>Giacenza</th><th>In arrivo</th><th>Da ordinare</th><th>PF Mexal</th><th>Consegne / fornitore</th><th>OCT</th><th>Ordini produzione</th><th>Stato</th></tr></thead><tbody>{visibleRows.map((row) => <tr key={row.key} className={row.quantityToOrder > 0 ? "to-order" : ""}><td className="purchase-select-cell">{row.quantityToOrder > 0 && <input type="checkbox" checked={selected.has(row.key)} onChange={() => toggle(row)} aria-label={`Seleziona ${row.articleCode}`}/>}</td><td className="purchase-material-cell"><strong>{row.articleCode}</strong><small>{row.description}</small></td><td><span className="purchase-type">{typeLabel(row.articleType)}</span></td><td>{date(row.requiredAt)}</td><td><strong className={row.status === "ORDER_LATE" ? "late" : ""}>{date(row.orderBy)}</strong><small>{row.leadTimeDays} gg</small></td><td className="number">{quantity(row.requiredQuantity)} {row.unitOfMeasure}</td><td className="number">{quantity(row.availableStock)}</td><td className="number">{quantity(row.incomingQuantity)}</td><td className="number"><strong className={row.quantityToOrder > 0 ? "late" : "covered"}>{quantity(row.quantityToOrder)}</strong>{row.reorderLot > 0 && row.quantityToOrder > 0 && <small>netto {quantity(row.netRequirement)} · lotto {quantity(row.reorderLot)}</small>}</td><td>{row.pfDocuments ? <><span className="purchase-pf">{row.pfDocuments}</span><small>{quantity(row.pfQuantity)} {row.unitOfMeasure} proposti</small></> : "—"}</td><td><span>{row.supplierOrders || "Nessuna consegna datata"}</span><small>{row.supplierName}</small></td><td className="purchase-lineage">{row.octReferences || "—"}</td><td className="purchase-lineage">{row.productionOrders || "—"}</td><td><span className={`purchase-status ${row.status.toLowerCase()}`}>{statusLabel(row.status)}</span></td></tr>)}</tbody></table>{!visibleRows.length && <p className="table-message">Nessun fabbisogno corrisponde alla ricerca.</p>}</div>
         </section>;
       })}</div>

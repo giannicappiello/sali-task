@@ -29,7 +29,7 @@ export default function WorkspaceTaskKanban({ items, onMove, onOpen }) {
         <div>{columnItems.map((item) => <article key={item.id} draggable={status !== "bloccata"} onDragStart={(event) => event.dataTransfer.setData("text/plain", item.id)}>
           <button type="button" onClick={() => onOpen(item)}><strong>{item.titolo}</strong></button>
           {item.crm_customer_key ? <Link to={`/crm/conto-terzi/clienti/${encodeURIComponent(item.crm_customer_key)}`}><Link2 size={13} />{item.crm_customer_key}</Link> : null}
-          {item.crm_opportunity_id ? <Link to={`/crm/conto-terzi/opportunita/${item.crm_opportunity_id}`}><Link2 size={13} />Apri opportunità CRM</Link> : null}
+          {item.crm_opportunity_id ? <Link to={`/crm/conto-terzi/pipeline/${item.crm_opportunity_id}`}><Link2 size={13} />Apri opportunità CRM</Link> : null}
           <small>{item.v4_progetti?.titolo || "Attività senza progetto"}</small>
           <small>{item.planningDepartments?.map((department) => department.nome).join(", ") || item.reparti?.nome || "Reparto non indicato"}</small>
           <small>{item.responsabile ? `${item.responsabile.nome || ""} ${item.responsabile.cognome || ""}`.trim() : "Responsabile non assegnato"}</small>

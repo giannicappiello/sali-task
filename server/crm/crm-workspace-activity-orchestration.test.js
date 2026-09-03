@@ -66,6 +66,7 @@ test("avanzamento CRM deriva dagli stati reali Workspace ed è bidirezionale", (
   assert.match(opportunity, /NESSUNA ATTIVITÀ PIANIFICATA/);
   assert.match(opportunity, /Responsabile non assegnato/);
   assert.match(kanban, /Apri opportunità CRM/);
+  assert.match(kanban, /\/crm\/conto-terzi\/pipeline\/\$\{item\.crm_opportunity_id\}/);
   assert.match(projects, /requestedProjectId/);
   assert.match(projects, /Torna all’opportunità CRM/);
 });

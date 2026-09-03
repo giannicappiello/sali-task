@@ -641,7 +641,7 @@ export default async function handler(req, res) {
         }));
       }
       case "progremes_diagnostic_action": {
-        const admin = await createAdmin(req, "diagnostics.manage");
+        const admin = await createAdmin(req);
         const result = await createProgremesDiagnosticManager().changeStatus({
           diagnosticId: body.diagnosticId,
           action: body.diagnosticAction,

@@ -27,7 +27,7 @@ test("le API Workbench derivano lo scope dall'associazione anagrafica e negano o
 test("le route locali Production richiedono i permessi e il Workbench cliente nasconde le aree globali", async () => {
   const production = await readFile(new URL("../src/pages/Production/Production.jsx", import.meta.url), "utf8");
   const workbench = await readFile(new URL("../src/pages/Production/RdpWorkbench.jsx", import.meta.url), "utf8");
-  assert.match(production, /sectionPath === "diagnostica"[\s\S]*hasPermission\?\.\("diagnostics\.view"\)/);
+  assert.match(production, /sectionPath === "diagnostica"[\s\S]*isAdminUser/);
   assert.match(production, /sectionPath === "fabbisogni-acquisto"[\s\S]*!customerScoped/);
   assert.match(workbench, /customerScoped \? TABS\.filter/);
   assert.match(workbench, /!customerScoped && <button[^>]+rdp-toolbar-refresh/);

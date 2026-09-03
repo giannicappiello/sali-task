@@ -3,14 +3,12 @@ import test from "node:test";
 
 import { requireProgremesReadonlyAccess } from "./progremes-readonly-auth.js";
 
-function adminDouble({ profile = { id: "profile-1", attivo: true }, enabled = true, diagnosticPermission = false } = {}) {
+function adminDouble({ profile = { id: "profile-1", attivo: true }, enabled = true } = {}) {
   return {
     auth: {
       getUser: async () => ({ data: { user: { id: "auth-1" } }, error: null }),
     },
-    from: (table) => ({ select: () => ({ eq: () => table === "utenti"
-      ? { maybeSingle: async () => ({ data: profile, error: null }) }
-      : { in: () => ({ limit: async () => ({ data: diagnosticPermission ? [{ permessi: { codice: "diagnostics.view" } }] : [], error: null }) }) } }) }),
+    from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: profile, error: null }) }) }) }),
     rpc: async (name, parameters) => {
       assert.equal(name, "workspace_module_enabled_for_user");
       assert.deepEqual(parameters, { target_user_id: "profile-1", target_module: "progremes" });
@@ -26,11 +24,10 @@ test("authorization rejects a missing Workspace session before creating server c
   );
 });
 
-test("diagnostic resources require diagnostics.view unless the user is an administrator", async () => {
+test("diagnostic resources are reserved to Workspace administrators", async () => {
   const request = { headers: { authorization: "Bearer workspace-session" }, query: { resource: "diagnostics" } };
   await assert.rejects(requireProgremesReadonlyAccess(request, { admin: adminDouble() }), (error) => error.status === 403);
-  const permitted = await requireProgremesReadonlyAccess(request, { admin: adminDouble({ diagnosticPermission: true }) });
-  assert.equal(permitted.profileId, "profile-1");
+  await assert.rejects(requireProgremesReadonlyAccess(request, { admin: adminDouble({ profile: { id: "profile-1", attivo: true, ruoli: { livello_accesso: "amministrazione" } } }) }), (error) => error.status === 403);
   const administrator = await requireProgremesReadonlyAccess(request, { admin: adminDouble({ profile: { id: "profile-1", attivo: true, ruoli: { amministratore_workspace: true } } }) });
   assert.equal(administrator.profileId, "profile-1");
 });

@@ -156,7 +156,7 @@ function SectionLauncher({ sectionCode }) {
 
 export default function Production() {
   const { "*": sectionPath } = useParams();
-  const { session, hasPermission, dataScope } = useAuth();
+  const { session, hasPermission, dataScope, isAdminUser } = useAuth();
   const accessToken = session?.access_token;
   const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -193,14 +193,14 @@ export default function Production() {
   }, [accessToken, sectionPath]);
 
   const customerScoped = Boolean(dataScope?.customerCode);
-  if (sectionPath === "diagnostica") return hasPermission?.("diagnostics.view") ? <DiagnosticsCenter /> : <Navigate to="/produzione" replace />;
+  if (sectionPath === "diagnostica") return isAdminUser ? <DiagnosticsCenter /> : <Navigate to="/produzione" replace />;
   if (sectionPath === "rdp-workbench") return hasPermission?.("rdp.view") ? <RdpWorkbench /> : <Navigate to="/produzione" replace />;
   if (sectionPath === "fabbisogni-acquisto") return hasPermission?.("rdp.view") && !customerScoped ? <PurchaseRequirements /> : <Navigate to="/produzione" replace />;
   if (sectionPath) return <SectionLauncher sectionCode={decodeURIComponent(sectionPath)} />;
 
   const workspaceLocalCodes = new Set(["diagnostica", "rdp-workbench", "fabbisogni-acquisto", "progremes.ordini.fabbisogni"]);
   const visibleSections = sections.filter((section) => !workspaceLocalCodes.has(String(section.code || "").trim().toLowerCase()) && !workspaceLocalCodes.has(String(section.externalCode || "").trim().toLowerCase()));
-  if (hasPermission?.("diagnostics.view")) visibleSections.unshift({ code: "diagnostica", name: "Centro Diagnostico", description: "Stato globale, alert operativi e integrazioni senza esporre configurazioni riservate.", workspaceLocal: true });
+  if (isAdminUser) visibleSections.unshift({ code: "diagnostica", name: "Centro Diagnostico", description: "Stato globale, alert operativi e integrazioni senza esporre configurazioni riservate.", workspaceLocal: true });
   if (hasPermission?.("rdp.view")) visibleSections.unshift({ code: "rdp-workbench", name: "RdP Workbench", description: "Gestione OCT, richieste di produzione, analisi MES e decisioni operative.", workspaceLocal: true, icon: ClipboardList });
   if (hasPermission?.("rdp.view") && !customerScoped) visibleSections.splice(1, 0, { code: "fabbisogni-acquisto", name: "Fabbisogni acquisto", description: "Calcolo mensile, coperture, fornitori e creazione controllata dei PF Mexal.", workspaceLocal: true, icon: ShoppingCart });
 

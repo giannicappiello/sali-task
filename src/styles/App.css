@@ -2915,7 +2915,8 @@ body {
   gap: 8px;
 }
 
-.status-tabs button {
+.status-tabs button,
+.projects-toolbar-final .status-tabs a {
   min-height: 38px;
   border: 1px solid var(--border);
   background: #fff;
@@ -2924,16 +2925,64 @@ body {
   font-weight: 800;
   color: #475569;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
 }
 
-.status-tabs button.active {
+.status-tabs button.active,
+.projects-toolbar-final .status-tabs a.active {
   border-color: #bfdbfe;
   background: #eaf2ff;
   color: var(--primary);
 }
 
+.projects-toolbar-final {
+  flex-wrap: nowrap;
+}
+
 .projects-toolbar-final .task-search {
-  max-width: 620px;
+  flex: 0 1 360px;
+  min-width: 240px;
+  max-width: 360px;
+}
+
+.projects-toolbar-final .status-tabs {
+  flex-wrap: nowrap;
+}
+
+.projects-create-action {
+  flex: 0 0 auto;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+@media (max-width: 1280px) {
+  .projects-toolbar-final {
+    flex-wrap: wrap;
+  }
+
+  .projects-create-action {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .projects-toolbar-final .task-search {
+    flex: 1 1 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .projects-toolbar-final .status-tabs {
+    flex-wrap: wrap;
+  }
+
+  .projects-create-action {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 .scrollable-check-group {
@@ -3238,8 +3287,21 @@ body {
 .planning-kpi-card.today { border-color:#fed7aa; background:#fff7ed; }
 .planning-kpi-card.danger { border-color:#fecaca; background:#fff7f7; }
 .planning-kpi-card.done { border-color:#bbf7d0; background:#f0fdf4; }
-.planning-toolbar-clean { align-items:stretch; }
-.planning-toolbar-clean .task-search { max-width:none; min-width:280px; }
+.planning-toolbar-primary { align-items:center; flex-wrap:nowrap; }
+.planning-toolbar-primary .task-search { flex:1 1 460px; min-width:280px; max-width:560px; }
+.planning-toolbar-primary > select {
+  flex:0 1 230px;
+  min-width:180px;
+  height:46px;
+  padding:0 42px 0 14px;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  background:#fff;
+  color:var(--text);
+  font:inherit;
+}
+.planning-create-action { flex:0 0 auto; margin-left:auto; white-space:nowrap; }
+.planning-toolbar-clean { align-items:center; }
 .planning-navigation { min-height:auto; padding:14px 16px; display:flex; justify-content:space-between; align-items:center; gap:16px; }
 .planning-nav-left { display:flex; align-items:center; gap:12px; }
 .planning-nav-left > div strong, .planning-nav-left > div span { display:block; }
@@ -3720,4 +3782,5 @@ body,
 .workspace-task-kanban{display:grid;grid-template-columns:repeat(5,minmax(280px,1fr));gap:18px;overflow-x:auto;padding:2px 2px 14px;scrollbar-gutter:stable}.workspace-task-column.panel{min-height:420px;padding:18px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--card);box-shadow:var(--shadow-soft)}.workspace-task-column>.panel-header{margin-bottom:14px}.workspace-task-column>.panel-header h3{font-size:16px}.workspace-task-column>.panel-header .filter-count{margin:0}.workspace-task-list{display:grid;align-content:start;gap:12px}.workspace-task-card{display:grid;gap:8px;padding:14px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--card);box-shadow:var(--shadow-soft);cursor:grab;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease}.workspace-task-card:hover{border-color:#bfdbfe;box-shadow:0 8px 22px rgba(15,23,42,.08);transform:translateY(-1px)}.workspace-task-open{padding:0;border:0;background:transparent;color:var(--text);font:inherit;text-align:left;cursor:pointer}.workspace-task-open:focus-visible,.workspace-task-link:focus-visible{outline:3px solid rgba(18,107,255,.22);outline-offset:3px}.workspace-task-card small{display:flex;align-items:center;gap:5px;color:var(--muted);font-size:12px}.workspace-task-link.secondary-action{width:fit-content;height:34px;padding:0 10px;color:var(--primary);font-size:12px;text-decoration:none;box-shadow:none}.workspace-task-card footer{display:flex;align-items:center;gap:10px;padding-top:8px;border-top:1px solid var(--border);color:var(--muted)}.workspace-task-card footer span{display:flex;align-items:center;gap:3px}.workspace-task-card footer .status-badge{margin-left:auto;padding:4px 7px}.workspace-task-column.status-bloccata{border-top:4px solid var(--warning)}.workspace-task-column.status-in_lavorazione{border-top:4px solid var(--primary)}.workspace-task-column.status-in_valutazione{border-top:4px solid #7c3aed}.workspace-task-column.status-evaso{border-top:4px solid var(--success)}.planning-mine-toggle{display:inline-flex;align-items:center;gap:7px;min-height:40px;padding:0 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--card);font-weight:700}.planning-list-view{min-height:0}.planning-list-view .planning-task-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}.planning-crm-links{display:flex;gap:8px;flex-wrap:wrap;padding:0 14px 10px}.planning-crm-links a{color:var(--primary);font-size:12px;font-weight:700;text-decoration:none}.planning-return-link{display:inline-flex;margin-bottom:6px;color:var(--primary);font-weight:750;text-decoration:none}.planning-return-link:hover{text-decoration:underline}.planning-return-link:focus-visible{outline:3px solid rgba(18,107,255,.22);outline-offset:3px}
 .workspace-task-blocked{background:#fff1dd;color:#955600}
 .project-types-settings-grid{display:grid;grid-template-columns:minmax(280px,.8fr) minmax(420px,1.2fr);gap:16px}
-@media(max-width:768px){.workspace-task-kanban{grid-template-columns:repeat(5,minmax(82vw,1fr))}.planning-toolbar-clean>select,.planning-mine-toggle{width:100%}.planning-list-view .planning-task-list{grid-template-columns:1fr}.project-types-settings-grid{grid-template-columns:1fr}.project-types-settings-grid>.settings-panel{grid-column:1!important}}
+@media(max-width:1100px){.planning-toolbar-primary{flex-wrap:wrap}.planning-toolbar-primary .task-search{max-width:none}.planning-create-action{margin-left:0}}
+@media(max-width:768px){.workspace-task-kanban{grid-template-columns:repeat(5,minmax(82vw,1fr))}.planning-toolbar-primary .task-search,.planning-toolbar-primary>select,.planning-create-action,.planning-mine-toggle{width:100%;max-width:none;flex:1 1 100%}.planning-create-action{justify-content:center}.planning-list-view .planning-task-list{grid-template-columns:1fr}.project-types-settings-grid{grid-template-columns:1fr}.project-types-settings-grid>.settings-panel{grid-column:1!important}}

@@ -768,9 +768,6 @@ export default function Tasks() {
           <h1>Planning fasi</h1>
           <p>Tutte le fasi dei progetti del mio reparto.</p>
         </div>
-        <button className="primary-action" type="button" onClick={() => openPhaseModal(null)}>
-          <Plus size={18} /> Nuova task/fase
-        </button>
       </div>
 
       <div className="calendar-kpi-grid dashboard-activity-kpis">
@@ -792,12 +789,19 @@ export default function Tasks() {
         </button>
       </div>
 
-      <div className="v4-toolbar planning-toolbar-clean">
+      <div className="v4-toolbar planning-toolbar-primary">
         <div className="task-search">
           <Search size={18} />
           <input placeholder="Cerca task, progetto, reparto o prodotto..." value={query} onChange={(event) => setQuery(event.target.value)} />
         </div>
+        <select value={originFilter} onChange={(event) => setOriginFilter(event.target.value)} aria-label="Filtra per origine"><option value="all">Tutte le origini</option><option value="crm">CRM</option><option value="workspace">Workspace e altri moduli</option></select>
+        <select value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)} aria-label="Filtra per reparto"><option value="all">Tutti i reparti</option>{departments.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select>
+        <button className="primary-action planning-create-action" type="button" onClick={() => openPhaseModal(null)}>
+          <Plus size={18} /> Nuova task/fase
+        </button>
+      </div>
 
+      <div className="v4-toolbar planning-toolbar-clean">
         <div className="status-tabs">
           {[
             ["tutte", "Tutte"],
@@ -814,8 +818,6 @@ export default function Tasks() {
         <div className="status-tabs" aria-label="Vista attività">
           {[['list','Lista'],['calendar','Calendario'],['kanban','Kanban']].map(([value, label]) => <button type="button" key={value} className={displayMode === value ? "active" : ""} onClick={() => setDisplayMode(value)}>{label}</button>)}
         </div>
-        <select value={originFilter} onChange={(event) => setOriginFilter(event.target.value)} aria-label="Filtra per origine"><option value="all">Tutte le origini</option><option value="crm">CRM</option><option value="workspace">Workspace e altri moduli</option></select>
-        <select value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)} aria-label="Filtra per reparto"><option value="all">Tutti i reparti</option>{departments.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select>
         <label className="planning-mine-toggle"><input type="checkbox" checked={mineOnly} onChange={(event) => setMineOnly(event.target.checked)} />Il mio lavoro</label>
       </div>
 

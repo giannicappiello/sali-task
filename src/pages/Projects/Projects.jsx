@@ -1290,11 +1290,6 @@ export default function Projects() {
           <h1>Progetti</h1>
           <p>Tutti i progetti del mio reparto.</p>
         </div>
-        {canManage && (
-          <button className="primary-action" onClick={() => openProject()}>
-            <Plus size={18} /> Nuovo progetto
-          </button>
-        )}
       </div>
 
       <div className="v4-toolbar projects-toolbar-final">
@@ -1320,6 +1315,11 @@ export default function Projects() {
           <Link to="/activities/tasks?view=calendar">Planning</Link>
           <button type="button" className={projectView === "kanban" ? "active" : ""} onClick={() => setProjectView("kanban")}>Kanban</button>
         </div>
+        {canManage && (
+          <button className="primary-action projects-create-action" onClick={() => openProject()}>
+            <Plus size={18} /> Nuovo progetto
+          </button>
+        )}
       </div>
 
       {loading ? (

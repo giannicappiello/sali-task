@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Search } from "lucide-react";
-import InfoTooltip from "../../components/InfoTooltip";
 import { supabase } from "../../lib/supabaseClient";
 import { CrmBeautyDashboardPanel } from "./CrmBeautyDays";
 import CrmCustomerLink from "./CrmCustomerLink";
@@ -10,57 +9,8 @@ import { CrmPageHeader, CrmSectionNav } from "./CrmWorkspaceUI";
 import { crmTypeConfig, formatDate, formatMoney } from "./crmConfig";
 import { crmNavigation } from "./crmNavigation";
 
-function Metric({ label, value, text, to }) {
-  const body = <><span>{label}<InfoTooltip label={label} text={text} /></span><strong>{value}</strong>{to ? <em>Apri dettaglio →</em> : null}</>;
-  return to ? <Link className="kpi-card crm-kpi" to={to} aria-label={`${label}: ${value}. Apri dettaglio`}>{body}</Link> : <article className="kpi-card crm-kpi">{body}</article>;
-}
-
 function ErrorMessage({ error }) {
   return error ? <div className="crm-message error">{error}</div> : null;
-}
-
-export function CrmPrivateDashboard() {
-  const type = "conto_terzi"; const config = crmTypeConfig(type); const period = useCrmPeriod();
-  const [data, setData] = useState({ analytics: {}, opportunities: [], projectCount: 0 });
-  const [loading, setLoading] = useState(true); const [error, setError] = useState("");
-  const [today] = useState(() => Date.now());
-  const load = useCallback(async () => {
-    setLoading(true); setError("");
-    const [analytics, opportunities] = await Promise.all([
-      supabase.rpc("crm_opportunity_analytics", { p_crm_type: type, p_from: period.from, p_to: period.to }),
-      supabase.from("crm_opportunities").select("id,titolo,chiusura_prevista,creato_il,aggiornato_il,stage_id,crm_accounts!inner(tipo),crm_opportunity_stages(codice,finale,vinta,soglia_aging_giorni),crm_activities(id,stato,data_attivita)").eq("crm_accounts.tipo", type).limit(1000),
-    ]);
-    const failure = analytics.error || opportunities.error;
-    if (failure) { setError(failure.message); setLoading(false); return; }
-    const rows = opportunities.data || [];
-    const ids = rows.map((row) => row.id);
-    const links = ids.length ? await supabase.from("crm_workspace_links").select("crm_entity_id").eq("crm_entity_type", "opportunity").eq("workspace_entity_type", "project").in("crm_entity_id", ids) : { data: [], error: null };
-    if (links.error) setError(links.error.message);
-    setData({ analytics: analytics.data || {}, opportunities: rows, projectCount: new Set((links.data || []).map((row) => row.crm_entity_id)).size });
-    setLoading(false);
-  }, [period.from, period.to]);
-  useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
-  const open = data.opportunities.filter((row) => !row.crm_opportunity_stages?.finale);
-  const missingNextStep = open.filter((row) => !(row.crm_activities || []).some((item) => item.stato !== "completata" && item.data_attivita)).length;
-  const samples = open.filter((row) => row.crm_opportunity_stages?.codice === "campionatura").length;
-  const quotes = open.filter((row) => ["offerta", "negoziazione", "approvazione", "attesa_ordine"].includes(row.crm_opportunity_stages?.codice)).length;
-  const stalled = open.filter((row) => row.crm_opportunity_stages?.soglia_aging_giorni && (today - new Date(row.aggiornato_il || row.creato_il).getTime()) / 86400000 > row.crm_opportunity_stages.soglia_aging_giorni).length;
-  const expected = open.filter((row) => row.chiusura_prevista >= period.from && row.chiusura_prevista <= period.to).length;
-  return <div className="crm-page">
-    <CrmPageHeader eyebrow="CRM PRIVATE · Conto Terzi" title="Sviluppo prodotti e progetti cliente" description="Dalla richiesta commerciale al brief tecnico, campione, offerta e progetto Workspace." actions={<CrmPeriodFilter period={period} compact />}><CrmSectionNav items={crmNavigation(type)} period={period} label="Navigazione CRM PRIVATE" /></CrmPageHeader>
-    <ErrorMessage error={error} />
-    {loading ? <div className="crm-loading">Caricamento CRM PRIVATE...</div> : <div className="crm-kpi-grid">
-      <Metric label="Pipeline" value={formatMoney(data.analytics.pipeline_value)} text="Valore nominale delle opportunità Conto Terzi aperte nel perimetro autorizzato." to={period.withPeriod(`${config.basePath}/pipeline`)} />
-      <Metric label="Pipeline ponderata" value={formatMoney(data.analytics.weighted_value)} text="Valore delle opportunità aperte moltiplicato per la probabilità corrente." to={period.withPeriod(`${config.basePath}/pipeline`)} />
-      <Metric label="Senza prossima attività" value={missingNextStep} text="Opportunità aperte prive di una prossima attività pianificata." to={period.withPeriod(`${config.basePath}/pipeline`, { nextStep: "missing" })} />
-      <Metric label="Preventivi in attesa" value={quotes} text="Opportunità nelle fasi offerta, negoziazione, approvazione o attesa ordine." to={period.withPeriod(`${config.basePath}/opportunita`, { view: "list" })} />
-      <Metric label="Campioni in attesa" value={samples} text="Opportunità attualmente nella fase di campionatura." to={period.withPeriod(`${config.basePath}/sviluppi`)} />
-      <Metric label="Opportunità ferme" value={stalled} text="Opportunità che superano la soglia di permanenza configurata per la fase." to={period.withPeriod(`${config.basePath}/pipeline`)} />
-      <Metric label="Chiusure previste" value={expected} text="Opportunità aperte con chiusura prevista nel periodo selezionato." to={period.withPeriod(`${config.basePath}/opportunita`, { view: "list" })} />
-      <Metric label="Progetti collegati" value={data.projectCount} text="Opportunità Conto Terzi collegate a un progetto Workspace, senza duplicare il progetto." to={period.withPeriod(`${config.basePath}/progetti`)} />
-    </div>}
-    <section className="panel crm-panel crm-workflow-explainer"><h3>Flusso Conto Terzi</h3><div><span>Prospect</span><i>→</i><span>Opportunità</span><i>→</i><span>Brief</span><i>→</i><span>Valutazione tecnica</span><i>→</i><span>Campionatura</span><i>→</i><span>Offerta</span><i>→</i><span>Progetto Workspace</span></div><p>Account, opportunità, attività, progetto e ordine restano oggetti distinti ma collegati.</p></section>
-  </div>;
 }
 
 export function CrmDevelopmentsPage() {

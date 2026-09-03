@@ -12,9 +12,9 @@ const departmentModulesMigration = read("supabase/migrations/20260902150000_dire
 const moduleConfig = read("src/config/workspaceModules.js");
 const privateDocuments = read("server/private-documents.js");
 
-test("un modulo contenitore con schermata esatta non riceve una seconda testata", () => {
+test("un modulo contenitore con schermata esatta usa la testata Workspace della schermata", () => {
   assert.match(layout, /exactModule\?\.tipo === "contenitore"/);
-  assert.doesNotMatch(layout, /exactModule\?\.tipo === "contenitore" && !exactScreen/);
+  assert.match(layout, /exactModule\?\.tipo === "contenitore" && !exactScreen/);
 });
 
 test("Documenti Direct è protetto dalla route e assegnabile ai reparti", () => {

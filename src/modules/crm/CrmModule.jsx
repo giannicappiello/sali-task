@@ -24,7 +24,7 @@ import { crmTypeConfig, formatDate, formatMoney } from "./crmConfig";
 import { loadAllRpcRows } from "./crmDataset";
 import { CRM_ROUTE_ALIASES, CRM_ROUTE_CATALOG, selectAuthorizedCrmModules } from "./crmRouteCatalog";
 import { crmNavigation } from "./crmNavigation";
-import { CrmB2BFollowUpPage, CrmB2BReordersPage, CrmBeautyDaysPage, CrmDevelopmentsPage, CrmPrivateDashboard, CrmProjectsPage } from "./CrmWorkflowPages";
+import { CrmB2BFollowUpPage, CrmB2BReordersPage, CrmBeautyDaysPage, CrmDevelopmentsPage, CrmProjectsPage } from "./CrmWorkflowPages";
 import "./crm.css";
 import "./workspace-alignment.css";
 
@@ -682,7 +682,7 @@ function renderCrmView(route) {
   switch (route.view) {
     case "overview": return <CrmOverview />;
     case "direct-overview": return <CrmDirectOverview />;
-    case "dashboard": return route.type === "conto_terzi" ? <CrmPrivateDashboard /> : <CrmDashboard type={route.type} />;
+    case "dashboard": return <CrmDashboard type={route.type} />;
     case "accounts": return <AccountsPage type={route.type} />;
     case "account": return <AccountDetail type={route.type} />;
     case "pipeline": return <Pipeline type={route.type} />;

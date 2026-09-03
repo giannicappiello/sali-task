@@ -73,9 +73,10 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
   const presentation = useMemo(() => {
     const pathname = location.pathname.replace(/\/$/, "") || "/";
     const exactModule = catalog.modules.find((module) => (module.percorso || "").replace(/\/$/, "") === pathname);
+    const exactScreen = catalog.screens.find((screen) => (screen.percorso || "").replace(/\/$/, "") === pathname);
     const isContainer = BUILT_IN_CONTAINER_PATHS.has(pathname)
       || isDynamicContainerPath(pathname)
-      || (exactModule?.tipo === "contenitore" && !isOrdersPath(pathname));
+      || (exactModule?.tipo === "contenitore" && !exactScreen && !isOrdersPath(pathname));
     if (isContainer) {
       const dynamicMatch = pathname.match(/^\/(menu|moduli)\/([^/]+)$/);
       const staticTarget = CONTAINER_TARGETS[pathname];
@@ -87,7 +88,7 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
       };
     }
 
-    const screen = catalog.screens
+    const screen = exactScreen || catalog.screens
       .filter((item) => item.percorso && (pathname === item.percorso || pathname.startsWith(`${item.percorso}/`)))
       .toSorted((left, right) => right.percorso.length - left.percorso.length)[0];
     const parentModules = screen

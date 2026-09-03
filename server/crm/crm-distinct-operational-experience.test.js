@@ -39,9 +39,10 @@ test("le esperienze operative hanno schermate Workspace dedicate", () => {
   assert.doesNotMatch(screenCatalogMigration, /\b(update|delete|truncate)\b\s+public\.(crm_|v4_)/i);
 });
 
-test("dashboard PRIVATE rappresenta il ciclo prodotto-progetto", () => {
-  for (const label of ["Pipeline ponderata", "Senza prossima attività", "Preventivi in attesa", "Campioni in attesa", "Opportunità ferme", "Chiusure previste", "Progetti collegati"]) assert.match(pages, new RegExp(label));
-  assert.match(pages, /Prospect[\s\S]*Opportunità[\s\S]*Brief[\s\S]*Valutazione tecnica[\s\S]*Campionatura[\s\S]*Offerta[\s\S]*Progetto Workspace/);
+test("dashboard PRIVATE ripristina i KPI completi senza la card di flusso", () => {
+  assert.match(crmModule, /case "dashboard": return <CrmDashboard type=\{route\.type\} \/>/);
+  for (const label of ["Clienti totali", "Clienti CRM attivi", "Clienti CRM non attivi", "Fatturato", "Ordinato", "Valore medio ordine", "Opportunità aperte", "Pipeline ponderata"]) assert.match(crmModule, new RegExp(label));
+  assert.doesNotMatch(pages, /Flusso Conto Terzi/);
 });
 
 test("scheda opportunità PRIVATE crea un brief tecnico sul core esistente", () => {

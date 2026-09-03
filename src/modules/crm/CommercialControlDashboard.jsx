@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { AlertTriangle, RefreshCw } from "lucide-react";
+import { AlertTriangle, BriefcaseBusiness, RefreshCw } from "lucide-react";
 import InfoTooltip from "../../components/InfoTooltip";
+import ModuleContainerLayout from "../../components/ModuleContainerLayout";
 import { supabase } from "../../lib/supabaseClient";
 import CrmPeriodFilter, { useCrmPeriod } from "./CrmPeriodFilter";
 import { CrmPageHeader, CrmSectionNav } from "./CrmWorkspaceUI";
@@ -289,5 +290,18 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
   </section>;
 
   if (embedded) return dashboard;
+  if (scope === "private") return <ModuleContainerLayout
+    icon={BriefcaseBusiness}
+    eyebrow="CRM PRIVATE"
+    title={config.title}
+    description={config.description}
+    backFallback="/crm"
+    backLabel="CRM Overview"
+  >
+    <div className="crm-page crm-control-page">
+      {nav.length ? <div className="panel crm-control-navigation"><CrmSectionNav items={nav} period={period} label="Navigazione CRM PRIVATE" /></div> : null}
+      {dashboard}
+    </div>
+  </ModuleContainerLayout>;
   return <div className="crm-page"><CrmPageHeader eyebrow={config.eyebrow} title={config.title} description={config.description}>{nav.length ? <CrmSectionNav items={nav} period={period} label={`Navigazione ${scope}`} /> : null}</CrmPageHeader>{dashboard}</div>;
 }

@@ -5,6 +5,8 @@ import { CRM_ROUTE_CATALOG } from "../../src/modules/crm/crmRouteCatalog.js";
 
 const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
 const crm = read("src/modules/crm/CrmModule.jsx");
+const commercialControl = read("src/modules/crm/CommercialControlDashboard.jsx");
+const commercialControlCss = read("src/modules/crm/commercial-control-dashboard.css");
 const digital = read("src/modules/crm/DigitalCommerce.jsx");
 const ai = read("src/modules/crm/CrmAIBrief.jsx");
 const settings = read("src/pages/Settings/DigitalConnectionsSettings.jsx");
@@ -62,4 +64,13 @@ test("la Panoramica include la dashboard globale clienti senza introdurre una nu
   assert.match(crm, /\/journey/);
   assert.doesNotMatch(crm, /basePath}\/creator`/);
   assert.doesNotMatch(crm, /basePath}\/customer-journey`/);
+});
+
+test("CRM PRIVATE usa la testata unica e la griglia responsive standard Workspace", () => {
+  assert.match(commercialControl, /scope === "private"/);
+  assert.match(commercialControl, /<ModuleContainerLayout/);
+  assert.match(commercialControl, /backLabel="CRM Overview"/);
+  assert.match(commercialControl, /className="panel crm-control-navigation"/);
+  assert.match(commercialControlCss, /\.scope-private \.crm-control-kpis\{grid-template-columns:repeat\(4/);
+  assert.match(commercialControlCss, /@media\(max-width:560px\)\{\.scope-private \.crm-control-kpis\{grid-template-columns:1fr/);
 });

@@ -16,7 +16,7 @@ test("il Workbench mantiene corpo, filtri e aggiornamento entro la testata", asy
   assert.match(css, /\.rdp-oct-line \{[^}]*minmax\(185px,1\.2fr\)/);
 });
 
-test("i fabbisogni mostrano nota e comandi in linea con tabella compatta e scrollbar", async () => {
+test("i fabbisogni usano ricerca totale, azioni PF in linea e tabella compatta", async () => {
   const [source, css] = await Promise.all([
     readFile(new URL("./PurchaseRequirements.jsx", import.meta.url), "utf8"),
     readFile(new URL("./production.css", import.meta.url), "utf8"),
@@ -25,7 +25,11 @@ test("i fabbisogni mostrano nota e comandi in linea con tabella compatta e scrol
   assert.match(source, /className="purchase-command-row"/);
   assert.match(source, /purchase-material-column/);
   assert.match(source, /purchase-status-column/);
-  assert.match(css, /\.purchase-table-wrap\{[^}]*overflow-x:scroll[^}]*scrollbar-gutter:stable/);
-  assert.match(css, /\.purchase-table-wrap table\{[^}]*table-layout:fixed[^}]*font-size:\.75rem/);
+  assert.match(source, /data-column-controls="off"/);
+  assert.match(source, /Ricerca rapida totale/);
+  assert.match(source, /Genera PF da selezionati/);
+  assert.match(source, /Genera PF automatico/);
+  assert.match(css, /\.purchase-table-wrap table\{[^}]*min-width:1145px[^}]*font-size:\.69rem/);
+  assert.match(css, /\.purchase-month-actions>select\{[^}]*max-width:220px/);
   assert.match(css, /\.purchase-command-row \.purchase-calculation-note\{[^}]*font-size:\.76rem/);
 });

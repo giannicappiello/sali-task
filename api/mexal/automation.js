@@ -37,7 +37,7 @@ import { productionGoLiveGates } from "../../server/workspace-production-gates.j
 import { effectiveWorkspaceDiagnostics } from "../../server/workspace-effective-diagnostics.js";
 import { confirmWorkspaceV4, createWorkspaceV4Preview } from "../../server/workspacemes-v4-api.js";
 import { createWorkspaceV4PurchaseDocument, listWorkspaceV4Purchasing } from "../../server/workspacemes-v4-purchasing.js";
-import { calculateWorkspaceV4PurchaseRequirements, executeWorkspaceV4PurchasingAction, readWorkspaceV4PurchasingSource } from "../../server/workspacemes-v4-purchasing-mes.js";
+import { automaticPfLines, calculateWorkspaceV4PurchaseRequirements, executeWorkspaceV4PurchasingAction, readWorkspaceV4PurchasingSource } from "../../server/workspacemes-v4-purchasing-mes.js";
 import { generateSaliDiIschiaProposal, listSaliDiIschiaProposals } from "../../server/sali-di-ischia-proposal.js";
 import { privateDocumentsSession, syncPrivateDocuments } from "../../server/private-documents.js";
 import { handleMesHeadingResolve } from "../../server/company-letterheads-mes-api.js";
@@ -749,6 +749,16 @@ export default async function handler(req, res) {
             actor: `workspace:${admin.authUserId || "service"}`,
           });
           return sendSuccess(res, 200, result);
+        }
+        if (action === "GENERATE_PF_AUTOMATIC") {
+          const generatedAt = new Date().toISOString();
+          const horizonDays = 60;
+          const source = await readWorkspaceV4PurchasingSource();
+          const lines = automaticPfLines(calculateWorkspaceV4PurchaseRequirements(source), { generatedAt, horizonDays });
+          if (!lines.length) return sendSuccess(res, 200, { message: "Nessun nuovo PF da generare nei prossimi 60 giorni." });
+          return sendSuccess(res, 200, await executeWorkspaceV4PurchasingAction({
+            action, generatedAt, horizonDays, lines, ignoreDuplicates: true,
+          }));
         }
         return sendSuccess(res, 200, await executeWorkspaceV4PurchasingAction({
           action, supplierId: body.supplierId || null, month: body.month || null,

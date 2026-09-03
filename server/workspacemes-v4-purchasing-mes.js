@@ -52,6 +52,27 @@ export async function executeWorkspaceV4PurchasingAction(command, options = {}) 
   return parse(response);
 }
 
+export function automaticPfLines(requirements, options = {}) {
+  const generatedAt = new Date(options.generatedAt || Date.now());
+  const horizonDays = Number.isFinite(Number(options.horizonDays)) ? Number(options.horizonDays) : 60;
+  if (Number.isNaN(generatedAt.getTime()) || horizonDays < 1) return [];
+  const start = Date.UTC(generatedAt.getUTCFullYear(), generatedAt.getUTCMonth(), generatedAt.getUTCDate());
+  const end = start + horizonDays * 86_400_000;
+  const seen = new Set();
+  return (requirements || []).filter((row) => {
+    const required = day(row.requiredAt);
+    const key = `${Number(row.articleId)}:${monthKey(row.requiredAt)}`;
+    if (!Number.isFinite(required) || required < start || required > end || number(row.quantityToOrder) <= 0) return false;
+    if (clean(row.pfDocuments) || number(row.pfQuantity) > 0 || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).map((row) => ({
+    articleId: Number(row.articleId),
+    quantity: number(row.quantityToOrder),
+    requiredAt: row.requiredAt,
+  }));
+}
+
 const number = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
 const monthKey = (value) => {
   const date = new Date(value);

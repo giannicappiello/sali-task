@@ -70,6 +70,7 @@ export default function CustomerClassificationPanel() {
   const [search, setSearch] = useState(() => searchParams.get("classification_search") || "");
   const [macro, setMacro] = useState(() => searchParams.get("classification_macro") || "");
   const [area, setArea] = useState(() => searchParams.get("classification_area") || "");
+  const [salesMetric, setSalesMetric] = useState(() => searchParams.get("classification_sales") || "");
   const [customerStatus, setCustomerStatus] = useCrmCustomerStatus("all");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -78,7 +79,12 @@ export default function CustomerClassificationPanel() {
   const loadingRef = useRef(false);
   const resetPage = useResetPageCallback(setPage);
   const [tableRef, tableQuery] = useDatasetTableControls({ onQueryChange: resetPage });
-  const { pageRows, total } = usePaginatedDataset(rows, CLASSIFICATION_COLUMNS, tableQuery, page, PAGE_SIZE);
+  const metricRows = useMemo(() => rows.filter((row) => !salesMetric
+    || (salesMetric === "invoiced" && Number(row.invoice_net || 0) !== 0)
+    || (salesMetric === "ordered" && Number(row.order_net || 0) !== 0)
+    || (salesMetric === "invoice-pieces" && Number(row.invoice_pieces || 0) !== 0)
+    || (salesMetric === "order-pieces" && Number(row.order_pieces || 0) !== 0)), [rows, salesMetric]);
+  const { pageRows, total } = usePaginatedDataset(metricRows, CLASSIFICATION_COLUMNS, tableQuery, page, PAGE_SIZE);
 
   const load = useCallback(async (silent = false) => {
     if (!isAdminUser || loadingRef.current) return;
@@ -123,16 +129,21 @@ export default function CustomerClassificationPanel() {
   useEffect(() => {
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
-      const values = { classification_search: search, classification_macro: macro, classification_area: area, classification_page: page ? String(page) : "" };
+      const values = { classification_search: search, classification_macro: macro, classification_area: area, classification_sales: salesMetric, classification_page: page ? String(page) : "" };
       Object.entries(values).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key));
       return next;
     }, { replace: true });
-  }, [area, macro, page, search, setSearchParams]);
+  }, [area, macro, page, salesMetric, search, setSearchParams]);
 
   useEffect(() => { const timer = window.setTimeout(() => void load(), 180); return () => window.clearTimeout(timer); }, [load]);
 
   const distribution = useMemo(() => AREA_OPTIONS.map(([value, label], index) => ({ key: index === 0 ? "private" : value, label, count: rows.filter((row) => row.area_crm === value).length })), [rows]);
   const salesTotals = sales.totals || {};
+  const openSalesMetric = (metric) => {
+    setSalesMetric(metric);
+    setPage(0);
+    window.requestAnimationFrame(() => document.getElementById("crm-classification-customers")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
   if (!isAdminUser) return null;
 
   return <section className="crm-panel crm-classification" aria-labelledby="crm-classification-title">
@@ -142,18 +153,18 @@ export default function CustomerClassificationPanel() {
     <section className="crm-commercial-dashboard" aria-labelledby="crm-commercial-title">
       <div className="crm-toolbar crm-commercial-heading"><div><span className="crm-eyebrow">Vendite globali</span><h2 id="crm-commercial-title">Fatturato e ordinato per prodotto</h2><p>Fatturato dalle fatture Mexal; ordinato dagli ordini Workspace. Importi e pezzi restano distinti.</p></div><CrmPeriodFilter period={period} compact /></div>
       <div className="crm-commercial-kpis">
-        <article className="kpi-card"><span>Fatturato<InfoTooltip label="Fatturato" text="Somma degli imponibili delle fatture Mexal nel periodo e nei filtri correnti." /></span><strong>{formatMoney(salesTotals.invoice_total)}</strong><p>{Number(salesTotals.invoice_count || 0).toLocaleString("it-IT")} fatture Mexal</p></article>
-        <article className="kpi-card"><span>Ordinato<InfoTooltip label="Ordinato" text="Somma del valore degli ordini Workspace nel periodo e nei filtri correnti." /></span><strong>{formatMoney(salesTotals.order_total)}</strong><p>ordini Workspace</p></article>
-        <article className="kpi-card"><span>Numero ordini<InfoTooltip label="Numero ordini" text="Conteggio degli ordini distinti compresi nel periodo e nei filtri correnti." /></span><strong>{Number(salesTotals.order_count || 0).toLocaleString("it-IT")}</strong><p>nel periodo selezionato</p></article>
-        <article className="kpi-card"><span>Pezzi fatturati<InfoTooltip label="Pezzi fatturati" text="Somma delle quantità presenti nelle righe delle fatture Mexal filtrate." /></span><strong>{formatPieces(salesTotals.invoice_pieces)}</strong><p>righe fattura Mexal</p></article>
-        <article className="kpi-card"><span>Pezzi ordinati<InfoTooltip label="Pezzi ordinati" text="Somma delle quantità presenti nelle righe degli ordini Workspace filtrati." /></span><strong>{formatPieces(salesTotals.order_pieces)}</strong><p>righe ordine Workspace</p></article>
+        <button type="button" className="kpi-card" onClick={() => openSalesMetric("invoiced")}><span>Fatturato<InfoTooltip label="Fatturato" text="Somma degli imponibili delle fatture Mexal nel periodo e nei filtri correnti." /></span><strong>{formatMoney(salesTotals.invoice_total)}</strong><p>{Number(salesTotals.invoice_count || 0).toLocaleString("it-IT")} fatture Mexal</p></button>
+        <button type="button" className="kpi-card" onClick={() => openSalesMetric("ordered")}><span>Ordinato<InfoTooltip label="Ordinato" text="Somma del valore degli ordini Workspace nel periodo e nei filtri correnti." /></span><strong>{formatMoney(salesTotals.order_total)}</strong><p>ordini Workspace</p></button>
+        <button type="button" className="kpi-card" onClick={() => openSalesMetric("ordered")}><span>Numero ordini<InfoTooltip label="Numero ordini" text="Conteggio degli ordini distinti compresi nel periodo e nei filtri correnti." /></span><strong>{Number(salesTotals.order_count || 0).toLocaleString("it-IT")}</strong><p>nel periodo selezionato</p></button>
+        <button type="button" className="kpi-card" onClick={() => openSalesMetric("invoice-pieces")}><span>Pezzi fatturati<InfoTooltip label="Pezzi fatturati" text="Somma delle quantità presenti nelle righe delle fatture Mexal filtrate." /></span><strong>{formatPieces(salesTotals.invoice_pieces)}</strong><p>righe fattura Mexal</p></button>
+        <button type="button" className="kpi-card" onClick={() => openSalesMetric("order-pieces")}><span>Pezzi ordinati<InfoTooltip label="Pezzi ordinati" text="Somma delle quantità presenti nelle righe degli ordini Workspace filtrati." /></span><strong>{formatPieces(salesTotals.order_pieces)}</strong><p>righe ordine Workspace</p></button>
       </div>
       <div className="crm-sales-charts">
         <SalesDistributionChart title="Distribuzione per categoria" description="Prime 12 categorie per valore commerciale." rows={sales.categories || []} />
         <SalesDistributionChart title="Distribuzione per sottocategoria" description="Prime 16 sottocategorie per valore commerciale." rows={sales.subcategories || []} showCategory />
       </div>
     </section>
-    <div className="crm-filters crm-classification-filters">
+    <div className="crm-filters crm-classification-filters" id="crm-classification-customers">
       <label><Search size={17} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0); }} placeholder="Codice cliente o ragione sociale" /></label>
       <select aria-label="Filtra blocco CRM" value={macro} onChange={(event) => { setMacro(event.target.value); setArea(""); setPage(0); }}><option value="">PRIVATE e DIRECT</option><option value="private">PRIVATE</option><option value="direct">DIRECT</option></select>
       <select aria-label="Filtra canale CRM" value={area} onChange={(event) => { setArea(event.target.value); setMacro(event.target.value === "conto_terzi" ? "private" : event.target.value ? "direct" : ""); setPage(0); }}><option value="">Tutti i canali</option>{AREA_OPTIONS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>

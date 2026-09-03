@@ -51,7 +51,7 @@ export function CrmProjectsPage() {
 
 function B2BCustomerActionPage({ mode }) {
   const type = "b2b"; const period = useCrmPeriod(); const [params, setParams] = useSearchParams();
-  const [rows, setRows] = useState([]); const [error, setError] = useState(""); const search = params.get("customerSearch") || "";
+  const [rows, setRows] = useState([]); const [error, setError] = useState(""); const search = params.get("customerSearch") || ""; const segment = params.get("segment") || "";
   const load = useCallback(async () => {
     const result = await supabase.rpc("crm_b2b_customer_worklist");
     if (result.error) setError(result.error.message); else { setRows(result.data || []); setError(""); }
@@ -59,9 +59,9 @@ function B2BCustomerActionPage({ mode }) {
   useEffect(() => { const timer = window.setTimeout(() => void load(), 150); return () => window.clearTimeout(timer); }, [load]);
   const visible = useMemo(() => rows.filter((row) => {
     const matchesSearch = !search || `${row.ragione_sociale} ${row.codice_cliente}`.toLowerCase().includes(search.toLowerCase());
-    const matchesMode = mode === "reorders" ? Number(row.numero_ordini || 0) > 0 : ["a_rischio", "dormiente", "perso"].includes(row.classificazione);
-    return matchesSearch && matchesMode;
-  }), [mode, rows, search]);
+    const matchesMode = segment ? true : mode === "reorders" ? Number(row.numero_ordini || 0) > 0 : ["a_rischio", "dormiente", "perso"].includes(row.classificazione);
+    return matchesSearch && matchesMode && (!segment || row.classificazione === segment);
+  }), [mode, rows, search, segment]);
   const title = mode === "reorders" ? "Riordini e opportunità commerciali" : "Clienti da seguire";
   const description = mode === "reorders" ? "Clienti acquisiti ordinati per ultimo acquisto, frequenza e valore: fuori dalla pipeline prospect, dentro il ciclo di sviluppo." : "Priorità commerciali derivate dall’assenza di attività nel periodo, senza modificare lo stato CRM del cliente.";
   return <div className="crm-page"><CrmPageHeader eyebrow="CRM DIRECT · BtoB" title={title} description={description} actions={<CrmPeriodFilter period={period} compact />}><CrmSectionNav items={crmNavigation(type)} period={period} label="Navigazione CRM B2B" /></CrmPageHeader><ErrorMessage error={error} /><div className="crm-filters"><label><Search size={16} /><input value={search} onChange={(event) => setParams((current) => { const next = new URLSearchParams(current); if (event.target.value) next.set("customerSearch", event.target.value); else next.delete("customerSearch"); return next; }, { replace: true })} placeholder="Cerca cliente o codice" /></label></div><div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Cliente</th><th>Codice</th><th>Segmento dinamico</th><th>Ultimo ordine</th><th>Ordini storici</th><th>Valore storico</th><th>Frequenza</th><th>Riordino atteso</th></tr></thead><tbody>{visible.map((row) => <tr key={row.codice_cliente}><td><CrmCustomerLink crmType={type} customerCode={row.codice_cliente} name={row.ragione_sociale} period={period}>{row.ragione_sociale}</CrmCustomerLink></td><td>{row.codice_cliente}</td><td><span className="status-badge">{row.classificazione.replaceAll("_", " ")}</span></td><td>{formatDate(row.ultimo_ordine_il)}{row.giorni_da_ultimo_ordine != null ? <small>{row.giorni_da_ultimo_ordine} giorni fa</small> : null}</td><td>{row.numero_ordini || 0}</td><td>{formatMoney(row.valore_ordini)}</td><td>{row.frequenza_media_giorni ? `${row.frequenza_media_giorni} gg` : "Non disponibile"}</td><td>{formatDate(row.riordino_atteso_il)}</td></tr>)}</tbody></table>{!visible.length ? <div className="crm-empty">Nessun cliente corrisponde ai filtri.</div> : null}</div></div>;

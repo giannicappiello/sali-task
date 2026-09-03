@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, Navigate, Route, Routes, useParams, useSearchParams } from "react-router-dom";
-import { Bot, BriefcaseBusiness, Network, Plus, Search, ShoppingBag, Store } from "lucide-react";
+import { Bot, BriefcaseBusiness, Plus, Search, ShoppingBag, Store } from "lucide-react";
 import WorkspaceAccessGuard from "../../components/WorkspaceAccessGuard";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
 import InfoTooltip from "../../components/InfoTooltip";
@@ -120,7 +120,25 @@ function CrmDirectOverview() {
     { code: "crm_b2b", name: "BtoB", description: "Clienti DIRECT con nome_ricerca_cf BtoB.", to: "/crm/b2b", icon: Store },
     { code: "crm_online", name: "BtoC / Online", description: "Clienti DIRECT con nome_ricerca_cf BtoC.", to: "/crm/online", icon: ShoppingBag },
   ].filter((item) => hasModuleAccess(item.code));
-  return <ModuleContainerLayout icon={Network} eyebrow="CRM DIRECT" title="Clienti DIRECT" description="I clienti DIRECT sono separati automaticamente nei canali BtoB e BtoC usando il valore Mexal nome_ricerca_cf." items={items} emptyTitle="Nessun canale DIRECT disponibile" emptyDescription="L’amministratore può assegnare i moduli CRM BtoB e Online dal catalogo Workspace."><CommercialControlDashboard scope="direct" embedded /></ModuleContainerLayout>;
+  return <div className="crm-page crm-direct-page">
+    {items.length ? <div className="crm-direct-area-grid" aria-label="Canali CRM DIRECT">{items.map((item) => {
+      const Icon = item.icon;
+      return <Link className="panel crm-direct-area-card" key={item.code} to={item.to}>
+        <span className="crm-direct-area-icon"><Icon size={24} /></span>
+        <span><strong>{item.name}</strong><small>{item.description}</small></span>
+        <em>Apri area →</em>
+      </Link>;
+    })}</div> : <div className="crm-empty"><strong>Nessun canale DIRECT disponibile.</strong><p>L’amministratore può assegnare i moduli CRM BtoB e Online dal catalogo Workspace.</p></div>}
+    <CommercialControlDashboard scope="direct" embedded />
+  </div>;
+}
+
+function CrmPrivateDashboard() {
+  const period = useCrmPeriod();
+  return <div className="crm-page crm-control-page">
+    <div className="panel crm-control-navigation"><CrmSectionNav items={crmNavigation("conto_terzi")} period={period} label="Navigazione CRM PRIVATE" /></div>
+    <CommercialControlDashboard scope="private" embedded />
+  </div>;
 }
 
 const CRM_KPI_INFO = {
@@ -450,9 +468,9 @@ function AccountDetail({ type }) {
     {(account.crm_account_id || account.codice_cliente_mexal) ? <div className="crm-kpi-grid crm-account-operational-kpis">
       <Kpi label="Opportunità aperte" value={Number(commercialSnapshot.opportunities?.open_count || 0).toLocaleString("it-IT")} note={formatMoney(commercialSnapshot.opportunities?.pipeline_value)} to={period.withPeriod(`${config.basePath}/pipeline`, { status: "open" })} />
       <Kpi label="Valore ponderato" value={formatMoney(commercialSnapshot.opportunities?.weighted_value)} note="Pipeline del cliente" to={period.withPeriod(`${config.basePath}/pipeline`, { status: "open" })} />
-      <Kpi label="Follow-up scaduti" value={Number(commercialSnapshot.activities?.overdue_count || 0).toLocaleString("it-IT")} note={commercialSnapshot.activities?.next_at ? `Prossimo ${formatDate(commercialSnapshot.activities.next_at)}` : "Prossimo passo mancante"} />
+      <Kpi label="Follow-up scaduti" value={Number(commercialSnapshot.activities?.overdue_count || 0).toLocaleString("it-IT")} note={commercialSnapshot.activities?.next_at ? `Prossimo ${formatDate(commercialSnapshot.activities.next_at)}` : "Prossimo passo mancante"} to={period.withPeriod(`${config.basePath}/attivita`, { activityStatus: "open", activitySearch: account.nome })} />
       {type === "conto_terzi" ? <><Kpi label="Progetti attivi" value={related.projectCount} note="Progetti Workspace collegati" to={period.withPeriod(`${config.basePath}/progetti`)} /><Kpi label="Campioni" value={related.activities.filter((item) => ["campionatura", "invio_campioni"].includes(item.tipo)).length} note="Attività registrate" to={period.withPeriod(`${config.basePath}/sviluppi`)} /><Kpi label="Preventivi" value={related.activities.filter((item) => item.tipo === "preventivo").length} note="Attività registrate" to={period.withPeriod(`${config.basePath}/sviluppi`, { developmentType: "preventivo" })} /></> : null}
-      {type === "b2b" ? <><Kpi label="Frequenza media ordini" value={commercialSnapshot.orders?.average_days ? `${commercialSnapshot.orders.average_days} gg` : "Non disponibile"} note={`${commercialSnapshot.orders?.lifetime_count || 0} ordini storici`} /><Kpi label="Prossimo riordino atteso" value={formatDate(commercialSnapshot.b2b?.expected_reorder_date)} note={(commercialSnapshot.b2b?.classification || "prospect").replaceAll("_", " ")} /></> : null}
+      {type === "b2b" ? <><Kpi label="Frequenza media ordini" value={commercialSnapshot.orders?.average_days ? `${commercialSnapshot.orders.average_days} gg` : "Non disponibile"} note={`${commercialSnapshot.orders?.lifetime_count || 0} ordini storici`} to={period.withPeriod(`${config.basePath}/riordini`, { customerSearch: account.nome })} /><Kpi label="Prossimo riordino atteso" value={formatDate(commercialSnapshot.b2b?.expected_reorder_date)} note={(commercialSnapshot.b2b?.classification || "prospect").replaceAll("_", " ")} to={period.withPeriod(`${config.basePath}/riordini`, { customerSearch: account.nome })} /></> : null}
     </div> : null}
     <div className="crm-tabs">
       <CrmExpandableCard title="Timeline e attività" preview={<>{related.activities[0]?.titolo || "Nessuna attività registrata"}<br />{related.activities[1]?.titolo || (type === "conto_terzi" ? "Campioni, formule, preventivi e follow-up" : "Telefonate, visite e follow-up")}</>}>{canWrite ? <form className="crm-inline-form" onSubmit={addActivity}><select aria-label="Tipo attività" value={activity.tipo} onChange={(e) => setActivity({ ...activity, tipo: e.target.value })}>{["telefonata","email","visita","videocall","presentazione","formazione","campionatura","sviluppo_formula","preventivo","follow_up"].map((value) => <option key={value} value={value}>{value.replaceAll("_", " ")}</option>)}</select><input required placeholder="Titolo attività" value={activity.titolo} onChange={(e) => setActivity({ ...activity, titolo: e.target.value })} /><input aria-label="Data attività" type="datetime-local" value={activity.data_attivita} onChange={(e) => setActivity({ ...activity, data_attivita: e.target.value })} /><button className="primary-action crm-primary"><Plus size={16} />Aggiungi</button></form> : null}<ul className="crm-timeline">{related.activities.map((item) => <li key={item.id}><strong>{item.titolo}</strong><span>{item.tipo.replaceAll("_", " ")} · {formatDate(item.data_attivita)}</span></li>)}</ul>{!related.activities.length ? <p>Nessuna attività disponibile.</p> : null}</CrmExpandableCard>
@@ -484,6 +502,7 @@ function Pipeline({ type, forceList = false }) {
   const overdueFilter = period.getParam("overdue") === "1";
   const followupFilter = period.getParam("followup") === "overdue";
   const openFilter = period.getParam("status") === "open";
+  const outcomeFilter = period.getParam("outcome") || "";
   const nextStepFilter = pipelineParams.get("nextStep") || "all";
   const updatePipelineParam = useCallback((name, value) => {
     setPipelineParams((current) => {
@@ -570,6 +589,10 @@ function Pipeline({ type, forceList = false }) {
   const visibleItems = statusVisibleItems.filter((item) => {
     const next = nextActivity(item);
     const matchesOpen = !openFilter || !item.crm_opportunity_stages?.finale;
+    const matchesOutcome = !outcomeFilter
+      || (outcomeFilter === "closed" && item.crm_opportunity_stages?.finale)
+      || (outcomeFilter === "won" && item.crm_opportunity_stages?.finale && item.crm_opportunity_stages?.vinta)
+      || (outcomeFilter === "lost" && item.crm_opportunity_stages?.finale && !item.crm_opportunity_stages?.vinta);
     const matchesOverdue = !overdueFilter || (!item.crm_opportunity_stages?.finale && item.chiusura_prevista && new Date(item.chiusura_prevista).getTime() < now);
     const matchesFollowup = !followupFilter || (next && new Date(next.data_attivita).getTime() < now);
     const nextAt = next?.data_attivita ? new Date(next.data_attivita).getTime() : null;
@@ -577,7 +600,7 @@ function Pipeline({ type, forceList = false }) {
       || (nextStepFilter === "missing" && !next)
       || (nextStepFilter === "overdue" && nextAt !== null && nextAt < now)
       || (nextStepFilter === "upcoming" && nextAt !== null && nextAt >= now);
-    return (!stageFilter || item.stage_id === stageFilter) && (!search || `${item.titolo} ${item.crm_accounts?.nome}`.toLowerCase().includes(search.toLowerCase())) && matchesOpen && matchesOverdue && matchesFollowup && matchesNextStep;
+    return (!stageFilter || item.stage_id === stageFilter) && (!search || `${item.titolo} ${item.crm_accounts?.nome}`.toLowerCase().includes(search.toLowerCase())) && matchesOpen && matchesOutcome && matchesOverdue && matchesFollowup && matchesNextStep;
   });
   function stageAge(item) {
     const changes = item.crm_opportunity_stage_history || [];
@@ -682,7 +705,7 @@ function renderCrmView(route) {
   switch (route.view) {
     case "overview": return <CrmOverview />;
     case "direct-overview": return <CrmDirectOverview />;
-    case "dashboard": return <CrmDashboard type={route.type} />;
+    case "dashboard": return route.type === "conto_terzi" ? <CrmPrivateDashboard /> : <CrmDashboard type={route.type} />;
     case "accounts": return <AccountsPage type={route.type} />;
     case "account": return <AccountDetail type={route.type} />;
     case "pipeline": return <Pipeline type={route.type} />;

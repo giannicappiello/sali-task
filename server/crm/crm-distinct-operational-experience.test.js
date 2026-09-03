@@ -40,7 +40,7 @@ test("le esperienze operative hanno schermate Workspace dedicate", () => {
 });
 
 test("dashboard PRIVATE ripristina i KPI completi senza la card di flusso", () => {
-  assert.match(crmModule, /case "dashboard": return <CrmDashboard type=\{route\.type\} \/>/);
+  assert.match(crmModule, /case "dashboard": return route\.type === "conto_terzi" \? <CrmPrivateDashboard \/> : <CrmDashboard type=\{route\.type\} \/>/);
   for (const label of ["Clienti totali", "Clienti CRM attivi", "Clienti CRM non attivi", "Fatturato", "Ordinato", "Valore medio ordine", "Opportunità aperte", "Pipeline ponderata"]) assert.match(crmModule, new RegExp(label));
   assert.doesNotMatch(pages, /Flusso Conto Terzi/);
 });

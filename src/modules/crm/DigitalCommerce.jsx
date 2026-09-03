@@ -113,14 +113,14 @@ export function DigitalDashboard({ analytics = false }) {
     <div className="crm-digital-filters"><CrmPeriodFilter period={period} compact /><label>Canale<select value={channel} onChange={(event) => setChannel(event.target.value)}><option value="">Tutti gli autorizzati</option>{availableChannels.map((item) => <option key={item.type} value={item.type}>{item.label}</option>)}</select></label><label>Marketplace<select value={marketplace} onChange={(event) => setMarketplace(event.target.value)}><option value="">Tutti</option>{marketplaces.map((item) => <option key={item}>{item}</option>)}</select></label><button type="button" className="secondary-action crm-secondary" onClick={() => void load()}><RefreshCw size={16} />Aggiorna</button></div>
     {error ? <div className="crm-message error">{error}</div> : null}
     {loading ? <div className="crm-loading">Calcolo aggregati server-side...</div> : <div className="crm-kpi-grid">
-      <DigitalKpi label="Revenue" value={metricValue(data?.revenue, formatMoney)} status={dataStatus} to={data?.revenue == null ? "" : drilldown("/crm/online/ecommerce", "revenue")} />
-      <DigitalKpi label="Ordini" value={metricValue(data?.orders)} status={dataStatus} to={data?.orders == null ? "" : drilldown("/crm/online/ecommerce", "orders")} />
-      <DigitalKpi label="Clienti identificati" value={metricValue(data?.customers)} status={dataStatus} note="Solo match autorizzati" to={data?.customers == null ? "" : drilldown("/crm/online/clienti", "identified")} />
-      <DigitalKpi label="AOV" value={metricValue(data?.aov, formatMoney)} status={dataStatus} to={data?.aov == null ? "" : drilldown("/crm/online/ecommerce", "aov")} />
-      <DigitalKpi label="Marketing spend" value={metricValue(data?.marketingSpend, formatMoney)} status={data?.marketingSpend == null ? "not_available" : "available"} to={data?.marketingSpend == null ? "" : drilldown("/crm/online/adv", "spend")} />
-      <DigitalKpi label="ROAS" value={metricValue(data?.roas, (value) => `${Number(value).toFixed(2)}×`)} status={data?.roas == null ? "not_available" : "available"} to={data?.roas == null ? "" : drilldown("/crm/online/adv", "roas")} />
-      <DigitalKpi label="LTV" value="Dato non disponibile" status="not_available" note="Richiede storico clienti e ordini del provider reale" />
-      <DigitalKpi label="Conversion rate" value="Dato non disponibile" status="not_available" note="Richiede sessioni e checkout autorizzati" />
+      <DigitalKpi label="Revenue" value={metricValue(data?.revenue, formatMoney)} status={dataStatus} to={drilldown("/crm/online/ecommerce", "revenue")} />
+      <DigitalKpi label="Ordini" value={metricValue(data?.orders)} status={dataStatus} to={drilldown("/crm/online/ecommerce", "orders")} />
+      <DigitalKpi label="Clienti identificati" value={metricValue(data?.customers)} status={dataStatus} note="Solo match autorizzati" to={drilldown("/crm/online/clienti", "identified")} />
+      <DigitalKpi label="AOV" value={metricValue(data?.aov, formatMoney)} status={dataStatus} to={drilldown("/crm/online/ecommerce", "aov")} />
+      <DigitalKpi label="Marketing spend" value={metricValue(data?.marketingSpend, formatMoney)} status={data?.marketingSpend == null ? "not_available" : "available"} to={drilldown("/crm/online/adv", "spend")} />
+      <DigitalKpi label="ROAS" value={metricValue(data?.roas, (value) => `${Number(value).toFixed(2)}×`)} status={data?.roas == null ? "not_available" : "available"} to={drilldown("/crm/online/adv", "roas")} />
+      <DigitalKpi label="LTV" value="Dato non disponibile" status="not_available" note="Richiede storico clienti e ordini del provider reale" to={drilldown("/crm/online/clienti", "ltv")} />
+      <DigitalKpi label="Conversion rate" value="Dato non disponibile" status="not_available" note="Richiede sessioni e checkout autorizzati" to={drilldown("/crm/online/analytics", "conversion")} />
     </div>}
     <section className="panel crm-panel"><h3>Stato fonti</h3><div className="crm-connection-grid">{availableChannels.map((definition) => { const connection = connections.find((item) => item.tipo === definition.type); return <article key={definition.type}><div><strong>{definition.label}</strong><StatusPill status={connectionDataStatus(connection)} /></div><p>{connection?.provider || definition.sourceNeeded}</p><small>{connection?.ultimo_sync_il ? `Ultimo sync ${new Date(connection.ultimo_sync_il).toLocaleString("it-IT")}` : "Nessuna sincronizzazione disponibile"}</small></article>; })}</div></section>
   </div>;

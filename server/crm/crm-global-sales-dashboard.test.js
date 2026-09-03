@@ -31,7 +31,7 @@ test("KPI e grafici distinguono fatturato, ordinato, ordini e pezzi", () => {
 
 test("Globale, PRIVATE e DIRECT sono dashboard distinte con filtri persistenti", () => {
   assert.match(crm, /CommercialControlDashboard scope="global" embedded/);
-  assert.match(crm, /case "dashboard": return <CrmDashboard type=\{route\.type\} \/>/);
+  assert.match(crm, /case "dashboard": return route\.type === "conto_terzi" \? <CrmPrivateDashboard \/> : <CrmDashboard type=\{route\.type\} \/>/);
   assert.match(crm, /crm_dashboard_metrics/);
   assert.match(crm, /CommercialControlDashboard scope="direct" embedded/);
   for (const field of ["business", "market", "country", "agent", "channel", "customer", "granularity", "compare"]) assert.match(dashboard, new RegExp(`setFilter\\("${field}"`));

@@ -212,7 +212,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
   const invoiceDelta = variation(totals.invoice_total, comparison.invoice_total);
   const orderDelta = variation(totals.order_total, comparison.order_total);
   const updated = data?.generated_at ? new Date(data.generated_at).toLocaleString("it-IT") : "—";
-  const nav = scope === "private" ? [["Clienti", "/crm/conto-terzi/clienti"], ["Pipeline", "/crm/conto-terzi/pipeline"], ["Brief", "/crm/conto-terzi/brief"]]
+  const nav = scope === "private" ? [["Clienti", "/crm/conto-terzi/clienti"], ["Pipeline", "/crm/conto-terzi/pipeline"], ["Attività", "/crm/conto-terzi/attivita"], ["Brief", "/crm/conto-terzi/brief"], ["Analisi", "/crm/conto-terzi/analisi"]]
     : scope === "direct" ? [["BtoB", "/crm/b2b"], ["BtoC / Online", "/crm/online"]] : [];
 
   const activateCard = useCallback((target) => {

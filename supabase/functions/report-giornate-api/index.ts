@@ -26,6 +26,7 @@ Deno.serve(async (req) => {
 
     const primary = createClient(primaryUrl, primaryServiceKey, { auth: { persistSession: false } });
     const token = authHeader.slice(7);
+    const scopedPrimary = createClient(primaryUrl, Deno.env.get("SUPABASE_ANON_KEY")!, { auth: { persistSession: false }, global: { headers: { Authorization: authHeader } } });
     const { data: authData, error: authError } = await primary.auth.getUser(token);
     if (authError || !authData.user) return json({ error: "Sessione non valida" }, 401);
 
@@ -44,14 +45,26 @@ Deno.serve(async (req) => {
     const canManageSettings = isAdmin || (permissionRows || []).some((row: any) =>
       ["settings.manage", "users.manage"].includes(String(row.permessi?.codice || ""))
     );
+    const body = await req.json();
+    const crmBeautyAction = ["crm-beauty-customer", "crm-beauty-dashboard"].includes(String(body.action || ""));
+    const { data: canReadCrmB2b } = crmBeautyAction
+      ? await primary.rpc("workspace_module_enabled_for_user", { target_user_id: profile.id, target_module: "crm_b2b" })
+      : { data: false };
     const { data: integration } = isAdmin
       ? { data: null }
       : await primary.from("integrazioni_utenti").select("*").eq("utente_id", profile.id).eq("modulo", "report_giornate").maybeSingle();
-    if (!isAdmin && (!integration || integration.enabled === false)) return json({ error: "Non sei autorizzato ad accedere a Beauty Days" }, 403);
+    if (!isAdmin && (!integration || integration.enabled === false) && canReadCrmB2b !== true) return json({ error: "Non sei autorizzato ad accedere a Beauty Days" }, 403);
 
-    let access = integration || { enabled: true, access_level: "admin", external_role: "admin", allowed_pages: ["dashboard","aperture","giornate","analisi"], data_scope: {} };
+    let access = integration || { enabled: true, access_level: crmBeautyAction ? "read" : "admin", external_role: crmBeautyAction ? "crm" : "admin", allowed_pages: [], data_scope: {} };
     const report = createClient(reportUrl, reportServiceKey, { auth: { persistSession: false } });
-    const body = await req.json();
+
+    if (body.action === "crm-beauty-customer") {
+      return json(await loadCrmBeautyCustomer(scopedPrimary, report, clean(body.customerCode), Number(body.postDays || 30)));
+    }
+
+    if (body.action === "crm-beauty-dashboard") {
+      return json(await loadCrmBeautyDashboard(scopedPrimary, report, Number(body.postDays || 30)));
+    }
 
     if (body.action === "context") {
       const expectedExternalId = access.external_role === "beauty"
@@ -174,6 +187,97 @@ Deno.serve(async (req) => {
     return json({ error: error instanceof Error ? error.message : String(error) }, 500);
   }
 });
+
+function boundedDays(value: number) {
+  return Number.isFinite(value) ? Math.min(180, Math.max(1, Math.trunc(value))) : 30;
+}
+
+function addDays(date: string, days: number) {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
+async function loadCommercialImpact(primary: any, customerCodes: string[], eventDays: string[], postDays: number) {
+  if (!customerCodes.length || !eventDays.length) return { orders: [], invoices: [] };
+  const from = [...eventDays].sort()[0];
+  const to = addDays([...eventDays].sort().at(-1)!, postDays);
+  const [orders, invoices] = await Promise.all([
+    primary.from("crm_order_kpi_source").select("id,codice_cliente,data_ordine,totale_documento").in("codice_cliente", customerCodes).gte("data_ordine", from).lte("data_ordine", to),
+    primary.from("mexal_fatture_vendita").select("id,codice_cliente,data_documento,totale_documento").in("codice_cliente", customerCodes).gte("data_documento", from).lte("data_documento", to),
+  ]);
+  if (orders.error) throw orders.error;
+  if (invoices.error) throw invoices.error;
+  return { orders: orders.data || [], invoices: invoices.data || [] };
+}
+
+function eventImpact(event: any, code: string, commercial: any, postDays: number) {
+  const to = addDays(event.data, postDays);
+  const orders = commercial.orders.filter((row: any) => row.codice_cliente === code && row.data_ordine >= event.data && row.data_ordine <= to);
+  const invoices = commercial.invoices.filter((row: any) => row.codice_cliente === code && row.data_documento >= event.data && row.data_documento <= to);
+  return {
+    post_days: postDays,
+    order_count: orders.length,
+    order_value: orders.reduce((sum: number, row: any) => sum + Number(row.totale_documento || 0), 0),
+    invoice_count: invoices.length,
+    invoice_value: invoices.reduce((sum: number, row: any) => sum + Number(row.totale_documento || 0), 0),
+  };
+}
+
+async function loadCrmBeautyRows(primary: any, report: any, customerCode: string | null, requestedPostDays: number) {
+  const postDays = boundedDays(requestedPostDays);
+  let mappingQuery = primary.from("beauty_clienti_mexal").select("codice_cliente,beauty_external_id,legacy_farmacia_id");
+  if (customerCode) mappingQuery = mappingQuery.eq("codice_cliente", customerCode);
+  const mappingsResult = await mappingQuery;
+  if (mappingsResult.error) throw mappingsResult.error;
+  const mappings = (mappingsResult.data || []).filter((row: any) => row.legacy_farmacia_id);
+  if (!mappings.length) return { linked: false, post_days: postDays, events: [] };
+  const farmToCustomer = new Map(mappings.map((row: any) => [row.legacy_farmacia_id, row.codice_cliente]));
+  const daysResult = await report.from("giornate_promozionali").select("*").in("farmacia_id", [...farmToCustomer.keys()]).order("data", { ascending: false });
+  if (daysResult.error) throw daysResult.error;
+  const days = daysResult.data || [];
+  const dayIds = days.map((row: any) => row.id);
+  const consultantIds = [...new Set(days.map((row: any) => row.consultant_id).filter(Boolean))];
+  const [salesResult, consultantsResult] = await Promise.all([
+    dayIds.length ? report.from("vendite_prodotti").select("*").in("giornata_id", dayIds) : { data: [], error: null },
+    consultantIds.length ? report.from("beauty_consultant").select("id,nome,cognome").in("id", consultantIds) : { data: [], error: null },
+  ]);
+  if (salesResult.error) throw salesResult.error;
+  if (consultantsResult.error) throw consultantsResult.error;
+  const commercial = await loadCommercialImpact(primary, [...new Set(mappings.map((row: any) => row.codice_cliente))], days.map((row: any) => row.data), postDays);
+  const consultants = new Map((consultantsResult.data || []).map((row: any) => [row.id, `${row.nome || ""} ${row.cognome || ""}`.trim()]));
+  const salesByDay = new Map<string, any[]>();
+  for (const sale of salesResult.data || []) salesByDay.set(sale.giornata_id, [...(salesByDay.get(sale.giornata_id) || []), sale]);
+  const events = days.map((day: any) => {
+    const code = farmToCustomer.get(day.farmacia_id)!;
+    const sales = salesByDay.get(day.id) || [];
+    return { ...day, customer_code: code, consultant_name: consultants.get(day.consultant_id) || null, sales, impact: eventImpact(day, code, commercial, postDays) };
+  });
+  return { linked: true, post_days: postDays, events };
+}
+
+async function loadCrmBeautyCustomer(primary: any, report: any, customerCode: string, postDays: number) {
+  if (!customerCode) throw new Error("Codice cliente obbligatorio");
+  return loadCrmBeautyRows(primary, report, customerCode, postDays);
+}
+
+async function loadCrmBeautyDashboard(primary: any, report: any, postDays: number) {
+  const result = await loadCrmBeautyRows(primary, report, null, postDays);
+  const executed = result.events.filter((row: any) => row.stato === "eseguita");
+  return {
+    ...result,
+    metrics: {
+      linked_customers: new Set(result.events.map((row: any) => row.customer_code)).size,
+      total_events: result.events.length,
+      executed_events: executed.length,
+      planned_events: result.events.filter((row: any) => row.stato === "pianificata").length,
+      reported_revenue: executed.reduce((sum: number, row: any) => sum + Number(row.fatturato_giornata || 0), 0),
+      reported_units: executed.reduce((sum: number, row: any) => sum + Number(row.numero_totale_pezzi_venduti || 0), 0),
+      post_event_invoice_value: executed.reduce((sum: number, row: any) => sum + Number(row.impact?.invoice_value || 0), 0),
+      post_event_order_value: executed.reduce((sum: number, row: any) => sum + Number(row.impact?.order_value || 0), 0),
+    },
+  };
+}
 
 
 async function ensureExternalUser(report: any, body: any) {

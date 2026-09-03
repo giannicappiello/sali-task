@@ -5,6 +5,7 @@ import test from "node:test";
 const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
 const migration = read("supabase/migrations/20260825110000_crm_operational_analytics.sql");
 const crm = read("src/modules/crm/CrmModule.jsx");
+const opportunity = read("src/modules/crm/CrmOpportunityDetail.jsx");
 const period = read("src/modules/crm/CrmPeriodFilter.jsx");
 const digital = read("src/modules/crm/DigitalCommerce.jsx");
 const ai = read("src/modules/crm/CrmAIBrief.jsx");
@@ -60,7 +61,7 @@ test("pipeline supporta kanban, lista, valore ponderato, scadenze e storico fase
   assert.match(crm, /updatePipelineParam\("view", "kanban"\)/);
   assert.match(crm, /updatePipelineParam\("view", "list"\)/);
   assert.match(crm, /Valore ponderato/);
-  assert.match(crm, /Giorni nello stato/);
+  assert.match(`${crm}${opportunity}`, /Giorni nello stato|Tempo nella fase/);
   assert.match(crm, /Chiusura prevista/);
   assert.match(crm, /Prossima attività/);
 });

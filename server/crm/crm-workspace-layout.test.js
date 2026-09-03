@@ -13,8 +13,8 @@ const structureCss = read("src/modules/crm/crm.css");
 const workspaceCss = read("src/modules/crm/workspace-alignment.css");
 const classificationCss = read("src/modules/crm/customer-classification.css");
 
-test("tutte le 25 destinazioni CRM passano dal layout e dalla guardia Workspace", () => {
-  assert.equal(CRM_ROUTE_CATALOG.length, 25);
+test("tutte le destinazioni CRM passano dal layout e dalla guardia Workspace", () => {
+  assert.ok(CRM_ROUTE_CATALOG.length >= 31);
   assert.match(crm, /CRM_ROUTE_CATALOG\.map/);
   assert.match(crm, /return <Screen moduleCode=\{route\.moduleCode\} screenCode=\{route\.screenCode\}>/);
   assert.match(crm, /WorkspaceAccessGuard/);

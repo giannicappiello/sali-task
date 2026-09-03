@@ -136,7 +136,13 @@ async function buildAuthorizedContext(auth, crmType, accountId, period) {
       queryRows(auth.scoped.from("crm_activities").select("tipo,titolo,stato,data_attivita").eq("crm_tipo", crmType).gte("data_attivita", period.from).lte("data_attivita", `${period.to}T23:59:59.999Z`).order("data_attivita", { ascending: false }).limit(100), "activities"),
       queryRows(auth.scoped.from("prodotti").select("id,codice,nome,brand,categoria").eq("attivo", true).limit(100), "products"),
     );
-    if (accountId) queries.push(queryRows(auth.scoped.from("crm_accounts").select("*").eq("id", accountId).eq("tipo", crmType).limit(1), "selectedAccount"));
+    if (accountId) {
+      queries.push(
+        queryRows(auth.scoped.from("crm_accounts").select("*").eq("id", accountId).eq("tipo", crmType).limit(1), "selectedAccount"),
+        queryRows(auth.scoped.rpc("crm_account_commercial_snapshot", { p_account_id: accountId, p_from: period.from, p_to: period.to }), "selectedAccountCommercialSnapshot"),
+        queryRows(auth.scoped.rpc("crm_account_journey", { p_account_id: accountId }), "selectedAccountJourney"),
+      );
+    }
     if ((auth.access?.modules || []).includes("attivita") || auth.isAdmin) queries.push(queryRows(auth.scoped.from("v4_progetti").select("titolo,descrizione,deadline,stato").order("created_at", { ascending: false }).limit(50), "workspaceProjects"));
   }
   const results = await Promise.all(queries);
@@ -153,6 +159,7 @@ Un canale Digital assente dal contesto puo essere non autorizzato: non trarre co
 Non trattare un valore assente come zero e non proporre azioni automatiche su campagne, budget, newsletter, Amazon o social.
 Proponi alternative e rischi. Il piano deve essere operativo ma non applicato: la decisione resta umana.
 Non inventare KPI o fonti. Le fasi saranno trasformate in fasi progetto Workspace e i task in ulteriori fasi operative/reminder.
+Lo snapshot commerciale e il customer journey, quando presenti, sono dati read-only gia autorizzati. Distingui sempre fatti, dati mancanti, interpretazioni e raccomandazioni; non eseguire aggiornamenti CRM senza approvazione umana esplicita.
 Contesto autorizzato:\n${JSON.stringify(context)}`;
 }
 

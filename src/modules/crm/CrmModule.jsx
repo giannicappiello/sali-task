@@ -9,6 +9,10 @@ import { getModuleIcon } from "../../config/moduleIcons";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
 import CrmAIBrief from "./CrmAIBrief";
+import CrmActivitiesPage from "./CrmActivitiesPage";
+import CrmAnalyticsPage from "./CrmAnalyticsPage";
+import { CrmB2BLifecyclePanel, CrmBeautyCustomerPanel, CrmBeautyDashboardPanel } from "./CrmBeautyDays";
+import CrmOpportunityDetail from "./CrmOpportunityDetail";
 import CommercialControlDashboard from "./CommercialControlDashboard";
 import CrmCustomerLink from "./CrmCustomerLink";
 import { CrmCustomerStatusBadge, CrmCustomerStatusDialog, CrmCustomerStatusFilter } from "./CrmCustomerStatus";
@@ -180,9 +184,9 @@ function CrmDashboard({ type }) {
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
 
   const navigation = type === "conto_terzi"
-    ? [["Clienti", `${config.basePath}/clienti`], ["Pipeline", `${config.basePath}/pipeline`], ["Brief", `${config.basePath}/brief`]]
+    ? [["Clienti", `${config.basePath}/clienti`], ["Pipeline", `${config.basePath}/pipeline`], ["Attività", `${config.basePath}/attivita`], ["Brief", `${config.basePath}/brief`], ["Analisi", `${config.basePath}/analisi`]]
     : type === "b2b"
-      ? [["Clienti", `${config.basePath}/clienti`], ["Pipeline", `${config.basePath}/pipeline`]]
+      ? [["Clienti", `${config.basePath}/clienti`], ["Pipeline", `${config.basePath}/pipeline`], ["Attività", `${config.basePath}/attivita`], ["Analisi", `${config.basePath}/analisi`]]
       : [["Clienti", `${config.basePath}/clienti`], ["Campagne", `${config.basePath}/campagne`], ["Creator", `${config.basePath}/creators`], ["Customer Journey", `${config.basePath}/journey`]];
   return <div className="crm-page">
     <CrmPageHeader eyebrow={config.label} title={`Dashboard ${config.label}`} description="KPI reali nel tuo ambito dati. Ordinato Workspace e fatturato Mexal restano metriche distinte." actions={<CrmPeriodFilter period={period} />}>
@@ -206,6 +210,7 @@ function CrmDashboard({ type }) {
       <Kpi label="Follow-up scaduti" value={Number(data.overdue_followups || 0).toLocaleString("it-IT")} to={period.withPeriod(`${config.basePath}/pipeline`, { followup: "overdue" })} />
     </div>}
     {!loading && !error ? <div className="crm-source-notes"><p><strong>Fatturato:</strong> {data.invoice_source_note}</p><p><strong>Ordinato:</strong> {data.order_source_note}</p></div> : null}
+    {type === "b2b" ? <><CrmB2BLifecyclePanel /><CrmBeautyDashboardPanel /></> : null}
   </div>;
 }
 
@@ -315,9 +320,9 @@ function AccountsPage({ type }) {
 
   const metricLabels = { all: "Tutti i clienti", active: "Attivi nel periodo", new: "Nuovi nel periodo", invoiced: "Con fatture nel periodo", ordered: "Con ordini nel periodo", inactive: "Inattivi da almeno 90 giorni" };
   const navigation = type === "conto_terzi"
-    ? [["Clienti", `${config.basePath}/clienti`], ["Pipeline", `${config.basePath}/pipeline`], ["Brief", `${config.basePath}/brief`]]
+    ? [["Clienti", `${config.basePath}/clienti`], ["Pipeline", `${config.basePath}/pipeline`], ["Attività", `${config.basePath}/attivita`], ["Brief", `${config.basePath}/brief`], ["Analisi", `${config.basePath}/analisi`]]
     : type === "b2b"
-      ? [["Clienti", `${config.basePath}/clienti`], ["Pipeline", `${config.basePath}/pipeline`]]
+      ? [["Clienti", `${config.basePath}/clienti`], ["Pipeline", `${config.basePath}/pipeline`], ["Attività", `${config.basePath}/attivita`], ["Analisi", `${config.basePath}/analisi`]]
       : [["Clienti", `${config.basePath}/clienti`], ["Campagne", `${config.basePath}/campagne`], ["Creator", `${config.basePath}/creators`], ["Customer Journey", `${config.basePath}/journey`]];
   return <div className="crm-page">
     <CrmPageHeader eyebrow={config.label} title={`Clienti ${config.label}`} description={`${canonicalTotal} clienti Workspace/Mexal nel dettaglio “${metricLabels[metric] || metric}” · ${prospectTotal} prospect CRM-only.`} actions={<><CrmPeriodFilter period={period} compact />{canWrite ? <button className="primary-action crm-primary" type="button" onClick={() => setOpen(true)}><Plus size={17} />Nuovo prospect</button> : null}</>}>
@@ -336,6 +341,7 @@ function AccountDetail({ type }) {
   const { id } = useParams(); const config = crmTypeConfig(type); const period = useCrmPeriod(); const { profile, canUseModule } = useAuth();
   const canWrite = canUseModule(config.moduleCode, "scrittura");
   const [account, setAccount] = useState(null); const [metrics, setMetrics] = useState({}); const [related, setRelated] = useState({ contacts: [], opportunities: [], activities: [], briefs: [], orders: [], invoices: [], products: [], consents: [], events: [], externalOrders: [] }); const [error, setError] = useState(""); const [warning, setWarning] = useState("");
+  const [commercialSnapshot, setCommercialSnapshot] = useState({}); const [journey, setJourney] = useState([]);
   const [activity, setActivity] = useState({ tipo: "telefonata", titolo: "", data_attivita: "" });
   const [statusDialogOpen, setStatusDialogOpen] = useState(false); const [statusBusy, setStatusBusy] = useState(false);
   const load = useCallback(async () => {
@@ -387,6 +393,18 @@ function AccountDetail({ type }) {
     if (invoiceLinesResult.error) failures.push(invoiceLinesResult.error.message);
     setWarning([...new Set(failures)].join(" · "));
     setRelated({ contacts: contactsResult.data || [], opportunities: opportunitiesResult.data || [], activities: activitiesResult.data || [], briefs: briefsResult.data || [], orders: ordersResult.data || [], invoices: invoicesResult.data || [], products: aggregatePurchasedProducts(invoiceLinesResult.data || []), consents: consentsResult.data || [], events: eventsResult.data || [], externalOrders: externalOrdersResult.data || [] });
+    if (crmAccountId) {
+      const [snapshotResult, journeyResult] = await Promise.all([
+        supabase.rpc("crm_account_commercial_snapshot", { p_account_id: crmAccountId, p_from: period.from, p_to: period.to }),
+        supabase.rpc("crm_account_journey", { p_account_id: crmAccountId }),
+      ]);
+      if (snapshotResult.error || journeyResult.error) setWarning((currentWarning) => [currentWarning, snapshotResult.error?.message, journeyResult.error?.message].filter(Boolean).join(" · "));
+      setCommercialSnapshot(snapshotResult.data || {}); setJourney(journeyResult.data || []);
+    } else if (customerCode) {
+      const snapshotResult = await supabase.rpc("crm_canonical_commercial_snapshot", { p_customer_code: customerCode, p_crm_type: type, p_from: period.from, p_to: period.to });
+      if (snapshotResult.error) setWarning((currentWarning) => [currentWarning, snapshotResult.error.message].filter(Boolean).join(" · "));
+      setCommercialSnapshot(snapshotResult.data || {}); setJourney([]);
+    } else { setCommercialSnapshot({}); setJourney([]); }
   }, [id, period.from, period.to, type]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
   async function addActivity(event) {
@@ -429,8 +447,15 @@ function AccountDetail({ type }) {
       <CrmExpandableCard title="Anagrafica" preview={<>{account.codice_cliente_mexal || "Prospect CRM-only"}<br />{account.email || account.telefono || "Contatti non disponibili"}</>}><dl><div><dt>Codice cliente</dt><dd>{account.codice_cliente_mexal || "—"}</dd></div><div><dt>Stato CRM</dt><dd><CrmCustomerStatusBadge active={account.crm_active} /></dd></div><div><dt>Stato relazione</dt><dd>{account.stato || "—"}</dd></div><div><dt>Agente Workspace/Mexal</dt><dd>{account.agente_nome || "—"}</dd></div><div><dt>Area CRM</dt><dd>{config.label}</dd></div><div><dt>Classificazione</dt><dd>{account.origine_classificazione ? `${account.origine_classificazione} · ${account.modalita_classificazione}` : "CRM-only"}</dd></div><div><dt>Partita IVA</dt><dd>{account.partita_iva || "—"}</dd></div><div><dt>Paese / nazionalità</dt><dd>{account.paese || "—"}</dd></div><div><dt>Email</dt><dd>{account.email || "—"}</dd></div><div><dt>Telefono</dt><dd>{account.telefono || "—"}</dd></div><div><dt>Indirizzo</dt><dd>{[account.indirizzo, account.cap, account.citta, account.provincia].filter(Boolean).join(" · ") || "—"}</dd></div><div><dt>Valore CRM</dt><dd>{formatMoney(account.valore_cliente)}</dd></div></dl></CrmExpandableCard>
       <CrmExpandableCard title="AI Summary" preview={<>Sintesi su richiesta.<br />Dati limitati al perimetro autorizzato.</>}><p>La sintesi AI viene generata soltanto su richiesta dall’AI Business Assistant e nel perimetro autorizzato.</p><Link to="/crm/ai" state={{ accountId: account.crm_account_id || null, customerCode: account.codice_cliente_mexal || null, crmType: type }}>Apri AI Brief</Link></CrmExpandableCard>
     </div>
+    {(account.crm_account_id || account.codice_cliente_mexal) ? <div className="crm-kpi-grid crm-account-operational-kpis">
+      <Kpi label="Opportunità aperte" value={Number(commercialSnapshot.opportunities?.open_count || 0).toLocaleString("it-IT")} note={formatMoney(commercialSnapshot.opportunities?.pipeline_value)} to={period.withPeriod(`${config.basePath}/pipeline`, { status: "open" })} />
+      <Kpi label="Valore ponderato" value={formatMoney(commercialSnapshot.opportunities?.weighted_value)} note="Pipeline del cliente" to={period.withPeriod(`${config.basePath}/pipeline`, { status: "open" })} />
+      <Kpi label="Follow-up scaduti" value={Number(commercialSnapshot.activities?.overdue_count || 0).toLocaleString("it-IT")} note={commercialSnapshot.activities?.next_at ? `Prossimo ${formatDate(commercialSnapshot.activities.next_at)}` : "Prossimo passo mancante"} />
+      {type === "b2b" ? <><Kpi label="Frequenza media ordini" value={commercialSnapshot.orders?.average_days ? `${commercialSnapshot.orders.average_days} gg` : "Non disponibile"} note={`${commercialSnapshot.orders?.lifetime_count || 0} ordini storici`} /><Kpi label="Prossimo riordino atteso" value={formatDate(commercialSnapshot.b2b?.expected_reorder_date)} note={(commercialSnapshot.b2b?.classification || "prospect").replaceAll("_", " ")} /></> : null}
+    </div> : null}
     <div className="crm-tabs">
       <CrmExpandableCard title="Timeline e attività" preview={<>{related.activities[0]?.titolo || "Nessuna attività registrata"}<br />{related.activities[1]?.titolo || (type === "conto_terzi" ? "Campioni, formule, preventivi e follow-up" : "Telefonate, visite e follow-up")}</>}>{canWrite ? <form className="crm-inline-form" onSubmit={addActivity}><select aria-label="Tipo attività" value={activity.tipo} onChange={(e) => setActivity({ ...activity, tipo: e.target.value })}>{["telefonata","email","visita","videocall","presentazione","formazione","campionatura","sviluppo_formula","preventivo","follow_up"].map((value) => <option key={value} value={value}>{value.replaceAll("_", " ")}</option>)}</select><input required placeholder="Titolo attività" value={activity.titolo} onChange={(e) => setActivity({ ...activity, titolo: e.target.value })} /><input aria-label="Data attività" type="datetime-local" value={activity.data_attivita} onChange={(e) => setActivity({ ...activity, data_attivita: e.target.value })} /><button className="primary-action crm-primary"><Plus size={16} />Aggiungi</button></form> : null}<ul className="crm-timeline">{related.activities.map((item) => <li key={item.id}><strong>{item.titolo}</strong><span>{item.tipo.replaceAll("_", " ")} · {formatDate(item.data_attivita)}</span></li>)}</ul>{!related.activities.length ? <p>Nessuna attività disponibile.</p> : null}</CrmExpandableCard>
+      <CrmExpandableCard title="Customer journey" preview={<>{journey[0]?.title || "Nessun evento CRM"}<br />{journey[1]?.title || `${journey.length} eventi unificati`}</>}>{journey.map((item) => <div className="crm-row-card" key={`${item.event_type}-${item.entity_id}-${item.event_at}`}><strong>{item.title}</strong><span>{item.event_type.replaceAll("_", " ")} · {formatDate(item.event_at)} · {item.detail || "—"}</span></div>)}{!journey.length ? <p>Nessun evento disponibile nel perimetro autorizzato.</p> : null}</CrmExpandableCard>
       <CrmExpandableCard title="Opportunità" preview={<>{related.opportunities[0]?.titolo || "Nessuna opportunità"}<br />{related.opportunities[1]?.titolo || `${related.opportunities.length} opportunità collegate`}</>}>{related.opportunities.map((item) => <div className="crm-row-card" key={item.id}><strong>{item.titolo}</strong><span>{item.crm_opportunity_stages?.nome || "Senza fase"} · {formatMoney(item.valore)}</span></div>)}{!related.opportunities.length ? <p>Nessuna opportunità disponibile.</p> : null}</CrmExpandableCard>
       <CrmExpandableCard title="Contatti CRM" preview={<>{related.contacts[0] ? [related.contacts[0].nome, related.contacts[0].cognome].filter(Boolean).join(" ") : "Nessun contatto"}<br />{related.contacts[1] ? [related.contacts[1].nome, related.contacts[1].cognome].filter(Boolean).join(" ") : `${related.contacts.length} contatti collegati`}</>}>{related.contacts.map((item) => <div className="crm-row-card" key={item.id}><strong>{[item.nome, item.cognome].filter(Boolean).join(" ")}</strong><span>{item.ruolo || "Contatto"} · {item.email || item.telefono || "—"}</span></div>)}{!related.contacts.length ? <p>Nessun contatto CRM disponibile.</p> : null}</CrmExpandableCard>
       <CrmExpandableCard title="Brief" preview={<>{related.briefs[0]?.titolo || "Nessun brief"}<br />{related.briefs[1]?.titolo || `${related.briefs.length} brief collegati`}</>}>{related.briefs.map((item) => <div className="crm-row-card" key={item.id}><strong>{item.titolo}</strong><span>{item.stato}</span></div>)}{!related.briefs.length ? <p>Nessun brief disponibile.</p> : null}</CrmExpandableCard>
@@ -440,6 +465,7 @@ function AccountDetail({ type }) {
       <CrmExpandableCard title="Note e documenti" preview={<>{account.metadati?.note || "Nessuna nota CRM disponibile."}<br />Documenti nel perimetro autorizzato.</>}><p>{account.metadati?.note || "Nessuna nota CRM disponibile."}</p><p>I documenti restano nella libreria Workspace e vengono mostrati solo quando esiste un collegamento autorizzato.</p></CrmExpandableCard>
     </div>
     {type === "online" ? <><section className="panel crm-panel"><h3>Profilo acquisti ecommerce</h3><dl><div><dt>Ordini</dt><dd>{related.externalOrders.length || "Dato non disponibile"}</dd></div><div><dt>Valore totale</dt><dd>{related.externalOrders.length ? formatMoney(related.externalOrders.reduce((sum, item) => sum + Number(item.net_revenue || 0), 0)) : "Dato non disponibile"}</dd></div><div><dt>AOV</dt><dd>{related.externalOrders.length ? formatMoney(related.externalOrders.reduce((sum, item) => sum + Number(item.net_revenue || 0), 0) / related.externalOrders.length) : "Dato non disponibile"}</dd></div><div><dt>Segmenti</dt><dd>{account.segmenti?.join(", ") || "Dato non disponibile"}</dd></div></dl></section><section className="panel crm-panel"><h3>Ordini ecommerce</h3>{related.externalOrders.map((item) => <div className="crm-row-card" key={item.id}><strong>{item.external_id}</strong><span>{formatDate(item.ordered_at)} · {formatMoney(item.net_revenue)} · {item.attribution_method}</span></div>)}{!related.externalOrders.length ? <p>Dato non sincronizzato: serve il connettore ecommerce reale.</p> : null}</section><section className="panel crm-panel"><h3>Consensi marketing</h3>{related.consents.map((item) => <div className="crm-row-card" key={item.id}><strong>{item.purpose}</strong><span>{item.status} · {item.legal_basis || "base giuridica non disponibile"} · {item.source || "fonte non disponibile"}</span></div>)}{!related.consents.length ? <p>Dato non disponibile.</p> : null}</section><section className="panel crm-panel"><h3>Customer journey</h3>{related.events.map((item) => <div className="crm-row-card" key={item.id}><strong>{item.fase}</strong><span>{formatDate(item.avvenuto_il)} · {item.fonte || "unknown"}</span></div>)}{!related.events.length ? <p>Nessun evento autorizzato disponibile.</p> : null}</section></> : null}
+    {type === "b2b" ? <CrmBeautyCustomerPanel customerCode={account.codice_cliente_mexal} /> : null}
     <CrmCustomerStatusDialog customer={statusDialogOpen ? account : null} busy={statusBusy} onClose={() => setStatusDialogOpen(false)} onConfirm={(change) => void changeCustomerStatus(change)} />
   </div>;
 }
@@ -448,15 +474,16 @@ function Pipeline({ type }) {
   const config = crmTypeConfig(type); const period = useCrmPeriod(); const { profile, canUseModule } = useAuth(); const canWrite = canUseModule(config.moduleCode, "scrittura");
   const [pipelineParams, setPipelineParams] = useSearchParams();
   const [customerStatus, setCustomerStatus] = useCrmCustomerStatus("active");
-  const [stages, setStages] = useState([]); const [items, setItems] = useState([]); const [accounts, setAccounts] = useState([]); const [customerStates, setCustomerStates] = useState({}); const [customers, setCustomers] = useState([]); const [error, setError] = useState(""); const [loading, setLoading] = useState(true);
+  const [stages, setStages] = useState([]); const [items, setItems] = useState([]); const [accounts, setAccounts] = useState([]); const [customerStates, setCustomerStates] = useState({}); const [pipelineMetrics, setPipelineMetrics] = useState({}); const [customers, setCustomers] = useState([]); const [error, setError] = useState(""); const [loading, setLoading] = useState(true);
   const view = pipelineParams.get("view") === "list" ? "list" : "kanban";
   const stageFilter = pipelineParams.get("stage") || "";
   const search = pipelineParams.get("search") || "";
-  const [customerSearch, setCustomerSearch] = useState(""); const [selected, setSelected] = useState(null);
+  const [customerSearch, setCustomerSearch] = useState("");
   const [form, setForm] = useState({ titolo: "", customer_ref: "", valore: "", probabilita: "20", chiusura_prevista: "" });
   const overdueFilter = period.getParam("overdue") === "1";
   const followupFilter = period.getParam("followup") === "overdue";
   const openFilter = period.getParam("status") === "open";
+  const nextStepFilter = pipelineParams.get("nextStep") || "all";
   const updatePipelineParam = useCallback((name, value) => {
     setPipelineParams((current) => {
       const next = new URLSearchParams(current);
@@ -467,16 +494,17 @@ function Pipeline({ type }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [s, o, a, customerStateResult] = await Promise.all([
+    const [s, o, a, customerStateResult, metricsResult] = await Promise.all([
       supabase.from("crm_opportunity_stages").select("*").eq("crm_tipo", type).eq("attiva", true).order("ordine"),
       supabase.from("crm_opportunities").select("*,crm_accounts!inner(id,nome,tipo,codice_cliente_mexal),crm_opportunity_stages(nome,finale,vinta),crm_opportunity_stage_history(changed_at),crm_activities(id,titolo,stato,data_attivita)").eq("crm_accounts.tipo", type).order("aggiornato_il", { ascending: false }).limit(1000),
       supabase.from("crm_accounts").select("id,nome,codice_cliente_mexal").eq("tipo", type).order("nome").limit(500),
       supabase.from("crm_customer_status").select("customer_key,crm_active").eq("crm_type", type),
+      supabase.rpc("crm_dashboard_metrics", { p_crm_type: type, p_from: period.from, p_to: period.to, p_inactivity_days: 90 }),
     ]);
-    const failure = s.error || o.error || a.error || customerStateResult.error;
-    if (failure) setError(failure.message); else { setStages(s.data || []); setItems(o.data || []); setAccounts(a.data || []); setCustomerStates(Object.fromEntries((customerStateResult.data || []).map((row) => [row.customer_key, row.crm_active]))); setError(""); }
+    const failure = s.error || o.error || a.error || customerStateResult.error || metricsResult.error;
+    if (failure) setError(failure.message); else { setStages(s.data || []); setItems(o.data || []); setAccounts(a.data || []); setCustomerStates(Object.fromEntries((customerStateResult.data || []).map((row) => [row.customer_key, row.crm_active]))); setPipelineMetrics(metricsResult.data || {}); setError(""); }
     setLoading(false);
-  }, [type]);
+  }, [period.from, period.to, type]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
 
   useEffect(() => {
@@ -522,7 +550,12 @@ function Pipeline({ type }) {
   }
   async function move(id, stageId) {
     if (!canWrite) return;
-    const { error: moveError } = await supabase.from("crm_opportunities").update({ stage_id: stageId }).eq("id", id);
+    const targetStage = stages.find((stage) => stage.id === stageId);
+    if (targetStage?.finale) {
+      setError("Le chiusure Vinta/Persa richiedono conferma nella scheda completa dell’opportunità.");
+      return;
+    }
+    const { error: moveError } = await supabase.rpc("crm_transition_opportunity", { p_opportunity_id: id, p_stage_id: stageId });
     if (moveError) setError(moveError.message); else await load();
   }
 
@@ -538,12 +571,13 @@ function Pipeline({ type }) {
     const matchesOpen = !openFilter || !item.crm_opportunity_stages?.finale;
     const matchesOverdue = !overdueFilter || (!item.crm_opportunity_stages?.finale && item.chiusura_prevista && new Date(item.chiusura_prevista).getTime() < now);
     const matchesFollowup = !followupFilter || (next && new Date(next.data_attivita).getTime() < now);
-    return (!stageFilter || item.stage_id === stageFilter) && (!search || `${item.titolo} ${item.crm_accounts?.nome}`.toLowerCase().includes(search.toLowerCase())) && matchesOpen && matchesOverdue && matchesFollowup;
+    const nextAt = next?.data_attivita ? new Date(next.data_attivita).getTime() : null;
+    const matchesNextStep = nextStepFilter === "all"
+      || (nextStepFilter === "missing" && !next)
+      || (nextStepFilter === "overdue" && nextAt !== null && nextAt < now)
+      || (nextStepFilter === "upcoming" && nextAt !== null && nextAt >= now);
+    return (!stageFilter || item.stage_id === stageFilter) && (!search || `${item.titolo} ${item.crm_accounts?.nome}`.toLowerCase().includes(search.toLowerCase())) && matchesOpen && matchesOverdue && matchesFollowup && matchesNextStep;
   });
-  const openItems = statusVisibleItems.filter((item) => !item.crm_opportunity_stages?.finale);
-  const pipelineValue = openItems.reduce((sum, item) => sum + Number(item.valore || 0), 0);
-  const weightedValue = openItems.reduce((sum, item) => sum + Number(item.valore || 0) * Number(item.probabilita || 0) / 100, 0);
-  const overdueItems = openItems.filter((item) => item.chiusura_prevista && new Date(item.chiusura_prevista).getTime() < now);
   function stageAge(item) {
     const changes = item.crm_opportunity_stage_history || [];
     const last = changes.reduce((latest, row) => !latest || row.changed_at > latest ? row.changed_at : latest, null);
@@ -555,14 +589,14 @@ function Pipeline({ type }) {
 
   return <div className="crm-page">
     <CrmPageHeader eyebrow={config.label} title={`Pipeline ${config.label}`} description="Snapshot corrente; il periodo resta condiviso per il contesto commerciale e i drill-down." actions={<CrmPeriodFilter period={period} compact />}>
-      <CrmSectionNav items={type === "conto_terzi" ? [["Clienti", `${config.basePath}/clienti`], ["Pipeline", `${config.basePath}/pipeline`], ["Brief", `${config.basePath}/brief`]] : [["Clienti", `${config.basePath}/clienti`], ["Pipeline", `${config.basePath}/pipeline`]]} period={period} label={`Navigazione ${config.label}`} />
+      <CrmSectionNav items={type === "conto_terzi" ? [["Clienti", `${config.basePath}/clienti`], ["Pipeline", `${config.basePath}/pipeline`], ["Attività", `${config.basePath}/attivita`], ["Brief", `${config.basePath}/brief`], ["Analisi", `${config.basePath}/analisi`]] : [["Clienti", `${config.basePath}/clienti`], ["Pipeline", `${config.basePath}/pipeline`], ["Attività", `${config.basePath}/attivita`], ["Analisi", `${config.basePath}/analisi`]]} period={period} label={`Navigazione ${config.label}`} />
     </CrmPageHeader>
     <ErrorBox error={error} retry={load} />
     <div className="crm-kpi-grid">
-      <Kpi label="Opportunità aperte" value={openItems.length} to={period.withPeriod(`${config.basePath}/pipeline`, { status: "open" })} />
-      <Kpi label="Valore pipeline" value={formatMoney(pipelineValue)} to={period.withPeriod(`${config.basePath}/pipeline`, { status: "open" })} />
-      <Kpi label="Valore ponderato" value={formatMoney(weightedValue)} note="Valore × probabilità" to={period.withPeriod(`${config.basePath}/pipeline`, { status: "open" })} />
-      <Kpi label="Scadute" value={overdueItems.length} note="Chiusura prevista superata" to={period.withPeriod(`${config.basePath}/pipeline`, { overdue: "1" })} />
+      <Kpi label="Opportunità aperte" value={Number(pipelineMetrics.open_opportunities || 0).toLocaleString("it-IT")} to={period.withPeriod(`${config.basePath}/pipeline`, { status: "open" })} />
+      <Kpi label="Valore pipeline" value={formatMoney(pipelineMetrics.pipeline_value)} to={period.withPeriod(`${config.basePath}/pipeline`, { status: "open" })} />
+      <Kpi label="Valore ponderato" value={formatMoney(pipelineMetrics.weighted_pipeline)} note="Valore × probabilità" to={period.withPeriod(`${config.basePath}/pipeline`, { status: "open" })} />
+      <Kpi label="Scadute" value={Number(pipelineMetrics.overdue_opportunities || 0).toLocaleString("it-IT")} note="Chiusura prevista superata" to={period.withPeriod(`${config.basePath}/pipeline`, { overdue: "1" })} />
     </div>
     {canWrite ? <form className="crm-card-form crm-opportunity-form" onSubmit={create}>
       <input required placeholder="Titolo opportunità" value={form.titolo} onChange={(event) => setForm({ ...form, titolo: event.target.value })} />
@@ -576,18 +610,52 @@ function Pipeline({ type }) {
       <input type="date" aria-label="Chiusura prevista" value={form.chiusura_prevista} onChange={(event) => setForm({ ...form, chiusura_prevista: event.target.value })} />
       <button className="primary-action crm-primary"><Plus size={16} />Crea opportunità</button>
     </form> : null}
-    <div className="crm-filters crm-pipeline-filters"><label><Search size={16} /><input placeholder="Cerca opportunità o cliente" value={search} onChange={(event) => updatePipelineParam("search", event.target.value)} /></label><select value={stageFilter} onChange={(event) => updatePipelineParam("stage", event.target.value)}><option value="">Tutte le fasi</option>{stages.map((stage) => <option key={stage.id} value={stage.id}>{stage.nome}</option>)}</select><CrmCustomerStatusFilter id={`crm-pipeline-status-${type}`} value={customerStatus} onChange={setCustomerStatus} /><div className="crm-view-toggle"><button type="button" className={view === "kanban" ? "active" : ""} onClick={() => updatePipelineParam("view", "kanban")}>Kanban</button><button type="button" className={view === "list" ? "active" : ""} onClick={() => updatePipelineParam("view", "list")}>Lista</button></div></div>
-    {loading ? <div className="crm-loading">Caricamento pipeline...</div> : !visibleItems.length ? <div className="crm-empty"><strong>Nessuna opportunità nel perimetro corrente.</strong><p>Crea la prima opportunità da un cliente Workspace/Mexal o da un prospect CRM-only.</p></div> : view === "kanban" ? <div className="crm-kanban">{stages.filter((stage) => !stageFilter || stage.id === stageFilter).map((stage) => <section key={stage.id} onDragOver={(event) => event.preventDefault()} onDrop={(event) => void move(event.dataTransfer.getData("text/plain"), stage.id)}><header><strong>{stage.nome}</strong><span>{visibleItems.filter((item) => item.stage_id === stage.id).length}</span></header>{visibleItems.filter((item) => item.stage_id === stage.id).map((item) => <article role="button" tabIndex={0} draggable={canWrite} onClick={() => setSelected(item)} onKeyDown={(event) => (event.key === "Enter" || event.key === " ") && setSelected(item)} onDragStart={(event) => event.dataTransfer.setData("text/plain", item.id)} key={item.id}><strong>{item.titolo}</strong><CrmCustomerLink crmType={type} customerCode={item.crm_accounts?.codice_cliente_mexal} accountId={item.crm_accounts?.id} name={item.crm_accounts?.nome} period={period}>{item.crm_accounts?.nome}</CrmCustomerLink><small>{formatMoney(item.valore)} · {item.probabilita || 0}% · {stageAge(item)} gg nello stato</small>{nextActivity(item) ? <small>Prossima: {formatDate(nextActivity(item).data_attivita)}</small> : <small>Nessuna prossima attività</small>}</article>)}</section>)}</div> : <div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Opportunità</th><th>Cliente</th><th>Fase</th><th>Valore</th><th>Ponderato</th><th>Giorni fase</th><th>Chiusura</th><th>Prossima attività</th></tr></thead><tbody>{visibleItems.map((item) => <tr key={item.id} onClick={() => setSelected(item)}><td><button type="button" className="crm-table-link">{item.titolo}</button></td><td><CrmCustomerLink crmType={type} customerCode={item.crm_accounts?.codice_cliente_mexal} accountId={item.crm_accounts?.id} name={item.crm_accounts?.nome} period={period}>{item.crm_accounts?.nome}</CrmCustomerLink></td><td>{item.crm_opportunity_stages?.nome}</td><td>{formatMoney(item.valore)}</td><td>{formatMoney(Number(item.valore || 0) * Number(item.probabilita || 0) / 100)}</td><td>{stageAge(item)}</td><td>{formatDate(item.chiusura_prevista)}</td><td>{nextActivity(item)?.titolo || "—"}</td></tr>)}</tbody></table></div>}
-    {selected ? <div className="crm-modal-backdrop" role="presentation" onMouseDown={() => setSelected(null)}><section className="crm-modal crm-opportunity-detail" role="dialog" aria-modal="true" aria-label="Dettaglio opportunità" onMouseDown={(event) => event.stopPropagation()}><div className="crm-toolbar"><div><span className="crm-eyebrow">{selected.crm_opportunity_stages?.nome}</span><h3>{selected.titolo}</h3><CrmCustomerLink crmType={type} customerCode={selected.crm_accounts?.codice_cliente_mexal} accountId={selected.crm_accounts?.id} name={selected.crm_accounts?.nome} period={period}>{selected.crm_accounts?.nome}</CrmCustomerLink></div><button type="button" onClick={() => setSelected(null)}>Chiudi</button></div><dl><div><dt>Valore</dt><dd>{formatMoney(selected.valore)}</dd></div><div><dt>Probabilità</dt><dd>{selected.probabilita || 0}%</dd></div><div><dt>Valore ponderato</dt><dd>{formatMoney(Number(selected.valore || 0) * Number(selected.probabilita || 0) / 100)}</dd></div><div><dt>Giorni nello stato</dt><dd>{stageAge(selected)}</dd></div><div><dt>Chiusura prevista</dt><dd>{formatDate(selected.chiusura_prevista)}</dd></div><div><dt>Prossima attività</dt><dd>{nextActivity(selected)?.titolo || "Non pianificata"}</dd></div></dl><p>{selected.descrizione || "Nessuna descrizione disponibile."}</p></section></div> : null}
+    <div className="crm-filters crm-pipeline-filters"><label><Search size={16} /><input placeholder="Cerca opportunità o cliente" value={search} onChange={(event) => updatePipelineParam("search", event.target.value)} /></label><select value={stageFilter} onChange={(event) => updatePipelineParam("stage", event.target.value)}><option value="">Tutte le fasi</option>{stages.map((stage) => <option key={stage.id} value={stage.id}>{stage.nome}</option>)}</select><select value={pipelineParams.get("nextStep") || "all"} onChange={(event) => updatePipelineParam("nextStep", event.target.value === "all" ? "" : event.target.value)}><option value="all">Tutti i prossimi passi</option><option value="overdue">Prossimo passo scaduto</option><option value="upcoming">Prossimo passo futuro</option><option value="missing">Prossimo passo mancante</option></select><CrmCustomerStatusFilter id={`crm-pipeline-status-${type}`} value={customerStatus} onChange={setCustomerStatus} /><div className="crm-view-toggle"><button type="button" className={view === "kanban" ? "active" : ""} onClick={() => updatePipelineParam("view", "kanban")}>Kanban</button><button type="button" className={view === "list" ? "active" : ""} onClick={() => updatePipelineParam("view", "list")}>Lista</button></div></div>
+    {loading ? <div className="crm-loading">Caricamento pipeline...</div> : !visibleItems.length ? <div className="crm-empty"><strong>Nessuna opportunità nel perimetro corrente.</strong><p>Crea la prima opportunità da un cliente Workspace/Mexal o da un prospect CRM-only.</p></div> : view === "kanban" ? <div className="crm-kanban">{stages.filter((stage) => !stageFilter || stage.id === stageFilter).map((stage) => <section key={stage.id} onDragOver={(event) => event.preventDefault()} onDrop={(event) => void move(event.dataTransfer.getData("text/plain"), stage.id)}><header><strong>{stage.nome}</strong><span>{visibleItems.filter((item) => item.stage_id === stage.id).length}</span></header>{visibleItems.filter((item) => item.stage_id === stage.id).map((item) => <article draggable={canWrite} onDragStart={(event) => event.dataTransfer.setData("text/plain", item.id)} key={item.id}><Link className="crm-opportunity-link" to={period.withPeriod(`${config.basePath}/pipeline/${item.id}`)}>{item.titolo}</Link><CrmCustomerLink crmType={type} customerCode={item.crm_accounts?.codice_cliente_mexal} accountId={item.crm_accounts?.id} name={item.crm_accounts?.nome} period={period}>{item.crm_accounts?.nome}</CrmCustomerLink><small>{formatMoney(item.valore)} · {item.probabilita || 0}% · {stageAge(item)} gg nello stato</small>{nextActivity(item) ? <small>Prossima: {formatDate(nextActivity(item).data_attivita)}</small> : <small className="crm-missing-step">Nessuna prossima attività</small>}</article>)}</section>)}</div> : <div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Opportunità</th><th>Cliente</th><th>Fase</th><th>Valore</th><th>Ponderato</th><th>Giorni fase</th><th>Chiusura</th><th>Prossima attività</th></tr></thead><tbody>{visibleItems.map((item) => <tr key={item.id}><td><Link className="crm-table-link" to={period.withPeriod(`${config.basePath}/pipeline/${item.id}`)}>{item.titolo}</Link></td><td><CrmCustomerLink crmType={type} customerCode={item.crm_accounts?.codice_cliente_mexal} accountId={item.crm_accounts?.id} name={item.crm_accounts?.nome} period={period}>{item.crm_accounts?.nome}</CrmCustomerLink></td><td>{item.crm_opportunity_stages?.nome}</td><td>{formatMoney(item.valore)}</td><td>{formatMoney(Number(item.valore || 0) * Number(item.probabilita || 0) / 100)}</td><td>{stageAge(item)}</td><td>{formatDate(item.chiusura_prevista)}</td><td>{nextActivity(item)?.titolo || <span className="crm-missing-step">Mancante</span>}</td></tr>)}</tbody></table></div>}
   </div>;
 }
 
 function BriefsPage() {
   const period = useCrmPeriod(); const config = crmTypeConfig("conto_terzi");
-  const { profile, canUseModule } = useAuth(); const canWrite = canUseModule("crm_conto_terzi", "scrittura"); const [rows, setRows] = useState([]); const [accounts, setAccounts] = useState([]); const [form, setForm] = useState({ titolo: "", account_id: "", obiettivo: "", target: "", categoria: "" }); const [error, setError] = useState("");
-  const load = useCallback(async () => { const [b, a] = await Promise.all([supabase.from("crm_briefs").select("id,titolo,stato,obiettivo,target,categoria,aggiornato_il,crm_accounts(id,nome,tipo,codice_cliente_mexal)").eq("crm_tipo", "conto_terzi").order("aggiornato_il", { ascending: false }), supabase.from("crm_accounts").select("id,nome").eq("tipo", "conto_terzi").order("nome")]); if (b.error || a.error) setError((b.error || a.error).message); else { setRows(b.data || []); setAccounts(a.data || []); } }, []); useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
-  async function save(e) { e.preventDefault(); const { error: x } = await supabase.from("crm_briefs").insert({ ...form, crm_tipo: "conto_terzi", account_id: form.account_id || null, responsabile_id: profile.id, reparto_id: profile.reparto_ids?.[0] || null, creato_da: profile.id }); if (x) setError(x.message); else { setForm({ titolo: "", account_id: "", obiettivo: "", target: "", categoria: "" }); await load(); } }
-  return <div className="crm-page"><CrmPageHeader eyebrow="Conto Terzi" title="Brief Cliente" description="Brief collegabili a opportunità, prodotti, documenti e AI Business Assistant." actions={<Link className="primary-action crm-primary" to="/crm/ai"><Bot size={17} />Apri AI Brief</Link>}><CrmSectionNav items={[["Clienti", `${config.basePath}/clienti`], ["Pipeline", `${config.basePath}/pipeline`], ["Brief", `${config.basePath}/brief`]]} period={period} label="Navigazione Conto Terzi" /></CrmPageHeader><ErrorBox error={error} />{canWrite ? <form className="crm-card-form panel" onSubmit={save}><input required placeholder="Titolo brief" value={form.titolo} onChange={(e) => setForm({ ...form, titolo: e.target.value })} /><select value={form.account_id} onChange={(e) => setForm({ ...form, account_id: e.target.value })}><option value="">Cliente opzionale</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}</select><input placeholder="Obiettivo" value={form.obiettivo} onChange={(e) => setForm({ ...form, obiettivo: e.target.value })} /><input placeholder="Target" value={form.target} onChange={(e) => setForm({ ...form, target: e.target.value })} /><input placeholder="Categoria" value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value })} /><button className="primary-action crm-primary"><Plus size={16} />Salva brief</button></form> : null}<div className="crm-list-grid">{rows.map((row) => <article className="crm-list-card" key={row.id}><span>{row.stato}</span><h3>{row.titolo}</h3>{row.crm_accounts ? <CrmCustomerLink crmType="conto_terzi" customerCode={row.crm_accounts.codice_cliente_mexal} accountId={row.crm_accounts.id} name={row.crm_accounts.nome} period={period}>{row.crm_accounts.nome}</CrmCustomerLink> : <p>{row.obiettivo || "Brief non ancora associato"}</p>}<small>{row.target || row.categoria || "Dati da completare"}</small></article>)}</div></div>;
+  const { profile, canUseModule } = useAuth(); const canWrite = canUseModule("crm_conto_terzi", "scrittura");
+  const [rows, setRows] = useState([]); const [accounts, setAccounts] = useState([]); const [opportunities, setOpportunities] = useState([]);
+  const emptyBrief = { titolo: "", account_id: "", opportunity_id: "", obiettivo: "", brand: "", categoria: "", tipo_prodotto: "", target: "", posizionamento: "", prezzo_target: "", quantita: "", packaging: "", claim: "", mercati: "", certificazioni: "", tempistiche: "", note: "" };
+  const [form, setForm] = useState(emptyBrief); const [error, setError] = useState("");
+  const setField = (name, value) => setForm((current) => ({ ...current, [name]: value }));
+  const load = useCallback(async () => {
+    const [briefResult, accountResult, opportunityResult] = await Promise.all([
+      supabase.from("crm_briefs").select("id,titolo,stato,obiettivo,target,categoria,aggiornato_il,crm_accounts(id,nome,tipo,codice_cliente_mexal)").eq("crm_tipo", "conto_terzi").order("aggiornato_il", { ascending: false }),
+      supabase.from("crm_accounts").select("id,nome").eq("tipo", "conto_terzi").order("nome"),
+      supabase.from("crm_opportunities").select("id,titolo,account_id,crm_accounts!inner(tipo)").eq("crm_accounts.tipo", "conto_terzi").order("aggiornato_il", { ascending: false }).limit(500),
+    ]);
+    const loadError = briefResult.error || accountResult.error || opportunityResult.error;
+    if (loadError) setError(loadError.message); else { setRows(briefResult.data || []); setAccounts(accountResult.data || []); setOpportunities(opportunityResult.data || []); }
+  }, []);
+  useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
+  async function save(event) {
+    event.preventDefault();
+    const payload = { ...form, crm_tipo: "conto_terzi", account_id: form.account_id || null, opportunity_id: form.opportunity_id || null, prezzo_target: form.prezzo_target === "" ? null : Number(form.prezzo_target), quantita: form.quantita === "" ? null : Number(form.quantita), mercati: form.mercati.split(",").map((value) => value.trim()).filter(Boolean), certificazioni: form.certificazioni.split(",").map((value) => value.trim()).filter(Boolean), responsabile_id: profile.id, reparto_id: profile.reparto_ids?.[0] || profile.reparto_id || null, creato_da: profile.id };
+    const { error: saveError } = await supabase.from("crm_briefs").insert(payload);
+    if (saveError) setError(saveError.message); else { setForm(emptyBrief); await load(); }
+  }
+  const navigation = [["Clienti", `${config.basePath}/clienti`], ["Pipeline", `${config.basePath}/pipeline`], ["Attività", `${config.basePath}/attivita`], ["Analisi", `${config.basePath}/analisi`], ["Brief", `${config.basePath}/brief`]];
+  return <div className="crm-page">
+    <CrmPageHeader eyebrow="Conto Terzi" title="Brief Cliente" description="Brief strutturati collegabili a cliente, opportunità, progetto e AI Business Assistant." actions={<Link className="primary-action crm-primary" to="/crm/ai"><Bot size={17} />Apri AI Brief</Link>}><CrmSectionNav items={navigation} period={period} label="Navigazione Conto Terzi" /></CrmPageHeader>
+    <ErrorBox error={error} />
+    {canWrite ? <form className="crm-card-form panel crm-form-grid" onSubmit={save}>
+      <input required placeholder="Titolo brief" value={form.titolo} onChange={(event) => setField("titolo", event.target.value)} />
+      <select value={form.account_id} onChange={(event) => { setField("account_id", event.target.value); setField("opportunity_id", ""); }}><option value="">Cliente opzionale</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.nome}</option>)}</select>
+      <select value={form.opportunity_id} onChange={(event) => setField("opportunity_id", event.target.value)}><option value="">Opportunità opzionale</option>{opportunities.filter((item) => !form.account_id || item.account_id === form.account_id).map((item) => <option key={item.id} value={item.id}>{item.titolo}</option>)}</select>
+      {[['obiettivo','Obiettivo'],['brand','Brand'],['categoria','Categoria'],['tipo_prodotto','Tipo prodotto'],['target','Target'],['posizionamento','Posizionamento'],['packaging','Packaging'],['claim','Claim'],['tempistiche','Tempistiche']].map(([name,label]) => <input key={name} placeholder={label} value={form[name]} onChange={(event) => setField(name, event.target.value)} />)}
+      <input type="number" min="0" step="0.01" placeholder="Prezzo target" value={form.prezzo_target} onChange={(event) => setField("prezzo_target", event.target.value)} />
+      <input type="number" min="0" step="0.001" placeholder="Quantità" value={form.quantita} onChange={(event) => setField("quantita", event.target.value)} />
+      <input placeholder="Mercati, separati da virgola" value={form.mercati} onChange={(event) => setField("mercati", event.target.value)} />
+      <input placeholder="Certificazioni, separate da virgola" value={form.certificazioni} onChange={(event) => setField("certificazioni", event.target.value)} />
+      <textarea placeholder="Note" value={form.note} onChange={(event) => setField("note", event.target.value)} />
+      <button className="primary-action crm-primary"><Plus size={16} />Salva brief</button>
+    </form> : null}
+    <div className="crm-list-grid">{rows.map((row) => <article className="crm-list-card" key={row.id}><span>{row.stato}</span><h3>{row.titolo}</h3>{row.crm_accounts ? <CrmCustomerLink crmType="conto_terzi" customerCode={row.crm_accounts.codice_cliente_mexal} accountId={row.crm_accounts.id} name={row.crm_accounts.nome} period={period}>{row.crm_accounts.nome}</CrmCustomerLink> : <p>{row.obiettivo || "Brief non ancora associato"}</p>}<small>{row.target || row.categoria || "Dati da completare"}</small></article>)}</div>
+  </div>;
 }
 
 function OnlineManager({ entity }) {
@@ -617,6 +685,9 @@ function renderCrmView(route) {
     case "accounts": return <AccountsPage type={route.type} />;
     case "account": return <AccountDetail type={route.type} />;
     case "pipeline": return <Pipeline type={route.type} />;
+    case "opportunity": return <CrmOpportunityDetail type={route.type} />;
+    case "activities": return <CrmActivitiesPage type={route.type} />;
+    case "analytics": return <CrmAnalyticsPage type={route.type} />;
     case "briefs": return <BriefsPage />;
     case "online-home": return <DigitalHome />;
     case "digital-dashboard": return <DigitalDashboard />;

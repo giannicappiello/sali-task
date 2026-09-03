@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabaseClient";
 
 export default function WorkspaceAccessGuard({ moduleCode, screenCode, featureCode, redirectTo = "/home", children }) {
-  const { hasModuleAccess, hasScreenAccess, hasWorkspaceFeature } = useAuth();
+  const location = useLocation();
+  const { hasModuleAccess, hasScreenAccess, hasWorkspaceFeature, getScreenCodeForPath, hasExplicitScreenGrant } = useAuth();
+  const resolvedScreenCode = screenCode || getScreenCodeForPath(location.pathname, moduleCode);
+  const screenGranted = Boolean(resolvedScreenCode && hasExplicitScreenGrant(resolvedScreenCode));
   const moduleAllowed = moduleCode
-    ? hasModuleAccess(moduleCode)
+    ? hasModuleAccess(moduleCode) || screenGranted
     : featureCode
       ? hasWorkspaceFeature(featureCode)
       : false;
@@ -37,7 +40,7 @@ export default function WorkspaceAccessGuard({ moduleCode, screenCode, featureCo
     };
   }, [moduleCode, screenCode]);
 
-  if (!moduleAllowed || (screenCode && catalogState === "available" && !hasScreenAccess(screenCode, moduleCode))) {
+  if (!moduleAllowed || (resolvedScreenCode && catalogState === "available" && !hasScreenAccess(resolvedScreenCode, moduleCode))) {
     return <Navigate to={redirectTo} replace />;
   }
   if (catalogState === "checking") return <div className="workspace-route-loading">Verifica autorizzazioni...</div>;
@@ -45,7 +48,7 @@ export default function WorkspaceAccessGuard({ moduleCode, screenCode, featureCo
     return (
       <section className="workspace-route-error" role="alert">
         <h2>Schermata Workspace non configurata</h2>
-        <p>{catalogState === "error" ? "Il catalogo non è al momento verificabile." : `La schermata ${screenCode} non è collegata al modulo ${moduleCode}.`}</p>
+        <p>{catalogState === "error" ? "Il catalogo non è al momento verificabile." : `La schermata ${resolvedScreenCode} non è collegata al modulo ${moduleCode}.`}</p>
       </section>
     );
   }

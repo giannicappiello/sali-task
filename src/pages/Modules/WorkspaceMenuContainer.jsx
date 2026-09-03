@@ -8,7 +8,7 @@ import { supabase } from "../../lib/supabaseClient";
 
 export default function WorkspaceMenuContainer() {
   const { menuCode = "" } = useParams();
-  const { hasModuleAccess, hasWorkspaceFeature } = useAuth();
+  const { hasModuleAccess, hasWorkspaceFeature, getModuleScreenGrant } = useAuth();
   const [catalog, setCatalog] = useState({ menu: null, modules: [], links: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -44,11 +44,11 @@ export default function WorkspaceMenuContainer() {
       .filter((module) => module?.attivo && module.mostra_menu && (
         module.codice === "analisi_dati"
           ? hasWorkspaceFeature("analisi_dati")
-          : hasModuleAccess(module.codice)
+          : hasModuleAccess(module.codice) || Boolean(getModuleScreenGrant(module.codice))
       ));
-  }, [catalog.links,catalog.modules,hasModuleAccess,hasWorkspaceFeature]);
+  }, [catalog.links,catalog.modules,getModuleScreenGrant,hasModuleAccess,hasWorkspaceFeature]);
 
   if (!loading && !catalog.menu) return <Navigate to="/home" replace />;
   const MenuIcon = getModuleIcon(catalog.menu?.icona,FolderTree);
-  return <ModuleContainerLayout icon={MenuIcon} eyebrow="Voce di menu" title={catalog.menu?.nome || "Menu"} description={catalog.menu?.descrizione || "Moduli disponibili in questa voce di menu."} items={modules.map((module) => ({ code:module.codice,name:module.nome,description:module.descrizione,to:module.percorso,state:{ workspaceMenuCode:menuCode,workspaceModuleCode:module.codice },icon:getModuleIcon(module.icona,FolderTree) }))} loading={loading} error={error} onRetry={load} ariaLabel="Moduli della voce di menu" emptyTitle="Nessun modulo disponibile" emptyDescription="Questa voce non contiene moduli visibili per il tuo profilo." />;
+  return <ModuleContainerLayout icon={MenuIcon} eyebrow="Voce di menu" title={catalog.menu?.nome || "Menu"} description={catalog.menu?.descrizione || "Moduli disponibili in questa voce di menu."} items={modules.map((module) => { const screenGrant = getModuleScreenGrant(module.codice); return { code:module.codice,name:module.nome,description:module.descrizione,to:!hasModuleAccess(module.codice) && screenGrant?.percorso ? screenGrant.percorso : module.percorso,state:{ workspaceMenuCode:menuCode,workspaceModuleCode:module.codice },icon:getModuleIcon(module.icona,FolderTree) }; })} loading={loading} error={error} onRetry={load} ariaLabel="Moduli della voce di menu" emptyTitle="Nessun modulo disponibile" emptyDescription="Questa voce non contiene moduli visibili per il tuo profilo." />;
 }

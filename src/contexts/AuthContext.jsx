@@ -56,6 +56,7 @@ export function AuthProvider({ children }) {
   const [accessExceptions, setAccessExceptions] = useState([]);
   const [areaAccess, setAreaAccess] = useState([]);
   const [moduleAreas, setModuleAreas] = useState({});
+  const [screenCatalog, setScreenCatalog] = useState({ screens: [], links: [] });
   const [dataScope, setDataScope] = useState(EMPTY_DATA_SCOPE);
   const [loading, setLoading] = useState(true);
 
@@ -80,6 +81,7 @@ export function AuthProvider({ children }) {
         setAccessExceptions([]);
         setAreaAccess([]);
         setModuleAreas({});
+        setScreenCatalog({ screens: [], links: [] });
         setDataScope(EMPTY_DATA_SCOPE);
       }
 
@@ -101,6 +103,7 @@ export function AuthProvider({ children }) {
         setAccessExceptions([]);
         setAreaAccess([]);
         setModuleAreas({});
+        setScreenCatalog({ screens: [], links: [] });
         setDataScope(EMPTY_DATA_SCOPE);
       }
 
@@ -191,6 +194,7 @@ export function AuthProvider({ children }) {
       setAccessExceptions([]);
       setAreaAccess([]);
       setModuleAreas({});
+      setScreenCatalog({ screens: [], links: [] });
       setDataScope(EMPTY_DATA_SCOPE);
       return;
     }
@@ -206,18 +210,25 @@ export function AuthProvider({ children }) {
       { data: scopeContext, error: scopeContextError },
       { data: areaContext, error: areaContextError },
       { data: moduleAreaRows, error: moduleAreasError },
+      { data: screenRows, error: screensError },
+      { data: screenLinkRows, error: screenLinksError },
     ] = await Promise.all([
       supabase.rpc("workspace_access_context"),
       supabase.rpc("workspace_data_scope"),
       supabase.rpc("workspace_area_access_codes"),
       supabase.from("workspace_moduli").select("codice,area"),
+      supabase.from("workspace_schermate").select("codice,percorso,attiva").eq("attiva", true),
+      supabase.from("workspace_moduli_schermate").select("modulo_codice,schermata_codice,ordine").order("ordine"),
     ]);
     if (accessContextError) console.error("Errore caricamento contesto autorizzativo:", accessContextError);
     if (scopeContextError) console.error("Errore caricamento ambito dati:", scopeContextError);
     if (areaContextError) console.error("Errore caricamento accesso alle aree:", areaContextError);
     if (moduleAreasError) console.error("Errore caricamento aree dei moduli:", moduleAreasError);
+    if (screensError) console.error("Errore caricamento catalogo schermate:", screensError);
+    if (screenLinksError) console.error("Errore caricamento collegamenti schermate:", screenLinksError);
     setAreaAccess(Array.isArray(areaContext) ? areaContext.filter(Boolean) : []);
     setModuleAreas(Object.fromEntries((moduleAreaRows || []).map((row) => [row.codice, row.area]).filter(([code]) => code)));
+    setScreenCatalog({ screens: screenRows || [], links: screenLinkRows || [] });
     const resolvedRole = accessContext?.role && typeof accessContext.role === "object" ? accessContext.role : null;
 
     let repartoRows = [];
@@ -332,6 +343,7 @@ export function AuthProvider({ children }) {
     setAccessExceptions([]);
     setAreaAccess([]);
     setModuleAreas({});
+    setScreenCatalog({ screens: [], links: [] });
     setDataScope(EMPTY_DATA_SCOPE);
   }
 
@@ -348,6 +360,39 @@ export function AuthProvider({ children }) {
   function getPersonalException(scope, code) {
     if (!scope || !code) return null;
     return accessExceptions.find((item) => item?.scope === scope && item?.code === code) || null;
+  }
+
+  function getPersonalAccessDecision(scope, code) {
+    return getPersonalException(scope, code)?.decision || null;
+  }
+
+  function hasExplicitScreenGrant(screenCode) {
+    return getPersonalAccessDecision("schermata", screenCode) === "consenti";
+  }
+
+  function getModuleScreenGrant(moduleCode) {
+    if (!moduleCode) return null;
+    const grantedCodes = new Set(accessExceptions
+      .filter((item) => item?.scope === "schermata" && item?.decision === "consenti")
+      .map((item) => item.code));
+    const grantedLink = screenCatalog.links.find((link) => link.modulo_codice === moduleCode && grantedCodes.has(link.schermata_codice));
+    return grantedLink
+      ? screenCatalog.screens.find((screen) => screen.codice === grantedLink.schermata_codice) || null
+      : null;
+  }
+
+  function getScreenCodeForPath(pathname, moduleCode = null) {
+    const normalizedPath = String(pathname || "").replace(/\/$/, "") || "/";
+    const linkedCodes = moduleCode
+      ? new Set(screenCatalog.links.filter((link) => link.modulo_codice === moduleCode).map((link) => link.schermata_codice))
+      : null;
+    return screenCatalog.screens
+      .filter((screen) => !linkedCodes || linkedCodes.has(screen.codice))
+      .filter((screen) => {
+        const screenPath = String(screen.percorso || "").replace(/\/$/, "") || "/";
+        return normalizedPath === screenPath || (screenPath !== "/" && normalizedPath.startsWith(`${screenPath}/`));
+      })
+      .toSorted((left, right) => String(right.percorso || "").length - String(left.percorso || "").length)[0]?.codice || "";
   }
 
   function hasPermission(code) {
@@ -478,6 +523,10 @@ export function AuthProvider({ children }) {
       hasModuleAccess,
       hasAreaAccess,
       hasScreenAccess,
+      getPersonalAccessDecision,
+      hasExplicitScreenGrant,
+      getModuleScreenGrant,
+      getScreenCodeForPath,
       hasWorkspaceFeature,
       getModuleAccessLevel,
       canUseModule,
@@ -490,7 +539,7 @@ export function AuthProvider({ children }) {
       userDepartmentIds: profile?.reparto_ids || [],
       reloadProfile: () => authUser && loadProfile(authUser),
     }),
-    [session, authUser, profile, permissions, moduleAccess, moduleLevels, accessExceptions, areaAccess, moduleAreas, dataScope, loading, adminUser]
+    [session, authUser, profile, permissions, moduleAccess, moduleLevels, accessExceptions, areaAccess, moduleAreas, screenCatalog, dataScope, loading, adminUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

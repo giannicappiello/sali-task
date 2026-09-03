@@ -123,7 +123,7 @@ function getPresence(profile) {
 function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { profile, signOut, hasPermission, hasModuleAccess, hasWorkspaceFeature, isAdminUser } = useAuth();
+  const { profile, signOut, hasPermission, hasModuleAccess, hasWorkspaceFeature, getModuleScreenGrant, isAdminUser } = useAuth();
 
   const currentPage = location.pathname.startsWith("/produzione")
     ? pageInfo["/produzione"]
@@ -332,9 +332,12 @@ function Layout() {
   const visibleModuleItems = useMemo(
     () =>
       menuItems.filter((item) => {
+        const itemModuleCode = item.catalogModule || item.module || item.accessModule || "";
+        const screenGrant = getModuleScreenGrant(itemModuleCode);
         if (item.adminOnly && !isAdminUser) return false;
-        if (item.module && !hasModuleAccess(item.module)) return false;
-        if (item.accessModule && !hasModuleAccess(item.accessModule)) return false;
+        if (item.module && !hasModuleAccess(item.module) && !screenGrant) return false;
+        if (item.accessModule && !hasModuleAccess(item.accessModule) && !screenGrant) return false;
+        if (screenGrant) return true;
         if (item.feature && !hasWorkspaceFeature(item.feature)) return false;
 
         if (item.path === "/farmacie/dashboard") {
@@ -346,8 +349,14 @@ function Layout() {
         if (item.special === "orders_private") return ordersAccess.private;
 
         return item.permission ? hasPermission(item.permission) : true;
+      }).map((item) => {
+        const itemModuleCode = item.catalogModule || item.module || item.accessModule || "";
+        const screenGrant = getModuleScreenGrant(itemModuleCode);
+        return screenGrant && !hasModuleAccess(itemModuleCode) && screenGrant.percorso
+          ? { ...item, path: screenGrant.percorso }
+          : item;
       }),
-    [menuItems, hasPermission, hasModuleAccess, hasWorkspaceFeature, pharmacyEnabled, ordersAccess, isAdminUser]
+    [menuItems, getModuleScreenGrant, hasPermission, hasModuleAccess, hasWorkspaceFeature, pharmacyEnabled, ordersAccess, isAdminUser]
   );
 
   const visibleMenuItems = useMemo(() => {

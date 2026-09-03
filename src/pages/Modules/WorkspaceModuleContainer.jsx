@@ -9,12 +9,12 @@ import { getModuleIcon } from "../../config/moduleIcons";
 export default function WorkspaceModuleContainer() {
   const { moduleCode = "" } = useParams();
   const location = useLocation();
-  const { profile, hasPermission, hasModuleAccess, hasAreaAccess, hasScreenAccess, canUseModule, isAdminUser } = useAuth();
+  const { profile, hasPermission, hasModuleAccess, hasAreaAccess, hasScreenAccess, hasExplicitScreenGrant, getModuleScreenGrant, canUseModule, isAdminUser } = useAuth();
   const departmentIds = useMemo(() => profile?.reparto_ids || [], [profile?.reparto_ids]);
   const [catalog, setCatalog] = useState({ module: null, screens: [], links: [], progremesAccess: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const allowed = hasModuleAccess(moduleCode);
+  const allowed = hasModuleAccess(moduleCode) || Boolean(getModuleScreenGrant(moduleCode));
 
   useEffect(() => {
     let active = true;
@@ -55,7 +55,7 @@ export default function WorkspaceModuleContainer() {
       .map((link) => ({ ...screenByCode.get(link.schermata_codice), ordine: link.ordine }))
       .filter((screen) => screen.codice && screen.metadati?.kind !== "topic")
       .filter((screen) => hasScreenAccess(screen.codice, moduleCode))
-      .filter((screen) => hasAreaAccess(screen.area))
+      .filter((screen) => hasAreaAccess(screen.area) || hasExplicitScreenGrant(screen.codice))
       .filter((screen) => !screen.metadati?.admin_only || isAdminUser)
       .filter((screen) => {
         const requiredPermissions = Array.isArray(screen.metadati?.required_permissions) ? screen.metadati.required_permissions : [];
@@ -66,11 +66,11 @@ export default function WorkspaceModuleContainer() {
         const externalCode = screen.metadati?.external_code || screen.codice.replace(/^progremes\./, "");
         return hasModuleAccess("progremes") && canUseModule("progremes", "lettura") && (isAdminUser || allowedProgremes.has(externalCode));
       });
-  }, [canUseModule, catalog.links, catalog.progremesAccess, catalog.screens, hasAreaAccess, hasModuleAccess, hasPermission, hasScreenAccess, isAdminUser, moduleCode]);
+  }, [canUseModule, catalog.links, catalog.progremesAccess, catalog.screens, hasAreaAccess, hasExplicitScreenGrant, hasModuleAccess, hasPermission, hasScreenAccess, isAdminUser, moduleCode]);
 
   const ModuleIcon = getModuleIcon(catalog.module?.icona, LayoutGrid);
 
-  if (!allowed) return <Navigate to="/home" replace />;
+  if (!loading && !allowed) return <Navigate to="/home" replace />;
 
   return <ModuleContainerLayout
     icon={ModuleIcon}

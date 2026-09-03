@@ -101,9 +101,14 @@ test("AI propone un tipo configurato e crea solo dopo conferma umana", () => {
 test("layout operativo mantiene responsive e focus Workspace", () => {
   assert.match(css, /crm-operational-grid/);
   assert.match(css, /crm-operational-form/);
+  assert.match(opportunity, /panel-header crm-operational-heading/);
+  assert.match(opportunity, /panel crm-operational-card/);
+  assert.match(opportunity, /className="secondary-action"/);
   assert.match(css, /@media\s*\(max-width:\s*1024px\)/);
   assert.match(css, /@media\s*\(max-width:\s*640px\)/);
   assert.match(kanban, /aria-label="Kanban task Workspace"/);
+  assert.match(kanban, /panel workspace-task-column/);
+  assert.match(kanban, /secondary-action workspace-task-link/);
 });
 
 test("assegnatari task usano il profilo Workspace canonico", () => {

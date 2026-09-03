@@ -1,7 +1,37 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { activeOctLines, confirmedV4ProductionRequest, diagnosticBlocks, diagnosticMatchesWorkbenchLine, loadAllProductionOrders, rdpProductionState, requestStage, resolveWorkbenchOctUnit, resolveWorkbenchUnits, v2DecisionAvailability, visibleDiagnostic, workbenchBomComponent, workbenchDetailLines, workbenchLineMappingStatus } from "./workspacemes-workbench.js";
+import { activeOctLines, confirmedV4ProductionRequest, diagnosticBlocks, diagnosticMatchesWorkbenchLine, loadAllProductionOrders, rdpProductionState, requestStage, resolveWorkbenchOctUnit, resolveWorkbenchUnits, v2DecisionAvailability, visibleDiagnostic, workbenchBomComponent, workbenchDetailLines, workbenchLineMappingStatus, workbenchOrderBelongsToCustomer } from "./workspacemes-workbench.js";
+
+test("il Workbench cliente riconosce esclusivamente il codice cliente associato", () => {
+  assert.equal(workbenchOrderBelongsToCustomer({ codice_cliente: "501.02281" }, "501.02281"), true);
+  assert.equal(workbenchOrderBelongsToCustomer({ mexal_cod_conto: "501.02281" }, "501.02281"), true);
+  assert.equal(workbenchOrderBelongsToCustomer({ codice_cliente: "501.99999" }, "501.02281"), false);
+});
+
+test("lista e dettaglio Workbench applicano lo scope cliente sul server", async () => {
+  const source = await readFile(new URL("./workspacemes-workbench.js", import.meta.url), "utf8");
+  assert.match(source, /if \(expectedCustomerCode\) ordersQuery = ordersQuery\.eq\("codice_cliente", expectedCustomerCode\)/);
+  assert.match(source, /some\(\(order\) => !workbenchOrderBelongsToCustomer\(order, expectedCustomerCode\)\)/);
+  assert.match(source, /OCT o RdP non disponibile per il cliente associato/);
+});
+
+test("le API Workbench derivano lo scope dall'associazione anagrafica e negano operazioni globali al cliente", async () => {
+  const source = await readFile(new URL("../api/mexal/automation.js", import.meta.url), "utf8");
+  assert.match(source, /workspace_customer_user_links/);
+  assert.match(source, /customerCode = await authorizedCustomerCode\(admin\)/);
+  assert.match(source, /rejectCustomerScopedOperation\(admin, "Aggiornamento globale OCT"\)/);
+  assert.match(source, /rejectCustomerScopedOperation\(admin, "Fabbisogni acquisto"\)/);
+});
+
+test("le route locali Production richiedono i permessi e il Workbench cliente nasconde le aree globali", async () => {
+  const production = await readFile(new URL("../src/pages/Production/Production.jsx", import.meta.url), "utf8");
+  const workbench = await readFile(new URL("../src/pages/Production/RdpWorkbench.jsx", import.meta.url), "utf8");
+  assert.match(production, /sectionPath === "diagnostica"[\s\S]*hasPermission\?\.\("diagnostics\.view"\)/);
+  assert.match(production, /sectionPath === "fabbisogni-acquisto"[\s\S]*!customerScoped/);
+  assert.match(workbench, /customerScoped \? TABS\.filter/);
+  assert.match(workbench, /!customerScoped && <button[^>]+rdp-toolbar-refresh/);
+});
 
 test("il dettaglio Workbench legge la data reale della revisione distinta", async () => {
   const source = await readFile(new URL("./workspacemes-workbench.js", import.meta.url), "utf8");

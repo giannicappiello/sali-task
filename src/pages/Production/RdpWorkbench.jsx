@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Ban, CheckCircle2, ChevronRight, Factory, RefreshCw, Search, Send, ShieldAlert, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
@@ -277,13 +277,15 @@ function PreviewDialog({ preview, busy, sendEnabled, onCancel, onConfirm }) {
 
 export default function RdpWorkbench() {
   const navigate = useNavigate();
-  const { session, hasPermission } = useAuth();
+  const { session, hasPermission, dataScope } = useAuth();
   const accessToken = session?.access_token;
-  const canCreate = hasPermission?.("rdp.create");
-  const canDecide = hasPermission?.("rdp.decide");
-  const canCancel = hasPermission?.("rdp.cancel");
-  const canManageDiagnostics = hasPermission?.("diagnostics.manage");
-  const canManagePurchases = hasPermission?.("purchases.manage");
+  const customerScoped = Boolean(dataScope?.customerCode);
+  const availableTabs = customerScoped ? TABS.filter(([code]) => !["purchasing", "mes-orders", "planning"].includes(code)) : TABS;
+  const canCreate = !customerScoped && hasPermission?.("rdp.create");
+  const canDecide = !customerScoped && hasPermission?.("rdp.decide");
+  const canCancel = !customerScoped && hasPermission?.("rdp.cancel");
+  const canManageDiagnostics = !customerScoped && hasPermission?.("diagnostics.manage");
+  const canManagePurchases = !customerScoped && hasPermission?.("purchases.manage");
   const [data, setData] = useState([]); const [tab, setTab] = useState("evaluation"); const [selected, setSelected] = useState([]);
   const [filters, setFilters] = useState({ search: "", ready: "" }); const [detail, setDetail] = useState(null);
   const [preview, setPreview] = useState(null); const [busy, setBusy] = useState(false); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [result, setResult] = useState(null);
@@ -334,13 +336,13 @@ export default function RdpWorkbench() {
     return () => { active = false; refreshGeneration.current += 1; };
   }, [accessToken]);
 
-  const loadPurchasing = useCallback(async () => {
+  async function loadPurchasing() {
     if (!accessToken) return;
     setPurchaseLoading(true); setError("");
     try { setPurchasing(await callWorkbench(accessToken, "workspacemes_v4_purchasing_list")); }
     catch (e) { setError(e.message); }
     finally { setPurchaseLoading(false); }
-  }, [accessToken]);
+  }
 
   async function createPurchaseDocument(input) {
     if (!canManagePurchases || busy) return;
@@ -430,8 +432,8 @@ export default function RdpWorkbench() {
   }
 
   return <div className="production-page rdp-workbench">
-    <header className="rdp-header"><div><span className="rdp-eyebrow">WorkspaceMES</span><h1>RdP Workbench</h1><p>Gestione OCT, richieste di produzione, analisi MES e decisioni operative.</p></div><div className="rdp-header-controls"><nav className="rdp-tabs" aria-label="Stati Workbench">{TABS.map(([code,label]) => <button type="button" key={code} className={tab === code ? "active" : ""} onClick={() => { if (code === "purchasing") navigate("/produzione/fabbisogni-acquisto"); else if (code === "mes-orders") navigate("/produzione/progremes.Ordini.Produzione"); else if (code === "planning") navigate("/produzione/progremes.Planning"); else setTab(code); }}>{label}{!["purchasing", "mes-orders", "planning"].includes(code) && <span>{data.filter((row) => row.stage === code).length}</span>}</button>)}</nav><div className="rdp-header-actions"><BackgroundSyncStatus refresh={octRefresh}/></div></div></header>
-    {tab !== "purchasing" && <section className={`rdp-toolbar ${tab === "evaluation" ? "rdp-toolbar-evaluation" : ""}`}><label className="rdp-quick-search"><Search size={17}/><input value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} placeholder="Cerca OCT, cliente, stato…"/></label><select value={filters.ready} onChange={(e) => setFilters({ ...filters, ready: e.target.value })}><option value="">Pronti e bloccati</option><option value="ready">Solo pronti</option><option value="blocked">Solo bloccati</option></select><button type="button" className="secondary-action rdp-toolbar-refresh" onClick={refreshOctOrders} disabled={loading || octRefreshRunning}><RefreshCw className={loading || octRefreshRunning ? "rdp-spin" : ""} size={17}/>Aggiorna</button>{tab === "evaluation" && <div className="rdp-selection-bar"><span><strong>{selected.length}</strong> OCT selezionati</span><button type="button" className="primary-action rdp-preview-action" onClick={createPreview} disabled={!canCreate || !sendEnabled || !selected.length || selectionBlocked || busy}>{busy ? "Verifica…" : "Verifica e crea anteprima"}</button>{!canCreate && <small>Permesso rdp.create richiesto.</small>}{!sendEnabled && <small>Invio RdP Production non disponibile: verificare i gate nel Centro Diagnostico.</small>}{selectionBlocked && <small>Rimuovere gli OCT bloccati prima di creare la RdP.</small>}</div>}</section>}
+    <header className="rdp-header"><div><span className="rdp-eyebrow">WorkspaceMES</span><h1>RdP Workbench</h1><p>{customerScoped ? "Consultazione delle sole richieste e degli OCT associati al cliente." : "Gestione OCT, richieste di produzione, analisi MES e decisioni operative."}</p></div><div className="rdp-header-controls"><nav className="rdp-tabs" aria-label="Stati Workbench">{availableTabs.map(([code,label]) => <button type="button" key={code} className={tab === code ? "active" : ""} onClick={() => { if (code === "purchasing") navigate("/produzione/fabbisogni-acquisto"); else if (code === "mes-orders") navigate("/produzione/progremes.Ordini.Produzione"); else if (code === "planning") navigate("/produzione/progremes.Planning"); else setTab(code); }}>{label}{!["purchasing", "mes-orders", "planning"].includes(code) && <span>{data.filter((row) => row.stage === code).length}</span>}</button>)}</nav><div className="rdp-header-actions"><BackgroundSyncStatus refresh={octRefresh}/></div></div></header>
+    {tab !== "purchasing" && <section className={`rdp-toolbar ${tab === "evaluation" ? "rdp-toolbar-evaluation" : ""}`}><label className="rdp-quick-search"><Search size={17}/><input value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} placeholder="Cerca OCT, cliente, stato…"/></label><select value={filters.ready} onChange={(e) => setFilters({ ...filters, ready: e.target.value })}><option value="">Pronti e bloccati</option><option value="ready">Solo pronti</option><option value="blocked">Solo bloccati</option></select>{!customerScoped && <button type="button" className="secondary-action rdp-toolbar-refresh" onClick={refreshOctOrders} disabled={loading || octRefreshRunning}><RefreshCw className={loading || octRefreshRunning ? "rdp-spin" : ""} size={17}/>Aggiorna</button>}{tab === "evaluation" && !customerScoped && <div className="rdp-selection-bar"><span><strong>{selected.length}</strong> OCT selezionati</span><button type="button" className="primary-action rdp-preview-action" onClick={createPreview} disabled={!canCreate || !sendEnabled || !selected.length || selectionBlocked || busy}>{busy ? "Verifica…" : "Verifica e crea anteprima"}</button>{!canCreate && <small>Permesso rdp.create richiesto.</small>}{!sendEnabled && <small>Invio RdP Production non disponibile: verificare i gate nel Centro Diagnostico.</small>}{selectionBlocked && <small>Rimuovere gli OCT bloccati prima di creare la RdP.</small>}</div>}</section>}
     {error && <div className="production-message" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")}><X size={16}/>Chiudi</button></div>}
     {result && <div className="rdp-success"><CheckCircle2/><div><strong>{result.kind === "cancelled" ? "RdP annullata logicamente" : result.kind === "production_order" ? "RdP andata a buon fine, OP generato." : "RdP ricevuta da ProgreMES"}</strong><p>{result.kind === "production_order" ? `${result.productionOrder?.number || result.productionOrder?.id ? `OP ${result.productionOrder.number || result.productionOrder.id} · ` : ""}apertura ordini di produzione…` : `${result.rdpNumber ? `RDP${result.rdpNumber}` : "RdP"} · Stato ${result.kind === "cancelled" ? "Annullata" : result.status || "Received"}`}</p></div></div>}
     {tab === "purchasing" ? <PurchasingPanel data={purchasing} loading={purchaseLoading} busy={busy} canManage={canManagePurchases} onReload={loadPurchasing} onCreate={createPurchaseDocument}/> : <section className="rdp-oct-scroll" role="region" aria-label="Elenco OCT e RdP" tabIndex={0}>{loading ? <div className="production-loading">Caricamento OCT e RdP…</div> : <div className="rdp-oct-cards">{visible.map((row) => <OctOrderCard key={row.id} row={row} selectable={tab === "evaluation"} selected={selected.includes(row.id)} onToggle={() => toggle(row)} onOpen={() => openDetail(row)} onDiagnostic={openDiagnostic}/>) }{!visible.length && <div className="rdp-empty">Nessun elemento per i filtri e lo stato selezionati.</div>}</div>}</section>}

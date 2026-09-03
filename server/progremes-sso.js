@@ -108,9 +108,12 @@ export async function listUserProgremesSections(req) {
   if (error || linksError) throw error || linksError;
   const screenByCode = new Map((screens || []).map((screen) => [screen.codice, screen]));
 
+  const workspaceLocalCodes = new Set(["diagnostica", "rdp-workbench", "fabbisogni-acquisto", "progremes.ordini.fabbisogni"]);
   const sections = (links || [])
     .map((link) => ({ ...screenByCode.get(link.schermata_codice), moduleOrder: link.ordine }))
-    .filter((screen) => screen.codice)
+    .filter((screen) => screen.codice
+      && !workspaceLocalCodes.has(String(screen.codice).trim().toLowerCase())
+      && !workspaceLocalCodes.has(String(screen.metadati?.external_code || "").trim().toLowerCase()))
     .map((screen) => ({
       code: screen.codice,
       externalCode: String(screen.metadati?.external_code || screen.codice.replace(/^progremes\./, "")).trim(),

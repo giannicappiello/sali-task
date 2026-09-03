@@ -251,8 +251,22 @@ async function createAdmin(req, permissionCode = null) {
   const authorizationResult = permissionCode
     ? await requirePermission(req, createSupabase, permissionCode)
     : await requireAdmin(req, createSupabase);
-  const { supabase, authUserId } = authorizationResult;
-  return { supabase, authUserId };
+  const { supabase, authUserId, id: profileId } = authorizationResult;
+  return { supabase, authUserId, profileId };
+}
+
+async function authorizedCustomerCode(admin) {
+  if (!admin?.profileId) return null;
+  const { data, error } = await admin.supabase.from("workspace_customer_user_links")
+    .select("customer_code").eq("user_id", admin.profileId).maybeSingle();
+  if (error) throw error;
+  return String(data?.customer_code || "").trim() || null;
+}
+
+async function rejectCustomerScopedOperation(admin, operation) {
+  if (await authorizedCustomerCode(admin)) {
+    throw Object.assign(new Error(`${operation} non disponibile per gli account cliente.`), { status: 403 });
+  }
 }
 
 async function startSync(req, res, body, syncType, runHandler, admin) {
@@ -594,6 +608,7 @@ export default async function handler(req, res) {
       }
       case "progremes_workbench_list": {
         const admin = await createAdmin(req, "rdp.view");
+        const customerCode = await authorizedCustomerCode(admin);
         const client = createProgremesClient();
         const [diagnostics, health, productionOrders] = await Promise.all([
           client.request("diagnostics").catch(() => []),
@@ -608,11 +623,13 @@ export default async function handler(req, res) {
           admin: admin.supabase,
           diagnostics: effectiveDiagnostics,
           productionOrders,
+          customerCode,
         });
         return sendSuccess(res, 200, { ...workbench, productionGates: productionGoLiveGates(health) });
       }
       case "progremes_workbench_detail": {
         const admin = await createAdmin(req, "rdp.view");
+        const customerCode = await authorizedCustomerCode(admin);
         const diagnostics = await createProgremesClient().request("diagnostics").catch(() => []);
         const effectiveDiagnostics = await effectiveWorkspaceDiagnostics({ admin: admin.supabase, diagnostics });
         return sendSuccess(res, 200, await productionWorkbenchDetail({
@@ -620,6 +637,7 @@ export default async function handler(req, res) {
           orderId: body.orderId,
           requestId: body.requestId,
           diagnostics: effectiveDiagnostics,
+          customerCode,
         }));
       }
       case "progremes_diagnostic_action": {
@@ -634,6 +652,7 @@ export default async function handler(req, res) {
       }
       case "progremes_oct_refresh": {
         const admin = await createAdmin(req, "rdp.view");
+        await rejectCustomerScopedOperation(admin, "Aggiornamento globale OCT");
         const { data, error } = await admin.supabase.rpc("enqueue_manual_workbench_oct_refresh", {
           p_requested_by: admin.authUserId,
           p_requested_at: new Date().toISOString(),
@@ -643,6 +662,7 @@ export default async function handler(req, res) {
       }
       case "progremes_oct_refresh_status": {
         const admin = await createAdmin(req, "rdp.view");
+        await rejectCustomerScopedOperation(admin, "Stato aggiornamento globale OCT");
         const jobId = Number(body.jobId);
         if (!Number.isSafeInteger(jobId) || jobId < 1) {
           return sendFailure(res, 400, "progremes_oct_refresh_status", "Job OCT non valido.");
@@ -700,6 +720,7 @@ export default async function handler(req, res) {
       }
       case "workspacemes_v4_purchasing_list": {
         const admin = await createAdmin(req, "rdp.view");
+        await rejectCustomerScopedOperation(admin, "Fabbisogni acquisto");
         const client = createProgremesClient();
         const [suppliersResult, source] = await Promise.all([
           client.request("suppliers", { page: 1, pageSize: 500, active: true }).catch(() => ({ items: [] })),

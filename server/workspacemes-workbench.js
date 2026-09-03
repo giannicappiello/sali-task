@@ -71,6 +71,11 @@ function customerCode(order) {
   return text(order.mexal_cod_conto || order.codice_cliente);
 }
 
+export function workbenchOrderBelongsToCustomer(order, expectedCustomerCode) {
+  if (!expectedCustomerCode) return true;
+  return customerCode(order).toUpperCase() === text(expectedCustomerCode).toUpperCase();
+}
+
 function customerName(order, customersByCode) {
   const code = customerCode(order);
   return text(order.ragione_sociale_cliente || customersByCode.get(code)?.ragione_sociale) || code || "—";
@@ -231,9 +236,11 @@ export function diagnosticBlocks(row) {
     ["OPEN", "ACKNOWLEDGED"].includes(text(row?.status).toUpperCase());
 }
 
-export async function listProductionWorkbench({ admin, diagnostics = [], productionOrders = [] }) {
+export async function listProductionWorkbench({ admin, diagnostics = [], productionOrders = [], customerCode: expectedCustomerCode = null }) {
+  let ordersQuery = admin.from("ordini_testate").select("*").eq("origine", "mexal_oct");
+  if (expectedCustomerCode) ordersQuery = ordersQuery.eq("codice_cliente", expectedCustomerCode);
   const [{ data: orders, error: orderError }, { data: lines, error: lineError }, { data: requests, error: requestError }] = await Promise.all([
-    admin.from("ordini_testate").select("*").eq("origine", "mexal_oct").order("data_consegna", { ascending: true }).limit(500),
+    ordersQuery.order("data_consegna", { ascending: true }).limit(500),
     admin.from("ordini_righe").select("*").order("mexal_posizione", { ascending: true }).limit(5000),
     admin.from("workspace_production_requests").select("*").order("created_at", { ascending: false }).limit(500),
   ]);
@@ -330,10 +337,10 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
       requestId: request.id, requestExternalId: request.external_id, rdpNumber: request.rdp_number || null, diagnostics: [],
     };
   });
-  return { generatedAt: new Date().toISOString(), items, history };
+  return { generatedAt: new Date().toISOString(), items, history, customerScoped: Boolean(expectedCustomerCode) };
 }
 
-export async function productionWorkbenchDetail({ admin, orderId = null, requestId = null, diagnostics = [] }) {
+export async function productionWorkbenchDetail({ admin, orderId = null, requestId = null, diagnostics = [], customerCode: expectedCustomerCode = null }) {
   let request = null;
   if (requestId) {
     const result = await admin.from("workspace_production_requests").select("*").eq("id", requestId).maybeSingle();
@@ -350,6 +357,9 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
     admin.from("ordini_righe").select("*").in("ordine_id", relatedOrderIds).order("mexal_posizione"),
   ]);
   if (ordersError || linesError) throw ordersError || linesError;
+  if (expectedCustomerCode && (!(orders || []).length || (orders || []).some((order) => !workbenchOrderBelongsToCustomer(order, expectedCustomerCode)))) {
+    throw Object.assign(new Error("OCT o RdP non disponibile per il cliente associato."), { status: 404 });
+  }
   const currentLines = activeOctLines(lines);
   const visibleLines = request ? workbenchDetailLines(lines, requestItemsResult.data || []) : currentLines;
   const customersByCode = await loadCustomers(admin, orders);

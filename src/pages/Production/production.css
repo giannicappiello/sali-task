@@ -136,3 +136,11 @@
 @media(max-width:1450px){.purchase-month-actions{grid-template-columns:auto minmax(150px,200px) minmax(180px,1fr) repeat(4,auto)}.purchase-month-actions>button{font-size:.66rem;padding-inline:7px}.purchase-table-wrap table{min-width:1100px;font-size:.64rem}.purchase-table-wrap td small{font-size:.58rem}}
 @media(max-width:1120px){.purchase-month-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.purchase-month-actions>select{max-width:none}.purchase-quick-search{grid-column:1/-1}.purchase-month-actions>button{white-space:normal}}
 @media(max-width:650px){.purchase-month-actions{grid-template-columns:1fr}.purchase-quick-search{grid-column:auto}}
+.purchase-discarded{overflow:hidden;border:1px solid #efc46a;border-radius:13px;background:#fffaf0}
+.purchase-discarded>header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:13px 16px;border-bottom:1px solid #f0d699}
+.purchase-discarded>header>div{display:grid;gap:3px}.purchase-discarded>header span{color:#765b28}.purchase-discarded>header button{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+.purchase-discarded>div{max-height:320px;overflow:auto}.purchase-discarded table{width:100%;border-collapse:collapse}
+.purchase-discarded th,.purchase-discarded td{padding:9px 11px;text-align:left;vertical-align:top;border-bottom:1px solid #eee3cb}
+.purchase-discarded th{position:sticky;top:0;color:#5d4a25;background:#fff4d8;font-size:.72rem;text-transform:uppercase}
+.purchase-discarded td{font-size:.78rem;overflow-wrap:anywhere}
+@media(max-width:700px){.purchase-discarded>header{align-items:stretch;flex-direction:column}.purchase-discarded>header button{justify-content:center}}

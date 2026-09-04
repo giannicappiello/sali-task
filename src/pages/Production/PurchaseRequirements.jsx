@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, ChevronLeft, ChevronRight, Download, FilePlus2, Info, RefreshCw, Search, ShoppingCart, X } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, Download, FilePlus2, Info, Printer, RefreshCw, Search, ShoppingCart, X } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { createPfPreviewPdfFiles } from "../../modules/orders/services/pfPreviewPdf.js";
 
@@ -40,6 +40,7 @@ export default function PurchaseRequirements() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [discardedRows, setDiscardedRows] = useState([]);
 
   const load = useCallback(async () => {
     if (!accessToken) return;
@@ -86,10 +87,37 @@ export default function PurchaseRequirements() {
     try {
       const result = await callPurchasing(accessToken, "workspacemes_v4_purchasing_action", { purchasingAction, ...extra });
       setMessage(result.message || "Operazione completata.");
+      if (purchasingAction === "IMPORT_SUPPLIER_ORDERS") {
+        setDiscardedRows(Array.isArray(result.discardedRows) ? result.discardedRows : []);
+      }
       if (successReload) await load();
       return true;
     } catch (actionError) { setError(actionError.message); return false; }
     finally { setBusy(""); }
+  }
+
+  function printDiscardedRows() {
+    const popup = window.open("", "_blank", "width=1100,height=800");
+    if (!popup) { setError("Il browser ha bloccato la finestra di stampa."); return; }
+    popup.opener = null;
+    const printDocument = popup.document;
+    printDocument.title = "Righe ordini fornitore scartate";
+    const style = printDocument.createElement("style");
+    style.textContent = "body{font:14px Arial,sans-serif;color:#172033;padding:24px}h1{font-size:22px;margin:0 0 6px}p{color:#596579;margin:0 0 18px}table{width:100%;border-collapse:collapse}th,td{padding:8px;text-align:left;vertical-align:top;border:1px solid #cfd8e3}th{background:#eef3f8;font-size:12px}td{overflow-wrap:anywhere}@media print{body{padding:0}}";
+    printDocument.head.append(style);
+    const title = printDocument.createElement("h1"); title.textContent = "Righe ordini fornitore scartate";
+    const subtitle = printDocument.createElement("p"); subtitle.textContent = `${discardedRows.length} righe · stampa del ${new Date().toLocaleString("it-IT")}`;
+    const table = printDocument.createElement("table");
+    const head = table.createTHead().insertRow();
+    ["Ordine", "Codice articolo", "Descrizione", "Motivo"].forEach((label) => { const cell = printDocument.createElement("th"); cell.textContent = label; head.append(cell); });
+    const body = table.createTBody();
+    discardedRows.forEach((row) => {
+      const line = body.insertRow();
+      [row.orderReference, row.articleCode, row.description, row.reason].forEach((value) => { const cell = line.insertCell(); cell.textContent = value || "—"; });
+    });
+    printDocument.body.append(title, subtitle, table);
+    popup.focus();
+    popup.print();
   }
 
   function closePfPreview() {
@@ -135,6 +163,10 @@ export default function PurchaseRequirements() {
     </div>
     {message && <div className="purchase-feedback success" role="status"><CheckCircle2 size={18}/><span>{message}</span><button onClick={() => setMessage("")} aria-label="Chiudi"><X size={16}/></button></div>}
     {error && <div className="purchase-feedback error" role="alert"><span>{error}</span><button onClick={() => setError("")} aria-label="Chiudi"><X size={16}/></button></div>}
+    {discardedRows.length > 0 && <section className="purchase-discarded" aria-label="Righe ordini fornitore scartate">
+      <header><div><strong>Righe scartate nell’ultima importazione</strong><span>{discardedRows.length} righe non importate con motivazione puntuale.</span></div><button type="button" className="secondary-action" onClick={printDiscardedRows}><Printer size={16}/>Stampa elenco</button></header>
+      <div><table><thead><tr><th>Ordine</th><th>Codice articolo</th><th>Descrizione</th><th>Motivo</th></tr></thead><tbody>{discardedRows.map((row, index) => <tr key={`${row.orderReference}:${row.articleCode}:${index}`}><td>{row.orderReference || "—"}</td><td>{row.articleCode || "—"}</td><td>{row.description || "—"}</td><td>{row.reason || "—"}</td></tr>)}</tbody></table></div>
+    </section>}
     {latestSaliProposal && <section className="purchase-sali-proposal" aria-label="Ultima proposta Sali di Ischia">
       <header><div><span>Riassortimento Workspace</span><h2>Proposta Sali di Ischia del {date(latestSaliProposal.proposal_date)}</h2></div><strong>{latestSaliProposal.status}</strong></header>
       <p>Calcolo autonomo Workspace su vendite sincronizzate MEXAL, giacenza del magazzino {latestSaliProposal.warehouse_number} e lead time configurati.</p>

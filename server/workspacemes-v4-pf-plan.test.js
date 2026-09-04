@@ -14,6 +14,26 @@ test("il piano automatico selezionato contiene solo le righe richieste", () => {
   assert.deepEqual(plan.documents[0].lines.map((line) => line.articleCode), ["MP12"]);
 });
 
+test("il piano da selezionati non applica il limite dei 60 giorni", () => {
+  const future = { ...rows[1], key: "12:2027-02", month: "2027-02-01T00:00:00.000Z", requiredAt: "2027-02-21T00:00:00.000Z" };
+  const plan = buildWorkspaceV4PfPlan([rows[0], future], suppliers, { mode: "selected", selectedKeys: [future.key], generatedAt: "2026-09-04T00:00:00.000Z", horizonDays: 60 });
+  assert.equal(plan.documents.length, 1);
+  assert.deepEqual(plan.documents[0].lines.map((line) => line.articleCode), ["MP12"]);
+});
+
+test("il piano da selezionati richiede un fornitore solo quando manca il mapping automatico", () => {
+  const withoutSupplier = { ...rows[0], supplierId: null };
+  assert.throws(() => buildWorkspaceV4PfPlan([withoutSupplier], suppliers, { mode: "selected", selectedKeys: [withoutSupplier.key] }), /Seleziona un fornitore PF/);
+  const plan = buildWorkspaceV4PfPlan([withoutSupplier], suppliers, { mode: "selected", selectedKeys: [withoutSupplier.key], supplierId: 7 });
+  assert.equal(plan.documents[0].supplierId, 7);
+  assert.equal(plan.documents[0].lines[0].articleCode, "MP11");
+});
+
+test("il piano da selezionati non ripropone righe con PF esistente", () => {
+  const withPf = { ...rows[0], pfDocuments: "PF 1/1", pfQuantity: 12 };
+  assert.throws(() => buildWorkspaceV4PfPlan([withPf], suppliers, { mode: "selected", selectedKeys: [withPf.key] }), /Nessun nuovo PF da generare per i materiali selezionati/);
+});
+
 test("il piano manuale conserva fornitore e mese e produce un hash stabile", () => {
   const options = { mode: "manual", supplierId: 7, month: "2026-09-01T00:00:00.000Z", selectedKeys: rows.map((row) => row.key) };
   const first = buildWorkspaceV4PfPlan(rows, suppliers, options);

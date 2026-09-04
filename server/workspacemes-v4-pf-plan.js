@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { automaticPfRows } from "./workspacemes-v4-purchasing-mes.js";
+import { automaticPfRows, selectedPfRows } from "./workspacemes-v4-purchasing-mes.js";
 
 const clean = (value) => String(value ?? "").trim();
 const number = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -29,7 +29,7 @@ function document(supplier, supplierId, month, rows) {
 
 export function buildWorkspaceV4PfPlan(requirements, suppliers, options = {}) {
   const mode = clean(options.mode).toLowerCase();
-  if (!["manual", "automatic"].includes(mode)) fail("Modalità di anteprima PF non valida.");
+  if (!["manual", "automatic", "selected"].includes(mode)) fail("Modalità di anteprima PF non valida.");
   const selectedKeys = Array.isArray(options.selectedKeys)
     ? new Set(options.selectedKeys.slice(0, 2000).map(clean).filter(Boolean))
     : null;
@@ -46,6 +46,31 @@ export function buildWorkspaceV4PfPlan(requirements, suppliers, options = {}) {
     rows = rows.filter((row) => monthKey(row.month || row.requiredAt) === month);
     if (!rows.length) fail("Nessun materiale selezionato è disponibile per il PF manuale.");
     return { mode, documents: [document(suppliersById.get(supplierId), supplierId, month, rows)], skippedWithoutSupplier: 0 };
+  }
+
+  if (mode === "selected") {
+    if (!selectedKeys?.size) fail("Seleziona almeno un materiale da ordinare.");
+    const supplierOverride = options.supplierId == null || options.supplierId === "" ? null : Number(options.supplierId);
+    if (supplierOverride != null && (!Number.isSafeInteger(supplierOverride) || supplierOverride < 1 || !suppliersById.has(supplierOverride)))
+      fail("Il fornitore selezionato non è disponibile.", "PF_SUPPLIER_INVALID");
+    const eligible = selectedPfRows(rows);
+    if (!eligible.length) fail("Nessun nuovo PF da generare per i materiali selezionati.", "PF_PREVIEW_EMPTY");
+    const missingSupplier = eligible.filter((row) => {
+      const supplierId = supplierOverride ?? Number(row.supplierId);
+      return !Number.isSafeInteger(supplierId) || supplierId < 1 || !suppliersById.has(supplierId);
+    });
+    if (missingSupplier.length) fail(`Per ${missingSupplier.length} materiali selezionati manca il fornitore. Seleziona un fornitore PF e riprova.`, "PF_SUPPLIER_REQUIRED");
+    const groups = new Map();
+    for (const row of eligible) {
+      const supplierId = supplierOverride ?? Number(row.supplierId);
+      const month = monthKey(row.month || row.requiredAt);
+      const key = `${supplierId}:${month}`;
+      if (!groups.has(key)) groups.set(key, { supplierId, month, rows: [] });
+      groups.get(key).rows.push(row);
+    }
+    const documents = [...groups.values()].sort((a, b) => a.month.localeCompare(b.month) || a.supplierId - b.supplierId)
+      .map((group) => document(suppliersById.get(group.supplierId), group.supplierId, group.month, group.rows));
+    return { mode, documents, skippedWithoutSupplier: 0 };
   }
 
   const eligible = automaticPfRows(rows, { generatedAt: options.generatedAt, horizonDays: options.horizonDays ?? 60 });

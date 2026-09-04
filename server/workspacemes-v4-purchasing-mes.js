@@ -77,6 +77,17 @@ export function automaticPfLines(requirements, options = {}) {
   }));
 }
 
+export function selectedPfRows(requirements) {
+  const seen = new Set();
+  return (requirements || []).filter((row) => {
+    const key = `${Number(row.articleId)}:${monthKey(row.requiredAt)}`;
+    if (number(row.quantityToOrder) <= 0) return false;
+    if (clean(row.pfDocuments) || number(row.pfQuantity) > 0 || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 const number = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
 const monthKey = (value) => {
   const date = new Date(value);

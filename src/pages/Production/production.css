@@ -144,3 +144,4 @@
 .purchase-discarded th{position:sticky;top:0;color:#5d4a25;background:#fff4d8;font-size:.72rem;text-transform:uppercase}
 .purchase-discarded td{font-size:.78rem;overflow-wrap:anywhere}
 @media(max-width:700px){.purchase-discarded>header{align-items:stretch;flex-direction:column}.purchase-discarded>header button{justify-content:center}}
+.pf-preview-counter{margin-left:auto;padding:7px 12px;border-radius:999px;color:#0f5fc4;background:#eaf3ff;font-size:.84rem;white-space:nowrap}

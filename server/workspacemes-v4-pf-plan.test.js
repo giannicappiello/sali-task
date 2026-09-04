@@ -68,6 +68,22 @@ test("senza scelta manuale crea un PF per il MES e per ogni fornitore Workspace 
   assert.ok(plan.documents.every((item) => item.lines[0].articleCode === "MP11"));
 });
 
+test("anagrafiche duplicate dello stesso fornitore producono un solo PF", () => {
+  const duplicateSuppliers = [
+    ...suppliers,
+    { ...suppliers[0], id: 70, ragioneSociale: "  FORNITORE   TEST " },
+  ];
+  const associated = { ...rows[0], workspaceSuppliers: [
+    { id: 7, ragioneSociale: "Fornitore Test" },
+    { id: 70, ragioneSociale: "Fornitore Test" },
+  ] };
+  const plan = buildWorkspaceV4PfPlan([associated], duplicateSuppliers, {
+    mode: "selected", selectedKeys: [associated.key],
+  });
+  assert.equal(plan.documents.length, 1);
+  assert.equal(plan.documents[0].supplierId, 7);
+});
+
 test("il fornitore manuale produce un solo PF anche con più associazioni Workspace", () => {
   const associated = { ...rows[0], workspaceSuppliers: [{ id: 8, ragioneSociale: "Fornitore Alternativo" }] };
   const plan = buildWorkspaceV4PfPlan([associated], suppliers, {

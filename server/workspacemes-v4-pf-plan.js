@@ -16,11 +16,29 @@ function line(row) {
 }
 
 function supplierMap(suppliers) {
-  return new Map((suppliers || []).map((supplier) => [Number(supplier.id), supplier]));
+  const canonicalByAlias = new Map();
+  const byId = new Map();
+  for (const supplier of suppliers || []) {
+    const aliases = supplierAliases(supplier);
+    const canonical = aliases.map((alias) => canonicalByAlias.get(alias)).find(Boolean) || supplier;
+    byId.set(Number(supplier.id), canonical);
+    aliases.forEach((alias) => canonicalByAlias.set(alias, canonical));
+  }
+  return byId;
 }
 
 function normalized(value) {
   return clean(value).toLocaleUpperCase("it-IT").replace(/\s+/g, " ");
+}
+
+function supplierAliases(supplier) {
+  const aliases = [
+    ["code", supplier?.codiceMexal],
+    ["vat", supplier?.partitaIva],
+    ["tax", supplier?.codiceFiscale],
+    ["name", supplier?.ragioneSociale],
+  ].map(([type, value]) => `${type}:${normalized(value)}`).filter((value) => !value.endsWith(":"));
+  return aliases;
 }
 
 function supplierNameMap(suppliers) {
@@ -77,7 +95,7 @@ export function buildWorkspaceV4PfPlan(requirements, suppliers, options = {}) {
   if (selectedKeys) rows = rows.filter((row) => selectedKeys.has(clean(row.key)));
   if (selectedKeys && !selectedKeys.size) fail("Seleziona almeno un materiale da ordinare.");
   const suppliersById = supplierMap(suppliers);
-  const suppliersByName = supplierNameMap(suppliers);
+  const suppliersByName = supplierNameMap([...new Set(suppliersById.values())]);
 
   if (mode === "manual") {
     const supplierId = Number(options.supplierId);

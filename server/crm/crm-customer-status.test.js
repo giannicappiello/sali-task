@@ -105,7 +105,7 @@ test("KPI e tabelle distinguono stato CRM da inattività commerciale", () => {
 });
 
 test("la scheda conserva storico e usa conferma esplicita per cambiare stato", () => {
-  assert.match(status, /ordini, fatture, opportunità, attività e documenti/);
+  assert.match(status, /ordini, fatture, progetti, attività e documenti/);
   assert.match(status, /Non verrà eliminato nulla/);
   assert.match(crm, /<CrmCustomerStatusDialog/);
   assert.match(crm, /crm_customer_period_metrics/);

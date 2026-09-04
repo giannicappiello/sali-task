@@ -33,7 +33,7 @@ function CrmCustomerStatusDialogForm({ customer, busy, onClose, onConfirm }) {
           <h3 id="crm-status-dialog-title">{action} {customer.nome}</h3>
           <p>{nextActive
             ? "Il cliente tornerà nelle viste operative Attivi. Tutto lo storico resta invariato."
-            : "Il cliente resterà nell’anagrafica con ordini, fatture, opportunità, attività e documenti. Non verrà eliminato nulla."}</p>
+            : "Il cliente resterà nell’anagrafica con ordini, fatture, progetti, attività e documenti. Non verrà eliminato nulla."}</p>
         </div>
         <label>Motivazione opzionale<textarea rows="3" value={reason} onChange={(event) => setReason(event.target.value)} /></label>
         <div className="crm-modal-actions">

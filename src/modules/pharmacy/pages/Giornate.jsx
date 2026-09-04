@@ -8,8 +8,10 @@ import { ensureBeautyClientLink, loadVisibleBeautyClients } from "../services/be
 import {
   checkInBeautyVisit,
   checkOutBeautyVisit,
+  createCrmBeautyContactVisit,
   ensureCrmBeautyVisit,
   loadBeautyVisitLinks,
+  loadCrmOnlyBeautyVisits,
 } from "../services/beautyVisitCrm";
 
 export default function Giornate({ utente }) {
@@ -45,6 +47,10 @@ export default function Giornate({ utente }) {
   const [tipoGiornata, setTipoGiornata] = useState("");
   const [obiettivoVendite, setObiettivoVendite] = useState("");
   const [noteOperative, setNoteOperative] = useState("");
+  const [tipoContatto, setTipoContatto] = useState("cliente_mexal");
+  const [nuovoContattoNome, setNuovoContattoNome] = useState("");
+  const [nuovoContattoIndirizzo, setNuovoContattoIndirizzo] = useState("");
+  const [nuovoContattoCitta, setNuovoContattoCitta] = useState("");
 
   const ruoloUtente = utente?.external_role || utente?.ruolo || "";
   const beautyIdUtente =
@@ -127,14 +133,20 @@ export default function Giornate({ utente }) {
     if (giornateRes.error) return alert(giornateRes.error.message);
 
     const loadedDays = giornateRes.data || [];
-    setGiornate(loadedDays);
     try {
-      setCrmVisitLinks(await loadBeautyVisitLinks(loadedDays.map((row) => row.id)));
+      const [legacyLinks, crmOnly] = await Promise.all([
+        loadBeautyVisitLinks(loadedDays.map((row) => row.id)),
+        loadCrmOnlyBeautyVisits(),
+      ]);
+      setGiornate([...loadedDays, ...crmOnly.days]);
+      setFarmacie([...farmacieData, ...crmOnly.clients]);
+      setCrmVisitLinks(new Map([...legacyLinks, ...crmOnly.links]));
     } catch (visitError) {
       console.warn("Collegamenti CRM Beauty non disponibili", visitError);
+      setGiornate(loadedDays);
+      setFarmacie(farmacieData);
       setCrmVisitLinks(new Map());
     }
-    setFarmacie(farmacieData);
     setProvince(provinceRes.data || []);
     setBeauty(beautyData);
   }
@@ -351,6 +363,10 @@ export default function Giornate({ utente }) {
     setRicercaFarmacia("");
     setProvinciaFiltro("");
     setGiornataInModifica(null);
+    setTipoContatto("cliente_mexal");
+    setNuovoContattoNome("");
+    setNuovoContattoIndirizzo("");
+    setNuovoContattoCitta("");
   }
 
   function apriNuovaGiornata() {
@@ -415,8 +431,28 @@ export default function Giornate({ utente }) {
 
   async function salvaGiornata(e) {
     e.preventDefault();
+    if (!giornataInModifica && tipoContatto === "nuovo_contatto") {
+      if (!nuovoContattoNome.trim()) return alert("Inserisci il nome del nuovo contatto.");
+      try {
+        await createCrmBeautyContactVisit({
+          name: nuovoContattoNome.trim(),
+          address: nuovoContattoIndirizzo.trim(),
+          city: nuovoContattoCitta.trim(),
+          data,
+          oraInizio,
+          title: tipoGiornata ? `${tipoGiornata} - ${nuovoContattoNome.trim()}` : null,
+          note: noteOperative,
+        });
+        svuotaForm();
+        setMostraForm(false);
+        await caricaDati();
+      } catch (error) {
+        alert(error.message || "Impossibile creare il nuovo contatto.");
+      }
+      return;
+    }
     const selectedClient = farmacie.find((client) => client.id === farmaciaId);
-    if (!selectedClient) return alert("Seleziona un cliente Mexal.");
+    if (!selectedClient) return alert("Seleziona un cliente.");
     let linkedClientId = selectedClient.legacy_farmacia_id || null;
     if (!linkedClientId) {
       try {
@@ -500,6 +536,7 @@ export default function Giornate({ utente }) {
   }
 
   async function ensureVisitForDay(giornata) {
+    if (giornata._crmOnly && giornata.crm_activity_id) return giornata.crm_activity_id;
     const existing = crmVisitLinks.get(giornata.id);
     if (existing) return existing.activity_id;
     const client = farmacie.find((item) => item.id === giornata.farmacia_id);
@@ -646,14 +683,16 @@ export default function Giornate({ utente }) {
               </button>
             )}
 
-            <button
-              style={editButtonStyle}
-              onClick={() => modificaGiornata(giornata)}
-            >
-              Modifica
-            </button>
+            {!giornata._crmOnly && (
+              <button
+                style={editButtonStyle}
+                onClick={() => modificaGiornata(giornata)}
+              >
+                Modifica
+              </button>
+            )}
 
-            {giornata.stato !== "annullata" && (
+            {!giornata._crmOnly && giornata.stato !== "annullata" && (
               <button
                 style={reportButtonStyle}
                 onClick={() => apriReport(giornata)}
@@ -664,7 +703,7 @@ export default function Giornate({ utente }) {
               </button>
             )}
 
-            {giornata.stato !== "annullata" && (
+            {!giornata._crmOnly && giornata.stato !== "annullata" && (
               <button
                 style={deleteButtonStyle}
                 onClick={() => annullaGiornata(giornata)}
@@ -684,27 +723,27 @@ export default function Giornate({ utente }) {
           </button>
         )}
 
-        {giornata.stato === "eseguita" && (
+        {!giornata._crmOnly && giornata.stato === "eseguita" && (
           <button style={reportButtonStyle} onClick={() => apriReport(giornata)}>
             Visualizza report
           </button>
         )}
 
-        <button
+        {!giornata._crmOnly && <button
           style={secondaryButtonStyle}
           onClick={() => apriAllegati(giornata)}
         >
           Allegati
-        </button>
+        </button>}
 
-        <button
+        {!giornata._crmOnly && <button
           style={secondaryButtonStyle}
           onClick={() => setGiornataFollowUp(giornata)}
         >
           Follow-up
-        </button>
+        </button>}
 
-        <button
+        {!giornata._crmOnly && <button
           style={secondaryButtonStyle}
           onClick={() =>
             setFarmaciaScheda(
@@ -713,7 +752,7 @@ export default function Giornate({ utente }) {
           }
         >
           Scheda farmacia
-        </button>
+        </button>}
       </div>
     );
   }
@@ -743,47 +782,83 @@ export default function Giornate({ utente }) {
               ← Torna al planning
             </button>
 
-            <label style={labelStyle}>Filtra cliente per provincia</label>
-            <select
-              style={inputStyle}
-              value={provinciaFiltro}
-              onChange={(e) => {
-                setProvinciaFiltro(e.target.value);
-                setFarmaciaId("");
-                setRicercaFarmacia("");
-              }}
-            >
-              <option value="">Tutte le province</option>
-              {province.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.nome} ({p.sigla})
-                </option>
-              ))}
-            </select>
+            {!giornataInModifica && <>
+              <label style={labelStyle}>Selezione contatto</label>
+              <select
+                style={inputStyle}
+                value={tipoContatto}
+                onChange={(e) => setTipoContatto(e.target.value)}
+              >
+                <option value="cliente_mexal">Cliente</option>
+                <option value="nuovo_contatto">NUOVO CONTATTO</option>
+              </select>
+            </>}
 
-            <label style={labelStyle}>Cerca cliente</label>
-            <input
-              style={inputStyle}
-              placeholder="Ragione sociale, città o provincia..."
-              value={ricercaFarmacia}
-              onChange={(e) => setRicercaFarmacia(e.target.value)}
-            />
+            {tipoContatto === "nuovo_contatto" && !giornataInModifica ? <>
+              <label style={labelStyle}>Nome nuovo contatto</label>
+              <input
+                style={inputStyle}
+                placeholder="Nome e cognome o ragione sociale"
+                value={nuovoContattoNome}
+                onChange={(e) => setNuovoContattoNome(e.target.value)}
+                required
+              />
+              <label style={labelStyle}>Indirizzo sede (facoltativo)</label>
+              <input
+                style={inputStyle}
+                placeholder="Via e numero civico"
+                value={nuovoContattoIndirizzo}
+                onChange={(e) => setNuovoContattoIndirizzo(e.target.value)}
+              />
+              <label style={labelStyle}>Città (facoltativa)</label>
+              <input
+                style={inputStyle}
+                value={nuovoContattoCitta}
+                onChange={(e) => setNuovoContattoCitta(e.target.value)}
+              />
+            </> : <>
+              <label style={labelStyle}>Filtra cliente per provincia</label>
+              <select
+                style={inputStyle}
+                value={provinciaFiltro}
+                onChange={(e) => {
+                  setProvinciaFiltro(e.target.value);
+                  setFarmaciaId("");
+                  setRicercaFarmacia("");
+                }}
+              >
+                <option value="">Tutte le province</option>
+                {province.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.nome} ({p.sigla})
+                  </option>
+                ))}
+              </select>
 
-            <label style={labelStyle}>Cliente Mexal</label>
-            <select
-              style={inputStyle}
-              value={farmaciaId}
-              onChange={(e) => setFarmaciaId(e.target.value)}
-              required
-            >
-              <option value="">Seleziona cliente</option>
-              {farmacieFiltrate.map((farmacia) => (
-                <option key={farmacia.id} value={farmacia.id}>
-                  {farmacia.nome} - {farmacia.citta}{" "}
-                  {getProvinciaLabel(farmacia.provincia_id)}
-                </option>
-              ))}
-            </select>
+              <label style={labelStyle}>Cerca cliente</label>
+              <input
+                style={inputStyle}
+                placeholder="Ragione sociale, città o provincia..."
+                value={ricercaFarmacia}
+                onChange={(e) => setRicercaFarmacia(e.target.value)}
+              />
+
+              <label style={labelStyle}>Cliente</label>
+              <select
+                style={inputStyle}
+                value={farmaciaId}
+                onChange={(e) => setFarmaciaId(e.target.value)}
+                required
+              >
+                <option value="">Seleziona cliente</option>
+                {farmacieFiltrate.map((farmacia) => (
+                  <option key={farmacia.id} value={farmacia.id}>
+                    {farmacia.nome} - {farmacia.citta}{" "}
+                    {getProvinciaLabel(farmacia.provincia_id)}
+                  </option>
+                ))}
+              </select>
+            </>}
 
             {ruoloUtente === "admin" && (
               <>

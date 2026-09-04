@@ -44,3 +44,20 @@ test("la UI collega lo storico senza duplicarlo e richiede GPS solo al gesto ute
   assert.match(service, /navigator\.geolocation\.getCurrentPosition/);
   assert.match(service, /beauty-legacy:/);
 });
+
+test("BeautyDays consente di pianificare un nuovo contatto CRM senza codice cliente", async () => {
+  const [page, service, sql] = await Promise.all([
+    read("src/modules/pharmacy/pages/Giornate.jsx"),
+    read("src/modules/pharmacy/services/beautyVisitCrm.js"),
+    read("supabase/migrations/20260904220000_crm_beauty_new_contact.sql"),
+  ]);
+  assert.match(page, /NUOVO CONTATTO/);
+  assert.match(page, /Nome nuovo contatto/);
+  assert.match(page, />Cliente</);
+  assert.doesNotMatch(page, />Cliente Mexal</);
+  assert.match(service, /createCrmBeautyContactVisit/);
+  assert.match(service, /source_type", "beauty_crm"/);
+  assert.match(sql, /Nome del nuovo contatto obbligatorio/i);
+  assert.match(sql, /'prospect'/i);
+  assert.doesNotMatch(sql, /drop table|truncate table|delete from public\.crm_/i);
+});

@@ -90,7 +90,7 @@ const pageInfo = {
   "/integrations/mexal": { title: "Mexal ERP", subtitle: "Sincronizzazioni, storico e controllo della WebAPI Mexal." },
   "/integrations/documentale": { title: "Documentale", subtitle: "Sezioni, cartelle NAS e sincronizzazione dell'archivio." },
   "/crm": { title: "CRM Platform AI", subtitle: "Conto Terzi, B2B, Online e AI Business Assistant." },
-  "/farmacie/dashboard": { title: "Beauty Days", subtitle: "Giornate promozionali, clienti Mexal e analisi dati." },
+  "/farmacie/dashboard": { title: "Beauty Days", subtitle: "Giornate promozionali, clienti e analisi dati." },
   "/ordini-prof": { title: "Ordini PR", subtitle: "Clienti, ordini e attività commerciali collegate a Mexal." },
   "/ordini-ph": { title: "Ordini PH", subtitle: "Clienti, ordini e attività commerciali collegate a Mexal." },
   "/ordini-private": { title: "OrdiniPrivate", subtitle: "Creazione e invio degli ordini cliente OCT a Mexal." },

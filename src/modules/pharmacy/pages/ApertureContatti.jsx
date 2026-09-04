@@ -308,7 +308,7 @@ setRichiestaContatto(
     e.preventDefault();
 
     const farmacia = getFarmacia(farmaciaId);
-    if (!farmacia) return alert("Seleziona un cliente Mexal");
+    if (!farmacia) return alert("Seleziona un cliente");
     if (!beautyId) return alert("Seleziona una beauty");
     if (!nuovaApertura && !richiestaContatto) {
       return alert("Seleziona almeno Nuova apertura o Richiesta di contatto");
@@ -602,7 +602,7 @@ setRichiestaContatto(
             onChange={(e) => setRicercaFarmacia(e.target.value)}
           />
 
-          <label style={labelStyle}>Cliente Mexal</label>
+          <label style={labelStyle}>Cliente</label>
           <select
             value={farmaciaId}
             onChange={(e) => setFarmaciaId(e.target.value)}

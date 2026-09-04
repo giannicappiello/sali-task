@@ -11,11 +11,25 @@ test("calcola cronologicamente giacenze, arrivi e lotto di riordino", () => {
       { productionOrderId: 2, productionOrderNumber: "RDP17", octReferences: "OC/2/428", requiredAt: "2026-09-25", priority: 1, articleId: 1, articleCode: "MP1", description: "Materia", unitOfMeasure: "KG", articleType: "MateriaPrima", quantity: 20, reorderLot: 25, leadTimeDays: 10 },
     ] });
   assert.equal(rows.length, 1);
-  assert.equal(rows[0].netRequirement, 20);
+  assert.equal(rows[0].netRequirement, 10);
   assert.equal(rows[0].quantityToOrder, 25);
-  assert.ok(["TO_ORDER", "ORDER_LATE"].includes(rows[0].status));
+  assert.equal(rows[0].status, "ORDER_LATE");
   assert.equal(rows[0].supplierId, 9);
   assert.equal(rows[0].octReferences, "OC/2/427, OC/2/428");
+});
+
+test("un OF con arrivo successivo alla necessita resta gia ordinato senza generare un secondo PF", () => {
+  const rows = calculateWorkspaceV4PurchaseRequirements({ contractVersion: 4, generatedAt: "2026-09-04T10:00:00Z",
+    stocks: [{ articleId: 1, availableQuantity: 700 }], existingPf: [],
+    arrivals: [{ articleId: 1, expectedAt: "2026-09-18", residualQuantity: 5300, supplierOrderNumber: "OF/1/99", supplierId: 9, supplierName: "Fornitore" }],
+    demands: [{ productionOrderId: 1, productionOrderNumber: "OC/2/55", requiredAt: "2026-09-08", priority: 1,
+      articleId: 1, articleCode: "E111", description: "Etichetta", unitOfMeasure: "PZ", articleType: "Packaging",
+      quantity: 6000, reorderLot: 0, leadTimeDays: 7 }] });
+  assert.equal(rows[0].incomingQuantity, 5300);
+  assert.equal(rows[0].quantityToOrder, 0);
+  assert.equal(rows[0].status, "ORDER_LATE");
+  assert.match(rows[0].supplierOrders, /OF\/1\/99/);
+  assert.deepEqual(automaticPfLines(rows, { generatedAt: "2026-09-04T10:00:00Z", horizonDays: 60 }), []);
 });
 
 test("un PF esistente viene mostrato ma non incrementa la disponibilità", () => {

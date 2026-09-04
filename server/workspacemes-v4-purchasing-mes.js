@@ -120,6 +120,10 @@ export function calculateWorkspaceV4PurchaseRequirements(source) {
     const arrivals = arrivalsByArticle.get(articleId) || [];
     const allIncoming = arrivals.reduce((total, item) => total + item.residualQuantity, 0);
     let balance = stock.get(articleId) || 0;
+    // Gli OF aperti rappresentano quantita gia ordinate anche quando la consegna
+    // prevista e successiva alla necessita. Il saldo temporale segnala il ritardo;
+    // questo saldo separato impedisce invece di proporre un secondo PF duplicato.
+    let orderedBalance = balance + allIncoming;
     let arrivalIndex = 0;
     const byMonth = new Map();
     for (const demand of demands) {
@@ -133,18 +137,22 @@ export function calculateWorkspaceV4PurchaseRequirements(source) {
       while (arrivalIndex < arrivals.length && day(arrivals[arrivalIndex].expectedAt) < monthStart) balance += arrivals[arrivalIndex++].residualQuantity;
       const openingStock = Math.max(0, balance);
       let minimum = balance;
+      let minimumOrdered = orderedBalance;
       let shortageAt = null;
       monthDemands.sort((a, b) => day(a.requiredAt) - day(b.requiredAt) || number(b.priority) - number(a.priority));
       for (const demand of monthDemands) {
         while (arrivalIndex < arrivals.length && day(arrivals[arrivalIndex].expectedAt) <= day(demand.requiredAt)) balance += arrivals[arrivalIndex++].residualQuantity;
         balance -= demand.quantity;
+        orderedBalance -= demand.quantity;
         if (balance < minimum) { minimum = balance; if (balance < 0 && !shortageAt) shortageAt = demand.requiredAt; }
+        if (orderedBalance < minimumOrdered) minimumOrdered = orderedBalance;
       }
       while (arrivalIndex < arrivals.length && day(arrivals[arrivalIndex].expectedAt) <= monthEnd) balance += arrivals[arrivalIndex++].residualQuantity;
-      const netRequirement = Math.max(0, -minimum);
+      const netRequirement = Math.max(0, -minimumOrdered);
       const reorderLot = number(first.reorderLot);
       const quantityToOrder = netRequirement > 0 && reorderLot > 0 ? Math.ceil(netRequirement / reorderLot) * reorderLot : netRequirement;
       balance += quantityToOrder;
+      orderedBalance += quantityToOrder;
       const monthArrivals = arrivals.filter((arrival) => monthKey(arrival.expectedAt) === key);
       const suggested = monthArrivals[0] || arrivals[0] || null;
       const pf = source.existingPf.filter((item) => Number(item.articleId) === articleId && monthKey(item.expectedAt) === key);
@@ -160,7 +168,11 @@ export function calculateWorkspaceV4PurchaseRequirements(source) {
         productionOrders: [...new Set(monthDemands.map((item) => item.productionOrderNumber))].slice(0, 4).join(", "),
         octReferences: [...new Set(monthDemands.map((item) => clean(item.octReferences)).filter(Boolean))].join(", "),
         pfQuantity: pf.reduce((total, item) => total + number(item.quantity), 0), pfDocuments: [...new Set(pf.map((item) => item.documentNumber))].join(", "),
-        status: quantityToOrder > 0 ? (day(orderBy) < day(new Date()) ? "ORDER_LATE" : "TO_ORDER") : allIncoming > 0 ? "COVERED_BY_ARRIVALS" : "COVERED_BY_STOCK" } );
+        status: quantityToOrder > 0
+          ? (day(orderBy) < day(new Date()) ? "ORDER_LATE" : "TO_ORDER")
+          : shortageAt && allIncoming > 0
+            ? "ORDER_LATE"
+            : allIncoming > 0 ? "COVERED_BY_ARRIVALS" : "COVERED_BY_STOCK" } );
     }
   }
   return rows.sort((a, b) => Number(b.quantityToOrder > 0) - Number(a.quantityToOrder > 0) || day(a.requiredAt) - day(b.requiredAt) || a.articleCode.localeCompare(b.articleCode));

@@ -3,7 +3,9 @@ import { payloadHash } from "./workspacemes-v3.js";
 
 const TYPES = new Set(["RFQ", "QUOTE", "SUPPLIER_ORDER"]);
 const clean = (value) => String(value ?? "").trim();
-export const AUTOMATIC_ARTICLE_SUPPLIER_SOURCE = "PROGREMES_ORDER_HISTORY_V2";
+// Versionare la sorgente forza una rilettura dopo l'ampliamento dello storico
+// alle righe Mexal valide non ancora collegate a un ArticoloId interno MES.
+export const AUTOMATIC_ARTICLE_SUPPLIER_SOURCE = "PROGREMES_ORDER_HISTORY_V3";
 
 export function validateWorkspaceV4PurchaseDocument(input = {}) {
   const documentType = clean(input.documentType).toUpperCase();

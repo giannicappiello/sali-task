@@ -124,6 +124,32 @@ Deno.serve(async (req) => {
       return json(result);
     }
 
+    if (body.action === "beauty-geocode") {
+      if (!isAdmin && !["write", "admin"].includes(access.access_level)) {
+        return json({ error: "Accesso in sola lettura" }, 403);
+      }
+      const address = clean(body.address);
+      if (!address) return json({ error: "Indirizzo obbligatorio" }, 400);
+      const url = new URL("https://nominatim.openstreetmap.org/search");
+      url.searchParams.set("q", address);
+      url.searchParams.set("format", "jsonv2");
+      url.searchParams.set("limit", "1");
+      url.searchParams.set("countrycodes", "it");
+      const response = await fetch(url, {
+        headers: { "User-Agent": "ProgreWorkspace/1.0 (workspace.progre.it)" },
+      });
+      if (!response.ok) return json({ error: "Servizio di geocodifica non disponibile" }, 502);
+      const matches = await response.json();
+      const match = Array.isArray(matches) ? matches[0] : null;
+      return json({
+        data: match ? {
+          latitude: Number(match.lat),
+          longitude: Number(match.lon),
+          display_name: match.display_name,
+        } : null,
+      });
+    }
+
     if (body.action === "query") {
       const organizationScope = await loadOrganizationScope(primary, profile, access, isAdmin);
       if (!allowedTables.has(body.table)) return json({ error: `Tabella non autorizzata: ${body.table}` }, 403);

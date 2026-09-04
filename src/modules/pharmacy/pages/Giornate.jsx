@@ -5,12 +5,20 @@ import SchedaFarmacia from "./SchedaFarmacia.jsx";
 import FollowUpGiornata from "./FollowUpGiornata.jsx";
 import AllegatiGiornata from "./AllegatiGiornata.jsx";
 import { ensureBeautyClientLink, loadVisibleBeautyClients } from "../services/beautyClients";
+import {
+  checkInBeautyVisit,
+  checkOutBeautyVisit,
+  ensureCrmBeautyVisit,
+  loadBeautyVisitLinks,
+} from "../services/beautyVisitCrm";
 
 export default function Giornate({ utente }) {
   const [giornate, setGiornate] = useState([]);
   const [farmacie, setFarmacie] = useState([]);
   const [beauty, setBeauty] = useState([]);
   const [province, setProvince] = useState([]);
+  const [crmVisitLinks, setCrmVisitLinks] = useState(new Map());
+  const [gpsBusyId, setGpsBusyId] = useState(null);
 
   const [mostraForm, setMostraForm] = useState(false);
   const [vistaPlanning, setVistaPlanning] = useState("mese");
@@ -118,7 +126,14 @@ export default function Giornate({ utente }) {
 
     if (giornateRes.error) return alert(giornateRes.error.message);
 
-    setGiornate(giornateRes.data || []);
+    const loadedDays = giornateRes.data || [];
+    setGiornate(loadedDays);
+    try {
+      setCrmVisitLinks(await loadBeautyVisitLinks(loadedDays.map((row) => row.id)));
+    } catch (visitError) {
+      console.warn("Collegamenti CRM Beauty non disponibili", visitError);
+      setCrmVisitLinks(new Map());
+    }
     setFarmacie(farmacieData);
     setProvince(provinceRes.data || []);
     setBeauty(beautyData);
@@ -430,9 +445,18 @@ export default function Giornate({ utente }) {
           .from("giornate_promozionali")
           .update(datiGiornata)
           .eq("id", giornataInModifica.id)
-      : await supabase.from("giornate_promozionali").insert([datiGiornata]);
+      : await supabase.from("giornate_promozionali").insert([datiGiornata]).select("*").single();
 
     if (response.error) return alert(response.error.message);
+
+    const savedDay = giornataInModifica || response.data;
+    if (savedDay?.id) {
+      try {
+        await ensureCrmBeautyVisit({ giornata: savedDay, client: selectedClient });
+      } catch (crmError) {
+        alert(`La giornata è stata salvata nello storico, ma il collegamento CRM non è riuscito: ${crmError.message}`);
+      }
+    }
 
     svuotaForm();
     setMostraForm(false);
@@ -473,6 +497,76 @@ export default function Giornate({ utente }) {
     if (error) return alert(error.message);
 
     await caricaDati();
+  }
+
+  async function ensureVisitForDay(giornata) {
+    const existing = crmVisitLinks.get(giornata.id);
+    if (existing) return existing.activity_id;
+    const client = farmacie.find((item) => item.id === giornata.farmacia_id);
+    if (!client) throw new Error("Cliente della giornata non trovato nel perimetro autorizzato.");
+    const created = await ensureCrmBeautyVisit({ giornata, client });
+    return created.activity_id;
+  }
+
+  async function executeWithGpsReason(operation) {
+    try {
+      return await operation(null);
+    } catch (error) {
+      if (!/Motivazione obbligatoria/i.test(error.message || "")) throw error;
+      const reason = await window.workspacePrompt(`${error.message}\nInserisci la motivazione:`);
+      if (!reason) throw new Error("Operazione annullata: motivazione non indicata.", { cause: error });
+      return operation(reason);
+    }
+  }
+
+  async function registraCheckIn(giornata) {
+    setGpsBusyId(giornata.id);
+    try {
+      const activityId = await ensureVisitForDay(giornata);
+      const result = await executeWithGpsReason((reason) => checkInBeautyVisit(activityId, reason));
+      alert(`Check-in registrato. Distanza dalla sede: ${result.distance_meters ?? "non disponibile"} m.`);
+      await caricaDati();
+    } catch (error) {
+      alert(error.message || "Check-in non riuscito.");
+    } finally {
+      setGpsBusyId(null);
+    }
+  }
+
+  async function registraCheckOut(giornata) {
+    const outcome = await window.workspacePrompt("Esito della visita:");
+    if (!outcome) return;
+    const withoutFollowUp = ["cliente_non_interessato", "annullata", "nessun_seguito"].includes(outcome.trim().toLowerCase());
+    let nextType = null;
+    let nextTopic = null;
+    let nextAt = null;
+    let closingReason = null;
+    if (withoutFollowUp) {
+      closingReason = await window.workspacePrompt("Motivazione della chiusura senza prossima attività:");
+      if (!closingReason) return;
+    } else {
+      nextType = await window.workspacePrompt("Tipo della prossima attività (es. telefonata, visita, follow-up):");
+      nextTopic = await window.workspacePrompt("Argomento della prossima attività:");
+      nextAt = await window.workspacePrompt("Data e ora della prossima attività (AAAA-MM-GGTHH:MM):");
+      if (!nextType || !nextTopic || !nextAt) return alert("La prossima attività è obbligatoria.");
+    }
+    setGpsBusyId(giornata.id);
+    try {
+      const activityId = await ensureVisitForDay(giornata);
+      const result = await executeWithGpsReason((gpsReason) => checkOutBeautyVisit(activityId, {
+        outcome,
+        nextType,
+        nextTopic,
+        nextAt,
+        exceptionReason: gpsReason || closingReason,
+      }));
+      alert(`Check-out registrato. Distanza dalla sede: ${result.distance_meters ?? "non disponibile"} m.`);
+      await caricaDati();
+    } catch (error) {
+      alert(error.message || "Check-out non riuscito.");
+    } finally {
+      setGpsBusyId(null);
+    }
   }
 
   if (giornataAllegati) {
@@ -527,10 +621,31 @@ export default function Giornate({ utente }) {
   const giornateGiornoSelezionato = giornateDelGiorno(giornoSelezionato);
 
   function azioniGiornata(giornata) {
+    const visit = crmVisitLinks.get(giornata.id);
     return (
       <div style={actionRowStyle}>
         {!solaLettura && (
           <>
+            {giornata.stato !== "annullata" && !visit?.check_in_at && (
+              <button
+                style={primaryButtonStyle}
+                disabled={gpsBusyId === giornata.id}
+                onClick={() => registraCheckIn(giornata)}
+              >
+                {gpsBusyId === giornata.id ? "Rilevazione GPS..." : "Check-in GPS"}
+              </button>
+            )}
+
+            {visit?.check_in_at && !visit?.check_out_at && (
+              <button
+                style={saveButtonStyle}
+                disabled={gpsBusyId === giornata.id}
+                onClick={() => registraCheckOut(giornata)}
+              >
+                {gpsBusyId === giornata.id ? "Rilevazione GPS..." : "Check-out e prossima attività"}
+              </button>
+            )}
+
             <button
               style={editButtonStyle}
               onClick={() => modificaGiornata(giornata)}
@@ -973,7 +1088,6 @@ export default function Giornate({ utente }) {
               <div style={weekGridStyle}>
                 {giorniSettimana.map((giorno) => {
                   const eventi = giornateDelGiorno(giorno);
-                  const conteggi = contaStati(eventi);
 
                   return (
                     <div key={getDateKey(giorno)} style={weekDayStyle}>

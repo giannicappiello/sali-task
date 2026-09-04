@@ -187,18 +187,19 @@ function drawCompanyHeader(doc, logo, continuation = false, hideCompanyDetails =
 
 function drawPartyBlock(doc, order, model) {
   const y = 32; const left = 7; const mid = 119; const right = 203;
-  cell(doc, left, y, 42, 12, "Cliente - Zona", [order.codice_cliente, order.zona].filter(Boolean).join(" - "));
+  const purchase = order.party_kind === "supplier";
+  cell(doc, left, y, 42, 12, purchase ? "Fornitore - Zona" : "Cliente - Zona", [order.codice_cliente, order.zona].filter(Boolean).join(" - "));
   cell(doc, 49, y, 35, 12, "Partita IVA", order.partita_iva || order.piva);
   cell(doc, 84, y, 35, 12, "Codice fiscale", order.codice_fiscale);
   cell(doc, left, y + 12, 61, 12, "Condizioni pagamento", order.descrizione_pagamento || order.codice_pagamento);
   cell(doc, 68, y + 12, 16, 12, "Valuta", order.valuta || "EUR");
-  cell(doc, 84, y + 12, 35, 12, "Documento", model.document ? `Ordine cliente ${model.document.type}` : "Ordine cliente");
+  cell(doc, 84, y + 12, 35, 12, "Documento", purchase ? `Proposta fornitore ${model.document?.type || "PF"}` : model.document ? `Ordine cliente ${model.document.type}` : "Ordine cliente");
   cell(doc, left, y + 24, 56, 12, "Agente", order.agente_nome || "-");
   cell(doc, 63, y + 24, 56, 12, "Numero documento", model.document ? formatMexalDocumentNumber(model.document) : "", { maxLines: 2, fontSize: 7, minFontSize: 5 });
   cell(doc, left, y + 36, 56, 12, "Appoggio bancario", order.appoggio_bancario);
   cell(doc, 63, y + 36, 34, 12, "Data", formatDate(order.data_ordine));
   cell(doc, 97, y + 36, 22, 12, "Pagina", "1", { align: "center" });
-  cell(doc, mid, y, right - mid, 24, "Spett.le cliente", [order.ragione_sociale_cliente || order.ragione_sociale, order.indirizzo_fatturazione || order.indirizzo, [order.cap, order.comune || order.localita, order.provincia].filter(Boolean).join(" "), order.telefono].filter(Boolean).join("\n"), { maxLines: 4, fontSize: 6.6, valueHeight: 18 });
+  cell(doc, mid, y, right - mid, 24, purchase ? "Spett.le fornitore" : "Spett.le cliente", [order.ragione_sociale_cliente || order.ragione_sociale, order.indirizzo_fatturazione || order.indirizzo, [order.cap, order.comune || order.localita, order.provincia].filter(Boolean).join(" "), order.telefono].filter(Boolean).join("\n"), { maxLines: 4, fontSize: 6.6, valueHeight: 18 });
   cell(doc, mid, y + 24, right - mid, 24, "Destinazione", [order.destinazione || order.indirizzo_spedizione, order.indirizzo_destinazione, [order.cap_destinazione, order.comune_destinazione, order.provincia_destinazione].filter(Boolean).join(" ")].filter(Boolean).join("\n"), { maxLines: 3, fontSize: 6.6, valueHeight: 18 });
   if (order.numero_ordine_visualizzato || order.numero_ordine) cell(doc, mid, y + 48, right - mid, 10, "Riferimento Workspace", order.numero_ordine_visualizzato || order.numero_ordine, { maxLines: 2, fontSize: 6.5 });
 }

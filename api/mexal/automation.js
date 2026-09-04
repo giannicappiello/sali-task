@@ -38,6 +38,7 @@ import { effectiveWorkspaceDiagnostics } from "../../server/workspace-effective-
 import { confirmWorkspaceV4, createWorkspaceV4Preview } from "../../server/workspacemes-v4-api.js";
 import { createWorkspaceV4PurchaseDocument, listWorkspaceV4Purchasing } from "../../server/workspacemes-v4-purchasing.js";
 import { automaticPfLines, calculateWorkspaceV4PurchaseRequirements, executeWorkspaceV4PurchasingAction, readWorkspaceV4PurchasingSource } from "../../server/workspacemes-v4-purchasing-mes.js";
+import { buildWorkspaceV4PfPlan, workspaceV4PfPlanChecksum } from "../../server/workspacemes-v4-pf-plan.js";
 import { generateSaliDiIschiaProposal, listSaliDiIschiaProposals } from "../../server/sali-di-ischia-proposal.js";
 import { privateDocumentsSession, syncPrivateDocuments } from "../../server/private-documents.js";
 import { handleMesHeadingResolve } from "../../server/company-letterheads-mes-api.js";
@@ -741,7 +742,7 @@ export default async function handler(req, res) {
       case "workspacemes_v4_purchasing_action": {
         const admin = await createAdmin(req, "purchases.manage");
         const action = String(body.purchasingAction || "").trim().toUpperCase();
-        const allowed = new Set(["IMPORT_SUPPLIER_ORDERS", "GENERATE_SALI_DI_ISCHIA", "CREATE_PF", "GENERATE_PF_AUTOMATIC"]);
+        const allowed = new Set(["IMPORT_SUPPLIER_ORDERS", "GENERATE_SALI_DI_ISCHIA", "CREATE_PF", "GENERATE_PF_AUTOMATIC", "PREVIEW_PF", "CONFIRM_PF_PREVIEW"]);
         if (!allowed.has(action)) return sendFailure(res, 400, "workspacemes_v4_purchasing_action", "Operazione acquisti non valida.");
         if (action === "GENERATE_SALI_DI_ISCHIA") {
           const result = await generateSaliDiIschiaProposal({
@@ -749,6 +750,29 @@ export default async function handler(req, res) {
             actor: `workspace:${admin.authUserId || "service"}`,
           });
           return sendSuccess(res, 200, result);
+        }
+        if (action === "PREVIEW_PF" || action === "CONFIRM_PF_PREVIEW") {
+          const generatedAt = new Date().toISOString();
+          const [source, suppliersResult] = await Promise.all([
+            readWorkspaceV4PurchasingSource(),
+            createProgremesClient().request("suppliers", { page: 1, pageSize: 500, active: true }).catch(() => ({ items: [] })),
+          ]);
+          const plan = buildWorkspaceV4PfPlan(calculateWorkspaceV4PurchaseRequirements(source), suppliersResult?.items || [], {
+            mode: body.mode, selectedKeys: body.selectedKeys, supplierId: body.supplierId,
+            month: body.month, generatedAt, horizonDays: 60,
+          });
+          const previewHash = workspaceV4PfPlanChecksum(plan);
+          if (action === "PREVIEW_PF") return sendSuccess(res, 200, { ...plan, previewHash,
+            documentCount: plan.documents.length, lineCount: plan.documents.reduce((total, item) => total + item.lines.length, 0) });
+          if (String(body.previewHash || "") !== previewHash)
+            return sendFailure(res, 409, "workspacemes_v4_purchasing_action", "I fabbisogni sono cambiati dopo l'anteprima. Genera una nuova anteprima PDF prima di emettere i PF.");
+          const results = [];
+          for (const item of plan.documents) {
+            results.push(await executeWorkspaceV4PurchasingAction({ action: "CREATE_PF", supplierId: item.supplierId,
+              month: item.month, lines: item.lines.map((line) => ({ articleId: line.articleId, quantity: line.quantity, requiredAt: line.requiredAt })),
+              ignoreDuplicates: true }));
+          }
+          return sendSuccess(res, 200, { message: `Emissione completata: ${results.length} PF inviati a Mexal.`, results });
         }
         if (action === "GENERATE_PF_AUTOMATIC") {
           const generatedAt = new Date().toISOString();

@@ -28,14 +28,14 @@ test("la scheda cliente recupera e mostra Paese e nazionalità", () => {
   assert.match(crm, /<dt>Paese \/ nazionalità<\/dt><dd>\{account\.paese \|\| "—"\}<\/dd>/);
 });
 
-test("il catalogo Paese copre tutti i clienti visibili senza dipendere dalla paginazione", () => {
+test("il catalogo Paese copre dashboard e dettaglio senza dipendere dalla paginazione", () => {
   assert.match(overviewMigration, /create or replace function public\.crm_customer_country_catalog/);
   assert.match(overviewMigration, /crm_customer_classification_visible/);
   assert.match(overviewMigration, /crm_row_visible/);
   assert.doesNotMatch(overviewMigration, /\blimit\b/i);
-  assert.match(crm, /supabase\.rpc\("crm_customer_country_catalog"/);
-  assert.match(crm, /<th>Paese<\/th>/);
-  assert.match(crm, /<td>\{row\.paese \|\| "—"\}<\/td>/);
+  assert.match(crm, /supabase\.rpc\("crm_customer_cadence_details"/);
+  assert.match(crm, /<th>Frequenza<\/th>/);
+  assert.match(crm, /<th>Riordino previsto<\/th>/);
   assert.match(dashboard, /supabase\.rpc\("crm_customer_country_catalog"/);
   assert.match(dashboard, /attention: withCountry/);
   assert.match(dashboard, /top_customers: withCountry/);

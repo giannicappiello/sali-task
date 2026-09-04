@@ -29,9 +29,10 @@ test("i fabbisogni usano ricerca totale, azioni PF in linea e tabella compatta",
   assert.match(source, /Ricerca rapida totale/);
   assert.match(source, /Genera PF da selezionati/);
   assert.match(source, /Prepara PF Mexal/);
-  assert.match(source, /Genera PF manuale/);
-  assert.match(source, /run\("GENERATE_PF_AUTOMATIC", \{ selectedKeys: rowsToSend\.map/);
-  assert.match(source, /PF Mexal manuale preparato/);
+  assert.match(source, /purchasingAction: "PREVIEW_PF"/);
+  assert.match(source, /purchasingAction: "CONFIRM_PF_PREVIEW"/);
+  assert.match(source, /createPfPreviewPdfFiles/);
+  assert.match(source, /Conferma ed emetti PF/);
   assert.match(source, /Genera PF automatico/);
   assert.match(source, /applySummaryFilter\("to_order"\)/);
   assert.match(source, /applySummaryFilter\("covered_arrivals"\)/);
@@ -42,4 +43,5 @@ test("i fabbisogni usano ricerca totale, azioni PF in linea e tabella compatta",
   assert.match(css, /\.purchase-summary button\.active/);
   assert.match(css, /\.purchase-month-actions>select\{[^}]*max-width:220px/);
   assert.match(css, /\.purchase-command-row \.purchase-calculation-note\{[^}]*font-size:\.76rem/);
+  assert.match(css, /\.pf-preview-dialog\{/);
 });

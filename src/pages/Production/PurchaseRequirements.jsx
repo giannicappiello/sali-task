@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, FilePlus2, Info, RefreshCw, Search, ShoppingCart, X } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, Download, FilePlus2, Info, RefreshCw, Search, ShoppingCart, X } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
+import { createPfPreviewPdfFiles } from "../../modules/orders/services/pfPreviewPdf.js";
 
 async function callPurchasing(accessToken, action, extra = {}) {
   const response = await fetch("/api/mexal/automation", { method: "POST",
@@ -30,7 +31,8 @@ export default function PurchaseRequirements() {
   const [selected, setSelected] = useState(new Set());
   const [supplierByMonth, setSupplierByMonth] = useState({});
   const [searchByMonth, setSearchByMonth] = useState({});
-  const [confirmMonth, setConfirmMonth] = useState("");
+  const [pfPreview, setPfPreview] = useState(null);
+  const [previewIndex, setPreviewIndex] = useState(0);
   const [onlyToOrder, setOnlyToOrder] = useState(false);
   const [summaryFilter, setSummaryFilter] = useState("all");
   const [loading, setLoading] = useState(true);
@@ -67,11 +69,10 @@ export default function PurchaseRequirements() {
     return result;
   }, {})).sort((a, b) => String(a.month).localeCompare(String(b.month))), [rows]);
 
-  function toggle(row) { setSelected((current) => { const next = new Set(current); next.has(row.key) ? next.delete(row.key) : next.add(row.key); return next; }); setConfirmMonth(""); }
+  function toggle(row) { setSelected((current) => { const next = new Set(current); next.has(row.key) ? next.delete(row.key) : next.add(row.key); return next; }); }
   function toggleGroup(group) {
     const ids = group.rows.filter((row) => row.quantityToOrder > 0).map((row) => row.key);
     setSelected((current) => { const next = new Set(current); ids.every((id) => next.has(id)) ? ids.forEach((id) => next.delete(id)) : ids.forEach((id) => next.add(id)); return next; });
-    setConfirmMonth("");
   }
   const selectedRows = (group) => group.rows.filter((row) => row.quantityToOrder > 0 && selected.has(row.key));
   function applySummaryFilter(filter) {
@@ -90,20 +91,34 @@ export default function PurchaseRequirements() {
     finally { setBusy(""); }
   }
 
-  async function createPf(group) {
-    const rowsToSend = selectedRows(group);
-    const supplierId = Number(supplierByMonth[group.key]);
-    if (!supplierId || !rowsToSend.length) { setError("Seleziona il fornitore e almeno un materiale da ordinare."); return; }
-    const ok = await run("CREATE_PF", { supplierId, month: group.month, ignoreDuplicates: true,
-      lines: rowsToSend.map((row) => ({ articleId: row.articleId, quantity: row.quantityToOrder, requiredAt: row.requiredAt })) });
-    if (ok) { setSelected((current) => { const next = new Set(current); rowsToSend.forEach((row) => next.delete(row.key)); return next; }); setConfirmMonth(""); }
+  function closePfPreview() {
+    pfPreview?.files?.forEach((file) => URL.revokeObjectURL(file.url));
+    setPfPreview(null); setPreviewIndex(0);
   }
 
-  async function generateSelectedPf(group) {
-    const rowsToSend = selectedRows(group);
-    if (!rowsToSend.length) { setError("Seleziona almeno un materiale da ordinare."); return; }
-    const ok = await run("GENERATE_PF_AUTOMATIC", { selectedKeys: rowsToSend.map((row) => row.key) });
-    if (ok) setSelected((current) => { const next = new Set(current); rowsToSend.forEach((row) => next.delete(row.key)); return next; });
+  async function preparePfPreview(request) {
+    setBusy("PREVIEW_PF"); setError(""); setMessage("");
+    try {
+      const plan = await callPurchasing(accessToken, "workspacemes_v4_purchasing_action", { purchasingAction: "PREVIEW_PF", ...request });
+      const files = (await createPfPreviewPdfFiles(plan.documents)).map((file) => ({ ...file,
+        url: URL.createObjectURL(new Blob([file.data], { type: "application/pdf" })) }));
+      setPreviewIndex(0); setPfPreview({ ...plan, files, request });
+    } catch (previewError) { setError(previewError.message); }
+    finally { setBusy(""); }
+  }
+
+  async function confirmPfPreview() {
+    if (!pfPreview) return;
+    setBusy("CONFIRM_PF_PREVIEW"); setError(""); setMessage("");
+    try {
+      const result = await callPurchasing(accessToken, "workspacemes_v4_purchasing_action", {
+        purchasingAction: "CONFIRM_PF_PREVIEW", ...pfPreview.request, previewHash: pfPreview.previewHash,
+      });
+      const emittedKeys = new Set(pfPreview.documents.flatMap((document) => document.lines.map((line) => line.key)));
+      setSelected((current) => new Set([...current].filter((key) => !emittedKeys.has(key))));
+      setMessage(result.message || "PF emessi in Mexal."); closePfPreview(); await load();
+    } catch (confirmError) { closePfPreview(); setError(confirmError.message); }
+    finally { setBusy(""); }
   }
 
   const toOrder = data.requirements.filter((row) => row.quantityToOrder > 0);
@@ -135,24 +150,23 @@ export default function PurchaseRequirements() {
         const allSelected = groupToOrder.length > 0 && groupToOrder.every((row) => selected.has(row.key));
         const supplierId = supplierByMonth[group.key] || "";
         const selectedForGroup = selectedRows(group);
-        const supplier = data.suppliers.find((item) => String(item.id) === String(supplierId));
         return <section className="purchase-month-card" id={monthId(group.month)} key={group.key}>
           <header><div><span>Fabbisogni del mese</span><h2>{monthTitle(group.month)}</h2></div><div><b>{group.rows.filter((row) => row.quantityToOrder > 0).length}</b> da ordinare · <b>{group.rows.filter((row) => row.quantityToOrder <= 0).length}</b> coperti</div></header>
           <div className="purchase-month-actions">
             <button type="button" className="secondary-action" disabled={!groupToOrder.length} onClick={() => toggleGroup({ ...group, rows: visibleRows })} title="Seleziona o deseleziona i materiali ordinabili visibili">{allSelected ? "Deseleziona visibili" : "Seleziona da ordinare"}<ButtonInfo text="Applica la selezione alle sole righe visibili che hanno una quantità da ordinare."/></button>
-            <select aria-label={`Fornitore PF ${monthTitle(group.month)}`} value={supplierId} onChange={(event) => { setSupplierByMonth((current) => ({ ...current, [group.key]: event.target.value })); setConfirmMonth(""); }}><option value="">Seleziona fornitore PF…</option>{data.suppliers.map((item) => <option value={item.id} key={item.id}>{item.ragioneSociale} ({item.codiceMexal})</option>)}</select>
+            <select aria-label={`Fornitore PF ${monthTitle(group.month)}`} value={supplierId} onChange={(event) => setSupplierByMonth((current) => ({ ...current, [group.key]: event.target.value }))}><option value="">Seleziona fornitore PF…</option>{data.suppliers.map((item) => <option value={item.id} key={item.id}>{item.ragioneSociale} ({item.codiceMexal})</option>)}</select>
             <label className="purchase-quick-search"><Search size={16} aria-hidden="true"/><input type="search" value={searchByMonth[group.key] || ""} onChange={(event) => setSearchByMonth((current) => ({ ...current, [group.key]: event.target.value }))} placeholder="Ricerca rapida totale" aria-label={`Ricerca rapida nei fabbisogni di ${monthTitle(group.month)}`}/></label>
-            <button type="button" className="secondary-action" disabled={!canManage || !supplierId || !selectedForGroup.length || Boolean(busy)} onClick={() => setConfirmMonth(group.key)} title="Prepara manualmente un PF per il fornitore scelto">Prepara PF Mexal<ButtonInfo text="Prepara il PF manuale usando esclusivamente gli articoli selezionati e il fornitore indicato."/></button>
-            <button type="button" className="primary-action" disabled={!canManage || !selectedForGroup.length || Boolean(busy)} onClick={() => generateSelectedPf(group)} title="Genera automaticamente i PF per i soli articoli selezionati"><FilePlus2 size={16}/>{busy === "GENERATE_PF_AUTOMATIC" ? "Generazione…" : "Genera PF da selezionati"}<ButtonInfo text="Applica la generazione automatica entro 60 giorni soltanto agli articoli selezionati, scegliendo i fornitori secondo le regole MES."/></button>
-            <button type="button" className="secondary-action" disabled={!canManage || Boolean(busy) || !toOrder.length} onClick={() => run("GENERATE_PF_AUTOMATIC")} title="Genera una sola volta i PF necessari entro 60 giorni da oggi"><FilePlus2 size={16}/>Genera PF automatico<ButtonInfo text="Raggruppa automaticamente i fabbisogni dei prossimi 60 giorni evitando PF duplicati."/></button>
+            <button type="button" className="secondary-action" disabled={!canManage || !supplierId || !selectedForGroup.length || Boolean(busy)} onClick={() => preparePfPreview({ mode: "manual", supplierId: Number(supplierId), month: group.month, selectedKeys: selectedForGroup.map((row) => row.key) })} title="Prepara manualmente un PF per il fornitore scelto">Prepara PF Mexal<ButtonInfo text="Genera l’anteprima PDF del PF manuale usando gli articoli selezionati e il fornitore indicato."/></button>
+            <button type="button" className="primary-action" disabled={!canManage || !selectedForGroup.length || Boolean(busy)} onClick={() => preparePfPreview({ mode: "automatic", selectedKeys: selectedForGroup.map((row) => row.key) })} title="Genera l’anteprima dei PF automatici per i soli articoli selezionati"><FilePlus2 size={16}/>{busy === "PREVIEW_PF" ? "Anteprima…" : "Genera PF da selezionati"}<ButtonInfo text="Prepara i PDF dei PF automatici entro 60 giorni soltanto per gli articoli selezionati; l’emissione richiede conferma."/></button>
+            <button type="button" className="secondary-action" disabled={!canManage || Boolean(busy) || !toOrder.length} onClick={() => preparePfPreview({ mode: "automatic" })} title="Genera l’anteprima dei PF necessari entro 60 giorni da oggi"><FilePlus2 size={16}/>Genera PF automatico<ButtonInfo text="Prepara i PDF di tutti i PF automatici evitando duplicati; l’emissione richiede conferma."/></button>
           </div>
-          {confirmMonth === group.key && <div className="purchase-confirm"><div><strong>PF Mexal manuale preparato</strong><span>Fornitore <b>{supplier?.ragioneSociale}</b> · <b>{selectedForGroup.length}</b> materiali · consegne previste in {monthTitle(group.month)}.</span></div><div><button type="button" className="secondary-action" onClick={() => setConfirmMonth("")} disabled={Boolean(busy)}>Annulla</button><button type="button" className="primary-action" onClick={() => createPf(group)} disabled={Boolean(busy)}><FilePlus2 size={16}/>{busy === "CREATE_PF" ? "Generazione…" : "Genera PF manuale"}<ButtonInfo text="Conferma la creazione del PF con il fornitore scelto manualmente."/></button></div></div>}
           <div className="purchase-table-wrap" data-column-controls="off"><table><colgroup><col className="purchase-select-column"/><col className="purchase-material-column"/><col className="purchase-type-column"/><col className="purchase-required-column"/><col className="purchase-order-by-column"/><col className="purchase-demand-column"/><col className="purchase-stock-column"/><col className="purchase-arrival-column"/><col className="purchase-order-column"/><col className="purchase-pf-column"/><col className="purchase-supplier-column"/><col className="purchase-oct-column"/><col className="purchase-production-column"/><col className="purchase-status-column"/></colgroup><thead><tr><th className="purchase-select-cell" aria-label="Seleziona"></th><th>Materiale</th><th>Tipo</th><th>Necessario entro</th><th>Ordina entro</th><th>Fabbisogno</th><th>Giacenza</th><th>In arrivo</th><th>Da ordinare</th><th>PF Mexal</th><th>Consegne / fornitore</th><th>OCT</th><th>Ordini produzione</th><th>Stato</th></tr></thead><tbody>{visibleRows.map((row) => <tr key={row.key} className={row.quantityToOrder > 0 ? "to-order" : ""}><td className="purchase-select-cell">{row.quantityToOrder > 0 && <input type="checkbox" checked={selected.has(row.key)} onChange={() => toggle(row)} aria-label={`Seleziona ${row.articleCode}`}/>}</td><td className="purchase-material-cell"><strong>{row.articleCode}</strong><small>{row.description}</small></td><td><span className="purchase-type">{typeLabel(row.articleType)}</span></td><td>{date(row.requiredAt)}</td><td><strong className={row.status === "ORDER_LATE" ? "late" : ""}>{date(row.orderBy)}</strong><small>{row.leadTimeDays} gg</small></td><td className="number">{quantity(row.requiredQuantity)} {row.unitOfMeasure}</td><td className="number">{quantity(row.availableStock)}</td><td className="number">{quantity(row.incomingQuantity)}</td><td className="number"><strong className={row.quantityToOrder > 0 ? "late" : "covered"}>{quantity(row.quantityToOrder)}</strong>{row.reorderLot > 0 && row.quantityToOrder > 0 && <small>netto {quantity(row.netRequirement)} · lotto {quantity(row.reorderLot)}</small>}</td><td>{row.pfDocuments ? <><span className="purchase-pf">{row.pfDocuments}</span><small>{quantity(row.pfQuantity)} {row.unitOfMeasure} proposti</small></> : "—"}</td><td><span>{row.supplierOrders || "Nessuna consegna datata"}</span><small>{row.supplierName}</small></td><td className="purchase-lineage">{row.octReferences || "—"}</td><td className="purchase-lineage">{row.productionOrders || "—"}</td><td><span className={`purchase-status ${row.status.toLowerCase()}`}>{statusLabel(row.status)}</span></td></tr>)}</tbody></table>{!visibleRows.length && <p className="table-message">Nessun fabbisogno corrisponde alla ricerca.</p>}</div>
         </section>;
       })}</div>
       {!groups.length && <div className="rdp-empty">Non ci sono fabbisogni per gli ordini di produzione nuovi o pianificati.</div>}
       <p className="purchase-footnote">I documenti PF vengono creati solo dopo conferma. Restano proposte a fornitore e non aumentano la disponibilità futura finché non vengono trasformati in ordini fornitore effettivi.</p>
     </>}
+    {pfPreview && <div className="pf-preview-backdrop" role="presentation"><section className="pf-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="pf-preview-title"><header><div><span>Anteprima non emessa</span><h2 id="pf-preview-title">PF Mexal · {previewIndex + 1} di {pfPreview.files.length}</h2><p>{pfPreview.documents[previewIndex]?.supplierName} · {pfPreview.documents[previewIndex]?.lines.length} articoli</p></div><button type="button" className="secondary-action" onClick={closePfPreview} disabled={Boolean(busy)} aria-label="Chiudi anteprima"><X size={18}/></button></header><div className="pf-preview-document"><iframe src={pfPreview.files[previewIndex]?.url} title={`Anteprima ${pfPreview.files[previewIndex]?.name}`}/></div><footer><div className="pf-preview-navigation"><button type="button" className="secondary-action" disabled={previewIndex === 0 || Boolean(busy)} onClick={() => setPreviewIndex((value) => value - 1)}><ChevronLeft size={16}/>Precedente</button><a className="secondary-action" href={pfPreview.files[previewIndex]?.url} download={pfPreview.files[previewIndex]?.name}><Download size={16}/>Scarica anteprima</a><button type="button" className="secondary-action" disabled={previewIndex >= pfPreview.files.length - 1 || Boolean(busy)} onClick={() => setPreviewIndex((value) => value + 1)}>Successivo<ChevronRight size={16}/></button></div><div className="pf-preview-confirm"><span>{pfPreview.documentCount} PF · {pfPreview.lineCount} righe. Nessun documento è stato ancora scritto.</span><button type="button" className="secondary-action" onClick={closePfPreview} disabled={Boolean(busy)}>Annulla</button><button type="button" className="primary-action" onClick={confirmPfPreview} disabled={Boolean(busy)}><FilePlus2 size={16}/>{busy === "CONFIRM_PF_PREVIEW" ? "Emissione…" : "Conferma ed emetti PF"}</button></div></footer></section></div>}
     {!canManage && <p className="rdp-diagnostic-readonly">Permesso purchases.manage richiesto per importazioni e creazione PF.</p>}
   </div>;
 }

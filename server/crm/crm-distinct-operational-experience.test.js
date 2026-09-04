@@ -14,7 +14,7 @@ const crmModule = read("src/modules/crm/CrmModule.jsx");
 test("PRIVATE e B2B espongono menu e route realmente distinti", () => {
   const privateLabels = crmNavigation("conto_terzi").map(([label]) => label);
   const b2bLabels = crmNavigation("b2b").map(([label]) => label);
-  assert.deepEqual(privateLabels, ["Dashboard", "Clienti", "Opportunità", "Pipeline", "Attività", "Campioni / Sviluppi", "Progetti", "Analisi"]);
+  assert.deepEqual(privateLabels, ["Dashboard", "Clienti", "Progetti", "Pipeline", "Attività", "Campioni / Sviluppi", "Progetti Workspace", "Analisi"]);
   assert.deepEqual(b2bLabels, ["Dashboard", "Clienti / Prospect", "Pipeline acquisizione", "Attività", "Clienti da seguire", "Riordini", "BeautyDays", "Analisi"]);
   for (const view of ["opportunities", "developments", "projects"]) assert.ok(CRM_ROUTE_CATALOG.some((route) => route.type === "conto_terzi" && route.view === view));
   for (const view of ["follow-up", "reorders", "beautydays"]) assert.ok(CRM_ROUTE_CATALOG.some((route) => route.type === "b2b" && route.view === view));
@@ -41,7 +41,7 @@ test("le esperienze operative hanno schermate Workspace dedicate", () => {
 
 test("dashboard PRIVATE ripristina i KPI completi senza la card di flusso", () => {
   assert.match(crmModule, /case "dashboard": return route\.type === "conto_terzi" \? <CrmPrivateDashboard \/> : <CrmDashboard type=\{route\.type\} \/>/);
-  for (const label of ["Clienti totali", "Clienti CRM attivi", "Clienti CRM non attivi", "Fatturato", "Ordinato", "Valore medio ordine", "Opportunità aperte", "Pipeline ponderata"]) assert.match(crmModule, new RegExp(label));
+  for (const label of ["Clienti totali", "Clienti CRM attivi", "Clienti CRM non attivi", "Fatturato", "Ordinato", "Valore medio ordine", "Progetti aperti", "Pipeline ponderata"]) assert.match(crmModule, new RegExp(label));
   assert.doesNotMatch(pages, /Flusso Conto Terzi/);
 });
 

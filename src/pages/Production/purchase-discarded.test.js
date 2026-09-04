@@ -10,6 +10,9 @@ test("le righe scartate sono visibili e stampabili", async () => {
 
   assert.match(source, /result\.discardedRows/);
   assert.match(source, /Righe scartate nell’ultima importazione/);
+  assert.match(source, /Tipo riga/);
+  assert.match(source, /Descrizione Mexal/);
+  assert.match(source, /row\.rowType/);
   assert.match(source, /Stampa elenco/);
   assert.match(source, /printDiscardedRows/);
   assert.match(source, /row\.orderReference/);

@@ -133,8 +133,9 @@ export function buildWorkspaceV4PfPlan(requirements, suppliers, options = {}) {
       for (const [rank, supplier] of resolveSuppliers(row, suppliersById, suppliersByName, supplierOverride).entries()) {
         const supplierId = Number(supplier.id);
         const month = monthKey(row.month || row.requiredAt);
-        const key = `${supplierId}:${month}`;
+        const key = `${supplierId}`;
         if (!groups.has(key)) groups.set(key, { supplierId, month, rank, rows: [] });
+        if (month && (!groups.get(key).month || month < groups.get(key).month)) groups.get(key).month = month;
         groups.get(key).rank = Math.min(groups.get(key).rank, rank);
         groups.get(key).rows.push(row);
       }
@@ -153,8 +154,9 @@ export function buildWorkspaceV4PfPlan(requirements, suppliers, options = {}) {
     if (!month) continue;
     for (const [rank, supplier] of resolveSuppliers(row, suppliersById, suppliersByName).entries()) {
       const supplierId = Number(supplier.id);
-      const key = `${supplierId}:${month}`;
+      const key = `${supplierId}`;
       if (!groups.has(key)) groups.set(key, { supplierId, month, rank, rows: [] });
+      if (!groups.get(key).month || month < groups.get(key).month) groups.get(key).month = month;
       groups.get(key).rank = Math.min(groups.get(key).rank, rank);
       groups.get(key).rows.push(row);
     }

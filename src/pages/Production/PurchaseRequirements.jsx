@@ -109,11 +109,11 @@ export default function PurchaseRequirements() {
     const subtitle = printDocument.createElement("p"); subtitle.textContent = `${discardedRows.length} righe · stampa del ${new Date().toLocaleString("it-IT")}`;
     const table = printDocument.createElement("table");
     const head = table.createTHead().insertRow();
-    ["Ordine", "Codice articolo", "Descrizione", "Motivo"].forEach((label) => { const cell = printDocument.createElement("th"); cell.textContent = label; head.append(cell); });
+    ["Ordine", "Tipo riga", "Codice articolo", "Descrizione Mexal", "Motivo"].forEach((label) => { const cell = printDocument.createElement("th"); cell.textContent = label; head.append(cell); });
     const body = table.createTBody();
     discardedRows.forEach((row) => {
       const line = body.insertRow();
-      [row.orderReference, row.articleCode, row.description, row.reason].forEach((value) => { const cell = line.insertCell(); cell.textContent = value || "—"; });
+      [row.orderReference, row.rowType, row.articleCode, row.description, row.reason].forEach((value) => { const cell = line.insertCell(); cell.textContent = value || "—"; });
     });
     printDocument.body.append(title, subtitle, table);
     popup.focus();
@@ -165,7 +165,7 @@ export default function PurchaseRequirements() {
     {error && <div className="purchase-feedback error" role="alert"><span>{error}</span><button onClick={() => setError("")} aria-label="Chiudi"><X size={16}/></button></div>}
     {discardedRows.length > 0 && <section className="purchase-discarded" aria-label="Righe ordini fornitore scartate">
       <header><div><strong>Righe scartate nell’ultima importazione</strong><span>{discardedRows.length} righe non importate con motivazione puntuale.</span></div><button type="button" className="secondary-action" onClick={printDiscardedRows}><Printer size={16}/>Stampa elenco</button></header>
-      <div><table><thead><tr><th>Ordine</th><th>Codice articolo</th><th>Descrizione</th><th>Motivo</th></tr></thead><tbody>{discardedRows.map((row, index) => <tr key={`${row.orderReference}:${row.articleCode}:${index}`}><td>{row.orderReference || "—"}</td><td>{row.articleCode || "—"}</td><td>{row.description || "—"}</td><td>{row.reason || "—"}</td></tr>)}</tbody></table></div>
+      <div><table><thead><tr><th>Ordine</th><th>Tipo riga</th><th>Codice articolo</th><th>Descrizione Mexal</th><th>Motivo</th></tr></thead><tbody>{discardedRows.map((row, index) => <tr key={`${row.orderReference}:${row.articleCode}:${index}`}><td>{row.orderReference || "—"}</td><td>{row.rowType || "—"}</td><td>{row.articleCode || "—"}</td><td>{row.description || "—"}</td><td>{row.reason || "—"}</td></tr>)}</tbody></table></div>
     </section>}
     {latestSaliProposal && <section className="purchase-sali-proposal" aria-label="Ultima proposta Sali di Ischia">
       <header><div><span>Riassortimento Workspace</span><h2>Proposta Sali di Ischia del {date(latestSaliProposal.proposal_date)}</h2></div><strong>{latestSaliProposal.status}</strong></header>

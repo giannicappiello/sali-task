@@ -99,6 +99,19 @@ test("varianti societarie Comprof e Miluet non duplicano i PF", () => {
   assert.deepEqual(plan.documents.map((item) => item.supplierName), ["COMPROF MILANO S.R.L.", "MILUET S.P.A."]);
 });
 
+test("i fabbisogni di mesi diversi producono un solo PF per fornitore", () => {
+  const october = {
+    ...rows[1], key: "12:2026-10", month: "2026-10-01T00:00:00.000Z",
+    requiredAt: "2026-10-12T00:00:00.000Z",
+  };
+  const plan = buildWorkspaceV4PfPlan([rows[0], october], suppliers, {
+    mode: "automatic", generatedAt: "2026-09-04T00:00:00.000Z", horizonDays: 60,
+  });
+  assert.equal(plan.documents.length, 1);
+  assert.equal(plan.documents[0].month, "2026-09-01T00:00:00.000Z");
+  assert.deepEqual(plan.documents[0].lines.map((item) => item.articleCode), ["MP11", "MP12"]);
+});
+
 test("il fornitore manuale produce un solo PF anche con più associazioni Workspace", () => {
   const associated = { ...rows[0], workspaceSuppliers: [{ id: 8, ragioneSociale: "Fornitore Alternativo" }] };
   const plan = buildWorkspaceV4PfPlan([associated], suppliers, {

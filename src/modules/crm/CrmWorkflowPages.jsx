@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Search } from "lucide-react";
+import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
 import { CrmBeautyDashboardPanel } from "./CrmBeautyDays";
 import CrmCustomerLink from "./CrmCustomerLink";
+import CrmDeleteActivityButton from "./CrmDeleteActivityButton";
 import CrmPeriodFilter, { useCrmPeriod } from "./CrmPeriodFilter";
 import { CrmPageHeader, CrmSectionNav } from "./CrmWorkspaceUI";
 import { crmTypeConfig, formatDate, formatMoney } from "./crmConfig";
@@ -15,6 +17,7 @@ function ErrorMessage({ error }) {
 
 export function CrmDevelopmentsPage() {
   const type = "conto_terzi"; const config = crmTypeConfig(type); const period = useCrmPeriod();
+  const { canUseModule } = useAuth(); const canWrite = canUseModule(config.moduleCode, "scrittura");
   const [params, setParams] = useSearchParams(); const [rows, setRows] = useState([]); const [error, setError] = useState("");
   const search = params.get("developmentSearch") || ""; const kind = params.get("developmentType") || "";
   const load = useCallback(async () => {
@@ -26,7 +29,7 @@ export function CrmDevelopmentsPage() {
   const setParam = (name, value) => setParams((current) => { const next = new URLSearchParams(current); if (value) next.set(name, value); else next.delete(name); return next; }, { replace: true });
   return <div className="crm-page"><CrmPageHeader eyebrow="CRM PRIVATE" title="Campioni e sviluppi" description="Attività tecniche e commerciali collegate a cliente e opportunità; la creazione operativa avviene dalla scheda opportunità." actions={<CrmPeriodFilter period={period} compact />}><CrmSectionNav items={crmNavigation(type)} period={period} label="Navigazione CRM PRIVATE" /></CrmPageHeader><ErrorMessage error={error} />
     <div className="crm-filters"><label><Search size={16} /><input value={search} onChange={(event) => setParam("developmentSearch", event.target.value)} placeholder="Cerca cliente, opportunità o sviluppo" /></label><select value={kind} onChange={(event) => setParam("developmentType", event.target.value)}><option value="">Tutti i tipi</option><option value="campionatura">Campionatura</option><option value="invio_campioni">Invio campioni</option><option value="sviluppo_formula">Sviluppo formula</option><option value="sviluppo_nuova_formula">Nuova formula</option><option value="preventivo">Preventivo</option></select></div>
-    <div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Attività</th><th>Cliente</th><th>Opportunità</th><th>Tipo</th><th>Data</th><th>Stato</th></tr></thead><tbody>{visible.map((row) => <tr key={row.id}><td><strong>{row.titolo}</strong><small>{row.descrizione}</small></td><td>{row.crm_accounts ? <CrmCustomerLink crmType={type} customerCode={row.crm_accounts.codice_cliente_mexal} accountId={row.crm_accounts.id} name={row.crm_accounts.nome} period={period}>{row.crm_accounts.nome}</CrmCustomerLink> : "—"}</td><td>{row.crm_opportunities ? <Link to={period.withPeriod(`${config.basePath}/pipeline/${row.crm_opportunities.id}`)}>{row.crm_opportunities.titolo}</Link> : "—"}</td><td>{row.tipo.replaceAll("_", " ")}</td><td>{formatDate(row.data_attivita)}</td><td>{row.stato}</td></tr>)}</tbody></table>{!visible.length ? <div className="crm-empty">Nessun campione o sviluppo corrisponde ai filtri.</div> : null}</div>
+    <div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Attività</th><th>Cliente</th><th>Opportunità</th><th>Tipo</th><th>Data</th><th>Stato</th>{canWrite ? <th>Azioni</th> : null}</tr></thead><tbody>{visible.map((row) => <tr key={row.id}><td><strong>{row.titolo}</strong><small>{row.descrizione}</small></td><td>{row.crm_accounts ? <CrmCustomerLink crmType={type} customerCode={row.crm_accounts.codice_cliente_mexal} accountId={row.crm_accounts.id} name={row.crm_accounts.nome} period={period}>{row.crm_accounts.nome}</CrmCustomerLink> : "—"}</td><td>{row.crm_opportunities ? <Link to={period.withPeriod(`${config.basePath}/pipeline/${row.crm_opportunities.id}`)}>{row.crm_opportunities.titolo}</Link> : "—"}</td><td>{row.tipo.replaceAll("_", " ")}</td><td>{formatDate(row.data_attivita)}</td><td>{row.stato}</td>{canWrite ? <td><CrmDeleteActivityButton activity={row} canDelete onDeleted={load} onError={setError} compact /></td> : null}</tr>)}</tbody></table>{!visible.length ? <div className="crm-empty">Nessun campione o sviluppo corrisponde ai filtri.</div> : null}</div>
   </div>;
 }
 

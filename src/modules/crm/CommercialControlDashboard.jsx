@@ -225,7 +225,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
     }
     const targetByScope = {
       global: { top: "business", portfolio: "business", new: "attention", "reorder-lost": "attention" },
-      private: { top: "top", portfolio: "top", new: "top", "reorder-lost": "reorders" },
+      private: { top: "attention", portfolio: "attention", new: "attention", "reorder-lost": "reorders" },
       direct: { top: "attention", portfolio: "attention", new: "direct-origin", "reorder-lost": "reorders" },
     };
     return linkFor(targetByScope[scope]?.[target] || target);
@@ -277,7 +277,6 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
       <section className="crm-control-panel" id="trend"><header><div><span>Andamento</span><h3>Composizione fatturato PRIVATE / DIRECT</h3></div><select aria-label="Raggruppamento andamento" value={granularity} onChange={(event) => setFilter("granularity", event.target.value)}><option value="day">Giorno</option><option value="week">Settimana</option><option value="month">Mese</option></select></header><Trend rows={data?.trend || []} /></section>
 
       {scope === "private" ? <>
-        <section className="crm-control-panel" id="top"><header><div><span>Valore cliente</span><h3>Top clienti PRIVATE</h3></div></header><CustomerTable rows={data?.top_customers || []} period={period} privateMode /></section>
         <section className="crm-control-split"><article className="crm-control-panel"><header><div><span>Dipendenza commerciale</span><h3>Concentrazione fatturato</h3></div></header>{[1, 5, 10].map((limit) => { const total = Number(data?.concentration?.total || 0); const value = Number(data?.concentration?.[`top_${limit}`] || 0); return <div className="crm-control-concentration" key={limit}><span>Top {limit}</span><strong>{total ? percentage(value / total * 100) : "—"}</strong><i style={{ width: `${total ? value / total * 100 : 0}%` }} /></div>; })}</article><article className="crm-control-panel" id="reorders"><header><div><span>Frequenza cliente</span><h3>Riordini PRIVATE</h3></div></header><ReorderHealth rows={data?.reorder_health || []} linkFor={linkFor} /></article></section>
         <section className="crm-control-panel" id="pipeline"><header><div><span>Fasi realmente configurate</span><h3>Pipeline PRIVATE</h3></div></header><div className="crm-control-stage-grid">{(data?.pipeline_stages || []).map((row) => <Link key={row.id} to={period.withPeriod("/crm/conto-terzi/pipeline", { stage: row.id })}><strong>{row.nome}</strong><span>{number(row.opportunity_count)} opportunità</span><span>{formatMoney(row.value)}</span><small>{number(row.average_days, 1)} gg medi nello stato</small></Link>)}</div></section>
       </> : null}

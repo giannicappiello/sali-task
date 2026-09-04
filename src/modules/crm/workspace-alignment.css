@@ -22,6 +22,7 @@
 .crm-kpi span{color:#334155;font-size:14px}.crm-kpi strong{margin-top:4px;color:var(--text);font-size:32px}.crm-kpi small{margin-top:6px;color:var(--muted)}
 .crm-panel,.crm-list-card,.crm-kanban>section,.crm-ai-sidebar,.crm-ai-main{border-color:var(--border);border-radius:var(--radius-md);background:var(--card);box-shadow:var(--shadow-soft)}
 .crm-panel{min-height:0;padding:22px}.crm-panel h3{color:var(--text);font-size:20px}
+.crm-card-drilldown{margin-top:16px}.crm-card-drilldown>header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}.crm-card-drilldown>header span{color:#64748b;font-size:.78rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em}.crm-card-drilldown>header h3{margin:3px 0 0}
 .crm-filters{align-items:center;gap:12px}.crm-filters label{flex:1 1 340px;max-width:520px;min-height:46px;border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:var(--shadow-soft)}
 .crm-filters label:focus-within{border-color:var(--primary);box-shadow:0 0 0 3px rgba(18,107,255,.16)}
 .crm-filters label svg{flex:0 0 auto;color:var(--muted)}
@@ -92,3 +93,38 @@
 @media(max-width:1200px){.crm-project-create-form{grid-template-columns:repeat(3,minmax(0,1fr))}.crm-project-create-form .crm-customer-quick-search{grid-column:span 2}}
 @media(max-width:760px){.crm-project-create-form{grid-template-columns:1fr}.crm-project-create-form .crm-customer-quick-search{grid-column:auto}.crm-header-actions{width:100%;justify-content:stretch}.crm-header-actions>*{flex:1}}
 @media(max-width:390px){.crm-toolbar h2{font-size:1.25rem}.crm-quick-nav{display:grid}.crm-quick-nav a{justify-content:center}.crm-plan-actions{display:grid}.crm-plan-actions>*{width:100%}.crm-ai-message{max-width:100%}.crm-page-header{padding:18px}.crm-section-nav{display:grid;overflow:visible}.crm-section-nav a{justify-content:center}.crm-status-filter{width:100%}}
+
+/* Gabbia smartphone unica per tutte le aree CRM. */
+@media(max-width:640px){
+  .workspace-screen-content .crm-page,.module-container-content .crm-page{gap:14px;min-width:0;overflow:hidden}
+  .crm-page-header{gap:12px;padding:16px;border-radius:16px}
+  .crm-page-header-row,.crm-toolbar,.crm-control-panel>header,.crm-sales-chart-heading{display:grid;grid-template-columns:minmax(0,1fr);align-items:stretch;gap:10px}
+  .crm-page-header h1,.crm-page-header h2,.crm-toolbar h2{font-size:clamp(1.2rem,6vw,1.55rem);line-height:1.15;overflow-wrap:anywhere}
+  .crm-page-header p,.crm-toolbar p{font-size:.9rem;line-height:1.45}
+  .crm-section-nav,.crm-quick-nav{display:flex;gap:8px;margin-inline:-4px;padding:2px 4px 7px;overflow-x:auto;scroll-snap-type:x proximity;scrollbar-width:thin}
+  .crm-section-nav a,.crm-quick-nav a{flex:0 0 auto;min-height:42px;justify-content:center;padding-inline:13px;white-space:nowrap;scroll-snap-align:start}
+  .crm-page-header-row>.crm-toolbar-actions,.crm-toolbar-actions,.crm-header-actions,.crm-plan-actions{display:grid;grid-template-columns:1fr;width:100%;gap:8px}
+  .crm-page-header-row>.crm-toolbar-actions>*,.crm-toolbar-actions>*,.crm-header-actions>*,.crm-plan-actions>*{width:100%;min-width:0;justify-content:center}
+  .crm-period-filter,.crm-period-filter.compact{display:grid;grid-template-columns:1fr;width:100%;padding:10px}
+  .crm-period-filter label,.crm-period-filter input,.crm-period-filter select{width:100%;min-width:0}
+  .crm-filters,.crm-control-filterbar,.crm-digital-filters,.crm-classification-filters{display:grid;grid-template-columns:1fr;width:100%;gap:8px;padding:12px}
+  .crm-filters>*,.crm-control-filterbar>*,.crm-digital-filters>*,.crm-classification-filters>*{width:100%;max-width:none;min-width:0}
+  .crm-kpi-grid,.crm-control-kpis,.crm-control-kpis.wide,.scope-private .crm-control-kpis,.crm-commercial-kpis,.crm-classification-kpis{grid-template-columns:1fr;gap:10px}
+  .crm-kpi,.crm-control-kpi,.crm-commercial-kpis .kpi-card,.crm-classification-kpis .kpi-card{min-height:104px;padding:16px;border-radius:15px}
+  .crm-kpi strong,.crm-control-kpi strong{font-size:clamp(1.45rem,8vw,1.9rem)}
+  .crm-detail-grid,.crm-tabs,.crm-classification-charts,.crm-control-split,.crm-connection-grid,.crm-settings-layout{grid-template-columns:1fr;gap:10px}
+  .crm-panel,.crm-list-card,.crm-control-panel,.crm-chart-card{padding:15px;border-radius:15px}
+  .crm-card-drilldown>header{display:grid;grid-template-columns:1fr}.crm-card-drilldown>header>a{width:100%;justify-content:center}
+  .crm-table-wrap{width:100%;max-width:100%;border-radius:14px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .crm-table{font-size:.82rem}.crm-table th,.crm-table td{padding:10px 12px}
+  .crm-kanban{grid-auto-columns:minmax(270px,88vw);gap:10px}
+  .crm-modal-backdrop{align-items:end;padding:0}.crm-modal{width:100%;max-height:92dvh;padding:18px;border-radius:20px 20px 0 0}
+  .crm-modal-actions{bottom:-18px;margin:4px -18px -18px;padding:12px 18px calc(12px + env(safe-area-inset-bottom));display:grid;grid-template-columns:1fr}
+  .crm-modal-actions>button{width:100%}
+  .crm-pagination{display:grid;grid-template-columns:1fr 1fr;gap:8px}.crm-pagination span{grid-column:1/-1;text-align:center}.crm-pagination button{width:100%}
+}
+
+@media(max-width:390px){
+  .crm-section-nav,.crm-quick-nav{display:flex;overflow-x:auto}
+  .crm-page-header{padding:14px}
+}

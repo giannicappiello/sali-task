@@ -72,3 +72,48 @@ test("la visita Beauty crea atomicamente anche la task Workspace collegata", asy
   assert.doesNotMatch(sql, /update public\.v4_fasi_progetto[\s\S]*where[\s\S]*crm_activity_id is null/i);
   assert.doesNotMatch(sql, /drop table|truncate table|delete from public\./i);
 });
+
+test("le visite Beauty pregresse senza task vengono collegate senza alterare task e progetti esistenti", async () => {
+  const sql = await read("supabase/migrations/20260904234000_backfill_beauty_workspace_tasks.sql");
+  assert.match(sql, /activity\.tipo='visita_beauty' and activity\.workspace_task_id is null/i);
+  assert.match(sql, /where phase\.crm_activity_id=visit_row\.id/i);
+  assert.match(sql, /insert into public\.v4_fasi_progetto/i);
+  assert.match(sql, /update public\.crm_activities set workspace_task_id=task_id/i);
+  assert.match(sql, /on conflict do nothing/i);
+  assert.doesNotMatch(sql, /drop table|truncate table|delete from/i);
+});
+
+test("il report Beauty CRM conserva vendite e rende visibili le coordinate di check-in e check-out", async () => {
+  const [days, report, service] = await Promise.all([
+    read("src/modules/pharmacy/pages/Giornate.jsx"),
+    read("src/modules/pharmacy/pages/CompilaReport.jsx"),
+    read("src/modules/pharmacy/services/beautyVisitCrm.js"),
+  ]);
+  assert.match(days, /Visualizza \/ modifica report/);
+  assert.match(days, /Tracciamento visita/);
+  assert.match(days, /Apri posizione sulla mappa/);
+  assert.match(report, /report_data: \{ \.\.\.crmReportData, report \}/);
+  assert.match(report, /Prodotti venduti/);
+  assert.match(service, /check_in_latitude/);
+  assert.match(service, /check_out_longitude/);
+  assert.match(service, /report_data/);
+});
+
+test("le card CRM hanno drill-down filtrati e il layout smartphone uniforme", async () => {
+  const [moduleSource, beautySource, analyticsSource, digitalSource, controlSource, css] = await Promise.all([
+    read("src/modules/crm/CrmModule.jsx"),
+    read("src/modules/crm/CrmBeautyDays.jsx"),
+    read("src/modules/crm/CrmAnalyticsPage.jsx"),
+    read("src/modules/crm/DigitalCommerce.jsx"),
+    read("src/modules/crm/CommercialControlDashboard.jsx"),
+    read("src/modules/crm/workspace-alignment.css"),
+  ]);
+  assert.doesNotMatch(moduleSource, /<Kpi\b(?![^>]*\bto=)[^>]*\/>/g);
+  assert.match(beautySource, /searchParams\.get\("beautyMetric"\)/);
+  assert.match(beautySource, /detailEvents\.map/);
+  assert.match(analyticsSource, /to=\{period\.withPeriod/);
+  assert.match(digitalSource, /to=\{drilldown/);
+  assert.match(controlSource, /Apri dettaglio filtrato/);
+  assert.match(css, /Gabbia smartphone unica per tutte le aree CRM/);
+  assert.match(css, /\.crm-kpi-grid,[^{]*\.crm-control-kpis[^{]*\{grid-template-columns:1fr/);
+});

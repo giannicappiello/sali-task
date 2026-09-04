@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase as reportSupabase } from "../services/reportSupabase";
 import { supabase as primarySupabase } from "../../../lib/supabaseClient";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
 export default function CompilaReport({ giornata, farmacie, beauty, onBack }) {
+  const isCrmOnly = Boolean(giornata._crmOnly && giornata.crm_activity_id);
   const [prodotti, setProdotti] = useState([]);
   const [sottocategorie, setSottocategorie] = useState([]);
   const [vendite, setVendite] = useState([]);
@@ -16,12 +17,10 @@ export default function CompilaReport({ giornata, farmacie, beauty, onBack }) {
   const [feedbackClienti, setFeedbackClienti] = useState("");
   const [motiviNonInteresse, setMotiviNonInteresse] = useState("");
   const [noteFinali, setNoteFinali] = useState("");
+  const [crmReportData, setCrmReportData] = useState({});
+  const [hasExistingReport, setHasExistingReport] = useState(false);
 
-  useEffect(() => {
-    caricaDati();
-  }, []);
-
-  async function caricaDati() {
+  const caricaDati = useCallback(async () => {
     const prodottiRes = await primarySupabase
       .from("prodotti")
       .select("*")
@@ -35,10 +34,9 @@ export default function CompilaReport({ giornata, farmacie, beauty, onBack }) {
       .select("*")
       .order("nome", { ascending: true });
 
-    const venditeRes = await reportSupabase
-      .from("vendite_prodotti")
-      .select("*")
-      .eq("giornata_id", giornata.id);
+    const venditeRes = isCrmOnly
+      ? await primarySupabase.from("crm_visit_details").select("report_data").eq("activity_id", giornata.crm_activity_id).single()
+      : await reportSupabase.from("vendite_prodotti").select("*").eq("giornata_id", giornata.id);
 
     if (prodottiRes.error) return alert(prodottiRes.error.message);
     if (sottocategorieRes.error) return alert(sottocategorieRes.error.message);
@@ -47,16 +45,20 @@ export default function CompilaReport({ giornata, farmacie, beauty, onBack }) {
     setProdotti(prodottiRes.data || []);
     setSottocategorie(sottocategorieRes.data || []);
 
-    setClientiIntervistati(giornata.clienti_intervistati || "");
-    setClientiInteressati(giornata.clienti_interessati || "");
-    setClientiAcquistato(giornata.clienti_acquistato || "");
-    setNumeroTests(giornata.numero_tests_effettuati || "");
-    setFeedbackClienti(giornata.feedback_clienti || "");
-    setMotiviNonInteresse(giornata.motivi_non_interesse || "");
-    setNoteFinali(giornata.note_finali || "");
+    const storedData = isCrmOnly ? (venditeRes.data?.report_data || {}) : {};
+    const report = isCrmOnly ? (storedData.report || {}) : giornata;
+    setCrmReportData(storedData);
+    setHasExistingReport(isCrmOnly ? Boolean(storedData.report) : giornata.stato === "eseguita");
+    setClientiIntervistati(report.clienti_intervistati || "");
+    setClientiInteressati(report.clienti_interessati || "");
+    setClientiAcquistato(report.clienti_acquistato || "");
+    setNumeroTests(report.numero_tests_effettuati || "");
+    setFeedbackClienti(report.feedback_clienti || "");
+    setMotiviNonInteresse(report.motivi_non_interesse || "");
+    setNoteFinali(report.note_finali || "");
 
     setVendite(
-      (venditeRes.data || []).map((v) => ({
+      (isCrmOnly ? (report.vendite || []) : (venditeRes.data || [])).map((v) => ({
         prodotto_id: v.prodotto_id || "",
         codice_prodotto: v.codice_prodotto || "",
         ricerca_prodotto: v.codice_prodotto
@@ -69,7 +71,12 @@ export default function CompilaReport({ giornata, farmacie, beauty, onBack }) {
         quantita: Number(v.quantita || 1),
       }))
     );
-  }
+  }, [giornata, isCrmOnly]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void caricaDati(), 0);
+    return () => window.clearTimeout(timer);
+  }, [caricaDati]);
 
   function getFarmaciaNome(id) {
     return farmacie.find((f) => f.id === id)?.nome || "";
@@ -174,6 +181,43 @@ export default function CompilaReport({ giornata, farmacie, beauty, onBack }) {
   async function salvaReport(e) {
     e.preventDefault();
 
+    const righeVendite = vendite
+      .filter((v) => v.codice_prodotto)
+      .map((v) => ({
+        prodotto_id: null,
+        codice_prodotto: v.codice_prodotto,
+        nome_prodotto: v.nome_prodotto,
+        categoria_prodotto: v.categoria_prodotto,
+        sottocategoria_prodotto: v.sottocategoria_prodotto,
+        prezzo_unitario: Number(v.prezzo_unitario || 0),
+        quantita: Number(v.quantita || 0),
+        valore_totale: Number(v.prezzo_unitario || 0) * Number(v.quantita || 0),
+      }));
+
+    if (isCrmOnly) {
+      const report = {
+        clienti_intervistati: Number(clientiIntervistati || 0),
+        clienti_interessati: Number(clientiInteressati || 0),
+        clienti_acquistato: Number(clientiAcquistato || 0),
+        numero_tests_effettuati: Number(numeroTests || 0),
+        feedback_clienti: feedbackClienti,
+        motivi_non_interesse: motiviNonInteresse,
+        numero_totale_pezzi_venduti: totalePezzi,
+        fatturato_giornata: fatturatoTotale,
+        note_finali: noteFinali,
+        vendite: righeVendite,
+        saved_at: new Date().toISOString(),
+      };
+      const { error } = await primarySupabase
+        .from("crm_visit_details")
+        .update({ report_data: { ...crmReportData, report } })
+        .eq("activity_id", giornata.crm_activity_id);
+      if (error) return alert(error.message);
+      alert("Report salvato correttamente");
+      onBack();
+      return;
+    }
+
     const { error: deleteOldVenditeError } = await reportSupabase
       .from("vendite_prodotti")
       .delete()
@@ -199,25 +243,15 @@ export default function CompilaReport({ giornata, farmacie, beauty, onBack }) {
 
     if (updateError) return alert(updateError.message);
 
-    const righeVendite = vendite
-      .filter((v) => v.codice_prodotto)
-      .map((v) => ({
+    const righeVenditeLegacy = righeVendite.map((v) => ({
         giornata_id: giornata.id,
-        prodotto_id: null,
-        codice_prodotto: v.codice_prodotto,
-        nome_prodotto: v.nome_prodotto,
-        categoria_prodotto: v.categoria_prodotto,
-        sottocategoria_prodotto: v.sottocategoria_prodotto,
-        prezzo_unitario: v.prezzo_unitario,
-        quantita: v.quantita,
-        valore_totale:
-          Number(v.prezzo_unitario || 0) * Number(v.quantita || 0),
+        ...v,
       }));
 
-    if (righeVendite.length > 0) {
+    if (righeVenditeLegacy.length > 0) {
       const { error: venditeError } = await reportSupabase
         .from("vendite_prodotti")
-        .insert(righeVendite);
+        .insert(righeVenditeLegacy);
 
       if (venditeError) return alert(venditeError.message);
     }
@@ -361,6 +395,20 @@ export default function CompilaReport({ giornata, farmacie, beauty, onBack }) {
 
     if (!conferma) return;
 
+    if (isCrmOnly) {
+      const preservedData = Object.fromEntries(
+        Object.entries(crmReportData).filter(([key]) => key !== "report")
+      );
+      const { error } = await primarySupabase
+        .from("crm_visit_details")
+        .update({ report_data: preservedData })
+        .eq("activity_id", giornata.crm_activity_id);
+      if (error) return alert(error.message);
+      alert("Report eliminato correttamente");
+      onBack();
+      return;
+    }
+
     const { error: venditeError } = await reportSupabase
       .from("vendite_prodotti")
       .delete()
@@ -394,7 +442,7 @@ export default function CompilaReport({ giornata, farmacie, beauty, onBack }) {
     <div>
       <div style={headerStyle}>
         <h2>
-          {giornata.stato === "eseguita" ? "Modifica report" : "Compila report"}
+          {hasExistingReport ? "Visualizza / modifica report" : "Compila report"}
         </h2>
         <p style={subtitleStyle}>
           {getFarmaciaNome(giornata.farmacia_id)} —{" "}
@@ -557,7 +605,7 @@ export default function CompilaReport({ giornata, farmacie, beauty, onBack }) {
             Genera PDF Report
           </button>
 
-          {giornata.stato === "eseguita" && (
+          {hasExistingReport && (
             <button
               type="button"
               style={deleteReportButtonStyle}

@@ -28,7 +28,7 @@ export async function loadBeautyVisitLinks(legacyIds) {
   if (!legacyIds.length) return new Map();
   const { data, error } = await supabase
     .from("crm_visit_details")
-    .select("activity_id,legacy_giornata_id,visit_status,check_in_at,check_out_at,check_in_geofence,check_out_geofence")
+    .select("activity_id,legacy_giornata_id,visit_status,check_in_at,check_out_at,check_in_latitude,check_in_longitude,check_in_accuracy_meters,check_in_distance_meters,check_in_geofence,check_in_exception_reason,check_out_latitude,check_out_longitude,check_out_accuracy_meters,check_out_distance_meters,check_out_geofence,check_out_exception_reason,report_data")
     .in("legacy_giornata_id", legacyIds);
   if (error) throw error;
   return new Map((data || []).map((row) => [row.legacy_giornata_id, row]));
@@ -37,7 +37,7 @@ export async function loadBeautyVisitLinks(legacyIds) {
 export async function loadCrmOnlyBeautyVisits() {
   const { data: activities, error: activitiesError } = await supabase
     .from("crm_activities")
-    .select("id,account_id,titolo,descrizione,stato,data_attivita")
+    .select("id,account_id,titolo,descrizione,stato,data_attivita,workspace_task_id")
     .eq("crm_tipo", "b2b")
     .eq("tipo", "visita_beauty")
     .eq("source_type", "beauty_crm")
@@ -46,7 +46,7 @@ export async function loadCrmOnlyBeautyVisits() {
   if (!activities?.length) return { days: [], clients: [], links: new Map() };
 
   const [detailsResult, accountsResult] = await Promise.all([
-    supabase.from("crm_visit_details").select("activity_id,visit_status,check_in_at,check_out_at,check_in_geofence,check_out_geofence").in("activity_id", activities.map((row) => row.id)),
+    supabase.from("crm_visit_details").select("activity_id,visit_status,check_in_at,check_out_at,check_in_latitude,check_in_longitude,check_in_accuracy_meters,check_in_distance_meters,check_in_geofence,check_in_exception_reason,check_out_latitude,check_out_longitude,check_out_accuracy_meters,check_out_distance_meters,check_out_geofence,check_out_exception_reason,report_data").in("activity_id", activities.map((row) => row.id)),
     supabase.from("crm_accounts").select("id,nome,indirizzo,citta,provincia,telefono,email").in("id", [...new Set(activities.map((row) => row.account_id))]),
   ]);
   if (detailsResult.error) throw detailsResult.error;
@@ -73,6 +73,7 @@ export async function loadCrmOnlyBeautyVisits() {
     return {
       id: dayId,
       crm_activity_id: activity.id,
+      workspace_task_id: activity.workspace_task_id,
       farmacia_id: `crm:${activity.account_id}`,
       data: activity.data_attivita?.slice(0, 10),
       ora_inizio: Number.isNaN(date.getTime()) ? null : date.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }),

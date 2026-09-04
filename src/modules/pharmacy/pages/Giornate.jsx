@@ -666,6 +666,7 @@ export default function Giornate({ utente }) {
 
   function azioniGiornata(giornata) {
     const visit = crmVisitLinks.get(giornata.id);
+    const hasReport = Boolean(visit?.report_data?.report);
     return (
       <div style={actionRowStyle}>
         {!solaLettura && (
@@ -699,13 +700,13 @@ export default function Giornate({ utente }) {
               </button>
             )}
 
-            {!giornata._crmOnly && giornata.stato !== "annullata" && (
+            {giornata.stato !== "annullata" && (
               <button
                 style={reportButtonStyle}
                 onClick={() => apriReport(giornata)}
               >
-                {giornata.stato === "eseguita"
-                  ? "Modifica report"
+                {giornata.stato === "eseguita" || hasReport
+                  ? "Visualizza / modifica report"
                   : "Compila report"}
               </button>
             )}
@@ -730,7 +731,7 @@ export default function Giornate({ utente }) {
           </button>
         )}
 
-        {!giornata._crmOnly && giornata.stato === "eseguita" && (
+        {(giornata.stato === "eseguita" || visit?.check_out_at || hasReport) && solaLettura && (
           <button style={reportButtonStyle} onClick={() => apriReport(giornata)}>
             Visualizza report
           </button>
@@ -994,6 +995,10 @@ export default function Giornate({ utente }) {
                 <span style={labelStyle}>Note operative:</span>{" "}
                 {giornataDettaglio.note_operative}
               </p>
+            )}
+
+            {crmVisitLinks.get(giornataDettaglio.id) && (
+              <VisitTrackingCard visit={crmVisitLinks.get(giornataDettaglio.id)} />
             )}
 
             {azioniGiornata(giornataDettaglio)}
@@ -1276,6 +1281,35 @@ export default function Giornate({ utente }) {
   );
 }
 
+function VisitTrackingCard({ visit }) {
+  return (
+    <section style={trackingCardStyle}>
+      <h4 style={{ margin: 0 }}>Tracciamento visita</h4>
+      <div style={trackingGridStyle}>
+        <VisitPosition label="Check-in" at={visit.check_in_at} latitude={visit.check_in_latitude} longitude={visit.check_in_longitude} accuracy={visit.check_in_accuracy_meters} distance={visit.check_in_distance_meters} geofence={visit.check_in_geofence} exceptionReason={visit.check_in_exception_reason} />
+        <VisitPosition label="Check-out" at={visit.check_out_at} latitude={visit.check_out_latitude} longitude={visit.check_out_longitude} accuracy={visit.check_out_accuracy_meters} distance={visit.check_out_distance_meters} geofence={visit.check_out_geofence} exceptionReason={visit.check_out_exception_reason} />
+      </div>
+    </section>
+  );
+}
+
+function VisitPosition({ label, at, latitude, longitude, accuracy, distance, geofence, exceptionReason }) {
+  const hasCoordinates = Number.isFinite(Number(latitude)) && Number.isFinite(Number(longitude));
+  return (
+    <div style={trackingPositionStyle}>
+      <strong>{label}</strong>
+      <span>{at ? new Date(at).toLocaleString("it-IT") : "Non registrato"}</span>
+      {distance != null && <span>Distanza dalla sede: {Number(distance).toFixed(0)} m</span>}
+      {accuracy != null && <span>Precisione GPS: ±{Number(accuracy).toFixed(0)} m</span>}
+      {geofence && <span>Esito: {String(geofence).replaceAll("_", " ")}</span>}
+      {exceptionReason && <span>Motivazione: {exceptionReason}</span>}
+      {hasCoordinates ? (
+        <a href={`https://www.google.com/maps?q=${latitude},${longitude}`} target="_blank" rel="noreferrer">Apri posizione sulla mappa</a>
+      ) : at ? <span>Coordinate non disponibili o anonimizzate.</span> : null}
+    </div>
+  );
+}
+
 const headerStyle = { marginBottom: "22px", textAlign: "center" };
 
 const topControlsStyle = {
@@ -1413,6 +1447,32 @@ const reportButtonStyle = {
   color: "#FFFFFF",
   fontWeight: "600",
   cursor: "pointer",
+};
+
+const trackingCardStyle = {
+  marginTop: "18px",
+  padding: "16px",
+  border: "1px solid #D8D1CB",
+  borderRadius: "14px",
+  backgroundColor: "#F7FAFC",
+};
+
+const trackingGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
+  gap: "12px",
+  marginTop: "12px",
+};
+
+const trackingPositionStyle = {
+  display: "grid",
+  gap: "5px",
+  minWidth: 0,
+  padding: "12px",
+  border: "1px solid #E2E8F0",
+  borderRadius: "12px",
+  backgroundColor: "#FFFFFF",
+  overflowWrap: "anywhere",
 };
 
 const deleteButtonStyle = {

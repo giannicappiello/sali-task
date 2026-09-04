@@ -47,6 +47,58 @@ export async function listWorkspaceV4Purchasing({ admin, suppliers = [] }) {
   };
 }
 
+export async function listWorkspaceArticleSupplierAssociations({ admin }) {
+  const { data, error } = await admin.from("workspace_article_supplier_associations")
+    .select("id,article_id,article_code,supplier_id,supplier_code,supplier_name,created_at,updated_at")
+    .order("supplier_name");
+  if (error) throw error;
+  return data || [];
+}
+
+export function attachWorkspaceArticleSuppliers(requirements = [], associations = []) {
+  const byArticle = new Map();
+  for (const item of associations || []) {
+    const articleId = Number(item.article_id);
+    if (!Number.isSafeInteger(articleId) || articleId < 1) continue;
+    byArticle.set(articleId, [...(byArticle.get(articleId) || []), {
+      associationId: Number(item.id), id: Number(item.supplier_id), codiceMexal: clean(item.supplier_code),
+      ragioneSociale: clean(item.supplier_name),
+    }]);
+  }
+  return (requirements || []).map((row) => ({ ...row, workspaceSuppliers: byArticle.get(Number(row.articleId)) || [] }));
+}
+
+export async function addWorkspaceArticleSupplierAssociations({ admin, articles, supplier, actor }) {
+  const supplierId = Number(supplier?.id);
+  if (!Number.isSafeInteger(supplierId) || supplierId < 1) throw Object.assign(new Error("Fornitore non valido."), { status: 400 });
+  const unique = new Map();
+  for (const item of Array.isArray(articles) ? articles.slice(0, 2000) : []) {
+    const articleId = Number(item?.articleId);
+    const articleCode = clean(item?.articleCode);
+    if (Number.isSafeInteger(articleId) && articleId > 0 && articleCode) unique.set(articleId, { articleId, articleCode });
+  }
+  if (!unique.size) throw Object.assign(new Error("Seleziona almeno un articolo da associare."), { status: 400 });
+  const now = new Date().toISOString();
+  const rows = [...unique.values()].map((item) => ({
+    article_id: item.articleId, article_code: item.articleCode, supplier_id: supplierId,
+    supplier_code: clean(supplier.codiceMexal), supplier_name: clean(supplier.ragioneSociale) || `Fornitore ${supplierId}`,
+    created_by: actor || null, updated_by: actor || null, updated_at: now,
+  }));
+  const { data, error } = await admin.from("workspace_article_supplier_associations")
+    .upsert(rows, { onConflict: "article_id,supplier_id" }).select("id");
+  if (error) throw error;
+  return { message: `Fornitore associato a ${unique.size} articoli.`, associations: data || [] };
+}
+
+export async function removeWorkspaceArticleSupplierAssociation({ admin, associationId }) {
+  const id = Number(associationId);
+  if (!Number.isSafeInteger(id) || id < 1) throw Object.assign(new Error("Associazione articolo-fornitore non valida."), { status: 400 });
+  const { data, error } = await admin.from("workspace_article_supplier_associations").delete().eq("id", id).select("id").maybeSingle();
+  if (error) throw error;
+  if (!data) throw Object.assign(new Error("Associazione articolo-fornitore non trovata."), { status: 404 });
+  return { message: "Associazione articolo-fornitore rimossa." };
+}
+
 export async function createWorkspaceV4PurchaseDocument({ admin, input, actor }) {
   const command = validateWorkspaceV4PurchaseDocument(input);
   const idempotencyKey = clean(input.idempotencyKey) || `workspacemes:v4:purchase:${payloadHash(command)}`;

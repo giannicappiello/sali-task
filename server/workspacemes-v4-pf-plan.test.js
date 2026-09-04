@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildWorkspaceV4PfPlan, workspaceV4PfPlanChecksum } from "./workspacemes-v4-pf-plan.js";
 
-const suppliers = [{ id: 7, codiceMexal: "601.00007", ragioneSociale: "Fornitore Test" }];
+const suppliers = [
+  { id: 7, codiceMexal: "601.00007", ragioneSociale: "Fornitore Test" },
+  { id: 8, codiceMexal: "601.00008", ragioneSociale: "Fornitore Alternativo" },
+];
 const rows = [
   { key: "11:2026-09", month: "2026-09-01T00:00:00.000Z", articleId: 11, articleCode: "MP11", description: "Materia 11", unitOfMeasure: "KG", quantityToOrder: 12, requiredAt: "2026-09-20T00:00:00.000Z", supplierId: 7, pfDocuments: "", pfQuantity: 0 },
   { key: "12:2026-09", month: "2026-09-01T00:00:00.000Z", articleId: 12, articleCode: "MP12", description: "Materia 12", unitOfMeasure: "KG", quantityToOrder: 8, requiredAt: "2026-09-21T00:00:00.000Z", supplierId: 7, pfDocuments: "", pfQuantity: 0 },
@@ -51,6 +54,35 @@ test("il piano automatico genera i PF validi e conta i materiali senza fornitore
   assert.equal(plan.documents.length, 1);
   assert.deepEqual(plan.documents[0].lines.map((line) => line.articleCode), ["MP11"]);
   assert.equal(plan.skippedWithoutSupplier, 1);
+});
+
+test("senza scelta manuale crea un PF per il MES e per ogni fornitore Workspace associato", () => {
+  const associated = { ...rows[0], workspaceSuppliers: [
+    { id: 7, ragioneSociale: "Fornitore Test" },
+    { id: 8, ragioneSociale: "Fornitore Alternativo" },
+  ] };
+  const plan = buildWorkspaceV4PfPlan([associated], suppliers, {
+    mode: "selected", selectedKeys: [associated.key], generatedAt: "2026-09-04T00:00:00.000Z",
+  });
+  assert.deepEqual(plan.documents.map((item) => item.supplierId), [7, 8]);
+  assert.ok(plan.documents.every((item) => item.lines[0].articleCode === "MP11"));
+});
+
+test("il fornitore manuale produce un solo PF anche con più associazioni Workspace", () => {
+  const associated = { ...rows[0], workspaceSuppliers: [{ id: 8, ragioneSociale: "Fornitore Alternativo" }] };
+  const plan = buildWorkspaceV4PfPlan([associated], suppliers, {
+    mode: "selected", selectedKeys: [associated.key], supplierId: 8,
+  });
+  assert.deepEqual(plan.documents.map((item) => item.supplierId), [8]);
+});
+
+test("un'associazione Workspace copre un articolo privo di suggerimento MES", () => {
+  const associated = { ...rows[0], supplierId: null, supplierName: "", workspaceSuppliers: [{ id: 8, ragioneSociale: "Fornitore Alternativo" }] };
+  const plan = buildWorkspaceV4PfPlan([associated], suppliers, {
+    mode: "automatic", generatedAt: "2026-09-04T00:00:00.000Z", horizonDays: 60,
+  });
+  assert.equal(plan.documents[0].supplierId, 8);
+  assert.equal(plan.skippedWithoutSupplier, 0);
 });
 
 test("il piano da selezionati non ripropone righe con PF esistente", () => {

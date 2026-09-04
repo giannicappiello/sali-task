@@ -36,7 +36,7 @@ import { listProductionWorkbench, loadAllProductionOrders, productionWorkbenchDe
 import { productionGoLiveGates } from "../../server/workspace-production-gates.js";
 import { effectiveWorkspaceDiagnostics } from "../../server/workspace-effective-diagnostics.js";
 import { confirmWorkspaceV4, createWorkspaceV4Preview } from "../../server/workspacemes-v4-api.js";
-import { createWorkspaceV4PurchaseDocument, listWorkspaceV4Purchasing } from "../../server/workspacemes-v4-purchasing.js";
+import { addWorkspaceArticleSupplierAssociations, attachWorkspaceArticleSuppliers, createWorkspaceV4PurchaseDocument, listWorkspaceArticleSupplierAssociations, listWorkspaceV4Purchasing, removeWorkspaceArticleSupplierAssociation } from "../../server/workspacemes-v4-purchasing.js";
 import { automaticPfLines, calculateWorkspaceV4PurchaseRequirements, executeWorkspaceV4PurchasingAction, readWorkspaceV4PurchasingSource } from "../../server/workspacemes-v4-purchasing-mes.js";
 import { buildWorkspaceV4PfPlan, workspaceV4PfPlanChecksum } from "../../server/workspacemes-v4-pf-plan.js";
 import { generateSaliDiIschiaProposal, listSaliDiIschiaProposals } from "../../server/sali-di-ischia-proposal.js";
@@ -727,13 +727,14 @@ export default async function handler(req, res) {
           readAllProgremesSuppliers(client),
           readWorkspaceV4PurchasingSource(),
         ]);
-        const current = await listWorkspaceV4Purchasing({
-          admin: admin.supabase,
-          suppliers,
-        });
+        const [current, associations] = await Promise.all([
+          listWorkspaceV4Purchasing({ admin: admin.supabase, suppliers }),
+          listWorkspaceArticleSupplierAssociations({ admin: admin.supabase }),
+        ]);
+        const requirements = attachWorkspaceArticleSuppliers(calculateWorkspaceV4PurchaseRequirements(source), associations);
         return sendSuccess(res, 200, { ...current,
           saliDiIschiaProposals: await listSaliDiIschiaProposals(admin.supabase),
-          requirements: calculateWorkspaceV4PurchaseRequirements(source),
+          requirements,
           sourceGeneratedAt: source.generatedAt,
           calculationOwner: "WORKSPACE",
           calculationVersion: 4,
@@ -742,8 +743,22 @@ export default async function handler(req, res) {
       case "workspacemes_v4_purchasing_action": {
         const admin = await createAdmin(req, "purchases.manage");
         const action = String(body.purchasingAction || "").trim().toUpperCase();
-        const allowed = new Set(["IMPORT_SUPPLIER_ORDERS", "GENERATE_SALI_DI_ISCHIA", "CREATE_PF", "GENERATE_PF_AUTOMATIC", "PREVIEW_PF", "CONFIRM_PF_PREVIEW"]);
+        const allowed = new Set(["IMPORT_SUPPLIER_ORDERS", "GENERATE_SALI_DI_ISCHIA", "CREATE_PF", "GENERATE_PF_AUTOMATIC", "PREVIEW_PF", "CONFIRM_PF_PREVIEW", "ADD_ARTICLE_SUPPLIER", "REMOVE_ARTICLE_SUPPLIER"]);
         if (!allowed.has(action)) return sendFailure(res, 400, "workspacemes_v4_purchasing_action", "Operazione acquisti non valida.");
+        if (action === "REMOVE_ARTICLE_SUPPLIER") {
+          return sendSuccess(res, 200, await removeWorkspaceArticleSupplierAssociation({
+            admin: admin.supabase, associationId: body.associationId,
+          }));
+        }
+        if (action === "ADD_ARTICLE_SUPPLIER") {
+          const suppliers = await readAllProgremesSuppliers(createProgremesClient());
+          const supplierId = Number(body.supplierId);
+          const supplier = suppliers.find((item) => Number(item.id) === supplierId && item?.attivo !== false);
+          if (!supplier) return sendFailure(res, 400, "workspacemes_v4_purchasing_action", "Il fornitore selezionato non è disponibile.");
+          return sendSuccess(res, 200, await addWorkspaceArticleSupplierAssociations({
+            admin: admin.supabase, articles: body.articles, supplier, actor: admin.authUserId,
+          }));
+        }
         if (action === "GENERATE_SALI_DI_ISCHIA") {
           const result = await generateSaliDiIschiaProposal({
             admin: admin.supabase,
@@ -754,11 +769,13 @@ export default async function handler(req, res) {
         if (action === "PREVIEW_PF" || action === "CONFIRM_PF_PREVIEW") {
           const generatedAt = new Date().toISOString();
           const client = createProgremesClient();
-          const [source, suppliers] = await Promise.all([
+          const [source, suppliers, associations] = await Promise.all([
             readWorkspaceV4PurchasingSource(),
             readAllProgremesSuppliers(client),
+            listWorkspaceArticleSupplierAssociations({ admin: admin.supabase }),
           ]);
-          const plan = buildWorkspaceV4PfPlan(calculateWorkspaceV4PurchaseRequirements(source), suppliers, {
+          const requirements = attachWorkspaceArticleSuppliers(calculateWorkspaceV4PurchaseRequirements(source), associations);
+          const plan = buildWorkspaceV4PfPlan(requirements, suppliers, {
             mode: body.mode, selectedKeys: body.selectedKeys, supplierId: body.supplierId,
             month: body.month, generatedAt, horizonDays: 60,
           });

@@ -40,6 +40,25 @@ function resolveSupplier(row, suppliersById, suppliersByName, overrideId = null)
   return suppliersByName.get(normalized(row.supplierName)) || null;
 }
 
+function resolveSuppliers(row, suppliersById, suppliersByName, overrideId = null) {
+  if (overrideId != null) {
+    const supplier = suppliersById.get(overrideId);
+    return supplier ? [supplier] : [];
+  }
+  const result = [];
+  const seen = new Set();
+  const add = (supplier) => {
+    const id = Number(supplier?.id);
+    if (Number.isSafeInteger(id) && id > 0 && !seen.has(id)) { seen.add(id); result.push(supplier); }
+  };
+  // Il fornitore suggerito dal MES resta sempre la prima priorità.
+  add(resolveSupplier(row, suppliersById, suppliersByName));
+  for (const association of row.workspaceSuppliers || []) {
+    add(resolveSupplier({ supplierId: association.id, supplierName: association.ragioneSociale }, suppliersById, suppliersByName));
+  }
+  return result;
+}
+
 function document(supplier, supplierId, month, rows) {
   return { supplierId, supplierCode: clean(supplier?.codiceMexal), supplierName: clean(supplier?.ragioneSociale) || `Fornitore ${supplierId}`,
     supplierVatNumber: clean(supplier?.partitaIva), supplierTaxCode: clean(supplier?.codiceFiscale),
@@ -77,37 +96,40 @@ export function buildWorkspaceV4PfPlan(requirements, suppliers, options = {}) {
       fail("Il fornitore selezionato non è disponibile.", "PF_SUPPLIER_INVALID");
     const eligible = selectedPfRows(rows);
     if (!eligible.length) fail("Nessun nuovo PF da generare per i materiali selezionati.", "PF_PREVIEW_EMPTY");
-    const missingSupplier = eligible.filter((row) => !resolveSupplier(row, suppliersById, suppliersByName, supplierOverride));
+    const missingSupplier = eligible.filter((row) => !resolveSuppliers(row, suppliersById, suppliersByName, supplierOverride).length);
     if (missingSupplier.length) fail(`Per ${missingSupplier.length} materiali selezionati manca il fornitore. Seleziona un fornitore PF e riprova.`, "PF_SUPPLIER_REQUIRED");
     const groups = new Map();
     for (const row of eligible) {
-      const supplier = resolveSupplier(row, suppliersById, suppliersByName, supplierOverride);
-      const supplierId = Number(supplier.id);
-      const month = monthKey(row.month || row.requiredAt);
-      const key = `${supplierId}:${month}`;
-      if (!groups.has(key)) groups.set(key, { supplierId, month, rows: [] });
-      groups.get(key).rows.push(row);
+      for (const [rank, supplier] of resolveSuppliers(row, suppliersById, suppliersByName, supplierOverride).entries()) {
+        const supplierId = Number(supplier.id);
+        const month = monthKey(row.month || row.requiredAt);
+        const key = `${supplierId}:${month}`;
+        if (!groups.has(key)) groups.set(key, { supplierId, month, rank, rows: [] });
+        groups.get(key).rank = Math.min(groups.get(key).rank, rank);
+        groups.get(key).rows.push(row);
+      }
     }
-    const documents = [...groups.values()].sort((a, b) => a.month.localeCompare(b.month) || a.supplierId - b.supplierId)
+    const documents = [...groups.values()].sort((a, b) => a.month.localeCompare(b.month) || a.rank - b.rank || a.supplierId - b.supplierId)
       .map((group) => document(suppliersById.get(group.supplierId), group.supplierId, group.month, group.rows));
     return { mode, documents, skippedWithoutSupplier: 0 };
   }
 
   const eligible = automaticPfRows(rows, { generatedAt: options.generatedAt, horizonDays: options.horizonDays ?? 60 });
   if (!eligible.length) fail("Nessun nuovo PF da generare nei prossimi 60 giorni.", "PF_PREVIEW_EMPTY");
-  const missingSupplier = eligible.filter((row) => !resolveSupplier(row, suppliersById, suppliersByName));
+  const missingSupplier = eligible.filter((row) => !resolveSuppliers(row, suppliersById, suppliersByName).length);
   const groups = new Map();
   for (const row of eligible) {
-    const supplier = resolveSupplier(row, suppliersById, suppliersByName);
-    if (!supplier) continue;
-    const supplierId = Number(supplier.id);
     const month = monthKey(row.month || row.requiredAt);
     if (!month) continue;
-    const key = `${supplierId}:${month}`;
-    if (!groups.has(key)) groups.set(key, { supplierId, month, rows: [] });
-    groups.get(key).rows.push(row);
+    for (const [rank, supplier] of resolveSuppliers(row, suppliersById, suppliersByName).entries()) {
+      const supplierId = Number(supplier.id);
+      const key = `${supplierId}:${month}`;
+      if (!groups.has(key)) groups.set(key, { supplierId, month, rank, rows: [] });
+      groups.get(key).rank = Math.min(groups.get(key).rank, rank);
+      groups.get(key).rows.push(row);
+    }
   }
-  const documents = [...groups.values()].sort((a, b) => a.month.localeCompare(b.month) || a.supplierId - b.supplierId)
+  const documents = [...groups.values()].sort((a, b) => a.month.localeCompare(b.month) || a.rank - b.rank || a.supplierId - b.supplierId)
     .map((group) => document(suppliersById.get(group.supplierId), group.supplierId, group.month, group.rows));
   if (!documents.length && missingSupplier.length)
     fail(`Per ${missingSupplier.length} materiali necessari nei prossimi 60 giorni manca un fornitore associato.`, "PF_SUPPLIER_REQUIRED");

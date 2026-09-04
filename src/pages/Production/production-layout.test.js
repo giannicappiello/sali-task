@@ -36,6 +36,10 @@ test("i fabbisogni usano ricerca totale, azioni PF in linea e tabella compatta",
   assert.match(source, /createPfPreviewPdfFiles/);
   assert.match(source, /Conferma ed emetti PF/);
   assert.match(source, /Genera PF automatico/);
+  assert.match(source, /ADD_ARTICLE_SUPPLIER/);
+  assert.match(source, /REMOVE_ARTICLE_SUPPLIER/);
+  assert.match(source, /Associa fornitore/);
+  assert.match(source, /Priorità MES:/);
   assert.match(source, /applySummaryFilter\("to_order"\)/);
   assert.match(source, /applySummaryFilter\("covered_arrivals"\)/);
   assert.match(source, /aria-pressed=\{summaryFilter/);
@@ -46,4 +50,5 @@ test("i fabbisogni usano ricerca totale, azioni PF in linea e tabella compatta",
   assert.match(css, /\.purchase-month-actions>select\{[^}]*max-width:220px/);
   assert.match(css, /\.purchase-command-row \.purchase-calculation-note\{[^}]*font-size:\.76rem/);
   assert.match(css, /\.pf-preview-dialog\{/);
+  assert.match(css, /\.purchase-supplier-links\{/);
 });

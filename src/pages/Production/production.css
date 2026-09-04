@@ -100,10 +100,11 @@
 @media(max-width:850px){.purchase-summary{grid-template-columns:1fr}.purchase-toolbar,.purchase-confirm{align-items:stretch;flex-direction:column}.purchase-month-actions{grid-template-columns:1fr}}
 
 /* Fabbisogni: una sola ricerca rapida per elenco e tabella compatta senza filtri di colonna. */
-.purchase-month-actions{display:grid;grid-template-columns:auto minmax(160px,220px) minmax(190px,1fr) auto auto auto;align-items:center;gap:8px;padding:12px 14px}
+.purchase-month-actions{display:grid;grid-template-columns:auto minmax(160px,220px) minmax(190px,1fr) repeat(4,auto);align-items:center;gap:8px;padding:12px 14px}
 .purchase-month-actions>select{width:100%;min-width:0;max-width:220px}
 .purchase-month-actions>button{min-height:40px;padding:7px 9px;font-size:.72rem;line-height:1.15;white-space:nowrap}
 .purchase-button-info{display:inline-flex;align-items:center;justify-content:center;margin-left:2px;opacity:.72}
+.purchase-supplier-links{display:flex;flex-wrap:wrap;gap:3px;margin-top:4px}.purchase-supplier-links>span{display:inline-flex;align-items:center;gap:3px;max-width:100%;padding:2px 4px;color:#174f87;border:1px solid #cbddec;border-radius:6px;background:#eef6ff;font-size:.58rem}.purchase-supplier-links button{display:inline-flex;padding:0;color:inherit;border:0;background:transparent;cursor:pointer}.purchase-supplier-links button:disabled{cursor:default;opacity:.45}
 .pf-preview-backdrop{position:fixed;z-index:1200;inset:0;display:grid;place-items:center;padding:20px;background:rgba(12,28,48,.72)}
 .pf-preview-dialog{display:grid;grid-template-rows:auto minmax(0,1fr) auto;width:min(1180px,96vw);height:min(900px,94vh);overflow:hidden;border-radius:18px;background:#fff;box-shadow:0 28px 80px rgba(0,0,0,.35)}
 .pf-preview-dialog>header{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;padding:16px 20px;border-bottom:1px solid #dbe5ef}.pf-preview-dialog>header span{color:#a15a00;font-size:.75rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em}.pf-preview-dialog h2,.pf-preview-dialog p{margin:2px 0 0}.pf-preview-dialog p{color:#60758b}
@@ -132,6 +133,6 @@
 .purchase-table-wrap .purchase-status-column{width:88px}
 .purchase-table-wrap .purchase-select-cell{width:30px;min-width:30px;max-width:30px;text-align:left}
 .purchase-table-wrap .table-message{margin:0;padding:16px;color:#697b90}
-@media(max-width:1450px){.purchase-month-actions{grid-template-columns:auto minmax(150px,200px) minmax(180px,1fr) repeat(3,auto)}.purchase-month-actions>button{font-size:.66rem;padding-inline:7px}.purchase-table-wrap table{min-width:1100px;font-size:.64rem}.purchase-table-wrap td small{font-size:.58rem}}
+@media(max-width:1450px){.purchase-month-actions{grid-template-columns:auto minmax(150px,200px) minmax(180px,1fr) repeat(4,auto)}.purchase-month-actions>button{font-size:.66rem;padding-inline:7px}.purchase-table-wrap table{min-width:1100px;font-size:.64rem}.purchase-table-wrap td small{font-size:.58rem}}
 @media(max-width:1120px){.purchase-month-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.purchase-month-actions>select{max-width:none}.purchase-quick-search{grid-column:1/-1}.purchase-month-actions>button{white-space:normal}}
 @media(max-width:650px){.purchase-month-actions{grid-template-columns:1fr}.purchase-quick-search{grid-column:auto}}

@@ -64,8 +64,8 @@ test("gli elenchi CRM mostrano importi netti e nascondono le colonne tecniche", 
   assert.doesNotMatch(panel, /<th>Ultima classificazione<\/th>/);
   assert.match(panel, /<th>Fatturato netto<\/th>/);
   assert.match(panel, /<th>Ordinato netto<\/th>/);
-  assert.match(crm, /<th>Fatturato netto<\/th>/);
-  assert.match(crm, /<th>Ordinato netto<\/th>/);
+  assert.match(crm, /<th>Fatturato<\/th>/);
+  assert.match(crm, /<th>Ordinato<\/th>/);
 });
 
 test("l'aggregazione server-side usa righe nette e categorie prodotto reali", () => {

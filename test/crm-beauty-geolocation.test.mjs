@@ -61,3 +61,14 @@ test("BeautyDays consente di pianificare un nuovo contatto CRM senza codice clie
   assert.match(sql, /'prospect'/i);
   assert.doesNotMatch(sql, /drop table|truncate table|delete from public\.crm_/i);
 });
+
+test("la visita Beauty crea atomicamente anche la task Workspace collegata", async () => {
+  const sql = await read("supabase/migrations/20260904230000_crm_beauty_workspace_task.sql");
+  assert.match(sql, /insert into public\.v4_fasi_progetto/i);
+  assert.match(sql, /workspace_task_id=v_task_id/i);
+  assert.match(sql, /'activity',v_activity_id,'task',v_task_id/i);
+  assert.match(sql, /'workspace_task_id',v_task_id/i);
+  assert.match(sql, /'task_id',v_task_id/i);
+  assert.doesNotMatch(sql, /update public\.v4_fasi_progetto[\s\S]*where[\s\S]*crm_activity_id is null/i);
+  assert.doesNotMatch(sql, /drop table|truncate table|delete from public\./i);
+});

@@ -47,6 +47,14 @@ const RESOURCE_DEFINITIONS = Object.freeze({
       "indirizzo", "cap", "localita", "provincia", "telefono", "email", "pec", "attivo",
     ]),
   }),
+  "article-supplier-history": Object.freeze({
+    path: "article-supplier-history",
+    parameters: Object.freeze([...COMMON_PAGED_PARAMETERS, "active", "from", "to"]),
+    fields: Object.freeze([
+      "articleId", "articleCode", "supplierId", "supplierCode", "supplierName",
+      "orderCount", "lastOrderAt",
+    ]),
+  }),
   articles: Object.freeze({
     path: "articles",
     parameters: Object.freeze([...COMMON_PAGED_PARAMETERS, "active", "updatedAfter"]),
@@ -153,6 +161,31 @@ export async function readAllProgremesArticles(client, options = {}) {
   }
   for (let page = 2; page <= pages; page += 1) {
     const result = await client.request("articles", { page, pageSize, active });
+    items.push(...(result?.items || []));
+  }
+  return items;
+}
+
+/**
+ * Carica tutte le relazioni articolo-fornitore ricavate dallo storico ordini
+ * conservato in ProgreMES, incluse quelle provenienti da ordini ormai chiusi.
+ *
+ * @param {{ request: (resource: string, query: Record<string, unknown>) => Promise<{ items?: unknown[], total?: number, pageSize?: number }> }} client
+ * @param {{ active?: boolean, pageSize?: number, maxPages?: number }} [options]
+ */
+export async function readAllProgremesArticleSupplierHistory(client, options = {}) {
+  const active = options.active ?? true;
+  const pageSize = options.pageSize ?? MAX_PAGE_SIZE;
+  const maxPages = options.maxPages ?? 1_000;
+  const first = await client.request("article-supplier-history", { page: 1, pageSize, active });
+  const items = [...(first?.items || [])];
+  const total = Number(first?.total ?? items.length);
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  if (!Number.isSafeInteger(pages) || pages > maxPages) {
+    throw new ProgremesClientError("INVALID_RESPONSE", "Numero pagine storico fornitori ProgreMES non valido.", { status: 502 });
+  }
+  for (let page = 2; page <= pages; page += 1) {
+    const result = await client.request("article-supplier-history", { page, pageSize, active });
     items.push(...(result?.items || []));
   }
   return items;

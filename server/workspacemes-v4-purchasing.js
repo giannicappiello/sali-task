@@ -3,6 +3,7 @@ import { payloadHash } from "./workspacemes-v3.js";
 
 const TYPES = new Set(["RFQ", "QUOTE", "SUPPLIER_ORDER"]);
 const clean = (value) => String(value ?? "").trim();
+export const AUTOMATIC_ARTICLE_SUPPLIER_SOURCE = "PROGREMES_ORDER_HISTORY";
 
 export function validateWorkspaceV4PurchaseDocument(input = {}) {
   const documentType = clean(input.documentType).toUpperCase();
@@ -59,7 +60,7 @@ export async function listWorkspaceArticleSupplierAssociations({ admin }) {
 const upper = (value) => clean(value).toUpperCase();
 
 export async function synchronizeWorkspaceArticleSupplierAssociations({
-  admin, relationships, articles, suppliers, source = "MEXAL_ORDER_HISTORY",
+  admin, relationships, articles, suppliers, source = AUTOMATIC_ARTICLE_SUPPLIER_SOURCE,
 }) {
   const articleByCode = new Map();
   for (const article of articles || []) {
@@ -99,7 +100,7 @@ export async function synchronizeWorkspaceArticleSupplierAssociations({
 
 export async function workspaceArticleSupplierHistoryNeedsRefresh({ admin, now = new Date(), maximumAgeHours = 12 }) {
   const { data, error } = await admin.from("workspace_article_supplier_sync_state")
-    .select("last_completed_at").eq("source", "MEXAL_ORDER_HISTORY").maybeSingle();
+    .select("last_completed_at").eq("source", AUTOMATIC_ARTICLE_SUPPLIER_SOURCE).maybeSingle();
   if (error) throw error;
   if (!data?.last_completed_at) return true;
   return now.getTime() - new Date(data.last_completed_at).getTime() >= maximumAgeHours * 60 * 60 * 1000;
@@ -108,7 +109,7 @@ export async function workspaceArticleSupplierHistoryNeedsRefresh({ admin, now =
 export async function recordWorkspaceArticleSupplierSync({ admin, status, count = 0, error = null }) {
   const now = new Date().toISOString();
   const row = {
-    source: "MEXAL_ORDER_HISTORY",
+    source: AUTOMATIC_ARTICLE_SUPPLIER_SOURCE,
     status,
     relationship_count: Math.max(0, Number(count) || 0),
     last_error: error ? clean(error).slice(0, 1000) : null,

@@ -22,7 +22,7 @@ import documentApiHandler from "../../server/document-api.js";
 import { consumeProgremesTicket, issueProgremesTicket, listUserProgremesSections } from "../../server/progremes-sso.js";
 import { listProgremesIntegration, saveProgremesSyncConfig, stopProgremesModulesSync, syncProgremesModules } from "../../server/progremes-modules.js";
 import { handleProgremesReadonlyRequest } from "../../server/progremes-readonly-api.js";
-import { createProgremesClient, readAllProgremesArticles, readAllProgremesSuppliers } from "../../server/progremes-readonly-client.js";
+import { createProgremesClient, readAllProgremesArticles, readAllProgremesArticleSupplierHistory, readAllProgremesSuppliers } from "../../server/progremes-readonly-client.js";
 import { createProgremesDiagnosticManager } from "../../server/progremes-diagnostics-client.js";
 import { handleAIAssistant } from "../../server/ai/assistant.js";
 import { handleCrmBrief } from "../../server/ai/crm-brief.js";
@@ -86,10 +86,18 @@ async function refreshAutomaticArticleSupplierAssociations(admin, progremesClien
   if (!await workspaceArticleSupplierHistoryNeedsRefresh({ admin })) return { refreshed: false };
   await recordWorkspaceArticleSupplierSync({ admin, status: "RUNNING" });
   try {
-    const [relationships, articles] = await Promise.all([
-      readMexalArticleSupplierHistory(buildMexalClient()),
-      readAllProgremesArticles(progremesClient),
-    ]);
+    const articlesPromise = readAllProgremesArticles(progremesClient);
+    let relationships;
+    try {
+      relationships = await readAllProgremesArticleSupplierHistory(progremesClient);
+    } catch (historyError) {
+      console.error("ProgreMES article-supplier history unavailable; using current Mexal orders", {
+        code: historyError?.code || "UNKNOWN",
+        upstreamStatus: historyError?.upstreamStatus || null,
+      });
+      relationships = await readMexalArticleSupplierHistory(buildMexalClient());
+    }
+    const articles = await articlesPromise;
     const result = await synchronizeWorkspaceArticleSupplierAssociations({
       admin, relationships, articles, suppliers,
     });

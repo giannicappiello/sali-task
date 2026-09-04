@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { attachWorkspaceArticleSuppliers, synchronizeWorkspaceArticleSupplierAssociations, validateWorkspaceV4PurchaseDocument, workspaceArticleSupplierHistoryNeedsRefresh } from "./workspacemes-v4-purchasing.js";
+import { AUTOMATIC_ARTICLE_SUPPLIER_SOURCE, attachWorkspaceArticleSuppliers, synchronizeWorkspaceArticleSupplierAssociations, validateWorkspaceV4PurchaseDocument, workspaceArticleSupplierHistoryNeedsRefresh } from "./workspacemes-v4-purchasing.js";
 
 test("la catena acquisti V4 richiede fornitore, quantità e lineage", () => {
   const rfq = validateWorkspaceV4PurchaseDocument({ documentType: "RFQ", supplierExternalRef: "F001", lines: [{ requirementId: 1, quantity: 10 }] });
@@ -44,7 +44,7 @@ test("le associazioni storiche vengono risolte automaticamente per codice e salv
   assert.equal(result.matched, 1);
   assert.equal(saved.length, 1);
   assert.deepEqual(saved[0], { article_id: 11, article_code: "MP01", supplier_id: 7,
-    supplier_code: "F001", supplier_name: "Fornitore Uno", source: "MEXAL_ORDER_HISTORY",
+    supplier_code: "F001", supplier_name: "Fornitore Uno", source: AUTOMATIC_ARTICLE_SUPPLIER_SOURCE,
     last_order_at: "2026-08-20", order_count: 3, source_seen_at: saved[0].source_seen_at,
     updated_at: saved[0].updated_at });
 });

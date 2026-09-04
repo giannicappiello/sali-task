@@ -61,6 +61,26 @@ test("builds only allow-listed ProgreMES URLs and validated query strings", () =
   assert.equal(url.searchParams.get("search"), "Cliente & Figli");
   assert.equal(url.searchParams.get("active"), "true");
   assert.equal(PROGREMES_ALLOWED_RESOURCES.includes("suppliers"), true);
+  assert.equal(PROGREMES_ALLOWED_RESOURCES.includes("article-supplier-history"), true);
+});
+
+test("sanitizes the article-supplier history contract", async () => {
+  const payload = {
+    page: 1, pageSize: 50, total: 1,
+    items: [{
+      articleId: 8, articleCode: "MP0001", supplierId: 12, supplierCode: "F012",
+      supplierName: "Fornitore storico", orderCount: 4, lastOrderAt: "2026-08-20T00:00:00",
+      orderNumber: "must-not-cross-boundary",
+    }],
+  };
+  const client = createProgremesClient({
+    baseUrl, secret, logger: silentLogger,
+    fetchFn: async () => new Response(JSON.stringify(payload), { status: 200 }),
+  });
+  const result = await client.request("article-supplier-history", { page: 1, pageSize: 50, active: true });
+  assert.equal(result.items[0].articleCode, "MP0001");
+  assert.equal(result.items[0].supplierCode, "F012");
+  assert.equal("orderNumber" in result.items[0], false);
 });
 
 test("adds X-Workspace-Secret server-side and returns a sanitized paged response", async () => {

@@ -133,6 +133,31 @@ export async function readAllProgremesSuppliers(client, options = {}) {
   return items;
 }
 
+/**
+ * Carica l'intera anagrafica articoli per risolvere in modo automatico le
+ * associazioni storiche articolo-fornitore lette da Mexal.
+ *
+ * @param {{ request: (resource: string, query: Record<string, unknown>) => Promise<{ items?: unknown[], total?: number, pageSize?: number }> }} client
+ * @param {{ active?: boolean, pageSize?: number, maxPages?: number }} [options]
+ */
+export async function readAllProgremesArticles(client, options = {}) {
+  const active = options.active ?? true;
+  const pageSize = options.pageSize ?? MAX_PAGE_SIZE;
+  const maxPages = options.maxPages ?? 1_000;
+  const first = await client.request("articles", { page: 1, pageSize, active });
+  const items = [...(first?.items || [])];
+  const total = Number(first?.total ?? items.length);
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  if (!Number.isSafeInteger(pages) || pages > maxPages) {
+    throw new ProgremesClientError("INVALID_RESPONSE", "Numero pagine articoli ProgreMES non valido.", { status: 502 });
+  }
+  for (let page = 2; page <= pages; page += 1) {
+    const result = await client.request("articles", { page, pageSize, active });
+    items.push(...(result?.items || []));
+  }
+  return items;
+}
+
 /** @param {unknown} value */
 function singleValue(value) {
   if (value === undefined || value === null || value === "") return null;

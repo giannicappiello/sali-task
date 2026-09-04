@@ -49,10 +49,76 @@ export async function listWorkspaceV4Purchasing({ admin, suppliers = [] }) {
 
 export async function listWorkspaceArticleSupplierAssociations({ admin }) {
   const { data, error } = await admin.from("workspace_article_supplier_associations")
-    .select("id,article_id,article_code,supplier_id,supplier_code,supplier_name,created_at,updated_at")
+    .select("id,article_id,article_code,supplier_id,supplier_code,supplier_name,source,last_order_at,order_count,created_at,updated_at")
+    .order("last_order_at", { ascending: false, nullsFirst: false })
     .order("supplier_name");
   if (error) throw error;
   return data || [];
+}
+
+const upper = (value) => clean(value).toUpperCase();
+
+export async function synchronizeWorkspaceArticleSupplierAssociations({
+  admin, relationships, articles, suppliers, source = "MEXAL_ORDER_HISTORY",
+}) {
+  const articleByCode = new Map();
+  for (const article of articles || []) {
+    for (const code of [article?.codice, article?.codiceMexal]) {
+      const normalized = upper(code);
+      if (normalized && !articleByCode.has(normalized)) articleByCode.set(normalized, article);
+    }
+  }
+  const supplierByCode = new Map((suppliers || []).map((supplier) => [upper(supplier?.codiceMexal), supplier]));
+  const rows = new Map();
+  const seenAt = new Date().toISOString();
+  for (const relationship of relationships || []) {
+    const article = articleByCode.get(upper(relationship?.articleCode));
+    const supplier = supplierByCode.get(upper(relationship?.supplierCode));
+    const articleId = Number(article?.id);
+    const supplierId = Number(supplier?.id);
+    if (!Number.isSafeInteger(articleId) || articleId < 1 || !Number.isSafeInteger(supplierId) || supplierId < 1) continue;
+    rows.set(`${articleId}:${supplierId}`, {
+      article_id: articleId,
+      article_code: clean(article.codice) || clean(article.codiceMexal),
+      supplier_id: supplierId,
+      supplier_code: clean(supplier.codiceMexal),
+      supplier_name: clean(supplier.ragioneSociale) || `Fornitore ${supplierId}`,
+      source,
+      last_order_at: clean(relationship?.lastOrderAt) || null,
+      order_count: Math.max(1, Number(relationship?.orderCount) || 1),
+      source_seen_at: seenAt,
+      updated_at: seenAt,
+    });
+  }
+  if (!rows.size) return { matched: 0, received: relationships?.length || 0 };
+  const { error } = await admin.from("workspace_article_supplier_associations")
+    .upsert([...rows.values()], { onConflict: "article_id,supplier_id" });
+  if (error) throw error;
+  return { matched: rows.size, received: relationships?.length || 0 };
+}
+
+export async function workspaceArticleSupplierHistoryNeedsRefresh({ admin, now = new Date(), maximumAgeHours = 12 }) {
+  const { data, error } = await admin.from("workspace_article_supplier_sync_state")
+    .select("last_completed_at").eq("source", "MEXAL_ORDER_HISTORY").maybeSingle();
+  if (error) throw error;
+  if (!data?.last_completed_at) return true;
+  return now.getTime() - new Date(data.last_completed_at).getTime() >= maximumAgeHours * 60 * 60 * 1000;
+}
+
+export async function recordWorkspaceArticleSupplierSync({ admin, status, count = 0, error = null }) {
+  const now = new Date().toISOString();
+  const row = {
+    source: "MEXAL_ORDER_HISTORY",
+    status,
+    relationship_count: Math.max(0, Number(count) || 0),
+    last_error: error ? clean(error).slice(0, 1000) : null,
+    updated_at: now,
+  };
+  if (status === "RUNNING") row.last_started_at = now;
+  if (status === "COMPLETED") row.last_completed_at = now;
+  const { error: saveError } = await admin.from("workspace_article_supplier_sync_state")
+    .upsert(row, { onConflict: "source" });
+  if (saveError) throw saveError;
 }
 
 export function attachWorkspaceArticleSuppliers(requirements = [], associations = []) {
@@ -82,6 +148,7 @@ export async function addWorkspaceArticleSupplierAssociations({ admin, articles,
   const rows = [...unique.values()].map((item) => ({
     article_id: item.articleId, article_code: item.articleCode, supplier_id: supplierId,
     supplier_code: clean(supplier.codiceMexal), supplier_name: clean(supplier.ragioneSociale) || `Fornitore ${supplierId}`,
+    source: "MANUAL", source_seen_at: now,
     created_by: actor || null, updated_by: actor || null, updated_at: now,
   }));
   const { data, error } = await admin.from("workspace_article_supplier_associations")

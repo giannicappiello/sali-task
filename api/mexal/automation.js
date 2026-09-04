@@ -22,7 +22,7 @@ import documentApiHandler from "../../server/document-api.js";
 import { consumeProgremesTicket, issueProgremesTicket, listUserProgremesSections } from "../../server/progremes-sso.js";
 import { listProgremesIntegration, saveProgremesSyncConfig, stopProgremesModulesSync, syncProgremesModules } from "../../server/progremes-modules.js";
 import { handleProgremesReadonlyRequest } from "../../server/progremes-readonly-api.js";
-import { createProgremesClient, readAllProgremesSuppliers } from "../../server/progremes-readonly-client.js";
+import { createProgremesClient, readAllProgremesArticles, readAllProgremesSuppliers } from "../../server/progremes-readonly-client.js";
 import { createProgremesDiagnosticManager } from "../../server/progremes-diagnostics-client.js";
 import { handleAIAssistant } from "../../server/ai/assistant.js";
 import { handleCrmBrief } from "../../server/ai/crm-brief.js";
@@ -36,9 +36,10 @@ import { listProductionWorkbench, loadAllProductionOrders, productionWorkbenchDe
 import { productionGoLiveGates } from "../../server/workspace-production-gates.js";
 import { effectiveWorkspaceDiagnostics } from "../../server/workspace-effective-diagnostics.js";
 import { confirmWorkspaceV4, createWorkspaceV4Preview } from "../../server/workspacemes-v4-api.js";
-import { addWorkspaceArticleSupplierAssociations, attachWorkspaceArticleSuppliers, createWorkspaceV4PurchaseDocument, listWorkspaceArticleSupplierAssociations, listWorkspaceV4Purchasing, removeWorkspaceArticleSupplierAssociation } from "../../server/workspacemes-v4-purchasing.js";
+import { addWorkspaceArticleSupplierAssociations, attachWorkspaceArticleSuppliers, createWorkspaceV4PurchaseDocument, listWorkspaceArticleSupplierAssociations, listWorkspaceV4Purchasing, recordWorkspaceArticleSupplierSync, removeWorkspaceArticleSupplierAssociation, synchronizeWorkspaceArticleSupplierAssociations, workspaceArticleSupplierHistoryNeedsRefresh } from "../../server/workspacemes-v4-purchasing.js";
 import { automaticPfLines, calculateWorkspaceV4PurchaseRequirements, executeWorkspaceV4PurchasingAction, readWorkspaceV4PurchasingSource } from "../../server/workspacemes-v4-purchasing-mes.js";
 import { buildWorkspaceV4PfPlan, workspaceV4PfPlanChecksum } from "../../server/workspacemes-v4-pf-plan.js";
+import { readMexalArticleSupplierHistory } from "../../server/mexal/sync-workspacemes-v3.js";
 import { generateSaliDiIschiaProposal, listSaliDiIschiaProposals } from "../../server/sali-di-ischia-proposal.js";
 import { privateDocumentsSession, syncPrivateDocuments } from "../../server/private-documents.js";
 import { handleMesHeadingResolve } from "../../server/company-letterheads-mes-api.js";
@@ -79,6 +80,31 @@ function required(name) {
   const value = String(process.env[name] || "").trim();
   if (!value) throw new Error(`Variabile Vercel mancante: ${name}`);
   return value;
+}
+
+async function refreshAutomaticArticleSupplierAssociations(admin, progremesClient, suppliers) {
+  if (!await workspaceArticleSupplierHistoryNeedsRefresh({ admin })) return { refreshed: false };
+  await recordWorkspaceArticleSupplierSync({ admin, status: "RUNNING" });
+  try {
+    const [relationships, articles] = await Promise.all([
+      readMexalArticleSupplierHistory(buildMexalClient()),
+      readAllProgremesArticles(progremesClient),
+    ]);
+    const result = await synchronizeWorkspaceArticleSupplierAssociations({
+      admin, relationships, articles, suppliers,
+    });
+    await recordWorkspaceArticleSupplierSync({ admin, status: "COMPLETED", count: result.matched });
+    return { refreshed: true, ...result };
+  } catch (error) {
+    const message = error?.message || "Sincronizzazione automatica non riuscita.";
+    try {
+      await recordWorkspaceArticleSupplierSync({ admin, status: "FAILED", error: message });
+    } catch (stateError) {
+      console.error("Automatic article-supplier sync state failed", { error: stateError?.message });
+    }
+    console.error("Automatic article-supplier sync failed", { error: message });
+    return { refreshed: false, error: message };
+  }
 }
 
 async function listPriceCommissionsHandler(req, res) {
@@ -727,6 +753,9 @@ export default async function handler(req, res) {
           readAllProgremesSuppliers(client),
           readWorkspaceV4PurchasingSource(),
         ]);
+        const supplierAssociationSync = await refreshAutomaticArticleSupplierAssociations(
+          admin.supabase, client, suppliers,
+        );
         const [current, associations] = await Promise.all([
           listWorkspaceV4Purchasing({ admin: admin.supabase, suppliers }),
           listWorkspaceArticleSupplierAssociations({ admin: admin.supabase }),
@@ -738,6 +767,7 @@ export default async function handler(req, res) {
           sourceGeneratedAt: source.generatedAt,
           calculationOwner: "WORKSPACE",
           calculationVersion: 4,
+          supplierAssociationSync,
         });
       }
       case "workspacemes_v4_purchasing_action": {
@@ -769,11 +799,12 @@ export default async function handler(req, res) {
         if (action === "PREVIEW_PF" || action === "CONFIRM_PF_PREVIEW") {
           const generatedAt = new Date().toISOString();
           const client = createProgremesClient();
-          const [source, suppliers, associations] = await Promise.all([
+          const [source, suppliers] = await Promise.all([
             readWorkspaceV4PurchasingSource(),
             readAllProgremesSuppliers(client),
-            listWorkspaceArticleSupplierAssociations({ admin: admin.supabase }),
           ]);
+          await refreshAutomaticArticleSupplierAssociations(admin.supabase, client, suppliers);
+          const associations = await listWorkspaceArticleSupplierAssociations({ admin: admin.supabase });
           const requirements = attachWorkspaceArticleSuppliers(calculateWorkspaceV4PurchaseRequirements(source), associations);
           const plan = buildWorkspaceV4PfPlan(requirements, suppliers, {
             mode: body.mode, selectedKeys: body.selectedKeys, supplierId: body.supplierId,

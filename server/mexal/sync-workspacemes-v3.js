@@ -48,6 +48,33 @@ async function pagedGet(mexal, endpoint, fields) {
   return rows;
 }
 
+export async function readMexalArticleSupplierHistory(mexal) {
+  const [headers, lines] = await Promise.all([
+    pagedGet(mexal, MEXAL_V3_CONTRACT.supplierOrders, "sigla,serie,numero,cod_conto,data_documento"),
+    pagedGet(mexal, MEXAL_V3_CONTRACT.supplierOrderLines, "sigla,serie,numero,codice_articolo"),
+  ]);
+  const headersByKey = new Map(headers.map((row) => [orderKey(row), row]));
+  const relationships = new Map();
+  for (const line of lines) {
+    const header = headersByKey.get(orderKey(line));
+    const articleCode = upper(line.codice_articolo);
+    const supplierCode = upper(header?.cod_conto);
+    if (!articleCode || !supplierCode) continue;
+    const key = `${articleCode}|${supplierCode}`;
+    const orderDate = date(header?.data_documento)?.slice(0, 10) || null;
+    const current = relationships.get(key);
+    relationships.set(key, {
+      articleCode,
+      supplierCode,
+      orderCount: (current?.orderCount || 0) + 1,
+      lastOrderAt: !current?.lastOrderAt || (orderDate && orderDate > current.lastOrderAt)
+        ? orderDate
+        : current.lastOrderAt,
+    });
+  }
+  return [...relationships.values()];
+}
+
 async function pagedSearch(mexal, endpoint, fields, filter) {
   const rows = [];
   let next = null;

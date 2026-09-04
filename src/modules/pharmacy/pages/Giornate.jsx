@@ -13,6 +13,7 @@ import {
   loadBeautyVisitLinks,
   loadCrmOnlyBeautyVisits,
 } from "../services/beautyVisitCrm";
+import { normalizeItalianVisitDate } from "../services/beautyVisitDate";
 
 export default function Giornate({ utente }) {
   const [giornate, setGiornate] = useState([]);
@@ -584,8 +585,14 @@ export default function Giornate({ utente }) {
     } else {
       nextType = await window.workspacePrompt("Tipo della prossima attività (es. telefonata, visita, follow-up):");
       nextTopic = await window.workspacePrompt("Argomento della prossima attività:");
-      nextAt = await window.workspacePrompt("Data e ora della prossima attività (AAAA-MM-GGTHH:MM):");
-      if (!nextType || !nextTopic || !nextAt) return alert("La prossima attività è obbligatoria.");
+      const nextDate = await window.workspacePrompt(
+        "Data della prossima visita:",
+        "",
+        { inputType: "italian-date", title: "Prossima visita" },
+      );
+      if (!nextType || !nextTopic || !nextDate) return alert("La prossima attività è obbligatoria.");
+      nextAt = normalizeItalianVisitDate(nextDate);
+      if (!nextAt) return alert("Inserisci una data valida nel formato gg/mm/aaaa oppure gg/mm/aa.");
     }
     setGpsBusyId(giornata.id);
     try {

@@ -29,6 +29,20 @@ test("il piano da selezionati richiede un fornitore solo quando manca il mapping
   assert.equal(plan.documents[0].lines[0].articleCode, "MP11");
 });
 
+test("il piano da selezionati risolve il fornitore associato anche per nome univoco", () => {
+  const staleId = { ...rows[0], supplierId: 999, supplierName: " Fornitore   Test " };
+  const plan = buildWorkspaceV4PfPlan([staleId], suppliers, { mode: "selected", selectedKeys: [staleId.key] });
+  assert.equal(plan.documents[0].supplierId, 7);
+});
+
+test("il piano automatico distingue l'assenza fornitore dall'assenza di fabbisogni", () => {
+  const withoutSupplier = { ...rows[0], supplierId: null, supplierName: "" };
+  assert.throws(
+    () => buildWorkspaceV4PfPlan([withoutSupplier], suppliers, { mode: "automatic", generatedAt: "2026-09-04T00:00:00.000Z", horizonDays: 60 }),
+    (error) => error.code === "PF_SUPPLIER_REQUIRED" && /fornitore associato/i.test(error.message),
+  );
+});
+
 test("il piano da selezionati non ripropone righe con PF esistente", () => {
   const withPf = { ...rows[0], pfDocuments: "PF 1/1", pfQuantity: 12 };
   assert.throws(() => buildWorkspaceV4PfPlan([withPf], suppliers, { mode: "selected", selectedKeys: [withPf.key] }), /Nessun nuovo PF da generare per i materiali selezionati/);

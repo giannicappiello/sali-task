@@ -22,7 +22,7 @@ import documentApiHandler from "../../server/document-api.js";
 import { consumeProgremesTicket, issueProgremesTicket, listUserProgremesSections } from "../../server/progremes-sso.js";
 import { listProgremesIntegration, saveProgremesSyncConfig, stopProgremesModulesSync, syncProgremesModules } from "../../server/progremes-modules.js";
 import { handleProgremesReadonlyRequest } from "../../server/progremes-readonly-api.js";
-import { createProgremesClient } from "../../server/progremes-readonly-client.js";
+import { createProgremesClient, readAllProgremesSuppliers } from "../../server/progremes-readonly-client.js";
 import { createProgremesDiagnosticManager } from "../../server/progremes-diagnostics-client.js";
 import { handleAIAssistant } from "../../server/ai/assistant.js";
 import { handleCrmBrief } from "../../server/ai/crm-brief.js";
@@ -723,13 +723,13 @@ export default async function handler(req, res) {
         const admin = await createAdmin(req, "rdp.view");
         await rejectCustomerScopedOperation(admin, "Fabbisogni acquisto");
         const client = createProgremesClient();
-        const [suppliersResult, source] = await Promise.all([
-          client.request("suppliers", { page: 1, pageSize: 500, active: true }).catch(() => ({ items: [] })),
+        const [suppliers, source] = await Promise.all([
+          readAllProgremesSuppliers(client),
           readWorkspaceV4PurchasingSource(),
         ]);
         const current = await listWorkspaceV4Purchasing({
           admin: admin.supabase,
-          suppliers: suppliersResult?.items || [],
+          suppliers,
         });
         return sendSuccess(res, 200, { ...current,
           saliDiIschiaProposals: await listSaliDiIschiaProposals(admin.supabase),
@@ -753,11 +753,12 @@ export default async function handler(req, res) {
         }
         if (action === "PREVIEW_PF" || action === "CONFIRM_PF_PREVIEW") {
           const generatedAt = new Date().toISOString();
-          const [source, suppliersResult] = await Promise.all([
+          const client = createProgremesClient();
+          const [source, suppliers] = await Promise.all([
             readWorkspaceV4PurchasingSource(),
-            createProgremesClient().request("suppliers", { page: 1, pageSize: 500, active: true }).catch(() => ({ items: [] })),
+            readAllProgremesSuppliers(client),
           ]);
-          const plan = buildWorkspaceV4PfPlan(calculateWorkspaceV4PurchaseRequirements(source), suppliersResult?.items || [], {
+          const plan = buildWorkspaceV4PfPlan(calculateWorkspaceV4PurchaseRequirements(source), suppliers, {
             mode: body.mode, selectedKeys: body.selectedKeys, supplierId: body.supplierId,
             month: body.month, generatedAt, horizonDays: 60,
           });

@@ -19,6 +19,27 @@ function supplierMap(suppliers) {
   return new Map((suppliers || []).map((supplier) => [Number(supplier.id), supplier]));
 }
 
+function normalized(value) {
+  return clean(value).toLocaleUpperCase("it-IT").replace(/\s+/g, " ");
+}
+
+function supplierNameMap(suppliers) {
+  const grouped = new Map();
+  for (const supplier of suppliers || []) {
+    const key = normalized(supplier.ragioneSociale);
+    if (!key) continue;
+    grouped.set(key, [...(grouped.get(key) || []), supplier]);
+  }
+  return new Map([...grouped].filter(([, matches]) => matches.length === 1).map(([key, matches]) => [key, matches[0]]));
+}
+
+function resolveSupplier(row, suppliersById, suppliersByName, overrideId = null) {
+  if (overrideId != null) return suppliersById.get(overrideId) || null;
+  const supplierId = Number(row.supplierId);
+  if (Number.isSafeInteger(supplierId) && supplierId > 0 && suppliersById.has(supplierId)) return suppliersById.get(supplierId);
+  return suppliersByName.get(normalized(row.supplierName)) || null;
+}
+
 function document(supplier, supplierId, month, rows) {
   return { supplierId, supplierCode: clean(supplier?.codiceMexal), supplierName: clean(supplier?.ragioneSociale) || `Fornitore ${supplierId}`,
     supplierVatNumber: clean(supplier?.partitaIva), supplierTaxCode: clean(supplier?.codiceFiscale),
@@ -37,6 +58,7 @@ export function buildWorkspaceV4PfPlan(requirements, suppliers, options = {}) {
   if (selectedKeys) rows = rows.filter((row) => selectedKeys.has(clean(row.key)));
   if (selectedKeys && !selectedKeys.size) fail("Seleziona almeno un materiale da ordinare.");
   const suppliersById = supplierMap(suppliers);
+  const suppliersByName = supplierNameMap(suppliers);
 
   if (mode === "manual") {
     const supplierId = Number(options.supplierId);
@@ -55,14 +77,12 @@ export function buildWorkspaceV4PfPlan(requirements, suppliers, options = {}) {
       fail("Il fornitore selezionato non è disponibile.", "PF_SUPPLIER_INVALID");
     const eligible = selectedPfRows(rows);
     if (!eligible.length) fail("Nessun nuovo PF da generare per i materiali selezionati.", "PF_PREVIEW_EMPTY");
-    const missingSupplier = eligible.filter((row) => {
-      const supplierId = supplierOverride ?? Number(row.supplierId);
-      return !Number.isSafeInteger(supplierId) || supplierId < 1 || !suppliersById.has(supplierId);
-    });
+    const missingSupplier = eligible.filter((row) => !resolveSupplier(row, suppliersById, suppliersByName, supplierOverride));
     if (missingSupplier.length) fail(`Per ${missingSupplier.length} materiali selezionati manca il fornitore. Seleziona un fornitore PF e riprova.`, "PF_SUPPLIER_REQUIRED");
     const groups = new Map();
     for (const row of eligible) {
-      const supplierId = supplierOverride ?? Number(row.supplierId);
+      const supplier = resolveSupplier(row, suppliersById, suppliersByName, supplierOverride);
+      const supplierId = Number(supplier.id);
       const month = monthKey(row.month || row.requiredAt);
       const key = `${supplierId}:${month}`;
       if (!groups.has(key)) groups.set(key, { supplierId, month, rows: [] });
@@ -74,12 +94,15 @@ export function buildWorkspaceV4PfPlan(requirements, suppliers, options = {}) {
   }
 
   const eligible = automaticPfRows(rows, { generatedAt: options.generatedAt, horizonDays: options.horizonDays ?? 60 });
-  const skippedWithoutSupplier = eligible.filter((row) => !Number.isSafeInteger(Number(row.supplierId)) || Number(row.supplierId) < 1).length;
+  if (!eligible.length) fail("Nessun nuovo PF da generare nei prossimi 60 giorni.", "PF_PREVIEW_EMPTY");
+  const missingSupplier = eligible.filter((row) => !resolveSupplier(row, suppliersById, suppliersByName));
+  if (missingSupplier.length) fail(`Per ${missingSupplier.length} materiali necessari nei prossimi 60 giorni manca un fornitore associato.`, "PF_SUPPLIER_REQUIRED");
   const groups = new Map();
   for (const row of eligible) {
-    const supplierId = Number(row.supplierId);
+    const supplier = resolveSupplier(row, suppliersById, suppliersByName);
+    const supplierId = Number(supplier.id);
     const month = monthKey(row.month || row.requiredAt);
-    if (!Number.isSafeInteger(supplierId) || supplierId < 1 || !month || !suppliersById.has(supplierId)) continue;
+    if (!month) continue;
     const key = `${supplierId}:${month}`;
     if (!groups.has(key)) groups.set(key, { supplierId, month, rows: [] });
     groups.get(key).rows.push(row);
@@ -87,7 +110,7 @@ export function buildWorkspaceV4PfPlan(requirements, suppliers, options = {}) {
   const documents = [...groups.values()].sort((a, b) => a.month.localeCompare(b.month) || a.supplierId - b.supplierId)
     .map((group) => document(suppliersById.get(group.supplierId), group.supplierId, group.month, group.rows));
   if (!documents.length) fail("Nessun nuovo PF da generare nei prossimi 60 giorni.", "PF_PREVIEW_EMPTY");
-  return { mode, documents, skippedWithoutSupplier };
+  return { mode, documents, skippedWithoutSupplier: 0 };
 }
 
 export function workspaceV4PfPlanChecksum(plan) {

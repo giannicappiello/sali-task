@@ -107,6 +107,32 @@ export class ProgremesClientError extends Error {
   }
 }
 
+/**
+ * Carica l'intera anagrafica fornitori, non soltanto la prima pagina.
+ * La risoluzione dei PF usa gli ID MES e deve quindi poter trovare anche
+ * fornitori oltre il limite massimo di 500 righe per richiesta.
+ *
+ * @param {{ request: (resource: string, query: Record<string, unknown>) => Promise<{ items?: unknown[], total?: number, pageSize?: number }> }} client
+ * @param {{ active?: boolean, pageSize?: number, maxPages?: number }} [options]
+ */
+export async function readAllProgremesSuppliers(client, options = {}) {
+  const active = options.active ?? true;
+  const pageSize = options.pageSize ?? MAX_PAGE_SIZE;
+  const maxPages = options.maxPages ?? 1_000;
+  const first = await client.request("suppliers", { page: 1, pageSize, active });
+  const items = [...(first?.items || [])];
+  const total = Number(first?.total ?? items.length);
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  if (!Number.isSafeInteger(pages) || pages > maxPages) {
+    throw new ProgremesClientError("INVALID_RESPONSE", "Numero pagine fornitori ProgreMES non valido.", { status: 502 });
+  }
+  for (let page = 2; page <= pages; page += 1) {
+    const result = await client.request("suppliers", { page, pageSize, active });
+    items.push(...(result?.items || []));
+  }
+  return items;
+}
+
 /** @param {unknown} value */
 function singleValue(value) {
   if (value === undefined || value === null || value === "") return null;

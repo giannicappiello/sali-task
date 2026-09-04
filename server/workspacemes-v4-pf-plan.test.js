@@ -84,6 +84,21 @@ test("anagrafiche duplicate dello stesso fornitore producono un solo PF", () => 
   assert.equal(plan.documents[0].supplierId, 7);
 });
 
+test("varianti societarie Comprof e Miluet non duplicano i PF", () => {
+  const duplicateSuppliers = [
+    { id: 21, codiceMexal: "601.00021", ragioneSociale: "COMPROF MILANO S.R.L.", partitaIva: "IT 012.345.67890" },
+    { id: 22, codiceMexal: "601.00921", ragioneSociale: "Comprof Milano srl", codiceFiscale: "01234567890" },
+    { id: 31, codiceMexal: "601.00031", ragioneSociale: "MILUET S.P.A." },
+    { id: 32, codiceMexal: "601.00931", ragioneSociale: "Miluet" },
+  ];
+  const comprof = { ...rows[0], supplierId: 21, workspaceSuppliers: [{ id: 22, ragioneSociale: "Comprof Milano srl" }] };
+  const miluet = { ...rows[1], supplierId: 31, workspaceSuppliers: [{ id: 32, ragioneSociale: "Miluet" }] };
+  const plan = buildWorkspaceV4PfPlan([comprof, miluet], duplicateSuppliers, {
+    mode: "selected", selectedKeys: [comprof.key, miluet.key],
+  });
+  assert.deepEqual(plan.documents.map((item) => item.supplierName), ["COMPROF MILANO S.R.L.", "MILUET S.P.A."]);
+});
+
 test("il fornitore manuale produce un solo PF anche con più associazioni Workspace", () => {
   const associated = { ...rows[0], workspaceSuppliers: [{ id: 8, ragioneSociale: "Fornitore Alternativo" }] };
   const plan = buildWorkspaceV4PfPlan([associated], suppliers, {

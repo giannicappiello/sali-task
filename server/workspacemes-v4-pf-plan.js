@@ -31,14 +31,26 @@ function normalized(value) {
   return clean(value).toLocaleUpperCase("it-IT").replace(/\s+/g, " ");
 }
 
+function compactIdentity(value) {
+  return normalized(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/g, "");
+}
+
+function supplierNameIdentities(value) {
+  const strict = compactIdentity(value);
+  if (!strict) return [];
+  const withoutLegalForm = strict.replace(/(?:SOC(?:IETA)?COOP(?:ERATIVA)?|SCARL|SCPA|SRLS|SRL|SPA|SAS|SNC)$/u, "");
+  return [...new Set([strict, withoutLegalForm].filter(Boolean))];
+}
+
 function supplierAliases(supplier) {
-  const aliases = [
-    ["code", supplier?.codiceMexal],
-    ["vat", supplier?.partitaIva],
-    ["tax", supplier?.codiceFiscale],
-    ["name", supplier?.ragioneSociale],
-  ].map(([type, value]) => `${type}:${normalized(value)}`).filter((value) => !value.endsWith(":"));
-  return aliases;
+  const code = compactIdentity(supplier?.codiceMexal);
+  const fiscal = [supplier?.partitaIva, supplier?.codiceFiscale].map(compactIdentity).filter(Boolean);
+  const names = supplierNameIdentities(supplier?.ragioneSociale);
+  return [...new Set([
+    code && `code:${code}`,
+    ...fiscal.map((value) => `fiscal:${value}`),
+    ...names.map((value) => `name:${value}`),
+  ].filter(Boolean))];
 }
 
 function supplierNameMap(suppliers) {

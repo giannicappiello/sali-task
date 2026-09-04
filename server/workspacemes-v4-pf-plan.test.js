@@ -1,0 +1,24 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { buildWorkspaceV4PfPlan, workspaceV4PfPlanChecksum } from "./workspacemes-v4-pf-plan.js";
+
+const suppliers = [{ id: 7, codiceMexal: "601.00007", ragioneSociale: "Fornitore Test" }];
+const rows = [
+  { key: "11:2026-09", month: "2026-09-01T00:00:00.000Z", articleId: 11, articleCode: "MP11", description: "Materia 11", unitOfMeasure: "KG", quantityToOrder: 12, requiredAt: "2026-09-20T00:00:00.000Z", supplierId: 7, pfDocuments: "", pfQuantity: 0 },
+  { key: "12:2026-09", month: "2026-09-01T00:00:00.000Z", articleId: 12, articleCode: "MP12", description: "Materia 12", unitOfMeasure: "KG", quantityToOrder: 8, requiredAt: "2026-09-21T00:00:00.000Z", supplierId: 7, pfDocuments: "", pfQuantity: 0 },
+];
+
+test("il piano automatico selezionato contiene solo le righe richieste", () => {
+  const plan = buildWorkspaceV4PfPlan(rows, suppliers, { mode: "automatic", selectedKeys: ["12:2026-09"], generatedAt: "2026-09-04T00:00:00.000Z", horizonDays: 60 });
+  assert.equal(plan.documents.length, 1);
+  assert.deepEqual(plan.documents[0].lines.map((line) => line.articleCode), ["MP12"]);
+});
+
+test("il piano manuale conserva fornitore e mese e produce un hash stabile", () => {
+  const options = { mode: "manual", supplierId: 7, month: "2026-09-01T00:00:00.000Z", selectedKeys: rows.map((row) => row.key) };
+  const first = buildWorkspaceV4PfPlan(rows, suppliers, options);
+  const second = buildWorkspaceV4PfPlan(rows, suppliers, options);
+  assert.equal(first.documents[0].supplierCode, "601.00007");
+  assert.equal(first.documents[0].lines.length, 2);
+  assert.equal(workspaceV4PfPlanChecksum(first), workspaceV4PfPlanChecksum(second));
+});

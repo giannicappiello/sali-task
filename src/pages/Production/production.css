@@ -104,6 +104,12 @@
 .purchase-month-actions>select{width:100%;min-width:0;max-width:220px}
 .purchase-month-actions>button{min-height:40px;padding:7px 9px;font-size:.72rem;line-height:1.15;white-space:nowrap}
 .purchase-button-info{display:inline-flex;align-items:center;justify-content:center;margin-left:2px;opacity:.72}
+.pf-preview-backdrop{position:fixed;z-index:1200;inset:0;display:grid;place-items:center;padding:20px;background:rgba(12,28,48,.72)}
+.pf-preview-dialog{display:grid;grid-template-rows:auto minmax(0,1fr) auto;width:min(1180px,96vw);height:min(900px,94vh);overflow:hidden;border-radius:18px;background:#fff;box-shadow:0 28px 80px rgba(0,0,0,.35)}
+.pf-preview-dialog>header{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;padding:16px 20px;border-bottom:1px solid #dbe5ef}.pf-preview-dialog>header span{color:#a15a00;font-size:.75rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em}.pf-preview-dialog h2,.pf-preview-dialog p{margin:2px 0 0}.pf-preview-dialog p{color:#60758b}
+.pf-preview-document{min-height:0;padding:12px;background:#e8eef5}.pf-preview-document iframe{width:100%;height:100%;border:0;border-radius:8px;background:#fff}
+.pf-preview-dialog>footer{display:grid;gap:12px;padding:14px 20px;border-top:1px solid #dbe5ef}.pf-preview-navigation,.pf-preview-confirm{display:flex;align-items:center;gap:10px}.pf-preview-navigation a{display:inline-flex;text-decoration:none}.pf-preview-confirm{justify-content:flex-end}.pf-preview-confirm>span{margin-right:auto;color:#5e7185}
+@media(max-width:720px){.pf-preview-backdrop{padding:0}.pf-preview-dialog{width:100vw;height:100vh;border-radius:0}.pf-preview-navigation,.pf-preview-confirm{align-items:stretch;flex-direction:column}.pf-preview-confirm>span{margin-right:0}.pf-preview-dialog>footer button,.pf-preview-dialog>footer a{justify-content:center;width:100%}}
 .purchase-quick-search{display:flex;align-items:center;gap:7px;min-width:0;min-height:40px;padding:0 10px;border:1px solid #bdccdc;border-radius:9px;background:#fff;color:#526c83}
 .purchase-quick-search:focus-within{border-color:#1f6feb;box-shadow:0 0 0 3px rgba(31,111,235,.14)}
 .purchase-quick-search input{width:100%;min-width:0;border:0;outline:0;background:transparent;font:inherit;color:#12213a}

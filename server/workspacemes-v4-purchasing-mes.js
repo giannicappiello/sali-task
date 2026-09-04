@@ -52,7 +52,7 @@ export async function executeWorkspaceV4PurchasingAction(command, options = {}) 
   return parse(response);
 }
 
-export function automaticPfLines(requirements, options = {}) {
+export function automaticPfRows(requirements, options = {}) {
   const generatedAt = new Date(options.generatedAt || Date.now());
   const horizonDays = Number.isFinite(Number(options.horizonDays)) ? Number(options.horizonDays) : 60;
   if (Number.isNaN(generatedAt.getTime()) || horizonDays < 1) return [];
@@ -66,7 +66,11 @@ export function automaticPfLines(requirements, options = {}) {
     if (clean(row.pfDocuments) || number(row.pfQuantity) > 0 || seen.has(key)) return false;
     seen.add(key);
     return true;
-  }).map((row) => ({
+  });
+}
+
+export function automaticPfLines(requirements, options = {}) {
+  return automaticPfRows(requirements, options).map((row) => ({
     articleId: Number(row.articleId),
     quantity: number(row.quantityToOrder),
     requiredAt: row.requiredAt,

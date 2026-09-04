@@ -88,9 +88,11 @@ async function refreshAutomaticArticleSupplierAssociations(admin, progremesClien
   try {
     const articlesPromise = readAllProgremesArticles(progremesClient);
     let relationships;
+    let usedCurrentMexalFallback = false;
     try {
       relationships = await readAllProgremesArticleSupplierHistory(progremesClient);
     } catch (historyError) {
+      usedCurrentMexalFallback = true;
       console.error("ProgreMES article-supplier history unavailable; using current Mexal orders", {
         code: historyError?.code || "UNKNOWN",
         upstreamStatus: historyError?.upstreamStatus || null,
@@ -101,8 +103,17 @@ async function refreshAutomaticArticleSupplierAssociations(admin, progremesClien
     const result = await synchronizeWorkspaceArticleSupplierAssociations({
       admin, relationships, articles, suppliers,
     });
-    await recordWorkspaceArticleSupplierSync({ admin, status: "COMPLETED", count: result.matched });
-    return { refreshed: true, ...result };
+    if (usedCurrentMexalFallback) {
+      await recordWorkspaceArticleSupplierSync({
+        admin,
+        status: "FAILED",
+        count: result.matched,
+        error: "Storico ProgreMES non ancora disponibile; applicato fallback ordini Mexal correnti.",
+      });
+    } else {
+      await recordWorkspaceArticleSupplierSync({ admin, status: "COMPLETED", count: result.matched });
+    }
+    return { refreshed: true, fallback: usedCurrentMexalFallback, ...result };
   } catch (error) {
     const message = error?.message || "Sincronizzazione automatica non riuscita.";
     try {

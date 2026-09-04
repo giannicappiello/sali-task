@@ -100,9 +100,9 @@ export async function synchronizeWorkspaceArticleSupplierAssociations({
 
 export async function workspaceArticleSupplierHistoryNeedsRefresh({ admin, now = new Date(), maximumAgeHours = 12 }) {
   const { data, error } = await admin.from("workspace_article_supplier_sync_state")
-    .select("last_completed_at").eq("source", AUTOMATIC_ARTICLE_SUPPLIER_SOURCE).maybeSingle();
+    .select("status,last_completed_at").eq("source", AUTOMATIC_ARTICLE_SUPPLIER_SOURCE).maybeSingle();
   if (error) throw error;
-  if (!data?.last_completed_at) return true;
+  if (data?.status !== "COMPLETED" || !data.last_completed_at) return true;
   return now.getTime() - new Date(data.last_completed_at).getTime() >= maximumAgeHours * 60 * 60 * 1000;
 }
 

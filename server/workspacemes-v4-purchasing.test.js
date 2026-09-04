@@ -52,8 +52,9 @@ test("le associazioni storiche vengono risolte automaticamente per codice e salv
 test("lo storico automatico viene riletto quando assente o scaduto", async () => {
   const query = (row) => ({ select() { return this; }, eq() { return this; }, maybeSingle() { return Promise.resolve({ data: row, error: null }); } });
   assert.equal(await workspaceArticleSupplierHistoryNeedsRefresh({ admin: { from: () => query(null) }, now: new Date("2026-09-04T12:00:00Z") }), true);
-  assert.equal(await workspaceArticleSupplierHistoryNeedsRefresh({ admin: { from: () => query({ last_completed_at: "2026-09-04T06:00:00Z" }) }, now: new Date("2026-09-04T12:00:00Z") }), false);
-  assert.equal(await workspaceArticleSupplierHistoryNeedsRefresh({ admin: { from: () => query({ last_completed_at: "2026-09-03T12:00:00Z" }) }, now: new Date("2026-09-04T12:00:00Z") }), true);
+  assert.equal(await workspaceArticleSupplierHistoryNeedsRefresh({ admin: { from: () => query({ status: "FAILED", last_completed_at: "2026-09-04T06:00:00Z" }) }, now: new Date("2026-09-04T12:00:00Z") }), true);
+  assert.equal(await workspaceArticleSupplierHistoryNeedsRefresh({ admin: { from: () => query({ status: "COMPLETED", last_completed_at: "2026-09-04T06:00:00Z" }) }, now: new Date("2026-09-04T12:00:00Z") }), false);
+  assert.equal(await workspaceArticleSupplierHistoryNeedsRefresh({ admin: { from: () => query({ status: "COMPLETED", last_completed_at: "2026-09-03T12:00:00Z" }) }, now: new Date("2026-09-04T12:00:00Z") }), true);
 });
 
 test("la migration automatica è additiva e non altera ordini o PF", async () => {

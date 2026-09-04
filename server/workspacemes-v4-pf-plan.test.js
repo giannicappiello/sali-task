@@ -43,6 +43,16 @@ test("il piano automatico distingue l'assenza fornitore dall'assenza di fabbisog
   );
 });
 
+test("il piano automatico genera i PF validi e conta i materiali senza fornitore", () => {
+  const withoutSupplier = { ...rows[1], supplierId: null, supplierName: "" };
+  const plan = buildWorkspaceV4PfPlan([rows[0], withoutSupplier], suppliers, {
+    mode: "automatic", generatedAt: "2026-09-04T00:00:00.000Z", horizonDays: 60,
+  });
+  assert.equal(plan.documents.length, 1);
+  assert.deepEqual(plan.documents[0].lines.map((line) => line.articleCode), ["MP11"]);
+  assert.equal(plan.skippedWithoutSupplier, 1);
+});
+
 test("il piano da selezionati non ripropone righe con PF esistente", () => {
   const withPf = { ...rows[0], pfDocuments: "PF 1/1", pfQuantity: 12 };
   assert.throws(() => buildWorkspaceV4PfPlan([withPf], suppliers, { mode: "selected", selectedKeys: [withPf.key] }), /Nessun nuovo PF da generare per i materiali selezionati/);

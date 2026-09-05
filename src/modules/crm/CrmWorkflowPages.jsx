@@ -101,12 +101,12 @@ export function CrmBrandDirectDashboard() {
     return () => { active = false; };
   }, []);
   const cards = [
-    ["Progetti DIRECT", summary.projects, `${config.basePath}/progetti?projectStatus=all`],
-    ["Attività aperte", summary.openTasks, `${config.basePath}/attivita?activityStatus=open`],
-    ["Attività completate", summary.completedTasks, `${config.basePath}/attivita?activityStatus=completed`],
-    ["Attività scadute", summary.overdueTasks, `${config.basePath}/attivita?activityStatus=open`],
+    ["Progetti DIRECT", summary.projects, `${config.basePath}/progetti`, { projectStatus: "all" }],
+    ["Attività aperte", summary.openTasks, `${config.basePath}/attivita`, { activityStatus: "open" }],
+    ["Attività completate", summary.completedTasks, `${config.basePath}/attivita`, { activityStatus: "completed" }],
+    ["Attività scadute", summary.overdueTasks, `${config.basePath}/attivita`, { activityStatus: "open", activityDue: "overdue" }],
   ];
-  return <div className="crm-page"><CrmPageHeader eyebrow="CRM BRAND DIRECT" title="Cliente DIRECT" description="Area interna per progetti e attività sui prodotti DIRECT non collegati a farmacie o ad altri clienti."><CrmSectionNav items={crmNavigation(type)} period={period} label="Navigazione CRM BRAND DIRECT" /></CrmPageHeader><ErrorMessage error={error} /><div className="crm-kpi-grid">{cards.map(([label, value, path]) => <Link className="crm-kpi-card" key={label} to={period.withPeriod(path)}><span>{label}</span><strong>{value}</strong><small>Apri dettaglio →</small></Link>)}</div></div>;
+  return <div className="crm-page"><CrmPageHeader eyebrow="CRM BRAND DIRECT" title="Cliente DIRECT" description="Area interna per progetti e attività sui prodotti DIRECT non collegati a farmacie o ad altri clienti."><CrmSectionNav items={crmNavigation(type)} period={period} label="Navigazione CRM BRAND DIRECT" /></CrmPageHeader><ErrorMessage error={error} /><div className="crm-kpi-grid">{cards.map(([label, value, path, filters]) => <Link className="crm-kpi-card" key={label} to={period.withPeriod(path, filters)}><span>{label}</span><strong>{value}</strong><small>Apri dettaglio →</small></Link>)}</div></div>;
 }
 
 function B2BCustomerActionPage({ mode }) {

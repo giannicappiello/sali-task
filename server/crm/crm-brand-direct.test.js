@@ -25,10 +25,14 @@ test("backfill preserves real links before assigning only missing customer keys"
 
 test("new records share Workspace project and task stores", async () => {
   const workflow = await readFile(new URL("../../src/modules/crm/CrmWorkflowPages.jsx", import.meta.url), "utf8");
+  const activities = await readFile(new URL("../../src/modules/crm/CrmActivitiesPage.jsx", import.meta.url), "utf8");
   assert.match(workflow, /from\("v4_progetti"\)/);
   assert.match(workflow, /from\("v4_fasi_progetto"\)/);
   assert.match(workflow, /crmType=\$\{encodeURIComponent\(type\)\}/);
   assert.match(workflow, /VIRTUAL_DIRECT_CUSTOMER_KEY/);
+  assert.match(workflow, /period\.withPeriod\(path, filters\)/);
+  assert.match(workflow, /activityDue: "overdue"/);
+  assert.match(activities, /due === "overdue"/);
 });
 
 test("CRM BRAND DIRECT inherits the effective DIRECT channel access", () => {

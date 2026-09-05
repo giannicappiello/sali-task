@@ -25,6 +25,7 @@ export default function CrmActivitiesPage({ type }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const status = params.get("activityStatus") || "open";
+  const due = params.get("activityDue") || "";
   const search = params.get("activitySearch") || "";
 
   const updateParam = (name, value) => setParams((current) => {
@@ -58,12 +59,13 @@ export default function CrmActivitiesPage({ type }) {
         const completed = isCompleted(task);
         if (status === "open" && completed) return [];
         if (status === "completed" && !completed) return [];
+        if (due === "overdue" && (completed || !task.deadline || new Date(`${task.deadline}T23:59:59`).getTime() >= now)) return [];
         if (normalizedSearch && !`${task.titolo} ${task.descrizione || ""} ${customer.name} ${task.v4_progetti?.titolo || ""}`.toLocaleLowerCase("it-IT").includes(normalizedSearch)) return [];
         return [{ ...task, customerKey, customer, completed }];
       }));
     }
     setLoading(false);
-  }, [search, status, type]);
+  }, [due, now, search, status, type]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 150);

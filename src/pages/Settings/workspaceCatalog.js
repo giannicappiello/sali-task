@@ -19,10 +19,12 @@ export function matchesAssociationStatus(count, status) {
 }
 
 export function selectedFirst(items, selectedCodes, getCode = (item) => item.codice) {
-  const selected = new Set(selectedCodes);
+  const selectedPositions = new Map(selectedCodes.map((code, index) => [code, index]));
   return [
-    ...items.filter((item) => selected.has(getCode(item))),
-    ...items.filter((item) => !selected.has(getCode(item))),
+    ...items
+      .filter((item) => selectedPositions.has(getCode(item)))
+      .toSorted((left, right) => selectedPositions.get(getCode(left)) - selectedPositions.get(getCode(right))),
+    ...items.filter((item) => !selectedPositions.has(getCode(item))),
   ];
 }
 

@@ -36,6 +36,18 @@ test("ricerca icone usa etichetta e keyword e conserva la selezione durante il f
   assert.deepEqual(result.map((item) => item.code), ["bell", "package"]);
 });
 
+test("gli elementi selezionati seguono la posizione salvata e precedono quelli non associati", () => {
+  const items = [
+    { codice: "overview" },
+    { codice: "private" },
+    { codice: "direct" },
+    { codice: "brand_direct" },
+    { codice: "b2b" },
+  ];
+  const result = filterKeepingSelected(items, "", ["codice"], ["overview", "private", "brand_direct", "direct"]);
+  assert.deepEqual(result.map((item) => item.codice), ["overview", "private", "brand_direct", "direct", "b2b"]);
+});
+
 test("filtri Associati e Non associati identificano gli elementi orfani", () => {
   assert.equal(matchesAssociationStatus(1, "associated"), true);
   assert.equal(matchesAssociationStatus(0, "associated"), false);

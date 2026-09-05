@@ -5,6 +5,7 @@ import { CRM_ROUTE_CATALOG } from "../../src/modules/crm/crmRouteCatalog.js";
 import { CRM_TYPES, VIRTUAL_DIRECT_CUSTOMER_KEY } from "../../src/modules/crm/crmConfig.js";
 
 const migration = await readFile(new URL("../../supabase/migrations/20260905130000_crm_brand_direct_virtual_customer.sql", import.meta.url), "utf8");
+const accessFixMigration = await readFile(new URL("../../supabase/migrations/20260905133000_fix_crm_brand_direct_access.sql", import.meta.url), "utf8");
 
 test("CRM BRAND DIRECT has a dedicated catalog and canonical customer", () => {
   assert.equal(CRM_TYPES.brand_direct.moduleCode, "crm_brand_direct");
@@ -28,4 +29,10 @@ test("new records share Workspace project and task stores", async () => {
   assert.match(workflow, /from\("v4_fasi_progetto"\)/);
   assert.match(workflow, /crmType=\$\{encodeURIComponent\(type\)\}/);
   assert.match(workflow, /VIRTUAL_DIRECT_CUSTOMER_KEY/);
+});
+
+test("CRM BRAND DIRECT inherits the effective DIRECT channel access", () => {
+  assert.match(accessFixMigration, /assegnabile_reparto=false/);
+  assert.match(accessFixMigration, /dipendenze_alternative=array\['crm_b2b','crm_online'\]/);
+  assert.doesNotMatch(accessFixMigration, /(?:v4_progetti|v4_fasi_progetto|crm_activities)/);
 });

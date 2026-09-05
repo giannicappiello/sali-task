@@ -24,6 +24,10 @@ export function getCurrentPosition() {
   });
 }
 
+export async function captureBeautyPosition() {
+  return getCurrentPosition();
+}
+
 export async function loadBeautyVisitLinks(legacyIds) {
   if (!legacyIds.length) return new Map();
   const { data, error } = await supabase
@@ -161,8 +165,8 @@ export async function checkInBeautyVisit(activityId, exceptionReason = null) {
   return data;
 }
 
-export async function checkOutBeautyVisit(activityId, values) {
-  const position = await getCurrentPosition();
+export async function checkOutBeautyVisit(activityId, values, capturedPosition = null) {
+  const position = capturedPosition || await getCurrentPosition();
   const { data, error } = await supabase.rpc("crm_beauty_check_out", {
     p_activity_id: activityId,
     p_latitude: position.latitude,

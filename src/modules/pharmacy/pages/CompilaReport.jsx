@@ -4,7 +4,15 @@ import { supabase as primarySupabase } from "../../../lib/supabaseClient";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-export default function CompilaReport({ giornata, farmacie, beauty, visit: initialVisit = null, onBack }) {
+export default function CompilaReport({
+  giornata,
+  farmacie,
+  beauty,
+  visit: initialVisit = null,
+  checkoutContext = null,
+  onCompleteCheckout = null,
+  onBack,
+}) {
   const isCrmOnly = Boolean(giornata._crmOnly && giornata.crm_activity_id);
   const [prodotti, setProdotti] = useState([]);
   const [sottocategorie, setSottocategorie] = useState([]);
@@ -22,6 +30,12 @@ export default function CompilaReport({ giornata, farmacie, beauty, visit: initi
   const [visitDetails, setVisitDetails] = useState(initialVisit);
   const [visitActivity, setVisitActivity] = useState(null);
   const [nextActivity, setNextActivity] = useState(null);
+  const [planningMode, setPlanningMode] = useState(false);
+  const [nextType, setNextType] = useState("follow_up");
+  const [nextTopic, setNextTopic] = useState("");
+  const [nextDate, setNextDate] = useState("");
+  const [visitOutcome, setVisitOutcome] = useState("");
+  const [planningBusy, setPlanningBusy] = useState(false);
 
   const caricaDati = useCallback(async () => {
     const prodottiRes = await primarySupabase
@@ -213,8 +227,32 @@ export default function CompilaReport({ giornata, farmacie, beauty, visit: initi
     0
   );
 
+  const effectiveVisit = checkoutContext
+    ? {
+        ...(visitDetails || {}),
+        check_out_at: checkoutContext.capturedAt,
+        check_out_latitude: checkoutContext.position?.latitude,
+        check_out_longitude: checkoutContext.position?.longitude,
+        check_out_accuracy_meters: checkoutContext.position?.accuracy,
+      }
+    : visitDetails;
+
+  function reportSaved() {
+    setHasExistingReport(true);
+    if (checkoutContext && onCompleteCheckout) {
+      setPlanningMode(true);
+      return;
+    }
+    alert("Report salvato correttamente");
+    onBack();
+  }
+
   async function salvaReport(e) {
     e.preventDefault();
+    if (checkoutContext && !noteFinali.trim()) {
+      alert("Le note finali sono obbligatorie per completare il check-out.");
+      return;
+    }
 
     const righeVendite = vendite
       .filter((v) => v.codice_prodotto)
@@ -248,8 +286,7 @@ export default function CompilaReport({ giornata, farmacie, beauty, visit: initi
         .update({ report_data: { ...crmReportData, report } })
         .eq("activity_id", giornata.crm_activity_id);
       if (error) return alert(error.message);
-      alert("Report salvato correttamente");
-      onBack();
+      reportSaved();
       return;
     }
 
@@ -291,8 +328,26 @@ export default function CompilaReport({ giornata, farmacie, beauty, visit: initi
       if (venditeError) return alert(venditeError.message);
     }
 
-    alert("Report salvato correttamente");
-    onBack();
+    reportSaved();
+  }
+
+  async function confermaPianificazione(e) {
+    e.preventDefault();
+    if (!visitOutcome.trim() || !nextType || !nextTopic.trim() || !nextDate) {
+      alert("Esito, tipo, argomento e data della prossima attività sono obbligatori.");
+      return;
+    }
+    setPlanningBusy(true);
+    try {
+      await onCompleteCheckout({
+        outcome: visitOutcome.trim(),
+        nextType,
+        nextTopic: nextTopic.trim(),
+        nextAt: `${nextDate}T09:00:00`,
+      });
+    } finally {
+      setPlanningBusy(false);
+    }
   }
 
   async function generaPDF() {
@@ -473,6 +528,40 @@ export default function CompilaReport({ giornata, farmacie, beauty, visit: initi
     onBack();
   }
 
+  if (planningMode) {
+    return (
+      <div>
+        <div style={headerStyle}>
+          <h2>Pianifica l'attività successiva</h2>
+          <p style={subtitleStyle}>Il report è salvato. Completa la pianificazione per terminare il check-out.</p>
+        </div>
+        <div style={formWrapperStyle}>
+          <form onSubmit={confermaPianificazione} style={formStyle}>
+            <VisitReportSummary giornata={giornata} visit={effectiveVisit} activity={visitActivity} nextActivity={null} pendingCheckout />
+            <label style={labelStyle}>Esito della visita *</label>
+            <input style={inputStyle} required value={visitOutcome} onChange={(e) => setVisitOutcome(e.target.value)} placeholder="Esito della visita" />
+            <label style={labelStyle}>Tipo attività successiva *</label>
+            <select style={inputStyle} required value={nextType} onChange={(e) => setNextType(e.target.value)}>
+              <option value="follow_up">Follow-up</option>
+              <option value="telefonata">Telefonata</option>
+              <option value="visita">Visita</option>
+              <option value="email">Email</option>
+              <option value="presentazione">Presentazione</option>
+              <option value="formazione">Formazione</option>
+            </select>
+            <label style={labelStyle}>Argomento *</label>
+            <textarea style={textareaStyle} required value={nextTopic} onChange={(e) => setNextTopic(e.target.value)} placeholder="Indica l'argomento della prossima attività" />
+            <label style={labelStyle}>Data attività successiva *</label>
+            <input style={inputStyle} required type="date" value={nextDate} onChange={(e) => setNextDate(e.target.value)} />
+            <button style={saveButtonStyle} type="submit" disabled={planningBusy}>
+              {planningBusy ? "Registrazione..." : "Conferma pianificazione e completa check-out"}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div style={headerStyle}>
@@ -493,9 +582,10 @@ export default function CompilaReport({ giornata, farmacie, beauty, visit: initi
 
           <VisitReportSummary
             giornata={giornata}
-            visit={visitDetails}
+            visit={effectiveVisit}
             activity={visitActivity}
             nextActivity={nextActivity}
+            pendingCheckout={Boolean(checkoutContext)}
           />
 
           <label style={labelStyle}>Clienti intervistati</label>
@@ -635,9 +725,11 @@ export default function CompilaReport({ giornata, farmacie, beauty, visit: initi
           <label style={labelStyle}>Note finali</label>
           <textarea
             style={textareaStyle}
+            required={Boolean(checkoutContext)}
             value={noteFinali}
             onChange={(e) => setNoteFinali(e.target.value)}
           />
+          {checkoutContext && <small>Campo obbligatorio per completare il check-out.</small>}
 
           <button style={saveButtonStyle} type="submit">
             Salva report
@@ -662,7 +754,7 @@ export default function CompilaReport({ giornata, farmacie, beauty, visit: initi
   );
 }
 
-function VisitReportSummary({ giornata, visit, activity, nextActivity }) {
+function VisitReportSummary({ giornata, visit, activity, nextActivity, pendingCheckout = false }) {
   const hasVisitData = Boolean(visit || activity || giornata.note_operative || giornata.tipo_giornata);
   if (!hasVisitData) return null;
   return (
@@ -673,6 +765,8 @@ function VisitReportSummary({ giornata, visit, activity, nextActivity }) {
         <ReportInfo label="Stato" value={visit?.visit_status || activity?.stato || giornata.stato} />
         <ReportInfo label="Esito" value={visit?.outcome || activity?.esito} />
         <ReportInfo label="Obiettivo vendite" value={giornata.obiettivo_vendite ? `€ ${giornata.obiettivo_vendite}` : null} />
+        <ReportInfo label="Ora inizio" value={visit?.check_in_at ? formatDateTime(visit.check_in_at) : giornata.ora_inizio} />
+        <ReportInfo label="Ora fine" value={visit?.check_out_at ? formatDateTime(visit.check_out_at) : giornata.ora_fine} />
       </div>
       {(giornata.note_operative || activity?.descrizione) && (
         <ReportInfo label="Argomenti / note operative" value={giornata.note_operative || activity?.descrizione} wide />
@@ -692,6 +786,7 @@ function VisitReportSummary({ giornata, visit, activity, nextActivity }) {
           <ReportPosition label="Check-out" at={visit.check_out_at} latitude={visit.check_out_latitude} longitude={visit.check_out_longitude} address={visit.check_out_address} accuracy={visit.check_out_accuracy_meters} distance={visit.check_out_distance_meters} geofence={visit.check_out_geofence} exceptionReason={visit.check_out_exception_reason} />
         </div>
       )}
+      {pendingCheckout && <small>Il check-out GPS sarà confermato dopo la pianificazione obbligatoria.</small>}
     </section>
   );
 }

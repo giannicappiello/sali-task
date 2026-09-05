@@ -20,10 +20,15 @@ test("geofence Beauty usa 150 metri, accuratezza e motivazione obbligatoria", as
 });
 
 test("check-out crea la prossima attività nella stessa operazione", async () => {
-  const sql = await read("supabase/migrations/20260904210000_crm_beauty_visit_geolocation.sql");
+  const sql = await read("supabase/migrations/20260905090000_beauty_checkout_report_planning_task.sql");
   assert.match(sql, /create or replace function public\.crm_beauty_check_out/i);
   assert.match(sql, /Tipo, argomento e data della prossima attività sono obbligatori/i);
   assert.match(sql, /insert into public\.crm_activities/i);
+  assert.match(sql, /insert into public\.v4_fasi_progetto/i);
+  assert.match(sql, /workspace_task_id=v_task_id/i);
+  assert.match(sql, /'next_task_id',v_task_id/i);
+  assert.match(sql, /source_type='beauty_visit' and activity\.workspace_task_id is null/i);
+  assert.doesNotMatch(sql, /drop table|truncate table|delete from public\./i);
 });
 
 test("le coordinate precise vengono anonimizzate dopo dodici mesi", async () => {
@@ -41,6 +46,9 @@ test("la UI collega lo storico senza duplicarlo e richiede GPS solo al gesto ute
   assert.match(page, /ensureCrmBeautyVisit/);
   assert.match(page, /Check-in GPS/);
   assert.match(page, /Check-out e prossima attività/);
+  assert.match(page, /setGiornataReport\(giornata\)/);
+  assert.match(page, /checkoutContext=/);
+  assert.match(page, /onCompleteCheckout=/);
   assert.match(service, /navigator\.geolocation\.getCurrentPosition/);
   assert.match(service, /beauty-legacy:/);
 });
@@ -103,6 +111,11 @@ test("il report Beauty CRM conserva vendite e rende visibili le coordinate di ch
   assert.match(report, /Apri posizione sulla mappa/);
   assert.match(report, /check_in_address/);
   assert.match(report, /check_out_distance_meters/);
+  assert.match(report, /Le note finali sono obbligatorie/);
+  assert.match(report, /Pianifica l'attività successiva/);
+  assert.match(report, /Argomento \*/);
+  assert.match(report, /type="date"/);
+  assert.match(report, /Conferma pianificazione e completa check-out/);
   assert.match(service, /check_in_latitude/);
   assert.match(service, /check_out_longitude/);
   assert.match(service, /report_data/);

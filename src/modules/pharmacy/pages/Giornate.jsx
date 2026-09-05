@@ -8,12 +8,12 @@ import { ensureBeautyClientLink, loadVisibleBeautyClients } from "../services/be
 import {
   checkInBeautyVisit,
   checkOutBeautyVisit,
+  captureBeautyPosition,
   createCrmBeautyContactVisit,
   ensureCrmBeautyVisit,
   loadBeautyVisitLinks,
   loadCrmOnlyBeautyVisits,
 } from "../services/beautyVisitCrm";
-import { normalizeItalianVisitDate } from "../services/beautyVisitDate";
 
 export default function Giornate({ utente }) {
   const [giornate, setGiornate] = useState([]);
@@ -22,6 +22,7 @@ export default function Giornate({ utente }) {
   const [province, setProvince] = useState([]);
   const [crmVisitLinks, setCrmVisitLinks] = useState(new Map());
   const [gpsBusyId, setGpsBusyId] = useState(null);
+  const [checkoutFlow, setCheckoutFlow] = useState(null);
 
   const [mostraForm, setMostraForm] = useState(false);
   const [vistaPlanning, setVistaPlanning] = useState("mese");
@@ -572,39 +573,38 @@ export default function Giornate({ utente }) {
   }
 
   async function registraCheckOut(giornata) {
-    const outcome = await window.workspacePrompt("Esito della visita:");
-    if (!outcome) return;
-    const withoutFollowUp = ["cliente_non_interessato", "annullata", "nessun_seguito"].includes(outcome.trim().toLowerCase());
-    let nextType = null;
-    let nextTopic = null;
-    let nextAt = null;
-    let closingReason = null;
-    if (withoutFollowUp) {
-      closingReason = await window.workspacePrompt("Motivazione della chiusura senza prossima attività:");
-      if (!closingReason) return;
-    } else {
-      nextType = await window.workspacePrompt("Tipo della prossima attività (es. telefonata, visita, follow-up):");
-      nextTopic = await window.workspacePrompt("Argomento della prossima attività:");
-      const nextDate = await window.workspacePrompt(
-        "Data della prossima visita:",
-        "",
-        { inputType: "italian-date", title: "Prossima visita" },
-      );
-      if (!nextType || !nextTopic || !nextDate) return alert("La prossima attività è obbligatoria.");
-      nextAt = normalizeItalianVisitDate(nextDate);
-      if (!nextAt) return alert("Inserisci una data valida nel formato gg/mm/aaaa oppure gg/mm/aa.");
-    }
     setGpsBusyId(giornata.id);
     try {
       const activityId = await ensureVisitForDay(giornata);
-      const result = await executeWithGpsReason((gpsReason) => checkOutBeautyVisit(activityId, {
-        outcome,
-        nextType,
-        nextTopic,
-        nextAt,
-        exceptionReason: gpsReason || closingReason,
-      }));
-      alert(`Check-out registrato. Distanza dalla sede: ${result.distance_meters ?? "non disponibile"} m.`);
+      const position = await captureBeautyPosition();
+      setCheckoutFlow({
+        giornataId: giornata.id,
+        activityId,
+        position,
+        capturedAt: new Date().toISOString(),
+      });
+      setGiornataReport(giornata);
+      setMostraForm(false);
+      setGiornataDettaglio(null);
+    } catch (error) {
+      alert(error.message || "Check-out non riuscito.");
+    } finally {
+      setGpsBusyId(null);
+    }
+  }
+
+  async function completaCheckout(values) {
+    if (!checkoutFlow) return;
+    setGpsBusyId(checkoutFlow.giornataId);
+    try {
+      const result = await executeWithGpsReason((gpsReason) => checkOutBeautyVisit(
+        checkoutFlow.activityId,
+        { ...values, exceptionReason: gpsReason },
+        checkoutFlow.position,
+      ));
+      alert(`Report e check-out registrati. Distanza dalla sede: ${result.distance_meters ?? "non disponibile"} m. Attività successiva e task Workspace create.`);
+      setCheckoutFlow(null);
+      setGiornataReport(null);
       await caricaDati();
     } catch (error) {
       alert(error.message || "Check-out non riuscito.");
@@ -629,7 +629,10 @@ export default function Giornate({ utente }) {
         farmacie={farmacie}
         beauty={beauty}
         visit={crmVisitLinks.get(giornataReport.id) || null}
+        checkoutContext={checkoutFlow?.giornataId === giornataReport.id ? checkoutFlow : null}
+        onCompleteCheckout={completaCheckout}
         onBack={async () => {
+          setCheckoutFlow(null);
           setGiornataReport(null);
           await caricaDati();
         }}

@@ -92,8 +92,17 @@ test("il report Beauty CRM conserva vendite e rende visibili le coordinate di ch
   assert.match(days, /Visualizza \/ modifica report/);
   assert.match(days, /Tracciamento visita/);
   assert.match(days, /Apri posizione sulla mappa/);
+  assert.match(days, /visit=\{crmVisitLinks\.get\(giornataReport\.id\) \|\| null\}/);
   assert.match(report, /report_data: \{ \.\.\.crmReportData, report \}/);
   assert.match(report, /Prodotti venduti/);
+  assert.match(report, /Dati e tracciamento della visita/);
+  assert.match(report, /Argomenti \/ note operative/);
+  assert.match(report, /Prossima attività/);
+  assert.match(report, /Check-in/);
+  assert.match(report, /Check-out/);
+  assert.match(report, /Apri posizione sulla mappa/);
+  assert.match(report, /check_in_address/);
+  assert.match(report, /check_out_distance_meters/);
   assert.match(service, /check_in_latitude/);
   assert.match(service, /check_out_longitude/);
   assert.match(service, /report_data/);

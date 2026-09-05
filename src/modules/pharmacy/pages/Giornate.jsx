@@ -628,6 +628,7 @@ export default function Giornate({ utente }) {
         giornata={giornataReport}
         farmacie={farmacie}
         beauty={beauty}
+        visit={crmVisitLinks.get(giornataReport.id) || null}
         onBack={async () => {
           setGiornataReport(null);
           await caricaDati();

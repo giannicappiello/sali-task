@@ -4,7 +4,7 @@ import { supabase as primarySupabase } from "../../../lib/supabaseClient";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-export default function CompilaReport({ giornata, farmacie, beauty, onBack }) {
+export default function CompilaReport({ giornata, farmacie, beauty, visit: initialVisit = null, onBack }) {
   const isCrmOnly = Boolean(giornata._crmOnly && giornata.crm_activity_id);
   const [prodotti, setProdotti] = useState([]);
   const [sottocategorie, setSottocategorie] = useState([]);
@@ -19,6 +19,9 @@ export default function CompilaReport({ giornata, farmacie, beauty, onBack }) {
   const [noteFinali, setNoteFinali] = useState("");
   const [crmReportData, setCrmReportData] = useState({});
   const [hasExistingReport, setHasExistingReport] = useState(false);
+  const [visitDetails, setVisitDetails] = useState(initialVisit);
+  const [visitActivity, setVisitActivity] = useState(null);
+  const [nextActivity, setNextActivity] = useState(null);
 
   const caricaDati = useCallback(async () => {
     const prodottiRes = await primarySupabase
@@ -34,9 +37,41 @@ export default function CompilaReport({ giornata, farmacie, beauty, onBack }) {
       .select("*")
       .order("nome", { ascending: true });
 
+    const activityId = giornata.crm_activity_id || initialVisit?.activity_id || null;
     const venditeRes = isCrmOnly
-      ? await primarySupabase.from("crm_visit_details").select("report_data").eq("activity_id", giornata.crm_activity_id).single()
+      ? await primarySupabase.from("crm_visit_details").select("*").eq("activity_id", activityId).single()
       : await reportSupabase.from("vendite_prodotti").select("*").eq("giornata_id", giornata.id);
+
+    if (activityId) {
+      const [detailsRes, activityRes, nextRes] = await Promise.all([
+        isCrmOnly
+          ? Promise.resolve(venditeRes)
+          : primarySupabase.from("crm_visit_details").select("*").eq("activity_id", activityId).maybeSingle(),
+        primarySupabase
+          .from("crm_activities")
+          .select("titolo,descrizione,esito,prossima_azione,data_attivita,stato")
+          .eq("id", activityId)
+          .maybeSingle(),
+        primarySupabase
+          .from("crm_activities")
+          .select("tipo,titolo,descrizione,data_attivita,stato")
+          .eq("source_type", "beauty_visit")
+          .eq("source_id", activityId)
+          .order("data_attivita", { ascending: true })
+          .limit(1)
+          .maybeSingle(),
+      ]);
+      if (detailsRes.error) return alert(detailsRes.error.message);
+      if (activityRes.error) return alert(activityRes.error.message);
+      if (nextRes.error) return alert(nextRes.error.message);
+      setVisitDetails(detailsRes.data || initialVisit);
+      setVisitActivity(activityRes.data || null);
+      setNextActivity(nextRes.data || null);
+    } else {
+      setVisitDetails(initialVisit);
+      setVisitActivity(null);
+      setNextActivity(null);
+    }
 
     if (prodottiRes.error) return alert(prodottiRes.error.message);
     if (sottocategorieRes.error) return alert(sottocategorieRes.error.message);
@@ -71,7 +106,7 @@ export default function CompilaReport({ giornata, farmacie, beauty, onBack }) {
         quantita: Number(v.quantita || 1),
       }))
     );
-  }, [giornata, isCrmOnly]);
+  }, [giornata, initialVisit, isCrmOnly]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void caricaDati(), 0);
@@ -456,6 +491,13 @@ export default function CompilaReport({ giornata, farmacie, beauty, onBack }) {
             ← Torna indietro
           </button>
 
+          <VisitReportSummary
+            giornata={giornata}
+            visit={visitDetails}
+            activity={visitActivity}
+            nextActivity={nextActivity}
+          />
+
           <label style={labelStyle}>Clienti intervistati</label>
           <input
             style={inputStyle}
@@ -620,6 +662,78 @@ export default function CompilaReport({ giornata, farmacie, beauty, onBack }) {
   );
 }
 
+function VisitReportSummary({ giornata, visit, activity, nextActivity }) {
+  const hasVisitData = Boolean(visit || activity || giornata.note_operative || giornata.tipo_giornata);
+  if (!hasVisitData) return null;
+  return (
+    <section style={visitSummaryStyle} aria-label="Dati e tracciamento della visita">
+      <h3 style={visitSummaryTitleStyle}>Dati della visita</h3>
+      <div style={visitInfoGridStyle}>
+        <ReportInfo label="Tipo / argomento" value={giornata.tipo_giornata || activity?.titolo} />
+        <ReportInfo label="Stato" value={visit?.visit_status || activity?.stato || giornata.stato} />
+        <ReportInfo label="Esito" value={visit?.outcome || activity?.esito} />
+        <ReportInfo label="Obiettivo vendite" value={giornata.obiettivo_vendite ? `€ ${giornata.obiettivo_vendite}` : null} />
+      </div>
+      {(giornata.note_operative || activity?.descrizione) && (
+        <ReportInfo label="Argomenti / note operative" value={giornata.note_operative || activity?.descrizione} wide />
+      )}
+      {(nextActivity || activity?.prossima_azione) && (
+        <ReportInfo
+          label="Prossima attività"
+          value={nextActivity
+            ? `${nextActivity.tipo?.replaceAll("_", " ") || "Attività"}: ${nextActivity.titolo || activity?.prossima_azione}${nextActivity.data_attivita ? ` · ${formatDateTime(nextActivity.data_attivita, false)}` : ""}`
+            : activity.prossima_azione}
+          wide
+        />
+      )}
+      {visit && (
+        <div style={visitTrackingGridStyle}>
+          <ReportPosition label="Check-in" at={visit.check_in_at} latitude={visit.check_in_latitude} longitude={visit.check_in_longitude} address={visit.check_in_address} accuracy={visit.check_in_accuracy_meters} distance={visit.check_in_distance_meters} geofence={visit.check_in_geofence} exceptionReason={visit.check_in_exception_reason} />
+          <ReportPosition label="Check-out" at={visit.check_out_at} latitude={visit.check_out_latitude} longitude={visit.check_out_longitude} address={visit.check_out_address} accuracy={visit.check_out_accuracy_meters} distance={visit.check_out_distance_meters} geofence={visit.check_out_geofence} exceptionReason={visit.check_out_exception_reason} />
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ReportInfo({ label, value, wide = false }) {
+  return (
+    <div style={{ ...visitInfoStyle, ...(wide ? { gridColumn: "1 / -1" } : {}) }}>
+      <strong>{label}</strong>
+      <span>{value || "Non indicato"}</span>
+    </div>
+  );
+}
+
+function ReportPosition({ label, at, latitude, longitude, address, accuracy, distance, geofence, exceptionReason }) {
+  const hasCoordinates = Number.isFinite(Number(latitude)) && Number.isFinite(Number(longitude));
+  return (
+    <div style={visitPositionStyle}>
+      <strong>{label}</strong>
+      <span>{at ? formatDateTime(at) : "Non registrato"}</span>
+      {address && <span>Indirizzo rilevato: {address}</span>}
+      {distance != null && <span>Distanza dalla sede: {Number(distance).toFixed(0)} m</span>}
+      {accuracy != null && <span>Precisione GPS: ±{Number(accuracy).toFixed(0)} m</span>}
+      {geofence && <span>Esito geolocalizzazione: {String(geofence).replaceAll("_", " ")}</span>}
+      {exceptionReason && <span>Motivazione: {exceptionReason}</span>}
+      {hasCoordinates ? (
+        <a href={`https://www.google.com/maps?q=${latitude},${longitude}`} target="_blank" rel="noreferrer">
+          Apri posizione sulla mappa
+        </a>
+      ) : at ? <span>Coordinate non disponibili o anonimizzate.</span> : null}
+    </div>
+  );
+}
+
+function formatDateTime(value, includeTime = true) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString("it-IT", includeTime
+    ? { dateStyle: "short", timeStyle: "short" }
+    : { dateStyle: "short" });
+}
+
 const headerStyle = {
   marginBottom: "22px",
   textAlign: "center",
@@ -650,6 +764,45 @@ const formStyle = {
   backgroundColor: "#FFFFFF",
   border: "1.5px solid #2D2B28",
   overflowX: "hidden",
+};
+
+const visitSummaryStyle = {
+  display: "grid",
+  gap: "12px",
+  padding: "16px",
+  border: "1px solid #D8E4F3",
+  borderRadius: "14px",
+  backgroundColor: "#F7FAFE",
+};
+
+const visitSummaryTitleStyle = { margin: 0, color: "#10243E" };
+
+const visitInfoGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: "10px",
+};
+
+const visitInfoStyle = {
+  display: "grid",
+  gap: "3px",
+  minWidth: 0,
+};
+
+const visitTrackingGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
+  gap: "10px",
+};
+
+const visitPositionStyle = {
+  display: "grid",
+  gap: "4px",
+  padding: "12px",
+  border: "1px solid #C9D9EC",
+  borderRadius: "12px",
+  backgroundColor: "#FFFFFF",
+  overflowWrap: "anywhere",
 };
 
 const inputStyle = {

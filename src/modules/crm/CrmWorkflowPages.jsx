@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Plus, Search } from "lucide-react";
+import { FolderKanban, LayoutList, Plus, Search, SquareKanban } from "lucide-react";
 import InfoTooltip from "../../components/InfoTooltip";
+import WorkspaceProjectCreateDialog from "../../components/WorkspaceProjectCreateDialog";
+import WorkspaceTaskDialog from "../../components/WorkspaceTaskDialog";
+import WorkspaceTaskKanban from "../../pages/Tasks/WorkspaceTaskKanban";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
 import { CrmBeautyDashboardPanel } from "./CrmBeautyDays";
@@ -37,14 +40,21 @@ export function CrmDevelopmentsPage() {
 
 export function CrmProjectsPage({ type = "conto_terzi" }) {
   const config = crmTypeConfig(type); const period = useCrmPeriod();
+  const { canUseModule, profile } = useAuth();
+  const canWrite = canUseModule(config.moduleCode, "scrittura");
+  const actorId = profile?.id || null;
   const [params, setParams] = useSearchParams();
   const [rows, setRows] = useState([]); const [error, setError] = useState(""); const [loading, setLoading] = useState(true);
+  const [projectDialogOpen, setProjectDialogOpen] = useState(false);
+  const [taskDialogOpen, setTaskDialogOpen] = useState(false);
+  const [selectedTask, setSelectedTask] = useState(null);
   const search = params.get("projectSearch") || "";
   const status = params.get("projectStatus") || "open";
+  const view = params.get("projectView") || "list";
   const load = useCallback(async () => {
     setLoading(true);
     const [projectsResult, customersResult] = await Promise.all([
-      supabase.from("v4_progetti").select("id,titolo,descrizione,stato,deadline,crm_customer_key,crm_opportunity_id,v4_fasi_progetto(id,stato,deadline),crm_opportunities(id,titolo)").not("crm_customer_key", "is", null).order("created_at", { ascending: false }).limit(2000),
+      supabase.from("v4_progetti").select("id,titolo,descrizione,stato,deadline,crm_customer_key,crm_opportunity_id,v4_fasi_progetto(id,titolo,descrizione,stato,deadline,priorita,completato_at,crm_customer_key,crm_opportunity_id,bloccante_id),crm_opportunities(id,titolo)").not("crm_customer_key", "is", null).order("created_at", { ascending: false }).limit(2000),
       loadCrmCustomerDirectory(supabase, type),
     ]);
     const loadError = projectsResult.error || customersResult.error;
@@ -70,10 +80,32 @@ export function CrmProjectsPage({ type = "conto_terzi" }) {
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
   const updateParam = (name, value) => setParams((current) => { const next = new URLSearchParams(current); if (value) next.set(name, value); else next.delete(name); return next; }, { replace: true });
   const returnTo = encodeURIComponent(`${config.basePath}/progetti${window.location.search}`);
-  const directCustomer = type === "brand_direct" ? `&customerKey=${encodeURIComponent(VIRTUAL_DIRECT_CUSTOMER_KEY)}` : "";
-  return <div className="crm-page"><CrmPageHeader eyebrow={config.label} title={`Progetti ${config.label}`} description="Gli stessi progetti operativi del modulo Attività, con cliente, task e deadline in un unico archivio." actions={<><CrmPeriodFilter period={period} compact /><Link className="primary-action crm-primary" to={`/activities/projects?new=1&crmType=${encodeURIComponent(type)}&returnTo=${returnTo}${directCustomer}`}><Plus size={16} />Nuovo progetto</Link></>}><CrmSectionNav items={crmNavigation(type)} period={period} label={`Navigazione ${config.label}`} /></CrmPageHeader><ErrorMessage error={error} />
-    <div className="crm-filters"><label><Search size={16} /><input value={search} onChange={(event) => updateParam("projectSearch", event.target.value)} placeholder="Cerca progetto o cliente" /></label><select value={status} onChange={(event) => updateParam("projectStatus", event.target.value)}><option value="open">Aperti</option><option value="completed">Completati</option><option value="all">Tutti</option></select></div>
-    {loading ? <div className="crm-loading">Caricamento progetti...</div> : <div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Progetto</th><th>Cliente</th><th>Task</th><th>Stato</th><th>Deadline</th><th>Pipeline collegata</th><th>Azioni</th></tr></thead><tbody>{rows.map((project) => <tr key={project.id}><td><strong>{project.titolo}</strong>{project.descrizione ? <small>{project.descrizione}</small> : null}</td><td><CrmCustomerLink crmType={type} customerCode={project.customer.customerCode} accountId={project.customer.accountId} name={project.customer.name} period={period}>{project.customer.name}</CrmCustomerLink></td><td>{project.v4_fasi_progetto?.length || 0}</td><td>{project.stato || "aperto"}</td><td>{formatDate(project.deadline)}</td><td>{project.crm_opportunities && type !== "brand_direct" ? <Link to={period.withPeriod(`${config.basePath}/pipeline/${project.crm_opportunities.id}`)}>{project.crm_opportunities.titolo}</Link> : "—"}</td><td><Link className="secondary-action" to={`/activities/projects?project=${project.id}&crmType=${encodeURIComponent(type)}&returnTo=${returnTo}`}>Apri progetto</Link></td></tr>)}</tbody></table>{!rows.length ? <div className="crm-empty">Nessun progetto operativo corrisponde ai filtri.</div> : null}</div>}
+  const initialCustomerKey = type === "brand_direct" ? VIRTUAL_DIRECT_CUSTOMER_KEY : "";
+  const kanbanTasks = rows.flatMap((project) => (project.v4_fasi_progetto || []).map((task) => ({ ...task, progetto_id: project.id, v4_progetti: { id: project.id, titolo: project.titolo }, crm_customer_key: task.crm_customer_key || project.crm_customer_key, crm_customer_name: project.customer.name })));
+  const moveTask = async (taskId, nextStatus) => {
+    if (!canWrite || nextStatus === "bloccata") return;
+    const task = kanbanTasks.find((row) => row.id === taskId);
+    if (!task) return;
+    if (task.bloccante_id) {
+      const { data: blocker, error: blockerError } = await supabase.from("v4_fasi_progetto").select("titolo,stato,completato_at").eq("id", task.bloccante_id).maybeSingle();
+      if (blockerError) return setError(blockerError.message);
+      const blockerDone = Boolean(blocker?.completato_at) || ["evaso", "evasa", "completato", "completata", "chiuso", "chiusa"].includes(String(blocker?.stato || "").toLowerCase());
+      if (blocker && !blockerDone) return setError(`Task bloccata da: ${blocker.titolo || "dipendenza"}. Completa prima il predecessore.`);
+    }
+    const done = nextStatus === "evaso";
+    const now = new Date().toISOString();
+    const { error: moveError } = await supabase.from("v4_fasi_progetto").update({ stato: nextStatus, completato_at: done ? now : null, completato_da: done ? actorId : null, modificato_da: actorId, updated_at: now }).eq("id", taskId);
+    if (moveError) return setError(moveError.message);
+    const { error: auditError } = await supabase.from("v4_audit_log").insert({ entity_type: "fase_progetto", entity_id: taskId, azione: "cambio stato kanban progetto CRM", dettagli: { testo: nextStatus }, user_id: actorId });
+    if (auditError) return setError(auditError.message);
+    await load();
+  };
+  const openTask = (task) => { setSelectedTask(task); setTaskDialogOpen(true); };
+  return <div className="crm-page"><CrmPageHeader eyebrow={config.label} title={`Progetti ${config.label}`} description="Gli stessi progetti operativi del modulo Attività, con cliente, task e deadline in un unico archivio." actions={<><CrmPeriodFilter period={period} compact />{canWrite ? <button type="button" className="primary-action crm-primary" onClick={() => setProjectDialogOpen(true)}><Plus size={16} />Nuovo progetto</button> : null}</>}><CrmSectionNav items={crmNavigation(type)} period={period} label={`Navigazione ${config.label}`} /></CrmPageHeader><ErrorMessage error={error} />
+    <div className="crm-filters"><label><Search size={16} /><input value={search} onChange={(event) => updateParam("projectSearch", event.target.value)} placeholder="Cerca progetto o cliente" /></label><select value={status} onChange={(event) => updateParam("projectStatus", event.target.value)}><option value="open">Aperti</option><option value="completed">Completati</option><option value="all">Tutti</option></select><div className="crm-view-toggle" aria-label="Vista progetti"><button type="button" className={view === "list" ? "active" : ""} onClick={() => updateParam("projectView", "list")}><LayoutList size={16} />Lista</button><button type="button" className={view === "kanban" ? "active" : ""} onClick={() => updateParam("projectView", "kanban")}><SquareKanban size={16} />Kanban</button></div></div>
+    {loading ? <div className="crm-loading">Caricamento progetti...</div> : view === "kanban" ? <WorkspaceTaskKanban items={kanbanTasks} onMove={moveTask} onOpen={openTask} /> : <div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Progetto</th><th>Cliente</th><th>Task</th><th>Stato</th><th>Deadline</th><th>Pipeline collegata</th><th>Azioni</th></tr></thead><tbody>{rows.map((project) => <tr key={project.id}><td><strong>{project.titolo}</strong>{project.descrizione ? <small>{project.descrizione}</small> : null}</td><td><CrmCustomerLink crmType={type} customerCode={project.customer.customerCode} accountId={project.customer.accountId} name={project.customer.name} period={period}>{project.customer.name}</CrmCustomerLink></td><td>{project.v4_fasi_progetto?.length || 0}</td><td>{project.stato || "aperto"}</td><td>{formatDate(project.deadline)}</td><td>{project.crm_opportunities && type !== "brand_direct" ? <Link to={period.withPeriod(`${config.basePath}/pipeline/${project.crm_opportunities.id}`)}>{project.crm_opportunities.titolo}</Link> : "—"}</td><td><Link className="secondary-action crm-table-action" to={`/activities/projects?project=${project.id}&crmType=${encodeURIComponent(type)}&returnTo=${returnTo}`}><FolderKanban size={16} />Apri progetto</Link></td></tr>)}</tbody></table>{!rows.length ? <div className="crm-empty">Nessun progetto operativo corrisponde ai filtri.</div> : null}</div>}
+    <WorkspaceProjectCreateDialog open={projectDialogOpen} crmType={type} initialCustomerKey={initialCustomerKey} onClose={() => setProjectDialogOpen(false)} onSaved={load} />
+    <WorkspaceTaskDialog open={taskDialogOpen} phase={selectedTask} crmType={type} initialCustomerKey={selectedTask?.crm_customer_key || initialCustomerKey} canManage={canWrite} onClose={() => setTaskDialogOpen(false)} onSaved={load} />
   </div>;
 }
 

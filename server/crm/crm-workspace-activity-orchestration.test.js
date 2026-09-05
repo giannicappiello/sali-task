@@ -165,3 +165,22 @@ test("CRM PRIVATE e Attività condividono progetti, task e cliente canonici", ()
   assert.match(catalogLabelsMigration, /Task e fasi operative condivise/);
   assert.doesNotMatch(unifiedMigration, /delete from public\.(v4_progetti|v4_fasi_progetto|crm_activities|crm_opportunities)/i);
 });
+
+test("CRM apre creazione e dettaglio in popup e offre le Kanban Workspace", () => {
+  const crmProjects = read("src/modules/crm/CrmWorkflowPages.jsx");
+  const crmActivities = read("src/modules/crm/CrmActivitiesPage.jsx");
+  const projectDialog = read("src/components/WorkspaceProjectCreateDialog.jsx");
+  const taskDialog = read("src/components/WorkspaceTaskDialog.jsx");
+  assert.match(crmProjects, /setProjectDialogOpen\(true\)/);
+  assert.match(crmProjects, /WorkspaceProjectCreateDialog/);
+  assert.match(crmProjects, /WorkspaceTaskKanban/);
+  assert.match(crmProjects, /projectView/);
+  assert.match(crmActivities, /WorkspaceTaskDialog/);
+  assert.match(crmActivities, /WorkspaceTaskKanban/);
+  assert.match(crmActivities, /activityView/);
+  assert.match(crmActivities, /crm-table-action/);
+  assert.match(projectDialog, /from\("v4_progetti"\)\.insert/);
+  assert.match(projectDialog, /from\("v4_fasi_progetto"\)\.insert/);
+  assert.match(projectDialog, /bloccante_id/);
+  assert.match(taskDialog, /PhaseChecklistModal/);
+});

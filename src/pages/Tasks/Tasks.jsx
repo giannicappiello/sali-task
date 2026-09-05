@@ -251,7 +251,7 @@ export default function Tasks() {
   const [cursor, setCursor] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState(params.get("date") || todayIso());
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState(params.get("filter") || "tutte");
+  const [statusFilter, setStatusFilter] = useState(params.get("filter") || "aperte");
   const [originFilter, setOriginFilter] = useState(params.get("origin") || "all");
   const [departmentFilter, setDepartmentFilter] = useState(params.get("department") || "all");
   const [mineOnly, setMineOnly] = useState(params.get("mine") === "1");
@@ -286,7 +286,7 @@ export default function Tasks() {
   useEffect(() => {
     const nextParams = {};
     if (selectedDate) nextParams.date = selectedDate;
-    if (statusFilter !== "tutte") nextParams.filter = statusFilter;
+    if (statusFilter !== "aperte") nextParams.filter = statusFilter;
     if (displayMode !== "calendar") nextParams.view = displayMode;
     if (originFilter !== "all") nextParams.origin = originFilter;
     if (departmentFilter !== "all") nextParams.department = departmentFilter;
@@ -784,10 +784,10 @@ export default function Tasks() {
           <Clock3 size={22} />
           <div><strong>{loading ? "..." : totals.overdue}</strong><span>Task/fasi scadute<InfoTooltip label="Task e fasi scadute" text="Task e fasi non completati con scadenza precedente a oggi." /></span></div>
         </button>
-        <button type="button" className={`calendar-kpi success ${statusFilter === "completate" ? "active" : ""}`} onClick={() => setStatusFilter("completate")}>
+        <Link className="calendar-kpi success" to="/activities/archive?type=tasks">
           <CheckCircle2 size={22} />
-          <div><strong>{loading ? "..." : totals.done}</strong><span>Task/fasi completate<InfoTooltip label="Task e fasi completate" text="Numero di task e fasi con stato completato nei filtri correnti." /></span></div>
-        </button>
+          <div><strong>{loading ? "..." : enrichedPhases.filter(isDone).length}</strong><span>Archivio task/fasi<InfoTooltip label="Archivio task e fasi" text="Task e fasi completati conservati nello storico unico." /></span></div>
+        </Link>
         <button type="button" className={`calendar-kpi ${statusFilter === "oggi" ? "active" : ""}`} onClick={() => setStatusFilter("oggi")}>
           <CalendarDays size={22} />
           <div><strong>{loading ? "..." : totals.today}</strong><span>Task/fasi oggi<InfoTooltip label="Task e fasi oggi" text="Task e fasi con data o scadenza uguale alla giornata odierna." /></span></div>
@@ -809,13 +809,11 @@ export default function Tasks() {
       <div className="v4-toolbar planning-toolbar-clean">
         <div className="status-tabs">
           {[
-            ["tutte", "Tutte"],
             ["aperte", "Aperte"],
             ["oggi", "Oggi"],
             ["settimana", "Questa settimana"],
             ["scadute", "Scadute"],
             ["bloccate", "Bloccate"],
-            ["completate", "Completate"],
           ].map(([value, label]) => (
             <button key={value} className={statusFilter === value ? "active" : ""} onClick={() => setStatusFilter(value)}>{label}</button>
           ))}

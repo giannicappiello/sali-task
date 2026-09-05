@@ -267,7 +267,7 @@ export default function Agenda() {
 
   const filtered = useMemo(() => {
     const text = query.trim().toLowerCase();
-    let data = reminders;
+    let data = reminders.filter((item) => !isDone(item));
 
     if (adminMode && selectedUserId !== "all") data = data.filter((item) => item.utente_id === selectedUserId);
 
@@ -275,7 +275,6 @@ export default function Agenda() {
       data = data.filter((item) => {
         if (selectedStatus === "Scaduto") return statusOf(item) === "Scaduto";
         if (selectedStatus === "Oggi") return statusOf(item) === "Oggi";
-        if (selectedStatus === "Completato") return isDone(item);
         return String(item.stato || "Aperto").toLowerCase() === selectedStatus.toLowerCase();
       });
     }
@@ -584,14 +583,13 @@ export default function Agenda() {
           <option value="Aperto">Aperto</option>
           <option value="In lavorazione">In lavorazione</option>
           <option value="Scaduto">Scaduto</option>
-          <option value="Completato">Completato</option>
         </select>
       </div>
 
       <div className="v4-split">
         <div className="panel">
           <div className="panel-header">
-            <h3>Tutti i reminder</h3>
+            <h3>Reminder attivi</h3>
             <span>{filtered.length} reminder</span>
           </div>
           {loading ? (

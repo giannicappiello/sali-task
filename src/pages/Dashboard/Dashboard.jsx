@@ -350,7 +350,10 @@ function Dashboard() {
     setLoading(false);
   }
 
-  const activities = useMemo(() => [...tasks, ...reminders], [tasks, reminders]);
+  const activities = useMemo(
+    () => [...tasks.filter((item) => !isTaskDone(item)), ...reminders.filter((item) => !isReminderDone(item))],
+    [tasks, reminders]
+  );
 
   const filteredActivities = useMemo(() => {
     const text = query.trim().toLowerCase();

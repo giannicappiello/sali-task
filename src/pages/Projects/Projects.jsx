@@ -131,7 +131,7 @@ export default function Projects() {
   const [phaseDepartments, setPhaseDepartments] = useState([]);
 
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("tutti");
+  const [statusFilter, setStatusFilter] = useState("aperti");
   const [projectView, setProjectView] = useState("list");
   const [selectedProject, setSelectedProject] = useState(null);
   const [selectedPhase, setSelectedPhase] = useState(null);
@@ -1322,11 +1322,9 @@ export default function Projects() {
         </div>
         <div className="status-tabs">
           {[
-            ["tutti", "Tutti"],
             ["aperti", "Aperti"],
             ["oggi", "In scadenza oggi"],
             ["scaduti", "Scaduti"],
-            ["completati", "Completati"],
           ].map(([value, label]) => (
             <button key={value} className={statusFilter === value ? "active" : ""} onClick={() => setStatusFilter(value)}>
               {label}

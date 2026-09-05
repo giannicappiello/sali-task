@@ -34,23 +34,29 @@ export function buildCrmCustomerDirectory(accounts = [], customers = []) {
 }
 
 export async function loadCrmCustomerDirectory(supabase, crmType) {
-  const [accountsResult, customersResult] = await Promise.all([
-    supabase
-      .from("crm_accounts")
-      .select("id,nome,tipo,codice_cliente_mexal")
-      .eq("tipo", crmType)
-      .order("nome")
-      .limit(2000),
-    supabase
-      .from("crm_classified_customers")
-      .select("codice_cliente,ragione_sociale,area_crm,crm_account_id")
-      .eq("area_crm", crmType)
-      .limit(5000),
-  ]);
+  let accountsQuery = supabase
+    .from("crm_accounts")
+    .select("id,nome,tipo,codice_cliente_mexal")
+    .order("nome")
+    .limit(2000);
+  let customersQuery = supabase
+    .from("crm_classified_customers")
+    .select("codice_cliente,ragione_sociale,area_crm,crm_account_id")
+    .limit(5000);
+  if (crmType) {
+    accountsQuery = accountsQuery.eq("tipo", crmType);
+    customersQuery = customersQuery.eq("area_crm", crmType);
+  }
+  const [accountsResult, customersResult] = await Promise.all([accountsQuery, customersQuery]);
 
   const error = accountsResult.error || customersResult.error;
   return {
     directory: buildCrmCustomerDirectory(accountsResult.data || [], customersResult.data || []),
     error,
   };
+}
+
+export function workspaceCustomerName(directory, customerKey) {
+  if (!customerKey) return "";
+  return directory?.get(customerKey)?.name || (customerKey === "crm:00000000-0000-4000-8000-000000000001" ? "DIRECT" : "Cliente");
 }

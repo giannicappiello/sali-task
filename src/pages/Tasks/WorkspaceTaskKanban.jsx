@@ -28,7 +28,7 @@ export default function WorkspaceTaskKanban({ items, onMove, onOpen }) {
         <header className="panel-header"><h3>{label}</h3><span className="filter-count" aria-label={`${columnItems.length} task`}>{columnItems.length}</span></header>
         <div className="workspace-task-list">{columnItems.map((item) => <article className="workspace-task-card" key={item.id} draggable={status !== "bloccata"} onDragStart={(event) => event.dataTransfer.setData("text/plain", item.id)}>
           <button className="workspace-task-open" type="button" onClick={() => onOpen(item)}><strong>{item.titolo}</strong></button>
-          {item.crm_customer_key ? <Link className="secondary-action workspace-task-link" to={`/crm/conto-terzi/clienti/${encodeURIComponent(item.crm_customer_key)}`}><Link2 size={13} />Cliente CRM · {item.crm_customer_key}</Link> : null}
+          {item.crm_customer_key ? <Link className="secondary-action workspace-task-link" to={item.crm_customer_name === "DIRECT" ? "/crm/brand-direct" : `/crm/conto-terzi/clienti/${encodeURIComponent(item.crm_customer_key)}`}><Link2 size={13} />{item.crm_customer_name || "Cliente"}</Link> : null}
           {item.crm_opportunity_id ? <Link className="secondary-action workspace-task-link" to={`/crm/conto-terzi/pipeline/${item.crm_opportunity_id}`}><Link2 size={13} />Apri opportunità CRM</Link> : null}
           <small>{item.v4_progetti?.titolo || "Attività senza progetto"}</small>
           <small>{item.planningDepartments?.map((department) => department.nome).join(", ") || item.reparti?.nome || "Reparto non indicato"}</small>

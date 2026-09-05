@@ -18,6 +18,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import PhaseChecklistModal from "../../components/PhaseChecklistModal";
 import WorkspaceCustomerPicker from "../../components/WorkspaceCustomerPicker";
 import WorkspaceTaskKanban from "../Tasks/WorkspaceTaskKanban";
+import { loadCrmCustomerDirectory, workspaceCustomerName } from "../../modules/crm/crmWorkspaceCustomers";
 
 const projectEmpty = {
   titolo: "",
@@ -129,6 +130,7 @@ export default function Projects() {
   const [phaseProducts, setPhaseProducts] = useState([]);
   const [templateDepartments, setTemplateDepartments] = useState([]);
   const [phaseDepartments, setPhaseDepartments] = useState([]);
+  const [customerDirectory, setCustomerDirectory] = useState(() => new Map());
 
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("aperti");
@@ -201,7 +203,7 @@ export default function Projects() {
 
   async function loadData() {
     setLoading(true);
-    const [projectsRes, phasesRes, productsRes, departmentsRes, usersRes, templatesRes, ppRes, prRes, fpRes, templateDepartmentsRes, phaseDepartmentsRes, projectTypesRes, projectTypePhasesRes] = await Promise.all([
+    const [projectsRes, phasesRes, productsRes, departmentsRes, usersRes, templatesRes, ppRes, prRes, fpRes, templateDepartmentsRes, phaseDepartmentsRes, projectTypesRes, projectTypePhasesRes, customersRes] = await Promise.all([
       supabase.from("v4_progetti").select("*").order("created_at", { ascending: false }),
       supabase
         .from("v4_fasi_progetto")
@@ -219,12 +221,14 @@ export default function Projects() {
       supabase.from("v4_fase_reparti").select("id,fase_id,reparto_id,completato,completato_at,completato_da"),
       supabase.from("tipi_progetto").select("id,nome,descrizione,attivo").order("nome"),
       supabase.from("tipo_progetto_fasi").select("id,tipo_progetto_id,template_id,giorni_anticipo,ordine,obbligatoria,responsabile_id,dipende_da_id,durata_giorni,priorita").order("ordine", { ascending: true }),
+      loadCrmCustomerDirectory(supabase),
     ]);
 
     if (projectsRes.error) console.error("Progetti:", projectsRes.error.message);
     if (phasesRes.error) console.error("Fasi:", phasesRes.error.message);
     if (templateDepartmentsRes.error) console.error("Reparti checklist:", templateDepartmentsRes.error.message);
     if (phaseDepartmentsRes.error) console.error("Reparti fase:", phaseDepartmentsRes.error.message);
+    if (customersRes.error) console.error("Anagrafica clienti CRM:", customersRes.error.message);
 
     const allProjects = projectsRes.data || [];
     const allPhases = phasesRes.data || [];
@@ -284,6 +288,7 @@ export default function Projects() {
     setProjectTypes((projectTypesRes.data || []).filter((item) => item.attivo !== false));
     setProjectTypePhases(projectTypePhasesRes.data || []);
     setPhaseDepartments((phaseDepartmentsRes.data || []).filter((row) => visiblePhases.some((phase) => phase.id === row.fase_id)));
+    setCustomerDirectory(customersRes.directory);
     setLoading(false);
   }
 
@@ -422,8 +427,17 @@ export default function Projects() {
 
   const kanbanPhases = useMemo(() => {
     const allowed = new Set(filteredProjects.map((item) => item.id));
-    return phases.filter((phase) => allowed.has(phase.progetto_id)).map((phase) => ({ ...phase, planningDepartments: departmentsByPhase.get(phase.id) || [] }));
-  }, [filteredProjects, phases, departmentsByPhase]);
+    const customerKeyByProject = new Map(projects.map((project) => [project.id, project.crm_customer_key || ""]));
+    return phases.filter((phase) => allowed.has(phase.progetto_id)).map((phase) => {
+      const customerKey = phase.crm_customer_key || customerKeyByProject.get(phase.progetto_id) || "";
+      return {
+        ...phase,
+        crm_customer_key: customerKey,
+        planningDepartments: departmentsByPhase.get(phase.id) || [],
+        crm_customer_name: workspaceCustomerName(customerDirectory, customerKey),
+      };
+    });
+  }, [filteredProjects, phases, departmentsByPhase, customerDirectory, projects]);
 
   async function moveProjectKanbanTask(taskId, targetStatus) {
     const phase = phases.find((item) => item.id === taskId);

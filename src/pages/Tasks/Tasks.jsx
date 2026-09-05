@@ -7,6 +7,7 @@ import PhaseChecklistModal from "../../components/PhaseChecklistModal";
 import InfoTooltip from "../../components/InfoTooltip";
 import WorkspaceTaskKanban from "./WorkspaceTaskKanban";
 import { crmTypeConfig } from "../../modules/crm/crmConfig";
+import { loadCrmCustomerDirectory, workspaceCustomerName } from "../../modules/crm/crmWorkspaceCustomers";
 
 const CLOSED_STATES = ["evaso", "evasa", "completato", "completata", "chiuso", "chiusa"];
 
@@ -263,6 +264,7 @@ export default function Tasks() {
   const [products, setProducts] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [templateDepartments, setTemplateDepartments] = useState([]);
+  const [customerDirectory, setCustomerDirectory] = useState(() => new Map());
   const [selectedPhase, setSelectedPhase] = useState(null);
   const [phaseModalOpen, setPhaseModalOpen] = useState(false);
   const [phaseForm, setPhaseForm] = useState(phaseEmpty);
@@ -301,7 +303,7 @@ export default function Tasks() {
   async function loadPlanning() {
     setLoading(true);
 
-    const [projectsRes, phasesRes, projectDepartmentsRes, phaseDepartmentsRes, departmentsRes, phaseProductsRes, productsRes, templatesRes, templateDepartmentsRes] = await Promise.all([
+    const [projectsRes, phasesRes, projectDepartmentsRes, phaseDepartmentsRes, departmentsRes, phaseProductsRes, productsRes, templatesRes, templateDepartmentsRes, customersRes] = await Promise.all([
       supabase.from("v4_progetti").select("id,titolo,descrizione,deadline,priorita,stato,created_at,creato_da,crm_customer_key").order("created_at", { ascending: false }),
       supabase
         .from("v4_fasi_progetto")
@@ -315,12 +317,14 @@ export default function Tasks() {
       supabase.from("prodotti").select("id,nome,codice").order("nome").limit(5000),
       supabase.from("checklist_template").select("id,titolo,reparto_id,ordine,attivo,reparti(id,nome)").eq("attivo", true).order("ordine", { ascending: true }),
       supabase.from("checklist_template_reparti").select("id,template_id,reparto_id"),
+      loadCrmCustomerDirectory(supabase),
     ]);
 
     if (projectsRes.error) console.error("Planning progetti:", projectsRes.error.message);
     if (phasesRes.error) console.error("Planning fasi:", phasesRes.error.message);
     if (projectDepartmentsRes.error) console.error("Planning reparti progetto:", projectDepartmentsRes.error.message);
     if (phaseDepartmentsRes.error) console.error("Planning reparti fase:", phaseDepartmentsRes.error.message);
+    if (customersRes.error) console.error("Anagrafica clienti CRM:", customersRes.error.message);
 
     const allProjects = projectsRes.data || [];
     const allPhases = phasesRes.data || [];
@@ -374,6 +378,7 @@ export default function Tasks() {
     setProducts(productsRes.data || []);
     setTemplates(templatesRes.data || []);
     setTemplateDepartments(templateDepartmentsRes.data || []);
+    setCustomerDirectory(customersRes.directory);
     setLoading(false);
   }
 
@@ -408,13 +413,18 @@ export default function Tasks() {
   }, [phaseProducts, products]);
 
   const enrichedPhases = useMemo(() => {
-    return phases.map((phase) => ({
-      ...phase,
-      deadline_day: dateOnly(phase.deadline),
-      planningDepartments: departmentsByPhase.get(phase.id) || (phase.reparti ? [{ ...phase.reparti, completato: isDone(phase) }] : []),
-      planningProducts: productsByPhase.get(phase.id) || [],
-    }));
-  }, [phases, departmentsByPhase, productsByPhase]);
+    return phases.map((phase) => {
+      const customerKey = phase.crm_customer_key || phase.v4_progetti?.crm_customer_key || "";
+      return {
+        ...phase,
+        crm_customer_key: customerKey,
+        deadline_day: dateOnly(phase.deadline),
+        planningDepartments: departmentsByPhase.get(phase.id) || (phase.reparti ? [{ ...phase.reparti, completato: isDone(phase) }] : []),
+        planningProducts: productsByPhase.get(phase.id) || [],
+        crm_customer_name: workspaceCustomerName(customerDirectory, customerKey),
+      };
+    });
+  }, [phases, departmentsByPhase, productsByPhase, customerDirectory]);
 
   useEffect(() => {
     const phaseId = params.get("task");
@@ -729,7 +739,7 @@ export default function Tasks() {
           {blocker && <small className={blocked ? "danger" : "done"}>Fase bloccante: {blocker.titolo || "fase"}{blocked ? " · da completare" : " · completata"}</small>}
         </button>
 
-        {phase.crm_customer_key || phase.crm_opportunity_id ? <div className="planning-crm-links">{phase.crm_customer_key ? <Link to={requestedCrmType === "brand_direct" ? crmTypeConfig(requestedCrmType).basePath : `${crmTypeConfig(requestedCrmType).basePath}/clienti/${encodeURIComponent(phase.crm_customer_key)}`}>Cliente CRM · {phase.crm_customer_key}</Link> : null}{phase.crm_opportunity_id && requestedCrmType !== "brand_direct" ? <Link to={`${crmTypeConfig(requestedCrmType).basePath}/pipeline/${phase.crm_opportunity_id}`}>Apri opportunità CRM</Link> : null}</div> : null}
+        {phase.crm_customer_key || phase.crm_opportunity_id ? <div className="planning-crm-links">{phase.crm_customer_key ? <Link to={phase.crm_customer_name === "DIRECT" ? crmTypeConfig("brand_direct").basePath : `${crmTypeConfig(requestedCrmType).basePath}/clienti/${encodeURIComponent(phase.crm_customer_key)}`}>{phase.crm_customer_name}</Link> : null}{phase.crm_opportunity_id && requestedCrmType !== "brand_direct" ? <Link to={`${crmTypeConfig(requestedCrmType).basePath}/pipeline/${phase.crm_opportunity_id}`}>Apri opportunità CRM</Link> : null}</div> : null}
 
         <div className="planning-department-actions">
           {departments.length > 0 ? (

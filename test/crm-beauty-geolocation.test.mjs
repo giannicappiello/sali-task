@@ -104,6 +104,17 @@ test("BeautyDays permette il check-in immediato con dati e GPS precompilati", as
   assert.match(service, /consultant_id: consultantId \|\| null/);
 });
 
+test("la selezione cliente BeautyDays usa una sola ricerca rapida totale", async () => {
+  const page = await read("src/modules/pharmacy/pages/Giornate.jsx");
+  assert.match(page, /aria-label="Ricerca rapida totale cliente"/);
+  assert.match(page, /list="beauty-clienti-disponibili"/);
+  assert.match(page, /getFarmaciaSearchLabel/);
+  assert.match(page, /codice_cliente/);
+  assert.match(page, /f\.indirizzo/);
+  assert.doesNotMatch(page, /<label style=\{labelStyle\}>Cerca cliente<\/label>/);
+  assert.doesNotMatch(page, /<option value="">Seleziona cliente<\/option>/);
+});
+
 test("la visita Beauty crea atomicamente anche la task Workspace collegata", async () => {
   const sql = await read("supabase/migrations/20260904230000_crm_beauty_workspace_task.sql");
   assert.match(sql, /insert into public\.v4_fasi_progetto/i);

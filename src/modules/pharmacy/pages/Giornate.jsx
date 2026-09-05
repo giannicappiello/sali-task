@@ -272,7 +272,29 @@ export default function Giornate({ utente }) {
   function getFarmaciaLabel(id) {
     const f = getFarmacia(id);
     if (!f) return "";
-    return `${f.nome} - ${f.citta || ""} ${getProvinciaLabel(f.provincia_id)}`;
+    return `${f.nome} - ${f.citta || ""} ${getFarmaciaProvinciaLabel(f)}`;
+  }
+
+  function getFarmaciaProvinciaLabel(farmacia) {
+    return getProvinciaLabel(farmacia?.provincia_id) || farmacia?.provincia || "";
+  }
+
+  function getFarmaciaSearchLabel(farmacia) {
+    return [
+      farmacia?.nome,
+      farmacia?.citta,
+      getFarmaciaProvinciaLabel(farmacia),
+      farmacia?.codice_cliente,
+    ].filter(Boolean).join(" · ");
+  }
+
+  function selectFarmaciaFromSearch(value) {
+    setRicercaFarmacia(value);
+    const normalizedValue = value.trim().toLocaleLowerCase("it");
+    const selected = farmacieFiltrate.find(
+      (farmacia) => getFarmaciaSearchLabel(farmacia).toLocaleLowerCase("it") === normalizedValue,
+    );
+    setFarmaciaId(selected?.id || "");
   }
 
   function getBeautyNome(id) {
@@ -281,12 +303,26 @@ export default function Giornate({ utente }) {
   }
 
   const farmacieFiltrate = farmacie.filter((f) => {
-    const provincia = getProvinciaLabel(f.provincia_id);
-    const testo = `${f.nome || ""} ${f.citta || ""} ${provincia}`.toLowerCase();
+    const provincia = getFarmaciaProvinciaLabel(f);
+    const provinciaSelezionata = province.find((item) => item.id === provinciaFiltro);
+    const testo = [
+      f.nome,
+      f.citta,
+      provincia,
+      f.codice_cliente,
+      f.indirizzo,
+      f.telefono,
+      f.email,
+      f.codice_agente_mexal,
+    ].filter(Boolean).join(" ").toLocaleLowerCase("it");
 
-    if (provinciaFiltro && f.provincia_id !== provinciaFiltro) return false;
+    if (provinciaFiltro
+      && f.provincia_id !== provinciaFiltro
+      && ![provinciaSelezionata?.sigla, provinciaSelezionata?.nome]
+        .filter(Boolean)
+        .some((value) => provincia.toLocaleLowerCase("it").includes(value.toLocaleLowerCase("it")))) return false;
 
-    return testo.includes(ricercaFarmacia.toLowerCase());
+    return testo.includes(ricercaFarmacia.trim().toLocaleLowerCase("it"));
   });
 
   const giornateFiltrate = giornate.filter((g) => {
@@ -426,6 +462,7 @@ export default function Giornate({ utente }) {
 
     const farmacia = getFarmacia(giornata.farmacia_id);
     setProvinciaFiltro(farmacia?.provincia_id || "");
+    setRicercaFarmacia(farmacia ? getFarmaciaSearchLabel(farmacia) : "");
 
     setMostraForm(true);
     setGiornataDettaglio(null);
@@ -957,29 +994,23 @@ export default function Giornate({ utente }) {
                 ))}
               </select>
 
-              <label style={labelStyle}>Cerca cliente</label>
+              <label style={labelStyle}>Cliente</label>
               <input
                 style={inputStyle}
-                placeholder="Ragione sociale, città o provincia..."
+                type="search"
+                list="beauty-clienti-disponibili"
+                autoComplete="off"
+                placeholder="Ricerca rapida totale cliente..."
                 value={ricercaFarmacia}
-                onChange={(e) => setRicercaFarmacia(e.target.value)}
-              />
-
-              <label style={labelStyle}>Cliente</label>
-              <select
-                style={inputStyle}
-                value={farmaciaId}
-                onChange={(e) => setFarmaciaId(e.target.value)}
+                onChange={(e) => selectFarmaciaFromSearch(e.target.value)}
+                aria-label="Ricerca rapida totale cliente"
                 required
-              >
-                <option value="">Seleziona cliente</option>
+              />
+              <datalist id="beauty-clienti-disponibili">
                 {farmacieFiltrate.map((farmacia) => (
-                  <option key={farmacia.id} value={farmacia.id}>
-                    {farmacia.nome} - {farmacia.citta}{" "}
-                    {getProvinciaLabel(farmacia.provincia_id)}
-                  </option>
+                  <option key={farmacia.id} value={getFarmaciaSearchLabel(farmacia)} />
                 ))}
-              </select>
+              </datalist>
             </>}
 
             {ruoloUtente === "admin" && (

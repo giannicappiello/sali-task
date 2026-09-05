@@ -3784,3 +3784,106 @@ body,
 .project-types-settings-grid{display:grid;grid-template-columns:minmax(280px,.8fr) minmax(420px,1.2fr);gap:16px}
 @media(max-width:1100px){.planning-toolbar-primary{flex-wrap:wrap}.planning-toolbar-primary .task-search{max-width:none}.planning-create-action{margin-left:0}}
 @media(max-width:768px){.workspace-task-kanban{grid-template-columns:repeat(5,minmax(82vw,1fr))}.planning-toolbar-primary .task-search,.planning-toolbar-primary>select,.planning-create-action,.planning-mine-toggle{width:100%;max-width:none;flex:1 1 100%}.planning-create-action{justify-content:center}.planning-list-view .planning-task-list{grid-template-columns:1fr}.project-types-settings-grid{grid-template-columns:1fr}.project-types-settings-grid>.settings-panel{grid-column:1!important}}
+
+/* KPI cards: presentation uniforme su smartphone */
+@media (max-width: 700px) {
+  .app-shell :is(
+    .kpi-card,
+    .product-kpi,
+    .project-kpi,
+    .calendar-kpi,
+    .planning-kpi-card,
+    .orders-kpi,
+    .delay-kpi-card,
+    .mexal-kpi,
+    .crm-control-kpi,
+    .purchase-summary > button,
+    .warehouse-kpis > article,
+    .warehouse-dashboard-kpis > article,
+    .warehouse-location-kpis > article,
+    .ai-cost-kpis > article,
+    .letterhead-kpis > button,
+    .document-sync-stats > div,
+    .progremes-summary-metrics > div,
+    .my-task-stats > div,
+    .my-task-stats > button
+  ) {
+    align-items: center;
+    align-content: center;
+    justify-content: center;
+    justify-items: center;
+    text-align: center;
+  }
+
+  .app-shell :is(.kpi-card, .product-kpi, .project-kpi, .calendar-kpi) {
+    flex-direction: column;
+  }
+
+  .app-shell .crm-classification-kpis button.kpi-card,
+  .app-shell .crm-commercial-kpis .kpi-card,
+  .app-shell button.kpi-clickable {
+    align-items: center;
+    justify-content: center;
+    justify-items: center;
+    text-align: center;
+  }
+
+  .app-shell .crm-classification-kpis button.kpi-card > div {
+    width: 100%;
+    text-align: center;
+  }
+
+  .app-shell :is(
+    .kpi-card,
+    .product-kpi,
+    .project-kpi,
+    .calendar-kpi,
+    .planning-kpi-card,
+    .orders-kpi,
+    .delay-kpi-card,
+    .mexal-kpi,
+    .crm-control-kpi,
+    .purchase-summary > button,
+    .warehouse-kpis > article,
+    .warehouse-dashboard-kpis > article,
+    .warehouse-location-kpis > article,
+    .ai-cost-kpis > article,
+    .letterhead-kpis > button,
+    .document-sync-stats > div,
+    .progremes-summary-metrics > div,
+    .my-task-stats > div,
+    .my-task-stats > button
+  ) > * {
+    max-width: 100%;
+    margin-inline: auto;
+    text-align: center;
+  }
+
+  .app-shell :is(
+    .kpi-card,
+    .orders-kpi,
+    .crm-control-kpi,
+    .purchase-summary > button,
+    .warehouse-kpis > article,
+    .warehouse-dashboard-kpis > article,
+    .warehouse-location-kpis > article,
+    .ai-cost-kpis > article,
+    .letterhead-kpis > button
+  ) :is(span, small, p, strong, em, h3, dt, dd) {
+    text-align: center;
+  }
+
+  .app-shell :is(.kpi-card, .orders-kpi, .crm-control-kpi) > span,
+  .app-shell :is(.warehouse-dashboard-kpis, .warehouse-location-kpis) header {
+    justify-content: center;
+  }
+
+  .app-shell .warehouse-location-kpis header {
+    flex-direction: column;
+  }
+
+  .app-shell .warehouse-location-kpis dl,
+  .app-shell .ai-cost-kpis > article {
+    grid-template-columns: 1fr;
+  }
+}

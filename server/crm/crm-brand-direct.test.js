@@ -30,8 +30,11 @@ test("new records share Workspace project and task stores", async () => {
   assert.match(workflow, /from\("v4_fasi_progetto"\)/);
   assert.match(workflow, /crmType=\$\{encodeURIComponent\(type\)\}/);
   assert.match(workflow, /VIRTUAL_DIRECT_CUSTOMER_KEY/);
-  assert.match(workflow, /period\.withPeriod\(path, filters\)/);
+  assert.match(workflow, /period\.withPeriod\(card\.path, card\.filters\)/);
   assert.match(workflow, /activityDue: "overdue"/);
+  assert.match(workflow, /className="kpi-card crm-kpi"/);
+  assert.match(workflow, /<InfoTooltip label=\{card\.label\} text=\{card\.info\}/);
+  assert.doesNotMatch(workflow, /className="crm-kpi-card"/);
   assert.match(activities, /due === "overdue"/);
 });
 

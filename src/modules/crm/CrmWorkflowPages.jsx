@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Plus, Search } from "lucide-react";
+import InfoTooltip from "../../components/InfoTooltip";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
 import { CrmBeautyDashboardPanel } from "./CrmBeautyDays";
@@ -101,12 +102,12 @@ export function CrmBrandDirectDashboard() {
     return () => { active = false; };
   }, []);
   const cards = [
-    ["Progetti DIRECT", summary.projects, `${config.basePath}/progetti`, { projectStatus: "all" }],
-    ["Attività aperte", summary.openTasks, `${config.basePath}/attivita`, { activityStatus: "open" }],
-    ["Attività completate", summary.completedTasks, `${config.basePath}/attivita`, { activityStatus: "completed" }],
-    ["Attività scadute", summary.overdueTasks, `${config.basePath}/attivita`, { activityStatus: "open", activityDue: "overdue" }],
+    { label: "Progetti DIRECT", value: summary.projects, note: "Tutti i progetti del cliente virtuale DIRECT", info: "Numero complessivo dei progetti Workspace collegati al cliente virtuale DIRECT.", path: `${config.basePath}/progetti`, filters: { projectStatus: "all" } },
+    { label: "Attività aperte", value: summary.openTasks, note: "Task e attività ancora da completare", info: "Numero di task e attività DIRECT non ancora completati, inclusi quelli in lavorazione o bloccati.", path: `${config.basePath}/attivita`, filters: { activityStatus: "open" } },
+    { label: "Attività completate", value: summary.completedTasks, note: "Storico delle attività concluse", info: "Numero di task e attività DIRECT conclusi e conservati nello storico Workspace.", path: `${config.basePath}/attivita`, filters: { activityStatus: "completed" } },
+    { label: "Attività scadute", value: summary.overdueTasks, note: "Attività aperte oltre la deadline", info: "Numero di task e attività DIRECT ancora aperti con deadline precedente alla data odierna.", path: `${config.basePath}/attivita`, filters: { activityStatus: "open", activityDue: "overdue" } },
   ];
-  return <div className="crm-page"><CrmPageHeader eyebrow="CRM BRAND DIRECT" title="Cliente DIRECT" description="Area interna per progetti e attività sui prodotti DIRECT non collegati a farmacie o ad altri clienti."><CrmSectionNav items={crmNavigation(type)} period={period} label="Navigazione CRM BRAND DIRECT" /></CrmPageHeader><ErrorMessage error={error} /><div className="crm-kpi-grid">{cards.map(([label, value, path, filters]) => <Link className="crm-kpi-card" key={label} to={period.withPeriod(path, filters)}><span>{label}</span><strong>{value}</strong><small>Apri dettaglio →</small></Link>)}</div></div>;
+  return <div className="crm-page"><CrmPageHeader eyebrow="CRM BRAND DIRECT" title="Cliente DIRECT" description="Area interna per progetti e attività sui prodotti DIRECT non collegati a farmacie o ad altri clienti."><CrmSectionNav items={crmNavigation(type)} period={period} label="Navigazione CRM BRAND DIRECT" /></CrmPageHeader><ErrorMessage error={error} /><div className="crm-kpi-grid">{cards.map((card) => <Link className="kpi-card crm-kpi" key={card.label} to={period.withPeriod(card.path, card.filters)} aria-label={`${card.label}: ${card.value}. Apri dettaglio`}><span>{card.label}<InfoTooltip label={card.label} text={card.info} /></span><strong>{card.value}</strong><small>{card.note}</small><em>Apri dettaglio →</em></Link>)}</div></div>;
 }
 
 function B2BCustomerActionPage({ mode }) {

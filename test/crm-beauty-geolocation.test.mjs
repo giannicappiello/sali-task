@@ -83,6 +83,25 @@ test("BeautyDays pianifica un cliente esistente senza dipendere dal collegamento
   assert.match(service, /beauty-customer:/);
   assert.match(service, /report_data: \{ \.\.\.\(currentDetail\?\.report_data \|\| \{\}\), planning \}/);
   assert.match(service, /account\.codice_cliente_mexal \? "Cliente" : "Nuovo contatto"/);
+  assert.match(service, /codice_cliente: account\.codice_cliente_mexal \|\| null/);
+  assert.match(service, /const customerCode = client\.codice_cliente \|\| client\.codice_cliente_mexal/);
+});
+
+test("BeautyDays permette il check-in immediato con dati e GPS precompilati", async () => {
+  const [page, service] = await Promise.all([
+    read("src/modules/pharmacy/pages/Giornate.jsx"),
+    read("src/modules/pharmacy/services/beautyVisitCrm.js"),
+  ]);
+  assert.match(page, /Check-in immediato/);
+  assert.match(page, /attivaCheckInImmediato/);
+  assert.match(page, /setData\(getDateKey\(now\)\)/);
+  assert.match(page, /setOraInizio/);
+  assert.match(page, /setConsultantId\(beautyIdUtente\)/);
+  assert.match(page, /captureBeautyPosition/);
+  assert.match(page, /checkInBeautyVisit\(visit\.activity_id, reason, checkInPosition\)/);
+  assert.match(page, /Registra check-in/);
+  assert.match(service, /capturedPosition \|\| await getCurrentPosition\(\)/);
+  assert.match(service, /consultant_id: consultantId \|\| null/);
 });
 
 test("la visita Beauty crea atomicamente anche la task Workspace collegata", async () => {

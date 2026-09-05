@@ -65,13 +65,14 @@ export async function loadCrmOnlyBeautyVisits() {
   const clients = [...accounts.values()].map((account) => ({
     id: `crm:${account.id}`,
     crm_account_id: account.id,
+    codice_cliente: account.codice_cliente_mexal || null,
     nome: account.nome,
     indirizzo: account.indirizzo,
     citta: account.citta,
     provincia: account.provincia,
     telefono: account.telefono,
     email: account.email,
-    nuovo_contatto: true,
+    nuovo_contatto: !account.codice_cliente_mexal,
   }));
   const links = new Map();
   const days = activities.map((activity) => {
@@ -89,6 +90,7 @@ export async function loadCrmOnlyBeautyVisits() {
       data: activity.data_attivita?.slice(0, 10),
       ora_inizio: Number.isNaN(date.getTime()) ? null : date.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }),
       ora_fine: null,
+      consultant_id: planning.consultant_id || null,
       tipo_giornata: planning.tipo_giornata || (account.codice_cliente_mexal ? "Cliente" : "Nuovo contatto"),
       obiettivo_vendite: planning.obiettivo_vendite || null,
       note_operative: planning.note_operative || activity.descrizione || "",
@@ -129,7 +131,7 @@ export async function ensureCrmBeautyVisit({ giornata, client, title }) {
   return data;
 }
 
-export async function createCrmBeautyContactVisit({ name, address, city, phone, email, data, oraInizio, title, note }) {
+export async function createCrmBeautyContactVisit({ name, address, city, phone, email, data, oraInizio, title, note, tipoGiornata, obiettivoVendite, consultantId, idempotencyKey }) {
   let target = null;
   if (address) {
     const { data: geocodeResponse, error: geocodeError } = await supabase.functions.invoke("report-giornate-api", {
@@ -149,9 +151,30 @@ export async function createCrmBeautyContactVisit({ name, address, city, phone, 
     p_target_latitude: target?.latitude || null,
     p_target_longitude: target?.longitude || null,
     p_legacy_giornata_id: null,
-    p_idempotency_key: `beauty-contact:${crypto.randomUUID()}`,
+    p_idempotency_key: idempotencyKey || `beauty-contact:${crypto.randomUUID()}`,
   });
   if (error) throw error;
+  const { data: currentDetail, error: detailError } = await supabase
+    .from("crm_visit_details")
+    .select("report_data")
+    .eq("activity_id", result.activity_id)
+    .single();
+  if (detailError) throw detailError;
+  const { error: planningError } = await supabase
+    .from("crm_visit_details")
+    .update({
+      report_data: {
+        ...(currentDetail?.report_data || {}),
+        planning: {
+          tipo_giornata: tipoGiornata || "Nuovo contatto",
+          obiettivo_vendite: obiettivoVendite || null,
+          note_operative: note || "",
+          consultant_id: consultantId || null,
+        },
+      },
+    })
+    .eq("activity_id", result.activity_id);
+  if (planningError) throw planningError;
   if (note) {
     const { error: updateError } = await supabase.from("crm_activities").update({ descrizione: note }).eq("id", result.activity_id);
     if (updateError) throw updateError;
@@ -159,7 +182,9 @@ export async function createCrmBeautyContactVisit({ name, address, city, phone, 
   return result;
 }
 
-export async function createCrmBeautyCustomerVisit({ client, data, oraInizio, title, note, tipoGiornata, obiettivoVendite }) {
+export async function createCrmBeautyCustomerVisit({ client, data, oraInizio, title, note, tipoGiornata, obiettivoVendite, consultantId }) {
+  const customerCode = client.codice_cliente || client.codice_cliente_mexal;
+  if (!customerCode) throw new Error("Il cliente selezionato non è collegato all'anagrafica clienti. Seleziona la voce Cliente corretta o usa NUOVO CONTATTO.");
   const address = [client.indirizzo, client.citta, client.provincia].filter(Boolean).join(", ");
   let target = null;
   if (address) {
@@ -170,7 +195,7 @@ export async function createCrmBeautyCustomerVisit({ client, data, oraInizio, ti
   }
 
   const { data: result, error } = await supabase.rpc("crm_create_beauty_visit", {
-    p_customer_code: client.codice_cliente,
+    p_customer_code: customerCode,
     p_customer_name: client.nome,
     p_address: address || null,
     p_city: client.citta || null,
@@ -181,7 +206,7 @@ export async function createCrmBeautyCustomerVisit({ client, data, oraInizio, ti
     p_target_latitude: target?.latitude || null,
     p_target_longitude: target?.longitude || null,
     p_legacy_giornata_id: null,
-    p_idempotency_key: `beauty-customer:${client.codice_cliente}:${data}:${oraInizio || "09:00"}`,
+    p_idempotency_key: `beauty-customer:${customerCode}:${data}:${oraInizio || "09:00"}`,
   });
   if (error) throw error;
 
@@ -195,6 +220,7 @@ export async function createCrmBeautyCustomerVisit({ client, data, oraInizio, ti
     tipo_giornata: tipoGiornata || "Cliente",
     obiettivo_vendite: obiettivoVendite || null,
     note_operative: note || "",
+    consultant_id: consultantId || null,
   };
   const { error: planningError } = await supabase
     .from("crm_visit_details")
@@ -209,8 +235,8 @@ export async function createCrmBeautyCustomerVisit({ client, data, oraInizio, ti
   return result;
 }
 
-export async function checkInBeautyVisit(activityId, exceptionReason = null) {
-  const position = await getCurrentPosition();
+export async function checkInBeautyVisit(activityId, exceptionReason = null, capturedPosition = null) {
+  const position = capturedPosition || await getCurrentPosition();
   const { data, error } = await supabase.rpc("crm_beauty_check_in", {
     p_activity_id: activityId,
     p_latitude: position.latitude,

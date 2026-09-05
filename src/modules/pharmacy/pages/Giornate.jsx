@@ -55,6 +55,10 @@ export default function Giornate({ utente }) {
   const [nuovoContattoNome, setNuovoContattoNome] = useState("");
   const [nuovoContattoIndirizzo, setNuovoContattoIndirizzo] = useState("");
   const [nuovoContattoCitta, setNuovoContattoCitta] = useState("");
+  const [checkInImmediato, setCheckInImmediato] = useState(false);
+  const [checkInPosition, setCheckInPosition] = useState(null);
+  const [checkInCapturedAt, setCheckInCapturedAt] = useState(null);
+  const [checkInPreparing, setCheckInPreparing] = useState(false);
 
   const ruoloUtente = utente?.external_role || utente?.ruolo || "";
   const beautyIdUtente =
@@ -371,6 +375,10 @@ export default function Giornate({ utente }) {
     setNuovoContattoNome("");
     setNuovoContattoIndirizzo("");
     setNuovoContattoCitta("");
+    setCheckInImmediato(false);
+    setCheckInPosition(null);
+    setCheckInCapturedAt(null);
+    setCheckInPreparing(false);
   }
 
   function apriNuovaGiornata() {
@@ -383,6 +391,26 @@ export default function Giornate({ utente }) {
     setMostraForm(true);
     setGiornataDettaglio(null);
     setGiornataReport(null);
+  }
+
+  async function attivaCheckInImmediato() {
+    const now = new Date();
+    setCheckInImmediato(true);
+    setData(getDateKey(now));
+    setOraInizio(`${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`);
+    setOraFine("");
+    setCheckInCapturedAt(now);
+    if (beautyIdUtente) setConsultantId(beautyIdUtente);
+    else if (!consultantId && beauty.length === 1) setConsultantId(beauty[0].id);
+    setCheckInPreparing(true);
+    try {
+      setCheckInPosition(await captureBeautyPosition());
+    } catch (error) {
+      setCheckInPosition(null);
+      alert(error.message || "Impossibile acquisire la posizione GPS.");
+    } finally {
+      setCheckInPreparing(false);
+    }
   }
 
   function modificaGiornata(giornata) {
@@ -435,6 +463,51 @@ export default function Giornate({ utente }) {
 
   async function salvaGiornata(e) {
     e.preventDefault();
+    const effectiveConsultantId = ruoloUtente === "beauty" ? beautyIdUtente : consultantId;
+    if (checkInImmediato) {
+      if (!checkInPosition || !checkInCapturedAt) return alert("Acquisisci la posizione GPS prima di registrare il check-in.");
+      if (ruoloUtente === "admin" && !effectiveConsultantId) return alert("Seleziona la Beauty consultant.");
+      let visit;
+      try {
+        if (tipoContatto === "nuovo_contatto") {
+          if (!nuovoContattoNome.trim()) return alert("Inserisci il nome del nuovo contatto.");
+          visit = await createCrmBeautyContactVisit({
+            name: nuovoContattoNome.trim(),
+            address: nuovoContattoIndirizzo.trim(),
+            city: nuovoContattoCitta.trim(),
+            data,
+            oraInizio,
+            title: tipoGiornata ? `${tipoGiornata} - ${nuovoContattoNome.trim()}` : null,
+            note: noteOperative,
+            tipoGiornata,
+            obiettivoVendite,
+            consultantId: effectiveConsultantId,
+            idempotencyKey: `beauty-contact-checkin:${checkInCapturedAt.toISOString()}`,
+          });
+        } else {
+          const selectedClient = farmacie.find((client) => client.id === farmaciaId);
+          if (!selectedClient) return alert("Seleziona un cliente.");
+          visit = await createCrmBeautyCustomerVisit({
+            client: selectedClient,
+            data,
+            oraInizio,
+            title: tipoGiornata ? `${tipoGiornata} - ${selectedClient.nome}` : null,
+            note: noteOperative,
+            tipoGiornata,
+            obiettivoVendite,
+            consultantId: effectiveConsultantId,
+          });
+        }
+        const result = await executeWithGpsReason((reason) => checkInBeautyVisit(visit.activity_id, reason, checkInPosition));
+        alert(`Check-in registrato. Distanza dalla sede: ${result.distance_meters ?? "non disponibile"} m.`);
+        svuotaForm();
+        setMostraForm(false);
+        await caricaDati();
+      } catch (error) {
+        alert(error.message || "Check-in non riuscito.");
+      }
+      return;
+    }
     if (!giornataInModifica && tipoContatto === "nuovo_contatto") {
       if (!nuovoContattoNome.trim()) return alert("Inserisci il nome del nuovo contatto.");
       try {
@@ -446,6 +519,9 @@ export default function Giornate({ utente }) {
           oraInizio,
           title: tipoGiornata ? `${tipoGiornata} - ${nuovoContattoNome.trim()}` : null,
           note: noteOperative,
+          tipoGiornata,
+          obiettivoVendite,
+          consultantId: effectiveConsultantId,
         });
         svuotaForm();
         setMostraForm(false);
@@ -468,6 +544,7 @@ export default function Giornate({ utente }) {
           note: noteOperative,
           tipoGiornata,
           obiettivoVendite,
+          consultantId: effectiveConsultantId,
         });
         svuotaForm();
         setMostraForm(false);
@@ -807,6 +884,26 @@ export default function Giornate({ utente }) {
               ← Torna al planning
             </button>
 
+            {!giornataInModifica && !solaLettura && (
+              <>
+                <button
+                  type="button"
+                  style={checkInNowButtonStyle}
+                  onClick={attivaCheckInImmediato}
+                  disabled={checkInPreparing}
+                >
+                  {checkInPreparing ? "Acquisizione posizione…" : checkInImmediato ? "Rileva nuovamente posizione" : "Check-in immediato"}
+                </button>
+                {checkInImmediato && (
+                  <div style={checkInInfoStyle}>
+                    {checkInPosition
+                      ? `GPS acquisito · precisione ±${Math.round(checkInPosition.accuracy || 0)} m. Seleziona il cliente o aggiungi un nuovo contatto, quindi conferma il check-in.`
+                      : "Posizione GPS non ancora acquisita."}
+                  </div>
+                )}
+              </>
+            )}
+
             {!giornataInModifica && <>
               <label style={labelStyle}>Selezione contatto</label>
               <select
@@ -910,6 +1007,7 @@ export default function Giornate({ utente }) {
               type="date"
               value={data}
               onChange={(e) => setData(e.target.value)}
+              disabled={checkInImmediato}
               required
             />
 
@@ -919,6 +1017,7 @@ export default function Giornate({ utente }) {
               type="time"
               value={oraInizio}
               onChange={(e) => setOraInizio(e.target.value)}
+              disabled={checkInImmediato}
             />
 
             <label style={labelStyle}>Ora fine</label>
@@ -927,6 +1026,7 @@ export default function Giornate({ utente }) {
               type="time"
               value={oraFine}
               onChange={(e) => setOraFine(e.target.value)}
+              disabled={checkInImmediato}
             />
 
             <label style={labelStyle}>Tipo giornata</label>
@@ -955,7 +1055,7 @@ export default function Giornate({ utente }) {
             />
 
             <button style={saveButtonStyle} type="submit">
-              {giornataInModifica ? "Aggiorna giornata" : "Salva giornata"}
+              {checkInImmediato ? "Registra check-in" : giornataInModifica ? "Aggiorna giornata" : "Salva giornata"}
             </button>
           </form>
         </div>
@@ -1464,6 +1564,20 @@ const reportButtonStyle = {
   color: "#FFFFFF",
   fontWeight: "600",
   cursor: "pointer",
+};
+
+const checkInNowButtonStyle = {
+  ...saveButtonStyle,
+  backgroundColor: "#0B8F55",
+  borderColor: "#0B8F55",
+};
+
+const checkInInfoStyle = {
+  padding: "12px 14px",
+  borderRadius: "12px",
+  backgroundColor: "#EEF8F3",
+  color: "#155D3F",
+  lineHeight: 1.4,
 };
 
 const trackingCardStyle = {

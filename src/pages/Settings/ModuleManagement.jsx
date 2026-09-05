@@ -47,6 +47,18 @@ const screenRouteSummary = (screen) => screen.provider === "progremes"
 
 const screenPreviewRoute = (screen) => cleanText(screen.percorso);
 
+const sortModulePickerScreens = (items, selectedCodes) => {
+  const moduleOrder = new Map(selectedCodes.map((code, index) => [code, index]));
+  return [...items].sort((left, right) => {
+    const leftOrder = moduleOrder.get(left.codice);
+    const rightOrder = moduleOrder.get(right.codice);
+    if (leftOrder != null && rightOrder != null) return leftOrder - rightOrder;
+    if (leftOrder != null) return -1;
+    if (rightOrder != null) return 1;
+    return 0;
+  });
+};
+
 export default function ModuleManagement() {
   const goBack = useBackNavigation("/settings");
   const { isAdminUser } = useAuth();
@@ -280,7 +292,8 @@ export default function ModuleManagement() {
   const selectedModule = modules.find((item) => item.codice === selectedCode);
   const pickerScreens = useMemo(() => {
     const available = screens.filter((screen) => screen.attiva || form.schermate.includes(screen.codice));
-    return filterKeepingSelected(available, pickerSearch, ["nome", "codice", "descrizione", "area", "provider", "percorso", screenDestination], form.schermate);
+    const filtered = filterKeepingSelected(available, pickerSearch, ["nome", "codice", "descrizione", "area", "provider", "percorso", screenDestination], form.schermate);
+    return sortModulePickerScreens(filtered, form.schermate);
   }, [form.schermate, pickerSearch, screens]);
 
   function openModuleAssociation(item) {

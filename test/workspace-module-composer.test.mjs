@@ -369,6 +369,9 @@ test("screen order is configurable per module and drives every module presentati
     read("server/progremes-sso.js"),
   ]);
   assert.match(editor, /moveScreenToPosition/);
+  assert.match(editor, /sortModulePickerScreens/);
+  assert.match(editor, /moduleOrder\.get\(left\.codice\)/);
+  assert.match(editor, /return leftOrder - rightOrder/);
   assert.match(editor, /Ordine nel modulo/);
   assert.match(editor, /target_screen_codes: form\.schermate/);
   assert.match(editor, /Ordine nel catalogo/);

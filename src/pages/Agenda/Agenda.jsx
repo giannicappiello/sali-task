@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { CheckCircle2, Clock, Download, MessageSquare, Paperclip, Plus, Save, Search, X } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
+import { loadCrmCustomerDirectory, workspaceCustomerName } from "../../modules/crm/crmWorkspaceCustomers";
 
 const defaultForm = {
   titolo: "",
@@ -71,6 +72,7 @@ export default function Agenda() {
   const [departments, setDepartments] = useState([]);
   const [reminderDepartments, setReminderDepartments] = useState([]);
   const [reminderProducts, setReminderProducts] = useState([]);
+  const [customerDirectory, setCustomerDirectory] = useState(() => new Map());
   const [productQuery, setProductQuery] = useState("");
   const [selected, setSelected] = useState(null);
   const [comments, setComments] = useState([]);
@@ -127,15 +129,16 @@ export default function Agenda() {
 
     let reminderQuery = supabase.from("agenda_reminder").select("*");
 
-    const [remRes, prodRes, projRes, projectDepartmentsRes, usersRes, departmentsRes, reminderDepartmentsRes, reminderProductsRes] = await Promise.all([
+    const [remRes, prodRes, projRes, projectDepartmentsRes, usersRes, departmentsRes, reminderDepartmentsRes, reminderProductsRes, customersRes] = await Promise.all([
       reminderQuery.order("deadline", { ascending: true, nullsFirst: false }),
       supabase.from("prodotti").select("id,nome,codice,attivo").order("nome").limit(5000),
-      supabase.from("v4_progetti").select("id,titolo,creato_da").order("created_at", { ascending: false }).limit(500),
+      supabase.from("v4_progetti").select("id,titolo,creato_da,crm_customer_key").order("created_at", { ascending: false }).limit(500),
       supabase.from("v4_progetto_reparti").select("progetto_id,reparto_id"),
       supabase.from("utenti").select("id,nome,cognome,email,attivo").order("nome"),
       supabase.from("reparti").select("id,nome,attivo").order("nome"),
       supabase.from("agenda_reminder_reparti").select("id,reminder_id,reparto_id,completato,completato_at,completato_da,note_completamento"),
       supabase.from("agenda_reminder_prodotti").select("id,reminder_id,prodotto_id,prodotto_nome"),
+      loadCrmCustomerDirectory(supabase),
     ]);
 
     if (remRes.error) console.error("Reminder agenda_reminder:", remRes.error.message);
@@ -146,6 +149,7 @@ export default function Agenda() {
     if (departmentsRes.error) console.error("Reparti reminder:", departmentsRes.error.message);
     if (reminderDepartmentsRes.error) console.error("Reparti collegati reminder:", reminderDepartmentsRes.error.message);
     if (reminderProductsRes.error) console.error("Prodotti collegati reminder:", reminderProductsRes.error.message);
+    if (customersRes.error) console.error("Anagrafica clienti CRM reminder:", customersRes.error.message);
 
     const allProjects = projRes.data || [];
     const projectDepartments = projectDepartmentsRes.data || [];
@@ -173,6 +177,7 @@ export default function Agenda() {
     setDepartments((departmentsRes.data || []).filter((item) => item.attivo !== false && (dataScope?.mode === "tutti" || selectableDepartmentIds.has(item.id))));
     setReminderDepartments(allReminderDepartments.filter((row) => visibleReminderIds.has(row.reminder_id)));
     setReminderProducts(allReminderProducts.filter((row) => visibleReminderIds.has(row.reminder_id)));
+    setCustomerDirectory(customersRes.directory);
     setLoading(false);
   }
 
@@ -284,7 +289,9 @@ export default function Agenda() {
         const productName = getReminderProductNames(item);
         const departmentName = getReminderDepartmentNames(item);
         const projectTitle = projects.find((p) => p.id === item.progetto_id)?.titolo || "";
-        return `${item.titolo || ""} ${item.descrizione || ""} ${productName} ${departmentName} ${projectTitle} ${userName(item.utente_id)}`
+        const projectCustomerKey = projects.find((project) => project.id === item.progetto_id)?.crm_customer_key || "";
+        const customerName = workspaceCustomerName(customerDirectory, item.crm_customer_key || projectCustomerKey);
+        return `${item.titolo || ""} ${item.descrizione || ""} ${customerName} ${productName} ${departmentName} ${projectTitle} ${userName(item.utente_id)}`
           .toLowerCase()
           .includes(text);
       });
@@ -295,7 +302,7 @@ export default function Agenda() {
         String(dateOnly(a.deadline) || "9999-12-31").localeCompare(String(dateOnly(b.deadline) || "9999-12-31")) ||
         String(a.titolo || "").localeCompare(String(b.titolo || ""))
     );
-  }, [reminders, query, products, projects, users, adminMode, selectedUserId, selectedStatus]);
+  }, [reminders, query, products, projects, users, customerDirectory, adminMode, selectedUserId, selectedStatus]);
 
   const remindersByDay = useMemo(() => {
     const map = new Map();
@@ -568,7 +575,7 @@ export default function Agenda() {
       <div className="v4-toolbar agenda-toolbar-clear">
         <div className="task-search">
           <Search size={18} />
-          <input placeholder="Cerca reminder..." value={query} onChange={(e) => setQuery(e.target.value)} />
+          <input placeholder="Cerca reminder, cliente o progetto..." value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
         {adminMode && (
           <select className="filter-chip" value={selectedUserId} onChange={(e) => setSelectedUserId(e.target.value)}>

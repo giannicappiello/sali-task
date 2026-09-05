@@ -461,6 +461,7 @@ export default function Tasks() {
         phase.descrizione,
         phase.note,
         phase.v4_progetti?.titolo,
+        phase.crm_customer_name,
         phase.reparti?.nome,
         ...phase.planningDepartments.map((item) => item.nome),
         ...phase.planningProducts,
@@ -807,7 +808,7 @@ export default function Tasks() {
       <div className="v4-toolbar planning-toolbar-primary">
         <div className="task-search">
           <Search size={18} />
-          <input placeholder="Cerca task, progetto, reparto o prodotto..." value={query} onChange={(event) => setQuery(event.target.value)} />
+          <input placeholder="Cerca task, cliente, progetto, reparto o prodotto..." value={query} onChange={(event) => setQuery(event.target.value)} />
         </div>
         <select value={originFilter} onChange={(event) => setOriginFilter(event.target.value)} aria-label="Filtra per origine"><option value="all">Tutte le origini</option><option value="crm">CRM</option><option value="workspace">Workspace e altri moduli</option></select>
         <select value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)} aria-label="Filtra per reparto"><option value="all">Tutti i reparti</option>{departments.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select>

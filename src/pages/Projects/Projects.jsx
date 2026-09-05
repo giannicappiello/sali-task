@@ -413,17 +413,18 @@ export default function Projects() {
       if (!text) return true;
       const productNames = (productsByProject.get(project.id) || []).join(" ");
       const departmentNames = (departmentsByProject.get(project.id) || []).join(" ");
+      const customerName = workspaceCustomerName(customerDirectory, project.crm_customer_key);
       const phaseText = projectPhases
         .map((phase) => {
           const phaseProductNames = (productsByPhase.get(phase.id) || []).map((item) => item.nome).join(" ");
           return `${phase.titolo} ${phase.descrizione} ${phaseProductNames}`;
         })
         .join(" ");
-      return `${project.titolo || ""} ${project.descrizione || ""} ${productNames} ${departmentNames} ${phaseText}`
+      return `${project.titolo || ""} ${project.descrizione || ""} ${customerName} ${productNames} ${departmentNames} ${phaseText}`
         .toLowerCase()
         .includes(text);
     });
-  }, [projects, phasesByProject, productsByProject, departmentsByProject, productsByPhase, query, requestedProjectId, statusFilter]);
+  }, [projects, phasesByProject, productsByProject, departmentsByProject, productsByPhase, customerDirectory, query, requestedProjectId, statusFilter]);
 
   const kanbanPhases = useMemo(() => {
     const allowed = new Set(filteredProjects.map((item) => item.id));
@@ -1332,7 +1333,7 @@ export default function Projects() {
       <div className="v4-toolbar projects-toolbar-final">
         <div className="task-search">
           <Search size={18} />
-          <input placeholder="Cerca progetto, prodotto, fase o reparto..." value={query} onChange={(e) => setQuery(e.target.value)} />
+          <input placeholder="Cerca progetto, cliente, prodotto, fase o reparto..." value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
         <div className="status-tabs">
           {[

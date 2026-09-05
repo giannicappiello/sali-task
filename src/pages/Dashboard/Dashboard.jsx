@@ -18,6 +18,7 @@ import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 import PhaseChecklistModal from "../../components/PhaseChecklistModal";
 import InfoTooltip from "../../components/InfoTooltip";
+import { loadCrmCustomerDirectory, workspaceCustomerName } from "../../modules/crm/crmWorkspaceCustomers";
 
 const CLOSED_STATES = ["evaso", "evasa", "completato", "completata", "chiuso", "chiusa"];
 const emptyPhaseForm = { titolo: "", descrizione: "", note: "", progetto_id: "", deadline: "", reparto_ids: [], prodotti: [], stato: "da_evadere" };
@@ -246,6 +247,7 @@ function Dashboard() {
   const [phaseDepartments, setPhaseDepartments] = useState([]);
   const [phaseProducts, setPhaseProducts] = useState([]);
   const [reminderDepartments, setReminderDepartments] = useState([]);
+  const [customerDirectory, setCustomerDirectory] = useState(() => new Map());
   const [currentMonth, setCurrentMonth] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState(todayIso());
   const [activityFilter, setActivityFilter] = useState(null);
@@ -267,10 +269,10 @@ function Dashboard() {
   async function loadData() {
     setLoading(true);
 
-    const [phasesRes, phaseDepartmentsRes, phaseProductsRes, remindersRes, reminderDepartmentsRes, messageParticipantsRes, projectsRes, projectDepartmentsRes, departmentsRes, productsRes, templatesRes, templateDepartmentsRes] = await Promise.all([
+    const [phasesRes, phaseDepartmentsRes, phaseProductsRes, remindersRes, reminderDepartmentsRes, messageParticipantsRes, projectsRes, projectDepartmentsRes, departmentsRes, productsRes, templatesRes, templateDepartmentsRes, customersRes] = await Promise.all([
       supabase
         .from("v4_fasi_progetto")
-        .select("id,titolo,descrizione,note,stato,deadline,reparto_id,progetto_id,completato_at,creato_da,v4_progetti(id,titolo),reparti(id,nome)")
+        .select("id,titolo,descrizione,note,stato,deadline,reparto_id,progetto_id,crm_customer_key,completato_at,creato_da,v4_progetti(id,titolo,crm_customer_key),reparti(id,nome)")
         .order("deadline", { ascending: true, nullsFirst: false }),
       supabase.from("v4_fase_reparti").select("id,fase_id,reparto_id,completato,completato_at,completato_da,reparti(id,nome)"),
       supabase.from("v4_fase_prodotti").select("id,fase_id,prodotto_id,prodotto_nome"),
@@ -289,6 +291,7 @@ function Dashboard() {
       supabase.from("prodotti").select("id,nome,codice").order("nome").limit(5000),
       supabase.from("checklist_template").select("id,titolo,reparto_id,ordine,attivo,reparti(id,nome)").eq("attivo", true).order("ordine", { ascending: true }),
       supabase.from("checklist_template_reparti").select("id,template_id,reparto_id"),
+      loadCrmCustomerDirectory(supabase),
     ]);
 
     if (phasesRes.error) console.error("Dashboard fasi:", phasesRes.error.message);
@@ -299,6 +302,7 @@ function Dashboard() {
     if (messageParticipantsRes.error) console.error("Dashboard messaggi:", messageParticipantsRes.error.message);
     if (projectsRes.error) console.error("Dashboard progetti:", projectsRes.error.message);
     if (projectDepartmentsRes.error) console.error("Dashboard reparti progetto:", projectDepartmentsRes.error.message);
+    if (customersRes.error) console.error("Anagrafica clienti CRM dashboard:", customersRes.error.message);
 
     const allPhaseDepartments = phaseDepartmentsRes.data || [];
     const visibleTasks = (phasesRes.data || []).filter((phase) => {
@@ -346,6 +350,7 @@ function Dashboard() {
     setProducts(productsRes.data || []);
     setTemplates(templatesRes.data || []);
     setTemplateDepartments(templateDepartmentsRes.data || []);
+    setCustomerDirectory(customersRes.directory);
     setMessagesCount(unreadMessages);
     setLoading(false);
   }
@@ -363,11 +368,14 @@ function Dashboard() {
       const projectTitle = item.v4_progetti?.titolo || projects.find((project) => project.id === item.progetto_id)?.titolo || "";
       const departmentName = item.reparti?.nome || "";
       const productName = products.find((product) => product.id === item.prodotto_id)?.nome || "";
+      const project = item.v4_progetti || projects.find((candidate) => candidate.id === item.progetto_id);
+      const customerName = workspaceCustomerName(customerDirectory, item.crm_customer_key || project?.crm_customer_key);
       const haystack = [
         item.titolo,
         item.descrizione,
         item.note,
         projectTitle,
+        customerName,
         departmentName,
         productName,
         item.tipo === "reminder" ? "reminder" : "task fase",
@@ -375,7 +383,7 @@ function Dashboard() {
 
       return haystack.includes(text);
     });
-  }, [activities, query, projects, products]);
+  }, [activities, query, projects, products, customerDirectory]);
 
   const calendarDays = useMemo(() => {
     const year = currentMonth.getFullYear();
@@ -661,7 +669,7 @@ function Dashboard() {
         <div className="task-search">
           <Search size={18} />
           <input
-            placeholder="Cerca task, reminder, progetto, reparto o prodotto..."
+            placeholder="Cerca task, reminder, cliente, progetto, reparto o prodotto..."
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />

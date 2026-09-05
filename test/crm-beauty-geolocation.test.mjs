@@ -135,6 +135,14 @@ test("le visite create dal check-in mantengono allegati, follow-up e scheda clie
   assert.match(service, /crm_account_id: activity\.account_id/);
 });
 
+test("il report di check-out apre gli allegati senza perdere la compilazione", async () => {
+  const report = await read("src/modules/pharmacy/pages/CompilaReport.jsx");
+  assert.match(report, /import AllegatiGiornata from "\.\/AllegatiGiornata\.jsx"/);
+  assert.match(report, /const \[showAttachments, setShowAttachments\] = useState\(false\)/);
+  assert.match(report, /<AllegatiGiornata[\s\S]*giornata=\{giornata\}[\s\S]*setShowAttachments\(false\)/);
+  assert.match(report, /onClick=\{\(\) => setShowAttachments\(true\)\}[\s\S]*>\s*Allegati/);
+});
+
 test("la visita Beauty crea atomicamente anche la task Workspace collegata", async () => {
   const sql = await read("supabase/migrations/20260904230000_crm_beauty_workspace_task.sql");
   assert.match(sql, /insert into public\.v4_fasi_progetto/i);

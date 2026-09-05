@@ -4,6 +4,7 @@ import { supabase as primarySupabase } from "../../../lib/supabaseClient";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { googleMapsCoordinateUrl } from "../services/beautyVisitCrm";
+import AllegatiGiornata from "./AllegatiGiornata.jsx";
 
 export default function CompilaReport({
   giornata,
@@ -37,6 +38,7 @@ export default function CompilaReport({
   const [nextDate, setNextDate] = useState("");
   const [visitOutcome, setVisitOutcome] = useState("");
   const [planningBusy, setPlanningBusy] = useState(false);
+  const [showAttachments, setShowAttachments] = useState(false);
 
   const caricaDati = useCallback(async () => {
     const prodottiRes = await primarySupabase
@@ -529,6 +531,15 @@ export default function CompilaReport({
     onBack();
   }
 
+  if (showAttachments) {
+    return (
+      <AllegatiGiornata
+        giornata={giornata}
+        onBack={() => setShowAttachments(false)}
+      />
+    );
+  }
+
   if (planningMode) {
     return (
       <div>
@@ -588,6 +599,14 @@ export default function CompilaReport({
             nextActivity={nextActivity}
             pendingCheckout={Boolean(checkoutContext)}
           />
+
+          <button
+            type="button"
+            style={secondaryButtonStyle}
+            onClick={() => setShowAttachments(true)}
+          >
+            Allegati
+          </button>
 
           <label style={labelStyle}>Clienti intervistati</label>
           <input

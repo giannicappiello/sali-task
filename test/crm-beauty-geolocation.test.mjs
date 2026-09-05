@@ -70,6 +70,21 @@ test("BeautyDays consente di pianificare un nuovo contatto CRM senza codice clie
   assert.doesNotMatch(sql, /drop table|truncate table|delete from public\.crm_/i);
 });
 
+test("BeautyDays pianifica un cliente esistente senza dipendere dal collegamento legacy", async () => {
+  const [page, service] = await Promise.all([
+    read("src/modules/pharmacy/pages/Giornate.jsx"),
+    read("src/modules/pharmacy/services/beautyVisitCrm.js"),
+  ]);
+  assert.match(page, /createCrmBeautyCustomerVisit/);
+  assert.doesNotMatch(page, /ensureBeautyClientLink/);
+  assert.match(service, /export async function createCrmBeautyCustomerVisit/);
+  assert.match(service, /p_customer_code: client\.codice_cliente/);
+  assert.match(service, /p_legacy_giornata_id: null/);
+  assert.match(service, /beauty-customer:/);
+  assert.match(service, /report_data: \{ \.\.\.\(currentDetail\?\.report_data \|\| \{\}\), planning \}/);
+  assert.match(service, /account\.codice_cliente_mexal \? "Cliente" : "Nuovo contatto"/);
+});
+
 test("la visita Beauty crea atomicamente anche la task Workspace collegata", async () => {
   const sql = await read("supabase/migrations/20260904230000_crm_beauty_workspace_task.sql");
   assert.match(sql, /insert into public\.v4_fasi_progetto/i);

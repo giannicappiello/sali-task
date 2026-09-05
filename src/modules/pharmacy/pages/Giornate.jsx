@@ -4,12 +4,13 @@ import CompilaReport from "./CompilaReport.jsx";
 import SchedaFarmacia from "./SchedaFarmacia.jsx";
 import FollowUpGiornata from "./FollowUpGiornata.jsx";
 import AllegatiGiornata from "./AllegatiGiornata.jsx";
-import { ensureBeautyClientLink, loadVisibleBeautyClients } from "../services/beautyClients";
+import { loadVisibleBeautyClients } from "../services/beautyClients";
 import {
   checkInBeautyVisit,
   checkOutBeautyVisit,
   captureBeautyPosition,
   createCrmBeautyContactVisit,
+  createCrmBeautyCustomerVisit,
   ensureCrmBeautyVisit,
   loadBeautyVisitLinks,
   loadCrmOnlyBeautyVisits,
@@ -458,11 +459,22 @@ export default function Giornate({ utente }) {
     let linkedClientId = selectedClient.legacy_farmacia_id || null;
     if (!linkedClientId) {
       try {
-        const link = await ensureBeautyClientLink(selectedClient.codice_cliente);
-        linkedClientId = link.legacy_farmacia_id;
-      } catch (linkError) {
-        return alert(linkError.message || "Impossibile collegare il cliente allo storico Beauty Days.");
+        await createCrmBeautyCustomerVisit({
+          client: selectedClient,
+          data,
+          oraInizio,
+          title: tipoGiornata ? `${tipoGiornata} - ${selectedClient.nome}` : null,
+          note: noteOperative,
+          tipoGiornata,
+          obiettivoVendite,
+        });
+        svuotaForm();
+        setMostraForm(false);
+        await caricaDati();
+      } catch (crmError) {
+        alert(crmError.message || "Impossibile creare la giornata per il cliente selezionato.");
       }
+      return;
     }
 
     const datiGiornata = {

@@ -4,6 +4,7 @@ import test from "node:test";
 
 const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
 const migration = read("supabase/migrations/20260903150000_crm_workspace_activity_orchestration.sql");
+const canonicalMigration = read("supabase/migrations/20260905100000_crm_workspace_canonical_activities.sql");
 const opportunity = read("src/modules/crm/CrmOpportunityDetail.jsx");
 const activityTypes = read("src/components/ProjectTypesSettings.jsx");
 const tasks = read("src/pages/Tasks/Tasks.jsx");
@@ -116,4 +117,30 @@ test("assegnatari task usano il profilo Workspace canonico", () => {
   assert.match(repair, /foreign key \(assegnato_a\) references public\.utenti\(id\) on delete set null/i);
   assert.match(tasks, /responsabile:utenti!v4_fasi_progetto_assegnato_a_fkey/);
   assert.match(projects, /responsabile:utenti!v4_fasi_progetto_assegnato_a_fkey/);
+});
+
+test("ogni nuova attività CRM ottiene una task Workspace senza duplicare i workflow strutturati", () => {
+  assert.match(canonicalMigration, /create constraint trigger trg_crm_deferred_ensure_workspace_task/i);
+  assert.match(canonicalMigration, /deferrable initially deferred/i);
+  assert.match(canonicalMigration, /crm_ensure_workspace_task\(new\.id\)/i);
+  assert.match(canonicalMigration, /if v_project_id is not null then[\s\S]*return null/i);
+  assert.match(canonicalMigration, /where f\.crm_activity_id=v_activity\.id/i);
+  assert.match(canonicalMigration, /if v_task_id is null then[\s\S]*insert into public\.v4_fasi_progetto/i);
+});
+
+test("il backfill canonico preserva integralmente lo storico esistente", () => {
+  assert.match(canonicalMigration, /Backfill only CRM activities still lacking every operational counterpart/i);
+  assert.match(canonicalMigration, /not exists\(select 1 from public\.v4_progetti/i);
+  assert.match(canonicalMigration, /not exists\(select 1 from public\.v4_fasi_progetto/i);
+  assert.doesNotMatch(canonicalMigration, /delete\s+from\s+public\.(crm_activities|v4_progetti|v4_fasi_progetto)/i);
+  assert.doesNotMatch(canonicalMigration, /truncate\s+table/i);
+  assert.doesNotMatch(canonicalMigration, /drop\s+table/i);
+});
+
+test("la task primaria e l'attività CRM restano sincronizzate in entrambe le direzioni", () => {
+  assert.match(canonicalMigration, /crm_sync_activity_to_workspace_task/i);
+  assert.match(canonicalMigration, /workspace_sync_task_to_crm_activity/i);
+  assert.match(canonicalMigration, /a\.workspace_task_id=new\.id/i);
+  assert.match(canonicalMigration, /crm_workspace_canonical_activities/i);
+  assert.match(canonicalMigration, /crm_workspace_activity_integrity/i);
 });

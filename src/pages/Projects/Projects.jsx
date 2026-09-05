@@ -16,6 +16,7 @@ import {
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 import PhaseChecklistModal from "../../components/PhaseChecklistModal";
+import WorkspaceCustomerPicker from "../../components/WorkspaceCustomerPicker";
 import WorkspaceTaskKanban from "../Tasks/WorkspaceTaskKanban";
 
 const projectEmpty = {
@@ -25,6 +26,8 @@ const projectEmpty = {
   prodotti: [],
   reparti: [],
   tipo_progetto_id: "",
+  crm_customer_key: "",
+  crm_opportunity_id: "",
 };
 
 const phaseEmpty = {
@@ -84,6 +87,9 @@ export default function Projects() {
   const [routeParams] = useSearchParams();
   const requestedProjectId = routeParams.get("project") || "";
   const requestedReturnTo = routeParams.get("returnTo") || "";
+  const requestedNewProject = routeParams.get("new") === "1";
+  const requestedCustomerKey = routeParams.get("customerKey") || "";
+  const requestedOpportunityId = routeParams.get("opportunity") || "";
   const safeReturnTo = requestedReturnTo.startsWith("/") && !requestedReturnTo.startsWith("//") ? requestedReturnTo : "";
   const { profile, hasPermission, isAdmin, userDepartmentIds = [], dataScope, canViewScopedData } = useAuth();
   const canManage = hasPermission("projects.write");
@@ -146,6 +152,7 @@ export default function Projects() {
   const projectBoardRef = useRef(null);
   const projectBoardScrollbarRef = useRef(null);
   const scrollSyncLockRef = useRef(false);
+  const openedRequestedProjectRef = useRef(false);
   const [projectBoardScrollWidth, setProjectBoardScrollWidth] = useState(0);
 
   useEffect(() => {
@@ -176,6 +183,12 @@ export default function Projects() {
   useEffect(() => {
     if (profile?.id) loadData();
   }, [profile?.id, userDepartmentIds.join(","), dataScope?.mode, dataScope?.userIds?.join(","), dataScope?.departmentIds?.join(",")]);
+
+  useEffect(() => {
+    if (!requestedNewProject || loading || openedRequestedProjectRef.current || !canManage) return;
+    openedRequestedProjectRef.current = true;
+    openProject();
+  }, [canManage, loading, requestedNewProject]);
 
   useEffect(() => {
     if (selectedPhase?.id) loadPhaseDetails(selectedPhase.id);
@@ -484,8 +497,10 @@ export default function Projects() {
             prodotti: getProjectProductIds(project.id),
             reparti: getProjectDepartmentIds(project.id),
             tipo_progetto_id: project.tipo_progetto_id || "",
+            crm_customer_key: project.crm_customer_key || "",
+            crm_opportunity_id: project.crm_opportunity_id || "",
           }
-        : { ...projectEmpty }
+        : { ...projectEmpty, crm_customer_key: requestedCustomerKey, crm_opportunity_id: requestedOpportunityId }
     );
     setProjectModal(true);
   }
@@ -587,8 +602,12 @@ export default function Projects() {
     e.preventDefault();
     if (!canManage) return alert("Non hai i permessi per modificare i progetti.");
     if (!projectForm.titolo.trim()) return alert("Inserisci il titolo del progetto.");
-    if (!selectedProject?.id && projectForm.tipo_progetto_id && !projectForm.deadline) {
-      return alert("Per generare le fasi dal tipo progetto devi inserire la deadline del progetto.");
+    if (!selectedProject?.id && !projectForm.crm_customer_key) return alert("Seleziona il cliente da collegare al progetto.");
+    if (!selectedProject?.id && !projectForm.tipo_progetto_id) {
+      return alert("Seleziona il tipo progetto per creare automaticamente le task.");
+    }
+    if (!selectedProject?.id && !projectForm.deadline) {
+      return alert("Inserisci la deadline per calcolare automaticamente le scadenze delle task.");
     }
 
     setSaving(true);
@@ -598,6 +617,8 @@ export default function Projects() {
       priorita: null,
       deadline: projectForm.deadline || null,
       tipo_progetto_id: projectForm.tipo_progetto_id || null,
+      crm_customer_key: projectForm.crm_customer_key || null,
+      crm_opportunity_id: projectForm.crm_opportunity_id || null,
       modificato_da: actorId,
       updated_at: new Date().toISOString(),
     };
@@ -624,7 +645,7 @@ export default function Projects() {
     await saveAssociations(projectId, projectForm.prodotti, projectDepartmentIds);
 
     if (!selectedProject?.id && projectForm.tipo_progetto_id) {
-      await createProjectTypePhases(projectId, projectForm.tipo_progetto_id, projectForm.deadline, projectForm.prodotti);
+      await createProjectTypePhases(projectId, projectForm.tipo_progetto_id, projectForm.deadline, projectForm.prodotti, projectForm.crm_customer_key);
     }
 
     await log("progetto", projectId, selectedProject?.id ? "modifica progetto" : "creazione progetto", payload.titolo);
@@ -644,7 +665,7 @@ export default function Projects() {
     return `${y}-${m}-${d}`;
   }
 
-  async function createProjectTypePhases(projectId, projectTypeId, projectDeadline, productIds) {
+  async function createProjectTypePhases(projectId, projectTypeId, projectDeadline, productIds, customerKey) {
     const rules = projectTypePhases
       .filter((row) => row.tipo_progetto_id === projectTypeId)
       .sort((a, b) => Number(a.ordine || 0) - Number(b.ordine || 0));
@@ -678,6 +699,7 @@ export default function Projects() {
           deadline: subtractDaysIso(projectDeadline, rule.giorni_anticipo),
           creato_da: actorId,
           modificato_da: actorId,
+          crm_customer_key: customerKey || null,
         })
         .select("id")
         .single();
@@ -1459,14 +1481,18 @@ export default function Projects() {
             <label>Titolo<input value={projectForm.titolo} onChange={(e) => setProjectForm({ ...projectForm, titolo: e.target.value })} /></label>
             <label>Descrizione<textarea rows="4" value={projectForm.descrizione} onChange={(e) => setProjectForm({ ...projectForm, descrizione: e.target.value })} /></label>
 
+            <label>Cliente
+              <WorkspaceCustomerPicker required={!selectedProject} crmType="conto_terzi" value={projectForm.crm_customer_key} onChange={(crm_customer_key) => setProjectForm((current) => ({ ...current, crm_customer_key }))} />
+            </label>
+
             <label>Tipo progetto
-              <select value={projectForm.tipo_progetto_id} onChange={(e) => setProjectForm({ ...projectForm, tipo_progetto_id: e.target.value })}>
+              <select required={!selectedProject} value={projectForm.tipo_progetto_id} onChange={(e) => setProjectForm({ ...projectForm, tipo_progetto_id: e.target.value })}>
                 <option value="">Nessun tipo progetto</option>
                 {projectTypes.map((type) => <option key={type.id} value={type.id}>{type.nome}</option>)}
               </select>
             </label>
 
-            <label>Deadline<input type="date" value={projectForm.deadline} onChange={(e) => setProjectForm({ ...projectForm, deadline: e.target.value })} /></label>
+            <label>Deadline<input required={!selectedProject} type="date" value={projectForm.deadline} onChange={(e) => setProjectForm({ ...projectForm, deadline: e.target.value })} /></label>
 
             <div className="checkbox-group scrollable-check-group">
               <strong>Prodotti associati</strong>

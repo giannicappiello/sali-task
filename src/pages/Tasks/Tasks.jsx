@@ -243,6 +243,7 @@ export default function Tasks() {
   const requestedReturnTo = params.get("returnTo") || "";
   const safeReturnTo = requestedReturnTo.startsWith("/") && !requestedReturnTo.startsWith("//") ? requestedReturnTo : "";
   const requestedTaskId = params.get("task") || "";
+  const requestedCrmType = params.get("crmType") || "conto_terzi";
   const [view, setView] = useState("month");
   const [displayMode, setDisplayMode] = useState(params.get("view") || "calendar");
   const [cursor, setCursor] = useState(() => new Date());
@@ -276,7 +277,7 @@ export default function Tasks() {
   useEffect(() => {
     if (params.get("new") === "1") {
       openPhaseModal(null);
-      setParams({}, { replace: true });
+      setParams((current) => { const next = new URLSearchParams(current); next.delete("new"); return next; }, { replace: true });
     }
   }, [params]);
 
@@ -290,17 +291,18 @@ export default function Tasks() {
     if (mineOnly) nextParams.mine = "1";
     if (safeReturnTo) nextParams.returnTo = safeReturnTo;
     if (requestedTaskId) nextParams.task = requestedTaskId;
+    if (requestedCrmType !== "conto_terzi") nextParams.crmType = requestedCrmType;
     setParams(nextParams, { replace: true });
-  }, [selectedDate, statusFilter, displayMode, originFilter, departmentFilter, mineOnly, requestedTaskId, safeReturnTo]);
+  }, [selectedDate, statusFilter, displayMode, originFilter, departmentFilter, mineOnly, requestedTaskId, requestedCrmType, safeReturnTo]);
 
   async function loadPlanning() {
     setLoading(true);
 
     const [projectsRes, phasesRes, projectDepartmentsRes, phaseDepartmentsRes, departmentsRes, phaseProductsRes, productsRes, templatesRes, templateDepartmentsRes] = await Promise.all([
-      supabase.from("v4_progetti").select("id,titolo,descrizione,deadline,priorita,stato,created_at,creato_da").order("created_at", { ascending: false }),
+      supabase.from("v4_progetti").select("id,titolo,descrizione,deadline,priorita,stato,created_at,creato_da,crm_customer_key").order("created_at", { ascending: false }),
       supabase
         .from("v4_fasi_progetto")
-        .select("*,v4_progetti(id,titolo,descrizione),reparti(id,nome),responsabile:utenti!v4_fasi_progetto_assegnato_a_fkey(id,nome,cognome)")
+        .select("*,v4_progetti(id,titolo,descrizione,crm_customer_key),reparti(id,nome),responsabile:utenti!v4_fasi_progetto_assegnato_a_fkey(id,nome,cognome)")
         .order("deadline", { ascending: true, nullsFirst: false })
         .order("ordine", { ascending: true }),
       supabase.from("v4_progetto_reparti").select("id,progetto_id,reparto_id"),
@@ -930,6 +932,7 @@ export default function Tasks() {
         templateDepartments={templateDepartments}
         allPhases={enrichedPhases}
         canManage={true}
+        crmType={requestedCrmType}
         canCompleteDepartment={canCompleteDepartment}
         onClose={() => {
           setPhaseModalOpen(false);

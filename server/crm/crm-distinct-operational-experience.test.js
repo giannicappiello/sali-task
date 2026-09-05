@@ -14,9 +14,9 @@ const crmModule = read("src/modules/crm/CrmModule.jsx");
 test("PRIVATE e B2B espongono menu e route realmente distinti", () => {
   const privateLabels = crmNavigation("conto_terzi").map(([label]) => label);
   const b2bLabels = crmNavigation("b2b").map(([label]) => label);
-  assert.deepEqual(privateLabels, ["Dashboard", "Clienti", "Progetti", "Pipeline", "Attività", "Campioni / Sviluppi", "Progetti Workspace", "Analisi"]);
+  assert.deepEqual(privateLabels, ["Dashboard", "Clienti", "Progetti", "Pipeline", "Attività", "Campioni / Sviluppi", "Analisi"]);
   assert.deepEqual(b2bLabels, ["Dashboard", "Clienti / Prospect", "Pipeline acquisizione", "Attività", "Clienti da seguire", "Riordini", "BeautyDays", "Analisi"]);
-  for (const view of ["opportunities", "developments", "projects"]) assert.ok(CRM_ROUTE_CATALOG.some((route) => route.type === "conto_terzi" && route.view === view));
+  for (const view of ["developments", "projects"]) assert.ok(CRM_ROUTE_CATALOG.some((route) => route.type === "conto_terzi" && route.view === view));
   for (const view of ["follow-up", "reorders", "beautydays"]) assert.ok(CRM_ROUTE_CATALOG.some((route) => route.type === "b2b" && route.view === view));
 });
 

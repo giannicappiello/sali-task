@@ -5,7 +5,7 @@ export const CRM_ROUTE_CATALOG = Object.freeze([
   { path: "conto-terzi/clienti", catalogPath: "/crm/conto-terzi/clienti", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.clienti", view: "accounts", type: "conto_terzi" },
   { path: "conto-terzi/clienti/:id", catalogPath: "/crm/conto-terzi/clienti/:id", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.cliente", view: "account", type: "conto_terzi" },
   { path: "conto-terzi/pipeline", catalogPath: "/crm/conto-terzi/pipeline", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.pipeline", view: "pipeline", type: "conto_terzi" },
-  { path: "conto-terzi/opportunita", catalogPath: "/crm/conto-terzi/opportunita", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.opportunita", view: "opportunities", type: "conto_terzi" },
+  { path: "conto-terzi/opportunita", catalogPath: "/crm/conto-terzi/opportunita", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.opportunita", view: "projects", type: "conto_terzi" },
   { path: "conto-terzi/pipeline/:opportunityId", catalogPath: "/crm/conto-terzi/pipeline/:opportunityId", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.pipeline", view: "opportunity", type: "conto_terzi" },
   { path: "conto-terzi/attivita", catalogPath: "/crm/conto-terzi/attivita", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.attivita", view: "activities", type: "conto_terzi" },
   { path: "conto-terzi/analisi", catalogPath: "/crm/conto-terzi/analisi", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.analisi", view: "analytics", type: "conto_terzi" },

@@ -36,12 +36,14 @@ test("la tabella top clienti lascia la dashboard e diventa la tabella completa C
   assert.match(migration, /purchase\.purchase_date - lag\(purchase\.purchase_date\)/);
 });
 
-test("qualsiasi elenco attività consente eliminazione solo in scrittura", () => {
-  assert.match(activities, /CrmDeleteActivityButton/);
+test("l'elenco operativo apre la task canonica e gli archivi CRM conservano l'eliminazione autorizzata", () => {
+  assert.match(activities, /v4_fasi_progetto/);
+  assert.match(activities, /Apri task/);
+  assert.doesNotMatch(activities, /CrmDeleteActivityButton/);
   assert.match(workflows, /CrmDeleteActivityButton/);
   assert.match(opportunity, /CrmDeleteActivityButton/);
   assert.match(crm, /CrmDeleteActivityButton/);
-  for (const source of [activities, workflows, opportunity, crm]) assert.match(source, /canWrite/);
+  for (const source of [workflows, opportunity, crm]) assert.match(source, /canWrite/);
 });
 
 test("l'eliminazione attività è atomica, autorizzata e auditata senza cancellare lavoro Workspace", () => {

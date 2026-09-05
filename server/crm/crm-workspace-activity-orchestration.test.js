@@ -5,6 +5,7 @@ import test from "node:test";
 const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
 const migration = read("supabase/migrations/20260903150000_crm_workspace_activity_orchestration.sql");
 const canonicalMigration = read("supabase/migrations/20260905100000_crm_workspace_canonical_activities.sql");
+const unifiedMigration = read("supabase/migrations/20260905120000_unify_crm_workspace_projects_tasks.sql");
 const opportunity = read("src/modules/crm/CrmOpportunityDetail.jsx");
 const activityTypes = read("src/components/ProjectTypesSettings.jsx");
 const tasks = read("src/pages/Tasks/Tasks.jsx");
@@ -143,4 +144,21 @@ test("la task primaria e l'attività CRM restano sincronizzate in entrambe le di
   assert.match(canonicalMigration, /a\.workspace_task_id=new\.id/i);
   assert.match(canonicalMigration, /crm_workspace_canonical_activities/i);
   assert.match(canonicalMigration, /crm_workspace_activity_integrity/i);
+});
+
+test("CRM PRIVATE e Attività condividono progetti, task e cliente canonici", () => {
+  const crmProjects = read("src/modules/crm/CrmWorkflowPages.jsx");
+  const crmActivities = read("src/modules/crm/CrmActivitiesPage.jsx");
+  const customerPicker = read("src/components/WorkspaceCustomerPicker.jsx");
+  assert.match(crmProjects, /from\("v4_progetti"\)/);
+  assert.match(crmActivities, /from\("v4_fasi_progetto"\)/);
+  assert.doesNotMatch(crmActivities, /from\("crm_activities"\)/);
+  assert.match(projects, /WorkspaceCustomerPicker/);
+  assert.match(projects, /crm_customer_key/);
+  assert.match(projects, /createProjectTypePhases/);
+  assert.match(customerPicker, /Ricerca rapida cliente o codice/);
+  assert.match(unifiedMigration, /workspace_inherit_project_customer/);
+  assert.match(unifiedMigration, /workspace_propagate_project_customer/);
+  assert.match(unifiedMigration, /phase\.crm_customer_key is null/);
+  assert.doesNotMatch(unifiedMigration, /delete from public\.(v4_progetti|v4_fasi_progetto|crm_activities|crm_opportunities)/i);
 });

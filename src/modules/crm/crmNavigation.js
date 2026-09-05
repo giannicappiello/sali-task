@@ -6,11 +6,10 @@ export function crmNavigation(type) {
     return [
       ["Dashboard", basePath],
       ["Clienti", `${basePath}/clienti`],
-      ["Progetti", `${basePath}/opportunita`],
+      ["Progetti", `${basePath}/progetti`],
       ["Pipeline", `${basePath}/pipeline`],
       ["Attività", `${basePath}/attivita`],
       ["Campioni / Sviluppi", `${basePath}/sviluppi`],
-      ["Progetti Workspace", `${basePath}/progetti`],
       ["Analisi", `${basePath}/analisi`],
     ];
   }

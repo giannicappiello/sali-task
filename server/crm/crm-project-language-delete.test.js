@@ -9,12 +9,11 @@ const navigation = read("src/modules/crm/crmNavigation.js");
 const css = read("src/modules/crm/workspace-alignment.css");
 const migration = read("supabase/migrations/20260904150000_crm_project_delete.sql");
 
-test("la UI usa Progetto e distingue i Progetti Workspace", () => {
-  assert.match(navigation, /\["Progetti", `\$\{basePath\}\/opportunita`\]/);
-  assert.match(navigation, /\["Progetti Workspace", `\$\{basePath\}\/progetti`\]/);
+test("la UI usa un solo archivio Progetti condiviso con Workspace", () => {
+  assert.match(navigation, /\["Progetti", `\$\{basePath\}\/progetti`\]/);
+  assert.doesNotMatch(navigation, /Progetti Workspace/);
   assert.match(crm, /Titolo progetto/);
-  assert.match(crm, /Crea progetto/);
-  assert.doesNotMatch(crm, />Crea opportunità</);
+  assert.match(crm, /Crea opportunità/);
 });
 
 test("la creazione usa una ricerca rapida cliente accessibile", () => {

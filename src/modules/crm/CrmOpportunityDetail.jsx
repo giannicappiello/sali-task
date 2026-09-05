@@ -50,7 +50,6 @@ export default function CrmOpportunityDetail({ type }) {
   const [completion, setCompletion] = useState(null);
   const [now] = useState(() => Date.now());
   const [transition, setTransition] = useState({ stage_id: "", valore_finale: "", motivo_perdita_id: "", motivo_perdita: "", concorrente: "", data_ricontatto: "" });
-  const [projectTitle, setProjectTitle] = useState("");
   const [briefDraft, setBriefDraft] = useState({ categoria: "", tipo_prodotto: "", quantita: "", packaging: "", prezzo_target: "", mercati: "", certificazioni: "", formula: "da_sviluppare", claim: "", note: "" });
 
   const load = useCallback(async () => {
@@ -70,7 +69,7 @@ export default function CrmOpportunityDetail({ type }) {
       supabase.from("crm_contacts").select("id,nome,cognome,ruolo,email,telefono,principale").eq("account_id", current.account_id).order("principale", { ascending: false }),
       supabase.from("crm_opportunity_stage_history").select("*,from_stage:from_stage_id(nome),to_stage:to_stage_id(nome)").eq("opportunity_id", opportunityId).order("changed_at", { ascending: false }),
       supabase.from("crm_workspace_links").select("*").eq("crm_entity_type", "opportunity").eq("crm_entity_id", opportunityId),
-      supabase.from("v4_progetti").select("id,titolo,stato,deadline").order("created_at", { ascending: false }).limit(200),
+      supabase.from("v4_progetti").select("id,titolo,stato,deadline,crm_customer_key,crm_opportunity_id").order("created_at", { ascending: false }).limit(200),
       supabase.from("crm_activity_types").select("*").eq("crm_tipo", type).eq("attivo", true).order("ordine"),
       supabase.from("reparti").select("id,nome").eq("attivo", true).order("nome"),
       supabase.from("utenti").select("id,nome,cognome,reparto_id").eq("attivo", true).order("nome"),
@@ -223,6 +222,15 @@ export default function CrmOpportunityDetail({ type }) {
   async function linkProject(projectId) {
     if (!canWrite || !projectId) return;
     setBusy(true); setError("");
+    const customerKey = opportunity.crm_accounts?.codice_cliente_mexal
+      ? `mexal:${opportunity.crm_accounts.codice_cliente_mexal}`
+      : `crm:${opportunity.account_id}`;
+    const { error: projectError } = await supabase.from("v4_progetti").update({
+      crm_customer_key: customerKey,
+      crm_opportunity_id: opportunityId,
+      updated_at: new Date().toISOString(),
+    }).eq("id", projectId);
+    if (projectError) { setError(projectError.message); setBusy(false); return; }
     const { error: linkError } = await supabase.from("crm_workspace_links").insert({
       crm_entity_type: "opportunity", crm_entity_id: opportunityId,
       workspace_entity_type: "project", workspace_entity_id: projectId, creato_da: profile.id,
@@ -230,14 +238,6 @@ export default function CrmOpportunityDetail({ type }) {
     });
     if (linkError && linkError.code !== "23505") setError(linkError.message); else await load();
     setBusy(false);
-  }
-
-  async function createProject(event) {
-    event.preventDefault(); const title = projectTitle.trim(); if (!canWrite || !title) return;
-    setBusy(true); setError("");
-    const { data, error: projectError } = await supabase.from("v4_progetti").insert({ titolo: title, descrizione: opportunity.descrizione || `Progetto Workspace generato dal progetto CRM ${opportunity.titolo}`, deadline: opportunity.chiusura_prevista || null, creato_da: profile.id, modificato_da: profile.id }).select("id").single();
-    if (projectError) { setError(projectError.message); setBusy(false); return; }
-    await linkProject(data.id); setProjectTitle(""); setBusy(false);
   }
 
   if (!opportunity) return <div className="crm-page">{message(error)}<div className="crm-loading">Caricamento progetto...</div></div>;
@@ -302,7 +302,7 @@ export default function CrmOpportunityDetail({ type }) {
       {canWrite ? <form className="crm-inline-form" onSubmit={addActivity}><select value={activity.tipo} onChange={(event) => setActivity({ ...activity, tipo: event.target.value })}>{["telefonata","email","visita","videocall","presentazione","formazione","campionatura","sviluppo_formula","preventivo","follow_up"].map((value) => <option key={value} value={value}>{value.replaceAll("_", " ")}</option>)}</select><input required value={activity.titolo} onChange={(event) => setActivity({ ...activity, titolo: event.target.value })} placeholder="Prossima azione" /><input type="datetime-local" value={activity.data_attivita} onChange={(event) => setActivity({ ...activity, data_attivita: event.target.value })} /><select value={activity.priorita} onChange={(event) => setActivity({ ...activity, priorita: event.target.value })}><option value="bassa">Bassa</option><option value="normale">Normale</option><option value="alta">Alta</option></select><button className="primary-action crm-primary" disabled={busy}><Plus size={16} />Aggiungi</button></form> : null}
       <ul className="crm-timeline">{activities.map((item) => <li key={item.id}><strong>{item.titolo}</strong><span>{item.tipo.replaceAll("_", " ")} · {formatDate(item.data_attivita)} · {item.stato}</span>{item.esito ? <small>Esito: {item.esito}</small> : null}<div className="crm-row-inline-actions">{canWrite && item.stato !== "completata" ? <button type="button" className="secondary-action" onClick={() => setCompletion({ id: item.id, esito: "", prossima_azione: "", prossima_data: "" })}><CheckCircle2 size={15} />Completa</button> : null}<CrmDeleteActivityButton activity={item} canDelete={canWrite} onDeleted={load} onError={setError} compact /></div></li>)}</ul>
     </section>
-    {type === "conto_terzi" && opportunity.crm_opportunity_stages?.vinta ? <section className="panel crm-panel"><h3>Progetto Workspace</h3><p>Un progetto commerciale vinto può creare un progetto Workspace oppure collegarne uno esistente, senza duplicarlo.</p><form className="crm-inline-form" onSubmit={createProject}><input value={projectTitle} onChange={(event) => setProjectTitle(event.target.value)} placeholder="Titolo nuovo progetto Workspace" /><button className="primary-action crm-primary" disabled={!canWrite || busy}><Plus size={16} />Crea progetto Workspace</button></form><select defaultValue="" onChange={(event) => void linkProject(event.target.value)} disabled={!canWrite || busy}><option value="">Collega progetto Workspace esistente</option>{projects.filter((item) => !linkedProjectIds.has(item.id)).map((item) => <option key={item.id} value={item.id}>{item.titolo}</option>)}</select>{projects.filter((item) => linkedProjectIds.has(item.id)).map((item) => <Link className="crm-row-card" key={item.id} to="/activities/projects"><FolderKanban size={18} /><strong>{item.titolo}</strong><span>{item.stato || "Progetto Workspace"}</span></Link>)}</section> : null}
+    {type === "conto_terzi" && opportunity.crm_opportunity_stages?.vinta ? <section className="panel crm-panel"><h3>Progetto operativo</h3><p>Il progetto viene creato direttamente nell’archivio unico di Attività, con cliente, tipologia, task e deadline.</p>{canWrite ? <Link className="primary-action crm-primary" to={`/activities/projects?new=1&customerKey=${encodeURIComponent(account.codice_cliente_mexal ? `mexal:${account.codice_cliente_mexal}` : `crm:${account.id}`)}&opportunity=${opportunityId}&returnTo=${encodeURIComponent(pageLocation.pathname + pageLocation.search)}`}><Plus size={16} />Crea progetto</Link> : null}<select defaultValue="" onChange={(event) => void linkProject(event.target.value)} disabled={!canWrite || busy}><option value="">Collega progetto operativo esistente</option>{projects.filter((item) => !linkedProjectIds.has(item.id)).map((item) => <option key={item.id} value={item.id}>{item.titolo}</option>)}</select>{projects.filter((item) => linkedProjectIds.has(item.id)).map((item) => <Link className="crm-row-card" key={item.id} to={`/activities/projects?project=${item.id}`}><FolderKanban size={18} /><strong>{item.titolo}</strong><span>{item.stato || "Progetto operativo"}</span></Link>)}</section> : null}
     <section className="panel crm-panel"><h3>Storico fasi</h3><ul className="crm-timeline">{stageHistory.map((item) => <li key={item.id}><strong>{item.to_stage?.nome || "Fase aggiornata"}</strong><span>{formatDate(item.changed_at)}{item.from_stage?.nome ? ` · da ${item.from_stage.nome}` : ""}</span></li>)}</ul></section>
     {completion ? <div className="crm-modal-backdrop"><form className="crm-modal" onSubmit={completeActivity}><h3>Completa attività</h3><textarea value={completion.esito} onChange={(event) => setCompletion({ ...completion, esito: event.target.value })} placeholder="Esito" /><input value={completion.prossima_azione} onChange={(event) => setCompletion({ ...completion, prossima_azione: event.target.value })} placeholder="Prossima azione (opzionale)" /><input type="datetime-local" value={completion.prossima_data} onChange={(event) => setCompletion({ ...completion, prossima_data: event.target.value })} /><div className="crm-modal-actions"><button type="button" onClick={() => setCompletion(null)}>Annulla</button><button className="primary-action crm-primary" disabled={busy}>Completa e pianifica</button></div></form></div> : null}
     {operationalPreview ? <div className="crm-modal-backdrop"><div className="crm-modal crm-workflow-preview" role="dialog" aria-modal="true" aria-labelledby="crm-workflow-preview-title"><h3 id="crm-workflow-preview-title">Anteprima attività operativa</h3><p>Verrà creato: <strong>{operationalPreview.project_count} progetto</strong>, <strong>{operationalPreview.task_count} task</strong>, <strong>{operationalPreview.department_count} reparti coinvolti</strong>.</p><ol>{(operationalPreview.tasks || []).map((item, index) => <li key={item.rule_id || index}><strong>{item.title}</strong><span>{formatDate(item.deadline)} · {item.priority || "normale"}{item.mandatory ? " · obbligatoria" : ""}</span></li>)}</ol><div className="crm-modal-actions"><button type="button" className="secondary-action" onClick={() => setOperationalPreview(null)}>Annulla</button><button type="button" className="primary-action crm-primary" onClick={confirmOperationalActivity} disabled={busy}>{busy ? "Creazione..." : "Conferma e crea"}</button></div></div></div> : null}

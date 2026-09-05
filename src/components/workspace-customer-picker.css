@@ -1,0 +1,7 @@
+.workspace-customer-picker { position: relative; min-width: 0; }
+.workspace-customer-picker-control { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border: 1px solid #cbd8e8; border-radius: 12px; background: #fff; }
+.workspace-customer-picker-control input { width: 100%; min-width: 0; border: 0 !important; outline: 0; background: transparent; box-shadow: none !important; }
+.workspace-customer-picker-results { position: absolute; z-index: 40; top: calc(100% + 4px); left: 0; right: 0; max-height: 260px; overflow: auto; padding: 6px; border: 1px solid #cbd8e8; border-radius: 12px; background: #fff; box-shadow: 0 16px 32px rgba(15, 39, 72, .16); }
+.workspace-customer-picker-results button { display: flex; width: 100%; flex-direction: column; align-items: flex-start; gap: 2px; padding: 9px 10px; border: 0; border-radius: 8px; background: transparent; text-align: left; cursor: pointer; }
+.workspace-customer-picker-results button:hover, .workspace-customer-picker-results button:focus-visible { background: #eef5ff; }
+.workspace-customer-picker-results span, .workspace-customer-picker-results small { color: #66758c; font-size: .82rem; }

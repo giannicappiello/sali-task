@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Clock3, FileText, MessageSquare, Paperclip, Save, Search, Trash2, X } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../contexts/AuthContext";
+import WorkspaceCustomerPicker from "./WorkspaceCustomerPicker";
 
-const emptyForm = { titolo: "", descrizione: "", note: "", progetto_id: "", deadline: "", reparto_ids: [], prodotti: [], stato: "da_evadere", bloccante_id: "" };
+const emptyForm = { titolo: "", descrizione: "", note: "", progetto_id: "", deadline: "", reparto_ids: [], prodotti: [], stato: "da_evadere", bloccante_id: "", crm_customer_key: "" };
 const closedStates = ["evaso", "evasa", "completato", "completata", "chiuso", "chiusa"];
 function safeArray(value) { return Array.isArray(value) ? value : []; }
 function normalize(value) { return String(value || "").trim().toLowerCase().replaceAll(" ", "_"); }
@@ -27,6 +28,7 @@ export default function PhaseChecklistModal({
   initialProjectId = "",
   initialProductIds = [],
   canManage = true,
+  crmType = "conto_terzi",
   canCompleteDepartment = () => true,
   onClose,
   onSaved,
@@ -64,6 +66,7 @@ export default function PhaseChecklistModal({
         prodotti: getPhaseProductIds(selectedPhase.id),
         stato: selectedPhase.stato || "da_evadere",
         bloccante_id: selectedPhase.bloccante_id || "",
+        crm_customer_key: selectedPhase.crm_customer_key || projects.find((item) => item.id === selectedPhase.progetto_id)?.crm_customer_key || "",
       });
       loadPhaseDetails(selectedPhase.id);
     } else {
@@ -72,6 +75,7 @@ export default function PhaseChecklistModal({
         progetto_id: initialProjectId || "",
         deadline: initialDate || todayIso(),
         prodotti: [...new Set(safeArray(initialProductIds).filter(Boolean))],
+        crm_customer_key: projects.find((item) => item.id === initialProjectId)?.crm_customer_key || "",
       });
       setComments([]);
       setAttachments([]);
@@ -235,6 +239,7 @@ export default function PhaseChecklistModal({
     e.preventDefault();
     if (!canManage) return alert("Non hai i permessi per modificare le fasi.");
     if (!form.titolo.trim()) return alert("Seleziona il titolo della fase dalla checklist.");
+    if (!selectedPhase?.id && !form.crm_customer_key) return alert("Seleziona il cliente da collegare alla task/fase.");
     setSaving(true);
     try {
       const now = new Date().toISOString();
@@ -249,6 +254,7 @@ export default function PhaseChecklistModal({
         assegnato_a: null,
         stato: form.stato || "da_evadere",
         bloccante_id: form.bloccante_id || null,
+        crm_customer_key: form.crm_customer_key || null,
         modificato_da: actorId,
         updated_at: now,
       };
@@ -502,7 +508,10 @@ export default function PhaseChecklistModal({
           </div>
         )}
 
-        <label>Progetto<select value={form.progetto_id} onChange={(e) => setForm({ ...form, progetto_id: e.target.value })}><option value="">Senza progetto</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.titolo}</option>)}</select></label>
+        <label>Progetto<select value={form.progetto_id} onChange={(e) => { const project = projects.find((item) => item.id === e.target.value); setForm((current) => ({ ...current, progetto_id: e.target.value, crm_customer_key: project?.crm_customer_key || current.crm_customer_key })); }}><option value="">Senza progetto</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.titolo}</option>)}</select></label>
+        <label>Cliente
+          <WorkspaceCustomerPicker required={!selectedPhase} crmType={crmType} value={form.crm_customer_key} onChange={(crm_customer_key) => setForm((current) => ({ ...current, crm_customer_key }))} />
+        </label>
         <label>Deadline<input type="date" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} /></label>
 
         <div className="phase-detail-extra">

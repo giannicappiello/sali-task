@@ -283,7 +283,7 @@ function Dashboard() {
         .from("chat_partecipanti")
         .select("id,ultimo_letto_at,conversazione_id,chat_conversazioni(updated_at)")
         .eq("utente_id", profile.id),
-      supabase.from("v4_progetti").select("id,titolo,creato_da").order("created_at", { ascending: false }).limit(500),
+      supabase.from("v4_progetti").select("id,titolo,creato_da,crm_customer_key").order("created_at", { ascending: false }).limit(500),
       supabase.from("v4_progetto_reparti").select("progetto_id,reparto_id"),
       supabase.from("reparti").select("id,nome,attivo").order("nome"),
       supabase.from("prodotti").select("id,nome,codice").order("nome").limit(5000),

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Search } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
 import { CrmBeautyDashboardPanel } from "./CrmBeautyDays";
@@ -10,6 +10,7 @@ import CrmPeriodFilter, { useCrmPeriod } from "./CrmPeriodFilter";
 import { CrmPageHeader, CrmSectionNav } from "./CrmWorkspaceUI";
 import { crmTypeConfig, formatDate, formatMoney } from "./crmConfig";
 import { crmNavigation } from "./crmNavigation";
+import { loadCrmCustomerDirectory } from "./crmWorkspaceCustomers";
 
 function ErrorMessage({ error }) {
   return error ? <div className="crm-message error">{error}</div> : null;
@@ -34,22 +35,44 @@ export function CrmDevelopmentsPage() {
 }
 
 export function CrmProjectsPage() {
-  const type = "conto_terzi"; const config = crmTypeConfig(type); const period = useCrmPeriod();
-  const [rows, setRows] = useState([]); const [error, setError] = useState("");
+  const type = "conto_terzi"; const period = useCrmPeriod();
+  const [params, setParams] = useSearchParams();
+  const [rows, setRows] = useState([]); const [error, setError] = useState(""); const [loading, setLoading] = useState(true);
+  const search = params.get("projectSearch") || "";
+  const status = params.get("projectStatus") || "open";
   const load = useCallback(async () => {
-    const opportunityResult = await supabase.from("crm_opportunities").select("id,titolo,crm_accounts!inner(id,nome,tipo,codice_cliente_mexal)").eq("crm_accounts.tipo", type).limit(2000);
-    if (opportunityResult.error) { setError(opportunityResult.error.message); return; }
-    const opportunities = opportunityResult.data || []; const opportunityIds = opportunities.map((row) => row.id);
-    const linkResult = opportunityIds.length ? await supabase.from("crm_workspace_links").select("crm_entity_id,workspace_entity_id").eq("crm_entity_type", "opportunity").eq("workspace_entity_type", "project").in("crm_entity_id", opportunityIds) : { data: [], error: null };
-    if (linkResult.error) { setError(linkResult.error.message); return; }
-    const projectIds = [...new Set((linkResult.data || []).map((row) => row.workspace_entity_id))];
-    const projectResult = projectIds.length ? await supabase.from("v4_progetti").select("id,titolo,stato,deadline").in("id", projectIds) : { data: [], error: null };
-    if (projectResult.error) { setError(projectResult.error.message); return; }
-    const byOpportunity = new Map(opportunities.map((row) => [row.id, row])); const byProject = new Map((projectResult.data || []).map((row) => [row.id, row]));
-    setRows((linkResult.data || []).map((link) => ({ link, opportunity: byOpportunity.get(link.crm_entity_id), project: byProject.get(link.workspace_entity_id) })).filter((row) => row.opportunity && row.project)); setError("");
-  }, []);
+    setLoading(true);
+    const [projectsResult, customersResult] = await Promise.all([
+      supabase.from("v4_progetti").select("id,titolo,descrizione,stato,deadline,crm_customer_key,crm_opportunity_id,v4_fasi_progetto(id,stato,deadline),crm_opportunities(id,titolo)").not("crm_customer_key", "is", null).order("created_at", { ascending: false }).limit(2000),
+      loadCrmCustomerDirectory(supabase, type),
+    ]);
+    const loadError = projectsResult.error || customersResult.error;
+    if (loadError) {
+      setError(loadError.message);
+      setRows([]);
+    } else {
+      const directory = customersResult.directory;
+      const normalizedSearch = search.trim().toLocaleLowerCase("it-IT");
+      setRows((projectsResult.data || []).flatMap((project) => {
+        const customer = directory.get(project.crm_customer_key);
+        if (!customer) return [];
+        const closed = ["evaso", "evasa", "completato", "completata", "chiuso", "chiusa", "annullato", "annullata"].includes(String(project.stato || "").toLowerCase());
+        if (status === "open" && closed) return [];
+        if (status === "completed" && !closed) return [];
+        if (normalizedSearch && !`${project.titolo} ${project.descrizione || ""} ${customer.name}`.toLocaleLowerCase("it-IT").includes(normalizedSearch)) return [];
+        return [{ ...project, customer, closed }];
+      }));
+      setError("");
+    }
+    setLoading(false);
+  }, [search, status]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
-  return <div className="crm-page"><CrmPageHeader eyebrow="CRM PRIVATE" title="Progetti Workspace collegati" description="Tracciabilità Cliente → Progetto commerciale → Progetto Workspace; nessun progetto esistente viene duplicato o modificato." actions={<CrmPeriodFilter period={period} compact />}><CrmSectionNav items={crmNavigation(type)} period={period} label="Navigazione CRM PRIVATE" /></CrmPageHeader><ErrorMessage error={error} /><div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Progetto Workspace</th><th>Cliente</th><th>Progetto commerciale</th><th>Stato</th><th>Deadline</th><th>Azioni</th></tr></thead><tbody>{rows.map(({ link, opportunity, project }) => <tr key={`${link.crm_entity_id}:${link.workspace_entity_id}`}><td><strong>{project.titolo}</strong></td><td><CrmCustomerLink crmType={type} customerCode={opportunity.crm_accounts.codice_cliente_mexal} accountId={opportunity.crm_accounts.id} name={opportunity.crm_accounts.nome} period={period}>{opportunity.crm_accounts.nome}</CrmCustomerLink></td><td><Link to={period.withPeriod(`${config.basePath}/pipeline/${opportunity.id}`)}>{opportunity.titolo}</Link></td><td>{project.stato}</td><td>{formatDate(project.deadline)}</td><td><Link className="secondary-action" to={`/activities/projects?project=${project.id}`}>Apri / elimina</Link></td></tr>)}</tbody></table>{!rows.length ? <div className="crm-empty">Nessun progetto Workspace collegato a progetti commerciali PRIVATE.</div> : null}</div></div>;
+  const updateParam = (name, value) => setParams((current) => { const next = new URLSearchParams(current); if (value) next.set(name, value); else next.delete(name); return next; }, { replace: true });
+  const returnTo = encodeURIComponent(`/crm/conto-terzi/progetti${window.location.search}`);
+  return <div className="crm-page"><CrmPageHeader eyebrow="CRM PRIVATE" title="Progetti PRIVATE" description="Gli stessi progetti operativi del modulo Attività, con cliente, task e deadline in un unico archivio." actions={<><CrmPeriodFilter period={period} compact /><Link className="primary-action crm-primary" to={`/activities/projects?new=1&returnTo=${returnTo}`}><Plus size={16} />Nuovo progetto</Link></>}><CrmSectionNav items={crmNavigation(type)} period={period} label="Navigazione CRM PRIVATE" /></CrmPageHeader><ErrorMessage error={error} />
+    <div className="crm-filters"><label><Search size={16} /><input value={search} onChange={(event) => updateParam("projectSearch", event.target.value)} placeholder="Cerca progetto o cliente" /></label><select value={status} onChange={(event) => updateParam("projectStatus", event.target.value)}><option value="open">Aperti</option><option value="completed">Completati</option><option value="all">Tutti</option></select></div>
+    {loading ? <div className="crm-loading">Caricamento progetti...</div> : <div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Progetto</th><th>Cliente</th><th>Task</th><th>Stato</th><th>Deadline</th><th>Pipeline collegata</th><th>Azioni</th></tr></thead><tbody>{rows.map((project) => <tr key={project.id}><td><strong>{project.titolo}</strong>{project.descrizione ? <small>{project.descrizione}</small> : null}</td><td><CrmCustomerLink crmType={type} customerCode={project.customer.customerCode} accountId={project.customer.accountId} name={project.customer.name} period={period}>{project.customer.name}</CrmCustomerLink></td><td>{project.v4_fasi_progetto?.length || 0}</td><td>{project.stato || "aperto"}</td><td>{formatDate(project.deadline)}</td><td>{project.crm_opportunities ? <Link to={period.withPeriod(`/crm/conto-terzi/pipeline/${project.crm_opportunities.id}`)}>{project.crm_opportunities.titolo}</Link> : "—"}</td><td><Link className="secondary-action" to={`/activities/projects?project=${project.id}&returnTo=${returnTo}`}>Apri progetto</Link></td></tr>)}</tbody></table>{!rows.length ? <div className="crm-empty">Nessun progetto operativo corrisponde ai filtri.</div> : null}</div>}
+  </div>;
 }
 
 function B2BCustomerActionPage({ mode }) {

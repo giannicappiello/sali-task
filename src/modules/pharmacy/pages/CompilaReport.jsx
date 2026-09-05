@@ -3,6 +3,7 @@ import { supabase as reportSupabase } from "../services/reportSupabase";
 import { supabase as primarySupabase } from "../../../lib/supabaseClient";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { googleMapsCoordinateUrl } from "../services/beautyVisitCrm";
 
 export default function CompilaReport({
   giornata,
@@ -812,7 +813,7 @@ function ReportPosition({ label, at, latitude, longitude, address, accuracy, dis
       {geofence && <span>Esito geolocalizzazione: {String(geofence).replaceAll("_", " ")}</span>}
       {exceptionReason && <span>Motivazione: {exceptionReason}</span>}
       {hasCoordinates ? (
-        <a href={`https://www.google.com/maps?q=${latitude},${longitude}`} target="_blank" rel="noreferrer">
+        <a href={googleMapsCoordinateUrl(latitude, longitude)} target="_blank" rel="noreferrer">
           Apri posizione sulla mappa
         </a>
       ) : at ? <span>Coordinate non disponibili o anonimizzate.</span> : null}

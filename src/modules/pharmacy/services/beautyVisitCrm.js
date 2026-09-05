@@ -28,6 +28,11 @@ export async function captureBeautyPosition() {
   return getCurrentPosition();
 }
 
+export function googleMapsCoordinateUrl(latitude, longitude) {
+  const query = `${Number(latitude)},${Number(longitude)}`;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+}
+
 export async function loadBeautyVisitLinks(legacyIds) {
   if (!legacyIds.length) return new Map();
   const { data, error } = await supabase

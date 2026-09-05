@@ -134,6 +134,9 @@ test("il report Beauty CRM conserva vendite e rende visibili le coordinate di ch
   assert.match(service, /check_in_latitude/);
   assert.match(service, /check_out_longitude/);
   assert.match(service, /report_data/);
+  assert.match(service, /maps\/search\/\?api=1&query=/);
+  assert.match(days, /googleMapsCoordinateUrl\(latitude, longitude\)/);
+  assert.match(report, /googleMapsCoordinateUrl\(latitude, longitude\)/);
 });
 
 test("le card CRM hanno drill-down filtrati e il layout smartphone uniforme", async () => {

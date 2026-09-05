@@ -12,6 +12,7 @@ import {
   createCrmBeautyContactVisit,
   createCrmBeautyCustomerVisit,
   ensureCrmBeautyVisit,
+  googleMapsCoordinateUrl,
   loadBeautyVisitLinks,
   loadCrmOnlyBeautyVisits,
 } from "../services/beautyVisitCrm";
@@ -1320,7 +1321,7 @@ function VisitPosition({ label, at, latitude, longitude, accuracy, distance, geo
       {geofence && <span>Esito: {String(geofence).replaceAll("_", " ")}</span>}
       {exceptionReason && <span>Motivazione: {exceptionReason}</span>}
       {hasCoordinates ? (
-        <a href={`https://www.google.com/maps?q=${latitude},${longitude}`} target="_blank" rel="noreferrer">Apri posizione sulla mappa</a>
+        <a href={googleMapsCoordinateUrl(latitude, longitude)} target="_blank" rel="noreferrer">Apri posizione sulla mappa</a>
       ) : at ? <span>Coordinate non disponibili o anonimizzate.</span> : null}
     </div>
   );

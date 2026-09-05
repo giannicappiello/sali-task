@@ -6,6 +6,7 @@ const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), "
 const migration = read("supabase/migrations/20260903150000_crm_workspace_activity_orchestration.sql");
 const canonicalMigration = read("supabase/migrations/20260905100000_crm_workspace_canonical_activities.sql");
 const unifiedMigration = read("supabase/migrations/20260905120000_unify_crm_workspace_projects_tasks.sql");
+const catalogLabelsMigration = read("supabase/migrations/20260905123000_crm_workspace_canonical_catalog_labels.sql");
 const opportunity = read("src/modules/crm/CrmOpportunityDetail.jsx");
 const activityTypes = read("src/components/ProjectTypesSettings.jsx");
 const tasks = read("src/pages/Tasks/Tasks.jsx");
@@ -160,5 +161,7 @@ test("CRM PRIVATE e Attività condividono progetti, task e cliente canonici", ()
   assert.match(unifiedMigration, /workspace_inherit_project_customer/);
   assert.match(unifiedMigration, /workspace_propagate_project_customer/);
   assert.match(unifiedMigration, /phase\.crm_customer_key is null/);
+  assert.match(catalogLabelsMigration, /nome='Progetti PRIVATE'/);
+  assert.match(catalogLabelsMigration, /Task e fasi operative condivise/);
   assert.doesNotMatch(unifiedMigration, /delete from public\.(v4_progetti|v4_fasi_progetto|crm_activities|crm_opportunities)/i);
 });

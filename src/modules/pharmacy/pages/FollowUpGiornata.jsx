@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../services/reportSupabase";
+import { supabase as workspaceSupabase } from "../../../lib/supabaseClient";
 
 const tipiAzione = [
   "richiamare farmacia",
@@ -27,6 +28,24 @@ export default function FollowUpGiornata({
   }, []);
 
   async function caricaFollowUp() {
+    if (giornata._crmOnly && giornata.crm_activity_id) {
+      const { data, error } = await workspaceSupabase
+        .from("crm_activities")
+        .select("id,tipo,descrizione,stato,data_attivita,creato_il")
+        .eq("source_type", "beauty_follow_up")
+        .eq("source_id", giornata.crm_activity_id)
+        .order("creato_il", { ascending: false });
+      if (error) return alert(error.message);
+      setFollowUp((data || []).map((item) => ({
+        ...item,
+        tipo_azione: item.tipo,
+        note: item.descrizione,
+        data_followup: item.data_attivita?.slice(0, 10),
+        stato: item.stato === "completata" ? "fatto" : "da fare",
+      })));
+      return;
+    }
+
     const { data, error } = await supabase
       .from("follow_up_giornate")
       .select("*")
@@ -56,15 +75,46 @@ export default function FollowUpGiornata({
   async function aggiungiFollowUp(e) {
     e.preventDefault();
 
-    const { error } = await supabase.from("follow_up_giornate").insert([
-      {
-        giornata_id: giornata.id,
-        tipo_azione: tipoAzione,
-        stato,
-        data_followup: dataFollowup || null,
-        note,
-      },
-    ]);
+    let error;
+    if (giornata._crmOnly && giornata.crm_activity_id) {
+      const { data: parent, error: parentError } = await workspaceSupabase
+        .from("crm_activities")
+        .select("account_id,responsabile_id,reparto_id,creato_da")
+        .eq("id", giornata.crm_activity_id)
+        .single();
+      if (parentError) error = parentError;
+      else {
+        const result = await workspaceSupabase.from("crm_activities").insert([{
+          crm_tipo: "b2b",
+          account_id: parent.account_id,
+          activity_class: "semplice",
+          tipo: tipoAzione,
+          titolo: `Follow-up Beauty - ${tipoAzione}`,
+          descrizione: note || null,
+          stato: stato === "fatto" ? "completata" : "pianificata",
+          data_attivita: dataFollowup ? `${dataFollowup}T09:00:00` : null,
+          completata_il: stato === "fatto" ? new Date().toISOString() : null,
+          responsabile_id: parent.responsabile_id,
+          reparto_id: parent.reparto_id,
+          source_type: "beauty_follow_up",
+          source_id: giornata.crm_activity_id,
+          idempotency_key: `beauty-follow-up:${giornata.crm_activity_id}:${crypto.randomUUID()}`,
+          creato_da: parent.creato_da || parent.responsabile_id,
+        }]);
+        error = result.error;
+      }
+    } else {
+      const result = await supabase.from("follow_up_giornate").insert([
+        {
+          giornata_id: giornata.id,
+          tipo_azione: tipoAzione,
+          stato,
+          data_followup: dataFollowup || null,
+          note,
+        },
+      ]);
+      error = result.error;
+    }
 
     if (error) return alert(error.message);
 
@@ -77,10 +127,19 @@ export default function FollowUpGiornata({
   }
 
   async function aggiornaStato(item, nuovoStato) {
-    const { error } = await supabase
-      .from("follow_up_giornate")
-      .update({ stato: nuovoStato })
-      .eq("id", item.id);
+    const result = giornata._crmOnly
+      ? await workspaceSupabase
+        .from("crm_activities")
+        .update({
+          stato: nuovoStato === "fatto" ? "completata" : "pianificata",
+          completata_il: nuovoStato === "fatto" ? new Date().toISOString() : null,
+        })
+        .eq("id", item.id)
+      : await supabase
+        .from("follow_up_giornate")
+        .update({ stato: nuovoStato })
+        .eq("id", item.id);
+    const { error } = result;
 
     if (error) return alert(error.message);
 
@@ -91,10 +150,13 @@ export default function FollowUpGiornata({
     const conferma = await window.workspaceConfirm("Vuoi eliminare questa azione commerciale?");
     if (!conferma) return;
 
-    const { error } = await supabase
-      .from("follow_up_giornate")
-      .delete()
-      .eq("id", item.id);
+    const result = giornata._crmOnly
+      ? await workspaceSupabase.rpc("crm_delete_activity", { p_activity_id: item.id })
+      : await supabase
+        .from("follow_up_giornate")
+        .delete()
+        .eq("id", item.id);
+    const { error } = result;
 
     if (error) return alert(error.message);
 

@@ -786,6 +786,7 @@ export default function Giornate({ utente }) {
       <SchedaFarmacia
         farmacia={farmaciaScheda}
         beauty={beauty}
+        crmOnly={Boolean(farmaciaScheda?._crmOnly)}
         onBack={() => setFarmaciaScheda(null)}
       />
     );
@@ -868,30 +869,32 @@ export default function Giornate({ utente }) {
           </button>
         )}
 
-        {!giornata._crmOnly && <button
+        <button
           style={secondaryButtonStyle}
           onClick={() => apriAllegati(giornata)}
         >
           Allegati
-        </button>}
+        </button>
 
-        {!giornata._crmOnly && <button
+        <button
           style={secondaryButtonStyle}
           onClick={() => setGiornataFollowUp(giornata)}
         >
           Follow-up
-        </button>}
+        </button>
 
-        {!giornata._crmOnly && <button
+        <button
           style={secondaryButtonStyle}
           onClick={() =>
-            setFarmaciaScheda(
-              farmacie.find((f) => f.id === giornata.farmacia_id)
-            )
+            setFarmaciaScheda({
+              ...farmacie.find((f) => f.id === giornata.farmacia_id),
+              _crmOnly: Boolean(giornata._crmOnly),
+              crm_account_id: giornata.crm_account_id,
+            })
           }
         >
           Scheda farmacia
-        </button>}
+        </button>
       </div>
     );
   }

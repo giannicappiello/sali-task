@@ -115,6 +115,26 @@ test("la selezione cliente BeautyDays usa una sola ricerca rapida totale", async
   assert.doesNotMatch(page, /<option value="">Seleziona cliente<\/option>/);
 });
 
+test("le visite create dal check-in mantengono allegati, follow-up e scheda cliente", async () => {
+  const [days, attachments, followUp, customerCard, service] = await Promise.all([
+    read("src/modules/pharmacy/pages/Giornate.jsx"),
+    read("src/modules/pharmacy/pages/AllegatiGiornata.jsx"),
+    read("src/modules/pharmacy/pages/FollowUpGiornata.jsx"),
+    read("src/modules/pharmacy/pages/SchedaFarmacia.jsx"),
+    read("src/modules/pharmacy/services/beautyVisitCrm.js"),
+  ]);
+  assert.doesNotMatch(days, /!giornata\._crmOnly && <button[\s\S]{0,180}>\s*Allegati/);
+  assert.doesNotMatch(days, /!giornata\._crmOnly && <button[\s\S]{0,180}>\s*Follow-up/);
+  assert.doesNotMatch(days, /!giornata\._crmOnly && <button[\s\S]{0,260}>\s*Scheda farmacia/);
+  assert.match(attachments, /report_data\?\.attachments/);
+  assert.match(attachments, /attachments: \[attachment,/);
+  assert.match(followUp, /source_type", "beauty_follow_up"/);
+  assert.match(followUp, /workspaceSupabase\.from\("crm_activities"\)\.insert/);
+  assert.match(customerCard, /crmOnly && farmacia\.crm_account_id/);
+  assert.match(customerCard, /note_commerciali/);
+  assert.match(service, /crm_account_id: activity\.account_id/);
+});
+
 test("la visita Beauty crea atomicamente anche la task Workspace collegata", async () => {
   const sql = await read("supabase/migrations/20260904230000_crm_beauty_workspace_task.sql");
   assert.match(sql, /insert into public\.v4_fasi_progetto/i);

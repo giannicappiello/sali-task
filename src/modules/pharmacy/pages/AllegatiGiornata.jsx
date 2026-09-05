@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../services/reportSupabase";
+import { supabase as workspaceSupabase } from "../../../lib/supabaseClient";
 
 const categorieAllegati = [
   { key: "foto_banco", label: "Foto banco" },
@@ -19,6 +20,17 @@ export default function AllegatiGiornata({ giornata, onBack }) {
   }, []);
 
   async function caricaAllegati() {
+    if (giornata._crmOnly && giornata.crm_activity_id) {
+      const { data, error } = await workspaceSupabase
+        .from("crm_visit_details")
+        .select("report_data")
+        .eq("activity_id", giornata.crm_activity_id)
+        .single();
+      if (error) return alert(error.message);
+      setAllegati(data?.report_data?.attachments || []);
+      return;
+    }
+
     const { data, error } = await supabase
       .from("allegati_giornata")
       .select("*")
@@ -39,7 +51,7 @@ export default function AllegatiGiornata({ giornata, onBack }) {
       return;
     }
 
-    const filePath = `${giornata.id}/${categoria}/${Date.now()}-${file.name}`;
+    const filePath = `${giornata.crm_activity_id || giornata.id}/${categoria}/${Date.now()}-${file.name}`;
 
     const { error: uploadError } = await supabase.storage
       .from(bucket)
@@ -47,17 +59,44 @@ export default function AllegatiGiornata({ giornata, onBack }) {
 
     if (uploadError) return alert(uploadError.message);
 
-    const { error: insertError } = await supabase
-      .from("allegati_giornata")
-      .insert([
-        {
-          giornata_id: giornata.id,
+    let insertError;
+    if (giornata._crmOnly && giornata.crm_activity_id) {
+      const { data: detail, error: detailError } = await workspaceSupabase
+        .from("crm_visit_details")
+        .select("report_data")
+        .eq("activity_id", giornata.crm_activity_id)
+        .single();
+      if (detailError) insertError = detailError;
+      else {
+        const attachment = {
+          id: crypto.randomUUID(),
           nome_file: file.name,
           path_file: filePath,
           tipo_file: file.type,
           categoria,
-        },
-      ]);
+          created_at: new Date().toISOString(),
+        };
+        const reportData = detail?.report_data || {};
+        const result = await workspaceSupabase
+          .from("crm_visit_details")
+          .update({ report_data: { ...reportData, attachments: [attachment, ...(reportData.attachments || [])] } })
+          .eq("activity_id", giornata.crm_activity_id);
+        insertError = result.error;
+      }
+    } else {
+      const result = await supabase
+        .from("allegati_giornata")
+        .insert([
+          {
+            giornata_id: giornata.id,
+            nome_file: file.name,
+            path_file: filePath,
+            tipo_file: file.type,
+            categoria,
+          },
+        ]);
+      insertError = result.error;
+    }
 
     if (insertError) return alert(insertError.message);
 
@@ -76,10 +115,29 @@ export default function AllegatiGiornata({ giornata, onBack }) {
 
     await supabase.storage.from(bucket).remove([allegato.path_file]);
 
-    const { error } = await supabase
-      .from("allegati_giornata")
-      .delete()
-      .eq("id", allegato.id);
+    let error;
+    if (giornata._crmOnly && giornata.crm_activity_id) {
+      const { data: detail, error: detailError } = await workspaceSupabase
+        .from("crm_visit_details")
+        .select("report_data")
+        .eq("activity_id", giornata.crm_activity_id)
+        .single();
+      if (detailError) error = detailError;
+      else {
+        const reportData = detail?.report_data || {};
+        const result = await workspaceSupabase
+          .from("crm_visit_details")
+          .update({ report_data: { ...reportData, attachments: (reportData.attachments || []).filter((item) => item.id !== allegato.id) } })
+          .eq("activity_id", giornata.crm_activity_id);
+        error = result.error;
+      }
+    } else {
+      const result = await supabase
+        .from("allegati_giornata")
+        .delete()
+        .eq("id", allegato.id);
+      error = result.error;
+    }
 
     if (error) return alert(error.message);
 

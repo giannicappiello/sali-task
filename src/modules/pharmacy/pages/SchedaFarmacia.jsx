@@ -1,19 +1,36 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../services/reportSupabase";
+import { supabase as workspaceSupabase } from "../../../lib/supabaseClient";
 import InfoTooltip from "../../../components/InfoTooltip";
 
-export default function SchedaFarmacia({ farmacia, beauty, onBack }) {
+export default function SchedaFarmacia({ farmacia, beauty, crmOnly = false, onBack }) {
   const [giornate, setGiornate] = useState([]);
   const [vendite, setVendite] = useState([]);
   const [noteCommerciali, setNoteCommerciali] = useState(
     farmacia.note_commerciali || ""
   );
 
-  useEffect(() => {
-    caricaDati();
-  }, []);
-
   async function caricaDati() {
+    if (crmOnly && farmacia.crm_account_id) {
+      const { data, error } = await workspaceSupabase
+        .from("crm_activities")
+        .select("id,titolo,stato,data_attivita,responsabile_id,esito")
+        .eq("account_id", farmacia.crm_account_id)
+        .eq("tipo", "visita_beauty")
+        .order("data_attivita", { ascending: false });
+      if (error) return alert(error.message);
+      setGiornate((data || []).map((item) => ({
+        id: item.id,
+        data: item.data_attivita?.slice(0, 10),
+        consultant_id: item.responsabile_id,
+        stato: item.stato === "completata" ? "eseguita" : item.stato,
+        fatturato_giornata: 0,
+        numero_totale_pezzi_venduti: 0,
+      })));
+      setVendite([]);
+      return;
+    }
+
     const giornateRes = await supabase
       .from("giornate_promozionali")
       .select("*")
@@ -41,6 +58,12 @@ export default function SchedaFarmacia({ farmacia, beauty, onBack }) {
 
     setVendite(venditeRes.data || []);
   }
+
+  useEffect(() => {
+    // Caricamento iniziale della scheda selezionata; gli aggiornamenti avvengono dopo query asincrone.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    caricaDati();
+  }, []);
 
   function formatDataIt(dataIso) {
     if (!dataIso) return "";
@@ -93,6 +116,22 @@ export default function SchedaFarmacia({ farmacia, beauty, onBack }) {
     .sort((a, b) => new Date(a.data) - new Date(b.data))[0];
 
   async function salvaNoteCommerciali() {
+    if (crmOnly && farmacia.crm_account_id) {
+      const { data: account, error: readError } = await workspaceSupabase
+        .from("crm_accounts")
+        .select("metadati")
+        .eq("id", farmacia.crm_account_id)
+        .single();
+      if (readError) return alert(readError.message);
+      const { error } = await workspaceSupabase
+        .from("crm_accounts")
+        .update({ metadati: { ...(account?.metadati || {}), note_commerciali: noteCommerciali } })
+        .eq("id", farmacia.crm_account_id);
+      if (error) return alert(error.message);
+      alert("Note commerciali salvate");
+      return;
+    }
+
     const { error } = await supabase
       .from("farmacie")
       .update({ note_commerciali: noteCommerciali })

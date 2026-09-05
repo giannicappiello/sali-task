@@ -56,7 +56,7 @@ export async function loadCrmOnlyBeautyVisits() {
 
   const [detailsResult, accountsResult] = await Promise.all([
     supabase.from("crm_visit_details").select("activity_id,visit_status,check_in_at,check_out_at,check_in_latitude,check_in_longitude,check_in_accuracy_meters,check_in_distance_meters,check_in_geofence,check_in_exception_reason,check_out_latitude,check_out_longitude,check_out_accuracy_meters,check_out_distance_meters,check_out_geofence,check_out_exception_reason,report_data").in("activity_id", activities.map((row) => row.id)),
-    supabase.from("crm_accounts").select("id,nome,indirizzo,citta,provincia,telefono,email,codice_cliente_mexal").in("id", [...new Set(activities.map((row) => row.account_id))]),
+    supabase.from("crm_accounts").select("id,nome,indirizzo,citta,provincia,telefono,email,codice_cliente_mexal,metadati").in("id", [...new Set(activities.map((row) => row.account_id))]),
   ]);
   if (detailsResult.error) throw detailsResult.error;
   if (accountsResult.error) throw accountsResult.error;
@@ -72,6 +72,8 @@ export async function loadCrmOnlyBeautyVisits() {
     provincia: account.provincia,
     telefono: account.telefono,
     email: account.email,
+    metadati: account.metadati || {},
+    note_commerciali: account.metadati?.note_commerciali || "",
     nuovo_contatto: !account.codice_cliente_mexal,
   }));
   const links = new Map();
@@ -85,6 +87,7 @@ export async function loadCrmOnlyBeautyVisits() {
     return {
       id: dayId,
       crm_activity_id: activity.id,
+      crm_account_id: activity.account_id,
       workspace_task_id: activity.workspace_task_id,
       farmacia_id: `crm:${activity.account_id}`,
       data: activity.data_attivita?.slice(0, 10),

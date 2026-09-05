@@ -358,11 +358,12 @@ test("legacy and derived module rows are migrated into canonical modules before 
 });
 
 test("screen order is configurable per module and drives every module presentation", async () => {
-  const [editor, orderHook, activities, beauty, genericContainer, settingsHub, analyticsHub, productionService] = await Promise.all([
+  const [editor, orderHook, activities, beauty, crmWorkspaceUi, genericContainer, settingsHub, analyticsHub, productionService] = await Promise.all([
     read("src/pages/Settings/ModuleManagement.jsx"),
     read("src/hooks/useOrderedModuleScreens.js"),
     read("src/pages/Activities/ActivitiesModule.jsx"),
     read("src/modules/pharmacy/PharmacyModule.jsx"),
+    read("src/modules/crm/CrmWorkspaceUI.jsx"),
     read("src/pages/Modules/WorkspaceModuleContainer.jsx"),
     read("src/pages/Settings/SettingsHub.jsx"),
     read("src/modules/analytics/pages/AnalyticsHub.jsx"),
@@ -377,6 +378,8 @@ test("screen order is configurable per module and drives every module presentati
   assert.match(editor, /Ordine nel catalogo/);
   assert.match(orderHook, /workspace_moduli_schermate/);
   assert.match(orderHook, /\.order\("ordine"\)/);
+  assert.match(crmWorkspaceUi, /useOrderedModuleScreens\(moduleCode, definitions\)/);
+  assert.match(crmWorkspaceUi, /CRM_ROUTE_CATALOG/);
   assert.match(activities, /useOrderedModuleScreens\("attivita", items\)/);
   assert.match(beauty, /useOrderedModuleScreens\("beauty_days", items\)/);
   assert.match(genericContainer, /\.order\("ordine"\)/);

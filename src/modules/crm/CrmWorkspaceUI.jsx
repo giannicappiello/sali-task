@@ -1,4 +1,10 @@
 import { Link, useLocation } from "react-router-dom";
+import useOrderedModuleScreens from "../../hooks/useOrderedModuleScreens";
+import { CRM_ROUTE_CATALOG } from "./crmRouteCatalog";
+
+function navigationRoute(path) {
+  return CRM_ROUTE_CATALOG.find((route) => route.catalogPath === path);
+}
 
 export function CrmPageHeader({ eyebrow = "CRM Workspace", title, description, actions = null, children = null }) {
   return (
@@ -13,13 +19,21 @@ export function CrmPageHeader({ eyebrow = "CRM Workspace", title, description, a
 }
 export function CrmSectionNav({ items, period, label }) {
   const location = useLocation();
-  const activePath = items
-    .map(([, path]) => path)
+  const definitions = items.map(([itemLabel, path]) => ({
+    itemLabel,
+    path,
+    screenCode: navigationRoute(path)?.screenCode,
+  }));
+  const firstConfiguredItem = definitions.find((item) => item.screenCode);
+  const moduleCode = navigationRoute(firstConfiguredItem?.path)?.moduleCode || "";
+  const { items: orderedItems } = useOrderedModuleScreens(moduleCode, definitions);
+  const activePath = orderedItems
+    .map((item) => item.path)
     .filter((path) => location.pathname === path || location.pathname.startsWith(`${path}/`))
     .sort((left, right) => right.length - left.length)[0] || null;
   return (
     <nav className="crm-section-nav" aria-label={label}>
-      {items.map(([itemLabel, path]) => {
+      {orderedItems.map(({ itemLabel, path }) => {
         const active = path === activePath;
         return <Link key={path} className={active ? "active" : ""} aria-current={active ? "page" : undefined} to={period ? period.withPeriod(path) : path}>{itemLabel}</Link>;
       })}

@@ -9,5 +9,6 @@ export function crmCustomerKey({ customerKey, customerCode, accountId }) {
 export function crmCustomerPath(crmType, identity) {
   const key = crmCustomerKey(identity);
   if (!key) return "";
+  if (crmType === "brand_direct") return crmTypeConfig(crmType).basePath;
   return `${crmTypeConfig(crmType).basePath}/clienti/${encodeURIComponent(key)}`;
 }

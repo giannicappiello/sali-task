@@ -29,6 +29,7 @@ export default function PhaseChecklistModal({
   initialProductIds = [],
   canManage = true,
   crmType = "conto_terzi",
+  initialCustomerKey = "",
   canCompleteDepartment = () => true,
   onClose,
   onSaved,
@@ -75,12 +76,12 @@ export default function PhaseChecklistModal({
         progetto_id: initialProjectId || "",
         deadline: initialDate || todayIso(),
         prodotti: [...new Set(safeArray(initialProductIds).filter(Boolean))],
-        crm_customer_key: projects.find((item) => item.id === initialProjectId)?.crm_customer_key || "",
+        crm_customer_key: projects.find((item) => item.id === initialProjectId)?.crm_customer_key || initialCustomerKey || "",
       });
       setComments([]);
       setAttachments([]);
     }
-  }, [open, selectedPhase?.id, initialDate, initialProjectId, safeArray(initialProductIds).join(",")]);
+  }, [open, selectedPhase?.id, initialDate, initialProjectId, initialCustomerKey, safeArray(initialProductIds).join(",")]);
 
   function getPhaseDepartmentIds(phaseId) {
     return safeArray(phaseDepartments).filter((row) => row.fase_id === phaseId && row.reparto_id).map((row) => row.reparto_id);

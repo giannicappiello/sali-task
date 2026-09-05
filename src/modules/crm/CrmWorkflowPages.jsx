@@ -8,7 +8,7 @@ import CrmCustomerLink from "./CrmCustomerLink";
 import CrmDeleteActivityButton from "./CrmDeleteActivityButton";
 import CrmPeriodFilter, { useCrmPeriod } from "./CrmPeriodFilter";
 import { CrmPageHeader, CrmSectionNav } from "./CrmWorkspaceUI";
-import { crmTypeConfig, formatDate, formatMoney } from "./crmConfig";
+import { crmTypeConfig, formatDate, formatMoney, VIRTUAL_DIRECT_CUSTOMER_KEY } from "./crmConfig";
 import { crmNavigation } from "./crmNavigation";
 import { loadCrmCustomerDirectory } from "./crmWorkspaceCustomers";
 
@@ -34,8 +34,8 @@ export function CrmDevelopmentsPage() {
   </div>;
 }
 
-export function CrmProjectsPage() {
-  const type = "conto_terzi"; const period = useCrmPeriod();
+export function CrmProjectsPage({ type = "conto_terzi" }) {
+  const config = crmTypeConfig(type); const period = useCrmPeriod();
   const [params, setParams] = useSearchParams();
   const [rows, setRows] = useState([]); const [error, setError] = useState(""); const [loading, setLoading] = useState(true);
   const search = params.get("projectSearch") || "";
@@ -65,14 +65,48 @@ export function CrmProjectsPage() {
       setError("");
     }
     setLoading(false);
-  }, [search, status]);
+  }, [search, status, type]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
   const updateParam = (name, value) => setParams((current) => { const next = new URLSearchParams(current); if (value) next.set(name, value); else next.delete(name); return next; }, { replace: true });
-  const returnTo = encodeURIComponent(`/crm/conto-terzi/progetti${window.location.search}`);
-  return <div className="crm-page"><CrmPageHeader eyebrow="CRM PRIVATE" title="Progetti PRIVATE" description="Gli stessi progetti operativi del modulo Attività, con cliente, task e deadline in un unico archivio." actions={<><CrmPeriodFilter period={period} compact /><Link className="primary-action crm-primary" to={`/activities/projects?new=1&returnTo=${returnTo}`}><Plus size={16} />Nuovo progetto</Link></>}><CrmSectionNav items={crmNavigation(type)} period={period} label="Navigazione CRM PRIVATE" /></CrmPageHeader><ErrorMessage error={error} />
+  const returnTo = encodeURIComponent(`${config.basePath}/progetti${window.location.search}`);
+  const directCustomer = type === "brand_direct" ? `&customerKey=${encodeURIComponent(VIRTUAL_DIRECT_CUSTOMER_KEY)}` : "";
+  return <div className="crm-page"><CrmPageHeader eyebrow={config.label} title={`Progetti ${config.label}`} description="Gli stessi progetti operativi del modulo Attività, con cliente, task e deadline in un unico archivio." actions={<><CrmPeriodFilter period={period} compact /><Link className="primary-action crm-primary" to={`/activities/projects?new=1&crmType=${encodeURIComponent(type)}&returnTo=${returnTo}${directCustomer}`}><Plus size={16} />Nuovo progetto</Link></>}><CrmSectionNav items={crmNavigation(type)} period={period} label={`Navigazione ${config.label}`} /></CrmPageHeader><ErrorMessage error={error} />
     <div className="crm-filters"><label><Search size={16} /><input value={search} onChange={(event) => updateParam("projectSearch", event.target.value)} placeholder="Cerca progetto o cliente" /></label><select value={status} onChange={(event) => updateParam("projectStatus", event.target.value)}><option value="open">Aperti</option><option value="completed">Completati</option><option value="all">Tutti</option></select></div>
-    {loading ? <div className="crm-loading">Caricamento progetti...</div> : <div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Progetto</th><th>Cliente</th><th>Task</th><th>Stato</th><th>Deadline</th><th>Pipeline collegata</th><th>Azioni</th></tr></thead><tbody>{rows.map((project) => <tr key={project.id}><td><strong>{project.titolo}</strong>{project.descrizione ? <small>{project.descrizione}</small> : null}</td><td><CrmCustomerLink crmType={type} customerCode={project.customer.customerCode} accountId={project.customer.accountId} name={project.customer.name} period={period}>{project.customer.name}</CrmCustomerLink></td><td>{project.v4_fasi_progetto?.length || 0}</td><td>{project.stato || "aperto"}</td><td>{formatDate(project.deadline)}</td><td>{project.crm_opportunities ? <Link to={period.withPeriod(`/crm/conto-terzi/pipeline/${project.crm_opportunities.id}`)}>{project.crm_opportunities.titolo}</Link> : "—"}</td><td><Link className="secondary-action" to={`/activities/projects?project=${project.id}&returnTo=${returnTo}`}>Apri progetto</Link></td></tr>)}</tbody></table>{!rows.length ? <div className="crm-empty">Nessun progetto operativo corrisponde ai filtri.</div> : null}</div>}
+    {loading ? <div className="crm-loading">Caricamento progetti...</div> : <div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Progetto</th><th>Cliente</th><th>Task</th><th>Stato</th><th>Deadline</th><th>Pipeline collegata</th><th>Azioni</th></tr></thead><tbody>{rows.map((project) => <tr key={project.id}><td><strong>{project.titolo}</strong>{project.descrizione ? <small>{project.descrizione}</small> : null}</td><td><CrmCustomerLink crmType={type} customerCode={project.customer.customerCode} accountId={project.customer.accountId} name={project.customer.name} period={period}>{project.customer.name}</CrmCustomerLink></td><td>{project.v4_fasi_progetto?.length || 0}</td><td>{project.stato || "aperto"}</td><td>{formatDate(project.deadline)}</td><td>{project.crm_opportunities && type !== "brand_direct" ? <Link to={period.withPeriod(`${config.basePath}/pipeline/${project.crm_opportunities.id}`)}>{project.crm_opportunities.titolo}</Link> : "—"}</td><td><Link className="secondary-action" to={`/activities/projects?project=${project.id}&crmType=${encodeURIComponent(type)}&returnTo=${returnTo}`}>Apri progetto</Link></td></tr>)}</tbody></table>{!rows.length ? <div className="crm-empty">Nessun progetto operativo corrisponde ai filtri.</div> : null}</div>}
   </div>;
+}
+
+export function CrmBrandDirectDashboard() {
+  const type = "brand_direct"; const config = crmTypeConfig(type); const period = useCrmPeriod();
+  const [summary, setSummary] = useState({ projects: 0, openTasks: 0, completedTasks: 0, overdueTasks: 0 });
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      const [projectsResult, tasksResult] = await Promise.all([
+        supabase.from("v4_progetti").select("id", { count: "exact", head: true }).eq("crm_customer_key", VIRTUAL_DIRECT_CUSTOMER_KEY),
+        supabase.from("v4_fasi_progetto").select("id,stato,deadline,completato_at").eq("crm_customer_key", VIRTUAL_DIRECT_CUSTOMER_KEY).limit(5000),
+      ]);
+      if (!active) return;
+      const loadError = projectsResult.error || tasksResult.error;
+      if (loadError) { setError(loadError.message); return; }
+      const tasks = tasksResult.data || [];
+      const completed = tasks.filter((task) => ["evaso", "evasa", "completato", "completata", "chiuso", "chiusa"].includes(String(task.stato || "").toLowerCase()) || task.completato_at);
+      const completedIds = new Set(completed.map((task) => task.id));
+      const today = new Date().toISOString().slice(0, 10);
+      setSummary({ projects: projectsResult.count || 0, openTasks: tasks.length - completed.length, completedTasks: completed.length, overdueTasks: tasks.filter((task) => !completedIds.has(task.id) && task.deadline && String(task.deadline).slice(0, 10) < today).length });
+      setError("");
+    }
+    void load();
+    return () => { active = false; };
+  }, []);
+  const cards = [
+    ["Progetti DIRECT", summary.projects, `${config.basePath}/progetti?projectStatus=all`],
+    ["Attività aperte", summary.openTasks, `${config.basePath}/attivita?activityStatus=open`],
+    ["Attività completate", summary.completedTasks, `${config.basePath}/attivita?activityStatus=completed`],
+    ["Attività scadute", summary.overdueTasks, `${config.basePath}/attivita?activityStatus=open`],
+  ];
+  return <div className="crm-page"><CrmPageHeader eyebrow="CRM BRAND DIRECT" title="Cliente DIRECT" description="Area interna per progetti e attività sui prodotti DIRECT non collegati a farmacie o ad altri clienti."><CrmSectionNav items={crmNavigation(type)} period={period} label="Navigazione CRM BRAND DIRECT" /></CrmPageHeader><ErrorMessage error={error} /><div className="crm-kpi-grid">{cards.map(([label, value, path]) => <Link className="crm-kpi-card" key={label} to={period.withPeriod(path)}><span>{label}</span><strong>{value}</strong><small>Apri dettaglio →</small></Link>)}</div></div>;
 }
 
 function B2BCustomerActionPage({ mode }) {

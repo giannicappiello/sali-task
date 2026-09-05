@@ -25,6 +25,13 @@ export function crmNavigation(type) {
       ["Analisi", `${basePath}/analisi`],
     ];
   }
+  if (type === "brand_direct") {
+    return [
+      ["Dashboard", basePath],
+      ["Progetti", `${basePath}/progetti`],
+      ["Attività", `${basePath}/attivita`],
+    ];
+  }
   return [
     ["Dashboard", basePath],
     ["Clienti", `${basePath}/clienti`],

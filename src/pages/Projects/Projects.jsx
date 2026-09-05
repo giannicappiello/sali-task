@@ -88,6 +88,7 @@ export default function Projects() {
   const requestedProjectId = routeParams.get("project") || "";
   const requestedReturnTo = routeParams.get("returnTo") || "";
   const requestedNewProject = routeParams.get("new") === "1";
+  const requestedCrmType = routeParams.get("crmType") || "conto_terzi";
   const requestedCustomerKey = routeParams.get("customerKey") || "";
   const requestedOpportunityId = routeParams.get("opportunity") || "";
   const safeReturnTo = requestedReturnTo.startsWith("/") && !requestedReturnTo.startsWith("//") ? requestedReturnTo : "";
@@ -1482,7 +1483,7 @@ export default function Projects() {
             <label>Descrizione<textarea rows="4" value={projectForm.descrizione} onChange={(e) => setProjectForm({ ...projectForm, descrizione: e.target.value })} /></label>
 
             <label>Cliente
-              <WorkspaceCustomerPicker required={!selectedProject} crmType="conto_terzi" value={projectForm.crm_customer_key} onChange={(crm_customer_key) => setProjectForm((current) => ({ ...current, crm_customer_key }))} />
+              <WorkspaceCustomerPicker required={!selectedProject} crmType={requestedCrmType} value={projectForm.crm_customer_key} onChange={(crm_customer_key) => setProjectForm((current) => ({ ...current, crm_customer_key }))} />
             </label>
 
             <label>Tipo progetto
@@ -1548,6 +1549,7 @@ export default function Projects() {
         templateDepartments={templateDepartments}
         allPhases={phases}
         canManage={canManage}
+        crmType={requestedCrmType}
         canCompleteDepartment={canCompleteDepartment}
         onClose={() => setPhaseModal(false)}
         onSaved={loadData}

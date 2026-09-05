@@ -5,7 +5,7 @@ import { supabase } from "../../lib/supabaseClient";
 import CrmCustomerLink from "./CrmCustomerLink";
 import CrmPeriodFilter, { useCrmPeriod } from "./CrmPeriodFilter";
 import { CrmPageHeader, CrmSectionNav } from "./CrmWorkspaceUI";
-import { crmTypeConfig, formatDate } from "./crmConfig";
+import { crmTypeConfig, formatDate, VIRTUAL_DIRECT_CUSTOMER_KEY } from "./crmConfig";
 import { crmNavigation } from "./crmNavigation";
 import { loadCrmCustomerDirectory } from "./crmWorkspaceCustomers";
 
@@ -72,8 +72,9 @@ export default function CrmActivitiesPage({ type }) {
 
   const navigation = crmNavigation(type);
   const returnTo = encodeURIComponent(pageLocation.pathname + pageLocation.search);
+  const directCustomer = type === "brand_direct" ? `&customerKey=${encodeURIComponent(VIRTUAL_DIRECT_CUSTOMER_KEY)}` : "";
   return <div className="crm-page">
-    <CrmPageHeader eyebrow={config.label} title={`Attività ${config.label}`} description="Le stesse task e fasi operative del modulo Attività, filtrate per cliente CRM." actions={<><CrmPeriodFilter period={period} compact /><Link className="primary-action crm-primary" to={`/activities/tasks?new=1&crmType=${encodeURIComponent(type)}&returnTo=${returnTo}`}><Plus size={16} />Nuova attività</Link></>}>
+    <CrmPageHeader eyebrow={config.label} title={`Attività ${config.label}`} description="Le stesse task e fasi operative del modulo Attività, filtrate per cliente CRM." actions={<><CrmPeriodFilter period={period} compact /><Link className="primary-action crm-primary" to={`/activities/tasks?new=1&crmType=${encodeURIComponent(type)}&returnTo=${returnTo}${directCustomer}`}><Plus size={16} />Nuova attività</Link></>}>
       <CrmSectionNav items={navigation} period={period} label={`Navigazione ${config.label}`} />
     </CrmPageHeader>
     {error ? <div className="crm-message error">{error}</div> : null}

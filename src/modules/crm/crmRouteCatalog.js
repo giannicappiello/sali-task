@@ -1,6 +1,9 @@
 export const CRM_ROUTE_CATALOG = Object.freeze([
   { index: true, path: "", catalogPath: "/crm", moduleCode: "crm", screenCode: "crm.dashboard", view: "overview" },
   { path: "direct", catalogPath: "/crm/direct", moduleCode: "crm_direct", screenCode: "crm.direct.dashboard", view: "direct-overview" },
+  { path: "brand-direct", catalogPath: "/crm/brand-direct", moduleCode: "crm_brand_direct", screenCode: "crm.brand_direct.dashboard", view: "brand-direct-dashboard", type: "brand_direct" },
+  { path: "brand-direct/progetti", catalogPath: "/crm/brand-direct/progetti", moduleCode: "crm_brand_direct", screenCode: "crm.brand_direct.progetti", view: "projects", type: "brand_direct" },
+  { path: "brand-direct/attivita", catalogPath: "/crm/brand-direct/attivita", moduleCode: "crm_brand_direct", screenCode: "crm.brand_direct.attivita", view: "activities", type: "brand_direct" },
   { path: "conto-terzi", catalogPath: "/crm/conto-terzi", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.dashboard", view: "dashboard", type: "conto_terzi" },
   { path: "conto-terzi/clienti", catalogPath: "/crm/conto-terzi/clienti", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.clienti", view: "accounts", type: "conto_terzi" },
   { path: "conto-terzi/clienti/:id", catalogPath: "/crm/conto-terzi/clienti/:id", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.cliente", view: "account", type: "conto_terzi" },

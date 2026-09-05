@@ -6,6 +6,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import PhaseChecklistModal from "../../components/PhaseChecklistModal";
 import InfoTooltip from "../../components/InfoTooltip";
 import WorkspaceTaskKanban from "./WorkspaceTaskKanban";
+import { crmTypeConfig } from "../../modules/crm/crmConfig";
 
 const CLOSED_STATES = ["evaso", "evasa", "completato", "completata", "chiuso", "chiusa"];
 
@@ -244,6 +245,7 @@ export default function Tasks() {
   const safeReturnTo = requestedReturnTo.startsWith("/") && !requestedReturnTo.startsWith("//") ? requestedReturnTo : "";
   const requestedTaskId = params.get("task") || "";
   const requestedCrmType = params.get("crmType") || "conto_terzi";
+  const requestedCustomerKey = params.get("customerKey") || "";
   const [view, setView] = useState("month");
   const [displayMode, setDisplayMode] = useState(params.get("view") || "calendar");
   const [cursor, setCursor] = useState(() => new Date());
@@ -292,8 +294,9 @@ export default function Tasks() {
     if (safeReturnTo) nextParams.returnTo = safeReturnTo;
     if (requestedTaskId) nextParams.task = requestedTaskId;
     if (requestedCrmType !== "conto_terzi") nextParams.crmType = requestedCrmType;
+    if (requestedCustomerKey) nextParams.customerKey = requestedCustomerKey;
     setParams(nextParams, { replace: true });
-  }, [selectedDate, statusFilter, displayMode, originFilter, departmentFilter, mineOnly, requestedTaskId, requestedCrmType, safeReturnTo]);
+  }, [selectedDate, statusFilter, displayMode, originFilter, departmentFilter, mineOnly, requestedTaskId, requestedCrmType, requestedCustomerKey, safeReturnTo]);
 
   async function loadPlanning() {
     setLoading(true);
@@ -726,7 +729,7 @@ export default function Tasks() {
           {blocker && <small className={blocked ? "danger" : "done"}>Fase bloccante: {blocker.titolo || "fase"}{blocked ? " · da completare" : " · completata"}</small>}
         </button>
 
-        {phase.crm_customer_key || phase.crm_opportunity_id ? <div className="planning-crm-links">{phase.crm_customer_key ? <Link to={`/crm/conto-terzi/clienti/${encodeURIComponent(phase.crm_customer_key)}`}>Cliente CRM · {phase.crm_customer_key}</Link> : null}{phase.crm_opportunity_id ? <Link to={`/crm/conto-terzi/pipeline/${phase.crm_opportunity_id}`}>Apri opportunità CRM</Link> : null}</div> : null}
+        {phase.crm_customer_key || phase.crm_opportunity_id ? <div className="planning-crm-links">{phase.crm_customer_key ? <Link to={requestedCrmType === "brand_direct" ? crmTypeConfig(requestedCrmType).basePath : `${crmTypeConfig(requestedCrmType).basePath}/clienti/${encodeURIComponent(phase.crm_customer_key)}`}>Cliente CRM · {phase.crm_customer_key}</Link> : null}{phase.crm_opportunity_id && requestedCrmType !== "brand_direct" ? <Link to={`${crmTypeConfig(requestedCrmType).basePath}/pipeline/${phase.crm_opportunity_id}`}>Apri opportunità CRM</Link> : null}</div> : null}
 
         <div className="planning-department-actions">
           {departments.length > 0 ? (
@@ -933,6 +936,7 @@ export default function Tasks() {
         allPhases={enrichedPhases}
         canManage={true}
         crmType={requestedCrmType}
+        initialCustomerKey={requestedCustomerKey}
         canCompleteDepartment={canCompleteDepartment}
         onClose={() => {
           setPhaseModalOpen(false);

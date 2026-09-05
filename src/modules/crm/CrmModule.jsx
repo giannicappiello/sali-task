@@ -26,7 +26,7 @@ import { crmTypeConfig, formatDate, formatMoney } from "./crmConfig";
 import { loadAllRpcRows } from "./crmDataset";
 import { CRM_ROUTE_ALIASES, CRM_ROUTE_CATALOG, selectAuthorizedCrmModules } from "./crmRouteCatalog";
 import { crmNavigation } from "./crmNavigation";
-import { CrmB2BFollowUpPage, CrmB2BReordersPage, CrmBeautyDaysPage, CrmDevelopmentsPage, CrmProjectsPage } from "./CrmWorkflowPages";
+import { CrmB2BFollowUpPage, CrmB2BReordersPage, CrmBeautyDaysPage, CrmBrandDirectDashboard, CrmDevelopmentsPage, CrmProjectsPage } from "./CrmWorkflowPages";
 import "./crm.css";
 import "./workspace-alignment.css";
 
@@ -119,6 +119,7 @@ return <ModuleContainerLayout icon={getModuleIcon(overview.icon, BriefcaseBusine
 function CrmDirectOverview() {
   const { hasModuleAccess } = useAuth();
   const items = [
+    { code: "crm_brand_direct", name: "BRAND DIRECT", description: "Cliente virtuale per progetti e attività interne sui prodotti DIRECT.", to: "/crm/brand-direct", icon: BriefcaseBusiness },
     { code: "crm_b2b", name: "BtoB", description: "Clienti DIRECT con nome_ricerca_cf BtoB.", to: "/crm/b2b", icon: Store },
     { code: "crm_online", name: "BtoC / Online", description: "Clienti DIRECT con nome_ricerca_cf BtoC.", to: "/crm/online", icon: ShoppingBag },
   ].filter((item) => hasModuleAccess(item.code));
@@ -718,6 +719,7 @@ function renderCrmView(route) {
   switch (route.view) {
     case "overview": return <CrmOverview />;
     case "direct-overview": return <CrmDirectOverview />;
+    case "brand-direct-dashboard": return <CrmBrandDirectDashboard />;
     case "dashboard": return route.type === "conto_terzi" ? <CrmPrivateDashboard /> : <CrmDashboard type={route.type} />;
     case "accounts": return <AccountsPage type={route.type} />;
     case "account": return <AccountDetail type={route.type} />;
@@ -727,7 +729,7 @@ function renderCrmView(route) {
     case "activities": return <CrmActivitiesPage type={route.type} />;
     case "analytics": return <CrmAnalyticsPage type={route.type} />;
     case "developments": return <CrmDevelopmentsPage />;
-    case "projects": return <CrmProjectsPage />;
+    case "projects": return <CrmProjectsPage type={route.type} />;
     case "follow-up": return <CrmB2BFollowUpPage />;
     case "reorders": return <CrmB2BReordersPage />;
     case "beautydays": return <CrmBeautyDaysPage />;

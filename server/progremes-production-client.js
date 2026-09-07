@@ -175,7 +175,8 @@ export function validateV4PreviewResponse(result, payload) {
         !positive(demand.quantity) || !text(demand.unitOfMeasure) || !Array.isArray(demand.materials))
       throw Object.assign(new Error("Domanda V4 non riconciliabile."), { code: "INVALID_MES_V4_RESPONSE" });
     for (const material of demand.materials) {
-      if (!text(material.source) || !text(material.articleCode) || !text(material.unitOfMeasure) ||
+      const blockCode = text(material.blockCode);
+      if (!text(material.source) || !text(material.articleCode) || (!text(material.unitOfMeasure) && !blockCode) ||
           !["grossRequirement", "physicalStock", "committedQuantity", "netStock", "futureSupplyQuantity", "projectedAvailability", "shortageQuantity"].every((field) => nonNegative(material[field])) ||
           !/^[a-f0-9]{64}$/i.test(text(material.certifiedHash)))
         throw Object.assign(new Error("Materiale V4 non certificabile."), { code: "INVALID_MES_V4_RESPONSE" });

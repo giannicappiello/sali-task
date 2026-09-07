@@ -1,6 +1,29 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createProgremesProductionClient, V4_CONFIRM_PATH, V4_PREVIEW_PATH } from "./progremes-production-client.js";
+import { createProgremesProductionClient, validateV4PreviewResponse, V4_CONFIRM_PATH, V4_PREVIEW_PATH } from "./progremes-production-client.js";
+
+const v4Payload = () => ({
+  contractVersion: 4,
+  workspaceRdpExternalId: "00000000-0000-4000-8000-000000000001",
+  externalId: "00000000-0000-4000-8000-000000000002",
+  idempotencyKey: "v4:preview:1",
+  demands: [{
+    workspaceLineId: "00000000-0000-4000-8000-000000000004",
+    finishedArticleCode: "CW0001",
+    quantity: 10,
+    unitOfMeasure: "PZ",
+    requiredAt: "2026-12-01T00:00:00Z",
+  }],
+});
+
+const v4Response = (preview, material) => ({
+  externalId: preview.externalId,
+  status: "Blocked",
+  snapshotHash: "a".repeat(64),
+  rowVersion: "1",
+  mutatesProduction: false,
+  demands: [{ ...preview.demands[0], materials: [material] }],
+});
 
 test("client V4 invia solo domanda PF e valida il netting completo MES", async () => {
   const requestId="00000000-0000-4000-8000-000000000001";
@@ -33,5 +56,54 @@ test("client V4 conserva codice e stato dei rifiuti MES privi di messaggio", asy
       && error.status === 401
       && error.details?.upstreamStatus === 401
       && /INVALID_SIGNATURE/.test(error.message),
+  );
+});
+
+test("client V4 accetta un materiale bloccato certificato anche senza UDM", () => {
+  const preview = v4Payload();
+  const blockedMaterial = {
+    source: "FinishedBom",
+    articleCode: "FP123M",
+    description: "FP123M",
+    unitOfMeasure: "",
+    grossRequirement: 10,
+    physicalStock: 0,
+    committedQuantity: 0,
+    netStock: 0,
+    futureSupplyQuantity: 0,
+    projectedAvailability: 0,
+    shortageQuantity: 10,
+    availableAt: null,
+    requiredAt: preview.demands[0].requiredAt,
+    formulaVersionId: null,
+    bomRevision: null,
+    blockCode: "FINISHED_BOM_NOT_FOUND",
+    certifiedHash: "b".repeat(64),
+  };
+
+  const response = v4Response(preview, blockedMaterial);
+  assert.equal(validateV4PreviewResponse(response, preview), response);
+});
+
+test("client V4 continua a rifiutare un materiale ordinario senza UDM", () => {
+  const preview = v4Payload();
+  const invalidMaterial = {
+    source: "DirectComponent",
+    articleCode: "MP01",
+    unitOfMeasure: "",
+    grossRequirement: 1,
+    physicalStock: 0,
+    committedQuantity: 0,
+    netStock: 0,
+    futureSupplyQuantity: 0,
+    projectedAvailability: 0,
+    shortageQuantity: 1,
+    blockCode: "",
+    certifiedHash: "b".repeat(64),
+  };
+
+  assert.throws(
+    () => validateV4PreviewResponse(v4Response(preview, invalidMaterial), preview),
+    (error) => error.code === "INVALID_MES_V4_RESPONSE",
   );
 });

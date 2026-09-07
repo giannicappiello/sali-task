@@ -14,7 +14,9 @@ test("il Workbench mostra un alertdialog quando ricalcolo, creazione o conferma 
   assert.match(source, /setRdpFailure\(\{ code: e\.code \|\| "V4_PREVIEW_FAILED"/);
   assert.match(source, /setRdpFailure\(\{ phase: "confirm", code: e\.code \|\| "V4_CONFIRM_FAILED"/);
   assert.match(source, /failure\.code === "STALE_V4_PREVIEW"/);
+  assert.match(source, /failure\.code === "V4_PREVIEW_BLOCKED"/);
   assert.match(source, /RdP da ricalcolare/);
+  assert.match(source, /Blocchi tecnici da risolvere/);
   assert.match(source, /Non è stato creato alcun ordine di produzione\. Chiudere questo messaggio e premere RICALCOLA RDP/);
   assert.match(source, /Non ripetere la conferma e non ricalcolare la RdP/);
   assert.match(css, /\.rdp-error-dialog/);

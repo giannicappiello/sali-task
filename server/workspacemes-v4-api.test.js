@@ -15,13 +15,16 @@ test("API V4 non legge distinte, giacenze o impegni Workspace", async () => {
 test("la decisione V4 è calcolata automaticamente dalle carenze certificate", () => {
   assert.equal(automaticWorkspaceV4Decision({ status: "READY" }, [{ shortage_quantity: 0 }]), "COMPLETE");
   assert.equal(automaticWorkspaceV4Decision({ status: "READY" }, [{ shortage_quantity: 12.5 }]), "WITH_SHORTAGES");
-  assert.equal(automaticWorkspaceV4Decision({ status: "BLOCKED" }, [{ shortage_quantity: 1 }]), "WITH_SHORTAGES");
 });
 
-test("un blocco non dovuto a carenze non può essere confermato", () => {
+test("una preview bloccata non viene confusa con un semplice fabbisogno", () => {
   assert.throws(
-    () => automaticWorkspaceV4Decision({ status: "BLOCKED" }, [{ shortage_quantity: 0, block_code: "FORMULA_MISSING" }]),
-    (error) => error.code === "V4_NON_SHORTAGE_BLOCK",
+    () => automaticWorkspaceV4Decision({ status: "BLOCKED" }, [{ shortage_quantity: 1, block_code: "FORMULA_MISSING" }]),
+    (error) => error.code === "V4_PREVIEW_BLOCKED",
+  );
+  assert.throws(
+    () => automaticWorkspaceV4Decision({ status: "READY" }, [{ shortage_quantity: 1, block_code: "MATERIAL_MAPPING_MISSING" }]),
+    (error) => error.code === "V4_PREVIEW_BLOCKED",
   );
 });
 

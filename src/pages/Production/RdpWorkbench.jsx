@@ -169,10 +169,11 @@ function V3Panel({ v3, canDecide, busy, onPreview, onConfirm }) {
         {row.block_code && <small className="rdp-alert-blocking">{row.block_code}</small>}
       </div>)}</div>
       {!!v3.requirements?.length && <p>Fabbisogni acquisto automatici: {v3.requirements.length}. Gli impegni produttivi sono gestiti esclusivamente da ProgreMES.</p>}
-      {["READY", "BLOCKED"].includes(preview.status) && !v3.saga && canDecide && <>
+      {preview.status === "READY" && !v3.saga && canDecide && <>
         <button type="button" className="primary-action rdp-v3-recalculate" onClick={onConfirm} disabled={busy || !confirmEnabled}><Factory size={16}/>Conferma, genera OP e fabbisogni</button>
         {!confirmEnabled && <small className="rdp-v3-gate-warning" role="status">Conferma produttiva non abilitata: verificare i gate Workspace e ProgreMES nel Centro Diagnostico.</small>}
       </>}
+      {preview.status === "BLOCKED" && !v3.saga && <small className="rdp-v3-gate-warning" role="alert">La RdP contiene blocchi tecnici: correggere i codici evidenziati e premere RICALCOLA RDP. Gli scoperti senza blocchi restano confermabili e generano automaticamente i fabbisogni.</small>}
     </>}
   </section>;
 }
@@ -181,10 +182,13 @@ function RdpFailureDialog({ failure, onClose }) {
   if (!failure) return null;
   const confirmationFailure = failure.phase === "confirm";
   const stalePreview = failure.code === "STALE_V4_PREVIEW";
-  const eyebrow = stalePreview ? "Anteprima non più valida" : confirmationFailure ? "Conferma conclusa con errore" : "Elaborazione conclusa con errore";
-  const title = stalePreview ? "RdP da ricalcolare" : confirmationFailure ? "Ordine di produzione non confermato" : "RdP non andata a buon fine";
+  const blockedPreview = failure.code === "V4_PREVIEW_BLOCKED";
+  const eyebrow = stalePreview ? "Anteprima non più valida" : blockedPreview ? "Anteprima bloccata" : confirmationFailure ? "Conferma conclusa con errore" : "Elaborazione conclusa con errore";
+  const title = stalePreview ? "RdP da ricalcolare" : blockedPreview ? "Blocchi tecnici da risolvere" : confirmationFailure ? "Ordine di produzione non confermato" : "RdP non andata a buon fine";
   const safetyMessage = stalePreview
     ? "Non è stato creato alcun ordine di produzione. Chiudere questo messaggio e premere RICALCOLA RDP, quindi verificare la nuova anteprima."
+    : blockedPreview
+      ? "Non è stato creato alcun ordine di produzione. Correggere i blocchi tecnici indicati nell’anteprima e ricalcolare la RdP."
     : confirmationFailure
       ? "Non ripetere la conferma e non ricalcolare la RdP: verificare il codice indicato e lo stato della conferma in ProgreMES."
       : "Non è stata eseguita alcuna decisione produttiva. Correggere il problema indicato e premere nuovamente RICALCOLA RDP.";

@@ -9,9 +9,10 @@ const fail = (message, code, status = 409) => Object.assign(new Error(message), 
 const ensure = (result) => { if (result.error) throw result.error; return result.data || []; };
 
 export function automaticWorkspaceV4Decision(preview, materials = []) {
+  const hasBlockingMaterial = materials.some((material) => clean(material?.block_code));
+  if (upper(preview?.status) === "BLOCKED" || hasBlockingMaterial)
+    throw fail("La preview contiene blocchi tecnici: correggerli e ricalcolare la RdP prima della conferma.", "V4_PREVIEW_BLOCKED", 409);
   const hasShortages = materials.some((material) => Number(material?.shortage_quantity) > 0);
-  if (upper(preview?.status) === "BLOCKED" && !hasShortages)
-    throw fail("La preview contiene blocchi non riconducibili a fabbisogni di acquisto.", "V4_NON_SHORTAGE_BLOCK", 409);
   return hasShortages ? "WITH_SHORTAGES" : "COMPLETE";
 }
 

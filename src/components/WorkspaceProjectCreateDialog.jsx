@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Plus, Save, Search, X } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabaseClient";
+import { loadDirectProductCatalog } from "../modules/orders/services/directProductCatalog";
 import WorkspaceCustomerPicker from "./WorkspaceCustomerPicker";
 
 const emptyForm = { titolo: "", descrizione: "", deadline: "", prodotti: [], reparti: [], tipo_progetto_id: "", crm_customer_key: "" };
@@ -27,8 +28,30 @@ export default function WorkspaceProjectCreateDialog({ open, crmType, initialCus
     const timer = window.setTimeout(async () => {
       setForm({ ...emptyForm, crm_customer_key: initialCustomerKey });
       setQuery("");
+      const productsRequest = crmType === "brand_direct"
+        ? loadDirectProductCatalog(supabase)
+          .then(({ products, implants }) => ({
+            data: [
+              ...products.map((product) => ({
+                ...product,
+                codice: product.codice_mexal || product.codice_articolo || product.codice,
+                catalogSource: "mexal",
+              })),
+              ...implants.map((implant) => ({
+                ...implant,
+                nome: implant.descrizione,
+                codice: implant.codice,
+                brand: "DIRECT",
+                categoria: "Impianto",
+                catalogSource: "impianto",
+              })),
+            ].sort((left, right) => String(left.codice || "").localeCompare(String(right.codice || ""), "it-IT")),
+            error: null,
+          }))
+          .catch((error) => ({ data: [], error }))
+        : supabase.from("prodotti").select("id,nome,codice,brand,categoria").order("nome").limit(5000);
       const results = await Promise.all([
-        supabase.from("prodotti").select("id,nome,codice,brand,categoria").order("nome").limit(5000),
+        productsRequest,
         supabase.from("reparti").select("id,nome,attivo").eq("attivo", true).order("nome"),
         supabase.from("checklist_template").select("id,titolo,reparto_id,attivo").eq("attivo", true).order("ordine"),
         supabase.from("checklist_template_reparti").select("template_id,reparto_id"),
@@ -41,7 +64,7 @@ export default function WorkspaceProjectCreateDialog({ open, crmType, initialCus
       setData({ products: results[0].data || [], departments: results[1].data || [], templates: results[2].data || [], templateDepartments: results[3].data || [], projectTypes: results[4].data || [], projectTypePhases: results[5].data || [] });
     }, 0);
     return () => { active = false; window.clearTimeout(timer); };
-  }, [initialCustomerKey, open]);
+  }, [crmType, initialCustomerKey, open]);
 
   const filteredProducts = useMemo(() => {
     const text = query.trim().toLocaleLowerCase("it-IT");

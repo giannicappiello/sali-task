@@ -14,8 +14,9 @@ const subtractDaysIso = (dateValue, days) => {
 };
 
 export default function WorkspaceProjectCreateDialog({ open, crmType, initialCustomerKey = "", onClose, onSaved }) {
-  const { profile, hasPermission } = useAuth();
+  const { profile, authUser, hasPermission } = useAuth();
   const actorId = profile?.id || null;
+  const auditActorId = authUser?.id || null;
   const canManage = hasPermission("projects.write");
   const [form, setForm] = useState(emptyForm);
   const [data, setData] = useState({ products: [], departments: [], templates: [], templateDepartments: [], projectTypes: [], projectTypePhases: [] });
@@ -117,8 +118,10 @@ export default function WorkspaceProjectCreateDialog({ open, crmType, initialCus
         createdByRule.set(rule.id, phase.id);
         previousPhaseId = phase.id;
       }
-      const { error: auditError } = await supabase.from("v4_audit_log").insert({ entity_type: "progetto", entity_id: project.id, azione: "creazione progetto", dettagli: { testo: form.titolo.trim() }, user_id: actorId });
-      if (auditError) throw auditError;
+      if (auditActorId) {
+        const { error: auditError } = await supabase.from("v4_audit_log").insert({ entity_type: "progetto", entity_id: project.id, azione: "creazione progetto", dettagli: { testo: form.titolo.trim() }, user_id: auditActorId });
+        if (auditError) console.error("Errore registrazione audit creazione progetto:", auditError);
+      }
       onSaved?.();
       onClose?.();
     } catch (error) {

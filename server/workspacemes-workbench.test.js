@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { activeOctLines, confirmedV4ProductionRequest, diagnosticBlocks, diagnosticMatchesWorkbenchLine, loadAllProductionOrders, rdpProductionState, requestStage, resolveWorkbenchOctUnit, resolveWorkbenchUnits, v2DecisionAvailability, visibleDiagnostic, workbenchBomComponent, workbenchDetailLines, workbenchLineMappingStatus, workbenchOrderBelongsToCustomer } from "./workspacemes-workbench.js";
+import { activeOctLines, confirmedV4ProductionRequest, diagnosticBlocks, diagnosticMatchesWorkbenchLine, loadAllProductionOrders, rdpProductionState, requestStage, resolveWorkbenchOctUnit, resolveWorkbenchUnits, v2DecisionAvailability, visibleDiagnostic, workbenchBomComponent, workbenchDetailLines, workbenchLineMappingStatus, workbenchLineProductionState, workbenchOrderBelongsToCustomer } from "./workspacemes-workbench.js";
 
 test("il Workbench cliente riconosce esclusivamente il codice cliente associato", () => {
   assert.equal(workbenchOrderBelongsToCustomer({ codice_cliente: "501.02281" }, "501.02281"), true);
@@ -108,6 +108,28 @@ test("l'OdP generato dalla RdP prevale su un vecchio ordine OCT con stato pianif
   assert.equal(state.status, "IN PIANIFICAZIONE");
   assert.equal(state.plannedCompletionDate, null);
   assert.deepEqual(state.orders.map((order) => order.numeroOrdine), ["RDP4-20260830105630-01"]);
+});
+
+test("lo stato produzione resta separato per articolo nello stesso OCT", () => {
+  const request = { workspace_status: "CONFIRMED", rdp_number: 139 };
+  const productionState = rdpProductionState(request, [{
+    numeroOrdine: "RDP139-01", riferimentoOct: "OC/2/139", codiceArticolo: "FPCOM38", stato: "InProduzione",
+  }, {
+    numeroOrdine: "RDP139-02", riferimentoOct: "OC/2/139", codiceArticolo: "FP220", stato: "Pianificato",
+  }], "OC/2/139");
+
+  assert.equal(productionState.status, "IN PRODUZIONE");
+  assert.equal(workbenchLineProductionState({ codice_articolo: "FPCOM38" }, request, productionState), "IN PRODUZIONE");
+  assert.equal(workbenchLineProductionState({ codice_articolo: "FP220" }, request, productionState), "PIANIFICATO");
+});
+
+test("una riga senza OdP proprio non eredita lo stato in produzione della testata", () => {
+  const request = { workspace_status: "CONFIRMED", rdp_number: 139 };
+  const productionState = rdpProductionState(request, [{
+    numeroOrdine: "RDP139-01", riferimentoOct: "OC/2/139", codiceArticolo: "FPCOM38", stato: "InProduzione",
+  }], "OC/2/139");
+
+  assert.equal(workbenchLineProductionState({ codice_articolo: "FP220" }, request, productionState), "IN PIANIFICAZIONE");
 });
 
 test("il Workbench carica tutte le pagine degli OdP MES", async () => {

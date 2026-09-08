@@ -204,6 +204,26 @@ export function rdpProductionState(request, productionOrders = [], octReference 
   return { stage, status, plannedCompletionDate, orders: matching };
 }
 
+export function workbenchLineProductionState(line, request, productionState) {
+  const articleCode = canonicalReference(line?.codice_articolo || line?.articleCode);
+  const matching = (productionState?.orders || []).filter((order) =>
+    articleCode && canonicalReference(order?.codiceArticolo || order?.articleCode) === articleCode);
+  if (matching.length) {
+    const statuses = matching.map((order) => mesOrderStatus(order?.stato));
+    if (statuses.some((status) => status === "INPRODUZIONE")) return "IN PRODUZIONE";
+    if (statuses.length && statuses.every((status) => ["COMPLETATO", "CHIUSO"].includes(status))) return "COMPLETATO";
+    if (statuses.some((status) => status === "PIANIFICATO")) return "PIANIFICATO";
+    return "IN PIANIFICAZIONE";
+  }
+
+  // Lo stato dell'RdP/OCT è una sintesi e non può essere attribuito a una
+  // singola riga senza un OdP dello stesso articolo.
+  const stage = requestStage(request);
+  if (stage === "blocked") return "BLOCCATO";
+  if (["rdp", "scheduling", "planned", "production", "completed"].includes(stage)) return "IN PIANIFICAZIONE";
+  return "DA GENERARE";
+}
+
 function cancelled(request) {
   return text(request?.workspace_status || request?.stato).toUpperCase() === "CANCELLED";
 }
@@ -309,7 +329,7 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
           residualQuantity: Math.max(0, orderedQuantity - fulfilledQuantity),
           unit: resolveWorkbenchOctUnit(line, product),
           deliveryDate: line.data_consegna || order.data_consegna,
-          productionStatus: productionState.status || (request ? (request.workspace_status || request.stato || "RdP") : "Da generare"),
+          productionStatus: workbenchLineProductionState(line, request, productionState),
         };
       }),
       ready: productive.length > 0 && order.cliente_mexal_risolto !== false && !orderDiagnostics.some(diagnosticBlocks),

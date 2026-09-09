@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { bomComponentStatusLabel, confirmedProductionOrder, diagnosticCanBeArchived, diagnosticIsManageable, productionOrderProgremesPath, v3RecalculationFailure, v3RecalculationOutcomeFailure } from "./rdp-workbench-state.js";
+import { bomComponentStatusLabel, confirmedProductionOrder, diagnosticCanBeArchived, diagnosticIsManageable, productionOrderProgremesPath, v3RecalculationFailure, v3RecalculationOutcomeFailure, workbenchRowSearchText } from "./rdp-workbench-state.js";
 
 test("riconosce l'OP realmente generato dalla conferma MES", () => {
   assert.deepEqual(confirmedProductionOrder({ proposals: [
@@ -9,6 +9,17 @@ test("riconosce l'OP realmente generato dalla conferma MES", () => {
   ] }), { id: 42, number: "W-00042" });
   assert.equal(confirmedProductionOrder({ proposals: [] }), null);
   assert.deepEqual(confirmedProductionOrder({ productionOrders: [{ id: 77, number: "WV2-77" }] }), { id: 77, number: "WV2-77" });
+});
+
+test("la ricerca totale RdP comprende codice e descrizione prodotto", () => {
+  const text = workbenchRowSearchText({
+    label: "OC/2/316",
+    customer: "Sali di Ischia",
+    status: "bozza",
+    lines: [{ articleCode: "IT0543", description: "Home Parfum Dolci Agrumi" }],
+  });
+  assert.match(text, /it0543/);
+  assert.match(text, /home parfum dolci agrumi/);
 });
 
 test("apre l'OP nella schermata ProgreMES registrata usando il contesto odpId", () => {

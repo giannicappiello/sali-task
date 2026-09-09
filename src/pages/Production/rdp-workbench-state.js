@@ -11,6 +11,17 @@ export function confirmedProductionOrder(payload = {}) {
   };
 }
 
+export function workbenchRowSearchText(row = {}) {
+  const lineText = (Array.isArray(row.lines) ? row.lines : []).flatMap((line) => [
+    line?.articleCode,
+    line?.description,
+  ]);
+  return [row.label, row.customer, row.status, ...lineText]
+    .filter(Boolean)
+    .join(" ")
+    .toLocaleLowerCase("it-IT");
+}
+
 export function productionOrderProgremesPath(result = {}) {
   const screenCode = encodeURIComponent("progremes.Ordini.Produzione");
   const params = new URLSearchParams();

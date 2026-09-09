@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../contexts/AuthContext";
+import { markProgremesPopup } from "../pages/ProgreMes/progremesWindow";
 import WorkspaceScreenLayout from "./WorkspaceScreenLayout";
 import { getModuleIcon } from "../config/moduleIcons";
 import { resolveCatalogModuleDestination } from "../config/workspaceNavigation";
@@ -238,7 +239,7 @@ function Layout() {
     const destination = workspacePath || (screenCode
       ? `/produzione/${encodeURIComponent(screenCode)}`
       : "/progremes/accesso");
-    const progremesWindow = window.open(destination, "_blank");
+    const progremesWindow = window.open(markProgremesPopup(destination), "_blank");
     if (!progremesWindow) {
       setProgremesConnection({ open: true, error: "Il browser ha bloccato la nuova finestra. Consenti i popup per Workspace e riprova." });
       return;

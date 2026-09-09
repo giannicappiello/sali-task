@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { requiresDirectModuleGrant } from "../config/directCrmAccess";
 import {
   featureIsAvailable,
   moduleIsAvailable,
@@ -281,7 +282,11 @@ export function AuthProvider({ children }) {
         nextModuleAccess = [...new Set((moduleRows || []).map((row) => row.modulo).filter(Boolean))];
       }
     }
-    setModuleAccess(nextModuleAccess);
+    // Do not reconstruct sensitive CRM grants from departments if the
+    // authoritative context is unavailable (area/deny/parent rules are missing).
+    setModuleAccess(hasAuthoritativeModuleContext
+      ? nextModuleAccess
+      : nextModuleAccess.filter((code) => !requiresDirectModuleGrant(code)));
     setModuleLevels(
       accessContext?.module_levels && typeof accessContext.module_levels === "object"
         ? accessContext.module_levels
@@ -372,6 +377,7 @@ export function AuthProvider({ children }) {
 
   function getModuleScreenGrant(moduleCode) {
     if (!moduleCode) return null;
+    if (requiresDirectModuleGrant(moduleCode) && !hasModuleAccess(moduleCode)) return null;
     const grantedCodes = new Set(accessExceptions
       .filter((item) => item?.scope === "schermata" && item?.decision === "consenti")
       .map((item) => item.code));
@@ -448,6 +454,7 @@ export function AuthProvider({ children }) {
   function hasModuleAccess(moduleCode) {
     if (!profile) return false;
     if (isAdmin()) return true;
+    if (requiresDirectModuleGrant(moduleCode)) return moduleAccess.includes(moduleCode);
     const personalException = getPersonalException("modulo", moduleCode);
     if (personalException?.decision === "consenti") return true;
     if (personalException?.decision === "nega") return false;
@@ -469,6 +476,7 @@ export function AuthProvider({ children }) {
   function hasScreenAccess(screenCode, moduleCode = null) {
     if (!profile) return false;
     if (isAdmin()) return true;
+    if (requiresDirectModuleGrant(moduleCode) && !hasModuleAccess(moduleCode)) return false;
     const personalException = getPersonalException("schermata", screenCode);
     if (personalException?.decision === "consenti") return true;
     if (personalException?.decision === "nega") return false;

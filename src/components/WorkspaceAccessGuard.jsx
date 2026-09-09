@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabaseClient";
+import { requiresDirectModuleGrant } from "../config/directCrmAccess";
 
 export default function WorkspaceAccessGuard({ moduleCode, screenCode, featureCode, redirectTo = "/home", children }) {
   const location = useLocation();
@@ -9,7 +10,7 @@ export default function WorkspaceAccessGuard({ moduleCode, screenCode, featureCo
   const resolvedScreenCode = screenCode || getScreenCodeForPath(location.pathname, moduleCode);
   const screenGranted = Boolean(resolvedScreenCode && hasExplicitScreenGrant(resolvedScreenCode));
   const moduleAllowed = moduleCode
-    ? hasModuleAccess(moduleCode) || screenGranted
+    ? hasModuleAccess(moduleCode) || (screenGranted && !requiresDirectModuleGrant(moduleCode))
     : featureCode
       ? hasWorkspaceFeature(featureCode)
       : false;

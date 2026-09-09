@@ -545,8 +545,8 @@ export function calculateAvailability(article, stock) {
  * is stock minus that commitment. Suspended commitments (qta_ord_dimp /
  * ord_cli_sps) belong to a different progressive and must not reduce it.
  *
- * The legacy Workspace formula remains an explicit fallback only for payloads
- * that do not contain either authoritative Mexal commitment field.
+ * Without either firm-commitment field, use physical stock. Suspended orders
+ * and future receipts must never change immediately sellable availability.
  */
 export function mexalNetAvailability(article, stock = calculateStock(article)) {
   const candidates = [
@@ -560,8 +560,8 @@ export function mexalNetAvailability(article, stock = calculateStock(article)) {
     }
   }
   return {
-    value: calculateAvailability(article, stock),
-    source: "calculateAvailability",
+    value: round4(stock),
+    source: "stock",
     fallback: true,
   };
 }

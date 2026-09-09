@@ -4,6 +4,7 @@ import { buildMexalClient, verifyUser } from "../../server/mexal/sync-products.j
 import { DEFAULT_MEXAL_ORDER_DATE_FORMAT, ORDER_DOCUMENTS, buildMexalOrderDocument, classifyOrderLines, classifyPrivateOrderLines, reconciliationFailure } from "../../server/mexal/order-documents.js";
 import { calculateCommissions } from "../../server/mexal/commission-engine.js";
 import { enqueueOrderConfirmationEmails } from "../../server/orders/order-email-queue.js";
+import { prepareOrderVat } from "../../server/mexal/order-vat.js";
 
 function env(name) { return String(process.env[name] ?? "").trim(); }
 function required(name) { const value = env(name); if (!value) throw new Error(`Variabile Vercel mancante: ${name}`); return value; }
@@ -197,6 +198,21 @@ export default async function handler(req, res) {
       documentConfig.serie_oci = moduleConfig.serie_documento;
     }
     const mexal = buildMexalClient(); const documents = []; const failures = [];
+    const { data: existingDocuments, error: existingDocumentsError } = await admin.from("ordini_documenti_mexal")
+      .select("tipo_documento,numero").eq("ordine_id", orderId);
+    if (existingDocumentsError) throw existingDocumentsError;
+    for (const document of existingDocuments || []) {
+      if (text(document.numero)) done.add(document.tipo_documento);
+    }
+    const pendingDocuments = Object.fromEntries(Object.entries(classified).filter(([kind]) => !done.has(kind)));
+    const vat = await prepareOrderVat(pendingDocuments, mexal);
+    if (vat.updates.length) {
+      const { error: vatSaveError } = await admin.rpc("salva_iva_ordine_in_sync", {
+        p_ordine_id: orderId, p_sync_token: syncToken, p_aggiornamenti: vat.updates,
+      });
+      if (vatSaveError) throw vatSaveError;
+    }
+    Object.assign(classified, vat.documents);
     for (const kind of requiredKinds) {
       if (await stopRequested(admin, orderId, syncToken)) break;
       await heartbeat(admin, orderId, syncToken);

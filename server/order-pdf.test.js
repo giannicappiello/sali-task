@@ -67,6 +67,29 @@ test("un solo documento scarica un PDF, più documenti un solo ZIP con tutti i P
   assert.deepEqual(downloads, ["ordine-3-2026-documenti-mexal.zip"]);
 });
 
+test("OCI contiene solo le righe assegnate e usa la quantità OCI, non il prefisso IMP", async () => {
+  const order = { mexal_documents: [
+    { tipo_documento: "OCM", serie: 1, numero: "101" },
+    { tipo_documento: "OCX", serie: 1, numero: "102" },
+    { tipo_documento: "OCI", serie: 1, numero: "103" },
+  ] };
+  const files = await createMexalDocumentPdfFiles(order, [
+    { codice_articolo: "IT-RESERVED", descrizione: "Prodotto prenotato", quantita: 10, quantita_oci: 3, prezzo_listino: 10, aliquota_iva: 22 },
+    { codice_articolo: "IMP-OCM", quantita: 2, quantita_ocm: 2, prezzo_listino: 10 },
+    { codice_articolo: "IT-OCX", quantita: 5, quantita_ocx: 5, prezzo_listino: 10 },
+  ]);
+  const oci = new TextDecoder().decode(files.find(f => f.name.includes("OCI")).data);
+  assert.match(oci, /IT-RESERVED/);
+  assert.doesNotMatch(oci, /IMP-OCM|IT-OCX/);
+  assert.match(oci, /36,60/, "totale calcolato su 3 pezzi con IVA, non sui 10 dell'ordine");
+  const ocm = new TextDecoder().decode(files.find(f => f.name.includes("OCM")).data);
+  assert.match(ocm, /IMP-OCM/);
+  assert.doesNotMatch(ocm, /IT-RESERVED|IT-OCX/);
+  const ocx = new TextDecoder().decode(files.find(f => f.name.includes("OCX")).data);
+  assert.match(ocx, /IT-OCX/);
+  assert.doesNotMatch(ocx, /IT-RESERVED|IMP-OCM/);
+});
+
 test("il PDF con almeno quindici righe gestisce più pagine e intestazioni", async () => {
   const lines = Array.from({ length: 45 }, (_, index) => ({ codice_articolo: `A-${index}`, descrizione: `Articolo molto descrittivo ${index}`, quantita: 1, prezzo_listino: 10, aliquota_iva: 22 }));
   const pdf = await createOrderPdf({ id: "ordine-test", data_ordine: "2026-07-20" }, lines, { logo: false });

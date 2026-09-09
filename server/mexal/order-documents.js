@@ -93,7 +93,7 @@ export function buildRootMatrixRows(lines, magazzino, defaultAgentCode, kind) {
     sconto: (line) => text(line.sconto_commerciale),
     id_mag_riga: (line) => number(line.id_mag_riga ?? magazzino),
     tp_um_articolo: (line) => normalizeMexalUnitType(line.tp_um_articolo),
-    cod_iva: (line) => text(line.cod_iva ?? line.codice_iva_mexal),
+    cod_iva: (line) => text(line.cod_iva) || text(line.codice_iva_mexal),
     tipo_stato_riga: () => mexalOrderLineStatus(kind),
   };
   const result = Object.fromEntries(Object.entries(fields).map(([field, value]) => [field,

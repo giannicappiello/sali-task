@@ -17,6 +17,9 @@ assert.throws(() => normalizeLines(Array.from({ length: MAX_ORDER_LINES + 1 }, (
 assert.deepEqual(normalizeLines([{ codice_articolo: " it001 ", quantita: 2 }, { productCode: "IT001", quantity: 3 }]), [{ productCode: "IT001", requestedQuantity: 5 }]);
 
 const article = { codice: "IT001", qta_inventario: 8, qta_carico: 0, qta_scarico: 0, ord_cli_e: 2 };
+assert.equal(availabilityLine("IT001", 6, { ...article, ord_cli_sps: 100, qta_ord_dimp: 100 }).confirmedQuantity, 6, "i sospesi non riducono il netto");
+assert.equal(availabilityLine("IT001", 6, { ...article, qta_ord_imp: 1, ord_cli_e: 100, ord_cli_sps: 100 }).availableQuantity, 7, "la verifica usa lo stesso progressivo netto del catalogo");
+assert.equal(availabilityLine("IT001", 10, { qta_inventario: 8, ord_cli_sps: 100, ord_fornitori: 500 }).confirmedQuantity, 8, "fallback sulla giacenza: né sospesi né arrivi futuri");
 assert.deepEqual(availabilityLine("IT001", 10, article), { productCode: "IT001", requestedQuantity: 10, availableQuantity: 6, confirmedQuantity: 6, missingQuantity: 4, status: "partial", message: null });
 assert.equal(availabilityLine("IT001", 4, article).status, "available");
 assert.equal(availabilityLine("IT001", 4, { codice: "IT001" }).status, "unavailable");
@@ -56,8 +59,8 @@ assert.match(frontend, /VERIFICA DISPONIBILITÀ/);
 assert.match(frontend, /disabled=\{checkingAvailability\}/);
 assert.match(frontend, /Le disponibilità devono essere verificate nuovamente/);
 assert.match(frontend, /confirm && !availabilityValidity\.valid/, "saveOrder blocca la conferma senza verifica valida");
-assert.match(frontend, /disabled=\{saving \|\| checkingAvailability \|\| !availabilityValidity\.valid\}/, "il pulsante conferma è disabilitato senza verifica valida");
-assert.match(frontend, /quantitiesForOrderLine\(line, availability, confirm\)/, "il payload confermato deriva dai risultati Mexal");
+assert.match(frontend, /disabled=\{saving \|\| checkingAvailability \|\| !availabilityValidity\.valid \|\| productsMissingVat.length > 0\}/, "il pulsante conferma è disabilitato senza verifica valida o IVA");
+assert.match(frontend, /quantitiesForOrderLine\(line, availability, confirm, \{ reservation: isReservation, skipAvailability \}\)/, "il payload confermato deriva dai risultati Mexal");
 assert.match(frontend, /availabilityRequestId\.current/, "risposte obsolete non sovrascrivono la verifica corrente");
 const submitOrder = await readFile("api/mexal/submit-order.js", "utf8");
 assert.doesNotMatch(submitOrder, /quantita_ocm.*disponibilita|quantita_ocx.*disponibilita/, "submit-order usa le quantità OCM/OCX persistite senza ricalcolo cache");

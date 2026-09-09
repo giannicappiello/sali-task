@@ -2,7 +2,7 @@
 import { createClient } from "@supabase/supabase-js";
 import {
   buildMexalClient,
-  calculateAvailability,
+  mexalNetAvailability,
   calculateStock,
   getArticleCode,
   loadFullArticle,
@@ -47,7 +47,7 @@ export function normalizeLines(lines) {
 }
 
 export function availabilityLine(productCode, requestedQuantity, article) {
-  const availableQuantity = calculateAvailability(article, calculateStock(article));
+  const availableQuantity = mexalNetAvailability(article, calculateStock(article)).value;
   const confirmedQuantity = Math.min(requestedQuantity, Math.max(availableQuantity, 0));
   const missingQuantity = requestedQuantity - confirmedQuantity;
   return {

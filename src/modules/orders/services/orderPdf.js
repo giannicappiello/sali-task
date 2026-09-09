@@ -417,9 +417,8 @@ export async function createMexalDocumentPdfFiles(order, lines) {
     const kind = document.type;
     const documentLines = lines.filter((line) => {
       if (kind === "OCT") return true;
-      if (kind === "OCI") return String(line.codice_articolo || "").trim().toUpperCase().startsWith("IMP");
       return Number(line[`quantita_${kind.toLowerCase()}`]) > 0;
-    }).map((line) => ({ ...line, quantita: ["OCI", "OCT"].includes(kind) ? line.quantita : line[`quantita_${kind.toLowerCase()}`] }));
+    }).map((line) => ({ ...line, quantita: kind === "OCT" ? line.quantita : line[`quantita_${kind.toLowerCase()}`] }));
     const doc = await createOrderPdf(order, documentLines, { document, managedLetterhead: managedCompositionAvailable });
     if (!managedCompositionAvailable) return { name: `ordine-${document.type}-${document.serie}-${document.numero}.pdf`, data: doc.output("arraybuffer"), headingSnapshot: null };
     try {

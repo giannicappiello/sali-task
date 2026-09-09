@@ -119,15 +119,15 @@ test("Disponibile netto Mexal ha priorità in prodotti, cache e magazzino", () =
   assert.equal(warehouse.available, 3369);
 });
 
-test("il dettaglio articolo usa ord_cli_e e il fallback precedente è esplicito", () => {
+test("il dettaglio articolo usa ord_cli_e e il fallback non sottrae sospesi", () => {
   assert.deepEqual(mexalNetAvailability({ ord_cli_e: 336 }, 3705), {
     value: 3369,
     source: "ord_cli_e",
     fallback: false,
   });
   assert.deepEqual(mexalNetAvailability({ ord_cli_sps: 7 }, 3705), {
-    value: 3698,
-    source: "calculateAvailability",
+    value: 3705,
+    source: "stock",
     fallback: true,
   });
 });

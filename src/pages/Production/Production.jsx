@@ -127,8 +127,8 @@ export default function Production() {
   const [catalog, setCatalog] = useState({ screens: [], links: [] });
 
   async function fetchSections() {
-    const [payload, screens, links] = await Promise.all([
-      requestProgremes("progremes_user_sections", accessToken),
+    const payload = await requestProgremes("progremes_user_sections", accessToken);
+    const [screens, links] = await Promise.all([
       supabase.from("workspace_schermate").select("codice,nome,descrizione,percorso,attiva,area").eq("attiva", true),
       supabase.from("workspace_moduli_schermate").select("modulo_codice,schermata_codice,ordine,visibile_menu").eq("modulo_codice", "progremes").eq("visibile_menu", true).order("ordine"),
     ]);

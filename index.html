@@ -34,7 +34,7 @@
           button.onclick = () => location.reload();
           status.appendChild(button);
         }
-        const timer = setTimeout(recover, 15000);
+        const timer = setTimeout(recover, 3000);
         const observer = new MutationObserver(() => {
           if (!document.getElementById("workspace-startup")) {
             clearTimeout(timer);

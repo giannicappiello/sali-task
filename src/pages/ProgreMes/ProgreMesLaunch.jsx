@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Factory, RefreshCw, X } from "lucide-react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { RefreshCw } from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { isProgremesFrameMessage, PROGREMES_POPUP_PARAM, requestProgremesNavigation, requestProgremesWorkspaceWindow } from "./progremesWindow";
 import "./progremes-frame.css";
@@ -60,11 +60,6 @@ export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
   const canConnect = dedicated && screenCode;
 
   return <section className="progremes-workspace-frame">
-    <header className="progremes-frame-toolbar">
-      <span><Factory size={20} />MES · Workspace</span>
-      <Link to="/produzione">Gestione Produzione</Link>
-      {dedicated && <button type="button" onClick={() => window.close()}><X size={17} />Chiudi finestra</button>}
-    </header>
     {(!ready || error) && <div className="progremes-frame-status" role={error ? "alert" : "status"}>
       <h2>{error ? "Collegamento non disponibile" : canConnect ? "Apertura schermata MES..." : "Apri MES in una nuova finestra Workspace"}</h2>
       <p>{error || "La finestra Workspace precedente rimane aperta e invariata."}</p>

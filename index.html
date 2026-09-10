@@ -7,7 +7,44 @@
     <title>Progre Workspace</title>
   </head>
   <body translate="no">
-    <div id="root"></div>
+    <div id="root"><div id="workspace-startup" role="status" style="padding:48px;font:18px system-ui;color:#193d70">Apertura Workspace…</div></div>
+    <script>
+      // This must run before the module bundle: a failed bundle cannot recover itself.
+      (() => {
+        const key = "workspace-startup-retry:" + location.pathname + location.search;
+        let recovering = false;
+        function recover() {
+          const status = document.getElementById("workspace-startup");
+          if (!status || recovering) return;
+          recovering = true;
+          let retried = true;
+          try {
+            retried = sessionStorage.getItem(key) === "1";
+            sessionStorage.setItem(key, "1");
+          } catch { /* Without storage, do not risk a reload loop. */ }
+          if (!retried) {
+            status.textContent = "Ripristino apertura Workspace…";
+            location.reload();
+            return;
+          }
+          status.setAttribute("role", "alert");
+          status.textContent = "Workspace non è riuscito ad avviarsi. ";
+          const button = document.createElement("button");
+          button.textContent = "Riprova";
+          button.onclick = () => location.reload();
+          status.appendChild(button);
+        }
+        const timer = setTimeout(recover, 15000);
+        const observer = new MutationObserver(() => {
+          if (!document.getElementById("workspace-startup")) {
+            clearTimeout(timer);
+            observer.disconnect();
+            try { sessionStorage.removeItem(key); } catch { /* Storage may be disabled. */ }
+          }
+        });
+        observer.observe(document.getElementById("root"), { childList: true });
+      })();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

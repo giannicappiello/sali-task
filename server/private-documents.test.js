@@ -90,3 +90,14 @@ test("l'associazione prodotto seleziona un file NAS esistente senza caricarlo", 
   assert.doesNotMatch(page, /name="nasDirectory"/);
   assert.doesNotMatch(page, /name="file"/);
 });
+
+test("il submit conserva il form prima delle operazioni asincrone e mostra lo stato", async () => {
+  const page = await readFile(new URL("../src/pages/Documentation/PrivateDocuments.jsx", import.meta.url), "utf8");
+  const uploadStart = page.indexOf("async function upload(event)");
+  const formData = page.indexOf("const formData = new FormData(event.currentTarget)", uploadStart);
+  const firstAwait = page.indexOf("await workspaceAction", uploadStart);
+  assert.ok(uploadStart >= 0 && formData > uploadStart && formData < firstAwait);
+  assert.match(page, /body: formData/);
+  assert.match(page, /uploading \? "Associazione…" : "Associa documento"/);
+  assert.match(page, /className="private-upload-error" role="alert"/);
+});

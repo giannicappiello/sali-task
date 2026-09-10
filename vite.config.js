@@ -38,6 +38,9 @@ export default defineConfig({
         ]
       },
       workbox: {
+        // Rotate the precache so clients discard entries containing HTML instead of JS.
+        cacheId: "workspace-assets-v2",
+        navigateFallbackDenylist: [/^\/api\//, /^\/assets\//],
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         skipWaiting: true,

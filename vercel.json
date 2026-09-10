@@ -57,7 +57,7 @@
       "destination": "/api/mexal/automation?route=crm-digital&action=oauth_callback"
     },
     {
-      "source": "/((?!api/).*)",
+      "source": "/((?!api/|assets/|sw\\.js$|registerSW\\.js$|workbox-[^/]+\\.js$).*)",
       "destination": "/"
     }
   ]

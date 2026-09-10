@@ -363,6 +363,10 @@ function writableSupabase() {
           const row = state.ordini_testate.find((item) => item.mexal_chiave === payload.mexal_chiave);
           return { data: single ? row : [row], error: null };
         }
+        if (table === "ordini_prodotti_cache") {
+          if (!state.ordini_prodotti_cache.some(row => row.codice_articolo === payload.codice_articolo)) state.ordini_prodotti_cache.push(payload);
+          return { data: payload, error: null };
+        }
         if (table === "ordini_righe") {
           for (const incoming of payload) {
             const existing = state.ordini_righe.find((row) => row.ordine_id === incoming.ordine_id && row.mexal_posizione === incoming.mexal_posizione);
@@ -653,4 +657,41 @@ test("precheck e import usano lo stesso paginator multi-pagina", async () => {
   assert.equal(precheck.result.source_records_read, 2);
   assert.equal(imported.result.pages_read, 2);
   assert.equal(imported.result.records_read, 2);
+});
+
+test("OCT recupera CMP attivo, mantiene fuori produzione escluso e ripristina la riga senza duplicati", async () => {
+  const supabase = writableSupabase();
+  const mexal = { async getJson(path) {
+    if (path === "/oct?max=200") return { dati: [{ sigla: "OC", serie: 2, numero: 500 }] };
+    if (path === "/documenti/ordini-clienti/OC%2B2%2B500") return {
+      sigla: "OC", cod_modulo: "T", serie: 2, numero: 500, cod_conto: "C1",
+      righe: [
+        { id_riga: 1, tp_riga: "R", codice_articolo: "IT0472-CMP", quantita: 3, tp_um_articolo: "1" },
+        { id_riga: 2, tp_riga: "R", codice_articolo: "IT0064", quantita: 2 },
+        { id_riga: 3, tp_riga: "D", descr_riga: "Nota" },
+      ],
+    };
+    if (path === "/dati-generali/gruppi-merceologici") return { dati: [
+      { codice: "B", descrizione: "Brand" },
+      { codice: "L", cod_grp_merc: "B", descrizione: "Linea attiva" },
+      { codice: "F", cod_grp_merc: "B", descrizione: "Fuori Produzione" },
+    ] };
+    if (path === "/articoli/IT0472-CMP") return { codice: "IT0472-CMP", cod_grp_merc: "L", um_principale: "PZ", gest_annullato: "N" };
+    if (path === "/articoli/IT0064") return { codice: "IT0064", cod_grp_merc: "F", gest_annullato: "N" };
+    throw new Error(`Unexpected ${path}`);
+  } };
+  const env = { MEXAL_OCT_IMPORT_ENABLED: "true", MEXAL_OCT_LIST_PATH: "/oct", MEXAL_OCT_MODULE_CODE: "T" };
+  const first = await syncOctOrders({ mexal, supabase, env });
+  assert.equal(first.imported_lines, 2);
+  assert.equal(first.skipped_article_lines, 1);
+  assert.equal(first.article_catalog_diagnostics.find(d => d.code === "IT0064").reason, "ARTICLE_OUT_OF_PRODUCTION");
+  assert.equal(supabase.state.ordini_prodotti_cache.some(r => r.codice_articolo === "IT0064"), false);
+  assert.equal(supabase.state.ordini_prodotti_cache.find(r => r.codice_articolo === "IT0472-CMP").mostra_in_app, false);
+  const line = supabase.state.ordini_righe.find(r => r.codice_articolo === "IT0472-CMP");
+  assert.equal(line.unita_misura_oct, "PZ");
+  line.mexal_attiva = false;
+  await syncOctOrders({ mexal, supabase, env });
+  assert.equal(line.mexal_attiva, true);
+  assert.equal(supabase.state.ordini_righe.length, 2);
+  assert.equal(supabase.state.ordini_prodotti_cache.length, 2);
 });

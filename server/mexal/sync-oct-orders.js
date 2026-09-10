@@ -2,6 +2,7 @@ import process from "node:process";
 import { calculateOrderLineEconomics } from "./order-economics.js";
 import { authoritativeArticleUnit, resolveOctUnitOfMeasure } from "./unit-of-measure.js";
 import { reconcileDeletedOcts } from "./reconcile-deleted-octs.js";
+import { inspectMissingOctArticles, recoverOctArticleReferences } from "./oct-article-catalog.js";
 function text(value) { return String(value ?? "").trim(); }
 function upper(value) { return text(value).toUpperCase(); }
 function number(value) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : null; }
@@ -465,6 +466,7 @@ export async function precheckOctOrders({ mexal, supabase, env = process.env }) 
 
   const presentArticleCodes = articleCodes.filter((code) => availableOrderArticleCodes.has(code));
   const missingArticleCodes = articleCodes.filter((code) => !availableOrderArticleCodes.has(code));
+  const missingArticleInspection = await inspectMissingOctArticles({ mexal, codes: missingArticleCodes });
   const inactiveArticles = articleCodes.flatMap((code) => (productsByCode.get(code) || [])
     .filter((product) => product.attivo_mexal !== true || product.mostra_in_app === false || product.sincronizzato_mexal === false)
     .map((product) => ({ code, product_id: product.id, attivo_mexal: product.attivo_mexal, mostra_in_app: product.mostra_in_app, sincronizzato_mexal: product.sincronizzato_mexal })));
@@ -546,6 +548,7 @@ export async function precheckOctOrders({ mexal, supabase, env = process.env }) 
     workspace_articles_present: presentArticleCodes,
     workspace_articles_missing_count: missingArticleCodes.length,
     workspace_articles_missing: missingArticleCodes,
+    missing_article_diagnostics: missingArticleInspection.diagnostics,
     inactive_articles: inactiveArticles,
     out_of_production_articles: outOfProductionArticles,
     already_in_workspace_count: alreadyInWorkspace.length,
@@ -592,7 +595,11 @@ export async function syncOctOrders({ mexal, supabase, env = process.env, contex
       skipped++;
     }
   }
-  const availableArticleCatalog = await readAvailableOrderArticleCatalog(supabase, documents);
+  let availableArticleCatalog = await readAvailableOrderArticleCatalog(supabase, documents);
+  const missingCodes = orderArticleCodes(documents).filter((code) => !availableArticleCatalog.has(code));
+  const articleInspection = await inspectMissingOctArticles({ mexal, codes: missingCodes });
+  await recoverOctArticleReferences({ supabase, eligible: articleInspection.eligible });
+  if (articleInspection.eligible.length) availableArticleCatalog = await readAvailableOrderArticleCatalog(supabase, documents);
   const availableArticleCodes = new Set(availableArticleCatalog.keys());
   let importedLines = 0;
   let skippedArticleLines = 0;
@@ -670,6 +677,7 @@ export async function syncOctOrders({ mexal, supabase, env = process.env, contex
     retired_lines: retiredLines,
     skipped_article_lines: skippedArticleLines,
     anomaly_count: anomalies.length,
+    article_catalog_diagnostics: articleInspection.diagnostics,
     anomalies,
     pages_read: collection.pagesRead,
     records_read: collection.recordsRead,

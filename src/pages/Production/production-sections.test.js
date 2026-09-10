@@ -1,0 +1,13 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { configuredProductionSections as select } from './production-sections.js';
+const codes=['rdp-workbench','fabbisogni-acquisto','diagnostica'];
+const screens=codes.map(c => ({codice:c,nome:c,percorso:'/produzione/'+c,attiva:true}));
+const links=codes.map((c,i) => ({modulo_codice:'progremes',schermata_codice:c,ordine:i,visibile_menu:true}));
+const permissions={hasPermission:()=>true,isAdminUser:true,customerScoped:false,hasScreenAccess:()=>true,hasAreaAccess:()=>true,hasExplicitScreenGrant:()=>false};
+test('removed module association does not reappear even for admins',()=>assert.deepEqual(select([],screens,[],permissions),[]));
+test('hidden or inactive screens are excluded',()=>assert.deepEqual(select([],screens.map(s=>({...s,attiva:false})),links,permissions),[]));
+test('module order and visibility govern local cards',()=>assert.deepEqual(select([],screens,links.map((l,i)=>({...l,visibile_menu:i!==1,ordine:-i})),permissions).map(s=>s.code),['diagnostica','rdp-workbench']));
+test('permissions still apply to configured cards',()=>assert.deepEqual(select([],screens,links,{...permissions,hasPermission:()=>false,isAdminUser:false}),[]));
+test('customers cannot see global purchasing or diagnostics',()=>assert.deepEqual(select([],screens,links,{...permissions,customerScoped:true,isAdminUser:false}).map(s=>s.code),['rdp-workbench']));
+test('screen denial is respected',()=>assert.deepEqual(select([],screens,links,{...permissions,hasScreenAccess:()=>false}),[]));

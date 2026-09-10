@@ -2,8 +2,15 @@ import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 
 function ProtectedRoute() {
-  const { session, loading } = useAuth();
+  const { session, loading, authError } = useAuth();
   const location = useLocation();
+
+  if (authError) {
+    return <div className="auth-loading"><div className="auth-loading-card" role="alert">
+      <p>{authError}</p>
+      <button type="button" onClick={() => window.location.reload()}>Riprova</button>
+    </div></div>;
+  }
 
   if (loading) {
     return (

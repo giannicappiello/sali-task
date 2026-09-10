@@ -204,6 +204,10 @@ export function rdpProductionState(request, productionOrders = [], octReference 
   return { stage, status, plannedCompletionDate, orders: matching };
 }
 
+export function visibleWorkbenchOct(item) {
+  return !item.sourceDeletedAt || Boolean(item.requestId) || Boolean(item.productionOrders?.length);
+}
+
 export function workbenchLineProductionState(line, request, productionState) {
   const articleCode = canonicalReference(line?.codice_articolo || line?.articleCode);
   const matching = (productionState?.orders || []).filter((order) =>
@@ -309,6 +313,7 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
       customer: customerName(order, customersByCode),
       orderDate: order.data_ordine, deliveryDate: order.data_consegna,
       sourceTimestamp: order.updated_at || order.mexal_sincronizzato_il || order.created_at,
+      sourceDeletedAt: order.mexal_eliminato_il || null,
       status: productionState.status || request?.workspace_status || request?.stato || order.stato || "DA_VALUTARE", stage: productionState.stage,
       plannedCompletionDate: productionState.plannedCompletionDate,
       productionOrders: productionState.orders,
@@ -332,7 +337,7 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
           productionStatus: workbenchLineProductionState(line, request, productionState),
         };
       }),
-      ready: productive.length > 0 && order.cliente_mexal_risolto !== false && !orderDiagnostics.some(diagnosticBlocks),
+      ready: !order.mexal_eliminato_il && productive.length > 0 && order.cliente_mexal_risolto !== false && !orderDiagnostics.some(diagnosticBlocks),
       requestId: request?.id || null, requestExternalId: request?.external_id || null, rdpNumber: request?.rdp_number || null,
       diagnostics: orderDiagnostics.map(publicDiagnostic),
     };
@@ -357,7 +362,7 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
       requestId: request.id, requestExternalId: request.external_id, rdpNumber: request.rdp_number || null, diagnostics: [],
     };
   });
-  return { generatedAt: new Date().toISOString(), items, history, customerScoped: Boolean(expectedCustomerCode) };
+  return { generatedAt: new Date().toISOString(), items: items.filter(visibleWorkbenchOct), history, customerScoped: Boolean(expectedCustomerCode) };
 }
 
 export async function productionWorkbenchDetail({ admin, orderId = null, requestId = null, diagnostics = [], customerCode: expectedCustomerCode = null }) {

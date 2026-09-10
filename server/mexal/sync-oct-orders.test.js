@@ -319,6 +319,15 @@ function writableSupabase() {
   let nextOrder = 1;
   return {
     state,
+    async rpc(name, args) {
+      assert.equal(name, "retire_deleted_mexal_oct");
+      const order = state.ordini_testate.find((row) => row.id === args.p_order_id);
+      order.mexal_eliminato_il = new Date().toISOString();
+      state.ordini_righe.filter((row) => row.ordine_id === order.id).forEach((row) => {
+        row.mexal_attiva = false; row.mexal_ritirata_il = order.mexal_eliminato_il;
+      });
+      return { data: true, error: null };
+    },
     from(table) {
       let operation = "select";
       let payload;
@@ -326,6 +335,10 @@ function writableSupabase() {
       const query = {
         select() { return query; },
         eq(column, value) { filters.push((row) => row[column] === value); return query; },
+        is(column, value) { filters.push((row) => (row[column] ?? null) === value); return query; },
+        gt(column, value) { filters.push((row) => row[column] > value); return query; },
+        order() { return query; },
+        limit() { return query; },
         in(column, values) { filters.push((row) => values.includes(row[column])); return query; },
         upsert(value) { operation = "upsert"; payload = value; return query; },
         update(value) { operation = "update"; payload = value; return query; },
@@ -341,7 +354,7 @@ function writableSupabase() {
         if (operation === "update") {
           const rows = (state[table] || []).filter((row) => filters.every((filter) => filter(row)));
           for (const row of rows) Object.assign(row, payload);
-          return { data: rows, error: null };
+          return { data: single ? rows[0] || null : rows, error: null };
         }
         if (table === "ordini_testate") {
           const existing = state.ordini_testate.find((row) => row.mexal_chiave === payload.mexal_chiave);
@@ -461,6 +474,34 @@ test("una riga rimossa da Mexal viene ritirata logicamente senza perdere lineage
   assert.equal(supabase.state.ordini_righe[1].mexal_attiva, false);
   assert.match(supabase.state.ordini_righe[1].mexal_ritirata_il, /^\d{4}-\d{2}-\d{2}T/);
   assert.equal(result.retired_lines, 1);
+});
+
+test("importazione completa ritira un OCT eliminato e lo ripristina senza duplicati se ricreato", async () => {
+  const supabase = writableSupabase();
+  const document = { sigla: "OC", cod_modulo: "T", serie: 2, numero: 77, anno: 2026, cod_conto: "C1",
+    righe: [{ id_riga: 1, tp_riga: "R", codice_articolo: "PB0004", quantita: 2, tp_um_articolo: "1" }] };
+  let deleted = false;
+  const mexal = { anno: "2026", async getJson(path) {
+    if (path.startsWith("/oct?")) return { dati: deleted ? [] : [document] };
+    if (deleted) throw Object.assign(new Error("Risorsa non trovata"), {
+      status: 404, mexalResponse: { body: JSON.stringify({ error: { "response-code": 1004 } }) },
+    });
+    return document;
+  } };
+  const input = { mexal, supabase, env: { MEXAL_OCT_IMPORT_ENABLED: "true", MEXAL_OCT_MODULE_CODE: "T", MEXAL_OCT_LIST_PATH: "/oct" } };
+  await syncOctOrders(input);
+  const originalId = supabase.state.ordini_testate[0].id;
+  deleted = true;
+  assert.equal((await syncOctOrders(input)).retired_orders, 1);
+  assert.ok(supabase.state.ordini_testate[0].mexal_eliminato_il);
+  assert.equal(supabase.state.ordini_righe[0].mexal_attiva, false);
+  deleted = false;
+  await syncOctOrders(input);
+  assert.equal(supabase.state.ordini_testate.length, 1);
+  assert.equal(supabase.state.ordini_testate[0].id, originalId);
+  assert.equal(supabase.state.ordini_testate[0].mexal_eliminato_il, null);
+  assert.equal(supabase.state.ordini_righe[0].mexal_attiva, true);
+  assert.equal(supabase.state.ordini_righe.length, 1);
 });
 
 test("un documento temporaneamente illeggibile non blocca gli OCT validi e non espone l'utente Mexal", async () => {

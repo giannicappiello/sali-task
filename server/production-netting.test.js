@@ -76,7 +76,7 @@ function productionRequestQuery(requests, onUpdate) {
 
 function makeAdmin({ rpcResult, rpcError = null, onRpc = () => {}, onUpdate = () => {}, onProposal = () => {},
   onResponseRpc = () => {},
-  onItemUpdate = () => {}, requestItems = [], lineRows = LINES, catalogRows = null, snapshots = null, productionRequests = {} } = {}) {
+  onItemUpdate = () => {}, requestItems = [], lineRows = LINES, orderRows = ORDERS, catalogRows = null, snapshots = null, productionRequests = {} } = {}) {
   const catalogs = catalogRows || {
     PB0004: { codice_articolo: "PB0004", unita_misura: "PZ", sincronizzato_il: "2026-08-24T20:00:00Z" },
     PB0005: { codice_articolo: "PB0005", unita_misura: "KG", sincronizzato_il: "2026-08-24T20:00:00Z" },
@@ -87,7 +87,7 @@ function makeAdmin({ rpcResult, rpcError = null, onRpc = () => {}, onUpdate = ()
   return {
     from(table) {
       if (table === "ordini_righe") return queryRows(lineRows);
-      if (table === "ordini_testate") return queryRows(ORDERS);
+      if (table === "ordini_testate") return queryRows(orderRows);
       if (table === "ordini_prodotti_cache") return catalogQuery(catalogs);
       if (table === "workspace_production_demand_snapshots") return snapshotQuery(effectiveSnapshots);
       if (table === "workspace_production_requests") return productionRequestQuery(productionRequests, onUpdate);
@@ -256,6 +256,12 @@ test("le righe ritirate dal documento Mexal non entrano in una nuova RdP", async
   const demand = await buildProductionDemand({ admin: makeAdmin({ lineRows }), orderIds: [ORDERS[0].id] });
   assert.equal(demand.items.length, 1);
   assert.equal(demand.items[0].commercialArticleCode, "PB0004");
+});
+
+test("un OCT eliminato non può generare nuove RdP nemmeno con righe ancora attive in una vecchia selezione", async () => {
+  const orderRows = [{ ...ORDERS[0], mexal_eliminato_il: "2026-09-10T12:00:00Z" }];
+  await assert.rejects(buildProductionDemand({ admin: makeAdmin({ orderRows }), orderIds: [ORDERS[0].id] }),
+    (error) => error.code === "OCT_DELETED_IN_MEXAL" && error.status === 409);
 });
 
 test("snapshot equivalente con ID diverso tra preview e invio raggiunge il MES", async () => {

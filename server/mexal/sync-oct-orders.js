@@ -1,6 +1,7 @@
 import process from "node:process";
 import { calculateOrderLineEconomics } from "./order-economics.js";
 import { authoritativeArticleUnit, resolveOctUnitOfMeasure } from "./unit-of-measure.js";
+import { reconcileDeletedOcts } from "./reconcile-deleted-octs.js";
 function text(value) { return String(value ?? "").trim(); }
 function upper(value) { return text(value).toUpperCase(); }
 function number(value) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : null; }
@@ -106,6 +107,8 @@ export async function readMexalCollectionPages({
 
   do {
     const payload = await mexal.getJson(collectionPagePath(path, { pageSize, next }));
+    if (!Array.isArray(payload) && ![payload?.data, payload?.dati, payload?.items, payload?.documenti].some(Array.isArray))
+      throw new Error("Collection Mexal non valida: elenco documenti assente.");
     const pageRecords = documentsOf(payload);
     pagesRead += 1;
     recordsRead += pageRecords.length;
@@ -355,6 +358,7 @@ export function normalizeOct(document) {
       totale_iva: totalVat,
       totale_documento: documentTotal,
       mexal_sincronizzato_il: new Date().toISOString(), stato_sincronizzazione: "importato_mexal",
+      mexal_eliminato_il: null,
     },
     lines,
   };
@@ -648,6 +652,10 @@ export async function syncOctOrders({ mexal, supabase, env = process.env, contex
     }
     imported++;
   }
+  const reconciliation = await reconcileDeletedOcts({
+    mexal, supabase, moduleCode, year: mexal.anno || env.MEXAL_ANNO,
+    importedKeys: new Set(documents.map((document) => document.key)),
+  });
   for (const anomaly of anomalies) console.warn(JSON.stringify({ level: "warn", event: "mexal_oct_import_anomaly", ...anomaly }));
   return {
     enabled: true,
@@ -667,6 +675,7 @@ export async function syncOctOrders({ mexal, supabase, env = process.env, contex
     records_read: collection.recordsRead,
     unique_records: summaries.length,
     duplicate_records_skipped: collection.duplicatesSkipped,
+    ...reconciliation,
   };
 
 }

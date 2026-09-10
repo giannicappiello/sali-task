@@ -130,6 +130,8 @@ async function loadLines(admin, { orderIds, lineIds }) {
 
   const sourceOrderIds = unique(productiveLines.map((line) => line.ordine_id));
   const { data: rawOrders, error: orderError } = await admin.from("ordini_testate").select("*").in("id", sourceOrderIds);
+  if ((rawOrders || []).some((order) => order.mexal_eliminato_il))
+    throw Object.assign(new Error("Uno o più OCT selezionati sono stati eliminati in Mexal. Aggiorna l'elenco."), { code: "OCT_DELETED_IN_MEXAL", status: 409 });
   if (orderError) throw orderError;
   const orders = rawOrders || [];
   if (orders.length !== sourceOrderIds.length || orders.some((order) => order.origine !== "mexal_oct"))

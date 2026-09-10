@@ -70,7 +70,7 @@ test("Emetti CoA segue la navigazione interna Workspace e conserva il contesto M
       lotCode: "400100035",
       productionOrderId: 17,
     }),
-    "/produzione/progremes.Documenti?destination=coa-produzioni&productionId=42&article=BT0001&lot=400100035&odpId=17",
+    "/produzione/progremes.Documenti?destination=coa-produzioni&workspaceMesWindow=1&productionId=42&article=BT0001&lot=400100035&odpId=17",
   );
   assert.equal(productionCoaWorkspacePath({ articleCode: "IT 0084", lotCode: "Lotto 1+2" }), null);
 

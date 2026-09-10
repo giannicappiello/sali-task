@@ -22,7 +22,7 @@ import documentApiHandler from "../../server/document-api.js";
 import { consumeProgremesTicket, issueProgremesTicket, listUserProgremesSections } from "../../server/progremes-sso.js";
 import { listProgremesIntegration, saveProgremesSyncConfig, stopProgremesModulesSync, syncProgremesModules } from "../../server/progremes-modules.js";
 import { handleProgremesReadonlyRequest } from "../../server/progremes-readonly-api.js";
-import { createProgremesClient, readAllProgremesArticles, readAllProgremesArticleSupplierHistory, readAllProgremesSuppliers } from "../../server/progremes-readonly-client.js";
+import { createProgremesClient, readAllProgremesArticles, readAllProgremesSuppliers } from "../../server/progremes-readonly-client.js";
 import { createProgremesDiagnosticManager } from "../../server/progremes-diagnostics-client.js";
 import { handleAIAssistant } from "../../server/ai/assistant.js";
 import { handleCrmBrief } from "../../server/ai/crm-brief.js";
@@ -39,7 +39,7 @@ import { confirmWorkspaceV4, createWorkspaceV4Preview } from "../../server/works
 import { addWorkspaceArticleSupplierAssociations, attachWorkspaceArticleSuppliers, createWorkspaceV4PurchaseDocument, listWorkspaceArticleSupplierAssociations, listWorkspaceV4Purchasing, recordWorkspaceArticleSupplierSync, removeWorkspaceArticleSupplierAssociation, synchronizeWorkspaceArticleSupplierAssociations, workspaceArticleSupplierHistoryNeedsRefresh } from "../../server/workspacemes-v4-purchasing.js";
 import { automaticPfLines, calculateWorkspaceV4PurchaseRequirements, executeWorkspaceV4PurchasingAction, readWorkspaceV4PurchasingSource } from "../../server/workspacemes-v4-purchasing-mes.js";
 import { buildWorkspaceV4PfPlan, workspaceV4PfPlanChecksum } from "../../server/workspacemes-v4-pf-plan.js";
-import { readMexalArticleSupplierHistory } from "../../server/mexal/sync-workspacemes-v3.js";
+import { readMexalArticleSupplierMaster } from "../../server/mexal/article-supplier-master.js";
 import { generateSaliDiIschiaProposal, listSaliDiIschiaProposals } from "../../server/sali-di-ischia-proposal.js";
 import { privateDocumentsSession, syncPrivateDocuments } from "../../server/private-documents.js";
 import { handleMesHeadingResolve } from "../../server/company-letterheads-mes-api.js";
@@ -86,34 +86,25 @@ async function refreshAutomaticArticleSupplierAssociations(admin, progremesClien
   if (!await workspaceArticleSupplierHistoryNeedsRefresh({ admin })) return { refreshed: false };
   await recordWorkspaceArticleSupplierSync({ admin, status: "RUNNING" });
   try {
-    const articlesPromise = readAllProgremesArticles(progremesClient);
-    let relationships;
-    let usedCurrentMexalFallback = false;
-    try {
-      relationships = await readAllProgremesArticleSupplierHistory(progremesClient);
-    } catch (historyError) {
-      usedCurrentMexalFallback = true;
-      console.error("ProgreMES article-supplier history unavailable; using current Mexal orders", {
-        code: historyError?.code || "UNKNOWN",
-        upstreamStatus: historyError?.upstreamStatus || null,
+    const [articles, relationships] = await Promise.all([
+      readAllProgremesArticles(progremesClient),
+      readMexalArticleSupplierMaster(buildMexalClient()),
+    ]);
+    if (!relationships.length) {
+      throw Object.assign(new Error("L'anagrafica articoli Mexal non contiene associazioni fornitore."), {
+        code: "MEXAL_ARTICLE_SUPPLIER_MASTER_EMPTY",
       });
-      relationships = await readMexalArticleSupplierHistory(buildMexalClient());
     }
-    const articles = await articlesPromise;
     const result = await synchronizeWorkspaceArticleSupplierAssociations({
       admin, relationships, articles, suppliers,
     });
-    if (usedCurrentMexalFallback) {
-      await recordWorkspaceArticleSupplierSync({
-        admin,
-        status: "FAILED",
-        count: result.matched,
-        error: "Storico ProgreMES non ancora disponibile; applicato fallback ordini Mexal correnti.",
+    if (!result.matched) {
+      throw Object.assign(new Error("Nessuna associazione dell'anagrafica Mexal corrisponde ad articoli e fornitori ProgreMES."), {
+        code: "MEXAL_ARTICLE_SUPPLIER_MASTER_NO_MATCHES",
       });
-    } else {
-      await recordWorkspaceArticleSupplierSync({ admin, status: "COMPLETED", count: result.matched });
     }
-    return { refreshed: true, fallback: usedCurrentMexalFallback, ...result };
+    await recordWorkspaceArticleSupplierSync({ admin, status: "COMPLETED", count: result.matched });
+    return { refreshed: true, source: "MEXAL_ARTICLE_MASTER", ...result };
   } catch (error) {
     const message = error?.message || "Sincronizzazione automatica non riuscita.";
     try {

@@ -1,3 +1,4 @@
+import { deliverCatalogDeletions } from "./workspace-catalog-deletions.js";
 import { requirePermission } from "./mexal/lib/auth.js";
 
 export const PROGREMES_SYNC_TIMEOUT_MS = 30 * 60 * 1000;
@@ -119,6 +120,7 @@ export async function syncProgremesModules(req, supabase, origin = "manuale", sk
   const { data: run, error: runError } = await supabase.from("progremes_sync_runs").insert({ origine: origin, stato: "in_esecuzione" }).select().single();
   if (runError) throw runError;
   try {
+    await deliverCatalogDeletions(supabase);
     const response = await fetch(new URL("/api/workspace/modules", required("PROGREMES_URL")), {
       headers: { "X-Workspace-Secret": required("PROGREMES_INTEGRATION_SECRET") },
       signal: AbortSignal.timeout(30000),

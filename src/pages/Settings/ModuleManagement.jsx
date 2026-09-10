@@ -61,7 +61,7 @@ const sortModulePickerScreens = (items, selectedCodes) => {
 
 export default function ModuleManagement() {
   const goBack = useBackNavigation("/settings");
-  const { isAdminUser } = useAuth();
+  const { isAdminUser, session } = useAuth();
   const [modules, setModules] = useState([]);
   const [screens, setScreens] = useState([]);
   const [links, setLinks] = useState([]);
@@ -243,6 +243,33 @@ export default function ModuleManagement() {
     }
   }
 
+  async function notifyMesDeletion() {
+    try {
+      const response = await fetch("/api/mexal/automation", {
+        method: "POST", headers: { Authorization: `Bearer ${session?.access_token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "workspace_catalog_deletions_sync" }),
+      });
+      const result = await response.json();
+      return response.ok && result.synchronized ? "Cancellazione definitiva completata in Workspace e MES." : "Cancellazione salvata in Workspace. Allineamento MES in attesa della prossima sincronizzazione.";
+    } catch { return "Cancellazione salvata in Workspace. Allineamento MES in attesa della prossima sincronizzazione."; }
+  }
+
+  async function deleteScreen() {
+    if (!screenForm || screenForm.protetta || !isAdminUser) return;
+    if (!await window.workspaceConfirm(`Eliminare definitivamente “${screenForm.nome}” dal catalogo Workspace e MES? I dati operativi saranno conservati.`)) return;
+    setBusy(true);
+    try {
+      const { error } = await supabase.rpc("admin_delete_workspace_screen", { target_code: screenForm.codice });
+      if (error) throw error;
+      const text = await notifyMesDeletion();
+      setScreenForm(null);
+      await load();
+      window.dispatchEvent(new CustomEvent("workspace:module-catalog-changed"));
+      setMessage({ type: "success", text });
+    } catch(error) { setMessage({ type: "error", text: error.message }); }
+    finally { setBusy(false); }
+  }
+
   async function deleteModule() {
     const module = modules.find((item) => item.codice === selectedCode);
     if (!module || module.protetto || !isAdminUser) return;
@@ -250,7 +277,7 @@ export default function ModuleManagement() {
     const linkedMenus = associations.moduleMenus.get(module.codice)?.map((item) => item.menu?.nome).filter(Boolean) || [];
     const usages = [...linkedScreens.map((name) => `Schermata: ${name}`), ...linkedMenus.map((name) => `Menu: ${name}`)];
     const warning = usages.length ? `\n\nQuesto elemento è utilizzato da:\n- ${usages.join("\n- ")}` : "\n\nIl modulo non ha associazioni.";
-    if (!await window.workspaceConfirm(`Eliminare il modulo “${module.nome}”?${warning}\n\nLe schermate e i dati operativi non verranno cancellati.`)) return;
+    if (!await window.workspaceConfirm(`Eliminare il modulo “${module.nome}”?${warning}\n\nIl modulo sarà eliminato anche dal catalogo MES e non sarà ricreato. I dati operativi saranno conservati.`)) return;
     setBusy(true);
     const { error } = await supabase.rpc("admin_delete_workspace_module", { target_code: module.codice });
     setBusy(false);
@@ -258,7 +285,7 @@ export default function ModuleManagement() {
     await load();
     window.dispatchEvent(new CustomEvent("workspace:module-catalog-changed"));
     createModule();
-    setMessage({ type: "success", text: "Modulo eliminato. Le schermate sono rimaste nel catalogo." });
+    setMessage({ type: "success", text: await notifyMesDeletion() });
   }
 
   function editScreen(screen) {
@@ -393,7 +420,7 @@ export default function ModuleManagement() {
             {visibleScreens.length === 0 ? <p className="catalog-empty">Nessuna schermata corrisponde ai filtri.</p> : null}
           </section>
           <form className="module-editor" onSubmit={saveScreen}>
-            {screenForm ? <><div className="module-editor-title"><div><h2>{screenForm.nome}</h2><p>La route e il componente restano controllati dal codice applicativo.</p></div></div><div className="module-fields"><label>Nome<input required disabled={!isAdminUser} value={screenForm.nome} onChange={(event) => setScreenForm((current) => ({ ...current, nome: event.target.value }))} /></label><label>Codice<input disabled value={screenForm.codice} /></label><label>Area<select required disabled={!isAdminUser} value={screenForm.area || "workspace"} onChange={(event) => setScreenForm((current) => ({ ...current, area: event.target.value }))}>{areas.filter((area) => area.attiva || area.codice === screenForm.area).map((area) => <option key={area.codice} value={area.codice}>{area.nome}</option>)}</select></label><label className="wide">Collegamento Workspace<input disabled value={screenForm.percorso} /></label>{screenForm.provider === "progremes" ? <label className="wide">Destinazione ProgreMES<input disabled value={screenDestination(screenForm)} /></label> : null}<label className="wide">Descrizione<textarea rows="3" disabled={!isAdminUser} value={screenForm.descrizione || ""} onChange={(event) => setScreenForm((current) => ({ ...current, descrizione: event.target.value }))} /></label><label>Ordine nel catalogo<input type="number" disabled={!isAdminUser} value={screenForm.ordine} onChange={(event) => setScreenForm((current) => ({ ...current, ordine: event.target.value }))} /><small>Non modifica la posizione nei moduli.</small></label><WorkspaceIconPicker value={screenForm.icona || "blocks"} disabled={!isAdminUser} description="Usata nelle card del modulo e nell’intestazione della schermata." onChange={(icona) => setScreenForm((current) => ({ ...current,icona }))}/></div><div className="module-flags"><label><input type="checkbox" disabled={screenForm.protetta || !isAdminUser} checked={screenForm.attiva !== false} onChange={(event) => setScreenForm((current) => ({ ...current, attiva: event.target.checked }))} />Schermata attiva</label></div><section className="workspace-associations"><h3>Associazioni</h3><div className="association-group"><strong>In ingresso · Moduli</strong><AssociationLinks items={associations.screenLinks.get(screenForm.codice)||[]} getKey={(item)=>item.modulo_codice} getLabel={(item)=>`${item.module?.nome||item.modulo_codice}${item.predefinita?" · predefinita":""}`} onOpen={openModuleAssociation}/></div><div className="association-group"><strong>In uscita · Route</strong><a href={screenPreviewRoute(screenForm)||undefined}>{screenDestination(screenForm)||"Nessuna route"}</a></div></section>{isAdminUser ? <button className="primary-action module-save" disabled={busy}><Save size={18} />Salva schermata</button> : null}</> : <div className="module-empty-editor"><Monitor size={42} /><h2>Seleziona una schermata</h2><p>Le schermate Workspace sono registrate dal codice; quelle ProgreMES arrivano dalla sincronizzazione.</p></div>}
+            {screenForm ? <><div className="module-editor-title"><div><h2>{screenForm.nome}</h2><p>La route e il componente restano controllati dal codice applicativo.</p></div>{isAdminUser && !screenForm.protetta && <button type="button" className="danger-action" disabled={busy} onClick={deleteScreen}><Trash2 size={17} />Elimina schermata</button>}</div><div className="module-fields"><label>Nome<input required disabled={!isAdminUser} value={screenForm.nome} onChange={(event) => setScreenForm((current) => ({ ...current, nome: event.target.value }))} /></label><label>Codice<input disabled value={screenForm.codice} /></label><label>Area<select required disabled={!isAdminUser} value={screenForm.area || "workspace"} onChange={(event) => setScreenForm((current) => ({ ...current, area: event.target.value }))}>{areas.filter((area) => area.attiva || area.codice === screenForm.area).map((area) => <option key={area.codice} value={area.codice}>{area.nome}</option>)}</select></label><label className="wide">Collegamento Workspace<input disabled value={screenForm.percorso} /></label>{screenForm.provider === "progremes" ? <label className="wide">Destinazione ProgreMES<input disabled value={screenDestination(screenForm)} /></label> : null}<label className="wide">Descrizione<textarea rows="3" disabled={!isAdminUser} value={screenForm.descrizione || ""} onChange={(event) => setScreenForm((current) => ({ ...current, descrizione: event.target.value }))} /></label><label>Ordine nel catalogo<input type="number" disabled={!isAdminUser} value={screenForm.ordine} onChange={(event) => setScreenForm((current) => ({ ...current, ordine: event.target.value }))} /><small>Non modifica la posizione nei moduli.</small></label><WorkspaceIconPicker value={screenForm.icona || "blocks"} disabled={!isAdminUser} description="Usata nelle card del modulo e nell’intestazione della schermata." onChange={(icona) => setScreenForm((current) => ({ ...current,icona }))}/></div><div className="module-flags"><label><input type="checkbox" disabled={screenForm.protetta || !isAdminUser} checked={screenForm.attiva !== false} onChange={(event) => setScreenForm((current) => ({ ...current, attiva: event.target.checked }))} />Schermata attiva</label></div><section className="workspace-associations"><h3>Associazioni</h3><div className="association-group"><strong>In ingresso · Moduli</strong><AssociationLinks items={associations.screenLinks.get(screenForm.codice)||[]} getKey={(item)=>item.modulo_codice} getLabel={(item)=>`${item.module?.nome||item.modulo_codice}${item.predefinita?" · predefinita":""}`} onOpen={openModuleAssociation}/></div><div className="association-group"><strong>In uscita · Route</strong><a href={screenPreviewRoute(screenForm)||undefined}>{screenDestination(screenForm)||"Nessuna route"}</a></div></section>{isAdminUser ? <button className="primary-action module-save" disabled={busy}><Save size={18} />Salva schermata</button> : null}</> : <div className="module-empty-editor"><Monitor size={42} /><h2>Seleziona una schermata</h2><p>Le schermate Workspace sono registrate dal codice; quelle ProgreMES arrivano dalla sincronizzazione.</p></div>}
           </form>
         </div>
       )}

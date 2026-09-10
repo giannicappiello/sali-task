@@ -1,6 +1,7 @@
 /* global process */
 import { createHash, randomBytes } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
+import { ensureLocalProductionScreens } from "./workspace-local-production-screens.js";
 import { ensureProgremesCatalogFresh } from "./progremes-modules.js";
 import { progremesContextualRoute, progremesDirectOperationalRoute } from "./progremes-sso-routes.js";
 
@@ -100,6 +101,7 @@ export async function listUserProgremesSections(req) {
   const admin = adminClient();
   const identity = await getWorkspaceIdentity(req, admin);
   await ensureProgremesCatalogFresh(admin);
+  if (identity.isAdmin) await ensureLocalProductionScreens(admin);
   const authorizedCodes = await getAuthorizedProgremesCodes(admin, identity);
   const [{ data: screens, error }, { data: links, error: linksError }] = await Promise.all([
     admin.from("workspace_schermate").select("codice,nome,descrizione,metadati").eq("provider", "progremes").eq("attiva", true),

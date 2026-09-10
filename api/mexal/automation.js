@@ -364,6 +364,14 @@ async function runScheduledStep(req, res, body, syncType, runHandler) {
   requireScheduledWorker(req);
   const admin = await createAdmin(req);
 
+  // A stock run is checkpointed server-side and may outlive the queue job that
+  // started it (for example when a serverless invocation is terminated). Every
+  // scheduled stock step must therefore reconnect to the existing run instead
+  // of treating it as a competing manual synchronization. This also lets a new
+  // daily job recover an orphaned run whose previous queue job exhausted its
+  // lease retries.
+  if (syncType === "stocks") body.resume = true;
+
   if (syncType === "list_price_commissions") {
     let running = await findRunningSync(admin.supabase, syncType);
     if (!running) {

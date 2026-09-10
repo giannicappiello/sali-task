@@ -224,6 +224,7 @@ assert.match(handlerSource, /checkpointSyncRunProgress\(supabase, syncRunId/);
 assert.match(handlerSource, /result\.completato && persistedState\.failed > 0[\s\S]*failSyncRun\(supabase, syncRunId/, "gli errori reali chiudono la run in failed");
 assert.match(handlerSource, /\.eq\("codice_mexal", code\)\.eq\("sincronizzato_mexal", true\)\.eq\("attivo_mexal", true\)/, "gli update restano idempotenti e limitati agli articoli ammessi");
 assert.match(automationSource, /syncType === "stocks" && body\.resume === true/, "un nuovo client può collegarsi alla sola run stocks già attiva");
+assert.match(automationSource, /runScheduledStep[\s\S]*if \(syncType === "stocks"\) body\.resume = true/, "ogni job pianificato riprende automaticamente una run stocks orfana");
 assert.match(automationSource, /resumeFailedSync\(admin\.supabase/, "una run stocks failed per timeout viene riaperta con lo stesso id");
 assert.match(automationSource, /if \(running && !isContinuation\) return sendRunning/, "una seconda run concorrente resta bloccata");
 assert.match(runsSource, /if \(syncType === "stocks"\) return/, "una run stocks stale resta riprendibile e continua a fungere da lock");

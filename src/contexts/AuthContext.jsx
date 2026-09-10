@@ -60,59 +60,55 @@ export function AuthProvider({ children }) {
   const [screenCatalog, setScreenCatalog] = useState({ screens: [], links: [] });
   const [dataScope, setDataScope] = useState(EMPTY_DATA_SCOPE);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState("");
 
   useEffect(() => {
     let mounted = true;
 
-    async function initializeAuth() {
-      const { data, error } = await supabase.auth.getSession();
-      if (error) console.error("Errore sessione Supabase:", error);
-      if (!mounted) return;
+    const pending = new Set();
+    const timeout = window.setTimeout(() => {
+      if (mounted) setAuthError("Il caricamento della sessione sta impiegando troppo tempo. Chiudi le altre finestre Workspace e riprova.");
+    }, 30000);
 
-      const currentSession = data?.session || null;
+    async function applySession(currentSession) {
+      if (!mounted) return;
       setSession(currentSession);
       setAuthUser(currentSession?.user || null);
-
-      if (currentSession?.user) await loadProfile(currentSession.user);
-      else {
-        setProfile(null);
-        setPermissions([]);
-        setModuleAccess([]);
-        setModuleLevels({});
-        setAccessExceptions([]);
-        setAreaAccess([]);
-        setModuleAreas({});
-        setScreenCatalog({ screens: [], links: [] });
-        setDataScope(EMPTY_DATA_SCOPE);
+      try {
+        if (currentSession?.user) await loadProfile(currentSession.user);
+        else {
+          setProfile(null);
+          setPermissions([]);
+          setModuleAccess([]);
+          setModuleLevels({});
+          setAccessExceptions([]);
+          setAreaAccess([]);
+          setModuleAreas({});
+          setScreenCatalog({ screens: [], links: [] });
+          setDataScope(EMPTY_DATA_SCOPE);
+        }
+        if (mounted) { setAuthError(""); setLoading(false); }
+      } catch (error) {
+        if (mounted) setAuthError("Impossibile caricare la sessione Workspace. Riprova.");
+        console.error("Errore caricamento sessione Workspace:", error);
+      } finally {
+        window.clearTimeout(timeout);
       }
-
-      setLoading(false);
     }
 
-    initializeAuth();
-
-    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
-      setSession(nextSession);
-      setAuthUser(nextSession?.user || null);
-
-      if (nextSession?.user) await loadProfile(nextSession.user);
-      else {
-        setProfile(null);
-        setPermissions([]);
-        setModuleAccess([]);
-        setModuleLevels({});
-        setAccessExceptions([]);
-        setAreaAccess([]);
-        setModuleAreas({});
-        setScreenCatalog({ screens: [], links: [] });
-        setDataScope(EMPTY_DATA_SCOPE);
-      }
-
-      setLoading(false);
+    // Database queries must run after Supabase releases its auth callback lock.
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      const timer = window.setTimeout(() => {
+        pending.delete(timer);
+        void applySession(nextSession);
+      }, 0);
+      pending.add(timer);
     });
 
     return () => {
       mounted = false;
+      window.clearTimeout(timeout);
+      for (const timer of pending) window.clearTimeout(timer);
       listener.subscription.unsubscribe();
     };
   }, []);
@@ -524,6 +520,7 @@ export function AuthProvider({ children }) {
       moduleAreas,
       dataScope,
       loading,
+      authError,
       signIn,
       signOut,
       resetPassword,
@@ -547,7 +544,7 @@ export function AuthProvider({ children }) {
       userDepartmentIds: profile?.reparto_ids || [],
       reloadProfile: () => authUser && loadProfile(authUser),
     }),
-    [session, authUser, profile, permissions, moduleAccess, moduleLevels, accessExceptions, areaAccess, moduleAreas, screenCatalog, dataScope, loading, adminUser]
+    [session, authUser, profile, permissions, moduleAccess, moduleLevels, accessExceptions, areaAccess, moduleAreas, screenCatalog, dataScope, loading, authError, adminUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

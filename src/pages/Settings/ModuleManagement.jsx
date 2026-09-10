@@ -84,6 +84,17 @@ export default function ModuleManagement() {
   const [message, setMessage] = useState(null);
 
   const load = useCallback(async () => {
+    if (isAdminUser && session?.access_token) {
+      const response = await fetch('/api/mexal/automation', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'workspace_catalog_register_private_documents' }),
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        setMessage({ type: 'error', text: result.error || 'Registrazione della schermata documenti non riuscita.' });
+      }
+    }
     const [modulesResult, screensResult, linksResult, areasResult, menusResult, menuModulesResult] = await Promise.all([
       supabase.from("workspace_moduli").select("*").order("ordine").order("nome"),
       supabase.from("workspace_schermate").select("*").order("provider").order("ordine").order("nome"),
@@ -106,7 +117,7 @@ export default function ModuleManagement() {
       const targetLinks = (linksResult.data || []).filter((link) => link.modulo_codice === targetModule.codice);
       setForm({ ...EMPTY_MODULE, ...targetModule, schermate: targetLinks.map((link) => link.schermata_codice), predefinita: targetLinks.find((link) => link.predefinita)?.schermata_codice || "" });
     } else if (targetScreen) setScreenForm({ ...targetScreen });
-  }, [initialTarget]);
+  }, [initialTarget, isAdminUser, session?.access_token]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load().catch((error) => setMessage({ type: "error", text: error.message })), 0);

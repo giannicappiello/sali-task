@@ -1,4 +1,5 @@
 import { syncDeletedWorkspaceCatalog } from "../../server/workspace-catalog-deletions.js";
+import { ensurePrivateDocumentsScreen } from "../../server/workspace-private-documents-screen.js";
 /* global process */
 import { createClient } from "@supabase/supabase-js";
 import productsHandler, { buildMexalClient } from "../../server/mexal/sync-products.js";
@@ -617,6 +618,12 @@ export default async function handler(req, res) {
       case "workspace_catalog_deletions_sync": {
         const admin = await createAdmin(req);
         return sendSuccess(res, 200, await syncDeletedWorkspaceCatalog(req, admin.supabase));
+      }
+      case "workspace_catalog_register_private_documents": {
+        const admin = await createAdmin(req);
+        await requireAdmin(req, admin.supabase);
+        await ensurePrivateDocumentsScreen(admin.supabase);
+        return sendSuccess(res, 200, { registered: true });
       }
       case "progremes_modules_list": {
         const admin = await createAdmin(req);

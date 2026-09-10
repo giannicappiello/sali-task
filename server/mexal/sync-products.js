@@ -566,7 +566,7 @@ export function mexalNetAvailability(article, stock = calculateStock(article)) {
   };
 }
 
-function resolveHierarchy(groupCode, groupMap) {
+export function resolveHierarchy(groupCode, groupMap) {
   const chain = [];
   const visited = new Set();
   let current = String(groupCode || "").trim();
@@ -590,7 +590,7 @@ function resolveHierarchy(groupCode, groupMap) {
   };
 }
 
-function isOutOfProductionLine(lineDescription) {
+export function isOutOfProductionLine(lineDescription) {
   return String(lineDescription || "")
     .trim()
     .toLocaleLowerCase("it-IT")
@@ -808,7 +808,7 @@ export function buildArticleDetailPath(code) {
   return `/articoli/${transportCode}`;
 }
 
-async function getGroupMap(mexal) {
+export async function getGroupMap(mexal) {
   const response = await mexal.getJson(
     "/dati-generali/gruppi-merceologici"
   );

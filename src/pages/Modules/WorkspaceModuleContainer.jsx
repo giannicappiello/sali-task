@@ -5,6 +5,7 @@ import ModuleContainerLayout from "../../components/ModuleContainerLayout";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
 import { getModuleIcon } from "../../config/moduleIcons";
+import { requestProgremesWorkspaceWindow } from "../ProgreMes/progremesWindow";
 
 export default function WorkspaceModuleContainer() {
   const { moduleCode = "" } = useParams();
@@ -76,7 +77,7 @@ export default function WorkspaceModuleContainer() {
     icon={ModuleIcon}
     title={catalog.module?.nome || "Modulo"}
     description={catalog.module?.descrizione || "Accedi alle aree disponibili in base alle tue autorizzazioni."}
-    items={screens.map((screen) => ({ code: screen.codice, name: screen.nome, description: screen.descrizione, to: screen.percorso, state:{ workspaceMenuCode:location.state?.workspaceMenuCode || "",workspaceModuleCode:moduleCode }, icon:getModuleIcon(screen.icona,LayoutGrid), external: screen.provider === "progremes" }))}
+    items={screens.map((screen) => ({ code: screen.codice, name: screen.nome, description: screen.descrizione, to: screen.percorso, onOpen: screen.provider === "progremes" ? () => requestProgremesWorkspaceWindow(screen.percorso) : undefined, state:{ workspaceMenuCode:location.state?.workspaceMenuCode || "",workspaceModuleCode:moduleCode }, icon:getModuleIcon(screen.icona,LayoutGrid) }))}
     loading={loading}
     loadingLabel="Caricamento aree disponibili..."
     error={error}

@@ -1,64 +1,79 @@
 import { useEffect, useRef, useState } from "react";
-import { Factory, RefreshCw } from "lucide-react";
+import { Factory, RefreshCw, X } from "lucide-react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
-import { isProgremesPopup, openPendingProgremesWindow } from "./progremesWindow";
+import { isProgremesFrameMessage, PROGREMES_POPUP_PARAM, requestProgremesNavigation, requestProgremesWorkspaceWindow } from "./progremesWindow";
+import "./progremes-frame.css";
 
-async function requestProgremesAccess(accessToken) {
-  const response = await fetch("/api/mexal/automation", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "progremes_sso" }),
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || !payload.url) throw new Error(payload.error || "Impossibile avviare ProgreMES.");
-  return payload.url;
-}
-
-export default function ProgreMesLaunch() {
-  const { session, hasModuleAccess } = useAuth();
+export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
+  const { session, hasModuleAccess, loading: authLoading } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const accessToken = session?.access_token;
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
-  const launched = useRef(false);
-  const dedicatedWindow = isProgremesPopup(window.location.search);
-
-  async function launch() {
-    setLoading(true);
-    setError("");
-    let popup;
-    try {
-      if (!hasModuleAccess("progremes")) throw new Error("Accesso al modulo ProgreMES non autorizzato.");
-      if (!accessToken) throw new Error("Sessione Workspace non disponibile.");
-      popup = openPendingProgremesWindow();
-      popup.location.replace(await requestProgremesAccess(accessToken));
-    } catch (launchError) {
-      popup?.close();
-      setError(launchError?.message || "Impossibile avviare ProgreMES.");
-      setLoading(false);
-    }
-  }
+  const allowed = hasModuleAccess("progremes");
+  const frame = useRef(null);
+  const [retry, setRetry] = useState(0);
+  const [connection, setConnection] = useState({ requestKey: "", url: "", error: "" });
+  const [frameStatus, setFrameStatus] = useState({ url: "", ready: false, error: "" });
+  const dedicated = new URLSearchParams(location.search).get(PROGREMES_POPUP_PARAM) === "1";
+  const requestKey = JSON.stringify([screenCode, search, retry]);
+  const url = connection.requestKey === requestKey ? connection.url : "";
 
   useEffect(() => {
-    if (launched.current || !accessToken || !dedicatedWindow) return;
-    launched.current = true;
-    requestProgremesAccess(accessToken)
-      .then((url) => window.location.assign(url))
-      .catch((launchError) => {
-        setError(launchError?.message || "Impossibile avviare ProgreMES.");
-        setLoading(false);
+    if (authLoading || !accessToken || !allowed || !dedicated || !screenCode) return undefined;
+    const controller = new AbortController();
+    requestProgremesNavigation(accessToken, { screenCode, search, signal: controller.signal })
+      .then((nextUrl) => {
+        if (!controller.signal.aborted) setConnection({ requestKey, url: nextUrl, error: "" });
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) setConnection({ requestKey, url: "", error: error.message || "Collegamento a ProgreMES non riuscito." });
       });
-  }, [accessToken, dedicatedWindow]);
+    return () => controller.abort();
+  }, [accessToken, allowed, authLoading, dedicated, screenCode, search, requestKey]);
 
-  return (
-    <div className="v4-page">
-      <div className="panel" style={{ maxWidth: 620, margin: "48px auto", padding: 32, textAlign: "center" }}>
-        <span style={{ width: 64, height: 64, margin: "0 auto 20px", borderRadius: 18, display: "grid", placeItems: "center", background: "#e0f2fe", color: "#075985" }}>
-          <Factory size={32} />
-        </span>
-        <h2>{error ? "Accesso non riuscito" : dedicatedWindow && loading ? "Accesso a ProgreMES..." : "Apri ProgreMES in una nuova scheda"}</h2>
-        <p className="muted">{error || (dedicatedWindow ? "Verifica dell'identità Workspace e apertura dell'ambiente di produzione." : "Workspace resterà aperto in questa scheda.")}</p>
-        {(error || !dedicatedWindow) && <button type="button" className="primary-action" onClick={launch}><RefreshCw size={18} />{error ? "Riprova" : "Apri ProgreMES"}</button>}
-      </div>
-    </div>
-  );
+  useEffect(() => {
+    if (!url) return undefined;
+    const origin = new URL(url).origin;
+    const timer = window.setTimeout(() => setFrameStatus({
+      url, ready: false, error: "MES non ha confermato il collegamento integrato. Verifica che MES sia aggiornato e che il browser consenta la sessione incorporata.",
+    }), 30000);
+    const receive = (event) => {
+      if (!isProgremesFrameMessage(event, frame.current?.contentWindow, origin)) return;
+      window.clearTimeout(timer);
+      if (event.data.type === "progremes-workspace-return") {
+        navigate("/produzione", { replace: true });
+      } else {
+        const ready = event.data.type === "progremes-embedded-ready";
+        setFrameStatus({ url, ready, error: ready ? "" : "Sessione MES non disponibile nella finestra Workspace. Premi Riprova per rinnovare l’accesso." });
+      }
+    };
+    window.addEventListener("message", receive);
+    return () => { window.clearTimeout(timer); window.removeEventListener("message", receive); };
+  }, [url, navigate]);
+
+  const error = !authLoading && !allowed ? "Accesso al modulo ProgreMES non autorizzato."
+    : !authLoading && !accessToken ? "Sessione Workspace non disponibile."
+      : connection.requestKey === requestKey && connection.error ? connection.error
+        : frameStatus.url === url ? frameStatus.error : "";
+  const ready = Boolean(url && frameStatus.url === url && frameStatus.ready);
+  const canConnect = dedicated && screenCode;
+
+  return <section className="progremes-workspace-frame">
+    <header className="progremes-frame-toolbar">
+      <span><Factory size={20} />MES · Workspace</span>
+      <Link to="/produzione">Gestione Produzione</Link>
+      {dedicated && <button type="button" onClick={() => window.close()}><X size={17} />Chiudi finestra</button>}
+    </header>
+    {(!ready || error) && <div className="progremes-frame-status" role={error ? "alert" : "status"}>
+      <h2>{error ? "Collegamento non disponibile" : canConnect ? "Apertura schermata MES..." : "Apri MES in una nuova finestra Workspace"}</h2>
+      <p>{error || "La finestra Workspace precedente rimane aperta e invariata."}</p>
+      {error && allowed && accessToken && canConnect && <button type="button" className="primary-action" onClick={() => setRetry((value) => value + 1)}><RefreshCw size={18} />Riprova</button>}
+      {!canConnect && allowed && <button type="button" className="primary-action" onClick={() => requestProgremesWorkspaceWindow(screenCode ? location.pathname + location.search : "/produzione")}>Apri nuova finestra Workspace</button>}
+    </div>}
+    {url && <iframe ref={frame} key={url} src={url} title="Schermata MES integrata in Workspace"
+      className={ready && !error ? "is-ready" : "is-connecting"} referrerPolicy="no-referrer"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-modals allow-popups"
+      onLoad={() => frame.current?.contentWindow?.postMessage({ type: "workspace-mes-connect" }, new URL(url).origin)} />}
+  </section>;
 }

@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../contexts/AuthContext";
-import { markProgremesPopup } from "../pages/ProgreMes/progremesWindow";
+import { isProgremesScreenPath, openProgremesWorkspaceWindow } from "../pages/ProgreMes/progremesWindow";
 import WorkspaceScreenLayout from "./WorkspaceScreenLayout";
 import { getModuleIcon } from "../config/moduleIcons";
 import { resolveCatalogModuleDestination } from "../config/workspaceNavigation";
@@ -238,18 +238,17 @@ function Layout() {
     }
     const destination = workspacePath || (screenCode
       ? `/produzione/${encodeURIComponent(screenCode)}`
-      : "/progremes/accesso");
-    const progremesWindow = window.open(markProgremesPopup(destination), "_blank");
-    if (!progremesWindow) {
-      setProgremesConnection({ open: true, error: "Il browser ha bloccato la nuova finestra. Consenti i popup per Workspace e riprova." });
-      return;
+      : "/produzione");
+    try {
+      openProgremesWorkspaceWindow(destination);
+      setProgremesConnection({ open: false, error: "" });
+    } catch (error) {
+      setProgremesConnection({ open: true, error: error.message });
     }
-    progremesWindow.opener = null;
-    setProgremesConnection({ open: false, error: "" });
   }, [hasModuleAccess]);
 
   useEffect(() => {
-    const handler = (event) => launchProgremes(event.detail?.screenCode || "");
+    const handler = (event) => launchProgremes(event.detail?.screenCode || "", event.detail?.workspacePath || "");
     window.addEventListener("workspace:launch-progremes", handler);
     return () => window.removeEventListener("workspace:launch-progremes", handler);
   }, [launchProgremes]);
@@ -501,11 +500,14 @@ function Layout() {
   }
 
   async function goToNotification(notification) {
+    const mesDestination = isProgremesScreenPath(notification.url, window.location.origin);
+    if (mesDestination) launchProgremes("", new URL(notification.url, window.location.origin).pathname + new URL(notification.url, window.location.origin).search);
     if (!notification.letta) {
       await supabase.from("notifiche").update({ letta: true }).eq("id", notification.id);
       await loadNotificationCount();
     }
     setNotificationOpen(false);
+    if (mesDestination) return;
     if (notification.tipo === "chat" && notification.chat_conversazione_id) navigate(`/messages?conversation=${notification.chat_conversazione_id}`);
     else if (notification.url) navigate(notification.url);
     else if (notification.tipo === "chat") navigate("/messages");

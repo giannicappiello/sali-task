@@ -37,8 +37,9 @@ export default function Home() {
         description: card.description || DESCRIPTION_BY_PATH[card.path] || "Apri il modulo del Workspace.",
         to: card.path,
         icon: card.icon,
-        external: launchesProgremes,
-        onOpen: launchesProgremes ? () => window.dispatchEvent(new CustomEvent("workspace:launch-progremes")) : undefined,
+        onOpen: launchesProgremes ? () => window.dispatchEvent(new CustomEvent("workspace:launch-progremes", {
+          detail: { workspacePath: card.provider === "progremes" && card.path !== "/progremes" ? card.path : "" },
+        })) : undefined,
       };
     }), [visibleMenuItems]);
 

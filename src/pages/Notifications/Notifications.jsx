@@ -3,6 +3,7 @@ import { Bell, CheckCircle2, Clock, AlertTriangle, Settings } from 'lucide-react
 import { supabase } from '../../lib/supabaseClient'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
+import { isProgremesScreenPath, requestProgremesWorkspaceWindow } from '../ProgreMes/progremesWindow'
 
 const iconByType = {
   scadenza: Clock,
@@ -49,7 +50,13 @@ export default function Notifications() {
   }
 
   async function openNotification(item) {
+    const mesDestination = isProgremesScreenPath(item.url, window.location.origin)
+    if (mesDestination) {
+      const target = new URL(item.url, window.location.origin)
+      requestProgremesWorkspaceWindow(target.pathname + target.search)
+    }
     if (!item.letta) await markRead(item.id)
+    if (mesDestination) return
     if (item.tipo === 'chat' && item.chat_conversazione_id) navigate(`/messages?conversation=${item.chat_conversazione_id}`)
     else if (item.url) navigate(item.url)
     else if (item.progetto_id) navigate('/projects')

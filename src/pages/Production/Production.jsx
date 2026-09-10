@@ -1,14 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, ClipboardList, Factory, RefreshCw, ShieldCheck, ShoppingCart, Workflow } from "lucide-react";
 import { Navigate, useLocation, useParams } from "react-router-dom";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
 import InfoTooltip from "../../components/InfoTooltip";
 import { useAuth } from "../../contexts/AuthContext";
-import useBackNavigation from "../../hooks/useBackNavigation";
 import "./production.css";
 import RdpWorkbench from "./RdpWorkbench";
 import PurchaseRequirements from "./PurchaseRequirements";
-import { isProgremesPopup, markProgremesPopup, openPendingProgremesWindow, PROGREMES_POPUP_PARAM } from "../ProgreMes/progremesWindow";
+import ProgreMesLaunch from "../ProgreMes/ProgreMesLaunch";
+import { requestProgremesWorkspaceWindow } from "../ProgreMes/progremesWindow";
 
 async function requestProgremes(action, accessToken, extra = {}) {
   const response = await fetch("/api/mexal/automation", {
@@ -113,54 +113,8 @@ function DiagnosticsCenter() {
 }
 
 function SectionLauncher({ sectionCode }) {
-  const { session } = useAuth();
-  const accessToken = session?.access_token;
-  const [error, setError] = useState("");
-  const launched = useRef(false);
-  const goBack = useBackNavigation("/produzione");
   const location = useLocation();
-  const context = useMemo(() => Object.fromEntries(new URLSearchParams(location.search)), [location.search]);
-  const dedicatedWindow = isProgremesPopup(location.search);
-
-  async function launch() {
-    setError("");
-    let popup;
-    try {
-      if (!accessToken) throw new Error("Sessione Workspace non disponibile.");
-      popup = openPendingProgremesWindow();
-      const safeContext = { ...context };
-      delete safeContext[PROGREMES_POPUP_PARAM];
-      const payload = await requestProgremes("progremes_sso", accessToken, { screenCode: sectionCode, context: safeContext });
-      if (!payload.url) throw new Error("Impossibile aprire l’area di produzione.");
-      popup.location.replace(payload.url);
-    } catch (launchError) {
-      popup?.close();
-      setError(launchError?.message || "Collegamento alla gestione produzione non riuscito.");
-    }
-  }
-
-  useEffect(() => {
-    if (launched.current || !accessToken || !dedicatedWindow) return;
-    launched.current = true;
-    const safeContext = { ...context };
-    delete safeContext[PROGREMES_POPUP_PARAM];
-    requestProgremes("progremes_sso", accessToken, { screenCode: sectionCode, context: safeContext })
-      .then((payload) => {
-        if (!payload.url) throw new Error("Impossibile aprire l’area di produzione.");
-        window.location.assign(payload.url);
-      })
-      .catch((launchError) => setError(launchError?.message || "Collegamento alla gestione produzione non riuscito."));
-  }, [accessToken, sectionCode, context, dedicatedWindow]);
-
-  return (
-    <div className="production-launch-state">
-      <div className="production-launch-icon"><Factory size={32} /></div>
-      <h2>{error ? "Apertura non riuscita" : dedicatedWindow ? "Apertura area di produzione..." : "Apri in una nuova scheda"}</h2>
-      <p>{error || (dedicatedWindow ? "Verifica dell’identità Workspace e collegamento sicuro in corso." : "Workspace resterà aperto in questa scheda.")}</p>
-      {error || !dedicatedWindow ? <button type="button" className="primary-action" onClick={launch}><RefreshCw size={17} />{error ? "Riprova" : "Apri ProgreMES"}</button> : <div className="auth-spinner" aria-label="Caricamento" />}
-      <button type="button" onClick={goBack}>Torna a Gestione Produzione</button>
-    </div>
-  );
+  return <ProgreMesLaunch key={sectionCode} screenCode={sectionCode} search={location.search} />;
 }
 
 export default function Production() {
@@ -217,8 +171,8 @@ export default function Production() {
     icon={Workflow}
     eyebrow="Area operativa"
     title="Gestione Produzione"
-    description="Accedi direttamente alle sezioni autorizzate. Ogni area si apre autonomamente in una nuova scheda."
-    items={visibleSections.map((section) => ({ code: section.code, name: section.name, description: section.description, to: section.workspaceLocal ? `/produzione/${encodeURIComponent(section.code)}` : markProgremesPopup(`/produzione/${encodeURIComponent(section.code)}`), external: !section.workspaceLocal, icon: section.icon || (section.workspaceLocal ? AlertTriangle : Factory) }))}
+    description="Le schermate MES si aprono in una nuova finestra Workspace, lasciando aperta quella corrente."
+    items={visibleSections.map((section) => ({ code: section.code, name: section.name, description: section.description, to: `/produzione/${encodeURIComponent(section.code)}`, onOpen: section.workspaceLocal ? undefined : () => requestProgremesWorkspaceWindow(`/produzione/${encodeURIComponent(section.code)}`), icon: section.icon || (section.workspaceLocal ? AlertTriangle : Factory) }))}
     loading={loading}
     error={error}
     onRetry={loadSections}

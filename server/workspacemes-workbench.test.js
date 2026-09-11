@@ -45,15 +45,15 @@ test("una RdP annullata è storico e non resta tra i bloccati", () => {
   assert.equal(requestStage({ workspace_status: "Blocked" }), "blocked");
 });
 
-test("una RdP V4 confermata passa in pianificazione e non risulta già in produzione", () => {
-  assert.equal(requestStage({ workspace_status: "CONFIRMED" }), "scheduling");
+test("una RdP V4 confermata resta in attesa finché MES non restituisce gli OP", () => {
+  assert.equal(requestStage({ workspace_status: "CONFIRMED" }), "confirmed");
 });
 
 test("una preview V4 confermata prevale sullo stato READY rimasto sulla richiesta", () => {
   const request = { id: "rdp-17", workspace_status: "READY", stato: "READY" };
   const effective = confirmedV4ProductionRequest(request, new Set(["rdp-17"]));
   assert.equal(effective.workspace_status, "CONFIRMED");
-  assert.equal(requestStage(effective), "scheduling");
+  assert.equal(requestStage(effective), "confirmed");
 });
 
 test("il Workbench riconcilia la RdP dalla conferma V4 persistita, non dallo stato transitorio della preview", async () => {
@@ -91,7 +91,7 @@ test("gli OdP precedenti a V4 aggiornano l'OCT collegato", () => {
   assert.equal(state.orders.length, 1);
 });
 
-test("l'OdP generato dalla RdP prevale su un vecchio ordine OCT con stato pianificato", () => {
+test("gli OdP RDP e gli OdP canonici di articoli diversi vengono riconciliati insieme", () => {
   const state = rdpProductionState({ workspace_status: "CONFIRMED", rdp_number: 16 }, [{
     numeroOrdine: "RDP4-20260830105630-01",
     riferimentoRdp: "RDP4-20260830105630",
@@ -100,6 +100,7 @@ test("l'OdP generato dalla RdP prevale su un vecchio ordine OCT con stato pianif
   }, {
     numeroOrdine: "OC/2/427",
     riferimentoOct: "OC/2/427",
+    codiceArticolo: "CW0002",
     stato: "Pianificato",
     dataPrevistaConsegna: "2026-09-25T12:34:00Z",
   }], "OC/2/427");
@@ -107,7 +108,16 @@ test("l'OdP generato dalla RdP prevale su un vecchio ordine OCT con stato pianif
   assert.equal(state.stage, "scheduling");
   assert.equal(state.status, "IN PIANIFICAZIONE");
   assert.equal(state.plannedCompletionDate, null);
-  assert.deepEqual(state.orders.map((order) => order.numeroOrdine), ["RDP4-20260830105630-01"]);
+  assert.deepEqual(state.orders.map((order) => order.numeroOrdine), ["RDP4-20260830105630-01", "OC/2/427"]);
+});
+
+test("il duplicato OCT dello stesso articolo non prevale sull'OdP RDP", () => {
+  const state = rdpProductionState({ workspace_status: "CONFIRMED", rdp_number: 16 }, [{
+    numeroOrdine: "RDP16", riferimentoOct: "OC/2/427", codiceArticolo: "CW0001", stato: "Nuovo",
+  }, {
+    numeroOrdine: "OC/2/427", riferimentoOct: "OC/2/427", codiceArticolo: "CW0001", stato: "Pianificato",
+  }], "OC/2/427");
+  assert.deepEqual(state.orders.map((order) => order.numeroOrdine), ["RDP16"]);
 });
 
 test("lo stato produzione resta separato per articolo nello stesso OCT", () => {
@@ -123,13 +133,37 @@ test("lo stato produzione resta separato per articolo nello stesso OCT", () => {
   assert.equal(workbenchLineProductionState({ codice_articolo: "FP220" }, request, productionState), "PIANIFICATO");
 });
 
-test("una riga senza OdP proprio non eredita lo stato in produzione della testata", () => {
+test("una riga senza OdP proprio segnala l'OP mancante", () => {
   const request = { workspace_status: "CONFIRMED", rdp_number: 139 };
   const productionState = rdpProductionState(request, [{
     numeroOrdine: "RDP139-01", riferimentoOct: "OC/2/139", codiceArticolo: "FPCOM38", stato: "InProduzione",
   }], "OC/2/139");
 
-  assert.equal(workbenchLineProductionState({ codice_articolo: "FP220" }, request, productionState), "IN PIANIFICAZIONE");
+  assert.equal(workbenchLineProductionState({ codice_articolo: "FP220" }, request, productionState), "OP MANCANTE");
+});
+
+test("una RdP confermata senza alcun OP resta in attesa di creazione", () => {
+  const request = { workspace_status: "CONFIRMED", rdp_number: 152 };
+  const state = rdpProductionState(request, [], "OC/2/221");
+  assert.equal(state.stage, "confirmed");
+  assert.equal(workbenchLineProductionState({ codice_articolo: "IT0036" }, request, state), "IN ATTESA CREAZIONE OP");
+});
+
+test("una riga V2 senza OP ma coperta dal magazzino non viene segnalata come mancante", () => {
+  const request = { workspace_status: "PLANNED", contract_version: 2, rdp_number: 161 };
+  const state = rdpProductionState(request, [{
+    numeroOrdine: "RDP161-03", riferimentoOct: "OC/2/1081", codiceArticolo: "CO0016", stato: "Nuovo",
+  }], "OC/2/1081");
+  assert.equal(workbenchLineProductionState(
+    { codice_articolo: "CO0014" }, request, state,
+    { mes_payload: { requested: 28800, free: 28800, incoming: 0, plannable: 0, blockCode: "" } },
+  ), "COPERTO DA MAGAZZINO");
+});
+
+test("uno stato produttivo storico senza OP viene segnalato come non riconciliato", () => {
+  const state = rdpProductionState({ workspace_status: "PLANNED", rdp_number: 85 }, [], "OC/2/164");
+  assert.equal(state.stage, "blocked");
+  assert.equal(state.status, "OP NON RICONCILIATO");
 });
 
 test("il Workbench carica tutte le pagine degli OdP MES", async () => {

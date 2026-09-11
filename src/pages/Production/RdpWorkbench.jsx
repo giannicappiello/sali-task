@@ -8,7 +8,7 @@ import { bomComponentStatusLabel, confirmedProductionOrder, diagnosticCanBeArchi
 const AUTOMATIC_RDP_CONFIRMATION_REASON = "Conferma operativa RdP da Workspace";
 
 const TABS = [
-  ["evaluation", "OCT da valutare"], ["rdp", "RdP"], ["scheduling", "In pianificazione"],
+  ["evaluation", "OCT da valutare"], ["rdp", "RdP"], ["confirmed", "Confermate / attesa OP"], ["scheduling", "Da pianificare"],
   ["planned", "Pianificati"], ["production", "In produzione"],
   ["completed", "Completati / evasi"], ["blocked", "Bloccati"], ["purchasing", "Fabbisogni acquisto"],
   ["history", "Storico RdP"], ["mes-orders", "Ordini produzione MES"], ["planning", "Planning"],
@@ -58,7 +58,7 @@ function rdpProgressiveLabel(value) {
 function rdpLabel(request) { return rdpProgressiveLabel(request?.rdp_number) || "RdP"; }
 
 function OctOrderCard({ row, selectable, selected, onToggle, onOpen, onDiagnostic }) {
-  const status = row.stage === "history" ? "Annullata" : (row.ready ? row.status : "BLOCCATO");
+  const status = row.stage === "history" ? "Annullata" : (row.status || (row.ready ? "—" : "BLOCCATO"));
   const tone = row.stage === "history" ? "neutral" : (row.ready ? "green" : "red");
   const rowRdpLabel = rdpProgressiveLabel(row.rdpNumber);
   return <article className={`rdp-oct-card ${!row.ready && row.stage !== "history" ? "blocked" : ""}`}>

@@ -312,7 +312,6 @@ export default function ModuleManagement() {
   async function saveScreen(event) {
     event.preventDefault();
     if (!screenForm || !isAdminUser) return;
-    if (!screenAreaCodes(screenForm).length) return setMessage({ type: "error", text: "Seleziona almeno un’area per la schermata." });
     const currentScreen = screens.find((item) => item.codice === screenForm.codice);
     const screenUsages = (associations.screenLinks.get(screenForm.codice) || []).map((item) => `Modulo: ${item.module?.nome || item.modulo_codice}`);
     if (currentScreen?.attiva !== false && screenForm.attiva === false && screenUsages.length && !await window.workspaceConfirm(`Disattivare “${currentScreen.nome}”?\n\nQuesto elemento è utilizzato da:\n- ${screenUsages.join("\n- ")}`)) return;

@@ -18,6 +18,8 @@ export const CRM_ROUTE_CATALOG = Object.freeze([
   { path: "b2b", catalogPath: "/crm/b2b", moduleCode: "crm_b2b", screenCode: "crm.b2b.dashboard", view: "dashboard", type: "b2b" },
   { path: "b2b/clienti", catalogPath: "/crm/b2b/clienti", moduleCode: "crm_b2b", screenCode: "crm.b2b.clienti", view: "accounts", type: "b2b" },
   { path: "b2b/clienti/:id", catalogPath: "/crm/b2b/clienti/:id", moduleCode: "crm_b2b", screenCode: "crm.b2b.cliente", view: "account", type: "b2b" },
+  { path: "prodotti-ordinati", catalogPath: "/crm/prodotti-ordinati", screenCode: "crm.prodotti_ordinati", view: "customer-products", kind: "ordered" },
+  { path: "prodotti-acquistati", catalogPath: "/crm/prodotti-acquistati", screenCode: "crm.prodotti_acquistati", view: "customer-products", kind: "purchased" },
   { path: "b2b/pipeline", catalogPath: "/crm/b2b/pipeline", moduleCode: "crm_b2b", screenCode: "crm.b2b.pipeline", view: "pipeline", type: "b2b" },
   { path: "b2b/pipeline/:opportunityId", catalogPath: "/crm/b2b/pipeline/:opportunityId", moduleCode: "crm_b2b", screenCode: "crm.b2b.pipeline", view: "opportunity", type: "b2b" },
   { path: "b2b/attivita", catalogPath: "/crm/b2b/attivita", moduleCode: "crm_b2b", screenCode: "crm.b2b.attivita", view: "activities", type: "b2b" },

@@ -12,7 +12,7 @@ export default function WorkspaceAccessGuard({ moduleCode, screenCode, featureCo
     ? hasModuleAccess(moduleCode) || screenGranted
     : featureCode
       ? hasWorkspaceFeature(featureCode) || screenGranted
-      : false;
+      : screenGranted;
 
   const [catalogState, setCatalogState] = useState(screenCode ? "checking" : "available");
 
@@ -48,7 +48,7 @@ export default function WorkspaceAccessGuard({ moduleCode, screenCode, featureCo
     return (
       <section className="workspace-route-error" role="alert">
         <h2>Schermata Workspace non configurata</h2>
-        <p>{catalogState === "error" ? "Il catalogo non è al momento verificabile." : `La schermata ${resolvedScreenCode} non è collegata al modulo ${moduleCode}.`}</p>
+        <p>{catalogState === "error" ? "Il catalogo non è al momento verificabile." : moduleCode ? `La schermata ${resolvedScreenCode} non è collegata al modulo ${moduleCode}.` : `La schermata ${resolvedScreenCode} non è presente o attiva nel catalogo.`}</p>
       </section>
     );
   }

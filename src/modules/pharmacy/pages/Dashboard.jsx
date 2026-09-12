@@ -13,9 +13,9 @@ import DashboardIncomplete from "../components/dashboard/DashboardIncomplete.jsx
 import DashboardFollowUp from "../components/dashboard/DashboardFollowUp.jsx";
 import DashboardRichieste from "../components/dashboard/DashboardRichieste.jsx";
 import { loadVisibleBeautyClients } from "../services/beautyClients";
+import BeautyLoadError from "../components/BeautyLoadError";
 
 import {
-  formatEuro,
   filtraGiornatePeriodo,
   filtraAperturePeriodo,
   calcolaKpiBase,
@@ -23,6 +23,7 @@ import {
 } from "../utils/dashboardUtils";
 
 export default function Dashboard({ utente }) {
+  const [erroreCaricamento, setErroreCaricamento] = useState("");
   const [giornate, setGiornate] = useState([]);
   const [farmacie, setFarmacie] = useState([]);
   const [beauty, setBeauty] = useState([]);
@@ -72,6 +73,21 @@ export default function Dashboard({ utente }) {
   }
 
   async function caricaDati() {
+    setErroreCaricamento("");
+    try {
+      await caricaDatiInternal();
+    } catch (error) {
+      setGiornate([]);
+      setFarmacie([]);
+      setBeauty([]);
+      setVendite([]);
+      setFollowUp([]);
+      setApertureContatti([]);
+      setErroreCaricamento(error?.message || "Errore di collegamento. Riprova.");
+    }
+  }
+
+  async function caricaDatiInternal() {
     let beautyIdsAgent = [];
 
     if (utente?.ruolo === "agent") {
@@ -672,6 +688,7 @@ async function confermaEvasione() {
 
   return (
     <div>
+      <BeautyLoadError message={erroreCaricamento} onRetry={caricaDati} />
       <DashboardFilters
         dataDa={dataDa}
         dataA={dataA}

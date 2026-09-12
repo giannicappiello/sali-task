@@ -5,6 +5,7 @@ import SchedaFarmacia from "./SchedaFarmacia.jsx";
 import FollowUpGiornata from "./FollowUpGiornata.jsx";
 import AllegatiGiornata from "./AllegatiGiornata.jsx";
 import { loadVisibleBeautyClients } from "../services/beautyClients";
+import BeautyLoadError from "../components/BeautyLoadError";
 import {
   checkInBeautyVisit,
   checkOutBeautyVisit,
@@ -18,6 +19,7 @@ import {
 } from "../services/beautyVisitCrm";
 
 export default function Giornate({ utente }) {
+  const [erroreCaricamento, setErroreCaricamento] = useState("");
   const [giornate, setGiornate] = useState([]);
   const [farmacie, setFarmacie] = useState([]);
   const [beauty, setBeauty] = useState([]);
@@ -75,6 +77,19 @@ export default function Giornate({ utente }) {
   }
 
   async function caricaDati() {
+    setErroreCaricamento("");
+    try {
+      await caricaDatiInternal();
+    } catch (error) {
+      setGiornate([]);
+      setFarmacie([]);
+      setBeauty([]);
+      setCrmVisitLinks(new Map());
+      setErroreCaricamento(error?.message || "Errore di collegamento. Riprova.");
+    }
+  }
+
+  async function caricaDatiInternal() {
     const farmacieData = await caricaTutteFarmacie();
 
     const provinceRes = await supabase
@@ -900,6 +915,7 @@ export default function Giornate({ utente }) {
 
   return (
     <div>
+      <BeautyLoadError message={erroreCaricamento} onRetry={caricaDati} />
       {(mostraForm || giornataDettaglio) && <div style={headerStyle}>
         <h2>
           {mostraForm

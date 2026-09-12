@@ -3,9 +3,10 @@ import { payloadHash } from "./workspacemes-v3.js";
 
 const TYPES = new Set(["RFQ", "QUOTE", "SUPPLIER_ORDER"]);
 const clean = (value) => String(value ?? "").trim();
-// Versionare la sorgente forza una rilettura dopo l'ampliamento dello storico
-// alle righe Mexal valide non ancora collegate a un ArticoloId interno MES.
-export const AUTOMATIC_ARTICLE_SUPPLIER_SOURCE = "PROGREMES_ORDER_HISTORY_V3";
+// L'anagrafica articolo Mexal, menu Fornitori, e l'unica sorgente autorevole
+// delle associazioni usate per generare i PF. Versionare la sorgente forza la
+// prima rilettura completa dopo il passaggio dal precedente storico ordini.
+export const AUTOMATIC_ARTICLE_SUPPLIER_SOURCE = "MEXAL_ARTICLE_MASTER_V1";
 
 export function validateWorkspaceV4PurchaseDocument(input = {}) {
   const documentType = clean(input.documentType).toUpperCase();
@@ -56,7 +57,9 @@ export async function listWorkspaceArticleSupplierAssociations({ admin }) {
     .order("last_order_at", { ascending: false, nullsFirst: false })
     .order("supplier_name");
   if (error) throw error;
-  return data || [];
+  // Le righe di sorgenti precedenti restano storicizzate, ma non devono piu
+  // influenzare i PF dopo che l'anagrafica articolo e diventata autorevole.
+  return (data || []).filter((item) => item.source === AUTOMATIC_ARTICLE_SUPPLIER_SOURCE);
 }
 
 const upper = (value) => clean(value).toUpperCase();
@@ -97,6 +100,9 @@ export async function synchronizeWorkspaceArticleSupplierAssociations({
   const { error } = await admin.from("workspace_article_supplier_associations")
     .upsert([...rows.values()], { onConflict: "article_id,supplier_id" });
   if (error) throw error;
+  const { error: staleError } = await admin.from("workspace_article_supplier_associations")
+    .delete().eq("source", source).lt("source_seen_at", seenAt);
+  if (staleError) throw staleError;
   return { matched: rows.size, received: relationships?.length || 0 };
 }
 

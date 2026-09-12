@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { deliverCatalogDeletions } from './workspace-catalog-deletions.js';
+const admin = rows => ({from: () => ({select: async () => ({data:rows})})});
+process.env.PROGREMES_URL='https://mes.example';
+process.env.PROGREMES_INTEGRATION_SECRET='test';
+test('sends exact module and screen codes; local-only entries stay local',async()=>{let body;await deliverCatalogDeletions(admin([{kind:'module',external_code:'Planning'},{kind:'screen',external_code:'ProdottiFiniti'},{kind:'module',code:'custom'}]),async(url,options)=>{body=JSON.parse(options.body);return {ok:true};});assert.deepEqual(body,{codes:['Planning'],screens:['ProdottiFiniti']});});
+test('failed delivery retains tombstones for retry',async()=>{const rows=[{kind:'module',external_code:'Planning'}];await assert.rejects(deliverCatalogDeletions(admin(rows),async()=>({ok:false,status:503})),/503/);let calls=0;await deliverCatalogDeletions(admin(rows),async()=>{calls++;return {ok:true};});assert.equal(calls,1);assert.equal(rows.length,1);});
+test('empty deletion catalog makes no MES request',async()=>{await deliverCatalogDeletions(admin([]),async()=>assert.fail());});
+test('bounds each delivery batch',async()=>{let calls=0;await deliverCatalogDeletions(admin(Array.from({length:205},(_,i)=>({kind:'screen',external_code:'screen'+i}))),async(u,o)=>{assert.ok(JSON.parse(o.body).screens.length<=100);calls++;return {ok:true};});assert.equal(calls,3);});

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { AUTOMATIC_ARTICLE_SUPPLIER_SOURCE, attachWorkspaceArticleSuppliers, synchronizeWorkspaceArticleSupplierAssociations, validateWorkspaceV4PurchaseDocument, workspaceArticleSupplierHistoryNeedsRefresh } from "./workspacemes-v4-purchasing.js";
+import { AUTOMATIC_ARTICLE_SUPPLIER_SOURCE, attachWorkspaceArticleSuppliers, listWorkspaceArticleSupplierAssociations, synchronizeWorkspaceArticleSupplierAssociations, validateWorkspaceV4PurchaseDocument, workspaceArticleSupplierHistoryNeedsRefresh } from "./workspacemes-v4-purchasing.js";
 
 test("la catena acquisti V4 richiede fornitore, quantità e lineage", () => {
   const rfq = validateWorkspaceV4PurchaseDocument({ documentType: "RFQ", supplierExternalRef: "F001", lines: [{ requirementId: 1, quantity: 10 }] });
@@ -29,9 +29,15 @@ test("la migration associazioni articolo-fornitore è additiva e riservata al se
   assert.doesNotMatch(migration, /\bdelete\s+from\b|\bdrop\b|\btruncate\b/i);
 });
 
-test("le associazioni storiche vengono risolte automaticamente per codice e salvate in un solo upsert", async () => {
+test("le associazioni dell'anagrafica vengono risolte automaticamente per codice e salvate in un solo upsert", async () => {
   let saved = [];
-  const admin = { from: () => ({ upsert(rows) { saved = rows; return Promise.resolve({ error: null }); } }) };
+  let staleFilter = null;
+  const admin = { from: () => ({
+    upsert(rows) { saved = rows; return Promise.resolve({ error: null }); },
+    delete() { return this; },
+    eq(field, value) { staleFilter = { ...staleFilter, [field]: value }; return this; },
+    lt(field, value) { staleFilter = { ...staleFilter, [field]: value }; return Promise.resolve({ error: null }); },
+  }) };
   const result = await synchronizeWorkspaceArticleSupplierAssociations({
     admin,
     relationships: [
@@ -47,9 +53,24 @@ test("le associazioni storiche vengono risolte automaticamente per codice e salv
     supplier_code: "F001", supplier_name: "Fornitore Uno", source: AUTOMATIC_ARTICLE_SUPPLIER_SOURCE,
     last_order_at: "2026-08-20", order_count: 3, source_seen_at: saved[0].source_seen_at,
     updated_at: saved[0].updated_at });
+  assert.equal(staleFilter.source, AUTOMATIC_ARTICLE_SUPPLIER_SOURCE);
+  assert.equal(staleFilter.source_seen_at, saved[0].source_seen_at);
 });
 
-test("lo storico automatico viene riletto quando assente o scaduto", async () => {
+test("espone ai PF soltanto le associazioni provenienti dall'anagrafica articolo", async () => {
+  const query = {
+    select() { return this; }, order() { return this; },
+    then(resolve) { resolve({ data: [
+      { id: 1, article_id: 7, supplier_id: 8, source: "PROGREMES_ORDER_HISTORY_V3" },
+      { id: 2, article_id: 7, supplier_id: 9, source: AUTOMATIC_ARTICLE_SUPPLIER_SOURCE },
+      { id: 3, article_id: 7, supplier_id: 10, source: "MANUAL" },
+    ], error: null }); },
+  };
+  const result = await listWorkspaceArticleSupplierAssociations({ admin: { from: () => query } });
+  assert.deepEqual(result.map((item) => item.supplier_id), [9]);
+});
+
+test("l'anagrafica automatica viene riletta quando assente o scaduta", async () => {
   const query = (row) => ({ select() { return this; }, eq() { return this; }, maybeSingle() { return Promise.resolve({ data: row, error: null }); } });
   assert.equal(await workspaceArticleSupplierHistoryNeedsRefresh({ admin: { from: () => query(null) }, now: new Date("2026-09-04T12:00:00Z") }), true);
   assert.equal(await workspaceArticleSupplierHistoryNeedsRefresh({ admin: { from: () => query({ status: "FAILED", last_completed_at: "2026-09-04T06:00:00Z" }) }, now: new Date("2026-09-04T12:00:00Z") }), true);

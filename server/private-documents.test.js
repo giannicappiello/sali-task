@@ -70,7 +70,7 @@ test("Emetti CoA segue la navigazione interna Workspace e conserva il contesto M
       lotCode: "400100035",
       productionOrderId: 17,
     }),
-    "/produzione/progremes.Documenti?destination=coa-produzioni&productionId=42&article=BT0001&lot=400100035&odpId=17",
+    "/produzione/progremes.Documenti?destination=coa-produzioni&workspaceMesWindow=1&productionId=42&article=BT0001&lot=400100035&odpId=17",
   );
   assert.equal(productionCoaWorkspacePath({ articleCode: "IT 0084", lotCode: "Lotto 1+2" }), null);
 
@@ -89,4 +89,15 @@ test("l'associazione prodotto seleziona un file NAS esistente senza caricarlo", 
   assert.match(page, /Il file resta nella posizione attuale/);
   assert.doesNotMatch(page, /name="nasDirectory"/);
   assert.doesNotMatch(page, /name="file"/);
+});
+
+test("il submit conserva il form prima delle operazioni asincrone e mostra lo stato", async () => {
+  const page = await readFile(new URL("../src/pages/Documentation/PrivateDocuments.jsx", import.meta.url), "utf8");
+  const uploadStart = page.indexOf("async function upload(event)");
+  const formData = page.indexOf("const formData = new FormData(event.currentTarget)", uploadStart);
+  const firstAwait = page.indexOf("await workspaceAction", uploadStart);
+  assert.ok(uploadStart >= 0 && formData > uploadStart && formData < firstAwait);
+  assert.match(page, /body: formData/);
+  assert.match(page, /uploading \? "Associazione…" : "Associa documento"/);
+  assert.match(page, /className="private-upload-error" role="alert"/);
 });

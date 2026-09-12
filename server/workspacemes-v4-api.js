@@ -16,6 +16,21 @@ export function automaticWorkspaceV4Decision(preview, materials = []) {
   return hasShortages ? "WITH_SHORTAGES" : "COMPLETE";
 }
 
+export function validateWorkspaceV4ProductionResult(preview, result) {
+  const expectedDemands = Array.isArray(preview?.snapshot?.demands) ? preview.snapshot.demands : [];
+  const productionOrders = Array.isArray(result?.productionOrders) ? result.productionOrders : [];
+  const validOrders = productionOrders.filter((order) =>
+    Number.isSafeInteger(Number(order?.id)) && Number(order.id) > 0 && clean(order?.number));
+  if (result?.productionCreated !== true || !expectedDemands.length ||
+      validOrders.length !== expectedDemands.length || validOrders.length !== productionOrders.length) {
+    throw fail(
+      `MES ha restituito ${validOrders.length} OP validi su ${expectedDemands.length} righe produttive: la RdP non viene confermata.`,
+      "V4_PRODUCTION_INCOMPLETE",
+    );
+  }
+  return productionOrders;
+}
+
 async function loadDemand(admin, requestId) {
   const requests = ensure(await admin.from("workspace_production_requests")
     .select("id,external_id,rdp_number,contract_version,demand_snapshot_id,workspace_status,stato")
@@ -112,8 +127,7 @@ export async function confirmWorkspaceV4({ admin, previewId, reason, requestedBy
     reason: clean(reason), decidedBy: `workspace:${requestedBy || "service"}`,
     correlationId: preview.correlation_id, causationId: preview.external_id };
   const sent = await client.confirmV4(request.external_id, command);
-  if (!sent.result.productionCreated || !sent.result.productionOrders.length)
-    throw fail("MES non ha creato alcun OdP V4.", "V4_PRODUCTION_NOT_CREATED");
+  validateWorkspaceV4ProductionResult(preview, sent.result);
   const result = ensure(await admin.rpc("confirm_workspace_v4_after_mes", {
     p_preview_id: preview.id, p_external_id: externalId, p_idempotency_key: idempotencyKey,
     p_payload_hash: payloadHash(command), p_expected_row_version: preview.local_row_version,

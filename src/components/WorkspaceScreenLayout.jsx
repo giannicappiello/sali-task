@@ -7,6 +7,7 @@ import { supabase } from "../lib/supabaseClient";
 import { getModuleIcon } from "../config/moduleIcons";
 import WorkspacePageHeader from "./WorkspacePageHeader";
 import WorkspaceScreenComposition from "./WorkspaceScreenComposition";
+import { isProgremesScreenPath } from "../pages/ProgreMes/progremesWindow";
 import "./workspace-screen-layout.css";
 
 const BUILT_IN_CONTAINER_PATHS = new Set([
@@ -152,6 +153,8 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
     : children;
 
   if (presentation.denied) return <Navigate to="/home" replace />;
+  // Le pagine MES hanno già un'intestazione propria, aggiornata dalla navigazione interna.
+  if (isProgremesScreenPath(location.pathname)) return composedContent;
   if (presentation.container) return composedContent;
 
   return (

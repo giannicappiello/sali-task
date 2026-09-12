@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Factory, RefreshCw, X } from "lucide-react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { RefreshCw } from "lucide-react";
+import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
-import { isProgremesFrameMessage, PROGREMES_POPUP_PARAM, requestProgremesNavigation, requestProgremesWorkspaceWindow } from "./progremesWindow";
+import { isProgremesFrameMessage, requestProgremesNavigation } from "./progremesWindow";
 import "./progremes-frame.css";
 
 export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
   const { session, hasModuleAccess, loading: authLoading } = useAuth();
-  const location = useLocation();
   const navigate = useNavigate();
   const accessToken = session?.access_token;
   const allowed = hasModuleAccess("progremes");
@@ -15,12 +14,11 @@ export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
   const [retry, setRetry] = useState(0);
   const [connection, setConnection] = useState({ requestKey: "", url: "", error: "" });
   const [frameStatus, setFrameStatus] = useState({ url: "", ready: false, error: "" });
-  const dedicated = new URLSearchParams(location.search).get(PROGREMES_POPUP_PARAM) === "1";
   const requestKey = JSON.stringify([screenCode, search, retry]);
   const url = connection.requestKey === requestKey ? connection.url : "";
 
   useEffect(() => {
-    if (authLoading || !accessToken || !allowed || !dedicated || !screenCode) return undefined;
+    if (authLoading || !accessToken || !allowed || !screenCode) return undefined;
     const controller = new AbortController();
     requestProgremesNavigation(accessToken, { screenCode, search, signal: controller.signal })
       .then((nextUrl) => {
@@ -30,7 +28,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
         if (!controller.signal.aborted) setConnection({ requestKey, url: "", error: error.message || "Collegamento a ProgreMES non riuscito." });
       });
     return () => controller.abort();
-  }, [accessToken, allowed, authLoading, dedicated, screenCode, search, requestKey]);
+  }, [accessToken, allowed, authLoading, screenCode, search, requestKey]);
 
   useEffect(() => {
     if (!url) return undefined;
@@ -57,19 +55,13 @@ export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
       : connection.requestKey === requestKey && connection.error ? connection.error
         : frameStatus.url === url ? frameStatus.error : "";
   const ready = Boolean(url && frameStatus.url === url && frameStatus.ready);
-  const canConnect = dedicated && screenCode;
+  if (!screenCode) return <Navigate to="/produzione" replace />;
 
   return <section className="progremes-workspace-frame">
-    <header className="progremes-frame-toolbar">
-      <span><Factory size={20} />MES · Workspace</span>
-      <Link to="/produzione">Gestione Produzione</Link>
-      {dedicated && <button type="button" onClick={() => window.close()}><X size={17} />Chiudi finestra</button>}
-    </header>
     {(!ready || error) && <div className="progremes-frame-status" role={error ? "alert" : "status"}>
-      <h2>{error ? "Collegamento non disponibile" : canConnect ? "Apertura schermata MES..." : "Apri MES in una nuova finestra Workspace"}</h2>
-      <p>{error || "La finestra Workspace precedente rimane aperta e invariata."}</p>
-      {error && allowed && accessToken && canConnect && <button type="button" className="primary-action" onClick={() => setRetry((value) => value + 1)}><RefreshCw size={18} />Riprova</button>}
-      {!canConnect && allowed && <button type="button" className="primary-action" onClick={() => requestProgremesWorkspaceWindow(screenCode ? location.pathname + location.search : "/produzione")}>Apri nuova finestra Workspace</button>}
+      <h2>{error ? "Collegamento non disponibile" : "Apertura schermata MES..."}</h2>
+      <p>{error || "Collegamento automatico alla schermata richiesta."}</p>
+      {error && allowed && accessToken && <button type="button" className="primary-action" onClick={() => setRetry((value) => value + 1)}><RefreshCw size={18} />Riprova</button>}
     </div>}
     {url && <iframe ref={frame} key={url} src={url} title="Schermata MES integrata in Workspace"
       className={ready && !error ? "is-ready" : "is-connecting"} referrerPolicy="no-referrer"

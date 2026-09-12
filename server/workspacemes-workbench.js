@@ -131,7 +131,7 @@ export function requestStage(request) {
   if (["EVASO", "COMPLETED", "PRODUCTIONCOMPLETED"].includes(status)) return "completed";
   if (["INPRODUCTION"].includes(status)) return "production";
   if (["PLANNED", "PARTIALLYPLANNED"].includes(status)) return "planned";
-  if (status === "CONFIRMED") return "scheduling";
+  if (status === "CONFIRMED") return "confirmed";
   if (["BLOCKED", "REJECTED", "FAILED"].includes(status)) return "blocked";
   return request ? "rdp" : "evaluation";
 }
@@ -184,13 +184,28 @@ export function rdpProductionState(request, productionOrders = [], octReference 
       (matchesRdp || productionOrderMatchesOct(order, octReference));
   });
   const rdpOrders = candidates.filter(isWorkspaceRdpProductionOrder);
-  const matching = rdpOrders.length ? rdpOrders : candidates;
-  if (!matching.length) return { stage: requestStage(request), status: null, plannedCompletionDate: null, orders: [] };
+  const rdpArticleCodes = new Set(rdpOrders
+    .map((order) => canonicalReference(order?.codiceArticolo || order?.articleCode))
+    .filter(Boolean));
+  // Un OdP RDP sostituisce soltanto l'eventuale duplicato OCT dello stesso
+  // articolo. Gli OdP canonici degli altri articoli servono per ricostruire
+  // correttamente le RDP storiche o create in più passaggi.
+  const matching = candidates.filter((order) => {
+    if (isWorkspaceRdpProductionOrder(order)) return true;
+    const articleCode = canonicalReference(order?.codiceArticolo || order?.articleCode);
+    return !articleCode || !rdpArticleCodes.has(articleCode);
+  });
+  if (!matching.length) {
+    const sourceStage = requestStage(request);
+    if (["planned", "production", "completed"].includes(sourceStage))
+      return { stage: "blocked", status: "OP NON RICONCILIATO", plannedCompletionDate: null, orders: [] };
+    return { stage: sourceStage, status: null, plannedCompletionDate: null, orders: [] };
+  }
   const statuses = matching.map((order) => mesOrderStatus(order.stato));
   let stage = "scheduling";
   if (statuses.some((status) => status === "INPRODUZIONE")) stage = "production";
   else if (statuses.length && statuses.every((status) => ["COMPLETATO", "CHIUSO"].includes(status))) stage = "completed";
-  else if (statuses.some((status) => status === "PIANIFICATO")) stage = "planned";
+  else if (statuses.every((status) => ["PIANIFICATO", "COMPLETATO", "CHIUSO"].includes(status))) stage = "planned";
   const dates = stage === "scheduling"
     ? []
     : matching.map((order) => order.dataPrevistaConsegna).filter((value) => Number.isFinite(Date.parse(value)));
@@ -208,7 +223,7 @@ export function visibleWorkbenchOct(item) {
   return !item.sourceDeletedAt || Boolean(item.requestId) || Boolean(item.productionOrders?.length);
 }
 
-export function workbenchLineProductionState(line, request, productionState) {
+export function workbenchLineProductionState(line, request, productionState, requestItem = null) {
   const articleCode = canonicalReference(line?.codice_articolo || line?.articleCode);
   const matching = (productionState?.orders || []).filter((order) =>
     articleCode && canonicalReference(order?.codiceArticolo || order?.articleCode) === articleCode);
@@ -220,11 +235,23 @@ export function workbenchLineProductionState(line, request, productionState) {
     return "IN PIANIFICAZIONE";
   }
 
+  const analysis = requestItem?.mes_payload;
+  const requested = number(analysis?.requested);
+  const free = number(analysis?.free);
+  const incoming = number(analysis?.incoming);
+  if (analysis && !text(analysis.blockCode) && requested > 0 && number(analysis.plannable) <= 0) {
+    if (free >= requested) return "COPERTO DA MAGAZZINO";
+    if (free + incoming >= requested) return "COPERTO DA ARRIVI";
+  }
+  if (text(analysis?.blockCode)) return "BLOCCATO";
+
   // Lo stato dell'RdP/OCT è una sintesi e non può essere attribuito a una
   // singola riga senza un OdP dello stesso articolo.
   const stage = requestStage(request);
   if (stage === "blocked") return "BLOCCATO";
-  if (["rdp", "scheduling", "planned", "production", "completed"].includes(stage)) return "IN PIANIFICAZIONE";
+  if (stage === "confirmed" && !(productionState?.orders || []).length) return "IN ATTESA CREAZIONE OP";
+  if ((productionState?.orders || []).length) return "OP MANCANTE";
+  if (["planned", "production", "completed"].includes(stage)) return "OP NON RICONCILIATO";
   return "DA GENERARE";
 }
 
@@ -280,14 +307,16 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
   for (const request of requests || []) if (!cancelled(request) && request.ordine_id && !requestByOrder.has(text(request.ordine_id))) requestByOrder.set(text(request.ordine_id), request);
   const requestIds = (requests || []).map((row) => row.id);
   const confirmedV4RequestIds = new Set();
+  const requestItemByRequestAndLine = new Map();
   if (requestIds.length) {
     const [itemsResult, previewsResult] = await Promise.all([
-      admin.from("workspace_production_request_items").select("production_request_id,ordine_id").in("production_request_id", requestIds),
+      admin.from("workspace_production_request_items").select("production_request_id,ordine_id,ordine_riga_id,mes_payload").in("production_request_id", requestIds),
       admin.from("workspace_v4_previews").select("id,production_request_id").in("production_request_id", requestIds),
     ]);
     if (itemsResult.error || previewsResult.error) throw itemsResult.error || previewsResult.error;
     for (const item of itemsResult.data || []) {
       const request = requestById.get(text(item.production_request_id));
+      requestItemByRequestAndLine.set(`${text(item.production_request_id)}:${text(item.ordine_riga_id)}`, item);
       orderIdsByRequest.get(text(item.production_request_id))?.add(text(item.ordine_id));
       if (request && !cancelled(request) && !requestByOrder.has(text(item.ordine_id))) requestByOrder.set(text(item.ordine_id), request);
     }
@@ -308,36 +337,43 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
     const request = confirmedV4ProductionRequest(requestByOrder.get(text(order.id)) || null, confirmedV4RequestIds);
     const orderDiagnostics = diagnostics.filter((row) => visibleDiagnostic(row) && [row.workspaceCommercialOctId, row.entityId].map(text).includes(text(order.id)));
     const productionState = rdpProductionState(request, productionOrders, octLabel(order));
+    const lineRows = productive.map((line) => {
+      const product = productsByCode.get(text(line.codice_articolo).toUpperCase());
+      const orderedQuantity = number(line.quantita);
+      const fulfilledQuantity = Math.min(orderedQuantity, Math.max(0, number(line.quantita_evasa)));
+      const requestItem = request
+        ? requestItemByRequestAndLine.get(`${text(request.id)}:${text(line.id)}`)
+        : null;
+      return {
+        id: line.id,
+        position: line.mexal_posizione,
+        articleCode: line.codice_articolo,
+        description: line.descrizione || product?.descrizione || "—",
+        orderedQuantity,
+        fulfilledQuantity,
+        residualQuantity: Math.max(0, orderedQuantity - fulfilledQuantity),
+        unit: resolveWorkbenchOctUnit(line, product),
+        deliveryDate: line.data_consegna || order.data_consegna,
+        productionStatus: workbenchLineProductionState(line, request, productionState, requestItem),
+      };
+    });
+    const incompleteProduction = lineRows.some((line) => ["OP MANCANTE", "OP NON RICONCILIATO"].includes(line.productionStatus));
+    const effectiveStage = incompleteProduction ? "blocked" : productionState.stage;
+    const effectiveStatus = incompleteProduction ? "OP INCOMPLETI" : productionState.status;
     return {
       id: order.id, label: octLabel(order), sigla: order.mexal_sigla, serie: order.mexal_serie, numero: order.mexal_numero,
       customer: customerName(order, customersByCode),
       orderDate: order.data_ordine, deliveryDate: order.data_consegna,
       sourceTimestamp: order.updated_at || order.mexal_sincronizzato_il || order.created_at,
       sourceDeletedAt: order.mexal_eliminato_il || null,
-      status: productionState.status || request?.workspace_status || request?.stato || order.stato || "DA_VALUTARE", stage: productionState.stage,
+      status: effectiveStatus || request?.workspace_status || request?.stato || order.stato || "DA_VALUTARE", stage: effectiveStage,
       plannedCompletionDate: productionState.plannedCompletionDate,
       productionOrders: productionState.orders,
       lineCount: orderLines.length, productiveLineCount: productive.length,
       quantity: productive.reduce((total, line) => total + number(line.quantita), 0),
       units: resolveWorkbenchUnits(productive, productsByCode),
-      lines: productive.map((line) => {
-        const product = productsByCode.get(text(line.codice_articolo).toUpperCase());
-        const orderedQuantity = number(line.quantita);
-        const fulfilledQuantity = Math.min(orderedQuantity, Math.max(0, number(line.quantita_evasa)));
-        return {
-          id: line.id,
-          position: line.mexal_posizione,
-          articleCode: line.codice_articolo,
-          description: line.descrizione || product?.descrizione || "—",
-          orderedQuantity,
-          fulfilledQuantity,
-          residualQuantity: Math.max(0, orderedQuantity - fulfilledQuantity),
-          unit: resolveWorkbenchOctUnit(line, product),
-          deliveryDate: line.data_consegna || order.data_consegna,
-          productionStatus: workbenchLineProductionState(line, request, productionState),
-        };
-      }),
-      ready: !order.mexal_eliminato_il && productive.length > 0 && order.cliente_mexal_risolto !== false && !orderDiagnostics.some(diagnosticBlocks),
+      lines: lineRows,
+      ready: !incompleteProduction && !order.mexal_eliminato_il && productive.length > 0 && order.cliente_mexal_risolto !== false && !orderDiagnostics.some(diagnosticBlocks),
       requestId: request?.id || null, requestExternalId: request?.external_id || null, rdpNumber: request?.rdp_number || null,
       diagnostics: orderDiagnostics.map(publicDiagnostic),
     };

@@ -1,3 +1,5 @@
+import { syncDeletedWorkspaceCatalog } from "../../server/workspace-catalog-deletions.js";
+import { ensurePrivateDocumentsScreen } from "../../server/workspace-private-documents-screen.js";
 /* global process */
 import { createClient } from "@supabase/supabase-js";
 import productsHandler, { buildMexalClient } from "../../server/mexal/sync-products.js";
@@ -22,7 +24,7 @@ import documentApiHandler from "../../server/document-api.js";
 import { consumeProgremesTicket, issueProgremesTicket, listUserProgremesSections } from "../../server/progremes-sso.js";
 import { listProgremesIntegration, saveProgremesSyncConfig, stopProgremesModulesSync, syncProgremesModules } from "../../server/progremes-modules.js";
 import { handleProgremesReadonlyRequest } from "../../server/progremes-readonly-api.js";
-import { createProgremesClient, readAllProgremesArticles, readAllProgremesArticleSupplierHistory, readAllProgremesSuppliers } from "../../server/progremes-readonly-client.js";
+import { createProgremesClient, readAllProgremesArticles, readAllProgremesSuppliers } from "../../server/progremes-readonly-client.js";
 import { createProgremesDiagnosticManager } from "../../server/progremes-diagnostics-client.js";
 import { handleAIAssistant } from "../../server/ai/assistant.js";
 import { handleCrmBrief } from "../../server/ai/crm-brief.js";
@@ -39,7 +41,7 @@ import { confirmWorkspaceV4, createWorkspaceV4Preview } from "../../server/works
 import { addWorkspaceArticleSupplierAssociations, attachWorkspaceArticleSuppliers, createWorkspaceV4PurchaseDocument, listWorkspaceArticleSupplierAssociations, listWorkspaceV4Purchasing, recordWorkspaceArticleSupplierSync, removeWorkspaceArticleSupplierAssociation, synchronizeWorkspaceArticleSupplierAssociations, workspaceArticleSupplierHistoryNeedsRefresh } from "../../server/workspacemes-v4-purchasing.js";
 import { automaticPfLines, calculateWorkspaceV4PurchaseRequirements, executeWorkspaceV4PurchasingAction, readWorkspaceV4PurchasingSource } from "../../server/workspacemes-v4-purchasing-mes.js";
 import { buildWorkspaceV4PfPlan, workspaceV4PfPlanChecksum } from "../../server/workspacemes-v4-pf-plan.js";
-import { readMexalArticleSupplierHistory } from "../../server/mexal/sync-workspacemes-v3.js";
+import { readMexalArticleSupplierMaster } from "../../server/mexal/article-supplier-master.js";
 import { generateSaliDiIschiaProposal, listSaliDiIschiaProposals } from "../../server/sali-di-ischia-proposal.js";
 import { privateDocumentsSession, syncPrivateDocuments } from "../../server/private-documents.js";
 import { handleMesHeadingResolve } from "../../server/company-letterheads-mes-api.js";
@@ -86,34 +88,25 @@ async function refreshAutomaticArticleSupplierAssociations(admin, progremesClien
   if (!await workspaceArticleSupplierHistoryNeedsRefresh({ admin })) return { refreshed: false };
   await recordWorkspaceArticleSupplierSync({ admin, status: "RUNNING" });
   try {
-    const articlesPromise = readAllProgremesArticles(progremesClient);
-    let relationships;
-    let usedCurrentMexalFallback = false;
-    try {
-      relationships = await readAllProgremesArticleSupplierHistory(progremesClient);
-    } catch (historyError) {
-      usedCurrentMexalFallback = true;
-      console.error("ProgreMES article-supplier history unavailable; using current Mexal orders", {
-        code: historyError?.code || "UNKNOWN",
-        upstreamStatus: historyError?.upstreamStatus || null,
+    const [articles, relationships] = await Promise.all([
+      readAllProgremesArticles(progremesClient),
+      readMexalArticleSupplierMaster(buildMexalClient()),
+    ]);
+    if (!relationships.length) {
+      throw Object.assign(new Error("L'anagrafica articoli Mexal non contiene associazioni fornitore."), {
+        code: "MEXAL_ARTICLE_SUPPLIER_MASTER_EMPTY",
       });
-      relationships = await readMexalArticleSupplierHistory(buildMexalClient());
     }
-    const articles = await articlesPromise;
     const result = await synchronizeWorkspaceArticleSupplierAssociations({
       admin, relationships, articles, suppliers,
     });
-    if (usedCurrentMexalFallback) {
-      await recordWorkspaceArticleSupplierSync({
-        admin,
-        status: "FAILED",
-        count: result.matched,
-        error: "Storico ProgreMES non ancora disponibile; applicato fallback ordini Mexal correnti.",
+    if (!result.matched) {
+      throw Object.assign(new Error("Nessuna associazione dell'anagrafica Mexal corrisponde ad articoli e fornitori ProgreMES."), {
+        code: "MEXAL_ARTICLE_SUPPLIER_MASTER_NO_MATCHES",
       });
-    } else {
-      await recordWorkspaceArticleSupplierSync({ admin, status: "COMPLETED", count: result.matched });
     }
-    return { refreshed: true, fallback: usedCurrentMexalFallback, ...result };
+    await recordWorkspaceArticleSupplierSync({ admin, status: "COMPLETED", count: result.matched });
+    return { refreshed: true, source: "MEXAL_ARTICLE_MASTER", ...result };
   } catch (error) {
     const message = error?.message || "Sincronizzazione automatica non riuscita.";
     try {
@@ -363,6 +356,14 @@ function stepCompleted(payload) {
 async function runScheduledStep(req, res, body, syncType, runHandler) {
   requireScheduledWorker(req);
   const admin = await createAdmin(req);
+
+  // A stock run is checkpointed server-side and may outlive the queue job that
+  // started it (for example when a serverless invocation is terminated). Every
+  // scheduled stock step must therefore reconnect to the existing run instead
+  // of treating it as a competing manual synchronization. This also lets a new
+  // daily job recover an orphaned run whose previous queue job exhausted its
+  // lease retries.
+  if (syncType === "stocks") body.resume = true;
 
   if (syncType === "list_price_commissions") {
     let running = await findRunningSync(admin.supabase, syncType);
@@ -614,6 +615,16 @@ export default async function handler(req, res) {
         return sendSuccess(res, 200, await syncPrivateDocuments(req));
       case "progremes_consume":
         return sendSuccess(res, 200, await consumeProgremesTicket(body));
+      case "workspace_catalog_deletions_sync": {
+        const admin = await createAdmin(req);
+        return sendSuccess(res, 200, await syncDeletedWorkspaceCatalog(req, admin.supabase));
+      }
+      case "workspace_catalog_register_private_documents": {
+        const admin = await createAdmin(req);
+        await requireAdmin(req, admin.supabase);
+        await ensurePrivateDocumentsScreen(admin.supabase);
+        return sendSuccess(res, 200, { registered: true });
+      }
       case "progremes_modules_list": {
         const admin = await createAdmin(req);
         return sendSuccess(res, 200, await listProgremesIntegration(req, admin.supabase));

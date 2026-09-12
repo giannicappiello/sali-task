@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { automaticWorkspaceV4Decision } from "./workspacemes-v4-api.js";
+import { automaticWorkspaceV4Decision, validateWorkspaceV4ProductionResult } from "./workspacemes-v4-api.js";
 
 test("API V4 non legge distinte, giacenze o impegni Workspace", async () => {
   const source = await readFile(new URL("./workspacemes-v4-api.js", import.meta.url), "utf8");
@@ -38,4 +38,16 @@ test("la conferma V4 trasferisce a ProgreMES il progressivo RdP Workspace", asyn
   const source = await readFile(new URL("./workspacemes-v4-api.js", import.meta.url), "utf8");
   assert.match(source, /workspaceRdpNumber:\s*Number\(request\.rdp_number\)/);
   assert.match(source, /V4_RDP_NUMBER_REQUIRED/);
+});
+
+test("la conferma V4 accetta soltanto un OP valido per ogni riga produttiva", () => {
+  const preview = { snapshot: { demands: [{ workspaceLineId: "a" }, { workspaceLineId: "b" }] } };
+  const complete = { productionCreated: true, productionOrders: [
+    { id: 11, number: "RDP161" }, { id: 12, number: "RDP161-02" },
+  ] };
+  assert.equal(validateWorkspaceV4ProductionResult(preview, complete).length, 2);
+  assert.throws(
+    () => validateWorkspaceV4ProductionResult(preview, { ...complete, productionOrders: [complete.productionOrders[0]] }),
+    (error) => error.code === "V4_PRODUCTION_INCOMPLETE",
+  );
 });

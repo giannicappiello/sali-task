@@ -7,3 +7,5 @@
 .private-nas-entries button{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:9px;padding:10px 12px;border:0;border-bottom:1px solid #edf1f6;background:#fff;text-align:left;cursor:pointer}
 .private-nas-entries button:hover,.private-nas-entries button.selected{background:#eaf4ff;color:#155da4}
 .private-nas-entries button small{color:#718199}
+.private-upload-error{padding:11px 13px;border:1px solid #f3b8b8;border-radius:10px;background:#fff2f2;color:#a52c2c;font-size:.84rem;font-weight:700}
+.private-upload-modal button:disabled{cursor:wait;opacity:.65}

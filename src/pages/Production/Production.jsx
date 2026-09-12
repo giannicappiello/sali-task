@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, ClipboardList, Factory, RefreshCw, ShieldCheck, ShoppingCart, Workflow } from "lucide-react";
+import { AlertTriangle, Factory, RefreshCw, ShieldCheck, Workflow } from "lucide-react";
 import { Navigate, useLocation, useParams } from "react-router-dom";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
 import InfoTooltip from "../../components/InfoTooltip";
@@ -8,6 +8,8 @@ import "./production.css";
 import RdpWorkbench from "./RdpWorkbench";
 import PurchaseRequirements from "./PurchaseRequirements";
 import ProgreMesLaunch from "../ProgreMes/ProgreMesLaunch";
+import { supabase } from "../../lib/supabaseClient";
+import { configuredProductionSections } from "./production-sections";
 import { requestProgremesWorkspaceWindow } from "../ProgreMes/progremesWindow";
 
 async function requestProgremes(action, accessToken, extra = {}) {
@@ -119,9 +121,20 @@ function SectionLauncher({ sectionCode }) {
 
 export default function Production() {
   const { "*": sectionPath } = useParams();
-  const { session, hasPermission, dataScope, isAdminUser } = useAuth();
+  const { session, hasPermission, dataScope, isAdminUser, hasScreenAccess, hasAreaAccess, hasExplicitScreenGrant } = useAuth();
   const accessToken = session?.access_token;
   const [sections, setSections] = useState([]);
+  const [catalog, setCatalog] = useState({ screens: [], links: [] });
+
+  async function fetchSections() {
+    const payload = await requestProgremes("progremes_user_sections", accessToken);
+    const [screens, links] = await Promise.all([
+      supabase.from("workspace_schermate").select("codice,nome,descrizione,percorso,attiva,area").eq("attiva", true),
+      supabase.from("workspace_moduli_schermate").select("modulo_codice,schermata_codice,ordine,visibile_menu").eq("modulo_codice", "progremes").eq("visibile_menu", true).order("ordine"),
+    ]);
+    if (screens.error || links.error) throw screens.error || links.error;
+    return { sections: payload.sections || [], screens: screens.data || [], links: links.data || [] };
+  }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -129,8 +142,9 @@ export default function Production() {
     setLoading(true);
     setError("");
     try {
-      const payload = await requestProgremes("progremes_user_sections", accessToken);
-      setSections(payload.sections || []);
+      const payload = await fetchSections();
+      setSections(payload.sections);
+      setCatalog(payload);
     } catch (loadError) {
       setError(loadError?.message || "Caricamento delle aree non riuscito.");
     } finally {
@@ -141,10 +155,11 @@ export default function Production() {
   useEffect(() => {
     if (sectionPath || !accessToken) return undefined;
     let active = true;
-    requestProgremes("progremes_user_sections", accessToken)
+    const refresh = () => fetchSections()
       .then((payload) => {
         if (!active) return;
-        setSections(payload.sections || []);
+        setSections(payload.sections);
+        setCatalog(payload);
         setLoading(false);
       })
       .catch((loadError) => {
@@ -152,7 +167,9 @@ export default function Production() {
         setError(loadError?.message || "Caricamento delle aree non riuscito.");
         setLoading(false);
       });
-    return () => { active = false; };
+    refresh();
+    window.addEventListener("workspace:module-catalog-changed", refresh);
+    return () => { active = false; window.removeEventListener("workspace:module-catalog-changed", refresh); };
   }, [accessToken, sectionPath]);
 
   const customerScoped = Boolean(dataScope?.customerCode);
@@ -161,11 +178,9 @@ export default function Production() {
   if (sectionPath === "fabbisogni-acquisto") return hasPermission?.("rdp.view") && !customerScoped ? <PurchaseRequirements /> : <Navigate to="/produzione" replace />;
   if (sectionPath) return <SectionLauncher sectionCode={decodeURIComponent(sectionPath)} />;
 
-  const workspaceLocalCodes = new Set(["diagnostica", "rdp-workbench", "fabbisogni-acquisto", "progremes.ordini.fabbisogni"]);
-  const visibleSections = sections.filter((section) => !workspaceLocalCodes.has(String(section.code || "").trim().toLowerCase()) && !workspaceLocalCodes.has(String(section.externalCode || "").trim().toLowerCase()));
-  if (isAdminUser) visibleSections.unshift({ code: "diagnostica", name: "Centro Diagnostico", description: "Stato globale, alert operativi e integrazioni senza esporre configurazioni riservate.", workspaceLocal: true });
-  if (hasPermission?.("rdp.view")) visibleSections.unshift({ code: "rdp-workbench", name: "RdP Workbench", description: "Gestione OCT, richieste di produzione, analisi MES e decisioni operative.", workspaceLocal: true, icon: ClipboardList });
-  if (hasPermission?.("rdp.view") && !customerScoped) visibleSections.splice(1, 0, { code: "fabbisogni-acquisto", name: "Fabbisogni acquisto", description: "Calcolo mensile, coperture, fornitori e creazione controllata dei PF Mexal.", workspaceLocal: true, icon: ShoppingCart });
+  const visibleSections = configuredProductionSections(sections, catalog.screens, catalog.links, {
+    hasPermission, isAdminUser, customerScoped, hasScreenAccess, hasAreaAccess, hasExplicitScreenGrant,
+  });
 
   return <ModuleContainerLayout
     icon={Workflow}

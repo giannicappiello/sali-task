@@ -84,6 +84,14 @@ function ProgressPanel({ run, stopping, onStop }) {
 }
 
 function OctPrecheckPanel({ result, running, onRun }) {
+  const reasonLabels = {
+    ARTICLE_OUT_OF_PRODUCTION: "Escluso: linea fuori produzione",
+    ARTICLE_INACTIVE: "Escluso: articolo annullato o precancellato in Mexal",
+    ARTICLE_HIERARCHY_UNKNOWN: "Da verificare: linea merceologica non determinabile",
+    ARTICLE_CODE_MISMATCH: "Da verificare: codice restituito da Mexal diverso da quello richiesto",
+    ARTICLE_READ_FAILED: "Da verificare: dettaglio articolo Mexal non leggibile",
+    ACTIVE_ARTICLE_MISSING_FROM_CACHE: "Attivo: riferimento recuperabile alla prossima sincronizzazione OCT",
+  };
   const missing = result?.workspace_articles_missing || [];
   const parsingErrors = result?.parsing_errors || [];
   const duplicateCount = (result?.header_duplicates?.length || 0) + (result?.line_duplicates?.length || 0) + (result?.workspace_product_duplicates?.length || 0);
@@ -109,6 +117,13 @@ function OctPrecheckPanel({ result, running, onRun }) {
         <span><strong>{result.has_blocking_anomalies ? "Precheck con anomalie bloccanti" : "Precheck completato senza anomalie bloccanti"}</strong><br />Modalità confermata: sola lettura.</span>
       </div>
       {missing.length > 0 && <div className="mexal-alert alert-error" style={{ marginTop: 12, alignItems: "flex-start" }}><span><strong>Articoli mancanti</strong><br />{missing.join(", ")}</span></div>}
+      {result.missing_article_diagnostics?.length > 0 && <div style={{ marginTop: 12 }}>
+        <h4>Motivi degli articoli mancanti</h4>
+        <p>Gli articoli fuori produzione o non attivi restano esclusi. Il precheck non salva dati.</p>
+        <ul>{result.missing_article_diagnostics.map((item) => <li key={item.code}>
+          <strong>{item.code}</strong>: {reasonLabels[item.reason] || "Da verificare"}{item.line ? ` · ${item.line}` : ""}
+        </li>)}</ul>
+      </div>}
       {parsingErrors.length > 0 && <div className="mexal-alert alert-warning" style={{ marginTop: 12, alignItems: "flex-start" }}><span><strong>Errori di lettura o normalizzazione</strong><br />{parsingErrors.map((error) => `${error.reference || `indice ${error.summary_index}`}: ${error.message}`).join(" · ")}</span></div>}
     </>}
   </section>;

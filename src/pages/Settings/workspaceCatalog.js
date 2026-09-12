@@ -1,3 +1,4 @@
+import { moduleAreaCodes } from "../../config/workspaceModuleAreas.js";
 import { screenAreaCodes } from "../../config/workspaceScreenAreas.js";
 
 export const normalizeWorkspaceSearch = (value) => String(value ?? "")
@@ -51,7 +52,7 @@ export function buildWorkspaceAssociations({ modules = [], screens = [], links =
   // Area ownership belongs to each screen, independently of its module links.
   const areaModules = new Map(areas.map((item) => [item.codice, []]));
   const areaScreens = new Map(areas.map((item) => [item.codice, []]));
-  modules.forEach((item) => areaModules.get(item.area)?.push(item));
+  modules.forEach((item) => moduleAreaCodes(item).forEach((code) => areaModules.get(code)?.push(item)));
   screens.forEach((item) => screenAreaCodes(item).forEach((code) => areaScreens.get(code)?.push(item)));
 
   links.forEach((link) => {

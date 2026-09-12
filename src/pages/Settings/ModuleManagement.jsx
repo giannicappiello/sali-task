@@ -6,6 +6,7 @@ import useBackNavigation from "../../hooks/useBackNavigation";
 import { supabase } from "../../lib/supabaseClient";
 import { getModuleIcon } from "../../config/moduleIcons";
 import InfoTooltip from "../../components/InfoTooltip";
+import { moduleAreaCodes, moduleMatchesArea } from "../../config/workspaceModuleAreas";
 import ScreenAreaPicker from "./ScreenAreaPicker";
 import { screenAreaCodes, screenMatchesArea } from "../../config/workspaceScreenAreas";
 import SettingsWorkspaceNav from "./SettingsWorkspaceNav";
@@ -145,10 +146,10 @@ export default function ModuleManagement() {
     const matchesProvider = provider === "all" || item.provider === provider;
     const matchesStatus = status === "all" || (status === "active" ? item.attivo !== false : item.attivo === false);
     const associationCount = (associations.moduleLinks.get(item.codice)?.length || 0) + (associations.moduleMenus.get(item.codice)?.length || 0);
-    const area = associations.areaByCode.get(item.area);
-    return matchesProvider && matchesStatus && (areaFilter === "all" || item.area === areaFilter)
+    const areaNames = moduleAreaCodes(item).map((code) => associations.areaByCode.get(code)?.nome || code).join(" ");
+    return matchesProvider && matchesStatus && moduleMatchesArea(item, areaFilter)
       && matchesAssociationStatus(associationCount, associationStatus)
-      && matchesWorkspaceSearch(item, search, ["nome", "codice", "descrizione", "area", "provider", "percorso", () => area?.nome]);
+      && matchesWorkspaceSearch(item, search, ["nome", "codice", "descrizione", "aree", "area", "provider", "percorso", () => areaNames]);
   }), [areaFilter, associationStatus, associations, modules, provider, search, status]);
 
   const visibleScreens = useMemo(() => screens.filter((item) => {
@@ -211,7 +212,7 @@ export default function ModuleManagement() {
     const code = selectedCode || normalizeCode(form.codice || form.nome);
     const name = cleanText(form.nome);
     if (!code || !name) return setMessage({ type: "error", text: "Inserisci codice e nome del modulo." });
-    if (!cleanText(form.area)) return setMessage({ type: "error", text: "Seleziona l’area del modulo." });
+    if (!moduleAreaCodes(form).length) return setMessage({ type: "error", text: "Seleziona almeno un’area per il modulo." });
     const currentModule = modules.find((item) => item.codice === selectedCode);
     if (currentModule?.attivo !== false && form.attivo === false) {
       const usages = [...(associations.moduleLinks.get(selectedCode) || []).map((item) => `Schermata: ${item.screen?.nome || item.schermata_codice}`), ...(associations.moduleMenus.get(selectedCode) || []).map((item) => `Menu: ${item.menu?.nome || item.voce_codice}`)];
@@ -228,7 +229,7 @@ export default function ModuleManagement() {
         descrizione: cleanText(form.descrizione) || null,
         provider: cleanText(form.provider) || "workspace",
         tipo: form.predefinita || dedicatedContainer ? cleanText(form.tipo) || "modulo" : "contenitore",
-        area: cleanText(form.area) || null,
+        aree: moduleAreaCodes(form),
         percorso: dedicatedContainer
           ? cleanText(form.percorso)
           : defaultScreen?.percorso || `/moduli/${code}`,
@@ -387,7 +388,7 @@ export default function ModuleManagement() {
               const builderTarget = item.tipo === "contenitore" || !defaultScreen
                 ? `/settings/layout-builder/module/${encodeURIComponent(item.codice)}`
                 : `/settings/layout-builder/screen/${encodeURIComponent(defaultScreen.codice)}`;
-              return <div className={`module-catalog-item catalog-with-associations ${selectedCode === item.codice ? "active" : ""}`} key={item.codice}><button type="button" className="module-catalog-select" onClick={() => editModule(item)}><span className="module-list-icon"><ModuleIcon /></span><span><strong>{item.nome}</strong><small>{item.codice} · {associations.areaByCode.get(item.area)?.nome || item.area} · {item.provider}</small><span className="catalog-relations">Schermate: {screenAssociations.slice(0,2).map((link) => link.screen?.nome).filter(Boolean).join(", ") || "nessuna"}{screenAssociations.length > 2 ? ` · + ${screenAssociations.length - 2}` : ""} · Menu: {menuAssociations.slice(0,2).map((link) => link.menu?.nome).filter(Boolean).join(", ") || "nessuno"}</span></span><AssociationBadge associated={associated}/><Pencil size={16} /></button><Link className="module-preview-link" to={builderTarget} title={`Modifica la struttura di ${defaultScreen && item.tipo !== "contenitore" ? defaultScreen.nome : item.nome}`}><ExternalLink size={16} /><span>Apri</span></Link></div>;
+              return <div className={`module-catalog-item catalog-with-associations ${selectedCode === item.codice ? "active" : ""}`} key={item.codice}><button type="button" className="module-catalog-select" onClick={() => editModule(item)}><span className="module-list-icon"><ModuleIcon /></span><span><strong>{item.nome}</strong><small>{item.codice} · {moduleAreaCodes(item).map((code) => associations.areaByCode.get(code)?.nome || code).join(", ")} · {item.provider}</small><span className="catalog-relations">Schermate: {screenAssociations.slice(0,2).map((link) => link.screen?.nome).filter(Boolean).join(", ") || "nessuna"}{screenAssociations.length > 2 ? ` · + ${screenAssociations.length - 2}` : ""} · Menu: {menuAssociations.slice(0,2).map((link) => link.menu?.nome).filter(Boolean).join(", ") || "nessuno"}</span></span><AssociationBadge associated={associated}/><Pencil size={16} /></button><Link className="module-preview-link" to={builderTarget} title={`Modifica la struttura di ${defaultScreen && item.tipo !== "contenitore" ? defaultScreen.nome : item.nome}`}><ExternalLink size={16} /><span>Apri</span></Link></div>;
             })}
             {visibleModules.length === 0 ? <p className="catalog-empty">Nessun modulo corrisponde ai filtri.</p> : null}
           </section>
@@ -398,7 +399,7 @@ export default function ModuleManagement() {
               <label>Nome<input required disabled={!isAdminUser} value={form.nome} onChange={(event) => setForm((current) => ({ ...current, nome: event.target.value, codice: selectedCode ? current.codice : normalizeCode(event.target.value) }))} /></label>
               <label>Codice<input required disabled={Boolean(selectedCode) || !isAdminUser} value={form.codice} onChange={(event) => setForm((current) => ({ ...current, codice: normalizeCode(event.target.value) }))} /></label>
               <label>Origine<select disabled={form.protetto || !isAdminUser} value={form.provider} onChange={(event) => setForm((current) => ({ ...current, provider: event.target.value }))}><option value="workspace">Workspace</option><option value="progremes">ProgreMES</option></select></label>
-              <label>Area<select required disabled={!isAdminUser} value={form.area || ""} onChange={(event) => setForm((current) => ({ ...current, area: event.target.value }))}><option value="">Seleziona area</option>{areas.filter((area) => area.attiva || area.codice === form.area).map((area) => <option key={area.codice} value={area.codice}>{area.nome}</option>)}</select></label>
+              <ScreenAreaPicker module screen={form} areas={areas} disabled={!isAdminUser || busy} onChange={(aree) => setForm((current) => ({ ...current, aree }))} />
               <label className="wide">Descrizione<textarea rows="3" disabled={!isAdminUser} value={form.descrizione || ""} onChange={(event) => setForm((current) => ({ ...current, descrizione: event.target.value }))} /></label>
               <label>Ordine<input type="number" disabled={!isAdminUser} value={form.ordine} onChange={(event) => setForm((current) => ({ ...current, ordine: event.target.value }))} /></label>
               <WorkspaceIconPicker value={form.icona} disabled={!isAdminUser} description="Scegli il simbolo mostrato nel menu, nella Home e nell’intestazione del modulo." onChange={(icona) => setForm((current) => ({ ...current, icona }))}/>
@@ -422,7 +423,7 @@ export default function ModuleManagement() {
                 return <div className={`screen-picker-row ${checked ? "selected" : ""}`} key={screen.codice}><label><input type="checkbox" disabled={!isAdminUser || protectedLastLink} checked={checked} onChange={() => toggleScreen(screen.codice)} /><span><strong>{screen.nome}</strong><small>{screenRouteSummary(screen)}{protectedLastLink ? " · ultimo collegamento protetto" : ""}</small></span></label><div className="screen-link-options">{checked ? <label className="screen-order-field"><span>Ordine nel modulo</span><select disabled={!isAdminUser} value={position} onChange={(event) => moveScreenToPosition(screen.codice, event.target.value)}>{form.schermate.map((code, index) => <option key={code} value={index + 1}>{index + 1}</option>)}</select></label> : null}<label className="default-screen"><input type="radio" name="default-screen" disabled={!checked || !isAdminUser} checked={form.predefinita === screen.codice} onChange={() => setForm((current) => ({ ...current, predefinita: screen.codice }))} />Iniziale</label></div></div>;
               })}
             </div>
-            <section className="workspace-associations"><h3>Associazioni</h3><div className="association-group"><strong>In ingresso · Voci menu</strong><AssociationLinks items={associations.moduleMenus.get(form.codice) || []} getKey={(item) => item.voce_codice} getLabel={(item) => item.menu?.nome || item.voce_codice} onOpen={() => { window.location.href = "/settings/menu?view=menu"; }}/></div><div className="association-group"><strong>In uscita · Schermate</strong><AssociationLinks items={associations.moduleLinks.get(form.codice) || []} getKey={(item) => item.schermata_codice} getLabel={(item) => `${item.screen?.nome || item.schermata_codice}${item.predefinita ? " · predefinita" : ""}`} onOpen={openScreenAssociation}/></div><div className="association-group"><strong>Area e dipendenze</strong><span>{associations.areaByCode.get(form.area)?.nome || form.area || "Nessuna area"}{form.dipendenze?.length ? ` · Dipendenze: ${form.dipendenze.join(", ")}` : " · Nessuna dipendenza"}</span></div></section>
+            <section className="workspace-associations"><h3>Associazioni</h3><div className="association-group"><strong>In ingresso · Voci menu</strong><AssociationLinks items={associations.moduleMenus.get(form.codice) || []} getKey={(item) => item.voce_codice} getLabel={(item) => item.menu?.nome || item.voce_codice} onOpen={() => { window.location.href = "/settings/menu?view=menu"; }}/></div><div className="association-group"><strong>In uscita · Schermate</strong><AssociationLinks items={associations.moduleLinks.get(form.codice) || []} getKey={(item) => item.schermata_codice} getLabel={(item) => `${item.screen?.nome || item.schermata_codice}${item.predefinita ? " · predefinita" : ""}`} onOpen={openScreenAssociation}/></div><div className="association-group"><strong>Aree e dipendenze</strong><span>{moduleAreaCodes(form).map((code) => associations.areaByCode.get(code)?.nome || code).join(", ") || "Nessuna area"}{form.dipendenze?.length ? ` · Dipendenze: ${form.dipendenze.join(", ")}` : " · Nessuna dipendenza"}</span></div></section>
             {isAdminUser ? <button className="primary-action module-save" disabled={busy}><Save size={18} />{busy ? "Salvataggio..." : "Salva modulo"}</button> : null}
           </form>
         </div>

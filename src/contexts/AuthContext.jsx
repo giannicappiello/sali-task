@@ -236,7 +236,7 @@ export function AuthProvider({ children }) {
     }
     const context = snapshot.access || {};
     const scope = snapshot.scope || {};
-    const signature = accessSnapshotSignature([data.id, context, scope, snapshot.areas, snapshot.module_areas, snapshot.screen_levels, snapshot.screens, snapshot.links]);
+    const signature = accessSnapshotSignature([data.id, context, scope, snapshot.areas, snapshot.module_area_codes, snapshot.module_areas, snapshot.screen_levels, snapshot.screens, snapshot.links]);
     if (lastAccessSignature.current && signature !== lastAccessSignature.current) setAccessEpoch((value) => value + 1);
     lastAccessSignature.current = signature;
     accessRevision.current = snapshot.revision;
@@ -248,7 +248,7 @@ export function AuthProvider({ children }) {
     setModuleLevels((current) => retainEqualAccessValue(current, context.module_levels || {}));
     setAccessExceptions((current) => retainEqualAccessValue(current, context.exceptions || []));
     setAreaAccess((current) => retainEqualAccessValue(current, snapshot.areas || []));
-    setModuleAreas((current) => retainEqualAccessValue(current, snapshot.module_areas || {}));
+    setModuleAreas((current) => retainEqualAccessValue(current, snapshot.module_area_codes || snapshot.module_areas || {}));
     setScreenCatalog((current) => retainEqualAccessValue(current, { screens: snapshot.screens || [], links: snapshot.links || [], levels: snapshot.screen_levels || {} }));
     setDataScope((current) => retainEqualAccessValue(current, { mode: scope.mode || "propri", commercialMode: scope.commercial_mode || scope.mode || "propri", userIds: scope.user_ids || [], departmentIds: scope.department_ids || [],
       agentIds: scope.agent_ids || [], customerCode: scope.customer_code || null, customerCodes: scope.customer_codes || [] }));
@@ -382,9 +382,10 @@ export function AuthProvider({ children }) {
     const personalException = getPersonalException("modulo", moduleCode);
     if (personalException?.decision === "consenti") return true;
     if (personalException?.decision === "nega") return false;
-    const areaCode = moduleAreas[moduleCode];
+    const configuredAreas = moduleAreas[moduleCode];
+    const areaCodes = Array.isArray(configuredAreas) ? configuredAreas : [configuredAreas].filter(Boolean);
     const alwaysAvailable = WORKSPACE_MODULES[moduleCode]?.alwaysAvailable === true;
-    if (!isAdmin() && !alwaysAvailable && areaCode && !areaAccess.includes(areaCode)) return false;
+    if (!isAdmin() && !alwaysAvailable && areaCodes.length && !areaCodes.some((code) => areaAccess.includes(code))) return false;
     return moduleIsAvailable(moduleCode, moduleAccess, isAdmin());
   }
 
@@ -419,8 +420,9 @@ export function AuthProvider({ children }) {
 
   function hasWorkspaceFeature(featureCode) {
     if (!profile || profile.attivo === false) return false;
-    const areaCode = moduleAreas[featureCode];
-    if (!isAdmin() && areaCode && !areaAccess.includes(areaCode)) return false;
+    const configuredAreas = moduleAreas[featureCode];
+    const areaCodes = Array.isArray(configuredAreas) ? configuredAreas : [configuredAreas].filter(Boolean);
+    if (!isAdmin() && areaCodes.length && !areaCodes.some((code) => areaAccess.includes(code))) return false;
     return featureIsAvailable(featureCode, moduleAccess, isAdmin());
   }
 

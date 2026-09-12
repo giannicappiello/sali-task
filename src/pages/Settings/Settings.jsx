@@ -34,7 +34,7 @@ const emptyUserAccess = {
   beauty_mexal_agente_id: "",
   permessi: [],
 };
-const emptyNewUser = { nome: "", cognome: "", email: "", password: "", telefono: "", ruolo_id: "", reparto_id: "", attivo: true };
+const emptyNewUser = { nome: "", cognome: "", email: "", password: "", telefono: "", ruolo_id: "", reparto_ids: [], attivo: true };
 
 const permissionLabels = {
   "projects.read": "Vede progetti dei propri reparti",
@@ -203,8 +203,7 @@ export default function Settings({ section = "team" }) {
 
   function getUserDepartmentIds(userId) {
     const linked = userDepartments.filter((row) => row.utente_id === userId && row.reparto_id).map((row) => row.reparto_id);
-    const primary = users.find((user) => user.id === userId)?.reparto_id;
-    return [...new Set(primary ? [...linked, primary] : linked)];
+    return [...new Set(linked)];
   }
 
   function getUserDepartmentNames(userId) {
@@ -456,38 +455,14 @@ export default function Settings({ section = "team" }) {
       ...new Set((userAccessForm.reparti || []).filter(Boolean)),
     ];
 
-    const updateUser = await supabase
-      .from("utenti")
-      .update({
-        ruolo_id: userAccessForm.ruolo_id || null,
-        reparto_id: selectedDepartmentIds[0] || null,
-        attivo: userAccessForm.attivo,
-      })
-      .eq("id", modal.item.id);
-
-    if (updateUser.error) {
-      setSaving(false);
-      return alert(updateUser.error.message);
-    }
-
-    const deleteRes = await supabase.from("utenti_reparti").delete().eq("utente_id", modal.item.id);
-    if (deleteRes.error) {
-      setSaving(false);
-      return alert(deleteRes.error.message);
-    }
-
-    const rows = selectedDepartmentIds.map((reparto_id) => ({
-      utente_id: modal.item.id,
-      reparto_id,
-    }));
-    if (rows.length > 0) {
-      const insertRes = await supabase.from("utenti_reparti").insert(rows);
-      if (insertRes.error) {
-        setSaving(false);
-        return alert(insertRes.error.message);
-      }
-    }
-
+    const { data: exceptions, error: exceptionsError } = await supabase.from("workspace_eccezioni_utente")
+      .select("ambito,codice,decisione,livello_accesso,motivazione,valida_fino_a").eq("utente_id", modal.item.id);
+    if (exceptionsError) { setSaving(false); return alert(exceptionsError.message); }
+    const { error: accessError } = await supabase.rpc("workspace_save_user_access", {
+      target_user_id: modal.item.id, target_role_id: userAccessForm.ruolo_id || null,
+      department_ids: selectedDepartmentIds, personal_exceptions: exceptions || [], target_active: userAccessForm.attivo !== false,
+    });
+    if (accessError) { setSaving(false); return alert(accessError.message); }
     const specialPermissionRows = (userAccessForm.permessi || []).map((permesso_id) => ({ utente_id: modal.item.id, permesso_id }));
     if (specialPermissionRows.length > 0) {
       const insertSpecialPermissions = await supabase.from("permessi_utente").upsert(specialPermissionRows, { onConflict: "utente_id,permesso_id" });
@@ -623,7 +598,7 @@ export default function Settings({ section = "team" }) {
         email: newUserForm.email.trim(),
         telefono: newUserForm.telefono.trim(),
         ruolo_id: newUserForm.ruolo_id || null,
-        reparto_id: newUserForm.reparto_id || null,
+        reparto_ids: newUserForm.reparto_ids || [],
       },
     });
     setSaving(false);
@@ -721,7 +696,10 @@ export default function Settings({ section = "team" }) {
               <label>Password iniziale<input type="password" minLength="8" value={newUserForm.password} onChange={(e) => setNewUserForm({ ...newUserForm, password: e.target.value })} /></label>
               <label>Telefono<input value={newUserForm.telefono} onChange={(e) => setNewUserForm({ ...newUserForm, telefono: e.target.value })} /></label>
               <label>Ruolo<select value={newUserForm.ruolo_id} onChange={(e) => setNewUserForm({ ...newUserForm, ruolo_id: e.target.value })}><option value="">Nessun ruolo</option>{roles.map((role) => <option key={role.id} value={role.id}>{role.nome}</option>)}</select></label>
-              <label>Reparto principale<select value={newUserForm.reparto_id} onChange={(e) => setNewUserForm({ ...newUserForm, reparto_id: e.target.value })}><option value="">Nessun reparto</option>{activeDepartments.map((department) => <option key={department.id} value={department.id}>{department.nome}</option>)}</select></label>
+              <fieldset><legend>Reparti di appartenenza</legend>{activeDepartments.map((department) => <label key={department.id}>
+                <input type="checkbox" checked={(newUserForm.reparto_ids || []).includes(department.id)}
+                  onChange={() => toggleListValue(setNewUserForm, "reparto_ids", department.id)} />{department.nome}
+              </label>)}</fieldset>
               <label className="check-line"><input type="checkbox" checked={newUserForm.attivo} onChange={(e) => setNewUserForm({ ...newUserForm, attivo: e.target.checked })} />Utente attivo</label>
             </>}
 

@@ -120,7 +120,7 @@ async function createUser(adminClient, body, callerProfileId) {
   const password = body.password || "";
   const telefono = clean(body.telefono) || null;
   const ruolo_id = body.ruolo_id || null;
-  const reparto_id = body.reparto_id || null;
+  const reparto_ids = Array.isArray(body.reparto_ids) ? [...new Set(body.reparto_ids)] : body.reparto_id ? [body.reparto_id] : null;
   const responsabile_utente_id = body.responsabile_utente_id || null;
   const customer_code = clean(body.customer_code) || null;
   const attivo = body.attivo !== false;
@@ -171,7 +171,7 @@ async function createUser(adminClient, body, callerProfileId) {
         email,
         telefono,
         ruolo_id,
-        reparto_id,
+        reparto_id: null,
         responsabile_utente_id,
         attivo,
       },
@@ -190,6 +190,11 @@ async function createUser(adminClient, body, callerProfileId) {
       400
     );
   }
+
+  const { error: organizationError } = await adminClient.rpc("workspace_set_user_organization", {
+    target_user_id: profile.id, target_role_id: ruolo_id, department_ids: reparto_ids || [], target_active: attivo,
+  });
+  if (organizationError) return json({ error: organizationError.message }, 400);
 
   const customerLinkError = await saveCustomerLink(
     adminClient,
@@ -220,7 +225,7 @@ async function updateUser(adminClient, body, callerProfileId) {
   const password = body.password || "";
   const telefono = clean(body.telefono) || null;
   const ruolo_id = body.ruolo_id || null;
-  const reparto_id = body.reparto_id || null;
+  const reparto_ids = Array.isArray(body.reparto_ids) ? [...new Set(body.reparto_ids)] : body.reparto_id ? [body.reparto_id] : null;
   const responsabile_utente_id = body.responsabile_utente_id || null;
   const customer_code = clean(body.customer_code) || null;
   const attivo = body.attivo !== false;
@@ -277,15 +282,19 @@ async function updateUser(adminClient, body, callerProfileId) {
       cognome,
       email,
       telefono,
-      ruolo_id,
-      reparto_id,
       responsabile_utente_id,
-      attivo,
     })
     .eq("id", id);
 
   if (profileError) {
     return json({ error: profileError.message }, 400);
+  }
+
+  if (body.defer_access_update !== true) {
+    const { error: organizationError } = await adminClient.rpc("workspace_set_user_organization", {
+      target_user_id: id, target_role_id: ruolo_id, department_ids: reparto_ids, target_active: attivo,
+    });
+    if (organizationError) return json({ error: organizationError.message }, 400);
   }
 
   const customerLinkError = await saveCustomerLink(

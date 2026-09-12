@@ -20,7 +20,7 @@ const emptyForm = {
   password: "",
   telefono: "",
   ruolo_id: "",
-  reparto_id: "",
+  reparto_ids: [],
   attivo: true,
 };
 
@@ -82,7 +82,7 @@ function Team() {
         created_at,
         reparto_id,
         ruolo_id,
-        reparti(id, nome),
+        utenti_reparti(reparto_id,reparti(id,nome)),
         ruoli(id, nome, amministratore_workspace)
       `)
       .order("nome");
@@ -139,7 +139,7 @@ function Team() {
       password: "",
       telefono: user.telefono || "",
       ruolo_id: user.ruolo_id || "",
-      reparto_id: user.reparto_id || "",
+      reparto_ids: (user.utenti_reparti || []).map((row) => row.reparto_id),
       attivo: Boolean(user.attivo),
     });
     setModalOpen(true);
@@ -223,7 +223,7 @@ function Team() {
         password: form.password,
         telefono: form.telefono.trim(),
         ruolo_id: form.ruolo_id || null,
-        reparto_id: form.reparto_id || null,
+        reparto_ids: form.reparto_ids,
         attivo: form.attivo,
       });
 
@@ -265,7 +265,7 @@ function Team() {
         password: "",
         telefono: user.telefono || "",
         ruolo_id: user.ruolo_id || null,
-        reparto_id: user.reparto_id || null,
+        reparto_ids: (user.utenti_reparti || []).map((row) => row.reparto_id),
         attivo: !user.attivo,
       });
 
@@ -349,7 +349,7 @@ function Team() {
         ${user.email || ""}
         ${user.telefono || ""}
         ${user.ruoli?.nome || ""}
-        ${user.reparti?.nome || ""}
+        ${(user.utenti_reparti || []).map((row) => row.reparti?.nome).filter(Boolean).join(", ")}
       `.toLowerCase();
 
       return text.includes(query);
@@ -416,7 +416,7 @@ function Team() {
                 </div>
 
                 <span>{user.ruoli?.nome || "-"}</span>
-                <span>{user.reparti?.nome || "-"}</span>
+                <span>{(user.utenti_reparti || []).map((row) => row.reparti?.nome).filter(Boolean).join(", ") || "-"}</span>
                 <span>{user.telefono || "-"}</span>
                 <span>{formatDateTime(user.ultimo_accesso)}</span>
 
@@ -588,20 +588,15 @@ function Team() {
               </div>
 
               <div className="form-group">
-                <label>Reparto</label>
-                <select
-                  value={form.reparto_id}
-                  onChange={(event) =>
-                    updateForm("reparto_id", event.target.value)
-                  }
-                >
-                  <option value="">Seleziona reparto</option>
-                  {reparti.map((reparto) => (
-                    <option key={reparto.id} value={reparto.id}>
-                      {reparto.nome}
-                    </option>
-                  ))}
-                </select>
+                <label>Reparti di appartenenza</label>
+                <div className="access-choice-grid">
+                  {reparti.map((reparto) => <label key={reparto.id}>
+                    <input type="checkbox" checked={form.reparto_ids.includes(reparto.id)}
+                      onChange={() => updateForm("reparto_ids", form.reparto_ids.includes(reparto.id)
+                        ? form.reparto_ids.filter((id) => id !== reparto.id) : [...form.reparto_ids, reparto.id])} />
+                    {reparto.nome}
+                  </label>)}
+                </div>
               </div>
 
               <div className="form-group">

@@ -8,7 +8,9 @@ test("le sole eccezioni non aggiornano inutilmente Auth o l'anagrafica utente", 
   assert.match(source, /function managedUserState/);
   assert.match(source, /if \(managedChanged\) \{/);
   assert.match(source, /functions\.invoke\("admin-manage-user"/);
-  assert.match(source, /workspace_eccezioni_utente"\)\.insert/);
+  assert.match(source, /rpc\("workspace_save_user_access"/);
+  assert.doesNotMatch(source, /workspace_eccezioni_utente"\)\.delete/);
+  assert.doesNotMatch(source, /utenti_reparti"\)\.delete/);
 });
 
 test("l'errore Edge reale viene mostrato al posto del messaggio SDK generico", () => {

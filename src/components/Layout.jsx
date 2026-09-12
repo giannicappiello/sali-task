@@ -644,7 +644,7 @@ function Layout() {
                 <span className="presence-dot" />
                 {presence.label}
               </div>
-              <span className="profile-department">{profile?.reparti?.nome || "Reparto non impostato"}</span>
+              <span className="profile-department">{(profile?.reparti_multipli || []).map((department) => department.nome).filter(Boolean).join(", ") || "Reparti non impostati"}</span>
             </div>
 
             <button className="logout-btn" onClick={signOut}><LogOut size={18} />Esci</button>

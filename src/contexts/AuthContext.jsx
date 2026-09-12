@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { requiresDirectModuleGrant } from "../config/directCrmAccess";
 import { useLocation } from "react-router-dom";
@@ -64,6 +64,12 @@ export function AuthProvider({ children }) {
   const [dataScope, setDataScope] = useState(EMPTY_DATA_SCOPE);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState("");
+  const [accessEpoch, setAccessEpoch] = useState(0);
+  const [authorizationRevision, setAuthorizationRevision] = useState(null);
+  const lastAccessSignature = useRef("");
+  const accessRevision = useRef(null);
+  const loadGeneration = useRef(0);
+  const currentAuthId = useRef(null);
 
   useEffect(() => {
     let mounted = true;
@@ -75,6 +81,8 @@ export function AuthProvider({ children }) {
 
     async function applySession(currentSession) {
       if (!mounted) return;
+      currentAuthId.current = currentSession?.user?.id || null;
+      loadGeneration.current += 1;
       setSession(currentSession);
       setAuthUser(currentSession?.user || null);
       try {
@@ -124,9 +132,44 @@ export function AuthProvider({ children }) {
   }, [profile?.id]);
 
   useEffect(() => {
-    const refresh = () => { if (authUser) void loadProfile(authUser); };
+    if (!authUser?.id) return undefined;
+    let disposed = false;
+    let running = false;
+    let pending = false;
+    const refresh = async () => {
+      if (running) { pending = true; return; }
+      running = true;
+      try {
+        do {
+          pending = false;
+          await loadProfile(authUser, { refresh: true });
+        } while (pending && !disposed);
+      } catch (error) {
+        console.error("Aggiornamento autorizzazioni non disponibile:", error);
+      } finally { running = false; }
+    };
+    const check = async () => {
+      const { data, error } = await supabase.from("workspace_access_revision").select("revision").eq("id", true).single();
+      if (!disposed && (error || data?.revision !== accessRevision.current)) void refresh();
+    };
+    const onFocus = () => { if (document.visibilityState !== "hidden") void refresh(); };
+    const channel = supabase.channel("workspace-access-revision")
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "workspace_access_revision" }, () => void refresh())
+      .subscribe((status) => { if (status === "SUBSCRIBED") void check(); });
+    // Realtime applies saved changes; polling also expires temporary exceptions
+    // and recovers missed notifications after network interruptions.
+    const interval = window.setInterval(() => void refresh(), 30000);
     window.addEventListener("workspace:module-catalog-changed", refresh);
-    return () => window.removeEventListener("workspace:module-catalog-changed", refresh);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+      window.removeEventListener("workspace:module-catalog-changed", refresh);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+      void supabase.removeChannel(channel);
+    };
   }, [authUser]);
 
   async function updatePresence(userId) {
@@ -168,31 +211,14 @@ export function AuthProvider({ children }) {
     });
   }
 
-  async function loadProfile(user) {
-    await ensureProfile(user);
-
-    const { data, error } = await supabase
-      .from("utenti")
-      .select(`
-        id,
-        auth_user_id,
-        nome,
-        cognome,
-        email,
-        telefono,
-        avatar_url,
-        attivo,
-        ultimo_accesso,
-        last_seen,
-        reparto_id,
-        ruolo_id,
-        reparti(id, nome)
-      `)
-      .eq("auth_user_id", user.id)
-      .maybeSingle();
-
-    if (error) {
-      console.error("Errore caricamento profilo:", error);
+  async function loadProfile(user, { refresh = false } = {}) {
+    const generation = ++loadGeneration.current;
+    if (!refresh) await ensureProfile(user);
+    const { data: snapshot, error } = await supabase.rpc("workspace_session_access");
+    // A late response from an older login/refresh must not restore old access.
+    if (generation !== loadGeneration.current || (currentAuthId.current && currentAuthId.current !== user.id)) return;
+    const data = snapshot?.profile;
+    if (error || !data || data.attivo === false) {
       setProfile(null);
       setPermissions([]);
       setModuleAccess([]);
@@ -200,137 +226,32 @@ export function AuthProvider({ children }) {
       setAccessExceptions([]);
       setAreaAccess([]);
       setModuleAreas({});
-      setScreenCatalog({ screens: [], links: [] });
+      setScreenCatalog({ screens: [], links: [], levels: {} });
       setDataScope(EMPTY_DATA_SCOPE);
+      if (error) throw error;
       return;
     }
-
-    const now = new Date().toISOString();
-
-    if (data?.id) {
+    const context = snapshot.access || {};
+    const scope = snapshot.scope || {};
+    const signature = JSON.stringify([data.id, context, scope, snapshot.areas, snapshot.module_areas, snapshot.screen_levels, snapshot.screens, snapshot.links]);
+    if (lastAccessSignature.current && signature !== lastAccessSignature.current) setAccessEpoch((value) => value + 1);
+    lastAccessSignature.current = signature;
+    accessRevision.current = snapshot.revision;
+    setAuthorizationRevision(snapshot.revision);
+    setProfile({ ...data, ruoli: context.role, reparto_ids: context.department_ids || [],
+      reparti_multipli: snapshot.departments || [] });
+    setPermissions(context.permissions || []);
+    setModuleAccess(context.modules || []);
+    setModuleLevels(context.module_levels || {});
+    setAccessExceptions(context.exceptions || []);
+    setAreaAccess(snapshot.areas || []);
+    setModuleAreas(snapshot.module_areas || {});
+    setScreenCatalog({ screens: snapshot.screens || [], links: snapshot.links || [], levels: snapshot.screen_levels || {} });
+    setDataScope({ mode: scope.mode || "propri", userIds: scope.user_ids || [], departmentIds: scope.department_ids || [],
+      agentIds: scope.agent_ids || [], customerCode: scope.customer_code || null, customerCodes: scope.customer_codes || [] });
+    if (!refresh) {
+      const now = new Date().toISOString();
       await supabase.from("utenti").update({ ultimo_accesso: now, last_seen: now }).eq("id", data.id);
-    }
-
-    const [
-      { data: accessContext, error: accessContextError },
-      { data: scopeContext, error: scopeContextError },
-      { data: areaContext, error: areaContextError },
-      { data: moduleAreaRows, error: moduleAreasError },
-      { data: screenRows, error: screensError },
-      { data: screenLinkRows, error: screenLinksError },
-    ] = await Promise.all([
-      supabase.rpc("workspace_access_context"),
-      supabase.rpc("workspace_data_scope"),
-      supabase.rpc("workspace_area_access_codes"),
-      supabase.from("workspace_moduli").select("codice,area"),
-      supabase.from("workspace_schermate").select("codice,percorso,attiva,area,metadati").eq("attiva", true),
-      supabase.from("workspace_moduli_schermate").select("modulo_codice,schermata_codice,ordine,visibile_menu").order("ordine"),
-    ]);
-    if (accessContextError) console.error("Errore caricamento contesto autorizzativo:", accessContextError);
-    if (scopeContextError) console.error("Errore caricamento ambito dati:", scopeContextError);
-    if (areaContextError) console.error("Errore caricamento accesso alle aree:", areaContextError);
-    if (moduleAreasError) console.error("Errore caricamento aree dei moduli:", moduleAreasError);
-    if (screensError) console.error("Errore caricamento catalogo schermate:", screensError);
-    if (screenLinksError) console.error("Errore caricamento collegamenti schermate:", screenLinksError);
-    setAreaAccess(Array.isArray(areaContext) ? areaContext.filter(Boolean) : []);
-    setModuleAreas(Object.fromEntries((moduleAreaRows || []).map((row) => [row.codice, row.area]).filter(([code]) => code)));
-    setScreenCatalog({ screens: screenRows || [], links: screenLinkRows || [] });
-    const resolvedRole = accessContext?.role && typeof accessContext.role === "object" ? accessContext.role : null;
-
-    let repartoRows = [];
-    if (data?.id) {
-      const { data: userDepartmentRows, error: userDepartmentsError } = await supabase
-        .from("utenti_reparti")
-        .select("reparto_id,reparti(id,nome)")
-        .eq("utente_id", data.id);
-
-      if (userDepartmentsError) {
-        console.error("Errore caricamento reparti utente:", userDepartmentsError);
-      } else {
-        repartoRows = userDepartmentRows || [];
-      }
-    }
-
-    const contextDepartmentIds = Array.isArray(accessContext?.department_ids) ? accessContext.department_ids : [];
-    const reparto_ids = [...new Set([...contextDepartmentIds, ...repartoRows.map((row) => row.reparto_id).filter(Boolean)])];
-    const reparti_multipli = repartoRows.map((row) => row.reparti).filter(Boolean);
-
-    if (data?.reparto_id && !reparto_ids.includes(data.reparto_id)) {
-      reparto_ids.push(data.reparto_id);
-      if (data.reparti) reparti_multipli.push(data.reparti);
-    }
-
-    const fallbackScopeMode = workspaceRoleIsAdmin(resolvedRole) || resolvedRole?.ambito_dati === "tutti"
-      ? "tutti"
-      : resolvedRole?.ambito_dati || "propri";
-    setDataScope({
-      mode: scopeContext?.mode || fallbackScopeMode,
-      userIds: Array.isArray(scopeContext?.user_ids) ? scopeContext.user_ids.filter(Boolean) : [data?.id].filter(Boolean),
-      departmentIds: Array.isArray(scopeContext?.department_ids)
-        ? scopeContext.department_ids.filter(Boolean)
-        : (fallbackScopeMode === "team" ? reparto_ids : []),
-      agentIds: Array.isArray(scopeContext?.agent_ids) ? scopeContext.agent_ids.filter(Boolean) : [],
-      customerCode: scopeContext?.customer_code || null,
-      customerCodes: Array.isArray(scopeContext?.customer_codes) ? scopeContext.customer_codes.filter(Boolean) : [],
-    });
-
-    const hasAuthoritativeModuleContext = Array.isArray(accessContext?.modules);
-    let nextModuleAccess = hasAuthoritativeModuleContext ? accessContext.modules.filter(Boolean) : [];
-    if (!hasAuthoritativeModuleContext && reparto_ids.length) {
-      const { data: moduleRows, error: moduleError } = await supabase
-        .from("reparti_moduli")
-        .select("modulo")
-        .in("reparto_id", reparto_ids);
-      if (moduleError) {
-        console.error("Errore caricamento moduli dei reparti:", moduleError);
-      } else {
-        nextModuleAccess = [...new Set((moduleRows || []).map((row) => row.modulo).filter(Boolean))];
-      }
-    }
-    // Do not reconstruct sensitive CRM grants from departments if the
-    // authoritative context is unavailable (area/deny/parent rules are missing).
-    setModuleAccess(hasAuthoritativeModuleContext
-      ? nextModuleAccess
-      : nextModuleAccess.filter((code) => !requiresDirectModuleGrant(code)));
-    setModuleLevels(
-      accessContext?.module_levels && typeof accessContext.module_levels === "object"
-        ? accessContext.module_levels
-        : {}
-    );
-    setAccessExceptions(Array.isArray(accessContext?.exceptions) ? accessContext.exceptions.filter(Boolean) : []);
-
-    const nextProfile = data
-      ? { ...data, ruoli: resolvedRole, ultimo_accesso: now, last_seen: now, reparto_ids, reparti_multipli }
-      : {
-          id: null,
-          auth_user_id: user.id,
-          nome: user.user_metadata?.nome || user.email?.split("@")[0] || "Utente",
-          cognome: user.user_metadata?.cognome || "",
-          email: user.email,
-          reparti: null,
-          reparti_multipli: [],
-          reparto_ids: [],
-          ruoli: null,
-        };
-
-    setProfile(nextProfile);
-
-    if (Array.isArray(accessContext?.permissions)) {
-      setPermissions(accessContext.permissions.filter(Boolean));
-    } else if (resolvedRole?.id) {
-      const { data: permissionRows, error: permissionError } = await supabase
-        .from("permessi_utente")
-        .select("permessi(codice)")
-        .eq("utente_id", data.id);
-
-      if (permissionError) {
-        console.error("Errore caricamento permessi:", permissionError);
-        setPermissions([]);
-      } else {
-        setPermissions((permissionRows || []).map((row) => row.permessi?.codice).filter(Boolean));
-      }
-    } else {
-      setPermissions([]);
     }
   }
 
@@ -343,6 +264,8 @@ export function AuthProvider({ children }) {
 
   async function signOut() {
     if (profile?.id) await supabase.from("utenti").update({ last_seen: null }).eq("id", profile.id);
+    currentAuthId.current = null;
+    loadGeneration.current += 1;
     await supabase.auth.signOut();
     setSession(null);
     setAuthUser(null);
@@ -364,7 +287,7 @@ export function AuthProvider({ children }) {
   }
 
   function isAdmin() {
-    return workspaceRoleIsAdmin(profile?.ruoli);
+    return profile?.attivo !== false && workspaceRoleIsAdmin(profile?.ruoli);
   }
 
   function getPersonalException(scope, code) {
@@ -396,7 +319,7 @@ export function AuthProvider({ children }) {
   }
 
   function hasPermission(code, screenCode = null) {
-    if (!profile) return false;
+    if (!profile || profile.attivo === false) return false;
     if (isAdmin()) return true;
     const personalException = getPersonalException("permesso", code);
     if (personalException?.decision === "nega") return false;
@@ -438,7 +361,7 @@ export function AuthProvider({ children }) {
   }
 
   function canViewScopedData({ ownerId = null, userIds = [], departmentIds = [] } = {}) {
-    if (!profile) return false;
+    if (!profile || profile.attivo === false) return false;
     if (isAdmin() || dataScope.mode === "tutti") return true;
 
     if (ownerId && ownerId === profile.id) return true;
@@ -450,7 +373,7 @@ export function AuthProvider({ children }) {
   }
 
   function hasModuleAccess(moduleCode) {
-    if (!profile) return false;
+    if (!profile || profile.attivo === false) return false;
     if (isAdmin()) return true;
     if (requiresDirectModuleGrant(moduleCode)) return moduleAccess.includes(moduleCode);
     const personalException = getPersonalException("modulo", moduleCode);
@@ -463,7 +386,7 @@ export function AuthProvider({ children }) {
   }
 
   function hasAreaAccess(areaCode) {
-    if (!profile) return false;
+    if (!profile || profile.attivo === false) return false;
     if (!areaCode || isAdmin()) return true;
     const personalException = getPersonalException("area", areaCode);
     if (personalException?.decision === "consenti") return true;
@@ -472,6 +395,7 @@ export function AuthProvider({ children }) {
   }
 
   function hasScreenAccess(screenCode, moduleCode = null) {
+    if (screenCatalog.levels) return Boolean(profile && profile.attivo !== false && screenCatalog.levels[screenCode] && screenCatalog.levels[screenCode] !== "nessuno");
     const screen = screenCatalog.screens.find((item) => item.codice === screenCode);
     const modules = screenCatalog.links.filter((link) => link.schermata_codice === screenCode).map((link) => link.modulo_codice);
     return screenAccessAllowed({ screen, activeUser: Boolean(profile && profile.attivo !== false), admin: isAdmin(),
@@ -481,6 +405,7 @@ export function AuthProvider({ children }) {
 
   function canUseScreen(screenCode, requiredLevel = "lettura") {
     if (!hasScreenAccess(screenCode)) return false;
+    if (screenCatalog.levels) return moduleLevelAllows(screenCatalog.levels[screenCode], requiredLevel);
     if (isAdmin()) return true;
     const exception = getPersonalException("schermata", screenCode);
     if (exception?.level) return moduleLevelAllows(exception.level, requiredLevel);
@@ -490,7 +415,7 @@ export function AuthProvider({ children }) {
   }
 
   function hasWorkspaceFeature(featureCode) {
-    if (!profile) return false;
+    if (!profile || profile.attivo === false) return false;
     const areaCode = moduleAreas[featureCode];
     if (!isAdmin() && areaCode && !areaAccess.includes(areaCode)) return false;
     return featureIsAvailable(featureCode, moduleAccess, isAdmin());
@@ -531,6 +456,7 @@ export function AuthProvider({ children }) {
       dataScope,
       loading,
       authError,
+      authorizationRevision,
       signIn,
       signOut,
       resetPassword,
@@ -553,12 +479,14 @@ export function AuthProvider({ children }) {
       canManageEverything: adminUser,
       canAccessDepartment,
       userDepartmentIds: profile?.reparto_ids || [],
-      reloadProfile: () => authUser && loadProfile(authUser),
+      reloadProfile: () => authUser && loadProfile(authUser, { refresh: true }),
     }),
-    [session, authUser, profile, permissions, moduleAccess, moduleLevels, accessExceptions, areaAccess, moduleAreas, screenCatalog, dataScope, loading, authError, adminUser, location.pathname]
+    [session, authUser, profile, permissions, moduleAccess, moduleLevels, accessExceptions, areaAccess, moduleAreas, screenCatalog, dataScope, loading, authError, authorizationRevision, adminUser, location.pathname]
   );
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  // Recreate page-local data and query state when the effective perimeter changes.
+  // Otherwise an already-open page could keep rows from a removed department.
+  return <AuthContext.Provider key={accessEpoch} value={value}>{children}</AuthContext.Provider>;
 }
 
 // eslint-disable-next-line react-refresh/only-export-components

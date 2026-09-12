@@ -12,7 +12,7 @@ function harness({ fail = false } = {}) {
   const setters = names.map(name => name === 'setLoading' ? value => { loading = value; } : name === 'setAuthError' ? value => { error = value; } : () => {});
   const supabase = { auth: { onAuthStateChange(fn) { callback = fn; return {data:{subscription:{unsubscribe(){}}}}; } } };
   const loadProfile = async () => { assert.equal(locked, false, 'profile query executed under auth lock'); calls++; if(fail) throw Error('offline'); };
-  cleanup = new Function('supabase','window','loadProfile','EMPTY_DATA_SCOPE','console',...names,effect)(supabase,window,loadProfile,{}, {error(){}},...setters);
+  cleanup = new Function('supabase','window','loadProfile','EMPTY_DATA_SCOPE','console','currentAuthId','loadGeneration',...names,effect)(supabase,window,loadProfile,{}, {error(){}},{current:null},{current:0},...setters);
   return { emit(session) { locked = true; const result = callback('INITIAL_SESSION',session); locked = false; assert.equal(result,undefined); }, async flush(delay) { for(const [id,t] of [...timers]) if(t.delay === delay){ timers.delete(id); t.fn(); } await new Promise(resolve => setImmediate(resolve)); }, cleanup, get loading(){return loading;}, get error(){return error;}, get calls(){return calls;} };
 }
 test('auth callback releases the lock before fetching the profile', async () => { const h=harness(); h.emit({user:{id:'one'}}); assert.equal(h.calls,0); await h.flush(0); assert.equal(h.calls,1); assert.equal(h.loading,false); });

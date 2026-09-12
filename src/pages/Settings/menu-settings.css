@@ -1,5 +1,8 @@
 .menu-settings-page .module-settings-header { margin-bottom: 0; }
 .menu-settings-page .module-toolbar { justify-content: space-between; }
+.area-associations { margin: 18px 0; }
+.area-associations > p { margin: 0 0 12px; color: #526176; line-height: 1.5; }
+.area-associations .association-links button { white-space: normal; overflow-wrap: anywhere; text-align: left; }
 .menu-settings-page .module-catalog-list > button { display: grid; grid-template-columns: 42px minmax(0,1fr) auto; align-items: center; gap: 12px; width: 100%; min-width: 0; padding: 15px; border: 0; border-bottom: 1px solid #edf1f5; background: #fff; color: inherit; text-align: left; cursor: pointer; }
 .menu-settings-page .module-catalog-list > button:last-child { border-bottom: 0; }
 .menu-settings-page .module-catalog-list > button:hover,.menu-settings-page .module-catalog-list > button.active { background: #f3f7ff; }

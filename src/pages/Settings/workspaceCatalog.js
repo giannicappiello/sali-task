@@ -46,6 +46,11 @@ export function buildWorkspaceAssociations({ modules = [], screens = [], links =
   const screenLinks = new Map(screens.map((item) => [item.codice, []]));
   const moduleMenus = new Map(modules.map((item) => [item.codice, []]));
   const menuModuleLinks = new Map(menus.map((item) => [item.codice, []]));
+  // Area ownership belongs to each screen, independently of its module links.
+  const areaModules = new Map(areas.map((item) => [item.codice, []]));
+  const areaScreens = new Map(areas.map((item) => [item.codice, []]));
+  modules.forEach((item) => areaModules.get(item.area)?.push(item));
+  screens.forEach((item) => areaScreens.get(item.area)?.push(item));
 
   links.forEach((link) => {
     moduleLinks.get(link.modulo_codice)?.push({ ...link, screen: screenByCode.get(link.schermata_codice) });
@@ -56,7 +61,7 @@ export function buildWorkspaceAssociations({ modules = [], screens = [], links =
     menuModuleLinks.get(link.voce_codice)?.push({ ...link, module: moduleByCode.get(link.modulo_codice) });
   });
 
-  return { moduleByCode, screenByCode, menuByCode, areaByCode, moduleLinks, screenLinks, moduleMenus, menuModuleLinks };
+  return { moduleByCode, screenByCode, menuByCode, areaByCode, moduleLinks, screenLinks, moduleMenus, menuModuleLinks, areaModules, areaScreens };
 }
 
 export function associationSummary(items, limit = 3) {

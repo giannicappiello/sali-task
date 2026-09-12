@@ -7,7 +7,7 @@ test("Workspace e MES nascondono l'icona AI agli utenti non abilitati", async ()
     readFile(new URL("../../src/components/ContextualAIAssistant.jsx", import.meta.url), "utf8"),
     readFile(new URL("../../_progremes_v3_fix/Components/Layout/WorkspacePageHeader.razor", import.meta.url), "utf8"),
     readFile(new URL("../../_progremes_v3_fix/Modules/Common/Security/WorkspaceAuthentication.cs", import.meta.url), "utf8"),
-    readFile(new URL("../../supabase/migrations/20260912123000_progremes_sso_ai_entitlement.sql", import.meta.url), "utf8"),
+    readFile(new URL("../../supabase/migrations/20260912201000_progremes_sso_ai_entitlement.sql", import.meta.url), "utf8"),
   ]);
   assert.match(workspace, /hasModuleAccess\("assistente_ai"\)/);
   assert.match(mesHeader, /WorkspaceAuthentication\.CanUseAi/);

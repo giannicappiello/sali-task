@@ -29,6 +29,7 @@ import { isProgremesScreenPath, openProgremesWorkspaceWindow } from "../pages/Pr
 import WorkspaceScreenLayout from "./WorkspaceScreenLayout";
 import { getModuleIcon } from "../config/moduleIcons";
 import { resolveCatalogModuleDestination } from "../config/workspaceNavigation";
+import ContextualAIAssistant from "./ContextualAIAssistant";
 
 const baseMenuItems = [
   { path: "/home", label: "Home", icon: Home, module: "home" },
@@ -660,6 +661,7 @@ function Layout() {
           </div>
 
           <div className="topbar-actions">
+            <ContextualAIAssistant key={location.pathname} title={currentPage.title} module={currentPage.title} />
             <button type="button" className="topbar-home-btn" onClick={() => navigate("/home")} aria-label="Vai alla Home"><Home size={19} /><span>Home</span></button>
             <button type="button" className="icon-btn notification-btn" onClick={openNotifications} aria-label="Apri notifiche"><Bell size={21} />{notificationCount > 0 && <small>{notificationCount}</small>}</button>
             <button type="button" className="icon-btn notification-btn" onClick={() => navigate("/messages")} aria-label="Apri messaggi"><MessageCircle size={21} /></button>

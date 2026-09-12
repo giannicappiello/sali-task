@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { generateText, isStepCount, jsonSchema, Output } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { decideHeadingAction, executeHeadingModelTool, HEADING_AI_TOOLS, HEADING_TOOL_SCHEMAS, interpretHeadingCommand } from "./company-letterhead-actions.js";
+import { availableControlledActions, decideControlledAction, proposeControlledAction } from "./controlled-actions.js";
 
 const DEFAULT_MODEL = "openai/gpt-5.6-luna";
 const MAX_HISTORY_MESSAGES = 14;
@@ -381,7 +382,7 @@ async function buildInternalContext({ scoped, profile, access, capabilities }, r
   return context;
 }
 
-function systemPrompt(mode, context) {
+function systemPrompt(mode, context, screenContext = null) {
   return `Sei l'Assistente AI di Progre Workspace. Rispondi in italiano, in modo concreto e verificabile.
 Regole obbligatorie:
 - usa soltanto i dati presenti nel CONTESTO INTERNO e le eventuali fonti Web;
@@ -390,6 +391,10 @@ Regole obbligatorie:
 - rispetta i moduli autorizzati indicati nel contesto;
 - distingui sempre dati aziendali, ipotesi e informazioni Web;
 - non dichiarare mai di aver modificato ordini o piani: puoi solo proporre e simulare;
+- quando l'utente chiede di modificare dati, filtri, card, KPI, permessi, formule, pianificazione, RdP, OP, lotti o documenti usa esclusivamente uno degli strumenti di azione controllata disponibili;
+- ogni strumento di scrittura crea soltanto una proposta: descrivi l'anteprima e attendi la conferma esplicita dell'utente mostrata dall'interfaccia;
+- non generare SQL, codice, identificativi o nomi di campi non presenti nel contesto; se manca l'identificativo del record chiedi all'utente di selezionarlo o aprirlo;
+- le forzature lotto e le variazioni operative MES sono ad alto rischio: evidenzia sempre impatto, motivo e record interessato;
 - per richieste su intestazioni, associazioni e firme usa sempre gli strumenti strutturati disponibili; non dedurre identificativi e non rispondere solo dal prompt;
 - gli strumenti intestazioni con rischio write preparano esclusivamente una proposta: comunica che serve la conferma esplicita mostrata dall'interfaccia e non dichiarare la modifica già eseguita;
 - segnala esplicitamente quando il connettore ProgreMES non è disponibile;
@@ -403,8 +408,24 @@ Regole obbligatorie:
 - se l’utente chiede un report PDF o un documento scaricabile, prepara direttamente il contenuto completo e ben strutturato: l’interfaccia lo trasformerà in un vero file allegato, quindi non descrivere la procedura e non dire che non puoi crearlo;
 - non esporre dettagli tecnici, credenziali o dati non necessari.
 Modalità richiesta: ${mode}.
+CONTESTO DELLA SCHERMATA APERTA:
+${JSON.stringify(screenContext)}
 CONTESTO INTERNO:
 ${JSON.stringify(context)}`;
+}
+
+function cleanScreenContext(value) {
+  if (!value || typeof value !== "object") return null;
+  const cleanText = (input, max = 3000) => String(input || "").replace(/\s+/g, " ").trim().slice(0, max);
+  const fields = Array.isArray(value.fields) ? value.fields.slice(0, 40).map((item) => ({
+    label: cleanText(item?.label, 120), value: cleanText(item?.value, 300),
+  })).filter((item) => item.label || item.value) : [];
+  return {
+    system: value.system === "mes" ? "mes" : "workspace",
+    path: cleanText(value.path, 500), title: cleanText(value.title, 200), module: cleanText(value.module, 160),
+    screenCode: cleanText(value.screenCode, 160), recordId: cleanText(value.recordId, 180),
+    selection: cleanText(value.selection, 1000), visibleSummary: cleanText(value.visibleSummary, 5000), fields,
+  };
 }
 
 function sourceList(result) {
@@ -735,6 +756,7 @@ async function chat(auth, body) {
   const messages = [...persistedMessages, userModelMessage(prompt, attachments)].slice(-MAX_HISTORY_MESSAGES);
   const requestText = [...memory, ...persistedMessages.map((message) => message.content), prompt].join("\n");
   const context = await buildInternalContext(auth, requestText, memory);
+  const screenContext = cleanScreenContext(body.screenContext);
   const mesLevel = String(auth.access?.module_levels?.progremes || "nessuno").toLowerCase();
   const canWriteMes = auth.profile?.ruoli?.amministratore_workspace === true || ["scrittura", "amministrazione"].includes(mesLevel);
   const availableHeadingTools = Object.keys(HEADING_AI_TOOLS).filter((toolName) => toolName !== "MES_DOCUMENT_GENERATE" || (auth.capabilities?.progremes === true && canWriteMes));
@@ -743,9 +765,14 @@ async function chat(auth, body) {
     inputSchema: jsonSchema(HEADING_TOOL_SCHEMAS[toolName]),
     execute: (input) => executeHeadingModelTool(auth, toolName, input, { correlationId: body.correlationId }),
   }]));
+  const controlledTools = Object.fromEntries(Object.entries(availableControlledActions(auth)).map(([toolName, descriptor]) => [toolName, {
+    description: `Azione controllata ${descriptor.system === "mes" ? "ProgreMES/MES tramite tunnel firmato" : "Workspace"}. Rischio: ${descriptor.risk}. Crea solo una proposta da confermare; non applica subito la modifica.`,
+    inputSchema: jsonSchema(descriptor.schema),
+    execute: (input) => proposeControlledAction(auth, toolName, input, { correlationId: body.correlationId }),
+  }]));
   const tools = mode === "web"
     ? { ...headingTools, web_search: openai.tools.webSearch({ externalWebAccess: true, searchContextSize: "medium" }) }
-    : headingTools;
+    : { ...headingTools, ...controlledTools };
   const model = process.env.AI_MODEL || DEFAULT_MODEL;
   const generationId = await startAIGeneration(auth.admin, {
     profileId: auth.profile.id,
@@ -757,7 +784,7 @@ async function chat(auth, body) {
   try {
     result = await generateText({
       model,
-      system: systemPrompt(mode, context),
+      system: systemPrompt(mode, context, screenContext),
       messages,
       tools,
       stopWhen: isStepCount(6),
@@ -773,12 +800,14 @@ async function chat(auth, body) {
   const allToolResults = (result.steps || []).flatMap((step) => step.toolResults || []);
   const allToolCalls = (result.steps || []).flatMap((step) => step.toolCalls || []);
   const headingAction = allToolResults.map((item) => item.output).find((output) => output?.headingAction)?.headingAction || null;
+  const controlledActions = allToolResults.map((item) => item.output?.controlledAction).filter(Boolean);
   const artifacts = requestedArtifacts(prompt, generationId);
   const downloadablePdf = artifacts.some((artifact) => artifact.kind === "pdf");
   const storedAttachments = attachmentMetadata(attachments);
-  const answer = result.text || (headingAction ? "Ho preparato l’azione richiesta. Verifica l’anteprima e conferma per applicarla." : "Operazione completata tramite gli strumenti autorizzati.");
-  await saveExchange(auth.admin, conversationId, displayedPrompt(prompt, attachments), answer, sources, { model, mode, generationId, costUsd: usage.cost, downloadablePdf, artifacts, headingToolCalls: allToolCalls.map((item) => item.toolName) }, { attachments: storedAttachments });
-  return { conversationId, answer, sources, usage, capabilities: auth.capabilities, downloadablePdf, artifacts, headingAction };
+  const hasPendingAction = Boolean(headingAction || controlledActions.length);
+  const answer = result.text || (hasPendingAction ? "Ho preparato l’azione richiesta. Verifica l’anteprima e conferma per applicarla." : "Operazione completata tramite gli strumenti autorizzati.");
+  await saveExchange(auth.admin, conversationId, displayedPrompt(prompt, attachments), answer, sources, { model, mode, generationId, costUsd: usage.cost, downloadablePdf, artifacts, headingToolCalls: allToolCalls.map((item) => item.toolName), controlledActions, screenContext }, { attachments: storedAttachments });
+  return { conversationId, answer, sources, usage, capabilities: auth.capabilities, downloadablePdf, artifacts, headingAction, controlledActions, controlledAction: controlledActions[0] || null };
 }
 
 async function createProposal(auth, body) {
@@ -908,6 +937,7 @@ export async function handleAIAssistant(req) {
   if (body.action === "capabilities") return { capabilities: auth.capabilities };
   if (body.action === "heading_command") return { ...(await interpretHeadingCommand(auth, body)), capabilities: auth.capabilities };
   if (body.action === "heading_decide") return { ...(await decideHeadingAction(auth, body)), capabilities: auth.capabilities };
+  if (body.action === "controlled_decide") return { ...(await decideControlledAction(auth, body)), capabilities: auth.capabilities };
   if (body.action === "list_conversations") return listConversations(auth);
   if (body.action === "create_topic") return createTopic(auth, body);
   if (body.action === "delete_conversation") return deleteConversation(auth, body);

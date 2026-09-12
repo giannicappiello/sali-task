@@ -138,9 +138,14 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
     const loadLayout = async () => {
       setBuilderLayout(null);
       if (!presentation.layoutTargetCode) return;
-      const { data, error } = await supabase.from("workspace_builder_layouts").select("layout").eq("target_type", presentation.layoutTargetType).eq("target_code", presentation.layoutTargetCode).maybeSingle();
-      if (error) throw error;
-      if (active) setBuilderLayout(data?.layout || null);
+      const resolved = await supabase.rpc("workspace_resolve_builder_layout", { p_target_type: presentation.layoutTargetType, p_target_code: presentation.layoutTargetCode });
+      if (resolved.error) {
+        const legacy = await supabase.from("workspace_builder_layouts").select("layout").eq("target_type", presentation.layoutTargetType).eq("target_code", presentation.layoutTargetCode).maybeSingle();
+        if (legacy.error) throw legacy.error;
+        if (active) setBuilderLayout(legacy.data?.layout || null);
+        return;
+      }
+      if (active) setBuilderLayout(resolved.data || null);
     };
     const refresh = () => void loadLayout().catch(() => { if (active) setBuilderLayout(null); });
     refresh();

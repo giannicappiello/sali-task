@@ -189,6 +189,7 @@ export default function AIAssistant() {
         content: message.contenuto,
         sources: message.fonti || [],
         artifacts: message.ruolo === "assistant" ? (message.metadati?.artifacts?.length ? message.metadati.artifacts : (message.metadati?.downloadablePdf === true ? [{ id: `${message.id}-pdf`, kind: "pdf", fileName: "report-assistente-ai.pdf", mediaType: "application/pdf" }] : [])) : [],
+        controlledActions: message.ruolo === "assistant" ? (message.metadati?.controlledActions || []) : [],
       }));
       setConversationId(payload.conversation.id);
       setSelectedTopicId(payload.conversation.argomento_id || "");
@@ -320,7 +321,7 @@ export default function AIAssistant() {
       setCapabilities(payload.capabilities || capabilities);
       if (payload.proposal) setProposal(payload.proposal);
       const responseArtifacts = payload.artifacts?.length ? payload.artifacts : ((payload.downloadablePdf === true || pdfRequested) ? [{ id: `pdf-${Date.now()}`, kind: "pdf", fileName: "report-assistente-ai.pdf", mediaType: "application/pdf" }] : []);
-      setMessages((current) => [...current, { id: `assistant-${Date.now()}`, role: "assistant", content: payload.answer, sources: payload.sources || [], proposal: payload.proposal || null, headingAction: payload.headingAction || null, artifacts: responseArtifacts }]);
+      setMessages((current) => [...current, { id: `assistant-${Date.now()}`, role: "assistant", content: payload.answer, sources: payload.sources || [], proposal: payload.proposal || null, headingAction: payload.headingAction || null, controlledActions: payload.controlledActions || [], artifacts: responseArtifacts }]);
       setPrompt("");
       attachments.forEach((item) => item.preview && URL.revokeObjectURL(item.preview));
       setAttachments([]);
@@ -362,6 +363,18 @@ export default function AIAssistant() {
     } finally {
       setDecisionBusy(false);
     }
+  }
+
+  async function decideControlled(messageId, action, decision) {
+    if (!action?.id || decisionBusy) return;
+    setDecisionBusy(true); setError("");
+    try {
+      const payload = await callAI({ action: "controlled_decide", proposalId: action.id, decision });
+      setMessages((current) => current.map((message) => message.id !== messageId ? message : { ...message,
+        controlledActions: (message.controlledActions || []).map((item) => item.id === action.id ? { ...item, state: payload.controlledAction?.state, result: payload.controlledAction?.result } : item),
+      }));
+      if (action.tool === "UI_CONFIGURE_VIEW" && payload.controlledAction?.state === "executed") window.dispatchEvent(new CustomEvent("workspace:builder-layout-changed"));
+    } catch (requestError) { setError(requestError.message); } finally { setDecisionBusy(false); }
   }
 
   return (
@@ -444,6 +457,7 @@ export default function AIAssistant() {
                 {message.sources?.length > 0 && <div className="ai-message-sources"><strong>Fonti Web</strong>{message.sources.map((source) => <a key={source.id || source.url} href={source.url} target="_blank" rel="noreferrer">{source.title}<ExternalLink size={13} /></a>)}</div>}
                 {message.proposal && <ProposalCard proposal={{ ...message.proposal, state: proposal?.id === message.proposal.id ? proposal.state : message.proposal.state }} canDecide={capabilities?.apply_plans === true} busy={decisionBusy} onApprove={() => decide("approve")} onReject={() => decide("reject")} />}
                 {message.headingAction && <HeadingActionCard action={message.headingAction} busy={decisionBusy} onConfirm={() => decideHeading(message.id, message.headingAction, "confirm")} onReject={() => decideHeading(message.id, message.headingAction, "reject")} />}
+                {message.controlledActions?.map((action) => <ControlledActionCard key={action.id} action={action} busy={decisionBusy} onConfirm={() => decideControlled(message.id, action, "confirm")} onReject={() => decideControlled(message.id, action, "reject")} />)}
               </div>
             </article>
           ))}
@@ -491,6 +505,16 @@ function HeadingActionCard({ action, busy, onConfirm, onReject }) {
   return <section className="ai-heading-action" aria-label={mesDocument ? "Proposta generazione documento MES" : "Proposta associazione intestazione"}>
     <div><FileText size={20} /><strong>{mesDocument ? "Generazione documento MES" : "Associazione intestazione"}</strong><span className={`status-badge ${pending ? "warning" : action.state === "executed" ? "success" : "neutral"}`}>{action.state}</span></div>
     {action.preview && <dl><div><dt>Tipo documento</dt><dd>{action.preview.documentType?.name || action.preview.documentTypeCode}</dd></div>{mesDocument ? <div><dt>Produzione MES</dt><dd>{action.preview.targetId}</dd></div> : <><div><dt>Intestazione</dt><dd>{action.preview.heading?.name}</dd></div><div><dt>Ambito</dt><dd>{action.preview.scope}</dd></div></>}</dl>}
+    {pending && <div className="ai-heading-actions"><button type="button" className="secondary-action" disabled={busy} onClick={onReject}>Rifiuta</button><button type="button" className="primary-action" disabled={busy} onClick={onConfirm}>{busy ? "Applicazione..." : "Conferma e applica"}</button></div>}
+  </section>;
+}
+
+function ControlledActionCard({ action, busy, onConfirm, onReject }) {
+  const pending = action.state === "proposed";
+  return <section className={`ai-heading-action ai-controlled-action risk-${action.risk || "write"}`} aria-label={`Proposta controllata ${action.tool}`}>
+    <div><ShieldCheck size={20}/><strong>{action.tool}</strong><span className={`status-badge ${pending ? "warning" : action.state === "executed" ? "success" : "neutral"}`}>{action.state}</span></div>
+    <p>{action.system === "mes" ? "L’applicazione avverrà in MES mediante tunnel firmato." : "L’applicazione avverrà nel Workspace con audit completo."}</p>
+    <pre>{JSON.stringify(action.preview || action.result || {}, null, 2)}</pre>
     {pending && <div className="ai-heading-actions"><button type="button" className="secondary-action" disabled={busy} onClick={onReject}>Rifiuta</button><button type="button" className="primary-action" disabled={busy} onClick={onConfirm}>{busy ? "Applicazione..." : "Conferma e applica"}</button></div>}
   </section>;
 }

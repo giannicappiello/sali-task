@@ -33,6 +33,16 @@ const block = {
   },
 };
 
+const mesBlock = {
+  type: "object", additionalProperties: false, required: ["id", "type", "width"],
+  properties: {
+    id: identifier, type: { type: "string", enum: ["system-content", "text", "panel", "notice", "button", "links", "divider"] },
+    width: { type: "string", enum: ["full", "half", "third"] }, locked: { type: "boolean" }, title: text, text,
+    label: text, href: text, variant: { type: "string", enum: ["primary", "secondary", "danger", "info", "warning"] },
+    items: { type: "array", maxItems: 20, items: { type: "object", additionalProperties: false, required: ["label", "href"], properties: { label: text, href: text } } },
+  },
+};
+
 const externalEntitySchema = (entityLabel) => ({
   type: "object", additionalProperties: false, required: ["targetId", "reason", "changes"],
   properties: {
@@ -52,6 +62,17 @@ export const CONTROLLED_AI_ACTIONS = Object.freeze({
         version: { type: "integer", const: 1 },
         presentation: { type: "object", additionalProperties: false, properties: { title: text, description: text } },
         blocks: { type: "array", minItems: 1, maxItems: 40, items: block },
+      } },
+    },
+  } },
+  MES_UI_CONFIGURE_VIEW: { system: "mes", risk: "write", permission: "progremes.write", schema: {
+    type: "object", additionalProperties: false, required: ["targetCode", "layout", "reason"],
+    properties: {
+      targetCode: identifier, reason: text,
+      layout: { type: "object", additionalProperties: false, required: ["version", "blocks"], properties: {
+        version: { type: "integer", const: 1 },
+        presentation: { type: "object", additionalProperties: false, properties: { title: text, description: text } },
+        blocks: { type: "array", minItems: 1, maxItems: 40, items: mesBlock },
       } },
     },
   } },

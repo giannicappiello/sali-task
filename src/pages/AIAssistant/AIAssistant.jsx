@@ -65,6 +65,8 @@ export default function AIAssistant() {
       module: "ProgreMES",
       title: "Schermata MES",
       path: String(params.get("mesPath") || "").slice(0, 500),
+      targetType: "screen",
+      targetCode: String(params.get("mesTarget") || "").slice(0, 160),
     };
   }, []);
   const [capabilities, setCapabilities] = useState(null);
@@ -389,6 +391,12 @@ export default function AIAssistant() {
         controlledActions: (message.controlledActions || []).map((item) => item.id === action.id ? { ...item, state: payload.controlledAction?.state, result: payload.controlledAction?.result } : item),
       }));
       if (action.tool === "UI_CONFIGURE_VIEW" && payload.controlledAction?.state === "executed") window.dispatchEvent(new CustomEvent("workspace:builder-layout-changed"));
+      if (action.tool === "MES_UI_CONFIGURE_VIEW" && payload.controlledAction?.state === "executed") {
+        try {
+          const parentOrigin = new URL(document.referrer).origin;
+          window.parent.postMessage({ type: "progremes-ui-layout-changed", targetCode: action.preview?.targetCode || "" }, parentOrigin);
+        } catch { /* Il refresh manuale resta disponibile se il referrer non è esposto. */ }
+      }
     } catch (requestError) { setError(requestError.message); } finally { setDecisionBusy(false); }
   }
 

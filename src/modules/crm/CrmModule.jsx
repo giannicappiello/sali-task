@@ -223,19 +223,6 @@ function parseCustomerRouteId(value) {
   return { kind: "prospect", value: decoded };
 }
 
-function aggregatePurchasedProducts(lines) {
-  const products = new Map();
-  for (const line of lines || []) {
-    const code = String(line.codice_articolo || "").trim();
-    const description = String(line.descrizione || "Articolo senza descrizione").trim();
-    const key = code || description;
-    const current = products.get(key) || { code, description, quantity: 0, value: 0 };
-    current.quantity += Number(line.quantita || 0);
-    current.value += Number(line.valore_netto ?? line.valore_lordo ?? 0);
-    products.set(key, current);
-  }
-  return [...products.values()].sort((left, right) => right.value - left.value || left.description.localeCompare(right.description));
-}
 
 function AccountsPage({ type }) {
   const config = crmTypeConfig(type);
@@ -333,7 +320,7 @@ function AccountsPage({ type }) {
 function AccountDetail({ type }) {
   const { id } = useParams(); const config = crmTypeConfig(type); const period = useCrmPeriod(); const { profile, canUseModule } = useAuth();
   const canWrite = canUseModule(config.moduleCode, "scrittura");
-  const [account, setAccount] = useState(null); const [metrics, setMetrics] = useState({}); const [related, setRelated] = useState({ contacts: [], opportunities: [], activities: [], briefs: [], orders: [], invoices: [], products: [], consents: [], events: [], externalOrders: [], projectCount: 0 }); const [error, setError] = useState(""); const [warning, setWarning] = useState("");
+  const [account, setAccount] = useState(null); const [metrics, setMetrics] = useState({}); const [related, setRelated] = useState({ contacts: [], opportunities: [], activities: [], briefs: [], orders: [], invoices: [], consents: [], events: [], externalOrders: [], projectCount: 0 }); const [error, setError] = useState(""); const [warning, setWarning] = useState("");
   const [commercialSnapshot, setCommercialSnapshot] = useState({}); const [journey, setJourney] = useState([]);
   const [activity, setActivity] = useState({ tipo: "telefonata", titolo: "", data_attivita: "" });
   const [statusDialogOpen, setStatusDialogOpen] = useState(false); const [statusBusy, setStatusBusy] = useState(false);
@@ -381,14 +368,11 @@ function AccountDetail({ type }) {
       type === "online" && crmAccountId ? supabase.from("crm_customer_events").select("id,fase,avvenuto_il,fonte").eq("account_id", crmAccountId).order("avvenuto_il", { ascending: false }).limit(50) : emptyResult,
     ]);
     const failures = [contactsResult, opportunitiesResult, activitiesResult, briefsResult, ordersResult, invoicesResult, externalOrdersResult, consentsResult, eventsResult].filter((result) => result.error).map((result) => result.error.message);
-    const invoiceIds = (invoicesResult.data || []).map((invoice) => invoice.id);
-    const invoiceLinesResult = type === "conto_terzi" && invoiceIds.length ? await supabase.from("mexal_fatture_vendita_righe").select("fattura_id,codice_articolo,descrizione,quantita,valore_lordo,valore_netto").in("fattura_id", invoiceIds).limit(1000) : emptyResult;
-    if (invoiceLinesResult.error) failures.push(invoiceLinesResult.error.message);
     const opportunityIds = (opportunitiesResult.data || []).map((item) => item.id);
     const projectLinksResult = opportunityIds.length ? await supabase.from("crm_workspace_links").select("workspace_entity_id").eq("crm_entity_type", "opportunity").eq("workspace_entity_type", "project").in("crm_entity_id", opportunityIds) : emptyResult;
     if (projectLinksResult.error) failures.push(projectLinksResult.error.message);
     setWarning([...new Set(failures)].join(" · "));
-    setRelated({ contacts: contactsResult.data || [], opportunities: opportunitiesResult.data || [], activities: activitiesResult.data || [], briefs: briefsResult.data || [], orders: ordersResult.data || [], invoices: invoicesResult.data || [], products: aggregatePurchasedProducts(invoiceLinesResult.data || []), consents: consentsResult.data || [], events: eventsResult.data || [], externalOrders: externalOrdersResult.data || [], projectCount: new Set((projectLinksResult.data || []).map((item) => item.workspace_entity_id)).size });
+    setRelated({ contacts: contactsResult.data || [], opportunities: opportunitiesResult.data || [], activities: activitiesResult.data || [], briefs: briefsResult.data || [], orders: ordersResult.data || [], invoices: invoicesResult.data || [], consents: consentsResult.data || [], events: eventsResult.data || [], externalOrders: externalOrdersResult.data || [], projectCount: new Set((projectLinksResult.data || []).map((item) => item.workspace_entity_id)).size });
     if (crmAccountId) {
       const [snapshotResult, journeyResult] = await Promise.all([
         supabase.rpc("crm_account_commercial_snapshot", { p_account_id: crmAccountId, p_from: period.from, p_to: period.to }),
@@ -458,7 +442,7 @@ function AccountDetail({ type }) {
       <CrmExpandableCard title="Brief" preview={<>{related.briefs[0]?.titolo || "Nessun brief"}<br />{related.briefs[1]?.titolo || `${related.briefs.length} brief collegati`}</>}>{related.briefs.map((item) => <div className="crm-row-card" key={item.id}><strong>{item.titolo}</strong><span>{item.stato}</span></div>)}{!related.briefs.length ? <p>Nessun brief disponibile.</p> : null}</CrmExpandableCard>
       {account.codice_cliente_mexal ? <><CrmExpandableCard id="orders" title="Ordini Workspace/Mexal" preview={<>{related.orders[0]?.numero_ordine_visualizzato || "Nessun ordine nel periodo"}<br />{related.orders[1]?.numero_ordine_visualizzato || `${related.orders.length} ordini visibili`}</>}>{related.orders.map((item) => <div className="crm-row-card" key={item.id}><strong>{item.numero_ordine_visualizzato || item.id}</strong><span>{formatDate(item.data_ordine)} · {formatMoney(item.totale_documento)} · {item.stato}</span></div>)}{!related.orders.length ? <p>Nessun ordine disponibile nel perimetro autorizzato.</p> : null}</CrmExpandableCard>
       <CrmExpandableCard id="invoices" title="Fatture Mexal" preview={<>{related.invoices[0] ? `${related.invoices[0].sigla} ${related.invoices[0].serie}/${related.invoices[0].numero}` : "Nessuna fattura nel periodo"}<br />{related.invoices[1] ? `${related.invoices[1].sigla} ${related.invoices[1].serie}/${related.invoices[1].numero}` : `${related.invoices.length} fatture visibili`}</>}>{related.invoices.map((item) => <div className="crm-row-card" key={item.id}><strong>{item.sigla} {item.serie}/{item.numero}</strong><span>{formatDate(item.data_documento)} · {formatMoney(item.totale_documento)}</span></div>)}{!related.invoices.length ? <p>Nessuna fattura disponibile nel perimetro autorizzato.</p> : null}</CrmExpandableCard>
-      {["b2b", "online"].includes(type) ? <CustomerProductCards customerKey={account.codice_cliente_mexal ? `mexal:${account.codice_cliente_mexal}` : account.entityKey} period={period} crmType={type} /> : <CrmExpandableCard title="Prodotti acquistati" preview={<>{related.products[0]?.description || "Nessun prodotto"}<br />{related.products[1]?.description || `${related.products.length} prodotti rilevati`}</>}>{related.products.slice(0, 100).map((item) => <div className="crm-row-card" key={item.code || item.description}><strong>{item.description}</strong><span>{item.code || "Senza codice"} · Q.tà {item.quantity.toLocaleString("it-IT")} · {formatMoney(item.value)}</span></div>)}{!related.products.length ? <p>Nessun prodotto derivabile dalle fatture visibili.</p> : null}</CrmExpandableCard>}</> : null}
+      <CustomerProductCards customerKey={account.codice_cliente_mexal ? `mexal:${account.codice_cliente_mexal}` : account.entityKey} period={period} crmType={type} /></> : null}
       <CrmExpandableCard title="Note e documenti" preview={<>{account.metadati?.note || "Nessuna nota CRM disponibile."}<br />Documenti nel perimetro autorizzato.</>}><p>{account.metadati?.note || "Nessuna nota CRM disponibile."}</p><p>I documenti restano nella libreria Workspace e vengono mostrati solo quando esiste un collegamento autorizzato.</p></CrmExpandableCard>
     </div>
     {type === "online" ? <><section className="panel crm-panel"><h3>Profilo acquisti ecommerce</h3><dl><div><dt>Ordini</dt><dd>{related.externalOrders.length || "Dato non disponibile"}</dd></div><div><dt>Valore totale</dt><dd>{related.externalOrders.length ? formatMoney(related.externalOrders.reduce((sum, item) => sum + Number(item.net_revenue || 0), 0)) : "Dato non disponibile"}</dd></div><div><dt>AOV</dt><dd>{related.externalOrders.length ? formatMoney(related.externalOrders.reduce((sum, item) => sum + Number(item.net_revenue || 0), 0) / related.externalOrders.length) : "Dato non disponibile"}</dd></div><div><dt>Segmenti</dt><dd>{account.segmenti?.join(", ") || "Dato non disponibile"}</dd></div></dl></section><section className="panel crm-panel"><h3>Ordini ecommerce</h3>{related.externalOrders.map((item) => <div className="crm-row-card" key={item.id}><strong>{item.external_id}</strong><span>{formatDate(item.ordered_at)} · {formatMoney(item.net_revenue)} · {item.attribution_method}</span></div>)}{!related.externalOrders.length ? <p>Dato non sincronizzato: serve il connettore ecommerce reale.</p> : null}</section><section className="panel crm-panel"><h3>Consensi marketing</h3>{related.consents.map((item) => <div className="crm-row-card" key={item.id}><strong>{item.purpose}</strong><span>{item.status} · {item.legal_basis || "base giuridica non disponibile"} · {item.source || "fonte non disponibile"}</span></div>)}{!related.consents.length ? <p>Dato non disponibile.</p> : null}</section><section className="panel crm-panel"><h3>Customer journey</h3>{related.events.map((item) => <div className="crm-row-card" key={item.id}><strong>{item.fase}</strong><span>{formatDate(item.avvenuto_il)} · {item.fonte || "unknown"}</span></div>)}{!related.events.length ? <p>Nessun evento autorizzato disponibile.</p> : null}</section></> : null}

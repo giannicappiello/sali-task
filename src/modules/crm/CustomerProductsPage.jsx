@@ -5,7 +5,7 @@ import { supabase } from '../../lib/supabaseClient';
 import CrmPeriodFilter, { useCrmPeriod } from './CrmPeriodFilter';
 import { CrmPageHeader } from './CrmWorkspaceUI';
 import { formatDate, formatMoney } from './crmConfig';
-import { CUSTOMER_PRODUCT_SCREENS, groupCustomerProducts, inProductPeriod, loadProductCustomers, productAmount, productDocumentLabel, purchaseDates } from './customerProducts';
+import { CUSTOMER_PRODUCT_CONTEXTS, customerProductAccountPath, CUSTOMER_PRODUCT_SCREENS, groupCustomerProducts, inProductPeriod, loadProductCustomers, productAmount, productDocumentLabel, purchaseDates } from './customerProducts';
 import { useCustomerProductData } from './useCustomerProductData';
 import './customer-products.css';
 
@@ -48,7 +48,7 @@ function ProductHistoryDialog({ product, rows, kind, period, allHistory, onHisto
 
 export default function CustomerProductsPage({ kind }) {
   const period = useCrmPeriod(); const [params, setParams] = useSearchParams();
-  const crmType = ['b2b', 'online'].includes(params.get('crmType')) ? params.get('crmType') : '';
+  const crmType = CUSTOMER_PRODUCT_CONTEXTS.includes(params.get('crmType')) ? params.get('crmType') : '';
   const customerKey = params.get('customer') || ''; const search = params.get('productSearch') || '';
   const allHistory = params.get('productHistory') === 'all'; const selectedCode = params.get('product') || '';
   const [customers, setCustomers] = useState([]); const [customerSearch, setCustomerSearch] = useState(''); const [customerError, setCustomerError] = useState('');
@@ -65,6 +65,7 @@ export default function CustomerProductsPage({ kind }) {
   const contextCustomers = customers.filter(customer => !crmType || customer.crmType === crmType);
   const selectedCustomer = contextCustomers.find(customer => customer.key === customerKey);
   const config = CUSTOMER_PRODUCT_SCREENS[kind];
+  const accountPath = customerProductAccountPath(selectedCustomer?.crmType || crmType, customerKey);
   const update = (key, value) => setParams(current => {
     const next = new URLSearchParams(current);
     if (value) next.set(key, value); else next.delete(key);
@@ -75,12 +76,12 @@ export default function CustomerProductsPage({ kind }) {
   const name = selectedCustomer?.name || rows[0]?.customer_name || (customerKey ? 'Cliente selezionato' : 'Seleziona un cliente');
   return <div className="crm-page crm-products-page">
     <CrmPageHeader title={config.title} eyebrow="Scheda commerciale cliente" description={name} actions={<CrmPeriodFilter period={period} compact />} />
-    <div className="crm-filters"><label>Contesto CRM<select aria-label="Contesto CRM prodotti" value={crmType} onChange={event => update('crmType', event.target.value)}><option value="">DIRECT · BtoB e BtoC</option><option value="b2b">DIRECT · BtoB</option><option value="online">DIRECT · BtoC</option></select></label><label><Search size={16} /><input aria-label="Cerca cliente per prodotti" value={customerSearch} onChange={event => setCustomerSearch(event.target.value)} placeholder="Cerca cliente o codice" /></label>
+    <div className="crm-filters"><label>Contesto CRM<select aria-label="Contesto CRM prodotti" value={crmType} onChange={event => update('crmType', event.target.value)}><option value="">Tutti i contesti CRM</option><option value="conto_terzi">PRIVATE</option><option value="b2b">DIRECT · BtoB</option><option value="online">DIRECT · BtoC</option></select></label><label><Search size={16} /><input aria-label="Cerca cliente per prodotti" value={customerSearch} onChange={event => setCustomerSearch(event.target.value)} placeholder="Cerca cliente o codice" /></label>
       <label>Cliente<select aria-label="Cliente prodotti" value={customerKey} onChange={event => update('customer', event.target.value)}><option value="">Seleziona cliente</option>
         {customerKey && !selectedCustomer && <option value={customerKey}>{name}</option>}
         {contextCustomers.filter(customer => customer.key === customerKey || `${customer.name} ${customer.code}`.toLocaleLowerCase('it-IT').includes(customerSearch.toLocaleLowerCase('it-IT'))).map(customer => <option key={customer.key} value={customer.key}>{customer.name} · {customer.code}</option>)}
       </select></label></div>
-    {customerKey && <Link to={period.withPeriod(`/crm/${(selectedCustomer?.crmType || crmType) === 'online' ? 'online' : 'b2b'}/clienti/${encodeURIComponent(customerKey)}`, { product: null })} className="crm-customer-link">← Scheda cliente</Link>}
+    {accountPath && <Link to={period.withPeriod(accountPath, { product: null })} className="crm-customer-link">← Scheda cliente</Link>}
     <div className="crm-filters"><label><Search size={16} /><input aria-label="Cerca prodotto" placeholder="Cerca codice o nome prodotto" value={search} onChange={event => update('productSearch', event.target.value)} /></label><label><input type="checkbox" checked={allHistory} onChange={event => update('productHistory', event.target.checked ? 'all' : '')} />Tutto lo storico</label></div>
     <p className="crm-product-note">{kind === 'ordered' ? 'Righe degli ordini canonici, senza sommare nuovamente i documenti figli.' : 'Righe dei documenti di vendita sincronizzati; storni e note di credito disponibili sono conteggiati con segno negativo.'} Importi netti IVA esclusa. Quantità separate per unità di misura; i dati mancanti non vengono ricostruiti.</p>
     {(error || customerError) && <div className="crm-message error" role="alert">{error || customerError}</div>}

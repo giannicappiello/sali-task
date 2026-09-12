@@ -1,3 +1,9 @@
+export const CUSTOMER_PRODUCT_CONTEXTS = Object.freeze(['conto_terzi', 'b2b', 'online']);
+export function customerProductAccountPath(crmType, customerKey) {
+  const segment = { conto_terzi: 'conto-terzi', b2b: 'b2b', online: 'online' }[crmType];
+  return segment && customerKey ? `/crm/${segment}/clienti/${encodeURIComponent(customerKey)}` : null;
+}
+
 export const CUSTOMER_PRODUCT_SCREENS = {
   ordered: { title: 'Prodotti ordinati', path: '/crm/prodotti-ordinati', code: 'crm.prodotti_ordinati' },
   purchased: { title: 'Prodotti acquistati', path: '/crm/prodotti-acquistati', code: 'crm.prodotti_acquistati' },
@@ -18,7 +24,7 @@ export async function loadCustomerProductLines(client, key, kind, signal, crmTyp
 }
 export async function loadProductCustomers(client, signal, crmType = '') {
   const rows = await readProductPages(() => client.from('crm_classified_customers')
-    .select('codice_cliente,ragione_sociale,area_crm').in('area_crm', crmType ? [crmType] : ['b2b', 'online']).order('ragione_sociale').order('codice_cliente'), signal);
+    .select('codice_cliente,ragione_sociale,area_crm').in('area_crm', crmType ? [crmType] : CUSTOMER_PRODUCT_CONTEXTS).order('ragione_sociale').order('codice_cliente'), signal);
   return rows.map(row => ({ key: 'mexal:' + row.codice_cliente, name: row.ragione_sociale, code: row.codice_cliente, crmType: row.area_crm }));
 }
 export function inProductPeriod(row, from, to, allHistory) {

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { CUSTOMER_PRODUCT_SCREENS, groupCustomerProducts, productAmount, productQuantities, previousProductPeriod, loadCustomerProductLines, loadProductCustomers } from '../../src/modules/crm/customerProducts.js';
+import { CUSTOMER_PRODUCT_CONTEXTS, customerProductAccountPath, CUSTOMER_PRODUCT_SCREENS, groupCustomerProducts, productAmount, productQuantities, previousProductPeriod, loadCustomerProductLines, loadProductCustomers } from '../../src/modules/crm/customerProducts.js';
 import { CRM_ROUTE_CATALOG } from '../../src/modules/crm/crmRouteCatalog.js';
 const read = path => readFileSync(new URL('../../' + path, import.meta.url), 'utf8');
 const row = (id, date, extra = {}) => ({ line_id: id, document_id: 'doc-' + id, document_date: date, product_code: 'IT001', description: 'Crema completa', quantity: 2, unit: 'PZ', net_amount: 10, line_position: 1, ...extra });
@@ -47,13 +47,13 @@ test('pagination and DIRECT context forwarded to same RPC, errors propagated', a
 test('customer selector filters canonical DIRECT contexts without narrowing authorization itself',async()=>{
  const scopes=[];const client={from(){const q={select:()=>q,in:(key,values)=>{scopes.push([key,values]);return q;},order:()=>q,range:()=>q,abortSignal:async()=>({data:[{codice_cliente:'A',ragione_sociale:'Cliente A',area_crm:'online'}]})};return q;}};
  assert.equal((await loadProductCustomers(client,undefined,'online'))[0].crmType,'online');
- await loadProductCustomers(client);assert.deepEqual(scopes,[['area_crm',['online']],['area_crm',['b2b','online']]]);
+ await loadProductCustomers(client);assert.deepEqual(scopes,[['area_crm',['online']],['area_crm',['conto_terzi','b2b','online']]]);
 });
 test('exactly two reusable catalogued screens without hardcoded module dependencies',()=>{
  const routes=CRM_ROUTE_CATALOG.filter(route=>route.view==='customer-products');assert.equal(routes.length,2);
  for(const [kind,screen] of Object.entries(CUSTOMER_PRODUCT_SCREENS)){const route=routes.find(route=>route.kind===kind);assert.equal(route.catalogPath,screen.path);assert.equal(route.screenCode,screen.code);assert.equal(route.moduleCode,undefined);}
  const cards=read('src/modules/crm/CustomerProductCards.jsx');assert.match(cards,/customer: customerKey, crmType/);
- assert.match(read('src/modules/crm/CrmModule.jsx'),/\["b2b", "online"\]\.includes\(type\) \? <CustomerProductCards/);
+ const detail=read('src/modules/crm/CrmModule.jsx');assert.match(detail,/<CustomerProductCards[^\n]+crmType=\{type\}/);assert.doesNotMatch(detail,/<CrmExpandableCard title="Prodotti acquistati"|aggregatePurchasedProducts/);
 });
 test('migration does not grant area/module access or bypass existing row policies',()=>{
  const sql=read('supabase/migrations/20260913010000_crm_customer_product_screens.sql');
@@ -69,4 +69,20 @@ test('popup contains all document lines and closing preserves router page, filte
  assert.match(source,/rows.filter\(row => row.document_id === documentId\)/);
  assert.match(source,/displayed.map\(line/);assert.match(source,/previousFocus\?\.focus/);assert.match(source,/onClose=\{\(\) => update\('product', ''\)\}/);
  assert.match(source,/replace: true/);assert.doesNotMatch(source,/window\.location|window\.open|slice\(0, 50\)/);
+});
+
+test('PRIVATE uses shared pages and returns to the PRIVATE customer, not B2B',async()=>{
+ assert.ok(CUSTOMER_PRODUCT_CONTEXTS.includes('conto_terzi'));
+ assert.equal(customerProductAccountPath('conto_terzi','mexal:PRIVATE'),'/crm/conto-terzi/clienti/mexal%3APRIVATE');
+ assert.equal(customerProductAccountPath('online','mexal:B'),'/crm/online/clienti/mexal%3AB');
+ assert.equal(customerProductAccountPath('b2b','mexal:A'),'/crm/b2b/clienti/mexal%3AA');
+ assert.equal(customerProductAccountPath('unknown','mexal:A'),null);
+ const calls=[];const client={rpc(name,args){calls.push({name,args});const q={range:()=>q,abortSignal:async()=>({data:[]})};return q;}};
+ await loadCustomerProductLines(client,'mexal:P','ordered',undefined,'conto_terzi');
+ await loadCustomerProductLines(client,'mexal:P','purchased',undefined,'conto_terzi');
+ assert.equal(calls.length,2);assert.ok(calls.every(call=>call.args.p_crm_type==='conto_terzi'));
+ const sql=read('supabase/migrations/20260913011000_crm_private_customer_products.sql');
+ assert.match(sql,/security invoker/);assert.match(sql,/p_crm_type not in \('conto_terzi','b2b','online'\)/);
+ assert.match(sql,/c.area_crm in \('conto_terzi','b2b','online'\)/);
+ assert.doesNotMatch(sql,/insert into|create policy|workspace_moduli|workspace_aree/i);
 });

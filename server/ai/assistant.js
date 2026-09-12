@@ -20,6 +20,10 @@ function isTimeLearningRequest(value) {
   return /autoapprend|apprendiment|tempi?\s+(?:standard\w*|effettiv\w*|consuntiv\w*|produzion\w*|lavorazion\w*)|riduc(?:i|e|iamo|zione)\s+(?:i\s+)?tempi|aggiorn(?:a|are|amento)\s+(?:dei\s+)?tempi/i.test(String(value || ""));
 }
 
+function isControlledMutationRequest(value) {
+  return /\b(?:modifica|modificare|cambia|cambiare|imposta|impostare|aggiungi|aggiungere|rimuovi|rimuovere|nascondi|nascondere|mostra|mostrare|crea|creare|forza|forzare|collega|collegare|aggiorna|aggiornare)\b/i.test(String(value || ""));
+}
+
 const PROPOSAL_SCHEMA = jsonSchema({
   type: "object",
   additionalProperties: false,
@@ -346,7 +350,7 @@ async function readProgremesPlanningContext() {
   return { connector: "available", data: await response.json() };
 }
 
-async function buildInternalContext({ scoped, profile, access, capabilities }, requestText = "", memory = []) {
+async function buildInternalContext({ scoped, profile, access, capabilities }, requestText = "", memory = [], screenContext = null) {
   if (!capabilities.internal_data) return { note: "Accesso ai dati interni non abilitato." };
   const isAdmin = profile.ruoli?.amministratore_workspace === true;
   const businessModules = new Set(access.modules || []);
@@ -360,6 +364,20 @@ async function buildInternalContext({ scoped, profile, access, capabilities }, r
     generatedAt: new Date().toISOString(),
     previousUserRequests: memory,
   };
+  const permissions = new Set(access.permissions || []);
+  if (isAdmin || permissions.has("settings.manage")) {
+    const [roles, configurableModules, configurableScreens] = await Promise.all([
+      safeQuery("ruoli_configurabili", () => scoped.from("ruoli").select("id,nome,descrizione,amministratore_workspace,ambito_dati,livello_accesso,livello_ai").order("nome").limit(100)),
+      safeQuery("moduli_configurabili", () => scoped.from("workspace_moduli").select("codice,nome,descrizione,percorso,provider,attivo").order("ordine").limit(160)),
+      safeQuery("schermate_configurabili", () => scoped.from("workspace_schermate").select("codice,nome,descrizione,percorso,provider,attiva").order("nome").limit(240)),
+    ]);
+    context.workspaceConfiguration = {
+      currentTarget: screenContext ? pick(screenContext, ["targetType", "targetCode", "screenCode", "path", "title"]) : null,
+      roles: roles.rows,
+      modules: configurableModules.rows,
+      screens: configurableScreens.rows,
+    };
+  }
   if (isAdmin || modules.has("attivita")) context.activities = await buildActivitiesContext(scoped, access, isAdmin);
   if (isAdmin || modules.has("prodotti")) {
     const result = await safeQuery("prodotti", () => scoped.from("prodotti").select("*").eq("attivo_mexal", true).eq("mostra_in_app", true).order("nome").limit(120));
@@ -382,7 +400,7 @@ async function buildInternalContext({ scoped, profile, access, capabilities }, r
   return context;
 }
 
-function systemPrompt(mode, context, screenContext = null) {
+function systemPrompt(mode, context, screenContext = null, controlledToolNames = [], roleAiLevel = "analisi") {
   return `Sei l'Assistente AI di Progre Workspace. Rispondi in italiano, in modo concreto e verificabile.
 Regole obbligatorie:
 - usa soltanto i dati presenti nel CONTESTO INTERNO e le eventuali fonti Web;
@@ -390,8 +408,10 @@ Regole obbligatorie:
 - non inventare record, disponibilità, vincoli o stati;
 - rispetta i moduli autorizzati indicati nel contesto;
 - distingui sempre dati aziendali, ipotesi e informazioni Web;
-- non dichiarare mai di aver modificato ordini o piani: puoi solo proporre e simulare;
+- non dichiarare una modifica applicata prima della conferma: gli strumenti preparano una proposta e l’interfaccia gestisce conferma ed esecuzione;
 - quando l'utente chiede di modificare dati, filtri, card, KPI, permessi, formule, pianificazione, RdP, OP, lotti o documenti usa esclusivamente uno degli strumenti di azione controllata disponibili;
+- se la richiesta contiene una modifica concreta e uno strumento compatibile è disponibile, DEVI invocarlo nella risposta corrente: non limitarti a spiegare la procedura, non rispondere che non puoi farlo e non chiedere conferma testuale;
+- chiedi un chiarimento soltanto quando manca una scelta indispensabile che produrrebbe risultati materialmente diversi; usa codici e identificativi presenti nel contesto senza inventarli;
 - ogni strumento di scrittura crea soltanto una proposta: descrivi l'anteprima e attendi la conferma esplicita dell'utente mostrata dall'interfaccia;
 - non generare SQL, codice, identificativi o nomi di campi non presenti nel contesto; se manca l'identificativo del record chiedi all'utente di selezionarlo o aprirlo;
 - le forzature lotto e le variazioni operative MES sono ad alto rischio: evidenzia sempre impatto, motivo e record interessato;
@@ -408,6 +428,8 @@ Regole obbligatorie:
 - se l’utente chiede un report PDF o un documento scaricabile, prepara direttamente il contenuto completo e ben strutturato: l’interfaccia lo trasformerà in un vero file allegato, quindi non descrivere la procedura e non dire che non puoi crearlo;
 - non esporre dettagli tecnici, credenziali o dati non necessari.
 Modalità richiesta: ${mode}.
+LIVELLO AI OPERATIVO: ${roleAiLevel}.
+STRUMENTI DI MODIFICA DISPONIBILI: ${controlledToolNames.length ? controlledToolNames.join(", ") : "nessuno"}.
 CONTESTO DELLA SCHERMATA APERTA:
 ${JSON.stringify(screenContext)}
 CONTESTO INTERNO:
@@ -424,6 +446,7 @@ function cleanScreenContext(value) {
     system: value.system === "mes" ? "mes" : "workspace",
     path: cleanText(value.path, 500), title: cleanText(value.title, 200), module: cleanText(value.module, 160),
     screenCode: cleanText(value.screenCode, 160), recordId: cleanText(value.recordId, 180),
+    targetType: cleanText(value.targetType, 40), targetCode: cleanText(value.targetCode, 160),
     selection: cleanText(value.selection, 1000), visibleSummary: cleanText(value.visibleSummary, 5000), fields,
   };
 }
@@ -755,8 +778,8 @@ async function chat(auth, body) {
   const persistedMessages = cleanMessages(persistedRows.map((row) => ({ role: row.ruolo, content: row.contenuto })));
   const messages = [...persistedMessages, userModelMessage(prompt, attachments)].slice(-MAX_HISTORY_MESSAGES);
   const requestText = [...memory, ...persistedMessages.map((message) => message.content), prompt].join("\n");
-  const context = await buildInternalContext(auth, requestText, memory);
   const screenContext = cleanScreenContext(body.screenContext);
+  const context = await buildInternalContext(auth, requestText, memory, screenContext);
   const mesLevel = String(auth.access?.module_levels?.progremes || "nessuno").toLowerCase();
   const canWriteMes = auth.profile?.ruoli?.amministratore_workspace === true || ["scrittura", "amministrazione"].includes(mesLevel);
   const availableHeadingTools = Object.keys(HEADING_AI_TOOLS).filter((toolName) => toolName !== "MES_DOCUMENT_GENERATE" || (auth.capabilities?.progremes === true && canWriteMes));
@@ -774,6 +797,8 @@ async function chat(auth, body) {
     ? { ...headingTools, web_search: openai.tools.webSearch({ externalWebAccess: true, searchContextSize: "medium" }) }
     : { ...headingTools, ...controlledTools };
   const model = process.env.AI_MODEL || DEFAULT_MODEL;
+  const mutationRequested = mode !== "web" && isControlledMutationRequest(prompt);
+  const controlledToolNames = Object.keys(controlledTools);
   const generationId = await startAIGeneration(auth.admin, {
     profileId: auth.profile.id,
     conversationId,
@@ -784,9 +809,12 @@ async function chat(auth, body) {
   try {
     result = await generateText({
       model,
-      system: systemPrompt(mode, context, screenContext),
+      system: systemPrompt(mode, context, screenContext, controlledToolNames, auth.capabilities?.role_ai_level || "analisi"),
       messages,
       tools,
+      ...(mutationRequested && controlledToolNames.length ? {
+        prepareStep: ({ stepNumber }) => ({ toolChoice: stepNumber === 0 ? "required" : "auto" }),
+      } : {}),
       stopWhen: isStepCount(6),
       maxOutputTokens: 1800,
       providerOptions: gatewayOptions(auth.profile.id, mode),

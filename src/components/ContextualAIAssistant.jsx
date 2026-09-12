@@ -16,6 +16,8 @@ function visibleContext({ pathname, title, module }) {
   return {
     system: "workspace", path: pathname, title, module,
     screenCode: root.querySelector("[data-screen-code]")?.dataset?.screenCode || "",
+    targetType: root.querySelector("[data-layout-target-type]")?.dataset?.layoutTargetType || "",
+    targetCode: root.querySelector("[data-layout-target-code]")?.dataset?.layoutTargetCode || "",
     recordId: root.querySelector("[data-record-id]")?.dataset?.recordId || "",
     selection: selected,
     visibleSummary: (root.innerText || "").replace(/\s+/g, " ").trim().slice(0, 5000),

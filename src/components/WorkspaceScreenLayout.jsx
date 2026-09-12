@@ -163,7 +163,12 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
   if (presentation.container) return composedContent;
 
   return (
-    <div className="workspace-screen-layout">
+    <div
+      className="workspace-screen-layout"
+      data-screen-code={presentation.layoutTargetType === "screen" ? presentation.layoutTargetCode : undefined}
+      data-layout-target-type={presentation.layoutTargetType}
+      data-layout-target-code={presentation.layoutTargetCode}
+    >
       <WorkspacePageHeader
         icon={screenIcon}
         backLabel={presentation.parentPath ? presentation.parentName : ""}

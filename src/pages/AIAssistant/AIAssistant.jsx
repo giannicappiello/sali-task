@@ -29,6 +29,10 @@ function isPlanningRequest(text) {
   return /\b(?:pianifica(?:zione|re)?|simula(?:zione|re)?|(?:crea|genera|prepara|proponi)(?:mi)?\s+(?:un\s+)?piano|autoapprend\w*|tempi?\s+(?:standard\w*|effettiv\w*|consuntiv\w*|produzion\w*|lavorazion\w*)|riduc(?:i|e|iamo|zione)\s+(?:i\s+)?tempi)\b/i.test(String(text || ""));
 }
 
+function isControlledMutationRequest(text) {
+  return /\b(?:modifica|modificare|cambia|cambiare|imposta|impostare|aggiungi|aggiungere|rimuovi|rimuovere|nascondi|nascondere|mostra|mostrare|forza|forzare|collega|collegare|aggiorna|aggiornare)\b/i.test(String(text || ""));
+}
+
 function inferredPlanType(text) {
   const value = String(text || "");
   if (/\b(?:produzion\w*|progremes|mes|macchin\w*|risors\w*|capacità|material\w*|autoapprend\w*|tempi?\s+(?:standard\w*|effettiv\w*|consuntiv\w*|lavorazion\w*)|riduc(?:i|e|iamo|zione)\s+(?:i\s+)?tempi)/i.test(value)) return "piano_produzione";
@@ -53,6 +57,16 @@ async function requestAI(token, body) {
 
 export default function AIAssistant() {
   const { session, profile } = useAuth();
+  const mesScreenContext = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("embedded") !== "mes") return null;
+    return {
+      system: "mes",
+      module: "ProgreMES",
+      title: "Schermata MES",
+      path: String(params.get("mesPath") || "").slice(0, 500),
+    };
+  }, []);
   const [capabilities, setCapabilities] = useState(null);
   const [mode, setMode] = useState("interno");
   const [conversationId, setConversationId] = useState("");
@@ -311,10 +325,11 @@ export default function AIAssistant() {
       const history = messages.filter((message) => message.id !== "welcome").map(({ role, content }) => ({ role, content }));
       const serializedAttachments = await serializeAssistantAttachments(attachments);
       const headingRequested = activeMode === "interno" && isHeadingRequest(requestText);
-      const planningRequested = !headingRequested && activeMode === "interno" && capabilities?.planning === true && isPlanningRequest(requestText);
+      const mutationRequested = activeMode === "interno" && isControlledMutationRequest(requestText);
+      const planningRequested = !headingRequested && !mutationRequested && activeMode === "interno" && capabilities?.planning === true && isPlanningRequest(requestText);
       const payload = planningRequested
         ? await callAI({ action: "proposal", prompt: requestText, attachments: serializedAttachments, proposalType: inferredPlanType(requestText), conversationId, topicId: selectedTopicId })
-        : await callAI({ action: "chat", mode: activeMode, prompt: requestText, attachments: serializedAttachments, conversationId, topicId: selectedTopicId, correlationId: crypto.randomUUID(), messages: [...history, { role: "user", content: requestText }] });
+        : await callAI({ action: "chat", mode: activeMode, prompt: requestText, attachments: serializedAttachments, conversationId, topicId: selectedTopicId, correlationId: crypto.randomUUID(), messages: [...history, { role: "user", content: requestText }], screenContext: mesScreenContext });
       const activeConversationId = payload.conversationId || conversationId;
       setConversationId(activeConversationId);
       if (activeConversationId) setConversationInUrl(activeConversationId);

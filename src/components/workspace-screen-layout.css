@@ -1,4 +1,5 @@
 .workspace-screen-layout { display: grid; gap: 20px; color: #172033; }
+.workspace-config-driven-view { min-width: 0; }
 .workspace-page-header { box-sizing: border-box; display: flex; align-items: flex-start; gap: 22px; min-height: 228px; padding: 34px; overflow: hidden; position: relative; border-radius: 26px; background: linear-gradient(118deg,#173a70 0%,#1b4c89 48%,#225fa9 100%); box-shadow: 0 18px 42px rgba(24,59,107,.13); color: #fff; }
 .workspace-page-header::after { content: ""; position: absolute; top: -150px; right: -70px; width: 440px; height: 330px; pointer-events: none; background: radial-gradient(circle,rgba(255,255,255,.12),transparent 67%); }
 .workspace-page-header-icon { z-index: 1; display: grid; flex: 0 0 72px; width: 72px; height: 72px; place-items: center; border-radius: 20px; background: rgba(255,255,255,.14); }

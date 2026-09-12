@@ -7,6 +7,7 @@ import { supabase } from "../lib/supabaseClient";
 import { getModuleIcon } from "../config/moduleIcons";
 import WorkspacePageHeader from "./WorkspacePageHeader";
 import WorkspaceScreenComposition from "./WorkspaceScreenComposition";
+import { normalizeWorkspaceLayout } from "./workspaceScreenLayoutConfig";
 import { isProgremesScreenPath } from "../pages/ProgreMes/progremesWindow";
 import "./workspace-screen-layout.css";
 
@@ -43,6 +44,15 @@ const CONTAINER_TARGETS = Object.freeze({
   "/crm": ["module", "crm"],
   "/crm/online": ["module", "crm_online"],
 });
+
+function stableRouteTarget(pathname) {
+  const stablePath = String(pathname || "/")
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => (/^\d+$/.test(segment) || /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(segment) ? ":id" : segment))
+    .join("/");
+  return `route:${stablePath || "home"}`.slice(0, 160);
+}
 
 export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescription, children }) {
   const location = useLocation();
@@ -114,6 +124,7 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
     const orderBackTarget = ordersBackTarget(pathname);
     const parentPath = orderBackTarget?.path || navigationParent?.percorso || "";
 
+    const exactScreenPath = Boolean(screen?.percorso && screen.percorso.replace(/\/$/, "") === pathname);
     return {
       container: false,
       denied: Boolean(screen && !hasScreenAccess(screen.codice, parentModule?.codice)),
@@ -126,7 +137,10 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
       parentName: orderBackTarget?.name || navigationParent?.nome || "",
       parentPath,
       layoutTargetType: "screen",
-      layoutTargetCode: screen?.codice || "",
+      // Every rendered route has a stable configuration target. Registered
+      // screens keep their catalog code; nested/detail routes get their own
+      // route target so changing one view cannot alter every sibling screen.
+      layoutTargetCode: exactScreenPath ? screen.codice : stableRouteTarget(pathname),
       layoutRequiresSystemContent: screen?.chiave_componente !== "screen-builder",
     };
   }, [catalog, fallbackDescription, fallbackTitle, getModuleScreenGrant, hasModuleAccess, hasScreenAccess, location.pathname, location.state]);
@@ -157,10 +171,26 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
     ? <WorkspaceScreenComposition layout={builderLayout} requireSystemContent={presentation.layoutRequiresSystemContent !== false}>{children}</WorkspaceScreenComposition>
     : children;
 
+  const normalizedLayout = builderLayout ? normalizeWorkspaceLayout(builderLayout, { requireSystemContent: presentation.layoutRequiresSystemContent !== false }) : null;
+  const configuredPresentation = normalizedLayout?.presentation || {};
+  const configuredTitle = configuredPresentation.title || presentation.title;
+  const configuredDescription = configuredPresentation.description || presentation.description;
+
+  const wrappedContent = (
+    <div
+      className="workspace-config-driven-view"
+      data-screen-code={presentation.layoutTargetType === "screen" ? presentation.layoutTargetCode : undefined}
+      data-layout-target-type={presentation.layoutTargetType}
+      data-layout-target-code={presentation.layoutTargetCode}
+    >
+      {composedContent}
+    </div>
+  );
+
   if (presentation.denied) return <Navigate to="/home" replace />;
   // Le pagine MES hanno già un'intestazione propria, aggiornata dalla navigazione interna.
-  if (isProgremesScreenPath(location.pathname)) return composedContent;
-  if (presentation.container) return composedContent;
+  if (isProgremesScreenPath(location.pathname)) return wrappedContent;
+  if (presentation.container) return wrappedContent;
 
   return (
     <div
@@ -173,10 +203,10 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
         icon={screenIcon}
         backLabel={presentation.parentPath ? presentation.parentName : ""}
         onBack={presentation.parentPath ? goBack : undefined}
-        title={presentation.title}
-        description={presentation.description}
+        title={configuredTitle}
+        description={configuredDescription}
       />
-      <div className="workspace-screen-content">{composedContent}</div>
+      <div className="workspace-screen-content">{wrappedContent}</div>
     </div>
   );
 }

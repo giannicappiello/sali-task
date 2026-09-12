@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Bot, Check, LoaderCircle, Send, ShieldCheck, X } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
@@ -85,7 +86,7 @@ export default function ContextualAIAssistant({ title = "Schermata", module = "W
 
   return <>
     <button type="button" className="context-ai-trigger" onClick={() => setOpen(true)} aria-label={`Apri assistente AI per ${title}`} title="Chiedi all'AI su questa schermata"><Bot size={21}/><span>AI</span></button>
-    {open ? <div className="context-ai-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setOpen(false)}>
+    {open && typeof document !== "undefined" ? createPortal(<div className="context-ai-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setOpen(false)}>
       <aside className="context-ai-dialog" role="dialog" aria-modal="true" aria-label={`Assistente AI contestuale: ${title}`}>
         <header><div><span>ASSISTENTE CONTESTUALE</span><h2><Bot size={22}/>{title}</h2><p>Conosce la schermata, i filtri e i dati autorizzati visibili.</p></div><button type="button" onClick={() => setOpen(false)} aria-label="Chiudi"><X size={21}/></button></header>
         <div className="context-ai-scope"><ShieldCheck size={16}/> Contesto protetto · {module} · {location.pathname}</div>
@@ -97,6 +98,6 @@ export default function ContextualAIAssistant({ title = "Schermata", module = "W
         {error ? <p className="context-ai-error">{error}</p> : null}
         <form onSubmit={send}><textarea rows="2" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Chiedi informazioni o proponi una modifica…"/><button type="submit" disabled={busy || !prompt.trim()} aria-label="Invia"><Send size={19}/></button></form>
       </aside>
-    </div> : null}
+    </div>, document.body) : null}
   </>;
 }

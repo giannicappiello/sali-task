@@ -34,11 +34,19 @@ export async function requirePermission(req, supabaseOrFactory, permissionCode) 
   if (profileError || !profile || profile.attivo === false) {
     throw Object.assign(new Error("Utente non configurato o disabilitato."), { status: 403 });
   }
+  const acceptedPermissions = (Array.isArray(permissionCode) ? permissionCode : [permissionCode]).filter(Boolean);
+  if (acceptedPermissions.length && acceptedPermissions.every((code) => code.startsWith("integrations."))) {
+    const results = await Promise.all(acceptedPermissions.map((code) => supabase.rpc("workspace_screen_permission_for_user", {
+      target_user_id: profile.id, permission_code: code,
+    })));
+    if (results.some((result) => result.error)) throw Object.assign(new Error("Verifica autorizzazioni non disponibile."), { status: 503 });
+    if (!results.some((result) => result.data === true)) throw Object.assign(new Error("Autorizzazione non concessa per questa operazione."), { status: 403 });
+    return { supabase, id: profile.id, authUserId: user.id };
+  }
   if (profile.ruoli?.amministratore_workspace === true || profile.ruoli?.livello_accesso === "amministrazione") {
     return { supabase, id: profile.id, authUserId: user.id };
   }
 
-  const acceptedPermissions = (Array.isArray(permissionCode) ? permissionCode : [permissionCode]).filter(Boolean);
   const { data: permission, error: permissionError } = await supabase
     .from("permessi_utente")
     .select("permessi!inner(codice)")

@@ -45,7 +45,7 @@ const CONTAINER_TARGETS = Object.freeze({
 
 export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescription, children }) {
   const location = useLocation();
-  const { hasAreaAccess, hasModuleAccess, hasScreenAccess, hasExplicitScreenGrant } = useAuth();
+  const { hasModuleAccess, hasScreenAccess, getModuleScreenGrant } = useAuth();
   const [catalog, setCatalog] = useState({ modules: [], screens: [], links: [] });
   const [builderLayout, setBuilderLayout] = useState(null);
 
@@ -82,7 +82,7 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
       const staticTarget = CONTAINER_TARGETS[pathname];
       return {
         container: true,
-        denied: Boolean(exactModule && (!hasModuleAccess(exactModule.codice) || (exactModule.area && !hasAreaAccess(exactModule.area)))),
+        denied: Boolean(exactModule && !hasModuleAccess(exactModule.codice) && !getModuleScreenGrant(exactModule.codice)),
         layoutTargetType: dynamicMatch?.[1] === "menu" ? "menu" : "module",
         layoutTargetCode: dynamicMatch?.[2] || exactModule?.codice || staticTarget?.[1] || "",
       };
@@ -115,7 +115,7 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
 
     return {
       container: false,
-      denied: Boolean((screen && !hasScreenAccess(screen.codice, parentModule?.codice)) || (screen?.area && !hasAreaAccess(screen.area) && !hasExplicitScreenGrant(screen.codice))),
+      denied: Boolean(screen && !hasScreenAccess(screen.codice, parentModule?.codice)),
       moduleTitle: parentModule?.nome || "Modulo Workspace",
       moduleDescription: parentModule?.descrizione || "Accedi alle funzioni disponibili in base alle tue autorizzazioni.",
       moduleIcon: parentModule?.icona || "",
@@ -128,7 +128,7 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
       layoutTargetCode: screen?.codice || "",
       layoutRequiresSystemContent: screen?.chiave_componente !== "screen-builder",
     };
-  }, [catalog, fallbackDescription, fallbackTitle, hasAreaAccess, hasExplicitScreenGrant, hasModuleAccess, hasScreenAccess, location.pathname, location.state]);
+  }, [catalog, fallbackDescription, fallbackTitle, getModuleScreenGrant, hasModuleAccess, hasScreenAccess, location.pathname, location.state]);
   const goBack = useBackNavigation(presentation.parentPath || "/home");
   const screenIcon = createElement(getModuleIcon(presentation.screenIcon, LayoutGrid), { size:29 });
 

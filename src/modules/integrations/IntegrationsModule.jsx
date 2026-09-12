@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import IntegrationsDashboard from "./pages/IntegrationsDashboard";
 import MexalDashboard from "./pages/MexalDashboard";
@@ -13,13 +13,17 @@ import "./document-gateway.css";
 import "./document-sync.css";
 
 export default function IntegrationsModule() {
-  const { hasPermission, hasModuleAccess } = useAuth();
+  const { hasModuleAccess, hasScreenAccess, getScreenCodeForPath, getModuleScreenGrant } = useAuth();
+  const { pathname } = useLocation();
+  const screenCode = getScreenCodeForPath(pathname, "integrazioni");
+  const screenAllowed = screenCode && hasScreenAccess(screenCode, "integrazioni");
+  const isIndex = pathname.replace(/\/$/, "") === "/integrations";
 
-  if (!hasModuleAccess("integrazioni") || !hasPermission("integrations.read")) {
+  if (screenCode ? !screenAllowed : !(isIndex && (hasModuleAccess("integrazioni") || getModuleScreenGrant("integrazioni")))) {
     return (
       <div className="integrations-denied">
         <h2>Accesso riservato</h2>
-        <p>Il Centro Integrazioni è disponibile solo agli amministratori del Workspace.</p>
+        <p>Non disponi dell’autorizzazione per questa schermata.</p>
       </div>
     );
   }
@@ -42,7 +46,11 @@ export default function IntegrationsModule() {
 }
 
 function IntegrationPermissionGate({ any, children }) {
-  const { hasPermission } = useAuth();
+  const { hasPermission, hasScreenAccess, canUseScreen, getScreenCodeForPath } = useAuth();
+  const { pathname } = useLocation();
+  const screenCode = getScreenCodeForPath(pathname, "integrazioni");
+  // Opening a screen is distinct from permission to run its operations.
+  if (screenCode && hasScreenAccess(screenCode, "integrazioni") && canUseScreen(screenCode, "lettura")) return children;
   if (!any.some((permission) => hasPermission(permission))) {
     return <div className="integrations-denied"><h2>Accesso non autorizzato</h2><p>Il ruolo non dispone dell'autorizzazione richiesta.</p></div>;
   }

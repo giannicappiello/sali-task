@@ -2,17 +2,16 @@ import { useEffect, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabaseClient";
-import { requiresDirectModuleGrant } from "../config/directCrmAccess";
 
 export default function WorkspaceAccessGuard({ moduleCode, screenCode, featureCode, redirectTo = "/home", children }) {
   const location = useLocation();
-  const { hasModuleAccess, hasScreenAccess, hasWorkspaceFeature, getScreenCodeForPath, hasExplicitScreenGrant } = useAuth();
+  const { hasModuleAccess, hasScreenAccess, hasWorkspaceFeature, getScreenCodeForPath } = useAuth();
   const resolvedScreenCode = screenCode || getScreenCodeForPath(location.pathname, moduleCode);
-  const screenGranted = Boolean(resolvedScreenCode && hasExplicitScreenGrant(resolvedScreenCode));
+  const screenGranted = Boolean(resolvedScreenCode && hasScreenAccess(resolvedScreenCode, moduleCode));
   const moduleAllowed = moduleCode
-    ? hasModuleAccess(moduleCode) || (screenGranted && !requiresDirectModuleGrant(moduleCode))
+    ? hasModuleAccess(moduleCode) || screenGranted
     : featureCode
-      ? hasWorkspaceFeature(featureCode)
+      ? hasWorkspaceFeature(featureCode) || screenGranted
       : false;
 
   const [catalogState, setCatalogState] = useState(screenCode ? "checking" : "available");

@@ -10,7 +10,7 @@ import { requestProgremesWorkspaceWindow } from "../ProgreMes/progremesWindow";
 export default function WorkspaceModuleContainer() {
   const { moduleCode = "" } = useParams();
   const location = useLocation();
-  const { profile, hasPermission, hasModuleAccess, hasAreaAccess, hasScreenAccess, hasExplicitScreenGrant, getModuleScreenGrant, canUseModule, isAdminUser } = useAuth();
+  const { profile, hasModuleAccess, hasScreenAccess, getModuleScreenGrant, canUseModule, canUseScreen, isAdminUser } = useAuth();
   const departmentIds = useMemo(() => profile?.reparto_ids || [], [profile?.reparto_ids]);
   const [catalog, setCatalog] = useState({ module: null, screens: [], links: [], progremesAccess: [] });
   const [loading, setLoading] = useState(true);
@@ -56,18 +56,16 @@ export default function WorkspaceModuleContainer() {
       .map((link) => ({ ...screenByCode.get(link.schermata_codice), ordine: link.ordine }))
       .filter((screen) => screen.codice && screen.metadati?.kind !== "topic")
       .filter((screen) => hasScreenAccess(screen.codice, moduleCode))
-      .filter((screen) => hasAreaAccess(screen.area) || hasExplicitScreenGrant(screen.codice))
       .filter((screen) => !screen.metadati?.admin_only || isAdminUser)
       .filter((screen) => {
-        const requiredPermissions = Array.isArray(screen.metadati?.required_permissions) ? screen.metadati.required_permissions : [];
-        if (requiredPermissions.length && !requiredPermissions.some((permission) => hasPermission(permission))) return false;
+        if (!canUseScreen(screen.codice, "lettura")) return false;
         const sourceModule = String(screen.metadati?.source_module || screen.metadati?.required_module || "").trim();
-        if (sourceModule && (!hasModuleAccess(sourceModule) || !canUseModule(sourceModule, "lettura"))) return false;
+        if (sourceModule && !canUseScreen(screen.codice, "lettura")) return false;
         if (screen.provider !== "progremes") return true;
         const externalCode = screen.metadati?.external_code || screen.codice.replace(/^progremes\./, "");
         return hasModuleAccess("progremes") && canUseModule("progremes", "lettura") && (isAdminUser || allowedProgremes.has(externalCode));
       });
-  }, [canUseModule, catalog.links, catalog.progremesAccess, catalog.screens, hasAreaAccess, hasExplicitScreenGrant, hasModuleAccess, hasPermission, hasScreenAccess, isAdminUser, moduleCode]);
+  }, [canUseModule, canUseScreen, catalog.links, catalog.progremesAccess, catalog.screens, hasModuleAccess, hasScreenAccess, isAdminUser, moduleCode]);
 
   const ModuleIcon = getModuleIcon(catalog.module?.icona, LayoutGrid);
 

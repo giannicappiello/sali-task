@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { requiresDirectModuleGrant } from "../config/directCrmAccess";
+import { useLocation } from "react-router-dom";
+import { screenAccessAllowed, screenForPath } from "../config/workspaceScreenAccess";
 import {
   featureIsAvailable,
   moduleIsAvailable,
@@ -48,6 +50,7 @@ function minimumModuleLevel(code) {
 }
 
 export function AuthProvider({ children }) {
+  const location = useLocation();
   const [session, setSession] = useState(null);
   const [authUser, setAuthUser] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -123,6 +126,12 @@ export function AuthProvider({ children }) {
     const interval = window.setInterval(() => updatePresence(profile.id), 60000);
     return () => window.clearInterval(interval);
   }, [profile?.id]);
+
+  useEffect(() => {
+    const refresh = () => { if (authUser) void loadProfile(authUser); };
+    window.addEventListener("workspace:module-catalog-changed", refresh);
+    return () => window.removeEventListener("workspace:module-catalog-changed", refresh);
+  }, [authUser]);
 
   async function updatePresence(userId) {
     const now = new Date().toISOString();
@@ -218,8 +227,8 @@ export function AuthProvider({ children }) {
       supabase.rpc("workspace_data_scope"),
       supabase.rpc("workspace_area_access_codes"),
       supabase.from("workspace_moduli").select("codice,area"),
-      supabase.from("workspace_schermate").select("codice,percorso,attiva").eq("attiva", true),
-      supabase.from("workspace_moduli_schermate").select("modulo_codice,schermata_codice,ordine").order("ordine"),
+      supabase.from("workspace_schermate").select("codice,percorso,attiva,area,metadati").eq("attiva", true),
+      supabase.from("workspace_moduli_schermate").select("modulo_codice,schermata_codice,ordine,visibile_menu").order("ordine"),
     ]);
     if (accessContextError) console.error("Errore caricamento contesto autorizzativo:", accessContextError);
     if (scopeContextError) console.error("Errore caricamento ambito dati:", scopeContextError);
@@ -364,7 +373,7 @@ export function AuthProvider({ children }) {
 
   function getPersonalException(scope, code) {
     if (!scope || !code) return null;
-    return accessExceptions.find((item) => item?.scope === scope && item?.code === code) || null;
+    return accessExceptions.find((item) => item?.scope === scope && item?.code === code && (!item.expires_at || Date.parse(item.expires_at) > Date.now())) || null;
   }
 
   function getPersonalAccessDecision(scope, code) {
@@ -377,43 +386,36 @@ export function AuthProvider({ children }) {
 
   function getModuleScreenGrant(moduleCode) {
     if (!moduleCode) return null;
-    if (requiresDirectModuleGrant(moduleCode) && !hasModuleAccess(moduleCode)) return null;
-    const grantedCodes = new Set(accessExceptions
-      .filter((item) => item?.scope === "schermata" && item?.decision === "consenti")
-      .map((item) => item.code));
-    const grantedLink = screenCatalog.links.find((link) => link.modulo_codice === moduleCode && grantedCodes.has(link.schermata_codice));
+    const grantedLink = screenCatalog.links.find((link) => link.modulo_codice === moduleCode && link.visibile_menu !== false && hasScreenAccess(link.schermata_codice, moduleCode));
     return grantedLink
       ? screenCatalog.screens.find((screen) => screen.codice === grantedLink.schermata_codice) || null
       : null;
   }
 
   function getScreenCodeForPath(pathname, moduleCode = null) {
-    const normalizedPath = String(pathname || "").replace(/\/$/, "") || "/";
     const linkedCodes = moduleCode
       ? new Set(screenCatalog.links.filter((link) => link.modulo_codice === moduleCode).map((link) => link.schermata_codice))
       : null;
-    return screenCatalog.screens
-      .filter((screen) => !linkedCodes || linkedCodes.has(screen.codice))
-      .filter((screen) => {
-        const screenPath = String(screen.percorso || "").replace(/\/$/, "") || "/";
-        return normalizedPath === screenPath || (screenPath !== "/" && normalizedPath.startsWith(`${screenPath}/`));
-      })
-      .toSorted((left, right) => String(right.percorso || "").length - String(left.percorso || "").length)[0]?.codice || "";
+    return screenForPath(screenCatalog.screens.filter((screen) => !linkedCodes || linkedCodes.has(screen.codice)), pathname)?.codice || "";
   }
 
-  function hasPermission(code) {
+  function hasPermission(code, screenCode = null) {
     if (!profile) return false;
     if (isAdmin()) return true;
     const personalException = getPersonalException("permesso", code);
-    if (personalException?.decision === "consenti") return true;
     if (personalException?.decision === "nega") return false;
     const relatedModules = permissionModuleCodes(code);
-    if (relatedModules.length && !relatedModules.some((moduleCode) => hasModuleAccess(moduleCode))) {
+    const currentScreen = screenCode || screenForPath(screenCatalog.screens, location.pathname)?.codice;
+    const screenModules = screenCatalog.links.filter((link) => link.schermata_codice === currentScreen).map((link) => link.modulo_codice);
+    const screenAllowed = currentScreen && hasScreenAccess(currentScreen) && relatedModules.some((moduleCode) => screenModules.includes(moduleCode));
+    const requiredModuleLevel = minimumModuleLevel(code);
+    if (currentScreen && relatedModules.some((moduleCode) => screenModules.includes(moduleCode)) && !canUseScreen(currentScreen, requiredModuleLevel)) return false;
+    if (personalException?.decision === "consenti") return true;
+    if (relatedModules.length && !relatedModules.some((moduleCode) => hasModuleAccess(moduleCode)) && !screenAllowed) {
       return false;
     }
 
-    const requiredModuleLevel = minimumModuleLevel(code);
-    if (relatedModules.length && !relatedModules.some((moduleCode) => canUseModule(moduleCode, requiredModuleLevel))) {
+    if (relatedModules.length && !relatedModules.some((moduleCode) => canUseModule(moduleCode, requiredModuleLevel)) && !(screenAllowed && canUseScreen(currentScreen, requiredModuleLevel))) {
       return false;
     }
 
@@ -474,13 +476,21 @@ export function AuthProvider({ children }) {
   }
 
   function hasScreenAccess(screenCode, moduleCode = null) {
-    if (!profile) return false;
+    const screen = screenCatalog.screens.find((item) => item.codice === screenCode);
+    const modules = screenCatalog.links.filter((link) => link.schermata_codice === screenCode).map((link) => link.modulo_codice);
+    return screenAccessAllowed({ screen, activeUser: Boolean(profile && profile.attivo !== false), admin: isAdmin(),
+      exception: getPersonalException("schermata", screenCode), areaAllowed: screen?.area && hasAreaAccess(screen.area),
+      moduleAllowed: moduleCode ? modules.includes(moduleCode) && hasModuleAccess(moduleCode) : modules.some(hasModuleAccess) });
+  }
+
+  function canUseScreen(screenCode, requiredLevel = "lettura") {
+    if (!hasScreenAccess(screenCode)) return false;
     if (isAdmin()) return true;
-    if (requiresDirectModuleGrant(moduleCode) && !hasModuleAccess(moduleCode)) return false;
-    const personalException = getPersonalException("schermata", screenCode);
-    if (personalException?.decision === "consenti") return true;
-    if (personalException?.decision === "nega") return false;
-    return moduleCode ? hasModuleAccess(moduleCode) : true;
+    const exception = getPersonalException("schermata", screenCode);
+    if (exception?.level) return moduleLevelAllows(exception.level, requiredLevel);
+    const levels = screenCatalog.links.filter((link) => link.schermata_codice === screenCode)
+      .map((link) => moduleLevels[link.modulo_codice] || profile?.ruoli?.livello_accesso || "lettura");
+    return (levels.length ? levels : [profile?.ruoli?.livello_accesso || "lettura"]).some((level) => moduleLevelAllows(level, requiredLevel));
   }
 
   function hasWorkspaceFeature(featureCode) {
@@ -531,6 +541,7 @@ export function AuthProvider({ children }) {
       hasModuleAccess,
       hasAreaAccess,
       hasScreenAccess,
+      canUseScreen,
       getPersonalAccessDecision,
       hasExplicitScreenGrant,
       getModuleScreenGrant,
@@ -547,7 +558,7 @@ export function AuthProvider({ children }) {
       userDepartmentIds: profile?.reparto_ids || [],
       reloadProfile: () => authUser && loadProfile(authUser),
     }),
-    [session, authUser, profile, permissions, moduleAccess, moduleLevels, accessExceptions, areaAccess, moduleAreas, screenCatalog, dataScope, loading, adminUser]
+    [session, authUser, profile, permissions, moduleAccess, moduleLevels, accessExceptions, areaAccess, moduleAreas, screenCatalog, dataScope, loading, adminUser, location.pathname]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

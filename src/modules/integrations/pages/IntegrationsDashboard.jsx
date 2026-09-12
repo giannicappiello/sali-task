@@ -17,7 +17,7 @@ const SCREEN_ICONS = Object.freeze({
 });
 
 export default function IntegrationsDashboard() {
-  const { hasPermission, hasScreenAccess, isAdminUser } = useAuth();
+  const { hasScreenAccess, canUseScreen } = useAuth();
   const [catalog, setCatalog] = useState({ module: null, screens: [], links: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -57,11 +57,8 @@ export default function IntegrationsDashboard() {
       .map((link) => ({ ...screenByCode.get(link.schermata_codice), ordine: link.ordine }))
       .filter((screen) => screen.codice && screen.metadati?.kind !== "topic")
       .filter((screen) => hasScreenAccess(screen.codice, "integrazioni"))
-      .filter((screen) => {
-        const required = Array.isArray(screen.metadati?.required_permissions) ? screen.metadati.required_permissions : [];
-        return isAdminUser || !required.length || required.some((permission) => hasPermission(permission));
-      });
-  }, [catalog.links, catalog.screens, hasPermission, hasScreenAccess, isAdminUser]);
+      .filter((screen) => canUseScreen(screen.codice, "lettura"));
+  }, [catalog.links, catalog.screens, canUseScreen, hasScreenAccess]);
 
   const ModuleIcon = getModuleIcon(catalog.module?.icona, PlugZap);
 

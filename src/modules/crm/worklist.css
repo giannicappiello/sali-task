@@ -1,0 +1,8 @@
+.crm-worklist-note { color:var(--muted); margin:0; font-size:.9rem; }
+.crm-worklist-count { font-size:.9rem; color:var(--text); }
+.crm-table.crm-worklist-table { table-layout:fixed; min-width:850px; }
+.crm-worklist-table th:first-child { width:20%; }
+.crm-worklist-table th:nth-child(2) { width:28%; }
+.crm-worklist-table th,.crm-worklist-table td { padding:12px; overflow-wrap:anywhere; vertical-align:top; }
+.crm-worklist-table small { display:block; margin-top:5px; font-size:.8rem; }
+.crm-worklist-table .status-badge { display:inline-block; margin-top:6px; }

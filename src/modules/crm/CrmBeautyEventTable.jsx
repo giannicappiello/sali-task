@@ -1,5 +1,6 @@
 import { formatDate, formatMoney } from "./crmConfig";
 import InfoTooltip from "../../components/InfoTooltip";
+import CrmCustomerLink from "./CrmCustomerLink";
 import "./beauty.css";
 
 export default function CrmBeautyEventTable({ events, postDays, from, to }) {
@@ -12,7 +13,7 @@ export default function CrmBeautyEventTable({ events, postDays, from, to }) {
         <th>Ordinato nel periodo<InfoTooltip label="Ordinato nel periodo" text={`Totale documento degli ordini della farmacia dal ${formatDate(from)} al ${formatDate(to)}, estremi inclusi, indipendentemente dalla data degli eventi. Il totale della stessa farmacia si ripete sulle sue singole giornate.`}/></th>
       </tr></thead>
       <tbody>{events.map(event => <tr key={event.id}>
-        <td data-label="Farmacia">{event.customer_name || "Farmacia non disponibile"}</td>
+        <td data-label="Farmacia"><CrmCustomerLink crmType="b2b" customerCode={event.customer_code} name={event.customer_name}>{event.customer_name || "Farmacia non disponibile"}</CrmCustomerLink></td>
         <td data-label="Data eventi">{event.first_event_date && event.first_event_date !== event.data ? <>{formatDate(event.first_event_date)}<br/>– {formatDate(event.data)}</> : formatDate(event.data)}</td>
         <td data-label="Stato">{event.stato || "—"}</td>
         <td data-label="Pezzi">{Number(event.numero_totale_pezzi_venduti || 0).toLocaleString("it-IT")}</td>

@@ -112,7 +112,8 @@ test("UI sends period, cancels stale results and uses names, orders, compact col
  assert.match(ui,/beautyMetric: null/);
  const table=read("src/modules/crm/CrmBeautyEventTable.jsx");
  assert.match(table,/event.customer_name/);
- assert.doesNotMatch(table,/event.customer_code|impact\?\.invoice_value/);
+ assert.doesNotMatch(table,/\{event.customer_code\}<\/|impact\?\.invoice_value/);
+ assert.match(table,/customerCode=\{event.customer_code\}/);
  assert.match(table,/Ordinato nel periodo/);
  assert.match(table,/impact\?\.order_value/);
  assert.match(read("src/modules/crm/beauty.css"),/table-layout:fixed/);

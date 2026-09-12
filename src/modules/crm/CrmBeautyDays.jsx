@@ -1,4 +1,5 @@
 import CrmBeautyEventTable from "./CrmBeautyEventTable";
+import { crmFunctionError } from "./crmFunctionError";
 import { beautyDetailEvents, postEventOrderValue } from "./crmBeautyData";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -9,7 +10,7 @@ import { useCrmPeriod } from "./CrmPeriodFilter";
 
 async function invoke(action, payload = {}) {
   const { data, error } = await supabase.functions.invoke("report-giornate-api", { body: { action, ...payload } });
-  if (error) throw error;
+  if (error) throw await crmFunctionError(error);
   if (data?.error) throw new Error(data.error);
   return data || {};
 }

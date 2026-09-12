@@ -24,8 +24,9 @@ test("period validates complete ISO dates and inclusive ordered range",()=>{
  assert.equal(normalizePeriod(),null);
 });
 function database(tables,errors={}) {
- const calls=[];
- return {calls,from(table){
+  const calls=[];
+  return {calls,from(table){
+  if (!(table in tables)) throw new Error(`Unknown database relation: ${table}`);
   const filters=[],orders=[];
   const q={select(){return q},eq(k,v){filters.push(r=>r[k]===v);return q},in(k,v){calls.push([table,k,[...v]]);filters.push(r=>v.includes(r[k]));return q},
    gte(k,v){filters.push(r=>r[k]>=v);return q},lte(k,v){filters.push(r=>r[k]<=v);return q},
@@ -40,7 +41,7 @@ function sources({missingName=false,error=null,extraOrders=[]}={}) {
  return {
  primary:database({
   beauty_clienti_mexal:[{codice_cliente:"A",legacy_farmacia_id:"f1",beauty_external_id:"c1"}],
-  mexal_clienti_cache:missingName?[]:[{codice_cliente:"A",ragione_sociale:"Farmacia Canonica"}],
+  ordini_clienti_cache:missingName?[]:[{codice_cliente:"A",ragione_sociale:"Farmacia Canonica"}],
   crm_order_kpi_source:[...commercial.orders,...extraOrders],mexal_fatture_vendita:[],
  },error?{crm_order_kpi_source:error}:{}),
  report:database({
@@ -87,7 +88,7 @@ test("query errors propagate instead of displaying false zero totals",async()=>{
 });
 test("empty authorized mappings never query the privileged report source",async()=>{
  const report={from(){throw new Error("unauthorized request")}};
- assert.deepEqual((await loadCrmBeautyDashboard(database({}),report,30,period)).events,[]);
+ assert.deepEqual((await loadCrmBeautyDashboard(database({beauty_clienti_mexal:[]}),report,30,period)).events,[]);
 });
 test("pagination includes more than 1000 orders",async()=>{
  const {primary,report}=sources({extraOrders:Array.from({length:1201},(_,i)=>order("extra-"+i,"2026-06-05",1))});

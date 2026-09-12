@@ -212,7 +212,7 @@ Deno.serve(async (req) => {
 
     return json({ error: "Operazione non riconosciuta" }, 400);
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : String(error) }, 500);
+    return json({ error: error instanceof Error ? error.message : String((error as any)?.message || "Errore caricamento Beauty Days") }, 500);
   }
 });
 

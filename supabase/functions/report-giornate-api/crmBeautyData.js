@@ -86,7 +86,7 @@ export async function loadCrmBeautyRows(primary, report, customerCode, requested
   const [sales, consultants, clients, pharmacies, commercial] = await Promise.all([
     readForKeys(days.map(row => row.id), ids => report.from("vendite_prodotti").select("*").in("giornata_id", ids).order("id")),
     readForKeys(days.map(row => row.consultant_id), ids => report.from("beauty_consultant").select("id,nome,cognome").in("id", ids).order("id")),
-    readForKeys(codes, ids => primary.from("mexal_clienti_cache").select("codice_cliente,ragione_sociale").in("codice_cliente", ids).order("codice_cliente")),
+    readForKeys(codes, ids => primary.from("ordini_clienti_cache").select("codice_cliente,ragione_sociale").in("codice_cliente", ids).order("codice_cliente")),
     readForKeys(days.map(row => row.farmacia_id), ids => report.from("farmacie").select("id,nome").in("id", ids).order("id")),
     loadCommercialImpact(primary, codes, days, postDays, period),
   ]);

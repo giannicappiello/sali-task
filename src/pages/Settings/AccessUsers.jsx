@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bot, KeyRound, Plus, Save, Search, ShieldCheck, UserRound, UsersRound, X } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
+import SettingsWorkspaceNav from "./SettingsWorkspaceNav";
 import "./access-control.css";
 
 const EMPTY_USER = { nome: "", cognome: "", email: "", telefono: "", password: "", ruolo_id: "", reparto_ids: [], responsabile_utente_id: "", mexal_agente_id: "", beauty_mexal_agente_id: "", customer_code: "", attivo: true };
@@ -192,10 +193,11 @@ export default function AccessUsers() {
 
   return (
     <section className="access-page">
+      <SettingsWorkspaceNav active="users" />
       <div className="access-page-actions"><button type="button" className="primary-action" onClick={() => { setSelectedId("new"); setTab("dati"); }}><Plus size={18}/>Nuovo utente</button></div>
       {message && <div className={`access-message ${message.type}`}>{message.text}<button type="button" onClick={() => setMessage(null)}><X size={16}/></button></div>}
       <div className="access-workspace">
-        <aside className="access-users"><div className="access-list-heading"><h2>Persone</h2><span>{data.users.length}</span></div><label className="access-search"><Search size={17}/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cerca utente..."/></label><div className="access-user-list">{filteredUsers.map((user) => <button type="button" key={user.id} className={selectedId === user.id ? "active" : ""} onClick={() => setSelectedId(user.id)}><span className="access-avatar">{initials(user)}</span><span><strong>{fullName(user)}</strong><small>{user.ruoli?.nome || "Nessun ruolo"}</small></span><i className={user.attivo !== false ? "online" : "offline"}/></button>)}</div></aside>
+        <aside className="access-users"><div className="access-list-heading"><h2>Persone</h2><span>{data.users.length}</span></div><label className="access-search"><Search size={17}/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cerca utente..."/></label><div className="access-user-list" tabIndex={0} role="region" aria-label="Elenco selezionabile">{filteredUsers.map((user) => <button type="button" key={user.id} className={selectedId === user.id ? "active" : ""} onClick={() => setSelectedId(user.id)}><span className="access-avatar">{initials(user)}</span><span><strong>{fullName(user)}</strong><small>{user.ruoli?.nome || "Nessun ruolo"}</small></span><i className={user.attivo !== false ? "online" : "offline"}/></button>)}</div></aside>
         <article className="access-editor">
           <div className="access-user-head"><span className="access-avatar large">{initials(isCreating ? form : selectedUser)}</span><div><h2>{isCreating ? "Nuovo utente" : fullName(selectedUser)}</h2><p>{selectedRole?.nome || "Profilo non assegnato"}</p></div>{selectedRole?.amministratore_workspace && <span className="access-admin"><ShieldCheck size={16}/>Accesso completo</span>}</div>
           <nav className="access-tabs" aria-label="Configurazione utente">{[["dati","Dati",UserRound],["organizzazione","Organizzazione",UsersRound],["accessi","Accessi",ShieldCheck],["ai","AI",Bot]].map(([code,label,Icon]) => <button type="button" key={code} className={tab === code ? "active" : ""} onClick={() => setTab(code)}><Icon size={16}/>{label}</button>)}</nav>

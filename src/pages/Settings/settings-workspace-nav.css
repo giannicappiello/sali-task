@@ -1,0 +1,7 @@
+.settings-workspace-nav { display:flex; flex-wrap:wrap; align-items:center; gap:6px; width:100%; min-width:0; box-sizing:border-box; padding:6px; margin:16px 0 0; border:1px solid #d6e1ef; border-radius:14px; background:#eaf0f7; }
+.settings-workspace-nav > a,.settings-workspace-nav > button { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:44px; padding:9px 14px; border:1px solid transparent; border-radius:10px; background:transparent; color:#263b55; font:inherit; font-weight:650; text-decoration:none; cursor:pointer; }
+.settings-workspace-nav > .active { background:#fff; color:#174ea6; border-color:#bfd0e6; box-shadow:0 2px 8px rgba(15,23,42,.08); }
+.settings-workspace-nav > a:hover,.settings-workspace-nav > button:hover { color:#174ea6; background:#f8fbff; }
+.settings-workspace-nav > a:focus-visible,.settings-workspace-nav > button:focus-visible { outline:3px solid #174ea6; outline-offset:2px; }
+.access-page > .settings-workspace-nav { margin-top:0; }
+@media(max-width:620px) { .settings-workspace-nav > a,.settings-workspace-nav > button { flex:1 1 120px; padding:9px 10px; } }

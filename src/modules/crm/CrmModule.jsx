@@ -24,7 +24,7 @@ import { CrmPageHeader, CrmSectionNav } from "./CrmWorkspaceUI";
 import { DigitalChannel, DigitalDashboard, DigitalHome, DigitalJourney } from "./DigitalCommerce";
 import { crmTypeConfig, formatDate, formatMoney } from "./crmConfig";
 import { loadAllRpcRows } from "./crmDataset";
-import { CRM_ROUTE_ALIASES, CRM_ROUTE_CATALOG, selectAuthorizedCrmModules } from "./crmRouteCatalog";
+import { CRM_ROUTE_ALIASES, CRM_ROUTE_CATALOG } from "./crmRouteCatalog";
 import { crmNavigation } from "./crmNavigation";
 import { CrmB2BFollowUpPage, CrmB2BReordersPage, CrmBeautyDaysPage, CrmBrandDirectDashboard, CrmDevelopmentsPage, CrmProjectsPage } from "./CrmWorkflowPages";
 import "./crm.css";
@@ -49,60 +49,30 @@ function CrmExpandableCard({ id, title, preview, children, initiallyOpen = false
 }
 
 function CrmOverview() {
-  const { hasModuleAccess } = useAuth();
-  const [overview, setOverview] = useState({ name: "CRM Platform AI", description: "", icon: "briefcase", items: [] });
+  const [overview, setOverview] = useState({ name: "CRM Overview", description: "Panoramica delle aree CRM autorizzate.", icon: "briefcase" });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const loadOverview = useCallback(async () => {
-    setLoading(true);
     setError("");
     const { data: container, error: containerError } = await supabase
       .from("workspace_moduli")
-      .select("codice,nome,descrizione,icona,dipendenze_alternative")
+      .select("codice,nome,descrizione,icona")
       .eq("codice", "crm")
       .eq("attivo", true)
       .maybeSingle();
 
     if (containerError || !container) {
       setError(containerError?.message || "Il contenitore CRM non è presente nel catalogo Workspace.");
-      setLoading(false);
-      return;
+    } else {
+      setOverview({
+        name: container.nome || "CRM Overview",
+        description: container.descrizione || "Panoramica delle aree CRM autorizzate.",
+        icon: container.icona || "briefcase",
+      });
     }
-
-    const dependencies = Array.isArray(container.dipendenze_alternative)
-      ? container.dipendenze_alternative.filter(Boolean)
-      : [];
-    let modules = [];
-    if (dependencies.length) {
-      const { data, error: modulesError } = await supabase
-        .from("workspace_moduli")
-        .select("codice,nome,descrizione,percorso,icona,attivo")
-        .in("codice", dependencies)
-        .eq("attivo", true);
-      if (modulesError) {
-        setError(modulesError.message);
-        setLoading(false);
-        return;
-      }
-      modules = data || [];
-    }
-
-    setOverview({
-      name: container.nome || "CRM Platform AI",
-      description: container.descrizione || "Relazioni e decisioni commerciali nel perimetro autorizzato del Workspace.",
-      icon: container.icona || "briefcase",
-      items: selectAuthorizedCrmModules(dependencies, modules, hasModuleAccess)
-        .map((module) => ({
-          code: module.codice,
-          name: module.nome,
-          description: module.descrizione,
-          to: module.percorso,
-          icon: getModuleIcon(module.icona),
-        })),
-    });
     setLoading(false);
-  }, [hasModuleAccess]);
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadOverview(), 0);
@@ -113,7 +83,9 @@ function CrmOverview() {
     };
   }, [loadOverview]);
 
-return <ModuleContainerLayout icon={getModuleIcon(overview.icon, BriefcaseBusiness)} eyebrow="Workspace" title={overview.name} description={overview.description} items={overview.items} loading={loading} error={error} onRetry={loadOverview} emptyTitle="Nessuna area CRM disponibile" emptyDescription="L’amministratore può assegnare i moduli CRM dal catalogo Workspace."><CommercialControlDashboard scope="global" embedded /></ModuleContainerLayout>;
+  return <ModuleContainerLayout icon={getModuleIcon(overview.icon, BriefcaseBusiness)} eyebrow="Workspace" title={overview.name} description={overview.description} loading={loading} error={error} onRetry={loadOverview}>
+    <CommercialControlDashboard scope="global" embedded />
+  </ModuleContainerLayout>;
 }
 
 function CrmDirectOverview() {

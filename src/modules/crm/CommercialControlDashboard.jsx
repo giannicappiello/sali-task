@@ -4,6 +4,7 @@ import { AlertTriangle, BriefcaseBusiness, RefreshCw } from "lucide-react";
 import InfoTooltip from "../../components/InfoTooltip";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
 import { supabase } from "../../lib/supabaseClient";
+import { useAuth } from "../../contexts/AuthContext";
 import CrmPeriodFilter, { useCrmPeriod } from "./CrmPeriodFilter";
 import { CrmPageHeader, CrmSectionNav } from "./CrmWorkspaceUI";
 import { formatDate, formatMoney } from "./crmConfig";
@@ -122,6 +123,7 @@ function CustomerTable({ rows, period, privateMode = false }) {
 }
 
 export default function CommercialControlDashboard({ scope, embedded = false }) {
+  const { hasScreenAccess } = useAuth();
   const config = SCOPE[scope] || SCOPE.global;
   const period = useCrmPeriod();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -272,7 +274,25 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
     {loading ? <div className="crm-loading">Calcolo server-side sull’intero dataset filtrato...</div> : <>
       <div className={`crm-control-kpis ${scope === "direct" ? "wide" : ""}`}>{kpis.map(([label, value, note, target, delta]) => <MetricCard key={label} label={label} value={value} note={note} delta={delta} to={cardDestination(label, target)} />)}</div>
 
-      {scope === "global" ? <section className="crm-control-panel" id="business"><header><div><span>Composizione business</span><h3>PRIVATE vs DIRECT</h3></div></header><div className="crm-control-business crm-business-summary">{(data?.business || []).map((row) => <Link key={row.business} to={row.business === "PRIVATE" ? period.withPeriod("/crm/conto-terzi") : period.withPeriod("/crm/direct")}><strong>{row.business}</strong><span>{formatMoney(row.invoice_total)} fatturato</span><span>{formatMoney(row.order_total)} ordinato</span><span>{number(row.customers)} clienti</span>{row.business === "DIRECT" ? <small>BtoB {formatMoney(data?.direct_breakdown?.btob_invoice_total)} · BtoC {formatMoney(data?.direct_breakdown?.btoc_invoice_total)} · Estero {formatMoney(data?.direct_breakdown?.foreign_invoice_total)}</small> : null}</Link>)}</div></section> : null}
+      {scope === "global" ? <section className="crm-control-panel" id="business">
+        <header><div><span>Composizione business</span><h3>PRIVATE vs DIRECT</h3></div></header>
+        <div className="crm-control-business crm-business-summary">{(data?.business || []).map((row) => {
+          const totals = <><strong>{row.business}</strong><span>{formatMoney(row.invoice_total)} fatturato</span><span>{formatMoney(row.order_total)} ordinato</span><span>{number(row.customers)} clienti</span></>;
+          if (row.business === "PRIVATE") return <Link key={row.business} to={period.withPeriod("/crm/conto-terzi")}>{totals}</Link>;
+          return <article className="crm-business-card" key={row.business}>
+            {totals}
+            <div className="crm-business-channels" aria-label="Canali DIRECT">
+              {[
+                ["BtoB", "/crm/b2b", "crm.b2b.dashboard", data?.direct_breakdown?.btob_invoice_total],
+                ["BtoC", "/crm/online", "crm.online.dashboard", data?.direct_breakdown?.btoc_invoice_total],
+              ].map(([label, path, screenCode, amount]) => hasScreenAccess(screenCode)
+                ? <Link key={label} to={period.withPeriod(path, { business: "DIRECT", channel: label, focus: null })} aria-label={`Apri CRM ${label}`}><b>{label} →</b><small>{formatMoney(amount)}</small></Link>
+                : <span key={label} className="crm-channel-unavailable" title="Accesso alla schermata non autorizzato"><b>{label}</b><small>{formatMoney(amount)}</small></span>)}
+            </div>
+            <small>Estero {formatMoney(data?.direct_breakdown?.foreign_invoice_total)}</small>
+          </article>;
+        })}</div>
+      </section> : null}
 
       <section className="crm-control-panel" id="trend"><header><div><span>Andamento</span><h3>Composizione fatturato PRIVATE / DIRECT</h3></div><select aria-label="Raggruppamento andamento" value={granularity} onChange={(event) => setFilter("granularity", event.target.value)}><option value="day">Giorno</option><option value="week">Settimana</option><option value="month">Mese</option></select></header><Trend rows={data?.trend || []} /></section>
 

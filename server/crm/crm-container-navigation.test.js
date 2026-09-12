@@ -21,13 +21,12 @@ test("la route principale CRM apre la panoramica protetta dal catalogo", () => {
   assert.match(guard, /catalogState !== "available"/);
 });
 
-test("la panoramica deriva aree e destinazioni dal catalogo", () => {
+test("la panoramica mantiene il titolo del catalogo senza ripetere i pulsanti superiori", () => {
   const crm = read("src/modules/crm/CrmModule.jsx");
-
-  assert.match(crm, /select\("codice,nome,descrizione,icona,dipendenze_alternative"\)/);
-  assert.match(crm, /select\("codice,nome,descrizione,percorso,icona,attivo"\)/);
-  assert.match(crm, /selectAuthorizedCrmModules\(dependencies, modules, hasModuleAccess\)/);
-  assert.match(crm, /to: module\.percorso/);
+  const overview = crm.slice(crm.indexOf("function CrmOverview()"), crm.indexOf("function CrmDirectOverview()"));
+  assert.match(overview, /select\("codice,nome,descrizione,icona"\)/);
+  assert.match(overview, /CommercialControlDashboard scope="global" embedded/);
+  assert.doesNotMatch(overview, /items=|hasModuleAccess|selectAuthorizedCrmModules/);
 });
 
 test("il catalogo canonico collega CRM a /crm e include il contenitore DIRECT", () => {

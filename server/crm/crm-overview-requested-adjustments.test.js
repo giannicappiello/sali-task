@@ -8,6 +8,17 @@ const css = read("src/modules/crm/commercial-control-dashboard.css");
 const syncClients = read("server/mexal/sync-clients.js");
 const migration = read("supabase/migrations/20260830210000_crm_overview_requested_adjustments.sql");
 
+test("DIRECT exposes separate screen-authorized BtoB and BtoC links, never the obsolete container", () => {
+  const business = dashboard.slice(dashboard.indexOf('className="crm-control-panel" id="business"'), dashboard.indexOf('className="crm-control-panel" id="trend"'));
+  assert.match(business, /<article className="crm-business-card"/);
+  assert.match(business, /\["BtoB", "\/crm\/b2b", "crm\.b2b\.dashboard"/);
+  assert.match(business, /\["BtoC", "\/crm\/online", "crm\.online\.dashboard"/);
+  assert.match(business, /hasScreenAccess\(screenCode\)/);
+  assert.match(business, /period\.withPeriod\(path, \{ business: "DIRECT", channel: label, focus: null \}\)/);
+  assert.doesNotMatch(business, /"\/crm\/direct"/);
+  assert.match(css, /crm-business-channels[\s\S]*min-height:48px/);
+});
+
 test("la CRM Overview non ripete richieste automatiche identiche", () => {
   assert.match(dashboard, /const requestArguments = useMemo/);
   assert.match(dashboard, /const requestKey = useMemo\(\(\) => JSON\.stringify\(requestArguments\)/);

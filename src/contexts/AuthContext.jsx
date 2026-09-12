@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabaseClient";
 import { requiresDirectModuleGrant } from "../config/directCrmAccess";
 import { useLocation } from "react-router-dom";
 import { screenAccessAllowed, screenForPath } from "../config/workspaceScreenAccess";
+import { accessSnapshotSignature, retainEqualAccessValue, retainAccessProfile } from "../config/workspaceAccessSnapshot";
 import {
   featureIsAvailable,
   moduleIsAvailable,
@@ -81,12 +82,13 @@ export function AuthProvider({ children }) {
 
     async function applySession(currentSession) {
       if (!mounted) return;
+      const sameUser = Boolean(currentSession?.user?.id && currentAuthId.current === currentSession.user.id);
       currentAuthId.current = currentSession?.user?.id || null;
       loadGeneration.current += 1;
       setSession(currentSession);
       setAuthUser(currentSession?.user || null);
       try {
-        if (currentSession?.user) await loadProfile(currentSession.user);
+        if (currentSession?.user) await loadProfile(currentSession.user, { refresh: sameUser });
         else {
           setProfile(null);
           setPermissions([]);
@@ -170,7 +172,7 @@ export function AuthProvider({ children }) {
       document.removeEventListener("visibilitychange", onFocus);
       void supabase.removeChannel(channel);
     };
-  }, [authUser]);
+  }, [authUser?.id]);
 
   async function updatePresence(userId) {
     const now = new Date().toISOString();
@@ -233,22 +235,22 @@ export function AuthProvider({ children }) {
     }
     const context = snapshot.access || {};
     const scope = snapshot.scope || {};
-    const signature = JSON.stringify([data.id, context, scope, snapshot.areas, snapshot.module_areas, snapshot.screen_levels, snapshot.screens, snapshot.links]);
+    const signature = accessSnapshotSignature([data.id, context, scope, snapshot.areas, snapshot.module_areas, snapshot.screen_levels, snapshot.screens, snapshot.links]);
     if (lastAccessSignature.current && signature !== lastAccessSignature.current) setAccessEpoch((value) => value + 1);
     lastAccessSignature.current = signature;
     accessRevision.current = snapshot.revision;
     setAuthorizationRevision(snapshot.revision);
-    setProfile({ ...data, ruoli: context.role, reparto_ids: context.department_ids || [],
-      reparti_multipli: snapshot.departments || [] });
-    setPermissions(context.permissions || []);
-    setModuleAccess(context.modules || []);
-    setModuleLevels(context.module_levels || {});
-    setAccessExceptions(context.exceptions || []);
-    setAreaAccess(snapshot.areas || []);
-    setModuleAreas(snapshot.module_areas || {});
-    setScreenCatalog({ screens: snapshot.screens || [], links: snapshot.links || [], levels: snapshot.screen_levels || {} });
-    setDataScope({ mode: scope.mode || "propri", userIds: scope.user_ids || [], departmentIds: scope.department_ids || [],
-      agentIds: scope.agent_ids || [], customerCode: scope.customer_code || null, customerCodes: scope.customer_codes || [] });
+    setProfile((current) => retainAccessProfile(current, { ...data, ruoli: context.role, reparto_ids: context.department_ids || [],
+      reparti_multipli: snapshot.departments || [] }));
+    setPermissions((current) => retainEqualAccessValue(current, context.permissions || []));
+    setModuleAccess((current) => retainEqualAccessValue(current, context.modules || []));
+    setModuleLevels((current) => retainEqualAccessValue(current, context.module_levels || {}));
+    setAccessExceptions((current) => retainEqualAccessValue(current, context.exceptions || []));
+    setAreaAccess((current) => retainEqualAccessValue(current, snapshot.areas || []));
+    setModuleAreas((current) => retainEqualAccessValue(current, snapshot.module_areas || {}));
+    setScreenCatalog((current) => retainEqualAccessValue(current, { screens: snapshot.screens || [], links: snapshot.links || [], levels: snapshot.screen_levels || {} }));
+    setDataScope((current) => retainEqualAccessValue(current, { mode: scope.mode || "propri", userIds: scope.user_ids || [], departmentIds: scope.department_ids || [],
+      agentIds: scope.agent_ids || [], customerCode: scope.customer_code || null, customerCodes: scope.customer_codes || [] }));
     if (!refresh) {
       const now = new Date().toISOString();
       await supabase.from("utenti").update({ ultimo_accesso: now, last_seen: now }).eq("id", data.id);
@@ -441,6 +443,17 @@ export function AuthProvider({ children }) {
 
   const adminUser = isAdmin();
 
+  // Only effective authorization inputs change these callbacks. Token refresh,
+  // presence updates and revisions affecting other users must not reload pages.
+  const accessMethods = useMemo(() => ({
+    hasPermission, hasModuleAccess, hasAreaAccess, hasScreenAccess, canUseScreen,
+    getPersonalAccessDecision, hasExplicitScreenGrant, getModuleScreenGrant,
+    getScreenCodeForPath, hasWorkspaceFeature, getModuleAccessLevel, canUseModule,
+    isAdmin, canViewScopedData, canAccessDepartment,
+    // These functions read only the profile's identity, active flag and role.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [profile?.id, profile?.attivo, profile?.ruoli, permissions, moduleAccess, moduleLevels, accessExceptions, areaAccess, moduleAreas, screenCatalog, dataScope, location.pathname]);
+
   const value = useMemo(
     () => ({
       session,
@@ -460,28 +473,14 @@ export function AuthProvider({ children }) {
       signIn,
       signOut,
       resetPassword,
-      hasPermission,
-      hasModuleAccess,
-      hasAreaAccess,
-      hasScreenAccess,
-      canUseScreen,
-      getPersonalAccessDecision,
-      hasExplicitScreenGrant,
-      getModuleScreenGrant,
-      getScreenCodeForPath,
-      hasWorkspaceFeature,
-      getModuleAccessLevel,
-      canUseModule,
-      isAdmin,
+      ...accessMethods,
       isAdminUser: adminUser,
       canReadEverything: adminUser || dataScope.mode === "tutti",
-      canViewScopedData,
       canManageEverything: adminUser,
-      canAccessDepartment,
       userDepartmentIds: profile?.reparto_ids || [],
       reloadProfile: () => authUser && loadProfile(authUser, { refresh: true }),
     }),
-    [session, authUser, profile, permissions, moduleAccess, moduleLevels, accessExceptions, areaAccess, moduleAreas, screenCatalog, dataScope, loading, authError, authorizationRevision, adminUser, location.pathname]
+    [session, authUser, profile, permissions, moduleAccess, moduleLevels, accessExceptions, areaAccess, moduleAreas, dataScope, loading, authError, authorizationRevision, adminUser, accessMethods]
   );
 
   // Recreate page-local data and query state when the effective perimeter changes.

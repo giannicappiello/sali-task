@@ -6,6 +6,7 @@ import useBackNavigation from "../../hooks/useBackNavigation";
 import { supabase } from "../../lib/supabaseClient";
 import { getModuleIcon } from "../../config/moduleIcons";
 import InfoTooltip from "../../components/InfoTooltip";
+import SettingsWorkspaceNav from "./SettingsWorkspaceNav";
 import { AssociationBadge, AssociationLinks, WorkspaceAssociationFilter, WorkspaceIconPicker, WorkspaceQuickSearch } from "./WorkspaceCatalogControls";
 import { buildWorkspaceAssociations, filterKeepingSelected, matchesAssociationStatus, matchesWorkspaceSearch } from "./workspaceCatalog";
 import "./modules-settings.css";
@@ -62,6 +63,7 @@ const sortModulePickerScreens = (items, selectedCodes) => {
 export default function ModuleManagement() {
   const goBack = useBackNavigation("/settings");
   const { isAdminUser, session } = useAuth();
+  const accessToken = session?.access_token;
   const [modules, setModules] = useState([]);
   const [screens, setScreens] = useState([]);
   const [links, setLinks] = useState([]);
@@ -84,10 +86,10 @@ export default function ModuleManagement() {
   const [message, setMessage] = useState(null);
 
   const load = useCallback(async () => {
-    if (isAdminUser && session?.access_token) {
+    if (isAdminUser && accessToken) {
       const response = await fetch('/api/mexal/automation', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'workspace_catalog_register_private_documents' }),
       });
       if (!response.ok) {
@@ -117,7 +119,7 @@ export default function ModuleManagement() {
       const targetLinks = (linksResult.data || []).filter((link) => link.modulo_codice === targetModule.codice);
       setForm({ ...EMPTY_MODULE, ...targetModule, schermate: targetLinks.map((link) => link.schermata_codice), predefinita: targetLinks.find((link) => link.predefinita)?.schermata_codice || "" });
     } else if (targetScreen) setScreenForm({ ...targetScreen });
-  }, [initialTarget, isAdminUser, session?.access_token]);
+  }, [initialTarget, isAdminUser, accessToken]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load().catch((error) => setMessage({ type: "error", text: error.message })), 0);
@@ -360,11 +362,8 @@ export default function ModuleManagement() {
 
       {message ? <div className={`module-message ${message.type}`}>{message.text}</div> : null}
 
+      <SettingsWorkspaceNav active={view} localSections={["modules", "screens"]} onSelect={setView} />
       <div className="module-toolbar">
-        <div className="module-view-tabs">
-          <button type="button" className={view === "modules" ? "active" : ""} onClick={() => setView("modules")}><Blocks size={17} />Moduli</button>
-          <button type="button" className={view === "screens" ? "active" : ""} onClick={() => setView("screens")}><Monitor size={17} />Schermate</button>
-        </div>
         <WorkspaceQuickSearch value={search} onChange={setSearch}/>
         <select value={provider} onChange={(event) => setProvider(event.target.value)}><option value="all">Tutte le origini</option><option value="workspace">Workspace</option><option value="progremes">ProgreMES</option></select>
         <select value={areaFilter} onChange={(event) => setAreaFilter(event.target.value)} aria-label="Filtra per area"><option value="all">Tutte le aree</option>{areas.map((area) => <option key={area.codice} value={area.codice}>{area.nome}</option>)}</select>
@@ -375,7 +374,7 @@ export default function ModuleManagement() {
 
       {view === "modules" ? (
         <div className="module-composer-grid">
-          <section className="module-catalog-list">
+          <section className="module-catalog-list" tabIndex={0} aria-label="Elenco elementi da configurare">
             {visibleModules.map((item) => {
               const screenAssociations = associations.moduleLinks.get(item.codice) || [];
               const menuAssociations = associations.moduleMenus.get(item.codice) || [];
@@ -426,7 +425,7 @@ export default function ModuleManagement() {
         </div>
       ) : (
         <div className="module-composer-grid">
-          <section className="module-catalog-list">
+          <section className="module-catalog-list" tabIndex={0} aria-label="Elenco elementi da configurare">
             {visibleScreens.map((screen) => { const moduleAssociations=associations.screenLinks.get(screen.codice)||[]; const ScreenIcon=getModuleIcon(screen.icona,screen.protetta?ShieldCheck:Monitor); return <div className={`module-catalog-item catalog-with-associations ${screenForm?.codice === screen.codice ? "active" : ""}`} key={screen.codice}><button type="button" className="module-catalog-select" onClick={() => editScreen(screen)}><span className="module-list-icon"><ScreenIcon /></span><span><strong>{screen.nome}</strong><small>{screen.codice} · {screenRouteSummary(screen)}</small><span className="catalog-relations">Moduli: {moduleAssociations.slice(0,2).map((link)=>link.module?.nome).filter(Boolean).join(", ")||"nessuno"}{moduleAssociations.length>2?` · + ${moduleAssociations.length-2}`:""}</span></span><AssociationBadge associated={moduleAssociations.length>0} orphanLabel="Non raggiungibile"/><Pencil size={16} /></button><Link className="module-preview-link" to={`/settings/layout-builder/screen/${encodeURIComponent(screen.codice)}`} title={`Modifica la struttura della schermata ${screen.nome}`}><ExternalLink size={16} /><span>Apri</span></Link></div>; })}
             {visibleScreens.length === 0 ? <p className="catalog-empty">Nessuna schermata corrisponde ai filtri.</p> : null}
           </section>

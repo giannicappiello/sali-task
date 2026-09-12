@@ -3,6 +3,7 @@ import { Bot, CheckCircle2, Eye, Menu, Search, ShieldCheck, XCircle } from "luci
 import { supabase } from "../../lib/supabaseClient";
 import InfoTooltip from "../../components/InfoTooltip";
 import { useAuth } from "../../contexts/AuthContext";
+import SettingsWorkspaceNav from "./SettingsWorkspaceNav";
 import "./access-control.css";
 
 const levelLabel = { nessuno: "Non visibile", lettura: "Consultazione", scrittura: "Operatività", amministrazione: "Gestione" };
@@ -107,6 +108,7 @@ export default function AccessCheck() {
   if (loadError) return <div className="access-message error" role="alert">Impossibile verificare gli accessi: {loadError}</div>;
 
   return <section className="access-page">
+      <SettingsWorkspaceNav active="access" />
     <div className="access-check-toolbar"><label>Utente<select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>{data.users.map((user) => <option key={user.id} value={user.id}>{fullName(user)}</option>)}</select></label><label className="access-search"><Search size={17}/><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cerca nel risultato..."/></label></div>
     {selectedUser && auditReady && <div className="access-audit-summary"><div><span className="access-avatar">{`${selectedUser.nome?.[0] || ""}${selectedUser.cognome?.[0] || ""}`}</span><span><strong>{fullName(selectedUser)}</strong><small>{selectedUser.ruoli?.nome || "Nessun ruolo"}</small></span></div><div><strong>{result.areas.filter((item) => item.allowed).length}</strong><span>Aree<InfoTooltip label="Aree" text="Numero di aree che risultano accessibili all’utente dai reparti ed eccezioni personali." /></span></div><div><strong>{result.modules.filter((item) => item.allowed).length}</strong><span>Moduli<InfoTooltip label="Moduli" text="Numero di moduli che risultano accessibili all’utente dopo tutte le regole autorizzative." /></span></div><div><strong>{result.screens.filter((item) => item.allowed).length}</strong><span>Schermate<InfoTooltip label="Schermate" text="Numero di schermate visibili tramite aree, moduli autorizzati o eccezioni personali." /></span></div><div><strong>{result.exceptions?.length || 0}</strong><span>Eccezioni<InfoTooltip label="Eccezioni" text="Numero di eccezioni personali attive e non scadute applicate all’utente." /></span></div></div>}
     {selectedId && !auditReady && <div className="access-message" role="status">{moduleAudit.userId === selectedId && moduleAudit.error ? `Verifica non disponibile: ${moduleAudit.error}` : "Calcolo delle autorizzazioni effettive..."}</div>}

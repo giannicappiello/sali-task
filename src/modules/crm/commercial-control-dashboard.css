@@ -7,3 +7,11 @@
 @media(max-width:820px){.scope-private .crm-control-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.scope-private .crm-control-kpis{grid-template-columns:1fr}.crm-control-navigation{padding:8px 10px}}
 .crm-control-kpi{text-decoration:none}.crm-control-kpi em{margin-top:auto;color:#166db0;font-size:11px;font-style:normal;font-weight:800}
+.crm-business-card{display:grid;gap:6px;padding:14px;border:1px solid #e0e8f2;border-radius:14px;color:#24364d;background:#f9fbfe;font-size:12px;min-width:0}
+.crm-business-card>strong{font-size:17px;color:#0c4f81}
+.crm-business-card small{color:#52647a;line-height:1.45}
+.crm-business-channels{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:6px}
+.crm-business-channels>a,.crm-business-channels>span{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:4px;min-height:48px;padding:8px;border:1px solid #cad7e6;border-radius:10px;text-align:center;overflow-wrap:anywhere}
+.crm-business-channels>a{background:#fff;color:#0c4f81;text-decoration:none}
+.crm-business-channels>a:hover,.crm-business-channels>a:focus-visible{border-color:#166db0;background:#eef6ff;outline:2px solid #166db0;outline-offset:2px}
+.crm-channel-unavailable{color:#64748b;background:#f1f5f9}

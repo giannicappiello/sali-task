@@ -13,7 +13,7 @@ const SCREEN_PRESENTATION = Object.freeze({
 });
 
 export default function AnalyticsHub() {
-  const { profile, hasModuleAccess, hasAreaAccess, hasScreenAccess, canUseModule, isAdminUser } = useAuth();
+  const { profile, hasModuleAccess, hasScreenAccess, canUseModule, canUseScreen, isAdminUser } = useAuth();
   const departmentIds = useMemo(() => profile?.reparto_ids || [], [profile?.reparto_ids]);
   const [catalog, setCatalog] = useState({ screens: [], links: [], progremesAccess: [] });
   const [loading, setLoading] = useState(true);
@@ -66,7 +66,7 @@ export default function AnalyticsHub() {
       .map((link) => ({ ...screenByCode.get(link.schermata_codice), ...link }))
       .filter((screen) => screen.codice && screen.metadati?.kind !== "topic" && screen.percorso !== "/analisi-dati")
       .filter((screen) => hasScreenAccess(screen.codice, "analisi_dati"))
-      .filter((screen) => hasAreaAccess(screen.area))
+      .filter((screen) => canUseScreen(screen.codice, "lettura"))
       .filter((screen) => {
         if (screen.provider === "progremes") {
           const externalCode = screen.metadati?.external_code || screen.codice.replace(/^progremes\./, "");
@@ -74,12 +74,9 @@ export default function AnalyticsHub() {
             && canUseModule("progremes", "lettura")
             && (isAdminUser || allowedProgremes.has(externalCode));
         }
-        const sourceModule = String(screen.metadati?.source_module || screen.metadati?.required_module || "").trim();
-        if (sourceModule && !hasModuleAccess(sourceModule)) return false;
-        if (sourceModule && !canUseModule(sourceModule, "lettura")) return false;
         return true;
       });
-  }, [canUseModule, catalog.links, catalog.progremesAccess, catalog.screens, hasAreaAccess, hasModuleAccess, hasScreenAccess, isAdminUser]);
+  }, [canUseModule, canUseScreen, catalog.links, catalog.progremesAccess, catalog.screens, hasModuleAccess, hasScreenAccess, isAdminUser]);
 
   return <ModuleContainerLayout
     icon={BarChart3}

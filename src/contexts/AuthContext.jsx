@@ -14,7 +14,7 @@ import {
 } from "../config/workspaceModules";
 
 const AuthContext = createContext(null);
-const EMPTY_DATA_SCOPE = Object.freeze({ mode: "propri", userIds: [], departmentIds: [], agentIds: [], customerCode: null, customerCodes: [] });
+const EMPTY_DATA_SCOPE = Object.freeze({ mode: "propri", commercialMode: "propri", userIds: [], departmentIds: [], agentIds: [], customerCode: null, customerCodes: [] });
 const WORKSPACE_ADMIN_ROLE_NAMES = new Set(["admin"]);
 
 function workspaceRoleIsAdmin(role) {
@@ -249,7 +249,7 @@ export function AuthProvider({ children }) {
     setAreaAccess((current) => retainEqualAccessValue(current, snapshot.areas || []));
     setModuleAreas((current) => retainEqualAccessValue(current, snapshot.module_areas || {}));
     setScreenCatalog((current) => retainEqualAccessValue(current, { screens: snapshot.screens || [], links: snapshot.links || [], levels: snapshot.screen_levels || {} }));
-    setDataScope((current) => retainEqualAccessValue(current, { mode: scope.mode || "propri", userIds: scope.user_ids || [], departmentIds: scope.department_ids || [],
+    setDataScope((current) => retainEqualAccessValue(current, { mode: scope.mode || "propri", commercialMode: scope.commercial_mode || scope.mode || "propri", userIds: scope.user_ids || [], departmentIds: scope.department_ids || [],
       agentIds: scope.agent_ids || [], customerCode: scope.customer_code || null, customerCodes: scope.customer_codes || [] }));
     if (!refresh) {
       const now = new Date().toISOString();

@@ -33,6 +33,7 @@ export default function useOrdersAccess(moduleCode = "prof") {
   const workspaceModuleCode = moduleDefinition.workspaceCode;
   const customerCode = dataScope?.customerCode || null;
   const scopeMode = dataScope?.mode || "propri";
+  const commercialMode = dataScope?.commercialMode || scopeMode;
   const scopeAgentKey = JSON.stringify(dataScope?.agentIds || []);
   const [loading, setLoading] = useState(true);
   const [access, setAccess] = useState(emptyAccess());
@@ -118,7 +119,7 @@ export default function useOrdersAccess(moduleCode = "prof") {
     return () => {
       active = false;
     };
-  }, [profile?.id, isAdminUser, customerCode, scopeMode, scopeAgentKey, moduleDefinition.integrationCode]);
+  }, [profile?.id, isAdminUser, customerCode, scopeMode, commercialMode, scopeAgentKey, moduleDefinition.integrationCode]);
 
   const permissions = useMemo(() => {
     const canReadModule = canUseModule(workspaceModuleCode, "lettura");
@@ -133,13 +134,14 @@ export default function useOrdersAccess(moduleCode = "prof") {
     const isAgent = enabled && role === "agente";
     const isCustomer = enabled && role === "cliente";
     const canCreateCustomerPrivateOrder = isCustomer && workspaceModuleCode === "ordini_private";
+    const canReadAllCommercial = !isCustomer && enabled && commercialMode === "tutti";
 
     const agentCode = isAgent ? access.codice_agente_mexal : null;
     const managedAgents = isAreaManager ? access.agenti_gestiti : [];
 
     let visibleAgents = [];
 
-    if (isAdmin || (isBackoffice && scopeMode === "tutti")) {
+    if (isAdmin || canReadAllCommercial) {
       visibleAgents = null;
     } else if (isBackoffice) {
       visibleAgents = access.agenti_gestiti;
@@ -161,14 +163,14 @@ export default function useOrdersAccess(moduleCode = "prof") {
       agentCode,
       managedAgents,
       visibleAgents,
-      canSeeAll: isAdmin || (isBackoffice && scopeMode === "tutti"),
+      canSeeAll: isAdmin || canReadAllCommercial,
       canWriteAll: !isCustomer && canWriteModule && (isAdmin || (isBackoffice && scopeMode === "tutti")),
       canAccessOrders: isAdmin || enabled,
       canWriteOrders: canCreateCustomerPrivateOrder || (!isCustomer && (isAdmin || (enabled && canWriteModule))),
       canUseAIOrderGeneration: !isCustomer && (isAdmin || (enabled && canWriteModule)),
       canManageOrders: !isCustomer && (isAdmin || (enabled && canManageModule)),
     };
-  }, [access, canUseModule, customerCode, scopeMode, workspaceModuleCode]);
+  }, [access, canUseModule, customerCode, scopeMode, commercialMode, workspaceModuleCode]);
 
   return {
     loading,

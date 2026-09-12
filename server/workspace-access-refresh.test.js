@@ -18,6 +18,18 @@ function harness() {
   return { fn, requests, state, loadGeneration, currentAuthId };
 }
 const snapshot = (departments) => ({ data: { profile: { id: 'one', attivo: true }, access: { department_ids: departments, role: {}, modules: departments }, screen_levels: {}, scope: { mode: 'team', department_ids: departments } } });
+test('commercial visibility refresh never promotes operational scope and revocation remounts readers', async () => {
+  const h = harness(), enabled = snapshot(['marketing']), revoked = snapshot(['marketing']);
+  enabled.data.scope.commercial_mode = 'tutti';
+  revoked.data.scope.commercial_mode = 'team';
+  let run = h.fn({id:'one'}, {refresh:true}); h.requests.shift()(enabled); await run;
+  assert.equal(h.state.setDataScope.mode, 'team');
+  assert.equal(h.state.setDataScope.commercialMode, 'tutti');
+  run = h.fn({id:'one'}, {refresh:true}); h.requests.shift()(revoked); await run;
+  assert.equal(h.state.setDataScope.commercialMode, 'team');
+  assert.deepEqual(h.state.setDataScope.departmentIds, ['marketing']);
+  assert.equal(h.state.setAccessEpoch, 1);
+});
 test('department refresh replaces old memberships and grants, never merges', async () => {
   const h = harness();
   let run = h.fn({id:'one'}, {refresh:true}); h.requests.shift()(snapshot(['old'])); await run;

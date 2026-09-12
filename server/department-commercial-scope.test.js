@@ -52,8 +52,9 @@ test("admin scope retains bypass without requesting a fake service-role user sco
 });
 test("orders backoffice cannot bypass organizational scope and reloads after membership changes", () => {
   const code = read("../src/modules/orders/pages/useOrdersAccess.js");
-  assert.match(code, /canSeeAll: isAdmin \|\| \(isBackoffice && scopeMode === "tutti"\)/);
-  assert.match(code, /customerCode, scopeMode, scopeAgentKey, moduleDefinition.integrationCode/);
+  assert.match(code, /canSeeAll: isAdmin \|\| canReadAllCommercial/);
+  assert.match(code, /canReadAllCommercial = !isCustomer && enabled && commercialMode === "tutti"/);
+  assert.match(code, /customerCode, scopeMode, commercialMode, scopeAgentKey, moduleDefinition.integrationCode/);
   assert.match(code, /enabled = access.enabled === true && canReadModule/);
 });
 test("SQL scope is canonical, active-only, customer-safe and reused by agent visibility", () => {

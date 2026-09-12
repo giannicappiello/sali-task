@@ -1,3 +1,4 @@
+import { screenAreaCodes } from "./workspaceScreenAreas.js";
 // Screen grants never mutate the list of enabled modules.
 export function screenAccessAllowed({ screen, activeUser, admin, exception, areaAllowed, moduleAllowed }) {
   if (!activeUser || !screen || screen.attiva === false) return false;
@@ -5,7 +6,7 @@ export function screenAccessAllowed({ screen, activeUser, admin, exception, area
   if (screen.metadati?.admin_only === true) return false;
   if (exception?.decision === "nega") return false;
   if (exception?.decision === "consenti") return true;
-  return Boolean((screen.area && areaAllowed) || moduleAllowed);
+  return Boolean((screenAreaCodes(screen).length && areaAllowed) || moduleAllowed);
 }
 
 export function screenForPath(screens, pathname) {

@@ -41,7 +41,7 @@ export default function MenuManagement() {
       supabase.from("workspace_menu_voci").select("*").order("ordine").order("nome"),
       supabase.from("workspace_menu_moduli").select("*").order("ordine"),
       supabase.from("workspace_moduli").select("codice,nome,descrizione,icona,area,attivo,mostra_menu,ordine").order("ordine").order("nome"),
-      supabase.from("workspace_schermate").select("codice,nome,descrizione,area,provider,percorso,attiva").order("ordine").order("nome"),
+      supabase.from("workspace_schermate").select("codice,nome,descrizione,area,aree,provider,percorso,attiva").order("ordine").order("nome"),
       supabase.from("workspace_moduli_schermate").select("*").order("ordine"),
       supabase.from("ruoli").select("id,nome,amministratore_workspace").order("nome"),
       supabase.from("reparti").select("id,nome,attivo").order("nome"),

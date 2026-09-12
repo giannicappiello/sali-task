@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { screenAccessAllowed, screenForPath } from '../src/config/workspaceScreenAccess.js';
+import { screenAreaCodes } from '../src/config/workspaceScreenAreas.js';
 import { requirePermission } from './mexal/lib/auth.js';
 import { readFileSync } from 'node:fs';
 import * as moduleRules from '../src/config/workspaceModules.js';
@@ -72,7 +73,7 @@ function authDecisions(overrides = {}) {
     screenCatalog: { screens: [screen, { ...screen, codice: 'agents', area: 'private_area', percorso: '/integrations/mexal/agenti' }],
       links: [{ modulo_codice: 'integrazioni', schermata_codice: screen.codice }, { modulo_codice: 'integrazioni', schermata_codice: 'agents' }] },
     location: { pathname: '/integrations/mexal' }, dataScope: {}, ...overrides };
-  const args = { ...state, ...moduleRules, screenAccessAllowed, screenForPath, requiresDirectModuleGrant, WORKSPACE_ADMIN_ROLE_NAMES: new Set(['admin']) };
+  const args = { ...state, ...moduleRules, screenAreaCodes, screenAccessAllowed, screenForPath, requiresDirectModuleGrant, WORKSPACE_ADMIN_ROLE_NAMES: new Set(['admin']) };
   return new Function(...Object.keys(args), `${authHelpers}\n${decisions}\nreturn { hasScreenAccess, hasModuleAccess, hasPermission, canUseScreen, getModuleScreenGrant };`)(...Object.values(args));
 }
 test('AuthContext allows area screen, keeps module and sibling denied, preserves assigned operation', () => {

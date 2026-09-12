@@ -4,7 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { getModuleIcon } from "../config/moduleIcons";
 
 export default function useOrderedModuleScreens(moduleCode, definitions) {
-  const { hasAreaAccess } = useAuth();
+  const { hasScreenAccess } = useAuth();
   const [links, setLinks] = useState(null);
 
   useEffect(() => {
@@ -34,9 +34,12 @@ export default function useOrderedModuleScreens(moduleCode, definitions) {
   }, [moduleCode]);
 
   return useMemo(() => {
-    if (!links) return { items: definitions, defaultItem: definitions[0] || null };
+    if (!links) {
+      const items = definitions.filter((item) => hasScreenAccess(item.screenCode, moduleCode));
+      return { items, defaultItem: items[0] || null };
+    }
     const definitionByCode = new Map(definitions.map((item) => [item.screenCode, item]));
-    const visibleLinks = links.filter((link) => hasAreaAccess(link.workspace_schermate?.area));
+    const visibleLinks = links.filter((link) => hasScreenAccess(link.schermata_codice, moduleCode));
     const items = visibleLinks.map((link) => {
       const definition = definitionByCode.get(link.schermata_codice);
       return definition ? { ...definition,icon:getModuleIcon(link.workspace_schermate?.icona,definition.icon) } : null;
@@ -46,5 +49,5 @@ export default function useOrderedModuleScreens(moduleCode, definitions) {
       items,
       defaultItem: items.find((item) => item.screenCode===defaultLink?.schermata_codice) || items[0] || null,
     };
-  }, [definitions, hasAreaAccess, links]);
+  }, [definitions, hasScreenAccess, links, moduleCode]);
 }

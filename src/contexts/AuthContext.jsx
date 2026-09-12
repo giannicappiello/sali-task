@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabaseClient";
 import { requiresDirectModuleGrant } from "../config/directCrmAccess";
 import { useLocation } from "react-router-dom";
 import { screenAccessAllowed, screenForPath } from "../config/workspaceScreenAccess";
+import { screenAreaCodes } from "../config/workspaceScreenAreas";
 import { accessSnapshotSignature, retainEqualAccessValue, retainAccessProfile } from "../config/workspaceAccessSnapshot";
 import {
   featureIsAvailable,
@@ -401,7 +402,7 @@ export function AuthProvider({ children }) {
     const screen = screenCatalog.screens.find((item) => item.codice === screenCode);
     const modules = screenCatalog.links.filter((link) => link.schermata_codice === screenCode).map((link) => link.modulo_codice);
     return screenAccessAllowed({ screen, activeUser: Boolean(profile && profile.attivo !== false), admin: isAdmin(),
-      exception: getPersonalException("schermata", screenCode), areaAllowed: screen?.area && hasAreaAccess(screen.area),
+      exception: getPersonalException("schermata", screenCode), areaAllowed: screenAreaCodes(screen).some(hasAreaAccess),
       moduleAllowed: moduleCode ? modules.includes(moduleCode) && hasModuleAccess(moduleCode) : modules.some(hasModuleAccess) });
   }
 

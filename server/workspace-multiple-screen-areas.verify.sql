@@ -1,0 +1,53 @@
+-- Execute after the migration in a transaction and ROLLBACK.
+do $test$
+declare actor uuid; admin_auth uuid; auth_actor uuid; before_revision bigint; failed boolean; payload jsonb; result text;
+begin
+ select id,auth_user_id into actor,auth_actor from public.utenti
+ where attivo and not public.workspace_user_is_admin(auth_user_id) and auth_user_id is not null limit 1;
+ select auth_user_id into admin_auth from public.utenti where attivo and public.workspace_user_is_admin(auth_user_id) limit 1;
+ if actor is null or admin_auth is null then raise exception 'Active admin/non-admin fixtures required'; end if;
+ perform set_config('request.jwt.claim.sub',admin_auth::text,true);
+ perform set_config('request.jwt.claim.role','authenticated',true);
+ insert into public.workspace_aree(codice,nome) values ('test_multi_a','Test A'),('test_multi_b','Test B');
+ insert into public.workspace_schermate(codice,nome,percorso,area) values('test.multi','Test','/test-multi','test_multi_a');
+ if (select aree from public.workspace_schermate where codice='test.multi') <> array['test_multi_a'] then raise exception 'Legacy insert not backfilled'; end if;
+ if public.workspace_screen_level_for_user(actor,'test.multi')<>'nessuno' then raise exception 'Unassigned screen visible'; end if;
+ insert into public.workspace_utenti_aree(utente_id,area_codice) values(actor,'test_multi_b');
+ select revision into before_revision from public.workspace_access_revision where id;
+ payload=jsonb_build_object('codice','test.multi','nome','Test','aree',jsonb_build_array('test_multi_a','test_multi_b','test_multi_b'));
+ perform public.admin_update_workspace_screen(payload);
+ if (select aree from public.workspace_schermate where codice='test.multi')<>array['test_multi_a','test_multi_b'] then raise exception 'Multi-area save/normalization failed'; end if;
+ if (select count(*) from public.workspace_schermate_aree where schermata_codice='test.multi')<>2 then raise exception 'FK links missing'; end if;
+ if (select revision from public.workspace_access_revision where id)<=before_revision then raise exception 'Access revision not refreshed'; end if;
+ if public.workspace_screen_level_for_user(actor,'test.multi')='nessuno' then raise exception 'Second-area grant not effective without module'; end if;
+ if not exists(select 1 from public.workspace_inspect_screen_access(actor) where codice='test.multi' and reason like '%test_multi_b%') then raise exception 'Audit lost second area'; end if;
+ update public.workspace_schermate set area='workspace',descrizione='resync' where codice='test.multi';
+ if (select aree from public.workspace_schermate where codice='test.multi')<>array['test_multi_a','test_multi_b'] then raise exception 'Sync overwrote areas'; end if;
+ failed=false;
+ begin delete from public.workspace_aree where codice='test_multi_b'; exception when foreign_key_violation then failed=true; end;
+ if not failed then raise exception 'Referenced secondary area deleted'; end if;
+ insert into public.workspace_eccezioni_utente(utente_id,ambito,codice,decisione) values(actor,'schermata','test.multi','nega');
+ if public.workspace_screen_level_for_user(actor,'test.multi')<>'nessuno' then raise exception 'Screen denial bypassed'; end if;
+ update public.workspace_eccezioni_utente set valida_fino_a=now()-interval '1 day' where utente_id=actor and codice='test.multi';
+ if public.workspace_screen_level_for_user(actor,'test.multi')='nessuno' then raise exception 'Expired denial persisted'; end if;
+ perform public.admin_update_workspace_screen(payload||jsonb_build_object('aree',jsonb_build_array('test_multi_a')));
+ if public.workspace_screen_level_for_user(actor,'test.multi')<>'nessuno' then raise exception 'Removed area still authorizes'; end if;
+ if exists(select 1 from public.workspace_schermate_aree where schermata_codice='test.multi' and area_codice='test_multi_b') then raise exception 'Stale FK association'; end if;
+ update public.workspace_eccezioni_utente set decisione='consenti',valida_fino_a=null where utente_id=actor and codice='test.multi';
+ if public.workspace_screen_level_for_user(actor,'test.multi')='nessuno' then raise exception 'Personal screen grant stopped working'; end if;
+ update public.workspace_schermate set attiva=false where codice='test.multi';
+ if public.workspace_screen_level_for_user(actor,'test.multi')<>'nessuno' then raise exception 'Inactive screen granted'; end if;
+ update public.workspace_schermate set attiva=true,metadati=jsonb_build_object('admin_only',true) where codice='test.multi';
+ if public.workspace_screen_level_for_user(actor,'test.multi')<>'nessuno' then raise exception 'Admin-only restriction bypassed'; end if;
+ failed=false;
+ begin perform public.admin_update_workspace_screen(payload||jsonb_build_object('aree','[]'::jsonb)); exception when raise_exception then failed=true; end;
+ if not failed then raise exception 'Empty areas accepted'; end if;
+ failed=false;
+ begin perform public.admin_update_workspace_screen(payload||jsonb_build_object('aree',jsonb_build_array('test_nonexistent'))); exception when raise_exception then failed=true; end;
+ if not failed then raise exception 'Unknown area accepted'; end if;
+ perform set_config('request.jwt.claim.sub',auth_actor::text,true);
+ failed=false;
+ begin perform public.admin_update_workspace_screen(payload); exception when insufficient_privilege then failed=true; end;
+ if not failed then raise exception 'Non-admin changed screen areas'; end if;
+ if not exists(select 1 from jsonb_array_elements(public.workspace_session_access()->'screens') s where s->>'codice'='test.multi' and s->'aree'=jsonb_build_array('test_multi_a')) then raise exception 'Session omits areas'; end if;
+end $test$;

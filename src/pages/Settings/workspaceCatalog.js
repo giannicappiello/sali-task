@@ -1,3 +1,5 @@
+import { screenAreaCodes } from "../../config/workspaceScreenAreas.js";
+
 export const normalizeWorkspaceSearch = (value) => String(value ?? "")
   .normalize("NFD")
   .replace(/[\u0300-\u036f]/g, "")
@@ -50,7 +52,7 @@ export function buildWorkspaceAssociations({ modules = [], screens = [], links =
   const areaModules = new Map(areas.map((item) => [item.codice, []]));
   const areaScreens = new Map(areas.map((item) => [item.codice, []]));
   modules.forEach((item) => areaModules.get(item.area)?.push(item));
-  screens.forEach((item) => areaScreens.get(item.area)?.push(item));
+  screens.forEach((item) => screenAreaCodes(item).forEach((code) => areaScreens.get(code)?.push(item)));
 
   links.forEach((link) => {
     moduleLinks.get(link.modulo_codice)?.push({ ...link, screen: screenByCode.get(link.schermata_codice) });

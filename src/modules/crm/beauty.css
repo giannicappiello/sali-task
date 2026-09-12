@@ -1,0 +1,29 @@
+/* Scoped to CRM BeautyDays: retain other CRM tables and their filters. */
+.crm-beauty-orders-dashboard { min-width:0; max-width:100%; }
+.crm-beauty-orders-dashboard .crm-kpi-grid { grid-template-columns:repeat(6,minmax(0,1fr)); gap:12px; }
+.crm-beauty-orders-dashboard .crm-kpi { min-width:0; padding:18px 14px; }
+.crm-beauty-orders-dashboard .crm-kpi strong { font-size:clamp(1.25rem,2.1vw,2.1rem); overflow-wrap:anywhere; }
+.crm-beauty-table-wrap { width:100%; max-width:100%; }
+.crm-table.crm-beauty-table { table-layout:fixed; width:100%; min-width:0; }
+.crm-beauty-table .beauty-client-col { width:25%; }
+.crm-beauty-table .beauty-date-col { width:12%; }
+.crm-beauty-table .beauty-state-col { width:11%; }
+.crm-beauty-table .beauty-units-col { width:7%; }
+.crm-table.crm-beauty-table th,.crm-table.crm-beauty-table td { padding:10px 8px; overflow-wrap:anywhere; white-space:normal; font-size:.8rem; }
+.crm-table.crm-beauty-table th { font-size:.73rem; line-height:1.35; }
+.crm-beauty-table .workspace-table-column-controls { min-width:0; grid-template-columns:1.5rem minmax(0,1fr); gap:3px; }
+.crm-beauty-table .workspace-table-sort-button { width:1.5rem; height:1.75rem; }
+.crm-beauty-table .workspace-table-column-filter { min-width:0; padding:0 4px; }
+@media(max-width:1200px) {
+  .crm-beauty-orders-dashboard .crm-kpi-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+}
+@media(max-width:700px) {
+  .crm-beauty-orders-dashboard .crm-kpi-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .crm-table.crm-beauty-table,.crm-beauty-table tbody,.crm-beauty-table tr,.crm-beauty-table td { display:block; width:100%; box-sizing:border-box; }
+  .crm-beauty-table colgroup { display:none; }
+  .crm-beauty-table thead { display:block; padding:8px; }
+  .crm-beauty-table thead tr { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .crm-beauty-table tbody tr { border-top:2px solid #dbe4f0; padding:6px 8px; }
+  .crm-table.crm-beauty-table td { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px; border-bottom:1px solid #edf2f7; }
+  .crm-beauty-table td::before { content:attr(data-label); color:#64748b; font-size:.75rem; font-weight:600; }
+}

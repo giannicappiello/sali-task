@@ -11,7 +11,7 @@ const activities = read("src/modules/crm/CrmActivitiesPage.jsx");
 const analytics = read("src/modules/crm/CrmAnalyticsPage.jsx");
 const navigation = read("src/modules/crm/crmNavigation.js");
 const beauty = read("src/modules/crm/CrmBeautyDays.jsx");
-const edge = read("supabase/functions/report-giornate-api/index.ts");
+const edge = read("supabase/functions/report-giornate-api/index.ts") + read("supabase/functions/report-giornate-api/crmBeautyData.js");
 const ai = read("server/ai/crm-brief.js");
 
 test("CRM Core aggiunge solo strutture additive, configurabili e protette", () => {

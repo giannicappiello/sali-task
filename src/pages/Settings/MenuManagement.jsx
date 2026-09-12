@@ -148,9 +148,11 @@ export default function MenuManagement() {
 
   async function deleteArea() {
     const area = catalog.areas.find((item) => item.codice === selectedArea);
-    const usedBy = catalog.modules.filter((item) => item.area === area?.codice).map((item) => item.nome);
-    const warning = usedBy.length ? `\n\nQuesto elemento è utilizzato da:\n- ${usedBy.join("\n- ")}` : "";
-    if (!area || area.protetta || !await window.workspaceConfirm(`Eliminare l’area “${area.nome}”?${warning}`)) return;
+    if (!isAdminUser || !area || area.protetta) return;
+    const moduleCount = (associations.areaModules.get(area.codice) || []).length;
+    const screenCount = (associations.areaScreens.get(area.codice) || []).length;
+    if (moduleCount || screenCount) return setMessage({ type: "error", text: `L’area non è vuota: contiene ${moduleCount} moduli e ${screenCount} schermate. Spostali in un’altra area prima di eliminarla.` });
+    if (!await window.workspaceConfirm(`Eliminare l’area “${area.nome}”? Verranno rimosse anche le autorizzazioni assegnate a questa area.`)) return;
     const { error } = await supabase.from("workspace_aree").delete().eq("codice", area.codice);
     if (error) return setMessage({ type: "error", text: "Sposta prima moduli e schermate collegati a questa Area." });
     setSelectedArea(""); setAreaForm(EMPTY_AREA); await load();

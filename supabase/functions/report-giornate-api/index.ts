@@ -92,7 +92,7 @@ Deno.serve(async (req) => {
         if (updateError) throw updateError;
         access = { ...access, ...ensured };
       }
-      const organizationScope = await loadOrganizationScope(primary, profile, access, isAdmin);
+      const organizationScope = await loadOrganizationScope(primary, scopedPrimary, access, isAdmin);
       return json({
         user_id: profile.id,
         external_user_id: access.external_user_id,
@@ -101,6 +101,7 @@ Deno.serve(async (req) => {
         external_agent_id: access.external_agent_id,
         visible_beauty_ids: organizationScope.visibleBeautyIds,
         access_level: isAdmin ? "admin" : access.access_level,
+        data_scope_mode: organizationScope.mode,
         allowed_pages: isAdmin
           ? ["dashboard","aperture","giornate","analisi"]
           : normalizeAllowedPages(access.allowed_pages),
@@ -119,7 +120,7 @@ Deno.serve(async (req) => {
       if (!isAdmin && !["write", "admin"].includes(access.access_level)) {
         return json({ error: "Accesso in sola lettura" }, 403);
       }
-      const organizationScope = await loadOrganizationScope(primary, profile, access, isAdmin);
+      const organizationScope = await loadOrganizationScope(primary, scopedPrimary, access, isAdmin);
       const result = await ensureClientLink(primary, report, body.codice_cliente, organizationScope, isAdmin);
       return json(result);
     }
@@ -151,7 +152,7 @@ Deno.serve(async (req) => {
     }
 
     if (body.action === "query") {
-      const organizationScope = await loadOrganizationScope(primary, profile, access, isAdmin);
+      const organizationScope = await loadOrganizationScope(primary, scopedPrimary, access, isAdmin);
       if (!allowedTables.has(body.table)) return json({ error: `Tabella non autorizzata: ${body.table}` }, 403);
       const write = ["insert", "update", "delete"].includes(body.operation);
       if (write && !isAdmin && !["write", "admin"].includes(access.access_level)) return json({ error: "Accesso in sola lettura" }, 403);
@@ -502,43 +503,34 @@ function applyFilter(query: any, f: any) {
   return query;
 }
 
-async function loadOrganizationScope(primary: any, profile: any, access: any, isAdmin: boolean) {
-  if (isAdmin) return { visibleAgentIds: null, visibleBeautyIds: null };
-
-  const visibleAgentIds = new Set<string>();
-  if (profile.mexal_agente_id) visibleAgentIds.add(profile.mexal_agente_id);
-  if (access.mexal_agente_id) visibleAgentIds.add(access.mexal_agente_id);
-
-  const managed = await primary
-    .from("mexal_agenti")
-    .select("id")
-    .eq("responsabile_utente_id", profile.id)
-    .eq("attivo_mexal", true);
-  if (managed.error) throw managed.error;
-  for (const agent of managed.data || []) visibleAgentIds.add(agent.id);
-
-  const ids = [...visibleAgentIds];
-  if (!ids.length) {
-    return {
-      visibleAgentIds: [],
-      visibleBeautyIds: access.external_beauty_id ? [access.external_beauty_id] : [],
-    };
+async function loadOrganizationScope(primary: any, scopedPrimary: any, access: any, isAdmin: boolean) {
+  if (isAdmin) return { mode: "tutti", visibleAgentIds: null, visibleBeautyIds: null };
+  // Must run with the caller's JWT, never the service-role client's empty auth.uid().
+  const { data: scope, error } = await scopedPrimary.rpc("workspace_data_scope");
+  if (error) throw error;
+  if (!scope || !Array.isArray(scope.agent_ids) || !Array.isArray(scope.user_ids)) {
+    throw new Error("Perimetro organizzativo non disponibile.");
   }
-
-  const beautyLinks = await primary
+  const ids = scope.agent_ids;
+  const users = scope.mode === "team" ? scope.user_ids : [];
+  const filters = [
+    ...(ids.length ? [`mexal_agente_id.in.(${ids.join(",")})`] : []),
+    ...(users.length ? [`utente_id.in.(${users.join(",")})`] : []),
+  ];
+  const beautyLinks = filters.length ? await primary
     .from("integrazioni_utenti")
     .select("external_beauty_id")
     .eq("modulo", "report_giornate")
     .eq("enabled", true)
-    .in("mexal_agente_id", ids)
-    .not("external_beauty_id", "is", null);
+    .or(filters.join(","))
+    .not("external_beauty_id", "is", null) : { data: [], error: null };
   if (beautyLinks.error) throw beautyLinks.error;
 
   const visibleBeautyIds = (beautyLinks.data || []).map((row: any) => row.external_beauty_id).filter(Boolean);
   if (access.external_beauty_id && !visibleBeautyIds.includes(access.external_beauty_id)) {
     visibleBeautyIds.push(access.external_beauty_id);
   }
-  return { visibleAgentIds: ids, visibleBeautyIds };
+  return { mode: scope.mode, visibleAgentIds: ids, visibleBeautyIds };
 }
 
 function applyOrganizationScope(query: any, table: string, scope: any) {

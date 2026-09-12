@@ -64,8 +64,7 @@ export default function Giornate({ utente }) {
   const beautyIdUtente =
     utente?.external_beauty_id || utente?.beauty_id || "";
 
-  const solaLettura =
-    ruoloUtente === "agent" || ruoloUtente === "sales_manager";
+  const solaLettura = !["write", "admin"].includes(utente?.access_level);
 
   useEffect(() => {
     if (utente) caricaDati();

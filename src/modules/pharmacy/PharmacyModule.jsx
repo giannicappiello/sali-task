@@ -30,7 +30,7 @@ async function getFunctionErrorMessage(invokeError, fallback) {
 }
 
 export default function PharmacyModule() {
-  const { profile, isAdminUser } = useAuth();
+  const { profile, isAdminUser, dataScope } = useAuth();
   const [context, setContext] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -52,7 +52,7 @@ export default function PharmacyModule() {
     }
     const timer = window.setTimeout(loadContext, 0);
     return () => { active = false; window.clearTimeout(timer); };
-  }, [profile?.id]);
+  }, [profile?.id, dataScope]);
 
   const legacyUser = useMemo(() => {
     const externalBeautyId = context?.external_beauty_id || null;
@@ -77,6 +77,7 @@ export default function PharmacyModule() {
       external_beauty_id: externalBeautyId,
       external_agent_id: externalAgentId,
       access_level: context?.access_level || "read",
+      data_scope_mode: context?.data_scope_mode || "propri",
       allowed_pages: context?.allowed_pages || [],
     };
   }, [context, profile, isAdminUser]);

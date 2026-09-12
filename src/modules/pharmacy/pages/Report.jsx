@@ -12,7 +12,7 @@ export default function Report({ utente }) {
 
   const [reportDettaglio, setReportDettaglio] = useState(null);
   const [reportModifica, setReportModifica] = useState(null);
-  const solaLettura = utente?.ruolo === "agent";
+  const solaLettura = !["write", "admin"].includes(utente?.access_level);
 
 
   async function caricaDati() {

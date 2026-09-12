@@ -32,6 +32,8 @@ export default function useOrdersAccess(moduleCode = "prof") {
   const moduleDefinition = orderModuleDefinition(moduleCode);
   const workspaceModuleCode = moduleDefinition.workspaceCode;
   const customerCode = dataScope?.customerCode || null;
+  const scopeMode = dataScope?.mode || "propri";
+  const scopeAgentKey = JSON.stringify(dataScope?.agentIds || []);
   const [loading, setLoading] = useState(true);
   const [access, setAccess] = useState(emptyAccess());
   const [error, setError] = useState(null);
@@ -116,7 +118,7 @@ export default function useOrdersAccess(moduleCode = "prof") {
     return () => {
       active = false;
     };
-  }, [profile?.id, isAdminUser, customerCode, moduleDefinition.integrationCode]);
+  }, [profile?.id, isAdminUser, customerCode, scopeMode, scopeAgentKey, moduleDefinition.integrationCode]);
 
   const permissions = useMemo(() => {
     const canReadModule = canUseModule(workspaceModuleCode, "lettura");
@@ -137,8 +139,10 @@ export default function useOrdersAccess(moduleCode = "prof") {
 
     let visibleAgents = [];
 
-    if (isAdmin || isBackoffice) {
+    if (isAdmin || (isBackoffice && scopeMode === "tutti")) {
       visibleAgents = null;
+    } else if (isBackoffice) {
+      visibleAgents = access.agenti_gestiti;
     } else if (isAreaManager) {
       visibleAgents = managedAgents;
     } else if (isAgent) {
@@ -157,14 +161,14 @@ export default function useOrdersAccess(moduleCode = "prof") {
       agentCode,
       managedAgents,
       visibleAgents,
-      canSeeAll: isAdmin || isBackoffice,
-      canWriteAll: !isCustomer && canWriteModule && (isAdmin || isBackoffice),
+      canSeeAll: isAdmin || (isBackoffice && scopeMode === "tutti"),
+      canWriteAll: !isCustomer && canWriteModule && (isAdmin || (isBackoffice && scopeMode === "tutti")),
       canAccessOrders: isAdmin || enabled,
       canWriteOrders: canCreateCustomerPrivateOrder || (!isCustomer && (isAdmin || (enabled && canWriteModule))),
       canUseAIOrderGeneration: !isCustomer && (isAdmin || (enabled && canWriteModule)),
       canManageOrders: !isCustomer && (isAdmin || (enabled && canManageModule)),
     };
-  }, [access, canUseModule, customerCode, workspaceModuleCode]);
+  }, [access, canUseModule, customerCode, scopeMode, workspaceModuleCode]);
 
   return {
     loading,

@@ -57,7 +57,7 @@ function rdpProgressiveLabel(value) {
 
 function rdpLabel(request) { return rdpProgressiveLabel(request?.rdp_number) || "RdP"; }
 
-function OctOrderCard({ row, selectable, selected, onToggle, onOpen, onDiagnostic }) {
+export function OctOrderCard({ row, selectable, selected, onToggle, onOpen, onDiagnostic }) {
   const status = row.stage === "history" ? "Annullata" : (row.status || (row.ready ? "—" : "BLOCCATO"));
   const tone = row.stage === "history" ? "neutral" : (row.ready ? "green" : "red");
   const rowRdpLabel = rdpProgressiveLabel(row.rdpNumber);
@@ -156,12 +156,12 @@ function FinishedBomDetails({ bom }) {
   </section>;
 }
 
-function V3Panel({ v3, canDecide, busy, onPreview, onConfirm }) {
+function V3Panel({ readOnly = false, v3, canDecide, busy, onPreview, onConfirm }) {
   if (!v3) return null;
   const preview = v3.preview;
   const confirmEnabled = v3.flags?.["workspacemes.v4.confirm"] === true;
   return <section className="rdp-decisions rdp-v3-panel">
-    <button type="button" className="primary-action rdp-v3-recalculate" onClick={onPreview} disabled={busy || !v3.flags?.["workspacemes.v4.preview"]}>{busy ? "RICALCOLO RDP…" : "RICALCOLA RDP"}</button>
+    {!readOnly && <button type="button" className="primary-action rdp-v3-recalculate" onClick={onPreview} disabled={busy || !v3.flags?.["workspacemes.v4.preview"]}>{busy ? "RICALCOLO RDP…" : "RICALCOLA RDP"}</button>}
     {preview && <>
       <p>Preview <strong>{preview.status}</strong> · distinta, disponibilità, FIFO, impegni e fabbisogni certificati da ProgreMES.</p>
       <div className="rdp-analysis-grid">{(v3.components || []).map((row) => <div key={row.id}>
@@ -203,7 +203,7 @@ function RdpFailureDialog({ failure, onClose }) {
   </section></div>;
 }
 
-function DiagnosticActionDialog({ diagnostic, busy, canManage, onClose, onApply }) {
+export function DiagnosticActionDialog({ diagnostic, busy, canManage, onClose, onApply }) {
   const [reason, setReason] = useState("");
   const [confirmArchive, setConfirmArchive] = useState(false);
   if (!diagnostic) return null;
@@ -222,14 +222,14 @@ function DiagnosticActionDialog({ diagnostic, busy, canManage, onClose, onApply 
   </section></div>;
 }
 
-function DetailPanel({ detail, onClose, onDiagnostics, canDecide, canCancel, onDecision, onCancel, onV3Preview, onV3Confirm, busy }) {
+export function DetailPanel({ readOnly = false, detail, onClose, onDiagnostics, canDecide, canCancel, onDecision, onCancel, onV3Preview, onV3Confirm, busy }) {
   const hasV3Preview = Boolean(detail?.v3?.preview);
   const outcomeLine = detail?.lines?.find((line) => !line.descriptive && !line.finishedBom?.components?.length && !hasV3Preview && (blocking(line.diagnostics) || /BLOCKED|TO_RESOLVE/.test(String(line.mesStatus || line.mappingStatus || "").toUpperCase())));
   const [openLine, setOpenLine] = useState(outcomeLine?.id || detail?.lines?.[0]?.id || null);
   if (!detail) return null;
   return <div className="rdp-detail-backdrop" role="presentation" onMouseDown={onClose}><section className="rdp-detail" role="dialog" aria-modal="true" aria-label="Dettaglio RdP e OCT" onMouseDown={(event) => event.stopPropagation()}>
     <header><div><span className="rdp-eyebrow">Lineage commerciale e produttivo</span><h2>{detail.request ? rdpLabel(detail.request) : detail.orders.map((item) => item.label).join(", ")}</h2><p>{detail.orders.map((item) => `${item.label} · ${item.customer || "cliente non disponibile"}`).join(" | ")}</p></div><button type="button" className="rdp-icon-button" onClick={onClose} aria-label="Chiudi dettaglio"><X /></button></header>
-    {detail.request && <div className="rdp-request-meta"><span>Stato {badge(detail.request.workspace_status || detail.request.stato, detail.request.stage === "blocked" ? "red" : "blue")}</span><span>Creata {formatDate(detail.request.created_at, true)}</span><span>Tentativi {detail.request.attempt_count ?? 0}</span><span>Contratto V4</span>{detail.cancellation?.allowed && <button type="button" className="rdp-cancel-action" onClick={onCancel} disabled={busy || !canCancel}><Ban size={16}/>Annulla RdP</button>}{detail.cancellation?.allowed && !canCancel && <small>Permesso rdp.cancel richiesto.</small>}</div>}
+    {detail.request && <div className="rdp-request-meta"><span>Stato {badge(detail.request.workspace_status || detail.request.stato, detail.request.stage === "blocked" ? "red" : "blue")}</span><span>Creata {formatDate(detail.request.created_at, true)}</span><span>Tentativi {detail.request.attempt_count ?? 0}</span><span>Contratto V4</span>{!readOnly && detail.cancellation?.allowed && <button type="button" className="rdp-cancel-action" onClick={onCancel} disabled={busy || !canCancel}><Ban size={16}/>Annulla RdP</button>}{!readOnly && detail.cancellation?.allowed && !canCancel && <small>Permesso rdp.cancel richiesto.</small>}</div>}
     {detail.request?.last_error_code && <div className="rdp-revision-alert"><AlertTriangle/><div><strong>ULTIMO INVIO NON RIUSCITO · {detail.request.last_error_code}</strong><p>La RdP è conservata senza duplicazioni. Consultare il Centro Diagnostico prima di un nuovo tentativo.</p></div></div>}
     {detail.revision?.modified && <div className="rdp-revision-alert"><AlertTriangle/><div><strong>OCT MODIFICATO IN MEXAL</strong><p>Aggiunte {detail.revision.added.length} · rimosse {detail.revision.removed.length} · quantità/UDM modificate {detail.revision.changed.length} · consegna {detail.revision.deliveryChanged ? "modificata" : "invariata"}.</p><small>Le opzioni “mantieni pianificazione + delta” e “integra e ripianifica” saranno abilitate soltanto quando esposte dal contratto MES.</small></div></div>}
     <div className="rdp-line-list">{detail.lines.map((line) => { const hasFinishedBom = Boolean(line.finishedBom?.components?.length); return <article key={line.id} className={line.descriptive ? "rdp-line descriptive" : "rdp-line"}>
@@ -243,8 +243,8 @@ function DetailPanel({ detail, onClose, onDiagnostics, canDecide, canCancel, onD
         {line.descriptive ? <div className="rdp-descriptive-ok"><CheckCircle2/><div><strong>Riga esclusa correttamente</strong><p>Testo informativo Mexal: non richiede mapping, UDM, analisi MES o lavorazione produttiva.</p></div></div> : hasV3Preview ? <div className="rdp-descriptive-ok"><CheckCircle2/><div><strong>Calcolo produttivo certificato</strong><p>La distinta completa e il netting sono stati elaborati esclusivamente da ProgreMES V4; il dettaglio materiali certificato è riportato nel riepilogo sottostante.</p></div></div> : hasFinishedBom ? <FinishedBomDetails bom={line.finishedBom} /> : <><div className="rdp-mes"><h3>Analisi produttiva MES</h3><AnalysisGrid analysis={line.mesAnalysis} proposal={line.proposal} /></div><Diagnostics rows={line.diagnostics} onOpen={onDiagnostics} /></>}
       </div>}
     </article>; })}</div>
-    {detail.request && canDecide && detail.lines.some((line) => line.proposal && !line.proposal.confirmation_external_id) && <section className="rdp-decisions"><h3>Decisioni operatore disponibili</h3><p>Il backend attuale espone la pianificazione completa. Le altre decisioni saranno mostrate solo quando disponibili nel contratto MES.</p>{detail.lines.filter((line) => line.proposal && !line.proposal.confirmation_external_id).map((line) => <button type="button" className="primary-action" key={line.proposal.id} onClick={() => onDecision(line)}><Factory size={16}/>Pianificazione completa · {line.articleCode}</button>)}</section>}
-    {detail.request && <V3Panel v3={detail.v3} canDecide={canDecide} busy={busy} onPreview={onV3Preview} onConfirm={onV3Confirm}/>}
+    {detail.request && !readOnly && canDecide && detail.lines.some((line) => line.proposal && !line.proposal.confirmation_external_id) && <section className="rdp-decisions"><h3>Decisioni operatore disponibili</h3><p>Il backend attuale espone la pianificazione completa. Le altre decisioni saranno mostrate solo quando disponibili nel contratto MES.</p>{detail.lines.filter((line) => line.proposal && !line.proposal.confirmation_external_id).map((line) => <button type="button" className="primary-action" key={line.proposal.id} onClick={() => onDecision(line)}><Factory size={16}/>Pianificazione completa · {line.articleCode}</button>)}</section>}
+    {detail.request && <V3Panel readOnly={readOnly} v3={detail.v3} canDecide={!readOnly && canDecide} busy={busy} onPreview={onV3Preview} onConfirm={onV3Confirm}/>}
   </section></div>;
 }
 

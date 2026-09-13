@@ -1,6 +1,7 @@
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import useOrdersAccess from "./pages/useOrdersAccess";
 import OrdersDashboard from "./pages/OrdersDashboard";
+import PrivateOrdersDashboard from "./pages/PrivateOrdersDashboard";
 import Customers from "./pages/Customers";
 import CustomerDetail from "./pages/CustomerDetail";
 import Orders from "./pages/Orders";
@@ -20,13 +21,14 @@ import "./order-child-documents.css";
 
 export default function OrdersModule({ moduleCode = "prof", title = "Ordini PROF", basePath = "/ordini-prof" }) {
   const { loading, canAccessOrders, canWriteOrders, canUseAIOrderGeneration, isCustomer } = useOrdersAccess(moduleCode);
-  const customerPrivateView = moduleCode === "private" && isCustomer;
+  const privateModule = moduleCode === "private";
+  const customerPrivateView = privateModule && isCustomer;
   if (loading) return <div className="orders-empty">Verifica autorizzazione...</div>;
   if (!canAccessOrders) return <div className="orders-empty">Non sei autorizzato ad accedere a {title}.</div>;
   return <OrdersModuleProvider value={{ moduleCode, title, basePath }}><div className="orders-module">
-    <OrdersModuleNavigation title={title} basePath={basePath} hideCustomers={customerPrivateView} />
+    {!privateModule && <OrdersModuleNavigation title={title} basePath={basePath} hideCustomers={customerPrivateView} />}
     <Routes>
-      <Route index element={<Navigate to="dashboard" replace />} /><Route path="dashboard" element={<OrdersDashboard />} /><Route path="clienti" element={customerPrivateView ? <Navigate to={`${basePath}/dashboard`} replace /> : <Customers />} /><Route path="clienti/:customerCode" element={customerPrivateView ? <Navigate to={`${basePath}/dashboard`} replace /> : <CustomerDetail />} /><Route path="elenco" element={<Orders />} /><Route path="nuovo" element={canWriteOrders ? <NewOrder /> : <Navigate to={`${basePath}/elenco`} replace />} /><Route path="nuovo-da-documento" element={canUseAIOrderGeneration ? <AIOrderImport /> : <Navigate to={`${basePath}/elenco`} replace />} /><Route path="modifica/:orderId" element={canWriteOrders ? <NewOrder /> : <Navigate to={`${basePath}/elenco`} replace />} /><Route path="elenco/:orderId" element={<OrderDetail />} /><Route path="fatture" element={<Invoices />} /><Route path="fatture/:invoiceId" element={<InvoiceDetail />} /><Route path="*" element={<Navigate to="dashboard" replace />} />
+      <Route index element={<Navigate to="dashboard" replace />} /><Route path="dashboard" element={privateModule ? <PrivateOrdersDashboard /> : <OrdersDashboard />} /><Route path="clienti" element={privateModule ? <Navigate to={`${basePath}/dashboard`} replace /> : <Customers />} /><Route path="clienti/:customerCode" element={privateModule ? <Navigate to={`${basePath}/dashboard`} replace /> : <CustomerDetail />} /><Route path="elenco" element={privateModule ? <Navigate to={`${basePath}/dashboard`} replace /> : <Orders />} /><Route path="nuovo" element={canWriteOrders ? <NewOrder /> : <Navigate to={`${basePath}/elenco`} replace />} /><Route path="nuovo-da-documento" element={canUseAIOrderGeneration ? <AIOrderImport /> : <Navigate to={`${basePath}/elenco`} replace />} /><Route path="modifica/:orderId" element={canWriteOrders ? <NewOrder /> : <Navigate to={`${basePath}/elenco`} replace />} /><Route path="elenco/:orderId" element={<OrderDetail />} /><Route path="fatture" element={privateModule ? <Navigate to={`${basePath}/dashboard`} replace /> : <Invoices />} /><Route path="fatture/:invoiceId" element={privateModule ? <Navigate to={`${basePath}/dashboard`} replace /> : <InvoiceDetail />} /><Route path="*" element={<Navigate to="dashboard" replace />} />
     </Routes>
   </div></OrdersModuleProvider>;
 }

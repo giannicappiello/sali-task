@@ -71,11 +71,12 @@ test("un ordine assente da Mexal non risulta spedito o evaso", () => {
   }).label, "NON RICONCILIATO");
 });
 
-test("la navigazione OrdiniPrivate espone Dashboard, Clienti, Ordini e Fatture", async () => {
+test("PR e PH mantengono la navigazione completa; Private usa la dashboard unica", async () => {
   const source = await readFile(new URL("../../src/modules/orders/OrdersModule.jsx", import.meta.url), "utf8");
   for (const path of ["dashboard", "clienti", "elenco", "fatture"]) {
     assert.match(source, new RegExp(`path: "${path}"`));
   }
+  assert.match(source, /!privateModule && <OrdersModuleNavigation/);
 });
 
 test("migration e riconciliazione applicano il contratto documentale", async () => {
@@ -146,9 +147,9 @@ test("OrdiniPrivate cliente nasconde Clienti e carica solo articoli associati", 
     readFile(new URL("../../supabase/migrations/20260902174000_customer_article_history_rls_bridge.sql", import.meta.url), "utf8"),
   ]);
 
-  assert.match(routes, /customerPrivateView = moduleCode === "private" && isCustomer/);
+  assert.match(routes, /customerPrivateView = privateModule && isCustomer/);
   assert.match(routes, /MODULE_NAVIGATION\.filter\(\(item\) => !hideCustomers \|\| item\.path !== "clienti"\)/);
-  assert.match(routes, /path="clienti" element=\{customerPrivateView \? <Navigate/);
+  assert.match(routes, /path="clienti" element=\{privateModule \? <Navigate/);
   assert.match(newOrder, /customerScoped: Boolean\(customerCode\)/);
   assert.match(catalog, /customerScoped \? "workspace_customer_orderable_products" : "prodotti"/);
   assert.match(catalog, /customerScoped \? "workspace_customer_orderable_product_economics" : "ordini_prodotti_cache"/);

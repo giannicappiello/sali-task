@@ -1,5 +1,6 @@
 import { authoritativeArticleUnit, resolveOctUnitOfMeasure } from "./mexal/unit-of-measure.js";
 import { evaluateProductionRequestCancellation } from "./workspacemes-rdp-cancellation.js";
+import { assertPrivateWorkbenchDetailScope, readRowsByIds } from "./private-orders-workbench.js";
 
 function text(value) { return String(value ?? "").trim(); }
 function number(value) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : 0; }
@@ -64,7 +65,7 @@ export function diagnosticMatchesWorkbenchLine(row, line, request = null) {
 }
 
 function octLabel(order) {
-  return [text(order.mexal_sigla), text(order.mexal_serie), text(order.mexal_numero)].filter(Boolean).join("/");
+  return [text(order.mexal_sigla), text(order.mexal_serie), text(order.mexal_numero)].filter(Boolean).join("/") || text(order.numero_ordine_visualizzato) || "OCT in bozza";
 }
 
 function customerCode(order) {
@@ -288,14 +289,30 @@ export function diagnosticBlocks(row) {
     ["OPEN", "ACKNOWLEDGED"].includes(text(row?.status).toUpperCase());
 }
 
-export async function listProductionWorkbench({ admin, diagnostics = [], productionOrders = [], customerCode: expectedCustomerCode = null }) {
+export async function listProductionWorkbench({ admin, diagnostics = [], productionOrders = [], customerCode: expectedCustomerCode = null, scopedOrders = null }) {
+  let source;
+  if (scopedOrders !== null) {
+    const ids = scopedOrders.map((order) => order.id);
+    const [lines, primaryRequests, linkedItems] = await Promise.all([
+      readRowsByIds(admin, "ordini_righe", "ordine_id", ids),
+      readRowsByIds(admin, "workspace_production_requests", "ordine_id", ids),
+      readRowsByIds(admin, "workspace_production_request_items", "ordine_id", ids, "id,production_request_id"),
+    ]);
+    const linkedRequests = await readRowsByIds(admin, "workspace_production_requests", "id", linkedItems.map((item) => item.production_request_id));
+    const requests = [...new Map([...primaryRequests, ...linkedRequests].map((request) => [request.id, request])).values()]
+      .sort((a, b) => text(b.created_at).localeCompare(text(a.created_at)) || text(a.id).localeCompare(text(b.id)));
+    lines.sort((a, b) => number(a.mexal_posizione) - number(b.mexal_posizione));
+    source = [{ data: scopedOrders }, { data: lines }, { data: requests }];
+  } else {
   let ordersQuery = admin.from("ordini_testate").select("*").eq("origine", "mexal_oct");
   if (expectedCustomerCode) ordersQuery = ordersQuery.in("codice_cliente", Array.isArray(expectedCustomerCode) ? expectedCustomerCode : [expectedCustomerCode]);
-  const [{ data: orders, error: orderError }, { data: lines, error: lineError }, { data: requests, error: requestError }] = await Promise.all([
+  source = await Promise.all([
     ordersQuery.order("data_consegna", { ascending: true }).limit(500),
     admin.from("ordini_righe").select("*").order("mexal_posizione", { ascending: true }).limit(5000),
     admin.from("workspace_production_requests").select("*").order("created_at", { ascending: false }).limit(500),
   ]);
+  }
+  const [{ data: orders, error: orderError }, { data: lines, error: lineError }, { data: requests, error: requestError }] = source;
   if (orderError || lineError || requestError) throw orderError || lineError || requestError;
   const customersByCode = await loadCustomers(admin, orders);
   const orderIds = new Set((orders || []).map((row) => text(row.id)));
@@ -311,8 +328,10 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
   const requestItemByRequestAndLine = new Map();
   if (requestIds.length) {
     const [itemsResult, previewsResult] = await Promise.all([
-      admin.from("workspace_production_request_items").select("production_request_id,ordine_id,ordine_riga_id,mes_payload").in("production_request_id", requestIds),
-      admin.from("workspace_v4_previews").select("id,production_request_id").in("production_request_id", requestIds),
+      scopedOrders === null ? admin.from("workspace_production_request_items").select("production_request_id,ordine_id,ordine_riga_id,mes_payload").in("production_request_id", requestIds)
+        : readRowsByIds(admin, "workspace_production_request_items", "production_request_id", requestIds, "production_request_id,ordine_id,ordine_riga_id,mes_payload").then((data) => ({ data })),
+      scopedOrders === null ? admin.from("workspace_v4_previews").select("id,production_request_id").in("production_request_id", requestIds)
+        : readRowsByIds(admin, "workspace_v4_previews", "production_request_id", requestIds, "id,production_request_id").then((data) => ({ data })),
     ]);
     if (itemsResult.error || previewsResult.error) throw itemsResult.error || previewsResult.error;
     for (const item of itemsResult.data || []) {
@@ -324,7 +343,9 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
     const requestIdByPreview = new Map((previewsResult.data || []).map((preview) => [text(preview.id), text(preview.production_request_id)]));
     const previewIds = [...requestIdByPreview.keys()];
     if (previewIds.length) {
-      const confirmationsResult = await admin.from("workspace_v4_confirmation_mirrors").select("preview_id").in("preview_id", previewIds);
+      const confirmationsResult = scopedOrders === null
+        ? await admin.from("workspace_v4_confirmation_mirrors").select("preview_id").in("preview_id", previewIds)
+        : { data: await readRowsByIds(admin, "workspace_v4_confirmation_mirrors", "preview_id", previewIds, "preview_id") };
       if (confirmationsResult.error) throw confirmationsResult.error;
       for (const confirmation of confirmationsResult.data || []) {
         const confirmedRequestId = requestIdByPreview.get(text(confirmation.preview_id));
@@ -362,7 +383,7 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
     const effectiveStage = incompleteProduction ? "blocked" : productionState.stage;
     const effectiveStatus = incompleteProduction ? "OP INCOMPLETI" : productionState.status;
     return {
-      id: order.id, label: octLabel(order), sigla: order.mexal_sigla, serie: order.mexal_serie, numero: order.mexal_numero,
+      id: order.id, origin: order.origine, label: octLabel(order), sigla: order.mexal_sigla, serie: order.mexal_serie, numero: order.mexal_numero,
       customer: customerName(order, customersByCode),
       orderDate: order.data_ordine, deliveryDate: order.data_consegna,
       sourceTimestamp: order.updated_at || order.mexal_sincronizzato_il || order.created_at,
@@ -402,7 +423,7 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
   return { generatedAt: new Date().toISOString(), items: items.filter(visibleWorkbenchOct), history, customerScoped: Boolean(expectedCustomerCode) };
 }
 
-export async function productionWorkbenchDetail({ admin, orderId = null, requestId = null, diagnostics = [], customerCode: expectedCustomerCode = null }) {
+export async function productionWorkbenchDetail({ admin, orderId = null, requestId = null, diagnostics = [], customerCode: expectedCustomerCode = null, allowedOrderIds = null }) {
   let request = null;
   if (requestId) {
     const result = await admin.from("workspace_production_requests").select("*").eq("id", requestId).maybeSingle();
@@ -413,7 +434,8 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
   if (!selectedOrderId && !request) throw Object.assign(new Error("OCT o RdP obbligatoria."), { status: 400 });
   const requestItemsResult = request ? await admin.from("workspace_production_request_items").select("*").eq("production_request_id", request.id).order("item_index") : { data: [], error: null };
   if (requestItemsResult.error) throw requestItemsResult.error;
-  const relatedOrderIds = [...new Set([selectedOrderId, ...(requestItemsResult.data || []).map((item) => item.ordine_id)].filter(Boolean))];
+  const relatedOrderIds = [...new Set([selectedOrderId, request?.ordine_id, ...(requestItemsResult.data || []).map((item) => item.ordine_id)].filter(Boolean))];
+  if (allowedOrderIds !== null) assertPrivateWorkbenchDetailScope(relatedOrderIds, allowedOrderIds);
   const [{ data: orders, error: ordersError }, { data: lines, error: linesError }] = await Promise.all([
     admin.from("ordini_testate").select("*").in("id", relatedOrderIds),
     admin.from("ordini_righe").select("*").in("ordine_id", relatedOrderIds).order("mexal_posizione"),

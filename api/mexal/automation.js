@@ -35,6 +35,7 @@ import { prepareProductionDemand } from "../../server/production-netting.js";
 import { createOctOrdersRunHandler, precheckOctOrders } from "../../server/mexal/sync-oct-orders.js";
 import { handleDigitalConnectionManager } from "../../server/crm/digital-connection-manager.js";
 import { listProductionWorkbench, loadAllProductionOrders, productionWorkbenchDetail } from "../../server/workspacemes-workbench.js";
+import { privateWorkbenchSession } from "../../server/private-orders-workbench.js";
 import { productionGoLiveGates } from "../../server/workspace-production-gates.js";
 import { effectiveWorkspaceDiagnostics } from "../../server/workspace-effective-diagnostics.js";
 import { confirmWorkspaceV4, createWorkspaceV4Preview } from "../../server/workspacemes-v4-api.js";
@@ -663,6 +664,38 @@ export default async function handler(req, res) {
       case "workspacemes_v4_precheck": {
         const admin = await createAdmin(req, "rdp.create");
         return previewProductionRequest(req, res, { admin: admin.supabase, requestedBy: admin.authUserId });
+      }
+      case "private_workbench_list":
+      case "private_workbench_detail": {
+        const { admin, orders } = await privateWorkbenchSession(req);
+        const client = createProgremesClient();
+        const diagnostics = await client.request("diagnostics").catch(() => []);
+        const effectiveDiagnostics = await effectiveWorkspaceDiagnostics({ admin, diagnostics });
+        if (body.action === "private_workbench_detail") {
+          return sendSuccess(res, 200, await productionWorkbenchDetail({
+            admin, orderId: body.orderId, requestId: body.requestId,
+            diagnostics: effectiveDiagnostics, allowedOrderIds: orders.map((order) => order.id),
+          }));
+        }
+        let productionWarning = null;
+        const productionOrders = await loadAllProductionOrders(client).catch(() => {
+          productionWarning = "Stati MES temporaneamente non disponibili. Riprova con Aggiorna.";
+          return [];
+        });
+        const workbench = await listProductionWorkbench({ admin, diagnostics: effectiveDiagnostics, productionOrders, scopedOrders: orders });
+        // The UI needs the scoped OCT rows, not raw MES orders or multi-customer history.
+        return sendSuccess(res, 200, {
+          generatedAt: workbench.generatedAt, productionWarning,
+          items: workbench.items.map((item) => {
+            const row = { ...item };
+            delete row.productionOrders;
+            if (productionWarning && row.requestId) {
+              row.status = "STATO MES NON DISPONIBILE";
+              row.lines = row.lines.map((line) => ({ ...line, productionStatus: "NON DISPONIBILE" }));
+            }
+            return row;
+          }),
+        });
       }
       case "progremes_workbench_list": {
         const admin = await createAdmin(req, "rdp.view");

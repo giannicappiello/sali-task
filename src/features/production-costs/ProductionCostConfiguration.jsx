@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Plus, Save, RefreshCw, Trash2 } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { defaultSettings, validateSettings } from "./cost-engine";
-import { Heading, Field, Numeric } from "./common";
+import { Field, Numeric } from "./common";
 import { action, money, date } from "./client";
 
 const days=["Dom","Lun","Mar","Mer","Gio","Ven","Sab"];
@@ -16,7 +16,7 @@ export default function ProductionCostConfiguration(){
  const remove=(key,i)=>update(key,settings[key].filter((_,n)=>n!==i));
  async function machines(){setBusy(true);setError("");try{const r=await action(token,"machines");setSettings(s=>({...s,machines:r.machines.map(m=>({...m,washCost:"",gainPerShift:"",...s.machines.find(x=>x.id===m.id)}))}));setMessage("Impianti importati. Nessun piano MES è stato modificato.");}catch(e){setError(e.message);}finally{setBusy(false);}}
  async function save(e){e.preventDefault();setError("");setMessage("");setBusy(true);try{validateSettings(settings);await action(token,"save-configuration",{settings,effectiveFrom:effective,note});const r=await action(token,"configuration");setVersions(r.configurations);setMessage("Nuova versione salvata. Le produzioni già associate conservano la loro configurazione.");}catch(e){setError(e.message);}finally{setBusy(false);}}
- return <main className="pc-page" data-column-controls="off"><Heading title="CONFIGURAZIONE COSTI PRODUZIONE">Tariffe e obiettivi economici, con decorrenza e storico delle versioni.</Heading>
+ return <main className="pc-page" data-column-controls="off">
  {error&&<p className="pc-error" role="alert">{error}</p>}{message&&<p className="pc-success" role="status">{message}</p>}
  <form onSubmit={save}><fieldset disabled={!canWrite||busy}>
  <section className="pc-panel"><h2>Costo del personale</h2><p>Un unico costo ora/uomo per tutti gli operatori. I tempi effettivi restano quelli rilevati in MES.</p><div className="pc-fields"><Field label="Costo ora/uomo (€)"><Numeric required value={settings.laborHourly} onChange={v=>update("laborHourly",v)}/></Field><Field label="Decorrenza della nuova versione"><input required type="date" value={effective} onChange={e=>setEffective(e.target.value)}/></Field><Field label="Nota della versione"><input value={note} onChange={e=>setNote(e.target.value)} placeholder="Es. tariffe approvate settembre"/></Field></div></section>

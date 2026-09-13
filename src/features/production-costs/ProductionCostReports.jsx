@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw, Search } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
-import { Heading, Field, Numeric, Modal } from "./common";
+import { Field, Numeric, Modal } from "./common";
 import { action, money, quantity, date } from "./client";
 import { sumKnown, delta, percent } from "./cost-engine";
+import { matchesProductionSearch } from "./search";
 
 function CostTable({record:r}){
  const rows=[["Materie prime",r.plannedMaterialCost,r.actualMaterialCost],["Packaging",r.plannedPackagingCost,r.actualPackagingCost],["Personale",r.plannedLabor,r.actualLabor],["Lavaggi (esclusa manodopera)",r.plannedWash,r.actualWash],["Perdite componenti SL",0,r.lossCost],["Totale costi",r.plannedTotal,r.actualTotal],["Ricavo OCT / fatture",r.plannedRevenue,r.actualRevenue],["Margine (consuntivo sulla quantità fatturata)",r.plannedMargin,r.actualMargin],["GUADAGNO STIMATO STATION (indicatore separato)",r.plannedGain,r.actualGain]];
@@ -46,11 +47,10 @@ export default function ProductionCostReports(){
  const machines=useMemo(()=>[...new Map(records.flatMap(r=>r.phases.map(p=>[p.machineId,p.machine?.code||"Impianto "+p.machineId]))).entries()], [records]);
  const filtered=useMemo(()=>records.filter(r=>{
   const d=String(r.works?.[0]?.start||r.date||"").slice(0,10);
-  const hay=[r.orderNumber,r.customerName,r.customerCode,r.articleCode,r.articleName,r.lot,r.bulkLot,r.state,...(r.links||[]).map(x=>x.oct),...r.phases.flatMap(p=>[p.phase,p.machine?.code,p.machine?.department,...(p.personnel||[]).flatMap(x=>[x.name,x.department])])].join(" ").toLowerCase();
-  return (!from||d>=from)&&(!to||d<=to)&&(!state||(state==="closed"?r.closed:state==="incomplete"?r.provisional:!r.closed))&&(!machine||r.phases.some(p=>String(p.machineId)===machine))&&query.toLowerCase().trim().split(/\s+/).every(q=>hay.includes(q));
+  return (!from||d>=from)&&(!to||d<=to)&&(!state||(state==="closed"?r.closed:state==="incomplete"?r.provisional:!r.closed))&&(!machine||r.phases.some(p=>String(p.machineId)===machine))&&matchesProductionSearch(r,query);
  }),[records,from,to,state,machine,query]);
  const aggregate=key=>sumKnown(filtered.map(r=>r[key]));
- return <main className="pc-page" data-column-controls="off"><Heading title="CONSUNTIVI PRODUZIONI">Tempi, persone, consumi e risultati economici: preventivo e consuntivo a confronto.</Heading>
+ return <main className="pc-page" data-column-controls="off">
  <section className="pc-panel"><div className="pc-toolbar"><p>Nessun aggiornamento automatico durante la consultazione.</p><button className="pc-primary" disabled={busy} onClick={sync}><RefreshCw size={17}/>{busy?"Caricamento…":"Importa / aggiorna storico MES"}</button></div>{progress&&<p role="status">{progress}</p>}
  <div className="pc-filters"><Field label="Ricerca totale"><input aria-label="Ricerca totale" placeholder="Cliente, OCT/RdP, prodotto, lotto, operatore, reparto…" value={query} onChange={e=>setQuery(e.target.value)}/></Field><Field label="Dal (avvio / data ordine)"><input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></Field><Field label="Al"><input type="date" value={to} onChange={e=>setTo(e.target.value)}/></Field><Field label="Stato"><select value={state} onChange={e=>setState(e.target.value)}><option value="">Tutti</option><option value="closed">Concluse</option><option value="open">Aperte</option><option value="incomplete">Provvisorie / incomplete</option></select></Field><Field label="Impianto"><select value={machine} onChange={e=>setMachine(e.target.value)}><option value="">Tutti</option>{machines.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></Field></div></section>
  {error&&<p className="pc-error" role="alert">{error}</p>}

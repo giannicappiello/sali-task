@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createProgremesClient } from "./progremes-readonly-client.js";
 import { readAllRows, readRowsByIds } from "./private-orders-workbench.js";
 import { calculateRecord, allocateBulkCosts, validateSettings, number, sumKnown } from "../src/features/production-costs/cost-engine.js";
+import { withCustomerNames } from "../src/features/production-costs/search.js";
 
 const fail = (message,status=400) => Object.assign(new Error(message),{status});
 const check = (result) => {if(result.error)throw result.error;return result.data;};
@@ -98,6 +99,15 @@ export async function handleProductionCosts(req,body) {
  const [records,configs]=await Promise.all([
   readAllRows(()=>admin.from("production_cost_records").select("*").order("mes_order_id")),readConfigurations(admin)]);
  const visible=scoped(records,session.scope);
+ // Enrich only customers belonging to already-authorized productions, including
+ // all OCT customers of a shared production. Do not overwrite historical evidence.
+ const customerCodes=[...new Set(visible.flatMap(r=>[r.evidence.customerCode,...(r.evidence.links||[]).map(l=>l.customerCode)]).map(c=>String(c||"").trim()).filter(Boolean))];
+ const customerNames=new Map();
+ for(let start=0;start<customerCodes.length;start+=100){
+  const customers=await readAllRows(()=>admin.from("crm_classified_customers").select("codice_cliente,ragione_sociale")
+   .in("codice_cliente",customerCodes.slice(start,start+100)).order("codice_cliente"));
+  for(const customer of customers)if(customer.ragione_sociale?.trim())customerNames.set(String(customer.codice_cliente).trim(),customer.ragione_sociale);
+ }
  const ids=visible.map(x=>x.mes_order_id);
  const adjustments=await readAllRows(()=>admin.from("production_cost_adjustments").select("*").order("created_at",{ascending:false}).order("id"));
  const allocations=await readAllRows(()=>admin.from("production_cost_invoice_allocations").select("*").order("id"));
@@ -106,7 +116,7 @@ export async function handleProductionCosts(req,body) {
  const invoiceHeaders=await readRowsByIds(caller,"mexal_fatture_vendita","id",invoiceLines.map(a=>a.fattura_id));
  const orderLines=await readRowsByIds(caller,"ordini_righe","id",visible.flatMap(r=>(r.evidence.links||[]).map(l=>l.lineId)));
  const calc=visible.map(r=>{
-  const e=r.evidence,links=e.links||[];
+  const e=withCustomerNames(r.evidence,customerNames),links=e.links||[];
   const revenues=links.map(l=>{const row=orderLines.find(x=>x.id===l.lineId);const sameUnit=String(row?.unita_misura_oct||"").toUpperCase()===String(l.unit||"").toUpperCase()&&Boolean(l.unit);return row&&sameUnit&&Number(row.quantita)>0&&number(row.imponibile_riga)!==null?Number(row.imponibile_riga)*Number(l.quantity)/Number(row.quantita):null;});
   const matches=allowedAllocations.filter(a=>a.mes_order_id===r.mes_order_id).map(a=>{
    const l=invoiceLines.find(x=>String(x.id)===String(a.invoice_line_id)),h=invoiceHeaders.find(x=>x.id===l?.fattura_id);

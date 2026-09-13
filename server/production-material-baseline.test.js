@@ -16,7 +16,7 @@ test('empty saved snapshot is supplemented without mutation',()=>{
  const evidence={baseline:{capturedAt:'2026-01-01',materials:[],quantity:100},historicalBaseline};
  const before=JSON.stringify(evidence);const r=calc(evidence);
  assert.equal(r.materialVariances[0].plannedQuantity,70);assert.equal(r.plannedMaterialCost,140);
- assert.equal(r.materialVariances[0].usageVariance,10);assert.equal(r.reconstructed,true);
+ assert.equal(r.materialVariances[0].usageVariance,-10);assert.equal(r.reconstructed,true);
  assert.equal(JSON.stringify(evidence),before);assert.equal(r.baseline.capturedAt,'2026-01-01');
 });
 test('recorded quantities and prices retain priority; no current price overwrite',()=>{

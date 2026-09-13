@@ -3,7 +3,8 @@ import { createProgremesClient } from "./progremes-readonly-client.js";
 import { readAllRows, readRowsByIds } from "./private-orders-workbench.js";
 import { calculateRecord, allocateBulkCosts, validateSettings, number, sumKnown } from "../src/features/production-costs/cost-engine.js";
 import { withCustomerNames } from "../src/features/production-costs/search.js";
-import { applicableConfiguration, legacyOrderRevenue } from "../src/features/production-costs/history.js";
+import { applicableConfiguration } from "../src/features/production-costs/history.js";
+import { resolveOctRevenue } from "../src/features/production-costs/commercial-revenue.js";
 import { handleCostAI, approvedCostSettings } from "./ai/production-costs.js";
 import { readStationHistory, stationHistorySummary } from "./production-station-history.js";
 import { activeStationPolicy } from "../src/features/production-costs/station-history.js";
@@ -179,20 +180,21 @@ export async function handleProductionCosts(req,body) {
  const invoiceLines=await readRowsByIds(caller,"mexal_fatture_vendita_righe","id",allowedAllocations.map(a=>a.invoice_line_id));
  const invoiceHeaders=await readRowsByIds(caller,"mexal_fatture_vendita","id",invoiceLines.map(a=>a.fattura_id));
  const orderLines=await readRowsByIds(caller,"ordini_righe","id",visible.flatMap(r=>(r.evidence.links||[]).map(l=>l.lineId)));
+ const allEvidence=records.map(x=>x.evidence);
  const calc=visible.map(r=>{
-  const e=withCustomerNames(r.evidence,customerNames),links=e.links||[];
+  const e=withCustomerNames(r.evidence,customerNames);
   if(sourceHistory&&!sourceHistory.error)e.works=(e.works||[]).map(w=>w.phase==="Semilavorato"&&currentWorks.has(w.id)?{...w,...currentWorks.get(w.id)}:w);
   if(sourceFillingHistory)e.works=(e.works||[]).map(w=>{
    const current=currentFillingWorks.get(w.id);
    return current&&current.orderId===r.mes_order_id&&current.phase===w.phase?{...w,...current}:w;
   });
-  const revenues=links.map(l=>{const row=orderLines.find(x=>x.id===l.lineId);const sameUnit=String(row?.unita_misura_oct||"").toUpperCase()===String(l.unit||"").toUpperCase()&&Boolean(l.unit);return row&&sameUnit&&Number(row.quantita)>0&&number(row.imponibile_riga)!==null?Number(row.imponibile_riga)*Number(l.quantity)/Number(row.quantita):null;});
+  const oct=resolveOctRevenue(e,orderLines,allEvidence);
   const matches=allowedAllocations.filter(a=>a.mes_order_id===r.mes_order_id).map(a=>{
    const l=invoiceLines.find(x=>String(x.id)===String(a.invoice_line_id)),h=invoiceHeaders.find(x=>x.id===l?.fattura_id);
    const sign=h?.sigla?.toUpperCase()==="NC"?-1:1;
    return {...a,document:h,line:l,quantity:sign*Number(a.quantity),amount:l&&h&&number(l.valore_netto)!==null?sign*Math.abs(Number(l.valore_netto))*Number(a.quantity)/Math.abs(Number(l.quantita)):null};
   });
-  const commercial={octRevenue:sumKnown(revenues)??legacyOrderRevenue(e,visible.map(x=>x.evidence)),invoiceRevenue:sumKnown(matches.map(x=>x.amount)),invoicedQuantity:matches.length?matches.reduce((s,x)=>s+x.quantity,0):null,invoices:matches};
+  const commercial={...oct,invoiceRevenue:sumKnown(matches.map(x=>x.amount)),invoicedQuantity:matches.length?matches.reduce((s,x)=>s+x.quantity,0):null,invoices:matches};
   const audit=adjustments.filter(a=>a.mes_order_id===r.mes_order_id);
   const overrideId=!e.baseline?audit.find(a=>a.details?.configurationId)?.details.configurationId:null;
   const config=configs.find(c=>c.id===overrideId)||configs.find(c=>c.id===r.configuration_id)||configurationFor(e,configs);

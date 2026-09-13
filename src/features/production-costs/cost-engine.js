@@ -12,6 +12,9 @@ export const number = (v) => v !== null && v !== undefined && v !== "" && Number
 export const sumKnown = (values) => values.length && values.every(v => number(v) !== null) ? values.reduce((s,v) => s + Number(v),0) : null;
 export const delta = (actual, planned) => number(actual) !== null && number(planned) !== null ? actual-planned : null;
 export const percent = (actual, planned) => number(planned) !== null && planned !== 0 && number(actual) !== null ? (actual-planned)/Math.abs(planned)*100 : null;
+// A saving is positive. Keep delta as subtraction for revenue-minus-cost margins.
+export const costVariance = (actual, planned) => delta(planned,actual);
+export const costVariancePercent = (actual, planned) => number(planned)!==null&&Number(planned)!==0&&number(actual)!==null ? (planned-actual)/Math.abs(planned)*100 : null;
 const hours = (a,b) => a && b ? Math.max(0,(new Date(b)-new Date(a))/3600000) : null;
 const materialCost = (rows) => sumKnown(rows.map(x => number(x.unitCost) === null || number(x.quantity) === null || Number(x.quantity)<0 ? null : Number(x.quantity)*Number(x.unitCost)));
 export function materialSummary(rows) {
@@ -72,7 +75,7 @@ function materialsVariance(planned,actual,confirmed=true,plannedComplete=false) 
   const x=p.get(code),y=a.get(code),pq=x?(x.quantityKnown?x.quantity:null):plannedComplete?0:null,aq=y?(y.quantityKnown?y.quantity:null):0;
   const pc=x?.known&&pq?x.amount/pq:null,ac=y?.known&&aq?y.amount/aq:null;
   return {code,plannedQuantity:pq,actualQuantity:confirmed?aq:null,plannedUnitCost:pc,actualUnitCost:ac,
-   usageVariance:!confirmed||pq===null||aq===null||pc===null?null:(aq-pq)*pc,priceVariance:!confirmed||pq===null||aq===null||pc===null||ac===null?null:aq*(ac-pc)};
+   usageVariance:!confirmed||pq===null||aq===null||pc===null?null:(pq-aq)*pc,priceVariance:!confirmed||pq===null||aq===null||pc===null||ac===null?null:aq*(pc-ac)};
  });
 }
 
@@ -238,8 +241,8 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
   laborCriteria:[rulesSummary(historicalMode?stationSettings:settings)[0],rulesSummary(fillingHistoricalMode?fillingSettings:settings)[1],rulesSummary(settings)[2]],plannedObjective,invoicedObjective,plannedObjectiveVariance:delta(delta(revenue,productPlannedTotal),plannedObjective),actualObjectiveVariance:delta(delta(actualRevenue,comparableCost),invoicedObjective),
   plannedLabor,actualLabor,plannedWash,actualWash,lossCost,plannedTotal,actualTotal,goodQuantity,
   bulkProcessingCost,plannedBulkProcessingCost,plannedFillingProcessingCost,fillingProcessingCost,directActualTotal,productActualTotal,productPlannedTotal,
-  unitCost:filling.length&&productActualTotal!==null&&goodQuantity>0?productActualTotal/goodQuantity:null,
-  totalVariance:delta(actualTotal,plannedTotal),variancePercent:percent(actualTotal,plannedTotal),
+  unitCost:filling.length&&isPieces(evidence.unit)&&productActualTotal!==null&&goodQuantity>0?productActualTotal/goodQuantity:null,
+  totalVariance:costVariance(actualTotal,plannedTotal),variancePercent:costVariancePercent(actualTotal,plannedTotal),
   plannedGain:sumKnown(phases.filter(x=>x.phase==="Semilavorato").map(x=>x.plannedGain)),
   actualGain:sumKnown(phases.filter(x=>x.phase==="Semilavorato").map(x=>x.actualGain)),
   plannedRevenue:revenue,actualRevenue,invoicedQuantity,plannedMargin:delta(revenue,productPlannedTotal),

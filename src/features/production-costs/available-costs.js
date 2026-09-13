@@ -1,3 +1,4 @@
+import { isPieces } from "./filling-history.js";
 const numeric=v=>v!==null&&v!==undefined&&v!==""&&Number.isFinite(Number(v))?Number(v):null;
 export const sumAvailable=values=>{const known=values.map(numeric).filter(v=>v!==null);return known.length?known.reduce((a,b)=>a+b,0):null;};
 const difference=(a,b)=>a!=null&&b!=null?a-b:null;
@@ -25,15 +26,24 @@ export function availableCosts(r) {
  values.directActualTotal=bulk.length?values.actualTotal:values.fillingProcessingCost;
  values.productActualTotal=r.productActualTotal??(filling.length?sumAvailable([actualTransfer,values.fillingProcessingCost]):values.actualTotal);
  values.productPlannedTotal=r.productPlannedTotal??(filling.length?sumAvailable([plannedTransfer,values.plannedFillingProcessingCost]):values.plannedTotal);
- values.unitCost=filling.length&&values.productActualTotal!==null&&r.goodQuantity>0?values.productActualTotal/r.goodQuantity:null;
+ values.unitCostApplicable=Boolean(filling.length&&isPieces(r.unit));
+ values.unitCost=values.unitCostApplicable&&values.productActualTotal!==null&&r.goodQuantity>0?values.productActualTotal/r.goodQuantity:null;
  const comparable=values.productActualTotal!==null&&r.goodQuantity>0&&numeric(r.invoicedQuantity)!==null&&r.invoicedQuantity>=0&&r.invoicedQuantity<=r.goodQuantity?values.productActualTotal*r.invoicedQuantity/r.goodQuantity:null;
  values.plannedMargin=difference(r.plannedRevenue,values.productPlannedTotal);values.actualMargin=difference(r.actualRevenue,comparable);
  const objective=sumAvailable(bulk.map(p=>p.actualGain));
  values.plannedObjective=r.plannedObjective??(new Set(bulk.map(p=>p.machineId)).size===1?sumAvailable(bulk.map(p=>p.plannedGain)):null);
  values.invoicedObjective=r.invoicedObjective??(new Set(bulk.map(p=>p.machineId)).size===1&&objective!==null&&comparable!==null?objective*r.invoicedQuantity/r.goodQuantity:null);
  values.plannedObjectiveVariance=difference(values.plannedMargin,values.plannedObjective);values.actualObjectiveVariance=difference(values.actualMargin,values.invoicedObjective);
- values.totalVariance=difference(values.actualTotal,values.plannedTotal);
+ values.totalVariance=difference(values.plannedTotal,values.actualTotal);
+ values.variancePercent=values.plannedTotal!=null&&values.plannedTotal!==0&&values.totalVariance!==null?values.totalVariance/Math.abs(values.plannedTotal)*100:null;
+ // The OCT amount is the share already attributed to this production, not the
+ // whole customer document and never the configured estimated selling price.
+ values.octRevenue=numeric(r.commercial?.octRevenue);
+ values.octActualMargin=difference(values.octRevenue,values.actualTotal);
  const partial=Object.fromEntries(Object.entries(values).map(([k,v])=>[k,v!=null&&r[k]==null]));
  partial.totalVariance=values.totalVariance!==null&&(partial.actualTotal||partial.plannedTotal);
+ partial.variancePercent=values.variancePercent!==null&&partial.totalVariance;
+ partial.octRevenue=values.octRevenue!==null&&Boolean(r.commercial?.octPartial);
+ partial.octActualMargin=values.octActualMargin!==null&&(partial.octRevenue||partial.actualTotal);
  return {values,partial};
 }

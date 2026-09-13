@@ -5,12 +5,13 @@ import { laborRules, validateLaborRules, roundedHours, stationPaidHours, rulesSu
 import { historicalStationTurns, historicalLabor,historyCalendar } from "./station-history.js";
 import { after17Intervals,currentOvertime } from "./overtime.js";
 import { fillingUnitLabor,isPieces } from "./filling-history.js";
+import { materialBaseline,materialCode } from "./material-baseline.js";
 export const number = (v) => v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v)) ? Number(v) : null;
 export const sumKnown = (values) => values.length && values.every(v => number(v) !== null) ? values.reduce((s,v) => s + Number(v),0) : null;
 export const delta = (actual, planned) => number(actual) !== null && number(planned) !== null ? actual-planned : null;
 export const percent = (actual, planned) => number(planned) !== null && planned !== 0 && number(actual) !== null ? (actual-planned)/Math.abs(planned)*100 : null;
 const hours = (a,b) => a && b ? Math.max(0,(new Date(b)-new Date(a))/3600000) : null;
-const materialCost = (rows) => sumKnown(rows.map(x => number(x.unitCost) === null ? null : Number(x.quantity)*Number(x.unitCost)));
+const materialCost = (rows) => sumKnown(rows.map(x => number(x.unitCost) === null || number(x.quantity) === null || Number(x.quantity)<0 ? null : Number(x.quantity)*Number(x.unitCost)));
 export const defaultSettings = () => ({ laborHourly: "", referenceShiftHours:8, mixingOperatorsCount:null, shifts:[{ name:"Turno ordinario",start:"08:00",end:"16:00",breakMinutes:0,days:[1,2,3,4,5] }], holidays:[], machines:[], prices:[] });
 
 export function validateSettings(settings) {
@@ -56,14 +57,14 @@ export function scheduledHours(start,end,settings) {
  }
  return total;
 }
-function materialsVariance(planned,actual,confirmed=true) {
- const group=rows=>{const map=new Map();for(const r of rows){const k=r.code;const v=map.get(k)||{quantity:0,amount:0,known:true};v.quantity+=Number(r.quantity||0);v.known&&=number(r.unitCost)!==null;v.amount+=Number(r.quantity||0)*Number(r.unitCost||0);map.set(k,v);}return map;};
+function materialsVariance(planned,actual,confirmed=true,plannedComplete=false) {
+ const group=rows=>{const map=new Map();for(const r of rows){const k=materialCode(r.code);const v=map.get(k)||{quantity:0,amount:0,known:true,quantityKnown:true};const q=number(r.quantity);v.quantityKnown&&=q!==null&&q>=0;v.quantity+=q??0;v.known&&=number(r.unitCost)!==null;v.amount+=(q??0)*Number(r.unitCost||0);map.set(k,v);}return map;};
  const p=group(planned),a=group(actual);
  return [...new Set([...p.keys(),...a.keys()])].map(code=>{
-  const x=p.get(code),y=a.get(code),pq=x?.quantity||0,aq=y?.quantity||0;
+  const x=p.get(code),y=a.get(code),pq=x?(x.quantityKnown?x.quantity:null):plannedComplete?0:null,aq=y?(y.quantityKnown?y.quantity:null):0;
   const pc=x?.known&&pq?x.amount/pq:null,ac=y?.known&&aq?y.amount/aq:null;
   return {code,plannedQuantity:pq,actualQuantity:confirmed?aq:null,plannedUnitCost:pc,actualUnitCost:ac,
-   usageVariance:!confirmed||pc===null?null:(aq-pq)*pc,priceVariance:!confirmed||pc===null||ac===null?null:aq*(ac-pc)};
+   usageVariance:!confirmed||pq===null||aq===null||pc===null?null:(aq-pq)*pc,priceVariance:!confirmed||pq===null||aq===null||pc===null||ac===null?null:aq*(ac-pc)};
  });
 }
 
@@ -77,12 +78,15 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
  const unitLabor=fillingHistoricalMode?fillingUnitLabor(fillingHistory,fillingSettings?.laborHourly):null;
  const recoveredConsumption=!evidence.bulkSl?.length?historicalConsumption(evidence):[];
  const recoveredProducts=!evidence.productSl?.length?(evidence.historicalProductConsumption||[]).filter(x=>x.consumedAt).map(x=>({...x,unitCost:number(x.currentUnitCost)>0?Number(x.currentUnitCost):null})):[];
- const reconstructed=Boolean((!evidence.baseline&&evidence.historicalBaseline)||recoveredConsumption.length||recoveredProducts.length);
+ const materialPlan=materialBaseline(evidence);
+ const reconstructed=Boolean(materialPlan.recovered||(!evidence.baseline&&evidence.historicalBaseline)||recoveredConsumption.length||recoveredProducts.length);
  if(evidence.workspaceSnapshot)warnings.push("Riferimenti storici importati dalle conferme Workspace. Aggiornare MES e importare lo storico per tempi, stato attuale e consumi.");
  if(!evidence.baseline)warnings.push(evidence.historicalBaseline?"Preventivo ricostruito dalla revisione formula collegata, valorizzato ai costi ultimi disponibili; non è il preventivo economico originale.":"Preventivo originario non congelato: formula storica non ancora recuperata.");
  if(recoveredConsumption.length)warnings.push("Consumi recuperati dai prelievi scaricati in MES e valorizzati ai costi ultimi disponibili. Valorizzazione ricostruita, non prezzi storici dello SL.");
  if(!settings)warnings.push("Configurazione costi non disponibile per questa produzione.");
- const plannedMaterials=original?.materials||[],plannedPackaging=original?.packaging||[];
+ const plannedMaterials=materialPlan.rows,plannedPackaging=original?.packaging||[];
+ if(materialPlan.recovered)warnings.push("Quantità formula mancanti recuperate dalla revisione collegata alla lavorazione e dalla quantità del lotto. Per i componenti assenti dal preventivo si usano i costi ultimi disponibili, non prezzi storici; i prezzi originali registrati restano prioritari. Il preventivo salvato resta invariato.");
+ if(!plannedMaterials.length)warnings.push("Quantità formula non disponibili: manca un preventivo materiali utilizzabile o la revisione formula storica collegata. I consumi SL non vengono copiati nel preventivo.");
  const bulkMaterials=evidence.bulkSl?.length?evidence.bulkSl.flatMap(x=>x.materials||[]):recoveredConsumption;
  const productMaterials=evidence.productSl?.length?evidence.productSl.flatMap(x=>x.materials||[]):recoveredProducts;
  if(recoveredProducts.length)warnings.push("Bulk/confezionamento ricostruiti dagli impegni V4 marcati consumati: quantità fabbisogno e costi ultimi, non righe SL originali.");
@@ -230,7 +234,7 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
   actualGain:sumKnown(phases.filter(x=>x.phase==="Semilavorato").map(x=>x.actualGain)),
   plannedRevenue:revenue,actualRevenue,invoicedQuantity,plannedMargin:delta(revenue,productPlannedTotal),
   actualMargin:delta(actualRevenue,comparableCost),commercial,
-  materialVariances:materialsVariance(plannedMaterials,bulkMaterials,Boolean(evidence.bulkSl?.length||recoveredConsumption.length)),
+  materialVariances:materialsVariance(plannedMaterials,bulkMaterials,Boolean(evidence.bulkSl?.length||recoveredConsumption.length),materialPlan.complete),
   historical:!evidence.baseline,provisional:!closed||actualTotal===null||reconstructed};
 }
 

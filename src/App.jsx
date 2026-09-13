@@ -43,6 +43,8 @@ const CompanyLetterheads = lazy(() => import("./pages/Settings/CompanyLetterhead
 const Notifications = lazy(() => import("./pages/Notifications/Notifications"));
 const AIAssistant = lazy(() => import("./pages/AIAssistant/AIAssistant"));
 const Production = lazy(() => import("./pages/Production/Production"));
+const ProductionCostConfiguration = lazy(() => import("./features/production-costs/ProductionCostConfiguration"));
+const ProductionCostReports = lazy(() => import("./features/production-costs/ProductionCostReports"));
 const WorkspaceModuleContainer = lazy(() => import("./pages/Modules/WorkspaceModuleContainer"));
 const ProgreMesLaunch = lazy(() => import("./pages/ProgreMes/ProgreMesLaunch"));
 const CrmModule = lazy(() => import("./modules/crm/CrmModule"));
@@ -98,6 +100,8 @@ function App() {
               <Route index element={<Navigate to="/home" replace />} />
 
               <Route path="home" element={<Home />} />
+              <Route path="settings/costi-produzione" element={<WorkspaceAccessGuard screenCode="produzione.configurazione_costi"><ProductionCostConfiguration /></WorkspaceAccessGuard>} />
+              <Route path="consuntivi-produzioni" element={<WorkspaceAccessGuard screenCode="produzione.consuntivi"><ProductionCostReports /></WorkspaceAccessGuard>} />
               <Route path="activities/*" element={<ActivitiesModule />} />
               <Route path="dashboard" element={<Navigate to="/activities/dashboard" replace />} />
               <Route path="agenda" element={<Agenda />} />

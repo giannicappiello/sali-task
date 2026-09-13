@@ -36,6 +36,7 @@ import { createOctOrdersRunHandler, precheckOctOrders } from "../../server/mexal
 import { handleDigitalConnectionManager } from "../../server/crm/digital-connection-manager.js";
 import { listProductionWorkbench, loadAllProductionOrders, productionWorkbenchDetail } from "../../server/workspacemes-workbench.js";
 import { privateWorkbenchSession } from "../../server/private-orders-workbench.js";
+import { handleProductionCosts } from "../../server/production-costs.js";
 import { productionGoLiveGates } from "../../server/workspace-production-gates.js";
 import { effectiveWorkspaceDiagnostics } from "../../server/workspace-effective-diagnostics.js";
 import { confirmWorkspaceV4, createWorkspaceV4Preview } from "../../server/workspacemes-v4-api.js";
@@ -604,6 +605,8 @@ export default async function handler(req, res) {
 
   try {
     switch (body.action) {
+      case "production_costs":
+        return sendSuccess(res, 200, await handleProductionCosts(req, body));
       case "ai_order_capabilities":
       case "ai_order_document":
         return sendSuccess(res, 200, await handleAIOrderDocument(req));

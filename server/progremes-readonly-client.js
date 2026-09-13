@@ -11,6 +11,17 @@ const MAX_STATUS_LENGTH = 64;
 const COMMON_PAGED_PARAMETERS = ["page", "pageSize", "search"];
 
 const RESOURCE_DEFINITIONS = Object.freeze({
+  "production-cost-evidence": Object.freeze({
+    path: "production-cost-evidence", internal: true,
+    parameters: Object.freeze(["page", "pageSize"]),
+    fields: Object.freeze(["id","orderNumber","articleCode","articleName","unit","quantity","date","dueAt","state","lot","bulkLot",
+      "customerCode","customerName","formulaVersion","formulaRevision","links","baseline","bulkSl","productSl",
+      "bulkSlReference","productSlReference","works","operations","historicalMaterials"]),
+  }),
+  "production-cost-machines": Object.freeze({
+    path: "production-cost-machines", internal: true, parameters: Object.freeze([]), collection: true,
+    fields: Object.freeze(["id","code","name","type","department","active","washMinutes","minOperators"]),
+  }),
   status: Object.freeze({
     path: "status",
     parameters: Object.freeze([]),
@@ -465,4 +476,4 @@ export function createProgremesClient(options = {}) {
   });
 }
 
-export const PROGREMES_ALLOWED_RESOURCES = Object.freeze(Object.keys(RESOURCE_DEFINITIONS));
+export const PROGREMES_ALLOWED_RESOURCES = Object.freeze(Object.keys(RESOURCE_DEFINITIONS).filter(key => !RESOURCE_DEFINITIONS[key].internal));

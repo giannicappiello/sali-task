@@ -6,12 +6,19 @@ import { historicalStationTurns, historicalLabor,historyCalendar } from "./stati
 import { after17Intervals,currentOvertime } from "./overtime.js";
 import { fillingUnitLabor,isPieces } from "./filling-history.js";
 import { materialBaseline,materialCode } from "./material-baseline.js";
+import { availableCosts } from "./available-costs.js";
 export const number = (v) => v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v)) ? Number(v) : null;
 export const sumKnown = (values) => values.length && values.every(v => number(v) !== null) ? values.reduce((s,v) => s + Number(v),0) : null;
 export const delta = (actual, planned) => number(actual) !== null && number(planned) !== null ? actual-planned : null;
 export const percent = (actual, planned) => number(planned) !== null && planned !== 0 && number(actual) !== null ? (actual-planned)/Math.abs(planned)*100 : null;
 const hours = (a,b) => a && b ? Math.max(0,(new Date(b)-new Date(a))/3600000) : null;
 const materialCost = (rows) => sumKnown(rows.map(x => number(x.unitCost) === null || number(x.quantity) === null || Number(x.quantity)<0 ? null : Number(x.quantity)*Number(x.unitCost)));
+export function materialSummary(rows) {
+ const known=rows.filter(x=>number(x.unitCost)!==null&&number(x.quantity)!==null&&Number(x.quantity)>=0);
+ return {value:known.length?known.reduce((sum,x)=>sum+Number(x.quantity)*Number(x.unitCost),0):null,
+  totalRows:rows.length,valuedRows:known.length,missingRows:rows.length-known.length,
+  missingCodes:[...new Set(rows.filter(x=>!known.includes(x)).map(x=>materialCode(x.code)))]};
+}
 export const defaultSettings = () => ({ laborHourly: "", referenceShiftHours:8, mixingOperatorsCount:null, shifts:[{ name:"Turno ordinario",start:"08:00",end:"16:00",breakMinutes:0,days:[1,2,3,4,5] }], holidays:[], machines:[], prices:[] });
 
 export function validateSettings(settings) {
@@ -165,6 +172,7 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
  const filling=phases.filter(x=>x.phase==="Confezionamento"||x.phase==="Astucciatura"),bulk=phases.filter(x=>x.phase==="Semilavorato");
  const closed=works.length>0&&works.every(x=>x.state==="Terminato");
  const plannedMaterialCost=materialCost(plannedMaterials),actualMaterialCost=materialCost(bulkMaterials);
+ const plannedMaterialSummary=materialSummary(plannedMaterials),actualMaterialSummary=materialSummary(bulkMaterials);
  const plannedPackagingCost=plannedPackaging.length?materialCost(plannedPackaging):filling.length?null:0;
  // The first finished-product SL row is the bulk transfer; do not add it again
  // when the same bulk production is already included in this order.
@@ -214,14 +222,14 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
  if(filling.length&&knownTransfer===null)warnings.push("Costo del bulk condiviso da riconciliare prima del costo per pezzo.");
  if(configuration?.created_at && String(configuration.created_at).slice(0,10)>String(original?.capturedAt||evidence.date).slice(0,10))warnings.push("Tariffe inserite dopo la lavorazione: valorizzazione ricostruita, non tariffa storica rilevata.");
  const knownSubtotal=values=>values.some(v=>number(v)!==null)?values.reduce((s,v)=>s+(number(v)??0),0):null;
- const actualKnownSubtotal=knownSubtotal([...(bulk.length?[materialsActual]:[]),...(filling.length?[actualPackagingCost]:[]),actualLabor,actualWash,...(losses.length?[lossCost]:[])]);
- const plannedKnownSubtotal=knownSubtotal([plannedMaterialCost,...(filling.length?[plannedPackagingCost]:[]),plannedLabor,plannedWash]);
+ const actualKnownSubtotal=knownSubtotal([...(bulk.length?[actualMaterialSummary.value]:[]),...(filling.length?[actualPackagingCost]:[]),actualLabor,actualWash,...(losses.length?[lossCost]:[])]);
+ const plannedKnownSubtotal=knownSubtotal([plannedMaterialSummary.value,...(filling.length?[plannedPackagingCost]:[]),plannedLabor,plannedWash]);
  const oneStation=new Set(bulk.map(p=>p.machineId)).size===1;
  const plannedObjective=oneStation?sumKnown(bulk.map(p=>p.plannedGain)):null;
  const actualObjective=oneStation?sumKnown(bulk.map(p=>p.actualGain)):null;
  const invoicedObjective=actualObjective!==null&&comparableCost!==null?actualObjective*invoicedQuantity/goodQuantity:null;
  if(bulk.length&&!oneStation)warnings.push("Margine per singola STATION non attribuibile: più STATION condividono il ricavo. Nessuna ripartizione automatica inventata.");
- return {...evidence,configuration,phases,closed,warnings,reconstructed,recoveredConsumption,recoveredProducts,actualKnownSubtotal,plannedKnownSubtotal,plannedMaterialCost,actualMaterialCost,plannedPackagingCost,actualPackagingCost,
+ return {...evidence,configuration,phases,closed,warnings,reconstructed,recoveredConsumption,recoveredProducts,actualKnownSubtotal,plannedKnownSubtotal,plannedMaterialSummary,actualMaterialSummary,plannedMaterialCost,actualMaterialCost,plannedPackagingCost,actualPackagingCost,
   adjustment,stationContext,stationHistory:historicalMode?history:null,stationHistoricalHourly:historicalMode?number(stationSettings?.laborHourly):null,
   fillingContext,fillingHistory:fillingHistoricalMode?fillingHistory:null,fillingHistoricalHourly:fillingHistoricalMode?number(fillingSettings?.laborHourly):null,
   fillingUnitLabor:unitLabor,
@@ -245,7 +253,7 @@ export function allocateBulkCosts(records) {
  return records.map(r=>{
   if(!r.phases.some(x=>x.phase==="Confezionamento"||x.phase==="Astucciatura"))return r;
   const lot=r.bulkLot;
-  const sources=lot?records.filter(x=>(x.bulkLot===lot||x.lot===lot)&&x.bulkProcessingCost!==null&&x.phases.some(p=>p.phase==="Semilavorato")):[];
+  const sources=lot?records.filter(x=>(x.bulkLot===lot||x.lot===lot)&&x.phases.some(p=>p.phase==="Semilavorato")):[];
   if(sources.length!==1)return r;
   const source=sources[0];
   const produced=source.phases.filter(p=>p.phase==="Semilavorato").reduce((s,p)=>s+Number(p.goodQuantity||0),0);
@@ -258,7 +266,11 @@ export function allocateBulkCosts(records) {
   const plannedUsed=number(r.baseline?.bulkQuantity);
   const plannedBulkTransferCost=plannedProduced>0&&plannedUsed!==null&&source.plannedBulkProcessingCost!==null
    ?source.plannedBulkProcessingCost*plannedUsed/plannedProduced:null;
-  const commercial={...r.commercial,bulkTransferCost:source.bulkProcessingCost*used/produced,plannedBulkTransferCost,bulkSourceOrder:source.orderNumber,bulkUsed:used,bulkProduced:produced};
+  const available=availableCosts(source).values;
+  const commercial={...r.commercial,bulkTransferCost:source.bulkProcessingCost===null?null:source.bulkProcessingCost*used/produced,plannedBulkTransferCost,
+   bulkTransferAvailable:available.bulkProcessingCost===null?null:available.bulkProcessingCost*used/produced,
+   plannedBulkTransferAvailable:plannedProduced>0&&plannedUsed!==null&&available.plannedBulkProcessingCost!==null?available.plannedBulkProcessingCost*plannedUsed/plannedProduced:null,
+   bulkSourceOrder:source.orderNumber,bulkUsed:used,bulkProduced:produced};
   return {...calculateRecord(r,r.configuration,r.adjustment||{},commercial,undefined,r.stationContext,r.fillingContext),audit:r.audit,refreshedAt:r.refreshedAt};
  });
 }

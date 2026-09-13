@@ -403,16 +403,17 @@ export async function verifyUser(req, supabase, { allowOrdersUser = false, allow
 
   if (allowCustomerPrivateOrder) {
     const [{ data: customerLink, error: customerLinkError }, { data: privateModuleEnabled, error: privateModuleError }] = await Promise.all([
-      supabase.from("workspace_customer_user_links").select("customer_code").eq("user_id", profile.id).maybeSingle(),
+      supabase.from("workspace_customer_user_links").select("customer_code").eq("user_id", profile.id),
       supabase.rpc("workspace_module_enabled_for_user", { target_user_id: profile.id, target_module: "ordini_private" }),
     ]);
     if (customerLinkError || privateModuleError) {
       console.error("Customer private order authorization failed", { auth_user_id: user.id, error: (customerLinkError || privateModuleError)?.message });
       throw authorizationError("Errore verifica autorizzazione OrdiniPrivate.", 500);
     }
-    const customerCode = String(customerLink?.customer_code || "").trim();
+    const customerCodes = (customerLink || []).map((row) => String(row.customer_code || "").trim()).filter(Boolean);
+    const customerCode = customerCodes[0] || null;
     if (customerCode && privateModuleEnabled === true) {
-      return { authUserId: user.id, profile, isAdmin: false, integration: null, customerCode };
+      return { authUserId: user.id, profile, isAdmin: false, integration: null, customerCode, customerCodes };
     }
   }
 

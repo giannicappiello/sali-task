@@ -151,11 +151,15 @@ export default function NewOrder() {
     loading: accessLoading,
     canAccessOrders,
     canWriteOrders,
-    canSeeAll,
+    canSeeAll: canSeeAllCustomers,
+    privateReadOnly,
     visibleAgents,
     agentCode,
     customerCode,
   } = useOrdersAccess(moduleCode);
+
+  // The production director's additional PRIVATE visibility is read-only.
+  const canSeeAll = canSeeAllCustomers && !privateReadOnly;
 
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
@@ -273,7 +277,7 @@ export default function NewOrder() {
           .eq("attivo_mexal", true)
           .order("ragione_sociale", { ascending: true })
           .order("codice_cliente", { ascending: true }), ORDER_CUSTOMER_COLUMNS)
-        : await loadPagedRpc("visible_mexal_clients_for_me", (query) => query
+        : await loadPagedRpc("visible_mexal_clients_for_me", (query) => (privateReadOnly ? query.in("codice_agente_mexal", visibleAgents) : query)
           .order("ragione_sociale", { ascending: true })
           .order("codice_cliente", { ascending: true }), ORDER_CUSTOMER_COLUMNS);
 

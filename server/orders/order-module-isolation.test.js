@@ -173,8 +173,8 @@ test("OrdiniPrivate cliente vede lo storico completo delle proprie fatture", asy
     "utf8",
   );
 
-  assert.match(source, /if \(customerCode\) \{[\s\S]*query = query\.eq\("codice_cliente", customerCode\)/);
-  assert.match(source, /else \{[\s\S]*\.gte\("data_documento", start\)[\s\S]*\.lt\("data_documento"/);
+  assert.match(source, /if \(readCustomerCodes !== null\) \{[\s\S]*query = query\.in\("codice_cliente", readCustomerCodes\)/);
+  assert.match(source, /if \(!customerCode\) \{[\s\S]*\.gte\("data_documento", start\)[\s\S]*\.lt\("data_documento"/);
   assert.match(source, /!customerCode && <input type="month"/);
   assert.match(source, /Storico completo delle fatture del cliente importate da Mexal/);
 });

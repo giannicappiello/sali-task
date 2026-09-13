@@ -18,7 +18,7 @@ function formatDate(value) {
 export default function Invoices() {
   const navigate = useNavigate();
   const { basePath, moduleCode } = useOrdersModule();
-  const { loading: accessLoading, canAccessOrders, canSeeAll, visibleAgents, customerCode } = useOrdersAccess(moduleCode);
+  const { loading: accessLoading, canAccessOrders, canSeeAll, visibleAgents, customerCode, readCustomerCodes } = useOrdersAccess(moduleCode);
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [search, setSearch] = useState("");
   const [invoices, setInvoices] = useState([]);
@@ -38,22 +38,23 @@ export default function Invoices() {
       .select("id,sigla,cod_modulo,serie,numero,data_documento,codice_cliente,ragione_sociale_cliente,codice_agente_mexal,agente_nome,causale_magazzino_codice,causale_magazzino_descrizione,totale_imponibile,totale_iva,totale_documento")
       .order("data_documento", { ascending: false })
       .order("numero", { ascending: false });
-    if (customerCode) {
-      query = query.eq("codice_cliente", customerCode);
-    } else {
+    if (readCustomerCodes !== null) {
+      query = query.in("codice_cliente", readCustomerCodes);
+    }
+    if (!customerCode) {
       const start = `${month}-01`;
       const end = new Date(`${month}-01T00:00:00`);
       end.setMonth(end.getMonth() + 1);
       query = query
         .gte("data_documento", start)
         .lt("data_documento", end.toISOString().slice(0, 10));
-      if (!canSeeAll) query = query.in("codice_agente_mexal", visibleAgents);
+      if (readCustomerCodes === null && !canSeeAll) query = query.in("codice_agente_mexal", visibleAgents);
     }
     const { data, error: queryError } = await query;
     if (queryError) setError(queryError.message);
     setInvoices(data || []);
     setLoading(false);
-  }, [canAccessOrders, canSeeAll, customerCode, month, visibleAgents]);
+  }, [canAccessOrders, canSeeAll, customerCode, readCustomerCodes, month, visibleAgents]);
 
   useEffect(() => {
     if (accessLoading) return undefined;

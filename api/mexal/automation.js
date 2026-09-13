@@ -297,9 +297,10 @@ async function createAdmin(req, permissionCode = null) {
 async function authorizedCustomerCode(admin) {
   if (!admin?.profileId) return null;
   const { data, error } = await admin.supabase.from("workspace_customer_user_links")
-    .select("customer_code").eq("user_id", admin.profileId).maybeSingle();
+    .select("customer_code").eq("user_id", admin.profileId);
   if (error) throw error;
-  return String(data?.customer_code || "").trim() || null;
+  const codes = (data || []).map((row) => String(row.customer_code || "").trim()).filter(Boolean);
+  return codes.length ? codes : null;
 }
 
 async function rejectCustomerScopedOperation(admin, operation) {

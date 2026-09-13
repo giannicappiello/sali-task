@@ -4,9 +4,10 @@ import { Bot, KeyRound, Plus, Save, Search, ShieldCheck, UserRound, UsersRound, 
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 import SettingsWorkspaceNav from "./SettingsWorkspaceNav";
+import UserCustomerPicker from "./UserCustomerPicker";
 import "./access-control.css";
 
-const EMPTY_USER = { nome: "", cognome: "", email: "", telefono: "", password: "", ruolo_id: "", reparto_ids: [], responsabile_utente_id: "", mexal_agente_id: "", beauty_mexal_agente_id: "", customer_code: "", attivo: true };
+const EMPTY_USER = { nome: "", cognome: "", email: "", telefono: "", password: "", ruolo_id: "", reparto_ids: [], responsabile_utente_id: "", mexal_agente_id: "", beauty_mexal_agente_id: "", customer_codes: [], attivo: true };
 const AI_ACCESS_OPTIONS = [["inherit", "Eredita dal reparto"], ["allow", "Consentito"], ["deny", "Bloccato"]];
 
 function fullName(user) {
@@ -21,7 +22,7 @@ function managedUserState(value) {
   return {
     nome: value.nome || "", cognome: value.cognome || "", email: value.email || "", telefono: value.telefono || "",
     responsabile_utente_id: value.responsabile_utente_id || "",
-    customer_code: value.customer_code || "",
+    customer_codes: [...(value.customer_codes || [])].sort(),
   };
 }
 
@@ -34,6 +35,18 @@ async function edgeErrorMessage(error, response) {
     // La risposta può non avere un body JSON; usa il messaggio SDK come fallback.
   }
   return error?.message || "Salvataggio non riuscito.";
+}
+
+async function loadCustomerOptions() {
+  const customers = [];
+  for (let offset = 0; ; offset += 500) {
+    const result = await supabase.from("ordini_clienti_cache")
+      .select("codice_cliente,ragione_sociale,partita_iva,attivo_mexal")
+      .order("ragione_sociale").order("codice_cliente").range(offset, offset + 499);
+    if (result.error) return { data: [], error: result.error };
+    customers.push(...result.data);
+    if (result.data.length < 500) return { data: customers, error: null };
+  }
 }
 
 export default function AccessUsers() {
@@ -65,7 +78,7 @@ export default function AccessUsers() {
       supabase.from("workspace_moduli").select("codice,nome,area,aree,attivo,ordine").eq("attivo", true).order("ordine"),
       supabase.from("workspace_aree").select("codice,nome,attiva,ordine").eq("attiva", true).order("ordine"),
       supabase.from("workspace_schermate").select("codice,nome,attiva,ordine").eq("attiva", true).order("ordine"),
-      supabase.from("ordini_clienti_cache").select("codice_cliente,ragione_sociale,partita_iva").eq("attivo_mexal", true).order("ragione_sociale").limit(10000),
+      loadCustomerOptions(),
       supabase.from("workspace_customer_user_links").select("user_id,customer_code"),
     ]);
     const firstError = results.find((result) => result.error)?.error;
@@ -97,12 +110,12 @@ export default function AccessUsers() {
     if (!selectedUser) return;
     const linkedAgent = data.agents.find((agent) => agent.workspace_utente_id === selectedUser.id);
     const beauty = data.integrations.find((item) => item.utente_id === selectedUser.id);
-    const customerLink = data.customerLinks.find((item) => item.user_id === selectedUser.id);
+    const customerCodes = data.customerLinks.filter((item) => item.user_id === selectedUser.id).map((item) => item.customer_code);
     const departmentIds = data.userDepartments.filter((row) => row.utente_id === selectedUser.id).map((row) => row.reparto_id);
     const nextForm = {
       nome: selectedUser.nome || "", cognome: selectedUser.cognome || "", email: selectedUser.email || "", telefono: selectedUser.telefono || "", password: "",
       ruolo_id: selectedUser.ruolo_id || "", reparto_ids: [...new Set(departmentIds)], responsabile_utente_id: selectedUser.responsabile_utente_id || linkedAgent?.responsabile_utente_id || "",
-      mexal_agente_id: linkedAgent?.id || "", beauty_mexal_agente_id: beauty?.mexal_agente_id || "", customer_code: customerLink?.customer_code || "", attivo: selectedUser.attivo !== false,
+      mexal_agente_id: linkedAgent?.id || "", beauty_mexal_agente_id: beauty?.mexal_agente_id || "", customer_codes: customerCodes, attivo: selectedUser.attivo !== false,
     };
     setForm(nextForm);
     setSavedManagedForm(nextForm);
@@ -145,7 +158,7 @@ export default function AccessUsers() {
     if (managedChanged && (!form.nome.trim() || !form.cognome.trim() || !form.email.trim())) return setMessage({ type: "error", text: "Nome, cognome ed email sono obbligatori quando modifichi i dati o l'organizzazione dell'utente." });
     if (isCreating && form.password.length < 8) return setMessage({ type: "error", text: "Per il nuovo utente inserisci una password di almeno 8 caratteri." });
     const customerRole = /(^|\s)(cliente|customer)(\s|$)/i.test(selectedRole?.nome || "");
-    if (customerRole && !form.customer_code) return setMessage({ type: "error", text: "Per un utente Cliente è obbligatorio selezionare l'anagrafica cliente associata." });
+    if (customerRole && !form.customer_codes.length) return setMessage({ type: "error", text: "Per un utente Cliente è obbligatorio selezionare l'anagrafica cliente associata." });
     setSaving(true);
     setMessage(null);
     let response = null;
@@ -153,7 +166,7 @@ export default function AccessUsers() {
       const action = isCreating ? "create" : "update";
       const invocation = await supabase.functions.invoke("admin-manage-user", { body: {
         action, id: selectedUser?.id, auth_user_id: selectedUser?.auth_user_id, nome: form.nome.trim(), cognome: form.cognome.trim(), email: form.email.trim(), telefono: form.telefono.trim(),
-        password: form.password, ruolo_id: form.ruolo_id || null, reparto_id: null, defer_access_update: !isCreating, responsabile_utente_id: form.responsabile_utente_id || null, customer_code: form.customer_code || null, attivo: form.attivo,
+        password: form.password, ruolo_id: form.ruolo_id || null, reparto_id: null, defer_access_update: !isCreating, responsabile_utente_id: form.responsabile_utente_id || null, customer_codes: form.customer_codes, attivo: form.attivo,
       } });
       response = invocation.data;
       if (invocation.error || response?.error) {
@@ -204,7 +217,7 @@ export default function AccessUsers() {
           <nav className="access-tabs" aria-label="Configurazione utente">{[["dati","Dati",UserRound],["organizzazione","Organizzazione",UsersRound],["accessi","Accessi",ShieldCheck],["ai","AI",Bot]].map(([code,label,Icon]) => <button type="button" key={code} className={tab === code ? "active" : ""} onClick={() => setTab(code)}><Icon size={16}/>{label}</button>)}</nav>
           <div className="access-editor-body">
             {tab === "dati" && <div className="access-form-grid"><label>Nome<input value={form.nome} onChange={(e) => setForm((v) => ({ ...v, nome: e.target.value }))}/></label><label>Cognome<input value={form.cognome} onChange={(e) => setForm((v) => ({ ...v, cognome: e.target.value }))}/></label><label>Email<input type="email" value={form.email} onChange={(e) => setForm((v) => ({ ...v, email: e.target.value }))}/></label><label>Telefono<input value={form.telefono} onChange={(e) => setForm((v) => ({ ...v, telefono: e.target.value }))}/></label><label className="wide">{isCreating ? "Password iniziale" : "Nuova password (lascia vuoto per non cambiarla)"}<input type="password" minLength="8" value={form.password} onChange={(e) => setForm((v) => ({ ...v, password: e.target.value }))}/></label><div className="access-security-actions wide"><button type="button" onClick={sendPasswordReset} disabled={!form.email || isCreating}><KeyRound size={16}/>Invia link cambio password</button><label className="access-check"><input type="checkbox" checked={form.attivo} onChange={(e) => setForm((v) => ({ ...v, attivo: e.target.checked }))}/>Account attivo</label></div></div>}
-            {tab === "organizzazione" && <><div className="access-form-grid"><label>Ruolo operativo<select value={form.ruolo_id} onChange={(e) => setForm((v) => ({ ...v, ruolo_id: e.target.value }))}><option value="">Nessun ruolo</option>{data.roles.map((role) => <option key={role.id} value={role.id}>{role.nome}</option>)}</select></label><label>Responsabile collegato<select value={form.responsabile_utente_id} onChange={(e) => setForm((v) => ({ ...v, responsabile_utente_id: e.target.value }))}><option value="">Nessun responsabile</option>{responsiblePeople.map((user) => <option key={user.id} value={user.id}>{fullName(user)}</option>)}</select></label><label className="wide">Cliente associato in anagrafica<input list="workspace-customer-options" value={form.customer_code} onChange={(e) => setForm((v) => ({ ...v, customer_code: e.target.value.trim() }))} placeholder="Cerca o inserisci il codice cliente..."/><datalist id="workspace-customer-options">{data.customers.map((customer) => <option key={customer.codice_cliente} value={customer.codice_cliente}>{customer.ragione_sociale} · {customer.partita_iva || "P. IVA non disponibile"}</option>)}</datalist><small>Obbligatorio per il ruolo Cliente. L'utente vedrà esclusivamente dati, ordini, documenti e fatture di questa anagrafica.</small></label><fieldset className="wide"><legend>Reparti di appartenenza</legend><p>Tutti i reparti hanno lo stesso valore. Il salvataggio sostituisce l’elenco: quelli deselezionati non mantengono alcun accesso.</p><div className="access-choice-grid">{data.departments.filter((item) => item.attivo !== false).map((department) => <label key={department.id}><input type="checkbox" checked={form.reparto_ids.includes(department.id)} onChange={() => setForm((v) => ({ ...v, reparto_ids: v.reparto_ids.includes(department.id) ? v.reparto_ids.filter((id) => id !== department.id) : [...v.reparto_ids, department.id] }))}/>{department.nome}</label>)}</div></fieldset><label>Agente importato da Mexal<select value={form.mexal_agente_id} onChange={(e) => setForm((v) => ({ ...v, mexal_agente_id: e.target.value }))}><option value="">Utente non agente</option>{data.agents.filter((agent) => agent.attivo_mexal !== false && (!agent.workspace_utente_id || agent.workspace_utente_id === selectedId)).map((agent) => <option key={agent.id} value={agent.id}>{agent.codice} · {fullName(agent)}</option>)}</select><small>I dati commerciali restano sincronizzati da Mexal; responsabile e accessi restano nel Workspace.</small></label><label>Agente collegato alla Beauty Consultant<select value={form.beauty_mexal_agente_id} onChange={(e) => setForm((v) => ({ ...v, beauty_mexal_agente_id: e.target.value }))}><option value="">Nessun agente</option>{data.agents.filter((agent) => agent.attivo_mexal !== false).map((agent) => <option key={agent.id} value={agent.id}>{agent.codice} · {fullName(agent)}</option>)}</select></label></div>{!isCreating && <div className="access-linked"><strong>Persone collegate</strong><span>{linkedPeople.length ? linkedPeople.map(fullName).join(", ") : "Nessuna persona collegata direttamente."}</span></div>}</>}
+            {tab === "organizzazione" && <><div className="access-form-grid"><label>Ruolo operativo<select value={form.ruolo_id} onChange={(e) => setForm((v) => ({ ...v, ruolo_id: e.target.value }))}><option value="">Nessun ruolo</option>{data.roles.map((role) => <option key={role.id} value={role.id}>{role.nome}</option>)}</select></label><label>Responsabile collegato<select value={form.responsabile_utente_id} onChange={(e) => setForm((v) => ({ ...v, responsabile_utente_id: e.target.value }))}><option value="">Nessun responsabile</option>{responsiblePeople.map((user) => <option key={user.id} value={user.id}>{fullName(user)}</option>)}</select></label><UserCustomerPicker key={selectedId} customers={data.customers} value={form.customer_codes} onChange={(customer_codes) => setForm((v) => ({ ...v, customer_codes }))}/><fieldset className="wide"><legend>Reparti di appartenenza</legend><p>Tutti i reparti hanno lo stesso valore. Il salvataggio sostituisce l’elenco: quelli deselezionati non mantengono alcun accesso.</p><div className="access-choice-grid">{data.departments.filter((item) => item.attivo !== false).map((department) => <label key={department.id}><input type="checkbox" checked={form.reparto_ids.includes(department.id)} onChange={() => setForm((v) => ({ ...v, reparto_ids: v.reparto_ids.includes(department.id) ? v.reparto_ids.filter((id) => id !== department.id) : [...v.reparto_ids, department.id] }))}/>{department.nome}</label>)}</div></fieldset><label>Agente importato da Mexal<select value={form.mexal_agente_id} onChange={(e) => setForm((v) => ({ ...v, mexal_agente_id: e.target.value }))}><option value="">Utente non agente</option>{data.agents.filter((agent) => agent.attivo_mexal !== false && (!agent.workspace_utente_id || agent.workspace_utente_id === selectedId)).map((agent) => <option key={agent.id} value={agent.id}>{agent.codice} · {fullName(agent)}</option>)}</select><small>I dati commerciali restano sincronizzati da Mexal; responsabile e accessi restano nel Workspace.</small></label><label>Agente collegato alla Beauty Consultant<select value={form.beauty_mexal_agente_id} onChange={(e) => setForm((v) => ({ ...v, beauty_mexal_agente_id: e.target.value }))}><option value="">Nessun agente</option>{data.agents.filter((agent) => agent.attivo_mexal !== false).map((agent) => <option key={agent.id} value={agent.id}>{agent.codice} · {fullName(agent)}</option>)}</select></label></div>{!isCreating && <div className="access-linked"><strong>Persone collegate</strong><span>{linkedPeople.length ? linkedPeople.map(fullName).join(", ") : "Nessuna persona collegata direttamente."}</span></div>}</>}
             {tab === "accessi" && <><div className="access-priority"><ShieldCheck size={20}/><div><strong>Le eccezioni personali prevalgono su area, reparto, ruolo, modulo e schermata.</strong><span>L’amministratore mantiene sempre accesso completo.</span></div></div><div className="access-exception-builder"><label>Ambito<select value={exceptionDraft.ambito} onChange={(e) => setExceptionDraft((v) => ({ ...v, ambito: e.target.value, codice: "" }))}><option value="area">Area</option><option value="modulo">Modulo</option><option value="schermata">Schermata</option><option value="permesso">Funzione</option></select></label><label>Elemento<select value={exceptionDraft.codice} onChange={(e) => setExceptionDraft((v) => ({ ...v, codice: e.target.value }))}><option value="">Seleziona...</option>{targetOptions.map(([code,label]) => <option key={code} value={code}>{label}</option>)}</select></label><label>Decisione<select value={exceptionDraft.decisione} onChange={(e) => setExceptionDraft((v) => ({ ...v, decisione: e.target.value }))}><option value="consenti">Consenti</option><option value="nega">Nega</option></select></label><label>Livello<select value={exceptionDraft.livello_accesso} onChange={(e) => setExceptionDraft((v) => ({ ...v, livello_accesso: e.target.value }))}><option value="">Ereditato</option><option value="lettura">Consultazione</option><option value="scrittura">Operatività</option><option value="amministrazione">Gestione</option></select></label><label>Scadenza<input type="date" value={exceptionDraft.valida_fino_a} onChange={(e) => setExceptionDraft((v) => ({ ...v, valida_fino_a: e.target.value }))}/></label><label className="wide">Motivazione<input value={exceptionDraft.motivazione} onChange={(e) => setExceptionDraft((v) => ({ ...v, motivazione: e.target.value }))} placeholder="Perché viene applicata questa eccezione?"/></label><button type="button" onClick={addException}><Plus size={16}/>Aggiungi eccezione</button></div><div className="access-exceptions">{userExceptions.map((item) => <div key={item.id || `${item.ambito}:${item.codice}`}><span className={`access-decision ${item.decisione}`}>{item.decisione === "consenti" ? "Consenti" : "Nega"}</span><span><strong>{item.codice}</strong><small>{item.ambito}{item.livello_accesso ? ` · ${item.livello_accesso}` : ""}{item.motivazione ? ` · ${item.motivazione}` : ""}</small></span><button type="button" onClick={() => setUserExceptions((current) => current.filter((row) => row !== item))}><X size={16}/></button></div>)}{!userExceptions.length && <p>Nessuna eccezione personale: valgono le regole ereditate.</p>}</div></>}
             {tab === "ai" && <><div className="access-priority"><Bot size={20}/><div><strong>Disponibilità AI per utente</strong><span>Il livello operativo è definito esclusivamente dal ruolo. Qui puoi solo ereditare, consentire o bloccare ogni modulo.</span></div></div><div className="access-ai-list">{data.modules.filter((module) => ["attivita","prodotti","documenti","beauty_days","ordini_pr","ordini_ph","ordini_private","progremes"].includes(module.codice)).map((module) => { const current = aiLevels[module.codice] || { consentito: null, riconoscimento_immagini: null }; const accessValue = current.consentito === null || current.consentito === undefined ? "inherit" : current.consentito ? "allow" : "deny"; return <div key={module.codice}><span><strong>{module.nome}</strong><small>{moduleAreaCodes(module).join(", ")}</small></span><select value={accessValue} onChange={(e) => setAiLevels((v) => ({ ...v, [module.codice]: { ...current, consentito: e.target.value === "inherit" ? null : e.target.value === "allow" } }))}>{AI_ACCESS_OPTIONS.map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select><label className="access-check"><input type="checkbox" checked={current.riconoscimento_immagini === true} onChange={(e) => setAiLevels((v) => ({ ...v, [module.codice]: { ...current, riconoscimento_immagini: e.target.checked } }))}/>Immagini</label></div>; })}</div></>}
           </div>

@@ -25,6 +25,7 @@ export default function Customers() {
     loading: accessLoading,
     visibleAgents,
     customerCode,
+    readCustomerCodes,
     canSeeAll,
     canAccessOrders,
   } = useOrdersAccess(moduleCode);
@@ -65,7 +66,7 @@ export default function Customers() {
         .limit(RESULT_LIMIT);
 
       if (canSeeAll || customerCode) query = query.eq("attivo_mexal", true);
-      if (customerCode) query = query.eq("codice_cliente", customerCode);
+      if (readCustomerCodes !== null) query = query.in("codice_cliente", readCustomerCodes);
 
       if (searchTerm) {
         const pattern = `%${searchTerm}%`;
@@ -116,6 +117,7 @@ export default function Customers() {
     canSeeAll,
     canAccessOrders,
     customerCode,
+    readCustomerCodes,
     search,
     JSON.stringify(visibleAgents),
   ]);

@@ -122,7 +122,7 @@ async function createUser(adminClient, body, callerProfileId) {
   const ruolo_id = body.ruolo_id || null;
   const reparto_ids = Array.isArray(body.reparto_ids) ? [...new Set(body.reparto_ids)] : body.reparto_id ? [body.reparto_id] : null;
   const responsabile_utente_id = body.responsabile_utente_id || null;
-  const customer_code = clean(body.customer_code) || null;
+  const customer_codes = Array.isArray(body.customer_codes) ? body.customer_codes.map(clean).filter(Boolean) : [clean(body.customer_code)].filter(Boolean);
   const attivo = body.attivo !== false;
 
   if (!nome || !cognome || !email || !password) {
@@ -199,7 +199,7 @@ async function createUser(adminClient, body, callerProfileId) {
   const customerLinkError = await saveCustomerLink(
     adminClient,
     profile.id,
-    customer_code,
+    customer_codes,
     ruolo_id,
     callerProfileId
   );
@@ -227,7 +227,7 @@ async function updateUser(adminClient, body, callerProfileId) {
   const ruolo_id = body.ruolo_id || null;
   const reparto_ids = Array.isArray(body.reparto_ids) ? [...new Set(body.reparto_ids)] : body.reparto_id ? [body.reparto_id] : null;
   const responsabile_utente_id = body.responsabile_utente_id || null;
-  const customer_code = clean(body.customer_code) || null;
+  const customer_codes = Array.isArray(body.customer_codes) ? body.customer_codes.map(clean).filter(Boolean) : [clean(body.customer_code)].filter(Boolean);
   const attivo = body.attivo !== false;
 
   if (!id || !nome || !cognome || !email) {
@@ -297,10 +297,10 @@ async function updateUser(adminClient, body, callerProfileId) {
     if (organizationError) return json({ error: organizationError.message }, 400);
   }
 
-  const customerLinkError = await saveCustomerLink(
+  const customerLinkError = !Object.hasOwn(body, "customer_codes") && !Object.hasOwn(body, "customer_code") ? null : await saveCustomerLink(
     adminClient,
     id,
-    customer_code,
+    customer_codes,
     ruolo_id,
     callerProfileId
   );
@@ -312,56 +312,11 @@ async function updateUser(adminClient, body, callerProfileId) {
   return json({ success: true });
 }
 
-async function saveCustomerLink(
-  adminClient,
-  userId,
-  customerCode,
-  roleId,
-  callerProfileId
-) {
-  const { data: role, error: roleError } = roleId
-    ? await adminClient.from("ruoli").select("nome").eq("id", roleId).maybeSingle()
-    : { data: null, error: null };
-
-  if (roleError) return roleError.message;
-
-  const customerRole = /(^|\s)(cliente|customer)(\s|$)/i.test(clean(role?.nome));
-
-  if (customerRole && !customerCode) {
-    return "Per un utente Cliente è obbligatorio selezionare l'anagrafica cliente associata.";
-  }
-
-  if (!customerCode) {
-    const { error } = await adminClient
-      .from("workspace_customer_user_links")
-      .delete()
-      .eq("user_id", userId);
-    return error?.message || null;
-  }
-
-  const { data: customer, error: customerError } = await adminClient
-    .from("ordini_clienti_cache")
-    .select("codice_cliente,attivo_mexal")
-    .ilike("codice_cliente", customerCode)
-    .maybeSingle();
-
-  if (customerError) return customerError.message;
-  if (!customer) return "Il cliente selezionato non esiste nell'anagrafica Workspace/Mexal.";
-  if (customer.attivo_mexal === false) return "Il cliente selezionato non è attivo nell'anagrafica Workspace/Mexal.";
-
-  const { error } = await adminClient
-    .from("workspace_customer_user_links")
-    .upsert(
-      {
-        user_id: userId,
-        customer_code: customer.codice_cliente,
-        linked_by: callerProfileId,
-        linked_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id" }
-    );
-
+async function saveCustomerLink(adminClient, userId, customerCodes, roleId, callerProfileId) {
+  const { error } = await adminClient.rpc("workspace_replace_user_customers", {
+    target_user_id: userId, customer_codes: customerCodes,
+    target_role_id: roleId, actor_id: callerProfileId,
+  });
   return error?.message || null;
 }
 

@@ -24,7 +24,7 @@ export default function Orders() {
   const { moduleCode, basePath } = useOrdersModule();
   const navigate = useNavigate();
   const location = useLocation();
-  const { loading: accessLoading, visibleAgents, customerCode, canSeeAll, canAccessOrders, canWriteOrders, canUseAIOrderGeneration, isBackoffice, isAdmin } = useOrdersAccess(moduleCode);
+  const { loading: accessLoading, visibleAgents, customerCode, readCustomerCodes, canSeeAll, canAccessOrders, canWriteOrders, canUseAIOrderGeneration, isBackoffice, isAdmin } = useOrdersAccess(moduleCode);
   const [rows, setRows] = useState([]);
   const [agentsByCode, setAgentsByCode] = useState(new Map());
   const [customersByCode, setCustomersByCode] = useState(new Map());
@@ -50,8 +50,8 @@ export default function Orders() {
     }
 
     let query = supabase.from("ordini_testate").select("*").or(orderModuleFilter(moduleCode)).eq("mese_ordine", month);
-    if (customerCode) {
-      query = query.eq("codice_cliente", customerCode);
+    if (readCustomerCodes !== null) {
+      query = query.in("codice_cliente", readCustomerCodes);
     } else if (!canSeeAll) {
       if (!visibleAgents?.length) {
         setRows([]);
@@ -106,7 +106,7 @@ export default function Orders() {
     setCustomersByCode(customerDirectory.namesByCode);
     setAgentsByCustomer(customerDirectory.agentsByCustomer);
     setLoading(false);
-  }, [canAccessOrders, canSeeAll, customerCode, moduleCode, month, visibleAgents]);
+  }, [canAccessOrders, canSeeAll, readCustomerCodes, moduleCode, month, visibleAgents]);
 
   useEffect(() => {
     if (accessLoading) return undefined;
@@ -133,7 +133,7 @@ export default function Orders() {
     });
   }, [rows, search, statusFilter, agentsByCode, agentsByCustomer, customersByCode]);
 
-  const accessLabel = customerCode ? `Solo cliente ${customerCode}` : isAdmin || isBackoffice ? "Accesso completo" : `${visibleAgents?.length || 0} agente/i autorizzato/i`;
+  const accessLabel = customerCode ? `Clienti associati: ${readCustomerCodes?.length || 1}` : readCustomerCodes !== null ? "Clienti PRIVATE" : isAdmin || isBackoffice ? "Accesso completo" : `${visibleAgents?.length || 0} agente/i autorizzato/i`;
 
   return (
     <div className="orders-page">

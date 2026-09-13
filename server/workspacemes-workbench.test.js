@@ -11,7 +11,7 @@ test("il Workbench cliente riconosce esclusivamente il codice cliente associato"
 
 test("lista e dettaglio Workbench applicano lo scope cliente sul server", async () => {
   const source = await readFile(new URL("./workspacemes-workbench.js", import.meta.url), "utf8");
-  assert.match(source, /if \(expectedCustomerCode\) ordersQuery = ordersQuery\.eq\("codice_cliente", expectedCustomerCode\)/);
+  assert.match(source, /if \(expectedCustomerCode\) ordersQuery = ordersQuery\.in\("codice_cliente", Array.isArray\(expectedCustomerCode\) \? expectedCustomerCode : \[expectedCustomerCode\]\)/);
   assert.match(source, /some\(\(order\) => !workbenchOrderBelongsToCustomer\(order, expectedCustomerCode\)\)/);
   assert.match(source, /OCT o RdP non disponibile per il cliente associato/);
 });

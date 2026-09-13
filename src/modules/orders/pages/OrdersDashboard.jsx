@@ -22,7 +22,7 @@ export default function OrdersDashboard() {
   const { moduleCode, basePath } = useOrdersModule();
   const usesMexalReconciliation = orderModuleUsesMexalReconciliation(moduleCode);
   const navigate = useNavigate();
-  const { loading: accessLoading, visibleAgents, customerCode, canSeeAll, canAccessOrders, canWriteOrders, canUseAIOrderGeneration } = useOrdersAccess(moduleCode);
+  const { loading: accessLoading, visibleAgents, readCustomerCodes, canSeeAll, canAccessOrders, canWriteOrders, canUseAIOrderGeneration } = useOrdersAccess(moduleCode);
   const [aiTypeDialogOpen, setAITypeDialogOpen] = useState(false);
   const [stats, setStats] = useState({ ordiniMese: 0, aperti: 0, inCorso: 0, evasi: 0 });
   const [orders, setOrders] = useState([]);
@@ -37,8 +37,8 @@ export default function OrdersDashboard() {
     let query = supabase.from(table).select("*", { count: "exact", head: true });
     query = query.or(orderModuleFilter(moduleCode));
     filters.forEach(([field, value]) => { query = query.eq(field, value); });
-    if (customerCode) {
-      query = query.eq("codice_cliente", customerCode);
+    if (readCustomerCodes !== null) {
+      query = query.in("codice_cliente", readCustomerCodes);
     } else if (!canSeeAll) {
       if (!visibleAgents?.length) return 0;
       query = query.in("codice_agente_mexal", visibleAgents);
@@ -46,7 +46,7 @@ export default function OrdersDashboard() {
     const { count, error } = await query;
     if (error) { console.error(`Errore conteggio ${table}:`, error); return 0; }
     return count || 0;
-  }, [canSeeAll, customerCode, moduleCode, visibleAgents]);
+  }, [canSeeAll, readCustomerCodes, moduleCode, visibleAgents]);
 
   const loadStats = useCallback(async () => {
     setLoading(true);
@@ -60,7 +60,7 @@ export default function OrdersDashboard() {
 
     const month = new Date().toISOString().slice(0, 7);
     let ordersQuery = supabase.from("ordini_testate").select("*").or(orderModuleFilter(moduleCode));
-    if (customerCode) ordersQuery = ordersQuery.eq("codice_cliente", customerCode);
+    if (readCustomerCodes !== null) ordersQuery = ordersQuery.in("codice_cliente", readCustomerCodes);
     else if (!canSeeAll) ordersQuery = visibleAgents?.length ? ordersQuery.in("codice_agente_mexal", visibleAgents) : null;
 
     const [ordiniMese, aperti, inCorso, evasi, ordersResult] = await Promise.all([
@@ -98,7 +98,7 @@ export default function OrdersDashboard() {
     setAgentsByCustomer(customerDirectory.agentsByCustomer);
     setOrders(orderRows.map((order) => ({ ...order, documenti_mexal: documentsByOrder.get(order.id) || [], agente_visualizzato: agentDisplayName(order, names, customerDirectory.agentsByCustomer) })));
     setLoading(false);
-  }, [canAccessOrders, canSeeAll, customerCode, countTable, moduleCode, visibleAgents]);
+  }, [canAccessOrders, canSeeAll, readCustomerCodes, countTable, moduleCode, visibleAgents]);
 
   useEffect(() => {
     if (accessLoading) return undefined;

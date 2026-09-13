@@ -13,8 +13,8 @@ export default async function handler(req, res) {
       const ownsPrivateDraft = existing
         && String(existing.modulo_ordini || "").toLowerCase() === "private"
         && String(existing.stato || "").toLowerCase() === "bozza"
-        && String(existing.codice_cliente || "").trim().toUpperCase() === String(authorization.customerCode).trim().toUpperCase()
-        && String(header.codice_cliente || "").trim().toUpperCase() === String(authorization.customerCode).trim().toUpperCase();
+        && (authorization.customerCodes || [authorization.customerCode]).some((code) => String(existing.codice_cliente || "").trim().toUpperCase() === String(code).trim().toUpperCase())
+        && (authorization.customerCodes || [authorization.customerCode]).some((code) => String(header.codice_cliente || "").trim().toUpperCase() === String(code).trim().toUpperCase());
       if (!ownsPrivateDraft) return res.status(403).json({ error: "Il cliente può modificare soltanto le proprie bozze OCT Private." });
     }
     const { error } = await admin.rpc("aggiorna_ordine_operativo", { p_ordine_id: orderId, p_testata: header, p_righe: lines });

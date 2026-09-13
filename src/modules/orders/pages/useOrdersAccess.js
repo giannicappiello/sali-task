@@ -32,6 +32,9 @@ export default function useOrdersAccess(moduleCode = "prof") {
   const moduleDefinition = orderModuleDefinition(moduleCode);
   const workspaceModuleCode = moduleDefinition.workspaceCode;
   const customerCode = dataScope?.customerCode || null;
+  const customerCodesKey = JSON.stringify(dataScope?.customerCodes?.length ? dataScope.customerCodes : customerCode ? [customerCode] : []);
+  const customerCodes = useMemo(() => JSON.parse(customerCodesKey), [customerCodesKey]);
+  const privateReadOnly = dataScope?.privateCommercialRead === true && moduleCode === "private" && !customerCode;
   const scopeMode = dataScope?.mode || "propri";
   const commercialMode = dataScope?.commercialMode || scopeMode;
   const scopeAgentKey = JSON.stringify(dataScope?.agentIds || []);
@@ -82,7 +85,7 @@ export default function useOrdersAccess(moduleCode = "prof") {
         return;
       }
 
-      const [integrationResult, scopeResult] = await Promise.all([
+      const [integrationResult, scopeResult, privateResult] = await Promise.all([
         supabase
           .from("integrazioni_utenti")
           .select("enabled,ruolo_ordini")
@@ -90,12 +93,13 @@ export default function useOrdersAccess(moduleCode = "prof") {
           .eq("modulo", moduleDefinition.integrationCode)
           .maybeSingle(),
         supabase.rpc("visible_mexal_agent_codes"),
+        privateReadOnly ? supabase.rpc("workspace_private_customer_codes") : Promise.resolve({ data: [], error: null }),
       ]);
 
       if (!active) return;
 
-      if (integrationResult.error || scopeResult.error) {
-        const accessError = integrationResult.error || scopeResult.error;
+      if (integrationResult.error || scopeResult.error || privateResult.error) {
+        const accessError = integrationResult.error || scopeResult.error || privateResult.error;
         console.error("Errore caricamento accesso Gestione Ordini:", accessError);
         setError(accessError);
         setAccess(emptyAccess());
@@ -108,6 +112,7 @@ export default function useOrdersAccess(moduleCode = "prof") {
         ruolo_ordini: integrationResult.data?.ruolo_ordini || "agente",
         codice_agente_mexal: normalizeAgentCodes(scopeResult.data)[0] || null,
         agenti_gestiti: normalizeAgentCodes(scopeResult.data),
+        private_customer_codes: privateResult.data || [],
         admin: false,
       });
 
@@ -119,7 +124,7 @@ export default function useOrdersAccess(moduleCode = "prof") {
     return () => {
       active = false;
     };
-  }, [profile?.id, isAdminUser, customerCode, scopeMode, commercialMode, scopeAgentKey, moduleDefinition.integrationCode]);
+  }, [profile?.id, isAdminUser, customerCode, scopeMode, commercialMode, scopeAgentKey, moduleDefinition.integrationCode, privateReadOnly]);
 
   const permissions = useMemo(() => {
     const canReadModule = canUseModule(workspaceModuleCode, "lettura");
@@ -160,17 +165,20 @@ export default function useOrdersAccess(moduleCode = "prof") {
       isAgent,
       isCustomer,
       customerCode,
+      customerCodes,
+      readCustomerCodes: customerCode ? customerCodes : privateReadOnly ? (access.private_customer_codes || []) : null,
+      privateReadOnly,
       agentCode,
       managedAgents,
       visibleAgents,
-      canSeeAll: isAdmin || canReadAllCommercial,
+      canSeeAll: isAdmin || canReadAllCommercial || (enabled && privateReadOnly),
       canWriteAll: !isCustomer && canWriteModule && (isAdmin || (isBackoffice && scopeMode === "tutti")),
       canAccessOrders: isAdmin || enabled,
       canWriteOrders: canCreateCustomerPrivateOrder || (!isCustomer && (isAdmin || (enabled && canWriteModule))),
       canUseAIOrderGeneration: !isCustomer && (isAdmin || (enabled && canWriteModule)),
       canManageOrders: !isCustomer && (isAdmin || (enabled && canManageModule)),
     };
-  }, [access, canUseModule, customerCode, scopeMode, commercialMode, workspaceModuleCode]);
+  }, [access, canUseModule, customerCode, scopeMode, commercialMode, workspaceModuleCode, customerCodes, privateReadOnly]);
 
   return {
     loading,

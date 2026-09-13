@@ -137,7 +137,7 @@ export default async function handler(req, res) {
     if (orderError) throw orderError; if (linesError) throw linesError; if (!lines?.length) throw new Error("Ordine senza righe.");
     if (authorization?.customerCode && (
       String(order.modulo_ordini || "").toLowerCase() !== "private"
-      || normalizeCustomerCode(order.codice_cliente) !== normalizeCustomerCode(authorization.customerCode)
+      || !(authorization.customerCodes || [authorization.customerCode]).some((code) => normalizeCustomerCode(order.codice_cliente) === normalizeCustomerCode(code))
     )) {
       return res.status(403).json({ error: "Il cliente può inviare soltanto i propri ordini OCT Private." });
     }

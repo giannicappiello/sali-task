@@ -115,3 +115,12 @@
 @media (max-width: 980px) { .access-users { contain: none; } .access-user-list { max-height: min(45svh, 420px); flex: auto; } }
 @media (max-width: 980px) { .access-workspace { grid-template-columns: 1fr; } .access-users { position: static; } .access-user-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } .access-exception-builder { grid-template-columns: repeat(2, minmax(0, 1fr)); } .access-exception-builder .wide { grid-column: 1 / -1; } .access-audit-summary { grid-template-columns: repeat(4, 1fr); } .access-audit-summary > div:first-child { grid-column: 1 / -1; } .access-audit-summary > div:not(:first-child) { border-left: 0; border-top: 1px solid #e3eaf3; padding: 10px 0 0; } .access-audit-table { overflow-x: auto; } .access-audit-table > div { min-width: 800px; } }
 @media (max-width: 680px) { .access-page-toolbar { align-items: stretch; flex-direction: column; } .access-page-toolbar .access-rule-tabs { width: 100%; } .access-page-toolbar .access-rule-tabs button { flex: 1; } .access-page-actions .primary-action, .access-page-toolbar .primary-action { justify-content: center; width: 100%; } .access-form-grid, .access-module-matrix, .access-check-toolbar { grid-template-columns: 1fr; } .access-user-list { grid-template-columns: 1fr; } .access-ai-list > div { grid-template-columns: 1fr; } .access-exception-builder { grid-template-columns: 1fr; } .access-exception-builder .wide { grid-column: auto; } .access-editor-footer { align-items: stretch; flex-direction: column; } .access-editor-footer button { justify-content: center; } }
+.user-customer-picker { display: grid; gap: 12px; }
+.user-customer-selected { display: grid; gap: 8px; }
+.user-customer-selected > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid #cddff4; border-radius: 10px; padding: 10px 12px; background: #f3f8ff; }
+.user-customer-picker strong, .user-customer-picker small { display: block; }
+.user-customer-picker small { color: #526780; font-size: .8rem; }
+.user-customer-selected button { flex-shrink: 0; padding: 7px 10px; border: 1px solid #cddff4; border-radius: 8px; background: white; color: #164f87; cursor: pointer; }
+.user-customer-results { max-height: 240px; overflow-y: auto; display: grid; gap: 6px; }
+.user-customer-results > label { display: flex; flex-direction: row; align-items: center; gap: 12px; padding: 8px; border-bottom: 1px solid #e5edf5; cursor: pointer; }
+.user-customer-results input[type=checkbox] { width: 18px; height: 18px; min-height: 18px; flex-shrink: 0; }

@@ -40,7 +40,7 @@ export default async function handler(req, res) {
     });
     if (authorization?.customerCode && (
       String(context.order?.modulo_ordini || "").toLowerCase() !== "private"
-      || String(context.order?.codice_cliente || "").trim().toUpperCase() !== String(authorization.customerCode).trim().toUpperCase()
+      || !(authorization.customerCodes || [authorization.customerCode]).some((code) => String(context.order?.codice_cliente || "").trim().toUpperCase() === String(code).trim().toUpperCase())
     )) {
       return res.status(403).json({ error: "Il cliente può gestire soltanto le notifiche dei propri ordini OCT Private." });
     }

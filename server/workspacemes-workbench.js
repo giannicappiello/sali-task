@@ -73,7 +73,8 @@ function customerCode(order) {
 
 export function workbenchOrderBelongsToCustomer(order, expectedCustomerCode) {
   if (!expectedCustomerCode) return true;
-  return customerCode(order).toUpperCase() === text(expectedCustomerCode).toUpperCase();
+  const codes = Array.isArray(expectedCustomerCode) ? expectedCustomerCode : [expectedCustomerCode];
+  return codes.some((code) => customerCode(order).toUpperCase() === text(code).toUpperCase());
 }
 
 function customerName(order, customersByCode) {
@@ -289,7 +290,7 @@ export function diagnosticBlocks(row) {
 
 export async function listProductionWorkbench({ admin, diagnostics = [], productionOrders = [], customerCode: expectedCustomerCode = null }) {
   let ordersQuery = admin.from("ordini_testate").select("*").eq("origine", "mexal_oct");
-  if (expectedCustomerCode) ordersQuery = ordersQuery.eq("codice_cliente", expectedCustomerCode);
+  if (expectedCustomerCode) ordersQuery = ordersQuery.in("codice_cliente", Array.isArray(expectedCustomerCode) ? expectedCustomerCode : [expectedCustomerCode]);
   const [{ data: orders, error: orderError }, { data: lines, error: lineError }, { data: requests, error: requestError }] = await Promise.all([
     ordersQuery.order("data_consegna", { ascending: true }).limit(500),
     admin.from("ordini_righe").select("*").order("mexal_posizione", { ascending: true }).limit(5000),

@@ -17,10 +17,12 @@ const RESOURCE_DEFINITIONS = Object.freeze({
     fields: Object.freeze(["id","orderNumber","articleCode","articleName","unit","quantity","date","dueAt","state","lot","bulkLot",
       "customerCode","customerName","formulaVersion","formulaRevision","links","baseline","bulkSl","productSl",
       "bulkSlReference","productSlReference","works","operations","historicalMaterials"]),
+    optionalFields: Object.freeze(["historicalBaseline","historicalProductConsumption","sourceOrder","mixingOperatorsCount","mixingOperatorsCapturedAt"]),
   }),
   "production-cost-machines": Object.freeze({
     path: "production-cost-machines", internal: true, parameters: Object.freeze([]), collection: true,
     fields: Object.freeze(["id","code","name","type","department","active","washMinutes","minOperators"]),
+    optionalFields: Object.freeze(["mixingOperatorsCount"]),
   }),
   status: Object.freeze({
     path: "status",
@@ -341,7 +343,7 @@ function sanitizeStatus(payload) {
  * @param {unknown} payload
  * @param {readonly string[]} fields
  */
-function sanitizePaged(payload, fields) {
+function sanitizePaged(payload, fields, optionalFields = []) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
   const value = /** @type {Record<string, unknown>} */ (payload);
   if (![value.page, value.pageSize, value.total].every(Number.isInteger) || !Array.isArray(value.items)) return null;
@@ -356,18 +358,18 @@ function sanitizePaged(payload, fields) {
     if (!item || typeof item !== "object" || Array.isArray(item)) return null;
     const row = /** @type {Record<string, unknown>} */ (item);
     if (fields.some((field) => !(field in row))) return null;
-    items.push(Object.fromEntries(fields.map((field) => [field, row[field]])));
+    items.push(Object.fromEntries([...fields,...optionalFields.filter(field=>field in row)].map((field) => [field, row[field]])));
   }
   return { page: value.page, pageSize: value.pageSize, total: value.total, items };
 }
 
-function sanitizeCollection(payload, fields) {
+function sanitizeCollection(payload, fields, optionalFields = []) {
   if (!Array.isArray(payload)) return null;
   return payload.map((item) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) throw new ProgremesClientError("INVALID_RESPONSE", "Riga diagnostica ProgreMES non valida.", { status: 502 });
     const row = /** @type {Record<string, unknown>} */ (item);
     if (fields.some((field) => !(field in row))) throw new ProgremesClientError("INVALID_RESPONSE", "Contratto diagnostico ProgreMES incompleto.", { status: 502 });
-    return Object.fromEntries(fields.map((field) => [field, row[field]]));
+    return Object.fromEntries([...fields,...optionalFields.filter(field=>field in row)].map((field) => [field, row[field]]));
   });
 }
 
@@ -388,8 +390,8 @@ function sanitizeHealth(payload) {
 function sanitizeResponse(resource, payload) {
   const definition = RESOURCE_DEFINITIONS[resource];
   if (definition.health) return sanitizeHealth(payload);
-  if (definition.collection) return sanitizeCollection(payload, definition.fields);
-  return definition.fields === null ? sanitizeStatus(payload) : sanitizePaged(payload, definition.fields);
+  if (definition.collection) return sanitizeCollection(payload, definition.fields, definition.optionalFields);
+  return definition.fields === null ? sanitizeStatus(payload) : sanitizePaged(payload, definition.fields, definition.optionalFields);
 }
 
 /**

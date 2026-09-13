@@ -3,6 +3,7 @@ import { createProgremesClient } from "./progremes-readonly-client.js";
 import { readAllRows, readRowsByIds } from "./private-orders-workbench.js";
 import { calculateRecord, allocateBulkCosts, validateSettings, number, sumKnown } from "../src/features/production-costs/cost-engine.js";
 import { withCustomerNames } from "../src/features/production-costs/search.js";
+import { applicableConfiguration, legacyOrderRevenue } from "../src/features/production-costs/history.js";
 
 const fail = (message,status=400) => Object.assign(new Error(message),{status});
 const check = (result) => {if(result.error)throw result.error;return result.data;};
@@ -36,8 +37,7 @@ async function recordFor(session,id) {
  return r;
 }
 export function configurationFor(evidence,configs) {
- const date=String(evidence.baseline?.capturedAt||evidence.works?.[0]?.start||evidence.date||"").slice(0,10);
- return configs.find(c=>c.effective_from<=date)||null;
+ return applicableConfiguration(evidence,configs);
 }
 async function readConfigurations(admin) {return readAllRows(()=>admin.from("production_cost_configurations").select("*").order("effective_from",{ascending:false}).order("created_at",{ascending:false}));}
 export async function handleProductionCosts(req,body) {
@@ -51,6 +51,14 @@ export async function handleProductionCosts(req,body) {
   const configuration=check(await admin.from("production_cost_configurations").insert({
    settings:body.settings,effective_from:body.effectiveFrom,created_by:profile.id,note:String(body.note||"").slice(0,2000)
   }).select().single());
+  check(await admin.rpc("production_cost_assign_missing_configurations"));
+  if(body.applyToHistory===true){
+   const history=await readAllRows(()=>admin.from("production_cost_records").select("*").order("mes_order_id"));
+   const targets=history.filter(r=>!r.evidence.baseline&&configurationFor(r.evidence,[configuration]));
+   for(let offset=0;offset<targets.length;offset+=100)check(await admin.from("production_cost_adjustments").insert(
+    targets.slice(offset,offset+100).map(r=>({mes_order_id:r.mes_order_id,details:{configurationId:configuration.id},
+     reason:"Applicazione esplicita della versione costi allo storico ricostruito",created_by:profile.id}))));
+  }
   return {configuration};
  }
  if(op==="machines")return {machines:await createProgremesClient().request("production-cost-machines")};
@@ -123,9 +131,10 @@ export async function handleProductionCosts(req,body) {
    const sign=h?.sigla?.toUpperCase()==="NC"?-1:1;
    return {...a,document:h,line:l,quantity:sign*Number(a.quantity),amount:l&&h&&number(l.valore_netto)!==null?sign*Math.abs(Number(l.valore_netto))*Number(a.quantity)/Math.abs(Number(l.quantita)):null};
   });
-  const commercial={octRevenue:sumKnown(revenues),invoiceRevenue:sumKnown(matches.map(x=>x.amount)),invoicedQuantity:matches.length?matches.reduce((s,x)=>s+x.quantity,0):null,invoices:matches};
-  const config=configs.find(c=>c.id===r.configuration_id)||null;
+  const commercial={octRevenue:sumKnown(revenues)??legacyOrderRevenue(e,visible.map(x=>x.evidence)),invoiceRevenue:sumKnown(matches.map(x=>x.amount)),invoicedQuantity:matches.length?matches.reduce((s,x)=>s+x.quantity,0):null,invoices:matches};
   const audit=adjustments.filter(a=>a.mes_order_id===r.mes_order_id);
+  const overrideId=!e.baseline?audit.find(a=>a.details?.configurationId)?.details.configurationId:null;
+  const config=configs.find(c=>c.id===overrideId)||configs.find(c=>c.id===r.configuration_id)||configurationFor(e,configs);
   return {...calculateRecord(e,config,audit.find(x=>x.details?.washes)?.details||{},commercial),audit,refreshedAt:r.refreshed_at};
  });
  return {records:allocateBulkCosts(calc),canWrite:session.canWrite,configurationsAvailable:configs.length};

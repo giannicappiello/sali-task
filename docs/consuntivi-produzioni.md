@@ -18,10 +18,11 @@ Le autorizzazioni sono quelle delle due singole schermate. Non occorre autorizza
 
 ## Regole
 
-- Costo del personale = ore di presenza MES × unico costo ora/uomo. Le ore entro turni sono un indicatore distinto: non cancellano eventuali presenze straordinarie.
+- STATION: costo personale = operatori Miscelazione attivi × unico costo ora/uomo × (turni ordinari × ore economiche configurate per turno + ore straordinarie). Le presenze restano consultabili, ma non sono il moltiplicatore economico STATION. FILLING: invariato il costo delle presenze effettive.
 - Turni/festività definiscono il calendario di confronto economico, senza alterare il planner APS. Le pause senza collocazione oraria sono proporzionate all'intervallo.
 - Costo lavaggio escluso personale, evitando di ricontare la manodopera. I lavaggi reali non vengono desunti dai lavaggi pianificati.
-- Guadagno stimato per turno = ore macchina / ore del primo turno di riferimento × valore configurato per STATION. È un indicatore, non un costo né un ricavo. Una durata maggiore non dimostra un maggiore profitto.
+- Gli orari/giorni dei turni sono definiti nel pannello; nessun turno 2 implicito. Le frazioni ordinarie arrotondano al mezzo turno superiore per ciascun turno occupato. Con turno 09:00–16:00: 09:00–17:00 = 1 turno + 1 ora straordinaria; 09:00–11:00 del giorno dopo = 1,5 turni. La notte senza turni non conta. Base economica iniziale 8 ore per turno, configurabile separatamente dagli orari; straordinari alla tariffa ora/uomo senza maggiorazione.
+- Guadagno stimato STATION = turni ordinari × valore configurato per STATION. È un indicatore, non un costo né un ricavo. Lo straordinario resta separato e non genera un guadagno aggiuntivo implicito.
 - Il preventivo conserva il primo foglio, versione formula, quantità materiali, packaging, piano e prezzi disponibili. Per confezionamenti senza foglio proprio viene conservato all'avvio.
 - Alla conferma degli SL si conservano quantità, riferimenti lotto, documento e prezzi realmente inviati a Mexal. Il prezzo è il costo ultimo utilizzato nel payload SL, non un prezzo storico di acquisto del lotto inventato.
 - Gli SL già esistenti non vengono riemessi per creare uno snapshot. I vecchi prezzi non conservati rimangono sconosciuti. Un prelievo pianificato non è presentato come pesata effettiva.
@@ -29,7 +30,19 @@ Le autorizzazioni sono quelle delle due singole schermate. Non occorre autorizza
 - Il costo per pezzo buono comprende bulk attribuito, confezionamento e perdite. Il bulk condiviso usa il lotto comune e la quantità del suo SL; fonte mancante o ambigua impedisce di esporre un costo unitario certo.
 - I totali economici di produzione sommano i costi diretti, non i trasferimenti interni del bulk. I margini del prodotto usano invece il costo attribuito. Non si sommano KG e PZ.
 - OCT e fatture non si sommano. Il ricavo OCT usa la riga collegata; in assenza di prezzo si usa una stima configurata e compatibile con l'unità. Le fatture richiedono un collegamento confermato: non basta avere lo stesso cliente/articolo. IVA esclusa, note credito negative, margine proporzionato alla quantità fatturata.
-- La configurazione assegnata a una produzione non viene sostituita dalle sincronizzazioni successive. Tariffe inserite dopo la lavorazione sono esplicitamente indicate come ricostruite. Conferme lavaggio e attribuzioni fattura lasciano una traccia.
+- La configurazione assegnata non viene sostituita dalle sincronizzazioni. Il salvataggio delle tariffe associa automaticamente le produzioni ancora prive di versione, rispettando la decorrenza. L'opzione esplicita “Applica questa versione anche alle produzioni storiche prive di preventivo congelato” registra una rettifica economica, senza modificare snapshot originali o dati MES. Tariffe inserite dopo la lavorazione sono indicate come ricostruite.
+
+## Recupero dello storico e aggiornamento settembre 2026
+
+- La migrazione Workspace `20260913050000` associa le configurazioni mancanti senza cambiare quelle congelate.
+- Dopo fetch/pull e aggiornamento MES, **Importa / aggiorna storico MES** recupera anche revisione formula collegata, dati della riga ordine cliente legacy e organico Miscelazione attivo. Nessuna scrittura su SL, lotti, magazzino o piano APS.
+- Le quantità dei prelievi con scarico registrato sono recuperate già dagli import precedenti. Se manca il prezzo originale SL, vengono valorizzate al costo ultimo conservato nell'import e marcate **ricostruite**. Non si creano finti documenti SL; prelievi senza scarico non sono consumi effettivi.
+- Il preventivo storico viene ricostruito soltanto dalla revisione formula fissata o da quella univoca dei prelievi. Prezzi e distinta packaging correnti sono dichiarati come tali; non si sostituisce la revisione con l'ultima formula attiva. Per prodotti finiti senza quantità bulk pianificata non si convertono arbitrariamente pezzi in kg.
+- I valori disponibili sono esposti anche come **subtotali parziali**, senza trasformare i costi mancanti in zero. Il totale definitivo resta incompleto se manca una voce necessaria.
+- Per bulk/packaging senza snapshot SL vengono esposti anche gli impegni V4 marcati consumati: fabbisogno e costo ultimo sono una stima esplicita, non vengono spacciati per quantità/prezzi della riga SL. Nessun impegno attivo viene presentato come consumo.
+- Le righe OCT legacy sono attribuite economicamente soltanto con articolo/unità coincidenti e quantità complessive non superiori alla riga. I valori documentali non attribuibili restano visibili nel dettaglio Economia.
+- Le fatture prive di un riferimento univoco alla produzione richiedono attribuzione esplicita; non vengono abbinate automaticamente solo per cliente o articolo. Lavaggi non registrati e prezzi storici assenti restano segnalati.
+- Per cambiare gli orari anche sullo storico: caricare impianti/organico, impostare i turni, scegliere la decorrenza desiderata e selezionare l'applicazione allo storico prima del salvataggio.
 
 ## Storico e completezza
 

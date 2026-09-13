@@ -44,7 +44,27 @@ Le autorizzazioni sono quelle delle due singole schermate. Non occorre autorizza
 - Le fatture prive di un riferimento univoco alla produzione richiedono attribuzione esplicita; non vengono abbinate automaticamente solo per cliente o articolo. Lavaggi non registrati e prezzi storici assenti restano segnalati.
 - Per cambiare gli orari anche sullo storico: caricare impianti/organico, impostare i turni, scegliere la decorrenza desiderata e selezionare l'applicazione allo storico prima del salvataggio.
 
-## Storico e completezza
+## Definizione dei criteri con IA
+
+Nella stessa **CONFIGURAZIONE COSTI PRODUZIONE** è disponibile «Definisci criteri e obiettivi con l’IA». Richiede scrittura sulla schermata e le abilitazioni IA già previste in Workspace, compresa l’analisi dati interni.
+
+1. Caricare impianti e organico Miscelazione da MES se non sono ancora presenti.
+2. Descrivere all’IA tariffa, turni, regole STATION/FILLING e margine desiderato per ciascuna STATION. Rispondere agli eventuali chiarimenti.
+3. Verificare il confronto prima/proposta, le formule esplicite e gli esempi calcolati dal motore. Esempi fittizi e valori mancanti sono indicati.
+4. Spuntare la conferma e premere **Trasferisci proposta confermata nel modulo**. Nessuna versione è ancora attiva.
+5. Scegliere decorrenza e premere **Salva nuova versione**. Lo storico già assegnato resta invariato, salvo applicazione esplicita allo storico ricostruito. Le modifiche manuali successive alla proposta vengono salvate come versione manuale.
+
+Le proposte sono conservate per autore e riapribili dallo storico o dal collegamento della pagina. La conferma viene verificata sul server contro la proposta conservata; l’IA non può scrivere configurazioni né eseguire codice/SQL. Richieste non rappresentabili restano da chiarire.
+
+- **STATION:** base a turni oppure ore entro calendario; arrotondamento turno esatto, mezzo superiore o intero superiore; moltiplicatore straordinario esplicito. Organico Miscelazione attivo e unica tariffa ora/uomo.
+- **FILLING:** preventivo operatori × ore entro calendario oppure durata del planning, includendo o escludendo la manodopera lavaggi pianificati. Consuntivo dalle presenze reali. Arrotondamento per intervallo esatto, 15, 30 o 60 minuti. Nessun uso dell’organico Miscelazione.
+- **Margine obiettivo STATION:** dopo tutti i costi di produzione conteggiati, distinto da costi e ricavi. Il report mostra margine obiettivo e margine sopra/sotto obiettivo; il consuntivo fatturato viene proporzionato alla stessa quantità. Con più STATION senza criterio di attribuzione univoco il confronto non viene inventato.
+
+Le versioni precedenti senza criteri espliciti mantengono i valori iniziali: mezzo turno superiore, straordinario senza maggiorazione, FILLING entro calendario con lavaggi pianificati e presenze esatte. La maggiorazione si applica solo alle nuove versioni configurate.
+
+Questo rilascio richiede la migrazione Workspace **20260913110000_production_cost_ai_proposals.sql**; non aggiunge modifiche o migrazioni MES. Se l’aggiornamento MES del rilascio precedente è già installato, non occorre ripeterlo.
+
+## Completezza dei dati
 
 La migrazione importa i riferimenti MES già presenti nelle conferme V4 Workspace, senza dedurne uno stato operativo corrente. L'importazione MES aggiunge il dettaglio disponibile anche per ordini anteriori a V4.
 

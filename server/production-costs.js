@@ -4,6 +4,7 @@ import { readAllRows, readRowsByIds } from "./private-orders-workbench.js";
 import { calculateRecord, allocateBulkCosts, validateSettings, number, sumKnown } from "../src/features/production-costs/cost-engine.js";
 import { withCustomerNames } from "../src/features/production-costs/search.js";
 import { applicableConfiguration, legacyOrderRevenue } from "../src/features/production-costs/history.js";
+import { handleCostAI, approvedCostSettings } from "./ai/production-costs.js";
 
 const fail = (message,status=400) => Object.assign(new Error(message),{status});
 const check = (result) => {if(result.error)throw result.error;return result.data;};
@@ -41,15 +42,17 @@ export function configurationFor(evidence,configs) {
 }
 async function readConfigurations(admin) {return readAllRows(()=>admin.from("production_cost_configurations").select("*").order("effective_from",{ascending:false}).order("created_at",{ascending:false}));}
 export async function handleProductionCosts(req,body) {
- const op=body.operation||"list",isConfig=["configuration","save-configuration","machines"].includes(op);
- const write=["save-configuration","adjust","allocate-invoice"].includes(op);
+ const op=body.operation||"list",isAI=["ai-propose","ai-history","ai-proposal"].includes(op),isConfig=isAI||["configuration","save-configuration","machines"].includes(op);
+ const write=isAI||["save-configuration","adjust","allocate-invoice"].includes(op);
  const session=await costSession(req,isConfig?CONFIG:REPORT,write),{admin,caller,profile}=session;
+ if(isAI)return handleCostAI(req,body,session);
  if(op==="configuration")return {configurations:await readConfigurations(admin),canWrite:session.canWrite};
  if(op==="save-configuration"){
   validateSettings(body.settings);
+  const settings=await approvedCostSettings(admin,profile.id,body);
   if(!/^\d{4}-\d{2}-\d{2}$/.test(body.effectiveFrom||""))throw fail("Data di decorrenza obbligatoria.");
   const configuration=check(await admin.from("production_cost_configurations").insert({
-   settings:body.settings,effective_from:body.effectiveFrom,created_by:profile.id,note:String(body.note||"").slice(0,2000)
+   settings,effective_from:body.effectiveFrom,created_by:profile.id,note:String(body.note||"").slice(0,2000)
   }).select().single());
   check(await admin.rpc("production_cost_assign_missing_configurations"));
   if(body.applyToHistory===true){

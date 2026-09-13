@@ -1,6 +1,7 @@
 // Shared deterministic accounting rules; null means unknown, never zero.
 import { historicalConsumption } from "./history.js";
 import { productionTurns } from "./turns.js";
+import { laborRules, validateLaborRules, roundedHours, stationPaidHours, rulesSummary } from "./labor-rules.js";
 export const number = (v) => v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v)) ? Number(v) : null;
 export const sumKnown = (values) => values.length && values.every(v => number(v) !== null) ? values.reduce((s,v) => s + Number(v),0) : null;
 export const delta = (actual, planned) => number(actual) !== null && number(planned) !== null ? actual-planned : null;
@@ -10,6 +11,7 @@ const materialCost = (rows) => sumKnown(rows.map(x => number(x.unitCost) === nul
 export const defaultSettings = () => ({ laborHourly: "", referenceShiftHours:8, mixingOperatorsCount:null, shifts:[{ name:"Turno ordinario",start:"08:00",end:"16:00",breakMinutes:0,days:[1,2,3,4,5] }], holidays:[], machines:[], prices:[] });
 
 export function validateSettings(settings) {
+ validateLaborRules(settings);
  if (!settings || number(settings.laborHourly) === null || number(settings.laborHourly)<0) throw new Error("Inserire il costo ora/uomo, anche zero se esplicitamente previsto.");
  if(number(settings.referenceShiftHours??8)===null||Number(settings.referenceShiftHours??8)<=0||Number(settings.referenceShiftHours??8)>24)throw new Error("La durata del turno di riferimento deve essere maggiore di zero e al massimo 24 ore.");
  if (!Array.isArray(settings.shifts) || !settings.shifts.length) throw new Error("Definire almeno un turno.");
@@ -64,6 +66,7 @@ function materialsVariance(planned,actual,confirmed=true) {
 
 export function calculateRecord(evidence,configuration,adjustment={},commercial={},now=new Date().toISOString()) {
  const settings=configuration?.settings, original=evidence.baseline||evidence.historicalBaseline, warnings=[];
+ const rules=laborRules(settings);
  const recoveredConsumption=!evidence.bulkSl?.length?historicalConsumption(evidence):[];
  const recoveredProducts=!evidence.productSl?.length?(evidence.historicalProductConsumption||[]).filter(x=>x.consumedAt).map(x=>({...x,unitCost:number(x.currentUnitCost)>0?Number(x.currentUnitCost):null})):[];
  const reconstructed=Boolean((!evidence.baseline&&evidence.historicalBaseline)||recoveredConsumption.length||recoveredProducts.length);
@@ -96,8 +99,8 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
   const actualElapsed=w.state==="DaAvviare"?null:hours(w.start,w.end||now);
   const stop=(Number(w.downtimeMinutes||0)/60)+(w.pausedAt?hours(w.pausedAt,w.end||now):0);
   const actualHours=actualElapsed===null?null:Math.max(0,actualElapsed-stop);
-  const laborOps=[...plannedOps,...ops.filter(x=>Number(x.impiantoId)===Number(w.machineId)&&x.type==="Cleaning")];
-  const plannedPersonHours=sumKnown(laborOps.map(x=>{const h=scheduledHours(x.start,x.end,settings);return h===null?null:h*Number(x.operators||0)*share;}));
+  const laborOps=[...plannedOps,...(rules.filling.includeCleaning?ops.filter(x=>Number(x.impiantoId)===Number(w.machineId)&&x.type==="Cleaning"):[])];
+  const plannedPersonHours=sumKnown(laborOps.map(x=>{const h=rules.filling.plannedTime==="elapsed"?hours(x.start,x.end):scheduledHours(x.start,x.end,settings);return h===null||number(x.operators)===null?null:roundedHours(h,rules.filling.roundingMinutes)*Number(x.operators)*share;}));
   const actualPersonHours=sumKnown((w.personnel||[]).map(x=>hours(x.start,x.end||w.end||now)));
   const personHoursInShifts=sumKnown((w.personnel||[]).map(x=>scheduledHours(x.start,x.end||w.end||now,settings)));
   const isStation=w.phase==="Semilavorato";
@@ -109,8 +112,10 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
   const actualTurns=actualShiftCounts?.turns??null;
   const plannedOvertimeHours=plannedShiftCounts.length&&plannedShiftCounts.every(Boolean)?plannedShiftCounts.reduce((sum,x)=>sum+x.overtimeHours,0)*share:null;
   const actualOvertimeHours=actualShiftCounts?.overtimeHours??null;
-  const plannedCostPersonHours=isStation?(mixingOperatorsCount===null||plannedTurns===null?null:mixingOperatorsCount*(plannedTurns*shiftHours+plannedOvertimeHours)):plannedPersonHours;
-  const actualCostPersonHours=isStation?(mixingOperatorsCount===null||actualTurns===null?null:mixingOperatorsCount*(actualTurns*shiftHours+actualOvertimeHours)):actualPersonHours;
+  const plannedPaidHours=sumKnown(plannedShiftCounts.map(x=>stationPaidHours(x,settings)));
+  const actualPaidHours=stationPaidHours(actualShiftCounts,settings);
+  const plannedCostPersonHours=isStation?(mixingOperatorsCount===null||plannedPaidHours===null?null:mixingOperatorsCount*plannedPaidHours*share):plannedPersonHours;
+  const actualCostPersonHours=isStation?(mixingOperatorsCount===null||actualPaidHours===null?null:mixingOperatorsCount*actualPaidHours):sumKnown((w.personnel||[]).map(x=>roundedHours(hours(x.start,x.end||w.end||now),rules.filling.roundingMinutes)));
   const plannedLabor=number(settings?.laborHourly)===null||plannedCostPersonHours===null?null:plannedCostPersonHours*Number(settings.laborHourly);
   const actualLabor=number(settings?.laborHourly)===null||actualCostPersonHours===null?null:actualCostPersonHours*Number(settings.laborHourly);
   const wash=adjustment.washes?.find(x=>Number(x.productionId)===w.id);
@@ -160,7 +165,7 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
  if(!evidence.bulkSl?.length&&bulk.length&&!recoveredConsumption.length)warnings.push("SL e prelievi scaricati non disponibili: consumi consuntivi non recuperabili.");
  if(actualWash===null)warnings.push("Lavaggi effettivi non rilevati: confermare conteggio nel dettaglio.");
  if(actualLabor===null)warnings.push("Costo personale incompleto: verificare tariffa, turni e organico Miscelazione per STATION; presenze per FILLING.");
- if(bulk.length)warnings.push("Costo STATION = operatori Miscelazione attivi × costo ora/uomo × (turni arrotondati al mezzo turno superiore × ore economiche per turno + ore straordinarie). Organico attuale usato anche per la ricostruzione storica; straordinario alla stessa tariffa oraria.");
+ if(bulk.length)warnings.push(rulesSummary(settings)[0]+" Organico della versione costi, oppure organico MES disponibile per ricostruzione.");
  if(bulk.some(p=>p.downtimeHours>0))warnings.push("Fermi STATION sottratti dalle ore entro calendario: la collocazione oraria dei fermi storici non è disponibile.");
  if(actualRevenue===null)warnings.push("Fatture non collegate univocamente alla produzione.");
  if(filling.length&&knownTransfer===null)warnings.push("Costo del bulk condiviso da riconciliare prima del costo per pezzo.");
@@ -168,7 +173,13 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
  const knownSubtotal=values=>values.some(v=>number(v)!==null)?values.reduce((s,v)=>s+(number(v)??0),0):null;
  const actualKnownSubtotal=knownSubtotal([...(bulk.length?[materialsActual]:[]),...(filling.length?[actualPackagingCost]:[]),actualLabor,actualWash,...(losses.length?[lossCost]:[])]);
  const plannedKnownSubtotal=knownSubtotal([plannedMaterialCost,...(filling.length?[plannedPackagingCost]:[]),plannedLabor,plannedWash]);
+ const oneStation=new Set(bulk.map(p=>p.machineId)).size===1;
+ const plannedObjective=oneStation?sumKnown(bulk.map(p=>p.plannedGain)):null;
+ const actualObjective=oneStation?sumKnown(bulk.map(p=>p.actualGain)):null;
+ const invoicedObjective=actualObjective!==null&&comparableCost!==null?actualObjective*invoicedQuantity/goodQuantity:null;
+ if(bulk.length&&!oneStation)warnings.push("Margine per singola STATION non attribuibile: più STATION condividono il ricavo. Nessuna ripartizione automatica inventata.");
  return {...evidence,configuration,phases,closed,warnings,reconstructed,recoveredConsumption,recoveredProducts,actualKnownSubtotal,plannedKnownSubtotal,plannedMaterialCost,actualMaterialCost,plannedPackagingCost,actualPackagingCost,
+  laborCriteria:rulesSummary(settings),plannedObjective,invoicedObjective,plannedObjectiveVariance:delta(delta(revenue,productPlannedTotal),plannedObjective),actualObjectiveVariance:delta(delta(actualRevenue,comparableCost),invoicedObjective),
   plannedLabor,actualLabor,plannedWash,actualWash,lossCost,plannedTotal,actualTotal,goodQuantity,
   bulkProcessingCost,plannedBulkProcessingCost,plannedFillingProcessingCost,fillingProcessingCost,directActualTotal,productActualTotal,productPlannedTotal,
   unitCost:filling.length&&productActualTotal!==null&&goodQuantity>0?productActualTotal/goodQuantity:null,

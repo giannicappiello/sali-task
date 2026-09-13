@@ -23,7 +23,8 @@ export function productionTurns(start,end,settings,downtimeHours=0) {
  windows.sort((a,b)=>a.a-b.a);
  const scheduledHours=windows.reduce((sum,w)=>sum+w.paid,0);
  const factor=scheduledHours>0?Math.max(0,scheduledHours-Math.max(0,downtimeHours))/scheduledHours:0;
- const turns=windows.reduce((sum,w)=>sum+Math.ceil(Math.max(0,w.overlap/w.gross*factor)*2-1e-9)/2,0);
+ const step=settings.laborRules?.station?.rounding??.5;
+ const turns=windows.reduce((sum,w)=>{const fraction=Math.max(0,w.overlap/w.gross*factor);return sum+(step?Math.ceil(fraction/step-1e-9)*step:fraction);},0);
  let overtimeHours=0;
  const first=windows[0],last=windows.at(-1);
  if(first&&dayKey(from)===dayKey(first.a)&&from<first.a)overtimeHours+=(first.a-from)/3600000;

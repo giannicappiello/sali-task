@@ -7,6 +7,7 @@ import { after17Intervals,currentOvertime } from "./overtime.js";
 import { fillingUnitLabor,isPieces } from "./filling-history.js";
 import { materialBaseline,materialCode } from "./material-baseline.js";
 import { availableCosts } from "./available-costs.js";
+import { forecastOperations } from "./planned-timing.js";
 export const number = (v) => v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v)) ? Number(v) : null;
 export const sumKnown = (values) => values.length && values.every(v => number(v) !== null) ? values.reduce((s,v) => s + Number(v),0) : null;
 export const delta = (actual, planned) => number(actual) !== null && number(planned) !== null ? actual-planned : null;
@@ -97,7 +98,8 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
  const bulkMaterials=evidence.bulkSl?.length?evidence.bulkSl.flatMap(x=>x.materials||[]):recoveredConsumption;
  const productMaterials=evidence.productSl?.length?evidence.productSl.flatMap(x=>x.materials||[]):recoveredProducts;
  if(recoveredProducts.length)warnings.push("Bulk/confezionamento ricostruiti dagli impegni V4 marcati consumati: quantità fabbisogno e costi ultimi, non righe SL originali.");
- const ops=original?.operations||evidence.operations||[];
+ const forecast=forecastOperations(evidence),ops=forecast.operations;
+ warnings.push(forecast.source);
  const works=[...new Map((evidence.works||[]).filter(w=>w.state!=="Annullato").map(w=>[w.id,w])).values()];
  for(const [type,phase] of [["Production","Semilavorato"],["Packaging","Confezionamento"],["Cartoning","Astucciatura"]]){
   for(const machineId of new Set(ops.filter(x=>x.type===type).map(x=>Number(x.impiantoId)))){
@@ -116,14 +118,14 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
   const plannedOps=ops.filter(x=>Number(x.impiantoId)===Number(w.machineId)&&x.type===({Confezionamento:"Packaging",Astucciatura:"Cartoning",Semilavorato:"Production"}[w.phase]));
   const siblings=works.filter(x=>x.machineId===w.machineId&&x.phase===w.phase);
   const siblingQuantity=siblings.reduce((s,x)=>s+Number(x.goodQuantity||0),0);
-  const share=siblings.length<=1?1:siblingQuantity>0?Number(w.goodQuantity||0)/siblingQuantity:1/siblings.length;
-  const rawPlannedHours=sumKnown(plannedOps.map(x=>scheduledHours(x.start,x.end,settings)));
+  const share=siblings.length<=1?1:forecast.estimated?1/siblings.length:siblingQuantity>0?Number(w.goodQuantity||0)/siblingQuantity:1/siblings.length;
+  const rawPlannedHours=sumKnown(plannedOps.map(x=>x.estimatedFromParameters?x.durationMinutes/60:scheduledHours(x.start,x.end,settings)));
   const plannedHours=rawPlannedHours===null?null:rawPlannedHours*share;
   const actualElapsed=w.state==="DaAvviare"?null:hours(w.start,w.end||now);
   const stop=(Number(w.downtimeMinutes||0)/60)+(w.pausedAt?hours(w.pausedAt,w.end||now):0);
   const actualHours=actualElapsed===null?null:Math.max(0,actualElapsed-stop);
   const laborOps=[...plannedOps,...(rules.filling.includeCleaning?ops.filter(x=>Number(x.impiantoId)===Number(w.machineId)&&x.type==="Cleaning"):[])];
-  const plannedPersonHours=sumKnown(laborOps.map(x=>{const h=rules.filling.plannedTime==="elapsed"?hours(x.start,x.end):scheduledHours(x.start,x.end,settings);return h===null||number(x.operators)===null?null:roundedHours(h,rules.filling.roundingMinutes)*Number(x.operators)*share;}));
+  const plannedPersonHours=sumKnown(laborOps.map(x=>{const h=x.estimatedFromParameters?x.durationMinutes/60:rules.filling.plannedTime==="elapsed"?hours(x.start,x.end):scheduledHours(x.start,x.end,settings);return h===null||number(x.operators)===null?null:roundedHours(h,rules.filling.roundingMinutes)*Number(x.operators)*share;}));
   const actualPersonHours=sumKnown((w.personnel||[]).map(x=>hours(x.start,x.end||w.end||now)));
   const personHoursInShifts=sumKnown((w.personnel||[]).map(x=>scheduledHours(x.start,x.end||w.end||now,settings)));
   const isStation=w.phase==="Semilavorato";
@@ -229,7 +231,7 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
  const actualObjective=oneStation?sumKnown(bulk.map(p=>p.actualGain)):null;
  const invoicedObjective=actualObjective!==null&&comparableCost!==null?actualObjective*invoicedQuantity/goodQuantity:null;
  if(bulk.length&&!oneStation)warnings.push("Margine per singola STATION non attribuibile: più STATION condividono il ricavo. Nessuna ripartizione automatica inventata.");
- return {...evidence,configuration,phases,closed,warnings,reconstructed,recoveredConsumption,recoveredProducts,actualKnownSubtotal,plannedKnownSubtotal,plannedMaterialSummary,actualMaterialSummary,plannedMaterialCost,actualMaterialCost,plannedPackagingCost,actualPackagingCost,
+ return {...evidence,configuration,phases,closed,warnings,forecastSource:forecast.source,reconstructed,recoveredConsumption,recoveredProducts,actualKnownSubtotal,plannedKnownSubtotal,plannedMaterialSummary,actualMaterialSummary,plannedMaterialCost,actualMaterialCost,plannedPackagingCost,actualPackagingCost,
   adjustment,stationContext,stationHistory:historicalMode?history:null,stationHistoricalHourly:historicalMode?number(stationSettings?.laborHourly):null,
   fillingContext,fillingHistory:fillingHistoricalMode?fillingHistory:null,fillingHistoricalHourly:fillingHistoricalMode?number(fillingSettings?.laborHourly):null,
   fillingUnitLabor:unitLabor,

@@ -25,7 +25,7 @@ const RESOURCE_DEFINITIONS = Object.freeze({
     fields: Object.freeze(["id","orderNumber","articleCode","articleName","unit","quantity","date","dueAt","state","lot","bulkLot",
       "customerCode","customerName","formulaVersion","formulaRevision","links","baseline","bulkSl","productSl",
       "bulkSlReference","productSlReference","works","operations","historicalMaterials"]),
-    optionalFields: Object.freeze(["historicalBaseline","historicalProductConsumption","sourceOrder","mixingOperatorsCount","mixingOperatorsCapturedAt"]),
+    optionalFields: Object.freeze(["historicalBaseline","historicalProductConsumption","sourceOrder","mixingOperatorsCount","mixingOperatorsCapturedAt","plannedTiming"]),
   }),
   "production-cost-machines": Object.freeze({
     path: "production-cost-machines", internal: true, parameters: Object.freeze([]), collection: true,

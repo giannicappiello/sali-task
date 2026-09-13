@@ -1,7 +1,9 @@
 // Shared deterministic accounting rules; null means unknown, never zero.
 import { historicalConsumption } from "./history.js";
-import { productionTurns } from "./turns.js";
+import { productionTurns,explicitOvertimeHours } from "./turns.js";
 import { laborRules, validateLaborRules, roundedHours, stationPaidHours, rulesSummary } from "./labor-rules.js";
+import { historicalStationTurns, historicalLabor,historyCalendar } from "./station-history.js";
+import { after17Intervals,currentOvertime } from "./overtime.js";
 export const number = (v) => v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v)) ? Number(v) : null;
 export const sumKnown = (values) => values.length && values.every(v => number(v) !== null) ? values.reduce((s,v) => s + Number(v),0) : null;
 export const delta = (actual, planned) => number(actual) !== null && number(planned) !== null ? actual-planned : null;
@@ -64,9 +66,11 @@ function materialsVariance(planned,actual,confirmed=true) {
  });
 }
 
-export function calculateRecord(evidence,configuration,adjustment={},commercial={},now=new Date().toISOString()) {
+export function calculateRecord(evidence,configuration,adjustment={},commercial={},now=new Date().toISOString(),stationContext=null) {
  const settings=configuration?.settings, original=evidence.baseline||evidence.historicalBaseline, warnings=[];
  const rules=laborRules(settings);
+ const historicalMode=Boolean(stationContext?.policy)||rules.station.basis==="historical_productivity";
+ const history=stationContext?.history,stationSettings=stationContext?.policy?.settings||settings;
  const recoveredConsumption=!evidence.bulkSl?.length?historicalConsumption(evidence):[];
  const recoveredProducts=!evidence.productSl?.length?(evidence.historicalProductConsumption||[]).filter(x=>x.consumedAt).map(x=>({...x,unitCost:number(x.currentUnitCost)>0?Number(x.currentUnitCost):null})):[];
  const reconstructed=Boolean((!evidence.baseline&&evidence.historicalBaseline)||recoveredConsumption.length||recoveredProducts.length);
@@ -105,19 +109,24 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
   const personHoursInShifts=sumKnown((w.personnel||[]).map(x=>scheduledHours(x.start,x.end||w.end||now,settings)));
   const isStation=w.phase==="Semilavorato";
   const shiftHours=number(settings?.referenceShiftHours??8);
-  const mixingOperatorsCount=number(settings?.mixingOperatorsCount)??number(evidence.mixingOperatorsCount);
-  const plannedShiftCounts=plannedOps.map(op=>productionTurns(op.start,op.end,settings));
-  const actualShiftCounts=w.state==="DaAvviare"?null:productionTurns(w.start,w.pausedAt||w.end||now,settings,Number(w.downtimeMinutes||0)/60);
+  const mixingOperatorsCount=isStation&&historicalMode?number(history?.mixingOperatorsCount):number(settings?.mixingOperatorsCount)??number(evidence.mixingOperatorsCount);
+  const countTurns=(start,end,down=0)=>isStation&&historicalMode?historicalStationTurns(start,end,history,down):productionTurns(start,end,settings,down);
+  const plannedShiftCounts=plannedOps.map(op=>countTurns(op.start,op.end));
+  const actualShiftCounts=w.state==="DaAvviare"?null:countTurns(w.start,w.pausedAt||w.end||history?.asOfLocal||now,Number(w.downtimeMinutes||0)/60);
   const plannedTurns=plannedShiftCounts.length&&plannedShiftCounts.every(Boolean)?plannedShiftCounts.reduce((sum,x)=>sum+x.turns,0)*share:null;
   const actualTurns=actualShiftCounts?.turns??null;
   const plannedOvertimeHours=plannedShiftCounts.length&&plannedShiftCounts.every(Boolean)?plannedShiftCounts.reduce((sum,x)=>sum+x.overtimeHours,0)*share:null;
-  const actualOvertimeHours=actualShiftCounts?.overtimeHours??null;
-  const plannedPaidHours=sumKnown(plannedShiftCounts.map(x=>stationPaidHours(x,settings)));
-  const actualPaidHours=stationPaidHours(actualShiftCounts,settings);
-  const plannedCostPersonHours=isStation?(mixingOperatorsCount===null||plannedPaidHours===null?null:mixingOperatorsCount*plannedPaidHours*share):plannedPersonHours;
-  const actualCostPersonHours=isStation?(mixingOperatorsCount===null||actualPaidHours===null?null:mixingOperatorsCount*actualPaidHours):sumKnown((w.personnel||[]).map(x=>roundedHours(hours(x.start,x.end||w.end||now),rules.filling.roundingMinutes)));
-  const plannedLabor=number(settings?.laborHourly)===null||plannedCostPersonHours===null?null:plannedCostPersonHours*Number(settings.laborHourly);
-  const actualLabor=number(settings?.laborHourly)===null||actualCostPersonHours===null?null:actualCostPersonHours*Number(settings.laborHourly);
+  const explicitIntervals=currentOvertime((adjustment.overtime||[]).filter(x=>x.productionId===w.id),w.start,w.pausedAt||w.end||history?.asOfLocal||now);
+  const economicCalendar=isStation&&historicalMode?historyCalendar(history):settings;
+  const explicitHours=isStation&&economicCalendar?explicitOvertimeHours(historicalMode?explicitIntervals:after17Intervals(explicitIntervals),economicCalendar):0;
+  const actualOvertimeHours=actualShiftCounts?(actualShiftCounts.overtimeHours+explicitHours):null;
+  const plannedPaidHours=isStation&&historicalMode?null:sumKnown(plannedShiftCounts.map(x=>stationPaidHours(x,settings)));
+  const actualPaidHours=isStation&&historicalMode?null:stationPaidHours(actualShiftCounts?{...actualShiftCounts,overtimeHours:actualOvertimeHours}:null,settings);
+  const plannedCostPersonHours=isStation&&historicalMode?historicalLabor(plannedTurns,history,1):isStation?(mixingOperatorsCount===null||plannedPaidHours===null?null:mixingOperatorsCount*plannedPaidHours*share):plannedPersonHours;
+  const actualCostPersonHours=isStation&&historicalMode?historicalLabor(actualTurns===null?null:actualTurns+explicitHours*laborRules(stationSettings).station.overtimeMultiplier/8,history,1):isStation?(mixingOperatorsCount===null||actualPaidHours===null?null:mixingOperatorsCount*actualPaidHours):sumKnown((w.personnel||[]).map(x=>roundedHours(hours(x.start,x.end||w.end||now),rules.filling.roundingMinutes)));
+  const hourly=isStation&&historicalMode?number(stationSettings?.laborHourly):number(settings?.laborHourly);
+  const plannedLabor=hourly===null||plannedCostPersonHours===null?null:plannedCostPersonHours*hourly;
+  const actualLabor=hourly===null||actualCostPersonHours===null?null:actualCostPersonHours*hourly;
   const wash=adjustment.washes?.find(x=>Number(x.productionId)===w.id);
   const plannedWashes=ops.filter(x=>Number(x.impiantoId)===w.machineId&&x.type==="Cleaning").length*share;
   const plannedWash=number(machine?.washCost)===null?null:plannedWashes*Number(machine.washCost);
@@ -165,7 +174,12 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
  if(!evidence.bulkSl?.length&&bulk.length&&!recoveredConsumption.length)warnings.push("SL e prelievi scaricati non disponibili: consumi consuntivi non recuperabili.");
  if(actualWash===null)warnings.push("Lavaggi effettivi non rilevati: confermare conteggio nel dettaglio.");
  if(actualLabor===null)warnings.push("Costo personale incompleto: verificare tariffa, turni e organico Miscelazione per STATION; presenze per FILLING.");
- if(bulk.length)warnings.push(rulesSummary(settings)[0]+" Organico della versione costi, oppure organico MES disponibile per ricostruzione.");
+ if(bulk.length)warnings.push(rulesSummary(historicalMode?stationSettings:settings)[0]+(historicalMode?"":" Organico della versione costi, oppure organico MES disponibile per ricostruzione."));
+ if(bulk.length&&historicalMode){
+  if(!history||history.error)warnings.push(history?.error||"Media storica MES non acquisita: costo non calcolabile.");
+  if(history?.calendar?.historyWarning)warnings.push(history.calendar.historyWarning);
+  warnings.push("Manodopera STATION ricalcolata anche sullo storico; snapshot di formula, SL e configurazioni originali non modificati.");
+ }
  if(bulk.some(p=>p.downtimeHours>0))warnings.push("Fermi STATION sottratti dalle ore entro calendario: la collocazione oraria dei fermi storici non è disponibile.");
  if(actualRevenue===null)warnings.push("Fatture non collegate univocamente alla produzione.");
  if(filling.length&&knownTransfer===null)warnings.push("Costo del bulk condiviso da riconciliare prima del costo per pezzo.");
@@ -179,7 +193,8 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
  const invoicedObjective=actualObjective!==null&&comparableCost!==null?actualObjective*invoicedQuantity/goodQuantity:null;
  if(bulk.length&&!oneStation)warnings.push("Margine per singola STATION non attribuibile: più STATION condividono il ricavo. Nessuna ripartizione automatica inventata.");
  return {...evidence,configuration,phases,closed,warnings,reconstructed,recoveredConsumption,recoveredProducts,actualKnownSubtotal,plannedKnownSubtotal,plannedMaterialCost,actualMaterialCost,plannedPackagingCost,actualPackagingCost,
-  laborCriteria:rulesSummary(settings),plannedObjective,invoicedObjective,plannedObjectiveVariance:delta(delta(revenue,productPlannedTotal),plannedObjective),actualObjectiveVariance:delta(delta(actualRevenue,comparableCost),invoicedObjective),
+  adjustment,stationContext,stationHistory:historicalMode?history:null,stationHistoricalHourly:historicalMode?number(stationSettings?.laborHourly):null,
+  laborCriteria:[rulesSummary(historicalMode?stationSettings:settings)[0],...rulesSummary(settings).slice(1)],plannedObjective,invoicedObjective,plannedObjectiveVariance:delta(delta(revenue,productPlannedTotal),plannedObjective),actualObjectiveVariance:delta(delta(actualRevenue,comparableCost),invoicedObjective),
   plannedLabor,actualLabor,plannedWash,actualWash,lossCost,plannedTotal,actualTotal,goodQuantity,
   bulkProcessingCost,plannedBulkProcessingCost,plannedFillingProcessingCost,fillingProcessingCost,directActualTotal,productActualTotal,productPlannedTotal,
   unitCost:filling.length&&productActualTotal!==null&&goodQuantity>0?productActualTotal/goodQuantity:null,
@@ -213,6 +228,6 @@ export function allocateBulkCosts(records) {
   const plannedBulkTransferCost=plannedProduced>0&&plannedUsed!==null&&source.plannedBulkProcessingCost!==null
    ?source.plannedBulkProcessingCost*plannedUsed/plannedProduced:null;
   const commercial={...r.commercial,bulkTransferCost:source.bulkProcessingCost*used/produced,plannedBulkTransferCost,bulkSourceOrder:source.orderNumber,bulkUsed:used,bulkProduced:produced};
-  return {...calculateRecord(r,r.configuration,r.audit?.find(x=>x.details?.washes)?.details||{},commercial),audit:r.audit,refreshedAt:r.refreshedAt};
+  return {...calculateRecord(r,r.configuration,r.adjustment||{},commercial,undefined,r.stationContext),audit:r.audit,refreshedAt:r.refreshedAt};
  });
 }

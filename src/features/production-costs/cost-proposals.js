@@ -42,11 +42,12 @@ export function proposalChanges(base,next) {
  for(const m of next.machines||[]){const old=base.machines?.find(x=>x.id===m.id)||{};for(const [k,label] of [["gainPerShift","Margine obiettivo / turno"],["washCost","Costo lavaggio"],["washMinutes","Minuti lavaggio"]])add(`${m.code} · ${label}`,old[k],m[k]);}
  return changes;
 }
-export function costExamples(settings) {
+export function costExamples(settings,history=null) {
+ const calculateExample=e=>calculateRecord(e,{settings},{},{},undefined,settings.laborRules?.station?.basis==="historical_productivity"?{history}:null);
  // Deterministic fixtures, not real productions or AI-generated arithmetic.
- const station=calculateRecord({quantity:100,unit:"KG",works:[{id:1,machineId:1,phase:"Semilavorato",state:"Terminato",start:"2026-09-07T09:00:00",end:"2026-09-08T11:00:00",personnel:[]}]},{settings});
- const overtime=calculateRecord({quantity:100,unit:"KG",works:[{id:1,machineId:1,phase:"Semilavorato",state:"Terminato",start:"2026-09-07T09:00:00",end:"2026-09-07T17:00:00",personnel:[]}]},{settings});
- const filling=calculateRecord({quantity:1000,unit:"PZ",baseline:{operations:[{type:"Packaging",impiantoId:2,start:"2026-09-07T09:00:00",end:"2026-09-07T12:00:00",operators:2}]},works:[{id:2,machineId:2,phase:"Confezionamento",state:"Terminato",start:"2026-09-07T09:00:00",end:"2026-09-07T12:00:00",goodQuantity:1000,personnel:[{start:"2026-09-07T09:00:00",end:"2026-09-07T12:00:00"},{start:"2026-09-07T09:00:00",end:"2026-09-07T12:00:00"}]}]},{settings});
+ const station=calculateExample({quantity:100,unit:"KG",works:[{id:1,machineId:1,phase:"Semilavorato",state:"Terminato",start:"2026-09-07T09:00:00",end:"2026-09-08T11:00:00",personnel:[]}]});
+ const overtime=calculateExample({quantity:100,unit:"KG",works:[{id:1,machineId:1,phase:"Semilavorato",state:"Terminato",start:"2026-09-07T09:00:00",end:"2026-09-07T17:00:00",personnel:[]}]});
+ const filling=calculateExample({quantity:1000,unit:"PZ",baseline:{operations:[{type:"Packaging",impiantoId:2,start:"2026-09-07T09:00:00",end:"2026-09-07T12:00:00",operators:2}]},works:[{id:2,machineId:2,phase:"Confezionamento",state:"Terminato",start:"2026-09-07T09:00:00",end:"2026-09-07T12:00:00",goodQuantity:1000,personnel:[{start:"2026-09-07T09:00:00",end:"2026-09-07T12:00:00"},{start:"2026-09-07T09:00:00",end:"2026-09-07T12:00:00"}]}]});
  return {criteria:rulesSummary(settings),rows:[
   {name:"STATION · lunedì 07/09 09:00 → martedì 08/09 11:00",planned:null,actual:station.actualLabor,detail:`Organico: ${settings.mixingOperatorsCount??"non importato"}; turni ${station.phases[0]?.actualTurns??"n.d."}; straordinario ${station.phases[0]?.actualOvertimeHours??"n.d."} ore.`},
   {name:"FILLING · 2 operatori, lunedì 07/09 09:00–12:00",planned:filling.plannedLabor,actual:filling.actualLabor,detail:"1.000 pezzi buoni; solo manodopera, esclusi materiali e lavaggi."},

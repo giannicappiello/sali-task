@@ -5,6 +5,9 @@ import { calculateRecord, allocateBulkCosts, validateSettings, number, sumKnown 
 import { withCustomerNames } from "../src/features/production-costs/search.js";
 import { applicableConfiguration, legacyOrderRevenue } from "../src/features/production-costs/history.js";
 import { handleCostAI, approvedCostSettings } from "./ai/production-costs.js";
+import { readStationHistory, stationHistorySummary } from "./production-station-history.js";
+import { activeStationPolicy } from "../src/features/production-costs/station-history.js";
+import { validateOvertime,latestCostAdjustment } from "../src/features/production-costs/overtime.js";
 
 const fail = (message,status=400) => Object.assign(new Error(message),{status});
 const check = (result) => {if(result.error)throw result.error;return result.data;};
@@ -42,14 +45,22 @@ export function configurationFor(evidence,configs) {
 }
 async function readConfigurations(admin) {return readAllRows(()=>admin.from("production_cost_configurations").select("*").order("effective_from",{ascending:false}).order("created_at",{ascending:false}));}
 export async function handleProductionCosts(req,body) {
- const op=body.operation||"list",isAI=["ai-propose","ai-history","ai-proposal"].includes(op),isConfig=isAI||["configuration","save-configuration","machines"].includes(op);
- const write=isAI||["save-configuration","adjust","allocate-invoice"].includes(op);
+ const op=body.operation||"list",isAI=["ai-propose","ai-history","ai-proposal"].includes(op),isConfig=isAI||["configuration","save-configuration","machines","station-history"].includes(op);
+ const write=isAI||["save-configuration","adjust","overtime","allocate-invoice"].includes(op);
  const session=await costSession(req,isConfig?CONFIG:REPORT,write),{admin,caller,profile}=session;
  if(isAI)return handleCostAI(req,body,session);
+ if(op==="station-history"){
+  if(body.settings)validateSettings(body.settings);
+  return {history:stationHistorySummary(await readStationHistory(admin,{settings:body.settings}))};
+ }
  if(op==="configuration")return {configurations:await readConfigurations(admin),canWrite:session.canWrite};
  if(op==="save-configuration"){
   validateSettings(body.settings);
   const settings=await approvedCostSettings(admin,profile.id,body);
+  if(settings.laborRules?.station?.basis==="historical_productivity"&&settings.shifts.length>1){
+   const calendarCheck=await readStationHistory(admin,{settings});
+   if(calendarCheck.errorCode==="INVALID_COST_CALENDAR")throw fail(calendarCheck.error);
+  }
   if(!/^\d{4}-\d{2}-\d{2}$/.test(body.effectiveFrom||""))throw fail("Data di decorrenza obbligatoria.");
   const configuration=check(await admin.from("production_cost_configurations").insert({
    settings,effective_from:body.effectiveFrom,created_by:profile.id,note:String(body.note||"").slice(0,2000)
@@ -83,6 +94,14 @@ export async function handleProductionCosts(req,body) {
   }
   return {page,total:result.total,imported:result.items.length,hasMore:page*100<result.total};
  }
+ if(op==="overtime"){
+  const source=await recordFor(session,Number(body.id));
+  if(!String(body.reason||"").trim())throw fail("Indicare la fonte dello straordinario.");
+  const now=new Intl.DateTimeFormat("sv-SE",{timeZone:"Europe/Rome",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(new Date()).replace(" ","T");
+  const overtime=validateOvertime(body.overtime,source.evidence.works||[],now);
+  check(await admin.from("production_cost_adjustments").insert({mes_order_id:Number(body.id),details:{overtime},reason:String(body.reason).slice(0,2000),created_by:profile.id}));
+  return {saved:true};
+ }
  if(op==="adjust"){
   await recordFor(session,Number(body.id));
   if(!String(body.reason||"").trim())throw fail("Indicare la fonte del dato consuntivo.");
@@ -110,6 +129,18 @@ export async function handleProductionCosts(req,body) {
  const [records,configs]=await Promise.all([
   readAllRows(()=>admin.from("production_cost_records").select("*").order("mes_order_id")),readConfigurations(admin)]);
  const visible=scoped(records,session.scope);
+ const today=new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Rome",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+ const policy=activeStationPolicy(configs,today);
+ const needsHistory=policy||configs.some(c=>c.settings?.laborRules?.station?.basis==="historical_productivity");
+ const sourceHistory=needsHistory?await readStationHistory(admin,{settings:policy?.settings}):null;
+ const history=stationHistorySummary(sourceHistory);
+ const historiesByConfig=new Map();
+ if(needsHistory&&!policy&&sourceHistory&&!sourceHistory.error){
+  await Promise.all(configs.filter(c=>c.settings?.laborRules?.station?.basis==="historical_productivity").map(async c=>{
+   historiesByConfig.set(c.id,stationHistorySummary(await readStationHistory(admin,{request:async()=>[sourceHistory],settings:c.settings})));
+  }));
+ }
+ const currentWorks=new Map((sourceHistory?.works||[]).map(w=>[w.id,w]));
  // Enrich only customers belonging to already-authorized productions, including
  // all OCT customers of a shared production. Do not overwrite historical evidence.
  const customerCodes=[...new Set(visible.flatMap(r=>[r.evidence.customerCode,...(r.evidence.links||[]).map(l=>l.customerCode)]).map(c=>String(c||"").trim()).filter(Boolean))];
@@ -128,6 +159,7 @@ export async function handleProductionCosts(req,body) {
  const orderLines=await readRowsByIds(caller,"ordini_righe","id",visible.flatMap(r=>(r.evidence.links||[]).map(l=>l.lineId)));
  const calc=visible.map(r=>{
   const e=withCustomerNames(r.evidence,customerNames),links=e.links||[];
+  if(sourceHistory&&!sourceHistory.error)e.works=(e.works||[]).map(w=>w.phase==="Semilavorato"&&currentWorks.has(w.id)?{...w,...currentWorks.get(w.id)}:w);
   const revenues=links.map(l=>{const row=orderLines.find(x=>x.id===l.lineId);const sameUnit=String(row?.unita_misura_oct||"").toUpperCase()===String(l.unit||"").toUpperCase()&&Boolean(l.unit);return row&&sameUnit&&Number(row.quantita)>0&&number(row.imponibile_riga)!==null?Number(row.imponibile_riga)*Number(l.quantity)/Number(row.quantita):null;});
   const matches=allowedAllocations.filter(a=>a.mes_order_id===r.mes_order_id).map(a=>{
    const l=invoiceLines.find(x=>String(x.id)===String(a.invoice_line_id)),h=invoiceHeaders.find(x=>x.id===l?.fattura_id);
@@ -138,7 +170,8 @@ export async function handleProductionCosts(req,body) {
   const audit=adjustments.filter(a=>a.mes_order_id===r.mes_order_id);
   const overrideId=!e.baseline?audit.find(a=>a.details?.configurationId)?.details.configurationId:null;
   const config=configs.find(c=>c.id===overrideId)||configs.find(c=>c.id===r.configuration_id)||configurationFor(e,configs);
-  return {...calculateRecord(e,config,audit.find(x=>x.details?.washes)?.details||{},commercial),audit,refreshedAt:r.refreshed_at};
+  const stationContext=policy||config?.settings?.laborRules?.station?.basis==="historical_productivity"?{policy:policy?{id:policy.id,effective_from:policy.effective_from,settings:{laborHourly:policy.settings.laborHourly,laborRules:policy.settings.laborRules}}:null,history:policy?history:historiesByConfig.get(config?.id)||history}:null;
+  return {...calculateRecord(e,config,latestCostAdjustment(audit),commercial,undefined,stationContext),audit,refreshedAt:r.refreshed_at};
  });
  return {records:allocateBulkCosts(calc),canWrite:session.canWrite,configurationsAvailable:configs.length};
 }

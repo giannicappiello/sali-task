@@ -11,6 +11,10 @@ const MAX_STATUS_LENGTH = 64;
 const COMMON_PAGED_PARAMETERS = ["page", "pageSize", "search"];
 
 const RESOURCE_DEFINITIONS = Object.freeze({
+  "production-cost-station-history": Object.freeze({
+    path: "production-cost-station-history", internal: true, parameters: Object.freeze([]), collection: true,
+    fields: Object.freeze(["generatedAt","asOfLocal","periodStart","periodEnd","completedWorks","calendarShifts","productivity","mixingOperatorsCount","error","works","calendar"]),
+  }),
   "production-cost-evidence": Object.freeze({
     path: "production-cost-evidence", internal: true,
     parameters: Object.freeze(["page", "pageSize"]),

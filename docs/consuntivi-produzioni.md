@@ -64,7 +64,32 @@ Le versioni precedenti senza criteri espliciti mantengono i valori iniziali: mez
 
 Questo rilascio richiede la migrazione Workspace **20260913110000_production_cost_ai_proposals.sql**; non aggiunge modifiche o migrazioni MES. Se l’aggiornamento MES del rilascio precedente è già installato, non occorre ripeterlo.
 
-## Completezza dei dati
+## Manodopera STATION su produttività media storica
+
+Modalità aggiuntiva **Media storica di reparto (anche produzioni concluse)**, selezionabile manualmente o tramite IA. Confermare la proposta e salvare la versione; la decorrenza è l'attivazione del criterio, non un limite alla data delle produzioni passate.
+
+- Media = tutte le lavorazioni STATION concluse / tutti i turni MES completati dalla prima attività disponibile. I turni senza attività contano; un turno di reparto non viene moltiplicato per il numero di macchine. Turno corrente, produzioni annullate e non avviate non entrano nella media.
+- Costo medio base = organico Miscelazione attivo da MES × tariffa della versione attiva × **8 ore** / media.
+- Costo preventivo/consuntivo della STATION = costo medio base × turni impiegati da piano originario/lavorazione reale sul calendario MES, minimo **0,5** solo se sono presenti ore entro calendario e arrotondamento al mezzo superiore. Una lavorazione interamente fuori calendario non genera automaticamente mezzo turno.
+- Per scelta esplicita gli **orari MES attuali sono estesi anche allo storico**. Attualmente sono 07:30–16:30; le chiusure aziendali restano quelle datate registrate in MES. Gli orari precedenti non vengono inventati; la scelta retroattiva è mostrata nel dettaglio.
+- Ogni consultazione/aggiornamento acquisisce nuovamente il conteggio globale MES: rettifiche, nuove chiusure di lavorazioni e turni appena completati modificano anche i costi delle produzioni concluse. Non c'è polling o ricaricamento continuo dell'interfaccia.
+- Una nuova versione attiva con questa modalità applica solo il criterio e la tariffa STATION all'intero storico; costi FILLING, materiali, lavaggi, formule, SL e versioni originarie restano invariati. I costi derivati del bulk e i confronti economici si ricalcolano di conseguenza.
+- Ogni revisione della fonte è conservata immutabile in Workspace con impronta univoca: calendario, dati lavorazioni, organico e contatori. Il report mostra periodo, chiusure, turni, media, costo turno e identificativo della revisione, senza esporre lavorazioni di clienti non autorizzati.
+- Media nulla/zero, dati incompleti o MES non raggiungibile = **costo non calcolabile**. Nessun ripiego automatico sulla formula precedente o sullo zero.
+
+Per attivarla occorrono la migrazione Workspace **20260913130000_production_station_history.sql** e il nuovo endpoint MES **production-cost-station-history**: eseguire fetch/pull e il normale aggiornamento MES, poi verificare la media in Configurazione costi e salvare il criterio. Nessuna nuova migrazione database MES è necessaria.
+
+### Secondo turno e straordinari STATION
+
+- Le ore dopo le **17:00** non vengono valorizzate automaticamente fuori dai turni: l'orario di chiusura non dimostra uno straordinario.
+- In modalità media storica il primo turno segue MES; gli eventuali turni dal secondo in poi configurati in Workspace estendono il calendario **economico**, anche sullo storico e nel denominatore della media. I turni aggiuntivi non possono sovrapporsi al turno MES. Calendario APS e criteri FILLING restano invariati.
+- Aprire **CONSUNTIVI PRODUZIONI → Apri → Tempi e personale → Straordinario STATION confermato**. Inserire lavorazione, data/ora iniziale e finale e fonte/autorizzazione, poi **Registra straordinario**.
+- Gli intervalli devono appartenere alla lavorazione, restare nei suoi orari e non sovrapporsi. Le ore già coperte dal secondo turno non vengono pagate nuovamente. Eventuali rettifiche MES limitano il tempo valorizzato ai nuovi estremi effettivi.
+- Straordinario confermato = **costo medio base / 8 × ore × moltiplicatore configurato**. Le ore straordinarie rimangono separate, senza arrotondamento al mezzo turno e senza margine obiettivo extra implicito.
+- Il salvataggio sostituisce l'elenco straordinari, mantenendo le revisioni e la fonte nel registro. Rimuovere tutti gli intervalli e salvare azzera lo straordinario dichiarato, senza cancellare la tracciabilità o le conferme dei lavaggi.
+- Nelle modalità STATION precedenti resta l'extra automatico agli estremi fino alle 17:00; le ore successive richiedono dichiarazione esplicita e usano la tariffa oraria configurata. Nella media storica lo straordinario è sempre esplicito.
+
+## Dati disponibili
 
 La migrazione importa i riferimenti MES già presenti nelle conferme V4 Workspace, senza dedurne uno stato operativo corrente. L'importazione MES aggiunge il dettaglio disponibile anche per ordini anteriori a V4.
 

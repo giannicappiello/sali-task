@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw, Search } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { Field, Numeric, Modal } from "./common";
-import { action, money, quantity, date } from "./client";
+import { action, money, quantity, date,unitMoney } from "./client";
 import { sumKnown, delta, percent } from "./cost-engine";
 import { matchesProductionSearch } from "./search";
 import StationHistorySummary from "./StationHistorySummary";
+import FillingHistorySummary from "./FillingHistorySummary";
 import StationOvertime from "./StationOvertime";
 
 function CostTable({record:r}){
@@ -24,6 +25,8 @@ function Detail({record:r,token,canWrite,onClose,onChanged}){
  {r.reconstructed&&<p className="pc-note"><strong>Valorizzazione storica ricostruita.</strong> Le quantità recuperate e i costi ultimi usati sono consultabili in Materiali e SL. Non sostituiscono prezzi storici non conservati nei documenti originali.</p>}
  {error&&<p className="pc-error" role="alert">{error}</p>}
  {r.stationContext&&["Riepilogo","Tempi e personale","Tracciabilità"].includes(tab)&&<StationHistorySummary history={r.stationHistory} hourly={r.stationHistoricalHourly} policyId={r.stationContext.policy?.id}/>}
+ {r.fillingContext&&["Riepilogo","Tempi e personale","Tracciabilità"].includes(tab)&&<FillingHistorySummary history={r.fillingHistory} hourly={r.fillingHistoricalHourly} policyId={r.fillingContext.policy?.id}/>}
+ {r.fillingContext&&tab==="Tempi e personale"&&<section className="pc-panel"><h3>Manodopera a pezzi · lavorazione selezionata</h3><p>Costo unitario FILLING: {unitMoney(r.fillingUnitLabor)}. I pezzi delle due fasi non vengono sommati.</p><div className="pc-table-wrap"><table><thead><tr><th>Fase / lavorazione</th><th>Pezzi previsti attribuiti</th><th>Pezzi buoni chiusi</th><th>Manodopera preventiva</th><th>Manodopera consuntiva</th></tr></thead><tbody>{r.phases.filter(p=>["Confezionamento","Astucciatura"].includes(p.phase)).map(p=><tr key={p.id}><td>{p.phase} · {p.id}</td><td>{p.phase==="Confezionamento"?quantity(p.plannedLaborPieces):"Separati"}</td><td>{p.state==="Terminato"?quantity(p.goodQuantity):"Non conclusa"}</td><td>{p.laborIncludedInFilling?"Compresa nel reparto":money(p.plannedLabor)}</td><td>{p.laborIncludedInFilling?"Compresa nel reparto":money(p.actualLabor)}</td></tr>)}</tbody></table></div><p className="pc-muted">La quantità preventiva dell’ordine viene ripartita una sola volta fra le lavorazioni FILLING, proporzionalmente ai pezzi rilevati o in parti uguali se non ancora disponibili.</p></section>}
  {tab==="Riepilogo"&&<><div className="pc-metrics"><div>Quantità prevista<strong>{quantity(r.quantity)} {r.unit}</strong></div><div>Quantità buona finale<strong>{quantity(r.goodQuantity)} {r.unit}</strong></div><div>Costo consuntivo / pezzo buono<strong>{money(r.unitCost)}</strong></div></div><p className="pc-note">{r.provisional?"Consuntivo provvisorio o incompleto.":"Lavorazione conclusa con costi disponibili."} Nessun valore mancante viene trattato come zero.</p>{r.warnings.map(w=><p key={w}>{w}</p>)}<CostTable record={r}/></>}
  {tab==="Tempi e personale"&&<><p>I tempi effettivi sono intervalli registrati in MES. Le presenze restano distinte dalla base economica STATION. Il tempo notturno senza turni non viene contato come lavoro ordinario.</p>{r.laborCriteria?.map(c=><p key={c}>{c}</p>)}
  {r.phases.map(w=><section className="pc-panel" key={w.id}><h3>{w.machine?.code||"Impianto "+w.machineId} · {w.phase} · {w.state}</h3><div className="pc-table-wrap"><table><thead><tr><th>Indicatore</th><th>Preventivo</th><th>Consuntivo</th></tr></thead><tbody>

@@ -4,6 +4,7 @@ import { productionTurns,explicitOvertimeHours } from "./turns.js";
 import { laborRules, validateLaborRules, roundedHours, stationPaidHours, rulesSummary } from "./labor-rules.js";
 import { historicalStationTurns, historicalLabor,historyCalendar } from "./station-history.js";
 import { after17Intervals,currentOvertime } from "./overtime.js";
+import { fillingUnitLabor,isPieces } from "./filling-history.js";
 export const number = (v) => v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v)) ? Number(v) : null;
 export const sumKnown = (values) => values.length && values.every(v => number(v) !== null) ? values.reduce((s,v) => s + Number(v),0) : null;
 export const delta = (actual, planned) => number(actual) !== null && number(planned) !== null ? actual-planned : null;
@@ -66,11 +67,14 @@ function materialsVariance(planned,actual,confirmed=true) {
  });
 }
 
-export function calculateRecord(evidence,configuration,adjustment={},commercial={},now=new Date().toISOString(),stationContext=null) {
+export function calculateRecord(evidence,configuration,adjustment={},commercial={},now=new Date().toISOString(),stationContext=null,fillingContext=null) {
  const settings=configuration?.settings, original=evidence.baseline||evidence.historicalBaseline, warnings=[];
  const rules=laborRules(settings);
  const historicalMode=Boolean(stationContext?.policy)||rules.station.basis==="historical_productivity";
  const history=stationContext?.history,stationSettings=stationContext?.policy?.settings||settings;
+ const fillingHistoricalMode=Boolean(fillingContext?.policy)||rules.filling.basis==="historical_pieces";
+ const fillingSettings=fillingContext?.policy?.settings||settings, fillingHistory=fillingContext?.history;
+ const unitLabor=fillingHistoricalMode?fillingUnitLabor(fillingHistory,fillingSettings?.laborHourly):null;
  const recoveredConsumption=!evidence.bulkSl?.length?historicalConsumption(evidence):[];
  const recoveredProducts=!evidence.productSl?.length?(evidence.historicalProductConsumption||[]).filter(x=>x.consumedAt).map(x=>({...x,unitCost:number(x.currentUnitCost)>0?Number(x.currentUnitCost):null})):[];
  const reconstructed=Boolean((!evidence.baseline&&evidence.historicalBaseline)||recoveredConsumption.length||recoveredProducts.length);
@@ -83,7 +87,7 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
  const productMaterials=evidence.productSl?.length?evidence.productSl.flatMap(x=>x.materials||[]):recoveredProducts;
  if(recoveredProducts.length)warnings.push("Bulk/confezionamento ricostruiti dagli impegni V4 marcati consumati: quantità fabbisogno e costi ultimi, non righe SL originali.");
  const ops=original?.operations||evidence.operations||[];
- const works=(evidence.works||[]).filter(w=>w.state!=="Annullato");
+ const works=[...new Map((evidence.works||[]).filter(w=>w.state!=="Annullato").map(w=>[w.id,w])).values()];
  for(const [type,phase] of [["Production","Semilavorato"],["Packaging","Confezionamento"],["Cartoning","Astucciatura"]]){
   for(const machineId of new Set(ops.filter(x=>x.type===type).map(x=>Number(x.impiantoId)))){
    if(!works.some(w=>w.machineId===machineId&&w.phase===phase))works.push({
@@ -92,6 +96,10 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
    });
   }
  }
+ const fillingWorks=works.filter(w=>w.phase==="Confezionamento");
+ // Order quantity is counted once, not once per daily planning interval/machine.
+ const plannedPieces=isPieces(evidence.unit)?number(original?.quantity)??number(evidence.quantity):null;
+ const fillingWeight=fillingWorks.reduce((s,w)=>s+Math.max(0,number(w.goodQuantity)??0),0);
  const phases=works.map(w=>{
   const machine=settings?.machines?.find(m=>Number(m.id)===Number(w.machineId));
   const plannedOps=ops.filter(x=>Number(x.impiantoId)===Number(w.machineId)&&x.type===({Confezionamento:"Packaging",Astucciatura:"Cartoning",Semilavorato:"Production"}[w.phase]));
@@ -108,9 +116,9 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
   const actualPersonHours=sumKnown((w.personnel||[]).map(x=>hours(x.start,x.end||w.end||now)));
   const personHoursInShifts=sumKnown((w.personnel||[]).map(x=>scheduledHours(x.start,x.end||w.end||now,settings)));
   const isStation=w.phase==="Semilavorato";
-  const shiftHours=number(settings?.referenceShiftHours??8);
+  const shiftHours=(isStation&&historicalMode)||(!isStation&&fillingHistoricalMode)?8:number(settings?.referenceShiftHours??8);
   const mixingOperatorsCount=isStation&&historicalMode?number(history?.mixingOperatorsCount):number(settings?.mixingOperatorsCount)??number(evidence.mixingOperatorsCount);
-  const countTurns=(start,end,down=0)=>isStation&&historicalMode?historicalStationTurns(start,end,history,down):productionTurns(start,end,settings,down);
+  const countTurns=(start,end,down=0)=>isStation&&historicalMode?historicalStationTurns(start,end,history,down):!isStation&&fillingHistoricalMode?historicalStationTurns(start,end,fillingHistory,down):productionTurns(start,end,settings,down);
   const plannedShiftCounts=plannedOps.map(op=>countTurns(op.start,op.end));
   const actualShiftCounts=w.state==="DaAvviare"?null:countTurns(w.start,w.pausedAt||w.end||history?.asOfLocal||now,Number(w.downtimeMinutes||0)/60);
   const plannedTurns=plannedShiftCounts.length&&plannedShiftCounts.every(Boolean)?plannedShiftCounts.reduce((sum,x)=>sum+x.turns,0)*share:null;
@@ -125,15 +133,25 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
   const plannedCostPersonHours=isStation&&historicalMode?historicalLabor(plannedTurns,history,1):isStation?(mixingOperatorsCount===null||plannedPaidHours===null?null:mixingOperatorsCount*plannedPaidHours*share):plannedPersonHours;
   const actualCostPersonHours=isStation&&historicalMode?historicalLabor(actualTurns===null?null:actualTurns+explicitHours*laborRules(stationSettings).station.overtimeMultiplier/8,history,1):isStation?(mixingOperatorsCount===null||actualPaidHours===null?null:mixingOperatorsCount*actualPaidHours):sumKnown((w.personnel||[]).map(x=>roundedHours(hours(x.start,x.end||w.end||now),rules.filling.roundingMinutes)));
   const hourly=isStation&&historicalMode?number(stationSettings?.laborHourly):number(settings?.laborHourly);
-  const plannedLabor=hourly===null||plannedCostPersonHours===null?null:plannedCostPersonHours*hourly;
-  const actualLabor=hourly===null||actualCostPersonHours===null?null:actualCostPersonHours*hourly;
+  let plannedLabor=hourly===null||plannedCostPersonHours===null?null:plannedCostPersonHours*hourly;
+  let actualLabor=hourly===null||actualCostPersonHours===null?null:actualCostPersonHours*hourly;
+  const pieceShare=fillingWeight>0?Math.max(0,number(w.goodQuantity)??0)/fillingWeight:1/Math.max(1,fillingWorks.length);
+  const plannedLaborPieces=w.phase==="Confezionamento"&&plannedPieces!==null&&plannedPieces>=0?plannedPieces*pieceShare:null;
+  const actualLaborPieces=w.phase==="Confezionamento"&&w.state==="Terminato"&&w.end&&w.end>=w.start&&isPieces(w.unit||evidence.unit)&&number(w.goodQuantity)!==null&&Number(w.goodQuantity)>=0?Number(w.goodQuantity):null;
+  const laborIncludedInFilling=fillingHistoricalMode&&w.phase==="Astucciatura"&&fillingWorks.length>0;
+  if(fillingHistoricalMode&&!isStation){
+   plannedLabor=w.phase==="Confezionamento"?unitLabor===null||plannedLaborPieces===null?null:unitLabor*plannedLaborPieces:laborIncludedInFilling?0:null;
+   actualLabor=w.phase==="Confezionamento"?unitLabor===null||actualLaborPieces===null?null:unitLabor*actualLaborPieces:laborIncludedInFilling?0:null;
+  }
   const wash=adjustment.washes?.find(x=>Number(x.productionId)===w.id);
   const plannedWashes=ops.filter(x=>Number(x.impiantoId)===w.machineId&&x.type==="Cleaning").length*share;
   const plannedWash=number(machine?.washCost)===null?null:plannedWashes*Number(machine.washCost);
   const actualWash=number(wash?.count)===null||number(machine?.washCost)===null?null:Number(wash.count)*Number(machine.washCost);
   const gain=number(machine?.gainPerShift);
   return {...w,machine,plannedHours,actualHours,downtimeHours:stop,plannedPersonHours,actualPersonHours,personHoursInShifts,plannedLabor,actualLabor,
-   mixingOperatorsCount,referenceShiftHours:shiftHours,plannedTurns,actualTurns,plannedOvertimeHours,actualOvertimeHours,plannedCostPersonHours,actualCostPersonHours,
+   mixingOperatorsCount,referenceShiftHours:shiftHours,plannedTurns,actualTurns,plannedOvertimeHours,actualOvertimeHours,
+   plannedCostPersonHours:fillingHistoricalMode&&!isStation?null:plannedCostPersonHours,actualCostPersonHours:fillingHistoricalMode&&!isStation?null:actualCostPersonHours,
+   plannedLaborPieces,actualLaborPieces,laborIncludedInFilling,laborUnitCost:fillingHistoricalMode&&w.phase==="Confezionamento"?unitLabor:null,
    plannedWashes,actualWashes:number(wash?.count),actualWashMinutes:number(wash?.minutes),plannedWash,actualWash,
    plannedWashMinutes:number(machine?.washMinutes)===null?null:plannedWashes*Number(machine.washMinutes),
    plannedGain:isStation&&plannedTurns!==null&&gain!==null?plannedTurns*gain:null,
@@ -173,7 +191,14 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
  const comparableCost=productActualTotal!==null&&goodQuantity>0&&invoicedQuantity!==null&&invoicedQuantity>=0&&invoicedQuantity<=goodQuantity?productActualTotal/goodQuantity*invoicedQuantity:null;
  if(!evidence.bulkSl?.length&&bulk.length&&!recoveredConsumption.length)warnings.push("SL e prelievi scaricati non disponibili: consumi consuntivi non recuperabili.");
  if(actualWash===null)warnings.push("Lavaggi effettivi non rilevati: confermare conteggio nel dettaglio.");
- if(actualLabor===null)warnings.push("Costo personale incompleto: verificare tariffa, turni e organico Miscelazione per STATION; presenze per FILLING.");
+ if(actualLabor===null)warnings.push("Costo personale incompleto: verificare tariffa, calendario e organico; per FILLING media storica, pezzi chiusi e unità pezzi, oppure presenze secondo il criterio scelto.");
+ if(filling.length&&fillingHistoricalMode){
+  warnings.push(rulesSummary(fillingSettings)[1]);
+  if(!fillingHistory||fillingHistory.error)warnings.push(fillingHistory?.error||"Media storica FILLING non acquisita: costo non calcolabile.");
+  if(!isPieces(evidence.unit))warnings.push("Unità della lavorazione non in pezzi: costo FILLING non calcolabile.");
+  if(!fillingWorks.length)warnings.push("Astucciatura senza lavorazione FILLING collegata: costo reparto non attribuibile.");
+  warnings.push("Manodopera FILLING ricalcolata anche sulle produzioni concluse. Pezzi astucciati separati e nessun addebito aggiuntivo di presenze o straordinari nel metodo a pezzi.");
+ }
  if(bulk.length)warnings.push(rulesSummary(historicalMode?stationSettings:settings)[0]+(historicalMode?"":" Organico della versione costi, oppure organico MES disponibile per ricostruzione."));
  if(bulk.length&&historicalMode){
   if(!history||history.error)warnings.push(history?.error||"Media storica MES non acquisita: costo non calcolabile.");
@@ -194,7 +219,9 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
  if(bulk.length&&!oneStation)warnings.push("Margine per singola STATION non attribuibile: più STATION condividono il ricavo. Nessuna ripartizione automatica inventata.");
  return {...evidence,configuration,phases,closed,warnings,reconstructed,recoveredConsumption,recoveredProducts,actualKnownSubtotal,plannedKnownSubtotal,plannedMaterialCost,actualMaterialCost,plannedPackagingCost,actualPackagingCost,
   adjustment,stationContext,stationHistory:historicalMode?history:null,stationHistoricalHourly:historicalMode?number(stationSettings?.laborHourly):null,
-  laborCriteria:[rulesSummary(historicalMode?stationSettings:settings)[0],...rulesSummary(settings).slice(1)],plannedObjective,invoicedObjective,plannedObjectiveVariance:delta(delta(revenue,productPlannedTotal),plannedObjective),actualObjectiveVariance:delta(delta(actualRevenue,comparableCost),invoicedObjective),
+  fillingContext,fillingHistory:fillingHistoricalMode?fillingHistory:null,fillingHistoricalHourly:fillingHistoricalMode?number(fillingSettings?.laborHourly):null,
+  fillingUnitLabor:unitLabor,
+  laborCriteria:[rulesSummary(historicalMode?stationSettings:settings)[0],rulesSummary(fillingHistoricalMode?fillingSettings:settings)[1],rulesSummary(settings)[2]],plannedObjective,invoicedObjective,plannedObjectiveVariance:delta(delta(revenue,productPlannedTotal),plannedObjective),actualObjectiveVariance:delta(delta(actualRevenue,comparableCost),invoicedObjective),
   plannedLabor,actualLabor,plannedWash,actualWash,lossCost,plannedTotal,actualTotal,goodQuantity,
   bulkProcessingCost,plannedBulkProcessingCost,plannedFillingProcessingCost,fillingProcessingCost,directActualTotal,productActualTotal,productPlannedTotal,
   unitCost:filling.length&&productActualTotal!==null&&goodQuantity>0?productActualTotal/goodQuantity:null,
@@ -228,6 +255,6 @@ export function allocateBulkCosts(records) {
   const plannedBulkTransferCost=plannedProduced>0&&plannedUsed!==null&&source.plannedBulkProcessingCost!==null
    ?source.plannedBulkProcessingCost*plannedUsed/plannedProduced:null;
   const commercial={...r.commercial,bulkTransferCost:source.bulkProcessingCost*used/produced,plannedBulkTransferCost,bulkSourceOrder:source.orderNumber,bulkUsed:used,bulkProduced:produced};
-  return {...calculateRecord(r,r.configuration,r.adjustment||{},commercial,undefined,r.stationContext),audit:r.audit,refreshedAt:r.refreshedAt};
+  return {...calculateRecord(r,r.configuration,r.adjustment||{},commercial,undefined,r.stationContext,r.fillingContext),audit:r.audit,refreshedAt:r.refreshedAt};
  });
 }

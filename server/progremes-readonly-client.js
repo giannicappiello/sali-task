@@ -15,6 +15,10 @@ const RESOURCE_DEFINITIONS = Object.freeze({
     path: "production-cost-station-history", internal: true, parameters: Object.freeze([]), collection: true,
     fields: Object.freeze(["generatedAt","asOfLocal","periodStart","periodEnd","completedWorks","calendarShifts","productivity","mixingOperatorsCount","error","works","calendar"]),
   }),
+  "production-cost-filling-history": Object.freeze({
+    path: "production-cost-filling-history", internal: true, parameters: Object.freeze([]), collection: true,
+    fields: Object.freeze(["generatedAt","asOfLocal","periodStart","periodEnd","completedWorks","completedPieces","calendarShifts","cartoningCompletedWorks","cartoningPieces","cartoningWarning","productivity","packagingOperatorsCount","error","works","calendar"]),
+  }),
   "production-cost-evidence": Object.freeze({
     path: "production-cost-evidence", internal: true,
     parameters: Object.freeze(["page", "pageSize"]),

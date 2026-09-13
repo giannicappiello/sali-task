@@ -1,4 +1,5 @@
 export const money=v=>v===null||v===undefined?"Non disponibile":Number(v).toLocaleString("it-IT",{style:"currency",currency:"EUR"});
+export const unitMoney=value=>value==null?"Non disponibile":new Intl.NumberFormat("it-IT",{style:"currency",currency:"EUR",minimumFractionDigits:4,maximumFractionDigits:6}).format(value);
 export const quantity=v=>v===null||v===undefined?"—":Number(v).toLocaleString("it-IT",{maximumFractionDigits:3});
 export const date=v=>v?new Date(v).toLocaleDateString("it-IT"):"—";
 export async function action(token,operation,extra={}) {

@@ -72,18 +72,23 @@ export function AuthProvider({ children }) {
   const accessRevision = useRef(null);
   const loadGeneration = useRef(0);
   const currentAuthId = useRef(null);
+  const sessionReady = useRef(false);
 
   useEffect(() => {
     let mounted = true;
 
     const pending = new Set();
     const timeout = window.setTimeout(() => {
-      if (mounted) setAuthError("Il caricamento della sessione sta impiegando troppo tempo. Chiudi le altre finestre Workspace e riprova.");
+      if (mounted && !sessionReady.current) setAuthError("Il caricamento della sessione sta impiegando troppo tempo. Chiudi le altre finestre Workspace e riprova.");
     }, 30000);
 
     async function applySession(currentSession) {
       if (!mounted) return;
       const sameUser = Boolean(currentSession?.user?.id && currentAuthId.current === currentSession.user.id);
+      if (!sameUser) {
+        sessionReady.current = false;
+        setLoading(true);
+      }
       currentAuthId.current = currentSession?.user?.id || null;
       loadGeneration.current += 1;
       setSession(currentSession);
@@ -100,13 +105,15 @@ export function AuthProvider({ children }) {
           setModuleAreas({});
           setScreenCatalog({ screens: [], links: [] });
           setDataScope(EMPTY_DATA_SCOPE);
+          sessionReady.current = true;
+          setAuthError("");
+          setLoading(false);
         }
-        if (mounted) { setAuthError(""); setLoading(false); }
       } catch (error) {
-        if (mounted) setAuthError("Impossibile caricare la sessione Workspace. Riprova.");
+        if (mounted && !sessionReady.current && currentAuthId.current === currentSession?.user?.id) setAuthError("Impossibile caricare la sessione Workspace. Riprova.");
         console.error("Errore caricamento sessione Workspace:", error);
       } finally {
-        window.clearTimeout(timeout);
+        if (sessionReady.current) window.clearTimeout(timeout);
       }
     }
 
@@ -121,6 +128,7 @@ export function AuthProvider({ children }) {
 
     return () => {
       mounted = false;
+      loadGeneration.current += 1;
       window.clearTimeout(timeout);
       for (const timer of pending) window.clearTimeout(timer);
       listener.subscription.unsubscribe();
@@ -140,6 +148,7 @@ export function AuthProvider({ children }) {
     let running = false;
     let pending = false;
     const refresh = async () => {
+      if (disposed) return;
       if (running) { pending = true; return; }
       running = true;
       try {
@@ -216,8 +225,13 @@ export function AuthProvider({ children }) {
 
   async function loadProfile(user, { refresh = false } = {}) {
     const generation = ++loadGeneration.current;
-    if (!refresh) await ensureProfile(user);
-    const { data: snapshot, error } = await supabase.rpc("workspace_session_access");
+    let snapshot, error;
+    try {
+      if (!refresh) await ensureProfile(user);
+      ({ data: snapshot, error } = await supabase.rpc("workspace_session_access"));
+    } catch (failure) {
+      error = failure;
+    }
     // A late response from an older login/refresh must not restore old access.
     if (generation !== loadGeneration.current || (currentAuthId.current && currentAuthId.current !== user.id)) return;
     const data = snapshot?.profile;
@@ -231,7 +245,13 @@ export function AuthProvider({ children }) {
       setModuleAreas({});
       setScreenCatalog({ screens: [], links: [], levels: {} });
       setDataScope(EMPTY_DATA_SCOPE);
-      if (error) throw error;
+      if (error) {
+        setAuthError("Impossibile caricare la sessione Workspace. Riprova.");
+        throw error;
+      }
+      sessionReady.current = true;
+      setAuthError("");
+      setLoading(false);
       return;
     }
     const context = snapshot.access || {};
@@ -253,6 +273,11 @@ export function AuthProvider({ children }) {
     setDataScope((current) => retainEqualAccessValue(current, { mode: scope.mode || "propri", commercialMode: scope.commercial_mode || scope.mode || "propri", userIds: scope.user_ids || [], departmentIds: scope.department_ids || [],
       privateCommercialRead: scope.private_commercial_read === true,
       agentIds: scope.agent_ids || [], customerCode: scope.customer_code || null, customerCodes: scope.customer_codes || [] }));
+    // Only the accepted snapshot can release protected routes. An older login
+    // may finish while a realtime/focus refresh is still loading permissions.
+    sessionReady.current = true;
+    setAuthError("");
+    setLoading(false);
     if (!refresh) {
       const now = new Date().toISOString();
       await supabase.from("utenti").update({ ultimo_accesso: now, last_seen: now }).eq("id", data.id);

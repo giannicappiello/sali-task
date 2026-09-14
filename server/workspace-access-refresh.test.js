@@ -9,9 +9,9 @@ function harness() {
   const requests = [], state = {}, loadGeneration = { current: 0 }, currentAuthId = { current: 'one' };
   const names = [...new Set([...loadCode.matchAll(/\b(set[A-Z]\w*)\(/g)].map(m => m[1]))];
   const supabase = { rpc(name) { assert.equal(name, 'workspace_session_access'); return new Promise(resolve => requests.push(resolve)); } };
-  const fn = new Function('supabase','ensureProfile','loadGeneration','currentAuthId','accessRevision','lastAccessSignature','EMPTY_DATA_SCOPE',
+  const fn = new Function('supabase','ensureProfile','loadGeneration','currentAuthId','accessRevision','lastAccessSignature','EMPTY_DATA_SCOPE','sessionReady',
     'accessSnapshotSignature','retainEqualAccessValue','retainAccessProfile',...names,
-    `${loadCode}; return loadProfile;`)(supabase,async()=>{},loadGeneration,currentAuthId,{current:null},{current:''},{},
+    `${loadCode}; return loadProfile;`)(supabase,async()=>{},loadGeneration,currentAuthId,{current:null},{current:''},{},{current:false},
       accessSnapshotSignature,retainEqualAccessValue,retainAccessProfile,...names.map(n=>v=>{
         state[n]=typeof v === 'function' ? v(n === 'setAccessEpoch' ? state[n] || 0 : state[n]) : v;
       }));

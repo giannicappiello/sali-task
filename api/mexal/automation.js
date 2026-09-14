@@ -17,7 +17,7 @@ import { agentsAccess } from "../../server/mexal/agents-access.js";
 import orderDocumentsHandler, { purgeEvictedOrderDocuments } from "../../server/mexal/sync-order-documents.js";
 import salesInvoicesHandler from "../../server/mexal/sync-sales-invoices.js";
 import productCategoriesHandler from "../../server/mexal/sync-product-categories.js";
-import { requireAdmin, requirePermission } from "../../server/mexal/lib/auth.js";
+import { requireAdmin, requirePermission, requireScreenManagement } from "../../server/mexal/lib/auth.js";
 import { completeIdempotentSync, findResumableSync, findRunningSync, reserveIdempotentSync, resumeFailedSync } from "../../server/mexal/lib/syncRuns.js";
 import { dispatchWorkspaceNotifications } from "../../server/notifications/dispatch.js";
 import documentApiHandler from "../../server/document-api.js";
@@ -292,6 +292,15 @@ async function createAdmin(req, permissionCode = null) {
   const authorizationResult = permissionCode
     ? await requirePermission(req, createSupabase, permissionCode)
     : await requireAdmin(req, createSupabase);
+  const { supabase, authUserId, id: profileId } = authorizationResult;
+  return { supabase, authUserId, profileId };
+}
+
+async function createScreenManager(req, screenCode) {
+  const createSupabase = () => createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const authorizationResult = await requireScreenManagement(req, createSupabase, screenCode);
   const { supabase, authUserId, id: profileId } = authorizationResult;
   return { supabase, authUserId, profileId };
 }
@@ -961,7 +970,7 @@ export default async function handler(req, res) {
       case "order_maintenance_purge":
         return sendSuccess(res, 200, await maintenancePurge(req));
       case "agents_access": {
-        const admin = await createAdmin(req);
+        const admin = await createScreenManager(req, "integrazioni.mexal_agenti");
         return sendSuccess(res, 200, await agentsAccess({ supabase: admin.supabase, body }));
       }
       case "oct_precheck": {

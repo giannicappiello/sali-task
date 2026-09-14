@@ -99,7 +99,7 @@ export async function loadCreatedMexalDocumentLines(documentIds) {
 export async function loadOrderDetail(orderId, moduleCode) {
 const [{ data: order, error: orderError }, { data: lines, error: linesError }, documents] = await Promise.all([
   supabase.from("ordini_testate").select("*").eq("id", orderId).or(orderModuleFilter(moduleCode)).single(),
-    supabase.from("ordini_righe").select("*").eq("ordine_id", orderId).order("id", { ascending: true }),
+    supabase.from("ordini_righe").select("*").eq("ordine_id", orderId).order("mexal_posizione", { ascending: true, nullsFirst: false }).order("id", { ascending: true }),
     loadCreatedMexalDocuments(orderId, moduleCode),
   ]);
   if (orderError) throw orderError;

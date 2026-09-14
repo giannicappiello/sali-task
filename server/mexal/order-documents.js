@@ -50,6 +50,23 @@ export function formatMexalCommission(value) {
   return String(parsed).replace(".", ",");
 }
 
+export function formatMexalDiscount(value) {
+  return text(value)
+    .split("+")
+    .map((part) => part.trim().replace(".", ","))
+    .filter(Boolean)
+    .join("+");
+}
+
+export function mexalLineDiscount(line) {
+  const detail = line?.dettaglio_calcolo && typeof line.dettaglio_calcolo === "object"
+    ? line.dettaglio_calcolo
+    : {};
+  const commercialDiscount = text(detail.sconto_commerciale ?? line?.sconto_commerciale);
+  const paymentDiscount = text(detail.sconto_pagamento ?? line?.sconto_pagamento);
+  return formatMexalDiscount([commercialDiscount, paymentDiscount].filter(Boolean).join("+"));
+}
+
 export function formatMexalNota(value, format) {
   const note = text(value);
   if (!note) return undefined;
@@ -90,7 +107,7 @@ export function buildRootMatrixRows(lines, magazzino, defaultAgentCode, kind) {
     codice_articolo: (line) => normalizeArticleCode(line.codice_articolo),
     quantita: (line) => number(line.quantita_documento),
     prezzo: (line) => number(line.prezzo_listino ?? line.prezzo_unitario ?? line.prezzo),
-    sconto: (line) => text(line.sconto_commerciale),
+    sconto: (line) => mexalLineDiscount(line),
     id_mag_riga: (line) => number(line.id_mag_riga ?? magazzino),
     tp_um_articolo: (line) => normalizeMexalUnitType(line.tp_um_articolo),
     cod_iva: (line) => text(line.cod_iva) || text(line.codice_iva_mexal),

@@ -5,7 +5,7 @@ import {
   calculateOrderEconomics,
   reconcileMexalTotals,
 } from "./order-economics.js";
-import { buildMexalOrderDocument, normalizeMexalUnitType } from "./order-documents.js";
+import { buildMexalOrderDocument, classifyOrderLines, formatMexalDiscount, mexalLineDiscount, normalizeMexalUnitType } from "./order-documents.js";
 
 test("applica gli sconti commerciali in sequenza", () => {
   assert.equal(applySequentialDiscounts(4.6, "50+35"), 1.4949999999999999);
@@ -79,4 +79,50 @@ test("tp_um_articolo esplicito ha precedenza sull'unità di misura", () => {
 test("id_causale viene inviato con il contratto matrice Mexal verificato", () => {
   const payload = buildMexalOrderDocument({ id: "ordine-3", codice_cliente: "501.03320", data_ordine: "2026-07-20", id_causale: 1 }, "OCM", [{ codice_articolo: "IT0001", quantita_documento: 1 }]);
   assert.deepEqual(payload.id_causale, [[1, 1]]);
+});
+
+test("formatta per Mexal gli sconti decimali mantenendo la catena", () => {
+  assert.equal(formatMexalDiscount("99.99"), "99,99");
+  assert.equal(formatMexalDiscount("50+35.5"), "50+35,5");
+});
+
+test("concatena lo sconto pagamento nel solo valore inviato a Mexal", () => {
+  const line = { sconto_commerciale: "50+35", sconto_pagamento: "3" };
+  assert.equal(mexalLineDiscount(line), "50+35+3");
+  assert.equal(line.sconto_commerciale, "50+35");
+  assert.equal(line.sconto_pagamento, "3");
+});
+
+test("usa il dettaglio separato per non duplicare lo sconto di una bozza legacy", () => {
+  assert.equal(mexalLineDiscount({
+    sconto_commerciale: "10+5",
+    sconto_pagamento: "5",
+    dettaglio_calcolo: { sconto_commerciale: "10", sconto_pagamento: "5" },
+  }), "10+5");
+});
+
+test("il documento Mexal contiene la catena commerciale e cassa completa", () => {
+  const payload = buildMexalOrderDocument({
+    codice_cliente: "501.03320",
+    data_ordine: "2026-09-14",
+    codice_pagamento: 7,
+  }, "OCM", [{
+    codice_articolo: "IT0001",
+    quantita_documento: 1,
+    prezzo_listino: 10,
+    sconto_commerciale: "50+35",
+    sconto_pagamento: "3",
+  }]);
+  assert.deepEqual(payload.sconto, [[1, "50+35+3"]]);
+  assert.equal(payload.id_pagamento, 7);
+});
+
+test("la suddivisione OCM e OCX conserva l'ordine relativo delle righe Workspace", () => {
+  const documents = classifyOrderLines([
+    { codice_articolo: "C003", quantita_ocm: 2, quantita_ocx: 0 },
+    { codice_articolo: "A001", quantita_ocm: 0, quantita_ocx: 4 },
+    { codice_articolo: "B002", quantita_ocm: 1, quantita_ocx: 3 },
+  ]);
+  assert.deepEqual(documents.OCM.map((line) => line.codice_articolo), ["C003", "B002"]);
+  assert.deepEqual(documents.OCX.map((line) => line.codice_articolo), ["A001", "B002"]);
 });

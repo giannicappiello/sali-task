@@ -133,7 +133,7 @@ export default async function handler(req, res) {
   try {
     const authorization = await verifyUser(req, admin, { allowOrdersUser: true, allowCustomerPrivateOrder: true });
     orderId = text(req.body?.orderId); if (!orderId) return res.status(400).json({ error: "orderId obbligatorio." });
-    const [{ data: order, error: orderError }, { data: lines, error: linesError }] = await Promise.all([admin.from("ordini_testate").select("*").eq("id", orderId).single(), admin.from("ordini_righe").select("*").eq("ordine_id", orderId).order("id")]);
+    const [{ data: order, error: orderError }, { data: lines, error: linesError }] = await Promise.all([admin.from("ordini_testate").select("*").eq("id", orderId).single(), admin.from("ordini_righe").select("*").eq("ordine_id", orderId).order("mexal_posizione", { ascending: true, nullsFirst: false }).order("id", { ascending: true })]);
     if (orderError) throw orderError; if (linesError) throw linesError; if (!lines?.length) throw new Error("Ordine senza righe.");
     if (authorization?.customerCode && (
       String(order.modulo_ordini || "").toLowerCase() !== "private"

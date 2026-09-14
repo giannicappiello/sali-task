@@ -1,4 +1,5 @@
 import { isPieces } from "./filling-history.js";
+import { packagingBaseline, productRows } from "./packaging-evidence.js";
 const numeric=v=>v!==null&&v!==undefined&&v!==""&&Number.isFinite(Number(v))?Number(v):null;
 export const sumAvailable=values=>{const known=values.map(numeric).filter(v=>v!==null);return known.length?known.reduce((a,b)=>a+b,0):null;};
 const difference=(a,b)=>a!=null&&b!=null?a-b:null;
@@ -8,10 +9,9 @@ const materials=rows=>sumAvailable(rows.map(r=>numeric(r.quantity)!==null&&Numbe
 // Missing inputs remain unknown; every derived partial amount carries a flag.
 export function availableCosts(r) {
  const phases=r.phases||[],bulk=phases.filter(p=>p.phase==="Semilavorato"),filling=phases.filter(p=>["Confezionamento","Astucciatura"].includes(p.phase));
- const original=r.baseline||r.historicalBaseline;
  const values={plannedMaterialCost:r.plannedMaterialSummary?.value??r.plannedMaterialCost,actualMaterialCost:r.actualMaterialSummary?.value??r.actualMaterialCost,
-  plannedPackagingCost:r.plannedPackagingCost??materials(original?.packaging||[]),
-  actualPackagingCost:r.actualPackagingCost??materials(r.productSl?.length?r.productSl.flatMap(d=>(d.materials||[]).slice(1)):(r.recoveredProducts||[]).filter(x=>x.kind==="Packaging"))};
+  plannedPackagingCost:r.plannedPackagingCost??materials(r.plannedPackaging||packagingBaseline(r).rows),
+  actualPackagingCost:r.actualPackagingCost??materials(r.actualPackagingRows||(r.productSl?.length?productRows(r).filter(m=>m.kind==="Packaging"):(r.recoveredProducts||[]).filter(x=>x.kind==="Packaging")))};
  for(const k of ["plannedLabor","actualLabor","plannedWash","actualWash"])values[k]=r[k]??sumAvailable(phases.map(p=>p[k]));
  values.lossCost=r.lossCost??sumAvailable(phases.flatMap(p=>p.lossesConfirmed?(p.losses||[]).map(l=>l.amount):[]));
  const bulkCost=side=>bulk.length?sumAvailable([values[side+"MaterialCost"],...bulk.flatMap(p=>[p[side+"Labor"],p[side+"Wash"]])]):null;

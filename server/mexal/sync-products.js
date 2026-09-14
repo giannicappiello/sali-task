@@ -180,7 +180,7 @@ function round4(value) {
   return Math.round((value + Number.EPSILON) * 10000) / 10000;
 }
 
-function requestMexal({ url, headers, binary = false, method = "GET", body }) {
+function requestMexal({ url, headers, binary = false, method = "GET", body, timeoutMs = 45000 }) {
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
 
@@ -193,7 +193,7 @@ function requestMexal({ url, headers, binary = false, method = "GET", body }) {
         method,
         headers: body ? { ...headers, "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) } : headers,
         rejectUnauthorized: false,
-        timeout: 45000,
+        timeout: timeoutMs,
       },
       (response) => {
         const chunks = [];
@@ -245,12 +245,13 @@ function parseJsonResponse(response, label) {
   return parsed;
 }
 
-export function buildMexalClient({ request = requestMexal, warehouse, retryOptions } = {}) {
+export function buildMexalClient({ request = requestMexal, warehouse, retryOptions, year, timeoutMs = 45000 } = {}) {
   const baseUrl = requireEnv("MEXAL_BASE_URL").replace(/\/+$/, "");
   const username = requireEnv("MEXAL_USERNAME");
   const password = requireEnv("MEXAL_PASSWORD");
   const azienda = requireEnv("MEXAL_AZIENDA");
-  const anno = requireEnv("MEXAL_ANNO");
+  const anno = year === undefined ? requireEnv("MEXAL_ANNO") : String(year);
+  if (!/^\d{4}$/.test(anno)) throw new Error("Anno Mexal non valido.");
   const configuredWarehouse = requireEnv("MEXAL_MAGAZZINO");
   // An explicit null omits Magazzino from Coordinate-Gestionale, so Mexal
   // returns progressives for the complete warehouse scope.
@@ -276,7 +277,7 @@ export function buildMexalClient({ request = requestMexal, warehouse, retryOptio
 
     async getJson(path) {
       const execute = async () => {
-        const response = await request({ url: `${baseUrl}/webapi/risorse${path}`, headers });
+        const response = await request({ url: `${baseUrl}/webapi/risorse${path}`, headers, timeoutMs });
         const payload = parseJsonResponse(response, path);
         this.lastHttpStatus = response.status;
         return payload;

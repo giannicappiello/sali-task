@@ -8,6 +8,7 @@ import { fillingUnitLabor,isPieces } from "./filling-history.js";
 import { materialBaseline,materialCode } from "./material-baseline.js";
 import { availableCosts } from "./available-costs.js";
 import { forecastOperations } from "./planned-timing.js";
+import { packagingBaseline, productDocuments, productRows } from "./packaging-evidence.js";
 export const number = (v) => v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v)) ? Number(v) : null;
 export const sumKnown = (values) => values.length && values.every(v => number(v) !== null) ? values.reduce((s,v) => s + Number(v),0) : null;
 export const delta = (actual, planned) => number(actual) !== null && number(planned) !== null ? actual-planned : null;
@@ -80,6 +81,8 @@ function materialsVariance(planned,actual,confirmed=true,plannedComplete=false) 
 }
 
 export function calculateRecord(evidence,configuration,adjustment={},commercial={},now=new Date().toISOString(),stationContext=null,fillingContext=null) {
+ const originalProductSl=evidence.originalProductSl??evidence.productSl;
+ evidence={...evidence,originalProductSl,productSl:productDocuments({...evidence,productSl:originalProductSl})};
  const settings=configuration?.settings, original=evidence.baseline||evidence.historicalBaseline, warnings=[];
  const rules=laborRules(settings);
  const historicalMode=Boolean(stationContext?.policy)||rules.station.basis==="historical_productivity";
@@ -95,11 +98,11 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
  if(!evidence.baseline)warnings.push(evidence.historicalBaseline?"Preventivo ricostruito dalla revisione formula collegata, valorizzato ai costi ultimi disponibili; non è il preventivo economico originale.":"Preventivo originario non congelato: formula storica non ancora recuperata.");
  if(recoveredConsumption.length)warnings.push("Consumi recuperati dai prelievi scaricati in MES e valorizzati ai costi ultimi disponibili. Valorizzazione ricostruita, non prezzi storici dello SL.");
  if(!settings)warnings.push("Configurazione costi non disponibile per questa produzione.");
- const plannedMaterials=materialPlan.rows,plannedPackaging=original?.packaging||[];
+ const packagingPlan=packagingBaseline(evidence);
+ const plannedMaterials=materialPlan.rows,plannedPackaging=packagingPlan.rows;
  if(materialPlan.recovered)warnings.push("Quantità formula mancanti recuperate dalla revisione collegata alla lavorazione e dalla quantità del lotto. Per i componenti assenti dal preventivo si usano i costi ultimi disponibili, non prezzi storici; i prezzi originali registrati restano prioritari. Il preventivo salvato resta invariato.");
  if(!plannedMaterials.length)warnings.push("Quantità formula non disponibili: manca un preventivo materiali utilizzabile o la revisione formula storica collegata. I consumi SL non vengono copiati nel preventivo.");
  const bulkMaterials=evidence.bulkSl?.length?evidence.bulkSl.flatMap(x=>x.materials||[]):recoveredConsumption;
- const productMaterials=evidence.productSl?.length?evidence.productSl.flatMap(x=>x.materials||[]):recoveredProducts;
  if(recoveredProducts.length)warnings.push("Bulk/confezionamento ricostruiti dagli impegni V4 marcati consumati: quantità fabbisogno e costi ultimi, non righe SL originali.");
  const forecast=forecastOperations(evidence),ops=forecast.operations;
  warnings.push(forecast.source);
@@ -181,9 +184,14 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
  const plannedPackagingCost=plannedPackaging.length?materialCost(plannedPackaging):filling.length?null:0;
  // The first finished-product SL row is the bulk transfer; do not add it again
  // when the same bulk production is already included in this order.
- const transferredBulk=evidence.productSl?.length?productMaterials[0]:recoveredProducts.find(x=>x.kind==="Bulk");
+ const classifiedProducts=productRows(evidence);
+ const transferredBulk=evidence.productSl?.length?classifiedProducts.find(x=>x.kind==="Bulk"):recoveredProducts.find(x=>x.kind==="Bulk");
  const recoveredPackaging=recoveredProducts.filter(x=>x.kind==="Packaging");
- const actualPackagingCost=evidence.productSl?.length?materialCost(evidence.productSl.flatMap(d=>(d.materials||[]).slice(1))):recoveredPackaging.length?materialCost(recoveredPackaging):filling.length?null:0;
+ const actualPackagingRows=evidence.productSl?.length?classifiedProducts.filter(m=>m.kind==="Packaging"):recoveredPackaging;
+ const actualPackagingCost=actualPackagingRows.length?materialCost(actualPackagingRows):filling.length?null:0;
+ if(packagingPlan.recovered)warnings.push(evidence.historicalPackaging?.source||"Packaging preventivo ricostruito dalla distinta MES disponibile.");
+ warnings.push(...(evidence.productSlRecovery?.warnings||[]));
+ if(classifiedProducts.some(m=>m.kind==="Unknown"))warnings.push("Alcune righe SL non sono classificate come bulk o packaging: visibili nel dettaglio, escluse dalla valorizzazione packaging.");
  const losses=phases.flatMap(x=>(x.losses||[]).map(l=>x.lossesConfirmed?number(l.amount):null));
  const lossCost=losses.length?sumKnown(losses):0;
  const plannedLabor=sumKnown(phases.map(x=>x.plannedLabor)),actualLabor=sumKnown(phases.map(x=>x.actualLabor));
@@ -234,7 +242,7 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
  const actualObjective=oneStation?sumKnown(bulk.map(p=>p.actualGain)):null;
  const invoicedObjective=actualObjective!==null&&comparableCost!==null?actualObjective*invoicedQuantity/goodQuantity:null;
  if(bulk.length&&!oneStation)warnings.push("Margine per singola STATION non attribuibile: più STATION condividono il ricavo. Nessuna ripartizione automatica inventata.");
- return {...evidence,configuration,phases,closed,warnings,forecastSource:forecast.source,reconstructed,recoveredConsumption,recoveredProducts,actualKnownSubtotal,plannedKnownSubtotal,plannedMaterialSummary,actualMaterialSummary,plannedMaterialCost,actualMaterialCost,plannedPackagingCost,actualPackagingCost,
+ return {...evidence,plannedPackaging,actualPackagingRows,configuration,phases,closed,warnings,forecastSource:forecast.source,reconstructed,recoveredConsumption,recoveredProducts,actualKnownSubtotal,plannedKnownSubtotal,plannedMaterialSummary,actualMaterialSummary,plannedMaterialCost,actualMaterialCost,plannedPackagingCost,actualPackagingCost,
   adjustment,stationContext,stationHistory:historicalMode?history:null,stationHistoricalHourly:historicalMode?number(stationSettings?.laborHourly):null,
   fillingContext,fillingHistory:fillingHistoricalMode?fillingHistory:null,fillingHistoricalHourly:fillingHistoricalMode?number(fillingSettings?.laborHourly):null,
   fillingUnitLabor:unitLabor,
@@ -262,10 +270,11 @@ export function allocateBulkCosts(records) {
   if(sources.length!==1)return r;
   const source=sources[0];
   const produced=source.phases.filter(p=>p.phase==="Semilavorato").reduce((s,p)=>s+Number(p.goodQuantity||0),0);
-  const used=(r.productSl||[]).reduce((s,d)=>s+Number(d.materials?.[0]?.quantity||0),0);
+  const bulkUsed=e=>productRows(e).filter(m=>m.kind==="Bulk").reduce((s,m)=>s+Number(m.quantity||0),0);
+  const used=bulkUsed(r);
   if(produced<=0||used<=0||used>produced)return r;
   const consumers=records.filter(x=>x.bulkLot===lot);
-  const totalUsed=consumers.reduce((s,x)=>s+(x.productSl||[]).reduce((t,d)=>t+Number(d.materials?.[0]?.quantity||0),0),0);
+  const totalUsed=consumers.reduce((s,x)=>s+bulkUsed(x),0);
   if(totalUsed>produced+0.000001)return r;
   const plannedProduced=(source.baseline?.operations||[]).filter(o=>o.type==="Production").reduce((s,o)=>s+Number(o.quantity||0),0);
   const plannedUsed=number(r.baseline?.bulkQuantity);

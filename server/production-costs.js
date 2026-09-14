@@ -11,6 +11,7 @@ import { activeStationPolicy } from "../src/features/production-costs/station-hi
 import { readFillingHistory,fillingHistorySummary } from "./production-filling-history.js";
 import { activeFillingPolicy } from "../src/features/production-costs/filling-history.js";
 import { validateOvertime,latestCostAdjustment } from "../src/features/production-costs/overtime.js";
+import { recoverPackagingSl, slReferences } from "./mexal/production-packaging-sl.js";
 
 const fail = (message,status=400) => Object.assign(new Error(message),{status});
 const check = (result) => {if(result.error)throw result.error;return result.data;};
@@ -87,6 +88,13 @@ export async function handleProductionCosts(req,body) {
   return {configuration};
  }
  if(op==="machines")return {machines:await createProgremesClient().request("production-cost-machines")};
+ if(op==="sync-product-sl"){
+  const row=await recordFor(session,Number(body.id));
+  const recovery=await recoverPackagingSl(row.evidence);
+  const evidence={...row.evidence,historicalProductSl:recovery.documents,productSlRecovery:{warnings:recovery.warnings,recoveredAt:recovery.recoveredAt}};
+  check(await admin.from("production_cost_records").update({evidence,refreshed_at:new Date().toISOString()}).eq("mes_order_id",row.mes_order_id));
+  return {recovered:recovery.documents.length,warnings:recovery.warnings};
+ }
  if(op==="sync"){
   // A page is atomic. The browser advances only after successful persistence;
   // repeated pages update evidence without overwriting the frozen cost revision.
@@ -100,10 +108,14 @@ export async function handleProductionCosts(req,body) {
   const byId=new Map(existing.map(x=>[x.mes_order_id,x]));
   for(const e of result.items){
    const old=byId.get(e.id);
+   e.historicalProductSl=old?.evidence?.historicalProductSl||[];
+   e.productSlRecovery=old?.evidence?.productSlRecovery;
    check(await admin.from("production_cost_records").upsert({mes_order_id:e.id,evidence:e,
     configuration_id:old?.configuration_id||configurationFor(e,configs)?.id||null,refreshed_at:new Date().toISOString()}));
   }
-  return {page,total:result.total,imported:result.items.length,hasMore:page*100<result.total};
+  const recoveryIds=scoped(result.items.map(e=>({evidence:e})),session.scope)
+   .filter(r=>slReferences(r.evidence.productSlReference).length).map(r=>r.evidence.id);
+  return {page,total:result.total,imported:result.items.length,hasMore:page*100<result.total,recoveryIds};
  }
  if(op==="overtime"){
   const source=await recordFor(session,Number(body.id));

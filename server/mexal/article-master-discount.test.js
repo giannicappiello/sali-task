@@ -53,3 +53,42 @@ test("non forza lo sconto sui suffissi TST e CMP non IT", () => {
   assert.equal(result.prezzo_netto, 100);
   assert.equal(result.origine_sconto, "nessuno");
 });
+
+test("applica la particolarità della categoria statistica cliente Mexal", () => {
+  const result = calculateLineConditions({
+    customer: {
+      codice_cliente: "501.00288",
+      categoria_sconti: 2,
+      dati_mexal: { cod_cat_sta: 2 },
+    },
+    product: {
+      codice_articolo: "IT0001",
+      prezzo_listino: 4.6,
+      categoria_sconto: 7,
+      dati_mexal: { nr_cat_sta: 2 },
+    },
+    quantity: 1,
+    orderDate: "2026-09-14",
+    discountMatrix: [
+      { cod_cat_cli: 2, cod_cat_art: 7, sconto_esteso: "50+35", is_active: true },
+    ],
+    specialConditions: [
+      {
+        id: 54,
+        tipo_part: "S",
+        tp_dato_conto: "S",
+        id_catsta_conto: 2,
+        tp_dato_art: "E",
+        nr_catsta_art: 2,
+        part_1: [[4, "50+35+10"]],
+        data_inizio: "2025-01-24",
+        is_active: true,
+      },
+    ],
+  });
+
+  assert.equal(result.sconto_commerciale, "50+35+10");
+  assert.equal(result.origine_sconto, "particolarita-sconto");
+  assert.equal(result.regola_sconto_id, 54);
+  assert.equal(result.prezzo_netto, 1.3455);
+});

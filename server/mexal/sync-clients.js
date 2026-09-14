@@ -380,7 +380,7 @@ async function loadPaymentsMap(mexal) {
   }
 }
 
-function mapClient(client, syncDate, paymentsMap) {
+export function mapClient(client, syncDate, paymentsMap) {
   const code = getClientCode(client);
   const companyName = normalize(
     firstValue(client, [
@@ -449,6 +449,14 @@ function mapClient(client, syncDate, paymentsMap) {
         "cod_cat_sconti",
         "codice_categoria_sconti",
         "cat_sconti",
+      ])
+    ),
+    categoria_statistica_cliente: nullableInteger(
+      firstValue(client, [
+        "categoria_statistica_cliente",
+        "cod_cat_sta",
+        "id_catsta_conto",
+        "nr_cat_sta",
       ])
     ),
     ...(nullableInteger(client.cod_cat_pr) !== null ? { categoria_provvigionale_mexal: nullableInteger(client.cod_cat_pr) } : {}),

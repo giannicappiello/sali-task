@@ -211,9 +211,11 @@ function customerStatCategory(customer) {
 
   return firstPositiveInteger([
     customer?.categoria_statistica_cliente,
+    customer?.cod_cat_sta,
     customer?.id_catsta_conto,
     customer?.nr_cat_sta,
     data.categoria_statistica_cliente,
+    data.cod_cat_sta,
     data.id_catsta_conto,
     data.nr_cat_sta,
   ]);

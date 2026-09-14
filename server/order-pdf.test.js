@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { jsPDF } from "jspdf";
 import { buildOrderPdfModel, createMexalDocumentPdfFiles, createOrderPdf, createZipArchive, downloadOrderPdf, fitTextInCell, formatMexalDocumentNumber, getMexalDocuments } from "../src/modules/orders/services/orderPdf.js";
+import { enrichOrderLinesWithBarcode } from "../src/modules/orders/services/orderLineBarcode.js";
 
 test("il modello PDF usa il motore economico condiviso per quindici righe", () => {
   const lines = Array.from({ length: 15 }, (_, index) => ({ codice_articolo: `A-${index}`, quantita: 2, prezzo_listino: 10, sconto_commerciale: "10", aliquota_iva: 22 }));
@@ -26,6 +27,59 @@ test("il PDF usa il numero completo del documento Mexal e mantiene Workspace sol
   assert.match(output, /RIFERIMENTO WORKSPACE/);
   assert.match(output, /3\/2026/);
   assert.doesNotMatch(output, /NUMERO ORDINE WORKSPACE/);
+});
+
+test("il PDF degli ordini PH riporta il barcode dell'articolo oltre a codice e descrizione", async () => {
+  const line = { codice_articolo: "IT-001", descrizione: "Crema corpo", ean: "8051234567890", quantita: 1, prezzo_listino: 10 };
+  const phPdf = await createOrderPdf({ modulo_ordini: "ph" }, [line], { logo: false });
+  const phOutput = phPdf.output();
+  assert.match(phOutput, /CODICE \/ BARCODE/);
+  assert.match(phOutput, /IT-001/);
+  assert.match(phOutput, /Crema corpo/);
+  assert.match(phOutput, /8051234567890/);
+
+  const profPdf = await createOrderPdf({ modulo_ordini: "prof" }, [line], { logo: false });
+  const profOutput = profPdf.output();
+  assert.match(profOutput, /ARTICOLO/);
+  assert.doesNotMatch(profOutput, /8051234567890/);
+});
+
+test("il barcode viene salvato sulle nuove righe e recuperato per gli ordini storici", async () => {
+  const [newOrderSource, migration] = await Promise.all([
+    readFile(new URL("../src/modules/orders/pages/NewOrder.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../supabase/migrations/20260914150000_ph_order_line_barcode.sql", import.meta.url), "utf8"),
+  ]);
+  assert.match(newOrderSource, /ean: normalize\(line\.ean \|\| line\.prodotto_origine\?\.ean\) \|\| null/);
+  assert.match(migration, /alter table if exists public\.ordini_righe[\s\S]*add column if not exists ean text/i);
+  assert.match(migration, /update public\.ordini_righe as line[\s\S]*from public\.ordini_prodotti_cache as product/i);
+  assert.match(migration, /before insert or update of codice_articolo, ean/i);
+});
+
+test("la stampa PH recupera dall'anagrafica il barcode mancante senza sovrascrivere gli snapshot", async () => {
+  const calls = [];
+  const db = {
+    from(table) {
+      calls.push(table);
+      return {
+        select(columns) {
+          calls.push(columns);
+          return {
+            async in(column, values) {
+              calls.push([column, values]);
+              return { data: [{ codice_articolo: "IT-OLD", ean: "8050000000001" }], error: null };
+            },
+          };
+        },
+      };
+    },
+  };
+  const lines = await enrichOrderLinesWithBarcode(db, [
+    { codice_articolo: "IT-OLD", descrizione: "Storico" },
+    { codice_articolo: "IT-SAVED", ean: "8059999999999", descrizione: "Snapshot" },
+  ]);
+  assert.equal(lines[0].ean, "8050000000001");
+  assert.equal(lines[1].ean, "8059999999999");
+  assert.deepEqual(calls, ["ordini_prodotti_cache", "codice_articolo,ean", ["codice_articolo", ["IT-OLD"]]]);
 });
 
 test("il riferimento Workspace termina prima della tabella articoli", async () => {

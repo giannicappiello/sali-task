@@ -240,6 +240,7 @@ export default function NewOrder() {
       return [{
         codice_articolo: code,
         descrizione: normalize(product.descrizione || product.nome || code),
+        ean: normalize(product.ean),
         quantita: quantity,
         prezzo_unitario: conditions.prezzo_base,
         ...withEconomics({ ...conditions, quantita: quantity, prodotto_origine: product }),
@@ -462,6 +463,7 @@ export default function NewOrder() {
         {
           codice_articolo: code,
           descrizione: description,
+          ean: normalize(product.ean),
           quantita: addedQuantity,
           prezzo_unitario: conditions.prezzo_base,
           ...withEconomics({ ...conditions, quantita: addedQuantity, prodotto_origine: product }),
@@ -524,6 +526,7 @@ export default function NewOrder() {
           next.unshift({
             codice_articolo: code,
             descrizione: normalize(product.descrizione || product.nome || code),
+            ean: normalize(product.ean),
             quantita: addedQuantity,
             prezzo_unitario: conditions.prezzo_base,
             ...withEconomics({ ...conditions, quantita: addedQuantity, dettaglio_calcolo: kitDetail, prodotto_origine: product }),
@@ -688,6 +691,7 @@ export default function NewOrder() {
           ordine_id: order.id,
           codice_articolo: line.codice_articolo,
           descrizione: line.descrizione,
+          ean: normalize(line.ean || line.prodotto_origine?.ean) || null,
           quantita: line.quantita,
           ...(editingOrderId && !confirm
             ? { quantita_ocm: 0, quantita_ocx: 0, quantita_oci: 0 }

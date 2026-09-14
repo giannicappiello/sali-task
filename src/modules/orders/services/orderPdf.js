@@ -204,11 +204,11 @@ function drawPartyBlock(doc, order, model) {
   if (order.numero_ordine_visualizzato || order.numero_ordine) cell(doc, mid, y + 48, right - mid, 10, "Riferimento Workspace", order.numero_ordine_visualizzato || order.numero_ordine, { maxLines: 2, fontSize: 6.5 });
 }
 
-function drawArticleGrid(doc, top, bottom) {
+function drawArticleGrid(doc, top, bottom, { showBarcode = false } = {}) {
   ruled(doc, PAGE.left, top, PAGE.right - PAGE.left, bottom - top);
   COLS.slice(1, -1).forEach((x) => line(doc, x, top, x, bottom));
   line(doc, PAGE.left, top + ARTICLE.header, PAGE.right, top + ARTICLE.header);
-  const labels = ["ARTICOLO", "DESCRIZIONE", "U.M.", "QTA", "PREZZO", "IMPORTO"];
+  const labels = [showBarcode ? "CODICE / BARCODE" : "ARTICOLO", "DESCRIZIONE", "U.M.", "QTA", "PREZZO", "IMPORTO"];
   labels.forEach((label, index) => small(doc, label, COLS[index] + 1, top + 4));
   small(doc, "SCONTO", (COLS[6] + COLS[7]) / 2, top + 4, { align: "center" });
   small(doc, "ALI. IVA", COLS[8] - 2.2, top + 4, { align: "right" });
@@ -224,9 +224,9 @@ function discountRows(lineItem) {
   return payment ? [...commercial, valueOrBlank(payment)] : commercial;
 }
 
-function drawArticleRow(doc, lineItem, y) {
+function drawArticleRow(doc, lineItem, y, { showBarcode = false } = {}) {
   normal(doc, lineItem.codice_articolo || lineItem.codice || "", COLS[0] + 1, y + 3.1, { maxWidth: 22 });
-  normal(doc, lineItem.ean || "", COLS[0] + 1, y + 6.5, { maxWidth: 22 });
+  if (showBarcode) normal(doc, lineItem.ean || "", COLS[0] + 1, y + 6.5, { maxWidth: 22 });
   normal(doc, lineItem.descrizione || lineItem.nome || "", COLS[1] + 1, y + 3.2, { maxWidth: 67 });
   normal(doc, lineItem.unita_misura || "", (COLS[2] + COLS[3]) / 2, y + 4.5, { align: "center" });
   normal(doc, quantity(lineItem.quantita), COLS[4] - 1, y + 4.5, { align: "right" });
@@ -330,9 +330,9 @@ export async function createOrderPdf(order, lines, { logo = null, document = nul
     if (!continuation) drawPartyBlock(doc, order, model);
     const articleTop = continuation ? 29 : ARTICLE.top;
     const articleBottom = continuation ? 260 : ARTICLE.bottom;
-    drawArticleGrid(doc, articleTop, articleBottom);
+    drawArticleGrid(doc, articleTop, articleBottom, { showBarcode: isPhOrder });
     const capacity = Math.floor((articleBottom - articleTop - ARTICLE.header) / ARTICLE.row);
-    pageRows[page].slice(0, capacity).forEach((lineItem, index) => drawArticleRow(doc, lineItem, articleTop + ARTICLE.header + index * ARTICLE.row));
+    pageRows[page].slice(0, capacity).forEach((lineItem, index) => drawArticleRow(doc, lineItem, articleTop + ARTICLE.header + index * ARTICLE.row, { showBarcode: isPhOrder }));
     normal(doc, `${page + 1}/${pages}`, 201, continuation ? 25 : 78, { align: "right" });
     if (page === pages - 1) drawFooter(doc, order, model);
   }

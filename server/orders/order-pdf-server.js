@@ -1,4 +1,5 @@
 import { createMexalDocumentPdfFiles } from "../../src/modules/orders/services/orderPdf.js";
+import { enrichOrderLinesWithBarcode } from "../../src/modules/orders/services/orderLineBarcode.js";
 
 function text(value) {
   return String(value ?? "").trim();
@@ -48,9 +49,12 @@ export async function loadOrderPdfEmailData({ supabase, orderId }) {
   if (orderError) throw orderError;
   if (linesError) throw linesError;
   if (documentsError) throw documentsError;
+  const pdfLines = text(order?.modulo_ordini).toLowerCase() === "ph"
+    ? await enrichOrderLinesWithBarcode(supabase, lines || [])
+    : lines || [];
   const attachments = await createOrderPdfAttachments({
     order,
-    lines: lines || [],
+    lines: pdfLines,
     documents: documents || [],
   });
   return { order, attachments };

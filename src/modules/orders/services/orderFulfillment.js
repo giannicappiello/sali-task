@@ -1,6 +1,7 @@
 import { supabase } from "../../../lib/supabaseClient.js";
 import { agentDisplayName, loadAgentNameMap } from "./agentNames.js";
 import { buildOrderPdfModel, createOrderPdf, downloadOrderPdf as createAndDownloadPdf } from "./orderPdf.js";
+import { enrichOrderLinesWithBarcode } from "./orderLineBarcode.js";
 import { filterOrderModuleDocuments, orderModuleCodeFromOrder, orderModuleDocumentTypes, orderModuleFilter } from "./orderModules.js";
 export { buildAvailabilityPreview } from "./availability.js";
 
@@ -124,5 +125,6 @@ export async function downloadOrderPdf(order, lines, options) {
   const documents = await loadCreatedMexalDocuments(order.id, moduleCode);
   const enriched = await enrichAgent(order);
   const mexalDocuments = mergeMexalDocuments(documents, order, moduleCode);
-  return createAndDownloadPdf({ ...enriched, mexal_documents: mexalDocuments }, lines, options);
+  const pdfLines = moduleCode === "ph" ? await enrichOrderLinesWithBarcode(supabase, lines) : lines;
+  return createAndDownloadPdf({ ...enriched, mexal_documents: mexalDocuments }, pdfLines, options);
 }

@@ -15,6 +15,7 @@ import SettingsAccessGuard from "./components/SettingsAccessGuard";
 import Login from "./pages/Login/Login";
 
 const Home = lazy(() => import("./pages/Home/Home"));
+const PriorityRevision = lazy(() => import("./pages/Production/PriorityRevision"));
 const ActivitiesModule = lazy(() => import("./pages/Activities/ActivitiesModule"));
 const Agenda = lazy(() => import("./pages/Agenda/Agenda"));
 const Products = lazy(() => import("./pages/Products/Products"));
@@ -100,6 +101,7 @@ function App() {
               <Route index element={<Navigate to="/home" replace />} />
 
               <Route path="home" element={<Home />} />
+              <Route path="revisione-priorita-produzione" element={<WorkspaceAccessGuard screenCode="produzione.revisione_priorita"><PriorityRevision /></WorkspaceAccessGuard>} />
               <Route path="settings/costi-produzione" element={<WorkspaceAccessGuard screenCode="produzione.configurazione_costi"><ProductionCostConfiguration /></WorkspaceAccessGuard>} />
               <Route path="consuntivi-produzioni" element={<WorkspaceAccessGuard screenCode="produzione.consuntivi"><ProductionCostReports /></WorkspaceAccessGuard>} />
               <Route path="activities/*" element={<ActivitiesModule />} />

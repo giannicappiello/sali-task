@@ -4,6 +4,7 @@ import { Bot, Check, LoaderCircle, Send, ShieldCheck, X } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import MaterialTransferSummary from "./MaterialTransferSummary";
+import PriorityRevisionSummary from "./PriorityRevisionSummary";
 import "./contextual-ai-assistant.css";
 
 function visibleContext({ pathname, title, module }) {
@@ -34,6 +35,7 @@ async function requestAI(token, body) {
 }
 
 const ACTION_LABELS = {
+  MES_PRIORITY_REVISE: "Conferma riallocazione e ripianifica",
   MES_MATERIAL_REALLOCATE: "Rialloca materie prime",
   UI_CONFIGURE_VIEW: "Configura schermata", ACCESS_ROLE_UPDATE: "Modifica ruolo e accessi", MONITOR_RULE_CREATE: "Crea monitoraggio",
   ARTICLE_UPDATE: "Modifica articolo", DOCUMENT_METADATA_UPDATE: "Modifica documento", FORMULA_CREATE_REVISION: "Crea revisione formula",
@@ -46,7 +48,8 @@ function ControlledAction({ action, busy, onDecision }) {
   return <section className={`context-ai-action risk-${action.risk || "write"}`}>
     <div><ShieldCheck size={17}/><strong>{ACTION_LABELS[action.tool] || action.tool}</strong><span>{action.system === "mes" ? "MES · tunnel firmato" : "Workspace"}</span></div>
     {action.tool === "MES_MATERIAL_REALLOCATE" ? <MaterialTransferSummary evidence={action.preview?.evidence} /> : null}
-    <pre>{JSON.stringify(action.state === "executed" ? action.result : action.preview || action.result || {}, null, 2)}</pre>
+    {action.tool === "MES_PRIORITY_REVISE" ? <><PriorityRevisionSummary revision={action.result?.snapshot ? action.result : action.preview?.evidence} /><a href={`/revisione-priorita-produzione?revision=${encodeURIComponent(action.preview?.targetId || action.result?.id || "")}`}>Apri revisione completa e verifica esito</a></> : null}
+    {action.tool !== "MES_PRIORITY_REVISE" ? <pre>{JSON.stringify(action.state === "executed" ? action.result : action.preview || action.result || {}, null, 2)}</pre> : null}
     {done ? <p>Stato: <strong>{action.state}</strong></p> : <div className="context-ai-action-buttons"><button type="button" disabled={busy} onClick={() => onDecision(action, "reject")}><X size={16}/>Rifiuta</button><button type="button" disabled={busy} onClick={() => onDecision(action, "confirm")}><Check size={16}/>Conferma</button></div>}
   </section>;
 }
@@ -65,6 +68,11 @@ export default function ContextualAIAssistant({ title = "Schermata", module = "W
   const pageKey = `${location.pathname}${location.search}`;
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, busy]);
+  useEffect(() => {
+    const openPriority = event => { setOpen(true); setPrompt(String(event.detail?.prompt || "").slice(0, 12000)); };
+    window.addEventListener("workspace:priority-ai", openPriority);
+    return () => window.removeEventListener("workspace:priority-ai", openPriority);
+  }, []);
   if (!allowed) return null;
 
   async function send(event) {

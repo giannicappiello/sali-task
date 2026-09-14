@@ -5,6 +5,7 @@ import { openai } from "@ai-sdk/openai";
 import { decideHeadingAction, executeHeadingModelTool, HEADING_AI_TOOLS, HEADING_TOOL_SCHEMAS, interpretHeadingCommand } from "./company-letterhead-actions.js";
 import { availableControlledActions, decideControlledAction, proposeControlledAction } from "./controlled-actions.js";
 import { findProductionForClosure } from "./production-closure.js";
+import { previewMaterialReallocation, materialLookupSchema } from "./material-reallocation.js";
 
 const DEFAULT_MODEL = "openai/gpt-5.6-luna";
 const MAX_HISTORY_MESSAGES = 14;
@@ -418,6 +419,7 @@ Regole obbligatorie:
 - non generare SQL, codice, identificativi o nomi di campi non presenti nel contesto; se manca l'identificativo del record chiedi all'utente di selezionarlo o aprirlo;
 - le forzature lotto e le variazioni operative MES sono ad alto rischio: evidenzia sempre impatto, motivo e record interessato;
 - per chiudere una lavorazione senza movimenti Mexal usa prima MES_PRODUCTION_LOOKUP con il numero esatto RdP/ordine, anche se screenContext.recordId manca. Usa productionId della fase, mai productionOrderId al suo posto. Poi proponi MES_PRODUCTION_FORCE_CLOSE solo se l'utente dichiara esplicitamente SL E CL già eseguiti manualmente. Non inventare tale dichiarazione né i riferimenti dei documenti. Questa azione non salta qualità/QA e non crea SL, CL o scarichi perdite; chiude la fase e aggiorna presenze, ordine e planning. Se ci sono più fasi chiedi quale chiudere. Se MES non è aggiornato dichiaralo senza promettere una forzatura con OP_UPDATE/RDP_UPDATE;
+- per materie prime impegnate su altri ordini usa MES_MATERIAL_ALLOCATION_LOOKUP con RdP completa e codice MP. Funziona anche prima dell'avvio, a differenza della ricerca delle chiusure. Mostra ordini origine, riserve e quantità mancanti. Chiedi quali origini e quantità l'utente vuole disimpegnare, senza sceglierle autonomamente; quindi proponi MES_MATERIAL_REALLOCATE con hash corrente. Non modificare giacenze, formule, consumi o regole del calcolo per superare il blocco. L'operazione trasferisce soltanto prenotazioni V4 di MP tra ordini non avviati, invalida i fogli da rigenerare/stampare e non avvia automaticamente né genera SL/CL. Spiega gli scoperti lasciati sulle origini e quelli residui sulla destinazione. Non usare OP_UPDATE/RDP_UPDATE come bypass;
 - per richieste su intestazioni, associazioni e firme usa sempre gli strumenti strutturati disponibili; non dedurre identificativi e non rispondere solo dal prompt;
 - gli strumenti intestazioni con rischio write preparano esclusivamente una proposta: comunica che serve la conferma esplicita mostrata dall'interfaccia e non dichiarare la modifica già eseguita;
 - segnala esplicitamente quando il connettore ProgreMES non è disponibile;
@@ -803,9 +805,16 @@ async function chat(auth, body) {
       execute: ({ orderNumber }) => findProductionForClosure(auth, orderNumber),
     },
   } : {};
+  const materialTools = controlledTools.MES_MATERIAL_REALLOCATE ? {
+    MES_MATERIAL_ALLOCATION_LOOKUP: {
+      description: "Legge impegni MP e ordini pianificati da cui liberare materiale per una RdP non avviabile. Usare numero RdP completo e codice MP. Mostrare origini/quantità e conseguenze, chiedere quali disimpegnare. Poi proporre MES_MATERIAL_REALLOCATE; non scegliere autonomamente ordini da penalizzare. Non avvia la produzione.",
+      inputSchema: jsonSchema(materialLookupSchema),
+      execute: input => previewMaterialReallocation(auth, input),
+    },
+  } : {};
   const tools = mode === "web"
     ? { ...headingTools, web_search: openai.tools.webSearch({ externalWebAccess: true, searchContextSize: "medium" }) }
-    : { ...headingTools, ...productionTools, ...controlledTools };
+    : { ...headingTools, ...productionTools, ...materialTools, ...controlledTools };
   const model = process.env.AI_MODEL || DEFAULT_MODEL;
   const mutationRequested = mode !== "web" && isControlledMutationRequest(prompt);
   const controlledToolNames = Object.keys(controlledTools);
@@ -976,6 +985,8 @@ export async function handleAIAssistant(req) {
   if (body.action === "heading_command") return { ...(await interpretHeadingCommand(auth, body)), capabilities: auth.capabilities };
   if (body.action === "heading_decide") return { ...(await decideHeadingAction(auth, body)), capabilities: auth.capabilities };
   if (body.action === "controlled_decide") return { ...(await decideControlledAction(auth, body)), capabilities: auth.capabilities };
+  if (body.action === "material_allocation_preview") return { preview: await previewMaterialReallocation(auth, body) };
+  if (body.action === "material_allocation_propose") return proposeControlledAction(auth, "MES_MATERIAL_REALLOCATE", body.input || {});
   if (body.action === "list_conversations") return listConversations(auth);
   if (body.action === "create_topic") return createTopic(auth, body);
   if (body.action === "delete_conversation") return deleteConversation(auth, body);

@@ -2,6 +2,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { HMAC_HEADERS, signProductionMessage } from "../progremes-production-hmac.js";
 import { assertClosureSnapshot, findProductionForClosure } from "./production-closure.js";
+import { assertMaterialReallocation, previewMaterialReallocation, materialReallocationSchema } from "./material-reallocation.js";
 
 const text = { type: "string", maxLength: 500 };
 const identifier = { type: "string", minLength: 1, maxLength: 160 };
@@ -54,6 +55,7 @@ const externalEntitySchema = (entityLabel) => ({
 });
 
 export const CONTROLLED_AI_ACTIONS = Object.freeze({
+  MES_MATERIAL_REALLOCATE: { system: "mes", risk: "destructive", permission: "progremes.write", schema: materialReallocationSchema },
   MES_PRODUCTION_FORCE_CLOSE: { system: "mes", risk: "destructive", permission: "progremes.write", schema: {
     type: "object", additionalProperties: false,
     required: ["targetId", "productionId", "productionOrderId", "orderNumber", "articleCode", "phase", "expectedStatus", "expectedStart", "expectedProducedQuantity", "expectedScrapQuantity", "reason", "slAndClAlreadyRegistered"],
@@ -135,6 +137,14 @@ function stableValue(value) {
 export async function proposeControlledAction(auth, tool, input, { correlationId = randomUUID() } = {}) {
   const descriptor = CONTROLLED_AI_ACTIONS[tool];
   if (!descriptor || !canPropose(auth, descriptor)) throw Object.assign(new Error("Azione AI non autorizzata per questo profilo."), { status: 403 });
+  if (tool === "MES_MATERIAL_REALLOCATE") {
+    const current = await previewMaterialReallocation(auth, input);
+    const evidence = assertMaterialReallocation(input, current);
+    input = { orderNumber: current.orderNumber, articleCode: current.articleCode,
+      targetId: String(current.orderId), expectedHash: current.hash,
+      transfers: input.transfers.map(({ sourceOrderId, quantity }) => ({ sourceOrderId, quantity })),
+      reason: input.reason.trim(), evidence };
+  }
   if (tool === "MES_PRODUCTION_FORCE_CLOSE") {
     const current = await findProductionForClosure(auth, input.orderNumber);
     assertClosureSnapshot(input, current.items);
@@ -176,6 +186,22 @@ async function executeExternalAction(auth, pending) {
     result = await response.json().catch(() => ({}));
     if (!response.ok || result?.applied !== true) failure = result?.error || `ProgreMES ha risposto con stato ${response.status}.`;
   } catch (error) { failure = error?.message || "ProgreMES non raggiungibile."; }
+  if (failure && pending.tool === "MES_MATERIAL_REALLOCATE") {
+    // Verify the durable MES audit after a timeout. Never repeat the transfer blindly.
+    try {
+      const resultPath = "/api/workspace/ai/materials/result";
+      const resultBody = Buffer.from(JSON.stringify({ idempotencyKey: pending.idempotency_key, actor: `workspace:${auth.profile.id}` }));
+      const resultTime = Math.floor(Date.now() / 1000), resultId = randomUUID();
+      const response = await fetch(new URL(resultPath, requiredEnvironment("PROGREMES_URL")), {
+        method: "POST", body: resultBody, signal: AbortSignal.timeout(10000),
+        headers: { "Content-Type": "application/json", [HMAC_HEADERS.timestamp]: String(resultTime), [HMAC_HEADERS.eventId]: resultId,
+          [HMAC_HEADERS.signature]: signProductionMessage({ method: "POST", path: resultPath, timestamp: resultTime, eventId: resultId, body: resultBody, secret: requiredEnvironment("PROGREMES_INTEGRATION_SECRET") }) },
+      });
+      const verified = await response.json();
+      if (response.ok && verified.applied === true) { result = { ...verified, verifiedAfterTimeout: true }; failure = null; }
+    } catch { /* Uncertain outcome remains visible; no second write. */ }
+    if (failure) failure = `Esito riallocazione non confermato: ${failure} Verificare impegni e audit MES prima di ripetere.`;
+  }
   if (failure && pending.tool === "MES_PRODUCTION_FORCE_CLOSE") {
     // Read back the durable confirmation; never retry a warehouse-related write blindly.
     try {
@@ -200,6 +226,9 @@ export async function decideControlledAction(auth, body) {
   const { data: pending, error: pendingError } = await auth.scoped.from("ai_action_audit").select("*").eq("id", proposalId).eq("user_id", auth.profile.id).maybeSingle();
   if (pendingError || !pending || !CONTROLLED_AI_ACTIONS[pending.tool]) throw Object.assign(new Error("Proposta non trovata o non autorizzata."), { status: 404 });
   const confirmed = body.decision === "confirm";
+  if (confirmed && pending.tool === "MES_MATERIAL_REALLOCATE" && pending.status === "proposed") {
+    assertMaterialReallocation(pending.payload_summary, await previewMaterialReallocation(auth, pending.payload_summary));
+  }
   if (confirmed && pending.tool === "MES_PRODUCTION_FORCE_CLOSE" && pending.status === "proposed") {
     const current = await findProductionForClosure(auth, pending.payload_summary.orderNumber);
     assertClosureSnapshot(pending.payload_summary, current.items);
@@ -211,6 +240,6 @@ export async function decideControlledAction(auth, body) {
   if (confirmed && action.status === "confirmed" && CONTROLLED_AI_ACTIONS[action.tool].system === "mes") ({ action, failure } = await executeExternalAction(auth, action));
   const answer = action.status === "executed" ? "Operazione applicata e registrata nell’audit."
     : action.status === "rejected" ? "Proposta rifiutata. Nessuna modifica è stata applicata."
-      : `Operazione non applicata. Audit registrato: ${failure || action.error || "connettore non disponibile"}.`;
+      : `${action.tool === "MES_MATERIAL_REALLOCATE" ? "Operazione non confermata" : "Operazione non applicata"}. Audit registrato: ${failure || action.error || "connettore non disponibile"}.`;
   return { controlledAction: { id: action.id, tool: action.tool, risk: CONTROLLED_AI_ACTIONS[action.tool].risk, system: action.system, state: action.status, result: action.result }, answer };
 }

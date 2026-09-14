@@ -1,0 +1,11 @@
+.material-reallocation { padding: 1rem; margin: 1rem 0; border: 1px solid #bfcee4; border-radius: 1rem; background: white; color: #182c47; }
+.material-reallocation summary { cursor: pointer; font-weight: 700; }
+.material-reallocation fieldset { border: 0; padding: 0; min-width: 0; }
+.material-reallocation-fields { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; margin: 1rem 0; }
+.material-reallocation label { display: flex; flex-direction: column; gap: .4rem; }
+.material-reallocation input, .material-reallocation textarea { padding: .6rem; border: 1px solid #bfcee4; border-radius: .5rem; font: inherit; color: inherit; max-width: 100%; box-sizing: border-box; }
+.material-reallocation-table { max-width: 100%; overflow-x: auto; margin: 1rem 0; }
+.material-reallocation-table table { width: 100%; border-collapse: collapse; text-align: left; }
+.material-reallocation-table th, .material-reallocation-table td { padding: .6rem; border-bottom: 1px solid #d9e2ef; }
+.material-reallocation-table input { width: 9rem; }
+.material-reallocation [role=alert] { color: #a52020; }

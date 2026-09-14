@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Bot, Check, LoaderCircle, Send, ShieldCheck, X } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import MaterialTransferSummary from "./MaterialTransferSummary";
 import "./contextual-ai-assistant.css";
 
 function visibleContext({ pathname, title, module }) {
@@ -33,6 +34,7 @@ async function requestAI(token, body) {
 }
 
 const ACTION_LABELS = {
+  MES_MATERIAL_REALLOCATE: "Rialloca materie prime",
   UI_CONFIGURE_VIEW: "Configura schermata", ACCESS_ROLE_UPDATE: "Modifica ruolo e accessi", MONITOR_RULE_CREATE: "Crea monitoraggio",
   ARTICLE_UPDATE: "Modifica articolo", DOCUMENT_METADATA_UPDATE: "Modifica documento", FORMULA_CREATE_REVISION: "Crea revisione formula",
   PLANNING_CRITERIA_UPDATE: "Modifica criteri planning", RDP_UPDATE: "Modifica RdP", OP_UPDATE: "Modifica OP",
@@ -43,7 +45,8 @@ function ControlledAction({ action, busy, onDecision }) {
   const done = ["executed", "rejected", "failed"].includes(action.state);
   return <section className={`context-ai-action risk-${action.risk || "write"}`}>
     <div><ShieldCheck size={17}/><strong>{ACTION_LABELS[action.tool] || action.tool}</strong><span>{action.system === "mes" ? "MES · tunnel firmato" : "Workspace"}</span></div>
-    <pre>{JSON.stringify(action.preview || action.result || {}, null, 2)}</pre>
+    {action.tool === "MES_MATERIAL_REALLOCATE" ? <MaterialTransferSummary evidence={action.preview?.evidence} /> : null}
+    <pre>{JSON.stringify(action.state === "executed" ? action.result : action.preview || action.result || {}, null, 2)}</pre>
     {done ? <p>Stato: <strong>{action.state}</strong></p> : <div className="context-ai-action-buttons"><button type="button" disabled={busy} onClick={() => onDecision(action, "reject")}><X size={16}/>Rifiuta</button><button type="button" disabled={busy} onClick={() => onDecision(action, "confirm")}><Check size={16}/>Conferma</button></div>}
   </section>;
 }

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { screenAccessAllowed, screenForPath } from '../src/config/workspaceScreenAccess.js';
 import { screenAreaCodes } from '../src/config/workspaceScreenAreas.js';
-import { requirePermission } from './mexal/lib/auth.js';
+import { requirePermission, requireScreenManagement } from './mexal/lib/auth.js';
 import { readFileSync } from 'node:fs';
 import * as moduleRules from '../src/config/workspaceModules.js';
 import { requiresDirectModuleGrant } from '../src/config/directCrmAccess.js';
@@ -60,6 +60,17 @@ test('server rejects inactive user before evaluating grants', async () => {
   const db = apiMock({ result: true, active: false });
   await assert.rejects(requirePermission(req, db, 'integrations.sync.products'), { status: 403 });
   assert.equal(db.calls.length, 0);
+});
+test('screen managers can execute management actions for the exact screen', async () => {
+  const db = apiMock({ result: 'amministrazione' });
+  assert.equal((await requireScreenManagement(req, db, 'integrazioni.mexal_agenti')).id, 'profile');
+  assert.deepEqual(db.calls[0], {
+    name: 'workspace_screen_level_for_user',
+    args: { target_user_id: 'profile', target_screen: 'integrazioni.mexal_agenti' },
+  });
+});
+test('read-only screen access cannot execute management actions', async () => {
+  await assert.rejects(requireScreenManagement(req, apiMock({ result: 'lettura' }), 'integrazioni.mexal_agenti'), { status: 403 });
 });
 
 // Exercise the real AuthContext decisions without a browser or a user session.

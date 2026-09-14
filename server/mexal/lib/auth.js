@@ -59,3 +59,31 @@ export async function requirePermission(req, supabaseOrFactory, permissionCode) 
   }
   return { supabase, id: profile.id, authUserId: user.id };
 }
+
+export async function requireScreenManagement(req, supabaseOrFactory, screenCode) {
+  const authorization = String(req.headers.authorization || "");
+  if (!authorization.startsWith("Bearer ")) throw Object.assign(new Error("Sessione mancante."), { status: 401 });
+
+  const supabase = typeof supabaseOrFactory === "function" ? supabaseOrFactory() : supabaseOrFactory;
+  const { data: { user }, error: authError } = await supabase.auth.getUser(authorization.slice(7));
+  if (authError || !user) throw Object.assign(new Error("Sessione non valida."), { status: 401 });
+
+  const { data: profile, error: profileError } = await supabase
+    .from("utenti")
+    .select("id,attivo")
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+  if (profileError || !profile || profile.attivo === false) {
+    throw Object.assign(new Error("Utente non configurato o disabilitato."), { status: 403 });
+  }
+
+  const { data: level, error: levelError } = await supabase.rpc("workspace_screen_level_for_user", {
+    target_user_id: profile.id,
+    target_screen: screenCode,
+  });
+  if (levelError) throw Object.assign(new Error("Verifica autorizzazioni non disponibile."), { status: 503 });
+  if (level !== "amministrazione") {
+    throw Object.assign(new Error("Gestione della schermata non autorizzata."), { status: 403 });
+  }
+  return { supabase, id: profile.id, authUserId: user.id };
+}

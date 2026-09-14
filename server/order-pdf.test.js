@@ -44,6 +44,22 @@ test("il PDF degli ordini PH riporta il barcode dell'articolo oltre a codice e d
   assert.doesNotMatch(profOutput, /8051234567890/);
 });
 
+test("il PDF PH mostra il prezzo unitario netto calcolato dopo gli sconti", async () => {
+  const pdf = await createOrderPdf({ modulo_ordini: "ph" }, [{
+    codice_articolo: "IT-NETTO",
+    descrizione: "Articolo scontato",
+    ean: "8051111111111",
+    quantita: 2,
+    prezzo_listino: 100,
+    sconto_commerciale: "10+5",
+    aliquota_iva: 22,
+  }], { logo: false });
+  const output = pdf.output();
+  assert.match(output, /PREZZO NETTO/);
+  assert.match(output, /85,50/);
+  assert.match(output, /200,00/);
+});
+
 test("il fallback PDF riconosce l'assenza intestazione anche se l'API storica ha rimappato il codice", () => {
   assert.equal(isLetterheadNotConfigured({ code: "LETTERHEAD_NOT_CONFIGURED" }), true);
   assert.equal(isLetterheadNotConfigured({ code: "LETTERHEAD_RESOLUTION_FAILED", message: "LETTERHEAD_NOT_CONFIGURED" }), true);

@@ -14,6 +14,7 @@ const PAGE = { width: 210, height: 297, left: 7, right: 203, top: 7, bottom: 290
 // article header so it can never occupy an article-table column.
 const ARTICLE = { top: 94, bottom: 210, header: 6, row: 8 };
 const COLS = [7, 31, 101, 111, 123, 143, 164, 181, 203];
+const PH_COLS = [7, 31, 91, 101, 113, 131, 149, 168, 185, 203];
 const RULE = [54, 54, 54];
 
 function number(value) { return Number(value || 0); }
@@ -209,14 +210,18 @@ function drawPartyBlock(doc, order, model) {
   if (order.numero_ordine_visualizzato || order.numero_ordine) cell(doc, mid, y + 48, right - mid, 10, "Riferimento Workspace", order.numero_ordine_visualizzato || order.numero_ordine, { maxLines: 2, fontSize: 6.5 });
 }
 
-function drawArticleGrid(doc, top, bottom, { showBarcode = false } = {}) {
+function drawArticleGrid(doc, top, bottom, { showBarcode = false, showDiscountedUnitPrice = false } = {}) {
+  const cols = showDiscountedUnitPrice ? PH_COLS : COLS;
   ruled(doc, PAGE.left, top, PAGE.right - PAGE.left, bottom - top);
-  COLS.slice(1, -1).forEach((x) => line(doc, x, top, x, bottom));
+  cols.slice(1, -1).forEach((x) => line(doc, x, top, x, bottom));
   line(doc, PAGE.left, top + ARTICLE.header, PAGE.right, top + ARTICLE.header);
-  const labels = [showBarcode ? "CODICE / BARCODE" : "ARTICOLO", "DESCRIZIONE", "U.M.", "QTA", "PREZZO", "IMPORTO"];
-  labels.forEach((label, index) => small(doc, label, COLS[index] + 1, top + 4));
-  small(doc, "SCONTO", (COLS[6] + COLS[7]) / 2, top + 4, { align: "center" });
-  small(doc, "ALI. IVA", COLS[8] - 2.2, top + 4, { align: "right" });
+  const labels = [showBarcode ? "CODICE / BARCODE" : "ARTICOLO", "DESCRIZIONE", "U.M.", "QTA", "PREZZO"];
+  if (showDiscountedUnitPrice) labels.push("PREZZO NETTO");
+  labels.push("IMPORTO");
+  labels.forEach((label, index) => small(doc, label, cols[index] + 1, top + 4));
+  const discountStart = showDiscountedUnitPrice ? 7 : 6;
+  small(doc, "SCONTO", (cols[discountStart] + cols[discountStart + 1]) / 2, top + 4, { align: "center" });
+  small(doc, "ALI. IVA", cols[discountStart + 2] - 2.2, top + 4, { align: "right" });
 }
 
 function discountRows(lineItem) {
@@ -229,22 +234,25 @@ function discountRows(lineItem) {
   return payment ? [...commercial, valueOrBlank(payment)] : commercial;
 }
 
-function drawArticleRow(doc, lineItem, y, { showBarcode = false } = {}) {
-  normal(doc, lineItem.codice_articolo || lineItem.codice || "", COLS[0] + 1, y + 3.1, { maxWidth: 22 });
-  if (showBarcode) normal(doc, lineItem.ean || "", COLS[0] + 1, y + 6.5, { maxWidth: 22 });
-  normal(doc, lineItem.descrizione || lineItem.nome || "", COLS[1] + 1, y + 3.2, { maxWidth: 67 });
-  normal(doc, lineItem.unita_misura || "", (COLS[2] + COLS[3]) / 2, y + 4.5, { align: "center" });
-  normal(doc, quantity(lineItem.quantita), COLS[4] - 1, y + 4.5, { align: "right" });
-  normal(doc, money(lineItem.prezzo_listino), COLS[5] - 1, y + 4.5, { align: "right" });
-  normal(doc, money(number(lineItem.quantita) * number(lineItem.prezzo_listino)), COLS[6] - 1, y + 4.5, { align: "right" });
+function drawArticleRow(doc, lineItem, y, { showBarcode = false, showDiscountedUnitPrice = false } = {}) {
+  const cols = showDiscountedUnitPrice ? PH_COLS : COLS;
+  normal(doc, lineItem.codice_articolo || lineItem.codice || "", cols[0] + 1, y + 3.1, { maxWidth: cols[1] - cols[0] - 2 });
+  if (showBarcode) normal(doc, lineItem.ean || "", cols[0] + 1, y + 6.5, { maxWidth: cols[1] - cols[0] - 2 });
+  normal(doc, lineItem.descrizione || lineItem.nome || "", cols[1] + 1, y + 3.2, { maxWidth: cols[2] - cols[1] - 3 });
+  normal(doc, lineItem.unita_misura || "", (cols[2] + cols[3]) / 2, y + 4.5, { align: "center" });
+  normal(doc, quantity(lineItem.quantita), cols[4] - 1, y + 4.5, { align: "right" });
+  normal(doc, money(lineItem.prezzo_listino), cols[5] - 1, y + 4.5, { align: "right" });
+  if (showDiscountedUnitPrice) normal(doc, money(lineItem.prezzo_netto), cols[6] - 1, y + 4.5, { align: "right" });
+  const amountEnd = showDiscountedUnitPrice ? 7 : 6;
+  normal(doc, money(number(lineItem.quantita) * number(lineItem.prezzo_listino)), cols[amountEnd] - 1, y + 4.5, { align: "right" });
 
   const discounts = discountRows(lineItem).slice(0, 2);
   discounts.forEach((discount, index) => fitTextInCell(
     doc,
     discount,
-    (COLS[6] + COLS[7]) / 2,
+    (cols[amountEnd] + cols[amountEnd + 1]) / 2,
     y + 1.5 + index * 3.2,
-    COLS[7] - COLS[6] - 3,
+    cols[amountEnd + 1] - cols[amountEnd] - 3,
     3.1,
     { align: "center", fontSize: 7.1, minFontSize: 5.8, maxLines: 1 },
   ));
@@ -252,9 +260,9 @@ function drawArticleRow(doc, lineItem, y, { showBarcode = false } = {}) {
   fitTextInCell(
     doc,
     valueOrBlank(lineItem.aliquota_iva),
-    COLS[8] - 2.2,
+    cols[amountEnd + 2] - 2.2,
     y + 2.2,
-    COLS[8] - COLS[7] - 4.2,
+    cols[amountEnd + 2] - cols[amountEnd + 1] - 4.2,
     3.5,
     { align: "right", fontSize: 7.1, minFontSize: 6, maxLines: 1 },
   );
@@ -335,9 +343,9 @@ export async function createOrderPdf(order, lines, { logo = null, document = nul
     if (!continuation) drawPartyBlock(doc, order, model);
     const articleTop = continuation ? 29 : ARTICLE.top;
     const articleBottom = continuation ? 260 : ARTICLE.bottom;
-    drawArticleGrid(doc, articleTop, articleBottom, { showBarcode: isPhOrder });
+    drawArticleGrid(doc, articleTop, articleBottom, { showBarcode: isPhOrder, showDiscountedUnitPrice: isPhOrder });
     const capacity = Math.floor((articleBottom - articleTop - ARTICLE.header) / ARTICLE.row);
-    pageRows[page].slice(0, capacity).forEach((lineItem, index) => drawArticleRow(doc, lineItem, articleTop + ARTICLE.header + index * ARTICLE.row, { showBarcode: isPhOrder }));
+    pageRows[page].slice(0, capacity).forEach((lineItem, index) => drawArticleRow(doc, lineItem, articleTop + ARTICLE.header + index * ARTICLE.row, { showBarcode: isPhOrder, showDiscountedUnitPrice: isPhOrder }));
     normal(doc, `${page + 1}/${pages}`, 201, continuation ? 25 : 78, { align: "right" });
     if (page === pages - 1) drawFooter(doc, order, model);
   }

@@ -12,6 +12,7 @@ import { readFillingHistory,fillingHistorySummary } from "./production-filling-h
 import { activeFillingPolicy } from "../src/features/production-costs/filling-history.js";
 import { validateOvertime,latestCostAdjustment } from "../src/features/production-costs/overtime.js";
 import { recoverPackagingSl, slReferences } from "./mexal/production-packaging-sl.js";
+import { recoverProductionOct } from "./mexal/production-oct.js";
 
 const fail = (message,status=400) => Object.assign(new Error(message),{status});
 const check = (result) => {if(result.error)throw result.error;return result.data;};
@@ -88,6 +89,16 @@ export async function handleProductionCosts(req,body) {
   return {configuration};
  }
  if(op==="machines")return {machines:await createProgremesClient().request("production-cost-machines")};
+ if(op==="sync-oct"){
+  const row=await recordFor(session,Number(body.id));
+  const recovery=await recoverProductionOct(row.evidence);
+  // Re-read before merging so simultaneous SL recovery cannot be overwritten.
+  const current=await recordFor(session,row.mes_order_id);
+  const evidence={...current.evidence,recoveredOctLines:recovery.lines,
+   octRecovery:{warnings:recovery.warnings,recoveredAt:recovery.recoveredAt}};
+  check(await admin.from("production_cost_records").update({evidence}).eq("mes_order_id",row.mes_order_id));
+  return {recovered:recovery.lines.length,warnings:recovery.warnings};
+ }
  if(op==="sync-product-sl"){
   const row=await recordFor(session,Number(body.id));
   const recovery=await recoverPackagingSl(row.evidence);
@@ -110,12 +121,15 @@ export async function handleProductionCosts(req,body) {
    const old=byId.get(e.id);
    e.historicalProductSl=old?.evidence?.historicalProductSl||[];
    e.productSlRecovery=old?.evidence?.productSlRecovery;
+   e.recoveredOctLines=old?.evidence?.recoveredOctLines||[];
+   e.octRecovery=old?.evidence?.octRecovery;
    check(await admin.from("production_cost_records").upsert({mes_order_id:e.id,evidence:e,
     configuration_id:old?.configuration_id||configurationFor(e,configs)?.id||null,refreshed_at:new Date().toISOString()}));
   }
   const recoveryIds=scoped(result.items.map(e=>({evidence:e})),session.scope)
    .filter(r=>slReferences(r.evidence.productSlReference).length).map(r=>r.evidence.id);
-  return {page,total:result.total,imported:result.items.length,hasMore:page*100<result.total,recoveryIds};
+  const octRecoveryIds=scoped(result.items.map(e=>({evidence:e})),session.scope).map(r=>r.evidence.id);
+  return {page,total:result.total,imported:result.items.length,hasMore:page*100<result.total,recoveryIds,octRecoveryIds};
  }
  if(op==="overtime"){
   const source=await recordFor(session,Number(body.id));

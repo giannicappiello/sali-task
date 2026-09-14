@@ -1,4 +1,5 @@
 import { legacyOrderRevenue } from "./history.js";
+import { octTargets,recoveredOctShare } from "./oct-evidence.js";
 
 const numeric=v=>v!==null&&v!==undefined&&v!==""&&Number.isFinite(Number(v))?Number(v):null;
 const unit=v=>String(v||"").trim().toUpperCase();
@@ -7,10 +8,28 @@ const unit=v=>String(v||"").trim().toUpperCase();
 // establish an allocation, especially between bulk KG and finished pieces.
 export function resolveOctRevenue(evidence, orderLines, allEvidence) {
  const reasons=[],amounts=[];
+ const targets=octTargets(evidence),recovered=[];
+ for(const target of targets){
+  const share=recoveredOctShare(evidence,target,allEvidence);
+  if(share.value!==null)recovered.push(share);
+  else if((evidence.recoveredOctLines||[]).some(r=>r.targetKey===target.key))reasons.push(`${target.reference}: ${share.reason}`);
+ }
+ if(recovered.length===targets.length&&recovered.length)return {
+  octRevenue:recovered.reduce((sum,r)=>sum+r.value,0),octPartial:false,
+  octSource:"Righe originali Mexal verificate, proporzionate alla quantità della produzione",octReasons:evidence.octRecovery?.warnings||[]
+ };
+ // A verified original that cannot be allocated must not fall back to a stale
+ // legacy amount (or to an estimated selling price).
+ if((evidence.recoveredOctLines||[]).length)return {octRevenue:recovered.length?recovered.reduce((sum,r)=>sum+r.value,0):null,
+  octPartial:recovered.length>0,octSource:recovered.length?"Righe originali Mexal verificate":null,
+  octReasons:[...reasons,...(evidence.octRecovery?.warnings||[])]};
  for(const link of evidence.links||[]){
   const row=orderLines.find(x=>String(x.id)===String(link.lineId));
   const reference=link.oct||link.lineId;
   if(!row){reasons.push(`OCT ${reference}: riga Workspace non disponibile o non accessibile.`);continue;}
+  if(row.codice_articolo&&evidence.articleCode&&String(row.codice_articolo).trim().toUpperCase()!==String(evidence.articleCode).trim().toUpperCase()){
+   reasons.push(`OCT ${reference}: articolo della riga diverso dall'articolo della produzione.`);continue;
+  }
   if(!unit(link.unit)||unit(row.unita_misura_oct)!==unit(link.unit)){
    reasons.push(`OCT ${reference}: unità della riga ordine e del collegamento assenti o diverse.`);continue;
   }
@@ -30,5 +49,5 @@ export function resolveOctRevenue(evidence, orderLines, allEvidence) {
  else if(!unit(s.unit)||unit(s.unit)!==unit(evidence.unit))reasons.push("Unità ordine e produzione assenti o diverse: conversione economica non disponibile.");
  else if(!(s.lineValue>0))reasons.push("Valore netto della riga ordine storica MES non disponibile.");
  else reasons.push("Quantità della riga ordine storica MES non disponibile o superata dalle produzioni collegate.");
- return {octRevenue:null,octPartial:false,octSource:null,octReasons:reasons};
+ return {octRevenue:null,octPartial:false,octSource:null,octReasons:[...reasons,...(evidence.octRecovery?.warnings||[])]};
 }

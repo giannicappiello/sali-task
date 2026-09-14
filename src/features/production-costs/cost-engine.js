@@ -207,9 +207,9 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
  const directActualTotal=bulk.length?actualTotal:fillingProcessingCost;
  const finalFilling=filling.some(x=>x.phase==="Astucciatura")?filling.filter(x=>x.phase==="Astucciatura"):filling;
  const goodQuantity=finalFilling.length?finalFilling.reduce((n,x)=>n+Number(x.goodQuantity||0),0):bulk.reduce((n,x)=>n+Number(x.goodQuantity||0),0);
- const estimate=settings?.prices?.filter(p=>p.articleCode===evidence.articleCode&&p.unit===evidence.unit&&(!p.customerCode||p.customerCode===evidence.customerCode)&&(!p.orderNumber||p.orderNumber===evidence.orderNumber))
-  .sort((a,b)=>(Number(Boolean(b.orderNumber))*2+Number(Boolean(b.customerCode)))-(Number(Boolean(a.orderNumber))*2+Number(Boolean(a.customerCode))))[0];
- const revenue=number(commercial.octRevenue)??(estimate?Number(estimate.price)*Number(evidence.quantity):null);
+ // Economic reporting uses only the actual attributed order amount. Configured
+ // target prices remain settings, never replacements for a missing OCT.
+ const revenue=number(commercial.octRevenue);
  const actualRevenue=number(commercial.invoiceRevenue),invoicedQuantity=number(commercial.invoicedQuantity);
  const productActualTotal=filling.length&&knownTransfer!==null?sumKnown([knownTransfer,fillingProcessingCost]):filling.length?null:actualTotal;
  const productPlannedTotal=filling.length?sumKnown([number(commercial.plannedBulkTransferCost),plannedFillingProcessingCost]):plannedTotal;

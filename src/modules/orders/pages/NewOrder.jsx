@@ -94,6 +94,7 @@ function paymentDescription(customer, paymentRules = []) {
 function conditionLabel(line) {
   if (line.origine_prezzo === "particolarita-prezzo") return "Prezzo speciale";
   if (line.origine_sconto === "particolarita-sconto") return `Particolarità ${line.sconto_commerciale || ""}`.trim();
+  if (line.origine_sconto === "anagrafica-articolo-mexal") return `Anagrafica Mexal ${line.sconto_commerciale || ""}`.trim();
   if (line.origine_sconto === "matrice-sconti") return `Matrice ${line.sconto_commerciale || ""}`.trim();
   return "Nessuna condizione";
 }
@@ -101,6 +102,7 @@ function conditionLabel(line) {
 function conditionClass(line) {
   if (line.origine_prezzo === "particolarita-prezzo") return "is-price";
   if (line.origine_sconto === "particolarita-sconto") return "is-special";
+  if (line.origine_sconto === "anagrafica-articolo-mexal") return "is-special";
   if (line.origine_sconto === "matrice-sconti") return "is-matrix";
   return "is-none";
 }

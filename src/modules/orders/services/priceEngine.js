@@ -122,6 +122,66 @@ function productData(product) {
   return mergedRow(product);
 }
 
+function productCode(product) {
+  const data = productData(product);
+  return text(
+    product?.codice_articolo ??
+      product?.codice_mexal ??
+      product?.codice ??
+      data.codice_articolo ??
+      data.codice_mexal ??
+      data.codice
+  ).toUpperCase();
+}
+
+export function usesMexalArticleListDiscount(product) {
+  const code = productCode(product);
+  return code.startsWith("MKT") || (code.startsWith("IT") && /-(?:TST|CMP)$/.test(code));
+}
+
+function listDiscountValue(entries, listCode) {
+  if (!entries) return "";
+
+  if (Array.isArray(entries)) {
+    for (const entry of entries) {
+      if (Array.isArray(entry)) {
+        if (text(entry[0]) === listCode) return text(entry[1]);
+        continue;
+      }
+
+      if (entry && typeof entry === "object") {
+        const entryList = text(entry.codice ?? entry.listino ?? entry.id ?? entry.numero);
+        if (entryList === listCode) {
+          return text(entry.sconto ?? entry.valore ?? entry.value ?? entry.percentuale);
+        }
+      }
+    }
+    return "";
+  }
+
+  if (typeof entries === "object") {
+    return text(entries[listCode] ?? entries[Number(listCode)]);
+  }
+
+  return "";
+}
+
+export function mexalArticleListDiscount(product, customer) {
+  if (!usesMexalArticleListDiscount(product)) return "";
+
+  const data = productData(product);
+  const listCode = text(
+    customer?.codice_listino ??
+      customerData(customer).codice_listino ??
+      "1"
+  );
+  const raw =
+    listDiscountValue(data.sconto_lis_ext, listCode) ||
+    listDiscountValue(data.sconto_listino, listCode);
+
+  return normalizeDiscountChain(raw);
+}
+
 function customerCategory(customer) {
   const data = customerData(customer);
   const keys = [
@@ -499,19 +559,23 @@ export function calculateLineConditions({
           integer(item.cod_cat_art) === articleDiscountCategory
       ) || null;
 
+  const articleListDiscount = mexalArticleListDiscount(product, customer);
+
   // Priorità commerciale:
   // 1) particolarità prezzo: prezzo fisso, la matrice non si applica;
   // 2) particolarità sconto: sostituisce la matrice;
-  // 3) matrice sconti;
-  // 4) sconto pagamento, applicato sempre dopo la condizione commerciale.
+  // 3) per MKT* e IT*-TST/CMP lo sconto del listino nell'anagrafica articolo Mexal;
+  // 4) matrice sconti;
+  // 5) sconto pagamento, applicato sempre dopo la condizione commerciale.
   const commercialChain = normalizeDiscountChain(
     discountRule
       ? ruleValue(discountRule)
       : priceRule
         ? ""
-        : matrix?.sconto_esteso ??
+        : articleListDiscount ||
+          (matrix?.sconto_esteso ??
             matrix?.sconto ??
-            ""
+            "")
   );
 
   const code = paymentCode(payment, customer);
@@ -576,6 +640,8 @@ export function calculateLineConditions({
       : "listino",
     origine_sconto: discountRule
       ? "particolarita-sconto"
+      : articleListDiscount
+        ? "anagrafica-articolo-mexal"
       : matrix
         ? "matrice-sconti"
         : "nessuno",
@@ -605,6 +671,8 @@ export function calculateLineConditions({
         : "listino",
       origine_sconto: discountRule
         ? "particolarita-sconto"
+        : articleListDiscount
+          ? "anagrafica-articolo-mexal"
         : matrix
           ? "matrice-sconti"
           : "nessuno",
@@ -622,6 +690,8 @@ export function calculateLineConditions({
         ? "particolarita-prezzo"
         : discountRule
           ? "particolarita-sconto"
+          : articleListDiscount
+            ? "anagrafica-articolo-mexal"
           : matrix
             ? "matrice-sconti"
             : "nessuna-condizione",
@@ -629,6 +699,8 @@ export function calculateLineConditions({
         ? `Prezzo speciale ${Number(basePrice.toFixed(4))}`
         : discountRule
           ? `Particolarità sconto ${commercialChain || "-"}`
+          : articleListDiscount
+            ? `Sconto anagrafica articolo Mexal ${commercialChain}`
           : matrix
             ? `Matrice ${commercialChain || "-"}`
             : "Nessuna condizione commerciale",

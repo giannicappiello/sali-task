@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, ArrowLeft, Camera, FileUp, Sparkles } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Camera, FileUp, Sparkles, X } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../../contexts/AuthContext";
 import useBackNavigation from "../../../hooks/useBackNavigation";
@@ -7,6 +7,7 @@ import { useOrdersModule } from "../ordersModuleContext";
 import { isPrivateOrderModule, orderModuleDefinition } from "../services/orderModules";
 
 const MAX_BYTES = 2_800_000;
+const MAX_FILES = 8;
 const EXCEL_EXTENSIONS = new Set(["xlsx", "xls", "xlsm"]);
 
 function readAsDataUrl(file) {
@@ -57,8 +58,7 @@ export default function AIOrderImport() {
   const navigate = useNavigate();
   const location = useLocation();
   const goBack = useBackNavigation(`${basePath}/elenco`);
-  const [document, setDocument] = useState(null);
-  const [preview, setPreview] = useState("");
+  const [documents, setDocuments] = useState([]);
   const [result, setResult] = useState(null);
   const [orderPreviews, setOrderPreviews] = useState([]);
   const [activeOrder, setActiveOrder] = useState(0);
@@ -71,26 +71,41 @@ export default function AIOrderImport() {
   const requestedOrderType = new URLSearchParams(location.search).get("tipo") === "prenotazione" ? "prenotazione" : "standard";
   const requestedOrderLabel = privateOrder ? "Nuovo OCT" : requestedOrderType === "prenotazione" ? "Ordine prenotazione" : "Nuovo ordine";
 
-  async function chooseFile(file) {
+  async function chooseFiles(fileList) {
     setError(""); setResult(null); setOrderPreviews([]); setReviewStates([]); setWorkbookReport(null); setActiveOrder(0);
     try {
-      const prepared = await prepareFile(file);
-      if (prepared.file.size > MAX_BYTES) throw new Error("La foto è ancora troppo grande. Inquadrala più da vicino e riprova.");
-      setDocument(prepared.file); setPreview(prepared.preview);
+      const incoming = Array.from(fileList || []);
+      if (!incoming.length) return;
+      if (documents.length + incoming.length > MAX_FILES) throw new Error(`Puoi allegare al massimo ${MAX_FILES} file per ordine.`);
+      const prepared = await Promise.all(incoming.map(prepareFile));
+      if (prepared.some((item) => item.file.size > MAX_BYTES)) throw new Error("Una foto è ancora troppo grande. Inquadrala più da vicino e riprova.");
+      const next = [...documents, ...prepared];
+      const totalBytes = next.reduce((sum, item) => sum + item.file.size, 0);
+      if (totalBytes > MAX_BYTES) throw new Error("Gli allegati superano complessivamente 2,8 MB. Riduci le foto o seleziona meno file.");
+      setDocuments(next);
     } catch (fileError) {
-      setDocument(null); setPreview(""); setError(fileError.message);
+      setError(fileError.message);
     }
   }
 
+  function removeDocument(index) {
+    setDocuments((current) => current.filter((_, itemIndex) => itemIndex !== index));
+    setResult(null); setOrderPreviews([]); setReviewStates([]); setWorkbookReport(null); setActiveOrder(0);
+  }
+
   async function analyze() {
-    if (!document || loading) return;
+    if (!documents.length || loading) return;
     setLoading(true); setError("");
     try {
-      const dataUrl = await readAsDataUrl(document);
+      const files = await Promise.all(documents.map(async ({ file }) => ({
+        fileName: file.name,
+        mediaType: file.type,
+        fileBase64: await readAsDataUrl(file),
+      })));
       const response = await fetch("/api/mexal/automation", {
         method: "POST",
         headers: { Authorization: `Bearer ${session?.access_token || ""}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "ai_order_document", moduleCode: workspaceModuleCode, fileName: document.name, mediaType: document.type, fileBase64: dataUrl }),
+        body: JSON.stringify({ action: "ai_order_document", moduleCode: workspaceModuleCode, files }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload.success === false) throw new Error(payload.error || "Lettura AI non riuscita.");
@@ -133,7 +148,7 @@ export default function AIOrderImport() {
   function openDraft() {
     const customer = result.customerCandidates?.find((item) => item.code === customerCode);
     const missing = (result.lines?.length || 0) - selectedLines.length;
-    const notes = [result.notes, `Documento acquisito con AI: ${document?.name || "-"}. Tipo rilevato: ${orderType}.`, missing ? `${missing} riga/e non abbinate da verificare manualmente.` : ""].filter(Boolean).join("\n");
+    const notes = [result.notes, `Documenti acquisiti con AI: ${documents.map((item) => item.file.name).join(", ") || "-"}. Tipo rilevato: ${orderType}.`, missing ? `${missing} riga/e non abbinate da verificare manualmente.` : ""].filter(Boolean).join("\n");
     const search = requestedOrderType === "prenotazione" ? "?tipo=prenotazione" : "";
     navigate(`${basePath}/nuovo${search}`, { state: { aiDraft: { customerCode: customer?.code || "", lines: selectedLines, comments: notes, detectedDocumentType: orderType } } });
   }
@@ -141,18 +156,18 @@ export default function AIOrderImport() {
   return <div className="orders-page ai-order-import">
     <div className="orders-order-header">
       <button className="orders-secondary" type="button" onClick={goBack}><ArrowLeft size={17} /> Torna agli ordini</button>
-      <div><h2><Sparkles size={22} /> Genera ordine con AI</h2><p>Scatta una foto o carica un documento: il sistema prepara una bozza da controllare.</p></div>
+      <div><h2><Sparkles size={22} /> Genera ordine con AI</h2><p>Scatta più foto o carica più documenti: il sistema prepara una bozza unica da controllare.</p></div>
     </div>
 
     <section className="orders-panel ai-order-upload">
       <div className="ai-order-requested-type"><span>Tipo di ordine da generare</span><strong>{requestedOrderLabel}</strong></div>
       <div className="ai-order-upload-actions">
-        <label className="orders-primary"><Camera size={19} /> Scatta foto<input hidden type="file" accept="image/*" capture="environment" onChange={(event) => void chooseFile(event.target.files?.[0])} /></label>
-        <label className="orders-secondary"><FileUp size={19} /> Carica documento<input hidden type="file" accept="image/jpeg,image/png,image/webp,application/pdf,.xlsx,.xls,.xlsm" onChange={(event) => void chooseFile(event.target.files?.[0])} /></label>
+        <label className="orders-primary"><Camera size={19} /> Scatta foto<input hidden type="file" accept="image/*" capture="environment" onChange={(event) => { void chooseFiles(event.target.files); event.target.value = ""; }} /></label>
+        <label className="orders-secondary"><FileUp size={19} /> Carica documenti<input hidden multiple type="file" accept="image/jpeg,image/png,image/webp,application/pdf,.xlsx,.xls,.xlsm" onChange={(event) => { void chooseFiles(event.target.files); event.target.value = ""; }} /></label>
       </div>
-      {document && <div className="ai-order-selected-file">{preview ? <img src={preview} alt="Anteprima documento" /> : <FileUp size={36} />}<div><strong>{document.name}</strong><span>{(document.size / 1024).toLocaleString("it-IT", { maximumFractionDigits: 0 })} KB</span></div></div>}
-      <button className="orders-primary" type="button" disabled={!document || loading} onClick={analyze}>{loading ? "Lettura in corso…" : "Riconosci cliente e prodotti"}</button>
-      <small>Formati: JPG, PNG, WebP, PDF, XLSX, XLS o XLSM fino a 2,8 MB. Tutti i fogli Excel utili vengono analizzati; il file non viene archiviato.</small>
+      {documents.length > 0 && <div className="ai-order-selected-files">{documents.map(({ file, preview }, index) => <div className="ai-order-selected-file" key={`${file.name}-${file.size}-${index}`}>{preview ? <img src={preview} alt={`Anteprima ${file.name}`} /> : <FileUp size={36} />}<div><strong>{file.name}</strong><span>{(file.size / 1024).toLocaleString("it-IT", { maximumFractionDigits: 0 })} KB</span></div><button type="button" className="ai-order-remove-file" aria-label={`Rimuovi ${file.name}`} onClick={() => removeDocument(index)}><X size={18} /></button></div>)}</div>}
+      <button className="orders-primary" type="button" disabled={!documents.length || loading} onClick={analyze}>{loading ? "Lettura in corso…" : `Riconosci cliente e prodotti${documents.length > 1 ? ` (${documents.length} file)` : ""}`}</button>
+      <small>Formati: JPG, PNG, WebP, PDF, XLSX, XLS o XLSM. Fino a {MAX_FILES} allegati e 2,8 MB complessivi; tutti i fogli Excel utili vengono analizzati e i file non vengono archiviati.</small>
     </section>
 
     {error && <div className="orders-alert"><AlertTriangle size={18} /> {error}</div>}

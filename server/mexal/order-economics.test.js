@@ -5,7 +5,7 @@ import {
   calculateOrderEconomics,
   reconcileMexalTotals,
 } from "./order-economics.js";
-import { buildMexalOrderDocument, normalizeMexalUnitType } from "./order-documents.js";
+import { buildMexalOrderDocument, classifyOrderLines, normalizeMexalUnitType } from "./order-documents.js";
 
 test("applica gli sconti commerciali in sequenza", () => {
   assert.equal(applySequentialDiscounts(4.6, "50+35"), 1.4949999999999999);
@@ -79,4 +79,14 @@ test("tp_um_articolo esplicito ha precedenza sull'unità di misura", () => {
 test("id_causale viene inviato con il contratto matrice Mexal verificato", () => {
   const payload = buildMexalOrderDocument({ id: "ordine-3", codice_cliente: "501.03320", data_ordine: "2026-07-20", id_causale: 1 }, "OCM", [{ codice_articolo: "IT0001", quantita_documento: 1 }]);
   assert.deepEqual(payload.id_causale, [[1, 1]]);
+});
+
+test("la suddivisione OCM e OCX conserva l'ordine relativo delle righe Workspace", () => {
+  const documents = classifyOrderLines([
+    { codice_articolo: "C003", quantita_ocm: 2, quantita_ocx: 0 },
+    { codice_articolo: "A001", quantita_ocm: 0, quantita_ocx: 4 },
+    { codice_articolo: "B002", quantita_ocm: 1, quantita_ocx: 3 },
+  ]);
+  assert.deepEqual(documents.OCM.map((line) => line.codice_articolo), ["C003", "B002"]);
+  assert.deepEqual(documents.OCX.map((line) => line.codice_articolo), ["A001", "B002"]);
 });

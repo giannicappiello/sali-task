@@ -12,6 +12,7 @@ import { parseOrderWorkbook } from "./order-excel.js";
 
 const DEFAULT_MODEL = "openai/gpt-5.6-luna";
 const MAX_FILE_BYTES = 2_800_000;
+const MAX_FILES_PER_REQUEST = 8;
 const HARD_DAILY_DOCUMENT_LIMIT = Math.max(1, Number(process.env.AI_ORDER_HARD_DAILY_LIMIT || 25));
 const HARD_MAX_DOCUMENT_PAGES = Math.max(1, Number(process.env.AI_ORDER_HARD_MAX_PAGES || 20));
 const EXCEL_MEDIA_BY_EXTENSION = new Map([
@@ -57,17 +58,26 @@ const ORDER_DOCUMENT_SCHEMA = jsonSchema({
   },
 });
 
-function parseFile(body) {
-  const filename = String(body.fileName || "documento").replace(/[^a-zA-Z0-9._ -]/g, "").slice(0, 120) || "documento";
+function parseFile(input) {
+  const filename = String(input.fileName || "documento").replace(/[^a-zA-Z0-9._ -]/g, "").slice(0, 120) || "documento";
   const extension = filename.toLowerCase().match(/\.[a-z0-9]+$/)?.[0] || "";
-  const declaredMediaType = String(body.mediaType || "").toLowerCase();
+  const declaredMediaType = String(input.mediaType || "").toLowerCase();
   const mediaType = EXCEL_MEDIA_BY_EXTENSION.get(extension) || declaredMediaType;
   if (!ALLOWED_MEDIA_TYPES.has(mediaType)) throw Object.assign(new Error("Formato non supportato. Usa JPG, PNG, WebP, PDF, XLSX, XLS o XLSM."), { status: 400 });
-  const raw = String(body.fileBase64 || "").replace(/^data:[^;]+;base64,/, "");
+  const raw = String(input.fileBase64 || "").replace(/^data:[^;]+;base64,/, "");
   if (!raw) throw Object.assign(new Error("Seleziona una foto o un documento."), { status: 400 });
   const data = Buffer.from(raw, "base64");
-  if (!data.length || data.length > MAX_FILE_BYTES) throw Object.assign(new Error("Il file supera il limite di 2,8 MB. Riduci la foto o il PDF e riprova."), { status: 413 });
+  if (!data.length || data.length > MAX_FILE_BYTES) throw Object.assign(new Error("Un file supera il limite di 2,8 MB. Riduci la foto o il PDF e riprova."), { status: 413 });
   return { data, mediaType, filename, isExcel: EXCEL_MEDIA_BY_EXTENSION.has(extension) };
+}
+
+export function parseOrderFiles(body) {
+  const inputs = Array.isArray(body?.files) && body.files.length ? body.files : [body];
+  if (inputs.length > MAX_FILES_PER_REQUEST) throw Object.assign(new Error(`Puoi allegare al massimo ${MAX_FILES_PER_REQUEST} file per ordine.`), { status: 400 });
+  const files = inputs.map(parseFile);
+  const totalBytes = files.reduce((sum, file) => sum + file.data.length, 0);
+  if (totalBytes > MAX_FILE_BYTES) throw Object.assign(new Error("Gli allegati superano complessivamente 2,8 MB. Riduci le foto o seleziona meno file."), { status: 413 });
+  return files;
 }
 
 function assertOrderModuleAllowed(auth, moduleCode) {
@@ -171,50 +181,70 @@ export async function handleAIOrderDocument(req) {
   const requestedModule = String(body.moduleCode || "").trim();
   const moduleCode = ["ordini_pr", "ordini_ph", "ordini_private"].includes(requestedModule) ? requestedModule : "ordini_pr";
   assertOrderModuleAllowed(auth, moduleCode);
-  if (body.action === "ai_order_capabilities") return { allowed: true, limits: { maxFileBytes: MAX_FILE_BYTES, dailyDocuments: HARD_DAILY_DOCUMENT_LIMIT, maxPages: HARD_MAX_DOCUMENT_PAGES } };
+  if (body.action === "ai_order_capabilities") return { allowed: true, limits: { maxFileBytes: MAX_FILE_BYTES, maxFiles: MAX_FILES_PER_REQUEST, dailyDocuments: HARD_DAILY_DOCUMENT_LIMIT, maxPages: HARD_MAX_DOCUMENT_PAGES } };
 
   await assertOrderAISafetyLimit(auth);
-  const file = parseFile(body);
+  const files = parseOrderFiles(body);
+  const visionFiles = files.filter((file) => !file.isExcel);
+  const excelFiles = files.filter((file) => file.isExcel);
   const model = process.env.AI_VISION_MODEL || process.env.AI_MODEL || DEFAULT_MODEL;
   const { data: acquisition, error: acquisitionError } = await auth.admin.from("ai_ordini_acquisizioni").insert({
-    utente_id: auth.profile.id, modulo_codice: moduleCode, nome_file: file.filename, tipo_file: file.mediaType, dimensione_byte: file.data.length,
+    utente_id: auth.profile.id,
+    modulo_codice: moduleCode,
+    nome_file: files.map((file) => file.filename).join(", ").slice(0, 500),
+    tipo_file: files.length === 1 ? files[0].mediaType : "application/x-multiple-order-documents",
+    dimensione_byte: files.reduce((sum, file) => sum + file.data.length, 0),
   }).select("id").single();
   if (acquisitionError) throw acquisitionError;
   let generationId = null;
-  if (!file.isExcel) {
+  if (visionFiles.length) {
     generationId = await startAIGeneration(auth.admin, { profileId: auth.profile.id, conversationId: null, type: "riconoscimento_ordine", model });
     await auth.admin.from("ai_ordini_acquisizioni").update({ generazione_id: generationId }).eq("id", acquisition.id);
   }
 
   let result;
   try {
-    if (file.isExcel) {
+    const extractions = [];
+    const includedSheets = [];
+    const excludedSheets = [];
+    const workbookWarnings = [];
+    for (const file of excelFiles) {
       const workbook = parseOrderWorkbook(file.data, { fileName: file.filename });
-      if (!workbook.orders.length) throw Object.assign(new Error("Nel workbook non sono state trovate righe prodotto utilizzabili."), { status: 400, details: workbook.excludedSheets });
-      const catalog = await visibleCatalog(auth, workbook.orders);
-      const matchedOrders = workbook.orders.map((order) => resolveExtraction(forRequestedOrderModule(order, moduleCode), catalog));
-      const matched = { ...matchedOrders[0], orders: matchedOrders, workbook: { includedSheets: workbook.includedSheets, excludedSheets: workbook.excludedSheets }, warnings: [...workbook.warnings, ...(matchedOrders[0]?.warnings || [])] };
-      await auth.admin.from("ai_ordini_acquisizioni").update({ stato: "completata", esito: matched, completata_il: new Date().toISOString() }).eq("id", acquisition.id);
-      return { acquisitionId: acquisition.id, extraction: matched, usage: null };
+      includedSheets.push(...workbook.includedSheets.map((sheet) => ({ ...sheet, fileName: file.filename })));
+      excludedSheets.push(...workbook.excludedSheets.map((sheet) => ({ ...sheet, fileName: file.filename })));
+      workbookWarnings.push(...workbook.warnings);
+      extractions.push(...workbook.orders.map((order) => forRequestedOrderModule(order, moduleCode)));
     }
-    result = await generateText({
-      model,
-      system: moduleCode === "ordini_private"
-        ? "Leggi il documento commerciale senza inventare dati. Estrai cliente, righe prodotto e quantità. Questo flusso crea esclusivamente un OCT: imposta sempre documentType a OCT e non classificare le righe in altri documenti. Usa stringhe vuote per i campi assenti. Le quantità devono essere positive. Segnala dubbi e testo illeggibile nelle warnings."
-        : "Leggi il documento commerciale senza inventare dati. Estrai cliente, righe prodotto e quantità. Usa stringhe vuote per i campi assenti. Il tipo è OCI solo per prenotazioni esplicite; OCM per evasione immediata esplicita; OCX per backorder esplicito; altrimenti NON_DETERMINATO. Le quantità devono essere positive. Segnala dubbi e testo illeggibile nelle warnings.",
-      messages: [{ role: "user", content: [
-        { type: "text", text: "Estrai i dati necessari per preparare una bozza d’ordine nel gestionale." },
-        { type: "file", mediaType: file.mediaType, data: file.data, filename: file.filename },
-      ] }],
-      output: Output.object({ name: "OrdineAcquisito", description: "Dati estratti da una richiesta d’ordine", schema: ORDER_DOCUMENT_SCHEMA }),
-      maxOutputTokens: 2200,
-      providerOptions: { gateway: { user: auth.profile.id, tags: ["app:sali-task", "feature:riconoscimento-ordine", `module:${moduleCode}`] } },
-    });
-    const extraction = forRequestedOrderModule(result.output, moduleCode);
-    if (extraction.pageCount > HARD_MAX_DOCUMENT_PAGES) throw Object.assign(new Error(`Il documento contiene ${extraction.pageCount} pagine; la soglia tecnica è ${HARD_MAX_DOCUMENT_PAGES}.`), { status: 400 });
-    const catalog = await visibleCatalog(auth, [extraction]);
-    const matched = resolveExtraction(extraction, catalog);
-    const usage = await completeAIGeneration(auth.admin, { generationId, profileId: auth.profile.id, result });
+
+    if (visionFiles.length) {
+      result = await generateText({
+        model,
+        system: moduleCode === "ordini_private"
+          ? "Leggi tutti gli allegati come parti della stessa richiesta commerciale, rispettando l’ordine in cui sono forniti e senza duplicare righe ripetute tra le pagine. Non inventare dati. Estrai cliente, righe prodotto e quantità. Questo flusso crea esclusivamente un OCT: imposta sempre documentType a OCT. Usa stringhe vuote per i campi assenti. Le quantità devono essere positive. Segnala dubbi e testo illeggibile nelle warnings."
+          : "Leggi tutti gli allegati come parti della stessa richiesta commerciale, rispettando l’ordine in cui sono forniti e senza duplicare righe ripetute tra le pagine. Non inventare dati. Estrai cliente, righe prodotto e quantità. Usa stringhe vuote per i campi assenti. Il tipo è OCI solo per prenotazioni esplicite; OCM per evasione immediata esplicita; OCX per backorder esplicito; altrimenti NON_DETERMINATO. Le quantità devono essere positive. Segnala dubbi e testo illeggibile nelle warnings.",
+        messages: [{ role: "user", content: [
+          { type: "text", text: "Estrai i dati necessari per preparare una bozza d’ordine. Gli allegati seguenti appartengono alla stessa acquisizione e sono presentati nel loro ordine corretto." },
+          ...visionFiles.map((file) => ({ type: "file", mediaType: file.mediaType, data: file.data, filename: file.filename })),
+        ] }],
+        output: Output.object({ name: "OrdineAcquisito", description: "Dati estratti da una richiesta d’ordine", schema: ORDER_DOCUMENT_SCHEMA }),
+        maxOutputTokens: 3600,
+        providerOptions: { gateway: { user: auth.profile.id, tags: ["app:sali-task", "feature:riconoscimento-ordine", `module:${moduleCode}`] } },
+      });
+      const extraction = forRequestedOrderModule(result.output, moduleCode);
+      if (extraction.pageCount > HARD_MAX_DOCUMENT_PAGES) throw Object.assign(new Error(`Gli allegati contengono ${extraction.pageCount} pagine; la soglia tecnica è ${HARD_MAX_DOCUMENT_PAGES}.`), { status: 400 });
+      extractions.push(extraction);
+    }
+
+    if (!extractions.length) throw Object.assign(new Error("Nei documenti non sono state trovate righe prodotto utilizzabili."), { status: 400, details: excludedSheets });
+    const catalog = await visibleCatalog(auth, extractions);
+    const matchedOrders = extractions.map((extraction) => resolveExtraction(extraction, catalog));
+    const matched = {
+      ...matchedOrders[0],
+      ...(matchedOrders.length > 1 ? { orders: matchedOrders } : {}),
+      ...(excelFiles.length ? { workbook: { includedSheets, excludedSheets } } : {}),
+      warnings: [...new Set([...workbookWarnings, ...(matchedOrders[0]?.warnings || [])])],
+    };
+    const usage = result ? await completeAIGeneration(auth.admin, { generationId, profileId: auth.profile.id, result }) : null;
     await auth.admin.from("ai_ordini_acquisizioni").update({ stato: "completata", esito: matched, completata_il: new Date().toISOString() }).eq("id", acquisition.id);
     return { acquisitionId: acquisition.id, extraction: matched, usage };
   } catch (error) {

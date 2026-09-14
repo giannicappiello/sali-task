@@ -88,6 +88,8 @@
   background: var(--surface-muted, #f7f9fb);
 }
 
+.ai-order-selected-files{display:grid;gap:.65rem}.ai-order-selected-file{position:relative}.ai-order-selected-file>div{flex:1}.ai-order-remove-file{display:grid;place-items:center;flex:0 0 auto;width:36px;height:36px;margin-left:auto;border:1px solid #fecaca;border-radius:9px;background:#fff;color:#b91c1c;cursor:pointer}.ai-order-remove-file:hover,.ai-order-remove-file:focus-visible{background:#fef2f2;outline:2px solid #fecaca}
+
 .ai-order-selected-file img {
   width: 84px;
   height: 84px;

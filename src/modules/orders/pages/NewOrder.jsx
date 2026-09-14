@@ -9,7 +9,6 @@ import {
   findMexalProductByCode,
   PRODUCT_OPTION_KIND,
   productOptionKey,
-  productOptionTypeLabel,
 } from "../lib/productOptionIdentity";
 import { calculateLineConditions } from "../services/priceEngine";
 import { calculateOrderEconomics, calculateOrderLineEconomicsWithPayment } from "../services/orderEconomics";
@@ -210,7 +209,7 @@ export default function NewOrder() {
     (async () => {
       const [{ data: existing, error: orderError }, { data: existingLines, error: linesError }, { data: docs, error: docsError }] = await Promise.all([
         supabase.from("ordini_testate").select("*").eq("id", editingOrderId).or(orderModuleFilter(moduleCode)).single(),
-        supabase.from("ordini_righe").select("*").eq("ordine_id", editingOrderId).order("id"),
+        supabase.from("ordini_righe").select("*").eq("ordine_id", editingOrderId).order("mexal_posizione", { ascending: true, nullsFirst: false }).order("id", { ascending: true }),
         supabase.from("ordini_documenti_mexal").select("numero").eq("ordine_id", editingOrderId).not("numero", "is", null),
       ]);
       if (orderError || linesError || docsError) { if (active) setError((orderError || linesError || docsError).message); return; }
@@ -371,6 +370,8 @@ export default function NewOrder() {
           product.is_impianto ? "impianto" : "",
         ].some((value) => String(value ?? "").toLowerCase().includes(query))
       )
+      .sort((left, right) => normalize(left.codice_articolo || left.codice_mexal || left.codice)
+        .localeCompare(normalize(right.codice_articolo || right.codice_mexal || right.codice), "it", { numeric: true, sensitivity: "base" }))
       .slice(0, 60);
   }, [products, productSearch]);
 
@@ -683,12 +684,13 @@ export default function NewOrder() {
       // The database trigger has allocated the human number atomically. Do not
       // overwrite it with the UUID when saving the order's Mexal note.
       const noteMexal = `Workspace n. ${order.numero_ordine_visualizzato || order.id}`;
-      const linePayload = lines.map((line) => {
+      const linePayload = lines.map((line, index) => {
         const quantities = privateOrder
           ? { quantita_disponibile: 0, quantita_ocm: 0, quantita_ocx: 0, quantita_oci: 0 }
           : quantitiesForOrderLine(line, availability, confirm, { reservation: isReservation, skipAvailability });
         return {
           ordine_id: order.id,
+          mexal_posizione: index + 1,
           codice_articolo: line.codice_articolo,
           descrizione: line.descrizione,
           ean: normalize(line.ean || line.prodotto_origine?.ean) || null,
@@ -879,10 +881,11 @@ export default function NewOrder() {
             <div className="orders-picker-results orders-product-results">
               {filteredProducts.map((product, index) => {
                 const code = product.codice_articolo || product.codice_mexal || product.codice;
+                const isLocalImplant = product.option_kind === PRODUCT_OPTION_KIND.LOCAL_IMPLANT;
                 return (
                   <button ref={(node) => { productResultRefs.current[index] = node; }} className={index === productResultIndex ? "is-keyboard-active" : ""} aria-selected={index === productResultIndex} key={productOptionKey(product)} type="button" disabled={checkingAvailability} onMouseEnter={() => setProductResultIndex(index)} onClick={() => void chooseProduct(product)} onKeyDown={(event) => { if (event.key === "Tab") { event.preventDefault(); void chooseProduct(product); } }}>
-                    <strong>{productOptionTypeLabel(product)} · {product.descrizione || product.nome || code}</strong>
-                    <span>{code} · Entità: {productOptionTypeLabel(product).toLowerCase()} · Cat. sconto: {productDiscountCategory(product) || "-"} · {money(product.prezzo_listino || 0)}</span>
+                    <strong>{isLocalImplant ? "Impianto locale · " : ""}{product.descrizione || product.nome || code}</strong>
+                    <span>{code} · Cat. sconto: {productDiscountCategory(product) || "-"} · {money(product.prezzo_listino || 0)}</span>
                   </button>
                 );
               })}

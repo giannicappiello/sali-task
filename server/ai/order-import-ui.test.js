@@ -27,6 +27,13 @@ test("UI supporta Excel multi-foglio e preview di ordini distinti", () => {
   assert.match(source, /rowNumber/);
 });
 
+test("UI consente allegati multipli e li invia insieme all'analisi", () => {
+  assert.match(source, /const \[documents, setDocuments\]/);
+  assert.match(source, /hidden multiple type="file"/);
+  assert.match(source, /body: JSON\.stringify\(\{ action: "ai_order_document", moduleCode: workspaceModuleCode, files \}\)/);
+  assert.match(source, /removeDocument\(index\)/);
+});
+
 test("cliente e prodotti suggeriti sono selezionabili direttamente nella preview AI", () => {
   assert.match(source, /aria-label="Clienti suggeriti"/);
   assert.match(source, /onClick=\{\(\) => selectCustomer\(item\.code\)\}/);

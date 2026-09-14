@@ -82,6 +82,12 @@ export interface ProductionOrder {
 }
 
 export interface ProductionProgress {
+  productionId?: number;
+  articleCode?: string;
+  scrapQuantity?: number;
+  qualityStatus?: string;
+  releaseStatus?: string;
+  closureConfirmationKey?: string | null;
   productionOrderId: number;
   orderNumber: string;
   phase: string;

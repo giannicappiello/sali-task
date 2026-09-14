@@ -102,6 +102,7 @@ const RESOURCE_DEFINITIONS = Object.freeze({
       "productionOrderId", "orderNumber", "phase", "status", "start", "end",
       "plannedQuantity", "producedQuantity", "progressPercent",
     ]),
+    optionalFields: Object.freeze(["productionId", "articleCode", "scrapQuantity", "qualityStatus", "releaseStatus", "closureConfirmationKey"]),
   }),
   inventory: Object.freeze({
     path: "inventory",

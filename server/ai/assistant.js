@@ -4,6 +4,7 @@ import { generateText, isStepCount, jsonSchema, Output } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { decideHeadingAction, executeHeadingModelTool, HEADING_AI_TOOLS, HEADING_TOOL_SCHEMAS, interpretHeadingCommand } from "./company-letterhead-actions.js";
 import { availableControlledActions, decideControlledAction, proposeControlledAction } from "./controlled-actions.js";
+import { findProductionForClosure } from "./production-closure.js";
 
 const DEFAULT_MODEL = "openai/gpt-5.6-luna";
 const MAX_HISTORY_MESSAGES = 14;
@@ -416,6 +417,7 @@ Regole obbligatorie:
 - ogni strumento di scrittura crea soltanto una proposta: descrivi l'anteprima e attendi la conferma esplicita dell'utente mostrata dall'interfaccia;
 - non generare SQL, codice, identificativi o nomi di campi non presenti nel contesto; se manca l'identificativo del record chiedi all'utente di selezionarlo o aprirlo;
 - le forzature lotto e le variazioni operative MES sono ad alto rischio: evidenzia sempre impatto, motivo e record interessato;
+- per chiudere una lavorazione senza movimenti Mexal usa prima MES_PRODUCTION_LOOKUP con il numero esatto RdP/ordine, anche se screenContext.recordId manca. Usa productionId della fase, mai productionOrderId al suo posto. Poi proponi MES_PRODUCTION_FORCE_CLOSE solo se l'utente dichiara esplicitamente SL E CL già eseguiti manualmente. Non inventare tale dichiarazione né i riferimenti dei documenti. Questa azione non salta qualità/QA e non crea SL, CL o scarichi perdite; chiude la fase e aggiorna presenze, ordine e planning. Se ci sono più fasi chiedi quale chiudere. Se MES non è aggiornato dichiaralo senza promettere una forzatura con OP_UPDATE/RDP_UPDATE;
 - per richieste su intestazioni, associazioni e firme usa sempre gli strumenti strutturati disponibili; non dedurre identificativi e non rispondere solo dal prompt;
 - gli strumenti intestazioni con rischio write preparano esclusivamente una proposta: comunica che serve la conferma esplicita mostrata dall'interfaccia e non dichiarare la modifica già eseguita;
 - segnala esplicitamente quando il connettore ProgreMES non è disponibile;
@@ -794,9 +796,16 @@ async function chat(auth, body) {
     inputSchema: jsonSchema(descriptor.schema),
     execute: (input) => proposeControlledAction(auth, toolName, input, { correlationId: body.correlationId }),
   }]));
+  const productionTools = controlledTools.MES_PRODUCTION_FORCE_CLOSE ? {
+    MES_PRODUCTION_LOOKUP: {
+      description: "Legge le lavorazioni MES di un numero ordine/RdP esatto, con identificativi e stato attuale. Sola lettura, prima di qualsiasi proposta di chiusura.",
+      inputSchema: jsonSchema({ type: "object", additionalProperties: false, required: ["orderNumber"], properties: { orderNumber: { type: "string", minLength: 1, maxLength: 100 } } }),
+      execute: ({ orderNumber }) => findProductionForClosure(auth, orderNumber),
+    },
+  } : {};
   const tools = mode === "web"
     ? { ...headingTools, web_search: openai.tools.webSearch({ externalWebAccess: true, searchContextSize: "medium" }) }
-    : { ...headingTools, ...controlledTools };
+    : { ...headingTools, ...productionTools, ...controlledTools };
   const model = process.env.AI_MODEL || DEFAULT_MODEL;
   const mutationRequested = mode !== "web" && isControlledMutationRequest(prompt);
   const controlledToolNames = Object.keys(controlledTools);

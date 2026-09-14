@@ -1,6 +1,7 @@
 /* global Buffer, process */
 import { createHash, randomUUID } from "node:crypto";
 import { HMAC_HEADERS, signProductionMessage } from "../progremes-production-hmac.js";
+import { assertClosureSnapshot, findProductionForClosure } from "./production-closure.js";
 
 const text = { type: "string", maxLength: 500 };
 const identifier = { type: "string", minLength: 1, maxLength: 160 };
@@ -53,6 +54,17 @@ const externalEntitySchema = (entityLabel) => ({
 });
 
 export const CONTROLLED_AI_ACTIONS = Object.freeze({
+  MES_PRODUCTION_FORCE_CLOSE: { system: "mes", risk: "destructive", permission: "progremes.write", schema: {
+    type: "object", additionalProperties: false,
+    required: ["targetId", "productionId", "productionOrderId", "orderNumber", "articleCode", "phase", "expectedStatus", "expectedStart", "expectedProducedQuantity", "expectedScrapQuantity", "reason", "slAndClAlreadyRegistered"],
+    properties: {
+      targetId: identifier, productionId: { type: "integer", minimum: 1 }, productionOrderId: { type: "integer", minimum: 1 },
+      orderNumber: identifier, articleCode: identifier, phase: { type: "string", enum: ["Semilavorato", "Confezionamento", "Astucciatura"] },
+      expectedStatus: { type: "string", enum: ["InProduzione", "Sospeso"] }, expectedStart: identifier,
+      expectedProducedQuantity: { type: "number", exclusiveMinimum: 0 }, expectedScrapQuantity: { type: "number", minimum: 0 },
+      reason: { type: "string", minLength: 1, maxLength: 1000 }, slAndClAlreadyRegistered: { type: "boolean", const: true },
+    },
+  } },
   UI_CONFIGURE_VIEW: { system: "workspace", risk: "write", permission: "settings.manage", schema: {
     type: "object", additionalProperties: false, required: ["targetType", "targetCode", "scopeType", "layout", "reason"],
     properties: {
@@ -123,6 +135,10 @@ function stableValue(value) {
 export async function proposeControlledAction(auth, tool, input, { correlationId = randomUUID() } = {}) {
   const descriptor = CONTROLLED_AI_ACTIONS[tool];
   if (!descriptor || !canPropose(auth, descriptor)) throw Object.assign(new Error("Azione AI non autorizzata per questo profilo."), { status: 403 });
+  if (tool === "MES_PRODUCTION_FORCE_CLOSE") {
+    const current = await findProductionForClosure(auth, input.orderNumber);
+    assertClosureSnapshot(input, current.items);
+  }
   const canonical = JSON.stringify(stableValue(input || {}));
   const idempotencyKey = createHash("sha256").update(`${auth.profile.id}:${tool}:${canonical}`).digest("hex");
   const { data, error } = await auth.scoped.rpc("propose_workspace_ai_action", {
@@ -160,6 +176,18 @@ async function executeExternalAction(auth, pending) {
     result = await response.json().catch(() => ({}));
     if (!response.ok || result?.applied !== true) failure = result?.error || `ProgreMES ha risposto con stato ${response.status}.`;
   } catch (error) { failure = error?.message || "ProgreMES non raggiungibile."; }
+  if (failure && pending.tool === "MES_PRODUCTION_FORCE_CLOSE") {
+    // Read back the durable confirmation; never retry a warehouse-related write blindly.
+    try {
+      const current = await findProductionForClosure(auth, pending.payload_summary.orderNumber);
+      const work = current.items.find(row => row.productionId === pending.payload_summary.productionId);
+      if (work?.status === "Terminato" && work.closureConfirmationKey === pending.idempotency_key) {
+        result = { applied: true, productionId: work.productionId, verifiedAfterTimeout: true, mexalMovementsGenerated: false };
+        failure = null;
+      }
+    } catch { /* Keep the uncertain outcome visible; no automatic write retry. */ }
+    if (failure) failure = `Chiusura non confermata: ${failure} Verificare lo stato MES prima di ripetere l'operazione.`;
+  }
   const { data, error } = await auth.admin.rpc("complete_workspace_external_ai_action", { p_proposal_id: pending.id, p_succeeded: !failure, p_result: result || {}, p_error: failure });
   if (error) throw error;
   const action = Array.isArray(data) ? data[0] : data;
@@ -172,6 +200,10 @@ export async function decideControlledAction(auth, body) {
   const { data: pending, error: pendingError } = await auth.scoped.from("ai_action_audit").select("*").eq("id", proposalId).eq("user_id", auth.profile.id).maybeSingle();
   if (pendingError || !pending || !CONTROLLED_AI_ACTIONS[pending.tool]) throw Object.assign(new Error("Proposta non trovata o non autorizzata."), { status: 404 });
   const confirmed = body.decision === "confirm";
+  if (confirmed && pending.tool === "MES_PRODUCTION_FORCE_CLOSE" && pending.status === "proposed") {
+    const current = await findProductionForClosure(auth, pending.payload_summary.orderNumber);
+    assertClosureSnapshot(pending.payload_summary, current.items);
+  }
   const { data: decided, error: decideError } = await auth.scoped.rpc("decide_workspace_ai_action", { p_proposal_id: pending.id, p_confirm: confirmed });
   if (decideError) throw decideError;
   let action = Array.isArray(decided) ? decided[0] : decided;

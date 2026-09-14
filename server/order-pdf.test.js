@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { jsPDF } from "jspdf";
-import { buildOrderPdfModel, createMexalDocumentPdfFiles, createOrderPdf, createZipArchive, downloadOrderPdf, fitTextInCell, formatMexalDocumentNumber, getMexalDocuments } from "../src/modules/orders/services/orderPdf.js";
+import { buildOrderPdfModel, createMexalDocumentPdfFiles, createOrderPdf, createZipArchive, downloadOrderPdf, fitTextInCell, formatMexalDocumentNumber, getMexalDocuments, isLetterheadNotConfigured } from "../src/modules/orders/services/orderPdf.js";
 import { enrichOrderLinesWithBarcode } from "../src/modules/orders/services/orderLineBarcode.js";
 
 test("il modello PDF usa il motore economico condiviso per quindici righe", () => {
@@ -42,6 +42,12 @@ test("il PDF degli ordini PH riporta il barcode dell'articolo oltre a codice e d
   const profOutput = profPdf.output();
   assert.match(profOutput, /ARTICOLO/);
   assert.doesNotMatch(profOutput, /8051234567890/);
+});
+
+test("il fallback PDF riconosce l'assenza intestazione anche se l'API storica ha rimappato il codice", () => {
+  assert.equal(isLetterheadNotConfigured({ code: "LETTERHEAD_NOT_CONFIGURED" }), true);
+  assert.equal(isLetterheadNotConfigured({ code: "LETTERHEAD_RESOLUTION_FAILED", message: "LETTERHEAD_NOT_CONFIGURED" }), true);
+  assert.equal(isLetterheadNotConfigured({ code: "LETTERHEAD_RESOLUTION_FAILED", message: "Errore database" }), false);
 });
 
 test("il barcode viene salvato sulle nuove righe e recuperato per gli ordini storici", async () => {

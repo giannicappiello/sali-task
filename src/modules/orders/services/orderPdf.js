@@ -20,6 +20,11 @@ function number(value) { return Number(value || 0); }
 function money(value) { return number(value).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function quantity(value) { return number(value).toLocaleString("it-IT", { maximumFractionDigits: 3 }); }
 function valueOrBlank(value) { return value === null || value === undefined || value === "" ? "" : String(value); }
+export function isLetterheadNotConfigured(error) {
+  const code = String(error?.code || "").trim().toUpperCase();
+  const message = String(error?.message || "").toUpperCase();
+  return code === "LETTERHEAD_NOT_CONFIGURED" || message.includes("LETTERHEAD_NOT_CONFIGURED");
+}
 function formatDate(value) {
   if (!value) return "";
   const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
@@ -409,7 +414,7 @@ export async function createMexalDocumentPdfFiles(order, lines) {
         });
         return { name: "ordine-bozza.pdf", data: await composed.blob.arrayBuffer(), headingSnapshot: composed.snapshot };
       } catch (error) {
-        if (error?.code !== "LETTERHEAD_NOT_CONFIGURED") throw error;
+        if (!isLetterheadNotConfigured(error)) throw error;
         const legacy = await createOrderPdf(order, lines);
         return { name: "ordine-bozza.pdf", data: legacy.output("arraybuffer"), headingSnapshot: null };
       }
@@ -429,7 +434,7 @@ export async function createMexalDocumentPdfFiles(order, lines) {
       });
       return { name: `ordine-${document.type}-${document.serie}-${document.numero}.pdf`, data: await composed.blob.arrayBuffer(), headingSnapshot: composed.snapshot };
     } catch (error) {
-      if (error?.code !== "LETTERHEAD_NOT_CONFIGURED") throw error;
+      if (!isLetterheadNotConfigured(error)) throw error;
       const legacy = await createOrderPdf(order, documentLines, { document });
       return { name: `ordine-${document.type}-${document.serie}-${document.numero}.pdf`, data: legacy.output("arraybuffer"), headingSnapshot: null };
     }

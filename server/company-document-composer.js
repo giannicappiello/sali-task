@@ -16,6 +16,17 @@ function httpError(message, status = 400, code = "INVALID_REQUEST") {
   return Object.assign(new Error(message), { status, code });
 }
 
+export function letterheadResolutionError(error) {
+  const message = String(error?.message || "Risoluzione intestazione non riuscita.");
+  const missingConfiguration = error?.code === "LETTERHEAD_NOT_CONFIGURED"
+    || message.includes("LETTERHEAD_NOT_CONFIGURED");
+  return httpError(
+    message,
+    missingConfiguration ? 409 : 500,
+    missingConfiguration ? "LETTERHEAD_NOT_CONFIGURED" : "LETTERHEAD_RESOLUTION_FAILED",
+  );
+}
+
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -73,7 +84,7 @@ async function frozenResolution(admin, input) {
     p_business_area: input.businessArea || null,
     p_language: input.language || "it",
   });
-  if (error) throw httpError(error.message, error.message?.includes("LETTERHEAD_NOT_CONFIGURED") ? 409 : 500, "LETTERHEAD_RESOLUTION_FAILED");
+  if (error) throw letterheadResolutionError(error);
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) throw httpError("Snapshot intestazione non registrato.", 500, "SNAPSHOT_NOT_RECORDED");
   const { data: version, error: versionError } = await admin.from("company_letterhead_versions")

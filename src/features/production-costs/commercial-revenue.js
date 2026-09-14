@@ -13,10 +13,19 @@ export function resolveOctRevenue(evidence, orderLines, allEvidence) {
   const share=recoveredOctShare(evidence,target,allEvidence);
   if(share.value!==null)recovered.push(share);
   else if((evidence.recoveredOctLines||[]).some(r=>r.targetKey===target.key))reasons.push(`${target.reference}: ${share.reason}`);
+  else if((evidence.recoveredOctLines||[]).length){
+   const link=(evidence.links||[]).find(l=>String(l.lineId)===target.key);
+   const row=link&&orderLines.find(r=>String(r.id)===target.key);
+   const qty=numeric(link?.quantity),ordered=numeric(row?.quantita),net=numeric(row?.imponibile_riga);
+   if(row&&unit(link.unit)&&unit(link.unit)===unit(row.unita_misura_oct)&&
+    (!row.codice_articolo||unit(row.codice_articolo)===unit(target.articleCode))&&
+    qty>0&&ordered>0&&qty<=ordered+0.000001&&net!==null)recovered.push({value:net*qty/ordered,workspace:true});
+   else reasons.push(`${target.reference}: riga OCT non recuperata né valorizzabile dai collegamenti Workspace.`);
+  }
  }
  if(recovered.length===targets.length&&recovered.length)return {
   octRevenue:recovered.reduce((sum,r)=>sum+r.value,0),octPartial:false,
-  octSource:"Righe originali Mexal verificate, proporzionate alla quantità della produzione",octReasons:evidence.octRecovery?.warnings||[]
+  octSource:recovered.some(r=>r.workspace)?"Righe OCT originali Mexal e righe Workspace attribuite alla produzione":"Righe originali Mexal verificate, proporzionate alla quantità della produzione",octReasons:evidence.octRecovery?.warnings||[]
  };
  // A verified original that cannot be allocated must not fall back to a stale
  // legacy amount (or to an estimated selling price).

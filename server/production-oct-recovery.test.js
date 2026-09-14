@@ -85,3 +85,17 @@ test("negative, empty or zero attributed quantities cannot manufacture a revenue
   assert.equal(recoveredOctShare(e,octTargets(e)[0],[e]).value,null);
  }
 });
+test("partial original recovery retains another explicitly linked Workspace OCT amount",async()=>{
+ const e=await enriched();
+ e.links=[{lineId:"x",oct:"OC/2/40",customerCode:"501.02267",quantity:50,unit:"KG"},
+  {lineId:"y",oct:"OC/2/41",customerCode:"501.02267",quantity:10,unit:"KG"}];
+ e.recoveredOctLines[0].targetKey="x";
+ const row={id:"y",codice_articolo:"FP123L",quantita:10,unita_misura_oct:"KG",imponibile_riga:200};
+ const result=resolveOctRevenue(e,[row],[e]);
+ assert.equal(result.octRevenue,650);assert.equal(result.octPartial,false);
+ assert.equal(resolveOctRevenue(e,[],[e]).octPartial,true);
+});
+test("a changed original order year invalidates a previous recovery",async()=>{
+ const e=await enriched();e.sourceOrder={...e.sourceOrder,date:"2025-02-02"};
+ assert.equal(resolveOctRevenue(e,[],[e]).octRevenue,null);
+});

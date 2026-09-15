@@ -7,9 +7,9 @@ export const priorityRequestSchema = {
   properties: {
     orderNumber: { type: "string", minLength: 1, maxLength: 50 }, startAt: { type: "string", description: "Data e ora MES locale desiderata, ISO senza suffisso UTC." },
     reason: { type: "string", minLength: 1, maxLength: 1000 },
-    materials: { type: "array", maxItems: 30, items: { type: "object", additionalProperties: false, required: ["articleCode", "transfers"], properties: {
+    materials: { type: "array", maxItems: 200, items: { type: "object", additionalProperties: false, required: ["articleCode", "transfers"], properties: {
       articleCode: { type: "string", minLength: 1 }, transfers: { type: "array", maxItems: 30, items: { type: "object", additionalProperties: false,
-        required: ["sourceOrderId", "quantity"], properties: { sourceOrderId: { type: "integer", minimum: 1 }, quantity: { type: "number", exclusiveMinimum: 0 } } } },
+        required: ["sourceOrderId", "quantity"], properties: { sourceOrderId: { type: "integer", minimum: 1 }, quantity: { type: "number", exclusiveMinimum: 0, description: "Quantità da disimpegnare dall’origine, anche oltre il mancante della destinazione per risolvere overbooking. MES assegna solo il necessario e libera il residuo." } } } },
     } } },
   },
 };
@@ -50,6 +50,8 @@ export async function checkPriorityWorkspace(auth, revision) {
   return revision;
 }
 export async function simulatePriority(auth, input) {
+  const current = await priorityCall(auth, "materials", { orderNumber: input?.orderNumber });
+  if (!(current.reservationReleaseVersion >= 2)) throw new Error("Aggiornare MES per attivare il disimpegno delle eccedenze su tutti gli articoli.");
   const revision = await priorityCall(auth, "simulate", { input });
   try { await checkPriorityWorkspace(auth, revision); return { ...revision, confirmable: true }; }
   catch (error) { return { ...revision, confirmable: false, workspaceBlock: error.message }; }

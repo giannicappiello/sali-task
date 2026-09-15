@@ -17,6 +17,8 @@ export function PriorityRevisionForm({ token }) {
   const [orders, setOrders] = useState([]);
   const [selected, setSelected] = useState(null);
   const [materials, setMaterials] = useState([]);
+  const [materialNote, setMaterialNote] = useState("");
+  const [releaseSupported, setReleaseSupported] = useState(false);
   const [quantities, setQuantities] = useState({});
   const [startAt, setStartAt] = useState(initialDate);
   const [reason, setReason] = useState("");
@@ -53,7 +55,7 @@ export function PriorityRevisionForm({ token }) {
   function choose(order) { return run(async () => {
     invalidate(); setSelected(null); setMaterials([]); setQuantities({});
     const data = await request("priority_materials", { orderNumber: order.orderNumber });
-    setSelected(order); setMaterials(data.materials);
+    setSelected(order); setMaterials(data.materials); setMaterialNote(data.note || ""); setReleaseSupported(data.reservationReleaseVersion >= 2);
   }); }
   function simulate() { return run(async () => {
     invalidate();
@@ -87,17 +89,24 @@ export function PriorityRevisionForm({ token }) {
     {selected ? <fieldset disabled={busy || Boolean(proposal)} className="priority-section"><legend><span>2</span> Materiali e nuova priorità</legend>
       <div className="priority-fields"><label>Avvio desiderato (orario MES)<input type="datetime-local" value={startAt} onChange={e => { invalidate(); setStartAt(e.target.value); }} /></label><label className="priority-reason">Motivazione<textarea maxLength={1000} value={reason} onChange={e => { invalidate(); setReason(e.target.value); }} placeholder="Perché anticipare questa lavorazione?" /></label></div>
       <button type="button" className="secondary-action" onClick={() => window.dispatchEvent(new CustomEvent("workspace:priority-ai", { detail: { prompt: `Voglio anticipare ${selected.orderNumber} (OP MES ${selected.orderId}) dal ${startAt}. Leggi materiali e origini disponibili e proponi una revisione che limiti i ritardi sulle consegne. Motivo: ${reason || "da definire"}. Simula le conseguenze, senza applicare trasferimenti prima della mia conferma.` } }))}><Bot size={17} /> Proponi con IA</button>
+      {!releaseSupported ? <p role="alert" className="priority-error">Aggiornare MES per abilitare il disimpegno delle eccedenze su tutti gli articoli. Nessuna revisione verrà applicata con il vecchio motore.</p> : null}
+      <p className="priority-help">Disimpegna le quantità dalle origini selezionate. Alla destinazione viene assegnato solo il necessario: il resto riduce l’eccedenza o torna libero. Anche una destinazione già coperta può richiedere disimpegni.</p>
+      {materialNote ? <p className="priority-help">{materialNote}</p> : null}
       {materials.map(m => {
         const total = m.donors.reduce((sum, d) => sum + Number(quantities[`${m.articleCode}:${d.orderId}`] || 0), 0);
-        return <details className="priority-material" key={m.articleCode} open={m.missing > 0}>
-          <summary><strong>{m.articleCode}</strong><span>Da recuperare: {number.format(m.missing)} {m.unit}</span><span>Selezionato: {number.format(total)} {m.unit}</span></summary>
-          <p>Fabbisogno {number.format(m.required)} · Libero {number.format(m.free)} · Già riservato {number.format(m.reserved)} {m.unit}</p>
+        const minimum = m.minimumRelease ?? m.missing;
+        return <details className="priority-material" key={m.articleCode} open={minimum > 0}>
+          <summary><strong>{m.articleCode}</strong><span>Minimo da disimpegnare: {number.format(minimum)} {m.unit}</span><span>Selezionato: {number.format(total)} {m.unit}</span></summary>
+          <p>Fabbisogno {number.format(m.required)} · Già riservato alla destinazione {number.format(m.reserved)} {m.unit}</p>
+          <p>Fisico utilizzabile {number.format(m.physical)} · Prenotazioni totali {number.format(m.totalReserved ?? m.reserved + m.donors.reduce((s, d) => s + d.reserved, 0))} · Libero {number.format(m.free)} {m.unit}</p>
+          {m.overbooked > 0 ? <p className="priority-notice"><strong>Eccedenza prenotazioni: {number.format(m.overbooked)} {m.unit}.</strong> È possibile risolverla disimpegnando le altre lavorazioni; la giacenza fisica non sarà modificata.</p> : null}
+          {minimum > total ? <p className="priority-warning">Ancora da selezionare: {number.format(minimum - total)} {m.unit}</p> : <p className="priority-help">Selezione pronta per la verifica del motore MES.</p>}
           {!m.eligible ? <p className="priority-error">{m.blockReason}</p> : null}
-          <div className="priority-table"><table><thead><tr><th>Origine</th><th>Riservato</th><th>Da trasferire ({m.unit})</th><th>Residuo</th><th>Vincoli</th></tr></thead><tbody>{m.donors.map(d => <tr key={d.orderId}><td><strong>{d.orderNumber}</strong><small>{d.product}</small></td><td>{number.format(d.reserved)}</td><td><input aria-label={`${m.articleCode} da ${d.orderNumber}`} type="number" min="0" max={Math.min(d.reserved, m.missing)} step="0.000001" value={quantities[`${m.articleCode}:${d.orderId}`] || ""} disabled={!m.eligible || !d.eligible || !m.missing} onChange={e => { invalidate(); setQuantities(values => ({ ...values, [`${m.articleCode}:${d.orderId}`]: e.target.value })); }} /></td><td>{number.format(d.reserved - Number(quantities[`${m.articleCode}:${d.orderId}`] || 0))}</td><td>{d.blockReason || "Non avviata"}</td></tr>)}</tbody></table></div>
+          <div className="priority-table"><table><thead><tr><th>Origine</th><th>Riservato</th><th>Da disimpegnare ({m.unit})</th><th>Residuo / scoperto fisico</th><th>Vincoli</th></tr></thead><tbody>{m.donors.map(d => <tr key={d.orderId}><td><strong>{d.orderNumber}</strong><small>{d.product}</small></td><td>{number.format(d.reserved)}</td><td><input aria-label={`${m.articleCode} da ${d.orderNumber}`} type="number" min="0" max={d.reserved} step="0.000001" value={quantities[`${m.articleCode}:${d.orderId}`] || ""} disabled={!releaseSupported || !m.eligible || !d.eligible} onChange={e => { invalidate(); setQuantities(values => ({ ...values, [`${m.articleCode}:${d.orderId}`]: e.target.value })); }} /></td><td>{number.format(d.reserved - Number(quantities[`${m.articleCode}:${d.orderId}`] || 0))}<small>Scoperto: {number.format(Math.max(0, d.required - d.reserved + Number(quantities[`${m.articleCode}:${d.orderId}`] || 0)))} {m.unit}</small></td><td>{d.blockReason || "Non avviata"}</td></tr>)}</tbody></table></div>
           {!m.donors.length ? <p>Nessuna origine disponibile per il trasferimento.</p> : null}
         </details>;
       })}
-      <button type="button" className="primary-action" onClick={simulate} disabled={!reason.trim() || !startAt || materials.some(m => !m.eligible)}><ArrowRight size={17} /> Simula revisione</button>
+      <button type="button" className="primary-action" onClick={simulate} disabled={!releaseSupported || !reason.trim() || !startAt || materials.some(m => !m.eligible)}><ArrowRight size={17} /> Simula revisione</button>
     </fieldset> : null}
     <section className="priority-section" ref={resultRef}><h2><span className="priority-step">3</span> Conseguenze e conferma</h2>
       {revision ? <><PriorityRevisionSummary revision={revision} />

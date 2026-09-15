@@ -1,23 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Building2,
-  Check,
+  ArrowLeft,
   Download,
   MessageCircle,
   Paperclip,
-  Plus,
   Search,
   Send,
   Trash2,
-  User,
-  UsersRound,
-  X,
   RefreshCw,
 } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { clearConversationPushNotifications, dispatchMessagePush } from "../../lib/pushNotifications";
 import { useAuth } from "../../contexts/AuthContext";
 import { useSearchParams } from "react-router-dom";
+import ChatDirectory from "./ChatDirectory.jsx";
+import { canSelectChatUser, chatUserName } from "./chatDirectory.js";
 import "./Messages.css";
 
 function Messages() {
@@ -25,9 +22,6 @@ function Messages() {
   const adminMode = Boolean(isAdmin?.());
   // L'invio personale è una funzione di base del Workspace per ogni utente autenticato.
   const canWriteMessages = Boolean(profile?.id);
-  // L'amministratore conserva sempre tutte le funzioni operative, anche se il
-  // livello del modulo non è ancora stato configurato nel relativo profilo.
-  const canOrganizeDepartmentChats = adminMode || canUseModule("messaggi", "scrittura");
   const canManageMessages = canUseModule("messaggi", "amministrazione");
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -42,11 +36,14 @@ function Messages() {
   const [newMessage, setNewMessage] = useState("");
   const [pendingFiles, setPendingFiles] = useState([]);
 
-  const [newChatOpen, setNewChatOpen] = useState(false);
-  const [newChatType, setNewChatType] = useState("direct");
-  const [selectedUserId, setSelectedUserId] = useState("");
-  const [groupTitle, setGroupTitle] = useState("");
-  const [selectedDepartmentIds, setSelectedDepartmentIds] = useState([]);
+  const [directoryTab, setDirectoryTab] = useState("organization");
+  const [selectingPeople, setSelectingPeople] = useState(false);
+  const [selectedPeopleIds, setSelectedPeopleIds] = useState([]);
+  const [directoryLoading, setDirectoryLoading] = useState(true);
+  const [directoryError, setDirectoryError] = useState("");
+  const [chatError, setChatError] = useState("");
+  const [mobileChatOpen, setMobileChatOpen] = useState(() => Boolean(searchParams.get("conversation")));
+  const [allowedConversationIds, setAllowedConversationIds] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [messagesLoading, setMessagesLoading] = useState(false);
@@ -54,6 +51,9 @@ function Messages() {
   const [creatingChat, setCreatingChat] = useState(false);
 
   const bottomRef = useRef(null);
+  const messageRequestRef = useRef(0);
+  const creationRef = useRef(false);
+  const directoryUsersRef = useRef([]);
   const realtimeRefreshRef = useRef(null);
 
   useEffect(() => {
@@ -147,62 +147,29 @@ function Messages() {
 
   async function loadInitialData() {
     setLoading(true);
-    await Promise.all([loadUsers(), loadDepartments(), loadConversations(true)]);
+    await loadDirectory();
+    await loadConversations(true);
     setLoading(false);
   }
 
-  async function loadUsers() {
-    const [{ data, error }, { data: assignments, error: assignmentsError }] = await Promise.all([
-      supabase
-        .from("utenti")
-        .select("id, nome, cognome, email, attivo, reparto_id, ruoli(nome), reparti(nome)")
-        .eq("attivo", true)
-        .order("nome"),
-      supabase
-        .from("utenti_reparti")
-        .select("utente_id,reparto_id"),
-    ]);
-
+  async function loadDirectory() {
+    setDirectoryLoading(true);
+    setDirectoryError("");
+    const { data, error } = await supabase.rpc("chat_directory");
     if (error) {
-      console.error("Errore caricamento utenti:", error);
+      setDirectoryError("Impossible caricare persone e reparti. Riprova.");
       setUtenti([]);
-      return;
-    }
-
-    if (assignmentsError) {
-      console.error("Errore caricamento assegnazioni reparti:", assignmentsError);
-    }
-
-    const assignmentsByUser = new Map();
-    (assignments || []).forEach((assignment) => {
-      const current = assignmentsByUser.get(assignment.utente_id) || [];
-      current.push(assignment);
-      assignmentsByUser.set(assignment.utente_id, current);
-    });
-
-    setUtenti((data || []).map((utente) => ({
-      ...utente,
-      utenti_reparti: assignmentsByUser.get(utente.id) || [],
-    })));
-  }
-
-  async function loadDepartments() {
-    const { data, error } = await supabase
-      .from("reparti")
-      .select("id,nome")
-      .eq("attivo", true)
-      .order("nome");
-
-    if (error) {
-      console.error("Errore caricamento reparti:", error);
+      directoryUsersRef.current = [];
       setReparti([]);
-      return;
+    } else {
+      setUtenti(data?.users || []);
+      directoryUsersRef.current = data?.users || [];
+      setReparti(data?.departments || []);
     }
-
-    setReparti(data || []);
+    setDirectoryLoading(false);
   }
 
-  async function loadConversations(selectFirst = false) {
+  async function loadConversations(selectFirst = false, preferredId = null) {
     if (!profile?.id) return;
 
     let memberships;
@@ -310,7 +277,7 @@ function Messages() {
       const conversation = membership.chat_conversazioni;
       const convParticipants = (participants || []).filter(
         (participant) => participant.conversazione_id === conversation.id
-      );
+      ).map((participant) => ({ ...participant, utenti: participant.utenti || directoryUsersRef.current.find((user) => user.id === participant.utente_id) }));
       const otherParticipants = convParticipants.filter(
         (participant) => participant.utente_id !== profile.id
       );
@@ -348,15 +315,17 @@ function Messages() {
       return bDate - aDate;
     });
 
+    const { data: allowedIds, error: permissionError } = await supabase.rpc("chat_writable_conversations", { p_ids: conversationIds });
+    setAllowedConversationIds(permissionError ? [] : (allowedIds || []));
     setConversations(mapped);
-    const requestedConversationId = searchParams.get("conversation");
+    const requestedConversationId = preferredId || searchParams.get("conversation");
     const requestedConversation = requestedConversationId
       ? mapped.find((item) => item.id === requestedConversationId)
       : null;
 
     if (requestedConversation) {
       setSelectedConversation(requestedConversation);
-    } else if (selectFirst && mapped.length > 0 && !selectedConversation) {
+    } else if (selectFirst && mapped.length > 0 && !selectedConversation && !window.matchMedia("(max-width: 760px)").matches) {
       setSelectedConversation(mapped[0]);
     } else if (selectedConversation) {
       const refreshedSelected = mapped.find((item) => item.id === selectedConversation.id);
@@ -365,6 +334,7 @@ function Messages() {
   }
 
   async function loadMessages(conversationId) {
+    const requestId = ++messageRequestRef.current;
     setMessagesLoading(true);
 
     const { data, error } = await supabase
@@ -380,6 +350,7 @@ function Messages() {
       .eq("conversazione_id", conversationId)
       .order("created_at", { ascending: true });
 
+    if (requestId !== messageRequestRef.current) return;
     if (error) {
       console.error("Errore caricamento messaggi:", error);
       setMessages([]);
@@ -394,6 +365,7 @@ function Messages() {
       .eq("conversazione_id", conversationId)
       .order("created_at", { ascending: true });
 
+    if (requestId !== messageRequestRef.current) return;
     if (attachmentsError) {
       console.error("Errore caricamento allegati chat:", attachmentsError);
       setAttachmentsByMessage({});
@@ -431,7 +403,7 @@ function Messages() {
 }
 
   async function refreshChat() {
-  await Promise.all([loadUsers(), loadDepartments()]);
+  await loadDirectory();
   await loadConversations(false);
 
   if (selectedConversation?.id) {
@@ -453,6 +425,7 @@ function Messages() {
       return;
     }
     setSelectedConversation(null);
+    setMobileChatOpen(false);
     setMessages([]);
     setAttachmentsByMessage({});
     setSearchParams({});
@@ -479,104 +452,46 @@ function Messages() {
     await loadConversations(false);
   }
 
-  async function createConversation(e) {
-    e.preventDefault();
-    if (newChatType === "group" && !canOrganizeDepartmentChats) {
-      alert("Il ruolo non consente di organizzare chat di reparto.");
-      return;
+  function selectChat(conversation) {
+    if (conversation.id !== selectedConversation?.id) {
+      setMessages([]);
+      setNewMessage("");
+      setPendingFiles([]);
     }
+    setChatError("");
+    setSelectedConversation(conversation);
+    setSearchParams({ conversation: conversation.id });
+    setMobileChatOpen(true);
+  }
 
-    if (newChatType === "direct" && !selectedUserId) {
-      alert("Seleziona un destinatario.");
-      return;
-    }
-
-    if (newChatType === "group" && !groupTitle.trim()) {
-      alert("Inserisci il nome della chat di gruppo.");
-      return;
-    }
-
-    if (newChatType === "group" && selectedDepartmentIds.length === 0) {
-      alert("Seleziona almeno un reparto.");
-      return;
-    }
-
-    const creatingGroup = newChatType === "group";
-    const createdGroupTitle = groupTitle.trim();
-    const createdGroupMembers = creatingGroup
-      ? selectedDepartmentMembers.map((utente) => ({
-          conversazione_id: null,
-          utente_id: utente.id,
-          ultimo_letto_il: null,
-          utenti: utente,
-        }))
-      : [];
-    if (creatingGroup && !createdGroupMembers.some((participant) => participant.utente_id === profile.id)) {
-      createdGroupMembers.push({
-        conversazione_id: null,
-        utente_id: profile.id,
-        ultimo_letto_il: null,
-        utenti: profile,
-      });
-    }
-
+  async function createConversation(kind, target) {
+    if (creationRef.current || sending || directoryLoading || directoryError) return;
+    creationRef.current = true;
     setCreatingChat(true);
-
-    const { data: conversationId, error } = creatingGroup
-      ? await supabase.rpc("chat_create_department_group", {
-          p_titolo: groupTitle.trim(),
-          p_reparto_ids: selectedDepartmentIds,
-        })
-      : await supabase.rpc("chat_create_direct", {
-          p_other_user_id: selectedUserId,
-        });
-
-    setCreatingChat(false);
-
-    if (error) {
-      console.error("Errore creazione chat:", error);
-      alert(`Errore durante la creazione della chat: ${error.message}`);
-      return;
-    }
-
-    setNewChatOpen(false);
-    setSelectedUserId("");
-    setGroupTitle("");
-    setSelectedDepartmentIds([]);
-    setNewChatType("direct");
-    setSearchParams({ conversation: conversationId });
-
-    await loadConversations(false);
-
-    const { data: memberships } = await supabase
-      .from("chat_partecipanti")
-      .select(`
-        id,
-        ultimo_letto_il,
-        conversazione_id,
-        chat_conversazioni(
-          id,
-          titolo,
-          tipo,
-          created_at,
-          updated_at,
-          created_by
-        )
-      `)
-      .eq("utente_id", profile.id)
-      .eq("conversazione_id", conversationId)
-      .maybeSingle();
-
-    if (memberships?.chat_conversazioni) {
-      const otherUser = utenti.find((utente) => utente.id === selectedUserId);
-      setSelectedConversation({
-        ...memberships.chat_conversazioni,
-        title: memberships.chat_conversazioni.titolo || (creatingGroup ? createdGroupTitle : `${otherUser?.nome || ""} ${otherUser?.cognome || ""}`.trim()) || "Conversazione",
-        participants: createdGroupMembers.map((participant) => ({ ...participant, conversazione_id: conversationId })),
-        otherParticipants: createdGroupMembers.filter((participant) => participant.utente_id !== profile.id),
-        latestMessage: null,
-        unreadCount: 0,
-      });
+    setChatError("");
+    try {
+      const args = kind === "direct" ? { p_other_user_id: target.id }
+        : kind === "department" ? { p_titolo: target.nome, p_reparto_ids: [target.id] }
+        : { p_titolo: ("Gruppo · " + selectedPeople.map(chatUserName).join(", ")).slice(0, 120), p_user_ids: selectedPeopleIds };
+      const rpc = kind === "direct" ? "chat_create_direct" : kind === "department" ? "chat_create_department_group" : "chat_create_people_group";
+      const { data: id, error } = await supabase.rpc(rpc, args);
+      if (error) throw error;
+      const [{ data: conversation, error: conversationError }, { data: participants, error: participantError }] = await Promise.all([
+        supabase.from("chat_conversazioni").select("id,titolo,tipo,created_at,updated_at,created_by").eq("id", id).single(),
+        supabase.from("chat_partecipanti").select("conversazione_id,utente_id,ultimo_letto_il,utenti(id,nome,cognome,email)").eq("conversazione_id", id),
+      ]);
+      if (conversationError || participantError) throw conversationError || participantError;
+      setAllowedConversationIds((current) => [...new Set([...current, id])]);
+      selectChat({ ...conversation, title: conversation.titolo || chatUserName(target), participants: participants || [], otherParticipants: (participants || []).filter((p) => p.utente_id !== profile.id), unreadCount: 0 });
+      setSelectingPeople(false);
+      setSelectedPeopleIds([]);
+      setDirectoryTab("chats");
+      await loadConversations(false, id);
+    } catch (error) {
+      setChatError(error.message || "Impossibile aprire la conversazione. Riprova.");
+    } finally {
+      creationRef.current = false;
+      setCreatingChat(false);
     }
   }
 
@@ -678,7 +593,7 @@ function Messages() {
   async function sendMessage(e) {
     e.preventDefault();
 
-    if (!selectedConversation?.id) return;
+    if (!selectedConversation?.id || !canSendSelected || sending) return;
     if (!newMessage.trim() && pendingFiles.length === 0) return;
 
     setSending(true);
@@ -744,42 +659,15 @@ function Messages() {
     });
   }, [conversations, search]);
 
-  const directRecipients = useMemo(
-    () => utenti.filter((utente) => utente.id !== profile?.id),
-    [utenti, profile?.id]
-  );
+  const directoryActor = utenti.find((user) => user.id === profile?.id);
+  const selectedPeople = utenti.filter((user) => selectedPeopleIds.includes(user.id));
+  const canSendSelected = canWriteMessages && allowedConversationIds.includes(selectedConversation?.id);
 
-  const selectedDepartmentMembers = useMemo(() => {
-    const selected = new Set(selectedDepartmentIds);
-    if (!selected.size) return [];
-    return utenti.filter((utente) => {
-      if (selected.has(utente.reparto_id)) return true;
-      return (utente.utenti_reparti || []).some((row) => selected.has(row.reparto_id));
-    });
-  }, [utenti, selectedDepartmentIds]);
-
-  function toggleDepartment(departmentId) {
-    setSelectedDepartmentIds((current) => (
-      current.includes(departmentId)
-        ? current.filter((id) => id !== departmentId)
-        : [...current, departmentId]
-    ));
-  }
-
-  function closeNewChat() {
-    setNewChatOpen(false);
-    setNewChatType("direct");
-    setSelectedUserId("");
-    setGroupTitle("");
-    setSelectedDepartmentIds([]);
-  }
-
-  function openNewChat(type = "direct") {
-    setSelectedUserId("");
-    setGroupTitle("");
-    setSelectedDepartmentIds([]);
-    setNewChatType(type === "group" && canOrganizeDepartmentChats ? "group" : "direct");
-    setNewChatOpen(true);
+  function togglePerson(id) {
+    const person = utenti.find((user) => user.id === id);
+    if (!person) return;
+    setSelectedPeopleIds((current) => current.includes(id) ? current.filter((item) => item !== id)
+      : canSelectChatUser(directoryActor, person, utenti.filter((user) => current.includes(user.id))) ? [...current, id] : current);
   }
 
   const selectedTitle = selectedConversation?.title || "Seleziona una chat";
@@ -789,7 +677,7 @@ function Messages() {
     .filter(Boolean);
 
   return (
-    <div className="messages-page">
+    <div className={`messages-page${mobileChatOpen ? " mobile-chat-open" : ""}`}>
       <div className="messages-toolbar" aria-label="Azioni chat">
         <div className="messages-title-actions">
           <button className="secondary-action" onClick={refreshChat}>
@@ -797,24 +685,18 @@ function Messages() {
             Aggiorna
           </button>
 
-          {canWriteMessages && (
-            <button className="secondary-action" onClick={() => openNewChat("direct")}>
-              <Plus size={18} />
-              Nuova chat
-            </button>
-          )}
-
-          {canOrganizeDepartmentChats && (
-            <button className="primary-action" onClick={() => openNewChat("group")}>
-              <UsersRound size={18} />
-              Nuova chat di gruppo
-            </button>
-          )}
         </div>
       </div>
+      {chatError && <div className="messages-error" role="alert">{chatError}</div>}
 
       <div className="messages-layout">
         <aside className="messages-sidebar panel">
+          <div className="messages-tabs" role="tablist" aria-label="Persone e conversazioni">
+            {[["chats", "Chat"], ["organization", "Organigramma"], ["department", "Il mio reparto"]].map(([id, label]) => <button key={id} id={"chat-tab-" + id} role="tab" type="button" aria-selected={directoryTab === id} aria-controls={"chat-panel-" + id} onClick={() => setDirectoryTab(id)}>{label}</button>)}
+          </div>
+          <div id={"chat-panel-" + directoryTab} role="tabpanel" aria-labelledby={"chat-tab-" + directoryTab} className="messages-sidebar-content">
+          {directoryTab !== "chats" ? <ChatDirectory tab={directoryTab} users={utenti} departments={reparti} actor={directoryActor} selecting={selectingPeople} selectedIds={selectedPeopleIds} onToggleSelection={() => { setSelectingPeople(!selectingPeople); setSelectedPeopleIds([]); }} onToggleUser={togglePerson} onDirect={(user) => createConversation("direct", user)} onDepartment={(department) => createConversation("department", department)} onCreateGroup={() => createConversation("group")} busy={creatingChat || sending} loading={directoryLoading} error={directoryError} onRetry={loadDirectory} /> : <>
+
           <div className="messages-search">
             <Search size={18} />
             <input
@@ -836,10 +718,8 @@ function Messages() {
                   className={`conversation-row ${
                     selectedConversation?.id === conversation.id ? "active" : ""
                   }`}
-                  onClick={() => {
-                    setSelectedConversation(conversation);
-                    setSearchParams({ conversation: conversation.id });
-                  }}
+                  disabled={sending || creatingChat}
+                  onClick={() => selectChat(conversation)}
                 >
                   <div className="conversation-avatar">
                     {getInitials(conversation.title)}
@@ -859,17 +739,21 @@ function Messages() {
               ))
             )}
           </div>
+          </>}
+          </div>
         </aside>
 
         <section className="messages-chat panel">
+          {selectingPeople && <div className="chat-selection" aria-live="polite"><span>{selectedPeopleIds.length} persone selezionate</span>{selectedPeopleIds.length >= 2 && <button type="button" className="primary-action" disabled={creatingChat || sending} onClick={() => createConversation("group")}>{creatingChat ? "Creazione..." : "Crea gruppo"}</button>}</div>}
           {selectedConversation ? (
             <>
               <div className="chat-header">
+                <button type="button" className="chat-back" onClick={() => { setMobileChatOpen(false); setSearchParams({}); }}><ArrowLeft size={18} />Indietro</button>
                 <div className="conversation-avatar">
                   {getInitials(selectedTitle)}
                 </div>
 
-                 <div>
+                 <div className="chat-header-copy">
                    <h3>{selectedTitle}</h3>
                   <p>
                     {selectedConversation.tipo === "gruppo"
@@ -891,9 +775,8 @@ function Messages() {
                   <p className="messages-empty">Caricamento messaggi...</p>
                 ) : messages.length === 0 ? (
                   <div className="chat-empty">
-                    <MessageCircle size={38} />
-                    <h4>Nessun messaggio</h4>
-                    <p>Scrivi il primo messaggio per iniziare la conversazione.</p>
+                    <h4>La conversazione è pronta</h4>
+                    <p>Scrivi il primo messaggio.</p>
                   </div>
                 ) : (
                   messages.map((message) => {
@@ -943,7 +826,7 @@ function Messages() {
                 <div ref={bottomRef} />
               </div>
 
-              {canWriteMessages ? <form className="chat-compose" onSubmit={sendMessage}>
+              {canSendSelected ? <form className="chat-compose" onSubmit={sendMessage}>
                 {pendingFiles.length > 0 && (
                   <div className="chat-pending-files">
                     {pendingFiles.map((file, index) => (
@@ -972,110 +855,18 @@ function Messages() {
                   <Send size={18} />
                   {sending ? "Invio..." : "Invia"}
                 </button>
-              </form> : <p className="messages-empty">Il ruolo consente soltanto la consultazione dei messaggi.</p>}
+              </form> : <p className="messages-empty">Questa conversazione è in sola lettura: i partecipanti non rispettano le attuali regole di reparto.</p>}
             </>
           ) : (
             <div className="chat-empty whole">
               <MessageCircle size={42} />
               <h4>Seleziona una conversazione</h4>
-              <p>Oppure crea una chat diretta o una chat di gruppo.</p>
+              <p>Scegli una persona o un reparto dalle schede a sinistra.</p>
             </div>
           )}
         </section>
       </div>
 
-      {newChatOpen && (
-        <div className="modal-backdrop">
-          <div className="new-chat-modal">
-            <div className="modal-header">
-              <div>
-                <h2>Nuova chat</h2>
-                <p>Scegli una persona oppure coinvolgi uno o più reparti.</p>
-              </div>
-
-              <button className="modal-close" onClick={closeNewChat} type="button">
-                <X size={22} />
-              </button>
-            </div>
-
-            <form className="new-chat-form" onSubmit={createConversation}>
-              <div className="new-chat-type-switch" role="tablist" aria-label="Tipo di chat">
-                <button type="button" className={newChatType === "direct" ? "active" : ""} onClick={() => setNewChatType("direct")}>
-                  <User size={18} />
-                  Chat diretta
-                </button>
-                {canOrganizeDepartmentChats && <button type="button" className={newChatType === "group" ? "active" : ""} onClick={() => setNewChatType("group")}>
-                  <UsersRound size={18} />
-                  Chat di gruppo
-                </button>}
-              </div>
-
-              {newChatType === "direct" ? (
-                <div className="form-group full">
-                  <label>Invia messaggio a</label>
-                  <select value={selectedUserId} onChange={(e) => setSelectedUserId(e.target.value)}>
-                    <option value="">Seleziona utente</option>
-                    {directRecipients.map((utente) => (
-                      <option key={utente.id} value={utente.id}>
-                        {`${utente.nome || ""} ${utente.cognome || ""}`.trim()} - {utente.email}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : (
-                <>
-                  <div className="form-group full">
-                    <label>Nome della chat</label>
-                    <input value={groupTitle} onChange={(e) => setGroupTitle(e.target.value)} maxLength={120} placeholder="Es. Coordinamento Commerciale" />
-                  </div>
-
-                  <fieldset className="department-picker">
-                    <legend>Reparti da coinvolgere</legend>
-                    <p>Tutti gli utenti attivi dei reparti selezionati saranno aggiunti automaticamente.</p>
-                    <div className="department-options">
-                      {reparti.map((reparto) => {
-                        const checked = selectedDepartmentIds.includes(reparto.id);
-                        return (
-                          <button key={reparto.id} type="button" className={checked ? "selected" : ""} onClick={() => toggleDepartment(reparto.id)} aria-pressed={checked}>
-                            <span className="department-check">{checked ? <Check size={15} /> : <Building2 size={15} />}</span>
-                            {reparto.nome}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </fieldset>
-
-                  {selectedDepartmentIds.length > 0 && (
-                    <div className="group-members-preview">
-                      <strong>Membri coinvolti: {selectedDepartmentMembers.length + (selectedDepartmentMembers.some((utente) => utente.id === profile?.id) ? 0 : 1)}</strong>
-                      <span>
-                        {selectedDepartmentMembers.slice(0, 6).map((utente) => `${utente.nome || ""} ${utente.cognome || ""}`.trim()).join(", ")}
-                        {selectedDepartmentMembers.length > 6 ? ` e altri ${selectedDepartmentMembers.length - 6}` : ""}
-                        {!selectedDepartmentMembers.some((utente) => utente.id === profile?.id) ? `${selectedDepartmentMembers.length ? ", " : ""}tu` : ""}
-                      </span>
-                    </div>
-                  )}
-                </>
-              )}
-
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="secondary-action"
-                  onClick={closeNewChat}
-                >
-                  Annulla
-                </button>
-
-                <button className="primary-action" disabled={creatingChat}>
-                  {newChatType === "group" ? <UsersRound size={18} /> : <User size={18} />}
-                  {creatingChat ? "Creazione..." : "Crea chat"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

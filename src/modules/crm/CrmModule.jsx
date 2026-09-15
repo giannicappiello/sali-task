@@ -17,6 +17,8 @@ import CommercialControlDashboard from "./CommercialControlDashboard";
 import CrmCustomerLink from "./CrmCustomerLink";
 import CustomerProductsPage from "./CustomerProductsPage";
 import CustomerProductCards from "./CustomerProductCards";
+import CrmB2BAccount from "./CrmB2BAccount";
+import CrmB2BDashboard from "./CrmB2BDashboard";
 import CrmDeleteActivityButton from "./CrmDeleteActivityButton";
 import CrmDeleteProjectButton from "./CrmDeleteProjectButton";
 import { CrmCustomerStatusBadge, CrmCustomerStatusDialog, CrmCustomerStatusFilter } from "./CrmCustomerStatus";
@@ -25,7 +27,7 @@ import CrmPeriodFilter, { useCrmPeriod } from "./CrmPeriodFilter";
 import { CrmPageHeader, CrmSectionNav } from "./CrmWorkspaceUI";
 import { DigitalChannel, DigitalDashboard, DigitalHome, DigitalJourney } from "./DigitalCommerce";
 import { crmTypeConfig, formatDate, formatMoney } from "./crmConfig";
-import { loadAllRpcRows } from "./crmDataset";
+import { loadAllQueryRows, loadAllRpcRows } from "./crmDataset";
 import { CRM_ROUTE_ALIASES, CRM_ROUTE_CATALOG } from "./crmRouteCatalog";
 import { crmNavigation } from "./crmNavigation";
 import { CrmB2BFollowUpPage, CrmB2BReordersPage, CrmBeautyDaysPage, CrmBrandDirectDashboard, CrmDevelopmentsPage, CrmProjectsPage } from "./CrmWorkflowPages";
@@ -181,6 +183,7 @@ function CrmDashboard({ type }) {
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
 
   const navigation = crmNavigation(type);
+  if (type === "b2b") return <CrmB2BDashboard data={data} firstOrderSuggestions={firstOrderSuggestions} loading={loading} error={error} period={period} retry={load}/>;
   return <div className="crm-page">
     <CrmPageHeader eyebrow={config.label} title={`Dashboard ${config.label}`} description="KPI reali nel tuo ambito dati. Ordinato Workspace e fatturato Mexal restano metriche distinte." actions={<CrmPeriodFilter period={period} />}>
       <CrmSectionNav items={navigation} period={period} label={`Aree CRM ${config.label}`} />
@@ -357,15 +360,16 @@ function AccountDetail({ type }) {
     const crmAccountId = current.crm_account_id;
     const customerCode = current.codice_cliente_mexal;
     const emptyResult = { data: [], error: null };
+    const relatedQuery = (table, fields) => crmAccountId ? loadAllQueryRows((from, to) => supabase.from(table).select(fields).eq("account_id", crmAccountId).order("id").range(from, to)) : emptyResult;
     if (customerCode) {
       const metricResult = await supabase.rpc("crm_customer_period_metrics", { p_customer_code: customerCode, p_crm_type: type, p_from: period.from, p_to: period.to });
       if (metricResult.error) setWarning(metricResult.error.message); else setMetrics(metricResult.data || {});
     } else setMetrics({});
     const [contactsResult, opportunitiesResult, activitiesResult, briefsResult, ordersResult, invoicesResult, externalOrdersResult, consentsResult, eventsResult] = await Promise.all([
-      crmAccountId ? supabase.from("crm_contacts").select("*").eq("account_id", crmAccountId) : emptyResult,
-      crmAccountId ? supabase.from("crm_opportunities").select("*,crm_opportunity_stages(nome)").eq("account_id", crmAccountId) : emptyResult,
-      crmAccountId ? supabase.from("crm_activities").select("*,checklist_template:catalog_template_id(titolo)").eq("account_id", crmAccountId).order("data_attivita", { ascending: false }) : emptyResult,
-      crmAccountId ? supabase.from("crm_briefs").select("id,titolo,stato,aggiornato_il").eq("account_id", crmAccountId) : emptyResult,
+      relatedQuery("crm_contacts", "*"),
+      relatedQuery("crm_opportunities", "*,crm_opportunity_stages(nome,finale)"),
+      relatedQuery("crm_activities", "*,checklist_template:catalog_template_id(titolo)"),
+      relatedQuery("crm_briefs", "id,titolo,stato,aggiornato_il"),
       customerCode ? supabase.from("ordini_testate").select("id,numero_ordine_visualizzato,data_ordine,stato,totale_documento").eq("codice_cliente", customerCode).gte("data_ordine", period.from).lte("data_ordine", period.to).order("data_ordine", { ascending: false }).limit(50) : emptyResult,
       customerCode ? supabase.from("mexal_fatture_vendita").select("id,sigla,serie,numero,data_documento,totale_documento").eq("codice_cliente", customerCode).gte("data_documento", period.from).lte("data_documento", period.to).order("data_documento", { ascending: false }).limit(50) : emptyResult,
       type === "online" && crmAccountId ? supabase.from("crm_external_orders").select("id,external_id,ordered_at,stato,net_revenue,attribution_method").eq("account_id", crmAccountId).order("ordered_at", { ascending: false }).limit(50) : emptyResult,
@@ -373,6 +377,7 @@ function AccountDetail({ type }) {
       type === "online" && crmAccountId ? supabase.from("crm_customer_events").select("id,fase,avvenuto_il,fonte").eq("account_id", crmAccountId).order("avvenuto_il", { ascending: false }).limit(50) : emptyResult,
     ]);
     const failures = [contactsResult, opportunitiesResult, activitiesResult, briefsResult, ordersResult, invoicesResult, externalOrdersResult, consentsResult, eventsResult].filter((result) => result.error).map((result) => result.error.message);
+    activitiesResult.data?.sort((a, b) => String(b.data_attivita || "").localeCompare(String(a.data_attivita || "")));
     const opportunityIds = (opportunitiesResult.data || []).map((item) => item.id);
     const projectLinksResult = opportunityIds.length ? await supabase.from("crm_workspace_links").select("workspace_entity_id").eq("crm_entity_type", "opportunity").eq("workspace_entity_type", "project").in("crm_entity_id", opportunityIds) : emptyResult;
     if (projectLinksResult.error) failures.push(projectLinksResult.error.message);
@@ -419,6 +424,7 @@ function AccountDetail({ type }) {
     finally { setStatusBusy(false); }
   }
   if (error) return <ErrorBox error={error} retry={load} />; if (!account) return <div className="crm-loading">Caricamento cliente...</div>;
+  if (type === "b2b") return <><CrmB2BAccount account={account} metrics={metrics} related={related} commercialSnapshot={commercialSnapshot} journey={journey} period={period} warning={warning} canWrite={canWrite} activity={activity} setActivity={setActivity} activityTemplates={activityTemplates} activityBusy={activityBusy} addActivity={addActivity} load={load} onStatus={() => setStatusDialogOpen(true)}/><CrmCustomerStatusDialog customer={statusDialogOpen ? account : null} busy={statusBusy} onClose={() => setStatusDialogOpen(false)} onConfirm={(change) => void changeCustomerStatus(change)}/></>;
   return <div className="crm-page">
     <CrmPageHeader eyebrow={config.label} title={account.nome} description={account.codice_cliente_mexal ? `Cliente Workspace/Mexal ${account.codice_cliente_mexal}` : "Prospect CRM-only"} actions={<><Link className="secondary-action crm-secondary" to={period.withPeriod(`${config.basePath}/clienti`)}>Torna ai clienti</Link>{canWrite ? <button type="button" className={account.crm_active ? "danger-action crm-danger" : "secondary-action crm-secondary"} onClick={() => setStatusDialogOpen(true)}>{account.crm_active ? "Disattiva cliente" : "Riattiva cliente"}</button> : null}</>}>
       <div className="crm-account-status-line"><span className={`crm-source-badge ${account.entity_kind}`}>{account.entity_kind === "canonical" ? "Anagrafica canonica" : "CRM-only"}</span><CrmCustomerStatusBadge active={account.crm_active} />{account.crm_status_reason ? <span>{account.crm_status_reason}</span> : null}</div><CrmSectionNav items={crmNavigation(type)} period={period} label={`Navigazione ${config.label}`} />

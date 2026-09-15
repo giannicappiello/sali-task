@@ -6,6 +6,7 @@ import { decideHeadingAction, executeHeadingModelTool, HEADING_AI_TOOLS, HEADING
 import { availableControlledActions, decideControlledAction, proposeControlledAction } from "./controlled-actions.js";
 import { findProductionForClosure } from "./production-closure.js";
 import { previewMaterialReallocation, materialLookupSchema } from "./material-reallocation.js";
+import { priorityCall, priorityRequestSchema, reconcilePriority, simulatePriority } from "./priority-revision.js";
 
 const DEFAULT_MODEL = "openai/gpt-5.6-luna";
 const MAX_HISTORY_MESSAGES = 14;
@@ -812,9 +813,19 @@ async function chat(auth, body) {
       execute: input => previewMaterialReallocation(auth, input),
     },
   } : {};
+  const priorityTools = controlledTools.MES_PRIORITY_REVISE ? {
+    MES_PRIORITY_LOOKUP: { description: "Trova gli OP esatti da anticipare cercando RdP, OCT o prodotto. Non confondere una RdP con i suoi suffissi.",
+      inputSchema: jsonSchema({ type: "object", required: ["query"], properties: { query: { type: "string" } } }), execute: input => priorityCall(auth, "lookup", input) },
+    MES_PRIORITY_MATERIALS: { description: "Legge tutti i materiali e gli ordini da cui recuperarli. Non applica trasferimenti.",
+      inputSchema: jsonSchema({ type: "object", required: ["orderNumber"], properties: { orderNumber: { type: "string" } } }), execute: input => priorityCall(auth, "materials", input) },
+    MES_PRIORITY_SIMULATE: { description: "Simula revisione RdP e planning con le origini/quantità proposte. Nessun trasferimento; restituisce revision id, hash, impatti, date e fabbisogni. Proponi poi MES_PRIORITY_REVISE per la conferma esplicita.",
+      inputSchema: jsonSchema(priorityRequestSchema), execute: input => simulatePriority(auth, input) },
+    MES_PRIORITY_STATUS: { description: "Legge una revisione e riallinea solo i mirror Workspace se MES l'ha già applicata. Non ripete trasferimenti.",
+      inputSchema: jsonSchema({ type: "object", required: ["id"], properties: { id: { type: "string", format: "uuid" } } }), execute: input => reconcilePriority(auth, input.id) },
+  } : {};
   const tools = mode === "web"
     ? { ...headingTools, web_search: openai.tools.webSearch({ externalWebAccess: true, searchContextSize: "medium" }) }
-    : { ...headingTools, ...productionTools, ...materialTools, ...controlledTools };
+    : { ...headingTools, ...productionTools, ...materialTools, ...priorityTools, ...controlledTools };
   const model = process.env.AI_MODEL || DEFAULT_MODEL;
   const mutationRequested = mode !== "web" && isControlledMutationRequest(prompt);
   const controlledToolNames = Object.keys(controlledTools);
@@ -828,7 +839,7 @@ async function chat(auth, body) {
   try {
     result = await generateText({
       model,
-      system: systemPrompt(mode, context, screenContext, controlledToolNames, auth.capabilities?.role_ai_level || "analisi"),
+      system: systemPrompt(mode, context, screenContext, controlledToolNames, auth.capabilities?.role_ai_level || "analisi") + "\nPer anticipare produzioni e cambiare priorità usa MES_PRIORITY_LOOKUP, MES_PRIORITY_MATERIALS, MES_PRIORITY_SIMULATE e infine MES_PRIORITY_REVISE. Questa procedura prevale sul trasferimento semplice MES_MATERIAL_REALLOCATE: coordina materiali, revisioni RdP, fabbisogni e planning. Puoi proporre origini e quantità se richiesto, motivando le conseguenze; non applicare senza conferma del riepilogo. Non inventare date: mostra quelle della simulazione APS, eventuali attese e ritardi. Una revisione MES_APPLIED non è ancora completata in Workspace: usare MES_PRIORITY_STATUS. Mai dichiarare eseguito un trasferimento da una semplice simulazione. Per modificare la scelta, simulare nuovamente. Non creare nuovi OP né duplicare RdP.",
       messages,
       tools,
       ...(mutationRequested && controlledToolNames.length ? {
@@ -986,6 +997,12 @@ export async function handleAIAssistant(req) {
   if (body.action === "heading_decide") return { ...(await decideHeadingAction(auth, body)), capabilities: auth.capabilities };
   if (body.action === "controlled_decide") return { ...(await decideControlledAction(auth, body)), capabilities: auth.capabilities };
   if (body.action === "material_allocation_preview") return { preview: await previewMaterialReallocation(auth, body) };
+  if (body.action === "priority_lookup") return priorityCall(auth, "lookup", { query: body.query });
+  if (body.action === "priority_materials") return priorityCall(auth, "materials", { orderNumber: body.orderNumber });
+  if (body.action === "priority_simulate") return simulatePriority(auth, body.input);
+  if (body.action === "priority_history") return priorityCall(auth, "history");
+  if (body.action === "priority_status") return reconcilePriority(auth, body.id);
+  if (body.action === "priority_propose") return proposeControlledAction(auth, "MES_PRIORITY_REVISE", body.input || {});
   if (body.action === "material_allocation_propose") return proposeControlledAction(auth, "MES_MATERIAL_REALLOCATE", body.input || {});
   if (body.action === "list_conversations") return listConversations(auth);
   if (body.action === "create_topic") return createTopic(auth, body);

@@ -187,7 +187,7 @@ export default function Production() {
     eyebrow="Area operativa"
     title="Gestione Produzione"
     description="Le schermate MES si aprono in una nuova finestra Workspace, lasciando aperta quella corrente."
-    items={visibleSections.map((section) => ({ code: section.code, name: section.name, description: section.description, to: `/produzione/${encodeURIComponent(section.code)}`, onOpen: section.workspaceLocal ? undefined : () => requestProgremesWorkspaceWindow(`/produzione/${encodeURIComponent(section.code)}`), icon: section.icon || (section.workspaceLocal ? AlertTriangle : Factory) }))}
+    items={visibleSections.map((section) => ({ code: section.code, name: section.name, description: section.description, to: section.path || `/produzione/${encodeURIComponent(section.code)}`, onOpen: section.workspaceLocal ? undefined : () => requestProgremesWorkspaceWindow(`/produzione/${encodeURIComponent(section.code)}`), icon: section.icon || (section.workspaceLocal ? AlertTriangle : Factory) }))}
     loading={loading}
     error={error}
     onRetry={loadSections}

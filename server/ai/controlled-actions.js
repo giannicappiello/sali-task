@@ -1,5 +1,6 @@
 /* global Buffer, process */
 import { createHash, randomUUID } from "node:crypto";
+import { priorityCall, priorityConfirmSchema, assertPriorityConfirmation, reconcilePriority, checkPriorityWorkspace } from "./priority-revision.js";
 import { HMAC_HEADERS, signProductionMessage } from "../progremes-production-hmac.js";
 import { assertClosureSnapshot, findProductionForClosure } from "./production-closure.js";
 import { assertMaterialReallocation, previewMaterialReallocation, materialReallocationSchema } from "./material-reallocation.js";
@@ -56,6 +57,7 @@ const externalEntitySchema = (entityLabel) => ({
 
 export const CONTROLLED_AI_ACTIONS = Object.freeze({
   MES_MATERIAL_REALLOCATE: { system: "mes", risk: "destructive", permission: "progremes.write", schema: materialReallocationSchema },
+  MES_PRIORITY_REVISE: { system: "mes", risk: "destructive", permission: "progremes.write", schema: priorityConfirmSchema },
   MES_PRODUCTION_FORCE_CLOSE: { system: "mes", risk: "destructive", permission: "progremes.write", schema: {
     type: "object", additionalProperties: false,
     required: ["targetId", "productionId", "productionOrderId", "orderNumber", "articleCode", "phase", "expectedStatus", "expectedStart", "expectedProducedQuantity", "expectedScrapQuantity", "reason", "slAndClAlreadyRegistered"],
@@ -137,6 +139,7 @@ function stableValue(value) {
 export async function proposeControlledAction(auth, tool, input, { correlationId = randomUUID() } = {}) {
   const descriptor = CONTROLLED_AI_ACTIONS[tool];
   if (!descriptor || !canPropose(auth, descriptor)) throw Object.assign(new Error("Azione AI non autorizzata per questo profilo."), { status: 403 });
+  if (tool === "MES_PRIORITY_REVISE") input = assertPriorityConfirmation(input, await checkPriorityWorkspace(auth, await priorityCall(auth, "get", { id: input.targetId })));
   if (tool === "MES_MATERIAL_REALLOCATE") {
     const current = await previewMaterialReallocation(auth, input);
     const evidence = assertMaterialReallocation(input, current);
@@ -179,13 +182,19 @@ async function executeExternalAction(auth, pending) {
   let result = null; let failure = null;
   try {
     const response = await fetch(new URL(path, requiredEnvironment("PROGREMES_URL")), {
-      method: "POST", signal: AbortSignal.timeout(Number(process.env.PROGREMES_API_TIMEOUT_MS || 15000)), body: payload,
+      method: "POST", signal: AbortSignal.timeout(pending.tool === "MES_PRIORITY_REVISE" ? 55000 : Number(process.env.PROGREMES_API_TIMEOUT_MS || 15000)), body: payload,
       headers: { "Content-Type": "application/json", [HMAC_HEADERS.timestamp]: String(timestamp), [HMAC_HEADERS.eventId]: eventId,
         [HMAC_HEADERS.signature]: signProductionMessage({ method: "POST", path, timestamp, eventId, body: payload, secret: requiredEnvironment("PROGREMES_INTEGRATION_SECRET") }) },
     });
     result = await response.json().catch(() => ({}));
     if (!response.ok || result?.applied !== true) failure = result?.error || `ProgreMES ha risposto con stato ${response.status}.`;
   } catch (error) { failure = error?.message || "ProgreMES non raggiungibile."; }
+  if (pending.tool === "MES_PRIORITY_REVISE") {
+    try {
+      result = await reconcilePriority(auth, pending.payload_summary.targetId);
+      failure = result.status === "COMPLETED" ? null : failure || result.message || "Revisione non completata: verificare lo storico, senza ripetere i trasferimenti.";
+    } catch (error) { failure = `Esito da riconciliare: ${error.message}. Verificare la revisione prima di ripetere.`; }
+  }
   if (failure && pending.tool === "MES_MATERIAL_REALLOCATE") {
     // Verify the durable MES audit after a timeout. Never repeat the transfer blindly.
     try {
@@ -226,6 +235,7 @@ export async function decideControlledAction(auth, body) {
   const { data: pending, error: pendingError } = await auth.scoped.from("ai_action_audit").select("*").eq("id", proposalId).eq("user_id", auth.profile.id).maybeSingle();
   if (pendingError || !pending || !CONTROLLED_AI_ACTIONS[pending.tool]) throw Object.assign(new Error("Proposta non trovata o non autorizzata."), { status: 404 });
   const confirmed = body.decision === "confirm";
+  if (confirmed && pending.tool === "MES_PRIORITY_REVISE" && pending.status === "proposed") assertPriorityConfirmation(pending.payload_summary, await checkPriorityWorkspace(auth, await priorityCall(auth, "get", { id: pending.payload_summary.targetId })));
   if (confirmed && pending.tool === "MES_MATERIAL_REALLOCATE" && pending.status === "proposed") {
     assertMaterialReallocation(pending.payload_summary, await previewMaterialReallocation(auth, pending.payload_summary));
   }
@@ -238,7 +248,7 @@ export async function decideControlledAction(auth, body) {
   let action = Array.isArray(decided) ? decided[0] : decided;
   let failure = null;
   if (confirmed && action.status === "confirmed" && CONTROLLED_AI_ACTIONS[action.tool].system === "mes") ({ action, failure } = await executeExternalAction(auth, action));
-  const answer = action.status === "executed" ? "Operazione applicata e registrata nell’audit."
+  const answer = action.tool === "MES_PRIORITY_REVISE" ? (failure || action.error || action.result?.message || "Proposta rifiutata: nessun trasferimento eseguito.") : action.status === "executed" ? "Operazione applicata e registrata nell’audit."
     : action.status === "rejected" ? "Proposta rifiutata. Nessuna modifica è stata applicata."
       : `${action.tool === "MES_MATERIAL_REALLOCATE" ? "Operazione non confermata" : "Operazione non applicata"}. Audit registrato: ${failure || action.error || "connettore non disponibile"}.`;
   return { controlledAction: { id: action.id, tool: action.tool, risk: CONTROLLED_AI_ACTIONS[action.tool].risk, system: action.system, state: action.status, result: action.result }, answer };

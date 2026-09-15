@@ -1,12 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import process from "node:process";
+import { resolve } from "node:path";
 
 test("Workspace e MES nascondono l'icona AI agli utenti non abilitati", async () => {
   const [workspace, mesHeader, mesAuth, migration] = await Promise.all([
     readFile(new URL("../../src/components/ContextualAIAssistant.jsx", import.meta.url), "utf8"),
-    readFile(new URL("../../_progremes_v3_fix/Components/Layout/WorkspacePageHeader.razor", import.meta.url), "utf8"),
-    readFile(new URL("../../_progremes_v3_fix/Modules/Common/Security/WorkspaceAuthentication.cs", import.meta.url), "utf8"),
+    readFile(process.env.MES_SOURCE_ROOT ? resolve(process.env.MES_SOURCE_ROOT,"Components/Layout/WorkspacePageHeader.razor") : new URL("../../_progremes_v3_fix/Components/Layout/WorkspacePageHeader.razor", import.meta.url), "utf8"),
+    readFile(process.env.MES_SOURCE_ROOT ? resolve(process.env.MES_SOURCE_ROOT,"Modules/Common/Security/WorkspaceAuthentication.cs") : new URL("../../_progremes_v3_fix/Modules/Common/Security/WorkspaceAuthentication.cs", import.meta.url), "utf8"),
     readFile(new URL("../../supabase/migrations/20260912201000_progremes_sso_ai_entitlement.sql", import.meta.url), "utf8"),
   ]);
   assert.match(workspace, /hasModuleAccess\("assistente_ai"\)/);

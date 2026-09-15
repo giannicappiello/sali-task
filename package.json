@@ -25,6 +25,7 @@
   "dependencies": {
     "@ai-sdk/openai": "^4.0.42",
     "@supabase/supabase-js": "^2.110.0",
+    "@vercel/functions": "3.6.2",
     "ai": "^7.0.67",
     "docxtemplater": "^3.69.3",
     "html2canvas": "^1.4.1",

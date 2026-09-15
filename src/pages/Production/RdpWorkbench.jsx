@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Ban, CheckCircle2, ChevronRight, Factory, RefreshCw, Search, Send, ShieldAlert, X } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import RdpPriorityLink from "./RdpPriorityLink";
 import { requestProgremesWorkspaceWindow } from "../ProgreMes/progremesWindow";
 import { bomComponentStatusLabel, confirmedProductionOrder, diagnosticCanBeArchived, diagnosticIsManageable, productionOrderProgremesPath, workbenchRowSearchText } from "./rdp-workbench-state.js";
 
@@ -36,12 +37,21 @@ function Diagnostics({ rows, onOpen }) {
   return <div className="rdp-inline-diagnostics">{rows.slice(0, 3).map((row) => <button type="button" key={row.diagnosticId} className={`rdp-alert-${String(row.severity).toLowerCase()}`} onClick={() => onOpen(row)}><AlertTriangle size={14} />{row.errorCode}</button>)}</div>;
 }
 
-function BackgroundSyncStatus({ refresh }) {
+export function BackgroundSyncStatus({ refresh }) {
   if (!refresh) return null;
-  if (refresh.status === "completed") return <div className="rdp-background-sync rdp-background-sync-complete" role="status"><CheckCircle2 size={16}/><span>OCT aggiornati da Mexal.</span></div>;
-  if (refresh.status === "failed") return <div className="rdp-background-sync rdp-background-sync-failed" role="alert" title={refresh.last_error || "Consultare il Centro Diagnostico"}><AlertTriangle size={16}/><span>Sincronizzazione OCT non riuscita.</span></div>;
-  if (refresh.status === "cancelled") return null;
-  return <div className="rdp-background-sync" role="status"><RefreshCw className="rdp-spin" size={16}/><span>Sincronizzazione OCT in background.</span></div>;
+  const running = ["leased", "running"].includes(refresh.status);
+  const failed = refresh.status === "failed";
+  const progress = refresh.last_result?.progress;
+  const labels = { queued: refresh.lane === "manual_priority" ? "OCT in attesa · corsia prioritaria" : "OCT in coda automatica · Aggiorna avvia la corsia prioritaria", retry: "OCT in attesa di ripresa", leased: "OCT in elaborazione", running: "OCT in elaborazione", completed: "OCT aggiornati da Mexal", failed: "Sincronizzazione OCT non riuscita", cancelled: "Sincronizzazione OCT annullata", idle: "Nessuna sincronizzazione OCT" };
+  return <div className={`rdp-background-sync ${failed ? "rdp-background-sync-failed" : refresh.status === "completed" ? "rdp-background-sync-complete" : ""}`} role={failed ? "alert" : "status"}>
+    {failed ? <AlertTriangle size={16}/> : refresh.status === "completed" ? <CheckCircle2 size={16}/> : <RefreshCw className={running ? "rdp-spin" : ""} size={16}/>}
+    <div><span>{labels[refresh.status] || "Stato OCT non disponibile"}</span>
+      {running && progress && <small>{progress.phase} · {progress.processed}{progress.total != null ? ` / ${progress.total}` : ""}</small>}
+      {failed && refresh.last_error && <small>{refresh.last_error}</small>}
+      {refresh.status === "completed" && refresh.last_result?.imported != null && <small>OCT acquisiti: {refresh.last_result.imported}{Number(refresh.last_result.anomaly_count) > 0 ? ` · Segnalazioni da verificare: ${refresh.last_result.anomaly_count}` : ""}</small>}
+      <small>Ultimo aggiornamento riuscito: {refresh.lastSuccessAt ? formatDate(refresh.lastSuccessAt, true) : "non disponibile"}</small>
+    </div>
+  </div>;
 }
 
 function formatQuantity(value) {
@@ -232,7 +242,7 @@ export function DetailPanel({ readOnly = false, detail, onClose, onDiagnostics, 
     {detail.request && <div className="rdp-request-meta"><span>Stato {badge(detail.request.workspace_status || detail.request.stato, detail.request.stage === "blocked" ? "red" : "blue")}</span><span>Creata {formatDate(detail.request.created_at, true)}</span><span>Tentativi {detail.request.attempt_count ?? 0}</span><span>Contratto V4</span>{!readOnly && detail.cancellation?.allowed && <button type="button" className="rdp-cancel-action" onClick={onCancel} disabled={busy || !canCancel}><Ban size={16}/>Annulla RdP</button>}{!readOnly && detail.cancellation?.allowed && !canCancel && <small>Permesso rdp.cancel richiesto.</small>}</div>}
     {detail.request?.last_error_code && <div className="rdp-revision-alert"><AlertTriangle/><div><strong>ULTIMO INVIO NON RIUSCITO · {detail.request.last_error_code}</strong><p>La RdP è conservata senza duplicazioni. Consultare il Centro Diagnostico prima di un nuovo tentativo.</p></div></div>}
     {detail.revision?.modified && <div className="rdp-revision-alert"><AlertTriangle/><div><strong>OCT MODIFICATO IN MEXAL</strong><p>Aggiunte {detail.revision.added.length} · rimosse {detail.revision.removed.length} · quantità/UDM modificate {detail.revision.changed.length} · consegna {detail.revision.deliveryChanged ? "modificata" : "invariata"}.</p><small>Le opzioni “mantieni pianificazione + delta” e “integra e ripianifica” saranno abilitate soltanto quando esposte dal contratto MES.</small></div></div>}
-    {!readOnly && canDecide ? <Link className="secondary-action" to={`/revisione-priorita-produzione?order=${encodeURIComponent(detail.request ? rdpLabel(detail.request) : detail.orders[0]?.label || "")}`}>Anticipa produzione / Revisioni RdP</Link> : null}
+    {!readOnly && canDecide ? <RdpPriorityLink to={`/revisione-priorita-produzione?order=${encodeURIComponent(detail.request ? rdpLabel(detail.request) : detail.orders[0]?.label || "")}`}/> : null}
     <div className="rdp-line-list">{detail.lines.map((line) => { const hasFinishedBom = Boolean(line.finishedBom?.components?.length); return <article key={line.id} className={line.descriptive ? "rdp-line descriptive" : "rdp-line"}>
       <button type="button" className="rdp-line-summary" onClick={() => setOpenLine(openLine === line.id ? null : line.id)}>
         <span className="rdp-position">{line.position ?? "—"}</span><span><strong>{line.descriptive ? "Riga descrittiva" : line.articleCode}</strong><small>{line.description || "—"}</small></span>
@@ -295,11 +305,12 @@ export default function RdpWorkbench() {
   const [rdpFailure, setRdpFailure] = useState(null);
   const [productionGates, setProductionGates] = useState(null);
   const [octRefresh, setOctRefresh] = useState(null);
+  const [octEnqueueing, setOctEnqueueing] = useState(false);
   const [purchasing, setPurchasing] = useState({ requirements: [], documents: [], suppliers: [] });
   const [purchaseLoading, setPurchaseLoading] = useState(false);
   const refreshGeneration = useRef(0);
   const sendEnabled = productionGates?.previewOn === true;
-  const octRefreshRunning = ["queued", "leased", "running", "retry"].includes(octRefresh?.status);
+  const octRefreshRunning = octEnqueueing || ["leased", "running"].includes(octRefresh?.status) || (octRefresh?.lane === "manual_priority" && ["queued", "retry"].includes(octRefresh?.status));
 
   async function load() { setLoading(true); setError(""); try { const payload = await callWorkbench(accessToken, "progremes_workbench_list"); setData(workbenchRows(payload)); setProductionGates(payload.productionGates || null); } catch (e) { setProductionGates(null); setError(e.message); } finally { setLoading(false); } }
   useEffect(() => {
@@ -315,6 +326,14 @@ export default function RdpWorkbench() {
           setData(workbenchRows(initial));
           setProductionGates(initial.productionGates || null);
         }
+        if (!customerScoped) {
+          try {
+            const status = await callWorkbench(accessToken, "progremes_oct_refresh_status");
+            if (active && generation === refreshGeneration.current) setOctRefresh(status.refresh);
+          } catch (statusError) {
+            if (active) setError(`Verifica stato OCT: ${statusError.message}`);
+          }
+        }
       } catch (loadError) {
         if (active && generation === refreshGeneration.current) {
           setProductionGates(null);
@@ -326,7 +345,29 @@ export default function RdpWorkbench() {
     }
     initialize();
     return () => { active = false; refreshGeneration.current += 1; };
-  }, [accessToken]);
+  }, [accessToken, customerScoped]);
+
+  const octJobId = octRefresh?.jobId;
+  const octStatus = octRefresh?.status;
+  useEffect(() => {
+    if (!accessToken || !octJobId || !["queued", "leased", "running", "retry"].includes(octStatus)) return undefined;
+    let active = true;
+    let timer;
+    async function poll() {
+      try {
+        const payload = await callWorkbench(accessToken, "progremes_oct_refresh_status", { jobId: octJobId });
+        if (!active) return;
+        if (payload.refresh?.status === "completed") {
+          const refreshed = await callWorkbench(accessToken, "progremes_workbench_list");
+          if (active) { setData(workbenchRows(refreshed)); setProductionGates(refreshed.productionGates || null); }
+        }
+        if (active) setOctRefresh(payload.refresh);
+      } catch (e) { if (active) setError(`Verifica stato OCT: ${e.message}`); }
+      if (active) timer = window.setTimeout(poll, 5000);
+    }
+    timer = window.setTimeout(poll, 5000);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [accessToken, octJobId, octStatus]);
 
   async function loadPurchasing() {
     if (!accessToken) return;
@@ -348,34 +389,18 @@ export default function RdpWorkbench() {
     if (!accessToken || loading || octRefreshRunning) return;
     const generation = ++refreshGeneration.current;
     setError("");
+    setOctEnqueueing(true);
     try {
       const payload = await callWorkbench(accessToken, "progremes_oct_refresh");
       const jobId = Number(payload.refresh?.jobId);
       if (!Number.isSafeInteger(jobId)) throw new Error("Il servizio OCT non ha restituito un job valido.");
-      setOctRefresh({ jobId, status: payload.refresh?.status || "queued" });
-      while (generation === refreshGeneration.current) {
-        await new Promise((resolve) => window.setTimeout(resolve, 5000));
-        if (generation !== refreshGeneration.current) return;
-        const statusPayload = await callWorkbench(accessToken, "progremes_oct_refresh_status", { jobId });
-        const refresh = statusPayload.refresh || {};
-        setOctRefresh({ jobId, ...refresh });
-        if (["completed", "failed", "cancelled"].includes(refresh.status)) {
-          if (refresh.status === "completed") {
-            const refreshed = await callWorkbench(accessToken, "progremes_workbench_list");
-            if (generation === refreshGeneration.current) {
-              setData(workbenchRows(refreshed));
-              setProductionGates(refreshed.productionGates || null);
-            }
-          } else if (refresh.last_error) setError(refresh.last_error);
-          return;
-        }
-      }
+      if (generation === refreshGeneration.current) setOctRefresh((previous) => ({ ...previous, ...payload.refresh, jobId, status: payload.refresh?.status || "queued" }));
     } catch (refreshError) {
       if (generation === refreshGeneration.current) {
         setOctRefresh({ status: "failed", last_error: refreshError.message });
         setError(refreshError.message);
       }
-    }
+    } finally { if (generation === refreshGeneration.current) setOctEnqueueing(false); }
   }
   const visible = useMemo(() => data.filter((row) => {
     if (row.stage !== tab) return false;
@@ -424,7 +449,7 @@ export default function RdpWorkbench() {
   }
 
   return <div className="production-page rdp-workbench">
-    {!customerScoped && canDecide ? <Link className="secondary-action" to="/revisione-priorita-produzione">Anticipa produzione · Revisioni di priorità</Link> : null}
+    {!customerScoped && canDecide ? <RdpPriorityLink/> : null}
     <header className="rdp-header"><div><span className="rdp-eyebrow">WorkspaceMES</span><h1>RdP Workbench</h1><p>{customerScoped ? "Consultazione delle sole richieste e degli OCT associati al cliente." : "Gestione OCT, richieste di produzione, analisi MES e decisioni operative."}</p></div><div className="rdp-header-controls"><nav className="rdp-tabs" aria-label="Stati Workbench">{availableTabs.map(([code,label]) => <button type="button" key={code} className={tab === code ? "active" : ""} onClick={() => { if (code === "purchasing") navigate("/produzione/fabbisogni-acquisto"); else if (code === "mes-orders") requestProgremesWorkspaceWindow("/produzione/progremes.Ordini.Produzione"); else if (code === "planning") requestProgremesWorkspaceWindow("/produzione/progremes.Planning"); else setTab(code); }}>{label}{!["purchasing", "mes-orders", "planning"].includes(code) && <span>{data.filter((row) => row.stage === code).length}</span>}</button>)}</nav><div className="rdp-header-actions"><BackgroundSyncStatus refresh={octRefresh}/></div></div></header>
     {tab !== "purchasing" && <section className={`rdp-toolbar ${tab === "evaluation" ? "rdp-toolbar-evaluation" : ""}`}><label className="rdp-quick-search"><Search size={17}/><input value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} placeholder="Cerca OCT, cliente, prodotto, stato…"/></label><select value={filters.ready} onChange={(e) => setFilters({ ...filters, ready: e.target.value })}><option value="">Pronti e bloccati</option><option value="ready">Solo pronti</option><option value="blocked">Solo bloccati</option></select>{!customerScoped && <button type="button" className="secondary-action rdp-toolbar-refresh" onClick={refreshOctOrders} disabled={loading || octRefreshRunning}><RefreshCw className={loading || octRefreshRunning ? "rdp-spin" : ""} size={17}/>Aggiorna</button>}{tab === "evaluation" && !customerScoped && <div className="rdp-selection-bar"><span><strong>{selected.length}</strong> OCT selezionati</span><button type="button" className="primary-action rdp-preview-action" onClick={createPreview} disabled={!canCreate || !sendEnabled || !selected.length || selectionBlocked || busy}>{busy ? "Verifica…" : "Verifica e crea anteprima"}</button>{!canCreate && <small>Permesso rdp.create richiesto.</small>}{!sendEnabled && <small>Invio RdP Production non disponibile: verificare i gate nel Centro Diagnostico.</small>}{selectionBlocked && <small>Rimuovere gli OCT bloccati prima di creare la RdP.</small>}</div>}</section>}
     {error && <div className="production-message" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")}><X size={16}/>Chiudi</button></div>}

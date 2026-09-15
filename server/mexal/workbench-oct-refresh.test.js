@@ -33,18 +33,19 @@ test("API e UI avviano il refresh in background e seguono soltanto job OCT", () 
   const initialEffect = ui.slice(ui.indexOf("useEffect(() => {", ui.indexOf("async function load()")), ui.indexOf("async function refreshOctOrders"));
   assert.match(api, /case "progremes_oct_refresh"[\s\S]*createAdmin\(req, "rdp\.view"\)/i);
   assert.match(api, /enqueue_manual_workbench_oct_refresh/i);
-  assert.match(api, /case "progremes_oct_refresh_status"[\s\S]*\.eq\("sync_type", "oct_orders"\)/i);
+  assert.match(api, /case "progremes_oct_refresh_status"[\s\S]*octRefreshStatus/i);
+  assert.match(fs.readFileSync(new URL("./oct-refresh-status.js", import.meta.url), "utf8"), /\.eq\("sync_type", "oct_orders"\)/);
   assert.match(ui, /callWorkbench\(accessToken, "progremes_workbench_list"\)/i);
   assert.match(ui, /callWorkbench\(accessToken, "progremes_oct_refresh"\)/i);
   assert.match(ui, /onClick=\{refreshOctOrders\}/i);
-  assert.doesNotMatch(initialEffect, /progremes_oct_refresh/i);
-  assert.match(ui, /Sincronizzazione OCT in background/i);
+  assert.doesNotMatch(initialEffect, /"progremes_oct_refresh"/i);
+  assert.match(ui, /OCT in elaborazione/i);
   assert.match(ui, /progremes_oct_refresh_status/i);
 });
 
 test("il tab Planning apre la schermata ProgreMES registrata", () => {
   const ui = fs.readFileSync(uiUrl, "utf8");
-  assert.match(ui, /navigate\("\/produzione\/progremes\.Planning"\)/);
+  assert.match(ui, /requestProgremesWorkspaceWindow\("\/produzione\/progremes\.Planning"\)/);
   assert.doesNotMatch(ui, /navigate\("\/produzione\/Planning"\)/);
 });
 

@@ -1,6 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 import { runAutomaticDocumentSync } from "../../server/document-api.js";
 import { checkAndRecordInfrastructureHealth } from "../../server/infrastructure-health.js";
+import { waitUntil } from "@vercel/functions";
+import { wakeMexalWorker } from "../../server/mexal/worker-wakeup.js";
 
 const LEASE_SECONDS = 300;
 const MAX_WORKER_DURATION_MS = 235000;
@@ -53,7 +55,7 @@ async function callAutomation(req, job, secret) {
       offset: restartMissingRun ? 0 : Number(job.offset || 0),
       batchSize: job.batch_size || undefined,
       origin: "worker",
-      context: { cycle_id: job.cycle_id, job_id: job.id, schedule_id: job.schedule_id },
+      context: { cycle_id: job.cycle_id, job_id: job.id, schedule_id: job.schedule_id, optimization_version: job.payload?.optimization_version, lock_token: job.lock_token },
     }),
   });
   const raw = await response.text();
@@ -95,7 +97,7 @@ async function resumeBlockedCycles(admin) {
   }
 }
 
-export default async function handler(req, res) {
+async function runWorker(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Metodo non consentito." });
   const automationSecret = required("WORKER_SECRET");
   const acceptedSecrets = [
@@ -114,9 +116,13 @@ export default async function handler(req, res) {
   const triggerSource = workerSource(req);
   const startedAt = Date.now();
   const processed = [];
+  const manualJobId = Number(req.body?.manualJobId) || null;
+  let optimizedProgress = false;
+  let yieldedForOct = false;
+  let manualWaiting = false;
   let activeJob;
   try {
-    await admin.from("mexal_worker_heartbeat").upsert({
+    if (!manualJobId) await admin.from("mexal_worker_heartbeat").upsert({
       id: 1,
       last_called_at: new Date().toISOString(),
       last_status: "running",
@@ -125,10 +131,10 @@ export default async function handler(req, res) {
       updated_at: new Date().toISOString(),
     });
     await rpc(admin, "recover_expired_mexal_sync_jobs", {});
-    await resumeBlockedCycles(admin);
+    if (!manualJobId && !req.body?.continuation) await resumeBlockedCycles(admin);
     let infrastructureHealth;
     try {
-      infrastructureHealth = await checkAndRecordInfrastructureHealth(admin);
+      infrastructureHealth = manualJobId || req.body?.continuation ? { status: "not_checked" } : await checkAndRecordInfrastructureHealth(admin);
     } catch (monitorError) {
       infrastructureHealth = {
         status: "error",
@@ -136,11 +142,11 @@ export default async function handler(req, res) {
       };
       console.error("Infrastructure health monitor failed", infrastructureHealth);
     }
-    const producer = await rpc(admin, "create_daily_mexal_sync_cycle", {
+    const producer = manualJobId || req.body?.continuation ? {} : await rpc(admin, "create_daily_mexal_sync_cycle", {
       p_scheduled_for: new Date().toISOString(),
       p_trigger_source: triggerSource,
     });
-    await admin.from("mexal_worker_heartbeat").upsert({
+    if (!manualJobId) await admin.from("mexal_worker_heartbeat").upsert({
       id: 1,
       last_source: triggerSource,
       last_business_date: producer?.businessDate || null,
@@ -150,19 +156,44 @@ export default async function handler(req, res) {
     });
     let documentSync = { status: "not_checked" };
     try {
-      documentSync = await runAutomaticDocumentSync(admin);
+      if (!manualJobId && !req.body?.continuation) documentSync = await runAutomaticDocumentSync(admin);
     } catch (documentError) {
       documentSync = { status: "error", error: documentError?.message || "Sincronizzazione documentale non riuscita." };
     }
 
     while (processed.length < MAX_STEPS_PER_CALL && Date.now() - startedAt < MAX_WORKER_DURATION_MS) {
-      activeJob = asJob(await rpc(admin, "claim_next_mexal_sync_job", {
+      activeJob = asJob(await rpc(admin, manualJobId ? "claim_priority_mexal_sync_job" : "claim_next_mexal_sync_job", {
         p_worker_id: workerId,
         p_lease_seconds: LEASE_SECONDS,
+        ...(manualJobId ? { p_manual_job_id: manualJobId } : {}),
       }));
-      if (!activeJob) break;
+      if (!activeJob) {
+        if (!manualJobId) break;
+        const { data: pending, error: pendingError } = await admin.from("mexal_sync_jobs")
+          .select("status,payload").eq("id", manualJobId).maybeSingle();
+        if (pendingError) throw pendingError;
+        manualWaiting = pending?.payload?.lane === "manual_priority" && ["queued", "retry"].includes(pending.status);
+        if (!manualWaiting) break;
+        // Wait only for ownership of the current batch, not the whole cycle.
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        continue;
+      }
+      manualWaiting = false;
+      optimizedProgress = Number(activeJob.payload?.optimization_version) >= 2;
 
       const lockToken = String(activeJob.lock_token || "");
+      // OCT is a complete document pass: give it a fresh function budget.
+      // Release only the newly acquired lease, preserving offset and result.
+      if (activeJob.sync_type === "oct_orders" && Date.now() - startedAt > 15000) {
+        await rpc(admin, "retry_mexal_sync_job", {
+          p_job_id: activeJob.id, p_worker_id: workerId, p_lock_token: lockToken,
+          p_error: null, p_offset: Number(activeJob.offset || 0),
+          p_sync_run_id: activeJob.sync_run_id, p_result: activeJob.last_result || {}, p_is_failure: false,
+        });
+        yieldedForOct = true;
+        activeJob = null;
+        break;
+      }
       await rpc(admin, "heartbeat_mexal_sync_job", {
         p_job_id: activeJob.id, p_worker_id: workerId, p_lock_token: lockToken,
       });
@@ -190,8 +221,11 @@ export default async function handler(req, res) {
     }
 
     const duration = Date.now() - startedAt;
-    const status = processed.length ? "completed_steps" : producer?.status === "waiting" ? "waiting_2300" : "idle";
-    await admin.from("mexal_worker_heartbeat").upsert({
+    if (yieldedForOct || manualWaiting || (optimizedProgress && (processed.length >= MAX_STEPS_PER_CALL || duration >= MAX_WORKER_DURATION_MS))) {
+      wakeMexalWorker({ manualJobId, continuation: true });
+    }
+    const status = processed.length ? "completed_steps" : producer?.status === "waiting" ? "waiting_2130" : "idle";
+    if (!manualJobId) await admin.from("mexal_worker_heartbeat").upsert({
       id: 1,
       last_completed_at: new Date().toISOString(),
       last_status: status,
@@ -226,7 +260,7 @@ export default async function handler(req, res) {
         p_is_failure: true,
       });
     }
-    await admin.from("mexal_worker_heartbeat").upsert({
+    if (!manualJobId) await admin.from("mexal_worker_heartbeat").upsert({
       id: 1,
       last_completed_at: new Date().toISOString(),
       last_status: "error",
@@ -238,4 +272,17 @@ export default async function handler(req, res) {
     });
     return res.status(502).json({ status: "error", error: error?.message || "Worker Mexal non riuscito." });
   }
+}
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Metodo non consentito." });
+  const secrets = [globalThis.process?.env?.WORKER_SECRET, globalThis.process?.env?.ARUBA_EMAIL_WORKER_SECRET].filter(Boolean);
+  if (!secrets.some((secret) => req.headers.authorization === `Bearer ${secret}`)) return res.status(401).json({ error: "Worker non autorizzato." });
+  if (req.body?.manualJobId != null && (!Number.isSafeInteger(Number(req.body.manualJobId)) || Number(req.body.manualJobId) < 1)) return res.status(400).json({ error: "Job non valido." });
+  if (req.body?.background === true) {
+    const capture = { status() { return this; }, json(value) { return value; } };
+    waitUntil(runWorker(req, capture).catch((error) => console.error("Background Mexal worker failed:", error.message)));
+    return res.status(202).json({ accepted: true });
+  }
+  return runWorker(req, res);
 }

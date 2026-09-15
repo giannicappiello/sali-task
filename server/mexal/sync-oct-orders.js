@@ -566,6 +566,14 @@ export async function syncOctOrders({ mexal, supabase, env = process.env, contex
   if (String(env.MEXAL_OCT_IMPORT_ENABLED || "").toLowerCase() !== "true")
     return { enabled: false, imported: 0, skipped: 0 };
   const { moduleCode, listPath } = sourceConfig(env);
+  const reportProgress = async (phase, processed, total) => {
+    if (Number(context.optimization_version) < 2 || !context.lock_token || !context.job_id) return;
+    const { error } = await supabase.from("mexal_sync_jobs").update({
+      last_result: { progress: { phase, processed, total } }, last_progress_at: new Date().toISOString(),
+    }).eq("id", context.job_id).eq("lock_token", context.lock_token).in("status", ["leased", "running"]);
+    if (error) throw error;
+  };
+  await reportProgress("catalogo", 0, null);
   const collection = await readMexalCollectionPages({
     mexal,
     path: listPath,
@@ -575,7 +583,10 @@ export async function syncOctOrders({ mexal, supabase, env = process.env, contex
   const documents = [];
   const anomalies = [];
   let imported = 0; let skipped = 0;
+  let readCount = 0;
+  await reportProgress("lettura", 0, summaries.length);
   for (const summary of summaries) {
+    if (++readCount % 25 === 0) await reportProgress("lettura", readCount, summaries.length);
     try {
       const read = await readOctSummary({ mexal, summary, moduleCode });
       if (read.status !== "candidate") { skipped++; continue; }
@@ -601,6 +612,7 @@ export async function syncOctOrders({ mexal, supabase, env = process.env, contex
   await recoverOctArticleReferences({ supabase, eligible: articleInspection.eligible });
   if (articleInspection.eligible.length) availableArticleCatalog = await readAvailableOrderArticleCatalog(supabase, documents);
   const availableArticleCodes = new Set(availableArticleCatalog.keys());
+  await reportProgress("salvataggio", 0, documents.length);
   let importedLines = 0;
   let skippedArticleLines = 0;
   let retiredLines = 0;
@@ -658,7 +670,9 @@ export async function syncOctOrders({ mexal, supabase, env = process.env, contex
       retiredLines += staleLineIds.length;
     }
     imported++;
+    if (imported % 10 === 0) await reportProgress("salvataggio", imported, documents.length);
   }
+  await reportProgress("riconciliazione", imported, documents.length);
   const reconciliation = await reconcileDeletedOcts({
     mexal, supabase, moduleCode, year: mexal.anno || env.MEXAL_ANNO,
     importedKeys: new Set(documents.map((document) => document.key)),

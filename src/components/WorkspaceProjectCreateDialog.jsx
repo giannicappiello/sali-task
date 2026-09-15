@@ -3,6 +3,7 @@ import { Plus, Save, Search, X } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabaseClient";
 import { loadDirectProductCatalog } from "../modules/orders/services/directProductCatalog";
+import { matchesCrmCompetency, projectRulesForCrm, resolveRuleBlocker } from "../lib/crmCompetencies";
 import WorkspaceCustomerPicker from "./WorkspaceCustomerPicker";
 
 const emptyForm = { titolo: "", descrizione: "", deadline: "", prodotti: [], reparti: [], tipo_progetto_id: "", crm_customer_key: "" };
@@ -54,10 +55,10 @@ export default function WorkspaceProjectCreateDialog({ open, crmType, initialCus
       const results = await Promise.all([
         productsRequest,
         supabase.from("reparti").select("id,nome,attivo").eq("attivo", true).order("nome"),
-        supabase.from("checklist_template").select("id,titolo,reparto_id,attivo").eq("attivo", true).order("ordine"),
+        supabase.from("checklist_template").select("id,titolo,reparto_id,attivo,competenze_crm").eq("attivo", true).order("ordine"),
         supabase.from("checklist_template_reparti").select("template_id,reparto_id"),
-        supabase.from("tipi_progetto").select("id,nome,attivo").eq("attivo", true).order("nome"),
-        supabase.from("tipo_progetto_fasi").select("id,tipo_progetto_id,template_id,giorni_anticipo,ordine,responsabile_id,dipende_da_id,priorita").order("ordine"),
+        supabase.from("tipi_progetto").select("id,nome,attivo,competenze_crm").eq("attivo", true).order("nome"),
+        supabase.from("tipo_progetto_fasi").select("id,tipo_progetto_id,template_id,giorni_anticipo,ordine,responsabile_id,dipende_da_id,priorita,obbligatoria,durata_giorni").order("ordine"),
       ]);
       if (!active) return;
       const error = results.find((result) => result.error)?.error;
@@ -83,12 +84,13 @@ export default function WorkspaceProjectCreateDialog({ open, crmType, initialCus
     event.preventDefault();
     if (!canManage) return window.alert("Non hai i permessi per creare progetti.");
     if (!form.titolo.trim() || !form.crm_customer_key || !form.tipo_progetto_id || !form.deadline) return window.alert("Compila titolo, cliente, tipo progetto e deadline.");
+    if (!data.projectTypes.some((item) => item.id === form.tipo_progetto_id && matchesCrmCompetency(item, crmType))) return window.alert("Tipo progetto non disponibile in questa sezione CRM.");
     setSaving(true);
     try {
-      const rules = data.projectTypePhases.filter((row) => row.tipo_progetto_id === form.tipo_progetto_id).toSorted((a, b) => Number(a.ordine || 0) - Number(b.ordine || 0));
+      const rules = projectRulesForCrm(data.projectTypePhases, data.templates, form.tipo_progetto_id, crmType);
       const automaticDepartments = rules.flatMap((rule) => templateDepartments(rule.template_id));
       const departments = [...new Set([...form.reparti, ...automaticDepartments].filter(Boolean))];
-      const { data: project, error } = await supabase.from("v4_progetti").insert({ titolo: form.titolo.trim(), descrizione: form.descrizione.trim() || null, deadline: form.deadline, tipo_progetto_id: form.tipo_progetto_id, crm_customer_key: form.crm_customer_key, stato: "aperto", creato_da: actorId, modificato_da: actorId }).select("id").single();
+      const { data: project, error } = await supabase.from("v4_progetti").insert({ titolo: form.titolo.trim(), descrizione: form.descrizione.trim() || null, deadline: form.deadline, tipo_progetto_id: form.tipo_progetto_id, crm_customer_key: form.crm_customer_key, crm_tipo: crmType || null, stato: "aperto", creato_da: actorId, modificato_da: actorId }).select("id").single();
       if (error) throw error;
       if (form.prodotti.length) {
         const { error: productsError } = await supabase.from("v4_progetto_prodotti").insert(form.prodotti.map((prodotto_id) => ({ progetto_id: project.id, prodotto_id, prodotto_nome: data.products.find((item) => item.id === prodotto_id)?.nome || null })));
@@ -104,8 +106,8 @@ export default function WorkspaceProjectCreateDialog({ open, crmType, initialCus
         const template = data.templates.find((item) => item.id === rule.template_id);
         if (!template) continue;
         const phaseDepartments = templateDepartments(template.id);
-        const blockingId = rule.dipende_da_id ? createdByRule.get(rule.dipende_da_id) || null : previousPhaseId;
-        const { data: phase, error: phaseError } = await supabase.from("v4_fasi_progetto").insert({ progetto_id: project.id, titolo: template.titolo, reparto_id: phaseDepartments[0] || null, stato: blockingId ? "bloccata" : "da_evadere", priorita: rule.priorita || "normale", assegnato_a: rule.responsabile_id || null, bloccante_id: blockingId, ordine: Number(rule.ordine || index + 1), deadline: subtractDaysIso(form.deadline, rule.giorni_anticipo), creato_da: actorId, modificato_da: actorId, crm_customer_key: form.crm_customer_key }).select("id").single();
+        const blockingId = resolveRuleBlocker(rule, data.projectTypePhases, createdByRule, previousPhaseId);
+        const { data: phase, error: phaseError } = await supabase.from("v4_fasi_progetto").insert({ progetto_id: project.id, template_id: template.id, durata_giorni: rule.durata_giorni || 1, obbligatoria: rule.obbligatoria !== false, crm_tipo: crmType || null, titolo: template.titolo, reparto_id: phaseDepartments[0] || null, stato: blockingId ? "bloccata" : "da_evadere", priorita: rule.priorita || "normale", assegnato_a: rule.responsabile_id || null, bloccante_id: blockingId, ordine: Number(rule.ordine || index + 1), deadline: subtractDaysIso(form.deadline, rule.giorni_anticipo), creato_da: actorId, modificato_da: actorId, crm_customer_key: form.crm_customer_key }).select("id").single();
         if (phaseError) throw phaseError;
         if (phaseDepartments.length) {
           const { error: phaseDepartmentsError } = await supabase.from("v4_fase_reparti").insert(phaseDepartments.map((reparto_id) => ({ fase_id: phase.id, reparto_id, completato: false })));
@@ -137,7 +139,7 @@ export default function WorkspaceProjectCreateDialog({ open, crmType, initialCus
     <label>Titolo<input required value={form.titolo} onChange={(event) => setForm({ ...form, titolo: event.target.value })} /></label>
     <label>Descrizione<textarea rows="4" value={form.descrizione} onChange={(event) => setForm({ ...form, descrizione: event.target.value })} /></label>
     <label>Cliente<WorkspaceCustomerPicker required crmType={crmType} value={form.crm_customer_key} onChange={(crm_customer_key) => setForm((current) => ({ ...current, crm_customer_key }))} /></label>
-    <label>Tipo progetto<select required value={form.tipo_progetto_id} onChange={(event) => setForm({ ...form, tipo_progetto_id: event.target.value })}><option value="">Seleziona tipo progetto</option>{data.projectTypes.map((type) => <option key={type.id} value={type.id}>{type.nome}</option>)}</select></label>
+    <label>Tipo progetto<select required value={form.tipo_progetto_id} onChange={(event) => setForm({ ...form, tipo_progetto_id: event.target.value })}><option value="">Seleziona tipo progetto</option>{data.projectTypes.filter((item) => matchesCrmCompetency(item, crmType)).map((type) => <option key={type.id} value={type.id}>{type.nome}</option>)}</select></label>
     <label>Deadline<input required type="date" value={form.deadline} onChange={(event) => setForm({ ...form, deadline: event.target.value })} /></label>
     <div className="checkbox-group scrollable-check-group"><strong>Prodotti associati</strong><div className="task-search"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ricerca rapida prodotto" /></div>{filteredProducts.map((product) => <label key={product.id}><input type="checkbox" checked={form.prodotti.includes(product.id)} onChange={() => toggle("prodotti", product.id)} />{product.nome}{product.codice ? ` · ${product.codice}` : ""}</label>)}</div>
     <div className="checkbox-group"><strong>Reparti associati</strong>{data.departments.map((department) => <label key={department.id}><input type="checkbox" checked={form.reparti.includes(department.id)} onChange={() => toggle("reparti", department.id)} />{department.nome}</label>)}</div>

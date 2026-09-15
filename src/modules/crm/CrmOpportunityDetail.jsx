@@ -44,7 +44,6 @@ export default function CrmOpportunityDetail({ type }) {
   const [briefs, setBriefs] = useState([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [activity, setActivity] = useState({ tipo: "follow_up", titolo: "", data_attivita: "", priorita: "normale" });
   const [operationalDraft, setOperationalDraft] = useState({ activity_type_id: "", titolo: "", descrizione: "", deadline: "", reparto_id: "", responsabile_id: "" });
   const [operationalPreview, setOperationalPreview] = useState(null);
   const [completion, setCompletion] = useState(null);
@@ -70,7 +69,7 @@ export default function CrmOpportunityDetail({ type }) {
       supabase.from("crm_opportunity_stage_history").select("*,from_stage:from_stage_id(nome),to_stage:to_stage_id(nome)").eq("opportunity_id", opportunityId).order("changed_at", { ascending: false }),
       supabase.from("crm_workspace_links").select("*").eq("crm_entity_type", "opportunity").eq("crm_entity_id", opportunityId),
       supabase.from("v4_progetti").select("id,titolo,stato,deadline,crm_customer_key,crm_opportunity_id").order("created_at", { ascending: false }).limit(200),
-      supabase.from("crm_activity_types").select("*").eq("crm_tipo", type).eq("attivo", true).order("ordine"),
+      supabase.rpc("workspace_activity_catalog", { p_crm_tipo: type }),
       supabase.from("reparti").select("id,nome").eq("attivo", true).order("nome"),
       supabase.from("utenti").select("id,nome,cognome,reparto_id").eq("attivo", true).order("nome"),
       supabase.from("utenti_reparti").select("utente_id,reparto_id"),
@@ -135,18 +134,6 @@ export default function CrmOpportunityDetail({ type }) {
     setBusy(false);
   }
 
-  async function addActivity(event) {
-    event.preventDefault(); if (!canWrite || !activity.titolo.trim()) return;
-    setBusy(true); setError("");
-    const { error: activityError } = await supabase.from("crm_activities").insert({
-      crm_tipo: type, account_id: opportunity.account_id, opportunity_id: opportunityId,
-      tipo: activity.tipo, titolo: activity.titolo.trim(), data_attivita: activity.data_attivita || null,
-      priorita: activity.priorita, responsabile_id: opportunity.responsabile_id || profile.id,
-      reparto_id: opportunity.reparto_id || profile.reparto_ids?.[0] || profile.reparto_id || null, creato_da: profile.id,
-    });
-    if (activityError) setError(activityError.message); else { setActivity({ tipo: "follow_up", titolo: "", data_attivita: "", priorita: "normale" }); await load(); }
-    setBusy(false);
-  }
 
   async function createTechnicalBrief(event) {
     event.preventDefault();
@@ -185,7 +172,8 @@ export default function CrmOpportunityDetail({ type }) {
     event.preventDefault();
     if (!canWrite || !operationalDraft.activity_type_id || !operationalDraft.titolo.trim() || !operationalDraft.deadline) return;
     setBusy(true); setError("");
-    const { data, error: previewError } = await supabase.rpc("crm_preview_operational_activity", {
+    const { data, error: previewError } = await supabase.rpc("workspace_preview_operational_activity", {
+      p_crm_tipo: type,
       p_activity_type_id: operationalDraft.activity_type_id,
       p_deadline: operationalDraft.deadline,
       p_department_id: operationalDraft.reparto_id || null,
@@ -199,7 +187,7 @@ export default function CrmOpportunityDetail({ type }) {
     if (!operationalPreview || !canWrite) return;
     setBusy(true); setError("");
     const idempotencyKey = `crm:${opportunityId}:${operationalDraft.activity_type_id}:${operationalDraft.deadline}:${operationalDraft.titolo.trim().toLowerCase()}`;
-    const { error: creationError } = await supabase.rpc("crm_create_operational_activity", {
+    const { error: creationError } = await supabase.rpc("workspace_create_operational_activity", {
       p_account_id: opportunity.account_id,
       p_opportunity_id: opportunityId,
       p_activity_type_id: operationalDraft.activity_type_id,
@@ -289,7 +277,7 @@ export default function CrmOpportunityDetail({ type }) {
         <div className="crm-operational-links">{item.project_id ? <Link className="secondary-action" to={`/activities/projects?project=${item.project_id}&returnTo=${encodeURIComponent(pageLocation.pathname + pageLocation.search)}`}>Apri progetto</Link> : null}{item.next_task_id ? <Link className="secondary-action" to={`/activities/tasks?task=${item.next_task_id}&returnTo=${encodeURIComponent(pageLocation.pathname + pageLocation.search)}`}>Apri task</Link> : null}<CrmDeleteActivityButton activity={{ id: item.activity_id, titolo: item.activity_title, activity_class: item.activity_class, workspace_project_id: item.project_id, workspace_task_id: item.next_task_id }} canDelete={canWrite} onDeleted={load} onError={setError} compact /></div>
       </article>)}</div> : <div className="table-message">Nessuna attività operativa collegata.</div>}
       {canWrite ? <form className="crm-operational-form" onSubmit={previewOperationalActivity}>
-        <label><span>Tipo attività</span><select required value={operationalDraft.activity_type_id} onChange={(event) => setOperationalDraft({ ...operationalDraft, activity_type_id: event.target.value })}><option value="">Seleziona tipo attività</option>{activityTypes.map((item) => <option key={item.id} value={item.id}>{item.nome} · {item.classe}</option>)}</select></label>
+        <label><span>Attività / progetto</span><select required value={operationalDraft.activity_type_id} onChange={(event) => setOperationalDraft({ ...operationalDraft, activity_type_id: event.target.value })}><option value="">Seleziona attività o progetto</option>{activityTypes.map((item) => <option key={item.id} value={item.id}>{item.nome} · {item.classe === "strutturata" ? "Progetto" : "Voce checklist"}</option>)}</select></label>
         <label><span>Titolo</span><input required value={operationalDraft.titolo} onChange={(event) => setOperationalDraft({ ...operationalDraft, titolo: event.target.value })} placeholder="Attività da realizzare" /></label>
         <label><span>Deadline</span><input required type="date" value={operationalDraft.deadline} onChange={(event) => setOperationalDraft({ ...operationalDraft, deadline: event.target.value })} /></label>
         <label><span>Reparto</span><select value={operationalDraft.reparto_id} onChange={(event) => setOperationalDraft({ ...operationalDraft, reparto_id: event.target.value })}><option value="">Reparto del progetto</option>{departments.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label>
@@ -299,7 +287,6 @@ export default function CrmOpportunityDetail({ type }) {
       </form> : null}
     </section>
     <section className="panel crm-panel"><h3>Attività e prossimo passo</h3>
-      {canWrite ? <form className="crm-inline-form" onSubmit={addActivity}><select value={activity.tipo} onChange={(event) => setActivity({ ...activity, tipo: event.target.value })}>{["telefonata","email","visita","videocall","presentazione","formazione","campionatura","sviluppo_formula","preventivo","follow_up"].map((value) => <option key={value} value={value}>{value.replaceAll("_", " ")}</option>)}</select><input required value={activity.titolo} onChange={(event) => setActivity({ ...activity, titolo: event.target.value })} placeholder="Prossima azione" /><input type="datetime-local" value={activity.data_attivita} onChange={(event) => setActivity({ ...activity, data_attivita: event.target.value })} /><select value={activity.priorita} onChange={(event) => setActivity({ ...activity, priorita: event.target.value })}><option value="bassa">Bassa</option><option value="normale">Normale</option><option value="alta">Alta</option></select><button className="primary-action crm-primary" disabled={busy}><Plus size={16} />Aggiungi</button></form> : null}
       <ul className="crm-timeline">{activities.map((item) => <li key={item.id}><strong>{item.titolo}</strong><span>{item.tipo.replaceAll("_", " ")} · {formatDate(item.data_attivita)} · {item.stato}</span>{item.esito ? <small>Esito: {item.esito}</small> : null}<div className="crm-row-inline-actions">{canWrite && item.stato !== "completata" ? <button type="button" className="secondary-action" onClick={() => setCompletion({ id: item.id, esito: "", prossima_azione: "", prossima_data: "" })}><CheckCircle2 size={15} />Completa</button> : null}<CrmDeleteActivityButton activity={item} canDelete={canWrite} onDeleted={load} onError={setError} compact /></div></li>)}</ul>
     </section>
     {type === "conto_terzi" && opportunity.crm_opportunity_stages?.vinta ? <section className="panel crm-panel"><h3>Progetto operativo</h3><p>Il progetto viene creato direttamente nell’archivio unico di Attività, con cliente, tipologia, task e deadline.</p>{canWrite ? <Link className="primary-action crm-primary" to={`/activities/projects?new=1&customerKey=${encodeURIComponent(account.codice_cliente_mexal ? `mexal:${account.codice_cliente_mexal}` : `crm:${account.id}`)}&opportunity=${opportunityId}&returnTo=${encodeURIComponent(pageLocation.pathname + pageLocation.search)}`}><Plus size={16} />Crea progetto</Link> : null}<select defaultValue="" onChange={(event) => void linkProject(event.target.value)} disabled={!canWrite || busy}><option value="">Collega progetto operativo esistente</option>{projects.filter((item) => !linkedProjectIds.has(item.id)).map((item) => <option key={item.id} value={item.id}>{item.titolo}</option>)}</select>{projects.filter((item) => linkedProjectIds.has(item.id)).map((item) => <Link className="crm-row-card" key={item.id} to={`/activities/projects?project=${item.id}`}><FolderKanban size={18} /><strong>{item.titolo}</strong><span>{item.stato || "Progetto operativo"}</span></Link>)}</section> : null}

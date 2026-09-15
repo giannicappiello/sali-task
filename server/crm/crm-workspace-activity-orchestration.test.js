@@ -29,7 +29,8 @@ test("tipi CRM PRIVATE semplici e strutturati sono configurabili e auditati", ()
     assert.match(migration, new RegExp(`'conto_terzi','${code}'`));
   }
   assert.match(migration, /trg_crm_activity_types_audit/);
-  assert.match(activityTypes, /Tipi attività CRM PRIVATE/);
+  assert.doesNotMatch(activityTypes, /Tipi attività CRM PRIVATE/);
+  assert.match(activityTypes, /CrmCompetencies/);
   assert.match(activityTypes, /tipo_progetto_id/);
 });
 
@@ -95,7 +96,7 @@ test("RLS e assegnazioni non allargano il perimetro corrente", () => {
 test("AI propone un tipo configurato e crea solo dopo conferma umana", () => {
   assert.match(ai, /configuredActivityTypes/);
   assert.match(ai, /activityTypeCode/);
-  assert.match(ai, /crm_create_operational_activity/);
+  assert.match(ai, /workspace_create_operational_activity/);
   assert.match(ai, /p_idempotency_key: `crm-ai:/);
   assert.match(ai, /action === "approve"/);
   assert.doesNotMatch(ai, /service_role.*crm_create_operational_activity/i);

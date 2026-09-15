@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Clock3, FileText, MessageSquare, Paperclip, Save, Search, Trash2, X } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../contexts/AuthContext";
+import { matchesCrmCompetency } from "../lib/crmCompetencies";
 import WorkspaceCustomerPicker from "./WorkspaceCustomerPicker";
 
 const emptyForm = { titolo: "", descrizione: "", note: "", progetto_id: "", deadline: "", reparto_ids: [], prodotti: [], stato: "da_evadere", bloccante_id: "", crm_customer_key: "" };
@@ -27,14 +28,14 @@ export default function PhaseChecklistModal({
   allPhases = [],
   initialProjectId = "",
   initialProductIds = [],
-  canManage = true,
-  crmType = "conto_terzi",
+  canManage: allowManage = true,
+  crmType = "",
   initialCustomerKey = "",
   canCompleteDepartment = () => true,
   onClose,
   onSaved,
 }) {
-  const { profile } = useAuth();
+  const { profile, userDepartmentIds = [], dataScope, isAdmin } = useAuth();
   const actorId = profile?.id || null;
   const [form, setForm] = useState(emptyForm);
   const [comments, setComments] = useState([]);
@@ -48,6 +49,12 @@ export default function PhaseChecklistModal({
   const [phaseProductQuery, setPhaseProductQuery] = useState("");
 
   const selectedPhase = phase?.id ? phase : null;
+  const effectiveCrmType = projects.find((item) => item.id === form.progetto_id)?.crm_tipo || selectedPhase?.crm_tipo || crmType;
+  const canManage = allowManage && (!selectedPhase || isAdmin?.() || dataScope?.mode === "tutti"
+    || selectedPhase.creato_da === actorId || selectedPhase.assegnato_a === actorId
+    || [selectedPhase.reparto_id, ...phaseDepartments.filter((row) => row.fase_id === selectedPhase.id).map((row) => row.reparto_id)]
+      .some((id) => id && [...userDepartmentIds, ...(dataScope?.departmentIds || [])].includes(id)));
+
 
   useEffect(() => {
     if (!open) return;
@@ -157,7 +164,7 @@ export default function PhaseChecklistModal({
   }
 
   function applyTemplate(templateId) {
-    const template = templates.find((item) => item.id === templateId);
+    const template = templates.find((item) => item.id === templateId && matchesCrmCompetency(item, effectiveCrmType));
     if (!template) return;
     const ids = getTemplateDepartmentIds(template.id);
     const effectiveIds = ids.length ? ids : [template.reparto_id].filter(Boolean);
@@ -249,17 +256,17 @@ export default function PhaseChecklistModal({
         titolo: form.titolo.trim(),
         descrizione: form.descrizione.trim() || null,
         note: form.note.trim() || null,
-        priorita: null,
+        priorita: selectedPhase?.priorita || null,
         deadline: form.deadline || null,
         reparto_id: safeArray(form.reparto_ids)[0] || null,
-        assegnato_a: null,
+        assegnato_a: selectedPhase?.assegnato_a || null,
         stato: form.stato || "da_evadere",
         bloccante_id: form.bloccante_id || null,
         crm_customer_key: form.crm_customer_key || null,
         modificato_da: actorId,
         updated_at: now,
       };
-      if (!selectedPhase?.id) payload.creato_da = actorId;
+      if (!selectedPhase?.id) { payload.creato_da = actorId; payload.crm_tipo = effectiveCrmType || null; payload.template_id = templates.find((item) => item.titolo === form.titolo && matchesCrmCompetency(item, effectiveCrmType))?.id || null; }
       const request = selectedPhase?.id
         ? supabase.from("v4_fasi_progetto").update(payload).eq("id", selectedPhase.id).select().single()
         : supabase.from("v4_fasi_progetto").insert(payload).select().single();
@@ -283,6 +290,7 @@ export default function PhaseChecklistModal({
 
   async function saveComment(e) {
     e.preventDefault();
+    if (!canManage) return;
     const text = comment.trim();
     if (!text) return;
     if (!selectedPhase?.id) {
@@ -300,6 +308,7 @@ export default function PhaseChecklistModal({
   }
 
   async function uploadFiles(files) {
+    if (!canManage) return;
     const list = Array.from(files || []).filter(Boolean);
     if (!list.length) return;
     if (!selectedPhase?.id) {
@@ -401,7 +410,7 @@ export default function PhaseChecklistModal({
   }
 
   async function completeDepartmentPhase(department) {
-    if (!selectedPhase?.id || !department?.id) return;
+    if (!canManage || !selectedPhase?.id || !department?.id) return;
     if (!canCompleteDepartment(department.id)) return alert("Non hai i permessi per completare questo reparto.");
     const now = new Date().toISOString();
     const { error } = await supabase.from("v4_fase_reparti").update({ completato: true, completato_at: now, completato_da: actorId }).eq("fase_id", selectedPhase.id).eq("reparto_id", department.id);
@@ -417,7 +426,7 @@ export default function PhaseChecklistModal({
   }
 
   async function reopenDepartmentPhase(department) {
-    if (!selectedPhase?.id || !department?.id) return;
+    if (!canManage || !selectedPhase?.id || !department?.id) return;
     const now = new Date().toISOString();
     const { error } = await supabase.from("v4_fase_reparti").update({ completato: false, completato_at: null, completato_da: null }).eq("fase_id", selectedPhase.id).eq("reparto_id", department.id);
     if (error) return alert(error.message);
@@ -436,14 +445,16 @@ export default function PhaseChecklistModal({
     <div className="modal-backdrop">
       <form className="modal-card v4-modal large-modal" onSubmit={savePhase}>
         <div className="modal-header">
-          <h2>{selectedPhase ? "Modifica task / fase" : "Nuova fase checklist"}</h2>
+          <h2>{selectedPhase ? (canManage ? "Modifica task / fase" : "Dettaglio task / fase") : "Nuova fase checklist"}</h2>
           <button type="button" onClick={onClose}><X size={20} /></button>
         </div>
 
+        {!canManage && <p className="muted">Partecipi al progetto: puoi seguire questa fase in sola lettura.</p>}
+        <fieldset disabled={!canManage} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
         <label>Checklist
           <select value={selectedTemplateValue} onChange={(e) => applyTemplate(e.target.value)}>
-            <option value="">Seleziona checklist...</option>
-            {templates.map((template) => (
+            <option value="">{selectedPhase && !selectedTemplateValue ? selectedPhase.titolo : "Seleziona checklist..."}</option>
+            {templates.filter((item) => matchesCrmCompetency(item, effectiveCrmType) || (selectedPhase && item.titolo === selectedPhase.titolo)).map((template) => (
               <option key={template.id} value={template.id}>{template.titolo}{template.reparti?.nome ? ` · ${template.reparti.nome}` : ""}</option>
             ))}
           </select>
@@ -511,7 +522,7 @@ export default function PhaseChecklistModal({
 
         <label>Progetto<select value={form.progetto_id} onChange={(e) => { const project = projects.find((item) => item.id === e.target.value); setForm((current) => ({ ...current, progetto_id: e.target.value, crm_customer_key: project?.crm_customer_key || current.crm_customer_key })); }}><option value="">Senza progetto</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.titolo}</option>)}</select></label>
         <label>Cliente
-          <WorkspaceCustomerPicker required={!selectedPhase} crmType={crmType} value={form.crm_customer_key} onChange={(crm_customer_key) => setForm((current) => ({ ...current, crm_customer_key }))} />
+          <WorkspaceCustomerPicker required={!selectedPhase} crmType={crmType || "conto_terzi"} value={form.crm_customer_key} onChange={(crm_customer_key) => setForm((current) => ({ ...current, crm_customer_key }))} />
         </label>
         <label>Deadline<input type="date" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} /></label>
 
@@ -553,13 +564,14 @@ export default function PhaseChecklistModal({
           </div>
         </div>
 
+        </fieldset>
         <div className="dashboard-message-actions">
           {selectedPhase?.id && canManage && (
             <button type="button" className="secondary-action danger" onClick={deletePhase} disabled={saving}>
               <Trash2 size={18} /> Elimina
             </button>
           )}
-          <button className="primary-action" disabled={saving}><Save size={18} /> {saving ? "Salvataggio..." : "Salva fase"}</button>
+          {canManage && <button className="primary-action" disabled={saving}><Save size={18} /> {saving ? "Salvataggio..." : "Salva fase"}</button>}
         </div>
       </form>
     </div>

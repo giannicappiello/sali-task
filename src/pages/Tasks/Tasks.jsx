@@ -1,3 +1,5 @@
+import { isPhaseParticipant } from "../../lib/projectVisibility";
+import { crmTypeFromPath } from "../../lib/crmCompetencies";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Plus, Save, Search, X } from "lucide-react";
@@ -245,7 +247,7 @@ export default function Tasks() {
   const requestedReturnTo = params.get("returnTo") || "";
   const safeReturnTo = requestedReturnTo.startsWith("/") && !requestedReturnTo.startsWith("//") ? requestedReturnTo : "";
   const requestedTaskId = params.get("task") || "";
-  const requestedCrmType = params.get("crmType") || "conto_terzi";
+  const requestedCrmType = params.get("crmType") || crmTypeFromPath(requestedReturnTo);
   const requestedCustomerKey = params.get("customerKey") || "";
   const [view, setView] = useState("month");
   const [displayMode, setDisplayMode] = useState(params.get("view") || "calendar");
@@ -295,7 +297,7 @@ export default function Tasks() {
     if (mineOnly) nextParams.mine = "1";
     if (safeReturnTo) nextParams.returnTo = safeReturnTo;
     if (requestedTaskId) nextParams.task = requestedTaskId;
-    if (requestedCrmType !== "conto_terzi") nextParams.crmType = requestedCrmType;
+    if (requestedCrmType) nextParams.crmType = requestedCrmType;
     if (requestedCustomerKey) nextParams.customerKey = requestedCustomerKey;
     setParams(nextParams, { replace: true });
   }, [selectedDate, statusFilter, displayMode, originFilter, departmentFilter, mineOnly, requestedTaskId, requestedCrmType, requestedCustomerKey, safeReturnTo]);
@@ -304,7 +306,7 @@ export default function Tasks() {
     setLoading(true);
 
     const [projectsRes, phasesRes, projectDepartmentsRes, phaseDepartmentsRes, departmentsRes, phaseProductsRes, productsRes, templatesRes, templateDepartmentsRes, customersRes] = await Promise.all([
-      supabase.from("v4_progetti").select("id,titolo,descrizione,deadline,priorita,stato,created_at,creato_da,crm_customer_key").order("created_at", { ascending: false }),
+      supabase.from("v4_progetti").select("id,titolo,descrizione,deadline,priorita,stato,created_at,creato_da,crm_customer_key,crm_tipo").order("created_at", { ascending: false }),
       supabase
         .from("v4_fasi_progetto")
         .select("*,v4_progetti(id,titolo,descrizione,crm_customer_key),reparti(id,nome),responsabile:utenti!v4_fasi_progetto_assegnato_a_fkey(id,nome,cognome)")
@@ -315,7 +317,7 @@ export default function Tasks() {
       supabase.from("reparti").select("id,nome,attivo").order("nome"),
       supabase.from("v4_fase_prodotti").select("id,fase_id,prodotto_id,prodotto_nome"),
       supabase.from("prodotti").select("id,nome,codice").order("nome").limit(5000),
-      supabase.from("checklist_template").select("id,titolo,reparto_id,ordine,attivo,reparti(id,nome)").eq("attivo", true).order("ordine", { ascending: true }),
+      supabase.from("checklist_template").select("id,titolo,reparto_id,ordine,attivo,competenze_crm,reparti(id,nome)").eq("attivo", true).order("ordine", { ascending: true }),
       supabase.from("checklist_template_reparti").select("id,template_id,reparto_id"),
       loadCrmCustomerDirectory(supabase),
     ]);
@@ -349,8 +351,9 @@ export default function Tasks() {
       ? allPhases
       : allPhases.filter((phase) => {
           const ids = phaseDepartmentIdsByPhase.get(phase.id) || [];
-          return canViewScopedData({
+          return phase.assegnato_a === actorId || [phase.reparto_id, ...(phaseDepartmentIdsByPhase.get(phase.id) || [])].some((id) => userDepartmentIds.includes(id)) || canViewScopedData({
             ownerId: phase.creato_da,
+            userIds: [phase.assegnato_a],
             departmentIds: ids.length ? ids : [phase.reparto_id].filter(Boolean),
           });
         });
@@ -367,12 +370,13 @@ export default function Tasks() {
             .map((project) => project.id)
     );
 
-    const visiblePhases = directlyVisiblePhases.filter((phase) => !phase.progetto_id || visibleProjectIds.has(phase.progetto_id));
+    const directPhaseIds = new Set(directlyVisiblePhases.map((phase) => phase.id));
+    const visiblePhases = allPhases.filter((phase) => phase.progetto_id ? visibleProjectIds.has(phase.progetto_id) : directPhaseIds.has(phase.id));
 
     const visiblePhaseIds = new Set(visiblePhases.map((phase) => phase.id));
     setProjects(allProjects.filter((project) => visibleProjectIds.has(project.id)));
     setPhases(visiblePhases);
-    setDepartments((departmentsRes.data || []).filter((item) => item.attivo !== false && (dataScope?.mode === "tutti" || selectableDepartmentIds.has(item.id))));
+    setDepartments((departmentsRes.data || []).filter((item) => item.attivo !== false && (dataScope?.mode === "tutti" || selectableDepartmentIds.has(item.id) || allPhaseDepartments.some((row) => row.reparto_id === item.id && visiblePhases.some((phase) => phase.id === row.fase_id)))));
     setPhaseDepartments(allPhaseDepartments.filter((row) => visiblePhaseIds.has(row.fase_id)));
     setPhaseProducts((phaseProductsRes.data || []).filter((row) => visiblePhaseIds.has(row.fase_id)));
     setProducts(productsRes.data || []);
@@ -535,11 +539,16 @@ export default function Tasks() {
     return safeArray(userDepartmentIds).includes(departmentId);
   }
 
+  function canEditPhase(phase) {
+    return isPhaseParticipant(phase, { actorId, departmentIds: [...userDepartmentIds, ...(dataScope?.departmentIds || [])], readAll: canReadAllProjects, phaseDepartments });
+  }
+
   async function log(entity_type, entity_id, azione, dettagli) {
     await supabase.from("v4_audit_log").insert({ entity_type, entity_id, azione, dettagli: { testo: dettagli || "" }, user_id: actorId });
   }
 
   async function completeWholePhase(phase) {
+    if (!canEditPhase(phase)) return alert("Puoi seguire questa fase in sola lettura.");
     const blocker = getBlockingPhase(phase, enrichedPhases);
     if (blocker && !isDone(blocker)) return alert(`Questa fase è bloccata da: ${blocker.titolo || "fase bloccante"}. Completa prima la fase bloccante.`);
     const now = new Date().toISOString();
@@ -554,6 +563,7 @@ export default function Tasks() {
   }
 
   async function moveKanbanTask(taskId, targetStatus) {
+    if (!canEditPhase(phases.find((item) => item.id === taskId))) return alert("Puoi seguire questa fase in sola lettura.");
     const phase = enrichedPhases.find((item) => item.id === taskId);
     if (!phase || targetStatus === "bloccata") return;
     const blocker = getBlockingPhase(phase, enrichedPhases);
@@ -573,6 +583,7 @@ export default function Tasks() {
   }
 
   async function completeDepartmentPhase(phase, department) {
+    if (!canEditPhase(phase)) return alert("Puoi seguire questa fase in sola lettura.");
     const blocker = getBlockingPhase(phase, enrichedPhases);
     if (blocker && !isDone(blocker)) return alert(`Questa fase è bloccata da: ${blocker.titolo || "fase bloccante"}. Completa prima la fase bloccante.`);
     if (!canCompleteDepartment(department.id)) return alert("Non hai i permessi per completare questo reparto.");
@@ -602,6 +613,7 @@ export default function Tasks() {
   }
 
   async function reopenDepartmentPhase(phase, department) {
+    if (!canEditPhase(phase)) return alert("Puoi seguire questa fase in sola lettura.");
     if (!hasPermission?.("projects.write") && !hasPermission?.("tasks.reopen") && !canReadAllProjects) return alert("Non hai i permessi per riaprire questo reparto.");
 
     const now = new Date().toISOString();
@@ -742,7 +754,7 @@ export default function Tasks() {
 
         {phase.crm_customer_key || phase.crm_opportunity_id ? <div className="planning-crm-links">{phase.crm_customer_key ? <Link to={phase.crm_customer_name === "DIRECT" ? crmTypeConfig("brand_direct").basePath : `${crmTypeConfig(requestedCrmType).basePath}/clienti/${encodeURIComponent(phase.crm_customer_key)}`}>{phase.crm_customer_name}</Link> : null}{phase.crm_opportunity_id && requestedCrmType !== "brand_direct" ? <Link to={`${crmTypeConfig(requestedCrmType).basePath}/pipeline/${phase.crm_opportunity_id}`}>Apri opportunità CRM</Link> : null}</div> : null}
 
-        <div className="planning-department-actions">
+        <div className="planning-department-actions">{canEditPhase(phase) && <>
           {departments.length > 0 ? (
             departments.map((department) =>
               department.completato ? (
@@ -760,7 +772,7 @@ export default function Tasks() {
               <CheckCircle2 size={15} /> Completa fase
             </button>
           ) : null}
-        </div>
+        </>}</div>
       </article>
     );
   }

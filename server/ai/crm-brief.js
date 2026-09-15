@@ -136,7 +136,7 @@ async function buildAuthorizedContext(auth, crmType, accountId, period) {
       queryRows(auth.scoped.from("crm_opportunities").select("id,titolo,valore,probabilita,chiusura_prevista,crm_accounts!inner(nome,tipo),crm_opportunity_stages(nome,finale,vinta)").eq("crm_accounts.tipo", crmType).gte("aggiornato_il", period.from).lte("aggiornato_il", `${period.to}T23:59:59.999Z`).limit(100), "opportunities"),
       queryRows(auth.scoped.from("crm_activities").select("tipo,titolo,stato,data_attivita").eq("crm_tipo", crmType).gte("data_attivita", period.from).lte("data_attivita", `${period.to}T23:59:59.999Z`).order("data_attivita", { ascending: false }).limit(100), "activities"),
       queryRows(auth.scoped.from("prodotti").select("id,codice,nome,brand,categoria").eq("attivo", true).limit(100), "products"),
-      queryRows(auth.scoped.from("crm_activity_types").select("id,codice,nome,descrizione,classe,tipo_progetto_id,priorita_default").eq("crm_tipo", crmType).eq("attivo", true).order("ordine"), "configuredActivityTypes"),
+      queryRows(auth.scoped.rpc("workspace_activity_catalog", { p_crm_tipo: crmType }), "configuredActivityTypes"),
     );
     if (accountId) {
       queries.push(
@@ -207,14 +207,13 @@ async function analyze(auth, body, crmType) {
   const result = await generateText({ model, system: systemPrompt(crmType, context), messages, output: Output.object({ schema: STRATEGIC_PLAN_SCHEMA }), maxOutputTokens: 3600, providerOptions: { gateway: { user: auth.profile.id, metadata: { feature: "crm-strategic-brief", crmType } } } });
   let plan = result.output;
   if (plan.activityTypeCode && /^\d{4}-\d{2}-\d{2}$/.test(String(plan.project?.deadline || ""))) {
-    const { data: configuredType, error: configuredTypeError } = await auth.scoped.from("crm_activity_types")
+    const { data: configuredType, error: configuredTypeError } = await auth.scoped.rpc("workspace_activity_catalog", { p_crm_tipo: crmType })
       .select("id,codice")
-      .eq("crm_tipo", crmType)
       .eq("codice", String(plan.activityTypeCode))
-      .eq("attivo", true)
       .maybeSingle();
     if (configuredTypeError || !configuredType) throw Object.assign(new Error("Il piano AI non corrisponde a un tipo attività configurato."), { status: 409 });
-    const { data: operationalPreview, error: previewError } = await auth.scoped.rpc("crm_preview_operational_activity", {
+    const { data: operationalPreview, error: previewError } = await auth.scoped.rpc("workspace_preview_operational_activity", {
+      p_crm_tipo: crmType,
       p_activity_type_id: configuredType.id,
       p_deadline: plan.project.deadline,
       p_department_id: brief.reparto_id || null,
@@ -245,16 +244,14 @@ async function applyPlan(auth, brief, decision) {
     throw Object.assign(new Error("Per creare il progetto serve il livello scrittura nel modulo Attività."), { status: 403 });
   }
   if (plan.activityTypeCode && brief.account_id && brief.opportunity_id) {
-    const { data: activityType, error: typeError } = await auth.scoped.from("crm_activity_types")
+    const { data: activityType, error: typeError } = await auth.scoped.rpc("workspace_activity_catalog", { p_crm_tipo: brief.crm_tipo })
       .select("id,codice,classe")
-      .eq("crm_tipo", brief.crm_tipo)
       .eq("codice", String(plan.activityTypeCode))
-      .eq("attivo", true)
       .maybeSingle();
     if (typeError || !activityType) throw Object.assign(new Error("Il tipo attività proposto dall'AI non è più disponibile."), { status: 409 });
     const deadline = plan.project?.deadline;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(deadline || ""))) throw Object.assign(new Error("La conferma richiede una deadline valida."), { status: 409 });
-    const { data: application, error: applicationError } = await auth.scoped.rpc("crm_create_operational_activity", {
+    const { data: application, error: applicationError } = await auth.scoped.rpc("workspace_create_operational_activity", {
       p_account_id: brief.account_id,
       p_opportunity_id: brief.opportunity_id,
       p_activity_type_id: activityType.id,

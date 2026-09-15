@@ -1,0 +1,24 @@
+.project-settings-tabs { display:flex; gap:10px; margin-bottom:18px; flex-wrap:wrap; }
+.project-settings-tabs button { padding:11px 20px; border:1px solid #e2e8f0; border-radius:999px; background:#fff; color:#64748b; font:inherit; font-weight:700; cursor:pointer; }
+.project-settings-tabs button[aria-selected="true"] { background:#eaf2ff; border-color:#126bff; color:#126bff; }
+.project-settings-workspace [hidden] { display:none!important; }
+.project-settings-workspace .project-types-settings-grid { grid-template-columns:minmax(260px,.8fr) minmax(0,1.2fr); align-items:start; }
+.project-settings-workspace .panel-header { flex-wrap:wrap; gap:12px; }
+.project-type-row { display:flex; align-items:center; gap:8px; padding:14px 10px; border-bottom:1px solid #e2e8f0; border-radius:10px; }
+.project-type-row.active { background:#eaf2ff; box-shadow:inset 3px 0 #126bff; }
+.project-type-select { flex:1; min-width:0; text-align:left; border:0; background:none; padding:0; color:inherit; font:inherit; cursor:pointer; }
+.project-type-select strong { display:block; }.project-type-select small { display:block; color:#64748b; margin-top:7px; }
+.project-edit-button { display:grid; place-items:center; min-width:38px; min-height:38px; border:1px solid #e2e8f0; border-radius:9px; background:#fff; color:#126bff; cursor:pointer; }
+.project-crm-badges { display:flex; flex-wrap:wrap; gap:5px; margin-top:7px; }
+.settings-page .project-crm-badges span,.project-crm-badges span { display:inline-block; margin:0; border-radius:7px; padding:4px 8px; font-size:11px; font-weight:700; color:#126bff; background:#eaf2ff; }
+.project-crm-field { min-width:0; padding:0; border:0; margin:16px 0 22px; }
+.project-crm-field legend { font-weight:800; }.project-crm-field p { color:#64748b; font-size:12px; margin:5px 0 10px; }
+.project-crm-field>div { display:flex; flex-wrap:wrap; gap:8px; }
+.project-crm-field>div>label { display:flex!important; align-items:center; gap:7px; margin:0; padding:9px; border:1px solid #e2e8f0; border-radius:9px; font-size:12px; font-weight:700; cursor:pointer; }
+.project-crm-field>div>label:has(input:checked) { background:#eaf2ff; border-color:#126bff; }
+.project-crm-field input[type="checkbox"] { width:17px; height:17px; accent-color:#126bff; }
+.project-phase-setting { padding:16px 0; border-top:1px solid #e2e8f0; }
+.project-phase-setting .panel-header { margin-bottom:7px; }.project-phase-setting>p { color:#64748b; font-size:12px; }
+.project-phase-setting .project-crm-field { margin-bottom:0; }
+.project-settings-workspace #project-checklist-panel .settings-row { grid-template-columns:minmax(0,1fr) auto auto auto; }
+@media(max-width:850px){.project-settings-workspace .project-types-settings-grid{grid-template-columns:1fr}.project-settings-workspace #project-checklist-panel .settings-row{grid-template-columns:minmax(0,1fr) auto}.project-settings-workspace #project-checklist-panel .role-level{display:none}}

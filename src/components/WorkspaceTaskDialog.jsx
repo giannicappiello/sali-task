@@ -10,12 +10,12 @@ export default function WorkspaceTaskDialog({ open, phase = null, crmType, initi
     let active = true;
     const timer = window.setTimeout(async () => {
       const results = await Promise.all([
-        supabase.from("v4_progetti").select("id,titolo,crm_customer_key").order("created_at", { ascending: false }).limit(2000),
+        supabase.from("v4_progetti").select("id,titolo,crm_customer_key,crm_tipo").order("created_at", { ascending: false }).limit(2000),
         supabase.from("reparti").select("id,nome,attivo").eq("attivo", true).order("nome"),
         supabase.from("prodotti").select("id,nome,codice,brand,categoria").order("nome").limit(5000),
         supabase.from("v4_fase_reparti").select("id,fase_id,reparto_id,completato,completato_at,completato_da,reparti(id,nome)"),
         supabase.from("v4_fase_prodotti").select("id,fase_id,prodotto_id,prodotto_nome"),
-        supabase.from("checklist_template").select("id,titolo,reparto_id,ordine,attivo,reparti(id,nome)").eq("attivo", true).order("ordine"),
+        supabase.from("checklist_template").select("id,titolo,reparto_id,ordine,attivo,competenze_crm,reparti(id,nome)").eq("attivo", true).order("ordine"),
         supabase.from("checklist_template_reparti").select("id,template_id,reparto_id"),
         supabase.from("v4_fasi_progetto").select("id,titolo,progetto_id,stato,completato_at,crm_customer_key,v4_progetti(titolo,crm_customer_key)").limit(5000),
       ]);

@@ -3,6 +3,7 @@ import { ArrowLeft, Pencil, Plus, Save, Search, Trash2, X } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 import useBackNavigation from "../../hooks/useBackNavigation";
+import CrmCompetencies, { CrmCompetencyBadges } from "../../components/CrmCompetencies";
 import ProjectTypesSettings from "../../components/ProjectTypesSettings";
 import {
   WORKSPACE_MODULES,
@@ -24,7 +25,7 @@ const emptyRole = {
   permessi: [],
   moduli: {},
 };
-const emptyTemplate = { titolo: "", reparto_id: "", reparto_ids: [], ordine: 1, attivo: true };
+const emptyTemplate = { competenze_crm: [], titolo: "", reparto_id: "", reparto_ids: [], ordine: 1, attivo: true };
 const emptyUserAccess = {
   ruolo_id: "",
   attivo: true,
@@ -292,6 +293,7 @@ export default function Settings({ section = "team" }) {
       const ids = getTemplateDepartmentIds(item.id);
       setTemplateForm({
         titolo: item.titolo || "",
+        competenze_crm: item.competenze_crm || [],
         reparto_id: ids[0] || item.reparto_id || "",
         reparto_ids: ids.length ? ids : (item.reparto_id ? [item.reparto_id] : []),
         ordine: item.ordine || 1,
@@ -411,6 +413,7 @@ export default function Settings({ section = "team" }) {
     const selectedDepartmentIds = Array.isArray(templateForm.reparto_ids) ? templateForm.reparto_ids.filter(Boolean) : [];
     const payload = {
       titolo: templateForm.titolo.trim(),
+      competenze_crm: templateForm.competenze_crm,
       reparto_id: selectedDepartmentIds[0] || null,
       ordine: Number(templateForm.ordine) || 1,
       attivo: templateForm.attivo,
@@ -679,8 +682,7 @@ export default function Settings({ section = "team" }) {
 
       {tab === "projects" && (
         <div className="settings-project-stack">
-          <div className="panel settings-panel"><div className="panel-header"><div><h3>Voci checklist preimpostate</h3><p>Voci riutilizzabili nelle fasi dei progetti.</p></div>{canManage && <button className="primary-action" onClick={() => openCreate("checklist")}><Plus size={18} />Nuova voce</button>}</div><div className="settings-list">{filteredTemplates.map((item) => <div className="settings-row" key={item.id}><div><strong>{item.titolo}</strong><span>{getTemplateDepartmentNames(item.id, item.reparti?.nome || "Tutti i reparti")}</span></div><span className={`config-status ${item.attivo ? "active" : "inactive"}`}>{item.attivo ? "Attiva" : "Disattiva"}</span><span className="role-level">Ordine {item.ordine}</span><div className="config-actions"><button onClick={() => openEdit("checklist", item)}><Pencil size={16} /></button><button className="danger" onClick={() => remove("checklist", item)}><Trash2 size={16} /></button></div></div>)}{filteredTemplates.length === 0 && <p>Nessuna voce corrisponde alla ricerca.</p>}</div></div>
-          <ProjectTypesSettings canManage={canManage} searchTerm={search} />
+          <ProjectTypesSettings canManage={canManage} searchTerm={search} onTemplatesChanged={loadData} checklistPanel={<div className="panel settings-panel"><div className="panel-header"><div><h3>Voci checklist preimpostate</h3><p>Voci riutilizzabili nelle fasi dei progetti.</p></div>{canManage && <button className="primary-action" onClick={() => openCreate("checklist")}><Plus size={18} />Nuova voce</button>}</div><div className="settings-list">{filteredTemplates.map((item) => <div className="settings-row" key={item.id}><div><strong>{item.titolo}</strong><span>{getTemplateDepartmentNames(item.id, item.reparti?.nome || "Tutti i reparti")}</span><CrmCompetencyBadges value={item.competenze_crm || []} /></div><span className={`config-status ${item.attivo ? "active" : "inactive"}`}>{item.attivo ? "Attiva" : "Disattiva"}</span><span className="role-level">Ordine {item.ordine}</span><div className="config-actions"><button aria-label={`Modifica voce ${item.titolo}`} onClick={() => openEdit("checklist", item)}><Pencil size={16} /></button><button className="danger" onClick={() => remove("checklist", item)}><Trash2 size={16} /></button></div></div>)}{filteredTemplates.length === 0 && <p>Nessuna voce corrisponde alla ricerca.</p>}</div></div>} />
         </div>
       )}
 
@@ -707,7 +709,7 @@ export default function Settings({ section = "team" }) {
 
             {modal.type === "ruolo" && <><label>Nome ruolo<input value={roleForm.nome} onChange={(e) => setRoleForm({ ...roleForm, nome: e.target.value })} /></label><label>Descrizione<textarea rows="3" value={roleForm.descrizione} onChange={(e) => setRoleForm({ ...roleForm, descrizione: e.target.value })} /></label><label className="check-line"><input type="checkbox" checked={roleForm.amministratore_workspace === true} onChange={(e) => setRoleForm({ ...roleForm, amministratore_workspace: e.target.checked })} />Accesso completo Amministratore</label><label>Ambito dati<select value={roleForm.ambito_dati} onChange={(e) => setRoleForm({ ...roleForm, ambito_dati: e.target.value })}><option value="propri">Dati personali e propria identità agente</option><option value="team">Dati personali, reparti e agenti associati</option><option value="tutti">Tutto il workspace</option></select></label><label>Livello operativo predefinito<select value={roleForm.livello_accesso} onChange={(e) => setRoleForm({ ...roleForm, livello_accesso: e.target.value })}><option value="lettura">Solo lettura</option><option value="scrittura">Operatività</option><option value="amministrazione">Gestione</option></select></label><label>Livello AI<select value={roleForm.livello_ai || "analisi"} onChange={(e) => setRoleForm({ ...roleForm, livello_ai: e.target.value })}><option value="nessuno">Nessun accesso</option><option value="analisi">Solo analisi</option><option value="bozza">Crea bozza</option><option value="conferma">Esegui dopo conferma</option></select></label><div className="checkbox-group scrollable-check-group"><strong>Operatività per modulo</strong><p className="muted">Il ruolo disciplina le operazioni su reparto, altri utenti e dati condivisi. Ogni utente può comunque organizzare le proprie attività e usare chat e messaggi personali.</p>{roleConfigurableModules.map((module) => <label key={module.code}>{module.label}<select value={roleForm.moduli?.[module.code] || roleForm.livello_accesso} onChange={(e) => setRoleForm((current) => ({ ...current, moduli: { ...current.moduli, [module.code]: e.target.value } }))}><option value="lettura">Lettura</option><option value="scrittura">Operatività</option><option value="amministrazione">Gestione</option></select></label>)}</div><label className="check-line"><input type="checkbox" checked={roleForm.accesso_come_beauty === true} onChange={(e) => setRoleForm({ ...roleForm, accesso_come_beauty: e.target.checked })} />Accesso Beauty Days con profilo Beauty</label><p className="muted">La visibilità dei moduli assegnabili dipende dai reparti; i livelli operativi dipendono sempre dal ruolo.</p></>}
 
-            {modal.type === "checklist" && <><label>Voce checklist<input value={templateForm.titolo} onChange={(e) => setTemplateForm({ ...templateForm, titolo: e.target.value })} /></label><div className="checkbox-group scrollable-check-group"><strong>Reparti collegati alla voce checklist</strong><p className="muted">Se non selezioni reparti, la voce sarà valida per tutti i reparti.</p>{activeDepartments.map((department) => (<label key={department.id}><input type="checkbox" checked={(templateForm.reparto_ids || []).includes(department.id)} onChange={() => toggleListValue(setTemplateForm, "reparto_ids", department.id)} />{department.nome}</label>))}{activeDepartments.length === 0 && <p>Nessun reparto attivo disponibile.</p>}</div><label>Ordine<input type="number" value={templateForm.ordine} onChange={(e) => setTemplateForm({ ...templateForm, ordine: e.target.value })} /></label><label className="check-line"><input type="checkbox" checked={templateForm.attivo} onChange={(e) => setTemplateForm({ ...templateForm, attivo: e.target.checked })} />Attiva</label></>}
+            {modal.type === "checklist" && <><label>Voce checklist<input value={templateForm.titolo} onChange={(e) => setTemplateForm({ ...templateForm, titolo: e.target.value })} /></label><div className="checkbox-group scrollable-check-group"><strong>Reparti collegati alla voce checklist</strong><p className="muted">Se non selezioni reparti, la voce sarà valida per tutti i reparti.</p>{activeDepartments.map((department) => (<label key={department.id}><input type="checkbox" checked={(templateForm.reparto_ids || []).includes(department.id)} onChange={() => toggleListValue(setTemplateForm, "reparto_ids", department.id)} />{department.nome}</label>))}{activeDepartments.length === 0 && <p>Nessun reparto attivo disponibile.</p>}</div><CrmCompetencies value={templateForm.competenze_crm} onChange={(competenze_crm) => setTemplateForm({ ...templateForm, competenze_crm })} /><label>Ordine<input type="number" value={templateForm.ordine} onChange={(e) => setTemplateForm({ ...templateForm, ordine: e.target.value })} /></label><label className="check-line"><input type="checkbox" checked={templateForm.attivo} onChange={(e) => setTemplateForm({ ...templateForm, attivo: e.target.checked })} />Attiva</label></>}
 
             {modal.type === "utente_accessi" && <>
               <h3>Profilo workspace</h3>

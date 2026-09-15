@@ -117,6 +117,44 @@ function mapAgent(row, syncAt) {
   };
 }
 
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map((item) => stableJson(item)).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+function sameNullableText(left, right) {
+  return text(left) === text(right);
+}
+
+export function partitionAgentChanges(activeAgents, existingAgents) {
+  const existingByCode = new Map((existingAgents || []).map((agent) => [upper(agent.codice), agent]));
+  const inserted = [];
+  const updated = [];
+  const unchanged = [];
+
+  for (const agent of activeAgents || []) {
+    const existing = existingByCode.get(upper(agent.codice));
+    if (!existing) {
+      inserted.push(agent);
+      continue;
+    }
+
+    const changed = !sameNullableText(existing.nome, agent.nome)
+      || !sameNullableText(existing.cognome, agent.cognome)
+      || !sameNullableText(existing.email, agent.email)
+      || !sameNullableText(existing.telefono, agent.telefono)
+      || Boolean(existing.attivo_mexal) !== Boolean(agent.attivo_mexal)
+      || stableJson(existing.dati_mexal) !== stableJson(agent.dati_mexal);
+
+    (changed ? updated : unchanged).push(agent);
+  }
+
+  return { inserted, updated, unchanged };
+}
+
 async function loadSupplierRows(mexal) {
   const rawRows = [];
   let next = null;
@@ -265,30 +303,33 @@ export default async function handler(req, res) {
     const activeAgents = await loadAgents(buildClient());
     const activeCodes = new Set(activeAgents.map((item) => item.codice));
 
-    let existing = [];
+    let changes = { inserted: [], updated: [], unchanged: [] };
     if (activeAgents.length) {
       const result = await admin
         .from("mexal_agenti")
-        .select("codice")
+        .select("codice,nome,cognome,email,telefono,attivo_mexal,dati_mexal")
         .in("codice", activeAgents.map((item) => item.codice));
       if (result.error) throw result.error;
-      existing = result.data || [];
+      changes = partitionAgentChanges(activeAgents, result.data || []);
 
-      const { error: upsertError } = await admin.from("mexal_agenti").upsert(activeAgents, { onConflict: "codice" });
-      if (upsertError) throw upsertError;
+      const rowsToPersist = [...changes.inserted, ...changes.updated];
+      if (rowsToPersist.length) {
+        const { error: upsertError } = await admin.from("mexal_agenti").upsert(rowsToPersist, { onConflict: "codice" });
+        if (upsertError) throw upsertError;
+      }
     }
 
-    const existingCodes = new Set(existing.map((item) => item.codice));
     const authEmailsUpdated = await syncLinkedUserEmails(admin, activeAgents);
     const removed = await removeInactiveAgents(admin, activeCodes);
-    const inserted = activeAgents.filter((item) => !existingCodes.has(item.codice)).length;
-    const updated = activeAgents.length - inserted;
+    const inserted = changes.inserted.length;
+    const updated = changes.updated.length;
+    const skipped = changes.unchanged.length;
 
     await completeSyncRun(admin, runId, {
       processed: activeAgents.length,
       inserted,
       updated,
-      skipped: 0,
+      skipped,
       failed: 0,
       metadata: { endpoint: "/fornitori", codice_prefix: AGENT_PREFIX, eliminati_disattivati: removed, email_accesso_aggiornate: authEmailsUpdated },
     });
@@ -299,6 +340,7 @@ export default async function handler(req, res) {
       letti_mexal: activeAgents.length,
       inseriti: inserted,
       aggiornati: updated,
+      invariati: skipped,
       eliminati_disattivati: removed,
       email_accesso_aggiornate: authEmailsUpdated,
       risorsa_mexal: "/fornitori",

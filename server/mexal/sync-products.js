@@ -4,6 +4,7 @@ import { checkpointSyncRunProgress, completeSyncRun, createSyncRun as createCent
 import { shouldReplayStockCheckpoint, stockBatchCheckpoint, stockRunState, stockUpdateDiagnostics } from "./lib/stockRunState.js";
 import { withTransientMexalRetry } from "./lib/transientRetry.js";
 import { authoritativeArticleUnit } from "./unit-of-measure.js";
+import { loadRunInputs } from "./lib/runInputs.js";
 
 const STORAGE_BUCKET = "prodotti-mexal";
 export const PRODUCT_UI_PREFIXES = ["IT", "MKT"];
@@ -1247,6 +1248,7 @@ export default async function handler(req, res) {
       syncRunId = body.syncRunId || null;
       if (!syncRunId && offset === 0) {
         syncRun = await createSyncRun(supabase, {
+          inputs_version: 1,
           batch_size: batchSize,
           article_prefix: articlePrefix,
           origin: body.origin || "manual",
@@ -1281,21 +1283,37 @@ export default async function handler(req, res) {
         : buildMexalClient({ warehouse: STOCK_WAREHOUSE, retryOptions: stockRetryOptions }),
       allWarehouses: buildMexalClient({ warehouse: null, retryOptions: stockRetryOptions }),
     };
-    let warehouseCatalog = [];
+    // Existing runs deliberately retain the legacy reader and their ordering.
+    let inputRun = syncRun;
+    if (action === "sync-stock-it") {
+      syncRunId = body.syncRunId ? Number(body.syncRunId) : null;
+      if (!syncRunId && offset === 0) {
+        const created = await createCentralSyncRun(supabase, { syncType: "stocks", source: body.origin === "cron" ? "cron" : "manual", context: body.context || {}, metadata: { inputs_version: 1, stock_state_version: 2, batch_size: batchSize, next_offset: 0, checkpointed_at: new Date().toISOString() } });
+        if (created.duplicate) return res.status(409).json({ error: "È già presente una sincronizzazione giacenze in corso.", sync_run_id: Number(created.id) });
+        syncRunId = created.id;
+      }
+      inputRun = await getCentralSyncRun(supabase, syncRunId);
+    }
+    const inputCatalog = await loadRunInputs({ supabase, run: inputRun, load: async () => {
+      const [allArticles, groups, warehouses] = await Promise.all([
+        getAllArticles(mexal),
+        action === "sync-stock-it" && inputRun?.metadata?.inputs_version === 1 ? new Map() : getGroupMap(mexal),
+        action === "sync-stock-it" ? loadMexalWarehouses(availabilityClients.allWarehouses) : [],
+      ]);
+      return { articles: allArticles, diagnostics: allArticles.diagnostics, groups: [...groups], warehouses };
+    } });
+    const allArticles = inputCatalog.articles;
+    allArticles.diagnostics = inputCatalog.diagnostics;
+    const groupMap = new Map(inputCatalog.groups);
+    const warehouseCatalog = inputCatalog.warehouses;
     let warehouseClients = new Map();
     if (action === "sync-stock-it") {
-      warehouseCatalog = await loadMexalWarehouses(availabilityClients.allWarehouses);
       warehouseClients = new Map(warehouseCatalog.map((warehouse) => [
         warehouse.number,
         buildMexalClient({ warehouse: warehouse.number, retryOptions: stockRetryOptions }),
       ]));
     }
 
-    const [allArticles, groupMap] =
-      await Promise.all([
-        getAllArticles(mexal),
-        getGroupMap(mexal),
-      ]);
     const articles = filterArticlesByPrefix(allArticles, articlePrefix);
 
     if (action === "test") {
@@ -1320,12 +1338,6 @@ export default async function handler(req, res) {
     }
 
     if (action === "sync-stock-it") {
-      syncRunId = body.syncRunId ? Number(body.syncRunId) : null;
-      if (!syncRunId && offset === 0) {
-        const stockRun = await createCentralSyncRun(supabase, { syncType: "stocks", source: ["manual", "cron"].includes(body.origin) ? body.origin : "manual", context: body.context || {}, metadata: { stock_state_version: 2, batch_size: batchSize, next_offset: 0, checkpointed_at: new Date().toISOString() } });
-        if (stockRun.duplicate) return res.status(409).json({ error: "È già presente una sincronizzazione giacenze in corso.", sync_run_id: Number(stockRun.id) });
-        syncRunId = stockRun.id;
-      }
       if (!Number.isSafeInteger(syncRunId)) throw new Error("Identificativo run giacenze non valido.");
       const activeRun = await findRunningSync(supabase, "stocks");
       if (activeRun && Number(activeRun.id) !== syncRunId) return res.status(409).json({ error: "È già presente una sincronizzazione giacenze in corso.", sync_run_id: Number(activeRun.id) });
@@ -1374,7 +1386,8 @@ export default async function handler(req, res) {
           const synchronizedAt = new Date().toISOString();
           const warehouseRows = [];
           for (const warehouse of warehouseCatalog) {
-            const warehouseArticle = await loadFullArticle(warehouseClients.get(warehouse.number), code, summary);
+            const warehouseArticle = inputRun?.metadata?.inputs_version === 1 && Number(availabilityMexal.magazzino) === Number(warehouse.number)
+              ? article : await loadFullArticle(warehouseClients.get(warehouse.number), code, summary);
             warehouseRows.push(mapArticleWarehouseStock(warehouseArticle, warehouse, {
               fallback: article,
               syncRunId,

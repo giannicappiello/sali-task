@@ -13,6 +13,6 @@ test("queue worker normalizza le origini Aruba, Vercel e Supabase", () => {
 });
 
 test("queue worker registra ciclo e business date subito dopo il producer", () => {
-  assert.match(workerSourceCode, /const producer = await rpc[\s\S]*last_business_date: producer\?\.businessDate[\s\S]*let documentSync/);
+  assert.match(workerSourceCode, /const producer =[\s\S]*await rpc[\s\S]*last_business_date: producer\?\.businessDate[\s\S]*let documentSync/);
   assert.match(workerSourceCode, /last_cycle_id: producer\?\.cycleId/);
 });

@@ -1,4 +1,6 @@
 import { syncDeletedWorkspaceCatalog } from "../../server/workspace-catalog-deletions.js";
+import { wakeMexalWorker } from "../../server/mexal/worker-wakeup.js";
+import { octRefreshStatus } from "../../server/mexal/oct-refresh-status.js";
 import { ensurePrivateDocumentsScreen } from "../../server/workspace-private-documents-screen.js";
 /* global process */
 import { createClient } from "@supabase/supabase-js";
@@ -527,7 +529,7 @@ async function rulesSave(req, body) {
   const rule = body.rule && typeof body.rule === "object" ? body.rule : null;
   if (!rule) throw Object.assign(new Error("Regola automazione non valida."), { status: 400 });
   const normalizedRule = body.ruleType === "schedule"
-    ? { ...rule, schedule_mode: "daily_vercel_hobby", hour: 23, minute: 0, frequency_minutes: null }
+    ? { ...rule, schedule_mode: "daily_vercel_hobby", hour: 21, minute: 30, frequency_minutes: null }
     : rule;
   const { data, error } = await admin.supabase.from(table).upsert(normalizedRule).select().single();
   if (error) throw error;
@@ -761,23 +763,17 @@ export default async function handler(req, res) {
           p_requested_at: new Date().toISOString(),
         });
         if (error) throw error;
-        return sendSuccess(res, 202, { refresh: data });
+        wakeMexalWorker({ manualJobId: Number(data.jobId) });
+        return sendSuccess(res, 202, { refresh: { ...data, lane: "manual_priority" } });
       }
       case "progremes_oct_refresh_status": {
         const admin = await createAdmin(req, "rdp.view");
         await rejectCustomerScopedOperation(admin, "Stato aggiornamento globale OCT");
-        const jobId = Number(body.jobId);
-        if (!Number.isSafeInteger(jobId) || jobId < 1) {
+        const jobId = body.jobId == null ? null : Number(body.jobId);
+        if (jobId !== null && (!Number.isSafeInteger(jobId) || jobId < 1)) {
           return sendFailure(res, 400, "progremes_oct_refresh_status", "Job OCT non valido.");
         }
-        const { data, error } = await admin.supabase
-          .from("mexal_sync_jobs")
-          .select("id,cycle_id,status,attempts,started_at,completed_at,last_error,last_result")
-          .eq("id", jobId)
-          .eq("sync_type", "oct_orders")
-          .maybeSingle();
-        if (error) throw error;
-        if (!data) return sendFailure(res, 404, "progremes_oct_refresh_status", "Job OCT Workbench non trovato.");
+        const data = await octRefreshStatus(admin.supabase, jobId);
         return sendSuccess(res, 200, { refresh: data });
       }
       case "workspacemes_v4_preview": {

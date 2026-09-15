@@ -41,11 +41,12 @@ export function businessDateInTimezone(now = new Date(), timezone = TIMEZONE) {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
+    minute: "2-digit",
     hourCycle: "h23",
   }).formatToParts(now);
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   const localDate = `${values.year}-${values.month}-${values.day}`;
-  return Number(values.hour) >= 23 ? localDate : addDays(localDate, -1);
+  return Number(values.hour) * 60 + Number(values.minute) >= 21 * 60 + 30 ? localDate : addDays(localDate, -1);
 }
 
 export function cycleKeyFor(scheduledDate, timezone = TIMEZONE) {

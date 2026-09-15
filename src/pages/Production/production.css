@@ -1,4 +1,15 @@
 .production-page { display: grid; gap: 24px; }
+.rdp-priority-action.secondary-action { display: inline-flex; align-items: center; justify-content: center; justify-self: start; gap: 8px; width: fit-content; max-width: 100%; box-sizing: border-box; height: auto; min-height: 46px; padding: 10px 16px; color: #1769aa; border-color: #bdd6ee; border-radius: 11px; background: #fff; line-height: 1.35; text-align: center; text-decoration: none; }
+.rdp-priority-action svg { flex: 0 0 auto; }
+.rdp-priority-action:hover { color: #12548a; background: #eef6ff; border-color: #1769aa; text-decoration: none; }
+.rdp-priority-action:focus-visible { outline: 3px solid #80b9ed; outline-offset: 3px; }
+.rdp-workbench .rdp-header-controls { flex-wrap: wrap; }
+.rdp-workbench .rdp-header-controls .rdp-tabs { flex-basis: 100%; }
+.rdp-workbench .rdp-header-actions { width: 100%; justify-content: flex-start; }
+.rdp-workbench .rdp-header-actions:empty { display: none; }
+.rdp-workbench .rdp-background-sync { white-space: normal; }
+.rdp-background-sync small { display: block; margin-top: 3px; font-size: .78rem; overflow-wrap: anywhere; }
+.rdp-background-sync svg { flex: 0 0 auto; }
 .production-hero { display: flex; align-items: center; gap: 20px; padding: 26px 28px; border: 1px solid #dbe5f0; border-radius: 20px; background: linear-gradient(135deg, #f8fbff 0%, #eef6ff 100%); box-shadow: var(--shadow-soft); }
 .production-hero-icon, .production-card-icon, .production-launch-icon { display: grid; place-items: center; flex: 0 0 auto; color: #fff; background: linear-gradient(135deg, #1769aa, #0b8f83); box-shadow: 0 10px 24px rgba(23, 105, 170, .2); }
 .production-hero-icon { width: 62px; height: 62px; border-radius: 18px; }

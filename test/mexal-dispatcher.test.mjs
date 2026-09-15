@@ -35,7 +35,14 @@ assert.equal(businessDateInTimezone(new Date("2026-08-25T21:00:00.000Z")), "2026
 assert.equal(businessDateInTimezone(new Date("2026-08-25T22:00:00.000Z")), "2026-08-25");
 assert.equal(businessDateInTimezone(new Date("2026-08-26T04:00:00.000Z")), "2026-08-25");
 // CET: 22:00 UTC sono le 23:00 italiane dello stesso giorno.
-assert.equal(businessDateInTimezone(new Date("2026-01-25T21:59:59.000Z")), "2026-01-24");
+assert.equal(businessDateInTimezone(new Date("2026-01-25T20:29:59.000Z")), "2026-01-24");
+assert.equal(businessDateInTimezone(new Date("2026-01-25T20:30:00.000Z")), "2026-01-25");
+assert.equal(businessDateInTimezone(new Date("2026-08-25T19:29:59.000Z")), "2026-08-24");
+assert.equal(businessDateInTimezone(new Date("2026-08-25T19:30:00.000Z")), "2026-08-25");
+assert.equal(businessDateInTimezone(new Date("2026-03-29T19:29:59.000Z")), "2026-03-28");
+assert.equal(businessDateInTimezone(new Date("2026-03-29T19:30:00.000Z")), "2026-03-29");
+assert.equal(businessDateInTimezone(new Date("2026-10-25T20:29:59.000Z")), "2026-10-24");
+assert.equal(businessDateInTimezone(new Date("2026-10-25T20:30:00.000Z")), "2026-10-25");
 assert.equal(businessDateInTimezone(new Date("2026-01-25T22:00:00.000Z")), "2026-01-25");
 assert.equal(businessDateInTimezone(new Date("2026-01-25T23:30:00.000Z")), "2026-01-25");
 // I due cambi d'ora mantengono la stessa business date maturata alle 23:00 locali.

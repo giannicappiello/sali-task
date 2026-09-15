@@ -48,6 +48,7 @@ export async function previewMaterialReallocation(auth, input, transport = fetch
 
 // Returns server-produced evidence, not descriptions supplied by the model/browser.
 export function assertMaterialReallocation(input, current) {
+  if (current.overbooked > 0) throw new Error("Usare MES_PRIORITY_MATERIALS e MES_PRIORITY_SIMULATE per risolvere l’eccedenza con disimpegno e ripianificazione, poi MES_PRIORITY_REVISE dopo conferma.");
   if (!current.eligible) throw new Error(current.blockReason || "Ordine non riallocabile.");
   if (input.targetId !== String(current.orderId) || input.orderNumber !== current.orderNumber ||
       input.articleCode !== current.articleCode || input.expectedHash !== current.hash)

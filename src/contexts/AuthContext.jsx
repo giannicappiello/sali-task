@@ -272,6 +272,7 @@ export function AuthProvider({ children }) {
     setScreenCatalog((current) => retainEqualAccessValue(current, { screens: snapshot.screens || [], links: snapshot.links || [], levels: snapshot.screen_levels || {} }));
     setDataScope((current) => retainEqualAccessValue(current, { mode: scope.mode || "propri", commercialMode: scope.commercial_mode || scope.mode || "propri", userIds: scope.user_ids || [], departmentIds: scope.department_ids || [],
       privateCommercialRead: scope.private_commercial_read === true,
+      directCustomerRead: scope.direct_customer_read === true,
       agentIds: scope.agent_ids || [], customerCode: scope.customer_code || null, customerCodes: scope.customer_codes || [] }));
     // Only the accepted snapshot can release protected routes. An older login
     // may finish while a realtime/focus refresh is still loading permissions.

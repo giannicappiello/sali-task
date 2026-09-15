@@ -35,6 +35,7 @@ export default function useOrdersAccess(moduleCode = "prof") {
   const customerCodesKey = JSON.stringify(dataScope?.customerCodes?.length ? dataScope.customerCodes : customerCode ? [customerCode] : []);
   const customerCodes = useMemo(() => JSON.parse(customerCodesKey), [customerCodesKey]);
   const privateReadOnly = dataScope?.privateCommercialRead === true && moduleCode === "private" && !customerCode;
+  const directCustomerRead = dataScope?.directCustomerRead === true && ["prof", "ph"].includes(moduleCode) && !customerCode;
   const scopeMode = dataScope?.mode || "propri";
   const commercialMode = dataScope?.commercialMode || scopeMode;
   const scopeAgentKey = JSON.stringify(dataScope?.agentIds || []);
@@ -140,13 +141,14 @@ export default function useOrdersAccess(moduleCode = "prof") {
     const isCustomer = enabled && role === "cliente";
     const canCreateCustomerPrivateOrder = isCustomer && workspaceModuleCode === "ordini_private";
     const canReadAllCommercial = !isCustomer && enabled && commercialMode === "tutti";
+    const canReadDirectCustomers = !isCustomer && enabled && directCustomerRead;
 
     const agentCode = isAgent ? access.codice_agente_mexal : null;
     const managedAgents = isAreaManager ? access.agenti_gestiti : [];
 
     let visibleAgents = [];
 
-    if (isAdmin || canReadAllCommercial) {
+    if (isAdmin || canReadAllCommercial || canReadDirectCustomers) {
       visibleAgents = null;
     } else if (isBackoffice) {
       visibleAgents = access.agenti_gestiti;
@@ -171,14 +173,14 @@ export default function useOrdersAccess(moduleCode = "prof") {
       agentCode,
       managedAgents,
       visibleAgents,
-      canSeeAll: isAdmin || canReadAllCommercial || (enabled && privateReadOnly),
+      canSeeAll: isAdmin || canReadAllCommercial || canReadDirectCustomers || (enabled && privateReadOnly),
       canWriteAll: !isCustomer && canWriteModule && (isAdmin || (isBackoffice && scopeMode === "tutti")),
       canAccessOrders: isAdmin || enabled,
       canWriteOrders: canCreateCustomerPrivateOrder || (!isCustomer && (isAdmin || (enabled && canWriteModule))),
       canUseAIOrderGeneration: !isCustomer && (isAdmin || (enabled && canWriteModule)),
       canManageOrders: !isCustomer && (isAdmin || (enabled && canManageModule)),
     };
-  }, [access, canUseModule, customerCode, scopeMode, commercialMode, workspaceModuleCode, customerCodes, privateReadOnly]);
+  }, [access, canUseModule, customerCode, scopeMode, commercialMode, workspaceModuleCode, customerCodes, privateReadOnly, directCustomerRead]);
 
   return {
     loading,

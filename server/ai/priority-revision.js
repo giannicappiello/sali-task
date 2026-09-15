@@ -52,6 +52,11 @@ export async function checkPriorityWorkspace(auth, revision) {
 export async function simulatePriority(auth, input) {
   const current = await priorityCall(auth, "materials", { orderNumber: input?.orderNumber });
   if (!(current.reservationReleaseVersion >= 2)) throw new Error("Aggiornare MES per attivare il disimpegno delle eccedenze su tutti gli articoli.");
+  if (!(current.bulkRoutingVersion >= 1)) throw new Error("Aggiornare MES per distinguere semilavorati da produrre e bulk da magazzino nella revisione del planning.");
+  if (current.planningBlock) throw new Error(current.planningBlock);
+  const internal = new Set((current.productionDependencies || []).map(x => x.articleCode?.trim().toUpperCase()));
+  if (input.materials?.some(x => internal.has(x.articleCode?.trim().toUpperCase())))
+    throw new Error("Il semilavorato interno è una dipendenza produttiva: selezionare le sue materie prime, non trasferire il bulk da produrre.");
   const revision = await priorityCall(auth, "simulate", { input });
   try { await checkPriorityWorkspace(auth, revision); return { ...revision, confirmable: true }; }
   catch (error) { return { ...revision, confirmable: false, workspaceBlock: error.message }; }

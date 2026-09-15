@@ -7,6 +7,15 @@ import "./priority-revision.css";
 
 const number = new Intl.NumberFormat("it-IT", { maximumFractionDigits: 6 });
 const initialDate = () => { const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset()); return now.toISOString().slice(0, 16); };
+export function ProductionDependencies({ dependencies = [] }) {
+  if (!dependencies.length) return null;
+  return <section className="priority-notice" aria-label="Semilavorati da produrre">
+    <h3>Semilavorati da produrre internamente</h3>
+    <p>Miscelazione → disponibilità del semilavorato → confezionamento. Questi articoli non richiedono disimpegni da altre lavorazioni: occorre coprire le loro materie prime.</p>
+    {dependencies.map(d => <p key={d.articleCode}><strong>{d.articleCode} · {number.format(d.required)} {d.unit}</strong><br />{d.description}</p>)}
+    <p className="priority-help">Quantità previste dalla distinta confermata. Le scorte di semilavorato non riducono automaticamente quantità e materie prime della ricetta.</p>
+  </section>;
+}
 export default function PriorityRevision() {
   const { session } = useAuth();
   return <PriorityRevisionForm key={session?.access_token} token={session?.access_token} />;
@@ -18,6 +27,8 @@ export function PriorityRevisionForm({ token }) {
   const [selected, setSelected] = useState(null);
   const [materials, setMaterials] = useState([]);
   const [materialNote, setMaterialNote] = useState("");
+  const [dependencies, setDependencies] = useState([]);
+  const [planningBlock, setPlanningBlock] = useState("");
   const [releaseSupported, setReleaseSupported] = useState(false);
   const [quantities, setQuantities] = useState({});
   const [startAt, setStartAt] = useState(initialDate);
@@ -53,9 +64,10 @@ export function PriorityRevisionForm({ token }) {
     return () => { active = false; };
   }, [latestId, token]);
   function choose(order) { return run(async () => {
-    invalidate(); setSelected(null); setMaterials([]); setQuantities({});
+    invalidate(); setSelected(null); setMaterials([]); setQuantities({}); setDependencies([]); setPlanningBlock(""); setMaterialNote(""); setReleaseSupported(false);
     const data = await request("priority_materials", { orderNumber: order.orderNumber });
-    setSelected(order); setMaterials(data.materials); setMaterialNote(data.note || ""); setReleaseSupported(data.reservationReleaseVersion >= 2);
+    setSelected(order); setMaterials(data.materials); setMaterialNote(data.note || ""); setReleaseSupported(data.reservationReleaseVersion >= 2 && data.bulkRoutingVersion >= 1);
+    setDependencies(data.productionDependencies || []); setPlanningBlock(data.planningBlock || "");
   }); }
   function simulate() { return run(async () => {
     invalidate();
@@ -89,7 +101,9 @@ export function PriorityRevisionForm({ token }) {
     {selected ? <fieldset disabled={busy || Boolean(proposal)} className="priority-section"><legend><span>2</span> Materiali e nuova priorità</legend>
       <div className="priority-fields"><label>Avvio desiderato (orario MES)<input type="datetime-local" value={startAt} onChange={e => { invalidate(); setStartAt(e.target.value); }} /></label><label className="priority-reason">Motivazione<textarea maxLength={1000} value={reason} onChange={e => { invalidate(); setReason(e.target.value); }} placeholder="Perché anticipare questa lavorazione?" /></label></div>
       <button type="button" className="secondary-action" onClick={() => window.dispatchEvent(new CustomEvent("workspace:priority-ai", { detail: { prompt: `Voglio anticipare ${selected.orderNumber} (OP MES ${selected.orderId}) dal ${startAt}. Leggi materiali e origini disponibili e proponi una revisione che limiti i ritardi sulle consegne. Motivo: ${reason || "da definire"}. Simula le conseguenze, senza applicare trasferimenti prima della mia conferma.` } }))}><Bot size={17} /> Proponi con IA</button>
-      {!releaseSupported ? <p role="alert" className="priority-error">Aggiornare MES per abilitare il disimpegno delle eccedenze su tutti gli articoli. Nessuna revisione verrà applicata con il vecchio motore.</p> : null}
+      {!releaseSupported ? <p role="alert" className="priority-error">Aggiornare MES per abilitare la revisione con distinzione tra semilavorati da produrre e materiali da magazzino. Nessuna revisione verrà applicata con il vecchio motore.</p> : null}
+      {planningBlock ? <p role="alert" className="priority-error">{planningBlock}</p> : null}
+      <ProductionDependencies dependencies={dependencies} />
       <p className="priority-help">Disimpegna le quantità dalle origini selezionate. Alla destinazione viene assegnato solo il necessario: il resto riduce l’eccedenza o torna libero. Anche una destinazione già coperta può richiedere disimpegni.</p>
       {materialNote ? <p className="priority-help">{materialNote}</p> : null}
       {materials.map(m => {
@@ -106,7 +120,7 @@ export function PriorityRevisionForm({ token }) {
           {!m.donors.length ? <p>Nessuna origine disponibile per il trasferimento.</p> : null}
         </details>;
       })}
-      <button type="button" className="primary-action" onClick={simulate} disabled={!releaseSupported || !reason.trim() || !startAt || materials.some(m => !m.eligible)}><ArrowRight size={17} /> Simula revisione</button>
+      <button type="button" className="primary-action" onClick={simulate} disabled={!releaseSupported || Boolean(planningBlock) || !reason.trim() || !startAt || materials.some(m => !m.eligible)}><ArrowRight size={17} /> Simula revisione</button>
     </fieldset> : null}
     <section className="priority-section" ref={resultRef}><h2><span className="priority-step">3</span> Conseguenze e conferma</h2>
       {revision ? <><PriorityRevisionSummary revision={revision} />

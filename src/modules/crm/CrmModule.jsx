@@ -322,7 +322,9 @@ function AccountDetail({ type }) {
   const canWrite = canUseModule(config.moduleCode, "scrittura");
   const [account, setAccount] = useState(null); const [metrics, setMetrics] = useState({}); const [related, setRelated] = useState({ contacts: [], opportunities: [], activities: [], briefs: [], orders: [], invoices: [], consents: [], events: [], externalOrders: [], projectCount: 0 }); const [error, setError] = useState(""); const [warning, setWarning] = useState("");
   const [commercialSnapshot, setCommercialSnapshot] = useState({}); const [journey, setJourney] = useState([]);
-  const [activity, setActivity] = useState({ tipo: "telefonata", titolo: "", data_attivita: "" });
+  const [activity, setActivity] = useState({ catalog_template_id: "", titolo: "", data_attivita: "" });
+  const [activityTemplates, setActivityTemplates] = useState([]);
+  const [activityBusy, setActivityBusy] = useState(false);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false); const [statusBusy, setStatusBusy] = useState(false);
   const load = useCallback(async () => {
     setError(""); setWarning("");
@@ -349,6 +351,9 @@ function AccountDetail({ type }) {
       current = { ...prospectResult.data, entity_kind: "prospect", entityKey, crm_account_id: prospectResult.data.id, area_crm: type, crm_active: statusResult.data?.crm_active !== false, crm_status_changed_at: statusResult.data?.changed_at || null, crm_status_reason: statusResult.data?.reason || null };
     }
     setAccount(current);
+    const catalogResult = await supabase.rpc("workspace_activity_catalog", { p_crm_tipo: type });
+    if (catalogResult.error) { setActivityTemplates([]); return setError(catalogResult.error.message); }
+    setActivityTemplates((catalogResult.data || []).filter((item) => item.classe === "semplice"));
     const crmAccountId = current.crm_account_id;
     const customerCode = current.codice_cliente_mexal;
     const emptyResult = { data: [], error: null };
@@ -359,7 +364,7 @@ function AccountDetail({ type }) {
     const [contactsResult, opportunitiesResult, activitiesResult, briefsResult, ordersResult, invoicesResult, externalOrdersResult, consentsResult, eventsResult] = await Promise.all([
       crmAccountId ? supabase.from("crm_contacts").select("*").eq("account_id", crmAccountId) : emptyResult,
       crmAccountId ? supabase.from("crm_opportunities").select("*,crm_opportunity_stages(nome)").eq("account_id", crmAccountId) : emptyResult,
-      crmAccountId ? supabase.from("crm_activities").select("*").eq("account_id", crmAccountId).order("data_attivita", { ascending: false }) : emptyResult,
+      crmAccountId ? supabase.from("crm_activities").select("*,checklist_template:catalog_template_id(titolo)").eq("account_id", crmAccountId).order("data_attivita", { ascending: false }) : emptyResult,
       crmAccountId ? supabase.from("crm_briefs").select("id,titolo,stato,aggiornato_il").eq("account_id", crmAccountId) : emptyResult,
       customerCode ? supabase.from("ordini_testate").select("id,numero_ordine_visualizzato,data_ordine,stato,totale_documento").eq("codice_cliente", customerCode).gte("data_ordine", period.from).lte("data_ordine", period.to).order("data_ordine", { ascending: false }).limit(50) : emptyResult,
       customerCode ? supabase.from("mexal_fatture_vendita").select("id,sigla,serie,numero,data_documento,totale_documento").eq("codice_cliente", customerCode).gte("data_documento", period.from).lte("data_documento", period.to).order("data_documento", { ascending: false }).limit(50) : emptyResult,
@@ -388,7 +393,10 @@ function AccountDetail({ type }) {
   }, [id, period.from, period.to, type]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
   async function addActivity(event) {
-    event.preventDefault(); if (!canWrite || !activity.titolo.trim()) return;
+    event.preventDefault(); if (!canWrite || activityBusy || !activity.titolo.trim()) return;
+    if (!activityTemplates.some((item) => item.id === activity.catalog_template_id)) return setError("Seleziona una voce checklist disponibile per questa sezione CRM.");
+    setActivityBusy(true);
+    try {
     let accountId = account.crm_account_id;
     if (!accountId && account.entity_kind === "canonical") {
       const ensured = await supabase.rpc("crm_ensure_canonical_account", { p_customer_code: account.codice_cliente_mexal, p_crm_type: type });
@@ -397,8 +405,9 @@ function AccountDetail({ type }) {
     }
     let reminderId = null;
     if (activity.data_attivita) { const reminder = await supabase.from("agenda_reminder").insert({ utente_id: profile.id, titolo: activity.titolo.trim(), descrizione: `CRM ${config.label}: ${account.nome}`, deadline: activity.data_attivita.slice(0, 10), stato: "Aperto" }).select("id").single(); reminderId = reminder.data?.id || null; }
-    const { error: insertError } = await supabase.from("crm_activities").insert({ ...activity, crm_tipo: type, account_id: accountId, responsabile_id: profile.id, reparto_id: account.reparto_id, reminder_id: reminderId, creato_da: profile.id });
-    if (insertError) return setError(insertError.message); setActivity({ tipo: "telefonata", titolo: "", data_attivita: "" }); await load();
+    const { error: insertError } = await supabase.from("crm_activities").insert({ ...activity, tipo: "follow_up", data_attivita: activity.data_attivita || new Date().toISOString(), crm_tipo: type, account_id: accountId, responsabile_id: profile.id, reparto_id: account.reparto_id, reminder_id: reminderId, creato_da: profile.id });
+    if (insertError) return setError(insertError.message); setActivity({ catalog_template_id: "", titolo: "", data_attivita: "" }); await load();
+    } finally { setActivityBusy(false); }
   }
   async function changeCustomerStatus({ active, reason }) {
     if (!canWrite || !account) return;
@@ -435,7 +444,7 @@ function AccountDetail({ type }) {
       {type === "b2b" ? <><Kpi label="Frequenza media ordini" value={commercialSnapshot.orders?.average_days ? `${commercialSnapshot.orders.average_days} gg` : "Non disponibile"} note={`${commercialSnapshot.orders?.lifetime_count || 0} ordini storici`} to={period.withPeriod(`${config.basePath}/riordini`, { customerSearch: account.nome })} /><Kpi label="Prossimo riordino atteso" value={formatDate(commercialSnapshot.b2b?.expected_reorder_date)} note={(commercialSnapshot.b2b?.classification || "prospect").replaceAll("_", " ")} to={period.withPeriod(`${config.basePath}/riordini`, { customerSearch: account.nome })} /></> : null}
     </div> : null}
     <div className="crm-tabs">
-      <CrmExpandableCard title="Timeline e attività" preview={<>{related.activities[0]?.titolo || "Nessuna attività registrata"}<br />{related.activities[1]?.titolo || (type === "conto_terzi" ? "Campioni, formule, preventivi e follow-up" : "Telefonate, visite e follow-up")}</>}>{canWrite ? <form className="crm-inline-form" onSubmit={addActivity}><select aria-label="Tipo attività" value={activity.tipo} onChange={(e) => setActivity({ ...activity, tipo: e.target.value })}>{["telefonata","email","visita","videocall","presentazione","formazione","campionatura","sviluppo_formula","preventivo","follow_up"].map((value) => <option key={value} value={value}>{value.replaceAll("_", " ")}</option>)}</select><input required placeholder="Titolo attività" value={activity.titolo} onChange={(e) => setActivity({ ...activity, titolo: e.target.value })} /><input aria-label="Data attività" type="datetime-local" value={activity.data_attivita} onChange={(e) => setActivity({ ...activity, data_attivita: e.target.value })} /><button className="primary-action crm-primary"><Plus size={16} />Aggiungi</button></form> : null}<ul className="crm-timeline">{related.activities.map((item) => <li key={item.id}><strong>{item.titolo}</strong><span>{item.tipo.replaceAll("_", " ")} · {formatDate(item.data_attivita)}</span><CrmDeleteActivityButton activity={item} canDelete={canWrite} onDeleted={load} onError={setError} compact /></li>)}</ul>{!related.activities.length ? <p>Nessuna attività disponibile.</p> : null}</CrmExpandableCard>
+      <CrmExpandableCard title="Timeline e attività" preview={<>{related.activities[0]?.titolo || "Nessuna attività registrata"}<br />{related.activities[1]?.titolo || (type === "conto_terzi" ? "Campioni, formule, preventivi e follow-up" : "Telefonate, visite e follow-up")}</>}>{canWrite ? <form className="crm-inline-form" onSubmit={addActivity}><select required aria-label="Tipo attività" disabled={activityBusy || !activityTemplates.length} value={activity.catalog_template_id} onChange={(e) => setActivity({ ...activity, catalog_template_id: e.target.value })}><option value="">{activityTemplates.length ? "Seleziona voce checklist" : "Nessuna voce checklist abilitata per questo CRM"}</option>{activityTemplates.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select><input required placeholder="Titolo attività" value={activity.titolo} onChange={(e) => setActivity({ ...activity, titolo: e.target.value })} /><input aria-label="Data attività" type="datetime-local" value={activity.data_attivita} onChange={(e) => setActivity({ ...activity, data_attivita: e.target.value })} /><button disabled={activityBusy || !activity.catalog_template_id} className="primary-action crm-primary"><Plus size={16} />{activityBusy ? "Salvataggio…" : "Aggiungi"}</button></form> : null}<ul className="crm-timeline">{related.activities.map((item) => <li key={item.id}><strong>{item.titolo}</strong><span>{item.checklist_template?.titolo || item.tipo.replaceAll("_", " ")} · {formatDate(item.data_attivita)}</span><CrmDeleteActivityButton activity={item} canDelete={canWrite} onDeleted={load} onError={setError} compact /></li>)}</ul>{!related.activities.length ? <p>Nessuna attività disponibile.</p> : null}</CrmExpandableCard>
       <CrmExpandableCard title="Customer journey" preview={<>{journey[0]?.title || "Nessun evento CRM"}<br />{journey[1]?.title || `${journey.length} eventi unificati`}</>}>{journey.map((item) => <div className="crm-row-card" key={`${item.event_type}-${item.entity_id}-${item.event_at}`}><strong>{item.title}</strong><span>{item.event_type.replaceAll("_", " ")} · {formatDate(item.event_at)} · {item.detail || "—"}</span></div>)}{!journey.length ? <p>Nessun evento disponibile nel perimetro autorizzato.</p> : null}</CrmExpandableCard>
       <CrmExpandableCard title="Progetti" preview={<>{related.opportunities[0]?.titolo || "Nessun progetto"}<br />{related.opportunities[1]?.titolo || `${related.opportunities.length} progetti collegati`}</>}>{related.opportunities.map((item) => <div className="crm-row-card" key={item.id}><strong>{item.titolo}</strong><span>{item.crm_opportunity_stages?.nome || "Senza fase"} · {formatMoney(item.valore)}</span></div>)}{!related.opportunities.length ? <p>Nessun progetto disponibile.</p> : null}</CrmExpandableCard>
       <CrmExpandableCard title="Contatti CRM" preview={<>{related.contacts[0] ? [related.contacts[0].nome, related.contacts[0].cognome].filter(Boolean).join(" ") : "Nessun contatto"}<br />{related.contacts[1] ? [related.contacts[1].nome, related.contacts[1].cognome].filter(Boolean).join(" ") : `${related.contacts.length} contatti collegati`}</>}>{related.contacts.map((item) => <div className="crm-row-card" key={item.id}><strong>{[item.nome, item.cognome].filter(Boolean).join(" ")}</strong><span>{item.ruolo || "Contatto"} · {item.email || item.telefono || "—"}</span></div>)}{!related.contacts.length ? <p>Nessun contatto CRM disponibile.</p> : null}</CrmExpandableCard>

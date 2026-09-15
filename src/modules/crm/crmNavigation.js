@@ -22,7 +22,6 @@ export function crmNavigation(type) {
       ["Clienti da seguire", `${basePath}/da-seguire`],
       ["Riordini", `${basePath}/riordini`],
       ["BeautyDays", `${basePath}/beautydays`],
-      ["Analisi", `${basePath}/analisi`],
     ];
   }
   if (type === "brand_direct") {

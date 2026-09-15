@@ -37,3 +37,18 @@ nel codice applicativo.
   dashboard, informazioni, popup, filtri, ordinamento numerico, paginazione,
   visibilità colonne, Escape e viewport mobile senza overflow/errori runtime.
 - Il test browser usa fixture; non è una sessione autenticata in produzione.
+
+## Creazione dalla scheda cliente
+
+- Nuova attività apre `WorkspaceTaskDialog` / `PhaseChecklistModal`, con cliente
+  già inserito e checklist filtrata B2B. Anche il dettaglio Attività usa questo
+  ingresso; le task Workspace del cliente sono incluse senza duplicare le
+  attività CRM già collegate.
+- I progetti selezionabili nel popup task appartengono al CRM e al cliente
+  iniziale. L'eventuale progetto di una fase esistente resta disponibile in modifica.
+- Nuovo progetto mantiene il filtro B2B sui tipi. Entrambi i moduli caricano
+  dall'anagrafica `prodotti` solo codici attivi IT, MKT e IMP, preservando gli UUID
+  corretti per i vincoli dei collegamenti prodotto. Non usano gli ID della tabella
+  separata degli impianti.
+- La schermata Analisi B2B è rimossa da navigazione, rotte e catalogo Workspace.
+  Analisi PRIVATE rimane disponibile.

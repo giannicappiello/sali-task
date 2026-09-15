@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import PhaseChecklistModal from "./PhaseChecklistModal";
 import { supabase } from "../lib/supabaseClient";
+import { loadDirectWorkspaceProducts, projectsForCrmTask } from "../lib/workspaceCrmCatalog";
 
 export default function WorkspaceTaskDialog({ open, phase = null, crmType, initialCustomerKey = "", canManage = true, onClose, onSaved }) {
   const [data, setData] = useState({ projects: [], departments: [], products: [], phaseDepartments: [], phaseProducts: [], templates: [], templateDepartments: [], allPhases: [] });
@@ -9,10 +10,13 @@ export default function WorkspaceTaskDialog({ open, phase = null, crmType, initi
     if (!open) return undefined;
     let active = true;
     const timer = window.setTimeout(async () => {
+      let projectsRequest = supabase.from("v4_progetti").select("id,titolo,crm_customer_key,crm_tipo");
+      if (!phase && crmType) projectsRequest = projectsRequest.eq("crm_tipo", crmType);
+      if (!phase && initialCustomerKey) projectsRequest = projectsRequest.eq("crm_customer_key", initialCustomerKey);
       const results = await Promise.all([
-        supabase.from("v4_progetti").select("id,titolo,crm_customer_key,crm_tipo").order("created_at", { ascending: false }).limit(2000),
+        projectsRequest.order("created_at", { ascending: false }).limit(2000),
         supabase.from("reparti").select("id,nome,attivo").eq("attivo", true).order("nome"),
-        supabase.from("prodotti").select("id,nome,codice,brand,categoria").order("nome").limit(5000),
+        crmType === "b2b" || crmType === "brand_direct" ? loadDirectWorkspaceProducts(supabase) : supabase.from("prodotti").select("id,nome,codice,brand,categoria").order("nome").limit(5000),
         supabase.from("v4_fase_reparti").select("id,fase_id,reparto_id,completato,completato_at,completato_da,reparti(id,nome)"),
         supabase.from("v4_fase_prodotti").select("id,fase_id,prodotto_id,prodotto_nome"),
         supabase.from("checklist_template").select("id,titolo,reparto_id,ordine,attivo,competenze_crm,reparti(id,nome)").eq("attivo", true).order("ordine"),
@@ -32,12 +36,12 @@ export default function WorkspaceTaskDialog({ open, phase = null, crmType, initi
       });
     }, 0);
     return () => { active = false; window.clearTimeout(timer); };
-  }, [open]);
+  }, [open, crmType, initialCustomerKey, phase]);
 
   return <PhaseChecklistModal
     open={open}
     phase={phase}
-    projects={data.projects}
+    projects={projectsForCrmTask(data.projects, crmType, initialCustomerKey, phase)}
     departments={data.departments}
     products={data.products}
     phaseDepartments={data.phaseDepartments}

@@ -23,7 +23,6 @@ export const CRM_ROUTE_CATALOG = Object.freeze([
   { path: "b2b/pipeline", catalogPath: "/crm/b2b/pipeline", moduleCode: "crm_b2b", screenCode: "crm.b2b.pipeline", view: "pipeline", type: "b2b" },
   { path: "b2b/pipeline/:opportunityId", catalogPath: "/crm/b2b/pipeline/:opportunityId", moduleCode: "crm_b2b", screenCode: "crm.b2b.pipeline", view: "opportunity", type: "b2b" },
   { path: "b2b/attivita", catalogPath: "/crm/b2b/attivita", moduleCode: "crm_b2b", screenCode: "crm.b2b.attivita", view: "activities", type: "b2b" },
-  { path: "b2b/analisi", catalogPath: "/crm/b2b/analisi", moduleCode: "crm_b2b", screenCode: "crm.b2b.analisi", view: "analytics", type: "b2b" },
   { path: "b2b/da-seguire", catalogPath: "/crm/b2b/da-seguire", moduleCode: "crm_b2b", screenCode: "crm.b2b.da_seguire", view: "follow-up", type: "b2b" },
   { path: "b2b/riordini", catalogPath: "/crm/b2b/riordini", moduleCode: "crm_b2b", screenCode: "crm.b2b.riordini", view: "reorders", type: "b2b" },
   { path: "b2b/beautydays", catalogPath: "/crm/b2b/beautydays", moduleCode: "crm_b2b", screenCode: "crm.b2b.beautydays", view: "beautydays", type: "b2b" },

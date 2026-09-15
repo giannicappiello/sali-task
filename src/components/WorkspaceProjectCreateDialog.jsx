@@ -3,6 +3,7 @@ import { Plus, Save, Search, X } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabaseClient";
 import { loadDirectProductCatalog } from "../modules/orders/services/directProductCatalog";
+import { loadDirectWorkspaceProducts } from "../lib/workspaceCrmCatalog";
 import { matchesCrmCompetency, projectRulesForCrm, resolveRuleBlocker } from "../lib/crmCompetencies";
 import WorkspaceCustomerPicker from "./WorkspaceCustomerPicker";
 
@@ -30,7 +31,7 @@ export default function WorkspaceProjectCreateDialog({ open, crmType, initialCus
     const timer = window.setTimeout(async () => {
       setForm({ ...emptyForm, crm_customer_key: initialCustomerKey });
       setQuery("");
-      const productsRequest = crmType === "brand_direct"
+      const productsRequest = crmType === "b2b" ? loadDirectWorkspaceProducts(supabase) : crmType === "brand_direct"
         ? loadDirectProductCatalog(supabase)
           .then(({ products, implants }) => ({
             data: [

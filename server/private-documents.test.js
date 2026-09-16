@@ -1,22 +1,10 @@
 import assert from "node:assert/strict";
-import { Buffer } from "node:buffer";
-import { createHmac } from "node:crypto";
+
+
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { createPrivateDocumentToken } from "./private-documents.js";
-import { productionCoaWorkspacePath } from "../src/pages/Documentation/private-documents-navigation.js";
 
-test("il ticket Documenti Private è firmato, breve e contiene il perimetro cliente", () => {
-  const secret = "workspace-private-documents-secret-123456789";
-  const token = createPrivateDocumentToken({ subject: "utente-1", email: "utente@example.test",
-    operations: ["view", "upload"], customerCodes: ["501.00001"], now: 1_800_000_000 }, secret);
-  const [encoded, signature] = token.split(".");
-  assert.equal(signature, createHmac("sha256", secret).update(encoded).digest("base64url"));
-  const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
-  assert.deepEqual(payload.customerCodes, ["501.00001"]);
-  assert.deepEqual(payload.operations, ["view", "upload"]);
-  assert.equal(payload.expiresAt - payload.issuedAt, 600);
-});
+import { productionCoaWorkspacePath } from "../src/pages/Documentation/private-documents-navigation.js";
 
 test("la migrazione conserva in Workspace documenti e genealogia SL", async () => {
   const migration = await readFile(new URL("../supabase/migrations/20260831210000_workspace_private_documents_and_sl_genealogy.sql", import.meta.url), "utf8");
@@ -51,15 +39,15 @@ test("un account cliente non può ottenere un ticket di associazione documenti",
 test("il cliente naviga da articolo a lotto e vede documenti comuni e specifici", async () => {
   const [page, service] = await Promise.all([
     readFile(new URL("../src/pages/Documentation/PrivateDocuments.jsx", import.meta.url), "utf8"),
-    readFile(new URL("../_progremes_v3_fix/Modules/Documenti/Services/PrivateDocumentService.cs", import.meta.url), "utf8"),
+    readFile(new URL("./private-documents-store.js", import.meta.url), "utf8"),
   ]);
   assert.match(page, /documentsForLot/);
   assert.match(await readFile(new URL("../src/pages/Documentation/private-documents-matching.js", import.meta.url), "utf8"), /document\.associationType === "Articolo"/);
   assert.match(page, /Apri lotto/);
   assert.match(page, /Documenti disponibili per il lotto/);
   assert.match(page, /!customerScoped.*Emetti CoA/);
-  assert.match(service, /CustomerOrderIdsForArticleAsync/);
-  assert.match(service, /allowedOrderIds\.Contains\(lot\.ProductionOrderId\.Value\)/);
+  assert.match(service, /allowedLots/);
+  assert.doesNotMatch(service, /PROGREMES_URL|PROGREMES_INTEGRATION_SECRET/);
 });
 
 test("Emetti CoA segue la navigazione interna Workspace e conserva il contesto MES", async () => {

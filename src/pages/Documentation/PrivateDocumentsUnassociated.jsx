@@ -24,8 +24,8 @@ export default function PrivateDocumentsUnassociated({ request, refreshKey }) {
 
   useEffect(() => {
     const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
+    const pending = window.setTimeout(() => void load(controller.signal), 0);
+    return () => { window.clearTimeout(pending); controller.abort(); };
   }, [load, refreshKey]);
 
   const term = query.trim().toLocaleLowerCase("it");
@@ -37,10 +37,10 @@ export default function PrivateDocumentsUnassociated({ request, refreshKey }) {
       <div><h2>Documenti non associati</h2><p>File sul NAS senza collegamento ad alcun articolo Workspace.</p></div>
       <button type="button" disabled={loading} onClick={() => void load()}><RefreshCw size={17}/>{loading ? "Verifica in corso…" : "Aggiorna elenco"}</button>
     </header>
-    <p className="private-unassociated-help">L’associazione automatica controlla ogni 5 minuti le cartelle in produzione / Documentazione Mp. Per i file fuori da questo percorso, compresa COA PROGRE, resta disponibile l’associazione manuale dalla scheda articolo.</p>
+    <p className="private-unassociated-help">L’associazione automatica viene eseguita dal servizio Workspace e con il pulsante Sincronizza documenti; controlla le cartelle in produzione / Documentazione Mp. Per i file fuori da questo percorso, compresa COA PROGRE, resta disponibile l’associazione manuale dalla scheda articolo.</p>
     <label className="private-unassociated-search"><Search size={18}/><input aria-label="Cerca documenti non associati" placeholder="Cerca per nome, cartella o motivo…" value={query} onChange={(event) => setQuery(event.target.value)}/></label>
     {error && <p role="alert" className="private-documents-error">{error}</p>}
-    {result && <p className="private-unassociated-status" role="status">Ultima verifica: {new Date(result.scannedAt).toLocaleString("it-IT")} · {result.unassociated.length} non associati{result.associated > 0 ? ` · ${result.associated} nuovi collegamenti creati` : ""}{loading || error ? " · Elenco precedente" : ""}</p>}
+    {result && <p className="private-unassociated-status" role="status">Ultima verifica: {result.scannedAt ? new Date(result.scannedAt).toLocaleString("it-IT") : "non ancora eseguita"} · {result.unassociated.length} non associati{result.associated > 0 ? ` · ${result.associated} nuovi collegamenti creati` : ""}{loading || error ? " · Elenco precedente" : ""}</p>}
     {result?.warnings?.length > 0 && <div className="private-unassociated-warning" role="status"><strong>Verifica parziale</strong><ul>{result.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}
     <div className="private-unassociated-list" aria-busy={loading}>
       {documents.map((item) => <article key={item.relativePath}><FileLock2 size={22}/><div><h3>{item.name}</h3><p className="private-unassociated-path">{item.relativePath}</p><p className="private-unassociated-reason">{item.reason}</p></div><small>{(item.sizeBytes / 1048576).toLocaleString("it-IT", { maximumFractionDigits: 2 })} MB</small></article>)}

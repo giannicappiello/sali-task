@@ -25,6 +25,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/workspace/documents",
+      "destination": "/api/mexal/automation"
+    },
+    {
       "source": "/api/company-documents/compose",
       "destination": "/api/mexal/automation?route=company-document-compose"
     },

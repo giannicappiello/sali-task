@@ -47,7 +47,7 @@ import { automaticPfLines, calculateWorkspaceV4PurchaseRequirements, executeWork
 import { buildWorkspaceV4PfPlan, workspaceV4PfPlanChecksum } from "../../server/workspacemes-v4-pf-plan.js";
 import { readMexalArticleSupplierMaster } from "../../server/mexal/article-supplier-master.js";
 import { generateSaliDiIschiaProposal, listSaliDiIschiaProposals } from "../../server/sali-di-ischia-proposal.js";
-import { privateDocumentsSession, syncPrivateDocuments } from "../../server/private-documents.js";
+import { handlePrivateDocuments, privateDocumentsSession, syncPrivateDocuments } from "../../server/private-documents.js";
 import { handleMesHeadingResolve } from "../../server/company-letterheads-mes-api.js";
 
 async function dispatchMessageNotification(req, body) {
@@ -625,6 +625,8 @@ export default async function handler(req, res) {
         return sendSuccess(res, 200, await issueProgremesTicket(req, body));
       case "progremes_user_sections":
         return sendSuccess(res, 200, await listUserProgremesSections(req));
+      case "private_documents":
+        return res.status(200).json(await handlePrivateDocuments(req, body));
       case "private_documents_session":
         return sendSuccess(res, 200, await privateDocumentsSession(req, body));
       case "private_documents_sync":

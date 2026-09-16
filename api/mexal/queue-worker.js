@@ -1,3 +1,4 @@
+import { synchronizeNas } from "../../server/private-documents-store.js";
 import { createClient } from "@supabase/supabase-js";
 import { runAutomaticDocumentSync } from "../../server/document-api.js";
 import { checkAndRecordInfrastructureHealth } from "../../server/infrastructure-health.js";
@@ -156,7 +157,7 @@ async function runWorker(req, res) {
     });
     let documentSync = { status: "not_checked" };
     try {
-      if (!manualJobId && !req.body?.continuation) documentSync = await runAutomaticDocumentSync(admin);
+      if (!manualJobId && !req.body?.continuation) { documentSync = await runAutomaticDocumentSync(admin); await synchronizeNas(admin); }
     } catch (documentError) {
       documentSync = { status: "error", error: documentError?.message || "Sincronizzazione documentale non riuscita." };
     }

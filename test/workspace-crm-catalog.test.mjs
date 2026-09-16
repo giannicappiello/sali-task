@@ -18,8 +18,8 @@ test('DIRECT loading follows every page and filters server results defensively',
   let calls=0;const client={from:()=>{const q={select:()=>q,eq:()=>q,or:()=>q,order:()=>q,range:async()=>{calls++;return {data:calls===1?Array.from({length:500},(_,i)=>({id:i,codice:'IT'+i})):[{id:501,codice:'IMP1'},{id:502,codice:'OTHER'}]};}};return q;}};
   const result=await loadDirectWorkspaceProducts(client);assert.equal(result.data.length,501);assert.equal(calls,2);
 });
-test('B2B Analysis removed without removing PRIVATE analysis', () => {
+test('B2B and PRIVATE Analysis removed', () => {
   assert.equal(crmNavigation('b2b').some(([name])=>name==='Analisi'),false);
   assert.equal(CRM_ROUTE_CATALOG.some(r=>r.path==='b2b/analisi'),false);
-  assert.equal(CRM_ROUTE_CATALOG.some(r=>r.path==='conto-terzi/analisi'),true);
+  assert.equal(CRM_ROUTE_CATALOG.some(r=>r.path==='conto-terzi/analisi'),false);
 });

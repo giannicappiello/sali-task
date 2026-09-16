@@ -10,7 +10,6 @@ export function crmNavigation(type) {
       ["Pipeline", `${basePath}/pipeline`],
       ["Attività", `${basePath}/attivita`],
       ["Campioni / Sviluppi", `${basePath}/sviluppi`],
-      ["Analisi", `${basePath}/analisi`],
     ];
   }
   if (type === "b2b") {

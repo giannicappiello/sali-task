@@ -108,12 +108,14 @@ export default function PrivateDocuments() {
   async function openArticle(article) { setDetailLoading(true); setError(""); setSelectedLot(null); try { setSelected(await documentRequest(documentSession || await establishSession(), `articles/${encodeURIComponent(article.articleId)}`)); } catch (cause) { setError(cause.message); } finally { setDetailLoading(false); } }
   async function download(document) {
     setError("");
+    // Reserve the tab while the click still carries browser user activation.
+    const fileWindow = window.open("", "_blank");
+    if (fileWindow) fileWindow.opener = null;
     try {
       const { url } = await documentRequest(documentSession || await establishSession(), `documents/${document.externalId}`);
-      const anchor = window.document.createElement("a");
-      anchor.href = url; anchor.target = "_blank"; anchor.rel = "noopener noreferrer";
-      anchor.download = document.originalFileName || "documento"; anchor.click();
-    } catch (cause) { setError(cause.message); }
+      if (!fileWindow) throw new Error("Consenti l’apertura di nuove schede per visualizzare il documento.");
+      fileWindow.location.replace(url);
+    } catch (cause) { fileWindow?.close(); setError(cause.message); }
   }  async function browseNas(directory = "") { setNasLoading(true); setError(""); try { const uploadSession = { accessToken }; setNasListing(await documentRequest(uploadSession, `nas?directory=${encodeURIComponent(directory)}`)); } catch (cause) { setError(cause.message); } finally { setNasLoading(false); } }
   function openDocumentLink(lot = null) { setUploadLot(lot); setNasPath(""); setNasListing(null); setUploadError(""); setUploadOpen(true); void browseNas(""); }
   async function upload(event) {

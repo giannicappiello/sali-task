@@ -7,7 +7,6 @@ import "./PrivateDocuments.css";
 import "./PrivateDocumentsActions.css";
 import "./PrivateDocumentsNasPicker.css";
 import PrivateDocumentsUnassociated from "./PrivateDocumentsUnassociated";
-import { documentsForLot } from "./private-documents-matching";
 import { documentsOnlyArticle, filterDocumentArticles, readCachedArticle, cacheArticle } from "./private-documents-catalogue";
 
 async function workspaceAction(token, action, extra = {}) {
@@ -41,6 +40,28 @@ function articleSection(article) {
 
 function DocumentList({ documents, onDownload, emptyText = "Nessun documento associato." }) {
   return <div className="private-document-list">{documents.map((document) => <article key={`${document.externalId}-${document.associationType}-${document.lotCode}`}><FileLock2/><div><strong>{document.title}</strong><span>{document.type} · Rev. {document.revision} · {document.associationType}{document.lotCode ? ` · Lotto ${document.lotCode}` : ""}</span><small>{document.originalFileName} · {size(document.sizeBytes)} · caricato il {date(document.uploadedAt)}</small></div><button onClick={() => onDownload(document)}><Download size={17}/>Scarica</button></article>)}{!documents.length && <p>{emptyText}</p>}</div>;
+}
+
+function LotDocuments({ articleCode, lotCode, session, onDownload }) {
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    documentRequest(session, `lots/documents?${new URLSearchParams({ articleCode, lotCode })}`)
+      .then(data => { if (active) setResult(data); })
+      .catch(cause => { if (active) setError(cause.message); });
+    return () => { active = false; };
+  }, [articleCode, lotCode, session]);
+  if (error) return <p className="private-documents-error" role="alert">{error}</p>;
+  if (!result) return <p role="status">Caricamento documenti del lotto e dei materiali utilizzati…</p>;
+  return <>
+    <section className="private-document-section"><h3>Documenti generali dell’articolo</h3><DocumentList documents={result.general} onDownload={onDownload}/></section>
+    <section className="private-document-section"><h3>Documenti specifici del lotto</h3><DocumentList documents={result.specific} onDownload={onDownload}/></section>
+    <section className="private-document-section"><h3>Documenti dei materiali utilizzati</h3><p>Documenti generali e dei lotti impiegati, anche attraverso i bulk intermedi.</p>
+      {result.materials.map(material => <section key={`${material.articleCode}-${material.lotCode}`}><h4>{material.articleCode} · Lotto {material.lotCode}</h4><p>{material.description}</p><DocumentList documents={material.documents} onDownload={onDownload}/></section>)}
+      {!result.materials.length && <p>Nessuno scarico di produzione disponibile per ricostruire i materiali utilizzati in questo lotto.</p>}
+    </section>
+  </>;
 }
 
 export default function PrivateDocuments() {
@@ -134,7 +155,8 @@ export default function PrivateDocuments() {
     const fileWindow = window.open("", "_blank");
     if (fileWindow) fileWindow.opener = null;
     try {
-      const { url } = await documentRequest(documentSession || await establishSession(), `documents/${document.externalId}`);
+      const context = document.downloadContext ? `?${new URLSearchParams(document.downloadContext)}` : "";
+      const { url } = await documentRequest(documentSession || await establishSession(), `documents/${document.externalId}${context}`);
       if (!fileWindow) throw new Error("Consenti l’apertura di nuove schede per visualizzare il documento.");
       fileWindow.location.replace(url);
     } catch (cause) { fileWindow?.close(); setError(cause.message); }
@@ -166,7 +188,6 @@ export default function PrivateDocuments() {
   function openCoa(lot) { const path = productionCoaWorkspacePath({ productionId: lot.productionId, articleCode: selected?.article?.articleCode, lotCode: lot.lotCode, productionOrderId: lot.productionOrderId }); if (!path) { setError("Produzione non identificata: non è possibile compilare il CoA per questo lotto."); return; } setError(""); navigate(path); }
 
   const lotOptions = useMemo(() => (selected?.lots || []).map((row) => ({ type: row.lotType, lot: row.lotCode, orderId: row.productionOrderId || "", stockId: row.stockLotId || "" })), [selected]);
-  const lotDocuments = useMemo(() => selectedLot ? documentsForLot(selected?.documents, selectedLot) : [], [selected, selectedLot]);
   const sectionCounts = useMemo(() => catalog.reduce((counts, article) => {
     counts[articleSection(article)] += 1;
     return counts;
@@ -190,7 +211,7 @@ export default function PrivateDocuments() {
       <section className="private-article-list-panel"><header><h2>{appliedQuery ? `Risultati per “${appliedQuery}”` : activeSectionInfo.title}</h2><span>{filteredArticles.length}</span></header>{loading ? <div className="private-documents-loading">Caricamento archivio…</div> : <div className="private-article-list">{filteredArticles.map((article) => <button key={article.articleId} type="button" onClick={() => openArticle(article)} className={selected?.article?.articleId === article.articleId ? "active" : ""}><span>{article.articleType}</span><strong>{article.articleCode}</strong><p>{article.description}</p><small>{article.documentCount} documenti · {article.lotCount} lotti</small></button>)}</div>}{!loading && !filteredArticles.length && <p className="private-panel-empty">{appliedQuery ? "Nessun articolo corrisponde alla ricerca globale." : "Nessun articolo disponibile in questa tipologia."}</p>}</section>
       <section className="private-article-detail-panel">{detailLoading ? <div className="private-documents-loading">Caricamento lotti e documenti…</div> : !selected ? <div className="private-panel-empty"><FileLock2 size={32}/><h2>Seleziona un articolo</h2><p>I lotti e i documenti disponibili compariranno qui.</p></div> : selectedLot ? <>
       <div className="private-detail-heading"><button onClick={() => setSelectedLot(null)}><ArrowLeft size={18}/>Torna ai lotti</button><div><span>{selected.article.articleCode} · {selectedLot.lotType}</span><h2>Lotto {selectedLot.lotCode}</h2><p>{selected.article.description}</p></div></div>
-      <section className="private-document-section"><h3>Documenti disponibili per il lotto</h3><DocumentList documents={lotDocuments} onDownload={download} emptyText="Nessun documento disponibile per questo lotto."/></section>
+      <LotDocuments key={`${selected.article.articleCode}-${selectedLot.lotCode}`} articleCode={selected.article.articleCode} lotCode={selectedLot.lotCode} session={documentSession} onDownload={download}/>
     </> : <>
       <div className="private-detail-heading"><div><span>{selected.article.articleType}</span><h2>{selected.article.articleCode} · {selected.article.description}</h2><p>{selected.article.customers?.join(", ") || "Nessun cliente collegato"}</p></div>{!customerScoped && canUpload && <button className="primary-action" onClick={() => openDocumentLink()}><FilePlus2 size={18}/>Associa documento</button>}</div>
       {(!customerScoped || documentsOnlyArticle(selected.article)) && <section className="private-document-section"><h3>{documentsOnlyArticle(selected.article) ? "Documenti associati" : "Documenti generali e di produzione"}</h3><DocumentList documents={selected.documents} onDownload={download}/></section>}

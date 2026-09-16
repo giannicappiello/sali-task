@@ -41,10 +41,10 @@ test("il cliente naviga da articolo a lotto e vede documenti comuni e specifici"
     readFile(new URL("../src/pages/Documentation/PrivateDocuments.jsx", import.meta.url), "utf8"),
     readFile(new URL("./private-documents-store.js", import.meta.url), "utf8"),
   ]);
-  assert.match(page, /documentsForLot/);
+  assert.match(page, /lots\/documents\?/);
   assert.match(await readFile(new URL("../src/pages/Documentation/private-documents-matching.js", import.meta.url), "utf8"), /document\.associationType === "Articolo"/);
   assert.match(page, /Apri lotto/);
-  assert.match(page, /Documenti disponibili per il lotto/);
+  assert.match(page, /Documenti specifici del lotto/);
   assert.match(page, /!customerScoped.*Emetti CoA/);
   assert.match(service, /allowedLots/);
   assert.doesNotMatch(service, /PROGREMES_URL|PROGREMES_INTEGRATION_SECRET/);

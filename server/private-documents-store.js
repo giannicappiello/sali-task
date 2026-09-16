@@ -45,10 +45,11 @@ export function normalizePath(path) {
 }
 export function matchFile(file, articles, lots) {
   const parts=normalizePath(file.path).split('/');
-  if(key(parts[0])!=='PRODUZIONE'||key(parts[1])!=='DOCUMENTAZIONE MP'||parts.length<4)
-    return {reason:'Fuori dalla cartella produzione / Documentazione Mp: associazione manuale.'};
+  if(key(parts[0])!=='PRODUZIONE'||!['DOCUMENTAZIONE MP','COAPROGRE'].includes(key(parts[1]))||parts.length<4)
+    return {reason:'Fuori dalle cartelle Produzione/Documentazione MP e Produzione/CoaPROGRE: associazione manuale.'};
   const article=articles.find(a=>key(a.articleCode)===key(parts[2]));
-  if(!article||['ProdottoFinito','Semilavorato'].includes(article.articleType)) return {reason:'Cartella non corrispondente a un articolo MP o Altro di Workspace.'};
+  const production=article&&['ProdottoFinito','Semilavorato'].includes(article.articleType);
+  if(!article||production!==(key(parts[1])==='COAPROGRE')) return {reason:'Cartella non corrispondente alla tipologia articolo di Workspace.'};
   const stem=key(parts.at(-1).replace(/\.[^.]+$/,''));
   const code=key(article.articleCode);
   if(stem===code||stem.startsWith(code+'_')) return {articleCode:article.articleCode,lotCode:''};
@@ -59,6 +60,7 @@ export function matchFile(file, articles, lots) {
   const matches=exact.length?exact:candidates;
   if(matches.length===1) return {articleCode:article.articleCode,lotCode:matches[0]};
   if(matches.length) return {reason:'Nome ambiguo tra più lotti: verificare il collegamento.'};
+  if(production&&/^\d+(?:_|$)/.test(stem)) return {reason:'Numero di lotto non presente per questo articolo: verificare il lotto e sincronizzare.'};
   return {articleCode:article.articleCode,lotCode:''};
 }
 export function articleType(code, hasBom) {
@@ -181,7 +183,12 @@ export async function synchronizeNas(admin,{force=false,fetchManifest=async()=>{
     for(const f of files) {
       if(linked.has(key(f.path))) continue;
       const match=matchFile(f,archive.articles,archive.lots);
-      if(match.articleCode) links.push(linkRow(f,match,{},'Workspace',stamp));
+      if(match.articleCode) {
+        const row=linkRow(f,match,{},'Workspace',stamp);
+        const type=archive.articles.find(a=>a.articleCode===match.articleCode)?.articleType;
+        if(match.lotCode) row.tipo_associazione=type==='Semilavorato'?'LottoBulk':type==='ProdottoFinito'?'LottoProdotto':'LottoMateriaPrima';
+        links.push(row);
+      }
     }
     await save(admin,'workspace_private_documents',links,{onConflict:'external_id',ignoreDuplicates:true});
     const {error:inactiveError}=await admin.from('workspace_private_nas_files').update({active:false}).lt('scanned_at',stamp);
@@ -200,6 +207,18 @@ export async function privateDocumentOperation(identity, path, input={}) {
   const {admin,customerCodes,profile}=identity;
   const internal=customerCodes.includes('*');
   const url=new URL(path,'https://workspace.invalid/');
+  if(url.pathname==='/lots/documents') return productionLotDocuments(admin,value(url.searchParams.get('articleCode')),value(url.searchParams.get('lotCode')),customerCodes);
+  if(url.pathname.startsWith('/documents/')&&url.pathname!=='/documents/reference'&&url.searchParams.has('articleCode')) {
+    const bundle=await productionLotDocuments(admin,value(url.searchParams.get('articleCode')),value(url.searchParams.get('lotCode')),customerCodes);
+    const id=url.pathname.slice('/documents/'.length);
+    const document=[...bundle.general,...bundle.specific,...bundle.materials.flatMap(m=>m.documents)].find(d=>d.externalId===id);
+    if(!document) throw fail('Documento non disponibile per questo lotto.',404);
+    const {data,error}=await admin.from('workspace_private_documents').select('percorso_nas').eq('external_id',id).single();
+    if(error) throw error;
+    const {error:auditError}=await admin.from('workspace_private_document_access_log').insert({user_id:profile.id,document_id:id});
+    if(auditError) throw auditError;
+    return {url:gatewayUrl('/files/'+normalizePath(data.percorso_nas).split('/').map(encodeURIComponent).join('/'))};
+  }
   if(url.pathname==='/nas/sync') return synchronizeNas(admin,{force:true});
   if(url.pathname==='/nas') {
     if(!internal) throw fail('Operazione riservata agli utenti interni.',403);
@@ -281,4 +300,75 @@ export function catalogue(archive,customerCodes) {
       searchText:key([a.articleCode,a.description,a.articleType,...lots.map(l=>l.lotCode),
         ...documents.map(d=>`${d.titolo} ${d.nome_file_originale}`)].join(' '))}];
   });
+}
+
+const lotKey=(code,lot)=>JSON.stringify([key(code),key(lot)]);
+const generalDocument=d=>!value(d.codice_lotto)&&d.tipo_associazione==='Articolo';
+export function lotDocumentBundle(archive,code,lot,customerCodes) {
+  if(!value(lot)||!allowedLots(archive,code,customerCodes).some(l=>key(l.lotCode)===key(lot)))
+    throw fail('Lotto non disponibile.',404);
+  const context={articleCode:code,lotCode:lot};
+  const dto=d=>({...documentDto(d),downloadContext:context});
+  const own=visibleDocuments(archive,code,customerCodes);
+  const edges=new Map();
+  for(const g of archive.genealogy) {
+    const id=lotKey(g.codice_articolo_prodotto,g.lotto_destinazione);
+    if(!edges.has(id)) edges.set(id,[]);
+    edges.get(id).push(g);
+  }
+  const visited=new Set([lotKey(code,lot)]),queue=[{articleCode:code,lotCode:lot}],materials=[];
+  for(let i=0;i<queue.length;i++) {
+    const node=queue[i];
+    for(const g of edges.get(lotKey(node.articleCode,node.lotCode))||[]) {
+      if(!value(g.codice_articolo_materia_prima)||!value(g.lotto_origine)||Number(g.quantita)<=0) continue;
+      const id=lotKey(g.codice_articolo_materia_prima,g.lotto_origine);
+      if(visited.has(id)) continue;
+      visited.add(id);
+      const source={articleCode:g.codice_articolo_materia_prima,lotCode:g.lotto_origine,description:g.descrizione_materia_prima||''};
+      queue.push(source);
+      // Access is inherited only along the exact consumption chain of an authorized root lot.
+      const documents=visibleDocuments(archive,source.articleCode,['*'])
+        .filter(d=>generalDocument(d)||key(d.codice_lotto)===key(source.lotCode)).map(dto);
+      materials.push({...source,documents});
+    }
+  }
+  return {general:own.filter(generalDocument).map(dto),
+    specific:own.filter(d=>value(d.codice_lotto)&&key(d.codice_lotto)===key(lot)).map(dto),materials};
+}
+
+export async function productionLotDocuments(admin,code,lot,customerCodes) {
+  const archive=await readArchive(admin,code);
+  // Validate the root before reading any upstream material data.
+  if(!value(lot)||!allowedLots(archive,code,customerCodes).some(l=>key(l.lotCode)===key(lot))) throw fail('Lotto non disponibile.',404);
+  const visited=new Set(),allEdges=[],sourceCodes=new Set();
+  let frontier=[{articleCode:code,lotCode:lot}];
+  while(frontier.length) {
+    const next=[];
+    for(let i=0;i<frontier.length;i+=40) {
+      const batch=frontier.slice(i,i+40).filter(n=>!visited.has(lotKey(n.articleCode,n.lotCode)));
+      if(!batch.length) continue;
+      for(const n of batch) visited.add(lotKey(n.articleCode,n.lotCode));
+      if(visited.size>2000) throw fail('Genealogia troppo estesa: impossibile completare la lettura dei documenti.',502);
+      const expression=batch.map(n=>`and(codice_articolo_prodotto.eq.${JSON.stringify(n.articleCode)},lotto_destinazione.eq.${JSON.stringify(n.lotCode)})`).join(',');
+      const edges=await rows(admin,'workspace_sl_genealogy','*',q=>q.or(expression));
+      allEdges.push(...edges);
+      for(const g of edges) {
+        if(!value(g.codice_articolo_materia_prima)||!value(g.lotto_origine)||Number(g.quantita)<=0) continue;
+        sourceCodes.add(g.codice_articolo_materia_prima);
+        if(!visited.has(lotKey(g.codice_articolo_materia_prima,g.lotto_origine))) next.push({articleCode:g.codice_articolo_materia_prima,lotCode:g.lotto_origine});
+      }
+    }
+    frontier=[...new Map(next.map(n=>[lotKey(n.articleCode,n.lotCode),n])).values()];
+  }
+  const codes=[...sourceCodes].filter(c=>key(c)!==key(code));
+  for(let i=0;i<codes.length;i+=100) {
+    const documents=await rows(admin,'workspace_private_documents','*',q=>q.in('codice_articolo',codes.slice(i,i+100)));
+    for(const d of documents) {
+      const k=key(d.codice_articolo);
+      if(!archive.documentsByArticle.has(k)) archive.documentsByArticle.set(k,[]);
+      archive.documentsByArticle.get(k).push(d);
+    }
+  }
+  archive.genealogy=allEdges;
+  return lotDocumentBundle(archive,code,lot,customerCodes);
 }

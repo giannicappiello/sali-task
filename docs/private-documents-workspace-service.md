@@ -69,3 +69,29 @@ sempre riautorizzati dal server.
 La migrazione `20260916120000` conserva i collegamenti esistenti, recuperando il
 codice articolo dalla genealogia e il percorso dall'inventario NAS già censito
 solo quando il riscontro è univoco. Non richiede un aggiornamento MES.
+
+### Bulk e prodotti finiti: fascicolo del lotto
+
+`Produzione/CoaPROGRE/{codice articolo}` contiene i file di bulk e prodotti finiti.
+I file generici sono collegati all'articolo; un nome uguale al lotto o con il
+prefisso `lotto_` viene collegato esclusivamente a quel lotto. Un nome numerico
+senza lotto corrispondente rimane non associato, evitando di distribuirlo come
+documento generale. I prefissi ambigui restano da verificare.
+
+Apri lotto carica `/lots/documents?articleCode=...&lotCode=...` solo su richiesta.
+La risposta separa documenti generali, specifici e materiali impiegati. La
+genealogia Workspace viene attraversata per coppia articolo/lotto, anche tramite
+bulk intermedi, considerando scarichi con quantità positiva e deduplicando cicli
+e percorsi ripetuti. Ogni materiale espone i propri documenti generali e quelli
+del solo lotto consumato. Nessuno scarico disponibile produce un messaggio
+esplicito; non si ricorre alla distinta base teorica.
+
+L'accesso parte da un lotto autorizzato; i download conservano quel contesto e
+il server ricalcola la catena prima di firmare il collegamento NAS e registrare
+l'accesso. La lettura non amplia l'accesso diretto agli altri lotti delle MP.
+I file non vengono duplicati. Nessuna richiesta aggiuntiva viene fatta al MES.
+
+Verifica: `node --test server/private-documents-lineage.test.js` copre cartelle,
+lotto esatto, risalita PF/bulk/MP, duplicati, cicli, file inattivi e isolamento
+tra clienti. Prova di lettura sul lotto FP123L/112310016: 447 ms per ricostruire
+11 coppie articolo/lotto (esclusi autenticazione e rendering browser).

@@ -36,7 +36,7 @@ test('HR migration and authorization flows in isolated PostgreSQL', async (t) =>
   const accessMigration = await readFile(new URL('../supabase/migrations/20260912150000_workspace_access_consistency.sql', import.meta.url), 'utf8');
   await db.exec(accessMigration.slice(accessMigration.indexOf('create or replace function public.workspace_save_user_access('), accessMigration.indexOf('-- One canonical department')));
   const migration = await readFile(new URL('../supabase/migrations/20260916180000_workspace_hr.sql', import.meta.url), 'utf8');
-  try { await db.exec(migration); await db.exec(await readFile(new URL('../supabase/migrations/20260916190000_workspace_hr_site_address.sql', import.meta.url), 'utf8')); await db.exec(await readFile(new URL('../supabase/migrations/20260916200000_workspace_hr_flexible_agreements.sql', import.meta.url), 'utf8')); } catch (error) { console.error('Migration:', error.message, error.where); throw error; }
+  try { await db.exec(migration); await db.exec(await readFile(new URL('../supabase/migrations/20260916190000_workspace_hr_site_address.sql', import.meta.url), 'utf8')); await db.exec(await readFile(new URL('../supabase/migrations/20260916200000_workspace_hr_flexible_agreements.sql', import.meta.url), 'utf8')); await db.exec(await readFile(new URL('../supabase/migrations/20260916210000_workspace_hr_home_punch.sql', import.meta.url), 'utf8')); } catch (error) { console.error('Migration:', error.message, error.where); throw error; }
   async function as(user, sql, args = []) {
     await db.exec('begin; set local role authenticated;');
     try { await db.query("select set_config('request.jwt.claim.sub',$1,true)", [user]); const result = await db.query(sql, args); await db.exec('commit'); return result.rows; }
@@ -94,6 +94,15 @@ test('HR migration and authorization flows in isolated PostgreSQL', async (t) =>
     assert.deepEqual(saved.weekdays, [1,2,3,4,5]);
     await assert.rejects(cfg('contract', { user_id: manager, effective_from: 'data non valida' }));
   });
+  await t.test('home punch status exposes only own membership and presence', async () => {
+    assert.equal((await rpc(admin,'workspace_hr_punch_status',[])).member,false);
+    const status = await rpc(employee,'workspace_hr_punch_status',[]);
+    assert.equal(status.member,true);
+    assert.equal(status.actor_id,employee);
+    assert.equal(status.open,null);
+    assert.deepEqual(Object.keys(status).sort(),['actor_id','member','open']);
+    await assert.rejects(rpc(outsider,'workspace_hr_punch_status',[]),/abilitato/);
+  });
   const position = (latitude = 40, accuracy = 3, sampled_at = new Date().toISOString()) => JSON.stringify({ latitude, longitude: 14, accuracy, sampled_at });
   const punch = (user, action, key = id(), pos = null, session = null) => rpc(user, 'workspace_hr_punch', [action, key, pos, session]);
   let session;
@@ -102,6 +111,8 @@ test('HR migration and authorization flows in isolated PostgreSQL', async (t) =>
     await assert.rejects(punch(employee, 'in', id(), position(40, 100)), /attendibile/);
     await assert.rejects(punch(employee, 'in', id(), position(40, 3, '2000-01-01T00:00:00Z')), /attendibile/);
     const key = id(); session = (await punch(employee, 'in', key, position())).id;
+    assert.equal((await rpc(employee,'workspace_hr_punch_status',[])).open.id,session);
+    assert.equal((await rpc(manager,'workspace_hr_punch_status',[])).open,null);
     assert.equal((await punch(employee, 'in', key, position())).id, session);
     await assert.rejects(punch(employee, 'in', id(), position()), /già/);
     await assert.rejects(as(employee, 'update workspace_hr_attendance set checkout_at=now()'), /permission denied/);

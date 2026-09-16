@@ -22,6 +22,7 @@ export default function ModuleContainerLayout({
   backLabel = "Indietro",
   showBack = true,
   children = null,
+  afterHeader = null,
 }) {
   const goBack = useBackNavigation(backFallback);
 
@@ -36,6 +37,7 @@ export default function ModuleContainerLayout({
         title={title}
         description={description}
       />
+      {afterHeader}
 
       {error ? <div className="module-container-message error"><span>{error}</span>{onRetry ? <button type="button" onClick={onRetry}><RefreshCw size={16} />Riprova</button> : null}</div> : null}
       {loading ? <div className="module-container-loading"><div className="auth-spinner" /><span>{loadingLabel}</span></div> : null}

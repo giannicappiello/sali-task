@@ -12,18 +12,25 @@ export default function HrAttendanceProvider({ children }) {
   const [open, setOpen] = useState(null);
   const [status, setStatus] = useState('Controllo posizione non attivo');
   const [notice, setNotice] = useState('');
+  const [identity, setIdentity] = useState(null);
   const ownOpen = open?.user_id === profile?.id ? open : null;
   const refresh = useCallback(async () => {
-    const result = await hrRpc('workspace_hr_open_session');
-    setOpen(result);
-    return result;
+    try {
+      const result = await hrRpc('workspace_hr_punch_status');
+      setOpen(result.open);
+      setIdentity({ userId: result.actor_id, member: result.member, ready: true });
+      return result.open;
+    } catch (error) {
+      setIdentity(previous => previous ? { ...previous, ready: false } : null);
+      throw error;
+    }
   }, []);
   useEffect(() => {
     if (!enabled) return;
     let active = true;
     const reload = async () => {
-      try { const result = await hrRpc('workspace_hr_open_session'); if (active) setOpen(result); }
-      catch { if (active) { setOpen(null); setStatus('Controllo non disponibile: verifica la connessione e riapri HR.'); } }
+      try { const result = await hrRpc('workspace_hr_punch_status'); if (active) { setOpen(result.open); setIdentity({ userId: result.actor_id, member: result.member, ready: true }); } }
+      catch { if (active) { setIdentity(previous => previous ? { ...previous, ready: false } : null); setStatus('Controllo non disponibile: verifica la connessione e riapri HR.'); } }
     };
     const timer = window.setTimeout(reload, 0);
     const poll = window.setInterval(() => { if (!document.hidden) void reload(); }, 60000);
@@ -53,5 +60,5 @@ export default function HrAttendanceProvider({ children }) {
     { enableHighAccuracy: true, maximumAge: 0, timeout: 25000 });
     return () => { active = false; navigator.geolocation.clearWatch(watcher); };
   }, [enabled, ownOpen?.id, ownOpen?.auto_checkout]);
-  return <Context.Provider value={{ open: enabled ? ownOpen : null, status: ownOpen?.auto_checkout ? status : 'Controllo posizione non attivo', notice: enabled ? notice : '', refresh }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ member: enabled && identity?.userId === profile?.id && identity.member, ready: enabled && identity?.userId === profile?.id && identity.ready, open: enabled ? ownOpen : null, status: ownOpen?.auto_checkout ? status : 'Controllo posizione non attivo', notice: enabled ? notice : '', refresh }}>{children}</Context.Provider>;
 }

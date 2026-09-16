@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Home as HomeIcon } from "lucide-react";
 import { useOutletContext } from "react-router-dom";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
+import HrHomePunch from "../../modules/hr/HrHomePunch";
 
 const DESCRIPTION_BY_PATH = Object.freeze({
   "/activities": "Task, reminder, progetti, fasi e analisi dati del reparto.",
@@ -48,6 +49,7 @@ export default function Home() {
     icon={HomeIcon}
     eyebrow="Workspace"
     title="Home"
+    afterHeader={<HrHomePunch />}
     description="Accedi ai moduli disponibili in base alle tue autorizzazioni."
     items={cards}
     ariaLabel="Moduli disponibili"

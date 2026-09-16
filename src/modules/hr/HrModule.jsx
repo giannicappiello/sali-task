@@ -60,23 +60,21 @@ export default function HrModule({ configuration = false }) {
   const [editor, setEditor] = useState(null);
   const generation = useRef(0);
   const punchKey = useRef(crypto.randomUUID());
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     const id = ++generation.current;
-    setLoading(true); setError('');
+    if (silent !== true) { setLoading(true); setError(''); }
     try {
       const result = await hrRpc('workspace_hr_snapshot', { p_month: `${month}-01`, p_config: configuration });
       if (id === generation.current) { setData({ ...EMPTY, ...result }); setSelected((previous) => result.employees.some((e) => e.user_id === previous) ? previous : result.employees[0]?.user_id || ''); }
-    } catch (failure) { if (id === generation.current) { setError(failure.message); setData(EMPTY); } }
+    } catch (failure) { if (id === generation.current && silent !== true) { setError(failure.message); setData(EMPTY); } }
     finally { if (id === generation.current) setLoading(false); }
   }, [month, configuration]);
   useEffect(() => {
     const guard = generation;
     const timer = setTimeout(load, 0);
-    const refresh = () => { if (!document.hidden) void load(); };
-    const poll = configuration ? null : setInterval(refresh, 60000);
+    const refresh = () => { void load(true); };
     if (!configuration) window.addEventListener('workspace:hr-changed', refresh);
-    if (!configuration) window.addEventListener('focus', refresh);
-    return () => { guard.current++; clearTimeout(timer); clearInterval(poll); window.removeEventListener('workspace:hr-changed', refresh); window.removeEventListener('focus', refresh); };
+    return () => { guard.current++; clearTimeout(timer); window.removeEventListener('workspace:hr-changed', refresh); };
   }, [load, configuration]);
   const name = (id) => data.employees.find((e) => e.user_id === id)?.name || 'Dipendente';
   const siteName = (id) => data.sites.find((s) => s.id === id)?.name || 'Sede non configurata';
@@ -89,7 +87,7 @@ export default function HrModule({ configuration = false }) {
   const tabs = configuration ? [['employees', UsersRound, 'Schede dipendente'], ['sites', MapPin, 'Sedi e timbrature'], ['economics', Timer, 'Riepilogo economico'], ['audit', Clock3, 'Storico modifiche']]
     : [['personal', Clock3, 'Le mie presenze'], ...(canManage ? [['attendance', UsersRound, 'Presenze aziendali']] : []), ['calendar', CalendarDays, 'Calendario e turni'], ['leave', CalendarCheck, 'Ferie e permessi'], ['overtime', Timer, 'Straordinari']];
   function show(model, save) { setEditor({ ...model, save }); }
-  async function operate(action, payload) { await hrRpc('workspace_hr_operate', { p_action: action, p_data: payload }); await load(); }
+  async function operate(action, payload) { await hrRpc('workspace_hr_operate', { p_action: action, p_data: payload }); await load(true); }
   async function configure(action, payload) { await hrRpc('workspace_hr_configure', { p_action: action, p_data: payload }); await load(); }
   async function punch(action) {
     setBusy(true); setError(''); setSuccess('');
@@ -98,7 +96,7 @@ export default function HrModule({ configuration = false }) {
       await hrRpc('workspace_hr_punch', { p_action: action, p_key: punchKey.current, p_position: position, p_attendance_id: open?.id || null });
       punchKey.current = crypto.randomUUID();
       setSuccess(action === 'in' ? 'Check-in registrato.' : 'Checkout registrato. Controllo posizione terminato.');
-      await monitor.refresh(); await load();
+      await monitor.refresh(); await load(true);
     } catch (failure) { setError(`${failure.message} Verifica la presenza prima di riprovare.`); if (action === 'out') throw failure; }
     finally { setBusy(false); }
   }

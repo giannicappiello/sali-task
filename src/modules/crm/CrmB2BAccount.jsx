@@ -88,7 +88,7 @@ export default function CrmB2BAccount({ crmType = 'b2b', account, metrics, relat
   function detail() {
     const id = selected.id;
     let rows = []; let columns = []; let error = ''; let loading = false;
-    if (id.startsWith('invoice') || id.startsWith('order') || id === 'average' || id === 'latest' || id === 'frequency' || id === 'reorder') {
+    if (id.startsWith('invoice') || id.startsWith('order-') || id === 'average' || id === 'latest' || id === 'frequency' || id === 'reorder') {
       const isInvoice = id.startsWith('invoice') || id === 'latest' && latestDate === metrics.last_invoice_date;
       rows = isInvoice ? invoices : orders; columns = docsColumns; error = extra.errors[isInvoice ? 'invoices' : 'orders']; loading = extra.loading;
       if (id.endsWith('period') || id === 'average') rows = rows.filter(r => inPeriod(r.date, period));
@@ -144,3 +144,4 @@ export default function CrmB2BAccount({ crmType = 'b2b', account, metrics, relat
     <WorkspaceProjectCreateDialog open={createProject} crmType={crmType} initialCustomerKey={key} onClose={() => setCreateProject(false)} onSaved={() => { setCreateProject(false); setRevision(v => v + 1); load(); }}/>
   </div>;
 }
+

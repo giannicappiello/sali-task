@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { loadDepartmentMembers } from "../src/pages/Settings/departmentMembers.js";
 
-function database(memberships, users, failure) {
+function database(memberships, users, failure, hr = false) {
   const calls = [];
   return { calls, from(table) {
     calls.push(table);
@@ -11,7 +11,8 @@ function database(memberships, users, failure) {
       eq(field, value) { calls.push([field, value]); return query; },
       in(field, values) { calls.push([field, values]); return query; },
       order() { return query; },
-      then(resolve, reject) { return Promise.resolve({ data: table === "utenti_reparti" ? memberships : users, error: failure?.table === table ? failure.error : null }).then(resolve, reject); },
+      single() { return query; },
+      then(resolve, reject) { return Promise.resolve({ data: table === "reparti" ? { workspace_hr: hr } : ["utenti_reparti", "workspace_hr_members"].includes(table) ? memberships : users, error: failure?.table === table ? failure.error : null }).then(resolve, reject); },
     };
     return query;
   } };
@@ -23,6 +24,12 @@ test("department membership uses only current canonical associations, deduplicat
   assert.ok(db.calls.some((call) => Array.isArray(call) && call[0] === "reparto_id" && call[1] === "department"));
   assert.ok(db.calls.some((call) => Array.isArray(call) && call[0] === "id" && JSON.stringify(call[1]) === '["a","b"]'));
   assert.ok(!db.calls.some((call) => typeof call === "string" && call.includes("reparto_id")));
+});
+test("HR department reads independent membership, not operational associations", async () => {
+  const db = database([{ utente_id: 'a' }], [{ id: 'a' }], null, true);
+  assert.deepEqual(await loadDepartmentMembers(db, 'hr'), [{ id: 'a' }]);
+  assert.ok(db.calls.includes('workspace_hr_members'));
+  assert.ok(!db.calls.includes('utenti_reparti'));
 });
 test("empty and new departments do not query unrelated users", async () => {
   const db = database([], []);

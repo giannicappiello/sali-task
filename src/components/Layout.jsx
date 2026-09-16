@@ -32,6 +32,7 @@ import { resolveCatalogModuleDestination } from "../config/workspaceNavigation";
 import ContextualAIAssistant from "./ContextualAIAssistant";
 
 const baseMenuItems = [
+  { path: "/hr", label: "Modulo HR", icon: Users, module: "hr" },
   { path: "/home", label: "Home", icon: Home, module: "home" },
   { path: "/activities", label: "Attività", icon: ClipboardList, module: "attivita" },
   { path: "/farmacie/dashboard", label: "Beauty Days", icon: Store, permission: "pharmacy.read", module: "beauty_days" },
@@ -54,6 +55,8 @@ const baseMenuItems = [
 
 const pageInfo = {
   "/home": { title: "Home", subtitle: "Accesso rapido ai moduli del Workspace." },
+  "/hr": { title: "Human Resources", subtitle: "Presenze, turni e gestione delle richieste." },
+  "/settings/hr": { title: "Configurazioni HR", subtitle: "Schede dipendente e accordi riservati agli admin." },
   "/analisi-dati": { title: "Analisi dati", subtitle: "Fatture, Ordini PH, Beauty Days e Attività." },
   "/activities": { title: "Attività", subtitle: "Task, reminder, progetti, fasi e analisi del reparto." },
   "/activities/dashboard": { title: "Tutte le attività del reparto", subtitle: "Task, fasi, reminder e scadenze del reparto." },

@@ -1,4 +1,5 @@
 export const WORKSPACE_MODULES = Object.freeze({
+  hr: { code: "hr", label: "Modulo HR", kind: "business", selfServiceLevel: "scrittura" },
   home: { code: "home", label: "Home", kind: "system", alwaysAvailable: true },
   attivita: { code: "attivita", label: "Attività", kind: "business", alwaysAvailable: true, roleConfigurable: true, selfServiceLevel: "scrittura" },
   prodotti: { code: "prodotti", label: "Prodotti Direct", kind: "business", departmentAssignable: true, roleConfigurable: true },

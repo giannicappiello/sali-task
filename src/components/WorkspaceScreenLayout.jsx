@@ -12,6 +12,8 @@ import { isProgremesScreenPath } from "../pages/ProgreMes/progremesWindow";
 import "./workspace-screen-layout.css";
 
 const BUILT_IN_CONTAINER_PATHS = new Set([
+  "/hr",
+  "/settings/hr",
   "/home",
   "/settings",
   "/analisi-dati",

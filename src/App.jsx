@@ -11,10 +11,12 @@ import BrandedDialogProvider from "./components/BrandedDialogProvider";
 import NotificationManager from "./components/NotificationManager";
 import WorkspaceAccessGuard from "./components/WorkspaceAccessGuard";
 import SettingsAccessGuard from "./components/SettingsAccessGuard";
+import HrAttendanceProvider from "./modules/hr/HrAttendanceProvider";
 
 import Login from "./pages/Login/Login";
 
 const Home = lazy(() => import("./pages/Home/Home"));
+const HrModule = lazy(() => import("./modules/hr/HrModule"));
 const PriorityRevision = lazy(() => import("./pages/Production/PriorityRevision"));
 const ActivitiesModule = lazy(() => import("./pages/Activities/ActivitiesModule"));
 const Agenda = lazy(() => import("./pages/Agenda/Agenda"));
@@ -87,6 +89,7 @@ function Loader() {
 function App() {
   return (
     <AuthProvider>
+      <HrAttendanceProvider>
       <BrandedDialogProvider />
       <OrdersDataPreloader />
       <GlobalWindowShortcuts />
@@ -101,6 +104,8 @@ function App() {
               <Route index element={<Navigate to="/home" replace />} />
 
               <Route path="home" element={<Home />} />
+              <Route path="hr" element={<WorkspaceAccessGuard moduleCode="hr"><HrModule key="hr" /></WorkspaceAccessGuard>} />
+              <Route path="settings/hr" element={<SettingsAccessGuard adminOnly><HrModule key="hr-config" configuration /></SettingsAccessGuard>} />
               <Route path="revisione-priorita-produzione" element={<WorkspaceAccessGuard screenCode="produzione.revisione_priorita"><PriorityRevision /></WorkspaceAccessGuard>} />
               <Route path="settings/costi-produzione" element={<WorkspaceAccessGuard screenCode="produzione.configurazione_costi"><ProductionCostConfiguration /></WorkspaceAccessGuard>} />
               <Route path="consuntivi-produzioni" element={<WorkspaceAccessGuard screenCode="produzione.consuntivi"><ProductionCostReports /></WorkspaceAccessGuard>} />
@@ -158,6 +163,7 @@ function App() {
           <Route path="*" element={<Navigate to="/home" replace />} />
         </Routes>
       </Suspense>
+      </HrAttendanceProvider>
     </AuthProvider>
   );
 }

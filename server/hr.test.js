@@ -36,7 +36,7 @@ test('HR migration and authorization flows in isolated PostgreSQL', async (t) =>
   const accessMigration = await readFile(new URL('../supabase/migrations/20260912150000_workspace_access_consistency.sql', import.meta.url), 'utf8');
   await db.exec(accessMigration.slice(accessMigration.indexOf('create or replace function public.workspace_save_user_access('), accessMigration.indexOf('-- One canonical department')));
   const migration = await readFile(new URL('../supabase/migrations/20260916180000_workspace_hr.sql', import.meta.url), 'utf8');
-  try { await db.exec(migration); } catch (error) { console.error('Migration:', error.message, error.where); throw error; }
+  try { await db.exec(migration); await db.exec(await readFile(new URL('../supabase/migrations/20260916190000_workspace_hr_site_address.sql', import.meta.url), 'utf8')); } catch (error) { console.error('Migration:', error.message, error.where); throw error; }
   async function as(user, sql, args = []) {
     await db.exec('begin; set local role authenticated;');
     try { await db.query("select set_config('request.jwt.claim.sub',$1,true)", [user]); const result = await db.query(sql, args); await db.exec('commit'); return result.rows; }
@@ -54,10 +54,11 @@ test('HR migration and authorization flows in isolated PostgreSQL', async (t) =>
     assert.equal((await rpc(outsider, 'workspace_module_enabled_for_user', [outsider, 'hr'])), false);
     await cfg('member', { user_id: manager, manager: true });
   });
-  const site = (await cfg('site', { name: 'Sede test', latitude: 40, longitude: 14, auto_checkout: true })).id;
+  const site = (await cfg('site', { name: 'Sede test', address: 'Via di prova 1, Roma', latitude: 40, longitude: 14, auto_checkout: true })).id;
   const today = (await db.query("select (now() at time zone 'Europe/Rome')::date::text as day")).rows[0].day;
   const terms = { user_id: employee, effective_from: today, site_id: site, weekly_hours: 40, start_time: '08:00', end_time: '17:00', weekdays: [1, 2, 3, 4, 5, 6, 7], break_minutes: 60, agreed_pay: 3210.45, pay_period: 'month', overtime_mode: 'paid', overtime_rate: 20, overtime_percent: 25 };
   await cfg('contract', terms);
+  assert.equal((await rpc(admin, 'workspace_hr_snapshot', [today, true])).sites.find(s => s.id === site).address, 'Via di prova 1, Roma');
   const snap = (user, config = false) => rpc(user, 'workspace_hr_snapshot', [today, config]);
   await t.test('employees/managers cannot retrieve or mutate contracts, admin can', async () => {
     for (const user of [employee, manager]) {

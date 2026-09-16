@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import process from "node:process";
 import { assertPlanningConfirmation, planningCall } from "./planning-lifecycle.js";
 import { validateWorkspaceV4ProductionResult } from "../workspacemes-v4-api.js";
 
@@ -23,6 +24,17 @@ test("MES cannot be called without the operational permission", async () => {
   let calls = 0;
   await assert.rejects(planningCall({ scoped: { rpc: async () => ({ data: false }) } }, "state", {}, () => { calls++; }), /Permesso/);
   assert.equal(calls, 0);
+});
+test("old MES fallback HTTP 400 explains the required update instead of claiming an empty plan", async () => {
+  const oldUrl = process.env.PROGREMES_URL, oldSecret = process.env.PROGREMES_INTEGRATION_SECRET;
+  process.env.PROGREMES_URL = "https://mes.example.test"; process.env.PROGREMES_INTEGRATION_SECRET = "test-secret";
+  try {
+    await assert.rejects(planningCall({ profile: { id: "user" }, scoped: { rpc: async () => ({ data: true }) } }, "state", {},
+      async () => new Response("", { status: 400 })), /AggiornaMES/);
+  } finally {
+    if (oldUrl === undefined) delete process.env.PROGREMES_URL; else process.env.PROGREMES_URL = oldUrl;
+    if (oldSecret === undefined) delete process.env.PROGREMES_INTEGRATION_SECRET; else process.env.PROGREMES_INTEGRATION_SECRET = oldSecret;
+  }
 });
 test("forecast acceptance requires every original line, no OP and no duplicates", () => {
   const preview = { snapshot: { demands: [{ workspaceLineId: "a" }, { workspaceLineId: "b" }] } };

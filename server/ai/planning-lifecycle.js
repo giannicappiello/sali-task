@@ -31,6 +31,7 @@ export async function planningCall(auth, operation, input = {}, transport = fetc
       [HMAC_HEADERS.signature]: signProductionMessage({ method: "POST", path, timestamp, eventId, body, secret }) } });
   const result = await response.json().catch(() => ({}));
   if (response.status === 404) throw new Error("Aggiornare MES per utilizzare previsione, versioni del piano e ODL. Il piano attuale non è stato modificato.");
+  if ([400, 405].includes(response.status) && !result.error) throw new Error(`Servizio di nuova pianificazione MES non disponibile (${response.status}). Verificare di avere eseguito fetch, pull e AggiornaMES del nuovo rilascio, quindi aggiornare lo stato. Nessuna modifica al piano eseguita da questa richiesta.`);
   if (!response.ok) throw new Error(result.error || `Pianificazione MES non disponibile (${response.status}).`);
   return result;
 }

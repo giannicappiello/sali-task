@@ -5,6 +5,7 @@ import { useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import MaterialTransferSummary from "./MaterialTransferSummary";
 import PriorityRevisionSummary from "./PriorityRevisionSummary";
+import PlanningVersionSummary from "./PlanningVersionSummary";
 import "./contextual-ai-assistant.css";
 
 function visibleContext({ pathname, title, module }) {
@@ -48,6 +49,7 @@ function ControlledAction({ action, busy, onDecision }) {
   return <section className={`context-ai-action risk-${action.risk || "write"}`}>
     <div><ShieldCheck size={17}/><strong>{ACTION_LABELS[action.tool] || action.tool}</strong><span>{action.system === "mes" ? "MES · tunnel firmato" : "Workspace"}</span></div>
     {action.tool === "MES_MATERIAL_REALLOCATE" ? <MaterialTransferSummary evidence={action.preview?.evidence} /> : null}
+    {["MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(action.tool) && <><PlanningVersionSummary version={action.result?.snapshot ? action.result : action.preview?.evidence} /><a href={`/versioni-piano-produzione?version=${encodeURIComponent(action.preview?.targetId || action.result?.id || "")}`}>Apri versione e verifica esito</a></>}
     {action.tool === "MES_PRIORITY_REVISE" ? <><PriorityRevisionSummary revision={action.result?.snapshot ? action.result : action.preview?.evidence} /><a href={`/revisione-priorita-produzione?revision=${encodeURIComponent(action.preview?.targetId || action.result?.id || "")}`}>Apri revisione completa e verifica esito</a></> : null}
     {action.tool !== "MES_PRIORITY_REVISE" ? <pre>{JSON.stringify(action.state === "executed" ? action.result : action.preview || action.result || {}, null, 2)}</pre> : null}
     {done ? <p>Stato: <strong>{action.state}</strong></p> : <div className="context-ai-action-buttons"><button type="button" disabled={busy} onClick={() => onDecision(action, "reject")}><X size={16}/>Rifiuta</button><button type="button" disabled={busy} onClick={() => onDecision(action, "confirm")}><Check size={16}/>Conferma</button></div>}

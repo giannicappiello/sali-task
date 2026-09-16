@@ -1,5 +1,6 @@
 /* global Buffer, process */
 import { createHash, randomUUID } from "node:crypto";
+import { planningCall, planningConfirmSchema, assertPlanningConfirmation, reconcilePlanning } from "./planning-lifecycle.js";
 import { priorityCall, priorityConfirmSchema, assertPriorityConfirmation, reconcilePriority, checkPriorityWorkspace } from "./priority-revision.js";
 import { HMAC_HEADERS, signProductionMessage } from "../progremes-production-hmac.js";
 import { assertClosureSnapshot, findProductionForClosure } from "./production-closure.js";
@@ -56,6 +57,8 @@ const externalEntitySchema = (entityLabel) => ({
 });
 
 export const CONTROLLED_AI_ACTIONS = Object.freeze({
+  MES_PLAN_APPLY: { system: "mes", risk: "destructive", permission: "progremes.write", schema: planningConfirmSchema },
+  MES_ODL_VERIFY: { system: "mes", risk: "write", permission: "progremes.write", schema: planningConfirmSchema },
   MES_MATERIAL_REALLOCATE: { system: "mes", risk: "destructive", permission: "progremes.write", schema: materialReallocationSchema },
   MES_PRIORITY_REVISE: { system: "mes", risk: "destructive", permission: "progremes.write", schema: priorityConfirmSchema },
   MES_PRODUCTION_FORCE_CLOSE: { system: "mes", risk: "destructive", permission: "progremes.write", schema: {
@@ -120,6 +123,7 @@ export const CONTROLLED_AI_ACTIONS = Object.freeze({
 });
 
 function canPropose(auth, descriptor) {
+  if (auth.manualPlanning === true) return [CONTROLLED_AI_ACTIONS.MES_PLAN_APPLY, CONTROLLED_AI_ACTIONS.MES_ODL_VERIFY].includes(descriptor);
   const level = String(auth.capabilities?.role_ai_level || (auth.profile?.ruoli?.amministratore_workspace ? "conferma" : "analisi"));
   if (!auth.profile?.ruoli?.amministratore_workspace && !["bozza", "conferma"].includes(level)) return false;
   if (descriptor.system === "mes" && auth.capabilities?.progremes !== true) return false;
@@ -139,6 +143,7 @@ function stableValue(value) {
 export async function proposeControlledAction(auth, tool, input, { correlationId = randomUUID() } = {}) {
   const descriptor = CONTROLLED_AI_ACTIONS[tool];
   if (!descriptor || !canPropose(auth, descriptor)) throw Object.assign(new Error("Azione AI non autorizzata per questo profilo."), { status: 403 });
+  if (["MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(tool)) input = assertPlanningConfirmation(input, await planningCall(auth, "get", { id: input.targetId }), tool === "MES_ODL_VERIFY");
   if (tool === "MES_PRIORITY_REVISE") input = assertPriorityConfirmation(input, await checkPriorityWorkspace(auth, await priorityCall(auth, "get", { id: input.targetId })));
   if (tool === "MES_MATERIAL_REALLOCATE") {
     const current = await previewMaterialReallocation(auth, input);
@@ -154,7 +159,7 @@ export async function proposeControlledAction(auth, tool, input, { correlationId
   }
   const canonical = JSON.stringify(stableValue(input || {}));
   const idempotencyKey = createHash("sha256").update(`${auth.profile.id}:${tool}:${canonical}`).digest("hex");
-  const { data, error } = await auth.scoped.rpc("propose_workspace_ai_action", {
+  const { data, error } = await auth.scoped.rpc(auth.manualPlanning ? "propose_workspace_manual_planning_action" : "propose_workspace_ai_action", {
     p_tool: tool, p_payload: input, p_request_id: randomUUID(), p_correlation_id: correlationId, p_idempotency_key: idempotencyKey,
   });
   if (error) throw error;
@@ -182,13 +187,20 @@ async function executeExternalAction(auth, pending) {
   let result = null; let failure = null;
   try {
     const response = await fetch(new URL(path, requiredEnvironment("PROGREMES_URL")), {
-      method: "POST", signal: AbortSignal.timeout(pending.tool === "MES_PRIORITY_REVISE" ? 55000 : Number(process.env.PROGREMES_API_TIMEOUT_MS || 15000)), body: payload,
+      method: "POST", signal: AbortSignal.timeout(["MES_PRIORITY_REVISE", "MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(pending.tool) ? 55000 : Number(process.env.PROGREMES_API_TIMEOUT_MS || 15000)), body: payload,
       headers: { "Content-Type": "application/json", [HMAC_HEADERS.timestamp]: String(timestamp), [HMAC_HEADERS.eventId]: eventId,
         [HMAC_HEADERS.signature]: signProductionMessage({ method: "POST", path, timestamp, eventId, body: payload, secret: requiredEnvironment("PROGREMES_INTEGRATION_SECRET") }) },
     });
     result = await response.json().catch(() => ({}));
     if (!response.ok || result?.applied !== true) failure = result?.error || `ProgreMES ha risposto con stato ${response.status}.`;
   } catch (error) { failure = error?.message || "ProgreMES non raggiungibile."; }
+  if (["MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(pending.tool)) {
+    try {
+      result = await planningCall(auth, "get", { id: pending.payload_summary.targetId });
+      failure = result.status === "APPLIED" ? null : `Stato ${result.status}: consultare Versioni del piano e Rilascio ODL; non ripetere la creazione dei lotti.`;
+      if (!failure) await reconcilePlanning(auth);
+    } catch (error) { failure = `Esito da verificare nello storico del piano: ${error.message}`; }
+  }
   if (pending.tool === "MES_PRIORITY_REVISE") {
     try {
       result = await reconcilePriority(auth, pending.payload_summary.targetId);
@@ -234,7 +246,10 @@ export async function decideControlledAction(auth, body) {
   if (!proposalId) throw Object.assign(new Error("Proposta operativa mancante."), { status: 400 });
   const { data: pending, error: pendingError } = await auth.scoped.from("ai_action_audit").select("*").eq("id", proposalId).eq("user_id", auth.profile.id).maybeSingle();
   if (pendingError || !pending || !CONTROLLED_AI_ACTIONS[pending.tool]) throw Object.assign(new Error("Proposta non trovata o non autorizzata."), { status: 404 });
+  if (auth.manualPlanning && (!["MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(pending.tool) || pending.action !== "manual_planning")) throw Object.assign(new Error("Proposta non appartenente alla pianificazione manuale."), { status: 403 });
   const confirmed = body.decision === "confirm";
+  if (confirmed && ["MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(pending.tool) && pending.status === "proposed")
+    assertPlanningConfirmation(pending.payload_summary, await planningCall(auth, "get", { id: pending.payload_summary.targetId }), pending.tool === "MES_ODL_VERIFY");
   if (confirmed && pending.tool === "MES_PRIORITY_REVISE" && pending.status === "proposed") assertPriorityConfirmation(pending.payload_summary, await checkPriorityWorkspace(auth, await priorityCall(auth, "get", { id: pending.payload_summary.targetId })));
   if (confirmed && pending.tool === "MES_MATERIAL_REALLOCATE" && pending.status === "proposed") {
     assertMaterialReallocation(pending.payload_summary, await previewMaterialReallocation(auth, pending.payload_summary));
@@ -243,7 +258,7 @@ export async function decideControlledAction(auth, body) {
     const current = await findProductionForClosure(auth, pending.payload_summary.orderNumber);
     assertClosureSnapshot(pending.payload_summary, current.items);
   }
-  const { data: decided, error: decideError } = await auth.scoped.rpc("decide_workspace_ai_action", { p_proposal_id: pending.id, p_confirm: confirmed });
+  const { data: decided, error: decideError } = await auth.scoped.rpc(auth.manualPlanning ? "decide_workspace_manual_planning_action" : "decide_workspace_ai_action", { p_proposal_id: pending.id, p_confirm: confirmed });
   if (decideError) throw decideError;
   let action = Array.isArray(decided) ? decided[0] : decided;
   let failure = null;

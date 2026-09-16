@@ -16,6 +16,7 @@ import Login from "./pages/Login/Login";
 
 const Home = lazy(() => import("./pages/Home/Home"));
 const PriorityRevision = lazy(() => import("./pages/Production/PriorityRevision"));
+const PlanningLifecycle = lazy(() => import("./pages/Production/PlanningLifecycle"));
 const ActivitiesModule = lazy(() => import("./pages/Activities/ActivitiesModule"));
 const Agenda = lazy(() => import("./pages/Agenda/Agenda"));
 const Products = lazy(() => import("./pages/Products/Products"));
@@ -102,6 +103,8 @@ function App() {
 
               <Route path="home" element={<Home />} />
               <Route path="revisione-priorita-produzione" element={<WorkspaceAccessGuard screenCode="produzione.revisione_priorita"><PriorityRevision /></WorkspaceAccessGuard>} />
+              <Route path="versioni-piano-produzione" element={<WorkspaceAccessGuard screenCode="produzione.versioni_piano"><PlanningLifecycle /></WorkspaceAccessGuard>} />
+              <Route path="rilascio-odl" element={<WorkspaceAccessGuard screenCode="produzione.rilascio_odl"><PlanningLifecycle release /></WorkspaceAccessGuard>} />
               <Route path="settings/costi-produzione" element={<WorkspaceAccessGuard screenCode="produzione.configurazione_costi"><ProductionCostConfiguration /></WorkspaceAccessGuard>} />
               <Route path="consuntivi-produzioni" element={<WorkspaceAccessGuard screenCode="produzione.consuntivi"><ProductionCostReports /></WorkspaceAccessGuard>} />
               <Route path="activities/*" element={<ActivitiesModule />} />

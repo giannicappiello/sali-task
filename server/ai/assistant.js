@@ -7,6 +7,7 @@ import { availableControlledActions, decideControlledAction, proposeControlledAc
 import { findProductionForClosure } from "./production-closure.js";
 import { previewMaterialReallocation, materialLookupSchema } from "./material-reallocation.js";
 import { priorityCall, priorityRequestSchema, reconcilePriority, simulatePriority } from "./priority-revision.js";
+import { planningCall, planningRequestSchema, reconcilePlanning } from "./planning-lifecycle.js";
 
 const DEFAULT_MODEL = "openai/gpt-5.6-luna";
 const MAX_HISTORY_MESSAGES = 14;
@@ -823,9 +824,14 @@ async function chat(auth, body) {
     MES_PRIORITY_STATUS: { description: "Legge una revisione e riallinea solo i mirror Workspace se MES l'ha già applicata. Non ripete trasferimenti.",
       inputSchema: jsonSchema({ type: "object", required: ["id"], properties: { id: { type: "string", format: "uuid" } } }), execute: input => reconcilePriority(auth, input.id) },
   } : {};
+  const planningTools = controlledTools.MES_PLAN_APPLY ? {
+    MES_PLAN_STATE: { description: "Legge fasi RdP/OP/ODL, configurazione e versioni. Nessuna modifica.", inputSchema: jsonSchema({ type: "object", properties: {} }), execute: () => planningCall(auth, "state") },
+    MES_PLAN_SIMULATE: { description: "Prepara anteprima verificabile di migrazione, revisione, conferma piano (60 giorni) o rilascio ODL (7 giorni). Nessun OP/lotto/impegno generato dalla simulazione. Mostrare date prima/dopo, scoperti e blocchi. Le fasi eseguite e gli ODL rilasciati restano protetti. Proporre MES_PLAN_APPLY solo dopo la lettura del riepilogo. La verifica del backup può essere attestata esclusivamente dall'utente; non affermare che è stata fatta senza prova.", inputSchema: jsonSchema(planningRequestSchema), execute: input => planningCall(auth, "simulate", { input }) },
+    MES_PLAN_STATUS: { description: "Verifica l'esito persistito di una versione, anche dopo timeout. PREPARING o RECONCILIATION_REQUIRED non significano rilascio completato: mai ripetere creazioni Mexal. MES_ODL_VERIFY controlla lotti già riconciliati senza crearne altri.", inputSchema: jsonSchema({ type: "object", required: ["id"], properties: { id: { type: "string", format: "uuid" } } }), execute: input => planningCall(auth, "get", input) },
+  } : {};
   const tools = mode === "web"
     ? { ...headingTools, web_search: openai.tools.webSearch({ externalWebAccess: true, searchContextSize: "medium" }) }
-    : { ...headingTools, ...productionTools, ...materialTools, ...priorityTools, ...controlledTools };
+    : { ...headingTools, ...productionTools, ...materialTools, ...priorityTools, ...planningTools, ...controlledTools };
   const model = process.env.AI_MODEL || DEFAULT_MODEL;
   const mutationRequested = mode !== "web" && isControlledMutationRequest(prompt);
   const controlledToolNames = Object.keys(controlledTools);
@@ -1000,6 +1006,12 @@ export async function handleAIAssistant(req) {
   if (body.action === "priority_lookup") return priorityCall(auth, "lookup", { query: body.query });
   if (body.action === "priority_materials") return priorityCall(auth, "materials", { orderNumber: body.orderNumber });
   if (body.action === "priority_simulate") return simulatePriority(auth, body.input);
+  if (body.action === "planning_state") return planningCall(auth, "state");
+  if (body.action === "planning_reconcile") return reconcilePlanning(auth);
+  if (body.action === "planning_get") return planningCall(auth, "get", { id: body.id });
+  if (body.action === "planning_simulate") return planningCall(auth, "simulate", { input: body.input });
+  if (body.action === "planning_propose") return proposeControlledAction(auth, "MES_PLAN_APPLY", body.input || {});
+  if (body.action === "planning_verify") return proposeControlledAction(auth, "MES_ODL_VERIFY", body.input || {});
   if (body.action === "priority_history") return priorityCall(auth, "history");
   if (body.action === "priority_status") return reconcilePriority(auth, body.id);
   if (body.action === "priority_propose") return proposeControlledAction(auth, "MES_PRIORITY_REVISE", body.input || {});

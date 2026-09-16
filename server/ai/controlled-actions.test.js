@@ -1,6 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { availableControlledActions, CONTROLLED_AI_ACTIONS } from "./controlled-actions.js";
+import { availableControlledActions, CONTROLLED_AI_ACTIONS, decideControlledAction } from "./controlled-actions.js";
+
+test("manual planning exposes only its two tools without granting arbitrary AI actions", () => {
+  const actions = availableControlledActions({ manualPlanning: true, profile: { ruoli: {} }, capabilities: {} });
+  assert.deepEqual(Object.keys(actions).sort(), ["MES_ODL_VERIFY", "MES_PLAN_APPLY"]);
+});
+
+test("manual decision cannot consume a different tool or an AI-originated proposal", async () => {
+  for (const pending of [{ tool: "LOT_OVERRIDE", action: "manual_planning" }, { tool: "MES_PLAN_APPLY", action: "mes_plan_apply" }]) {
+    const chain = { select() { return this; }, eq() { return this; }, async maybeSingle() { return { data: pending }; } };
+    const auth = { manualPlanning: true, profile: { id: "operator" }, scoped: { from: () => chain, rpc: () => assert.fail("Must not decide") } };
+    await assert.rejects(decideControlledAction(auth, { proposalId: "id", decision: "confirm" }), /pianificazione manuale/);
+  }
+});
 
 test("le azioni operative MES sono esplicite e la forzatura lotto è distruttiva", () => {
   assert.equal(CONTROLLED_AI_ACTIONS.LOT_OVERRIDE.system, "mes");

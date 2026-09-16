@@ -83,6 +83,8 @@ const pageInfo = {
   "/settings/access-check": { title: "Verifica accessi", subtitle: "Controllo motivato della visibilità effettiva." },
   "/progremes": { title: "ProgreMES APS", subtitle: "Accesso transitorio alla pianificazione e gestione della produzione." },
   "/produzione": { title: "Gestione Produzione", subtitle: "Accesso diretto e autonomo alle aree operative della produzione." },
+  "/versioni-piano-produzione": { title: "Versioni e revisioni del piano", subtitle: "Previsioni, conferme e riprogrammazione controllata Workspace–MES." },
+  "/rilascio-odl": { title: "Rilascio ODL", subtitle: "Materiali, lotti e rilascio delle fasi produttive." },
   "/produzione/rdp-workbench": { title: "Gestione Produzione", subtitle: "Gestione OCT, richieste di produzione, analisi MES e decisioni operative." },
   "/produzione/diagnostica": { title: "Centro Diagnostico", subtitle: "Stato globale, alert operativi e integrazioni WorkspaceMES." },
   "/analysis-data": { title: "Analisi Dati Attività", subtitle: "Analisi su progetti, fasi e reminder." },

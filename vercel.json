@@ -25,6 +25,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/workspace/planning",
+      "destination": "/api/mexal/automation?route=planning-workspace"
+    },
+    {
       "source": "/api/workspace/documents",
       "destination": "/api/mexal/automation"
     },

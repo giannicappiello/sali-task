@@ -29,6 +29,7 @@ import { handleProgremesReadonlyRequest } from "../../server/progremes-readonly-
 import { createProgremesClient, readAllProgremesArticles, readAllProgremesSuppliers } from "../../server/progremes-readonly-client.js";
 import { createProgremesDiagnosticManager } from "../../server/progremes-diagnostics-client.js";
 import { handleAIAssistant } from "../../server/ai/assistant.js";
+import { handlePlanningWorkspace } from "../../server/planning-workspace.js";
 import { handleCrmBrief } from "../../server/ai/crm-brief.js";
 import { handleAIOrderDocument } from "../../server/ai/order-document.js";
 import { handleWorkspaceDocumentCompose } from "../../server/company-document-composer.js";
@@ -580,9 +581,9 @@ export default async function handler(req, res) {
   if (req.query?.route === "progremes-readonly") {
     return handleProgremesReadonlyRequest(req, res);
   }
-  if (req.query?.route === "ai") {
+  if (["ai", "planning-workspace"].includes(req.query?.route)) {
     try {
-      const result = await handleAIAssistant(req);
+      const result = await (req.query.route === "planning-workspace" ? handlePlanningWorkspace(req) : handleAIAssistant(req));
       return res.status(200).json({ success: true, ...result });
     } catch (error) {
       const status = Number(error?.status || 500);

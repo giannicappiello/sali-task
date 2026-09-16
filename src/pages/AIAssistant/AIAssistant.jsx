@@ -3,6 +3,7 @@ import { Bot, CalendarClock, Camera, Check, ChevronDown, ChevronRight, Database,
 import { useAuth } from "../../contexts/AuthContext";
 import MaterialTransferSummary from "../../components/MaterialTransferSummary";
 import PriorityRevisionSummary from "../../components/PriorityRevisionSummary";
+import PlanningVersionSummary from "../../components/PlanningVersionSummary";
 import { prepareAssistantAttachments, serializeAssistantAttachments } from "./assistantAttachments";
 import { buildAssistantArtifactFileAsync } from "./assistantArtifacts";
 import { isPdfReportRequest } from "./assistantPdf";
@@ -540,6 +541,7 @@ function ControlledActionCard({ action, busy, onConfirm, onReject }) {
     <div><ShieldCheck size={20}/><strong>{action.tool}</strong><span className={`status-badge ${pending ? "warning" : action.state === "executed" ? "success" : "neutral"}`}>{action.state}</span></div>
     <p>{action.system === "mes" ? "L’applicazione avverrà in MES mediante tunnel firmato." : "L’applicazione avverrà nel Workspace con audit completo."}</p>
     {action.tool === "MES_MATERIAL_REALLOCATE" ? <MaterialTransferSummary evidence={action.preview?.evidence} /> : null}
+    {["MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(action.tool) && <><PlanningVersionSummary version={action.result?.snapshot ? action.result : action.preview?.evidence} /><a href={`/versioni-piano-produzione?version=${encodeURIComponent(action.preview?.targetId || action.result?.id || "")}`}>Apri versione e verifica esito</a></>}
     {action.tool === "MES_PRIORITY_REVISE" ? <><PriorityRevisionSummary revision={action.result?.snapshot ? action.result : action.preview?.evidence} /><a href={`/revisione-priorita-produzione?revision=${encodeURIComponent(action.preview?.targetId || action.result?.id || "")}`}>Apri revisione completa e verifica esito</a></> : null}
     {action.tool !== "MES_PRIORITY_REVISE" ? <pre>{JSON.stringify(action.state === "executed" ? action.result : action.preview || action.result || {}, null, 2)}</pre> : null}
     {pending && <div className="ai-heading-actions"><button type="button" className="secondary-action" disabled={busy} onClick={onReject}>Rifiuta</button><button type="button" className="primary-action" disabled={busy} onClick={onConfirm}>{busy ? "Applicazione..." : "Conferma e applica"}</button></div>}

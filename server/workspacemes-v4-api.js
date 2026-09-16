@@ -19,6 +19,13 @@ export function automaticWorkspaceV4Decision(preview, materials = []) {
 export function validateWorkspaceV4ProductionResult(preview, result) {
   const expectedDemands = Array.isArray(preview?.snapshot?.demands) ? preview.snapshot.demands : [];
   const productionOrders = Array.isArray(result?.productionOrders) ? result.productionOrders : [];
+  if (result?.status === "FORECAST" && result.productionCreated === false && productionOrders.length === 0) {
+    const actual = Array.isArray(result.forecastLines) ? result.forecastLines : [];
+    const expected = expectedDemands.map(x => x.workspaceLineId);
+    if (!expected.length || expected.some(x => !x) || actual.length !== expected.length || new Set(actual).size !== actual.length || expected.some(id => !actual.includes(id)))
+      throw fail("MES non ha confermato tutte le righe previsionali della RdP.", "V5_FORECAST_INCOMPLETE");
+    return [];
+  }
   const validOrders = productionOrders.filter((order) =>
     Number.isSafeInteger(Number(order?.id)) && Number(order.id) > 0 && clean(order?.number));
   if (result?.productionCreated !== true || !expectedDemands.length ||
@@ -128,7 +135,7 @@ export async function confirmWorkspaceV4({ admin, previewId, reason, requestedBy
     correlationId: preview.correlation_id, causationId: preview.external_id };
   const sent = await client.confirmV4(request.external_id, command);
   validateWorkspaceV4ProductionResult(preview, sent.result);
-  const result = ensure(await admin.rpc("confirm_workspace_v4_after_mes", {
+  const result = ensure(await admin.rpc(sent.result.status === "FORECAST" ? "confirm_workspace_forecast_after_mes" : "confirm_workspace_v4_after_mes", {
     p_preview_id: preview.id, p_external_id: externalId, p_idempotency_key: idempotencyKey,
     p_payload_hash: payloadHash(command), p_expected_row_version: preview.local_row_version,
     p_decision: normalizedDecision, p_mes_response: sent.result,

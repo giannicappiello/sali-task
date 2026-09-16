@@ -37,3 +37,4 @@ output/
 UNUSED/
 supabase/.temp/
 hosting/*.zip
+.env*

@@ -83,7 +83,7 @@ test("il submit conserva il form prima delle operazioni asincrone e mostra lo st
   const page = await readFile(new URL("../src/pages/Documentation/PrivateDocuments.jsx", import.meta.url), "utf8");
   const uploadStart = page.indexOf("async function upload(event)");
   const formData = page.indexOf("const formData = new FormData(event.currentTarget)", uploadStart);
-  const firstAwait = page.indexOf("await workspaceAction", uploadStart);
+  const firstAwait = page.indexOf("await documentRequest", uploadStart);
   assert.ok(uploadStart >= 0 && formData > uploadStart && formData < firstAwait);
   assert.match(page, /body: formData/);
   assert.match(page, /uploading \? "Associazione…" : "Associa documento"/);

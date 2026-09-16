@@ -5,14 +5,23 @@ import { buildMexalClient } from './mexal/sync-products.js';
 const value = v => String(v ?? '').trim();
 export const key = v => value(v).toUpperCase();
 const fail = (message, status=400) => Object.assign(new Error(message), {status});
-export async function rows(admin, table, select='*') {
-  const result=[];
-  for(let offset=0;;offset+=1000) {
-    const {data,error}=await admin.from(table).select(select).range(offset,offset+999);
-    if(error) throw error;
-    result.push(...data);
-    if(data.length<1000) return result;
+const primaryKeys={ordini_prodotti_cache:'codice_articolo',workspace_private_documents:'external_id',
+  workspace_sl_genealogy:'mes_id',workspace_private_document_lots:'mexal_id',workspace_private_nas_files:'path_key',documenti_workspace:'id'};
+export async function rows(admin, table, select='*', filter=q=>q) {
+  const page=async(offset,count=false)=>{
+    const query=filter(admin.from(table).select(select,count?{count:'exact'}:undefined));
+    const result=await query.order(primaryKeys[table]||'id').range(offset,offset+999);
+    if(result.error) throw result.error;
+    return result;
+  };
+  const first=await page(0,true), result=[...first.data];
+  if(first.data.length===1000&&!Number.isInteger(first.count)) throw fail('Conteggio archivio non disponibile: lettura interrotta.',502);
+  // Stable ordering and bounded parallel pages avoid one round trip per 1,000 lots.
+  for(let offset=1000;offset<(first.count??first.data.length);offset+=4000) {
+    const pages=await Promise.allSettled([0,1000,2000,3000].filter(n=>offset+n<first.count).map(n=>page(offset+n)));
+    for(const item of pages) {if(item.status==='rejected') throw item.reason;result.push(...item.value.data);}
   }
+  return result;
 }
 async function save(admin, table, data, options) {
   for(let i=0;i<data.length;i+=300) {
@@ -39,7 +48,7 @@ export function matchFile(file, articles, lots) {
   if(key(parts[0])!=='PRODUZIONE'||key(parts[1])!=='DOCUMENTAZIONE MP'||parts.length<4)
     return {reason:'Fuori dalla cartella produzione / Documentazione Mp: associazione manuale.'};
   const article=articles.find(a=>key(a.articleCode)===key(parts[2]));
-  if(!article||article.articleType!=='MateriaPrima') return {reason:'Codice materia prima non presente nel catalogo Workspace.'};
+  if(!article||['ProdottoFinito','Semilavorato'].includes(article.articleType)) return {reason:'Cartella non corrispondente a un articolo MP o Altro di Workspace.'};
   const stem=key(parts.at(-1).replace(/\.[^.]+$/,''));
   const code=key(article.articleCode);
   if(stem===code||stem.startsWith(code+'_')) return {articleCode:article.articleCode,lotCode:''};
@@ -49,19 +58,22 @@ export function matchFile(file, articles, lots) {
   const exact=candidates.filter(l=>stem===l);
   const matches=exact.length?exact:candidates;
   if(matches.length===1) return {articleCode:article.articleCode,lotCode:matches[0]};
-  return {reason:matches.length?'Nome ambiguo tra più lotti: verificare il collegamento.':'Nome file non riconosciuto come codice articolo o lotto esistente della materia prima.'};
+  if(matches.length) return {reason:'Nome ambiguo tra più lotti: verificare il collegamento.'};
+  return {articleCode:article.articleCode,lotCode:''};
 }
 export function articleType(code, hasBom) {
   if(key(code).startsWith('MP')) return 'MateriaPrima';
   if(key(code).startsWith('FP')) return 'Semilavorato';
   return hasBom==='S'||/^(IT|DC|CO|BT|DD|CW|DR)/i.test(code)?'ProdottoFinito':'Packaging';
 }
-export async function readArchive(admin) {
+export async function readArchive(admin, articleCode=null) {
+  const byCode=column=>q=>articleCode?q.eq(column,column==='article_code'?key(articleCode):articleCode):q;
+  const genealogyFilter=q=>articleCode?q.or(`codice_articolo_prodotto.eq.${JSON.stringify(articleCode)},codice_articolo_materia_prima.eq.${JSON.stringify(articleCode)}`):q;
   const [catalog,documents,genealogy,lotRows,files,genericDocuments]=await Promise.all([
-    rows(admin,'ordini_prodotti_cache','codice_articolo,descrizione,unita_misura,has_bom:dati_mexal->>gest_dbp'),
-    rows(admin,'workspace_private_documents'),rows(admin,'workspace_sl_genealogy'),
-    rows(admin,'workspace_private_document_lots'),rows(admin,'workspace_private_nas_files'),
-    rows(admin,'documenti_workspace','percorso,prodotto_id,attivo')]);
+    rows(admin,'ordini_prodotti_cache','codice_articolo,descrizione,unita_misura,has_bom:dati_mexal->>gest_dbp',byCode('codice_articolo')),
+    rows(admin,'workspace_private_documents','*',byCode('codice_articolo')),rows(admin,'workspace_sl_genealogy','*',genealogyFilter),
+    rows(admin,'workspace_private_document_lots','article_code,lot_code,customer_code',byCode('article_code')),rows(admin,'workspace_private_nas_files'),
+    articleCode?Promise.resolve([]):rows(admin,'documenti_workspace','percorso,prodotto_id,attivo')]);
   const lots=lotRows.map(l=>({articleCode:l.article_code,lotCode:l.lot_code,customerCode:l.customer_code,source:'Mexal'}));
   for(const g of genealogy) {
     if(g.lotto_origine) lots.push({articleCode:g.codice_articolo_materia_prima,lotCode:g.lotto_origine,source:'SL'});
@@ -81,19 +93,20 @@ export async function readArchive(admin) {
     if(!documentsByArticle.has(code)) documentsByArticle.set(code,[]);
     documentsByArticle.get(code).push(document);
   }
-  return {articles,documents,genealogy,lots,files,genericDocuments,lotsByArticle,documentsByArticle};
+  const activeFiles=new Set(files.filter(f=>f.active).map(f=>key(f.path)));
+  return {articles,documents,genealogy,lots,files,genericDocuments,lotsByArticle,documentsByArticle,activeFiles};
 }
 export function allowedLots(archive, code, customerCodes) {
   const internal=customerCodes.includes('*');
-  const candidates=archive.lotsByArticle?.get(key(code))||archive.lots;
+  const candidates=archive.lotsByArticle?(archive.lotsByArticle.get(key(code))||[]):archive.lots;
   return candidates.filter(l=>key(l.articleCode)===key(code)&&(internal||customerCodes.includes(value(l.customerCode))));
 }
 export function visibleDocuments(archive, code, customerCodes) {
   const internal=customerCodes.includes('*');
-  const lots=allowedLots(archive,code,customerCodes);
+  const lots=internal?[]:allowedLots(archive,code,customerCodes);
   if(!internal&&!lots.length) return [];
-  const activeFiles=new Set(archive.files.filter(f=>f.active).map(f=>key(f.path)));
-  const candidates=archive.documentsByArticle?.get(key(code))||archive.documents;
+  const activeFiles=archive.activeFiles||new Set(archive.files.filter(f=>f.active).map(f=>key(f.path)));
+  const candidates=archive.documentsByArticle?(archive.documentsByArticle.get(key(code))||[]):archive.documents;
   return candidates.filter(d=>d.attivo&&key(d.codice_articolo)===key(code)&&d.percorso_nas&&activeFiles.has(key(d.percorso_nas))
     &&(internal||!d.codice_lotto||lots.some(l=>key(l.lotCode)===key(d.codice_lotto))));
 }
@@ -188,16 +201,32 @@ export async function privateDocumentOperation(identity, path, input={}) {
   const internal=customerCodes.includes('*');
   const url=new URL(path,'https://workspace.invalid/');
   if(url.pathname==='/nas/sync') return synchronizeNas(admin,{force:true});
-  const archive=await readArchive(admin);
-  const articles=archive.articles.filter(a=>internal||allowedLots(archive,a.articleCode,customerCodes).length).map(a=>({...a,
-    customers:internal?[...new Set(allowedLots(archive,a.articleCode,customerCodes).map(l=>l.customerCode).filter(Boolean))]:customerCodes,
-    lotCount:new Set(allowedLots(archive,a.articleCode,customerCodes).map(l=>key(l.lotCode))).size,
-    documentCount:visibleDocuments(archive,a.articleCode,customerCodes).length}));
+  if(url.pathname==='/nas') {
+    if(!internal) throw fail('Operazione riservata agli utenti interni.',403);
+    const dir=value(url.searchParams.get('directory'));
+    const prefix=dir?normalizePath(dir)+'/':'';
+    const dirs=new Map(),files=[];
+    for(const f of (await rows(admin,'workspace_private_nas_files')).filter(f=>f.active&&f.path.startsWith(prefix))) {
+      const parts=f.path.slice(prefix.length).split('/');
+      if(parts.length>1) dirs.set(parts[0],{name:parts[0],relativePath:prefix+parts[0]});
+      else files.push({name:f.name,relativePath:f.path,sizeBytes:f.size_bytes});
+    }
+    return {parentPath:dir?dir.split('/').slice(0,-1).join('/'):null,directories:[...dirs.values()],files};
+  }
+  let code=url.pathname.startsWith('/articles/')?decodeURIComponent(url.pathname.slice('/articles/'.length)):null;
+  if(url.pathname==='/documents/reference') code=value(input.articleId);
+  if(url.pathname.startsWith('/documents/')&&url.pathname!=='/documents/reference') {
+    const {data,error}=await admin.from('workspace_private_documents').select('codice_articolo').eq('external_id',url.pathname.slice('/documents/'.length)).maybeSingle();
+    if(error) throw error;
+    if(!data?.codice_articolo) throw fail('Documento non disponibile.',404);
+    code=data.codice_articolo;
+  }
+  const archive=await readArchive(admin,code);
+  const needsArticles=url.pathname.startsWith('/articles')||url.pathname==='/documents/reference';
+  const articles=needsArticles?catalogue(archive,customerCodes):[];
   if(url.pathname==='/articles') {
     const term=key(url.searchParams.get('search'));
-    return articles.filter(a=>!term||key(`${a.articleCode} ${a.description} ${a.articleType}`).includes(term)
-      ||allowedLots(archive,a.articleCode,customerCodes).some(l=>key(l.lotCode).includes(term))
-      ||visibleDocuments(archive,a.articleCode,customerCodes).some(d=>key(`${d.titolo} ${d.nome_file_originale}`).includes(term)));
+    return articles.filter(a=>!term||a.searchText.includes(term));
   }
   if(url.pathname.startsWith('/articles/')) {
     const code=decodeURIComponent(url.pathname.slice('/articles/'.length));
@@ -238,16 +267,18 @@ export async function privateDocumentOperation(identity, path, input={}) {
     if(error) throw error;
     return {scannedAt:data.last_success,associated:0,warnings:data.warnings,unassociated:unassociated(archive)};
   }
-  if(url.pathname==='/nas') {
-    const dir=value(url.searchParams.get('directory'));
-    const prefix=dir?normalizePath(dir)+'/':'';
-    const dirs=new Map(),files=[];
-    for(const f of archive.files.filter(f=>f.active&&f.path.startsWith(prefix))) {
-      const remainder=f.path.slice(prefix.length),parts=remainder.split('/');
-      if(parts.length>1) dirs.set(parts[0],{name:parts[0],relativePath:prefix+parts[0]});
-      else files.push({name:f.name,relativePath:f.path,sizeBytes:f.size_bytes});
-    }
-    return {parentPath:dir?dir.split('/').slice(0,-1).join('/'):null,directories:[...dirs.values()],files};
-  }
   throw fail('Operazione documentale non disponibile.',404);
+}
+
+export function catalogue(archive,customerCodes) {
+  const internal=customerCodes.includes('*');
+  return archive.articles.flatMap(a=>{
+    const lots=allowedLots(archive,a.articleCode,customerCodes);
+    if(!internal&&!lots.length) return [];
+    const documents=visibleDocuments(archive,a.articleCode,customerCodes);
+    return [{...a,customers:internal?[...new Set(lots.map(l=>l.customerCode).filter(Boolean))]:customerCodes,
+      lotCount:new Set(lots.map(l=>key(l.lotCode))).size,documentCount:documents.length,
+      searchText:key([a.articleCode,a.description,a.articleType,...lots.map(l=>l.lotCode),
+        ...documents.map(d=>`${d.titolo} ${d.nome_file_originale}`)].join(' '))}];
+  });
 }

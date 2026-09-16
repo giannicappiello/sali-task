@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { matchFile, normalizePath, allowedLots, visibleDocuments, linkRow, syncLots, synchronizeNas } from './private-documents-store.js';
+import { matchFile, normalizePath, allowedLots, visibleDocuments, linkRow, syncLots, synchronizeNas, rows, catalogue } from './private-documents-store.js';
+import { documentsOnlyArticle, filterDocumentArticles, readCachedArticle, cacheArticle } from '../src/pages/Documentation/private-documents-catalogue.js';
 const articles=[{articleCode:'MP2022',articleType:'MateriaPrima'},{articleCode:'MP2025',articleType:'MateriaPrima'}];
 const lots=[{articleCode:'MP2022',lotCode:'12345'},{articleCode:'MP2025',lotCode:'67890'}];
 test('MP generale e lotto esatto: case insensitive, nessun collegamento incrociato',()=>{
@@ -8,8 +9,8 @@ test('MP generale e lotto esatto: case insensitive, nessun collegamento incrocia
   assert.deepEqual(match('mp2022_sds.pdf'),{articleCode:'MP2022',lotCode:''});
   assert.deepEqual(match('MP2022.pdf'),{articleCode:'MP2022',lotCode:''});
   assert.deepEqual(match('12345_sds.pdf'),{articleCode:'MP2022',lotCode:'12345'});
-  assert.equal(match('123456_sds.pdf').articleCode,undefined);
-  assert.equal(match('67890_sds.pdf').articleCode,undefined);
+  assert.equal(match('123456_sds.pdf').lotCode,'');
+  assert.deepEqual(match('67890_sds.pdf'),{articleCode:'MP2022',lotCode:''});
   assert.equal(matchFile({path:'produzione/COA PROGRE/12345_sds.pdf'},articles,lots).articleCode,undefined);
 });
 test('lotti con underscore e prefissi ambigui non vengono confusi',()=>{
@@ -51,4 +52,55 @@ test('manifest incompleto non scrive inventario o collegamenti e libera il lock'
   const admin={rpc:async()=>({data:true}),from:t=>{calls.push(t);return {update:()=>({eq:()=>({eq:async()=>({})})})};}};
   await assert.rejects(synchronizeNas(admin,{fetchManifest:async()=>({files:[],complete:false})}),/incompleto/);
   assert.deepEqual(calls,['workspace_private_document_sync']);
+});
+
+test('ogni nome file nella cartella MP o Altro è generale salvo il lotto esatto',()=>{
+  const catalog=[...articles,{articleCode:'TAP01',articleType:'Packaging'}];
+  for(const name of ['Scheda sicurezza.pdf','Certificazione fornitore.pdf','S.T..pdf']) {
+    assert.deepEqual(matchFile({path:'Produzione/Documentazione MP/MP2022/'+name},catalog,lots),{articleCode:'MP2022',lotCode:''});
+    assert.deepEqual(matchFile({path:'Produzione/Documentazione MP/TAP01/'+name},catalog,lots),{articleCode:'TAP01',lotCode:''});
+  }
+  assert.equal(matchFile({path:'Produzione/Documentazione MP/SCONOSCIUTO/Scheda.pdf'},catalog,lots).articleCode,undefined);
+  assert.equal(documentsOnlyArticle(catalog[0]),true);
+  assert.equal(documentsOnlyArticle(catalog[2]),true);
+  for(const articleType of ['ProdottoFinito','Semilavorato']) assert.equal(documentsOnlyArticle({articleType}),false);
+});
+
+test('indici vuoti non causano scansioni di tutti i lotti per ogni articolo',()=>{
+  const archive={articles:[{articleCode:'MP0000',articleType:'MateriaPrima',description:'Prova'}],
+    lotsByArticle:new Map(),documentsByArticle:new Map(),activeFiles:new Set(),
+    get lots(){throw new Error('Scansione completa non consentita');},get documents(){throw new Error('Scansione completa non consentita');}};
+  assert.deepEqual(allowedLots(archive,'MP0000',['*']),[]);
+  assert.deepEqual(visibleDocuments(archive,'MP0000',['*']),[]);
+  assert.equal(catalogue(archive,['*'])[0].lotCount,0);
+});
+
+test('ricerca locale indicizza solo i documenti e lotti autorizzati',()=>{
+  const archive={articles:[{articleCode:'MP2022',description:'Collagene',articleType:'MateriaPrima'}],
+    lots:[{articleCode:'MP2022',lotCode:'LOT-A',customerCode:'A'},{articleCode:'MP2022',lotCode:'LOT-B',customerCode:'B'}],
+    documents:[{codice_articolo:'MP2022',codice_lotto:'LOT-A',attivo:true,percorso_nas:'a',titolo:'Sicurezza'},
+      {codice_articolo:'MP2022',codice_lotto:'LOT-B',attivo:true,percorso_nas:'b',titolo:'Riservato B'}],
+    files:[{path:'a',active:true},{path:'b',active:true}]};
+  const catalog=catalogue(archive,['A']);
+  for(const term of ['MP2022','collagene','LOT-A','sicurezza']) assert.equal(filterDocumentArticles(catalog,term).length,1);
+  for(const term of ['LOT-B','Riservato B']) assert.equal(filterDocumentArticles(catalog,term).length,0);
+});
+
+test('cache dettaglio scade ed è limitata, refresh può invalidarla subito',()=>{
+  const cache=new Map();cacheArticle(cache,'MP2022',{documents:[1]},0);
+  assert.deepEqual(readCachedArticle(cache,'MP2022',29999),{documents:[1]});
+  assert.equal(readCachedArticle(cache,'MP2022',30000),null);
+  for(let i=0;i<40;i++) cacheArticle(cache,String(i),{},0);
+  assert.equal(cache.size,30);cache.clear();assert.equal(readCachedArticle(cache,'39',1),null);
+});
+
+test('paginazione ordinata e parallela non perde righe oltre la soglia 1000',async()=>{
+  const calls=[],data=Array.from({length:6200},(_,id)=>({id}));let active=0,peak=0;
+  const admin={from:()=>({select:()=>({order:column=>({range:async(from,to)=>{
+    calls.push({from,to,column});active++;peak=Math.max(peak,active);
+    await new Promise(resolve=>setTimeout(resolve,2));active--;
+    return {data:data.slice(from,to+1),count:data.length};
+  }})})})};
+  assert.deepEqual(await rows(admin,'documenti_workspace'),data);
+  assert.equal(calls.length,7);assert.equal(peak,4);assert.ok(calls.every(c=>c.column==='id'));
 });

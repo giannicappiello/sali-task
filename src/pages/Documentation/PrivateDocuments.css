@@ -4,3 +4,11 @@
 
 @media(max-width:1100px){.private-document-sections{grid-template-columns:repeat(2,minmax(0,1fr))}.private-documents-master-detail{grid-template-columns:minmax(260px,.75fr) minmax(0,1.25fr)}}
 @media(max-width:760px){.private-document-sections{grid-template-columns:1fr}.private-documents-master-detail{grid-template-columns:1fr}.private-article-list{max-height:440px}.private-article-detail-panel{padding:12px}}
+
+/* Search and both archive actions share the same desktop row. */
+.private-documents-toolbar{display:flex;align-items:stretch;gap:10px}
+.private-documents-toolbar>label{flex:1;min-width:180px}
+.private-documents-toolbar>button{min-height:48px;white-space:nowrap}
+.private-documents-toolbar>.private-sync-action{background:#254f78;color:#fff;border-color:#254f78}
+.private-documents-toolbar>button:disabled{opacity:.6;cursor:wait}
+@media(max-width:760px){.private-documents-toolbar{display:grid;grid-template-columns:1fr 1fr}.private-documents-toolbar>label{grid-column:1/-1;min-width:0}.private-documents-toolbar>button{white-space:normal;padding:10px}.private-documents-toolbar>.private-sync-action{grid-column:1/-1}}

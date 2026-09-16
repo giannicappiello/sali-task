@@ -14,7 +14,7 @@ test("Documenti Private usa categorie articolo e layout master-detail", async ()
   assert.match(page, /articleSection\(article\) === activeSection/);
   assert.match(page, /catalog\.reduce/);
   assert.match(page, /appliedQuery \? articles/);
-  assert.match(page, /documentRequest\(active, "articles"\)/);
+  assert.match(page, /documentRequest\(\{ accessToken \}, "articles"\)/);
 
 
   assert.match(page, /window\.setTimeout\(\(\) => \{/);

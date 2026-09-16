@@ -22,7 +22,9 @@ mostra un avviso.
 ## Associazione
 
 - Solo `produzione/Documentazione Mp/{codice}` viene associata automaticamente.
-- `MP2022.pdf` e `MP2022_*.pdf` sono documenti generali dell'articolo.
+- Per MP e Altro, tutti i nomi file nella cartella del codice articolo vengono
+  riconosciuti: non è necessario che inizino per MP.
+- Ogni file è generale dell'articolo, salvo il riconoscimento di un lotto esatto.
 - `12345.pdf` e `12345_*.pdf` richiedono un lotto 12345 esistente di quell'articolo.
 - Codici e percorsi vengono confrontati senza distinzione maiuscole/minuscole.
 - I numeri di lotto conservano gli zeri iniziali. I casi ambigui restano da verificare.
@@ -36,6 +38,31 @@ generali di tali articoli e quelli dei lotti autorizzati. Ogni download viene
 autorizzato sul server e registrato prima di generare il collegamento NAS.
 
 ## Verifica
+
+MP e Altro mostrano direttamente documenti generali e documenti dei lotti,
+senza le schede Lotti disponibili e Genealogia. Prodotti finiti e Bulk mantengono
+entrambe le schede. Sincronizza documenti è a destra di Aggiorna archivio nella
+barra di ricerca. Aggiorna archivio rilegge i dati già indicizzati, senza avviare
+una scansione NAS.
+
+### Prestazioni (confronto backend, 16 settembre 2026)
+
+Stesso progetto, stesse tre operazioni in sola lettura, stesso percorso di rete:
+
+| Operazione | Prima | Dopo | Richieste DB prima/dopo |
+| --- | ---: | ---: | ---: |
+| Catalogo 3.835 articoli | 9.714 ms | 1.176 ms | 18 / 18 |
+| Dettaglio MP2033 | 6.461 ms | 126 ms | 18 / 5 |
+| Non associati | 6.426 ms | 912 ms | 19 / 19 |
+
+I tempi non comprendono autenticazione, rete browser e rendering. Il dettaglio
+legge solo l'articolo richiesto; le pagine del catalogo vengono lette con ordine
+stabile e parallelismo limitato a quattro. Gli indici vuoti non ricadono più
+nella scansione completa di tutti i lotti. Ricerca e filtri usano il catalogo
+già autorizzato ricevuto dal browser, senza richieste per ogni digitazione.
+La cache dei dettagli dura 30 secondi, è limitata a 30 articoli e viene svuotata
+da aggiornamento, sincronizzazione e associazione manuale. I download vengono
+sempre riautorizzati dal server.
 
 `node --test server/private-documents.test.js server/private-documents-layout.test.js server/private-documents-store.test.js server/private-documents-matching.test.js`
 

@@ -49,3 +49,6 @@ npm run build
 Verificati: isolamento dipendente/gestore/admin, attribuzione/revoca reparto, tabelle private, precisione e freschezza GPS, idempotenza, checkout manuale e automatico, turni notturni, chiusure, correzioni motivate, richieste e divieto di autoapprovazione. Verifica browser locale del componente reale con dati sintetici per desktop e smartphone, incluse le viste gestore e configurazioni admin.
 
 Nota sul repository: il test legacy `test/user-department-assignment.test.mjs` contiene già in HEAD un'aspettativa non soddisfatta sul vecchio `Settings.jsx` (rimozione ruolo). Le attribuzioni correnti di `AccessUsers.jsx` sono verificate dai test SQL HR.
+
+## Accordi a compilazione libera
+La decorrenza può essere pregressa. Tutti gli altri campi possono essere vuoti o descrittivi: il testo originale resta riservato agli admin. Le colonne operative contengono solo valori riconosciuti; per generare i turni servono sede configurata, giorni numerici (1=lunedì), orari HH:MM e pausa valida. Gli importi con tariffa o maggiorazione mancanti risultano da definire. La pagina Configurazioni HR si aggiorna solo all’apertura, al cambio periodo, dopo il salvataggio o con Aggiorna: nessun polling o aggiornamento al ritorno alla finestra.

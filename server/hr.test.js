@@ -36,7 +36,7 @@ test('HR migration and authorization flows in isolated PostgreSQL', async (t) =>
   const accessMigration = await readFile(new URL('../supabase/migrations/20260912150000_workspace_access_consistency.sql', import.meta.url), 'utf8');
   await db.exec(accessMigration.slice(accessMigration.indexOf('create or replace function public.workspace_save_user_access('), accessMigration.indexOf('-- One canonical department')));
   const migration = await readFile(new URL('../supabase/migrations/20260916180000_workspace_hr.sql', import.meta.url), 'utf8');
-  try { await db.exec(migration); await db.exec(await readFile(new URL('../supabase/migrations/20260916190000_workspace_hr_site_address.sql', import.meta.url), 'utf8')); } catch (error) { console.error('Migration:', error.message, error.where); throw error; }
+  try { await db.exec(migration); await db.exec(await readFile(new URL('../supabase/migrations/20260916190000_workspace_hr_site_address.sql', import.meta.url), 'utf8')); await db.exec(await readFile(new URL('../supabase/migrations/20260916200000_workspace_hr_flexible_agreements.sql', import.meta.url), 'utf8')); } catch (error) { console.error('Migration:', error.message, error.where); throw error; }
   async function as(user, sql, args = []) {
     await db.exec('begin; set local role authenticated;');
     try { await db.query("select set_config('request.jwt.claim.sub',$1,true)", [user]); const result = await db.query(sql, args); await db.exec('commit'); return result.rows; }
@@ -74,6 +74,25 @@ test('HR migration and authorization flows in isolated PostgreSQL', async (t) =>
     assert.equal((await snap(employee)).employees.length, 1);
     assert.equal((await snap(manager)).employees.length, 2);
     assert.ok((await snap(employee)).shifts.length > 0);
+  });
+  await t.test('past agreements accept empty and descriptive fields without inventing shifts or amounts', async () => {
+    await cfg('contract', { user_id: manager, effective_from: '2020-01-01' });
+    let saved = (await snap(admin, true)).contracts.find(c => c.user_id === manager && c.effective_from === '2020-01-01');
+    assert.equal(saved.agreed_pay, null);
+    assert.equal(saved.site_id, null);
+    await cfg('contract', { user_id: manager, effective_from: '2020-02-01', site_id: 'Sede da definire', weekly_hours: 'part time 20h', start_time: 'flessibile', end_time: '', weekdays: 'a chiamata', break_minutes: 'da concordare', agreed_pay: 'CCNL livello B2', pay_period: 'da definire', overtime_mode: 'accordo individuale', overtime_rate: '', overtime_percent: 'forfait' });
+    saved = (await snap(admin, true)).contracts.find(c => c.user_id === manager && c.effective_from === '2020-02-01');
+    assert.equal(saved.agreement_fields.agreed_pay, 'CCNL livello B2');
+    assert.equal(saved.agreed_pay, null);
+    assert.equal(saved.overtime_percent, null);
+    assert.equal((await snap(admin, true)).shifts.some(s => s.user_id === manager), false);
+    assert.equal(JSON.stringify(await snap(manager)).includes('CCNL livello B2'), false);
+    await cfg('contract', { ...terms, effective_from: '2019-01-01', agreed_pay: '1200,50', weekdays: '1, 2, 3, 4, 5', site_id: 'Sede test' });
+    saved = (await snap(admin, true)).contracts.find(c => c.user_id === employee && c.effective_from === '2019-01-01');
+    assert.equal(saved.agreed_pay, 1200.5);
+    assert.equal(saved.site_id, site);
+    assert.deepEqual(saved.weekdays, [1,2,3,4,5]);
+    await assert.rejects(cfg('contract', { user_id: manager, effective_from: 'data non valida' }));
   });
   const position = (latitude = 40, accuracy = 3, sampled_at = new Date().toISOString()) => JSON.stringify({ latitude, longitude: 14, accuracy, sampled_at });
   const punch = (user, action, key = id(), pos = null, session = null) => rpc(user, 'workspace_hr_punch', [action, key, pos, session]);

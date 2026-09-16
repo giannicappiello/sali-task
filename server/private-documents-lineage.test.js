@@ -108,3 +108,13 @@ test('endpoint carica la catena e firma soltanto download appartenenti al lotto 
     if(oldSecret===undefined) delete process.env.DOCUMENT_GATEWAY_SECRET; else process.env.DOCUMENT_GATEWAY_SECRET=oldSecret;
   }
 });
+
+test('elenco di tutti i fascicoli mantiene separati lotti e clienti',async()=>{
+  const {admin}=database();
+  const result=await productionLotDocuments(admin,'IT01',null,['A']);
+  assert.deepEqual(result.lots.map(l=>l.lotCode),['P1']);
+  assert.ok(!result.lots[0].materials.flatMap(m=>m.documents).some(d=>d.externalId==='raw-M2'));
+  const internal=await productionLotDocuments(admin,'IT01',null,['*']);
+  assert.deepEqual(internal.lots.map(l=>l.lotCode),['P1','P2']);
+  assert.deepEqual(internal.lots[1].materials.flatMap(m=>m.documents.map(d=>d.externalId)),['raw-general','raw-M2']);
+});

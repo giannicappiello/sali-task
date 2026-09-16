@@ -1,4 +1,5 @@
 /* global process */
+import { Buffer } from "node:buffer";
 import { privateDocumentOperation, synchronizeNas, rows } from "./private-documents-store.js";
 import { createClient } from "@supabase/supabase-js";
 
@@ -64,7 +65,33 @@ export async function handlePrivateDocuments(req, body = {}) {
   const pathname = new URL(path, "https://workspace.invalid/").pathname;
   const upload = ["/nas/sync", "/documents/reference", "/nas"].includes(pathname);
   const identity = await authorize(req, { upload });
-  return privateDocumentOperation(identity, path, body.input || {});
+  const result = await privateDocumentOperation(identity, path, body.input || {});
+  const url = new URL(path, "https://workspace.invalid/");
+  if (url.searchParams.get("content") === "true" && pathname.startsWith("/documents/") && pathname !== "/documents/reference") {
+    const offset = Number(url.searchParams.get("offset") || 0);
+    if (!Number.isSafeInteger(offset) || offset < 0) throw Object.assign(new Error("Posizione documento non valida."), { status: 400 });
+    return readPrivateDocumentChunk(result.url, offset);
+  }
+  return result;
+}
+
+export async function readPrivateDocumentChunk(url, offset, fetchFile = fetch) {
+  const chunkSize = 1024 * 1024;
+  const response = await fetchFile(url, { headers: { Range: `bytes=${offset}-${offset + chunkSize - 1}` }, signal: AbortSignal.timeout(60000) });
+  if (offset === 0 && response.status === 416 && response.headers.get("content-range") === "bytes */0") return { base64: "", nextOffset: null };
+  if (!response.ok) throw new Error(`Lettura documento NAS non riuscita (${response.status}).`);
+  const range = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(response.headers.get("content-range") || "");
+  if (response.status !== 206 || !range || Number(range[1]) !== offset || Number(range[2]) - offset + 1 > chunkSize)
+    throw new Error("Risposta NAS incompleta: archivio ZIP non creato.");
+  const reader = response.body.getReader(), chunks = []; let length = 0;
+  while (true) {
+    const { done, value } = await reader.read(); if (done) break;
+    length += value.length;
+    if (length > chunkSize) { await reader.cancel(); throw new Error("Dimensione risposta NAS non valida."); }
+    chunks.push(value);
+  }
+  if (length !== Number(range[2]) - offset + 1) throw new Error("Documento NAS incompleto: archivio ZIP non creato.");
+  return { base64: Buffer.concat(chunks).toString("base64"), nextOffset: Number(range[2]) + 1 < Number(range[3]) ? Number(range[2]) + 1 : null };
 }
 export async function syncPrivateDocuments(req) {
   const {admin, customerCodes} = await authorize(req);

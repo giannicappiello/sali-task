@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Boxes, ClipboardCheck, Download, File, FileLock2, FilePlus2, FlaskConical, Folder, PackageCheck, RefreshCw, Search, Shapes, ShieldCheck, X } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { ArrowLeft, Boxes, Download, File, FileLock2, FilePlus2, FlaskConical, Folder, PackageCheck, RefreshCw, Search, Shapes, ShieldCheck, X } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
-import { productionCoaWorkspacePath } from "./private-documents-navigation";
 import "./PrivateDocuments.css";
 import "./PrivateDocumentsActions.css";
 import "./PrivateDocumentsNasPicker.css";
 import PrivateDocumentsUnassociated from "./PrivateDocumentsUnassociated";
 import { documentsOnlyArticle, filterDocumentArticles, readCachedArticle, cacheArticle } from "./private-documents-catalogue";
+import { archiveDocuments, createDocumentArchive } from "./private-documents-zip";
 
 async function workspaceAction(token, action, extra = {}) {
   const response = await fetch("/api/workspace/documents", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ action, ...extra }) });
@@ -42,34 +41,60 @@ function DocumentList({ documents, onDownload, emptyText = "Nessun documento ass
   return <div className="private-document-list">{documents.map((document) => <article key={`${document.externalId}-${document.associationType}-${document.lotCode}`}><FileLock2/><div><strong>{document.title}</strong><span>{document.type} · Rev. {document.revision} · {document.associationType}{document.lotCode ? ` · Lotto ${document.lotCode}` : ""}</span><small>{document.originalFileName} · {size(document.sizeBytes)} · caricato il {date(document.uploadedAt)}</small></div><button onClick={() => onDownload(document)}><Download size={17}/>Scarica</button></article>)}{!documents.length && <p>{emptyText}</p>}</div>;
 }
 
-function LotDocuments({ articleCode, lotCode, session, onDownload }) {
+function DownloadAll({ documents, fileName, session }) {
+  const [progress, setProgress] = useState("");
+  const [error, setError] = useState("");
+  async function downloadAll() {
+    setError(""); setProgress("Preparazione ZIP…");
+    try {
+      const bytes = await createDocumentArchive(documents, path => documentRequest(session, path), (done, total) => setProgress(`Scaricamento ${done}/${total}…`));
+      const url = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));
+      const link = document.createElement("a"); link.href = url; link.download = fileName.replace(/[\\/:*?"<>|]/g, "_") + ".zip";
+      document.body.appendChild(link); link.click(); link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (cause) { setError(cause.message); }
+    finally { setProgress(""); }
+  }
+  return <div className="private-download-all"><button type="button" disabled={!documents.length || Boolean(progress)} onClick={downloadAll}><Download size={16}/>{progress || "Scarica tutti"}</button>{error && <small role="alert">{error}</small>}</div>;
+}
+
+function LotDocumentLinks({ title, documents, onDownload }) {
+  if (!documents.length) return null;
+  return <div className="private-lot-document-group"><strong>{title}</strong><ul>{documents.map(document => <li key={document.externalId}><a href="#documento" onClick={event => { event.preventDefault(); onDownload(document); }}><FileLock2 size={15}/><span>{document.originalFileName || document.title}</span></a></li>)}</ul></div>;
+}
+
+function LotsWithDocuments({ selected, session, onDownload }) {
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+  const articleCode = selected.article.articleCode;
   useEffect(() => {
     let active = true;
-    documentRequest(session, `lots/documents?${new URLSearchParams({ articleCode, lotCode })}`)
+    documentRequest(session, `lots/documents?${new URLSearchParams({ articleCode, all: "true" })}`)
       .then(data => { if (active) setResult(data); })
       .catch(cause => { if (active) setError(cause.message); });
     return () => { active = false; };
-  }, [articleCode, lotCode, session]);
-  if (error) return <p className="private-documents-error" role="alert">{error}</p>;
-  if (!result) return <p role="status">Caricamento documenti del lotto e dei materiali utilizzati…</p>;
-  return <>
-    <section className="private-document-section"><h3>Documenti generali dell’articolo</h3><DocumentList documents={result.general} onDownload={onDownload}/></section>
-    <section className="private-document-section"><h3>Documenti specifici del lotto</h3><DocumentList documents={result.specific} onDownload={onDownload}/></section>
-    <section className="private-document-section"><h3>Documenti dei materiali utilizzati</h3><p>Documenti generali e dei lotti impiegati, anche attraverso i bulk intermedi.</p>
-      {result.materials.map(material => <section key={`${material.articleCode}-${material.lotCode}`}><h4>{material.articleCode} · Lotto {material.lotCode}</h4><p>{material.description}</p><DocumentList documents={material.documents} onDownload={onDownload}/></section>)}
-      {!result.materials.length && <p>Nessuno scarico di produzione disponibile per ricostruire i materiali utilizzati in questo lotto.</p>}
-    </section>
-  </>;
+  }, [articleCode, session]);
+  const bundles = new Map((result?.lots || []).map(lot => [lot.lotCode.toUpperCase(), lot]));
+  return <section className="private-document-section"><h3>Lotti disponibili</h3><div className="private-genealogy-wrap private-lots-wrap"><table><thead><tr><th>Lotto</th><th>Tipo</th><th>Quantità disponibile</th><th>OP</th><th>Documenti disponibili</th></tr></thead><tbody>{(selected.lots || []).map(row => {
+    const bundle = bundles.get(row.lotCode.toUpperCase());
+    const materials = (bundle?.materials || []).filter(material => material.documents.length);
+    const hasDocuments = bundle && (bundle.general.length || bundle.specific.length || materials.length);
+    return <tr key={row.lotCode}><td><strong>{row.lotCode}</strong></td><td>{row.lotType}</td><td>{row.quantity == null ? "—" : Number(row.quantity).toLocaleString("it-IT")} {row.unitOfMeasure}</td><td>{row.productionOrderNumber || "—"}</td><td className="private-lot-documents-cell">{error ? <span role="alert">{error}</span> : !bundle ? <span>{result ? "Nessun documento disponibile." : "Caricamento documenti…"}</span> : <>
+      <DownloadAll documents={archiveDocuments(bundle)} fileName={articleCode + "_" + row.lotCode} session={session}/>
+      <LotDocumentLinks title="Generali articolo" documents={bundle.general} onDownload={onDownload}/>
+      <LotDocumentLinks title="Specifici del lotto" documents={bundle.specific} onDownload={onDownload}/>
+      {materials.map(material => <LotDocumentLinks key={material.articleCode + "-" + material.lotCode} title={material.articleCode + " · Lotto " + material.lotCode} documents={material.documents} onDownload={onDownload}/>)}
+      {!hasDocuments && <span>Nessun documento disponibile.</span>}
+      {!bundle.materials.length && <small>Scarichi MP non disponibili per questo lotto.</small>}
+    </>}</td></tr>;
+  })}</tbody></table>{!selected.lots?.length && <p>Nessun lotto associato.</p>}</div></section>;
 }
 
 export default function PrivateDocuments() {
   const { session: authSession } = useAuth();
-  const navigate = useNavigate();
   const accessToken = authSession?.access_token;
   const [documentSession, setDocumentSession] = useState(null), [canUpload, setCanUpload] = useState(false), [customerScoped, setCustomerScoped] = useState(false);
-  const [catalog, setCatalog] = useState([]), [articles, setArticles] = useState([]), [selected, setSelected] = useState(null), [selectedLot, setSelectedLot] = useState(null);
+  const [catalog, setCatalog] = useState([]), [articles, setArticles] = useState([]), [selected, setSelected] = useState(null);
   const [activeSection, setActiveSection] = useState("finished");
   const [archiveVersion, setArchiveVersion] = useState(0);
   const [synchronizing, setSynchronizing] = useState(false), [nasSync, setNasSync] = useState(null);
@@ -113,16 +138,16 @@ export default function PrivateDocuments() {
     const search = query.trim();
     if (search === appliedQuery) return undefined;
     const pending = window.setTimeout(() => {
-      activeSearchRef.current = search; setAppliedQuery(search); detailSequence.current++; setDetailLoading(false); setSelected(null); setSelectedLot(null);
+      activeSearchRef.current = search; setAppliedQuery(search); detailSequence.current++; setDetailLoading(false); setSelected(null);
       if (search) void loadSearch(search); else setArticles(catalog);
     }, 250);
     return () => window.clearTimeout(pending);
   }, [appliedQuery, catalog, loadSearch, query]);
 
-  async function applySearch(event) { event?.preventDefault(); const search = query.trim(); activeSearchRef.current = search; detailSequence.current++; setDetailLoading(false); setSelected(null); setSelectedLot(null); setAppliedQuery(search); if (!search) { setArticles(catalog); return; } await loadSearch(search); }
+  async function applySearch(event) { event?.preventDefault(); const search = query.trim(); activeSearchRef.current = search; detailSequence.current++; setDetailLoading(false); setSelected(null);  setAppliedQuery(search); if (!search) { setArticles(catalog); return; } await loadSearch(search); }
   async function refreshArchive() {
     detailCache.current.clear(); setArchiveVersion(version => version + 1);
-    activeSearchRef.current = ""; setAppliedQuery(""); setQuery(""); detailSequence.current++; setDetailLoading(false); setSelected(null); setSelectedLot(null);
+    activeSearchRef.current = ""; setAppliedQuery(""); setQuery(""); detailSequence.current++; setDetailLoading(false); setSelected(null);
     await loadCatalog();
   }
   async function synchronizeDocuments() {
@@ -137,7 +162,7 @@ export default function PrivateDocuments() {
 
   async function openArticle(article) {
     const sequence = ++detailSequence.current;
-    setError(""); setSelectedLot(null);
+    setError("");
     const cached = readCachedArticle(detailCache.current, article.articleId);
     if (cached) { setSelected(cached); setDetailLoading(false); return; }
     setDetailLoading(true);
@@ -175,6 +200,7 @@ export default function PrivateDocuments() {
       const uploadSession = { accessToken };
       await documentRequest(uploadSession, "documents/reference", { method: "POST", body: formData });
       setUploadOpen(false);
+      setArchiveVersion(version => version + 1);
       detailCache.current.clear();
       await openArticle(selected.article);
       await loadCatalog();
@@ -185,7 +211,6 @@ export default function PrivateDocuments() {
       setUploading(false);
     }
   }
-  function openCoa(lot) { const path = productionCoaWorkspacePath({ productionId: lot.productionId, articleCode: selected?.article?.articleCode, lotCode: lot.lotCode, productionOrderId: lot.productionOrderId }); if (!path) { setError("Produzione non identificata: non è possibile compilare il CoA per questo lotto."); return; } setError(""); navigate(path); }
 
   const lotOptions = useMemo(() => (selected?.lots || []).map((row) => ({ type: row.lotType, lot: row.lotCode, orderId: row.productionOrderId || "", stockId: row.stockLotId || "" })), [selected]);
   const sectionCounts = useMemo(() => catalog.reduce((counts, article) => {
@@ -198,7 +223,7 @@ export default function PrivateDocuments() {
   return <div className="private-documents-page">
     <header className="private-documents-hero"><div className="private-documents-icon"><FileLock2 /></div><div><span>DOCUMENTI PRIVATE</span><h1>Articoli, lotti e certificati</h1><p>Archivio protetto sul NAS con genealogia dei lotti ricostruita dagli scarichi SL.</p></div><div className="private-documents-security"><ShieldCheck size={18}/><span>Accesso tracciato</span></div></header>
     {error && <div className="private-documents-error">{error}<button onClick={() => setError("")}><X size={16}/></button></div>}
-    <div className="private-document-sections" role="tablist" aria-label="Tipologie articolo">{ARTICLE_SECTIONS.map((section) => { const Icon = section.icon; const active = !appliedQuery && activeSection === section.id; return <button key={section.id} type="button" role="tab" aria-selected={active} className={active ? "active" : ""} onClick={() => { activeSearchRef.current = ""; setActiveSection(section.id); setQuery(""); setAppliedQuery(""); setArticles(catalog); detailSequence.current++; setDetailLoading(false); setSelected(null); setSelectedLot(null); }}><span className="private-document-section-icon"><Icon size={22}/></span><span><strong>{section.title}</strong><small>{section.description}</small></span><b>{sectionCounts[section.id]}</b></button>; })}{documentSession && !customerScoped && <button type="button" role="tab" aria-selected={Boolean(unassociatedActive)} className={unassociatedActive ? "active" : ""} onClick={() => { setActiveSection("unassociated"); setQuery(""); setAppliedQuery(""); activeSearchRef.current = ""; detailSequence.current++; setDetailLoading(false); setSelected(null); }}><span className="private-document-section-icon"><Folder size={22}/></span><span><strong>Documenti non associati</strong><small>File NAS da verificare e collegare.</small></span></button>}</div>
+    <div className="private-document-sections" role="tablist" aria-label="Tipologie articolo">{ARTICLE_SECTIONS.map((section) => { const Icon = section.icon; const active = !appliedQuery && activeSection === section.id; return <button key={section.id} type="button" role="tab" aria-selected={active} className={active ? "active" : ""} onClick={() => { activeSearchRef.current = ""; setActiveSection(section.id); setQuery(""); setAppliedQuery(""); setArticles(catalog); detailSequence.current++; setDetailLoading(false); setSelected(null);  }}><span className="private-document-section-icon"><Icon size={22}/></span><span><strong>{section.title}</strong><small>{section.description}</small></span><b>{sectionCounts[section.id]}</b></button>; })}{documentSession && !customerScoped && <button type="button" role="tab" aria-selected={Boolean(unassociatedActive)} className={unassociatedActive ? "active" : ""} onClick={() => { setActiveSection("unassociated"); setQuery(""); setAppliedQuery(""); activeSearchRef.current = ""; detailSequence.current++; setDetailLoading(false); setSelected(null); }}><span className="private-document-section-icon"><Folder size={22}/></span><span><strong>Documenti non associati</strong><small>File NAS da verificare e collegare.</small></span></button>}</div>
     <form className="private-documents-toolbar" onSubmit={applySearch}>
       <label><Search size={19}/><input value={query} disabled={unassociatedActive} onChange={(event) => { activeSearchRef.current = event.target.value.trim(); setQuery(event.target.value); }} placeholder="Ricerca rapida in tutti gli articoli, lotti e documenti…"/></label>
       <button type="submit" disabled={unassociatedActive}><Search size={17}/>Cerca</button>
@@ -209,13 +234,10 @@ export default function PrivateDocuments() {
     {unassociatedActive ? <PrivateDocumentsUnassociated request={requestNas} refreshKey={`${nasSync?.scannedAt}-${archiveVersion}`}/> : <>
     <div className="private-documents-master-detail">
       <section className="private-article-list-panel"><header><h2>{appliedQuery ? `Risultati per “${appliedQuery}”` : activeSectionInfo.title}</h2><span>{filteredArticles.length}</span></header>{loading ? <div className="private-documents-loading">Caricamento archivio…</div> : <div className="private-article-list">{filteredArticles.map((article) => <button key={article.articleId} type="button" onClick={() => openArticle(article)} className={selected?.article?.articleId === article.articleId ? "active" : ""}><span>{article.articleType}</span><strong>{article.articleCode}</strong><p>{article.description}</p><small>{article.documentCount} documenti · {article.lotCount} lotti</small></button>)}</div>}{!loading && !filteredArticles.length && <p className="private-panel-empty">{appliedQuery ? "Nessun articolo corrisponde alla ricerca globale." : "Nessun articolo disponibile in questa tipologia."}</p>}</section>
-      <section className="private-article-detail-panel">{detailLoading ? <div className="private-documents-loading">Caricamento lotti e documenti…</div> : !selected ? <div className="private-panel-empty"><FileLock2 size={32}/><h2>Seleziona un articolo</h2><p>I lotti e i documenti disponibili compariranno qui.</p></div> : selectedLot ? <>
-      <div className="private-detail-heading"><button onClick={() => setSelectedLot(null)}><ArrowLeft size={18}/>Torna ai lotti</button><div><span>{selected.article.articleCode} · {selectedLot.lotType}</span><h2>Lotto {selectedLot.lotCode}</h2><p>{selected.article.description}</p></div></div>
-      <LotDocuments key={`${selected.article.articleCode}-${selectedLot.lotCode}`} articleCode={selected.article.articleCode} lotCode={selectedLot.lotCode} session={documentSession} onDownload={download}/>
-    </> : <>
+      <section className="private-article-detail-panel">{detailLoading ? <div className="private-documents-loading">Caricamento lotti e documenti…</div> : !selected ? <div className="private-panel-empty"><FileLock2 size={32}/><h2>Seleziona un articolo</h2><p>I lotti e i documenti disponibili compariranno qui.</p></div> : <>
       <div className="private-detail-heading"><div><span>{selected.article.articleType}</span><h2>{selected.article.articleCode} · {selected.article.description}</h2><p>{selected.article.customers?.join(", ") || "Nessun cliente collegato"}</p></div>{!customerScoped && canUpload && <button className="primary-action" onClick={() => openDocumentLink()}><FilePlus2 size={18}/>Associa documento</button>}</div>
-      {(!customerScoped || documentsOnlyArticle(selected.article)) && <section className="private-document-section"><h3>{documentsOnlyArticle(selected.article) ? "Documenti associati" : "Documenti generali e di produzione"}</h3><DocumentList documents={selected.documents} onDownload={download}/></section>}
-      {!documentsOnlyArticle(selected.article) && <section className="private-document-section"><h3>Lotti disponibili</h3><div className="private-genealogy-wrap private-lots-wrap"><table><thead><tr><th>Lotto</th><th>Tipo</th><th>Quantità disponibile</th><th>OP</th><th>Azioni</th></tr></thead><tbody>{(selected.lots || []).map((row) => <tr key={`${row.lotType}-${row.lotCode}`}><td><strong>{row.lotCode}</strong></td><td>{row.lotType}</td><td>{row.quantity == null ? "—" : Number(row.quantity).toLocaleString("it-IT")} {row.unitOfMeasure}</td><td>{row.productionOrderNumber || "—"}</td><td><div className="private-lot-actions"><button type="button" onClick={() => setSelectedLot(row)}><FileLock2 size={15}/>Apri lotto</button>{!customerScoped && canUpload && <button type="button" onClick={() => openDocumentLink(row)}><FilePlus2 size={15}/>Associa documento</button>}{!customerScoped && ["LottoProdotto", "LottoBulk"].includes(row.lotType) && (Number(row.productionId) > 0 ? <button type="button" onClick={() => openCoa(row)}><ClipboardCheck size={15}/>Emetti CoA</button> : <button type="button" disabled title={row.coaUnavailableReason || "Il lotto non è collegato in modo univoco a una produzione MES"}><ClipboardCheck size={15}/>{row.coaUnavailableReason || "Produzione non identificata"}</button>)}</div></td></tr>)}</tbody></table>{!(selected.lots || []).length && <p>Nessun lotto associato.</p>}</div></section>}
+      {(!customerScoped || documentsOnlyArticle(selected.article)) && <section className="private-document-section"><header className="private-document-section-heading"><h3>{documentsOnlyArticle(selected.article) ? "Documenti associati" : "Documenti generali e di produzione"}</h3><DownloadAll documents={selected.documents} fileName={selected.article.articleCode} session={documentSession}/></header><DocumentList documents={selected.documents} onDownload={download}/></section>}
+      {!documentsOnlyArticle(selected.article) && <LotsWithDocuments key={selected.article.articleCode + "-" + archiveVersion} selected={selected} session={documentSession} onDownload={download}/>}
       {!customerScoped && !documentsOnlyArticle(selected.article) && <section className="private-document-section"><h3>Genealogia lotti e scarichi SL</h3><div className="private-genealogy-wrap"><table><thead><tr><th>OP / OCT / RdP</th><th>Lotto prodotto</th><th>Materia prima</th><th>Lotto utilizzato</th><th>Quantità</th><th>Documento SL</th></tr></thead><tbody>{selected.genealogy.map((row) => <tr key={row.mesId}><td><strong>{row.productionOrderNumber}</strong><small>{row.octReference} · {row.rdpReference}</small></td><td>{row.productArticleCode}<small>{row.destinationLot}</small></td><td>{row.rawMaterialArticleCode}<small>{row.rawMaterialDescription}</small></td><td>{row.sourceLot}</td><td>{row.quantity == null ? "—" : Number(row.quantity).toLocaleString("it-IT")} {row.unitOfMeasure}</td><td>{row.slDocument || "—"}</td></tr>)}</tbody></table></div></section>}
     </>}</section></div>
     </>}

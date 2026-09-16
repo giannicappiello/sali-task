@@ -43,9 +43,10 @@ test("il cliente naviga da articolo a lotto e vede documenti comuni e specifici"
   ]);
   assert.match(page, /lots\/documents\?/);
   assert.match(await readFile(new URL("../src/pages/Documentation/private-documents-matching.js", import.meta.url), "utf8"), /document\.associationType === "Articolo"/);
-  assert.match(page, /Apri lotto/);
-  assert.match(page, /Documenti specifici del lotto/);
-  assert.match(page, /!customerScoped.*Emetti CoA/);
+  assert.match(page, /Documenti disponibili/);
+  assert.match(page, /Specifici del lotto/);
+  assert.doesNotMatch(page, /Apri lotto|Emetti CoA|Produzione non identificata/);
+  assert.match(page, /Scarica tutti/);
   assert.match(service, /allowedLots/);
   assert.doesNotMatch(service, /PROGREMES_URL|PROGREMES_INTEGRATION_SECRET/);
 });
@@ -63,9 +64,7 @@ test("Emetti CoA segue la navigazione interna Workspace e conserva il contesto M
   assert.equal(productionCoaWorkspacePath({ articleCode: "IT 0084", lotCode: "Lotto 1+2" }), null);
 
   const page = await readFile(new URL("../src/pages/Documentation/PrivateDocuments.jsx", import.meta.url), "utf8");
-  assert.match(page, /const path = productionCoaWorkspacePath/);
-  assert.match(page, /navigate\(path\)/);
-  assert.match(page, /Produzione non identificata/);
+  assert.doesNotMatch(page, /productionCoaWorkspacePath|Produzione non identificata/);
   assert.doesNotMatch(page, /window\.open\("about:blank"/);
 });
 

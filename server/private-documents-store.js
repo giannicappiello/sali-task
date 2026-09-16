@@ -207,7 +207,7 @@ export async function privateDocumentOperation(identity, path, input={}) {
   const {admin,customerCodes,profile}=identity;
   const internal=customerCodes.includes('*');
   const url=new URL(path,'https://workspace.invalid/');
-  if(url.pathname==='/lots/documents') return productionLotDocuments(admin,value(url.searchParams.get('articleCode')),value(url.searchParams.get('lotCode')),customerCodes);
+  if(url.pathname==='/lots/documents') return productionLotDocuments(admin,value(url.searchParams.get('articleCode')),url.searchParams.get('all')==='true'?null:value(url.searchParams.get('lotCode')),customerCodes);
   if(url.pathname.startsWith('/documents/')&&url.pathname!=='/documents/reference'&&url.searchParams.has('articleCode')) {
     const bundle=await productionLotDocuments(admin,value(url.searchParams.get('articleCode')),value(url.searchParams.get('lotCode')),customerCodes);
     const id=url.pathname.slice('/documents/'.length);
@@ -339,9 +339,10 @@ export function lotDocumentBundle(archive,code,lot,customerCodes) {
 export async function productionLotDocuments(admin,code,lot,customerCodes) {
   const archive=await readArchive(admin,code);
   // Validate the root before reading any upstream material data.
-  if(!value(lot)||!allowedLots(archive,code,customerCodes).some(l=>key(l.lotCode)===key(lot))) throw fail('Lotto non disponibile.',404);
+  const authorized=[...new Map(allowedLots(archive,code,customerCodes).map(l=>[key(l.lotCode),l.lotCode])).values()];
+  if(lot!==null&&(!value(lot)||!authorized.some(l=>key(l)===key(lot)))) throw fail('Lotto non disponibile.',404);
   const visited=new Set(),allEdges=[],sourceCodes=new Set();
-  let frontier=[{articleCode:code,lotCode:lot}];
+  let frontier=(lot===null?authorized:[lot]).map(lotCode=>({articleCode:code,lotCode}));
   while(frontier.length) {
     const next=[];
     for(let i=0;i<frontier.length;i+=40) {
@@ -370,5 +371,6 @@ export async function productionLotDocuments(admin,code,lot,customerCodes) {
     }
   }
   archive.genealogy=allEdges;
+  if(lot===null) return {lots:authorized.map(lotCode=>({lotCode,...lotDocumentBundle(archive,code,lotCode,customerCodes)}))};
   return lotDocumentBundle(archive,code,lot,customerCodes);
 }

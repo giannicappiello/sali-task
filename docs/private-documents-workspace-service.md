@@ -95,3 +95,23 @@ Verifica: `node --test server/private-documents-lineage.test.js` copre cartelle,
 lotto esatto, risalita PF/bulk/MP, duplicati, cicli, file inattivi e isolamento
 tra clienti. Prova di lettura sul lotto FP123L/112310016: 447 ms per ricostruire
 11 coppie articolo/lotto (esclusi autenticazione e rendering browser).
+
+### Elenco documenti nelle righe e Scarica tutti
+
+La colonna Azioni è sostituita da Documenti disponibili: nomi cliccabili,
+raggruppati in generali articolo, specifici lotto e materiali/lotto consumato.
+Le vecchie azioni Apri lotto, Associa documento ed Emetti CoA non compaiono più
+nelle righe. La richiesta `lots/documents?articleCode=...&all=true` ricostruisce
+insieme i soli lotti autorizzati dell'articolo, senza una richiesta per riga.
+Verifica FP123M: 31 lotti in 924 ms nel servizio, prima di autenticazione e rendering.
+
+Scarica tutti è disponibile per ogni lotto e per i documenti dell'articolo,
+incluse MP e Altro. Il browser crea uno ZIP deduplicato per documento, con
+cartelle articolo/lotto. I file vengono letti dal NAS tramite Workspace in
+frammenti di massimo 1 MiB, con tre file contemporanei; ogni richiesta mantiene
+la verifica di accesso e l'audit. Nessun archivio viene salvato sul server o
+sul NAS. Le letture incomplete interrompono lo ZIP con un errore visibile.
+Il limite per singolo archivio nel browser è 256 MiB non compressi.
+
+`node --test server/private-documents-zip.test.js` verifica byte, omonimi,
+deduplicazione, contesto autorizzato e gestione dei frammenti incompleti.

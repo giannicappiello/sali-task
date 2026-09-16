@@ -405,6 +405,7 @@ export function AuthProvider({ children }) {
   function hasModuleAccess(moduleCode) {
     if (!profile || profile.attivo === false) return false;
     if (isAdmin()) return true;
+    if (moduleCode === "hr" || moduleCode === "human_resources") return moduleIsAvailable(moduleCode, moduleAccess);
     if (requiresDirectModuleGrant(moduleCode)) return moduleAccess.includes(moduleCode);
     const personalException = getPersonalException("modulo", moduleCode);
     if (personalException?.decision === "consenti") return true;

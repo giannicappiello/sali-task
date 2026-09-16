@@ -21,6 +21,12 @@ test('HR migration and authorization flows in isolated PostgreSQL', async (t) =>
     create function workspace_user_is_admin() returns boolean language sql stable security definer as $$ select coalesce((select r.amministratore_workspace from utenti u join ruoli r on r.id=u.ruolo_id where u.auth_user_id=auth.uid() and u.attivo),false) $$;
     create function workspace_current_profile_id() returns uuid language sql stable security definer as $$ select id from utenti where auth_user_id=auth.uid() $$;
     create function workspace_touch_access_revision() returns trigger language plpgsql as $$ begin return null; end $$;
+    create table notifiche(id uuid primary key default gen_random_uuid(),utente_id uuid,titolo text,messaggio text,tipo text,evento text,url text,metadata jsonb);
+    create table workspace_access_revision(id boolean primary key, revision bigint default 0);
+    insert into workspace_access_revision values(true,0);
+    create function workspace_screen_level_for_user(target_user_id uuid,target_screen text) returns text language sql stable security definer as $$
+      with t as (select target_user_id id),s as(select '{}'::jsonb metadati)
+      select case when s.metadati->>'admin_only'='true' then 'nessuno' else 'lettura' end from t,s $$;
     create table workspace_moduli(codice text primary key,nome text,descrizione text,tipo text,area text,percorso text,provider text,sempre_disponibile boolean,assegnabile_reparto boolean,configurabile_ruolo boolean,mostra_menu boolean,attivo boolean,ordine integer,icona text,livello_self_service text);
     create table workspace_schermate(codice text primary key,nome text,descrizione text,provider text,percorso text,chiave_componente text,ordine integer,icona text,metadati jsonb);
     create table workspace_moduli_schermate(modulo_codice text,schermata_codice text,ordine integer,predefinita boolean,visibile_menu boolean);
@@ -36,7 +42,7 @@ test('HR migration and authorization flows in isolated PostgreSQL', async (t) =>
   const accessMigration = await readFile(new URL('../supabase/migrations/20260912150000_workspace_access_consistency.sql', import.meta.url), 'utf8');
   await db.exec(accessMigration.slice(accessMigration.indexOf('create or replace function public.workspace_save_user_access('), accessMigration.indexOf('-- One canonical department')));
   const migration = await readFile(new URL('../supabase/migrations/20260916180000_workspace_hr.sql', import.meta.url), 'utf8');
-  try { await db.exec(migration); await db.exec(await readFile(new URL('../supabase/migrations/20260916190000_workspace_hr_site_address.sql', import.meta.url), 'utf8')); await db.exec(await readFile(new URL('../supabase/migrations/20260916200000_workspace_hr_flexible_agreements.sql', import.meta.url), 'utf8')); await db.exec(await readFile(new URL('../supabase/migrations/20260916210000_workspace_hr_home_punch.sql', import.meta.url), 'utf8')); } catch (error) { console.error('Migration:', error.message, error.where); throw error; }
+  try { await db.exec(migration); await db.exec(await readFile(new URL('../supabase/migrations/20260916190000_workspace_hr_site_address.sql', import.meta.url), 'utf8')); await db.exec(await readFile(new URL('../supabase/migrations/20260916200000_workspace_hr_flexible_agreements.sql', import.meta.url), 'utf8')); await db.exec(await readFile(new URL('../supabase/migrations/20260916210000_workspace_hr_home_punch.sql', import.meta.url), 'utf8')); await db.exec(await readFile(new URL('../supabase/migrations/20260916220000_workspace_hr_catalog_alias.sql', import.meta.url), 'utf8')); await db.exec(await readFile(new URL('../supabase/migrations/20260916230000_workspace_hr_request_recipients.sql', import.meta.url), 'utf8')); } catch (error) { console.error('Migration:', error.message, error.where); throw error; }
   async function as(user, sql, args = []) {
     await db.exec('begin; set local role authenticated;');
     try { await db.query("select set_config('request.jwt.claim.sub',$1,true)", [user]); const result = await db.query(sql, args); await db.exec('commit'); return result.rows; }
@@ -103,6 +109,16 @@ test('HR migration and authorization flows in isolated PostgreSQL', async (t) =>
     assert.deepEqual(Object.keys(status).sort(),['actor_id','member','open']);
     await assert.rejects(rpc(outsider,'workspace_hr_punch_status',[]),/abilitato/);
   });
+  await t.test('renamed HR catalog module preserves membership-only access under both codes', async () => {
+    await db.exec("update workspace_moduli set codice='human_resources' where codice='hr'");
+    for (const code of ['hr','human_resources']) {
+      assert.equal(await rpc(employee,'workspace_module_enabled_for_user',[employee,code]),true);
+      assert.equal(await rpc(outsider,'workspace_module_enabled_for_user',[outsider,code]),false);
+    }
+    assert.equal(await rpc(employee,'workspace_screen_level_for_user',[employee,'hr']),'scrittura');
+    assert.equal(await rpc(outsider,'workspace_screen_level_for_user',[outsider,'hr']),'nessuno');
+    await db.exec("update workspace_moduli set codice='hr' where codice='human_resources'");
+  });
   const position = (latitude = 40, accuracy = 3, sampled_at = new Date().toISOString()) => JSON.stringify({ latitude, longitude: 14, accuracy, sampled_at });
   const punch = (user, action, key = id(), pos = null, session = null) => rpc(user, 'workspace_hr_punch', [action, key, pos, session]);
   let session;
@@ -165,6 +181,29 @@ test('HR migration and authorization flows in isolated PostgreSQL', async (t) =>
     await rpc(manager, 'workspace_hr_operate', ['review', review]);
     assert.equal((await snap(employee)).requests[0].status, 'approved');
     await assert.rejects(rpc(manager, 'workspace_hr_operate', ['review', review]), /già/);
+  });
+  await t.test('multiple company recipients receive once and can only review requests', async () => {
+    await assert.rejects(rpc(employee,'workspace_hr_save_recipients',[[outsider]]),/admin/);
+    await rpc(admin,'workspace_hr_save_recipients',[[outsider,manager,outsider]]);
+    assert.equal((await snap(admin,true)).recipients.length,2);
+    const payload={request_key:id(),kind:'leave',starts_at:'2030-01-01T08:00:00Z',ends_at:'2030-01-01T09:00:00Z',note:'Ferie'};
+    const req=await rpc(employee,'workspace_hr_operate',['request',JSON.stringify(payload)]);
+    await rpc(employee,'workspace_hr_operate',['request',JSON.stringify(payload)]);
+    assert.equal((await db.query('select count(*)::integer count from notifiche')).rows[0].count,2);
+    const reviewSnapshot=await snap(outsider);
+    assert.equal(reviewSnapshot.reviewer,true);
+    assert.equal(reviewSnapshot.manager,false);
+    assert.equal(reviewSnapshot.member,false);
+    assert.equal(reviewSnapshot.attendance.length,0);
+    assert.equal(reviewSnapshot.shifts.length,0);
+    assert.equal('contracts' in reviewSnapshot,false);
+    assert.ok(reviewSnapshot.requests.some(r=>r.id===req.id));
+    await assert.rejects(snap(outsider,true),/admin/);
+    await assert.rejects(rpc(outsider,'workspace_hr_operate',['closure',JSON.stringify({name:'test'})]),/autorizzata/);
+    await rpc(outsider,'workspace_hr_operate',['review',JSON.stringify({id:req.id,status:'approved',note:'Approvata'})]);
+    await assert.rejects(rpc(manager,'workspace_hr_operate',['review',JSON.stringify({id:req.id,status:'approved',note:'Ripetuta'})]),/già/);
+    await rpc(admin,'workspace_hr_save_recipients',[[]]);
+    await assert.rejects(snap(outsider),/abilitato/);
   });
   await t.test('removing HR department revokes HR without removing operational department', async () => {
     await writeFile(new URL('../.tmp/hr-fixtures.json', import.meta.url), JSON.stringify({ employee: await snap(employee), manager: await snap(manager), admin: await snap(admin, true) }));

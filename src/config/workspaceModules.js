@@ -1,5 +1,6 @@
 export const WORKSPACE_MODULES = Object.freeze({
   hr: { code: "hr", label: "Modulo HR", kind: "business", selfServiceLevel: "scrittura" },
+  human_resources: { code: "human_resources", label: "Human Resources", kind: "business", selfServiceLevel: "scrittura" },
   home: { code: "home", label: "Home", kind: "system", alwaysAvailable: true },
   attivita: { code: "attivita", label: "Attività", kind: "business", alwaysAvailable: true, roleConfigurable: true, selfServiceLevel: "scrittura" },
   prodotti: { code: "prodotti", label: "Prodotti Direct", kind: "business", departmentAssignable: true, roleConfigurable: true },
@@ -53,6 +54,7 @@ export function moduleSelfServiceAllows(moduleCode, requiredLevel = "lettura") {
 }
 
 export function moduleIsAvailable(moduleCode, grantedModules = [], isAdmin = false) {
+  if (moduleCode === "hr" || moduleCode === "human_resources") return isAdmin || grantedModules.includes("hr") || grantedModules.includes("human_resources");
   const definition = WORKSPACE_MODULES[moduleCode];
   if (!definition) return isAdmin || grantedModules.includes(moduleCode);
   if (definition.alwaysAvailable) return true;

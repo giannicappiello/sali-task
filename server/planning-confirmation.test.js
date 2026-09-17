@@ -5,12 +5,12 @@ import { decideControlledAction } from "./ai/controlled-actions.js";
 import { planningVersionWithAudit } from "./planning-audit.js";
 import { planningConfirmationError, planningOperation } from "../src/pages/Production/planning-confirmation.js";
 
-async function confirm({ apply, status = "PROPOSED", getError = false, mirrorError = false }) {
+async function confirm({ apply, status = "PROPOSED", getError = false, mirrorError = false, tool = "MES_PLAN_APPLY", snapshot }) {
   const originalFetch = globalThis.fetch;
   const oldUrl = process.env.PROGREMES_URL, oldSecret = process.env.PROGREMES_INTEGRATION_SECRET;
   process.env.PROGREMES_URL = "https://mes.example.test";
   process.env.PROGREMES_INTEGRATION_SECRET = "test-only";
-  const pending = { id: "action", tool: "MES_PLAN_APPLY", action: "manual_planning", status: "confirmed", target: "version",
+  const pending = { id: "action", tool, action: "manual_planning", status: "confirmed", target: "version",
     payload_summary: { targetId: "version", expectedHash: "hash", backupVerified: true, evidence: { snapshot: { tasks: ["large archived evidence"] } } } };
   const calls = []; let completed;
   const chain = { select() { return this; }, eq() { return this; }, async maybeSingle() { return { data: pending }; } };
@@ -28,7 +28,7 @@ async function confirm({ apply, status = "PROPOSED", getError = false, mirrorErr
     }
     if (url.pathname.endsWith("/planning/get")) {
       if (getError) throw new Error("Lettura MES non disponibile");
-      return new Response(JSON.stringify({ id: "version", status }));
+      return new Response(JSON.stringify({ id: "version", status, snapshot }));
     }
     return new Response(JSON.stringify({ configuration: { activeVersionId: "version" } }));
   };
@@ -52,6 +52,14 @@ test("failed verification keeps both the original error and the read failure", a
   const { completed } = await confirm({ apply: { status: 401, body: { code: "INVALID_SIGNATURE" } }, getError: true });
   assert.match(completed.p_error, /INVALID_SIGNATURE/);
   assert.match(completed.p_error, /Lettura MES non disponibile/);
+});
+
+test("an applied release is not successful material coverage while its shortages remain open", async () => {
+  const { result } = await confirm({ tool: "MES_ODL_VERIFY", status: "APPLIED",
+    snapshot: { shortages: [{ code: "MP", quantity: 5 }], shortagesCoveredAtUtc: null },
+    apply: { status: 409, body: { error: "Copertura fisica insufficiente" } } });
+  assert.equal(result.controlledAction.state, "failed");
+  assert.match(result.controlledAction.error, /ancora da coprire/);
 });
 test("a transport timeout followed by APPLIED is successful without replay", async () => {
   const { result, calls } = await confirm({ apply: new Error("Timeout"), status: "APPLIED" });

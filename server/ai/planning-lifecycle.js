@@ -47,7 +47,7 @@ export function assertPlanningConfirmation(input, version, verifyOnly = false) {
     throw new Error("Versione non corrispondente: ricaricare l'anteprima.");
   if (verifyOnly) {
     const pendingCoverage = version.status === "APPLIED" && version.snapshot.shortages?.length && !version.snapshot.shortagesCoveredAtUtc;
-    if (version.kind !== "RELEASE_ODL" || (!pendingCoverage && !["PREPARING", "RECONCILIATION_REQUIRED"].includes(version.status))) throw new Error("Nessun rilascio ODL da riconciliare.");
+    if (!["RELEASE_ODL", "GRAPHICAL_RELEASE"].includes(version.kind) || (!pendingCoverage && !["PREPARING", "RECONCILIATION_REQUIRED"].includes(version.status))) throw new Error("Nessun rilascio ODL da riconciliare.");
   } else {
     if (version.status !== "PROPOSED" || version.snapshot.blocks?.length) throw new Error("Anteprima non confermabile: verificare i blocchi.");
     const time = Date.parse(version.createdAt);

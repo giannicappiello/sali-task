@@ -38,6 +38,12 @@ export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
     }), 30000);
     const receive = (event) => {
       if (!isProgremesFrameMessage(event, frame.current?.contentWindow, origin)) return;
+      if (event.data.type === "progremes-planning-applied") {
+        fetch("/api/workspace/planning", { method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }, body: JSON.stringify({ action: "planning_reconcile" }) })
+          .then(async response => { const result = await response.json(); if (!response.ok) throw new Error(result.error || "Allineamento non riuscito"); })
+          .catch(() => setFrameStatus({ url, ready: true, error: "Piano salvato in MES. Completa l’allineamento dallo Storico ODL con Allinea stato Workspace; non ripetere la generazione." }));
+        return;
+      }
       if (event.data.type === "progremes-workspace-navigate") {
         navigate(progremesWorkspaceDestination(event.data));
         return;
@@ -52,7 +58,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
     };
     window.addEventListener("message", receive);
     return () => { window.clearTimeout(timer); window.removeEventListener("message", receive); };
-  }, [url, navigate]);
+  }, [url, navigate, accessToken]);
 
   const error = !authLoading && !allowed ? "Accesso al modulo ProgreMES non autorizzato."
     : !authLoading && !accessToken ? "Sessione Workspace non disponibile."

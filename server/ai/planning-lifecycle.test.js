@@ -20,6 +20,14 @@ test("ODL recovery verifies existing lots, not another plan application", () => 
   assert.equal(assertPlanningConfirmation({ targetId: "id", expectedHash: "hash" }, v, true).evidence.status, v.status);
   assert.throws(() => assertPlanningConfirmation({ targetId: "id", expectedHash: "hash" }, v));
 });
+test("graphical releases support lot recovery and shortage coverage without replaying the plan", () => {
+  const input = { targetId: "id", expectedHash: "hash" };
+  for (const patch of [{ status: "RECONCILIATION_REQUIRED" }, { status: "APPLIED", snapshot: { shortages: [{ quantity: 5 }] } }]) {
+    const v = { ...version(), kind: "GRAPHICAL_RELEASE", ...patch };
+    assert.equal(assertPlanningConfirmation(input, v, true).evidence.kind, "GRAPHICAL_RELEASE");
+    assert.throws(() => assertPlanningConfirmation(input, v));
+  }
+});
 test("MES cannot be called without the operational permission", async () => {
   let calls = 0;
   await assert.rejects(planningCall({ scoped: { rpc: async () => ({ data: false }) } }, "state", {}, () => { calls++; }), /Permesso/);

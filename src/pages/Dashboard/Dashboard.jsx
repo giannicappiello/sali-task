@@ -18,6 +18,8 @@ import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../contexts/AuthContext";
 import PhaseChecklistModal from "../../components/PhaseChecklistModal";
 import InfoTooltip from "../../components/InfoTooltip";
+import useProductionCalendar from './useProductionCalendar';
+import { activityOnDay } from './productionCalendar';
 import { loadCrmCustomerDirectory, workspaceCustomerName } from "../../modules/crm/crmWorkspaceCustomers";
 
 const CLOSED_STATES = ["evaso", "evasa", "completato", "completata", "chiuso", "chiusa"];
@@ -110,7 +112,7 @@ function buildDashboardMonthDays(monthDate, activities, selectedDate) {
     const day = new Date(start);
     day.setDate(start.getDate() + index);
     const dateKey = formatDateForQuery(day);
-    const dayItems = activities.filter((item) => dateOnly(item.deadline) === dateKey);
+    const dayItems = activities.filter((item) => activityOnDay(item, dateKey));
     const dayTasks = dayItems.filter((item) => item.tipo === "task");
     const dayReminders = dayItems.filter((item) => item.tipo === "reminder");
     const plannedTasks = dayTasks.filter((item) => !isTaskDone(item) && !isOverdue(item)).length;
@@ -127,6 +129,7 @@ function buildDashboardMonthDays(monthDate, activities, selectedDate) {
       )
     );
     const indicators = [
+      ...(dayItems.some(item => item.tipo === 'production') ? [{ label: `MES ${dayItems.filter(item => item.tipo === 'production').length}`, tone: 'planned' }] : []),
       ...taskDepartments.slice(0, 2).map((name) => ({ label: name, tone: "planned" })),
       ...(plannedReminders > 0 ? [{ label: `Reminder ${plannedReminders}`, tone: "planned" }] : []),
       ...(overdueTasks + overdueReminders > 0 ? [{ label: `Scadute ${overdueTasks + overdueReminders}`, tone: "danger" }] : []),
@@ -139,7 +142,7 @@ function buildDashboardMonthDays(monthDate, activities, selectedDate) {
       inMonth: day.getMonth() === month,
       isToday: dateKey === todayIso(),
       isSelected: dateKey === selectedDate,
-      planned: plannedTasks + plannedReminders,
+      planned: plannedTasks + plannedReminders + dayItems.filter(item => item.tipo === 'production').length,
       overdue: overdueTasks + overdueReminders,
       done: doneItems,
       total: dayItems.length,
@@ -249,6 +252,7 @@ function Dashboard() {
   const [reminderDepartments, setReminderDepartments] = useState([]);
   const [customerDirectory, setCustomerDirectory] = useState(() => new Map());
   const [currentMonth, setCurrentMonth] = useState(() => new Date());
+  const production = useProductionCalendar(profile?.id, currentMonth);
   const [selectedDate, setSelectedDate] = useState(todayIso());
   const [activityFilter, setActivityFilter] = useState(null);
   const [query, setQuery] = useState("");
@@ -356,8 +360,8 @@ function Dashboard() {
   }
 
   const activities = useMemo(
-    () => [...tasks.filter((item) => !isTaskDone(item)), ...reminders.filter((item) => !isReminderDone(item))],
-    [tasks, reminders]
+    () => [...tasks.filter((item) => !isTaskDone(item)), ...reminders.filter((item) => !isReminderDone(item)), ...production.items],
+    [tasks, reminders, production.items]
   );
 
   const filteredActivities = useMemo(() => {
@@ -374,6 +378,7 @@ function Dashboard() {
         item.titolo,
         item.descrizione,
         item.note,
+        item.reparto,
         projectTitle,
         customerName,
         departmentName,
@@ -396,7 +401,7 @@ function Dashboard() {
       const day = new Date(start);
       day.setDate(start.getDate() + index);
       const dateKey = formatDateForQuery(day);
-      const dayItems = filteredActivities.filter((item) => dateOnly(item.deadline) === dateKey);
+      const dayItems = filteredActivities.filter((item) => activityOnDay(item, dateKey));
       const dayTasks = dayItems.filter((item) => item.tipo === "task");
       const dayReminders = dayItems.filter((item) => item.tipo === "reminder");
       const plannedTasks = dayTasks.filter((item) => !isTaskDone(item) && !isOverdue(item)).length;
@@ -441,7 +446,7 @@ function Dashboard() {
 
   const selectedItems = useMemo(() => {
     if (activityFilter) return filterActivities(monthItems, activityFilter);
-    return filteredActivities.filter((item) => dateOnly(item.deadline) === selectedDate);
+    return filteredActivities.filter((item) => activityOnDay(item, selectedDate));
   }, [filteredActivities, selectedDate, activityFilter, monthItems]);
 
   const monthStats = useMemo(() => {
@@ -637,7 +642,7 @@ function Dashboard() {
       <div className="page-title-row">
         <div>
           <h1>Le mie attività</h1>
-          <p>Task/fasi  e reminder del mio reparto.</p>
+          <p>Task, reminder e lavorazioni MES del mio reparto.</p>
         </div>
         <div className="dashboard-quick-actions">
           <button className="primary-action" onClick={openNewPhase}><Plus size={18} /> Nuova task/fase</button>
@@ -646,6 +651,8 @@ function Dashboard() {
         </div>
       </div>
 
+      {production.error && <div role="alert" className="panel" style={{ color: '#b91c1c', padding: 16 }}>{production.error}</div>}
+      {production.loading && <p role="status">Aggiornamento lavorazioni MES…</p>}
       <div className="calendar-kpi-grid dashboard-activity-kpis">
         <button type="button" className={`calendar-kpi success ${activityFilter === "plannedTasks" ? "active" : ""}`} onClick={() => setActivityFilter("plannedTasks")}>
           <ListChecks size={22} />
@@ -719,6 +726,7 @@ function Dashboard() {
                     <span className="day-number">{day.date.getDate()}</span>
                     {day.items.length > 0 && (
                       <div className="dashboard-day-counts">
+                        {day.items.some(item => item.tipo === 'production') && <span className="dashboard-day-line">MES {day.items.filter(item => item.tipo === 'production').length}</span>}
                         {day.plannedTasks > 0 && <span style={{ borderRadius: "999px", padding: "2px 8px", background: "#e0f2fe", color: "#1d4ed8", fontSize: "12px", fontWeight: 700 }}>Task {day.plannedTasks}</span>}
                         {day.overdueTasks > 0 && <span className="dashboard-day-line danger">Task scad. {day.overdueTasks}</span>}
                         {day.plannedReminders > 0 && <span style={{ borderRadius: "999px", padding: "2px 8px", background: "#e0f2fe", color: "#1d4ed8", fontSize: "12px", fontWeight: 700 }}>Rem. {day.plannedReminders}</span>}
@@ -746,11 +754,12 @@ function Dashboard() {
             <div className="dashboard-activity-list"><ActivityGroup title={sidePanelTitle} danger={activityFilter.includes("overdue")} items={selectedItems} onOpen={openActivity} /></div>
           ) : (
             <div className="dashboard-activity-list">
+              <ProductionGroup items={selectedItems.filter(item => item.tipo === 'production')} />
               <ActivityGroup title="Task/fasi pianificate" items={selectedItems.filter((item) => item.tipo === "task" && !isTaskDone(item) && !isOverdue(item))} onOpen={openActivity} />
               <ActivityGroup title="Task/fasi scadute" danger items={selectedItems.filter((item) => item.tipo === "task" && isOverdue(item))} onOpen={openActivity} />
               <ActivityGroup title="Reminder pianificati" items={selectedItems.filter((item) => item.tipo === "reminder" && !isReminderDone(item) && !isOverdue(item))} onOpen={openActivity} />
               <ActivityGroup title="Reminder scaduti" danger items={selectedItems.filter((item) => item.tipo === "reminder" && isOverdue(item))} onOpen={openActivity} />
-              <ActivityGroup title="Completate / evasi" done items={selectedItems.filter((item) => item.tipo === "task" ? isTaskDone(item) : isReminderDone(item))} onOpen={openActivity} />
+              <ActivityGroup title="Completate / evasi" done items={selectedItems.filter((item) => item.tipo === "task" ? isTaskDone(item) : item.tipo === 'reminder' && isReminderDone(item))} onOpen={openActivity} />
             </div>
           )}
         </div>
@@ -807,6 +816,19 @@ function Dashboard() {
       )}
     </div>
   );
+}
+
+function ProductionGroup({ items }) {
+  if (!items.length) return null;
+  const time = value => `${value.slice(8, 10)}/${value.slice(5, 7)} ${value.slice(11, 16)}`;
+  return <section className="dashboard-activity-group">
+    <h4>Lavorazioni del reparto · MES</h4>
+    {[...items].sort((a, b) => a.start.localeCompare(b.start)).map(item => <div key={item.id} className="calendar-task-card" style={{ background: '#eef4ff', borderColor: '#bfd3ff', display: 'grid', gap: 6 }}>
+      <strong>{item.titolo}</strong><span>{item.descrizione}</span>
+      <small>{item.reparto}</small><span>{time(item.start)} – {time(item.end)}</span>
+      <small>Stato ordine: {item.stato} · Pianificazione MES</small>
+    </div>)}
+  </section>;
 }
 
 function ActivityGroup({ title, items, danger = false, done = false, onOpen }) {

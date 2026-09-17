@@ -25,6 +25,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/workspace/hr-production-calendar",
+      "destination": "/api/mexal/automation?route=hr-production-calendar"
+    },
+    {
       "source": "/api/workspace/company-calendar",
       "destination": "/api/mexal/automation?route=company-calendar"
     },

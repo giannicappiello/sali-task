@@ -260,7 +260,7 @@ export function createProgremesProductionClient({ env = process.env, fetchImpl =
       const sent = await call(V4_CONFIRM_PATH(workspaceExternalId), payload);
       return { ...sent, result: validateV4ConfirmResponse(sent.result, payload) };
     },
-    cancelV4: async (workspaceExternalId, payload) => call(V4_CANCEL_PATH(workspaceExternalId), payload),
+    cancelV4: async (workspaceExternalId, payload) => call(V4_CANCEL_PATH(workspaceExternalId), { ...payload, externalId: workspaceExternalId }),
     confirmProposal: (proposalId, externalId = randomUUID()) => call(CONFIRM_PATH(proposalId), { schemaVersion: 1, externalId, proposalId }),
   };
 }

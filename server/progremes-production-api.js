@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import { verifyProductionMessage } from "./progremes-production-hmac.js";
 import { aggregateWorkspaceHashes, createProductionPayload, createProgremesProductionClient } from "./progremes-production-client.js";
 import { prepareProductionDemand, productionDemandContract } from "./production-netting.js";
+import { cancelCoordinatedProductionRequest } from "./workspacemes-cancel-coordinator.js";
 
 const EVENT_PATH = "/api/progremes-production/events";
 function required(name) { const value = String(process.env[name] || "").trim(); if (!value) throw new Error(`Configurazione server mancante: ${name}`); return value; }
@@ -82,28 +83,25 @@ async function loadPersistedProductionRequest(admin, requestId) {
   };
 }
 
-export async function cancelProductionRequest(req, res, { admin = adminClient(), requestedBy = null } = {}) {
+export async function cancelProductionRequest(req, res, { admin = adminClient(), requestedBy = null, client } = {}) {
   if (req.method !== "POST") return res.status(405).json({ error: "Metodo non consentito." });
   const requestId = String(req.body?.requestId || "").trim();
   const reason = String(req.body?.reason || "").trim();
   if (!requestId) return res.status(400).json({ error: "RdP obbligatoria.", code: "INVALID_REQUEST" });
   if (reason.length < 5 || reason.length > 1000)
     return res.status(400).json({ error: "Il motivo è obbligatorio e deve contenere da 5 a 1000 caratteri.", code: "INVALID_CANCELLATION_REASON" });
-  const { data, error } = await admin.rpc("cancel_workspace_production_request", {
-    p_request_id: requestId,
-    p_reason: reason,
-    p_cancelled_by: requestedBy,
-  });
-  if (error) {
+  try {
+    const cancelled = await cancelCoordinatedProductionRequest({ admin, requestId, reason, requestedBy, client });
+    return res.status(200).json({ cancelled: true, id: requestId, externalId: cancelled.external_id,
+      status: "Cancelled", cancelledAt: cancelled.cancelled_at, warnings: cancelled.warnings || [] });
+  } catch (error) {
     const message = String(error.message || "");
     const code = message.includes("IRREVERSIBLE_EFFECTS") ? "IRREVERSIBLE_EFFECTS"
       : message.includes("INVALID_STATUS") ? "INVALID_STATUS"
-        : message.includes("NOT_FOUND") ? "NOT_FOUND" : "CANCELLATION_FAILED";
-    const status = code === "NOT_FOUND" ? 404 : 409;
-    return res.status(status).json({ error: message.split(":").slice(1).join(":").trim() || "Annullamento RdP non consentito.", code });
+          : message.includes("NOT_FOUND") ? "NOT_FOUND" : error.code || "CANCELLATION_FAILED";
+    const status = code === "NOT_FOUND" ? 404 : Number(error.status) >= 400 && Number(error.status) <= 599 ? Number(error.status) : 409;
+    return res.status(status).json({ error: message.includes(":") ? message.split(":").slice(1).join(":").trim() : message || "Annullamento RdP non consentito.", code });
   }
-  const cancelled = data?.[0];
-  return res.status(200).json({ cancelled: true, id: cancelled?.id || requestId, externalId: cancelled?.external_id, status: "Cancelled", cancelledAt: cancelled?.cancelled_at });
 }
 
 export async function sendProductionRequest(req, res, {

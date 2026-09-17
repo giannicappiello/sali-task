@@ -178,8 +178,14 @@ function requiredEnvironment(name) {
 
 async function executeExternalAction(auth, pending) {
   const path = String(process.env.PROGREMES_AI_ACTION_PATH || "/api/workspace/ai/actions/apply");
+  // Evidence remains in the durable audit. MES already owns the immutable snapshot;
+  // its confirmation contract needs only the identifier, hash and backup attestation.
+  const actionInput = ["MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(pending.tool)
+    ? { targetId: pending.payload_summary.targetId, expectedHash: pending.payload_summary.expectedHash,
+      backupVerified: pending.payload_summary.backupVerified === true }
+    : pending.payload_summary;
   const payload = Buffer.from(JSON.stringify({
-    actionId: pending.id, tool: pending.tool, target: pending.target, input: pending.payload_summary,
+    actionId: pending.id, tool: pending.tool, target: pending.target, input: actionInput,
     idempotencyKey: pending.idempotency_key, requestId: pending.request_id, correlationId: pending.correlation_id,
     actor: `workspace:${auth.profile.id}`, confirmed: true,
   }));
@@ -187,19 +193,24 @@ async function executeExternalAction(auth, pending) {
   let result = null; let failure = null;
   try {
     const response = await fetch(new URL(path, requiredEnvironment("PROGREMES_URL")), {
-      method: "POST", signal: AbortSignal.timeout(["MES_PRIORITY_REVISE", "MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(pending.tool) ? 55000 : Number(process.env.PROGREMES_API_TIMEOUT_MS || 15000)), body: payload,
+      // Full-plan migration writes hundreds of phases. Leave room in the 300s
+      // route budget for validation and authoritative readback after this call.
+      method: "POST", signal: AbortSignal.timeout(pending.tool === "MES_PLAN_APPLY" ? 120000
+        : ["MES_PRIORITY_REVISE", "MES_ODL_VERIFY"].includes(pending.tool) ? 55000
+          : Number(process.env.PROGREMES_API_TIMEOUT_MS || 15000)), body: payload,
       headers: { "Content-Type": "application/json", [HMAC_HEADERS.timestamp]: String(timestamp), [HMAC_HEADERS.eventId]: eventId,
         [HMAC_HEADERS.signature]: signProductionMessage({ method: "POST", path, timestamp, eventId, body: payload, secret: requiredEnvironment("PROGREMES_INTEGRATION_SECRET") }) },
     });
     result = await response.json().catch(() => ({}));
-    if (!response.ok || result?.applied !== true) failure = result?.error || `ProgreMES ha risposto con stato ${response.status}.`;
+    if (!response.ok || result?.applied !== true) failure = result?.error || result?.code || `ProgreMES ha risposto con stato ${response.status}.`;
   } catch (error) { failure = error?.message || "ProgreMES non raggiungibile."; }
   if (["MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(pending.tool)) {
     try {
       result = await planningCall(auth, "get", { id: pending.payload_summary.targetId });
-      failure = result.status === "APPLIED" ? null : `Stato ${result.status}: consultare Versioni del piano e Rilascio ODL; non ripetere la creazione dei lotti.`;
+      const pendingCoverage = pending.tool === "MES_ODL_VERIFY" && result.snapshot?.shortages?.length && !result.snapshot.shortagesCoveredAtUtc;
+      failure = result.status === "APPLIED" && !pendingCoverage ? null : [failure, pendingCoverage ? "Fabbisogni specifici ancora da coprire." : `Stato MES ${result.status}: consultare il dettaglio della versione prima di ripetere l'operazione.`].filter(Boolean).join(" ");
       if (!failure) await reconcilePlanning(auth);
-    } catch (error) { failure = `Esito da verificare nello storico del piano: ${error.message}`; }
+    } catch (error) { failure = [failure, `Esito da verificare nello storico del piano: ${error.message}`].filter(Boolean).join(" "); }
   }
   if (pending.tool === "MES_PRIORITY_REVISE") {
     try {
@@ -266,5 +277,5 @@ export async function decideControlledAction(auth, body) {
   const answer = action.tool === "MES_PRIORITY_REVISE" ? (failure || action.error || action.result?.message || "Proposta rifiutata: nessun trasferimento eseguito.") : action.status === "executed" ? "Operazione applicata e registrata nell’audit."
     : action.status === "rejected" ? "Proposta rifiutata. Nessuna modifica è stata applicata."
       : `${action.tool === "MES_MATERIAL_REALLOCATE" ? "Operazione non confermata" : "Operazione non applicata"}. Audit registrato: ${failure || action.error || "connettore non disponibile"}.`;
-  return { controlledAction: { id: action.id, tool: action.tool, risk: CONTROLLED_AI_ACTIONS[action.tool].risk, system: action.system, state: action.status, result: action.result }, answer };
+  return { controlledAction: { id: action.id, tool: action.tool, risk: CONTROLLED_AI_ACTIONS[action.tool].risk, system: action.system, state: action.status, result: action.result, error: failure || action.error || null }, answer };
 }

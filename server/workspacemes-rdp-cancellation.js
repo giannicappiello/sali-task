@@ -1,4 +1,4 @@
-const CANCELLABLE_STATUSES = new Set(["BLOCKED", "FAILED", "REJECTED", "NON_INVIATA", "PRONTA", "READY", "AWAITINGDECISION", "AWAITING_DECISION"]);
+const CANCELLABLE_STATUSES = new Set(["BLOCKED", "FAILED", "REJECTED", "NON_INVIATA", "PRONTA", "READY", "AWAITINGDECISION", "AWAITING_DECISION", "CONFIRMED", "PLANNED", "RECEIVED", "SENT", "DRAFT", "FORECAST"]);
 const IRREVERSIBLE_PROPOSAL_STATUSES = new Set(["CONFIRMED", "PLANNED", "INPRODUCTION", "IN_PRODUCTION", "COMPLETED", "PRODUCTIONCOMPLETED"]);
 const IRREVERSIBLE_EVENT_PATTERN = /(PRODUCTION.?ORDER.*(CREATED|CONFIRMED)|PLANNING.*(CREATED|CONFIRMED)|LOT.*CREATED|MATERIAL.*(CONSUMED|MOVEMENT)|STOCK.*MOVEMENT|INVENTORY.*MOVEMENT|(LOAD|UNLOAD).*CREATED)/i;
 
@@ -10,6 +10,11 @@ export function evaluateProductionRequestCancellation({ request, proposals = [],
   if (status === "CANCELLED") return { allowed: false, code: "ALREADY_CANCELLED", reason: "La RdP è già annullata." };
   if (!CANCELLABLE_STATUSES.has(status))
     return { allowed: false, code: "INVALID_STATUS", reason: `Lo stato ${status || "non disponibile"} non consente l’annullo.` };
+
+  // MES is authoritative for V4 effects, including forecast-only confirmations.
+  // This is eligibility to request cancellation, not permission to bypass its guards.
+  if (Number(request.contract_version) === 4)
+    return { allowed: true, code: "MES_VERIFICATION_REQUIRED", reason: "Annullamento coordinato con MES: verranno verificati lavorazioni, impegni e movimenti prima di procedere." };
 
   const irreversibleProposal = proposals.find((proposal) =>
     proposal.confirmation_external_id || proposal.mes_production_order_id || proposal.mes_production_order_number ||

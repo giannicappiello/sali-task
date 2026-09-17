@@ -33,7 +33,7 @@ export function requestProgremesWorkspaceWindow(path) {
 export function isProgremesFrameMessage(event, frameWindow, origin) {
   if (!frameWindow || event.source !== frameWindow || event.origin !== origin) return false;
   if (event.data?.type === "progremes-workspace-navigate") return Boolean(progremesWorkspaceDestination(event.data));
-  return ["progremes-embedded-ready", "progremes-embedded-auth-error", "progremes-workspace-return"].includes(event.data?.type);
+  return ["progremes-embedded-ready", "progremes-embedded-auth-error", "progremes-workspace-return", "progremes-planning-applied"].includes(event.data?.type);
 }
 
 export function progremesWorkspaceDestination(data) {

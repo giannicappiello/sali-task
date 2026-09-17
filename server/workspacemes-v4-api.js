@@ -8,6 +8,14 @@ const positive = (value) => Number.isFinite(Number(value)) && Number(value) > 0;
 const fail = (message, code, status = 409) => Object.assign(new Error(message), { code, status });
 const ensure = (result) => { if (result.error) throw result.error; return result.data || []; };
 
+async function ensureRequestNotCancelling(admin, requestId) {
+  const request = ensure(await admin.from("workspace_production_requests").select("workspace_status,stato").eq("id", requestId).limit(1))[0];
+  if (!request || upper(request.workspace_status || request.stato) === "CANCELLED")
+    throw fail("RdP annullata o non trovata.", "RDP_CANCELLED");
+  const pending = ensure(await admin.from("workspace_rdp_cancellations").select("request_id").eq("request_id", requestId).neq("status", "REJECTED").limit(1));
+  if (pending.length) throw fail("RdP in annullamento o già annullata: completare la riconciliazione, senza riconfermarla.", "RDP_CANCELLATION_PENDING");
+}
+
 export function automaticWorkspaceV4Decision(preview, materials = []) {
   const hasBlockingMaterial = materials.some((material) => clean(material?.block_code));
   if (upper(preview?.status) === "BLOCKED" || hasBlockingMaterial)
@@ -69,6 +77,7 @@ function buildPreviewIdentity({ requestId, octHash, demands }) {
 export async function createWorkspaceV4Preview({ admin, requestId, requestedBy, client = createProgremesProductionClient() }) {
   if (!client.v4PreviewEnabled()) throw fail("Preview WorkspaceMES V4 disabilitata.", "V4_PREVIEW_DISABLED", 403);
   const input = await loadDemand(admin, requestId);
+  await ensureRequestNotCancelling(admin, requestId);
   const orders = new Map(input.demand.orders.map((order) => [clean(order.orderId), order]));
   const demands = input.demand.items.map((item) => {
     const order = orders.get(clean(item.orderId));
@@ -119,6 +128,7 @@ export async function confirmWorkspaceV4({ admin, previewId, reason, requestedBy
   const previews = ensure(await admin.from("workspace_v4_previews").select("*").eq("id", previewId).limit(1));
   const preview = previews[0];
   if (!preview || !["READY", "BLOCKED"].includes(preview.status)) throw fail("Preview V4 non confermabile.", "V4_PREVIEW_NOT_CONFIRMABLE");
+  await ensureRequestNotCancelling(admin, preview.production_request_id);
   const materials = ensure(await admin.from("workspace_v4_preview_materials")
     .select("shortage_quantity,block_code").eq("preview_id", preview.id));
   const normalizedDecision = automaticWorkspaceV4Decision(preview, materials);

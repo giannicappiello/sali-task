@@ -134,7 +134,7 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
       moduleDescription: parentModule?.descrizione || "Accedi alle funzioni disponibili in base alle tue autorizzazioni.",
       moduleIcon: parentModule?.icona || "",
       screenIcon: screen?.icona || "",
-      title: screen?.nome || fallbackTitle || "Schermata Workspace",
+      title: pathname === "/rilascio-odl" ? "Storico ODL" : screen?.nome || fallbackTitle || "Schermata Workspace",
       description: screen?.descrizione || fallbackDescription || "Funzioni e dati disponibili in base alle autorizzazioni dell’utente.",
       parentName: orderBackTarget?.name || navigationParent?.nome || "",
       parentPath,

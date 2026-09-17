@@ -220,6 +220,38 @@ test('HR migration and authorization flows in isolated PostgreSQL', async (t) =>
     await rpc(admin,'workspace_hr_save_recipients',[[]]);
     await assert.rejects(snap(outsider),/abilitato/);
   });
+  await t.test('network migration gates both punches, prevents direct RPC bypass and supports IP changes', async () => {
+    await db.exec(await readFile(new URL('../supabase/migrations/20260917140000_workspace_hr_network.sql', import.meta.url),'utf8'));
+    await assert.rejects(rpc(employee,'workspace_hr_punch',['in',id(),null,null]),/rete aziendale/);
+    await assert.rejects(rpc(employee,'workspace_hr_punch',['out',id(),null,id()]),/rete aziendale/);
+    await assert.rejects(rpc(employee,'workspace_hr_punch_gps',['in',id(),null,null]),/permission denied/);
+    await assert.rejects(rpc(employee,'workspace_hr_network_punch',[employee,'in',id(),'8.8.8.8',null]),/permission denied/);
+    const network=async(user,action,key,ip,attendance=null)=>{
+      await db.exec('begin; set local role service_role;');
+      try {const result=await db.query('select workspace_hr_network_punch($1,$2,$3,$4,$5) value',[user,action,key,ip,attendance]);await db.exec('commit');return result.rows[0].value;}
+      catch(error){await db.exec('rollback');throw error;}
+    };
+    const sitePayload={id:site,name:'Sede test',latitude:40,longitude:14,public_ips:[]};
+    await assert.rejects(network(employee,'in',id(),'8.8.8.8'),/non configurato/);
+    for(const ip of ['10.64.0.217','192.168.1.1','8.8.8.8/24','::1','invalid']) await assert.rejects(cfg('site',{...sitePayload,public_ips:[ip]}));
+    await cfg('site',{...sitePayload,public_ips:['8.8.8.8','8.8.8.8']});
+    assert.equal((await snap(admin,true)).sites.find(s=>s.id===site).public_ips.length,1);
+    await assert.rejects(network(outsider,'in',id(),'8.8.8.8'),/abilitato|attiva/);
+    await assert.rejects(network(employee,'in',id(),'1.1.1.1'),/LAN aziendale/);
+    const networkKey=id(),entered=await network(employee,'in',networkKey,'8.8.8.8');
+    assert.equal((await network(employee,'in',networkKey,'8.8.8.8')).id,entered.id);
+    assert.equal((await db.query('select entry_distance from workspace_hr_attendance where id=$1',[entered.id])).rows[0].entry_distance,null);
+    const observation=await rpc(employee,'workspace_hr_punch',['observe',id(),JSON.stringify({latitude:40,longitude:14,accuracy:5,sampled_at:new Date().toISOString()}),entered.id]);
+    assert.equal(observation.checkout_at,null);
+    await assert.rejects(network(employee,'out',id(),'1.1.1.1',entered.id),/LAN aziendale/);
+    await assert.rejects(network(manager,'out',id(),'8.8.8.8',entered.id),/non trovata/);
+    await cfg('site',{...sitePayload,public_ips:['2001:4860:4860::8888']});
+    await assert.rejects(network(employee,'out',id(),'8.8.8.8',entered.id),/LAN aziendale/);
+    const exited=await network(employee,'out',id(),'2001:4860:4860::8888',entered.id);
+    assert.equal(exited.checkout_kind,'manual');
+    assert.equal((await network(employee,'out',id(),'2001:4860:4860::8888',entered.id)).checkout_at,exited.checkout_at);
+    await cfg('site',{...sitePayload,public_ips:[]});
+  });
   await t.test('removing HR department revokes HR without removing operational department', async () => {
     await writeFile(new URL('../.tmp/hr-fixtures.json', import.meta.url), JSON.stringify({ employee: await snap(employee), manager: await snap(manager), admin: await snap(admin, true) }));
     await rpc(admin, 'workspace_save_user_access', [employee, normalRole, [dept], '[]', true]);

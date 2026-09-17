@@ -1,5 +1,17 @@
 import { supabase } from '../../lib/supabaseClient';
 
+export async function hrNetwork(body) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error('Accedi nuovamente a Workspace.');
+  const response = await fetch('/api/workspace/hr', { method: body ? 'POST' : 'GET', cache: 'no-store',
+    headers: { Authorization: `Bearer ${session.access_token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || 'Verifica della rete aziendale non disponibile.');
+  return result;
+}
+
 export async function hrRpc(name, args = {}) {
   const { data, error } = await supabase.rpc(name, args);
   if (error) throw new Error(error.message || 'Servizio HR non disponibile');

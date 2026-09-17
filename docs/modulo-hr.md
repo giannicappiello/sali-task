@@ -21,6 +21,18 @@ Contratti e compensi sono conservati separatamente. Le tabelle non consentono le
 
 ## Timbrature sulla PWA
 
+### Verifica rete aziendale (PC e smartphone)
+
+Dal rilascio `20260917140000`, entrata e uscita **manuali** richiedono un IP pubblico autorizzato per la sede. Il GPS non sostituisce questo controllo. Lo smartphone deve utilizzare il Wi-Fi aziendale; la rete mobile viene rifiutata se il suo IP non corrisponde. Il controllo usa l’header di ingresso Vercel `x-vercel-forwarded-for`, validato sul server, e non accetta IP o identità dichiarati nel corpo della richiesta.
+
+Gli admin gestiscono fino a 20 indirizzi IPv4/IPv6 singoli in Sedi e timbrature. “Usa IP attuale” rileva la connessione e la aggiunge al modulo: serve poi Salva. Usarlo solo dalla sede e senza VPN. Indirizzi locali, intervalli e IP non pubblici vengono rifiutati. Le sedi esistenti partono con elenco vuoto e le timbrature restano bloccate finché l’admin configura l’IP. Nessun indirizzo è stato dedotto dagli IP privati di Station 7 o dal PC remoto.
+
+La API `/api/workspace/hr` convalida il token Supabase e invoca una RPC riservata al `service_role`. Le RPC GPS precedenti non permettono più entrate/uscite manuali dirette, anche da client obsoleti. Sede assegnata e appartenenza attiva vengono verificate nel database; l’uscita usa la sede della presenza aperta e gli IP attualmente autorizzati. La cronologia conserva IP d’ingresso/uscita senza inventare distanze GPS. La funzione server mantiene idempotenza e blocco delle presenze duplicate.
+
+Il checkout automatico GPS già concordato resta un’eccezione di sicurezza; correzioni motivate e approvazioni HR restano disponibili. Una VPN che esca attraverso la sede o un PC aziendale controllato da remoto non sono distinguibili dalla sola verifica IP. Il controllo garantisce l’origine di rete, non la presenza fisica in questi casi.
+
+La descrizione GPS seguente documenta la logica preesistente e il supporto automatico; il vincolo di rete sopra sostituisce il precedente requisito GPS per l’entrata manuale.
+
 Il check-in usa l'orario del server e una posizione rilevata da non oltre 30 secondi: distanza più margine di precisione deve rientrare nel raggio. Le pressioni ripetute sono idempotenti; è ammessa una sola presenza aperta per dipendente. Il checkout manuale funziona senza GPS, con connessione al server.
 
 Il controllo di supporto resta montato anche navigando in altre schermate Workspace, solo durante una presenza aperta. Richiede due rilevazioni affidabili oltre la soglia, distanziate di almeno 30 secondi; un'interruzione di oltre 90 secondi azzera il candidato all'uscita. Il rientro nell'area azzera la conferma. Le coordinate della sede e le soglie sono fissate per la presenza al momento del check-in.

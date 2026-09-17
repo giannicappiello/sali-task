@@ -25,6 +25,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/workspace/hr",
+      "destination": "/api/mexal/automation?route=hr-network"
+    },
+    {
       "source": "/api/workspace/planning",
       "destination": "/api/mexal/automation?route=planning-workspace"
     },

@@ -1,3 +1,4 @@
+import { handleCompanyCalendar } from '../../server/company-calendar.js';
 import { syncDeletedWorkspaceCatalog } from "../../server/workspace-catalog-deletions.js";
 import { handleHrNetwork } from "../../server/hr-network.js";
 import { wakeMexalWorker } from "../../server/mexal/worker-wakeup.js";
@@ -572,6 +573,7 @@ async function maintenancePurge(req) {
 
 export default async function handler(req, res) {
   if (req.query?.route === "company-letterheads-mes") return handleMesHeadingResolve(req, res);
+  if (req.query?.route === "company-calendar") return handleCompanyCalendar(req, res);
   if (req.query?.route === "hr-network") return handleHrNetwork(req, res);
   if (req.query?.route === "company-document-compose") return handleWorkspaceDocumentCompose(req, res);
   if (req.query?.route === "crm-digital") {

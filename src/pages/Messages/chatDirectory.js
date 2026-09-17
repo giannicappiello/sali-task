@@ -1,5 +1,7 @@
 export const chatUserName = (user) => `${user?.nome || ""} ${user?.cognome || ""}`.trim() || "Utente";
 
+export const isChatAdmin = user => user?.attivo !== false && user?.ruoli?.amministratore_workspace === true;
+
 export function isChatLeader(user) {
   return /^(responsabile|direttore|direttrice)(\s|$)/i.test(user?.ruoli?.nome?.trim() || "")
     || user?.ruoli?.nome?.trim().toLowerCase() === "direzione";
@@ -11,7 +13,7 @@ export function chatDepartmentIds(user) {
 
 export function canChatTogether(a, b) {
   if (!a?.id || !b?.id || a.attivo === false || b.attivo === false) return false;
-  return a.id === b.id || (isChatLeader(a) && isChatLeader(b))
+  return a.id === b.id || isChatAdmin(a) || isChatAdmin(b) || (isChatLeader(a) && isChatLeader(b))
     || chatDepartmentIds(a).some((id) => chatDepartmentIds(b).includes(id));
 }
 

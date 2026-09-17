@@ -1,8 +1,9 @@
 import { Building2, UsersRound } from "lucide-react";
-import { canSelectChatUser, chatDepartmentIds, chatUserName, isChatLeader } from "./chatDirectory.js";
+import { canSelectChatUser, chatDepartmentIds, chatUserName, isChatLeader, isChatAdmin } from "./chatDirectory.js";
 
 export default function ChatDirectory({ tab, users, departments, actor, selecting, selectedIds, onToggleSelection, onToggleUser, onDirect, onDepartment, onCreateGroup, busy, loading, error, onRetry }) {
   const ownIds = chatDepartmentIds(actor);
+  const admin = isChatAdmin(actor);
   const selected = users.filter((user) => selectedIds.includes(user.id));
   const visibleDepartments = tab === "department" ? departments.filter((department) => ownIds.includes(department.id)) : departments;
 
@@ -29,17 +30,18 @@ export default function ChatDirectory({ tab, users, departments, actor, selectin
         {visibleDepartments.map((department) => {
           const own = ownIds.includes(department.id);
           const members = users.filter((user) => chatDepartmentIds(user).includes(department.id));
-          const visible = tab === "department" ? members : members.filter((user) => user.id !== actor?.id && isChatLeader(user));
+          const visible = tab === "department" ? members : members.filter((user) => user.id !== actor?.id && (admin || isChatLeader(user) || isChatAdmin(user)));
           return <div className="directory-department" key={department.id}>
-            <button className="directory-department-button" type="button" disabled={busy || selecting || (!own && !isChatLeader(actor)) || !members.some((user) => user.id !== actor?.id)} onClick={() => onDepartment(department)}>
+            <button className="directory-department-button" type="button" disabled={busy || selecting || (!admin && !own && !isChatLeader(actor)) || !members.some((user) => user.id !== actor?.id)} onClick={() => onDepartment(department)}>
               {tab === "department" ? <UsersRound size={17} /> : <Building2 size={17} />}<span>{department.nome}<small>{own ? (tab === "department" ? ` · ${members.length} persone` : " · Il tuo reparto") : ""}</small></span>
             </button>
-            <div className="directory-branch">{visible.map((user) => person(user, department.id))}{!visible.length && <p className="directory-empty">Nessun responsabile o direttore assegnato.</p>}</div>
+            <div className="directory-branch">{visible.map((user) => person(user, department.id))}{!visible.length && <p className="directory-empty">{admin ? 'Nessun altro utente assegnato.' : 'Nessun responsabile o direttore assegnato.'}</p>}</div>
           </div>;
         })}
+        {tab === 'organization' && users.some(user => !chatDepartmentIds(user).length && user.id !== actor?.id && (admin || isChatAdmin(user))) && <div className="directory-department"><h4>Senza reparto</h4><div className="directory-branch">{users.filter(user => !chatDepartmentIds(user).length && user.id !== actor?.id && (admin || isChatAdmin(user))).map(user => person(user, 'unassigned'))}</div></div>}
       </>}
     </div>
     {selecting && <div className="directory-selection" aria-live="polite"><span>{selectedIds.length} persone selezionate</span>{selectedIds.length >= 2 && <button type="button" className="primary-action" disabled={busy} onClick={onCreateGroup}>{busy ? "Creazione..." : "Crea gruppo"}</button>}</div>}
-    <p className="directory-policy">{isChatLeader(actor) ? "Puoi contattare tutti nel tuo reparto e solo responsabili e direttori degli altri reparti." : "Puoi chattare solo con i membri del tuo reparto. Gli altri reparti sono visibili, ma non contattabili."}{selecting && selectedIds.length > 0 ? " Puoi aggiungere solo persone compatibili con tutti i membri selezionati." : ""}</p>
+    <p className="directory-policy">{admin ? 'Come amministratore puoi contattare tutti gli utenti.' : isChatLeader(actor) ? "Puoi contattare il tuo reparto, gli amministratori e i responsabili e direttori degli altri reparti." : "Puoi chattare con i membri del tuo reparto e con gli amministratori."}{selecting && selectedIds.length > 0 ? " Puoi aggiungere solo persone compatibili con tutti i membri selezionati." : ""}</p>
   </>;
 }

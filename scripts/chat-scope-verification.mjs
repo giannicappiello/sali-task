@@ -5,6 +5,7 @@ const fixture = readFileSync(new URL('../test/chat-scope-fixtures.sql',import.me
 const [setup, assertions] = fixture.split('-- ASSERTIONS');
 const definitions = migration.match(/create or replace function[\s\S]*?\$\$;/g);
 if (definitions?.length !== 13) throw new Error('Unexpected chat function count: ' + definitions?.length);
+definitions.push(...readFileSync(new URL('../supabase/migrations/20260917223000_chat_admin_all_users.sql',import.meta.url),'utf8').match(/create or replace function[\s\S]*?\$\$;/g));
 const triggers = migration.match(/create trigger[^;]+;/g) || [];
 const names = [...definitions.map(sql => sql.match(/function public\.(\w+)/)[1]), 'current_app_user_id', 'workspace_module_enabled_for_user'];
 const local = (sql) => sql.replaceAll('public.','pg_temp.').replaceAll('search_path=public','search_path=pg_temp')

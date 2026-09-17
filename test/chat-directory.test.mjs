@@ -6,6 +6,19 @@ const manager = user('manager', 'Responsabile reparto', 'production');
 const member = user('member', 'Operatore', 'production');
 const director = user('director', 'Direzione', 'sales');
 const outsider = user('outsider', 'Operatore', 'sales');
+
+test('workspace admin can contact every active user and receive replies', () => {
+  const admin = { ...user('admin', 'Gestore'), ruoli: { nome: 'Gestore', amministratore_workspace: true } };
+  for (const candidate of [member, outsider, director, user('none', 'Operatore')]) {
+    assert.equal(canChatTogether(admin, candidate), true);
+    assert.equal(canChatTogether(candidate, admin), true);
+    assert.equal(canSelectChatUser(admin, candidate), true);
+  }
+  assert.equal(canChatTogether(admin, { ...outsider, attivo: false }), false);
+  assert.equal(canChatTogether({ ...admin, attivo: false }, outsider), false);
+  assert.equal(canChatTogether(user('fake', 'Admin'), outsider), false);
+  assert.equal(canSelectChatUser(admin, outsider, [member]), false);
+});
 test('only leadership roles can chat across departments, in either direction', () => {
   for (const role of ['Direzione', 'Direttore commerciale', 'Direttrice', 'Responsabile reparto']) assert.equal(isChatLeader(user('x',role)),true);
   assert.equal(isChatLeader(user('x','Admin')),false);

@@ -5,6 +5,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import PlanningVersionSummary from "../../components/PlanningVersionSummary";
 import "./planning-lifecycle.css";
 import { planningDate, planningStages as stageLabels, planningStatuses } from "./planning-display";
+import { planningConfirmationError, planningOperation } from "./planning-confirmation";
 
 const localDate = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Rome", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date()).replace(" ", "T");
 const phaseLabels = { 0: "Miscelazione", 3: "Confezionamento", 7: "Astucciatura" };
@@ -34,13 +35,18 @@ export function PlanningLifecycleForm({ token, release = false, canUseAI = false
     busyRef.current = true; setBusy(true); setError("");
     try { await work(); } catch (e) { setError(e.message); } finally { busyRef.current = false; setBusy(false); }
   }
-  async function refresh() { const next = await request("planning_state"); setState(next); return next; }
+  async function refresh() {
+    const next = await request("planning_state"); setState(next);
+    setKind(current => planningOperation(next.configuration.active, release, current));
+    if (version) setVersion(await request("planning_get", { id: version.id }));
+    return next;
+  }
   useEffect(() => {
     let cancelled = false;
     request("planning_state").then(next => {
       if (cancelled) return;
       setState(next); setHorizons(next.configuration);
-      if (!next.configuration.active && !release) setKind("MIGRATE");
+      setKind(current => planningOperation(next.configuration.active, release, current));
     }).catch(e => { if (!cancelled) setError(e.message); });
     if (params.get("version")) request("planning_get", { id: params.get("version") }).then(v => { if (!cancelled) setVersion(v); }).catch(e => { if (!cancelled) setError(e.message); });
     return () => { cancelled = true; };
@@ -58,9 +64,12 @@ export function PlanningLifecycleForm({ token, release = false, canUseAI = false
   async function decide() {
     const id = proposal.proposalId || proposal.id;
     if (!id) throw new Error("Identificativo proposta mancante: ricaricare senza ripetere il rilascio.");
-    await request("controlled_decide", { proposalId: id, decision: "confirm" });
+    const result = await request("controlled_decide", { proposalId: id, decision: "confirm" });
+    const failure = planningConfirmationError(result);
     setProposal(null); setAck(false);
-    setVersion(await request("planning_get", { id: version.id })); await refresh();
+    try { await refresh(); }
+    catch (e) { throw new Error([failure, `Aggiornamento dell'esito non riuscito: ${e.message}`].filter(Boolean).join(" "), { cause: e }); }
+    if (failure) throw new Error(failure);
   }
   const status = !state ? "Stato da verificare" : state.configuration?.active ? "Nuovo sistema attivo" : "Sistema attuale conservato";
   return <div className="planning-lifecycle" data-screen-code={release ? "produzione.rilascio_odl" : "produzione.versioni_piano"} aria-busy={busy}>
@@ -83,6 +92,8 @@ export function PlanningLifecycleForm({ token, release = false, canUseAI = false
       })}{!filtered.length && <tr><td colSpan={release ? 6 : 8}>{state?.configuration?.active ? "Nessuna domanda corrispondente." : "Le lavorazioni pregresse saranno mostrate nell'anteprima di migrazione, senza modificarle."}</td></tr>}</tbody></table></div>
     </section>
     {version && <section className="plan-panel" ref={results} tabIndex={-1}><h2>Anteprima e confronto</h2><PlanningVersionSummary version={version} query={query} />
+      {version.auditError && <p className="plan-notice plan-error" role="alert">{version.auditError}</p>}
+      {!!version.confirmationAttempts?.length && <div className="plan-notice"><h3>Esito delle conferme</h3>{version.confirmationAttempts.map(attempt => <p key={attempt.id} role={attempt.status === "failed" ? "alert" : undefined}><strong>{attempt.status === "executed" ? "Applicazione completata" : attempt.status === "failed" ? "Applicazione non riuscita" : attempt.status === "confirmed" ? "Esito da verificare" : attempt.status === "rejected" ? "Conferma annullata" : "Conferma preparata"}</strong> · {planningDate(attempt.occurred_at)}<br />{attempt.error || (attempt.status === "confirmed" ? "La richiesta è stata confermata, ma non risulta un esito definitivo. Non ripetere l'applicazione." : "")}<br /><small>Riferimento: {attempt.id}</small></p>)}</div>}
       {version.status === "PROPOSED" && <div className="plan-approval"><button disabled={busy} onClick={() => run(async () => { const previousInput = version.snapshot.input; invalidate(); setVersion(await request("planning_simulate", { input: { ...previousInput, startAt: previousInput.startAt < localDate() ? localDate() : previousInput.startAt } })); })}>Ricalcola proposta con i dati correnti</button>{version.kind === "MIGRATE" && <label><input type="checkbox" checked={backup} disabled={busy} onChange={e => { setBackup(e.target.checked); setProposal(null); }} />Ho verificato un backup ripristinabile del database MES e dei documenti.</label>}<label><input type="checkbox" disabled={busy} checked={ack} onChange={e => setAck(e.target.checked)} />Ho verificato lavorazioni protette, date proposte, copertura e avvisi.</label><button className="plan-primary" disabled={busy || version.actor?.startsWith("system:") || !ack || !!version.snapshot.blocks?.length || (version.kind === "MIGRATE" && !backup)} onClick={() => run(confirm)}><ShieldCheck size={16} />Prepara conferma: {labels[version.kind]}</button></div>}
       {proposal && <div className="plan-notice"><p>Conferma finale: <strong>{labels[version.kind] || "Verifica ODL"}</strong>. L'operazione sarà registrata nell'audit.</p><button className="plan-primary" disabled={busy} onClick={() => run(decide)}><Check size={16} />Conferma applicazione</button><button disabled={busy} onClick={() => setProposal(null)}>Non applicare</button></div>}
       {version.status === "APPLIED" && <p className="plan-notice" role="status">Versione applicata. Nessun avvio produzione automatico.</p>}

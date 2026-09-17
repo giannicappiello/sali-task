@@ -5,8 +5,10 @@
 .rdp-priority-action:focus-visible { outline: 3px solid #80b9ed; outline-offset: 3px; }
 .rdp-workbench .rdp-header-controls { flex-wrap: wrap; }
 .rdp-workbench .rdp-header-controls .rdp-tabs { flex-basis: 100%; }
-.rdp-workbench .rdp-header-actions { width: 100%; justify-content: flex-start; }
-.rdp-workbench .rdp-header-actions:empty { display: none; }
+.rdp-top-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; min-width: 0; }
+.rdp-top-actions > .rdp-priority-action { flex: 0 0 auto; }
+.rdp-top-actions > .rdp-background-sync { flex: 0 1 auto; max-width: 100%; box-sizing: border-box; }
+.rdp-top-actions .rdp-background-sync > div { min-width: 0; overflow-wrap: anywhere; }
 .rdp-workbench .rdp-background-sync { white-space: normal; }
 .rdp-background-sync small { display: block; margin-top: 3px; font-size: .78rem; overflow-wrap: anywhere; }
 .rdp-background-sync svg { flex: 0 0 auto; }

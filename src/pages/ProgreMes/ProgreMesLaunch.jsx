@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
-import { isProgremesFrameMessage, requestProgremesNavigation } from "./progremesWindow";
+import { isProgremesFrameMessage, progremesWorkspaceDestination, requestProgremesNavigation } from "./progremesWindow";
 import "./progremes-frame.css";
 
 export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
@@ -38,6 +38,10 @@ export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
     }), 30000);
     const receive = (event) => {
       if (!isProgremesFrameMessage(event, frame.current?.contentWindow, origin)) return;
+      if (event.data.type === "progremes-workspace-navigate") {
+        navigate(progremesWorkspaceDestination(event.data));
+        return;
+      }
       window.clearTimeout(timer);
       if (event.data.type === "progremes-workspace-return") {
         navigate("/produzione", { replace: true });

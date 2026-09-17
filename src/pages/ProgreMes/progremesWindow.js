@@ -31,8 +31,18 @@ export function requestProgremesWorkspaceWindow(path) {
 }
 
 export function isProgremesFrameMessage(event, frameWindow, origin) {
-  return Boolean(frameWindow && event.source === frameWindow && event.origin === origin
-    && ["progremes-embedded-ready", "progremes-embedded-auth-error", "progremes-workspace-return"].includes(event.data?.type));
+  if (!frameWindow || event.source !== frameWindow || event.origin !== origin) return false;
+  if (event.data?.type === "progremes-workspace-navigate") return Boolean(progremesWorkspaceDestination(event.data));
+  return ["progremes-embedded-ready", "progremes-embedded-auth-error", "progremes-workspace-return"].includes(event.data?.type);
+}
+
+export function progremesWorkspaceDestination(data) {
+  if (data?.type !== "progremes-workspace-navigate" || typeof data.path !== "string" || !data.path.startsWith("/")) return null;
+  try {
+    const url = new URL(data.path, "https://workspace.invalid");
+    if (url.origin !== "https://workspace.invalid" || !["/versioni-piano-produzione", "/rilascio-odl", "/revisione-priorita-produzione"].includes(url.pathname)) return null;
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch { return null; }
 }
 
 export async function requestProgremesNavigation(accessToken, { screenCode = "", search = "", signal, fetcher = fetch } = {}) {

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { isProgremesFrameMessage, isProgremesScreenPath, openProgremesWorkspaceWindow, progremesWorkspacePath, requestProgremesNavigation } from "./progremesWindow.js";
+import { isProgremesFrameMessage, isProgremesScreenPath, openProgremesWorkspaceWindow, progremesWorkspacePath, progremesWorkspaceDestination, requestProgremesNavigation } from "./progremesWindow.js";
 
 test("la nuova finestra usa una route Workspace preservando il contesto", () => {
   assert.equal(progremesWorkspacePath("/produzione/progremes.Planning?odpId=42&workspaceMesWindow=1#piano"), "/produzione/progremes.Planning?odpId=42&workspaceMesWindow=1#piano");
@@ -101,4 +101,26 @@ test("i messaggi MES devono provenire dal frame e dall'origine attesa", () => {
   assert.equal(isProgremesFrameMessage({ ...event, origin: "https://evil.example" }, frame, event.origin), false);
   assert.equal(isProgremesFrameMessage({ ...event, data: { type: "navigate", url: "https://evil.example" } }, frame, event.origin), false);
   assert.equal(isProgremesFrameMessage(event, null, event.origin), false);
+});
+
+test("planning, ODL e priorita navigano solo verso route Workspace ammesse", () => {
+  const frame = {};
+  for (const path of ["/versioni-piano-produzione", "/rilascio-odl", "/revisione-priorita-produzione?order=RDP160-3"] ) {
+    const data = { type: "progremes-workspace-navigate", path };
+    const event = { data, source: frame, origin: "https://mes.example" };
+    assert.equal(isProgremesFrameMessage(event, frame, event.origin), true);
+    assert.equal(progremesWorkspaceDestination(data), path);
+    assert.equal(isProgremesFrameMessage({ ...event, source: {} }, frame, event.origin), false);
+    assert.equal(isProgremesFrameMessage({ ...event, origin: "https://evil.example" }, frame, event.origin), false);
+  }
+  for (const path of [undefined, {}, "", "/settings", "https://evil.example/rilascio-odl", "//evil.example/rilascio-odl", "/\\evil.example/rilascio-odl", "javascript:alert(1)", "/rilascio-odl/evil"]) {
+    const data = { type: "progremes-workspace-navigate", path };
+    assert.equal(progremesWorkspaceDestination(data), null);
+    assert.equal(isProgremesFrameMessage({ data, source: frame, origin: "https://mes.example" }, frame, "https://mes.example"), false);
+  }
+  const launch = readFileSync(new URL("./ProgreMesLaunch.jsx", import.meta.url), "utf8");
+  assert.match(launch, /navigate\(progremesWorkspaceDestination\(event.data\)\)/);
+  assert.doesNotMatch(launch, /allow-top-navigation/);
+  const app = readFileSync(new URL("../../App.jsx", import.meta.url), "utf8");
+  for (const code of ["produzione.versioni_piano", "produzione.rilascio_odl"]) assert.ok(app.includes(`WorkspaceAccessGuard screenCode="${code}"`));
 });

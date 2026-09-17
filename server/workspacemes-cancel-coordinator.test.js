@@ -52,6 +52,19 @@ test("ripetizione annullamento già completato non richiama MES", async () => {
   assert.equal(f.calls.length, 1);
 });
 
+test("rifiuto tecnico certo non lascia congelata la RdP, ma un esito parziale sì", async () => {
+  for (const partial of [false, true]) {
+    const f = fixture({ confirmations: partial ? ["first", "second"] : ["first"] });
+    const refusal = Object.assign(new Error("SL registrato"), { status: 400, code: "V4_ORDER_IRREVERSIBLE" });
+    let calls = 0;
+    await assert.rejects(cancelCoordinatedProductionRequest({ admin: f.admin, requestId: "rdp", client: { cancelV4: async () => {
+      if (partial && calls++ === 0) return { result: { status: "CANCELLED" } }; throw refusal;
+    } } }), /SL registrato/);
+    assert.equal(f.calls.some(c => c.name === "reject_workspace_rdp_cancellation"), !partial);
+    assert.equal(f.calls.some(c => c.name === "complete_workspace_rdp_cancellation"), false);
+  }
+});
+
 test("errore del commit locale viene propagato e il retry richiama idempotentemente MES", async () => {
   const f = fixture(); let count = 0;
   const rpc = f.admin.rpc;

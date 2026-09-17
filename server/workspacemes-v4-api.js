@@ -12,7 +12,7 @@ async function ensureRequestNotCancelling(admin, requestId) {
   const request = ensure(await admin.from("workspace_production_requests").select("workspace_status,stato").eq("id", requestId).limit(1))[0];
   if (!request || upper(request.workspace_status || request.stato) === "CANCELLED")
     throw fail("RdP annullata o non trovata.", "RDP_CANCELLED");
-  const pending = ensure(await admin.from("workspace_rdp_cancellations").select("request_id").eq("request_id", requestId).limit(1));
+  const pending = ensure(await admin.from("workspace_rdp_cancellations").select("request_id").eq("request_id", requestId).neq("status", "REJECTED").limit(1));
   if (pending.length) throw fail("RdP in annullamento o già annullata: completare la riconciliazione, senza riconfermarla.", "RDP_CANCELLATION_PENDING");
 }
 

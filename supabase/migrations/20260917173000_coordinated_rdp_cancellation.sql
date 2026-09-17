@@ -14,7 +14,7 @@ create table public.workspace_rdp_cancellations (
  request_id uuid primary key references public.workspace_production_requests(id),
  external_id uuid not null, confirmations uuid[] not null default '{}',
  previous_status text not null, reason text not null, actor_id uuid,
- status text not null default 'PREPARED' check(status in ('PREPARED','COMPLETED')),
+ status text not null default 'PREPARED' check(status in ('PREPARED','COMPLETED','REJECTED')),
  created_at timestamptz not null default now(), completed_at timestamptz
 );
 alter table public.workspace_rdp_cancellations enable row level security;
@@ -30,7 +30,8 @@ begin
  select * into r from public.workspace_production_requests where id=p_request_id for update;
  if not found then raise exception 'NOT_FOUND: RdP non trovata'; end if;
  select * into c from public.workspace_rdp_cancellations where request_id=p_request_id;
- if found then return to_jsonb(c); end if;
+ if found and c.status<>'REJECTED' then return to_jsonb(c); end if;
+ delete from public.workspace_rdp_cancellations where request_id=p_request_id and status='REJECTED';
  s:=upper(coalesce(r.workspace_status,r.stato,''));
  if s='CANCELLED' then return jsonb_build_object('status','COMPLETED','external_id',r.external_id,'cancelled_at',r.cancelled_at); end if;
  if r.contract_version is distinct from 4 then
@@ -61,6 +62,17 @@ begin
  return to_jsonb(c);
 end $$;
 
+create or replace function public.reject_workspace_rdp_cancellation(p_request_id uuid,p_error text)
+returns void language plpgsql security definer set search_path=public as $$
+declare c public.workspace_rdp_cancellations%rowtype;
+begin
+ select * into c from public.workspace_rdp_cancellations where request_id=p_request_id for update;
+ if not found or c.status<>'PREPARED' then return; end if;
+ insert into public.workspace_production_request_audit(production_request_id,action,previous_status,new_status,reason,actor_id,details)
+ values(p_request_id,'CANCEL_REJECTED',c.previous_status,c.previous_status,c.reason,c.actor_id,jsonb_build_object('mesError',p_error));
+ update public.workspace_rdp_cancellations set status='REJECTED' where request_id=p_request_id;
+end $$;
+
 create or replace function public.complete_workspace_rdp_cancellation(p_request_id uuid)
 returns jsonb language plpgsql security definer set search_path=public as $$
 declare r public.workspace_production_requests%rowtype; c public.workspace_rdp_cancellations%rowtype;
@@ -69,6 +81,7 @@ begin
  select * into r from public.workspace_production_requests where id=p_request_id for update;
  select * into c from public.workspace_rdp_cancellations where request_id=p_request_id for update;
  if not found then raise exception 'CANCELLATION_NOT_PREPARED'; end if;
+ if c.status='REJECTED' then raise exception 'CANCELLATION_REJECTED'; end if;
  if c.status='COMPLETED' then return to_jsonb(c)||jsonb_build_object('cancelled_at',c.completed_at); end if;
  if exists(select 1 from public.workspace_v4_confirmation_mirrors m join public.workspace_v4_previews p on p.id=m.preview_id
    where p.production_request_id=p_request_id and upper(m.status) not in ('CANCELLED','REPLACED') and not(m.external_id=any(c.confirmations))) then
@@ -102,7 +115,7 @@ declare v_request_id uuid;
 begin
  if tg_table_name='workspace_v4_previews' then v_request_id:=new.production_request_id;
  else select production_request_id into v_request_id from public.workspace_v4_previews where id=new.preview_id; end if;
- if upper(new.status)<>'CANCELLED' and exists(select 1 from public.workspace_rdp_cancellations c where c.request_id=v_request_id) then
+ if upper(new.status)<>'CANCELLED' and exists(select 1 from public.workspace_rdp_cancellations c where c.request_id=v_request_id and c.status<>'REJECTED') then
    raise exception 'RDP_CANCELLATION_PENDING: RdP in annullamento o già annullata';
  end if;
  return new;
@@ -120,7 +133,7 @@ begin
    new.workspace_status:=old.workspace_status; new.stato:=old.stato;
  elsif upper(coalesce(new.workspace_status,new.stato,''))<>'CANCELLED'
    and (new.workspace_status is distinct from old.workspace_status or new.stato is distinct from old.stato)
-   and exists(select 1 from public.workspace_rdp_cancellations where request_id=old.id) then
+   and exists(select 1 from public.workspace_rdp_cancellations where request_id=old.id and status<>'REJECTED') then
    raise exception 'RDP_CANCELLATION_PENDING: annullamento in riconciliazione';
  end if;
  return new;
@@ -129,6 +142,6 @@ create trigger preserve_cancelled_workspace_rdp before update of workspace_statu
 for each row execute function public.preserve_cancelled_workspace_rdp();
 
 revoke all on function public.prepare_workspace_rdp_cancellation(uuid,text,uuid), public.complete_workspace_rdp_cancellation(uuid),
- public.guard_workspace_rdp_cancellation(), public.preserve_cancelled_workspace_rdp() from public,anon,authenticated;
-grant execute on function public.prepare_workspace_rdp_cancellation(uuid,text,uuid), public.complete_workspace_rdp_cancellation(uuid) to service_role;
+ public.guard_workspace_rdp_cancellation(), public.preserve_cancelled_workspace_rdp(), public.reject_workspace_rdp_cancellation(uuid,text) from public,anon,authenticated;
+grant execute on function public.prepare_workspace_rdp_cancellation(uuid,text,uuid), public.complete_workspace_rdp_cancellation(uuid), public.reject_workspace_rdp_cancellation(uuid,text) to service_role;
 commit;

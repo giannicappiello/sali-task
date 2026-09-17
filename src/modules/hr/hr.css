@@ -5,3 +5,29 @@
 .hr-page .hr-punch-action{min-height:60px;font-size:1.15rem;font-weight:700;width:100%;justify-content:center;border-radius:14px}
 
 .hr-recipient-list{display:grid;gap:10px;max-height:45vh;overflow:auto}.hr-recipient-list label{display:flex;align-items:center;gap:10px}.hr-recipient-list input[type=checkbox]{width:22px;height:22px;min-height:22px}
+
+/* Compact controls share a row on wide screens and wrap without squeezing labels. */
+.hr-controls{display:flex;align-items:stretch;gap:14px;flex-wrap:wrap}
+.hr-page .hr-controls .hr-nav{flex:1 1 760px;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+.hr-controls .hr-nav button{font-size:.82rem;padding:12px 10px;gap:8px}
+.hr-controls .hr-nav button>span{padding:7px}
+.hr-controls .hr-toolbar{flex:0 1 auto;gap:8px;font-size:.82rem}
+.hr-controls .hr-toolbar label{gap:7px}
+.hr-controls .hr-toolbar input{width:165px;padding:9px}
+.hr-controls .hr-toolbar button,.hr-controls .hr-toolbar a{padding:9px 10px}
+.hr-panel{font-size:.9rem;line-height:1.5}
+.hr-page .hr-panel h2{font-size:1.08rem}
+.hr-page .hr-panel h3{font-size:1rem}
+.hr-page .hr-master-detail{grid-template-columns:minmax(320px, .85fr) minmax(0,1.65fr);gap:20px;align-items:stretch}
+.hr-employee-card{display:flex;flex-direction:column;min-width:0;height:clamp(420px,65dvh,760px);background:#f8fbff;border:1px solid #dce6f4;border-radius:18px;padding:18px;overflow:hidden}
+.hr-employee-card>h2,.hr-employee-card>.hr-heading h2{color:#075b99}
+.hr-employee-card>.hr-heading,.hr-employee-card>h2,.hr-employee-card>a{flex-shrink:0}
+.hr-employee-card>.hr-heading button{font-size:.85rem;padding:9px 12px}
+.hr-card-scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable;overscroll-behavior:contain;margin-top:12px;padding-right:8px}
+.hr-card-scroll:focus-visible{outline:2px solid #3268ff;outline-offset:2px}
+.hr-page .hr-person{font-size:.9rem;background:transparent;padding:14px 10px;line-height:1.4}
+.hr-person small{font-size:.78rem;overflow-wrap:anywhere}
+.hr-card-scroll .hr-contract p{font-size:.85rem;overflow-wrap:anywhere}
+.hr-dialog{width:min(780px,calc(100vw - 24px))}
+@media(max-width:1100px){.hr-page .hr-master-detail{grid-template-columns:minmax(280px,.9fr) minmax(0,1.3fr)}}
+@media(max-width:700px){.hr-page .hr-master-detail{grid-template-columns:1fr;padding:12px;gap:14px}.hr-employee-card{height:clamp(320px,55dvh,520px);padding:14px}.hr-page .hr-controls .hr-nav{grid-template-columns:repeat(2,minmax(0,1fr));flex-basis:100%}.hr-controls .hr-toolbar{width:100%;flex-wrap:wrap}.hr-controls .hr-toolbar label{flex:1 1 100%}.hr-controls .hr-toolbar input{flex:1}.hr-controls .hr-toolbar>a{margin-left:0}.hr-panel{font-size:.86rem}}

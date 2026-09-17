@@ -43,6 +43,7 @@ test('HR migration and authorization flows in isolated PostgreSQL', async (t) =>
   await db.exec(accessMigration.slice(accessMigration.indexOf('create or replace function public.workspace_save_user_access('), accessMigration.indexOf('-- One canonical department')));
   const migration = await readFile(new URL('../supabase/migrations/20260916180000_workspace_hr.sql', import.meta.url), 'utf8');
   try { await db.exec(migration); await db.exec(await readFile(new URL('../supabase/migrations/20260916190000_workspace_hr_site_address.sql', import.meta.url), 'utf8')); await db.exec(await readFile(new URL('../supabase/migrations/20260916200000_workspace_hr_flexible_agreements.sql', import.meta.url), 'utf8')); await db.exec(await readFile(new URL('../supabase/migrations/20260916210000_workspace_hr_home_punch.sql', import.meta.url), 'utf8')); await db.exec(await readFile(new URL('../supabase/migrations/20260916220000_workspace_hr_catalog_alias.sql', import.meta.url), 'utf8')); await db.exec(await readFile(new URL('../supabase/migrations/20260916230000_workspace_hr_request_recipients.sql', import.meta.url), 'utf8')); } catch (error) { console.error('Migration:', error.message, error.where); throw error; }
+  await db.exec(await readFile(new URL('../supabase/migrations/20260917120000_workspace_hr_employee_editor.sql', import.meta.url), 'utf8'));
   async function as(user, sql, args = []) {
     await db.exec('begin; set local role authenticated;');
     try { await db.query("select set_config('request.jwt.claim.sub',$1,true)", [user]); const result = await db.query(sql, args); await db.exec('commit'); return result.rows; }
@@ -66,6 +67,20 @@ test('HR migration and authorization flows in isolated PostgreSQL', async (t) =>
   await cfg('contract', terms);
   assert.equal((await rpc(admin, 'workspace_hr_snapshot', [today, true])).sites.find(s => s.id === site).address, 'Via di prova 1, Roma');
   const snap = (user, config = false) => rpc(user, 'workspace_hr_snapshot', [today, config]);
+  await t.test('combined employee editor is atomic, admin-only, idempotent and preserves agreement history', async () => {
+    const save=(user,payload,key=id())=>rpc(user,'workspace_hr_save_employee',[JSON.stringify(payload),key]);
+    const before=(await snap(admin,true)).contracts.find(c=>c.user_id===employee);
+    const payload={user_id:employee,employee_code:'TEST-01',manager:false};
+    for(const user of [employee,manager]) await assert.rejects(save(user,payload),/admin/);
+    await save(admin,payload);
+    assert.equal((await snap(admin,true)).contracts.filter(c=>c.user_id===employee).length,1);
+    await assert.rejects(save(admin,{...payload,employee_code:'ROLLBACK',contract_id:before.id,contract:{effective_from:'invalid'}}));
+    assert.equal((await snap(admin,true)).employees.find(e=>e.user_id===employee).employee_code,'TEST-01');
+    const key=id(),changed={...payload,contract_id:before.id,contract:{...terms,effective_from:'2019-01-01',agreed_pay:'Accordo storico',weekly_hours:''}};
+    await save(admin,changed,key); await save(admin,changed,key);
+    assert.equal((await snap(admin,true)).contracts.filter(c=>c.user_id===employee).length,2);
+    await assert.rejects(save(admin,{...payload,contract_id:id(),contract:terms}),/aggiornati/);
+  });
   await t.test('employees/managers cannot retrieve or mutate contracts, admin can', async () => {
     for (const user of [employee, manager]) {
       const s = await snap(user);

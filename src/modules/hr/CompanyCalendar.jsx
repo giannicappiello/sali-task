@@ -1,37 +1,55 @@
-import { useEffect, useState } from 'react';
-import { hrRpc, romeDay } from './hrService';
+import { useRef, useState, useEffect } from 'react';
+import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
+import { hrRpc, romeDay, monthDays, formatDate, formatTime } from './hrService';
+import { companyCalendarDay } from './companyCalendarDay';
+import { plannedPresentCount } from './hrCalendarPresence';
+import { CALENDAR_DAYS, calendarWeek, calendarSavePayload, isoWeekday, missingScheduleCount, validateSlots } from './hrCalendarEditor';
 
-const DAYS = ['Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato','Domenica'];
-const format = slots => slots.map(([from,to]) => `${from}-${to}`).join(', ');
-function parseCalendarIntervals(text) {
-  if (!text.trim()) return [];
-  let end = '';
-  return text.split(',').map(part => {
-    const match = /^\s*((?:[01]\d|2[0-3]):[0-5]\d)\s*-\s*((?:[01]\d|2[0-3]):[0-5]\d)\s*$/.exec(part);
-    if (!match || match[1] >= match[2] || match[1] < end) throw new Error('Usa fasce ordinate, ad esempio 07:30-12:30, 13:30-16:30.');
-    end = match[2]; return [match[1],match[2]];
-  });
+const showSlots = slots => slots.map(s => s.join('–')).join(', ') || 'Chiusa';
+function Slots({ slots, onChange, disabled }) {
+  return <div className="hr-slot-list">{slots.map((slot, i) => <div className="hr-slot-row" key={i}>{['Dalle', 'Alle'].map((label, j) => <label key={label}>{label}<input required type="time" disabled={disabled} value={slot[j]} onChange={e => onChange(slots.map((s, n) => n === i ? s.map((v, k) => k === j ? e.target.value : v) : s))}/></label>)}<button type="button" aria-label={`Rimuovi fascia ${i + 1}`} disabled={disabled} onClick={() => onChange(slots.filter((_, n) => n !== i))}><X size={16}/></button></div>)}<button className="hr-add-slot" type="button" disabled={disabled} onClick={() => onChange([...slots, ['13:00', '17:00']])}><Plus size={14}/>Aggiungi fascia</button></div>;
 }
-export default function CompanyCalendar() {
-  const [data,setData] = useState(null), [error,setError] = useState(''), [busy,setBusy] = useState(false);
-  const [editor,setEditor] = useState(null), [success,setSuccess] = useState('');
-  async function load() { const value=await hrRpc('workspace_company_calendar_read'); setData(value); }
-  useEffect(() => { let active=true; hrRpc('workspace_company_calendar_read').then(value => { if(active)setData(value); }).catch(e=>{if(active)setError(e.message);});return()=>{active=false;}; },[]);
+function WeekEditor({ calendar, day, onClose, onSaved }) {
+  const dialog = useRef(null);
+  const [from, setFrom] = useState(day), [week, setWeek] = useState(() => calendarWeek(calendar, day)), [note, setNote] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  useEffect(() => { const node = dialog.current; node.showModal(); return () => node.close(); }, []);
   async function save(e) {
-    e.preventDefault();setBusy(true);setError('');setSuccess('');
+    e.preventDefault(); setError(''); setBusy(true);
     try {
-      const payload=editor.kind==='version' ? {effectiveFrom:editor.day,note:editor.reason,week:Object.fromEntries(editor.days.map((s,i)=>[String(i+1),parseCalendarIntervals(s)]))} : {day:editor.day,reason:editor.reason,intervals:parseCalendarIntervals(editor.slots)};
-      await hrRpc('workspace_company_calendar_save',{p_action:editor.kind,p_data:payload});
-      setEditor(null);await load();setSuccess('Calendario salvato. Il MES lo acquisisce alla successiva sincronizzazione.');
-    } catch(e){setError(e.message);}finally{setBusy(false);}
+      if (calendar.versions.some(v => v.effectiveFrom === from)) throw new Error('Esiste già un orario con questa decorrenza. Scegli una data successiva oppure modifica il singolo giorno.');
+      const validated = Object.fromEntries(Object.entries(week).map(([d, slots]) => [d, validateSlots(slots)]));
+      if (!Object.values(validated).some(s => s.length)) throw new Error('Configura almeno una fascia settimanale.');
+      await hrRpc('workspace_company_calendar_save', { p_action: 'version', p_data: { effectiveFrom: from, week: validated, note: note.trim() || 'Aggiornamento orario settimanale' } });
+      await onSaved(); onClose();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
-  async function refresh() { setBusy(true);setError('');try{await load();}catch(e){setError(e.message);}finally{setBusy(false);} }
-  const current=data?.versions.filter(v=>v.effectiveFrom<=romeDay()).at(-1);
-  return <section className="hr-panel"><div className="hr-heading"><h2>Calendario aziendale</h2><div className="hr-actions"><button disabled={busy} onClick={refresh}>Aggiorna calendario</button><button disabled={!data||busy} onClick={()=>{setError('');setEditor({kind:'version',day:romeDay(),reason:'',days:DAYS.map((_,i)=>format(current?.week[String(i+1)]||[]))});}}>Nuovo orario con decorrenza</button><button disabled={!data||busy} onClick={()=>{setError('');setEditor({kind:'exception',day:romeDay(),reason:'',slots:''});}}>Chiusura / apertura straordinaria</button></div></div>
-    <p className="hr-note">{data?.lastMesSync ? `Ultimo collegamento MES: ${new Date(data.lastMesSync).toLocaleString('it-IT',{timeZone:'Europe/Rome'})}` : 'Collegamento MES non ancora attivato.'}</p><p>Orari locali Europe/Rome. Il calendario vale per la pianificazione aziendale; gli accordi individuali e i fermi macchina restano distinti.</p>
-    {error&&<p className="hr-error" role="alert">{error}</p>}{success&&<p role="status">{success}</p>}
-    {editor&&<form onSubmit={save} className="hr-contract"><h3>{editor.kind==='version'?'Nuova versione dell’orario':'Eccezione giornaliera'}</h3><div className="hr-form-grid"><label>{editor.kind==='version'?'Decorrenza':'Giorno'}<input required type="date" min={romeDay()} value={editor.day} onChange={e=>setEditor({...editor,day:e.target.value})}/></label><label>Motivazione<input required maxLength={300} value={editor.reason} onChange={e=>setEditor({...editor,reason:e.target.value})}/></label>
-      {editor.kind==='version'?DAYS.map((day,i)=><label key={day}>{day}<input placeholder="07:30-12:30, 13:30-16:30" value={editor.days[i]} onChange={e=>setEditor({...editor,days:editor.days.map((s,j)=>j===i?e.target.value:s)})}/></label>):<label>Fasce di apertura<input placeholder="Vuoto = giornata chiusa" value={editor.slots} onChange={e=>setEditor({...editor,slots:e.target.value})}/></label>}</div><p className="hr-note">Una fascia vuota indica chiusura. Separa i turni con una virgola. Le eccezioni prevalgono sull’orario settimanale e sulle chiusure. Le versioni precedenti sono conservate; per una stessa decorrenza è ammessa una sola versione.</p><div className="hr-actions"><button type="button" disabled={busy} onClick={()=>setEditor(null)}>Annulla</button><button className="hr-primary" disabled={busy}>{busy?'Salvataggio…':'Salva calendario'}</button></div></form>}
-    {!data?<p>{error?'Calendario non caricato. Premi Aggiorna calendario per riprovare.':'Caricamento calendario…'}</p>:<><div className="hr-table-wrap"><table><thead><tr><th>Giorno</th><th>Orario attuale</th></tr></thead><tbody>{DAYS.map((d,i)=><tr key={d}><td>{d}</td><td>{format(current?.week[String(i+1)]||[])||'Chiuso'}</td></tr>)}</tbody></table></div><h3>Eccezioni</h3>{data.exceptions.length?data.exceptions.map(e=><p key={e.id}>{e.day} · {format(e.intervals)||'Chiuso'} · {e.reason}</p>):<p>Nessuna eccezione.</p>}<h3>Chiusure e festività registrate</h3><div style={{maxHeight:320,overflowY:'auto'}}>{data.closures.filter(c=>c.to>=romeDay()).map((c,i)=><p key={i}>{c.from} – {c.to} · {c.reason}</p>)}</div><h3>Versioni dell’orario</h3>{data.versions.slice().reverse().map(v=><details key={v.id}><summary>Decorrenza {v.effectiveFrom} · {v.note}</summary>{DAYS.map((d,i)=><p key={d}>{d}: {format(v.week[String(i+1)]||[])||'Chiuso'}</p>)}</details>)}</>}
+  return <dialog ref={dialog} className="hr-dialog" aria-labelledby="hr-week-title" onCancel={e => { e.preventDefault(); if (!busy) onClose(); }}><form onSubmit={save}><header><h2 id="hr-week-title">Orario settimanale</h2><button type="button" disabled={busy} onClick={onClose} aria-label="Chiudi"><X size={18}/></button></header><fieldset disabled={busy}><div className="hr-form-grid"><label>Decorrenza<input type="date" required min={romeDay()} value={from} onChange={e => { setFrom(e.target.value); setWeek(calendarWeek(calendar, e.target.value)); }}/></label><label>Nota<input maxLength={300} value={note} onChange={e => setNote(e.target.value)}/></label></div>{CALENDAR_DAYS.map((name, i) => <section className="hr-week-editor-day" key={name}><label className="hr-calendar-switch"><input type="checkbox" checked={week[String(i + 1)].length > 0} onChange={e => setWeek({ ...week, [String(i + 1)]: e.target.checked ? [['07:30', '16:30']] : [] })}/>{name}</label>{week[String(i + 1)].length > 0 && <Slots slots={week[String(i + 1)]} disabled={busy} onChange={slots => setWeek({ ...week, [String(i + 1)]: slots })}/>}</section>)}</fieldset><p className="hr-note">La nuova decorrenza conserva gli orari precedenti. Eccezioni giornaliere e festività mantengono la precedenza.</p>{error && <p role="alert" className="hr-error">{error}</p>}<footer><button type="button" disabled={busy} onClick={onClose}>Annulla</button><button className="hr-primary" disabled={busy}>{busy ? 'Salvataggio…' : 'Salva settimana'}</button></footer></form></dialog>;
+}
+function DayEditor({ calendar, day, onSaved }) {
+  const plan = companyCalendarDay(calendar, day);
+  const [draft, setDraft] = useState(() => ({ day, open: Boolean(plan?.intervals.length), slots: plan?.intervals.length ? structuredClone(plan.intervals) : [['07:30', '16:30']], note: plan?.reason || '', scope: 'day' }));
+  const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const past = day < romeDay();
+  async function save(e) {
+    e.preventDefault(); setError(''); setBusy(true);
+    try { await hrRpc('workspace_company_calendar_save', calendarSavePayload(calendar, draft)); await onSaved(); }
+    catch (e) { setError(e.message); } finally { setBusy(false); }
+  }
+  return <form onSubmit={save}><fieldset disabled={busy || past}><label className="hr-calendar-switch"><input type="checkbox" checked={draft.open} onChange={e => setDraft({ ...draft, open: e.target.checked })}/>Giorno aperto</label>{draft.open && <Slots slots={draft.slots} disabled={busy || past} onChange={slots => setDraft({ ...draft, slots })}/>}<div className="hr-calendar-apply-row"><label>Applica a<select value={draft.scope} onChange={e => setDraft({ ...draft, scope: e.target.value })}><option value="day">Solo questo giorno</option><option value="recurring">Ogni {CALENDAR_DAYS[isoWeekday(day) - 1].toLowerCase()} da questa data</option></select></label><label>Nota<input maxLength={300} value={draft.note} placeholder="Nota facoltativa" onChange={e => setDraft({ ...draft, note: e.target.value })}/></label></div><button className="hr-primary hr-full" disabled={busy || past}>{busy ? 'Salvataggio…' : 'Salva orario'}</button></fieldset>{past && <p className="hr-muted hr-small">Il calendario passato è consultabile e non modificabile.</p>}{draft.scope === 'recurring' && <p className="hr-muted hr-small">Valido fino alla prossima versione settimanale. Le eccezioni giornaliere e le chiusure esistenti restano valide.</p>}{error && <p className="hr-error" role="alert">{error}</p>}</form>;
+}
+export default function CompanyCalendar({ snapshot, month, onMonthChange, onReload }) {
+  const calendar = snapshot.companyCalendar, today = romeDay();
+  const [selection, setSelection] = useState(today), [weekEditor, setWeekEditor] = useState(false), [revision, setRevision] = useState(0), [notice, setNotice] = useState('');
+  const day = selection.startsWith(month) ? selection : `${month}-01`;
+  const name = id => snapshot.employees.find(e => e.user_id === id)?.name || 'Dipendente';
+  function absences(date) { return snapshot.requests.filter(r => ['leave', 'permission'].includes(r.kind) && r.status === 'approved' && romeDay(r.starts_at) <= date && romeDay(new Date(Date.parse(r.ends_at) - 1)) >= date).sort((a, b) => name(a.user_id).localeCompare(name(b.user_id), 'it')); }
+  const shifts = date => snapshot.shifts.filter(s => s.work_date === date);
+  function move(delta) { const date = new Date(`${month}-01T12:00:00Z`); date.setUTCMonth(date.getUTCMonth() + delta); onMonthChange(date.toISOString().slice(0, 7)); setNotice(''); }
+  async function saved() { await onReload(); setRevision(r => r + 1); setNotice('Orario salvato. Il MES lo acquisisce alla successiva sincronizzazione.'); }
+  const days = monthDays(month), leading = (isoWeekday(days[0]) - 1), trailing = (7 - (leading + days.length) % 7) % 7;
+  return <section className="hr-panel hr-company-calendar"><div className="hr-heading"><div className="hr-actions"><h2>{new Date(`${month}-01T12:00:00Z`).toLocaleDateString('it-IT', { month: 'long', year: 'numeric', timeZone: 'UTC' })}</h2><button aria-label="Mese precedente" onClick={() => move(-1)}><ChevronLeft size={18}/></button><button aria-label="Mese successivo" onClick={() => move(1)}><ChevronRight size={18}/></button><button onClick={() => { onMonthChange(today.slice(0, 7)); setSelection(today); }}>Oggi</button></div><button disabled={!calendar} onClick={() => setWeekEditor(true)}>Orario settimanale</button></div>
+    {!calendar ? <p className="hr-note" role="status">Calendario non disponibile. Premi Aggiorna per riprovare.</p> : <><div className="hr-company-calendar-layout"><div><div className="hr-month-grid">{CALENDAR_DAYS.map(d => <div className="hr-month-label" key={d}>{d.slice(0, 3)}</div>)}{Array.from({ length: leading }, (_, i) => <div className="hr-month-blank" key={`before-${i}`}/>)}{days.map(date => { const plan = companyCalendarDay(calendar, date), away = absences(date), count = plannedPresentCount(shifts(date), away); return <button key={date} className={`hr-month-day ${date === today ? 'today' : ''} ${!plan?.intervals.length ? 'closed' : ''}`} aria-pressed={date === day} aria-label={`${formatDate(date)} · ${showSlots(plan?.intervals || [])} · ${count} presenti previsti${away.length ? ` · Assenti: ${away.map(r => name(r.user_id)).join(', ')}` : ''}`} onClick={() => { setSelection(date); setNotice(''); }}><strong>{Number(date.slice(-2))}</strong><span className="hr-month-hours">{showSlots(plan?.intervals || [])}</span><span className="hr-month-count">{count} previsti</span>{away.map(r => <span className="hr-month-absence" key={r.id}>{name(r.user_id)}</span>)}{away.length > 0 && <span className="hr-month-dot" aria-hidden="true"/>}</button>; })}{Array.from({ length: trailing }, (_, i) => <div className="hr-month-blank" key={`after-${i}`}/>)}</div><p className="hr-muted hr-small">Orario aziendale · Assenze approvate · Seleziona un giorno per i dettagli.</p></div>
+    <aside className="hr-calendar-editor"><h3>{new Date(`${day}T12:00:00Z`).toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })}</h3><p className="hr-muted hr-small">Orario aziendale · Europe/Rome</p><DayEditor key={`${day}-${revision}`} calendar={calendar} day={day} onSaved={saved}/>{notice && <p className="hr-success" role="status">{notice}</p>}<div className="hr-calendar-staff"><strong>{plannedPresentCount(shifts(day), absences(day))}</strong> presenti previsti<p className="hr-muted hr-small">{snapshot.employees.filter(e => e.active).length} dipendenti attivi</p><p className="hr-schedule-missing">Orario da completare: {missingScheduleCount(snapshot, day)}</p><h4>Assenze programmate</h4>{absences(day).length ? absences(day).map(r => <p className="hr-absence-detail" key={r.id}><b>{name(r.user_id)}</b><span>{r.kind === 'leave' ? 'Ferie' : `Permesso · ${formatTime(r.starts_at)}–${formatTime(r.ends_at)}`}</span></p>) : <p className="hr-muted hr-small">Nessuna assenza programmata</p>}</div></aside></div>
+    <details className="hr-calendar-history"><summary>Storico orari e collegamento MES</summary><p>{calendar.lastMesSync ? `Ultimo collegamento MES: ${new Date(calendar.lastMesSync).toLocaleString('it-IT', { timeZone: 'Europe/Rome' })}` : 'Collegamento MES non ancora attivato.'}</p>{calendar.versions.slice().reverse().map(v => <details key={v.id}><summary>Dal {formatDate(v.effectiveFrom)} · {v.note}</summary>{CALENDAR_DAYS.map((d, i) => <p key={d}>{d}: {showSlots(v.week[String(i + 1)])}</p>)}</details>)}</details>{weekEditor && <WeekEditor calendar={calendar} day={day < today ? today : day} onClose={() => setWeekEditor(false)} onSaved={saved}/>}</>}
   </section>;
 }

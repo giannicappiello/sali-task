@@ -14,6 +14,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
   const [retry, setRetry] = useState(0);
   const [connection, setConnection] = useState({ requestKey: "", url: "", error: "" });
   const [frameStatus, setFrameStatus] = useState({ url: "", ready: false, error: "" });
+  const [syncError, setSyncError] = useState("");
   const requestKey = JSON.stringify([screenCode, search, retry]);
   const url = connection.requestKey === requestKey ? connection.url : "";
 
@@ -39,9 +40,10 @@ export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
     const receive = (event) => {
       if (!isProgremesFrameMessage(event, frame.current?.contentWindow, origin)) return;
       if (event.data.type === "progremes-planning-applied") {
+        setSyncError("");
         fetch("/api/workspace/planning", { method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }, body: JSON.stringify({ action: "planning_reconcile" }) })
           .then(async response => { const result = await response.json(); if (!response.ok) throw new Error(result.error || "Allineamento non riuscito"); })
-          .catch(() => setFrameStatus({ url, ready: true, error: "Piano salvato in MES. Completa l’allineamento dallo Storico ODL con Allinea stato Workspace; non ripetere la generazione." }));
+          .catch(() => setSyncError("Piano salvato in MES. Completa l’allineamento dallo Storico ODL con Allinea stato Workspace; non ripetere la generazione."));
         return;
       }
       if (event.data.type === "progremes-workspace-navigate") {
@@ -68,6 +70,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
   if (!screenCode) return <Navigate to="/produzione" replace />;
 
   return <section className="progremes-workspace-frame">
+    {syncError && <div className="progremes-frame-status" role="alert">{syncError}</div>}
     {(!ready || error) && <div className="progremes-frame-status" role={error ? "alert" : "status"}>
       <h2>{error ? "Collegamento non disponibile" : "Apertura schermata MES..."}</h2>
       <p>{error || "Collegamento automatico alla schermata richiesta."}</p>

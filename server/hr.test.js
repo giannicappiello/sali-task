@@ -44,6 +44,7 @@ test('HR migration and authorization flows in isolated PostgreSQL', async (t) =>
   const migration = await readFile(new URL('../supabase/migrations/20260916180000_workspace_hr.sql', import.meta.url), 'utf8');
   try { await db.exec(migration); await db.exec(await readFile(new URL('../supabase/migrations/20260916190000_workspace_hr_site_address.sql', import.meta.url), 'utf8')); await db.exec(await readFile(new URL('../supabase/migrations/20260916200000_workspace_hr_flexible_agreements.sql', import.meta.url), 'utf8')); await db.exec(await readFile(new URL('../supabase/migrations/20260916210000_workspace_hr_home_punch.sql', import.meta.url), 'utf8')); await db.exec(await readFile(new URL('../supabase/migrations/20260916220000_workspace_hr_catalog_alias.sql', import.meta.url), 'utf8')); await db.exec(await readFile(new URL('../supabase/migrations/20260916230000_workspace_hr_request_recipients.sql', import.meta.url), 'utf8')); } catch (error) { console.error('Migration:', error.message, error.where); throw error; }
   await db.exec(await readFile(new URL('../supabase/migrations/20260917120000_workspace_hr_employee_editor.sql', import.meta.url), 'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/20260917160000_workspace_company_calendar.sql', import.meta.url), 'utf8'));
   async function as(user, sql, args = []) {
     await db.exec('begin; set local role authenticated;');
     try { await db.query("select set_config('request.jwt.claim.sub',$1,true)", [user]); const result = await db.query(sql, args); await db.exec('commit'); return result.rows; }
@@ -60,6 +61,13 @@ test('HR migration and authorization flows in isolated PostgreSQL', async (t) =>
     assert.equal((await rpc(employee, 'workspace_module_enabled_for_user', [employee, 'hr'])), true);
     assert.equal((await rpc(outsider, 'workspace_module_enabled_for_user', [outsider, 'hr'])), false);
     await cfg('member', { user_id: manager, manager: true });
+  });
+  await t.test('company calendar uses real HR membership and keeps administration restricted',async()=>{
+    const calendar=await rpc(employee,'workspace_company_calendar_read',[]);
+    assert.deepEqual(calendar.versions[0].week['1'],[['07:30','16:30']]);
+    await assert.rejects(rpc(outsider,'workspace_company_calendar_read',[]));
+    await assert.rejects(rpc(manager,'workspace_company_calendar_save',['exception',JSON.stringify({day:'2035-01-01',reason:'Test',intervals:[]})]),/riservato/);
+    assert.ok((await rpc(admin,'workspace_company_calendar_read',[])).closures.length>0);
   });
   const site = (await cfg('site', { name: 'Sede test', address: 'Via di prova 1, Roma', latitude: 40, longitude: 14, auto_checkout: true })).id;
   const today = (await db.query("select (now() at time zone 'Europe/Rome')::date::text as day")).rows[0].day;

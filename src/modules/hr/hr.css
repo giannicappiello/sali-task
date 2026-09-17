@@ -5,6 +5,9 @@
 .hr-page .hr-punch-action{min-height:60px;font-size:1.15rem;font-weight:700;width:100%;justify-content:center;border-radius:14px}
 
 .hr-recipient-list{display:grid;gap:10px;max-height:45vh;overflow:auto}.hr-recipient-list label{display:flex;align-items:center;gap:10px}.hr-recipient-list input[type=checkbox]{width:22px;height:22px;min-height:22px}
+.hr-calendar-scroll{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain}
+.hr-calendar-scroll .hr-calendar{min-width:740px}
+.hr-calendar-scroll:focus-visible{outline:2px solid #3268ff;outline-offset:2px}
 
 /* Compact controls share a row on wide screens and wrap without squeezing labels. */
 .hr-controls{display:flex;align-items:stretch;gap:14px;flex-wrap:wrap}

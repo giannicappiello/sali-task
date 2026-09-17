@@ -193,7 +193,11 @@ async function executeExternalAction(auth, pending) {
   let result = null; let failure = null;
   try {
     const response = await fetch(new URL(path, requiredEnvironment("PROGREMES_URL")), {
-      method: "POST", signal: AbortSignal.timeout(["MES_PRIORITY_REVISE", "MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(pending.tool) ? 55000 : Number(process.env.PROGREMES_API_TIMEOUT_MS || 15000)), body: payload,
+      // Full-plan migration writes hundreds of phases. Leave room in the 300s
+      // route budget for validation and authoritative readback after this call.
+      method: "POST", signal: AbortSignal.timeout(pending.tool === "MES_PLAN_APPLY" ? 120000
+        : ["MES_PRIORITY_REVISE", "MES_ODL_VERIFY"].includes(pending.tool) ? 55000
+          : Number(process.env.PROGREMES_API_TIMEOUT_MS || 15000)), body: payload,
       headers: { "Content-Type": "application/json", [HMAC_HEADERS.timestamp]: String(timestamp), [HMAC_HEADERS.eventId]: eventId,
         [HMAC_HEADERS.signature]: signProductionMessage({ method: "POST", path, timestamp, eventId, body: payload, secret: requiredEnvironment("PROGREMES_INTEGRATION_SECRET") }) },
     });

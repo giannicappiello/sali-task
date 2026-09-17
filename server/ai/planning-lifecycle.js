@@ -27,6 +27,8 @@ export async function planningCall(auth, operation, input = {}, transport = fetc
   const path = `/api/workspace/ai/planning/${operation}`;
   const body = Buffer.from(JSON.stringify({ ...input, actor: `workspace:${auth.profile.id}` }));
   const timestamp = Math.floor(Date.now() / 1000), eventId = randomUUID();
+  const startedAt = performance.now();
+  try {
   const response = await transport(new URL(path, base), { method: "POST", body, signal: AbortSignal.timeout(55000),
     headers: { "Content-Type": "application/json", [HMAC_HEADERS.timestamp]: String(timestamp), [HMAC_HEADERS.eventId]: eventId,
       [HMAC_HEADERS.signature]: signProductionMessage({ method: "POST", path, timestamp, eventId, body, secret }) } });
@@ -35,6 +37,9 @@ export async function planningCall(auth, operation, input = {}, transport = fetc
   if ([400, 405].includes(response.status) && !result.error) throw new Error(`Servizio di nuova pianificazione MES non disponibile (${response.status}). Verificare di avere eseguito fetch, pull e AggiornaMES del nuovo rilascio, quindi aggiornare lo stato. Nessuna modifica al piano eseguita da questa richiesta.`);
   if (!response.ok) throw new Error(result.error || `Pianificazione MES non disponibile (${response.status}).`);
   return result;
+  } finally {
+    console.info("[planning-performance]", JSON.stringify({ operation, elapsedMs: Math.round(performance.now() - startedAt) }));
+  }
 }
 
 export function assertPlanningConfirmation(input, version, verifyOnly = false) {

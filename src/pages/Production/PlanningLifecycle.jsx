@@ -38,9 +38,14 @@ export function PlanningLifecycleForm({ token, release = false, canUseAI = false
     try { await work(); } catch (e) { setError(e.message); } finally { busyRef.current = false; setBusy(false); }
   }
   async function refresh() {
-    const next = await request("planning_state"); setState(next);
-    setKind(current => planningOperation(next.configuration.active, release, current));
-    if (version) setVersion(await request("planning_get", { id: version.id }));
+    const [next] = await Promise.all([
+      request("planning_state").then(next => {
+        setState(next);
+        setKind(current => planningOperation(next.configuration.active, release, current));
+        return next;
+      }),
+      version ? request("planning_get", { id: version.id }).then(setVersion) : Promise.resolve(),
+    ]);
     return next;
   }
   useEffect(() => {

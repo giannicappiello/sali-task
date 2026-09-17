@@ -62,7 +62,7 @@ export function PlanningLifecycleForm({ token, release = false, canUseAI = false
   }, [token]);
   const filtered = (state?.demands || []).filter(row => !["HISTORICAL", "CANCELLED"].includes(row.stage))
     .filter(row => [...Object.values(row), stageLabels[row.stage]].join(" ").toLocaleLowerCase("it-IT").includes(query.toLocaleLowerCase("it-IT")));
-  const input = () => ({ kind, startAt, reason, confirmationDays: Number(horizons.confirmationDays), reviewDays: Number(horizons.reviewDays), releaseDays: Number(horizons.releaseDays),
+  const input = () => ({ kind, startAt, reason: release ? "Rilascio ODL da Workspace" : reason, confirmationDays: Number(horizons.confirmationDays), reviewDays: Number(horizons.reviewDays), releaseDays: Number(horizons.releaseDays),
     orderIds: selected.length ? selected : null, manualChoices: Object.entries(["MIGRATE", "RECALCULATE"].includes(kind) ? choices : {}).filter(([, c]) => c.notBefore).map(([id, c]) => ({ orderId: Number(id), notBefore: c.notBefore, resourceId: c.resourceId ? Number(c.resourceId) : null })) });
   async function simulate() { invalidate(); const next = await request("planning_simulate", { input: input() }); setVersion(next); results.current?.focus(); }
   async function confirm() {
@@ -100,8 +100,8 @@ export function PlanningLifecycleForm({ token, release = false, canUseAI = false
         <label>Operazione<select value={kind} onChange={e => { setKind(e.target.value); invalidate(); }}>{!state?.configuration?.active && !release ? <option value="MIGRATE">Migrazione dal piano attuale</option> : release ? <option value="RELEASE_ODL">Genera ODL</option> : <><option value="RECALCULATE">Rivedi piano e fattibilità</option><option value="CONFIRM_PLAN">Conferma piano / genera OP</option><option value="ROLLBACK">Ripristina ultima revisione, se ancora reversibile</option></>}</select></label>
         <label>Data di riferimento · ora italiana<input type="datetime-local" value={startAt} onChange={e => { setStartAt(e.target.value); invalidate(); }} /></label>
         {[['confirmationDays', 'Conferma OP · giorni'], ['reviewDays', 'Revisione · giorni'], ['releaseDays', 'Rilascio · giorni']].map(([key, name]) => <label key={key}>{name}<input type="number" min="1" max="365" value={horizons[key] ?? ""} onChange={e => { setHorizons({ ...horizons, [key]: e.target.value }); invalidate(); }} /></label>)}
-      </div><label className="plan-reason">Motivazione<textarea maxLength={1000} value={reason} onChange={e => { setReason(e.target.value); invalidate(); }} /></label></fieldset>
-      <button className="plan-primary" disabled={busy || !reason.trim() || !state || (release && !state.configuration.active)} onClick={() => run(simulate)}>{busy ? "Elaborazione…" : "Calcola anteprima senza applicare"}</button>
+      </div>{!release && <label className="plan-reason">Motivazione<textarea maxLength={1000} value={reason} onChange={e => { setReason(e.target.value); invalidate(); }} /></label>}</fieldset>
+      <button className="plan-primary" disabled={busy || (!release && !reason.trim()) || !state || (release && !state.configuration.active)} onClick={() => run(simulate)}>{busy ? "Elaborazione…" : "Calcola anteprima senza applicare"}</button>
     </section>
     {version && <section className="plan-panel" ref={results} tabIndex={-1}><h2>Anteprima e confronto</h2><PlanningVersionSummary version={version} query={query}>
       {version.kind === "RELEASE_ODL" && version.status === "PROPOSED" && !!version.snapshot.blocks?.length && <OdlReleaseChoices key={version.id} version={version} busy={busy} shortageSupported={state?.materialShortageReleaseSupported === true} onRecalculate={(ids, allowMaterialShortage = false, shortageReason) => run(async () => {

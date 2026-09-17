@@ -55,7 +55,8 @@ export function PlanningLifecycleForm({ token, release = false, canUseAI = false
     // Requests are scoped to this mounted authentication session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
-  const filtered = (state?.demands || []).filter(row => [...Object.values(row), stageLabels[row.stage]].join(" ").toLocaleLowerCase("it-IT").includes(query.toLocaleLowerCase("it-IT")));
+  const filtered = (state?.demands || []).filter(row => !["HISTORICAL", "CANCELLED"].includes(row.stage))
+    .filter(row => [...Object.values(row), stageLabels[row.stage]].join(" ").toLocaleLowerCase("it-IT").includes(query.toLocaleLowerCase("it-IT")));
   const input = () => ({ kind, startAt, reason, confirmationDays: Number(horizons.confirmationDays), reviewDays: Number(horizons.reviewDays), releaseDays: Number(horizons.releaseDays),
     orderIds: selected.length ? selected : null, manualChoices: Object.entries(["MIGRATE", "RECALCULATE"].includes(kind) ? choices : {}).filter(([, c]) => c.notBefore).map(([id, c]) => ({ orderId: Number(id), notBefore: c.notBefore, resourceId: c.resourceId ? Number(c.resourceId) : null })) });
   async function simulate() { invalidate(); const next = await request("planning_simulate", { input: input() }); setVersion(next); results.current?.focus(); }

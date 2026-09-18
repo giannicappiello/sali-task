@@ -207,7 +207,8 @@ async function executeExternalAction(auth, pending) {
   if (["MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(pending.tool)) {
     try {
       result = await planningCall(auth, "get", { id: pending.payload_summary.targetId });
-      const pendingCoverage = pending.tool === "MES_ODL_VERIFY" && result.snapshot?.shortages?.length && !result.snapshot.shortagesCoveredAtUtc;
+      const releaseRecovery = ["PREPARING", "RECONCILIATION_REQUIRED"].includes(pending.payload_summary.evidence?.status);
+      const pendingCoverage = pending.tool === "MES_ODL_VERIFY" && !releaseRecovery && result.snapshot?.shortages?.length && !result.snapshot.shortagesCoveredAtUtc;
       failure = result.status === "APPLIED" && !pendingCoverage ? null : [failure, pendingCoverage ? "Fabbisogni specifici ancora da coprire." : `Stato MES ${result.status}: consultare il dettaglio della versione prima di ripetere l'operazione.`].filter(Boolean).join(" ");
       if (!failure) await reconcilePlanning(auth);
     } catch (error) { failure = [failure, `Esito da verificare nello storico del piano: ${error.message}`].filter(Boolean).join(" "); }

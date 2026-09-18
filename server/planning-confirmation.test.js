@@ -5,13 +5,13 @@ import { decideControlledAction } from "./ai/controlled-actions.js";
 import { planningVersionWithAudit } from "./planning-audit.js";
 import { planningConfirmationError, planningOperation } from "../src/pages/Production/planning-confirmation.js";
 
-async function confirm({ apply, status = "PROPOSED", getError = false, mirrorError = false, tool = "MES_PLAN_APPLY", snapshot }) {
+async function confirm({ apply, status = "PROPOSED", getError = false, mirrorError = false, tool = "MES_PLAN_APPLY", snapshot, initialStatus }) {
   const originalFetch = globalThis.fetch;
   const oldUrl = process.env.PROGREMES_URL, oldSecret = process.env.PROGREMES_INTEGRATION_SECRET;
   process.env.PROGREMES_URL = "https://mes.example.test";
   process.env.PROGREMES_INTEGRATION_SECRET = "test-only";
   const pending = { id: "action", tool, action: "manual_planning", status: "confirmed", target: "version",
-    payload_summary: { targetId: "version", expectedHash: "hash", backupVerified: true, evidence: { snapshot: { tasks: ["large archived evidence"] } } } };
+    payload_summary: { targetId: "version", expectedHash: "hash", backupVerified: true, evidence: { status: initialStatus, snapshot: { tasks: ["large archived evidence"] } } } };
   const calls = []; let completed;
   const chain = { select() { return this; }, eq() { return this; }, async maybeSingle() { return { data: pending }; } };
   const auth = { manualPlanning: true, profile: { id: "user" }, scoped: {
@@ -61,6 +61,18 @@ test("an applied release is not successful material coverage while its shortages
   assert.equal(result.controlledAction.state, "failed");
   assert.match(result.controlledAction.error, /ancora da coprire/);
 });
+test("ODL recovery accepts authorized shortages after completion, including a lost response", async () => {
+  for (const initialStatus of ["PREPARING", "RECONCILIATION_REQUIRED"]) {
+    for (const apply of [{ status: 200, body: { applied: true } }, new Error("Timeout")]) {
+      const { result, calls } = await confirm({ tool: "MES_ODL_VERIFY", initialStatus, status: "APPLIED",
+        snapshot: { shortages: [{ code: "MP", quantity: 5 }], shortagesCoveredAtUtc: null }, apply });
+      assert.equal(result.controlledAction.state, "executed");
+      assert.equal(calls.filter(x => x.path.endsWith("/actions/apply")).length, 1);
+      assert.ok(calls.some(x => x.path.endsWith("/planning/state")));
+    }
+  }
+});
+
 test("a transport timeout followed by APPLIED is successful without replay", async () => {
   const { result, calls } = await confirm({ apply: new Error("Timeout"), status: "APPLIED" });
   assert.equal(result.controlledAction.state, "executed");

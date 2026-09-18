@@ -25,6 +25,17 @@ export function PlanningLifecycleForm({ token, release = false, canUseAI = false
   const [horizons, setHorizons] = useState({ confirmationDays: 60, reviewDays: 30, releaseDays: 7 });
   const [backup, setBackup] = useState(false), [ack, setAck] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState("");
   const busyRef = useRef(false), results = useRef(null);
+  const [openedDetail, setOpenedDetail] = useState(0);
+  useEffect(() => {
+    if (!openedDetail || !results.current) return;
+    results.current.focus({ preventScroll: true });
+    results.current.scrollIntoView({ behavior: "auto", block: "start" });
+  }, [openedDetail]);
+  async function openDetail(id) {
+    setVersion(await request("planning_get", { id }));
+    setProposal(null); setAck(false);
+    setOpenedDetail(value => value + 1);
+  }
   const invalidate = () => { setVersion(null); setProposal(null); setAck(false); setBackup(false); };
   async function request(action, data = {}) {
     const response = await fetch("/api/workspace/planning", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ action, ...data }) });
@@ -123,7 +134,7 @@ export function PlanningLifecycleForm({ token, release = false, canUseAI = false
       {version.status === "APPLIED" && !!version.snapshot.shortages?.length && !version.snapshot.shortagesCoveredAtUtc && <div className="plan-notice"><p>ODL generati con fabbisogni specifici. Quando i materiali sono disponibili, prepara la verifica della copertura; non vengono creati nuovi lotti.</p><button disabled={busy} onClick={() => run(async () => { const p = await request("planning_verify", { input: { targetId: version.id, expectedHash: version.expectedHash } }); setProposal(p.controlledAction || p.action || p); })}>Verifica copertura dei fabbisogni</button></div>}
       {["PREPARING", "RECONCILIATION_REQUIRED"].includes(version.status) && <div className="plan-notice"><p>Rilascio non completato. Verificare i lotti esistenti in Mexal e riallinearli prima di continuare. Non ripetere la creazione dei lotti.</p><button disabled={busy} onClick={() => run(async () => { const p = await request("planning_verify", { input: { targetId: version.id, expectedHash: version.expectedHash } }); setProposal(p.controlledAction || p.action || p); })}>Verifica lotti riconciliati, senza generarli</button></div>}
     </section>}
-    {release && <OdlShortages rows={state?.releaseShortages} busy={busy} onOpen={id => run(async () => { setVersion(await request("planning_get", { id })); setProposal(null); setAck(false); results.current?.focus(); })} />}
-    <section className="plan-panel"><h2>{release ? "Storico ODL" : "Storico delle versioni"}</h2><div className="plan-table-wrap"><table><thead><tr><th>Riferimento</th><th>Stato</th><th>Data</th><th>Informazioni</th><th>Dettaglio</th></tr></thead><tbody>{(release ? state?.odls : state?.versions)?.map(row => <tr key={row.id}><td>{release ? `ODL ${row.id} · OP ${row.productionOrderId} · batch ${row.batch} · ${phaseLabels[row.phase] || row.phase}` : row.kind}</td><td>{planningStatuses[row.status] || row.status}</td><td>{planningDate(row.createdAtUtc)}</td><td>{row.error || row.reason || row.actor}</td><td><button disabled={busy} onClick={() => run(async () => { setVersion(await request("planning_get", { id: row.versionId || row.id })); setProposal(null); setAck(false); })}>Apri</button></td></tr>)}</tbody></table></div></section>
+    {release && <OdlShortages rows={state?.releaseShortages} busy={busy} onOpen={id => run(() => openDetail(id))} />}
+    <section className="plan-panel"><h2>{release ? "Storico ODL" : "Storico delle versioni"}</h2><div className="plan-table-wrap"><table><thead><tr><th>Riferimento</th><th>Stato</th><th>Data</th><th>Informazioni</th><th>Dettaglio</th></tr></thead><tbody>{(release ? state?.odls : state?.versions)?.map(row => <tr key={row.id}><td>{release ? `ODL ${row.id} · OP ${row.productionOrderId} · batch ${row.batch} · ${phaseLabels[row.phase] || row.phase}` : row.kind}</td><td>{planningStatuses[row.status] || row.status}</td><td>{planningDate(row.createdAtUtc)}</td><td>{row.error || row.reason || row.actor}</td><td><button disabled={busy} onClick={() => run(() => openDetail(row.versionId || row.id))}>Apri</button></td></tr>)}</tbody></table></div></section>
   </div>;
 }

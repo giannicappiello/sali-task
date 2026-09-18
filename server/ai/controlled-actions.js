@@ -206,14 +206,20 @@ async function executeExternalAction(auth, pending) {
         [HMAC_HEADERS.signature]: signProductionMessage({ method: "POST", path, timestamp, eventId, body: payload, secret: requiredEnvironment("PROGREMES_INTEGRATION_SECRET") }) },
     });
     result = await response.json().catch(() => ({}));
-    if (!response.ok || result?.applied !== true) failure = result?.error || result?.code || `ProgreMES ha risposto con stato ${response.status}.`;
+    const planningReadback = ["MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(pending.tool) && typeof result?.status === "string";
+    if (!response.ok || (result?.applied !== true && !planningReadback)) failure = result?.error || result?.code || `ProgreMES ha risposto con stato ${response.status}.`;
   } catch (error) { failure = error?.message || "ProgreMES non raggiungibile."; }
   if (["MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(pending.tool)) {
     try {
       result = await planningCall(auth, "get", { id: pending.payload_summary.targetId });
       const releaseRecovery = ["PREPARING", "RECONCILIATION_REQUIRED"].includes(pending.payload_summary.evidence?.status);
       const pendingCoverage = pending.tool === "MES_ODL_VERIFY" && !releaseRecovery && result.snapshot?.shortages?.length && !result.snapshot.shortagesCoveredAtUtc;
-      failure = result.status === "APPLIED" && !pendingCoverage ? null : [failure, pendingCoverage ? "Fabbisogni specifici ancora da coprire." : `Stato MES ${result.status}: consultare il dettaglio della versione prima di ripetere l'operazione.`].filter(Boolean).join(" ");
+      const released = result.releaseOrders?.filter(row => ["RELEASED", "RELEASED_WITH_SHORTAGE", "IN_PRODUCTION", "COMPLETED"].includes(row.status)) || [];
+      const unresolved = result.releaseOrders?.filter(row => !released.includes(row)) || [];
+      const releaseMessage = releaseRecovery && unresolved.length
+        ? `${released.length} ODL rilasciati; ${unresolved.length} ancora da riconciliare. Gli ODL rilasciati restano validi. ${unresolved.slice(0, 5).map(row => `ODL ${row.odlId} / OP ${row.orderId}: ${row.error || row.status}`).join(" ")}${unresolved.length > 5 ? " Vedi gli altri nel dettaglio della versione." : ""}`
+        : `Stato MES ${result.status}: consultare il dettaglio della versione prima di ripetere l'operazione.`;
+      failure = result.status === "APPLIED" && !pendingCoverage ? null : [failure, pendingCoverage ? "Fabbisogni specifici ancora da coprire." : releaseMessage].filter(Boolean).join(" ");
       if (!failure) await reconcilePlanning(auth);
     } catch (error) { failure = [failure, `Esito da verificare nello storico del piano: ${error.message}`].filter(Boolean).join(" "); }
   }

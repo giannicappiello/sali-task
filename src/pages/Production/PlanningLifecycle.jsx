@@ -118,6 +118,13 @@ export function PlanningLifecycleForm({ token, release = false, canUseAI = false
     {release && <nav className="plan-actions"><Link to="/produzione/progremes.Planning?workspaceMesWindow=1">Apri Planning · Genera ODL</Link></nav>}
     {release && state && !state.graphicalReleaseSupported && <p className="plan-notice">Aggiorna MES per usare il nuovo rilascio direttamente dal Planning.</p>}
     {version && <section className="plan-panel" ref={results} tabIndex={-1}><h2>Anteprima e confronto</h2><PlanningVersionSummary version={version} query={query}>
+      {!!version.releaseOrders?.length && <div className="plan-notice">
+        <h3>Stato attuale degli ODL della versione</h3>
+        <p>{version.releaseOrders.filter(row => ["RELEASED", "RELEASED_WITH_SHORTAGE", "IN_PRODUCTION", "COMPLETED"].includes(row.status)).length} di {version.releaseOrders.length} ODL rilasciati o già in lavorazione. Gli esiti precedenti riportati sotto non annullano questi rilasci.</p>
+        <details><summary>Dettaglio dei singoli ODL</summary>
+          {version.releaseOrders.map(row => <p key={row.odlId}><strong>ODL {row.odlId} · OP {row.orderId}</strong>: {["RELEASED", "RELEASED_WITH_SHORTAGE"].includes(row.status) ? "Rilasciato" : row.status === "PREPARING" ? "Da riconciliare" : row.status}{row.error ? ` — ${row.error}` : ""}</p>)}
+        </details>
+      </div>}
       {!release && version.kind === "RELEASE_ODL" && version.status === "PROPOSED" && !!version.snapshot.blocks?.length && <OdlReleaseChoices key={version.id} version={version} busy={busy} shortageSupported={state?.materialShortageReleaseSupported === true} onRecalculate={(ids, allowMaterialShortage = false, shortageReason) => run(async () => {
         const previousInput = version.snapshot.input;
         setSelected(ids); setProposal(null); setAck(false);

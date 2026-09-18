@@ -5,7 +5,7 @@ import { decideControlledAction, proposeControlledAction } from "./ai/controlled
 import { planningVersionWithAudit } from "./planning-audit.js";
 import { planningConfirmationError, planningOperation } from "../src/pages/Production/planning-confirmation.js";
 
-async function confirm({ apply, status = "PROPOSED", getError = false, mirrorError = false, tool = "MES_PLAN_APPLY", snapshot, initialStatus }) {
+async function confirm({ apply, status = "PROPOSED", getError = false, mirrorError = false, tool = "MES_PLAN_APPLY", snapshot, initialStatus, releaseOrders }) {
   const originalFetch = globalThis.fetch;
   const oldUrl = process.env.PROGREMES_URL, oldSecret = process.env.PROGREMES_INTEGRATION_SECRET;
   process.env.PROGREMES_URL = "https://mes.example.test";
@@ -28,7 +28,7 @@ async function confirm({ apply, status = "PROPOSED", getError = false, mirrorErr
     }
     if (url.pathname.endsWith("/planning/get")) {
       if (getError) throw new Error("Lettura MES non disponibile");
-      return new Response(JSON.stringify({ id: "version", status, snapshot }));
+      return new Response(JSON.stringify({ id: "version", status, snapshot, releaseOrders }));
     }
     return new Response(JSON.stringify({ configuration: { activeVersionId: "version" } }));
   };
@@ -107,6 +107,18 @@ test("a transport timeout followed by APPLIED is successful without replay", asy
   assert.equal(result.controlledAction.state, "executed");
   assert.equal(planningConfirmationError(result), "");
   assert.equal(calls.filter(x => x.path.endsWith("/actions/apply")).length, 1);
+});
+test("partial recovery preserves released ODLs and reports the actual remaining blockers", async () => {
+  const { result, calls } = await confirm({ tool: "MES_ODL_VERIFY", initialStatus: "RECONCILIATION_REQUIRED",
+    status: "RECONCILIATION_REQUIRED", apply: new Error("Timeout"), releaseOrders: [
+      { odlId: 66, orderId: 5316, status: "RELEASED" },
+      { odlId: 12, orderId: 5281, status: "PREPARING", error: "RDP81: Lotto bulk da riconciliare" },
+    ] });
+  assert.equal(result.controlledAction.state, "failed");
+  assert.match(result.controlledAction.error, /1 ODL rilasciati; 1 ancora da riconciliare/);
+  assert.match(result.controlledAction.error, /ODL 12 \/ OP 5281: RDP81: Lotto bulk/);
+  assert.doesNotMatch(result.controlledAction.error, /ODL 66 \/ OP 5316:/);
+  assert.equal(calls.filter(x => x.path.endsWith("\/actions\/apply")).length, 1);
 });
 test("an applied MES plan with a failed Workspace mirror remains recoverable", async () => {
   const { result } = await confirm({ apply: { status: 200, body: { applied: true } }, status: "APPLIED", mirrorError: true });

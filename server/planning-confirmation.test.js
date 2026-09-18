@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import process from "node:process";
-import { decideControlledAction } from "./ai/controlled-actions.js";
+import { decideControlledAction, proposeControlledAction } from "./ai/controlled-actions.js";
 import { planningVersionWithAudit } from "./planning-audit.js";
 import { planningConfirmationError, planningOperation } from "../src/pages/Production/planning-confirmation.js";
 
@@ -39,6 +39,35 @@ async function confirm({ apply, status = "PROPOSED", getError = false, mirrorErr
     if (oldSecret === undefined) delete process.env.PROGREMES_INTEGRATION_SECRET; else process.env.PROGREMES_INTEGRATION_SECRET = oldSecret;
   }
 }
+
+test("fresh verification gets a new audit while plan application retains its stable key", async () => {
+  const originalFetch = globalThis.fetch;
+  const oldUrl = process.env.PROGREMES_URL, oldSecret = process.env.PROGREMES_INTEGRATION_SECRET;
+  process.env.PROGREMES_URL = "https://mes.example.test";
+  process.env.PROGREMES_INTEGRATION_SECRET = "test-only";
+  const keys = [];
+  const version = { id: "version", expectedHash: "hash", kind: "RELEASE_ODL", status: "RECONCILIATION_REQUIRED", snapshot: {} };
+  const auth = { manualPlanning: true, profile: { id: "user" }, scoped: { rpc: async (name, args) => {
+    if (name === "company_mes_ai_can_write") return { data: true };
+    keys.push(args.p_idempotency_key);
+    return { data: { id: args.p_idempotency_key, status: "proposed" } };
+  } } };
+  globalThis.fetch = async () => new Response(JSON.stringify(version));
+  try {
+    const input = { targetId: "version", expectedHash: "hash" };
+    await proposeControlledAction(auth, "MES_ODL_VERIFY", input);
+    await proposeControlledAction(auth, "MES_ODL_VERIFY", input);
+    assert.notEqual(keys[0], keys[1]);
+    version.status = "PROPOSED"; version.createdAt = new Date().toISOString();
+    await proposeControlledAction(auth, "MES_PLAN_APPLY", input);
+    await proposeControlledAction(auth, "MES_PLAN_APPLY", input);
+    assert.equal(keys[2], keys[3]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (oldUrl === undefined) delete process.env.PROGREMES_URL; else process.env.PROGREMES_URL = oldUrl;
+    if (oldSecret === undefined) delete process.env.PROGREMES_INTEGRATION_SECRET; else process.env.PROGREMES_INTEGRATION_SECRET = oldSecret;
+  }
+});
 
 test("a rejected MES confirmation preserves the original cause in audit and UI", async () => {
   const { result, completed, calls } = await confirm({ apply: { status: 409, body: { error: "Piano, materiali o lavorazioni cambiati: ricalcolare l'anteprima." } } });

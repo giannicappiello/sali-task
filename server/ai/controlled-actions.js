@@ -158,7 +158,11 @@ export async function proposeControlledAction(auth, tool, input, { correlationId
     assertClosureSnapshot(input, current.items);
   }
   const canonical = JSON.stringify(stableValue(input || {}));
-  const idempotencyKey = createHash("sha256").update(`${auth.profile.id}:${tool}:${canonical}`).digest("hex");
+  // Verification may be requested again after a failed/partial reconciliation.
+  // Keep each confirmation idempotent, without reusing an immutable failed audit.
+  // Plan application and actions that create lots retain their stable key.
+  const verificationAttempt = tool === "MES_ODL_VERIFY" ? `:${randomUUID()}` : "";
+  const idempotencyKey = createHash("sha256").update(`${auth.profile.id}:${tool}:${canonical}${verificationAttempt}`).digest("hex");
   const { data, error } = await auth.scoped.rpc(auth.manualPlanning ? "propose_workspace_manual_planning_action" : "propose_workspace_ai_action", {
     p_tool: tool, p_payload: input, p_request_id: randomUUID(), p_correlation_id: correlationId, p_idempotency_key: idempotencyKey,
   });
@@ -195,8 +199,8 @@ async function executeExternalAction(auth, pending) {
     const response = await fetch(new URL(path, requiredEnvironment("PROGREMES_URL")), {
       // Full-plan migration writes hundreds of phases. Leave room in the 300s
       // route budget for validation and authoritative readback after this call.
-      method: "POST", signal: AbortSignal.timeout(pending.tool === "MES_PLAN_APPLY" ? 120000
-        : ["MES_PRIORITY_REVISE", "MES_ODL_VERIFY"].includes(pending.tool) ? 55000
+      method: "POST", signal: AbortSignal.timeout(["MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(pending.tool) ? 120000
+        : pending.tool === "MES_PRIORITY_REVISE" ? 55000
           : Number(process.env.PROGREMES_API_TIMEOUT_MS || 15000)), body: payload,
       headers: { "Content-Type": "application/json", [HMAC_HEADERS.timestamp]: String(timestamp), [HMAC_HEADERS.eventId]: eventId,
         [HMAC_HEADERS.signature]: signProductionMessage({ method: "POST", path, timestamp, eventId, body: payload, secret: requiredEnvironment("PROGREMES_INTEGRATION_SECRET") }) },

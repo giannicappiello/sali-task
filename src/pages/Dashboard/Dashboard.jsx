@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   CalendarDays,
@@ -21,6 +20,8 @@ import InfoTooltip from "../../components/InfoTooltip";
 import useProductionCalendar from './useProductionCalendar';
 import { activityOnDay, activityInMonth } from './productionCalendar';
 import { loadCrmCustomerDirectory, workspaceCustomerName } from "../../modules/crm/crmWorkspaceCustomers";
+
+import "./dashboard-planning.css";
 
 const CLOSED_STATES = ["evaso", "evasa", "completato", "completata", "chiuso", "chiusa"];
 const emptyPhaseForm = { titolo: "", descrizione: "", note: "", progetto_id: "", deadline: "", reparto_ids: [], prodotti: [], stato: "da_evadere" };
@@ -101,143 +102,7 @@ function DashboardColorLegend() {
   );
 }
 
-function buildDashboardMonthDays(monthDate, activities, selectedDate) {
-  const year = monthDate.getFullYear();
-  const month = monthDate.getMonth();
-  const firstDay = new Date(year, month, 1);
-  const startOffset = (firstDay.getDay() + 6) % 7;
-  const start = new Date(year, month, 1 - startOffset);
-
-  return Array.from({ length: 42 }).map((_, index) => {
-    const day = new Date(start);
-    day.setDate(start.getDate() + index);
-    const dateKey = formatDateForQuery(day);
-    const dayItems = activities.filter((item) => activityOnDay(item, dateKey));
-    const dayTasks = dayItems.filter((item) => item.tipo === "task");
-    const dayReminders = dayItems.filter((item) => item.tipo === "reminder");
-    const plannedTasks = dayTasks.filter((item) => !isTaskDone(item) && !isOverdue(item)).length;
-    const overdueTasks = dayTasks.filter(isOverdue).length;
-    const plannedReminders = dayReminders.filter((item) => !isReminderDone(item) && !isOverdue(item)).length;
-    const overdueReminders = dayReminders.filter(isOverdue).length;
-    const doneItems = dayItems.filter((item) => item.tipo === "task" ? isTaskDone(item) : isReminderDone(item)).length;
-    const taskDepartments = Array.from(
-      new Set(
-        dayTasks
-          .filter((item) => !isTaskDone(item) && !isOverdue(item))
-          .map((item) => item.reparti?.nome || "Task")
-          .filter(Boolean)
-      )
-    );
-    const indicators = [
-      ...(dayItems.some(item => item.tipo === 'production') ? [{ label: `MES ${dayItems.filter(item => item.tipo === 'production').length}`, tone: 'planned' }] : []),
-      ...taskDepartments.slice(0, 2).map((name) => ({ label: name, tone: "planned" })),
-      ...(plannedReminders > 0 ? [{ label: `Reminder ${plannedReminders}`, tone: "planned" }] : []),
-      ...(overdueTasks + overdueReminders > 0 ? [{ label: `Scadute ${overdueTasks + overdueReminders}`, tone: "danger" }] : []),
-      ...(doneItems > 0 ? [{ label: `Completate ${doneItems}`, tone: "done" }] : []),
-    ].slice(0, 4);
-
-    return {
-      date: day,
-      dateKey,
-      inMonth: day.getMonth() === month,
-      isToday: dateKey === todayIso(),
-      isSelected: dateKey === selectedDate,
-      planned: plannedTasks + plannedReminders + dayItems.filter(item => item.tipo === 'production').length,
-      overdue: overdueTasks + overdueReminders,
-      done: doneItems,
-      total: dayItems.length,
-      indicators,
-    };
-  });
-}
-
-function SixMonthDashboardOverview({ currentMonth, activities, selectedDate, onSelectDate, onMove }) {
-  const months = Array.from({ length: 4 }).map((_, index) => {
-    const date = new Date(currentMonth);
-    date.setMonth(currentMonth.getMonth() + index);
-    return date;
-  });
-
-  return (
-    <div className="panel six-month-overview" style={{ marginBottom: "16px" }}>
-      <div className="panel-header" style={{ alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
-        <button type="button" className="secondary-action" onClick={() => onMove(-4)}>
-          <ChevronLeft size={18} />
-        </button>
-        <div style={{ textAlign: "center" }}>
-          <h3>Panoramica 4 mesi</h3>
-          <p>Vista rapida delle attività dei prossimi quattro mesi.</p>
-        </div>
-        <button type="button" className="secondary-action" onClick={() => onMove(4)}>
-          <ChevronRight size={18} />
-        </button>
-        <DashboardColorLegend />
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(220px, 1fr))", gap: "12px", overflowX: "auto" }}>
-        {months.map((month) => {
-          const days = buildDashboardMonthDays(month, activities, selectedDate);
-          return (
-            <div key={`${month.getFullYear()}-${month.getMonth()}`} className="six-month-card" style={{ minWidth: "150px" }}>
-              <strong style={{ display: "block", marginBottom: "8px", textTransform: "capitalize" }}>{formatMonth(month)}</strong>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "4px", fontSize: "11px", color: "#64748b", marginBottom: "5px" }}>
-                <span>L</span><span>M</span><span>M</span><span>G</span><span>V</span><span>S</span><span>D</span>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(34px, 1fr))", gap: "7px" }}>
-                {days.map((day) => (
-                  <button
-                    key={day.dateKey}
-                    type="button"
-                    onClick={() => onSelectDate(day.dateKey, month)}
-                    title={`${day.dateKey} · ${day.total} attività`}
-                    className={`mini-calendar-day ${day.inMonth ? "" : "muted"} ${day.isToday ? "today" : ""} ${day.isSelected ? "selected" : ""}`}
-                    style={{
-                      minHeight: "70px",
-                      borderRadius: "8px",
-                      border: day.isSelected ? "1px solid #2563eb" : "1px solid #e5e7eb",
-                      background: day.overdue > 0 ? "#fee2e2" : day.done > 0 ? "#dcfce7" : day.planned > 0 ? "#e0f2fe" : "#fff",
-                      color: day.inMonth ? "#0f172a" : "#94a3b8",
-                      fontWeight: day.total > 0 ? 800 : 500,
-                      cursor: "pointer",
-                    }}
-                  >
-                    <span style={{ display: "block", marginBottom: "4px" }}>{day.date.getDate()}</span>
-                    {day.indicators.length > 0 && (
-                      <span style={{ display: "grid", gap: "3px", width: "100%" }}>
-                        {day.indicators.map((indicator, indicatorIndex) => (
-                          <small
-                            key={`${day.dateKey}-${indicator.label}-${indicatorIndex}`}
-                            style={{
-                              display: "block",
-                              width: "100%",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                              borderRadius: "999px",
-                              padding: "2px 5px",
-                              fontSize: "9px",
-                              lineHeight: "1.1",
-                              background: indicator.tone === "danger" ? "#fee2e2" : indicator.tone === "done" ? "#dcfce7" : "#e0f2fe",
-                              color: indicator.tone === "danger" ? "#b91c1c" : indicator.tone === "done" ? "#15803d" : "#1d4ed8",
-                            }}
-                          >
-                            {indicator.label}
-                          </small>
-                        ))}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function Dashboard() {
-  const navigate = useNavigate();
   const { profile, userDepartmentIds = [], isAdmin, dataScope, canViewScopedData } = useAuth();
   const adminMode = Boolean(isAdmin?.() || dataScope?.mode === "tutti");
   const [tasks, setTasks] = useState([]);
@@ -254,6 +119,8 @@ function Dashboard() {
   const [currentMonth, setCurrentMonth] = useState(() => new Date());
   const production = useProductionCalendar(profile?.id, currentMonth);
   const [selectedDate, setSelectedDate] = useState(todayIso());
+  const [dayPopup, setDayPopup] = useState(null);
+  const [activityPopup, setActivityPopup] = useState(null);
   const [activityFilter, setActivityFilter] = useState(null);
   const [query, setQuery] = useState("");
   const [messagesCount, setMessagesCount] = useState(0);
@@ -459,7 +326,7 @@ function Dashboard() {
 
   const sidePanelTitle = activityFilter
     ? {
-        production: 'Lavorazioni MES nel mese',
+        production: 'Lavorazioni nel mese',
         plannedTasks: "Task/fasi pianificate nel mese",
         overdueTasks: "Task/fasi scadute nel mese",
         plannedReminders: "Reminder pianificati nel mese",
@@ -517,15 +384,22 @@ function Dashboard() {
     setReminderModalOpen(true);
   }
 
-  function openReminderEdit(item) {
-    if (!item?.id) return;
-    navigate(`/reminders?reminder=${item.id}&edit=1`);
-  }
-
   function openActivity(item) {
-    if (item.tipo === "reminder") openReminderEdit(item);
-    else openPhaseEdit(item);
+    if (item.panelUrl) { window.open(item.panelUrl, '_blank', 'noopener,noreferrer'); return; }
+    setDayPopup(null); setActivityPopup(item);
   }
+  function openDay(day) { setSelectedDate(day); setActivityFilter(null); setDayPopup(day); }
+  function moveWeek(offset) {
+    const date = new Date(selectedDate + 'T12:00:00'); date.setDate(date.getDate() + offset * 7);
+    setSelectedDate(formatDateForQuery(date)); setCurrentMonth(new Date(date.getFullYear(), date.getMonth(), 1)); setActivityFilter(null);
+  }
+  const weekStart = new Date(selectedDate + 'T12:00:00');
+  weekStart.setDate(weekStart.getDate() - (weekStart.getDay() + 6) % 7);
+  const weekDays = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(weekStart); date.setDate(date.getDate() + index);
+    const key = formatDateForQuery(date);
+    return { date, key, items: filteredActivities.filter(item => activityOnDay(item, key)) };
+  });
 
   function togglePhaseDepartment(departmentId) {
     setPhaseForm((current) => {
@@ -640,7 +514,7 @@ function Dashboard() {
       <div className="page-title-row">
         <div>
           <h1>Le mie attività</h1>
-          <p>Task, reminder e lavorazioni MES del mio reparto.</p>
+          <p>Task, reminder, preparazione e confezionamento.</p>
         </div>
         <div className="dashboard-quick-actions">
           <button className="primary-action" onClick={openNewPhase}><Plus size={18} /> Nuova task/fase</button>
@@ -680,23 +554,42 @@ function Dashboard() {
         </div>
       </div>
 
-      <SixMonthDashboardOverview
-        currentMonth={currentMonth}
-        activities={filteredActivities}
-        selectedDate={selectedDate}
-        onSelectDate={(dateKey, monthDate) => {
-          setSelectedDate(dateKey);
-          setCurrentMonth(new Date(monthDate));
-          setActivityFilter(null);
-        }}
-        onMove={(months) => {
-          const next = new Date(currentMonth);
-          next.setMonth(next.getMonth() + months);
-          setCurrentMonth(next);
-        }}
-      />
+      <div className="calendar-layout-grid dashboard-planning-top">
+        <section className="panel dashboard-week-panel">
+          <div className="panel-header"><button className="secondary-action" aria-label="Settimana precedente" onClick={() => moveWeek(-1)}><ChevronLeft size={18} /></button><div><h3>Planning settimanale</h3><p>{formatDateHuman(weekDays[0].key)} – {formatDateHuman(weekDays[6].key)}</p></div><button className="secondary-action" aria-label="Settimana successiva" onClick={() => moveWeek(1)}><ChevronRight size={18} /></button></div>
+          <div className="dashboard-week-scroll"><div className="dashboard-week-days">{weekDays.map(day => <section key={day.key} className={day.key === selectedDate ? 'selected' : ''}>
+            <button className="dashboard-week-date" onClick={() => openDay(day.key)}>{day.date.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' })}<small>{day.items.length} attività</small></button>
+            {day.items.map(item => <button key={item.id} className="calendar-task-card" onClick={() => openActivity(item)}><small>{item.tipo === 'production' ? item.reparto : item.tipo === 'reminder' ? 'Reminder' : 'Task / fase'}</small><strong>{item.titolo}</strong><span>{item.tipo === 'production' ? item.resource : statusLabel(item)}</span></button>)}
+          </section>)}</div></div>
+        </section>
 
-      <div className="calendar-layout-grid">
+        <div className="panel calendar-side-panel">
+          <div className="panel-header">
+            <div>
+              <h3>{sidePanelTitle}</h3>
+              <p>{activityFilter ? `${selectedItems.length} attività nel mese` : `${selectedItems.length} attività nel giorno`}</p>
+            </div>
+          </div>
+
+          {selectedItems.length === 0 ? (
+            <div className="calendar-empty-day"><CalendarDays size={34} /><h4>Nessuna attività</h4><p>Non ci sono attività per questo filtro.</p></div>
+          ) : activityFilter === 'production' ? (
+            <div className="dashboard-activity-list"><ProductionGroup onOpen={openActivity} items={selectedItems} /></div>
+          ) : activityFilter ? (
+            <div className="dashboard-activity-list"><ActivityGroup title={sidePanelTitle} danger={activityFilter.includes("overdue")} items={selectedItems} onOpen={openActivity} /></div>
+          ) : (
+            <div className="dashboard-activity-list">
+              <ProductionGroup onOpen={openActivity} items={selectedItems.filter(item => item.tipo === 'production')} />
+              <ActivityGroup title="Task/fasi pianificate" items={selectedItems.filter((item) => item.tipo === "task" && !isTaskDone(item) && !isOverdue(item))} onOpen={openActivity} />
+              <ActivityGroup title="Task/fasi scadute" danger items={selectedItems.filter((item) => item.tipo === "task" && isOverdue(item))} onOpen={openActivity} />
+              <ActivityGroup title="Reminder pianificati" items={selectedItems.filter((item) => item.tipo === "reminder" && !isReminderDone(item) && !isOverdue(item))} onOpen={openActivity} />
+              <ActivityGroup title="Reminder scaduti" danger items={selectedItems.filter((item) => item.tipo === "reminder" && isOverdue(item))} onOpen={openActivity} />
+              <ActivityGroup title="Completate / evasi" done items={selectedItems.filter((item) => item.tipo === "task" ? isTaskDone(item) : item.tipo === 'reminder' && isReminderDone(item))} onOpen={openActivity} />
+            </div>
+          )}
+        </div>
+      </div>
+
         <div className="panel calendar-main-panel">
           <div className="calendar-main-header">
             <button type="button" onClick={() => changeMonth(-1)}><ChevronLeft size={20} /></button>
@@ -718,12 +611,12 @@ function Dashboard() {
                     key={day.dateKey}
                     type="button"
                     className={`full-calendar-day ${day.inMonth ? "" : "muted"} ${day.isToday ? "today" : ""} ${day.isSelected ? "selected" : ""} ${day.items.length ? "has-task" : ""} ${day.hasOverdue ? "has-overdue" : ""}`}
-                    onClick={() => { setSelectedDate(day.dateKey); setActivityFilter(null); }}
+                    onClick={() => { openDay(day.dateKey); }}
                   >
                     <span className="day-number">{day.date.getDate()}</span>
                     {day.items.length > 0 && (
                       <div className="dashboard-day-counts">
-                        {day.items.some(item => item.tipo === 'production') && <span className="dashboard-day-line">MES {day.items.filter(item => item.tipo === 'production').length}</span>}
+                        {['PREPARAZIONE', 'CONFEZIONAMENTO'].map(label => { const count = day.items.filter(item => item.tipo === 'production' && item.reparto === label).length; return count > 0 && <span key={label} className="dashboard-day-line">{label} {count}</span>; })}
                         {day.plannedTasks > 0 && <span style={{ borderRadius: "999px", padding: "2px 8px", background: "#e0f2fe", color: "#1d4ed8", fontSize: "12px", fontWeight: 700 }}>Task {day.plannedTasks}</span>}
                         {day.overdueTasks > 0 && <span className="dashboard-day-line danger">Task scad. {day.overdueTasks}</span>}
                         {day.plannedReminders > 0 && <span style={{ borderRadius: "999px", padding: "2px 8px", background: "#e0f2fe", color: "#1d4ed8", fontSize: "12px", fontWeight: 700 }}>Rem. {day.plannedReminders}</span>}
@@ -737,32 +630,6 @@ function Dashboard() {
           )}
         </div>
 
-        <div className="panel calendar-side-panel">
-          <div className="panel-header">
-            <div>
-              <h3>{sidePanelTitle}</h3>
-              <p>{activityFilter ? `${selectedItems.length} attività nel mese` : `${selectedItems.length} attività nel giorno`}</p>
-            </div>
-          </div>
-
-          {selectedItems.length === 0 ? (
-            <div className="calendar-empty-day"><CalendarDays size={34} /><h4>Nessuna attività</h4><p>Non ci sono attività per questo filtro.</p></div>
-          ) : activityFilter === 'production' ? (
-            <div className="dashboard-activity-list"><ProductionGroup items={selectedItems} /></div>
-          ) : activityFilter ? (
-            <div className="dashboard-activity-list"><ActivityGroup title={sidePanelTitle} danger={activityFilter.includes("overdue")} items={selectedItems} onOpen={openActivity} /></div>
-          ) : (
-            <div className="dashboard-activity-list">
-              <ProductionGroup items={selectedItems.filter(item => item.tipo === 'production')} />
-              <ActivityGroup title="Task/fasi pianificate" items={selectedItems.filter((item) => item.tipo === "task" && !isTaskDone(item) && !isOverdue(item))} onOpen={openActivity} />
-              <ActivityGroup title="Task/fasi scadute" danger items={selectedItems.filter((item) => item.tipo === "task" && isOverdue(item))} onOpen={openActivity} />
-              <ActivityGroup title="Reminder pianificati" items={selectedItems.filter((item) => item.tipo === "reminder" && !isReminderDone(item) && !isOverdue(item))} onOpen={openActivity} />
-              <ActivityGroup title="Reminder scaduti" danger items={selectedItems.filter((item) => item.tipo === "reminder" && isOverdue(item))} onOpen={openActivity} />
-              <ActivityGroup title="Completate / evasi" done items={selectedItems.filter((item) => item.tipo === "task" ? isTaskDone(item) : item.tipo === 'reminder' && isReminderDone(item))} onOpen={openActivity} />
-            </div>
-          )}
-        </div>
-      </div>
 
       <div className="panel dashboard-messages-panel">
         <div className="panel-header">
@@ -775,6 +642,16 @@ function Dashboard() {
         </div>
       </div>
 
+      {dayPopup && <PlanningDialog title={formatDateHuman(dayPopup)} onClose={() => setDayPopup(null)}>
+        {filteredActivities.filter(item => activityOnDay(item, dayPopup)).length === 0 && <p>Nessuna attività per questo giorno.</p>}
+        <ProductionGroup onOpen={openActivity} items={filteredActivities.filter(item => item.tipo === 'production' && activityOnDay(item, dayPopup))} />
+        <ActivityGroup title="Task, fasi e reminder" items={filteredActivities.filter(item => item.tipo !== 'production' && activityOnDay(item, dayPopup))} onOpen={openActivity} />
+      </PlanningDialog>}
+      {activityPopup && <PlanningDialog title={activityPopup.titolo} onClose={() => setActivityPopup(null)}>
+        <p><strong>{activityPopup.tipo === 'production' ? activityPopup.reparto : statusLabel(activityPopup)}</strong></p>
+        <p>{activityPopup.descrizione || 'Nessuna descrizione'}</p>
+        {activityPopup.tipo === 'production' ? <><p>{activityPopup.resource}</p><p>{activityPopup.start.replace('T', ' ')} – {activityPopup.end.replace('T', ' ')}</p><p>{activityPopup.stato}</p></> : <><p>Scadenza: {activityPopup.deadline ? formatDateHuman(dateOnly(activityPopup.deadline)) : 'Non impostata'}</p><button className="primary-action" onClick={() => { const item = activityPopup; setActivityPopup(null); if (item.tipo === 'reminder') { setSelectedReminder(item); setReminderForm({ ...emptyReminderForm, ...item, deadline: dateOnly(item.deadline) || '' }); setReminderModalOpen(true); } else openPhaseEdit(item); }}>Apri dettaglio e azioni</button></>}
+      </PlanningDialog>}
       <PhaseChecklistModal
         open={phaseModalOpen}
         phase={selectedPhase}
@@ -817,16 +694,22 @@ function Dashboard() {
   );
 }
 
-function ProductionGroup({ items }) {
+function PlanningDialog({ title, onClose, children }) {
+  const ref = useRef(null);
+  useEffect(() => { ref.current?.showModal(); }, []);
+  return <dialog ref={ref} className="dashboard-planning-dialog" onClose={onClose} onClick={event => { if (event.target === event.currentTarget) onClose(); }}><div className="modal-header"><h2>{title}</h2><button type="button" aria-label="Chiudi" onClick={onClose}><X size={20} /></button></div><div className="dashboard-dialog-content">{children}</div></dialog>;
+}
+
+function ProductionGroup({ items, onOpen }) {
   if (!items.length) return null;
   const time = value => `${value.slice(8, 10)}/${value.slice(5, 7)} ${value.slice(11, 16)}`;
   return <section className="dashboard-activity-group">
-    <h4>Lavorazioni del reparto · MES</h4>
-    {[...items].sort((a, b) => a.start.localeCompare(b.start)).map(item => <div key={item.id} className="calendar-task-card" style={{ background: '#eef4ff', borderColor: '#bfd3ff', display: 'grid', gap: 6 }}>
+    <h4>Preparazione e confezionamento</h4>
+    {[...items].sort((a, b) => a.start.localeCompare(b.start)).map(item => <button type="button" onClick={() => onOpen(item)} key={item.id} className="calendar-task-card" style={{ background: '#eef4ff', borderColor: '#bfd3ff', display: 'grid', gap: 6 }}>
       <strong>{item.titolo}</strong><span>{item.descrizione}</span>
       <small>{item.reparto}{item.resource ? ` · ${item.resource}` : ''}</small><span>{time(item.start)} – {time(item.end)}</span>
-      <small>{item.stato} · {item.forecast ? 'Previsione MES' : 'Pianificazione MES'}</small>
-    </div>)}
+      <small>{item.stato} · {item.forecast ? 'Previsione' : 'Pianificazione'}</small>
+    </button>)}
   </section>;
 }
 

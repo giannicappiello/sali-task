@@ -71,6 +71,7 @@ export function calendarRows(rows, allowed, from, to) {
       articleCode: row.articleCode, articleDescription: row.articleDescription,
       operationType: row.operationType, start: row.start, end: row.end, status: row.status,
       ...(row.resource ? { resource: row.resource } : {}),
+      ...(row.resourceCode ? { resourceCode: row.resourceCode } : {}),
       ...(row.forecast ? { forecast: true } : {}),
     }));
 }

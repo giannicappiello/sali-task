@@ -1,6 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { productionActivities, activityOnDay, activityInMonth, plantTime } from './productionCalendar.js';
+import { productionActivities, activityOnDay, activityInMonth, plantTime, stationPanelUrl } from './productionCalendar.js';
+
+test('collegamenti impianto limitati alle Station configurate, nessun pannello Filling inventato', () => {
+  assert.equal(stationPanelUrl('Production', 'ST7'), 'http://10.64.0.217');
+  assert.equal(stationPanelUrl('Production', 'ST01'), 'http://10.64.0.179:1880/ui');
+  assert.equal(stationPanelUrl('Packaging', 'F02'), '');
+  assert.equal(stationPanelUrl('Production', 'ST999'), '');
+  assert.equal(stationPanelUrl('Production', 'https://external.invalid'), '');
+  const [item] = productionActivities([{ operationType: 'Production', resourceCode: 'ST7', start: '2026-09-17T08:00:00', end: '2026-09-17T16:00:00' }]);
+  assert.equal(item.reparto, 'PREPARAZIONE');
+  assert.equal(item.panelUrl, 'http://10.64.0.217');
+});
 
 test('orari di stabilimento e conversione UTC con ora legale', () => {
   assert.equal(plantTime('2026-09-17T08:00:00'), '2026-09-17T08:00');

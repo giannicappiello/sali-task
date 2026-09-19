@@ -1,4 +1,12 @@
-const labels = { Production: 'Miscelazione · Station', Packaging: 'Confezionamento · Filling', Cartoning: 'Confezionamento · Astucciatura' };
+const labels = { Production: 'PREPARAZIONE', Packaging: 'CONFEZIONAMENTO', Cartoning: 'CONFEZIONAMENTO' };
+
+// Same operational Station destinations configured in the MES planner.
+const stationHosts = { 1: '179:1880/ui', 2: '58:1880/ui', 3: '41:1880/ui', 4: '200:1880/ui', 5: '165:1880/ui', 6: '97:1880/ui', 7: '217', 8: '210:1880/ui', 9: '172:1880/ui', 10: '205:1880/ui' };
+export function stationPanelUrl(operationType, resourceCode) {
+  if (operationType !== 'Production') return '';
+  const match = /^(?:ST|STATION)\s*0*(\d+)$/i.exec(String(resourceCode || '').trim());
+  return match && stationHosts[Number(match[1])] ? `http://10.64.0.${stationHosts[Number(match[1])]}` : '';
+}
 
 // MES serializes local plant times without an offset. Preserve their wall time;
 // convert explicitly zoned timestamps to the plant timezone instead of device time.
@@ -19,6 +27,7 @@ export function productionActivities(rows) {
       descrizione: row.articleDescription, start, end, deadline: end.slice(0, 10),
       stato: row.status, reparto: labels[row.operationType],
       resource: row.resource || '', forecast: row.forecast === true,
+      panelUrl: stationPanelUrl(row.operationType, row.resourceCode || String(row.resource || '').split(' · ')[0]),
     }];
   });
 }

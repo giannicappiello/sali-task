@@ -37,6 +37,7 @@ export function activePlanRows(state, version) {
       operationType, start: task.start, end: task.end,
       status: forecast ? 'Previsione' : statuses[task.status] || String(task.status || 'Pianificata'),
       resource: resource ? [resource.code, resource.description].filter(Boolean).join(' · ') : '',
+      resourceCode: resource?.code || '',
       forecast,
     }];
   });

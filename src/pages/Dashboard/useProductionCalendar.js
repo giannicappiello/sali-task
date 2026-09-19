@@ -4,7 +4,6 @@ import { productionActivities } from './productionCalendar';
 
 export default function useProductionCalendar(profileId, month) {
   const [state, setState] = useState({ items: [], loading: false, error: '', enabled: false });
-  const [revision, setRevision] = useState(0);
   const year = month.getFullYear(), monthIndex = month.getMonth();
   useEffect(() => {
     if (!profileId) return;
@@ -38,6 +37,6 @@ export default function useProductionCalendar(profileId, month) {
     window.addEventListener('focus', refresh);
     document.addEventListener('visibilitychange', refresh);
     return () => { disposed = true; controller?.abort(); clearInterval(timer); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
-  }, [profileId, year, monthIndex, revision]);
-  return { ...state, refresh: () => setRevision(value => value + 1) };
+  }, [profileId, year, monthIndex]);
+  return state;
 }

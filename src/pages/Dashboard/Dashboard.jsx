@@ -650,12 +650,6 @@ function Dashboard() {
       </div>
 
       {production.error && <div role="alert" className="panel" style={{ color: '#b91c1c', padding: 16 }}>{production.error}</div>}
-      {production.loading && <p role="status">Aggiornamento lavorazioni MES…</p>}
-      {(production.enabled || production.error) && <div className="panel" style={{ padding: 16, marginBottom: 16, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        <button type="button" className={activityFilter === 'production' ? 'primary-action' : 'secondary-action'} onClick={() => setActivityFilter('production')}><CalendarDays size={18} />Lavorazioni MES · {monthStats.production}</button>
-        <span>{production.error ? 'Collegamento da verificare' : production.source === 'piano-attivo' ? 'Piano MES attivo · Station e Filling del reparto' : 'Operazioni MES salvate del reparto'}</span>
-        <button type="button" className="secondary-action" onClick={production.refresh} disabled={production.loading}>Aggiorna lavorazioni</button>
-      </div>}
       <div className="calendar-kpi-grid dashboard-activity-kpis">
         <button type="button" className={`calendar-kpi success ${activityFilter === "plannedTasks" ? "active" : ""}`} onClick={() => setActivityFilter("plannedTasks")}>
           <ListChecks size={22} />

@@ -19,9 +19,10 @@ export async function authorizeProductionCalendar(req, admin) {
   if (!token) throw fail('Accedi a Workspace per continuare.', 401);
   const { data, error } = await admin.auth.getUser(token);
   if (error || !data?.user?.id) throw fail('Sessione Workspace non valida.', 401);
-  const profile = await admin.from('utenti').select('id,attivo,reparto_id').eq('auth_user_id', data.user.id).maybeSingle();
+  const profile = await admin.from('utenti').select('id,attivo,reparto_id,ruoli(amministratore_workspace)').eq('auth_user_id', data.user.id).maybeSingle();
   if (profile.error) throw profile.error;
   if (!profile.data || profile.data.attivo === false) throw fail('Utente non abilitato.', 403);
+  if (profile.data.ruoli?.amministratore_workspace === true) return ['Production', 'Packaging', 'Cartoning'];
   const [member, memberships] = await Promise.all([
     admin.from('workspace_hr_members').select('active').eq('user_id', profile.data.id).maybeSingle(),
     admin.from('utenti_reparti').select('reparto_id').eq('utente_id', profile.data.id),

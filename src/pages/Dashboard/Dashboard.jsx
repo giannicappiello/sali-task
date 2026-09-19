@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
@@ -103,7 +104,7 @@ function DashboardColorLegend() {
   );
 }
 
-function Dashboard() {
+function Dashboard({ toolbarTarget = null }) {
   const { profile, userDepartmentIds = [], isAdmin, dataScope, canViewScopedData, hasScreenAccess, hasModuleAccess } = useAuth();
   const adminMode = Boolean(isAdmin?.() || dataScope?.mode === "tutti");
   const [tasks, setTasks] = useState([]);
@@ -510,6 +511,18 @@ function Dashboard() {
     await loadData();
   }
 
+  const planningToolbar = (<div className="v4-toolbar planning-toolbar-clean dashboard-planning-toolbar">
+        <div className="task-search">
+          <Search size={18} />
+          <input
+            placeholder="Cerca task, reminder, cliente, progetto, reparto o prodotto..."
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
+        {hasModuleAccess?.('progremes') && hasScreenAccess?.('progremes.Planning', 'progremes') && <button type="button" className="primary-action" onClick={() => requestProgremesWorkspaceWindow('/produzione/progremes.Planning')}><CalendarDays size={18} />Apri Planning</button>}
+      </div>);
+
   return (
     <div className="calendar-page dashboard-activities-page">
       <div className="page-title-row">
@@ -544,24 +557,14 @@ function Dashboard() {
         </button>
       </div>
 
-      <div className="v4-toolbar planning-toolbar-clean dashboard-planning-toolbar">
-        <div className="task-search">
-          <Search size={18} />
-          <input
-            placeholder="Cerca task, reminder, cliente, progetto, reparto o prodotto..."
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </div>
-        {hasModuleAccess?.('progremes') && hasScreenAccess?.('progremes.Planning', 'progremes') && <button type="button" className="primary-action" onClick={() => requestProgremesWorkspaceWindow('/produzione/progremes.Planning')}><CalendarDays size={18} />Apri Planning</button>}
-      </div>
+      {toolbarTarget ? createPortal(planningToolbar, toolbarTarget) : planningToolbar}
 
       <div className="calendar-layout-grid dashboard-planning-top">
         <section className="panel dashboard-week-panel">
           <div className="panel-header"><button className="secondary-action" aria-label="Settimana precedente" onClick={() => moveWeek(-1)}><ChevronLeft size={18} /></button><div><h3>Planning settimanale</h3><p>{formatDateHuman(weekDays[0].key)} – {formatDateHuman(weekDays[6].key)}</p></div><button className="secondary-action" aria-label="Settimana successiva" onClick={() => moveWeek(1)}><ChevronRight size={18} /></button></div>
           <div className="dashboard-week-scroll"><div className="dashboard-week-days">{weekDays.map(day => <section key={day.key} className={day.key === selectedDate ? 'selected' : ''}>
             <button className="dashboard-week-date" onClick={() => openDay(day.key)}>{day.date.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' })}<small>{day.items.length} attività</small></button>
-            {day.items.map(item => <button key={item.id} className="calendar-task-card" onClick={() => openActivity(item)}><small className={item.tipo === 'production' ? `production-label ${item.reparto === 'Preparazione' ? 'preparation' : 'packaging'}` : undefined}>{item.tipo === 'production' ? item.reparto : item.tipo === 'reminder' ? 'Reminder' : 'Task / fase'}</small><strong>{item.titolo}</strong><span>{item.tipo === 'production' ? item.resource : statusLabel(item)}</span></button>)}
+            {day.items.map(item => <button key={item.id} className="calendar-task-card" onClick={() => openActivity(item)}><small className={item.tipo === 'production' ? `production-label ${item.reparto === 'Preparazione' ? 'preparation' : 'packaging'}` : 'activity-kind task-kind'}>{item.tipo === 'production' ? item.reparto : item.tipo === 'reminder' ? 'Reminder' : 'Task / fase'}</small><strong>{item.titolo}</strong><span>{item.tipo === 'production' ? item.resource : statusLabel(item)}</span></button>)}
           </section>)}</div></div>
         </section>
 
@@ -717,6 +720,7 @@ function ActivityGroup({ title, items, danger = false, done = false, onOpen }) {
           }
           onClick={() => onOpen(item)}
         >
+          <small className="activity-kind task-kind">{item.tipo === "reminder" ? "Reminder" : "Task/fase"}</small>
           <strong>{item.titolo}</strong>
           <span>{item.tipo === "reminder" ? "Reminder personale" : item.v4_progetti?.titolo || "Senza progetto"}</span>
           <small>{statusLabel(item)} · {item.tipo === "task" ? item.reparti?.nome || "Reparto" : "Personale"}</small>

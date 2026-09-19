@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import {
   BellRing,
@@ -54,11 +54,13 @@ function Loader() {
 }
 
 export default function ActivitiesModule() {
+  const [toolbarTarget, setToolbarTarget] = useState(null);
   const { items: visibleItems, defaultItem } = useOrderedModuleScreens("attivita", items);
   const firstVisiblePath = defaultItem?.to || visibleItems[0]?.to || "/home";
 
   return (
     <div className="activities-module">
+      <div className="activities-navigation-row">
       <div className="activities-tabs" aria-label="Menu attività">
         {visibleItems.map((item) => {
           const Icon = item.icon;
@@ -75,11 +77,13 @@ export default function ActivitiesModule() {
           );
         })}
       </div>
+      <div className="activities-toolbar-slot" ref={setToolbarTarget} />
+      </div>
 
       <Suspense fallback={<Loader />}>
         <Routes>
           <Route index element={<Navigate to={firstVisiblePath} replace />} />
-          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="dashboard" element={<Dashboard toolbarTarget={toolbarTarget} />} />
           <Route path="reminders" element={<Agenda />} />
           <Route path="projects" element={<Projects />} />
           <Route path="tasks" element={<Tasks />} />

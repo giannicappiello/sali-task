@@ -3,6 +3,14 @@
   flex-direction: column;
   gap: 20px;
 }
+.activities-navigation-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.activities-navigation-row .activities-tabs { flex: 0 1 auto; }
+.activities-toolbar-slot { flex: 1 1 380px; min-width: 0; }
+.activities-toolbar-slot:empty { display: none; }
+.activities-toolbar-slot .dashboard-planning-toolbar { margin: 0; flex-wrap: nowrap; }
+.activities-toolbar-slot .task-search { min-width: 140px; }
+.activities-toolbar-slot .primary-action { white-space: nowrap; }
+@media(max-width: 600px) { .activities-toolbar-slot { flex-basis: 100%; } .activities-toolbar-slot .dashboard-planning-toolbar { flex-wrap: wrap; } }
 
 .activities-tabs {
   display: flex;

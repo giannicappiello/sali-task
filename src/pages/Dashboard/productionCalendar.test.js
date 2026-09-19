@@ -9,7 +9,7 @@ test('collegamenti impianto limitati alle Station configurate, nessun pannello F
   assert.equal(stationPanelUrl('Production', 'ST999'), '');
   assert.equal(stationPanelUrl('Production', 'https://external.invalid'), '');
   const [item] = productionActivities([{ operationType: 'Production', resourceCode: 'ST7', start: '2026-09-17T08:00:00', end: '2026-09-17T16:00:00' }]);
-  assert.equal(item.reparto, 'PREPARAZIONE');
+  assert.equal(item.reparto, 'Preparazione');
   assert.equal(item.panelUrl, 'http://10.64.0.217');
 });
 

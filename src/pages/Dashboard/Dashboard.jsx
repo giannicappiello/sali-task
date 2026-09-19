@@ -22,6 +22,7 @@ import { activityOnDay, activityInMonth } from './productionCalendar';
 import { loadCrmCustomerDirectory, workspaceCustomerName } from "../../modules/crm/crmWorkspaceCustomers";
 
 import "./dashboard-planning.css";
+import { requestProgremesWorkspaceWindow } from "../ProgreMes/progremesWindow";
 
 const CLOSED_STATES = ["evaso", "evasa", "completato", "completata", "chiuso", "chiusa"];
 const emptyPhaseForm = { titolo: "", descrizione: "", note: "", progetto_id: "", deadline: "", reparto_ids: [], prodotti: [], stato: "da_evadere" };
@@ -103,7 +104,7 @@ function DashboardColorLegend() {
 }
 
 function Dashboard() {
-  const { profile, userDepartmentIds = [], isAdmin, dataScope, canViewScopedData } = useAuth();
+  const { profile, userDepartmentIds = [], isAdmin, dataScope, canViewScopedData, hasScreenAccess, hasModuleAccess } = useAuth();
   const adminMode = Boolean(isAdmin?.() || dataScope?.mode === "tutti");
   const [tasks, setTasks] = useState([]);
   const [reminders, setReminders] = useState([]);
@@ -386,7 +387,7 @@ function Dashboard() {
 
   function openActivity(item) {
     if (item.panelUrl) { window.open(item.panelUrl, '_blank', 'noopener,noreferrer'); return; }
-    setDayPopup(null); setActivityPopup(item);
+    setDayPopup(null); setActivityFilter(null); setActivityPopup(item);
   }
   function openDay(day) { setSelectedDate(day); setActivityFilter(null); setDayPopup(day); }
   function moveWeek(offset) {
@@ -543,7 +544,7 @@ function Dashboard() {
         </button>
       </div>
 
-      <div className="v4-toolbar planning-toolbar-clean">
+      <div className="v4-toolbar planning-toolbar-clean dashboard-planning-toolbar">
         <div className="task-search">
           <Search size={18} />
           <input
@@ -552,6 +553,7 @@ function Dashboard() {
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
+        {hasModuleAccess?.('progremes') && hasScreenAccess?.('progremes.Planning', 'progremes') && <button type="button" className="primary-action" onClick={() => requestProgremesWorkspaceWindow('/produzione/progremes.Planning')}><CalendarDays size={18} />Apri Planning</button>}
       </div>
 
       <div className="calendar-layout-grid dashboard-planning-top">
@@ -559,35 +561,10 @@ function Dashboard() {
           <div className="panel-header"><button className="secondary-action" aria-label="Settimana precedente" onClick={() => moveWeek(-1)}><ChevronLeft size={18} /></button><div><h3>Planning settimanale</h3><p>{formatDateHuman(weekDays[0].key)} – {formatDateHuman(weekDays[6].key)}</p></div><button className="secondary-action" aria-label="Settimana successiva" onClick={() => moveWeek(1)}><ChevronRight size={18} /></button></div>
           <div className="dashboard-week-scroll"><div className="dashboard-week-days">{weekDays.map(day => <section key={day.key} className={day.key === selectedDate ? 'selected' : ''}>
             <button className="dashboard-week-date" onClick={() => openDay(day.key)}>{day.date.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' })}<small>{day.items.length} attività</small></button>
-            {day.items.map(item => <button key={item.id} className="calendar-task-card" onClick={() => openActivity(item)}><small>{item.tipo === 'production' ? item.reparto : item.tipo === 'reminder' ? 'Reminder' : 'Task / fase'}</small><strong>{item.titolo}</strong><span>{item.tipo === 'production' ? item.resource : statusLabel(item)}</span></button>)}
+            {day.items.map(item => <button key={item.id} className="calendar-task-card" onClick={() => openActivity(item)}><small className={item.tipo === 'production' ? `production-label ${item.reparto === 'Preparazione' ? 'preparation' : 'packaging'}` : undefined}>{item.tipo === 'production' ? item.reparto : item.tipo === 'reminder' ? 'Reminder' : 'Task / fase'}</small><strong>{item.titolo}</strong><span>{item.tipo === 'production' ? item.resource : statusLabel(item)}</span></button>)}
           </section>)}</div></div>
         </section>
 
-        <div className="panel calendar-side-panel">
-          <div className="panel-header">
-            <div>
-              <h3>{sidePanelTitle}</h3>
-              <p>{activityFilter ? `${selectedItems.length} attività nel mese` : `${selectedItems.length} attività nel giorno`}</p>
-            </div>
-          </div>
-
-          {selectedItems.length === 0 ? (
-            <div className="calendar-empty-day"><CalendarDays size={34} /><h4>Nessuna attività</h4><p>Non ci sono attività per questo filtro.</p></div>
-          ) : activityFilter === 'production' ? (
-            <div className="dashboard-activity-list"><ProductionGroup onOpen={openActivity} items={selectedItems} /></div>
-          ) : activityFilter ? (
-            <div className="dashboard-activity-list"><ActivityGroup title={sidePanelTitle} danger={activityFilter.includes("overdue")} items={selectedItems} onOpen={openActivity} /></div>
-          ) : (
-            <div className="dashboard-activity-list">
-              <ProductionGroup onOpen={openActivity} items={selectedItems.filter(item => item.tipo === 'production')} />
-              <ActivityGroup title="Task/fasi pianificate" items={selectedItems.filter((item) => item.tipo === "task" && !isTaskDone(item) && !isOverdue(item))} onOpen={openActivity} />
-              <ActivityGroup title="Task/fasi scadute" danger items={selectedItems.filter((item) => item.tipo === "task" && isOverdue(item))} onOpen={openActivity} />
-              <ActivityGroup title="Reminder pianificati" items={selectedItems.filter((item) => item.tipo === "reminder" && !isReminderDone(item) && !isOverdue(item))} onOpen={openActivity} />
-              <ActivityGroup title="Reminder scaduti" danger items={selectedItems.filter((item) => item.tipo === "reminder" && isOverdue(item))} onOpen={openActivity} />
-              <ActivityGroup title="Completate / evasi" done items={selectedItems.filter((item) => item.tipo === "task" ? isTaskDone(item) : item.tipo === 'reminder' && isReminderDone(item))} onOpen={openActivity} />
-            </div>
-          )}
-        </div>
       </div>
 
         <div className="panel calendar-main-panel">
@@ -616,7 +593,7 @@ function Dashboard() {
                     <span className="day-number">{day.date.getDate()}</span>
                     {day.items.length > 0 && (
                       <div className="dashboard-day-counts">
-                        {['PREPARAZIONE', 'CONFEZIONAMENTO'].map(label => { const count = day.items.filter(item => item.tipo === 'production' && item.reparto === label).length; return count > 0 && <span key={label} className="dashboard-day-line">{label} {count}</span>; })}
+                        {['Preparazione', 'Confezionamento'].map(label => { const count = day.items.filter(item => item.tipo === 'production' && item.reparto === label).length; return count > 0 && <span key={label} className={`dashboard-day-line production-label ${label === 'Preparazione' ? 'preparation' : 'packaging'}`}>{label} {count}</span>; })}
                         {day.plannedTasks > 0 && <span style={{ borderRadius: "999px", padding: "2px 8px", background: "#e0f2fe", color: "#1d4ed8", fontSize: "12px", fontWeight: 700 }}>Task {day.plannedTasks}</span>}
                         {day.overdueTasks > 0 && <span className="dashboard-day-line danger">Task scad. {day.overdueTasks}</span>}
                         {day.plannedReminders > 0 && <span style={{ borderRadius: "999px", padding: "2px 8px", background: "#e0f2fe", color: "#1d4ed8", fontSize: "12px", fontWeight: 700 }}>Rem. {day.plannedReminders}</span>}
@@ -642,13 +619,17 @@ function Dashboard() {
         </div>
       </div>
 
+      {activityFilter && <PlanningDialog title={sidePanelTitle} onClose={() => setActivityFilter(null)}>
+        {selectedItems.length === 0 && <p>Nessuna attività per questo filtro.</p>}
+        <ActivityGroup title={sidePanelTitle} danger={activityFilter.includes('overdue')} items={selectedItems} onOpen={openActivity} />
+      </PlanningDialog>}
       {dayPopup && <PlanningDialog title={formatDateHuman(dayPopup)} onClose={() => setDayPopup(null)}>
         {filteredActivities.filter(item => activityOnDay(item, dayPopup)).length === 0 && <p>Nessuna attività per questo giorno.</p>}
         <ProductionGroup onOpen={openActivity} items={filteredActivities.filter(item => item.tipo === 'production' && activityOnDay(item, dayPopup))} />
         <ActivityGroup title="Task, fasi e reminder" items={filteredActivities.filter(item => item.tipo !== 'production' && activityOnDay(item, dayPopup))} onOpen={openActivity} />
       </PlanningDialog>}
       {activityPopup && <PlanningDialog title={activityPopup.titolo} onClose={() => setActivityPopup(null)}>
-        <p><strong>{activityPopup.tipo === 'production' ? activityPopup.reparto : statusLabel(activityPopup)}</strong></p>
+        <p><strong className={activityPopup.tipo === 'production' ? `production-label ${activityPopup.reparto === 'Preparazione' ? 'preparation' : 'packaging'}` : undefined}>{activityPopup.tipo === 'production' ? activityPopup.reparto : statusLabel(activityPopup)}</strong></p>
         <p>{activityPopup.descrizione || 'Nessuna descrizione'}</p>
         {activityPopup.tipo === 'production' ? <><p>{activityPopup.resource}</p><p>{activityPopup.start.replace('T', ' ')} – {activityPopup.end.replace('T', ' ')}</p><p>{activityPopup.stato}</p></> : <><p>Scadenza: {activityPopup.deadline ? formatDateHuman(dateOnly(activityPopup.deadline)) : 'Non impostata'}</p><button className="primary-action" onClick={() => { const item = activityPopup; setActivityPopup(null); if (item.tipo === 'reminder') { setSelectedReminder(item); setReminderForm({ ...emptyReminderForm, ...item, deadline: dateOnly(item.deadline) || '' }); setReminderModalOpen(true); } else openPhaseEdit(item); }}>Apri dettaglio e azioni</button></>}
       </PlanningDialog>}
@@ -707,7 +688,7 @@ function ProductionGroup({ items, onOpen }) {
     <h4>Preparazione e confezionamento</h4>
     {[...items].sort((a, b) => a.start.localeCompare(b.start)).map(item => <button type="button" onClick={() => onOpen(item)} key={item.id} className="calendar-task-card" style={{ background: '#eef4ff', borderColor: '#bfd3ff', display: 'grid', gap: 6 }}>
       <strong>{item.titolo}</strong><span>{item.descrizione}</span>
-      <small>{item.reparto}{item.resource ? ` · ${item.resource}` : ''}</small><span>{time(item.start)} – {time(item.end)}</span>
+      <small className={`production-label ${item.reparto === 'Preparazione' ? 'preparation' : 'packaging'}`}>{item.reparto}{item.resource ? ` · ${item.resource}` : ''}</small><span>{time(item.start)} – {time(item.end)}</span>
       <small>{item.stato} · {item.forecast ? 'Previsione' : 'Pianificazione'}</small>
     </button>)}
   </section>;

@@ -16,12 +16,13 @@ export function ProductionDependencies({ dependencies = [] }) {
     <p className="priority-help">Quantità previste dalla distinta confermata. Le scorte di semilavorato non riducono automaticamente quantità e materie prime della ricetta.</p>
   </section>;
 }
-export default function PriorityRevision() {
+export default function PriorityRevision({ compact = false, initialSearch }) {
   const { session } = useAuth();
-  return <PriorityRevisionForm key={session?.access_token} token={session?.access_token} />;
+  return <PriorityRevisionForm key={session?.access_token} token={session?.access_token} compact={compact} initialSearch={initialSearch} />;
 }
-export function PriorityRevisionForm({ token }) {
-  const [params] = useSearchParams();
+export function PriorityRevisionForm({ token, compact = false, initialSearch }) {
+  const [routeParams] = useSearchParams();
+  const params = initialSearch === undefined ? routeParams : new URLSearchParams(initialSearch);
   const [query, setQuery] = useState(params.get("order") || "");
   const [orders, setOrders] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -88,7 +89,7 @@ export function PriorityRevisionForm({ token }) {
     const state = await request("priority_status", { id: revision.id }); setRevision(state);
   }); }
   return <div className="priority-page" data-screen-code="produzione.revisione_priorita" aria-busy={busy}>
-    <section className="priority-intro"><CalendarClock size={26} aria-hidden="true" /><div><h2>Cambia priorità con una revisione coordinata</h2><p>Seleziona la lavorazione, scegli i materiali da recuperare e verifica le conseguenze prima di confermare. Nessun avvio automatico.</p></div><button type="button" className="secondary-action" disabled={busy} onClick={() => run(async () => setHistory((await request("priority_history")).revisions))}>Storico revisioni</button></section>
+    <section className="priority-intro">{!compact && <><CalendarClock size={26} aria-hidden="true" /><div><h2>Cambia priorità con una revisione coordinata</h2><p>Seleziona la lavorazione, scegli i materiali da recuperare e verifica le conseguenze prima di confermare. Nessun avvio automatico.</p></div></>}<button type="button" className="secondary-action" disabled={busy} onClick={() => run(async () => setHistory((await request("priority_history")).revisions))}>Storico revisioni</button></section>
     {error ? <div role="alert" className="priority-error">{error}</div> : null}
     {message ? <p role="status" className="priority-notice">{message}</p> : null}
     <fieldset disabled={busy || Boolean(proposal)} className="priority-section"><legend><span>1</span> Lavorazione da anticipare</legend>

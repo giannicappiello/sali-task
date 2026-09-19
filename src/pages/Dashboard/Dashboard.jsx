@@ -19,7 +19,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import PhaseChecklistModal from "../../components/PhaseChecklistModal";
 import InfoTooltip from "../../components/InfoTooltip";
 import useProductionCalendar from './useProductionCalendar';
-import { activityOnDay } from './productionCalendar';
+import { activityOnDay, activityInMonth } from './productionCalendar';
 import { loadCrmCustomerDirectory, workspaceCustomerName } from "../../modules/crm/crmWorkspaceCustomers";
 
 const CLOSED_STATES = ["evaso", "evasa", "completato", "completata", "chiuso", "chiusa"];
@@ -428,15 +428,11 @@ function Dashboard() {
   const monthItems = useMemo(() => {
     const month = currentMonth.getMonth();
     const year = currentMonth.getFullYear();
-    return activities.filter((item) => {
-      const deadline = dateOnly(item.deadline);
-      if (!deadline) return false;
-      const d = new Date(`${deadline}T00:00:00`);
-      return d.getMonth() === month && d.getFullYear() === year;
-    });
+    return filteredActivities.filter(item => activityInMonth(item, year, month));
   }, [filteredActivities, currentMonth]);
 
   function filterActivities(items, filter) {
+    if (filter === 'production') return items.filter(item => item.tipo === 'production');
     if (filter === "plannedTasks") return items.filter((item) => item.tipo === "task" && !isTaskDone(item) && !isOverdue(item));
     if (filter === "overdueTasks") return items.filter((item) => item.tipo === "task" && isOverdue(item));
     if (filter === "plannedReminders") return items.filter((item) => item.tipo === "reminder" && !isReminderDone(item) && !isOverdue(item));
@@ -454,6 +450,7 @@ function Dashboard() {
     const monthReminders = monthItems.filter((item) => item.tipo === "reminder");
     return {
       plannedTasks: monthTasks.filter((item) => !isTaskDone(item) && !isOverdue(item)).length,
+      production: monthItems.filter(item => item.tipo === 'production').length,
       overdueTasks: monthTasks.filter(isOverdue).length,
       plannedReminders: monthReminders.filter((item) => !isReminderDone(item) && !isOverdue(item)).length,
       overdueReminders: monthReminders.filter(isOverdue).length,
@@ -462,6 +459,7 @@ function Dashboard() {
 
   const sidePanelTitle = activityFilter
     ? {
+        production: 'Lavorazioni MES nel mese',
         plannedTasks: "Task/fasi pianificate nel mese",
         overdueTasks: "Task/fasi scadute nel mese",
         plannedReminders: "Reminder pianificati nel mese",
@@ -653,6 +651,11 @@ function Dashboard() {
 
       {production.error && <div role="alert" className="panel" style={{ color: '#b91c1c', padding: 16 }}>{production.error}</div>}
       {production.loading && <p role="status">Aggiornamento lavorazioni MES…</p>}
+      {(production.enabled || production.error) && <div className="panel" style={{ padding: 16, marginBottom: 16, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button type="button" className={activityFilter === 'production' ? 'primary-action' : 'secondary-action'} onClick={() => setActivityFilter('production')}><CalendarDays size={18} />Lavorazioni MES · {monthStats.production}</button>
+        <span>{production.error ? 'Collegamento da verificare' : production.source === 'piano-attivo' ? 'Piano MES attivo · Station e Filling del reparto' : 'Operazioni MES salvate del reparto'}</span>
+        <button type="button" className="secondary-action" onClick={production.refresh} disabled={production.loading}>Aggiorna lavorazioni</button>
+      </div>}
       <div className="calendar-kpi-grid dashboard-activity-kpis">
         <button type="button" className={`calendar-kpi success ${activityFilter === "plannedTasks" ? "active" : ""}`} onClick={() => setActivityFilter("plannedTasks")}>
           <ListChecks size={22} />
@@ -750,6 +753,8 @@ function Dashboard() {
 
           {selectedItems.length === 0 ? (
             <div className="calendar-empty-day"><CalendarDays size={34} /><h4>Nessuna attività</h4><p>Non ci sono attività per questo filtro.</p></div>
+          ) : activityFilter === 'production' ? (
+            <div className="dashboard-activity-list"><ProductionGroup items={selectedItems} /></div>
           ) : activityFilter ? (
             <div className="dashboard-activity-list"><ActivityGroup title={sidePanelTitle} danger={activityFilter.includes("overdue")} items={selectedItems} onOpen={openActivity} /></div>
           ) : (
@@ -825,8 +830,8 @@ function ProductionGroup({ items }) {
     <h4>Lavorazioni del reparto · MES</h4>
     {[...items].sort((a, b) => a.start.localeCompare(b.start)).map(item => <div key={item.id} className="calendar-task-card" style={{ background: '#eef4ff', borderColor: '#bfd3ff', display: 'grid', gap: 6 }}>
       <strong>{item.titolo}</strong><span>{item.descrizione}</span>
-      <small>{item.reparto}</small><span>{time(item.start)} – {time(item.end)}</span>
-      <small>Stato ordine: {item.stato} · Pianificazione MES</small>
+      <small>{item.reparto}{item.resource ? ` · ${item.resource}` : ''}</small><span>{time(item.start)} – {time(item.end)}</span>
+      <small>{item.stato} · {item.forecast ? 'Previsione MES' : 'Pianificazione MES'}</small>
     </div>)}
   </section>;
 }

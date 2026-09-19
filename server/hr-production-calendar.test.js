@@ -7,6 +7,7 @@ test('reparti esatti, nessuna espansione automatica a tutti i reparti', () => {
   assert.deepEqual(productionDepartments(['Human Resources', 'Direzione']), []);
   assert.deepEqual(productionDepartments(['Miscelazione']), ['Production']);
   assert.deepEqual(productionDepartments(['AddettoConfezionamento']), ['Packaging', 'Cartoning']);
+  assert.deepEqual(productionDepartments(['Produzione']), ['Production', 'Packaging', 'Cartoning']);
 });
 test('visibilità reparto, attraversamento mesi, dati ridotti e annullamenti', () => {
   const rows = calendarRows([row, { ...row, operationType: 'Packaging' }, { ...row, status: 'Annullato' }], ['Production'], '2026-09-01', '2026-09-30');
@@ -39,4 +40,16 @@ test('nessuna chiamata MES per utenti non HR e parametri limitati', async () => 
   const req = { method: 'GET', query: { from: '2026-09-01', to: '2026-09-30' } };
   assert.deepEqual(await productionCalendarRequest(req, { admin: {}, authorize: async () => [] }), { enabled: false, items: [] });
   await assert.rejects(productionCalendarRequest({ ...req, query: { from: '2026-02-30', to: '2026-09-30' } }), { status: 400 });
+});
+
+test('authorization precedes plan retrieval and only department records leave the API', async () => {
+  let calls = 0;
+  const req = { method: 'GET', query: { from: '2026-09-01', to: '2026-09-30' } };
+  const deps = { admin: {}, readPlan: async () => { calls++; return { source: 'piano-attivo', items: [row, { ...row, operationType: 'Packaging' }] }; } };
+  await assert.rejects(productionCalendarRequest(req, { ...deps, authorize: async () => { throw Object.assign(new Error('Denied'), { status: 403 }); } }), { status: 403 });
+  assert.equal(calls, 0);
+  const response = await productionCalendarRequest(req, { ...deps, authorize: async () => ['Production'] });
+  assert.equal(response.items.length, 1);
+  assert.equal(response.source, 'piano-attivo');
+  assert.equal('operatorNames' in response.items[0], false);
 });

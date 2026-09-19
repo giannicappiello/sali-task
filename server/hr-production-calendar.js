@@ -1,11 +1,13 @@
 import { createProgremesReadonlyAdmin } from './progremes-readonly-auth.js';
 import { createProgremesClient } from './progremes-readonly-client.js';
+import { readActiveProductionPlan } from './hr-active-production-plan.js';
 
 const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const fail = (message, status) => Object.assign(new Error(message), { status });
 
 export function productionDepartments(names) {
   const values = new Set(names.map(normalize));
+  if (values.has('produzione') || values.has('addettoproduzione')) return ['Production', 'Packaging', 'Cartoning'];
   return [
     ...(values.has('miscelazione') || values.has('addettomiscelazione') ? ['Production'] : []),
     ...(values.has('confezionamento') || values.has('addettoconfezionamento') ? ['Packaging', 'Cartoning'] : []),
@@ -51,7 +53,7 @@ let cacheUntil = 0;
 function currentProductionPlan() {
   if (!cachedPlan || Date.now() >= cacheUntil) {
     cacheUntil = Date.now() + 30000;
-    cachedPlan = readProductionPlan(createProgremesClient()).catch(error => {
+    cachedPlan = readActiveProductionPlan(undefined, () => readProductionPlan(createProgremesClient())).catch(error => {
       cachedPlan = undefined;
       throw error;
     });
@@ -67,6 +69,8 @@ export function calendarRows(rows, allowed, from, to) {
       productionOrderId: row.productionOrderId, orderNumber: row.orderNumber,
       articleCode: row.articleCode, articleDescription: row.articleDescription,
       operationType: row.operationType, start: row.start, end: row.end, status: row.status,
+      ...(row.resource ? { resource: row.resource } : {}),
+      ...(row.forecast ? { forecast: true } : {}),
     }));
 }
 
@@ -76,9 +80,14 @@ export async function productionCalendarRequest(req, dependencies = {}) {
   const valid = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
   if (!valid(from) || !valid(to) || from > to || Date.parse(to) - Date.parse(from) > 160 * 86400000) throw fail('Periodo del calendario non valido.', 400);
   const allowed = await (dependencies.authorize || authorizeProductionCalendar)(req, dependencies.admin || createProgremesReadonlyAdmin());
-  if (!allowed.length) return { items: [], enabled: false };
-  const rows = dependencies.client ? await readProductionPlan(dependencies.client) : await currentProductionPlan();
-  return { items: calendarRows(rows, allowed, from, to), enabled: true };
+  if (!allowed.length) {
+    console.info('[hr-production-calendar]', { enabled: false, reason: 'no-eligible-hr-department' });
+    return { items: [], enabled: false };
+  }
+  const plan = dependencies.readPlan ? await dependencies.readPlan() : dependencies.client ? { items: await readProductionPlan(dependencies.client), source: 'archivio' } : await currentProductionPlan();
+  const items = calendarRows(plan.items, allowed, from, to);
+  console.info('[hr-production-calendar]', { source: plan.source, allowed, total: plan.items.length, visible: items.length, from, to });
+  return { items, enabled: true, source: plan.source, updatedAt: new Date().toISOString() };
 }
 
 export async function handleHrProductionCalendar(req, res) {

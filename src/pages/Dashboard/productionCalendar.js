@@ -18,8 +18,17 @@ export function productionActivities(rows) {
       tipo: 'production', titolo: `${row.orderNumber} · ${row.articleCode}`,
       descrizione: row.articleDescription, start, end, deadline: end.slice(0, 10),
       stato: row.status, reparto: labels[row.operationType],
+      resource: row.resource || '', forecast: row.forecast === true,
     }];
   });
+}
+
+export function activityInMonth(item, year, month) {
+  const first = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+  const next = new Date(year, month + 1, 1);
+  const after = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-01`;
+  return item.tipo === 'production' ? item.start < `${after}T00:00` && item.end > `${first}T00:00`
+    : String(item.deadline || '').slice(0, 10) >= first && String(item.deadline || '').slice(0, 10) < after;
 }
 
 export function activityOnDay(item, day) {

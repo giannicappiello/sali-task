@@ -3,7 +3,8 @@ import { supabase } from '../../lib/supabaseClient';
 import { productionActivities } from './productionCalendar';
 
 export default function useProductionCalendar(profileId, month) {
-  const [state, setState] = useState({ items: [], loading: false, error: '' });
+  const [state, setState] = useState({ items: [], loading: false, error: '', enabled: false });
+  const [revision, setRevision] = useState(0);
   const year = month.getFullYear(), monthIndex = month.getMonth();
   useEffect(() => {
     if (!profileId) return;
@@ -27,15 +28,16 @@ export default function useProductionCalendar(profileId, month) {
         });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || 'Pianificazione MES non disponibile.');
-        if (!disposed) setState({ items: productionActivities(payload.items || []), loading: false, error: '' });
+        if (!disposed) setState({ items: productionActivities(payload.items || []), loading: false, error: '', enabled: payload.enabled === true, source: payload.source, updatedAt: payload.updatedAt });
       } catch (error) {
-        if (!disposed && error.name !== 'AbortError') setState({ items: [], loading: false, error: error.message });
+        if (!disposed && error.name !== 'AbortError') setState({ items: [], loading: false, error: error.message, enabled: true });
       } finally { running = false; }
     }
     Promise.resolve().then(refresh);
     const timer = setInterval(refresh, 60000);
     window.addEventListener('focus', refresh);
-    return () => { disposed = true; controller?.abort(); clearInterval(timer); window.removeEventListener('focus', refresh); };
-  }, [profileId, year, monthIndex]);
-  return state;
+    document.addEventListener('visibilitychange', refresh);
+    return () => { disposed = true; controller?.abort(); clearInterval(timer); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
+  }, [profileId, year, monthIndex, revision]);
+  return { ...state, refresh: () => setRevision(value => value + 1) };
 }

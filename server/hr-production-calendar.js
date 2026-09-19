@@ -72,6 +72,7 @@ export function calendarRows(rows, allowed, from, to) {
       operationType: row.operationType, start: row.start, end: row.end, status: row.status,
       ...(row.resource ? { resource: row.resource } : {}),
       ...(row.resourceCode ? { resourceCode: row.resourceCode } : {}),
+      customerName: row.customerName || '', rdpReference: row.rdpReference || '', octReference: row.octReference || '',
       ...(row.forecast ? { forecast: true } : {}),
     }));
 }

@@ -1,3 +1,4 @@
+import { matchesActivitySearch } from "./activitySearch";
 import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -241,21 +242,11 @@ function Dashboard({ toolbarTarget = null }) {
       const productName = products.find((product) => product.id === item.prodotto_id)?.nome || "";
       const project = item.v4_progetti || projects.find((candidate) => candidate.id === item.progetto_id);
       const customerName = workspaceCustomerName(customerDirectory, item.crm_customer_key || project?.crm_customer_key);
-      const haystack = [
-        item.titolo,
-        item.descrizione,
-        item.note,
-        item.reparto,
-        projectTitle,
-        customerName,
-        departmentName,
-        productName,
-        item.tipo === "reminder" ? "reminder" : "task fase",
-      ].join(" ").toLowerCase();
-
-      return haystack.includes(text);
+      const linkedProductIds = phaseProducts.filter(link => link.fase_id === item.id).map(link => link.prodotto_id);
+      const linkedProducts = products.filter(product => linkedProductIds.includes(product.id)).flatMap(product => [product.nome, product.codice]);
+      return matchesActivitySearch(item, text, [projectTitle, customerName, departmentName, productName, ...linkedProducts]);
     });
-  }, [activities, query, projects, products, customerDirectory]);
+  }, [activities, query, projects, products, customerDirectory, phaseProducts]);
 
   const calendarDays = useMemo(() => {
     const year = currentMonth.getFullYear();
@@ -516,7 +507,7 @@ function Dashboard({ toolbarTarget = null }) {
         <div className="task-search">
           <Search size={18} />
           <input
-            placeholder="Cerca task, reminder, cliente, progetto, reparto o prodotto..."
+            placeholder="Cerca Station, Filling, RdP, OCT, FP, prodotto, cliente, attività..."
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />

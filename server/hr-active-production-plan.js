@@ -38,6 +38,9 @@ export function activePlanRows(state, version) {
       status: forecast ? 'Previsione' : statuses[task.status] || String(task.status || 'Pianificata'),
       resource: resource ? [resource.code, resource.description].filter(Boolean).join(' · ') : '',
       resourceCode: resource?.code || '',
+      customerName: task.customerName || demand?.customer || '',
+      rdpReference: demand?.number || '',
+      octReference: demand?.octReference || '',
       forecast,
     }];
   });

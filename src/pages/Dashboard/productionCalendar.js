@@ -27,6 +27,8 @@ export function productionActivities(rows) {
       descrizione: row.articleDescription, start, end, deadline: end.slice(0, 10),
       stato: row.status, reparto: labels[row.operationType],
       resource: row.resource || '', forecast: row.forecast === true,
+      resourceCode: row.resourceCode || '', orderNumber: row.orderNumber || '', articleCode: row.articleCode || '',
+      customerName: row.customerName || '', rdpReference: row.rdpReference || '', octReference: row.octReference || '',
       panelUrl: stationPanelUrl(row.operationType, row.resourceCode || String(row.resource || '').split(' · ')[0]),
     }];
   });

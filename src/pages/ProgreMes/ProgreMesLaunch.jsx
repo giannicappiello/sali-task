@@ -11,6 +11,9 @@ export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
   const accessToken = session?.access_token;
   const allowed = hasModuleAccess("progremes");
   const frame = useRef(null);
+  const popupDialog = useRef(null);
+  const [popupPath, setPopupPath] = useState("");
+  useEffect(() => { if (popupPath) popupDialog.current?.showModal(); }, [popupPath]);
   const [retry, setRetry] = useState(0);
   const [connection, setConnection] = useState({ requestKey: "", url: "", error: "" });
   const [frameStatus, setFrameStatus] = useState({ url: "", ready: false, error: "" });
@@ -47,7 +50,9 @@ export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
         return;
       }
       if (event.data.type === "progremes-workspace-navigate") {
-        navigate(progremesWorkspaceDestination(event.data));
+        const destination = progremesWorkspaceDestination(event.data);
+        if (event.data.popup === true) setPopupPath(destination);
+        else navigate(progremesWorkspaceDestination(event.data));
         return;
       }
       window.clearTimeout(timer);
@@ -70,6 +75,10 @@ export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
   if (!screenCode) return <Navigate to="/produzione" replace />;
 
   return <section className="progremes-workspace-frame">
+    {popupPath && <dialog ref={popupDialog} onClose={() => setPopupPath("")} aria-label="Dettaglio Planning" style={{ width: "96vw", maxWidth: "none", height: "94vh", padding: 12, borderRadius: 16 }}>
+      <button type="button" className="primary-action" onClick={() => popupDialog.current?.close()}>← Torna al Planning</button>
+      <iframe src={popupPath} title="Dettaglio Planning" style={{ width: "100%", height: "calc(100% - 48px)", border: 0 }} />
+    </dialog>}
     {syncError && <div className="progremes-frame-status" role="alert">{syncError}</div>}
     {(!ready || error) && <div className="progremes-frame-status" role={error ? "alert" : "status"}>
       <h2>{error ? "Collegamento non disponibile" : "Apertura schermata MES..."}</h2>

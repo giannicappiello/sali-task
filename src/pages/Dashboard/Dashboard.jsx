@@ -385,7 +385,10 @@ function Dashboard({ toolbarTarget = null }) {
   }
 
   function openActivity(item) {
-    if (item.panelUrl) { window.open(item.panelUrl, '_blank', 'noopener,noreferrer'); return; }
+    if (item.panelUrl) {
+      window.open(item.panelUrl, '_blank', 'popup=yes,width=1440,height=960,toolbar=no,menubar=no,location=no,status=no,resizable=yes,scrollbars=yes,noopener,noreferrer');
+      return;
+    }
     setDayPopup(null); setActivityFilter(null); setActivityPopup(item);
   }
   function openDay(day) { setSelectedDate(day); setActivityFilter(null); setDayPopup(day); }

@@ -12,12 +12,13 @@ import { planningConfirmationError, planningOperation } from "./planning-confirm
 const localDate = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Rome", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date()).replace(" ", "T");
 const phaseLabels = { 0: "Miscelazione", 3: "Confezionamento", 7: "Astucciatura" };
 const labels = { MIGRATE: "Attiva nuova pianificazione", RECALCULATE: "Applica revisione del piano", CONFIRM_PLAN: "Conferma piano", RELEASE_ODL: "Genera ODL", ROLLBACK: "Ripristina ultima revisione" };
-export default function PlanningLifecycle({ release = false }) {
+export default function PlanningLifecycle({ release = false, compact = false, initialSearch }) {
   const { session, hasModuleAccess } = useAuth();
-  return <PlanningLifecycleForm key={`${session?.access_token}:${release}`} token={session?.access_token} release={release} canUseAI={hasModuleAccess("assistente_ai")} />;
+  return <PlanningLifecycleForm key={`${session?.access_token}:${release}`} token={session?.access_token} release={release} compact={compact} initialSearch={initialSearch} canUseAI={hasModuleAccess("assistente_ai")} />;
 }
-export function PlanningLifecycleForm({ token, release = false, canUseAI = false }) {
-  const [params] = useSearchParams();
+export function PlanningLifecycleForm({ token, release = false, canUseAI = false, compact = false, initialSearch }) {
+  const [routeParams] = useSearchParams();
+  const params = initialSearch === undefined ? routeParams : new URLSearchParams(initialSearch);
   const [state, setState] = useState(null), [version, setVersion] = useState(null), [proposal, setProposal] = useState(null);
   const [kind, setKind] = useState(release ? "RELEASE_ODL" : "RECALCULATE");
   const [startAt, setStartAt] = useState(localDate), [reason, setReason] = useState("");
@@ -96,7 +97,7 @@ export function PlanningLifecycleForm({ token, release = false, canUseAI = false
   const confirmationLabel = proposal?.tool === "MES_ODL_VERIFY" ? "Verifica ODL e copertura materiali"
     : version?.snapshot?.input?.allowMaterialShortage ? "Genera ODL con carenza e fabbisogni specifici" : labels[version?.kind];
   return <div className="planning-lifecycle" data-screen-code={release ? "produzione.rilascio_odl" : "produzione.versioni_piano"} aria-busy={busy}>
-    <section className="plan-intro"><CalendarClock aria-hidden="true" /><div><h2>{release ? "Storico ODL" : "Pianificare senza perdere lo storico"}</h2><p>{release ? "Consulta gli ODL, le revisioni e i fabbisogni. Per rilasciare o anticipare una lavorazione, apri il Planning e usa Genera ODL." : "Previsione RdP → conferma piano → rilascio ODL. Ogni modifica resta confrontabile con la versione precedente."}</p></div></section>
+    {!compact && <section className="plan-intro"><CalendarClock aria-hidden="true" /><div><h2>{release ? "Storico ODL" : "Pianificare senza perdere lo storico"}</h2><p>{release ? "Consulta gli ODL, le revisioni e i fabbisogni. Per rilasciare o anticipare una lavorazione, apri il Planning e usa Genera ODL." : "Previsione RdP → conferma piano → rilascio ODL. Ogni modifica resta confrontabile con la versione precedente."}</p></div></section>}
     <nav className="plan-actions" aria-label="Pianificazione"><Link to={release ? "/versioni-piano-produzione" : "/rilascio-odl"}>{release ? "Versioni e revisioni del piano" : "Storico ODL"}</Link><Link to="/produzione/rdp-workbench">Workbench RdP</Link><Link to="/revisione-priorita-produzione">Revisione priorità</Link><button disabled={busy} onClick={() => run(refresh)}><RefreshCw size={16} />Aggiorna stato</button><button disabled={busy || !state?.configuration?.active} onClick={() => run(async () => { await request("planning_reconcile"); await refresh(); })}>Allinea stato Workspace</button>{canUseAI && !release && <button disabled={busy} onClick={() => window.dispatchEvent(new CustomEvent("workspace:priority-ai", { detail: { prompt: `Aiutami nella ${release ? "preparazione del rilascio ODL" : "revisione del piano"}. Leggi MES_PLAN_STATE e prepara una simulazione con MES_PLAN_SIMULATE. Spiega le conseguenze e attendi la conferma: nessuna attivazione, creazione lotti o avvio autonomo.` } }))}><Bot size={16} />Supporto IA</button>}</nav>
     {error && <div className="plan-notice plan-error" role="alert">{error}</div>}
     <div className="plan-kpis"><section><span>Modalità</span><strong>{status}</strong></section><section><span>Previsioni senza OP</span><strong>{state?.demands?.filter(x => x.stage === "FORECAST").length ?? "—"}</strong></section><section><span>ODL rilasciati</span><strong>{state?.odls?.filter(x => ["RELEASED", "RELEASED_WITH_SHORTAGE"].includes(x.status)).length ?? "—"}</strong></section></div>

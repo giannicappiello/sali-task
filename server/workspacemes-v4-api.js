@@ -166,7 +166,7 @@ export async function confirmWorkspaceV4({ admin, previewId, reason, requestedBy
     const uncertain = error.name === "AbortError" || error.name === "TypeError" || /TIMEOUT|HTTP_50[234]/.test(error.code || "");
     if (uncertain) throw fail("Conferma in verifica: recupero dell'esito MES della stessa richiesta.", "V4_CONFIRM_PENDING", 202);
     ensure(await admin.from("workspace_v4_previews").update({ snapshot: {
-      ...saved.snapshot, confirmationRecovery: { ...recovery, rejected: true },
+      ...saved.snapshot, confirmationRecovery: { ...recovery, rejected: error.code !== "V4_IDEMPOTENCY_CONFLICT", reconciliationRequired: error.code === "V4_IDEMPOTENCY_CONFLICT" },
     } }).eq("id", preview.id));
     throw error;
   }

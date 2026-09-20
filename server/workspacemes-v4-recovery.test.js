@@ -55,3 +55,12 @@ test("mirror non salvato: recupera la risposta persistita senza richiamare MES",
   assert.deepEqual((await confirmWorkspaceV4(args)).mes, response);
   assert.equal(calls, 1);
 });
+
+test("conflitto storico preserva la richiesta per riconciliazione senza consentire un nuovo ricalcolo", async () => {
+  const { admin, tables } = fixture();
+  const client = { v4ConfirmationEnabled: () => true, async confirmV4() { throw Object.assign(new Error("Conflitto"), { code: "V4_IDEMPOTENCY_CONFLICT" }); } };
+  await assert.rejects(confirmWorkspaceV4({ admin, client, previewId: 1, reason: "Original reason", requestedBy: "one" }), { code: "V4_IDEMPOTENCY_CONFLICT" });
+  const recovery = tables.workspace_v4_previews[0].snapshot.confirmationRecovery;
+  assert.equal(recovery.rejected, false);
+  assert.equal(recovery.reconciliationRequired, true);
+});

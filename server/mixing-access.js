@@ -1,7 +1,7 @@
 import { productionDepartments } from './hr-production-calendar.js';
 
-export async function mixingDepartmentAccess(admin, profileId) {
-  const profile = await admin.from('utenti').select('attivo,reparto_id,auth_user_id').eq('id', profileId).maybeSingle();
+export async function mixingDepartmentAccess(admin, profileId, knownProfile = null) {
+  const profile = knownProfile ? { data: knownProfile } : await admin.from('utenti').select('attivo,reparto_id,auth_user_id').eq('id', profileId).maybeSingle();
   if (profile.error) throw profile.error;
   if (!profile.data || profile.data.attivo === false) return false;
   const [memberships, areas, exceptions] = await Promise.all([

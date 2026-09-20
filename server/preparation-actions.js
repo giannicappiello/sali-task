@@ -32,23 +32,29 @@ async function preparationSession(req, write) {
   const token = /^Bearer (.+)$/i.exec(String(req.headers?.authorization || ''))?.[1];
   const auth = await admin.auth.getUser(token);
   if (auth.error || !auth.data?.user) throw fail('Sessione non valida.', 401);
-  const profile = await admin.from('utenti').select('id,attivo,ruoli(nome)').eq('auth_user_id', auth.data.user.id).maybeSingle();
+  const profile = await admin.from('utenti').select('id,attivo,reparto_id,auth_user_id,ruoli(nome)').eq('auth_user_id', auth.data.user.id).maybeSingle();
   if (profile.error) throw profile.error;
   if (!profile.data || profile.data.attivo === false || /client|portal/i.test(profile.data.ruoli?.nome || '')) throw fail('Accesso riservato agli addetti interni.', 403);
-  const links = await admin.from('workspace_customer_user_links').select('customer_code').eq('user_id', profile.data.id);
-  const legacy = await admin.from('workspace_private_document_customer_access').select('codice_cliente').eq('utente_id', profile.data.id);
+  const [links, legacy, mixingAccess] = await Promise.all([
+    admin.from('workspace_customer_user_links').select('customer_code').eq('user_id', profile.data.id),
+    admin.from('workspace_private_document_customer_access').select('codice_cliente').eq('utente_id', profile.data.id),
+    mixingDepartmentAccess(admin, profile.data.id, profile.data),
+  ]);
   if (links.error || legacy.error) throw links.error || legacy.error;
-  if (links.data.length || legacy.data.length || !await mixingDepartmentAccess(admin, profile.data.id)) throw fail('Accesso riservato all’area Miscelazione.', 403);
+  if (links.data.length || legacy.data.length || !mixingAccess) throw fail('Accesso riservato all’area Miscelazione.', 403);
   return { profile: profile.data, scope: { mode: 'team' }, canWrite: true };
 }
 export async function handlePreparationActions(req, body, { authorize = preparationSession, clientFactory = createProgremesProductionClient } = {}) {
   const input = preparationInput(body);
   // Generating the sheet assigns material lots and therefore needs write access too.
+  const startedAt = Date.now();
   const session = await authorize(req, input.operation !== 'context');
+  const authorizedAt = Date.now();
   if (!['tutti', 'team', 'propri'].includes(session.scope.mode) || session.scope.customer_code || session.scope.customer_codes?.length)
     throw fail('Operazione riservata agli addetti interni.', 403);
   try {
     const { result } = await clientFactory().preparationActions({ ...input, externalId: randomUUID(), requestedBy: session.profile.id });
+    console.info('[preparation-timing]', { operation: input.operation, authorizationMs: authorizedAt - startedAt, mesMs: Date.now() - authorizedAt });
     return { ...result, canWrite: session.canWrite };
   } catch (error) {
     if ([404, 405].includes(error.status)) throw fail('Aggiornare ProgreMES per utilizzare le azioni di preparazione da Workspace.', 503);

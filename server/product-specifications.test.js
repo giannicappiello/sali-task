@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import process from 'node:process';
 import { validateSpecification, productSpecificationOperation, specificationRequiresWrite } from './product-specifications.js';
+import { loadSpecificationSources, readSpecificationBom } from './product-specification-sources.js';
+import { applySpecificationSources } from '../shared/productSpecification.js';
 
 const payload = (extra = {}) => ({ expectedVersion: 0, data: { description: '  Prodotto finito  ', dipTubeCut: 'no' }, attachments: [], ...extra });
 function fixture({ customers = ['*'], canWrite = true, files = [], lots = [] } = {}) {
@@ -78,7 +80,7 @@ test('capitolato: riservato ai prodotti finiti esistenti', async () => {
 test('capitolato: isolamento clienti per articolo anche per storico e allegati', async () => {
   const options = { customers: ['501.A'], lots: [{ article_code: 'IT0001', lot_code: 'L1', customer_code: '501.B' }] };
   const f = fixture(options);
-  for (const route of ['specifications', 'specifications/history', 'specifications/file']) {
+  for (const route of ['specifications', 'specifications/sources', 'specifications/history', 'specifications/file']) {
     await assert.rejects(productSpecificationOperation(f.identity, route + '?articleCode=IT0001'), e => e.status === 404);
   }
   f.tables.workspace_private_document_lots[0].customer_code = '501.A';
@@ -129,4 +131,45 @@ test('capitolato: apertura allegato autorizzato registra accesso prima del link 
     if (originalUrl === undefined) delete process.env.DOCUMENT_GATEWAY_URL; else process.env.DOCUMENT_GATEWAY_URL = originalUrl;
     if (originalSecret === undefined) delete process.env.DOCUMENT_GATEWAY_SECRET; else process.env.DOCUMENT_GATEWAY_SECRET = originalSecret;
   }
+});
+
+test('capitolato: foto dal catalogo, distinta corrente e nomi clienti isolati per cliente', async () => {
+  const f = fixture({ customers: ['501.A'] });
+  Object.assign(f.tables, {
+    prodotti: [{ codice_mexal: 'IT0001', immagine_catalogo_url: 'https://catalog.test/photo.jpg' }],
+    workspace_finished_bom_revisions: [{ id: 7, revision: 2, finished_article_code: 'IT0001', is_current: true }],
+    workspace_finished_bom_lines: [
+      { id: 1, revision_id: 7, article_code: 'FP001', description: 'Bulk', is_removed: false },
+      { id: 2, revision_id: 7, article_code: 'CN01', description: 'Flacone', is_removed: false },
+      { id: 3, revision_id: 6, article_code: 'OLD', is_removed: false },
+      { id: 4, revision_id: 7, article_code: 'REMOVED', is_removed: true },
+    ],
+    workspace_private_document_lots: [{ article_code: 'IT0001', customer_code: '501.A' }, { article_code: 'IT0001', customer_code: '501.B' }],
+    ordini_clienti_cache: [{ codice_cliente: '501.A', ragione_sociale: 'Cliente Alfa' }, { codice_cliente: '501.B', ragione_sociale: 'Cliente Beta' }],
+  });
+  const result = await loadSpecificationSources(f.identity, 'IT0001');
+  assert.equal(result.photoUrl, 'https://catalog.test/photo.jpg');
+  assert.deepEqual(result.customerNames, ['Cliente Alfa']);
+  assert.deepEqual(result.components.map(c => c.code), ['FP001', 'CN01']);
+  assert.deepEqual(applySpecificationSources({ customer: '501.A', semiFinished: 'OLD', notes: 'Mantieni' }, result),
+    { customer: 'Cliente Alfa', semiFinished: 'FP001', notes: 'Mantieni' });
+});
+
+test('capitolato: distinta Mexal paginata, sottocomponenti e descrizioni mancanti', async () => {
+  const f = fixture();
+  f.tables.ordini_prodotti_cache.push({ codice_articolo: 'FP001', descrizione: 'Semilavorato' });
+  const client = {
+    async postJson(url, body) {
+      const code = body.filtri[0].valore;
+      if (code === 'IT0001-SING') return { dati: [{ codice: code, codice_mp: 'FP001', qta_utilizzo: '0,2' }] };
+      if (url.includes('next=')) return { dati: [{ codice: code, codice_mp: 'CN01', qta_utilizzo: 1 }] };
+      return { dati: [{ codice: code, codice_mp: 'IT0001-SING', qta_utilizzo: 1 }, { codice: 'IT0001-ALTRO', codice_mp: 'ERRATO', qta_utilizzo: 1 }], next: 'second' };
+    },
+    async getJson() { return { dati: { descrizione: 'Descrizione da Mexal' } }; },
+  };
+  const result = await readSpecificationBom(f.identity.admin, 'IT0001', client);
+  assert.deepEqual(result.map(r => r.article_code), ['IT0001-SING', 'FP001', 'CN01']);
+  assert.equal(result[0].description, 'Descrizione da Mexal');
+  assert.equal(result[1].description, 'Semilavorato');
+  await assert.rejects(readSpecificationBom(f.identity.admin, 'IT0001', client, ['IT0001']), /ricorsiva/);
 });

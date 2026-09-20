@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { articleType, rows, readArchive, catalogue, normalizePath, gatewayUrl, key } from './private-documents-store.js';
 import { specificationFields, specificationAttachmentSections, isSpecificationImage, MAX_SPECIFICATION_ATTACHMENTS } from '../shared/productSpecification.js';
+import { loadSpecificationSources } from './product-specification-sources.js';
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 export function validateSpecification(input) {
@@ -56,12 +57,13 @@ const dto = row => row ? { data: row.data, attachments: row.attachments, version
 
 export async function productSpecificationOperation(identity, path, input = {}) {
   const url = new URL(path, 'https://workspace.invalid/');
-  if (!['/specifications', '/specifications/save', '/specifications/file', '/specifications/history'].includes(url.pathname))
+  if (!['/specifications', '/specifications/sources', '/specifications/save', '/specifications/file', '/specifications/history'].includes(url.pathname))
     throw fail('Operazione capitolato non disponibile.', 404);
   if (specificationRequiresWrite(url.pathname) && (!identity.canWriteDocuments || !identity.customerCodes.includes('*')))
     throw fail('Modifica capitolato non autorizzata.', 403);
   const code = await authorizeSpecificationArticle(identity, String(url.searchParams.get('articleCode') || '').trim());
   const { admin, profile } = identity;
+  if (url.pathname === '/specifications/sources') return loadSpecificationSources(identity, code);
   if (url.pathname === '/specifications/history') {
     const { data, error } = await admin.from('workspace_product_specification_revisions')
       .select('version,updated_at,updated_by_label').eq('article_code', code).order('version', { ascending: false }).limit(50);

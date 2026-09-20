@@ -2,6 +2,24 @@
 
 ## Capitolati prodotti finiti
 
+Il capitolato carica la foto dei codici IT da `prodotti.immagine_catalogo_url`,
+la stessa fonte della sezione Workspace Prodotti. `specifications/sources`
+riusa l'autorizzazione articolo e risolve i nomi clienti da `ordini_clienti_cache`,
+filtrando i collegamenti per il cliente autorizzato. Non mostra codici cliente
+al posto delle ragioni sociali mancanti.
+
+La distinta corrente arriva da `workspace_finished_bom_revisions/lines`;
+quando manca viene letta da Mexal tramite il connettore esistente, senza scritture.
+La lettura risolve anche sottoprodotti IT, con controllo di cicli e limiti,
+recupera descrizioni mancanti dall'anagrafica Mexal e compila i codici FP.
+Le tendine componenti mostrano codice e descrizione; Altri componenti permette
+di aggiungere ulteriori elementi della distinta. Un errore di lettura è visibile.
+
+Visualizza capitolato genera nel browser un PDF scaricabile con logo Progré
+originale su ogni pagina, foto di catalogo, foto NAS salvate, campi e descrizioni
+dei componenti. Le bozze sono esplicitamente indicate; le immagini non recuperabili
+sono segnalate sia nell'anteprima sia nel documento. Non occorrono migrazioni aggiuntive.
+
 Il dettaglio dei prodotti finiti contiene il capitolato tra l'intestazione
 dell'articolo e i documenti esistenti. La struttura della pagina, le categorie,
 la ricerca e i fascicoli dei lotti restano quelli di Documenti Private.

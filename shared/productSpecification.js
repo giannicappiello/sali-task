@@ -8,6 +8,7 @@ export const specificationSections = [
     ['pumpCode', 'Codice tappo / pompa'], ['pumpDescription', 'Descrizione tappo / pompa'],
     ['dipTubeCut', 'Taglio pescante', 'yesno'], ['dipTubeLength', 'Lunghezza pescante (mm)'],
     ['primaryNotes', 'Altri componenti e indicazioni', 'textarea'],
+    ['additionalComponents', 'Altri componenti della distinta', 'textarea'],
   ] },
   { id: 'secondary', title: 'Packaging secondario', fields: [
     ['cartonPresent', 'Astuccio', 'yesno'], ['cartonCode', 'Codice astuccio'], ['cartonDescription', 'Descrizione astuccio'],
@@ -33,3 +34,13 @@ export const specificationAttachmentSections = ['product', ...specificationSecti
 export const specificationFields = specificationSections.flatMap(s => s.fields);
 export const isSpecificationImage = path => /\.(?:jpe?g|png|webp|gif)$/i.test(path || '');
 export const MAX_SPECIFICATION_ATTACHMENTS = 40;
+export const specificationComponentFields = {
+  bottleCode: 'bottleDescription', pumpCode: 'pumpDescription',
+  cartonCode: 'cartonDescription', leafletCode: 'leafletDescription',
+  labelCode: null, boxCode: null, palletType: null,
+};
+
+export function applySpecificationSources(data, sources) {
+  return { ...data, customer: sources.customerNames.join(', '),
+    semiFinished: sources.components.filter(c => /^FP/i.test(c.code)).map(c => c.code).join(', ') };
+}

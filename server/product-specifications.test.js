@@ -257,3 +257,12 @@ test('bulk FP: cliente automatico in ragione sociale, senza codici né clienti f
   assert.deepEqual(missing.customerNames, []);
   assert.equal(missing.missingCustomerNames, 1);
 });
+
+test('FP135: descrizione completa Mexal con spazio originale e revisione da riapprovare', async () => {
+  const f = fixture();
+  f.tables.ordini_prodotti_cache.push({ codice_articolo: 'FP135', descrizione: 'Semilavorato SALI DIISCHIA Crema Antiage', dati_mexal: { descrizione: 'Semilavorato SALI DI', descrizione_agg: ' ISCHIA Crema Antiage' } });
+  const sources = await loadSpecificationSources(f.identity, 'FP135', { formulaClient: () => ({ formulaSpecification: async () => ({ result: { formulaData: {} } }) }) });
+  const data = applySpecificationSources({ customer: '', semiFinished: '', description: 'Semilavorato SALI DI', approvedBy: 'Approvatore' }, sources);
+  assert.equal(data.description, 'Semilavorato SALI DI ISCHIA Crema Antiage');
+  assert.equal(data.approvedBy, '');
+});

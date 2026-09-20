@@ -57,7 +57,7 @@ export default function PreparationActions({ activity, onStarted }) {
   return <>
     <ProductSpecificationViewButton articleCode={context?.bulkCode || ''} description={context?.description}/>
     <button type="button" disabled={!context?.canWrite} onClick={openSheet}><Printer size={17}/>Stampa foglio produzione</button>
-    <button type="button" disabled={!activity.panelUrl || !context} onClick={() => window.open(activity.panelUrl, '_blank', 'noopener,noreferrer')}><Monitor size={17}/>Apri station</button>
+    <button type="button" disabled={!activity.panelUrl || !context} onClick={() => window.open(activity.panelUrl, '_blank', 'popup=yes,width=800,height=960,toolbar=no,menubar=no,location=no,status=no,resizable=yes,scrollbars=yes,noopener,noreferrer')}><Monitor size={17}/>Apri station</button>
     <button type="button" disabled={!context?.canWrite || !activity.resourceCode || !context?.ready} onClick={() => { setMode('start'); setError(''); }}><Play size={17}/>Avvia lavorazione</button>
     {!context && !error && <p role="status">Caricamento dati preparazione…</p>}
     {context && !context.bulkCode && <p role="status">Nessun codice semilavorato associato alla formula dell’ordine.</p>}

@@ -34,7 +34,7 @@ export const specificationSections = [
 export const formulaFields = [['formulaCode', 'Formula'], ['formulaRevision', 'Revisione formula'],
   ['viscosityMin', 'Viscosità minima'], ['viscosityMax', 'Viscosità massima'], ['color', 'Colore'],
   ['fragrance', 'Profumo'], ['phMin', 'pH minimo'], ['phMax', 'pH massimo'], ['density', 'Densità'], ['appearance', 'Aspetto']];
-export const specificationSourceFields = ['customer', 'semiFinished', ...formulaFields.map(([name]) => name)];
+export const specificationSourceFields = ['customer', 'semiFinished', 'description', ...formulaFields.map(([name]) => name)];
 export function sectionsForSpecification(data) {
   return data?.specificationKind === 'bulk' ? [
     { id: 'general', title: 'Dati del semilavorato', fields: [['customer', 'Cliente'], ['description', 'Descrizione semilavorato', 'textarea']] },

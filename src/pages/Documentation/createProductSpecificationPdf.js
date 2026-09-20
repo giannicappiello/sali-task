@@ -60,7 +60,7 @@ export async function createProductSpecificationPdf({ article, specification, ph
       paragraph(`Immagine non disponibile: ${caption}`, 9);
     }
   }
-  paragraph(`${article.articleCode} - ${article.description || ''}`, 15); y += 4;
+  paragraph(`${article.articleCode} - ${(specification.data.specificationKind === 'bulk' ? specification.data.description : article.description) || article.description || ''}`, 15); y += 4;
   if (photoUrl) await photo(photoUrl, `Foto prodotto ${article.articleCode}`);
   async function attachments(section) {
     for (const attachment of specification.attachments.filter(a => a.section === section)) {

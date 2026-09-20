@@ -50,9 +50,18 @@ export async function loadSpecificationSources(identity, code, { formulaClient =
     missingCustomerNames: codes.filter(c => !(customers.data || []).some(row => key(row.codice_cliente) === c && String(row.ragione_sociale || '').trim())).length,
   };
   if (/^FP/i.test(code)) {
-    const { result } = await formulaClient().formulaSpecification({ articleCode: code });
+    const [{ result }, article] = await Promise.all([
+      formulaClient().formulaSpecification({ articleCode: code }),
+      admin.from('ordini_prodotti_cache').select('descrizione,dati_mexal').eq('codice_articolo', key(code)).maybeSingle(),
+    ]);
+    if (article.error) throw article.error;
+    const raw = article.data?.dati_mexal;
+    // Mexal stores a continuation, including meaningful spaces at the boundary.
+    const description = (raw?.descrizione
+      ? String(raw.descrizione) + String(raw.descrizione_agg || '')
+      : String(article.data?.descrizione || '')).replace(/\s+/g, ' ').trim();
     if (!result.formulaData) throw new Error('Specifiche della formula non disponibili in MES.');
-    return { specificationKind: 'bulk', formulaData: result.formulaData, components: [], ...customerData, photoUrl: null, bomError: '' };
+    return { specificationKind: 'bulk', formulaData: { ...result.formulaData, ...(description ? { description } : {}) }, components: [], ...customerData, photoUrl: null, bomError: '' };
   }
   const [product, revision] = await Promise.all([
     admin.from('prodotti').select('immagine_catalogo_url').eq('codice_mexal', code).maybeSingle(),

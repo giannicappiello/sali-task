@@ -71,3 +71,12 @@ test('capitolato PDF: recupera immagini NAS tramite proxy quando il browser bloc
   assert.deepEqual(result.warnings, []);
   assert.ok(calls.some(path => path.includes('specifications/preview') && path.includes('content=true&offset=0')));
 });
+
+test('titolo PDF bulk usa la descrizione completa come il campo descrizione', async () => {
+  const description = 'Semilavorato SALI DI ISCHIA Crema Antiage';
+  const result = await createProductSpecificationPdf({ article: { articleCode: 'FP135', description: 'Semilavorato SALI DI' }, logoBytes,
+    specification: { version: 0, attachments: [], data: { specificationKind: 'bulk', description } } });
+  const raw = new TextDecoder().decode(await result.blob.arrayBuffer());
+  assert.ok(raw.includes('FP135 - ' + description));
+  assert.ok(raw.includes('(' + description + ')'));
+});

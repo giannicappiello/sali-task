@@ -2,6 +2,7 @@
 import { Buffer } from "node:buffer";
 import { privateDocumentOperation, synchronizeNas, rows } from "./private-documents-store.js";
 import { createClient } from "@supabase/supabase-js";
+import { productSpecificationOperation, specificationRequiresWrite } from "./product-specifications.js";
 
 const required = (name) => {
   const value = String(process.env[name] || "").trim();
@@ -53,7 +54,7 @@ async function authorize(req, { upload = false } = {}) {
     ]);
     if (!direct && !role) throw Object.assign(new Error("Caricamento Documenti Private non autorizzato."), { status: 403 });
   }
-  return { admin, user, profile, customerCodes: customerCodes.length ? customerCodes : ["*"] };
+  return { admin, user, profile, customerCodes: customerCodes.length ? customerCodes : ["*"], canWriteDocuments: upload };
 }
 
 export async function privateDocumentsSession(req, body = {}) {
@@ -63,8 +64,9 @@ export async function privateDocumentsSession(req, body = {}) {
 export async function handlePrivateDocuments(req, body = {}) {
   const path = String(body.path || "");
   const pathname = new URL(path, "https://workspace.invalid/").pathname;
-  const upload = ["/nas/sync", "/documents/reference", "/nas"].includes(pathname);
+  const upload = ["/nas/sync", "/documents/reference", "/nas"].includes(pathname) || specificationRequiresWrite(pathname);
   const identity = await authorize(req, { upload });
+  if (pathname.startsWith("/specifications")) return productSpecificationOperation(identity, path, body.input || {});
   const result = await privateDocumentOperation(identity, path, body.input || {});
   const url = new URL(path, "https://workspace.invalid/");
   if (url.searchParams.get("content") === "true" && pathname.startsWith("/documents/") && pathname !== "/documents/reference") {

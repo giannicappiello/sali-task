@@ -1,5 +1,45 @@
 # Documenti PRIVATE: servizio Workspace
 
+## Capitolati prodotti finiti
+
+Il dettaglio dei prodotti finiti contiene il capitolato tra l'intestazione
+dell'articolo e i documenti esistenti. La struttura della pagina, le categorie,
+la ricerca e i fascicoli dei lotti restano quelli di Documenti Private.
+
+Il capitolato contiene dati descrittivi, foto prodotto, packaging primario e
+secondario, etichetta/lavorazioni, marcatura lotto, imballo, pallet e note.
+Ogni sezione consente di collegare più file dalle cartelle già censite nel NAS;
+per le foto prodotto sono ammessi JPG, PNG, WebP e GIF. Le immagini diventano
+visibili dopo il salvataggio. Il limite è 40 allegati per capitolato. Rimuovere
+un collegamento non elimina il file originale.
+
+La lettura segue il perimetro articoli già autorizzato. La modifica richiede
+il permesso esistente `documentation.private.upload` (o amministratore), ed è
+sempre esclusa per gli utenti associati a clienti. Ogni apertura di un allegato,
+incluse le anteprime, verifica nuovamente articolo e file attivo e registra
+l'accesso prima di emettere un URL NAS firmato con validità 15 minuti.
+
+Applicare `20260920120000_workspace_product_specifications.sql` prima di
+distribuire il codice. Crea tabelle riservate al servizio Workspace e la RPC
+atomica `save_workspace_product_specification`. Un salvataggio incrementa la
+revisione e ne conserva una copia completa; il controllo `expectedVersion`
+impedisce a due editor di sovrascriversi. Il server risponde 409 se nel frattempo
+è stata salvata una revisione diversa. La UI conserva la bozza e offre Ricarica,
+con conferma prima di scartare modifiche locali. Lo storico mostra le ultime
+50 revisioni con autore e data; le copie complete restano nel database.
+
+Le bozze sono in memoria per la sessione della pagina e restano disponibili
+passando tra articoli; la chiusura/ricarica del browser avvisa se vi sono
+modifiche non salvate. Non viene effettuato salvataggio automatico sul NAS.
+
+API (attraverso `private_documents`):
+- `specifications?articleCode=...`: legge il capitolato corrente.
+- `specifications/save?articleCode=...`: salva dati, allegati e versione attesa.
+- `specifications/file?articleCode=...&attachmentId=...`: autorizza un allegato salvato.
+- `specifications/history?articleCode=...`: elenco delle revisioni.
+
+Test: `node --test server/product-specifications.test.js`.
+
 La schermata usa `/api/workspace/documents`, gestito dalle funzioni Workspace.
 Autenticazione, permessi, inventario, collegamenti e tracciamento download sono in
 Supabase Workspace. Non vengono emessi ticket MES e non vengono chiamate API MES.

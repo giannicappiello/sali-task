@@ -5,6 +5,7 @@ import "./PrivateDocuments.css";
 import "./PrivateDocumentsActions.css";
 import "./PrivateDocumentsNasPicker.css";
 import PrivateDocumentsUnassociated from "./PrivateDocumentsUnassociated";
+import ProductSpecification from "./ProductSpecification";
 import { documentsOnlyArticle, filterDocumentArticles, readCachedArticle, cacheArticle } from "./private-documents-catalogue";
 import { archiveDocuments, createDocumentArchive } from "./private-documents-zip";
 
@@ -107,6 +108,17 @@ export default function PrivateDocuments() {
   const detailCache = useRef(new Map());
   const documentSessionRef = useRef(null);
   const activeSearchRef = useRef("");
+  const specificationOwnerId = authSession?.user?.id || "";
+  const specificationDraftStore = useMemo(() => ({ ownerId: specificationOwnerId, customerScoped, items: new Map() }), [specificationOwnerId, customerScoped]);
+  const specificationDrafts = specificationDraftStore.items;
+  useEffect(() => {
+    function warnUnsaved(event) {
+      if (!specificationDrafts.size) return;
+      event.preventDefault(); event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", warnUnsaved);
+    return () => window.removeEventListener("beforeunload", warnUnsaved);
+  }, [specificationDrafts]);
   const unassociatedActive = activeSection === "unassociated" && documentSession && !customerScoped;
   const requestNas = useCallback(async (path, options) => {
     const session = { accessToken };
@@ -237,6 +249,7 @@ export default function PrivateDocuments() {
       <section className="private-article-list-panel"><header><h2>{appliedQuery ? `Risultati per “${appliedQuery}”` : activeSectionInfo.title}</h2><span>{filteredArticles.length}</span></header>{loading ? <div className="private-documents-loading">Caricamento archivio…</div> : <div className="private-article-list">{filteredArticles.map((article) => <button key={article.articleId} type="button" onClick={() => openArticle(article)} className={selected?.article?.articleId === article.articleId ? "active" : ""}><span>{article.articleType}</span><strong>{article.articleCode}</strong><p>{article.description}</p><small>{article.documentCount} documenti · {article.lotCount} lotti</small></button>)}</div>}{!loading && !filteredArticles.length && <p className="private-panel-empty">{appliedQuery ? "Nessun articolo corrisponde alla ricerca globale." : "Nessun articolo disponibile in questa tipologia."}</p>}</section>
       <section className="private-article-detail-panel">{detailLoading ? <div className="private-documents-loading">Caricamento lotti e documenti…</div> : !selected ? <div className="private-panel-empty"><FileLock2 size={32}/><h2>Seleziona un articolo</h2><p>I lotti e i documenti disponibili compariranno qui.</p></div> : <>
       <div className="private-detail-heading"><div><span>{selected.article.articleType}</span><h2>{selected.article.articleCode} · {selected.article.description}</h2><p>{selected.article.customers?.join(", ") || "Nessun cliente collegato"}</p></div>{!customerScoped && canUpload && <button className="primary-action" onClick={() => openDocumentLink()}><FilePlus2 size={18}/>Associa documento</button>}</div>
+      {articleSection(selected.article) === "finished" && <ProductSpecification key={`${authSession?.user?.id}-${customerScoped}-${selected.article.articleCode}`} article={selected.article} canEdit={canUpload && !customerScoped} request={requestNas} drafts={specificationDrafts}/>}
       {(!customerScoped || documentsOnlyArticle(selected.article)) && <section className="private-document-section"><header className="private-document-section-heading"><h3>{documentsOnlyArticle(selected.article) ? "Documenti associati" : "Documenti generali e di produzione"}</h3><DownloadAll documents={selected.documents} fileName={selected.article.articleCode} session={documentSession}/></header><DocumentList documents={selected.documents} onDownload={download}/></section>}
       {!documentsOnlyArticle(selected.article) && <LotsWithDocuments key={selected.article.articleCode + "-" + archiveVersion} selected={selected} session={documentSession} onDownload={download}/>}
     </>}</section></div>

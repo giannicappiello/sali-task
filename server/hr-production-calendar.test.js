@@ -22,9 +22,9 @@ test('tutte le pagine del piano, senza filtri upstream che perdono le sovrapposi
   assert.deepEqual(queries, [{ page: 1, pageSize: 500 }, { page: 2, pageSize: 500 }]);
 });
 function adminStub({ active = true, hr = true, workspaceAdmin = false } = {}) {
-  const data = { utenti: { id: 'employee', attivo: active, reparto_id: workspaceAdmin ? null : 'mix', ruoli: { amministratore_workspace: workspaceAdmin } }, workspace_hr_members: { active: hr }, utenti_reparti: [{ reparto_id: 'fill' }], reparti: [{ nome: 'Miscelazione', attivo: true }, { nome: 'Confezionamento', attivo: false }] };
+  const data = { utenti: { id: 'employee', attivo: active, reparto_id: workspaceAdmin ? null : 'mix', ruoli: { amministratore_workspace: workspaceAdmin } }, workspace_customer_user_links: [], workspace_hr_members: { active: hr }, utenti_reparti: [{ reparto_id: 'fill' }], reparti: [{ nome: 'Miscelazione', attivo: true }, { nome: 'Confezionamento', attivo: false }] };
   return { auth: { getUser: async () => ({ data: { user: { id: 'auth' } } }) }, from: table => {
-    if (workspaceAdmin && table !== 'utenti') throw new Error('Admin must not require HR membership or departments');
+    if (workspaceAdmin && !['utenti', 'workspace_customer_user_links'].includes(table)) throw new Error('Admin must not require HR membership or departments');
     const result = { data: data[table] };
     const query = { select: () => query, eq: () => query, in: async () => result, maybeSingle: async () => result, then: resolve => Promise.resolve(result).then(resolve) };
     return query;
@@ -65,4 +65,22 @@ test('authorization precedes plan retrieval and only department records leave th
   assert.equal(response.items.length, 1);
   assert.equal(response.source, 'piano-attivo');
   assert.equal('operatorNames' in response.items[0], false);
+});
+
+test('cliente: stesso ambito Produzioni, esclusione altri ordini e pannelli Station', async () => {
+  const req = { method: 'GET', query: { from: '2026-09-01', to: '2026-09-30' } };
+  const orders = [{ id: 'own-oct' }];
+  const response = await productionCalendarRequest(req, {
+    admin: {}, authorize: async () => ({ operations: ['Production', 'Packaging'], orders }),
+    readPlan: async () => ({ items: [{ ...row, resource: 'ST7', resourceCode: 'ST7' }, { ...row, productionOrderId: 2 }] }),
+    workbench: async options => {
+      assert.equal(options.scopedOrders, orders);
+      assert.equal(options.productionOrders.length, 2);
+      return { items: [{ productionOrders: [{ id: 1 }] }] };
+    },
+  });
+  assert.equal(response.items.length, 1);
+  assert.equal(response.items[0].productionOrderId, 1);
+  assert.equal('resourceCode' in response.items[0], false);
+  assert.equal('resource' in response.items[0], false);
 });

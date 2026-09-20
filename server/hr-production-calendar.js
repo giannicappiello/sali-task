@@ -2,6 +2,9 @@ import { createProgremesReadonlyAdmin } from './progremes-readonly-auth.js';
 import { createProgremesClient } from './progremes-readonly-client.js';
 import { readActiveProductionPlan } from './hr-active-production-plan.js';
 
+import { privateWorkbenchSession } from './private-orders-workbench.js';
+import { listProductionWorkbench } from './workspacemes-workbench.js';
+
 const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const fail = (message, status) => Object.assign(new Error(message), { status });
 
@@ -22,6 +25,13 @@ export async function authorizeProductionCalendar(req, admin) {
   const profile = await admin.from('utenti').select('id,attivo,reparto_id,ruoli(amministratore_workspace)').eq('auth_user_id', data.user.id).maybeSingle();
   if (profile.error) throw profile.error;
   if (!profile.data || profile.data.attivo === false) throw fail('Utente non abilitato.', 403);
+  const links = await admin.from('workspace_customer_user_links').select('customer_code').eq('user_id', profile.data.id);
+  if (links.error) throw links.error;
+  if (links.data?.length) {
+    const { orders, customerCodes } = await privateWorkbenchSession(req, { admin });
+    if (!customerCodes.length) throw fail('Associazione cliente non disponibile.', 403);
+    return { operations: ['Production', 'Packaging', 'Cartoning'], orders };
+  }
   if (profile.data.ruoli?.amministratore_workspace === true) return ['Production', 'Packaging', 'Cartoning'];
   const [member, memberships] = await Promise.all([
     admin.from('workspace_hr_members').select('active').eq('user_id', profile.data.id).maybeSingle(),
@@ -82,13 +92,30 @@ export async function productionCalendarRequest(req, dependencies = {}) {
   const { from, to } = req.query || {};
   const valid = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
   if (!valid(from) || !valid(to) || from > to || Date.parse(to) - Date.parse(from) > 160 * 86400000) throw fail('Periodo del calendario non valido.', 400);
-  const allowed = await (dependencies.authorize || authorizeProductionCalendar)(req, dependencies.admin || createProgremesReadonlyAdmin());
+  const admin = dependencies.admin || createProgremesReadonlyAdmin();
+  const authorization = await (dependencies.authorize || authorizeProductionCalendar)(req, admin);
+  const allowed = Array.isArray(authorization) ? authorization : authorization.operations;
   if (!allowed.length) {
     console.info('[hr-production-calendar]', { enabled: false, reason: 'no-eligible-hr-department' });
     return { items: [], enabled: false };
   }
   const plan = dependencies.readPlan ? await dependencies.readPlan() : dependencies.client ? { items: await readProductionPlan(dependencies.client), source: 'archivio' } : await currentProductionPlan();
-  const items = calendarRows(plan.items, allowed, from, to);
+  let rows = plan.items;
+  const customerScoped = !Array.isArray(authorization);
+  if (customerScoped) {
+    // Reuse the exact Produzioni OCT/RdP reconciliation and customer order scope.
+    const workbench = await (dependencies.workbench || listProductionWorkbench)({
+      admin, scopedOrders: authorization.orders,
+      productionOrders: rows.map(row => ({ id: row.productionOrderId,
+        numeroOrdine: row.orderNumber, riferimentoRdp: row.rdpReference,
+        riferimentoOct: row.octReference, codiceArticolo: row.articleCode, stato: row.status })),
+    });
+    const ids = new Set(workbench.items.flatMap(item => item.productionOrders || []).map(order => String(order.id)));
+    rows = rows.filter(row => ids.has(String(row.productionOrderId))).map(row => ({
+      ...row, resource: '', resourceCode: '', customerName: '', octReference: '', rdpReference: '',
+    }));
+  }
+  const items = calendarRows(rows, allowed, from, to);
   console.info('[hr-production-calendar]', { source: plan.source, allowed, total: plan.items.length, visible: items.length, from, to });
   return { items, enabled: true, source: plan.source, updatedAt: new Date().toISOString() };
 }

@@ -1,3 +1,4 @@
+import { productionCalendarRequest } from './hr-production-calendar.js';
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
@@ -106,4 +107,22 @@ test("Private navigation hides old lists; existing PR/PH navigation and creation
   assert.match(page, /Nuovo OCT/); assert.match(page, /Genera con AI/);
   assert.match(page, /<DetailPanel[^>]+readOnly/);
   assert.doesNotMatch(page, /rdp-tabs|Fabbisogni acquisto|Storico RdP|Ordini produzione MES|setInterval|enqueue/);
+});
+
+test('calendario cliente riusa la riconciliazione reale Produzioni senza ampliare il cliente', async () => {
+ const admin = database({
+  ordini_righe: [{id:'L1',ordine_id:'A',codice_articolo:'FP1',quantita:10}],
+  workspace_production_requests: [{id:'R1',ordine_id:'A',rdp_number:16}],
+ });
+ const base={articleCode:'FP1',articleDescription:'Prodotto',start:'2026-09-20T08:00:00',end:'2026-09-20T16:00:00',status:'Pianificato',resourceCode:'ST7'};
+ const result=await productionCalendarRequest({method:'GET',query:{from:'2026-09-01',to:'2026-09-30'}},{
+  admin, authorize:async()=>({operations:['Production','Packaging'],orders:[orders[0]]}),
+  readPlan:async()=>({items:[
+   {...base,productionOrderId:1,orderNumber:'RDP16',operationType:'Production'},
+   {...base,productionOrderId:1,orderNumber:'RDP16',operationType:'Packaging'},
+   {...base,productionOrderId:2,orderNumber:'RDP160',operationType:'Production'},
+  ]}),
+ });
+ assert.deepEqual(result.items.map(x=>x.operationType),['Production','Packaging']);
+ assert.ok(result.items.every(x=>x.productionOrderId===1 && !x.resourceCode));
 });

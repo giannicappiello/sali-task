@@ -73,7 +73,7 @@ export async function privateWorkbenchSession(req, dependencies = {}) {
     filter = { column: "codice_agente_mexal", values: result.data || [] };
   }
   const orders = await loadPrivateWorkbenchOrders(caller, filter);
-  return { admin, orders };
+  return { admin, orders, customerCodes };
 }
 
 export async function loadPrivateWorkbenchOrders(caller, filter) {

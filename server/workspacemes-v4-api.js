@@ -78,6 +78,10 @@ export async function createWorkspaceV4Preview({ admin, requestId, requestedBy, 
   if (!client.v4PreviewEnabled()) throw fail("Preview WorkspaceMES V4 disabilitata.", "V4_PREVIEW_DISABLED", 403);
   const input = await loadDemand(admin, requestId);
   await ensureRequestNotCancelling(admin, requestId);
+  const latest = ensure(await admin.from("workspace_v4_previews").select("status,snapshot")
+    .eq("production_request_id", requestId).order("captured_at", { ascending: false }).limit(1))[0];
+  if (latest?.status === "READY" && latest.snapshot?.confirmationRecovery && !latest.snapshot.confirmationRecovery.rejected)
+    throw fail("Recuperare la conferma in corso prima di ricalcolare la RdP.", "V4_CONFIRM_PENDING");
   const orders = new Map(input.demand.orders.map((order) => [clean(order.orderId), order]));
   const demands = input.demand.items.map((item) => {
     const order = orders.get(clean(item.orderId));
@@ -127,8 +131,11 @@ export async function confirmWorkspaceV4({ admin, previewId, reason, requestedBy
   if (clean(reason).length < 5) throw fail("Motivazione obbligatoria.", "INVALID_REASON", 400);
   const previews = ensure(await admin.from("workspace_v4_previews").select("*").eq("id", previewId).limit(1));
   const preview = previews[0];
-  if (!preview || !["READY", "BLOCKED"].includes(preview.status)) throw fail("Preview V4 non confermabile.", "V4_PREVIEW_NOT_CONFIRMABLE");
+  if (!preview) throw fail("Preview V4 non confermabile.", "V4_PREVIEW_NOT_CONFIRMABLE");
   await ensureRequestNotCancelling(admin, preview.production_request_id);
+  const existing = ensure(await admin.from("workspace_v4_confirmation_mirrors").select("*").eq("preview_id", preview.id).limit(1))[0];
+  if (existing && existing.status !== "CANCELLED") return { confirmation: existing, mes: existing.mes_response };
+  if (!["READY", "BLOCKED"].includes(preview.status)) throw fail("Preview V4 non confermabile.", "V4_PREVIEW_NOT_CONFIRMABLE");
   const materials = ensure(await admin.from("workspace_v4_preview_materials")
     .select("shortage_quantity,block_code").eq("preview_id", preview.id));
   const normalizedDecision = automaticWorkspaceV4Decision(preview, materials);
@@ -138,19 +145,46 @@ export async function confirmWorkspaceV4({ admin, previewId, reason, requestedBy
     throw fail("Progressivo RdP Workspace non valido.", "V4_RDP_NUMBER_REQUIRED", 409);
   const idempotencyKey = `workspacemes:v4:confirm:${payloadHash({ previewHash: preview.preview_hash, decision: normalizedDecision })}`;
   const externalId = deterministicUuid({ purpose: "v4-confirmation", idempotencyKey });
-  const command = { contractVersion: 4, externalId, previewExternalId: preview.external_id,
+  let command = { contractVersion: 4, externalId, previewExternalId: preview.external_id,
     idempotencyKey, expectedPreviewHash: preview.preview_hash, workspaceRdpNumber: Number(request.rdp_number),
     decision: normalizedDecision,
     reason: clean(reason), decidedBy: `workspace:${requestedBy || "service"}`,
     correlationId: preview.correlation_id, causationId: preview.external_id };
-  const sent = await client.confirmV4(request.external_id, command);
+  // Claim once before sending. Concurrent callers and later sessions reuse the
+  // exact original payload, including actor/reason, required by MES idempotency.
+  ensure(await admin.from("workspace_v4_previews").update({ snapshot: {
+    ...preview.snapshot, confirmationRecovery: { command, actor: requestedBy || "workspace:service" },
+  } }).eq("id", preview.id).eq("status", "READY").is("snapshot->confirmationRecovery", null));
+  const saved = ensure(await admin.from("workspace_v4_previews").select("*").eq("id", preview.id).limit(1))[0];
+  const recovery = saved?.snapshot?.confirmationRecovery;
+  if (!recovery?.command) throw fail("La preview è cambiata prima dell'invio.", "V4_PREVIEW_NOT_CONFIRMABLE");
+  command = recovery.command;
+  let sent;
+  try {
+    sent = recovery.response ? { result: recovery.response } : await client.confirmV4(request.external_id, command);
+  } catch (error) {
+    const uncertain = error.name === "AbortError" || error.name === "TypeError" || /TIMEOUT|HTTP_50[234]/.test(error.code || "");
+    if (uncertain) throw fail("Conferma in verifica: recupero dell'esito MES della stessa richiesta.", "V4_CONFIRM_PENDING", 202);
+    ensure(await admin.from("workspace_v4_previews").update({ snapshot: {
+      ...saved.snapshot, confirmationRecovery: { ...recovery, rejected: true },
+    } }).eq("id", preview.id));
+    throw error;
+  }
   validateWorkspaceV4ProductionResult(preview, sent.result);
-  const result = ensure(await admin.rpc(sent.result.status === "FORECAST" ? "confirm_workspace_forecast_after_mes" : "confirm_workspace_v4_after_mes", {
-    p_preview_id: preview.id, p_external_id: externalId, p_idempotency_key: idempotencyKey,
-    p_payload_hash: payloadHash(command), p_expected_row_version: preview.local_row_version,
-    p_decision: normalizedDecision, p_mes_response: sent.result,
-    p_actor: requestedBy || "workspace:service", p_reason: clean(reason),
-    p_correlation_id: preview.correlation_id, p_causation_id: preview.external_id,
-  }))[0];
-  return { confirmation: result, mes: sent.result };
+  try {
+    ensure(await admin.from("workspace_v4_previews").update({ snapshot: {
+      ...saved.snapshot, confirmationRecovery: { ...recovery, response: sent.result },
+    } }).eq("id", preview.id));
+    const result = ensure(await admin.rpc(sent.result.status === "FORECAST" ? "confirm_workspace_forecast_after_mes" : "confirm_workspace_v4_after_mes", {
+      p_preview_id: preview.id, p_external_id: externalId, p_idempotency_key: idempotencyKey,
+      p_payload_hash: payloadHash(command), p_expected_row_version: preview.local_row_version,
+      p_decision: normalizedDecision, p_mes_response: sent.result,
+      p_actor: recovery.actor, p_reason: command.reason,
+      p_correlation_id: preview.correlation_id, p_causation_id: preview.external_id,
+    }))[0];
+    return { confirmation: result, mes: sent.result };
+  } catch (error) {
+    console.error("Conferma MES completata; mirror Workspace da recuperare", { previewId: preview.id, code: error.code });
+    throw fail("MES ha risposto: completamento della registrazione Workspace in verifica.", "V4_CONFIRM_PENDING", 202);
+  }
 }

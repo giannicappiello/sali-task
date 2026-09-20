@@ -264,7 +264,8 @@ export function createProgremesProductionClient({ env = process.env, fetchImpl =
       return { ...sent, result: validateV4PreviewResponse(sent.result, payload) };
     },
     confirmV4: async (workspaceExternalId, payload) => {
-      const sent = await call(V4_CONFIRM_PATH(workspaceExternalId), payload);
+      const sent = await call(V4_CONFIRM_PATH(workspaceExternalId), payload,
+        Math.min(120_000, Math.max(10_000, Number(env.PROGREMES_CONFIRM_TIMEOUT_MS) || 60_000)));
       return { ...sent, result: validateV4ConfirmResponse(sent.result, payload) };
     },
     cancelV4: async (workspaceExternalId, payload) => call(V4_CANCEL_PATH(workspaceExternalId), { ...payload, externalId: workspaceExternalId }),

@@ -19,14 +19,17 @@ sempre esclusa per gli utenti associati a clienti. Ogni apertura di un allegato,
 incluse le anteprime, verifica nuovamente articolo e file attivo e registra
 l'accesso prima di emettere un URL NAS firmato con validità 15 minuti.
 
-Applicare `20260920120000_workspace_product_specifications.sql` prima di
-distribuire il codice. Crea tabelle riservate al servizio Workspace e la RPC
+Applicare `20260920120000_workspace_product_specifications.sql` e
+`20260920121000_product_specification_conflict_status.sql` prima di distribuire
+il codice. Creano tabelle riservate al servizio Workspace e la RPC
 atomica `save_workspace_product_specification`. Un salvataggio incrementa la
 revisione e ne conserva una copia completa; il controllo `expectedVersion`
 impedisce a due editor di sovrascriversi. Il server risponde 409 se nel frattempo
 è stata salvata una revisione diversa. La UI conserva la bozza e offre Ricarica,
 con conferma prima di scartare modifiche locali. Lo storico mostra le ultime
 50 revisioni con autore e data; le copie complete restano nel database.
+Il conflitto usa SQLSTATE `PT409`, così PostgREST risponde subito con HTTP 409
+senza ritentare il salvataggio come se fosse un errore di serializzazione SQL.
 
 Le bozze sono in memoria per la sessione della pagina e restano disponibili
 passando tra articoli; la chiusura/ricarica del browser avvisa se vi sono

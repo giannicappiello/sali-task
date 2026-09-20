@@ -83,7 +83,7 @@ export async function productSpecificationOperation(identity, path, input = {}) 
       p_article_code: code, p_expected_version: input.expectedVersion, p_data: validated.data,
       p_attachments: validated.attachments, p_user_id: profile.id, p_user_label: profile.email || 'Utente Workspace',
     });
-    if (error?.code === '40001') throw fail('Il capitolato è stato modificato da un’altra persona. Ricaricare la versione aggiornata prima di salvare.', 409);
+    if (['PT409', '40001'].includes(error?.code)) throw fail('Il capitolato è stato modificato da un’altra persona. Ricaricare la versione aggiornata prima di salvare.', 409);
     if (error) throw error;
     return dto(data);
   }

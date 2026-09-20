@@ -30,7 +30,7 @@ function fixture({ customers = ['*'], canWrite = true, files = [], lots = [] } =
     async rpc(name, args) {
       assert.equal(name, 'save_workspace_product_specification'); writes++;
       const current = tables.workspace_product_specifications.find(r => r.article_code === args.p_article_code);
-      if ((current?.version || 0) !== args.p_expected_version) return { error: { code: '40001' } };
+      if ((current?.version || 0) !== args.p_expected_version) return { error: { code: 'PT409' } };
       const saved = { article_code: args.p_article_code, version: args.p_expected_version + 1, data: args.p_data,
         attachments: args.p_attachments, updated_at: '2026-09-20T12:00:00Z', updated_by_label: args.p_user_label };
       tables.workspace_product_specifications = [saved]; tables.workspace_product_specification_revisions.push(saved);

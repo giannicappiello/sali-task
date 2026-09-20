@@ -266,3 +266,18 @@ test('FP135: descrizione completa Mexal con spazio originale e revisione da riap
   assert.equal(data.description, 'Semilavorato SALI DI ISCHIA Crema Antiage');
   assert.equal(data.approvedBy, '');
 });
+
+test('lettura capitolato e fonti con una sola autorizzazione, senza scritture', async () => {
+  const f = fixture();
+  let calls = 0;
+  const result = await productSpecificationOperation(f.identity, 'specifications?articleCode=IT0001&includeSources=true', {}, {
+    loadSources: async () => { calls++; return { customerNames: ['Cliente Alfa'], components: [] }; },
+  });
+  assert.equal(calls, 1);
+  assert.deepEqual(result.sources.customerNames, ['Cliente Alfa']);
+  assert.equal(result.specification, null);
+  assert.equal(f.writes(), 0);
+  await assert.rejects(productSpecificationOperation(f.identity, 'specifications?articleCode=UNKNOWN&includeSources=true', {}, {
+    loadSources: async () => { throw new Error('Must not load unauthorized sources'); },
+  }), error => error.status === 404);
+});

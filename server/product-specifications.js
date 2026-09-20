@@ -94,6 +94,14 @@ export async function productSpecificationOperation(identity, path, input = {}, 
     if (error) throw error;
     return dto(data);
   }
+  if (url.pathname === '/specifications' && url.searchParams.get('includeSources') === 'true') {
+    const [saved, sources] = await Promise.all([
+      admin.from('workspace_product_specifications').select('*').eq('article_code', code).maybeSingle(),
+      loadSources(identity, code),
+    ]);
+    if (saved.error) throw saved.error;
+    return { specification: dto(saved.data), sources, canApprove: Boolean(identity.canApproveSpecification || identity.canWriteDocuments) };
+  }
   const { data: spec, error } = await admin.from('workspace_product_specifications').select('*').eq('article_code', code).maybeSingle();
   if (error) throw error;
   if (url.pathname === '/specifications') return { specification: dto(spec), canApprove: Boolean(identity.canApproveSpecification || identity.canWriteDocuments) };

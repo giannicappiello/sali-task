@@ -36,6 +36,7 @@ export async function readSpecificationBom(admin, code, mexal = buildMexalClient
 // Called only after authorizing access to the finished article.
 export async function loadSpecificationSources(identity, code, { formulaClient = createProgremesProductionClient } = {}) {
   const { admin, customerCodes } = identity;
+  const readCustomers = async () => {
   // Customer resolution applies to both bulk formulas and finished articles.
   const [lots, genealogy] = await Promise.all([
     rows(admin, 'workspace_private_document_lots', 'customer_code', q => q.eq('article_code', key(code))),
@@ -45,14 +46,16 @@ export async function loadSpecificationSources(identity, code, { formulaClient =
     .map(key).filter(Boolean).filter(c => customerCodes.includes('*') || customerCodes.map(key).includes(c)))];
   const customers = codes.length ? await admin.from('ordini_clienti_cache').select('codice_cliente,ragione_sociale').in('codice_cliente', codes) : { data: [] };
   if (customers.error) throw customers.error;
-  const customerData = {
+  return {
     customerNames: [...new Set((customers.data || []).map(c => String(c.ragione_sociale || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'it')),
     missingCustomerNames: codes.filter(c => !(customers.data || []).some(row => key(row.codice_cliente) === c && String(row.ragione_sociale || '').trim())).length,
   };
+  };
   if (/^FP/i.test(code)) {
-    const [{ result }, article] = await Promise.all([
+    const [{ result }, article, customerData] = await Promise.all([
       formulaClient().formulaSpecification({ articleCode: code }),
       admin.from('ordini_prodotti_cache').select('descrizione,dati_mexal').eq('codice_articolo', key(code)).maybeSingle(),
+      readCustomers(),
     ]);
     if (article.error) throw article.error;
     const raw = article.data?.dati_mexal;
@@ -63,9 +66,10 @@ export async function loadSpecificationSources(identity, code, { formulaClient =
     if (!result.formulaData) throw new Error('Specifiche della formula non disponibili in MES.');
     return { specificationKind: 'bulk', formulaData: { ...result.formulaData, ...(description ? { description } : {}) }, components: [], ...customerData, photoUrl: null, bomError: '' };
   }
-  const [product, revision] = await Promise.all([
+  const [product, revision, customerData] = await Promise.all([
     admin.from('prodotti').select('immagine_catalogo_url').eq('codice_mexal', code).maybeSingle(),
     admin.from('workspace_finished_bom_revisions').select('id,revision').eq('finished_article_code', code).eq('is_current', true).maybeSingle(),
+    readCustomers(),
   ]);
   if (product.error || revision.error) throw product.error || revision.error;
   let lines = revision.data ? await rows(admin, 'workspace_finished_bom_lines', 'article_code,description', q => q.eq('revision_id', revision.data.id).eq('is_removed', false)) : [];

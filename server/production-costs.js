@@ -26,10 +26,13 @@ export async function costSession(req,screen,write=false) {
  if(auth.error||!auth.data?.user)throw fail("Sessione non valida.",401);
  const profile=check(await admin.from("utenti").select("id,attivo").eq("auth_user_id",auth.data.user.id).maybeSingle());
  if(!profile||!profile.attivo)throw fail("Profilo non attivo.",403);
- const level=check(await admin.rpc("workspace_screen_level_for_user",{target_user_id:profile.id,target_screen:screen}));
- if(!level||level==="nessuno"||(write&&!["scrittura","gestione","completo","amministrazione"].includes(level)))throw fail("Operazione non autorizzata su questa schermata.",403);
  const caller=createClient(env.SUPABASE_URL,env.SUPABASE_ANON_KEY||env.SUPABASE_SERVICE_ROLE_KEY,{...options,global:{headers:{Authorization:`Bearer ${token}`}}});
- const snapshot=check(await caller.rpc("workspace_session_access"));
+ const [levelResult,snapshotResult]=await Promise.all([
+  admin.rpc("workspace_screen_level_for_user",{target_user_id:profile.id,target_screen:screen}),
+  caller.rpc("workspace_session_access"),
+ ]);
+ const level=check(levelResult),snapshot=check(snapshotResult);
+ if(!level||level==="nessuno"||(write&&!["scrittura","gestione","completo","amministrazione"].includes(level)))throw fail("Operazione non autorizzata su questa schermata.",403);
  if(!snapshot?.scope)throw fail("Ambito dati non disponibile.",403);
  return {admin,caller,profile,scope:snapshot.scope,canWrite:["scrittura","gestione","completo","amministrazione"].includes(level)};
 }

@@ -22,7 +22,7 @@ export default function ProductSpecificationViewButton({ articleCode, descriptio
     let active = true, objectUrl;
     async function load() {
       const query = new URLSearchParams({ articleCode });
-      const [{ specification: saved, canApprove }, sources] = await Promise.all([request(`specifications?${query}`), request(`specifications/sources?${query}`)]);
+      const { specification: saved, canApprove, sources } = await request(`specifications?${query}&includeSources=true`);
       const specification = saved || (sources.specificationKind === 'bulk' ? { version: 0, attachments: [], data: { description: description || articleCode } } : null);
       if (!specification) throw new Error('Il capitolato di questo prodotto non è ancora stato compilato in Documenti Private.');
       if (sources.bomError) throw new Error(sources.bomError);

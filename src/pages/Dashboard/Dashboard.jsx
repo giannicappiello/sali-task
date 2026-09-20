@@ -382,13 +382,15 @@ function Dashboard({ toolbarTarget = null }) {
     const date = new Date(selectedDate + 'T12:00:00'); date.setDate(date.getDate() + offset * 7);
     setSelectedDate(formatDateForQuery(date)); setCurrentMonth(new Date(date.getFullYear(), date.getMonth(), 1)); setActivityFilter(null);
   }
+  const weekDays = useMemo(() => {
   const weekStart = new Date(selectedDate + 'T12:00:00');
   weekStart.setDate(weekStart.getDate() - (weekStart.getDay() + 6) % 7);
-  const weekDays = Array.from({ length: 7 }, (_, index) => {
+  return Array.from({ length: 7 }, (_, index) => {
     const date = new Date(weekStart); date.setDate(date.getDate() + index);
     const key = formatDateForQuery(date);
     return { date, key, items: filteredActivities.filter(item => activityOnDay(item, key)) };
   });
+  }, [selectedDate, filteredActivities]);
 
   function togglePhaseDepartment(departmentId) {
     setPhaseForm((current) => {

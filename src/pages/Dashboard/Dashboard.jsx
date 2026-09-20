@@ -1,3 +1,4 @@
+import PreparationActions from './PreparationActions';
 import { displayDate } from '../../lib/displayDate';
 import { Modal as CostModal } from '../../features/production-costs/common';
 import ProductSpecificationViewButton from '../Documentation/ProductSpecificationViewButton';
@@ -374,10 +375,6 @@ function Dashboard({ toolbarTarget = null }) {
   }
 
   function openActivity(item) {
-    if (item.panelUrl) {
-      window.open(item.panelUrl, '_blank', 'popup=yes,width=800,height=960,toolbar=no,menubar=no,location=no,status=no,resizable=yes,scrollbars=yes,noopener,noreferrer');
-      return;
-    }
     setDayPopup(null); setActivityFilter(null); setActivityPopup(item);
   }
   function openDay(day) { setSelectedDate(day); setActivityFilter(null); setDayPopup(day); }
@@ -603,7 +600,7 @@ function Dashboard({ toolbarTarget = null }) {
       {activityPopup && <CostModal title={activityPopup.titolo} onClose={() => setActivityPopup(null)}>
         <p><strong className={activityPopup.tipo === 'production' ? `production-label ${activityPopup.reparto === 'Preparazione' ? 'preparation' : 'packaging'}` : undefined}>{activityPopup.tipo === 'production' ? activityPopup.reparto : statusLabel(activityPopup)}</strong></p>
         <p>{activityPopup.descrizione || 'Nessuna descrizione'}</p>
-        {activityPopup.tipo === 'production' ? <><div className="pc-metrics"><div><span>Risorsa</span><strong>{activityPopup.resource}</strong></div><div><span>Periodo</span><strong>{displayDate(activityPopup.start, true)} – {displayDate(activityPopup.end, true)}</strong></div><div><span>Stato</span><strong>{activityPopup.stato}</strong></div></div>{activityPopup.reparto === 'Confezionamento' && <div className="dashboard-production-actions"><ProductSpecificationViewButton key={activityPopup.articleCode} articleCode={activityPopup.articleCode} description={activityPopup.descrizione}/><PackagingSheetActions productionOrderId={activityPopup.productionOrderId}/><PackagingOperationalActions key={activityPopup.id} productionOrderId={activityPopup.productionOrderId} resourceCode={activityPopup.resourceCode} orderNumber={activityPopup.orderNumber} articleCode={activityPopup.articleCode} operationType={activityPopup.operationType} onStarted={() => setActivityPopup(current => current ? { ...current, stato: 'In lavorazione' } : current)}/></div>}</> : <><p>Scadenza: {activityPopup.deadline ? formatDateHuman(dateOnly(activityPopup.deadline)) : 'Non impostata'}</p><button className="primary-action" onClick={() => { const item = activityPopup; setActivityPopup(null); if (item.tipo === 'reminder') { setSelectedReminder(item); setReminderForm({ ...emptyReminderForm, ...item, deadline: dateOnly(item.deadline) || '' }); setReminderModalOpen(true); } else openPhaseEdit(item); }}>Apri dettaglio e azioni</button></>}
+        {activityPopup.tipo === 'production' ? <><div className="pc-metrics"><div><span>Risorsa</span><strong>{activityPopup.resource}</strong></div><div><span>Periodo</span><strong>{displayDate(activityPopup.start, true)} – {displayDate(activityPopup.end, true)}</strong></div><div><span>Stato</span><strong>{activityPopup.stato}</strong></div></div>{activityPopup.operationType === 'Production' && <div className="dashboard-production-actions"><PreparationActions key={activityPopup.id} activity={activityPopup} onStarted={() => setActivityPopup(current => current ? { ...current, stato: 'In lavorazione' } : current)}/></div>}{activityPopup.reparto === 'Confezionamento' && <div className="dashboard-production-actions"><ProductSpecificationViewButton key={activityPopup.articleCode} articleCode={activityPopup.articleCode} description={activityPopup.descrizione}/><PackagingSheetActions productionOrderId={activityPopup.productionOrderId}/><PackagingOperationalActions key={activityPopup.id} productionOrderId={activityPopup.productionOrderId} resourceCode={activityPopup.resourceCode} orderNumber={activityPopup.orderNumber} articleCode={activityPopup.articleCode} operationType={activityPopup.operationType} onStarted={() => setActivityPopup(current => current ? { ...current, stato: 'In lavorazione' } : current)}/></div>}</> : <><p>Scadenza: {activityPopup.deadline ? formatDateHuman(dateOnly(activityPopup.deadline)) : 'Non impostata'}</p><button className="primary-action" onClick={() => { const item = activityPopup; setActivityPopup(null); if (item.tipo === 'reminder') { setSelectedReminder(item); setReminderForm({ ...emptyReminderForm, ...item, deadline: dateOnly(item.deadline) || '' }); setReminderModalOpen(true); } else openPhaseEdit(item); }}>Apri dettaglio e azioni</button></>}
       </CostModal>}
       <PhaseChecklistModal
         open={phaseModalOpen}

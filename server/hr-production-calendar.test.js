@@ -21,9 +21,9 @@ test('tutte le pagine del piano, senza filtri upstream che perdono le sovrapposi
   assert.equal(rows.length, 2);
   assert.deepEqual(queries, [{ page: 1, pageSize: 500 }, { page: 2, pageSize: 500 }]);
 });
-function adminStub({ active = true, hr = true, workspaceAdmin = false } = {}) {
+function adminStub({ active = true, hr = true, workspaceAdmin = false, areas = [] } = {}) {
   const data = { utenti: { id: 'employee', attivo: active, reparto_id: workspaceAdmin ? null : 'mix', ruoli: { amministratore_workspace: workspaceAdmin } }, workspace_customer_user_links: [], workspace_hr_members: { active: hr }, utenti_reparti: [{ reparto_id: 'fill' }], reparti: [{ nome: 'Miscelazione', attivo: true }, { nome: 'Confezionamento', attivo: false }] };
-  return { auth: { getUser: async () => ({ data: { user: { id: 'auth' } } }) }, from: table => {
+  return { rpc: async () => ({ data: areas }), auth: { getUser: async () => ({ data: { user: { id: 'auth' } } }) }, from: table => {
     if (workspaceAdmin && !['utenti', 'workspace_customer_user_links'].includes(table)) throw new Error('Admin must not require HR membership or departments');
     const result = { data: data[table] };
     const query = { select: () => query, eq: () => query, in: async () => result, maybeSingle: async () => result, then: resolve => Promise.resolve(result).then(resolve) };
@@ -34,6 +34,7 @@ test('autorizzazione verifica sessione, dipendente HR attivo e reparti attivi', 
   const req = { headers: { authorization: 'Bearer test' } };
   assert.deepEqual(await authorizeProductionCalendar(req, adminStub()), ['Production']);
   assert.deepEqual(await authorizeProductionCalendar(req, adminStub({ hr: false })), []);
+  assert.deepEqual(await authorizeProductionCalendar(req, adminStub({ hr: false, areas: ['miscelazione'] })), ['Production']);
   await assert.rejects(authorizeProductionCalendar(req, adminStub({ active: false })), { status: 403 });
   await assert.rejects(authorizeProductionCalendar({}, adminStub()), { status: 401 });
 });

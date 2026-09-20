@@ -45,6 +45,7 @@ import { privateWorkbenchSession } from "../../server/private-orders-workbench.j
 import { handleProductionCosts } from "../../server/production-costs.js";
 import { handlePackagingSheet } from "../../server/packaging-sheet.js";
 import { handlePackagingActions } from "../../server/packaging-actions.js";
+import { handlePreparationActions } from "../../server/preparation-actions.js";
 import { resolveMesPackagingSpecification } from "../../server/mes-packaging-specification.js";
 import { productionGoLiveGates } from "../../server/workspace-production-gates.js";
 import { effectiveWorkspaceDiagnostics } from "../../server/workspace-effective-diagnostics.js";
@@ -632,6 +633,8 @@ export default async function handler(req, res) {
         return sendSuccess(res, 200, await handlePackagingSheet(req, body));
       case "packaging_actions":
         return sendSuccess(res, 200, await handlePackagingActions(req, body));
+      case "preparation_actions":
+        return sendSuccess(res, 200, await handlePreparationActions(req, body));
       case "production_costs":
         return sendSuccess(res, 200, await handleProductionCosts(req, body));
       case "ai_order_capabilities":

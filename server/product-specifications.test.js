@@ -43,6 +43,56 @@ function fixture({ customers = ['*'], canWrite = true, files = [], lots = [] } =
 }
 const path = 'specifications/save?articleCode=IT0001';
 
+test('approval records authenticated name and server date, checks revision, and editing clears approval', async () => {
+  const f = fixture();
+  f.identity.profile.nome = 'Maria'; f.identity.profile.cognome = 'Rossi';
+  const first = await productSpecificationOperation(f.identity, path, payload());
+  const deps = { loadSources: async () => ({ customerNames: [], components: [] }), now: () => new Date('2026-09-20T13:15:00Z') };
+  const approved = await productSpecificationOperation(f.identity, 'specifications/approve?articleCode=IT0001',
+    { expectedVersion: first.version, approvedBy: 'Forged', approvedAt: '2000-01-01', data: { description: 'Injected' } }, deps);
+  assert.equal(approved.data.approvedBy, 'Maria Rossi'); assert.equal(approved.data.approvedUserId, 'user');
+  assert.equal(approved.data.approvedAt, '2026-09-20T13:15:00.000Z'); assert.equal(approved.version, 2);
+  assert.equal(approved.data.description, first.data.description);
+  await assert.rejects(productSpecificationOperation(f.identity, 'specifications/approve?articleCode=IT0001', { expectedVersion: 1 }, deps), { status: 409 });
+  const edited = await productSpecificationOperation(f.identity, path, payload({ expectedVersion: 2, data: { ...approved.data, description: 'Nuova specifica' } }));
+  assert.equal(edited.data.approvedBy, undefined); assert.equal(edited.data.approvedAt, undefined);
+  assert.equal(f.tables.workspace_product_specification_revisions[1].data.approvedBy, 'Maria Rossi');
+});
+test('read-only operators cannot approve and changed authoritative sources require a new saved revision', async () => {
+  const f = fixture(); await productSpecificationOperation(f.identity, path, payload());
+  const route = 'specifications/approve?articleCode=IT0001';
+  await assert.rejects(productSpecificationOperation({ ...f.identity, canWriteDocuments: false }, route, { expectedVersion: 1 }), { status: 403 });
+  await assert.rejects(productSpecificationOperation(f.identity, route, { expectedVersion: 1 }, {
+    loadSources: async () => ({ customerNames: [], components: [{ code: 'FP002' }] }),
+  }), { status: 409 });
+  assert.equal(f.writes(), 1);
+});
+test('customer approval is limited to articles in the authenticated customer scope', async () => {
+  const f = fixture({ customers: ['501.A'], canWrite: false, lots: [{ article_code: 'IT0001', lot_code: 'L1', customer_code: '501.B' }] });
+  f.identity.canApproveSpecification = true;
+  f.tables.workspace_product_specifications.push({ article_code: 'IT0001', version: 1, data: { customer: '', semiFinished: '' }, attachments: [] });
+  const route = 'specifications/approve?articleCode=IT0001';
+  const deps = { loadSources: async () => ({ customerNames: [], components: [] }) };
+  await assert.rejects(productSpecificationOperation(f.identity, route, { expectedVersion: 1 }, deps), { status: 404 });
+  assert.equal(f.writes(), 0);
+  f.tables.workspace_private_document_lots[0].customer_code = '501.A';
+  assert.equal((await productSpecificationOperation(f.identity, route, { expectedVersion: 1 }, deps)).data.approvedUserId, 'user');
+});
+
+test('approval metadata cannot be supplied through specification edits and changed sources invalidate it', () => {
+  const data = { approvedBy: 'Forged', approvedAt: '2000-01-01T00:00:00Z', approvedUserId: 'other' };
+  const validated = validateSpecification(payload({ data })).data;
+  assert.equal(validated.approvedBy, undefined); assert.equal(validated.approvedAt, undefined); assert.equal(validated.approvedUserId, undefined);
+  const original = { ...data, customer: '', semiFinished: '', viscosityMin: '100' };
+  const sources = { customerNames: [], components: [], formulaData: { viscosityMin: '150' }, specificationKind: 'bulk' };
+  const changed = applySpecificationSources(original, sources);
+  assert.equal(changed.viscosityMin, '150'); assert.equal(changed.approvedBy, ''); assert.equal(changed.approvedAt, '');
+});
+test('existing semilavorati can have their own specification without authorizing raw materials', async () => {
+  const f = fixture(); f.tables.ordini_prodotti_cache.push({ codice_articolo: 'FP001' });
+  assert.deepEqual(await productSpecificationOperation(f.identity, 'specifications?articleCode=FP001'), { specification: null, canApprove: true });
+});
+
 test('capitolato: campi ammessi, lunghezze, tipi e percorsi sono validati', () => {
   const normalized = validateSpecification(payload({ data: { description: '  Test  ', injected: true } }));
   assert.equal(normalized.data.description, 'Test'); assert.equal(normalized.data.injected, undefined);
@@ -74,7 +124,7 @@ test('capitolato: riservato ai prodotti finiti esistenti', async () => {
   for (const code of ['MP001', 'IT9999', '']) {
     await assert.rejects(productSpecificationOperation(f.identity, 'specifications?articleCode=' + code));
   }
-  assert.deepEqual(await productSpecificationOperation(f.identity, 'specifications?articleCode=IT0001'), { specification: null });
+  assert.deepEqual(await productSpecificationOperation(f.identity, 'specifications?articleCode=IT0001'), { specification: null, canApprove: true });
 });
 
 test('capitolato: isolamento clienti per articolo anche per storico e allegati', async () => {
@@ -84,7 +134,7 @@ test('capitolato: isolamento clienti per articolo anche per storico e allegati',
     await assert.rejects(productSpecificationOperation(f.identity, route + '?articleCode=IT0001'), e => e.status === 404);
   }
   f.tables.workspace_private_document_lots[0].customer_code = '501.A';
-  assert.deepEqual(await productSpecificationOperation(f.identity, 'specifications?articleCode=IT0001'), { specification: null });
+  assert.deepEqual(await productSpecificationOperation(f.identity, 'specifications?articleCode=IT0001'), { specification: null, canApprove: true });
 });
 
 test('capitolato: file inesistenti o inattivi impediscono il salvataggio', async () => {

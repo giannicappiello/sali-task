@@ -2,9 +2,10 @@ import { displayDate } from '../../lib/displayDate';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, File, FileText, Folder, FolderOpen, ImagePlus, Pencil, RefreshCw, Save, Trash2, X } from 'lucide-react';
-import { applySpecificationSources, specificationFileRequest, specificationComponentFields, isSpecificationImage, MAX_SPECIFICATION_ATTACHMENTS, specificationFields, specificationSections } from '../../../shared/productSpecification';
+import { applySpecificationSources, specificationFileRequest, specificationComponentFields, isSpecificationImage, MAX_SPECIFICATION_ATTACHMENTS, specificationFields, sectionsForSpecification, specificationSourceFields, formulaFields } from '../../../shared/productSpecification';
 import '../../features/production-costs/production-costs.css';
 import './ProductSpecification.css';
+import SpecificationApproval from './SpecificationApproval';
 
 const labelDate = value => value ? displayDate(value, true) : '';
 const initialData = article => Object.fromEntries(specificationFields.map(([name]) => [name,
@@ -96,6 +97,7 @@ export default function ProductSpecification({ article, canEdit, request, drafts
   const [picker, setPicker] = useState(null), [revisions, setRevisions] = useState(null), [historyError, setHistoryError] = useState('');
   const [reload, setReload] = useState(0);
   const [editing, setEditing] = useState(false);
+  const [approvalAllowed, setApprovalAllowed] = useState(false);
   const editTrigger = useRef(null), editorClose = useRef(null);
   const [sources, setSources] = useState(null), [sourceError, setSourceError] = useState('');
   const [pdf, setPdf] = useState(null), [pdfLoading, setPdfLoading] = useState(false), [photoError, setPhotoError] = useState(false);
@@ -108,9 +110,10 @@ export default function ProductSpecification({ article, canEdit, request, drafts
     let active = true;
     Promise.all([pending ? Promise.resolve({ specification: pending }) : request(resource),
       request(`specifications/sources?${new URLSearchParams({ articleCode: code })}`).catch(cause => ({ sourceError: cause.message })),
-    ]).then(([{ specification }, loadedSources]) => {
+    ]).then(([{ specification, canApprove }, loadedSources]) => {
       if (active) {
         setSpec(specification || { data: initialData(article), attachments: [], version: 0 });
+        setApprovalAllowed(Boolean(canApprove));
         setDirty(Boolean(pending)); setSources(loadedSources.sourceError ? null : loadedSources);
         setSourceError(loadedSources.sourceError || ''); setPhotoError(false); setLoading(false);
       }
@@ -141,7 +144,8 @@ export default function ProductSpecification({ article, canEdit, request, drafts
     if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
   }
   const displayedData = spec && sources ? applySpecificationSources(spec.data, sources) : spec?.data;
-  const sourceChanges = Boolean(spec && sources && ['customer', 'semiFinished'].some(name => (spec.data[name] || '') !== displayedData[name]));
+  const sourceChanges = Boolean(spec && sources && specificationSourceFields.some(name => (spec.data[name] || '') !== (displayedData[name] || '')));
+  const sections = sectionsForSpecification(displayedData);
   async function preview(event) {
     previewTrigger.current = event.currentTarget; setPdfLoading(true); setError('');
     try {
@@ -152,8 +156,22 @@ export default function ProductSpecification({ article, canEdit, request, drafts
     } catch (cause) { if (mounted.current) setError(cause.message); }
     finally { if (mounted.current) setPdfLoading(false); }
   }
-  function closePreview() { setPdf(null); previewTrigger.current?.focus(); }
-  function change(next) { setSpec(next); setDirty(true); drafts.set(code, next); setMessage(''); }
+  function closePreview() { if (saving) return; setPdf(null); previewTrigger.current?.focus(); }
+  function change(next) { next = { ...next, data: { ...(sources ? applySpecificationSources(next.data, sources) : next.data), approvedBy: '', approvedAt: '', approvedUserId: '' } }; setSpec(next); setDirty(true); drafts.set(code, next); setMessage(''); }
+  async function approve() {
+    setSaving(true); setError('');
+    try {
+      const result = await request(`specifications/approve?${new URLSearchParams({ articleCode: code })}`, { body: { expectedVersion: spec.version } });
+      if (!mounted.current) return;
+      setSpec(result); drafts.delete(code); setDirty(false); setRevisions(null); setMessage('Approvazione registrata.');
+      if (pdf) {
+        const { createProductSpecificationPdf } = await import('./createProductSpecificationPdf');
+        const updated = await createProductSpecificationPdf({ article, specification: result, photoUrl: sources?.photoUrl, components: sources?.components, dirty: false, request });
+        if (mounted.current) setPdf({ ...updated, url: URL.createObjectURL(updated.blob) });
+      }
+    } catch (cause) { if (mounted.current) setError(cause.message); }
+    finally { if (mounted.current) setSaving(false); }
+  }
   function closePicker() { setPicker(null); pickerTrigger.current?.focus(); }
   function openPicker(section, event) { pickerTrigger.current = event.currentTarget; setPicker(section); }
   function addFile(file) {
@@ -184,7 +202,9 @@ export default function ProductSpecification({ article, canEdit, request, drafts
     catch (cause) { if (mounted.current) setHistoryError(cause.message); }
   }
   function field([name, label, type]) {
-    const automatic = ['customer', 'semiFinished'].includes(name);
+    const automatic = ['customer', 'semiFinished'].includes(name) || (displayedData.specificationKind === 'bulk' && formulaFields.some(([key]) => key === name));
+    if (['readonly', 'timestamp'].includes(type)) return <label key={name}>{label}<input readOnly
+      value={type === 'timestamp' ? (displayedData[name] ? displayDate(displayedData[name]) : '') : displayedData[name] || ''} placeholder="Non ancora approvato"/></label>;
     if (name === 'additionalComponents') {
       const selected = (spec.data[name] || '').split('\n').filter(Boolean);
       const components = sources?.components.filter(c => !/^FP/i.test(c.code)) || [];
@@ -204,7 +224,7 @@ export default function ProductSpecification({ article, canEdit, request, drafts
     return <label key={name} className={type === 'textarea' ? 'product-spec-wide' : ''}>{label}{type === 'textarea'
       ? <textarea rows={3} maxLength={5000} value={spec.data[name] || ''} readOnly={!canEdit} onChange={e => change({ ...spec, data: { ...spec.data, [name]: e.target.value } })}/>
       : type === 'yesno' ? <select value={spec.data[name] || ''} disabled={!canEdit} onChange={e => change({ ...spec, data: { ...spec.data, [name]: e.target.value } })}><option value="">Da definire</option><option value="yes">Sì</option><option value="no">No</option></select>
-        : <input maxLength={500} value={displayedData[name] || ''} readOnly={!canEdit || automatic} placeholder={automatic ? 'Non disponibile nelle anagrafiche' : ''} onChange={e => change({ ...spec, data: { ...spec.data, [name]: e.target.value } })}/>}</label>;
+        : <input type={type === 'date' ? 'date' : 'text'} maxLength={500} value={displayedData[name] || ''} readOnly={!canEdit || automatic} placeholder={automatic ? 'Non disponibile nelle anagrafiche' : ''} onChange={e => change({ ...spec, data: { ...spec.data, [name]: e.target.value } })}/>}</label>;
   }
   function attachments(section, compact = false) {
     return <><div className="product-spec-attachments">{spec.attachments.filter(a => a.section === section).map(a => <Attachment key={`${a.section}-${a.path}`} attachment={a} articleCode={code} request={request} compact={compact} editable={!compact && canEdit && !saving}
@@ -215,16 +235,16 @@ export default function ProductSpecification({ article, canEdit, request, drafts
   function productPhotos(compact = false) {
     return <div className={`product-spec-product-photos${compact ? ' product-spec-compact-photos' : ''}`}>
       {sources?.photoUrl && <article className="product-spec-attachment"><div className="product-spec-image">{photoError ? <p role="alert">Foto di catalogo non disponibile.</p> : <img src={sources.photoUrl} alt={`Foto ${code}`} onError={() => setPhotoError(true)}/>}</div></article>}
-      {!sources?.photoUrl && !spec.attachments.some(a => a.section === 'product') && <div className="product-spec-placeholder"><ImagePlus/><strong>Foto prodotto finito</strong><small>Nessuna foto disponibile</small></div>}
+      {!sources?.photoUrl && !spec.attachments.some(a => a.section === 'product') && <div className="product-spec-placeholder"><ImagePlus/><strong>Foto prodotto</strong><small>Nessuna foto disponibile</small></div>}
       {attachments('product', compact)}
     </div>;
   }
   const notices = <>{sourceError && <p role="alert" className="private-upload-error">{sourceError} Ricarica per recuperare foto, distinta e cliente.</p>}
     {sources?.bomError && <p role="alert" className="private-upload-error">{sources.bomError}</p>}
-    {sources && !sources.bomError && !sources.components.length && <p role="status">Nessuna distinta base disponibile per questo articolo.</p>}
+    {sources && sources.specificationKind !== 'bulk' && !sources.bomError && !sources.components.length && <p role="status">Nessuna distinta base disponibile per questo articolo.</p>}
     {sources?.missingCustomerNames > 0 && <p role="status">Alcuni clienti collegati non hanno una ragione sociale disponibile.</p>}</>;
   return <section className="private-document-section product-specification" inert={overlayOpen || undefined}>
-    <header className="private-document-section-heading"><h3>Capitolato prodotto</h3><span className="product-spec-status">{spec?.version ? `Revisione ${spec.version}` : 'Nessuna revisione'}{dirty ? ' · Bozza non salvata' : ''}</span></header>
+    <header className="private-document-section-heading"><h3>{displayedData?.specificationKind === 'bulk' ? 'Capitolato semilavorato' : 'Capitolato prodotto'}</h3><span className="product-spec-status">{spec?.version ? `Revisione ${spec.version}` : 'Nessuna revisione'}{dirty ? ' · Bozza non salvata' : ''}</span></header>
     {loading ? <p role="status">Caricamento capitolato…</p> : !spec ? <><div role="alert" className="private-upload-error">{error}</div><button type="button" onClick={refresh}><RefreshCw size={15}/>Riprova</button></> : <>
       <div className="product-spec-compact">{productPhotos(true)}<div className="product-spec-actions">
         <button type="button" onClick={preview} disabled={pdfLoading || !sources || Boolean(sources.bomError)}><FileText size={17}/>{pdfLoading ? 'Preparazione PDF…' : 'Visualizza capitolato'}</button>
@@ -238,8 +258,8 @@ export default function ProductSpecification({ article, canEdit, request, drafts
         <div className="product-spec-editor-content">{notices}
       <form onSubmit={save}><fieldset disabled={saving}>
         <div className="product-spec-overview">{productPhotos()}
-          <div className="product-spec-fields"><label>Codice articolo<input value={code} readOnly/></label>{specificationSections[0].fields.map(field)}</div></div>
-        {specificationSections.slice(1).map(section => <details key={section.id} className="product-spec-section" open={section.id === 'primary' || undefined}><summary>{section.title}</summary><div className="product-spec-fields">{section.fields.map(field)}</div>{attachments(section.id)}</details>)}
+          <div className="product-spec-fields"><label>Codice articolo<input value={code} readOnly/></label>{sections[0].fields.map(field)}</div></div>
+        {sections.slice(1).map(section => <details key={section.id} className="product-spec-section" open={['primary', 'formula', 'acceptance'].includes(section.id) || undefined}><summary>{section.title}</summary>{section.id === 'acceptance' && <><p>Spunta Approva per registrare il tuo nome e la data. Una modifica richiede una nuova approvazione.</p><SpecificationApproval specification={{ ...spec, data: displayedData }} canApprove={canEdit || approvalAllowed} disabled={dirty || sourceChanges} busy={saving} onApprove={approve} showDetails={false}/></>}<div className="product-spec-fields">{section.fields.map(field)}</div>{attachments(section.id)}</details>)}
         <footer className="product-spec-footer"><div><small>{spec.updatedAt ? `Salvato il ${labelDate(spec.updatedAt)} da ${spec.updatedBy}` : 'I file restano nelle cartelle NAS esistenti.'}</small>{dirty && <small>Chiudendo il popup, le modifiche restano in bozza in questa pagina fino al salvataggio.</small>}</div><div className="product-spec-actions"><button type="button" onClick={() => setEditing(false)}>Chiudi</button><button type="button" onClick={refresh}><RefreshCw size={15}/>Ricarica</button>{canEdit && <button className="product-spec-save" type="submit" disabled={(!dirty && !sourceChanges && Boolean(spec.version)) || !sources || Boolean(sources.bomError)}><Save size={16}/>{saving ? 'Salvataggio…' : 'Salva capitolato'}</button>}</div></footer>
       </fieldset></form>
       {error && <div className="private-upload-error" role="alert">{error}</div>}{message && <p className="product-spec-message" role="status">{message}</p>}
@@ -251,7 +271,7 @@ export default function ProductSpecification({ article, canEdit, request, drafts
     {pdf && createPortal(<div className="product-spec-modal"><section className="product-spec-pdf" role="dialog" aria-modal="true" aria-label="Anteprima capitolato" onKeyDown={e => { if (e.key === 'Escape') closePreview(); }}>
       <header><h3>Capitolato · {code}</h3><button type="button" ref={previewClose} onClick={closePreview} aria-label="Chiudi anteprima"><X/></button></header>
       {pdf.warnings.length > 0 && <p role="alert">{pdf.warnings.join(' ')}</p>}
-      <iframe title={`Capitolato ${code}`} src={pdf.url}/><footer><small>{dirty || sourceChanges || !spec.version ? 'Bozza con i dati attualmente visualizzati.' : `Revisione ${spec.version}`}</small><a href={pdf.url} download={pdf.fileName}>Scarica PDF</a></footer>
+      <iframe title={`Capitolato ${code}`} src={pdf.url}/>{error && <p role="alert">{error}</p>}<SpecificationApproval specification={{ ...spec, data: displayedData }} canApprove={canEdit || approvalAllowed} disabled={dirty || sourceChanges} busy={saving} onApprove={approve}/><footer><small>{dirty || sourceChanges || !spec.version ? 'Bozza con i dati attualmente visualizzati.' : `Revisione ${spec.version}`}</small><a href={pdf.url} download={pdf.fileName}>Scarica PDF</a></footer>
     </section></div>, document.body)}
   </section>;
 }

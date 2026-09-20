@@ -22,7 +22,7 @@ async function authorize(req, { upload = false, specificationPath = '' } = {}) {
   const { data: { user }, error: authError } = await admin.auth.getUser(authorization.slice(7));
   if (authError || !user) throw Object.assign(new Error("Sessione Workspace non valida."), { status: 401 });
   const { data: profile, error: profileError } = await admin.from("utenti")
-    .select("id,email,attivo,ruolo_id,ruoli(nome,livello_accesso,amministratore_workspace)")
+    .select("id,email,nome,cognome,attivo,ruolo_id,ruoli(nome,livello_accesso,amministratore_workspace)")
     .eq("auth_user_id", user.id).maybeSingle();
   if (profileError || !profile || profile.attivo === false) throw Object.assign(new Error("Utente Workspace non abilitato."), { status: 403 });
 
@@ -59,7 +59,16 @@ async function authorize(req, { upload = false, specificationPath = '' } = {}) {
     ]);
     if (!direct && !role) throw Object.assign(new Error("Caricamento Documenti Private non autorizzato."), { status: 403 });
   }
-  return { admin, user, profile, customerCodes: customerCodes.length ? customerCodes : ["*"], canWriteDocuments: upload };
+  let canApproveSpecification = isAdmin || customerCodes.length > 0;
+  if (!canApproveSpecification && !productionReader && specificationPath.startsWith('/specifications')) {
+    const [direct, role] = await Promise.all([
+      admin.from('permessi_utente').select('permessi!inner(codice)').eq('utente_id', profile.id).eq('permessi.codice', 'documentation.private.upload').limit(1).maybeSingle(),
+      admin.from('permessi_ruolo').select('permessi!inner(codice)').eq('ruolo_id', profile.ruolo_id).eq('permessi.codice', 'documentation.private.upload').limit(1).maybeSingle(),
+    ]);
+    if (direct.error || role.error) throw direct.error || role.error;
+    canApproveSpecification = Boolean(direct.data || role.data);
+  }
+  return { admin, user, profile, customerCodes: customerCodes.length ? customerCodes : ["*"], canWriteDocuments: upload, canApproveSpecification };
 }
 
 export async function privateDocumentsSession(req, body = {}) {

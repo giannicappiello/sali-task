@@ -1,5 +1,5 @@
 import { displayDate } from '../../lib/displayDate.js';
-import { specificationSections, specificationComponentFields, specificationFileRequest, isSpecificationImage } from '../../../shared/productSpecification.js';
+import { sectionsForSpecification, specificationComponentFields, specificationFileRequest, isSpecificationImage } from '../../../shared/productSpecification.js';
 import { specificationAttachmentContent } from './specificationAttachmentContent.js';
 
 async function imageData(url) {
@@ -27,7 +27,7 @@ export async function createProductSpecificationPdf({ article, specification, ph
   const logo = doc.getImageProperties(logoBytes);
   const warnings = [];
   let y = 40;
-  const title = 'Capitolato prodotto';
+  const title = specification.data.specificationKind === 'bulk' ? 'Capitolato semilavorato' : 'Capitolato prodotto';
   const status = dirty || !specification.version ? 'BOZZA - dati non salvati' : `Revisione ${specification.version}`;
   const text = value => String(value ?? '').replace(/[\u2010-\u2015]/g, '-');
   const componentLabel = code => { const component = components.find(c => c.code === code); return component?.description ? `${code} - ${component.description}` : code; };
@@ -35,6 +35,7 @@ export async function createProductSpecificationPdf({ article, specification, ph
     const value = specification.data[name];
     if (value === '__NONE__' || (!value && ({ cartonCode: 'cartonPresent', leafletCode: 'leafletPresent' }[name]) && specification.data[({ cartonCode: 'cartonPresent', leafletCode: 'leafletPresent' }[name])] === 'no')) return 'Non previsto';
     if (!value) return 'Da definire';
+    if (type === 'timestamp') return displayDate(value);
     if (type === 'yesno') return value === 'yes' ? 'Sì' : 'No';
     if (Object.hasOwn(specificationComponentFields, name)) return componentLabel(value);
     if (name === 'additionalComponents') return value.split('\n').map(componentLabel).join('\n');
@@ -78,8 +79,8 @@ export async function createProductSpecificationPdf({ article, specification, ph
     }
   }
   await attachments('product');
-  for (const section of specificationSections) {
-    room(24);
+  for (const section of sectionsForSpecification(specification.data)) {
+    room(section.id === 'acceptance' ? 42 : 24);
     doc.setFont('helvetica', 'bold'); paragraph(section.title, 12); doc.setFont('helvetica', 'normal');
     autoTable(doc, {
       startY: y, margin: { left: 18, right: 18, top: 40, bottom: 21 },
@@ -89,6 +90,9 @@ export async function createProductSpecificationPdf({ article, specification, ph
     });
     y = doc.lastAutoTable.finalY + 8;
     await attachments(section.id);
+    if (section.id === 'acceptance') {
+      room(8); paragraph(`Approvazione delle specifiche del presente capitolato - ${status}`, 9); y += 4;
+    }
   }
   const pages = doc.getNumberOfPages();
   for (let page = 1; page <= pages; page++) {

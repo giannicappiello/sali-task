@@ -6,6 +6,16 @@ import { createProductSpecificationPdf } from '../src/pages/Documentation/create
 
 const logoBytes = new Uint8Array(await readFile(new URL('../public/progre-logo-white.png', import.meta.url)));
 const article = { articleCode: 'IT0001', description: 'Detergente intimo 250ml' };
+test('bulk PDF contains formula bounds and customer acceptance with Italian date, without packaging fields', async () => {
+  const result = await createProductSpecificationPdf({ article: { articleCode: 'FP001', description: 'Semilavorato' }, logoBytes,
+    specification: { version: 2, attachments: [], data: { specificationKind: 'bulk', formulaCode: 'FP001', formulaRevision: '1.0 / 2',
+      viscosityMin: '100', viscosityMax: '200', phMin: '4,5', phMax: '5,5', density: '1,02', appearance: 'Gel limpido', color: 'Blu', fragrance: 'Menta',
+      approvedBy: 'Mario Rossi', approvedAt: '2026-09-20T10:15:00Z' } } });
+  const raw = new TextDecoder().decode(await result.blob.arrayBuffer());
+  for (const value of ['Mario Rossi', '20-09-2026', 'Gel limpido', 'FP001', '4,5', '5,5', '100', '200', '1,02']) assert.ok(raw.includes(value), value);
+  assert.ok(!raw.includes('Firma del cliente')); assert.ok(!raw.includes('________'));
+  assert.ok(!raw.includes('Packaging primario')); assert.ok(!raw.includes('Pezzi per cartone'));
+});
 test('capitolato PDF: logo, foto, semilavorato e impaginazione di note lunghe', async () => {
   let loaded = 0;
   const result = await createProductSpecificationPdf({ article, logoBytes, photoUrl: 'catalog-photo', dirty: false,

@@ -1,5 +1,6 @@
 import { rows, key } from './private-documents-store.js';
 import { buildMexalClient, loadFullArticle } from './mexal/sync-products.js';
+import { createProgremesProductionClient } from './progremes-production-client.js';
 
 export async function readSpecificationBom(admin, code, mexal = buildMexalClient({ warehouse: null, timeoutMs: 12000 }), ancestors = [], budget = { calls: 0 }) {
   if (ancestors.includes(key(code)) || ancestors.length >= 6 || ++budget.calls > 20) throw new Error('Distinta base ricorsiva o troppo estesa.');
@@ -35,6 +36,11 @@ export async function readSpecificationBom(admin, code, mexal = buildMexalClient
 // Called only after authorizing access to the finished article.
 export async function loadSpecificationSources(identity, code) {
   const { admin, customerCodes } = identity;
+  if (/^FP/i.test(code)) {
+    const { result } = await createProgremesProductionClient().formulaSpecification({ articleCode: code });
+    if (!result.formulaData) throw new Error('Specifiche della formula non disponibili in MES.');
+    return { specificationKind: 'bulk', formulaData: result.formulaData, components: [], customerNames: [], photoUrl: null, bomError: '' };
+  }
   const results = await Promise.all([
     admin.from('prodotti').select('immagine_catalogo_url').eq('codice_mexal', code).maybeSingle(),
     admin.from('workspace_finished_bom_revisions').select('id,revision').eq('finished_article_code', code).eq('is_current', true).maybeSingle(),

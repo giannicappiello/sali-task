@@ -33,17 +33,19 @@ export async function authorizeProductionCalendar(req, admin) {
     return { operations: ['Production', 'Packaging', 'Cartoning'], orders };
   }
   if (profile.data.ruoli?.amministratore_workspace === true) return ['Production', 'Packaging', 'Cartoning'];
-  const [member, memberships] = await Promise.all([
+  const [member, memberships, areas] = await Promise.all([
     admin.from('workspace_hr_members').select('active').eq('user_id', profile.data.id).maybeSingle(),
     admin.from('utenti_reparti').select('reparto_id').eq('utente_id', profile.data.id),
+    admin.rpc('workspace_area_access_codes', { target_auth_user_id: data.user.id }),
   ]);
-  if (member.error || memberships.error) throw member.error || memberships.error;
-  if (!member.data?.active) return [];
+  if (member.error || memberships.error || areas.error) throw member.error || memberships.error || areas.error;
+  const areaOperations = productionDepartments(areas.data || []);
+  if (!member.data?.active) return areaOperations;
   const ids = [...new Set([profile.data.reparto_id, ...(memberships.data || []).map(row => row.reparto_id)].filter(Boolean))];
-  if (!ids.length) return [];
+  if (!ids.length) return areaOperations;
   const departments = await admin.from('reparti').select('nome,attivo').in('id', ids);
   if (departments.error) throw departments.error;
-  return productionDepartments(departments.data.filter(row => row.attivo !== false).map(row => row.nome));
+  return [...new Set([...areaOperations, ...productionDepartments(departments.data.filter(row => row.attivo !== false).map(row => row.nome))])];
 }
 
 // The existing MES endpoint uses containment date filters, not overlap filters.

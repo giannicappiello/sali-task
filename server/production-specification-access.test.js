@@ -13,6 +13,7 @@ test('production permission never grants editing, NAS browsing or other private 
   for (const path of ['/specifications/save', '/specifications/preview', '/nas', '/nas/sync', '/documents/reference', '/documents/1', '/specifications-other']) assert.equal(await canReadProductionSpecification(admin, 'operator', path), false);
 });
 test('missing, denied and unknown levels do not grant access', async () => {
-  for (const data of [null, 'nessuno', '', 'unknown']) assert.equal(await canReadProductionSpecification({ rpc: async () => ({ data }) }, 'operator', '/specifications'), false);
+  const from = () => { const q = { select: () => q, eq: () => q, maybeSingle: async () => ({ data: null }) }; return q; };
+  for (const data of [null, 'nessuno', '', 'unknown']) assert.equal(await canReadProductionSpecification({ from, rpc: async () => ({ data }) }, 'operator', '/specifications'), false);
   await assert.rejects(canReadProductionSpecification({ rpc: async () => ({ error: new Error('permission service unavailable') }) }, 'operator', '/specifications'), /permission service unavailable/);
 });

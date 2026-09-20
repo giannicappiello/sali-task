@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { articleType, rows, readArchive, catalogue, normalizePath, gatewayUrl, key } from './private-documents-store.js';
-import { specificationFields, specificationAttachmentSections, isSpecificationImage, MAX_SPECIFICATION_ATTACHMENTS } from '../shared/productSpecification.js';
+import { specificationFields, specificationAttachmentSections, isSpecificationImage, MAX_SPECIFICATION_ATTACHMENTS, applySpecificationSources, specificationSourceFields } from '../shared/productSpecification.js';
 import { loadSpecificationSources } from './product-specification-sources.js';
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
@@ -10,6 +10,7 @@ export function validateSpecification(input) {
   if (!input.data || typeof input.data !== 'object' || Array.isArray(input.data)) throw fail('Dati capitolato non validi.');
   const data = {};
   for (const [name, , type] of specificationFields) {
+    if (['readonly', 'timestamp'].includes(type)) continue;
     const v = input.data[name] ?? '';
     if (typeof v !== 'string' || v.length > (type === 'textarea' ? 5000 : 500)) throw fail(`Campo ${name} non valido o troppo lungo.`);
     if (type === 'yesno' && !['', 'yes', 'no'].includes(v)) throw fail(`Campo ${name} non valido.`);
@@ -43,27 +44,29 @@ export async function authorizeSpecificationArticle(identity, code) {
   if (!customerCodes.includes('*')) {
     const archive = await readArchive(admin, code);
     const article = catalogue(archive, customerCodes).find(a => key(a.articleCode) === key(code));
-    if (!article || article.articleType !== 'ProdottoFinito') throw fail('Prodotto finito non disponibile.', 404);
+    if (!article || !['ProdottoFinito', 'Semilavorato'].includes(article.articleType)) throw fail('Articolo non disponibile.', 404);
     return article.articleCode;
   }
   const { data, error } = await admin.from('ordini_prodotti_cache')
     .select('codice_articolo,has_bom:dati_mexal->>gest_dbp').eq('codice_articolo', code).maybeSingle();
   if (error) throw error;
-  if (!data || articleType(data.codice_articolo, data.has_bom) !== 'ProdottoFinito') throw fail('Prodotto finito non disponibile.', 404);
+  if (!data || !['ProdottoFinito', 'Semilavorato'].includes(articleType(data.codice_articolo, data.has_bom))) throw fail('Articolo non disponibile.', 404);
   return data.codice_articolo;
 }
 
 const dto = row => row ? { data: row.data, attachments: row.attachments, version: row.version, updatedAt: row.updated_at, updatedBy: row.updated_by_label } : null;
 
-export async function productSpecificationOperation(identity, path, input = {}) {
+export async function productSpecificationOperation(identity, path, input = {}, { loadSources = loadSpecificationSources, now = () => new Date() } = {}) {
   const url = new URL(path, 'https://workspace.invalid/');
-  if (!['/specifications', '/specifications/sources', '/specifications/save', '/specifications/preview', '/specifications/file', '/specifications/history'].includes(url.pathname))
+  if (!['/specifications', '/specifications/sources', '/specifications/save', '/specifications/approve', '/specifications/preview', '/specifications/file', '/specifications/history'].includes(url.pathname))
     throw fail('Operazione capitolato non disponibile.', 404);
   if (specificationRequiresWrite(url.pathname) && (!identity.canWriteDocuments || !identity.customerCodes.includes('*')))
     throw fail('Modifica capitolato non autorizzata.', 403);
+  if (url.pathname === '/specifications/approve' && !identity.canApproveSpecification && !identity.canWriteDocuments)
+    throw fail('Approvazione capitolato non autorizzata.', 403);
   const code = await authorizeSpecificationArticle(identity, String(url.searchParams.get('articleCode') || '').trim());
   const { admin, profile } = identity;
-  if (url.pathname === '/specifications/sources') return loadSpecificationSources(identity, code);
+  if (url.pathname === '/specifications/sources') return loadSources(identity, code);
   if (url.pathname === '/specifications/history') {
     const { data, error } = await admin.from('workspace_product_specification_revisions')
       .select('version,updated_at,updated_by_label').eq('article_code', code).order('version', { ascending: false }).limit(50);
@@ -72,6 +75,8 @@ export async function productSpecificationOperation(identity, path, input = {}) 
   }
   if (url.pathname === '/specifications/save') {
     const validated = validateSpecification(input);
+    if (/^FP/i.test(code)) validated.data = applySpecificationSources(validated.data, await loadSources(identity, code));
+    else validated.data.specificationKind = '';
     if (validated.attachments.length) {
       const files = await rows(admin, 'workspace_private_nas_files', 'path_key,path,active', q => q.in('path_key', validated.attachments.map(a => key(a.path))));
       for (const attachment of validated.attachments) {
@@ -91,7 +96,27 @@ export async function productSpecificationOperation(identity, path, input = {}) 
   }
   const { data: spec, error } = await admin.from('workspace_product_specifications').select('*').eq('article_code', code).maybeSingle();
   if (error) throw error;
-  if (url.pathname === '/specifications') return { specification: dto(spec) };
+  if (url.pathname === '/specifications') return { specification: dto(spec), canApprove: Boolean(identity.canApproveSpecification || identity.canWriteDocuments) };
+  if (url.pathname === '/specifications/approve') {
+    if (!spec || !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion !== spec.version)
+      throw fail('Il capitolato è cambiato. Ricarica la revisione prima di approvare.', 409);
+    if (spec.data.approvedBy) return dto(spec);
+    const sources = await loadSources(identity, code);
+    if (sources.bomError) throw fail(sources.bomError, 409);
+    const current = applySpecificationSources(spec.data, sources);
+    if (specificationSourceFields.some(name => (current[name] || '') !== (spec.data[name] || '')))
+      throw fail('Le specifiche sono cambiate. Salvare la revisione aggiornata prima di approvare.', 409);
+    const name = [profile.nome, profile.cognome].filter(Boolean).join(' ').trim() || profile.email;
+    if (!name) throw fail('Nome utente non disponibile. Aggiornare il profilo prima di approvare.', 409);
+    const { data, error: approvalError } = await admin.rpc('save_workspace_product_specification', {
+      p_article_code: code, p_expected_version: input.expectedVersion,
+      p_data: { ...spec.data, approvedBy: name, approvedAt: now().toISOString(), approvedUserId: profile.id },
+      p_attachments: spec.attachments, p_user_id: profile.id, p_user_label: name,
+    });
+    if (['PT409', '40001'].includes(approvalError?.code)) throw fail('Capitolato modificato da un altro utente. Ricaricare prima di approvare.', 409);
+    if (approvalError) throw approvalError;
+    return dto(data);
+  }
   const attachment = url.pathname === '/specifications/preview'
     ? validateSpecification({ expectedVersion: 0, data: {}, attachments: [input] }).attachments[0]
     : spec?.attachments.find(a => a.id === url.searchParams.get('attachmentId'));

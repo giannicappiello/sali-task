@@ -3,6 +3,7 @@ import { Buffer } from "node:buffer";
 import { privateDocumentOperation, synchronizeNas, rows } from "./private-documents-store.js";
 import { createClient } from "@supabase/supabase-js";
 import { productSpecificationOperation, specificationRequiresWrite } from "./product-specifications.js";
+import { canReadProductionSpecification } from './production-specification-access.js';
 
 const required = (name) => {
   const value = String(process.env[name] || "").trim();
@@ -14,7 +15,7 @@ const adminClient = () => createClient(required("SUPABASE_URL"), required("SUPAB
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-async function authorize(req, { upload = false } = {}) {
+async function authorize(req, { upload = false, specificationPath = '' } = {}) {
   const authorization = String(req.headers.authorization || "");
   if (!authorization.startsWith("Bearer ")) throw Object.assign(new Error("Sessione Workspace mancante."), { status: 401 });
   const admin = adminClient();
@@ -30,7 +31,9 @@ async function authorize(req, { upload = false } = {}) {
     target_user_id: profile.id, target_module: "progremes_formule",
   });
   if (moduleError) throw moduleError;
-  if (!isAdmin && moduleEnabled !== true) throw Object.assign(new Error("Accesso a Documenti Private non autorizzato."), { status: 403 });
+  const productionReader = !isAdmin && moduleEnabled !== true && !upload
+    && await canReadProductionSpecification(admin, profile.id, specificationPath);
+  if (!isAdmin && moduleEnabled !== true && !productionReader) throw Object.assign(new Error("Accesso a Documenti Private non autorizzato."), { status: 403 });
 
   const [canonicalAccess, legacyAccess] = await Promise.all([
     admin.from("workspace_customer_user_links").select("customer_code").eq("user_id", profile.id),
@@ -42,6 +45,8 @@ async function authorize(req, { upload = false } = {}) {
   const legacyCodes = (legacyAccess.data || []).map((row) => String(row.codice_cliente || "").trim()).filter(Boolean);
   const customerCodes = [...new Set(canonicalCodes.length ? canonicalCodes : legacyCodes)];
   const externalRole = /client|cliente|portal/i.test(String(profile.ruoli?.nome || ""));
+  if (productionReader && (externalRole || customerCodes.length))
+    throw Object.assign(new Error('Consultazione operativa dei capitolati riservata agli addetti interni.'), { status: 403 });
   if (externalRole && customerCodes.length === 0) throw Object.assign(new Error("Nessun cliente associato all’account Workspace."), { status: 403 });
   if (upload && customerCodes.length) throw Object.assign(new Error("I clienti possono consultare i Documenti Private ma non associarli."), { status: 403 });
 
@@ -65,7 +70,7 @@ export async function handlePrivateDocuments(req, body = {}) {
   const path = String(body.path || "");
   const pathname = new URL(path, "https://workspace.invalid/").pathname;
   const upload = ["/nas/sync", "/documents/reference", "/nas"].includes(pathname) || specificationRequiresWrite(pathname);
-  const identity = await authorize(req, { upload });
+  const identity = await authorize(req, { upload, specificationPath: pathname });
   const result = pathname.startsWith("/specifications")
     ? await productSpecificationOperation(identity, path, body.input || {})
     : await privateDocumentOperation(identity, path, body.input || {});

@@ -41,7 +41,8 @@ export default function PackagingOperationalActions({ productionOrderId, resourc
       const { printThermalLabels } = await import('./printThermalLabels.jsx');
       const result = await request('thermal-print', { labelCount: Number(count), piecesPerBox: Number(pieces) });
       setData(result);
-      await printThermalLabels(result.label, Number(count), Number(pieces));
+      setCount(result.label.numeroEtichette); setPieces(result.label.pezziPerCollo);
+      await printThermalLabels(result.label, result.label.numeroEtichette, result.label.pezziPerCollo);
     } catch (cause) { setError(cause.message); }
     finally { setBusy(false); }
   }
@@ -62,7 +63,7 @@ export default function PackagingOperationalActions({ productionOrderId, resourc
     {mode === 'labels' && <Modal title="Etichetta termica" onClose={close} className="thermal-label-modal">
       {error && <p role="alert" className="pc-note">{error}</p>}
       {!data && !error && <p role="status">Caricamento etichetta…</p>}
-      {data?.label && <div className="thermal-label-body"><div className="thermal-label-settings"><strong>{data.label.numeroOrdine} · {data.label.codiceProdotto}</strong><label>Pezzi per collo<input type="number" min="0" step="1" value={pieces} disabled={busy} onChange={e => changePieces(e.target.value)}/></label><label>Numero etichette<input type="number" min="1" max="1000" step="1" value={count} disabled={busy} onChange={e => setCount(e.target.value)}/></label><p>Formato 100 × 150 mm. Una etichetta per ogni collo. Anteprima del primo collo.</p>{!validLabels && <p role="alert">Indica da 1 a 1.000 etichette e pezzi per collo non negativi.</p>}</div><ThermalLabel label={data.label} count={count} pieces={Number(pieces)}/></div>}
+      {data?.label && <div className="thermal-label-body"><div className="thermal-label-settings"><strong>{data.label.numeroOrdine} · {data.label.codiceProdotto}</strong><label>Pezzi per collo<input type="number" min="0" step="1" value={pieces} readOnly={data.label.pezziPerColloDaCapitolato} disabled={busy} onChange={e => changePieces(e.target.value)}/></label><small>{data.label.pezziPerColloDaCapitolato ? `Dal capitolato prodotto · revisione ${data.label.revisioneCapitolato}` : 'Dato assente nel capitolato: inseriscilo manualmente. Verrà salvato alla stampa anche per il foglio di confezionamento.'}</small><label>Numero etichette<input type="number" min="1" max="1000" step="1" value={count} readOnly={Number(pieces) > 0} disabled={busy} onChange={e => setCount(e.target.value)}/></label><p>Formato 100 × 150 mm. Una etichetta per ogni collo. Anteprima del primo collo.</p>{!validLabels && <p role="alert">Indica da 1 a 1.000 etichette e pezzi per collo non negativi.</p>}</div><ThermalLabel label={data.label} count={count} pieces={Number(pieces)}/></div>}
       <footer><button type="button" disabled={busy} onClick={close}>Chiudi</button><button type="button" disabled={busy || !data?.canWrite || !data?.label || !validLabels} onClick={printLabels}><Printer size={17}/>{busy ? 'Preparazione stampa…' : 'Stampa etichette'}</button></footer>
     </Modal>}
     {mode === 'start' && <Modal title="Avvia confezionamento" onClose={close}>

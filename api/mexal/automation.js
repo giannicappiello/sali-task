@@ -45,6 +45,7 @@ import { privateWorkbenchSession } from "../../server/private-orders-workbench.j
 import { handleProductionCosts } from "../../server/production-costs.js";
 import { handlePackagingSheet } from "../../server/packaging-sheet.js";
 import { handlePackagingActions } from "../../server/packaging-actions.js";
+import { resolveMesPackagingSpecification } from "../../server/mes-packaging-specification.js";
 import { productionGoLiveGates } from "../../server/workspace-production-gates.js";
 import { effectiveWorkspaceDiagnostics } from "../../server/workspace-effective-diagnostics.js";
 import { confirmWorkspaceV4, createWorkspaceV4Preview } from "../../server/workspacemes-v4-api.js";
@@ -625,6 +626,8 @@ export default async function handler(req, res) {
 
   try {
     switch (body.action) {
+      case "mes_packaging_specification":
+        return sendSuccess(res, 200, await resolveMesPackagingSpecification(req, body));
       case "packaging_sheet":
         return sendSuccess(res, 200, await handlePackagingSheet(req, body));
       case "packaging_actions":

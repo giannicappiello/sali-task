@@ -156,19 +156,41 @@ export async function confirmWorkspaceV4({ admin, previewId, reason, requestedBy
     ...preview.snapshot, confirmationRecovery: { command, actor: requestedBy || "workspace:service" },
   } }).eq("id", preview.id).eq("status", "READY").is("snapshot->confirmationRecovery", null));
   const saved = ensure(await admin.from("workspace_v4_previews").select("*").eq("id", preview.id).limit(1))[0];
-  const recovery = saved?.snapshot?.confirmationRecovery;
+  let recovery = saved?.snapshot?.confirmationRecovery;
   if (!recovery?.command) throw fail("La preview è cambiata prima dell'invio.", "V4_PREVIEW_NOT_CONFIRMABLE");
   command = recovery.command;
   let sent;
   try {
+    if (recovery.reconciliationRequired && !recovery.response && client.recoverV4)
+      throw fail("Recupero conferma originale richiesto.", "V4_IDEMPOTENCY_CONFLICT");
     sent = recovery.response ? { result: recovery.response } : await client.confirmV4(request.external_id, command);
   } catch (error) {
-    const uncertain = error.name === "AbortError" || error.name === "TypeError" || /TIMEOUT|HTTP_50[234]/.test(error.code || "");
-    if (uncertain) throw fail("Conferma in verifica: recupero dell'esito MES della stessa richiesta.", "V4_CONFIRM_PENDING", 202);
-    ensure(await admin.from("workspace_v4_previews").update({ snapshot: {
-      ...saved.snapshot, confirmationRecovery: { ...recovery, rejected: error.code !== "V4_IDEMPOTENCY_CONFLICT", reconciliationRequired: error.code === "V4_IDEMPOTENCY_CONFLICT" },
-    } }).eq("id", preview.id));
-    throw error;
+    if (error.code === "V4_IDEMPOTENCY_CONFLICT" && client.recoverV4) {
+      let original;
+      try { original = (await client.recoverV4(request.external_id, command)).result; }
+      catch (recoveryError) {
+        if (recoveryError.code === "PROGREMES_HTTP_404")
+          throw fail("Aggiornare MES per recuperare la conferma originale, poi premere Recupera conferma. Non ricalcolare la RdP.", "V4_RECOVERY_REQUIRES_MES_UPDATE", 409);
+        throw recoveryError;
+      }
+      if (original.confirmationExternalId !== command.externalId || original.previewExternalId !== command.previewExternalId ||
+          original.idempotencyKey !== command.idempotencyKey || original.expectedPreviewHash !== command.expectedPreviewHash ||
+          original.decision !== command.decision || !clean(original.decidedBy) || !clean(original.reason) ||
+          original.result?.externalId !== command.externalId || original.result?.status !== "FORECAST")
+        throw fail("L'esito recuperato non corrisponde alla conferma richiesta.", "V4_RECOVERY_IDENTITY_MISMATCH");
+      command = { ...command, reason: original.reason, decidedBy: original.decidedBy,
+        correlationId: original.correlationId, causationId: original.causationId };
+      recovery = { ...recovery, command, actor: original.decidedBy.replace(/^workspace:/, ""), rejected: false,
+        reconciliationRequired: false, recoveredBy: requestedBy, originalConfirmedAt: original.confirmedAt };
+      sent = { result: original.result };
+    } else {
+      const uncertain = error.name === "AbortError" || error.name === "TypeError" || /TIMEOUT|HTTP_50[234]/.test(error.code || "");
+      if (uncertain) throw fail("Conferma in verifica: recupero dell'esito MES della stessa richiesta.", "V4_CONFIRM_PENDING", 202);
+      ensure(await admin.from("workspace_v4_previews").update({ snapshot: {
+        ...saved.snapshot, confirmationRecovery: { ...recovery, rejected: error.code !== "V4_IDEMPOTENCY_CONFLICT", reconciliationRequired: error.code === "V4_IDEMPOTENCY_CONFLICT" },
+      } }).eq("id", preview.id));
+      throw error;
+    }
   }
   validateWorkspaceV4ProductionResult(preview, sent.result);
   try {

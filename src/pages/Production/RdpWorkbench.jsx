@@ -170,9 +170,10 @@ function FinishedBomDetails({ bom }) {
 function V3Panel({ readOnly = false, v3, canDecide, busy, onPreview, onConfirm }) {
   if (!v3) return null;
   const preview = v3.preview;
+  const recovering = !!preview?.snapshot?.confirmationRecovery && !preview.snapshot.confirmationRecovery.rejected;
   const confirmEnabled = v3.flags?.["workspacemes.v4.confirm"] === true;
   return <section className="rdp-decisions rdp-v3-panel">
-    {!readOnly && <button type="button" className="primary-action rdp-v3-recalculate" onClick={onPreview} disabled={busy || !v3.flags?.["workspacemes.v4.preview"]}>{busy ? "RICALCOLO RDP…" : "RICALCOLA RDP"}</button>}
+    {!readOnly && <button type="button" className="primary-action rdp-v3-recalculate" onClick={onPreview} disabled={busy || recovering || !v3.flags?.["workspacemes.v4.preview"]}>RICALCOLA RDP</button>}
     {preview && <>
       <p>Preview <strong>{preview.status}</strong> · distinta, disponibilità, FIFO, impegni e fabbisogni certificati da ProgreMES.</p>
       <div className="rdp-analysis-grid">{(v3.components || []).map((row) => <div key={row.id}>
@@ -184,7 +185,7 @@ function V3Panel({ readOnly = false, v3, canDecide, busy, onPreview, onConfirm }
       </div>)}</div>
       {!!v3.requirements?.length && <p>Fabbisogni acquisto automatici: {v3.requirements.length}. Gli impegni produttivi sono gestiti esclusivamente da ProgreMES.</p>}
       {preview.status === "READY" && !v3.saga && canDecide && <>
-        <button type="button" className="primary-action rdp-v3-recalculate" onClick={onConfirm} disabled={busy || !confirmEnabled}><Factory size={16}/>Conferma RdP</button>
+        <button type="button" className="primary-action rdp-v3-recalculate" onClick={onConfirm} disabled={busy || !confirmEnabled}><Factory size={16}/>{busy ? "Verifica conferma…" : recovering ? "Recupera conferma" : "Conferma RdP"}</button>
         {!confirmEnabled && <small className="rdp-v3-gate-warning" role="status">Conferma produttiva non abilitata: verificare i gate Workspace e ProgreMES nel Centro Diagnostico.</small>}
       </>}
       {preview.status === "BLOCKED" && !v3.saga && <small className="rdp-v3-gate-warning" role="alert">La RdP contiene blocchi tecnici: correggere i codici evidenziati e premere RICALCOLA RDP. Gli scoperti senza blocchi restano confermabili. Nel nuovo ciclo, OP e fabbisogni operativi si generano con Conferma piano; gli impegni fisici con Rilascio ODL.</small>}
@@ -197,10 +198,10 @@ function RdpFailureDialog({ failure, onClose }) {
   const confirmationFailure = failure.phase === "confirm";
   const stalePreview = failure.code === "STALE_V4_PREVIEW";
   const blockedPreview = failure.code === "V4_PREVIEW_BLOCKED";
-  const pending = failure.code === "V4_CONFIRM_PENDING";
+  const pending = failure.code === "V4_CONFIRM_PENDING" || failure.code === "V4_RECOVERY_REQUIRES_MES_UPDATE";
   const eyebrow = pending ? "Recupero conferma" : stalePreview ? "Anteprima non più valida" : blockedPreview ? "Anteprima bloccata" : confirmationFailure ? "Conferma conclusa con errore" : "Elaborazione conclusa con errore";
   const title = pending ? "Conferma ancora in verifica" : stalePreview ? "RdP da ricalcolare" : blockedPreview ? "Blocchi tecnici da risolvere" : confirmationFailure ? "Ordine di produzione non confermato" : "RdP non andata a buon fine";
-  const safetyMessage = stalePreview
+  const safetyMessage = pending ? "Conservare questa RdP. Dopo il ripristino del collegamento o l’aggiornamento MES, riaprire il dettaglio e premere Recupera conferma." : stalePreview
     ? "Non è stato creato alcun ordine di produzione. Chiudere questo messaggio e premere RICALCOLA RDP, quindi verificare la nuova anteprima."
     : blockedPreview
       ? "Non è stato creato alcun ordine di produzione. Correggere i blocchi tecnici indicati nell’anteprima e ricalcolare la RdP."

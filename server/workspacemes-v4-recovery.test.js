@@ -64,3 +64,28 @@ test("conflitto storico preserva la richiesta per riconciliazione senza consenti
   assert.equal(recovery.rejected, false);
   assert.equal(recovery.reconciliationRequired, true);
 });
+
+test("conflitto storico: registra esclusivamente la risposta autorevole della stessa conferma", async () => {
+  const { admin, tables } = fixture(); let calls = 0;
+  const client = { v4ConfirmationEnabled: () => true,
+    async confirmV4() { calls++; throw Object.assign(new Error("conflict"), { code: "V4_IDEMPOTENCY_CONFLICT" }); },
+    async recoverV4(id, command) { return { result: { confirmationExternalId: command.externalId,
+      previewExternalId: command.previewExternalId, expectedPreviewHash: command.expectedPreviewHash,
+      idempotencyKey: command.idempotencyKey, decision: command.decision, reason: "Original reason",
+      decidedBy: "workspace:original", correlationId: "original-correlation", causationId: command.previewExternalId,
+      confirmedAt: "2026-09-20T18:50:00Z", result: { externalId: command.externalId, status: "FORECAST", productionCreated: false, productionOrders: [], forecastLines: ["line"] } } }; }
+  };
+  const result = await confirmWorkspaceV4({ admin, client, previewId: 1, reason: "New reason", requestedBy: "two" });
+  assert.equal(result.mes.status, "FORECAST"); assert.equal(calls, 1);
+  const saved = tables.workspace_v4_previews[0].snapshot.confirmationRecovery;
+  assert.equal(saved.command.decidedBy, "workspace:original"); assert.equal(saved.recoveredBy, "two");
+  assert.equal(saved.reconciliationRequired, false);
+});
+test("recupero rifiuta una conferma appartenente ad altra anteprima", async () => {
+  const { admin, tables } = fixture();
+  const client = { v4ConfirmationEnabled: () => true,
+    async confirmV4() { throw Object.assign(new Error("conflict"), { code: "V4_IDEMPOTENCY_CONFLICT" }); },
+    async recoverV4() { return { result: { confirmationExternalId: "other" } }; } };
+  await assert.rejects(confirmWorkspaceV4({ admin, client, previewId: 1, reason: "Original reason", requestedBy: "one" }), { code: "V4_RECOVERY_IDENTITY_MISMATCH" });
+  assert.equal(tables.workspace_v4_confirmation_mirrors.length, 0);
+});

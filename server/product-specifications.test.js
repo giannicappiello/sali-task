@@ -241,3 +241,19 @@ test('capitolato: anteprima immediata ammessa solo a editor interni e file NAS a
   f.tables.workspace_private_nas_files[0].active = false;
   await assert.rejects(productSpecificationOperation(f.identity, path, input), e => e.status === 404);
 });
+
+test('bulk FP: cliente automatico in ragione sociale, senza codici né clienti fuori ambito', async () => {
+  const f = fixture({ customers: ['501.A'], lots: [
+    { article_code: 'FPCOM07', customer_code: '501.A' },
+    { article_code: 'FPCOM07', customer_code: '501.B' },
+  ] });
+  f.tables.ordini_clienti_cache = [{ codice_cliente: '501.A', ragione_sociale: 'Cliente Alfa' }, { codice_cliente: '501.B', ragione_sociale: 'Cliente Beta' }];
+  const dependencies = { formulaClient: () => ({ formulaSpecification: async () => ({ result: { formulaData: { viscosityMin: '4000' } } }) }) };
+  const sources = await loadSpecificationSources(f.identity, 'FPCOM07', dependencies);
+  assert.equal(applySpecificationSources({ customer: '501.A' }, sources).customer, 'Cliente Alfa');
+  assert.equal(sources.formulaData.viscosityMin, '4000');
+  f.tables.ordini_clienti_cache = [];
+  const missing = await loadSpecificationSources(f.identity, 'FPCOM07', dependencies);
+  assert.deepEqual(missing.customerNames, []);
+  assert.equal(missing.missingCustomerNames, 1);
+});

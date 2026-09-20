@@ -195,7 +195,7 @@ export function validateV4ConfirmResponse(result, payload) {
 }
 
 export function createProgremesProductionClient({ env = process.env, fetchImpl = fetch, now = () => Date.now() } = {}) {
-  const call = async (path, payload) => {
+  const call = async (path, payload, timeoutMs) => {
     const origin = new URL(required("PROGREMES_URL", env));
     if (origin.protocol !== "https:") throw new Error("PROGREMES_URL deve usare HTTPS.");
     const secret = required("PROGREMES_INTEGRATION_SECRET", env);
@@ -203,7 +203,7 @@ export function createProgremesProductionClient({ env = process.env, fetchImpl =
     const timestamp = Math.floor(now() / 1000);
     const eventId = payload.workspaceExternalId || payload.externalId;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), Math.min(30_000, Math.max(1_000, Number(env.PROGREMES_API_TIMEOUT_MS) || 10_000)));
+    const timer = setTimeout(() => controller.abort(), timeoutMs ?? Math.min(30_000, Math.max(1_000, Number(env.PROGREMES_API_TIMEOUT_MS) || 10_000)));
     try {
       const response = await fetchImpl(new URL(path, origin), {
         method: "POST", redirect: "error", signal: controller.signal, body,
@@ -227,11 +227,14 @@ export function createProgremesProductionClient({ env = process.env, fetchImpl =
         });
       }
       return { result, payloadHash: hash(body) };
+    } catch (error) {
+      if (controller.signal.aborted) throw Object.assign(new Error('Il MES non ha completato la richiesta entro il tempo previsto. Verifica lo stato della lavorazione prima di riprovare.'), { status: 504, code: 'PROGREMES_TIMEOUT' });
+      throw error;
     } finally { clearTimeout(timer); }
   };
   return {
     formulaSpecification: payload => call('/api/workspace/v1/formula-specification', payload),
-    preparationActions: payload => call('/api/workspace/v1/preparation-actions', payload),
+    preparationActions: payload => call('/api/workspace/v1/preparation-actions', payload, payload.operation === 'sheet' ? 120_000 : undefined),
     packagingSheet: payload => call('/api/workspace/v1/packaging-sheet', payload),
     packagingActions: payload => call('/api/workspace/v1/packaging-actions', payload),
     requestEnabled: () => enabled("PROGREMES_PRODUCTION_REQUESTS_ENABLED", env),

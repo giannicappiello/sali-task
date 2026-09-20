@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { productionDepartments, calendarRows, readProductionPlan, authorizeProductionCalendar, productionCalendarRequest } from './hr-production-calendar.js';
 
+const calendar = { versions: [{ effectiveFrom: '2000-01-01', week: Object.fromEntries([1,2,3,4,5,6,7].map(d => [d, d < 6 ? [['08:00','16:00']] : []])) }], exceptions: [], closures: [] };
 const row = { productionOrderId: 1, orderNumber: 'OP1', articleCode: 'MP1', articleDescription: 'Prodotto', operationType: 'Production', start: '2026-08-31T08:00:00', end: '2026-09-02T16:00:00', status: 'Pianificato', operatorNames: ['private'] };
 test('reparti esatti, nessuna espansione automatica a tutti i reparti', () => {
   assert.deepEqual(productionDepartments(['Human Resources', 'Direzione']), []);
@@ -43,7 +44,7 @@ test('admin vede tutti i reparti anche senza HR; admin disattivato resta escluso
   const operations = ['Production', 'Packaging', 'Cartoning'];
   const response = await productionCalendarRequest(req, {
     admin: adminStub({ workspaceAdmin: true, hr: false }),
-    readPlan: async () => ({ source: 'piano-attivo', items: operations.map(operationType => ({ ...row, operationType })) }),
+    readCalendar: async () => calendar, readPlan: async () => ({ source: 'piano-attivo', items: operations.map(operationType => ({ ...row, operationType })) }),
   });
   assert.equal(response.enabled, true);
   assert.deepEqual(response.items.map(item => item.operationType), operations);
@@ -59,7 +60,7 @@ test('nessuna chiamata MES per utenti non HR e parametri limitati', async () => 
 test('authorization precedes plan retrieval and only department records leave the API', async () => {
   let calls = 0;
   const req = { method: 'GET', query: { from: '2026-09-01', to: '2026-09-30' } };
-  const deps = { admin: {}, readPlan: async () => { calls++; return { source: 'piano-attivo', items: [row, { ...row, operationType: 'Packaging' }] }; } };
+  const deps = { admin: {}, readCalendar: async () => calendar, readPlan: async () => { calls++; return { source: 'piano-attivo', items: [row, { ...row, operationType: 'Packaging' }] }; } };
   await assert.rejects(productionCalendarRequest(req, { ...deps, authorize: async () => { throw Object.assign(new Error('Denied'), { status: 403 }); } }), { status: 403 });
   assert.equal(calls, 0);
   const response = await productionCalendarRequest(req, { ...deps, authorize: async () => ['Production'] });
@@ -73,7 +74,7 @@ test('cliente: stesso ambito Produzioni, esclusione altri ordini e pannelli Stat
   const orders = [{ id: 'own-oct' }];
   const response = await productionCalendarRequest(req, {
     admin: {}, authorize: async () => ({ operations: ['Production', 'Packaging'], orders }),
-    readPlan: async () => ({ items: [{ ...row, resource: 'ST7', resourceCode: 'ST7' }, { ...row, productionOrderId: 2 }] }),
+    readCalendar: async () => calendar, readPlan: async () => ({ items: [{ ...row, resource: 'ST7', resourceCode: 'ST7' }, { ...row, productionOrderId: 2 }] }),
     workbench: async options => {
       assert.equal(options.scopedOrders, orders);
       assert.equal(options.productionOrders.length, 2);
@@ -84,4 +85,18 @@ test('cliente: stesso ambito Produzioni, esclusione altri ordini e pannelli Stat
   assert.equal(response.items[0].productionOrderId, 1);
   assert.equal('resourceCode' in response.items[0], false);
   assert.equal('resource' in response.items[0], false);
+});
+
+test('closed confirmed work is flagged instead of silently disappearing; other departments cannot cause warnings', async () => {
+  const req = { method: 'GET', query: { from: '2026-09-18', to: '2026-09-21' } };
+  const closed = { ...row, start: '2026-09-19T09:00', end: '2026-09-19T10:00',
+    confirmedIntervals: [{ start: '2026-09-19T09:00', end: '2026-09-19T10:00' }] };
+  const deps = { admin: {}, authorize: async () => ['Production'], readCalendar: async () => calendar,
+    readPlan: async () => ({ items: [closed] }) };
+  const result = await productionCalendarRequest(req, deps);
+  assert.deepEqual(result.items, []);
+  assert.match(result.warning, /ripianificare/);
+  const scoped = await productionCalendarRequest(req, { ...deps,
+    readPlan: async () => ({ items: [{ ...closed, operationType: 'Packaging' }] }) });
+  assert.equal(scoped.warning, '');
 });

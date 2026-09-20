@@ -521,6 +521,7 @@ function Dashboard({ toolbarTarget = null }) {
       </div>
 
       {production.error && <div role="alert" className="panel" style={{ color: '#b91c1c', padding: 16 }}>{production.error}</div>}
+      {production.warning && <div role="status" className="panel" style={{ color: '#854d0e', background: '#fef9c3', padding: 16 }}>{production.warning}</div>}
       <DashboardActivityToolbar loading={loading} monthStats={monthStats} activityFilter={activityFilter} setActivityFilter={setActivityFilter} openNewPhase={openNewPhase} openNewReminder={openNewReminder} goToday={goToday} />
 
       {toolbarTarget ? createPortal(planningToolbar, toolbarTarget) : planningToolbar}

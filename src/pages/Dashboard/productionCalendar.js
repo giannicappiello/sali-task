@@ -26,6 +26,7 @@ export function productionActivities(rows) {
       productionOrderId: row.productionOrderId,
       operationType: row.operationType,
       tipo: 'production', titolo: `${row.orderNumber} · ${row.articleCode}`,
+      ...(Array.isArray(row.workingIntervals) ? { workingIntervals: row.workingIntervals.map(i => ({ start: plantTime(i.start), end: plantTime(i.end) })) } : {}),
       descrizione: row.articleDescription, start, end, deadline: end.slice(0, 10),
       stato: row.status, reparto: labels[row.operationType],
       resource: row.resource || '', forecast: row.forecast === true,
@@ -46,5 +47,6 @@ export function activityInMonth(item, year, month) {
 
 export function activityOnDay(item, day) {
   if (item.tipo !== 'production') return String(item.deadline || '').slice(0, 10) === day;
+  if (Array.isArray(item.workingIntervals)) return item.workingIntervals.some(i => i.start < `${day}T24:00` && i.end > `${day}T00:00`);
   return item.start < `${day}T24:00` && item.end > `${day}T00:00`;
 }

@@ -27,7 +27,7 @@ export default function useProductionCalendar(profileId, month) {
         });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || 'Pianificazione MES non disponibile.');
-        if (!disposed) setState({ items: productionActivities(payload.items || []), loading: false, error: '', enabled: payload.enabled === true, source: payload.source, updatedAt: payload.updatedAt });
+        if (!disposed) setState({ items: productionActivities(payload.items || []), loading: false, error: '', warning: payload.warning || '', enabled: payload.enabled === true, source: payload.source, updatedAt: payload.updatedAt });
       } catch (error) {
         if (!disposed && error.name !== 'AbortError') setState({ items: [], loading: false, error: error.message, enabled: true });
       } finally { running = false; }

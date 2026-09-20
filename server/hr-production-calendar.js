@@ -1,6 +1,7 @@
 import { createProgremesReadonlyAdmin } from './progremes-readonly-auth.js';
 import { createProgremesClient } from './progremes-readonly-client.js';
 import { readActiveProductionPlan } from './hr-active-production-plan.js';
+import { calendarProjection } from './production-calendar-intervals.js';
 
 import { privateWorkbenchSession } from './private-orders-workbench.js';
 import { listProductionWorkbench } from './workspacemes-workbench.js';
@@ -82,6 +83,7 @@ export function calendarRows(rows, allowed, from, to) {
       productionOrderId: row.productionOrderId, orderNumber: row.orderNumber,
       articleCode: row.articleCode, articleDescription: row.articleDescription,
       operationType: row.operationType, start: row.start, end: row.end, status: row.status,
+      ...(Array.isArray(row.workingIntervals) ? { workingIntervals: row.workingIntervals } : {}),
       ...(row.resource ? { resource: row.resource } : {}),
       ...(row.resourceCode ? { resourceCode: row.resourceCode } : {}),
       customerName: row.customerName || '', rdpReference: row.rdpReference || '', octReference: row.octReference || '',
@@ -117,9 +119,23 @@ export async function productionCalendarRequest(req, dependencies = {}) {
       ...row, resource: '', resourceCode: '', customerName: '', octReference: '', rdpReference: '',
     }));
   }
+  rows = rows.filter(row => allowed.includes(row.operationType));
+  let calendarConflicts = 0;
+  if (rows.length) {
+    const { data: calendar, error } = dependencies.readCalendar ? { data: await dependencies.readCalendar() }
+      : await admin.rpc('workspace_company_calendar_data');
+    if (error) throw error;
+    rows = rows.map(row => {
+      const projection = calendarProjection(row, calendar, from, to);
+      if (projection.conflict) calendarConflicts++;
+      return { ...row, workingIntervals: projection.intervals };
+    })
+      .filter(row => row.workingIntervals.length > 0);
+  }
   const items = calendarRows(rows, allowed, from, to);
   console.info('[hr-production-calendar]', { source: plan.source, allowed, total: plan.items.length, visible: items.length, from, to });
-  return { items, enabled: true, source: plan.source, updatedAt: new Date().toISOString() };
+  return { items, enabled: true, source: plan.source, updatedAt: new Date().toISOString(),
+    warning: calendarConflicts ? 'Il piano contiene fasce confermate su orari ora chiusi. Sono mostrate solo le fasce del calendario aziendale; il responsabile deve ripianificare le lavorazioni in conflitto.' : '' };
 }
 
 export async function handleHrProductionCalendar(req, res) {

@@ -35,6 +35,8 @@ export function activePlanRows(state, version) {
     return [{ productionOrderId: task.orderId, orderNumber: task.orderNumber || demand?.number || '',
       articleCode: task.articleCode || demand?.articleCode || '', articleDescription: task.description || demand?.description || '',
       operationType, start: task.start, end: task.end,
+      ...((task.status === 0 || task.status === 'Planned') && task.calendarIntervalsJson
+        ? { confirmedIntervals: JSON.parse(task.calendarIntervalsJson) } : {}),
       status: forecast ? 'Previsione' : statuses[task.status] || String(task.status || 'Pianificata'),
       resource: resource ? [resource.code, resource.description].filter(Boolean).join(' · ') : '',
       resourceCode: resource?.code || '',

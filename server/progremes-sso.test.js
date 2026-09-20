@@ -48,3 +48,9 @@ test("il fallback OdP mantiene il controllo autorizzativo SSO", async () => {
   assert.match(source, /if \(!identity\.isAdmin\) \{[\s\S]*isProgremesScreenAuthorized/);
   assert.match(source, /directOperationalRoute \|\| screen\.metadati\?\.external_route/);
 });
+
+test('foglio confezionamento: route solo per Produzione e ID ordine intero valido', () => {
+  assert.equal(progremesContextualRoute('progremes.Produzione', { destination: 'foglio-confezionamento', productionId: 42 }, '/produzione'), '/produzione/confezionamento/42');
+  for (const productionId of ['',0,-1,'../42',1.5,2147483648]) assert.throws(() => progremesContextualRoute('progremes.Produzione', { destination: 'foglio-confezionamento', productionId }, '/produzione'));
+  assert.equal(progremesContextualRoute('progremes.Planning', { destination: 'foglio-confezionamento', productionId: 42 }, '/planning'), '/planning');
+});

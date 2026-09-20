@@ -1,3 +1,6 @@
+import { Modal as CostModal } from '../../features/production-costs/common';
+import ProductSpecificationViewButton from '../Documentation/ProductSpecificationViewButton';
+import PackagingSheetActions from './PackagingSheetActions';
 import { matchesActivitySearch } from "./activitySearch";
 import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -602,11 +605,11 @@ function Dashboard({ toolbarTarget = null }) {
         <ProductionGroup onOpen={openActivity} items={filteredActivities.filter(item => item.tipo === 'production' && activityOnDay(item, dayPopup))} />
         <ActivityGroup title="Task, fasi e reminder" items={filteredActivities.filter(item => item.tipo !== 'production' && activityOnDay(item, dayPopup))} onOpen={openActivity} />
       </PlanningDialog>}
-      {activityPopup && <PlanningDialog title={activityPopup.titolo} onClose={() => setActivityPopup(null)}>
+      {activityPopup && <CostModal title={activityPopup.titolo} onClose={() => setActivityPopup(null)}>
         <p><strong className={activityPopup.tipo === 'production' ? `production-label ${activityPopup.reparto === 'Preparazione' ? 'preparation' : 'packaging'}` : undefined}>{activityPopup.tipo === 'production' ? activityPopup.reparto : statusLabel(activityPopup)}</strong></p>
         <p>{activityPopup.descrizione || 'Nessuna descrizione'}</p>
-        {activityPopup.tipo === 'production' ? <><p>{activityPopup.resource}</p><p>{activityPopup.start.replace('T', ' ')} – {activityPopup.end.replace('T', ' ')}</p><p>{activityPopup.stato}</p></> : <><p>Scadenza: {activityPopup.deadline ? formatDateHuman(dateOnly(activityPopup.deadline)) : 'Non impostata'}</p><button className="primary-action" onClick={() => { const item = activityPopup; setActivityPopup(null); if (item.tipo === 'reminder') { setSelectedReminder(item); setReminderForm({ ...emptyReminderForm, ...item, deadline: dateOnly(item.deadline) || '' }); setReminderModalOpen(true); } else openPhaseEdit(item); }}>Apri dettaglio e azioni</button></>}
-      </PlanningDialog>}
+        {activityPopup.tipo === 'production' ? <><div className="pc-metrics"><div><span>Risorsa</span><strong>{activityPopup.resource}</strong></div><div><span>Periodo</span><strong>{activityPopup.start.replace('T', ' ')} – {activityPopup.end.replace('T', ' ')}</strong></div><div><span>Stato</span><strong>{activityPopup.stato}</strong></div></div>{activityPopup.reparto === 'Confezionamento' && <div className="dashboard-production-actions"><ProductSpecificationViewButton key={activityPopup.articleCode} articleCode={activityPopup.articleCode} description={activityPopup.descrizione}/><PackagingSheetActions productionOrderId={activityPopup.productionOrderId}/></div>}</> : <><p>Scadenza: {activityPopup.deadline ? formatDateHuman(dateOnly(activityPopup.deadline)) : 'Non impostata'}</p><button className="primary-action" onClick={() => { const item = activityPopup; setActivityPopup(null); if (item.tipo === 'reminder') { setSelectedReminder(item); setReminderForm({ ...emptyReminderForm, ...item, deadline: dateOnly(item.deadline) || '' }); setReminderModalOpen(true); } else openPhaseEdit(item); }}>Apri dettaglio e azioni</button></>}
+      </CostModal>}
       <PhaseChecklistModal
         open={phaseModalOpen}
         phase={selectedPhase}

@@ -32,3 +32,10 @@ test('lavorazioni su più giorni, fine a mezzanotte esclusiva e tipi separati da
   assert.equal(activityOnDay(activity, '2026-09-19'), false);
   assert.equal(activityOnDay({ tipo: 'task', deadline: '2026-09-18' }, '2026-09-18'), true);
 });
+
+test('attività di confezionamento conserva ID ordine e codice articolo per foglio e capitolato', () => {
+  const [activity] = productionActivities([{ productionOrderId: 16004, articleCode: 'CO0017', operationType: 'Packaging', start: '2026-09-17T14:06:00', end: '2026-09-17T15:27:00' }]);
+  assert.equal(activity.productionOrderId, 16004);
+  assert.equal(activity.articleCode, 'CO0017');
+  assert.equal(activity.reparto, 'Confezionamento');
+});

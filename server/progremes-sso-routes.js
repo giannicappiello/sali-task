@@ -7,6 +7,13 @@ export function progremesDirectOperationalRoute(screenCode) {
 }
 
 export function progremesContextualRoute(screenCode, context = {}, fallback = "") {
+  if (String(screenCode || '').trim() === 'progremes.Produzione'
+      && context?.destination === 'foglio-confezionamento') {
+    const id = Number(context.productionId);
+    if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647)
+      throw Object.assign(new Error('Ordine di produzione non valido.'), { status: 400 });
+    return `/produzione/confezionamento/${id}`;
+  }
   if (String(screenCode || "").trim() === "progremes.Documenti"
       && String(context?.destination || "").trim() === "coa-produzioni") {
     const productionId = Number(context?.productionId);

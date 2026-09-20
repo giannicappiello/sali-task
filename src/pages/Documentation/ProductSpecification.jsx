@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, File, FileText, Folder, FolderOpen, ImagePlus, RefreshCw, Save, Trash2, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { ArrowLeft, File, FileText, Folder, FolderOpen, ImagePlus, Pencil, RefreshCw, Save, Trash2, X } from 'lucide-react';
 import { applySpecificationSources, specificationFileRequest, specificationComponentFields, isSpecificationImage, MAX_SPECIFICATION_ATTACHMENTS, specificationFields, specificationSections } from '../../../shared/productSpecification';
+import '../../features/production-costs/production-costs.css';
 import './ProductSpecification.css';
 
 const labelDate = value => value ? new Date(value).toLocaleString('it-IT') : '';
@@ -8,7 +10,7 @@ const initialData = article => Object.fromEntries(specificationFields.map(([name
   name === 'description' ? article.description || '' : '',
 ]));
 
-function Attachment({ attachment, articleCode, request, editable, onChange, onRemove }) {
+function Attachment({ attachment, articleCode, request, editable, onChange, onRemove, compact = false }) {
   const [url, setUrl] = useState(''), [error, setError] = useState(''), [attempt, setAttempt] = useState(0);
   const container = useRef(null);
   const isImage = isSpecificationImage(attachment.path);
@@ -37,11 +39,11 @@ function Attachment({ attachment, articleCode, request, editable, onChange, onRe
   return <article ref={container} className="product-spec-attachment">
     {isImage && <div className="product-spec-image">{url && !error ? <img src={url} alt={attachment.caption || attachment.name} loading="lazy" onError={() => setError('Anteprima non disponibile. Riprova o apri il file.')} /> : <><ImagePlus/><small>Caricamento foto…</small></>}</div>}
     {isPdf && url && <iframe className="product-spec-document-preview" title={`Anteprima ${attachment.name}`} src={url}/>}
-    <div className="product-spec-attachment-body"><strong>{attachment.name}</strong>
+    {!compact && <div className="product-spec-attachment-body"><strong>{attachment.name}</strong>
       {editable ? <label>Didascalia<input value={attachment.caption} maxLength={500} onChange={e => onChange(e.target.value)} /></label> : attachment.caption && <p>{attachment.caption}</p>}
       <div className="product-spec-actions"><button type="button" onClick={open}>Apri file</button>{editable && <button type="button" onClick={onRemove} aria-label={`Rimuovi collegamento a ${attachment.name}`}><Trash2 size={15}/>Rimuovi</button>}</div>
       {error && <div className="product-spec-file-error" role="alert">{error}{(isImage || isPdf) && <button type="button" onClick={() => { setUrl(''); setError(''); setAttempt(n => n + 1); }}>Riprova anteprima</button>}</div>}
-    </div>
+    </div>}
   </article>;
 }
 
@@ -92,6 +94,8 @@ export default function ProductSpecification({ article, canEdit, request, drafts
   const [saving, setSaving] = useState(false), [error, setError] = useState(''), [message, setMessage] = useState('');
   const [picker, setPicker] = useState(null), [revisions, setRevisions] = useState(null), [historyError, setHistoryError] = useState('');
   const [reload, setReload] = useState(0);
+  const [editing, setEditing] = useState(false);
+  const editTrigger = useRef(null), editorClose = useRef(null);
   const [sources, setSources] = useState(null), [sourceError, setSourceError] = useState('');
   const [pdf, setPdf] = useState(null), [pdfLoading, setPdfLoading] = useState(false), [photoError, setPhotoError] = useState(false);
   const previewClose = useRef(null), previewTrigger = useRef(null);
@@ -113,6 +117,28 @@ export default function ProductSpecification({ article, canEdit, request, drafts
     return () => { active = false; mounted.current = false; };
   }, [article, code, drafts, request, resource, reload]);
   useEffect(() => { if (pdf) previewClose.current?.focus(); return () => { if (pdf) URL.revokeObjectURL(pdf.url); }; }, [pdf]);
+  const overlayOpen = editing || Boolean(pdf) || Boolean(picker);
+  useEffect(() => {
+    if (!overlayOpen) return undefined;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previous; };
+  }, [overlayOpen]);
+  useEffect(() => {
+    if (!editing) return undefined;
+    const trigger = editTrigger.current;
+    editorClose.current?.focus();
+    return () => { trigger?.focus(); };
+  }, [editing]);
+  function editorKey(event) {
+    if (picker || pdf) return;
+    if (event.key === 'Escape' && !saving) { event.preventDefault(); setEditing(false); }
+    if (event.key !== 'Tab') return;
+    const elements = [...event.currentTarget.querySelectorAll('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), summary, a[href]')].filter(el => el.getClientRects().length);
+    const first = elements[0], last = elements.at(-1);
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+    if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+  }
   const displayedData = spec && sources ? applySpecificationSources(spec.data, sources) : spec?.data;
   const sourceChanges = Boolean(spec && sources && ['customer', 'semiFinished'].some(name => (spec.data[name] || '') !== displayedData[name]));
   async function preview(event) {
@@ -142,7 +168,7 @@ export default function ProductSpecification({ article, canEdit, request, drafts
     try {
       const result = await request(`specifications/save?${new URLSearchParams({ articleCode: code })}`, { body: { expectedVersion: spec.version, data: displayedData, attachments: spec.attachments } });
       if (drafts.get(code) === submitted) drafts.delete(code);
-      if (mounted.current) { setSpec(result); setDirty(false); setMessage(`Capitolato salvato. Revisione ${result.version}.`); setRevisions(null); }
+      if (mounted.current) { setSpec(result); setDirty(false); setMessage(`Capitolato salvato. Revisione ${result.version}.`); setRevisions(null); setEditing(false); }
     } catch (cause) { if (mounted.current) setError(cause.message); }
     finally { if (mounted.current) setSaving(false); }
   }
@@ -179,36 +205,52 @@ export default function ProductSpecification({ article, canEdit, request, drafts
       : type === 'yesno' ? <select value={spec.data[name] || ''} disabled={!canEdit} onChange={e => change({ ...spec, data: { ...spec.data, [name]: e.target.value } })}><option value="">Da definire</option><option value="yes">Sì</option><option value="no">No</option></select>
         : <input maxLength={500} value={displayedData[name] || ''} readOnly={!canEdit || automatic} placeholder={automatic ? 'Non disponibile nelle anagrafiche' : ''} onChange={e => change({ ...spec, data: { ...spec.data, [name]: e.target.value } })}/>}</label>;
   }
-  function attachments(section) {
-    return <><div className="product-spec-attachments">{spec.attachments.filter(a => a.section === section).map(a => <Attachment key={`${a.section}-${a.path}`} attachment={a} articleCode={code} request={request} editable={canEdit && !saving}
+  function attachments(section, compact = false) {
+    return <><div className="product-spec-attachments">{spec.attachments.filter(a => a.section === section).map(a => <Attachment key={`${a.section}-${a.path}`} attachment={a} articleCode={code} request={request} compact={compact} editable={!compact && canEdit && !saving}
       onChange={caption => change({ ...spec, attachments: spec.attachments.map(item => item === a ? { ...item, caption } : item) })}
       onRemove={() => change({ ...spec, attachments: spec.attachments.filter(item => item !== a) })}/>)}</div>
-      {canEdit && <button type="button" disabled={spec.attachments.length >= MAX_SPECIFICATION_ATTACHMENTS} onClick={e => openPicker(section, e)}><FolderOpen size={16}/>{section === 'product' ? 'Scegli foto dal NAS' : 'Associa foto o documento dal NAS'}</button>}</>;
+      {!compact && canEdit && <button type="button" disabled={spec.attachments.length >= MAX_SPECIFICATION_ATTACHMENTS} onClick={e => openPicker(section, e)}><FolderOpen size={16}/>{section === 'product' ? 'Scegli foto dal NAS' : 'Associa foto o documento dal NAS'}</button>}</>;
   }
-  return <section className="private-document-section product-specification">
-    <header className="private-document-section-heading"><div><h3>Capitolato prodotto</h3><p>Foto, caratteristiche e istruzioni di confezionamento</p></div><span className="product-spec-status">{dirty || sourceChanges ? 'Modifiche non salvate' : spec?.version ? `Revisione ${spec.version}` : 'Da compilare'}</span></header>
+  function productPhotos(compact = false) {
+    return <div className={`product-spec-product-photos${compact ? ' product-spec-compact-photos' : ''}`}>
+      {sources?.photoUrl && <article className="product-spec-attachment"><div className="product-spec-image">{photoError ? <p role="alert">Foto di catalogo non disponibile.</p> : <img src={sources.photoUrl} alt={`Foto ${code}`} onError={() => setPhotoError(true)}/>}</div></article>}
+      {!sources?.photoUrl && !spec.attachments.some(a => a.section === 'product') && <div className="product-spec-placeholder"><ImagePlus/><strong>Foto prodotto finito</strong><small>Nessuna foto disponibile</small></div>}
+      {attachments('product', compact)}
+    </div>;
+  }
+  const notices = <>{sourceError && <p role="alert" className="private-upload-error">{sourceError} Ricarica per recuperare foto, distinta e cliente.</p>}
+    {sources?.bomError && <p role="alert" className="private-upload-error">{sources.bomError}</p>}
+    {sources && !sources.bomError && !sources.components.length && <p role="status">Nessuna distinta base disponibile per questo articolo.</p>}
+    {sources?.missingCustomerNames > 0 && <p role="status">Alcuni clienti collegati non hanno una ragione sociale disponibile.</p>}</>;
+  return <section className="private-document-section product-specification" inert={overlayOpen || undefined}>
+    <header className="private-document-section-heading"><h3>Capitolato prodotto</h3><span className="product-spec-status">{spec?.version ? `Revisione ${spec.version}` : 'Nessuna revisione'}{dirty ? ' · Bozza non salvata' : ''}</span></header>
     {loading ? <p role="status">Caricamento capitolato…</p> : !spec ? <><div role="alert" className="private-upload-error">{error}</div><button type="button" onClick={refresh}><RefreshCw size={15}/>Riprova</button></> : <>
-      <div className="product-spec-actions product-spec-preview-action"><button type="button" onClick={preview} disabled={pdfLoading || loading || !sources || Boolean(sources.bomError)}><FileText size={17}/>{pdfLoading ? 'Preparazione PDF…' : 'Visualizza capitolato'}</button></div>
-      {sourceError && <p role="alert" className="private-upload-error">{sourceError} Ricarica per recuperare foto, distinta e cliente.</p>}
-      {sources?.bomError && <p role="alert" className="private-upload-error">{sources.bomError}</p>}
-      {sources && !sources.bomError && !sources.components.length && <p role="status">Nessuna distinta base disponibile per questo articolo.</p>}
-      {sources?.missingCustomerNames > 0 && <p role="status">Alcuni clienti collegati non hanno una ragione sociale disponibile.</p>}
+      <div className="product-spec-compact">{productPhotos(true)}<div className="product-spec-actions">
+        <button type="button" onClick={preview} disabled={pdfLoading || !sources || Boolean(sources.bomError)}><FileText size={17}/>{pdfLoading ? 'Preparazione PDF…' : 'Visualizza capitolato'}</button>
+        {canEdit && <button type="button" ref={editTrigger} className="product-spec-save" onClick={() => setEditing(true)}><Pencil size={17}/>Modifica</button>}
+      </div></div>
+      {!editing && error && <div className="private-upload-error" role="alert">{error}</div>}
+      {!editing && message && <p className="product-spec-message" role="status">{message}</p>}
+      {!editing && (sourceError || sources?.bomError) && <><p role="alert">Dati del capitolato non disponibili.</p><button type="button" onClick={refresh}>Riprova</button></>}
+      {editing && createPortal(<div className="product-spec-modal product-spec-editor-overlay"><section className="pc-modal product-specification product-spec-editor" role="dialog" aria-modal="true" aria-labelledby="product-spec-editor-title" inert={Boolean(picker || pdf) || undefined} onKeyDown={editorKey}>
+        <header className="product-spec-editor-heading"><div><h2 id="product-spec-editor-title">Modifica capitolato</h2><p>{code} · {article.description}</p></div><button type="button" ref={editorClose} onClick={() => setEditing(false)} disabled={saving} aria-label="Chiudi modifica capitolato"><X/></button></header>
+        <div className="product-spec-editor-content">{notices}
       <form onSubmit={save}><fieldset disabled={saving}>
-        <div className="product-spec-overview"><div className="product-spec-product-photos">
-          {sources?.photoUrl && <article className="product-spec-attachment"><div className="product-spec-image">{photoError ? <p role="alert">Foto di catalogo non disponibile. Ricarica per riprovare.</p> : <img src={sources.photoUrl} alt={`Foto ${code}`} onError={() => setPhotoError(true)}/>}</div><div className="product-spec-attachment-body"><small>Foto da Workspace · Prodotti</small></div></article>}
-          {!sources?.photoUrl && !spec.attachments.some(a => a.section === 'product') && <div className="product-spec-placeholder"><ImagePlus/><strong>Foto prodotto finito</strong><small>Nessuna foto disponibile nel catalogo</small></div>}{attachments('product')}</div>
+        <div className="product-spec-overview">{productPhotos()}
           <div className="product-spec-fields"><label>Codice articolo<input value={code} readOnly/></label>{specificationSections[0].fields.map(field)}</div></div>
         {specificationSections.slice(1).map(section => <details key={section.id} className="product-spec-section" open={section.id === 'primary' || undefined}><summary>{section.title}</summary><div className="product-spec-fields">{section.fields.map(field)}</div>{attachments(section.id)}</details>)}
-        <footer className="product-spec-footer"><div><small>{spec.updatedAt ? `Salvato il ${labelDate(spec.updatedAt)} da ${spec.updatedBy}` : 'I file restano nelle cartelle NAS esistenti.'}</small>{dirty && <small>Le modifiche non salvate restano disponibili passando ad altri articoli in questa pagina.</small>}</div><div className="product-spec-actions"><button type="button" onClick={refresh}><RefreshCw size={15}/>Ricarica</button>{canEdit && <button className="product-spec-save" type="submit" disabled={(!dirty && !sourceChanges && Boolean(spec.version)) || !sources || Boolean(sources.bomError)}><Save size={16}/>{saving ? 'Salvataggio…' : 'Salva capitolato'}</button>}</div></footer>
+        <footer className="product-spec-footer"><div><small>{spec.updatedAt ? `Salvato il ${labelDate(spec.updatedAt)} da ${spec.updatedBy}` : 'I file restano nelle cartelle NAS esistenti.'}</small>{dirty && <small>Chiudendo il popup, le modifiche restano in bozza in questa pagina fino al salvataggio.</small>}</div><div className="product-spec-actions"><button type="button" onClick={() => setEditing(false)}>Chiudi</button><button type="button" onClick={refresh}><RefreshCw size={15}/>Ricarica</button>{canEdit && <button className="product-spec-save" type="submit" disabled={(!dirty && !sourceChanges && Boolean(spec.version)) || !sources || Boolean(sources.bomError)}><Save size={16}/>{saving ? 'Salvataggio…' : 'Salva capitolato'}</button>}</div></footer>
       </fieldset></form>
       {error && <div className="private-upload-error" role="alert">{error}</div>}{message && <p className="product-spec-message" role="status">{message}</p>}
       {spec.version > 0 && <details className="product-spec-section" onToggle={loadHistory}><summary>Storico revisioni</summary>{historyError ? <p role="alert">{historyError}</p> : revisions ? <ul>{revisions.map(r => <li key={r.version}>Rev. {r.version} · {labelDate(r.updatedAt)} · {r.updatedBy}</li>)}</ul> : <p>Caricamento revisioni…</p>}</details>}
+        </div>
+      </section></div>, document.body)}
     </>}
-    {picker && <NasPicker section={picker} articleCode={code} request={request} onSelect={addFile} onClose={closePicker}/>}
-    {pdf && <div className="product-spec-modal"><section className="product-spec-pdf" role="dialog" aria-modal="true" aria-label="Anteprima capitolato" onKeyDown={e => { if (e.key === 'Escape') closePreview(); }}>
+    {picker && createPortal(<NasPicker section={picker} articleCode={code} request={request} onSelect={addFile} onClose={closePicker}/>, document.body)}
+    {pdf && createPortal(<div className="product-spec-modal"><section className="product-spec-pdf" role="dialog" aria-modal="true" aria-label="Anteprima capitolato" onKeyDown={e => { if (e.key === 'Escape') closePreview(); }}>
       <header><h3>Capitolato · {code}</h3><button type="button" ref={previewClose} onClick={closePreview} aria-label="Chiudi anteprima"><X/></button></header>
       {pdf.warnings.length > 0 && <p role="alert">{pdf.warnings.join(' ')}</p>}
       <iframe title={`Capitolato ${code}`} src={pdf.url}/><footer><small>{dirty || sourceChanges || !spec.version ? 'Bozza con i dati attualmente visualizzati.' : `Revisione ${spec.version}`}</small><a href={pdf.url} download={pdf.fileName}>Scarica PDF</a></footer>
-    </section></div>}
+    </section></div>, document.body)}
   </section>;
 }

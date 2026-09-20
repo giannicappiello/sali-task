@@ -23,6 +23,7 @@ export function productionActivities(rows) {
     if (!start || !end || end <= start || !labels[row.operationType]) return [];
     return [{
       id: `mes-${row.productionOrderId}-${row.operationType}-${start}-${index}`,
+      productionOrderId: row.productionOrderId,
       tipo: 'production', titolo: `${row.orderNumber} · ${row.articleCode}`,
       descrizione: row.articleDescription, start, end, deadline: end.slice(0, 10),
       stato: row.status, reparto: labels[row.operationType],

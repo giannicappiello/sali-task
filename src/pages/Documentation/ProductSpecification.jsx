@@ -1,3 +1,4 @@
+import { displayDate } from '../../lib/displayDate';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, File, FileText, Folder, FolderOpen, ImagePlus, Pencil, RefreshCw, Save, Trash2, X } from 'lucide-react';
@@ -5,7 +6,7 @@ import { applySpecificationSources, specificationFileRequest, specificationCompo
 import '../../features/production-costs/production-costs.css';
 import './ProductSpecification.css';
 
-const labelDate = value => value ? new Date(value).toLocaleString('it-IT') : '';
+const labelDate = value => value ? displayDate(value, true) : '';
 const initialData = article => Object.fromEntries(specificationFields.map(([name]) => [name,
   name === 'description' ? article.description || '' : '',
 ]));

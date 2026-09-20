@@ -1,3 +1,4 @@
+import { displayDate } from '../../lib/displayDate';
 import { Modal as CostModal } from '../../features/production-costs/common';
 import ProductSpecificationViewButton from '../Documentation/ProductSpecificationViewButton';
 import PackagingSheetActions from './PackagingSheetActions';
@@ -74,14 +75,7 @@ function formatMonth(date) {
   return date.toLocaleDateString("it-IT", { month: "long", year: "numeric" });
 }
 
-function formatDateHuman(dateKey) {
-  return new Date(`${dateKey}T00:00:00`).toLocaleDateString("it-IT", {
-    weekday: "long",
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  });
-}
+function formatDateHuman(dateKey) { return displayDate(dateKey); }
 
 function statusLabel(item) {
   if (item.tipo === "reminder") {
@@ -608,7 +602,7 @@ function Dashboard({ toolbarTarget = null }) {
       {activityPopup && <CostModal title={activityPopup.titolo} onClose={() => setActivityPopup(null)}>
         <p><strong className={activityPopup.tipo === 'production' ? `production-label ${activityPopup.reparto === 'Preparazione' ? 'preparation' : 'packaging'}` : undefined}>{activityPopup.tipo === 'production' ? activityPopup.reparto : statusLabel(activityPopup)}</strong></p>
         <p>{activityPopup.descrizione || 'Nessuna descrizione'}</p>
-        {activityPopup.tipo === 'production' ? <><div className="pc-metrics"><div><span>Risorsa</span><strong>{activityPopup.resource}</strong></div><div><span>Periodo</span><strong>{activityPopup.start.replace('T', ' ')} – {activityPopup.end.replace('T', ' ')}</strong></div><div><span>Stato</span><strong>{activityPopup.stato}</strong></div></div>{activityPopup.reparto === 'Confezionamento' && <div className="dashboard-production-actions"><ProductSpecificationViewButton key={activityPopup.articleCode} articleCode={activityPopup.articleCode} description={activityPopup.descrizione}/><PackagingSheetActions productionOrderId={activityPopup.productionOrderId}/></div>}</> : <><p>Scadenza: {activityPopup.deadline ? formatDateHuman(dateOnly(activityPopup.deadline)) : 'Non impostata'}</p><button className="primary-action" onClick={() => { const item = activityPopup; setActivityPopup(null); if (item.tipo === 'reminder') { setSelectedReminder(item); setReminderForm({ ...emptyReminderForm, ...item, deadline: dateOnly(item.deadline) || '' }); setReminderModalOpen(true); } else openPhaseEdit(item); }}>Apri dettaglio e azioni</button></>}
+        {activityPopup.tipo === 'production' ? <><div className="pc-metrics"><div><span>Risorsa</span><strong>{activityPopup.resource}</strong></div><div><span>Periodo</span><strong>{displayDate(activityPopup.start, true)} – {displayDate(activityPopup.end, true)}</strong></div><div><span>Stato</span><strong>{activityPopup.stato}</strong></div></div>{activityPopup.reparto === 'Confezionamento' && <div className="dashboard-production-actions"><ProductSpecificationViewButton key={activityPopup.articleCode} articleCode={activityPopup.articleCode} description={activityPopup.descrizione}/><PackagingSheetActions productionOrderId={activityPopup.productionOrderId}/></div>}</> : <><p>Scadenza: {activityPopup.deadline ? formatDateHuman(dateOnly(activityPopup.deadline)) : 'Non impostata'}</p><button className="primary-action" onClick={() => { const item = activityPopup; setActivityPopup(null); if (item.tipo === 'reminder') { setSelectedReminder(item); setReminderForm({ ...emptyReminderForm, ...item, deadline: dateOnly(item.deadline) || '' }); setReminderModalOpen(true); } else openPhaseEdit(item); }}>Apri dettaglio e azioni</button></>}
       </CostModal>}
       <PhaseChecklistModal
         open={phaseModalOpen}

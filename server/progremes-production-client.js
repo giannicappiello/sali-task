@@ -230,6 +230,7 @@ export function createProgremesProductionClient({ env = process.env, fetchImpl =
     } finally { clearTimeout(timer); }
   };
   return {
+    packagingSheet: payload => call('/api/workspace/v1/packaging-sheet', payload),
     requestEnabled: () => enabled("PROGREMES_PRODUCTION_REQUESTS_ENABLED", env),
     confirmationEnabled: () => enabled("PROGREMES_PRODUCTION_CONFIRMATIONS_ENABLED", env),
     v3PreviewEnabled: () => enabled("WORKSPACEMES_V3_PREVIEW_ENABLED", env),

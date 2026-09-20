@@ -1,3 +1,4 @@
+import { displayDate } from '../../lib/displayDate';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Boxes, Download, File, FileLock2, FilePlus2, FlaskConical, Folder, PackageCheck, RefreshCw, Search, Shapes, ShieldCheck, X } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
@@ -20,7 +21,7 @@ async function documentRequest(session, path, options = {}) {
   return workspaceAction(session.accessToken, "private_documents", { path, input });
 }
 const size = (bytes) => `${(Number(bytes || 0) / 1048576).toLocaleString("it-IT", { maximumFractionDigits: 2 })} MB`;
-const date = (value) => value ? new Date(value).toLocaleDateString("it-IT") : "—";
+const date = (value) => displayDate(value);
 
 const ARTICLE_SECTIONS = [
   { id: "finished", title: "Prodotti finiti", description: "Articoli finiti e confezionati.", icon: PackageCheck },

@@ -1,3 +1,4 @@
+import { displayDate } from '../../lib/displayDate.js';
 import { specificationSections, specificationComponentFields, specificationFileRequest, isSpecificationImage } from '../../../shared/productSpecification.js';
 import { specificationAttachmentContent } from './specificationAttachmentContent.js';
 
@@ -96,7 +97,7 @@ export async function createProductSpecificationPdf({ article, specification, ph
     doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text(title, 77, 13);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.text(text(`${article.articleCode} | ${status}`), 77, 22);
     doc.setTextColor(90, 106, 125); doc.setFontSize(8);
-    doc.text(`Generato il ${new Date().toLocaleDateString('it-IT')}`, 18, 287); doc.text(`${page} / ${pages}`, 192, 287, { align: 'right' });
+    doc.text(`Generato il ${displayDate(new Date())}`, 18, 287); doc.text(`${page} / ${pages}`, 192, 287, { align: 'right' });
   }
   doc.setProperties({ title: `${title} ${article.articleCode}`, subject: status, creator: 'Progré Workspace' });
   return { blob: doc.output('blob'), warnings, fileName: `Capitolato_${article.articleCode.replace(/[^a-z0-9_-]/gi, '_')}_${dirty || !specification.version ? 'bozza' : `rev${specification.version}`}.pdf` };

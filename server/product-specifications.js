@@ -34,7 +34,7 @@ export function validateSpecification(input) {
 }
 
 export function specificationRequiresWrite(pathname) {
-  return pathname === '/specifications/save';
+  return ['/specifications/save', '/specifications/preview'].includes(pathname);
 }
 
 export async function authorizeSpecificationArticle(identity, code) {
@@ -57,7 +57,7 @@ const dto = row => row ? { data: row.data, attachments: row.attachments, version
 
 export async function productSpecificationOperation(identity, path, input = {}) {
   const url = new URL(path, 'https://workspace.invalid/');
-  if (!['/specifications', '/specifications/sources', '/specifications/save', '/specifications/file', '/specifications/history'].includes(url.pathname))
+  if (!['/specifications', '/specifications/sources', '/specifications/save', '/specifications/preview', '/specifications/file', '/specifications/history'].includes(url.pathname))
     throw fail('Operazione capitolato non disponibile.', 404);
   if (specificationRequiresWrite(url.pathname) && (!identity.canWriteDocuments || !identity.customerCodes.includes('*')))
     throw fail('Modifica capitolato non autorizzata.', 403);
@@ -92,7 +92,9 @@ export async function productSpecificationOperation(identity, path, input = {}) 
   const { data: spec, error } = await admin.from('workspace_product_specifications').select('*').eq('article_code', code).maybeSingle();
   if (error) throw error;
   if (url.pathname === '/specifications') return { specification: dto(spec) };
-  const attachment = spec?.attachments.find(a => a.id === url.searchParams.get('attachmentId'));
+  const attachment = url.pathname === '/specifications/preview'
+    ? validateSpecification({ expectedVersion: 0, data: {}, attachments: [input] }).attachments[0]
+    : spec?.attachments.find(a => a.id === url.searchParams.get('attachmentId'));
   if (!attachment) throw fail('Allegato capitolato non disponibile.', 404);
   const { data: file, error: fileError } = await admin.from('workspace_private_nas_files').select('path,active').eq('path_key', key(attachment.path)).maybeSingle();
   if (fileError) throw fileError;

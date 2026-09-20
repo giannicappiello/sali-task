@@ -2,6 +2,20 @@
 
 ## Capitolati prodotti finiti
 
+Ogni componente viene mostrato una sola volta con codice e descrizione; astuccio
+e bugiardino hanno l'opzione Non previsto nella stessa tendina. I vecchi valori
+descrittivi vengono conservati nei dati, senza righe duplicate nella schermata o nel PDF.
+Le foto NAS appena selezionate sono visibili immediatamente e incluse anche nel PDF
+di bozza, tramite `specifications/preview`: solo editor interni, file attivi indicizzati,
+percorsi normalizzati e audit come per gli allegati salvati. Il PDF può leggere i byte
+dal proxy Workspace se il NAS blocca richieste CORS (frammenti da 1 MiB, massimo 20 MiB).
+I PDF allegati hanno un'anteprima nella schermata; nel capitolato sono elencati come documenti.
+
+Entrambi i selettori Associa documento partono da `nas?articleCode=...`:
+cartella con nome esatto del codice sotto Produzione, escludendo il cestino NAS.
+In assenza di file indicizzati si apre Produzione/codice e si mostra un avviso,
+senza creare o spostare cartelle sul NAS. Rimane disponibile la navigazione Su.
+
 Il capitolato carica la foto dei codici IT da `prodotti.immagine_catalogo_url`,
 la stessa fonte della sezione Workspace Prodotti. `specifications/sources`
 riusa l'autorizzazione articolo e risolve i nomi clienti da `ordini_clienti_cache`,

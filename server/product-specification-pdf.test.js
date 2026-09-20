@@ -29,5 +29,35 @@ test('capitolato PDF: segnala foto non disponibili e allegati non ancora salvati
   });
   assert.equal(result.warnings.length, 2);
   assert.equal(result.fileName, 'Capitolato_IT0001_bozza.pdf');
-  assert.match(result.warnings.join(' '), /Salva il capitolato/);
+  assert.match(result.warnings.join(' '), /Allegato non disponibile/);
+});
+
+test('capitolato PDF: include subito le immagini non salvate senza campi duplicati', async () => {
+  const requests = [];
+  let loaded = 0;
+  const result = await createProductSpecificationPdf({ article, logoBytes, dirty: true,
+    specification: { version: 0, data: { bottleCode: 'CN01', bottleDescription: 'Flacone', cartonCode: '__NONE__' }, attachments: [{ section: 'primary', path: 'Produzione/IT0001/foto.jpg', name: 'foto.jpg' }] },
+    components: [{ code: 'CN01', description: 'Flacone' }],
+    request: async (...args) => { requests.push(args); return { url: 'signed-photo' }; },
+    loadImage: async url => { assert.equal(url, 'signed-photo'); loaded++; return { data: logoBytes, width: 775, height: 323 }; },
+  });
+  assert.equal(loaded, 1); assert.equal(requests.length, 1);
+  assert.match(requests[0][0], /specifications\/preview/);
+  assert.equal(requests[0][1].body.path, 'Produzione/IT0001/foto.jpg');
+  assert.deepEqual(result.warnings, []);
+  const raw = new TextDecoder().decode(await result.blob.arrayBuffer());
+  assert.ok(!raw.includes('Descrizione flacone'));
+  assert.ok(raw.includes('Non previsto'));
+});
+
+// The gateway may not allow browser cross-origin fetch; PDF export retries through Workspace.
+test('capitolato PDF: recupera immagini NAS tramite proxy quando il browser blocca CORS', async () => {
+  const calls = [];
+  const result = await createProductSpecificationPdf({ article, logoBytes, dirty: true,
+    specification: { version: 0, data: {}, attachments: [{ section: 'primary', path: 'foto.jpg', name: 'foto.jpg' }] },
+    request: async (path) => { calls.push(path); return path.includes('content=true') ? { base64: 'AQID', nextOffset: null } : { url: 'blocked-nas' }; },
+    loadImage: async url => { if (url === 'blocked-nas') throw Error('CORS'); assert.match(url, /^blob:/); return { data: logoBytes, width: 775, height: 323 }; },
+  });
+  assert.deepEqual(result.warnings, []);
+  assert.ok(calls.some(path => path.includes('specifications/preview') && path.includes('content=true&offset=0')));
 });

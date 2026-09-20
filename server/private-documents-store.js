@@ -1,6 +1,7 @@
 /* global process */
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { buildMexalClient } from './mexal/sync-products.js';
+import { articleNasDirectory } from './private-document-directory.js';
 
 const value = v => String(v ?? '').trim();
 export const key = v => value(v).toUpperCase();
@@ -222,15 +223,18 @@ export async function privateDocumentOperation(identity, path, input={}) {
   if(url.pathname==='/nas/sync') return synchronizeNas(admin,{force:true});
   if(url.pathname==='/nas') {
     if(!internal) throw fail('Operazione riservata agli utenti interni.',403);
-    const dir=value(url.searchParams.get('directory'));
+    const inventory=await rows(admin,'workspace_private_nas_files');
+    const articleCode=value(url.searchParams.get('articleCode'));
+    const resolved=articleCode&&!url.searchParams.has('directory')?articleNasDirectory(inventory,articleCode):null;
+    const dir=resolved?.directory??value(url.searchParams.get('directory'));
     const prefix=dir?normalizePath(dir)+'/':'';
     const dirs=new Map(),files=[];
-    for(const f of (await rows(admin,'workspace_private_nas_files')).filter(f=>f.active&&f.path.startsWith(prefix))) {
+    for(const f of inventory.filter(f=>f.active&&f.path.startsWith(prefix))) {
       const parts=f.path.slice(prefix.length).split('/');
       if(parts.length>1) dirs.set(parts[0],{name:parts[0],relativePath:prefix+parts[0]});
       else files.push({name:f.name,relativePath:f.path,sizeBytes:f.size_bytes});
     }
-    return {parentPath:dir?dir.split('/').slice(0,-1).join('/'):null,directories:[...dirs.values()],files};
+    return {directory:dir,notice:resolved?.notice||'',parentPath:dir?dir.split('/').slice(0,-1).join('/'):null,directories:[...dirs.values()],files};
   }
   let code=url.pathname.startsWith('/articles/')?decodeURIComponent(url.pathname.slice('/articles/'.length)):null;
   if(url.pathname==='/documents/reference') code=value(input.articleId);

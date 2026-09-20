@@ -66,10 +66,11 @@ export async function handlePrivateDocuments(req, body = {}) {
   const pathname = new URL(path, "https://workspace.invalid/").pathname;
   const upload = ["/nas/sync", "/documents/reference", "/nas"].includes(pathname) || specificationRequiresWrite(pathname);
   const identity = await authorize(req, { upload });
-  if (pathname.startsWith("/specifications")) return productSpecificationOperation(identity, path, body.input || {});
-  const result = await privateDocumentOperation(identity, path, body.input || {});
+  const result = pathname.startsWith("/specifications")
+    ? await productSpecificationOperation(identity, path, body.input || {})
+    : await privateDocumentOperation(identity, path, body.input || {});
   const url = new URL(path, "https://workspace.invalid/");
-  if (url.searchParams.get("content") === "true" && pathname.startsWith("/documents/") && pathname !== "/documents/reference") {
+  if (url.searchParams.get("content") === "true" && ((pathname.startsWith("/documents/") && pathname !== "/documents/reference") || ["/specifications/file", "/specifications/preview"].includes(pathname))) {
     const offset = Number(url.searchParams.get("offset") || 0);
     if (!Number.isSafeInteger(offset) || offset < 0) throw Object.assign(new Error("Posizione documento non valida."), { status: 400 });
     return readPrivateDocumentChunk(result.url, offset);

@@ -173,3 +173,21 @@ test('capitolato: distinta Mexal paginata, sottocomponenti e descrizioni mancant
   assert.equal(result[1].description, 'Semilavorato');
   await assert.rejects(readSpecificationBom(f.identity.admin, 'IT0001', client, ['IT0001']), /ricorsiva/);
 });
+
+test('capitolato: anteprima immediata ammessa solo a editor interni e file NAS attivi', async () => {
+  process.env.DOCUMENT_GATEWAY_URL = 'https://nas.example.test';
+  process.env.DOCUMENT_GATEWAY_SECRET = 'test-secret-with-at-least-32-characters';
+  const f = fixture({ files: [{ path_key: 'PRODUZIONE/IT0001/FOTO.JPG', path: 'Produzione/IT0001/foto.jpg', active: true }] });
+  const path = 'specifications/preview?articleCode=IT0001';
+  const input = { section: 'primary', path: 'Produzione/IT0001/foto.jpg' };
+  assert.equal(specificationRequiresWrite('/specifications/preview'), true);
+  const result = await productSpecificationOperation(f.identity, path, input);
+  assert.match(result.url, /\/files\/Produzione\/IT0001\/foto.jpg/);
+  assert.equal(f.writes(), 0);
+  assert.equal(f.tables.workspace_product_specification_access_log.length, 1);
+  await assert.rejects(productSpecificationOperation({ ...f.identity, canWriteDocuments: false }, path, input), e => e.status === 403);
+  await assert.rejects(productSpecificationOperation({ ...f.identity, customerCodes: ['501.A'] }, path, input), e => e.status === 403);
+  await assert.rejects(productSpecificationOperation(f.identity, path, { ...input, path: '../secret.jpg' }));
+  f.tables.workspace_private_nas_files[0].active = false;
+  await assert.rejects(productSpecificationOperation(f.identity, path, input), e => e.status === 404);
+});

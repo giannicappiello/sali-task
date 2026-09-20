@@ -4,15 +4,15 @@ export const specificationSections = [
     ['appearance', 'Aspetto'], ['fragrance', 'Profumo'], ['description', 'Descrizione prodotto', 'textarea'],
   ] },
   { id: 'primary', title: 'Packaging primario', fields: [
-    ['bottleCode', 'Codice flacone / vaso'], ['bottleDescription', 'Descrizione flacone / vaso'],
-    ['pumpCode', 'Codice tappo / pompa'], ['pumpDescription', 'Descrizione tappo / pompa'],
+    ['bottleCode', 'Flacone / vaso'],
+    ['pumpCode', 'Tappo / pompa'],
     ['dipTubeCut', 'Taglio pescante', 'yesno'], ['dipTubeLength', 'Lunghezza pescante (mm)'],
     ['primaryNotes', 'Altri componenti e indicazioni', 'textarea'],
     ['additionalComponents', 'Altri componenti della distinta', 'textarea'],
   ] },
   { id: 'secondary', title: 'Packaging secondario', fields: [
-    ['cartonPresent', 'Astuccio', 'yesno'], ['cartonCode', 'Codice astuccio'], ['cartonDescription', 'Descrizione astuccio'],
-    ['leafletPresent', 'Bugiardino', 'yesno'], ['leafletCode', 'Codice bugiardino'], ['leafletDescription', 'Descrizione bugiardino'],
+    ['cartonCode', 'Astuccio'],
+    ['leafletCode', 'Bugiardino'],
   ] },
   { id: 'label', title: 'Etichetta e lavorazioni', fields: [
     ['decoration', 'Etichetta / serigrafia'], ['labelCode', 'Codice etichetta'], ['labelDimensions', 'Dimensioni etichetta (mm)'],
@@ -31,7 +31,10 @@ export const specificationSections = [
   { id: 'other', title: 'Note e allegati', fields: [['notes', 'Note aggiuntive', 'textarea']] },
 ];
 export const specificationAttachmentSections = ['product', ...specificationSections.map(s => s.id).filter(s => s !== 'general')];
-export const specificationFields = specificationSections.flatMap(s => s.fields);
+// Retain legacy values in saved revisions, but display each component only once.
+export const specificationFields = [...specificationSections.flatMap(s => s.fields),
+  ['bottleDescription', ''], ['pumpDescription', ''], ['cartonDescription', ''], ['leafletDescription', ''],
+  ['cartonPresent', '', 'yesno'], ['leafletPresent', '', 'yesno']];
 export const isSpecificationImage = path => /\.(?:jpe?g|png|webp|gif)$/i.test(path || '');
 export const MAX_SPECIFICATION_ATTACHMENTS = 40;
 export const specificationComponentFields = {
@@ -43,4 +46,10 @@ export const specificationComponentFields = {
 export function applySpecificationSources(data, sources) {
   return { ...data, customer: sources.customerNames.join(', '),
     semiFinished: sources.components.filter(c => /^FP/i.test(c.code)).map(c => c.code).join(', ') };
+}
+
+export function specificationFileRequest(articleCode, attachment) {
+  return attachment.id
+    ? [`specifications/file?${new URLSearchParams({ articleCode, attachmentId: attachment.id })}`]
+    : [`specifications/preview?${new URLSearchParams({ articleCode })}`, { body: attachment }];
 }

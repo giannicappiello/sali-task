@@ -1,61 +1,62 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, File, FileText, Folder, FolderOpen, ImagePlus, RefreshCw, Save, Trash2, X } from 'lucide-react';
-import { applySpecificationSources, specificationComponentFields, isSpecificationImage, MAX_SPECIFICATION_ATTACHMENTS, specificationFields, specificationSections } from '../../../shared/productSpecification';
+import { applySpecificationSources, specificationFileRequest, specificationComponentFields, isSpecificationImage, MAX_SPECIFICATION_ATTACHMENTS, specificationFields, specificationSections } from '../../../shared/productSpecification';
 import './ProductSpecification.css';
 
 const labelDate = value => value ? new Date(value).toLocaleString('it-IT') : '';
 const initialData = article => Object.fromEntries(specificationFields.map(([name]) => [name,
   name === 'description' ? article.description || '' : '',
 ]));
-const filePath = (code, id) => `specifications/file?${new URLSearchParams({ articleCode: code, attachmentId: id })}`;
 
 function Attachment({ attachment, articleCode, request, editable, onChange, onRemove }) {
   const [url, setUrl] = useState(''), [error, setError] = useState(''), [attempt, setAttempt] = useState(0);
   const container = useRef(null);
   const isImage = isSpecificationImage(attachment.path);
+  const isPdf = /\.pdf$/i.test(attachment.path);
   useEffect(() => {
-    if (!isImage || !attachment.id) return undefined;
+    if (!isImage && !isPdf) return undefined;
     let active = true, started = false;
     const load = () => {
       if (started) return; started = true;
-      request(filePath(articleCode, attachment.id)).then(result => { if (active) setUrl(result.url); })
+      request(...specificationFileRequest(articleCode, { id: attachment.id, path: attachment.path, section: attachment.section })).then(result => { if (active) setUrl(result.url); })
         .catch(cause => { if (active) setError(cause.message); });
     };
     const observer = new IntersectionObserver(entries => { if (entries.some(e => e.isIntersecting)) load(); }, { rootMargin: '150px' });
     if (container.current) observer.observe(container.current);
     return () => { active = false; observer.disconnect(); };
-  }, [articleCode, attachment.id, isImage, request, attempt]);
+  }, [articleCode, attachment.id, attachment.path, attachment.section, isImage, isPdf, request, attempt]);
   async function open() {
     const opened = window.open('', '_blank');
     if (opened) opened.opener = null;
     try {
       if (!opened) throw new Error('Consenti l’apertura di nuove schede per visualizzare il file.');
-      const result = await request(filePath(articleCode, attachment.id));
+      const result = await request(...specificationFileRequest(articleCode, attachment));
       opened.location.replace(result.url);
     } catch (cause) { opened?.close(); setError(cause.message); }
   }
   return <article ref={container} className="product-spec-attachment">
-    {isImage && <div className="product-spec-image">{url && !error ? <img src={url} alt={attachment.caption || attachment.name} loading="lazy" onError={() => setError('Anteprima non disponibile. Riprova o apri il file.')} /> : <><ImagePlus/><small>{attachment.id ? 'Anteprima foto' : 'Salva il capitolato per visualizzare la foto.'}</small></>}</div>}
+    {isImage && <div className="product-spec-image">{url && !error ? <img src={url} alt={attachment.caption || attachment.name} loading="lazy" onError={() => setError('Anteprima non disponibile. Riprova o apri il file.')} /> : <><ImagePlus/><small>Caricamento foto…</small></>}</div>}
+    {isPdf && url && <iframe className="product-spec-document-preview" title={`Anteprima ${attachment.name}`} src={url}/>}
     <div className="product-spec-attachment-body"><strong>{attachment.name}</strong>
       {editable ? <label>Didascalia<input value={attachment.caption} maxLength={500} onChange={e => onChange(e.target.value)} /></label> : attachment.caption && <p>{attachment.caption}</p>}
-      <div className="product-spec-actions">{attachment.id && <button type="button" onClick={open}>Apri file</button>}{editable && <button type="button" onClick={onRemove} aria-label={`Rimuovi collegamento a ${attachment.name}`}><Trash2 size={15}/>Rimuovi</button>}</div>
-      {error && <div className="product-spec-file-error" role="alert">{error}{isImage && <button type="button" onClick={() => { setUrl(''); setError(''); setAttempt(n => n + 1); }}>Riprova anteprima</button>}</div>}
+      <div className="product-spec-actions"><button type="button" onClick={open}>Apri file</button>{editable && <button type="button" onClick={onRemove} aria-label={`Rimuovi collegamento a ${attachment.name}`}><Trash2 size={15}/>Rimuovi</button>}</div>
+      {error && <div className="product-spec-file-error" role="alert">{error}{(isImage || isPdf) && <button type="button" onClick={() => { setUrl(''); setError(''); setAttempt(n => n + 1); }}>Riprova anteprima</button>}</div>}
     </div>
   </article>;
 }
 
-function NasPicker({ section, request, onSelect, onClose }) {
+function NasPicker({ section, articleCode, request, onSelect, onClose }) {
   const [listing, setListing] = useState(null), [directory, setDirectory] = useState(''), [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true), [error, setError] = useState('');
   const sequence = useRef({ value: 0 }), closeButton = useRef(null);
   useEffect(() => {
     let active = true;
     const requests = sequence.current;
-    request('nas').then(result => { if (active) { setListing(result); setLoading(false); } })
+    request(`nas?${new URLSearchParams({ articleCode })}`).then(result => { if (active) { setDirectory(result.directory || ''); setListing(result); setLoading(false); } })
       .catch(cause => { if (active) { setError(cause.message); setLoading(false); } });
     closeButton.current?.focus();
     return () => { active = false; requests.value++; };
-  }, [request]);
+  }, [request, articleCode]);
   async function browse(path) {
     const seq = ++sequence.current.value; setLoading(true); setError(''); setSelected(null);
     try { const result = await request(`nas?directory=${encodeURIComponent(path)}`); if (seq === sequence.current.value) { setDirectory(path); setListing(result); } }
@@ -74,6 +75,7 @@ function NasPicker({ section, request, onSelect, onClose }) {
   return <div className="product-spec-modal" role="presentation"><section role="dialog" aria-modal="true" aria-label="Seleziona un file NAS esistente" onKeyDown={dialogKey}>
     <header><div><h3>Seleziona dal NAS</h3><p>Il file resta nella cartella attuale.</p></div><button type="button" ref={closeButton} onClick={onClose} aria-label="Chiudi selezione NAS"><X/></button></header>
     <div className="private-nas-picker"><header><div><strong>Cartella corrente</strong><small>{directory || 'Archivio NAS'}</small></div>{listing?.parentPath != null && <button type="button" disabled={loading} onClick={() => browse(listing.parentPath)}><ArrowLeft size={15}/>Su</button>}</header>
+      {listing?.notice && <p role="status">{listing.notice}</p>}
       {loading ? <p role="status">Caricamento cartelle NAS…</p> : <div className="private-nas-entries">
         {(listing?.directories || []).map(dir => <button type="button" key={dir.relativePath} onClick={() => browse(dir.relativePath)}><Folder size={17}/><span>{dir.name}</span></button>)}
         {files.map(file => <button type="button" key={file.relativePath} className={selected?.relativePath === file.relativePath ? 'selected' : ''} aria-pressed={selected?.relativePath === file.relativePath} onClick={() => setSelected(file)}><File size={17}/><span>{file.name}</span><small>{(file.sizeBytes / 1048576).toLocaleString('it-IT', { maximumFractionDigits: 2 })} MB</small></button>)}
@@ -164,12 +166,13 @@ export default function ProductSpecification({ article, canEdit, request, drafts
     }
     if (Object.hasOwn(specificationComponentFields, name)) {
       const components = sources?.components.filter(c => !/^FP/i.test(c.code)) || [];
-      const selected = spec.data[name] || '';
+      const presence = { cartonCode: 'cartonPresent', leafletCode: 'leafletPresent' }[name];
+      const selected = spec.data[name] || (presence && spec.data[presence] === 'no' ? '__NONE__' : '');
       return <label key={name}>{label}<select value={selected} disabled={!canEdit || !sources || Boolean(sources.bomError)} onChange={e => {
         const component = components.find(c => c.code === e.target.value);
         const descriptionField = specificationComponentFields[name];
-        change({ ...spec, data: { ...spec.data, [name]: e.target.value, ...(descriptionField ? { [descriptionField]: component?.description || '' } : {}) } });
-      }}><option value="">Seleziona dalla distinta base</option>{selected && !components.some(c => c.code === selected) && <option value={selected}>{selected} — non presente nella distinta attuale</option>}{components.map(c => <option key={c.code} value={c.code}>{c.code} — {c.description || 'Descrizione non disponibile'}</option>)}</select></label>;
+        change({ ...spec, data: { ...spec.data, [name]: e.target.value, ...(presence ? { [presence]: e.target.value === '__NONE__' ? 'no' : e.target.value ? 'yes' : '' } : {}), ...(descriptionField ? { [descriptionField]: component?.description || '' } : {}) } });
+      }}><option value="">Seleziona dalla distinta base</option>{presence && <option value="__NONE__">Non previsto</option>}{selected && selected !== '__NONE__' && !components.some(c => c.code === selected) && <option value={selected}>{selected} — non presente nella distinta attuale</option>}{components.map(c => <option key={c.code} value={c.code}>{c.code} — {c.description || 'Descrizione non disponibile'}</option>)}</select></label>;
     }
     return <label key={name} className={type === 'textarea' ? 'product-spec-wide' : ''}>{label}{type === 'textarea'
       ? <textarea rows={3} maxLength={5000} value={spec.data[name] || ''} readOnly={!canEdit} onChange={e => change({ ...spec, data: { ...spec.data, [name]: e.target.value } })}/>
@@ -201,7 +204,7 @@ export default function ProductSpecification({ article, canEdit, request, drafts
       {error && <div className="private-upload-error" role="alert">{error}</div>}{message && <p className="product-spec-message" role="status">{message}</p>}
       {spec.version > 0 && <details className="product-spec-section" onToggle={loadHistory}><summary>Storico revisioni</summary>{historyError ? <p role="alert">{historyError}</p> : revisions ? <ul>{revisions.map(r => <li key={r.version}>Rev. {r.version} · {labelDate(r.updatedAt)} · {r.updatedBy}</li>)}</ul> : <p>Caricamento revisioni…</p>}</details>}
     </>}
-    {picker && <NasPicker section={picker} request={request} onSelect={addFile} onClose={closePicker}/>}
+    {picker && <NasPicker section={picker} articleCode={code} request={request} onSelect={addFile} onClose={closePicker}/>}
     {pdf && <div className="product-spec-modal"><section className="product-spec-pdf" role="dialog" aria-modal="true" aria-label="Anteprima capitolato" onKeyDown={e => { if (e.key === 'Escape') closePreview(); }}>
       <header><h3>Capitolato · {code}</h3><button type="button" ref={previewClose} onClick={closePreview} aria-label="Chiudi anteprima"><X/></button></header>
       {pdf.warnings.length > 0 && <p role="alert">{pdf.warnings.join(' ')}</p>}

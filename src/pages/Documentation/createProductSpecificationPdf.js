@@ -1,4 +1,5 @@
-import { specificationSections, specificationComponentFields, isSpecificationImage } from '../../../shared/productSpecification.js';
+import { specificationSections, specificationComponentFields, specificationFileRequest, isSpecificationImage } from '../../../shared/productSpecification.js';
+import { specificationAttachmentContent } from './specificationAttachmentContent.js';
 
 async function imageData(url) {
   const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
@@ -31,6 +32,7 @@ export async function createProductSpecificationPdf({ article, specification, ph
   const componentLabel = code => { const component = components.find(c => c.code === code); return component?.description ? `${code} - ${component.description}` : code; };
   const fieldValue = (name, type) => {
     const value = specification.data[name];
+    if (value === '__NONE__' || (!value && ({ cartonCode: 'cartonPresent', leafletCode: 'leafletPresent' }[name]) && specification.data[({ cartonCode: 'cartonPresent', leafletCode: 'leafletPresent' }[name])] === 'no')) return 'Non previsto';
     if (!value) return 'Da definire';
     if (type === 'yesno') return value === 'yes' ? 'Sì' : 'No';
     if (Object.hasOwn(specificationComponentFields, name)) return componentLabel(value);
@@ -42,9 +44,11 @@ export async function createProductSpecificationPdf({ article, specification, ph
     doc.setFontSize(size); doc.setTextColor(35, 49, 70);
     for (const line of doc.splitTextToSize(text(value), 174)) { room(6); doc.text(line, 18, y); y += 6; }
   };
-  async function photo(url, caption) {
+  async function photo(url, caption, fallback) {
     try {
-      const image = await loadImage(url);
+      let image;
+      try { image = await loadImage(url); }
+      catch (cause) { if (!fallback) throw cause; image = await fallback(); }
       const scale = Math.min(174 / image.width, 70 / image.height);
       const w = image.width * scale, h = image.height * scale;
       room(h + 8); doc.addImage(image.data, 'JPEG', 18 + (174 - w) / 2, y, w, h); y += h + 5;
@@ -60,10 +64,14 @@ export async function createProductSpecificationPdf({ article, specification, ph
     for (const attachment of specification.attachments.filter(a => a.section === section)) {
       const caption = attachment.caption || attachment.name;
       if (isSpecificationImage(attachment.path)) {
-        if (!attachment.id) { warnings.push(`Salva il capitolato per includere ${attachment.name}.`); paragraph(`Foto da salvare: ${caption}`); continue; }
         try {
-          const { url } = await request(`specifications/file?${new URLSearchParams({ articleCode: article.articleCode, attachmentId: attachment.id })}`);
-          await photo(url, caption);
+          const { url } = await request(...specificationFileRequest(article.articleCode, attachment));
+          await photo(url, caption, async () => {
+            const blob = await specificationAttachmentContent(article.articleCode, attachment, request);
+            const localUrl = URL.createObjectURL(blob);
+            try { return await loadImage(localUrl); }
+            finally { URL.revokeObjectURL(localUrl); }
+          });
         } catch { warnings.push(`Allegato non disponibile: ${attachment.name}.`); paragraph(`Allegato non disponibile: ${caption}`); }
       } else paragraph(`Allegato: ${attachment.name}${attachment.caption ? ` - ${attachment.caption}` : ''}`, 9);
     }

@@ -20,3 +20,16 @@
 .plan-notice { border:1px solid #d5e4f8; border-radius:12px; padding:16px; background:#f3f7fd; margin:16px 0; line-height:1.5; }.plan-error { background:#fff0f1; border-color:#f1b9c0; color:#932437; }.plan-notice summary { cursor:pointer; }
 .plan-approval { display:grid; gap:14px; margin-top:24px; }.plan-approval label { display:flex; align-items:flex-start; font-weight:400; }.plan-approval input { width:18px; height:18px; flex-shrink:0; }
 @media(max-width:760px) { .plan-kpis { grid-template-columns:1fr; }.plan-panel,.plan-intro { padding:16px; }.plan-actions>* { flex:1 1 180px; } }
+
+/* Give order descriptions the remaining space and contain both editable fields. */
+.planning-lifecycle table.plan-demands-table { table-layout:fixed; min-width:1320px; }
+.plan-demands-table .plan-col-selection { width:72px; }
+.plan-demands-table .plan-col-stage { width:112px; }
+.plan-demands-table .plan-col-date { width:140px; }
+.plan-demands-table .plan-col-start { width:220px; }
+.plan-demands-table .plan-col-resource { width:215px; }
+.planning-lifecycle .plan-demands-table :is(th,td) { padding:9px 10px; vertical-align:top; }
+.planning-lifecycle .plan-demands-table :is(th,td):first-child { text-align:center; padding-inline:5px; }
+.planning-lifecycle .plan-demands-table td:nth-child(2) { overflow-wrap:anywhere; }
+.planning-lifecycle .plan-demands-table td :is(input[type=datetime-local],select) { width:100%; min-width:0; max-width:100%; height:38px; margin:0; padding:7px 8px; box-sizing:border-box; font-size:13px; line-height:normal; }
+.planning-lifecycle .plan-demands-table td input[type=checkbox] { width:16px; height:16px; margin:3px 0 0; }

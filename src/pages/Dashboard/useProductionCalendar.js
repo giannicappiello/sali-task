@@ -35,8 +35,9 @@ export default function useProductionCalendar(profileId, month) {
     Promise.resolve().then(refresh);
     const timer = setInterval(refresh, 60000);
     window.addEventListener('focus', refresh);
+    window.addEventListener('workspace:production-changed', refresh);
     document.addEventListener('visibilitychange', refresh);
-    return () => { disposed = true; controller?.abort(); clearInterval(timer); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
+    return () => { disposed = true; controller?.abort(); clearInterval(timer); window.removeEventListener('focus', refresh); window.removeEventListener('workspace:production-changed', refresh); document.removeEventListener('visibilitychange', refresh); };
   }, [profileId, year, monthIndex]);
   return state;
 }

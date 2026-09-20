@@ -44,6 +44,7 @@ import { listProductionWorkbench, loadAllProductionOrders, productionWorkbenchDe
 import { privateWorkbenchSession } from "../../server/private-orders-workbench.js";
 import { handleProductionCosts } from "../../server/production-costs.js";
 import { handlePackagingSheet } from "../../server/packaging-sheet.js";
+import { handlePackagingActions } from "../../server/packaging-actions.js";
 import { productionGoLiveGates } from "../../server/workspace-production-gates.js";
 import { effectiveWorkspaceDiagnostics } from "../../server/workspace-effective-diagnostics.js";
 import { confirmWorkspaceV4, createWorkspaceV4Preview } from "../../server/workspacemes-v4-api.js";
@@ -626,6 +627,8 @@ export default async function handler(req, res) {
     switch (body.action) {
       case "packaging_sheet":
         return sendSuccess(res, 200, await handlePackagingSheet(req, body));
+      case "packaging_actions":
+        return sendSuccess(res, 200, await handlePackagingActions(req, body));
       case "production_costs":
         return sendSuccess(res, 200, await handleProductionCosts(req, body));
       case "ai_order_capabilities":

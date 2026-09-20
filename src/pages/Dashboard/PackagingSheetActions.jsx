@@ -35,7 +35,6 @@ export default function PackagingSheetActions({ productionOrderId }) {
   function close() { if (!printing) { setMode(''); setResult(null); setError(''); } }
   const disabled = !Number.isSafeInteger(Number(productionOrderId)) || Number(productionOrderId) <= 0;
   return <><button type="button" disabled={disabled} onClick={() => setMode('open')}><FileText size={17}/>Apri foglio confezionamento</button>
-    <button type="button" disabled={disabled} onClick={() => setMode('print')}><Printer size={17}/>Stampa foglio di confezionamento</button>
     {mode && <Modal title="Foglio di confezionamento" onClose={close} className="dashboard-production-sheet">
       {error && <p role="alert" className="pc-note">{error}</p>}
       <div className="packaging-sheet-content">{result?.sheet ? <PackagingSheet sheet={result.sheet}/> : !error && <p role="status">Preparazione foglio di confezionamento…</p>}</div>

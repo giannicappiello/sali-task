@@ -6,5 +6,5 @@ export function Numeric({value,onChange,...props}) {return <input type="number" 
 export function Modal({title,onClose,children,className=''}) {
  const ref=useRef(null);
  useEffect(()=>{const d=ref.current;d.showModal();return()=>d.close();},[]);
- return <dialog ref={ref} className={`pc-modal ${className}`} data-column-controls="off" onCancel={onClose}><header><h2>{title}</h2><button type="button" aria-label="Chiudi dettaglio" onClick={onClose}><X/></button></header>{children}</dialog>;
+ return <dialog ref={ref} className={`pc-modal ${className}`} data-column-controls="off" onCancel={event=>{event.preventDefault();onClose();}}><header><h2>{title}</h2><button type="button" aria-label="Chiudi dettaglio" onClick={onClose}><X/></button></header>{children}</dialog>;
 }

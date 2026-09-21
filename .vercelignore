@@ -1,5 +1,6 @@
 .git
 .tmp
+.popup-check
 .pnpm-store
 dist
 node_modules

@@ -5,6 +5,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import PlanningVersionSummary from "../../components/PlanningVersionSummary";
 import OdlReleaseChoices from "./OdlReleaseChoices";
 import OdlShortages from "./OdlShortages";
+import { planningResolutionInput } from "./planning-block-resolution";
 import "./planning-lifecycle.css";
 import { planningDate, planningStages as stageLabels, planningStatuses } from "./planning-display";
 import { planningConfirmationError, planningOperation } from "./planning-confirmation";
@@ -77,6 +78,17 @@ export function PlanningLifecycleForm({ token, release = false, canUseAI = false
   const input = () => ({ kind, startAt, reason: release ? "Rilascio ODL da Workspace" : reason, confirmationDays: Number(horizons.confirmationDays), reviewDays: Number(horizons.reviewDays), releaseDays: Number(horizons.releaseDays),
     orderIds: selected.length ? selected : null, manualChoices: Object.entries(["MIGRATE", "RECALCULATE"].includes(kind) ? choices : {}).filter(([, c]) => c.notBefore).map(([id, c]) => ({ orderId: Number(id), notBefore: c.notBefore, resourceId: c.resourceId ? Number(c.resourceId) : null })) });
   async function simulate() { invalidate(); const next = await request("planning_simulate", { input: input() }); setVersion(next); results.current?.focus(); }
+  async function resolveBlock(resolution) {
+    if (busyRef.current) throw new Error("Attendi il completamento del calcolo in corso.");
+    busyRef.current = true; setBusy(true); setError("");
+    setProposal(null); setAck(false);
+    try {
+      const nextInput = planningResolutionInput(version.snapshot.input, resolution.orderId, localDate());
+      const next = await request("planning_simulate", { input: nextInput });
+      setSelected(nextInput.orderIds || []); setStartAt(nextInput.startAt); setVersion(next);
+      results.current?.focus();
+    } finally { busyRef.current = false; setBusy(false); }
+  }
   async function confirm() {
     const result = await request("planning_propose", { input: { targetId: version.id, expectedHash: version.expectedHash, backupVerified: backup } });
     const prepared = result.controlledAction || result.action || result;
@@ -118,7 +130,7 @@ export function PlanningLifecycleForm({ token, release = false, canUseAI = false
     </>}
     {release && <nav className="plan-actions"><Link to="/produzione/progremes.Planning?workspaceMesWindow=1">Apri Planning · Genera ODL</Link></nav>}
     {release && state && !state.graphicalReleaseSupported && <p className="plan-notice">Aggiorna MES per usare il nuovo rilascio direttamente dal Planning.</p>}
-    {version && <section className="plan-panel" ref={results} tabIndex={-1}><h2>Anteprima e confronto</h2><PlanningVersionSummary version={version} query={query}>
+    {version && <section className="plan-panel" ref={results} tabIndex={-1}><h2>Anteprima e confronto</h2><PlanningVersionSummary version={version} query={query} busy={busy} onResolveBlock={resolveBlock}>
       {!!version.releaseOrders?.length && <div className="plan-notice">
         <h3>Stato attuale degli ODL della versione</h3>
         <p>{version.releaseOrders.filter(row => ["RELEASED", "RELEASED_WITH_SHORTAGE", "IN_PRODUCTION", "COMPLETED"].includes(row.status)).length} di {version.releaseOrders.length} ODL rilasciati o già in lavorazione. Gli esiti precedenti riportati sotto non annullano questi rilasci.</p>
@@ -136,7 +148,7 @@ export function PlanningLifecycleForm({ token, release = false, canUseAI = false
       </PlanningVersionSummary>
       {version.auditError && <p className="plan-notice plan-error" role="alert">{version.auditError}</p>}
       {!!version.confirmationAttempts?.length && <div className="plan-notice"><h3>Esito delle conferme</h3>{version.confirmationAttempts.map(attempt => <p key={attempt.id} role={attempt.status === "failed" ? "alert" : undefined}><strong>{attempt.status === "executed" ? "Applicazione completata" : attempt.status === "failed" ? "Applicazione non riuscita" : attempt.status === "confirmed" ? "Esito da verificare" : attempt.status === "rejected" ? "Conferma annullata" : "Conferma preparata"}</strong> · {planningDate(attempt.occurred_at)}<br />{attempt.error || (attempt.status === "confirmed" ? "La richiesta è stata confermata, ma non risulta un esito definitivo. Non ripetere l'applicazione." : "")}<br /><small>Riferimento: {attempt.id}</small></p>)}</div>}
-      {!release && version.kind !== "GRAPHICAL_RELEASE" && version.status === "PROPOSED" && <div className="plan-approval"><button disabled={busy} onClick={() => run(async () => { const previousInput = version.snapshot.input; invalidate(); setVersion(await request("planning_simulate", { input: { ...previousInput, startAt: previousInput.startAt < localDate() ? localDate() : previousInput.startAt } })); })}>Ricalcola proposta con i dati correnti</button>{version.kind === "MIGRATE" && <label><input type="checkbox" checked={backup} disabled={busy} onChange={e => { setBackup(e.target.checked); setProposal(null); }} />Ho verificato un backup ripristinabile del database MES e dei documenti.</label>}<label><input type="checkbox" disabled={busy} checked={ack} onChange={e => setAck(e.target.checked)} />Ho verificato lavorazioni protette, date proposte, copertura e avvisi.</label><button className="plan-primary" disabled={busy || version.actor?.startsWith("system:") || !ack || !!version.snapshot.blocks?.length || (version.kind === "MIGRATE" && !backup)} onClick={() => run(confirm)}><ShieldCheck size={16} />{version.kind === "RELEASE_ODL" ? (version.snapshot.input.allowMaterialShortage ? "Genera ODL con carenza e fabbisogni" : "Genera ODL") : `Prepara conferma: ${labels[version.kind]}`}</button></div>}
+      {!release && version.kind !== "GRAPHICAL_RELEASE" && version.status === "PROPOSED" && <div className="plan-approval">{version.kind === "MIGRATE" && <label><input type="checkbox" checked={backup} disabled={busy} onChange={e => { setBackup(e.target.checked); setProposal(null); }} />Ho verificato un backup ripristinabile del database MES e dei documenti.</label>}<label><input type="checkbox" disabled={busy} checked={ack} onChange={e => setAck(e.target.checked)} />Ho verificato lavorazioni protette, date proposte, copertura e avvisi.</label><button className="plan-primary" disabled={busy || version.actor?.startsWith("system:") || !ack || !!version.snapshot.blocks?.length || (version.kind === "MIGRATE" && !backup)} onClick={() => run(confirm)}><ShieldCheck size={16} />{version.kind === "RELEASE_ODL" ? (version.snapshot.input.allowMaterialShortage ? "Genera ODL con carenza e fabbisogni" : "Genera ODL") : `Prepara conferma: ${labels[version.kind]}`}</button></div>}
       {proposal && <div className="plan-notice"><p>Conferma finale: <strong>{confirmationLabel}</strong>. L'operazione sarà registrata nell'audit.</p><button className="plan-primary" disabled={busy} onClick={() => run(() => decide())}><Check size={16} />Conferma applicazione</button><button disabled={busy} onClick={() => setProposal(null)}>Non applicare</button></div>}
       {version.status === "APPLIED" && <p className="plan-notice" role="status">Versione applicata. Nessun avvio produzione automatico.</p>}
       {version.status === "APPLIED" && !!version.snapshot.shortages?.length && !version.snapshot.shortagesCoveredAtUtc && <div className="plan-notice"><p>ODL generati con fabbisogni specifici. Quando i materiali sono disponibili, prepara la verifica della copertura; non vengono creati nuovi lotti.</p><button disabled={busy} onClick={() => run(async () => { const p = await request("planning_verify", { input: { targetId: version.id, expectedHash: version.expectedHash } }); setProposal(p.controlledAction || p.action || p); })}>Verifica copertura dei fabbisogni</button></div>}

@@ -3,6 +3,19 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { isProgremesFrameMessage, isProgremesScreenPath, openProgremesWorkspaceWindow, progremesWorkspacePath, progremesWorkspaceDestination, requestProgremesNavigation } from "./progremesWindow.js";
 
+test("il titolo MES richiede frame, origine e metadati validi", () => {
+  const frame = {};
+  const origin = "https://mes.example";
+  const data = { type: "progremes-page-header", title: "Pianificazione", description: "Risorse e ordini", canGoBack: true };
+  const event = { source: frame, origin, data };
+  assert.equal(isProgremesFrameMessage(event, frame, origin), true);
+  assert.equal(isProgremesFrameMessage({ ...event, source: {} }, frame, origin), false);
+  assert.equal(isProgremesFrameMessage({ ...event, origin: "https://evil.example" }, frame, origin), false);
+  for (const invalid of [{ title: {} }, { title: "x".repeat(301) }, { description: null }, { canGoBack: "true" }]) {
+    assert.equal(isProgremesFrameMessage({ ...event, data: { ...data, ...invalid } }, frame, origin), false);
+  }
+});
+
 test("la nuova finestra usa una route Workspace preservando il contesto", () => {
   assert.equal(progremesWorkspacePath("/produzione/progremes.Planning?odpId=42&workspaceMesWindow=1#piano"), "/produzione/progremes.Planning?odpId=42&workspaceMesWindow=1#piano");
   assert.equal(progremesWorkspacePath("/progremes/accesso"), "/progremes/accesso?workspaceMesWindow=1");

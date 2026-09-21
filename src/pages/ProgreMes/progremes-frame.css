@@ -4,3 +4,46 @@
 .progremes-workspace-frame iframe { width:100%; min-height:70vh; height:calc(100dvh - 180px); border:0; background:#fff; }
 .progremes-workspace-frame iframe.is-connecting { height:1px; min-height:1px; visibility:hidden; }
 @media(max-width:640px) { .progremes-workspace-frame iframe { height:calc(100dvh - 210px); } }
+
+/* MES uses the whole Workspace canvas and owns scrolling of its pages. */
+.main-area:has(.progremes-workspace-frame) {
+  display:flex;
+  flex-direction:column;
+  height:100dvh !important;
+  min-height:0;
+}
+.main-area:has(.progremes-workspace-frame) > .topbar { flex-shrink:0; }
+.app-shell.workspace-unified-chrome .content-area:has(.progremes-workspace-frame) {
+  display:flex;
+  flex:1;
+  min-height:0;
+  /* Override the legacy mobile page padding and scrolling rules. */
+  padding:0 !important;
+  overflow:hidden !important;
+  scrollbar-gutter:auto;
+}
+.content-area .workspace-config-driven-view:has(.progremes-workspace-frame),
+.content-area .system-content:has(.progremes-workspace-frame) {
+  display:flex;
+  flex-direction:column;
+  flex:1;
+  min-height:0;
+}
+.content-area .workspace-composition:has(.progremes-workspace-frame) {
+  flex:1;
+  min-height:0;
+  overflow:auto;
+}
+.progremes-workspace-frame {
+  flex:1;
+  min-height:0;
+  border:0;
+  border-radius:0;
+}
+.progremes-workspace-frame iframe.is-ready {
+  display:block;
+  flex:1;
+  height:100%;
+  min-height:0;
+}
+

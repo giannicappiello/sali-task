@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
@@ -6,6 +6,7 @@ import { progremesWorkspaceDestination, requestProgremesNavigation } from "./pro
 import { observeProgremesFrame } from "./progremesHandshake";
 import "./progremes-frame.css";
 import PlanningActionModal from "./PlanningActionModal";
+import { useWorkspaceChrome } from "../../components/workspaceChromeContext";
 
 export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
   const { session, hasModuleAccess, loading: authLoading, authorizationRevision } = useAuth();
@@ -20,8 +21,15 @@ export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
   const [connection, setConnection] = useState({ requestKey: "", url: "", error: "" });
   const [frameStatus, setFrameStatus] = useState({ url: "", ready: false, error: "" });
   const [syncError, setSyncError] = useState("");
+  const [mesHeader, setMesHeader] = useState(null);
   const requestKey = JSON.stringify([session?.user?.id, authorizationRevision, screenCode, search, retry]);
   const url = allowed && accessToken && connection.requestKey === requestKey ? connection.url : "";
+  const goBackInMes = useCallback(() => {
+    if (url && mesHeader?.url === url && mesHeader.canGoBack) frame.current?.contentWindow?.postMessage({ type: "workspace-mes-back" }, new URL(url).origin);
+    else navigate("/produzione");
+  }, [url, mesHeader, navigate]);
+  useWorkspaceChrome({ title: mesHeader?.url === url ? mesHeader.title : undefined,
+    description: mesHeader?.description, backLabel: "schermata precedente", onBack: goBackInMes, priority: 10 });
 
   useEffect(() => {
     if (authLoading || !accessToken || !allowed || !screenCode) return undefined;
@@ -43,6 +51,11 @@ export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
     if (!url) return undefined;
     const origin = new URL(url).origin;
     const receive = (event) => {
+      if (event.data.type === "progremes-page-header") {
+        setMesHeader(current => current?.url === url && current.title === event.data.title && current.description === event.data.description && current.canGoBack === event.data.canGoBack
+          ? current : { url, title: event.data.title, description: event.data.description, canGoBack: event.data.canGoBack });
+        return;
+      }
       if (event.data.type === "progremes-planning-applied") {
         setSyncError("");
         fetch("/api/workspace/planning", { method: "POST", headers: { Authorization: `Bearer ${currentToken.current}`, "Content-Type": "application/json" }, body: JSON.stringify({ action: "planning_reconcile" }) })
@@ -77,7 +90,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
   const ready = Boolean(url && frameStatus.url === url && frameStatus.ready);
   if (!screenCode) return <Navigate to="/produzione" replace />;
 
-  return <section className="progremes-workspace-frame">
+  return <section className={`progremes-workspace-frame${screenCode === "progremes.Planning" ? " progremes-planning-frame" : ""}`}>
     {popupPath && <PlanningActionModal path={popupPath} onClose={() => setPopupPath("")} onNavigate={setPopupPath} />}
     {syncError && <div className="progremes-frame-status" role="alert">{syncError}</div>}
     {(!ready || error) && <div className="progremes-frame-status" role={error ? "alert" : "status"}>
@@ -86,8 +99,8 @@ export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
       {error && allowed && accessToken && <button type="button" className="primary-action" onClick={() => setRetry((value) => value + 1)}><RefreshCw size={18} />Riprova</button>}
     </div>}
     {url && <iframe ref={frame} key={url} src={url} title="Schermata MES integrata in Workspace"
-      className={ready && !error ? "is-ready" : "is-connecting"} referrerPolicy="no-referrer"
+      className={ready && !error ? "is-ready" : "is-connecting"} referrerPolicy="no-referrer" allowFullScreen
       sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-modals allow-popups"
-      onLoad={() => frame.current?.contentWindow?.postMessage({ type: "workspace-mes-connect" }, new URL(url).origin)} />}
+      onLoad={() => frame.current?.contentWindow?.postMessage({ type: "workspace-mes-connect", unifiedChrome: true }, new URL(url).origin)} />}
   </section>;
 }

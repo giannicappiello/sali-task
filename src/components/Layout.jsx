@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
+  ArrowLeft,
   BarChart3,
   Bell,
   Bot,
@@ -31,6 +32,9 @@ import { getModuleIcon } from "../config/moduleIcons";
 import { resolveCatalogModuleDestination } from "../config/workspaceNavigation";
 import ContextualAIAssistant from "./ContextualAIAssistant";
 import "../styles/compact-headers.css";
+import "../styles/unified-chrome.css";
+import useBackNavigation from "../hooks/useBackNavigation";
+import { WorkspaceChromeContext } from "./workspaceChromeContext";
 
 const baseMenuItems = [
   { path: "/hr", label: "Modulo HR", icon: Users, module: "hr" },
@@ -132,6 +136,17 @@ function getPresence(profile) {
 function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
+  const goBack = useBackNavigation(isProgremesScreenPath(location.pathname) ? "/produzione" : "/home");
+  const [screenHeaders, setScreenHeaders] = useState({});
+  const registerHeader = useCallback((owner, value) => {
+    setScreenHeaders(current => ({ ...current, [owner]: value }));
+    return () => setScreenHeaders(current => {
+      const next = { ...current }; delete next[owner]; return next;
+    });
+  }, []);
+  const chromeContext = useMemo(() => ({ register: registerHeader, route: location.pathname }), [registerHeader, location.pathname]);
+  const screenHeader = Object.values(screenHeaders).filter(header => header.route === location.pathname)
+    .sort((a, b) => b.priority - a.priority)[0];
   const { profile, signOut, hasPermission, hasModuleAccess, hasWorkspaceFeature, getModuleScreenGrant, isAdminUser } = useAuth();
 
   const currentPage = location.pathname.startsWith("/produzione")
@@ -436,8 +451,8 @@ function Layout() {
   }, [activeNavigation, location.pathname]);
 
   useEffect(() => {
-    document.title = `${currentPage.title} · Progre Workspace`;
-  }, [location.pathname, currentPage.title]);
+    document.title = `${screenHeader?.title || currentPage.title} · Progre Workspace`;
+  }, [location.pathname, currentPage.title, screenHeader?.title]);
 
   useEffect(() => {
     if (!mobileMenuOpen) return undefined;
@@ -542,7 +557,8 @@ function Layout() {
   }
 
   return (
-    <div className={`app-shell ${mobileMenuOpen ? "mobile-menu-is-open" : ""}`}>
+    <WorkspaceChromeContext.Provider value={chromeContext}>
+    <div className={`app-shell workspace-unified-chrome ${mobileMenuOpen ? "mobile-menu-is-open" : ""}`}>
       {progremesConnection.open && (
         <div className="progremes-connection-overlay" role="dialog" aria-modal="true" aria-labelledby="progremes-connection-title">
           <div className="progremes-connection-dialog">
@@ -663,11 +679,12 @@ function Layout() {
         <header className="topbar">
           <div className="topbar-left">
             <button type="button" className="mobile-menu-btn" onClick={() => setMobileMenuOpen(true)} aria-label="Apri menu principale" aria-expanded={mobileMenuOpen} aria-controls="workspace-main-menu"><Menu size={25} /></button>
-            <div><h2>{currentPage.title}</h2><p>{currentPage.subtitle}</p></div>
+            <div><h1>{screenHeader?.title || currentPage.title}</h1><p>{screenHeader?.description ?? currentPage.subtitle}</p></div>
           </div>
 
           <div className="topbar-actions">
-            <ContextualAIAssistant key={location.pathname} title={currentPage.title} module={currentPage.title} />
+            <ContextualAIAssistant key={location.pathname} title={screenHeader?.title || currentPage.title} module={currentPage.title} />
+            {location.pathname !== "/home" && <button type="button" className="topbar-home-btn topbar-back-btn" onClick={screenHeader?.onBack || goBack} aria-label={screenHeader?.backLabel ? `Torna a ${screenHeader.backLabel}` : "Indietro"}><ArrowLeft size={19} /><span>Indietro</span></button>}
             <button type="button" className="topbar-home-btn" onClick={() => navigate("/home")} aria-label="Vai alla Home"><Home size={19} /><span>Home</span></button>
             <button type="button" className="icon-btn notification-btn" onClick={openNotifications} aria-label="Apri notifiche"><Bell size={21} />{notificationCount > 0 && <small>{notificationCount}</small>}</button>
             <button type="button" className="icon-btn notification-btn" onClick={() => navigate("/messages")} aria-label="Apri messaggi"><MessageCircle size={21} /></button>
@@ -696,6 +713,7 @@ function Layout() {
       </main>
 
     </div>
+    </WorkspaceChromeContext.Provider>
   );
 }
 

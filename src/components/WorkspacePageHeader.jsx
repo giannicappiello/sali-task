@@ -1,4 +1,5 @@
 import { ArrowLeft, LayoutGrid } from "lucide-react";
+import { useWorkspaceChrome } from "./workspaceChromeContext";
 
 export default function WorkspacePageHeader({
   icon = <LayoutGrid size={29} />,
@@ -10,6 +11,8 @@ export default function WorkspacePageHeader({
   className = "",
 }) {
   const canGoBack = Boolean(backLabel && onBack);
+  const integrated = useWorkspaceChrome({ title, description, backLabel, onBack: canGoBack ? onBack : undefined });
+  if (integrated) return null;
 
   return (
     <header className={`workspace-page-header ${canGoBack ? "has-back" : ""} ${className}`.trim()}>

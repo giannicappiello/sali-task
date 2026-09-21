@@ -10,6 +10,7 @@ import WorkspaceScreenComposition from "./WorkspaceScreenComposition";
 import { normalizeWorkspaceLayout } from "./workspaceScreenLayoutConfig";
 import { isProgremesScreenPath } from "../pages/ProgreMes/progremesWindow";
 import "./workspace-screen-layout.css";
+import { useWorkspaceChrome } from "./workspaceChromeContext";
 
 const BUILT_IN_CONTAINER_PATHS = new Set([
   "/hr",
@@ -177,6 +178,8 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
   const configuredPresentation = normalizedLayout?.presentation || {};
   const configuredTitle = configuredPresentation.title || presentation.title;
   const configuredDescription = configuredPresentation.description || presentation.description;
+  useWorkspaceChrome({ title: configuredTitle, description: configuredDescription,
+    backLabel: presentation.parentName, onBack: goBack, priority: -1 });
 
   const wrappedContent = (
     <div

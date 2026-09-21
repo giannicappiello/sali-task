@@ -1,0 +1,35 @@
+/* One shared page heading and navigation bar, including embedded MES. */
+.app-shell.workspace-unified-chrome .main-area { display:flex; flex-direction:column; height:100dvh !important; min-height:0; }
+.app-shell.workspace-unified-chrome .content-area { flex:1; min-height:0; overflow:auto !important; }
+.app-shell.workspace-unified-chrome .topbar {
+  min-height:66px; padding:10px 18px !important; border:0;
+  background:linear-gradient(110deg,#173a70,#225fa9); color:#fff;
+  flex-wrap:nowrap; gap:16px !important; box-shadow:0 1px 0 #ffffff20;
+}
+.workspace-unified-chrome .topbar-left { overflow:hidden; }
+.app-shell.workspace-unified-chrome .topbar-left h1 { color:#fff; font-size:19px; line-height:1.2; margin:0 0 3px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.app-shell.workspace-unified-chrome .topbar-left p { color:#e0ebfb; font-size:12px; line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.app-shell.workspace-unified-chrome .topbar-actions { gap:8px !important; }
+.app-shell.workspace-unified-chrome .topbar :is(.topbar-home-btn,.icon-btn,.mobile-menu-btn,.context-ai-trigger) {
+  color:#fff; background:#ffffff12; border:1px solid #ffffff38; box-shadow:none; height:38px; min-width:38px;
+}
+.app-shell.workspace-unified-chrome .topbar :is(.topbar-home-btn,.icon-btn,.mobile-menu-btn,.context-ai-trigger):hover { background:#ffffff26; }
+.workspace-unified-chrome .topbar button:focus-visible { outline:2px solid white; outline-offset:2px; }
+.workspace-unified-chrome .topbar-popover { color:#172033; }
+/* Legacy introductions become ordinary toolbars; retain actions and statuses. */
+.app-shell.workspace-unified-chrome :is(.private-documents-hero,.workspace-container-hero,.settings-hub-hero,.production-hero,.purchase-hero,.integrations-hero) {
+  min-height:0; padding:0; margin:0; border:0; border-radius:0; background:none; box-shadow:none; color:#172033;
+}
+.workspace-unified-chrome :is(.private-documents-hero,.workspace-container-hero,.settings-hub-hero,.production-hero,.purchase-hero,.integrations-hero)::after { display:none; }
+.workspace-unified-chrome :is(.private-documents-icon,.workspace-container-hero-icon,.settings-hub-hero-icon,.production-hero-icon) { display:none; }
+.workspace-unified-chrome :is(.private-documents-hero,.workspace-container-hero,.settings-hub-hero,.production-hero,.purchase-hero,.integrations-hero) > div:has(> h1) { display:none; }
+.workspace-unified-chrome .private-documents-security { color:#48617e; }
+@media(max-width:700px) {
+  .app-shell.workspace-unified-chrome .topbar { min-height:72px; padding:8px 10px !important; gap:8px !important; }
+  .app-shell.workspace-unified-chrome .topbar-left { flex:1 1 0; }
+  .app-shell.workspace-unified-chrome .topbar-left h1 { font-size:16px; }
+  .app-shell.workspace-unified-chrome .topbar-left p { font-size:10px; }
+  .app-shell.workspace-unified-chrome .topbar-actions { gap:4px !important; }
+  .app-shell.workspace-unified-chrome .topbar :is(.topbar-home-btn,.icon-btn,.mobile-menu-btn,.context-ai-trigger) { width:34px; min-width:34px; height:36px; padding:0; }
+  .workspace-unified-chrome .topbar-home-btn span { display:none; }
+}

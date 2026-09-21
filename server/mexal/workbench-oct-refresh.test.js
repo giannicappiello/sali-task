@@ -4,7 +4,7 @@ import test from "node:test";
 
 const migrationUrl = new URL("../../supabase/migrations/20260827143000_enqueue_workbench_oct_refresh.sql", import.meta.url);
 const manualMigrationUrl = new URL("../../supabase/migrations/20260829103000_link_orders_oct_and_manual_workbench_refresh.sql", import.meta.url);
-const apiUrl = new URL("../../api/mexal/automation.js", import.meta.url);
+const apiUrl = new URL("./automation-handler.js", import.meta.url);
 const uiUrl = new URL("../../src/pages/Production/RdpWorkbench.jsx", import.meta.url);
 
 test("il refresh Workbench accoda oct_orders nel queue worker con lock globale", () => {

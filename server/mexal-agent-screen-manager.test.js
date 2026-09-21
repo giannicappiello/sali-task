@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const migration = readFileSync(new URL('../supabase/migrations/20260914110000_mexal_agent_screen_manager_visibility.sql', import.meta.url), 'utf8');
-const automation = readFileSync(new URL('../api/mexal/automation.js', import.meta.url), 'utf8');
+const automation = readFileSync(new URL('./mexal/automation-handler.js', import.meta.url), 'utf8');
 
 test('agent management visibility is tied to management of the exact screen', () => {
   assert.match(migration, /workspace_screen_level_for_user\(u\.id, 'integrazioni\.mexal_agenti'\) = 'amministrazione'/);

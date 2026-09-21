@@ -17,7 +17,7 @@ test("lista e dettaglio Workbench applicano lo scope cliente sul server", async 
 });
 
 test("le API Workbench derivano lo scope dall'associazione anagrafica e negano operazioni globali al cliente", async () => {
-  const source = await readFile(new URL("../api/mexal/automation.js", import.meta.url), "utf8");
+  const source = await readFile(new URL("./mexal/automation-handler.js", import.meta.url), "utf8");
   assert.match(source, /workspace_customer_user_links/);
   assert.match(source, /customerCode = await authorizedCustomerCode\(admin\)/);
   assert.match(source, /rejectCustomerScopedOperation\(admin, "Aggiornamento globale OCT"\)/);
@@ -258,7 +258,7 @@ test("il riepilogo Workbench non espone il codice tecnico 1 come una seconda UDM
 });
 
 test("Apri dettaglio non avvia una sincronizzazione Mexal", async () => {
-  const source = await readFile(new URL("../api/mexal/automation.js", import.meta.url), "utf8");
+  const source = await readFile(new URL("./mexal/automation-handler.js", import.meta.url), "utf8");
   const detailCase = source.slice(
     source.indexOf('case "progremes_workbench_detail"'),
     source.indexOf('case "progremes_diagnostic_action"'),

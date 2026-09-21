@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createProductionActionsHandler } from '../api/production/actions.js';
+import { createProductionActionsHandler } from './production-actions-handler.js';
+import automationHandler from '../api/mexal/automation.js';
 
 function response() {
   return { headers: {}, setHeader(k, v) { this.headers[k] = v; },
@@ -32,4 +33,13 @@ test('authorization errors propagate without success or cached fallback', async 
   } });
   const res = response(); await handler({ method: 'POST', body: { action: 'preparation_actions' } }, res);
   assert.equal(res.statusCode, 403); assert.equal(res.body.success, false);
+});
+test('both production URLs use the authenticated fast path', async () => {
+  for (const query of [{}, { route: 'production-actions' }]) {
+    const res = response();
+    await automationHandler({ method: 'POST', query, headers: {},
+      body: { action: 'preparation_actions', operation: 'context', productionOrderId: 168 } }, res);
+    assert.equal(res.statusCode, 401);
+    assert.equal(res.headers['Cache-Control'], 'private, no-store');
+  }
 });

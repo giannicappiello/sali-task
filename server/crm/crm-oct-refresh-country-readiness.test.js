@@ -12,7 +12,7 @@ const dashboardMigration = readFileSync(
 );
 const octSync = readFileSync(new URL("../mexal/sync-oct-orders.js", import.meta.url), "utf8");
 const dashboard = readFileSync(new URL("../../src/modules/crm/CommercialControlDashboard.jsx", import.meta.url), "utf8");
-const automation = readFileSync(new URL("../../api/mexal/automation.js", import.meta.url), "utf8");
+const automation = readFileSync(new URL("../mexal/automation-handler.js", import.meta.url), "utf8");
 
 test("gli OCT importati conservano economia di riga e totali di testata", () => {
   for (const field of ["prezzo_listino", "sconto_commerciale", "prezzo_netto", "imponibile_riga", "totale_riga", "totale_imponibile", "totale_documento"]) {

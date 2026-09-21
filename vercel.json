@@ -1,10 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "api/production/actions.js": {
-      "regions": ["fra1"],
-      "maxDuration": 300
-    },
     "api/cron/mexal-products.js": {
       "maxDuration": 300
     },
@@ -12,7 +8,10 @@
       "maxDuration": 300
     },
     "api/mexal/automation.js": {
-      "maxDuration": 300
+      "maxDuration": 300,
+      "regions": [
+        "fra1"
+      ]
     },
     "api/mexal/queue-worker.js": {
       "maxDuration": 300
@@ -28,6 +27,10 @@
     }
   ],
   "rewrites": [
+    {
+      "source": "/api/production/actions",
+      "destination": "/api/mexal/automation?route=production-actions"
+    },
     {
       "source": "/api/workspace/hr-production-calendar",
       "destination": "/api/mexal/automation?route=hr-production-calendar"

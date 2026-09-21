@@ -1,6 +1,6 @@
-import { handlePreparationActions } from '../../server/preparation-actions.js';
-import { handlePackagingActions } from '../../server/packaging-actions.js';
-import { handlePackagingSheet } from '../../server/packaging-sheet.js';
+import { handlePreparationActions } from './preparation-actions.js';
+import { handlePackagingActions } from './packaging-actions.js';
+import { handlePackagingSheet } from './packaging-sheet.js';
 
 // Keep interactive production requests independent from the automation bundle.
 export function createProductionActionsHandler(handlers = {

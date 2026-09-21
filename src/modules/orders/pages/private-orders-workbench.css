@@ -4,7 +4,7 @@
 .private-orders-workbench .orders-search input { min-width: 0; width: 100%; }
 .private-orders-workbench .orders-secondary,.private-orders-workbench .orders-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 .private-orders-workbench .private-workbench-count { margin: 0; color: #53657d; font-size: .85rem; }
-.private-orders-workbench .rdp-oct-scroll { max-height: max(360px,calc(100dvh - 450px)); }
+.private-orders-workbench .rdp-oct-scroll { min-height: 0; max-height: none; overflow: visible; overscroll-behavior: auto; scrollbar-gutter: auto; padding: 2px 0 8px; }
 .private-orders-workbench .rdp-oct-meta { white-space: normal; }
 .private-orders-workbench .rdp-oct-actions { flex-shrink: 0; }
 .private-orders-workbench .rdp-oct-lines { overflow-x: auto; }

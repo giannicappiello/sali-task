@@ -117,7 +117,10 @@ export default function ProductionCostReports(){
   const d=String(r.works?.[0]?.start||r.date||"").slice(0,10);
   return (!from||d>=from)&&(!to||d<=to)&&matchesWorkflow(r,state)&&(!machine||r.phases.some(p=>String(p.machineId)===machine))&&matchesProductionSearch(r,query);
  }),[records,from,to,state,machine,query]);
- const displayed=useMemo(()=>filtered.map(displayRecord),[filtered]);
+ const displayed=useMemo(()=>filtered.map(displayRecord).sort((a,b)=>{
+  const start=r=>Date.parse(r.works?.[0]?.start||r.date||"")||0;
+  return start(b)-start(a);
+ }),[filtered]);
  const aggregate=key=>sumAvailable(displayed.map(r=>r[key]));
 
  return <main className="pc-page" data-column-controls="off">

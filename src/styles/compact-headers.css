@@ -1,0 +1,67 @@
+/* Shared screen headings: half the previous minimum height, with wrapping for long titles. */
+.app-shell .workspace-page-header {
+  min-height: 114px; padding: 14px 20px; gap: 14px; border-radius: 16px;
+}
+.app-shell .workspace-page-header-icon {
+  width: 40px; height: 40px; flex-basis: 40px; border-radius: 12px;
+}
+.app-shell .workspace-page-header-icon svg { width: 22px; height: 22px; }
+.app-shell .workspace-page-header-copy { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; row-gap: 3px; flex: 1; }
+.app-shell .workspace-page-header-back { min-height: 24px; font-size: 12px; gap: 6px; }
+.app-shell .workspace-page-header-eyebrow,
+.app-shell .workspace-page-header.has-back .workspace-page-header-eyebrow { margin: 0; font-size: 10px; letter-spacing: .08em; }
+.app-shell .workspace-page-header h1 { flex-basis: 100%; margin: 0; font-size: clamp(20px, 2vw, 26px); line-height: 1.15; overflow-wrap: anywhere; }
+.app-shell .workspace-page-header p { flex-basis: 100%; font-size: 13px; line-height: 1.35; }
+.app-shell .workspace-screen-layout { gap: 12px; }
+.app-shell .module-container-page { gap: 12px; }
+
+/* Container screens with their own introduction share the same compact scale. */
+.app-shell :is(.private-documents-hero, .workspace-container-hero, .settings-hub-hero, .production-hero, .purchase-hero, .integrations-hero) {
+  min-height: 114px; padding: 14px 20px; gap: 14px; border-radius: 16px;
+}
+.app-shell :is(.private-documents-hero, .workspace-container-hero, .settings-hub-hero, .production-hero, .purchase-hero, .integrations-hero) h1 {
+  margin: 3px 0; font-size: clamp(20px, 2vw, 26px); line-height: 1.15; overflow-wrap: anywhere;
+}
+.app-shell :is(.private-documents-hero, .workspace-container-hero, .settings-hub-hero, .production-hero, .purchase-hero, .integrations-hero) p { margin: 3px 0 0; font-size: 13px; line-height: 1.35; }
+.app-shell :is(.workspace-container-hero-icon, .settings-hub-hero-icon, .production-hero-icon) { width: 40px; height: 40px; flex-basis: 40px; border-radius: 12px; }
+
+/* Compact Home bar; keep controls at least 36px and allow titles to wrap. */
+.app-shell .topbar {
+  box-sizing: border-box; display: flex; height: auto !important; min-height: 47px;
+  padding: 4px 16px !important; flex-direction: row !important; align-items: center !important; gap: 8px !important;
+}
+.app-shell .topbar-left { width: auto; min-width: 0; flex: 1; align-items: center; gap: 8px; }
+.app-shell .topbar-left > div { min-width: 0; }
+.app-shell .topbar-left h2 { font-size: 17px; line-height: 1.15; overflow-wrap: anywhere; }
+.app-shell .topbar-left p { margin: 1px 0 0; max-width: none; font-size: 11px; line-height: 1.2; }
+.app-shell .topbar-actions { display: flex !important; width: auto; flex: 0 0 auto; flex-wrap: nowrap; align-self: center; align-items: center; gap: 4px !important; }
+.app-shell .topbar :is(.topbar-home-btn, .icon-btn, .mobile-menu-btn) { min-width: 36px; width: 36px; height: 36px; flex-shrink: 0; padding: 0; border-radius: 9px; }
+.app-shell .topbar .topbar-home-btn { width: auto; padding: 0 9px; font-size: 12px; gap: 5px; }
+.app-shell .topbar :is(.topbar-home-btn, .icon-btn, .mobile-menu-btn) svg { width: 19px; height: 19px; }
+.app-shell .topbar-popover { top: calc(100% + 4px); }
+@media (max-width: 620px) {
+  .app-shell .workspace-page-header,
+  .app-shell :is(.private-documents-hero, .workspace-container-hero, .settings-hub-hero, .production-hero, .purchase-hero, .integrations-hero) { min-height: 95px; padding: 10px 12px; gap: 10px; }
+  .app-shell .workspace-page-header h1 { font-size: 19px; }
+  .app-shell .workspace-page-header p { font-size: 12px; }
+  .app-shell .topbar { padding: 4px 8px !important; }
+  .app-shell .topbar-left h2 { font-size: 15px; }
+  .app-shell .topbar-left p { font-size: 10px; }
+  .app-shell .topbar .topbar-home-btn { width: 36px; padding: 0; }
+  .app-shell .topbar-home-btn span { display: none; }
+}
+
+/* Actions participate in layout: no floating buttons over page content. */
+.app-shell .topbar { position: sticky; top: 0; flex: 0 0 auto; isolation: isolate; }
+.app-shell .topbar-actions { position: static; transform: none; min-height: 36px; }
+.app-shell .topbar-actions > button { position: relative; inset: auto; transform: none; margin: 0; }
+.app-shell .topbar .context-ai-trigger { width: 36px; min-width: 36px; height: 36px; padding: 0; border-radius: 9px; }
+.app-shell .topbar .context-ai-trigger span { display: none; }
+.app-shell .topbar .context-ai-trigger svg { width: 19px; height: 19px; }
+@media (max-width: 900px), (max-height: 500px) and (orientation: landscape) {
+  .app-shell .topbar { flex-wrap: wrap; }
+  .app-shell .topbar-left { flex: 1 1 130px; }
+  .app-shell .topbar-actions { margin-left: auto; }
+  .app-shell .topbar-left h2 { white-space: normal; }
+  .app-shell .topbar-left p { white-space: normal; }
+}

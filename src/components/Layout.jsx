@@ -30,6 +30,7 @@ import WorkspaceScreenLayout from "./WorkspaceScreenLayout";
 import { getModuleIcon } from "../config/moduleIcons";
 import { resolveCatalogModuleDestination } from "../config/workspaceNavigation";
 import ContextualAIAssistant from "./ContextualAIAssistant";
+import "../styles/compact-headers.css";
 
 const baseMenuItems = [
   { path: "/hr", label: "Modulo HR", icon: Users, module: "hr" },

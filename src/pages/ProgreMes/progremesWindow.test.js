@@ -61,7 +61,8 @@ test("menu, home, cataloghi, RdP e notifiche aprono nuove finestre Workspace con
   assert.doesNotMatch(launch, /window\.open|_blank/);
   assert.doesNotMatch(launch, /window.location.assign|window.location.replace/);
   assert.match(launch, /<iframe ref=\{frame\} key=\{url\} src=\{url\}/);
-  assert.match(launch, /isProgremesFrameMessage\(event, frame.current\?\.contentWindow, origin\)/);
+  assert.match(launch, /observeProgremesFrame\(\{ origin, getFrameWindow: \(\) => frame.current\?\.contentWindow/);
+  assert.match(read("./progremesHandshake.js"), /isProgremesFrameMessage\(event, getFrameWindow\(\), origin\)/);
   assert.doesNotMatch(launch, /allow-top-navigation/);
   assert.match(workbench, /requestProgremesWorkspaceWindow\(productionOrderProgremesPath\(result\)\)/);
   assert.doesNotMatch(workbench, /window.location.assign\(productionOrderProgremesPath/);

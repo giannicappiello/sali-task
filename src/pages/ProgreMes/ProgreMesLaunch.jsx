@@ -2,14 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
-import { isProgremesFrameMessage, progremesWorkspaceDestination, requestProgremesNavigation } from "./progremesWindow";
+import { progremesWorkspaceDestination, requestProgremesNavigation } from "./progremesWindow";
+import { observeProgremesFrame } from "./progremesHandshake";
 import "./progremes-frame.css";
 import PlanningActionModal from "./PlanningActionModal";
 
 export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
-  const { session, hasModuleAccess, loading: authLoading } = useAuth();
+  const { session, hasModuleAccess, loading: authLoading, authorizationRevision } = useAuth();
   const navigate = useNavigate();
   const accessToken = session?.access_token;
+  const currentToken = useRef(accessToken);
+  useEffect(() => { currentToken.current = accessToken; }, [accessToken]);
   const allowed = hasModuleAccess("progremes");
   const frame = useRef(null);
   const [popupPath, setPopupPath] = useState("");
@@ -17,11 +20,14 @@ export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
   const [connection, setConnection] = useState({ requestKey: "", url: "", error: "" });
   const [frameStatus, setFrameStatus] = useState({ url: "", ready: false, error: "" });
   const [syncError, setSyncError] = useState("");
-  const requestKey = JSON.stringify([screenCode, search, retry]);
-  const url = connection.requestKey === requestKey ? connection.url : "";
+  const requestKey = JSON.stringify([session?.user?.id, authorizationRevision, screenCode, search, retry]);
+  const url = allowed && accessToken && connection.requestKey === requestKey ? connection.url : "";
 
   useEffect(() => {
     if (authLoading || !accessToken || !allowed || !screenCode) return undefined;
+    // A refreshed Workspace token must not recreate an already authenticated
+    // MES iframe, discard its circuit and load the entire planning again.
+    if (connection.requestKey === requestKey && connection.url) return undefined;
     const controller = new AbortController();
     requestProgremesNavigation(accessToken, { screenCode, search, signal: controller.signal })
       .then((nextUrl) => {
@@ -31,19 +37,15 @@ export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
         if (!controller.signal.aborted) setConnection({ requestKey, url: "", error: error.message || "Collegamento a ProgreMES non riuscito." });
       });
     return () => controller.abort();
-  }, [accessToken, allowed, authLoading, screenCode, search, requestKey]);
+  }, [accessToken, allowed, authLoading, screenCode, search, requestKey, connection.requestKey, connection.url]);
 
   useEffect(() => {
     if (!url) return undefined;
     const origin = new URL(url).origin;
-    const timer = window.setTimeout(() => setFrameStatus({
-      url, ready: false, error: "MES non ha confermato il collegamento integrato. Verifica che MES sia aggiornato e che il browser consenta la sessione incorporata.",
-    }), 30000);
     const receive = (event) => {
-      if (!isProgremesFrameMessage(event, frame.current?.contentWindow, origin)) return;
       if (event.data.type === "progremes-planning-applied") {
         setSyncError("");
-        fetch("/api/workspace/planning", { method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }, body: JSON.stringify({ action: "planning_reconcile" }) })
+        fetch("/api/workspace/planning", { method: "POST", headers: { Authorization: `Bearer ${currentToken.current}`, "Content-Type": "application/json" }, body: JSON.stringify({ action: "planning_reconcile" }) })
           .then(async response => { const result = await response.json(); if (!response.ok) throw new Error(result.error || "Allineamento non riuscito"); })
           .catch(() => setSyncError("Piano salvato in MES. Completa l’allineamento dallo Storico ODL con Allinea stato Workspace; non ripetere la generazione."));
         return;
@@ -54,7 +56,6 @@ export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
         else navigate(progremesWorkspaceDestination(event.data));
         return;
       }
-      window.clearTimeout(timer);
       if (event.data.type === "progremes-workspace-return") {
         navigate("/produzione", { replace: true });
       } else {
@@ -62,9 +63,12 @@ export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
         setFrameStatus({ url, ready, error: ready ? "" : "Sessione MES non disponibile nella finestra Workspace. Premi Riprova per rinnovare l’accesso." });
       }
     };
-    window.addEventListener("message", receive);
-    return () => { window.clearTimeout(timer); window.removeEventListener("message", receive); };
-  }, [url, navigate, accessToken]);
+    // Retry only the handshake when the load event precedes the MES listener.
+    return observeProgremesFrame({ origin, getFrameWindow: () => frame.current?.contentWindow,
+      onMessage: receive, onTimeout: () => setFrameStatus({ url, ready: false,
+        error: "MES non ha confermato il collegamento integrato. Verifica che MES sia aggiornato e che il browser consenta la sessione incorporata.",
+      }) });
+  }, [url, navigate]);
 
   const error = !authLoading && !allowed ? "Accesso al modulo ProgreMES non autorizzato."
     : !authLoading && !accessToken ? "Sessione Workspace non disponibile."

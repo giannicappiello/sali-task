@@ -1,6 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
+    "api/production/actions.js": {
+      "regions": ["fra1"],
+      "maxDuration": 300
+    },
     "api/cron/mexal-products.js": {
       "maxDuration": 300
     },

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { costSession } from './production-costs.js';
+import { costSession } from './production-action-session.js';
 import { createProgremesReadonlyAdmin } from './progremes-readonly-auth.js';
 import { createProgremesProductionClient } from './progremes-production-client.js';
 import { mixingDepartmentAccess } from './mixing-access.js';
@@ -53,8 +53,9 @@ export async function handlePreparationActions(req, body, { authorize = preparat
   if (!['tutti', 'team', 'propri'].includes(session.scope.mode) || session.scope.customer_code || session.scope.customer_codes?.length)
     throw fail('Operazione riservata agli addetti interni.', 403);
   try {
-    const { result } = await clientFactory().preparationActions({ ...input, externalId: randomUUID(), requestedBy: session.profile.id });
-    console.info('[preparation-timing]', { operation: input.operation, authorizationMs: authorizedAt - startedAt, mesMs: Date.now() - authorizedAt });
+    const { result, mesContextMs } = await clientFactory().preparationActions({ ...input, externalId: randomUUID(), requestedBy: session.profile.id });
+    console.info('[preparation-timing]', { operation: input.operation, authorizationMs: authorizedAt - startedAt,
+      mesMs: Date.now() - authorizedAt, ...(Number.isFinite(mesContextMs) ? { mesContextMs } : {}) });
     return { ...result, canWrite: session.canWrite };
   } catch (error) {
     if ([404, 405].includes(error.status)) throw fail('Aggiornare ProgreMES per utilizzare le azioni di preparazione da Workspace.', 503);

@@ -226,7 +226,9 @@ export function createProgremesProductionClient({ env = process.env, fetchImpl =
           details: { upstreamStatus: response.status, upstreamCode },
         });
       }
-      return { result, payloadHash: hash(body) };
+      const timing = response.headers?.get?.('server-timing') || '';
+      const contextTiming = /(?:^|,)\s*mesContext;dur=([\d.]+)/.exec(timing);
+      return { result, payloadHash: hash(body), ...(contextTiming ? { mesContextMs: Number(contextTiming[1]) } : {}) };
     } catch (error) {
       if (controller.signal.aborted) throw Object.assign(new Error('Il MES non ha completato la richiesta entro il tempo previsto. Verifica lo stato della lavorazione prima di riprovare.'), { status: 504, code: 'PROGREMES_TIMEOUT' });
       throw error;

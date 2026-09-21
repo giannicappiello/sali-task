@@ -9,7 +9,7 @@ export default function PackagingSheetActions({ productionOrderId }) {
   const [mode, setMode] = useState(''), [result, setResult] = useState(null), [error, setError] = useState(''), [printing, setPrinting] = useState(false);
   const [pieces, setPieces] = useState(0);
   const request = useCallback(async (operation, signal, piecesPerBox) => {
-    const response = await fetch('/api/mexal/automation', { method: 'POST', signal,
+    const response = await fetch('/api/production/actions', { method: 'POST', signal,
       headers: { Authorization: `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'packaging_sheet', productionOrderId, operation, piecesPerBox }) });
     const data = await response.json();

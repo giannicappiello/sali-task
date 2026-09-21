@@ -14,7 +14,7 @@ export default function PreparationActions({ activity, onStarted }) {
   const [sheet, setSheet] = useState(null), [busy, setBusy] = useState(false), [started, setStarted] = useState(false);
   const frame = useRef(null);
   const request = useCallback(async (operation, extra = {}, signal) => {
-    const response = await fetch('/api/mexal/automation', { method: 'POST', signal,
+    const response = await fetch('/api/production/actions', { method: 'POST', signal,
       headers: { Authorization: `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'preparation_actions', productionOrderId: activity.productionOrderId,
         resourceCode: activity.resourceCode, operation, ...extra }) });

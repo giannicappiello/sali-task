@@ -1,4 +1,4 @@
-const LOCAL_PATHS = new Set(["/produzione/rdp-workbench", "/produzione/fabbisogni-acquisto", "/produzione/diagnostica", "/revisione-priorita-produzione", "/versioni-piano-produzione", "/rilascio-odl"]);
+const LOCAL_PATHS = new Set(["/produzione/ordini-avanzamento", "/produzione/rdp-workbench", "/produzione/fabbisogni-acquisto", "/produzione/diagnostica", "/revisione-priorita-produzione", "/versioni-piano-produzione", "/rilascio-odl"]);
 
 export function configuredProductionSections(remote, screens, links, { hasPermission, isAdminUser, customerScoped, hasScreenAccess }) {
   const byCode = new Map(screens.filter(s => s.attiva).map(s => [s.codice, s]));

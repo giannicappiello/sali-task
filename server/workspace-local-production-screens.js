@@ -1,5 +1,6 @@
 const REGISTRATION = "local_production_catalog_v1";
 export const LOCAL_PRODUCTION_SCREENS = [
+  { codice: "workspace.production.progress", nome: "Ordini e avanzamento", percorso: "/produzione/ordini-avanzamento", descrizione: "Monitoraggio OCT, richieste produttive e lavorazioni collegate.", icona: "list-checks", ordine: 5, metadati: { required_permissions: ["rdp.view"] } },
   { codice: "workspace.production.rdp", nome: "RdP Workbench", percorso: "/produzione/rdp-workbench", descrizione: "Gestione OCT, richieste di produzione, analisi MES e decisioni operative.", icona: "clipboard-list", ordine: 10, metadati: { required_permissions: ["rdp.view"] } },
   { codice: "progremes.Ordini.Fabbisogni", nome: "Fabbisogni acquisto", percorso: "/produzione/fabbisogni-acquisto", descrizione: "Calcolo mensile, coperture, fornitori e creazione controllata dei PF Mexal.", icona: "shopping-cart", ordine: 20, metadati: { required_permissions: ["rdp.view"] } },
   { codice: "workspace.production.diagnostics", nome: "Centro Diagnostico", percorso: "/produzione/diagnostica", descrizione: "Stato globale, alert operativi e integrazioni.", icona: "triangle-alert", ordine: 30, metadati: { admin_only: true } },

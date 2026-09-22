@@ -11,3 +11,19 @@ test('module order and visibility govern local cards',()=>assert.deepEqual(selec
 test('permissions still apply to configured cards',()=>assert.deepEqual(select([],screens,links,{...permissions,hasPermission:()=>false,isAdminUser:false}),[]));
 test('customers cannot see global purchasing or diagnostics',()=>assert.deepEqual(select([],screens,links,{...permissions,customerScoped:true,isAdminUser:false}).map(s=>s.code),['rdp-workbench']));
 test('screen denial is respected',()=>assert.deepEqual(select([],screens,links,{...permissions,hasScreenAccess:()=>false}),[]));
+
+const progress={codice:'workspace.production.progress',nome:'Ordini e avanzamento',percorso:'/produzione/ordini-avanzamento',attiva:true};
+const progressLink={modulo_codice:'progremes',schermata_codice:progress.codice,ordine:5,visibile_menu:true};
+test('commercial screen is discoverable and keeps its own access decision',()=>{
+ assert.equal(select([],[progress],[progressLink],permissions)[0].path,progress.percorso);
+ assert.deepEqual(select([],[progress],[progressLink],{...permissions,hasScreenAccess:()=>false}),[]);
+ assert.deepEqual(select([],[progress],[progressLink],{...permissions,hasPermission:()=>false}),[]);
+});
+test('new MES screen uses discovered catalog identity and never substitutes legacy planning',()=>{
+ const screen={codice:'progremes.PlanningProduction',nome:'Pianificazione e produzione',percorso:'/produzione/progremes.PlanningProduction',attiva:true};
+ const link={...progressLink,schermata_codice:screen.codice};
+ const remote=[{code:screen.codice,name:screen.nome}];
+ assert.deepEqual(select(remote,[screen],[link],permissions),remote);
+ assert.deepEqual(select(remote,[screen],[link],{...permissions,hasScreenAccess:()=>false}),[]);
+ assert.deepEqual(select([],[screen],[link],permissions),[]);
+});

@@ -3,6 +3,7 @@ import { AlertTriangle, Factory, RefreshCw, ShieldCheck, Workflow } from "lucide
 import { Navigate, useLocation, useParams } from "react-router-dom";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
 import InfoTooltip from "../../components/InfoTooltip";
+import WorkspaceAccessGuard from "../../components/WorkspaceAccessGuard";
 import { useAuth } from "../../contexts/AuthContext";
 import "./production.css";
 import RdpWorkbench from "./RdpWorkbench";
@@ -174,6 +175,7 @@ export default function Production() {
 
   const customerScoped = Boolean(dataScope?.customerCode);
   if (sectionPath === "diagnostica") return isAdminUser ? <DiagnosticsCenter /> : <Navigate to="/produzione" replace />;
+  if (sectionPath === "ordini-avanzamento") return hasPermission?.("rdp.view") && hasScreenAccess("workspace.production.progress", "progremes") ? <WorkspaceAccessGuard screenCode="workspace.production.progress"><RdpWorkbench commercial /></WorkspaceAccessGuard> : <Navigate to="/produzione" replace />;
   if (sectionPath === "rdp-workbench") return hasPermission?.("rdp.view") ? <RdpWorkbench /> : <Navigate to="/produzione" replace />;
   if (sectionPath === "fabbisogni-acquisto") return hasPermission?.("rdp.view") && !customerScoped ? <PurchaseRequirements /> : <Navigate to="/produzione" replace />;
   if (sectionPath) return <SectionLauncher sectionCode={decodeURIComponent(sectionPath)} />;

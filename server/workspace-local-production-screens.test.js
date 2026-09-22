@@ -10,7 +10,7 @@ function db() {
  update(patch){return {eq:async(key,value)=>{Object.assign(rows.find(r=>r[key]===value),patch);return {};}};}
  };}};
 }
-test('registers three selectable local screens and preserves purchasing assignment',async()=>{const d=db();await ensureLocalProductionScreens(d);assert.equal(d.screens.length,3);assert.equal(d.links.length,4);assert.equal(d.screens[0].metadati.custom,true);assert.ok(d.links.some(l=>l.modulo_codice==='acquisti'));});
+test('registers four selectable local screens and preserves purchasing assignment',async()=>{const d=db();await ensureLocalProductionScreens(d);assert.equal(d.screens.length,4);assert.equal(d.links.length,5);assert.equal(d.screens[0].metadati.custom,true);assert.ok(d.links.some(l=>l.modulo_codice==='acquisti'));});
 test('removed associations never return on subsequent visits',async()=>{const d=db();await ensureLocalProductionScreens(d);d.links.splice(1);await ensureLocalProductionScreens(d);assert.equal(d.links.length,1);});
 test('manual deactivation and metadata survive subsequent visits',async()=>{const d=db();await ensureLocalProductionScreens(d);d.screens[1].attiva=false;await ensureLocalProductionScreens(d);assert.equal(d.screens[1].attiva,false);});
-test('local routes remain distinct from MES screens',()=>{assert.equal(new Set(LOCAL_PRODUCTION_SCREENS.map(s=>s.percorso)).size,3);assert.ok(LOCAL_PRODUCTION_SCREENS.every(s=>s.percorso.startsWith('/produzione/')));});
+test('local routes remain distinct from MES screens',()=>{assert.equal(new Set(LOCAL_PRODUCTION_SCREENS.map(s=>s.percorso)).size,4);assert.ok(LOCAL_PRODUCTION_SCREENS.every(s=>s.percorso.startsWith('/produzione/')));});

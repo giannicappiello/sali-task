@@ -1,4 +1,5 @@
 /* global process */
+import { canOpenPlanningProduction } from "./production-workbench-access.js";
 import { createHash, randomBytes } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { ensureLocalProductionScreens } from "./workspace-local-production-screens.js";
@@ -41,7 +42,8 @@ async function getWorkspaceIdentity(req, admin) {
     target_module: "progremes",
   });
   if (accessError) throw accessError;
-  if (enabled !== true) {
+  const planningProductionAllowed = await canOpenPlanningProduction(admin, profile.id);
+  if (enabled !== true && !planningProductionAllowed) {
     throw Object.assign(new Error("Accesso al modulo ProgreMES non autorizzato."), { status: 403 });
   }
 
@@ -50,11 +52,13 @@ async function getWorkspaceIdentity(req, admin) {
   });
   if (adminError) throw adminError;
 
-  return { user, profile, isAdmin: adminAccess === true };
+  return { user, profile, isAdmin: adminAccess === true, productionHubAllowed: enabled === true, planningProductionAllowed };
 }
 
-async function getAuthorizedProgremesCodes(admin, identity) {
+export async function getAuthorizedProgremesCodes(admin, identity) {
   if (identity.isAdmin) return null;
+  const directCodes = new Set(identity.planningProductionAllowed ? ["PlanningProduction"] : []);
+  if (!identity.productionHubAllowed) return directCodes;
 
   const { data: departmentRows, error: departmentsError } = await admin
     .from("utenti_reparti")
@@ -66,14 +70,17 @@ async function getAuthorizedProgremesCodes(admin, identity) {
     identity.profile.reparto_id,
     ...(departmentRows || []).map((row) => row.reparto_id),
   ].filter(Boolean))];
-  if (!departmentIds.length) return new Set();
+  if (!departmentIds.length) return directCodes;
 
   const { data: accessRows, error: accessError } = await admin
     .from("progremes_reparti_moduli")
     .select("modulo_codice")
     .in("reparto_id", departmentIds);
   if (accessError) throw accessError;
-  return new Set((accessRows || []).map((row) => row.modulo_codice));
+  for (const row of accessRows || []) {
+    if (row.modulo_codice !== "PlanningProduction") directCodes.add(row.modulo_codice);
+  }
+  return directCodes;
 }
 
 export function progremesModuleCodeFromMetadata(metadata = {}) {

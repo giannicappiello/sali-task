@@ -12,3 +12,10 @@
 .planning-action-modal table { font-size:13px; }
 .planning-action-modal :is(th,td) { padding:9px; }
 .planning-action-modal .priority-intro { border:0; background:none; padding:0; }
+
+.planning-action-modal .production-page { margin:0; padding:0; max-width:none; }
+.planning-action-modal .rdp-header>div:first-child,.planning-action-modal .rdp-top-actions { display:none; }
+.planning-action-modal .rdp-header { margin:0 0 12px; padding:0; }
+.planning-action-modal .rdp-oct-card { box-shadow:none; border-radius:10px; }
+.planning-action-modal .rdp-oct-scroll { max-height:none; overflow:visible; }
+.planning-action-modal .purchase-page>header h1 { display:none; }

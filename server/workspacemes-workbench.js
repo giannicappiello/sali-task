@@ -423,7 +423,7 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
   return { generatedAt: new Date().toISOString(), items: items.filter(visibleWorkbenchOct), history, customerScoped: Boolean(expectedCustomerCode) };
 }
 
-export async function productionWorkbenchDetail({ admin, orderId = null, requestId = null, diagnostics = [], customerCode: expectedCustomerCode = null, allowedOrderIds = null }) {
+export async function productionWorkbenchDetail({ admin, orderId = null, requestId = null, diagnostics = [], customerCode: expectedCustomerCode = null, allowedOrderIds = null, scopeOnly = false }) {
   let request = null;
   if (requestId) {
     const result = await admin.from("workspace_production_requests").select("*").eq("id", requestId).maybeSingle();
@@ -444,6 +444,7 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
   if (expectedCustomerCode && (!(orders || []).length || (orders || []).some((order) => !workbenchOrderBelongsToCustomer(order, expectedCustomerCode)))) {
     throw Object.assign(new Error("OCT o RdP non disponibile per il cliente associato."), { status: 404 });
   }
+  if (scopeOnly) return { request, orders: (orders || []).map(order => ({ id: order.id, label: octLabel(order) })) };
   const currentLines = activeOctLines(lines);
   const visibleLines = request ? workbenchDetailLines(lines, requestItemsResult.data || []) : currentLines;
   const customersByCode = await loadCustomers(admin, orders);

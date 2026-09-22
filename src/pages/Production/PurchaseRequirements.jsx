@@ -154,7 +154,7 @@ export default function PurchaseRequirements() {
   const latestSaliProposal = data.saliDiIschiaProposals?.[0] || null;
   return <div className="production-page purchase-requirements-page">
     <div className="purchase-command-row">
-      <div className="purchase-calculation-note"><strong>Come viene calcolato.</strong><span>Workspace applica i criteri MES ai dati certificati: giacenze disponibili dei magazzini 1 e 8, domande degli OP nuovi o pianificati e quantità residue degli ordini fornitore. Gli arrivi coprono soltanto necessità successive alla loro data.</span></div>
+      <div className="purchase-calculation-note"><strong>Come viene calcolato.</strong><span>Workspace applica i criteri MES ai dati certificati: giacenze disponibili dei magazzini 1 e 8, fabbisogni residui dei singoli batch, anche degli ordini in lavorazione e quantità residue degli ordini fornitore. Gli arrivi coprono soltanto necessità successive alla loro data.</span></div>
       <div className="purchase-command-bar">
         <button type="button" className="secondary-action" disabled={!canManage || Boolean(busy)} onClick={() => run("IMPORT_SUPPLIER_ORDERS")} title="Importa dal MES gli ordini fornitore aggiornati"><RefreshCw size={16}/>Importa ordini fornitore<ButtonInfo text="Aggiorna nel Workspace gli ordini fornitore presenti nel MES."/></button>
         <button type="button" className="secondary-action" disabled={!canManage || Boolean(busy)} onClick={() => run("GENERATE_SALI_DI_ISCHIA")} title="Calcola la proposta di riassortimento Sali di Ischia"><ShoppingCart size={16}/>Genera proposta Sali di Ischia<ButtonInfo text="Calcola una proposta dai consumi, dalle giacenze e dai tempi di consegna configurati."/></button>

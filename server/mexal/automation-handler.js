@@ -41,6 +41,7 @@ import { prepareProductionDemand } from "../../server/production-netting.js";
 import { createOctOrdersRunHandler, precheckOctOrders } from "../../server/mexal/sync-oct-orders.js";
 import { handleDigitalConnectionManager } from "../../server/crm/digital-connection-manager.js";
 import { listProductionWorkbench, loadAllProductionOrders, productionWorkbenchDetail } from "../../server/workspacemes-workbench.js";
+import { readWorkbenchBatches } from "../../server/production-workbench-batches.js";
 import { privateWorkbenchSession } from "../../server/private-orders-workbench.js";
 import { handleProductionCosts } from "../../server/production-costs.js";
 import { handlePackagingSheet } from "../../server/packaging-sheet.js";
@@ -756,15 +757,24 @@ export default async function handler(req, res) {
       case "progremes_workbench_detail": {
         const admin = await createAdmin(req, "rdp.view");
         const customerCode = await authorizedCustomerCode(admin);
+        if (body.productionOrderId !== undefined) {
+          const detail = await productionWorkbenchDetail({ admin: admin.supabase,
+            orderId: body.orderId, requestId: body.requestId, customerCode, scopeOnly: true });
+          const batches = await readWorkbenchBatches({ detail,
+            productionOrderId: body.productionOrderId, actor: admin.authUserId });
+          return sendSuccess(res, 200, { batches });
+        }
         const diagnostics = await createProgremesClient().request("diagnostics").catch(() => []);
         const effectiveDiagnostics = await effectiveWorkspaceDiagnostics({ admin: admin.supabase, diagnostics });
-        return sendSuccess(res, 200, await productionWorkbenchDetail({
+        const detail = await productionWorkbenchDetail({
           admin: admin.supabase,
           orderId: body.orderId,
           requestId: body.requestId,
           diagnostics: effectiveDiagnostics,
           customerCode,
-        }));
+        });
+
+        return sendSuccess(res, 200, detail);
       }
       case "progremes_diagnostic_action": {
         const admin = await createAdmin(req);

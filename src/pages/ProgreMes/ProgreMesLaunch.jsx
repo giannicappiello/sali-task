@@ -93,7 +93,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
   if (!screenCode) return <Navigate to="/produzione" replace />;
 
   return <section className={`progremes-workspace-frame${["progremes.Planning", "progremes.PlanningProduction"].includes(screenCode) ? " progremes-planning-frame" : ""}`}>
-    {popupPath && <PlanningActionModal path={popupPath} onClose={() => setPopupPath("")} onNavigate={setPopupPath} />}
+    {popupPath && <PlanningActionModal path={popupPath} onClose={() => { setPopupPath(""); if (url) frame.current?.contentWindow?.postMessage({ type: "workspace-mes-refresh-planning" }, new URL(url).origin); }} onNavigate={setPopupPath} />}
     {syncError && <div className="progremes-frame-status" role="alert">{syncError}</div>}
     {(!ready || error) && <div className="progremes-frame-status" role={error ? "alert" : "status"}>
       <h2>{error ? "Collegamento non disponibile" : "Apertura schermata MES..."}</h2>

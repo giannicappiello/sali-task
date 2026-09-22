@@ -219,5 +219,9 @@ export async function consumeProgremesTicket(body) {
   if (!profile) {
     throw Object.assign(new Error("Ticket non valido, scaduto o già utilizzato."), { status: 401 });
   }
-  return profile;
+  const { data: planningLevel, error: planningError } = await admin.rpc("workspace_screen_level_for_user", {
+    target_user_id: profile.workspace_user_id, target_screen: "progremes.PlanningProduction",
+  });
+  if (planningError) throw Object.assign(new Error("Verifica permessi pianificazione non disponibile."), { status: 503 });
+  return { ...profile, planning_production_level: ["lettura", "scrittura", "amministrazione"].includes(planningLevel) ? planningLevel : "" };
 }

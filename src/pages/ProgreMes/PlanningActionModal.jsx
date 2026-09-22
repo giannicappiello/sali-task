@@ -1,46 +1,48 @@
 import { lazy, Suspense } from "react";
 import { Modal } from "../../features/production-costs/common";
 import WorkspaceAccessGuard from "../../components/WorkspaceAccessGuard";
+import { useAuth } from "../../contexts/AuthContext";
 import "./planning-action-modal.css";
 
 const Lifecycle = lazy(() => import("../Production/PlanningLifecycle"));
 const Priority = lazy(() => import("../Production/PriorityRevision"));
+const Requests = lazy(() => import("../Production/RdpWorkbench"));
+const Purchasing = lazy(() => import("../Production/PurchaseRequirements"));
 const destinations = {
   "/rilascio-odl": ["Storico ODL", "produzione.rilascio_odl"],
   "/versioni-piano-produzione": ["Versioni e revisioni del piano", "produzione.versioni_piano"],
   "/revisione-priorita-produzione": ["Anticipa produzione", "produzione.revisione_priorita"],
+  "/produzione/rdp-workbench": ["OCT e richieste di produzione", null, "rdp.view"],
+  "/produzione/fabbisogni-acquisto": ["Fabbisogni e PF", null, "rdp.view"],
 };
 
 export default function PlanningActionModal({ path, onClose, onNavigate }) {
+  const { hasPermission, dataScope } = useAuth();
   const url = new URL(path, window.location.origin);
-  const destination = destinations[url.pathname];
+  const destination = url.origin === window.location.origin && destinations[url.pathname];
   if (!destination) return null;
-  const [title, screenCode] = destination;
+  const [title, screenCode, permission] = destination;
   function followLink(event) {
     const link = event.target.closest("a[href]");
     if (!link) return;
     const next = new URL(link.href);
-    if (next.origin === window.location.origin && next.pathname === "/produzione/progremes.Planning") {
-      event.preventDefault();
-      event.stopPropagation();
-      onClose();
-      return;
+    if (next.origin === window.location.origin && ["/produzione/progremes.Planning", "/produzione/progremes.PlanningProduction"].includes(next.pathname)) {
+      event.preventDefault(); event.stopPropagation(); onClose(); return;
     }
     if (next.origin === window.location.origin && destinations[next.pathname]) {
-      event.preventDefault();
-      event.stopPropagation();
-      onNavigate(next.pathname + next.search);
+      event.preventDefault(); event.stopPropagation(); onNavigate(next.pathname + next.search);
     }
   }
+  const content = <Suspense fallback={<p role="status">Caricamento dati...</p>}>
+    {url.pathname === "/produzione/rdp-workbench" ? <Requests compact onNavigate={onNavigate} onReturnToPlan={onClose}/>
+      : url.pathname === "/produzione/fabbisogni-acquisto" ? <Purchasing/>
+      : url.pathname === "/revisione-priorita-produzione" ? <Priority key={path} compact initialSearch={url.search}/>
+      : <Lifecycle key={path} compact initialSearch={url.search} release={url.pathname === "/rilascio-odl"}/>}
+  </Suspense>;
   return <Modal title={title} onClose={onClose}>
     <div className="planning-action-modal" onClickCapture={followLink}>
-      <WorkspaceAccessGuard screenCode={screenCode}>
-        <Suspense fallback={<p role="status">Caricamento dati…</p>}>
-          {url.pathname === "/revisione-priorita-produzione"
-            ? <Priority key={path} compact initialSearch={url.search} />
-            : <Lifecycle key={path} compact initialSearch={url.search} release={url.pathname === "/rilascio-odl"} />}
-        </Suspense>
-      </WorkspaceAccessGuard>
+      {screenCode ? <WorkspaceAccessGuard screenCode={screenCode}>{content}</WorkspaceAccessGuard>
+        : hasPermission?.(permission) && (url.pathname !== "/produzione/fabbisogni-acquisto" || !dataScope?.customerCode) ? content : <p role="alert">Non sei autorizzato a usare questa funzione.</p>}
     </div>
   </Modal>;
 }

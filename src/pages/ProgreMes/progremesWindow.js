@@ -8,7 +8,7 @@ export function isProgremesScreenPath(path, origin = "https://workspace.invalid"
     if (url.pathname === "/progremes/accesso" || url.pathname === "/progremes") return true;
     const section = decodeURIComponent(url.pathname.replace(/^\/produzione\//, ""));
     return url.pathname.startsWith("/produzione/") && Boolean(section)
-      && !["diagnostica", "rdp-workbench", "fabbisogni-acquisto"].includes(section);
+      && !["diagnostica", "rdp-workbench", "fabbisogni-acquisto", "ordini-avanzamento"].includes(section);
   } catch { return false; }
 }
 
@@ -43,7 +43,7 @@ export function progremesWorkspaceDestination(data) {
   if (data?.type !== "progremes-workspace-navigate" || typeof data.path !== "string" || !data.path.startsWith("/")) return null;
   try {
     const url = new URL(data.path, "https://workspace.invalid");
-    if (url.origin !== "https://workspace.invalid" || !["/versioni-piano-produzione", "/rilascio-odl", "/revisione-priorita-produzione"].includes(url.pathname)) return null;
+    if (url.origin !== "https://workspace.invalid" || !["/versioni-piano-produzione", "/rilascio-odl", "/revisione-priorita-produzione", "/produzione/rdp-workbench", "/produzione/fabbisogni-acquisto"].includes(url.pathname)) return null;
     return `${url.pathname}${url.search}${url.hash}`;
   } catch { return null; }
 }

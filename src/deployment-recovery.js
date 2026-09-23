@@ -1,15 +1,20 @@
-// An open tab may still reference a chunk removed by a newer deployment.
-// Retry once per stale URL, so a network outage cannot create a reload loop.
-export function recoverStaleModule(event, location, storage, now = Date.now()) {
-  const message = String(event.payload?.message || "");
-  if (!/Failed to fetch dynamically imported module|Importing a module script failed|Loading chunk .* failed/i.test(message)) return false;
-  const key = "workspace:module-reload";
-  try {
-    const previous = JSON.parse(storage.getItem(key) || "null");
-    if (previous && now - previous.at < 60000) return false;
-    storage.setItem(key, JSON.stringify({ at: now }));
-  } catch { return false; }
-  event.preventDefault();
-  location.reload();
+export function isStaleModuleError(error) {
+  return /Failed to fetch dynamically imported module|Importing a module script failed|Loading chunk .* failed|Unable to preload CSS/i.test(String(error?.message || ''));
+}
+
+// Never reload a working session automatically after a deployment or outage.
+export function recoverStaleModule(event, notify) {
+  if (!isStaleModuleError(event.payload)) return false;
+  notify();
   return true;
+}
+
+export async function loadModuleWithRecovery(importer, waitForRetry) {
+  for (;;) {
+    try { return await importer(); }
+    catch (error) {
+      if (!isStaleModuleError(error)) throw error;
+      await waitForRetry();
+    }
+  }
 }

@@ -72,7 +72,7 @@ test('identical and reordered snapshots retain references without remounting CRM
   for (const key of ['setProfile','setPermissions','setModuleAccess','setModuleLevels','setAccessExceptions','setAreaAccess','setModuleAreas','setScreenCatalog','setDataScope']) {
     assert.equal(h.state[key], before[key], key + ' should remain referentially stable');
   }
-  assert.equal(h.state.setAuthorizationRevision, 42);
+  assert.equal(h.state.setAuthorizationRevision, before.setAuthorizationRevision);
   assert.equal('setAccessEpoch' in h.state, false);
 });
 
@@ -113,4 +113,29 @@ test('revision broadcasts are content-free and presence changes are excluded', (
   assert.match(source,/postgres_changes.*workspace_access_revision/);
   assert.match(source,/window\.addEventListener\("focus", onFocus\)/);
   assert.match(source,/setInterval\(\(\) => void refresh\(\), 30000\)/);
+});
+
+test('temporary outage preserves the open editor state and recovery releases the pause', async () => {
+ const h=harness();
+ let run=h.fn({id:'one'},{refresh:true}); h.requests.shift()(snapshot(['a'])); await run;
+ const before={...h.state};
+ run=h.fn({id:'one'},{refresh:true}); h.requests.shift()({error:Error('offline')}); await assert.rejects(run,/offline/);
+ assert.ok(h.state.setAccessRefreshError);
+ assert.equal(h.state.setProfile,before.setProfile);
+ assert.equal(h.state.setAuthError,'');
+ assert.equal(h.state.setAccessEpoch,undefined);
+ run=h.fn({id:'one'},{refresh:true}); h.requests.shift()(snapshot(['a'])); await run;
+ assert.equal(h.state.setAccessRefreshError,'');
+ assert.equal(h.state.setAccessEpoch,undefined);
+});
+test('invalid token still clears permissions', async () => {
+ const h=harness(); let run=h.fn({id:'one'},{refresh:true}); h.requests.shift()(snapshot(['a'])); await run;
+ run=h.fn({id:'one'},{refresh:true}); h.requests.shift()({error:Object.assign(Error('expired'),{code:'PGRST301'})}); await assert.rejects(run);
+ assert.equal(h.state.setProfile,null); assert.deepEqual(h.state.setPermissions,[]);
+});
+test('catalogue metadata alone does not discard the active form', async () => {
+ const h=harness(); let run=h.fn({id:'one'},{refresh:true}); h.requests.shift()(snapshot(['a'])); await run;
+ const next=snapshot(['a']); next.data.screens=[{title:'Updated catalogue'}]; next.data.links=[{label:'Updated link'}]; next.data.revision=999;
+ run=h.fn({id:'one'},{refresh:true}); h.requests.shift()(next); await run;
+ assert.equal(h.state.setAccessEpoch,undefined);
 });

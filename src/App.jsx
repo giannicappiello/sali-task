@@ -1,4 +1,7 @@
-import { lazy, Suspense } from "react";
+import { lazy as reactLazy, Suspense } from "react";
+import { loadModuleWithRecovery } from "./deployment-recovery.js";
+import { waitForModuleRetry } from "./workspace-updates.js";
+const lazy = importer => reactLazy(() => loadModuleWithRecovery(importer, waitForModuleRetry));
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { AuthProvider } from "./contexts/AuthContext";

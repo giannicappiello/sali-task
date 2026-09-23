@@ -66,6 +66,7 @@ export function AuthProvider({ children }) {
   const [dataScope, setDataScope] = useState(EMPTY_DATA_SCOPE);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState("");
+  const [accessRefreshError, setAccessRefreshError] = useState("");
   const [accessEpoch, setAccessEpoch] = useState(0);
   const [authorizationRevision, setAuthorizationRevision] = useState(null);
   const lastAccessSignature = useRef("");
@@ -87,6 +88,7 @@ export function AuthProvider({ children }) {
       const sameUser = Boolean(currentSession?.user?.id && currentAuthId.current === currentSession.user.id);
       if (!sameUser) {
         sessionReady.current = false;
+        setAccessRefreshError("");
         setLoading(true);
       }
       currentAuthId.current = currentSession?.user?.id || null;
@@ -234,6 +236,16 @@ export function AuthProvider({ children }) {
     }
     // A late response from an older login/refresh must not restore old access.
     if (generation !== loadGeneration.current || (currentAuthId.current && currentAuthId.current !== user.id)) return;
+    // A temporary refresh failure must not unmount the active editor.
+    // Block interaction until access can be verified again; actual revocation
+    // and invalid authentication still clear the session below.
+    if (error && refresh && sessionReady.current &&
+        ![401, 403].includes(Number(error.status)) &&
+        !['PGRST301', 'PGRST302', 'PGRST303', '42501'].includes(error.code)) {
+      setAccessRefreshError("Connessione temporaneamente non disponibile. Il lavoro aperto è conservato; verifica accessi in corso.");
+      throw error;
+    }
+    setAccessRefreshError("");
     const data = snapshot?.profile;
     if (error || !data || data.attivo === false) {
       setProfile(null);
@@ -256,7 +268,11 @@ export function AuthProvider({ children }) {
     }
     const context = snapshot.access || {};
     const scope = snapshot.scope || {};
-    const signature = accessSnapshotSignature([data.id, context, scope, snapshot.areas, snapshot.module_area_codes, snapshot.module_areas, snapshot.screen_levels, snapshot.screens, snapshot.links]);
+    const signature = accessSnapshotSignature([
+      data.id, context.department_ids, context.permissions, context.modules, context.module_levels,
+      context.role?.nome, context.role?.amministratore_workspace, context.role?.livello_accesso,
+      scope, snapshot.areas, snapshot.module_area_codes, snapshot.module_areas, snapshot.screen_levels,
+    ]);
     if (lastAccessSignature.current && signature !== lastAccessSignature.current) setAccessEpoch((value) => value + 1);
     lastAccessSignature.current = signature;
     accessRevision.current = snapshot.revision;
@@ -503,6 +519,7 @@ export function AuthProvider({ children }) {
       loading,
       authError,
       authorizationRevision,
+      accessRefreshError,
       signIn,
       signOut,
       resetPassword,
@@ -513,7 +530,7 @@ export function AuthProvider({ children }) {
       userDepartmentIds: profile?.reparto_ids || [],
       reloadProfile: () => authUser && loadProfile(authUser, { refresh: true }),
     }),
-    [session, authUser, profile, permissions, moduleAccess, moduleLevels, accessExceptions, areaAccess, moduleAreas, dataScope, loading, authError, authorizationRevision, adminUser, accessMethods]
+    [session, authUser, profile, permissions, moduleAccess, moduleLevels, accessExceptions, areaAccess, moduleAreas, dataScope, loading, authError, accessRefreshError, authorizationRevision, adminUser, accessMethods]
   );
 
   // Recreate page-local data and query state when the effective perimeter changes.

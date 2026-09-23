@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: "autoUpdate",
+      registerType: "prompt",
       includeAssets: ["favicon.svg", "pwa-192x192.png", "pwa-512x512.png", "pwa-maskable-512x512.png"],
       manifest: {
         name: "Progre Workspace",
@@ -41,8 +41,8 @@ export default defineConfig({
         cacheId: "workspace-assets-v2",
         navigateFallbackDenylist: [/^\/api\//, /^\/assets\//],
         cleanupOutdatedCaches: true,
-        clientsClaim: true,
-        skipWaiting: true,
+        clientsClaim: false,
+        skipWaiting: false,
         importScripts: ["/push-handler.js"]
       },
       devOptions: {

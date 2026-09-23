@@ -1,8 +1,9 @@
+import "../styles/session-stability.css";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 
 function ProtectedRoute() {
-  const { session, loading, authError } = useAuth();
+  const { session, loading, authError, accessRefreshError } = useAuth();
   const location = useLocation();
 
   if (authError) {
@@ -27,7 +28,10 @@ function ProtectedRoute() {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  return <Outlet />;
+  return <>
+    {accessRefreshError && <div role="alert" className="workspace-connection-pause">{accessRefreshError}</div>}
+    <div inert={accessRefreshError ? true : undefined} aria-busy={Boolean(accessRefreshError)}><Outlet /></div>
+  </>;
 }
 
 export default ProtectedRoute;

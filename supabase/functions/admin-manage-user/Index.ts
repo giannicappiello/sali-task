@@ -218,7 +218,7 @@ async function createUser(adminClient, body, callerProfileId) {
 
 async function updateUser(adminClient, body, callerProfileId) {
   const id = body.id;
-  const auth_user_id = body.auth_user_id || null;
+
   const nome = clean(body.nome);
   const cognome = clean(body.cognome);
   const email = clean(body.email).toLowerCase();
@@ -237,6 +237,15 @@ async function updateUser(adminClient, body, callerProfileId) {
       },
       400
     );
+  }
+
+  const { data: targetUser, error: targetError } = await adminClient
+    .from("utenti").select("auth_user_id").eq("id", id).maybeSingle();
+  if (targetError) return json({ error: targetError.message }, 400);
+  if (!targetUser) return json({ error: "Utente non trovato." }, 404);
+  const auth_user_id = targetUser.auth_user_id;
+  if (password && !auth_user_id) {
+    return json({ error: "Password non modificata: la scheda utente non è collegata a un account di accesso." }, 409);
   }
 
   const fullName = `${nome} ${cognome}`.trim();

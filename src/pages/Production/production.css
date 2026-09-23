@@ -158,3 +158,10 @@
 .purchase-discarded td{font-size:.78rem;overflow-wrap:anywhere}
 @media(max-width:700px){.purchase-discarded>header{align-items:stretch;flex-direction:column}.purchase-discarded>header button{justify-content:center}}
 .pf-preview-counter{margin-left:auto;padding:7px 12px;border-radius:999px;color:#0f5fc4;background:#eaf3ff;font-size:.84rem;white-space:nowrap}
+.rdp-success > svg { flex-shrink: 0; }
+.rdp-success > div { min-width: 0; }
+.rdp-success .rdp-forecast-action { display: inline-flex; align-items: center; justify-content: center; gap: 8px; box-sizing: border-box; max-width: 100%; min-height: 44px; margin-top: 12px; padding: 10px 16px; border: 1px solid #1769aa; border-radius: 10px; background: #1769aa; color: #fff; font: inherit; font-weight: 700; line-height: 1.4; text-align: center; white-space: normal; cursor: pointer; }
+.rdp-success .rdp-forecast-action > svg { flex-shrink: 0; }
+.rdp-success .rdp-forecast-action:hover { background: #12558b; border-color: #12558b; }
+.rdp-success .rdp-forecast-action:focus-visible { outline: 3px solid #1769aa; outline-offset: 3px; }
+@media (max-width: 480px) { .rdp-success .rdp-forecast-action { width: 100%; } }

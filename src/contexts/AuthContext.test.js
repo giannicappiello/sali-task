@@ -49,6 +49,20 @@ function sessionHarness() {
 const planningSnapshot = () => ({ data: { profile: { id: 'maria', attivo: true }, access: { modules: ['progremes'] },
   screen_levels: { 'progremes.Planning': 'amministrazione' } } });
 
+test('catalogue revisions retain the MES session while real permission changes invalidate it', async () => {
+  const h = sessionHarness();
+  const first = h.loadProfile({ id: 'maria' });
+  await h.settle();
+  h.requests[0].resolve({ data: { ...planningSnapshot().data, revision: 10 } }); await first;
+  const revision = h.state.setAuthorizationRevision;
+  const second = h.loadProfile({ id: 'maria' }, { refresh: true });
+  h.requests[1].resolve({ data: { ...planningSnapshot().data, revision: 11 } }); await second;
+  assert.equal(h.state.setAuthorizationRevision, revision);
+  const third = h.loadProfile({ id: 'maria' }, { refresh: true });
+  h.requests[2].resolve({ data: { ...planningSnapshot().data, revision: 12, screen_levels: {} } }); await third;
+  assert.notEqual(h.state.setAuthorizationRevision, revision);
+});
+
 test('Planning popup waits for the newest access snapshot when realtime overlaps initial login', async () => {
   const h = sessionHarness();
   await h.emit({ user: { id: 'maria' } });

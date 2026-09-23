@@ -260,7 +260,9 @@ export function AuthProvider({ children }) {
     if (lastAccessSignature.current && signature !== lastAccessSignature.current) setAccessEpoch((value) => value + 1);
     lastAccessSignature.current = signature;
     accessRevision.current = snapshot.revision;
-    setAuthorizationRevision(snapshot.revision);
+    // The global revision also changes for catalogue synchronisation and other
+    // users. Reconnect embedded MES only when this user's effective access changes.
+    setAuthorizationRevision(signature);
     setProfile((current) => retainAccessProfile(current, { ...data, ruoli: context.role, reparto_ids: context.department_ids || [],
       reparti_multipli: snapshot.departments || [] }));
     setPermissions((current) => retainEqualAccessValue(current, context.permissions || []));

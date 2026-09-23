@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { progremesContextualRoute } from './progremes-sso-routes.js';
 import { stationPanelUrl } from '../src/pages/Dashboard/productionCalendar.js';
 test('activity station link preserves MES code through SSO', () => {
-  for (const code of ['ST01', 'ST2', 'ST5', 'ST10']) {
+  for (const code of ['ST01', 'ST2', 'ST5', 'ST10', 'ST11']) {
     const url = new URL(stationPanelUrl('Production', code), 'https://workspace.progre.it');
     assert.equal(url.pathname, '/produzione/progremes.PlanningProduction');
     assert.equal(progremesContextualRoute('progremes.PlanningProduction', Object.fromEntries(url.searchParams)), `/stations/${code}`);

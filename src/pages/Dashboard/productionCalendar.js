@@ -5,7 +5,7 @@ export function stationPanelUrl(operationType, resourceCode) {
   if (operationType !== 'Production') return '';
   const code = String(resourceCode || '').trim().toUpperCase();
   const match = /^(?:ST|STATION)\s*0*(\d+)$/.exec(code);
-  if (!match || Number(match[1]) < 1 || Number(match[1]) > 10) return '';
+  if (!match || Number(match[1]) < 1 || code.length > 30) return '';
   if (Number(match[1]) === 7) return 'http://10.64.0.217';
   return `/produzione/progremes.PlanningProduction?destination=station&station=${encodeURIComponent(code)}&workspaceMesWindow=1`;
 }

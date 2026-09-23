@@ -1,4 +1,5 @@
 import { deliverCatalogDeletions } from "./workspace-catalog-deletions.js";
+import { removedProgremesModules } from "./progremes-restored-modules.js";
 import { requirePermission } from "./mexal/lib/auth.js";
 
 export const PROGREMES_SYNC_TIMEOUT_MS = 30 * 60 * 1000;
@@ -139,7 +140,7 @@ export async function syncProgremesModules(req, supabase, origin = "manuale", sk
     const codes = catalog.modules.map((item) => item.codice);
     const [{ data: existing, error: existingError }, { data: existingScreens, error: existingScreensError }] = await Promise.all([
       supabase.from("progremes_moduli").select("codice,nome,descrizione,percorso,attivo,ordine"),
-      supabase.from("workspace_schermate").select("codice,metadati").eq("provider", "progremes"),
+      supabase.from("workspace_schermate").select("codice,attiva,metadati").eq("provider", "progremes"),
     ]);
     if (existingError || existingScreensError) throw existingError || existingScreensError;
     const before = new Map(existing.map((item) => [item.codice, item]));
@@ -163,7 +164,7 @@ export async function syncProgremesModules(req, supabase, origin = "manuale", sk
         .in("codice", removedScreens);
       if (error) throw error;
     }
-    const removed = existing.filter((item) => !codes.includes(item.codice)).map((item) => item.codice);
+    const removed = removedProgremesModules(existing, codes, existingScreens || []);
     if (removed.length) {
       const { error } = await supabase.from("progremes_moduli").update({ attivo: false, ultima_sincronizzazione: now }).in("codice", removed);
       if (error) throw error;

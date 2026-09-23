@@ -375,7 +375,7 @@ function Layout() {
       }).map((item) => {
         const itemModuleCode = item.catalogModule || item.module || item.accessModule || "";
         const screenGrant = getModuleScreenGrant(itemModuleCode);
-        return screenGrant && !hasModuleAccess(itemModuleCode) && screenGrant.percorso
+        return itemModuleCode !== "integrazioni" && screenGrant && !hasModuleAccess(itemModuleCode) && screenGrant.percorso
           ? { ...item, path: screenGrant.percorso }
           : item;
       }),

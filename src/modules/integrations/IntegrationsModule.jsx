@@ -19,7 +19,7 @@ export default function IntegrationsModule() {
   const screenAllowed = screenCode && hasScreenAccess(screenCode, "integrazioni");
   const isIndex = pathname.replace(/\/$/, "") === "/integrations";
 
-  if (screenCode ? !screenAllowed : !(isIndex && (hasModuleAccess("integrazioni") || getModuleScreenGrant("integrazioni")))) {
+  if (isIndex ? !(hasModuleAccess("integrazioni") || getModuleScreenGrant("integrazioni")) : !screenAllowed) {
     return (
       <div className="integrations-denied">
         <h2>Accesso riservato</h2>

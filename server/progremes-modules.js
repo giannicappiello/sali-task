@@ -120,13 +120,14 @@ export async function syncProgremesModules(req, supabase, origin = "manuale", sk
   const { data: run, error: runError } = await supabase.from("progremes_sync_runs").insert({ origine: origin, stato: "in_esecuzione" }).select().single();
   if (runError) throw runError;
   try {
-    await deliverCatalogDeletions(supabase);
     const response = await fetch(new URL("/api/workspace/modules", required("PROGREMES_URL")), {
       headers: { "X-Workspace-Secret": required("PROGREMES_INTEGRATION_SECRET") },
       signal: AbortSignal.timeout(30000),
     });
     if (!response.ok) throw new Error(`ProgreMES ha risposto con stato ${response.status}.`);
-    const payload = await response.json();
+    const sourcePayload = await response.json();
+    const deletions = await deliverCatalogDeletions(supabase, fetch, sourcePayload);
+    const payload = deletions.catalog || sourcePayload;
     const { data: runState } = await supabase.from("progremes_sync_runs").select("stato,arresto_richiesto").eq("id", run.id).single();
     if (runState?.arresto_richiesto || !ACTIVE_RUN_STATES.includes(runState?.stato)) {
       const stoppedAt = new Date().toISOString();

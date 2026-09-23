@@ -1,26 +1,43 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const labels = { PLANNED: "Pianificato", CANCELLED: "Annullato", RELEASED: "Rilasciato", RELEASED_WITH_SHORTAGE: "Rilasciato con carenze", PREPARING: "In preparazione",
   NOT_STARTED: "Da avviare", RUNNING: "In lavorazione", COMPLETED: "Terminato", SUSPENDED: "Sospeso",
   CLOSING: "Chiusura in corso", RECONCILIATION_REQUIRED: "Da riconciliare", COVERED: "Coperto",
   SHORTAGE: "Materiali mancanti", UNVERIFIED: "Da verificare", STOCK_PENDING: "Aggiornamento giacenze in attesa" };
 const status = value => labels[value] || value || "—";
-const date = value => value ? new Intl.DateTimeFormat("it-IT", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "—";
+const date = value => value && Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat("it-IT", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "—";
 const qty = value => new Intl.NumberFormat("it-IT", { maximumFractionDigits: 3 }).format(value || 0);
 
-export default function CommercialBatchProgress({ orders, load }) {
-  const [expanded, setExpanded] = useState(null);
+export default function CommercialBatchProgress({ orders, load, autoOpen = false }) {
+  const [expanded, setExpanded] = useState(autoOpen ? orders?.[0]?.id ?? null : null);
   const [results, setResults] = useState({});
   const [loading, setLoading] = useState(null);
   const [error, setError] = useState("");
-  async function open(id, refresh = false) {
-    if (!refresh && expanded === id) { setExpanded(null); return; }
-    setExpanded(id); setError("");
-    if (!refresh && results[id]) return;
-    setLoading(id);
-    try { const result = await load(id); setResults(current => ({ ...current, [id]: result.batches })); }
-    catch (e) { setError(e.message); }
-    finally { setLoading(null); }
+  const [revision, setRevision] = useState(0);
+  const loader = useRef(load);
+  const cache = useRef({});
+  useEffect(() => { loader.current = load; }, [load]);
+  useEffect(() => {
+    if (!expanded) return undefined;
+    let active = true;
+    async function read() {
+      setError("");
+      if (cache.current[expanded]) { setLoading(null); return; }
+      setLoading(expanded);
+      try {
+        const result = await loader.current(expanded);
+        if (!active) return;
+        cache.current[expanded] = result.batches;
+        setResults(current => ({ ...current, [expanded]: result.batches }));
+      } catch (e) { if (active) setError(e.message); }
+      finally { if (active) setLoading(null); }
+    }
+    read();
+    return () => { active = false; };
+  }, [expanded, revision]);
+  function open(id, refresh = false) {
+    if (refresh) { delete cache.current[id]; setRevision(value => value + 1); }
+    setExpanded(!refresh && expanded === id ? null : id);
   }
   return <section aria-label="Avanzamento delle singole lavorazioni" className="commercial-batch-progress">
     {(orders || []).map(order => <div key={order.id}>

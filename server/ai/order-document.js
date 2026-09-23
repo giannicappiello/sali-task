@@ -8,6 +8,7 @@ import {
 } from "./assistant.js";
 import { applyDirectMexalProductFilters } from "../../shared/directProductCatalog.js";
 import { distinctiveCustomerTokens, matchCustomer, matchProduct } from "../../shared/orderDocumentMatching.js";
+import { combineOrderExtractions, extractOrderVision } from "./order-import-extraction.js";
 import { parseOrderWorkbook } from "./order-excel.js";
 
 const DEFAULT_MODEL = "openai/gpt-5.6-luna";
@@ -212,12 +213,12 @@ export async function handleAIOrderDocument(req) {
       const workbook = parseOrderWorkbook(file.data, { fileName: file.filename });
       includedSheets.push(...workbook.includedSheets.map((sheet) => ({ ...sheet, fileName: file.filename })));
       excludedSheets.push(...workbook.excludedSheets.map((sheet) => ({ ...sheet, fileName: file.filename })));
-      workbookWarnings.push(...workbook.warnings);
+      // All imported sheets belong to one draft; source rows retain their sheet names.
       extractions.push(...workbook.orders.map((order) => forRequestedOrderModule(order, moduleCode)));
     }
 
     if (visionFiles.length) {
-      result = await generateText({
+      result = await extractOrderVision(generateText, {
         model,
         system: moduleCode === "ordini_private"
           ? "Leggi tutti gli allegati come parti della stessa richiesta commerciale, rispettando l’ordine in cui sono forniti e senza duplicare righe ripetute tra le pagine. Non inventare dati. Estrai cliente, righe prodotto e quantità. Questo flusso crea esclusivamente un OCT: imposta sempre documentType a OCT. Usa stringhe vuote per i campi assenti. Le quantità devono essere positive. Segnala dubbi e testo illeggibile nelle warnings."
@@ -227,7 +228,7 @@ export async function handleAIOrderDocument(req) {
           ...visionFiles.map((file) => ({ type: "file", mediaType: file.mediaType, data: file.data, filename: file.filename })),
         ] }],
         output: Output.object({ name: "OrdineAcquisito", description: "Dati estratti da una richiesta d’ordine", schema: ORDER_DOCUMENT_SCHEMA }),
-        maxOutputTokens: 3600,
+
         providerOptions: { gateway: { user: auth.profile.id, tags: ["app:sali-task", "feature:riconoscimento-ordine", `module:${moduleCode}`] } },
       });
       const extraction = forRequestedOrderModule(result.output, moduleCode);
@@ -237,7 +238,13 @@ export async function handleAIOrderDocument(req) {
 
     if (!extractions.length) throw Object.assign(new Error("Nei documenti non sono state trovate righe prodotto utilizzabili."), { status: 400, details: excludedSheets });
     const catalog = await visibleCatalog(auth, extractions);
-    const matchedOrders = extractions.map((extraction) => resolveExtraction(extraction, catalog));
+    const combined = combineOrderExtractions(extractions);
+    const resolved = resolveExtraction(combined, catalog);
+    if (combined.customerConflict) {
+      resolved.customerCandidates = [...new Map(extractions.flatMap(item => resolveExtraction(item, catalog).customerCandidates).map(item => [item.code, item])).values()];
+      resolved.customerMatch = { status: "ambiguous", proposedId: null };
+    }
+    const matchedOrders = [resolved];
     const matched = {
       ...matchedOrders[0],
       ...(matchedOrders.length > 1 ? { orders: matchedOrders } : {}),

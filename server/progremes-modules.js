@@ -1,5 +1,6 @@
 import { deliverCatalogDeletions } from "./workspace-catalog-deletions.js";
 import { removedProgremesModules } from "./progremes-restored-modules.js";
+import { missingProgremesScreens } from "./progremes-screen-retention.js";
 import { requirePermission } from "./mexal/lib/auth.js";
 
 export const PROGREMES_SYNC_TIMEOUT_MS = 30 * 60 * 1000;
@@ -154,10 +155,14 @@ export async function syncProgremesModules(req, supabase, origin = "manuale", sk
       const { error } = await supabase.from("workspace_schermate").upsert(normalizedScreens, { onConflict: "codice" });
       if (error) throw error;
     }
-    const screenCodes = new Set(normalizedScreens.map((item) => item.codice));
-    const removedScreens = (existingScreens || [])
-      .filter((item) => item.metadati?.catalog_source === "progremes_catalog" && !screenCodes.has(item.codice))
-      .map((item) => item.codice);
+    const [menuLinks, menuModules] = await Promise.all([
+      supabase.from("workspace_moduli_schermate").select("modulo_codice,schermata_codice,visibile_menu").eq("visibile_menu", true),
+      supabase.from("workspace_moduli").select("codice,attivo").eq("attivo", true),
+    ]);
+    if (menuLinks.error || menuModules.error) throw menuLinks.error || menuModules.error;
+    const { removed: removedScreens, retained: retainedScreens } = missingProgremesScreens(
+      existingScreens || [], normalizedScreens, menuLinks.data || [], menuModules.data || [],
+    );
     if (removedScreens.length) {
       const { error } = await supabase.from("workspace_schermate")
         .update({ attiva: false, ultima_sincronizzazione: now })
@@ -171,7 +176,7 @@ export async function syncProgremesModules(req, supabase, origin = "manuale", sk
     }
     const inserted = normalized.filter((item) => !before.has(item.codice)).length;
     const updated = normalized.length - inserted;
-    const { data: completedRun, error: completedRunError } = await supabase.from("progremes_sync_runs").update({ stato: "completata", completata_il: now, moduli_letti: normalized.length, inseriti: inserted, aggiornati: updated, disattivati: removed.length, dettagli: { source: payload.source, version: payload.version, screens_disabled: removedScreens.length } }).eq("id", run.id).eq("stato", "in_esecuzione").select("id").maybeSingle();
+    const { data: completedRun, error: completedRunError } = await supabase.from("progremes_sync_runs").update({ stato: "completata", completata_il: now, moduli_letti: normalized.length, inseriti: inserted, aggiornati: updated, disattivati: removed.length, dettagli: { source: payload.source, version: payload.version, screens_disabled: removedScreens.length, screens_retained_by_workspace: retainedScreens } }).eq("id", run.id).eq("stato", "in_esecuzione").select("id").maybeSingle();
     if (completedRunError) throw completedRunError;
     if (!completedRun) return { runId: run.id, stopped: true };
     const { data: syncConfig } = await supabase.from("progremes_sync_config").select("intervallo_ore").eq("id", 1).single();

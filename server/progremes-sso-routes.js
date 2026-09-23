@@ -39,3 +39,9 @@ export function progremesContextualRoute(screenCode, context = {}, fallback = ""
   }
   return fallback;
 }
+
+// Old PWA windows may still hold the retired screen code; retain the same authorization checks on the active screen.
+export function canonicalProgremesScreen(screenCode, context = {}) {
+  const code = String(screenCode || '').trim();
+  return code === 'progremes.Produzione' && context?.destination === 'station' ? 'progremes.PlanningProduction' : code;
+}

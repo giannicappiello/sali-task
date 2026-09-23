@@ -4,7 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { ensureLocalProductionScreens } from "./workspace-local-production-screens.js";
 import { ensureProgremesCatalogFresh } from "./progremes-modules.js";
-import { progremesContextualRoute, progremesDirectOperationalRoute } from "./progremes-sso-routes.js";
+import { canonicalProgremesScreen, progremesContextualRoute, progremesDirectOperationalRoute } from "./progremes-sso-routes.js";
 
 const required = (name) => {
   const value = String(process.env[name] || "").trim();
@@ -145,7 +145,7 @@ export async function issueProgremesTicket(req, body = {}) {
     throw Object.assign(new Error("L'utente non dispone di un indirizzo email valido."), { status: 422 });
   }
 
-  const screenCode = String(body?.screenCode || "").trim();
+  const screenCode = canonicalProgremesScreen(body?.screenCode, body?.context);
   let returnUrl = "";
   if (screenCode) {
     const directOperationalRoute = progremesDirectOperationalRoute(screenCode);

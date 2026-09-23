@@ -4,7 +4,7 @@ import { productionActivities, activityOnDay, activityInMonth, plantTime, statio
 
 test('collegamenti impianto limitati alle Station configurate, nessun pannello Filling inventato', () => {
   assert.equal(stationPanelUrl('Production', 'ST7'), 'http://10.64.0.217');
-  assert.equal(stationPanelUrl('Production', 'ST01'), '/produzione/progremes.Produzione?destination=station&station=ST01&workspaceMesWindow=1');
+  assert.equal(stationPanelUrl('Production', 'ST01'), '/produzione/progremes.PlanningProduction?destination=station&station=ST01&workspaceMesWindow=1');
   assert.equal(stationPanelUrl('Packaging', 'F02'), '');
   assert.equal(stationPanelUrl('Production', 'ST999'), '');
   assert.equal(stationPanelUrl('Production', 'https://external.invalid'), '');

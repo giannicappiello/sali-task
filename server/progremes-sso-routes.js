@@ -7,7 +7,7 @@ export function progremesDirectOperationalRoute(screenCode) {
 }
 
 export function progremesContextualRoute(screenCode, context = {}, fallback = "") {
-  if (String(screenCode || '').trim() === 'progremes.Produzione'
+  if (String(screenCode || '').trim() === 'progremes.PlanningProduction'
       && context?.destination === 'station') {
     const station = String(context.station || '').trim().toUpperCase();
     if (!/^(?:ST|STATION)\s*0*[1-9]\d*$/.test(station) || station.length > 30)

@@ -7,7 +7,7 @@ export function stationPanelUrl(operationType, resourceCode) {
   const match = /^(?:ST|STATION)\s*0*(\d+)$/.exec(code);
   if (!match || Number(match[1]) < 1 || Number(match[1]) > 10) return '';
   if (Number(match[1]) === 7) return 'http://10.64.0.217';
-  return `/produzione/progremes.Produzione?destination=station&station=${encodeURIComponent(code)}&workspaceMesWindow=1`;
+  return `/produzione/progremes.PlanningProduction?destination=station&station=${encodeURIComponent(code)}&workspaceMesWindow=1`;
 }
 
 // MES serializes local plant times without an offset. Preserve their wall time;

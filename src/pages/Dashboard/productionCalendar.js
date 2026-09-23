@@ -1,11 +1,13 @@
 const labels = { Production: 'Preparazione', Packaging: 'Confezionamento', Cartoning: 'Confezionamento' };
 
-// Same operational Station destinations configured in the MES planner.
-const stationHosts = { 1: '179:1880/ui', 2: '58:1880/ui', 3: '41:1880/ui', 4: '200:1880/ui', 5: '165:1880/ui', 6: '97:1880/ui', 7: '217', 8: '210:1880/ui', 9: '172:1880/ui', 10: '205:1880/ui' };
+// Keep the existing machine UI for Station7; other stations use authenticated MES pages.
 export function stationPanelUrl(operationType, resourceCode) {
   if (operationType !== 'Production') return '';
-  const match = /^(?:ST|STATION)\s*0*(\d+)$/i.exec(String(resourceCode || '').trim());
-  return match && stationHosts[Number(match[1])] ? `http://10.64.0.${stationHosts[Number(match[1])]}` : '';
+  const code = String(resourceCode || '').trim().toUpperCase();
+  const match = /^(?:ST|STATION)\s*0*(\d+)$/.exec(code);
+  if (!match || Number(match[1]) < 1 || Number(match[1]) > 10) return '';
+  if (Number(match[1]) === 7) return 'http://10.64.0.217';
+  return `/produzione/progremes.Produzione?destination=station&station=${encodeURIComponent(code)}&workspaceMesWindow=1`;
 }
 
 // MES serializes local plant times without an offset. Preserve their wall time;

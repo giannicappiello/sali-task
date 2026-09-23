@@ -8,6 +8,14 @@ export function progremesDirectOperationalRoute(screenCode) {
 
 export function progremesContextualRoute(screenCode, context = {}, fallback = "") {
   if (String(screenCode || '').trim() === 'progremes.Produzione'
+      && context?.destination === 'station') {
+    const station = String(context.station || '').trim().toUpperCase();
+    if (!/^(?:ST|STATION)\s*0*[1-9]\d*$/.test(station) || station.length > 30)
+      throw Object.assign(new Error('Station non valida.'), { status: 400 });
+    return `/stations/${encodeURIComponent(station)}`;
+  }
+
+  if (String(screenCode || '').trim() === 'progremes.Produzione'
       && context?.destination === 'foglio-confezionamento') {
     const id = Number(context.productionId);
     if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647)

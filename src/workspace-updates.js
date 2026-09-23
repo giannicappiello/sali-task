@@ -1,4 +1,3 @@
-import { registerSW } from 'virtual:pwa-register';
 let notice;
 let updateWorker;
 export function showUpdateNotice(stale = false) {
@@ -31,5 +30,25 @@ export function waitForModuleRetry() {
   return new Promise(resolve => window.addEventListener('workspace:retry-module', resolve, { once: true }));
 }
 export function registerWorkspaceUpdates() {
-  const update = registerSW({ onNeedRefresh() { updateWorker = update; showUpdateNotice(); } });
+  if (!import.meta.env.PROD || !('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.register('/sw.js').then(registration => {
+    const announce = () => {
+      const worker = registration.waiting;
+      if (!worker || !navigator.serviceWorker.controller) return;
+      updateWorker = async () => {
+        worker.addEventListener('statechange', () => {
+          if (worker.state === 'activated') window.location.reload();
+        });
+        worker.postMessage({ type: 'SKIP_WAITING' });
+      };
+      showUpdateNotice();
+    };
+    announce();
+    registration.addEventListener('updatefound', () => {
+      const worker = registration.installing;
+      worker?.addEventListener('statechange', () => {
+        if (worker.state === 'installed') announce();
+      });
+    });
+  }).catch(error => console.warn('Aggiornamento app non disponibile:', error));
 }

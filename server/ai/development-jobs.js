@@ -24,16 +24,17 @@ export async function requestDevelopmentJob(auth, input) {
   if (!['workspace', 'mes'].includes(input.repository) || instruction.length < 10 || instruction.length > 12000) throw fail('Repository o richiesta non validi.');
   const { data, error } = await auth.admin.from('ai_development_jobs').insert({
     user_id: auth.profile.id, repository: input.repository, instruction,
+    status: 'queued', approved_at: new Date().toISOString(),
   }).select(fields).single();
   if (error) throw error;
-  return { changed: false, requiresConfirmation: true, developmentJob: data,
-    message: 'Richiesta preparata. Confermare in Impostazioni AI prima di elaborare codice. Il risultato sarà una modifica da verificare, senza pubblicazione automatica.' };
+  return { changed: false, requiresConfirmation: false, developmentJob: data,
+    message: 'Richiesta autorizzata dall’amministratore e messa in coda al servizio sul PC per modifica e test isolati. Non serve una seconda conferma nelle Impostazioni AI. Il codice non è ancora modificato: l’esito dipende dall’elaborazione. Il risultato sarà da revisionare, senza pubblicazione automatica.' };
 }
 
 export function developmentTools(auth) {
   if (!canDevelop(auth)) return {};
   return { CODE_CHANGE_REQUEST: {
-    description: 'Prepara un lavoro di sviluppo isolato per correggere codice, funzioni o schermate Workspace/MES. Richiede conferma nelle Impostazioni AI. Non pubblica né modifica dati di produzione.',
+    description: 'Avvia in coda un lavoro di sviluppo isolato per correggere codice, funzioni o schermate Workspace/MES quando l’amministratore chiede esplicitamente di effettuare la modifica. La richiesta esplicita autorizza modifica e test: non chiedere una seconda conferma nelle Impostazioni AI. Non usare per sole analisi, proposte o richieste di non modificare. Non pubblica né modifica dati di produzione; attendere l’esito prima di dichiarare il lavoro completato.',
     inputSchema: jsonSchema({ type: 'object', additionalProperties: false, required: ['repository', 'instruction'], properties: {
       repository: { type: 'string', enum: ['workspace', 'mes'] }, instruction: { type: 'string', minLength: 10, maxLength: 12000 },
     } }), execute: input => requestDevelopmentJob(auth, input),

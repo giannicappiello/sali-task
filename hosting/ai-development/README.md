@@ -48,7 +48,11 @@ trasformare un lavoro interrotto in un successo né ripetere scritture su MES/Me
 
 ## Esito di una richiesta
 
-La conferma autorizza elaborazione e test. Il worker fotografa una revisione Git,
+La richiesta esplicita di modifica dell’amministratore autorizza elaborazione e
+test: il lavoro entra direttamente in coda, senza una seconda conferma nelle
+Impostazioni AI. Una richiesta di sola analisi non deve avviare il lavoro.
+Le vecchie proposte già salvate restano da confermare e non vengono avviate in massa.
+Il worker fotografa una revisione Git,
 verifica le dipendenze, richiede i file necessari e applica sostituzioni vincolate
 al contenuto originale. Il modello non esegue comandi sul PC. Solo dopo test riusciti
 viene creato un commit nel ramo `codex/ai-<id>` usando un indice Git separato:

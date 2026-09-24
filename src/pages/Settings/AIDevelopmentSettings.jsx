@@ -46,7 +46,7 @@ export default function AIDevelopmentSettings() {
   }
   if (profile?.ruoli?.amministratore_workspace !== true) return null;
   return <section className="ai-cost-report" aria-labelledby="ai-development-title">
-    <div className="ai-cost-report-heading"><div><span>ASSISTENZA E SVILUPPO</span><h2 id="ai-development-title">Servizio sul PC e modifiche al codice</h2><p>Le richieste confermate vengono elaborate in isolamento. I risultati richiedono verifica prima della pubblicazione.</p></div>
+    <div className="ai-cost-report-heading"><div><span>ASSISTENZA E SVILUPPO</span><h2 id="ai-development-title">Servizio sul PC e modifiche al codice</h2><p>Le modifiche al codice richieste esplicitamente dagli amministratori vengono inviate direttamente al PC per elaborazione e test isolati. I risultati richiedono verifica prima della pubblicazione.</p></div>
       <button type="button" disabled={busy} onClick={() => act({ action: 'development_list' })}>Aggiorna stato</button></div>
     {error && <p role="alert">{error}</p>}
     <p>Cartella dedicata: <strong>C:\AssistenteAI</strong>. Il PC deve essere acceso e collegato.</p>

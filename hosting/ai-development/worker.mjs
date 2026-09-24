@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { safeDevelopmentPath } from './worker-paths.mjs';
 import { publishVerifiedRevision, verifyWorkspaceDeployment } from './publisher.mjs';
+import { supplySources, SOURCE_EXTENSIONS, MAX_SOURCE_ROUNDS, MAX_CHECK_ATTEMPTS } from './source-discovery.mjs';
 
 const MAX_BYTES = 64 * 1024 * 1024;
 const sha = value => createHash('sha256').update(value).digest('hex');
@@ -148,22 +149,25 @@ export async function run(config, { transport = fetch, once = false } = {}) {
       }
       const source = await snapshot(repo.path, repo.sourceRef || 'HEAD');
       verifyDependencyManifest(source.files, repo.dependencyManifest);
-      const index = Object.keys(source.files).filter(path => /\.(jsx?|tsx?|json|cs|razor|css|sql|md|yml|yaml)$/.test(path));
+      const index = Object.keys(source.files).filter(path => SOURCE_EXTENSIONS.test(path));
       const supplied = {};
+      const context = job.result?.requestContext;
+      if (context?.repository === job.repository && Array.isArray(context.sourceCandidates)) {
+        supplySources(source, index, supplied, context.sourceCandidates.filter(path => index.includes(path)), { requireProgress: false });
+      }
       let generated;
       let checks = [];
       let testFailure = null;
       const attempts = [];
-      for (let round = 0; round < 4; round++) {
+      const discovery = [];
+      for (let round = 0; round < MAX_SOURCE_ROUNDS + MAX_CHECK_ATTEMPTS; round++) {
         if (leaseLost) throw new Error('Sessione worker persa.');
         generated = await api({ action: 'generate', ...identity, source: { baseCommit: source.baseCommit, index, files: supplied, testFailure } });
-        for (const path of generated.requiredFiles || []) {
-          if (!index.includes(path)) throw new Error('File richiesto fuori dalla revisione.');
-          const content = Buffer.from(source.files[path], 'base64').toString('utf8');
-          if (content.includes('\u0000') || content.length > 200000) throw new Error('File non testuale o troppo grande: ' + path);
-          supplied[path] = content;
+        if (generated.requiredFiles?.length) {
+          if (discovery.length >= MAX_SOURCE_ROUNDS) throw new Error('Ricerca sorgenti troppo ampia dopo 20 acquisizioni distinte. Ultimi file richiesti: ' + generated.requiredFiles.join(', '));
+          discovery.push({ files: supplySources(source, index, supplied, generated.requiredFiles) });
+          continue;
         }
-        if (generated.requiredFiles?.length) continue;
         const files = applyEdits(source.files, generated.edits);
         checks = [];
         for (const command of repo.checks) {
@@ -174,16 +178,17 @@ export async function run(config, { transport = fetch, once = false } = {}) {
         const check = JSON.parse(raw.toString()); checks.push(check);
         if (!check.succeeded) break;
         }
-        attempts.push({ round: round + 1, checks });
+        attempts.push({ round: attempts.length + 1, checks });
         if (checks.length === repo.checks.length && checks.every(check => check.succeeded)) break;
+        if (attempts.length >= MAX_CHECK_ATTEMPTS) break;
         testFailure = { edits: generated.edits, output: checks.map(check => check.output || '').join('\n').slice(-30000) };
       }
-      if (generated.requiredFiles?.length) throw new Error('Servono altri sorgenti: limite dei cicli raggiunto.');
+      if (generated.requiredFiles?.length) throw new Error('Ricerca sorgenti incompleta: ' + generated.requiredFiles.join(', '));
       const passed = checks.length === repo.checks.length && checks.every(check => check.succeeded);
       if (leaseLost) throw new Error('Sessione worker persa prima della registrazione del risultato.');
       await api({ action: 'heartbeat', ...identity });
       const revision = passed ? await createReviewBranch(repo.path, source, generated.edits, job.id, outputRoot) : null;
-      let result = { baseCommit: source.baseCommit, summary: generated.summary, edits: generated.edits, checks, attempts, revision, published: false };
+      let result = { baseCommit: source.baseCommit, summary: generated.summary, edits: generated.edits, checks, attempts, discovery, revision, published: false };
       completedResult = result;
       if (passed) result = await publish(result);
       const path = join(outputRoot, job.id + '.json');

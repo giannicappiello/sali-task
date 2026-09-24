@@ -83,3 +83,13 @@ o configurazioni escluse dal trasferimento. Prima del rilascio MES eseguire anch
 la suite completa Windows sui sorgenti revisionati. Il worker non esegue mai
 il codice generato sul sistema Windows. La pubblicazione MES non installa il
 software né applica migrazioni sul server: questo resta parte dell'aggiornamento MES.
+
+## Ricerca dei sorgenti
+
+Il worker precarica i componenti indicati dal contesto e le importazioni locali
+immediate. Il modello può richiedere più file insieme con `SOURCE_READ_MANY`.
+Le acquisizioni di sorgenti (massimo 20, ognuna deve aggiungere file) sono separate
+dai quattro tentativi di compilazione e riparazione. Il database limita a 24 le
+chiamate totali e mantiene vincoli su revisione, sessione e autorizzazioni.
+I risultati registrano separatamente acquisizioni e test. Aggiornare anche il
+worker locale e applicare `20260924170000_ai_source_discovery_budget.sql`.

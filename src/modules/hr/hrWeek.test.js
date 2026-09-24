@@ -20,4 +20,6 @@ test('agreements support numeric schedules but never turn alphanumeric or missin
   assert.equal(minutesBetween('2026-09-24T08:00:00Z', null), null);
   assert.equal(formatMinutes(NaN), 'Non determinabile');
   assert.equal(formatMinutes(-30), '−0h 30m');
+  assert.equal(formatMinutes(0), '0h 00m');
+  assert.equal(formatMinutes(30), '+0h 30m');
 });

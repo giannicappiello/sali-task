@@ -17,6 +17,7 @@ export function minutesBetween(from, to) {
 export function formatMinutes(minutes) {
   if (!Number.isFinite(minutes)) return 'Non determinabile';
   const absolute = Math.round(Math.abs(minutes));
+  if (minutes === 0) return '0h 00m';
   return `${minutes < 0 ? '−' : '+'}${Math.floor(absolute / 60)}h ${String(absolute % 60).padStart(2, '0')}m`;
 }
 export function agreementMinutes(contract, day) {

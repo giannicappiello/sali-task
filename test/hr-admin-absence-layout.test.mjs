@@ -36,6 +36,10 @@ test('the real /settings/hr route renders the current HR module and requested co
   assert.match(moduleSource, /option value="week">Settimana/);
   assert.match(moduleSource, /option value="month">Mese/);
   assert.match(moduleSource, /option value="custom">Date selezionate/);
+  assert.match(moduleSource, /role="button" tabIndex=\{0\}/);
+  assert.match(moduleSource, /setCalendarView\('month'\)/);
+  assert.match(moduleSource, /Ore in più/);
+  assert.match(moduleSource, /Ore in meno/);
 });
 
 test('weekly HR calendar keeps all person/status content while using compact spacing', () => {

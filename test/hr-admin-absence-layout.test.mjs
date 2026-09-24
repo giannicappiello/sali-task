@@ -42,7 +42,7 @@ test('the real /settings/hr route renders the current HR module and requested co
   assert.match(moduleSource, /role="button" tabIndex=\{0\}/);
   assert.match(moduleSource, /page === 'company-calendar' && calendarView === 'week'/);
   assert.match(moduleSource, /page === 'company-calendar' && <section className="hr-panel hr-attendance-report"/);
-  assert.match(moduleSource, /setCalendarView\('month'\)/);
+  assert.match(moduleSource, /setCalendarView\('month'\)/);\n  assert.match(moduleSource, /<CompanyCalendar snapshot=\{data\} month=\{month\}/);\n  assert.match(moduleSource, /onViewChange=\{setCalendarView\}/);\n  assert.match(moduleSource, /Vista mensile/);\n  assert.doesNotMatch(moduleSource, /Calendario presenze mensile/);\n  assert.doesNotMatch(moduleSource, /false && page === 'calendar'/);\n  assert.match(moduleSource, /page === 'company-calendar' && calendarView === 'month'/);\n  assert.match(moduleSource, /aria-pressed=\{true\} onClick=\{\(\) => setCalendarView\('week'\)\}/);\n  assert.match(moduleSource, /aria-pressed=\{false\} onClick=\{\(\) => setCalendarView\('month'\)\}/);\n  const companyCalendar = fs.readFileSync('src/modules/hr/CompanyCalendar.jsx', 'utf8');\n  assert.match(companyCalendar, /Calendario aziendale · vista mensile/);\n  assert.match(companyCalendar, /onViewChange\?\.\('week'\)/);\n  assert.match(companyCalendar, /onViewChange\?\.\('month'\)/);\n  assert.match(companyCalendar, /monthDays\(month\)/);
   assert.match(moduleSource, /Ore in più/);
   assert.match(moduleSource, /Ore in meno/);
   assert.match(styles, /\.hr-week-person\{[^}]*display:flex/);

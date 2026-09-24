@@ -39,7 +39,9 @@ export default defineConfig({
       },
       workbox: {
         // Rotate the precache so clients discard entries containing HTML instead of JS.
-        cacheId: "workspace-assets-v2",
+        // Bump this whenever the application shell changes so a previously published
+        // service worker cannot keep serving the prior HR route bundle.
+        cacheId: "workspace-assets-v3",
         navigateFallbackDenylist: [/^\/api\//, /^\/assets\//],
         cleanupOutdatedCaches: true,
         clientsClaim: false,

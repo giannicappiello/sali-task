@@ -8,7 +8,7 @@ import "./progremes-frame.css";
 import PlanningActionModal from "./PlanningActionModal";
 import { useWorkspaceChrome } from "../../components/workspaceChromeContext";
 
-export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
+export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog = false }) {
   const { session, hasModuleAccess, hasScreenAccess, loading: authLoading, authorizationRevision } = useAuth();
   const navigate = useNavigate();
   const accessToken = session?.access_token;
@@ -92,7 +92,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
   const ready = Boolean(url && frameStatus.url === url && frameStatus.ready);
   if (!screenCode) return <Navigate to="/produzione" replace />;
 
-  return <section className={`progremes-workspace-frame${["progremes.Planning", "progremes.PlanningProduction"].includes(screenCode) ? " progremes-planning-frame" : ""}`}>
+  return <section className={`${inDialog ? "progremes-card-frame" : "progremes-workspace-frame"}${["progremes.Planning", "progremes.PlanningProduction"].includes(screenCode) ? " progremes-planning-frame" : ""}`}>
     {popupPath && <PlanningActionModal path={popupPath} onClose={() => { setPopupPath(""); if (url) frame.current?.contentWindow?.postMessage({ type: "workspace-mes-refresh-planning" }, new URL(url).origin); }} onNavigate={setPopupPath} />}
     {syncError && <div className="progremes-frame-status" role="alert">{syncError}</div>}
     {(!ready || error) && <div className="progremes-frame-status" role={error ? "alert" : "status"}>

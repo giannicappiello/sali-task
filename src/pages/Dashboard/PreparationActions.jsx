@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Monitor, Play, Printer } from 'lucide-react';
+import { Monitor, Play, Printer, Square } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Modal } from '../../features/production-costs/common';
 import ProductSpecificationViewButton from '../Documentation/ProductSpecificationViewButton';
 import '../Documentation/ProductSpecification.css';
+import ProgreMesLaunch from '../ProgreMes/ProgreMesLaunch';
+import { stationActionUrl } from './productionCalendar';
 
 function pdfUrl(base64) {
   return URL.createObjectURL(new Blob([Uint8Array.from(atob(base64), c => c.charCodeAt(0))], { type: 'application/pdf' }));
@@ -11,7 +13,7 @@ function pdfUrl(base64) {
 export default function PreparationActions({ activity, onStarted }) {
   const { session } = useAuth();
   const [context, setContext] = useState(null), [mode, setMode] = useState(''), [error, setError] = useState('');
-  const [sheet, setSheet] = useState(null), [busy, setBusy] = useState(false), [started, setStarted] = useState(false);
+  const [sheet, setSheet] = useState(null), [busy, setBusy] = useState(false);
   const frame = useRef(null);
   const request = useCallback(async (operation, extra = {}, signal) => {
     const response = await fetch('/api/production/actions', { method: 'POST', signal,
@@ -43,23 +45,22 @@ export default function PreparationActions({ activity, onStarted }) {
     } catch (cause) { setError(cause.message); }
     finally { setBusy(false); }
   }
-  async function start() {
-    setBusy(true); setError('');
-    try {
-      const result = await request('start');
-      if (!result.started) throw new Error('Avvio non confermato. Ricarica lo stato MES.');
-      setStarted(true); setContext(old => ({ ...old, ready: false })); onStarted?.();
-      window.dispatchEvent(new Event('workspace:production-changed'));
-    } catch (cause) { setError(cause.message); }
-    finally { setBusy(false); }
-  }
   const knownBulkCode = /^FP/i.test(activity.articleCode || '') ? activity.articleCode : '';
-  const close = () => { if (!busy) { setMode(''); setSheet(null); setError(''); } };
+  const close = () => { if (!busy) {
+    const changed = mode === 'start' || mode === 'close';
+    setMode(''); setSheet(null); setError('');
+    if (changed) {
+      request('context').then(setContext).catch(cause => setError(cause.message));
+      onStarted?.(); window.dispatchEvent(new Event('workspace:production-changed'));
+    }
+  } };
+  const actionUrl = stationActionUrl(activity, mode);
   return <>
     <ProductSpecificationViewButton articleCode={knownBulkCode || context?.bulkCode || ''} description={activity.descrizione || context?.description}/>
     <button type="button" disabled={!context?.canWrite} onClick={openSheet}><Printer size={17}/>Stampa foglio produzione</button>
     <button type="button" disabled={!activity.panelUrl} onClick={() => window.open(activity.panelUrl, '_blank', 'popup=yes,width=800,height=960,toolbar=no,menubar=no,location=no,status=no,resizable=yes,scrollbars=yes,noopener,noreferrer')}><Monitor size={17}/>Apri station</button>
-    <button type="button" disabled={!context?.canWrite || !activity.resourceCode || !context?.ready} onClick={() => { setMode('start'); setError(''); }}><Play size={17}/>Avvia lavorazione</button>
+    <button type="button" disabled={!context?.canWrite || !stationActionUrl(activity, 'start')} onClick={() => { setMode('start'); setError(''); }}><Play size={17}/>Avvia lavorazione</button>
+    <button type="button" disabled={!context?.canWrite || !stationActionUrl(activity, 'close')} onClick={() => { setMode('close'); setError(''); }}><Square size={17}/>Concludi lavorazione</button>
     {!context && !error && <p role="status">Caricamento dati preparazione…</p>}
     {context && !context.bulkCode && <p role="status">Nessun codice semilavorato associato alla formula dell’ordine.</p>}
     {!mode && error && <p role="alert" className="pc-error">{error}</p>}
@@ -69,11 +70,10 @@ export default function PreparationActions({ activity, onStarted }) {
       {sheet && <>{sheet.messages?.map((message, i) => <p key={i} className="pc-note">{message}</p>)}<iframe ref={frame} title="Foglio di produzione" src={sheet.url}/></>}
       <footer><button type="button" disabled={busy} onClick={close}>Chiudi</button>{sheet && <a href={sheet.url} download={sheet.fileName}>Scarica PDF</a>}<button type="button" disabled={busy || !sheet} onClick={print}><Printer size={17}/>{busy ? 'Preparazione…' : 'Stampa foglio produzione'}</button></footer>
     </Modal>}
-    {mode === 'start' && <Modal title="Avvia lavorazione" onClose={close}>
-      <strong>{activity.orderNumber} · {context?.bulkCode}</strong><p>Impianto: {activity.resource}</p>
-      {error && <p role="alert" className="pc-error">{error}</p>}
-      <p>{started ? 'Lavorazione avviata.' : 'Conferma l’avvio. MES verifica ODL, foglio di produzione e disponibilità dei materiali.'}</p>
-      <footer><button type="button" disabled={busy} onClick={close}>Chiudi</button><button type="button" disabled={busy || started || !context?.ready} onClick={start}>{busy ? 'Avvio…' : 'Conferma avvio'}</button></footer>
+    {(mode === 'start' || mode === 'close') && actionUrl && <Modal className="station-card-action" title={mode === 'start' ? 'Avvia lavorazione' : 'Concludi lavorazione'} onClose={close}>
+      <strong>{activity.orderNumber} · {activity.resource}</strong>
+      <ProgreMesLaunch inDialog screenCode="progremes.PlanningProduction" search={actionUrl.slice(actionUrl.indexOf('?'))}/>
+      <footer><button type="button" onClick={close}>Chiudi</button></footer>
     </Modal>}
   </>;
 }

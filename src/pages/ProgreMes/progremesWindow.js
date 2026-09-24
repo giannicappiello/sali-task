@@ -43,6 +43,13 @@ export function progremesWorkspaceDestination(data) {
   if (data?.type !== "progremes-workspace-navigate" || typeof data.path !== "string" || !data.path.startsWith("/")) return null;
   try {
     const url = new URL(data.path, "https://workspace.invalid");
+    if (url.origin === "https://workspace.invalid" && url.pathname === "/produzione/progremes.PlanningProduction"
+        && url.searchParams.get("destination") === "station"
+        && /^(?:ST|STATION)\s*0*[1-9]\d*$/.test(url.searchParams.get("station") || "")
+        && (url.searchParams.get("station") || "").length <= 30) {
+      const params = new URLSearchParams({ destination: "station", station: url.searchParams.get("station"), workspaceMesWindow: "1" });
+      return `${url.pathname}?${params}`;
+    }
     if (url.origin !== "https://workspace.invalid" || !["/versioni-piano-produzione", "/rilascio-odl", "/revisione-priorita-produzione", "/produzione/rdp-workbench", "/produzione/fabbisogni-acquisto"].includes(url.pathname)) return null;
     return `${url.pathname}${url.search}${url.hash}`;
   } catch { return null; }

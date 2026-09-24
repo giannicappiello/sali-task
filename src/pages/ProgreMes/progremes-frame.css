@@ -46,4 +46,9 @@
   height:100%;
   min-height:0;
 }
+.pc-modal.station-card-action[open] { display:flex; flex-direction:column; gap:8px; height:94dvh; max-height:94dvh; overflow:hidden; }
+.station-card-action > header, .station-card-action > strong, .station-card-action > footer { flex-shrink:0; }
+.progremes-card-frame { display:flex; flex-direction:column; flex:1; min-height:0; width:100%; overflow:hidden; }
+.progremes-card-frame > iframe { display:block; flex:1; width:100%; height:100%; min-height:0; border:0; }
+.progremes-card-frame > iframe.is-connecting { visibility:hidden; }
 

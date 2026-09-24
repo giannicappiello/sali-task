@@ -9,6 +9,13 @@ export function stationPanelUrl(operationType, resourceCode) {
   return `/produzione/progremes.PlanningProduction?destination=station&station=${encodeURIComponent(code)}&workspaceMesWindow=1`;
 }
 
+export function stationActionUrl(activity, operation) {
+  const base = stationPanelUrl(activity.operationType, activity.resourceCode);
+  const orderId = Number(activity.productionOrderId);
+  if (!base || !['start', 'close'].includes(operation) || !Number.isSafeInteger(orderId) || orderId <= 0 || orderId > 2147483647) return '';
+  return `${base}&stationAction=${operation}&orderId=${orderId}`;
+}
+
 // MES serializes local plant times without an offset. Preserve their wall time;
 // convert explicitly zoned timestamps to the plant timezone instead of device time.
 export function plantTime(value) {

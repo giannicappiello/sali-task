@@ -12,7 +12,12 @@ export function progremesContextualRoute(screenCode, context = {}, fallback = ""
     const station = String(context.station || '').trim().toUpperCase();
     if (!/^(?:ST|STATION)\s*0*[1-9]\d*$/.test(station) || station.length > 30)
       throw Object.assign(new Error('Station non valida.'), { status: 400 });
-    return `/stations/${encodeURIComponent(station)}`;
+    const path = `/stations/${encodeURIComponent(station)}`;
+    if (context.stationAction == null && context.orderId == null) return path;
+    const orderId = Number(context.orderId);
+    if (!['start', 'close'].includes(context.stationAction) || !Number.isSafeInteger(orderId) || orderId <= 0 || orderId > 2147483647)
+      throw Object.assign(new Error('Azione o ordine della station non valido.'), { status: 400 });
+    return `${path}?stationAction=${context.stationAction}&orderId=${orderId}`;
   }
 
   if (String(screenCode || '').trim() === 'progremes.Produzione'

@@ -162,16 +162,74 @@ export async function createAttendanceWorkbook(data, month, now = new Date()) {
   return workbook;
 }
 
+export const exportDate = day => day.slice(0, 10).split('-').reverse().join('-');
+
+export async function createMonthlyAttendanceWorkbook(data, month, now = new Date()) {
+  const XLSX = await import('xlsx');
+  const full = await createAttendanceWorkbook(data, month, now);
+  const book = XLSX.utils.book_new(), grid = full.Sheets['Presenze mensili'];
+  monthDays(month).forEach((day, i) => {
+    grid[XLSX.utils.encode_cell({r:4,c:i+7})] = {t:'s',v:exportDate(day)};
+    grid['!cols'][i+7] = {wch:12};
+  });
+  XLSX.utils.book_append_sheet(book, grid, 'Presenze mensili');
+  return book;
+}
+
+export async function createManagedOvertimeWorkbook(data, month, now = new Date()) {
+  const XLSX = await import('xlsx');
+  const days = monthDays(month), grouped = new Map();
+  for (const row of attendanceExportRows(data, month, now)) {
+    const summary = attendanceDaySummary(row);
+    if (!summary.separate) continue;
+    if (!grouped.has(row.employeeId)) grouped.set(row.employeeId, {
+      name:row.Dipendente, code:row.Matricola, weekday:0, festive:0, amount:0, missing:false, daily:{},
+    });
+    const item = grouped.get(row.employeeId);
+    for (const [key, value] of [['weekday',summary.weekdayOvertime],['festive',summary.festiveOvertime]])
+      item[key] = item[key] == null || value == null ? null : item[key] + value;
+    item.daily[exportDate(row.Data)] = summary.overtime == null ? 'Da verificare' : summary.overtime;
+    const c = agreementForDay(data.contracts, row.employeeId, row.Data);
+    if (summary.overtime == null) item.missing = true;
+    else if (summary.overtime > 0) {
+      if (typeof c?.overtime_rate !== 'number' || !Number.isFinite(c.overtime_rate) || typeof c?.overtime_percent !== 'number' || !Number.isFinite(c.overtime_percent)) item.missing = true;
+      else item.amount += summary.overtime * c.overtime_rate * (1 + c.overtime_percent / 100);
+    }
+  }
+  const headers = ['Dipendente','Matricola','Dal','Al','Ore feriali','Ore festive','Ore totali','Valorizzazione EUR',...days.map(exportDate)];
+  const records = [...grouped.values()].map(item => ({
+    Dipendente:item.name, Matricola:item.code, Dal:exportDate(days[0]), Al:exportDate(days.at(-1)),
+    'Ore feriali':item.weekday == null ? 'Da verificare' : round(item.weekday),
+    'Ore festive':item.festive == null ? 'Da verificare' : round(item.festive),
+    'Ore totali':item.weekday == null || item.festive == null ? 'Da verificare' : round(item.weekday+item.festive),
+    'Valorizzazione EUR':item.missing ? 'Da definire' : round(item.amount),
+    ...Object.fromEntries(days.map(day => [exportDate(day),item.daily[exportDate(day)] ?? ''])),
+  }));
+  const sheet = XLSX.utils.json_to_sheet(records, {header:headers});
+  sheet['!cols'] = headers.map((_,i) => ({wch:i===0?28:i===7?22:14}));
+  sheet['!autofilter'] = {ref:sheet['!ref']};
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book,sheet,'Straordinario gestito');
+  return book;
+}
+
 export async function attendanceWorkbookBytes(workbook) {
   const XLSX=await import('xlsx');
   return styleAttendanceFile(XLSX.write(workbook,{type:'array',bookType:'xlsx'}),workbook);
 }
 
 export async function downloadAttendanceWorkbook(data, month) {
-  const workbook=await createAttendanceWorkbook(data,month);
+  return downloadHrWorkbook(await createMonthlyAttendanceWorkbook(data,month), `Presenze_HR_${month.split('-').reverse().join('-')}.xlsx`);
+}
+
+export async function downloadManagedOvertimeWorkbook(data, month) {
+  return downloadHrWorkbook(await createManagedOvertimeWorkbook(data,month), `Straordinario_gestito_${month.split('-').reverse().join('-')}.xlsx`);
+}
+
+async function downloadHrWorkbook(workbook, filename) {
   const bytes=await attendanceWorkbookBytes(workbook);
   const url=URL.createObjectURL(new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
-  const link=document.createElement('a'); link.href=url; link.download=`Presenze_HR_${month}.xlsx`;
+  const link=document.createElement('a'); link.href=url; link.download=filename;
   document.body.append(link); link.click(); link.remove();
   setTimeout(()=>URL.revokeObjectURL(url),60000);
 }

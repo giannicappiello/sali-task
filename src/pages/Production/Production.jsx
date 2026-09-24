@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Factory, RefreshCw, ShieldCheck, Workflow } from "lucide-react";
 import { Navigate, useLocation, useParams } from "react-router-dom";
+import ProductionNavigation from "./ProductionNavigation";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
 import InfoTooltip from "../../components/InfoTooltip";
 import WorkspaceAccessGuard from "../../components/WorkspaceAccessGuard";
@@ -154,7 +155,7 @@ export default function Production() {
   }
 
   useEffect(() => {
-    if (sectionPath || !accessToken) return undefined;
+    if (!accessToken) return undefined;
     let active = true;
     const refresh = () => fetchSections()
       .then((payload) => {
@@ -171,19 +172,20 @@ export default function Production() {
     refresh();
     window.addEventListener("workspace:module-catalog-changed", refresh);
     return () => { active = false; window.removeEventListener("workspace:module-catalog-changed", refresh); };
-  }, [accessToken, sectionPath]);
+  }, [accessToken]);
 
   const customerScoped = Boolean(dataScope?.customerCode);
-  if (sectionPath === "diagnostica") return isAdminUser ? <DiagnosticsCenter /> : <Navigate to="/produzione" replace />;
-  if (sectionPath === "ordini-avanzamento") return hasPermission?.("rdp.view") && hasScreenAccess("workspace.production.progress", "progremes") ? <WorkspaceAccessGuard screenCode="workspace.production.progress"><RdpWorkbench commercial /></WorkspaceAccessGuard> : <Navigate to="/produzione" replace />;
-  if (sectionPath === "rdp-workbench") return hasPermission?.("rdp.view") ? <RdpWorkbench /> : <Navigate to="/produzione" replace />;
-  if (sectionPath === "fabbisogni-acquisto") return hasPermission?.("rdp.view") && !customerScoped ? <PurchaseRequirements /> : <Navigate to="/produzione" replace />;
-  if (sectionPath) return <SectionLauncher sectionCode={decodeURIComponent(sectionPath)} />;
-
   const visibleSections = configuredProductionSections(sections, catalog.screens, catalog.links, {
     hasPermission, isAdminUser, customerScoped, hasScreenAccess, hasAreaAccess, hasExplicitScreenGrant,
   });
   const initialPath = productionInitialPath(visibleSections, catalog.screens, catalog.links);
+  const withNavigation = content => <>{initialPath && <ProductionNavigation sections={visibleSections}/>} {content}</>;
+  if (sectionPath === "diagnostica") return isAdminUser ? withNavigation(<DiagnosticsCenter />) : <Navigate to="/produzione" replace />;
+  if (sectionPath === "ordini-avanzamento") return hasPermission?.("rdp.view") && hasScreenAccess("workspace.production.progress", "progremes") ? withNavigation(<WorkspaceAccessGuard screenCode="workspace.production.progress"><RdpWorkbench commercial /></WorkspaceAccessGuard>) : <Navigate to="/produzione" replace />;
+  if (sectionPath === "rdp-workbench") return hasPermission?.("rdp.view") ? withNavigation(<RdpWorkbench />) : <Navigate to="/produzione" replace />;
+  if (sectionPath === "fabbisogni-acquisto") return hasPermission?.("rdp.view") && !customerScoped ? withNavigation(<PurchaseRequirements />) : <Navigate to="/produzione" replace />;
+  if (sectionPath) return withNavigation(<SectionLauncher sectionCode={decodeURIComponent(sectionPath)} />);
+
   if (!loading && !error && initialPath) return <Navigate to={initialPath} replace />;
 
   return <ModuleContainerLayout

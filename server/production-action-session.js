@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 const fail = (message,status=400) => Object.assign(new Error(message),{status});
 const check = (result) => {if(result.error)throw result.error;return result.data;};
-export async function costSession(req,screen,write=false,{clientFactory=createClient}={}) {
+export async function costSession(req,screen,write=false,{clientFactory=createClient,departmentAccess}={}) {
  const token=String(req.headers?.authorization||"").replace(/^Bearer\s+/i,"");
  if(!token)throw fail("Sessione mancante.",401);
  const env=globalThis.process.env,options={auth:{persistSession:false,autoRefreshToken:false}};
@@ -18,7 +18,8 @@ export async function costSession(req,screen,write=false,{clientFactory=createCl
   caller.rpc("workspace_data_scope"),
  ]);
  const level=check(levelResult),scope=check(scopeResult);
- if(!level||level==="nessuno"||(write&&!["scrittura","gestione","completo","amministrazione"].includes(level)))throw fail("Operazione non autorizzata su questa schermata.",403);
+ const departmentGranted=departmentAccess ? await departmentAccess(admin,profile.id) : false;
+ if(!departmentGranted&&(!level||level==="nessuno"||(write&&!["scrittura","gestione","completo","amministrazione"].includes(level))))throw fail("Operazione non autorizzata su questa schermata.",403);
  if(!scope?.mode)throw fail("Ambito dati non disponibile.",403);
- return {admin,caller,profile,scope,canWrite:["scrittura","gestione","completo","amministrazione"].includes(level)};
+ return {admin,caller,profile,scope,canWrite:departmentGranted||["scrittura","gestione","completo","amministrazione"].includes(level)};
 }

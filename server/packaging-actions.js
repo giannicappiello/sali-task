@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { costSession } from './production-action-session.js';
+import { packagingSession } from './packaging-access.js';
 import { createProgremesProductionClient } from './progremes-production-client.js';
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
@@ -23,7 +23,7 @@ export function packagingActionInput(body) {
   }
   return input;
 }
-export async function handlePackagingActions(req, body, { authorize = costSession, clientFactory = createProgremesProductionClient } = {}) {
+export async function handlePackagingActions(req, body, { authorize = packagingSession, clientFactory = createProgremesProductionClient } = {}) {
   const input = packagingActionInput(body);
   const write = ['thermal-print', 'start'].includes(input.operation);
   const session = await authorize(req, 'progremes.Produzione', write);

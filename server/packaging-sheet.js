@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { costSession } from './production-action-session.js';
+import { packagingSession } from './packaging-access.js';
 import { createProgremesProductionClient } from './progremes-production-client.js';
 
-export async function handlePackagingSheet(req, body, { authorize = costSession, clientFactory = createProgremesProductionClient } = {}) {
+export async function handlePackagingSheet(req, body, { authorize = packagingSession, clientFactory = createProgremesProductionClient } = {}) {
   const id = Number(body.productionOrderId), operation = body.operation || 'read';
   if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647 || !['read', 'print'].includes(operation))
     throw Object.assign(new Error('Richiesta foglio di confezionamento non valida.'), { status: 400 });

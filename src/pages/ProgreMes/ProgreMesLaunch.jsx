@@ -53,6 +53,10 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
     if (!url) return undefined;
     const origin = new URL(url).origin;
     const receive = (event) => {
+      if (event.data.type === "progremes-open-assistant") {
+        window.dispatchEvent(new CustomEvent('workspace:open-assistant'));
+        return;
+      }
       if (event.data.type === "progremes-page-header") {
         setMesHeader(current => current?.url === url && current.title === event.data.title && current.description === event.data.description && current.canGoBack === event.data.canGoBack
           ? current : { url, title: event.data.title, description: event.data.description, canGoBack: event.data.canGoBack });
@@ -100,7 +104,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
       <p>{error || "Collegamento automatico alla schermata richiesta."}</p>
       {error && allowed && accessToken && <button type="button" className="primary-action" onClick={() => setRetry((value) => value + 1)}><RefreshCw size={18} />Riprova</button>}
     </div>}
-    {url && <iframe ref={frame} key={url} src={url} title="Schermata MES integrata in Workspace"
+    {url && <iframe ref={frame} key={url} src={url} data-assistant-mes-frame="true" title="Schermata MES integrata in Workspace"
       className={ready && !error ? "is-ready" : "is-connecting"} referrerPolicy="no-referrer" allowFullScreen
       sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-modals allow-popups"
       onLoad={() => frame.current?.contentWindow?.postMessage({ type: "workspace-mes-connect", unifiedChrome: true }, new URL(url).origin)} />}

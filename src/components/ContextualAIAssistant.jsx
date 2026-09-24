@@ -4,6 +4,7 @@ import { Bot, X, Maximize2 } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { captureAssistantContext, activeWorkspaceDialogs } from '../lib/assistantContext';
+import { captureWithMesFrame } from '../lib/assistantFrameContext';
 import './contextual-ai-assistant.css';
 import './unified-assistant.css';
 import { loadModuleWithRecovery } from '../deployment-recovery.js';
@@ -52,7 +53,11 @@ export default function ContextualAIAssistant({ title = 'Workspace', module = 'W
     return () => { window.removeEventListener('workspace:open-assistant', handler); window.removeEventListener('workspace:priority-ai', handler); };
   }, [open]);
   if (!allowed) return null;
-  const getContext = () => captureAssistantContext({ dialog: contextRoot.current, path: location.pathname + location.search, title, module });
+  const getContext = async () => {
+    const context = await captureWithMesFrame(captureAssistantContext({ dialog: contextRoot.current, path: location.pathname + location.search, title, module }));
+    setContextTitle(context.title || title);
+    return context;
+  };
   return <>
     <button type="button" className="context-ai-trigger" onClick={() => open()} aria-label="Apri assistente AI"><Bot size={21}/><span>AI</span></button>
     {dialogs.map((dialog, i) => createPortal(<button type="button" className="context-ai-trigger assistant-popup-trigger" onClick={event => {event.stopPropagation();open(dialog);}} aria-label="Apri assistente AI per questo popup"><Bot size={18}/> AI</button>, dialog.querySelector('header') || dialog, `ai-popup-${i}`))}

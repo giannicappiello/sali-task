@@ -36,7 +36,7 @@ export function isProgremesFrameMessage(event, frameWindow, origin) {
   if (event.data?.type === "progremes-page-header") return typeof event.data.title === "string" && event.data.title.length <= 300
     && typeof event.data.description === "string" && event.data.description.length <= 2000
     && typeof event.data.canGoBack === "boolean";
-  return ["progremes-embedded-ready", "progremes-embedded-auth-error", "progremes-workspace-return", "progremes-planning-applied"].includes(event.data?.type);
+  return ["progremes-embedded-ready", "progremes-embedded-auth-error", "progremes-workspace-return", "progremes-planning-applied", "progremes-open-assistant"].includes(event.data?.type);
 }
 
 export function progremesWorkspaceDestination(data) {

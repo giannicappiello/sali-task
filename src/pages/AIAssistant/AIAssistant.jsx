@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Bot, CalendarClock, Camera, Check, ChevronDown, ChevronRight, Database, Download, ExternalLink, Factory, FileText, Folder, FolderKanban, Globe2, LoaderCircle, MessageSquare, PanelLeft, Paperclip, Plus, Search, Send, ShieldCheck, ShoppingCart, Trash2, X } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
+import { captureFromMesParent } from '../../lib/assistantFrameContext';
 import MaterialTransferSummary from "../../components/MaterialTransferSummary";
 import PriorityRevisionSummary from "../../components/PriorityRevisionSummary";
 import PlanningVersionSummary from "../../components/PlanningVersionSummary";
@@ -362,9 +363,10 @@ export default function AIAssistant({ getScreenContext, embedded = false, prompt
       const headingRequested = activeMode === "interno" && isHeadingRequest(requestText);
       const mutationRequested = activeMode === "interno" && isControlledMutationRequest(requestText);
       const planningRequested = !headingRequested && !mutationRequested && activeMode === "interno" && capabilities?.planning === true && isPlanningRequest(requestText);
+      const screenContext = getScreenContext ? await getScreenContext() : await captureFromMesParent(mesScreenContext);
       const payload = planningRequested
-        ? await callAI({ action: "proposal", prompt: requestText, attachments: serializedAttachments, proposalType: inferredPlanType(requestText), conversationId, topicId: selectedTopicId })
-        : await callAI({ action: "chat", mode: activeMode, prompt: requestText, attachments: serializedAttachments, conversationId, topicId: selectedTopicId, correlationId: crypto.randomUUID(), messages: [...history, { role: "user", content: requestText }], screenContext: getScreenContext?.() || mesScreenContext });
+        ? await callAI({ action: "proposal", prompt: requestText, attachments: serializedAttachments, proposalType: inferredPlanType(requestText), conversationId, topicId: selectedTopicId, screenContext })
+        : await callAI({ action: "chat", mode: activeMode, prompt: requestText, attachments: serializedAttachments, conversationId, topicId: selectedTopicId, correlationId: crypto.randomUUID(), messages: [...history, { role: "user", content: requestText }], screenContext });
       const activeConversationId = payload.conversationId || conversationId;
       setConversationId(activeConversationId);
       if (activeConversationId) setConversationInUrl(activeConversationId);

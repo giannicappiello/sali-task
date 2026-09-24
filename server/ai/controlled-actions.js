@@ -5,6 +5,10 @@ import { priorityCall, priorityConfirmSchema, assertPriorityConfirmation, reconc
 import { HMAC_HEADERS, signProductionMessage } from "../progremes-production-hmac.js";
 import { assertClosureSnapshot, findProductionForClosure } from "./production-closure.js";
 import { assertMaterialReallocation, previewMaterialReallocation, materialReallocationSchema } from "./material-reallocation.js";
+import { formulaCall, formulaRevisionSchema } from './formula-revisions.js';
+import { lotCall, lotConfirmationSchema, assertLotPreview } from './lot-maintenance.js';
+import { productBulkSchema, productChangeSchema, productChangePreview } from './product-changes.js';
+import { machineCall, machineDraftSchema } from './machine-instructions.js';
 
 const text = { type: "string", maxLength: 500 };
 const identifier = { type: "string", minLength: 1, maxLength: 160 };
@@ -111,22 +115,45 @@ export const CONTROLLED_AI_ACTIONS = Object.freeze({
       notificationMode: { type: "string", enum: ["on_change", "on_match", "daily_summary"] }, active: { type: "boolean" },
     },
   } },
-  ARTICLE_UPDATE: { system: "workspace", risk: "write", permission: "products.write", schema: externalEntitySchema("article") },
+  ARTICLE_UPDATE: { system: "workspace", risk: "write", permission: "products.write", schema: productChangeSchema },
+  ARTICLE_BULK_UPDATE: { system: 'workspace', risk: 'write', permission: 'products.write', schema: productBulkSchema },
   DOCUMENT_METADATA_UPDATE: { system: "workspace", risk: "write", permission: "documentation.write", schema: externalEntitySchema("document") },
-  FORMULA_CREATE_REVISION: { system: "mes", risk: "write", permission: "progremes.write", schema: externalEntitySchema("formula") },
+  FORMULA_CREATE_REVISION: { system: "mes", risk: "write", permission: "progremes.write", schema: formulaRevisionSchema },
+  MACHINE_INSTRUCTION_DRAFT: { system: 'mes', risk: 'write', permission: 'progremes.write', schema: machineDraftSchema,
+    description: 'Crea esclusivamente una nuova bozza di sequenza. Richiede il contesto MACHINE_INSTRUCTION_CONTEXT. Non valida, approva, invia o avvia macchine.' },
+  MES_RESOURCE_COST_UPDATE: { system: 'mes', risk: 'write', permission: 'progremes.write', schema: {
+    type: 'object', additionalProperties: false, required: ['targetId', 'expectedHash', 'fixedProductionCost', 'reason'], properties: {
+      targetId: { type: 'integer', minimum: 1 }, expectedHash: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+      fixedProductionCost: { type: 'number', minimum: 0, maximum: 999999999 }, reason: { type: 'string', minLength: 5, maxLength: 500 },
+    },
+  } },
   PLANNING_CRITERIA_UPDATE: { system: "mes", risk: "write", permission: "progremes.write", schema: externalEntitySchema("planning") },
   RDP_UPDATE: { system: "mes", risk: "write", permission: "progremes.write", schema: externalEntitySchema("rdp") },
   OP_UPDATE: { system: "mes", risk: "write", permission: "progremes.write", schema: externalEntitySchema("op") },
-  LOT_OVERRIDE: { system: "mes", risk: "destructive", permission: "progremes.write", schema: externalEntitySchema("lot") },
+  LOT_OVERRIDE: { system: "mes", risk: "destructive", permission: "progremes.write", schema: lotConfirmationSchema },
   LOT_DOCUMENT_LINK: { system: "mes", risk: "write", permission: "progremes.write", schema: externalEntitySchema("lot_document") },
   PURCHASE_PROPOSAL_CREATE: { system: "mes", risk: "write", permission: "progremes.write", schema: externalEntitySchema("purchase") },
 });
 
 function canPropose(auth, descriptor) {
+  // Legacy registry labels without an execution handler must never become promises to the operator.
+  if ([CONTROLLED_AI_ACTIONS.PLANNING_CRITERIA_UPDATE, CONTROLLED_AI_ACTIONS.RDP_UPDATE,
+    CONTROLLED_AI_ACTIONS.OP_UPDATE, CONTROLLED_AI_ACTIONS.LOT_DOCUMENT_LINK,
+    CONTROLLED_AI_ACTIONS.PURCHASE_PROPOSAL_CREATE, CONTROLLED_AI_ACTIONS.MONITOR_RULE_CREATE].includes(descriptor)) return false;
   if (auth.manualPlanning === true) return [CONTROLLED_AI_ACTIONS.MES_PLAN_APPLY, CONTROLLED_AI_ACTIONS.MES_ODL_VERIFY].includes(descriptor);
+  const admin = auth.profile?.ruoli?.amministratore_workspace === true;
   const level = String(auth.capabilities?.role_ai_level || (auth.profile?.ruoli?.amministratore_workspace ? "conferma" : "analisi"));
-  if (!auth.profile?.ruoli?.amministratore_workspace && !["bozza", "conferma"].includes(level)) return false;
+  if (!admin && !["bozza", "conferma"].includes(level)) return false;
   if (descriptor.system === "mes" && auth.capabilities?.progremes !== true) return false;
+  if (admin) return true;
+  if (descriptor === CONTROLLED_AI_ACTIONS.ACCESS_ROLE_UPDATE) return false;
+  const module = descriptor.system === 'mes' ? 'progremes'
+    : [CONTROLLED_AI_ACTIONS.ARTICLE_UPDATE, CONTROLLED_AI_ACTIONS.ARTICLE_BULK_UPDATE].includes(descriptor) ? 'prodotti'
+      : descriptor === CONTROLLED_AI_ACTIONS.DOCUMENT_METADATA_UPDATE ? 'documenti' : null;
+  if (module) {
+    if (!['scrittura','amministrazione'].includes(auth.access?.module_levels?.[module])) return false;
+    if (Array.isArray(auth.capabilities.allowed_modules) && !auth.capabilities.allowed_modules.includes(module)) return false;
+  }
   return true;
 }
 
@@ -143,6 +170,34 @@ function stableValue(value) {
 export async function proposeControlledAction(auth, tool, input, { correlationId = randomUUID() } = {}) {
   const descriptor = CONTROLLED_AI_ACTIONS[tool];
   if (!descriptor || !canPropose(auth, descriptor)) throw Object.assign(new Error("Azione AI non autorizzata per questo profilo."), { status: 403 });
+  if (['ARTICLE_UPDATE', 'ARTICLE_BULK_UPDATE'].includes(tool)) input = await productChangePreview(auth, tool, input);
+  if (tool === 'UI_CONFIGURE_VIEW') {
+    let query = auth.scoped.from('workspace_builder_scoped_layouts').select('id,current_version')
+      .eq('target_type', input.targetType).eq('target_code', input.targetCode).eq('scope_type', input.scopeType);
+    query = input.scopeId ? query.eq('scope_id', input.scopeId) : query.is('scope_id', null);
+    const { data, error } = await query.maybeSingle();
+    if (error) throw error;
+    input = { ...input, expectedVersion: data?.current_version ?? 0 };
+  }
+  if (tool === 'DOCUMENT_METADATA_UPDATE') {
+    const { data, error } = await auth.scoped.from('documenti_workspace')
+      .select('id,titolo,categoria,marca,gamma,prodotto,parole_chiave,attivo,aggiornato_il').eq('id', input.targetId).maybeSingle();
+    if (error) throw error;
+    if (!data) throw Object.assign(new Error('Documento non trovato o non accessibile.'), { status: 404 });
+    input = { ...input, before: data };
+  }
+  if (tool === 'FORMULA_CREATE_REVISION') {
+    const preview = await formulaCall(auth, 'preview', { input });
+    if (preview.hash !== input.expectedHash) throw new Error('La formula è cambiata: leggere nuovamente la revisione.');
+    input = { ...input, evidence: preview };
+  }
+  if (tool === 'LOT_OVERRIDE') input = assertLotPreview(input, await lotCall(auth, 'result', { previewToken: input.previewToken }));
+  if (tool === 'MACHINE_INSTRUCTION_DRAFT') input = { ...input, evidence: await machineCall(auth, 'preview', { input }) };
+  if (tool === 'MES_RESOURCE_COST_UPDATE') {
+    const resource = (await formulaCall(auth, 'resources')).find(row => row.id === input.targetId);
+    if (!resource || resource.hash !== input.expectedHash) throw new Error('Impianto o costo cambiato: leggere nuovamente i dati.');
+    input = { ...input, evidence: { before: resource, after: { fixedProductionCost: input.fixedProductionCost }, historicalDocumentsRecalculated: false } };
+  }
   if (["MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(tool)) input = assertPlanningConfirmation(input, await planningCall(auth, "get", { id: input.targetId }), tool === "MES_ODL_VERIFY");
   if (tool === "MES_PRIORITY_REVISE") input = assertPriorityConfirmation(input, await checkPriorityWorkspace(auth, await priorityCall(auth, "get", { id: input.targetId })));
   if (tool === "MES_MATERIAL_REALLOCATE") {
@@ -257,6 +312,20 @@ async function executeExternalAction(auth, pending) {
     } catch { /* Keep the uncertain outcome visible; no automatic write retry. */ }
     if (failure) failure = `Chiusura non confermata: ${failure} Verificare lo stato MES prima di ripetere l'operazione.`;
   }
+  if (failure && ['FORMULA_CREATE_REVISION', 'MES_RESOURCE_COST_UPDATE', 'MACHINE_INSTRUCTION_DRAFT'].includes(pending.tool)) {
+    try {
+      const readback = await formulaCall(auth, 'result', { idempotencyKey: pending.idempotency_key });
+      if (readback?.applied === true) { result = readback; failure = null; }
+    } catch { /* Preserve the uncertain outcome; never repeat the write. */ }
+  }
+  if (failure && pending.tool === 'LOT_OVERRIDE') {
+    try {
+      const readback = await lotCall(auth, 'result', { previewToken: pending.payload_summary.previewToken });
+      result = readback;
+      if (readback?.applied === true) failure = null;
+      else failure = 'Esito Mexal da verificare nel registro lotti MES. Nessuna ripetizione automatica della scrittura.';
+    } catch { /* Keep the uncertain outcome visible. */ }
+  }
   const { data, error } = await auth.admin.rpc("complete_workspace_external_ai_action", { p_proposal_id: pending.id, p_succeeded: !failure, p_result: result || {}, p_error: failure });
   if (error) throw error;
   const action = Array.isArray(data) ? data[0] : data;
@@ -264,12 +333,19 @@ async function executeExternalAction(auth, pending) {
 }
 
 export async function decideControlledAction(auth, body) {
+  if (!["confirm", "reject"].includes(body.decision)) throw Object.assign(new Error("Decisione non valida."), { status: 400 });
   const proposalId = String(body.proposalId || "").trim();
   if (!proposalId) throw Object.assign(new Error("Proposta operativa mancante."), { status: 400 });
   const { data: pending, error: pendingError } = await auth.scoped.from("ai_action_audit").select("*").eq("id", proposalId).eq("user_id", auth.profile.id).maybeSingle();
   if (pendingError || !pending || !CONTROLLED_AI_ACTIONS[pending.tool]) throw Object.assign(new Error("Proposta non trovata o non autorizzata."), { status: 404 });
   if (auth.manualPlanning && (!["MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(pending.tool) || pending.action !== "manual_planning")) throw Object.assign(new Error("Proposta non appartenente alla pianificazione manuale."), { status: 403 });
   const confirmed = body.decision === "confirm";
+  // A stored proposal is not a permission grant. Recheck current capabilities
+  // before any preview, MES request or database mutation, even on a retry.
+  if (confirmed && (!canPropose(auth, CONTROLLED_AI_ACTIONS[pending.tool]) ||
+      (!auth.manualPlanning && auth.profile?.ruoli?.amministratore_workspace !== true && auth.capabilities?.role_ai_level !== "conferma"))) {
+    throw Object.assign(new Error("Autorizzazione alla conferma non disponibile. La proposta non è stata eseguita."), { status: 403 });
+  }
   if (confirmed && ["MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(pending.tool) && pending.status === "proposed")
     assertPlanningConfirmation(pending.payload_summary, await planningCall(auth, "get", { id: pending.payload_summary.targetId }), pending.tool === "MES_ODL_VERIFY");
   if (confirmed && pending.tool === "MES_PRIORITY_REVISE" && pending.status === "proposed") assertPriorityConfirmation(pending.payload_summary, await checkPriorityWorkspace(auth, await priorityCall(auth, "get", { id: pending.payload_summary.targetId })));
@@ -279,6 +355,16 @@ export async function decideControlledAction(auth, body) {
   if (confirmed && pending.tool === "MES_PRODUCTION_FORCE_CLOSE" && pending.status === "proposed") {
     const current = await findProductionForClosure(auth, pending.payload_summary.orderNumber);
     assertClosureSnapshot(pending.payload_summary, current.items);
+  }
+  if (confirmed && pending.tool === 'FORMULA_CREATE_REVISION' && pending.status === 'proposed') {
+    const preview = await formulaCall(auth, 'preview', { input: pending.payload_summary });
+    if (preview.hash !== pending.payload_summary.expectedHash) throw new Error('La formula è cambiata dopo la proposta. Rigenerare prima di confermare.');
+  }
+  if (confirmed && pending.tool === 'LOT_OVERRIDE' && pending.status === 'proposed') assertLotPreview(pending.payload_summary, await lotCall(auth, 'result', { previewToken: pending.payload_summary.previewToken }));
+  if (confirmed && pending.tool === 'MACHINE_INSTRUCTION_DRAFT' && pending.status === 'proposed') await machineCall(auth, 'preview', { input: pending.payload_summary });
+  if (confirmed && pending.tool === 'MES_RESOURCE_COST_UPDATE' && pending.status === 'proposed') {
+    const resource = (await formulaCall(auth, 'resources')).find(row => row.id === pending.payload_summary.targetId);
+    if (!resource || resource.hash !== pending.payload_summary.expectedHash) throw new Error('Impianto modificato dopo la proposta. Rigenerare prima di confermare.');
   }
   const { data: decided, error: decideError } = await auth.scoped.rpc(auth.manualPlanning ? "decide_workspace_manual_planning_action" : "decide_workspace_ai_action", { p_proposal_id: pending.id, p_confirm: confirmed });
   if (decideError) throw decideError;

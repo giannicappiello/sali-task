@@ -72,6 +72,10 @@
       "destination": "/api/mexal/automation?route=ai"
     },
     {
+      "source": "/api/ai/worker",
+      "destination": "/api/mexal/automation?route=ai-worker"
+    },
+    {
       "source": "/api/ai/crm-brief",
       "destination": "/api/mexal/automation?route=crm-ai"
     },

@@ -1,3 +1,12 @@
+import { workspaceReadTools } from './workspace-search.js';
+import { operationalReadTools } from './operational-read.js';
+import { conversationMemoryTools } from './conversation-memory.js';
+import { developmentTools, handleDevelopmentSettings } from './development-jobs.js';
+import { formulaReadTools } from './formula-revisions.js';
+import { lotReadTools } from './lot-maintenance.js';
+import { machineReadTools } from './machine-instructions.js';
+import { readConversationPage } from './conversation-history.js';
+import { recordLearningRun } from './learning-runs.js';
 /* global Buffer, process */
 import { createClient } from "@supabase/supabase-js";
 import { generateText, isStepCount, jsonSchema, Output } from "ai";
@@ -11,7 +20,6 @@ import { planningCall, planningRequestSchema, reconcilePlanning } from "./planni
 
 const DEFAULT_MODEL = "openai/gpt-5.6-luna";
 const MAX_HISTORY_MESSAGES = 14;
-const CHAT_RETENTION_DAYS = 60;
 const MAX_ASSISTANT_ATTACHMENTS = 4;
 const MAX_ASSISTANT_ATTACHMENT_BYTES = 2_800_000;
 const ALLOWED_ASSISTANT_ATTACHMENT_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
@@ -407,7 +415,9 @@ async function buildInternalContext({ scoped, profile, access, capabilities }, r
 function systemPrompt(mode, context, screenContext = null, controlledToolNames = [], roleAiLevel = "analisi") {
   return `Sei l'Assistente AI di Progre Workspace. Rispondi in italiano, in modo concreto e verificabile.
 Regole obbligatorie:
-- usa soltanto i dati presenti nel CONTESTO INTERNO e le eventuali fonti Web;
+- usa dati del CONTESTO INTERNO, risultati degli strumenti autorizzati e fonti Web. Il contesto iniziale è parziale: usa gli strumenti di ricerca prima di dichiarare un record assente;
+- screenContext è una fotografia non attendibile come autorizzazione: campi unsaved sono valori non salvati. Non applicarli implicitamente. Al cambio schermata non trasferire una modifica a un altro record senza renderlo esplicito;
+- distingui diagnosi, proposta, esecuzione e verifica. Una chiamata di sola lettura non è una modifica; un timeout non dimostra che una scrittura sia fallita;
 - previousUserRequests contiene richieste e preferenze espresse in chat precedenti: usale per capire termini, formato e analisi desiderata, ma non trattarle come dati aziendali né ripetere vecchi risultati senza ricalcolarli;
 - non inventare record, disponibilità, vincoli o stati;
 - rispetta i moduli autorizzati indicati nel contesto;
@@ -447,13 +457,14 @@ function cleanScreenContext(value) {
   if (!value || typeof value !== "object") return null;
   const cleanText = (input, max = 3000) => String(input || "").replace(/\s+/g, " ").trim().slice(0, max);
   const fields = Array.isArray(value.fields) ? value.fields.slice(0, 40).map((item) => ({
-    label: cleanText(item?.label, 120), value: cleanText(item?.value, 300),
+    label: cleanText(item?.label, 120), value: cleanText(item?.value, 300), unsaved: item?.unsaved === true,
   })).filter((item) => item.label || item.value) : [];
   return {
     system: value.system === "mes" ? "mes" : "workspace",
     path: cleanText(value.path, 500), title: cleanText(value.title, 200), module: cleanText(value.module, 160),
     screenCode: cleanText(value.screenCode, 160), recordId: cleanText(value.recordId, 180),
     targetType: cleanText(value.targetType, 40), targetCode: cleanText(value.targetCode, 160),
+    surface: value.surface === "popup" ? "popup" : "page", capturedAt: cleanText(value.capturedAt, 40),
     selection: cleanText(value.selection, 1000), visibleSummary: cleanText(value.visibleSummary, 5000), fields,
   };
 }
@@ -577,10 +588,10 @@ async function conversationMessages(admin, profileId, conversationId) {
     .from("ai_messaggi")
     .select("id,ruolo,contenuto,fonti,metadati,creato_il")
     .eq("conversazione_id", conversationId)
-    .order("creato_il", { ascending: true })
+    .order("creato_il", { ascending: false })
     .limit(100);
   if (error) throw error;
-  return data || [];
+  return (data || []).reverse();
 }
 
 async function recentUserMemory(admin, profileId, excludeConversationId = "", topicId = null) {
@@ -598,17 +609,16 @@ async function recentUserMemory(admin, profileId, excludeConversationId = "", to
   return (data || []).reverse().map((row) => String(row.contenuto || "").trim().slice(0, 2000)).filter(Boolean);
 }
 
-async function listConversations(auth) {
-  const staleBefore = new Date(Date.now() - CHAT_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
-  const [conversationResult, topicResult, staleResult] = await Promise.all([
-    auth.admin.from("ai_conversazioni").select("id,titolo,modalita,argomento_id,creata_il,aggiornata_il").eq("utente_id", auth.profile.id).order("aggiornata_il", { ascending: false }).limit(100),
+async function listConversations(auth, body = {}) {
+  const offset = Number(body.offset || 0);
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1000000) throw Object.assign(new Error('Pagina non valida.'), { status: 400 });
+  const [conversationResult, topicResult] = await Promise.all([
+    auth.admin.from("ai_conversazioni").select("id,titolo,modalita,argomento_id,creata_il,aggiornata_il").eq("utente_id", auth.profile.id).order("aggiornata_il", { ascending: false }).order('id', { ascending: false }).range(offset, offset + 100),
     auth.admin.from("ai_argomenti").select("id,nome,tipo,creato_il,aggiornato_il").eq("utente_id", auth.profile.id).order("aggiornato_il", { ascending: false }),
-    auth.admin.from("ai_conversazioni").select("id", { count: "exact" }).eq("utente_id", auth.profile.id).lt("aggiornata_il", staleBefore),
   ]);
   if (conversationResult.error) throw conversationResult.error;
   if (topicResult.error) throw topicResult.error;
-  if (staleResult.error) throw staleResult.error;
-  return { conversations: conversationResult.data || [], topics: topicResult.data || [], retention: { days: CHAT_RETENTION_DAYS, staleCount: staleResult.count || 0, staleConversationIds: (staleResult.data || []).map((item) => item.id) }, capabilities: auth.capabilities };
+  return { conversations: (conversationResult.data || []).slice(0, 100), nextOffset: conversationResult.data?.length > 100 ? offset + 100 : null, topics: topicResult.data || [], capabilities: auth.capabilities };
 }
 
 async function createTopic(auth, body) {
@@ -630,24 +640,11 @@ async function deleteConversation(auth, body) {
   return { deletedConversationId: data.id };
 }
 
-async function deleteStaleConversations(auth) {
-  const staleBefore = new Date(Date.now() - CHAT_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
-  const { data, error } = await auth.admin.from("ai_conversazioni").delete().eq("utente_id", auth.profile.id).lt("aggiornata_il", staleBefore).select("id");
-  if (error) throw error;
-  return { deletedCount: data?.length || 0, retentionDays: CHAT_RETENTION_DAYS };
-}
 
 async function loadConversation(auth, body) {
   const conversationId = String(body.conversationId || "").trim();
-  const messages = await conversationMessages(auth.admin, auth.profile.id, conversationId);
-  const { data: conversation } = await auth.admin
-    .from("ai_conversazioni")
-    .select("id,titolo,modalita,argomento_id,creata_il,aggiornata_il")
-    .eq("id", conversationId)
-    .eq("utente_id", auth.profile.id)
-    .maybeSingle();
-  if (!conversation) throw Object.assign(new Error("Conversazione non trovata."), { status: 404 });
-  return { conversation, messages, capabilities: auth.capabilities };
+  const page = await readConversationPage(auth.admin, auth.profile.id, conversationId, body.cursor);
+  return { ...page, capabilities: auth.capabilities };
 }
 
 async function saveExchange(admin, conversationId, prompt, answer, sources, metadata = {}, userMetadata = {}) {
@@ -727,8 +724,12 @@ async function listAutoplanning(auth) {
 }
 
 export async function runAutomaticTimeLearningScan() {
-  if (!progremesDataAvailable()) return { created: 0, candidates: 0, connectorDisabled: true };
   const admin = adminClient();
+  return recordLearningRun(admin, () => scanTimeLearning(admin));
+}
+
+async function scanTimeLearning(admin) {
+  if (!progremesDataAvailable()) return { created: 0, candidates: 0, connectorDisabled: true };
   const context = await readProgremesPlanningContext();
   const proposal = buildTimeLearningProposal(context?.data?.timeLearning?.candidates || []);
   if (!proposal.executable || !proposal.learningFingerprint) return { created: 0, candidates: 0 };
@@ -796,7 +797,7 @@ async function chat(auth, body) {
     execute: (input) => executeHeadingModelTool(auth, toolName, input, { correlationId: body.correlationId }),
   }]));
   const controlledTools = Object.fromEntries(Object.entries(availableControlledActions(auth)).map(([toolName, descriptor]) => [toolName, {
-    description: `Azione controllata ${descriptor.system === "mes" ? "ProgreMES/MES tramite tunnel firmato" : "Workspace"}. Rischio: ${descriptor.risk}. Crea solo una proposta da confermare; non applica subito la modifica.`,
+    description: `${descriptor.description || ''} Azione controllata ${descriptor.system === "mes" ? "ProgreMES/MES tramite tunnel firmato" : "Workspace"}. Rischio: ${descriptor.risk}. Crea solo una proposta da confermare; non applica subito la modifica.`,
     inputSchema: jsonSchema(descriptor.schema),
     execute: (input) => proposeControlledAction(auth, toolName, input, { correlationId: body.correlationId }),
   }]));
@@ -831,7 +832,7 @@ async function chat(auth, body) {
   } : {};
   const tools = mode === "web"
     ? { ...headingTools, web_search: openai.tools.webSearch({ externalWebAccess: true, searchContextSize: "medium" }) }
-    : { ...headingTools, ...productionTools, ...materialTools, ...priorityTools, ...planningTools, ...controlledTools };
+    : { ...developmentTools(auth), ...conversationMemoryTools(auth), ...workspaceReadTools(auth), ...operationalReadTools(auth), ...(controlledTools.FORMULA_CREATE_REVISION ? formulaReadTools(auth) : {}), ...(controlledTools.LOT_OVERRIDE ? lotReadTools(auth) : {}), ...(controlledTools.MACHINE_INSTRUCTION_DRAFT ? machineReadTools(auth) : {}), ...headingTools, ...productionTools, ...materialTools, ...priorityTools, ...planningTools, ...controlledTools };
   const model = process.env.AI_MODEL || DEFAULT_MODEL;
   const mutationRequested = mode !== "web" && isControlledMutationRequest(prompt);
   const controlledToolNames = Object.keys(controlledTools);
@@ -851,7 +852,7 @@ async function chat(auth, body) {
       ...(mutationRequested && controlledToolNames.length ? {
         prepareStep: ({ stepNumber }) => ({ toolChoice: stepNumber === 0 ? "required" : "auto" }),
       } : {}),
-      stopWhen: isStepCount(6),
+      stopWhen: isStepCount(12),
       maxOutputTokens: 1800,
       providerOptions: gatewayOptions(auth.profile.id, mode),
     });
@@ -869,7 +870,7 @@ async function chat(auth, body) {
   const downloadablePdf = artifacts.some((artifact) => artifact.kind === "pdf");
   const storedAttachments = attachmentMetadata(attachments);
   const hasPendingAction = Boolean(headingAction || controlledActions.length);
-  const answer = result.text || (hasPendingAction ? "Ho preparato l’azione richiesta. Verifica l’anteprima e conferma per applicarla." : "Operazione completata tramite gli strumenti autorizzati.");
+  const answer = result.text || (hasPendingAction ? "Ho preparato l’azione richiesta. Verifica l’anteprima e conferma per applicarla." : "Non ho ottenuto un esito conclusivo verificabile. Nessuna modifica viene dichiarata completata.");
   await saveExchange(auth.admin, conversationId, displayedPrompt(prompt, attachments), answer, sources, { model, mode, generationId, costUsd: usage.cost, downloadablePdf, artifacts, headingToolCalls: allToolCalls.map((item) => item.toolName), controlledActions, screenContext }, { attachments: storedAttachments });
   return { conversationId, answer, sources, usage, capabilities: auth.capabilities, downloadablePdf, artifacts, headingAction, controlledActions, controlledAction: controlledActions[0] || null };
 }
@@ -957,37 +958,51 @@ async function createProposal(auth, body) {
   return { conversationId, answer, proposal: { id: stored.id, state: stored.stato, createdAt: stored.creata_il, type: proposalType, ...proposal }, usage, capabilities: auth.capabilities };
 }
 
-async function applyProgremesProposal(proposal) {
+async function applyProgremesProposal(proposal, actorId) {
   if (String(process.env.PROGREMES_AI_PLANNING_ENABLED || "").toLowerCase() !== "true") {
     return { applied: false, connectorRequired: true, message: "Proposta approvata. Il connettore di pianificazione ProgreMES deve ancora essere abilitato." };
   }
   const url = new URL(String(process.env.PROGREMES_AI_APPLY_PATH || "/api/workspace/ai/planning/apply"), required("PROGREMES_URL"));
   const response = await fetch(url, {
     method: "POST",
+    signal: AbortSignal.timeout(55000),
     headers: { "Content-Type": "application/json", "X-Workspace-Secret": required("PROGREMES_INTEGRATION_SECRET") },
-    body: JSON.stringify({ proposalId: proposal.id, criterion: proposal.criterio, proposal: proposal.proposta }),
+    body: JSON.stringify({ proposalId: proposal.id, actor: `workspace:${actorId}`, criterion: proposal.criterio, proposal: proposal.proposta }),
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || `ProgreMES ha risposto con stato ${response.status}.`);
-  return { applied: true, message: "Piano inviato e applicato da ProgreMES.", details: payload };
+  if (payload.applied !== true) throw new Error(payload.error || 'MES non ha confermato l’applicazione. Verificare l’esito prima di ripetere.');
+  return { applied: true, message: payload.message || "Operazione confermata da ProgreMES.", details: payload };
 }
 
 async function decideProposal(auth, body) {
   if (!auth.capabilities.apply_plans) throw Object.assign(new Error("Approvazione dei piani non autorizzata."), { status: 403 });
   const proposalId = String(body.proposalId || "").trim();
-  const decision = body.decision === "reject" ? "reject" : "approve";
+  if (!['reject', 'approve'].includes(body.decision)) throw Object.assign(new Error('Decisione non valida.'), { status: 400 });
+  const decision = body.decision;
   const { data: proposal, error } = await auth.admin.from("ai_proposte").select("*").eq("id", proposalId).eq("utente_id", auth.profile.id).maybeSingle();
   if (error || !proposal) throw Object.assign(new Error("Proposta non trovata o non autorizzata."), { status: 404 });
   if (proposal.stato !== "bozza") throw Object.assign(new Error("La proposta è già stata gestita."), { status: 409 });
+  const approvedAt = new Date().toISOString();
+  const { data: claimed, error: claimError } = await auth.admin.from('ai_proposte').update({
+    stato: decision === 'reject' ? 'rifiutata' : 'in_applicazione', approvata_il: decision === 'approve' ? approvedAt : null,
+  }).eq('id', proposal.id).eq('utente_id', auth.profile.id).eq('stato', 'bozza').select('id').maybeSingle();
+  if (claimError) throw claimError;
+  if (!claimed) throw Object.assign(new Error('La proposta è già stata gestita da un’altra richiesta.'), { status: 409 });
   if (decision === "reject") {
-    await auth.admin.from("ai_proposte").update({ stato: "rifiutata" }).eq("id", proposal.id);
     await auth.admin.from("ai_audit_log").insert({ utente_id: auth.profile.id, azione: "proposta_rifiutata", entita_tipo: proposal.tipo, entita_id: proposal.id });
     return { proposalId, state: "rifiutata", message: "Proposta rifiutata. Nessuna modifica è stata applicata." };
   }
-  const approvedAt = new Date().toISOString();
-  await auth.admin.from("ai_proposte").update({ stato: "approvata", approvata_il: approvedAt }).eq("id", proposal.id);
   let application = { applied: false, message: "Proposta approvata. Nessuna modifica automatica prevista per questo tipo di piano." };
-  if (proposal.tipo === "piano_produzione") application = await applyProgremesProposal(proposal);
+  try {
+    if (proposal.tipo === "piano_produzione") application = await applyProgremesProposal(proposal, auth.profile.id);
+  } catch (failure) {
+    const message = `Esito non confermato: ${failure.message}. Verificare il registro MES prima di ripetere.`;
+    const { error: stateError } = await auth.admin.from('ai_proposte').update({ stato: 'errore' }).eq('id', proposal.id).eq('stato', 'in_applicazione');
+    if (stateError) throw stateError;
+    await auth.admin.from('ai_audit_log').insert({ utente_id: auth.profile.id, azione: 'proposta_esito_da_verificare', entita_tipo: proposal.tipo, entita_id: proposal.id, dettagli: { error: message } });
+    return { proposalId, state: 'errore', applied: false, message };
+  }
   const state = application.applied ? "applicata" : application.connectorRequired ? "connettore_richiesto" : "approvata";
   await auth.admin.from("ai_proposte").update({ stato: state, applicata_il: application.applied ? new Date().toISOString() : null }).eq("id", proposal.id);
   await auth.admin.from("ai_audit_log").insert({ utente_id: auth.profile.id, azione: application.applied ? "proposta_applicata" : "proposta_approvata", entita_tipo: proposal.tipo, entita_id: proposal.id, dettagli: application.details || {} });
@@ -998,6 +1013,7 @@ export async function handleAIAssistant(req) {
   if (req.method !== "POST") throw Object.assign(new Error("Metodo non consentito."), { status: 405 });
   const auth = await authorizeAIRequest(req);
   const body = req.body && typeof req.body === "object" ? req.body : {};
+  if (String(body.action || '').startsWith('development_')) return handleDevelopmentSettings(auth, body);
   if (body.action === "capabilities") return { capabilities: auth.capabilities };
   if (body.action === "heading_command") return { ...(await interpretHeadingCommand(auth, body)), capabilities: auth.capabilities };
   if (body.action === "heading_decide") return { ...(await decideHeadingAction(auth, body)), capabilities: auth.capabilities };
@@ -1016,10 +1032,9 @@ export async function handleAIAssistant(req) {
   if (body.action === "priority_status") return reconcilePriority(auth, body.id);
   if (body.action === "priority_propose") return proposeControlledAction(auth, "MES_PRIORITY_REVISE", body.input || {});
   if (body.action === "material_allocation_propose") return proposeControlledAction(auth, "MES_MATERIAL_REALLOCATE", body.input || {});
-  if (body.action === "list_conversations") return listConversations(auth);
+  if (body.action === "list_conversations") return listConversations(auth, body);
   if (body.action === "create_topic") return createTopic(auth, body);
   if (body.action === "delete_conversation") return deleteConversation(auth, body);
-  if (body.action === "delete_stale_conversations") return deleteStaleConversations(auth);
   if (body.action === "load_conversation") return loadConversation(auth, body);
   if (body.action === "list_autoplanning") return listAutoplanning(auth);
   if (body.action === "time_learning_review") return createProposal(auth, {

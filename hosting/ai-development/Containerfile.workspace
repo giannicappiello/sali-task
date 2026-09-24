@@ -1,0 +1,9 @@
+FROM docker.io/library/node@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6
+WORKDIR /opt/workspace
+COPY package.json pnpm-lock.yaml ./
+# Match the deployment's frozen pnpm graph. Lifecycle scripts never run here.
+RUN npm install -g pnpm@10.28.0 --ignore-scripts --no-audit --no-fund && pnpm install --frozen-lockfile --ignore-scripts && npm cache clean --force
+ENV NODE_PATH=/opt/workspace/node_modules
+# Git is needed by the repository/review tests; this adds no host or network access at runtime.
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+WORKDIR /work

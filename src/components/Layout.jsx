@@ -47,7 +47,6 @@ const baseMenuItems = [
   { path: "/products", label: "Prodotti", icon: Package, module: "prodotti" },
   { path: "/magazzino-dashboard", label: "Magazzino", icon: Warehouse, module: "magazzino" },
   { path: "/documentation", label: "Documenti", icon: FileArchive, module: "documenti" },
-  { path: "/assistente-ai", label: "Assistente AI", icon: Bot, module: "assistente_ai" },
   { path: "/progremes", label: "ProgreMES APS", icon: Factory, module: "progremes" },
   { path: "/produzione", label: "Produzione", icon: Workflow, accessModule: "progremes", persistent: true },
   { path: "/analisi-dati", label: "Analisi dati", icon: BarChart3, feature: "analisi_dati", module: "analisi_dati" },
@@ -356,6 +355,7 @@ function Layout() {
     () =>
       menuItems.filter((item) => {
         const itemModuleCode = item.catalogModule || item.module || item.accessModule || "";
+        if (itemModuleCode === "assistente_ai" || item.path === "/assistente-ai") return false;
         const screenGrant = getModuleScreenGrant(itemModuleCode);
         if (item.adminOnly && !isAdminUser) return false;
         if (item.module && !hasModuleAccess(item.module) && !screenGrant) return false;
@@ -683,7 +683,7 @@ function Layout() {
           </div>
 
           <div className="topbar-actions">
-            <ContextualAIAssistant key={location.pathname} title={screenHeader?.title || currentPage.title} module={currentPage.title} />
+            <ContextualAIAssistant title={screenHeader?.title || currentPage.title} module={currentPage.title} />
             {location.pathname !== "/home" && <button type="button" className="topbar-home-btn topbar-back-btn" onClick={screenHeader?.onBack || goBack} aria-label={screenHeader?.backLabel ? `Torna a ${screenHeader.backLabel}` : "Indietro"}><ArrowLeft size={19} /><span>Indietro</span></button>}
             <button type="button" className="topbar-home-btn" onClick={() => navigate("/home")} aria-label="Vai alla Home"><Home size={19} /><span>Home</span></button>
             <button type="button" className="icon-btn notification-btn" onClick={openNotifications} aria-label="Apri notifiche"><Bell size={21} />{notificationCount > 0 && <small>{notificationCount}</small>}</button>

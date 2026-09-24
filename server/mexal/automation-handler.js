@@ -32,6 +32,7 @@ import { handleProgremesReadonlyRequest } from "../../server/progremes-readonly-
 import { createProgremesClient, readAllProgremesArticles, readAllProgremesSuppliers } from "../../server/progremes-readonly-client.js";
 import { createProgremesDiagnosticManager } from "../../server/progremes-diagnostics-client.js";
 import { handleAIAssistant } from "../../server/ai/assistant.js";
+import { handleDevelopmentWorker } from "../../server/ai/development-jobs.js";
 import { handlePlanningWorkspace } from "../../server/planning-workspace.js";
 import { handleCrmBrief } from "../../server/ai/crm-brief.js";
 import { handleAIOrderDocument } from "../../server/ai/order-document.js";
@@ -592,9 +593,9 @@ export default async function handler(req, res) {
   if (req.query?.route === "progremes-readonly") {
     return handleProgremesReadonlyRequest(req, res);
   }
-  if (["ai", "planning-workspace"].includes(req.query?.route)) {
+  if (["ai", "ai-worker", "planning-workspace"].includes(req.query?.route)) {
     try {
-      const result = await (req.query.route === "planning-workspace" ? handlePlanningWorkspace(req) : handleAIAssistant(req));
+      const result = await (req.query.route === "planning-workspace" ? handlePlanningWorkspace(req) : req.query.route === 'ai-worker' ? handleDevelopmentWorker(req) : handleAIAssistant(req));
       return res.status(200).json({ success: true, ...result });
     } catch (error) {
       const status = Number(error?.status || 500);

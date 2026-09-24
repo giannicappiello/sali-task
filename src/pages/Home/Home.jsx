@@ -27,7 +27,7 @@ const DESCRIPTION_BY_PATH = Object.freeze({
 export default function Home() {
   const visibleMenuItems = useOutletContext();
   const cards = useMemo(() => (visibleMenuItems || [])
-    .filter((item) => item.path !== "/home")
+    .filter((item) => item.path !== "/home" && item.path !== "/assistente-ai")
     .map((card) => {
       const isProductionHub = card.module === "progremes" && card.path === "/produzione";
       let launchesProgremes = false;

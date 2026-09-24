@@ -1,0 +1,9 @@
+FROM mcr.microsoft.com/dotnet/sdk@sha256:28e7a5db4f5d40cc805acd939a065668ba2e17d697a09153054dce98db240d0e
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 NUGET_PACKAGES=/opt/nuget/packages
+WORKDIR /opt/mes
+COPY ProgreMES.APS.csproj ./
+COPY Tests/Planning/ProgreMES.APS.Planning.Tests.csproj ./Tests/Planning/
+# Razor activates an additional SDK assets package even though project references are unchanged.
+RUN mkdir -p Components && printf '<div></div>\n' > Components/RestoreProbe.razor && dotnet restore Tests/Planning/ProgreMES.APS.Planning.Tests.csproj -p:NuGetAudit=false --source https://api.nuget.org/v3/index.json
+WORKDIR /work
+COPY check-mes-linux.sh /opt/mes/check-mes-linux.sh

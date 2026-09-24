@@ -58,7 +58,7 @@ async function requestAI(token, body) {
   return payload;
 }
 
-export default function AIAssistant() {
+export default function AIAssistant({ getScreenContext, embedded = false, promptRequest }) {
   const { session, profile } = useAuth();
   const mesScreenContext = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
@@ -76,6 +76,8 @@ export default function AIAssistant() {
   const [mode, setMode] = useState("interno");
   const [conversationId, setConversationId] = useState("");
   const [conversations, setConversations] = useState([]);
+  const [conversationOffset, setConversationOffset] = useState(null);
+  const [conversationPageBusy, setConversationPageBusy] = useState(false);
   const [topics, setTopics] = useState([]);
   const [selectedTopicId, setSelectedTopicId] = useState("");
   const [expandedTopics, setExpandedTopics] = useState(() => new Set(["general"]));
@@ -86,6 +88,8 @@ export default function AIAssistant() {
   const [historySearch, setHistorySearch] = useState("");
   const [historyBusy, setHistoryBusy] = useState(false);
   const [messages, setMessages] = useState([initialWelcome()]);
+  const [historyCursor, setHistoryCursor] = useState(null);
+  const prependingHistory = useRef(false);
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [attachments, setAttachments] = useState([]);
@@ -100,7 +104,12 @@ export default function AIAssistant() {
   const endRef = useRef(null);
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
-  const retentionPromptedRef = useRef(false);
+
+  useEffect(() => {
+    // A contextual command from another screen fills the existing composer.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (promptRequest?.text) setPrompt(promptRequest.text);
+  }, [promptRequest]);
 
   useEffect(() => {
     if (!session?.access_token) return;
@@ -113,13 +122,10 @@ export default function AIAssistant() {
       const loadedCapabilities = capabilityPayload.capabilities;
       setCapabilities(loadedCapabilities);
       setConversations(recentConversations);
+      setConversationOffset(historyPayload.nextOffset ?? null);
       setTopics(historyPayload.topics || []);
       setAutoProposals(autoPlanningPayload.proposals || []);
       setExpandedTopics(new Set(["general", ...(historyPayload.topics || []).map((topic) => topic.id)]));
-      if (historyPayload.retention?.staleCount > 0 && !retentionPromptedRef.current) {
-        retentionPromptedRef.current = true;
-        void confirmStaleConversationDeletion(historyPayload.retention);
-      }
       const requestedConversation = new URLSearchParams(window.location.search).get("conversation");
       const contextualPrompt = new URLSearchParams(window.location.search).get("prompt");
       if (contextualPrompt) setPrompt(contextualPrompt.slice(0, 4000));
@@ -128,9 +134,12 @@ export default function AIAssistant() {
     }).catch((requestError) => setError(requestError.message));
     // L'inizializzazione deve ripartire soltanto quando cambia la sessione autenticata.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.access_token]);
+  }, [session?.user?.id]);
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, busy]);
+  useEffect(() => {
+    if (prependingHistory.current) { prependingHistory.current = false; return; }
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, busy]);
 
   useEffect(() => {
     if (!session?.access_token) return undefined;
@@ -163,6 +172,7 @@ export default function AIAssistant() {
   }
 
   function setConversationInUrl(id = "") {
+    if (embedded) return;
     const url = new URL(window.location.href);
     if (id) url.searchParams.set("conversation", id);
     else url.searchParams.delete("conversation");
@@ -173,35 +183,30 @@ export default function AIAssistant() {
     if (!session?.access_token) return;
     const payload = await callAI({ action: "list_conversations" });
     setConversations(payload.conversations || []);
+    setConversationOffset(payload.nextOffset ?? null);
     setTopics(payload.topics || []);
     return payload;
   }
 
-  async function confirmStaleConversationDeletion(retention) {
-    const count = Number(retention?.staleCount || 0);
-    if (!count) return;
-    const message = `Sono presenti ${count} chat non utilizzate da più di ${retention.days || 60} giorni. Confermi l’eliminazione definitiva delle vecchie chat?`;
-    const confirmed = window.workspaceConfirm ? await window.workspaceConfirm(message, { title: "Pulizia cronologia AI", variant: "danger", confirmLabel: "Elimina vecchie chat" }) : window.confirm(message);
-    if (!confirmed) return;
+  async function loadOlderConversations() {
+    if (conversationPageBusy || conversationOffset === null) return;
+    setConversationPageBusy(true);
     try {
-      const result = await callAI({ action: "delete_stale_conversations" });
-      const refreshed = await refreshConversations();
-      if ((retention.staleConversationIds || []).includes(conversationId)) newConversation(selectedTopicId);
-      if (result.deletedCount > 0) setError("");
-      if (!refreshed?.conversations?.length) newConversation(selectedTopicId);
-    } catch (requestError) {
-      setError(requestError.message);
-    }
+      const payload = await callAI({ action: 'list_conversations', offset: conversationOffset });
+      setConversations(current => [...new Map([...current, ...(payload.conversations || [])].map(row => [row.id, row])).values()]);
+      setConversationOffset(payload.nextOffset ?? null);
+    } catch (err) { setError(err.message); }
+    finally { setConversationPageBusy(false); }
   }
 
-  async function openConversation(id) {
+  async function openConversation(id, cursor = null) {
     if (!id || historyBusy) return;
     setHistoryBusy(true);
     setAutoPlanningOpen(false);
     setMobileSidebarOpen(false);
     setError("");
     try {
-      const payload = await callAI({ action: "load_conversation", conversationId: id });
+      const payload = await callAI({ action: "load_conversation", conversationId: id, cursor });
       const restoredMessages = (payload.messages || []).map((message) => ({
         id: message.id,
         role: message.ruolo,
@@ -213,7 +218,11 @@ export default function AIAssistant() {
       setConversationId(payload.conversation.id);
       setSelectedTopicId(payload.conversation.argomento_id || "");
       setMode(payload.conversation.modalita || "interno");
-      setMessages(restoredMessages.length ? restoredMessages : [initialWelcome()]);
+      setHistoryCursor(payload.nextCursor || null);
+      if (cursor) {
+        prependingHistory.current = true;
+        setMessages(current => [...restoredMessages.filter(item => !current.some(existing => existing.id === item.id)), ...current]);
+      } else setMessages(restoredMessages.length ? restoredMessages : [initialWelcome()]);
       setProposal(null);
       setConversationInUrl(payload.conversation.id);
     } catch (requestError) {
@@ -225,6 +234,7 @@ export default function AIAssistant() {
   }
 
   function newConversation(topicId = selectedTopicId) {
+    setHistoryCursor(null);
     setAutoPlanningOpen(false);
     setMobileSidebarOpen(false);
     setConversationId("");
@@ -334,7 +344,7 @@ export default function AIAssistant() {
       const planningRequested = !headingRequested && !mutationRequested && activeMode === "interno" && capabilities?.planning === true && isPlanningRequest(requestText);
       const payload = planningRequested
         ? await callAI({ action: "proposal", prompt: requestText, attachments: serializedAttachments, proposalType: inferredPlanType(requestText), conversationId, topicId: selectedTopicId })
-        : await callAI({ action: "chat", mode: activeMode, prompt: requestText, attachments: serializedAttachments, conversationId, topicId: selectedTopicId, correlationId: crypto.randomUUID(), messages: [...history, { role: "user", content: requestText }], screenContext: mesScreenContext });
+        : await callAI({ action: "chat", mode: activeMode, prompt: requestText, attachments: serializedAttachments, conversationId, topicId: selectedTopicId, correlationId: crypto.randomUUID(), messages: [...history, { role: "user", content: requestText }], screenContext: getScreenContext?.() || mesScreenContext });
       const activeConversationId = payload.conversationId || conversationId;
       setConversationId(activeConversationId);
       if (activeConversationId) setConversationInUrl(activeConversationId);
@@ -404,7 +414,7 @@ export default function AIAssistant() {
   }
 
   return (
-    <section className="ai-assistant-page">
+    <section className={`ai-assistant-page ${embedded ? "ai-assistant-embedded" : ""}`}>
       {mobileSidebarOpen && <button type="button" className="ai-mobile-sidebar-overlay" aria-label="Chiudi menu Assistente AI" onClick={() => setMobileSidebarOpen(false)} />}
       <aside className={`ai-assistant-sidebar ${mobileSidebarOpen ? "mobile-open" : ""}`} aria-label="Modalità e cronologia Assistente AI">
         <div className="ai-assistant-brand"><span><Bot size={24} /></span><div><strong>Progre AI</strong><small>Assistente Workspace</small></div><button type="button" className="ai-mobile-sidebar-close" onClick={() => setMobileSidebarOpen(false)} aria-label="Chiudi modalità e cronologia"><X size={20} /></button></div>
@@ -453,6 +463,7 @@ export default function AIAssistant() {
               ))}{group.conversations.length === 0 && <small className="ai-history-empty">Nessuna chat. Premi + per iniziare.</small>}</div>}
             </section>;
           })}</div>
+          {conversationOffset !== null && <button type="button" disabled={conversationPageBusy} onClick={loadOlderConversations}>{conversationPageBusy ? 'Caricamento…' : 'Carica conversazioni precedenti'}</button>}
         </div>
         <div className="ai-access-summary">
           <ShieldCheck size={18} />
@@ -474,6 +485,7 @@ export default function AIAssistant() {
         </div>}
 
         {!autoPlanningOpen && <div className="ai-chat-messages" aria-live="polite">
+          {historyCursor && <button type="button" disabled={historyBusy} onClick={() => openConversation(conversationId, historyCursor)}>{historyBusy ? "Caricamento…" : "Carica messaggi precedenti"}</button>}
           {messages.map((message) => (
             <article key={message.id} className={`ai-message ${message.role}`}>
               {message.role === "assistant" && <span className="ai-message-avatar"><Bot size={18} /></span>}

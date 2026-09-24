@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from 'react-dom';
 import { AlertTriangle, CalendarDays, CheckCircle2, Info, X } from "lucide-react";
 import "./BrandedDialogProvider.css";
 
@@ -52,7 +53,9 @@ export default function BrandedDialogProvider() {
   const Icon = destructive ? AlertTriangle : dialog.type === "alert" ? Info : CheckCircle2;
   const cancelValue = dialog.type === "confirm" ? false : null;
   const isItalianDate = dialog.inputType === "italian-date";
-  return <div className="brand-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) close(cancelValue); }}>
+  // A confirmation opened from a native modal must stay inside its top layer.
+  const portalTarget = document.querySelector('dialog[data-workspace-assistant][open]') || [...document.querySelectorAll('dialog[open]')].at(-1) || document.body;
+  return createPortal(<div className="brand-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) close(cancelValue); }}>
     <section className="brand-dialog" role="dialog" aria-modal="true" aria-labelledby="brand-dialog-title">
       <button className="brand-dialog-close" type="button" onClick={() => close(cancelValue)} aria-label="Chiudi"><X size={20} /></button>
       <div className="brand-dialog-brand"><img src="/pwa-192x192.png" alt="" /><span>PROGRE WORKSPACE</span></div>
@@ -95,5 +98,5 @@ export default function BrandedDialogProvider() {
         <button autoFocus={dialog.type !== "prompt"} type="button" className={destructive ? "brand-dialog-danger" : "brand-dialog-primary"} onClick={() => close(dialog.type === "prompt" ? inputValue : true)}>{dialog.confirmLabel || (dialog.type === "alert" ? "OK" : "Conferma")}</button>
       </div>
     </section>
-  </div>;
+  </div>, portalTarget);
 }

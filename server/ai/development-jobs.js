@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { jsonSchema } from 'ai';
 import { generateDevelopmentChange } from './development-agent.js';
+import { resolveUiSourceContext } from './ui-source-context.js';
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 export const canDevelop = auth => auth.profile?.ruoli?.amministratore_workspace === true;
@@ -32,6 +33,7 @@ export async function requestDevelopmentJob(auth, input) {
   const { data, error } = await auth.admin.from('ai_development_jobs').insert({
     user_id: auth.profile.id, conversation_id: auth.conversationId || null, repository: input.repository, instruction,
     status: 'queued', approved_at: new Date().toISOString(), publish_requested: input.publish !== false,
+    ...(auth.screenContext ? { result: { requestContext: resolveUiSourceContext(auth.screenContext) } } : {}),
   }).select(fields).single();
   if (error) throw error;
   return { changed: false, requiresConfirmation: false, developmentJob: data,
@@ -58,7 +60,11 @@ export async function requestDevelopmentPublication(auth, id) {
 
 export function developmentTools(auth) {
   if (!canDevelop(auth)) return {};
-  return { CODE_PUBLISH_REQUEST: {
+  return { CODE_LOCATE_UI: {
+    description: 'Identifica il popup o la schermata aperta e i componenti candidati nel repository. I popup interni non hanno necessariamente un URL autonomo: non chiederlo. Usa questa lettura prima di una modifica UI se il componente non è chiaro; i file vanno verificati nella revisione corrente dal servizio di sviluppo.',
+    inputSchema: jsonSchema({ type: 'object', additionalProperties: false, properties: {} }),
+    execute: () => ({ target: resolveUiSourceContext(auth.screenContext), changed: false }),
+  }, CODE_PUBLISH_REQUEST: {
     description: 'Pubblica su main un lavoro già testato quando l’admin chiede il rilascio. Verifica Workspace in produzione; per MES pubblica i sorgenti e segnala di aggiornare il server. Non ripetere se un lavoro di pubblicazione è già in corso.',
     inputSchema: jsonSchema({ type: 'object', additionalProperties: false, required: ['id'], properties: { id: { type: 'string', format: 'uuid' } } }), execute: input => requestDevelopmentPublication(auth, input.id),
   }, CODE_JOB_LIST: {
@@ -177,6 +183,7 @@ export async function handleDevelopmentWorker(req) {
     status: body.succeeded === true ? (body.result?.published === true ? 'published' : 'review') : 'failed', finished_at: new Date().toISOString(),
     result: body.result || current.result || {}, error: body.succeeded === true ? null : String(body.error || 'Verifica non riuscita.').slice(0, 2000),
   };
+  if (update.result && current.result?.requestContext) update.result = { ...update.result, requestContext: current.result.requestContext };
   if (JSON.stringify(update).length > 2000000) throw fail('Risultato troppo grande.', 413);
   const { data, error: updateError } = await admin.from('ai_development_jobs').update(update)
     .eq('id', body.jobId).eq('host_id', host.id).eq('lease_token', body.leaseToken).eq('status', 'running')

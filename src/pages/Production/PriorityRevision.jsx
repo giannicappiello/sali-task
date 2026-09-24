@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { ArrowRight, Bot, CalendarClock, Check, Search } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import PriorityRevisionSummary from "../../components/PriorityRevisionSummary";
+import { suggestMaterialDisengagements } from "./priority-material-suggestions";
 import "./priority-revision.css";
 
 const number = new Intl.NumberFormat("it-IT", { maximumFractionDigits: 6 });
@@ -69,6 +70,7 @@ export function PriorityRevisionForm({ token, compact = false, initialSearch }) 
     const data = await request("priority_materials", { orderNumber: order.orderNumber });
     setSelected(order); setMaterials(data.materials); setMaterialNote(data.note || ""); setReleaseSupported(data.reservationReleaseVersion >= 2 && data.bulkRoutingVersion >= 1);
     setDependencies(data.productionDependencies || []); setPlanningBlock(data.planningBlock || "");
+    setQuantities(suggestMaterialDisengagements(data.materials, startAt));
   }); }
   function simulate() { return run(async () => {
     invalidate();
@@ -100,7 +102,8 @@ export function PriorityRevisionForm({ token, compact = false, initialSearch }) 
       {selected ? <div className="priority-selected"><Check size={19} /><strong>{selected.orderNumber} · {selected.product}</strong><small>Identificativo MES: {selected.orderId}</small></div> : <p className="priority-help">Seleziona l’OP preciso: una RdP può contenere più lavorazioni con suffissi diversi. Gli OCT non ancora confermati devono prima generare gli OP dal Workbench.</p>}
     </fieldset>
     {selected ? <fieldset disabled={busy || Boolean(proposal)} className="priority-section"><legend><span>2</span> Materiali e nuova priorità</legend>
-      <div className="priority-fields"><label>Avvio desiderato (orario MES)<input type="datetime-local" value={startAt} onChange={e => { invalidate(); setStartAt(e.target.value); }} /></label><label className="priority-reason">Motivazione<textarea maxLength={1000} value={reason} onChange={e => { invalidate(); setReason(e.target.value); }} placeholder="Perché anticipare questa lavorazione?" /></label></div>
+      <div className="priority-fields"><label>Avvio desiderato (orario MES)<input type="datetime-local" value={startAt} onChange={e => { invalidate(); setStartAt(e.target.value); setQuantities(suggestMaterialDisengagements(materials, e.target.value)); }} /></label><label className="priority-reason">Motivazione<textarea maxLength={1000} value={reason} onChange={e => { invalidate(); setReason(e.target.value); }} placeholder="Perché anticipare questa lavorazione?" /></label></div>
+      <p className="priority-notice">Proposta automatica: prima le lavorazioni non avviate con data più lontana. Puoi modificare le quantità; nessun disimpegno viene applicato prima della conferma.</p>
       <button type="button" className="secondary-action" onClick={() => window.dispatchEvent(new CustomEvent("workspace:priority-ai", { detail: { prompt: `Voglio anticipare ${selected.orderNumber} (OP MES ${selected.orderId}) dal ${startAt}. Leggi materiali e origini disponibili e proponi una revisione che limiti i ritardi sulle consegne. Motivo: ${reason || "da definire"}. Simula le conseguenze, senza applicare trasferimenti prima della mia conferma.` } }))}><Bot size={17} /> Proponi con IA</button>
       {!releaseSupported ? <p role="alert" className="priority-error">Aggiornare MES per abilitare la revisione con distinzione tra semilavorati da produrre e materiali da magazzino. Nessuna revisione verrà applicata con il vecchio motore.</p> : null}
       {planningBlock ? <p role="alert" className="priority-error">{planningBlock}</p> : null}

@@ -18,10 +18,12 @@ export function captureAssistantContext({ dialog, path, title, module }, doc = d
   })).filter(field => !SENSITIVE.test(field.label));
   const clone = root.cloneNode(true);
   clone.querySelectorAll('input,select,textarea,script,style,[hidden],[aria-hidden="true"],[data-workspace-assistant]').forEach(el => el.remove());
-  return { system:'workspace',path,title:root.getAttribute('aria-label') || root.querySelector('h1,h2,h3')?.textContent || title,module,
+  const surface = dialogs.includes(root) ? 'popup' : 'page';
+  const contextTitle = surface === 'popup' ? root.getAttribute('aria-label') || root.querySelector('h1,h2,h3')?.textContent || title : title;
+  return { system:'workspace',path,title:contextTitle,module,
     screenCode:root.dataset.screenCode || root.querySelector('[data-screen-code]')?.dataset.screenCode || '',
     recordId:root.dataset.recordId || root.querySelector('[data-record-id]')?.dataset.recordId || '',
     targetType:root.dataset.layoutTargetType || root.querySelector('[data-layout-target-type]')?.dataset.layoutTargetType || '',targetCode:root.dataset.layoutTargetCode || root.querySelector('[data-layout-target-code]')?.dataset.layoutTargetCode || '',
     visibleSummary:(clone.textContent || '').replace(/\s+/g,' ').slice(0,8000),fields,
-    surface:dialogs.includes(root) ? 'popup':'page',capturedAt:new Date().toISOString() };
+    surface,capturedAt:new Date().toISOString() };
 }

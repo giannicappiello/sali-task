@@ -110,6 +110,7 @@ function applyTableState(table, state) {
 
 function addHeaderControls(table, state) {
   state.headers.forEach((header, columnIndex) => {
+    if (header.dataset.columnControl === "off") return;
     const label = headerLabel(header, columnIndex);
     header.classList.add("workspace-table-column-header");
 
@@ -166,7 +167,8 @@ function ensureTableControls(table) {
   const controlsAreCurrent = state
     && state.headers.length === headers.length
     && state.headers.every((header, index) => header === headers[index])
-    && headers.every((header) => header.querySelector(":scope > [data-column-control]"));
+    && headers.every((header) => header.dataset.columnControl === "off"
+      || header.querySelector(":scope > [data-column-control]"));
 
   if (!controlsAreCurrent) {
     table.querySelectorAll("[data-column-control]").forEach((node) => node.remove());

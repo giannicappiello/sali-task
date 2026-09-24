@@ -37,9 +37,9 @@ export default function PackagingSheetActions({ productionOrderId }) {
   function close() { if (!printing) { setMode(''); setResult(null); setError(''); } }
   const disabled = !Number.isSafeInteger(Number(productionOrderId)) || Number(productionOrderId) <= 0;
   return <><button type="button" disabled={disabled} onClick={() => setMode('open')}><FileText size={17}/>Apri foglio confezionamento</button>
-    {mode && <Modal title="Foglio di confezionamento" onClose={close} className="dashboard-production-sheet">
+    {mode && <Modal title="Foglio di confezionamento" onClose={close} className="dashboard-production-sheet packaging-sheet-modal">
       {error && <p role="alert" className="pc-note">{error}</p>}
-      {result?.sheet && <label className="pc-field"><span>Pezzi per collo</span><input type="number" min="0" step="1" value={pieces} readOnly={result.sheet.pezziPerColloDaCapitolato} disabled={printing} onChange={e => setPieces(e.target.value)}/><small>{result.sheet.pezziPerColloDaCapitolato ? `Dal capitolato prodotto · revisione ${result.sheet.revisioneCapitolato}` : 'Dato assente nel capitolato: inseriscilo manualmente. Verrà salvato alla stampa anche per le etichette termiche.'}</small></label>}
+      {result?.sheet && <label className="pc-field packaging-sheet-settings"><span>Pezzi per collo</span><input type="number" min="0" step="1" value={pieces} readOnly={result.sheet.pezziPerColloDaCapitolato} disabled={printing} onChange={e => setPieces(e.target.value)}/><small>{result.sheet.pezziPerColloDaCapitolato ? `Dal capitolato prodotto · revisione ${result.sheet.revisioneCapitolato}` : 'Dato assente nel capitolato: inseriscilo manualmente. Verrà salvato alla stampa anche per le etichette termiche.'}</small></label>}
       <div className="packaging-sheet-content">{result?.sheet ? <PackagingSheet sheet={{ ...result.sheet, pezziPerCollo: Number(pieces) }}/>: !error && <p role="status">Preparazione foglio di confezionamento…</p>}</div>
       <footer><button type="button" disabled={printing} onClick={close}>Chiudi</button><button type="button" disabled={!result?.sheet || !result.canPrint || printing || !Number.isFinite(Number(pieces)) || Number(pieces) < 0} onClick={print}><Printer size={17}/>{printing ? 'Preparazione stampa…' : 'Stampa foglio di confezionamento'}</button></footer>
     </Modal>}

@@ -12,9 +12,17 @@ export async function hrNetwork(body) {
   return result;
 }
 
+const RPC_SCHEMA_CACHE_ERROR = /could not find the function|schema cache|function .* does not exist/i;
+
 export async function hrRpc(name, args = {}) {
   const { data, error } = await supabase.rpc(name, args);
-  if (error) throw new Error(error.message || 'Servizio HR non disponibile');
+  if (error) {
+    if (RPC_SCHEMA_CACHE_ERROR.test(error.message || '')) {
+      const signature = name === 'workspace_hr_admin_request' ? 'p_data jsonb' : 'contratto RPC HR previsto dalla migrazione';
+      throw new Error(`Il servizio HR non è allineato in produzione (RPC ${name}, firma attesa: ${signature}). Contatta l’amministratore: la migrazione HR deve essere applicata e lo schema PostgREST ricaricato.`);
+    }
+    throw new Error(error.message || 'Servizio HR non disponibile');
+  }
   return data;
 }
 

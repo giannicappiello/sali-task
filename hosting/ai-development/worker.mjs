@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { safeDevelopmentPath } from './worker-paths.mjs';
+import { publishVerifiedRevision, verifyWorkspaceDeployment } from './publisher.mjs';
 
 const MAX_BYTES = 64 * 1024 * 1024;
 const sha = value => createHash('sha256').update(value).digest('hex');
@@ -110,6 +111,7 @@ export async function run(config, { transport = fetch, once = false } = {}) {
   };
   for (;;) {
     let job;
+    let completedResult;
     try { ({ job } = await api({ action: 'claim' })); }
     catch (error) { process.stderr.write(`${new Date().toISOString()} Collegamento: ${error.message}\n`); await delay(30000); continue; }
     if (!job) { if (once) return; await delay(15000); continue; }
@@ -120,6 +122,25 @@ export async function run(config, { transport = fetch, once = false } = {}) {
       if (!/^[a-f0-9-]{36}$/.test(job.id)) throw new Error('Identificativo lavoro non valido.');
       const repo = config.repositories?.[job.repository];
       if (!repo?.path || !repo.image || !Array.isArray(repo.checks) || !repo.checks.length) throw new Error('Repository o ambiente di verifica non configurato sul PC.');
+      const publish = async result => {
+        if (!job.publish_requested) return result;
+        completedResult = result;
+        await api({ action: 'checkpoint', ...identity, result });
+        if (leaseLost) throw new Error('Sessione persa prima della pubblicazione.');
+        result.publication = await publishVerifiedRevision(repo, result, execute);
+        await api({ action: 'checkpoint', ...identity, result });
+        if (job.repository === 'workspace') result.publication = await verifyWorkspaceDeployment(repo, result.revision.commit, execute);
+        else result.publication.serverUpdateRequired = true;
+        result.published = true;
+        return result;
+      };
+      if (job.publish_requested && job.result?.revision) {
+        const result = await publish(job.result);
+        await writeFile(join(outputRoot, job.id + '.json'), JSON.stringify(result, null, 2));
+        await api({ action: 'finish', ...identity, succeeded: true, result });
+        if (once) return;
+        continue;
+      }
       if (repo.sourceRef === 'refs/remotes/origin/main') {
         const remote = (await execute('git', ['remote', 'get-url', 'origin'], { cwd: repo.path })).toString().trim();
         if (!repo.expectedRemote || remote !== repo.expectedRemote) throw new Error('Repository remoto diverso da quello configurato.');
@@ -162,13 +183,15 @@ export async function run(config, { transport = fetch, once = false } = {}) {
       if (leaseLost) throw new Error('Sessione worker persa prima della registrazione del risultato.');
       await api({ action: 'heartbeat', ...identity });
       const revision = passed ? await createReviewBranch(repo.path, source, generated.edits, job.id, outputRoot) : null;
-      const result = { baseCommit: source.baseCommit, summary: generated.summary, edits: generated.edits, checks, attempts, revision, published: false };
+      let result = { baseCommit: source.baseCommit, summary: generated.summary, edits: generated.edits, checks, attempts, revision, published: false };
+      completedResult = result;
+      if (passed) result = await publish(result);
       const path = join(outputRoot, job.id + '.json');
       await writeFile(path, JSON.stringify(result, null, 2), { flag: 'wx' });
       await api({ action: 'finish', ...identity, succeeded: passed, result,
         error: passed ? null : 'Compilazione o test non riusciti. Modifiche non pubblicate.' });
     } catch (error) {
-      await api({ action: 'finish', ...identity, succeeded: false, error: error.message }).catch(failure => process.stderr.write(`Esito da riconciliare per ${job.id}: ${failure.message}\n`));
+      await api({ action: 'finish', ...identity, succeeded: completedResult?.published === true, result: completedResult, error: completedResult?.published === true ? null : error.message }).catch(failure => process.stderr.write(`Esito da riconciliare per ${job.id}: ${failure.message}\n`));
     } finally { clearInterval(heartbeat); }
     if (once) return;
   }

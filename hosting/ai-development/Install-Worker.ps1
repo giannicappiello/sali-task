@@ -18,7 +18,7 @@ foreach ($rule in (Get-Acl -LiteralPath $root).Access) {
     if ($LASTEXITCODE -ne 0) { throw 'Impossibile rimuovere un accesso non previsto.' }
   }
 }
-foreach ($file in @('worker.mjs','worker-paths.mjs','Start-Worker.ps1','Pair-Worker.ps1')) {
+foreach ($file in @('worker.mjs','worker-paths.mjs','publisher.mjs','Start-Worker.ps1','Pair-Worker.ps1')) {
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination (Join-Path $root $file) -Force
 }
 $configuration | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $root 'config.json') -Encoding UTF8

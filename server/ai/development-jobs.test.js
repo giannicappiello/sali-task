@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateDevelopmentResult, requestDevelopmentJob, developmentTools } from './development-jobs.js';
+import { validateDevelopmentResult, requestDevelopmentJob, developmentTools, readDevelopmentJobs } from './development-jobs.js';
 
 test('explicit admin development requests enter the runnable queue without another confirmation', async () => {
   let inserted;
@@ -39,4 +39,18 @@ test('successful development completion requires matching source, checks and rev
   for (const invalid of [{ ...valid, baseCommit: 'c'.repeat(40) }, { ...valid, checks: [] }, { ...valid, checks: [{ succeeded: false }] }, { ...valid, revision: null }, { ...valid, published: true }, { ...valid, edits: [] }]) {
     assert.throws(() => validateDevelopmentResult(invalid, commit));
   }
+});
+
+test('job readback uses current owner and reports review without pretending it is published', async () => {
+  const filters = [];
+  const job = { id: 'job', status: 'review', result: { published: false, revision: { commit: 'a'.repeat(40) }, edits: [{ path: 'a.js', content: 'do not repeat source in chat' }], checks: [{ succeeded: true, output: 'x'.repeat(6000) }] } };
+  const query = { select: () => query, eq: (...args) => { filters.push(args); return query; }, maybeSingle: async () => ({ data: job }) };
+  const auth = { profile: { id: 'owner', ruoli: { amministratore_workspace: true } }, admin: { from: () => query } };
+  const result = await readDevelopmentJobs(auth, 'job');
+  assert.deepEqual(filters, [['user_id', 'owner'], ['id', 'job']]);
+  assert.equal(result.job.result.published, false);
+  assert.equal(result.job.status, 'review');
+  assert.deepEqual(result.job.result.edits, [{ path: 'a.js' }]);
+  assert.equal(result.job.result.checks[0].output.length, 4000);
+  await assert.rejects(readDevelopmentJobs({ profile: { ruoli: {} } }, 'job'), error => error.status === 403);
 });

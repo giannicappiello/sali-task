@@ -13,8 +13,8 @@ si trova in C:\AssistenteAI\Linux. Il MES rimane sul server attuale.
   socket del runtime o montaggi del filesystem dell'host.
 - CPU, memoria, processi, spazio temporaneo e durata devono essere limitati.
   Un errore del runtime interrompe il job; nessuna esecuzione diretta sul PC.
-- Una compilazione riuscita non equivale a un rilascio. Risultato, revisione e
-  prove devono essere esaminati prima di pubblicare.
+- La pubblicazione richiede verifiche riuscite e un commit contenente esattamente
+  i file testati. Workspace deve risultare READY sull'alias di produzione.
 
 ## Stato
 
@@ -56,8 +56,20 @@ Il worker fotografa una revisione Git,
 verifica le dipendenze, richiede i file necessari e applica sostituzioni vincolate
 al contenuto originale. Il modello non esegue comandi sul PC. Solo dopo test riusciti
 viene creato un commit nel ramo `codex/ai-<id>` usando un indice Git separato:
-nessun checkout, hook o push automatico. Le Impostazioni AI mostrano file, prove,
-ramo e commit per la successiva revisione e pubblicazione.
+nessun checkout o hook sul PC. Le nuove richieste degli admin pubblicano anche
+`main`, salvo richiesta esplicita di non pubblicare (`publish=false`). Le vecchie
+proposte non vengono pubblicate automaticamente. Il repository deve avere
+`publishEnabled=true` e `expectedRemote` esatto. Per Workspace configurare
+`deployment: { project: "sali-task", scope: "progre1", alias: "https://workspace.progre.it" }`.
+Il processo fidato usa l'accesso Git e Vercel già configurato dell'utente Windows;
+nessuna credenziale entra nel contenitore o nei prompt del modello.
+
+Il push è un avanzamento normale di main, mai forzato. Una main modificata da altri
+dopo i test richiede nuova elaborazione e test: non si sovrascrive. Prima del push
+si salva un checkpoint; dopo un'interruzione si riconcilia lo stesso commit.
+Per Workspace si verifica il commit del deployment e l'alias attivo, per MES si
+pubblicano solo i sorgenti e si notifica di aggiornare il server. L'esito viene
+salvato nella chat originale e nelle Impostazioni AI. Il PC deve rimanere acceso.
 
 `worker.integration.test.mjs` con `AI_VERIFY_WSL=1` verifica davvero entrambi gli
 esiti nel container, usando API simulata e repository temporaneo. Non costituisce
@@ -69,4 +81,5 @@ una verifica del modello remoto o della connessione alla produzione.
 contenitore. Elenca esplicitamente i controlli che richiedono Windows, font PDF
 o configurazioni escluse dal trasferimento. Prima del rilascio MES eseguire anche
 la suite completa Windows sui sorgenti revisionati. Il worker non esegue mai
-il codice generato sul sistema Windows e non pubblica automaticamente i rami.
+il codice generato sul sistema Windows. La pubblicazione MES non installa il
+software né applica migrazioni sul server: questo resta parte dell'aggiornamento MES.

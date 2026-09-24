@@ -7,10 +7,16 @@ export const planningConfirmSchema = { type: "object", additionalProperties: fal
   backupVerified: { type: "boolean", description: "Solo dopo verifica esplicita dell'utente del backup del database e dei documenti, mai dedurre o impostare autonomamente." },
 } };
 export const planningRequestSchema = { type: "object", additionalProperties: false, required: ["kind", "startAt", "reason"], properties: {
-  kind: { type: "string", enum: ["MIGRATE", "RECALCULATE", "CONFIRM_PLAN", "RELEASE_ODL", "ROLLBACK"] },
+  kind: { type: "string", enum: ["MIGRATE", "RECALCULATE", "CONFIRM_PLAN", "RELEASE_ODL", "ROLLBACK", "GRAPHICAL_RELEASE"] },
   startAt: { type: "string", description: "Data/ora locale italiana ISO senza Z." }, reason: { type: "string", minLength: 1, maxLength: 1000 },
   orderIds: { type: "array", maxItems: 1000, items: { type: "integer" } },
-  allowMaterialShortage: { type: "boolean", description: "Solo per RELEASE_ODL e su scelta esplicita: genera fabbisogni specifici per le carenze, senza inventare giacenza o consentire l'avvio della fase scoperta." },
+  allowMaterialShortage: { type: "boolean", description: "Solo per RELEASE_ODL o GRAPHICAL_RELEASE e su scelta esplicita: genera fabbisogni specifici per le carenze, senza inventare giacenza o consentire l'avvio della fase scoperta." },
+  moves: { type: "array", maxItems: 1000, description: "GRAPHICAL_RELEASE: spostamenti mirati di fasi non eseguite. Per una singola fase usare moves senza orderIds: orderIds attiva invece la revisione completa dell'ordine, non applicabile a ordini già avviati. Risorse e ID devono provenire dal MES.", items: { type: "object", additionalProperties: false, required: ["orderId", "phase", "start", "resourceId"], properties: {
+    orderId: { type: "integer", minimum: 1 }, phase: { type: "integer", enum: [0, 3], description: "0 = Preparazione, 3 = Confezionamento." }, start: { type: "string", description: "Data/ora locale italiana ISO senza Z." }, resourceId: { type: "integer", minimum: 1 },
+  } } },
+  releasePhases: { type: "array", maxItems: 3000, description: "Fasi da rilasciare per GRAPHICAL_RELEASE. Non aggiungere fasi estranee alla richiesta.", items: { type: "object", additionalProperties: false, required: ["orderId", "phase"], properties: {
+    orderId: { type: "integer", minimum: 1 }, phase: { type: "integer", enum: [0, 3, 7], description: "0 = Preparazione, 3 = Confezionamento, 7 = Astucciatura." },
+  } } },
   confirmationDays: { type: "integer", minimum: 7, maximum: 365 }, reviewDays: { type: "integer", minimum: 7, maximum: 180 }, releaseDays: { type: "integer", minimum: 1, maximum: 14 },
   manualChoices: { type: "array", items: { type: "object", additionalProperties: false, required: ["orderId", "notBefore"], properties: {
     orderId: { type: "integer" }, notBefore: { type: "string" }, resourceId: { type: ["integer", "null"], minimum: 1 },
@@ -18,7 +24,7 @@ export const planningRequestSchema = { type: "object", additionalProperties: fal
 } };
 
 export async function planningCall(auth, operation, input = {}, transport = fetch) {
-  if (!["state", "get", "simulate"].includes(operation)) throw new Error("Operazione di pianificazione non disponibile.");
+  if (!["state", "get", "simulate", "batches"].includes(operation)) throw new Error("Operazione di pianificazione non disponibile.");
   const { data, error } = await auth.scoped.rpc("company_mes_ai_can_write");
   if (error || data !== true) throw Object.assign(new Error("Permesso operativo MES richiesto."), { status: 403 });
   const secret = String(process.env.PROGREMES_INTEGRATION_SECRET || "").trim();

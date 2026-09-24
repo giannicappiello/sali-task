@@ -1,5 +1,6 @@
 import { workspaceReadTools } from './workspace-search.js';
 import { operationalReadTools } from './operational-read.js';
+import { recoveryTools, createRecoveryStep, RECOVERY_INSTRUCTIONS } from './operation-recovery.js';
 import { conversationMemoryTools } from './conversation-memory.js';
 import { developmentTools, handleDevelopmentSettings } from './development-jobs.js';
 import { formulaReadTools } from './formula-revisions.js';
@@ -431,7 +432,7 @@ Regole obbligatorie:
 - se la richiesta contiene una modifica concreta e uno strumento compatibile è disponibile, DEVI invocarlo nella risposta corrente: non limitarti a spiegare la procedura, non rispondere che non puoi farlo e non chiedere conferma testuale;
 - chiedi un chiarimento soltanto quando manca una scelta indispensabile che produrrebbe risultati materialmente diversi; usa codici e identificativi presenti nel contesto senza inventarli;
 - gli strumenti di scrittura dei dati aziendali creano soltanto una proposta: descrivi l'anteprima e attendi la conferma esplicita dell'utente mostrata dall'interfaccia;
-- CODE_CHANGE_REQUEST è il flusso di sviluppo isolato riservato agli admin: se l’admin chiede esplicitamente di effettuare una modifica al codice, avvia il lavoro con questo strumento senza un’altra conferma nelle Impostazioni AI. Per sole analisi, proposte o richieste di non modificare non avviarlo. Lo stato queued significa in attesa del servizio sul PC, non modifica già completata; il risultato richiede revisione e non viene pubblicato automaticamente;
+- CODE_CHANGE_REQUEST avvia modifica, test e pubblicazione su main per richieste esplicite degli admin, senza altra conferma nelle Impostazioni AI. Per sole analisi o richieste di non modificare non avviarlo. Usa publish=false se l'utente esclude la pubblicazione. Per Workspace il servizio verifica Vercel e l'alias di produzione; per MES pubblica i sorgenti e comunica di aggiornare il server. queued/running non significa completato: usa CODE_JOB_STATUS. Per pubblicare un lavoro già testato usa CODE_PUBLISH_REQUEST, senza rigenerarlo;
 - non generare SQL, codice, identificativi o nomi di campi non presenti nel contesto; se manca l'identificativo del record chiedi all'utente di selezionarlo o aprirlo;
 - le forzature lotto e le variazioni operative MES sono ad alto rischio: evidenzia sempre impatto, motivo e record interessato;
 - per chiudere una lavorazione senza movimenti Mexal usa prima MES_PRODUCTION_LOOKUP con il numero esatto RdP/ordine, anche se screenContext.recordId manca. Usa productionId della fase, mai productionOrderId al suo posto. Poi proponi MES_PRODUCTION_FORCE_CLOSE solo se l'utente dichiara esplicitamente SL E CL già eseguiti manualmente. Non inventare tale dichiarazione né i riferimenti dei documenti. Questa azione non salta qualità/QA e non crea SL, CL o scarichi perdite; chiude la fase e aggiorna presenze, ordine e planning. Se ci sono più fasi chiedi quale chiudere. Se MES non è aggiornato dichiaralo senza promettere una forzatura con OP_UPDATE/RDP_UPDATE;
@@ -830,13 +831,14 @@ async function chat(auth, body) {
       inputSchema: jsonSchema({ type: "object", required: ["id"], properties: { id: { type: "string", format: "uuid" } } }), execute: input => reconcilePriority(auth, input.id) },
   } : {};
   const planningTools = controlledTools.MES_PLAN_APPLY ? {
+    MES_PLAN_BATCHES: { description: "Legge batch e fasi dello specifico OP prima di una revisione mirata. Verificare quali fasi sono già eseguite o in corso e non modificarle.", inputSchema: jsonSchema({ type: "object", additionalProperties: false, required: ["orderId"], properties: { orderId: { type: "integer", minimum: 1 } } }), execute: input => planningCall(auth, "batches", input) },
     MES_PLAN_STATE: { description: "Legge fasi RdP/OP/ODL, configurazione e versioni. Nessuna modifica.", inputSchema: jsonSchema({ type: "object", properties: {} }), execute: () => planningCall(auth, "state") },
     MES_PLAN_SIMULATE: { description: "Prepara anteprima verificabile di migrazione, revisione, conferma piano (60 giorni) o rilascio ODL (7 giorni). Nessun OP/lotto/impegno generato dalla simulazione. Mostrare date prima/dopo, scoperti e blocchi. Le fasi eseguite e gli ODL rilasciati restano protetti. Proporre MES_PLAN_APPLY solo dopo la lettura del riepilogo. La verifica del backup può essere attestata esclusivamente dall'utente; non affermare che è stata fatta senza prova.", inputSchema: jsonSchema(planningRequestSchema), execute: input => planningCall(auth, "simulate", { input }) },
     MES_PLAN_STATUS: { description: "Verifica l'esito persistito di una versione, anche dopo timeout. PREPARING o RECONCILIATION_REQUIRED non significano rilascio completato: mai ripetere creazioni Mexal. MES_ODL_VERIFY controlla lotti già riconciliati senza crearne altri.", inputSchema: jsonSchema({ type: "object", required: ["id"], properties: { id: { type: "string", format: "uuid" } } }), execute: input => planningCall(auth, "get", input) },
   } : {};
   const tools = mode === "web"
     ? { ...headingTools, web_search: openai.tools.webSearch({ externalWebAccess: true, searchContextSize: "medium" }) }
-    : { ...developmentTools(auth), ...conversationMemoryTools(auth), ...workspaceReadTools(auth), ...operationalReadTools(auth), ...(controlledTools.FORMULA_CREATE_REVISION ? formulaReadTools(auth) : {}), ...(controlledTools.LOT_OVERRIDE ? lotReadTools(auth) : {}), ...(controlledTools.MACHINE_INSTRUCTION_DRAFT ? machineReadTools(auth) : {}), ...headingTools, ...productionTools, ...materialTools, ...priorityTools, ...planningTools, ...controlledTools };
+    : { ...developmentTools({ ...auth, conversationId }), ...recoveryTools(auth, Boolean(controlledTools.MES_PLAN_APPLY)), ...conversationMemoryTools(auth), ...workspaceReadTools(auth), ...operationalReadTools(auth), ...(controlledTools.FORMULA_CREATE_REVISION ? formulaReadTools(auth) : {}), ...(controlledTools.LOT_OVERRIDE ? lotReadTools(auth) : {}), ...(controlledTools.MACHINE_INSTRUCTION_DRAFT ? machineReadTools(auth) : {}), ...headingTools, ...productionTools, ...materialTools, ...priorityTools, ...planningTools, ...controlledTools };
   const model = process.env.AI_MODEL || DEFAULT_MODEL;
   const mutationRequested = mode !== "web" && isControlledMutationRequest(prompt);
   const controlledToolNames = Object.keys(controlledTools);
@@ -850,12 +852,10 @@ async function chat(auth, body) {
   try {
     result = await generateText({
       model,
-      system: systemPrompt(mode, context, screenContext, controlledToolNames, auth.capabilities?.role_ai_level || "analisi") + "\nPer anticipare produzioni e cambiare priorità usa MES_PRIORITY_LOOKUP, MES_PRIORITY_MATERIALS, MES_PRIORITY_SIMULATE e infine MES_PRIORITY_REVISE. Questa procedura prevale sul trasferimento semplice MES_MATERIAL_REALLOCATE: coordina materiali, revisioni RdP, fabbisogni e planning. Puoi proporre origini e quantità se richiesto, motivando le conseguenze; non applicare senza conferma del riepilogo. Non inventare date: mostra quelle della simulazione APS, eventuali attese e ritardi. Una revisione MES_APPLIED non è ancora completata in Workspace: usare MES_PRIORITY_STATUS. Mai dichiarare eseguito un trasferimento da una semplice simulazione. Per modificare la scelta, simulare nuovamente. Non creare nuovi OP né duplicare RdP.",
+      system: systemPrompt(mode, context, screenContext, controlledToolNames, auth.capabilities?.role_ai_level || "analisi") + RECOVERY_INSTRUCTIONS + "\nPer anticipare produzioni e cambiare priorità usa MES_PRIORITY_LOOKUP, MES_PRIORITY_MATERIALS, MES_PRIORITY_SIMULATE e infine MES_PRIORITY_REVISE. Questa procedura prevale sul trasferimento semplice MES_MATERIAL_REALLOCATE: coordina materiali, revisioni RdP, fabbisogni e planning. Puoi proporre origini e quantità se richiesto, motivando le conseguenze; non applicare senza conferma del riepilogo. Non inventare date: mostra quelle della simulazione APS, eventuali attese e ritardi. Una revisione MES_APPLIED non è ancora completata in Workspace: usare MES_PRIORITY_STATUS. Mai dichiarare eseguito un trasferimento da una semplice simulazione. Per modificare la scelta, simulare nuovamente. Non creare nuovi OP né duplicare RdP.",
       messages,
       tools,
-      ...(mutationRequested && controlledToolNames.length ? {
-        prepareStep: ({ stepNumber }) => ({ toolChoice: stepNumber === 0 ? "required" : "auto" }),
-      } : {}),
+      prepareStep: createRecoveryStep(tools, mutationRequested && controlledToolNames.length > 0),
       stopWhen: isStepCount(12),
       maxOutputTokens: 1800,
       providerOptions: gatewayOptions(auth.profile.id, mode),
@@ -875,9 +875,10 @@ async function chat(auth, body) {
   const downloadablePdf = artifacts.some((artifact) => artifact.kind === "pdf");
   const storedAttachments = attachmentMetadata(attachments);
   const hasPendingAction = Boolean(headingAction || controlledActions.length || developmentJob);
-  const answer = result.text || (developmentJob ? "Richiesta di sviluppo messa in coda per modifica e test isolati sul PC. Non serve una seconda conferma; il risultato sarà da revisionare e non verrà pubblicato automaticamente." : hasPendingAction ? "Ho preparato l’azione richiesta. Verifica l’anteprima e conferma per applicarla." : "Non ho ottenuto un esito conclusivo verificabile. Nessuna modifica viene dichiarata completata.");
-  await saveExchange(auth.admin, conversationId, displayedPrompt(prompt, attachments), answer, sources, { model, mode, generationId, costUsd: usage.cost, downloadablePdf, artifacts, headingToolCalls: allToolCalls.map((item) => item.toolName), controlledActions, screenContext }, { attachments: storedAttachments });
-  return { conversationId, answer, sources, usage, capabilities: auth.capabilities, downloadablePdf, artifacts, headingAction, controlledActions, controlledAction: controlledActions[0] || null };
+  const developmentJobSummary = developmentJob ? { id: developmentJob.id, status: developmentJob.status } : null;
+  const answer = result.text || (developmentJob ? "Richiesta di sviluppo accodata al PC per modifica, test e pubblicazione richiesta. L’esito sarà riportato in questa chat." : hasPendingAction ? "Ho preparato l’azione richiesta. Verifica l’anteprima e conferma per applicarla." : "Non ho ottenuto un esito conclusivo verificabile. Nessuna modifica viene dichiarata completata.");
+  await saveExchange(auth.admin, conversationId, displayedPrompt(prompt, attachments), answer, sources, { model, mode, generationId, costUsd: usage.cost, downloadablePdf, artifacts, headingToolCalls: allToolCalls.map((item) => item.toolName), controlledActions, developmentJob: developmentJobSummary, screenContext }, { attachments: storedAttachments });
+  return { conversationId, answer, sources, usage, capabilities: auth.capabilities, downloadablePdf, artifacts, headingAction, controlledActions, controlledAction: controlledActions[0] || null, developmentJob: developmentJobSummary };
 }
 
 async function createProposal(auth, body) {

@@ -27,3 +27,19 @@ test('new MES screen uses discovered catalog identity and never substitutes lega
  assert.deepEqual(select(remote,[screen],[link],{...permissions,hasScreenAccess:()=>false}),[]);
  assert.deepEqual(select([],[screen],[link],permissions),[]);
 });
+
+test('configured initial local screen opens directly, but hidden or denied screens do not', async()=>{
+ const {productionInitialPath}=await import('./production-sections.js');
+ const initial={...progressLink,predefinita:true};
+ const visible=select([],[progress],[initial],permissions);
+ assert.equal(productionInitialPath(visible,[progress],[initial]),progress.percorso);
+ assert.equal(productionInitialPath([],[progress],[initial]),'');
+ assert.equal(productionInitialPath(visible,[progress],[{...initial,predefinita:false}]),'');
+ assert.equal(productionInitialPath(visible,[progress],[{...initial,visibile_menu:false}]),'');
+});
+test('initial MES screen resolves to authenticated Workspace route', async()=>{
+ const {productionInitialPath}=await import('./production-sections.js');
+ const screen={codice:'progremes.PlanningProduction',attiva:true,percorso:'/pianificazione-produzione'};
+ const link={modulo_codice:'progremes',schermata_codice:screen.codice,predefinita:true,visibile_menu:true};
+ assert.equal(productionInitialPath([{code:screen.codice}],[screen],[link]),'/produzione/progremes.PlanningProduction');
+});

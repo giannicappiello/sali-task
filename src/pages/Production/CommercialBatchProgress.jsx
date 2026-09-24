@@ -51,9 +51,9 @@ export default function CommercialBatchProgress({ orders, load, autoOpen = false
           {results[order.id]?.batches?.map(batch => <div key={batch.id || batch.number}>
             <h4>Batch {batch.number} · {qty(batch.quantity)} {batch.unit}</h4>
             <div style={{ overflowX: "auto" }}><table className="rdp-table" style={{ width: "100%", textAlign: "left" }}>
-              <thead><tr><th>Fase / ODL</th><th>Impianto</th><th>Pianificato</th><th>Avanzamento</th><th>Lotto</th><th>Quantità</th><th>Materiali / documenti</th></tr></thead>
+              <thead><tr><th>Fase del batch</th><th>Impianto</th><th>Pianificato</th><th>Avanzamento</th><th>Lotto</th><th>Quantità</th><th>Materiali / documenti</th></tr></thead>
               <tbody>{batch.phases.map(phase => <tr key={phase.id || `${phase.phase}:${phase.odlId}`}>
-                <td>{phase.phase === 0 ? "Produzione" : phase.phase === 3 ? "Confezionamento" : "Astucciatura"}<br/>ODL {phase.odlId || "da rilasciare"}<br/>{status(phase.releaseStatus)}</td>
+                <td>{phase.phase === 0 ? "Produzione" : phase.phase === 3 ? "Confezionamento" : "Astucciatura"}</td>
                 <td>{phase.resource}</td><td>{date(phase.plannedStart)}<br/>{date(phase.plannedEnd)}</td>
                 <td>{status(phase.executionStatus)}<br/>{phase.actualStart && date(phase.actualStart)}<br/>{phase.actualEnd && date(phase.actualEnd)}</td>
                 <td>{phase.lot || "Da assegnare"}</td><td>{qty(phase.plannedQuantity)} {phase.unit}<br/>Prodotta: {phase.producedQuantity == null ? "—" : qty(phase.producedQuantity)}</td>

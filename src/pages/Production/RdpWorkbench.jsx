@@ -191,7 +191,7 @@ function V3Panel({ readOnly = false, v3, canDecide, busy, onPreview, onConfirm }
         <button type="button" className="primary-action rdp-v3-recalculate" onClick={onConfirm} disabled={busy || !confirmEnabled}><Factory size={16}/>{busy ? "Verifica conferma…" : recovering ? "Recupera conferma" : "Conferma RdP"}</button>
         {!confirmEnabled && <small className="rdp-v3-gate-warning" role="status">Conferma produttiva non abilitata: verificare i gate Workspace e ProgreMES nel Centro Diagnostico.</small>}
       </>}
-      {preview.status === "BLOCKED" && !v3.saga && <small className="rdp-v3-gate-warning" role="alert">La RdP contiene blocchi tecnici: correggere i codici evidenziati e premere RICALCOLA RDP. Gli scoperti senza blocchi restano confermabili. Nel nuovo ciclo, OP e fabbisogni operativi si generano con Conferma piano; gli impegni fisici con Rilascio ODL.</small>}
+      {preview.status === "BLOCKED" && !v3.saga && <small className="rdp-v3-gate-warning" role="alert">La RdP contiene blocchi tecnici: correggere i codici evidenziati e premere RICALCOLA RDP. Gli scoperti senza blocchi restano confermabili. Nel nuovo ciclo, OP e fabbisogni operativi si generano con Conferma piano; materiali, lotti e lavorazioni si gestiscono direttamente nei batch.</small>}
     </>}
   </section>;
 }

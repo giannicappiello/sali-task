@@ -62,7 +62,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "" }) {
         setSyncError("");
         fetch("/api/workspace/planning", { method: "POST", headers: { Authorization: `Bearer ${currentToken.current}`, "Content-Type": "application/json" }, body: JSON.stringify({ action: "planning_reconcile" }) })
           .then(async response => { const result = await response.json(); if (!response.ok) throw new Error(result.error || "Allineamento non riuscito"); })
-          .catch(() => setSyncError("Piano salvato in MES. Completa l’allineamento dallo Storico ODL con Allinea stato Workspace; non ripetere la generazione."));
+          .catch(() => setSyncError("Piano salvato in MES. Completa l’allineamento da Versioni e revisioni del piano con Allinea stato Workspace; non ripetere la generazione."));
         return;
       }
       if (event.data.type === "progremes-workspace-navigate") {

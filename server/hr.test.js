@@ -45,6 +45,7 @@ test('HR migration and authorization flows in isolated PostgreSQL', async (t) =>
   try { await db.exec(migration); await db.exec(await readFile(new URL('../supabase/migrations/20260916190000_workspace_hr_site_address.sql', import.meta.url), 'utf8')); await db.exec(await readFile(new URL('../supabase/migrations/20260916200000_workspace_hr_flexible_agreements.sql', import.meta.url), 'utf8')); await db.exec(await readFile(new URL('../supabase/migrations/20260916210000_workspace_hr_home_punch.sql', import.meta.url), 'utf8')); await db.exec(await readFile(new URL('../supabase/migrations/20260916220000_workspace_hr_catalog_alias.sql', import.meta.url), 'utf8')); await db.exec(await readFile(new URL('../supabase/migrations/20260916230000_workspace_hr_request_recipients.sql', import.meta.url), 'utf8')); } catch (error) { console.error('Migration:', error.message, error.where); throw error; }
   await db.exec(await readFile(new URL('../supabase/migrations/20260917120000_workspace_hr_employee_editor.sql', import.meta.url), 'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/20260917160000_workspace_company_calendar.sql', import.meta.url), 'utf8'));
+  for (const migration of ['20260924180000_workspace_hr_admin_absences','20260924190000_verify_workspace_hr_admin_absence_rpc','20260924200000_workspace_hr_admin_absence_validation']) await db.exec(await readFile(new URL('../supabase/migrations/'+migration+'.sql', import.meta.url),'utf8'));
   async function as(user, sql, args = []) {
     await db.exec('begin; set local role authenticated;');
     try { await db.query("select set_config('request.jwt.claim.sub',$1,true)", [user]); const result = await db.query(sql, args); await db.exec('commit'); return result.rows; }
@@ -263,6 +264,43 @@ test('HR migration and authorization flows in isolated PostgreSQL', async (t) =>
     assert.equal(exited.checkout_kind,'manual');
     assert.equal((await network(employee,'out',id(),'2001:4860:4860::8888',entered.id)).checkout_at,exited.checkout_at);
     await cfg('site',{...sitePayload,public_ips:[]});
+  });
+  await t.test('admin absence RPC supports maternity, validates input, audits and retries without duplicates', async () => {
+    const payload={user_id:employee,request_key:id(),kind:'pregnancy',starts_at:'2035-01-01T00:00:00Z',ends_at:'2035-06-01T00:00:00Z',note:'Fixture maternità'};
+    const call=(user,data)=>rpc(user,'workspace_hr_admin_request',[JSON.stringify(data)]);
+    for(const user of [employee,outsider]) await assert.rejects(call(user,payload),/autorizzat|abilitat/);
+    const created=await call(admin,payload);
+    assert.equal((await call(admin,payload)).id,created.id);
+    assert.equal((await db.query('select count(*)::int n from workspace_hr_audit where target_id=$1 and action=$2',[created.id,'admin_request'])).rows[0].n,1);
+    assert.equal((await db.query('select status from workspace_hr_requests where id=$1',[created.id])).rows[0].status,'approved');
+    await assert.rejects(call(admin,{...payload,note:'Different'}),/già utilizzato/);
+    await assert.rejects(call(admin,{...payload,request_key:id(),kind:'leave'}),/sovrapposto/);
+    await assert.rejects(call(admin,{...payload,request_key:id(),kind:null}),/Causale/);
+    await assert.rejects(call(admin,{...payload,request_key:id(),ends_at:'2037-01-01T00:00:00Z'}),/Periodo/);
+    await assert.rejects(call(admin,{...payload,request_key:id(),ends_at:payload.starts_at}),/Periodo/);
+    await assert.rejects(call(admin,{...payload,request_key:id(),user_id:outsider}),/Dipendente/);
+    const leave=await rpc(employee,'workspace_hr_operate',['request',JSON.stringify({...payload,request_key:id(),kind:'leave'})]);
+    await assert.rejects(rpc(manager,'workspace_hr_operate',['review',JSON.stringify({id:leave.id,status:'approved',note:'Fixture overlap'})]),/sovrapposto/);
+    const boundary={...payload,request_key:id(),starts_at:payload.ends_at,ends_at:'2035-06-02T00:00:00Z',kind:'illness'};
+    assert.ok((await call(manager,boundary)).id);
+  });
+  await t.test('separate overtime is admin-only, boolean, versioned and survives older clients', async () => {
+    await db.exec(await readFile(new URL('../supabase/migrations/20260924210000_workspace_hr_separate_overtime.sql', import.meta.url),'utf8'));
+    const count = async () => (await db.query('select count(*)::int n from workspace_hr_contracts')).rows[0].n;
+    const before = await count();
+    await assert.rejects(cfg('contract',{...terms,overtime_separate:'false'}),/valore non valido/);
+    assert.equal(await count(),before);
+    await assert.rejects(rpc(employee,'workspace_hr_configure',['contract',JSON.stringify({...terms,overtime_separate:true})]),/admin/);
+    await cfg('contract',{...terms,effective_from:'2040-01-01',overtime_separate:true});
+    const read = async date => (await db.query('select * from workspace_hr_contracts where user_id=$1 and effective_from=$2',[employee,date])).rows[0];
+    assert.equal((await read('2040-01-01')).overtime_separate,true);
+    assert.equal((await read('2040-01-01')).agreement_fields.overtime_separate,true);
+    await cfg('contract',{...terms,effective_from:'2040-02-01'});
+    assert.equal((await read('2040-02-01')).overtime_separate,true);
+    await cfg('contract',{...terms,effective_from:'2040-03-01',overtime_separate:false});
+    assert.equal((await read('2040-03-01')).overtime_separate,false);
+    assert.equal((await read('2040-01-01')).overtime_separate,true);
+    assert.equal('contracts' in await snap(employee),false);
   });
   await t.test('removing HR department revokes HR without removing operational department', async () => {
     await writeFile(new URL('../.tmp/hr-fixtures.json', import.meta.url), JSON.stringify({ employee: await snap(employee), manager: await snap(manager), admin: await snap(admin, true) }));

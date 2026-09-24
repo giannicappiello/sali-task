@@ -1,6 +1,7 @@
 import { monthDays, romeDay, romeInstant, formatDate, formatTime } from './hrTime.js';
 import { comparePeople } from './hrPeople.js';
 import { calendarDay } from './hrCalendar.js';
+import { agreementForDay, separateOvertime } from './hrAgreements.js';
 import { styleAttendanceFile } from './hrWorkbookStyles.js';
 
 const round = value => Math.round(value * 100) / 100;
@@ -32,12 +33,13 @@ export function attendanceExportRows(data, month, now = new Date()) {
       const plannedMinutes = unionMinutes(planned, start, end);
       const pause = shifts.filter(s => s.work_date === day).reduce((sum, s) => sum + Number(s.break_minutes || 0), 0);
       const requests = kind => approved.filter(r => r.kind === kind && millis(r.starts_at) < end && millis(r.ends_at) > start).map(r => [millis(r.starts_at), millis(r.ends_at)]);
-      const leave = requests('leave'), permission = requests('permission'), overtime = requests('overtime');
+      const leave = requests('leave'), permission = requests('permission'), overtime = requests('overtime'), illness = requests('illness'), pregnancy = requests('pregnancy');
+      const absences = [...leave, ...permission, ...illness, ...pregnancy];
       const notes = [];
       if (incomplete) notes.push('Timbratura senza uscita: ore da verificare');
-      if ((leave.length || permission.length) && !plannedMinutes) notes.push('Ferie/permessi approvati senza turno: quantità da definire');
-      if (plannedMinutes && day < today && !daily.length && !leave.length && !permission.length) notes.push('Assenza da verificare');
-      const uncovered = day < today && plannedMinutes && !incomplete ? Math.max(0, plannedMinutes - pause - unionMinutes(overlaps([...actual, ...leave, ...permission], planned), start, end)) : null;
+      if (absences.length && !plannedMinutes) notes.push('Assenze approvate senza turno: quantità da definire');
+      if (plannedMinutes && day < today && !daily.length && !absences.length) notes.push('Assenza da verificare');
+      const uncovered = day < today && plannedMinutes && !incomplete ? Math.max(0, plannedMinutes - pause - unionMinutes(overlaps([...actual, ...absences], planned), start, end)) : null;
       if (uncovered > 0 && !notes.includes('Assenza da verificare')) notes.push('Copertura del turno da verificare');
       const row = { Dipendente: employee.name, Matricola: employee.employee_code || '', Data: day,
         Giorno: new Date(start).toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long' }),
@@ -46,6 +48,8 @@ export function attendanceExportRows(data, month, now = new Date()) {
         'Ore presenza rilevata': incomplete ? null : round(unionMinutes(actual, start, end) / 60),
         'Ferie approvate': leave.length ? 'Sì' : '', 'Ore ferie su turno lordo': leave.length && !plannedMinutes ? null : round(unionMinutes(overlaps(leave, planned), start, end) / 60),
         'Permessi approvati': permission.length ? 'Sì' : '', 'Ore permessi su turno lordo': permission.length && !plannedMinutes ? null : round(unionMinutes(overlaps(permission, planned), start, end) / 60),
+        'Malattia approvata': illness.length ? 'Sì' : '', 'Maternità approvata': pregnancy.length ? 'Sì' : '',
+        'Straordinario separato': separateOvertime(agreementForDay(data.contracts, employee.user_id, day)) ? 'Sì' : 'No',
         'Ore straordinario approvate': round(unionMinutes(overtime, start, end) / 60),
         'Ore scoperte da verificare': uncovered == null ? null : round(uncovered / 60),
         'Chiusura aziendale': data.closures.filter(c => c.date_from <= day && c.date_to >= day).map(c => c.name).join('; '),
@@ -67,12 +71,14 @@ export function attendanceDaySummary(row) {
   const codes = [];
   if (row['Ferie approvate']) codes.push('F');
   if (row['Permessi approvati']) codes.push('P');
+  if (row['Malattia approvata']) codes.push('M');
+  if (row['Maternità approvata']) codes.push('MAT');
   if (absence) codes.push('A');
   if (unknown) codes.push('?');
   if (overtime > 0) codes.push(overtime.toLocaleString('it-IT', { maximumFractionDigits: 2 }));
   if (!codes.length && present > 0) codes.push('PR');
   return { ...day, present: present > 0, absence, leave: Boolean(row['Ferie approvate']), permission: Boolean(row['Permessi approvati']),
-    unknown, overtime, weekdayOvertime: day.festive ? 0 : overtime, festiveOvertime: day.festive ? overtime : 0,
+    separate: row['Straordinario separato'] === 'Sì', unknown, overtime, weekdayOvertime: day.festive ? 0 : overtime, festiveOvertime: day.festive ? overtime : 0,
     value: codes.length === 1 && overtime > 0 && !unknown ? overtime : codes.join('\n'),
   };
 }
@@ -94,8 +100,9 @@ export async function createAttendanceWorkbook(data, month, now = new Date()) {
   for (const row of rows) { if (!grouped.has(row.employeeId)) grouped.set(row.employeeId, []); grouped.get(row.employeeId).push(row); }
   for (const employeeRows of grouped.values()) {
     const summary = employeeRows.map(attendanceDaySummary);
-    const total = key => summary.some(s => s[key] == null) ? 'Da verificare' : round(summary.reduce((n,s) => n+s[key],0));
-    matrix.push([employeeRows[0].Dipendente, ...['present','leave','absence','permission'].map(k => summary.filter(s => s[k]).length), total('weekdayOvertime'), total('festiveOvertime'), ...summary.map(s => s.value)]);
+    const ordinary = summary.filter(s => !s.separate);
+    const total = key => ordinary.some(s => s[key] == null) ? 'Da verificare' : round(ordinary.reduce((n,s) => n+s[key],0));
+    matrix.push([employeeRows[0].Dipendente, ...['present','leave','absence','permission'].map(k => summary.filter(s => s[k]).length), total('weekdayOvertime'), total('festiveOvertime'), ...summary.map(s => s.separate && (s.overtime > 0 || s.unknown) ? `${s.value}\nS` : s.value)]);
   }
   if (!grouped.size) matrix.push(['Nessun dipendente nel periodo']);
   const grid = XLSX.utils.aoa_to_sheet(matrix);
@@ -124,12 +131,23 @@ export async function createAttendanceWorkbook(data, month, now = new Date()) {
     ws['!cols']=Object.keys(records[0] || {}).map(key=>({wch:Math.min(55,Math.max(18,key.length+2))}));
     XLSX.utils.book_append_sheet(workbook,ws,name);
   };
-  sheet('Presenze giornaliere', rows.map(row => { const s=attendanceDaySummary(row); return {...row,'Festività italiana':s.holiday,'Ore straordinario feriali totali':s.weekdayOvertime,'Ore straordinario festivi':s.festiveOvertime}; }));
+  sheet('Presenze giornaliere', rows.map(row => { const s=attendanceDaySummary(row); return {...row,'Festività italiana':s.holiday,'Ore straordinario feriali totali':s.separate ? 0 : s.weekdayOvertime,'Ore straordinario festivi':s.separate ? 0 : s.festiveOvertime,'Ore straordinario feriali separate':s.separate ? s.weekdayOvertime : 0,'Ore straordinario festive separate':s.separate ? s.festiveOvertime : 0}; }));
+  const separateRows = [...grouped.values()].filter(employeeRows => employeeRows.some(row => row['Straordinario separato'] === 'Sì')).map(employeeRows => {
+    const summaries = employeeRows.map(attendanceDaySummary);
+    const separate = summaries.filter(s => s.separate);
+    const total = key => separate.some(s => s[key] == null) ? 'Da verificare' : round(separate.reduce((n,s) => n+s[key],0));
+    return { Dipendente: employeeRows[0].Dipendente, Matricola: employeeRows[0].Matricola,
+      'Ore straordinario feriali separate': total('weekdayOvertime'), 'Ore straordinario festive separate': total('festiveOvertime'),
+      ...Object.fromEntries(employeeRows.map((row,i) => [row.Data, !summaries[i].separate ? '' : summaries[i].overtime == null ? 'Da verificare' : summaries[i].overtime])),
+    };
+  });
+  if (separateRows.length) sheet('Straordinari separati', separateRows);
   const name=id=>data.employees.find(e=>e.user_id===id)?.name || 'Dipendente';
-  sheet('Richieste', [...data.requests].sort((a,b)=>comparePeople({name:name(a.user_id)},{name:name(b.user_id)})).filter(r=>romeDay(r.starts_at)<=days.at(-1) && romeDay(new Date(Date.parse(r.ends_at)-1))>=days[0]).map(r=>({Dipendente:name(r.user_id),Tipo:({leave:'Ferie',permission:'Permesso',overtime:'Straordinario',correction:'Correzione'})[r.kind],Dal:`${formatDate(r.starts_at)} ${formatTime(r.starts_at)}`,Al:`${formatDate(r.ends_at)} ${formatTime(r.ends_at)}`,Stato:({pending:'In attesa',approved:'Approvata',rejected:'Rifiutata',cancelled:'Annullata'})[r.status]})));
+  sheet('Richieste', [...data.requests].sort((a,b)=>comparePeople({name:name(a.user_id)},{name:name(b.user_id)})).filter(r=>romeDay(r.starts_at)<=days.at(-1) && romeDay(new Date(Date.parse(r.ends_at)-1))>=days[0]).map(r=>({Dipendente:name(r.user_id),Tipo:({leave:'Ferie',permission:'Permesso',illness:'Malattia',pregnancy:'Maternità',overtime:'Straordinario',correction:'Correzione'})[r.kind],Dal:`${formatDate(r.starts_at)} ${formatTime(r.starts_at)}`,Al:`${formatDate(r.ends_at)} ${formatTime(r.ends_at)}`,Stato:({pending:'In attesa',approved:'Approvata',rejected:'Rifiutata',cancelled:'Annullata'})[r.status]})));
   sheet('Legenda', [
     {Voce:'Periodo',Descrizione:`${month} · Fuso Europe/Rome · Ore decimali. Esportato il ${formatDate(now)}.`},
-    {Voce:'Codici giornalieri',Descrizione:'F ferie approvate; P permesso approvato; A turno non interamente coperto, assenza da verificare; PR presenza; numero = ore straordinario; ? timbratura senza uscita.'},
+    {Voce:'Codici giornalieri',Descrizione:'F ferie approvate; P permesso approvato; M malattia; MAT maternità; S straordinario gestito separatamente; A turno non interamente coperto, assenza da verificare; PR presenza; numero = ore straordinario; ? timbratura senza uscita.'},
+    {Voce:'Gestione separata',Descrizione:'La spunta dell’accordo valido nel giorno esclude lo straordinario dai totali feriali/festivi ordinari. Le ore restano documentate giorno per giorno (S) e nel foglio Straordinari separati. Le presenze effettive non sono alterate.'},
     {Voce:'Straordinario feriale',Descrizione:'Somma delle ore di straordinario approvate dal lunedì al venerdì e delle ore di presenza del sabato. Escluse le festività nazionali.'},
     {Voce:'Straordinario festivo',Descrizione:'Ore di presenza nelle domeniche e nelle festività nazionali italiane. Una festività di sabato è conteggiata solo qui.'},
     {Voce:'Calendario',Descrizione:'Sabati viola; domeniche e festività nazionali rosse. Pasqua e Pasquetta variabili; San Francesco (4 ottobre) dal 2026. Feste patronali locali non incluse.'},

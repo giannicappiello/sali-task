@@ -88,3 +88,40 @@ test('all employee lists use the same Italian alphabetical order without mutatin
   assert.deepEqual(sorted.requests.map(e=>e.user_id),['a','z']);
   assert.equal(employees[0].name,'Zeno');
 });
+
+test('separate overtime follows agreement dates, excludes ordinary totals and preserves daily hours',async()=>{
+  const d=data();
+  d.contracts=[{id:'old',user_id:'e',effective_from:'2026-01-01',overtime_separate:false},{id:'new',user_id:'e',effective_from:'2026-08-15',overtime_separate:true}];
+  for(const [day,hours] of [['2026-08-14',10],['2026-08-15',5],['2026-08-16',4],['2026-08-22',6]]) {
+    d.attendance.push({user_id:'e',checkin_at:day+'T06:00:00Z',checkout_at:day+'T'+String(6+hours).padStart(2,'0')+':00:00Z'});
+    d.requests.push({user_id:'e',kind:'overtime',status:'approved',starts_at:day+'T06:00:00Z',ends_at:day+'T08:00:00Z'});
+  }
+  const book=await createAttendanceWorkbook(d,'2026-08',now);
+  assert.equal(book.Sheets['Presenze mensili'].F7.v,2);
+  assert.equal(book.Sheets['Presenze mensili'].G7.v,0);
+  const separate=XLSX.utils.sheet_to_json(book.Sheets['Straordinari separati'])[0];
+  assert.equal(separate['Ore straordinario feriali separate'],6);
+  assert.equal(separate['Ore straordinario festive separate'],9);
+  assert.equal(separate['2026-08-14'],'');
+  assert.equal(separate['2026-08-15'],5);
+  const daily=XLSX.utils.sheet_to_json(book.Sheets['Presenze giornaliere']).find(r=>r.Data==='2026-08-15');
+  assert.equal(daily['Ore presenza rilevata'],5);
+  assert.equal(daily['Ore straordinario festivi'],0);
+  assert.equal(daily['Ore straordinario festive separate'],5);
+  d.attendance.push({user_id:'e',checkin_at:'2026-08-23T06:00:00Z',checkout_at:null});
+  const unknown=await createAttendanceWorkbook(d,'2026-08',now);
+  assert.equal(unknown.Sheets['Presenze mensili'].G7.v,0);
+  assert.equal(XLSX.utils.sheet_to_json(unknown.Sheets['Straordinari separati'])[0]['Ore straordinario festive separate'],'Da verificare');
+  const saved=XLSX.read(await attendanceWorkbookBytes(book),{type:'array'});
+  assert.ok(saved.SheetNames.includes('Straordinari separati'));
+});
+test('approved illness and maternity cover shifts without becoming unexplained absence',()=>{
+  for(const kind of ['illness','pregnancy']) {
+    const d=data();
+    d.shifts=[{user_id:'e',work_date:'2026-09-01',starts_at:'2026-09-01T06:00:00Z',ends_at:'2026-09-01T15:00:00Z',break_minutes:60}];
+    d.requests=[{user_id:'e',kind,status:'approved',starts_at:'2026-09-01T06:00:00Z',ends_at:'2026-09-01T15:00:00Z'}];
+    const row=attendanceExportRows(d,'2026-09',now)[0];
+    assert.equal(row['Ore scoperte da verificare'],0);
+    assert.equal(attendanceDaySummary(row).value,kind==='illness'?'M':'MAT');
+  }
+});

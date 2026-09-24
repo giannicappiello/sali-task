@@ -10,3 +10,11 @@ test('agreements preserve free text and do not value missing amounts as zero', (
   assert.equal(agreementDisplay({agreed_pay:0},'agreed_pay'),'0');
   assert.notEqual(overtimeValue({...c,overtime_rate:0},2),'Da definire');
 });
+
+test('separate overtime is an explicit boolean and missing amounts remain undefined', () => {
+  assert.equal(agreementValues({}).overtime_separate,false);
+  assert.equal(agreementValues({overtime_separate:false}).overtime_separate,false);
+  assert.equal(agreementValues({overtime_separate:true}).overtime_separate,true);
+  assert.equal(agreementDisplay({overtime_separate:true},'overtime_separate'),'Sì');
+  assert.equal(overtimeValue({overtime_separate:true,overtime_rate:20,overtime_percent:25},2),(50).toLocaleString('it-IT',{style:'currency',currency:'EUR'}));
+});

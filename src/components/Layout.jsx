@@ -146,7 +146,7 @@ function Layout() {
   const chromeContext = useMemo(() => ({ register: registerHeader, route: location.pathname }), [registerHeader, location.pathname]);
   const screenHeader = Object.values(screenHeaders).filter(header => header.route === location.pathname)
     .sort((a, b) => b.priority - a.priority)[0];
-  const { profile, signOut, hasPermission, hasModuleAccess, hasWorkspaceFeature, getModuleScreenGrant, isAdminUser } = useAuth();
+  const { profile, signOut, hasPermission, hasModuleAccess, hasScreenAccess, hasWorkspaceFeature, getModuleScreenGrant, isAdminUser } = useAuth();
 
   const currentPage = location.pathname.startsWith("/produzione")
     ? pageInfo["/produzione"]
@@ -253,7 +253,9 @@ function Layout() {
   }, [configuredMenu, configuredModules]);
 
   const launchProgremes = useCallback((screenCode = "", workspacePath = "") => {
-    if (!hasModuleAccess("progremes")) {
+    const targetScreen = workspacePath ? new URL(workspacePath, window.location.origin).pathname.split('/').pop() : screenCode;
+    const planningAllowed = targetScreen === 'progremes.PlanningProduction' && hasScreenAccess(targetScreen);
+    if (!planningAllowed && !hasModuleAccess("progremes")) {
       setProgremesConnection({ open: true, error: "Accesso al modulo ProgreMES non autorizzato." });
       return;
     }
@@ -266,7 +268,7 @@ function Layout() {
     } catch (error) {
       setProgremesConnection({ open: true, error: error.message });
     }
-  }, [hasModuleAccess]);
+  }, [hasModuleAccess, hasScreenAccess]);
 
   useEffect(() => {
     const handler = (event) => launchProgremes(event.detail?.screenCode || "", event.detail?.workspacePath || "");

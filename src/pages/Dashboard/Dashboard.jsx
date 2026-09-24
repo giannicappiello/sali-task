@@ -500,6 +500,10 @@ function Dashboard({ toolbarTarget = null }) {
     await loadData();
   }
 
+  const planningPath = hasScreenAccess?.('progremes.PlanningProduction')
+    ? '/produzione/progremes.PlanningProduction'
+    : hasModuleAccess?.('progremes') && hasScreenAccess?.('progremes.Planning', 'progremes')
+      ? '/produzione/progremes.Planning' : '';
   const planningToolbar = (<div className="v4-toolbar planning-toolbar-clean dashboard-planning-toolbar">
         <div className="task-search">
           <Search size={18} />
@@ -509,7 +513,7 @@ function Dashboard({ toolbarTarget = null }) {
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
-        {hasModuleAccess?.('progremes') && hasScreenAccess?.('progremes.Planning', 'progremes') && <button type="button" className="primary-action" onClick={() => requestProgremesWorkspaceWindow('/produzione/progremes.Planning')}><CalendarDays size={18} />Apri Planning</button>}
+        {planningPath && <button type="button" className="primary-action" onClick={() => requestProgremesWorkspaceWindow(planningPath)}><CalendarDays size={18} />Apri Planning</button>}
       </div>);
 
   return (

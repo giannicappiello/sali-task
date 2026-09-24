@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
-import { progremesWorkspaceDestination, requestProgremesNavigation } from "./progremesWindow";
+import { openProgremesWorkspaceWindow, progremesWorkspaceDestination, requestProgremesNavigation } from "./progremesWindow";
 import { observeProgremesFrame } from "./progremesHandshake";
 import "./progremes-frame.css";
 import PlanningActionModal from "./PlanningActionModal";
@@ -71,7 +71,10 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
       }
       if (event.data.type === "progremes-workspace-navigate") {
         const destination = progremesWorkspaceDestination(event.data);
-        if (event.data.popup === true) setPopupPath(destination);
+        if (new URL(destination, window.location.origin).searchParams.get('destination') === 'station') {
+          try { openProgremesWorkspaceWindow(destination); }
+          catch (error) { setSyncError(error.message); }
+        } else if (event.data.popup === true) setPopupPath(destination);
         else navigate(progremesWorkspaceDestination(event.data));
         return;
       }

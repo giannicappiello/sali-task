@@ -20,7 +20,9 @@ export function progremesWorkspacePath(path) {
 }
 
 export function openProgremesWorkspaceWindow(path, browser = window) {
-  const popup = browser.open(progremesWorkspacePath(path), "_blank", "popup,width=1440,height=960");
+  const target = new URL(path, "https://workspace.invalid");
+  const width = target.searchParams.get('destination') === 'station' ? 800 : 1440;
+  const popup = browser.open(progremesWorkspacePath(path), "_blank", `popup,width=${width},height=960`);
   if (!popup) throw new Error("Consenti l’apertura di nuove finestre per Workspace e riprova.");
   popup.opener = null;
   return popup;

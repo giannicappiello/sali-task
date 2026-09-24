@@ -138,3 +138,14 @@ test("planning, ODL e priorita navigano solo verso route Workspace ammesse", () 
   const app = readFileSync(new URL("../../App.jsx", import.meta.url), "utf8");
   for (const code of ["produzione.versioni_piano", "produzione.rilascio_odl"]) assert.ok(app.includes(`WorkspaceAccessGuard screenCode="${code}"`));
 });
+
+test('Station opens a separate 800 by 960 Workspace window and preserves the planning', () => {
+  const path='/produzione/progremes.PlanningProduction?destination=station&station=ST7';
+  let opened;
+  const browser={open:(url,target,features)=>{opened={url,target,features};return {opener:browser};},location:{assign:()=>assert.fail('Planning must not navigate')}};
+  const popup=openProgremesWorkspaceWindow(path,browser);
+  assert.equal(opened.target,'_blank');
+  assert.equal(opened.features,'popup,width=800,height=960');
+  assert.match(opened.url,/station=ST7&workspaceMesWindow=1/);
+  assert.equal(popup.opener,null);
+});

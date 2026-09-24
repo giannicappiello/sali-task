@@ -150,6 +150,9 @@ function wantsDownloadablePdf(...values) {
 
 export function requestedArtifacts(prompt, generationId) {
   const text = String(prompt || "");
+  // A repository file is an output of the development job, not a chat PDF.
+  const developmentRequest = /CODE_CHANGE_REQUEST|\brepository\b|\b(?:codice sorgente|commit|branch)\b|\b[\w./-]+\.(?:md|jsx?|tsx?|cs|razor|sql|ya?ml)\b/i.test(text);
+  if (developmentRequest && !wantsDownloadablePdf(text)) return [];
   const action = /elabor|scaric|esport|crea|genera|prepara|produci|fammi|vorrei|voglio|mostra|visualizza/i.test(text);
   const chartRequested = action && /grafico|diagramma|chart/i.test(text);
   const imageRequested = action && /\b(?:immagine|png|jpe?g)\b/i.test(text);
@@ -866,10 +869,11 @@ async function chat(auth, body) {
   const allToolCalls = (result.steps || []).flatMap((step) => step.toolCalls || []);
   const headingAction = allToolResults.map((item) => item.output).find((output) => output?.headingAction)?.headingAction || null;
   const controlledActions = allToolResults.map((item) => item.output?.controlledAction).filter(Boolean);
-  const artifacts = requestedArtifacts(prompt, generationId);
+  const developmentJob = allToolResults.map((item) => item.output?.developmentJob).find(Boolean);
+  const artifacts = developmentJob ? [] : requestedArtifacts(prompt, generationId);
   const downloadablePdf = artifacts.some((artifact) => artifact.kind === "pdf");
   const storedAttachments = attachmentMetadata(attachments);
-  const hasPendingAction = Boolean(headingAction || controlledActions.length);
+  const hasPendingAction = Boolean(headingAction || controlledActions.length || developmentJob);
   const answer = result.text || (hasPendingAction ? "Ho preparato l’azione richiesta. Verifica l’anteprima e conferma per applicarla." : "Non ho ottenuto un esito conclusivo verificabile. Nessuna modifica viene dichiarata completata.");
   await saveExchange(auth.admin, conversationId, displayedPrompt(prompt, attachments), answer, sources, { model, mode, generationId, costUsd: usage.cost, downloadablePdf, artifacts, headingToolCalls: allToolCalls.map((item) => item.toolName), controlledActions, screenContext }, { attachments: storedAttachments });
   return { conversationId, answer, sources, usage, capabilities: auth.capabilities, downloadablePdf, artifacts, headingAction, controlledActions, controlledAction: controlledActions[0] || null };

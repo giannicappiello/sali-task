@@ -490,7 +490,7 @@ export default function AIAssistant({ getScreenContext, embedded = false, prompt
             <article key={message.id} className={`ai-message ${message.role}`}>
               {message.role === "assistant" && <span className="ai-message-avatar"><Bot size={18} /></span>}
               <div className="ai-message-content">
-                <p>{message.artifacts?.length ? `Ho elaborato ${message.artifacts.length === 1 ? "il file richiesto" : "i file richiesti"}.` : message.content}</p>
+                <p>{message.content}</p>
                 {message.artifacts?.length > 0 && <div className="ai-generated-artifacts">{message.artifacts.map((artifact) => <AssistantArtifactCard key={artifact.id || artifact.fileName} artifact={artifact} content={message.content} />)}</div>}
                 {message.sources?.length > 0 && <div className="ai-message-sources"><strong>Fonti Web</strong>{message.sources.map((source) => <a key={source.id || source.url} href={source.url} target="_blank" rel="noreferrer">{source.title}<ExternalLink size={13} /></a>)}</div>}
                 {message.proposal && <ProposalCard proposal={{ ...message.proposal, state: proposal?.id === message.proposal.id ? proposal.state : message.proposal.state }} canDecide={capabilities?.apply_plans === true} busy={decisionBusy} onApprove={() => decide("approve")} onReject={() => decide("reject")} />}

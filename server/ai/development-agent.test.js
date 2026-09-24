@@ -9,6 +9,21 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 
+test('development requires a concrete tool outcome while allowing explicit blockers', async () => {
+  const state = createSourceTools({ index: ['a.js'], files: {} });
+  assert.equal(state.prepareStep().toolChoice, 'required');
+  await state.tools.SOURCE_READ.execute({ path: 'a.js' });
+  assert.equal(state.prepareStep().toolChoice, 'auto');
+  const created = createSourceTools({ index: [], files: {} });
+  await created.tools.SOURCE_CREATE.execute({ path: 'docs/check.md', content: 'verified' });
+  assert.equal(created.prepareStep().toolChoice, 'auto');
+  const blocked = createSourceTools({ index: [], files: {} });
+  await blocked.tools.SOURCE_REPORT_BLOCKER.execute({ reason: 'Manca la specifica necessaria.' });
+  assert.equal(blocked.getBlocker(), 'Manca la specifica necessaria.');
+  assert.equal(blocked.prepareStep().toolChoice, 'auto');
+  assert.equal(blocked.edited.size, 0);
+});
+
 test('development refuses credential paths, traversal and Windows alternate streams', () => {
   for (const path of ['../secret', '/etc/passwd', 'a/../../b', 'C:/file', 'a\\b', '.env.production', '.git/config', 'src/.npmrc', 'appsettings.Production.json', 'key.pem', 'a.js:stream']) assert.equal(safeDevelopmentPath(path), false, path);
   assert.equal(safeDevelopmentPath('src/pages/Home.jsx'), true);

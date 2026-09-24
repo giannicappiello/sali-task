@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { requestedArtifacts } from "../server/ai/assistant.js";
+
+test('repository edits are not converted to downloadable PDFs', () => {
+  assert.deepEqual(requestedArtifacts('Crea il file docs/ai-worker-verification.md nel repository workspace', 'dev-1'), []);
+  assert.deepEqual(requestedArtifacts('Usa CODE_CHANGE_REQUEST per modificare il file della schermata', 'dev-2'), []);
+  assert.deepEqual(requestedArtifacts('Prepara un PDF che descrive il repository', 'report-1').map(item => item.kind), ['pdf']);
+});
 import { buildAssistantArtifactFile } from "../src/pages/AIAssistant/assistantArtifacts.js";
 import { buildAssistantChartSvg, extractAssistantChart } from "../src/pages/AIAssistant/assistantChart.js";
 

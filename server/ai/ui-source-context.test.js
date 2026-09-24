@@ -16,6 +16,9 @@ test('popup is located without a separate URL; candidate paths are repository-sp
   const local = resolveUiSourceContext({ ...context, system: 'workspace', path: '/activities/dashboard', title: 'Foglio di produzione' });
   assert.ok(local.sourceCandidates.includes('src/pages/Dashboard/PreparationActions.jsx'));
   assert.ok(local.sourceCandidates.every(path => path.startsWith('src/')));
+  const hr = resolveUiSourceContext({ system: 'workspace', surface: 'popup', path: '/settings/hr', title: 'Scheda e accordi · Dipendente', screenCode: '', targetCode: '' });
+  assert.ok(hr.sourceCandidates.includes('src/modules/hr/HrModule.jsx'));
+  assert.equal(hr.repository, 'workspace');
 });
 test('admin development job automatically persists popup context even if model omits it', async () => {
   let row;

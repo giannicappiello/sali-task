@@ -12,7 +12,7 @@ test('HR admin absence flow exposes the four supported absence causes', () => {
   assert.match(moduleSource, /Nuova assenza/);
   assert.match(moduleSource, /workspace_hr_admin_request/);
   assert.match(moduleSource, /\['illness', 'Malattia'\]/);
-  assert.match(moduleSource, /\['pregnancy', 'Gravidanza'\]/);
+  assert.match(moduleSource, /\['pregnancy', 'Maternità'\]/);
 });
 
 test('HR admin absence persistence is authorization-checked and immediately approved', () => {
@@ -27,8 +27,11 @@ test('the real /settings/hr route renders the current HR module and requested co
   assert.ok(appSource.includes('<Route path="settings/hr" element={<SettingsAccessGuard adminOnly><HrModule key="hr-config" configuration /></SettingsAccessGuard>} />'));
   assert.match(appSource, /const HrModule = lazy\(\(\) => import\("\.\/modules\/hr\/HrModule"\)\)/);
   assert.match(moduleSource, /import '\.\/hr\.css';/);
-  assert.match(moduleSource, /Calendario presenze settimanale/);
-  assert.match(moduleSource, /Scostamento ore:/);
+  assert.match(moduleSource, /Calendario aziendale · vista settimanale/);
+  assert.doesNotMatch(moduleSource, /Scostamento ore:/);
+  assert.doesNotMatch(moduleSource, /Stato: \{row\.kind\}/);
+  assert.match(moduleSource, /row\.kind === 'unjustified' \? 'ingiustificato' : 'ferie'/);
+  assert.match(moduleSource, /formatMinutes\(worked - expected\)/);
   assert.match(moduleSource, /Dettaglio presenze/);
   assert.match(moduleSource, /Entrata:/);
   assert.match(moduleSource, /Motivazione:/);
@@ -37,13 +40,18 @@ test('the real /settings/hr route renders the current HR module and requested co
   assert.match(moduleSource, /option value="month">Mese/);
   assert.match(moduleSource, /option value="custom">Date selezionate/);
   assert.match(moduleSource, /role="button" tabIndex=\{0\}/);
+  assert.match(moduleSource, /page === 'company-calendar' && calendarView === 'week'/);
+  assert.match(moduleSource, /page === 'company-calendar' && <section className="hr-panel hr-attendance-report"/);
   assert.match(moduleSource, /setCalendarView\('month'\)/);
   assert.match(moduleSource, /Ore in più/);
   assert.match(moduleSource, /Ore in meno/);
+  assert.match(styles, /\.hr-week-person\{[^}]*display:flex/);
+  assert.match(styles, /white-space:nowrap/);
+  assert.match(styles, /@media\(max-width:700px\)/);
 });
 
 test('weekly HR calendar keeps all person/status content while using compact spacing', () => {
-  assert.match(moduleSource, /Calendario presenze settimanale/);
+  assert.match(moduleSource, /Calendario aziendale · vista settimanale/);
   assert.match(moduleSource, /Presenti/);
   assert.match(moduleSource, /Assenti/);
   assert.match(moduleSource, /Assegna turno/);

@@ -1,13 +1,12 @@
 import HrEmployeeDetails from './HrEmployeeDetails';
 import CompanyCalendar from './CompanyCalendar';
-import { companyCalendarDay } from './companyCalendarDay';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CalendarDays, Clock3, MapPin, RefreshCw, Search, Settings, Timer, UsersRound, CalendarCheck, X } from 'lucide-react';
+import { CalendarDays, Clock3, MapPin, RefreshCw, Search, Settings, Timer, UsersRound, CalendarCheck, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import WorkspacePageHeader from '../../components/WorkspacePageHeader';
 import { useHrAttendance } from './HrAttendanceProvider';
-import { attendanceAnomaly, formatDate, formatTime, hrRpc, hrNetwork, monthDays, romeDay, romeInstant, timeInput } from './hrService';
+import { attendanceAnomaly, formatDate, formatTime, hrRpc, hrNetwork, romeDay, romeInstant, timeInput } from './hrService';
 import './hr.css';
 import { downloadAttendanceWorkbook } from './hrAttendanceExport';
 import { agreementValues, agreementDisplay, overtimeValue, AGREEMENT_FIELDS } from './hrAgreements';
@@ -18,9 +17,28 @@ import { plannedPresentCount } from './hrCalendarPresence';
 const KIND = { leave: 'Ferie', permission: 'Permesso', overtime: 'Straordinario', correction: 'Correzione uscita' };
 const STATUS = { pending: 'In attesa', approved: 'Approvata', rejected: 'Rifiutata', cancelled: 'Annullata' };
 const WEEKDAYS = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
-const EMPTY = { employees: [], sites: [], shifts: [], attendance: [], requests: [], closures: [], contracts: [], audit: [] };
+const EMPTY = { employees: [], sites: [], shifts: [], attendance: [], requests: [], closures: [], contracts: [], audit: [], calendarAttendance: [], calendarShifts: [], calendarRequests: [] };
 const searchable = (value) => (value && typeof value === 'object' ? JSON.stringify(value) : String(value ?? '')).toLocaleLowerCase('it-IT').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 const field = (key, label, type = 'text', extra = {}) => ({ key, label, type, ...extra });
+const isoDate = (value) => new Date(`${value}T12:00:00Z`);
+const shiftDate = (value, days) => { const date = isoDate(value); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); };
+const mondayOf = (value) => { const date = isoDate(value); const weekday = date.getUTCDay() || 7; return shiftDate(value, 1 - weekday); };
+const weekLabel = (start) => `${formatDate(`${start}T12:00:00Z`)} – ${formatDate(`${shiftDate(start, 6)}T12:00:00Z`)}`;
+const minutesBetween = (from, to) => from && to ? Math.round((Date.parse(to) - Date.parse(from)) / 60000) : null;
+const formatMinutes = (minutes) => { if (minutes == null) return '—'; const sign = minutes < 0 ? '−' : '+'; const absolute = Math.abs(minutes); return `${sign}${Math.floor(absolute / 60)}h ${String(absolute % 60).padStart(2, '0')}m`; };
+function agreementMinutes(contract, day) {
+  if (!contract) return null;
+  const fields = contract.agreement_fields || contract;
+  const weekdays = String(fields.weekdays || '').split(',').map(Number).filter(Boolean);
+  const weekday = isoDate(day).getUTCDay() || 7;
+  if (weekdays.length && !weekdays.includes(weekday)) return 0;
+  if (fields.start_time && fields.end_time) {
+    const [fromHour, fromMinute] = fields.start_time.split(':').map(Number);
+    const [toHour, toMinute] = fields.end_time.split(':').map(Number);
+    return Math.max(0, (toHour * 60 + toMinute) - (fromHour * 60 + fromMinute) - Number(fields.break_minutes || 0));
+  }
+  return fields.weekly_hours && weekdays.length ? (Number(fields.weekly_hours) * 60) / weekdays.length : null;
+}
 function Badge({ children, kind = '' }) { return <span className={`hr-badge ${kind}`}>{children}</span>; }
 function Empty({ children }) { return <p className="hr-empty">{children}</p>; }
 function Editor({ model, onClose, onSave }) {
@@ -59,6 +77,7 @@ export default function HrModule({ configuration = false }) {
   const monitor = useHrAttendance();
   const [data, setData] = useState(EMPTY);
   const [month, setMonth] = useState(romeDay().slice(0, 7));
+  const [weekStart, setWeekStart] = useState(() => mondayOf(romeDay()));
   const [page, setPage] = useState(configuration ? 'employees' : ['leave','overtime'].includes(searchParams.get('richieste')) ? searchParams.get('richieste') : 'personal');
   const [selected, setSelected] = useState('');
   const [filter, setFilter] = useState('');
@@ -74,12 +93,19 @@ export default function HrModule({ configuration = false }) {
     const id = ++generation.current;
     if (silent !== true) { setLoading(true); setError(''); }
     try {
-      const [snapshot, calendar] = await Promise.allSettled([
-        hrRpc('workspace_hr_snapshot', { p_month: `${month}-01`, p_config: configuration }),
+      const monthDate = new Date(`${month}-01T12:00:00Z`);
+      const requestedMonths = [-1, 0, 1].map((offset) => { const date = new Date(monthDate); date.setUTCMonth(date.getUTCMonth() + offset); return date.toISOString().slice(0, 7); });
+      const [snapshots, calendar] = await Promise.allSettled([
+        Promise.all(requestedMonths.map((requestedMonth) => hrRpc('workspace_hr_snapshot', { p_month: `${requestedMonth}-01`, p_config: configuration }))),
         hrRpc('workspace_company_calendar_read'),
       ]);
-      if (snapshot.status === 'rejected') throw snapshot.reason;
-      const result = sortHrPeople(snapshot.value);
+      if (snapshots.status === 'rejected') throw snapshots.reason;
+      const sources = snapshots.value;
+      const mergeRows = (key) => [...new Map(sources.flatMap((source) => source?.[key] || []).map((row, index) => [row.id || `${row.user_id || ''}:${row.work_date || row.checkin_at || index}`, row])).values()];
+      const result = sortHrPeople({ ...sources[0], employees: sources[0].employees, users: sources[0].users, sites: sources[0].sites, manager: sources[0].manager, member: sources[0].member });
+      result.calendarAttendance = mergeRows('attendance');
+      result.calendarShifts = mergeRows('shifts');
+      result.calendarRequests = mergeRows('requests');
       result.companyCalendar = calendar.status === 'fulfilled' ? calendar.value : null;
       if (id === generation.current) { setData({ ...EMPTY, ...result }); setSelected((previous) => result.employees.some((e) => e.user_id === previous) ? previous : result.employees[0]?.user_id || ''); }
     } catch (failure) { if (id === generation.current && silent !== true) { setError(failure.message); setData(EMPTY); } }
@@ -172,7 +198,16 @@ export default function HrModule({ configuration = false }) {
   });
   const selectedEmployee = visibleEmployees.find((e) => e.user_id === selected);
   const selectedContracts = data.contracts.filter((c) => c.user_id === selected);
-  const calendarShifts = data.shifts.filter((s) => !canManage || !filter ? true : s.user_id === filter);
+  const calendarAttendance = data.calendarAttendance || data.attendance;
+  const calendarShiftRows = data.calendarShifts || data.shifts;
+  const calendarRequestRows = data.calendarRequests || data.requests;
+  const weekDays = Array.from({ length: 7 }, (_, index) => shiftDate(weekStart, index));
+  const contractFor = (userId, day) => data.contracts.filter((contract) => contract.user_id === userId && contract.effective_from <= day).sort((a, b) => b.effective_from.localeCompare(a.effective_from))[0];
+  const weekRows = weekDays.map((day) => {
+    const present = calendarAttendance.filter((row) => romeDay(row.checkin_at) === day && (!filter || row.user_id === filter));
+    const absent = calendarRequestRows.filter((row) => ['leave', 'permission'].includes(row.kind) && row.status === 'approved' && romeDay(row.starts_at) <= day && romeDay(new Date(Date.parse(row.ends_at) - 1)) >= day && (!filter || row.user_id === filter));
+    return { day, present, absent };
+  });
   if (configuration && !isAdminUser) return <section className="hr-page"><p role="alert">Configurazioni riservate agli admin.</p></section>;
   return <div className="hr-page">
     <WorkspacePageHeader icon={<UsersRound size={30}/>} eyebrow="Human Resources" title={configuration ? 'Configurazioni HR' : 'Presenze, turni e richieste'} description={configuration ? 'Schede dipendente e accordi contrattuali ed economici · Solo admin.' : 'Gestione del personale nel Workspace.'}/>
@@ -184,7 +219,7 @@ export default function HrModule({ configuration = false }) {
     {loading ? <div className="hr-panel">Caricamento HR…</div> : !error && <>
       {page === 'personal' && <div className="hr-two-col"><section className="hr-panel"><div className="hr-heading"><h2>La mia giornata</h2><Badge kind={open ? 'green' : ''}>{open ? 'Presente' : 'Non presente'}</Badge></div><p className="hr-muted">{formatDate(new Date())}</p>{!data.member ? <Empty>Per timbrare devi essere assegnato al reparto Human Resources da Utenti e accessi.</Empty> : <><div className="hr-clock">{open ? formatTime(open.checkin_at) : '—'}</div><p className="hr-muted">{open ? `Ingresso del ${formatDate(open.checkin_at)}` : 'Nessuna presenza aperta'}</p><div className="hr-shift"><span>Turno assegnato<strong>{todayShift ? `${formatTime(todayShift.starts_at)} – ${formatTime(todayShift.ends_at)}` : month === today.slice(0, 7) ? 'Nessun turno oggi' : 'Seleziona il mese corrente'}</strong></span><span>Pausa prevista<strong>{todayShift ? `${todayShift.break_minutes} min` : '—'}</strong></span></div>{open && <p className="hr-location"><MapPin size={18}/>{siteName(open.site_id)} · {open.entry_ip ? 'Ingresso verificato sulla rete aziendale' : 'Ingresso verificato con GPS'}</p>}<p className="hr-muted hr-small">{monitor?.status}</p><div className="hr-note">Registra entrata e uscita dalla LAN o dal Wi-Fi aziendale. Ricorda il checkout manuale. Quello automatico oltre la soglia configurata è un supporto: può non intervenire a schermo spento o quando Workspace è sospeso.</div></>}</section><section className="hr-panel"><h2>Le mie presenze</h2>{attendanceTable(ownAttendance)}</section></div>}
       {page === 'attendance' && canManage && <section className="hr-panel"><div className="hr-heading"><h2>Presenze aziendali</h2><input aria-label="Cerca dipendente" placeholder="Cerca dipendente…" value={filter} onChange={(e) => setFilter(e.target.value)}/></div>{attendanceTable(data.attendance.filter((a) => name(a.user_id).toLowerCase().includes(filter.toLowerCase())))}</section>}
-      {page === 'calendar' && <section className="hr-panel"><div className="hr-heading"><h2>Calendario aziendale</h2>{canManage && <div className="hr-actions"><button onClick={closure}>Chiusura / festività</button><button className="hr-primary" onClick={shift} disabled={!data.sites.length || !data.employees.length}>Assegna turno</button></div>}</div>{canManage && <label className="hr-calendar-filter">Dipendente<select value={filter} onChange={(e) => setFilter(e.target.value)}><option value="">Tutti</option>{data.employees.map((e) => <option key={e.user_id} value={e.user_id}>{e.name}</option>)}</select></label>}{!data.companyCalendar && <p className="hr-note" role="status">Calendario aziendale non disponibile. Aggiorna per riprovare; i turni personali restano consultabili.</p>}<div className="hr-calendar-scroll" tabIndex={0} aria-label="Calendario mensile, scorri orizzontalmente"><div className="hr-calendar">{WEEKDAYS.map((d) => <div className="hr-calendar-label" key={d}>{d}</div>)}{Array.from({ length: (new Date(`${month}-01T12:00:00Z`).getUTCDay() + 6) % 7 }, (_, i) => <div key={`blank${i}`}/>)}{monthDays(month).map((day) => { const shifts = calendarShifts.filter((s) => s.work_date === day); const leave = data.requests.filter((r) => ['leave', 'permission'].includes(r.kind) && r.status === 'approved' && romeDay(r.starts_at) <= day && romeDay(new Date(Date.parse(r.ends_at) - 1)) >= day && (!canManage || !filter || r.user_id === filter)); const closures = data.closures.filter((c) => c.date_from <= day && c.date_to >= day); const companyDay=companyCalendarDay(data.companyCalendar,day); return <div key={day} className={`hr-calendar-day ${day === today ? 'today' : ''}`}><strong>{day.slice(-2)}</strong>{companyDay ? <span className={`hr-event ${companyDay.intervals.length ? '' : 'closure'}`}>Azienda: {companyDay.intervals.length ? companyDay.intervals.map(([from,to])=>`${from}–${to}`).join(', ') : 'chiusa'}{companyDay.reason && <><br/>{companyDay.reason}</>}</span> : closures.map((c) => <span className="hr-event closure" key={c.id}>{c.name}</span>)}<span className="hr-event"><b>Presenti previsti: {plannedPresentCount(shifts, leave)}</b></span>{leave.length > 0 && <span className="hr-muted">Assenze</span>}{[...leave].sort((a, b) => name(a.user_id).localeCompare(name(b.user_id), 'it')).map((r) => <span className="hr-event leave" key={r.id}><b>{name(r.user_id)}</b><br/>{KIND[r.kind]}{r.kind === 'permission' && <> · {formatTime(r.starts_at)}–{formatTime(r.ends_at)}</>}</span>)}</div>; })}</div></div>{!calendarShifts.length && <Empty>Nessun turno: l’admin può configurare gli orari e il gestore HR assegnare turni specifici.</Empty>}</section>}
+      {page === 'calendar' && <section className="hr-panel"><div className="hr-heading"><div><h2>Calendario presenze settimanale</h2><p className="hr-muted hr-small">Settimana {weekLabel(weekStart)} · Europe/Rome</p></div><div className="hr-actions"><button type="button" aria-label="Settimana precedente" onClick={() => { const next = shiftDate(weekStart, -7); setWeekStart(next); setMonth(next.slice(0, 7)); }}><ChevronLeft size={18}/></button><button type="button" onClick={() => { const next = mondayOf(today); setWeekStart(next); setMonth(next.slice(0, 7)); }}>Questa settimana</button><button type="button" aria-label="Settimana successiva" onClick={() => { const next = shiftDate(weekStart, 7); setWeekStart(next); setMonth(next.slice(0, 7)); }}><ChevronRight size={18}/></button>{canManage && <><button onClick={closure}>Chiusura / festività</button><button className="hr-primary" onClick={shift} disabled={!data.sites.length || !data.employees.length}>Assegna turno</button></>}</div></div>{canManage && <label className="hr-calendar-filter">Dipendente<select value={filter} onChange={(e) => setFilter(e.target.value)}><option value="">Tutti</option>{data.employees.map((e) => <option key={e.user_id} value={e.user_id}>{e.name}</option>)}</select></label>}<div className="hr-week-grid" aria-label={`Presenze della settimana ${weekLabel(weekStart)}`}>{weekRows.map(({ day, present, absent }) => { const shifts = calendarShiftRows.filter((row) => row.work_date === day && (!filter || row.user_id === filter)); return <article className={`hr-week-day ${day === today ? 'today' : ''}`} key={day}><header><strong>{new Date(`${day}T12:00:00Z`).toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'UTC' })}</strong><span>{shifts.length ? `${plannedPresentCount(shifts, absent)} previsti` : 'Nessun turno registrato'}</span></header><h3>Presenti</h3>{present.length ? present.map((row) => { const shiftRow = shifts.find((item) => item.user_id === row.user_id); const worked = row.checkout_at ? minutesBetween(row.checkin_at, row.checkout_at) - Number(shiftRow?.break_minutes || 0) : null; const expected = agreementMinutes(contractFor(row.user_id, day), day) ?? (shiftRow ? minutesBetween(shiftRow.starts_at, shiftRow.ends_at) - Number(shiftRow.break_minutes || 0) : null); return <div className="hr-week-person" key={row.id}><b>{name(row.user_id)}</b><span>Entrata: {formatTime(row.checkin_at)} · Uscita: {row.checkout_at ? formatTime(row.checkout_at) : 'Presenza ancora aperta'}</span><span>Scostamento ore: {row.checkout_at && expected != null ? formatMinutes(worked - expected) : 'Non determinabile con presenza aperta o accordo mancante'}</span></div>; }) : <p className="hr-muted hr-small">Nessuna presenza registrata.</p>}<h3>Assenti</h3>{absent.length ? absent.map((row) => <div className="hr-week-person absent" key={row.id}><b>{name(row.user_id)}</b><span>Stato: {KIND[row.kind]}{row.kind === 'permission' ? ` · ${formatTime(row.starts_at)}–${formatTime(row.ends_at)}` : ''}</span></div>) : <p className="hr-muted hr-small">Nessuna assenza disponibile nei dati HR.</p>}</article>; })}</div>{!calendarAttendance.length && <Empty>Nessuna registrazione nella settimana selezionata. I giorni senza dati restano visibili.</Empty>}</section>}
       {page === 'leave' && requestsTable('leave')}{page === 'overtime' && requestsTable('overtime')}
       {configuration && page === 'employees' && <div className="hr-master-detail hr-panel"><section className="hr-employee-card" aria-label="Dipendenti HR"><div className="hr-heading"><h2>Dipendenti HR</h2><Badge>{visibleEmployees.length}</Badge></div><Link to="/settings/users">Assegna utenti al reparto</Link><div className="hr-card-scroll" tabIndex={0} aria-label="Elenco dipendenti">{visibleEmployees.map((e) => <button className={`hr-person ${selected === e.user_id ? 'active' : ''}`} key={e.user_id} onClick={() => setSelected(e.user_id)}><strong>{e.name}</strong><small>{e.department || 'Nessun reparto operativo'} · {e.active ? 'Attivo' : 'Non attivo'}</small></button>)}{!visibleEmployees.length && <Empty>{hrSearch ? 'Nessun risultato per la ricerca.' : 'Assegna gli utenti al reparto Human Resources da Utenti e accessi.'}</Empty>}</div></section><section className="hr-employee-card" aria-label="Scheda dipendente">{selectedEmployee ? <HrEmployeeDetails employee={selectedEmployee} contracts={selectedContracts} sites={data.sites} users={data.users} onEdit={() => editMember(selectedEmployee)}/> : <Empty>Assegna gli utenti al reparto Human Resources da Utenti e accessi.</Empty>}</section></div>}
       {configuration && page === 'company-calendar' && <CompanyCalendar snapshot={data} month={month} onMonthChange={setMonth} onReload={async () => { const calendar = await hrRpc('workspace_company_calendar_read'); setData(previous => ({ ...previous, companyCalendar: calendar })); }}/>}

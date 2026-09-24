@@ -119,7 +119,7 @@ begin
     if nullif(btrim(p_data->>'note'),'') is null then raise exception 'Inserisci una motivazione'; end if;
     perform pg_advisory_xact_lock(hashtextextended('hr:'||row.user_id,0));
     if p_data->>'status'='approved' then
-      if row.kind in ('leave','permission','overtime') and exists(select 1 from workspace_hr_requests r where r.id<>row.id and r.user_id=row.user_id and r.status='approved' and r.kind in ('leave','permission','overtime') and r.starts_at<row.ends_at and r.ends_at>row.starts_at) then raise exception 'Periodo sovrapposto a una richiesta già approvata'; end if;
+      if row.kind in ('leave','permission','illness','pregnancy','overtime') and exists(select 1 from workspace_hr_requests r where r.id<>row.id and r.user_id=row.user_id and r.status='approved' and r.kind in ('leave','permission','illness','pregnancy','overtime') and r.starts_at<row.ends_at and r.ends_at>row.starts_at) then raise exception 'Periodo sovrapposto a una richiesta già approvata'; end if;
       if row.kind='correction' then
         select * into a from workspace_hr_attendance where id=row.attendance_id for update;
         if a.checkout_at is not null or row.ends_at<a.checkin_at or row.ends_at>now() then raise exception 'La presenza non è più correggibile'; end if;

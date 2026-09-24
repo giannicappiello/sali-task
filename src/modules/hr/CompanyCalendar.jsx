@@ -2,7 +2,7 @@ import { useRef, useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
 import { hrRpc, romeDay, monthDays, formatDate, formatTime } from './hrService';
 import { companyCalendarDay } from './companyCalendarDay';
-import { plannedPresentCount } from './hrCalendarPresence';
+import { ABSENCE_KINDS, plannedPresentCount } from './hrCalendarPresence';
 import { CALENDAR_DAYS, calendarWeek, calendarSavePayload, isoWeekday, missingScheduleCount, validateSlots } from './hrCalendarEditor';
 
 const showSlots = slots => slots.map(s => s.join('–')).join(', ') || 'Chiusa';
@@ -42,7 +42,7 @@ export default function CompanyCalendar({ snapshot, month, onMonthChange, onRelo
   const [selection, setSelection] = useState(today), [weekEditor, setWeekEditor] = useState(false), [revision, setRevision] = useState(0), [notice, setNotice] = useState('');
   const day = selection.startsWith(month) ? selection : `${month}-01`;
   const name = id => snapshot.employees.find(e => e.user_id === id)?.name || 'Dipendente';
-  function absences(date) { return snapshot.requests.filter(r => ['leave', 'permission'].includes(r.kind) && r.status === 'approved' && romeDay(r.starts_at) <= date && romeDay(new Date(Date.parse(r.ends_at) - 1)) >= date).sort((a, b) => name(a.user_id).localeCompare(name(b.user_id), 'it')); }
+  function absences(date) { return snapshot.requests.filter(r => ABSENCE_KINDS.includes(r.kind) && r.status === 'approved' && romeDay(r.starts_at) <= date && romeDay(new Date(Date.parse(r.ends_at) - 1)) >= date).sort((a, b) => name(a.user_id).localeCompare(name(b.user_id), 'it')); }
   const shifts = date => snapshot.shifts.filter(s => s.work_date === date);
   function move(delta) { const date = new Date(`${month}-01T12:00:00Z`); date.setUTCMonth(date.getUTCMonth() + delta); onMonthChange(date.toISOString().slice(0, 7)); setNotice(''); }
   async function saved() { await onReload(); setRevision(r => r + 1); setNotice('Orario salvato. Il MES lo acquisisce alla successiva sincronizzazione.'); }

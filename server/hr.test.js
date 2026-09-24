@@ -204,6 +204,10 @@ test('HR migration and authorization flows in isolated PostgreSQL', async (t) =>
     await rpc(manager, 'workspace_hr_operate', ['review', review]);
     assert.equal((await snap(employee)).requests[0].status, 'approved');
     await assert.rejects(rpc(manager, 'workspace_hr_operate', ['review', review]), /già/);
+    for (const kind of ['illness', 'pregnancy']) {
+      const cause = await rpc(employee, 'workspace_hr_operate', ['request', JSON.stringify({ request_key: id(), kind, starts_at: `${today}T19:00:00Z`, ends_at: `${today}T20:00:00Z`, note: `Motivo ${kind}` })]);
+      assert.equal((await db.query('select kind from workspace_hr_requests where id=$1', [cause.id])).rows[0].kind, kind);
+    }
   });
   await t.test('multiple company recipients receive once and can only review requests', async () => {
     await assert.rejects(rpc(employee,'workspace_hr_save_recipients',[[outsider]]),/admin/);

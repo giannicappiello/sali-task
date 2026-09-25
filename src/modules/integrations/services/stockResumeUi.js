@@ -1,4 +1,6 @@
-export const STOCK_RESUME_STALE_MS = 30 * 60 * 1000;
+// Twice the API's 300-second execution limit: no previous request can still
+// be processing, while orphaned manual runs become recoverable promptly.
+export const STOCK_RESUME_STALE_MS = 10 * 60 * 1000;
 
 function timestamp(value) {
   const parsed = Date.parse(String(value || ""));

@@ -40,12 +40,13 @@ export default function MexalSyncCard({
       tabIndex={0}
       onClick={activate}
       onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           activate();
         }
       }}
-      aria-disabled={running}
+      aria-busy={running}
     >
       <div className="mexal-sync-card-top">
         <div className="mexal-sync-icon"><Icon size={23} /></div>

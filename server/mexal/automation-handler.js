@@ -869,6 +869,7 @@ export default async function handler(req, res) {
           saliDiIschiaProposals: await listSaliDiIschiaProposals(admin.supabase),
           requirements,
           sourceGeneratedAt: source.generatedAt,
+          warnings: source.warnings || [],
           calculationOwner: "WORKSPACE",
           calculationVersion: 4,
           supplierAssociationSync,
@@ -910,7 +911,7 @@ export default async function handler(req, res) {
           await refreshAutomaticArticleSupplierAssociations(admin.supabase, client, suppliers);
           const associations = await listWorkspaceArticleSupplierAssociations({ admin: admin.supabase });
           const requirements = attachWorkspaceArticleSuppliers(calculateWorkspaceV4PurchaseRequirements(source), associations);
-          const plan = buildWorkspaceV4PfPlan(requirements, suppliers, {
+          const plan = buildWorkspaceV4PfPlan(requirements.filter((row) => !row.requiresReview), suppliers, {
             mode: body.mode, selectedKeys: body.selectedKeys, supplierId: body.supplierId,
             month: body.month, generatedAt, horizonDays: 60,
           });
@@ -934,7 +935,7 @@ export default async function handler(req, res) {
           const selectedKeys = Array.isArray(body.selectedKeys)
             ? new Set(body.selectedKeys.slice(0, 2000).map((value) => String(value || "").trim()).filter(Boolean))
             : null;
-          const requirements = calculateWorkspaceV4PurchaseRequirements(source);
+          const requirements = calculateWorkspaceV4PurchaseRequirements(source).filter((row) => !row.requiresReview);
           const selectedRequirements = selectedKeys
             ? requirements.filter((row) => selectedKeys.has(String(row.key)))
             : requirements;

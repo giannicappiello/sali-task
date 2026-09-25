@@ -1,6 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { automaticPfLines, calculateWorkspaceV4PurchaseRequirements } from "./workspacemes-v4-purchasing-mes.js";
+import { automaticPfLines, selectedPfRows, calculateWorkspaceV4PurchaseRequirements } from "./workspacemes-v4-purchasing-mes.js";
+
+test("un materiale con fase mancante resta visibile e non interrompe i PF dei materiali validi", () => {
+  const rows = calculateWorkspaceV4PurchaseRequirements({ contractVersion: 4, stocks: [], arrivals: [], existingPf: [],
+    reviewArticleIds: [1], demands: [1, 2].map((id) => ({ articleId: id, articleCode: `M${id}`,
+      productionOrderNumber: `OP${id}`, requiredAt: "2026-10-01", quantity: 12, leadTimeDays: 0 })) });
+  assert.equal(rows.length, 2);
+  assert.equal(rows.find((row) => row.articleId === 1).requiredQuantity, 12);
+  assert.equal(rows.find((row) => row.articleId === 1).requiresReview, true);
+  assert.deepEqual(automaticPfLines(rows, { generatedAt: "2026-09-25" }).map((row) => row.articleId), [2]);
+  assert.deepEqual(selectedPfRows(rows).map((row) => row.articleId), [2]);
+});
 
 test("calcola cronologicamente giacenze, arrivi e lotto di riordino", () => {
   const rows = calculateWorkspaceV4PurchaseRequirements({ contractVersion: 4, generatedAt: "2026-08-30T10:00:00Z",

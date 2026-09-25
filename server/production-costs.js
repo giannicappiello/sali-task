@@ -1,3 +1,4 @@
+import { privateProductionRecord } from "../src/features/production-costs/private-report.js";
 import { costSession } from "./production-action-session.js";
 import { createProgremesClient } from "./progremes-readonly-client.js";
 import { readAllRows, readRowsByIds } from "./private-orders-workbench.js";
@@ -38,7 +39,8 @@ async function readConfigurations(admin) {return readAllRows(()=>admin.from("pro
 export async function handleProductionCosts(req,body) {
  const op=body.operation||"list",isAI=["ai-propose","ai-history","ai-proposal"].includes(op),isConfig=isAI||["configuration","save-configuration","machines","station-history","filling-history"].includes(op);
  const write=isAI||["save-configuration","adjust","overtime","allocate-invoice"].includes(op);
- const session=await costSession(req,isConfig?CONFIG:REPORT,write),{admin,caller,profile}=session;
+ const privateReport=op==="private-list";
+ const session=await costSession(req,privateReport?"produzione.consuntivi_private":isConfig?CONFIG:REPORT,write),{admin,caller,profile}=session;
  if(isAI)return handleCostAI(req,body,session);
  if(op==="filling-history"){
   if(body.settings)validateSettings(body.settings);
@@ -148,7 +150,7 @@ export async function handleProductionCosts(req,body) {
   check(await admin.rpc("production_cost_allocate_invoice",{p_order:Number(body.id),p_line:Number(body.lineId),p_quantity:Number(body.quantity),p_user:profile.id}));
   return {saved:true};
  }
- if(op!=="list")throw fail("Operazione non disponibile.");
+ if(op!=="list"&&!privateReport)throw fail("Operazione non disponibile.");
  const [records,configs]=await Promise.all([
   readAllRows(()=>admin.from("production_cost_records").select("*").order("mes_order_id")),readConfigurations(admin)]);
  const visible=scoped(records,session.scope);
@@ -214,5 +216,7 @@ export async function handleProductionCosts(req,body) {
   const fillingContext=fillingPolicy||config?.settings?.laborRules?.filling?.basis==="historical_pieces"?{policy:fillingPolicy?{id:fillingPolicy.id,effective_from:fillingPolicy.effective_from,settings:{laborHourly:fillingPolicy.settings.laborHourly,laborRules:fillingPolicy.settings.laborRules}}:null,history:fillingPolicy?fillingHistory:fillingHistoriesByConfig.get(config?.id)||fillingHistory}:null;
   return {...calculateRecord(e,config,latestCostAdjustment(audit),commercial,undefined,stationContext,fillingContext),audit,refreshedAt:r.refreshed_at};
  });
- return {records:allocateBulkCosts(calc),canWrite:session.canWrite,configurationsAvailable:configs.length};
+ const calculated=allocateBulkCosts(calc);
+ if(privateReport)return {records:calculated.map(privateProductionRecord),canWrite:false};
+ return {records:calculated,canWrite:session.canWrite,configurationsAvailable:configs.length};
 }

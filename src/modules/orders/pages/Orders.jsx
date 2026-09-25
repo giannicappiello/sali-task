@@ -1,3 +1,5 @@
+import { enrichOrderInvoices } from "../services/orderInvoices";
+import OrderStatus from "../components/OrderStatus";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Search, Sparkles } from "lucide-react";
@@ -101,7 +103,7 @@ export default function Orders() {
     } catch (agentError) {
       console.warn("Errore caricamento anagrafiche cliente/agente:", agentError);
     }
-    setRows(rowsWithDocuments);
+    setRows(await enrichOrderInvoices(rowsWithDocuments));
     setAgentsByCode(names);
     setCustomersByCode(customerDirectory.namesByCode);
     setAgentsByCustomer(customerDirectory.agentsByCustomer);
@@ -121,6 +123,8 @@ export default function Orders() {
       if (!q) return true;
       return [
         ...Object.values(item),
+        getOrderDisplayStatus(item).label,
+        ...(item.linked_invoices || []).map(invoice => `${invoice.sigla} ${invoice.serie}/${invoice.numero}`),
         customerDisplayName(item, customersByCode),
         agentDisplayName(item, agentsByCode, agentsByCustomer),
         ...(item.documenti_mexal || []).flatMap((document) => [
@@ -152,12 +156,12 @@ export default function Orders() {
             <thead><tr><th>Tipo</th><th>Data</th><th>Numero</th><th>Rif. padre</th><th>Cliente</th><th>Agente</th><th>Stato</th><th>Imponibile</th><th>IVA</th><th>Totale documento</th></tr></thead>
             <tbody>
               {filtered.map((item) => {
-                const status = getOrderDisplayStatus(item);
+
                 const parentReference = item.numero_ordine_visualizzato || item.numero_ordine || "Bozza";
                 return [
                   <tr key={item.id} className="orders-clickable-row" onClick={() => navigate(`${basePath}/elenco/${item.id}`)}>
                     <td>PADRE</td><td>{item.data_ordine || "-"}</td><td>{parentReference}</td><td>-</td><td>{customerDisplayName(item, customersByCode)}</td><td>{agentDisplayName(item, agentsByCode, agentsByCustomer)}</td>
-                    <td><span className={`orders-status ${status.className}`}>{status.label}</span></td>
+                    <td><OrderStatus order={item} basePath={basePath} /></td>
                     <td>{Number(item.totale_imponibile ?? item.totale ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td><td>{Number(item.totale_iva || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td><td>{Number(item.totale_documento ?? item.totale ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td>
                   </tr>,
                   ...(item.documenti_mexal || []).map((document) => {

@@ -1,3 +1,4 @@
+import { enrichOrderInvoices } from "./orderInvoices";
 import { supabase } from "../../../lib/supabaseClient.js";
 import { agentDisplayName, loadAgentNameMap } from "./agentNames.js";
 import { buildOrderPdfModel, createOrderPdf, downloadOrderPdf as createAndDownloadPdf } from "./orderPdf.js";
@@ -114,7 +115,8 @@ const [{ data: order, error: orderError }, { data: lines, error: linesError }, d
   }, new Map());
   const childDocuments = (documents || []).map((document) => ({ ...document, righe: linesByDocument.get(document.id) || [] }));
   const enriched = await enrichAgent(order);
-  return { order: { ...enriched, mexal_documents: mergeMexalDocuments(childDocuments, order, moduleCode) }, lines: lines || [] };
+  const [withInvoices] = await enrichOrderInvoices([{ ...enriched, mexal_documents: mergeMexalDocuments(childDocuments, order, moduleCode) }]);
+  return { order: withInvoices, lines: lines || [] };
 }
 
 export { buildOrderPdfModel, createOrderPdf };

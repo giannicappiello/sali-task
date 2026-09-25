@@ -81,7 +81,7 @@ assert.equal(reconciledCoxLine.valore_netto_origine, "calcolato_sconti_scorporo_
 
 const [migration, automation, moduleSource, dashboardSource, syncService, syncCard] = await Promise.all([
   readFile("supabase/migrations/20260728080000_mexal_sales_invoices.sql", "utf8"),
-  readFile("api/mexal/automation.js", "utf8"),
+  readFile("server/mexal/automation-handler.js", "utf8"),
   readFile("src/modules/orders/OrdersModule.jsx", "utf8"),
   readFile("src/modules/integrations/pages/MexalDashboard.jsx", "utf8"),
   readFile("src/modules/integrations/services/mexalSyncService.js", "utf8"),
@@ -114,7 +114,7 @@ assert.match(await readFile("server/mexal/sync-sales-invoices.js", "utf8"), /DET
 assert.match(await readFile("server/mexal/sync-sales-invoices.js", "utf8"), /emptyPagesAfterFte >= 3/);
 assert.match(await readFile("server/mexal/invoice-line-economics.js", "utf8"), /sigla === "FT"/);
 assert.match(await readFile("supabase/migrations/20260728170000_extend_sales_documents_fts_cox.sql", "utf8"), /cod_modulo in \('E', 'S'\)/);
-assert.match(moduleSource, /path="fatture" element={<Invoices \/>}/);
+assert.match(moduleSource, /path="fatture" element=\{[^\n]*<Invoices \/>/);
 assert.match(moduleSource, /fatture\/:invoiceId/);
 assert.match(dashboardSource, /title: "Fatture"/);
 assert.match(dashboardSource, /toggleSyncSchedule/);

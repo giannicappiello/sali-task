@@ -36,10 +36,15 @@ export function getOrderDisplayStatus(order = {}) {
     return PH_INTERNAL_STATUSES[orderStatus] || PH_INTERNAL_STATUSES.bozza;
   }
 
+  if (order.linked_invoices?.length) {
+    const coverage = order.invoice_coverage;
+    return { label: coverage === 'full' ? 'FATTURATO' : coverage === 'partial' ? 'PARZIALMENTE FATTURATO' : 'FATTURA COLLEGATA',
+      className: coverage === 'full' ? 'fatturato' : coverage === 'partial' ? 'parzialmente-fatturato' : 'fattura-collegata', closed: getOrderDisplayStatus({ ...order, linked_invoices: [] }).closed };
+  }
   const hasDocuments = hasMexalDocuments(order);
 
   if (hasOnlyMissingMexalDocuments(order) || syncStatus === "annullato") {
-    return { label: "NON PRESENTE IN MEXAL", className: "annullato", closed: false };
+    return { label: "NON PRESENTE", className: "annullato", closed: false };
   }
 
   if (orderStatus === "evaso") {
@@ -47,7 +52,7 @@ export function getOrderDisplayStatus(order = {}) {
   }
 
   if ((syncStatus === "completato" || orderStatus === "confermato") && hasDocuments) {
-    return { label: "INVIATO A MEXAL", className: "inviato-mexal", closed: true };
+    return { label: "INVIATO", className: "inviato-mexal", closed: true };
   }
 
   if (syncStatus === "completato" || orderStatus === "confermato") {

@@ -63,7 +63,7 @@ test("un ordine assente da Mexal non risulta spedito o evaso", () => {
     modulo_ordini: "prof",
     stato_sincronizzazione: "completato",
     documenti_mexal: [{ id: "d1", tipo_documento: "OCM", numero: "11", stato_operativo: "ANNULLATO", presente_in_mexal: false }],
-  }).label, "NON PRESENTE IN MEXAL");
+  }).label, "NON PRESENTE");
 
   assert.equal(getOrderDisplayStatus({
     modulo_ordini: "prof",

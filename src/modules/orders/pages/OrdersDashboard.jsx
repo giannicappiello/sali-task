@@ -1,3 +1,5 @@
+import { enrichOrderInvoices } from "../services/orderInvoices";
+import OrderStatus from "../components/OrderStatus";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowUpRight, Search, Sparkles } from "lucide-react";
@@ -7,7 +9,6 @@ import useOrdersAccess from "./useOrdersAccess";
 import { useOrdersModule } from "../ordersModuleContext";
 import { filterDashboardOrders, getDashboardOrderMonth } from "../services/dashboardOrders";
 import { agentDisplayName, customerDisplayName, loadAgentNameMap, loadCustomerDirectory, sortOrdersNewestFirst } from "../services/agentNames";
-import { getOrderDisplayStatus } from "../services/orderDisplayStatus";
 import AIOrderTypeDialog from "../components/AIOrderTypeDialog";
 import OrdersStatusFilter from "../components/OrdersStatusFilter";
 import { filterOrderModuleDocuments, filterOrderModuleRows, isPrivateOrderModule, orderModuleDocumentTypes, orderModuleFilter, orderModuleUsesMexalReconciliation } from "../services/orderModules";
@@ -96,7 +97,7 @@ export default function OrdersDashboard() {
     setAgentsByCode(names);
     setCustomersByCode(customerDirectory.namesByCode);
     setAgentsByCustomer(customerDirectory.agentsByCustomer);
-    setOrders(orderRows.map((order) => ({ ...order, documenti_mexal: documentsByOrder.get(order.id) || [], agente_visualizzato: agentDisplayName(order, names, customerDirectory.agentsByCustomer) })));
+    setOrders(await enrichOrderInvoices(orderRows.map((order) => ({ ...order, documenti_mexal: documentsByOrder.get(order.id) || [], agente_visualizzato: agentDisplayName(order, names, customerDirectory.agentsByCustomer) }))));
     setLoading(false);
   }, [canAccessOrders, canSeeAll, readCustomerCodes, countTable, moduleCode, visibleAgents]);
 
@@ -125,8 +126,8 @@ export default function OrdersDashboard() {
       <div className="orders-dashboard-list-header"><div className="orders-dashboard-brand"><img src="/pwa-512x512.png" alt="Logo aziendale" /><div><p>Panoramica operativa</p><h2>Ordini recenti</h2></div></div><div className="orders-dashboard-controls"><label className="orders-dashboard-month"><span>Mese</span><select value={monthFilter} onChange={(event) => setMonthFilter(event.target.value)} aria-label="Filtra ordini per mese"><option value="">Tutti i mesi</option>{monthOptions.map((month) => <option key={month} value={month}>{formatMonth(month)}</option>)}</select></label><OrdersStatusFilter value={statusFilter} onChange={setStatusFilter} options={DASHBOARD_STATUS_OPTIONS} /><div className="orders-search orders-dashboard-search"><Search size={18} aria-hidden="true" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cerca numero, cliente o agente" aria-label="Cerca ordini per numero, cliente o agente" /></div></div></div>
       <div className="orders-dashboard-filter-row"><button type="button" className={!statusFilter ? "active" : ""} onClick={() => setStatusFilter("")}>Tutti gli ordini</button>{statusFilter && <span>Stato: {statusFilter.replaceAll("_", " ")}</span>}{monthFilter && <span>Mese: {formatMonth(monthFilter)}</span>}</div>
       <div className="orders-dashboard-table-wrap"><table className="orders-table orders-dashboard-table"><thead><tr><th>Data</th><th>Ordine</th><th>Cliente</th><th>Agente</th><th>Stato</th><th>Totale</th>{usesMexalReconciliation && <th>Documenti Mexal</th>}<th><span className="sr-only">Apri ordine</span></th></tr></thead><tbody>{filteredOrders.map((order) => {
-        const status = getOrderDisplayStatus(order);
-        return <tr key={order.id} className="orders-clickable-row" onClick={() => navigate(`${basePath}/elenco/${order.id}`)}><td>{formatDate(order.data_ordine)}</td><td><strong>{order.numero_ordine_visualizzato || order.numero_ordine || "Bozza"}</strong></td><td>{customerDisplayName(order, customersByCode)}</td><td>{agentDisplayName(order, agentsByCode, agentsByCustomer)}</td><td><span className={`orders-status ${status.className}`}>{status.label}</span></td><td><strong>{formatCurrency(order.totale_documento ?? order.totale)}</strong></td>{usesMexalReconciliation && <td><div className="orders-dashboard-documents">{documentNumbers(order).map((number) => <span key={number}>{number}</span>)}</div></td>}<td><ArrowUpRight size={18} aria-hidden="true" /></td></tr>;
+
+        return <tr key={order.id} className="orders-clickable-row" onClick={() => navigate(`${basePath}/elenco/${order.id}`)}><td>{formatDate(order.data_ordine)}</td><td><strong>{order.numero_ordine_visualizzato || order.numero_ordine || "Bozza"}</strong></td><td>{customerDisplayName(order, customersByCode)}</td><td>{agentDisplayName(order, agentsByCode, agentsByCustomer)}</td><td><OrderStatus order={order} basePath={basePath} /></td><td><strong>{formatCurrency(order.totale_documento ?? order.totale)}</strong></td>{usesMexalReconciliation && <td><div className="orders-dashboard-documents">{documentNumbers(order).map((number) => <span key={number}>{number}</span>)}</div></td>}<td><ArrowUpRight size={18} aria-hidden="true" /></td></tr>;
       })}</tbody></table></div>
       {!filteredOrders.length && <p className="orders-dashboard-empty">{search || statusFilter || monthFilter ? "Nessun ordine corrisponde ai filtri selezionati." : "Non ci sono ancora ordini da mostrare."}</p>}
     </section>

@@ -1,3 +1,4 @@
+import OrderStatus from "../components/OrderStatus";
 import { useEffect, useState } from "react";
 import { ArrowLeft, Download, Edit3, OctagonX, RefreshCw, Send, Trash2 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -231,7 +232,7 @@ export default function OrderDetail() {
         <div><span>Cliente</span><strong>{order.codice_cliente || "-"}</strong></div>
         <div><span>Agente</span><strong>{agentName || "-"}</strong></div>
         <div><span>Pagamento</span><strong>{order.descrizione_pagamento || order.codice_pagamento || "-"}</strong></div>
-        <div><span>Stato</span><strong className={`orders-sync-badge ${displayStatus.className}`}>{displayStatus.label}</strong></div>
+        <div><span>Stato</span><OrderStatus order={order} basePath={basePath} /></div>
         {moduleCode !== "ph" && <div><span>Ultimo tentativo</span><strong>{order.ultimo_tentativo_sync ? new Date(order.ultimo_tentativo_sync).toLocaleString("it-IT") : "-"}</strong></div>}
         {moduleCode !== "ph" && (privateOrder ? ["OCT"] : ["OCM", "OCX", "OCI"]).map((kind) => {
           const document = order.mexal_documents?.find((item) => item.tipo_documento === kind);

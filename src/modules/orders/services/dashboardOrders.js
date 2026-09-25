@@ -1,3 +1,4 @@
+import { getOrderDisplayStatus } from "./orderDisplayStatus.js";
 export const DASHBOARD_DOCUMENT_FIELDS = ["numero_ocm", "numero_ocx", "numero_oci"];
 
 export function getDashboardOrderMonth(order) {
@@ -18,6 +19,8 @@ export function matchesDashboardOrder(order, query, statusFilter = "", monthFilt
     order.codice_cliente,
     order.codice_agente_mexal,
     order.stato,
+    getOrderDisplayStatus(order).label,
+    ...(order.linked_invoices || []).map(invoice => `${invoice.sigla} ${invoice.serie}/${invoice.numero}`),
     ...DASHBOARD_DOCUMENT_FIELDS.map((field) => order[field]),
     ...(order.documenti_mexal || []).map((document) => document.numero),
   ].some((value) => String(value ?? "").toLowerCase().includes(term));

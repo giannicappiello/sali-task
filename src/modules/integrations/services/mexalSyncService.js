@@ -1,7 +1,5 @@
 import { supabase } from "../../../lib/supabaseClient";
 import { mexalAuthenticatedRequest } from "./mexalAuthenticatedRequest";
-import { stockSyncRequestPayload } from "./stockResumeUi";
-import { requestStockBatch } from "./stockRequestRetry";
 
 export async function getAccessToken({ refresh = false } = {}) {
   const { data, error } = refresh
@@ -90,30 +88,14 @@ export async function invokeProductsSync(onProgress = () => {}, isCancelled = ()
   }
 }
 
-export async function invokeStocksSync(onProgress = () => {}, isCancelled = () => false, { resumeRunId = null } = {}) {
-  let offset = 0;
-  let syncRunId = resumeRunId == null ? null : Number(resumeRunId);
-  let firstRequest = true;
-  const total = { processed: 0, updated: 0, errors: [] };
-  while (true) {
-    if (isCancelled()) throw Object.assign(new Error("Sincronizzazione annullata."), { cancelled: true });
-    const data = await requestStockBatch(
-      (payload) => invokeMexalApi("/api/mexal/automation", payload),
-      stockSyncRequestPayload({ offset, syncRunId, resume: firstRequest }),
-      { isCancelled, onRetry: ({ attempt }) => onProgress({ ...total, syncRunId, retrying: true, attempt }) },
-    );
-    firstRequest = false;
-    syncRunId = data.sync_run_id || syncRunId;
-    total.processed = Number(data.elaborati_totali ?? (total.processed + Number(data.elaborati || 0)));
-    total.updated = Number(data.aggiornati_totali ?? (total.updated + Number(data.aggiornati || 0)));
-    total.failed = Number(data.errori_totali ?? (total.errors.length + (data.errori || []).length));
-    total.imported = Number(data.articoli_importati_totali ?? total.imported ?? 0);
-    total.errors.push(...(data.errori || [])); onProgress({ ...total, total: Number(data.totale || 0), syncRunId });
-    if (isCancelled()) throw Object.assign(new Error("Sincronizzazione annullata."), { cancelled: true });
-    if (data.completato) return { ...total, syncRunId };
-    const next = Number(data.prossimo_offset); if (!Number.isFinite(next) || next <= offset) throw new Error("Paginazione giacenze Mexal non valida.");
-    offset = next;
-  }
+export async function invokeStocksSync(_onProgress, _isCancelled, { resumeRunId = null } = {}) {
+  return invokeMexalApi("/api/mexal/automation", {
+    action: "run_now", syncType: "stocks", syncRunId: resumeRunId, resume: true,
+  });
+}
+
+export async function loadStockQueueStatus() {
+  return invokeMexalApi("/api/mexal/automation", { action: "stock_queue_status" });
 }
 
 export async function invokeClientsSync() {

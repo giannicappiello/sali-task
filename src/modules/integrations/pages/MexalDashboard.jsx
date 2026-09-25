@@ -32,6 +32,7 @@ import {
   invokeProductsDryRun,
   invokeProductsSync,
   invokeStocksSync,
+  loadStockQueueStatus,
   invokeSalesInvoicesSync,
   loadMexalEntityCounts,
   loadMexalRuns,
@@ -88,6 +89,7 @@ export default function MexalDashboard() {
   const [entityCounts, setEntityCounts] = useState({ products: null, clients: null, stocks: null, orders: null, listPriceCommissions: null, salesInvoices: null, salesInvoicesLastSync: null });
   const [entityRuns, setEntityRuns] = useState({ products: null, clients: null, stocks: null, orders: null });
   const [activeSync, setActiveSync] = useState(null);
+  const [stockJob, setStockJob] = useState(null);
   const [pbPreview, setPbPreview] = useState(null);
   const [activeTab, setActiveTab] = useState("syncs");
   const [configurationTab, setConfigurationTab] = useState("settings");
@@ -156,7 +158,8 @@ export default function MexalDashboard() {
     };
   }, [refreshData]);
 
-  const hasRegisteredRunningRun = runs.some((run) => run.status === "running");
+  const hasRegisteredRunningRun = runs.some((run) => run.status === "running")
+    || ["queued", "retry", "leased", "running"].includes(stockJob?.status);
 
   useEffect(() => {
     if (!activeSync && !running && !hasRegisteredRunningRun) return undefined;
@@ -170,6 +173,20 @@ export default function MexalDashboard() {
     }, 1500);
     return () => window.clearInterval(timer);
   }, [activeSync, hasRegisteredRunningRun, running]);
+
+  useEffect(() => {
+    if (!canSync("stocks")) return undefined;
+    let disposed = false;
+    const poll = async () => {
+      try {
+        const result = await loadStockQueueStatus();
+        if (!disposed) setStockJob(result.job || null);
+      } catch { /* Keep the last observed server state during a connection loss. */ }
+    };
+    poll();
+    const timer = window.setInterval(poll, 5000);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [canSync]);
 
   async function runCommercialSync() {
     if (!canSync("commercial_conditions")) return;
@@ -230,6 +247,13 @@ export default function MexalDashboard() {
         setPhase("OCT: sincronizzazione ordini cliente");
         result = await startMexalSync("oct_orders");
       } else result = await startMexalSync(type);
+      if (type === "stocks" && result?.queued) {
+        setMessage({ type: "info", text: "Giacenze affidate al server. Puoi chiudere questa pagina: avanzamento e ripresa sono automatici." });
+        const status = await loadStockQueueStatus();
+        setStockJob(status.job || null);
+        await refreshData(result.sync_run_id);
+        return;
+      }
       if (result?.cancelled) {
         setMessage({ type: "warning", text: `Sincronizzazione ${syncLabels[type] || type} arrestata.` });
         await refreshData(result.sync_run_id || result.runId);
@@ -391,6 +415,13 @@ export default function MexalDashboard() {
     { icon: FileText, title: "Fatture", description: "Importa da Mexal i documenti FTE, FTS e COX completi di testata e righe.", recordLabel: "documenti importati", recordCount: entityCounts.salesInvoices, enabled: true, type: "sales_invoices", actionLabel: "Sincronizza ora", runningLabel: "Importazione documenti...", lastRun: entityCounts.salesInvoicesLastSync },
   ];
 
+  const stockRun = latestRunsByType.stocks || entityRuns.stocks;
+  const currentStockJob = stockJob && Number(stockJob.sync_run_id) === Number(stockRun?.id) ? stockJob : null;
+  const stockQueued = currentStockJob && ["queued", "retry", "leased", "running"].includes(currentStockJob.status);
+  const stockServerPhase = currentStockJob?.status === "retry" ? "Ripresa automatica in attesa"
+    : currentStockJob?.status === "queued" ? "In coda sul server" : "Elaborazione sul server";
+  const stockServerProgress = stockRun?.metadata?.total > 0 ? Math.round(Number(stockRun.processed || 0) / stockRun.metadata.total * 100) : 0;
+
   const runningRuns = runs.filter((item) => item.status === "running").length;
   const failedRuns = runs.filter((item) => ["failed", "timeout", "completed_with_errors"].includes(item.status)).length;
 
@@ -421,21 +452,21 @@ export default function MexalDashboard() {
             const stockResume = card.type === "stocks"
               ? stockResumeUiState(card.lastRunData, { clientActive })
               : null;
-            const cardRunning = stockResume?.registeredRunning
+            const cardRunning = card.type === "stocks" && currentStockJob?.status === "failed" ? false : card.type === "stocks" && stockQueued ? true : stockResume?.registeredRunning
               ? stockResume.running
               : clientActive || card.lastRunData?.status === "running";
             return <MexalSyncCard
               key={card.title}
               {...card}
-              actionLabel={stockResume?.actionLabel || card.actionLabel}
+              actionLabel={card.type === "stocks" && currentStockJob?.status === "failed" ? "Riprendi" : stockResume?.actionLabel || card.actionLabel}
               running={cardRunning}
               stopping={card.type === "sales_invoices" ? stoppingInvoiceSync : stoppingRunId === card.lastRunData?.id}
-              canStop={card.type === "sales_invoices" || card.type === "product_categories"}
+              canStop={["sales_invoices", "product_categories", "stocks"].includes(card.type)}
               lastRun={formatDate(card.lastRun || card.lastRunData?.started_at)}
               run={card.lastRunData}
               onSync={() => card.type === "commercial_conditions"
                 ? runCommercialSync()
-                : runEntitySync(card.type, { resumeRunId: stockResume?.canResume ? card.lastRunData?.id : null })}
+                : runEntitySync(card.type, { resumeRunId: stockResume?.canResume || (card.type === "stocks" && currentStockJob?.status === "failed") ? card.lastRunData?.id : null })}
               onStop={() => card.type === "sales_invoices" ? stopInvoiceSync() : stopRun(card.lastRunData)}
               onOpen={() => card.type === "agents" && navigate("/integrations/mexal/agenti")}
               automaticEnabled={card.type === "orders"
@@ -449,7 +480,15 @@ export default function MexalDashboard() {
           })}
         </section>
 
-        <MexalProgress running={running || Boolean(activeSync)} progress={progress} phase={phase} />
+        <MexalProgress running={running || Boolean(activeSync) || Boolean(stockQueued)} progress={stockQueued && !activeSync ? stockServerProgress : progress} phase={stockQueued && !activeSync ? `Giacenze: ${stockRun?.processed || 0}/${stockRun?.metadata?.total || "?"} articoli · ${stockServerPhase}` : phase} />
+        {currentStockJob && <div className={`mexal-alert alert-${currentStockJob.status === "failed" ? "error" : "info"}`}>
+          <span>Giacenze · ultimo avanzamento: {formatDate(stockRun?.metadata?.checkpointed_at)}.
+            {currentStockJob.status === "retry" && ` Nuovo tentativo: ${formatDate(currentStockJob.available_at)}.`}
+            {currentStockJob.last_error && ` Ultimo errore: ${currentStockJob.last_error}`}
+            {currentStockJob.status === "failed" && " Tentativi automatici esauriti: usa Riprendi per riprovare dal punto salvato."}
+            {currentStockJob.status === "completed" && ` Conclusa: ${stockRun?.inserted || 0} nuovi articoli importati, ${stockRun?.failed || 0} errori. Dettagli nello storico.`}
+          </span>
+        </div>}
 
         <section ref={historyRef} className="mexal-history-section">
           <MexalHistory runs={runs} selectedRunId={selectedRun?.id} onSelect={setSelectedRun} />

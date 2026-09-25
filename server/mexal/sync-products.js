@@ -1294,13 +1294,21 @@ export default async function handler(req, res) {
       }
     }
 
-    const stockRetryOptions = action === "sync-stock-it" ? {} : undefined;
-    const mexal = buildMexalClient({ retryOptions: stockRetryOptions });
+    const stockRetryOptions = action === "sync-stock-it" ? { maxRetries: 1 } : undefined;
+    let articleDeadline = Infinity;
+    const stockRequest = (options) => {
+      const remaining = articleDeadline - Date.now();
+      if (remaining <= 0) throw new Error("Tempo massimo articolo superato; articolo segnalato nello storico.");
+      return requestMexal({ ...options, timeoutMs: Math.min(options.timeoutMs, remaining) });
+    };
+    const stockClientOptions = action === "sync-stock-it"
+      ? { retryOptions: stockRetryOptions, timeoutMs: 15000, request: stockRequest } : {};
+    const mexal = buildMexalClient({ ...stockClientOptions });
     const availabilityClients = {
       warehouse5: Number(mexal.magazzino) === STOCK_WAREHOUSE
         ? mexal
-        : buildMexalClient({ warehouse: STOCK_WAREHOUSE, retryOptions: stockRetryOptions }),
-      allWarehouses: buildMexalClient({ warehouse: null, retryOptions: stockRetryOptions }),
+        : buildMexalClient({ warehouse: STOCK_WAREHOUSE, ...stockClientOptions }),
+      allWarehouses: buildMexalClient({ warehouse: null, ...stockClientOptions }),
     };
     // Existing runs deliberately retain the legacy reader and their ordering.
     let inputRun = syncRun;
@@ -1329,7 +1337,7 @@ export default async function handler(req, res) {
     if (action === "sync-stock-it") {
       warehouseClients = new Map(warehouseCatalog.map((warehouse) => [
         warehouse.number,
-        buildMexalClient({ warehouse: warehouse.number, retryOptions: stockRetryOptions }),
+        buildMexalClient({ warehouse: warehouse.number, ...stockClientOptions }),
       ]));
     }
 
@@ -1388,8 +1396,10 @@ export default async function handler(req, res) {
         return res.status(200).json({ totale: stockArticles.length, elaborati: 0, elaborati_totali: state.processed, offset: state.nextOffset, prossimo_offset: state.nextOffset, completato: state.nextOffset >= stockArticles.length, aggiornati: 0, aggiornati_totali: state.updated, errori: [], errori_totali: state.failed, sync_run_id: Number(syncRunId), replay: true, stale: state.stale });
       }
       const authoritativeOffset = state.nextOffset;
-      const batch = stockArticles.slice(authoritativeOffset, authoritativeOffset + state.batchSize);
-      const result = { totale: stockArticles.length, elaborati: batch.length, offset: authoritativeOffset, prossimo_offset: authoritativeOffset + batch.length, completato: authoritativeOffset + batch.length >= stockArticles.length, aggiornati: 0, esclusi: 0, errori: [] };
+      const effectiveBatchSize = Math.min(state.batchSize, 3);
+      const batch = stockArticles.slice(authoritativeOffset, authoritativeOffset + effectiveBatchSize);
+      const batchStartedAt = Date.now();
+      const result = { totale: stockArticles.length, elaborati: 0, offset: authoritativeOffset, prossimo_offset: authoritativeOffset + batch.length, completato: authoritativeOffset + batch.length >= stockArticles.length, aggiornati: 0, esclusi: 0, errori: [] };
       const updateOperations = [];
       const importedArticles = [];
       const batchCodes = batch.map(getArticleCode).filter(Boolean);
@@ -1403,7 +1413,12 @@ export default async function handler(req, res) {
       const cacheCodes = new Set((knownCache.data || []).map((row) => row.codice_articolo));
       let importGroups;
       await processStockArticles(batch, {
-        beforeArticle: () => assertRunStillRunning(supabase, syncRunId, "stocks"),
+        shouldContinue: () => Date.now() - batchStartedAt < 60000,
+        beforeArticle: async () => {
+          await assertRunStillRunning(supabase, syncRunId, "stocks");
+          articleDeadline = Date.now() + 60000;
+          result.elaborati += 1;
+        },
         processArticle: async (summary) => {
           const code = getArticleCode(summary);
           const availabilityMexal = selectAvailabilityClient(code, availabilityClients);
@@ -1451,7 +1466,7 @@ export default async function handler(req, res) {
         },
       });
       const updateAudit = stockUpdateDiagnostics(currentRun.metadata, updateOperations);
-      const checkpoint = stockBatchCheckpoint(currentRun, { processed: result.elaborati, updated: result.aggiornati, skipped: result.esclusi, failed: result.errori.length, errors: result.errori, importedArticles }, { total: stockArticles.length, batchSize: state.batchSize, metadata: { stock_update_diagnostics: updateAudit } });
+      const checkpoint = stockBatchCheckpoint(currentRun, { processed: result.elaborati, updated: result.aggiornati, skipped: result.esclusi, failed: result.errori.length, errors: result.errori, importedArticles }, { total: stockArticles.length, batchSize: effectiveBatchSize, metadata: { stock_update_diagnostics: updateAudit } });
       const persisted = await checkpointSyncRunProgress(supabase, syncRunId, checkpoint.expectedProcessed, checkpoint.values);
       if (!persisted.advanced) {
         const concurrent = stockRunState(persisted.run, { batchSize: state.batchSize, total: stockArticles.length });

@@ -387,7 +387,17 @@ async function runScheduledStep(req, res, body, syncType, runHandler) {
   // of treating it as a competing manual synchronization. This also lets a new
   // daily job recover an orphaned run whose previous queue job exhausted its
   // lease retries.
-  if (syncType === "stocks") body.resume = true;
+  if (syncType === "stocks") {
+    const { data: job, error } = await admin.supabase.from("mexal_sync_jobs")
+      .select("sync_type,sync_run_id,status,lock_token,lease_expires_at").eq("id", body.context?.job_id || 0).maybeSingle();
+    if (error) throw error;
+    if (!job || job.sync_type !== "stocks" || !["leased", "running"].includes(job.status)
+      || job.lock_token !== body.context?.lock_token || Date.parse(job.lease_expires_at) <= Date.now()
+      || (job.sync_run_id && Number(job.sync_run_id) !== Number(body.syncRunId))) {
+      return sendFailure(res, 409, syncType, "La coda non assegna questa esecuzione al worker.");
+    }
+    body.resume = true;
+  }
 
   if (syncType === "list_price_commissions") {
     let running = await findRunningSync(admin.supabase, syncType);
@@ -1010,13 +1020,29 @@ export default async function handler(req, res) {
           env: process.env,
         }));
       }
+      case "stock_queue_status": {
+        const admin = await createAdmin(req, "integrations.sync.stocks");
+        const { data, error } = await admin.supabase.from("mexal_sync_jobs")
+          .select("id,sync_run_id,status,attempts,max_attempts,last_error,available_at,heartbeat_at,updated_at")
+          .eq("sync_type", "stocks").order("id", { ascending: false }).limit(1).maybeSingle();
+        if (error) throw error;
+        return sendSuccess(res, 200, { job: data });
+      }
       case "run_now": {
         const syncType = body.syncType || body.sync_type;
         const runHandler = RUN_HANDLERS[syncType];
         if (!runHandler) return sendFailure(res, 400, syncType || "run_now", "Tipo sincronizzazione non supportato.");
-        return executeIdempotently(req, res, body, syncType, (response, admin) => (
-          startSync(req, response, body, syncType, runHandler, admin)
-        ));
+        return executeIdempotently(req, res, body, syncType, async (response, admin) => {
+          if (syncType === "stocks") {
+            const { data, error } = await admin.supabase.rpc("enqueue_manual_stock_sync", {
+              p_requested_by: admin.authUserId, p_resume_run_id: body.syncRunId || null,
+            });
+            if (error) throw error;
+            wakeMexalWorker({ manualJobId: data.manualPriority ? data.jobId : null, continuation: true });
+            return response.status(202).json({ ...data, success: true });
+          }
+          return startSync(req, response, body, syncType, runHandler, admin);
+        });
       }
       case "run_scheduled_step": {
         const syncType = body.syncType || body.sync_type;

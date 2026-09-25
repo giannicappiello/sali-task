@@ -1,8 +1,9 @@
 export const STOCK_RUN_STATE_VERSION = 2;
 export const STOCK_RUN_STALE_MS = 30 * 60 * 1000;
 
-export async function processStockArticles(articles, { beforeArticle, processArticle, onError }) {
+export async function processStockArticles(articles, { beforeArticle, processArticle, onError, shouldContinue = () => true }) {
   for (const article of articles) {
+    if (!shouldContinue()) break;
     // Cancellation and run lifecycle failures must still stop the batch.
     await beforeArticle(article);
     try {

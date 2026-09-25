@@ -73,12 +73,13 @@ async function callAutomation(req, job, secret) {
 async function resumeBlockedCycles(admin) {
   const { data: cycles, error: cyclesError } = await admin
     .from("mexal_sync_cycles")
-    .select("id")
+    .select("id,metadata")
     .eq("status", "failed")
     .order("scheduled_for", { ascending: true })
     .limit(20);
   if (cyclesError) throw cyclesError;
   for (const cycle of cycles || []) {
+    if (cycle.metadata?.producer === "workspace_manual_stocks") continue;
     const { error: jobsError } = await admin
       .from("mexal_sync_jobs")
       .update({ status: "skipped", completed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
@@ -185,7 +186,8 @@ async function runWorker(req, res) {
       const lockToken = String(activeJob.lock_token || "");
       // OCT is a complete document pass: give it a fresh function budget.
       // Release only the newly acquired lease, preserving offset and result.
-      if (activeJob.sync_type === "oct_orders" && Date.now() - startedAt > 15000) {
+      if ((activeJob.sync_type === "oct_orders" && Date.now() - startedAt > 15000)
+        || (activeJob.sync_type === "stocks" && Date.now() - startedAt > 60000)) {
         await rpc(admin, "retry_mexal_sync_job", {
           p_job_id: activeJob.id, p_worker_id: workerId, p_lock_token: lockToken,
           p_error: null, p_offset: Number(activeJob.offset || 0),
@@ -260,6 +262,9 @@ async function runWorker(req, res) {
         p_result: {},
         p_is_failure: true,
       });
+      if (activeJob.sync_type === "stocks") {
+        wakeMexalWorker({ manualJobId: activeJob.payload?.lane === "manual_priority" ? activeJob.id : null, continuation: true });
+      }
     }
     if (!manualJobId) await admin.from("mexal_worker_heartbeat").upsert({
       id: 1,

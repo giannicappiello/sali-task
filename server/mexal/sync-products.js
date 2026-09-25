@@ -1,7 +1,7 @@
 import https from "node:https";
 import { createClient } from "@supabase/supabase-js";
-import { checkpointSyncRunProgress, completeSyncRun, createSyncRun as createCentralSyncRun, failSyncRun, failSyncRunUnlessClosed, findRunningSync, getSyncRun as getCentralSyncRun, isSyncRunClosedError } from "./lib/syncRuns.js";
-import { shouldReplayStockCheckpoint, stockBatchCheckpoint, stockRunState, stockUpdateDiagnostics } from "./lib/stockRunState.js";
+import { checkpointSyncRunProgress, completeSyncRun, completeSyncRunWithErrors, createSyncRun as createCentralSyncRun, failSyncRun, failSyncRunUnlessClosed, findRunningSync, getSyncRun as getCentralSyncRun, isSyncRunClosedError } from "./lib/syncRuns.js";
+import { processStockArticles, shouldReplayStockCheckpoint, stockBatchCheckpoint, stockRunState, stockUpdateDiagnostics } from "./lib/stockRunState.js";
 import { withTransientMexalRetry } from "./lib/transientRetry.js";
 import { authoritativeArticleUnit } from "./unit-of-measure.js";
 import { loadRunInputs } from "./lib/runInputs.js";
@@ -1003,6 +1003,25 @@ export function mapArticleToOrdersCache(article, { imageUrl = null } = {}) {
   };
 }
 
+export async function importMissingStockArticle({ supabase, article, productExists, cacheExists, hierarchy = {}, onImported }) {
+  if (!isActiveArticle(article)) return;
+  const code = getArticleCode(article);
+  if (!productExists) {
+    // Preserve existing/catalogue-managed fields and tolerate a simultaneous
+    // product importer. The unique article code prevents duplicate products.
+    const { data, error } = await supabase.from("prodotti")
+      .upsert(mapArticleToProduct(article, { hierarchy }), { onConflict: "codice", ignoreDuplicates: true }).select("id");
+    if (error) throw error;
+    if (data?.length) onImported({ codice: code, destinazione: "Catalogo prodotti" });
+  }
+  if (!cacheExists) {
+    const { data, error } = await supabase.from("ordini_prodotti_cache")
+      .upsert(mapArticleToOrdersCache(article), { onConflict: "codice_articolo", ignoreDuplicates: true }).select("codice_articolo");
+    if (error) throw error;
+    if (data?.length) onImported({ codice: code, destinazione: "Anagrafica magazzino e ordini" });
+  }
+}
+
 export function mapArticleWarehouseStock(article, warehouse, { fallback = {}, syncRunId = null, synchronizedAt = new Date().toISOString() } = {}) {
   const code = getArticleCode(article) || getArticleCode(fallback);
   if (!code) throw new Error("Codice articolo mancante nel progressivo di magazzino Mexal.");
@@ -1350,16 +1369,17 @@ export default async function handler(req, res) {
           elaborati_totali: Number(currentRun.processed || 0),
           offset: Number(currentRun.processed || 0),
           prossimo_offset: Number(currentRun.processed || 0),
-          completato: currentRun.status === "completed",
+          completato: ["completed", "completed_with_errors"].includes(currentRun.status),
           aggiornati: 0,
           aggiornati_totali: Number(currentRun.updated || 0),
           errori: [],
           errori_totali: Number(currentRun.failed || 0),
+          articoli_importati_totali: Number(currentRun.inserted || 0),
           sync_run_id: Number(syncRunId),
           stato_run: currentRun.status,
           replay: true,
         };
-        if (currentRun.status !== "completed") return res.status(409).json({ ...terminalPayload, error: currentRun.error_message || `Run giacenze chiusa con stato ${currentRun.status}.` });
+        if (!terminalPayload.completato) return res.status(409).json({ ...terminalPayload, error: currentRun.error_message || `Run giacenze chiusa con stato ${currentRun.status}.` });
         return res.status(200).json(terminalPayload);
       }
       const stockArticles = articles;
@@ -1371,13 +1391,34 @@ export default async function handler(req, res) {
       const batch = stockArticles.slice(authoritativeOffset, authoritativeOffset + state.batchSize);
       const result = { totale: stockArticles.length, elaborati: batch.length, offset: authoritativeOffset, prossimo_offset: authoritativeOffset + batch.length, completato: authoritativeOffset + batch.length >= stockArticles.length, aggiornati: 0, esclusi: 0, errori: [] };
       const updateOperations = [];
-      for (const summary of batch) {
-        await assertRunStillRunning(supabase, syncRunId, "stocks");
-        const code = getArticleCode(summary);
-        try {
+      const importedArticles = [];
+      const batchCodes = batch.map(getArticleCode).filter(Boolean);
+      const [knownProducts, knownCache] = await Promise.all([
+        supabase.from("prodotti").select("codice_mexal").in("codice_mexal", batchCodes),
+        supabase.from("ordini_prodotti_cache").select("codice_articolo").in("codice_articolo", batchCodes),
+      ]);
+      if (knownProducts.error) throw knownProducts.error;
+      if (knownCache.error) throw knownCache.error;
+      const productCodes = new Set((knownProducts.data || []).map((row) => row.codice_mexal));
+      const cacheCodes = new Set((knownCache.data || []).map((row) => row.codice_articolo));
+      let importGroups;
+      await processStockArticles(batch, {
+        beforeArticle: () => assertRunStillRunning(supabase, syncRunId, "stocks"),
+        processArticle: async (summary) => {
+          const code = getArticleCode(summary);
           const availabilityMexal = selectAvailabilityClient(code, availabilityClients);
           const article = await loadFullArticle(availabilityMexal, code, summary);
-          if (!isActiveArticle(article)) { result.esclusi += 1; continue; }
+          if (!isActiveArticle(article)) { result.esclusi += 1; return; }
+          if (!productCodes.has(code) || !cacheCodes.has(code)) {
+            if (!productCodes.has(code)) importGroups ??= getGroupMap(mexal);
+            await importMissingStockArticle({
+              supabase, article, productExists: productCodes.has(code), cacheExists: cacheCodes.has(code),
+              hierarchy: importGroups ? resolveHierarchy(article.cod_grp_merc, await importGroups) : {},
+              onImported: (entry) => importedArticles.push(entry),
+            });
+            productCodes.add(code);
+            cacheCodes.add(code);
+          }
           const stock = calculateStock(article); const now = new Date().toISOString();
           const availability = mexalNetAvailability(article, stock).value;
           const lastCost = getLastCost(article);
@@ -1401,28 +1442,28 @@ export default async function handler(req, res) {
           if (cacheUpdateError) throw cacheUpdateError;
           result.aggiornati += updatedRows?.length || 0;
           for (const row of updatedRows || []) updateOperations.push({ id: row.id, code });
-        } catch (error) {
-          if (error?.retryable === true) {
-            error.stockUpdateDiagnostics = stockUpdateDiagnostics(currentRun.metadata, updateOperations);
-            throw error;
-          }
-          result.errori.push({ codice: code || "senza codice", errore: error?.message || String(error) });
-        }
-      }
+        },
+        onError: (summary, error) => {
+          // Retries for this article have already been attempted by the Mexal
+          // client. Record the failure and allow the remaining articles to run.
+          result.errori.push({ codice: getArticleCode(summary) || "senza codice", errore: error?.message || String(error), codice_errore: error?.code || null, tentativi: error?.retryAttempts || 1 });
+        },
+      });
       const updateAudit = stockUpdateDiagnostics(currentRun.metadata, updateOperations);
-      const checkpoint = stockBatchCheckpoint(currentRun, { processed: result.elaborati, updated: result.aggiornati, skipped: result.esclusi, failed: result.errori.length }, { total: stockArticles.length, batchSize: state.batchSize, metadata: { stock_update_diagnostics: updateAudit } });
+      const checkpoint = stockBatchCheckpoint(currentRun, { processed: result.elaborati, updated: result.aggiornati, skipped: result.esclusi, failed: result.errori.length, errors: result.errori, importedArticles }, { total: stockArticles.length, batchSize: state.batchSize, metadata: { stock_update_diagnostics: updateAudit } });
       const persisted = await checkpointSyncRunProgress(supabase, syncRunId, checkpoint.expectedProcessed, checkpoint.values);
       if (!persisted.advanced) {
         const concurrent = stockRunState(persisted.run, { batchSize: state.batchSize, total: stockArticles.length });
         return res.status(200).json({ totale: stockArticles.length, elaborati: 0, elaborati_totali: concurrent.processed, offset: concurrent.nextOffset, prossimo_offset: concurrent.nextOffset, completato: persisted.run.status === "completed" || concurrent.nextOffset >= stockArticles.length, aggiornati: 0, aggiornati_totali: concurrent.updated, errori: [], errori_totali: concurrent.failed, sync_run_id: Number(syncRunId), replay: true, stale: concurrent.stale });
       }
       const persistedState = stockRunState(persisted.run, { total: stockArticles.length });
+      result.articoli_importati_totali = new Set((persisted.run.metadata?.stock_imported_articles || []).map((entry) => entry.codice)).size;
       result.prossimo_offset = persistedState.nextOffset;
       result.completato = persistedState.nextOffset >= stockArticles.length;
       if (result.completato && persistedState.failed > 0) {
-        const message = "Sincronizzazione giacenze completata con errori reali.";
-        await failSyncRun(supabase, syncRunId, message, { processed: persistedState.processed, updated: persistedState.updated, skipped: persistedState.skipped, failed: persistedState.failed, metadata: persisted.run.metadata });
-        return res.status(422).json({ ...result, error: message, elaborati_totali: persistedState.processed, aggiornati_totali: persistedState.updated, errori_totali: persistedState.failed, sync_run_id: Number(syncRunId), stato_run: "failed" });
+        const message = `Sincronizzazione completata: ${persistedState.failed} articoli con errori. Le giacenze degli altri articoli sono state aggiornate. Consulta il dettaglio nello storico.`;
+        await completeSyncRunWithErrors(supabase, syncRunId, { error_message: message, processed: persistedState.processed, updated: persistedState.updated, skipped: persistedState.skipped, failed: persistedState.failed, metadata: persisted.run.metadata });
+        return res.status(200).json({ ...result, warning: message, elaborati_totali: persistedState.processed, aggiornati_totali: persistedState.updated, errori_totali: persistedState.failed, sync_run_id: Number(syncRunId), stato_run: "completed_with_errors" });
       }
       if (result.completato) await completeSyncRun(supabase, syncRunId, { processed: persistedState.processed, updated: persistedState.updated, skipped: persistedState.skipped, failed: 0, metadata: persisted.run.metadata, error_message: null });
       const persistedAudit = persisted.run.metadata?.stock_update_diagnostics || updateAudit;

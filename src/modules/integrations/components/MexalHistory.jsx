@@ -50,6 +50,9 @@ export default function MexalHistory({ runs = [], selectedRunId, onSelect }) {
   const [source, setSource] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const selectedRun = runs.find((run) => run.id === selectedRunId);
+  const stockErrors = selectedRun?.metadata?.stock_errors || [];
+  const importedArticles = selectedRun?.metadata?.stock_imported_articles || [];
 
   const filtered = useMemo(() => runs.filter((run) => (
     (!type || run.sync_type === type)
@@ -140,12 +143,41 @@ export default function MexalHistory({ runs = [], selectedRunId, onSelect }) {
                   <td>{run.updated ?? run.records_updated ?? 0}</td>
                   <td>{run.failed ?? run.records_failed ?? 0}</td>
                   <td>{formatDuration(run.duration_ms)}</td>
-                  <td>{run.error_message || "—"}</td>
+                  <td>{run.error_message || (run.sync_type === "stocks" && run.inserted > 0 ? `${run.inserted} articoli importati automaticamente · seleziona per il dettaglio` : "—")}</td>
                 </tr>
               ))}
           </tbody>
         </table>
       </div>
+      {selectedRun?.sync_type === "stocks" && importedArticles.length > 0 && (
+        <section aria-label="Articoli importati automaticamente">
+          <h4>Articoli importati automaticamente · esecuzione {selectedRun.id}</h4>
+          <div className="mexal-history-table-wrap">
+            <table className="mexal-history-table">
+              <thead><tr><th>Articolo</th><th>Destinazione</th><th>Importato</th></tr></thead>
+              <tbody>{importedArticles.map((entry, index) => (
+                <tr key={`${entry.codice}-${index}`}><td>{entry.codice}</td><td>{entry.destinazione}</td><td>{formatDate(entry.recorded_at)}</td></tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </section>
+      )}
+      {selectedRun?.sync_type === "stocks" && Number(selectedRun.failed) > 0 && (
+        <section aria-label="Errori articoli giacenze">
+          <h4>Articoli con errori · esecuzione {selectedRun.id}</h4>
+          <p>Gli articoli elencati richiedono verifica: il loro aggiornamento non è stato completato. Le giacenze importate per gli altri articoli sono conservate.</p>
+          {stockErrors.length > 0 ? (
+            <div className="mexal-history-table-wrap">
+              <table className="mexal-history-table">
+                <thead><tr><th>Articolo</th><th>Errore</th><th>Rilevato</th></tr></thead>
+                <tbody>{stockErrors.map((error, index) => (
+                  <tr key={`${error.codice}-${index}`}><td>{error.codice}</td><td>{error.errore}</td><td>{formatDate(error.recorded_at)}</td></tr>
+                ))}</tbody>
+              </table>
+            </div>
+          ) : <p>Questa esecuzione precedente non ha conservato il dettaglio degli errori per articolo.</p>}
+        </section>
+      )}
     </section>
   );
 }

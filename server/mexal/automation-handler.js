@@ -254,7 +254,7 @@ function sendRunning(res, phase, run) {
 }
 
 function sendSuccess(res, statusCode, payload = {}) {
-  const status = payload.completed === false || payload.completato === false ? "running" : "completed";
+  const status = payload.completed === false || payload.completato === false ? "running" : payload.stato_run === "completed_with_errors" ? "completed_with_errors" : "completed";
   return res.status(statusCode).json({ ...payload, success: true, status });
 }
 
@@ -421,7 +421,7 @@ async function runScheduledStep(req, res, body, syncType, runHandler) {
   return res.status(200).json({
     ...captured.payload,
     success: true,
-    status: completed ? "completed" : "running",
+    status: completed ? (captured.payload?.stato_run === "completed_with_errors" ? "completed_with_errors" : "completed") : "running",
     completed,
     syncRunId: syncRunId(captured.payload),
   });

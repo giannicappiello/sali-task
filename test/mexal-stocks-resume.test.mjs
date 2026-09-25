@@ -218,10 +218,10 @@ await assert.rejects(
 );
 
 const handlerSource = await readFile("server/mexal/sync-products.js", "utf8");
-const automationSource = await readFile("api/mexal/automation.js", "utf8");
+const automationSource = await readFile("server/mexal/automation-handler.js", "utf8");
 const runsSource = await readFile("server/mexal/lib/syncRuns.js", "utf8");
 assert.match(handlerSource, /checkpointSyncRunProgress\(supabase, syncRunId/);
-assert.match(handlerSource, /result\.completato && persistedState\.failed > 0[\s\S]*failSyncRun\(supabase, syncRunId/, "gli errori reali chiudono la run in failed");
+assert.match(handlerSource, /result\.completato && persistedState\.failed > 0[\s\S]*completeSyncRunWithErrors\(supabase, syncRunId/, "gli errori articolo non trasformano una scansione completa in una run interrotta");
 assert.match(handlerSource, /\.eq\("codice_mexal", code\)\.eq\("sincronizzato_mexal", true\)\.eq\("attivo_mexal", true\)/, "gli update restano idempotenti e limitati agli articoli ammessi");
 assert.match(automationSource, /syncType === "stocks" && body\.resume === true/, "un nuovo client può collegarsi alla sola run stocks già attiva");
 assert.match(automationSource, /runScheduledStep[\s\S]*if \(syncType === "stocks"\) body\.resume = true/, "ogni job pianificato riprende automaticamente una run stocks orfana");

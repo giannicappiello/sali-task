@@ -1,6 +1,18 @@
 export const STOCK_RUN_STATE_VERSION = 2;
 export const STOCK_RUN_STALE_MS = 30 * 60 * 1000;
 
+export async function processStockArticles(articles, { beforeArticle, processArticle, onError }) {
+  for (const article of articles) {
+    // Cancellation and run lifecycle failures must still stop the batch.
+    await beforeArticle(article);
+    try {
+      await processArticle(article);
+    } catch (error) {
+      await onError(article, error);
+    }
+  }
+}
+
 function nonNegativeInteger(value, fallback = 0) {
   const number = Number(value);
   return Number.isSafeInteger(number) && number >= 0 ? number : fallback;
@@ -82,12 +94,23 @@ export function stockBatchCheckpoint(run, batch, { total, batchSize, now = new D
     checkpointed_at: now,
     last_batch_offset: state.nextOffset,
     last_batch_processed: nonNegativeInteger(batch?.processed),
+    // Error details and cursor share the same compare-and-set checkpoint.
+    // A replay cannot append the same batch twice or lose earlier errors.
+    stock_errors: [
+      ...(run?.metadata?.stock_errors || []),
+      ...(batch?.errors || []).map((error) => ({ ...error, recorded_at: now })),
+    ],
+    stock_imported_articles: [
+      ...(run?.metadata?.stock_imported_articles || []),
+      ...(batch?.importedArticles || []).map((entry) => ({ ...entry, recorded_at: now })),
+    ],
   };
 
   return {
     expectedProcessed: state.processed,
     values: {
       processed,
+      inserted: new Set(metadata.stock_imported_articles.map((entry) => entry.codice)).size,
       updated: state.updated + nonNegativeInteger(batch?.updated),
       skipped: state.skipped + nonNegativeInteger(batch?.skipped),
       failed: state.failed + nonNegativeInteger(batch?.failed),

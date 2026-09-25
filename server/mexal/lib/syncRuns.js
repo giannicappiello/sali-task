@@ -191,6 +191,7 @@ async function closeSyncRun(admin, id, status, values = {}) {
 }
 export const isSyncRunClosedError = (error) => error?.code === "MEXAL_SYNC_RUN_CLOSED";
 export const completeSyncRun = (admin, id, values = {}) => closeSyncRun(admin, id, "completed", values);
+export const completeSyncRunWithErrors = (admin, id, values = {}) => closeSyncRun(admin, id, "completed_with_errors", values);
 export const failSyncRun = (admin, id, errorMessage, values = {}) => closeSyncRun(admin, id, "failed", { ...values, failed: Math.max(1, Number(values.failed || 0)), error_message: String(errorMessage || "Errore sincronizzazione.").slice(0, 1000) });
 export async function failSyncRunUnlessClosed(admin, id, errorMessage, values = {}) {
   try {

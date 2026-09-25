@@ -101,6 +101,8 @@ export async function invokeStocksSync(onProgress = () => {}, isCancelled = () =
     syncRunId = data.sync_run_id || syncRunId;
     total.processed = Number(data.elaborati_totali ?? (total.processed + Number(data.elaborati || 0)));
     total.updated = Number(data.aggiornati_totali ?? (total.updated + Number(data.aggiornati || 0)));
+    total.failed = Number(data.errori_totali ?? (total.errors.length + (data.errori || []).length));
+    total.imported = Number(data.articoli_importati_totali ?? total.imported ?? 0);
     total.errors.push(...(data.errori || [])); onProgress({ ...total, total: Number(data.totale || 0), syncRunId });
     if (isCancelled()) throw Object.assign(new Error("Sincronizzazione annullata."), { cancelled: true });
     if (data.completato) return { ...total, syncRunId };

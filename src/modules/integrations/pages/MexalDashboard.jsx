@@ -232,8 +232,12 @@ export default function MexalDashboard() {
         return;
       }
       setProgress(100);
-      setMessage({ type: "success", text: `Sincronizzazione ${syncLabels[type] || type} completata.` });
-      await refreshData();
+      const stockErrors = type === "stocks" ? Number(result?.failed || result?.errors?.length || 0) : 0;
+      const importNotice = type === "stocks" && result?.imported > 0 ? ` Importati automaticamente ${result.imported} articoli: dettaglio nello storico.` : "";
+      setMessage(stockErrors
+        ? { type: "warning", text: `Giacenze: sincronizzazione completata con ${stockErrors} articoli in errore. Gli altri articoli sono stati elaborati. Seleziona l'esecuzione nello storico per leggere gli errori.${importNotice}` }
+        : { type: "success", text: `Sincronizzazione ${syncLabels[type] || type} completata.${importNotice}` });
+      await refreshData(result?.syncRunId);
     } catch (error) {
       if (error?.cancelled) {
         setMessage({ type: "warning", text: "Sincronizzazione Fatture arrestata. I documenti già elaborati sono stati conservati." });

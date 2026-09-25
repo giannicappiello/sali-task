@@ -1,3 +1,4 @@
+import { displayDateFormatter } from '../../lib/displayLocale.js';
 import { useEffect, useRef, useState } from "react";
 
 const labels = { PLANNED: "Pianificato", CANCELLED: "Annullato", RELEASED: "Rilasciato", RELEASED_WITH_SHORTAGE: "Rilasciato con carenze", PREPARING: "In preparazione",
@@ -5,8 +6,8 @@ const labels = { PLANNED: "Pianificato", CANCELLED: "Annullato", RELEASED: "Rila
   CLOSING: "Chiusura in corso", RECONCILIATION_REQUIRED: "Da riconciliare", COVERED: "Coperto",
   SHORTAGE: "Materiali mancanti", UNVERIFIED: "Da verificare", STOCK_PENDING: "Aggiornamento giacenze in attesa" };
 const status = value => labels[value] || value || "—";
-const date = value => value && Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat("it-IT", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "—";
-const qty = value => new Intl.NumberFormat("it-IT", { maximumFractionDigits: 3 }).format(value || 0);
+const date = value => value && Number.isFinite(Date.parse(value)) ? displayDateFormatter({ dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "—";
+const qty = value => new Intl.NumberFormat("it-IT", { useGrouping: 'always',  maximumFractionDigits: 3 }).format(value || 0);
 
 export default function CommercialBatchProgress({ orders, load, autoOpen = false }) {
   const [expanded, setExpanded] = useState(autoOpen ? orders?.[0]?.id ?? null : null);

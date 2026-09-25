@@ -31,5 +31,5 @@ export function agreementDisplay(contract, key, sites) {
 export function overtimeValue(contract, hours) {
   if (!separateOvertime(contract) && contract?.overtime_mode !== 'paid') return '—';
   if (contract.overtime_rate == null || contract.overtime_percent == null) return 'Da definire';
-  return (hours * contract.overtime_rate * (1 + contract.overtime_percent / 100)).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
+  return (hours * contract.overtime_rate * (1 + contract.overtime_percent / 100)).toLocaleString('it-IT', { useGrouping: 'always',  style: 'currency', currency: 'EUR' });
 }

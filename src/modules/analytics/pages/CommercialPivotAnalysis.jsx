@@ -32,7 +32,7 @@ const dimensions = [
 const metrics = [["documents", "Numero documenti"], ["lines", "Numero righe"], ["quantity", "Quantità"], ["taxable", "Imponibile"], ["vat", "IVA"], ["total", "Totale"]].map(([key, label]) => ({ key, label }));
 const dimensionLabel = (key) => dimensions.find((item) => item.key === key)?.label || key;
 const metricLabel = (key) => metrics.find((item) => item.key === key)?.label || key;
-const money = (value) => Number(value || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
+const money = (value) => Number(value || 0).toLocaleString("it-IT", { useGrouping: 'always',  style: "currency", currency: "EUR" });
 const text = (...values) => values.find((value) => value !== null && value !== undefined && String(value).trim()) ?? "";
 const jsonValue = (json, ...keys) => keys.map((key) => json?.[key]).find((value) => value !== null && value !== undefined && String(value).trim()) ?? "";
 const monthName = (value) => value ? new Date(2000, Number(value) - 1, 1).toLocaleString("it-IT", { month: "long" }) : "";

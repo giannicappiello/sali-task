@@ -1,7 +1,8 @@
+import { formatDisplayDate } from '../lib/displayLocale.js';
 import "../pages/Production/priority-revision.css";
 
-const number = new Intl.NumberFormat("it-IT", { maximumFractionDigits: 6 });
-const date = value => value ? new Date(value).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" }) : "Da ripianificare";
+const number = new Intl.NumberFormat("it-IT", { useGrouping: 'always',  maximumFractionDigits: 6 });
+const date = value => value ? formatDisplayDate(new Date(value), { dateStyle: "short", timeStyle: "short" }) : "Da ripianificare";
 export default function PriorityRevisionSummary({ revision }) {
   const snapshot = revision?.snapshot;
   if (!snapshot) return null;

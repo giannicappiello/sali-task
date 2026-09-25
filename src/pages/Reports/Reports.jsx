@@ -1,3 +1,4 @@
+import { formatDisplayDate } from '../../lib/displayLocale.js';
 import { useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
@@ -364,7 +365,7 @@ function formatDateIt(value) {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleDateString("it-IT");
+  return formatDisplayDate(date, {});
 }
 
 function dateToInputValue(date) {
@@ -394,7 +395,7 @@ function groupValue(value, grouping) {
   if (grouping === "month") {
     return date.toLocaleDateString("it-IT", { year: "numeric", month: "long" });
   }
-  return date.toLocaleDateString("it-IT");
+  return formatDisplayDate(date, {});
 }
 
 function toNumber(value) {
@@ -423,7 +424,7 @@ function aggregateValues(values, aggregation) {
 
 function formatMetric(value) {
   if (typeof value !== "number") return value;
-  return new Intl.NumberFormat("it-IT", { maximumFractionDigits: 2 }).format(value);
+  return new Intl.NumberFormat("it-IT", { useGrouping: 'always',  maximumFractionDigits: 2 }).format(value);
 }
 
 function filterMatches(row, filter) {

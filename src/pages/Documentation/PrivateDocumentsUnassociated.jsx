@@ -43,7 +43,7 @@ export default function PrivateDocumentsUnassociated({ request, refreshKey }) {
     {result && <p className="private-unassociated-status" role="status">Ultima verifica: {result.scannedAt ? new Date(result.scannedAt).toLocaleString("it-IT") : "non ancora eseguita"} · {result.unassociated.length} non associati{result.associated > 0 ? ` · ${result.associated} nuovi collegamenti creati` : ""}{loading || error ? " · Elenco precedente" : ""}</p>}
     {result?.warnings?.length > 0 && <div className="private-unassociated-warning" role="status"><strong>Verifica parziale</strong><ul>{result.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}
     <div className="private-unassociated-list" aria-busy={loading}>
-      {documents.map((item) => <article key={item.relativePath}><FileLock2 size={22}/><div><h3>{item.name}</h3><p className="private-unassociated-path">{item.relativePath}</p><p className="private-unassociated-reason">{item.reason}</p></div><small>{(item.sizeBytes / 1048576).toLocaleString("it-IT", { maximumFractionDigits: 2 })} MB</small></article>)}
+      {documents.map((item) => <article key={item.relativePath}><FileLock2 size={22}/><div><h3>{item.name}</h3><p className="private-unassociated-path">{item.relativePath}</p><p className="private-unassociated-reason">{item.reason}</p></div><small>{(item.sizeBytes / 1048576).toLocaleString("it-IT", { useGrouping: 'always',  maximumFractionDigits: 2 })} MB</small></article>)}
       {!loading && !error && result && !documents.length && <p className="private-panel-empty">{term ? "Nessun documento corrisponde alla ricerca." : result.warnings?.length ? "Nessun documento non associato nelle cartelle leggibili." : "Nessun documento non associato."}</p>}
     </div>
   </section>;

@@ -1,3 +1,4 @@
+import { formatDisplayDate } from '../../lib/displayLocale.js';
 import { monthDays, romeDay, romeInstant, formatDate, formatTime } from './hrTime.js';
 import { comparePeople } from './hrPeople.js';
 import { calendarDay } from './hrCalendar.js';
@@ -42,7 +43,7 @@ export function attendanceExportRows(data, month, now = new Date()) {
       const uncovered = day < today && plannedMinutes && !incomplete ? Math.max(0, plannedMinutes - pause - unionMinutes(overlaps([...actual, ...absences], planned), start, end)) : null;
       if (uncovered > 0 && !notes.includes('Assenza da verificare')) notes.push('Copertura del turno da verificare');
       const row = { Dipendente: employee.name, Matricola: employee.employee_code || '', Data: day,
-        Giorno: new Date(start).toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long' }),
+        Giorno: formatDisplayDate(new Date(start), { timeZone: 'Europe/Rome', weekday: 'long' }),
         'Entrate / uscite': daily.map(a => `${formatDate(a.checkin_at)} ${formatTime(a.checkin_at)} → ${a.checkout_at ? `${formatDate(a.checkout_at)} ${formatTime(a.checkout_at)}` : 'USCITA MANCANTE'}`).join('; '),
         'Ore turno lordo': round(plannedMinutes / 60), 'Pausa prevista (min)': pause,
         'Ore presenza rilevata': incomplete ? null : round(unionMinutes(actual, start, end) / 60),
@@ -75,7 +76,7 @@ export function attendanceDaySummary(row) {
   if (row['Maternità approvata']) codes.push('MAT');
   if (absence) codes.push('A');
   if (unknown) codes.push('?');
-  if (overtime > 0) codes.push(overtime.toLocaleString('it-IT', { maximumFractionDigits: 2 }));
+  if (overtime > 0) codes.push(overtime.toLocaleString('it-IT', { useGrouping: 'always',  maximumFractionDigits: 2 }));
   if (!codes.length && present > 0) codes.push('PR');
   return { ...day, present: present > 0, absence, leave: Boolean(row['Ferie approvate']), permission: Boolean(row['Permessi approvati']),
     separate: row['Straordinario separato'] === 'Sì', unknown, overtime, weekdayOvertime: day.festive ? 0 : overtime, festiveOvertime: day.festive ? overtime : 0,

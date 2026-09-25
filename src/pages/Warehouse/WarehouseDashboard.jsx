@@ -1,3 +1,4 @@
+import { formatDisplayDate } from '../../lib/displayLocale.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BarChart3, CalendarDays, Info, RefreshCw, Search } from "lucide-react";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
@@ -10,16 +11,16 @@ import "./warehouseDashboard.css";
 const TYPES = ["TOTALE", "MP", "IT", "MKT", "CN", "FP", "AS", "TB", "ALTRI"];
 const COLORS = ["#1769aa", "#16a36f", "#f1a11a", "#7657d5", "#db5b55", "#16a4b8", "#74849a"];
 const PAGE_SIZE = 100;
-const quantityFormat = new Intl.NumberFormat("it-IT", { maximumFractionDigits: 3 });
-const costFormat = new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 6 });
-const currencyFormat = new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR", maximumFractionDigits: 2 });
+const quantityFormat = new Intl.NumberFormat("it-IT", { useGrouping: 'always',  maximumFractionDigits: 3 });
+const costFormat = new Intl.NumberFormat("it-IT", { useGrouping: 'always',  style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 6 });
+const currencyFormat = new Intl.NumberFormat("it-IT", { useGrouping: 'always',  style: "currency", currency: "EUR", maximumFractionDigits: 2 });
 
 function localDay(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Rome", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
 
 function formatDate(value) {
-  return value ? new Date(value).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" }) : "—";
+  return value ? formatDisplayDate(new Date(value), { dateStyle: "short", timeStyle: "short" }) : "—";
 }
 
 function InfoTip({ text, label = "Spiegazione del dato" }) {
@@ -41,6 +42,22 @@ function Donut({ title, info, items, valueKey, labelKey, formatter }) {
     return `${COLORS[index % COLORS.length]} ${start}deg ${cursor}deg`;
   });
   return <article className="warehouse-chart-card"><h3>{title}<InfoTip text={info} label={title} /></h3><div className="warehouse-chart-body"><div className="warehouse-donut" style={{ background: total > 0 ? `conic-gradient(${segments.join(",")})` : "#e7edf3" }}><span>{formatter(total)}</span></div><ul>{items.map((item, index) => <li key={item[labelKey]}><i style={{ background: COLORS[index % COLORS.length] }} /><span>{item[labelKey]}</span><strong>{formatter(item[valueKey])}</strong></li>)}</ul></div></article>;
+}
+
+function ItStockCharts({ breakdown, customerScoped }) {
+  const dimensions = [['byLine', 'linea'], ['byCategory', 'categoria']];
+  return <section className="warehouse-dashboard-charts" aria-label="Giacenze IT per linea e categoria">{dimensions.flatMap(([key, title]) => {
+    const items = breakdown?.[key] || [];
+    const units = [...new Set(items.map(item => item.unit_of_measure))];
+    const values = [...items.reduce((map, item) => {
+      map.set(item.label, { label: item.label, stock_value: (map.get(item.label)?.stock_value || 0) + Number(item.stock_value || 0) });
+      return map;
+    }, new Map()).values()];
+    return [
+      ...units.map(unit => <Donut key={`${key}-${unit}`} title={`Quantità IT per ${title} · ${unit}`} info="Giacenze positive di tutti gli articoli IT filtrati, senza sommare unità di misura diverse." items={items.filter(item => item.unit_of_measure === unit)} valueKey="quantity" labelKey="label" formatter={quantityFormat.format} />),
+      !customerScoped && <Donut key={`${key}-value`} title={`Valore IT per ${title}`} info="Valore delle giacenze positive: quantità per costo ultimo, su tutti i risultati filtrati." items={values} valueKey="stock_value" labelKey="label" formatter={currencyFormat.format} />,
+    ];
+  })}</section>;
 }
 
 function WarehouseKpis({ items }) {
@@ -108,9 +125,9 @@ export default function WarehouseDashboard() {
       <section className="warehouse-search-card warehouse-dashboard-search"><label><Search size={19} /><input value={query} onChange={(event) => { setPage(1); setQuery(event.target.value); }} placeholder="Cerca per codice o descrizione..." /></label><select value={stockFilter} onChange={(event) => { setPage(1); setStockFilter(event.target.value); }} aria-label="Filtra stato magazzino"><option value="all">Tutte le giacenze</option><option value="positive">Giacenza positiva</option><option value="zero">Giacenza zero</option><option value="negative">Giacenza negativa</option>{!customerScoped && <option value="unvalued">Costo non valorizzato</option>}</select></section>
       {error ? <div className="warehouse-dashboard-message error" role="alert">{error}</div> : null}
       {loading ? <div className="warehouse-dashboard-message">Caricamento giacenza storica...</div> : null}
-      {!loading && !error && !data.snapshotAvailable ? <div className="warehouse-dashboard-message" role="status"><strong>Nessuno snapshot inventariale certificato per il {new Date(`${asOfDate}T12:00:00`).toLocaleDateString("it-IT")}.</strong><br />Date disponibili: {(data.availableDates || []).join(", ") || "nessuna"}. `sincronizzato_il` non viene utilizzato come data inventariale.</div> : null}
+      {!loading && !error && !data.snapshotAvailable ? <div className="warehouse-dashboard-message" role="status"><strong>Nessuno snapshot inventariale certificato per il {formatDisplayDate(new Date(`${asOfDate}T12:00:00`), {})}.</strong><br />Date disponibili: {(data.availableDates || []).map(value => formatDisplayDate(new Date(`${value}T12:00:00`))).join(", ") || "nessuna"}. `sincronizzato_il` non viene utilizzato come data inventariale.</div> : null}
       {!loading && !error && data.snapshotAvailable ? <>
-        <p className="warehouse-last-update">Giacenza al <strong>{new Date(`${asOfDate}T12:00:00`).toLocaleDateString("it-IT")}</strong> · Ultimo aggiornamento: <strong>{formatDate(data.lastUpdated)}</strong></p>
+        <p className="warehouse-last-update">Giacenza al <strong>{formatDisplayDate(new Date(`${asOfDate}T12:00:00`), {})}</strong> · Ultimo aggiornamento: <strong>{formatDate(data.lastUpdated)}</strong></p>
         <section className="warehouse-dashboard-kpis">
           <article><span>Articoli<InfoTip text={customerScoped ? "Numero di codici articolo distinti collegati al cliente nel dataset filtrato." : "Numero di codici articolo distinti nel dataset filtrato per data, magazzino, tipologia, UDM, ricerca e stato giacenza."} label="Articoli" /></span><strong>{quantityFormat.format(summary.articles || 0)}</strong><small>{customerScoped ? "Articoli collegati al cliente" : `${quantityFormat.format(summary.locations || 0)} righe articolo-magazzino`}</small></article>
           {!customerScoped && <article><span>Valore magazzino<InfoTip text="Somma di giacenza × costo ultimo per tutte le righe filtrate con giacenza positiva. Le giacenze negative e zero contribuiscono 0 €." label="Valore magazzino" /></span><strong>{currencyFormat.format(summary.stockValue || 0)}</strong><small>Stesso dataset della tabella e dei grafici</small></article>}
@@ -119,6 +136,7 @@ export default function WarehouseDashboard() {
         </section>
         {!customerScoped && <WarehouseKpis items={breakdown.byWarehouse || []} />}
         <section className="warehouse-dashboard-charts">{!customerScoped && <Donut title="Valore per tipologia" info="Ripartizione del valore positivo per tipologia articolo, calcolata server-side sullo stesso dataset filtrato della tabella." items={breakdown.byType || []} valueKey="stock_value" labelKey="article_type" formatter={currencyFormat.format} />}<Donut title="Articoli per tipologia" info="Codici articolo distinti per tipologia nel dataset filtrato." items={breakdown.byType || []} valueKey="articles" labelKey="article_type" formatter={quantityFormat.format} />{!customerScoped && <Donut title="Articoli per magazzino" info="Codici articolo distinti per singolo magazzino; con Tutti ogni magazzino resta separato." items={(breakdown.byWarehouse || []).map((item) => ({ ...item, label: `MAG-${item.warehouse_number}` }))} valueKey="articles" labelKey="label" formatter={quantityFormat.format} />}</section>
+        {type === "IT" && <ItStockCharts breakdown={data.itBreakdown} customerScoped={customerScoped} />}
         <section className="warehouse-unit-card"><header><div><strong>Quantità per unità di misura</strong><InfoTip text="Raggruppamento server-side delle quantità del dataset filtrato. UDM diverse non vengono mai sommate tra loro." label="Quantità per unità di misura" /><span>{(breakdown.byUnit || []).length} UDM</span></div><small>Le quantità non vengono sommate tra UDM differenti.</small></header><div className="warehouse-unit-scroll"><table><thead><tr><th>UDM</th><th>Articoli</th><th>Giacenza</th>{!customerScoped && <th>Valore</th>}</tr></thead><tbody>{(breakdown.byUnit || []).map((item) => <tr key={item.unit_of_measure}><td><strong>{item.unit_of_measure}</strong></td><td>{quantityFormat.format(item.articles)}</td><td>{quantityFormat.format(item.quantity)}</td>{!customerScoped && <td><strong>{currencyFormat.format(item.stock_value)}</strong></td>}</tr>)}</tbody></table></div></section>
         <p className="warehouse-dashboard-note">{customerScoped ? "Ogni riga rappresenta un articolo collegato al cliente, con giacenza, quantità impegnata e disponibile." : "Ogni riga rappresenta Articolo + Magazzino. Le giacenze negative restano consultabili e valgono zero esclusivamente nelle valorizzazioni economiche."}</p>
         <section className="warehouse-table-card" aria-label={customerScoped ? "Elenco giacenze per articolo" : "Elenco giacenze per articolo e magazzino"}><header><div><strong>Elenco giacenze</strong><span>{quantityFormat.format(data.totalRows || 0)} risultati</span></div><small>Data inventariale: {asOfDate} · Ultimo aggiornamento separato dalla competenza.</small></header><div className="warehouse-table-scroll"><table data-column-controls="off"><thead><tr><th>Articolo</th>{!customerScoped && <th>Magazzino</th>}<th>UDM</th><th>Giacenza</th><th>Impegnato</th><th>Disponibile</th>{!customerScoped && <th>Costo ultimo</th>}{!customerScoped && <th>Valore</th>}<th>Stato</th><th>Ultimo aggiornamento</th></tr></thead><tbody>{data.rows.map((row) => { const status = stockStatus(row); return <tr key={customerScoped ? row.article_code : `${row.article_code}:${row.warehouse_number}`}><td data-label="Articolo"><strong>{row.article_code}</strong><small>{row.description || "Descrizione non disponibile"}</small></td>{!customerScoped && <td data-label="Magazzino"><strong>MAG-{row.warehouse_number}</strong>{row.warehouse_name ? <small>{row.warehouse_name}</small> : null}</td>}<td data-label="UDM">{row.unit_of_measure}</td><td data-label="Giacenza">{quantityFormat.format(row.on_hand)}</td><td data-label="Impegnato">{row.committed === null ? "—" : quantityFormat.format(row.committed)}</td><td data-label="Disponibile">{row.available === null ? "—" : quantityFormat.format(row.available)}</td>{!customerScoped && <><td data-label="Costo ultimo">{Number(row.unit_cost) > 0 ? costFormat.format(row.unit_cost) : <span className="warehouse-missing-cost">Da valorizzare</span>}</td><td data-label="Valore"><strong>{currencyFormat.format(row.stock_value)}</strong></td></>}<td data-label="Stato"><span className={`warehouse-status ${status.tone}`}>{status.label}</span></td><td data-label="Ultimo aggiornamento">{formatDate(row.captured_at)}</td></tr>; })}</tbody></table></div><footer className="warehouse-pagination"><button type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Precedente</button><span>Pagina {page} di {pages}</span><button type="button" disabled={page >= pages} onClick={() => setPage((value) => value + 1)}>Successiva</button></footer></section>

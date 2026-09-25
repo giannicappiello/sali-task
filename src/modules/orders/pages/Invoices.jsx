@@ -6,13 +6,13 @@ import { useOrdersModule } from "../ordersModuleContext";
 import useOrdersAccess from "./useOrdersAccess";
 
 function money(value) {
-  return Number(value || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
+  return Number(value || 0).toLocaleString("it-IT", { useGrouping: 'always',  style: "currency", currency: "EUR" });
 }
 
 function formatDate(value) {
   if (!value) return "-";
   const [year, month, day] = String(value).slice(0, 10).split("-");
-  return year && month && day ? `${day}/${month}/${year}` : value;
+  return year && month && day ? `${day}-${month}-${year}` : value;
 }
 
 export default function Invoices() {

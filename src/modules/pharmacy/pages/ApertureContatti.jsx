@@ -1,3 +1,4 @@
+import { formatDisplayDate } from '../../../lib/displayLocale.js';
 import { useEffect, useState } from "react";
 import { supabase } from "../services/reportSupabase";
 import { ensureBeautyClientLink, loadVisibleBeautyClients } from "../services/beautyClients";
@@ -784,7 +785,7 @@ setRichiestaContatto(
               return (
                 <div key={getDateKey(giorno)} style={weekDayStyle}>
                   <h4>
-                    {giorno.toLocaleDateString("it-IT", { weekday: "short" })}
+                    {formatDisplayDate(giorno, { weekday: "short" })}
                   </h4>
 
                   <strong>{formatDataIt(getDateKey(giorno))}</strong>

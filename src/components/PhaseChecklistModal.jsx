@@ -12,7 +12,7 @@ function normalize(value) { return String(value || "").trim().toLowerCase().repl
 function isDone(item) { return closedStates.includes(normalize(item?.stato)) || Boolean(item?.completato_at); }
 function dateOnly(value) { return value ? String(value).slice(0, 10) : ""; }
 function todayIso() { return new Date().toISOString().slice(0, 10); }
-function formatFileSize(bytes) { const value = Number(bytes || 0); if (!value) return ""; if (value < 1024) return `${value} B`; if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`; return `${(value / (1024 * 1024)).toFixed(1)} MB`; }
+function formatFileSize(bytes) { const value = Number(bytes || 0); if (!value) return ""; if (value < 1024) return `${value} B`; if (value < 1024 * 1024) return `${(value / 1024).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 1, maximumFractionDigits: 1 })} KB`; return `${(value / (1024 * 1024)).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 1, maximumFractionDigits: 1 })} MB`; }
 
 export default function PhaseChecklistModal({
   open,

@@ -1,3 +1,4 @@
+import { formatDisplayDate } from '../../lib/displayLocale.js';
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { drawAssistantChartPdf } from "./assistantChart.js";
@@ -120,7 +121,7 @@ function drawCover(doc, { title, subtitle, generatedAt, author, logoDataUrl }) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
   doc.setTextColor(255, 255, 255);
-  doc.text(generatedAt.toLocaleDateString("it-IT", { day: "2-digit", month: "long", year: "numeric" }), 24, 218);
+  doc.text(formatDisplayDate(generatedAt, { day: "2-digit", month: "long", year: "numeric" }), 24, 218);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9.5);
   doc.setTextColor(218, 229, 242);
@@ -163,7 +164,7 @@ export function buildAssistantPdf({ content, generatedAt = new Date(), author = 
     doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(...BRAND.navy); doc.text("REPORT AI", 24, 92);
     doc.setFontSize(25); doc.text(doc.splitTextToSize(title, 156), 24, 108);
     doc.setFont("helvetica", "normal"); doc.setFontSize(11); doc.text(doc.splitTextToSize(subtitle, 156), 24, 145);
-    doc.setFontSize(9.5); doc.text(`Data di elaborazione: ${generatedAt.toLocaleDateString("it-IT")}`, 24, 220);
+    doc.setFontSize(9.5); doc.text(`Data di elaborazione: ${formatDisplayDate(generatedAt, {})}`, 24, 220);
     doc.text(`Preparato da: ${author}`, 24, 232);
   } else drawCover(doc, { title, subtitle, generatedAt, author, logoDataUrl });
   doc.addPage();

@@ -1,3 +1,4 @@
+import { displayDateFormatter } from '../../lib/displayLocale.js';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Ban, CheckCircle2, ChevronRight, Factory, RefreshCw, Search, Send, ShieldAlert, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -29,7 +30,7 @@ function formatDate(value, withTime = false) {
   if (!value) return "—";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return String(value);
-  return new Intl.DateTimeFormat("it-IT", withTime ? { dateStyle: "short", timeStyle: "short" } : { dateStyle: "short" }).format(parsed);
+  return displayDateFormatter(withTime ? { dateStyle: "short", timeStyle: "short" } : { dateStyle: "short" }).format(parsed);
 }
 
 function badge(value, tone = "neutral") { return <span className={`rdp-badge rdp-${tone}`}>{value || "—"}</span>; }
@@ -58,7 +59,7 @@ export function BackgroundSyncStatus({ refresh }) {
 }
 
 function formatQuantity(value) {
-  return new Intl.NumberFormat("it-IT", { minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(Number(value) || 0);
+  return new Intl.NumberFormat("it-IT", { useGrouping: 'always',  minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(Number(value) || 0);
 }
 
 function rdpProgressiveLabel(value) {

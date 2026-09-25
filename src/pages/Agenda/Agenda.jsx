@@ -1,3 +1,4 @@
+import { formatDisplayDate } from '../../lib/displayLocale.js';
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { CheckCircle2, Clock, Download, MessageSquare, Paperclip, Plus, Save, Search, X } from "lucide-react";
@@ -48,7 +49,7 @@ function statusClass(item) {
 function formatDate(value) {
   const date = dateOnly(value);
   if (!date) return "Senza deadline";
-  return new Date(`${date}T00:00:00`).toLocaleDateString("it-IT", {
+  return formatDisplayDate(new Date(`${date}T00:00:00`), {
     weekday: "short",
     day: "2-digit",
     month: "short",

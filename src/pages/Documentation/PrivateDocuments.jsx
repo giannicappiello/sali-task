@@ -20,7 +20,7 @@ async function documentRequest(session, path, options = {}) {
   const input = options.body instanceof FormData ? Object.fromEntries(options.body) : options.body;
   return workspaceAction(session.accessToken, "private_documents", { path, input });
 }
-const size = (bytes) => `${(Number(bytes || 0) / 1048576).toLocaleString("it-IT", { maximumFractionDigits: 2 })} MB`;
+const size = (bytes) => `${(Number(bytes || 0) / 1048576).toLocaleString("it-IT", { useGrouping: 'always',  maximumFractionDigits: 2 })} MB`;
 const date = (value) => displayDate(value);
 
 const ARTICLE_SECTIONS = [

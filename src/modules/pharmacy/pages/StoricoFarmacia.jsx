@@ -131,12 +131,12 @@ export default function StoricoFarmacia({ farmacia, onBack }) {
         </div>
 
         <div style={kpiCardStyle}>
-          <h3>€ {fatturatoTotale.toFixed(2)}</h3>
+          <h3>€ {fatturatoTotale.toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
           <p>Fatturato totale<InfoTooltip label="Fatturato totale" text="Somma del fatturato registrato in tutte le giornate concluse della farmacia." /></p>
         </div>
 
         <div style={kpiCardStyle}>
-          <h3>€ {mediaFatturato.toFixed(2)}</h3>
+          <h3>€ {mediaFatturato.toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
           <p>Media giornata<InfoTooltip label="Media giornata" text="Fatturato totale diviso per il numero di giornate concluse della farmacia." /></p>
         </div>
       </div>
@@ -158,7 +158,7 @@ export default function StoricoFarmacia({ farmacia, onBack }) {
                 <div style={{ ...barStyle, width: `${larghezza}%` }} />
               </div>
 
-              <div style={chartValueStyle}>€ {valore.toFixed(2)}</div>
+              <div style={chartValueStyle}>€ {valore.toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
             </div>
           );
         })}
@@ -179,7 +179,7 @@ export default function StoricoFarmacia({ farmacia, onBack }) {
 
             <p>
               <span style={labelStyle}>Fatturato:</span> €{" "}
-              {Number(giornata.fatturato_giornata || 0).toFixed(2)}
+              {Number(giornata.fatturato_giornata || 0).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
 
             <p>
@@ -209,7 +209,7 @@ export default function StoricoFarmacia({ farmacia, onBack }) {
 
             <p>
               <span style={labelStyle}>Totale venduto:</span> €{" "}
-              {prodotto.totale.toFixed(2)}
+              {prodotto.totale.toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
           </div>
         ))}

@@ -71,7 +71,7 @@ function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
   function update(field, value){ setForm(c => ({...c, [field]: value})); }
   function mapName(list, id){ return list.find(x => x.id === id)?.nome || id || ""; }
   function fmt(date){ if(!date) return "-"; return new Date(date).toLocaleString("it-IT",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}); }
-  function fileSize(bytes){ if(!bytes) return "-"; if(bytes<1024) return `${bytes} B`; if(bytes<1024*1024) return `${Math.round(bytes/1024)} KB`; return `${(bytes/1024/1024).toFixed(1)} MB`; }
+  function fileSize(bytes){ if(!bytes) return "-"; if(bytes<1024) return `${bytes} B`; if(bytes<1024*1024) return `${Math.round(bytes/1024)} KB`; return `${(bytes/1024/1024).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 1, maximumFractionDigits: 1 })} MB`; }
   function blockerTask(){ return opts.tasks.find(x => x.id === form.bloccante_id); }
   function isTaskClosed(t){ const state = opts.stati.find(s => s.id === t?.stato_id); return Boolean(state?.chiusa) || ["chiusa","chiuso","completata","completato"].includes(String(state?.nome || "").toLowerCase()); }
   function isTryingToClose(){ const state = opts.stati.find(s => s.id === form.stato_id); return Boolean(state?.chiusa) || ["chiusa","chiuso","completata","completato"].includes(String(state?.nome || "").toLowerCase()); }

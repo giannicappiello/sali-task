@@ -109,7 +109,7 @@ export default function AISettings() {
   }), { requests: 0, tokens: 0, cost: 0 }), [reportRows]);
 
   const formatTokens = (value) => new Intl.NumberFormat("it-IT").format(Number(value || 0));
-  const formatUsd = (value) => new Intl.NumberFormat("it-IT", { style: "currency", currency: "USD", minimumFractionDigits: 4, maximumFractionDigits: 6 }).format(Number(value || 0));
+  const formatUsd = (value) => new Intl.NumberFormat("it-IT", { useGrouping: 'always',  style: "currency", currency: "USD", minimumFractionDigits: 4, maximumFractionDigits: 6 }).format(Number(value || 0));
 
   function policyFor(departmentId) {
     return { ...EMPTY_POLICY, ...(policies[departmentId] || {}) };

@@ -82,7 +82,7 @@ function NasPicker({ section, articleCode, request, onSelect, onClose }) {
       {listing?.notice && <p role="status">{listing.notice}</p>}
       {loading ? <p role="status">Caricamento cartelle NAS…</p> : <div className="private-nas-entries">
         {(listing?.directories || []).map(dir => <button type="button" key={dir.relativePath} onClick={() => browse(dir.relativePath)}><Folder size={17}/><span>{dir.name}</span></button>)}
-        {files.map(file => <button type="button" key={file.relativePath} className={selected?.relativePath === file.relativePath ? 'selected' : ''} aria-pressed={selected?.relativePath === file.relativePath} onClick={() => setSelected(file)}><File size={17}/><span>{file.name}</span><small>{(file.sizeBytes / 1048576).toLocaleString('it-IT', { maximumFractionDigits: 2 })} MB</small></button>)}
+        {files.map(file => <button type="button" key={file.relativePath} className={selected?.relativePath === file.relativePath ? 'selected' : ''} aria-pressed={selected?.relativePath === file.relativePath} onClick={() => setSelected(file)}><File size={17}/><span>{file.name}</span><small>{(file.sizeBytes / 1048576).toLocaleString('it-IT', { useGrouping: 'always',  maximumFractionDigits: 2 })} MB</small></button>)}
         {!files.length && !listing?.directories?.length && <p>Nessun {section === 'product' ? 'file immagine' : 'file'} disponibile in questa cartella.</p>}
       </div>}
     </div>{error && <div role="alert" className="private-upload-error">{error}<button type="button" onClick={() => browse(directory)}>Riprova</button></div>}

@@ -40,7 +40,7 @@ export default function Orders() {
         <div className="orders-table-wrap">
           <table className="orders-table">
             <thead><tr><th>Data</th><th>Numero</th><th>Cliente</th><th>Agente</th><th>Stato</th><th>Totale</th><th>OCM</th><th>OCX</th></tr></thead>
-            <tbody>{filtered.map((item) => <tr key={item.id}><td>{item.data_ordine || "-"}</td><td>{item.numero_ordine || "Bozza"}</td><td>{item.ragione_sociale_cliente || item.codice_cliente}</td><td>{item.codice_agente_mexal}</td><td><span className={`orders-status ${item.stato}`}>{item.stato}</span></td><td>{Number(item.totale || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td><td>{item.numero_ocm || "-"}</td><td>{item.numero_ocx || "-"}</td></tr>)}</tbody>
+            <tbody>{filtered.map((item) => <tr key={item.id}><td>{item.data_ordine || "-"}</td><td>{item.numero_ordine || "Bozza"}</td><td>{item.ragione_sociale_cliente || item.codice_cliente}</td><td>{item.codice_agente_mexal}</td><td><span className={`orders-status ${item.stato}`}>{item.stato}</span></td><td>{Number(item.totale || 0).toLocaleString("it-IT", { useGrouping: 'always',  style: "currency", currency: "EUR" })}</td><td>{item.numero_ocm || "-"}</td><td>{item.numero_ocx || "-"}</td></tr>)}</tbody>
           </table>
         </div>
         {loading && <p>Caricamento ordini...</p>}

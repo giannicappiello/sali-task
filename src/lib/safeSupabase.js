@@ -1,3 +1,4 @@
+import { formatDisplayDate } from './displayLocale.js';
 import { supabase } from './supabaseClient'
 
 export async function safeSelect(table, query = '*', options = {}) {
@@ -45,7 +46,7 @@ export async function safeDelete(table, id) {
 export function niceDate(value) {
   if (!value) return '—'
   try {
-    return new Date(value).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' })
+    return formatDisplayDate(new Date(value), { day: '2-digit', month: 'short', year: 'numeric' })
   } catch {
     return value
   }

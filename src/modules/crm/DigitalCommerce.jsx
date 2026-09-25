@@ -118,7 +118,7 @@ export function DigitalDashboard({ analytics = false }) {
       <DigitalKpi label="Clienti identificati" value={metricValue(data?.customers)} status={dataStatus} note="Solo match autorizzati" to={drilldown("/crm/online/clienti", "identified")} />
       <DigitalKpi label="AOV" value={metricValue(data?.aov, formatMoney)} status={dataStatus} to={drilldown("/crm/online/ecommerce", "aov")} />
       <DigitalKpi label="Marketing spend" value={metricValue(data?.marketingSpend, formatMoney)} status={data?.marketingSpend == null ? "not_available" : "available"} to={drilldown("/crm/online/adv", "spend")} />
-      <DigitalKpi label="ROAS" value={metricValue(data?.roas, (value) => `${Number(value).toFixed(2)}×`)} status={data?.roas == null ? "not_available" : "available"} to={drilldown("/crm/online/adv", "roas")} />
+      <DigitalKpi label="ROAS" value={metricValue(data?.roas, (value) => `${Number(value).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 2, maximumFractionDigits: 2 })}×`)} status={data?.roas == null ? "not_available" : "available"} to={drilldown("/crm/online/adv", "roas")} />
       <DigitalKpi label="LTV" value="Dato non disponibile" status="not_available" note="Richiede storico clienti e ordini del provider reale" to={drilldown("/crm/online/clienti", "ltv")} />
       <DigitalKpi label="Conversion rate" value="Dato non disponibile" status="not_available" note="Richiede sessioni e checkout autorizzati" to={drilldown("/crm/online/analytics", "conversion")} />
     </div>}

@@ -162,7 +162,7 @@ export default function Orders() {
                   <tr key={item.id} className="orders-clickable-row" onClick={() => navigate(`${basePath}/elenco/${item.id}`)}>
                     <td>PADRE</td><td>{item.data_ordine || "-"}</td><td>{parentReference}</td><td>-</td><td>{customerDisplayName(item, customersByCode)}</td><td>{agentDisplayName(item, agentsByCode, agentsByCustomer)}</td>
                     <td><OrderStatus order={item} basePath={basePath} /></td>
-                    <td>{Number(item.totale_imponibile ?? item.totale ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td><td>{Number(item.totale_iva || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td><td>{Number(item.totale_documento ?? item.totale ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" })}</td>
+                    <td>{Number(item.totale_imponibile ?? item.totale ?? 0).toLocaleString("it-IT", { useGrouping: 'always',  style: "currency", currency: "EUR" })}</td><td>{Number(item.totale_iva || 0).toLocaleString("it-IT", { useGrouping: 'always',  style: "currency", currency: "EUR" })}</td><td>{Number(item.totale_documento ?? item.totale ?? 0).toLocaleString("it-IT", { useGrouping: 'always',  style: "currency", currency: "EUR" })}</td>
                   </tr>,
                   ...(item.documenti_mexal || []).map((document) => {
                     const documentStatus = String(document.stato_operativo || "APERTO").toUpperCase();

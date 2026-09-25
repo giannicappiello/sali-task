@@ -472,7 +472,7 @@ export default function DocumentGatewaySettings() {
                     )}
                   </td>
                   <td>
-                    {(document.dimensione / 1048576).toLocaleString("it-IT", {
+                    {(document.dimensione / 1048576).toLocaleString("it-IT", { useGrouping: 'always',
                       maximumFractionDigits: 1,
                     })}{" "}
                     MB

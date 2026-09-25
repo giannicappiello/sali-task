@@ -9,7 +9,7 @@ import { CUSTOMER_PRODUCT_CONTEXTS, customerProductAccountPath, CUSTOMER_PRODUCT
 import { useCustomerProductData } from './useCustomerProductData';
 import './customer-products.css';
 
-const quantity = value => Number(value || 0).toLocaleString('it-IT', { maximumFractionDigits: 4 });
+const quantity = value => Number(value || 0).toLocaleString('it-IT', { useGrouping: 'always',  maximumFractionDigits: 4 });
 const money = value => value == null ? 'Non disponibile' : formatMoney(value);
 
 function ProductHistoryDialog({ product, rows, kind, period, allHistory, onHistoryChange, onClose }) {

@@ -34,7 +34,7 @@ function applyFilters(query, filters, dataset) {
 function display(value) {
   if (value === null || value === undefined || value === "") return "—";
   if (typeof value === "boolean") return value ? "Sì" : "No";
-  if (typeof value === "number") return new Intl.NumberFormat("it-IT", { maximumFractionDigits: 2 }).format(value);
+  if (typeof value === "number") return new Intl.NumberFormat("it-IT", { useGrouping: 'always',  maximumFractionDigits: 2 }).format(value);
   return String(value);
 }
 

@@ -173,12 +173,12 @@ export default function SchedaFarmacia({ farmacia, beauty, crmOnly = false, onBa
         </div>
 
         <div style={kpiCardStyle}>
-          <h3>€ {fatturatoTotale.toFixed(2)}</h3>
+          <h3>€ {fatturatoTotale.toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
           <p>Fatturato totale<InfoTooltip label="Fatturato totale" text="Somma del fatturato registrato nelle giornate eseguite della farmacia." /></p>
         </div>
 
         <div style={kpiCardStyle}>
-          <h3>€ {fatturatoMedio.toFixed(2)}</h3>
+          <h3>€ {fatturatoMedio.toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
           <p>Fatturato medio<InfoTooltip label="Fatturato medio" text="Fatturato totale diviso per il numero di giornate eseguite della farmacia." /></p>
         </div>
 
@@ -229,7 +229,7 @@ export default function SchedaFarmacia({ farmacia, beauty, crmOnly = false, onBa
             <h4>{formatDataIt(g.data)}</h4>
             <p><strong>Beauty:</strong> {getBeautyNome(g.consultant_id)}</p>
             <p><strong>Stato:</strong> {g.stato}</p>
-            <p><strong>Fatturato:</strong> € {Number(g.fatturato_giornata || 0).toFixed(2)}</p>
+            <p><strong>Fatturato:</strong> € {Number(g.fatturato_giornata || 0).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
             <p><strong>Pezzi:</strong> {Number(g.numero_totale_pezzi_venduti || 0)}</p>
           </div>
         ))}

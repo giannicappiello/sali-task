@@ -494,17 +494,17 @@ export default function Analisi({ utente }) {
       tipo === "farmacia_top_performance" ||
       tipo === "trend_mensile"
     ) {
-      return `€ ${Number(valore || 0).toFixed(2)}`;
+      return `€ ${Number(valore || 0).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
 
     if (
       tipo === "conversione" ||
       tipo === "conversione_contatto_giornata"
     ) {
-      return `${Number(valore || 0).toFixed(1)}%`;
+      return `${Number(valore || 0).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
     }
 
-    return Number(valore || 0).toFixed(0);
+    return Number(valore || 0).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 0, maximumFractionDigits: 0 });
   }
   async function esportaPDF() {
     if (caricamento) {

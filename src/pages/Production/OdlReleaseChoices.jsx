@@ -10,7 +10,7 @@ export default function OdlReleaseChoices({ version, busy, shortageSupported, on
   const candidates = releaseCandidates(version.snapshot);
   const [chosen, setChosen] = useState(() => candidates.map(row => row.id));
   const [shortageReason, setShortageReason] = useState("");
-  const number = new Intl.NumberFormat("it-IT", { maximumFractionDigits: 6 });
+  const number = new Intl.NumberFormat("it-IT", { useGrouping: 'always',  maximumFractionDigits: 6 });
   return <section className="plan-notice" aria-label="Scelte per il rilascio bloccato">
     <h3>Decidi come procedere</h3>
     <p>Questa proposta non ha generato ODL. Puoi scegliere gli ordini da verificare insieme, gestire la priorità dei materiali o rivedere le date del piano.</p>

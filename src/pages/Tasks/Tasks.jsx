@@ -1,3 +1,4 @@
+import { formatDisplayDate } from '../../lib/displayLocale.js';
 import { isPhaseParticipant } from "../../lib/projectVisibility";
 import { crmTypeFromPath } from "../../lib/crmCompetencies";
 import { useEffect, useMemo, useState } from "react";
@@ -100,12 +101,9 @@ function formatDate(value, options = {}) {
   const [year, month, day] = date.split("-").map(Number);
   const localDate = new Date(year, month - 1, day);
 
-  return localDate.toLocaleDateString(
-    "it-IT",
-    options.weekday
+  return formatDisplayDate(localDate, options.weekday
       ? { weekday: "long", day: "2-digit", month: "long", year: "numeric" }
-      : { day: "2-digit", month: "2-digit", year: "numeric" }
-  );
+      : { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 function monthTitle(date) {

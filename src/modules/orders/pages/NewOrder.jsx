@@ -26,7 +26,7 @@ function normalize(value) {
 }
 
 function money(value) {
-  return Number(value || 0).toLocaleString("it-IT", {
+  return Number(value || 0).toLocaleString("it-IT", { useGrouping: 'always',
     style: "currency",
     currency: "EUR",
   });

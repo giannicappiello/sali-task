@@ -165,7 +165,7 @@ export default function AIOrderImport() {
         <label className="orders-primary"><Camera size={19} /> Scatta foto<input hidden type="file" accept="image/*" capture="environment" onChange={(event) => { void chooseFiles(event.target.files); event.target.value = ""; }} /></label>
         <label className="orders-secondary"><FileUp size={19} /> Carica documenti<input hidden multiple type="file" accept="image/jpeg,image/png,image/webp,application/pdf,.xlsx,.xls,.xlsm" onChange={(event) => { void chooseFiles(event.target.files); event.target.value = ""; }} /></label>
       </div>
-      {documents.length > 0 && <div className="ai-order-selected-files">{documents.map(({ file, preview }, index) => <div className="ai-order-selected-file" key={`${file.name}-${file.size}-${index}`}>{preview ? <img src={preview} alt={`Anteprima ${file.name}`} /> : <FileUp size={36} />}<div><strong>{file.name}</strong><span>{(file.size / 1024).toLocaleString("it-IT", { maximumFractionDigits: 0 })} KB</span></div><button type="button" className="ai-order-remove-file" aria-label={`Rimuovi ${file.name}`} onClick={() => removeDocument(index)}><X size={18} /></button></div>)}</div>}
+      {documents.length > 0 && <div className="ai-order-selected-files">{documents.map(({ file, preview }, index) => <div className="ai-order-selected-file" key={`${file.name}-${file.size}-${index}`}>{preview ? <img src={preview} alt={`Anteprima ${file.name}`} /> : <FileUp size={36} />}<div><strong>{file.name}</strong><span>{(file.size / 1024).toLocaleString("it-IT", { useGrouping: 'always',  maximumFractionDigits: 0 })} KB</span></div><button type="button" className="ai-order-remove-file" aria-label={`Rimuovi ${file.name}`} onClick={() => removeDocument(index)}><X size={18} /></button></div>)}</div>}
       <button className="orders-primary" type="button" disabled={!documents.length || loading} onClick={analyze}>{loading ? "Lettura in corso…" : `Riconosci cliente e prodotti${documents.length > 1 ? ` (${documents.length} file)` : ""}`}</button>
       <small>Formati: JPG, PNG, WebP, PDF, XLSX, XLS o XLSM. Fino a {MAX_FILES} allegati e 2,8 MB complessivi; tutti i fogli Excel utili vengono analizzati e i file non vengono archiviati.</small>
     </section>
@@ -217,7 +217,7 @@ export default function AIOrderImport() {
         <p className="orders-alert">Il tipo rilevato descrive il documento acquisito. La bozza manterrà la scelta “{requestedOrderLabel}” effettuata prima del caricamento.</p>
         {(result.warnings || []).length > 0 && <ul>{result.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}
         <button className="orders-primary" type="button" onClick={openDraft}>Apri e controlla la bozza</button>
-        {result.usage ? <small>Costo di questa lettura: {Number(result.usage?.cost || 0).toLocaleString("it-IT", { style: "currency", currency: "USD", minimumFractionDigits: 4 })}</small> : <small>Import Excel deterministico: nessun costo AI.</small>}
+        {result.usage ? <small>Costo di questa lettura: {Number(result.usage?.cost || 0).toLocaleString("it-IT", { useGrouping: 'always',  style: "currency", currency: "USD", minimumFractionDigits: 4 })}</small> : <small>Import Excel deterministico: nessun costo AI.</small>}
       </section>
     </>}
   </div>;

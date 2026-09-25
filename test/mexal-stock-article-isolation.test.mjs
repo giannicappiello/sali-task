@@ -55,3 +55,7 @@ assert.equal(tables.get('prodotti').get('MP-NUOVA').nome, 'Nome personalizzato')
 await importMissingStockArticle({ supabase, article: { ...article, codice: 'ANNULLATO', gest_annullato: 'S' }, onImported: () => assert.fail() });
 assert.equal(tables.get('prodotti').has('ANNULLATO'), false);
 console.log('Stock isolation, cancellation, error/import checkpoints, idempotent catalogue creation: PASS');
+
+const countBeforeExcluded = writes.length;
+await importMissingStockArticle({ supabase, article: { ...article, codice: 'IT-FUORI' }, hierarchy: { linea: { descrizione: 'Sali di Ischia Fuori Produzione' } }, onImported: () => assert.fail('Non importare fuori produzione') });
+assert.equal(writes.length, countBeforeExcluded);

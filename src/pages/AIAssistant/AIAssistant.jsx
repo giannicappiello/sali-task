@@ -1,3 +1,4 @@
+import { formatDisplayDate } from '../../lib/displayLocale.js';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Bot, CalendarClock, Camera, Check, ChevronDown, ChevronRight, Database, Download, ExternalLink, Factory, FileText, Folder, FolderKanban, Globe2, LoaderCircle, MessageSquare, PanelLeft, Paperclip, Plus, Search, Send, ShieldCheck, ShoppingCart, Trash2, X } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
@@ -479,7 +480,7 @@ export default function AIAssistant({ getScreenContext, embedded = false, prompt
               </div>
               {expanded && <div className="ai-history-group-chats">{group.conversations.map((conversation) => (
                 <div className={`ai-history-chat ${conversationId === conversation.id ? "active" : ""}`} key={conversation.id}>
-                  <button type="button" onClick={() => openConversation(conversation.id)}><MessageSquare size={14} /><span><strong>{conversation.titolo || "Conversazione"}</strong><small>{new Date(conversation.aggiornata_il || conversation.creata_il).toLocaleDateString("it-IT")}</small></span></button>
+                  <button type="button" onClick={() => openConversation(conversation.id)}><MessageSquare size={14} /><span><strong>{conversation.titolo || "Conversazione"}</strong><small>{formatDisplayDate(new Date(conversation.aggiornata_il || conversation.creata_il), {})}</small></span></button>
                   <button type="button" className="ai-delete-chat" onClick={(event) => void deleteChat(event, conversation)} title="Elimina chat" aria-label={`Elimina ${conversation.titolo || "conversazione"}`}><Trash2 size={14} /></button>
                 </div>
               ))}{group.conversations.length === 0 && <small className="ai-history-empty">Nessuna chat. Premi + per iniziare.</small>}</div>}
@@ -544,7 +545,7 @@ export default function AIAssistant({ getScreenContext, embedded = false, prompt
           {attachments.length > 0 && <div className="ai-attachment-list">
             {attachments.map((item) => <div className="ai-attachment-item" key={item.id}>
               {item.preview ? <img src={item.preview} alt="" /> : <span className="ai-attachment-file-icon"><FileText size={18} /></span>}
-              <div><strong title={item.file.name}>{item.file.name}</strong><small>{(item.file.size / 1024).toFixed(0)} KB</small></div>
+              <div><strong title={item.file.name}>{item.file.name}</strong><small>{(item.file.size / 1024).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 0, maximumFractionDigits: 0 })} KB</small></div>
               <button type="button" className="ai-attachment-remove" onClick={() => removeAttachment(item.id)} aria-label={`Rimuovi ${item.file.name}`}><Trash2 size={14} /></button>
             </div>)}
           </div>}

@@ -1,3 +1,4 @@
+import { displayDateFormatter } from '../../../lib/displayLocale.js';
 import { enrichOrderInvoices } from "../services/orderInvoices";
 import OrderStatus from "../components/OrderStatus";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -135,9 +136,9 @@ export default function OrdersDashboard() {
   </div>;
 }
 
-function formatDate(value) { if (!value) return "-"; return new Intl.DateTimeFormat("it-IT", { dateStyle: "medium" }).format(new Date(`${value}T00:00:00`)); }
+function formatDate(value) { if (!value) return "-"; return displayDateFormatter({ dateStyle: "medium" }).format(new Date(`${value}T00:00:00`)); }
 function formatMonth(value) { return new Intl.DateTimeFormat("it-IT", { month: "long", year: "numeric" }).format(new Date(`${value}-01T00:00:00`)); }
-function formatCurrency(value) { return Number(value ?? 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" }); }
+function formatCurrency(value) { return Number(value ?? 0).toLocaleString("it-IT", { useGrouping: 'always',  style: "currency", currency: "EUR" }); }
 function documentNumbers(order) {
   const types = orderModuleDocumentTypes(order.modulo_ordini || "prof");
   const stored = filterOrderModuleDocuments(order.modulo_ordini || "prof", order.documenti_mexal || []);

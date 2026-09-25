@@ -1,3 +1,4 @@
+import { formatDisplayDate } from '../../lib/displayLocale.js';
 export const CRM_TYPES = Object.freeze({
   conto_terzi: { moduleCode: "crm_conto_terzi", label: "PRIVATE", basePath: "/crm/conto-terzi" },
   b2b: { moduleCode: "crm_b2b", label: "DIRECT · BtoB", basePath: "/crm/b2b" },
@@ -13,9 +14,9 @@ export function crmTypeConfig(type) {
 }
 
 export function formatMoney(value) {
-  return value == null ? "Dato non disponibile" : new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(Number(value || 0));
+  return value == null ? "Dato non disponibile" : new Intl.NumberFormat("it-IT", { useGrouping: 'always',  style: "currency", currency: "EUR" }).format(Number(value || 0));
 }
 
 export function formatDate(value) {
-  return value ? new Date(value).toLocaleDateString("it-IT") : "—";
+  return value ? formatDisplayDate(new Date(value), {}) : "—";
 }

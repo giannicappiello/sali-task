@@ -1,3 +1,4 @@
+import { displayDateFormatter } from '../../lib/displayLocale.js';
 import { Fragment, useMemo, useState } from "react";
 import { AlertTriangle, CalendarClock, CheckCircle2, ChevronDown, ChevronUp, ClipboardList, Factory, RefreshCw, Search, X } from "lucide-react";
 import WorkspacePageHeader from "../../components/WorkspacePageHeader";
@@ -5,8 +6,8 @@ import CommercialBatchProgress from "./CommercialBatchProgress";
 import { commercialCounts, commercialStageLabel, commercialStages, deliveryState, hasBlock, openDiagnostics, selectCommercialRows } from "./commercial-order-state.js";
 import "./commercial-orders.css";
 
-const date = value => value && Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat("it-IT", {dateStyle:"short"}).format(new Date(value)) : "—";
-const qty = value => value == null ? "—" : new Intl.NumberFormat("it-IT", {maximumFractionDigits:3}).format(value);
+const date = value => value && Number.isFinite(Date.parse(value)) ? displayDateFormatter({dateStyle:"short"}).format(new Date(value)) : "—";
+const qty = value => value == null ? "—" : new Intl.NumberFormat("it-IT", { useGrouping: 'always', maximumFractionDigits:3}).format(value);
 const PAGE_SIZE = 25;
 
 function OrderDetail({ row, loadBatches, onOpen, onDiagnostic }) {

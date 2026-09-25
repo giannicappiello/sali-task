@@ -6,7 +6,7 @@ import PriorityRevisionSummary from "../../components/PriorityRevisionSummary";
 import { suggestMaterialDisengagements } from "./priority-material-suggestions";
 import "./priority-revision.css";
 
-const number = new Intl.NumberFormat("it-IT", { maximumFractionDigits: 6 });
+const number = new Intl.NumberFormat("it-IT", { useGrouping: 'always',  maximumFractionDigits: 6 });
 const initialDate = () => { const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset()); return now.toISOString().slice(0, 16); };
 export function ProductionDependencies({ dependencies = [] }) {
   if (!dependencies.length) return null;

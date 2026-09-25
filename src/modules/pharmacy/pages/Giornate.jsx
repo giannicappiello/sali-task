@@ -1,3 +1,4 @@
+import { formatDisplayDate } from '../../../lib/displayLocale.js';
 import { useEffect, useState } from "react";
 import { supabase } from "../services/reportSupabase";
 import CompilaReport from "./CompilaReport.jsx";
@@ -1308,7 +1309,7 @@ export default function Giornate({ utente }) {
     {conteggi.annullate}
   </span>
 )}
-                          
+
                         </div>
                       )}
                     </button>
@@ -1345,7 +1346,7 @@ export default function Giornate({ utente }) {
                   return (
                     <div key={getDateKey(giorno)} style={weekDayStyle}>
                       <h4>
-                        {giorno.toLocaleDateString("it-IT", {
+                        {formatDisplayDate(giorno, {
                           weekday: "short",
                         })}
                       </h4>
@@ -1358,12 +1359,12 @@ export default function Giornate({ utente }) {
 
                       {eventi.length > 0 && (
                         <div style={weekStatsStyle}>
-                          
-                      
 
-                      
 
-                      
+
+
+
+
                         </div>
                       )}
 
@@ -1465,8 +1466,8 @@ function VisitPosition({ label, at, latitude, longitude, accuracy, distance, geo
     <div style={trackingPositionStyle}>
       <strong>{label}</strong>
       <span>{at ? new Date(at).toLocaleString("it-IT") : "Non registrato"}</span>
-      {distance != null && <span>Distanza dalla sede: {Number(distance).toFixed(0)} m</span>}
-      {accuracy != null && <span>Precisione GPS: ±{Number(accuracy).toFixed(0)} m</span>}
+      {distance != null && <span>Distanza dalla sede: {Number(distance).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 0, maximumFractionDigits: 0 })} m</span>}
+      {accuracy != null && <span>Precisione GPS: ±{Number(accuracy).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 0, maximumFractionDigits: 0 })} m</span>}
       {geofence && <span>Esito: {String(geofence).replaceAll("_", " ")}</span>}
       {exceptionReason && <span>Motivazione: {exceptionReason}</span>}
       {hasCoordinates ? (

@@ -18,7 +18,7 @@ export default function DashboardObiettivi({
 
       <div style={kpiGridStyle}>
         <div style={kpiCardStyle}>
-          <h3>{raggiungimentoObiettivi.toFixed(1)}%</h3>
+          <h3>{raggiungimentoObiettivi.toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</h3>
           <p>Raggiungimento obiettivi<InfoTooltip label="Raggiungimento obiettivi" text="Fatturato sulle giornate con obiettivo diviso per l’obiettivo totale, moltiplicato per 100." /></p>
         </div>
 

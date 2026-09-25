@@ -1,3 +1,4 @@
+import { formatDisplayDate } from '../../lib/displayLocale.js';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Archive, BellRing, CheckCircle2, Folder, ListChecks, Search } from "lucide-react";
@@ -25,7 +26,7 @@ function dateOnly(value) {
 
 function formatDate(value) {
   const date = dateOnly(value);
-  return date ? new Date(`${date}T00:00:00`).toLocaleDateString("it-IT") : "—";
+  return date ? formatDisplayDate(new Date(`${date}T00:00:00`), {}) : "—";
 }
 
 function latestDate(values) {

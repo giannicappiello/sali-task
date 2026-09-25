@@ -4,7 +4,7 @@ import { supabase } from "../../../lib/supabaseClient";
 import { useAuth } from "../../../contexts/AuthContext";
 import { loadDirectProductCatalog } from "../services/directProductCatalog";
 
-const money = (value) => Number(value || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
+const money = (value) => Number(value || 0).toLocaleString("it-IT", { useGrouping: 'always',  style: "currency", currency: "EUR" });
 const emptyForm = { id: null, codice: "", descrizione: "", modalita_prezzo: "sconto_ordine", prezzo_fisso: "", sconto_personalizzato: "", componenti: [] };
 const numericPrice = (value, fallback = 0) => {
   const normalized = String(value ?? "").trim().replace(",", ".");

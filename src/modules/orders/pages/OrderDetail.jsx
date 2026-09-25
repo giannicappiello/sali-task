@@ -14,7 +14,7 @@ import useOrdersAccess from "./useOrdersAccess";
 import { isPrivateOrderModule, orderModuleDefinition, orderModuleFilter } from "../services/orderModules";
 
 function money(value) {
-  return Number(value || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
+  return Number(value || 0).toLocaleString("it-IT", { useGrouping: 'always',  style: "currency", currency: "EUR" });
 }
 
 function childStatusClass(document) {

@@ -5,7 +5,7 @@ export function formatDataIt(dataIso) {
 }
 
 export function formatEuro(valore) {
-  return `€ ${Number(valore || 0).toFixed(2)}`;
+  return `€ ${Number(valore || 0).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export function filtraGiornatePeriodo(

@@ -183,7 +183,7 @@ export default function Report({ utente }) {
           <p><span style={labelStyle}>Clienti acquistato:</span> {reportDettaglio.clienti_acquistato || 0}</p>
           <p><span style={labelStyle}>Test effettuati:</span> {reportDettaglio.numero_tests_effettuati || 0}</p>
           <p><span style={labelStyle}>Pezzi venduti:</span> {reportDettaglio.numero_totale_pezzi_venduti || 0}</p>
-          <p><span style={labelStyle}>Fatturato:</span> € {Number(reportDettaglio.fatturato_giornata || 0).toFixed(2)}</p>
+          <p><span style={labelStyle}>Fatturato:</span> € {Number(reportDettaglio.fatturato_giornata || 0).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
 
           {reportDettaglio.feedback_clienti && (
             <p><span style={labelStyle}>Feedback clienti:</span> {reportDettaglio.feedback_clienti}</p>
@@ -211,8 +211,8 @@ export default function Report({ utente }) {
               <p><span style={labelStyle}>Categoria:</span> {v.categoria_prodotto || "-"}</p>
               <p><span style={labelStyle}>Sottocategoria:</span> {v.sottocategoria_prodotto || "-"}</p>
               <p><span style={labelStyle}>Quantità:</span> {v.quantita}</p>
-              <p><span style={labelStyle}>Prezzo unitario:</span> € {Number(v.prezzo_unitario || 0).toFixed(2)}</p>
-              <p><span style={labelStyle}>Totale:</span> € {Number(v.valore_totale || 0).toFixed(2)}</p>
+              <p><span style={labelStyle}>Prezzo unitario:</span> € {Number(v.prezzo_unitario || 0).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              <p><span style={labelStyle}>Totale:</span> € {Number(v.valore_totale || 0).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
             </div>
           ))}
         </div>
@@ -242,7 +242,7 @@ export default function Report({ utente }) {
             <p><span style={labelStyle}>Data:</span> {formatData(r.data)}</p>
             <p><span style={labelStyle}>Provincia:</span> {getProvinciaLabel(r.farmacia_id)}</p>
             <p><span style={labelStyle}>Beauty:</span> {getBeautyNome(r.consultant_id, r.consultant_nome_storico)}</p>
-            <p><span style={labelStyle}>Fatturato:</span> € {Number(r.fatturato_giornata || 0).toFixed(2)}</p>
+            <p><span style={labelStyle}>Fatturato:</span> € {Number(r.fatturato_giornata || 0).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
 
             <div style={actionRowStyle}>
                <button

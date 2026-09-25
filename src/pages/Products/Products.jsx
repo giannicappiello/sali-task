@@ -36,7 +36,7 @@ const SECTIONS = [
 
 function formatCurrency(value) {
   if (value === null || value === undefined || value === "") return "-";
-  return Number(value).toLocaleString("it-IT", {
+  return Number(value).toLocaleString("it-IT", { useGrouping: 'always',
     style: "currency",
     currency: "EUR",
   });

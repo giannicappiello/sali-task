@@ -56,11 +56,11 @@ const CONTROL_KPI_INFO = {
 };
 
 function number(value, decimals = 0) {
-  return new Intl.NumberFormat("it-IT", { maximumFractionDigits: decimals }).format(Number(value || 0));
+  return new Intl.NumberFormat("it-IT", { useGrouping: 'always',  maximumFractionDigits: decimals }).format(Number(value || 0));
 }
 
 function percentage(value) {
-  return value == null ? "—" : `${new Intl.NumberFormat("it-IT", { maximumFractionDigits: 1, signDisplay: "exceptZero" }).format(Number(value))}%`;
+  return value == null ? "—" : `${new Intl.NumberFormat("it-IT", { useGrouping: 'always',  maximumFractionDigits: 1, signDisplay: "exceptZero" }).format(Number(value))}%`;
 }
 
 function variation(current, previous) {

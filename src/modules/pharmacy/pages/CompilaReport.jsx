@@ -1,3 +1,4 @@
+import { formatDisplayDate } from '../../../lib/displayLocale.js';
 import { useCallback, useEffect, useState } from "react";
 import { supabase as reportSupabase } from "../services/reportSupabase";
 import { supabase as primarySupabase } from "../../../lib/supabaseClient";
@@ -381,9 +382,9 @@ export default function CompilaReport({
     doc.setFontSize(20);
     doc.text("Report Giornata Promozionale", 196, 30, { align: "right" });
 
-    
+
     doc.setFontSize(12);
-    
+
     doc.setLineWidth(0.5);
     doc.setDrawColor(150, 150, 150);
       doc.line(14, 67, 196, 67);
@@ -420,8 +421,8 @@ export default function CompilaReport({
         v.codice_prodotto || "-",
         v.nome_prodotto || "-",
         v.quantita || 0,
-        `€ ${Number(v.prezzo_unitario || 0).toFixed(2)}`,
-        `€ ${(Number(v.prezzo_unitario || 0) * Number(v.quantita || 0)).toFixed(2)}`,
+        `€ ${Number(v.prezzo_unitario || 0).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        `€ ${(Number(v.prezzo_unitario || 0) * Number(v.quantita || 0)).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       ]),
       styles: { fontSize: 8 },
       headStyles: { fillColor: [45, 43, 40] },
@@ -436,7 +437,7 @@ export default function CompilaReport({
 
     doc.setFontSize(12);
     doc.text(`Totale pezzi: ${totalePezzi}`, 196, y, { align: "right" });
-    doc.text(`Fatturato totale: € ${fatturatoTotale.toFixed(2)}`, 196, y + 7, { align: "right" });
+    doc.text(`Fatturato totale: € ${fatturatoTotale.toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 196, y + 7, { align: "right" });
 
     y += 7;
 
@@ -694,7 +695,7 @@ export default function CompilaReport({
               </p>
               <p>
                 <span style={labelStyle}>Prezzo unitario:</span> €{" "}
-                {Number(vendita.prezzo_unitario || 0).toFixed(2)}
+                {Number(vendita.prezzo_unitario || 0).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
 
               <label style={labelStyle}>Quantità</label>
@@ -711,7 +712,7 @@ export default function CompilaReport({
                 {(
                   Number(vendita.prezzo_unitario || 0) *
                   Number(vendita.quantita || 0)
-                ).toFixed(2)}
+                ).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
 
               <button
@@ -738,7 +739,7 @@ export default function CompilaReport({
             </p>
             <p>
               <span style={labelStyle}>Fatturato totale:</span> €{" "}
-              {fatturatoTotale.toFixed(2)}
+              {fatturatoTotale.toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
           </div>
 
@@ -827,8 +828,8 @@ function ReportPosition({ label, at, latitude, longitude, address, accuracy, dis
       <strong>{label}</strong>
       <span>{at ? formatDateTime(at) : "Non registrato"}</span>
       {address && <span>Indirizzo rilevato: {address}</span>}
-      {distance != null && <span>Distanza dalla sede: {Number(distance).toFixed(0)} m</span>}
-      {accuracy != null && <span>Precisione GPS: ±{Number(accuracy).toFixed(0)} m</span>}
+      {distance != null && <span>Distanza dalla sede: {Number(distance).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 0, maximumFractionDigits: 0 })} m</span>}
+      {accuracy != null && <span>Precisione GPS: ±{Number(accuracy).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 0, maximumFractionDigits: 0 })} m</span>}
       {geofence && <span>Esito geolocalizzazione: {String(geofence).replaceAll("_", " ")}</span>}
       {exceptionReason && <span>Motivazione: {exceptionReason}</span>}
       {hasCoordinates ? (
@@ -844,7 +845,7 @@ function formatDateTime(value, includeTime = true) {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString("it-IT", includeTime
+  return formatDisplayDate(date, includeTime
     ? { dateStyle: "short", timeStyle: "short" }
     : { dateStyle: "short" });
 }

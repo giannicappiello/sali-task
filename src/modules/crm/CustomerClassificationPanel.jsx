@@ -44,7 +44,7 @@ function DistributionChart({ rows }) {
 }
 
 function formatPieces(value) {
-  return Number(value || 0).toLocaleString("it-IT", { maximumFractionDigits: 2 });
+  return Number(value || 0).toLocaleString("it-IT", { useGrouping: 'always',  maximumFractionDigits: 2 });
 }
 
 function SalesDistributionChart({ title, description, rows, showCategory = false }) {

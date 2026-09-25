@@ -44,7 +44,7 @@ export default function DashboardKpi({
       </div>
 
       <div style={kpiCardStyle}>
-        <h3>{conversione.toFixed(1)}%</h3>
+        <h3>{conversione.toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</h3>
         <p>Conversione clienti<InfoTooltip label="Conversione clienti" text="Rapporto percentuale tra clienti convertiti e contatti utili registrati nel periodo." /></p>
       </div>
 

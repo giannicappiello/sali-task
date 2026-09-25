@@ -14,7 +14,7 @@ function Conversion({ row, name, onClose, onSave }) {
     } catch (failure) { setError(failure.message); } finally { setBusy(false); } }}>
       <h2 id="hr-convert-title">Converti ore eccedenti in straordinario</h2>
       <p>{name} · {exportDate(row.day)}</p>
-      <p>Disponibili {row.minutes} minuti ({(row.minutes / 60).toLocaleString('it-IT', { maximumFractionDigits: 2 })} ore). Conferma tutti i minuti oppure riduci la quantità per una conversione parziale.</p>
+      <p>Disponibili {row.minutes} minuti ({(row.minutes / 60).toLocaleString('it-IT', { useGrouping: 'always',  maximumFractionDigits: 2 })} ore). Conferma tutti i minuti oppure riduci la quantità per una conversione parziale.</p>
       <label>Minuti da approvare<input aria-label="Minuti da approvare" type="number" min={1} max={row.minutes} step={1} required value={minutes} onChange={e => setMinutes(e.target.value)}/></label>
       <p className="hr-note">La conferma registra lo straordinario approvato e aggiorna il riepilogo economico e i prossimi export Excel. Le timbrature restano invariate.</p>
       {error && <p role="alert" className="hr-error">{error}</p>}
@@ -45,7 +45,7 @@ export default function HrExcessOvertime({ month, employees, data, onConverted }
     for (const key of ['worked_minutes', 'planned_minutes', 'minutes']) group[key] += Number(row[key] || 0);
   }
   const groups = [...grouped.values()].sort((a, b) => name(a.user_id).localeCompare(name(b.user_id), 'it'));
-  const hours = minutes => (minutes / 60).toLocaleString('it-IT', { maximumFractionDigits: 2 });
+  const hours = minutes => (minutes / 60).toLocaleString('it-IT', { useGrouping: 'always',  maximumFractionDigits: 2 });
   const toggle = id => setExpanded(previous => ({ ...previous, [`${month}:${id}`]: !previous[`${month}:${id}`] }));
   return <section className="hr-panel"><h2>Ore eccedenti da autorizzare</h2>
     <p className="hr-muted">Proposte dalle presenze chiuse, al netto del turno e della pausa prevista. Gli intervalli già approvati o con richieste in attesa sono esclusi. Presenze incomplete e accordi non determinabili richiedono verifica.</p>

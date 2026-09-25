@@ -1,3 +1,4 @@
+import { formatDisplayDate } from '../../lib/displayLocale.js';
 export function romeDay(value = new Date()) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value));
 }
@@ -6,7 +7,7 @@ export function monthDays(month) {
   return Array.from({ length: new Date(Date.UTC(year, number, 0)).getUTCDate() }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`);
 }
 export function formatTime(value) { return value ? new Date(value).toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' }) : '—'; }
-export function formatDate(value) { return value ? new Date(value).toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' }) : '—'; }
+export function formatDate(value) { return value ? formatDisplayDate(new Date(value), { timeZone: 'Europe/Rome' }) : '—'; }
 export function timeInput(value) {
   return value ? `${romeDay(value)}T${formatTime(value)}` : '';
 }

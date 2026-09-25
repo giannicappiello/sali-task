@@ -12,7 +12,7 @@ async function callPurchasing(accessToken, action, extra = {}) {
   return payload;
 }
 
-const quantity = (value) => new Intl.NumberFormat("it-IT", { minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(Number(value) || 0);
+const quantity = (value) => new Intl.NumberFormat("it-IT", { useGrouping: 'always',  minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(Number(value) || 0);
 const date = (value) => value ? new Intl.DateTimeFormat("it-IT").format(new Date(value)) : "Da definire";
 const monthTitle = (value) => value ? new Intl.DateTimeFormat("it-IT", { month: "long", year: "numeric" }).format(new Date(value)).replace(/^./, (letter) => letter.toUpperCase()) : "Data da definire";
 const monthId = (value) => value ? `fabbisogni-${String(value).slice(0, 7)}` : "fabbisogni-senza-data";

@@ -1,3 +1,4 @@
+import { formatDisplayDate } from '../../lib/displayLocale.js';
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -147,7 +148,7 @@ function Calendar() {
 
   function formatDateHuman(dateKey) {
     if (!dateKey) return "-";
-    return new Date(`${dateKey}T00:00:00`).toLocaleDateString("it-IT", {
+    return formatDisplayDate(new Date(`${dateKey}T00:00:00`), {
       weekday: "long",
       day: "2-digit",
       month: "long",

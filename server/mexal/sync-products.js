@@ -1,3 +1,4 @@
+/* global process, Buffer */
 import https from "node:https";
 import { createClient } from "@supabase/supabase-js";
 import { checkpointSyncRunProgress, completeSyncRun, completeSyncRunWithErrors, createSyncRun as createCentralSyncRun, failSyncRun, failSyncRunUnlessClosed, findRunningSync, getSyncRun as getCentralSyncRun, isSyncRunClosedError } from "./lib/syncRuns.js";
@@ -1003,8 +1004,23 @@ export function mapArticleToOrdersCache(article, { imageUrl = null } = {}) {
   };
 }
 
+export function articleImportExclusion(article, hierarchy = {}) {
+  if (!isActiveArticle(article)) return "non_attivo";
+  if (Object.values(hierarchy).some(group => isOutOfProductionLine(group?.descrizione))) return "fuori_produzione";
+  return null;
+}
+
+export async function deactivateExcludedArticle(supabase, code) {
+  const now = new Date().toISOString();
+  const product = await supabase.from("prodotti").update({ mostra_in_app: false, attivo: false, attivo_mexal: false, stato: "Non attivo", updated_at: now }, { count: "exact" }).eq("codice_mexal", code).eq("sincronizzato_mexal", true);
+  if (product.error) throw product.error;
+  const cache = await supabase.from("ordini_prodotti_cache").update({ mostra_in_app: false }).eq("codice_articolo", code);
+  if (cache.error) throw cache.error;
+  return product.count || 0;
+}
+
 export async function importMissingStockArticle({ supabase, article, productExists, cacheExists, hierarchy = {}, onImported }) {
-  if (!isActiveArticle(article)) return;
+  if (articleImportExclusion(article, hierarchy)) return;
   const code = getArticleCode(article);
   if (!productExists) {
     // Preserve existing/catalogue-managed fields and tolerate a simultaneous
@@ -1180,23 +1196,6 @@ async function updateSyncRun(supabase, id, values) {
   if (error) console.error("Aggiornamento run prodotti non riuscito", { runId: id, message: error.message });
 }
 
-async function reconcileStaleProducts(supabase, startedAt) {
-  const now = new Date().toISOString();
-  const { count, error } = await supabase
-    .from("prodotti")
-    .update({
-      mostra_in_app: false,
-      attivo: false,
-      attivo_mexal: false,
-      stato: "Non attivo",
-      updated_at: now,
-    }, { count: "exact" })
-    .eq("sincronizzato_mexal", true)
-    .or(`ultimo_sync_mexal.lt.${startedAt},ultimo_sync_mexal.is.null`);
-
-  if (error) throw error;
-  return count || 0;
-}
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({
@@ -1423,12 +1422,17 @@ export default async function handler(req, res) {
           const code = getArticleCode(summary);
           const availabilityMexal = selectAvailabilityClient(code, availabilityClients);
           const article = await loadFullArticle(availabilityMexal, code, summary);
-          if (!isActiveArticle(article)) { result.esclusi += 1; return; }
+          if (!groupMap.size) importGroups ??= getGroupMap(mexal);
+          const hierarchy = resolveHierarchy(article.cod_grp_merc, importGroups ? await importGroups : groupMap);
+          if (articleImportExclusion(article, hierarchy)) {
+            await deactivateExcludedArticle(supabase, code);
+            result.esclusi += 1;
+            return;
+          }
           if (!productCodes.has(code) || !cacheCodes.has(code)) {
-            if (!productCodes.has(code)) importGroups ??= getGroupMap(mexal);
             await importMissingStockArticle({
               supabase, article, productExists: productCodes.has(code), cacheExists: cacheCodes.has(code),
-              hierarchy: importGroups ? resolveHierarchy(article.cod_grp_merc, await importGroups) : {},
+              hierarchy,
               onImported: (entry) => importedArticles.push(entry),
             });
             productCodes.add(code);
@@ -1536,9 +1540,14 @@ export default async function handler(req, res) {
         const availabilityMexal = selectAvailabilityClient(code, availabilityClients);
         const article = await loadFullArticle(availabilityMexal, code, summary);
         result.detail_loaded += 1;
-        if (!isActiveArticle(article)) { result.esclusi_non_attivi += 1; continue; }
         const hierarchy = resolveHierarchy(article.cod_grp_merc, groupMap);
-        if (isOutOfProductionLine(hierarchy.linea?.descrizione)) { result.esclusi_fuori_produzione += 1; continue; }
+        const exclusion = articleImportExclusion(article, hierarchy);
+        if (exclusion) {
+          result.disattivati += await deactivateExcludedArticle(supabase, code);
+          if (exclusion === "non_attivo") result.esclusi_non_attivi += 1;
+          else result.esclusi_fuori_produzione += 1;
+          continue;
+        }
         const existing = await findExistingProduct(supabase, code);
         let imageUrl = existing?.immagine_catalogo_url || null;
         if (String(article?.img_cat_disp || "N").trim().toUpperCase() === "S") {
@@ -1566,7 +1575,6 @@ export default async function handler(req, res) {
     result.aggiornati = cacheWrites.updated;
     result.righe_scritte = cacheWrites.inserted + cacheWrites.updated;
 
-    const previousProcessed = Number(syncRun.processed || 0);
     const previousInserted = Number(syncRun.inserted || 0);
     const previousUpdated = Number(syncRun.updated || 0);
     const previousCache = syncRun.metadata?.cache_writes || {};
@@ -1576,10 +1584,9 @@ export default async function handler(req, res) {
       cache_inseriti: Number(previousCache.cache_inseriti || 0) + result.inseriti,
       cache_aggiornati: Number(previousCache.cache_aggiornati || 0) + result.aggiornati,
     };
-    const allBatchesCompleted = result.completato && previousProcessed + batch.length === result.totale;
     const totalProductWrites = previousInserted + previousUpdated + result.prodotti_inseriti + result.prodotti_aggiornati;
     const totalCacheWrites = totals.cache_inseriti + totals.cache_aggiornati;
-    const noRowsDiagnostic = result.completato && result.totale > 0 && totalProductWrites + totalCacheWrites === 0;
+    const noRowsDiagnostic = result.completato && result.totale > 0 && Number(syncRun.skipped || 0) + result.esclusi_non_attivi + result.esclusi_fuori_produzione < result.totale && totalProductWrites + totalCacheWrites === 0;
     const status = result.completato ? (noRowsDiagnostic ? "failed" : "completed") : "running";
     const completionError = noRowsDiagnostic
       ? "Mexal ha restituito articoli validi ma non sono state scritte righe né in prodotti né in ordini_prodotti_cache."

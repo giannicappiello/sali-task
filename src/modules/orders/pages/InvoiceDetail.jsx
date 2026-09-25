@@ -7,13 +7,13 @@ import { useOrdersModule } from "../ordersModuleContext";
 import InfoTooltip from "../../../components/InfoTooltip";
 
 function money(value) {
-  return Number(value || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR" });
+  return Number(value || 0).toLocaleString("it-IT", { useGrouping: 'always',  style: "currency", currency: "EUR" });
 }
 
 function formatDate(value) {
   if (!value) return "-";
   const [year, month, day] = String(value).slice(0, 10).split("-");
-  return `${day}/${month}/${year}`;
+  return `${day}-${month}-${year}`;
 }
 
 export default function InvoiceDetail() {

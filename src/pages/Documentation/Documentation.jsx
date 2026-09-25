@@ -52,7 +52,7 @@ function formatSize(bytes) {
   if (!bytes) return "0 KB";
   const units = ["B", "KB", "MB", "GB"];
   const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), 3);
-  return `${(bytes / 1024 ** index).toLocaleString("it-IT", { maximumFractionDigits: 1 })} ${units[index]}`;
+  return `${(bytes / 1024 ** index).toLocaleString("it-IT", { useGrouping: 'always',  maximumFractionDigits: 1 })} ${units[index]}`;
 }
 const sameId = (left, right) =>
   String(left ?? "").trim() === String(right ?? "").trim();

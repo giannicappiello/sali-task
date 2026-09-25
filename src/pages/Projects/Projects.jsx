@@ -1,3 +1,4 @@
+import { formatDisplayDate } from '../../lib/displayLocale.js';
 import { isPhaseParticipant } from "../../lib/projectVisibility";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -74,7 +75,7 @@ function statusClass(item) {
 }
 
 function formatDate(date) {
-  return date ? new Date(`${date}T00:00:00`).toLocaleDateString("it-IT") : "-";
+  return date ? formatDisplayDate(new Date(`${date}T00:00:00`), {}) : "-";
 }
 
 function safeArray(value) {
@@ -1031,8 +1032,8 @@ export default function Projects() {
     const value = Number(bytes || 0);
     if (!value) return "";
     if (value < 1024) return `${value} B`;
-    if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+    if (value < 1024 * 1024) return `${(value / 1024).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 1, maximumFractionDigits: 1 })} KB`;
+    return `${(value / (1024 * 1024)).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 1, maximumFractionDigits: 1 })} MB`;
   }
 
   async function removeAttachment(attachment) {

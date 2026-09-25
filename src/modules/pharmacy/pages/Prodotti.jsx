@@ -494,7 +494,7 @@ export default function Prodotti({ utente }) {
                   </p>
 
                   <p>
-                    <span style={labelStyle}>Prezzo:</span> € {Number(prodotto.prezzo_listino || prodotto.prezzo || 0).toFixed(2)}
+                    <span style={labelStyle}>Prezzo:</span> € {Number(prodotto.prezzo_listino || prodotto.prezzo || 0).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
 
                   <p>

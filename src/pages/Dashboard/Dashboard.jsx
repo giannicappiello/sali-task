@@ -1,3 +1,4 @@
+import { formatDisplayDate } from '../../lib/displayLocale.js';
 import PreparationActions from './PreparationActions';
 import { displayDate } from '../../lib/displayDate';
 import { Modal as CostModal } from '../../features/production-costs/common';
@@ -536,7 +537,7 @@ function Dashboard({ toolbarTarget = null }) {
         <section className="panel dashboard-week-panel">
           <div className="panel-header"><button className="secondary-action" aria-label="Settimana precedente" onClick={() => moveWeek(-1)}><ChevronLeft size={18} /></button><div><h3>Planning settimanale</h3><p>{formatDateHuman(weekDays[0].key)} – {formatDateHuman(weekDays[6].key)}</p></div><button className="secondary-action" aria-label="Settimana successiva" onClick={() => moveWeek(1)}><ChevronRight size={18} /></button></div>
           <div className="dashboard-week-scroll"><div className="dashboard-week-days">{weekDays.map(day => <section key={day.key} className={day.key === selectedDate ? 'selected' : ''}>
-            <button className="dashboard-week-date" onClick={() => openDay(day.key)}>{day.date.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' })}<small>{day.items.length} attività</small></button>
+            <button className="dashboard-week-date" onClick={() => openDay(day.key)}>{formatDisplayDate(day.date, { weekday: 'short', day: 'numeric', month: 'short' })}<small>{day.items.length} attività</small></button>
             {day.items.map(item => <button key={item.id} className="calendar-task-card" onClick={() => openActivity(item)}><small className={item.tipo === 'production' ? `production-label ${item.reparto === 'Preparazione' ? 'preparation' : 'packaging'}` : 'activity-kind task-kind'}>{item.tipo === 'production' ? item.reparto : item.tipo === 'reminder' ? 'Reminder' : 'Task / fase'}</small><strong>{item.titolo}</strong><span>{item.tipo === 'production' ? item.resource : statusLabel(item)}</span></button>)}
           </section>)}</div></div>
         </section>

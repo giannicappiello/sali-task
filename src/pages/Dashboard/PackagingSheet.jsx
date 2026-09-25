@@ -1,6 +1,6 @@
 import { displayDate } from '../../lib/displayDate';
 import './PackagingSheet.css';
-const number = value => Number(value || 0).toLocaleString('it-IT', { maximumFractionDigits: 3 });
+const number = value => Number(value || 0).toLocaleString('it-IT', { useGrouping: 'always',  maximumFractionDigits: 3 });
 export default function PackagingSheet({ sheet }) {
   return <article className="packaging-sheet">
     <header><strong>PROGRÉ · Foglio di confezionamento</strong><h2>{sheet.numeroOrdine}</h2><p>Cliente: {sheet.cliente}</p><p>Generato: {displayDate(sheet.generatoIl, true)} · Stampato: {displayDate(sheet.stampatoIl, true)}</p></header>

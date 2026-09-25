@@ -18,8 +18,8 @@ const PH_COLS = [7, 31, 91, 101, 113, 131, 149, 168, 185, 203];
 const RULE = [54, 54, 54];
 
 function number(value) { return Number(value || 0); }
-function money(value) { return number(value).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-function quantity(value) { return number(value).toLocaleString("it-IT", { maximumFractionDigits: 3 }); }
+function money(value) { return number(value).toLocaleString("it-IT", { useGrouping: 'always',  minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function quantity(value) { return number(value).toLocaleString("it-IT", { useGrouping: 'always',  maximumFractionDigits: 3 }); }
 function valueOrBlank(value) { return value === null || value === undefined || value === "" ? "" : String(value); }
 export function isLetterheadNotConfigured(error) {
   const code = String(error?.code || "").trim().toUpperCase();

@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Factory, RefreshCw, ShieldCheck, Workflow } from "lucide-react";
 import { Navigate, useLocation, useParams } from "react-router-dom";
-import ProductionNavigation from "./ProductionNavigation";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
 import InfoTooltip from "../../components/InfoTooltip";
 import WorkspaceAccessGuard from "../../components/WorkspaceAccessGuard";
@@ -180,7 +179,7 @@ export default function Production() {
     hasPermission, isAdminUser, customerScoped, hasScreenAccess, hasAreaAccess, hasExplicitScreenGrant,
   });
   const initialPath = productionInitialPath(visibleSections, catalog.screens, catalog.links);
-  const withNavigation = content => <>{initialPath && <ProductionNavigation sections={visibleSections}/>} {content}</>;
+  const withNavigation = content => content;
   if (sectionPath === "diagnostica") return isAdminUser ? withNavigation(<DiagnosticsCenter />) : <Navigate to="/produzione" replace />;
   if (sectionPath === "ordini-avanzamento") return hasScreenAccess("workspace.production.progress", "progremes") ? withNavigation(<WorkspaceAccessGuard screenCode="workspace.production.progress"><RdpWorkbench commercial /></WorkspaceAccessGuard>) : <Navigate to="/produzione" replace />;
   if (sectionPath === "rdp-workbench") return hasPermission?.("rdp.view") ? withNavigation(<RdpWorkbench />) : <Navigate to="/produzione" replace />;

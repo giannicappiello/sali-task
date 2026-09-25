@@ -1,3 +1,4 @@
+import WorkspaceModuleNavigation from "./WorkspaceModuleNavigation";
 import { createElement, useEffect, useMemo, useState } from "react";
 import { LayoutGrid } from "lucide-react";
 import { Navigate, useLocation } from "react-router-dom";
@@ -69,7 +70,7 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
       const [modulesResult, screensResult, linksResult] = await Promise.all([
         supabase.from("workspace_moduli").select("codice,nome,descrizione,tipo,percorso,attivo,icona,area").eq("attivo", true),
         supabase.from("workspace_schermate").select("codice,nome,descrizione,percorso,attiva,area,icona,chiave_componente").eq("attiva", true),
-        supabase.from("workspace_moduli_schermate").select("modulo_codice,schermata_codice,predefinita"),
+        supabase.from("workspace_moduli_schermate").select("modulo_codice,schermata_codice,predefinita,ordine,visibile_menu"),
       ]);
       const error = modulesResult.error || screensResult.error || linksResult.error;
       if (error) throw error;
@@ -188,7 +189,7 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
       data-layout-target-type={presentation.layoutTargetType}
       data-layout-target-code={presentation.layoutTargetCode}
     >
-      {composedContent}
+      <WorkspaceModuleNavigation catalog={catalog} canRead={hasScreenAccess}/>{composedContent}
     </div>
   );
 

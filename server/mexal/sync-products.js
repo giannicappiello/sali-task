@@ -2,7 +2,7 @@ import https from "node:https";
 import { createClient } from "@supabase/supabase-js";
 import { checkpointSyncRunProgress, completeSyncRun, completeSyncRunWithErrors, createSyncRun as createCentralSyncRun, failSyncRun, failSyncRunUnlessClosed, findRunningSync, getSyncRun as getCentralSyncRun, isSyncRunClosedError } from "./lib/syncRuns.js";
 import { processStockArticles, shouldReplayStockCheckpoint, stockBatchCheckpoint, stockRunState, stockUpdateDiagnostics } from "./lib/stockRunState.js";
-import { withTransientMexalRetry } from "./lib/transientRetry.js";
+import { isTransientDatabaseError, isTransientMexalError, withTransientMexalRetry } from "./lib/transientRetry.js";
 import { authoritativeArticleUnit } from "./unit-of-measure.js";
 import { loadRunInputs } from "./lib/runInputs.js";
 
@@ -1444,6 +1444,7 @@ export default async function handler(req, res) {
           for (const row of updatedRows || []) updateOperations.push({ id: row.id, code });
         },
         onError: (summary, error) => {
+          if (isTransientDatabaseError(error)) throw error;
           // Retries for this article have already been attempted by the Mexal
           // client. Record the failure and allow the remaining articles to run.
           result.errori.push({ codice: getArticleCode(summary) || "senza codice", errore: error?.message || String(error), codice_errore: error?.code || null, tentativi: error?.retryAttempts || 1 });
@@ -1610,8 +1611,11 @@ export default async function handler(req, res) {
   } catch (error) {
     if (action === "sync-stock-it" && syncRunId) {
       const current = await getCentralSyncRun(supabase, syncRunId).catch(() => null);
+      // Never overwrite a saved cursor with zero when the database itself
+      // cannot return the run. A retry will read the authoritative checkpoint.
+      if (!current) return res.status(503).json({ error: error?.message || "Database temporaneamente non disponibile.", sync_run_id: Number(syncRunId), retryable: true });
       const state = stockRunState(current || {});
-      const retryable = error?.retryable === true;
+      const retryable = error?.retryable === true || isTransientMexalError(error) || isTransientDatabaseError(error);
       const metadata = {
         ...(current?.metadata || {}),
         ...(error?.stockUpdateDiagnostics ? { stock_update_diagnostics: error.stockUpdateDiagnostics } : {}),
@@ -1625,13 +1629,16 @@ export default async function handler(req, res) {
           attempts: Number(error?.retryAttempts || 1),
         },
       };
-      await failSyncRunUnlessClosed(supabase, syncRunId, error?.message || "Errore sincronizzazione giacenze.", {
+      try { await failSyncRunUnlessClosed(supabase, syncRunId, error?.message || "Errore sincronizzazione giacenze.", {
         processed: state.processed,
         updated: state.updated,
         skipped: state.skipped,
         failed: Math.max(1, state.failed),
         metadata,
-      });
+      }); } catch (closeError) {
+        if (!retryable && !isTransientMexalError(closeError)) throw closeError;
+      }
+      if (retryable) return res.status(503).json({ error: error?.message || "Database temporaneamente non disponibile.", sync_run_id: Number(syncRunId), retryable: true });
     }
     else {
       try {

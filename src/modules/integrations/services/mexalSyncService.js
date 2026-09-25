@@ -1,6 +1,7 @@
 import { supabase } from "../../../lib/supabaseClient";
 import { mexalAuthenticatedRequest } from "./mexalAuthenticatedRequest";
 import { stockSyncRequestPayload } from "./stockResumeUi";
+import { requestStockBatch } from "./stockRequestRetry";
 
 export async function getAccessToken({ refresh = false } = {}) {
   const { data, error } = refresh
@@ -20,7 +21,7 @@ async function invokeMexalApi(path, payload) {
   try {
     data = raw ? JSON.parse(raw) : {};
   } catch {
-    throw new Error("Risposta Mexal non valida.");
+    throw Object.assign(new Error("Risposta Mexal non valida."), { status: response.status });
   }
   if (!response.ok) {
     const messages = {
@@ -96,7 +97,11 @@ export async function invokeStocksSync(onProgress = () => {}, isCancelled = () =
   const total = { processed: 0, updated: 0, errors: [] };
   while (true) {
     if (isCancelled()) throw Object.assign(new Error("Sincronizzazione annullata."), { cancelled: true });
-    const data = await invokeMexalApi("/api/mexal/automation", stockSyncRequestPayload({ offset, syncRunId, resume: firstRequest }));
+    const data = await requestStockBatch(
+      (payload) => invokeMexalApi("/api/mexal/automation", payload),
+      stockSyncRequestPayload({ offset, syncRunId, resume: firstRequest }),
+      { isCancelled, onRetry: ({ attempt }) => onProgress({ ...total, syncRunId, retrying: true, attempt }) },
+    );
     firstRequest = false;
     syncRunId = data.sync_run_id || syncRunId;
     total.processed = Number(data.elaborati_totali ?? (total.processed + Number(data.elaborati || 0)));

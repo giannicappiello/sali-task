@@ -1,4 +1,4 @@
-import { isTransientMexalError } from "./transientRetry.js";
+import { isTransientDatabaseError, isTransientMexalError } from "./transientRetry.js";
 
 /** Central, bigint-safe lifecycle for public.mexal_sync_runs. */
 export const SYNC_TYPES = Object.freeze(["clients", "agents", "products", "product_categories", "commercial_conditions", "document_series", "stocks", "list_price_commissions", "orders", "payments", "sales_invoices", "oct_orders"]);
@@ -39,7 +39,7 @@ export function isResumableSyncRun(run) {
   const recordedRetryable = run?.metadata?.recovery?.retryable;
   return run?.sync_type === "stocks"
     && run?.status === "failed"
-    && (recordedRetryable === true
+    && (isTransientDatabaseError(new Error(run?.error_message || "")) || recordedRetryable === true
       || (recordedRetryable === undefined && isTransientMexalError(new Error(run?.error_message || ""))));
 }
 export async function findResumableSync(admin, syncType) {

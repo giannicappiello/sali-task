@@ -207,7 +207,11 @@ export default function MexalDashboard() {
       setStoppingInvoiceSync(false);
     }
     try {
-      const updateProgress = ({ processed, total }) => {
+      const updateProgress = ({ processed, total, retrying, attempt }) => {
+        if (retrying) {
+          setPhase(`Attesa del servizio: tentativo ${attempt}/5. Ripresa dall'ultimo punto salvato (${processed} articoli).`);
+          return;
+        }
         const percentage = total > 0 ? Math.min(95, Math.round((processed / total) * 100)) : 10;
         setProgress(percentage);
         setPhase(`${syncLabels[type] || type}: ${processed}/${total || "?"} elaborati`);

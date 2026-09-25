@@ -4,6 +4,10 @@ export const MEXAL_TRANSIENT_MAX_BACKOFF_MS = 4000;
 
 const TRANSIENT_STATUS_CODES = new Set([408, 425, 429, 502, 503, 504]);
 const TRANSIENT_CODES = new Set([
+  "57014",
+  "55P03",
+  "40001",
+  "40P01",
   "ECONNRESET",
   "ECONNREFUSED",
   "EPIPE",
@@ -12,6 +16,10 @@ const TRANSIENT_CODES = new Set([
   "UND_ERR_CONNECT_TIMEOUT",
   "UND_ERR_HEADERS_TIMEOUT",
 ]);
+export function isTransientDatabaseError(error) {
+  return ["57014", "55P03", "40001", "40P01"].includes(String(error?.code || ""))
+    || /statement timeout|lock timeout|deadlock detected|could not serialize access/i.test(String(error?.message || error || ""));
+}
 const TRANSIENT_MESSAGE = /\b(?:upstream|network|socket hang up|fetch failed|timeout|timed out|temporar(?:y|ily)|econnreset|eai_again|etimedout)\b/i;
 
 export function isTransientMexalError(error) {

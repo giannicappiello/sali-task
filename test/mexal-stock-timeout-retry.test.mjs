@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {requestStockBatch} from '../src/modules/integrations/services/stockRequestRetry.js';
+import {isTransientDatabaseError} from '../server/mexal/lib/transientRetry.js';
+import {isResumableSyncRun} from '../server/mexal/lib/syncRuns.js';
+const calls=[],delays=[];
+const data=await requestStockBatch(async p=>{calls.push(p);if(calls.length<3)throw Object.assign(new Error('canceling statement due to statement timeout'),{status:503});return {prossimo_offset:1368};},{syncRunId:795,offset:1356,resume:false},{sleep:async ms=>delays.push(ms)});
+assert.equal(data.prossimo_offset,1368);
+assert.deepEqual(calls.map(p=>p.syncRunId),[795,795,795]);
+assert.deepEqual(calls.map(p=>p.offset),[1356,1356,1356]);
+assert.deepEqual(calls.map(p=>p.resume),[false,true,true]);
+assert.deepEqual(delays,[2000,4000]);
+assert.equal(isTransientDatabaseError({code:'57014'}),true);
+assert.equal(isResumableSyncRun({sync_type:'stocks',status:'failed',error_message:'canceling statement due to statement timeout',metadata:{recovery:{retryable:false}}}),true);
+let n=0;await assert.rejects(requestStockBatch(async()=>{n++;throw Object.assign(new Error('Forbidden'),{status:403});},{},{sleep:async()=>{}}),/Forbidden/);assert.equal(n,1);
+n=0;await assert.rejects(requestStockBatch(async()=>{n++;throw Object.assign(new Error('Unavailable'),{status:503});},{},{sleep:async()=>{},maxRetries:2}),/Unavailable/);assert.equal(n,3);
+await assert.rejects(requestStockBatch(()=>assert.fail(),{},{isCancelled:()=>true}),/annullata/);
+console.log('Database timeout resume and bounded client retry: PASS');

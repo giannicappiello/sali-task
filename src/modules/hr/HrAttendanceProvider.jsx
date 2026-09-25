@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { hrRpc, positionPayload } from './hrService';
+import { shouldSendObservation } from './hrGpsObservation';
 
 const Context = createContext(null);
 // eslint-disable-next-line react-refresh/only-export-components
@@ -10,6 +11,7 @@ export default function HrAttendanceProvider({ children }) {
   const { profile, hasModuleAccess } = useAuth();
   const enabled = Boolean(profile?.id && hasModuleAccess('hr'));
   const [open, setOpen] = useState(null);
+  const [manualPending, setManualPending] = useState(false);
   const [status, setStatus] = useState('Controllo posizione non attivo');
   const [notice, setNotice] = useState('');
   const [identity, setIdentity] = useState(null);
@@ -39,13 +41,14 @@ export default function HrAttendanceProvider({ children }) {
     return () => { active = false; clearTimeout(timer); clearInterval(poll); window.removeEventListener('online', reload); window.removeEventListener('focus', reload); };
   }, [enabled, profile?.id]);
   useEffect(() => {
-    if (!enabled || !ownOpen?.id || !ownOpen.auto_checkout || !navigator.geolocation) return;
+    if (!enabled || !ownOpen?.id || !ownOpen.auto_checkout || manualPending || !navigator.geolocation) return;
     let active = true, pending = false, lastSent = 0;
     const watcher = navigator.geolocation.watchPosition(async (position) => {
-      if (!active || pending || Date.now() - lastSent < 15000) return;
+      if (!active || pending) return;
       if (!navigator.onLine || Date.now() - position.timestamp > 30000 || position.coords.accuracy > 50) {
         setStatus('Posizione o connessione non attendibile: ricorda il checkout manuale.'); return;
       }
+      if (!shouldSendObservation(position, ownOpen, lastSent)) return;
       pending = true; lastSent = Date.now();
       try {
         const result = await hrRpc('workspace_hr_punch', { p_action: 'observe', p_key: crypto.randomUUID(), p_position: positionPayload(position), p_attendance_id: ownOpen.id });
@@ -59,6 +62,6 @@ export default function HrAttendanceProvider({ children }) {
     }, () => { if (active) setStatus('Posizione non disponibile: il checkout automatico non è garantito.'); },
     { enableHighAccuracy: true, maximumAge: 0, timeout: 25000 });
     return () => { active = false; navigator.geolocation.clearWatch(watcher); };
-  }, [enabled, ownOpen?.id, ownOpen?.auto_checkout]);
-  return <Context.Provider value={{ member: enabled && identity?.userId === profile?.id && identity.member, ready: enabled && identity?.userId === profile?.id && identity.ready, open: enabled ? ownOpen : null, status: ownOpen?.auto_checkout ? status : 'Controllo posizione non attivo', notice: enabled ? notice : '', refresh }}>{children}</Context.Provider>;
+  }, [enabled, ownOpen, manualPending]);
+  return <Context.Provider value={{ member: enabled && identity?.userId === profile?.id && identity.member, ready: enabled && identity?.userId === profile?.id && identity.ready, open: enabled ? ownOpen : null, status: ownOpen?.auto_checkout ? status : 'Controllo posizione non attivo', notice: enabled ? notice : '', refresh, setManualPending }}>{children}</Context.Provider>;
 }

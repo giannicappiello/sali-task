@@ -63,15 +63,15 @@ test('calendar distinguishes Easter, Saturday holidays and the new October holid
   assert.equal(calendarDay('2026-10-04').holiday,'San Francesco d’Assisi');
 });
 
-test('monthly totals count weekday overtime and weekend presence once, preserve unknown data and F/P/A codes',async()=>{
+test('monthly totals count approved overtime on weekdays and weekends once, preserve unknown data and F/P/A codes',async()=>{
   const d=data();
   for(const [day,hours] of [['2026-08-14',10],['2026-08-15',5],['2026-08-16',4],['2026-08-22',6]]) {
     d.attendance.push({user_id:'e',checkin_at:`${day}T06:00:00Z`,checkout_at:`${day}T${String(6+hours).padStart(2,'0')}:00:00Z`});
     d.requests.push({user_id:'e',kind:'overtime',status:'approved',starts_at:`${day}T06:00:00Z`,ends_at:`${day}T08:00:00Z`});
   }
   const workbook=await createAttendanceWorkbook(d,'2026-08',now),ws=workbook.Sheets['Presenze mensili'];
-  assert.equal(ws.F7.v,8); // 2 approved Friday + 6 actual Saturday
-  assert.equal(ws.G7.v,9); // Saturday holiday 5 + Sunday 4, no duplicate approved overtime
+  assert.equal(ws.F7.v,4); // 2 approved Friday + 2 approved Saturday
+  assert.equal(ws.G7.v,4); // 2 approved holiday + 2 approved Sunday
   const row=attendanceExportRows(d,'2026-08',now)[0];
   assert.equal(attendanceDaySummary({...row,'Ferie approvate':'Sì','Permessi approvati':'Sì'}).value,'F\nP');
   assert.equal(attendanceDaySummary({...row,'Ore scoperte da verificare':8}).value,'A');
@@ -100,14 +100,14 @@ test('separate overtime follows agreement dates, excludes ordinary totals and pr
   assert.equal(book.Sheets['Presenze mensili'].F7.v,2);
   assert.equal(book.Sheets['Presenze mensili'].G7.v,0);
   const separate=XLSX.utils.sheet_to_json(book.Sheets['Straordinari separati'])[0];
-  assert.equal(separate['Ore straordinario feriali separate'],6);
-  assert.equal(separate['Ore straordinario festive separate'],9);
+  assert.equal(separate['Ore straordinario feriali separate'],2);
+  assert.equal(separate['Ore straordinario festive separate'],4);
   assert.equal(separate['2026-08-14'],'');
-  assert.equal(separate['2026-08-15'],5);
+  assert.equal(separate['2026-08-15'],2);
   const daily=XLSX.utils.sheet_to_json(book.Sheets['Presenze giornaliere']).find(r=>r.Data==='2026-08-15');
   assert.equal(daily['Ore presenza rilevata'],5);
   assert.equal(daily['Ore straordinario festivi'],0);
-  assert.equal(daily['Ore straordinario festive separate'],5);
+  assert.equal(daily['Ore straordinario festive separate'],2);
   d.attendance.push({user_id:'e',checkin_at:'2026-08-23T06:00:00Z',checkout_at:null});
   const unknown=await createAttendanceWorkbook(d,'2026-08',now);
   assert.equal(unknown.Sheets['Presenze mensili'].G7.v,0);

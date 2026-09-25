@@ -67,7 +67,7 @@ export function attendanceDaySummary(row) {
   const present = row['Ore presenza rilevata'];
   const unknown = present == null;
   const absence = !unknown && !day.festive && row['Ore scoperte da verificare'] > 0;
-  const overtime = day.festive || day.saturday ? present : row['Ore straordinario approvate'];
+  const overtime = unknown ? null : row['Ore straordinario approvate'];
   const codes = [];
   if (row['Ferie approvate']) codes.push('F');
   if (row['Permessi approvati']) codes.push('P');
@@ -148,8 +148,8 @@ export async function createAttendanceWorkbook(data, month, now = new Date()) {
     {Voce:'Periodo',Descrizione:`${month} · Fuso Europe/Rome · Ore decimali. Esportato il ${formatDate(now)}.`},
     {Voce:'Codici giornalieri',Descrizione:'F ferie approvate; P permesso approvato; M malattia; MAT maternità; S straordinario gestito separatamente; A turno non interamente coperto, assenza da verificare; PR presenza; numero = ore straordinario; ? timbratura senza uscita.'},
     {Voce:'Gestione separata',Descrizione:'La spunta dell’accordo valido nel giorno esclude lo straordinario dai totali feriali/festivi ordinari. Le ore restano documentate giorno per giorno (S) e nel foglio Straordinari separati. Le presenze effettive non sono alterate.'},
-    {Voce:'Straordinario feriale',Descrizione:'Somma delle ore di straordinario approvate dal lunedì al venerdì e delle ore di presenza del sabato. Escluse le festività nazionali.'},
-    {Voce:'Straordinario festivo',Descrizione:'Ore di presenza nelle domeniche e nelle festività nazionali italiane. Una festività di sabato è conteggiata solo qui.'},
+    {Voce:'Straordinario feriale',Descrizione:'Somma delle ore di straordinario approvate dal lunedì al venerdì anche di sabato. Escluse le festività nazionali.'},
+    {Voce:'Straordinario festivo',Descrizione:'Ore di straordinario approvate nelle domeniche e nelle festività nazionali italiane. Una festività di sabato è conteggiata solo qui.'},
     {Voce:'Calendario',Descrizione:'Sabati viola; domeniche e festività nazionali rosse. Pasqua e Pasquetta variabili; San Francesco (4 ottobre) dal 2026. Feste patronali locali non incluse.'},
     {Voce:'Presenze',Descrizione:'Intervalli completi, suddivisi a mezzanotte, senza duplicare sovrapposizioni. Le pause non timbrate non sono sottratte dalle ore di presenza.'},
     {Voce:'Riepiloghi',Descrizione:'Giorni con almeno una presenza, ferie, permesso o assenza: giornate anche parziali, quindi non sommabili tra loro. I dettagli orari sono nel foglio Presenze giornaliere.'},

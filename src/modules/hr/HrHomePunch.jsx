@@ -1,40 +1,15 @@
-import { useRef, useState } from 'react';
 import { useHrAttendance } from './HrAttendanceProvider';
-import { hrNetwork } from './hrService';
+import HrPunchButton from './HrPunchButton';
 import './hr-home-punch.css';
 
 export default function HrHomePunch() {
   const attendance = useHrAttendance();
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-  const key = useRef(crypto.randomUUID());
-  const pending = useRef(false);
   if (!attendance?.member) return null;
-  const open = attendance.open;
-  async function punch() {
-    if (pending.current || !attendance.ready) return;
-    pending.current = true;
-    setBusy(true); setError(''); setMessage('');
-    try {
-      await hrNetwork({
-        action: open ? 'out' : 'in', key: key.current,
-        attendance_id: open?.id || null,
-      });
-      await attendance.refresh();
-      key.current = crypto.randomUUID();
-      setMessage(open ? 'Uscita registrata.' : 'Entrata registrata.');
-      window.dispatchEvent(new Event('workspace:hr-changed'));
-    } catch (failure) { setError(failure.message); }
-    finally { pending.current = false; setBusy(false); }
-  }
   return <section className="hr-home-punch" aria-label="Timbratura personale">
-    <button type="button" className={open ? 'is-out' : ''} disabled={busy || !attendance.ready} onClick={punch}>
-      {busy ? 'Registrazione in corso…' : open ? 'Registra uscita' : 'Registra entrata'}
-    </button>
-    <p>Entrata e uscita disponibili solo dalla LAN o dal Wi-Fi aziendale.</p>
+    <HrPunchButton className={attendance.open ? 'is-out' : ''}/>
+    <p>Ingresso in azienda con verifica GPS. Uscita fuori sede con motivazione.</p>
+    {attendance.open && <p role="status">{attendance.status} Mantieni Workspace aperto: il browser può sospendere il GPS in background.</p>}
+    {attendance.notice && <p role="status">{attendance.notice}</p>}
     {!attendance.ready && <p role="status">Verifica della presenza non disponibile. Attendi il ripristino della connessione.</p>}
-    {message && <p role="status">{message}</p>}
-    {error && <p role="alert">{error}</p>}
   </section>;
 }

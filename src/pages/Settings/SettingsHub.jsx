@@ -7,7 +7,7 @@ import { supabase } from "../../lib/supabaseClient";
 import { getModuleIcon } from "../../config/moduleIcons";
 
 const FALLBACK_SECTIONS = Object.freeze([
-  { codice: "impostazioni.hr", nome: "Configurazioni HR", descrizione: "Schede dipendente, orari, compensi e regole economiche degli straordinari.", percorso: "/settings/hr", ordine: 56, metadati: { admin_only: true } },
+  { codice: "impostazioni.hr", nome: "Rendicontazioni HR", descrizione: "Schede dipendente, orari, compensi e regole economiche degli straordinari.", percorso: "/settings/hr", ordine: 56, metadati: { admin_only: true } },
   { codice: "impostazioni.utenti_accessi", nome: "Utenti e accessi", descrizione: "Dati, sicurezza, organizzazione, eccezioni personali e AI.", percorso: "/settings/users", ordine: 10, metadati: { admin_only: true } },
   { codice: "impostazioni.regole_accesso", nome: "Regole e profili di accesso", descrizione: "Profili, ruoli, aree, reparti e livelli operativi.", percorso: "/settings/access-rules", ordine: 20, metadati: { admin_only: true } },
   { codice: "impostazioni.verifica_accessi", nome: "Verifica accessi", descrizione: "Simula ciò che un utente vede e spiega ogni autorizzazione.", percorso: "/settings/access-check", ordine: 30, metadati: { admin_only: true } },

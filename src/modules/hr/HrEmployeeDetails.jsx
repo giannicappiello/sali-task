@@ -1,16 +1,61 @@
-import { agreementDisplay, AGREEMENT_FIELDS } from './hrAgreements';
+import { useRef, useState } from 'react';
+import { agreementDisplay, agreementValues, AGREEMENT_FIELDS } from './hrAgreements';
 import { formatDate, romeDay } from './hrTime';
+import { hrRpc } from './hrService';
 
-const DAYS = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
-function Value({ label, children }) { return <dl><dt>{label}</dt><dd>{children}</dd></dl>; }
-export default function HrEmployeeDetails({ employee, contracts, sites, users = [], onEdit }) {
+export default function HrEmployeeDetails({ employee, contracts, sites, users = [], onSaved }) {
   const ordered = [...contracts].sort((a, b) => b.effective_from.localeCompare(a.effective_from) || (b.created_at || '').localeCompare(a.created_at || ''));
-  const current = ordered.find(c => c.effective_from <= romeDay());
-  const value = key => agreementDisplay(current, key, sites);
-  const days = value('weekdays').split(',').map(s => s.trim());
-  const readableDays = days.every(d => /^[1-7]$/.test(d));
-  return <><div className="hr-heading hr-profile-head"><div className="hr-profile-identity"><span className="hr-avatar" aria-hidden="true">{employee.name.split(' ').map(s => s[0]).slice(0, 2).join('')}</span><div><h2>{employee.name}</h2><span className="hr-muted hr-small">{employee.manager ? 'Gestore HR' : 'Dipendente'} · <span className={`hr-badge ${employee.active ? 'green' : ''}`}>{employee.active ? 'Attivo' : 'Non attivo'}</span></span></div></div><button onClick={onEdit}>Modifica scheda</button></div>
-    <div className="hr-card-scroll hr-profile-content" tabIndex={0} aria-label="Dati e accordi dipendente"><section className="hr-profile-group"><h3>Anagrafica e organizzazione</h3><div className="hr-profile-grid"><Value label="Matricola">{employee.employee_code || 'Non indicata'}</Value><Value label="Sede">{value('site_id')}</Value><Value label="Reparti operativi">{employee.department || 'Non indicati'}</Value><Value label="Appartenenza aggiuntiva">Human Resources</Value><Value label="Responsabili richieste">{users.filter(u => (employee.reviewer_ids || []).includes(u.id)).map(u => u.name).join(", ") || "Non configurati"}</Value></div></section>
-      {current ? <><section className="hr-profile-group"><div className="hr-heading"><h3>Orario pattuito</h3><span className="hr-muted hr-small">Dal {formatDate(current.effective_from)}</span></div><div className="hr-profile-grid"><Value label="Ore settimanali">{value('weekly_hours')}</Value><Value label="Fascia oraria">{value('start_time')} – {value('end_time')}</Value><Value label="Pausa non lavorata · minuti">{value('break_minutes')}</Value><Value label="Giorni lavorativi">{readableDays ? <span className="hr-day-chips">{days.map(d => <span key={d}>{DAYS[Number(d) - 1]}</span>)}</span> : value('weekdays')}</Value></div></section><section className="hr-profile-group"><h3>Accordi economici</h3><div className="hr-profile-grid"><Value label="Compenso pattuito">{value('agreed_pay')}</Value><Value label="Periodicità">{value('pay_period')}</Value><Value label="Gestisci Straordinario Separatamente">{value('overtime_separate')}</Value><Value label="Tariffa straordinario · €/ora">{value('overtime_rate')}</Value><Value label="Maggiorazione · %">{value('overtime_percent')}</Value></div></section></> : <p className="hr-note">Nessun accordo in vigore. Usa Modifica scheda per inserire orario e accordi.</p>}
-      <details className="hr-profile-history"><summary>Storico e accordi futuri ({ordered.length})</summary>{ordered.map(c => <article className="hr-contract" key={c.id}><h3>Dal {formatDate(c.effective_from)}{c.effective_from > romeDay() ? ' · Programmato' : ''}</h3>{AGREEMENT_FIELDS.map(([key, label]) => <p key={key}>{label}: <strong>{agreementDisplay(c, key, sites)}</strong></p>)}</article>)}</details><p className="hr-muted hr-small">I campi descrittivi o incompleti non generano automaticamente turni o importi.</p></div></>;
+  const current = ordered[0];
+  const initial = { ...agreementValues(current, sites), effective_from: current?.effective_from || '', employee_code: employee.employee_code || '', manager: employee.manager === true, reviewer_ids: employee.reviewer_ids || [] };
+  const [drafts, setDrafts] = useState({}), [busy, setBusy] = useState(false), [error, setError] = useState(''), [saved, setSaved] = useState('');
+  const keys = useRef({});
+  const draft = drafts[employee.user_id];
+  const values = draft?.values || initial;
+  const base = draft?.base || initial;
+  const change = (field, value) => { delete keys.current[employee.user_id]; setError(''); setSaved(''); setDrafts(all => ({ ...all, [employee.user_id]: { base, contract: draft?.contract || current || null, values: { ...values, [field]: value } } })); };
+  const dirty = JSON.stringify(values) !== JSON.stringify(base);
+  const input = key => {
+    const label = AGREEMENT_FIELDS.find(([k]) => k === key)?.[1] || key;
+    return <label key={key}>{label}{key === 'overtime_separate' ? <input className="hr-agreement-checkbox" type="checkbox" checked={values[key] === true} onChange={e => change(key, e.target.checked)}/> : <input value={values[key] ?? ''} onChange={e => change(key, e.target.value)}/>}</label>;
+  };
+  async function save(event) {
+    event.preventDefault(); if (busy || !dirty) return; setBusy(true); setError('');
+    const employeeId = employee.user_id;
+    try {
+      const changed = [...AGREEMENT_FIELDS.map(([key]) => key), 'effective_from'].some(key => values[key] !== base[key]);
+      if (changed && !values.effective_from) throw new Error('Indica la decorrenza degli accordi.');
+      const source = draft?.contract || current;
+      keys.current[employeeId] ||= crypto.randomUUID();
+      await hrRpc('workspace_hr_save_employee', { p_key: keys.current[employeeId], p_data: {
+        user_id: employeeId, employee_code: values.employee_code, manager: values.manager,
+        reviewer_ids: values.reviewer_ids, contract_id: source?.id || null,
+        ...(changed ? { contract: { ...Object.fromEntries([...AGREEMENT_FIELDS.map(([key]) => key), 'effective_from'].map(key => [key, values[key]])), overtime_mode: source?.agreement_fields?.overtime_mode ?? source?.overtime_mode ?? '' } } : {}),
+      } });
+      await onSaved(); delete keys.current[employeeId];
+      setDrafts(all => { const next = { ...all }; delete next[employeeId]; return next; });
+      setSaved(employeeId);
+    } catch (failure) { setError(failure.message); }
+    finally { setBusy(false); }
+  }
+  return <form className="hr-inline-employee" onSubmit={save}>
+    <div className="hr-heading hr-profile-head"><div className="hr-profile-identity"><span className="hr-avatar" aria-hidden="true">{employee.name.split(' ').map(s => s[0]).slice(0, 2).join('')}</span><div><h2>{employee.name}</h2><span className="hr-muted hr-small">{employee.active ? 'Attivo' : 'Non attivo'} · {dirty ? 'Modifiche da salvare' : 'Scheda dipendente'}</span></div></div></div>
+    <fieldset className="hr-card-scroll hr-profile-content" disabled={busy}>
+      <section className="hr-profile-group"><h3>Anagrafica e organizzazione</h3><div className="hr-profile-grid">
+        <label>Matricola<input value={values.employee_code} onChange={e => change('employee_code', e.target.value)}/></label>
+        {input('site_id')}
+        <p>Reparti operativi<br/><strong>{employee.department || 'Non indicati'}</strong></p><p>Appartenenza aggiuntiva<br/><strong>Human Resources</strong></p>
+        <label>Permessi nel modulo HR<select value={values.manager ? 'manager' : 'employee'} onChange={e => change('manager', e.target.value === 'manager')}><option value="employee">Dipendente · Dati personali</option><option value="manager">Gestore HR · Gestione operativa</option></select></label>
+        <fieldset className="hr-inline-reviewers"><legend>Responsabili richieste</legend>{users.filter(u => u.id !== employee.user_id).map(u => <label key={u.id}><input type="checkbox" checked={values.reviewer_ids.includes(u.id)} onChange={e => change('reviewer_ids', e.target.checked ? [...values.reviewer_ids, u.id] : values.reviewer_ids.filter(id => id !== u.id))}/>{u.name}</label>)}</fieldset>
+      </div></section>
+      <section className="hr-profile-group"><h3>Orario pattuito</h3><div className="hr-profile-grid">
+        <label>Decorrenza accordi<input type="date" value={values.effective_from} onChange={e => change('effective_from', e.target.value)}/></label>
+        {['weekly_hours','weekdays','start_time','end_time','break_minutes'].map(input)}
+      </div></section>
+      <section className="hr-profile-group"><h3>Accordi economici</h3><div className="hr-profile-grid">{['agreed_pay','pay_period','overtime_separate','overtime_rate','overtime_percent'].map(input)}</div></section>
+      <details className="hr-profile-history"><summary>Storico e accordi futuri ({ordered.length})</summary>{ordered.map(c => <article className="hr-contract" key={c.id}><h3>Dal {formatDate(c.effective_from)}{c.effective_from > romeDay() ? ' · Programmato' : ''}</h3>{AGREEMENT_FIELDS.map(([key, label]) => <p key={key}>{label}: <strong>{agreementDisplay(c, key, sites)}</strong></p>)}</article>)}</details>
+      <p className="hr-muted hr-small">Le modifiche agli accordi conservano le versioni precedenti. I campi descrittivi o incompleti non generano automaticamente turni o importi.</p>
+    </fieldset>
+    {error && <p role="alert" className="hr-error">{error}</p>}{saved === employee.user_id && <p role="status" className="hr-success">Scheda salvata.</p>}
+    <footer className="hr-actions"><button type="button" disabled={busy || !dirty} onClick={() => { setDrafts(all => { const next = { ...all }; delete next[employee.user_id]; return next; }); delete keys.current[employee.user_id]; setError(''); }}>Annulla modifiche</button><button className="hr-primary" disabled={busy || !dirty}>{busy ? 'Salvataggio…' : 'Salva scheda'}</button></footer>
+  </form>;
 }

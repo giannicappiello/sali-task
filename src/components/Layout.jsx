@@ -60,7 +60,7 @@ const baseMenuItems = [
 const pageInfo = {
   "/home": { title: "Home", subtitle: "Accesso rapido ai moduli del Workspace." },
   "/hr": { title: "Human Resources", subtitle: "Presenze, turni e gestione delle richieste." },
-  "/settings/hr": { title: "Configurazioni HR", subtitle: "Schede dipendente e accordi riservati agli admin." },
+  "/settings/hr": { title: "Rendicontazioni HR", subtitle: "Schede dipendente e accordi riservati agli admin." },
   "/analisi-dati": { title: "Analisi dati", subtitle: "Fatture, Ordini PH, Beauty Days e Attività." },
   "/activities": { title: "Attività", subtitle: "Task, reminder, progetti, fasi e analisi del reparto." },
   "/activities/dashboard": { title: "Tutte le attività del reparto", subtitle: "Task, fasi, reminder e scadenze del reparto." },

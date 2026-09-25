@@ -5,6 +5,9 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { isProgremesScreenPath, requestProgremesWorkspaceWindow } from '../ProgreMes/progremesWindow'
 
+import './notifications.css'
+import { displayDate } from '../../lib/displayDate'
+
 const iconByType = {
   scadenza: Clock,
   errore: AlertTriangle,
@@ -65,7 +68,7 @@ export default function Notifications() {
   }
 
   return (
-    <div className="workspace-page">
+    <div className="workspace-page notifications-page">
       <div className="page-title-row">
         <div>
           <h1>Notifiche</h1>
@@ -80,7 +83,7 @@ export default function Notifications() {
 
       {error && <div className="soft-alert">{error}</div>}
 
-      <section className="panel notification-list">
+      <section className="notification-list">
         {visible.map((item) => {
           const Icon = iconByType[item.tipo] || Bell
           return (
@@ -89,7 +92,7 @@ export default function Notifications() {
               <div>
                 <strong>{item.titolo}</strong>
                 <p>{item.descrizione || item.messaggio}</p>
-                <span>{item.created_at ? new Date(item.created_at).toLocaleString('it-IT') : ''}</span>
+                <span>{item.created_at ? displayDate(item.created_at, true) : ''}</span>
               </div>
               {!item.letta && <button onClick={(event) => { event.stopPropagation(); openNotification(item); }}>Apri</button>}
             </article>

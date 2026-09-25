@@ -1,0 +1,13 @@
+.notifications-page .notification-list { max-height: none; height: auto; overflow: visible; padding: 0; display: grid; gap: 12px; }
+.notifications-page .segmented-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.notifications-page button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 10px 16px; border: 1px solid #cbd8e8; border-radius: 10px; color: #155d9f; background: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+.notifications-page .segmented-actions button.active { background: #0f172a; border-color: #0f172a; color: #fff; }
+.notifications-page .notification-card { display: flex; align-items: center; gap: 16px; background: #fff; border: 1px solid #dbe4f0; border-radius: 16px; padding: 18px 20px; cursor: pointer; }
+.notifications-page .notification-card:not(.read) { border-left: 4px solid #126bff; }
+.notifications-page .notification-icon { display: grid; place-items: center; flex: 0 0 42px; height: 42px; border-radius: 12px; background: #edf4ff; color: #126bff; }
+.notifications-page .notification-card > div:nth-child(2) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.notifications-page .notification-card strong { font-size: 16px; }
+.notifications-page .notification-card p { margin: 6px 0; line-height: 1.45; }
+.notifications-page .notification-card span { font-size: 13px; color: #64748b; }
+.notifications-page .notification-card button { flex-shrink: 0; }
+@media(max-width:600px) { .notifications-page .notification-card { gap: 10px; padding: 14px; flex-wrap: wrap; } .notifications-page .notification-card button { margin-left: auto; } }

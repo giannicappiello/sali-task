@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   BarChart3,
   Bell,
-  Bot,
   Blocks,
   ChevronDown,
   ClipboardList,
@@ -544,7 +543,7 @@ function Layout() {
     setMobileMenuOpen(false);
     setExpandedMenuCode("");
     const isProductionHub = item.module === "progremes" && item.path === "/produzione";
-    if (!isProductionHub && (item.module === "progremes" || item.provider === "progremes")) {
+    if (!isProductionHub && isProgremesScreenPath(item.path)) {
       event.preventDefault();
       launchProgremes("", item.provider === "progremes" && item.path !== "/progremes" ? item.path : "");
       return;

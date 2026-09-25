@@ -401,7 +401,7 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
     };
   });
   const orderById = new Map((orders || []).map((order) => [text(order.id), order]));
-  const history = (requests || []).filter(cancelled).map((request) => {
+  const history = (requests || []).filter(cancelled).filter(request => !expectedCustomerCode || [...(orderIdsByRequest.get(text(request.id)) || [])].some(id => orderIds.has(id))).map((request) => {
     const historicalOrders = [...(orderIdsByRequest.get(text(request.id)) || [])].map((id) => orderById.get(id)).filter(Boolean);
     const historicalOrderIds = new Set(historicalOrders.map((order) => text(order.id)));
     const historicalLines = allRelevantLines.filter((line) => historicalOrderIds.has(text(line.ordine_id)));

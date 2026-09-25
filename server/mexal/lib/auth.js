@@ -60,7 +60,7 @@ export async function requirePermission(req, supabaseOrFactory, permissionCode) 
   return { supabase, id: profile.id, authUserId: user.id };
 }
 
-export async function requireScreenManagement(req, supabaseOrFactory, screenCode) {
+export async function requireScreenManagement(req, supabaseOrFactory, screenCode, { readOnly = false } = {}) {
   const authorization = String(req.headers.authorization || "");
   if (!authorization.startsWith("Bearer ")) throw Object.assign(new Error("Sessione mancante."), { status: 401 });
 
@@ -82,7 +82,7 @@ export async function requireScreenManagement(req, supabaseOrFactory, screenCode
     target_screen: screenCode,
   });
   if (levelError) throw Object.assign(new Error("Verifica autorizzazioni non disponibile."), { status: 503 });
-  if (level !== "amministrazione") {
+  if (readOnly ? !["lettura", "scrittura", "amministrazione"].includes(level) : level !== "amministrazione") {
     throw Object.assign(new Error("Gestione della schermata non autorizzata."), { status: 403 });
   }
   return { supabase, id: profile.id, authUserId: user.id };

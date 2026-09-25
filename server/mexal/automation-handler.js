@@ -317,6 +317,13 @@ async function createScreenManager(req, screenCode) {
   return { supabase, authUserId, profileId };
 }
 
+async function createWorkbenchReader(req) {
+  const result = await requireScreenManagement(req, () => createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), {
+    auth: { persistSession: false, autoRefreshToken: false },
+  }), "workspace.production.progress", { readOnly: true });
+  return { supabase: result.supabase, authUserId: result.authUserId, profileId: result.id };
+}
+
 async function authorizedCustomerCode(admin) {
   if (!admin?.profileId) return null;
   const { data, error } = await admin.supabase.from("workspace_customer_user_links")
@@ -745,7 +752,7 @@ export default async function handler(req, res) {
         });
       }
       case "progremes_workbench_list": {
-        const admin = await createAdmin(req, "rdp.view");
+        const admin = body.workspaceScreen === "workspace.production.progress" ? await createWorkbenchReader(req) : await createAdmin(req, "rdp.view");
         const customerCode = await authorizedCustomerCode(admin);
         const client = createProgremesClient();
         const [diagnostics, health, productionOrders] = await Promise.all([
@@ -766,7 +773,7 @@ export default async function handler(req, res) {
         return sendSuccess(res, 200, { ...workbench, productionGates: productionGoLiveGates(health) });
       }
       case "progremes_workbench_detail": {
-        const admin = await createAdmin(req, "rdp.view");
+        const admin = body.workspaceScreen === "workspace.production.progress" ? await createWorkbenchReader(req) : await createAdmin(req, "rdp.view");
         const customerCode = await authorizedCustomerCode(admin);
         if (body.productionOrderId !== undefined) {
           const detail = await productionWorkbenchDetail({ admin: admin.supabase,

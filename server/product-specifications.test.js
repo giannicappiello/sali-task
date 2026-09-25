@@ -281,3 +281,13 @@ test('lettura capitolato e fonti con una sola autorizzazione, senza scritture', 
     loadSources: async () => { throw new Error('Must not load unauthorized sources'); },
   }), error => error.status === 404);
 });
+
+test('private customer reads bulk specification sources only for their own article', async () => {
+  const f = fixture({ customers: ['501.A'], canWrite: false, lots: [{ article_code: 'FP001', lot_code: 'L1', customer_code: '501.A' }] });
+  f.tables.ordini_prodotti_cache.push({ codice_articolo: 'FP001', has_bom: 'S' });
+  const deps = { loadSources: async () => ({ specificationKind: 'bulk', formulaData: { description: 'Formula cliente' } }) };
+  const result = await productSpecificationOperation(f.identity, '/specifications?articleCode=FP001&includeSources=true', {}, deps);
+  assert.equal(result.sources.specificationKind, 'bulk');
+  f.identity.customerCodes = ['501.B'];
+  await assert.rejects(productSpecificationOperation(f.identity, '/specifications?articleCode=FP001&includeSources=true', {}, deps), { status: 404 });
+});

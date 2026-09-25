@@ -11,7 +11,8 @@ function pdfUrl(base64) {
   return URL.createObjectURL(new Blob([Uint8Array.from(atob(base64), c => c.charCodeAt(0))], { type: 'application/pdf' }));
 }
 export default function PreparationActions({ activity, onStarted }) {
-  const { session } = useAuth();
+  const { session, dataScope } = useAuth();
+  const customerScoped = Boolean(dataScope?.customerCode || dataScope?.customerCodes?.length);
   const [context, setContext] = useState(null), [mode, setMode] = useState(''), [error, setError] = useState('');
   const [sheet, setSheet] = useState(null), [busy, setBusy] = useState(false);
   const frame = useRef(null);
@@ -25,11 +26,12 @@ export default function PreparationActions({ activity, onStarted }) {
     return result;
   }, [session?.access_token, activity.productionOrderId, activity.resourceCode]);
   useEffect(() => {
+    if (customerScoped) return undefined;
     const controller = new AbortController();
     request('context', {}, controller.signal).then(value => { if (!controller.signal.aborted) setContext(value); })
       .catch(cause => { if (!controller.signal.aborted) setError(cause.message); });
     return () => controller.abort();
-  }, [request]);
+  }, [request, customerScoped]);
   useEffect(() => () => { if (sheet?.url) URL.revokeObjectURL(sheet.url); }, [sheet?.url]);
   async function openSheet() {
     setMode('sheet'); setSheet(null); setError(''); setBusy(true);
@@ -56,7 +58,8 @@ export default function PreparationActions({ activity, onStarted }) {
   } };
   const actionUrl = stationActionUrl(activity, mode);
   return <>
-    <ProductSpecificationViewButton articleCode={knownBulkCode || context?.bulkCode || ''} description={activity.descrizione || context?.description}/>
+    <ProductSpecificationViewButton articleCode={knownBulkCode || context?.bulkCode || (customerScoped ? activity.articleCode : '')} description={activity.descrizione || context?.description}/>
+    {!customerScoped && <>
     <button type="button" disabled={!context?.canWrite} onClick={openSheet}><Printer size={17}/>Stampa foglio produzione</button>
     <button type="button" disabled={!activity.panelUrl} onClick={() => window.open(activity.panelUrl, '_blank', 'popup=yes,width=800,height=960,toolbar=no,menubar=no,location=no,status=no,resizable=yes,scrollbars=yes,noopener,noreferrer')}><Monitor size={17}/>Apri station</button>
     <button type="button" disabled={!context?.canWrite || !stationActionUrl(activity, 'start')} onClick={() => { setMode('start'); setError(''); }}><Play size={17}/>Avvia lavorazione</button>
@@ -64,6 +67,7 @@ export default function PreparationActions({ activity, onStarted }) {
     {!context && !error && <p role="status">Caricamento dati preparazione…</p>}
     {context && !context.bulkCode && <p role="status">Nessun codice semilavorato associato alla formula dell’ordine.</p>}
     {!mode && error && <p role="alert" className="pc-error">{error}</p>}
+    </>}
     {mode === 'sheet' && <Modal title="Foglio di produzione" onClose={close} className="product-spec-viewer">
       {error && <p role="alert" className="pc-error">{error}</p>}
       {!sheet && busy && <p role="status">Preparazione foglio MES…</p>}

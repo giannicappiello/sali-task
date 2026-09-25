@@ -115,3 +115,14 @@ test('specific screen denial remains enforced on its exact nested route', () => 
     accessExceptions: [{ scope: 'schermata', code: 'agents', decision: 'nega' }] });
   assert.equal(auth.hasPermission('integrations.read'), false);
 });
+
+test('Workspace progress reads use the exact screen grant without a MES module grant', async () => {
+  for (const result of ['lettura', 'scrittura', 'amministrazione']) {
+    const db = apiMock({ result });
+    assert.equal((await requireScreenManagement(req, db, 'workspace.production.progress', { readOnly: true })).id, 'profile');
+    assert.equal(db.calls[0].args.target_screen, 'workspace.production.progress');
+  }
+  for (const result of ['nessuno', null, 'unknown']) await assert.rejects(
+    requireScreenManagement(req, apiMock({ result }), 'workspace.production.progress', { readOnly: true }), { status: 403 });
+  await assert.rejects(requireScreenManagement(req, apiMock({ result: 'scrittura', active: false }), 'workspace.production.progress', { readOnly: true }), { status: 403 });
+});

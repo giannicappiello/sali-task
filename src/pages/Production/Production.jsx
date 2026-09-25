@@ -123,13 +123,14 @@ function SectionLauncher({ sectionCode }) {
 
 export default function Production() {
   const { "*": sectionPath } = useParams();
-  const { session, hasPermission, dataScope, isAdminUser, hasScreenAccess, hasAreaAccess, hasExplicitScreenGrant } = useAuth();
+  const { session, hasPermission, dataScope, isAdminUser, hasScreenAccess, hasAreaAccess, hasExplicitScreenGrant, hasModuleAccess } = useAuth();
   const accessToken = session?.access_token;
   const [sections, setSections] = useState([]);
   const [catalog, setCatalog] = useState({ screens: [], links: [] });
 
   async function fetchSections() {
-    const payload = await requestProgremes("progremes_user_sections", accessToken);
+    const payload = hasModuleAccess("progremes") || hasScreenAccess("progremes.PlanningProduction")
+      ? await requestProgremes("progremes_user_sections", accessToken) : { sections: [] };
     const [screens, links] = await Promise.all([
       supabase.from("workspace_schermate").select("codice,nome,descrizione,percorso,attiva,area,aree").eq("attiva", true),
       supabase.from("workspace_moduli_schermate").select("modulo_codice,schermata_codice,ordine,visibile_menu,predefinita").eq("modulo_codice", "progremes").eq("visibile_menu", true).order("ordine"),
@@ -174,14 +175,14 @@ export default function Production() {
     return () => { active = false; window.removeEventListener("workspace:module-catalog-changed", refresh); };
   }, [accessToken]);
 
-  const customerScoped = Boolean(dataScope?.customerCode);
+  const customerScoped = Boolean(dataScope?.customerCode || dataScope?.customerCodes?.length);
   const visibleSections = configuredProductionSections(sections, catalog.screens, catalog.links, {
     hasPermission, isAdminUser, customerScoped, hasScreenAccess, hasAreaAccess, hasExplicitScreenGrant,
   });
   const initialPath = productionInitialPath(visibleSections, catalog.screens, catalog.links);
   const withNavigation = content => <>{initialPath && <ProductionNavigation sections={visibleSections}/>} {content}</>;
   if (sectionPath === "diagnostica") return isAdminUser ? withNavigation(<DiagnosticsCenter />) : <Navigate to="/produzione" replace />;
-  if (sectionPath === "ordini-avanzamento") return hasPermission?.("rdp.view") && hasScreenAccess("workspace.production.progress", "progremes") ? withNavigation(<WorkspaceAccessGuard screenCode="workspace.production.progress"><RdpWorkbench commercial /></WorkspaceAccessGuard>) : <Navigate to="/produzione" replace />;
+  if (sectionPath === "ordini-avanzamento") return hasScreenAccess("workspace.production.progress", "progremes") ? withNavigation(<WorkspaceAccessGuard screenCode="workspace.production.progress"><RdpWorkbench commercial /></WorkspaceAccessGuard>) : <Navigate to="/produzione" replace />;
   if (sectionPath === "rdp-workbench") return hasPermission?.("rdp.view") ? withNavigation(<RdpWorkbench />) : <Navigate to="/produzione" replace />;
   if (sectionPath === "fabbisogni-acquisto") return hasPermission?.("rdp.view") && !customerScoped ? withNavigation(<PurchaseRequirements />) : <Navigate to="/produzione" replace />;
   if (sectionPath) return withNavigation(<SectionLauncher sectionCode={decodeURIComponent(sectionPath)} />);

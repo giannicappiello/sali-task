@@ -17,7 +17,7 @@ const progressLink={modulo_codice:'progremes',schermata_codice:progress.codice,o
 test('commercial screen is discoverable and keeps its own access decision',()=>{
  assert.equal(select([],[progress],[progressLink],permissions)[0].path,progress.percorso);
  assert.deepEqual(select([],[progress],[progressLink],{...permissions,hasScreenAccess:()=>false}),[]);
- assert.deepEqual(select([],[progress],[progressLink],{...permissions,hasPermission:()=>false}),[]);
+ assert.equal(select([],[progress],[progressLink],{...permissions,hasPermission:()=>false})[0].path,progress.percorso);
 });
 test('new MES screen uses discovered catalog identity and never substitutes legacy planning',()=>{
  const screen={codice:'progremes.PlanningProduction',nome:'Pianificazione e produzione',percorso:'/produzione/progremes.PlanningProduction',attiva:true};

@@ -1,3 +1,4 @@
+import { isProgremesScreenPath } from "../ProgreMes/progremesWindow";
 import { useMemo } from "react";
 import { Home as HomeIcon } from "lucide-react";
 import { useOutletContext } from "react-router-dom";
@@ -31,7 +32,7 @@ export default function Home() {
     .map((card) => {
       const isProductionHub = card.module === "progremes" && card.path === "/produzione";
       let launchesProgremes = false;
-      if (!isProductionHub && (card.module === "progremes" || card.provider === "progremes")) launchesProgremes = true;
+      if (!isProductionHub && isProgremesScreenPath(card.path)) launchesProgremes = true;
       return {
         code: card.module || card.path,
         name: card.label,

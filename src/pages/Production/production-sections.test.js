@@ -43,3 +43,14 @@ test('initial MES screen resolves to authenticated Workspace route', async()=>{
  const link={modulo_codice:'progremes',schermata_codice:screen.codice,predefinita:true,visibile_menu:true};
  assert.equal(productionInitialPath([{code:screen.codice}],[screen],[link]),'/produzione/progremes.PlanningProduction');
 });
+
+test('new Workspace module screens appear without a hardcoded route or MES section',()=>{
+ const screen={codice:'produzione.consuntivi',nome:'Consuntivi Produzioni',provider:'workspace',percorso:'/consuntivi-produzioni',attiva:true};
+ const link={...progressLink,schermata_codice:screen.codice};
+ const result=select([],[screen],[link],{...permissions,hasPermission:()=>false});
+ assert.equal(result.length,1);
+ assert.equal(result[0].path,screen.percorso);
+ assert.equal(result[0].workspaceLocal,true);
+ assert.deepEqual(select([],[screen],[link],{...permissions,hasScreenAccess:()=>false}),[]);
+ assert.deepEqual(select([],[screen],[{...link,visibile_menu:false}],permissions),[]);
+});

@@ -132,7 +132,7 @@ export default function Production() {
     const payload = hasModuleAccess("progremes") || hasScreenAccess("progremes.PlanningProduction")
       ? await requestProgremes("progremes_user_sections", accessToken) : { sections: [] };
     const [screens, links] = await Promise.all([
-      supabase.from("workspace_schermate").select("codice,nome,descrizione,percorso,attiva,area,aree").eq("attiva", true),
+      supabase.from("workspace_schermate").select("codice,nome,descrizione,percorso,attiva,area,aree,provider").eq("attiva", true),
       supabase.from("workspace_moduli_schermate").select("modulo_codice,schermata_codice,ordine,visibile_menu,predefinita").eq("modulo_codice", "progremes").eq("visibile_menu", true).order("ordine"),
     ]);
     if (screens.error || links.error) throw screens.error || links.error;

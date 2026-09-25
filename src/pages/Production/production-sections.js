@@ -20,8 +20,10 @@ export function configuredProductionSections(remote, screens, links, { hasPermis
       if (!screen) return [];
       if (!hasScreenAccess(screen.codice, "progremes")) return [];
       const path = (screen.percorso || "").replace(/\/$/, "");
-      if (!LOCAL_PATHS.has(path)) return remoteByCode.has(screen.codice) ? [remoteByCode.get(screen.codice)] : [];
-      if (path.endsWith("/diagnostica") ? !isAdminUser : path !== "/produzione/ordini-avanzamento" && !hasPermission("rdp.view")) return [];
+      const workspaceLocal = screen.provider === "workspace" || (!screen.provider && LOCAL_PATHS.has(path));
+      if (!workspaceLocal) return remoteByCode.has(screen.codice) ? [remoteByCode.get(screen.codice)] : [];
+      if (!path.startsWith("/") || path.startsWith("//")) return [];
+      if (path.endsWith("/diagnostica") ? !isAdminUser : LOCAL_PATHS.has(path) && path !== "/produzione/ordini-avanzamento" && !hasPermission("rdp.view")) return [];
       if ((path.endsWith("/fabbisogni-acquisto") || ["/revisione-priorita-produzione", "/versioni-piano-produzione", "/rilascio-odl"].includes(path)) && customerScoped) return [];
       return [{ code: path.split("/").at(-1), path, name: path === "/rilascio-odl" ? "Storico ODL" : screen.nome, description: path === "/rilascio-odl" ? "Archivio ODL precedenti. Le lavorazioni correnti si gestiscono per OP e batch." : screen.descrizione, workspaceLocal: true }];
     });

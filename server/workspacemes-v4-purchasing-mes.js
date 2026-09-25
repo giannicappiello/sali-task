@@ -60,6 +60,7 @@ export function automaticPfRows(requirements, options = {}) {
   const end = start + horizonDays * 86_400_000;
   const seen = new Set();
   return (requirements || []).filter((row) => {
+    if (row.requiresReview) return false;
     const required = day(row.requiredAt);
     const key = `${Number(row.articleId)}:${monthKey(row.requiredAt)}`;
     if (!Number.isFinite(required) || required < start || required > end || number(row.quantityToOrder) <= 0) return false;
@@ -80,6 +81,7 @@ export function automaticPfLines(requirements, options = {}) {
 export function selectedPfRows(requirements) {
   const seen = new Set();
   return (requirements || []).filter((row) => {
+    if (row.requiresReview) return false;
     const key = `${Number(row.articleId)}:${monthKey(row.requiredAt)}`;
     if (number(row.quantityToOrder) <= 0) return false;
     if (clean(row.pfDocuments) || number(row.pfQuantity) > 0 || seen.has(key)) return false;
@@ -100,6 +102,7 @@ const day = (value) => {
 
 export function calculateWorkspaceV4PurchaseRequirements(source) {
   validateSource(source);
+  const reviewArticles = new Set((source.reviewArticleIds || []).map(Number));
   const stock = new Map(source.stocks.map((item) => [Number(item.articleId), number(item.availableQuantity)]));
   const arrivalsByArticle = new Map();
   for (const arrival of source.arrivals) {
@@ -159,6 +162,7 @@ export function calculateWorkspaceV4PurchaseRequirements(source) {
       const requiredAt = shortageAt || monthDemands[0].requiredAt;
       const orderBy = new Date(day(requiredAt) - number(first.leadTimeDays) * 86_400_000).toISOString();
       rows.push({ key: `${articleId}:${key}`, month: `${key}-01T00:00:00.000Z`, articleId,
+        requiresReview: reviewArticles.has(articleId),
         articleCode: first.articleCode, description: first.description, unitOfMeasure: first.unitOfMeasure,
         articleType: first.articleType, requiredAt, orderBy, leadTimeDays: number(first.leadTimeDays),
         requiredQuantity: monthDemands.reduce((total, item) => total + item.quantity, 0), availableStock: openingStock,

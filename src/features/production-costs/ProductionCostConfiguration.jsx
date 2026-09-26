@@ -4,7 +4,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { defaultSettings, validateSettings } from "./cost-engine";
 import { Field, Numeric } from "./common";
 import { action, money, date } from "./client";
-import CostAIAssistant from "./CostAIAssistant";
+import { publishCostAssistantDraft } from "./assistant-bridge";
 import LaborCriteriaFields from "./LaborCriteriaFields";
 import { sameSettings } from "./labor-rules";
 import StationHistorySummary from "./StationHistorySummary";
@@ -21,6 +21,12 @@ export default function ProductionCostConfiguration(){
  const [applyToHistory,setApplyToHistory]=useState(false);
  const [effective,setEffective]=useState(new Date().toISOString().slice(0,10)),[note,setNote]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState(""),[message,setMessage]=useState("");
  useEffect(()=>{if(!token)return;let alive=true;action(token,"configuration").then(r=>{if(alive){setVersions(r.configurations);setCanWrite(r.canWrite);if(r.configurations[0])setSettings({...defaultSettings(),...r.configurations[0].settings});}}).catch(e=>alive&&setError(e.message));return()=>{alive=false;};},[token]);
+ useEffect(()=>{
+  publishCostAssistantDraft({token,settings,disabled:!canWrite||!hasModuleAccess?.("assistente_ai")||busy,onApply:p=>{
+   setSettings(p.candidate);setAppliedProposal(p);setMessage("Proposta IA confermata e trasferita nel modulo. Verifica la decorrenza e salva la nuova versione per attivarla.");
+  }});
+  return()=>publishCostAssistantDraft(null);
+ },[token,settings,canWrite,hasModuleAccess,busy]);
  const update=(key,value)=>setSettings(s=>({...s,[key]:value}));
  const edit=(key,i,values)=>setSettings(s=>({...s,[key]:s[key].map((x,n)=>n===i?{...x,...values}:x)}));
  const remove=(key,i)=>update(key,settings[key].filter((_,n)=>n!==i));
@@ -33,7 +39,7 @@ export default function ProductionCostConfiguration(){
  }catch(e){setError(e.message);}finally{setBusy(false);}}
  return <main className="pc-page" data-column-controls="off">
  {error&&<p className="pc-error" role="alert">{error}</p>}{message&&<p className="pc-success" role="status">{message}</p>}
- <CostAIAssistant token={token} settings={settings} disabled={!canWrite||!hasModuleAccess?.("assistente_ai")||busy} onApply={p=>{setSettings(p.candidate);setAppliedProposal(p);setMessage("Proposta IA confermata e trasferita nel modulo. Verifica la decorrenza e salva la nuova versione per attivarla.");}}/>
+
  {appliedProposal&&<p className="pc-note">{sameSettings(settings,appliedProposal.candidate)?"Proposta IA confermata, non ancora salvata.":"Hai modificato manualmente i valori della proposta: il prossimo salvataggio sarà una versione manuale."}</p>}
  <form onSubmit={save}><fieldset disabled={!canWrite||busy}>
  <section className="pc-panel"><h2>Costo del personale</h2><p>Un unico costo ora/uomo per tutti gli operatori. I tempi effettivi restano quelli rilevati in MES.</p><div className="pc-fields"><Field label="Costo ora/uomo (€)"><Numeric required value={settings.laborHourly} onChange={v=>update("laborHourly",v)}/></Field><Field label="Decorrenza della nuova versione"><input required type="date" value={effective} onChange={e=>setEffective(e.target.value)}/></Field><Field label="Nota della versione"><input value={note} onChange={e=>setNote(e.target.value)} placeholder="Es. tariffe approvate settembre"/></Field></div></section>

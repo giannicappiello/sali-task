@@ -9,6 +9,10 @@ export function moduleScreenNavigation(catalog, pathname, preferredModule, canRe
  const links = catalog.links.filter(l => l.modulo_codice === module.codice && l.visibile_menu !== false).sort((a,b) => (a.ordine || 0)-(b.ordine || 0));
  const initial = links.find(l => l.predefinita && screens.some(s => s.codice === l.schermata_codice && canRead(s.codice,module.codice)));
  if (!initial) return null;
+ // Legacy catalogs mark the container itself as default. It is not a landing
+ // screen and must not activate sibling navigation throughout the module.
+ const initialScreen = screens.find(s => s.codice === initial.schermata_codice);
+ if (module.tipo === 'contenitore' && initialScreen?.percorso.replace(/\/$/, '') === module.percorso?.replace(/\/$/, '')) return null;
  const items = links.map(l => screens.find(s => s.codice === l.schermata_codice)).filter(s => s && canRead(s.codice,module.codice));
  if (items.length < 2) return null;
  return { module, items };

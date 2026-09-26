@@ -373,6 +373,7 @@ export default function AIAssistant({ getScreenContext, embedded = false, prompt
       if (activeConversationId) setConversationInUrl(activeConversationId);
       setCapabilities(payload.capabilities || capabilities);
       if (payload.proposal) setProposal(payload.proposal);
+      window.dispatchEvent(new CustomEvent("workspace:assistant-response",{detail:{costProposalId:payload.costProposalId}}));
       const responseArtifacts = payload.artifacts?.length ? payload.artifacts : ((payload.downloadablePdf === true || pdfRequested) ? [{ id: `pdf-${Date.now()}`, kind: "pdf", fileName: "report-assistente-ai.pdf", mediaType: "application/pdf" }] : []);
       setMessages((current) => [...current, { id: `assistant-${Date.now()}`, role: "assistant", content: payload.answer, sources: payload.sources || [], proposal: payload.proposal || null, headingAction: payload.headingAction || null, controlledActions: payload.controlledActions || [], developmentJob: payload.developmentJob || null, artifacts: responseArtifacts }]);
       setPrompt("");

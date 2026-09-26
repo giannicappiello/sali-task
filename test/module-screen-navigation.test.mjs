@@ -9,3 +9,12 @@ test('removing initial screen removes navigation',()=>assert.equal(nav({...catal
 
 test("single screen module never renders an isolated navigation button",()=>assert.equal(nav({...catalog,links:catalog.links.filter(l=>l.schermata_codice==='first')},'/first',null,()=>true),null));
 test("hidden sibling does not create navigation",()=>assert.equal(nav({...catalog,links:catalog.links.map(l=>l.schermata_codice==='new'?{...l,visibile_menu:false}:l)},'/first',null,()=>true),null));
+
+test('legacy default pointing at the container does not enable navigation on its children',()=>{
+ const c={...catalog,modules:[{...catalog.modules[0],tipo:'contenitore'}]};
+ for(const path of ['/first','/new','/new/123'])assert.equal(nav(c,path,null,()=>true),null);
+});
+test('container with a distinct configured landing screen retains navigation including MES',()=>{
+ const c={...catalog,modules:[{...catalog.modules[0],tipo:'contenitore',percorso:'/module'}]};
+ assert.equal(nav(c,'/new',null,()=>true).items.length,2);
+});

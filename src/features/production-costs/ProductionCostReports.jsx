@@ -14,7 +14,7 @@ import { sumAvailable } from "./available-costs";
 import StationOvertime from "./StationOvertime";
 
 function Amount({value,partial,signed=false}){
- return <>{(signed?signedMoney:money)(value)}{partial&&value!=null&&<small className="pc-partial">Parziale</small>}</>;
+ return <><span className={signed&&value!=null?(value>0?"pc-balance-positive":value<0?"pc-balance-negative":""):undefined}>{(signed?signedMoney:money)(value)}</span>{partial&&value!=null&&<small className="pc-partial">Parziale</small>}</>;
 }
 function OctNotes({record:r}){
  return <><p>Valore netto OCT attribuito a questa produzione, non il totale dell’intero documento. IVA esclusa; OCT e fatture non si sommano.</p>
@@ -29,21 +29,21 @@ function OctComparisonNotes(){
  return <p>Valore OCT attribuito alla produzione meno costi consuntivi e margine obiettivo STATION previsto, sull’intera lavorazione. Positivo = ricavo superiore ai costi. Non è il margine sulla sola quantità fatturata. Se mancano costi o quote OCT, il confronto è parziale; per produzioni aperte è provvisorio.</p>;
 }
 function CostTable({record}){
- const r=displayRecord(record.completeCosts||record),rows=[...costRows(r),{name:"Totale costi + obiettivo STATION previsto",p:r.plannedWithObjective,a:r.actualWithObjective,pp:r.costPartial.plannedWithObjective,ap:r.costPartial.actualWithObjective,total:true,info:"Lo stesso margine obiettivo STATION previsto viene sommato a entrambi i totali."}];
+ const r=displayRecord(record.completeCosts||record),rows=[...costRows(r),{name:"Totale costi + obiettivo STATION previsto",p:r.plannedWithObjective,a:r.actualWithObjective,pp:r.costPartial.plannedWithObjective,ap:r.costPartial.actualWithObjective,total:true,comparison:true,info:"Lo stesso margine obiettivo STATION previsto viene sommato a entrambi i totali."}];
  return <div className="pc-table-wrap"><table className="pc-economics-table"><thead><tr>
  <th>Voce</th><th>Preventivo</th><th>Consuntivo</th>
  <th>Scostamento €<CostInfo title="Scostamenti"><p>Preventivo meno consuntivo: risparmio positivo, maggior costo negativo. Percentuale rispetto al preventivo. Un confronto tra somme parziali resta parziale; margini su quantità fatturate diverse restano separati.</p></CostInfo></th>
  <th>Scostamento %</th><th>Valore OCT<CostInfo title="Valore OCT"><OctNotes record={r}/></CostInfo></th>
  <th>Fatture attribuite<CostInfo title="Fatture attribuite"><p>Valore netto delle sole righe fattura riconciliate con la produzione. Non è sommato all’OCT e può riferirsi a una quantità inferiore.</p></CostInfo></th>
  <th>OCT − costi e obiettivo<CostInfo title="OCT meno consuntivo"><OctComparisonNotes/></CostInfo></th>
- </tr></thead><tbody>{rows.map(({name,p,a,pp,ap,separate,info,total})=><tr key={name} className={total?"pc-total-row":undefined}>
+ </tr></thead><tbody>{rows.map(({name,p,a,pp,ap,separate,info,total,comparison})=><tr key={name} className={total?"pc-total-row":undefined}>
  <td>{name}<CostInfo title={name}><p>{info}</p></CostInfo></td>
  <td><Amount value={p} partial={pp}/></td><td><Amount value={a} partial={ap}/></td>
  <td>{separate?"Basi quantitative distinte":<Amount value={costVariance(a,p)} partial={pp||ap} signed/>}</td>
  <td>{separate?"—":signedPercent(costVariancePercent(a,p))}</td>
- <td>{total?<Amount value={r.octRevenue} partial={r.costPartial.octRevenue}/>:"—"}</td>
- <td>{total?<>{money(r.actualRevenue)}{r.commercial?.invoices?.map(x=><small key={x.id}>{x.document?.sigla} {x.document?.serie}/{x.document?.numero}</small>)}</>:"—"}</td>
- <td>{total?<><small>OCT − preventivo e obiettivo</small><Amount value={r.octPlannedMargin} partial={r.costPartial.plannedWithObjective} signed/><small>OCT − consuntivo e obiettivo</small><Amount value={r.octActualMargin} partial={r.costPartial.octActualMargin} signed/></>:"—"}</td>
+ <td>{comparison?<Amount value={r.octRevenue} partial={r.costPartial.octRevenue}/>:"—"}</td>
+ <td>{comparison?<>{money(r.actualRevenue)}{r.commercial?.invoices?.map(x=><small key={x.id}>{x.document?.sigla} {x.document?.serie}/{x.document?.numero}</small>)}</>:"—"}</td>
+ <td>{comparison?<><small className="pc-comparison-label">OCT − preventivo e obiettivo</small><Amount value={r.octPlannedMargin} partial={r.costPartial.plannedWithObjective} signed/><small className="pc-comparison-label">OCT − consuntivo e obiettivo</small><Amount value={r.octActualMargin} partial={r.costPartial.octActualMargin} signed/></>:"—"}</td>
  </tr>)}</tbody></table></div>;
 }
 function Detail({record,token,canWrite,onClose,onChanged}){

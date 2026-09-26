@@ -3,7 +3,7 @@ import {Modal} from './common';
 import {money,signedMoney} from './client';
 export const invoiceDifference=(a,b)=>a!=null&&b!=null?a-b:null;
 export function InvoiceBalance({value}){return <span className={value>0?'pc-balance-positive':value<0?'pc-balance-negative':''}>{value==null?'—':signedMoney(value)}</span>;}
-export function InvoiceCells({invoice,oc,actual,references=[]}){return <><td>{invoice==null?<span className="pc-invoice-missing">Fattura mancante</span>:money(invoice)}<small>{references.join(' · ')}</small></td><td><InvoiceBalance value={invoiceDifference(invoice,oc)}/></td><td><InvoiceBalance value={invoiceDifference(invoice,actual)}/></td></>;}
+export function InvoiceCells({invoice,oc,actual,references=[]}){return <><td>{invoice==null?<span className="pc-invoice-missing">Fattura mancante</span>:money(invoice)}<small>{[...new Set(references)].join(' · ')}</small></td><td><InvoiceBalance value={invoiceDifference(invoice,oc)}/></td><td><InvoiceBalance value={invoiceDifference(invoice,actual)}/></td></>;}
 export const InvoiceHeaders=()=> <><th>Fatturato / fattura</th><th>Fatturato − OC</th><th>Fatturato − consuntivo</th></>;
 export default function InvoiceSummary({rows}){
  const [open,setOpen]=useState(false),known=rows.filter(r=>r.invoice!=null),missing=rows.length-known.length;

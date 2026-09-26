@@ -1,3 +1,4 @@
+import {invoiceOrderReferences} from './invoice-order-references.js';
 import {octReference} from '../src/features/production-costs/oct-evidence.js';
 const norm=v=>String(v??'').trim().toUpperCase();
 export function recoverInvoiceIdentity(e,all,headers,lines,now=new Date().toISOString()){
@@ -6,11 +7,11 @@ export function recoverInvoiceIdentity(e,all,headers,lines,now=new Date().toISOS
  const candidates=[];
  for(const h of headers){
   if(norm(h.sigla)!=='FT'||!norm(h.codice_cliente))continue;
-  const d=h.dati_mexal||{},value=(key,pos)=>(d[key]||[]).find(x=>String(x[0])===String(pos))?.[1];
+  const refs=invoiceOrderReferences(h,lines);
   for(const l of lines.filter(l=>String(l.fattura_id)===String(h.id)&&norm(l.codice_articolo)===norm(e.articleCode))){
-   const group=value('id_rif_testata',l.posizione);if(group==null)continue;
-   const ref=octReference(`${value('sigla_ordine',group)}/${value('serie_ordine',group)}/${value('numero_ordine',group)}`);
-   const raw=String(value('data_ordine',group)||'').replaceAll('-','');
+   if(!(h.dati_mexal?.id_rif_testata||[]).some(x=>String(x[0])===String(l.posizione)))continue;
+   const resolved=refs.get(String(l.id)),ref=resolved?.reference;
+   const raw=String(resolved?.date||'').replaceAll('-','');
    if(ref!==reference||!/^\d{8}$/.test(raw))continue;
    const year=Number(raw.slice(0,4)),productionYear=Number(String(e.date||e.works?.[0]?.start||'').slice(0,4));
    if(!productionYear||year>productionYear||year<productionYear-1)continue;

@@ -21,3 +21,23 @@ test('sums separate invoice lines without reusing manual allocations',()=>{
  assert.equal(match(e,[e],[h],lines,[]).reduce((s,x)=>s+x.amount,0),325);
  assert.equal(match(e,[e],[h],lines,[{invoice_line_id:'L'}])[0].amount,25);
 });
+import {invoiceReferences,groupedInvoices} from '../src/features/production-costs/invoice-summary.js';
+const splitHeader={...h,dati_mexal:{...h.dati_mexal,id_rif_testata:[[11,1],[15,2]],pos_righe_lotto:[[11,1],[15,2]],nr_righe_lotto:[[11,1],[15,1]],id_lotto:[[1,9805],[2,9805]]}};
+const splitLines=[{...l,id:'A',posizione:11,quantita:10000,valore_netto:2700},{...l,id:'B',posizione:15,quantita:5000,valore_netto:1350}];
+test('split delivery same article and lot recovers missing order and totals all invoice lines',()=>{
+ const r=match(e,[e],[splitHeader],splitLines,[]);assert.equal(r.length,2);assert.equal(r.reduce((s,x)=>s+x.invoiceQuantity,0),15000);assert.equal(r.reduce((s,x)=>s+x.amount,0),4050);assert.equal(invoiceReferences(r).length,1);assert.equal(groupedInvoices(r)[0].amount,4050);
+});
+test('different prices sum actual net amounts rather than extrapolating the first price',()=>{
+ assert.equal(match(e,[e],[splitHeader],[splitLines[0],{...splitLines[1],valore_netto:1500}],[]).reduce((s,x)=>s+x.amount,0),4200);
+});
+test('missing lot, different lot, ambiguous order and explicit different order cannot inherit',()=>{
+ for(const d of [{...splitHeader.dati_mexal,id_lotto:[[1,9805],[2,9999]]},{...splitHeader.dati_mexal,id_lotto:[]},{...splitHeader.dati_mexal,sigla_ordine:[[1,'OC'],[2,'OC']],serie_ordine:[[1,2],[2,2]],numero_ordine:[[1,92],[2,93]],data_ordine:[[1,'20260101'],[2,'20260101']]}])assert.equal(match(e,[e],[{...h,dati_mexal:d}],splitLines,[]).length,1);
+});
+test('repeated input rows and manual allocations never double invoice amounts',()=>{
+ assert.equal(match(e,[e],[splitHeader,splitHeader],[...splitLines,...splitLines],[]).reduce((s,x)=>s+x.amount,0),4050);
+ assert.equal(match(e,[e],[splitHeader],splitLines,[{invoice_line_id:'A'}]).reduce((s,x)=>s+x.amount,0),1350);
+});
+test('same lot linked explicitly to different orders leaves continuation unresolved',()=>{
+ const header={...splitHeader,dati_mexal:{...splitHeader.dati_mexal,sigla_ordine:[[1,'OC'],[3,'OC']],serie_ordine:[[1,2],[3,2]],numero_ordine:[[1,92],[3,93]],data_ordine:[[1,'20260101'],[3,'20260101']],id_rif_testata:[[11,1],[15,2],[20,3]],pos_righe_lotto:[[11,1],[15,2],[20,3]],nr_righe_lotto:[[11,1],[15,1],[20,1]],id_lotto:[[1,9805],[2,9805],[3,9805]]}};
+ assert.equal(match(e,[e],[header],[...splitLines,{...l,id:'C',posizione:20}],[]).length,1);
+});

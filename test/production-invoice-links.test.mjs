@@ -30,8 +30,12 @@ test('split delivery same article and lot recovers missing order and totals all 
 test('different prices sum actual net amounts rather than extrapolating the first price',()=>{
  assert.equal(match(e,[e],[splitHeader],[splitLines[0],{...splitLines[1],valore_netto:1500}],[]).reduce((s,x)=>s+x.amount,0),4200);
 });
-test('missing lot, different lot, ambiguous order and explicit different order cannot inherit',()=>{
- for(const d of [{...splitHeader.dati_mexal,id_lotto:[[1,9805],[2,9999]]},{...splitHeader.dati_mexal,id_lotto:[]},{...splitHeader.dati_mexal,sigla_ordine:[[1,'OC'],[2,'OC']],serie_ordine:[[1,2],[2,2]],numero_ordine:[[1,92],[2,93]],data_ordine:[[1,'20260101'],[2,'20260101']]}])assert.equal(match(e,[e],[{...h,dati_mexal:d}],splitLines,[]).length,1);
+test('valued same article rows share the unique OC even without a matching lot',()=>{
+ for(const d of [{...splitHeader.dati_mexal,id_lotto:[[1,9805],[2,9999]]},{...splitHeader.dati_mexal,id_lotto:[]}])assert.equal(match(e,[e],[{...h,dati_mexal:d}],splitLines,[]).reduce((s,x)=>s+x.amount,0),4050);
+});
+test('explicit different OC stays separate despite matching article',()=>{
+ const d={...splitHeader.dati_mexal,sigla_ordine:[[1,'OC'],[2,'OC']],serie_ordine:[[1,2],[2,2]],numero_ordine:[[1,92],[2,93]],data_ordine:[[1,'20260101'],[2,'20260101']]};
+ assert.equal(match(e,[e],[{...h,dati_mexal:d}],splitLines,[]).length,1);
 });
 test('repeated input rows and manual allocations never double invoice amounts',()=>{
  assert.equal(match(e,[e],[splitHeader,splitHeader],[...splitLines,...splitLines],[]).reduce((s,x)=>s+x.amount,0),4050);

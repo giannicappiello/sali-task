@@ -1,5 +1,5 @@
-// Resolve explicit order references first. A missing delivery reference can only
-// inherit from the same article AND the same Mexal lot in this invoice.
+// Explicit order references take precedence. Valued repeated articles inherit
+// the unique order for that article in this invoice, as authorized by the user.
 const code=v=>String(v??'').trim().toUpperCase();
 const same=(a,b)=>String(a??'').trim()===String(b??'').trim();
 export function invoiceOrderReferences(header,lines){
@@ -13,7 +13,10 @@ export function invoiceOrderReferences(header,lines){
   const explicit=direct(l);if(explicit)return [String(l.id),explicit];
   const group=value('id_rif_testata',l.posizione);
   // Incomplete or conflicting explicit fields must never be overwritten.
-  if(group==null||['sigla_ordine','serie_ordine','numero_ordine','data_ordine'].some(k=>value(k,group)!=null))return [String(l.id),null];
+  if(group!=null&&['sigla_ordine','serie_ordine','numero_ordine','data_ordine'].some(k=>value(k,group)!=null))return [String(l.id),null];
+  const valued=row=>row.valore_netto!=null&&String(row.valore_netto).trim()!==''&&Number.isFinite(Number(row.valore_netto))&&Number(row.valore_netto)!==0;
+  const articleRefs=[...new Map(own.filter(other=>code(other.codice_articolo)===code(l.codice_articolo)&&valued(other)&&direct(other)).map(other=>{const r=direct(other);return [r.reference+'/'+r.year,r];})).values()];
+  if(valued(l)&&articleRefs.length===1)return [String(l.id),{...articleRefs[0],viaArticle:true}];
   const lotIds=lots(l);if(!lotIds.length)return [String(l.id),null];
   const candidates=lotIds.map(id=>[...new Map(own.filter(other=>code(other.codice_articolo)===code(l.codice_articolo)&&lots(other).includes(id)&&direct(other)).map(other=>{const r=direct(other);return [r.reference+'/'+r.year,r];})).values()]);
   if(candidates.some(a=>a.length!==1))return [String(l.id),null];

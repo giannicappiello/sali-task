@@ -15,7 +15,7 @@ export function automaticInvoiceMatches(e, allEvidence, headers, lines, allocati
   if(candidates.length!==1||!same(candidates[0].id,e.id))continue;
    if(l.valore_netto==null||!Number.isFinite(Number(l.valore_netto))||allocations.some(a=>String(a.invoice_line_id)===String(l.id)))continue;
    if(seen.has(String(l.id)))continue;seen.add(String(l.id));
-   result.push({invoiceLineId:l.id,invoiceQuantity:l.quantita==null?null:Number(l.quantita),orderReference:ref.reference,orderYear:ref.year,id:`auto-${l.id}`,document:{id:h.id,sigla:h.sigla,serie:h.serie,numero:h.numero,data_documento:h.data_documento},amount:Number(l.valore_netto),quantity:null,source:ref.viaLot?"Stesso articolo e lotto Mexal di una riga con OC esplicito":"OC originale e articolo univoci"});
+   result.push({invoiceLineId:l.id,invoiceQuantity:l.quantita==null?null:Number(l.quantita),orderReference:ref.reference,orderYear:ref.year,id:`auto-${l.id}`,document:{id:h.id,sigla:h.sigla,serie:h.serie,numero:h.numero,data_documento:h.data_documento},amount:Number(l.valore_netto),quantity:null,source:ref.viaArticle?"Righe valorizzate dello stesso articolo nella fattura, con OC univoco":ref.viaLot?"Stesso articolo e lotto Mexal di una riga con OC esplicito":"OC originale e articolo univoci"});
   }
  }
  return result;

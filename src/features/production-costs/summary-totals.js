@@ -11,3 +11,10 @@ export function conclusionDate(works=[]){
  if(!active.length||active.some(w=>!w.end||!Number.isFinite(Date.parse(w.end))))return null;
  return active.reduce((latest,w)=>Date.parse(w.end)>Date.parse(latest)?w.end:latest,active[0].end);
 }
+
+export function isSaliDiIschia(row){
+ const code=String(row.customerCode||row.sourceOrder?.customerCode||'').trim();
+ if(code)return code==='501.00995';
+ return String(row.customerName||'').toUpperCase().replace(/[^A-Z0-9]/g,'')==='SALIDIISCHIA';
+}
+export function splitSaliDiIschia(rows){return {ordinary:rows.filter(r=>!isSaliDiIschia(r)),sali:rows.filter(isSaliDiIschia)};}

@@ -108,3 +108,5 @@
 .pc-modal .pc-summary-detail-table{min-width:1100px;font-size:12px}
 .pc-summary-detail-table th:first-child{width:9%}.pc-summary-detail-table th:nth-child(2){width:18%}.pc-summary-detail-table th:nth-child(3){width:8%}
 .pc-modal .pc-summary-detail-table th,.pc-modal .pc-summary-detail-table td{padding:10px 7px}
+
+.pc-sali-summary h3{display:flex;align-items:center;margin:0 0 12px;font-size:16px}.pc-sali-summary footer{margin-top:14px;color:#1261ba;font-size:12px}

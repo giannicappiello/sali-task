@@ -110,3 +110,5 @@
 .pc-modal .pc-summary-detail-table th,.pc-modal .pc-summary-detail-table td{padding:10px 7px}
 
 .pc-sali-summary h3{display:flex;align-items:center;margin:0 0 12px;font-size:16px}.pc-sali-summary footer{margin-top:14px;color:#1261ba;font-size:12px}
+
+.pc-financial-exclusions{grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch}.pc-financial-exclusions>.pc-panel{height:100%;box-sizing:border-box;display:flex;flex-direction:column}.pc-financial-exclusions>.pc-panel>button{align-self:flex-start;margin-top:auto}.pc-financial-exclusions .pc-sali-summary footer{margin-top:auto;padding-top:14px}@media(max-width:900px){.pc-financial-exclusions{grid-template-columns:1fr}}

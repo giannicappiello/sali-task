@@ -10,7 +10,7 @@ export function octTargets(e){
  return (links.length?links.map(l=>({key:String(l.lineId),reference:octReference(l.oct),customerCode:l.customerCode,
   articleCode:l.articleCode||e.articleCode,unit:l.unit,quantity:l.quantity,date:l.date||source?.date||e.date,exactYear:Boolean(l.date||source?.date)})):
   [{key:"source",reference:octReference(source?.reference||e.orderNumber),customerCode:source?.customerCode||e.customerCode,
-   articleCode:e.articleCode,unit:e.unit,quantity:e.quantity,date:source?.date||e.date,exactYear:Boolean(source?.date)}]);
+   articleCode:e.articleCode,unit:e.unit,quantity:e.quantity,date:source?.date||e.commercialIdentity?.date||e.date,exactYear:Boolean(source?.date||e.commercialIdentity?.date)}]);
 }
 export function recoveredOctShare(e,target,allEvidence){
  const found=(e.recoveredOctLines||[]).filter(r=>r.targetKey===target.key&&r.reference===target.reference&&

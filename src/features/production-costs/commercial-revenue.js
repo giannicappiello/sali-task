@@ -1,5 +1,5 @@
 import { legacyOrderRevenue } from "./history.js";
-import { octTargets,recoveredOctShare } from "./oct-evidence.js";
+import { octTargets,recoveredOctShare,octReference } from "./oct-evidence.js";
 
 const numeric=v=>v!==null&&v!==undefined&&v!==""&&Number.isFinite(Number(v))?Number(v):null;
 const unit=v=>String(v||"").trim().toUpperCase();
@@ -7,6 +7,16 @@ const unit=v=>String(v||"").trim().toUpperCase();
 // Only explicit line relationships are used. Customer/name matches cannot
 // establish an allocation, especially between bulk KG and finished pieces.
 export function resolveOctRevenue(evidence, orderLines, allEvidence) {
+ const override=evidence.authorizedInvoicePricing;
+ if(override?.authorized===true&&String(override.productionId)===String(evidence.id)&&
+   override.reference===octReference(evidence.sourceOrder?.reference||evidence.orderNumber)&&
+   override.customerCode===evidence.customerCode&&unit(override.articleCode)===unit(evidence.articleCode)&&
+   unit(override.unit)===unit(evidence.unit)&&numeric(override.quantity)===numeric(evidence.quantity)&&
+   numeric(override.unitPrice)!==null&&override.unitPrice>=0&&override.quantity>0){
+  return {octRevenue:Math.round(override.unitPrice*override.quantity*100)/100,octPartial:false,
+   octSource:"Valore OC ricostruito su autorizzazione: prezzo netto unitario della fattura × quantità della lavorazione",
+   octReasons:[`Prezzo da ${override.invoiceReference}; quantità di riferimento ${override.quantity} ${override.unit}. Non è il fatturato effettivo.`]};
+ }
  const reasons=[],amounts=[];
  const targets=octTargets(evidence),recovered=[];
  for(const target of targets){

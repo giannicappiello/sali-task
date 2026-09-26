@@ -1,3 +1,4 @@
+import {recoverInvoiceIdentity} from "./production-invoice-identity.js";
 import { recoverFormulaLinks } from "./production-formula-links.js";
 import { readCostCalendar } from "./production-cost-calendar.js";
 import {automaticInvoiceMatches} from "./production-invoice-links.js";
@@ -111,12 +112,18 @@ export async function handleProductionCosts(req,body) {
   const incomingIds=new Set(result.items.map(e=>e.id));
   result.items=recoverFormulaLinks([...existing.filter(r=>!incomingIds.has(r.mes_order_id)).map(r=>r.evidence),...result.items]).filter(e=>incomingIds.has(e.id));
   const byId=new Map(existing.map(x=>[x.mes_order_id,x]));
+  const identityLines=await readRowsByIds(admin,"mexal_fatture_vendita_righe","codice_articolo",result.items.filter(e=>!e.customerCode).map(e=>e.articleCode));
+  const identityHeaders=await readRowsByIds(admin,"mexal_fatture_vendita","id",identityLines.map(l=>l.fattura_id));
+  const identityEvidence=[...existing.filter(r=>!incomingIds.has(r.mes_order_id)).map(r=>r.evidence),...result.items];
+  result.items=result.items.map(e=>recoverInvoiceIdentity(e,identityEvidence,identityHeaders,identityLines));
+
   for(const e of result.items){
    const old=byId.get(e.id);
    e.historicalProductSl=old?.evidence?.historicalProductSl||[];
    e.productSlRecovery=old?.evidence?.productSlRecovery;
    e.recoveredOctLines=old?.evidence?.recoveredOctLines||[];
    e.octRecovery=old?.evidence?.octRecovery;
+   e.authorizedInvoicePricing=old?.evidence?.authorizedInvoicePricing;
    check(await admin.from("production_cost_records").upsert({mes_order_id:e.id,evidence:e,
     configuration_id:old?.configuration_id||configurationFor(e,configs)?.id||null,refreshed_at:new Date().toISOString()}));
   }
@@ -196,6 +203,12 @@ export async function handleProductionCosts(req,body) {
   const customers=await readAllRows(()=>admin.from("crm_classified_customers").select("codice_cliente,ragione_sociale")
    .in("codice_cliente",customerCodes.slice(start,start+100)).order("codice_cliente"));
   for(const customer of customers)if(customer.ragione_sociale?.trim())customerNames.set(String(customer.codice_cliente).trim(),customer.ragione_sociale);
+  const missing=customerCodes.slice(start,start+100).filter(code=>!customerNames.has(code));
+  if(missing.length){
+   const cached=check(await admin.from("ordini_clienti_cache").select("codice_cliente,ragione_sociale").in("codice_cliente",missing));
+   for(const customer of cached)if(customer.ragione_sociale?.trim())customerNames.set(String(customer.codice_cliente).trim(),customer.ragione_sociale);
+  }
+
  }
  const ids=visible.map(x=>x.mes_order_id);
  const adjustments=await readAllRows(()=>admin.from("production_cost_adjustments").select("*").order("created_at",{ascending:false}).order("id"));

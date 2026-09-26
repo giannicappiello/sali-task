@@ -5,7 +5,7 @@ const stamp=d=>d.toISOString().slice(0,19);
 
 // Construct accounting intervals from an independent duration, not Gantt end dates.
 export function forecastOperations(evidence) {
- const timing=evidence.baseline?.plannedTiming||evidence.plannedTiming;
+ const timing=evidence.plannedTimingRecovery?.timing||evidence.baseline?.plannedTiming||evidence.plannedTiming;
  if(!timing){
   return {operations:evidence.baseline?.operations||[],estimated:false,
    source:evidence.baseline?.operations?.length?"Tempi del piano originale congelato. Importare MES aggiornato per usare i parametri formula indipendenti.":"Durate preventive formula non ancora importate: aggiornare MES e importare lo storico. Il planning consuntivato non viene utilizzato."};

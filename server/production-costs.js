@@ -1,3 +1,4 @@
+import { recoverFormulaLinks } from "./production-formula-links.js";
 import { readCostCalendar } from "./production-cost-calendar.js";
 import {automaticInvoiceMatches} from "./production-invoice-links.js";
 import { privateProductionRecord } from "../src/features/production-costs/private-report.js";
@@ -106,7 +107,9 @@ export async function handleProductionCosts(req,body) {
   try {result=await createProgremesClient({timeoutMs:30000}).request("production-cost-evidence",{page,pageSize:100});}
   catch(error){throw fail(error.upstreamStatus===404?"Aggiornare MES: il collegamento ai consuntivi non è ancora installato. I dati già importati restano disponibili.":"MES non raggiungibile per i consuntivi. I dati già importati restano disponibili.",502);}
   const configs=await readConfigurations(admin);
-  const existing=result.items.length?await readAllRows(()=>admin.from("production_cost_records").select("*").in("mes_order_id",result.items.map(x=>x.id)).order("mes_order_id")):[];
+  const existing=await readAllRows(()=>admin.from("production_cost_records").select("*").order("mes_order_id"));
+  const incomingIds=new Set(result.items.map(e=>e.id));
+  result.items=recoverFormulaLinks([...existing.filter(r=>!incomingIds.has(r.mes_order_id)).map(r=>r.evidence),...result.items]).filter(e=>incomingIds.has(e.id));
   const byId=new Map(existing.map(x=>[x.mes_order_id,x]));
   for(const e of result.items){
    const old=byId.get(e.id);
@@ -158,6 +161,8 @@ export async function handleProductionCosts(req,body) {
   readAllRows(()=>admin.from("production_cost_records").select("*").order("mes_order_id")),readConfigurations(admin)]);
  const companyCalendar=await readCostCalendar(admin);
  for(const config of configs)config.settings={...config.settings,companyCalendar};
+ const recovered=recoverFormulaLinks(records.map(r=>r.evidence));
+ for(let i=0;i<records.length;i++)records[i].evidence=recovered[i];
  const visible=scoped(records,session.scope);
  const today=new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Rome",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
  const policy=activeStationPolicy(configs,today);

@@ -98,6 +98,8 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
  if(!evidence.baseline)warnings.push(evidence.historicalBaseline?"Preventivo ricostruito dalla revisione formula collegata, valorizzato ai costi ultimi disponibili; non è il preventivo economico originale.":"Preventivo originario non congelato: formula storica non ancora recuperata.");
  if(recoveredConsumption.length)warnings.push("Consumi recuperati dai prelievi scaricati in MES e valorizzati ai costi ultimi disponibili. Valorizzazione ricostruita, non prezzi storici dello SL.");
  if(!settings)warnings.push("Configurazione costi non disponibile per questa produzione.");
+ if(evidence.plannedTimingRecovery?.recovered?.length)warnings.push("Collegamenti formula–lavorazione recuperati dai parametri preventivi. La copia originale è conservata.");
+ for(const issue of evidence.plannedTimingRecovery?.unresolved||[])warnings.push(`Preventivo ${issue.type} · impianto ${issue.impiantoId}: ${issue.reason}.`);
  const packagingPlan=packagingBaseline(evidence);
  const plannedMaterials=materialPlan.rows,plannedPackaging=packagingPlan.rows;
  if(materialPlan.recovered)warnings.push("Quantità formula mancanti recuperate dalla revisione collegata alla lavorazione e dalla quantità del lotto. Per i componenti assenti dal preventivo si usano i costi ultimi disponibili, non prezzi storici; i prezzi originali registrati restano prioritari. Il preventivo salvato resta invariato.");

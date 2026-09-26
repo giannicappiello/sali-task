@@ -1,19 +1,24 @@
-import InvoiceSummary,{InvoiceCells,InvoiceHeaders} from "./InvoiceSummary";
 import {useState} from 'react';
 import {Modal} from './common';
+import CostInfo from './CostInfo';
 import {money} from './client';
+import {InvoiceBalance} from './InvoiceSummary';
+import PrivateReportTable from './PrivateReportTable';
 import {privateProductionSummary} from './private-report';
-
-const sum=(rows,key)=>rows.some(r=>r[key]!=null)?rows.reduce((s,r)=>s+(r[key]??0),0):null;
-export default function PrivateCostSummaryCards({rows,searchCard}) {
- const [selected,setSelected]=useState(null);
- const summary=privateProductionSummary(rows);
- const matched=rows.filter(r=>r.comparisonTotal!=null&&r.workedOct!=null);
+import {total,pairedDifference} from './summary-totals';
+function Info({title,children}){return <span onClick={e=>e.stopPropagation()} onKeyDown={e=>e.stopPropagation()}><CostInfo title={title}><p>{children}</p></CostInfo></span>;}
+function Metric({label,value,balance=false,excess=false}){return <div><span>{label}</span><strong className={excess?'pc-balance-negative':''}>{balance?<InvoiceBalance value={value}/>:excess&&value==null?'—':money(value)}</strong></div>;}
+export default function PrivateCostSummaryCards({rows,saliRows=[]}){
+ const [selected,setSelected]=useState(null),summary=privateProductionSummary(rows);
+ const matched=rows.filter(r=>r.comparisonTotal!=null&&r.workedOct!=null),invoiced=rows.filter(r=>r.invoiceValue!=null),missing=rows.filter(r=>r.invoiceValue==null),invoiceOc=invoiced.filter(r=>r.workedOct!=null);
  const activate=(title,items)=>({role:'button',tabIndex:0,onClick:()=>setSelected({title,items}),onKeyDown:e=>{if(e.target===e.currentTarget&&(e.key==='Enter'||e.key===' ')){e.preventDefault();setSelected({title,items});}}});
- return <><div className="pc-cards pc-summary-cards pc-private-overview">{searchCard}
- <article className="pc-card pc-card-clickable" {...activate('Costi consuntivi',rows)}><span>Costi consuntivi</span><div className="pc-summary-line"><small>Con OC</small><strong>{money(sum(matched,'comparisonTotal'))}</strong></div><div className="pc-summary-line"><small>Senza confronto</small><strong>{money(sum(summary.excluded,'comparisonTotal'))}</strong></div></article>
- <article className="pc-card pc-card-clickable" {...activate('Valore netto OC',matched)}><span>Valore netto OC</span><div className="pc-summary-line"><strong>{money(sum(matched,'workedOct'))}</strong></div></article>
- <article className="pc-card pc-card-clickable" {...activate('Differenza',matched)}><span>Differenza</span><div className="pc-summary-line">{summary.excess!=null&&<strong className="pc-balance-negative">{money(summary.excess)}</strong>}</div></article>
- <InvoiceSummary rows={rows.map(r=>({id:r.id,order:r.order,article:r.articleCode,invoice:r.invoiceValue,oc:r.workedOct,actual:r.comparisonTotal,references:r.invoiceReferences}))}/>
- </div>{selected&&<Modal title={selected.title} onClose={()=>setSelected(null)}><div className="pc-table-wrap"><table><thead><tr><th>RdP</th><th>Cliente / prodotto</th><th>OC</th><th>Costi consuntivi</th><th>Valore netto OC</th><th>Differenza</th><InvoiceHeaders/></tr></thead><tbody>{selected.items.map(r=><tr key={r.id}><td>{r.order}</td><td>{r.customer}<small>{r.articleCode} · {r.description}</small></td><td>{r.octReferences.join(' · ')}</td><td>{money(r.comparisonTotal)}</td><td>{money(r.workedOct)}</td><td className="pc-balance-negative">{r.excess!=null?money(r.excess):'—'}</td><InvoiceCells invoice={r.invoiceValue} oc={r.workedOct} actual={r.comparisonTotal} references={r.invoiceReferences}/></tr>)}</tbody></table></div></Modal>}</>;
+ return <><div className="pc-financial-overview pc-private-financial">
+ <article className="pc-panel pc-card-clickable" {...activate('Costi consuntivi',rows)}><h3>Costi consuntivi<Info title="Costi consuntivi">Importi delle lavorazioni concluse nel filtro. Le lavorazioni senza un OC confrontabile sono separate. Gli importi disponibili possono essere parziali.</Info></h3><div className="pc-financial-metrics"><Metric label="Con OC" value={total(matched,'comparisonTotal')}/><Metric label="Senza confronto" value={total(summary.excluded,'comparisonTotal')}/><Metric label="Totale" value={total(rows,'comparisonTotal')}/></div><footer>{rows.length} lavorazioni</footer></article>
+ <article className="pc-panel pc-card-clickable" {...activate('OC',matched)}><h3>OC<Info title="Confronto OC">Valore netto OC riferito alle quantità lavorate, fino alla quantità ordinata. Differenza = consuntivo meno OC: compare in rosso solo quando il consuntivo complessivo supera l’OC. Il confronto comprende solo lavorazioni con entrambi i valori disponibili.</Info></h3><div className="pc-financial-metrics pc-private-oc-metrics"><Metric label="Valore netto OC" value={total(matched,'workedOct')}/><Metric label="Differenza" value={summary.excess} excess/></div><footer>{matched.length} con OC · {summary.excluded.length} senza confronto</footer></article>
+ <article className="pc-panel pc-card-clickable" {...activate('Fatturato',invoiced)}><h3>Fatturato<Info title="Fatturato">Importi netti delle fatture associate. Differenze = fatturato meno consuntivo e fatturato meno OC, sulle sole lavorazioni con entrambi i valori disponibili. Blu: differenza positiva; rosso: negativa. Le lavorazioni senza fattura sono escluse da questi conteggi.</Info></h3><div className="pc-financial-metrics"><Metric label="Fatturato netto" value={total(invoiced,'invoiceValue')}/><Metric label="Differenza su consuntivi" value={pairedDifference(invoiced,'invoiceValue','comparisonTotal')} balance/><Metric label="Differenza su OC" value={pairedDifference(invoiceOc,'invoiceValue','workedOct')} balance/></div><footer>{invoiced.length} fatturate · {missing.length} senza fattura<br/>Confronto OC: {invoiceOc.length} incluse · {invoiced.length-invoiceOc.length} escluse</footer></article>
+ </div><div className={`pc-financial-exclusions pc-private-exclusions ${saliRows.length?'pc-private-with-sali':''}`}>
+ <article className="pc-panel"><h3>Senza confronto OC · {summary.excluded.length}<Info title="Senza confronto OC">Lavorazioni escluse dal confronto perché manca un valore OC confrontabile o il consuntivo.</Info></h3><button onClick={()=>setSelected({title:'Lavorazioni senza confronto OC',items:summary.excluded})}>Mostra lavorazioni</button></article>
+ <article className="pc-panel"><h3>Senza fattura · {missing.length}<Info title="Senza fattura">Lavorazioni senza fattura associata, escluse dal fatturato e dai relativi confronti.</Info></h3><button onClick={()=>setSelected({title:'Lavorazioni senza fattura',items:missing})}>Mostra lavorazioni</button></article>
+ {saliRows.length>0&&<article className="pc-panel"><h3>Sali di Ischia · {saliRows.length}<Info title="Sali di Ischia">Lavorazioni separate dai conteggi delle altre card e dall’elenco principale.</Info></h3><strong>{money(total(saliRows,'comparisonTotal'))}</strong><button onClick={()=>setSelected({title:'Sali di Ischia',items:saliRows})}>Mostra lavorazioni</button></article>}
+ </div>{selected&&<Modal className="pc-private-report" title={selected.title} onClose={()=>setSelected(null)}><PrivateReportTable rows={selected.items}/></Modal>}</>;
 }

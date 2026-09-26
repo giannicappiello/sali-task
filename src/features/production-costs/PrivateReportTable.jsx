@@ -1,0 +1,5 @@
+import {money,date} from './client';
+import {InvoiceCells,InvoiceHeaders} from './InvoiceSummary';
+export default function PrivateReportTable({rows,onDetail}){
+ return <div className="pc-table-wrap"><table className="pc-private-table"><thead><tr><th>OC</th><th>Cliente / prodotto</th><th>Conclusione</th><th>Consuntivo</th><th>Valore netto OC</th><th>Differenza</th><InvoiceHeaders/>{onDetail&&<th>Dettaglio</th>}</tr></thead><tbody>{rows.map(r=><tr key={r.id}><td>{r.octReferences.join(' · ')||'Non disponibile'}</td><td>{r.customer}<small>{r.articleCode} · {r.description}</small></td><td>{date(r.concludedAt)}</td><td>{money(r.comparisonTotal)}</td><td>{money(r.workedOct)}</td><td className="pc-balance-negative">{r.excess!=null?money(r.excess):'—'}</td><InvoiceCells invoice={r.invoiceValue} oc={r.workedOct} actual={r.comparisonTotal} references={r.invoiceReferences}/>{onDetail&&<td>{r.excess!=null&&r.detail&&<button onClick={()=>onDetail(r)}>Apri</button>}</td>}</tr>)}</tbody></table>{!rows.length&&<p>Nessuna lavorazione nel filtro.</p>}</div>;
+}

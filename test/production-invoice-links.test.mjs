@@ -6,3 +6,18 @@ test('unique explicit invoice order and article match',()=>assert.equal(match(e,
 test('no duplication of manually allocated invoice',()=>assert.equal(match(e,[e],[h],[l],[{invoice_line_id:'L'}]).length,0));
 test('ambiguous productions, customers and years rejected',()=>{assert.equal(match(e,[e,{...e,id:2}],[h],[l],[]).length,0);assert.equal(match(e,[e],[{...h,codice_cliente:'OTHER'}],[l],[]).length,0);assert.equal(match({...e,date:'2025-01-01'},[{...e,date:'2025-01-01'}],[h],[l],[]).length,0);});
 test('multi-order invoice uses explicit line header group and rejects missing group',()=>{const multi={...h,dati_mexal:{sigla_ordine:[[1,'OC'],[2,'OC']],serie_ordine:[[1,2],[2,2]],numero_ordine:[[1,92],[2,93]],data_ordine:[[1,'20260101'],[2,'20260101']],id_rif_testata:[[28,1],[29,2]]}};assert.equal(match(e,[e],[multi],[{...l,posizione:28}],[])[0].amount,300);assert.equal(match(e,[e],[multi],[{...l,posizione:29}],[]).length,0);assert.equal(match(e,[e],[multi],[l],[]).length,0);});
+
+test('normalizes imported codes and numeric header group identifiers',()=>{
+ const header={...h,codice_cliente:' C ',sigla:'ft',dati_mexal:{...h.dati_mexal,id_rif_testata:[['28','1']]}};
+ const line={...l,codice_articolo:' a ',posizione:28};
+ assert.equal(match(e,[{...e,id:'1'}],[header],[line],[])[0].amount,300);
+});
+test('an invoice imported later is picked up on the next report read',()=>{
+ assert.deepEqual(match(e,[e],[],[],[]),[]);
+ assert.equal(match(e,[e],[h],[l],[])[0].document.id,'H');
+});
+test('sums separate invoice lines without reusing manual allocations',()=>{
+ const lines=[l,{...l,id:'L2',valore_netto:25}];
+ assert.equal(match(e,[e],[h],lines,[]).reduce((s,x)=>s+x.amount,0),325);
+ assert.equal(match(e,[e],[h],lines,[{invoice_line_id:'L'}])[0].amount,25);
+});

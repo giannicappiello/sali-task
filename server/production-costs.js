@@ -1,3 +1,4 @@
+import {automaticInvoiceMatches} from "./production-invoice-links.js";
 import { privateProductionRecord } from "../src/features/production-costs/private-report.js";
 import { costSession } from "./production-action-session.js";
 import { createProgremesClient } from "./progremes-readonly-client.js";
@@ -194,6 +195,11 @@ export async function handleProductionCosts(req,body) {
  const invoiceLines=await readRowsByIds(caller,"mexal_fatture_vendita_righe","id",allowedAllocations.map(a=>a.invoice_line_id));
  const invoiceHeaders=await readRowsByIds(caller,"mexal_fatture_vendita","id",invoiceLines.map(a=>a.fattura_id));
  const orderLines=await readRowsByIds(caller,"ordini_righe","id",visible.flatMap(r=>(r.evidence.links||[]).map(l=>l.lineId)));
+ const linkedHeaders=[];
+ for(let start=0;start<customerCodes.length;start+=100){
+ linkedHeaders.push(...await readAllRows(()=>caller.from("mexal_fatture_vendita").select("id,sigla,serie,numero,data_documento,codice_cliente,dati_mexal").eq("sigla","FT").in("codice_cliente",customerCodes.slice(start,start+100)).order("id")));
+ }
+ const linkedLines=await readRowsByIds(caller,"mexal_fatture_vendita_righe","fattura_id",linkedHeaders.map(h=>h.id));
  const allEvidence=records.map(x=>x.evidence);
  const calc=visible.map(r=>{
   const e=withCustomerNames(r.evidence,customerNames);
@@ -208,7 +214,8 @@ export async function handleProductionCosts(req,body) {
    const sign=h?.sigla?.toUpperCase()==="NC"?-1:1;
    return {...a,document:h,line:l,quantity:sign*Number(a.quantity),amount:l&&h&&number(l.valore_netto)!==null?sign*Math.abs(Number(l.valore_netto))*Number(a.quantity)/Math.abs(Number(l.quantita)):null};
   });
-  const commercial={...oct,invoiceRevenue:sumKnown(matches.map(x=>x.amount)),invoicedQuantity:matches.length?matches.reduce((s,x)=>s+x.quantity,0):null,invoices:matches};
+  matches.push(...automaticInvoiceMatches(e,allEvidence,linkedHeaders,linkedLines,allocations));
+  const commercial={...oct,invoiceRevenue:sumKnown(matches.map(x=>x.amount)),invoicedQuantity:matches.length&&matches.every(x=>x.quantity!=null)?matches.reduce((s,x)=>s+x.quantity,0):null,invoices:matches};
   const audit=adjustments.filter(a=>a.mes_order_id===r.mes_order_id);
   const overrideId=!e.baseline?audit.find(a=>a.details?.configurationId)?.details.configurationId:null;
   const config=configs.find(c=>c.id===overrideId)||configs.find(c=>c.id===r.configuration_id)||configurationFor(e,configs);

@@ -18,10 +18,10 @@ export function costRows(record) {
    pp:partial(r.plannedKnownSubtotal,r.plannedTotal),ap:partial(r.actualKnownSubtotal,r.actualTotal),
    info:"Somma di tutti i costi disponibili. Anche margini e costo al pezzo vengono calcolati con queste somme: Parziale indica che il risultato non include le componenti ancora mancanti."},
   {name:"Margine (consuntivo sulla quantità fatturata)",p:r.plannedMargin,a:r.actualMargin,separate:true,info:"Ricavo meno costi disponibili attribuiti alla stessa quantità. Se i costi sono parziali, il margine è provvisorio e può diminuire quando vengono valorizzate le componenti mancanti."},
-  {name:"Margine obiettivo STATION (consuntivo proporzionato al fatturato)",p:r.plannedObjective,a:r.invoicedObjective,separate:true,info:"Obiettivo configurato per STATION e turni, proporzionato alla quantità fatturata quando il collegamento è verificabile."},
+  {name:"Margine obiettivo STATION previsto",p:r.plannedObjective,a:r.invoicedObjective,separate:true,info:"Obiettivo configurato per STATION e turni, proporzionato alla quantità fatturata quando il collegamento è verificabile."},
   {name:"Margine oltre / sotto obiettivo STATION",p:r.plannedObjectiveVariance,a:r.actualObjectiveVariance,separate:true,info:"Differenza tra margine sui costi disponibili e obiettivo STATION. Resta non disponibile solo quando mancano le basi del confronto, come il ricavo o l’obiettivo."}
  ].map((row,i)=>{
-  const keys=[["plannedMaterialCost","actualMaterialCost"],["plannedPackagingCost","actualPackagingCost"],["plannedLabor","actualLabor"],["plannedWash","actualWash"],[null,"lossCost"],["plannedTotal","actualTotal"],["plannedMargin","actualMargin"],["plannedObjective","invoicedObjective"],["plannedObjectiveVariance","actualObjectiveVariance"]][i];
+  const keys=[["plannedMaterialCost","actualMaterialCost"],["plannedPackagingCost","actualPackagingCost"],["plannedLabor","actualLabor"],["plannedWash","actualWash"],[null,"lossCost"],["plannedTotal","actualTotal"],["plannedMargin","actualMargin"],["plannedObjective","plannedObjective"],["plannedObjectiveVariance","actualObjectiveVariance"]][i];
   return {...row,...(keys[0]?{p:shown[keys[0]],pp:Boolean(shown.costPartial[keys[0]])}:{}),a:shown[keys[1]],ap:Boolean(shown.costPartial[keys[1]])};
- });
+ }).filter(row=>!row.name.startsWith("Margine (consuntivo")&&!row.name.startsWith("Margine oltre / sotto"));
 }

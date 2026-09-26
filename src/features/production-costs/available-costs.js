@@ -39,11 +39,17 @@ export function availableCosts(r) {
  // The OCT amount is the share already attributed to this production, not the
  // whole customer document and never the configured estimated selling price.
  values.octRevenue=numeric(r.commercial?.octRevenue);
- values.octActualMargin=difference(values.octRevenue,values.actualTotal);
+ const targetObjective=values.plannedObjective;
+ values.plannedWithObjective=values.plannedTotal!=null&&targetObjective!=null?values.plannedTotal+targetObjective:null;
+ values.actualWithObjective=values.actualTotal!=null&&targetObjective!=null?values.actualTotal+targetObjective:null;
+ values.octPlannedMargin=difference(values.octRevenue,values.plannedWithObjective);
+ values.octActualMargin=difference(values.octRevenue,values.actualWithObjective);
  const partial=Object.fromEntries(Object.entries(values).map(([k,v])=>[k,v!=null&&r[k]==null]));
  partial.totalVariance=values.totalVariance!==null&&(partial.actualTotal||partial.plannedTotal);
  partial.variancePercent=values.variancePercent!==null&&partial.totalVariance;
  partial.octRevenue=values.octRevenue!==null&&Boolean(r.commercial?.octPartial);
+ partial.actualWithObjective=partial.actualTotal||partial.plannedObjective;
+ partial.plannedWithObjective=partial.plannedTotal||partial.plannedObjective;
  partial.octActualMargin=values.octActualMargin!==null&&(partial.octRevenue||partial.actualTotal);
  return {values,partial};
 }

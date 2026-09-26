@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {privateProductionRecord as project,privateProductionSummary as summary} from '../src/features/production-costs/private-report.js';
-const base={id:1,quantity:100,goodQuantity:50,commercial:{octRevenue:200},actualTotal:120,plannedTotal:999,baseline:{secret:true},phases:[{id:1,personnel:[{name:'hidden'}],actualHours:2,plannedHours:88}]};
+const base={id:1,plannedObjective:0,quantity:100,goodQuantity:50,commercial:{octRevenue:200},actualTotal:120,plannedTotal:999,baseline:{secret:true},phases:[{id:1,personnel:[{name:'hidden'}],actualHours:2,plannedHours:88}]};
 test('compares actual costs with OCT value of worked quantity',()=>{const r=project(base);assert.equal(r.workedOct,100);assert.equal(r.excess,20);assert.ok(r.detail);assert.equal(JSON.stringify(r).includes('planned'),false);assert.equal(JSON.stringify(r).includes('secret'),false);assert.equal(JSON.stringify(r).includes('hidden'),false);});
 test('no detail for equal, lower or unavailable costs and OCT',()=>{for(const patch of [{actualTotal:100},{actualTotal:90},{actualTotal:null},{commercial:{octRevenue:null}},{commercial:{octRevenue:200,octPartial:true}},{goodQuantity:0}]){const r=project({...base,...patch});assert.equal(r.excess,null);assert.equal(r.detail,undefined);}});
 test('overall excess is net overall difference, not sum of positive rows',()=>{const a=project(base),b=project({...base,id:2,actualTotal:70});assert.equal(summary([a,b]).excess,null);assert.equal(summary([a]).excess,20);assert.equal(summary([a,project({...base,actualTotal:null})]).excess,20);});
@@ -10,3 +10,5 @@ test('OC92 available partial costs expose excess and detail',()=>{const r=projec
 test('partial costs below OCT do not create an excess',()=>{const r=project({...base,actualTotal:null,actualLabor:90});assert.equal(r.actualPartial,true);assert.equal(r.excess,null);assert.equal(r.detail,undefined);});
 
 test("missing OCT costs are excluded from comparison and itemized",()=>{const valid=project(base),missing=project({...base,id:2,actualTotal:999,commercial:{octRevenue:null,octReasons:["Riga assente"]}});const result=summary([valid,missing]);assert.equal(result.excess,20);assert.equal(result.excludedCost,999);assert.equal(result.excluded[0].octReasons[0],"Riga assente");assert.equal(result.comparableCount,1);});
+
+test("STATION objective increases comparison total once",()=>{const r=project({...base,plannedObjective:25});assert.equal(r.comparisonTotal,145);assert.equal(r.excess,45);assert.equal(summary([r]).excess,45);});

@@ -90,11 +90,11 @@ test("filling history client contract is sanitized and not available through pub
 });
 test("immutable snapshots are idempotent and unavailable MES does not fall back",async()=>{
  const data=new Map();let inserts=0;
- const admin={from(name){assert.equal(name,"production_cost_station_history");let key;return {async upsert(row,options){assert.equal(options.ignoreDuplicates,true);assert.equal(row.source.economicDepartment,"Confezionamento");if(!data.has(row.fingerprint))data.set(row.fingerprint,{id:"snapshot-"+(++inserts),created_at:"now"});return {};},select(){return this;},eq(_field,value){key=value;return this;},async single(){return {data:data.get(key)};}};}};
+ const admin={async rpc(){return {data:{versions:[{effectiveFrom:"1900-01-01",week:Object.fromEntries([1,2,3,4,5,6,7].map(d=>[d,d<6?[["09:00","16:00"]]:[]]))}],exceptions:[],closures:[]}};},from(name){assert.equal(name,"production_cost_station_history");let key;return {async upsert(row,options){assert.equal(options.ignoreDuplicates,true);assert.equal(row.source.economicDepartment,"Confezionamento");if(!data.has(row.fingerprint))data.set(row.fingerprint,{id:"snapshot-"+(++inserts),created_at:"now"});return {};},select(){return this;},eq(_field,value){key=value;return this;},async single(){return {data:data.get(key)};}};}};
  const a=await readFillingHistory(admin,{request:async()=>[fillingFixtureHistory()]});
  const b=await readFillingHistory(admin,{request:async()=>[{...fillingFixtureHistory(),generatedAt:"later",asOfLocal:"later"}]});
  assert.equal(a.snapshotId,b.snapshotId);assert.equal(inserts,1);
- await readFillingHistory(admin,{request:async()=>[{...fillingFixtureHistory(),completedPieces:4000,productivity:1000}]});assert.equal(inserts,2);
+ await readFillingHistory(admin,{request:async()=>[{...fillingFixtureHistory(),works:[work()]}]});assert.equal(inserts,2);
  const missing=await readFillingHistory(admin,{request:async()=>{throw {upstreamStatus:404};}});assert.equal(missing.productivity,null);assert.match(missing.error,/Aggiornare MES/);
  const sql=await readFile(new URL("../supabase/migrations/20260913130000_production_station_history.sql",import.meta.url),"utf8");
  assert.match(sql,/enable row level security/);assert.match(sql,/grant select,insert/);assert.doesNotMatch(sql,/grant.*update/i);

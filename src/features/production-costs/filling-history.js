@@ -6,7 +6,7 @@ const amount = value => value !== null && value !== undefined && value !== "" &&
 // Only FILLING starts define this department's period. Reuse the STATION
 // calendar extension, not its completed-work productivity formula.
 export function withAdditionalFillingShifts(source,settings) {
- if(!settings?.shifts?.slice(1).length)return source;
+ if(!settings?.shifts?.slice(1).length&&!settings?.companyCalendar)return source;
  const active=[...new Map((source.works||[]).filter(w=>!["Annullato","DaAvviare"].includes(w.state)&&w.start<=source.asOfLocal).map(w=>[w.id,w])).values()];
  const filling=active.filter(w=>w.phase==="Confezionamento");
  const period=withAdditionalStationShifts({...source,works:filling,mixingOperatorsCount:source.packagingOperatorsCount},settings);

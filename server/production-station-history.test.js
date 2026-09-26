@@ -67,7 +67,7 @@ test("MES source is internal-only and snapshots are immutable/idempotent across 
  assert.match(buildProgremesUrl("production-cost-station-history",{},"https://mes.example.it").href,/production-cost-station-history/);
  assert(!PROGREMES_ALLOWED_RESOURCES.includes("production-cost-station-history"));
  const data=new Map();let inserts=0;
- const admin={from(){let key;return {async upsert(row,options){assert.equal(options.ignoreDuplicates,true);if(!data.has(row.fingerprint)){data.set(row.fingerprint,{id:"snapshot-"+(++inserts),created_at:"now"});}return {};},select(){return this;},eq(_field,value){key=value;return this;},async single(){return {data:data.get(key)};}};}};
+ const admin={async rpc(){return {data:{versions:[{effectiveFrom:"1900-01-01",week:Object.fromEntries([1,2,3,4,5,6,7].map(d=>[d,d<6?[["09:00","16:00"]]:[]]))}],exceptions:[],closures:[]}};},from(){let key;return {async upsert(row,options){assert.equal(options.ignoreDuplicates,true);if(!data.has(row.fingerprint)){data.set(row.fingerprint,{id:"snapshot-"+(++inserts),created_at:"now"});}return {};},select(){return this;},eq(_field,value){key=value;return this;},async single(){return {data:data.get(key)};}};}};
  const request=async()=>[history()];
  const a=await readStationHistory(admin,{request}),b=await readStationHistory(admin,{request:async()=>[{...history(),generatedAt:"later",asOfLocal:"later"}]});
  assert.equal(a.snapshotId,b.snapshotId);assert.equal(inserts,1);

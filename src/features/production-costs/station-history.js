@@ -2,6 +2,7 @@ import { productionTurns, shiftWindows } from "./turns.js";
 
 // The denominator comes from the complete MES department, never UI filters.
 export function historyCalendar(history) {
+ if(history?.calendar?.companyCalendar)return {companyCalendar:history.calendar.companyCalendar,shifts:history.calendar.shifts,laborRules:{station:{rounding:.5}}};
  if(!history?.calendar?.shifts?.length)return null;
  const holidays=[];
  for(const c of history.calendar.closures||[]){
@@ -22,12 +23,12 @@ export function historicalStationTurns(start,end,history,downtimeHours=0) {
 // MES planning and the first MES shift are left untouched.
 export function withAdditionalStationShifts(source,settings) {
  const extra=settings?.shifts?.slice(1)||[];
- if(!extra.length)return source;
- const calendar=historyCalendar(source);
+ if(!extra.length&&!settings?.companyCalendar)return source;
+ const calendar=settings?.companyCalendar?{shifts:[],holidays:[]}:historyCalendar(source);
  if(!calendar)return {...source,error:"Calendario MES non disponibile.",productivity:null};
  const shifts=[...calendar.shifts,...extra];
- const merged={...calendar,shifts};
- const weekly=shiftWindows("2026-09-07T00:00:00","2026-09-15T00:00:00",{...merged,holidays:[]});
+ const merged={...calendar,shifts,...(settings?.companyCalendar?{companyCalendar:settings.companyCalendar}:{})};
+ const weekly=settings?.companyCalendar?[]:shiftWindows("2026-09-07T00:00:00","2026-09-15T00:00:00",{...merged,holidays:[]});
  if(weekly.some((w,i)=>i&&w.a<weekly[i-1].b))throw Object.assign(new Error("Il secondo turno si sovrappone al turno MES: verificare gli orari."),{code:"INVALID_COST_CALENDAR"});
  const active=[...new Map((source.works||[]).filter(w=>!["Annullato","DaAvviare"].includes(w.state)&&w.start<=source.asOfLocal).map(w=>[w.id,w])).values()];
  const first=active.map(w=>w.start).sort()[0];
@@ -39,7 +40,7 @@ export function withAdditionalStationShifts(source,settings) {
  const invalid=active.some(w=>w.state==="Terminato"&&(!w.end||w.end<w.start));
  const error=invalid?"Lavorazioni concluse con date incoerenti.":!completed.length?"Nessun turno completato.":!closed?"Media storica pari a zero.":source.mixingOperatorsCount<=0?"Organico Miscelazione non disponibile.":null;
  return {...source,periodStart:first,periodEnd:end,completedWorks:closed,calendarShifts:completed.length,productivity:error?null:closed/completed.length,error,
-  calendar:{...source.calendar,shifts,source:source.calendar.source+" + turni aggiuntivi economici Workspace",historyWarning:source.calendar.historyWarning+" I turni aggiuntivi configurati vengono applicati anche allo storico; non modificano APS."}};
+  calendar:settings?.companyCalendar?{shifts,companyCalendar:settings.companyCalendar,source:"Calendario aziendale HR",historyWarning:"Orari HR secondo la decorrenza, con eccezioni e chiusure delle rispettive date. Ogni fascia di apertura HR vale un turno; le pause fra fasce sono escluse."}:{...source.calendar,shifts,source:source.calendar.source+" + turni aggiuntivi economici Workspace",historyWarning:source.calendar.historyWarning+" I turni aggiuntivi configurati vengono applicati anche allo storico; non modificano APS."}};
 }
 export function historicalLabor(turns,history,hourly) {
  if(turns===null||!history||history.error||!(history.productivity>0)||!(history.mixingOperatorsCount>0)||hourly===null||hourly===undefined||hourly===""||!Number.isFinite(Number(hourly)))return null;

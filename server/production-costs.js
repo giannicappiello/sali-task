@@ -1,3 +1,4 @@
+import { readCostCalendar } from "./production-cost-calendar.js";
 import {automaticInvoiceMatches} from "./production-invoice-links.js";
 import { privateProductionRecord } from "../src/features/production-costs/private-report.js";
 import { costSession } from "./production-action-session.js";
@@ -51,10 +52,11 @@ export async function handleProductionCosts(req,body) {
   if(body.settings)validateSettings(body.settings);
   return {history:stationHistorySummary(await readStationHistory(admin,{settings:body.settings}))};
  }
- if(op==="configuration")return {configurations:await readConfigurations(admin),canWrite:session.canWrite};
+ if(op==="configuration")return {configurations:await readConfigurations(admin),companyCalendar:await readCostCalendar(admin),canWrite:session.canWrite};
  if(op==="save-configuration"){
   validateSettings(body.settings);
   const settings=await approvedCostSettings(admin,profile.id,body);
+  delete settings.companyCalendar;
   if(settings.laborRules?.station?.basis==="historical_productivity"&&settings.shifts.length>1){
    const calendarCheck=await readStationHistory(admin,{settings});
    if(calendarCheck.errorCode==="INVALID_COST_CALENDAR")throw fail(calendarCheck.error);
@@ -154,6 +156,8 @@ export async function handleProductionCosts(req,body) {
  if(op!=="list"&&!privateReport)throw fail("Operazione non disponibile.");
  const [records,configs]=await Promise.all([
   readAllRows(()=>admin.from("production_cost_records").select("*").order("mes_order_id")),readConfigurations(admin)]);
+ const companyCalendar=await readCostCalendar(admin);
+ for(const config of configs)config.settings={...config.settings,companyCalendar};
  const visible=scoped(records,session.scope);
  const today=new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Rome",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
  const policy=activeStationPolicy(configs,today);
@@ -161,20 +165,20 @@ export async function handleProductionCosts(req,body) {
  const fillingPolicy=activeFillingPolicy(configs,today);
  const needsFillingHistory=fillingPolicy||configs.some(c=>c.settings?.laborRules?.filling?.basis==="historical_pieces");
  const [sourceHistory,sourceFillingHistory]=await Promise.all([
-  needsHistory?readStationHistory(admin,{settings:policy?.settings}):null,
-  needsFillingHistory?readFillingHistory(admin,{settings:fillingPolicy?.settings}):null
+  needsHistory?readStationHistory(admin,{settings:policy?.settings,companyCalendar}):null,
+  needsFillingHistory?readFillingHistory(admin,{settings:fillingPolicy?.settings,companyCalendar}):null
  ]);
  const fillingHistory=fillingHistorySummary(sourceFillingHistory),fillingHistoriesByConfig=new Map();
  if(needsFillingHistory&&!fillingPolicy&&sourceFillingHistory&&!sourceFillingHistory.error){
   await Promise.all(configs.filter(c=>c.settings?.laborRules?.filling?.basis==="historical_pieces").map(async c=>{
-   fillingHistoriesByConfig.set(c.id,fillingHistorySummary(await readFillingHistory(admin,{request:async()=>[sourceFillingHistory],settings:c.settings})));
+   fillingHistoriesByConfig.set(c.id,fillingHistorySummary(await readFillingHistory(admin,{request:async()=>[sourceFillingHistory],settings:c.settings,companyCalendar})));
   }));
  }
  const history=stationHistorySummary(sourceHistory);
  const historiesByConfig=new Map();
  if(needsHistory&&!policy&&sourceHistory&&!sourceHistory.error){
   await Promise.all(configs.filter(c=>c.settings?.laborRules?.station?.basis==="historical_productivity").map(async c=>{
-   historiesByConfig.set(c.id,stationHistorySummary(await readStationHistory(admin,{request:async()=>[sourceHistory],settings:c.settings})));
+   historiesByConfig.set(c.id,stationHistorySummary(await readStationHistory(admin,{request:async()=>[sourceHistory],settings:c.settings,companyCalendar})));
   }));
  }
  const currentWorks=new Map((sourceHistory?.works||[]).map(w=>[w.id,w]));

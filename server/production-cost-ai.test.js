@@ -52,7 +52,7 @@ test("margin target is not revenue/cost, invoice target uses the same quantity a
 // In-memory repository double exercises the complete server proposal boundary.
 function database(){
  const data=new Map(),writes=[];
- const db={data,writes,rpc:async()=>({data:{},error:null}),from(table){
+ const db={data,writes,rpc:async name=>({data:name==="workspace_company_calendar_data"?{versions:[{effectiveFrom:"1900-01-01",week:Object.fromEntries([1,2,3,4,5,6,7].map(d=>[d,d<6?[["09:00","16:00"]]:[]]))}],exceptions:[],closures:[]}: {},error:null}),from(table){
   if(!data.has(table))data.set(table,[]);
   let action="select",payload,filters=[],count=false;
   const query={select(_fields,options){count=options?.count==="exact";return query;},eq(k,v){filters.push(r=>r[k]===v);return query;},gte(k,v){filters.push(r=>r[k]>=v);return query;},order(){return query;},limit(){return query;},insert(v){action="insert";payload=v;return query;},update(v){action="update";payload=v;return query;},single(){return run(true);},maybeSingle(){return run(true);},then(a,b){return run(false).then(a,b);}};

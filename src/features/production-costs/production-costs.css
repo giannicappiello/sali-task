@@ -49,3 +49,5 @@
 
 .pc-configuration form>fieldset>.pc-panel:first-child{grid-column:1/-1}
 .pc-info-dialog .pc-config-explanation{grid-template-columns:1fr;gap:8px;margin:0}.pc-info-dialog .pc-config-explanation>div{padding:10px}
+
+.pc-hr-week{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:16px 0}.pc-hr-week>div{display:flex;flex-direction:column;gap:6px;padding:12px;background:#f5f8fc;border:1px solid #d8e3f1;border-radius:10px;font-size:13px}

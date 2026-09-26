@@ -122,3 +122,9 @@
 .pc-private-report .pc-balance-negative{color:#b42332}.pc-private-report .pc-balance-positive{color:#1261ba}
 @media(max-width:800px){.pc-private-exclusions{grid-template-columns:1fr}.pc-private-table{min-width:950px}}
 .pc-private-financial .pc-financial-metrics strong>span{font-size:inherit;font-weight:inherit}
+
+.pc-report-controls{padding:16px!important}.pc-report-control-row{display:grid;grid-template-columns:minmax(170px,1.6fr) repeat(2,minmax(130px,.8fr)) repeat(2,minmax(115px,.8fr)) auto auto;gap:10px;align-items:end}
+.pc-report-control-row .pc-field{min-width:0;margin:0;font-size:12px}.pc-report-control-row input,.pc-report-control-row select{width:100%;min-width:0;box-sizing:border-box;height:40px;padding:8px;font-size:13px}
+.pc-report-control-row>button{height:40px;white-space:nowrap;padding:8px 12px;font-size:12px;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+@media(max-width:1150px){.pc-report-control-row{grid-template-columns:repeat(4,minmax(0,1fr))}.pc-report-control-row .pc-field:first-child{grid-column:span 2}}
+@media(max-width:600px){.pc-report-control-row{grid-template-columns:repeat(2,minmax(0,1fr))}.pc-report-control-row>button{white-space:normal;height:auto;min-height:40px}}

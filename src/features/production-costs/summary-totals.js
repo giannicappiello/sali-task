@@ -5,3 +5,9 @@ export function summaryGroups(rows){
  const invoiced=rows.filter(r=>r.invoice!=null);
  return {matched,excluded:rows.filter(r=>!matched.includes(r)),invoiced,uninvoiced:rows.filter(r=>r.invoice==null),invoiceOc:invoiced.filter(r=>r.oct!=null&&!r.octPartial)};
 }
+
+export function conclusionDate(works=[]){
+ const active=works.filter(w=>String(w.state||'').toLowerCase()!=='annullato');
+ if(!active.length||active.some(w=>!w.end||!Number.isFinite(Date.parse(w.end))))return null;
+ return active.reduce((latest,w)=>Date.parse(w.end)>Date.parse(latest)?w.end:latest,active[0].end);
+}

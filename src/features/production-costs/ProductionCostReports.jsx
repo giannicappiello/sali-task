@@ -85,7 +85,7 @@ function Detail({record,token,canWrite,onClose,onChanged}){
 export default function ProductionCostReports(){
  const {session}=useAuth(),token=session?.access_token;
  const [records,setRecords]=useState([]),[canWrite,setCanWrite]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(""),[progress,setProgress]=useState("");
- const [query,setQuery]=useState(""),[from,setFrom]=useState(""),[to,setTo]=useState(""),[machine,setMachine]=useState(""),[selected,setSelected]=useState(null);
+ const [query,setQuery]=useState(""),[from,setFrom]=useState(""),[to,setTo]=useState(""),[invoiceState,setInvoiceState]=useState(""),[machine,setMachine]=useState(""),[selected,setSelected]=useState(null);
  const mounted=useRef(true);useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
  async function load(){const r=await action(token,"list");if(mounted.current){setRecords(r.records);setCanWrite(r.canWrite);}}
  useEffect(()=>{if(!token)return;let alive=true;action(token,"list").then(r=>{if(alive){setRecords(r.records);setCanWrite(r.canWrite);}}).catch(e=>alive&&setError(e.message)).finally(()=>alive&&setBusy(false));return()=>{alive=false;};},[token]);
@@ -118,8 +118,8 @@ export default function ProductionCostReports(){
  const machines=useMemo(()=>[...new Map(records.flatMap(r=>r.phases.map(p=>[p.machineId,p.machine?.code||"Impianto "+p.machineId]))).entries()], [records]);
  const filtered=useMemo(()=>records.filter(r=>{
   const d=String(r.works?.[0]?.start||r.date||"").slice(0,10);
-  return (!from||d>=from)&&(!to||d<=to)&&matchesWorkflow(r,"closed")&&(!machine||r.phases.some(p=>String(p.machineId)===machine))&&matchesProductionSearch(r,query);
- }),[records,from,to,machine,query]);
+  return (!from||d>=from)&&(!to||d<=to)&&matchesWorkflow(r,"closed")&&(!invoiceState||(invoiceState==="available"?r.commercial?.invoiceRevenue!=null:r.commercial?.invoiceRevenue==null))&&(!machine||r.phases.some(p=>String(p.machineId)===machine))&&matchesProductionSearch(r,query);
+ }),[records,from,to,machine,query,invoiceState]);
  const displayed=useMemo(()=>filtered.map(displayRecord).sort((a,b)=>{
   const start=r=>Date.parse(r.works?.[0]?.start||r.date||"")||0;
   return start(b)-start(a);
@@ -130,7 +130,7 @@ export default function ProductionCostReports(){
 
  return <main className="pc-page" data-column-controls="off">
  <section className="pc-panel"><div className="pc-toolbar"><p>Nessun aggiornamento automatico durante la consultazione.</p><button disabled={busy||!records.length} onClick={recoverAllOct}>Recupera OC originali · tutte le produzioni</button><button className="pc-primary" disabled={busy} onClick={sync}><RefreshCw size={17}/>{busy?"Caricamento…":"Importa / aggiorna storico MES"}</button></div>{progress&&<p role="status">{progress}</p>}
- <div className="pc-filters"><Field label="Ricerca totale"><input aria-label="Ricerca totale" placeholder="Cliente, OC/RdP, prodotto, lotto, operatore, reparto…" value={query} onChange={e=>setQuery(e.target.value)}/></Field><Field label="Dal (avvio / data ordine)"><input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></Field><Field label="Al"><input type="date" value={to} onChange={e=>setTo(e.target.value)}/></Field><Field label="Stato lavorazione"><input value="Solo concluse" readOnly /></Field><Field label="Impianto"><select value={machine} onChange={e=>setMachine(e.target.value)}><option value="">Tutti</option>{machines.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></Field></div></section>
+ <div className="pc-filters"><Field label="Ricerca totale"><input aria-label="Ricerca totale" placeholder="Cliente, OC/RdP, prodotto, lotto, operatore, reparto…" value={query} onChange={e=>setQuery(e.target.value)}/></Field><Field label="Dal (avvio / data ordine)"><input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></Field><Field label="Al"><input type="date" value={to} onChange={e=>setTo(e.target.value)}/></Field><Field label="Stato fatture"><select value={invoiceState} onChange={e=>setInvoiceState(e.target.value)}><option value="">Tutte</option><option value="available">Disponibili</option><option value="missing">Non disponibili</option></select></Field><Field label="Impianto"><select value={machine} onChange={e=>setMachine(e.target.value)}><option value="">Tutti</option>{machines.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></Field></div></section>
  {error&&<p className="pc-error" role="alert">{error}</p>}
  <CostSummaryCards rows={closedRows.map(r=>({id:r.id,order:r.orderNumber,concludedAt:conclusionDate(r.works),customer:r.customerName,articleCode:r.articleCode,description:r.articleName,references:r.links?.map(l=>l.oct),reasons:r.commercial?.octReasons,oct:r.octRevenue,octPartial:r.costPartial.octRevenue,actual:r.actualWithObjective,planned:r.plannedWithObjective,objective:r.plannedObjective,invoice:r.commercial?.invoiceRevenue,invoiceReferences:r.commercial?.invoices?.map(x=>`${x.document?.sigla} ${x.document?.serie}/${x.document?.numero}`)}))}/>
 

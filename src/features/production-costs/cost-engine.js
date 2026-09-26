@@ -44,7 +44,7 @@ export function validateSettings(settings) {
   intervals.sort((a,b)=>a[0]-b[0]);
   if(intervals.some((x,i)=>i>0&&x[0]<intervals[i-1][1])) throw new Error("I turni non possono sovrapporsi.");
  }
- for(const m of settings.machines||[]) for(const key of ["washMinutes","washCost","gainPerShift"]) if(m[key]!=="" && (number(m[key])===null || number(m[key])<0)) throw new Error("Costi/tempi macchina non validi.");
+ for(const m of settings.machines||[]) for(const key of ["washMinutes","washCost","gainPerShift","gainPerWork"]) if(m[key]!=null && m[key]!=="" && (number(m[key])===null || number(m[key])<0)) throw new Error("Costi/tempi macchina non validi.");
  for(const p of settings.prices||[]) if(!p.articleCode?.trim() || !p.unit?.trim() || number(p.price)===null || p.price<0) throw new Error("Prezzo stimato: articolo, unità e valore obbligatori.");
  if((settings.holidays||[]).some(d=>!/^\d{4}-\d{2}-\d{2}$/.test(d))) throw new Error("Date di chiusura non valide.");
  return settings;
@@ -166,15 +166,15 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
   const plannedWashes=ops.filter(x=>Number(x.impiantoId)===w.machineId&&x.type==="Cleaning").length*share;
   const plannedWash=number(machine?.washCost)===null?null:plannedWashes*Number(machine.washCost);
   const actualWash=number(wash?.count)===null||number(machine?.washCost)===null?null:Number(wash.count)*Number(machine.washCost);
-  const gain=number(machine?.gainPerShift);
+  const gain=number(machine?.gainPerWork??machine?.gainPerShift);
   return {...w,machine,plannedHours,actualHours,downtimeHours:stop,plannedPersonHours,actualPersonHours,personHoursInShifts,plannedLabor,actualLabor,
    mixingOperatorsCount,referenceShiftHours:shiftHours,plannedTurns,actualTurns,plannedOvertimeHours,actualOvertimeHours,
    plannedCostPersonHours:fillingHistoricalMode&&!isStation?null:plannedCostPersonHours,actualCostPersonHours:fillingHistoricalMode&&!isStation?null:actualCostPersonHours,
    plannedLaborPieces,actualLaborPieces,laborIncludedInFilling,laborUnitCost:fillingHistoricalMode&&w.phase==="Confezionamento"?unitLabor:null,
    plannedWashes,actualWashes:number(wash?.count),actualWashMinutes:number(wash?.minutes),plannedWash,actualWash,
    plannedWashMinutes:number(machine?.washMinutes)===null?null:plannedWashes*Number(machine.washMinutes),
-   plannedGain:isStation&&plannedTurns!==null&&gain!==null?plannedTurns*gain:null,
-   actualGain:isStation&&actualTurns!==null&&gain!==null?actualTurns*gain:null,
+   plannedGain:isStation?gain:null,
+   actualGain:isStation?gain:null,
    productivity:actualHours>0?w.goodQuantity/actualHours:null,personProductivity:actualPersonHours>0?w.goodQuantity/actualPersonHours:null};
  });
  const filling=phases.filter(x=>x.phase==="Confezionamento"||x.phase==="Astucciatura"),bulk=phases.filter(x=>x.phase==="Semilavorato");

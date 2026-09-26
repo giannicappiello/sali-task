@@ -12,3 +12,5 @@ test('partial costs below OCT do not create an excess',()=>{const r=project({...
 test("missing OCT costs are excluded from comparison and itemized",()=>{const valid=project(base),missing=project({...base,id:2,actualTotal:999,commercial:{octRevenue:null,octReasons:["Riga assente"]}});const result=summary([valid,missing]);assert.equal(result.excess,20);assert.equal(result.excludedCost,999);assert.equal(result.excluded[0].octReasons[0],"Riga assente");assert.equal(result.comparableCount,1);});
 
 test("STATION objective increases comparison total once",()=>{const r=project({...base,plannedObjective:25});assert.equal(r.comparisonTotal,145);assert.equal(r.excess,45);assert.equal(summary([r]).excess,45);});
+
+test("real gain per shift excludes objective from costs",()=>{const r=project({...base,closed:true,quantity:100,goodQuantity:100,plannedObjective:25,phases:[{id:1,machineId:1,phase:"Semilavorato",actualTurns:2}]});assert.equal(r.realGainPerShift,40);});

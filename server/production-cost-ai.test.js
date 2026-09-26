@@ -6,16 +6,16 @@ import { defaultLaborRules, sameSettings } from "../src/features/production-cost
 import { applyCostProposal,costExamples } from "../src/features/production-costs/cost-proposals.js";
 import { handleCostAI,approvedCostSettings,evaluateCostProposal } from "./ai/production-costs.js";
 import { handleProductionCosts } from "./production-costs.js";
-const base=()=>({...defaultSettings(),laborHourly:20,mixingOperatorsCount:3,shifts:[{name:"1",start:"09:00",end:"16:00",days:[1,2,3,4,5],breakMinutes:0}],machines:[{id:1,code:"ST1",type:"Miscelatore",washCost:0,washMinutes:0,gainPerShift:500},{id:2,code:"F1",type:"LineaVasi",washCost:0,washMinutes:0,gainPerShift:""}]});
+const base=()=>({...defaultSettings(),laborHourly:20,mixingOperatorsCount:3,shifts:[{name:"1",start:"09:00",end:"16:00",days:[1,2,3,4,5],breakMinutes:0}],machines:[{id:1,code:"ST1",type:"Miscelatore",washCost:0,washMinutes:0,gainPerWork:500},{id:2,code:"F1",type:"LineaVasi",washCost:0,washMinutes:0,gainPerWork:""}]});
 const output=patch=>({answer:"Proposta da confermare",questions:[],readyForApproval:true,patch});
 test("legacy settings preserve half shifts and independent exact filling hours",()=>{
  const e=costExamples(base());assert.equal(e.rows[0].actual,720);assert.equal(e.rows[1].planned,120);assert.equal(e.rows[1].actual,120);
  assert.equal(sameSettings(base(),base()),true);
 });
 test("AI changes are validated declarations, never arbitrary code or new machines",()=>{
- for(const patch of [{execute:"delete"},{station:{expression:"eval()"}},{machines:[{id:999,gainPerShift:10}]},{machines:[{id:2,gainPerShift:10}]},{laborHourly:-1},{station:{rounding:.3}},{station:{overtimeMultiplier:8}},{filling:{roundingMinutes:9}}])assert.throws(()=>applyCostProposal(base(),patch));
- const b=base(),candidate=applyCostProposal(b,{station:{overtimeMultiplier:1.25},machines:[{id:1,gainPerShift:800}]});
- assert.equal(candidate.machines[0].gainPerShift,800);assert.equal(b.machines[0].gainPerShift,500);assert.equal(candidate.laborRules.filling.roundingMinutes,0);
+ for(const patch of [{execute:"delete"},{station:{expression:"eval()"}},{machines:[{id:999,gainPerWork:10}]},{machines:[{id:2,gainPerWork:10}]},{laborHourly:-1},{station:{rounding:.3}},{station:{overtimeMultiplier:8}},{filling:{roundingMinutes:9}}])assert.throws(()=>applyCostProposal(base(),patch));
+ const b=base(),candidate=applyCostProposal(b,{station:{overtimeMultiplier:1.25},machines:[{id:1,gainPerWork:800}]});
+ assert.equal(candidate.machines[0].gainPerWork,800);assert.equal(b.machines[0].gainPerWork,500);assert.equal(candidate.laborRules.filling.roundingMinutes,0);
 });
 test("ambiguous and unsupported AI replies cannot be applied",()=>{
  assert.equal(evaluateCostProposal(base(),{...output({}),questions:["Quale tariffa?"],readyForApproval:false}).candidate,null);
@@ -64,9 +64,9 @@ const owner=randomUUID(),other=randomUUID();
 const authorize=async()=>({capabilities:{internal_data:true}});
 test("proposal persists before generation, replay does not spend again, no configuration writes",async()=>{
  const admin=database(),id=randomUUID(),body={operation:"ai-propose",requestId:id,prompt:"Margine ST1 800",settings:base()};let calls=0;
- const generate=async()=>{calls++;assert.equal(admin.data.get("production_cost_ai_proposals")[0].id,id);return {output:output({machines:[{id:1,gainPerShift:800}]}),usage:{inputTokens:100,outputTokens:50}};};
+ const generate=async()=>{calls++;assert.equal(admin.data.get("production_cost_ai_proposals")[0].id,id);return {output:output({machines:[{id:1,gainPerWork:800}]}),usage:{inputTokens:100,outputTokens:50}};};
  const result=await handleCostAI({},body,{admin,profile:{id:owner}},{authorize,generate});
- assert.equal(result.proposal.candidate.machines[0].gainPerShift,800);assert.equal(result.proposal.status,"complete");
+ assert.equal(result.proposal.candidate.machines[0].gainPerWork,800);assert.equal(result.proposal.status,"complete");
  await handleCostAI({},body,{admin,profile:{id:owner}},{authorize,generate});assert.equal(calls,1);
  assert.equal(admin.writes.includes("production_cost_configurations"),false);
  const saved=await approvedCostSettings(admin,owner,{settings:result.proposal.candidate,proposalId:id,confirmProposal:true});assert.equal(saved.aiDefinition.proposalId,id);

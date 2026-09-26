@@ -21,11 +21,11 @@ export function applyCostProposal(base,patch) {
   if(!Array.isArray(patch.machines)||patch.machines.length>200)fail("Elenco impianti non valido.");
   const seen=new Set();
   for(const item of patch.machines){
-   keys(item,["id","gainPerShift","washMinutes","washCost"]);
+   keys(item,["id","gainPerWork","washMinutes","washCost"]);
    const m=candidate.machines.find(m=>Number(m.id)===Number(item.id));
    if(!m||seen.has(m.id))fail("Impianto non presente o ripetuto: caricare gli impianti da MES.");seen.add(m.id);
-   if(item.gainPerShift!=null&&!["TurboEmulsore","Miscelatore"].includes(m.type))fail("Obiettivo di margine consentito solo per STATION.");
-   for(const key of ["gainPerShift","washMinutes","washCost"])if(item[key]!=null)m[key]=item[key];
+   if(item.gainPerWork!=null&&!["TurboEmulsore","Miscelatore"].includes(m.type))fail("Obiettivo di margine consentito solo per STATION.");
+   for(const key of ["gainPerWork","washMinutes","washCost"])if(item[key]!=null)m[key]=item[key];
   }
  }
  validateSettings(candidate);
@@ -39,7 +39,7 @@ export function proposalChanges(base,next) {
  for(const group of ["station","filling"])for(const key of Object.keys(a[group]))add(key==="basis"?"Base "+group.toUpperCase():labels[key],a[group][key],b[group][key]);
  const calendar=shifts=>(shifts||[]).map(s=>`${s.name}: ${s.start}–${s.end}, ${s.days.map(d=>["Dom","Lun","Mar","Mer","Gio","Ven","Sab"][d]).join(", ")}, pausa ${s.breakMinutes} min`).join("; ");
  add("Turni",calendar(base.shifts),calendar(next.shifts));add("Chiusure",(base.holidays||[]).join(", "),(next.holidays||[]).join(", "));
- for(const m of next.machines||[]){const old=base.machines?.find(x=>x.id===m.id)||{};for(const [k,label] of [["gainPerShift","Margine obiettivo / turno"],["washCost","Costo lavaggio"],["washMinutes","Minuti lavaggio"]])add(`${m.code} · ${label}`,old[k],m[k]);}
+ for(const m of next.machines||[]){const old=base.machines?.find(x=>x.id===m.id)||{};for(const [k,label] of [["gainPerWork","Margine obiettivo / lavorazione"],["washCost","Costo lavaggio"],["washMinutes","Minuti lavaggio"]])add(`${m.code} · ${label}`,old[k],m[k]);}
  return changes;
 }
 export function costExamples(settings,history=null,fillingHistory=null) {

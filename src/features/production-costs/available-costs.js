@@ -44,7 +44,10 @@ export function availableCosts(r) {
  values.actualWithObjective=values.actualTotal!=null&&targetObjective!=null?values.actualTotal+targetObjective:null;
  values.octPlannedMargin=difference(values.octRevenue,values.plannedWithObjective);
  values.octActualMargin=difference(values.octRevenue,values.actualWithObjective);
+ const stationTurns=bulk.length&&bulk.every(p=>p.actualTurns!=null)?bulk.reduce((s,p)=>s+p.actualTurns,0):null;
+ values.realGainPerShift=r.closed&&!r.commercial?.octPartial&&new Set(bulk.map(p=>p.machineId)).size===1&&stationTurns>0&&values.octRevenue!=null&&values.actualTotal!=null?(values.octRevenue-values.actualTotal)/stationTurns:null;
  const partial=Object.fromEntries(Object.entries(values).map(([k,v])=>[k,v!=null&&r[k]==null]));
+ partial.realGainPerShift=values.realGainPerShift!=null&&partial.actualTotal;
  partial.totalVariance=values.totalVariance!==null&&(partial.actualTotal||partial.plannedTotal);
  partial.variancePercent=values.variancePercent!==null&&partial.totalVariance;
  partial.octRevenue=values.octRevenue!==null&&Boolean(r.commercial?.octPartial);

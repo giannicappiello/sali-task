@@ -28,3 +28,5 @@
 .pc-modal .pc-economics-table th:nth-child(7){width:9%}
 .pc-modal .pc-economics-table th:nth-child(8){width:21%}
 .pc-modal .pc-comparison-label{white-space:nowrap;font-size:12px}
+
+.pc-config-explanation{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:18px 0}.pc-config-explanation>div{background:#f3f7fc;padding:16px;border-radius:12px}.pc-config-explanation p{font-size:13px;margin:8px 0 0}.pc-station-config th:last-child{background:#eaf2ff}.pc-station-config td:last-child{background:#f8fbff}.pc-station-config input{max-width:200px}@media(max-width:800px){.pc-config-explanation{grid-template-columns:1fr}}

@@ -119,6 +119,12 @@ export async function handleProductionCosts(req,body) {
 
   for(const e of result.items){
    const old=byId.get(e.id);
+   const customerOverride=old?.evidence?.confirmedCustomer;
+   if(customerOverride&&customerOverride.articleCode===e.articleCode&&customerOverride.orderNumber===e.orderNumber){
+    e.confirmedCustomer=customerOverride;
+    e.customerCode=customerOverride.customerCode;
+    e.customerName=customerOverride.customerName;
+   }
    e.historicalProductSl=old?.evidence?.historicalProductSl||[];
    e.productSlRecovery=old?.evidence?.productSlRecovery;
    e.recoveredOctLines=old?.evidence?.recoveredOctLines||[];

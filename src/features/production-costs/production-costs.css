@@ -54,3 +54,13 @@
 
 .pc-config-top{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:16px;align-items:stretch}.pc-config-top>.pc-panel{height:100%;box-sizing:border-box}.pc-tariff-card>.pc-fields{grid-template-columns:1fr}.pc-labor-grid h3{display:flex;align-items:center;gap:8px;min-height:32px;margin-bottom:12px}.pc-labor-grid h3 .pc-info{margin:0}@media(max-width:800px){.pc-config-top{grid-template-columns:1fr}}
 .pc-labor-grid .pc-fields{margin:0;align-items:start}.pc-labor-grid .pc-field>span{min-height:2.4em;line-height:1.2}.pc-labor-grid .pc-field>input,.pc-labor-grid .pc-field>select{height:38px}
+
+.pc-private-overview{grid-template-columns:minmax(260px,1.3fr) minmax(230px,1.15fr) repeat(2,minmax(180px,.85fr));gap:12px;margin:0 0 16px;align-items:stretch}
+.pc-private-overview .pc-card{grid-template-rows:24px 36px 36px;gap:2px;padding:14px;min-width:0}
+.pc-private-overview .pc-summary-line strong{font-size:16px;grid-column:2}
+.pc-private-overview .pc-private-search{padding:14px;margin:0;display:flex;align-items:center}
+.pc-private-search .pc-fields{margin:0;width:100%;gap:10px}
+.pc-private-search .pc-field{font-size:13px;flex-basis:100%}
+.pc-private-search button{padding:7px 12px;font-size:13px;margin-left:auto}
+@media(max-width:1100px){.pc-private-overview{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.pc-private-overview{grid-template-columns:minmax(0,1fr)}.pc-private-overview .pc-card{grid-template-rows:22px 32px;grid-auto-rows:32px}}

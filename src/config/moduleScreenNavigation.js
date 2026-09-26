@@ -10,5 +10,6 @@ export function moduleScreenNavigation(catalog, pathname, preferredModule, canRe
  const initial = links.find(l => l.predefinita && screens.some(s => s.codice === l.schermata_codice && canRead(s.codice,module.codice)));
  if (!initial) return null;
  const items = links.map(l => screens.find(s => s.codice === l.schermata_codice)).filter(s => s && canRead(s.codice,module.codice));
+ if (items.length < 2) return null;
  return { module, items };
 }

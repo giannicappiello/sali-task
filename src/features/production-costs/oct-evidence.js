@@ -25,7 +25,7 @@ export function recoveredOctShare(e,target,allEvidence){
  // the same commercial pool even when MES line IDs differ or are absent.
  let allocated=0;
  const records=new Map([...allEvidence,e].map(r=>[r.id??r,r]));
- for(const sibling of records.values())for(const t of octTargets(sibling)){
+ for(const sibling of records.values())for(const t of (octCode(sibling.state)==="ANNULLATO"?[]:octTargets(sibling))){
   if(t.reference!==target.reference||octCode(t.articleCode)!==octCode(row.articleCode))continue;
   if(t.customerCode&&t.customerCode!==row.customerCode)continue;
   const year=Number(String(t.date||"").slice(0,4));

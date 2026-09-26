@@ -21,7 +21,7 @@ test("recover missing MES zero from exact original customer order with discounts
  assert.equal(result.lines[0].lineValue,900);assert.deepEqual(result.warnings,[]);
  const e={...evidence,recoveredOctLines:result.lines};
  const commercial=resolveOctRevenue(e,[],[e]);assert.equal(commercial.octRevenue,450);
- const summary=displayRecord({...e,phases:[],commercial,actualTotal:300});
+ const summary=displayRecord({...e,phases:[],commercial,actualTotal:300,plannedObjective:0});
  assert.equal(summary.octRevenue,450);assert.equal(summary.octActualMargin,150);
  assert.equal(displayRecord(summary.completeCosts).octRevenue,summary.octRevenue);
 });
@@ -53,6 +53,14 @@ test("unrelated years and customers never consume another order's allocation",as
  const e=await enriched(),other={...evidence,id:25,quantity:999,sourceOrder:{...evidence.sourceOrder,date:"2025-02-02"}};
  assert.equal(resolveOctRevenue(e,[],[e,other]).octRevenue,450);
  assert.equal(resolveOctRevenue(e,[],[e,{...other,sourceOrder:{...other.sourceOrder,date:"2026-02-02",customerCode:"other"}}]).octRevenue,450);
+});
+
+test("cancelled duplicate does not consume original order quantity, active siblings still do",async()=>{
+ const e=await enriched();
+ const duplicate={...evidence,id:5436,quantity:100,state:"Annullato"};
+ assert.equal(resolveOctRevenue(e,[],[e,duplicate]).octRevenue,450);
+ assert.equal(resolveOctRevenue(e,[],[e,{...duplicate,state:"DaAvviare"}]).octRevenue,null);
+ assert.equal(resolveOctRevenue(e,[],[e,{...duplicate,state:"Completato"}]).octRevenue,null);
 });
 test("stale recovery cannot follow production when article changes",async()=>{
  const e={...await enriched(),articleCode:"OTHER"};

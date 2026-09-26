@@ -14,7 +14,7 @@ export function costRows(record) {
   {name:"Personale",p:r.plannedLabor,a:r.actualLabor,info:"Costo calcolato secondo i criteri STATION e FILLING configurati. Criteri e medie storiche sono consultabili nell’icona informazioni del dettaglio."},
   {name:"Lavaggi (esclusa manodopera)",p:r.plannedWash,a:r.actualWash,info:"Numero lavaggi × costo configurato. La manodopera resta nella voce Personale. Il consuntivo richiede il conteggio confermato."},
   {name:"Perdite componenti SL",p:0,a:r.lossCost,info:"Perdite dei componenti documentate e confermate nello SL, aggiunte una sola volta ai costi."},
-  {name:"Totale costi",total:true,p:r.plannedTotal??r.plannedKnownSubtotal,a:r.actualTotal??r.actualKnownSubtotal,
+  {name:"Subtotale costi (prima dell’obiettivo)",total:true,p:r.plannedTotal??r.plannedKnownSubtotal,a:r.actualTotal??r.actualKnownSubtotal,
    pp:partial(r.plannedKnownSubtotal,r.plannedTotal),ap:partial(r.actualKnownSubtotal,r.actualTotal),
    info:"Somma di tutti i costi disponibili. Anche margini e costo al pezzo vengono calcolati con queste somme: Parziale indica che il risultato non include le componenti ancora mancanti."},
   {name:"Margine (consuntivo sulla quantità fatturata)",p:r.plannedMargin,a:r.actualMargin,separate:true,info:"Ricavo meno costi disponibili attribuiti alla stessa quantità. Se i costi sono parziali, il margine è provvisorio e può diminuire quando vengono valorizzate le componenti mancanti."},

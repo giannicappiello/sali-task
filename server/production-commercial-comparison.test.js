@@ -17,20 +17,20 @@ test("missing OCT explains absent link, wrong product, absent price and over-all
  const absent=resolveOctRevenue({},[],[]);assert.equal(absent.octRevenue,null);assert.match(absent.octReasons[0],/Collegamento/);
  const wrong=resolveOctRevenue({...evidence,articleCode:"PF1"},[],[evidence]);assert.equal(wrong.octRevenue,null);assert.match(wrong.octReasons[0],/diverso/);
  const noPrice=resolveOctRevenue({...evidence,sourceOrder:{...source,lineValue:0}},[],[evidence]);assert.equal(noPrice.octRevenue,null);assert.match(noPrice.octReasons[0],/Valore netto/);
- const over=resolveOctRevenue(evidence,[],[evidence,{...evidence,id:2,quantity:60}]);assert.equal(over.octRevenue,null);assert.match(over.octReasons[0],/Quantità/);
+ const over=resolveOctRevenue(evidence,[],[evidence,{...evidence,id:2,quantity:60}]);assert.equal(over.octRevenue,1000*50/110);
 });
 test("Workspace OCT preserves known shares and flags missing linked lines",()=>{
  const c=resolveOctRevenue({links:[link,{...link,lineId:"missing"}]},[row],[]);
  assert.equal(c.octRevenue,500);assert.equal(c.octPartial,true);assert.match(c.octReasons[0],/non disponibile/);
 });
 test("OCT rejects incompatible units or unverified quantity; explicit net zero is retained",()=>{
- for(const bad of [{...link,unit:"PZ"},{...link,quantity:null},{...link,quantity:101}]){
+ for(const bad of [{...link,unit:"PZ"},{...link,quantity:null}]){
   assert.equal(resolveOctRevenue({links:[bad]},[row],[]).octRevenue,null);
  }
  assert.equal(resolveOctRevenue({links:[link]},[{...row,imponibile_riga:0}],[]).octRevenue,0);
 });
 test("OCT and invoices remain separate; comparison uses actual cost displayed",()=>{
- const d=displayRecord({phases:[],plannedTotal:400,actualTotal:300,commercial:{octRevenue:500},actualRevenue:200});
+ const d=displayRecord({phases:[],plannedTotal:400,actualTotal:300,plannedObjective:0,commercial:{octRevenue:500},actualRevenue:200});
  assert.equal(d.totalVariance,100);assert.equal(d.variancePercent,25);assert.equal(d.octRevenue,500);
  assert.equal(d.octActualMargin,200);assert.equal(d.costPartial.octActualMargin,false);
  assert.equal(costRows(d).some(r=>r.name==="Ricavo OCT / fatture"),false);
@@ -42,7 +42,7 @@ test("estimated selling price is never labelled as OCT; missing inputs not inven
  assert.equal(displayRecord({phases:[],commercial:{octRevenue:1000}}).octActualMargin,null);
 });
 test("partial actual cost and partial OCT preserve comparison with flag",()=>{
- const d=displayRecord({phases:[{phase:"Semilavorato",actualLabor:100}],commercial:{octRevenue:500,octPartial:true}});
+ const d=displayRecord({plannedObjective:0,phases:[{phase:"Semilavorato",actualLabor:100}],commercial:{octRevenue:500,octPartial:true}});
  assert.equal(d.actualTotal,100);assert.equal(d.octActualMargin,400);assert.equal(d.costPartial.octActualMargin,true);
 });
 test("savings have explicit plus, overruns negative, percentages use forecast denominator",()=>{
@@ -62,3 +62,9 @@ test("cost per conforming piece excludes scrap and does not apply to bulk or KG"
   assert.equal(displayRecord(r).unitCost,null);assert.equal(displayRecord(r).unitCostApplicable,false);
  }
 });
+
+ test("Workspace overproduction caps the order amount and preserves shared totals",()=>{
+ const a={id:1,links:[{...link,quantity:120}]},b={id:2,links:[{...link,quantity:80}]};
+ assert.equal(resolveOctRevenue(a,[row],[a]).octRevenue,1000);
+ assert.equal(resolveOctRevenue(a,[row],[a,b]).octRevenue+resolveOctRevenue(b,[row],[a,b]).octRevenue,1000);
+ });

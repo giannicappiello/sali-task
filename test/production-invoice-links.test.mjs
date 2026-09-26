@@ -45,3 +45,5 @@ test('same lot linked explicitly to different orders leaves continuation unresol
  const header={...splitHeader,dati_mexal:{...splitHeader.dati_mexal,sigla_ordine:[[1,'OC'],[3,'OC']],serie_ordine:[[1,2],[3,2]],numero_ordine:[[1,92],[3,93]],data_ordine:[[1,'20260101'],[3,'20260101']],id_rif_testata:[[11,1],[15,2],[20,3]],pos_righe_lotto:[[11,1],[15,2],[20,3]],nr_righe_lotto:[[11,1],[15,1],[20,1]],id_lotto:[[1,9805],[2,9805],[3,9805]]}};
  assert.equal(match(e,[e],[header],[...splitLines,{...l,id:'C',posizione:20}],[]).length,1);
 });
+
+test('overproduction does not block or rescale the actual invoice',()=>{const production={...e,quantity:10000,sourceOrder:{quantity:9600}};assert.equal(match(production,[production],[h],[{...l,quantita:11000}],[])[0].amount,300);});

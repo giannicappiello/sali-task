@@ -47,7 +47,7 @@ test("actual OCT overrides stale positive legacy revenue, not just legacy zeros"
 test("shared original line is apportioned once, including siblings not yet recovered",async()=>{
  const e=await enriched(),other={...evidence,id:25,quantity:40,sourceOrder:{...evidence.sourceOrder,mesLineId:900}};
  assert.equal(resolveOctRevenue(e,[],[e,other]).octRevenue,450);
- assert.equal(resolveOctRevenue(e,[],[e,{...other,quantity:51}]).octRevenue,null);
+ assert.equal(resolveOctRevenue(e,[],[e,{...other,quantity:51}]).octRevenue,900*50/101);
 });
 test("unrelated years and customers never consume another order's allocation",async()=>{
  const e=await enriched(),other={...evidence,id:25,quantity:999,sourceOrder:{...evidence.sourceOrder,date:"2025-02-02"}};
@@ -59,8 +59,8 @@ test("cancelled duplicate does not consume original order quantity, active sibli
  const e=await enriched();
  const duplicate={...evidence,id:5436,quantity:100,state:"Annullato"};
  assert.equal(resolveOctRevenue(e,[],[e,duplicate]).octRevenue,450);
- assert.equal(resolveOctRevenue(e,[],[e,{...duplicate,state:"DaAvviare"}]).octRevenue,null);
- assert.equal(resolveOctRevenue(e,[],[e,{...duplicate,state:"Completato"}]).octRevenue,null);
+ assert.equal(resolveOctRevenue(e,[],[e,{...duplicate,state:"DaAvviare"}]).octRevenue,300);
+ assert.equal(resolveOctRevenue(e,[],[e,{...duplicate,state:"Completato"}]).octRevenue,300);
 });
 test("stale recovery cannot follow production when article changes",async()=>{
  const e={...await enriched(),articleCode:"OTHER"};

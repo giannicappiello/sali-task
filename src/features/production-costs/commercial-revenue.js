@@ -3,6 +3,13 @@ import { octTargets,recoveredOctShare,octReference } from "./oct-evidence.js";
 
 const numeric=v=>v!==null&&v!==undefined&&v!==""&&Number.isFinite(Number(v))?Number(v):null;
 const unit=v=>String(v||"").trim().toUpperCase();
+function workspaceShare(evidence,link,row,allEvidence){
+ const siblings=[...new Map([...allEvidence,evidence].map(e=>[e.id??e,e])).values()].filter(e=>unit(e.state)!=="ANNULLATO");
+ const links=siblings.flatMap(e=>(e.links||[]).filter(l=>String(l.lineId)===String(link.lineId)));
+ if(links.some(l=>!(numeric(l.quantity)>0)||unit(l.unit)!==unit(row.unita_misura_oct)))return null;
+ const allocated=links.reduce((sum,l)=>sum+Number(l.quantity),0);
+ return Number(row.imponibile_riga)*Number(link.quantity)/Math.max(Number(row.quantita),allocated,Number(link.quantity));
+}
 
 // Only explicit line relationships are used. Customer/name matches cannot
 // establish an allocation, especially between bulk KG and finished pieces.
@@ -29,7 +36,7 @@ export function resolveOctRevenue(evidence, orderLines, allEvidence) {
    const qty=numeric(link?.quantity),ordered=numeric(row?.quantita),net=numeric(row?.imponibile_riga);
    if(row&&unit(link.unit)&&unit(link.unit)===unit(row.unita_misura_oct)&&
     (!row.codice_articolo||unit(row.codice_articolo)===unit(target.articleCode))&&
-    qty>0&&ordered>0&&qty<=ordered+0.000001&&net!==null)recovered.push({value:net*qty/ordered,workspace:true});
+    qty>0&&ordered>0&&net!==null&&workspaceShare(evidence,link,row,allEvidence)!==null)recovered.push({value:workspaceShare(evidence,link,row,allEvidence),workspace:true});
    else reasons.push(`${target.reference}: riga OCT non recuperata né valorizzabile dai collegamenti Workspace.`);
   }
  }
@@ -53,11 +60,13 @@ export function resolveOctRevenue(evidence, orderLines, allEvidence) {
    reasons.push(`OCT ${reference}: unità della riga ordine e del collegamento assenti o diverse.`);continue;
   }
   const qty=numeric(link.quantity),ordered=numeric(row.quantita),net=numeric(row.imponibile_riga);
-  if(qty===null||qty<=0||ordered===null||ordered<=0||qty>ordered+0.000001){
+  if(qty===null||qty<=0||ordered===null||ordered<=0){
    reasons.push(`OCT ${reference}: quantità attribuita non verificabile rispetto alla riga ordine.`);continue;
   }
   if(net===null){reasons.push(`OCT ${reference}: imponibile della riga ordine non disponibile.`);continue;}
-  amounts.push(net*qty/ordered);
+  const share=workspaceShare(evidence,link,row,allEvidence);
+  if(share!==null)amounts.push(share);
+  else reasons.push(`OC ${reference}: quantit� o unit� delle produzioni collegate non disponibili.`);
  }
  if(amounts.length)return {octRevenue:amounts.reduce((a,b)=>a+b,0),octPartial:reasons.length>0,octSource:"Righe OCT Workspace attribuite alla produzione",octReasons:reasons};
  const legacy=legacyOrderRevenue(evidence,allEvidence);
@@ -67,6 +76,6 @@ export function resolveOctRevenue(evidence, orderLines, allEvidence) {
  else if(s.articleCode!==evidence.articleCode)reasons.push(`Articolo ordine ${s.articleCode||"assente"} diverso dall’articolo prodotto ${evidence.articleCode||"assente"}: ricavo non ripartibile automaticamente.`);
  else if(!unit(s.unit)||unit(s.unit)!==unit(evidence.unit))reasons.push("Unità ordine e produzione assenti o diverse: conversione economica non disponibile.");
  else if(!(s.lineValue>0))reasons.push("Valore netto della riga ordine storica MES non disponibile.");
- else reasons.push("Quantità della riga ordine storica MES non disponibile o superata dalle produzioni collegate.");
+ else reasons.push("Quantità della riga ordine storica MES non disponibile.");
  return {octRevenue:null,octPartial:false,octSource:null,octReasons:[...reasons,...(evidence.octRecovery?.warnings||[])]};
 }

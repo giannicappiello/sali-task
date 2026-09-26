@@ -60,9 +60,9 @@ test("packaging recovery uses consumed commitments only and never replaces an SL
  const confirmed=calculateRecord({...evidence,productSl:[{materials:[{code:"FP1",quantity:5,unitCost:3},{code:"PK1",quantity:10,unitCost:4}]}]},{settings});
  assert.equal(confirmed.actualPackagingCost,40);assert.equal(confirmed.recoveredProducts.length,0);
 });
-test("legacy OCT revenue requires exact line, article, unit and non-overallocated quantities",()=>{
+test("legacy OCT revenue requires exact line, article, unit and capped ordered value",()=>{
  const e={quantity:50,articleCode:"FP1",unit:"KG",sourceOrder:{mesLineId:10,articleCode:"FP1",unit:"KG",quantity:100,lineValue:600}};
  assert.equal(legacyOrderRevenue(e,[e]),300);
  assert.equal(legacyOrderRevenue({...e,unit:"PZ"},[e]),null);
- assert.equal(legacyOrderRevenue(e,[e,{...e,quantity:60}]),null);
+ assert.equal(legacyOrderRevenue(e,[e,{...e,quantity:60}]),600*50/110);
 });

@@ -34,6 +34,5 @@ export function recoveredOctShare(e,target,allEvidence){
    return {value:null,reason:"Produzioni collegate con quantità o unità non confrontabili."};
   allocated+=Number(t.quantity);
  }
- if(allocated>ordered+0.000001)return {value:null,reason:"Quantità complessiva delle produzioni superiore alla riga OCT: attribuzione da verificare."};
- return {value:net*qty/ordered,row};
+ return {value:net*qty/Math.max(ordered,allocated,qty),row};
 }

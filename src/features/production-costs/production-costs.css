@@ -30,3 +30,22 @@
 .pc-modal .pc-comparison-label{white-space:nowrap;font-size:12px}
 
 .pc-config-explanation{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:18px 0}.pc-config-explanation>div{background:#f3f7fc;padding:16px;border-radius:12px}.pc-config-explanation p{font-size:13px;margin:8px 0 0}.pc-station-config th:last-child{background:#eaf2ff}.pc-station-config td:last-child{background:#f8fbff}.pc-station-config input{max-width:200px}@media(max-width:800px){.pc-config-explanation{grid-template-columns:1fr}}
+
+/* Compact configuration cards; report layouts are unaffected. */
+.pc-configuration .pc-panel{padding:18px;margin:0;min-width:0;border-radius:16px}
+.pc-configuration h2{font-size:17px;margin:0 0 12px}.pc-configuration h3{font-size:14px;margin:0 0 10px}
+.pc-configuration .pc-field{font-size:12px;gap:5px}.pc-configuration input:not([type=checkbox]),.pc-configuration select,.pc-configuration textarea{font-size:13px;padding:9px 10px;min-width:0}
+.pc-configuration .pc-fields{gap:12px}.pc-configuration button{font-size:12px;padding:8px 11px}
+.pc-configuration form>fieldset{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:0;padding:0;border:0;min-width:0}
+.pc-configuration form>fieldset>.pc-labor-criteria,.pc-configuration form>fieldset>.pc-panel:has(.pc-shift),.pc-configuration form>fieldset>.pc-panel:has(.pc-station-config){grid-column:1/-1}
+.pc-configuration .pc-labor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.pc-labor-grid>div{min-width:0;padding:12px;background:#f6f9fd;border-radius:10px}
+.pc-configuration .pc-save{align-self:center;margin:0}.pc-configuration .pc-note{font-size:12px;padding:10px;margin:0}
+.pc-configuration .pc-config-versions{margin-top:16px}.pc-config-versions summary{cursor:pointer;font-size:15px;font-weight:700}.pc-configuration .pc-version{font-size:12px;padding:10px 0}
+.pc-current-history{margin-bottom:16px}.pc-current-history>.pc-toolbar{margin:0 0 10px}.pc-current-history h2{margin:0}
+.pc-history-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.pc-history-primary{display:flex;justify-content:space-between;align-items:center;background:#edf5ff;border-radius:10px;padding:10px 12px;font-size:13px}.pc-history-primary strong{font-size:24px;color:#165aa9;font-variant-numeric:tabular-nums}
+.pc-history-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}.pc-history-metrics>div{display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid #e6edf5;padding-bottom:7px;font-size:12px}.pc-history-metrics strong{white-space:nowrap;font-variant-numeric:tabular-nums}.pc-history-card footer{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:11px;color:#627590;margin-top:12px}.pc-history-card .pc-error{font-size:12px;padding:8px}
+@media(max-width:800px){.pc-history-grid,.pc-configuration form>fieldset,.pc-configuration .pc-labor-grid{grid-template-columns:1fr}.pc-history-metrics{grid-template-columns:1fr 1fr}.pc-configuration .pc-shift{grid-template-columns:repeat(2,minmax(0,1fr))}.pc-configuration .pc-shift .pc-days{grid-column:1/-1}}
+@media(max-width:420px){.pc-history-metrics{grid-template-columns:1fr}}
+
+.pc-configuration form>fieldset>.pc-panel:first-child{grid-column:1/-1}
+.pc-info-dialog .pc-config-explanation{grid-template-columns:1fr;gap:8px;margin:0}.pc-info-dialog .pc-config-explanation>div{padding:10px}

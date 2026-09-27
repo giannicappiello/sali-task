@@ -21,8 +21,8 @@ export function resolveOctRevenue(evidence, orderLines, allEvidence) {
    unit(override.unit)===unit(evidence.unit)&&numeric(override.quantity)===numeric(evidence.quantity)&&
    numeric(override.unitPrice)!==null&&override.unitPrice>=0&&override.quantity>0){
   return {octRevenue:Math.round(override.unitPrice*override.quantity*100)/100,octPartial:false,
-   octSource:"Valore OC ricostruito su autorizzazione: prezzo netto unitario della fattura × quantità della lavorazione",
-   octReasons:[`Prezzo da ${override.invoiceReference}; quantità di riferimento ${override.quantity} ${override.unit}. Non è il fatturato effettivo.`]};
+   octSource:override.priceSource==="user_confirmed"?"Valore OC da prezzo e quantita confermati dall utente":"Valore OC ricostruito su autorizzazione: prezzo netto unitario della fattura × quantità della lavorazione",
+   octReasons:[`${override.priceSource==="user_confirmed"?"Prezzo confermato dall utente":`Prezzo da ${override.invoiceReference}`}; quantità di riferimento ${override.quantity} ${override.unit}. Non è il fatturato effettivo.`]};
  }
  const reasons=[],amounts=[];
  const targets=octTargets(evidence),recovered=[];
@@ -66,7 +66,7 @@ export function resolveOctRevenue(evidence, orderLines, allEvidence) {
   if(net===null){reasons.push(`OCT ${reference}: imponibile della riga ordine non disponibile.`);continue;}
   const share=workspaceShare(evidence,link,row,allEvidence);
   if(share!==null)amounts.push(share);
-  else reasons.push(`OC ${reference}: quantit� o unit� delle produzioni collegate non disponibili.`);
+  else reasons.push(`OC ${reference}: quantità o unità delle produzioni collegate non disponibili.`);
  }
  if(amounts.length)return {octRevenue:amounts.reduce((a,b)=>a+b,0),octPartial:reasons.length>0,octSource:"Righe OCT Workspace attribuite alla produzione",octReasons:reasons};
  const legacy=legacyOrderRevenue(evidence,allEvidence);

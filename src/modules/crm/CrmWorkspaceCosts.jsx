@@ -29,7 +29,7 @@ export default function CrmWorkspaceCosts(){
    if(request===sequence.current){setData(Object.fromEntries(['costs','projects','tasks','customers','accounts'].map((key,i)=>[key,results[i].data])));setError('');}
   }catch(e){if(request===sequence.current)setError(e.message);}finally{if(request===sequence.current)setLoading(false);}
  },[]);
- useEffect(()=>{void load();return()=>{sequence.current++;};},[load]);
+ useEffect(()=>{const requests=sequence;const timer=setTimeout(()=>void load(),0);return()=>{clearTimeout(timer);requests.current++;};},[load]);
  const customers=useMemo(()=>costCustomerIndex(data.customers,data.accounts),[data.customers,data.accounts]);
  const allRows=useMemo(()=>costRows(data.costs,data.projects,data.tasks).map(r=>({...r,customer:resolveCostCustomer(r.task||r.project,r.project,customers)})),[data,customers]);
  const rows=allRows.filter(r=>r.cost_date>=period.from&&r.cost_date<=period.to&&(!kind||r.kind===kind)&&(!project||r.project?.id===project)&&`${r.customer.name} ${r.customer.key} ${r.description} ${r.operator_name||''} ${r.target} ${r.project?.titolo||''}`.toLocaleLowerCase('it-IT').includes(search.trim().toLocaleLowerCase('it-IT')));

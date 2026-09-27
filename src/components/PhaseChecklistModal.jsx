@@ -3,6 +3,7 @@ import { CheckCircle2, Clock3, FileText, MessageSquare, Paperclip, Save, Search,
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../contexts/AuthContext";
 import { matchesCrmCompetency } from "../lib/crmCompetencies";
+import useCustomerWorkspaceProducts from "../lib/useCustomerWorkspaceProducts";
 import WorkspaceCustomerPicker from "./WorkspaceCustomerPicker";
 
 const emptyForm = { titolo: "", descrizione: "", note: "", progetto_id: "", deadline: "", reparto_ids: [], prodotti: [], stato: "da_evadere", bloccante_id: "", crm_customer_key: "" };
@@ -121,11 +122,12 @@ export default function PhaseChecklistModal({
 
   const selectedBlocker = useMemo(() => blockingOptions.find((item) => item.id === form.bloccante_id) || null, [blockingOptions, form.bloccante_id]);
 
+  const customerProducts = useCustomerWorkspaceProducts(products, form.crm_customer_key, effectiveCrmType, open);
   const filteredPhaseProducts = useMemo(() => {
     const text = phaseProductQuery.trim().toLowerCase();
-    if (!text) return products;
-    return products.filter((product) => `${product.nome || ""} ${product.codice || ""} ${product.brand || ""} ${product.categoria || ""}`.toLowerCase().includes(text));
-  }, [products, phaseProductQuery]);
+    if (!text) return customerProducts.products;
+    return customerProducts.products.filter((product) => `${product.nome || ""} ${product.codice || ""} ${product.brand || ""} ${product.categoria || ""}`.toLowerCase().includes(text));
+  }, [customerProducts.products, phaseProductQuery]);
 
   const departmentsByPhase = useMemo(() => {
     const map = new Map();
@@ -247,6 +249,8 @@ export default function PhaseChecklistModal({
     e.preventDefault();
     if (!canManage) return alert("Non hai i permessi per modificare le fasi.");
     if (!form.titolo.trim()) return alert("Seleziona il titolo della fase dalla checklist.");
+    const existingProductIds = selectedPhase?.id && form.crm_customer_key === (selectedPhase.crm_customer_key || projects.find(p => p.id === selectedPhase.progetto_id)?.crm_customer_key) ? getPhaseProductIds(selectedPhase.id) : [];
+    if (form.prodotti.some(id => !existingProductIds.includes(id) && !customerProducts.products.some(p => p.id === id))) return alert("Verifica i prodotti associati al cliente prima di salvare.");
     if (!selectedPhase?.id && !form.crm_customer_key) return alert("Seleziona il cliente da collegare alla task/fase.");
     setSaving(true);
     try {
@@ -500,6 +504,11 @@ export default function PhaseChecklistModal({
           </div>
         )}
 
+        <label>Progetto<select value={form.progetto_id} onChange={(e) => { const project = projects.find((item) => item.id === e.target.value); setForm((current) => ({ ...current, progetto_id: e.target.value, crm_customer_key: project?.crm_customer_key || current.crm_customer_key, prodotti: project?.crm_customer_key && project.crm_customer_key !== current.crm_customer_key ? [] : current.prodotti })); }}><option value="">Senza progetto</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.titolo}</option>)}</select></label>
+        <label>Cliente
+          <WorkspaceCustomerPicker required={!selectedPhase} crmType={crmType || "conto_terzi"} value={form.crm_customer_key} onChange={(crm_customer_key) => setForm((current) => ({ ...current, crm_customer_key, prodotti: [], progetto_id: "" }))} />
+        </label>
+
         <div className="phase-products-toolbar" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
           <strong>Prodotti associati alla fase: {safeArray(form.prodotti).length}</strong>
           <button type="button" className="filter-chip" onClick={() => setShowPhaseProducts((value) => !value)}>{showPhaseProducts ? "Chiudi prodotti" : safeArray(form.prodotti).length ? "Aggiungi/Modifica/Rimuovi prodotti" : "Aggiungi prodotti"}</button>
@@ -513,17 +522,13 @@ export default function PhaseChecklistModal({
               <input placeholder="Ricerca rapida prodotto..." value={phaseProductQuery} onChange={(e) => setPhaseProductQuery(e.target.value)} />
             </div>
             {filteredPhaseProducts.length === 0 ? (
-              <p className="empty-text">Nessun prodotto trovato.</p>
+              <p className="empty-text">{!form.crm_customer_key ? "Seleziona prima il cliente." : customerProducts.loading ? "Caricamento prodotti cliente…" : customerProducts.error || "Nessun prodotto associato al cliente."}</p>
             ) : (
               filteredPhaseProducts.map((p) => <label key={p.id}><input type="checkbox" checked={safeArray(form.prodotti).includes(p.id)} onChange={() => togglePhaseProduct(p.id)} />{p.nome}{p.codice ? ` · ${p.codice}` : ""}</label>)
             )}
           </div>
         )}
 
-        <label>Progetto<select value={form.progetto_id} onChange={(e) => { const project = projects.find((item) => item.id === e.target.value); setForm((current) => ({ ...current, progetto_id: e.target.value, crm_customer_key: project?.crm_customer_key || current.crm_customer_key })); }}><option value="">Senza progetto</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.titolo}</option>)}</select></label>
-        <label>Cliente
-          <WorkspaceCustomerPicker required={!selectedPhase} crmType={crmType || "conto_terzi"} value={form.crm_customer_key} onChange={(crm_customer_key) => setForm((current) => ({ ...current, crm_customer_key }))} />
-        </label>
         <label>Deadline<input type="date" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} /></label>
 
         <div className="phase-detail-extra">

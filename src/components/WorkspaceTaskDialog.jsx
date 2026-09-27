@@ -16,7 +16,7 @@ export default function WorkspaceTaskDialog({ open, phase = null, crmType, initi
       const results = await Promise.all([
         projectsRequest.order("created_at", { ascending: false }).limit(2000),
         supabase.from("reparti").select("id,nome,attivo").eq("attivo", true).order("nome"),
-        crmType === "b2b" || crmType === "brand_direct" ? loadDirectWorkspaceProducts(supabase) : supabase.from("prodotti").select("id,nome,codice,brand,categoria").order("nome").limit(5000),
+        crmType === "b2b" || crmType === "brand_direct" ? loadDirectWorkspaceProducts(supabase) : supabase.from("prodotti").select("id,nome,codice,codice_mexal,brand,categoria").order("nome").limit(5000),
         supabase.from("v4_fase_reparti").select("id,fase_id,reparto_id,completato,completato_at,completato_da,reparti(id,nome)"),
         supabase.from("v4_fase_prodotti").select("id,fase_id,prodotto_id,prodotto_nome"),
         supabase.from("checklist_template").select("id,titolo,reparto_id,ordine,attivo,competenze_crm,reparti(id,nome)").eq("attivo", true).order("ordine"),

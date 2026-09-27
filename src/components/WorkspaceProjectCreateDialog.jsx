@@ -5,6 +5,7 @@ import { supabase } from "../lib/supabaseClient";
 import { loadDirectProductCatalog } from "../modules/orders/services/directProductCatalog";
 import { loadDirectWorkspaceProducts } from "../lib/workspaceCrmCatalog";
 import { matchesCrmCompetency, projectRulesForCrm, resolveRuleBlocker } from "../lib/crmCompetencies";
+import useCustomerWorkspaceProducts from "../lib/useCustomerWorkspaceProducts";
 import WorkspaceCustomerPicker from "./WorkspaceCustomerPicker";
 
 const emptyForm = { titolo: "", descrizione: "", deadline: "", prodotti: [], reparti: [], tipo_progetto_id: "", crm_customer_key: "" };
@@ -52,7 +53,7 @@ export default function WorkspaceProjectCreateDialog({ open, crmType, initialCus
             error: null,
           }))
           .catch((error) => ({ data: [], error }))
-        : supabase.from("prodotti").select("id,nome,codice,brand,categoria").order("nome").limit(5000);
+        : supabase.from("prodotti").select("id,nome,codice,codice_mexal,brand,categoria").order("nome").limit(5000);
       const results = await Promise.all([
         productsRequest,
         supabase.from("reparti").select("id,nome,attivo").eq("attivo", true).order("nome"),
@@ -69,10 +70,11 @@ export default function WorkspaceProjectCreateDialog({ open, crmType, initialCus
     return () => { active = false; window.clearTimeout(timer); };
   }, [crmType, initialCustomerKey, open]);
 
+  const customerProducts = useCustomerWorkspaceProducts(data.products, form.crm_customer_key, crmType, open);
   const filteredProducts = useMemo(() => {
     const text = query.trim().toLocaleLowerCase("it-IT");
-    return text ? data.products.filter((product) => `${product.nome || ""} ${product.codice || ""} ${product.brand || ""}`.toLocaleLowerCase("it-IT").includes(text)) : data.products;
-  }, [data.products, query]);
+    return text ? customerProducts.products.filter((product) => `${product.nome || ""} ${product.codice || ""} ${product.brand || ""}`.toLocaleLowerCase("it-IT").includes(text)) : customerProducts.products;
+  }, [customerProducts.products, query]);
 
   const toggle = (field, value) => setForm((current) => ({ ...current, [field]: current[field].includes(value) ? current[field].filter((item) => item !== value) : [...current[field], value] }));
   const templateDepartments = (templateId) => {
@@ -86,6 +88,7 @@ export default function WorkspaceProjectCreateDialog({ open, crmType, initialCus
     if (!canManage) return window.alert("Non hai i permessi per creare progetti.");
     if (!form.titolo.trim() || !form.crm_customer_key || !form.tipo_progetto_id || !form.deadline) return window.alert("Compila titolo, cliente, tipo progetto e deadline.");
     if (!data.projectTypes.some((item) => item.id === form.tipo_progetto_id && matchesCrmCompetency(item, crmType))) return window.alert("Tipo progetto non disponibile in questa sezione CRM.");
+    if (customerProducts.loading || customerProducts.error || form.prodotti.some(id => !customerProducts.products.some(p => p.id === id))) return window.alert("Verifica i prodotti associati al cliente prima di salvare.");
     setSaving(true);
     try {
       const rules = projectRulesForCrm(data.projectTypePhases, data.templates, form.tipo_progetto_id, crmType);
@@ -139,10 +142,10 @@ export default function WorkspaceProjectCreateDialog({ open, crmType, initialCus
     <div className="modal-header"><h2>Nuovo progetto</h2><button type="button" onClick={onClose}><X size={20} /></button></div>
     <label>Titolo<input required value={form.titolo} onChange={(event) => setForm({ ...form, titolo: event.target.value })} /></label>
     <label>Descrizione<textarea rows="4" value={form.descrizione} onChange={(event) => setForm({ ...form, descrizione: event.target.value })} /></label>
-    <label>Cliente<WorkspaceCustomerPicker required crmType={crmType} value={form.crm_customer_key} onChange={(crm_customer_key) => setForm((current) => ({ ...current, crm_customer_key }))} /></label>
+    <label>Cliente<WorkspaceCustomerPicker required crmType={crmType} value={form.crm_customer_key} onChange={(crm_customer_key) => setForm((current) => ({ ...current, crm_customer_key, prodotti: [] }))} /></label>
     <label>Tipo progetto<select required value={form.tipo_progetto_id} onChange={(event) => setForm({ ...form, tipo_progetto_id: event.target.value })}><option value="">Seleziona tipo progetto</option>{data.projectTypes.filter((item) => matchesCrmCompetency(item, crmType)).map((type) => <option key={type.id} value={type.id}>{type.nome}</option>)}</select></label>
     <label>Deadline<input required type="date" value={form.deadline} onChange={(event) => setForm({ ...form, deadline: event.target.value })} /></label>
-    <div className="checkbox-group scrollable-check-group"><strong>Prodotti associati</strong><div className="task-search"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ricerca rapida prodotto" /></div>{filteredProducts.map((product) => <label key={product.id}><input type="checkbox" checked={form.prodotti.includes(product.id)} onChange={() => toggle("prodotti", product.id)} />{product.nome}{product.codice ? ` · ${product.codice}` : ""}</label>)}</div>
+    <div className="checkbox-group scrollable-check-group"><strong>Prodotti associati</strong><div className="task-search"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ricerca rapida prodotto" /></div>{!form.crm_customer_key ? <p>Seleziona prima il cliente.</p> : customerProducts.loading ? <p>Caricamento prodotti cliente…</p> : customerProducts.error ? <p role="alert">{customerProducts.error}</p> : !filteredProducts.length ? <p>Nessun prodotto associato al cliente.</p> : null}{filteredProducts.map((product) => <label key={product.id}><input type="checkbox" checked={form.prodotti.includes(product.id)} onChange={() => toggle("prodotti", product.id)} />{product.nome}{product.codice ? ` · ${product.codice}` : ""}</label>)}</div>
     <div className="checkbox-group"><strong>Reparti associati</strong>{data.departments.map((department) => <label key={department.id}><input type="checkbox" checked={form.reparti.includes(department.id)} onChange={() => toggle("reparti", department.id)} />{department.nome}</label>)}</div>
     <button className="primary-action" disabled={saving}>{saving ? <Save size={18} /> : <Plus size={18} />}{saving ? "Salvataggio..." : "Crea progetto"}</button>
   </form></div>;

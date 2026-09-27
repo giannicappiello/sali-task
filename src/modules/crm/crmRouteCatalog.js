@@ -1,4 +1,5 @@
 export const CRM_ROUTE_CATALOG = Object.freeze([
+  { path: "conto-terzi/rendicontazione", catalogPath: "/crm/conto-terzi/rendicontazione", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.rendicontazione", view: "costs", type: "conto_terzi" },
   { index: true, path: "", catalogPath: "/crm", moduleCode: "crm", screenCode: "crm.dashboard", view: "overview" },
   { path: "direct", catalogPath: "/crm/direct", moduleCode: "crm_direct", screenCode: "crm.direct.dashboard", view: "direct-overview" },
   { path: "brand-direct", catalogPath: "/crm/brand-direct", moduleCode: "crm_brand_direct", screenCode: "crm.brand_direct.dashboard", view: "brand-direct-dashboard", type: "brand_direct" },
@@ -7,11 +8,8 @@ export const CRM_ROUTE_CATALOG = Object.freeze([
   { path: "conto-terzi", catalogPath: "/crm/conto-terzi", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.dashboard", view: "dashboard", type: "conto_terzi" },
   { path: "conto-terzi/clienti", catalogPath: "/crm/conto-terzi/clienti", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.clienti", view: "accounts", type: "conto_terzi" },
   { path: "conto-terzi/clienti/:id", catalogPath: "/crm/conto-terzi/clienti/:id", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.cliente", view: "account", type: "conto_terzi" },
-  { path: "conto-terzi/pipeline", catalogPath: "/crm/conto-terzi/pipeline", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.pipeline", view: "pipeline", type: "conto_terzi" },
   { path: "conto-terzi/opportunita", catalogPath: "/crm/conto-terzi/opportunita", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.opportunita", view: "projects", type: "conto_terzi" },
-  { path: "conto-terzi/pipeline/:opportunityId", catalogPath: "/crm/conto-terzi/pipeline/:opportunityId", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.pipeline", view: "opportunity", type: "conto_terzi" },
   { path: "conto-terzi/attivita", catalogPath: "/crm/conto-terzi/attivita", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.attivita", view: "activities", type: "conto_terzi" },
-  { path: "conto-terzi/sviluppi", catalogPath: "/crm/conto-terzi/sviluppi", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.sviluppi", view: "developments", type: "conto_terzi" },
   { path: "conto-terzi/progetti", catalogPath: "/crm/conto-terzi/progetti", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.progetti", view: "projects", type: "conto_terzi" },
   { path: "conto-terzi/brief", catalogPath: "/crm/conto-terzi/brief", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.brief", view: "briefs" },
   { path: "b2b", catalogPath: "/crm/b2b", moduleCode: "crm_b2b", screenCode: "crm.b2b.dashboard", view: "dashboard", type: "b2b" },
@@ -42,6 +40,9 @@ export const CRM_ROUTE_CATALOG = Object.freeze([
 ]);
 
 export const CRM_ROUTE_ALIASES = Object.freeze([
+  { path: "conto-terzi/sviluppi", to: "/crm/conto-terzi/rendicontazione" },
+  { path: "conto-terzi/pipeline", to: "/crm/conto-terzi/progetti" },
+  { path: "conto-terzi/pipeline/:opportunityId", to: "/crm/conto-terzi/progetti" },
   { path: "online/creator", to: "/crm/online/creators" },
   { path: "online/customer-journey", to: "/crm/online/journey" },
 ]);

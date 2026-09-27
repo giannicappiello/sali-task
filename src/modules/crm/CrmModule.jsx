@@ -10,6 +10,7 @@ import { useDatasetTableControls, usePaginatedDataset } from "../../components/u
 import { getModuleIcon } from "../../config/moduleIcons";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
+import CrmWorkspaceCosts from "./CrmWorkspaceCosts";
 import CrmAIBrief from "./CrmAIBrief";
 import CrmActivitiesPage from "./CrmActivitiesPage";
 import CrmAnalyticsPage from "./CrmAnalyticsPage";
@@ -32,7 +33,7 @@ import { crmTypeConfig, formatDate, formatMoney } from "./crmConfig";
 import { loadAllQueryRows, loadAllRpcRows } from "./crmDataset";
 import { CRM_ROUTE_ALIASES, CRM_ROUTE_CATALOG } from "./crmRouteCatalog";
 import { crmNavigation } from "./crmNavigation";
-import { CrmB2BFollowUpPage, CrmB2BReordersPage, CrmBeautyDaysPage, CrmBrandDirectDashboard, CrmDevelopmentsPage, CrmProjectsPage } from "./CrmWorkflowPages";
+import { CrmB2BFollowUpPage, CrmB2BReordersPage, CrmBeautyDaysPage, CrmBrandDirectDashboard, CrmProjectsPage } from "./CrmWorkflowPages";
 import "./crm.css";
 import "./workspace-alignment.css";
 
@@ -455,7 +456,7 @@ function AccountDetail({ type }) {
       <Kpi label="Opportunità aperte" value={Number(commercialSnapshot.opportunities?.open_count || 0).toLocaleString("it-IT")} note={formatMoney(commercialSnapshot.opportunities?.pipeline_value)} to={period.withPeriod(`${config.basePath}/pipeline`, { status: "open" })} />
       <Kpi label="Valore ponderato" value={formatMoney(commercialSnapshot.opportunities?.weighted_value)} note="Pipeline del cliente" to={period.withPeriod(`${config.basePath}/pipeline`, { status: "open" })} />
       <Kpi label="Follow-up scaduti" value={Number(commercialSnapshot.activities?.overdue_count || 0).toLocaleString("it-IT")} note={commercialSnapshot.activities?.next_at ? `Prossimo ${formatDate(commercialSnapshot.activities.next_at)}` : "Prossimo passo mancante"} to={period.withPeriod(`${config.basePath}/attivita`, { activityStatus: "open", activitySearch: account.nome })} />
-      {type === "conto_terzi" ? <><Kpi label="Progetti attivi" value={related.projectCount} note="Progetti Workspace collegati" to={period.withPeriod(`${config.basePath}/progetti`)} /><Kpi label="Campioni" value={related.activities.filter((item) => ["campionatura", "invio_campioni"].includes(item.tipo)).length} note="Attività registrate" to={period.withPeriod(`${config.basePath}/sviluppi`)} /><Kpi label="Preventivi" value={related.activities.filter((item) => item.tipo === "preventivo").length} note="Attività registrate" to={period.withPeriod(`${config.basePath}/sviluppi`, { developmentType: "preventivo" })} /></> : null}
+      {type === "conto_terzi" ? <><Kpi label="Progetti attivi" value={related.projectCount} note="Progetti Workspace collegati" to={period.withPeriod(`${config.basePath}/progetti`)} /><Kpi label="Rendicontazione" value="Apri" note="Costi task e progetti Workspace" to={period.withPeriod(`${config.basePath}/rendicontazione`)} /></> : null}
       {type === "b2b" ? <><Kpi label="Frequenza media ordini" value={commercialSnapshot.orders?.average_days ? `${commercialSnapshot.orders.average_days} gg` : "Non disponibile"} note={`${commercialSnapshot.orders?.lifetime_count || 0} ordini storici`} to={period.withPeriod(`${config.basePath}/riordini`, { customerSearch: account.nome })} /><Kpi label="Prossimo riordino atteso" value={formatDate(commercialSnapshot.b2b?.expected_reorder_date)} note={(commercialSnapshot.b2b?.classification || "prospect").replaceAll("_", " ")} to={period.withPeriod(`${config.basePath}/riordini`, { customerSearch: account.nome })} /></> : null}
     </div> : null}
     <div className="crm-tabs">
@@ -711,7 +712,7 @@ function renderCrmView(route) {
     case "opportunity": return <CrmOpportunityDetail type={route.type} />;
     case "activities": return <CrmActivitiesPage type={route.type} />;
     case "analytics": return <CrmAnalyticsPage type={route.type} />;
-    case "developments": return <CrmDevelopmentsPage />;
+    case "costs": return <CrmWorkspaceCosts />;
     case "projects": return <CrmProjectsPage type={route.type} />;
     case "follow-up": return <CrmB2BFollowUpPage />;
     case "reorders": return <CrmB2BReordersPage />;

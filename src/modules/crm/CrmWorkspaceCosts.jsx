@@ -1,0 +1,44 @@
+import {useCallback,useEffect,useState} from 'react';
+import {Link} from 'react-router-dom';
+import {supabase} from '../../lib/supabaseClient';
+import {useAuth} from '../../contexts/AuthContext';
+import InfoTooltip from '../../components/InfoTooltip';
+import {CrmPageHeader,CrmSectionNav} from './CrmWorkspaceUI';
+import CrmPeriodFilter,{useCrmPeriod} from './CrmPeriodFilter';
+import {crmNavigation} from './crmNavigation';
+import {formatMoney,formatDate} from './crmConfig';
+import {loadAllQueryRows} from './crmDataset';
+import {costRows,costSummary,projectCostRows} from './workspaceCostModel';
+import './workspace-costs.css';
+const empty=()=>({kind:'task',target:'',description:'',amount:'',cost_date:new Date().toLocaleDateString('sv-SE')});
+export default function CrmWorkspaceCosts(){
+ const period=useCrmPeriod(),{canUseModule}=useAuth(),canWrite=canUseModule('crm_conto_terzi','scrittura');
+ const [data,setData]=useState({costs:[],projects:[],tasks:[]}),[error,setError]=useState(''),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false);
+ const [form,setForm]=useState(null),[search,setSearch]=useState(''),[kind,setKind]=useState(''),[project,setProject]=useState(''),[deleting,setDeleting]=useState(null);
+ const load=useCallback(async()=>{setLoading(true);try{
+  const queries=[['crm_workspace_costs','*'],['v4_progetti','id,titolo,stato,crm_customer_key'],['v4_fasi_progetto','id,titolo,stato,progetto_id,crm_customer_key']];
+  const results=await Promise.all(queries.map(([table,columns],i)=>loadAllQueryRows((a,b)=>{let q=supabase.from(table).select(columns).order('id').range(a,b);if(i)q=q.eq('crm_tipo','conto_terzi');return q;})));
+  const failure=results.find(r=>r.error);if(failure)throw failure.error;
+  setData({costs:results[0].data,projects:results[1].data,tasks:results[2].data});setError('');
+ }catch(e){setError(e.message);}finally{setLoading(false);}},[]);
+ useEffect(()=>{void load();},[load]);
+ const rows=costRows(data.costs,data.projects,data.tasks).filter(r=>r.cost_date>=period.from&&r.cost_date<=period.to&&(!kind||r.kind===kind)&&(!project||r.project?.id===project)&&`${r.description} ${r.target} ${r.project?.titolo||''}`.toLocaleLowerCase('it-IT').includes(search.toLocaleLowerCase('it-IT')));
+ const totals=costSummary(rows),projects=projectCostRows(rows);
+ async function save(event){event.preventDefault();if(busy||!canWrite)return;setBusy(true);setError('');try{
+  const amount=Number(form.amount);if(!Number.isFinite(amount)||amount<0||!form.target||!form.description.trim())throw Error('Completa destinazione, descrizione e importo valido.');
+  const payload={project_id:form.kind==='project'?form.target:null,phase_id:form.kind==='task'?form.target:null,cost_date:form.cost_date,description:form.description.trim(),amount};
+  const result=form.id?await supabase.from('crm_workspace_costs').update(payload).eq('id',form.id).select('id').single():await supabase.from('crm_workspace_costs').insert(payload).select('id').single();
+  if(result.error)throw result.error;setForm(null);await load();
+ }catch(e){setError(e.message);}finally{setBusy(false);}}
+ async function remove(){if(busy||!canWrite)return;setBusy(true);try{const r=await supabase.from('crm_workspace_costs').delete().eq('id',deleting).select('id').single();if(r.error)throw r.error;setDeleting(null);await load();}catch(e){setError(e.message);}finally{setBusy(false);}}
+ const change=(name,value)=>setForm(f=>({...f,[name]:value}));
+ return <div className="crm-page crm-cost-page">
+  <CrmPageHeader eyebrow="CRM PRIVATE" title="Rendicontazione" description="Consuntivi di task, fasi e progetti Workspace." actions={<button className="primary-action crm-primary" disabled={!canWrite||busy} onClick={()=>setForm(empty())}>Aggiungi costo</button>}><CrmSectionNav items={crmNavigation('conto_terzi')} period={period}/></CrmPageHeader>
+  {error&&<div role="alert" className="crm-message error">{error}</div>}
+  <section className="panel crm-cost-filters"><CrmPeriodFilter period={period} compact/><label>Ricerca<input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Task, progetto o costo"/></label><label>Progetto<select value={project} onChange={e=>setProject(e.target.value)}><option value="">Tutti</option>{data.projects.map(p=><option key={p.id} value={p.id}>{p.titolo}</option>)}</select></label><label>Attribuzione<select value={kind} onChange={e=>setKind(e.target.value)}><option value="">Tutte</option><option value="task">Task / fase</option><option value="project">Diretta al progetto</option></select></label><button onClick={load} disabled={loading||busy}>Aggiorna</button></section>
+  <div className="crm-cost-cards">{[['Consuntivo totale',totals.total,'Somma dei costi registrati nel periodo e nei filtri selezionati. Non include costi non ancora inseriti.',''],['Costi task / fasi',totals.tasks,'Costi attribuiti alle singole task, anche indipendenti da un progetto.','task'],['Costi diretti progetti',totals.projects,'Solo costi attribuiti direttamente ai progetti. I costi delle task sono conteggiati separatamente, una sola volta.','project']].map(([title,value,info,filter])=><section className="panel" key={title}><h3>{title} <InfoTooltip text={info}/></h3><button className="crm-cost-value" onClick={()=>setKind(filter)}>{loading?'…':formatMoney(value)}</button></section>)}</div>
+  {form&&<section className="panel crm-cost-editor"><h3>{form.id?'Modifica costo':'Nuovo costo consuntivo'}</h3><form onSubmit={save}><label>Attribuisci a<select value={form.kind} onChange={e=>setForm({...form,kind:e.target.value,target:''})}><option value="task">Task / fase</option><option value="project">Progetto Workspace</option></select></label><label>{form.kind==='task'?'Task / fase':'Progetto'}<select required value={form.target} onChange={e=>change('target',e.target.value)}><option value="">Seleziona</option>{(form.kind==='task'?data.tasks:data.projects).map(t=><option key={t.id} value={t.id}>{t.titolo}{form.kind==='task'?` · ${data.projects.find(p=>p.id===t.progetto_id)?.titolo||'Task singola'}`:''}</option>)}</select></label><label>Data costo<input required type="date" value={form.cost_date} onChange={e=>change('cost_date',e.target.value)}/></label><label>Importo netto (€)<input required type="number" min="0" max="999999999999.99" step="0.01" value={form.amount} onChange={e=>change('amount',e.target.value)}/></label><label className="crm-cost-description">Descrizione<input required maxLength={1000} value={form.description} onChange={e=>change('description',e.target.value)}/></label><div><button type="submit" className="primary-action crm-primary" disabled={busy}>{busy?'Salvataggio…':'Salva costo'}</button> <button type="button" disabled={busy} onClick={()=>setForm(null)}>Annulla</button></div></form></section>}
+  <section className="panel"><h3>Consuntivi per progetto <InfoTooltip text="Totale dei costi diretti e dei costi delle task appartenenti al progetto, nel periodo selezionato. Le task singole restano nel totale generale."/></h3><div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Progetto</th><th>Costi diretti</th><th>Task / fasi</th><th>Consuntivo totale</th></tr></thead><tbody>{projects.map(p=><tr key={p.id}><td><Link to={`/activities/projects?project=${p.id}`}>{p.titolo}</Link></td><td>{formatMoney(p.direct)}</td><td>{formatMoney(p.tasks)}</td><td><strong>{formatMoney(p.total)}</strong></td></tr>)}</tbody></table>{!projects.length&&<p className="crm-empty">Nessun costo di progetto nel periodo selezionato.</p>}</div></section>
+  <section className="panel"><h3>Costi registrati · {totals.count}</h3><div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Data</th><th>Task / fase o progetto</th><th>Progetto</th><th>Descrizione</th><th>Consuntivo</th>{canWrite&&<th>Azioni</th>}</tr></thead><tbody>{rows.map(r=><tr key={r.id}><td>{formatDate(r.cost_date)}</td><td>{r.target}<small>{r.kind==='task'?'Task / fase':'Costo diretto progetto'}</small></td><td>{r.project?.titolo||'Task singola'}</td><td>{r.description}</td><td>{formatMoney(r.amount)}</td>{canWrite&&<td><button disabled={busy} onClick={()=>setForm({id:r.id,kind:r.kind,target:r.phase_id||r.project_id,cost_date:r.cost_date,description:r.description,amount:r.amount})}>Modifica</button> {deleting===r.id?<><button disabled={busy} onClick={remove}>Conferma eliminazione</button> <button onClick={()=>setDeleting(null)}>Annulla</button></>:<button disabled={busy} onClick={()=>setDeleting(r.id)}>Elimina</button>}</td>}</tr>)}</tbody></table>{loading?<p className="crm-empty">Caricamento…</p>:!rows.length&&<p className="crm-empty">Nessun costo registrato per questi filtri.</p>}</div></section>
+ </div>;
+}

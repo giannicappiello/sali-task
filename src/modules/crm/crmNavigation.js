@@ -7,9 +7,8 @@ export function crmNavigation(type) {
       ["Dashboard", basePath],
       ["Clienti", `${basePath}/clienti`],
       ["Progetti", `${basePath}/progetti`],
-      ["Pipeline", `${basePath}/pipeline`],
       ["Attività", `${basePath}/attivita`],
-      ["Campioni / Sviluppi", `${basePath}/sviluppi`],
+      ["Rendicontazione", `${basePath}/rendicontazione`],
     ];
   }
   if (type === "b2b") {

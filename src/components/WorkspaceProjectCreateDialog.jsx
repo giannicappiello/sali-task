@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Save, X } from "lucide-react";
+import { Save, X } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabaseClient";
 import { loadDirectProductCatalog } from "../modules/orders/services/directProductCatalog";
@@ -147,13 +147,12 @@ export default function WorkspaceProjectCreateDialog({ open, crmType, initialCus
         {form.crm_customer_key && !customerProducts.loading && !customerProducts.error && !customerProducts.products.length && <small>Nessun prodotto associato al cliente.</small>}
         <label>Deadline<input required type="date" value={form.deadline} onChange={(event) => setForm({ ...form, deadline: event.target.value })} /></label>
       </fieldset>
-      <fieldset><legend>Progetto e reparti</legend>
+      <fieldset><legend>Progetto</legend>
         <label>Tipo progetto<select required value={form.tipo_progetto_id} onChange={(event) => setForm({ ...form, tipo_progetto_id: event.target.value })}><option value="">Seleziona tipo progetto</option>{data.projectTypes.filter((item) => matchesCrmCompetency(item, crmType)).map((type) => <option key={type.id} value={type.id}>{type.nome}</option>)}</select></label>
         <label>Titolo<input required value={form.titolo} onChange={(event) => setForm({ ...form, titolo: event.target.value })} /></label>
         <label>Descrizione<textarea rows="3" value={form.descrizione} onChange={(event) => setForm({ ...form, descrizione: event.target.value })} /></label>
-        {selection('Reparti associati', 'reparti', data.departments, false, 'Seleziona reparto')}
       </fieldset>
     </div>
-    <button className="primary-action" disabled={saving}>{saving ? <Save size={18} /> : <Plus size={18} />}{saving ? "Salvataggio..." : "Crea progetto"}</button>
+    <footer className="project-dialog-actions" data-assistant-actions><button className="primary-action" disabled={saving}><Save size={18} />{saving ? "Salvataggio..." : "Salva"}</button></footer>
   </form></div>;
 }

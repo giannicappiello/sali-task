@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, Navigate, Route, Routes, useParams, useSearchParams } from "react-router-dom";
 import { Bot, BriefcaseBusiness, Plus, Search, ShoppingBag, Store } from "lucide-react";
 import WorkspaceAccessGuard from "../../components/WorkspaceAccessGuard";
@@ -169,24 +169,38 @@ const ACCOUNT_COLUMNS = [
 function CrmDashboard({ type }) {
   const config = crmTypeConfig(type);
   const period = useCrmPeriod();
+  const [params, setParams] = useSearchParams();
+  const agent = type === 'b2b' ? params.get('agent') || '' : '';
+  const onAgentChange = value => setParams(current => { const next = new URLSearchParams(current); if (value) next.set('agent', value); else next.delete('agent'); return next; }, { replace: true });
+  const [agentCustomers, setAgentCustomers] = useState([]);
   const [data, setData] = useState({}); const [firstOrderSuggestions, setFirstOrderSuggestions] = useState([]);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const request = useRef(0);
   const load = useCallback(async () => {
-    setLoading(true); setError("");
-    const [metricsResult, statusResult, suggestionResult] = await Promise.all([
-      supabase.rpc("crm_dashboard_metrics", { p_crm_type: type, p_from: period.from, p_to: period.to, p_inactivity_days: 90 }),
-      supabase.rpc("crm_customer_status_counts", { p_crm_type: type }),
-      type === "b2b" ? supabase.rpc("crm_b2b_first_order_suggestions") : Promise.resolve({ data: [], error: null }),
-    ]);
-    const metricsError = metricsResult.error || statusResult.error || suggestionResult.error;
-    if (metricsError) setError(metricsError.message); else { setData({ ...(metricsResult.data || {}), crm_status: statusResult.data || {} }); setFirstOrderSuggestions(suggestionResult.data || []); }
-    setLoading(false);
-  }, [period.from, period.to, type]);
-  useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
+    const sequence = ++request.current;
+    setLoading(true); setError('');
+    try {
+      const [metricsResult, statusResult, suggestionResult, agentResult] = await Promise.all([
+        supabase.rpc(type === 'b2b' ? 'crm_dashboard_metrics_filtered' : 'crm_dashboard_metrics', { p_crm_type: type, p_from: period.from, p_to: period.to, p_inactivity_days: 90, ...(type === 'b2b' ? { p_agent: agent || null } : {}) }),
+        supabase.rpc(type === 'b2b' ? 'crm_customer_status_counts_filtered' : 'crm_customer_status_counts', { p_crm_type: type, ...(type === 'b2b' ? { p_agent: agent || null } : {}) }),
+        type === 'b2b' ? supabase.rpc('crm_b2b_first_order_suggestions') : Promise.resolve({ data: [] }),
+        type === 'b2b' ? loadAllRpcRows('crm_b2b_agent_customers', {}) : Promise.resolve({ data: [] }),
+      ]);
+      if (sequence !== request.current) return;
+      const failure = metricsResult.error || statusResult.error || suggestionResult.error || agentResult.error;
+      if (failure) throw failure;
+      setAgentCustomers(agentResult.data || []);
+      const codes = new Set((agentResult.data || []).filter(row => row.agent_code === agent).map(row => row.customer_code));
+      setData({ ...(metricsResult.data || {}), crm_status: statusResult.data || {} });
+      setFirstOrderSuggestions((suggestionResult.data || []).filter(row => !agent || codes.has(row.customer_code)));
+    } catch (failure) { if (sequence === request.current) { setError(failure.message); setData({}); setFirstOrderSuggestions([]); } }
+    finally { if (sequence === request.current) setLoading(false); }
+  }, [period.from, period.to, type, agent]);
+  useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => { window.clearTimeout(timer); request.current++; }; }, [load]);
 
   const navigation = crmNavigation(type);
-  if (type === "b2b") return <CrmB2BDashboard data={data} firstOrderSuggestions={firstOrderSuggestions} loading={loading} error={error} period={period} retry={load}/>;
+  if (type === "b2b") return <CrmB2BDashboard data={data} firstOrderSuggestions={firstOrderSuggestions} loading={loading} error={error} period={period} retry={load} agent={agent} onAgentChange={onAgentChange} agentCustomers={agentCustomers}/>;
   return <div className="crm-page">
     <CrmPageHeader eyebrow={config.label} title={`Dashboard ${config.label}`} description="KPI reali nel tuo ambito dati. Ordinato Workspace e fatturato Mexal restano metriche distinte." actions={<CrmPeriodFilter period={period} />}>
       <CrmSectionNav items={navigation} period={period} label={`Aree CRM ${config.label}`} />

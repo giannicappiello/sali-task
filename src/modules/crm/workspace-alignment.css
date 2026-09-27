@@ -149,3 +149,9 @@ body .workspace-screen-content .b2b-navigation-period .crm-section-nav{flex:1 1 
 .crm-open-order-breakdown > span{display:block}
 
 .crm-order-category-list{display:grid;gap:10px}.crm-order-category-list>button{display:flex;align-items:center;gap:16px;padding:14px 16px;border:1px solid #dbe5f2;border-radius:12px;background:#fff;color:inherit;text-align:left;font:inherit;cursor:pointer}.crm-order-category-list>button>span:first-child{flex:1}.crm-order-category-list>button:hover{background:#eff6ff}.crm-order-category-list>p{text-align:right}
+
+.b2b-dashboard-filters{display:flex;align-items:center;gap:12px;flex:0 1 auto;min-width:0}
+.b2b-agent-filter{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted,#64748b);min-width:150px;max-width:210px}
+.b2b-agent-filter select{height:42px;max-width:100%;border:1px solid var(--border,#dbe4f0);border-radius:10px;background:var(--card,#fff);padding:8px 10px;color:inherit}
+@media(max-width:1100px){.b2b-dashboard-filters{width:100%;flex-wrap:wrap}.b2b-dashboard-filters .crm-period-filter{flex:1 1 420px}}
+@media(max-width:700px){.b2b-agent-filter{max-width:none;width:100%}.b2b-dashboard-filters .crm-period-filter{min-width:0}}

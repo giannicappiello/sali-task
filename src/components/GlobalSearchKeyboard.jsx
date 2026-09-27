@@ -17,6 +17,20 @@ export default function GlobalSearchKeyboard() {
     };
     const keydown = event => {
       const input = event.target;
+      // Open single-value native dropdowns without changing their value first.
+      // Once open, the browser owns arrow navigation, Enter and Escape.
+      if (!event.defaultPrevented && !event.isComposing && event.key === 'ArrowDown'
+          && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
+          && input instanceof HTMLSelectElement && !input.disabled && !input.multiple && input.size <= 1
+          && typeof input.showPicker === 'function') {
+        try {
+          input.showPicker();
+          event.preventDefault();
+        } catch {
+          // Older/embedded browsers keep their native keyboard behavior.
+        }
+        return;
+      }
       const list = listFor(input);
       if (event.defaultPrevented || event.isComposing || !list || !['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(event.key)) return;
       if (activeInput !== input) { clear(); activeInput = input; }

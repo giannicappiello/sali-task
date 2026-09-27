@@ -152,6 +152,8 @@ begin
     'pr_order_total', (select coalesce(sum(v.pr_amount),0) from verified_values v join public.ordini_testate o on o.id=v.order_id join visible_customers c using(codice_cliente) where o.data_ordine between p_from and p_to),
     'stralci_order_total', (select coalesce(sum(v.stralci_amount),0) from verified_values v join public.ordini_testate o on o.id=v.order_id join visible_customers c using(codice_cliente) where o.data_ordine between p_from and p_to),
     'prenotazioni_order_total', (select coalesce(sum(v.prenotazioni_amount),0) from verified_values v join public.ordini_testate o on o.id=v.order_id join visible_customers c using(codice_cliente) where o.data_ordine between p_from and p_to),
+    'ph_prenotazioni_total', (select coalesce(sum(v.prenotazioni_amount),0) from verified_values v join public.ordini_testate o on o.id=v.order_id join visible_customers c using(codice_cliente) where o.data_ordine between p_from and p_to and o.modulo_ordini='ph'),
+    'pr_prenotazioni_total', (select coalesce(sum(v.prenotazioni_amount),0) from verified_values v join public.ordini_testate o on o.id=v.order_id join visible_customers c using(codice_cliente) where o.data_ordine between p_from and p_to and o.modulo_ordini='prof'),
     'invoiced_orders_excluded', (select count(*) from invoiced_orders),
     'average_order_value', case when c.order_count > 0 then c.order_total / c.order_count else 0 end,
     'open_opportunities', p.open_opportunities,
@@ -306,12 +308,12 @@ begin
     )
     where comparison_from is not null
   ), current_totals as (
-    select count(*)::bigint as order_count, coalesce(sum(amount), 0)::numeric as order_total, count(*) filter(where modulo_ordini='ph')::bigint ph_order_count, coalesce(sum(ph_amount),0)::numeric ph_order_total, count(*) filter(where modulo_ordini='prof')::bigint pr_order_count, coalesce(sum(pr_amount),0)::numeric pr_order_total, coalesce(sum(stralci_amount),0)::numeric stralci_order_total, coalesce(sum(oct_amount),0)::numeric oct_order_total, coalesce(sum(prenotazioni_amount),0)::numeric prenotazioni_order_total
+    select count(*)::bigint as order_count, coalesce(sum(amount), 0)::numeric as order_total, count(*) filter(where modulo_ordini='ph')::bigint ph_order_count, coalesce(sum(ph_amount),0)::numeric ph_order_total, count(*) filter(where modulo_ordini='prof')::bigint pr_order_count, coalesce(sum(pr_amount),0)::numeric pr_order_total, coalesce(sum(stralci_amount),0)::numeric stralci_order_total, coalesce(sum(oct_amount),0)::numeric oct_order_total, coalesce(sum(prenotazioni_amount),0)::numeric prenotazioni_order_total, coalesce(sum(prenotazioni_amount) filter(where modulo_ordini='ph'),0)::numeric ph_prenotazioni_total, coalesce(sum(prenotazioni_amount) filter(where modulo_ordini='prof'),0)::numeric pr_prenotazioni_total
     from current_orders
   ), comparison_totals as (
     select coalesce(sum(amount), 0)::numeric as order_total from comparison_orders
   ), business_rows as (
-    select business, count(*)::bigint as order_count, coalesce(sum(amount), 0)::numeric as order_total, count(*) filter(where modulo_ordini='ph')::bigint ph_order_count, coalesce(sum(ph_amount),0)::numeric ph_order_total, count(*) filter(where modulo_ordini='prof')::bigint pr_order_count, coalesce(sum(pr_amount),0)::numeric pr_order_total, coalesce(sum(stralci_amount),0)::numeric stralci_order_total, coalesce(sum(oct_amount),0)::numeric oct_order_total, coalesce(sum(prenotazioni_amount),0)::numeric prenotazioni_order_total
+    select business, count(*)::bigint as order_count, coalesce(sum(amount), 0)::numeric as order_total, count(*) filter(where modulo_ordini='ph')::bigint ph_order_count, coalesce(sum(ph_amount),0)::numeric ph_order_total, count(*) filter(where modulo_ordini='prof')::bigint pr_order_count, coalesce(sum(pr_amount),0)::numeric pr_order_total, coalesce(sum(stralci_amount),0)::numeric stralci_order_total, coalesce(sum(oct_amount),0)::numeric oct_order_total, coalesce(sum(prenotazioni_amount),0)::numeric prenotazioni_order_total, coalesce(sum(prenotazioni_amount) filter(where modulo_ordini='ph'),0)::numeric ph_prenotazioni_total, coalesce(sum(prenotazioni_amount) filter(where modulo_ordini='prof'),0)::numeric pr_prenotazioni_total
     from current_orders group by business
   ), agent_rows as (
     select agent_code, agent_name, count(*)::bigint as order_count,
@@ -350,7 +352,7 @@ begin
       'ph_order_count', current_totals.ph_order_count,
       'ph_order_total', current_totals.ph_order_total,
       'pr_order_count', current_totals.pr_order_count,
-      'pr_order_total', current_totals.pr_order_total, 'stralci_order_total',current_totals.stralci_order_total, 'oct_order_total',current_totals.oct_order_total, 'prenotazioni_order_total',current_totals.prenotazioni_order_total, 'oc_order_total',current_totals.pr_order_total+current_totals.stralci_order_total+current_totals.ph_order_total+current_totals.prenotazioni_order_total,
+      'pr_order_total', current_totals.pr_order_total, 'stralci_order_total',current_totals.stralci_order_total, 'oct_order_total',current_totals.oct_order_total, 'prenotazioni_order_total',current_totals.prenotazioni_order_total, 'ph_prenotazioni_total',current_totals.ph_prenotazioni_total, 'pr_prenotazioni_total',current_totals.pr_prenotazioni_total, 'oc_order_total',current_totals.pr_order_total+current_totals.stralci_order_total+current_totals.ph_order_total+current_totals.prenotazioni_order_total,
       'average_order_value', current_totals.order_total / nullif(current_totals.order_count, 0)
     ),
     'comparison', jsonb_build_object('order_total', comparison_totals.order_total),
@@ -770,7 +772,7 @@ begin
       'ph_order_count', coalesce((orders.item ->> 'ph_order_count')::numeric, 0),
       'ph_order_total', coalesce((orders.item ->> 'ph_order_total')::numeric, 0),
       'pr_order_count', coalesce((orders.item ->> 'pr_order_count')::numeric, 0),
-      'pr_order_total', coalesce((orders.item ->> 'pr_order_total')::numeric, 0), 'stralci_order_total', coalesce((orders.item ->> 'stralci_order_total')::numeric, 0), 'oct_order_total', coalesce((orders.item ->> 'oct_order_total')::numeric, 0), 'prenotazioni_order_total', coalesce((orders.item ->> 'prenotazioni_order_total')::numeric, 0)
+      'pr_order_total', coalesce((orders.item ->> 'pr_order_total')::numeric, 0), 'stralci_order_total', coalesce((orders.item ->> 'stralci_order_total')::numeric, 0), 'oct_order_total', coalesce((orders.item ->> 'oct_order_total')::numeric, 0), 'prenotazioni_order_total', coalesce((orders.item ->> 'prenotazioni_order_total')::numeric, 0), 'ph_prenotazioni_total', coalesce((orders.item ->> 'ph_prenotazioni_total')::numeric, 0), 'pr_prenotazioni_total', coalesce((orders.item ->> 'pr_prenotazioni_total')::numeric, 0)
     ) order by keys.key
   ), '[]'::jsonb) into merged_rows
   from keys

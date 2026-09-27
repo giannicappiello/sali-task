@@ -89,7 +89,7 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
   }
   const life = extra.lifecycle || {}; const lifeValue = name => extra.errors.lifecycle ? '—' : extra.lifecycle ? life[name] : '…';
   const beautyValue = value => extra.errors.beauty ? '—' : extra.beauty ? value : '…';
-  return <div className="crm-page b2b-dashboard-page"><CrmPageHeader eyebrow="CRM B2B" title="Dashboard B2B" description="Clienti, attività commerciali e Beauty Days" actions={<CrmPeriodFilter period={period}/>}><CrmSectionNav items={crmNavigation('b2b')} period={period} label="Navigazione CRM B2B"/></CrmPageHeader>
+  return <div className="crm-page b2b-dashboard-page"><CrmPageHeader eyebrow="CRM B2B" title="Dashboard B2B" description="Clienti, attività commerciali e Beauty Days"><div className="b2b-navigation-period"><CrmSectionNav items={crmNavigation('b2b')} period={period} label="Navigazione CRM B2B"/><CrmPeriodFilter period={period} compact/></div></CrmPageHeader>
     {error && <div role="alert" className="crm-message error">{error}<button onClick={retry}>Riprova</button></div>}
     {loading ? <p role="status">Caricamento KPI…</p> : <>
       <section className="b2b-kpi-section"><h2>1. Clienti, fatturato e ordini</h2><div className="crm-kpi-grid">
@@ -99,7 +99,7 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
         {card('Clienti attivi nel periodo', data.customers_with_activity, 'Almeno un documento', 'Clienti con ordini o fatture nel periodo selezionato.', customer('active'))}
         {card('Nuovi clienti', data.new_customers, 'Prima vendita nel periodo', 'Clienti con prima vendita documentata nel periodo selezionato.', customer('new'))}
         {card('Fatturato', formatMoney(data.invoice_total), `${data.invoice_count || 0} fatture`, data.invoice_source_note || 'Somma del fatturato nel periodo selezionato.', customer('invoiced'))}
-        {card('Ordinato', formatMoney(data.order_total), `${data.order_count || 0} ordini`, data.order_source_note || 'Somma dell’ordinato nel periodo selezionato.', customer('ordered'))}
+        {card('Ordinato', formatMoney(data.order_total), `${data.order_count || 0} ordini · Ordini PH: ${data.ph_order_count || 0} (${formatMoney(data.ph_order_total)}) · Ordini PR: ${data.pr_order_count || 0} (${formatMoney(data.pr_order_total)})`, data.order_source_note || 'Somma dell’ordinato nel periodo selezionato.', customer('ordered'))}
         {card('Valore medio ordine', formatMoney(data.average_order_value), 'Periodo selezionato', 'Ordinato diviso per il numero di ordini nel periodo.', customer('ordered'))}
         {card('Clienti senza attività nel periodo', data.inactive_customers, 'Nessun documento da 90 giorni', 'Indicatore commerciale di inattività: non modifica lo stato attivo/non attivo del CRM.', customer('inactive'))}
       </div></section>

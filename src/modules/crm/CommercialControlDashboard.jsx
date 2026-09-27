@@ -39,7 +39,7 @@ const REORDER_LABELS = {
 
 const CONTROL_KPI_INFO = {
   Fatturato: "Somma degli imponibili delle fatture Mexal nel periodo e nei filtri correnti.",
-  Ordinato: "Somma del valore degli ordini Workspace e Mexal, inclusi gli OCT, nel periodo e nei filtri correnti.",
+  Ordinato: "Valore degli ordini non fatturati nel periodo e nei filtri correnti. Gli ordini collegati a fatture sono esclusi anche se la fattura è fuori periodo.",
   "Portafoglio ordini": "Somma del valore residuo degli ordini aperti monitorati.",
   "Clienti Mexal attivi": "Numero di clienti distinti con anagrafica Mexal attiva nel perimetro selezionato.",
   "Nuovi clienti": "Clienti la cui prima vendita documentata ricade nel periodo selezionato.",
@@ -236,7 +236,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
   const kpis = useMemo(() => {
     const common = [
       ["Fatturato", formatMoney(totals.invoice_total), `${totals.invoice_count || 0} fatture Mexal`, "top", invoiceDelta],
-      ["Ordinato", formatMoney(totals.order_total), `${totals.order_count || 0} ordini Workspace/Mexal, inclusi OCT`, "top", orderDelta],
+      ["Ordinato", formatMoney(totals.order_total), `${totals.order_count || 0} ordini non fatturati · PH: ${totals.ph_order_count || 0} (${formatMoney(totals.ph_order_total)}) · PR: ${totals.pr_order_count || 0} (${formatMoney(totals.pr_order_total)})`, "top", orderDelta],
       ["Portafoglio ordini", formatMoney(totals.portfolio_total), `${totals.portfolio_orders || 0} ordini aperti monitorati`, "portfolio"],
       ["Clienti Mexal attivi", number(totals.mexal_active_customers), "Stato anagrafico Mexal", "top"],
       ["Nuovi clienti", number(totals.new_customers), "Prima vendita documentata nel periodo", "new"],
@@ -277,7 +277,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
       {scope === "global" ? <section className="crm-control-panel" id="business">
         <header><div><span>Composizione business</span><h3>PRIVATE vs DIRECT</h3></div></header>
         <div className="crm-control-business crm-business-summary">{(data?.business || []).map((row) => {
-          const totals = <><strong>{row.business}</strong><span>{formatMoney(row.invoice_total)} fatturato</span><span>{formatMoney(row.order_total)} ordinato</span><span>{number(row.customers)} clienti</span></>;
+          const totals = <><strong>{row.business}</strong><span>{formatMoney(row.invoice_total)} fatturato</span><span>{formatMoney(row.order_total)} ordinato non fatturato</span>{row.business === "DIRECT" && <><span>Ordini PH: {number(row.ph_order_count)} · {formatMoney(row.ph_order_total)}</span><span>Ordini PR: {number(row.pr_order_count)} · {formatMoney(row.pr_order_total)}</span></>}<span>{number(row.customers)} clienti</span></>;
           if (row.business === "PRIVATE") return <Link key={row.business} to={period.withPeriod("/crm/conto-terzi")}>{totals}</Link>;
           return <article className="crm-business-card" key={row.business}>
             {totals}

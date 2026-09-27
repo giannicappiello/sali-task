@@ -137,3 +137,10 @@
   .crm-section-nav,.crm-quick-nav{display:flex;overflow-x:auto}
   .crm-page-header{padding:14px}
 }
+
+.b2b-navigation-period{display:flex;align-items:center;flex-wrap:wrap;gap:12px;padding:10px 14px;border:1px solid var(--border,#dbe4f0);border-radius:18px;background:var(--card,#fff)}
+body .workspace-screen-content .b2b-navigation-period .crm-section-nav{flex:1 1 auto;border:0;padding:0;margin:0;box-shadow:none}
+.b2b-navigation-period .crm-period-filter{flex:0 1 auto;margin:0;gap:6px}
+.b2b-navigation-period .crm-period-filter label{min-width:120px}
+@media(min-width:1500px){.b2b-navigation-period .crm-section-nav{gap:3px}.b2b-navigation-period .crm-section-nav a{font-size:14px;padding-inline:9px}}
+@media(max-width:700px){.b2b-navigation-period .crm-period-filter{width:100%}}

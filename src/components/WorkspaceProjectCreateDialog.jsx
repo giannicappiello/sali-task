@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
-import { Plus, Save, Search, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Plus, Save, X } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabaseClient";
 import { loadDirectProductCatalog } from "../modules/orders/services/directProductCatalog";
 import { loadWorkspaceProducts, loadDirectWorkspaceProducts } from "../lib/workspaceCrmCatalog";
 import { matchesCrmCompetency, projectRulesForCrm, resolveRuleBlocker } from "../lib/crmCompetencies";
 import useCustomerWorkspaceProducts from "../lib/useCustomerWorkspaceProducts";
+import "./workspace-project-dialog.css";
 import WorkspaceCustomerPicker from "./WorkspaceCustomerPicker";
 
 const emptyForm = { titolo: "", descrizione: "", deadline: "", prodotti: [], reparti: [], tipo_progetto_id: "", crm_customer_key: "" };
@@ -23,7 +24,6 @@ export default function WorkspaceProjectCreateDialog({ open, crmType, initialCus
   const canManage = hasPermission("projects.write");
   const [form, setForm] = useState(emptyForm);
   const [data, setData] = useState({ products: [], departments: [], templates: [], templateDepartments: [], projectTypes: [], projectTypePhases: [] });
-  const [query, setQuery] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -31,7 +31,6 @@ export default function WorkspaceProjectCreateDialog({ open, crmType, initialCus
     let active = true;
     const timer = window.setTimeout(async () => {
       setForm({ ...emptyForm, crm_customer_key: initialCustomerKey });
-      setQuery("");
       const productsRequest = crmType === "b2b" ? loadDirectWorkspaceProducts(supabase) : crmType === "brand_direct"
         ? loadDirectProductCatalog(supabase)
           .then(({ products, implants }) => ({
@@ -71,12 +70,6 @@ export default function WorkspaceProjectCreateDialog({ open, crmType, initialCus
   }, [crmType, initialCustomerKey, open]);
 
   const customerProducts = useCustomerWorkspaceProducts(data.products, form.crm_customer_key, crmType, open);
-  const filteredProducts = useMemo(() => {
-    const text = query.trim().toLocaleLowerCase("it-IT");
-    return text ? customerProducts.products.filter((product) => `${product.nome || ""} ${product.codice || ""} ${product.brand || ""}`.toLocaleLowerCase("it-IT").includes(text)) : customerProducts.products;
-  }, [customerProducts.products, query]);
-
-  const toggle = (field, value) => setForm((current) => ({ ...current, [field]: current[field].includes(value) ? current[field].filter((item) => item !== value) : [...current[field], value] }));
   const templateDepartments = (templateId) => {
     const linked = data.templateDepartments.filter((row) => row.template_id === templateId).map((row) => row.reparto_id);
     if (linked.length) return linked;
@@ -138,15 +131,29 @@ export default function WorkspaceProjectCreateDialog({ open, crmType, initialCus
   }
 
   if (!open) return null;
-  return <div className="modal-backdrop"><form className="modal-card v4-modal" onSubmit={save}>
-    <div className="modal-header"><h2>Nuovo progetto</h2><button type="button" onClick={onClose}><X size={20} /></button></div>
-    <label>Titolo<input required value={form.titolo} onChange={(event) => setForm({ ...form, titolo: event.target.value })} /></label>
-    <label>Descrizione<textarea rows="4" value={form.descrizione} onChange={(event) => setForm({ ...form, descrizione: event.target.value })} /></label>
-    <label>Cliente<WorkspaceCustomerPicker required crmType={crmType} value={form.crm_customer_key} onChange={(crm_customer_key) => setForm((current) => ({ ...current, crm_customer_key, prodotti: [] }))} /></label>
-    <label>Tipo progetto<select required value={form.tipo_progetto_id} onChange={(event) => setForm({ ...form, tipo_progetto_id: event.target.value })}><option value="">Seleziona tipo progetto</option>{data.projectTypes.filter((item) => matchesCrmCompetency(item, crmType)).map((type) => <option key={type.id} value={type.id}>{type.nome}</option>)}</select></label>
-    <label>Deadline<input required type="date" value={form.deadline} onChange={(event) => setForm({ ...form, deadline: event.target.value })} /></label>
-    <div className="checkbox-group scrollable-check-group"><strong>Prodotti associati</strong><div className="task-search"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ricerca rapida prodotto" /></div>{!form.crm_customer_key ? <p>Seleziona prima il cliente.</p> : customerProducts.loading ? <p>Caricamento prodotti cliente…</p> : customerProducts.error ? <p role="alert">{customerProducts.error}</p> : !filteredProducts.length ? <p>Nessun prodotto associato al cliente.</p> : null}{filteredProducts.map((product) => <label key={product.id}><input type="checkbox" checked={form.prodotti.includes(product.id)} onChange={() => toggle("prodotti", product.id)} />{product.nome}{product.codice ? ` · ${product.codice}` : ""}</label>)}</div>
-    <div className="checkbox-group"><strong>Reparti associati</strong>{data.departments.map((department) => <label key={department.id}><input type="checkbox" checked={form.reparti.includes(department.id)} onChange={() => toggle("reparti", department.id)} />{department.nome}</label>)}</div>
+  const selection = (label, field, options, disabled = false, placeholder = 'Seleziona') => <div className="project-selection">
+    <label>{label}<select aria-label={label} value="" disabled={disabled} onChange={event => { const id = event.target.value; if (id) setForm(current => ({ ...current, [field]: [...new Set([...current[field], id])] })); }}>
+      <option value="">{placeholder}</option>{options.filter(item => !form[field].includes(item.id)).map(item => <option key={item.id} value={item.id}>{item.nome}{item.codice ? ` · ${item.codice}` : ''}</option>)}
+    </select></label>
+    {form[field].length > 0 && <div className="project-selected-values">{form[field].map(id => { const item = options.find(option => option.id === id); return <span key={id}>{item?.nome || id}<button type="button" aria-label={`Rimuovi ${item?.nome || label}`} onClick={() => setForm(current => ({ ...current, [field]: current[field].filter(value => value !== id) }))}><X size={13}/></button></span>; })}</div>}
+  </div>;
+  return <div className="modal-backdrop"><form className="modal-card v4-modal workspace-project-dialog" onSubmit={save}>
+    <div className="modal-header"><h2>Nuovo progetto</h2><button type="button" aria-label="Chiudi nuovo progetto" onClick={onClose}><X size={20} /></button></div>
+    <div className="project-dialog-columns">
+      <fieldset><legend>Cliente e prodotto</legend>
+        <label>Cliente<WorkspaceCustomerPicker required crmType={crmType} value={form.crm_customer_key} onChange={(crm_customer_key) => setForm((current) => ({ ...current, crm_customer_key, prodotti: [] }))} /></label>
+        {selection('Prodotto', 'prodotti', customerProducts.products, !form.crm_customer_key || customerProducts.loading || Boolean(customerProducts.error), !form.crm_customer_key ? 'Seleziona prima il cliente' : customerProducts.loading ? 'Caricamento prodotti…' : 'Seleziona prodotto')}
+        {customerProducts.error && <p role="alert">{customerProducts.error}</p>}
+        {form.crm_customer_key && !customerProducts.loading && !customerProducts.error && !customerProducts.products.length && <small>Nessun prodotto associato al cliente.</small>}
+        <label>Deadline<input required type="date" value={form.deadline} onChange={(event) => setForm({ ...form, deadline: event.target.value })} /></label>
+      </fieldset>
+      <fieldset><legend>Progetto e reparti</legend>
+        <label>Tipo progetto<select required value={form.tipo_progetto_id} onChange={(event) => setForm({ ...form, tipo_progetto_id: event.target.value })}><option value="">Seleziona tipo progetto</option>{data.projectTypes.filter((item) => matchesCrmCompetency(item, crmType)).map((type) => <option key={type.id} value={type.id}>{type.nome}</option>)}</select></label>
+        <label>Titolo<input required value={form.titolo} onChange={(event) => setForm({ ...form, titolo: event.target.value })} /></label>
+        <label>Descrizione<textarea rows="3" value={form.descrizione} onChange={(event) => setForm({ ...form, descrizione: event.target.value })} /></label>
+        {selection('Reparti associati', 'reparti', data.departments, false, 'Seleziona reparto')}
+      </fieldset>
+    </div>
     <button className="primary-action" disabled={saving}>{saving ? <Save size={18} /> : <Plus size={18} />}{saving ? "Salvataggio..." : "Crea progetto"}</button>
   </form></div>;
 }

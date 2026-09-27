@@ -1,0 +1,12 @@
+.modal-card.v4-modal.workspace-project-dialog{width:min(1000px,calc(100vw - 32px));max-width:1000px;padding:24px;gap:16px}
+.workspace-project-dialog .project-dialog-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.workspace-project-dialog fieldset{min-width:0;margin:0;padding:16px;border:1px solid #d7e3f3;border-radius:14px;background:#f8faff;display:flex;flex-direction:column;gap:14px}
+.workspace-project-dialog legend{padding:0 6px;font-weight:600;font-size:15px}
+.workspace-project-dialog label{display:flex;flex-direction:column;gap:6px;margin:0;font-size:14px;min-width:0}
+.workspace-project-dialog input,.workspace-project-dialog select{width:100%;min-width:0;min-height:40px;height:40px;padding:7px 10px;font-size:14px;box-sizing:border-box}
+.workspace-project-dialog textarea{min-height:80px;padding:8px 10px;font-size:14px;box-sizing:border-box;resize:vertical}
+.workspace-project-dialog .project-selected-values{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.workspace-project-dialog .project-selected-values>span{display:inline-flex;align-items:center;gap:6px;padding:4px 7px;border:1px solid #d7e3f3;border-radius:8px;background:white;font-size:12px;max-width:100%;overflow-wrap:anywhere}
+.workspace-project-dialog .project-selected-values button{display:inline-flex;align-items:center;justify-content:center;min-width:24px;min-height:24px;padding:3px;border:0;background:transparent}
+.workspace-project-dialog>.primary-action{align-self:flex-end}
+@media(max-width:700px){.workspace-project-dialog .project-dialog-columns{grid-template-columns:minmax(0,1fr)}.modal-card.v4-modal.workspace-project-dialog{padding:16px}.workspace-project-dialog fieldset{padding:12px}}

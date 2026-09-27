@@ -108,6 +108,15 @@
 .crm-cost-entry{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:14px 0;border:1px solid #d7e3f3;border-radius:10px;padding:12px;min-width:0;background:#fff}
 .crm-cost-entry legend{font-size:13px;color:#526781}.crm-cost-entry-description,.crm-cost-entry-total{grid-column:1/-1}
 .crm-cost-editor input[readonly]{background:#edf2f8;color:#526781}
+.crm-cost-page .crm-cost-dialog form>.crm-cost-entry-cards{align-items:stretch}
+.crm-cost-entry-card{display:flex;flex-direction:column;padding:14px}
+.crm-cost-entry-card>p{margin:0 0 8px}
+.crm-cost-entry-card .crm-cost-entry{flex:1;align-content:start;margin:8px 0 0;gap:10px}
+.crm-cost-entry-total{margin:0;line-height:1.4}
+.crm-cost-entry-card--materials .crm-cost-entry{grid-template-rows:auto 1fr}
+.crm-cost-entry-card--materials .crm-cost-entry-description{grid-template-rows:auto 1fr}
+.crm-cost-editor textarea{width:100%;min-width:0;box-sizing:border-box;border:1px solid #cad9ed;border-radius:10px;padding:8px 12px;font:inherit;resize:vertical}
+.crm-cost-page .crm-cost-dialog .crm-cost-entry input{min-height:38px;padding:6px 10px}
 @media(max-width:1200px){.crm-cost-page .panel.crm-cost-filters{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:700px){
  .crm-cost-page .panel.crm-cost-filters{grid-template-columns:minmax(0,1fr)}

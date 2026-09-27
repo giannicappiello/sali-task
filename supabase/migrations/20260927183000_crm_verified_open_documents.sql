@@ -4,7 +4,7 @@ create or replace function public.crm_verified_open_order_values()
 returns table(order_id uuid, pr_amount numeric, stralci_amount numeric, ph_amount numeric, oct_amount numeric)
 language sql stable security invoker set search_path=public as $verified$
 with candidates as materialized (
- select o.id order_id,o.codice_cliente,d.tipo_documento kind,coalesce(nullif(d.sigla,''),'OC') sigla,d.numero,d.anno,
+ select o.id order_id,o.codice_cliente,d.tipo_documento kind,coalesce(nullif(d.sigla,''),'OC') sigla,d.numero,coalesce(nullif(d.anno,0),extract(year from o.data_ordine)::integer),
    coalesce(
     (select sum((v->>1)::numeric) from jsonb_array_elements(d.dati_mexal->'tot_documento') v)
     - (select sum((v->>1)::numeric) from jsonb_array_elements(d.dati_mexal->'tot_iva') v),
@@ -17,7 +17,7 @@ with candidates as materialized (
   and d.stato_operativo='APERTO' and d.presente_in_mexal is true and d.ultimo_sync_mexal is not null
   and d.numero is not null and d.anno is not null
  union all
- select o.id,o.codice_cliente,'OCT',coalesce(nullif(o.mexal_sigla,''),'OC'),o.mexal_numero::text,o.mexal_anno,
+ select o.id,o.codice_cliente,'OCT',coalesce(nullif(o.mexal_sigla,''),'OC'),o.mexal_numero::text,coalesce(nullif(o.mexal_anno,0),extract(year from o.data_ordine)::integer),
   coalesce(o.totale_imponibile,(select sum(coalesce(r.imponibile_riga,r.quantita*r.prezzo_netto)) from public.ordini_righe r where r.ordine_id=o.id and not coalesce(r.riga_descrittiva,false) and coalesce(r.mexal_attiva,true)))
  from public.ordini_testate o where o.modulo_ordini='private' and o.origine='mexal_oct'
   and o.mexal_sincronizzato_il is not null and o.mexal_eliminato_il is null and o.mexal_numero is not null and o.mexal_anno is not null

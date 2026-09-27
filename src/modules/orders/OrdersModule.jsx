@@ -1,3 +1,5 @@
+import OrdersTableScrollbar from './OrdersTableScrollbar';
+import './orders-compact-tables.css';
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import useOrdersAccess from "./pages/useOrdersAccess";
 import OrdersDashboard from "./pages/OrdersDashboard";
@@ -30,6 +32,7 @@ export default function OrdersModule({ moduleCode = "prof", title = "Ordini PROF
     <Routes>
       <Route index element={<Navigate to="dashboard" replace />} /><Route path="dashboard" element={privateModule ? <PrivateOrdersDashboard /> : <OrdersDashboard />} /><Route path="clienti" element={privateModule ? <Navigate to={`${basePath}/dashboard`} replace /> : <Customers />} /><Route path="clienti/:customerCode" element={privateModule ? <Navigate to={`${basePath}/dashboard`} replace /> : <CustomerDetail />} /><Route path="elenco" element={privateModule ? <Navigate to={`${basePath}/dashboard`} replace /> : <Orders />} /><Route path="nuovo" element={canWriteOrders ? <NewOrder /> : <Navigate to={`${basePath}/elenco`} replace />} /><Route path="nuovo-da-documento" element={canUseAIOrderGeneration ? <AIOrderImport /> : <Navigate to={`${basePath}/elenco`} replace />} /><Route path="modifica/:orderId" element={canWriteOrders ? <NewOrder /> : <Navigate to={`${basePath}/elenco`} replace />} /><Route path="elenco/:orderId" element={<OrderDetail />} /><Route path="fatture" element={privateModule ? <Navigate to={`${basePath}/dashboard`} replace /> : <Invoices />} /><Route path="fatture/:invoiceId" element={<InvoiceDetail />} /><Route path="*" element={<Navigate to="dashboard" replace />} />
     </Routes>
+    <OrdersTableScrollbar/>
   </div></OrdersModuleProvider>;
 }
 

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Clock3, FileText, MessageSquare, Paperclip, Save, Search, Trash2, X } from "lucide-react";
+import { CheckCircle2, Clock3, FileText, MessageSquare, Paperclip, Save, Trash2, X } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../contexts/AuthContext";
 import { matchesCrmCompetency } from "../lib/crmCompetencies";
 import useCustomerWorkspaceProducts from "../lib/useCustomerWorkspaceProducts";
+import "./workspace-phase-dialog.css";
 import WorkspaceCustomerPicker from "./WorkspaceCustomerPicker";
 
 const emptyForm = { titolo: "", descrizione: "", note: "", progetto_id: "", deadline: "", reparto_ids: [], prodotti: [], stato: "da_evadere", bloccante_id: "", crm_customer_key: "" };
@@ -46,8 +47,7 @@ export default function PhaseChecklistModal({
   const [pendingFiles, setPendingFiles] = useState([]);
   const [saving, setSaving] = useState(false);
   const [dragActive, setDragActive] = useState(false);
-  const [showPhaseProducts, setShowPhaseProducts] = useState(false);
-  const [phaseProductQuery, setPhaseProductQuery] = useState("");
+  const [showDepartmentPicker, setShowDepartmentPicker] = useState(false);
 
   const selectedPhase = phase?.id ? phase : null;
   const effectiveCrmType = projects.find((item) => item.id === form.progetto_id)?.crm_tipo || selectedPhase?.crm_tipo || crmType;
@@ -62,8 +62,7 @@ export default function PhaseChecklistModal({
     setPendingComments([]);
     setPendingFiles([]);
     setComment("");
-    setShowPhaseProducts(false);
-    setPhaseProductQuery("");
+    setShowDepartmentPicker(false);
     if (selectedPhase?.id) {
       setForm({
         titolo: selectedPhase.titolo || "",
@@ -123,12 +122,6 @@ export default function PhaseChecklistModal({
   const selectedBlocker = useMemo(() => blockingOptions.find((item) => item.id === form.bloccante_id) || null, [blockingOptions, form.bloccante_id]);
 
   const customerProducts = useCustomerWorkspaceProducts(products, form.crm_customer_key, effectiveCrmType, open);
-  const filteredPhaseProducts = useMemo(() => {
-    const text = phaseProductQuery.trim().toLowerCase();
-    if (!text) return customerProducts.products;
-    return customerProducts.products.filter((product) => `${product.nome || ""} ${product.codice || ""} ${product.brand || ""} ${product.categoria || ""}`.toLowerCase().includes(text));
-  }, [customerProducts.products, phaseProductQuery]);
-
   const departmentsByPhase = useMemo(() => {
     const map = new Map();
     safeArray(phaseDepartments).forEach((row) => {
@@ -447,15 +440,27 @@ export default function PhaseChecklistModal({
 
   return (
     <div className="modal-backdrop">
-      <form className="modal-card v4-modal large-modal" onSubmit={savePhase}>
+      <form className="modal-card v4-modal large-modal workspace-phase-dialog" onSubmit={savePhase}>
         <div className="modal-header">
-          <h2>{selectedPhase ? (canManage ? "Modifica task / fase" : "Dettaglio task / fase") : "Nuova fase checklist"}</h2>
+          <h2>{selectedPhase ? (canManage ? "Modifica task / fase" : "Dettaglio task / fase") : "Nuova attività"}</h2>
           <button type="button" onClick={onClose}><X size={20} /></button>
         </div>
 
         {!canManage && <p className="muted">Partecipi al progetto: puoi seguire questa fase in sola lettura.</p>}
         <fieldset disabled={!canManage} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-        <label>Checklist
+        <div className="phase-dialog-columns"><section className="phase-dialog-panel"><h3>Cliente e prodotto</h3>
+        <label>Cliente
+          <WorkspaceCustomerPicker required={!selectedPhase} crmType={crmType || "conto_terzi"} value={form.crm_customer_key} onChange={(crm_customer_key) => setForm((current) => ({ ...current, crm_customer_key, prodotti: [], progetto_id: "" }))} />
+        </label>
+
+        <label>Progetto<select value={form.progetto_id} onChange={(e) => { const project = projects.find((item) => item.id === e.target.value); setForm((current) => ({ ...current, progetto_id: e.target.value, crm_customer_key: project?.crm_customer_key || current.crm_customer_key, prodotti: project?.crm_customer_key && project.crm_customer_key !== current.crm_customer_key ? [] : current.prodotti })); }}><option value="">Senza progetto</option>{projects.filter(p => !form.crm_customer_key || p.crm_customer_key === form.crm_customer_key || p.id === form.progetto_id).map((p) => <option key={p.id} value={p.id}>{p.titolo}</option>)}</select></label>
+        <label>Prodotto<select aria-label="Prodotto" value="" disabled={!form.crm_customer_key || customerProducts.loading || Boolean(customerProducts.error)} onChange={e=>{if(e.target.value)togglePhaseProduct(e.target.value);}}><option value="">{!form.crm_customer_key ? "Seleziona prima il cliente" : customerProducts.loading ? "Caricamento prodotti…" : "Seleziona prodotto"}</option>{customerProducts.products.filter(p=>!form.prodotti.includes(p.id)).map(p=><option key={p.id} value={p.id}>{p.nome}{p.codice ? ` · ${p.codice}` : ''}</option>)}</select></label>
+        {customerProducts.error&&<p role="alert">{customerProducts.error}</p>}
+        <div className="phase-selected-tags">{form.prodotti.map(id=><span key={id}>{products.find(p=>p.id===id)?.nome || phaseProducts.find(p=>p.prodotto_id===id)?.prodotto_nome || 'Prodotto associato'}<button type="button" aria-label="Rimuovi prodotto" onClick={()=>togglePhaseProduct(id)}><X size={13}/></button></span>)}</div>
+        <label>Deadline<input type="date" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} /></label>
+
+        </section><section className="phase-dialog-panel"><h3>Attività e reparti</h3>
+        <label>Attività (voce checklist)
           <select value={selectedTemplateValue} onChange={(e) => applyTemplate(e.target.value)}>
             <option value="">{selectedPhase && !selectedTemplateValue ? selectedPhase.titolo : "Seleziona checklist..."}</option>
             {templates.filter((item) => matchesCrmCompetency(item, effectiveCrmType) || (selectedPhase && item.titolo === selectedPhase.titolo)).map((template) => (
@@ -464,14 +469,10 @@ export default function PhaseChecklistModal({
           </select>
         </label>
         <label>Descrizione<textarea rows="3" value={form.descrizione} onChange={(e) => setForm({ ...form, descrizione: e.target.value })} /></label>
-        <label>Note<textarea rows="3" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></label>
-
-        <div className="form-grid-2">
-          <label>Stato<select value={form.stato} onChange={(e) => setForm({ ...form, stato: e.target.value })}><option value="da_evadere">Da evadere</option><option value="in_lavorazione">In lavorazione</option><option value="in_valutazione">In valutazione</option><option value="evaso">Evaso</option></select></label>
-          <label>Reparti selezionati<input disabled value={safeArray(form.reparto_ids).map((id) => departments.find((d) => d.id === id)?.nome).filter(Boolean).join(", ") || "Nessun reparto"} /></label>
-        </div>
-
-        <label>Fase / task bloccante
+        <div className="phase-departments"><strong>Reparti coinvolti</strong><div className="phase-selected-tags">{form.reparto_ids.length ? form.reparto_ids.map(id=><span key={id}>{departments.find(d=>d.id===id)?.nome || 'Reparto'}<button type="button" aria-label={`Rimuovi reparto ${departments.find(d=>d.id===id)?.nome || ''}`} onClick={()=>togglePhaseDepartment(id)}><X size={13}/></button></span>) : <small>Nessun reparto selezionato.</small>}</div>
+        <button type="button" className="secondary-action" onClick={()=>setShowDepartmentPicker(v=>!v)}>Aggiungi reparto</button>
+        {showDepartmentPicker&&<label>Reparto da aggiungere<select autoFocus value="" onChange={e=>{if(e.target.value){togglePhaseDepartment(e.target.value);setShowDepartmentPicker(false);}}}><option value="">Seleziona reparto</option>{availableDepartments.filter(d=>!form.reparto_ids.includes(d.id)).map(d=><option key={d.id} value={d.id}>{d.nome}</option>)}</select></label>}</div>
+        <label>Attività bloccante
           <select value={form.bloccante_id} onChange={(e) => setForm({ ...form, bloccante_id: e.target.value })}>
             <option value="">Nessuna fase bloccante</option>
             {blockingOptions.map((item) => (
@@ -481,12 +482,11 @@ export default function PhaseChecklistModal({
         </label>
         {selectedBlocker && !isDone(selectedBlocker) && <p className="soft-alert">Fase bloccata fino al completamento di: {selectedBlocker.titolo || "fase bloccante"}</p>}
 
-        <div className="checkbox-group scrollable-check-group">
-          <strong>Reparti competenti sulla fase</strong>
-          {availableDepartments.map((d) => (
-            <label key={d.id}><input type="checkbox" checked={safeArray(form.reparto_ids).includes(d.id)} onChange={() => togglePhaseDepartment(d.id)} />{d.nome}</label>
-          ))}
-        </div>
+        </section></div>
+        <section className="phase-dialog-panel phase-dialog-details"><h3>Stato, commenti e allegati</h3>
+          <label>Stato<select value={form.stato} onChange={(e) => setForm({ ...form, stato: e.target.value })}><option value="da_evadere">Da evadere</option><option value="in_lavorazione">In lavorazione</option><option value="in_valutazione">In valutazione</option><option value="evaso">Evaso</option></select></label>
+        <label>Note<textarea rows="3" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></label>
+
 
         {selectedPhase?.id && completedDepartments.length > 0 && (
           <div className="checkbox-group">
@@ -503,33 +503,6 @@ export default function PhaseChecklistModal({
             ))}
           </div>
         )}
-
-        <label>Progetto<select value={form.progetto_id} onChange={(e) => { const project = projects.find((item) => item.id === e.target.value); setForm((current) => ({ ...current, progetto_id: e.target.value, crm_customer_key: project?.crm_customer_key || current.crm_customer_key, prodotti: project?.crm_customer_key && project.crm_customer_key !== current.crm_customer_key ? [] : current.prodotti })); }}><option value="">Senza progetto</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.titolo}</option>)}</select></label>
-        <label>Cliente
-          <WorkspaceCustomerPicker required={!selectedPhase} crmType={crmType || "conto_terzi"} value={form.crm_customer_key} onChange={(crm_customer_key) => setForm((current) => ({ ...current, crm_customer_key, prodotti: [], progetto_id: "" }))} />
-        </label>
-
-        <div className="phase-products-toolbar" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
-          <strong>Prodotti associati alla fase: {safeArray(form.prodotti).length}</strong>
-          <button type="button" className="filter-chip" onClick={() => setShowPhaseProducts((value) => !value)}>{showPhaseProducts ? "Chiudi prodotti" : safeArray(form.prodotti).length ? "Aggiungi/Modifica/Rimuovi prodotti" : "Aggiungi prodotti"}</button>
-        </div>
-
-        {showPhaseProducts && (
-          <div className="checkbox-group scrollable-check-group">
-            <strong>Prodotti associati alla fase</strong>
-            <div className="task-search" style={{ margin: "8px 0" }}>
-              <Search size={18} />
-              <input placeholder="Ricerca rapida prodotto..." value={phaseProductQuery} onChange={(e) => setPhaseProductQuery(e.target.value)} />
-            </div>
-            {filteredPhaseProducts.length === 0 ? (
-              <p className="empty-text">{!form.crm_customer_key ? "Seleziona prima il cliente." : customerProducts.loading ? "Caricamento prodotti cliente…" : customerProducts.error || "Nessun prodotto associato al cliente."}</p>
-            ) : (
-              filteredPhaseProducts.map((p) => <label key={p.id}><input type="checkbox" checked={safeArray(form.prodotti).includes(p.id)} onChange={() => togglePhaseProduct(p.id)} />{p.nome}{p.codice ? ` · ${p.codice}` : ""}</label>)
-            )}
-          </div>
-        )}
-
-        <label>Deadline<input type="date" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} /></label>
 
         <div className="phase-detail-extra">
           <div className="phase-extra-title"><MessageSquare size={18} /><strong>Commenti</strong></div>
@@ -569,14 +542,15 @@ export default function PhaseChecklistModal({
           </div>
         </div>
 
+        </section>
         </fieldset>
-        <div className="dashboard-message-actions">
+        <div className="dashboard-message-actions phase-dialog-actions" data-assistant-actions>
           {selectedPhase?.id && canManage && (
             <button type="button" className="secondary-action danger" onClick={deletePhase} disabled={saving}>
               <Trash2 size={18} /> Elimina
             </button>
           )}
-          {canManage && <button className="primary-action" disabled={saving}><Save size={18} /> {saving ? "Salvataggio..." : "Salva fase"}</button>}
+          {canManage && <button className="primary-action" disabled={saving}><Save size={18} /> {saving ? "Salvataggio..." : "Salva"}</button>}
         </div>
       </form>
     </div>

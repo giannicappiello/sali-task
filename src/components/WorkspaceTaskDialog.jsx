@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import PhaseChecklistModal from "./PhaseChecklistModal";
 import { supabase } from "../lib/supabaseClient";
-import { loadDirectWorkspaceProducts, projectsForCrmTask } from "../lib/workspaceCrmCatalog";
+import { loadWorkspaceProducts, loadDirectWorkspaceProducts, projectsForCrmTask } from "../lib/workspaceCrmCatalog";
 
 export default function WorkspaceTaskDialog({ open, phase = null, crmType, initialCustomerKey = "", canManage = true, onClose, onSaved }) {
   const [data, setData] = useState({ projects: [], departments: [], products: [], phaseDepartments: [], phaseProducts: [], templates: [], templateDepartments: [], allPhases: [] });
@@ -16,7 +16,7 @@ export default function WorkspaceTaskDialog({ open, phase = null, crmType, initi
       const results = await Promise.all([
         projectsRequest.order("created_at", { ascending: false }).limit(2000),
         supabase.from("reparti").select("id,nome,attivo").eq("attivo", true).order("nome"),
-        crmType === "b2b" || crmType === "brand_direct" ? loadDirectWorkspaceProducts(supabase) : supabase.from("prodotti").select("id,nome,codice,codice_mexal,brand,categoria").order("nome").limit(5000),
+        crmType === "b2b" || crmType === "brand_direct" ? loadDirectWorkspaceProducts(supabase) : loadWorkspaceProducts(supabase),
         supabase.from("v4_fase_reparti").select("id,fase_id,reparto_id,completato,completato_at,completato_da,reparti(id,nome)"),
         supabase.from("v4_fase_prodotti").select("id,fase_id,prodotto_id,prodotto_nome"),
         supabase.from("checklist_template").select("id,titolo,reparto_id,ordine,attivo,competenze_crm,reparti(id,nome)").eq("attivo", true).order("ordine"),

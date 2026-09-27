@@ -22,3 +22,13 @@ export function projectsForCrmTask(projects, crmType, customerKey = '', phase = 
   return projects.filter(project => project.id === phase?.progetto_id ||
     ((!crmType || project.crm_tipo === crmType) && (!customerKey || project.crm_customer_key === customerKey)));
 }
+
+export async function loadWorkspaceProducts(client) {
+  const rows = [];
+  for (let from = 0; ; from += 500) {
+    const result = await client.from('prodotti').select('id,nome,codice,codice_mexal,brand,categoria').order('nome').order('id').range(from, from + 499);
+    if (result.error) return { data: [], error: result.error };
+    rows.push(...(result.data || []));
+    if ((result.data || []).length < 500) return { data: rows, error: null };
+  }
+}

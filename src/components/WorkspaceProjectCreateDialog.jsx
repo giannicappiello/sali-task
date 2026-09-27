@@ -3,7 +3,7 @@ import { Plus, Save, Search, X } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabaseClient";
 import { loadDirectProductCatalog } from "../modules/orders/services/directProductCatalog";
-import { loadDirectWorkspaceProducts } from "../lib/workspaceCrmCatalog";
+import { loadWorkspaceProducts, loadDirectWorkspaceProducts } from "../lib/workspaceCrmCatalog";
 import { matchesCrmCompetency, projectRulesForCrm, resolveRuleBlocker } from "../lib/crmCompetencies";
 import useCustomerWorkspaceProducts from "../lib/useCustomerWorkspaceProducts";
 import WorkspaceCustomerPicker from "./WorkspaceCustomerPicker";
@@ -53,7 +53,7 @@ export default function WorkspaceProjectCreateDialog({ open, crmType, initialCus
             error: null,
           }))
           .catch((error) => ({ data: [], error }))
-        : supabase.from("prodotti").select("id,nome,codice,codice_mexal,brand,categoria").order("nome").limit(5000);
+        : loadWorkspaceProducts(supabase);
       const results = await Promise.all([
         productsRequest,
         supabase.from("reparti").select("id,nome,attivo").eq("attivo", true).order("nome"),

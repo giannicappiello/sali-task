@@ -10,5 +10,44 @@
 .crm-cost-editor form{display:grid;grid-template-columns:1fr 2fr 1fr 1fr;gap:16px;align-items:end}
 .crm-cost-description{grid-column:span 3}.crm-cost-page td small{display:block}
 .crm-cost-page .crm-table-wrap{overflow-x:auto}.crm-cost-page td:last-child button{margin:3px}
-@media(max-width:900px){.crm-cost-cards{grid-template-columns:1fr}.crm-cost-editor form{grid-template-columns:1fr 1fr}.crm-cost-description{grid-column:span 2}}
-@media(max-width:550px){.crm-cost-editor form{grid-template-columns:1fr}.crm-cost-description{grid-column:auto}}
+/* Keep each section inside the available Workspace column. */
+.crm-cost-page,.crm-cost-page .panel,.crm-cost-page .crm-table-wrap{min-width:0;max-width:100%;box-sizing:border-box}
+.crm-cost-page input,.crm-cost-page select{min-width:0;max-width:100%}
+.crm-cost-page .crm-table td{overflow-wrap:anywhere}
+.crm-cost-editor form>div{display:flex;flex-wrap:wrap;gap:8px}
+@media(max-width:1100px){
+ .crm-cost-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+ .crm-cost-filters .crm-period-filter{grid-column:1/-1;min-width:0;width:100%;box-sizing:border-box;display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+ .crm-cost-filters>label{min-width:0}
+ .crm-cost-filters .crm-period-filter label{min-width:0;width:auto}
+ .crm-cost-editor form{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .crm-cost-description{grid-column:1/-1}
+ .crm-cost-cards{gap:12px}
+ .crm-cost-cards h3{min-height:44px;margin-bottom:12px}
+ .crm-cost-page button,.crm-cost-page input,.crm-cost-page select{min-height:44px}
+ .crm-cost-page .crm-table{min-width:660px}
+}
+@media(max-width:600px){
+ .crm-cost-page .panel{padding:16px;border-radius:16px}
+ .crm-cost-page .crm-page-header-row{flex-direction:column;align-items:stretch}
+ .crm-cost-page .crm-toolbar-actions,.crm-cost-page .crm-toolbar-actions>button{width:100%}
+ .crm-cost-page .crm-section-nav{display:flex;flex-wrap:wrap;gap:8px}
+ .crm-cost-page .crm-section-nav a{padding:10px;min-width:0;overflow-wrap:anywhere}
+ .crm-cost-cards,.crm-cost-editor form,.crm-cost-filters{grid-template-columns:minmax(0,1fr)}
+ .crm-cost-cards h3{min-height:0;margin-bottom:8px}
+ .crm-cost-cards .panel{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
+ .crm-cost-value{font-size:23px}
+ .crm-cost-filters .crm-period-filter{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:0}
+ .crm-cost-filters .crm-period-filter label:first-of-type{grid-column:1/-1}
+ .crm-cost-page input,.crm-cost-page select{font-size:16px}
+ .crm-cost-filters>button,.crm-cost-editor form>div>button{width:100%}
+ .crm-cost-page .crm-table{display:block;min-width:0;width:100%}
+ .crm-cost-page .crm-table thead{display:none}
+ .crm-cost-page .crm-table tbody{display:grid;gap:14px}
+ .crm-cost-page .crm-table tr{display:block;border:1px solid var(--border,#d7e3f3);border-radius:12px;padding:12px}
+ .crm-cost-page .crm-table td{display:block;width:auto;padding:8px 0;border:0;white-space:normal}
+ .crm-cost-page .crm-table td+td{border-top:1px solid var(--border,#d7e3f3)}
+ .crm-cost-page .crm-table td::before{content:attr(data-label);display:block;font-size:12px;font-weight:600;color:#526781;margin-bottom:5px}
+ .crm-cost-page .crm-table td[data-label="Azioni"] button{margin:4px 6px 0 0}
+ .crm-cost-page .crm-empty{padding:16px 0;overflow-wrap:anywhere}
+}

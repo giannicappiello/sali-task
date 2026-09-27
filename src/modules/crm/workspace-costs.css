@@ -83,7 +83,7 @@
 .crm-cost-page .crm-cost-cards .crm-cost-value{min-height:32px;line-height:1.3;font-size:23px}
 @media(max-width:600px){.crm-cost-page .crm-cost-cards>.panel{padding:12px 16px}}
 
-.crm-cost-page .panel.crm-cost-filters{grid-template-columns:minmax(360px,2fr) minmax(220px,1.6fr) repeat(2,minmax(120px,1fr)) auto auto}
+.crm-cost-page .panel.crm-cost-filters{grid-template-columns:minmax(360px,2fr) minmax(220px,1.6fr) repeat(2,minmax(120px,1fr)) auto}
 .crm-cost-page .panel.crm-cost-tree{height:auto;min-height:0}
 .crm-cost-client{border:1px solid var(--border,#d7e3f3);border-radius:12px;margin:12px 0;overflow:hidden}
 .crm-cost-client>summary,.crm-cost-project summary{display:flex;align-items:center;gap:16px;padding:14px;cursor:pointer;list-style:none}
@@ -94,11 +94,12 @@
 .crm-cost-client>summary>span{font-size:13px;color:#526781}
 .crm-cost-client-content{padding:0 14px}
 .crm-cost-project{position:relative;border-bottom:1px solid #d7e3f3}
-.crm-cost-project summary{padding-right:155px}
-.crm-cost-project>button{position:absolute;right:0;top:12px}
+.crm-cost-project summary{padding-left:175px;padding-right:14px}
+.crm-cost-project>button{position:absolute;left:14px;top:12px}
 .crm-cost-project-tasks{padding-left:20px}
 .crm-cost-tree-row{display:flex;align-items:center;gap:16px;padding:14px;border-top:1px solid #e7eef7}
 .crm-cost-tree-row>span{flex:1;min-width:0;overflow-wrap:anywhere}
+.crm-cost-tree-row>button{order:-1;flex-shrink:0}
 .crm-cost-tree small{display:block;font-size:12px;color:#526781;margin-top:4px}
 .crm-cost-page .panel.crm-cost-dialog{width:min(1060px,calc(100vw - 32px))}
 .crm-cost-page .crm-cost-dialog form>.crm-cost-entry-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start}
@@ -112,7 +113,7 @@
  .crm-cost-page .panel.crm-cost-filters{grid-template-columns:minmax(0,1fr)}
  .crm-cost-page .crm-cost-dialog form>.crm-cost-entry-cards{grid-template-columns:minmax(0,1fr)}
  .crm-cost-client>summary{flex-wrap:wrap;gap:8px}.crm-cost-client>summary>span{width:100%;padding-left:20px;order:4}
- .crm-cost-client-content{padding:0 8px}.crm-cost-project summary{padding-right:0;flex-wrap:wrap}
+ .crm-cost-client-content{padding:0 8px}.crm-cost-project summary{padding-left:14px;padding-right:0;flex-wrap:wrap}
  .crm-cost-project>button{position:static;margin:0 0 10px 14px}
  .crm-cost-project-tasks{padding-left:8px}.crm-cost-tree-row{flex-wrap:wrap;gap:10px;padding:12px 6px}
  .crm-cost-tree-row>span{flex-basis:100%}.crm-cost-entry{grid-template-columns:minmax(0,1fr)}

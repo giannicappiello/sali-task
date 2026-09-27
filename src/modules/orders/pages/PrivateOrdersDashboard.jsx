@@ -75,11 +75,11 @@ export default function PrivateOrdersDashboard() {
     }
   }
   return <section className="production-page rdp-workbench private-orders-workbench" aria-label="Dashboard OrdiniPrivate">
-    <div className="orders-toolbar private-workbench-actions">
+    <div className="private-workbench-toolbar">    <div className="orders-toolbar private-workbench-actions">
       {canWriteOrders && <button type="button" className="orders-primary" onClick={() => navigate(`${basePath}/nuovo`)}><Plus size={17}/>Nuovo OCT</button>}
       {canUseAIOrderGeneration && <button type="button" className="orders-secondary" onClick={() => navigate(`${basePath}/nuovo-da-documento?tipo=standard`)}><Sparkles size={17}/>Genera con AI</button>}
     </div>
-    <div className="private-workbench-toolbar">
+
       <label className="orders-search"><Search size={18} aria-hidden="true"/><input type="search" aria-label="Ricerca rapida totale OCT" placeholder="Cerca OCT, RdP, cliente, prodotto, stato o data…" value={search} onChange={(event) => setSearch(event.target.value)}/></label>
       <button type="button" className="orders-secondary" disabled={loading || accessLoading} onClick={() => setRevision((value) => value + 1)}><RefreshCw size={17}/>Aggiorna</button>
     </div>

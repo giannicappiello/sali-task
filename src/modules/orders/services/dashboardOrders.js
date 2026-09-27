@@ -16,6 +16,8 @@ export function matchesDashboardOrder(order, query, statusFilter = "", monthFilt
   return [
     order.numero_ordine,
     order.ragione_sociale_cliente,
+    order.agente_visualizzato,
+    order.numero_ordine_visualizzato,
     order.codice_cliente,
     order.codice_agente_mexal,
     order.stato,

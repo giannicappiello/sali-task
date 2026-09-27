@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { getOrderDisplayStatus } from '../services/orderDisplayStatus';
 export default function OrderStatus({ order, basePath }) {
   const status = getOrderDisplayStatus(order);
-  return <div><span className={`orders-status ${status.className}`}>{status.label}</span>
+  return <div>{status.className !== 'fattura-collegata' && <span className={`orders-status ${status.className}`}>{status.label}</span>}
     {order.invoice_lookup_error && <small role="status">Verifica fatture non disponibile</small>}
     {(order.linked_invoices || []).map(invoice => <Link key={invoice.id}
       style={{ display: 'block', marginTop: 4 }} to={`${basePath}/fatture/${invoice.id}`}

@@ -53,7 +53,7 @@
 }
 
 /* Compact toolbar; override generic panel sizing in the Workspace shell. */
-.crm-cost-page .panel.crm-cost-filters{min-height:0;height:auto;align-content:start;padding:16px;display:grid;grid-template-columns:minmax(390px,2fr) repeat(3,minmax(120px,1fr)) auto auto;gap:12px;align-items:end}
+.crm-cost-page .panel.crm-cost-filters{min-height:0;height:auto;align-content:start;padding:16px;display:grid;grid-template-columns:minmax(360px,2fr) minmax(145px,1fr) repeat(3,minmax(110px,1fr)) auto auto;gap:12px;align-items:end}
 .crm-cost-page .crm-cost-filters>label{min-width:0}
 .crm-cost-page .crm-cost-filters>button{white-space:nowrap;min-height:44px;width:auto}
 .crm-cost-page .crm-cost-filters .crm-period-filter{grid-column:auto;display:grid;grid-template-columns:1.2fr 1fr 1fr;min-width:0;width:100%;box-sizing:border-box;gap:8px}

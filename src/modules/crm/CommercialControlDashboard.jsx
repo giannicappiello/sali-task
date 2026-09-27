@@ -1,3 +1,4 @@
+import CrmOpenOrderBreakdown from './CrmOpenOrderBreakdown';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { AlertTriangle, BriefcaseBusiness, RefreshCw } from "lucide-react";
@@ -40,7 +41,8 @@ const REORDER_LABELS = {
 const CONTROL_KPI_INFO = {
   Fatturato: "Somma degli imponibili delle fatture Mexal nel periodo e nei filtri correnti.",
   Ordinato: "Valore degli ordini non fatturati nel periodo e nei filtri correnti. Gli ordini collegati a fatture sono esclusi anche se la fattura è fuori periodo.",
-  "Portafoglio ordini": "Somma del valore residuo degli ordini aperti monitorati.",
+  "OC aperti": "Importi netti: PR in corso (OCM/OCI) e Stralci OCX verificati aperti e non fatturati, più Ordini PH, che restano sempre ordini. Le fatture sono verificate senza limite di periodo.",
+  "OCT aperti": "Valore netto degli OCT presenti nell’ultima sincronizzazione Mexal e senza fatture collegate. Esclusi gli OCT rimossi e quelli fatturati, anche fuori periodo.",
   "Clienti Mexal attivi": "Numero di clienti distinti con anagrafica Mexal attiva nel perimetro selezionato.",
   "Nuovi clienti": "Clienti la cui prima vendita documentata ricade nel periodo selezionato.",
   "Clienti persi": "Clienti senza riordino da oltre 2,5 volte la propria frequenza storica individuale.",
@@ -214,14 +216,13 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
   const totals = useMemo(() => data?.totals || {}, [data?.totals]);
   const comparison = data?.comparison || {};
   const invoiceDelta = variation(totals.invoice_total, comparison.invoice_total);
-  const orderDelta = variation(totals.order_total, comparison.order_total);
   const updated = data?.generated_at ? new Date(data.generated_at).toLocaleString("it-IT") : "—";
   const nav = scope === "private" ? [["Clienti", "/crm/conto-terzi/clienti"], ["Pipeline", "/crm/conto-terzi/pipeline"], ["Attività", "/crm/conto-terzi/attivita"], ["Brief", "/crm/conto-terzi/brief"], ["Analisi", "/crm/conto-terzi/analisi"]]
     : scope === "direct" ? [["BtoB", "/crm/b2b"], ["BtoC / Online", "/crm/online"]] : [];
 
   const cardDestination = useCallback((label, target) => {
     if (scope === "private") {
-      const customerMetric = { Fatturato: "invoiced", Ordinato: "ordered", "Portafoglio ordini": "ordered", "Clienti Mexal attivi": "all", "Nuovi clienti": "new" }[label];
+      const customerMetric = { Fatturato: "invoiced", Ordinato: "ordered", "OCT aperti": "ordered", "OC aperti": "ordered", "Clienti Mexal attivi": "all", "Nuovi clienti": "new" }[label];
       if (customerMetric) return period.withPeriod("/crm/conto-terzi/clienti", { metric: customerMetric, ...(label === "Clienti Mexal attivi" ? { customerStatus: "active" } : {}) });
       if (["Pipeline", "Forecast ponderato"].includes(label)) return period.withPeriod("/crm/conto-terzi/pipeline", { status: "open", view: "list" });
     }
@@ -236,17 +237,17 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
   const kpis = useMemo(() => {
     const common = [
       ["Fatturato", formatMoney(totals.invoice_total), `${totals.invoice_count || 0} fatture Mexal`, "top", invoiceDelta],
-      ["Ordinato", formatMoney(totals.order_total), `${totals.order_count || 0} ordini non fatturati · PH: ${totals.ph_order_count || 0} (${formatMoney(totals.ph_order_total)}) · PR: ${totals.pr_order_count || 0} (${formatMoney(totals.pr_order_total)})`, "top", orderDelta],
-      ["Portafoglio ordini", formatMoney(totals.portfolio_total), `${totals.portfolio_orders || 0} ordini aperti monitorati`, "portfolio"],
+      ["OCT aperti", formatMoney(totals.oct_order_total), "OCT non fatturati · IVA esclusa", "top"],
+      ["OC aperti", formatMoney(totals.oc_order_total), <CrmOpenOrderBreakdown values={totals}/>, "portfolio"],
       ["Clienti Mexal attivi", number(totals.mexal_active_customers), "Stato anagrafico Mexal", "top"],
       ["Nuovi clienti", number(totals.new_customers), "Prima vendita documentata nel periodo", "new"],
     ];
     if (scope === "global") return [...common, ["Clienti persi", number(totals.lost_customers), "Frequenza individuale oltre 2,5×", "reorder-lost"]];
-    if (scope === "private") return [...common,
+    if (scope === "private") return [...common.filter(([label]) => label !== "OC aperti"),
       ["Pipeline", formatMoney(totals.pipeline_value), `${totals.pipeline_count || 0} progetti aperti`, "pipeline"],
       ["Forecast ponderato", formatMoney(totals.weighted_pipeline), "Valore progetto × probabilità", "pipeline"],
       ["Riordini attesi", number(totals.reorders_due), "Frequenza storica individuale", "reorders"]];
-    return [...common,
+    return [...common.filter(([label]) => label !== "OCT aperti"),
       ["Riordini", number(totals.reorders_due), "Attesi o in ritardo", "reorders"],
       ["Ordine medio", formatMoney(totals.average_order_value), "Ordini Workspace/Mexal nel periodo", "top"],
       ["Frequenza media", totals.average_reorder_days ? `${number(totals.average_reorder_days, 1)} gg` : "—", "Solo clienti con storico sufficiente", "reorders"],
@@ -255,7 +256,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
       ["Crescita fatturato", percentage(invoiceDelta), "Rispetto al confronto scelto", "trend"],
       ["Forecast", formatMoney(totals.weighted_pipeline), "Pipeline ponderata reale", "pipeline"],
     ];
-  }, [data?.attention, invoiceDelta, orderDelta, scope, totals]);
+  }, [data?.attention, invoiceDelta, scope, totals]);
 
   const dashboard = <section className={`crm-control-dashboard scope-${scope}`} aria-label={config.title}>
     <div className="crm-control-filterbar">
@@ -277,7 +278,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
       {scope === "global" ? <section className="crm-control-panel" id="business">
         <header><div><span>Composizione business</span><h3>PRIVATE vs DIRECT</h3></div></header>
         <div className="crm-control-business crm-business-summary">{(data?.business || []).map((row) => {
-          const totals = <><strong>{row.business}</strong><span>{formatMoney(row.invoice_total)} fatturato</span><span>{formatMoney(row.order_total)} ordinato non fatturato</span>{row.business === "DIRECT" && <><span>Ordini PH: {number(row.ph_order_count)} · {formatMoney(row.ph_order_total)}</span><span>Ordini PR: {number(row.pr_order_count)} · {formatMoney(row.pr_order_total)}</span></>}<span>{number(row.customers)} clienti</span></>;
+          const totals = <><strong>{row.business}</strong><span>{formatMoney(row.invoice_total)} fatturato</span>{row.business === "DIRECT" ? <><span>{formatMoney(Number(row.pr_order_total || 0) + Number(row.stralci_order_total || 0) + Number(row.ph_order_total || 0))} OC aperti</span><CrmOpenOrderBreakdown values={row}/></> : <span>{formatMoney(row.oct_order_total)} OCT aperti</span>}<span>{number(row.customers)} clienti</span></>;
           if (row.business === "PRIVATE") return <Link key={row.business} to={period.withPeriod("/crm/conto-terzi")}>{totals}</Link>;
           return <article className="crm-business-card" key={row.business}>
             {totals}

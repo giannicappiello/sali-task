@@ -1,3 +1,4 @@
+import CrmOpenOrderBreakdown from './CrmOpenOrderBreakdown';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
@@ -99,7 +100,7 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
         {card('Clienti attivi nel periodo', data.customers_with_activity, 'Almeno un documento', 'Clienti con ordini o fatture nel periodo selezionato.', customer('active'))}
         {card('Nuovi clienti', data.new_customers, 'Prima vendita nel periodo', 'Clienti con prima vendita documentata nel periodo selezionato.', customer('new'))}
         {card('Fatturato', formatMoney(data.invoice_total), `${data.invoice_count || 0} fatture`, data.invoice_source_note || 'Somma del fatturato nel periodo selezionato.', customer('invoiced'))}
-        {card('Ordinato', formatMoney(data.order_total), `${data.order_count || 0} ordini · Ordini PH: ${data.ph_order_count || 0} (${formatMoney(data.ph_order_total)}) · Ordini PR: ${data.pr_order_count || 0} (${formatMoney(data.pr_order_total)})`, data.order_source_note || 'Somma dell’ordinato nel periodo selezionato.', customer('ordered'))}
+        {card('Ordinato', formatMoney(data.order_total), <CrmOpenOrderBreakdown values={data}/>, 'Importi netti IVA esclusa. PR in corso: documenti OCM/OCI verificati aperti e non fatturati. Stralci: soli OCX verificati aperti e non fatturati. PH: ordini che restano tali e non sono fatturati. Verifica delle fatture senza limite di periodo.', customer('ordered'))}
         {card('Valore medio ordine', formatMoney(data.average_order_value), 'Periodo selezionato', 'Ordinato diviso per il numero di ordini nel periodo.', customer('ordered'))}
         {card('Clienti senza attività nel periodo', data.inactive_customers, 'Nessun documento da 90 giorni', 'Indicatore commerciale di inattività: non modifica lo stato attivo/non attivo del CRM.', customer('inactive'))}
       </div></section>

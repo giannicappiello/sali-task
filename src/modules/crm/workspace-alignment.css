@@ -144,3 +144,6 @@ body .workspace-screen-content .b2b-navigation-period .crm-section-nav{flex:1 1 
 .b2b-navigation-period .crm-period-filter label{min-width:120px}
 @media(min-width:1500px){.b2b-navigation-period .crm-section-nav{gap:3px}.b2b-navigation-period .crm-section-nav a{font-size:14px;padding-inline:9px}}
 @media(max-width:700px){.b2b-navigation-period .crm-period-filter{width:100%}}
+
+.crm-open-order-breakdown{display:grid;gap:4px;font-size:12px;font-weight:400;line-height:1.45}
+.crm-open-order-breakdown > span{display:block}

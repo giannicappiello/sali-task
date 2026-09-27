@@ -128,3 +128,10 @@
  .crm-cost-project-tasks{padding-left:8px}.crm-cost-tree-row{flex-wrap:wrap;gap:10px;padding:12px 6px}
  .crm-cost-tree-row>span{flex-basis:100%}.crm-cost-entry{grid-template-columns:minmax(0,1fr)}
 }
+
+.crm-cost-details .crm-table{font-size:12px;min-width:900px}
+.crm-cost-details .crm-table th,.crm-cost-details .crm-table td{padding:8px 7px;min-width:0}
+.crm-cost-details .crm-table th input{width:100%;min-width:0;max-width:125px;min-height:30px;padding:4px 6px;font-size:12px}
+.crm-cost-details .b2b-sort{font-size:12px}
+.crm-cost-detail-actions{display:flex;align-items:center;gap:6px;flex-wrap:nowrap}
+.crm-cost-detail-actions button{white-space:nowrap;font-size:12px;padding:6px 9px;min-height:32px}

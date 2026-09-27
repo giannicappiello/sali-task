@@ -59,7 +59,8 @@ export default function CrmWorkspaceCosts(){
   </section>
   <div className="crm-cost-cards">{[['Consuntivo totale',totals.total,'Somma dei costi registrati nel periodo e nei filtri selezionati.',''],['Costi task / fasi',totals.tasks,'Costi attribuiti alle attività e alle fasi.','task'],['Costi diretti progetti',totals.projects,'Costi attribuiti direttamente ai progetti, senza duplicare quelli delle attività.','project']].map(([title,value,info,filter])=><section className="panel" key={title}><h3>{title} <InfoTooltip text={info}/></h3><button className="crm-cost-value" onClick={()=>setKind(filter)}>{loading?'…':formatMoney(value)}</button></section>)}</div>
   {form&&<WorkspaceCostDialog initial={form} operator={operator} isAdmin={isAdmin()} projects={data.projects.map(p=>({...p,customerName:resolveCostCustomer(p,null,customers).name}))} tasks={data.tasks.map(t=>({...t,customerName:resolveCostCustomer(t,data.projects.find(p=>p.id===t.progetto_id),customers).name}))} onSave={save} onClose={()=>setForm(null)}/>}
-  {viewCosts&&<CrmKpiDialog title={`Costi · ${viewCosts.title}`} subtitle={`${formatDate(period.from)} – ${formatDate(period.to)} · Filtri correnti`} onClose={()=>setViewCosts(null)}>
+  {viewCosts&&!form&&<CrmKpiDialog title={`Costi · ${viewCosts.title}`} subtitle={`${formatDate(period.from)} – ${formatDate(period.to)} · Filtri correnti`} onClose={()=>{setViewCosts(null);setDeleting(null);}}><div className="crm-cost-details">
+   {error&&<p role="alert" className="crm-message error">{error}</p>}
    <p>Totale: <strong>{formatMoney(costSummary(viewedRows).total)}</strong></p>
    <CrmDetailTable rows={viewedRows} columns={[
     {key:'date',label:'Data',value:r=>formatDate(r.cost_date),sortValue:r=>r.cost_date},
@@ -69,20 +70,17 @@ export default function CrmWorkspaceCosts(){
     {key:'hours',label:'Ore',value:r=>r.hours??'—'},
     {key:'rate',label:'Costo orario',value:r=>r.hourly_rate==null?'—':formatMoney(r.hourly_rate)},
     {key:'description',label:'Descrizione',value:r=>r.description},
-    {key:'amount',label:'Importo',value:r=>formatMoney(r.amount),sortValue:r=>Number(r.amount)}
+    {key:'amount',label:'Importo',value:r=>formatMoney(r.amount),sortValue:r=>Number(r.amount)},
+    ...(canWrite?[{key:'actions',label:'Azioni',value:()=>'',render:r=><div className="crm-cost-detail-actions"><button type="button" disabled={busy} onClick={()=>{setDeleting(null);setForm({...r,target:r.phase_id||r.project_id});}}>Modifica</button>{deleting===r.id?<><button type="button" disabled={busy} onClick={remove}>Conferma eliminazione</button><button type="button" disabled={busy} onClick={()=>setDeleting(null)}>Annulla</button></>:<button type="button" disabled={busy} onClick={()=>setDeleting(r.id)}>Elimina</button>}</div>}]:[])
+
    ]} empty="Nessun costo registrato per questa voce e i filtri selezionati."/>
-  </CrmKpiDialog>}
+  </div></CrmKpiDialog>}
   <section className="panel crm-cost-tree"><h3>Consuntivi per progetto <InfoTooltip text="Clienti con progetti o attività in corso, anche senza costi. Prima i progetti per data di inserimento, dal meno recente, poi le attività singole. Gli importi rispettano il periodo e i filtri selezionati."/></h3>
    {tree.map(client=><details className="crm-cost-client" key={client.key}><summary><strong>{client.name}</strong><span>{client.projects.length} progetti · {client.tasks.length} attività singole</span><strong>{formatMoney(client.total)}</strong></summary>
     <div className="crm-cost-client-content">{client.projects.map(p=><div className="crm-cost-project" key={p.id}><details><summary><span><strong>{p.titolo}</strong><small>Progetto · inserito il {formatDate(p.created_at)} · {p.stato}</small>{productReference(p)}</span><strong>{formatMoney(p.total)}</strong></summary><div className="crm-cost-project-tasks">{p.tasks.map(taskRow)}{!p.tasks.length&&<p>Nessuna attività per i filtri selezionati.</p>}</div></details>{rowActions('project',p)}</div>)}{client.tasks.map(taskRow)}</div>
    </details>)}
    {loading?<p role="status">Caricamento…</p>:!tree.length&&<p>Nessun cliente con progetti o attività in corso per questi filtri.</p>}
   </section>
-  <section className="panel"><h3>Costi registrati · {totals.count}</h3><div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Data</th><th>Cliente</th><th>Attività / progetto</th><th>Voce</th><th>Descrizione / operatore</th><th>Consuntivo</th>{canWrite&&<th>Azioni</th>}</tr></thead><tbody>{rows.map(r=><tr key={r.id}>
-   <td data-label="Data">{formatDate(r.cost_date)}</td><td data-label="Cliente">{r.customer.name}</td><td data-label="Attività / progetto">{r.target}<small>{r.kind==='task'?r.project?.titolo||'Attività singola':'Costo diretto progetto'}</small></td>
-   <td data-label="Voce">{r.cost_type==='labor'?'Lavoro':r.cost_type==='materials'?'Materiali':'Costo precedente'}{r.cost_type==='labor'&&<small>{r.hours} ore × {formatMoney(r.hourly_rate)}</small>}</td>
-   <td data-label="Descrizione / operatore">{r.description}{r.operator_name&&<small>{r.operator_name}</small>}</td><td data-label="Consuntivo">{formatMoney(r.amount)}</td>
-   {canWrite&&<td data-label="Azioni"><button disabled={busy} onClick={()=>setForm({...r,target:r.phase_id||r.project_id})}>Modifica</button>{deleting===r.id?<><button disabled={busy} onClick={remove}>Conferma eliminazione</button><button onClick={()=>setDeleting(null)}>Annulla</button></>:<button disabled={busy} onClick={()=>setDeleting(r.id)}>Elimina</button>}</td>}
-  </tr>)}</tbody></table>{loading?<p className="crm-empty">Caricamento…</p>:!rows.length&&<p className="crm-empty">Nessun costo registrato per questi filtri.</p>}</div></section>
+
  </div>;
 }

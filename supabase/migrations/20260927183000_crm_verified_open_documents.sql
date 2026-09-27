@@ -1,10 +1,10 @@
 begin;
 
-create or replace function public.crm_verified_open_order_values()
-returns table(order_id uuid, pr_amount numeric, stralci_amount numeric, ph_amount numeric, oct_amount numeric)
+create or replace function public.crm_verified_open_order_values_v2()
+returns table(order_id uuid, pr_amount numeric, stralci_amount numeric, ph_amount numeric, oct_amount numeric, prenotazioni_amount numeric)
 language sql stable security invoker set search_path=public as $verified$
 with candidates as materialized (
- select o.id order_id,o.codice_cliente,d.tipo_documento kind,coalesce(nullif(d.sigla,''),'OC') sigla,d.numero,coalesce(nullif(d.anno,0),extract(year from o.data_ordine)::integer),
+ select o.id order_id,o.codice_cliente,d.tipo_documento kind,coalesce(nullif(d.sigla,''),'OC') sigla,d.numero,coalesce(nullif(d.anno,0),extract(year from o.data_ordine)::integer) as anno,
    coalesce(
     (select sum((v->>1)::numeric) from jsonb_array_elements(d.dati_mexal->'tot_documento') v)
     - (select sum((v->>1)::numeric) from jsonb_array_elements(d.dati_mexal->'tot_iva') v),
@@ -22,7 +22,7 @@ with candidates as materialized (
  from public.ordini_testate o where o.modulo_ordini='private' and o.origine='mexal_oct'
   and o.mexal_sincronizzato_il is not null and o.mexal_eliminato_il is null and o.mexal_numero is not null and o.mexal_anno is not null
  union all
- select o.id,o.codice_cliente,'PH',null,null,null,
+ select o.id,o.codice_cliente,case when o.tipo_ordine='prenotazione' then 'PH_OCI' else 'PH' end,null,null,null,
  coalesce((select sum(coalesce(r.imponibile_riga,r.quantita*r.prezzo_netto)) from public.ordini_righe r where r.ordine_id=o.id and not coalesce(r.riga_descrittiva,false) and coalesce(r.mexal_attiva,true)),o.totale_imponibile,o.totale_documento,0)
  from public.ordini_testate o where o.modulo_ordini='ph'
 ), invoice_refs as materialized (
@@ -36,13 +36,13 @@ with candidates as materialized (
  select c.* from candidates c where c.amount is not null and not exists(
   select 1 from invoice_refs f where f.codice_cliente=c.codice_cliente and f.numero=c.numero and f.sigla=c.sigla and f.anno=c.anno::text)
 )
-select order_id,coalesce(sum(amount) filter(where kind in ('OCM','OCI')),0),
+select order_id,coalesce(sum(amount) filter(where kind='OCM'),0),
  coalesce(sum(amount) filter(where kind='OCX'),0),coalesce(sum(amount) filter(where kind='PH'),0),
- coalesce(sum(amount) filter(where kind='OCT'),0)
+ coalesce(sum(amount) filter(where kind='OCT'),0),coalesce(sum(amount) filter(where kind in ('OCI','PH_OCI')),0)
 from eligible group by order_id;
 $verified$;
-revoke all on function public.crm_verified_open_order_values() from public,anon,authenticated;
-grant execute on function public.crm_verified_open_order_values() to service_role;
+revoke all on function public.crm_verified_open_order_values_v2() from public,anon,authenticated;
+grant execute on function public.crm_verified_open_order_values_v2() to service_role;
 CREATE OR REPLACE FUNCTION public.crm_dashboard_metrics(p_crm_type text, p_from date, p_to date, p_inactivity_days integer DEFAULT 90)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -69,7 +69,7 @@ begin
     join public.ordini_clienti_cache c using (codice_cliente)
     where x.area_crm = p_crm_type
       and (x.codice_cliente in (select public.crm_visible_canonical_customer_codes()) and x.area_crm = any((select public.crm_visible_customer_areas())::text[]))
-  ), verified_values as materialized (select * from public.crm_verified_open_order_values()), invoiced_orders as materialized (
+  ), verified_values as materialized (select * from public.crm_verified_open_order_values_v2()), invoiced_orders as materialized (
  select distinct links.ordine_id from public.workspace_order_invoice_links(
   array(select o.id from public.ordini_testate o where o.codice_cliente in (select codice_cliente from visible_customers) and o.data_ordine between p_from and p_to)
  ) links
@@ -85,7 +85,7 @@ begin
   ), order_by_customer as (
     select o.codice_cliente,
       count(*) filter (where o.data_ordine between p_from and p_to and exists(select 1 from verified_values v where v.order_id=o.id))::bigint order_count,
-      coalesce(sum((select v.pr_amount+v.stralci_amount+v.ph_amount+v.oct_amount from verified_values v where v.order_id=o.id)) filter (where o.data_ordine between p_from and p_to and exists(select 1 from verified_values v where v.order_id=o.id)), 0)::numeric order_total,
+      coalesce(sum((select v.pr_amount+v.stralci_amount+v.ph_amount+v.oct_amount+v.prenotazioni_amount from verified_values v where v.order_id=o.id)) filter (where o.data_ordine between p_from and p_to and exists(select 1 from verified_values v where v.order_id=o.id)), 0)::numeric order_total,
       min(o.data_ordine) first_order,
       max(o.data_ordine) last_order
     from public.ordini_testate o
@@ -151,6 +151,7 @@ begin
     'ph_order_total', (select coalesce(sum(v.ph_amount),0) from verified_values v join public.ordini_testate o on o.id=v.order_id join visible_customers c using(codice_cliente) where o.data_ordine between p_from and p_to),
     'pr_order_total', (select coalesce(sum(v.pr_amount),0) from verified_values v join public.ordini_testate o on o.id=v.order_id join visible_customers c using(codice_cliente) where o.data_ordine between p_from and p_to),
     'stralci_order_total', (select coalesce(sum(v.stralci_amount),0) from verified_values v join public.ordini_testate o on o.id=v.order_id join visible_customers c using(codice_cliente) where o.data_ordine between p_from and p_to),
+    'prenotazioni_order_total', (select coalesce(sum(v.prenotazioni_amount),0) from verified_values v join public.ordini_testate o on o.id=v.order_id join visible_customers c using(codice_cliente) where o.data_ordine between p_from and p_to),
     'invoiced_orders_excluded', (select count(*) from invoiced_orders),
     'average_order_value', case when c.order_count > 0 then c.order_total / c.order_count else 0 end,
     'open_opportunities', p.open_opportunities,
@@ -158,7 +159,7 @@ begin
     'weighted_pipeline', p.weighted_pipeline,
     'overdue_opportunities', p.overdue_opportunities,
     'overdue_followups', a.overdue_followups,
-    'order_source_note', 'Importi netti: PR OCM/OCI e Stralci OCX verificati aperti e non fatturati; PH sempre ordini. Esclusione delle fatture senza limite di periodo, per singolo documento.',
+    'order_source_note', 'Importi netti: PR OCM, Prenotazioni OCI e Stralci OCX verificati aperti e non fatturati; PH sempre ordini. Esclusione delle fatture senza limite di periodo, per singolo documento.',
     'invoice_source_note', 'Fatture di vendita Mexal sincronizzate nel Workspace.'
   ) into result
   from customer_totals c cross join pipeline p cross join activity a;
@@ -237,7 +238,7 @@ AS $function$
     source.customer_code,
     source.customer_name,
     source.document_date,
-    (verified.pr_amount+verified.stralci_amount+verified.ph_amount+verified.oct_amount)::numeric,
+    (verified.pr_amount+verified.stralci_amount+verified.ph_amount+verified.oct_amount+verified.prenotazioni_amount)::numeric,
     source.business,
     source.channel,
     source.country_code,
@@ -245,7 +246,7 @@ AS $function$
     source.agent_name,
     source.crm_area,
     source.order_source
-  from dimensioned_orders source join public.crm_verified_open_order_values() verified on verified.order_id=source.order_id
+  from dimensioned_orders source join public.crm_verified_open_order_values_v2() verified on verified.order_id=source.order_id
   where source.customer_code is not null
     and source.crm_area is not null
     and (source.customer_code in (select public.crm_visible_canonical_customer_codes()) and source.crm_area = any((select public.crm_visible_customer_areas())::text[]))
@@ -293,9 +294,9 @@ begin
   end if;
 
   with current_orders as materialized (
-    select dataset.*, header.modulo_ordini, verified.pr_amount, verified.stralci_amount, verified.ph_amount, verified.oct_amount from public.crm_commercial_control_order_dataset(
+    select dataset.*, header.modulo_ordini, verified.pr_amount, verified.stralci_amount, verified.ph_amount, verified.oct_amount, verified.prenotazioni_amount from public.crm_commercial_control_order_dataset(
       p_scope, p_from, p_to, p_business, p_market, p_country, p_agent, p_channel, p_customer
-    ) dataset join public.ordini_testate header on header.id=dataset.order_id join public.crm_verified_open_order_values() verified on verified.order_id=dataset.order_id
+    ) dataset join public.ordini_testate header on header.id=dataset.order_id join public.crm_verified_open_order_values_v2() verified on verified.order_id=dataset.order_id
   ), comparison_orders as materialized (
     select * from public.crm_commercial_control_order_dataset(
       p_scope,
@@ -305,12 +306,12 @@ begin
     )
     where comparison_from is not null
   ), current_totals as (
-    select count(*)::bigint as order_count, coalesce(sum(amount), 0)::numeric as order_total, count(*) filter(where modulo_ordini='ph')::bigint ph_order_count, coalesce(sum(amount) filter(where modulo_ordini='ph'),0)::numeric ph_order_total, count(*) filter(where modulo_ordini='prof')::bigint pr_order_count, coalesce(sum(pr_amount),0)::numeric pr_order_total, coalesce(sum(stralci_amount),0)::numeric stralci_order_total, coalesce(sum(oct_amount),0)::numeric oct_order_total
+    select count(*)::bigint as order_count, coalesce(sum(amount), 0)::numeric as order_total, count(*) filter(where modulo_ordini='ph')::bigint ph_order_count, coalesce(sum(ph_amount),0)::numeric ph_order_total, count(*) filter(where modulo_ordini='prof')::bigint pr_order_count, coalesce(sum(pr_amount),0)::numeric pr_order_total, coalesce(sum(stralci_amount),0)::numeric stralci_order_total, coalesce(sum(oct_amount),0)::numeric oct_order_total, coalesce(sum(prenotazioni_amount),0)::numeric prenotazioni_order_total
     from current_orders
   ), comparison_totals as (
     select coalesce(sum(amount), 0)::numeric as order_total from comparison_orders
   ), business_rows as (
-    select business, count(*)::bigint as order_count, coalesce(sum(amount), 0)::numeric as order_total, count(*) filter(where modulo_ordini='ph')::bigint ph_order_count, coalesce(sum(amount) filter(where modulo_ordini='ph'),0)::numeric ph_order_total, count(*) filter(where modulo_ordini='prof')::bigint pr_order_count, coalesce(sum(pr_amount),0)::numeric pr_order_total, coalesce(sum(stralci_amount),0)::numeric stralci_order_total, coalesce(sum(oct_amount),0)::numeric oct_order_total
+    select business, count(*)::bigint as order_count, coalesce(sum(amount), 0)::numeric as order_total, count(*) filter(where modulo_ordini='ph')::bigint ph_order_count, coalesce(sum(ph_amount),0)::numeric ph_order_total, count(*) filter(where modulo_ordini='prof')::bigint pr_order_count, coalesce(sum(pr_amount),0)::numeric pr_order_total, coalesce(sum(stralci_amount),0)::numeric stralci_order_total, coalesce(sum(oct_amount),0)::numeric oct_order_total, coalesce(sum(prenotazioni_amount),0)::numeric prenotazioni_order_total
     from current_orders group by business
   ), agent_rows as (
     select agent_code, agent_name, count(*)::bigint as order_count,
@@ -349,7 +350,7 @@ begin
       'ph_order_count', current_totals.ph_order_count,
       'ph_order_total', current_totals.ph_order_total,
       'pr_order_count', current_totals.pr_order_count,
-      'pr_order_total', current_totals.pr_order_total, 'stralci_order_total',current_totals.stralci_order_total, 'oct_order_total',current_totals.oct_order_total, 'oc_order_total',current_totals.pr_order_total+current_totals.stralci_order_total+current_totals.ph_order_total,
+      'pr_order_total', current_totals.pr_order_total, 'stralci_order_total',current_totals.stralci_order_total, 'oct_order_total',current_totals.oct_order_total, 'prenotazioni_order_total',current_totals.prenotazioni_order_total, 'oc_order_total',current_totals.pr_order_total+current_totals.stralci_order_total+current_totals.ph_order_total+current_totals.prenotazioni_order_total,
       'average_order_value', current_totals.order_total / nullif(current_totals.order_count, 0)
     ),
     'comparison', jsonb_build_object('order_total', comparison_totals.order_total),
@@ -467,7 +468,7 @@ begin
   ), invoiced_orders as materialized (
     select distinct ordine_id from public.workspace_order_invoice_links(array(select id from historical_order_values))
   ), order_values as materialized (
-    select h.id,h.codice_cliente,h.document_date,(v.pr_amount+v.stralci_amount+v.ph_amount+v.oct_amount)::numeric amount from historical_order_values h join public.crm_verified_open_order_values() v on v.order_id=h.id
+    select h.id,h.codice_cliente,h.document_date,(v.pr_amount+v.stralci_amount+v.ph_amount+v.oct_amount+v.prenotazioni_amount)::numeric amount from historical_order_values h join public.crm_verified_open_order_values_v2() v on v.order_id=h.id
   ), invoice_lifetime as materialized (
     select codice_cliente, min(document_date) first_invoice, max(document_date) last_invoice,
       avg(amount)::numeric average_purchase_value
@@ -769,7 +770,7 @@ begin
       'ph_order_count', coalesce((orders.item ->> 'ph_order_count')::numeric, 0),
       'ph_order_total', coalesce((orders.item ->> 'ph_order_total')::numeric, 0),
       'pr_order_count', coalesce((orders.item ->> 'pr_order_count')::numeric, 0),
-      'pr_order_total', coalesce((orders.item ->> 'pr_order_total')::numeric, 0), 'stralci_order_total', coalesce((orders.item ->> 'stralci_order_total')::numeric, 0), 'oct_order_total', coalesce((orders.item ->> 'oct_order_total')::numeric, 0)
+      'pr_order_total', coalesce((orders.item ->> 'pr_order_total')::numeric, 0), 'stralci_order_total', coalesce((orders.item ->> 'stralci_order_total')::numeric, 0), 'oct_order_total', coalesce((orders.item ->> 'oct_order_total')::numeric, 0), 'prenotazioni_order_total', coalesce((orders.item ->> 'prenotazioni_order_total')::numeric, 0)
     ) order by keys.key
   ), '[]'::jsonb) into merged_rows
   from keys
@@ -874,7 +875,7 @@ CREATE OR REPLACE FUNCTION public.crm_customer_metric_details(p_crm_type text, p
  STABLE SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-  with verified_values as materialized (select * from public.crm_verified_open_order_values()), customers as (
+  with verified_values as materialized (select * from public.crm_verified_open_order_values_v2()), customers as (
     select customer.codice_cliente, customer.ragione_sociale,
       classification.agente_classificazione,
       classification.origine_classificazione,
@@ -941,7 +942,7 @@ AS $function$
     left join lateral (
       select
         count(distinct customer_order.id) filter (where customer_order.data_ordine between p_from and p_to and exists(select 1 from verified_values v where v.order_id=customer_order.id))::bigint order_count,
-        coalesce(sum(v.pr_amount+v.stralci_amount+v.ph_amount+v.oct_amount) filter(where customer_order.data_ordine between p_from and p_to),0)::numeric order_total,
+        coalesce(sum(v.pr_amount+v.stralci_amount+v.ph_amount+v.oct_amount+v.prenotazioni_amount) filter(where customer_order.data_ordine between p_from and p_to),0)::numeric order_total,
         min(customer_order.data_ordine) first_date,
         max(customer_order.data_ordine) last_date
       from public.ordini_testate customer_order

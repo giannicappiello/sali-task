@@ -41,7 +41,7 @@ const REORDER_LABELS = {
 const CONTROL_KPI_INFO = {
   Fatturato: "Somma degli imponibili delle fatture Mexal nel periodo e nei filtri correnti.",
   Ordinato: "Valore degli ordini non fatturati nel periodo e nei filtri correnti. Gli ordini collegati a fatture sono esclusi anche se la fattura è fuori periodo.",
-  "OC aperti": "Importi netti: PR in corso (OCM/OCI) e Stralci OCX verificati aperti e non fatturati, più Ordini PH, che restano sempre ordini. Le fatture sono verificate senza limite di periodo.",
+  "OC aperti": "Importi netti: PR in corso (OCM) e Stralci OCX verificati aperti e non fatturati, Prenotazioni OCI PR verificate e prenotazioni PH, più Ordini PH standard, che restano sempre ordini. Le fatture sono verificate senza limite di periodo.",
   "OCT aperti": "Valore netto degli OCT presenti nell’ultima sincronizzazione Mexal e senza fatture collegate. Esclusi gli OCT rimossi e quelli fatturati, anche fuori periodo.",
   "Clienti Mexal attivi": "Numero di clienti distinti con anagrafica Mexal attiva nel perimetro selezionato.",
   "Nuovi clienti": "Clienti la cui prima vendita documentata ricade nel periodo selezionato.",
@@ -278,7 +278,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
       {scope === "global" ? <section className="crm-control-panel" id="business">
         <header><div><span>Composizione business</span><h3>PRIVATE vs DIRECT</h3></div></header>
         <div className="crm-control-business crm-business-summary">{(data?.business || []).map((row) => {
-          const totals = <><strong>{row.business}</strong><span>{formatMoney(row.invoice_total)} fatturato</span>{row.business === "DIRECT" ? <><span>{formatMoney(Number(row.pr_order_total || 0) + Number(row.stralci_order_total || 0) + Number(row.ph_order_total || 0))} OC aperti</span><CrmOpenOrderBreakdown values={row}/></> : <span>{formatMoney(row.oct_order_total)} OCT aperti</span>}<span>{number(row.customers)} clienti</span></>;
+          const totals = <><strong>{row.business}</strong><span>{formatMoney(row.invoice_total)} fatturato</span>{row.business === "DIRECT" ? <><span>{formatMoney(Number(row.pr_order_total || 0) + Number(row.stralci_order_total || 0) + Number(row.ph_order_total || 0) + Number(row.prenotazioni_order_total || 0))} OC aperti</span><CrmOpenOrderBreakdown values={row}/></> : <span>{formatMoney(row.oct_order_total)} OCT aperti</span>}<span>{number(row.customers)} clienti</span></>;
           if (row.business === "PRIVATE") return <Link key={row.business} to={period.withPeriod("/crm/conto-terzi")}>{totals}</Link>;
           return <article className="crm-business-card" key={row.business}>
             {totals}

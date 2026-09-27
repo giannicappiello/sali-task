@@ -13,3 +13,13 @@
 
 .workspace-project-dialog .project-dialog-actions{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin:12px 0 0;padding:0;border:0}
 .workspace-project-dialog .project-dialog-actions>button{position:static;float:none;display:inline-flex;align-items:center;justify-content:center;height:42px;min-height:42px;margin:0;padding:8px 16px;box-sizing:border-box}
+
+.modal-card.v4-modal.workspace-project-dialog{width:min(900px,calc(100vw - 32px));padding:18px;gap:10px;height:auto;min-height:0}
+.workspace-project-dialog .modal-header{padding:0 0 10px;margin:0 0 10px;min-height:0}
+.workspace-project-dialog .modal-header h2{margin:0;font-size:24px}
+.workspace-project-dialog .project-dialog-columns{gap:14px}
+.workspace-project-dialog fieldset{padding:12px;gap:10px}
+.workspace-project-dialog label{gap:4px;font-size:13px}
+.workspace-project-dialog input,.workspace-project-dialog select{min-height:36px;height:36px;padding:6px 9px;font-size:13px}
+.workspace-project-dialog textarea{min-height:64px;height:64px;padding:6px 9px;font-size:13px}
+.workspace-project-dialog .project-dialog-actions{margin-top:10px}

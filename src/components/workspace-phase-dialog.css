@@ -16,3 +16,10 @@
 .workspace-phase-dialog .phase-dialog-actions>button{position:static;float:none;display:inline-flex;align-items:center;justify-content:center;height:42px;min-height:42px;margin:0;padding:8px 16px;box-sizing:border-box}
 .workspace-phase-dialog .phase-additional-options summary{cursor:pointer;font-size:13px}.workspace-phase-dialog .phase-additional-options[open]{display:grid;gap:8px}
 @media(max-width:700px){.workspace-phase-dialog .phase-dialog-columns{grid-template-columns:minmax(0,1fr)}.modal-card.v4-modal.workspace-phase-dialog{padding:14px}.workspace-phase-dialog .phase-dialog-details>label{max-width:none}}
+
+.workspace-phase-dialog fieldset.phase-dialog-panel{margin:0;min-width:0}
+.workspace-phase-dialog fieldset.phase-dialog-details{margin-top:12px}
+.workspace-phase-dialog .phase-dialog-panel legend{padding:0 6px;font-weight:600;font-size:15px}
+.workspace-phase-dialog .phase-status-notes{display:grid;grid-template-columns:minmax(180px,1fr) minmax(0,2fr);gap:14px;align-items:start}
+.workspace-phase-dialog .phase-status-notes textarea{height:64px;min-height:64px}
+@media(max-width:600px){.workspace-phase-dialog .phase-status-notes{grid-template-columns:minmax(0,1fr)}}

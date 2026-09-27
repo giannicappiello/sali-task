@@ -448,7 +448,7 @@ export default function PhaseChecklistModal({
 
         {!canManage && <p className="muted">Partecipi al progetto: puoi seguire questa fase in sola lettura.</p>}
         <fieldset disabled={!canManage} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-        <div className="phase-dialog-columns"><section className="phase-dialog-panel"><h3>Cliente e prodotto</h3>
+        <div className="phase-dialog-columns"><fieldset className="phase-dialog-panel"><legend>Cliente e prodotto</legend>
         <label>Cliente
           <WorkspaceCustomerPicker required={!selectedPhase} crmType={crmType || "conto_terzi"} value={form.crm_customer_key} onChange={(crm_customer_key) => setForm((current) => ({ ...current, crm_customer_key, prodotti: [], progetto_id: "" }))} />
         </label>
@@ -459,7 +459,7 @@ export default function PhaseChecklistModal({
         <div className="phase-selected-tags">{form.prodotti.map(id=><span key={id}>{products.find(p=>p.id===id)?.nome || phaseProducts.find(p=>p.prodotto_id===id)?.prodotto_nome || 'Prodotto associato'}<button type="button" aria-label="Rimuovi prodotto" onClick={()=>togglePhaseProduct(id)}><X size={13}/></button></span>)}</div>
         <label>Deadline<input type="date" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} /></label>
 
-        </section><section className="phase-dialog-panel"><h3>Attività e reparti</h3>
+        </fieldset><fieldset className="phase-dialog-panel"><legend>Attività e reparti</legend>
         <label>Attività (voce checklist)
           <select value={selectedTemplateValue} onChange={(e) => applyTemplate(e.target.value)}>
             <option value="">{selectedPhase && !selectedTemplateValue ? selectedPhase.titolo : "Seleziona checklist..."}</option>
@@ -482,10 +482,12 @@ export default function PhaseChecklistModal({
         </label>
         {selectedBlocker && !isDone(selectedBlocker) && <p className="soft-alert">Fase bloccata fino al completamento di: {selectedBlocker.titolo || "fase bloccante"}</p>}
 
-        </section></div>
-        <section className="phase-dialog-panel phase-dialog-details"><h3>Stato, commenti e allegati</h3>
+        </fieldset></div>
+        <fieldset className="phase-dialog-panel phase-dialog-details"><legend>Stato, commenti e allegati</legend>
+        <div className="phase-status-notes">
           <label>Stato<select value={form.stato} onChange={(e) => setForm({ ...form, stato: e.target.value })}><option value="da_evadere">Da evadere</option><option value="in_lavorazione">In lavorazione</option><option value="in_valutazione">In valutazione</option><option value="evaso">Evaso</option></select></label>
         <label>Note<textarea rows="3" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></label>
+        </div>
 
 
         {selectedPhase?.id && completedDepartments.length > 0 && (
@@ -542,7 +544,7 @@ export default function PhaseChecklistModal({
           </div>
         </div>
 
-        </section>
+        </fieldset>
         </fieldset>
         <div className="dashboard-message-actions phase-dialog-actions" data-assistant-actions>
           {selectedPhase?.id && canManage && (

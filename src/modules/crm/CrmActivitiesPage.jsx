@@ -34,7 +34,7 @@ export default function CrmActivitiesPage({ type }) {
   const status = params.get("activityStatus") || "open";
   const due = params.get("activityDue") || "";
   const search = params.get("activitySearch") || "";
-  const view = params.get("activityView") || "list";
+  const view = params.get("activityView") || "kanban";
 
   const updateParam = (name, value) => setParams((current) => {
     const next = new URLSearchParams(current);

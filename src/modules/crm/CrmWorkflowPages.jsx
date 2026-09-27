@@ -32,7 +32,7 @@ export function CrmProjectsPage({ type = "conto_terzi" }) {
   const [selectedTask, setSelectedTask] = useState(null);
   const search = params.get("projectSearch") || "";
   const status = params.get("projectStatus") || "open";
-  const view = params.get("projectView") || "list";
+  const view = params.get("projectView") || "kanban";
   const load = useCallback(async () => {
     setLoading(true);
     const [projectsResult, customersResult] = await Promise.all([

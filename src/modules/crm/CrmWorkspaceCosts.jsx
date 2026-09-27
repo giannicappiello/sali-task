@@ -8,6 +8,7 @@ import {crmNavigation} from './crmNavigation';
 import {formatMoney,formatDate} from './crmConfig';
 import {loadAllQueryRows} from './crmDataset';
 import {costRows,costSummary,costCustomerIndex,resolveCostCustomer,costClientTree} from './workspaceCostModel';
+import {CrmKpiDialog,CrmDetailTable} from './CrmKpiDetail';
 import WorkspaceCostDialog from './WorkspaceCostDialog';
 import './workspace-costs.css';
 
@@ -16,6 +17,7 @@ export default function CrmWorkspaceCosts(){
  const [data,setData]=useState({costs:[],projects:[],tasks:[],customers:[],accounts:[]});
  const [error,setError]=useState(''),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false);
  const [form,setForm]=useState(null),[search,setSearch]=useState(''),[kind,setKind]=useState(''),[project,setProject]=useState(''),[deleting,setDeleting]=useState(null);
+ const [viewCosts,setViewCosts]=useState(null);
  const sequence=useRef(0);
  const load=useCallback(async()=>{
   const request=++sequence.current;setLoading(true);
@@ -42,8 +44,9 @@ export default function CrmWorkspaceCosts(){
   if(result.error)throw result.error;await load();
  }
  async function remove(){if(busy||!canWrite)return;setBusy(true);try{const r=await supabase.from('crm_workspace_costs').delete().eq('id',deleting).select('id').single();if(r.error)throw r.error;setDeleting(null);await load();}catch(e){setError(e.message);}finally{setBusy(false);}}
- const addButton=(kind,id)=>canWrite&&<button type="button" disabled={busy} onClick={()=>start(kind,id)}>Aggiungi costo</button>;
- const taskRow=t=><div className="crm-cost-tree-row crm-cost-task-row" key={t.id}><span><strong>{t.titolo}</strong><small>Attività / fase · {t.stato}</small></span><strong>{formatMoney(t.total)}</strong>{addButton('task',t.id)}</div>;
+ const rowActions=(kind,item)=><div className="crm-cost-row-actions"><button type="button" onClick={()=>setViewCosts({kind,id:item.id,title:item.titolo})}>Visualizza costi</button>{canWrite&&<button type="button" disabled={busy} onClick={()=>start(kind,item.id)}>Aggiungi costo</button>}</div>;
+ const viewedRows=viewCosts?rows.filter(r=>viewCosts.kind==='project'?r.project?.id===viewCosts.id:r.phase_id===viewCosts.id):[];
+ const taskRow=t=><div className="crm-cost-tree-row crm-cost-task-row" key={t.id}><span><strong>{t.titolo}</strong><small>Attività / fase · {t.stato}</small></span><strong>{formatMoney(t.total)}</strong>{rowActions('task',t)}</div>;
  return <div className="crm-page crm-cost-page">
   <CrmPageHeader eyebrow="CRM PRIVATE" title="Rendicontazione" description="Consuntivi di task, fasi e progetti Workspace."><CrmSectionNav items={crmNavigation('conto_terzi')} period={period}/></CrmPageHeader>
   {error&&<div role="alert" className="crm-message error">{error}</div>}
@@ -55,9 +58,22 @@ export default function CrmWorkspaceCosts(){
   </section>
   <div className="crm-cost-cards">{[['Consuntivo totale',totals.total,'Somma dei costi registrati nel periodo e nei filtri selezionati.',''],['Costi task / fasi',totals.tasks,'Costi attribuiti alle attività e alle fasi.','task'],['Costi diretti progetti',totals.projects,'Costi attribuiti direttamente ai progetti, senza duplicare quelli delle attività.','project']].map(([title,value,info,filter])=><section className="panel" key={title}><h3>{title} <InfoTooltip text={info}/></h3><button className="crm-cost-value" onClick={()=>setKind(filter)}>{loading?'…':formatMoney(value)}</button></section>)}</div>
   {form&&<WorkspaceCostDialog initial={form} operator={operator} isAdmin={isAdmin()} projects={data.projects.map(p=>({...p,customerName:resolveCostCustomer(p,null,customers).name}))} tasks={data.tasks.map(t=>({...t,customerName:resolveCostCustomer(t,data.projects.find(p=>p.id===t.progetto_id),customers).name}))} onSave={save} onClose={()=>setForm(null)}/>}
+  {viewCosts&&<CrmKpiDialog title={`Costi · ${viewCosts.title}`} subtitle={`${formatDate(period.from)} – ${formatDate(period.to)} · Filtri correnti`} onClose={()=>setViewCosts(null)}>
+   <p>Totale: <strong>{formatMoney(costSummary(viewedRows).total)}</strong></p>
+   <CrmDetailTable rows={viewedRows} columns={[
+    {key:'date',label:'Data',value:r=>formatDate(r.cost_date),sortValue:r=>r.cost_date},
+    {key:'target',label:'Attività / progetto',value:r=>r.target},
+    {key:'type',label:'Voce',value:r=>r.cost_type==='labor'?'Lavoro':r.cost_type==='materials'?'Materiali':'Costo precedente'},
+    {key:'operator',label:'Operatore',value:r=>r.operator_name||'—'},
+    {key:'hours',label:'Ore',value:r=>r.hours??'—'},
+    {key:'rate',label:'Costo orario',value:r=>r.hourly_rate==null?'—':formatMoney(r.hourly_rate)},
+    {key:'description',label:'Descrizione',value:r=>r.description},
+    {key:'amount',label:'Importo',value:r=>formatMoney(r.amount),sortValue:r=>Number(r.amount)}
+   ]} empty="Nessun costo registrato per questa voce e i filtri selezionati."/>
+  </CrmKpiDialog>}
   <section className="panel crm-cost-tree"><h3>Consuntivi per progetto <InfoTooltip text="Clienti con progetti o attività in corso, anche senza costi. Prima i progetti per data di inserimento, dal meno recente, poi le attività singole. Gli importi rispettano il periodo e i filtri selezionati."/></h3>
    {tree.map(client=><details className="crm-cost-client" key={client.key}><summary><strong>{client.name}</strong><span>{client.projects.length} progetti · {client.tasks.length} attività singole</span><strong>{formatMoney(client.total)}</strong></summary>
-    <div className="crm-cost-client-content">{client.projects.map(p=><div className="crm-cost-project" key={p.id}><details><summary><span><strong>{p.titolo}</strong><small>Progetto · inserito il {formatDate(p.created_at)} · {p.stato}</small></span><strong>{formatMoney(p.total)}</strong></summary><div className="crm-cost-project-tasks">{p.tasks.map(taskRow)}{!p.tasks.length&&<p>Nessuna attività per i filtri selezionati.</p>}</div></details>{addButton('project',p.id)}</div>)}{client.tasks.map(taskRow)}</div>
+    <div className="crm-cost-client-content">{client.projects.map(p=><div className="crm-cost-project" key={p.id}><details><summary><span><strong>{p.titolo}</strong><small>Progetto · inserito il {formatDate(p.created_at)} · {p.stato}</small></span><strong>{formatMoney(p.total)}</strong></summary><div className="crm-cost-project-tasks">{p.tasks.map(taskRow)}{!p.tasks.length&&<p>Nessuna attività per i filtri selezionati.</p>}</div></details>{rowActions('project',p)}</div>)}{client.tasks.map(taskRow)}</div>
    </details>)}
    {loading?<p role="status">Caricamento…</p>:!tree.length&&<p>Nessun cliente con progetti o attività in corso per questi filtri.</p>}
   </section>

@@ -1,7 +1,9 @@
+import {loadCustomerDirectory,customerDisplayName} from '../services/agentNames';
+import {invoicesForMexalDocument} from '../services/orderInvoiceReconciliation';
 import OrderStatus from "../components/OrderStatus";
 import { useEffect, useState } from "react";
 import { ArrowLeft, Download, Edit3, OctagonX, RefreshCw, Send, Trash2 } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../../../lib/supabaseClient";
 import { useAuth } from "../../../contexts/AuthContext";
 import useBackNavigation from "../../../hooks/useBackNavigation";
@@ -83,6 +85,8 @@ export default function OrderDetail() {
         loadedOrder = { ...loadedOrder, ...closedOrder };
       }
 
+      const directory=await loadCustomerDirectory([loadedOrder.codice_cliente]);
+      loadedOrder={...loadedOrder,ragione_sociale_cliente:customerDisplayName(loadedOrder,directory.namesByCode)};
       setOrder(loadedOrder);
       setLines(result.lines);
       setAgentName(loadedOrder.agente_nome || "-");
@@ -229,7 +233,7 @@ export default function OrderDetail() {
 
       <section className="orders-panel orders-detail-summary">
         <div><span>Data</span><strong>{order.data_ordine || "-"}</strong></div>
-        <div><span>Cliente</span><strong>{order.codice_cliente || "-"}</strong></div>
+        <div><span>Cliente</span><strong>{customerDisplayName(order)}</strong></div>
         <div><span>Agente</span><strong>{agentName || "-"}</strong></div>
         <div><span>Pagamento</span><strong>{order.descrizione_pagamento || order.codice_pagamento || "-"}</strong></div>
         <div><span>Stato</span><OrderStatus order={order} basePath={basePath} /></div>
@@ -256,7 +260,7 @@ export default function OrderDetail() {
                 <p>{`${document.serie || "-"}/${document.numero || "-"}${document.anno ? ` · ${document.anno}` : ""}`}</p>
               </div>
               <div>
-                <span className={`orders-status ${childStatusClass(document)}`}>{document.stato_operativo || "APERTO"}</span>
+                {invoicesForMexalDocument(document,order.linked_invoices).length ? invoicesForMexalDocument(document,order.linked_invoices).map(invoice=><Link key={invoice.id} style={{display:'block'}} to={`${basePath}/fatture/${invoice.id}`}>{invoice.sigla} {invoice.serie}/{invoice.numero} · {String(invoice.data_documento||'').split('-').reverse().join('-')}</Link>) : <span className={`orders-status ${childStatusClass(document)}`}>{document.stato_operativo || "APERTO"}</span>}
                 <small>{document.ultimo_sync_mexal ? `Controllato ${new Date(document.ultimo_sync_mexal).toLocaleString("it-IT")}` : "Non ancora controllato"}</small>
               </div>
             </div>

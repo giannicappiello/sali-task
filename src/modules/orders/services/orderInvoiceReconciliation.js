@@ -35,3 +35,14 @@ export function attachInvoiceLinks(orders, links) {
     return { ...order, linked_invoices: invoices, invoice_coverage: invoiceCoverage(group?.expected, invoices) };
   });
 }
+
+export function invoicesForMexalDocument(document, invoices) {
+ return (invoices || []).filter(invoice => {
+  const refs=invoice.order_references || {};
+  const dates=matrix(refs.dates),types=matrix(refs.types);
+  return [...matrix(refs.numbers)].some(([position,number])=>
+   String(number)===String(document.numero)&&
+   String(dates.get(position)||'').slice(0,4)===String(document.anno)&&
+   String(types.get(position)||'')===String(document.sigla||'OC'));
+ });
+}

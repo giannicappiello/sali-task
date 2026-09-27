@@ -469,8 +469,8 @@ export default function PhaseChecklistModal({
           </select>
         </label>
         <label>Descrizione<textarea rows="3" value={form.descrizione} onChange={(e) => setForm({ ...form, descrizione: e.target.value })} /></label>
-        <div className="phase-departments"><strong>Reparti coinvolti</strong><div className="phase-selected-tags">{form.reparto_ids.length ? form.reparto_ids.map(id=><span key={id}>{departments.find(d=>d.id===id)?.nome || 'Reparto'}<button type="button" aria-label={`Rimuovi reparto ${departments.find(d=>d.id===id)?.nome || ''}`} onClick={()=>togglePhaseDepartment(id)}><X size={13}/></button></span>) : <small>Nessun reparto selezionato.</small>}</div>
-        <button type="button" className="secondary-action" onClick={()=>setShowDepartmentPicker(v=>!v)}>Aggiungi reparto</button>
+        <div className="phase-departments"><div className="phase-departments-heading"><strong>Reparti coinvolti</strong><button type="button" className="phase-add-department" onClick={()=>setShowDepartmentPicker(v=>!v)}>Aggiungi reparto</button></div><div className="phase-selected-tags">{form.reparto_ids.length ? form.reparto_ids.map(id=><span key={id}>{departments.find(d=>d.id===id)?.nome || 'Reparto'}<button type="button" aria-label={`Rimuovi reparto ${departments.find(d=>d.id===id)?.nome || ''}`} onClick={()=>togglePhaseDepartment(id)}><X size={13}/></button></span>) : <small>Nessun reparto selezionato.</small>}</div>
+        
         {showDepartmentPicker&&<label>Reparto da aggiungere<select autoFocus value="" onChange={e=>{if(e.target.value){togglePhaseDepartment(e.target.value);setShowDepartmentPicker(false);}}}><option value="">Seleziona reparto</option>{availableDepartments.filter(d=>!form.reparto_ids.includes(d.id)).map(d=><option key={d.id} value={d.id}>{d.nome}</option>)}</select></label>}</div>
         <label>Attività bloccante
           <select value={form.bloccante_id} onChange={(e) => setForm({ ...form, bloccante_id: e.target.value })}>

@@ -23,3 +23,7 @@
 .workspace-phase-dialog .phase-status-notes{display:grid;grid-template-columns:minmax(180px,1fr) minmax(0,2fr);gap:14px;align-items:start}
 .workspace-phase-dialog .phase-status-notes textarea{height:64px;min-height:64px}
 @media(max-width:600px){.workspace-phase-dialog .phase-status-notes{grid-template-columns:minmax(0,1fr)}}
+
+.workspace-phase-dialog .phase-departments-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%}
+.workspace-phase-dialog .phase-departments-heading .phase-add-department{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;min-height:28px;height:28px;padding:4px 10px;margin:0;border:1px solid #126bff;border-radius:8px;background:#126bff;color:#fff;font-size:12px;line-height:18px;font-weight:600}
+.workspace-phase-dialog .phase-departments-heading .phase-add-department:hover{background:#0754d6;border-color:#0754d6}

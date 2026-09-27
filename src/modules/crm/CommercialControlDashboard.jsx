@@ -1,3 +1,4 @@
+import CrmOpenOrdersDialog from './CrmOpenOrdersDialog';
 import CrmOpenOrderBreakdown from './CrmOpenOrderBreakdown';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -76,8 +77,8 @@ function customerPath(row) {
   return `${base}/clienti/${encodeURIComponent(`mexal:${row.codice_cliente}`)}`;
 }
 
-function MetricCard({ label, value, note, to, delta }) {
-  return <Link className="crm-control-kpi" to={to} aria-label={`${label}: ${value}. Apri dettaglio filtrato`}>
+function MetricCard({ label, value, note, to, delta, onClick }) {
+  return <Link className="crm-control-kpi" to={to} onClick={onClick ? event => { event.preventDefault(); onClick(); } : undefined} aria-label={`${label}: ${value}. Apri dettaglio filtrato`}>
     <span>{label}<InfoTooltip label={label} text={CONTROL_KPI_INFO[label] || note || `Indicatore ${label} calcolato sui filtri correnti.`} /></span><strong>{value}</strong>
     {delta != null ? <small className={delta >= 0 ? "positive" : "negative"}>{percentage(delta)} vs confronto</small> : note ? <small>{note}</small> : null}
     <em>Apri dettaglio →</em>
@@ -131,6 +132,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
   const [searchParams, setSearchParams] = useSearchParams();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [openOrders, setOpenOrders] = useState(false);
   const [error, setError] = useState("");
   const activeRequest = useRef(null);
   const requestSequence = useRef(0);
@@ -238,7 +240,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
     const common = [
       ["Fatturato", formatMoney(totals.invoice_total), `${totals.invoice_count || 0} fatture Mexal`, "top", invoiceDelta],
       ["OCT aperti", formatMoney(totals.oct_order_total), "OCT non fatturati · IVA esclusa", "top"],
-      ["OC aperti", formatMoney(totals.oc_order_total), <CrmOpenOrderBreakdown values={totals}/>, "portfolio"],
+      ["OC aperti", formatMoney(totals.oc_order_total), null, "portfolio"],
       ["Clienti Mexal attivi", number(totals.mexal_active_customers), "Stato anagrafico Mexal", "top"],
       ["Nuovi clienti", number(totals.new_customers), "Prima vendita documentata nel periodo", "new"],
     ];
@@ -273,7 +275,8 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
     <p className="crm-control-updated">Ultimo aggiornamento: {updated}. Nessun polling automatico.</p>
     {error ? <div className="crm-message error"><span>{error}</span><button type="button" onClick={load}>Riprova</button></div> : null}
     {loading ? <div className="crm-loading">Calcolo server-side sull’intero dataset filtrato...</div> : <>
-      <div className={`crm-control-kpis ${scope === "direct" ? "wide" : ""}`}>{kpis.map(([label, value, note, target, delta]) => <MetricCard key={label} label={label} value={value} note={note} delta={delta} to={cardDestination(label, target)} />)}</div>
+      {openOrders && <CrmOpenOrdersDialog title="OC aperti" values={totals} filters={Object.fromEntries(Object.entries(requestArguments).filter(([key]) => !['p_compare','p_granularity'].includes(key)))} onClose={() => setOpenOrders(false)}/>}
+      <div className={`crm-control-kpis ${scope === "direct" ? "wide" : ""}`}>{kpis.map(([label, value, note, target, delta]) => <MetricCard key={label} label={label} value={value} note={note} delta={delta} to={cardDestination(label, target)} onClick={label === "OC aperti" ? () => setOpenOrders(true) : undefined} />)}</div>
 
       {scope === "global" ? <section className="crm-control-panel" id="business">
         <header><div><span>Composizione business</span><h3>PRIVATE vs DIRECT</h3></div></header>

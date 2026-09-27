@@ -1,4 +1,4 @@
-import CrmOpenOrderBreakdown from './CrmOpenOrderBreakdown';
+import CrmOpenOrdersDialog from './CrmOpenOrdersDialog';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabaseClient';
@@ -35,7 +35,7 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
     }, 0); return () => { active = false; clearTimeout(timer); };
   }, [period.from, period.to]);
   useEffect(() => {
-    if (!selected) return;
+    if (!selected || selected.kind === 'open-orders') return;
     let active = true; const controller = new AbortController();
     const timer = setTimeout(async () => {
       setDetails({ rows: [], loading: true, error: '' });
@@ -100,7 +100,7 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
         {card('Clienti attivi nel periodo', data.customers_with_activity, 'Almeno un documento', 'Clienti con ordini o fatture nel periodo selezionato.', customer('active'))}
         {card('Nuovi clienti', data.new_customers, 'Prima vendita nel periodo', 'Clienti con prima vendita documentata nel periodo selezionato.', customer('new'))}
         {card('Fatturato', formatMoney(data.invoice_total), `${data.invoice_count || 0} fatture`, data.invoice_source_note || 'Somma del fatturato nel periodo selezionato.', customer('invoiced'))}
-        {card('Ordinato', formatMoney(data.order_total), <CrmOpenOrderBreakdown values={data}/>, 'Importi netti IVA esclusa. PR in corso: documenti OCM verificati aperti e non fatturati. Prenotazioni: OCI PR verificati aperti e non fatturati e prenotazioni PH. Stralci: soli OCX verificati aperti e non fatturati. PH: ordini che restano tali e non sono fatturati. Verifica delle fatture senza limite di periodo.', customer('ordered'))}
+        {card('Ordinato', formatMoney(data.order_total), null, 'Importi netti IVA esclusa. PR in corso: documenti OCM verificati aperti e non fatturati. Prenotazioni: OCI PR verificati aperti e non fatturati e prenotazioni PH. Stralci: soli OCX verificati aperti e non fatturati. PH: ordini che restano tali e non sono fatturati. Verifica delle fatture senza limite di periodo.', { kind: 'open-orders' })}
         {card('Valore medio ordine', formatMoney(data.average_order_value), 'Periodo selezionato', 'Ordinato diviso per il numero di ordini nel periodo.', customer('ordered'))}
         {card('Clienti senza attività nel periodo', data.inactive_customers, 'Nessun documento da 90 giorni', 'Indicatore commerciale di inattività: non modifica lo stato attivo/non attivo del CRM.', customer('inactive'))}
       </div></section>
@@ -122,6 +122,7 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
         {card('Ordinato post Beauty Days', beautyValue(formatMoney(postEventOrderValue(executed))), `${extra.beauty?.post_days || 30} giorni successivi`, 'Ordini successivi alle giornate eseguite. Ogni ordine viene conteggiato una sola volta nel totale, anche con eventi sovrapposti; non è attribuzione causale.', { kind: 'beauty', metric: 'post-revenue' })}
       </div>{extra.errors.beauty && <p role="alert">{extra.errors.beauty}</p>}</section>
     </>}
-    {selected && <CrmKpiDialog key={`${selected.label}-${period.from}-${period.to}`} title={selected.label} subtitle={`CRM B2B · ${formatDate(period.from)} – ${formatDate(period.to)}`} onClose={() => setSelected(null)}>{detail()}</CrmKpiDialog>}
+    {selected?.kind === 'open-orders' && <CrmOpenOrdersDialog title="Ordinato" values={data} filters={{ p_scope: 'global', p_crm_type: 'b2b', p_from: period.from, p_to: period.to }} onClose={() => setSelected(null)}/>}
+    {selected && selected.kind !== 'open-orders' && <CrmKpiDialog key={`${selected.label}-${period.from}-${period.to}`} title={selected.label} subtitle={`CRM B2B · ${formatDate(period.from)} – ${formatDate(period.to)}`} onClose={() => setSelected(null)}>{detail()}</CrmKpiDialog>}
   </div>;
 }

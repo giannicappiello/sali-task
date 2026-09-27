@@ -147,3 +147,5 @@ body .workspace-screen-content .b2b-navigation-period .crm-section-nav{flex:1 1 
 
 .crm-open-order-breakdown{display:grid;gap:4px;font-size:12px;font-weight:400;line-height:1.45}
 .crm-open-order-breakdown > span{display:block}
+
+.crm-order-category-list{display:grid;gap:10px}.crm-order-category-list>button{display:flex;align-items:center;gap:16px;padding:14px 16px;border:1px solid #dbe5f2;border-radius:12px;background:#fff;color:inherit;text-align:left;font:inherit;cursor:pointer}.crm-order-category-list>button>span:first-child{flex:1}.crm-order-category-list>button:hover{background:#eff6ff}.crm-order-category-list>p{text-align:right}

@@ -82,3 +82,38 @@
 .crm-cost-page .crm-cost-cards h3{min-height:0;margin:0 0 8px;font-size:16px}
 .crm-cost-page .crm-cost-cards .crm-cost-value{min-height:32px;line-height:1.3;font-size:23px}
 @media(max-width:600px){.crm-cost-page .crm-cost-cards>.panel{padding:12px 16px}}
+
+.crm-cost-page .panel.crm-cost-filters{grid-template-columns:minmax(360px,2fr) minmax(220px,1.6fr) repeat(2,minmax(120px,1fr)) auto auto}
+.crm-cost-page .panel.crm-cost-tree{height:auto;min-height:0}
+.crm-cost-client{border:1px solid var(--border,#d7e3f3);border-radius:12px;margin:12px 0;overflow:hidden}
+.crm-cost-client>summary,.crm-cost-project summary{display:flex;align-items:center;gap:16px;padding:14px;cursor:pointer;list-style:none}
+.crm-cost-client>summary{background:#f3f7fd}
+.crm-cost-client summary::before{content:'▸';color:var(--primary,#176db4)}
+.crm-cost-client[open]>summary::before,.crm-cost-project details[open]>summary::before{content:'▾'}
+.crm-cost-client>summary>strong:first-of-type,.crm-cost-project summary>span{flex:1;min-width:0;overflow-wrap:anywhere}
+.crm-cost-client>summary>span{font-size:13px;color:#526781}
+.crm-cost-client-content{padding:0 14px}
+.crm-cost-project{position:relative;border-bottom:1px solid #d7e3f3}
+.crm-cost-project summary{padding-right:155px}
+.crm-cost-project>button{position:absolute;right:0;top:12px}
+.crm-cost-project-tasks{padding-left:20px}
+.crm-cost-tree-row{display:flex;align-items:center;gap:16px;padding:14px;border-top:1px solid #e7eef7}
+.crm-cost-tree-row>span{flex:1;min-width:0;overflow-wrap:anywhere}
+.crm-cost-tree small{display:block;font-size:12px;color:#526781;margin-top:4px}
+.crm-cost-page .panel.crm-cost-dialog{width:min(1060px,calc(100vw - 32px))}
+.crm-cost-page .crm-cost-dialog form>.crm-cost-entry-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start}
+.crm-cost-entry-card{border:1px solid #d7e3f3;border-radius:14px;padding:16px;min-width:0;background:#f8faff}
+.crm-cost-entry-card h4{font-size:18px;margin:0 0 10px}.crm-cost-entry-card>p{font-size:13px;color:#526781}
+.crm-cost-entry{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:14px 0;border:1px solid #d7e3f3;border-radius:10px;padding:12px;min-width:0;background:#fff}
+.crm-cost-entry legend{font-size:13px;color:#526781}.crm-cost-entry-description,.crm-cost-entry-total{grid-column:1/-1}
+.crm-cost-editor input[readonly]{background:#edf2f8;color:#526781}
+@media(max-width:1200px){.crm-cost-page .panel.crm-cost-filters{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:700px){
+ .crm-cost-page .panel.crm-cost-filters{grid-template-columns:minmax(0,1fr)}
+ .crm-cost-page .crm-cost-dialog form>.crm-cost-entry-cards{grid-template-columns:minmax(0,1fr)}
+ .crm-cost-client>summary{flex-wrap:wrap;gap:8px}.crm-cost-client>summary>span{width:100%;padding-left:20px;order:4}
+ .crm-cost-client-content{padding:0 8px}.crm-cost-project summary{padding-right:0;flex-wrap:wrap}
+ .crm-cost-project>button{position:static;margin:0 0 10px 14px}
+ .crm-cost-project-tasks{padding-left:8px}.crm-cost-tree-row{flex-wrap:wrap;gap:10px;padding:12px 6px}
+ .crm-cost-tree-row>span{flex-basis:100%}.crm-cost-entry{grid-template-columns:minmax(0,1fr)}
+}

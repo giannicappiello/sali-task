@@ -51,3 +51,27 @@
  .crm-cost-page .crm-table td[data-label="Azioni"] button{margin:4px 6px 0 0}
  .crm-cost-page .crm-empty{padding:16px 0;overflow-wrap:anywhere}
 }
+
+/* Compact toolbar; override generic panel sizing in the Workspace shell. */
+.crm-cost-page .panel.crm-cost-filters{min-height:0;height:auto;align-content:start;padding:16px;display:grid;grid-template-columns:minmax(390px,2fr) repeat(3,minmax(120px,1fr)) auto auto;gap:12px;align-items:end}
+.crm-cost-page .crm-cost-filters>label{min-width:0}
+.crm-cost-page .crm-cost-filters>button{white-space:nowrap;min-height:44px;width:auto}
+.crm-cost-page .crm-cost-filters .crm-period-filter{grid-column:auto;display:grid;grid-template-columns:1.2fr 1fr 1fr;min-width:0;width:100%;box-sizing:border-box;gap:8px}
+.crm-cost-page .crm-cost-filters .crm-period-filter label{min-width:0;width:auto;grid-column:auto}
+.crm-cost-page .panel.crm-cost-dialog{width:min(760px,calc(100vw - 32px));max-height:calc(100dvh - 32px);height:auto;min-height:0;margin:auto;overflow:auto;box-shadow:0 20px 70px #142f5266}
+.crm-cost-dialog::backdrop{background:#142f5280}
+.crm-cost-dialog>header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}
+.crm-cost-dialog>header h3{margin:0}
+.crm-cost-page .crm-cost-dialog form{grid-template-columns:repeat(2,minmax(0,1fr))}
+.crm-cost-dialog .crm-cost-description,.crm-cost-dialog form>div{grid-column:1/-1}
+.crm-cost-dialog form>div{justify-content:flex-end}
+@media(max-width:1200px){
+ .crm-cost-page .panel.crm-cost-filters{grid-template-columns:repeat(3,minmax(0,1fr))}
+ .crm-cost-page .crm-cost-filters .crm-period-filter{grid-column:1/-1}
+}
+@media(max-width:600px){
+ .crm-cost-page .panel.crm-cost-filters,.crm-cost-page .crm-cost-dialog form{grid-template-columns:minmax(0,1fr)}
+ .crm-cost-page .crm-cost-filters .crm-period-filter{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .crm-cost-page .crm-cost-filters .crm-period-filter label:first-of-type{grid-column:1/-1}
+ .crm-cost-page .crm-cost-filters>button{width:100%}
+}

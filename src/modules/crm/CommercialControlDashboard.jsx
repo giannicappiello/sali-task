@@ -48,7 +48,7 @@ const CONTROL_KPI_INFO = {
   "Clienti Mexal attivi": "Numero di clienti distinti con anagrafica Mexal attiva nel perimetro selezionato.",
   "Nuovi clienti": "Clienti la cui prima vendita documentata ricade nel periodo selezionato.",
   "Clienti persi": "Clienti senza riordino da oltre 2,5 volte la propria frequenza storica individuale.",
-  Pipeline: "Somma del valore nominale dei progetti CRM aperti.",
+  "Consuntivi Attività": "Apri la rendicontazione dei costi di progetti e attività nel periodo selezionato.",
   "Forecast ponderato": "Somma del valore di ogni progetto moltiplicato per la relativa probabilità.",
   Forecast: "Somma del valore di ogni progetto moltiplicato per la relativa probabilità.",
   "Riordini attesi": "Clienti che hanno raggiunto la propria data di riordino prevista in base alla frequenza storica.",
@@ -228,6 +228,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
     if (scope === "private") {
       const customerMetric = { Fatturato: "invoiced", Ordinato: "ordered", "OCT aperti": "ordered", "OC aperti": "ordered", "Clienti Mexal attivi": "all", "Nuovi clienti": "new" }[label];
       if (customerMetric) return period.withPeriod("/crm/conto-terzi/clienti", { metric: customerMetric, ...(label === "Clienti Mexal attivi" ? { customerStatus: "active" } : {}) });
+      if (label === "Consuntivi Attività") return period.withPeriod("/crm/conto-terzi/rendicontazione");
       if (["Pipeline", "Forecast ponderato"].includes(label)) return period.withPeriod("/crm/conto-terzi/pipeline", { status: "open", view: "list" });
     }
     const targetByScope = {
@@ -248,7 +249,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
     ];
     if (scope === "global") return [...common, ["Clienti persi", number(totals.lost_customers), "Frequenza individuale oltre 2,5×", "reorder-lost"]];
     if (scope === "private") return [...common.filter(([label]) => label !== "OC aperti"),
-      ["Pipeline", formatMoney(totals.pipeline_value), `${totals.pipeline_count || 0} progetti aperti`, "pipeline"],
+      ["Consuntivi Attività", "Apri", "Rendicontazione di progetti e attività", "rendicontazione"],
       ["Forecast ponderato", formatMoney(totals.weighted_pipeline), "Valore progetto × probabilità", "pipeline"],
       ["Riordini attesi", number(totals.reorders_due), "Frequenza storica individuale", "reorders"]];
     return [...common.filter(([label]) => label !== "OCT aperti"),
@@ -281,7 +282,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
         filters={{ p_from: period.from, p_to: period.to, p_market: market || null, p_country: country || null, p_agent: agent || null, p_customer: customer || null }}
         onClose={() => setPrivateDetail(null)}/>}
       {openOrders && <CrmOpenOrdersDialog title="OC aperti" values={totals} filters={Object.fromEntries(Object.entries(requestArguments).filter(([key]) => !['p_compare','p_granularity'].includes(key)))} onClose={() => setOpenOrders(false)}/>}
-      <div className={`crm-control-kpis ${scope === "direct" ? "wide" : ""}`}>{kpis.map(([label, value, note, target, delta]) => <MetricCard key={label} label={label} value={value} note={note} delta={delta} to={cardDestination(label, target)} onClick={scope === "private" ? () => setPrivateDetail(label) : label === "OC aperti" ? () => setOpenOrders(true) : undefined} />)}</div>
+      <div className={`crm-control-kpis ${scope === "direct" ? "wide" : ""}`}>{kpis.map(([label, value, note, target, delta]) => <MetricCard key={label} label={label} value={value} note={note} delta={delta} to={cardDestination(label, target)} onClick={scope === "private" && label !== "Consuntivi Attività" ? () => setPrivateDetail(label) : label === "OC aperti" ? () => setOpenOrders(true) : undefined} />)}</div>
 
       {scope === "global" ? <section className="crm-control-panel" id="business">
         <header><div><span>Composizione business</span><h3>PRIVATE vs DIRECT</h3></div></header>
@@ -307,7 +308,6 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
 
       {scope === "private" ? <>
         <section className="crm-control-split"><article className="crm-control-panel"><header><div><span>Dipendenza commerciale</span><h3>Concentrazione fatturato</h3></div></header>{[1, 5, 10].map((limit) => { const total = Number(data?.concentration?.total || 0); const value = Number(data?.concentration?.[`top_${limit}`] || 0); return <div className="crm-control-concentration" key={limit}><span>Top {limit}</span><strong>{total ? percentage(value / total * 100) : "—"}</strong><i style={{ width: `${total ? value / total * 100 : 0}%` }} /></div>; })}</article><article className="crm-control-panel" id="reorders"><header><div><span>Frequenza cliente</span><h3>Riordini PRIVATE</h3></div></header><ReorderHealth rows={data?.reorder_health || []} linkFor={linkFor} /></article></section>
-        <section className="crm-control-panel" id="pipeline"><header><div><span>Fasi realmente configurate</span><h3>Pipeline PRIVATE</h3></div></header><div className="crm-control-stage-grid">{(data?.pipeline_stages || []).map((row) => <Link key={row.id} to={period.withPeriod("/crm/conto-terzi/pipeline", { stage: row.id })}><strong>{row.nome}</strong><span>{number(row.opportunity_count)} progetti</span><span>{formatMoney(row.value)}</span><small>{number(row.average_days, 1)} gg medi nello stato</small></Link>)}</div></section>
       </> : null}
 
       {scope === "direct" ? <>

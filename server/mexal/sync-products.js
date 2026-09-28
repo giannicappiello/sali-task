@@ -402,7 +402,7 @@ export async function verifyUser(req, supabase, { allowOrdersUser = false, allow
 
   const isAdmin = profile.ruoli?.amministratore_workspace === true;
 
-  if (isAdmin) return { authUserId: user.id, profile, isAdmin: true, integration: null };
+  if (isAdmin && !allowCustomerPrivateOrder) return { authUserId: user.id, profile, isAdmin: true, integration: null };
 
   if (allowCustomerPrivateOrder) {
     const [{ data: customerLink, error: customerLinkError }, { data: privateModuleEnabled, error: privateModuleError }] = await Promise.all([
@@ -415,10 +415,17 @@ export async function verifyUser(req, supabase, { allowOrdersUser = false, allow
     }
     const customerCodes = (customerLink || []).map((row) => String(row.customer_code || "").trim()).filter(Boolean);
     const customerCode = customerCodes[0] || null;
-    if (customerCode && privateModuleEnabled === true) {
-      return { authUserId: user.id, profile, isAdmin: false, integration: null, customerCode, customerCodes };
+    if (customerCode && privateModuleEnabled !== true) {
+      throw authorizationError("Accesso al modulo OrdiniPrivate non abilitato.", 403);
+    }
+    // This legacy flag is used by submit/update/confirmation-email endpoints.
+    // Linked customers now have overview-only access, even with an operative/admin role.
+    if (customerCode) {
+      throw authorizationError("Gli ordini Private sono in sola lettura per gli account cliente.", 403);
     }
   }
+
+  if (isAdmin) return { authUserId: user.id, profile, isAdmin: true, integration: null };
 
   const { data: integrations, error: integrationError } = await supabase
     .from("integrazioni_utenti")

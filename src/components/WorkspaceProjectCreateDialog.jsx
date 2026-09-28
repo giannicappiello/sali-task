@@ -1,3 +1,4 @@
+import { isCustomerRecordScope } from '../lib/customerRecordAccess.js';
 import { useEffect, useState } from "react";
 import { Save, X } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
@@ -18,10 +19,10 @@ const subtractDaysIso = (dateValue, days) => {
 };
 
 export default function WorkspaceProjectCreateDialog({ open, crmType, initialCustomerKey = "", onClose, onSaved }) {
-  const { profile, authUser, hasPermission } = useAuth();
+  const { profile, authUser, hasPermission, dataScope } = useAuth();
   const actorId = profile?.id || null;
   const auditActorId = authUser?.id || null;
-  const canManage = hasPermission("projects.write");
+  const canManage = !isCustomerRecordScope(dataScope) && hasPermission("projects.write");
   const [form, setForm] = useState(emptyForm);
   const [data, setData] = useState({ products: [], departments: [], templates: [], templateDepartments: [], projectTypes: [], projectTypePhases: [] });
   const [saving, setSaving] = useState(false);

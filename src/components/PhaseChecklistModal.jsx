@@ -1,3 +1,4 @@
+import { isCustomerRecordScope } from '../lib/customerRecordAccess.js';
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Clock3, FileText, MessageSquare, Paperclip, Save, Trash2, X } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
@@ -51,7 +52,9 @@ export default function PhaseChecklistModal({
 
   const selectedPhase = phase?.id ? phase : null;
   const effectiveCrmType = projects.find((item) => item.id === form.progetto_id)?.crm_tipo || selectedPhase?.crm_tipo || crmType;
-  const canManage = allowManage && (!selectedPhase || isAdmin?.() || dataScope?.mode === "tutti"
+  const customerScoped = isCustomerRecordScope(dataScope);
+  const canContribute = customerScoped && Boolean(selectedPhase);
+  const canManage = !customerScoped && allowManage && (!selectedPhase || isAdmin?.() || dataScope?.mode === "tutti"
     || selectedPhase.creato_da === actorId || selectedPhase.assegnato_a === actorId
     || [selectedPhase.reparto_id, ...phaseDepartments.filter((row) => row.fase_id === selectedPhase.id).map((row) => row.reparto_id)]
       .some((id) => id && [...userDepartmentIds, ...(dataScope?.departmentIds || [])].includes(id)));
@@ -232,7 +235,7 @@ export default function PhaseChecklistModal({
     if (!currentUtenteId) throw new Error("Utente non trovato nella tabella utenti. Verifica login e tabella utenti.");
     const cleanFileName = file.name.replaceAll("/", "-");
     const path = `${currentUtenteId}/fasi/${phaseId}/${Date.now()}-${cleanFileName}`;
-    const uploaded = await supabase.storage.from("allegati").upload(path, file, { upsert: true });
+    const uploaded = await supabase.storage.from("allegati").upload(path, file, { upsert: !customerScoped });
     if (uploaded.error) throw uploaded.error;
     const { error } = await supabase.from("v4_allegati").insert({ entity_type: "fase_progetto", entity_id: phaseId, file_path: path, file_name: file.name, mime_type: file.type || null, size_bytes: file.size || null, caricato_da: currentUtenteId });
     if (error) throw error;
@@ -240,6 +243,15 @@ export default function PhaseChecklistModal({
 
   async function savePhase(e) {
     e.preventDefault();
+    if (canContribute) {
+      setSaving(true);
+      try {
+        const { error } = await supabase.rpc("workspace_customer_task_status", { p_task_id: selectedPhase.id, p_status: form.stato });
+        if (error) throw error;
+        onSaved?.(); onClose?.();
+      } catch (error) { alert(error.message); } finally { setSaving(false); }
+      return;
+    }
     if (!canManage) return alert("Non hai i permessi per modificare le fasi.");
     if (!form.titolo.trim()) return alert("Seleziona il titolo della fase dalla checklist.");
     const existingProductIds = selectedPhase?.id && form.crm_customer_key === (selectedPhase.crm_customer_key || projects.find(p => p.id === selectedPhase.progetto_id)?.crm_customer_key) ? getPhaseProductIds(selectedPhase.id) : [];
@@ -287,7 +299,7 @@ export default function PhaseChecklistModal({
 
   async function saveComment(e) {
     e.preventDefault();
-    if (!canManage) return;
+    if (!canManage && !canContribute) return;
     const text = comment.trim();
     if (!text) return;
     if (!selectedPhase?.id) {
@@ -305,7 +317,7 @@ export default function PhaseChecklistModal({
   }
 
   async function uploadFiles(files) {
-    if (!canManage) return;
+    if (!canManage && !canContribute) return;
     const list = Array.from(files || []).filter(Boolean);
     if (!list.length) return;
     if (!selectedPhase?.id) {
@@ -446,7 +458,8 @@ export default function PhaseChecklistModal({
           <button type="button" onClick={onClose}><X size={20} /></button>
         </div>
 
-        {!canManage && <p className="muted">Partecipi al progetto: puoi seguire questa fase in sola lettura.</p>}
+        {canContribute && <p className="muted">Puoi cambiare lo stato e aggiungere commenti e allegati. Gli altri dati sono in sola lettura.</p>}
+        {!canManage && !canContribute && <p className="muted">Partecipi al progetto: puoi seguire questa fase in sola lettura.</p>}
         <fieldset disabled={!canManage} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
         <div className="phase-dialog-columns"><fieldset className="phase-dialog-panel"><legend>Cliente e prodotto</legend>
         <label>Cliente
@@ -483,14 +496,15 @@ export default function PhaseChecklistModal({
         {selectedBlocker && !isDone(selectedBlocker) && <p className="soft-alert">Fase bloccata fino al completamento di: {selectedBlocker.titolo || "fase bloccante"}</p>}
 
         </fieldset></div>
-        <fieldset className="phase-dialog-panel phase-dialog-details"><legend>Stato, commenti e allegati</legend>
+        </fieldset>
+        <fieldset disabled={!canManage && !canContribute} className="phase-dialog-panel phase-dialog-details"><legend>Stato, commenti e allegati</legend>
         <div className="phase-status-notes">
           <label>Stato<select value={form.stato} onChange={(e) => setForm({ ...form, stato: e.target.value })}><option value="da_evadere">Da evadere</option><option value="in_lavorazione">In lavorazione</option><option value="in_valutazione">In valutazione</option><option value="evaso">Evaso</option></select></label>
-        <label>Note<textarea rows="3" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></label>
+        <label>Note<textarea disabled={!canManage} rows="3" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></label>
         </div>
 
 
-        {selectedPhase?.id && completedDepartments.length > 0 && (
+        {canManage && selectedPhase?.id && completedDepartments.length > 0 && (
           <div className="checkbox-group">
             <strong>Completamento per reparto</strong>
             {completedDepartments.map((department) => (
@@ -507,14 +521,14 @@ export default function PhaseChecklistModal({
         )}
 
         <div className="phase-detail-extra">
-          <div className="phase-extra-title"><MessageSquare size={18} /><strong>Commenti</strong></div>
+          <div className="phase-extra-title"><MessageSquare size={18} /><strong>Note e commenti</strong></div>
           <div className="comments-box">
             {comments.length === 0 && pendingComments.length === 0 ? <p className="muted">Nessun commento.</p> : null}
             {comments.map((c) => <p key={c.id}><strong>{c.creato_da === actorId ? "Tu" : "Utente"}</strong> {c.testo}<small>{new Date(c.created_at).toLocaleString("it-IT")}</small></p>)}
             {pendingComments.map((text, index) => <p key={`pending-comment-${index}`}><strong>Da salvare</strong> {text}</p>)}
           </div>
           <div className="comment-form-inline">
-            <input placeholder="Aggiungi commento..." value={comment} onChange={(e) => setComment(e.target.value)} />
+            <input placeholder="Aggiungi una nota o un commento..." value={comment} onChange={(e) => setComment(e.target.value)} />
             <button type="button" onClick={saveComment}><MessageSquare size={16} /> Invia</button>
           </div>
 
@@ -545,14 +559,13 @@ export default function PhaseChecklistModal({
         </div>
 
         </fieldset>
-        </fieldset>
         <div className="dashboard-message-actions phase-dialog-actions" data-assistant-actions>
           {selectedPhase?.id && canManage && (
             <button type="button" className="secondary-action danger" onClick={deletePhase} disabled={saving}>
               <Trash2 size={18} /> Elimina
             </button>
           )}
-          {canManage && <button className="primary-action" disabled={saving}><Save size={18} /> {saving ? "Salvataggio..." : "Salva"}</button>}
+          {(canManage || canContribute) && <button className="primary-action" disabled={saving}><Save size={18} /> {saving ? "Salvataggio..." : "Salva"}</button>}
         </div>
       </form>
     </div>

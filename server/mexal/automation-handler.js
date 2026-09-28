@@ -1,3 +1,4 @@
+import { assertPrivateCustomerDetailAccess, customerOrderOverview, loadCustomerInvoiceReferences } from '../private-orders-workbench.js';
 import { handleCompanyCalendar } from '../../server/company-calendar.js';
 import { handleHrProductionCalendar } from '../../server/hr-production-calendar.js';
 import { syncDeletedWorkspaceCatalog } from "../../server/workspace-catalog-deletions.js";
@@ -721,7 +722,8 @@ export default async function handler(req, res) {
       }
       case "private_workbench_list":
       case "private_workbench_detail": {
-        const { admin, orders } = await privateWorkbenchSession(req);
+        const { admin, caller, orders, customerCodes } = await privateWorkbenchSession(req);
+        if (body.action === "private_workbench_detail") assertPrivateCustomerDetailAccess(customerCodes);
         const client = createProgremesClient();
         const diagnostics = await client.request("diagnostics").catch(() => []);
         const effectiveDiagnostics = await effectiveWorkspaceDiagnostics({ admin, diagnostics });
@@ -737,6 +739,11 @@ export default async function handler(req, res) {
           return [];
         });
         const workbench = await listProductionWorkbench({ admin, diagnostics: effectiveDiagnostics, productionOrders, scopedOrders: orders });
+        if (customerCodes.length) {
+          const invoices = await loadCustomerInvoiceReferences(caller, orders);
+          return sendSuccess(res, 200, { generatedAt: workbench.generatedAt, productionWarning,
+            items: workbench.items.map(row => customerOrderOverview(row, invoices.links, invoices.error)) });
+        }
         // The UI needs the scoped OCT rows, not raw MES orders or multi-customer history.
         return sendSuccess(res, 200, {
           generatedAt: workbench.generatedAt, productionWarning,
@@ -754,6 +761,7 @@ export default async function handler(req, res) {
       case "progremes_workbench_list": {
         const admin = body.workspaceScreen === "workspace.production.progress" ? await createWorkbenchReader(req) : await createAdmin(req, "rdp.view");
         const customerCode = await authorizedCustomerCode(admin);
+        if (body.workspaceScreen !== "workspace.production.progress") assertPrivateCustomerDetailAccess(customerCode);
         const client = createProgremesClient();
         const [diagnostics, health, productionOrders] = await Promise.all([
           client.request("diagnostics").catch(() => []),
@@ -770,11 +778,14 @@ export default async function handler(req, res) {
           productionOrders,
           customerCode,
         });
+        if (customerCode?.length) return sendSuccess(res, 200, { generatedAt: workbench.generatedAt, customerScoped: true, history: [],
+          items: workbench.items.map(row => ({ ...customerOrderOverview(row), stage: row.stage, status: row.status })) });
         return sendSuccess(res, 200, { ...workbench, productionGates: productionGoLiveGates(health) });
       }
       case "progremes_workbench_detail": {
         const admin = body.workspaceScreen === "workspace.production.progress" ? await createWorkbenchReader(req) : await createAdmin(req, "rdp.view");
         const customerCode = await authorizedCustomerCode(admin);
+        assertPrivateCustomerDetailAccess(customerCode);
         if (body.productionOrderId !== undefined) {
           const detail = await productionWorkbenchDetail({ admin: admin.supabase,
             orderId: body.orderId, requestId: body.requestId, customerCode, scopeOnly: true });

@@ -138,8 +138,8 @@ export default function useOrdersAccess(moduleCode = "prof") {
     const isBackoffice = enabled && role === "backoffice";
     const isAreaManager = enabled && role === "area_manager";
     const isAgent = enabled && role === "agente";
-    const isCustomer = enabled && role === "cliente";
-    const canCreateCustomerPrivateOrder = isCustomer && workspaceModuleCode === "ordini_private";
+    const isCustomer = enabled && (role === "cliente" || customerCodes.length > 0 || scopeMode === "cliente");
+    const canCreateCustomerPrivateOrder = false;
     const canReadAllCommercial = !isCustomer && enabled && commercialMode === "tutti";
     const canReadDirectCustomers = !isCustomer && enabled && directCustomerRead;
 

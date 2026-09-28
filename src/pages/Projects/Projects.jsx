@@ -1,3 +1,4 @@
+import { isCustomerRecordScope } from '../../lib/customerRecordAccess.js';
 import { formatDisplayDate } from '../../lib/displayLocale.js';
 import { isPhaseParticipant } from "../../lib/projectVisibility";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -97,7 +98,7 @@ export default function Projects() {
   const requestedOpportunityId = routeParams.get("opportunity") || "";
   const safeReturnTo = requestedReturnTo.startsWith("/") && !requestedReturnTo.startsWith("//") ? requestedReturnTo : "";
   const { profile, hasPermission, isAdmin, userDepartmentIds = [], dataScope, canViewScopedData } = useAuth();
-  const canManage = hasPermission("projects.write");
+  const canManage = !isCustomerRecordScope(dataScope) && hasPermission("projects.write");
   const canReadAllProjects = dataScope?.mode === "tutti" || isAdmin?.();
   const actorId = profile?.id || null;
 

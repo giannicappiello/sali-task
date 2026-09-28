@@ -54,6 +54,7 @@ export async function privateWorkbenchSession(req, dependencies = {}) {
   if (profile.ruoli?.amministratore_workspace !== true &&
       (snapshot.access?.module_levels?.ordini_private || snapshot.access?.role?.livello_accesso || "lettura") === "nessuno") throw denied();
   const customerCodes = (scope.customer_codes || (scope.customer_code ? [scope.customer_code] : [])).map(text).filter(Boolean);
+  if (scope.mode === "cliente" && !customerCodes.length) throw denied();
   const isAdmin = profile.ruoli?.amministratore_workspace === true;
   if (!isAdmin && !customerCodes.length) {
     const integration = await admin.from("integrazioni_utenti").select("enabled")
@@ -73,7 +74,7 @@ export async function privateWorkbenchSession(req, dependencies = {}) {
     filter = { column: "codice_agente_mexal", values: result.data || [] };
   }
   const orders = await loadPrivateWorkbenchOrders(caller, filter);
-  return { admin, orders, customerCodes };
+  return { admin, caller, orders, customerCodes };
 }
 
 export async function loadPrivateWorkbenchOrders(caller, filter) {
@@ -94,4 +95,33 @@ export function assertPrivateWorkbenchDetailScope(relatedOrderIds, allowedOrderI
   if (!relatedOrderIds.length || relatedOrderIds.some((id) => !allowed.has(text(id)))) {
     throw Object.assign(new Error("OCT o RdP non disponibile: contiene ordini fuori dal tuo ambito autorizzato."), { status: 404 });
   }
+}
+
+export function assertPrivateCustomerDetailAccess(customerCodes) {
+  if (customerCodes?.length) throw Object.assign(new Error("Gli account cliente possono consultare solo il riepilogo ordini."), { status: 403 });
+}
+
+// Explicit projection prevents accidental disclosure of RdP and internal diagnostics.
+export function customerOrderOverview(row, invoiceLinks = [], invoiceLookupError = false) {
+  return {
+    id: row.id, label: row.label, customer: row.customer,
+    orderDate: row.orderDate, deliveryDate: row.deliveryDate,
+    plannedCompletionDate: row.plannedCompletionDate,
+    invoiceLookupError,
+    invoiceReferences: [...new Set(invoiceLinks.filter(link => link.ordine_id === row.id).map(({ invoice }) =>
+      [invoice.sigla, invoice.serie, invoice.numero].filter(value => value != null && value !== '').join('/')))],
+    lines: (row.lines || []).map(line => ({ id: line.id, articleCode: line.articleCode,
+      description: line.description, orderedQuantity: line.orderedQuantity,
+      fulfilledQuantity: line.fulfilledQuantity, unit: line.unit })),
+  };
+}
+
+export async function loadCustomerInvoiceReferences(caller, orders) {
+  const links = [];
+  for (let start = 0; start < orders.length; start += 100) {
+    const { data, error } = await caller.rpc('workspace_order_invoice_links', { p_order_ids: orders.slice(start, start + 100).map(order => order.id) });
+    if (error) return { links: [], error: true };
+    links.push(...(data || []));
+  }
+  return { links, error: false };
 }

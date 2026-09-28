@@ -1,3 +1,5 @@
+import CustomerOrderOverview from './CustomerOrderOverview';
+import { isCustomerRecordScope } from '../../../lib/customerRecordAccess.js';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, RefreshCw, Search, Sparkles } from "lucide-react";
@@ -25,6 +27,7 @@ export default function PrivateOrdersDashboard() {
   const { basePath } = useOrdersModule();
   const { session, dataScope } = useAuth();
   const { loading: accessLoading, canAccessOrders, canWriteOrders, canUseAIOrderGeneration } = useOrdersAccess("private");
+  const customerScoped = isCustomerRecordScope(dataScope);
   const token = session?.access_token;
   const scopeKey = JSON.stringify(dataScope || {});
   const [revision, setRevision] = useState(0);
@@ -59,6 +62,7 @@ export default function PrivateOrdersDashboard() {
 
   const visible = useMemo(() => rows.filter((row) => privateWorkbenchMatchesSearch(row, search)), [rows, search]);
   async function openDetail(row) {
+    if (customerScoped) return;
     // Local OCT drafts retain their existing edit/send workflow.
     if (row.origin !== "mexal_oct" && !row.requestId) { navigate(`${basePath}/elenco/${row.id}`); return; }
     detailRequest.current?.abort();
@@ -76,11 +80,11 @@ export default function PrivateOrdersDashboard() {
   }
   return <section className="production-page rdp-workbench private-orders-workbench" aria-label="Dashboard OrdiniPrivate">
     <div className="private-workbench-toolbar">    <div className="orders-toolbar private-workbench-actions">
-      {canWriteOrders && <button type="button" className="orders-primary" onClick={() => navigate(`${basePath}/nuovo`)}><Plus size={17}/>Nuovo OCT</button>}
-      {canUseAIOrderGeneration && <button type="button" className="orders-secondary" onClick={() => navigate(`${basePath}/nuovo-da-documento?tipo=standard`)}><Sparkles size={17}/>Genera con AI</button>}
+      {!customerScoped && canWriteOrders && <button type="button" className="orders-primary" onClick={() => navigate(`${basePath}/nuovo`)}><Plus size={17}/>Nuovo OCT</button>}
+      {!customerScoped && canUseAIOrderGeneration && <button type="button" className="orders-secondary" onClick={() => navigate(`${basePath}/nuovo-da-documento?tipo=standard`)}><Sparkles size={17}/>Genera con AI</button>}
     </div>
 
-      <label className="orders-search"><Search size={18} aria-hidden="true"/><input type="search" aria-label="Ricerca rapida totale OCT" placeholder="Cerca OCT, RdP, cliente, prodotto, stato o data…" value={search} onChange={(event) => setSearch(event.target.value)}/></label>
+      <label className="orders-search"><Search size={18} aria-hidden="true"/><input type="search" aria-label="Ricerca rapida totale OCT" placeholder={customerScoped ? "Cerca ordine, cliente o prodotto…" : "Cerca OCT, RdP, cliente, prodotto, stato o data…"} value={search} onChange={(event) => setSearch(event.target.value)}/></label>
       <button type="button" className="orders-secondary" disabled={loading || accessLoading} onClick={() => setRevision((value) => value + 1)}><RefreshCw size={17}/>Aggiorna</button>
     </div>
     <p className="private-workbench-count" role="status">{loading ? "Caricamento OCT e stati di produzione…" : `${visible.length} OCT${search ? ` su ${rows.length}` : ""} · Tutti gli stati`}</p>
@@ -88,10 +92,10 @@ export default function PrivateOrdersDashboard() {
     {warning && <div className="private-workbench-warning" role="alert">{warning}</div>}
     {detailLoading && <p role="status">Caricamento dettaglio…</p>}
     <div className="rdp-oct-scroll" tabIndex={0} role="region" aria-label="Elenco unico OCT">
-      <div className="rdp-oct-cards">{visible.map((row) => <OctOrderCard key={row.id} row={row} selectable={false} onOpen={() => openDetail(row)} onDiagnostic={setDiagnostic}/>)}</div>
+      {customerScoped ? <CustomerOrderOverview rows={visible}/> : <div className="rdp-oct-cards">{visible.map((row) => <OctOrderCard key={row.id} row={row} selectable={false} onOpen={() => openDetail(row)} onDiagnostic={setDiagnostic}/>)}</div>}
       {!loading && !error && !visible.length && <div className="rdp-empty">{search ? "Nessun OCT corrisponde alla ricerca." : "Nessun OCT disponibile nel tuo ambito autorizzato."}</div>}
     </div>
-    {detail && <DetailPanel key={detail.request?.id || detail.orders?.[0]?.id} detail={detail} readOnly onClose={() => setDetail(null)} onDiagnostics={setDiagnostic}/>}
-    {diagnostic && <DiagnosticActionDialog diagnostic={diagnostic} canManage={false} onClose={() => setDiagnostic(null)}/>}
+    {!customerScoped && detail && <DetailPanel key={detail.request?.id || detail.orders?.[0]?.id} detail={detail} readOnly onClose={() => setDetail(null)} onDiagnostics={setDiagnostic}/>}
+    {!customerScoped && diagnostic && <DiagnosticActionDialog diagnostic={diagnostic} canManage={false} onClose={() => setDiagnostic(null)}/>}
   </section>;
 }

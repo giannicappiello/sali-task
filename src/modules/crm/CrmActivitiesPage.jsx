@@ -1,3 +1,4 @@
+import { isCustomerRecordScope } from '../../lib/customerRecordAccess.js';
 import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { LayoutList, Plus, Search, SquareKanban } from "lucide-react";
@@ -21,8 +22,9 @@ function isCompleted(row) {
 export default function CrmActivitiesPage({ type }) {
   const config = crmTypeConfig(type);
   const period = useCrmPeriod();
-  const { canUseModule, profile } = useAuth();
-  const canWrite = canUseModule(config.moduleCode, "scrittura");
+  const { canUseModule, profile, dataScope } = useAuth();
+  const customerScoped = isCustomerRecordScope(dataScope);
+  const canWrite = !customerScoped && canUseModule(config.moduleCode, "scrittura");
   const actorId = profile?.id || null;
   const [params, setParams] = useSearchParams();
   const [now] = useState(() => Date.now());
@@ -84,7 +86,12 @@ export default function CrmActivitiesPage({ type }) {
   const initialCustomerKey = type === "brand_direct" ? VIRTUAL_DIRECT_CUSTOMER_KEY : "";
   const openTask = (task = null) => { setSelectedTask(task); setTaskDialogOpen(true); };
   const moveTask = async (taskId, nextStatus) => {
-    if (!canWrite || nextStatus === "bloccata") return;
+    if ((!canWrite && !customerScoped) || nextStatus === "bloccata") return;
+    if (customerScoped) {
+      const { error } = await supabase.rpc("workspace_customer_task_status", { p_task_id: taskId, p_status: nextStatus });
+      if (error) return setError(error.message);
+      await load(); return;
+    }
     const task = rows.find((row) => row.id === taskId);
     if (!task) return;
     if (task.bloccante_id) {
@@ -108,7 +115,7 @@ export default function CrmActivitiesPage({ type }) {
     <div className="crm-filters"><label><Search size={16} /><input value={search} onChange={(event) => updateParam("activitySearch", event.target.value)} placeholder="Cerca attività, cliente o progetto" /></label><select value={status} onChange={(event) => updateParam("activityStatus", event.target.value)}><option value="open">Aperte</option><option value="completed">Completate</option><option value="all">Tutte</option></select><div className="crm-view-toggle" aria-label="Vista attività"><button type="button" className={view === "list" ? "active" : ""} onClick={() => updateParam("activityView", "list")}><LayoutList size={16} />Lista</button><button type="button" className={view === "kanban" ? "active" : ""} onClick={() => updateParam("activityView", "kanban")}><SquareKanban size={16} />Kanban</button></div></div>
     {loading ? <div className="crm-loading">Caricamento attività...</div> : view === "kanban" ? <WorkspaceTaskKanban items={rows} onMove={moveTask} onOpen={openTask} /> : <div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Attività / task</th><th>Cliente</th><th>Progetto</th><th>Scadenza</th><th>Stato</th><th>Azioni</th></tr></thead><tbody>{rows.map((row) => {
       const overdue = !row.completed && row.deadline && new Date(`${row.deadline}T23:59:59`).getTime() < now;
-      return <tr key={row.id}><td><strong>{row.titolo}</strong>{row.descrizione ? <small>{row.descrizione}</small> : null}</td><td><CrmCustomerLink crmType={type} customerCode={row.customer.customerCode} accountId={row.customer.accountId} name={row.customer.name} period={period}>{row.customer.name}</CrmCustomerLink></td><td>{row.v4_progetti ? <Link to={`/activities/projects?project=${row.v4_progetti.id}`}>{row.v4_progetti.titolo}</Link> : "Attività singola"}</td><td className={overdue ? "crm-missing-step" : ""}>{row.deadline ? formatDate(row.deadline) : "Senza scadenza"}</td><td>{row.stato || "da evadere"}</td><td><button type="button" className="secondary-action crm-table-action" onClick={() => openTask(row)}>Apri task</button></td></tr>;
+      return <tr key={row.id}><td><strong>{row.titolo}</strong>{row.descrizione ? <small>{row.descrizione}</small> : null}</td><td><CrmCustomerLink crmType={type} customerCode={row.customer.customerCode} accountId={row.customer.accountId} name={row.customer.name} period={period}>{row.customer.name}</CrmCustomerLink></td><td>{row.v4_progetti ? <Link to={customerScoped ? `/crm/conto-terzi/progetti?projectView=kanban&kanbanProject=${row.v4_progetti.id}` : `/activities/projects?project=${row.v4_progetti.id}`}>{row.v4_progetti.titolo}</Link> : "Attività singola"}</td><td className={overdue ? "crm-missing-step" : ""}>{row.deadline ? formatDate(row.deadline) : "Senza scadenza"}</td><td>{row.stato || "da evadere"}</td><td><button type="button" className="secondary-action crm-table-action" onClick={() => openTask(row)}>Apri task</button></td></tr>;
     })}</tbody></table>{!rows.length ? <div className="crm-empty">Nessuna task o fase corrisponde ai filtri.</div> : null}</div>}
     <WorkspaceTaskDialog open={taskDialogOpen} phase={selectedTask} crmType={type} initialCustomerKey={selectedTask?.crm_customer_key || initialCustomerKey} canManage={canWrite} onClose={() => setTaskDialogOpen(false)} onSaved={load} />
   </div>;

@@ -1,3 +1,4 @@
+import { isCustomerRecordScope } from '../../lib/customerRecordAccess.js';
 import { useCallback, useEffect, useState } from "react";
 import CrmB2BWorklist from "./CrmB2BWorklist";
 import { Link, useSearchParams } from "react-router-dom";
@@ -22,8 +23,9 @@ function ErrorMessage({ error }) {
 
 export function CrmProjectsPage({ type = "conto_terzi" }) {
   const config = crmTypeConfig(type); const period = useCrmPeriod();
-  const { canUseModule, profile } = useAuth();
-  const canWrite = canUseModule(config.moduleCode, "scrittura");
+  const { canUseModule, profile, dataScope } = useAuth();
+  const customerScoped = isCustomerRecordScope(dataScope);
+  const canWrite = !customerScoped && canUseModule(config.moduleCode, "scrittura");
   const actorId = profile?.id || null;
   const [params, setParams] = useSearchParams();
   const [rows, setRows] = useState([]); const [error, setError] = useState(""); const [loading, setLoading] = useState(true);
@@ -36,7 +38,7 @@ export function CrmProjectsPage({ type = "conto_terzi" }) {
   const load = useCallback(async () => {
     setLoading(true);
     const [projectsResult, customersResult] = await Promise.all([
-      supabase.from("v4_progetti").select("id,titolo,descrizione,stato,deadline,crm_customer_key,crm_opportunity_id,v4_fasi_progetto(id,titolo,descrizione,stato,deadline,priorita,completato_at,crm_customer_key,crm_opportunity_id,bloccante_id),crm_opportunities(id,titolo)").not("crm_customer_key", "is", null).order("created_at", { ascending: false }).limit(2000),
+      supabase.from("v4_progetti").select("id,titolo,descrizione,stato,deadline,crm_customer_key,crm_opportunity_id,v4_fasi_progetto(id,titolo,descrizione,note,crm_tipo,stato,deadline,priorita,completato_at,crm_customer_key,crm_opportunity_id,bloccante_id),crm_opportunities(id,titolo)").not("crm_customer_key", "is", null).order("created_at", { ascending: false }).limit(2000),
       loadCrmCustomerDirectory(supabase, type),
     ]);
     const loadError = projectsResult.error || customersResult.error;
@@ -72,7 +74,12 @@ export function CrmProjectsPage({ type = "conto_terzi" }) {
   const initialCustomerKey = type === "brand_direct" ? VIRTUAL_DIRECT_CUSTOMER_KEY : "";
   const kanbanTasks = rows.filter((project) => !selectedProjectId || project.id === selectedProjectId).flatMap((project) => (project.v4_fasi_progetto || []).map((task) => ({ ...task, progetto_id: project.id, v4_progetti: { id: project.id, titolo: project.titolo }, crm_customer_key: task.crm_customer_key || project.crm_customer_key, crm_customer_name: project.customer.name })));
   const moveTask = async (taskId, nextStatus) => {
-    if (!canWrite || nextStatus === "bloccata") return;
+    if ((!canWrite && !customerScoped) || nextStatus === "bloccata") return;
+    if (customerScoped) {
+      const { error } = await supabase.rpc("workspace_customer_task_status", { p_task_id: taskId, p_status: nextStatus });
+      if (error) return setError(error.message);
+      await load(); return;
+    }
     const task = kanbanTasks.find((row) => row.id === taskId);
     if (!task) return;
     if (task.bloccante_id) {

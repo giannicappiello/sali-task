@@ -1,3 +1,4 @@
+import { isCustomerRecordScope } from '../../lib/customerRecordAccess.js';
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {supabase} from '../../lib/supabaseClient';
 import {useAuth} from '../../contexts/AuthContext';
@@ -13,7 +14,7 @@ import WorkspaceCostDialog from './WorkspaceCostDialog';
 import './workspace-costs.css';
 
 export default function CrmWorkspaceCosts(){
- const period=useCrmPeriod(),{canUseModule,isAdmin,user}=useAuth(),canWrite=canUseModule('crm_conto_terzi','scrittura');
+ const period=useCrmPeriod(),{canUseModule,isAdmin,user,dataScope}=useAuth(),canWrite=!isCustomerRecordScope(dataScope)&&canUseModule('crm_conto_terzi','scrittura');
  const [data,setData]=useState({costs:[],projects:[],tasks:[],customers:[],accounts:[]});
  const [error,setError]=useState(''),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false);
  const [form,setForm]=useState(null),[search,setSearch]=useState(''),[kind,setKind]=useState(''),[project,setProject]=useState(''),[deleting,setDeleting]=useState(null);

@@ -1,5 +1,6 @@
 /* global process */
 import { canOpenPlanningProduction } from "./production-workbench-access.js";
+import { workspaceAuthFailure } from './workspace-auth-diagnostic.js';
 import { productionSheetSession, productionSheetProfileAccess } from './production-sheet-access.js';
 import { createHash, randomBytes } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
@@ -26,7 +27,7 @@ async function getWorkspaceIdentity(req, admin, operationalRead = false) {
   }
 
   const { data: { user }, error: authError } = await admin.auth.getUser(authorization.slice(7));
-  if (authError || !user) throw Object.assign(new Error("Sessione Workspace non valida."), { status: 401 });
+  if (authError || !user) throw workspaceAuthFailure(authError, 'progremes-sso', "Sessione Workspace non valida.");
 
   const { data: profile, error: profileError } = await admin
     .from("utenti")

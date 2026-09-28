@@ -17,7 +17,17 @@ export async function costSession(req,screen,write=false,{clientFactory=createCl
   // endpoint only needs the same caller-bound scope and the requested screen.
   caller.rpc("workspace_data_scope"),
  ]);
- const level=check(levelResult),scope=check(scopeResult);
+ let level=check(levelResult);
+ const scope=check(scopeResult);
+ // Older sheet routes still reference retired operator screens. Only a verified
+ // administrator with access to the active planning screen may use that fallback.
+ if(["progremes.Produzione","progremes.OperatoreProduzione","progremes.OperatoreConfezionamento"].includes(screen)&&level!=="amministrazione") {
+  const isAdmin=check(await admin.rpc("workspace_user_is_admin",{target_auth_user_id:auth.data.user.id}));
+  if(isAdmin===true) {
+   const planningLevel=check(await admin.rpc("workspace_screen_level_for_user",{target_user_id:profile.id,target_screen:"progremes.PlanningProduction"}));
+   if(planningLevel==="amministrazione")level=planningLevel;
+  }
+ }
  const departmentGranted=departmentAccess ? await departmentAccess(admin,profile.id) : false;
  if(!departmentGranted&&(!level||level==="nessuno"||(write&&!["scrittura","gestione","completo","amministrazione"].includes(level))))throw fail("Operazione non autorizzata su questa schermata.",403);
  if(!scope?.mode)throw fail("Ambito dati non disponibile.",403);

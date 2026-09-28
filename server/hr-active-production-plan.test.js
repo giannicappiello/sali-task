@@ -43,3 +43,15 @@ test('signed read transport cannot send simulated or write operations or caller-
   await reader('get', { id: 'v1', actor: 'spoof', input: { kind: 'RELEASE_ODL' } });
   await assert.rejects(reader('simulate'), /sola lettura/);
 });
+
+test('upstream failure identifies the failed read without copying server details or credentials', async () => {
+  const reader = createHrPlanReader({ base: 'https://mes.example', secret: 'test-secret', transport: async () => ({ ok: false, status: 500 }) });
+  await assert.rejects(reader('state'), error => {
+    assert.equal(error.code, 'MES_PLAN_READ_FAILED');
+    assert.equal(error.operation, 'state');
+    assert.equal(error.upstreamStatus, 500);
+    assert.equal(error.status, 502);
+    assert.equal(JSON.stringify(error).includes('test-secret'), false);
+    return true;
+  });
+});

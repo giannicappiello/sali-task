@@ -17,7 +17,9 @@ export function createHrPlanReader({ base = process.env.PROGREMES_URL, secret = 
       'Content-Type': 'application/json', [HMAC_HEADERS.timestamp]: String(timestamp), [HMAC_HEADERS.eventId]: eventId,
       [HMAC_HEADERS.signature]: signProductionMessage({ method: 'POST', path, timestamp, eventId, body, secret: secret.trim() }),
     } });
-    if (!response.ok) throw Object.assign(new Error('Lettura piano MES non disponibile.'), { status: 502, upstreamStatus: response.status });
+    if (!response.ok) throw Object.assign(new Error('Lettura piano MES non disponibile.'), {
+      code: 'MES_PLAN_READ_FAILED', status: 502, upstreamStatus: response.status, operation,
+    });
     return response.json();
   };
 }

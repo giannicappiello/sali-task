@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { packagingSession } from './packaging-access.js';
+import { productionSheetSession } from './production-sheet-access.js';
 import { createProgremesProductionClient } from './progremes-production-client.js';
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
@@ -23,7 +24,15 @@ export function packagingActionInput(body) {
   }
   return input;
 }
-export async function handlePackagingActions(req, body, { authorize = packagingSession, clientFactory = createProgremesProductionClient } = {}) {
+export async function authorizePackaging(req, screen, write) {
+  if (write) return packagingSession(req, screen, true);
+  const session = await productionSheetSession(req, 'packaging');
+  let canWrite = false;
+  try { canWrite = (await packagingSession(req, screen, true)).canWrite; }
+  catch (error) { if (error.status !== 403) throw error; }
+  return { ...session, canWrite };
+}
+export async function handlePackagingActions(req, body, { authorize = authorizePackaging, clientFactory = createProgremesProductionClient } = {}) {
   const input = packagingActionInput(body);
   const write = ['thermal-print', 'start'].includes(input.operation);
   const session = await authorize(req, 'progremes.Produzione', write);

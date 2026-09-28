@@ -59,6 +59,7 @@ export default function PackagingOperationalActions({ productionOrderId, resourc
   }
   const unavailable = !Number.isSafeInteger(Number(productionOrderId)) || Number(productionOrderId) <= 0;
   return <><button type="button" disabled={unavailable} onClick={() => open('labels')}><Tag size={17}/>Etichetta termica</button>
+    <button type="button" disabled={unavailable || !resourceCode} onClick={() => open('data')}>Dati filling</button>
     <button type="button" disabled={unavailable || !resourceCode || operationType !== 'Packaging'} onClick={() => open('start')}><Play size={17}/>Avvia confezionamento</button>
     {mode === 'labels' && <Modal title="Etichetta termica" onClose={close} className="thermal-label-modal">
       {error && <p role="alert" className="pc-note">{error}</p>}
@@ -66,12 +67,12 @@ export default function PackagingOperationalActions({ productionOrderId, resourc
       {data?.label && <div className="thermal-label-body"><div className="thermal-label-settings"><strong>{data.label.numeroOrdine} · {data.label.codiceProdotto}</strong><label>Pezzi per collo<input type="number" min="0" step="1" value={pieces} readOnly={data.label.pezziPerColloDaCapitolato} disabled={busy} onChange={e => changePieces(e.target.value)}/></label><small>{data.label.pezziPerColloDaCapitolato ? `Dal capitolato prodotto · revisione ${data.label.revisioneCapitolato}` : 'Dato assente nel capitolato: inseriscilo manualmente. Verrà salvato alla stampa anche per il foglio di confezionamento.'}</small><label>Numero etichette<input type="number" min="1" max="1000" step="1" value={count} readOnly={Number(pieces) > 0} disabled={busy} onChange={e => setCount(e.target.value)}/></label><p>Formato 100 × 150 mm. Una etichetta per ogni collo. Anteprima del primo collo.</p>{!validLabels && <p role="alert">Indica da 1 a 1.000 etichette e pezzi per collo non negativi.</p>}</div><ThermalLabel label={data.label} count={count} pieces={Number(pieces)}/></div>}
       <footer><button type="button" disabled={busy} onClick={close}>Chiudi</button><button type="button" disabled={busy || !data?.canWrite || !data?.label || !validLabels} onClick={printLabels}><Printer size={17}/>{busy ? 'Preparazione stampa…' : 'Stampa etichette'}</button></footer>
     </Modal>}
-    {mode === 'start' && <Modal title="Avvia confezionamento" onClose={close}>
+    {(mode === 'start' || mode === 'data') && <Modal title={mode === 'data' ? 'Dati filling' : 'Avvia confezionamento'} onClose={close}>
       <div className="packaging-start-summary"><strong>{orderNumber} · {articleCode}</strong><p>Linea: {resourceCode}{data?.resourceName ? ` · ${data.resourceName}` : ''}</p></div>
       {error && <p role="alert" className="pc-note">{error}</p>}
       {!data && !error && <p role="status">Verifica dello stato MES…</p>}
-      {data?.started ? <p role="status">Confezionamento avviato.</p> : data && <p>{data.ready ? 'Conferma l’avvio su questa linea. MES verifica ODL, foglio, etichette e delibera del semilavorato.' : 'Il confezionamento è già avviato o non è nello stato Da avviare.'}</p>}
-      <footer className="packaging-start-actions"><button type="button" disabled={busy} onClick={close}>Chiudi</button><button type="button" disabled={busy || !data?.ready || !data?.canWrite} onClick={start}>{busy ? 'Avvio…' : 'Conferma avvio'}</button></footer>
+      {data?.started ? <p role="status">Confezionamento avviato.</p> : data && <p>{data.ready ? (mode === 'data' ? 'Confezionamento da avviare.' : 'Conferma l’avvio su questa linea. MES verifica ODL, foglio, etichette e delibera del semilavorato.') : 'Il confezionamento è già avviato o non è nello stato Da avviare.'}</p>}
+      <footer className="packaging-start-actions"><button type="button" disabled={busy} onClick={close}>Chiudi</button>{mode === 'start' && <button type="button" disabled={busy || !data?.ready || !data?.canWrite} onClick={start}>{busy ? 'Avvio…' : 'Conferma avvio'}</button>}</footer>
     </Modal>}
   </>;
 }

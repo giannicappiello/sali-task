@@ -1,5 +1,6 @@
 /* global process */
 import { canOpenPlanningProduction } from "./production-workbench-access.js";
+import { productionSheetSession, productionSheetProfileAccess } from './production-sheet-access.js';
 import { createHash, randomBytes } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { ensureLocalProductionScreens } from "./workspace-local-production-screens.js";
@@ -18,7 +19,7 @@ function adminClient() {
   });
 }
 
-async function getWorkspaceIdentity(req, admin) {
+async function getWorkspaceIdentity(req, admin, operationalRead = false) {
   const authorization = String(req.headers.authorization || "");
   if (!authorization.startsWith("Bearer ")) {
     throw Object.assign(new Error("Sessione Workspace mancante."), { status: 401 });
@@ -43,7 +44,7 @@ async function getWorkspaceIdentity(req, admin) {
   });
   if (accessError) throw accessError;
   const planningProductionAllowed = await canOpenPlanningProduction(admin, profile.id);
-  if (enabled !== true && !planningProductionAllowed) {
+  if (enabled !== true && !planningProductionAllowed && !operationalRead) {
     throw Object.assign(new Error("Accesso al modulo ProgreMES non autorizzato."), { status: 403 });
   }
 
@@ -138,7 +139,10 @@ export async function listUserProgremesSections(req) {
 
 export async function issueProgremesTicket(req, body = {}) {
   const admin = adminClient();
-  const identity = await getWorkspaceIdentity(req, admin);
+  const operationalRead = body.screenCode === 'progremes.PlanningProduction' && body.context?.destination === 'station'
+    && body.context.stationAction == null && body.context.orderId == null;
+  if (operationalRead) await productionSheetSession(req, 'production', { admin });
+  const identity = await getWorkspaceIdentity(req, admin, operationalRead);
   await ensureProgremesCatalogFresh(admin);
   const { user, profile } = identity;
   if (!String(profile.email || user.email || "").trim()) {
@@ -172,7 +176,7 @@ export async function issueProgremesTicket(req, body = {}) {
       .maybeSingle();
     if (screenError) throw screenError;
     if (!screen) throw Object.assign(new Error("Schermata ProgreMES non disponibile."), { status: 404 });
-    if (!identity.isAdmin) {
+    if (!identity.isAdmin && !operationalRead) {
       const authorizedCodes = await getAuthorizedProgremesCodes(admin, identity);
       if (!isProgremesScreenAuthorized(identity.isAdmin, authorizedCodes, screen.metadati)) {
         throw Object.assign(new Error("Schermata ProgreMES non autorizzata."), { status: 403 });
@@ -223,5 +227,11 @@ export async function consumeProgremesTicket(body) {
     target_user_id: profile.workspace_user_id, target_screen: "progremes.PlanningProduction",
   });
   if (planningError) throw Object.assign(new Error("Verifica permessi pianificazione non disponibile."), { status: 503 });
-  return { ...profile, planning_production_level: ["lettura", "scrittura", "amministrazione"].includes(planningLevel) ? planningLevel : "" };
+  const { data: operationalProfile, error: operationalError } = await admin.from('utenti')
+    .select('id,auth_user_id,attivo,reparto_id,ruoli(nome,amministratore_workspace)').eq('id', profile.workspace_user_id).maybeSingle();
+  if (operationalError) throw operationalError;
+  let stationRead = false;
+  try { await productionSheetProfileAccess(admin, operationalProfile, operationalProfile?.auth_user_id, 'production'); stationRead = true; }
+  catch (error) { if (error.status !== 403) throw error; }
+  return { ...profile, station_read_allowed: stationRead, planning_production_level: ["lettura", "scrittura", "amministrazione"].includes(planningLevel) ? planningLevel : "" };
 }

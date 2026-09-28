@@ -6,6 +6,7 @@ import ProductSpecificationViewButton from '../Documentation/ProductSpecificatio
 import '../Documentation/ProductSpecification.css';
 import ProgreMesLaunch from '../ProgreMes/ProgreMesLaunch';
 import { stationActionUrl } from './productionCalendar';
+import { requestProgremesNavigation } from '../ProgreMes/progremesWindow';
 
 function pdfUrl(base64) {
   return URL.createObjectURL(new Blob([Uint8Array.from(atob(base64), c => c.charCodeAt(0))], { type: 'application/pdf' }));
@@ -57,11 +58,19 @@ export default function PreparationActions({ activity, onStarted }) {
     }
   } };
   const actionUrl = stationActionUrl(activity, mode);
+  async function openStation() {
+    const popup = window.open('about:blank', '_blank', 'popup=yes,width=800,height=960,resizable=yes,scrollbars=yes');
+    try {
+      const search = `?destination=station&station=${encodeURIComponent(activity.resourceCode)}`;
+      const url = await requestProgremesNavigation(session?.access_token, { screenCode: 'progremes.PlanningProduction', search });
+      if (popup) { popup.opener = null; popup.location.replace(url); }
+    } catch (cause) { popup?.close(); setError(cause.message); }
+  }
   return <>
     <ProductSpecificationViewButton articleCode={knownBulkCode || context?.bulkCode || (customerScoped ? activity.articleCode : '')} description={activity.descrizione || context?.description}/>
     {!customerScoped && <>
-    <button type="button" disabled={!context?.canWrite} onClick={openSheet}><Printer size={17}/>Stampa foglio produzione</button>
-    <button type="button" disabled={!activity.panelUrl} onClick={() => window.open(activity.panelUrl, '_blank', 'popup=yes,width=800,height=960,toolbar=no,menubar=no,location=no,status=no,resizable=yes,scrollbars=yes,noopener,noreferrer')}><Monitor size={17}/>Apri station</button>
+    <button type="button" disabled={!context?.canPrint} onClick={openSheet}><Printer size={17}/>Stampa foglio produzione</button>
+    <button type="button" disabled={!activity.panelUrl || !context?.canPrint} onClick={openStation}><Monitor size={17}/>Apri station</button>
     <button type="button" disabled={!context?.canWrite || !stationActionUrl(activity, 'start')} onClick={() => { setMode('start'); setError(''); }}><Play size={17}/>Avvia lavorazione</button>
     <button type="button" disabled={!context?.canWrite || !stationActionUrl(activity, 'close')} onClick={() => { setMode('close'); setError(''); }}><Square size={17}/>Concludi lavorazione</button>
     {!context && !error && <p role="status">Caricamento dati preparazione…</p>}

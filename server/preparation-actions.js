@@ -3,6 +3,7 @@ import { costSession } from './production-action-session.js';
 import { createProgremesReadonlyAdmin } from './progremes-readonly-auth.js';
 import { createProgremesProductionClient } from './progremes-production-client.js';
 import { mixingDepartmentAccess } from './mixing-access.js';
+import { productionSheetSession } from './production-sheet-access.js';
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 export function preparationInput(body) {
@@ -44,11 +45,21 @@ async function preparationSession(req, write) {
   if (links.data.length || legacy.data.length || !mixingAccess) throw fail('Accesso riservato all’area Miscelazione.', 403);
   return { profile: profile.data, scope: { mode: 'team' }, canWrite: true };
 }
-export async function handlePreparationActions(req, body, { authorize = preparationSession, clientFactory = createProgremesProductionClient } = {}) {
+export async function authorizePreparation(req, write, operation) {
+  if (operation === 'start') return preparationSession(req, write);
+  const session = await productionSheetSession(req, 'production');
+  let canWrite = false;
+  if (operation === 'context') {
+    try { canWrite = (await preparationSession(req, true)).canWrite; }
+    catch (error) { if (error.status !== 403) throw error; }
+  }
+  return { ...session, canWrite };
+}
+export async function handlePreparationActions(req, body, { authorize = authorizePreparation, clientFactory = createProgremesProductionClient } = {}) {
   const input = preparationInput(body);
   // Generating the sheet assigns material lots and therefore needs write access too.
   const startedAt = Date.now();
-  const session = await authorize(req, input.operation !== 'context');
+  const session = await authorize(req, input.operation !== 'context', input.operation);
   const authorizedAt = Date.now();
   if (!['tutti', 'team', 'propri'].includes(session.scope.mode) || session.scope.customer_code || session.scope.customer_codes?.length)
     throw fail('Operazione riservata agli addetti interni.', 403);
@@ -56,7 +67,7 @@ export async function handlePreparationActions(req, body, { authorize = preparat
     const { result, mesContextMs } = await clientFactory().preparationActions({ ...input, externalId: randomUUID(), requestedBy: session.profile.id });
     console.info('[preparation-timing]', { operation: input.operation, authorizationMs: authorizedAt - startedAt,
       mesMs: Date.now() - authorizedAt, ...(Number.isFinite(mesContextMs) ? { mesContextMs } : {}) });
-    return { ...result, canWrite: session.canWrite };
+    return { ...result, canWrite: session.canWrite, canPrint: session.canPrint ?? session.canWrite };
   } catch (error) {
     if ([404, 405].includes(error.status)) throw fail('Aggiornare ProgreMES per utilizzare le azioni di preparazione da Workspace.', 503);
     throw error;

@@ -33,7 +33,7 @@ export default function CrmActivitiesPage({ type }) {
   const [loading, setLoading] = useState(true);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
-  const status = params.get("activityStatus") || "open";
+  const status = params.get("activityStatus") || (params.get("activityView") === "list" ? "open" : "all");
   const due = params.get("activityDue") || "";
   const search = params.get("activitySearch") || "";
   const view = params.get("activityView") || "kanban";
@@ -41,6 +41,7 @@ export default function CrmActivitiesPage({ type }) {
   const updateParam = (name, value) => setParams((current) => {
     const next = new URLSearchParams(current);
     if (value) next.set(name, value); else next.delete(name);
+    if (name === "activityView" && value === "kanban") next.set("activityStatus", "all");
     return next;
   }, { replace: true });
 

@@ -33,7 +33,7 @@ export function CrmProjectsPage({ type = "conto_terzi" }) {
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
   const search = params.get("projectSearch") || "";
-  const status = params.get("projectStatus") || "open";
+  const status = params.get("projectStatus") || (params.get("projectView") === "list" ? "open" : "all");
   const view = params.get("projectView") || "kanban";
   const load = useCallback(async () => {
     setLoading(true);
@@ -68,6 +68,7 @@ export function CrmProjectsPage({ type = "conto_terzi" }) {
   const changeView = (nextView, projectId = "") => setParams((current) => {
     const next = new URLSearchParams(current);
     next.set("projectView", nextView);
+    if (nextView === "kanban") next.set("projectStatus", "all");
     if (projectId) next.set("kanbanProject", projectId); else next.delete("kanbanProject");
     return next;
   });

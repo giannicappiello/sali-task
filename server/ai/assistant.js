@@ -1,4 +1,5 @@
 import { productionCostTools, cleanCostDraft } from "./production-cost-tools.js";
+import { workspaceAuthFailure } from '../workspace-auth-diagnostic.js';
 import { workspaceReadTools } from './workspace-search.js';
 import { operationalReadTools } from './operational-read.js';
 import { recoveryTools, createRecoveryStep, RECOVERY_INSTRUCTIONS } from './operation-recovery.js';
@@ -204,7 +205,7 @@ export async function authorizeAIRequest(req, { bypassAIEntitlements = false } =
   const admin = adminClient();
   const scoped = userClient(token);
   const { data: authData, error: authError } = await admin.auth.getUser(token);
-  if (authError || !authData?.user?.id) throw Object.assign(new Error("Sessione non valida."), { status: 401 });
+  if (authError || !authData?.user?.id) throw workspaceAuthFailure(authError, bypassAIEntitlements ? 'planning-workspace' : 'ai', "Sessione non valida.");
 
   const { data: profile, error: profileError } = await admin
     .from("utenti")

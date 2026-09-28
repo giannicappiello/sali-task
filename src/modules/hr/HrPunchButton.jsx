@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useHrAttendance } from './HrAttendanceProvider';
-import { hrRpc, locate } from './hrService';
+import { hrNetwork, hrRpc, locate } from './hrService';
 import './hr.css';
+import { usesMobileLocation } from './hrPunchDevice';
 
 function CheckoutDialog({ onClose, onSave }) {
   const ref = useRef(null);
@@ -23,6 +24,7 @@ function CheckoutDialog({ onClose, onSave }) {
 
 export default function HrPunchButton({ className = '', disabled = false, onComplete }) {
   const monitor = useHrAttendance();
+  const mobile = usesMobileLocation();
   const [dialog, setDialog] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -36,18 +38,19 @@ export default function HrPunchButton({ className = '', disabled = false, onComp
     if (pending.current) return;
     pending.current = true; setBusy(true); setError(''); setMessage('');
     try {
-      const position = await locate();
-      const result = await hrRpc('workspace_hr_location_punch', { p_action: open ? 'out' : 'in', p_key: key.current, p_attendance_id: open?.id || null, p_position: position, p_reason: reason });
+      const result = mobile
+        ? await hrRpc('workspace_hr_location_punch', { p_action: open ? 'out' : 'in', p_key: key.current, p_attendance_id: open?.id || null, p_position: await locate(), p_reason: reason })
+        : await hrNetwork({ action: open ? 'out' : 'in', key: key.current, attendance_id: open?.id || null });
       key.current = crypto.randomUUID();
       await monitor.refresh();
-      setMessage(result.checkout_at ? 'Uscita registrata. Controllo posizione terminato.' : 'Entrata registrata. Controllo posizione attivo mentre Workspace riceve il GPS.');
+      setMessage(!mobile ? (result.checkout_at ? 'Uscita registrata tramite rete aziendale.' : 'Entrata registrata tramite rete aziendale.') : result.checkout_at ? 'Uscita registrata. Controllo posizione terminato.' : 'Entrata registrata. Controllo posizione attivo mentre Workspace riceve il GPS.');
       window.dispatchEvent(new Event('workspace:hr-changed'));
       await onComplete?.();
     } catch (failure) { setError(failure.message); throw failure; }
     finally { pending.current = false; setBusy(false); }
   }
   return <>
-    <button type="button" className={className} disabled={disabled || busy || !monitor?.ready} onClick={() => open ? setDialog(true) : void punch().catch(() => {})}>
+    <button type="button" className={className} disabled={disabled || busy || !monitor?.ready} onClick={() => open && mobile ? setDialog(true) : void punch().catch(() => {})}>
       {busy ? 'Verifica posizione…' : open ? 'Registra uscita' : 'Registra entrata'}
     </button>
     {message && <p role="status">{message}</p>}

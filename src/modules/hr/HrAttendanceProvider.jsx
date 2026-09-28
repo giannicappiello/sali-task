@@ -1,3 +1,4 @@
+import { usesMobileLocation } from './hrPunchDevice';
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { hrRpc, positionPayload } from './hrService';
@@ -41,7 +42,7 @@ export default function HrAttendanceProvider({ children }) {
     return () => { active = false; clearTimeout(timer); clearInterval(poll); window.removeEventListener('online', reload); window.removeEventListener('focus', reload); };
   }, [enabled, profile?.id]);
   useEffect(() => {
-    if (!enabled || !ownOpen?.id || !ownOpen.auto_checkout || manualPending || !navigator.geolocation) return;
+    if (!usesMobileLocation() || !enabled || !ownOpen?.id || !ownOpen.auto_checkout || manualPending || !navigator.geolocation) return;
     let active = true, pending = false, lastSent = 0;
     const watcher = navigator.geolocation.watchPosition(async (position) => {
       if (!active || pending) return;

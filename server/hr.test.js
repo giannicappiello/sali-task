@@ -244,6 +244,9 @@ test('HR migration and authorization flows in isolated PostgreSQL', async (t) =>
       try {const result=await db.query('select workspace_hr_network_punch($1,$2,$3,$4,$5) value',[user,action,key,ip,attendance]);await db.exec('commit');return result.rows[0].value;}
       catch(error){await db.exec('rollback');throw error;}
     };
+    const locationMigration = await readFile(new URL('../supabase/migrations/20260925190000_hr_location_and_overtime_conversion.sql', import.meta.url),'utf8');
+    await db.exec(locationMigration.slice(0, locationMigration.indexOf('-- Internal authoritative calculation.')) + '\ncommit;');
+    await db.exec(await readFile(new URL('../supabase/migrations/20260928100000_restore_hr_desktop_network.sql', import.meta.url),'utf8'));
     const sitePayload={id:site,name:'Sede test',latitude:40,longitude:14,public_ips:[]};
     await assert.rejects(network(employee,'in',id(),'8.8.8.8'),/non configurato/);
     for(const ip of ['10.64.0.217','192.168.1.1','8.8.8.8/24','::1','invalid']) await assert.rejects(cfg('site',{...sitePayload,public_ips:[ip]}));
@@ -254,6 +257,7 @@ test('HR migration and authorization flows in isolated PostgreSQL', async (t) =>
     const networkKey=id(),entered=await network(employee,'in',networkKey,'8.8.8.8');
     assert.equal((await network(employee,'in',networkKey,'8.8.8.8')).id,entered.id);
     assert.equal((await db.query('select entry_distance from workspace_hr_attendance where id=$1',[entered.id])).rows[0].entry_distance,null);
+    assert.equal((await db.query('select auto_checkout from workspace_hr_attendance where id=$1',[entered.id])).rows[0].auto_checkout,false);
     const observation=await rpc(employee,'workspace_hr_punch',['observe',id(),JSON.stringify({latitude:40,longitude:14,accuracy:5,sampled_at:new Date().toISOString()}),entered.id]);
     assert.equal(observation.checkout_at,null);
     await assert.rejects(network(employee,'out',id(),'1.1.1.1',entered.id),/LAN aziendale/);

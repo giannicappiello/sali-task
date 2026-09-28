@@ -68,9 +68,9 @@ export default function PreparationActions({ activity, onStarted }) {
   return <>
     <ProductSpecificationViewButton articleCode={knownBulkCode || context?.bulkCode || (customerScoped ? activity.articleCode : '')} description={activity.descrizione || context?.description}/>
     {!customerScoped && <>
-    <button type="button" disabled={!context?.canPrint} onClick={openSheet}><Printer size={17}/>Stampa foglio produzione</button>
+    <BatchSheetActions productionOrderId={activity.productionOrderId} kind="production"><button type="button" disabled={!context?.canPrint} onClick={openSheet}><Printer size={17}/>Stampa foglio produzione</button>
 
-    <BatchSheetActions productionOrderId={activity.productionOrderId} kind="production"><button type="button" disabled={!context?.canWrite || !stationActionUrl(activity, 'start')} onClick={() => openStation('start')}><Play size={17}/>Avvia lavorazione</button>
+    <button type="button" disabled={!context?.canWrite || !stationActionUrl(activity, 'start')} onClick={() => openStation('start')}><Play size={17}/>Avvia lavorazione</button>
     </BatchSheetActions>
     <button type="button" disabled={!activity.panelUrl || !context?.canPrint} onClick={() => openStation()}><Monitor size={17}/>Apri station</button>
     <button type="button" disabled={!context?.canWrite || !stationActionUrl(activity, 'close')} onClick={() => openStation('close')}><Square size={17}/>Concludi lavorazione</button>

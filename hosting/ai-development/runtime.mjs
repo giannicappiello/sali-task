@@ -61,12 +61,17 @@ export async function executeDatabase(config, operation, check, execute) {
   if (!config.supabaseExecutable || !repo?.path) throw new Error('CLI database non configurata sul coordinatore.');
   const query = async sql => {
     await check();
-    return JSON.parse((await execute(config.supabaseExecutable, ['db', 'query', '--linked', sql, '--output', 'json'], { cwd: repo.path, timeout: 90000, maxBytes: 1000000 })).toString());
+    const result = JSON.parse((await execute(config.supabaseExecutable, ['db', 'query', '--linked', sql, '--output', 'json'], { cwd: repo.path, timeout: 90000, maxBytes: 1000000 })).toString());
+    // Supabase adds a rows/warning envelope when invoked from an AI environment;
+    // the scheduled coordinator receives a plain JSON array instead.
+    const rows = Array.isArray(result) ? result : result.rows;
+    if (!Array.isArray(rows)) throw new Error('Risposta database senza righe verificabili.');
+    return { rows };
   };
   if (operation.payload.operation === 'schema') {
     const result = await query("select table_name,column_name,data_type from information_schema.columns where table_schema='public' order by table_name,ordinal_position");
     const functions = await query("select p.proname as name,pg_get_function_identity_arguments(p.oid) as arguments from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' order by p.proname");
-    return { summary: 'Schema e firme RPC letti dal database collegato.', columns: result.rows, functions: functions.rows, observedAt: new Date().toISOString() };
+    return { summary: `Schema letto: ${result.rows.length} colonne e ${functions.rows.length} firme RPC dal database collegato.`, columns: result.rows, functions: functions.rows, observedAt: new Date().toISOString() };
   }
   const { commit, files } = operation.payload;
   if (!/^[a-f0-9]{40}$/.test(commit || '') || !Array.isArray(files) || !files.length || files.length > 20 || files.some(path => !/^supabase\/migrations\/\d{14}_[a-zA-Z0-9_-]+\.sql$/.test(path))) throw new Error('Revisione migrazioni non valida.');

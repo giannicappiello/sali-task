@@ -66,7 +66,7 @@ test('database metadata queries request JSON explicitly and never write business
     calls.push(args);
     assert.deepEqual(args.slice(-2), ['--output', 'json']);
     assert.match(args[3], /^select /);
-    return Buffer.from(JSON.stringify({ rows: [{ sample: 'metadata' }] }));
+    return Buffer.from(JSON.stringify(calls.length === 1 ? [{ sample: 'metadata' }] : { rows: [{ sample: 'metadata' }] }));
   });
   assert.equal(calls.length, 2);
   assert.equal(result.columns.length, 1);

@@ -56,6 +56,10 @@ export async function readRuntimeOperation(auth, id) {
   const { data, error } = await auth.admin.from('ai_runtime_operations').select('id,capability,status,result,error,created_at,finished_at').eq('id', id).eq('user_id', auth.profile.id).maybeSingle();
   if (error) throw error;
   if (!data || !hasDevelopmentPermission(auth, data.capability)) throw fail('Operazione non accessibile.', 403);
+  if (data.result?.screenshot) {
+    data.result = { ...data.result, screenshotAvailable: true };
+    delete data.result.screenshot;
+  }
   return data;
 }
 

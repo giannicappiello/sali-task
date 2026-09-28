@@ -355,7 +355,7 @@ function logOrdersAuthorization(authUserId, reason, profilesFound) {
   });
 }
 
-export async function verifyUser(req, supabase, { allowOrdersUser = false, allowCustomerPrivateOrder = false } = {}) {
+export async function verifyUser(req, supabase, { allowOrdersUser = false, allowCustomerPrivateOrder = false, syncPermission = null } = {}) {
   const authorization = req.headers.authorization || "";
   const cronSecret = process.env.CRON_SECRET?.trim();
 
@@ -403,6 +403,14 @@ export async function verifyUser(req, supabase, { allowOrdersUser = false, allow
   const isAdmin = profile.ruoli?.amministratore_workspace === true;
 
   if (isAdmin && !allowCustomerPrivateOrder) return { authUserId: user.id, profile, isAdmin: true, integration: null };
+
+  if (["integrations.sync.products", "integrations.sync.stocks"].includes(syncPermission)) {
+    const { data: canSync, error: permissionError } = await supabase.rpc("workspace_screen_permission_for_user", {
+      target_user_id: profile.id, permission_code: syncPermission,
+    });
+    if (permissionError) throw authorizationError("Verifica autorizzazioni non disponibile.", 503);
+    if (canSync === true) return { authUserId: user.id, profile, isAdmin: false, integration: null };
+  }
 
   if (allowCustomerPrivateOrder) {
     const [{ data: customerLink, error: customerLinkError }, { data: privateModuleEnabled, error: privateModuleError }] = await Promise.all([
@@ -1233,6 +1241,7 @@ export default async function handler(req, res) {
     action = body.action || "test";
 
     const authorization = await verifyUser(req, supabase, {
+      syncPermission: action === "sync-stock-it" ? "integrations.sync.stocks" : action === "sync" ? "integrations.sync.products" : null,
       // Le sincronizzazioni automatiche possono essere avviate da qualunque
       // utente abilitato al modulo. Il lock centralizzato evita duplicazioni.
       allowOrdersUser: action === "sync-stock-it" || action === "sync",

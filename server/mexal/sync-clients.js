@@ -247,7 +247,7 @@ function buildMexalClient() {
   };
 }
 
-async function verifyUser(req, supabase) {
+export async function verifyUser(req, supabase) {
   const authorization = req.headers.authorization || "";
   if (process.env.CRON_SECRET && authorization === `Bearer ${process.env.CRON_SECRET}`) return;
   if (!authorization.startsWith("Bearer ")) {
@@ -280,6 +280,12 @@ async function verifyUser(req, supabase) {
   const isAdmin = profile.ruoli?.amministratore_workspace === true;
 
   if (isAdmin) return;
+
+  const { data: canSync, error: permissionError } = await supabase.rpc("workspace_screen_permission_for_user", {
+    target_user_id: profile.id, permission_code: "integrations.sync.clients",
+  });
+  if (permissionError) throw Object.assign(new Error("Verifica autorizzazioni non disponibile."), { status: 503 });
+  if (canSync === true) return;
 
   const { data: integrations, error: integrationError } = await supabase
     .from("integrazioni_utenti")

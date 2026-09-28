@@ -1,12 +1,14 @@
+import { handleRuntimeWorker } from './runtime-tools.js';
 /* global process */
 import { createHash, randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { jsonSchema } from 'ai';
 import { generateDevelopmentChange } from './development-agent.js';
+import { hasDevelopmentPermission, isDevelopmentAdmin, loadDevelopmentPermissions, manageDevelopmentPermissions } from './development-permissions.js';
 import { resolveUiSourceContext } from './ui-source-context.js';
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
-export const canDevelop = auth => auth.profile?.ruoli?.amministratore_workspace === true;
+export const canDevelop = auth => hasDevelopmentPermission(auth, 'develop');
 const hash = value => createHash('sha256').update(value).digest('hex');
 const fields = 'id,user_id,conversation_id,repository,instruction,status,created_at,approved_at,finished_at,host_id,result,error,publish_requested,source_job_id';
 
@@ -28,6 +30,7 @@ export function validatePublishedResult(result, job) {
 
 export async function requestDevelopmentJob(auth, input) {
   if (!canDevelop(auth)) throw fail('Sviluppo del codice riservato agli amministratori Workspace.', 403);
+  if (input.publish !== false && !hasDevelopmentPermission(auth, 'publish')) throw fail('Pubblicazione non autorizzata: richiedere una revisione senza pubblicazione.', 403);
   const instruction = String(input.instruction || '').trim();
   if (!['workspace', 'mes'].includes(input.repository) || instruction.length < 10 || instruction.length > 12000) throw fail('Repository o richiesta non validi.');
   const { data, error } = await auth.admin.from('ai_development_jobs').insert({
@@ -41,6 +44,7 @@ export async function requestDevelopmentJob(auth, input) {
 }
 
 export async function requestDevelopmentPublication(auth, id) {
+  if (!hasDevelopmentPermission(auth, 'publish')) throw fail('Pubblicazione non autorizzata.', 403);
   if (!canDevelop(auth)) throw fail('Accesso amministrativo richiesto.', 403);
   const { data: source, error } = await auth.admin.from('ai_development_jobs').select('*').eq('id', id).eq('user_id', auth.profile.id).maybeSingle();
   if (error) throw error;
@@ -145,6 +149,8 @@ export async function readDevelopmentJobs(auth, id) {
 }
 
 export async function handleDevelopmentSettings(auth, body) {
+  if (body.action.startsWith('development_permissions_')) return manageDevelopmentPermissions(auth, body);
+  if (['development_list', 'development_pair', 'development_revoke'].includes(body.action) && !isDevelopmentAdmin(auth)) throw fail('Configurazione riservata all’amministratore.', 403);
   if (!canDevelop(auth)) throw fail('Accesso amministrativo richiesto.', 403);
   if (body.action === 'development_list') {
     const [hosts, jobs] = await Promise.all([
@@ -194,6 +200,7 @@ export async function handleDevelopmentWorker(req) {
   const body = req.body || {};
   const heartbeat = await admin.from('ai_development_hosts').update({ last_seen_at: new Date().toISOString() }).eq('id', host.id);
   if (heartbeat.error) throw heartbeat.error;
+  if (String(body.action || '').startsWith('runtime_')) return handleRuntimeWorker(admin, host, body);
   if (body.action === 'claim') {
     if (body.protocolVersion !== 2) throw fail('Aggiornare il coordinatore AI: protocollo di annullamento richiesto.', 409);
     const { data, error: claimError } = await admin.rpc('claim_ai_development_job', { p_host_id: host.id });
@@ -208,7 +215,9 @@ export async function handleDevelopmentWorker(req) {
   if (!current) throw fail('Sessione worker scaduta o lavoro non assegnato.', 409);
   const { data: owner, error: ownerError } = await admin.from('utenti').select('attivo,ruoli(amministratore_workspace)').eq('id', current.user_id).maybeSingle();
   if (ownerError) throw ownerError;
-  if (!owner?.attivo || owner.ruoli?.amministratore_workspace !== true) throw fail('Autorizzazione del richiedente revocata.', 403);
+  if (!owner?.attivo) throw fail('Autorizzazione del richiedente revocata.', 403);
+  const ownerAuth = { profile: owner, developmentPermissions: await loadDevelopmentPermissions(admin, { ...owner, id: current.user_id }) };
+  if (!canDevelop(ownerAuth) || (current.publish_requested && !hasDevelopmentPermission(ownerAuth, 'publish'))) throw fail('Autorizzazione del richiedente revocata.', 403);
   if (body.action === 'generate') {
     if (current.status !== 'running') throw fail('Pubblicazione già iniziata.', 409);
     const { data: reserved, error: reserveError } = await admin.rpc('reserve_ai_development_generation', {
@@ -233,7 +242,10 @@ export async function handleDevelopmentWorker(req) {
     validateDevelopmentResult(body.result, current.source_commit);
   }
   if (body.action === 'finish' && body.succeeded === true) {
-    if (body.result?.published === true) validatePublishedResult(body.result, current);
+    if (body.result?.published === true) {
+      if (current.status !== 'publishing') throw fail('Pubblicazione non acquisita.', 409);
+      validatePublishedResult(body.result, current);
+    }
     else validateDevelopmentResult(body.result, current.source_commit);
   }
   const update = body.action === 'heartbeat' ? { lease_until: new Date(Date.now() + 300000).toISOString() } : body.action === 'checkpoint' ? { result: body.result, lease_until: new Date(Date.now() + 300000).toISOString() } : {

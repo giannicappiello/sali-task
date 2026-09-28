@@ -105,3 +105,36 @@ se è già iniziata l'annullamento restituisce un conflitto, mai una falsa confe
 Dopo un crash i lavori sono interrupted e non vengono ripubblicati automaticamente.
 Il deployment READY attesta il rilascio del commit, non il funzionamento della UI o le migrazioni.
 La verifica funzionale resta esplicitamente distinta e non viene inventata.
+
+## Browser, database e deleghe
+
+Applicare `20260928210000_ai_runtime_permissions.sql` prima del backend.
+Le impostazioni AI permettono all'admin di assegnare separatamente sviluppo,
+pubblicazione, browser e database. Nessun permesso viene assegnato automaticamente
+agli altri utenti. La revoca viene riletta dal backend e dai gate SQL del worker.
+
+Installare nel solo coordinatore `playwright@1.63.0` (senza script di installazione);
+viene usato Chrome già installato. Copiare anche `runtime.mjs` e `browser-login.mjs`.
+Configurare `runtimeEnabled: true` e `supabaseExecutable` con il percorso assoluto
+della CLI Supabase autenticata. Il repository Workspace deve essere collegato
+al progetto Supabase corretto. Le credenziali restano nel servizio, mai nei prompt.
+
+`BROWSER_OPEN_LOGIN` apre il profilo isolato del richiedente sul PC; il primo login
+è personale. `BROWSER_VERIFY` naviga su Workspace, esegue azioni per nome accessibile,
+controlla testi e conserva schermata/esito. Prima delle azioni verifica l'identità
+Workspace nel DOM: un account diverso viene rifiutato. Non usa il profilo Chrome
+personale né il profilo di un altro utente. Per popup interni sono supportati clic
+e campi con etichette univoche; CAPTCHA e credenziali restano manuali.
+
+`DATABASE_SCHEMA` legge solo metadati e firme RPC reali. `DATABASE_APPLY_MIGRATIONS`
+accetta il proprio lavoro già pubblicato e testato: il coordinatore legge soltanto
+i file di migrazione di quel commit e verifica che siano ancora identici in main.
+Non usa `db push` sull'insieme delle migrazioni pendenti. Registra ogni versione
+applicata e ricarica lo schema PostgREST. Un errore tra esecuzione e registrazione
+viene segnalato esplicitamente e richiede riconciliazione prima di ripetere.
+
+Le operazioni vengono accodate e restituite nella conversazione; `AI_OPERATION_STATUS`
+legge risultati ed errori. "Fermati" blocca le azioni residue della conversazione;
+non annulla effetti già completati. Dopo una scadenza non si ripetono automaticamente
+azioni browser o migrazioni. Build, deployment, migrazioni e verifica browser
+rimangono esiti distinti.

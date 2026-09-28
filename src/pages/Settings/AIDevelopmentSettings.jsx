@@ -1,3 +1,4 @@
+import AIDevelopmentPermissions from './AIDevelopmentPermissions';
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -58,6 +59,7 @@ export default function AIDevelopmentSettings() {
       <input aria-label="Credenziale servizio" type="password" readOnly value={pairing.token} autoComplete="off" />
       <button type="button" onClick={() => navigator.clipboard.writeText(pairing.token).catch(() => setError('Copia non disponibile: selezionare la credenziale.'))}>Copia credenziale</button>
       <button type="button" onClick={() => setPairing(null)}>Chiudi credenziale</button></div>}
+    <AIDevelopmentPermissions call={call} />
     {!data.jobs.length ? <p>Nessuna richiesta di sviluppo. Puoi descrivere il problema nel pannello AI di qualsiasi schermata.</p> : <div className="ai-cost-table-wrap"><table className="ai-cost-table"><thead><tr><th>Data</th><th>Repository</th><th>Richiesta</th><th>Stato e risultato</th><th>Azioni</th></tr></thead><tbody>{data.jobs.map(job => <tr key={job.id}>
       <td>{new Date(job.created_at).toLocaleString('it-IT')}</td><td>{job.repository}</td><td>{job.instruction}<small>{job.id}</small></td>
       <td>{STATES[job.status] || job.status}{job.error && <p role="alert">{job.error}</p>}<DevelopmentResult result={job.result} /></td>

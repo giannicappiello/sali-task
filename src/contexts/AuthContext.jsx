@@ -533,6 +533,13 @@ export function AuthProvider({ children }) {
     [session, authUser, profile, permissions, moduleAccess, moduleLevels, accessExceptions, areaAccess, moduleAreas, dataScope, loading, authError, accessRefreshError, authorizationRevision, adminUser, accessMethods]
   );
 
+  // Non-secret identity marker lets the isolated browser reject a different signed-in user.
+  useEffect(() => {
+    if (profile?.id) document.documentElement.dataset.workspaceUserId = profile.id;
+    else delete document.documentElement.dataset.workspaceUserId;
+    return () => { delete document.documentElement.dataset.workspaceUserId; };
+  }, [profile?.id]);
+
   // Recreate page-local data and query state when the effective perimeter changes.
   // Otherwise an already-open page could keep rows from a removed department.
   return <AuthContext.Provider key={accessEpoch} value={value}>{children}</AuthContext.Provider>;

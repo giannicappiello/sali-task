@@ -1,3 +1,4 @@
+import { runRuntimeOperation } from './runtime.mjs';
 /* global process, Buffer */
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
@@ -115,7 +116,10 @@ export async function run(config, { transport = fetch, once = false } = {}) {
   for (;;) {
     let job;
     let completedResult;
-    try { ({ job } = await api({ action: 'claim', protocolVersion: 2 })); }
+    try {
+      if (config.runtimeEnabled && await runRuntimeOperation(config, api, execute)) { if (once) return; continue; }
+      ({ job } = await api({ action: 'claim', protocolVersion: 2 }));
+    }
     catch (error) { await report({ connected: false, error: String(error.message).slice(0,1000) }); process.stderr.write(`${new Date().toISOString()} Collegamento: ${error.message}\n`); if (once) throw error; await delay(30000); continue; }
     if (!job) { if (once) return; await delay(15000); continue; }
     const identity = { jobId: job.id, leaseToken: job.lease_token };

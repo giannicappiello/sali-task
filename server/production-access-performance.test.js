@@ -13,6 +13,7 @@ function fixture({ level = 'lettura', active = true, scope = { mode: 'cliente', 
       async rpc(name, args) {
         calls.push([name, authorization, args]);
         if (name === 'workspace_screen_level_for_user') return { data: level };
+        if (name === 'workspace_user_is_admin') return { data: false };
         assert.equal(name, 'workspace_data_scope', 'must not compute the entire screen catalogue');
         assert.equal(authorization, 'Bearer verified-token', 'scope must use the caller, never the service identity');
         return { data: scope, error };

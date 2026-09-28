@@ -21,7 +21,7 @@ export async function costSession(req,screen,write=false,{clientFactory=createCl
  const scope=check(scopeResult);
  // Older sheet routes still reference retired operator screens. Only a verified
  // administrator with access to the active planning screen may use that fallback.
- if(["progremes.Produzione","progremes.OperatoreProduzione","progremes.OperatoreConfezionamento"].includes(screen)&&level!=="amministrazione") {
+ if(["progremes.Produzione","progremes.OperatoreProduzione","progremes.OperatoreConfezionamento"].includes(screen)&&(!level||level==="nessuno")) {
   const isAdmin=check(await admin.rpc("workspace_user_is_admin",{target_auth_user_id:auth.data.user.id}));
   if(isAdmin===true) {
    const planningLevel=check(await admin.rpc("workspace_screen_level_for_user",{target_user_id:profile.id,target_screen:"progremes.PlanningProduction"}));

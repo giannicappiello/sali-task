@@ -119,8 +119,11 @@ Configurare `runtimeEnabled: true` e `supabaseExecutable` con il percorso assolu
 della CLI Supabase autenticata. Il repository Workspace deve essere collegato
 al progetto Supabase corretto. Le credenziali restano nel servizio, mai nei prompt.
 
-`BROWSER_OPEN_LOGIN` apre il profilo isolato del richiedente sul PC; il primo login
-è personale. `BROWSER_VERIFY` naviga su Workspace, esegue azioni per nome accessibile,
+`BROWSER_OPEN_LOGIN` e `BROWSER_VERIFY` usano la sessione del Workspace già aperto.
+Il solo access token viene cifrato lato server per cinque minuti, legato al richiedente,
+consumato una volta dal coordinatore autorizzato e verificato nuovamente. Non viene
+trasferito un refresh token. Il browser temporaneo viene chiuso al termine.
+`BROWSER_VERIFY` naviga su Workspace, esegue azioni per nome accessibile,
 controlla testi e conserva schermata/esito. Prima delle azioni verifica l'identità
 Workspace nel DOM: un account diverso viene rifiutato. Non usa il profilo Chrome
 personale né il profilo di un altro utente. Per popup interni sono supportati clic

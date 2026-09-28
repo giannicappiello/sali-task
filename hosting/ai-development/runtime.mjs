@@ -1,5 +1,3 @@
-import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -9,13 +7,17 @@ export function browserUrl(value) {
   return url.href;
 }
 
-export async function verifyBrowser(config, operation, check, chromium) {
+export async function verifyBrowser(config, operation, check, chromium, bootstrap) {
   const { url, steps } = operation.payload;
   browserUrl(url);
   if (!/^[a-f0-9-]{36}$/i.test(operation.user_id)) throw new Error('Profilo browser non valido.');
-  const context = await chromium.launchPersistentContext(join(config.outputDirectory, 'browser-profiles', operation.user_id), { headless: true, channel: 'chrome', viewport: { width: 1280, height: 900 }, acceptDownloads: false, serviceWorkers: 'block' });
+  const browser = await chromium.launch({ headless: true, channel: 'chrome' });
   try {
-    const page = context.pages()[0] || await context.newPage();
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: false, serviceWorkers: 'block' });
+    if (bootstrap) await context.addInitScript(({ storageKey, session }) => {
+      if (location.origin === 'https://workspace.progre.it') localStorage.setItem(storageKey, JSON.stringify(session));
+    }, bootstrap);
+    const page = await context.newPage();
     // Keep navigations in Workspace, including redirects and popup destinations.
     await context.route('**/*', async route => {
       const request = route.request();
@@ -51,7 +53,7 @@ export async function verifyBrowser(config, operation, check, chromium) {
     browserUrl(page.url());
     const screenshot = await page.screenshot({ type: 'jpeg', quality: 50 });
     return { summary: `Browser: ${performed.length} azioni completate. Pagina finale: ${page.url()}.`, url: page.url(), title: await page.title(), text: (await page.locator('body').innerText()).slice(0, 24000), actions: performed, screenshot: `data:image/jpeg;base64,${screenshot.toString('base64')}`, observedAt: new Date().toISOString() };
-  } finally { await context.close(); }
+  } finally { await browser.close(); }
 }
 
 export async function executeDatabase(config, operation, check, execute) {
@@ -59,7 +61,7 @@ export async function executeDatabase(config, operation, check, execute) {
   if (!config.supabaseExecutable || !repo?.path) throw new Error('CLI database non configurata sul coordinatore.');
   const query = async sql => {
     await check();
-    return JSON.parse((await execute(config.supabaseExecutable, ['db', 'query', '--linked', sql], { cwd: repo.path, timeout: 90000, maxBytes: 1000000 })).toString());
+    return JSON.parse((await execute(config.supabaseExecutable, ['db', 'query', '--linked', sql, '--output', 'json'], { cwd: repo.path, timeout: 90000, maxBytes: 1000000 })).toString());
   };
   if (operation.payload.operation === 'schema') {
     const result = await query("select table_name,column_name,data_type from information_schema.columns where table_schema='public' order by table_name,ordinal_position");
@@ -103,15 +105,10 @@ export async function runRuntimeOperation(config, api, execute, dependencies = {
   const check = () => api({ action: 'runtime_check', ...identity });
   try {
     await check();
-    if (operation.payload.operation === 'browser_login') {
-      const child = spawn(config.nodeExecutable, [fileURLToPath(new URL('./browser-login.mjs', import.meta.url)), config.outputDirectory, operation.user_id], { detached: true, windowsHide: true, stdio: 'ignore' });
-      await new Promise((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
-      child.unref();
-      await api({ action: 'runtime_finish', ...identity, succeeded: true, result: { summary: 'Browser di collaudo aperto. Accedere personalmente con il proprio utente; la finestra si chiude dopo il collegamento. Nessuna credenziale viene inviata al modello.' } });
-      return true;
-    }
+    const bootstrap = operation.capability === 'browser' ? await api({ action: 'runtime_session', ...identity }) : null;
+    if (operation.payload.operation === 'browser_login') operation.payload = { url: 'https://workspace.progre.it/activities/dashboard', steps: [] };
     const result = operation.capability === 'browser'
-      ? await verifyBrowser(config, operation, check, dependencies.chromium || (await import('playwright')).chromium)
+      ? await verifyBrowser(config, operation, check, dependencies.chromium || (await import('playwright')).chromium, bootstrap)
       : await executeDatabase(config, operation, check, execute);
     await api({ action: 'runtime_finish', ...identity, succeeded: true, result });
   } catch (error) {

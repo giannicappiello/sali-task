@@ -92,6 +92,7 @@ export default function AIAssistant({ getScreenContext, embedded = false, prompt
   const [messages, setMessages] = useState([initialWelcome()]);
   const pendingDevelopment = useMemo(() => messages.filter(message => message.developmentJob &&
     ['queued', 'running'].includes(message.developmentJob.status) && !messages.some(item => item.id === message.developmentJob.id)).map(message => message.developmentJob.id).join(','), [messages]);
+  const pendingRuntime = useMemo(() => messages.flatMap(message => message.runtimeOperations || []).filter(id => !messages.some(message => message.runtimeOperation === id)).join(','), [messages]);
   const [historyCursor, setHistoryCursor] = useState(null);
   const prependingHistory = useRef(false);
   const [prompt, setPrompt] = useState("");
@@ -156,21 +157,21 @@ export default function AIAssistant({ getScreenContext, embedded = false, prompt
   }, [session?.access_token]);
 
   useEffect(() => {
-    if (!pendingDevelopment || !conversationId || busy) return undefined;
+    if ((!pendingDevelopment && !pendingRuntime) || !conversationId || busy) return undefined;
     let alive = true; let loading = false;
     const timer = window.setInterval(async () => {
       if (loading) return;
       loading = true;
       try {
         const payload = await requestAI(session.access_token, { action: 'load_conversation', conversationId });
-        const completed = (payload.messages || []).filter(message => message.metadati?.developmentJobId)
-          .map(message => ({ id: message.id, role: message.ruolo, content: message.contenuto, sources: [] }));
+        const completed = (payload.messages || []).filter(message => message.metadati?.developmentJobId || message.metadati?.runtimeOperation)
+          .map(message => ({ id: message.id, role: message.ruolo, content: message.contenuto, runtimeOperation: message.metadati?.runtimeOperation, sources: [] }));
         if (alive && completed.length) setMessages(current => [...current, ...completed.filter(message => !current.some(item => item.id === message.id))]);
       } catch { /* Retry the read on the next interval; never recreate a development job. */ }
       finally { loading = false; }
     }, 10000);
     return () => { alive = false; window.clearInterval(timer); };
-  }, [pendingDevelopment, conversationId, busy, session?.access_token]);
+  }, [pendingDevelopment, pendingRuntime, conversationId, busy, session?.access_token]);
 
   const availableModes = useMemo(() => MODE_OPTIONS.filter((item) => modeIsEnabled(capabilities, item)), [capabilities]);
   const activeMode = availableModes.some((item) => item.id === mode) ? mode : (availableModes[0]?.id || "interno");
@@ -236,6 +237,8 @@ export default function AIAssistant({ getScreenContext, embedded = false, prompt
         artifacts: message.ruolo === "assistant" ? (message.metadati?.artifacts?.length ? message.metadati.artifacts : (message.metadati?.downloadablePdf === true ? [{ id: `${message.id}-pdf`, kind: "pdf", fileName: "report-assistente-ai.pdf", mediaType: "application/pdf" }] : [])) : [],
         controlledActions: message.ruolo === "assistant" ? (message.metadati?.controlledActions || []) : [],
         developmentJob: message.metadati?.developmentJob || null,
+        runtimeOperations: message.metadati?.runtimeOperations || [],
+        runtimeOperation: message.metadati?.runtimeOperation,
       }));
       setConversationId(payload.conversation.id);
       setSelectedTopicId(payload.conversation.argomento_id || "");
@@ -375,7 +378,7 @@ export default function AIAssistant({ getScreenContext, embedded = false, prompt
       if (payload.proposal) setProposal(payload.proposal);
       window.dispatchEvent(new CustomEvent("workspace:assistant-response",{detail:{costProposalId:payload.costProposalId}}));
       const responseArtifacts = payload.artifacts?.length ? payload.artifacts : ((payload.downloadablePdf === true || pdfRequested) ? [{ id: `pdf-${Date.now()}`, kind: "pdf", fileName: "report-assistente-ai.pdf", mediaType: "application/pdf" }] : []);
-      setMessages((current) => [...current, { id: `assistant-${Date.now()}`, role: "assistant", content: payload.answer, sources: payload.sources || [], proposal: payload.proposal || null, headingAction: payload.headingAction || null, controlledActions: payload.controlledActions || [], developmentJob: payload.developmentJob || null, artifacts: responseArtifacts }]);
+      setMessages((current) => [...current, { id: `assistant-${Date.now()}`, role: "assistant", content: payload.answer, sources: payload.sources || [], proposal: payload.proposal || null, headingAction: payload.headingAction || null, controlledActions: payload.controlledActions || [], developmentJob: payload.developmentJob || null, runtimeOperations: payload.runtimeOperations || [], artifacts: responseArtifacts }]);
       setPrompt("");
       attachments.forEach((item) => item.preview && URL.revokeObjectURL(item.preview));
       setAttachments([]);

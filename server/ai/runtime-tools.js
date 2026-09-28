@@ -1,7 +1,31 @@
+/* global process, Buffer */
 import { jsonSchema } from 'ai';
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import { hasDevelopmentPermission } from './development-permissions.js';
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
+const sessionKey = () => {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) throw fail('Collegamento browser non configurato.', 503);
+  return createHash('sha256').update('workspace-browser-session-v1:' + process.env.SUPABASE_SERVICE_ROLE_KEY).digest();
+};
+export function sealBrowserSession(token, owner, now = Date.now()) {
+  if (!token) throw fail('Sessione Workspace richiesta.', 401);
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', sessionKey(), iv);
+  cipher.setAAD(Buffer.from(owner));
+  const data = Buffer.concat([cipher.update(JSON.stringify({ token, expires: now + 300000 })), cipher.final()]);
+  return { iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), data: data.toString('base64') };
+}
+export function openBrowserSession(envelope, owner, now = Date.now()) {
+  try {
+    const decipher = createDecipheriv('aes-256-gcm', sessionKey(), Buffer.from(envelope.iv, 'base64'));
+    decipher.setAAD(Buffer.from(owner));
+    decipher.setAuthTag(Buffer.from(envelope.tag, 'base64'));
+    const value = JSON.parse(Buffer.concat([decipher.update(Buffer.from(envelope.data, 'base64')), decipher.final()]).toString());
+    if (value.expires <= now) throw new Error('expired');
+    return value.token;
+  } catch { throw fail('Collegamento browser scaduto: ripetere la richiesta dal Workspace aperto.', 401); }
+}
 export function validateBrowserRequest(input) {
   const url = new URL(input.url);
   if (url.origin !== 'https://workspace.progre.it' || url.username || url.password) throw fail('Browser limitato a Workspace.');
@@ -14,6 +38,7 @@ export function validateBrowserRequest(input) {
 }
 export async function requestRuntimeOperation(auth, capability, payload) {
   if (!hasDevelopmentPermission(auth, capability)) throw fail('Operazione non autorizzata.', 403);
+  if (capability === 'browser') payload = { ...payload, sessionEnvelope: sealBrowserSession(auth.token, auth.profile.id) };
   const { data, error } = await auth.admin.from('ai_runtime_operations').insert({ user_id: auth.profile.id, conversation_id: auth.conversationId || null, capability, payload }).select('id,status').single();
   if (error) throw error;
   return { operation: data, completed: false, message: 'Operazione accodata. Leggere AI_OPERATION_STATUS prima di dichiarare un risultato.' };
@@ -49,7 +74,7 @@ export function runtimeTools(auth) {
     execute: input => requestRuntimeOperation(auth, 'browser', validateBrowserRequest(input)),
   };
   if (hasDevelopmentPermission(auth, 'browser')) tools.BROWSER_OPEN_LOGIN = {
-    description: 'Apre sul PC del coordinatore un profilo browser separato per il richiedente, per il primo accesso personale. Usare solo quando occorre collegare il browser. Non chiedere o inserire password in chat. La finestra si chiude dopo il login corretto; poi BROWSER_VERIFY può usarla automaticamente.', inputSchema: empty,
+    description: 'Verifica il collegamento browser usando la sessione del Workspace già aperto, senza chiedere un altro login. Il browser è isolato e usa esclusivamente l’identità del richiedente. Restituisce evidenza della pagina autenticata.', inputSchema: empty,
     execute: () => requestRuntimeOperation(auth, 'browser', { operation: 'browser_login' }),
   };
   if (hasDevelopmentPermission(auth, 'database')) {
@@ -66,7 +91,7 @@ export async function handleRuntimeWorker(admin, host, body) {
     if (error) throw error;
     return { operation: data?.[0] || null };
   }
-  if (!['runtime_check', 'runtime_finish'].includes(body.action)) throw fail('Azione runtime non valida.');
+  if (!['runtime_check', 'runtime_finish', 'runtime_session'].includes(body.action)) throw fail('Azione runtime non valida.');
   const query = () => admin.from('ai_runtime_operations').select('*').eq('id', body.id).eq('host_id', host.id).eq('lease_token', body.leaseToken).eq('status', 'running').gt('lease_until', new Date().toISOString());
   const { data: operation, error } = await query().maybeSingle();
   if (error) throw error;
@@ -74,6 +99,20 @@ export async function handleRuntimeWorker(admin, host, body) {
   const permission = await admin.rpc('ai_development_allowed', { p_user: operation.user_id, p_capability: operation.capability });
   if (permission.error) throw permission.error;
   if (!permission.data) throw fail('Permesso revocato.', 403);
+  if (body.action === 'runtime_session') {
+    if (operation.capability !== 'browser') throw fail('Sessione non accessibile.', 403);
+    const token = openBrowserSession(operation.payload.sessionEnvelope, operation.user_id);
+    const { data: authenticated, error: authError } = await admin.auth.getUser(token);
+    const { data: owner, error: ownerError } = await admin.from('utenti').select('auth_user_id').eq('id', operation.user_id).eq('attivo', true).maybeSingle();
+    if (authError || ownerError || !owner || owner.auth_user_id !== authenticated?.user?.id) throw fail('Sessione non valida per il richiedente.', 403);
+    const payload = { ...operation.payload }; delete payload.sessionEnvelope;
+    const { data: consumed, error: consumeError } = await admin.from('ai_runtime_operations').update({ payload }).eq('id', operation.id).eq('lease_token', body.leaseToken).eq('status', 'running').contains('payload', { sessionEnvelope: operation.payload.sessionEnvelope }).select('id').maybeSingle();
+    if (consumeError) throw consumeError;
+    if (!consumed) throw fail('Sessione già utilizzata.', 409);
+    const expiresAt = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()).exp;
+    if (!expiresAt || expiresAt * 1000 < Date.now() + 60000) throw fail('Sessione in scadenza: ripetere dal Workspace aperto.', 401);
+    return { storageKey: `sb-${new URL(process.env.SUPABASE_URL).hostname.split('.')[0]}-auth-token`, session: { access_token: token, refresh_token: '', token_type: 'bearer', expires_at: expiresAt, expires_in: expiresAt - Math.floor(Date.now() / 1000), user: authenticated.user } };
+  }
   if (body.action === 'runtime_check') {
     const { error: leaseError } = await admin.from('ai_runtime_operations').update({ lease_until: new Date(Date.now() + 240000).toISOString() }).eq('id', operation.id).eq('lease_token', body.leaseToken).eq('status', 'running');
     if (leaseError) throw leaseError;

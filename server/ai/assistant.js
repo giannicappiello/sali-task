@@ -887,6 +887,7 @@ async function chat(auth, body) {
   const allToolCalls = (result.steps || []).flatMap((step) => step.toolCalls || []);
   const headingAction = allToolResults.map((item) => item.output).find((output) => output?.headingAction)?.headingAction || null;
   const controlledActions = allToolResults.map((item) => item.output?.controlledAction).filter(Boolean);
+  const runtimeOperations = allToolResults.map(item => item.output?.operation?.id).filter(Boolean);
   const developmentJob = allToolResults.map((item) => item.output?.developmentJob).find(Boolean);
   const costProposalId = allToolResults.filter(item=>item.toolName === "PRODUCTION_COST_PROPOSE").map(item=>item.output?.proposal?.id).filter(Boolean).at(-1) || null;
   const artifacts = developmentJob ? [] : requestedArtifacts(prompt, generationId);
@@ -895,8 +896,8 @@ async function chat(auth, body) {
   const hasPendingAction = Boolean(headingAction || controlledActions.length || developmentJob);
   const developmentJobSummary = developmentJob ? { id: developmentJob.id, status: developmentJob.status } : null;
   const answer = result.text || (developmentJob ? "Richiesta di sviluppo accodata al PC per modifica, test e pubblicazione richiesta. L’esito sarà riportato in questa chat." : hasPendingAction ? "Ho preparato l’azione richiesta. Verifica l’anteprima e conferma per applicarla." : "Non ho ottenuto un esito conclusivo verificabile. Nessuna modifica viene dichiarata completata.");
-  await saveExchange(auth.admin, conversationId, displayedPrompt(prompt, attachments), answer, sources, { model, mode, generationId, costUsd: usage.cost, downloadablePdf, artifacts, headingToolCalls: allToolCalls.map((item) => item.toolName), controlledActions, costProposalId, developmentJob: developmentJobSummary, screenContext }, { attachments: storedAttachments });
-  return { conversationId, answer, sources, usage, capabilities: auth.capabilities, downloadablePdf, artifacts, headingAction, costProposalId, controlledActions, controlledAction: controlledActions[0] || null, developmentJob: developmentJobSummary };
+  await saveExchange(auth.admin, conversationId, displayedPrompt(prompt, attachments), answer, sources, { model, mode, generationId, costUsd: usage.cost, downloadablePdf, artifacts, headingToolCalls: allToolCalls.map((item) => item.toolName), controlledActions, costProposalId, runtimeOperations, developmentJob: developmentJobSummary, screenContext }, { attachments: storedAttachments });
+  return { conversationId, answer, sources, usage, capabilities: auth.capabilities, downloadablePdf, artifacts, headingAction, costProposalId, controlledActions, controlledAction: controlledActions[0] || null, runtimeOperations, developmentJob: developmentJobSummary };
 }
 
 async function createProposal(auth, body) {

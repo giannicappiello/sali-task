@@ -29,7 +29,7 @@ export function packagingSheetPdf(sheet) {
       startY: y, margin: { left: 16, right: 16, top: 16, bottom: 18 },
       head: head ? [head] : undefined, body,
       theme: 'grid', rowPageBreak: 'avoid',
-      styles: { font: 'helvetica', fontSize: 9, cellPadding: 3, textColor: [23, 43, 73], lineColor: [219, 229, 242], lineWidth: 0.2 },
+      styles: { font: 'helvetica', fontSize: 9, cellPadding: 2, textColor: [23, 43, 73], lineColor: [219, 229, 242], lineWidth: 0.2 },
       headStyles: { fillColor: [240, 245, 252], textColor: blue, fontStyle: 'bold' },
     });
     y = doc.lastAutoTable.finalY + 5;

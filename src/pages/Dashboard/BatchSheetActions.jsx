@@ -12,6 +12,7 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
   const [list, setList] = useState(null), [error, setError] = useState(''), [open, setOpen] = useState(false);
   const [phaseId, setPhaseId] = useState(''), [sheet, setSheet] = useState(null), [busy, setBusy] = useState(false);
   const [confirmStart, setConfirmStart] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const frame = useRef(null);
   const request = useCallback(async (operation, extra = {}, signal) => {
     const response = await fetch('/api/production/actions', { method: 'POST', signal,
@@ -30,15 +31,18 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
   }, [request]);
   useEffect(() => () => { if (sheet?.url) URL.revokeObjectURL(sheet.url); }, [sheet]);
   const phase = list?.phases?.find(p => p.id === phaseId);
-  async function load() {
+  useEffect(() => {
+    if (!open || !phaseId) return;
+    const controller = new AbortController();
     setBusy(true); setError(''); setSheet(null); setConfirmStart(false);
-    try {
-      const value = await request('sheet', { phaseId });
+    request('sheet', { phaseId }, controller.signal).then(value => {
+      if (controller.signal.aborted) return;
       const url = URL.createObjectURL(new Blob([Uint8Array.from(atob(value.pdfBase64), c => c.charCodeAt(0))], { type: 'application/pdf' }));
       setSheet({ ...value, url });
-    } catch (cause) { setError(cause.message); }
-    finally { setBusy(false); }
-  }
+    }).catch(cause => { if (!controller.signal.aborted) setError(cause.message); })
+      .finally(() => { if (!controller.signal.aborted) setBusy(false); });
+    return () => controller.abort();
+  }, [open, phaseId, request, loadAttempt]);
   async function act(operation) {
     setBusy(true); setError('');
     try {
@@ -67,7 +71,7 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
         {list.phases.map(p => <option key={p.id} value={p.id}>Batch {p.number} · {p.quantity} {p.unit} · {p.lotCode || 'Lotto da assegnare'} · {states[p.executionStatus] || p.executionStatus} · {p.resource}{p.phase === 7 ? ' · Astucciatura' : ''}</option>)}
       </select></label>
       {!list.phases.length && <p>Nessuna lavorazione di {title} disponibile per questo ordine.</p>}
-      <button type="button" disabled={!phaseId || busy} onClick={load}>Apri foglio del batch</button>
+      {error && !sheet && phaseId && <button type="button" disabled={busy} onClick={() => setLoadAttempt(value => value + 1)}>Riprova apertura foglio</button>}
       {error && <p role="alert" className="pc-error">{error}</p>}
       {busy && <p role="status">Operazione in corso…</p>}
       {sheet && (sheet.packagingSheet ? <div className="packaging-sheet-content"><PackagingSheet sheet={sheet.packagingSheet}/></div> : <iframe ref={frame} title={`Foglio di ${title}`} src={sheet.url}/>)}

@@ -1537,7 +1537,7 @@ const smallButtonStyle = {
 
 const formWrapperStyle = {
   width: "100%",
-  maxWidth: "720px",
+  maxWidth: "none",
   margin: "0 auto",
   boxSizing: "border-box",
 };

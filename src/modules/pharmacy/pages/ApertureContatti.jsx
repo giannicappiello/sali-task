@@ -996,7 +996,7 @@ const backButtonStyle = {
 
 const formStyle = {
   width: "100%",
-  maxWidth: "720px",
+  maxWidth: "none",
   margin: "0 auto 24px auto",
   boxSizing: "border-box",
   display: "grid",

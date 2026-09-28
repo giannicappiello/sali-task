@@ -44,3 +44,15 @@
   .workspace-screen-content .page-title-row > :not(:first-child) { width: 100%; margin-left: 0; }
   .workspace-screen-content .page-title-row > button { justify-content: center; }
 }
+
+/* Route bodies use the same available width as the shared heading. */
+.workspace-screen-layout,
+.workspace-config-driven-view,
+.workspace-screen-content,
+.module-container-content,
+.workspace-composition-block.system-content {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  box-sizing: border-box;
+}

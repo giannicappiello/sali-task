@@ -11,7 +11,7 @@ export function createHrPlanReader({ base = process.env.PROGREMES_URL, secret = 
     if (!['state', 'get'].includes(operation)) throw new Error('Operazione di sola lettura richiesta.');
     if (!base || !secret) throw Object.assign(new Error('Collegamento MES non configurato.'), { status: 503 });
     const path = `/api/workspace/ai/planning/${operation}`;
-    const body = Buffer.from(JSON.stringify({ ...(operation === 'get' ? { id: input.id } : {}), actor: 'workspace:hr-production-calendar' }));
+    const body = Buffer.from(JSON.stringify({ ...(operation === 'get' ? { id: input.id } : { calendar: true }), actor: 'workspace:hr-production-calendar' }));
     const timestamp = Math.floor(Date.now() / 1000), eventId = randomUUID();
     const response = await transport(new URL(path, base), { method: 'POST', body, redirect: 'error', signal: AbortSignal.timeout(25000), headers: {
       'Content-Type': 'application/json', [HMAC_HEADERS.timestamp]: String(timestamp), [HMAC_HEADERS.eventId]: eventId,
@@ -55,7 +55,9 @@ export async function readActiveProductionPlan(read = createHrPlanReader(), lega
   if (state.configuration?.active !== true) return { items: await legacy(), source: 'archivio', versionId: null };
   const id = state.configuration.activeVersionId;
   if (!id) return { items: [], source: 'piano-attivo', versionId: null };
-  const version = await read('get', { id });
-  if (version.id !== id || !['APPLIED', 'PREPARING', 'RECONCILIATION_REQUIRED'].includes(version.status)) throw new Error('Versione attiva MES non valida.');
+  // Updated MES returns the active snapshot in one lightweight read. Older
+  // installations keep their existing path until the server is updated.
+  const version = Object.hasOwn(state, 'version') ? state.version : await read('get', { id });
+  if (version?.id !== id || !['APPLIED', 'PREPARING', 'RECONCILIATION_REQUIRED'].includes(version.status)) throw new Error('Versione attiva MES non valida.');
   return { items: activePlanRows(state, version), source: 'piano-attivo', versionId: id };
 }

@@ -8,6 +8,29 @@ const task = { orderId: 7, orderNumber: 'OP7', articleCode: 'PF7', description: 
 const state = { configuration: { active: true, activeVersionId: 'v1' }, demands: [], resources: [{ id: 4, code: 'ST4', description: 'Station 4' }] };
 const version = tasks => ({ id: 'v1', status: 'APPLIED', snapshot: { tasks, resources: state.resources, operators: [{ id: 99, description: 'Private' }] } });
 
+test('calendar projection needs only one MES request and keeps the same rows', async () => {
+  const calls = [];
+  const result = await readActiveProductionPlan(async op => {
+    calls.push(op);
+    return { ...state, version: version([task]) };
+  });
+  assert.deepEqual(calls, ['state']);
+  assert.equal(result.items[0].orderNumber, 'OP7');
+  assert.equal(result.versionId, 'v1');
+  await assert.rejects(readActiveProductionPlan(async () => ({ ...state, version: null })), /non valida/);
+});
+
+test('calendar transport requests a read projection with the existing authentication', async () => {
+  const secret = 'test-secret';
+  const reader = createHrPlanReader({ base: 'https://mes.example', secret, transport: async (url, options) => {
+    assert.equal(url.pathname, '/api/workspace/ai/planning/state');
+    assert.equal(verifyProductionMessage({ method: options.method, path: url.pathname, headers: options.headers, body: options.body, secret }), true);
+    assert.deepEqual(JSON.parse(options.body), { calendar: true, actor: 'workspace:hr-production-calendar' });
+    return { ok: true, json: async () => ({ ...state, version: version([task]) }) };
+  } });
+  await reader('state');
+});
+
 test('reads the active planning version, including forecasts absent from persisted operations', async () => {
   const calls = [];
   const plan = await readActiveProductionPlan(async (operation, input) => {

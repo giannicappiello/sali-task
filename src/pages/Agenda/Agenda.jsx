@@ -159,7 +159,7 @@ export default function Agenda() {
             .filter((row) => row.progetto_id === project.id)
             .map((row) => row.reparto_id)
             .filter(Boolean);
-          return canViewScopedData({ ownerId: project.creato_da, departmentIds: deps });
+          return canViewScopedData({ ownerId: project.creato_da, customerKey: project.crm_customer_key, departmentIds: deps });
         });
 
     const allReminderDepartments = reminderDepartmentsRes.data || [];

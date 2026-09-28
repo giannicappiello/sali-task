@@ -426,10 +426,9 @@ export async function verifyUser(req, supabase, { allowOrdersUser = false, allow
     if (customerCode && privateModuleEnabled !== true) {
       throw authorizationError("Accesso al modulo OrdiniPrivate non abilitato.", 403);
     }
-    // This legacy flag is used by submit/update/confirmation-email endpoints.
-    // Linked customers now have overview-only access, even with an operative/admin role.
+    // Keep linked customers scoped even when their operative role is admin.
     if (customerCode) {
-      throw authorizationError("Gli ordini Private sono in sola lettura per gli account cliente.", 403);
+      return { authUserId: user.id, profile, isAdmin: false, integration: null, customerCode, customerCodes };
     }
   }
 

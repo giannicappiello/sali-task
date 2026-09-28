@@ -4,15 +4,16 @@ import { assertPrivateCustomerDetailAccess, customerOrderOverview, loadCustomerI
 import { isCustomerRecordScope } from '../src/lib/customerRecordAccess.js';
 import { verifyUser } from './mexal/sync-products.js';
 
-test('service-role order writers reject linked customers before mutation, including admin roles', async () => {
-  function client(linked, admin) {
-    return {auth:{getUser:async()=>({data:{user:{id:'AUTH'}}})},rpc:async()=>({data:true}),
+test('service-role order writers retain customer scope, including admin roles', async () => {
+  function client(linked, admin, moduleEnabled = true) {
+    return {auth:{getUser:async()=>({data:{user:{id:'AUTH'}}})},rpc:async()=>({data:moduleEnabled}),
       from(table){const data=table==='utenti'?[{id:'U',attivo:true,ruoli:{amministratore_workspace:admin}}]:linked?[{customer_code:'A'},{customer_code:'B'}]:[];
         return {select(){return this},eq(){return this},limit(){return this},then(resolve){return Promise.resolve({data}).then(resolve)}};
       }};
   }
   const req={headers:{authorization:'Bearer fixture'}};
-  for(const admin of [true,false]) await assert.rejects(verifyUser(req,client(true,admin),{allowOrdersUser:true,allowCustomerPrivateOrder:true}),{status:403});
+  for(const admin of [true,false]) { const access=await verifyUser(req,client(true,admin),{allowOrdersUser:true,allowCustomerPrivateOrder:true}); assert.equal(access.isAdmin,false); assert.deepEqual(access.customerCodes,['A','B']); }
+  await assert.rejects(verifyUser(req,client(true,true,false),{allowOrdersUser:true,allowCustomerPrivateOrder:true}),{status:403});
   assert.equal((await verifyUser(req,client(false,true),{allowOrdersUser:true,allowCustomerPrivateOrder:true})).isAdmin,true);
 });
 

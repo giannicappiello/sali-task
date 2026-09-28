@@ -1,0 +1,35 @@
+// Local fixture only; install @electric-sql/pglite or set PGLITE_MODULE to its file URL.
+const {PGlite}=await import(process.env.PGLITE_MODULE || '@electric-sql/pglite');
+import fs from 'node:fs';import assert from 'node:assert/strict';
+const db=new PGlite();
+await db.exec(`create schema auth;create role authenticated;create role anon;
+create function auth.role() returns text language sql as $$select current_setting('test.role')$$;
+create function workspace_customer_record_scope() returns boolean language sql as $$select true$$;
+create function workspace_current_profile_id() returns uuid language sql as $$select '00000000-0000-0000-0000-000000000001'::uuid$$;
+create function workspace_current_customer_codes() returns text[] language sql as $$select array['A','B']$$;
+create function workspace_module_enabled_for_user(uuid,text) returns boolean language sql as $$select current_setting('test.module')='yes'$$;
+create function workspace_customer_data_visible(text) returns boolean language sql as $$select $1=any(array['A','B'])$$;
+create table ordini_testate(id uuid primary key,modulo_ordini text,stato text,codice_cliente text);
+create table ordini_righe(id int primary key,ordine_id uuid);
+set test.role='authenticated';set test.module='yes';`);
+await db.exec(fs.readFileSync('supabase/migrations/20260928193000_restore_customer_private_order_creation.sql','utf8'));
+await db.exec(`create trigger customer_private_order_readonly before insert or update or delete on ordini_testate for each row execute function workspace_customer_private_order_readonly();
+create trigger customer_private_order_line_readonly before insert or update or delete on ordini_righe for each row execute function workspace_customer_private_order_readonly();`);
+const id=n=>'00000000-0000-0000-0000-'+String(n).padStart(12,'0');let checks=0;
+async function ok(sql){await db.exec(sql);checks++}async function deny(sql){await assert.rejects(db.exec(sql),{code:'42501'});checks++}
+await ok(`insert into ordini_testate values ('${id(1)}','private','bozza','A'),('${id(2)}','private','bozza','B')`);
+await deny(`insert into ordini_testate values ('${id(3)}','private','bozza','C')`);
+await deny(`insert into ordini_testate values ('${id(3)}','prof','bozza','A')`);
+await deny(`insert into ordini_testate values ('${id(3)}','private','aperto','A')`);
+await ok(`insert into ordini_righe values(1,'${id(1)}'),(2,'${id(2)}')`);
+await ok(`update ordini_testate set stato='aperto' where id='${id(1)}'`);
+await deny(`update ordini_testate set stato='bozza' where id='${id(1)}'`);
+await deny(`insert into ordini_righe values(3,'${id(1)}')`);
+await deny(`delete from ordini_righe where id=1`);
+await deny(`update ordini_righe set ordine_id='${id(1)}' where id=2`);
+await deny(`update ordini_testate set codice_cliente='C' where id='${id(2)}'`);
+await deny(`delete from ordini_testate where id='${id(2)}'`);
+await ok(`delete from ordini_righe where id=2`);
+await db.exec("set test.module='no'");await deny(`insert into ordini_righe values(2,'${id(2)}')`);
+await db.exec("set test.role='service_role'");await ok(`update ordini_testate set stato='inviato' where id='${id(1)}'`);
+console.log(checks+' SQL workflow checks passed');await db.close();

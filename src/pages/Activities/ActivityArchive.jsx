@@ -107,6 +107,7 @@ export default function ActivityArchive() {
       const projectsById = new Map(allProjects.map((project) => [project.id, project]));
       const visibleTasks = allTasks.filter((task) => canReadAll || canViewScopedDataRef.current({
         ownerId: task.creato_da,
+        customerKey: task.crm_customer_key || projectsById.get(task.progetto_id)?.crm_customer_key,
         userIds: [task.assegnato_a].filter(Boolean),
         departmentIds: taskDepartments.get(task.id) || [task.reparto_id].filter(Boolean),
       }));
@@ -114,6 +115,7 @@ export default function ActivityArchive() {
       const visibleProjectIdsFromTasks = new Set(visibleTasks.map((task) => task.progetto_id).filter(Boolean));
       const visibleProjects = allProjects.filter((project) => canReadAll || visibleProjectIdsFromTasks.has(project.id) || canViewScopedDataRef.current({
         ownerId: project.creato_da,
+        customerKey: project.crm_customer_key,
         departmentIds: projectDepartments.get(project.id) || [],
       }));
       const visibleReminders = (remindersResult.data || []).filter((reminder) => canReadAll || canViewScopedDataRef.current({

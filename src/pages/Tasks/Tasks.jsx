@@ -351,6 +351,7 @@ export default function Tasks() {
           const ids = phaseDepartmentIdsByPhase.get(phase.id) || [];
           return phase.assegnato_a === actorId || [phase.reparto_id, ...(phaseDepartmentIdsByPhase.get(phase.id) || [])].some((id) => userDepartmentIds.includes(id)) || canViewScopedData({
             ownerId: phase.creato_da,
+            customerKey: phase.crm_customer_key || phase.v4_progetti?.crm_customer_key || allProjects.find((project) => project.id === phase.progetto_id)?.crm_customer_key,
             userIds: [phase.assegnato_a],
             departmentIds: ids.length ? ids : [phase.reparto_id].filter(Boolean),
           });
@@ -363,7 +364,7 @@ export default function Tasks() {
             .filter((project) => {
               const ids = projectDepartmentIdsByProject.get(project.id) || [];
               return projectsWithVisiblePhases.has(project.id)
-                || canViewScopedData({ ownerId: project.creato_da, departmentIds: ids });
+                || canViewScopedData({ ownerId: project.creato_da, customerKey: project.crm_customer_key, departmentIds: ids });
             })
             .map((project) => project.id)
     );

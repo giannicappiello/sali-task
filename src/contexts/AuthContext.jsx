@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { matchesCustomerActivityScope } from "../lib/customerActivityScope";
 import { requiresDirectModuleGrant } from "../config/directCrmAccess";
 import { useLocation } from "react-router-dom";
 import { screenAccessAllowed, screenForPath } from "../config/workspaceScreenAccess";
@@ -408,9 +409,11 @@ export function AuthProvider({ children }) {
     return dataScope.mode === "team" && dataScope.departmentIds.includes(repartoId);
   }
 
-  function canViewScopedData({ ownerId = null, userIds = [], departmentIds = [] } = {}) {
+  function canViewScopedData({ ownerId = null, userIds = [], departmentIds = [], customerKey = null } = {}) {
     if (!profile || profile.attivo === false) return false;
     if (isAdmin() || dataScope.mode === "tutti") return true;
+
+    if (matchesCustomerActivityScope(dataScope, customerKey)) return true;
 
     if (ownerId && ownerId === profile.id) return true;
     if ((userIds || []).some((id) => id && id === profile.id)) return true;

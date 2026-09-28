@@ -183,6 +183,7 @@ function Dashboard({ toolbarTarget = null }) {
         .map((row) => row.reparto_id);
       return canViewScopedData({
         ownerId: phase.creato_da,
+        customerKey: phase.crm_customer_key || phase.v4_progetti?.crm_customer_key,
         departmentIds: phaseDeps.length ? phaseDeps : [phase.reparto_id].filter(Boolean),
       });
     });
@@ -207,7 +208,7 @@ function Dashboard({ toolbarTarget = null }) {
       const projectDepartmentIds = allProjectDepartments
         .filter((row) => row.progetto_id === project.id && row.reparto_id)
         .map((row) => row.reparto_id);
-      return canViewScopedData({ ownerId: project.creato_da, departmentIds: projectDepartmentIds });
+      return canViewScopedData({ ownerId: project.creato_da, customerKey: project.crm_customer_key, departmentIds: projectDepartmentIds });
     });
     const visiblePhaseIds = new Set(visibleTasks.map((phase) => phase.id));
     const selectableDepartmentIds = new Set([...(userDepartmentIds || []), ...(dataScope?.departmentIds || [])]);

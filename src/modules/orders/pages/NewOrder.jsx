@@ -763,7 +763,7 @@ export default function NewOrder() {
         }
       }
 
-      navigate(confirm || editingOrderId ? `${basePath}/elenco/${order.id}` : `${basePath}/elenco`, {
+      navigate(!customerCode && (confirm || editingOrderId) ? `${basePath}/elenco/${order.id}` : `${basePath}/elenco`, {
         replace: true,
         state: {
           message: confirm

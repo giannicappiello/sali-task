@@ -259,6 +259,7 @@ export default function Projects() {
           const phaseDepartmentIds = phaseDepartmentIdsByPhase.get(phase.id) || [];
           return phase.assegnato_a === actorId || [phase.reparto_id, ...(phaseDepartmentIdsByPhase.get(phase.id) || [])].some((id) => userDepartmentIds.includes(id)) || canViewScopedData({
             ownerId: phase.creato_da,
+            customerKey: phase.crm_customer_key || phase.v4_progetti?.crm_customer_key || allProjects.find((project) => project.id === phase.progetto_id)?.crm_customer_key,
             userIds: [phase.assegnato_a],
             departmentIds: phaseDepartmentIds.length ? phaseDepartmentIds : [phase.reparto_id].filter(Boolean),
           });
@@ -272,7 +273,7 @@ export default function Projects() {
               const projectDepartmentIds = projectDepartmentIdsByProject.get(project.id) || [];
 
               return projectsWithVisiblePhases.has(project.id)
-                || canViewScopedData({ ownerId: project.creato_da, departmentIds: projectDepartmentIds });
+                || canViewScopedData({ ownerId: project.creato_da, customerKey: project.crm_customer_key, departmentIds: projectDepartmentIds });
             })
             .map((project) => project.id)
     );

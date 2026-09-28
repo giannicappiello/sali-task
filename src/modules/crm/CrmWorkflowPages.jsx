@@ -38,7 +38,7 @@ export function CrmProjectsPage({ type = "conto_terzi" }) {
   const load = useCallback(async () => {
     setLoading(true);
     const [projectsResult, customersResult] = await Promise.all([
-      supabase.from("v4_progetti").select("id,titolo,descrizione,stato,deadline,crm_customer_key,crm_opportunity_id,v4_fasi_progetto(id,titolo,descrizione,note,crm_tipo,stato,deadline,priorita,completato_at,crm_customer_key,crm_opportunity_id,bloccante_id),crm_opportunities(id,titolo)").not("crm_customer_key", "is", null).order("created_at", { ascending: false }).limit(2000),
+      supabase.from("v4_progetti").select("id,titolo,descrizione,stato,deadline,crm_customer_key,crm_opportunity_id,v4_fasi_progetto(*,reparti(id,nome),v4_fase_reparti(reparti(id,nome))),crm_opportunities(id,titolo)").not("crm_customer_key", "is", null).order("created_at", { ascending: false }).limit(2000),
       loadCrmCustomerDirectory(supabase, type),
     ]);
     const loadError = projectsResult.error || customersResult.error;

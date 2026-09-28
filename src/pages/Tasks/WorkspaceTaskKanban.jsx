@@ -20,13 +20,17 @@ function effectiveStatus(item, allItems) {
   return "da_evadere";
 }
 
-export default function WorkspaceTaskKanban({ items, onMove, onOpen }) {
+export default function WorkspaceTaskKanban({ items, onMove, onOpen, openOnCardClick = false }) {
   return <div className="workspace-task-kanban" aria-label="Kanban task Workspace">
     {COLUMNS.map(([status, label]) => {
       const columnItems = items.filter((item) => effectiveStatus(item, items) === status);
       return <section key={status} className={`panel workspace-task-column status-${status}`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => onMove(event.dataTransfer.getData("text/plain"), status)}>
         <header className="panel-header"><h3>{label}</h3><span className="filter-count" aria-label={`${columnItems.length} task`}>{columnItems.length}</span></header>
-        <div className="workspace-task-list">{columnItems.map((item) => <article className="workspace-task-card" key={item.id} draggable={status !== "bloccata"} onDragStart={(event) => event.dataTransfer.setData("text/plain", item.id)}>
+        <div className="workspace-task-list">{columnItems.map((item) => <article className="workspace-task-card" key={item.id} draggable={status !== "bloccata"} onDragStart={(event) => event.dataTransfer.setData("text/plain", item.id)}
+          style={openOnCardClick ? { cursor: "pointer" } : undefined}
+          onClick={openOnCardClick ? (event) => {
+            if (!event.target.closest("a,button,input,select,textarea")) onOpen(item);
+          } : undefined}>
           <button className="workspace-task-open" type="button" onClick={() => onOpen(item)}><strong>{item.titolo}</strong></button>
           {item.crm_customer_key ? <Link className="secondary-action workspace-task-link" to={item.crm_customer_name === "DIRECT" ? "/crm/brand-direct" : `/crm/conto-terzi/clienti/${encodeURIComponent(item.crm_customer_key)}`}><Link2 size={13} />{item.crm_customer_name || "Cliente"}</Link> : null}
           {item.crm_opportunity_id ? <Link className="secondary-action workspace-task-link" to={`/crm/conto-terzi/pipeline/${item.crm_opportunity_id}`}><Link2 size={13} />Apri opportunità CRM</Link> : null}

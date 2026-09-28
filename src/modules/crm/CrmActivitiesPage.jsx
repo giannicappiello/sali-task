@@ -33,7 +33,7 @@ export default function CrmActivitiesPage({ type }) {
   const [loading, setLoading] = useState(true);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
-  const status = params.get("activityStatus") || "open";
+  const status = params.get("activityStatus") || (params.get("activityView") === "list" ? "open" : "all");
   const due = params.get("activityDue") || "";
   const search = params.get("activitySearch") || "";
   const view = params.get("activityView") || "kanban";
@@ -41,6 +41,7 @@ export default function CrmActivitiesPage({ type }) {
   const updateParam = (name, value) => setParams((current) => {
     const next = new URLSearchParams(current);
     if (value) next.set(name, value); else next.delete(name);
+    if (name === "activityView" && value === "kanban") next.set("activityStatus", "all");
     return next;
   }, { replace: true });
 
@@ -113,7 +114,7 @@ export default function CrmActivitiesPage({ type }) {
     </CrmPageHeader>
     {error ? <div className="crm-message error">{error}</div> : null}
     <div className="crm-filters"><label><Search size={16} /><input value={search} onChange={(event) => updateParam("activitySearch", event.target.value)} placeholder="Cerca attività, cliente o progetto" /></label><select value={status} onChange={(event) => updateParam("activityStatus", event.target.value)}><option value="open">Aperte</option><option value="completed">Completate</option><option value="all">Tutte</option></select><div className="crm-view-toggle" aria-label="Vista attività"><button type="button" className={view === "list" ? "active" : ""} onClick={() => updateParam("activityView", "list")}><LayoutList size={16} />Lista</button><button type="button" className={view === "kanban" ? "active" : ""} onClick={() => updateParam("activityView", "kanban")}><SquareKanban size={16} />Kanban</button></div></div>
-    {loading ? <div className="crm-loading">Caricamento attività...</div> : view === "kanban" ? <WorkspaceTaskKanban items={rows} onMove={moveTask} onOpen={openTask} /> : <div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Attività / task</th><th>Cliente</th><th>Progetto</th><th>Scadenza</th><th>Stato</th><th>Azioni</th></tr></thead><tbody>{rows.map((row) => {
+    {loading ? <div className="crm-loading">Caricamento attività...</div> : view === "kanban" ? <WorkspaceTaskKanban openOnCardClick items={rows} onMove={moveTask} onOpen={openTask} /> : <div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Attività / task</th><th>Cliente</th><th>Progetto</th><th>Scadenza</th><th>Stato</th><th>Azioni</th></tr></thead><tbody>{rows.map((row) => {
       const overdue = !row.completed && row.deadline && new Date(`${row.deadline}T23:59:59`).getTime() < now;
       return <tr key={row.id}><td><strong>{row.titolo}</strong>{row.descrizione ? <small>{row.descrizione}</small> : null}</td><td><CrmCustomerLink crmType={type} customerCode={row.customer.customerCode} accountId={row.customer.accountId} name={row.customer.name} period={period}>{row.customer.name}</CrmCustomerLink></td><td>{row.v4_progetti ? <Link to={customerScoped ? `/crm/conto-terzi/progetti?projectView=kanban&kanbanProject=${row.v4_progetti.id}` : `/activities/projects?project=${row.v4_progetti.id}`}>{row.v4_progetti.titolo}</Link> : "Attività singola"}</td><td className={overdue ? "crm-missing-step" : ""}>{row.deadline ? formatDate(row.deadline) : "Senza scadenza"}</td><td>{row.stato || "da evadere"}</td><td><button type="button" className="secondary-action crm-table-action" onClick={() => openTask(row)}>Apri task</button></td></tr>;
     })}</tbody></table>{!rows.length ? <div className="crm-empty">Nessuna task o fase corrisponde ai filtri.</div> : null}</div>}

@@ -51,7 +51,7 @@ export default function CrmActivitiesPage({ type }) {
     const [tasksResult, customersResult] = await Promise.all([
       supabase
         .from("v4_fasi_progetto")
-        .select("id,titolo,descrizione,stato,deadline,priorita,completato_at,crm_customer_key,crm_opportunity_id,bloccante_id,source_type,v4_progetti(id,titolo,crm_customer_key)")
+        .select("*,v4_progetti(id,titolo,crm_customer_key),reparti(id,nome),v4_fase_reparti(reparti(id,nome))")
         .order("deadline", { ascending: true, nullsFirst: false })
         .limit(3000),
       loadCrmCustomerDirectory(supabase, type),

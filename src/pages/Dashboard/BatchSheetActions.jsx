@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { FileText, Play, Printer } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Modal } from '../../features/production-costs/common';
+import PackagingSheet from './PackagingSheet';
 import './BatchSheetActions.css';
 
 const states = {NOT_STARTED:'Da avviare', RUNNING:'In lavorazione', COMPLETED:'Completato', SUSPENDED:'Sospeso', CLOSING:'In chiusura'};
@@ -42,7 +43,12 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
     setBusy(true); setError('');
     try {
       await request(operation, { phaseId: sheet.phaseId, contentHash: sheet.contentHash });
-      if (operation === 'print') frame.current?.contentWindow?.print();
+      if (operation === 'print') {
+        if (sheet.packagingSheet) {
+          const { printPackagingSheet } = await import('./printPackagingSheet.jsx');
+          await printPackagingSheet(sheet.packagingSheet);
+        } else frame.current?.contentWindow?.print();
+      }
       else {
         setList(await request('list')); setConfirmStart(false);
         window.dispatchEvent(new Event('workspace:production-changed'));
@@ -53,7 +59,7 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
   if (list?.managed === false) return children;
   const title = kind === 'production' ? 'produzione' : 'confezionamento';
   return <>
-    <button type="button" disabled={!list} onClick={() => { setOpen(true); setError(''); setSheet(null); setConfirmStart(false); setPhaseId(list.phases.length === 1 ? list.phases[0].id : ''); }}><FileText size={17}/>Foglio e avvio {title}</button>
+    <button type="button" disabled={!list} onClick={() => { setOpen(true); setError(''); setSheet(null); setConfirmStart(false); setPhaseId(list.phases.length === 1 ? list.phases[0].id : ''); }}><FileText size={17}/>Gestione batch {title}</button>
     {!open && error && <p role="alert">{error}</p>}
     {open && <Modal title={`Foglio di ${title} · batch`} className="product-spec-viewer batch-sheet-modal" onClose={() => { if (!busy) { setOpen(false); setSheet(null); } }}>
       <label className="pc-field"><span>Batch / lavorazione</span><select value={phaseId} disabled={busy} onChange={e => { setPhaseId(e.target.value); setSheet(null); setConfirmStart(false); setError(''); }}>
@@ -64,7 +70,7 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
       <button type="button" disabled={!phaseId || busy} onClick={load}>Apri foglio del batch</button>
       {error && <p role="alert" className="pc-error">{error}</p>}
       {busy && <p role="status">Operazione in corso…</p>}
-      {sheet && <iframe ref={frame} title={`Foglio di ${title}`} src={sheet.url}/>}
+      {sheet && (sheet.packagingSheet ? <div className="packaging-sheet-content"><PackagingSheet sheet={sheet.packagingSheet}/></div> : <iframe ref={frame} title={`Foglio di ${title}`} src={sheet.url}/>)}
       {confirmStart && <p>Confermi l’avvio del batch {phase?.number} selezionato su {phase?.resource}?</p>}
       <footer><button type="button" disabled={busy} onClick={() => { setOpen(false); setSheet(null); }}>Chiudi</button>
         <button type="button" disabled={!sheet || busy} onClick={() => act('print')}><Printer size={17}/>Stampa foglio</button>

@@ -1,3 +1,4 @@
+import { loadWorkspaceProducts } from '../../lib/workspaceCrmCatalog';
 import { formatDisplayDate } from '../../lib/displayLocale.js';
 import { isPhaseParticipant } from "../../lib/projectVisibility";
 import { crmTypeFromPath } from "../../lib/crmCompetencies";
@@ -314,7 +315,7 @@ export default function Tasks() {
       supabase.from("v4_fase_reparti").select("id,fase_id,reparto_id,completato,completato_at,completato_da"),
       supabase.from("reparti").select("id,nome,attivo").order("nome"),
       supabase.from("v4_fase_prodotti").select("id,fase_id,prodotto_id,prodotto_nome"),
-      supabase.from("prodotti").select("id,nome,codice").order("nome").limit(5000),
+      loadWorkspaceProducts(supabase),
       supabase.from("checklist_template").select("id,titolo,reparto_id,ordine,attivo,competenze_crm,reparti(id,nome)").eq("attivo", true).order("ordine", { ascending: true }),
       supabase.from("checklist_template_reparti").select("id,template_id,reparto_id"),
       loadCrmCustomerDirectory(supabase),

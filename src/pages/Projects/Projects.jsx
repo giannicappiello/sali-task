@@ -1,3 +1,4 @@
+import { loadWorkspaceProducts } from '../../lib/workspaceCrmCatalog';
 import { isCustomerRecordScope } from '../../lib/customerRecordAccess.js';
 import { formatDisplayDate } from '../../lib/displayLocale.js';
 import { isPhaseParticipant } from "../../lib/projectVisibility";
@@ -214,7 +215,7 @@ export default function Projects() {
         .select("*,v4_progetti(titolo),reparti(id,nome),responsabile:utenti!v4_fasi_progetto_assegnato_a_fkey(id,nome,cognome)")
         .order("ordine", { ascending: true })
         .order("deadline", { ascending: true, nullsFirst: false }),
-      supabase.from("prodotti").select("id,nome,codice").order("nome").limit(5000),
+      loadWorkspaceProducts(supabase),
       supabase.from("reparti").select("id,nome,attivo").order("nome"),
       supabase.from("utenti").select("id,nome,cognome,email,reparto_id,attivo").order("nome"),
       supabase.from("checklist_template").select("id,titolo,reparto_id,ordine,attivo,competenze_crm,reparti(id,nome)").order("ordine", { ascending: true }),

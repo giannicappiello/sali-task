@@ -1,3 +1,4 @@
+import { loadWorkspaceProducts } from '../../lib/workspaceCrmCatalog';
 import { formatDisplayDate } from '../../lib/displayLocale.js';
 import PreparationActions from './PreparationActions';
 import { displayDate } from '../../lib/displayDate';
@@ -160,7 +161,7 @@ function Dashboard({ toolbarTarget = null }) {
       supabase.from("v4_progetti").select("id,titolo,creato_da,crm_customer_key").order("created_at", { ascending: false }).limit(500),
       supabase.from("v4_progetto_reparti").select("progetto_id,reparto_id"),
       supabase.from("reparti").select("id,nome,attivo").order("nome"),
-      supabase.from("prodotti").select("id,nome,codice").order("nome").limit(5000),
+      loadWorkspaceProducts(supabase),
       supabase.from("checklist_template").select("id,titolo,reparto_id,ordine,attivo,reparti(id,nome)").eq("attivo", true).order("ordine", { ascending: true }),
       supabase.from("checklist_template_reparti").select("id,template_id,reparto_id"),
       loadCrmCustomerDirectory(supabase),

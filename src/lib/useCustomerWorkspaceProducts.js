@@ -13,7 +13,11 @@ export default function useCustomerWorkspaceProducts(products, customerKey, crmT
   useEffect(() => {
     if (!open || !customerKey || direct) return;
     const controller = new AbortController();
-    Promise.all(['ordered', 'purchased'].map(kind => loadCustomerProductLines(supabase, customerKey, kind, controller.signal, crmType === 'brand_direct' ? '' : crmType)))
+    Promise.all([
+      ...['ordered', 'purchased'].map(kind => loadCustomerProductLines(supabase, customerKey, kind, controller.signal, crmType === 'brand_direct' ? '' : crmType)),
+      supabase.rpc('workspace_activity_additional_products', { p_customer_key: customerKey, p_crm_type: crmType || null }).abortSignal(controller.signal)
+        .then(({ data, error }) => { if (error) throw error; return data || []; }),
+    ])
       .then(groups => { if (!controller.signal.aborted) setResult({ key: customerKey, type: crmType, lines: groups.flat(), error: '' }); })
       .catch(error => { if (!controller.signal.aborted) setResult({ key: customerKey, type: crmType, lines: [], error: error.message }); });
     return () => controller.abort();

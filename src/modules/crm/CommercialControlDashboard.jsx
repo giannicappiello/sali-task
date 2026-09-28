@@ -1,3 +1,4 @@
+import CrmPrivateDashboardDialog from './CrmPrivateDashboardDialog';
 import CrmOpenOrdersDialog from './CrmOpenOrdersDialog';
 import CrmOpenOrderBreakdown from './CrmOpenOrderBreakdown';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -133,6 +134,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [openOrders, setOpenOrders] = useState(false);
+  const [privateDetail, setPrivateDetail] = useState(null);
   const [error, setError] = useState("");
   const activeRequest = useRef(null);
   const requestSequence = useRef(0);
@@ -275,8 +277,11 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
     <p className="crm-control-updated">Ultimo aggiornamento: {updated}. Nessun polling automatico.</p>
     {error ? <div className="crm-message error"><span>{error}</span><button type="button" onClick={load}>Riprova</button></div> : null}
     {loading ? <div className="crm-loading">Calcolo server-side sull’intero dataset filtrato...</div> : <>
+      {scope === "private" && privateDetail && <CrmPrivateDashboardDialog title={privateDetail}
+        filters={{ p_from: period.from, p_to: period.to, p_market: market || null, p_country: country || null, p_agent: agent || null, p_customer: customer || null }}
+        onClose={() => setPrivateDetail(null)}/>}
       {openOrders && <CrmOpenOrdersDialog title="OC aperti" values={totals} filters={Object.fromEntries(Object.entries(requestArguments).filter(([key]) => !['p_compare','p_granularity'].includes(key)))} onClose={() => setOpenOrders(false)}/>}
-      <div className={`crm-control-kpis ${scope === "direct" ? "wide" : ""}`}>{kpis.map(([label, value, note, target, delta]) => <MetricCard key={label} label={label} value={value} note={note} delta={delta} to={cardDestination(label, target)} onClick={label === "OC aperti" ? () => setOpenOrders(true) : undefined} />)}</div>
+      <div className={`crm-control-kpis ${scope === "direct" ? "wide" : ""}`}>{kpis.map(([label, value, note, target, delta]) => <MetricCard key={label} label={label} value={value} note={note} delta={delta} to={cardDestination(label, target)} onClick={scope === "private" ? () => setPrivateDetail(label) : label === "OC aperti" ? () => setOpenOrders(true) : undefined} />)}</div>
 
       {scope === "global" ? <section className="crm-control-panel" id="business">
         <header><div><span>Composizione business</span><h3>PRIVATE vs DIRECT</h3></div></header>

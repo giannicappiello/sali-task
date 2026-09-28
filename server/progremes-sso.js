@@ -140,7 +140,7 @@ export async function listUserProgremesSections(req) {
 export async function issueProgremesTicket(req, body = {}) {
   const admin = adminClient();
   const operationalRead = body.screenCode === 'progremes.PlanningProduction' && body.context?.destination === 'station'
-    && body.context.stationAction == null && body.context.orderId == null;
+    && (body.context.stationAction == null || ['start', 'close'].includes(body.context.stationAction));
   if (operationalRead) await productionSheetSession(req, 'production', { admin });
   const identity = await getWorkspaceIdentity(req, admin, operationalRead);
   await ensureProgremesCatalogFresh(admin);
@@ -233,5 +233,5 @@ export async function consumeProgremesTicket(body) {
   let stationRead = false;
   try { await productionSheetProfileAccess(admin, operationalProfile, operationalProfile?.auth_user_id, 'production'); stationRead = true; }
   catch (error) { if (error.status !== 403) throw error; }
-  return { ...profile, station_read_allowed: stationRead, planning_production_level: ["lettura", "scrittura", "amministrazione"].includes(planningLevel) ? planningLevel : "" };
+  return { ...profile, station_read_allowed: stationRead, station_write_allowed: stationRead, planning_production_level: ["lettura", "scrittura", "amministrazione"].includes(planningLevel) ? planningLevel : "" };
 }

@@ -1,8 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { costSession } from './production-action-session.js';
-import { createProgremesReadonlyAdmin } from './progremes-readonly-auth.js';
 import { createProgremesProductionClient } from './progremes-production-client.js';
-import { mixingDepartmentAccess } from './mixing-access.js';
 import { productionSheetSession } from './production-sheet-access.js';
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
@@ -21,39 +18,9 @@ export function preparationInput(body) {
   }
   return input;
 }
-async function preparationSession(req, write) {
-  let screenSession;
-  try { screenSession = await costSession(req, 'progremes.OperatoreProduzione', false); }
-  catch (error) { if (error.status !== 403) throw error; }
-  if (screenSession) {
-    if (write && !screenSession.canWrite) throw fail('Permesso di sola lettura: avvio e stampa non autorizzati.', 403);
-    return screenSession;
-  }
-  const admin = createProgremesReadonlyAdmin();
-  const token = /^Bearer (.+)$/i.exec(String(req.headers?.authorization || ''))?.[1];
-  const auth = await admin.auth.getUser(token);
-  if (auth.error || !auth.data?.user) throw fail('Sessione non valida.', 401);
-  const profile = await admin.from('utenti').select('id,attivo,reparto_id,auth_user_id,ruoli(nome)').eq('auth_user_id', auth.data.user.id).maybeSingle();
-  if (profile.error) throw profile.error;
-  if (!profile.data || profile.data.attivo === false || /client|portal/i.test(profile.data.ruoli?.nome || '')) throw fail('Accesso riservato agli addetti interni.', 403);
-  const [links, legacy, mixingAccess] = await Promise.all([
-    admin.from('workspace_customer_user_links').select('customer_code').eq('user_id', profile.data.id),
-    admin.from('workspace_private_document_customer_access').select('codice_cliente').eq('utente_id', profile.data.id),
-    mixingDepartmentAccess(admin, profile.data.id, profile.data),
-  ]);
-  if (links.error || legacy.error) throw links.error || legacy.error;
-  if (links.data.length || legacy.data.length || !mixingAccess) throw fail('Accesso riservato all’area Miscelazione.', 403);
-  return { profile: profile.data, scope: { mode: 'team' }, canWrite: true };
-}
-export async function authorizePreparation(req, write, operation) {
-  if (operation === 'start') return preparationSession(req, write);
+export async function authorizePreparation(req) {
   const session = await productionSheetSession(req, 'production');
-  let canWrite = false;
-  if (operation === 'context') {
-    try { canWrite = (await preparationSession(req, true)).canWrite; }
-    catch (error) { if (error.status !== 403) throw error; }
-  }
-  return { ...session, canWrite };
+  return { ...session, canWrite: true };
 }
 export async function handlePreparationActions(req, body, { authorize = authorizePreparation, clientFactory = createProgremesProductionClient } = {}) {
   const input = preparationInput(body);

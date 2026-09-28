@@ -1,0 +1,74 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { FileText, Play, Printer } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
+import { Modal } from '../../features/production-costs/common';
+
+const states = {NOT_STARTED:'Da avviare', RUNNING:'In lavorazione', COMPLETED:'Completato', SUSPENDED:'Sospeso', CLOSING:'In chiusura'};
+
+export default function BatchSheetActions({ productionOrderId, kind, children }) {
+  const { session } = useAuth();
+  const [list, setList] = useState(null), [error, setError] = useState(''), [open, setOpen] = useState(false);
+  const [phaseId, setPhaseId] = useState(''), [sheet, setSheet] = useState(null), [busy, setBusy] = useState(false);
+  const [confirmStart, setConfirmStart] = useState(false);
+  const frame = useRef(null);
+  const request = useCallback(async (operation, extra = {}, signal) => {
+    const response = await fetch('/api/production/actions', { method: 'POST', signal,
+      headers: { Authorization: `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'batch_sheet', productionOrderId, kind, operation, ...extra }) });
+    const value = await response.json();
+    if (!response.ok) throw new Error(value.error || 'Batch non disponibile.');
+    return value;
+  }, [session?.access_token, productionOrderId, kind]);
+  useEffect(() => {
+    const controller = new AbortController();
+    setList(null); setError('');
+    request('list', {}, controller.signal).then(value => { if (!controller.signal.aborted) setList(value); })
+      .catch(cause => { if (!controller.signal.aborted) setError(cause.message); });
+    return () => controller.abort();
+  }, [request]);
+  useEffect(() => () => { if (sheet?.url) URL.revokeObjectURL(sheet.url); }, [sheet]);
+  const phase = list?.phases?.find(p => p.id === phaseId);
+  async function load() {
+    setBusy(true); setError(''); setSheet(null); setConfirmStart(false);
+    try {
+      const value = await request('sheet', { phaseId });
+      const url = URL.createObjectURL(new Blob([Uint8Array.from(atob(value.pdfBase64), c => c.charCodeAt(0))], { type: 'application/pdf' }));
+      setSheet({ ...value, url });
+    } catch (cause) { setError(cause.message); }
+    finally { setBusy(false); }
+  }
+  async function act(operation) {
+    setBusy(true); setError('');
+    try {
+      await request(operation, { phaseId: sheet.phaseId, contentHash: sheet.contentHash });
+      if (operation === 'print') frame.current?.contentWindow?.print();
+      else {
+        setList(await request('list')); setConfirmStart(false);
+        window.dispatchEvent(new Event('workspace:production-changed'));
+      }
+    } catch (cause) { setError(cause.message); }
+    finally { setBusy(false); }
+  }
+  if (list?.managed === false) return children;
+  const title = kind === 'production' ? 'produzione' : 'confezionamento';
+  return <>
+    <button type="button" disabled={!list} onClick={() => { setOpen(true); setError(''); setSheet(null); setConfirmStart(false); setPhaseId(list.phases.length === 1 ? list.phases[0].id : ''); }}><FileText size={17}/>Foglio e avvio {title}</button>
+    {!open && error && <p role="alert">{error}</p>}
+    {open && <Modal title={`Foglio di ${title} · batch`} className="product-spec-viewer" onClose={() => { if (!busy) { setOpen(false); setSheet(null); } }}>
+      <label className="pc-field"><span>Batch / lavorazione</span><select value={phaseId} disabled={busy} onChange={e => { setPhaseId(e.target.value); setSheet(null); setConfirmStart(false); setError(''); }}>
+        <option value="">Seleziona il batch</option>
+        {list.phases.map(p => <option key={p.id} value={p.id}>Batch {p.number} · {p.quantity} {p.unit} · {p.lotCode || 'Lotto da assegnare'} · {states[p.executionStatus] || p.executionStatus} · {p.resource}{p.phase === 7 ? ' · Astucciatura' : ''}</option>)}
+      </select></label>
+      {!list.phases.length && <p>Nessuna lavorazione di {title} disponibile per questo ordine.</p>}
+      <button type="button" disabled={!phaseId || busy} onClick={load}>Apri foglio del batch</button>
+      {error && <p role="alert" className="pc-error">{error}</p>}
+      {busy && <p role="status">Operazione in corso…</p>}
+      {sheet && <iframe ref={frame} title={`Foglio di ${title}`} src={sheet.url}/>}
+      {confirmStart && <p>Confermi l’avvio del batch {phase?.number} selezionato su {phase?.resource}?</p>}
+      <footer><button type="button" disabled={busy} onClick={() => { setOpen(false); setSheet(null); }}>Chiudi</button>
+        <button type="button" disabled={!sheet || busy} onClick={() => act('print')}><Printer size={17}/>Stampa foglio</button>
+        {phase?.executionStatus === 'NOT_STARTED' && <button type="button" disabled={!sheet || busy} onClick={() => confirmStart ? act('start') : setConfirmStart(true)}><Play size={17}/>{confirmStart ? 'Conferma avvio' : 'Avvia lavorazione'}</button>}
+      </footer>
+    </Modal>}
+  </>;
+}

@@ -237,6 +237,7 @@ export function createProgremesProductionClient({ env = process.env, fetchImpl =
   return {
     formulaSpecification: payload => call('/api/workspace/v1/formula-specification', payload),
     preparationActions: payload => call('/api/workspace/v1/preparation-actions', payload, payload.operation === 'sheet' ? 120_000 : undefined),
+    batchSheet: payload => call('/api/workspace/v1/batch-sheet', payload),
     packagingSheet: payload => call('/api/workspace/v1/packaging-sheet', payload),
     packagingActions: payload => call('/api/workspace/v1/packaging-actions', payload),
     requestEnabled: () => enabled("PROGREMES_PRODUCTION_REQUESTS_ENABLED", env),

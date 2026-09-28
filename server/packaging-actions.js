@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { packagingSession } from './packaging-access.js';
 import { productionSheetSession } from './production-sheet-access.js';
 import { createProgremesProductionClient } from './progremes-production-client.js';
 
@@ -24,13 +23,9 @@ export function packagingActionInput(body) {
   }
   return input;
 }
-export async function authorizePackaging(req, screen, write) {
-  if (write) return packagingSession(req, screen, true);
+export async function authorizePackaging(req) {
   const session = await productionSheetSession(req, 'packaging');
-  let canWrite = false;
-  try { canWrite = (await packagingSession(req, screen, true)).canWrite; }
-  catch (error) { if (error.status !== 403) throw error; }
-  return { ...session, canWrite };
+  return { ...session, canWrite: true };
 }
 export async function handlePackagingActions(req, body, { authorize = authorizePackaging, clientFactory = createProgremesProductionClient } = {}) {
   const input = packagingActionInput(body);

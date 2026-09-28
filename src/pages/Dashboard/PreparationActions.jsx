@@ -1,10 +1,10 @@
+import BatchSheetActions from './BatchSheetActions';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Monitor, Play, Printer, Square } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Modal } from '../../features/production-costs/common';
 import ProductSpecificationViewButton from '../Documentation/ProductSpecificationViewButton';
 import '../Documentation/ProductSpecification.css';
-import ProgreMesLaunch from '../ProgreMes/ProgreMesLaunch';
 import { stationActionUrl } from './productionCalendar';
 import { requestProgremesNavigation } from '../ProgreMes/progremesWindow';
 
@@ -57,11 +57,10 @@ export default function PreparationActions({ activity, onStarted }) {
       onStarted?.(); window.dispatchEvent(new Event('workspace:production-changed'));
     }
   } };
-  const actionUrl = stationActionUrl(activity, mode);
-  async function openStation() {
+  async function openStation(operation) {
     const popup = window.open('about:blank', '_blank', 'popup=yes,width=800,height=960,resizable=yes,scrollbars=yes');
     try {
-      const search = `?destination=station&station=${encodeURIComponent(activity.resourceCode)}`;
+      const search = `?destination=station&station=${encodeURIComponent(activity.resourceCode)}${operation ? `&stationAction=${operation}&orderId=${activity.productionOrderId}` : ""}`;
       const url = await requestProgremesNavigation(session?.access_token, { screenCode: 'progremes.PlanningProduction', search });
       if (popup) { popup.opener = null; popup.location.replace(url); }
     } catch (cause) { popup?.close(); setError(cause.message); }
@@ -69,10 +68,12 @@ export default function PreparationActions({ activity, onStarted }) {
   return <>
     <ProductSpecificationViewButton articleCode={knownBulkCode || context?.bulkCode || (customerScoped ? activity.articleCode : '')} description={activity.descrizione || context?.description}/>
     {!customerScoped && <>
-    <button type="button" disabled={!context?.canPrint} onClick={openSheet}><Printer size={17}/>Stampa foglio produzione</button>
-    <button type="button" disabled={!activity.panelUrl || !context?.canPrint} onClick={openStation}><Monitor size={17}/>Apri station</button>
-    <button type="button" disabled={!context?.canWrite || !stationActionUrl(activity, 'start')} onClick={() => { setMode('start'); setError(''); }}><Play size={17}/>Avvia lavorazione</button>
-    <button type="button" disabled={!context?.canWrite || !stationActionUrl(activity, 'close')} onClick={() => { setMode('close'); setError(''); }}><Square size={17}/>Concludi lavorazione</button>
+    <BatchSheetActions productionOrderId={activity.productionOrderId} kind="production"><button type="button" disabled={!context?.canPrint} onClick={openSheet}><Printer size={17}/>Stampa foglio produzione</button>
+
+    <button type="button" disabled={!context?.canWrite || !stationActionUrl(activity, 'start')} onClick={() => openStation('start')}><Play size={17}/>Avvia lavorazione</button>
+    </BatchSheetActions>
+    <button type="button" disabled={!activity.panelUrl || !context?.canPrint} onClick={() => openStation()}><Monitor size={17}/>Apri station</button>
+    <button type="button" disabled={!context?.canWrite || !stationActionUrl(activity, 'close')} onClick={() => openStation('close')}><Square size={17}/>Concludi lavorazione</button>
     {!context && !error && <p role="status">Caricamento dati preparazione…</p>}
     {context && !context.bulkCode && <p role="status">Nessun codice semilavorato associato alla formula dell’ordine.</p>}
     {!mode && error && <p role="alert" className="pc-error">{error}</p>}
@@ -83,10 +84,6 @@ export default function PreparationActions({ activity, onStarted }) {
       {sheet && <>{sheet.messages?.map((message, i) => <p key={i} className="pc-note">{message}</p>)}<iframe ref={frame} title="Foglio di produzione" src={sheet.url}/></>}
       <footer><button type="button" disabled={busy} onClick={close}>Chiudi</button>{sheet && <a href={sheet.url} download={sheet.fileName}>Scarica PDF</a>}<button type="button" disabled={busy || !sheet} onClick={print}><Printer size={17}/>{busy ? 'Preparazione…' : 'Stampa foglio produzione'}</button></footer>
     </Modal>}
-    {(mode === 'start' || mode === 'close') && actionUrl && <Modal className="station-card-action" title={mode === 'start' ? 'Avvia lavorazione' : 'Concludi lavorazione'} onClose={close}>
-      <strong>{activity.orderNumber} · {activity.resource}</strong>
-      <ProgreMesLaunch inDialog screenCode="progremes.PlanningProduction" search={actionUrl.slice(actionUrl.indexOf('?'))}/>
-      <footer><button type="button" onClick={close}>Chiudi</button></footer>
-    </Modal>}
+
   </>;
 }

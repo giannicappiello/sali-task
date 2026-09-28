@@ -7,6 +7,7 @@ import ThermalLabel from './ThermalLabel';
 export default function PackagingOperationalActions({ productionOrderId, resourceCode, orderNumber, articleCode, operationType, onStarted }) {
   const { session } = useAuth();
   const [mode, setMode] = useState(''), [data, setData] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  const [batchManaged, setBatchManaged] = useState(null);
   const [count, setCount] = useState(1), [pieces, setPieces] = useState(0);
   const request = useCallback(async (operation, extra = {}, signal) => {
     const response = await fetch('/api/production/actions', { method: 'POST', signal,
@@ -16,6 +17,16 @@ export default function PackagingOperationalActions({ productionOrderId, resourc
     if (!response.ok) throw new Error(value.error || 'Operazione MES non riuscita.');
     return value;
   }, [session?.access_token, productionOrderId, resourceCode]);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/production/actions', { method:'POST', signal:controller.signal,
+      headers:{Authorization:`Bearer ${session?.access_token}`, 'Content-Type':'application/json'},
+      body:JSON.stringify({action:'batch_sheet', productionOrderId, kind:'packaging', operation:'list'}) })
+      .then(async response => { if (!response.ok) throw new Error('Verifica batch non disponibile.'); return response.json(); })
+      .then(value => { if (!controller.signal.aborted) setBatchManaged(value.managed); })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [productionOrderId, session?.access_token]);
   useEffect(() => {
     if (!mode) return undefined;
     const controller = new AbortController();
@@ -60,7 +71,7 @@ export default function PackagingOperationalActions({ productionOrderId, resourc
   const unavailable = !Number.isSafeInteger(Number(productionOrderId)) || Number(productionOrderId) <= 0;
   return <><button type="button" disabled={unavailable} onClick={() => open('labels')}><Tag size={17}/>Etichetta termica</button>
     <button type="button" disabled={unavailable || !resourceCode} onClick={() => open('data')}>Dati filling</button>
-    <button type="button" disabled={unavailable || !resourceCode || operationType !== 'Packaging'} onClick={() => open('start')}><Play size={17}/>Avvia confezionamento</button>
+    {batchManaged === false && <button type="button" disabled={unavailable || !resourceCode || operationType !== 'Packaging'} onClick={() => open('start')}><Play size={17}/>Avvia confezionamento</button>}
     {mode === 'labels' && <Modal title="Etichetta termica" onClose={close} className="thermal-label-modal">
       {error && <p role="alert" className="pc-note">{error}</p>}
       {!data && !error && <p role="status">Caricamento etichetta…</p>}
@@ -71,7 +82,7 @@ export default function PackagingOperationalActions({ productionOrderId, resourc
       <div className="packaging-start-summary"><strong>{orderNumber} · {articleCode}</strong><p>Linea: {resourceCode}{data?.resourceName ? ` · ${data.resourceName}` : ''}</p></div>
       {error && <p role="alert" className="pc-note">{error}</p>}
       {!data && !error && <p role="status">Verifica dello stato MES…</p>}
-      {data?.started ? <p role="status">Confezionamento avviato.</p> : data && <p>{data.ready ? (mode === 'data' ? 'Confezionamento da avviare.' : 'Conferma l’avvio su questa linea. MES verifica ODL, foglio, etichette e delibera del semilavorato.') : 'Il confezionamento è già avviato o non è nello stato Da avviare.'}</p>}
+      {data?.batchManaged ? <ul>{data.phases.map(p => <li key={`${p.number}-${p.lotCode}`}>Batch {p.number} · {p.quantity} {p.unit} · {p.lotCode || 'Lotto da assegnare'} · {({NOT_STARTED:'Da avviare',RUNNING:'In lavorazione',COMPLETED:'Completato',SUSPENDED:'Sospeso',CLOSING:'In chiusura'})[p.executionStatus] || p.executionStatus}</li>)}</ul> : data?.started ? <p role="status">Confezionamento avviato.</p> : data && <p>{data.ready ? (mode === 'data' ? 'Confezionamento da avviare.' : 'Conferma l’avvio su questa linea. MES verifica ODL, foglio, etichette e delibera del semilavorato.') : 'Il confezionamento è già avviato o non è nello stato Da avviare.'}</p>}
       <footer className="packaging-start-actions"><button type="button" disabled={busy} onClick={close}>Chiudi</button>{mode === 'start' && <button type="button" disabled={busy || !data?.ready || !data?.canWrite} onClick={start}>{busy ? 'Avvio…' : 'Conferma avvio'}</button>}</footer>
     </Modal>}
   </>;

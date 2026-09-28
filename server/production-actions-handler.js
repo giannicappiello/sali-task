@@ -1,3 +1,4 @@
+import { handleBatchSheet } from './batch-sheet.js';
 import { handlePreparationActions } from './preparation-actions.js';
 import { handlePackagingActions } from './packaging-actions.js';
 import { handlePackagingSheet } from './packaging-sheet.js';
@@ -7,6 +8,7 @@ export function createProductionActionsHandler(handlers = {
   preparation_actions: handlePreparationActions,
   packaging_actions: handlePackagingActions,
   packaging_sheet: handlePackagingSheet,
+  batch_sheet: handleBatchSheet,
 }) {
   return async (req, res) => {
     res.setHeader('Cache-Control', 'private, no-store');

@@ -4,7 +4,7 @@ import { workspaceReadTools } from './workspace-search.js';
 import { operationalReadTools } from './operational-read.js';
 import { recoveryTools, createRecoveryStep, RECOVERY_INSTRUCTIONS } from './operation-recovery.js';
 import { conversationMemoryTools } from './conversation-memory.js';
-import { developmentTools, handleDevelopmentSettings } from './development-jobs.js';
+import { cancelConversationDevelopment, developmentTools, handleDevelopmentSettings } from './development-jobs.js';
 import { formulaReadTools } from './formula-revisions.js';
 import { lotReadTools } from './lot-maintenance.js';
 import { machineReadTools } from './machine-instructions.js';
@@ -227,6 +227,7 @@ export async function authorizeAIRequest(req, { bypassAIEntitlements = false } =
   const reportedCapabilities = capabilitiesResult.data || {};
   const baseCapabilities = workspaceAdmin || bypassAIEntitlements ? {
     ...reportedCapabilities,
+    role_ai_level: "conferma",
     module_access: true,
     internal_data: true,
     web_search: true,
@@ -790,6 +791,11 @@ async function chat(auth, body) {
   const prompt = String(body.prompt || submittedMessages.at(-1)?.content || (attachments.length ? "Analizza i documenti allegati e riassumi i dati rilevanti." : "")).trim().slice(0, 12000);
   if (!prompt) throw Object.assign(new Error("Scrivi una richiesta per l’assistente."), { status: 400 });
   const conversationId = await ensureConversation(auth.admin, auth.profile.id, body.conversationId, mode, prompt, body.topicId);
+  const cancellation = await cancelConversationDevelopment(auth, prompt, conversationId);
+  if (cancellation) {
+    await saveExchange(auth.admin, conversationId, prompt, cancellation, [], { mode, cancellation: true });
+    return { conversationId, answer: cancellation, sources: [], capabilities: auth.capabilities };
+  }
   const { data: conversationScope } = await auth.admin.from("ai_conversazioni").select("argomento_id").eq("id", conversationId).eq("utente_id", auth.profile.id).single();
   const [persistedRows, memory] = await Promise.all([
     conversationMessages(auth.admin, auth.profile.id, conversationId),
@@ -846,9 +852,8 @@ async function chat(auth, body) {
     MES_PLAN_SIMULATE: { description: "Prepara anteprima verificabile di migrazione, revisione, conferma piano (60 giorni) o rilascio ODL (7 giorni). Nessun OP/lotto/impegno generato dalla simulazione. Mostrare date prima/dopo, scoperti e blocchi. Le fasi eseguite e gli ODL rilasciati restano protetti. Proporre MES_PLAN_APPLY solo dopo la lettura del riepilogo. La verifica del backup può essere attestata esclusivamente dall'utente; non affermare che è stata fatta senza prova.", inputSchema: jsonSchema(planningRequestSchema), execute: input => planningCall(auth, "simulate", { input }) },
     MES_PLAN_STATUS: { description: "Verifica l'esito persistito di una versione, anche dopo timeout. PREPARING o RECONCILIATION_REQUIRED non significano rilascio completato: mai ripetere creazioni Mexal. MES_ODL_VERIFY controlla lotti già riconciliati senza crearne altri.", inputSchema: jsonSchema({ type: "object", required: ["id"], properties: { id: { type: "string", format: "uuid" } } }), execute: input => planningCall(auth, "get", input) },
   } : {};
-  const tools = mode === "web"
-    ? { ...headingTools, web_search: openai.tools.webSearch({ externalWebAccess: true, searchContextSize: "medium" }) }
-    : { ...productionCostTools(auth, screenContext), ...developmentTools({ ...auth, conversationId, screenContext }), ...recoveryTools(auth, Boolean(controlledTools.MES_PLAN_APPLY)), ...conversationMemoryTools(auth), ...workspaceReadTools(auth), ...operationalReadTools(auth), ...(controlledTools.FORMULA_CREATE_REVISION ? formulaReadTools(auth) : {}), ...(controlledTools.LOT_OVERRIDE ? lotReadTools(auth) : {}), ...(controlledTools.MACHINE_INSTRUCTION_DRAFT ? machineReadTools(auth) : {}), ...headingTools, ...productionTools, ...materialTools, ...priorityTools, ...planningTools, ...controlledTools };
+  const tools = { ...(mode === "web" ? { web_search: openai.tools.webSearch({ externalWebAccess: true, searchContextSize: "medium" }) } : {}),
+    ...productionCostTools(auth, screenContext), ...developmentTools({ ...auth, conversationId, screenContext }), ...recoveryTools(auth, Boolean(controlledTools.MES_PLAN_APPLY)), ...conversationMemoryTools(auth), ...workspaceReadTools(auth), ...operationalReadTools(auth), ...(controlledTools.FORMULA_CREATE_REVISION ? formulaReadTools(auth) : {}), ...(controlledTools.LOT_OVERRIDE ? lotReadTools(auth) : {}), ...(controlledTools.MACHINE_INSTRUCTION_DRAFT ? machineReadTools(auth) : {}), ...headingTools, ...productionTools, ...materialTools, ...priorityTools, ...planningTools, ...controlledTools };
   const model = process.env.AI_MODEL || DEFAULT_MODEL;
   const mutationRequested = mode !== "web" && isControlledMutationRequest(prompt);
   const controlledToolNames = Object.keys(controlledTools);

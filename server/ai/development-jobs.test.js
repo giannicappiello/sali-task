@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateDevelopmentResult, requestDevelopmentJob, developmentTools, readDevelopmentJobs } from './development-jobs.js';
+import { cancelConversationDevelopment, developmentServiceHealth, cancelDevelopmentJob, validateDevelopmentResult, requestDevelopmentJob, developmentTools, readDevelopmentJobs } from './development-jobs.js';
 
 test('explicit admin development requests enter the runnable queue without another confirmation', async () => {
   let inserted;
@@ -53,4 +53,28 @@ test('job readback uses current owner and reports review without pretending it i
   assert.deepEqual(result.job.result.edits, [{ path: 'a.js' }]);
   assert.equal(result.job.result.checks[0].output.length, 4000);
   await assert.rejects(readDevelopmentJobs({ profile: { ruoli: {} } }, 'job'), error => error.status === 403);
+});
+
+test('cancellation is owner scoped, idempotent and refuses late cancellation', async()=>{
+  const id='00000000-0000-4000-8000-000000000000'; let data=[{id,status:'cancelled'}];
+  const auth={profile:{id:'owner',ruoli:{amministratore_workspace:true}},admin:{rpc:async(name,args)=>{
+    assert.equal(name,'cancel_ai_development_job'); assert.deepEqual(args,{p_job_id:id,p_user_id:'owner'});return {data};
+  }}};
+  assert.equal((await cancelDevelopmentJob(auth,id)).developmentJob.status,'cancelled');
+  data=[];await assert.rejects(cancelDevelopmentJob(auth,id),e=>e.status===409);
+  await assert.rejects(cancelDevelopmentJob({profile:{ruoli:{}}},id),e=>e.status===403);
+});
+
+test('service health distinguishes a live heartbeat from a stale associated host',()=>{
+ const now=Date.now();assert.equal(developmentServiceHealth([{active:true,last_seen_at:new Date(now-10000).toISOString()}],now).connected,true);
+ assert.equal(developmentServiceHealth([{active:true,last_seen_at:new Date(now-300000).toISOString()}],now).connected,false);
+ assert.equal(developmentServiceHealth([{active:false,last_seen_at:new Date(now).toISOString()}],now).connected,false);
+});
+test('explicit stop bypasses the model and only cancels this owner conversation',async()=>{
+ const filters=[];const id='00000000-0000-4000-8000-000000000000';
+ const query={select:()=>query,eq:(...args)=>{filters.push(args);return query;},in:async()=>({data:[{id,status:'running'}]})};
+ const auth={profile:{id:'owner',ruoli:{amministratore_workspace:true}},admin:{from:()=>query,rpc:async()=>({data:[{id,status:'cancelled'}]})}};
+ assert.match(await cancelConversationDevelopment(auth,'fermati ed annulla la richiesta','conversation'),/annullato/);
+ assert.deepEqual(filters,[['user_id','owner'],['conversation_id','conversation']]);
+ assert.equal(await cancelConversationDevelopment(auth,'non annullare il lavoro','conversation'),null);
 });

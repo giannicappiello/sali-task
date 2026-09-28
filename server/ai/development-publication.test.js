@@ -65,6 +65,7 @@ test('worker resumes a tested MES publication without regenerating code or updat
     const body = JSON.parse(request.body);
     if (body.action === 'claim') return Response.json({ job });
     if (body.action === 'checkpoint') checkpoints++;
+    else if (body.action === 'begin_publish') return Response.json({ job: { status: 'publishing' } });
     else if (body.action === 'finish') finished = body;
     else assert.fail(`Unexpected worker action ${body.action}`);
     return Response.json({});
@@ -72,4 +73,19 @@ test('worker resumes a tested MES publication without regenerating code or updat
   assert.equal(checkpoints, 2); assert.equal(finished.succeeded, true, finished.error);
   assert.equal(finished.result.published, true);
   assert.equal(finished.result.publication.serverUpdateRequired, true);
+});
+
+for (const denied of ['cancelled', 'expired']) test('worker never pushes when publication gate is '+denied, async () => {
+  const {repo,result,root,git}=await fixture();
+  const job={id:randomUUID(),lease_token:randomUUID(),repository:'mes',publish_requested:true,result};
+  let finished;
+  await run({workspaceUrl:'https://workspace.example.invalid',token:'a'.repeat(64),outputDirectory:join(root,'results'),repositories:{mes:{...repo,image:'unused',checks:[['unused']]}}},{once:true,transport:async(_url,request)=>{
+    const body=JSON.parse(request.body);
+    if(body.action==='claim') { assert.equal(body.protocolVersion,2); return Response.json({job}); }
+    if(body.action==='begin_publish') return Response.json({error:denied},{status:409});
+    if(body.action==='finish') finished=body;
+    return Response.json({});
+  }});
+  assert.equal(finished.succeeded,false);
+  assert.equal(git('ls-remote','origin','refs/heads/main').split(/\s/)[0],result.baseCommit);
 });

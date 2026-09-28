@@ -58,9 +58,54 @@ export async function requestDevelopmentPublication(auth, id) {
   return { developmentJob: data, changed: false, message: 'Pubblicazione accodata. Nessuna nuova elaborazione del codice; il servizio verificherà commit remoto e produzione.' };
 }
 
+export function developmentServiceHealth(hosts, now = Date.now()) {
+  const active = (hosts || []).filter(host => host.active);
+  return { connected: active.some(host => now - Date.parse(host.last_seen_at) < 120000),
+    message: active.length ? 'Il servizio deve rinnovare il collegamento entro due minuti. Un lavoro in coda non è ancora eseguito.' : 'Nessun servizio di sviluppo associato.' };
+}
+
+export async function readDevelopmentService(auth) {
+  if (!canDevelop(auth)) throw fail('Accesso amministrativo richiesto.', 403);
+  const { data, error } = await auth.admin.from('ai_development_hosts').select('id,name,active,last_seen_at,diagnostics');
+  if (error) throw error;
+  return { hosts: data || [], ...developmentServiceHealth(data) };
+}
+
+export async function cancelDevelopmentJob(auth, id) {
+  if (!canDevelop(auth)) throw fail('Accesso amministrativo richiesto.', 403);
+  if (!/^[a-f0-9-]{36}$/i.test(id || '')) throw fail('Identificativo lavoro non valido.');
+  const { data, error } = await auth.admin.rpc('cancel_ai_development_job', { p_job_id: id, p_user_id: auth.profile.id });
+  if (error) throw error;
+  const job = data?.[0];
+  if (!job) throw fail('Lavoro non accessibile o pubblicazione già iniziata: verificare lo stato. Annullamento non eseguito.', 409);
+  return { changed: true, developmentJob: job, message: 'Lavoro annullato. La pubblicazione è bloccata.' };
+}
+
+export async function cancelConversationDevelopment(auth, prompt, conversationId) {
+  if (!canDevelop(auth) || !/^(?:fermati|stop|annulla (?:il lavoro|la richiesta))(?:\s+(?:e|ed)\s+annulla(?:\s+(?:il lavoro|la richiesta))?)?[.!\s]*$/i.test(prompt)) return null;
+  const { data, error } = await auth.admin.from('ai_development_jobs').select('id,status')
+    .eq('user_id', auth.profile.id).eq('conversation_id', conversationId).in('status', ['proposed', 'queued', 'running', 'publishing']);
+  if (error) throw error;
+  if (!data?.length) return null;
+  const outcomes = [];
+  for (const job of data) {
+    try { await cancelDevelopmentJob(auth, job.id); outcomes.push(`${job.id}: annullato, pubblicazione bloccata.`); }
+    catch (error) { if (error.status !== 409) throw error; outcomes.push(`${job.id}: annullamento non eseguito; pubblicazione già iniziata o stato cambiato. Verificare l’esito.`); }
+  }
+  return outcomes.join('\n');
+}
+
 export function developmentTools(auth) {
   if (!canDevelop(auth)) return {};
-  return { CODE_LOCATE_UI: {
+  return { CODE_SERVICE_STATUS: {
+    description: 'Verifica il collegamento reale del coordinatore. Se una richiesta resta queued, leggere questo stato e CODE_JOB_STATUS; non inventare avanzamenti e non duplicare il lavoro.',
+    inputSchema: jsonSchema({ type: 'object', additionalProperties: false, properties: {} }),
+    execute: () => readDevelopmentService(auth),
+  }, CODE_JOB_CANCEL: {
+    description: 'Annulla il lavoro del richiedente quando chiede di fermarsi. Usa CODE_JOB_LIST per trovare l’identificativo. Non creare altri lavori. Se la pubblicazione è iniziata, riporta il blocco senza dichiarare l’annullamento.',
+    inputSchema: jsonSchema({ type: 'object', additionalProperties: false, required: ['id'], properties: { id: { type: 'string', format: 'uuid' } } }),
+    execute: input => cancelDevelopmentJob(auth, input.id),
+  }, CODE_LOCATE_UI: {
     description: 'Identifica il popup o la schermata aperta e i componenti candidati nel repository. I popup interni non hanno necessariamente un URL autonomo: non chiederlo. Usa questa lettura prima di una modifica UI se il componente non è chiaro; i file vanno verificati nella revisione corrente dal servizio di sviluppo.',
     inputSchema: jsonSchema({ type: 'object', additionalProperties: false, properties: {} }),
     execute: () => ({ target: resolveUiSourceContext(auth.screenContext), changed: false }),
@@ -107,7 +152,7 @@ export async function handleDevelopmentSettings(auth, body) {
       auth.admin.from('ai_development_jobs').select(fields).order('created_at', { ascending: false }).limit(50),
     ]);
     if (hosts.error || jobs.error) throw hosts.error || jobs.error;
-    return { hosts: hosts.data, jobs: jobs.data };
+    return { hosts: hosts.data, jobs: jobs.data, service: developmentServiceHealth(hosts.data) };
   }
   if (body.action === 'development_pair') {
     const token = randomBytes(32).toString('hex');
@@ -131,6 +176,7 @@ export async function handleDevelopmentSettings(auth, body) {
     if (!data) throw fail('Lavoro già gestito o appartenente a un altro amministratore.', 409);
     return { job: data };
   }
+  if (body.action === 'development_cancel') return cancelDevelopmentJob(auth, body.jobId);
   if (body.action === 'development_request') return requestDevelopmentJob(auth, body);
   if (body.action === 'development_publish') return requestDevelopmentPublication(auth, body.jobId);
   if (body.action === 'development_status') return readDevelopmentJobs(auth, body.jobId);
@@ -149,13 +195,14 @@ export async function handleDevelopmentWorker(req) {
   const heartbeat = await admin.from('ai_development_hosts').update({ last_seen_at: new Date().toISOString() }).eq('id', host.id);
   if (heartbeat.error) throw heartbeat.error;
   if (body.action === 'claim') {
+    if (body.protocolVersion !== 2) throw fail('Aggiornare il coordinatore AI: protocollo di annullamento richiesto.', 409);
     const { data, error: claimError } = await admin.rpc('claim_ai_development_job', { p_host_id: host.id });
     if (claimError) throw claimError;
     return { job: data?.[0] || null };
   }
-  if (!['heartbeat', 'finish', 'generate', 'checkpoint'].includes(body.action)) throw fail('Operazione worker non valida.');
+  if (!['heartbeat', 'finish', 'generate', 'checkpoint', 'begin_publish'].includes(body.action)) throw fail('Operazione worker non valida.');
   const { data: current, error: currentError } = await admin.from('ai_development_jobs').select('*')
-    .eq('id', body.jobId).eq('host_id', host.id).eq('lease_token', body.leaseToken).eq('status', 'running')
+    .eq('id', body.jobId).eq('host_id', host.id).eq('lease_token', body.leaseToken).in('status', ['running', 'publishing'])
     .gt('lease_until', new Date().toISOString()).maybeSingle();
   if (currentError) throw currentError;
   if (!current) throw fail('Sessione worker scaduta o lavoro non assegnato.', 409);
@@ -163,6 +210,7 @@ export async function handleDevelopmentWorker(req) {
   if (ownerError) throw ownerError;
   if (!owner?.attivo || owner.ruoli?.amministratore_workspace !== true) throw fail('Autorizzazione del richiedente revocata.', 403);
   if (body.action === 'generate') {
+    if (current.status !== 'running') throw fail('Pubblicazione già iniziata.', 409);
     const { data: reserved, error: reserveError } = await admin.rpc('reserve_ai_development_generation', {
       p_job_id: current.id, p_host_id: host.id, p_lease_token: body.leaseToken, p_commit: body.source?.baseCommit,
     });
@@ -170,6 +218,15 @@ export async function handleDevelopmentWorker(req) {
     if (!reserved?.length) throw fail('Limite di elaborazioni raggiunto, revisione cambiata o autorizzazione revocata.', 409);
     const result = await generateDevelopmentChange(admin, current, body.source || {});
     return result;
+  }
+  if (body.action === 'begin_publish') {
+    validateDevelopmentResult(body.result, current.source_commit);
+    const { data, error } = await admin.rpc('begin_ai_development_publication', {
+      p_job_id: current.id, p_host_id: host.id, p_lease_token: body.leaseToken,
+    });
+    if (error) throw error;
+    if (!data?.length) throw fail('Pubblicazione bloccata: lavoro annullato o sessione scaduta.', 409);
+    return { job: data[0] };
   }
   if (body.action === 'checkpoint') {
     if (!current.publish_requested) throw fail('Pubblicazione non richiesta.', 403);
@@ -186,7 +243,7 @@ export async function handleDevelopmentWorker(req) {
   if (update.result && current.result?.requestContext) update.result = { ...update.result, requestContext: current.result.requestContext };
   if (JSON.stringify(update).length > 2000000) throw fail('Risultato troppo grande.', 413);
   const { data, error: updateError } = await admin.from('ai_development_jobs').update(update)
-    .eq('id', body.jobId).eq('host_id', host.id).eq('lease_token', body.leaseToken).eq('status', 'running')
+    .eq('id', body.jobId).eq('host_id', host.id).eq('lease_token', body.leaseToken).in('status', ['running', 'publishing'])
     .gt('lease_until', new Date().toISOString()).select('id,status').maybeSingle();
   if (updateError) throw updateError;
   if (!data) throw fail('Sessione worker scaduta o lavoro non assegnato.', 409);

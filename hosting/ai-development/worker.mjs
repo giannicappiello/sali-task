@@ -103,18 +103,20 @@ export async function run(config, { transport = fetch, once = false } = {}) {
   if (!/^[a-f0-9]{64}$/.test(config.token || '')) throw new Error('Credenziale di associazione mancante.');
   const outputRoot = resolve(config.outputDirectory);
   await mkdir(outputRoot, { recursive: true });
+  const report = async state => writeFile(join(outputRoot, 'worker-status.json'), JSON.stringify({ ...state, observedAt: new Date().toISOString() })).catch(() => {});
   const api = async body => {
     const response = await transport(endpoint, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(210000),
       headers: { Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const result = await response.json();
     if (!response.ok || result.success === false) throw new Error(result.error || `Workspace: ${response.status}`);
+    await report({ connected: true, action: body.action, jobId: body.jobId || result.job?.id || null });
     return result;
   };
   for (;;) {
     let job;
     let completedResult;
-    try { ({ job } = await api({ action: 'claim' })); }
-    catch (error) { process.stderr.write(`${new Date().toISOString()} Collegamento: ${error.message}\n`); await delay(30000); continue; }
+    try { ({ job } = await api({ action: 'claim', protocolVersion: 2 })); }
+    catch (error) { await report({ connected: false, error: String(error.message).slice(0,1000) }); process.stderr.write(`${new Date().toISOString()} Collegamento: ${error.message}\n`); if (once) throw error; await delay(30000); continue; }
     if (!job) { if (once) return; await delay(15000); continue; }
     const identity = { jobId: job.id, leaseToken: job.lease_token };
     let leaseLost = false;
@@ -128,6 +130,7 @@ export async function run(config, { transport = fetch, once = false } = {}) {
         completedResult = result;
         await api({ action: 'checkpoint', ...identity, result });
         if (leaseLost) throw new Error('Sessione persa prima della pubblicazione.');
+        await api({ action: 'begin_publish', ...identity, result });
         result.publication = await publishVerifiedRevision(repo, result, execute);
         await api({ action: 'checkpoint', ...identity, result });
         if (job.repository === 'workspace') result.publication = await verifyWorkspaceDeployment(repo, result.revision.commit, execute);

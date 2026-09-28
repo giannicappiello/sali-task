@@ -93,3 +93,15 @@ dai quattro tentativi di compilazione e riparazione. Il database limita a 24 le
 chiamate totali e mantiene vincoli su revisione, sessione e autorizzazioni.
 I risultati registrano separatamente acquisizioni e test. Aggiornare anche il
 worker locale e applicare `20260924170000_ai_source_discovery_budget.sql`.
+
+## Annullamento e diagnosi (protocollo 2)
+Il coordinatore deve essere aggiornato insieme al backend e alla migrazione
+20260928190000_ai_development_cancellation.sql. I vecchi worker non possono acquisire nuovi lavori.
+CODE_SERVICE_STATUS espone il heartbeat; Results/worker-status.json registra il collegamento locale.
+CODE_JOB_CANCEL e il pulsante Annulla lavoro invalidano la sessione prima della pubblicazione.
+Un comando semplice "fermati" nella chat annulla deterministicamente i lavori della stessa
+conversazione, senza una chiamata al modello. La fase publishing è acquisita atomicamente:
+se è già iniziata l'annullamento restituisce un conflitto, mai una falsa conferma.
+Dopo un crash i lavori sono interrupted e non vengono ripubblicati automaticamente.
+Il deployment READY attesta il rilascio del commit, non il funzionamento della UI o le migrazioni.
+La verifica funzionale resta esplicitamente distinta e non viene inventata.

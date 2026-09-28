@@ -11,6 +11,8 @@ import { useAuth } from "../../contexts/AuthContext";
 import CrmPeriodFilter, { useCrmPeriod } from "./CrmPeriodFilter";
 import { CrmPageHeader, CrmSectionNav } from "./CrmWorkspaceUI";
 import { formatDate, formatMoney } from "./crmConfig";
+import { loadAllQueryRows } from "./crmDataset";
+import { costSummary } from "./workspaceCostModel";
 import "./commercial-control-dashboard.css";
 
 const SCOPE = {
@@ -48,7 +50,7 @@ const CONTROL_KPI_INFO = {
   "Clienti Mexal attivi": "Numero di clienti distinti con anagrafica Mexal attiva nel perimetro selezionato.",
   "Nuovi clienti": "Clienti la cui prima vendita documentata ricade nel periodo selezionato.",
   "Clienti persi": "Clienti senza riordino da oltre 2,5 volte la propria frequenza storica individuale.",
-  "Consuntivi Attività": "Apri la rendicontazione dei costi di progetti e attività nel periodo selezionato.",
+  "Consuntivi Attività": "Totale dei costi rendicontati di progetti e attività nel periodo selezionato, come in Rendicontazione.",
   "Forecast ponderato": "Somma del valore di ogni progetto moltiplicato per la relativa probabilità.",
   Forecast: "Somma del valore di ogni progetto moltiplicato per la relativa probabilità.",
   "Riordini attesi": "Clienti che hanno raggiunto la propria data di riordino prevista in base alla frequenza storica.",
@@ -136,6 +138,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
   const [openOrders, setOpenOrders] = useState(false);
   const [privateDetail, setPrivateDetail] = useState(null);
   const [error, setError] = useState("");
+  const [costTotal, setCostTotal] = useState(null);
   const activeRequest = useRef(null);
   const requestSequence = useRef(0);
   const compare = searchParams.get("compare") || "previous_period";
@@ -183,9 +186,15 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
     let countryRequest = supabase.rpc("crm_customer_country_catalog", { p_crm_type: null });
     if (typeof request.abortSignal === "function") request = request.abortSignal(controller.signal);
     if (typeof countryRequest.abortSignal === "function") countryRequest = countryRequest.abortSignal(controller.signal);
-    const [dashboardResult, countryResult] = await Promise.all([request, countryRequest]);
+    const costsRequest = scope === "private" ? loadAllQueryRows((from, to) =>
+      supabase.from("crm_workspace_costs").select("id,amount")
+        .gte("cost_date", requestArguments.p_from).lte("cost_date", requestArguments.p_to)
+        .order("id").range(from, to).abortSignal(controller.signal)
+    ) : Promise.resolve({ data: [], error: null });
+    const [dashboardResult, countryResult, costsResult] = await Promise.all([request, countryRequest, costsRequest]);
     if (sequence !== requestSequence.current || controller.signal.aborted) return;
     activeRequest.current = null;
+    setCostTotal(costsResult.error ? null : costSummary(costsResult.data || []).total);
     const loadError = dashboardResult.error || countryResult.error;
     if (loadError) {
       setError(loadError.message);
@@ -202,9 +211,10 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
         attention: withCountry(dashboardResult.data?.attention),
         top_customers: withCountry(dashboardResult.data?.top_customers),
       });
+      if (costsResult.error) setError(`Rendicontazione: ${costsResult.error.message}`);
     }
     setLoading(false);
-  }, [requestArguments]);
+  }, [requestArguments, scope]);
 
   useEffect(() => {
     let cancelled = false;
@@ -249,7 +259,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
     ];
     if (scope === "global") return [...common, ["Clienti persi", number(totals.lost_customers), "Frequenza individuale oltre 2,5×", "reorder-lost"]];
     if (scope === "private") return [...common.filter(([label]) => label !== "OC aperti"),
-      ["Consuntivi Attività", "Apri", "Rendicontazione di progetti e attività", "rendicontazione"],
+      ["Consuntivi Attività", costTotal == null ? "—" : formatMoney(costTotal), "Totale rendicontato nel periodo", "rendicontazione"],
       ["Forecast ponderato", formatMoney(totals.weighted_pipeline), "Valore progetto × probabilità", "pipeline"],
       ["Riordini attesi", number(totals.reorders_due), "Frequenza storica individuale", "reorders"]];
     return [...common.filter(([label]) => label !== "OCT aperti"),
@@ -261,7 +271,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
       ["Crescita fatturato", percentage(invoiceDelta), "Rispetto al confronto scelto", "trend"],
       ["Forecast", formatMoney(totals.weighted_pipeline), "Pipeline ponderata reale", "pipeline"],
     ];
-  }, [data?.attention, invoiceDelta, scope, totals]);
+  }, [costTotal, data?.attention, invoiceDelta, scope, totals]);
 
   const dashboard = <section className={`crm-control-dashboard scope-${scope}`} aria-label={config.title}>
     <div className="crm-control-filterbar">

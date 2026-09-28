@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { FileText, Play, Printer } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Modal } from '../../features/production-costs/common';
-import PackagingSheet from './PackagingSheet';
 import './BatchSheetActions.css';
 
 const states = {NOT_STARTED:'Da avviare', RUNNING:'In lavorazione', COMPLETED:'Completato', SUSPENDED:'Sospeso', CLOSING:'In chiusura'};
@@ -35,9 +34,12 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
     if (!open || !phaseId) return;
     const controller = new AbortController();
     setBusy(true); setError(''); setSheet(null); setConfirmStart(false);
-    request('sheet', { phaseId }, controller.signal).then(value => {
+    request('sheet', { phaseId }, controller.signal).then(async value => {
+      const blob = value.packagingSheet
+        ? (await import('./packagingSheetPdf.js')).packagingSheetPdf(value.packagingSheet)
+        : new Blob([Uint8Array.from(atob(value.pdfBase64), c => c.charCodeAt(0))], { type: 'application/pdf' });
       if (controller.signal.aborted) return;
-      const url = URL.createObjectURL(new Blob([Uint8Array.from(atob(value.pdfBase64), c => c.charCodeAt(0))], { type: 'application/pdf' }));
+      const url = URL.createObjectURL(blob);
       setSheet({ ...value, url });
     }).catch(cause => { if (!controller.signal.aborted) setError(cause.message); })
       .finally(() => { if (!controller.signal.aborted) setBusy(false); });
@@ -48,10 +50,7 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
     try {
       await request(operation, { phaseId: sheet.phaseId, contentHash: sheet.contentHash });
       if (operation === 'print') {
-        if (sheet.packagingSheet) {
-          const { printPackagingSheet } = await import('./printPackagingSheet.jsx');
-          await printPackagingSheet(sheet.packagingSheet);
-        } else frame.current?.contentWindow?.print();
+        frame.current?.contentWindow?.print();
       }
       else {
         setList(await request('list')); setConfirmStart(false);
@@ -74,7 +73,7 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
       {error && !sheet && phaseId && <button type="button" disabled={busy} onClick={() => setLoadAttempt(value => value + 1)}>Riprova apertura foglio</button>}
       {error && <p role="alert" className="pc-error">{error}</p>}
       {busy && <p role="status">Operazione in corso…</p>}
-      {sheet && (sheet.packagingSheet ? <div className="packaging-sheet-content"><PackagingSheet sheet={sheet.packagingSheet}/></div> : <iframe ref={frame} title={`Foglio di ${title}`} src={sheet.url}/>)}
+      {sheet && <iframe ref={frame} title={`Foglio di ${title}`} src={sheet.url}/>}
       {confirmStart && <p>Confermi l’avvio del batch {phase?.number} selezionato su {phase?.resource}?</p>}
       <footer><button type="button" disabled={busy} onClick={() => { setOpen(false); setSheet(null); }}>Chiudi</button>
         <button type="button" disabled={!sheet || busy} onClick={() => act('print')}><Printer size={17}/>Stampa foglio</button>

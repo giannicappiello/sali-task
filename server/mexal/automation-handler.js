@@ -1,3 +1,4 @@
+import { createWorkspaceRdp } from '../workspace-rdp-create.js';
 import { assertPrivateCustomerDetailAccess, customerOrderOverview, loadCustomerInvoiceReferences } from '../private-orders-workbench.js';
 import { handleCompanyCalendar } from '../../server/company-calendar.js';
 import { handleHrProductionCalendar } from '../../server/hr-production-calendar.js';
@@ -39,7 +40,6 @@ import { handleCrmBrief } from "../../server/ai/crm-brief.js";
 import { handleAIOrderDocument } from "../../server/ai/order-document.js";
 import { handleWorkspaceDocumentCompose } from "../../server/company-document-composer.js";
 import { cancelProductionRequest, confirmProductionProposal, handleProductionEvent, previewProductionRequest } from "../../server/progremes-production-api.js";
-import { prepareProductionDemand } from "../../server/production-netting.js";
 import { createOctOrdersRunHandler, precheckOctOrders } from "../../server/mexal/sync-oct-orders.js";
 import { handleDigitalConnectionManager } from "../../server/crm/digital-connection-manager.js";
 import { listProductionWorkbench, loadAllProductionOrders, productionWorkbenchDetail } from "../../server/workspacemes-workbench.js";
@@ -688,33 +688,12 @@ export default async function handler(req, res) {
       }
       case "workspacemes_v4_request": {
         const admin = await createAdmin(req, "rdp.create");
-        const prepared = await prepareProductionDemand({
+        return sendSuccess(res, 200, await createWorkspaceRdp({
           admin: admin.supabase,
           orderIds: Array.isArray(body.orderIds) ? body.orderIds : [],
           lineIds: Array.isArray(body.lineIds) ? body.lineIds : [],
-          expectedSnapshotId: body.snapshotId,
-          requestedBy: admin.authUserId,
-          mode: "create",
-        });
-        const requestId = prepared.request?.id;
-        if (!requestId) throw Object.assign(new Error("Creazione RdP V4 non confermata."), { code: "V4_REQUEST_FAILED" });
-        try {
-          const v4Preview = await createWorkspaceV4Preview({ admin: admin.supabase, requestId, requestedBy: admin.authUserId });
-          await admin.supabase.from("workspace_production_requests").update({
-            stato: v4Preview.status, workspace_status: v4Preview.status, last_error_code: null,
-            last_response: { contractVersion: 4, previewId: v4Preview.id, status: v4Preview.status },
-            updated_at: new Date().toISOString(),
-          }).eq("id", requestId);
-          return sendSuccess(res, 200, { requestId, externalId: prepared.request.external_id, status: v4Preview.status, v4Preview });
-        } catch (previewError) {
-          await admin.supabase.from("workspace_production_requests").update({
-            stato: "BLOCKED", workspace_status: "BLOCKED", last_error_code: previewError.code || "V4_PREVIEW_FAILED",
-            last_response: { contractVersion: 4, error: previewError.message, code: previewError.code || "V4_PREVIEW_FAILED" },
-            updated_at: new Date().toISOString(),
-          }).eq("id", requestId);
-          return sendSuccess(res, 200, { requestId, externalId: prepared.request.external_id, status: "BLOCKED",
-            previewError: { code: previewError.code || "V4_PREVIEW_FAILED", message: previewError.message } });
-        }
+          snapshotId: body.snapshotId, requestedBy: admin.authUserId,
+        }));
       }
       case "workspacemes_v4_precheck": {
         const admin = await createAdmin(req, "rdp.create");

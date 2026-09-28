@@ -311,8 +311,11 @@ export async function prepareProductionDemand({
   expectedSnapshotId = null,
   requestedBy = null,
   generateRequestGeneration = () => randomBytes(16).toString("hex"),
+  recordRpc = "record_workspace_production_demand",
+  validateDemand = null,
 }) {
   const builtDemand = await buildProductionDemand({ admin, orderIds, lineIds, conversions });
+  if (validateDemand) await validateDemand(builtDemand);
   const demand = await reserveOctRevisions(admin, builtDemand, mode !== "preview");
   const capturedAt = new Date().toISOString();
   const stableDemand = productionDemandContract(demand);
@@ -346,7 +349,7 @@ export async function prepareProductionDemand({
     capturedAt,
   };
   const snapshotHash = hash({ ...snapshot, capturedAt: undefined });
-  const { data, error } = await admin.rpc("record_workspace_production_demand", {
+  const { data, error } = await admin.rpc(recordRpc, {
     p_create_request: mode !== "preview",
     p_idempotency_key: idempotencyKey,
     p_demand_hash: demandHash,

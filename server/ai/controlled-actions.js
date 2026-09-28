@@ -9,6 +9,7 @@ import { formulaCall, formulaRevisionSchema } from './formula-revisions.js';
 import { lotCall, lotConfirmationSchema, assertLotPreview } from './lot-maintenance.js';
 import { productBulkSchema, productChangeSchema, productChangePreview } from './product-changes.js';
 import { machineCall, machineDraftSchema } from './machine-instructions.js';
+import { rdpCreateSchema, proposeRdpCreation, validateRdpSnapshot, executeRdpCreation } from './rdp-create.js';
 
 const text = { type: "string", maxLength: 500 };
 const identifier = { type: "string", minLength: 1, maxLength: 160 };
@@ -61,6 +62,8 @@ const externalEntitySchema = (entityLabel) => ({
 });
 
 export const CONTROLLED_AI_ACTIONS = Object.freeze({
+  RDP_CREATE: { system: 'mes', risk: 'write', permission: 'rdp.create', schema: rdpCreateSchema,
+    description: 'Crea una nuova RdP da OC verificato usando snapshotId di RDP_CREATE_PREVIEW come targetId. Supporta OC con precedente RdP annullata, preservandone lo storico. Non crea OP, lotti o avvii. Esegue il servizio Workspace e il calcolo MES.' },
   MES_PLAN_APPLY: { system: "mes", risk: "destructive", permission: "progremes.write", schema: planningConfirmSchema },
   MES_ODL_VERIFY: { system: "mes", risk: "write", permission: "progremes.write", schema: planningConfirmSchema },
   MES_MATERIAL_REALLOCATE: { system: "mes", risk: "destructive", permission: "progremes.write", schema: materialReallocationSchema },
@@ -170,6 +173,7 @@ function stableValue(value) {
 export async function proposeControlledAction(auth, tool, input, { correlationId = randomUUID() } = {}) {
   const descriptor = CONTROLLED_AI_ACTIONS[tool];
   if (!descriptor || !canPropose(auth, descriptor)) throw Object.assign(new Error("Azione AI non autorizzata per questo profilo."), { status: 403 });
+  if (tool === 'RDP_CREATE') input = await proposeRdpCreation(auth, input);
   if (['ARTICLE_UPDATE', 'ARTICLE_BULK_UPDATE'].includes(tool)) input = await productChangePreview(auth, tool, input);
   if (tool === 'UI_CONFIGURE_VIEW') {
     let query = auth.scoped.from('workspace_builder_scoped_layouts').select('id,current_version')
@@ -236,6 +240,16 @@ function requiredEnvironment(name) {
 }
 
 async function executeExternalAction(auth, pending) {
+  if (pending.tool === 'RDP_CREATE') {
+    let result = {}, failure = null;
+    try { result = await executeRdpCreation(auth, pending); }
+    catch (error) { failure = `${error.message} Verificare le RdP dell’OC prima di ripetere la creazione.`; }
+    const { data, error } = await auth.admin.rpc('complete_workspace_external_ai_action', {
+      p_proposal_id: pending.id, p_succeeded: !failure, p_result: result, p_error: failure,
+    });
+    if (error) throw error;
+    return { action: Array.isArray(data) ? data[0] : data, failure };
+  }
   const path = String(process.env.PROGREMES_AI_ACTION_PATH || "/api/workspace/ai/actions/apply");
   // Evidence remains in the durable audit. MES already owns the immutable snapshot;
   // its confirmation contract needs only the identifier, hash and backup attestation.
@@ -349,6 +363,7 @@ export async function decideControlledAction(auth, body) {
   if (confirmed && ["MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(pending.tool) && pending.status === "proposed")
     assertPlanningConfirmation(pending.payload_summary, await planningCall(auth, "get", { id: pending.payload_summary.targetId }), pending.tool === "MES_ODL_VERIFY");
   if (confirmed && pending.tool === "MES_PRIORITY_REVISE" && pending.status === "proposed") assertPriorityConfirmation(pending.payload_summary, await checkPriorityWorkspace(auth, await priorityCall(auth, "get", { id: pending.payload_summary.targetId })));
+  if (confirmed && pending.tool === 'RDP_CREATE' && pending.status === 'proposed') await validateRdpSnapshot(auth, pending.payload_summary.targetId);
   if (confirmed && pending.tool === "MES_MATERIAL_REALLOCATE" && pending.status === "proposed") {
     assertMaterialReallocation(pending.payload_summary, await previewMaterialReallocation(auth, pending.payload_summary));
   }
@@ -371,7 +386,9 @@ export async function decideControlledAction(auth, body) {
   let action = Array.isArray(decided) ? decided[0] : decided;
   let failure = null;
   if (confirmed && action.status === "confirmed" && CONTROLLED_AI_ACTIONS[action.tool].system === "mes") ({ action, failure } = await executeExternalAction(auth, action));
-  const answer = action.tool === "MES_PRIORITY_REVISE" ? (failure || action.error || action.result?.message || "Proposta rifiutata: nessun trasferimento eseguito.") : action.status === "executed" ? "Operazione applicata e registrata nell’audit."
+  const answer = action.tool === 'RDP_CREATE' && action.status === 'executed'
+    ? `RdP ${action.result?.rdpNumber || action.result?.requestId} creata. Stato: ${action.result?.status}. Nessun OP o lotto creato.${action.result?.previewError ? ' Calcolo MES da completare: ' + action.result.previewError.message : ''}`
+    : action.tool === "MES_PRIORITY_REVISE" ? (failure || action.error || action.result?.message || "Proposta rifiutata: nessun trasferimento eseguito.") : action.status === "executed" ? "Operazione applicata e registrata nell’audit."
     : action.status === "rejected" ? "Proposta rifiutata. Nessuna modifica è stata applicata."
       : `${action.tool === "MES_MATERIAL_REALLOCATE" ? "Operazione non confermata" : "Operazione non applicata"}. Audit registrato: ${failure || action.error || "connettore non disponibile"}.`;
   return { controlledAction: { id: action.id, tool: action.tool, risk: CONTROLLED_AI_ACTIONS[action.tool].risk, system: action.system, state: action.status, result: action.result, error: failure || action.error || null }, answer };

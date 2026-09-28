@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { FileText, Play, Printer } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Modal } from '../../features/production-costs/common';
+import './BatchSheetActions.css';
 
 const states = {NOT_STARTED:'Da avviare', RUNNING:'In lavorazione', COMPLETED:'Completato', SUSPENDED:'Sospeso', CLOSING:'In chiusura'};
 
@@ -54,7 +55,7 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
   return <>
     <button type="button" disabled={!list} onClick={() => { setOpen(true); setError(''); setSheet(null); setConfirmStart(false); setPhaseId(list.phases.length === 1 ? list.phases[0].id : ''); }}><FileText size={17}/>Foglio e avvio {title}</button>
     {!open && error && <p role="alert">{error}</p>}
-    {open && <Modal title={`Foglio di ${title} · batch`} className="product-spec-viewer" onClose={() => { if (!busy) { setOpen(false); setSheet(null); } }}>
+    {open && <Modal title={`Foglio di ${title} · batch`} className="product-spec-viewer batch-sheet-modal" onClose={() => { if (!busy) { setOpen(false); setSheet(null); } }}>
       <label className="pc-field"><span>Batch / lavorazione</span><select value={phaseId} disabled={busy} onChange={e => { setPhaseId(e.target.value); setSheet(null); setConfirmStart(false); setError(''); }}>
         <option value="">Seleziona il batch</option>
         {list.phases.map(p => <option key={p.id} value={p.id}>Batch {p.number} · {p.quantity} {p.unit} · {p.lotCode || 'Lotto da assegnare'} · {states[p.executionStatus] || p.executionStatus} · {p.resource}{p.phase === 7 ? ' · Astucciatura' : ''}</option>)}

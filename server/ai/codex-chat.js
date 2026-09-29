@@ -37,7 +37,7 @@ export async function runWorkspaceCodex({ auth, body, conversationId, prompt, di
   };
   const modelAttachments = (run.request.modelAttachments || []).map(file => ({ ...file, data: Buffer.from(file.base64, 'base64') }));
   const result = await driveCodexRun({ store, run, tools, client, instructions, attachments: modelAttachments, history,
-    context: { ...context, screenContext, recentConversation: history },
+    context: { ...context, screenContext },
     scope: { userId: auth.profile.id, roleId: auth.profile.ruolo_id, access: auth.access, development: auth.developmentPermissions },
     finalize: async ({ text, calls, usage, run: completed, model }) => {
       const results = calls.filter(call => call.outcome?.success).map(call => ({ name: call.name, output: JSON.parse(call.outcome.output) }));

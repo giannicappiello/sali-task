@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { jsonSchema } from 'ai';
 import { createCodexClient, codexToolDefinitions, executeCodexCall, driveCodexRun, codexInput } from './codex-agent.js';
+import { boundedHistory, boundedPlanningState, codexRequestContext } from './codex-budget.js';
 
 const schema = jsonSchema({ type: 'object', required: ['orderId'], additionalProperties: false, properties: { orderId: { type: 'integer', minimum: 1 } } });
 const action = { type: 'function_call', name: 'MES_READ', arguments: { orderId: 5372 }, turn_id: 'turn_1', call_id: 'call_1' };
@@ -124,4 +125,77 @@ test('changed tool scope cancels an existing pending turn before executing tools
 
 test('PDF is never silently sent as an unsupported Agents input', () => {
   assert.throws(() => codexInput('Read', [{ mediaType: 'application/pdf', data: new Uint8Array([1]) }]), /lettore documenti/);
+});
+
+test('new requests never inherit a bloated provider session; history and context are bounded', async () => {
+  const { store, run } = fixture();
+  await store.saveSession('conv_1', { session_id: 'old-heavy-session' });
+  let received;
+  const client = { create: async input => { received = input; return { id: 'fresh' }; },
+    get: async () => ({ status: 'idle' }), turns: async () => ({ data: [] }),
+    send: async () => assert.fail('must not send into old session') };
+  await driveCodexRun({ store, run, tools: {}, instructions: '', client, sliceMs: 0,
+    history: [{ role: 'assistant', content: 'x'.repeat(500000) }, { role: 'user', content: 'OP 5372' }] });
+  assert.ok(JSON.stringify(received).length < 20000);
+  assert.match(JSON.stringify(received), /OP 5372/);
+  assert.match(JSON.stringify(received), /omittedMessages/);
+});
+
+test('oversized initial input is rejected before any paid provider request', async () => {
+  const { store, run } = fixture();
+  await assert.rejects(driveCodexRun({ store, run, tools: {}, instructions: '', context: { huge: 'x'.repeat(250000) },
+    client: { create: async () => assert.fail('must not spend') } }), /Limite preventivo/);
+  assert.equal(run.state, 'cancelled');
+});
+
+test('oversized tool output is saved intact but never sent; the operation is not repeated', async () => {
+  const { store, run } = fixture(); let executions = 0; const events = [];
+  const tools = { MES_READ: { inputSchema: schema, execute: async () => { executions++; return { large: 'x'.repeat(30000) }; } } };
+  const client = { create: async () => ({ id: 's' }), get: async () => ({ required_actions: [action] }),
+    turns: async () => ({ data: [{ id: 'turn_1', status: 'waiting' }] }), send: async (id, input) => events.push(...input) };
+  await assert.rejects(driveCodexRun({ store, run, tools, instructions: '', client }), /risultato MES_READ troppo esteso/);
+  assert.equal(executions, 1);
+  assert.ok((await store.calls(run.id))[0].outcome.output.length > 30000);
+  assert.deepEqual(events.map(event => event.type), ['agent.session.input.cancel']);
+  await assert.rejects(driveCodexRun({ store, run, tools, instructions: '', client }), /Limite preventivo/);
+  assert.equal(executions, 1);
+});
+
+test('planning pages disclose omissions and retain selected order data without version snapshots', () => {
+  const state = { configuration: { active: true }, demands: [{ productionOrderId: 1 }, { productionOrderId: 2 }],
+    versions: [{ id: 'v1', snapshot: { huge: 'x'.repeat(500000) }, expectedHash: 'hash' }, { id: 'v2' }] };
+  const page = boundedPlanningState(state, { orderId: 2, limit: 1 });
+  assert.deepEqual(page.demands, [{ productionOrderId: 2 }]);
+  assert.equal(page.versions[0].snapshot, undefined);
+  assert.equal(page.versions[0].expectedHash, 'hash');
+  assert.equal(page.pagination.versions.nextOffset, 1);
+  assert.equal(state.versions[0].snapshot.huge.length, 500000);
+  assert.equal(boundedHistory([{ content: 'x'.repeat(17000) }]).omittedMessages, 1);
+  const context = codexRequestContext({ profile: { id: 'u' }, capabilities: {}, access: { modules: ['progremes'] } }, null);
+  assert.equal(context.progremes, undefined);
+});
+
+test('tool-call ceiling stops before the thirteenth operation, across continuation slices', async () => {
+  const { store, run } = fixture(); let calls = 0;
+  const tools = { MES_READ: { inputSchema: schema, execute: async () => ({ value: ++calls }) } };
+  const client = { create: async () => ({ id: 's' }),
+    get: async () => ({ required_actions: [{ ...action, call_id: `call_${calls}` }] }),
+    turns: async () => ({ data: [{ id: 'turn_1', status: 'waiting' }] }), send: async () => {} };
+  const options = { store, run, tools, instructions: '', client, sliceMs: 0 };
+  for (let i = 0; i < 12; i++) assert.equal((await driveCodexRun(options)).pending, true);
+  await assert.rejects(driveCodexRun(options), /12 chiamate/);
+  assert.equal(calls, 12);
+  assert.equal(run.state, 'cancelled');
+});
+
+test('cumulative result ceiling stops even when every individual result is small', async () => {
+  const { store, run } = fixture(); let calls = 0;
+  const tools = { MES_READ: { inputSchema: schema, execute: async () => { calls++; return { data: 'x'.repeat(22000) }; } } };
+  const client = { create: async () => ({ id: 's' }),
+    get: async () => ({ required_actions: [{ ...action, call_id: `call_${calls}` }] }),
+    turns: async () => ({ data: [{ id: 'turn_1', status: 'waiting' }] }), send: async () => {} };
+  const options = { store, run, tools, instructions: '', client, sliceMs: 0 };
+  for (let i = 0; i < 4; i++) await driveCodexRun(options);
+  await assert.rejects(driveCodexRun(options), /troppo esteso/);
+  assert.equal(calls, 5);
 });

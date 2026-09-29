@@ -12,11 +12,12 @@ test('addition and complete revision use authenticated signed MES operations', a
     const auth = { profile: { id: 'operator' }, scoped: { rpc: async name => {
       assert.equal(name, 'company_mes_ai_can_write'); return { data: true };
     } } };
-    for (const operation of ['addition-candidates', 'addition-preview', 'order-revision']) {
-      const result = await planningCall(auth, operation, { orderId: 80, lineId: -261, actor: 'spoofed' }, async (url, options) => {
+    for (const operation of ['addition-candidates', 'addition-preview', 'order-revision', 'merge-preview']) {
+      const result = await planningCall(auth, operation, { orderId: 80, lineId: -261, sourceOrderId: 6455, actor: 'spoofed' }, async (url, options) => {
         assert.equal(url.pathname, `/api/workspace/ai/planning/${operation}`);
         assert.equal(JSON.parse(options.body).actor, 'workspace:operator');
         assert.equal(JSON.parse(options.body).lineId, -261);
+        assert.equal(JSON.parse(options.body).sourceOrderId, 6455);
         assert.equal(options.headers[HMAC_HEADERS.signature], signProductionMessage({ method: 'POST', path: url.pathname,
           timestamp: Number(options.headers[HMAC_HEADERS.timestamp]), eventId: options.headers[HMAC_HEADERS.eventId],
           body: options.body, secret: 'test-only-secret' }));
@@ -26,6 +27,7 @@ test('addition and complete revision use authenticated signed MES operations', a
     }
     assert.equal(planningRequestSchema.properties.planOnly.type, 'boolean');
     await assert.rejects(planningCall({ ...auth, scoped: { rpc: async () => ({ data: false }) } }, 'addition-preview', {}, () => { throw Error('must not send'); }), /Permesso/);
+    await assert.rejects(planningCall({ ...auth, scoped: { rpc: async () => ({ data: false }) } }, 'merge-preview', {}, () => { throw Error('must not send'); }), /Permesso/);
     await assert.rejects(planningCall(auth, 'arbitrary-write'), /non disponibile/);
   } finally {
     if (oldSecret === undefined) delete process.env.PROGREMES_INTEGRATION_SECRET; else process.env.PROGREMES_INTEGRATION_SECRET = oldSecret;

@@ -45,6 +45,14 @@ export default function PlanningVersionSummary({ version, query = "", children, 
         <button type="button" disabled={busy} onClick={() => setOpenedBlock(null)}>Chiudi</button>
       </div>
     </Modal>}
+    {snapshot.merge && <section className="plan-notice" aria-label="Riepilogo fusione ordini">
+      <h3>Fusione ordini · {snapshot.merge.article}</h3>
+      <p><strong>{snapshot.merge.targetNumber} · OP {snapshot.merge.targetOrderId}</strong> resta attivo con <strong>{new Intl.NumberFormat("it-IT", { useGrouping: "always", maximumFractionDigits: 6 }).format(snapshot.merge.combinedQuantity)} {snapshot.merge.unit}</strong> ({new Intl.NumberFormat("it-IT", { useGrouping: "always", maximumFractionDigits: 6 }).format(snapshot.merge.targetQuantity)} + {new Intl.NumberFormat("it-IT", { useGrouping: "always", maximumFractionDigits: 6 }).format(snapshot.merge.sourceQuantity)}).</p>
+      <p><strong>{snapshot.merge.sourceNumber} · OP {snapshot.merge.sourceOrderId}</strong> viene assorbito e annullato nello storico.</p>
+      <p>Riferimenti conservati: <strong>{snapshot.merge.commercialReferences?.join(" · ")}</strong>.</p>
+      <p>Lotto mantenuto: <strong>{snapshot.merge.retainedLot || "Non ancora assegnato"}</strong>. La fusione non avvia la produzione.</p>
+      <p>Verifica sotto il nuovo piano, le risorse e i fabbisogni prima di confermare.</p>
+    </section>}
     {children}
     {!!snapshot.shortages?.length && <div className="plan-notice"><h3>Fabbisogni specifici {version.status === "PROPOSED" ? "da generare" : "generati"}</h3><p>{snapshot.shortagesCoveredAtUtc ? "Copertura verificata: " + date(snapshot.shortagesCoveredAtUtc) : "Carenza autorizzata: le quantità indicate non sono prenotate né disponibili per l’avvio."}</p><div className="plan-table-wrap"><table><thead><tr><th>RdP / OP</th><th>Fase</th><th>Materiale</th><th>Quantità mancante</th></tr></thead><tbody>{snapshot.shortages.map((item, i) => <tr key={i}><td>{snapshot.impacts?.find(row => row.orderId === item.orderId)?.number || item.orderId}</td><td>{phases[item.phase] || item.phase}</td><td>{item.code}</td><td>{new Intl.NumberFormat("it-IT", { useGrouping: 'always',  maximumFractionDigits: 6 }).format(item.quantity)} {item.unit}</td></tr>)}</tbody></table></div></div>}
     <div className="plan-table-wrap" tabIndex={0} role="region" aria-label="Confronto versioni del piano">

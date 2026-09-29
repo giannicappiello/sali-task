@@ -6,7 +6,7 @@ const keys=(value,allowed)=>{if(!value||typeof value!=="object"||Array.isArray(v
 export function applyCostProposal(base,patch) {
  keys(patch,["laborHourly","referenceShiftHours","station","filling","shifts","holidays","machines"]);
  const candidate=structuredClone(base),rules=laborRules(base);delete candidate.aiDefinition;
- for(const key of ["laborHourly","referenceShiftHours"])if(patch[key]!=null)candidate[key]=patch[key];
+ if(patch.referenceShiftHours!=null&&Number(patch.referenceShiftHours)!==8)fail("Il turno standard è fisso a 8 ore."); candidate.referenceShiftHours=8; if(patch.laborHourly!=null)candidate.laborHourly=patch.laborHourly;
  for(const [group,allowed] of [["station",["basis","rounding","overtimeMultiplier"]],["filling",["basis","plannedTime","includeCleaning","roundingMinutes"]]]){
   if(patch[group]!=null){keys(patch[group],allowed);for(const key of allowed)if(patch[group][key]!=null)rules[group][key]=patch[group][key];}
  }

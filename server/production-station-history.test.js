@@ -107,3 +107,8 @@ test("all calendar shift policies use eight standard hours regardless of old shi
  assert.equal(r.phases[0].actualStandardShiftHours,16);
  assert.equal(r.actualLabor,2*8*3*20);
 });
+
+test("AI cannot reintroduce a nonstandard economic shift duration",()=>{
+ assert.throws(()=>applyCostProposal(settings(),{referenceShiftHours:12}),/8 ore/);
+ assert.equal(applyCostProposal({...settings(),referenceShiftHours:12},{laborHourly:30}).referenceShiftHours,8);
+});

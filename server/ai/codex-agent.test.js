@@ -30,10 +30,10 @@ test('REST client uses the managed Codex endpoint and agent beta header; paginat
   const requests = [];
   const client = createCodexClient({ apiKey: 'test-only', transport: async (url, options) => {
     requests.push({ url, options });
-    return { ok: true, json: async () => url.includes('after=') ? { data: [{ id: 'second' }], has_more: false } : { data: [{ id: 'first' }], has_more: true, last_id: 'first' } };
+    return { ok: true, json: async () => url.includes('after=') ? { data: [{ id: 'second', turn_id: 'turn_1' }], has_more: false } : { data: [{ id: 'old', turn_id: 'turn_old' }, { id: 'first', turn_id: 'turn_1' }], has_more: true, last_id: 'first' } };
   } });
   assert.equal((await client.items('sess_1', 'turn_1')).length, 2);
-  assert.match(requests[0].url, /^https:\/\/api.openai.com\/v1\/agents\/sessions\/sess_1\/items\?turn_id=turn_1/);
+  assert.match(requests[0].url, /^https:\/\/api.openai.com\/v1\/agents\/sessions\/sess_1\/items\?order=asc/);
   assert.equal(requests[0].options.headers['OpenAI-Beta'], 'agents=v1');
   assert.match(requests[1].url, /after=first/);
 });

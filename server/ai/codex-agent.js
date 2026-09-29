@@ -54,7 +54,9 @@ export function createCodexClient({ apiKey = process.env.OPENAI_API_KEY, transpo
     get: id => request(`/${encodeURIComponent(id)}`),
     send: (id, events) => request(`/${encodeURIComponent(id)}/events`, { events }),
     turns: id => request(`/${encodeURIComponent(id)}/turns?order=desc&limit=10`),
-    items: (id, turnId) => list(`/${encodeURIComponent(id)}/items?turn_id=${encodeURIComponent(turnId)}`),
+    // The root items endpoint lists the whole session and has no turn_id filter.
+    // Filter locally so prior final answers/commentary cannot leak into this turn.
+    items: async (id, turnId) => (await list(`/${encodeURIComponent(id)}/items`)).filter(item => item.turn_id === turnId),
     delete: id => request(`/${encodeURIComponent(id)}`, undefined, 'DELETE'),
   };
 }

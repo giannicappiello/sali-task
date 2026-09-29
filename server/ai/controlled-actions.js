@@ -1,3 +1,4 @@
+import { productionStartSchema, productionDateCall } from './production-dates.js';
 /* global Buffer, process */
 import { createHash, randomUUID } from "node:crypto";
 import { planningCall, planningConfirmSchema, assertPlanningConfirmation, reconcilePlanning } from "./planning-lifecycle.js";
@@ -62,6 +63,8 @@ const externalEntitySchema = (entityLabel) => ({
 });
 
 export const CONTROLLED_AI_ACTIONS = Object.freeze({
+  MES_PRODUCTION_START_CORRECT: {system:'mes',risk:'write',permission:'progremes.write',schema:productionStartSchema,
+    description:'Rettifica solo la data di inizio effettiva di una lavorazione conclusa, conservando orario e fine. Prima leggere MES_PRODUCTION_DATES_LOOKUP. Usa targetId e hash esatti; mostra prima/dopo e motivo. Cambia durate e costi derivati, non quantità o documenti Mexal. Richiede conferma del riepilogo.'},
   RDP_CREATE: { system: 'mes', risk: 'write', permission: 'rdp.create', schema: rdpCreateSchema,
     description: 'Crea una nuova RdP da OC verificato usando snapshotId di RDP_CREATE_PREVIEW come targetId. Supporta OC con precedente RdP annullata, preservandone lo storico. Non crea OP, lotti o avvii. Esegue il servizio Workspace e il calcolo MES.' },
   MES_PLAN_APPLY: { system: "mes", risk: "destructive", permission: "progremes.write", schema: planningConfirmSchema },
@@ -173,6 +176,7 @@ function stableValue(value) {
 export async function proposeControlledAction(auth, tool, input, { correlationId = randomUUID() } = {}) {
   const descriptor = CONTROLLED_AI_ACTIONS[tool];
   if (!descriptor || !canPropose(auth, descriptor)) throw Object.assign(new Error("Azione AI non autorizzata per questo profilo."), { status: 403 });
+  if (tool === 'MES_PRODUCTION_START_CORRECT') input = { ...input, evidence: await productionDateCall(auth, 'preview', { input }) };
   if (tool === 'RDP_CREATE') input = await proposeRdpCreation(auth, input);
   if (['ARTICLE_UPDATE', 'ARTICLE_BULK_UPDATE'].includes(tool)) input = await productChangePreview(auth, tool, input);
   if (tool === 'UI_CONFIGURE_VIEW') {
@@ -326,6 +330,13 @@ async function executeExternalAction(auth, pending) {
     } catch { /* Keep the uncertain outcome visible; no automatic write retry. */ }
     if (failure) failure = `Chiusura non confermata: ${failure} Verificare lo stato MES prima di ripetere l'operazione.`;
   }
+  if (failure && pending.tool === 'MES_PRODUCTION_START_CORRECT') {
+    try {
+      const verified = await productionDateCall(auth, 'result', {idempotencyKey:pending.idempotency_key});
+      if (verified?.applied === true && verified.productionId === pending.payload_summary.targetId) { result=verified; failure=null; }
+    } catch { /* No blind retry after an uncertain write. */ }
+    if (failure) failure += ' Verificare l’audit della rettifica MES prima di ripetere.';
+  }
   if (failure && ['FORMULA_CREATE_REVISION', 'MES_RESOURCE_COST_UPDATE', 'MACHINE_INSTRUCTION_DRAFT'].includes(pending.tool)) {
     try {
       const readback = await formulaCall(auth, 'result', { idempotencyKey: pending.idempotency_key });
@@ -363,6 +374,7 @@ export async function decideControlledAction(auth, body) {
   if (confirmed && ["MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(pending.tool) && pending.status === "proposed")
     assertPlanningConfirmation(pending.payload_summary, await planningCall(auth, "get", { id: pending.payload_summary.targetId }), pending.tool === "MES_ODL_VERIFY");
   if (confirmed && pending.tool === "MES_PRIORITY_REVISE" && pending.status === "proposed") assertPriorityConfirmation(pending.payload_summary, await checkPriorityWorkspace(auth, await priorityCall(auth, "get", { id: pending.payload_summary.targetId })));
+  if (confirmed && pending.tool === 'MES_PRODUCTION_START_CORRECT' && pending.status === 'proposed') await productionDateCall(auth, 'preview', {input:pending.payload_summary});
   if (confirmed && pending.tool === 'RDP_CREATE' && pending.status === 'proposed') await validateRdpSnapshot(auth, pending.payload_summary.targetId);
   if (confirmed && pending.tool === "MES_MATERIAL_REALLOCATE" && pending.status === "proposed") {
     assertMaterialReallocation(pending.payload_summary, await previewMaterialReallocation(auth, pending.payload_summary));

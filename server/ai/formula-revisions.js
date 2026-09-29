@@ -22,7 +22,7 @@ export async function formulaCall(auth, operation, input = {}, transport = fetch
 }
 
 export async function mesDomainCall(auth, domain, operation, input = {}, transport = fetch) {
-  if (!['formulas', 'lots', 'machines'].includes(domain) || !['lookup', 'read', 'preview', 'result', 'resources'].includes(operation)) throw new Error('Operazione MES non disponibile.');
+  if (!['formulas', 'lots', 'machines', 'production-dates'].includes(domain) || !['lookup', 'read', 'preview', 'result', 'resources'].includes(operation)) throw new Error('Operazione MES non disponibile.');
   const { data, error } = await auth.scoped.rpc('company_mes_ai_can_write');
   if (error || data !== true) throw Object.assign(new Error('Permesso operativo MES richiesto.'), { status: 403 });
   const secret = String(process.env.PROGREMES_INTEGRATION_SECRET || '').trim();

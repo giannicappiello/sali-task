@@ -112,7 +112,7 @@ test('revision broadcasts are content-free and presence changes are excluded', (
   assert.doesNotMatch(migration,/after update of[^\n]*last_seen/);
   assert.match(source,/postgres_changes.*workspace_access_revision/);
   assert.match(source,/window\.addEventListener\("focus", onFocus\)/);
-  assert.match(source,/setInterval\(\(\) => void refresh\(\), 30000\)/);
+  assert.match(source,/setInterval\(\(\) => void refresh\(\), 10 \* 60 \* 1000\)/);
 });
 
 test('temporary outage preserves the open editor state and recovery releases the pause', async () => {

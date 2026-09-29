@@ -150,9 +150,11 @@ export function AuthProvider({ children }) {
     let disposed = false;
     let running = false;
     let pending = false;
+    let retryTimer;
     const refresh = async () => {
       if (disposed) return;
       if (running) { pending = true; return; }
+      window.clearTimeout(retryTimer);
       running = true;
       try {
         do {
@@ -161,6 +163,9 @@ export function AuthProvider({ children }) {
         } while (pending && !disposed);
       } catch (error) {
         console.error("Aggiornamento autorizzazioni non disponibile:", error);
+        // Recover a failed check promptly rather than leaving the editor
+        // paused until the next ten-minute periodic check.
+        if (!disposed) retryTimer = window.setTimeout(() => void refresh(), 5000);
       } finally { running = false; }
     };
     const check = async () => {
@@ -173,13 +178,14 @@ export function AuthProvider({ children }) {
       .subscribe((status) => { if (status === "SUBSCRIBED") void check(); });
     // Realtime applies saved changes; polling also expires temporary exceptions
     // and recovers missed notifications after network interruptions.
-    const interval = window.setInterval(() => void refresh(), 30000);
+    const interval = window.setInterval(() => void refresh(), 10 * 60 * 1000);
     window.addEventListener("workspace:module-catalog-changed", refresh);
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onFocus);
     return () => {
       disposed = true;
       window.clearInterval(interval);
+      window.clearTimeout(retryTimer);
       window.removeEventListener("workspace:module-catalog-changed", refresh);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onFocus);

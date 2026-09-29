@@ -8,6 +8,7 @@ Il backend `AI_RUNTIME=codex-agents` usa la **OpenAI Agents API**, cioè il moto
 2. Configurare `OPENAI_API_KEY` come segreto server Production. Servono `api.agents.read`, `api.agents.write` e `api.responses.write`. Fatturazione API del progetto OpenAI.
 3. Verificare accesso API e modello con un test senza dati aziendali. Il modello predefinito è `gpt-6-astra`; l'override server è `CODEX_MODEL`.
    Il controllo `POST /api/mexal/automation?route=codex-health` richiede il Bearer del worker/cron già configurato: esegue solo un ciclo fisso con uno strumento fittizio, senza dati aziendali, ed elimina la sessione di prova. Non accetta prompt o strumenti dal chiamante.
+   Il coordinatore AssistenteAI già associato può eseguire lo stesso controllo con `POST /api/ai/worker`, azione `codex_health`, usando la propria credenziale e soltanto finché l'host risulta attivo.
 4. Impostare `AI_RUNTIME=codex-agents` e pubblicare. La risposta `capabilities.runtime` e il titolo della chat identificano il motore attivo.
 5. Provare una lettura autorizzata, un seguito nella stessa chat e una proposta operativa senza confermarla. Controllare `ai_codex_runs`, `ai_codex_calls` e `ai_messaggi`. L'applicazione effettiva resta nella scheda di conferma esistente.
 

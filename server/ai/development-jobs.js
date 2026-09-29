@@ -200,6 +200,10 @@ export async function handleDevelopmentWorker(req) {
   const body = req.body || {};
   const heartbeat = await admin.from('ai_development_hosts').update({ last_seen_at: new Date().toISOString() }).eq('id', host.id);
   if (heartbeat.error) throw heartbeat.error;
+  if (body.action === 'codex_health') {
+    const { probeCodex } = await import('./codex-health.js');
+    return probeCodex();
+  }
   if (String(body.action || '').startsWith('runtime_')) return handleRuntimeWorker(admin, host, body);
   if (body.action === 'claim') {
     if (body.protocolVersion !== 2) throw fail('Aggiornare il coordinatore AI: protocollo di annullamento richiesto.', 409);

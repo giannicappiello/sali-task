@@ -1,4 +1,4 @@
-import { productionStartSchema, productionDateCall } from './production-dates.js';
+import { productionStartSchema, productionDatesSchema, productionDateCall } from './production-dates.js';
 /* global Buffer, process */
 import { createHash, randomUUID } from "node:crypto";
 import { planningCall, planningConfirmSchema, assertPlanningConfirmation, reconcilePlanning } from "./planning-lifecycle.js";
@@ -63,6 +63,8 @@ const externalEntitySchema = (entityLabel) => ({
 });
 
 export const CONTROLLED_AI_ACTIONS = Object.freeze({
+  MES_PRODUCTION_DATES_CORRECT: {system:'mes',risk:'write',permission:'progremes.write',schema:productionDatesSchema,
+    description:'Rettifica inizio e/o fine effettivi di una fase conclusa. Prima leggere MES_PRODUCTION_DATES_LOOKUP e identificare articolo e fase. I campi non richiesti sono null: conserva gli orari, non inventarli se inizio e fine nello stesso giorno risultano invertiti. L’allineamento presenze richiede autorizzazione esplicita dell’utente. Esporre le presenze riallineate e l’effetto su durate e costi. Conferma e audit obbligatori.'},
   MES_PRODUCTION_START_CORRECT: {system:'mes',risk:'write',permission:'progremes.write',schema:productionStartSchema,
     description:'Rettifica solo la data di inizio effettiva di una lavorazione conclusa, conservando orario e fine. Prima leggere MES_PRODUCTION_DATES_LOOKUP. Usa targetId e hash esatti; mostra prima/dopo e motivo. Cambia durate e costi derivati, non quantità o documenti Mexal. Richiede conferma del riepilogo.'},
   RDP_CREATE: { system: 'mes', risk: 'write', permission: 'rdp.create', schema: rdpCreateSchema,
@@ -176,7 +178,7 @@ function stableValue(value) {
 export async function proposeControlledAction(auth, tool, input, { correlationId = randomUUID() } = {}) {
   const descriptor = CONTROLLED_AI_ACTIONS[tool];
   if (!descriptor || !canPropose(auth, descriptor)) throw Object.assign(new Error("Azione AI non autorizzata per questo profilo."), { status: 403 });
-  if (tool === 'MES_PRODUCTION_START_CORRECT') input = { ...input, evidence: await productionDateCall(auth, 'preview', { input }) };
+  if (['MES_PRODUCTION_START_CORRECT','MES_PRODUCTION_DATES_CORRECT'].includes(tool)) input = { ...input, evidence: await productionDateCall(auth, 'preview', { input }) };
   if (tool === 'RDP_CREATE') input = await proposeRdpCreation(auth, input);
   if (['ARTICLE_UPDATE', 'ARTICLE_BULK_UPDATE'].includes(tool)) input = await productChangePreview(auth, tool, input);
   if (tool === 'UI_CONFIGURE_VIEW') {
@@ -330,7 +332,7 @@ async function executeExternalAction(auth, pending) {
     } catch { /* Keep the uncertain outcome visible; no automatic write retry. */ }
     if (failure) failure = `Chiusura non confermata: ${failure} Verificare lo stato MES prima di ripetere l'operazione.`;
   }
-  if (failure && pending.tool === 'MES_PRODUCTION_START_CORRECT') {
+  if (failure && ['MES_PRODUCTION_START_CORRECT','MES_PRODUCTION_DATES_CORRECT'].includes(pending.tool)) {
     try {
       const verified = await productionDateCall(auth, 'result', {idempotencyKey:pending.idempotency_key});
       if (verified?.applied === true && verified.productionId === pending.payload_summary.targetId) { result=verified; failure=null; }
@@ -374,7 +376,7 @@ export async function decideControlledAction(auth, body) {
   if (confirmed && ["MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(pending.tool) && pending.status === "proposed")
     assertPlanningConfirmation(pending.payload_summary, await planningCall(auth, "get", { id: pending.payload_summary.targetId }), pending.tool === "MES_ODL_VERIFY");
   if (confirmed && pending.tool === "MES_PRIORITY_REVISE" && pending.status === "proposed") assertPriorityConfirmation(pending.payload_summary, await checkPriorityWorkspace(auth, await priorityCall(auth, "get", { id: pending.payload_summary.targetId })));
-  if (confirmed && pending.tool === 'MES_PRODUCTION_START_CORRECT' && pending.status === 'proposed') await productionDateCall(auth, 'preview', {input:pending.payload_summary});
+  if (confirmed && ['MES_PRODUCTION_START_CORRECT','MES_PRODUCTION_DATES_CORRECT'].includes(pending.tool) && pending.status === 'proposed') await productionDateCall(auth, 'preview', {input:pending.payload_summary});
   if (confirmed && pending.tool === 'RDP_CREATE' && pending.status === 'proposed') await validateRdpSnapshot(auth, pending.payload_summary.targetId);
   if (confirmed && pending.tool === "MES_MATERIAL_REALLOCATE" && pending.status === "proposed") {
     assertMaterialReallocation(pending.payload_summary, await previewMaterialReallocation(auth, pending.payload_summary));

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mesDomainCall } from './formula-revisions.js';
-import { productionStartSchema } from './production-dates.js';
+import { productionStartSchema, productionDatesSchema } from './production-dates.js';
 import { availableControlledActions } from './controlled-actions.js';
 
 test('date lookup rejects missing MES permission before transport',async()=>{
@@ -16,4 +16,15 @@ test('date correction is explicit and never available to analysis-only or non-ME
  assert.deepEqual(productionStartSchema.required,['targetId','expectedHash','newStartDate','reason']);
  assert.ok(new RegExp(productionStartSchema.properties.newStartDate.pattern).test('2026-09-23'));
  assert.ok(!new RegExp(productionStartSchema.properties.newStartDate.pattern).test('23/09/2026'));
+});
+
+test('full interval correction requires an explicit presence choice and leaves unspecified endpoints nullable',()=>{
+ assert.equal(productionDatesSchema.additionalProperties,false);
+ assert.ok(productionDatesSchema.required.includes('alignBoundaryPresences'));
+ assert.equal(productionDatesSchema.properties.alignBoundaryPresences.type,'boolean');
+ for(const field of ['newStartDate','newEndDate']) assert.ok(productionDatesSchema.properties[field].anyOf.some(s=>s.type==='null'));
+ assert.ok(new RegExp(productionDatesSchema.properties.newStartTime.pattern).test('08:00'));
+ assert.ok(!new RegExp(productionDatesSchema.properties.newStartTime.pattern).test('28:00'));
+ const available=availableControlledActions({profile:{ruoli:{}},capabilities:{role_ai_level:'analisi',progremes:true}});
+ assert.equal(available.MES_PRODUCTION_DATES_CORRECT,undefined);
 });

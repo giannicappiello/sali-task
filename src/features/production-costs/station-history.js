@@ -12,9 +12,9 @@ export function historyCalendar(history) {
  }
  return {shifts:history.calendar.shifts,holidays,laborRules:{station:{rounding:.5}}};
 }
-export function historicalStationTurns(start,end,history,downtimeHours=0) {
+export function historicalStationTurns(start,end,history) {
  const calendar=historyCalendar(history);
- const counts=calendar?productionTurns(start,end,calendar,downtimeHours):null;
+ const counts=calendar?productionTurns(start,end,calendar):null;
  // No minimum charge when the whole interval is outside the calendar.
  return counts?{...counts,overtimeHours:0,turns:counts.scheduledHours>0?Math.max(.5,Math.ceil(counts.turns*2-1e-9)/2):0}:null;
 }

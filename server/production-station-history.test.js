@@ -75,3 +75,35 @@ test("MES source is internal-only and snapshots are immutable/idempotent across 
  const fail=await readStationHistory(admin,{request:async()=>{throw {upstreamStatus:404};}});
  assert.equal(fail.productivity,null);assert.match(fail.error,/Aggiornare MES/);
 });
+
+test("OC159 FPCOM35: machine downtime never erases paid shifts in closed historical records",()=>{
+ const h=history(),s=settings();
+ const evidence={works:[{...work(),id:3043,start:"2026-08-19T15:31:01.0216041",end:"2026-09-07T12:38:36.8405883",downtimeMinutes:15833}]};
+ const before=structuredClone(evidence);
+ const r=calculateRecord(evidence,{settings:s},{},{},undefined,{history:h});
+ const noStops=calculateRecord({works:[{...evidence.works[0],downtimeMinutes:0}]},{settings:s},{},{},undefined,{history:h});
+ assert.equal(r.phases[0].actualTurns,13.5);
+ assert.equal(r.phases[0].actualStandardShiftHours,108);
+ assert.equal(r.actualLabor,13.5*8*3*40/2);
+ assert.equal(r.actualLabor,noStops.actualLabor);
+ assert.equal(r.phases[0].downtimeHours,15833/60);
+ assert(r.phases[0].actualHours<noStops.phases[0].actualHours);
+ assert.deepEqual(evidence,before);
+});
+
+test("active machine pause does not stop calendar-based personnel costing",()=>{
+ const h=history(),evidence={works:[{...work(),state:"Sospeso",end:null,pausedAt:"2026-09-07T10:00:00",downtimeMinutes:1000}]};
+ const r=calculateRecord(evidence,{settings:settings()},{},{},"2026-09-08T16:00:00",{history:{...h,asOfLocal:"2026-09-08T16:00:00"}});
+ assert.equal(r.phases[0].actualTurns,2);
+ assert.equal(r.phases[0].actualStandardShiftHours,16);
+ assert.equal(r.actualLabor,960);
+});
+
+test("all calendar shift policies use eight standard hours regardless of old shift duration",()=>{
+ const s={...settings(),referenceShiftHours:12,mixingOperatorsCount:3,laborHourly:20,laborRules:{station:{basis:"shifts"}}};
+ const evidence={works:[{...work(),start:"2026-09-07T08:00:00",end:"2026-09-08T16:00:00",downtimeMinutes:2000}]};
+ const r=calculateRecord(evidence,{settings:s});
+ assert.equal(r.phases[0].actualTurns,2);
+ assert.equal(r.phases[0].actualStandardShiftHours,16);
+ assert.equal(r.actualLabor,2*8*3*20);
+});

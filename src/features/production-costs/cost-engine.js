@@ -137,11 +137,11 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
   const actualPersonHours=sumKnown((w.personnel||[]).map(x=>hours(x.start,x.end||w.end||now)));
   const personHoursInShifts=sumKnown((w.personnel||[]).map(x=>scheduledHours(x.start,x.end||w.end||now,settings)));
   const isStation=w.phase==="Semilavorato";
-  const shiftHours=(isStation&&historicalMode)||(!isStation&&fillingHistoricalMode)?8:number(settings?.referenceShiftHours??8);
+  const shiftHours=8;
   const mixingOperatorsCount=isStation&&historicalMode?number(history?.mixingOperatorsCount):number(settings?.mixingOperatorsCount)??number(evidence.mixingOperatorsCount);
-  const countTurns=(start,end,down=0)=>isStation&&historicalMode?historicalStationTurns(start,end,history,down):!isStation&&fillingHistoricalMode?historicalStationTurns(start,end,fillingHistory,down):productionTurns(start,end,settings,down);
+  const countTurns=(start,end)=>isStation&&historicalMode?historicalStationTurns(start,end,history):!isStation&&fillingHistoricalMode?historicalStationTurns(start,end,fillingHistory):productionTurns(start,end,settings);
   const plannedShiftCounts=plannedOps.map(op=>countTurns(op.start,op.end));
-  const actualShiftCounts=w.state==="DaAvviare"?null:countTurns(w.start,w.pausedAt||w.end||history?.asOfLocal||now,Number(w.downtimeMinutes||0)/60);
+  const actualShiftCounts=w.state==="DaAvviare"?null:countTurns(w.start,w.end||history?.asOfLocal||now);
   const plannedTurns=plannedShiftCounts.length&&plannedShiftCounts.every(Boolean)?plannedShiftCounts.reduce((sum,x)=>sum+x.turns,0)*share:null;
   const actualTurns=actualShiftCounts?.turns??null;
   const plannedOvertimeHours=plannedShiftCounts.length&&plannedShiftCounts.every(Boolean)?plannedShiftCounts.reduce((sum,x)=>sum+x.overtimeHours,0)*share:null;
@@ -170,7 +170,7 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
   const actualWash=number(wash?.count)===null||number(machine?.washCost)===null?null:Number(wash.count)*Number(machine.washCost);
   const gain=number(machine?.gainPerWork??machine?.gainPerShift);
   return {...w,machine,plannedHours,actualHours,downtimeHours:stop,plannedPersonHours,actualPersonHours,personHoursInShifts,plannedLabor,actualLabor,
-   mixingOperatorsCount,referenceShiftHours:shiftHours,plannedTurns,actualTurns,plannedOvertimeHours,actualOvertimeHours,
+   mixingOperatorsCount,referenceShiftHours:shiftHours,plannedStandardShiftHours:plannedTurns===null?null:plannedTurns*8,actualStandardShiftHours:actualTurns===null?null:actualTurns*8,plannedTurns,actualTurns,plannedOvertimeHours,actualOvertimeHours,
    plannedCostPersonHours:fillingHistoricalMode&&!isStation?null:plannedCostPersonHours,actualCostPersonHours:fillingHistoricalMode&&!isStation?null:actualCostPersonHours,
    plannedLaborPieces,actualLaborPieces,laborIncludedInFilling,laborUnitCost:fillingHistoricalMode&&w.phase==="Confezionamento"?unitLabor:null,
    plannedWashes,actualWashes:number(wash?.count),actualWashMinutes:number(wash?.minutes),plannedWash,actualWash,
@@ -232,7 +232,7 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
   if(history?.calendar?.historyWarning)warnings.push(history.calendar.historyWarning);
   warnings.push("Manodopera STATION ricalcolata anche sullo storico; snapshot di formula, SL e configurazioni originali non modificati.");
  }
- if(bulk.some(p=>p.downtimeHours>0))warnings.push("Fermi STATION sottratti dalle ore entro calendario: la collocazione oraria dei fermi storici non è disponibile.");
+ if(bulk.some(p=>p.downtimeHours>0))warnings.push("I fermi macchina non riducono i turni né la manodopera. Ore standard = turni da calendario × 8; fermi separati negli indicatori macchina.");
  if(actualRevenue===null)warnings.push("Fatture non collegate univocamente alla produzione.");
  if(filling.length&&knownTransfer===null)warnings.push("Costo del bulk condiviso da riconciliare prima del costo per pezzo.");
  if(configuration?.created_at && String(configuration.created_at).slice(0,10)>String(original?.capturedAt||evidence.date).slice(0,10))warnings.push("Tariffe inserite dopo la lavorazione: valorizzazione ricostruita, non tariffa storica rilevata.");

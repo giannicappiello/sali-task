@@ -33,7 +33,7 @@ export function explicitOvertimeHours(intervals,settings) {
 
 // Round each occupied scheduled shift to the next half shift. Time between
 // days is not overtime. Only work extending the first/last day's schedule is.
-export function productionTurns(start,end,settings,downtimeHours=0) {
+export function productionTurns(start,end,settings) {
  if(!start||!end||(!settings?.shifts?.length&&!settings?.companyCalendar))return null;
  const from=wall(start),to=wall(end);
  if(!Number.isFinite(+from)||!Number.isFinite(+to)||to<from)return null;
@@ -50,9 +50,9 @@ export function productionTurns(start,end,settings,downtimeHours=0) {
  }
  windows.sort((a,b)=>a.a-b.a);
  const scheduledHours=windows.reduce((sum,w)=>sum+w.paid,0);
- const factor=scheduledHours>0?Math.max(0,scheduledHours-Math.max(0,downtimeHours))/scheduledHours:0;
+ // Machine downtime is not an absence: never deduct it from paid calendar turns.
  const step=settings.laborRules?.station?.rounding??.5;
- const turns=windows.reduce((sum,w)=>{const fraction=Math.max(0,w.overlap/w.gross*factor);return sum+(step?Math.ceil(fraction/step-1e-9)*step:fraction);},0);
+ const turns=windows.reduce((sum,w)=>{const fraction=Math.max(0,w.overlap/w.gross);return sum+(step?Math.ceil(fraction/step-1e-9)*step:fraction);},0);
  let overtimeHours=0;
  const first=windows[0],last=windows.at(-1);
  const startCutoff=new Date(from);startCutoff.setUTCHours(17,0,0,0);
@@ -61,6 +61,6 @@ export function productionTurns(start,end,settings,downtimeHours=0) {
  const cutoff=new Date(to);cutoff.setUTCHours(17,0,0,0);
  if(last&&dayKey(to)===dayKey(last.b)&&to>last.b)overtimeHours+=Math.max(0,Math.min(+to,+cutoff)-last.b)/3600000;
  if(!windows.length&&dayKey(from)===dayKey(to))overtimeHours=Math.max(0,Math.min(+to,+cutoff)-from)/3600000;
- overtimeHours=Math.max(0,overtimeHours-Math.max(0,downtimeHours-scheduledHours));
- return {turns,overtimeHours,scheduledHours:scheduledHours*factor};
+
+ return {turns,overtimeHours,scheduledHours};
 }

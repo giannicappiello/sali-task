@@ -97,6 +97,9 @@ export default function AIAssistant({ getScreenContext, embedded = false, prompt
   const prependingHistory = useRef(false);
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pendingCodex, setPendingCodex] = useState(null);
+  const [codexProgress, setCodexProgress] = useState('');
+  const [codexPaused, setCodexPaused] = useState(false);
   const [attachments, setAttachments] = useState([]);
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [dragActive, setDragActive] = useState(false);
@@ -155,6 +158,35 @@ export default function AIAssistant({ getScreenContext, embedded = false, prompt
     }, 60_000);
     return () => window.clearInterval(timer);
   }, [session?.access_token]);
+
+  useEffect(() => {
+    if (!pendingCodex?.id || !session?.access_token || codexPaused) return undefined;
+    let alive = true;
+    let timer;
+    const poll = async () => {
+      try {
+        const payload = await requestAI(session.access_token, { action: 'codex_continue', runId: pendingCodex.id, conversationId: pendingCodex.conversationId });
+        if (!alive) return;
+        if (payload.pending) {
+          setCodexProgress(payload.progress || 'Codex sta lavorando…');
+          timer = window.setTimeout(poll, 1500);
+          return;
+        }
+        setMessages(current => [...current.filter(message => message.id !== payload.runId), {
+          id: payload.runId, role: 'assistant', content: payload.answer, sources: payload.sources || [],
+          controlledActions: payload.controlledActions || [], headingAction: payload.headingAction,
+          developmentJob: payload.developmentJob, runtimeOperations: payload.runtimeOperations || [], artifacts: payload.artifacts || [], runtime: payload.runtime,
+        }]);
+        setPendingCodex(null);
+        setCodexProgress('');
+        window.dispatchEvent(new CustomEvent('workspace:assistant-response', { detail: { costProposalId: payload.costProposalId } }));
+      } catch (requestError) {
+        if (alive) { setError(requestError.message); setCodexPaused(true); }
+      }
+    };
+    timer = window.setTimeout(poll, 500);
+    return () => { alive = false; window.clearTimeout(timer); };
+  }, [pendingCodex?.id, pendingCodex?.conversationId, session?.access_token, codexPaused]);
 
   useEffect(() => {
     if ((!pendingDevelopment && !pendingRuntime) || !conversationId || busy) return undefined;
@@ -239,8 +271,10 @@ export default function AIAssistant({ getScreenContext, embedded = false, prompt
         developmentJob: message.metadati?.developmentJob || null,
         runtimeOperations: message.metadati?.runtimeOperations || [],
         runtimeOperation: message.metadati?.runtimeOperation,
+        runtime: message.metadati?.runtime,
       }));
       setConversationId(payload.conversation.id);
+      if (!cursor) { setPendingCodex(payload.pendingRun || null); setCodexPaused(false); setCodexProgress('Codex riprende il lavoro salvato…'); }
       setSelectedTopicId(payload.conversation.argomento_id || "");
       setMode(payload.conversation.modalita || "interno");
       setHistoryCursor(payload.nextCursor || null);
@@ -259,6 +293,9 @@ export default function AIAssistant({ getScreenContext, embedded = false, prompt
   }
 
   function newConversation(topicId = selectedTopicId) {
+    setPendingCodex(null);
+    setCodexPaused(false);
+    setCodexProgress('');
     setHistoryCursor(null);
     setAutoPlanningOpen(false);
     setMobileSidebarOpen(false);
@@ -353,7 +390,7 @@ export default function AIAssistant({ getScreenContext, embedded = false, prompt
   async function submit(event) {
     event.preventDefault();
     const text = prompt.trim();
-    if ((!text && attachments.length === 0) || busy || attachmentBusy) return;
+    if ((!text && attachments.length === 0) || busy || attachmentBusy || pendingCodex) return;
     const requestText = text || "Analizza i documenti allegati e riassumi i dati rilevanti.";
     const attachmentNames = attachments.map((item) => item.file.name);
     const displayedText = attachmentNames.length ? `${requestText}\n\nAllegati: ${attachmentNames.join(", ")}` : requestText;
@@ -366,7 +403,7 @@ export default function AIAssistant({ getScreenContext, embedded = false, prompt
       const serializedAttachments = await serializeAssistantAttachments(attachments);
       const headingRequested = activeMode === "interno" && isHeadingRequest(requestText);
       const mutationRequested = activeMode === "interno" && isControlledMutationRequest(requestText);
-      const planningRequested = !headingRequested && !mutationRequested && activeMode === "interno" && capabilities?.planning === true && isPlanningRequest(requestText);
+      const planningRequested = capabilities?.runtime !== 'codex-agents' && !headingRequested && !mutationRequested && activeMode === "interno" && capabilities?.planning === true && isPlanningRequest(requestText);
       const screenContext = getScreenContext ? await getScreenContext() : await captureFromMesParent(mesScreenContext);
       const payload = planningRequested
         ? await callAI({ action: "proposal", prompt: requestText, attachments: serializedAttachments, proposalType: inferredPlanType(requestText), conversationId, topicId: selectedTopicId, screenContext })
@@ -375,10 +412,20 @@ export default function AIAssistant({ getScreenContext, embedded = false, prompt
       setConversationId(activeConversationId);
       if (activeConversationId) setConversationInUrl(activeConversationId);
       setCapabilities(payload.capabilities || capabilities);
+      if (payload.pending) {
+        setPendingCodex({ id: payload.runId, conversationId: activeConversationId });
+        setCodexPaused(false);
+        setCodexProgress(payload.progress || 'Codex sta lavorando…');
+        setPrompt('');
+        attachments.forEach(item => item.preview && URL.revokeObjectURL(item.preview));
+        setAttachments([]);
+        await refreshConversations();
+        return;
+      }
       if (payload.proposal) setProposal(payload.proposal);
       window.dispatchEvent(new CustomEvent("workspace:assistant-response",{detail:{costProposalId:payload.costProposalId}}));
       const responseArtifacts = payload.artifacts?.length ? payload.artifacts : ((payload.downloadablePdf === true || pdfRequested) ? [{ id: `pdf-${Date.now()}`, kind: "pdf", fileName: "report-assistente-ai.pdf", mediaType: "application/pdf" }] : []);
-      setMessages((current) => [...current, { id: `assistant-${Date.now()}`, role: "assistant", content: payload.answer, sources: payload.sources || [], proposal: payload.proposal || null, headingAction: payload.headingAction || null, controlledActions: payload.controlledActions || [], developmentJob: payload.developmentJob || null, runtimeOperations: payload.runtimeOperations || [], artifacts: responseArtifacts }]);
+      setMessages((current) => [...current, { id: payload.runId || `assistant-${Date.now()}`, role: "assistant", content: payload.answer, sources: payload.sources || [], proposal: payload.proposal || null, headingAction: payload.headingAction || null, controlledActions: payload.controlledActions || [], developmentJob: payload.developmentJob || null, runtimeOperations: payload.runtimeOperations || [], artifacts: responseArtifacts, runtime: payload.runtime }]);
       setPrompt("");
       attachments.forEach((item) => item.preview && URL.revokeObjectURL(item.preview));
       setAttachments([]);
@@ -436,6 +483,15 @@ export default function AIAssistant({ getScreenContext, embedded = false, prompt
           const parentOrigin = new URL(document.referrer).origin;
           window.parent.postMessage({ type: "progremes-ui-layout-changed", targetCode: action.preview?.targetCode || "" }, parentOrigin);
         } catch { /* Il refresh manuale resta disponibile se il referrer non è esposto. */ }
+      }
+      if (decision === 'confirm' && capabilities?.runtime === 'codex-agents' && !pendingCodex && conversationId) {
+        const verification = await callAI({ action: 'chat', mode: activeMode, conversationId, correlationId: crypto.randomUUID(),
+          prompt: `Verifica l’esito persistito dell’azione ${action.id} (${action.tool}) che ho appena confermato. Leggi ACTION_STATUS e gli strumenti specifici necessari; non ripetere l’applicazione. Riporta ciò che è riuscito e gli eventuali blocchi residui.` });
+        if (verification.pending) {
+          setPendingCodex({ id: verification.runId, conversationId });
+          setCodexPaused(false);
+          setCodexProgress('Codex verifica l’esito della conferma…');
+        }
       }
     } catch (requestError) { setError(requestError.message); } finally { setDecisionBusy(false); }
   }
@@ -501,7 +557,7 @@ export default function AIAssistant({ getScreenContext, embedded = false, prompt
 
       <div className="ai-chat-shell">
         <header className="ai-chat-header">
-          <div><span className="ai-online-dot" /><div><h1>{autoPlanningOpen ? "Autoprogrammazione" : (MODE_OPTIONS.find((item) => item.id === activeMode)?.label || "Assistente AI")}</h1><p>{autoPlanningOpen ? "Proposte generate dai tempi effettivi ProgreMES" : MODE_OPTIONS.find((item) => item.id === activeMode)?.description}</p></div></div>
+          <div><span className="ai-online-dot" /><div><h1>{autoPlanningOpen ? "Autoprogrammazione" : (capabilities?.runtime === 'codex-agents' ? 'Codex · ' : '') + (MODE_OPTIONS.find((item) => item.id === activeMode)?.label || "Assistente AI")}</h1><p>{autoPlanningOpen ? "Proposte generate dai tempi effettivi ProgreMES" : MODE_OPTIONS.find((item) => item.id === activeMode)?.description}</p></div></div>
           <button type="button" className="ai-mobile-sidebar-trigger" onClick={() => setMobileSidebarOpen(true)} aria-expanded={mobileSidebarOpen}><PanelLeft size={18} /><span>Modalità e chat</span></button>
         </header>
 
@@ -518,6 +574,7 @@ export default function AIAssistant({ getScreenContext, embedded = false, prompt
               {message.role === "assistant" && <span className="ai-message-avatar"><Bot size={18} /></span>}
               <div className="ai-message-content">
                 <p>{message.content}</p>
+                {message.runtime === 'workspace-documents' && <small>Analisi tramite il lettore documenti Workspace</small>}
                 {message.artifacts?.length > 0 && <div className="ai-generated-artifacts">{message.artifacts.map((artifact) => <AssistantArtifactCard key={artifact.id || artifact.fileName} artifact={artifact} content={message.content} />)}</div>}
                 {message.sources?.length > 0 && <div className="ai-message-sources"><strong>Fonti Web</strong>{message.sources.map((source) => <a key={source.id || source.url} href={source.url} target="_blank" rel="noreferrer">{source.title}<ExternalLink size={13} /></a>)}</div>}
                 {message.proposal && <ProposalCard proposal={{ ...message.proposal, state: proposal?.id === message.proposal.id ? proposal.state : message.proposal.state }} canDecide={capabilities?.apply_plans === true} busy={decisionBusy} onApprove={() => decide("approve")} onReject={() => decide("reject")} />}
@@ -527,6 +584,14 @@ export default function AIAssistant({ getScreenContext, embedded = false, prompt
             </article>
           ))}
           {busy && <article className="ai-message assistant"><span className="ai-message-avatar"><Bot size={18} /></span><div className="ai-thinking"><LoaderCircle size={18} /> Analisi in corso...</div></article>}
+          {pendingCodex && <article className="ai-message assistant"><span className="ai-message-avatar"><Bot size={18} /></span><div>
+            <p role="status">{codexPaused ? 'Lavoro salvato. Riprendi per verificare l’esito.' : codexProgress || 'Codex sta lavorando…'}</p>
+            {codexPaused && <button type="button" onClick={() => { setError(''); setCodexPaused(false); }}>Riprendi</button>}
+            <button type="button" onClick={async () => {
+              try { await callAI({ action: 'codex_cancel', runId: pendingCodex.id }); setPendingCodex(null); setCodexProgress(''); setError(''); }
+              catch (requestError) { setError(requestError.message); }
+            }}>Interrompi</button>
+          </div></article>}
           <div ref={endRef} />
         </div>}
 
@@ -555,7 +620,7 @@ export default function AIAssistant({ getScreenContext, embedded = false, prompt
           </div>}
           <div className="ai-compose-row">
             <textarea rows="2" value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={activeMode === "interno" ? (capabilities?.vision ? "Chiedi sui dati Workspace + MES oppure trascina qui un documento..." : "Chiedi sui dati autorizzati Workspace + MES...") : "Cerca sul Web con fonti verificabili..."} />
-            <button type="submit" disabled={(!prompt.trim() && attachments.length === 0) || busy || attachmentBusy} aria-label="Invia richiesta"><Send size={20} /></button>
+            <button type="submit" disabled={(!prompt.trim() && attachments.length === 0) || busy || attachmentBusy || Boolean(pendingCodex)} aria-label="Invia richiesta"><Send size={20} /></button>
           </div>
           <small>{capabilities?.vision ? "PDF, JPG, PNG o WebP · massimo 4 file e 2,8 MB complessivi. " : ""}L’AI può commettere errori: verifica sempre dati, ordini e proposte operative.</small>
         </form>}

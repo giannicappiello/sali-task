@@ -34,6 +34,7 @@ import { handleProgremesReadonlyRequest } from "../../server/progremes-readonly-
 import { createProgremesClient, readAllProgremesArticles, readAllProgremesSuppliers } from "../../server/progremes-readonly-client.js";
 import { createProgremesDiagnosticManager } from "../../server/progremes-diagnostics-client.js";
 import { handleAIAssistant } from "../../server/ai/assistant.js";
+import { probeCodex } from "../../server/ai/codex-health.js";
 import { handleDevelopmentWorker } from "../../server/ai/development-jobs.js";
 import { handlePlanningWorkspace } from "../../server/planning-workspace.js";
 import { handleCrmBrief } from "../../server/ai/crm-brief.js";
@@ -597,6 +598,15 @@ async function maintenancePurge(req) {
 }
 
 export default async function handler(req, res) {
+  if (req.query?.route === "codex-health") {
+    try {
+      if (req.method !== "POST") return res.status(405).json({ success: false, error: "Metodo non consentito." });
+      requireScheduledWorker(req);
+      return res.status(200).json({ success: true, ...await probeCodex() });
+    } catch (error) {
+      return res.status(error.status || 502).json({ success: false, error: error.message || "Verifica Codex non riuscita." });
+    }
+  }
   if (req.query?.route === "company-letterheads-mes") return handleMesHeadingResolve(req, res);
   if (req.query?.route === "hr-production-calendar") return handleHrProductionCalendar(req, res);
   if (req.query?.route === "company-calendar") return handleCompanyCalendar(req, res);

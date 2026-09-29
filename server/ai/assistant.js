@@ -1,4 +1,7 @@
 import { productionDateTools } from './production-dates.js';
+import { codexEnabled, CODEX_RUNTIME, createCodexClient } from './codex-agent.js';
+import { codexStore } from './codex-store.js';
+import { recoverCodexRequest, runWorkspaceCodex, cancelCodexRun } from './codex-chat.js';
 import { rdpCreationTools } from './rdp-create.js';
 import { runtimeTools, cancelConversationRuntime } from './runtime-tools.js';
 import { loadDevelopmentPermissions } from './development-permissions.js';
@@ -249,6 +252,7 @@ export async function authorizeAIRequest(req, { bypassAIEntitlements = false } =
   } : reportedCapabilities;
   const capabilities = {
     ...baseCapabilities,
+    runtime: codexEnabled() ? CODEX_RUNTIME : 'workspace-ai',
     progremes_data: baseCapabilities.progremes === true && progremesDataAvailable(),
   };
   if (!bypassAIEntitlements && capabilities.module_access !== true) {
@@ -652,6 +656,19 @@ async function createTopic(auth, body) {
 async function deleteConversation(auth, body) {
   const conversationId = String(body.conversationId || "").trim();
   if (!conversationId) throw Object.assign(new Error("Conversazione non specificata."), { status: 400 });
+  {
+    const { data: owned } = await auth.admin.from('ai_conversazioni').select('id').eq('id', conversationId).eq('utente_id', auth.profile.id).maybeSingle();
+    if (!owned) throw Object.assign(new Error('Conversazione non trovata.'), { status: 404 });
+    const pending = await codexStore(auth).pending(conversationId);
+    if (pending) await cancelCodexRun(auth, pending.id);
+    const { data: runs, error: runsError } = await auth.admin.from('ai_codex_runs').select('session_id').eq('conversation_id', conversationId).eq('user_id', auth.profile.id);
+    if (runsError) throw runsError;
+    const remoteIds = new Set((runs || []).map(run => run.session_id).filter(Boolean));
+    const client = remoteIds.size ? createCodexClient() : null;
+    for (const id of remoteIds) {
+      try { await client.delete(id); } catch (error) { if (error.providerStatus !== 404) throw error; }
+    }
+  }
   const { data, error } = await auth.admin.from("ai_conversazioni").delete().eq("id", conversationId).eq("utente_id", auth.profile.id).select("id").maybeSingle();
   if (error) throw error;
   if (!data?.id) throw Object.assign(new Error("Conversazione non trovata."), { status: 404 });
@@ -662,7 +679,8 @@ async function deleteConversation(auth, body) {
 async function loadConversation(auth, body) {
   const conversationId = String(body.conversationId || "").trim();
   const page = await readConversationPage(auth.admin, auth.profile.id, conversationId, body.cursor);
-  return { ...page, capabilities: auth.capabilities };
+  const pending = codexEnabled() ? await codexStore(auth).pending(conversationId) : null;
+  return { ...page, pendingRun: pending ? { id: pending.id, conversationId } : null, capabilities: auth.capabilities };
 }
 
 async function saveExchange(admin, conversationId, prompt, answer, sources, metadata = {}, userMetadata = {}) {
@@ -789,6 +807,7 @@ async function scanTimeLearning(admin) {
 }
 
 async function chat(auth, body) {
+  body = await recoverCodexRequest(auth, body);
   const mode = ["interno", "web", "ordini"].includes(body.mode) ? body.mode : "interno";
   assertModeAllowed(mode, auth.capabilities);
   const attachments = parseAssistantAttachments(body, auth.capabilities);
@@ -863,6 +882,17 @@ async function chat(auth, body) {
   const model = process.env.AI_MODEL || DEFAULT_MODEL;
   const mutationRequested = mode !== "web" && isControlledMutationRequest(prompt);
   const controlledToolNames = Object.keys(controlledTools);
+  if (codexEnabled()) {
+    // Agents input currently supports text and images. Existing document handling is
+    // retained for PDF/large images, with its runtime explicitly identified in the UI.
+    const compatible = attachments.every(file => file.mediaType !== 'application/pdf' && Math.ceil(file.data.byteLength / 3) * 4 + 100 <= 1048576);
+    if (compatible || body.action === 'codex_continue') return runWorkspaceCodex({
+      auth, body, conversationId, prompt, displayedPrompt: displayedPrompt(prompt, attachments), attachments,
+      attachmentMetadata: attachmentMetadata(attachments), mode, screenContext, context,
+      history: persistedMessages, tools, requestedArtifacts,
+      instructions: systemPrompt(mode, {}, null, controlledToolNames, auth.capabilities?.role_ai_level || 'analisi') + RECOVERY_INSTRUCTIONS,
+    });
+  }
   const generationId = await startAIGeneration(auth.admin, {
     profileId: auth.profile.id,
     conversationId,
@@ -901,7 +931,7 @@ async function chat(auth, body) {
   const developmentJobSummary = developmentJob ? { id: developmentJob.id, status: developmentJob.status } : null;
   const answer = result.text || (developmentJob ? "Richiesta di sviluppo accodata al PC per modifica, test e pubblicazione richiesta. L’esito sarà riportato in questa chat." : hasPendingAction ? "Ho preparato l’azione richiesta. Verifica l’anteprima e conferma per applicarla." : "Non ho ottenuto un esito conclusivo verificabile. Nessuna modifica viene dichiarata completata.");
   await saveExchange(auth.admin, conversationId, displayedPrompt(prompt, attachments), answer, sources, { model, mode, generationId, costUsd: usage.cost, downloadablePdf, artifacts, headingToolCalls: allToolCalls.map((item) => item.toolName), controlledActions, costProposalId, runtimeOperations, developmentJob: developmentJobSummary, screenContext }, { attachments: storedAttachments });
-  return { conversationId, answer, sources, usage, capabilities: auth.capabilities, downloadablePdf, artifacts, headingAction, costProposalId, controlledActions, controlledAction: controlledActions[0] || null, runtimeOperations, developmentJob: developmentJobSummary };
+  return { conversationId, answer, sources, usage, runtime: codexEnabled() ? 'workspace-documents' : 'workspace-ai', capabilities: auth.capabilities, downloadablePdf, artifacts, headingAction, costProposalId, controlledActions, controlledAction: controlledActions[0] || null, runtimeOperations, developmentJob: developmentJobSummary };
 }
 
 async function createProposal(auth, body) {
@@ -1045,6 +1075,7 @@ export async function handleAIAssistant(req) {
   const body = req.body && typeof req.body === "object" ? req.body : {};
   if (String(body.action || '').startsWith('development_')) return handleDevelopmentSettings(auth, body);
   if (body.action === "capabilities") return { capabilities: auth.capabilities };
+  if (body.action === 'codex_cancel') return cancelCodexRun(auth, body.runId);
   if (body.action === "heading_command") return { ...(await interpretHeadingCommand(auth, body)), capabilities: auth.capabilities };
   if (body.action === "heading_decide") return { ...(await decideHeadingAction(auth, body)), capabilities: auth.capabilities };
   if (body.action === "controlled_decide") return { ...(await decideControlledAction(auth, body)), capabilities: auth.capabilities };

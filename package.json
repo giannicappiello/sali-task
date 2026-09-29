@@ -27,6 +27,8 @@
     "@supabase/supabase-js": "^2.110.0",
     "@vercel/functions": "3.6.2",
     "ai": "^7.0.67",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
     "docxtemplater": "^3.69.3",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",

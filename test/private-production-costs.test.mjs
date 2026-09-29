@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {privateProductionRecord as project,privateComparisons,matchesPrivateDates} from '../src/features/production-costs/private-report.js';
+import {privateProductionRecord as project,privateProductionSummary,privateComparisons,matchesPrivateDates} from '../src/features/production-costs/private-report.js';
 import {displayRecord} from '../src/features/production-costs/cost-display.js';
 const base={id:1,closed:true,plannedObjective:25,quantity:100,goodQuantity:50,commercial:{octRevenue:100,invoiceRevenue:110},actualTotal:120,plannedTotal:999,baseline:{secret:true},phases:[{id:1,personnel:[{name:'hidden'}],actualHours:2,plannedHours:88}]};
 test('private OC actual and invoice values exactly match standard including partial OC',()=>{
@@ -12,6 +12,14 @@ test('each comparison uses its own available pairs and counts missing values sep
  const rows=[{invoiceValue:90,workedOct:100,comparisonTotal:120},{invoiceValue:50,workedOct:null,comparisonTotal:60},{invoiceValue:null,workedOct:30,comparisonTotal:40},{invoiceValue:0,workedOct:0,comparisonTotal:0}];
  const [fo,fc,oc]=privateComparisons(rows);assert.equal(fo.difference,-10);assert.equal(fo.items.length,2);assert.equal(fo.missingLeft,1);assert.equal(fo.missingRight,1);assert.equal(fc.difference,-40);assert.equal(fc.items.length,3);assert.equal(oc.difference,-30);assert.equal(oc.items.length,3);
 });
-test('no pairs stays unavailable, positive balances are retained for display suppression',()=>{assert.equal(privateComparisons([{invoiceValue:null,workedOct:null,comparisonTotal:30}])[0].difference,null);assert.equal(privateComparisons([{invoiceValue:200,workedOct:100,comparisonTotal:50}])[0].difference,100);});
+test('no pairs stays unavailable, positive balances are counted without offsetting losses',()=>{assert.equal(privateComparisons([{invoiceValue:null,workedOct:null,comparisonTotal:30}])[0].difference,null);assert.equal(privateComparisons([{invoiceValue:200,workedOct:100,comparisonTotal:50}])[0].difference,0);});
 test('month and inclusive date range filters use the same start or order date',()=>{const r=project({...base,date:'2026-08-01',works:[{start:'2026-09-15T08:00:00',end:'2026-09-16',state:'Terminato'}]});assert.equal(matchesPrivateDates(r,{month:'2026-09',from:'2026-09-15',to:'2026-09-15'}),true);assert.equal(matchesPrivateDates(r,{month:'2026-08'}),false);assert.equal(matchesPrivateDates({date:null},{month:'2026-09'}),false);assert.equal(matchesPrivateDates({date:null},{}),true);});
 test('legacy order references conclusion and safe invoice references retained',()=>{const r=project({...base,orderNumber:'OC/2/144',customerCode:'501.00995',works:[{end:'2026-09-16',state:'Terminato'}],commercial:{octRevenue:100,octPartial:true,octReasons:['STATION secret'],invoiceRevenue:120,invoices:[{document:{sigla:'FT',serie:1,numero:42,secret:'hidden'}},{document:{sigla:'FT',serie:1,numero:42}}]}});assert.deepEqual(r.octReferences,['OC/2/144']);assert.deepEqual(r.invoiceReferences,['FT 1/42']);assert.equal(r.octPartial,true);assert.equal(r.concludedAt,'2026-09-16');assert.equal(r.isSali,true);assert.equal(JSON.stringify(r).includes('secret'),false);});
+
+test('positive work never offsets negative work, while all comparable work is counted',()=>{
+ const rows=[{invoiceValue:90,workedOct:100,comparisonTotal:120},{invoiceValue:500,workedOct:200,comparisonTotal:100},{invoiceValue:50,workedOct:50,comparisonTotal:50}];
+ const [fo,fc,oc]=privateComparisons(rows);
+ assert.deepEqual([fo.difference,fc.difference,oc.difference],[-10,-30,-20]);
+ for(const c of [fo,fc,oc]){assert.equal(c.items.length,3);assert.equal(c.negativeCount,1);assert.equal(c.positiveCount,1);}
+ assert.equal(privateProductionSummary(rows).excess,20);
+});

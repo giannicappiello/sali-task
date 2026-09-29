@@ -21,7 +21,7 @@ export function privateProductionSummary(rows) {
  const octRows=rows.filter(r=>r.octValue!=null);
  const comparable=rows.filter(r=>r.comparisonTotal!=null&&r.workedOct!=null);
  const excluded=rows.filter(r=>!comparable.includes(r));
- const difference=comparable.length?comparable.reduce((s,r)=>s+r.comparisonTotal-r.workedOct,0):null;
+ const difference=comparable.length?comparable.reduce((s,r)=>s+Math.max(r.comparisonTotal-r.workedOct,0),0):null;
  return {octValue:octRows.length?octRows.reduce((s,r)=>s+r.octValue,0):null,octPartial:octRows.length!==rows.length,excess:difference>0?Math.round(difference*100)/100:null,comparisonComplete:excluded.length===0,actualPartial:comparable.some(r=>r.actualPartial),comparableCount:comparable.length,excluded,excludedCost:excluded.some(r=>r.actualTotal!=null)?excluded.reduce((s,r)=>s+(r.actualTotal??0),0):null};
 }
 
@@ -31,7 +31,7 @@ export function privateComparisons(rows){
  {key:'invoiceActual',label:'Fatturato su Consuntivo',left:'invoiceValue',right:'comparisonTotal'},
  {key:'ocActual',label:'OC su Consuntivo',left:'workedOct',right:'comparisonTotal'}].map(c=>{
  const items=rows.filter(r=>r[c.left]!=null&&r[c.right]!=null);
- return {...c,items,difference:items.length?Math.round(items.reduce((sum,r)=>sum+r[c.left]-r[c.right],0)*100)/100:null,
+ return {...c,items,negativeCount:items.filter(r=>privateDifference(r[c.left],r[c.right])<0).length,positiveCount:items.filter(r=>privateDifference(r[c.left],r[c.right])>0).length,difference:items.length?Math.round(items.reduce((sum,r)=>sum+Math.min(privateDifference(r[c.left],r[c.right]),0),0)*100)/100:null,
  missingLeft:rows.filter(r=>r[c.left]==null).length,missingRight:rows.filter(r=>r[c.right]==null).length,excluded:rows.length-items.length};
  });
 }

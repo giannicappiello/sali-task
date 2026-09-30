@@ -13,6 +13,7 @@ import GlobalSearchKeyboard from "./components/GlobalSearchKeyboard";
 import GlobalTableColumnControls from "./components/GlobalTableColumnControls";
 import BrandedDialogProvider from "./components/BrandedDialogProvider";
 import NotificationManager from "./components/NotificationManager";
+import ProductionEntry from "./components/ProductionEntry";
 import WorkspaceAccessGuard from "./components/WorkspaceAccessGuard";
 import SettingsAccessGuard from "./components/SettingsAccessGuard";
 import HrAttendanceProvider from "./modules/hr/HrAttendanceProvider";
@@ -154,7 +155,7 @@ function App() {
               <Route path="settings/crm-digital" element={<SettingsAccessGuard adminOnly><DigitalConnectionsSettings /></SettingsAccessGuard>} />
               <Route path="notifications" element={<Notifications />} />
               <Route path="assistente-ai" element={<WorkspaceAccessGuard moduleCode="assistente_ai"><AIAssistant /></WorkspaceAccessGuard>} />
-              <Route path="produzione/*" element={<WorkspaceAccessGuard moduleCode="progremes"><Production /></WorkspaceAccessGuard>} />
+              <Route path="produzione/*" element={<ProductionEntry><Production /></ProductionEntry>} />
               <Route path="moduli/:moduleCode" element={<WorkspaceModuleContainer />} />
               <Route path="menu/:menuCode" element={<WorkspaceMenuContainer />} />
               <Route path="workspace/schermate/:screenCode" element={<ConfigurableWorkspaceScreen />} />

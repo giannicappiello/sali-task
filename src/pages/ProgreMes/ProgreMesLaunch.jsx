@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { Navigate, useNavigate } from "react-router-dom";
+import { operationalMesRoute } from "../../lib/operationalMesRoute";
 import { useAuth } from "../../contexts/AuthContext";
 import { openProgremesWorkspaceWindow, progremesWorkspaceDestination, requestProgremesNavigation } from "./progremesWindow";
 import { observeProgremesFrame } from "./progremesHandshake";
@@ -16,7 +17,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
   useEffect(() => { currentToken.current = accessToken; }, [accessToken]);
   const operationalOverview = screenCode === "progremes.PlanningProduction" && ["station-overview", "filling-overview"].includes(new URLSearchParams(search).get("destination"));
   const allowed = screenCode === "progremes.PlanningProduction"
-    ? hasScreenAccess(screenCode)
+    ? hasScreenAccess(screenCode) || (operationalMesRoute(`/produzione/${screenCode}`, search) && hasScreenAccess("attivita.dashboard"))
     : hasModuleAccess("progremes");
   const frame = useRef(null);
   const [popupPath, setPopupPath] = useState("");

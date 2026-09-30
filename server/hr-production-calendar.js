@@ -41,7 +41,11 @@ export async function authorizeProductionCalendar(req, admin) {
   ]);
   if (member.error || memberships.error || areas.error) throw member.error || memberships.error || areas.error;
   const areaOperations = productionDepartments(areas.data || []);
-  if (!member.data?.active) return areaOperations;
+  if (!member.data?.active) {
+    const activityAccess = await admin.rpc('workspace_screen_level_for_user', { target_user_id: profile.data.id, target_screen: 'attivita.dashboard' });
+    if (activityAccess.error) throw activityAccess.error;
+    if (!['lettura', 'scrittura', 'amministrazione'].includes(activityAccess.data)) return areaOperations;
+  }
   const ids = [...new Set([profile.data.reparto_id, ...(memberships.data || []).map(row => row.reparto_id)].filter(Boolean))];
   if (!ids.length) return areaOperations;
   const departments = await admin.from('reparti').select('nome,attivo').in('id', ids);

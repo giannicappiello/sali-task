@@ -24,6 +24,7 @@ import {
   X,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
+import { operationalMesRoute } from "../lib/operationalMesRoute";
 import { useAuth } from "../contexts/AuthContext";
 import { isProgremesScreenPath, openProgremesWorkspaceWindow } from "../pages/ProgreMes/progremesWindow";
 import WorkspaceScreenLayout from "./WorkspaceScreenLayout";
@@ -176,6 +177,7 @@ function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [pharmacyEnabled, setPharmacyEnabled] = useState(false);
   const [ordersAccess, setOrdersAccess] = useState({ pr: false, ph: false, private: false });
+  const notificationsAllowed = hasModuleAccess("notifiche");
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
   const [notifications, setNotifications] = useState([]);
@@ -254,7 +256,9 @@ function Layout() {
   const launchProgremes = useCallback((screenCode = "", workspacePath = "") => {
     const targetScreen = workspacePath ? new URL(workspacePath, window.location.origin).pathname.split('/').pop() : screenCode;
     const planningAllowed = targetScreen === 'progremes.PlanningProduction' && hasScreenAccess(targetScreen);
-    if (!planningAllowed && !hasModuleAccess("progremes")) {
+    const operationalTarget = new URL(workspacePath || `/produzione/${targetScreen}`, window.location.origin);
+    const operationalAllowed = operationalMesRoute(operationalTarget.pathname, operationalTarget.search) && hasScreenAccess("attivita.dashboard");
+    if (!planningAllowed && !operationalAllowed && !hasModuleAccess("progremes")) {
       setProgremesConnection({ open: true, error: "Accesso al modulo ProgreMES non autorizzato." });
       return;
     }
@@ -469,7 +473,7 @@ function Layout() {
   }, [profile?.id]);
 
   useEffect(() => {
-    if (!profile?.id) return undefined;
+    if (!notificationsAllowed || !profile?.id) return undefined;
     const channel = supabase
       .channel(`topbar-notifications-${profile.id}`)
       .on("postgres_changes", {
@@ -483,7 +487,7 @@ function Layout() {
       })
       .subscribe();
     return () => supabase.removeChannel(channel);
-  }, [profile?.id, notificationOpen]);
+  }, [profile?.id, notificationOpen, notificationsAllowed]);
 
   useEffect(() => {
     const refresh = () => {
@@ -492,11 +496,11 @@ function Layout() {
     };
     window.addEventListener("workspace:notifications-changed", refresh);
     return () => window.removeEventListener("workspace:notifications-changed", refresh);
-  }, [profile?.id, notificationOpen]);
+  }, [profile?.id, notificationOpen, notificationsAllowed]);
 
 
   async function loadNotificationCount() {
-    if (!profile?.id) return;
+    if (!notificationsAllowed || !profile?.id) return;
     const { count, error } = await supabase
       .from("notifiche")
       .select("*", { count: "exact", head: true })
@@ -506,7 +510,7 @@ function Layout() {
   }
 
   async function loadNotifications() {
-    if (!profile?.id) return;
+    if (!notificationsAllowed || !profile?.id) return;
     const { data, error } = await supabase
       .from("notifiche")
       .select("id,titolo,messaggio,tipo,evento,url,task_id,letta,created_at,chat_conversazione_id,progetto_id,prodotto_id")
@@ -687,11 +691,11 @@ function Layout() {
             <ContextualAIAssistant title={screenHeader?.title || currentPage.title} module={currentPage.title} />
             {location.pathname !== "/home" && <button type="button" className="topbar-home-btn topbar-back-btn" onClick={screenHeader?.onBack || goBack} aria-label={screenHeader?.backLabel ? `Torna a ${screenHeader.backLabel}` : "Indietro"}><ArrowLeft size={19} /><span>Indietro</span></button>}
             <button type="button" className="topbar-home-btn" onClick={() => navigate("/home")} aria-label="Vai alla Home"><Home size={19} /><span>Home</span></button>
-            <button type="button" className="icon-btn notification-btn" onClick={openNotifications} aria-label="Apri notifiche"><Bell size={21} />{notificationCount > 0 && <small>{notificationCount}</small>}</button>
-            <button type="button" className="icon-btn notification-btn" onClick={() => navigate("/messages")} aria-label="Apri messaggi"><MessageCircle size={21} /></button>
+            {hasModuleAccess("notifiche") && <button type="button" className="icon-btn notification-btn" onClick={openNotifications} aria-label="Apri notifiche"><Bell size={21} />{notificationCount > 0 && <small>{notificationCount}</small>}</button>}
+            {hasModuleAccess("messaggi") && <button type="button" className="icon-btn notification-btn" onClick={() => navigate("/messages")} aria-label="Apri messaggi"><MessageCircle size={21} /></button>}
           </div>
 
-          {notificationOpen && (
+          {notificationOpen && hasModuleAccess("notifiche") && (
             <div className="topbar-popover">
               <div className="topbar-popover-header"><h3>Notifiche</h3><p>{notificationCount} non lette</p></div>
               <div className="notification-list">

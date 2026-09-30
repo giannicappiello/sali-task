@@ -42,11 +42,13 @@ function unlockNotificationAudio() {
 }
 
 export default function NotificationManager() {
-  const { profile } = useAuth();
+  const { profile, hasModuleAccess } = useAuth();
+  const notificationsAllowed = hasModuleAccess("notifiche");
   const soundEnabled = useRef(true);
   const soundRules = useRef({});
 
   useEffect(() => {
+    if (!notificationsAllowed) return undefined;
     const unlock = () => unlockNotificationAudio();
     window.addEventListener("pointerdown", unlock, { once: true });
     window.addEventListener("keydown", unlock, { once: true });
@@ -54,10 +56,10 @@ export default function NotificationManager() {
       window.removeEventListener("pointerdown", unlock);
       window.removeEventListener("keydown", unlock);
     };
-  }, []);
+  }, [notificationsAllowed]);
 
   useEffect(() => {
-    if (!profile?.id) return undefined;
+    if (!notificationsAllowed || !profile?.id) return undefined;
     Promise.all([
       supabase.from("notifiche_preferenze").select("suono_attivo").eq("utente_id", profile.id).maybeSingle(),
       supabase.from("notifiche_regole").select("codice,suono_attivo,attiva"),
@@ -91,10 +93,10 @@ export default function NotificationManager() {
       window.removeEventListener("workspace:notification-preferences", preferencesListener);
       supabase.removeChannel(channel);
     };
-  }, [profile?.id]);
+  }, [profile?.id, notificationsAllowed]);
 
   useEffect(() => {
-    if (!profile?.id || !pushSupported()) return;
+    if (!notificationsAllowed || !profile?.id || !pushSupported()) return;
     if (localStorage.getItem(`workspace-push-disabled:${profile.id}`) === "1") return;
     let cancelled = false;
     async function activateAfterUpdate() {
@@ -119,7 +121,7 @@ export default function NotificationManager() {
     }
     activateAfterUpdate();
     return () => { cancelled = true; };
-  }, [profile?.id]);
+  }, [profile?.id, notificationsAllowed]);
 
   return null;
 }

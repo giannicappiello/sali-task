@@ -106,7 +106,8 @@ function DashboardColorLegend() {
 }
 
 function Dashboard({ toolbarTarget = null }) {
-  const { profile, areaAccess = [], userDepartmentIds = [], isAdmin, dataScope, canViewScopedData, hasScreenAccess, hasModuleAccess } = useAuth();
+  const { profile, areaAccess = [], userDepartmentIds = [], isAdmin, dataScope, canViewScopedData, hasScreenAccess, hasModuleAccess, getPersonalAccessDecision } = useAuth();
+  const operationsOnly = !isAdmin?.() && ["attivita.fasi", "attivita.reminder", "attivita.progetti"].every(code => getPersonalAccessDecision("schermata", code) === "nega");
   const adminMode = Boolean(isAdmin?.() || dataScope?.mode === "tutti");
   const [tasks, setTasks] = useState([]);
   const [reminders, setReminders] = useState([]);
@@ -138,10 +139,17 @@ function Dashboard({ toolbarTarget = null }) {
 
   useEffect(() => {
     if (profile?.id) loadData();
-  }, [profile?.id, profile?.reparto_id, userDepartmentIds.join(","), dataScope?.mode, dataScope?.userIds?.join(","), dataScope?.departmentIds?.join(","), adminMode]);
+  }, [profile?.id, profile?.reparto_id, userDepartmentIds.join(","), dataScope?.mode, dataScope?.userIds?.join(","), dataScope?.departmentIds?.join(","), adminMode, operationsOnly]);
 
   async function loadData() {
     setLoading(true);
+    if (operationsOnly) {
+      const result = await supabase.from("reparti").select("id,nome,attivo").order("nome");
+      setDepartments(result.data || []);
+      setTasks([]); setReminders([]); setProjects([]);
+      setLoading(false);
+      return;
+    }
 
     const [phasesRes, phaseDepartmentsRes, phaseProductsRes, remindersRes, reminderDepartmentsRes, messageParticipantsRes, projectsRes, projectDepartmentsRes, departmentsRes, productsRes, templatesRes, templateDepartmentsRes, customersRes] = await Promise.all([
       supabase
@@ -231,8 +239,8 @@ function Dashboard({ toolbarTarget = null }) {
   }
 
   const activities = useMemo(
-    () => [...tasks.filter((item) => !isTaskDone(item)), ...reminders.filter((item) => !isReminderDone(item)), ...production.items],
-    [tasks, reminders, production.items]
+    () => operationsOnly ? production.items : [...tasks.filter((item) => !isTaskDone(item)), ...reminders.filter((item) => !isReminderDone(item)), ...production.items],
+    [tasks, reminders, production.items, operationsOnly]
   );
 
   const filteredActivities = useMemo(() => {
@@ -535,7 +543,7 @@ function Dashboard({ toolbarTarget = null }) {
 
       {production.error && <div role="alert" className="panel" style={{ color: '#b91c1c', padding: 16 }}>{production.error}</div>}
       {production.warning && <div role="status" className="panel" style={{ color: '#854d0e', background: '#fef9c3', padding: 16 }}>{production.warning}</div>}
-      <DashboardActivityToolbar loading={loading} monthStats={monthStats} activityFilter={activityFilter} setActivityFilter={setActivityFilter} openNewPhase={openNewPhase} openNewReminder={openNewReminder} goToday={goToday} />
+      {!operationsOnly && <DashboardActivityToolbar loading={loading} monthStats={monthStats} activityFilter={activityFilter} setActivityFilter={setActivityFilter} openNewPhase={openNewPhase} openNewReminder={openNewReminder} goToday={goToday} />}
 
       {toolbarTarget ? createPortal(planningToolbar, toolbarTarget) : planningToolbar}
 
@@ -591,7 +599,7 @@ function Dashboard({ toolbarTarget = null }) {
         </div>
 
 
-      <div className="panel dashboard-messages-panel">
+      {hasModuleAccess("messaggi") && <div className="panel dashboard-messages-panel">
         <div className="panel-header">
           <div><h3>Messaggistica</h3><p>{messagesCount} nuovi messaggi in arrivo</p></div>
           <MessageCircle size={24} />
@@ -600,7 +608,7 @@ function Dashboard({ toolbarTarget = null }) {
           <button className="secondary-action" onClick={() => window.location.assign("/messages")}>Apri messaggi</button>
           <button className="primary-action" onClick={() => window.location.assign("/messages?new=1")}><Plus size={18} /> Crea nuovo messaggio</button>
         </div>
-      </div>
+      </div>}
 
       {activityFilter && <PlanningDialog title={sidePanelTitle} onClose={() => setActivityFilter(null)}>
         {selectedItems.length === 0 && <p>Nessuna attività per questo filtro.</p>}
@@ -609,7 +617,7 @@ function Dashboard({ toolbarTarget = null }) {
       {dayPopup && <PlanningDialog title={formatDateHuman(dayPopup)} onClose={() => setDayPopup(null)}>
         {filteredActivities.filter(item => activityOnDay(item, dayPopup)).length === 0 && <p>Nessuna attività per questo giorno.</p>}
         <ProductionGroup onOpen={openActivity} items={filteredActivities.filter(item => item.tipo === 'production' && activityOnDay(item, dayPopup))} />
-        <ActivityGroup title="Task, fasi e reminder" items={filteredActivities.filter(item => item.tipo !== 'production' && activityOnDay(item, dayPopup))} onOpen={openActivity} />
+        {!operationsOnly && <ActivityGroup title="Task, fasi e reminder" items={filteredActivities.filter(item => item.tipo !== 'production' && activityOnDay(item, dayPopup))} onOpen={openActivity} />}
       </PlanningDialog>}
       {activityPopup && <CostModal title={activityPopup.titolo} data-record-id={activityPopup.productionOrderId || activityPopup.id} data-order-number={activityPopup.orderNumber} data-article-code={activityPopup.articleCode} data-phase={activityPopup.reparto} onClose={() => setActivityPopup(null)}>
         <p><strong className={activityPopup.tipo === 'production' ? `production-label ${activityPopup.reparto === 'Preparazione' ? 'preparation' : 'packaging'}` : undefined}>{activityPopup.tipo === 'production' ? activityPopup.reparto : statusLabel(activityPopup)}</strong></p>

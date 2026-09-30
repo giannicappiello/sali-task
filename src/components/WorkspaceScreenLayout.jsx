@@ -182,6 +182,8 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
   useWorkspaceChrome({ title: configuredTitle, description: configuredDescription,
     backLabel: presentation.parentName, onBack: goBack, priority: -1 });
 
+  const stationDestination = new URLSearchParams(location.search).get("destination");
+  const isStationUi = location.pathname === "/produzione/miscelazione" || (isProgremesScreenPath(location.pathname) && ["station", "station-overview"].includes(stationDestination));
   const wrappedContent = (
     <div
       className="workspace-config-driven-view"
@@ -189,7 +191,7 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
       data-layout-target-type={presentation.layoutTargetType}
       data-layout-target-code={presentation.layoutTargetCode}
     >
-      <WorkspaceModuleNavigation catalog={catalog} canRead={hasScreenAccess}/>{composedContent}
+      {!isStationUi && <WorkspaceModuleNavigation catalog={catalog} canRead={hasScreenAccess}/>}{isStationUi ? children : composedContent}
     </div>
   );
 

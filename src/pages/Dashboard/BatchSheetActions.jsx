@@ -1,4 +1,5 @@
 import PackagingActualEditor from './PackagingActualEditor';
+import { assertPackagingEditorAvailable } from './packagingActualAvailability.js';
 import { observeCentralPrint, pendingCentralPrint, finishCentralPrint } from './centralPrint.js';
 import { useCallback, useEffect, useState } from 'react';
 import { FileText, Play, Printer } from 'lucide-react';
@@ -35,7 +36,8 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
     return () => controller.abort();
   }, [request]);
   useEffect(() => () => { if (sheet?.url) URL.revokeObjectURL(sheet.url); }, [sheet]);
-  const phase = list?.phases?.find(p => p.id === phaseId);
+  const phases = list?.phases || [];
+  const phase = phases.find(p => p.id === phaseId);
   useEffect(() => {
     if (!open || !phaseId) return;
     const controller = new AbortController();
@@ -48,6 +50,7 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
       const url = URL.createObjectURL(blob);
       setSheet({ ...value, url });
       if (autoEdit && list?.phases?.some(p => p.id === phaseId && p.phase === 3 && ['RUNNING','SUSPENDED','CLOSING'].includes(p.executionStatus))) {
+        assertPackagingEditorAvailable(value);
         const actual = await request('actual-sheet', {phaseId}, controller.signal);
         if (!controller.signal.aborted) { setSavedActual(actual.saved); setEditing(true); }
       }
@@ -76,11 +79,6 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
     } catch (cause) { setError(cause.message); }
     finally { setBusy(false); }
   }
-  async function editSheet() {
-    setBusy(true); setError('');
-    try { const result = await request('actual-sheet', {phaseId}); setSavedActual(result.saved); setEditing(true); }
-    catch (cause) { setError(cause.message); } finally { setBusy(false); }
-  }
   async function saveSheet(actual) {
     if (busy) return;
     setBusy(true); setError('');
@@ -94,19 +92,18 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
   if (list?.managed === false) return children;
   const title = kind === 'production' ? 'produzione' : 'confezionamento';
   return <>
-    <button type="button" disabled={!list} onClick={() => { setAutoEdit(false); setOpen(true); setError(''); setSheet(null); setConfirmStart(false); setPhaseId(list.phases.length === 1 ? list.phases[0].id : ''); }}><FileText size={17}/>Gestione batch {title}</button>
-    {kind === 'packaging' && list?.phases?.some(p => p.phase === 3 && ['RUNNING','SUSPENDED','CLOSING'].includes(p.executionStatus)) && <button type="button" onClick={() => {
-      const eligible = list.phases.filter(p => p.phase === 3 && ['RUNNING','SUSPENDED','CLOSING'].includes(p.executionStatus));
-      setAutoEdit(true); setOpen(true); setError(''); setSheet(null); setPhaseId(eligible.length === 1 ? eligible[0].id : '');
-    }}>Compila foglio</button>}
+    <button type="button" disabled={!list || open} onClick={() => {
+      setAutoEdit(kind === 'packaging'); setOpen(true); setError(''); setSheet(null); setConfirmStart(false); setPrintMessage('');
+      setPhaseId(phases.length === 1 ? phases[0].id : '');
+    }}><FileText size={17}/>{kind === 'packaging' && list?.phases?.some(p => p.phase === 3 && ['RUNNING','SUSPENDED','CLOSING'].includes(p.executionStatus)) ? 'Compila foglio' : `Gestione batch ${title}`}</button>
     {!open && error && <p role="alert">{error}</p>}
-    {open && <Modal title={`Foglio di ${title} · batch`} className="product-spec-viewer batch-sheet-modal" onClose={() => { if (!busy) { setOpen(false); setSheet(null); } }}>
+    {open && <Modal title={`Foglio di ${title} · batch`} className="product-spec-viewer batch-sheet-modal" onClose={() => { if (!busy) { setOpen(false); setSheet(null); setError(''); } }}>
       <label className="pc-field"><span>Batch / lavorazione</span><select value={phaseId} disabled={busy} onChange={e => { setPhaseId(e.target.value); setPrintMessage(''); setPrintPending(false); setSheet(null); setConfirmStart(false); setError(''); }}>
         <option value="">Seleziona il batch</option>
-        {list.phases.map(p => <option key={p.id} value={p.id}>Batch {p.number} · {p.quantity} {p.unit} · {p.lotCode || 'Lotto da assegnare'} · {states[p.executionStatus] || p.executionStatus} · {p.resource}{p.phase === 7 ? ' · Astucciatura' : ''}</option>)}
+        {phases.map(p => <option key={p.id} value={p.id}>Batch {p.number} · {p.quantity} {p.unit} · {p.lotCode || 'Lotto da assegnare'} · {states[p.executionStatus] || p.executionStatus} · {p.resource}{p.phase === 7 ? ' · Astucciatura' : ''}</option>)}
       </select></label>
       {phase?.actualStart && <p><strong>Avviata il {String(phase.actualStart).replace("T"," ").slice(0,16)}</strong></p>}
-      {!list.phases.length && <p>Nessuna lavorazione di {title} disponibile per questo ordine.</p>}
+      {list && !phases.length && <p>Nessuna lavorazione di {title} disponibile per questo ordine.</p>}
       {error && !sheet && phaseId && <button type="button" disabled={busy} onClick={() => setLoadAttempt(value => value + 1)}>Riprova apertura foglio</button>}
       {error && <p role="alert" className="pc-error">{error}</p>}
       {printMessage && <p role="status">{printMessage}</p>}
@@ -114,10 +111,9 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
       {sheet && !editing && <iframe title={`Foglio di ${title}`} srcDoc={sheet.sheetHtml || undefined} src={sheet.sheetHtml ? undefined : sheet.url}/>}
       {editing && sheet && <PackagingActualEditor key={phaseId} sheet={sheet} saved={savedActual} busy={busy} onSave={saveSheet} onCancel={() => setEditing(false)}/>}
       {confirmStart && <p>Confermi l’avvio del batch {phase?.number} selezionato su {phase?.resource}?</p>}
-      {!editing && <footer><button type="button" disabled={busy} onClick={() => { setOpen(false); setSheet(null); }}>Chiudi</button>
+      {!editing && <footer><button type="button" disabled={busy} onClick={() => { setOpen(false); setSheet(null); setError(''); }}>Chiudi</button>
         <button type="button" disabled={!sheet || busy} onClick={() => act('print')}><Printer size={17}/>{printPending ? 'Verifica stampa' : printMessage ? 'Ristampa su PRODUZIONE' : 'Stampa su PRODUZIONE'}</button>
         {phase?.executionStatus === 'NOT_STARTED' && <button type="button" disabled={!sheet || busy} onClick={() => confirmStart ? act('start') : setConfirmStart(true)}><Play size={17}/>{confirmStart ? 'Conferma avvio' : 'Avvia lavorazione'}</button>}
-        {kind === 'packaging' && phase?.phase === 3 && ['RUNNING','SUSPENDED','CLOSING'].includes(phase?.executionStatus) && <button type="button" disabled={!sheet || busy} onClick={editSheet}>Compila foglio</button>}
         {kind === 'packaging' && phase?.executionStatus === 'COMPLETED' && <button type="button" disabled={busy} onClick={async () => { try { setPrintMessage((await request('archive-status',{phaseId})).message); } catch(e) { setError(e.message); } }}>Verifica PDF sul NAS</button>}
       </footer>}
     </Modal>}

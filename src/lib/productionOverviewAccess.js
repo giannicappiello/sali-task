@@ -1,3 +1,4 @@
+import { operationalMesRoute } from './operationalMesRoute.js';
 const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 export function productionOverviewAccess({ admin = false, role = '', areas = [], departments = [], planning = false, customer = false } = {}) {
   if (customer) return { station: false, filling: false };
@@ -18,7 +19,7 @@ export function productionOverviewKind(path, origin = 'https://workspace.invalid
     if (url.origin !== origin) return '';
     if (url.pathname === '/produzione/miscelazione') return 'station';
     if (url.pathname === '/produzione/filling') return 'filling';
-    if (url.pathname !== '/produzione/progremes.PlanningProduction') return '';
-    return ({'station-overview':'station','filling-overview':'filling'})[url.searchParams.get('destination')] || '';
+    if (!operationalMesRoute(url.pathname, url.search)) return '';
+    return ({'station':'station','station-overview':'station','filling-overview':'filling'})[url.searchParams.get('destination')] || '';
   } catch { return ''; }
 }

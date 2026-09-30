@@ -17,9 +17,21 @@ test('department grants are limited to exact overview destinations',()=>{
  assert.equal(productionOverviewKind('/produzione/filling'),'filling');
  assert.equal(productionOverviewKind('/produzione/progremes.PlanningProduction?destination=station-overview&workspaceMesWindow=1'),'station');
  assert.equal(productionOverviewKind('/produzione/progremes.PlanningProduction?destination=filling-overview'),'filling');
- for(const path of ['/produzione','/produzione/progremes.PlanningProduction','/produzione/progremes.PlanningProduction?destination=station&station=ST7','/produzione/progremes.Settings','https://external.invalid/produzione/filling']) assert.equal(productionOverviewKind(path),'');
+ for(const path of ['/produzione','/produzione/progremes.PlanningProduction','/produzione/progremes.Settings','https://external.invalid/produzione/filling']) assert.equal(productionOverviewKind(path),'');
  const mixing=productionOverviewAccess({role:'Addetto miscelazione'});
  assert.equal(mixing[productionOverviewKind('/produzione/filling')],false);
  const packaging=productionOverviewAccess({role:'Addetto confezionamento'});
  assert.equal(packaging[productionOverviewKind('/produzione/miscelazione')],false);
+});
+
+test('mixing operators can open individual Stations without granting planning or packaging access',()=>{
+ const path='/produzione/progremes.PlanningProduction';
+ for(const station of ['ST01','ST7','ST10','STATION7']) {
+  const kind=productionOverviewKind(path+'?destination=station&station='+station+'&workspaceMesWindow=1');
+  assert.equal(kind,'station');
+  assert.equal(productionOverviewAccess({role:'Addetto miscelazione'})[kind],true);
+  assert.equal(productionOverviewAccess({role:'Addetto confezionamento'})[kind],false);
+  assert.equal(productionOverviewAccess({customer:true})[kind],false);
+ }
+ for(const query of ['?destination=station','?destination=station&station=invalid','?destination=station&station=ST7&action=delete','?destination=station&station=ST7&stationAction=start&orderId=-1','?destination=planning']) assert.equal(productionOverviewKind(path+query),'');
 });

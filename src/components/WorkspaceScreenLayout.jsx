@@ -1,3 +1,5 @@
+import { productionOverviewKind } from "../lib/productionOverviewAccess";
+import useProductionOverviewAccess from "../hooks/useProductionOverviewAccess";
 import WorkspaceModuleNavigation from "./WorkspaceModuleNavigation";
 import { createElement, useEffect, useMemo, useState } from "react";
 import { LayoutGrid } from "lucide-react";
@@ -60,6 +62,8 @@ function stableRouteTarget(pathname) {
 
 export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescription, children }) {
   const location = useLocation();
+  const { canOpen, pending: overviewPending } = useProductionOverviewAccess();
+  const overviewRoute = productionOverviewKind(location.pathname + location.search, window.location.origin);
   const { hasModuleAccess, hasScreenAccess, getModuleScreenGrant } = useAuth();
   const [catalog, setCatalog] = useState({ modules: [], screens: [], links: [] });
   const [builderLayout, setBuilderLayout] = useState(null);
@@ -195,7 +199,8 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
     </div>
   );
 
-  if (presentation.denied) return <Navigate to="/home" replace />;
+  if (overviewRoute && overviewPending) return <div>Verifica reparto...</div>;
+  if (presentation.denied && !canOpen(location.pathname + location.search)) return <Navigate to="/home" replace />;
   // Le pagine MES hanno già un'intestazione propria, aggiornata dalla navigazione interna.
   if (isProgremesScreenPath(location.pathname)) return wrappedContent;
   if (presentation.container) return wrappedContent;

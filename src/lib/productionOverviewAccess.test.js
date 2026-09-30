@@ -10,3 +10,16 @@ test('department operators see only their own overview, administrators both',()=
  assert.deepEqual(productionOverviewAccess({customer:true,planning:true}),{station:false,filling:false});
  assert.deepEqual(productionOverviewAccess(),{station:false,filling:false});
 });
+
+import {productionOverviewKind} from './productionOverviewAccess.js';
+test('department grants are limited to exact overview destinations',()=>{
+ assert.equal(productionOverviewKind('/produzione/miscelazione'),'station');
+ assert.equal(productionOverviewKind('/produzione/filling'),'filling');
+ assert.equal(productionOverviewKind('/produzione/progremes.PlanningProduction?destination=station-overview&workspaceMesWindow=1'),'station');
+ assert.equal(productionOverviewKind('/produzione/progremes.PlanningProduction?destination=filling-overview'),'filling');
+ for(const path of ['/produzione','/produzione/progremes.PlanningProduction','/produzione/progremes.PlanningProduction?destination=station&station=ST7','/produzione/progremes.Settings','https://external.invalid/produzione/filling']) assert.equal(productionOverviewKind(path),'');
+ const mixing=productionOverviewAccess({role:'Addetto miscelazione'});
+ assert.equal(mixing[productionOverviewKind('/produzione/filling')],false);
+ const packaging=productionOverviewAccess({role:'Addetto confezionamento'});
+ assert.equal(packaging[productionOverviewKind('/produzione/miscelazione')],false);
+});

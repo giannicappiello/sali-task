@@ -1,3 +1,4 @@
+import useWorkspaceAutofillPolicy from "../hooks/useWorkspaceAutofillPolicy";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -133,6 +134,7 @@ function getPresence(profile) {
 }
 
 function Layout() {
+  useWorkspaceAutofillPolicy();
   const location = useLocation();
   const navigate = useNavigate();
   const goBack = useBackNavigation(isProgremesScreenPath(location.pathname) ? "/produzione" : "/home");

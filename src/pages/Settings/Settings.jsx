@@ -688,14 +688,14 @@ export default function Settings({ section = "team" }) {
 
       {modal.open && (
         <div className="modal-backdrop">
-          <form className="modal-card v4-modal" onSubmit={modal.type === "reparto" ? saveReparto : modal.type === "ruolo" ? saveRuolo : modal.type === "utente_accessi" ? saveUserAccess : modal.type === "nuovo_utente" ? saveNewUser : saveTemplate}>
+          <form autoComplete="off" className="modal-card v4-modal" onSubmit={modal.type === "reparto" ? saveReparto : modal.type === "ruolo" ? saveRuolo : modal.type === "utente_accessi" ? saveUserAccess : modal.type === "nuovo_utente" ? saveNewUser : saveTemplate}>
             <div className="modal-header"><h2>{modal.type === "utente_accessi" ? `Accessi di ${`${modal.item?.nome || ""} ${modal.item?.cognome || ""}`.trim() || modal.item?.email || "utente"}` : modal.type === "nuovo_utente" ? "Nuovo utente" : modal.item ? "Modifica" : "Nuovo"}</h2><button type="button" onClick={closeModal}><X size={20} /></button></div>
 
             {modal.type === "nuovo_utente" && <>
               <label>Nome<input value={newUserForm.nome} onChange={(e) => setNewUserForm({ ...newUserForm, nome: e.target.value })} /></label>
               <label>Cognome<input value={newUserForm.cognome} onChange={(e) => setNewUserForm({ ...newUserForm, cognome: e.target.value })} /></label>
-              <label>Email<input type="email" value={newUserForm.email} onChange={(e) => setNewUserForm({ ...newUserForm, email: e.target.value })} /></label>
-              <label>Password iniziale<input type="password" minLength="8" value={newUserForm.password} onChange={(e) => setNewUserForm({ ...newUserForm, password: e.target.value })} /></label>
+              <label>Email<input type="email" autoComplete="off" data-lpignore="true" data-1p-ignore="true" value={newUserForm.email} onChange={(e) => setNewUserForm({ ...newUserForm, email: e.target.value })} /></label>
+              <label>Password iniziale<input type="password" autoComplete="new-password" data-lpignore="true" data-1p-ignore="true" minLength="8" value={newUserForm.password} onChange={(e) => setNewUserForm({ ...newUserForm, password: e.target.value })} /></label>
               <label>Telefono<input value={newUserForm.telefono} onChange={(e) => setNewUserForm({ ...newUserForm, telefono: e.target.value })} /></label>
               <label>Ruolo<select value={newUserForm.ruolo_id} onChange={(e) => setNewUserForm({ ...newUserForm, ruolo_id: e.target.value })}><option value="">Nessun ruolo</option>{roles.map((role) => <option key={role.id} value={role.id}>{role.nome}</option>)}</select></label>
               <fieldset><legend>Reparti di appartenenza</legend>{activeDepartments.map((department) => <label key={department.id}>

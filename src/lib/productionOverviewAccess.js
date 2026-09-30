@@ -11,3 +11,14 @@ export function productionOverviewAccess({ admin = false, role = '', areas = [],
   const filling = all || tags.some(v => ['confezionamento', 'addettoconfezionamento'].includes(v));
   return station || filling ? { station, filling } : { station: planning, filling: planning };
 }
+
+export function productionOverviewKind(path, origin = 'https://workspace.invalid') {
+  try {
+    const url = new URL(path, origin);
+    if (url.origin !== origin) return '';
+    if (url.pathname === '/produzione/miscelazione') return 'station';
+    if (url.pathname === '/produzione/filling') return 'filling';
+    if (url.pathname !== '/produzione/progremes.PlanningProduction') return '';
+    return ({'station-overview':'station','filling-overview':'filling'})[url.searchParams.get('destination')] || '';
+  } catch { return ''; }
+}

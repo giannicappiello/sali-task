@@ -70,7 +70,6 @@ export default function PackagingActualEditor({ sheet, saved, busy, onSave, onCa
   return <>
     {error && <p role="alert">{error}</p>}
     <iframe style={busy ? {pointerEvents:"none",opacity:.7} : undefined} ref={frame} title="Compila foglio di confezionamento" sandbox="allow-same-origin" srcDoc={sheet.sheetHtml} onLoad={initialize}/>
-    <p>Salva e chiudi registra il consuntivo, termina la lavorazione selezionata e archivia il PDF sul NAS.</p>
-    <footer><button type="button" disabled={busy} onClick={onCancel}>Torna al foglio</button><button type="button" disabled={busy} onClick={submit}>{busy ? 'Salvataggio in corso…' : 'Salva e chiudi'}</button></footer>
+    <footer className="packaging-editor-actions"><button className="packaging-editor-back" type="button" disabled={busy} onClick={onCancel}>Torna al foglio</button><button className="packaging-editor-save" type="button" disabled={busy} onClick={submit}>{busy ? 'Salvataggio in corso…' : 'Salva e chiudi'}</button></footer>
   </>;
 }

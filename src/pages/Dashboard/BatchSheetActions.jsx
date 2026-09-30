@@ -1,3 +1,4 @@
+import PackagingActualEditor from './PackagingActualEditor';
 import { observeCentralPrint, pendingCentralPrint, finishCentralPrint } from './centralPrint.js';
 import { useCallback, useEffect, useState } from 'react';
 import { FileText, Play, Printer } from 'lucide-react';
@@ -11,6 +12,8 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
   const { session } = useAuth();
   const [list, setList] = useState(null), [error, setError] = useState(''), [open, setOpen] = useState(false);
   const [phaseId, setPhaseId] = useState(''), [sheet, setSheet] = useState(null), [busy, setBusy] = useState(false);
+  const [autoEdit, setAutoEdit] = useState(false);
+  const [editing, setEditing] = useState(false), [savedActual, setSavedActual] = useState(null);
   const [confirmStart, setConfirmStart] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [printMessage, setPrintMessage] = useState('');
@@ -36,7 +39,7 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
   useEffect(() => {
     if (!open || !phaseId) return;
     const controller = new AbortController();
-    setBusy(true); setError(''); setSheet(null); setConfirmStart(false);
+    setBusy(true); setError(''); setSheet(null); setConfirmStart(false); setEditing(false);
     request('sheet', { phaseId }, controller.signal).then(async value => {
       const blob = value.packagingSheet
         ? (await import('./packagingSheetPdf.js')).packagingSheetPdf(value.packagingSheet)
@@ -44,10 +47,14 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
       if (controller.signal.aborted) return;
       const url = URL.createObjectURL(blob);
       setSheet({ ...value, url });
+      if (autoEdit && list?.phases?.some(p => p.id === phaseId && p.phase === 3 && ['RUNNING','SUSPENDED','CLOSING'].includes(p.executionStatus))) {
+        const actual = await request('actual-sheet', {phaseId}, controller.signal);
+        if (!controller.signal.aborted) { setSavedActual(actual.saved); setEditing(true); }
+      }
     }).catch(cause => { if (!controller.signal.aborted) setError(cause.message); })
       .finally(() => { if (!controller.signal.aborted) setBusy(false); });
     return () => controller.abort();
-  }, [open, phaseId, request, loadAttempt]);
+  }, [open, phaseId, request, loadAttempt, autoEdit]);
   async function act(operation) {
     setBusy(true); setError('');
     try {
@@ -69,10 +76,29 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
     } catch (cause) { setError(cause.message); }
     finally { setBusy(false); }
   }
+  async function editSheet() {
+    setBusy(true); setError('');
+    try { const result = await request('actual-sheet', {phaseId}); setSavedActual(result.saved); setEditing(true); }
+    catch (cause) { setError(cause.message); } finally { setBusy(false); }
+  }
+  async function saveSheet(actual) {
+    if (busy) return;
+    setBusy(true); setError('');
+    try {
+      const result = await request('complete-sheet', {phaseId, contentHash:savedActual?.sheetHash || sheet.contentHash, actual});
+      if (!result.closed) throw new Error('Chiusura non confermata: riaprire il foglio prima di riprovare.');
+      setPrintMessage(result.message); setEditing(false); setList(await request('list'));
+      window.dispatchEvent(new Event('workspace:production-changed'));
+    } catch (cause) { setError(cause.message); } finally { setBusy(false); }
+  }
   if (list?.managed === false) return children;
   const title = kind === 'production' ? 'produzione' : 'confezionamento';
   return <>
-    <button type="button" disabled={!list} onClick={() => { setOpen(true); setError(''); setSheet(null); setConfirmStart(false); setPhaseId(list.phases.length === 1 ? list.phases[0].id : ''); }}><FileText size={17}/>Gestione batch {title}</button>
+    <button type="button" disabled={!list} onClick={() => { setAutoEdit(false); setOpen(true); setError(''); setSheet(null); setConfirmStart(false); setPhaseId(list.phases.length === 1 ? list.phases[0].id : ''); }}><FileText size={17}/>Gestione batch {title}</button>
+    {kind === 'packaging' && list?.phases?.some(p => p.phase === 3 && ['RUNNING','SUSPENDED','CLOSING'].includes(p.executionStatus)) && <button type="button" onClick={() => {
+      const eligible = list.phases.filter(p => p.phase === 3 && ['RUNNING','SUSPENDED','CLOSING'].includes(p.executionStatus));
+      setAutoEdit(true); setOpen(true); setError(''); setSheet(null); setPhaseId(eligible.length === 1 ? eligible[0].id : '');
+    }}>Compila foglio</button>}
     {!open && error && <p role="alert">{error}</p>}
     {open && <Modal title={`Foglio di ${title} · batch`} className="product-spec-viewer batch-sheet-modal" onClose={() => { if (!busy) { setOpen(false); setSheet(null); } }}>
       <label className="pc-field"><span>Batch / lavorazione</span><select value={phaseId} disabled={busy} onChange={e => { setPhaseId(e.target.value); setPrintMessage(''); setPrintPending(false); setSheet(null); setConfirmStart(false); setError(''); }}>
@@ -85,12 +111,15 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
       {error && <p role="alert" className="pc-error">{error}</p>}
       {printMessage && <p role="status">{printMessage}</p>}
       {busy && <p role="status">Operazione in corso…</p>}
-      {sheet && <iframe title={`Foglio di ${title}`} srcDoc={sheet.sheetHtml || undefined} src={sheet.sheetHtml ? undefined : sheet.url}/>}
+      {sheet && !editing && <iframe title={`Foglio di ${title}`} srcDoc={sheet.sheetHtml || undefined} src={sheet.sheetHtml ? undefined : sheet.url}/>}
+      {editing && sheet && <PackagingActualEditor key={phaseId} sheet={sheet} saved={savedActual} busy={busy} onSave={saveSheet} onCancel={() => setEditing(false)}/>}
       {confirmStart && <p>Confermi l’avvio del batch {phase?.number} selezionato su {phase?.resource}?</p>}
-      <footer><button type="button" disabled={busy} onClick={() => { setOpen(false); setSheet(null); }}>Chiudi</button>
+      {!editing && <footer><button type="button" disabled={busy} onClick={() => { setOpen(false); setSheet(null); }}>Chiudi</button>
         <button type="button" disabled={!sheet || busy} onClick={() => act('print')}><Printer size={17}/>{printPending ? 'Verifica stampa' : printMessage ? 'Ristampa su PRODUZIONE' : 'Stampa su PRODUZIONE'}</button>
         {phase?.executionStatus === 'NOT_STARTED' && <button type="button" disabled={!sheet || busy} onClick={() => confirmStart ? act('start') : setConfirmStart(true)}><Play size={17}/>{confirmStart ? 'Conferma avvio' : 'Avvia lavorazione'}</button>}
-      </footer>
+        {kind === 'packaging' && phase?.phase === 3 && ['RUNNING','SUSPENDED','CLOSING'].includes(phase?.executionStatus) && <button type="button" disabled={!sheet || busy} onClick={editSheet}>Compila foglio</button>}
+        {kind === 'packaging' && phase?.executionStatus === 'COMPLETED' && <button type="button" disabled={busy} onClick={async () => { try { setPrintMessage((await request('archive-status',{phaseId})).message); } catch(e) { setError(e.message); } }}>Verifica PDF sul NAS</button>}
+      </footer>}
     </Modal>}
   </>;
 }

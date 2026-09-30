@@ -8,17 +8,19 @@ export async function handleBatchSheet(req, body, { authorize = productionSheetS
   const productionOrderId = Number(body.productionOrderId);
   const fail = message => Object.assign(new Error(message), { status: 400 });
   if (!Number.isSafeInteger(productionOrderId) || productionOrderId <= 0 || productionOrderId > 2147483647
-      || !['production', 'packaging'].includes(kind) || !['list', 'sheet', 'print', 'start'].includes(operation))
+      || !['production', 'packaging'].includes(kind) || !['list', 'sheet', 'print', 'start', 'actual-sheet', 'complete-sheet', 'archive-status'].includes(operation))
     throw fail('Richiesta batch non valida.');
   if (operation !== 'list' && !/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(phaseId || '')) throw fail('Seleziona il batch.');
-  if (['print', 'start'].includes(operation) && !/^[a-f0-9]{64}$/i.test(contentHash || '')) throw fail('Riapri il foglio del batch.');
+  if (['print', 'start', 'complete-sheet'].includes(operation) && !/^[a-f0-9]{64}$/i.test(contentHash || '')) throw fail('Riapri il foglio del batch.');
+  if (['actual-sheet', 'complete-sheet', 'archive-status'].includes(operation) && kind !== 'packaging') throw fail('Seleziona il confezionamento.');
+  if (operation === 'complete-sheet' && (!body.actual || typeof body.actual !== 'object')) throw fail('Compilare il foglio.');
   const externalId = operation === 'print' ? operationalPrintId(body) : randomUUID();
   const session = await authorize(req, kind);
   if (!['tutti', 'team', 'propri'].includes(session.scope.mode) || session.scope.customer_code || session.scope.customer_codes?.length)
     throw Object.assign(new Error('Operazione riservata agli addetti interni.'), { status: 403 });
   try {
     const { result } = await clientFactory().batchSheet({ externalId, printMode: operation === 'print' ? 'server' : undefined, productionOrderId, kind, operation,
-      phaseId, contentHash, requestedBy: session.profile.id });
+      phaseId, contentHash, actual: operation === 'complete-sheet' ? body.actual : undefined, requestedBy: session.profile.id });
     requireCentralPrint(result, operation);
     return { ...result, canPrint: true, canStart: true };
   } catch (error) {

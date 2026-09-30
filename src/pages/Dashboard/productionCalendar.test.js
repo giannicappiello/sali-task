@@ -39,3 +39,11 @@ test('attività di confezionamento conserva ID ordine e codice articolo per fogl
   assert.equal(activity.articleCode, 'CO0017');
   assert.equal(activity.reparto, 'Confezionamento');
 });
+
+
+test('avvio effettivo prevale sullo stato pianificato senza sovrascrivere pausa o conclusione', () => {
+  const row = { operationType: 'Production', start: '2026-09-30T11:31:00', end: '2026-10-02T11:31:00', actualStart: '2026-09-30T09:20:00', status: 'Pianificata' };
+  assert.equal(productionActivities([row])[0].stato, 'In corso');
+  assert.equal(productionActivities([{ ...row, actualStart: null }])[0].stato, 'Pianificata');
+  for (const status of ['Completata', 'Annullata', 'In pausa']) assert.equal(productionActivities([{ ...row, status }])[0].stato, status);
+});

@@ -32,7 +32,7 @@ export function productionActivities(rows) {
     return [{
       id: `mes-${row.productionOrderId}-${row.operationType}-${start}-${index}`,
       productionOrderId: row.productionOrderId,
-      operationType: row.operationType,
+      operationType: row.operationType, actualStart: plantTime(row.actualStart) || null,
       tipo: 'production', titolo: `${row.orderNumber} · ${row.articleCode}`,
       ...(Array.isArray(row.workingIntervals) ? { workingIntervals: row.workingIntervals.map(i => ({ start: plantTime(i.start), end: plantTime(i.end) })) } : {}),
       descrizione: row.articleDescription, start, end, deadline: end.slice(0, 10),

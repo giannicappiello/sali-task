@@ -9,3 +9,7 @@ test('individual Station routing still requires a valid station', () => {
   assert.equal(progremesContextualRoute('progremes.PlanningProduction',{destination:'station',station:'ST7'}),'/stations/ST7');
   assert.throws(()=>progremesContextualRoute('progremes.PlanningProduction',{destination:'station'}));
 });
+test('Filling overview is a fixed contextual route',()=>{
+ assert.equal(progremesContextualRoute('progremes.PlanningProduction',{destination:'filling-overview',returnUrl:'https://invalid.example'}),'/filling');
+ assert.equal(progremesContextualRoute('other',{destination:'filling-overview'},'/original'),'/original');
+});

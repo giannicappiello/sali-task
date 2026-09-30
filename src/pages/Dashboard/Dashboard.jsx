@@ -1,3 +1,4 @@
+import { productionOverviewAccess } from "../../lib/productionOverviewAccess.js";
 import { loadWorkspaceProducts } from '../../lib/workspaceCrmCatalog';
 import { formatDisplayDate } from '../../lib/displayLocale.js';
 import PreparationActions from './PreparationActions';
@@ -105,7 +106,7 @@ function DashboardColorLegend() {
 }
 
 function Dashboard({ toolbarTarget = null }) {
-  const { profile, userDepartmentIds = [], isAdmin, dataScope, canViewScopedData, hasScreenAccess, hasModuleAccess } = useAuth();
+  const { profile, areaAccess = [], userDepartmentIds = [], isAdmin, dataScope, canViewScopedData, hasScreenAccess, hasModuleAccess } = useAuth();
   const adminMode = Boolean(isAdmin?.() || dataScope?.mode === "tutti");
   const [tasks, setTasks] = useState([]);
   const [reminders, setReminders] = useState([]);
@@ -507,16 +508,19 @@ function Dashboard({ toolbarTarget = null }) {
     ? '/produzione/progremes.PlanningProduction'
     : hasModuleAccess?.('progremes') && hasScreenAccess?.('progremes.Planning', 'progremes')
       ? '/produzione/progremes.Planning' : '';
+  const overviewAccess = productionOverviewAccess({ admin: Boolean(isAdmin?.()), role: profile?.ruoli?.nome, areas: areaAccess, departments: departments.filter(d => userDepartmentIds.includes(d.id) || d.id === profile?.reparto_id).map(d => d.nome), planning: Boolean(planningPath), customer: Boolean(dataScope?.customerCode || dataScope?.customerCodes?.length) });
   const planningToolbar = (<div className="v4-toolbar planning-toolbar-clean dashboard-planning-toolbar">
         <div className="task-search">
           <Search size={18} />
           <input
-            placeholder="Cerca Station, Filling, RdP, OCT, FP, prodotto, cliente, attività..."
+            placeholder="Cerca prodotto, ordine, attività…"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
         {planningPath && <button type="button" className="primary-action" onClick={() => requestProgremesWorkspaceWindow(planningPath)}><CalendarDays size={18} />Apri Planning</button>}
+        {overviewAccess.station && <button type="button" className="primary-action" onClick={() => requestProgremesWorkspaceWindow("/produzione/progremes.PlanningProduction?destination=station-overview")}>Apri Station</button>}
+        {overviewAccess.filling && <button type="button" className="primary-action" onClick={() => requestProgremesWorkspaceWindow("/produzione/progremes.PlanningProduction?destination=filling-overview")}>Apri Filling</button>}
       </div>);
 
   return (

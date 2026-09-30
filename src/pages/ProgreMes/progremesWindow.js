@@ -58,7 +58,7 @@ export function progremesWorkspaceDestination(data) {
       }
       return `${url.pathname}?${params}`;
     }
-    if (url.origin !== "https://workspace.invalid" || !["/versioni-piano-produzione", "/rilascio-odl", "/revisione-priorita-produzione", "/produzione/rdp-workbench", "/produzione/fabbisogni-acquisto"].includes(url.pathname)) return null;
+    if (url.origin !== "https://workspace.invalid" || !["/activities/dashboard", "/versioni-piano-produzione", "/rilascio-odl", "/revisione-priorita-produzione", "/produzione/rdp-workbench", "/produzione/fabbisogni-acquisto"].includes(url.pathname)) return null;
     return `${url.pathname}${url.search}${url.hash}`;
   } catch { return null; }
 }

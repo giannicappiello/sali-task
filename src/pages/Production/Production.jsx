@@ -180,6 +180,7 @@ export default function Production() {
   });
   const initialPath = productionInitialPath(visibleSections, catalog.screens, catalog.links);
   const withNavigation = content => content;
+  if (sectionPath === "filling") return <ProgreMesLaunch screenCode="progremes.PlanningProduction" search="?destination=filling-overview" />;
   if (sectionPath === "miscelazione") return <ProgreMesLaunch screenCode="progremes.PlanningProduction" search="?destination=station-overview" />;
   if (sectionPath === "diagnostica") return isAdminUser ? withNavigation(<DiagnosticsCenter />) : <Navigate to="/produzione" replace />;
   if (sectionPath === "ordini-avanzamento") return hasScreenAccess("workspace.production.progress", "progremes") ? withNavigation(<WorkspaceAccessGuard screenCode="workspace.production.progress"><RdpWorkbench commercial /></WorkspaceAccessGuard>) : <Navigate to="/produzione" replace />;

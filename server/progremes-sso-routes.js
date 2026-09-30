@@ -7,6 +7,7 @@ export function progremesDirectOperationalRoute(screenCode) {
 }
 
 export function progremesContextualRoute(screenCode, context = {}, fallback = "") {
+  if (String(screenCode || "").trim() === "progremes.PlanningProduction" && context?.destination === "filling-overview") return "/filling";
   if (String(screenCode || '').trim() === 'progremes.PlanningProduction' && context?.destination === 'station-overview') return '/miscelazione';
   if (String(screenCode || '').trim() === 'progremes.PlanningProduction'
       && context?.destination === 'station') {

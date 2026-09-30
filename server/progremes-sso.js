@@ -140,9 +140,13 @@ export async function listUserProgremesSections(req) {
 
 export async function issueProgremesTicket(req, body = {}) {
   const admin = adminClient();
-  const operationalRead = body.screenCode === 'progremes.PlanningProduction' && body.context?.destination === 'station'
-    && (body.context.stationAction == null || ['start', 'close'].includes(body.context.stationAction));
-  if (operationalRead) await productionSheetSession(req, 'production', { admin });
+  const operationalKind = body.screenCode === 'progremes.PlanningProduction'
+    ? body.context?.destination === 'filling-overview' ? 'packaging'
+      : body.context?.destination === 'station-overview' || (body.context?.destination === 'station'
+        && (body.context.stationAction == null || ['start', 'close'].includes(body.context.stationAction))) ? 'production' : ''
+    : '';
+  const operationalRead = Boolean(operationalKind);
+  if (operationalRead) await productionSheetSession(req, operationalKind, { admin });
   const identity = await getWorkspaceIdentity(req, admin, operationalRead);
   await ensureProgremesCatalogFresh(admin);
   const { user, profile } = identity;
@@ -234,5 +238,8 @@ export async function consumeProgremesTicket(body) {
   let stationRead = false;
   try { await productionSheetProfileAccess(admin, operationalProfile, operationalProfile?.auth_user_id, 'production'); stationRead = true; }
   catch (error) { if (error.status !== 403) throw error; }
-  return { ...profile, station_read_allowed: stationRead, station_write_allowed: stationRead, planning_production_level: ["lettura", "scrittura", "amministrazione"].includes(planningLevel) ? planningLevel : "" };
+  let fillingRead = false;
+  try { await productionSheetProfileAccess(admin, operationalProfile, operationalProfile?.auth_user_id, "packaging"); fillingRead = true; }
+  catch (error) { if (error.status !== 403) throw error; }
+  return { ...profile, filling_read_allowed: fillingRead, station_read_allowed: stationRead, station_write_allowed: stationRead, planning_production_level: ["lettura", "scrittura", "amministrazione"].includes(planningLevel) ? planningLevel : "" };
 }

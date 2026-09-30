@@ -149,3 +149,7 @@ test('Station opens a separate 800 by 960 Workspace window and preserves the pla
   assert.match(opened.url,/station=ST7&workspaceMesWindow=1/);
   assert.equal(popup.opener,null);
 });
+test('activities navigation stays within the authenticated Workspace frame',()=>{
+ assert.equal(progremesWorkspaceDestination({type:'progremes-workspace-navigate',path:'/activities/dashboard'}),'/activities/dashboard');
+ assert.equal(progremesWorkspaceDestination({type:'progremes-workspace-navigate',path:'//evil.example/activities/dashboard'}),null);
+});

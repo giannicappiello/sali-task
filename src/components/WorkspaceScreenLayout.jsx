@@ -183,7 +183,7 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
     backLabel: presentation.parentName, onBack: goBack, priority: -1 });
 
   const stationDestination = new URLSearchParams(location.search).get("destination");
-  const isStationUi = location.pathname === "/produzione/miscelazione" || (isProgremesScreenPath(location.pathname) && ["station", "station-overview"].includes(stationDestination));
+  const isStationUi = ["/produzione/miscelazione", "/produzione/filling"].includes(location.pathname) || (isProgremesScreenPath(location.pathname) && ["station", "station-overview", "filling-overview"].includes(stationDestination));
   const wrappedContent = (
     <div
       className="workspace-config-driven-view"

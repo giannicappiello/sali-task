@@ -46,7 +46,7 @@ test("il collegamento COA usa soltanto la destinazione Documenti autorizzata", (
 test("il fallback OdP mantiene il controllo autorizzativo SSO", async () => {
   const source = await readFile(new URL("./progremes-sso.js", import.meta.url), "utf8");
   assert.match(source, /if \(!identity\.isAdmin && !operationalRead\) \{[\s\S]*isProgremesScreenAuthorized/);
-  assert.match(source, /if \(operationalRead\) await productionSheetSession\(req, 'production', \{ admin \}\)/);
+  assert.match(source, /if \(operationalRead\) await productionSheetSession\(req, operationalKind, \{ admin \}\)/);
   assert.match(source, /directOperationalRoute \|\| screen\.metadati\?\.external_route/);
 });
 

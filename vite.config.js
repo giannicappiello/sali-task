@@ -42,7 +42,20 @@ export default defineConfig({
         // Bump this whenever the application shell changes so a previously published
         // service worker cannot keep serving the prior HR route bundle.
         cacheId: "workspace-assets-v3",
-        navigateFallbackDenylist: [/^\/api\//, /^\/assets\//],
+        // HTML must come from the current deployment, not an older precache.
+        globIgnores: ["**/index.html"],
+        navigateFallback: null,
+        runtimeCaching: [{
+          urlPattern: ({ request, url }) => request.mode === "navigate" &&
+            !/^\/(api|assets)(\/|$)/.test(url.pathname),
+          handler: "NetworkFirst",
+          options: {
+            cacheName: "workspace-navigation-v1",
+            fetchOptions: { cache: "no-store" },
+            cacheableResponse: { statuses: [200] },
+            expiration: { maxEntries: 30, maxAgeSeconds: 7 * 24 * 60 * 60 }
+          }
+        }],
         cleanupOutdatedCaches: true,
         clientsClaim: false,
         skipWaiting: false,

@@ -69,6 +69,7 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
         <option value="">Seleziona il batch</option>
         {list.phases.map(p => <option key={p.id} value={p.id}>Batch {p.number} · {p.quantity} {p.unit} · {p.lotCode || 'Lotto da assegnare'} · {states[p.executionStatus] || p.executionStatus} · {p.resource}{p.phase === 7 ? ' · Astucciatura' : ''}</option>)}
       </select></label>
+      {phase?.actualStart && <p><strong>Avviata il {String(phase.actualStart).replace("T"," ").slice(0,16)}</strong></p>}
       {!list.phases.length && <p>Nessuna lavorazione di {title} disponibile per questo ordine.</p>}
       {error && !sheet && phaseId && <button type="button" disabled={busy} onClick={() => setLoadAttempt(value => value + 1)}>Riprova apertura foglio</button>}
       {error && <p role="alert" className="pc-error">{error}</p>}

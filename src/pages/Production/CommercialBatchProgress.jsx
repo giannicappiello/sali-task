@@ -56,7 +56,7 @@ export default function CommercialBatchProgress({ orders, load, autoOpen = false
               <tbody>{batch.phases.map(phase => <tr key={phase.id || `${phase.phase}:${phase.odlId}`}>
                 <td>{phase.phase === 0 ? "Produzione" : phase.phase === 3 ? "Confezionamento" : "Astucciatura"}</td>
                 <td>{phase.resource}</td><td>{date(phase.plannedStart)}<br/>{date(phase.plannedEnd)}</td>
-                <td>{status(phase.executionStatus)}<br/>{phase.actualStart && date(phase.actualStart)}<br/>{phase.actualEnd && date(phase.actualEnd)}</td>
+                <td>{status(phase.executionStatus)}<br/>{phase.actualStart && <>Avviata il {date(phase.actualStart)}</>}<br/>{phase.actualEnd && date(phase.actualEnd)}</td>
                 <td>{phase.lot || "Da assegnare"}</td><td>{qty(phase.plannedQuantity)} {phase.unit}<br/>Prodotta: {phase.producedQuantity == null ? "—" : qty(phase.producedQuantity)}</td>
                 <td>{status(phase.coverageStatus)}<br/>{[phase.dischargeDocuments, phase.loadDocument, phase.wasteDocument].filter(Boolean).join(" · ")}{phase.syncStatus === "STOCK_PENDING" && <p>{status(phase.syncStatus)}</p>}</td>
               </tr>)}</tbody>

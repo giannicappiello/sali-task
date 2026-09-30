@@ -82,7 +82,7 @@ export function calendarRows(rows, allowed, from, to) {
     .map(row => ({
       productionOrderId: row.productionOrderId, orderNumber: row.orderNumber,
       articleCode: row.articleCode, articleDescription: row.articleDescription,
-      operationType: row.operationType, start: row.start, end: row.end, status: row.status,
+      operationType: row.operationType, start: row.start, end: row.end, status: row.status, actualStart: row.actualStart || null,
       ...(Array.isArray(row.workingIntervals) ? { workingIntervals: row.workingIntervals } : {}),
       ...(row.resource ? { resource: row.resource } : {}),
       ...(row.resourceCode ? { resourceCode: row.resourceCode } : {}),

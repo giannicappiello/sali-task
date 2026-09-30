@@ -1,3 +1,4 @@
+import { editProductionDates } from "./production-date-editor.js";
 import {recoverInvoiceIdentity} from "./production-invoice-identity.js";
 import { recoverFormulaLinks } from "./production-formula-links.js";
 import { readCostCalendar } from "./production-cost-calendar.js";
@@ -42,10 +43,23 @@ export function configurationFor(evidence,configs) {
 async function readConfigurations(admin) {return readAllRows(()=>admin.from("production_cost_configurations").select("*").order("effective_from",{ascending:false}).order("created_at",{ascending:false}));}
 export async function handleProductionCosts(req,body) {
  const op=body.operation||"list",isAI=["ai-propose","ai-history","ai-proposal"].includes(op),isConfig=isAI||["configuration","save-configuration","machines","station-history","filling-history"].includes(op);
- const write=isAI||["save-configuration","adjust","overtime","allocate-invoice"].includes(op);
+ const write=isAI||["dates-read","dates-preview","dates-save","save-configuration","adjust","overtime","allocate-invoice"].includes(op);
  const privateReport=op==="private-list";
  const session=await costSession(req,privateReport?"produzione.consuntivi_private":isConfig?CONFIG:REPORT,write),{admin,caller,profile}=session;
  if(isAI)return handleCostAI(req,body,session);
+ if(["dates-read","dates-preview","dates-save"].includes(op)){
+  const row=await recordFor(session,Number(body.id));
+  const result=await editProductionDates(session,row,body);
+  if(result.applied===true&&result.after){
+   const current=await recordFor(session,row.mes_order_id), actual=result.after;
+   const evidence={...current.evidence,works:current.evidence.works.map(w=>w.id===actual.productionId?{...w,start:actual.start,end:actual.end,personnel:(w.personnel||[]).map(p=>{
+    const updated=actual.personnel?.find(x=>x.id===p.id);return updated?{...p,start:updated.start,end:updated.end}:p;
+   })}:w)};
+   const saved=await admin.from("production_cost_records").update({evidence,refreshed_at:new Date().toISOString()}).eq("mes_order_id",row.mes_order_id).eq("evidence",current.evidence).select("mes_order_id");
+   if(saved.error||!saved.data?.length)return {...result,warning:"Date salvate in MES. Aggiornare lo storico dei consuntivi per riallineare la copia Workspace."};
+  }
+  return result;
+ }
  if(op==="filling-history"){
   if(body.settings)validateSettings(body.settings);
   return {history:fillingHistorySummary(await readFillingHistory(admin,{settings:body.settings}))};

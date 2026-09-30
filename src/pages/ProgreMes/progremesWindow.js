@@ -50,6 +50,12 @@ export function progremesWorkspaceDestination(data) {
         && /^(?:ST|STATION)\s*0*[1-9]\d*$/.test(url.searchParams.get("station") || "")
         && (url.searchParams.get("station") || "").length <= 30) {
       const params = new URLSearchParams({ destination: "station", station: url.searchParams.get("station"), workspaceMesWindow: "1" });
+      const action = url.searchParams.get("stationAction");
+      const orderId = Number(url.searchParams.get("orderId"));
+      if (url.searchParams.has("stationAction") || url.searchParams.has("orderId")) {
+        if (!["start", "close"].includes(action) || !Number.isSafeInteger(orderId) || orderId <= 0 || orderId > 2147483647) return null;
+        params.set("stationAction", action); params.set("orderId", String(orderId));
+      }
       return `${url.pathname}?${params}`;
     }
     if (url.origin !== "https://workspace.invalid" || !["/versioni-piano-produzione", "/rilascio-odl", "/revisione-priorita-produzione", "/produzione/rdp-workbench", "/produzione/fabbisogni-acquisto"].includes(url.pathname)) return null;

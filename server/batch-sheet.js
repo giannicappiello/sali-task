@@ -1,3 +1,4 @@
+import { operationalPrintId, requireCentralPrint } from './operational-print.js';
 import { randomUUID } from 'node:crypto';
 import { productionSheetSession } from './production-sheet-access.js';
 import { createProgremesProductionClient } from './progremes-production-client.js';
@@ -11,12 +12,14 @@ export async function handleBatchSheet(req, body, { authorize = productionSheetS
     throw fail('Richiesta batch non valida.');
   if (operation !== 'list' && !/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(phaseId || '')) throw fail('Seleziona il batch.');
   if (['print', 'start'].includes(operation) && !/^[a-f0-9]{64}$/i.test(contentHash || '')) throw fail('Riapri il foglio del batch.');
+  const externalId = operation === 'print' ? operationalPrintId(body) : randomUUID();
   const session = await authorize(req, kind);
   if (!['tutti', 'team', 'propri'].includes(session.scope.mode) || session.scope.customer_code || session.scope.customer_codes?.length)
     throw Object.assign(new Error('Operazione riservata agli addetti interni.'), { status: 403 });
   try {
-    const { result } = await clientFactory().batchSheet({ externalId: randomUUID(), productionOrderId, kind, operation,
+    const { result } = await clientFactory().batchSheet({ externalId, printMode: operation === 'print' ? 'server' : undefined, productionOrderId, kind, operation,
       phaseId, contentHash, requestedBy: session.profile.id });
+    requireCentralPrint(result, operation);
     return { ...result, canPrint: true, canStart: true };
   } catch (error) {
     if ([404, 405].includes(error.status)) throw Object.assign(new Error('Aggiornare il server MES per aprire i fogli dei batch da Attività.'), { status: 503 });

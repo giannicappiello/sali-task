@@ -5,9 +5,11 @@ const session = { scope: { mode: 'tutti' }, profile: { id: 7 }, canWrite: true }
 test('packaging sheet validates identity and requires write permission only for printing', async () => {
   for (const operation of ['read', 'print']) {
     const calls = [];
-    const result = await handlePackagingSheet({}, { productionOrderId: 42, operation }, {
+    const result = await handlePackagingSheet({}, { productionOrderId: 42, operation, printRequestId: '75f4fb07-8b4b-42db-a5b4-ce3d9303ed11' }, {
       authorize: async (...args) => { calls.push(args); return session; },
-      clientFactory: () => ({ packagingSheet: async payload => { assert.equal(payload.productionOrderId, 42); assert.equal(payload.operation, operation); assert.equal(payload.requestedBy, '7'); return { result: { sheet: { numeroOrdine: 'OP42' } } }; } }),
+      clientFactory: () => ({ packagingSheet: async payload => { assert.equal(payload.productionOrderId, 42); assert.equal(payload.operation, operation); assert.equal(payload.requestedBy, '7');
+        if (operation === 'print') { assert.equal(payload.externalId, '75f4fb07-8b4b-42db-a5b4-ce3d9303ed11'); assert.equal(payload.printMode, 'server'); }
+        return { result: { sheet: { numeroOrdine: 'OP42' }, printJob: { id: 'job', printer: 'Production', status: 'Queued' } } }; } }),
     });
     assert.equal(calls[0][1], 'progremes.Produzione'); assert.equal(calls[0][2], operation === 'print'); assert.equal(result.canPrint, true);
   }

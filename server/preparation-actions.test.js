@@ -12,11 +12,12 @@ test('preparation validates order, operation, machine and print snapshot; strips
 test('all preparation operations authorize before MES; lot assignment requires write', async () => {
   for (const operation of ['context', 'sheet', 'print', 'start']) {
     let authorization, sent;
-    const body = { productionOrderId: 7, operation, resourceCode: 'ST7', contentHash: 'a'.repeat(64) };
+    const body = { productionOrderId: 7, operation, resourceCode: 'ST7', contentHash: 'a'.repeat(64), printRequestId: '75f4fb07-8b4b-42db-a5b4-ce3d9303ed11' };
     const deps = { authorize: async (req, write) => { authorization = write; return { scope: { mode: 'team' }, profile: { id: 'actual' }, canWrite: true }; },
-      clientFactory: () => ({ preparationActions: async input => { sent = input; return { result: { ready: true } }; } }) };
+      clientFactory: () => ({ preparationActions: async input => { sent = input; return { result: { ready: true, printJob: { id: 'job', printer: 'Production', status: 'Queued' } } }; } }) };
     assert.equal((await handlePreparationActions({}, body, deps)).ready, true);
     assert.equal(authorization, operation !== 'context'); assert.equal(sent.requestedBy, 'actual'); assert.ok(sent.externalId);
+    if (operation === 'print') { assert.equal(sent.externalId, body.printRequestId); assert.equal(sent.printMode, 'server'); }
     await assert.rejects(handlePreparationActions({}, body, { ...deps, authorize: async () => ({ scope: { mode: 'cliente', customer_code: '501.A' } }),
       clientFactory: () => { throw new Error('Must not call MES'); } }), { status: 403 });
   }

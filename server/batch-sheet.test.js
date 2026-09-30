@@ -5,11 +5,12 @@ const phaseId = '11111111-1111-1111-1111-111111111111';
 test('batch requests check department every time and preserve the selected phase and hash', async () => {
   for (const kind of ['production', 'packaging']) for (const operation of ['list', 'sheet', 'print', 'start']) {
     let sent;
-    const result = await handleBatchSheet({}, { productionOrderId: 42, kind, operation, phaseId, contentHash: 'a'.repeat(64), requestedBy:'forged', allowShortage:true }, {
+    const result = await handleBatchSheet({}, { productionOrderId: 42, kind, operation, phaseId, contentHash: 'a'.repeat(64), printRequestId: '75f4fb07-8b4b-42db-a5b4-ce3d9303ed11', requestedBy:'forged', allowShortage:true }, {
       authorize: async (_, actualKind) => { assert.equal(actualKind, kind); return { profile:{id:'operator'}, scope:{mode:'team'} }; },
-      clientFactory: () => ({ batchSheet:async payload => { sent = payload; return {result:{managed:true}}; } }),
+      clientFactory: () => ({ batchSheet:async payload => { sent = payload; return {result:{managed:true, printJob:{id:'job',printer:'PRODUZIONE',status:'Queued'}}}; } }),
     });
     assert.equal(sent.phaseId, phaseId); assert.equal(sent.requestedBy, 'operator');
+    if (operation === 'print') { assert.equal(sent.externalId, '75f4fb07-8b4b-42db-a5b4-ce3d9303ed11'); assert.equal(sent.printMode, 'server'); }
     assert.equal(sent.allowShortage, undefined); assert.equal(result.canStart, true);
   }
 });
@@ -18,4 +19,11 @@ test('invalid phase/hash and customer scopes never reach MES', async () => {
   for (const body of [{kind:'other'}, {operation:'delete'}, {operation:'sheet',phaseId:'bad'}, {operation:'start',phaseId,contentHash:'bad'}])
     await assert.rejects(handleBatchSheet({}, {productionOrderId:42,kind:'production',operation:'list',...body}, dependencies),{status:400});
   await assert.rejects(handleBatchSheet({}, {productionOrderId:42,kind:'production',operation:'list'}, dependencies),{status:403});
+});
+
+test('batch printing rejects old clients and legacy MES acknowledgments', async () => {
+  const body = { productionOrderId: 42, kind: 'production', operation: 'print', phaseId, contentHash: 'a'.repeat(64) };
+  const deps = { authorize: async () => ({ profile: { id: 'operator' }, scope: { mode: 'team' } }), clientFactory: () => ({ batchSheet: async () => ({ result: { printed: true } }) }) };
+  await assert.rejects(handleBatchSheet({}, body, deps), { status: 400 });
+  await assert.rejects(handleBatchSheet({}, { ...body, printRequestId: '75f4fb07-8b4b-42db-a5b4-ce3d9303ed11' }, deps), { status: 503 });
 });

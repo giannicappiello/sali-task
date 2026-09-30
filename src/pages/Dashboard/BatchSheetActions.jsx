@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { observeCentralPrint, pendingCentralPrint, finishCentralPrint } from './centralPrint.js';
+import { useCallback, useEffect, useState } from 'react';
 import { FileText, Play, Printer } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Modal } from '../../features/production-costs/common';
@@ -12,7 +13,9 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
   const [phaseId, setPhaseId] = useState(''), [sheet, setSheet] = useState(null), [busy, setBusy] = useState(false);
   const [confirmStart, setConfirmStart] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
-  const frame = useRef(null);
+  const [printMessage, setPrintMessage] = useState('');
+  const [printPending, setPrintPending] = useState(false);
+  const printKey = `mes-print:batch:${session?.user?.id}:${productionOrderId}:${kind}:${phaseId}`;
   const request = useCallback(async (operation, extra = {}, signal) => {
     const response = await fetch('/api/production/actions', { method: 'POST', signal,
       headers: { Authorization: `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' },
@@ -48,11 +51,18 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
   async function act(operation) {
     setBusy(true); setError('');
     try {
-      await request(operation, { phaseId: sheet.phaseId, contentHash: sheet.contentHash });
       if (operation === 'print') {
-        frame.current?.contentWindow?.print();
+        const pending = pendingCentralPrint(printKey, { hash: sheet.contentHash, phaseId: sheet.phaseId });
+        setPrintPending(true);
+        const job = await observeCentralPrint(() => request('print', { phaseId: pending.phaseId, contentHash: pending.hash, printRequestId: pending.id }),
+          (job, message) => setPrintMessage(message || `Stampa ${job.status} su PRODUZIONE (${job.printer}).`));
+        if (job) {
+          finishCentralPrint(printKey); setPrintPending(false);
+          if (job.status === 'Failed' || job.confirmationError) setError(job.confirmationError || `Stampa non riuscita: ${job.error}. Verificare la coda MES prima di ristampare.`);
+        }
       }
       else {
+        await request(operation, { phaseId: sheet.phaseId, contentHash: sheet.contentHash });
         setList(await request('list')); setConfirmStart(false);
         window.dispatchEvent(new Event('workspace:production-changed'));
       }
@@ -65,7 +75,7 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
     <button type="button" disabled={!list} onClick={() => { setOpen(true); setError(''); setSheet(null); setConfirmStart(false); setPhaseId(list.phases.length === 1 ? list.phases[0].id : ''); }}><FileText size={17}/>Gestione batch {title}</button>
     {!open && error && <p role="alert">{error}</p>}
     {open && <Modal title={`Foglio di ${title} · batch`} className="product-spec-viewer batch-sheet-modal" onClose={() => { if (!busy) { setOpen(false); setSheet(null); } }}>
-      <label className="pc-field"><span>Batch / lavorazione</span><select value={phaseId} disabled={busy} onChange={e => { setPhaseId(e.target.value); setSheet(null); setConfirmStart(false); setError(''); }}>
+      <label className="pc-field"><span>Batch / lavorazione</span><select value={phaseId} disabled={busy} onChange={e => { setPhaseId(e.target.value); setPrintMessage(''); setPrintPending(false); setSheet(null); setConfirmStart(false); setError(''); }}>
         <option value="">Seleziona il batch</option>
         {list.phases.map(p => <option key={p.id} value={p.id}>Batch {p.number} · {p.quantity} {p.unit} · {p.lotCode || 'Lotto da assegnare'} · {states[p.executionStatus] || p.executionStatus} · {p.resource}{p.phase === 7 ? ' · Astucciatura' : ''}</option>)}
       </select></label>
@@ -73,11 +83,12 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
       {!list.phases.length && <p>Nessuna lavorazione di {title} disponibile per questo ordine.</p>}
       {error && !sheet && phaseId && <button type="button" disabled={busy} onClick={() => setLoadAttempt(value => value + 1)}>Riprova apertura foglio</button>}
       {error && <p role="alert" className="pc-error">{error}</p>}
+      {printMessage && <p role="status">{printMessage}</p>}
       {busy && <p role="status">Operazione in corso…</p>}
-      {sheet && <iframe ref={frame} title={`Foglio di ${title}`} src={sheet.url}/>}
+      {sheet && <iframe title={`Foglio di ${title}`} srcDoc={sheet.sheetHtml || undefined} src={sheet.sheetHtml ? undefined : sheet.url}/>}
       {confirmStart && <p>Confermi l’avvio del batch {phase?.number} selezionato su {phase?.resource}?</p>}
       <footer><button type="button" disabled={busy} onClick={() => { setOpen(false); setSheet(null); }}>Chiudi</button>
-        <button type="button" disabled={!sheet || busy} onClick={() => act('print')}><Printer size={17}/>Stampa foglio</button>
+        <button type="button" disabled={!sheet || busy} onClick={() => act('print')}><Printer size={17}/>{printPending ? 'Verifica stampa' : printMessage ? 'Ristampa su PRODUZIONE' : 'Stampa su PRODUZIONE'}</button>
         {phase?.executionStatus === 'NOT_STARTED' && <button type="button" disabled={!sheet || busy} onClick={() => confirmStart ? act('start') : setConfirmStart(true)}><Play size={17}/>{confirmStart ? 'Conferma avvio' : 'Avvia lavorazione'}</button>}
       </footer>
     </Modal>}

@@ -1,3 +1,4 @@
+import { ensurePrinterScreen } from '../../server/workspace-printer-screen.js';
 import { createWorkspaceRdp } from '../workspace-rdp-create.js';
 import { assertPrivateCustomerDetailAccess, customerOrderOverview, loadCustomerInvoiceReferences } from '../private-orders-workbench.js';
 import { handleCompanyCalendar } from '../../server/company-calendar.js';
@@ -690,6 +691,7 @@ export default async function handler(req, res) {
         const admin = await createAdmin(req);
         await requireAdmin(req, admin.supabase);
         await ensurePrivateDocumentsScreen(admin.supabase);
+        await ensurePrinterScreen(admin.supabase);
         return sendSuccess(res, 200, { registered: true });
       }
       case "progremes_modules_list": {

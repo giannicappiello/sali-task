@@ -1,3 +1,5 @@
+import PackagingActivityDialog from '../Dashboard/PackagingActivityDialog';
+import { fillingActivityMessage } from './fillingActivityMessage';
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { Navigate, useNavigate } from "react-router-dom";
@@ -12,6 +14,7 @@ import { useWorkspaceChrome } from "../../components/workspaceChromeContext";
 export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog = false }) {
   const { session, hasModuleAccess, hasScreenAccess, loading: authLoading, authorizationRevision } = useAuth();
   const navigate = useNavigate();
+  const [fillingActivity, setFillingActivity] = useState(null);
   const accessToken = session?.access_token;
   const currentToken = useRef(accessToken);
   useEffect(() => { currentToken.current = accessToken; }, [accessToken]);
@@ -55,6 +58,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
     if (!url) return undefined;
     const origin = new URL(url).origin;
     const receive = (event) => {
+      if (event.data.type === "progremes-filling-activity") { setFillingActivity(fillingActivityMessage(event.data)); return; }
       if (event.data.type === "progremes-open-assistant") {
         window.dispatchEvent(new CustomEvent('workspace:open-assistant'));
         return;
@@ -102,6 +106,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
   if (!screenCode) return <Navigate to="/produzione" replace />;
 
   return <section style={["station-overview", "filling-overview"].includes(new URLSearchParams(search).get("destination")) ? { position: "fixed", inset: 0, zIndex: 1100, margin: 0, border: 0, borderRadius: 0, height: "100dvh", width: "100vw", background: "#020f17" } : undefined} className={`${inDialog ? "progremes-card-frame" : "progremes-workspace-frame"}${["progremes.Planning", "progremes.PlanningProduction"].includes(screenCode) ? " progremes-planning-frame" : ""}`}>
+    {fillingActivity && <PackagingActivityDialog activity={fillingActivity} onClose={() => setFillingActivity(null)} onStarted={() => setFillingActivity(current => current ? {...current, stato: "In lavorazione"} : current)}/> }
     {popupPath && <PlanningActionModal path={popupPath} onClose={() => { setPopupPath(""); if (url) frame.current?.contentWindow?.postMessage({ type: "workspace-mes-refresh-planning" }, new URL(url).origin); }} onNavigate={setPopupPath} />}
     {syncError && <div className="progremes-frame-status" role="alert">{syncError}</div>}
     {(!ready || error) && <div className="progremes-frame-status" role={error ? "alert" : "status"}>

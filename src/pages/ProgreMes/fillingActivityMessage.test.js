@@ -1,0 +1,7 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {fillingActivityMessage} from './fillingActivityMessage.js';
+import {isProgremesFrameMessage} from './progremesWindow.js';
+const data={type:'progremes-filling-activity',activity:{productionOrderId:31,orderNumber:'RDP31',articleCode:'BT0059',descrizione:'Thotale Genial Eyes 30ml',resourceCode:'F05',resource:'F05 · FILLING 5',operationType:'Packaging',start:'2026-10-02T07:30:00',end:'2026-10-02T09:30:00',stato:'Pianificata'}};
+test('Filling uses the same activity contract, including cartoning',()=>{const activity=fillingActivityMessage(data);assert.equal(activity.titolo,'RDP31 · BT0059');assert.equal(activity.reparto,'Confezionamento');assert.equal(activity.resourceCode,'F05');assert.equal(fillingActivityMessage({...data,activity:{...data.activity,operationType:'Cartoning'}}).operationType,'Cartoning');});
+test('rejects invalid activities and messages from other origins or frames',()=>{const frame={};const event={data,source:frame,origin:'https://mes.example'};assert.equal(isProgremesFrameMessage(event,frame,event.origin),true);assert.equal(isProgremesFrameMessage(event,{},event.origin),false);assert.equal(isProgremesFrameMessage(event,frame,'https://other.example'),false);for(const changed of [{productionOrderId:-1},{operationType:'Production'},{start:'invalid'},{resourceCode:null},{actualStart:22}]) assert.equal(fillingActivityMessage({...data,activity:{...data.activity,...changed}}),null);});

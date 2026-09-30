@@ -1,3 +1,4 @@
+import { fillingActivityMessage } from './fillingActivityMessage.js';
 export const PROGREMES_POPUP_PARAM = "workspaceMesWindow";
 
 export function isProgremesScreenPath(path, origin = "https://workspace.invalid") {
@@ -34,6 +35,7 @@ export function requestProgremesWorkspaceWindow(path) {
 
 export function isProgremesFrameMessage(event, frameWindow, origin) {
   if (!frameWindow || event.source !== frameWindow || event.origin !== origin) return false;
+  if (event.data?.type === "progremes-filling-activity") return Boolean(fillingActivityMessage(event.data));
   if (event.data?.type === "progremes-workspace-navigate") return Boolean(progremesWorkspaceDestination(event.data));
   if (event.data?.type === "progremes-page-header") return typeof event.data.title === "string" && event.data.title.length <= 300
     && typeof event.data.description === "string" && event.data.description.length <= 2000

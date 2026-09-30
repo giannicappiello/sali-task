@@ -100,6 +100,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
   if (!screenCode) return <Navigate to="/produzione" replace />;
 
   return <section className={`${inDialog ? "progremes-card-frame" : "progremes-workspace-frame"}${["progremes.Planning", "progremes.PlanningProduction"].includes(screenCode) ? " progremes-planning-frame" : ""}`}>
+    {screenCode === "progremes.PlanningProduction" && !new URLSearchParams(search).get("destination") && allowed && <div style={{ padding: "8px 12px", flexShrink: 0 }}><button type="button" className="secondary-action" onClick={() => navigate("/produzione/miscelazione?workspaceMesWindow=1")}>Miscelazione · Station e pesate</button></div>}
     {popupPath && <PlanningActionModal path={popupPath} onClose={() => { setPopupPath(""); if (url) frame.current?.contentWindow?.postMessage({ type: "workspace-mes-refresh-planning" }, new URL(url).origin); }} onNavigate={setPopupPath} />}
     {syncError && <div className="progremes-frame-status" role="alert">{syncError}</div>}
     {(!ready || error) && <div className="progremes-frame-status" role={error ? "alert" : "status"}>

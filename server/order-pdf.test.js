@@ -221,3 +221,12 @@ test("usa una griglia IVA separata e un logo di intestazione realmente maggiorat
   assert.doesNotMatch(source, /order\.acconto \? money\(model\.totals\.totale_documento\)/);
   assert.doesNotMatch(source, /order\.abbuono \? money\(model\.totals\.totale_documento\)/);
 });
+
+test("PH conserva il logo Sali anche con intestazione gestita e senza rete", async () => {
+  const { SALI_LOGO_DATA_URL } = await import("../src/modules/orders/services/saliLogo.js");
+  assert.equal(SALI_LOGO_DATA_URL, `data:image/png;base64,${(await readFile(new URL("../public/logo.png", import.meta.url))).toString("base64")}`);
+  const pdf = await createOrderPdf({ modulo_ordini: "ph" }, Array.from({length: 20}, () => ({codice_articolo: "PH", quantita: 1, prezzo_listino: 10})), { managedLetterhead: true });
+  assert.equal(pdf.getNumberOfPages(), 2);
+  assert.equal(Object.keys(pdf.internal.collections.addImage_images).length, 1);
+  assert.doesNotMatch(pdf.output(), /PROGRE/);
+});

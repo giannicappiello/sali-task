@@ -1,3 +1,4 @@
+import { SALI_LOGO_DATA_URL } from "./saliLogo.js";
 import { jsPDF } from "jspdf";
 import { calculateOrderEconomics } from "./orderEconomics.js";
 
@@ -83,20 +84,9 @@ async function getCompanyLogo() {
   return COMPANY_LOGO_DATA_URL;
 }
 
+// Bundle the PH brand so network failures cannot substitute the Progre logo.
 async function getAnalysisReportLogo() {
-  try {
-    const response = await fetch("/logo.png");
-    if (!response.ok) throw new Error("Logo report non disponibile.");
-    const blob = await response.blob();
-    return await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  } catch {
-    return getCompanyLogo();
-  }
+  return SALI_LOGO_DATA_URL;
 }
 
 function ruled(doc, x, y, width, height, fill = false) {
@@ -339,7 +329,7 @@ export async function createOrderPdf(order, lines, { logo = null, document = nul
   for (let page = 0; page < pages; page += 1) {
     if (page) doc.addPage();
     const continuation = page > 0;
-    if (!managedLetterhead) drawCompanyHeader(doc, companyLogo, continuation, isPhOrder);
+    if (isPhOrder || !managedLetterhead) drawCompanyHeader(doc, companyLogo, continuation, isPhOrder);
     if (!continuation) drawPartyBlock(doc, order, model);
     const articleTop = continuation ? 29 : ARTICLE.top;
     const articleBottom = continuation ? 260 : ARTICLE.bottom;
@@ -409,7 +399,8 @@ export function createZipArchive(files) {
 export async function createMexalDocumentPdfFiles(order, lines) {
   const documents = getMexalDocuments(order);
   const targets = documents.length ? documents : [null];
-  const managedCompositionAvailable = typeof import.meta.env !== "undefined";
+  // PH retains its Sali di Ischia heading, including drafts and split Mexal documents.
+  const managedCompositionAvailable = String(order?.modulo_ordini || "").toLowerCase() !== "ph" && typeof import.meta.env !== "undefined";
   return Promise.all(targets.map(async (document) => {
     if (!document) {
       const doc = await createOrderPdf(order, lines, { managedLetterhead: managedCompositionAvailable });

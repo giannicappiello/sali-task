@@ -7,7 +7,7 @@ import { Modal } from '../../features/production-costs/common';
 import ProductSpecificationViewButton from '../Documentation/ProductSpecificationViewButton';
 import '../Documentation/ProductSpecification.css';
 import { stationActionUrl } from './productionCalendar';
-import { requestProgremesNavigation } from '../ProgreMes/progremesWindow';
+import { requestProgremesWorkspaceWindow } from '../ProgreMes/progremesWindow';
 
 function pdfUrl(base64) {
   return URL.createObjectURL(new Blob([Uint8Array.from(atob(base64), c => c.charCodeAt(0))], { type: 'application/pdf' }));
@@ -71,13 +71,9 @@ export default function PreparationActions({ activity, onStarted }) {
       onStarted?.(); window.dispatchEvent(new Event('workspace:production-changed'));
     }
   } };
-  async function openStation(operation) {
-    const popup = window.open('about:blank', '_blank', 'popup=yes,width=800,height=960,resizable=yes,scrollbars=yes');
-    try {
-      const search = `?destination=station&station=${encodeURIComponent(activity.resourceCode)}${operation ? `&stationAction=${operation}&orderId=${activity.productionOrderId}` : ""}`;
-      const url = await requestProgremesNavigation(session?.access_token, { screenCode: 'progremes.PlanningProduction', search });
-      if (popup) { popup.opener = null; popup.location.replace(url); }
-    } catch (cause) { popup?.close(); setError(cause.message); }
+  function openStation(operation) {
+    const search = '?destination=station&station=' + encodeURIComponent(activity.resourceCode) + (operation ? '&stationAction=' + operation + '&orderId=' + activity.productionOrderId : '');
+    requestProgremesWorkspaceWindow('/produzione/progremes.PlanningProduction' + search);
   }
   return <>
     <ProductSpecificationViewButton articleCode={knownBulkCode || context?.bulkCode || (customerScoped ? activity.articleCode : '')} description={activity.descrizione || context?.description}/>

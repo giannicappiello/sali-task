@@ -5,9 +5,10 @@ import { RefreshCw } from "lucide-react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { operationalMesRoute } from "../../lib/operationalMesRoute";
 import { useAuth } from "../../contexts/AuthContext";
-import { openProgremesWorkspaceWindow, progremesWorkspaceDestination, requestProgremesNavigation } from "./progremesWindow";
+import { progremesWorkspaceDestination, requestProgremesNavigation } from "./progremesWindow";
 import { observeProgremesFrame } from "./progremesHandshake";
 import "./progremes-frame.css";
+import StationUiPopup from "./StationUiPopup";
 import PlanningActionModal from "./PlanningActionModal";
 import { useWorkspaceChrome } from "../../components/workspaceChromeContext";
 
@@ -18,11 +19,11 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
   const accessToken = session?.access_token;
   const currentToken = useRef(accessToken);
   useEffect(() => { currentToken.current = accessToken; }, [accessToken]);
-  const operationalOverview = screenCode === "progremes.PlanningProduction" && ["station-overview", "filling-overview"].includes(new URLSearchParams(search).get("destination"));
   const allowed = screenCode === "progremes.PlanningProduction"
     ? hasScreenAccess(screenCode) || (operationalMesRoute(`/produzione/${screenCode}`, search) && hasScreenAccess("attivita.dashboard"))
     : hasModuleAccess("progremes");
   const frame = useRef(null);
+  const [stationPath, setStationPath] = useState("");
   const [popupPath, setPopupPath] = useState("");
   const [retry, setRetry] = useState(0);
   const [connection, setConnection] = useState({ requestKey: "", url: "", error: "" });
@@ -35,7 +36,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
     if (url && mesHeader?.url === url && mesHeader.canGoBack) frame.current?.contentWindow?.postMessage({ type: "workspace-mes-back" }, new URL(url).origin);
     else navigate("/produzione");
   }, [url, mesHeader, navigate]);
-  useWorkspaceChrome({ title: mesHeader?.url === url ? mesHeader.title : undefined,
+  useWorkspaceChrome({ title: !inDialog && mesHeader?.url === url ? mesHeader.title : undefined,
     description: mesHeader?.description, backLabel: "schermata precedente", onBack: goBackInMes, priority: 10 });
 
   useEffect(() => {
@@ -78,8 +79,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
       if (event.data.type === "progremes-workspace-navigate") {
         const destination = progremesWorkspaceDestination(event.data);
         if (new URL(destination, window.location.origin).searchParams.get('destination') === 'station') {
-          try { openProgremesWorkspaceWindow(destination); }
-          catch (error) { setSyncError(error.message); }
+          setStationPath(destination);
         } else if (event.data.popup === true) setPopupPath(destination);
         else navigate(progremesWorkspaceDestination(event.data));
         return;
@@ -106,6 +106,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
   if (!screenCode) return <Navigate to="/produzione" replace />;
 
   return <section style={["station-overview", "filling-overview"].includes(new URLSearchParams(search).get("destination")) ? { position: "fixed", inset: 0, zIndex: 1100, margin: 0, border: 0, borderRadius: 0, height: "100dvh", width: "100vw", background: "#020f17" } : undefined} className={`${inDialog ? "progremes-card-frame" : "progremes-workspace-frame"}${["progremes.Planning", "progremes.PlanningProduction"].includes(screenCode) ? " progremes-planning-frame" : ""}`}>
+    {stationPath && <StationUiPopup station={new URL(stationPath, window.location.origin).searchParams.get("station")} onClose={() => setStationPath("")}><ProgreMesLaunch key={stationPath} screenCode="progremes.PlanningProduction" search={new URL(stationPath, window.location.origin).search} inDialog /></StationUiPopup>}
     {fillingActivity && <PackagingActivityDialog activity={fillingActivity} onClose={() => setFillingActivity(null)} onStarted={() => setFillingActivity(current => current ? {...current, stato: "In lavorazione"} : current)}/> }
     {popupPath && <PlanningActionModal path={popupPath} onClose={() => { setPopupPath(""); if (url) frame.current?.contentWindow?.postMessage({ type: "workspace-mes-refresh-planning" }, new URL(url).origin); }} onNavigate={setPopupPath} />}
     {syncError && <div className="progremes-frame-status" role="alert">{syncError}</div>}

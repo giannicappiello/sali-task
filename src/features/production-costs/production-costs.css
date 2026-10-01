@@ -137,3 +137,9 @@
 .pc-private-missing{display:grid;border-top:1px solid #e7edf5}.pc-private-missing>button{display:grid;grid-template-columns:1fr auto auto;gap:14px;align-items:center;border:0;border-bottom:1px solid #e7edf5;border-radius:0;background:transparent;padding:18px 0;text-align:left;font-size:13px}.pc-private-missing>button>span:last-child{font-size:11px;color:#176bba}.pc-private-sali-link{margin-top:10px;font-size:11px!important}
 @media(max-width:1100px){.pc-private-filter-row{grid-template-columns:repeat(3,minmax(0,1fr))}.pc-private-comparison-overview{grid-template-columns:1fr}}
 @media(max-width:600px){.pc-private-filter-row{grid-template-columns:repeat(2,minmax(0,1fr))}.pc-private-comparison-metrics{grid-template-columns:1fr}.pc-private-comparison-metric>span{min-height:0}}
+
+/* Dynamic viewport keeps dialog headings and close controls visible on tablets. */
+.pc-modal { max-height:calc(100dvh - 24px); max-width:calc(100vw - 24px); }
+.pc-modal > header { top:0; }
+.pc-modal > header h2 { min-width:0; overflow-wrap:anywhere; }
+.pc-modal > header > button { flex-shrink:0; min-width:44px; min-height:44px; }

@@ -33,3 +33,11 @@
   .app-shell.workspace-unified-chrome .topbar :is(.topbar-home-btn,.icon-btn,.mobile-menu-btn,.context-ai-trigger) { width:34px; min-width:34px; height:36px; padding:0; }
   .workspace-unified-chrome .topbar-home-btn span { display:none; }
 }
+
+ .workspace-window-close { display:none; }
+/* Keep window controls within the tablet viewport instead of relying on browser chrome. */
+@media (pointer:coarse) {
+ .app-shell.workspace-unified-chrome .topbar { position:sticky; top:0; z-index:50; flex-shrink:0; padding-top:max(8px, env(safe-area-inset-top)); }
+ .workspace-window-close { display:grid; place-items:center; border:1px solid #8fb7d0; border-radius:8px; position:fixed; top:max(8px, env(safe-area-inset-top)); right:max(8px, env(safe-area-inset-right)); z-index:1300; width:44px!important; height:44px!important; background:#204e83!important; color:white!important; }
+ .app-shell:has(.workspace-window-close) .topbar-actions { padding-right:48px; }
+}

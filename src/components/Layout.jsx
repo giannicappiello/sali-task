@@ -1,3 +1,5 @@
+import StationUiPopup from "../pages/ProgreMes/StationUiPopup";
+import ProgreMesLaunch from "../pages/ProgreMes/ProgreMesLaunch";
 import useWorkspaceAutofillPolicy from "../hooks/useWorkspaceAutofillPolicy";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -255,6 +257,8 @@ function Layout() {
     ));
   }, [configuredMenu, configuredModules]);
 
+  const [isWorkspaceWindow] = useState(() => new URLSearchParams(window.location.search).has("workspaceMesWindow"));
+  const [stationPopupPath, setStationPopupPath] = useState("");
   const launchProgremes = useCallback((screenCode = "", workspacePath = "") => {
     const targetScreen = workspacePath ? new URL(workspacePath, window.location.origin).pathname.split('/').pop() : screenCode;
     const planningAllowed = targetScreen === 'progremes.PlanningProduction' && hasScreenAccess(targetScreen);
@@ -268,7 +272,8 @@ function Layout() {
       ? `/produzione/${encodeURIComponent(screenCode)}`
       : "/produzione");
     try {
-      openProgremesWorkspaceWindow(destination);
+      if (operationalTarget.searchParams.get("destination") === "station" && operationalMesRoute(operationalTarget.pathname, operationalTarget.search)) setStationPopupPath(destination);
+      else openProgremesWorkspaceWindow(destination);
       setProgremesConnection({ open: false, error: "" });
     } catch (error) {
       setProgremesConnection({ open: true, error: error.message });
@@ -565,6 +570,8 @@ function Layout() {
 
   return (
     <WorkspaceChromeContext.Provider value={chromeContext}>
+            {isWorkspaceWindow && <button type="button" className="workspace-window-close" aria-label="Chiudi finestra" onClick={() => { if (window.opener || window.history.length <= 1) window.close(); navigate("/activities/dashboard"); }}><X size={22}/></button>}
+      {stationPopupPath && <StationUiPopup station={new URL(stationPopupPath, window.location.origin).searchParams.get("station")} onClose={() => setStationPopupPath("")}><ProgreMesLaunch screenCode="progremes.PlanningProduction" search={new URL(stationPopupPath, window.location.origin).search} inDialog /></StationUiPopup>}
     <div className={`app-shell workspace-unified-chrome ${mobileMenuOpen ? "mobile-menu-is-open" : ""}`}>
       {progremesConnection.open && (
         <div className="progremes-connection-overlay" role="dialog" aria-modal="true" aria-labelledby="progremes-connection-title">

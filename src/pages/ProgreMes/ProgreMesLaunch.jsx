@@ -117,7 +117,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
     </div>}
     {url && <iframe ref={frame} key={url} src={url} data-assistant-mes-frame="true" title="Schermata MES integrata in Workspace"
       className={ready && !error ? "is-ready" : "is-connecting"} referrerPolicy="no-referrer" allowFullScreen
-      sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-modals allow-popups"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-modals allow-popups allow-popups-to-escape-sandbox"
       onLoad={() => frame.current?.contentWindow?.postMessage({ type: "workspace-mes-connect", unifiedChrome: true }, new URL(url).origin)} />}
   </section>;
 }

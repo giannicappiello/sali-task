@@ -1,14 +1,14 @@
 import { useRef, useState } from 'react';
 
 const fields = [
-  ['operator', 'text'], ['responsible', 'text'], ['expiry', 'date'],
+  ['operator', 'text'], ['responsible', 'text'], ['closureDate', 'date'],
   ['piecesPerBox', 'number'], ['boxesPerLayer', 'number'], ['layersPerPallet', 'number'],
   ['piecesPerPallet', 'number'], ['pallets', 'number'], ['produced', 'number'], ['scrap', 'number'], ['notes', 'textarea'],
 ];
 const incompleteFields = ['incompletePalletFullBoxes', 'incompletePalletPiecesPerBox', 'incompletePalletPartialBoxes', 'incompletePalletCount'];
 export default function PackagingActualEditor({ sheet, saved, busy, onSave, onCancel }) {
   const frame = useRef(null), [error, setError] = useState('');
-  const actual = saved?.actual || { piecesPerBox: sheet.packagingSheet?.pezziPerCollo || '', materialWastes: [] };
+  const actual = saved?.actual || { closureDate: new Date().toLocaleDateString('sv-SE'), piecesPerBox: sheet.packagingSheet?.pezziPerCollo || '', materialWastes: [] };
   function initialize() {
     const doc = frame.current?.contentDocument;
     if (!doc) return;
@@ -22,9 +22,10 @@ export default function PackagingActualEditor({ sheet, saved, busy, onSave, onCa
         input.step = row.dataset.materialUnit?.toUpperCase() === 'PZ' ? '1' : '0.000001';
         input.inputMode = input.step === '1' ? 'numeric' : 'decimal';
         input.required = true; input.disabled = Boolean(saved);
+        input.readOnly = row.dataset.bulk === 'true' && key !== 'returned';
         input.dataset.materialInput = key;
         input.setAttribute('aria-label', `${row.dataset.materialCode} - ${{deposited:'Depositati',consumed:'Consumo effettivo',wasted:'Scartati',returned:'Reso'}[key]}`);
-        input.value = material?.[key] ?? '';
+        input.value = material?.[key] ?? (key === 'deposited' ? row.dataset.deposited ?? '' : '');
         cell.replaceChildren(input);
       }
     }
@@ -43,17 +44,33 @@ export default function PackagingActualEditor({ sheet, saved, busy, onSave, onCa
       if (type === 'number') { input.inputMode = 'numeric'; input.min = ['produced','piecesPerBox'].includes(key) ? '1' : '0'; input.max = '1000000000'; input.step = '1'; }
       fieldLabel.append(input); cell.append(fieldLabel);
     }
+    const recalculate = () => {
+      if (saved) return;
+      const produced = doc.querySelector('[name="produced"]');
+      const planned = Number(doc.querySelector('[data-planned-quantity]')?.dataset.plannedQuantity);
+      for (const row of doc.querySelectorAll('[data-bulk="true"]')) {
+        const input = key => row.querySelector('[data-material-input="' + key + '"]');
+        const deposited = Number(row.dataset.deposited);
+        let consumed = produced?.value && planned > 0 ? Math.round(Number(row.dataset.required) * Number(produced.value) / planned * 1e6) / 1e6 : null;
+        if (Number(produced?.value) > planned && planned > 0) consumed = input('returned').value === '' ? null : deposited - Number(input('returned').value);
+        input('deposited').value = deposited;
+        input('consumed').value = consumed ?? '';
+        input('wasted').value = consumed !== null && input('returned').value !== '' ? Math.round((deposited - consumed - Number(input('returned').value)) * 1e6) / 1e6 : '';
+      }
+    };
+    doc.addEventListener('input', recalculate); recalculate();
     const pieces = doc.querySelector('[name="piecesPerBox"]');
     const updatePieces = () => { const mirror = doc.querySelector('[data-packaging-pieces-per-box]'); if (mirror) mirror.textContent = pieces?.value || '—'; };
     pieces?.addEventListener('input', updatePieces); updatePieces();
   }
   function submit() {
+    if (saved) { setError(''); onSave(actual); return; }
     const doc = frame.current?.contentDocument; if (!doc) return;
     const value = {...actual};
     for (const [key,type] of fields) {
       const input = doc.querySelector(`[name="${key}"]`);
       if (!input) { setError('Aggiornare MES: foglio incompleto.'); return; }
-      if (!saved && !input.reportValidity()) return;
+      if (!saved && !input.reportValidity()) { setError('Compilare correttamente il campo: ' + (input.closest('label')?.firstChild?.textContent || key)); input.scrollIntoView({block:'center'}); return; }
       value[key] = type === 'number' ? Number(input.value) : input.value;
     }
     if (!saved && doc.querySelector('[data-packaging-version="2"]')) {
@@ -61,7 +78,7 @@ export default function PackagingActualEditor({ sheet, saved, busy, onSave, onCa
       for (const row of doc.querySelectorAll('[data-packaging-material]')) {
         const material = {articleId: Number(row.dataset.packagingMaterial)};
         for (const input of row.querySelectorAll('[data-material-input]')) {
-          if (!input.reportValidity()) return;
+          if (!input.reportValidity() || input.value === '' || Number(input.value) < 0) { setError(row.dataset.materialCode + ': verificare ' + input.getAttribute('aria-label') + '. Lo scarto calcolato non può essere negativo.'); input.scrollIntoView({block:'center'}); return; }
           material[input.dataset.materialInput] = Number(input.value);
         }
         if (Math.abs(material.deposited - material.consumed - material.wasted - material.returned) > 0.0000001) {

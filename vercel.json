@@ -28,6 +28,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/progremes-inventory/snapshot",
+      "destination": "/api/mexal/automation?route=progremes-inventory-snapshot"
+    },
+    {
       "source": "/api/production/actions",
       "destination": "/api/mexal/automation?route=production-actions"
     },

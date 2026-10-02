@@ -10,3 +10,7 @@
 .batch-sheet-modal .packaging-editor-actions button:focus-visible { outline:3px solid #86b5ff; outline-offset:2px; }
 .batch-sheet-modal .packaging-editor-actions button:disabled { opacity:.6; cursor:wait; }
 @media(max-width:600px) { .batch-sheet-modal .packaging-editor-actions button { flex:1; min-width:130px; } }
+
+.batch-sheet-modal footer { align-items:center; }
+.batch-sheet-modal .batch-start-shortage { display:inline-flex; align-items:center; gap:8px; margin:0; }
+.batch-sheet-modal .batch-start-shortage input { width:auto; margin:0; }

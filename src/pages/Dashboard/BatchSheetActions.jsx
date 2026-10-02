@@ -1,3 +1,4 @@
+import { batchPrintStart } from './batchPrintStart.js';
 import PackagingActualEditor from './PackagingActualEditor';
 import { assertPackagingEditorAvailable } from './packagingActualAvailability.js';
 import { observeCentralPrint, pendingCentralPrint, finishCentralPrint } from './centralPrint.js';
@@ -16,6 +17,8 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
   const [autoEdit, setAutoEdit] = useState(false);
   const [editing, setEditing] = useState(false), [savedActual, setSavedActual] = useState(null);
   const [confirmStart, setConfirmStart] = useState(false);
+  const [allowShortage, setAllowShortage] = useState(false);
+  const [printedHash, setPrintedHash] = useState('');
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [printMessage, setPrintMessage] = useState('');
   const [printPending, setPrintPending] = useState(false);
@@ -41,7 +44,7 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
   useEffect(() => {
     if (!open || !phaseId) return;
     const controller = new AbortController();
-    setBusy(true); setError(''); setSheet(null); setConfirmStart(false); setEditing(false);
+    setBusy(true); setError(''); setSheet(null); setConfirmStart(false); setEditing(false); setAllowShortage(false); setPrintedHash('');
     request('sheet', { phaseId }, controller.signal).then(async value => {
       const blob = value.packagingSheet
         ? (await import('./packagingSheetPdf.js')).packagingSheetPdf(value.packagingSheet)
@@ -58,21 +61,34 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
       .finally(() => { if (!controller.signal.aborted) setBusy(false); });
     return () => controller.abort();
   }, [open, phaseId, request, loadAttempt, autoEdit]);
+  async function printSheet() {
+    const pending = pendingCentralPrint(printKey, { hash: sheet.contentHash, phaseId: sheet.phaseId });
+    if (pending.hash !== sheet.contentHash || pending.phaseId !== sheet.phaseId)
+      throw new Error('Una stampa precedente è ancora in attesa. Verificare la coda MES prima di avviare il foglio aggiornato.');
+    setPrintPending(true);
+    const job = await observeCentralPrint(() => request('print', { phaseId: pending.phaseId, contentHash: pending.hash, printRequestId: pending.id }),
+      (job, message) => setPrintMessage(message || 'Stampa ' + job.status + ' su PRODUZIONE (' + job.printer + ').'));
+    if (job) {
+      finishCentralPrint(printKey); setPrintPending(false);
+      if (job.status === 'Failed' || job.confirmationError)
+        throw new Error(job.confirmationError || 'Stampa non riuscita: ' + job.error);
+      setPrintedHash(sheet.contentHash);
+    }
+    return job;
+  }
   async function act(operation) {
+    if (busy) return;
     setBusy(true); setError('');
     try {
-      if (operation === 'print') {
-        const pending = pendingCentralPrint(printKey, { hash: sheet.contentHash, phaseId: sheet.phaseId });
-        setPrintPending(true);
-        const job = await observeCentralPrint(() => request('print', { phaseId: pending.phaseId, contentHash: pending.hash, printRequestId: pending.id }),
-          (job, message) => setPrintMessage(message || `Stampa ${job.status} su PRODUZIONE (${job.printer}).`));
-        if (job) {
-          finishCentralPrint(printKey); setPrintPending(false);
-          if (job.status === 'Failed' || job.confirmationError) setError(job.confirmationError || `Stampa non riuscita: ${job.error}. Verificare la coda MES prima di ristampare.`);
-        }
-      }
+      if (operation === 'print') await printSheet();
       else {
-        await request(operation, { phaseId: sheet.phaseId, contentHash: sheet.contentHash });
+        if (operation === 'print-start') {
+          const started = await batchPrintStart({ alreadyPrinted: printedHash === sheet.contentHash,
+            print: printSheet, onPrinted: () => setPrintedHash(sheet.contentHash),
+            start: () => request('start', { phaseId: sheet.phaseId, contentHash: sheet.contentHash, allowShortage }) });
+          if (!started) return;
+          setPrintMessage('Foglio stampato. Lavorazione in produzione nel MES. Il caricamento PLC viene confermato nella UI della Station collegata.');
+        } else await request(operation, { phaseId: sheet.phaseId, contentHash: sheet.contentHash });
         setList(await request('list')); setConfirmStart(false);
         window.dispatchEvent(new Event('workspace:production-changed'));
       }
@@ -112,8 +128,10 @@ export default function BatchSheetActions({ productionOrderId, kind, children })
       {editing && sheet && <PackagingActualEditor key={phaseId} sheet={sheet} saved={savedActual} busy={busy} onSave={saveSheet} onCancel={() => setEditing(false)}/>}
       {confirmStart && <p>Confermi l’avvio del batch {phase?.number} selezionato su {phase?.resource}?</p>}
       {!editing && <footer><button type="button" disabled={busy} onClick={() => { setOpen(false); setSheet(null); setError(''); }}>Chiudi</button>
-        <button type="button" disabled={!sheet || busy} onClick={() => act('print')}><Printer size={17}/>{printPending ? 'Verifica stampa' : printMessage ? 'Ristampa su PRODUZIONE' : 'Stampa su PRODUZIONE'}</button>
-        {phase?.executionStatus === 'NOT_STARTED' && <button type="button" disabled={!sheet || busy} onClick={() => confirmStart ? act('start') : setConfirmStart(true)}><Play size={17}/>{confirmStart ? 'Conferma avvio' : 'Avvia lavorazione'}</button>}
+        <button type="button" disabled={!sheet || busy} onClick={() => act('print')}><Printer size={17}/>{printPending ? 'Verifica stampa' : kind === 'production' ? 'Stampa Foglio' : printMessage ? 'Ristampa su PRODUZIONE' : 'Stampa su PRODUZIONE'}</button>
+        {kind === 'production' && <label className="batch-start-shortage"><input type="checkbox" checked={allowShortage} disabled={busy || phase?.executionStatus !== 'NOT_STARTED'} onChange={e => setAllowShortage(e.target.checked)}/> Avvia con materiali mancanti</label>}
+        {kind === 'production' && <button type="button" disabled={!sheet || busy || phase?.executionStatus !== 'NOT_STARTED'} onClick={() => act('print-start')}><Play size={17}/>Stampa e Avvia</button>}
+        {kind !== 'production' && phase?.executionStatus === 'NOT_STARTED' && <button type="button" disabled={!sheet || busy} onClick={() => confirmStart ? act('start') : setConfirmStart(true)}><Play size={17}/>{confirmStart ? 'Conferma avvio' : 'Avvia lavorazione'}</button>}
         {kind === 'packaging' && phase?.executionStatus === 'COMPLETED' && <button type="button" disabled={busy} onClick={async () => { try { setPrintMessage((await request('archive-status',{phaseId})).message); } catch(e) { setError(e.message); } }}>Verifica PDF sul NAS</button>}
       </footer>}
     </Modal>}

@@ -20,7 +20,7 @@ export async function handleBatchSheet(req, body, { authorize = productionSheetS
     throw Object.assign(new Error('Operazione riservata agli addetti interni.'), { status: 403 });
   try {
     const { result } = await clientFactory().batchSheet({ externalId, printMode: operation === 'print' ? 'server' : undefined, productionOrderId, kind, operation,
-      phaseId, contentHash, actual: operation === 'complete-sheet' ? body.actual : undefined, requestedBy: session.profile.id });
+      phaseId, contentHash, allowShortage: operation === 'start' && kind === 'production' && body.allowShortage === true, actual: operation === 'complete-sheet' ? body.actual : undefined, requestedBy: session.profile.id });
     requireCentralPrint(result, operation);
     return { ...result, canPrint: true, canStart: true };
   } catch (error) {

@@ -11,7 +11,7 @@ test('batch requests check department every time and preserve the selected phase
     });
     assert.equal(sent.phaseId, phaseId); assert.equal(sent.requestedBy, 'operator');
     if (operation === 'print') { assert.equal(sent.externalId, '75f4fb07-8b4b-42db-a5b4-ce3d9303ed11'); assert.equal(sent.printMode, 'server'); }
-    assert.equal(sent.allowShortage, undefined); assert.equal(result.canStart, true);
+    assert.equal(sent.allowShortage, operation === 'start' && kind === 'production'); assert.equal(result.canStart, true);
   }
 });
 test('invalid phase/hash and customer scopes never reach MES', async () => {

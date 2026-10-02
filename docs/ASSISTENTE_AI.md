@@ -5,7 +5,7 @@
 1. Applicare le migrazioni `20260818220000_workspace_ai_module.sql` e `20260818230000_workspace_ai_cost_reporting.sql`.
 2. Assegnare il modulo **Assistente AI** ai reparti autorizzati.
 3. Aprire **Impostazioni → Assistente AI** e scegliere le capacità del reparto.
-4. Abilitare AI Gateway per il progetto Vercel. In produzione l'autenticazione usa automaticamente `VERCEL_OIDC_TOKEN`; `AI_GATEWAY_API_KEY` è opzionale e serve per esecuzioni esterne o locali. Il modello predefinito è `openai/gpt-5.6-luna` e può essere cambiato con `AI_MODEL`.
+4. Abilitare AI Gateway per il progetto Vercel. In produzione l'autenticazione usa automaticamente `VERCEL_OIDC_TOKEN`; `AI_GATEWAY_API_KEY` è opzionale e serve per esecuzioni esterne o locali. Il modello predefinito è `openai/gpt-6.1-sol` e può essere cambiato con `AI_MODEL`. Per l'assistente integrato senza Agents API impostare `AI_RUNTIME=workspace-ai`: strumenti Workspace/MES, allegati e permessi continuano a usare il percorso AI SDK esistente. L'integrazione API non include automaticamente ogni funzionalità dell'app ChatGPT. Conservare le credenziali del precedente runtime finché non sono stati verificati e chiusi gli eventuali turni Codex pendenti.
 
 La chiave AI è usata esclusivamente dalla funzione server `/api/ai/assistant` e non viene mai inviata al browser.
 

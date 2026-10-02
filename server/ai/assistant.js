@@ -29,7 +29,7 @@ import { previewMaterialReallocation, materialLookupSchema } from "./material-re
 import { priorityCall, priorityRequestSchema, reconcilePriority, simulatePriority } from "./priority-revision.js";
 import { planningCall, planningRequestSchema, reconcilePlanning } from "./planning-lifecycle.js";
 
-const DEFAULT_MODEL = "openai/gpt-5.6-luna";
+const DEFAULT_MODEL = "openai/gpt-6.1-sol";
 const MAX_HISTORY_MESSAGES = 14;
 const MAX_ASSISTANT_ATTACHMENTS = 4;
 const MAX_ASSISTANT_ATTACHMENT_BYTES = 2_800_000;

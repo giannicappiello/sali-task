@@ -1,3 +1,4 @@
+import { productionStatus } from '../../lib/productionStatus.js';
 import { displayDate } from '../../lib/displayDate.js';
 import { batchPrintStart } from './batchPrintStart.js';
 import PackagingActualEditor from './PackagingActualEditor';
@@ -124,7 +125,7 @@ export default function BatchSheetActions({ productionOrderId, kind, children, o
     {open && <Modal title={`Foglio di ${title} · batch`} className="product-spec-viewer batch-sheet-modal" onClose={() => { if (!busy) { setOpen(false); setSheet(null); setError(''); } }}>
       <label className="pc-field"><span>Batch / lavorazione</span><select value={phaseId} disabled={busy} onChange={e => { setPhaseId(e.target.value); setPrintMessage(''); setPrintPending(false); setSheet(null); setConfirmStart(false); setError(''); }}>
         <option value="">Seleziona il batch</option>
-        {phases.map(p => <option key={p.id} value={p.id}>Batch {p.number} · {p.quantity} {p.unit} · {p.lotCode || 'Lotto da assegnare'} · {states[p.executionStatus] || p.executionStatus} · {p.resource}{p.phase === 7 ? ' · Astucciatura' : ''}</option>)}
+        {phases.map(p => <option key={p.id} value={p.id}>Batch {p.number} · {p.quantity} {p.unit} · {p.lotCode || 'Lotto da assegnare'} · {productionStatus(states[p.executionStatus] || p.executionStatus, p.actualStart)} · {p.resource}{p.phase === 7 ? ' · Astucciatura' : ''}</option>)}
       </select></label>
       {phase?.actualStart && <p><strong>Avviata il {displayDate(phase.actualStart, true)}</strong></p>}
       {list && !phases.length && <p>Nessuna lavorazione di {title} disponibile per questo ordine.</p>}

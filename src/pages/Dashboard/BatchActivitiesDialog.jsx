@@ -1,3 +1,4 @@
+import { productionStatus } from '../../lib/productionStatus.js';
 import { Modal } from '../../features/production-costs/common';
 import { displayDate } from '../../lib/displayDate.js';
 import PreparationActions from './PreparationActions';
@@ -17,7 +18,7 @@ export default function BatchActivitiesDialog({ activities, onClose, onChanged }
         {activity.actualStart && <p><strong>Avviata il {displayDate(activity.actualStart, true)}</strong></p>}
         <div className="pc-metrics"><div><span>Risorsa</span><strong>{activity.resource}</strong></div>
           <div><span>Periodo</span><strong>{displayDate(activity.start, true)} – {displayDate(activity.end, true)}</strong></div>
-          <div><span>Stato</span><strong>{activity.stato}</strong></div></div>
+          <div><span>Stato</span><strong>{productionStatus(activity.stato, activity.actualStart)}</strong></div></div>
         <div className="dashboard-production-actions">
           {activity.operationType === 'Production' ? <PreparationActions activity={activity} onStarted={onChanged}/> : <>
             <ProductSpecificationViewButton articleCode={activity.articleCode} description={activity.descrizione}/>

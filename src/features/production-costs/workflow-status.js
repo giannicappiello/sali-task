@@ -3,8 +3,8 @@ const key = value => String(value || "").toLowerCase().replace(/[\s_/-]/g, "");
 const terminal = new Set(["completato", "chiuso", "terminato"]);
 export const workflowOptions = [
   ["open", "Aperte (tutte)"], ["new", "Da avviare"],
-  ["planned", "Pianificate"], ["running", "In produzione"],
-  ["paused", "Sospese"], ["closed", "Concluse"], ["cancelled", "Annullate"],
+  ["planned", "Pianificate"], ["running", "In Lavorazione"],
+  ["closed", "Concluse"], ["cancelled", "Annullate"],
 ];
 export function productionWorkflow(record) {
   const order = key(record.state);
@@ -12,7 +12,7 @@ export function productionWorkflow(record) {
   if (terminal.has(order)) return "closed";
   const works = (record.works || record.phases || []).filter(w => key(w.state) !== "annullato");
   if (works.some(w => key(w.state) === "inproduzione")) return "running";
-  if (works.some(w => key(w.state) === "sospeso")) return "paused";
+  if (works.some(w => key(w.state) === "sospeso")) return "running";
   // A completed mixing phase does not close an order awaiting filling.
   if (order === "inproduzione") return "running";
   if (order === "pianificato") return "planned";
@@ -29,6 +29,6 @@ export function matchesWorkflow(record, selection) {
 }
 export function workflowLabel(record) {
   const status = productionWorkflow(record);
-  return ({new: "Da avviare", planned: "Pianificata", running: "In produzione",
-    paused: "Sospesa", closed: "Conclusa", cancelled: "Annullata"})[status] || record.state || "Stato non disponibile";
+  return ({new: "Da avviare", planned: "Pianificata", running: "In Lavorazione",
+    paused: "In Lavorazione", closed: "Conclusa", cancelled: "Annullata"})[status] || record.state || "Stato non disponibile";
 }

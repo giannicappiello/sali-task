@@ -1,3 +1,4 @@
+import {workflowLabel} from './workflow-status.js';
 import {invoiceReferences} from './invoice-summary.js';
 import {conclusionDate,isSaliDiIschia} from './summary-totals.js';
 import {octReference} from './oct-evidence.js';
@@ -13,7 +14,7 @@ export function privateProductionRecord(r) {
  const workedOct=oct;
  const compared=available.values.actualWithObjective;
  const excess=compared!=null&&workedOct!=null&&compared>workedOct ? Math.round((compared-workedOct)*100)/100 : null;
- const row={id:r.id,customer:r.customerName||r.customer||r.customerCode||'',articleCode:r.articleCode,description:r.articleName||r.description||r.articleDescription||'',order:r.number||r.orderNumber||String(r.id),octReferences:[...new Set([...(r.links||[]).map(l=>l.oct),r.sourceOrder?.reference,r.commercialIdentity?.reference,r.orderNumber].map(octReference).filter(Boolean))].map(v=>v.replaceAll('+','/')),concludedAt:conclusionDate(r.works||r.phases||[]),isSali:isSaliDiIschia(r),date:r.works?.[0]?.start||r.date||r.start||r.createdAt||null,state:r.closed?'Conclusa':'In lavorazione',octValue:oct,octPartial:Boolean(r.commercial?.octPartial),actualTotal:compared,comparisonTotal:compared,invoiceValue:r.commercial?.invoiceRevenue??null,invoiceReferences:invoiceReferences(r.commercial?.invoices),actualPartial,octReasons:workedOct==null?['OC non disponibile o non confrontabile.']:[],workedOct,excess:excess>0?excess:null};
+ const row={id:r.id,customer:r.customerName||r.customer||r.customerCode||'',articleCode:r.articleCode,description:r.articleName||r.description||r.articleDescription||'',order:r.number||r.orderNumber||String(r.id),octReferences:[...new Set([...(r.links||[]).map(l=>l.oct),r.sourceOrder?.reference,r.commercialIdentity?.reference,r.orderNumber].map(octReference).filter(Boolean))].map(v=>v.replaceAll('+','/')),concludedAt:conclusionDate(r.works||r.phases||[]),isSali:isSaliDiIschia(r),date:r.works?.[0]?.start||r.date||r.start||r.createdAt||null,state:r.closed?'Conclusa':workflowLabel(r),octValue:oct,octPartial:Boolean(r.commercial?.octPartial),actualTotal:compared,comparisonTotal:compared,invoiceValue:r.commercial?.invoiceRevenue??null,invoiceReferences:invoiceReferences(r.commercial?.invoices),actualPartial,octReasons:workedOct==null?['OC non disponibile o non confrontabile.']:[],workedOct,excess:excess>0?excess:null};
  if(row.excess!=null)row.detail={workedQuantity:worked,unit:r.unit,phases:(r.phases||[]).map(p=>({id:p.id,phase:p.phase,machine:p.machine?.name||p.machineName||'',start:p.start,end:p.end,hours:number(p.actualHours),quantity:number(p.goodQuantity)}))};
  return row;
 }

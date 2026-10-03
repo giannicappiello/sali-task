@@ -1,3 +1,4 @@
+import { productionStatus } from '../../lib/productionStatus.js';
 const labels = { Production: 'Preparazione', Packaging: 'Confezionamento', Cartoning: 'Confezionamento' };
 
 // All PC stations use authenticated MES pages; the local Raspberry UI is independent.
@@ -42,7 +43,7 @@ export function productionActivities(rows) {
       tipo: 'production', titolo: `${row.orderNumber} · ${row.articleCode}`,
       ...(Array.isArray(row.workingIntervals) ? { workingIntervals: row.workingIntervals.map(i => ({ start: plantTime(i.start), end: plantTime(i.end) })) } : {}),
       descrizione: row.articleDescription, start, end, deadline: end.slice(0, 10),
-      stato: plantTime(row.actualStart) && ['pianificata', 'pianificato', 'planned', 'da avviare', 'not_started'].includes(String(row.status || '').trim().toLowerCase()) ? 'In corso' : row.status, reparto: labels[row.operationType],
+      stato: productionStatus(row.status, plantTime(row.actualStart), row.actualEnd), reparto: labels[row.operationType],
       resource: row.resource || '', forecast: row.forecast === true,
       resourceCode: row.resourceCode || '', orderNumber: row.orderNumber || '', articleCode: row.articleCode || '',
       customerName: row.customerName || '', rdpReference: row.rdpReference || '', octReference: row.octReference || '',

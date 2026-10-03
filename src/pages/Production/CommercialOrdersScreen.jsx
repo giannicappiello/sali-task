@@ -41,7 +41,7 @@ export default function CommercialOrdersScreen({ data, stage, onStage, loading, 
   const metrics = [
     ["Ordini aperti",counts.active,ClipboardList,"all","active","blue"],
     ["OCT da valutare",counts.evaluation,ClipboardList,"evaluation","","blue"],
-    ["In produzione",counts.production,Factory,"production","","green"],
+    ["In Lavorazione",counts.production,Factory,"production","","green"],
     ["Consegne da verificare",counts.late,CalendarClock,"all","late","amber"],
     ["Ordini bloccati",counts.attention,AlertTriangle,"all","attention","red"],
   ];

@@ -18,7 +18,7 @@ test("a completed station does not close an order awaiting filling", () => {
 test("MES order and phase states have explicit operational categories", () => {
   for (const [state, expected] of [["Nuovo","new"],["Pianificato","planned"],["InProduzione","running"],["Completato","closed"],["Chiuso","closed"],["Annullato","cancelled"]])
     assert.equal(productionWorkflow({state}), expected);
-  assert.equal(productionWorkflow({state:"InProduzione",works:[{state:"Sospeso"}]}), "paused");
+  assert.equal(productionWorkflow({state:"InProduzione",works:[{state:"Sospeso"}]}), "running");
   assert.equal(productionWorkflow({works:[{state:"Terminato"},{state:"Annullato"}]}), "closed");
   assert.equal(matchesWorkflow({state:"Annullato"},"open"), false);
   assert.equal(matchesWorkflow({},"open"), false);

@@ -1,3 +1,4 @@
+import { productionStatus } from '../../lib/productionStatus.js';
 import { displayDateFormatter } from '../../lib/displayLocale.js';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Ban, CheckCircle2, ChevronRight, Factory, RefreshCw, Search, Send, ShieldAlert, X } from "lucide-react";
@@ -14,7 +15,7 @@ const AUTOMATIC_RDP_CONFIRMATION_REASON = "Conferma operativa RdP da Workspace";
 
 const TABS = [
   ["evaluation", "OCT da valutare"], ["rdp", "RdP"], ["confirmed", "Confermate / attesa OP"], ["scheduling", "Da pianificare"],
-  ["planned", "Pianificati"], ["production", "In produzione"],
+  ["planned", "Pianificati"], ["production", "In Lavorazione"],
   ["completed", "Completati / evasi"], ["blocked", "Bloccati"], ["purchasing", "Fabbisogni acquisto"],
   ["history", "Storico RdP"], ["mes-orders", "Ordini produzione MES"], ["planning", "Planning"],
 ];
@@ -72,7 +73,7 @@ function rdpProgressiveLabel(value) {
 function rdpLabel(request) { return rdpProgressiveLabel(request?.rdp_number) || "RdP"; }
 
 export function OctOrderCard({ row, selectable, selected, onToggle, onOpen, onDiagnostic, loadBatches }) {
-  const status = row.stage === "history" ? "Annullata" : (row.status || (row.ready ? "—" : "BLOCCATO"));
+  const status = row.stage === "history" ? "Annullata" : row.stage === "production" ? "In Lavorazione" : productionStatus(row.status || (row.ready ? "—" : "BLOCCATO"));
   const tone = row.stage === "history" ? "neutral" : (row.ready ? "green" : "red");
   const rowRdpLabel = rdpProgressiveLabel(row.rdpNumber);
   return <article className={`rdp-oct-card ${!row.ready && row.stage !== "history" ? "blocked" : ""}`}>
@@ -246,7 +247,7 @@ export function DetailPanel({ readOnly = false, detail, onClose, onDiagnostics, 
   if (!detail) return null;
   return <div className="rdp-detail-backdrop" role="presentation" onMouseDown={onClose}><section className="rdp-detail" role="dialog" aria-modal="true" aria-label="Dettaglio RdP e OCT" onMouseDown={(event) => event.stopPropagation()}>
     <header><div><span className="rdp-eyebrow">Lineage commerciale e produttivo</span><h2>{detail.request ? rdpLabel(detail.request) : detail.orders.map((item) => item.label).join(", ")}</h2><p>{detail.orders.map((item) => `${item.label} · ${item.customer || "cliente non disponibile"}`).join(" | ")}</p></div><button type="button" className="rdp-icon-button" onClick={onClose} aria-label="Chiudi dettaglio"><X /></button></header>
-    {detail.request && <div className="rdp-request-meta"><span>Stato {badge(detail.request.workspace_status || detail.request.stato, detail.request.stage === "blocked" ? "red" : "blue")}</span><span>Creata {formatDate(detail.request.created_at, true)}</span><span>Tentativi {detail.request.attempt_count ?? 0}</span><span>Contratto V4</span>{!readOnly && detail.cancellation?.allowed && <button type="button" className="rdp-cancel-action" onClick={onCancel} disabled={busy || !canCancel}><Ban size={16}/>Annulla RdP</button>}{!readOnly && detail.cancellation?.allowed && !canCancel && <small>Permesso rdp.cancel richiesto.</small>}</div>}
+    {detail.request && <div className="rdp-request-meta"><span>Stato {badge(productionStatus(detail.request.workspace_status || detail.request.stato), detail.request.stage === "blocked" ? "red" : "blue")}</span><span>Creata {formatDate(detail.request.created_at, true)}</span><span>Tentativi {detail.request.attempt_count ?? 0}</span><span>Contratto V4</span>{!readOnly && detail.cancellation?.allowed && <button type="button" className="rdp-cancel-action" onClick={onCancel} disabled={busy || !canCancel}><Ban size={16}/>Annulla RdP</button>}{!readOnly && detail.cancellation?.allowed && !canCancel && <small>Permesso rdp.cancel richiesto.</small>}</div>}
     {detail.request?.last_error_code && <div className="rdp-revision-alert"><AlertTriangle/><div><strong>ULTIMO INVIO NON RIUSCITO · {detail.request.last_error_code}</strong><p>La RdP è conservata senza duplicazioni. Consultare il Centro Diagnostico prima di un nuovo tentativo.</p></div></div>}
     {detail.revision?.modified && <div className="rdp-revision-alert"><AlertTriangle/><div><strong>OCT MODIFICATO IN MEXAL</strong><p>Aggiunte {detail.revision.added.length} · rimosse {detail.revision.removed.length} · quantità/UDM modificate {detail.revision.changed.length} · consegna {detail.revision.deliveryChanged ? "modificata" : "invariata"}.</p><small>Le opzioni “mantieni pianificazione + delta” e “integra e ripianifica” saranno abilitate soltanto quando esposte dal contratto MES.</small></div></div>}
     {!readOnly && canDecide ? <RdpPriorityLink to={`/revisione-priorita-produzione?order=${encodeURIComponent(detail.request ? rdpLabel(detail.request) : detail.orders[0]?.label || "")}`}/> : null}

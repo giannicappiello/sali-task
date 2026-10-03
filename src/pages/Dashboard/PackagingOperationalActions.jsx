@@ -1,3 +1,4 @@
+import { productionStatus } from '../../lib/productionStatus.js';
 import { useCallback, useEffect, useState } from 'react';
 import { Play, Printer, Tag } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -82,7 +83,7 @@ export default function PackagingOperationalActions({ productionOrderId, resourc
       <div className="packaging-start-summary"><strong>{orderNumber} · {articleCode}</strong><p>Linea: {resourceCode}{data?.resourceName ? ` · ${data.resourceName}` : ''}</p></div>
       {error && <p role="alert" className="pc-note">{error}</p>}
       {!data && !error && <p role="status">Verifica dello stato MES…</p>}
-      {data?.batchManaged ? <ul>{data.phases.map(p => <li key={`${p.number}-${p.lotCode}`}>Batch {p.number} · {p.quantity} {p.unit} · {p.lotCode || 'Lotto da assegnare'} · {({NOT_STARTED:'Da avviare',RUNNING:'In lavorazione',COMPLETED:'Completato',SUSPENDED:'Sospeso',CLOSING:'In chiusura'})[p.executionStatus] || p.executionStatus}</li>)}</ul> : data?.started ? <p role="status">Confezionamento avviato.</p> : data && <p>{data.ready ? (mode === 'data' ? 'Confezionamento da avviare.' : 'Conferma l’avvio su questa linea. MES verifica ODL, foglio, etichette e delibera del semilavorato.') : 'Il confezionamento è già avviato o non è nello stato Da avviare.'}</p>}
+      {data?.batchManaged ? <ul>{data.phases.map(p => <li key={`${p.number}-${p.lotCode}`}>Batch {p.number} · {p.quantity} {p.unit} · {p.lotCode || 'Lotto da assegnare'} · {productionStatus(({NOT_STARTED:'Da avviare',RUNNING:'In Lavorazione',COMPLETED:'Completato',SUSPENDED:'Sospeso',CLOSING:'In chiusura'})[p.executionStatus] || p.executionStatus, p.actualStart)}</li>)}</ul> : data?.started ? <p role="status">Confezionamento avviato.</p> : data && <p>{data.ready ? (mode === 'data' ? 'Confezionamento da avviare.' : 'Conferma l’avvio su questa linea. MES verifica ODL, foglio, etichette e delibera del semilavorato.') : 'Il confezionamento è già avviato o non è nello stato Da avviare.'}</p>}
       <footer className="packaging-start-actions"><button type="button" disabled={busy} onClick={close}>Chiudi</button>{mode === 'start' && <button type="button" disabled={busy || !data?.ready || !data?.canWrite} onClick={start}>{busy ? 'Avvio…' : 'Conferma avvio'}</button>}</footer>
     </Modal>}
   </>;

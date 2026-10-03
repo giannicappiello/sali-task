@@ -111,7 +111,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
 
   return <section style={["station-overview", "filling-overview"].includes(new URLSearchParams(search).get("destination")) ? { position: "fixed", inset: 0, zIndex: 1100, margin: 0, border: 0, borderRadius: 0, height: "100dvh", width: "100vw", background: "#020f17" } : undefined} className={`${inDialog ? "progremes-card-frame" : "progremes-workspace-frame"}${["progremes.Planning", "progremes.PlanningProduction"].includes(screenCode) ? " progremes-planning-frame" : ""}`}>
     {stationPath && <StationUiPopup station={new URL(stationPath, window.location.origin).searchParams.get("station")} onClose={() => setStationPath("")}><ProgreMesLaunch key={stationPath} screenCode="progremes.PlanningProduction" search={new URL(stationPath, window.location.origin).search} inDialog /></StationUiPopup>}
-    {fillingActivity && <PackagingActivityDialog activity={fillingActivity} onClose={() => setFillingActivity(null)} onStarted={() => setFillingActivity(current => current ? {...current, stato: "In lavorazione"} : current)}/> }
+    {fillingActivity && <PackagingActivityDialog activity={fillingActivity} onClose={() => setFillingActivity(null)} onStarted={() => setFillingActivity(current => current ? {...current, stato: "In Lavorazione"} : current)}/> }
     {batchActivities && <BatchActivitiesDialog activities={batchActivities} onClose={() => {
       setBatchActivities(null);
       if (url) frame.current?.contentWindow?.postMessage({ type: 'workspace-mes-refresh-planning' }, new URL(url).origin);

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { HMAC_HEADERS, signProductionMessage } from './progremes-production-hmac.js';
 
 const types = { 0: 'Production', 3: 'Packaging', 7: 'Cartoning' };
-const statuses = ['Pianificata', 'In lavorazione', 'Completata', 'In ritardo', 'Controllo qualità', 'Respinta', 'Bloccata'];
+const statuses = ['Pianificata', 'In Lavorazione', 'Completata', 'In ritardo', 'Controllo qualità', 'Respinta', 'Bloccata'];
 
 // This transport cannot simulate, confirm, release or otherwise change a plan.
 export function createHrPlanReader({ base = process.env.PROGREMES_URL, secret = process.env.PROGREMES_INTEGRATION_SECRET, transport = fetch } = {}) {

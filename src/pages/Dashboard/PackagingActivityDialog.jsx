@@ -1,3 +1,4 @@
+import { productionStatus } from '../../lib/productionStatus.js';
 import { Modal } from '../../features/production-costs/common';
 import { displayDate } from '../../lib/displayDate';
 import ProductSpecificationViewButton from '../Documentation/ProductSpecificationViewButton';
@@ -10,7 +11,7 @@ export default function PackagingActivityDialog({ activity, onClose, onStarted }
   <p><strong className="production-label packaging">{activity.reparto}</strong></p>
   <p>{activity.descrizione || 'Nessuna descrizione'}</p>
   {activity.actualStart && <p><strong>Avviata il {displayDate(activity.actualStart, true)}</strong></p>}
-  <div className="pc-metrics"><div><span>Risorsa</span><strong>{activity.resource}</strong></div><div><span>Periodo</span><strong>{displayDate(activity.start,true)} – {displayDate(activity.end,true)}</strong></div><div><span>Stato</span><strong>{activity.stato}</strong></div></div>
+  <div className="pc-metrics"><div><span>Risorsa</span><strong>{activity.resource}</strong></div><div><span>Periodo</span><strong>{displayDate(activity.start,true)} – {displayDate(activity.end,true)}</strong></div><div><span>Stato</span><strong>{productionStatus(activity.stato, activity.actualStart)}</strong></div></div>
   <div className="dashboard-production-actions"><ProductSpecificationViewButton key={activity.articleCode} articleCode={activity.articleCode} description={activity.descrizione}/><PackagingSheetActions productionOrderId={activity.productionOrderId} operationType={activity.operationType} batchNumber={activity.batchNumber}/><PackagingOperationalActions key={activity.id} productionOrderId={activity.productionOrderId} resourceCode={activity.resourceCode} orderNumber={activity.orderNumber} articleCode={activity.articleCode} operationType={activity.operationType} onStarted={onStarted}/></div>
  </Modal></div>;
 }

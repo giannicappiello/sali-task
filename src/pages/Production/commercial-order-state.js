@@ -3,7 +3,7 @@ import { workbenchRowSearchText } from "./rdp-workbench-state.js";
 export const commercialStages = [
   ["all", "Tutti gli ordini"], ["evaluation", "OCT da valutare"], ["rdp", "RdP da confermare"],
   ["confirmed", "Confermati / attesa OP"], ["scheduling", "Da pianificare"], ["planned", "Pianificati"],
-  ["production", "In produzione"], ["completed", "Completati / evasi"], ["blocked", "Bloccati"], ["history", "Storico"],
+  ["production", "In Lavorazione"], ["completed", "Completati / evasi"], ["blocked", "Bloccati"], ["history", "Storico"],
 ];
 export const commercialStageLabel = stage => commercialStages.find(([code]) => code === stage)?.[1] || "Da verificare";
 export const openDiagnostics = row => (row.diagnostics || []).filter(item => !["resolved", "ignored", "archived"].includes(String(item.status).toLowerCase()));

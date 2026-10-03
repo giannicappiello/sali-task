@@ -1,3 +1,4 @@
+import { displayDate } from '../../lib/displayDate.js';
 import { useEffect, useId, useRef, useState } from "react";
 import { Info, X } from "lucide-react";
 import { createPortal } from "react-dom";
@@ -10,7 +11,7 @@ export default function CostInfo({title,children}) {
  return <><button type="button" className="pc-info-button" aria-label={"Informazioni: "+title} aria-haspopup="dialog" aria-expanded={open} onClick={()=>setOpen(true)}><Info size={17} aria-hidden="true"/></button>
  {open&&createPortal(<dialog ref={ref} className="pc-info-dialog" aria-labelledby={id} onCancel={e=>{e.preventDefault();e.stopPropagation();setOpen(false);}}><header><h2 id={id}>{title}</h2><button type="button" aria-label="Chiudi informazioni" onClick={()=>setOpen(false)} autoFocus><X size={20}/></button></header><div className="pc-info-text">{children}</div></dialog>,document.body)}</>;
 }
-const timestamp=v=>v?String(v).replace("T"," "):"Non disponibile";
+const timestamp=value=>value?displayDate(value, true):"Non disponibile";
 export function HistoryNotes({record:r}) {
  return <>{[["STATION",r.stationHistory,r.stationHistoricalHourly,r.stationContext?.policy?.id],["FILLING",r.fillingHistory,r.fillingHistoricalHourly,r.fillingContext?.policy?.id]].map(([kind,h,hourly,policy])=>{
  if(!h)return null;

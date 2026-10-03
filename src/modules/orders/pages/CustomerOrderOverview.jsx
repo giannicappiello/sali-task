@@ -1,5 +1,6 @@
 const quantity = value => Number(value || 0).toLocaleString('it-IT', { maximumFractionDigits: 3 });
-const date = value => value ? new Date(value).toLocaleDateString('it-IT') : 'Da pianificare';
+import { displayDate } from '../../../lib/displayDate.js';
+const date = value => value ? displayDate(value) : 'Da pianificare';
 
 export default function CustomerOrderOverview({ rows }) {
   return <div className="rdp-oct-cards">{rows.map(row => <article key={row.id} className="rdp-oct-card">

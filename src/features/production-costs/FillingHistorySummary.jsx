@@ -1,6 +1,7 @@
+import { displayDate } from '../../lib/displayDate.js';
 import { money,quantity,unitMoney } from "./client";
 import { fillingUnitLabor } from "./filling-history";
-const timestamp=value=>value?String(value).slice(0,19).replace("T"," "):"Non disponibile";
+const timestamp=value=>value?displayDate(value, true):"Non disponibile";
 export default function FillingHistorySummary({history,hourly,policyId}) {
  if(!history)return <p className="pc-note">Media storica FILLING non ancora acquisita: costo non calcolabile.</p>;
  const shiftCost=history.packagingOperatorsCount>0&&hourly!==""&&hourly!=null?history.packagingOperatorsCount*8*Number(hourly):null;

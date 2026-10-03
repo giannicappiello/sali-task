@@ -1,4 +1,6 @@
 import PackagingActivityDialog from '../Dashboard/PackagingActivityDialog';
+import BatchActivitiesDialog from '../Dashboard/BatchActivitiesDialog';
+import { batchActivitiesMessage } from './batchActivitiesMessage.js';
 import { fillingActivityMessage } from './fillingActivityMessage';
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
@@ -16,6 +18,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
   const { session, hasModuleAccess, hasScreenAccess, loading: authLoading, authorizationRevision } = useAuth();
   const navigate = useNavigate();
   const [fillingActivity, setFillingActivity] = useState(null);
+  const [batchActivities, setBatchActivities] = useState(null);
   const accessToken = session?.access_token;
   const currentToken = useRef(accessToken);
   useEffect(() => { currentToken.current = accessToken; }, [accessToken]);
@@ -59,6 +62,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
     if (!url) return undefined;
     const origin = new URL(url).origin;
     const receive = (event) => {
+      if (event.data.type === 'progremes-batch-activities') { setBatchActivities(batchActivitiesMessage(event.data)); return; }
       if (event.data.type === "progremes-filling-activity") { setFillingActivity(fillingActivityMessage(event.data)); return; }
       if (event.data.type === "progremes-open-assistant") {
         window.dispatchEvent(new CustomEvent('workspace:open-assistant'));
@@ -108,6 +112,13 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
   return <section style={["station-overview", "filling-overview"].includes(new URLSearchParams(search).get("destination")) ? { position: "fixed", inset: 0, zIndex: 1100, margin: 0, border: 0, borderRadius: 0, height: "100dvh", width: "100vw", background: "#020f17" } : undefined} className={`${inDialog ? "progremes-card-frame" : "progremes-workspace-frame"}${["progremes.Planning", "progremes.PlanningProduction"].includes(screenCode) ? " progremes-planning-frame" : ""}`}>
     {stationPath && <StationUiPopup station={new URL(stationPath, window.location.origin).searchParams.get("station")} onClose={() => setStationPath("")}><ProgreMesLaunch key={stationPath} screenCode="progremes.PlanningProduction" search={new URL(stationPath, window.location.origin).search} inDialog /></StationUiPopup>}
     {fillingActivity && <PackagingActivityDialog activity={fillingActivity} onClose={() => setFillingActivity(null)} onStarted={() => setFillingActivity(current => current ? {...current, stato: "In lavorazione"} : current)}/> }
+    {batchActivities && <BatchActivitiesDialog activities={batchActivities} onClose={() => {
+      setBatchActivities(null);
+      if (url) frame.current?.contentWindow?.postMessage({ type: 'workspace-mes-refresh-planning' }, new URL(url).origin);
+    }} onChanged={() => {
+      window.dispatchEvent(new Event('workspace:production-changed'));
+      if (url) frame.current?.contentWindow?.postMessage({ type: 'workspace-mes-refresh-planning' }, new URL(url).origin);
+    }}/>}
     {popupPath && <PlanningActionModal path={popupPath} onClose={() => { setPopupPath(""); if (url) frame.current?.contentWindow?.postMessage({ type: "workspace-mes-refresh-planning" }, new URL(url).origin); }} onNavigate={setPopupPath} />}
     {syncError && <div className="progremes-frame-status" role="alert">{syncError}</div>}
     {(!ready || error) && <div className="progremes-frame-status" role={error ? "alert" : "status"}>

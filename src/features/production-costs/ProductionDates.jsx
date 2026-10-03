@@ -1,7 +1,8 @@
+import { displayDate } from '../../lib/displayDate.js';
 import {useState} from 'react';
 import {action} from './client';
 import {Field} from './common';
-const stamp=value=>{if(!value)return '—';const [day,time='']=String(value).split('T');return `${day.split('-').reverse().join('/')} ${time.slice(0,8)}`;};
+const stamp=value=>displayDate(value, true);
 export default function ProductionDates({work,record,token,canWrite,onSaved}){
  const [editing,setEditing]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[input,setInput]=useState(null),[preview,setPreview]=useState(null);
  const run=async fn=>{setBusy(true);setError('');try{await fn();}catch(e){setError(e.message);}finally{setBusy(false);}};

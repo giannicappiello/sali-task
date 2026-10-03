@@ -78,7 +78,7 @@ export default function PreparationActions({ activity, onStarted }) {
   return <>
     <ProductSpecificationViewButton articleCode={knownBulkCode || context?.bulkCode || (customerScoped ? activity.articleCode : '')} description={activity.descrizione || context?.description}/>
     {!customerScoped && <>
-    <BatchSheetActions productionOrderId={activity.productionOrderId} kind="production"><button type="button" disabled={!context?.canPrint} onClick={openSheet}><Printer size={17}/>Stampa foglio produzione</button>
+    <BatchSheetActions productionOrderId={activity.productionOrderId} kind="production" operationType="Production" batchNumber={activity.batchNumber}><button type="button" disabled={!context?.canPrint} onClick={openSheet}><Printer size={17}/>Stampa foglio produzione</button>
 
     <button type="button" disabled={!context?.canWrite || !stationActionUrl(activity, 'start')} onClick={() => openStation('start')}><Play size={17}/>Avvia lavorazione</button>
     </BatchSheetActions>

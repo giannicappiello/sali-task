@@ -1,3 +1,4 @@
+import { displayDateFormatter } from '../../lib/displayLocale.js';
 export const emptyProductionCalendar = () => ({ items: [], loading: false, error: '', warning: '', enabled: false, valid: false });
 
 export function calendarFailure(previous, error) {
@@ -13,5 +14,5 @@ export function calendarNotModified(previous) {
 
 export function calendarUpdatedLabel(updatedAt) {
   if (!updatedAt || !Number.isFinite(Date.parse(updatedAt))) return '';
-  return new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', dateStyle: 'short', timeStyle: 'medium' }).format(new Date(updatedAt));
+  return displayDateFormatter({ timeZone: 'Europe/Rome', dateStyle: 'short', timeStyle: 'medium' }).format(new Date(updatedAt));
 }

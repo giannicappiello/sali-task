@@ -1,5 +1,6 @@
+import { displayDate } from '../../lib/displayDate.js';
 import { money, quantity } from "./client";
-const timestamp=value=>value?String(value).slice(0,19).replace("T"," "):"Non disponibile";
+const timestamp=value=>value?displayDate(value, true):"Non disponibile";
 export default function StationHistorySummary({history,hourly,policyId}) {
  if(!history)return <p className="pc-note">Media storica MES non ancora acquisita: costo non calcolabile.</p>;
  const shiftCost=history.mixingOperatorsCount>0&&hourly!==""&&hourly!=null?history.mixingOperatorsCount*8*Number(hourly):null;

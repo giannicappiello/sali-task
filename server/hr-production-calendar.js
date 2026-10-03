@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { createProgremesReadonlyAdmin } from './progremes-readonly-auth.js';
 import { createProgremesClient } from './progremes-readonly-client.js';
 import { readActiveProductionPlan } from './hr-active-production-plan.js';
@@ -66,18 +67,34 @@ export async function readProductionPlan(client) {
   throw fail('Piano MES troppo esteso per la lettura del calendario.', 502);
 }
 
-let cachedPlan;
-let cacheUntil = 0;
-function currentProductionPlan() {
-  if (!cachedPlan || Date.now() >= cacheUntil) {
-    cacheUntil = Date.now() + 30000;
-    cachedPlan = readActiveProductionPlan(undefined, () => readProductionPlan(createProgremesClient())).catch(error => {
-      cachedPlan = undefined;
-      throw error;
-    });
-  }
-  return cachedPlan;
+// Cache completion times, share every in-flight read, and back off after failure.
+// Keep the last successful plan; authorization is checked again for each request.
+export function createProductionPlanCache({ read, now = Date.now, recheckMs = 30000, retryMs = 30000 }) {
+  let last, pending, nextCheck = 0, failure;
+  return function currentPlan() {
+    if (pending) return pending;
+    if (now() < nextCheck) {
+      if (!last) return Promise.reject(failure);
+      return Promise.resolve(failure ? { ...last, stale: true, warning: "MES non aggiornato: è mostrato l'ultimo calendario valido." } : last);
+    }
+    pending = Promise.resolve().then(() => read(last)).then(plan => {
+      last = plan; failure = undefined; nextCheck = now() + recheckMs;
+      return plan;
+    }).catch(error => {
+      nextCheck = now() + retryMs; failure = error;
+      // Authentication failures must never be served from the previous cache.
+      if ([401, 403].includes(error.status) || [401, 403].includes(error.upstreamStatus)) {
+        last = undefined; throw error;
+      }
+      if (!last) throw error;
+      return { ...last, stale: true, warning: "MES non aggiornato: è mostrato l'ultimo calendario valido." };
+    }).finally(() => { pending = undefined; });
+    return pending;
+  };
 }
+const currentProductionPlan = createProductionPlanCache({
+  read: previous => readActiveProductionPlan(undefined, () => readProductionPlan(createProgremesClient()), previous),
+});
 
 export function calendarRows(rows, allowed, from, to) {
   return rows.filter(row => allowed.includes(row.operationType)
@@ -138,13 +155,20 @@ export async function productionCalendarRequest(req, dependencies = {}) {
   }
   const items = calendarRows(rows, allowed, from, to);
   console.info('[hr-production-calendar]', { source: plan.source, allowed, total: plan.items.length, visible: items.length, from, to });
-  return { items, enabled: true, source: plan.source, updatedAt: new Date().toISOString(),
-    warning: calendarConflicts ? 'Il piano contiene fasce confermate su orari ora chiusi. Sono mostrate solo le fasce del calendario aziendale; il responsabile deve ripianificare le lavorazioni in conflitto.' : '' };
+  const warning = [plan.warning || (plan.stale ? "MES non aggiornato: è mostrato l'ultimo calendario valido." : ''),
+    calendarConflicts ? 'Il piano contiene fasce confermate su orari ora chiusi. Sono mostrate solo le fasce del calendario aziendale; il responsabile deve ripianificare le lavorazioni in conflitto.' : ''].filter(Boolean).join(' ');
+  const result = { items, enabled: true, source: plan.source, updatedAt: plan.updatedAt || null, stale: plan.stale === true, warning };
+  // Hash the authorized projection, including company-calendar changes and warnings.
+  const revision = createHash('sha256').update(JSON.stringify(result)).digest('hex');
+  return req.query.revision === revision && !result.stale ? { notModified: true } : { ...result, revision };
 }
 
 export async function handleHrProductionCalendar(req, res) {
   res.setHeader('Cache-Control', 'private, no-store');
-  try { return res.status(200).json(await productionCalendarRequest(req)); }
+  try {
+    const result = await productionCalendarRequest(req);
+    return result.notModified ? res.status(304).end() : res.status(200).json(result);
+  }
   catch (error) {
     const status = error.status || 500;
     if (status >= 500) console.error('HR production calendar unavailable', { code: error.code, upstreamStatus: error.upstreamStatus, operation: error.operation });

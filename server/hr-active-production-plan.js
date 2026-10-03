@@ -11,14 +11,14 @@ export function createHrPlanReader({ base = process.env.PROGREMES_URL, secret = 
     if (!['state', 'get'].includes(operation)) throw new Error('Operazione di sola lettura richiesta.');
     if (!base || !secret) throw Object.assign(new Error('Collegamento MES non configurato.'), { status: 503 });
     const path = `/api/workspace/ai/planning/${operation}`;
-    const body = Buffer.from(JSON.stringify({ ...(operation === 'get' ? { id: input.id } : { calendar: true }), actor: 'workspace:hr-production-calendar' }));
+    const body = Buffer.from(JSON.stringify({ ...(operation === 'get' ? { id: input.id } : { calendar: true, ...(input.revision ? { calendarRevision: input.revision } : {}) }), actor: 'workspace:hr-production-calendar' }));
     const timestamp = Math.floor(Date.now() / 1000), eventId = randomUUID();
     const response = await transport(new URL(path, base), { method: 'POST', body, redirect: 'error', signal: AbortSignal.timeout(25000), headers: {
       'Content-Type': 'application/json', [HMAC_HEADERS.timestamp]: String(timestamp), [HMAC_HEADERS.eventId]: eventId,
       [HMAC_HEADERS.signature]: signProductionMessage({ method: 'POST', path, timestamp, eventId, body, secret: secret.trim() }),
     } });
     if (!response.ok) throw Object.assign(new Error('Lettura piano MES non disponibile.'), {
-      code: 'MES_PLAN_READ_FAILED', status: 502, upstreamStatus: response.status, operation,
+      code: 'MES_PLAN_READ_FAILED', status: [401, 403].includes(response.status) ? response.status : 502, upstreamStatus: response.status, operation,
     });
     return response.json();
   };
@@ -50,14 +50,19 @@ export function activePlanRows(state, version) {
   });
 }
 
-export async function readActiveProductionPlan(read = createHrPlanReader(), legacy) {
-  const state = await read('state');
-  if (state.configuration?.active !== true) return { items: await legacy(), source: 'archivio', versionId: null };
+export async function readActiveProductionPlan(read = createHrPlanReader(), legacy, previous) {
+  const state = await read('state', previous?.revision ? { revision: previous.revision } : undefined);
+  const metadata = { revision: state.revision, updatedAt: state.updatedAt || new Date().toISOString(), stale: state.stale === true, warning: state.warning || '' };
+  if (state.notModified) {
+    if (!previous) throw new Error('Calendario precedente non disponibile.');
+    return { ...previous, ...metadata };
+  }
+  if (state.configuration?.active !== true) return { items: await legacy(), source: 'archivio', versionId: null, ...metadata };
   const id = state.configuration.activeVersionId;
-  if (!id) return { items: [], source: 'piano-attivo', versionId: null };
+  if (!id) return { items: [], source: 'piano-attivo', versionId: null, ...metadata };
   // Updated MES returns the active snapshot in one lightweight read. Older
   // installations keep their existing path until the server is updated.
   const version = Object.hasOwn(state, 'version') ? state.version : await read('get', { id });
   if (version?.id !== id || !['APPLIED', 'PREPARING', 'RECONCILIATION_REQUIRED'].includes(version.status)) throw new Error('Versione attiva MES non valida.');
-  return { items: activePlanRows(state, version), source: 'piano-attivo', versionId: id };
+  return { items: activePlanRows(state, version), source: 'piano-attivo', versionId: id, ...metadata };
 }

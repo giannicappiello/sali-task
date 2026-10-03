@@ -71,7 +71,9 @@ export default function PreparationActions({ activity, onStarted }) {
       onStarted?.(); window.dispatchEvent(new Event('workspace:production-changed'));
     }
   } };
+  const alreadyClosed = ['completata', 'completato', 'completed', 'terminata', 'terminato', 'chiusa', 'closed'].includes(String(activity.stato || activity.status || '').trim().toLowerCase());
   function openStation(operation) {
+    if (operation === 'close' && alreadyClosed) return;
     const search = '?destination=station&station=' + encodeURIComponent(activity.resourceCode) + (operation ? '&stationAction=' + operation + '&orderId=' + activity.productionOrderId : '');
     requestProgremesWorkspaceWindow('/produzione/progremes.PlanningProduction' + search);
   }
@@ -83,7 +85,7 @@ export default function PreparationActions({ activity, onStarted }) {
     <button type="button" disabled={!context?.canWrite || !stationActionUrl(activity, 'start')} onClick={() => openStation('start')}><Play size={17}/>Avvia lavorazione</button>
     </BatchSheetActions>
     <button type="button" disabled={!activity.panelUrl || !context?.canPrint} onClick={() => openStation()}><Monitor size={17}/>Apri station</button>
-    <button type="button" disabled={!context?.canWrite || !stationActionUrl(activity, 'close')} onClick={() => openStation('close')}><Square size={17}/>Concludi lavorazione</button>
+    <button type="button" disabled={alreadyClosed || !context?.canWrite || !stationActionUrl(activity, 'close')} title={alreadyClosed ? 'Lavorazione già chiusa' : undefined} onClick={() => openStation('close')}><Square size={17}/>Concludi lavorazione</button>
     {!context && !error && <p role="status">Caricamento dati preparazione…</p>}
     {context && !context.bulkCode && <p role="status">Nessun codice semilavorato associato alla formula dell’ordine.</p>}
     {!mode && error && <p role="alert" className="pc-error">{error}</p>}

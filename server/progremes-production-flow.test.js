@@ -116,6 +116,23 @@ test("il client usa un messaggio generico se MES non restituisce un errore contr
   );
 });
 
+for (const status of [502, 503, 504]) {
+  test(`il client distingue l'indisponibilità HTTP ${status} dal rifiuto del batch senza ritentare`, async () => {
+    let calls = 0;
+    const client = createProgremesProductionClient({
+      env: { PROGREMES_URL: "https://mes.example.test", PROGREMES_INTEGRATION_SECRET: "test-secret" },
+      fetchImpl: async () => {
+        calls++;
+        return { ok: false, status, json: async () => { throw new SyntaxError("HTML gateway response"); } };
+      },
+    });
+    await assert.rejects(() => client.batchSheet({ externalId: "test" }), error =>
+      error.status === status && error.code === `PROGREMES_HTTP_${status}` &&
+      error.message.includes("Verifica lo stato della lavorazione") && !error.message.includes("rifiutato"));
+    assert.equal(calls, 1);
+  });
+}
+
 test("tutte le mutazioni restano disabilitate se i flag non esistono", () => {
   const client = createProgremesProductionClient({ env: {} });
   assert.equal(client.requestEnabled(), false);

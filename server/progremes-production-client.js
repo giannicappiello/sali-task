@@ -18,7 +18,11 @@ function required(name, env) {
 }
 function enabled(name, env) { return String(env[name] || "").trim().toLowerCase() === "true"; }
 function hash(body) { return createHash("sha256").update(body).digest("hex"); }
-function mesErrorMessage(result) {
+function mesErrorMessage(result, status) {
+  if ([502, 503].includes(status))
+    return "Collegamento al MES temporaneamente non disponibile. Verifica lo stato della lavorazione prima di riprovare.";
+  if (status === 504)
+    return "Il MES non ha completato la richiesta entro il tempo previsto. Verifica lo stato della lavorazione prima di riprovare.";
   const message = [result?.error, result?.message, result?.detail, result?.title]
     .map((value) => text(value).replace(/[\r\n\t]+/g, " ").slice(0, 500))
     .find(Boolean);
@@ -220,7 +224,7 @@ export function createProgremesProductionClient({ env = process.env, fetchImpl =
         console.error("ProgreMES production request rejected", {
           path, upstreamStatus: response.status, upstreamCode,
         });
-        throw Object.assign(new Error(mesErrorMessage(result)), {
+        throw Object.assign(new Error(mesErrorMessage(result, response.status)), {
           status: response.status,
           code: upstreamCode,
           details: { upstreamStatus: response.status, upstreamCode },

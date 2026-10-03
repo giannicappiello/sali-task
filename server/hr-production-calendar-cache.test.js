@@ -88,3 +88,23 @@ test('successful unchanged response clears the outage warning without changing t
   assert.equal(recovered.items, previous.items);
   assert.equal(recovered.warning, previous.serverWarning);
 });
+
+
+test('stale MES snapshots are rechecked promptly while concurrent reads still coalesce', async () => {
+  let now = 0, calls = 0;
+  const cache = createProductionPlanCache({ now: () => now, read: async () => {
+    calls++;
+    return { items: [{ id: 7 }], updatedAt: '2026-10-03T08:00:00Z', stale: calls === 1 };
+  } });
+  assert.equal((await cache()).stale, true);
+  now = 4900;
+  await Promise.all(Array.from({ length: 20 }, () => cache()));
+  assert.equal(calls, 1);
+  now = 5100;
+  const results = await Promise.all(Array.from({ length: 20 }, () => cache()));
+  assert.ok(results.every(result => result.stale === false));
+  assert.equal(calls, 2);
+  now += 29000;
+  await cache();
+  assert.equal(calls, 2);
+});

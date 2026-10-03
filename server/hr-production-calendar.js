@@ -78,7 +78,7 @@ export function createProductionPlanCache({ read, now = Date.now, recheckMs = 30
       return Promise.resolve(failure ? { ...last, stale: true, warning: "MES non aggiornato: è mostrato l'ultimo calendario valido." } : last);
     }
     pending = Promise.resolve().then(() => read(last)).then(plan => {
-      last = plan; failure = undefined; nextCheck = now() + recheckMs;
+      last = plan; failure = undefined; nextCheck = now() + (plan.stale ? Math.min(recheckMs, 5000) : recheckMs);
       return plan;
     }).catch(error => {
       nextCheck = now() + retryMs; failure = error;

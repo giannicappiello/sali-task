@@ -37,3 +37,7 @@
 @media(max-width: 600px) { .dashboard-planning-top > .panel { height: 460px; } .dashboard-dialog-content { padding: 12px; } }
 .dashboard-planning-toolbar .task-search{flex:1 1 190px;min-width:150px;max-width:320px}.dashboard-planning-toolbar .primary-action{white-space:nowrap;flex-shrink:0}.dashboard-planning-toolbar{gap:8px}
 .activities-toolbar-slot .dashboard-planning-toolbar .task-search{max-width:320px;flex-basis:190px}.activities-toolbar-slot .dashboard-planning-toolbar{flex-wrap:wrap}
+
+.dashboard-calendar-notice { flex: 0 0 auto; min-height: 0; height: auto; padding: 8px 12px; margin-bottom: 12px; border: 1px solid; border-radius: 10px; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.dashboard-calendar-notice-warning { color: #854d0e; background: #fef9c3; border-color: #fde68a; }
+.dashboard-calendar-notice-error { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }

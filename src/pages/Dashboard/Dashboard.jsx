@@ -541,9 +541,9 @@ function Dashboard({ toolbarTarget = null }) {
 
       </div>
 
-      {production.error && <div role="alert" className="panel" style={{ color: '#b91c1c', padding: 16 }}>{production.error}</div>}
+      {production.error && <div role="alert" className="dashboard-calendar-notice dashboard-calendar-notice-error">{production.error}</div>}
       {!production.warning && calendarUpdatedLabel(production.updatedAt) && <div role="status" style={{ fontSize: 12, color: '#64748b', padding: '4px 16px' }}>Calendario MES aggiornato il {calendarUpdatedLabel(production.updatedAt)}.</div>}
-      {production.warning && <div role="status" className="panel" style={{ color: '#854d0e', background: '#fef9c3', padding: 16 }}>{production.warning}{calendarUpdatedLabel(production.updatedAt) && <span> Ultimo aggiornamento valido: {calendarUpdatedLabel(production.updatedAt)}.</span>}</div>}
+      {production.warning && <div role="status" className="dashboard-calendar-notice dashboard-calendar-notice-warning">{production.warning}{calendarUpdatedLabel(production.updatedAt) && <span> Ultimo aggiornamento valido: {calendarUpdatedLabel(production.updatedAt)}.</span>}</div>}
       {!operationsOnly && <DashboardActivityToolbar loading={loading} monthStats={monthStats} activityFilter={activityFilter} setActivityFilter={setActivityFilter} openNewPhase={openNewPhase} openNewReminder={openNewReminder} goToday={goToday} />}
 
       {toolbarTarget ? createPortal(planningToolbar, toolbarTarget) : planningToolbar}

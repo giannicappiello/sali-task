@@ -10,7 +10,7 @@ export default function useProductionCalendar(profileId, month) {
   useEffect(() => {
     setState({ ...emptyProductionCalendar(), scope });
     if (!profileId) return;
-    let disposed = false, controller, running = false, revision = '', nextRefresh = 0;
+    let disposed = false, controller, running = false, revision = '', nextRefresh = 0, staleResponses = 0, retryTimer;
     const date = value => `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
     const from = date(new Date(year, monthIndex, -6));
     const to = date(new Date(year, monthIndex + 4, 7));
@@ -29,13 +29,18 @@ export default function useProductionCalendar(profileId, month) {
         if (disposed) return;
         if (response.status === 304) {
           setState(calendarNotModified);
+          staleResponses = 0;
           nextRefresh = Date.now() + 10000;
           return;
         }
         const payload = await response.json().catch(() => { throw Object.assign(new Error('Risposta del calendario MES non valida.'), { status: response.ok ? 502 : response.status }); });
         if (!response.ok) throw Object.assign(new Error(payload.error || 'Pianificazione MES non disponibile.'), { status: response.status });
         revision = payload.revision || '';
-        nextRefresh = Date.now() + (payload.stale ? 30000 : 10000);
+        staleResponses = payload.stale ? staleResponses + 1 : 0;
+        const retryDelay = staleResponses === 1 ? 5000 : 30000;
+        nextRefresh = Date.now() + (payload.stale ? retryDelay : 10000);
+        clearTimeout(retryTimer);
+        if (payload.stale) retryTimer = setTimeout(() => refresh(), retryDelay + 50);
         if (!disposed) setState({ scope, valid: true, items: productionActivities(payload.items || []), loading: false, error: '', warning: payload.warning || '', serverWarning: payload.warning || '', stale: payload.stale === true, enabled: payload.enabled === true, source: payload.source, updatedAt: payload.updatedAt });
       } catch (error) {
         if ([401, 403].includes(error.status)) revision = '';
@@ -50,7 +55,7 @@ export default function useProductionCalendar(profileId, month) {
     window.addEventListener('focus', normalRefresh);
     window.addEventListener('workspace:production-changed', changed);
     document.addEventListener('visibilitychange', normalRefresh);
-    return () => { disposed = true; controller?.abort(); clearInterval(timer); window.removeEventListener('focus', normalRefresh); window.removeEventListener('workspace:production-changed', changed); document.removeEventListener('visibilitychange', normalRefresh); };
+    return () => { disposed = true; controller?.abort(); clearInterval(timer); clearTimeout(retryTimer); window.removeEventListener('focus', normalRefresh); window.removeEventListener('workspace:production-changed', changed); document.removeEventListener('visibilitychange', normalRefresh); };
   }, [profileId, year, monthIndex, scope]);
   // Never expose a previous profile/month while the new effect is starting.
   return state.scope === scope ? state : emptyProductionCalendar();

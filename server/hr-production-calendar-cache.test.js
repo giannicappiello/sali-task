@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createProductionPlanCache, productionCalendarRequest } from './hr-production-calendar.js';
 import { readActiveProductionPlan } from './hr-active-production-plan.js';
-import { calendarFailure, calendarUpdatedLabel } from '../src/pages/Dashboard/productionCalendarState.js';
+import { calendarFailure, calendarNotModified, calendarUpdatedLabel } from '../src/pages/Dashboard/productionCalendarState.js';
 
 test('slow reads coalesce even after TTL and expiry starts at completion', async () => {
   let now = 0, calls = 0, release;
@@ -78,4 +78,13 @@ test('UI transient errors preserve last valid calendar; auth errors remove it', 
   assert.deepEqual(calendarFailure(previous, { status: 403, message: 'denied' }).items, []);
   assert.equal(calendarUpdatedLabel('invalid'), '');
   assert.match(calendarUpdatedLabel(previous.updatedAt), /10:00:00/);
+});
+
+test('successful unchanged response clears the outage warning without changing the timestamp', () => {
+  const previous = { valid: true, items: [{ id: 7 }], enabled: true, updatedAt: '2026-10-03T08:00:00Z', serverWarning: 'Conflitto da ripianificare' };
+  const recovered = calendarNotModified(calendarFailure(previous, new Error('offline')));
+  assert.equal(recovered.stale, false);
+  assert.equal(recovered.updatedAt, previous.updatedAt);
+  assert.equal(recovered.items, previous.items);
+  assert.equal(recovered.warning, previous.serverWarning);
 });

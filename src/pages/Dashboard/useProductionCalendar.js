@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { productionActivities } from './productionCalendar';
-import { calendarFailure, emptyProductionCalendar } from './productionCalendarState';
+import { calendarFailure, calendarNotModified, emptyProductionCalendar } from './productionCalendarState';
 
 export default function useProductionCalendar(profileId, month) {
   const year = month.getFullYear(), monthIndex = month.getMonth();
@@ -28,15 +28,15 @@ export default function useProductionCalendar(profileId, month) {
         });
         if (disposed) return;
         if (response.status === 304) {
-          setState(old => ({ ...old, loading: false }));
+          setState(calendarNotModified);
           nextRefresh = Date.now() + 10000;
           return;
         }
-        const payload = await response.json();
+        const payload = await response.json().catch(() => { throw Object.assign(new Error('Risposta del calendario MES non valida.'), { status: response.ok ? 502 : response.status }); });
         if (!response.ok) throw Object.assign(new Error(payload.error || 'Pianificazione MES non disponibile.'), { status: response.status });
         revision = payload.revision || '';
         nextRefresh = Date.now() + (payload.stale ? 30000 : 10000);
-        if (!disposed) setState({ scope, valid: true, items: productionActivities(payload.items || []), loading: false, error: '', warning: payload.warning || '', stale: payload.stale === true, enabled: payload.enabled === true, source: payload.source, updatedAt: payload.updatedAt });
+        if (!disposed) setState({ scope, valid: true, items: productionActivities(payload.items || []), loading: false, error: '', warning: payload.warning || '', serverWarning: payload.warning || '', stale: payload.stale === true, enabled: payload.enabled === true, source: payload.source, updatedAt: payload.updatedAt });
       } catch (error) {
         if ([401, 403].includes(error.status)) revision = '';
         nextRefresh = Date.now() + 30000;

@@ -39,3 +39,6 @@
  .warehouse-unit-card>header div{flex-wrap:wrap}
  .warehouse-chart-body li{grid-template-columns:10px minmax(0,1fr) auto}
 }
+
+.warehouse-article-sync{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:7px 10px;border:1px solid #c5d8e9;border-radius:7px;background:#eef6fc;color:#1769aa;white-space:nowrap;cursor:pointer}
+.warehouse-article-sync:disabled{opacity:.55;cursor:default}

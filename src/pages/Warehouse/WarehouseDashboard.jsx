@@ -4,6 +4,7 @@ import { BarChart3, CalendarDays, Info, RefreshCw, Search } from "lucide-react";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
+import { invokeArticleStockSync } from "../../modules/integrations/services/mexalSyncService";
 import { loadWorkspaceWarehouse } from "./warehouseData";
 import "./warehouse.css";
 import "./warehouseDashboard.css";
@@ -69,7 +70,7 @@ function WarehouseKpis({ items }) {
 }
 
 export default function WarehouseDashboard() {
-  const { dataScope } = useAuth();
+  const { dataScope, hasPermission } = useAuth();
   const [data, setData] = useState({ rows: [], summary: {}, breakdown: {}, totalRows: 0, availableDates: [] });
   const [type, setType] = useState("TOTALE");
   const [unit, setUnit] = useState("TUTTE");
@@ -82,6 +83,11 @@ export default function WarehouseDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const requestSequence = useRef(0);
+  const syncLock = useRef(false);
+  const [syncingArticle, setSyncingArticle] = useState("");
+  const [syncMessage, setSyncMessage] = useState("");
+  const [stockRevision, setStockRevision] = useState(0);
+  const [syncError, setSyncError] = useState("");
 
   const filters = useMemo(() => ({ asOfDate, warehouse, type, unit, query, stockFilter, page, pageSize: PAGE_SIZE }), [asOfDate, page, query, stockFilter, type, unit, warehouse]);
   const load = useCallback(async () => {
@@ -109,7 +115,7 @@ export default function WarehouseDashboard() {
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), query ? 300 : 0);
     return () => window.clearTimeout(timer);
-  }, [load, query]);
+  }, [load, query, stockRevision]);
 
   const summary = data.summary || {};
   const breakdown = data.breakdown || {};
@@ -118,11 +124,27 @@ export default function WarehouseDashboard() {
 
   const customerScoped = Boolean(dataScope?.customerCode || dataScope?.customerCodes?.length) || data.customerScoped === true;
 
+  const canSync = !customerScoped && hasPermission("integrations.sync.stocks");
+  const synchronizeArticle = async (row) => {
+    if (syncLock.current) return;
+    syncLock.current = true;
+    setSyncingArticle(row.article_code); setSyncMessage(""); setSyncError("");
+    try {
+      const result = await invokeArticleStockSync(row.article_code, row.warehouse_number);
+      setSyncMessage(result.message || result.data?.message || ("Giacenza di " + row.article_code + " sincronizzata."));
+      setStockRevision(value => value + 1);
+      if (asOfDate !== localDay()) setSyncMessage(message => message + " Seleziona la data di oggi per vedere la giacenza aggiornata.");
+    } catch (failure) { setSyncError(row.article_code + ": " + (failure.message || "Sincronizzazione non riuscita.")); }
+    finally { syncLock.current = false; setSyncingArticle(""); }
+  };
+
   return <ModuleContainerLayout icon={BarChart3} eyebrow="Modulo Workspace" title="Magazzino" description={customerScoped ? "Giacenze inventariali storiche degli articoli collegati al cliente." : "Giacenze inventariali storiche per articolo e singolo magazzino."} backFallback="/home">
     <div className="warehouse-dashboard-page">
       <section className="warehouse-dashboard-toolbar"><div className="warehouse-dashboard-types" aria-label="Selezione rapida tipologia">{TYPES.map((item) => <button key={item} type="button" className={type === item ? "active" : ""} onClick={() => { setPage(1); setType(item); }}>{item}<span>{item === "TOTALE" ? Object.values(catalog.types).reduce((sum, value) => sum + value, 0) : (catalog.types[item] || 0)}</span></button>)}</div><button className="warehouse-dashboard-refresh" type="button" onClick={load} disabled={loading}><RefreshCw size={17} className={loading ? "warehouse-spin" : ""} />Aggiorna</button></section>
       <section className="warehouse-dashboard-filters"><label><span><CalendarDays size={15} />Giacenza al giorno</span><input type="date" max={localDay()} value={asOfDate} onChange={(event) => { setPage(1); setAsOfDate(event.target.value); }} /></label><label><span>UDM</span><select value={unit} onChange={(event) => { setPage(1); setUnit(event.target.value); }}><option value="TUTTE">Tutte le UDM</option>{catalog.units.map((item) => <option key={item.unit_of_measure} value={item.unit_of_measure}>{item.unit_of_measure}</option>)}</select></label>{!customerScoped && <label><span>Magazzino</span><select value={warehouse} onChange={(event) => { setPage(1); setWarehouse(event.target.value); }}><option value="TUTTI">Tutti i magazzini</option>{catalog.warehouses.map((item) => <option key={item.warehouse_number} value={`MAG-${item.warehouse_number}`}>MAG-{item.warehouse_number}{item.warehouse_name ? ` · ${item.warehouse_name}` : ""}</option>)}</select></label>}<button type="button" onClick={resetFilters}>Azzera filtri</button></section>
       <section className="warehouse-search-card warehouse-dashboard-search"><label><Search size={19} /><input value={query} onChange={(event) => { setPage(1); setQuery(event.target.value); }} placeholder="Cerca per codice o descrizione..." /></label><select value={stockFilter} onChange={(event) => { setPage(1); setStockFilter(event.target.value); }} aria-label="Filtra stato magazzino"><option value="all">Tutte le giacenze</option><option value="positive">Giacenza positiva</option><option value="zero">Giacenza zero</option><option value="negative">Giacenza negativa</option>{!customerScoped && <option value="unvalued">Costo non valorizzato</option>}</select></section>
+      {syncMessage && <div className="warehouse-dashboard-message" role="status">{syncMessage}</div>}
+      {syncError && <div className="warehouse-dashboard-message error" role="alert">{syncError}</div>}
       {error ? <div className="warehouse-dashboard-message error" role="alert">{error}</div> : null}
       {loading ? <div className="warehouse-dashboard-message">Caricamento giacenza storica...</div> : null}
       {!loading && !error && !data.snapshotAvailable ? <div className="warehouse-dashboard-message" role="status"><strong>Nessuno snapshot inventariale certificato per il {formatDisplayDate(new Date(`${asOfDate}T12:00:00`), {})}.</strong><br />Date disponibili: {(data.availableDates || []).map(value => formatDisplayDate(new Date(`${value}T12:00:00`))).join(", ") || "nessuna"}. `sincronizzato_il` non viene utilizzato come data inventariale.</div> : null}
@@ -139,7 +161,7 @@ export default function WarehouseDashboard() {
         {type === "IT" && <ItStockCharts breakdown={data.itBreakdown} customerScoped={customerScoped} />}
         <section className="warehouse-unit-card"><header><div><strong>Quantità per unità di misura</strong><InfoTip text="Raggruppamento server-side delle quantità del dataset filtrato. UDM diverse non vengono mai sommate tra loro." label="Quantità per unità di misura" /><span>{(breakdown.byUnit || []).length} UDM</span></div><small>Le quantità non vengono sommate tra UDM differenti.</small></header><div className="warehouse-unit-scroll"><table><thead><tr><th>UDM</th><th>Articoli</th><th>Giacenza</th>{!customerScoped && <th>Valore</th>}</tr></thead><tbody>{(breakdown.byUnit || []).map((item) => <tr key={item.unit_of_measure}><td><strong>{item.unit_of_measure}</strong></td><td>{quantityFormat.format(item.articles)}</td><td>{quantityFormat.format(item.quantity)}</td>{!customerScoped && <td><strong>{currencyFormat.format(item.stock_value)}</strong></td>}</tr>)}</tbody></table></div></section>
         <p className="warehouse-dashboard-note">{customerScoped ? "Ogni riga rappresenta un articolo collegato al cliente, con giacenza, quantità impegnata e disponibile." : "Ogni riga rappresenta Articolo + Magazzino. Le giacenze negative restano consultabili e valgono zero esclusivamente nelle valorizzazioni economiche."}</p>
-        <section className="warehouse-table-card" aria-label={customerScoped ? "Elenco giacenze per articolo" : "Elenco giacenze per articolo e magazzino"}><header><div><strong>Elenco giacenze</strong><span>{quantityFormat.format(data.totalRows || 0)} risultati</span></div><small>Data inventariale: {asOfDate} · Ultimo aggiornamento separato dalla competenza.</small></header><div className="warehouse-table-scroll"><table data-column-controls="off"><thead><tr><th>Articolo</th>{!customerScoped && <th>Magazzino</th>}<th>UDM</th><th>Giacenza</th><th>Impegnato</th><th>Disponibile</th>{!customerScoped && <th>Costo ultimo</th>}{!customerScoped && <th>Valore</th>}<th>Stato</th><th>Ultimo aggiornamento</th></tr></thead><tbody>{data.rows.map((row) => { const status = stockStatus(row); return <tr key={customerScoped ? row.article_code : `${row.article_code}:${row.warehouse_number}`}><td data-label="Articolo"><strong>{row.article_code}</strong><small>{row.description || "Descrizione non disponibile"}</small></td>{!customerScoped && <td data-label="Magazzino"><strong>MAG-{row.warehouse_number}</strong>{row.warehouse_name ? <small>{row.warehouse_name}</small> : null}</td>}<td data-label="UDM">{row.unit_of_measure}</td><td data-label="Giacenza">{quantityFormat.format(row.on_hand)}</td><td data-label="Impegnato">{row.committed === null ? "—" : quantityFormat.format(row.committed)}</td><td data-label="Disponibile">{row.available === null ? "—" : quantityFormat.format(row.available)}</td>{!customerScoped && <><td data-label="Costo ultimo">{Number(row.unit_cost) > 0 ? costFormat.format(row.unit_cost) : <span className="warehouse-missing-cost">Da valorizzare</span>}</td><td data-label="Valore"><strong>{currencyFormat.format(row.stock_value)}</strong></td></>}<td data-label="Stato"><span className={`warehouse-status ${status.tone}`}>{status.label}</span></td><td data-label="Ultimo aggiornamento">{formatDate(row.captured_at)}</td></tr>; })}</tbody></table></div><footer className="warehouse-pagination"><button type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Precedente</button><span>Pagina {page} di {pages}</span><button type="button" disabled={page >= pages} onClick={() => setPage((value) => value + 1)}>Successiva</button></footer></section>
+        <section className="warehouse-table-card" aria-label={customerScoped ? "Elenco giacenze per articolo" : "Elenco giacenze per articolo e magazzino"}><header><div><strong>Elenco giacenze</strong><span>{quantityFormat.format(data.totalRows || 0)} risultati</span></div><small>Data inventariale: {asOfDate} · Ultimo aggiornamento separato dalla competenza.</small></header><div className="warehouse-table-scroll"><table data-column-controls="off"><thead><tr><th>Articolo</th>{!customerScoped && <th>Magazzino</th>}<th>UDM</th><th>Giacenza</th><th>Impegnato</th><th>Disponibile</th>{!customerScoped && <th>Costo ultimo</th>}{!customerScoped && <th>Valore</th>}<th>Stato</th><th>Ultimo aggiornamento</th>{!customerScoped && <th>Azioni</th>}</tr></thead><tbody>{data.rows.map((row) => { const status = stockStatus(row); return <tr key={customerScoped ? row.article_code : `${row.article_code}:${row.warehouse_number}`}><td data-label="Articolo"><strong>{row.article_code}</strong><small>{row.description || "Descrizione non disponibile"}</small></td>{!customerScoped && <td data-label="Magazzino"><strong>MAG-{row.warehouse_number}</strong>{row.warehouse_name ? <small>{row.warehouse_name}</small> : null}</td>}<td data-label="UDM">{row.unit_of_measure}</td><td data-label="Giacenza">{quantityFormat.format(row.on_hand)}</td><td data-label="Impegnato">{row.committed === null ? "—" : quantityFormat.format(row.committed)}</td><td data-label="Disponibile">{row.available === null ? "—" : quantityFormat.format(row.available)}</td>{!customerScoped && <><td data-label="Costo ultimo">{Number(row.unit_cost) > 0 ? costFormat.format(row.unit_cost) : <span className="warehouse-missing-cost">Da valorizzare</span>}</td><td data-label="Valore"><strong>{currencyFormat.format(row.stock_value)}</strong></td></>}<td data-label="Stato"><span className={`warehouse-status ${status.tone}`}>{status.label}</span></td><td data-label="Ultimo aggiornamento">{formatDate(row.captured_at)}</td>{!customerScoped && <td data-label="Azioni"><button type="button" className="warehouse-article-sync" disabled={!canSync || Boolean(syncingArticle)} onClick={() => void synchronizeArticle(row)} aria-label={`Sincronizza giacenza ${row.article_code}`} title={canSync ? "Sincronizza la giacenza corrente del singolo articolo" : "Permesso di sincronizzazione giacenze richiesto"}><RefreshCw size={15} className={syncingArticle === row.article_code ? "warehouse-spin" : ""} />{syncingArticle === row.article_code ? "Sincronizzazione..." : "Sincronizza"}</button></td>}</tr>; })}</tbody></table></div><footer className="warehouse-pagination"><button type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Precedente</button><span>Pagina {page} di {pages}</span><button type="button" disabled={page >= pages} onClick={() => setPage((value) => value + 1)}>Successiva</button></footer></section>
       </> : null}
     </div>
   </ModuleContainerLayout>;

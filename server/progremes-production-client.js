@@ -239,6 +239,7 @@ export function createProgremesProductionClient({ env = process.env, fetchImpl =
     } finally { clearTimeout(timer); }
   };
   return {
+    syncInventoryArticle: payload => call('/api/workspace/v1/inventory/article-sync', payload, 120_000),
     formulaSpecification: payload => call('/api/workspace/v1/formula-specification', payload),
     preparationActions: payload => call('/api/workspace/v1/preparation-actions', payload, payload.operation === 'sheet' ? 120_000 : undefined),
     batchSheet: payload => call('/api/workspace/v1/batch-sheet', payload),

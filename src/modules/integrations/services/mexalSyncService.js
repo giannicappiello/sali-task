@@ -41,6 +41,10 @@ async function invokeMexalApi(path, payload) {
   return data;
 }
 
+export async function invokeArticleStockSync(articleCode, warehouseNumber) {
+  return invokeMexalApi("/api/mexal/automation", { action: "warehouse_article_sync", articleCode, warehouseNumber });
+}
+
 /** Manual controls exposed by the Sincronizzazioni tab. */
 export async function startMexalSync(syncType) {
   return invokeMexalApi("/api/mexal/automation", { action: "run_now", syncType });

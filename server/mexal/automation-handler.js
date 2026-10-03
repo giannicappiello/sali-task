@@ -1,3 +1,4 @@
+import { syncWarehouseArticle } from "../warehouse-article-sync.js";
 import { ensurePrinterScreen } from '../../server/workspace-printer-screen.js';
 import { createWorkspaceRdp } from '../workspace-rdp-create.js';
 import { assertPrivateCustomerDetailAccess, customerOrderOverview, loadCustomerInvoiceReferences } from '../private-orders-workbench.js';
@@ -985,6 +986,11 @@ export default async function handler(req, res) {
         const admin = await createAdmin(req, "rdp.cancel");
         req.body = { requestId: body.requestId, reason: body.reason };
         return cancelProductionRequest(req, res, { admin: admin.supabase, requestedBy: admin.authUserId });
+      }
+      case "warehouse_article_sync": {
+        const admin = await createAdmin(req, "integrations.sync.stocks");
+        await rejectCustomerScopedOperation(admin, "sincronizzazione giacenze articolo");
+        return sendSuccess(res, 200, await syncWarehouseArticle(admin.supabase, body));
       }
       case "progremes_modules_sync": {
         const admin = await createAdmin(req);

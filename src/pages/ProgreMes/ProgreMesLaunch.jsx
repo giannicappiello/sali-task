@@ -62,6 +62,9 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
     if (!url) return undefined;
     const origin = new URL(url).origin;
     const receive = (event) => {
+      if (event.data.type === 'progremes-production-changed') {
+        window.dispatchEvent(new Event('workspace:production-changed')); return;
+      }
       if (event.data.type === 'progremes-batch-activities') { setBatchActivities(batchActivitiesMessage(event.data)); return; }
       if (event.data.type === "progremes-filling-activity") { setFillingActivity(fillingActivityMessage(event.data)); return; }
       if (event.data.type === "progremes-open-assistant") {

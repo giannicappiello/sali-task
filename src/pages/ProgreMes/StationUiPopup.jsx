@@ -22,7 +22,12 @@ export default function StationUiPopup({ station, onClose, children }) {
     };
     const receive = event => {
       const frame = element.querySelector("iframe[data-assistant-mes-frame]");
-      if (!frame || event.source !== frame.contentWindow || event.origin !== new URL(frame.src).origin || event.data?.type !== "progremes-station-size") return;
+      if (!frame || event.source !== frame.contentWindow || event.origin !== new URL(frame.src).origin) return;
+      if (event.data?.type === "progremes-production-changed") {
+        window.dispatchEvent(new Event('workspace:production-changed'));
+        return;
+      }
+      if (event.data?.type !== "progremes-station-size") return;
       const { width, height } = event.data;
       if (![width, height].every(Number.isFinite) || width <= 0 || height <= 0 || width > 4096 || height > 20000) return;
       dimensions = { width, height };

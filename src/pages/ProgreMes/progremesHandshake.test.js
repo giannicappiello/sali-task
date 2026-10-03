@@ -37,3 +37,12 @@ test('timeout and disposal stop retries; an auth error never signals ready', () 
   assert.deepEqual(auth.received, ['progremes-embedded-auth-error']); assert.equal(auth.timers.size, 0);
   const closed = fixture(); closed.dispose(); assert.equal(closed.timers.size, 0);
 });
+
+ test('production changes are delivered only from the authenticated MES frame', () => {
+  const f=fixture();
+  f.message({}, 'https://mes.example', 'progremes-production-changed');
+  f.message(f.frame, 'https://other.example', 'progremes-production-changed');
+  assert.deepEqual(f.received, []);
+  f.message(f.frame, 'https://mes.example', 'progremes-production-changed');
+  assert.deepEqual(f.received, ['progremes-production-changed']);
+ });

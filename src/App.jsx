@@ -29,6 +29,7 @@ const Agenda = lazy(() => import("./pages/Agenda/Agenda"));
 const Products = lazy(() => import("./pages/Products/Products"));
 const WarehouseDashboard = lazy(() => import("./pages/Warehouse/WarehouseDashboard"));
 const Documentation = lazy(() => import("./pages/Documentation/Documentation"));
+const ProductSpecificationPage = lazy(() => import("./pages/Documentation/ProductSpecificationPage"));
 const PrivateDocuments = lazy(() => import("./pages/Documentation/PrivateDocuments"));
 const ManualiUso = lazy(() => import("./pages/Documentation/ManualiUso"));
 const Messages = lazy(() => import("./pages/Messages/Messages"));
@@ -130,6 +131,7 @@ function App() {
               <Route path="magazzino" element={<Navigate to="/magazzino-dashboard" replace />} />
               <Route path="magazzino-dashboard" element={<WorkspaceAccessGuard moduleCode="magazzino"><WarehouseDashboard /></WorkspaceAccessGuard>} />
               <Route path="documentation" element={<WorkspaceAccessGuard moduleCode="documenti"><Documentation /></WorkspaceAccessGuard>} />
+              <Route path="documentation/specification/:articleCode" element={<WorkspaceAccessGuard moduleCode="progremes_formule"><ProductSpecificationPage /></WorkspaceAccessGuard>} />
               <Route path="documentation/private" element={<WorkspaceAccessGuard moduleCode="progremes_formule"><PrivateDocuments /></WorkspaceAccessGuard>} />
               <Route path="manuali-uso" element={<WorkspaceAccessGuard moduleCode="manuali_uso"><ManualiUso /></WorkspaceAccessGuard>} />
               <Route path="messages" element={<Messages />} />

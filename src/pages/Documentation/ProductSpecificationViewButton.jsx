@@ -6,9 +6,9 @@ import { applySpecificationSources, specificationSourceFields } from '../../../s
 import './ProductSpecification.css';
 import SpecificationApproval from './SpecificationApproval';
 
-export default function ProductSpecificationViewButton({ articleCode, description }) {
+export default function ProductSpecificationViewButton({ articleCode, description, defaultOpen = false }) {
   const { session } = useAuth();
-  const [open, setOpen] = useState(false), [pdf, setPdf] = useState(null), [error, setError] = useState('');
+  const [open, setOpen] = useState(defaultOpen), [pdf, setPdf] = useState(null), [error, setError] = useState('');
   const [approval, setApproval] = useState(null), [approving, setApproving] = useState(false), [reload, setReload] = useState(0);
   const button = useRef(null);
   const request = useCallback(async (path, options = {}) => {

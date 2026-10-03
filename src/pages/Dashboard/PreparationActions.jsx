@@ -6,7 +6,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { Modal } from '../../features/production-costs/common';
 import ProductSpecificationViewButton from '../Documentation/ProductSpecificationViewButton';
 import '../Documentation/ProductSpecification.css';
-import { stationActionUrl } from './productionCalendar';
+import { stationActionUrl, isProductionActivityClosed } from './productionCalendar';
 import { requestProgremesWorkspaceWindow } from '../ProgreMes/progremesWindow';
 
 function pdfUrl(base64) {
@@ -71,7 +71,7 @@ export default function PreparationActions({ activity, onStarted }) {
       onStarted?.(); window.dispatchEvent(new Event('workspace:production-changed'));
     }
   } };
-  const alreadyClosed = ['completata', 'completato', 'completed', 'terminata', 'terminato', 'chiusa', 'closed'].includes(String(activity.stato || activity.status || '').trim().toLowerCase());
+  const alreadyClosed = isProductionActivityClosed(activity);
   function openStation(operation) {
     if (operation === 'close' && alreadyClosed) return;
     const search = '?destination=station&station=' + encodeURIComponent(activity.resourceCode) + (operation ? '&stationAction=' + operation + '&orderId=' + activity.productionOrderId : '');

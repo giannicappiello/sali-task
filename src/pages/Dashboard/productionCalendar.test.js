@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { productionActivities, activityOnDay, activityInMonth, plantTime, stationPanelUrl } from './productionCalendar.js';
+import { stationActionUrl, productionActivities, activityOnDay, activityInMonth, plantTime, stationPanelUrl } from './productionCalendar.js';
 
 test('collegamenti impianto limitati alle Station configurate, nessun pannello Filling inventato', () => {
   assert.equal(stationPanelUrl('Production', 'ST7'), '/produzione/progremes.PlanningProduction?destination=station&station=ST7&workspaceMesWindow=1');
@@ -46,4 +46,16 @@ test('avvio effettivo prevale sullo stato pianificato senza sovrascrivere pausa 
   assert.equal(productionActivities([row])[0].stato, 'In corso');
   assert.equal(productionActivities([{ ...row, actualStart: null }])[0].stato, 'Pianificata');
   for (const status of ['Completata', 'Annullata', 'In pausa']) assert.equal(productionActivities([{ ...row, status }])[0].stato, status);
+});
+
+
+test('closed work cannot generate a Station completion link from the activity popup', () => {
+  const activity = { operationType: 'Production', resourceCode: 'ST4', productionOrderId: 5395 };
+  for (const field of ['stato', 'status', 'executionStatus']) {
+    for (const value of ['Completata', 'Terminato', 'COMPLETED', 'Chiusa']) {
+      assert.equal(stationActionUrl({ ...activity, [field]: value }, 'close'), '');
+      assert.ok(stationActionUrl({ ...activity, [field]: value }, 'start'));
+    }
+  }
+  assert.ok(stationActionUrl({ ...activity, stato: 'In lavorazione' }, 'close'));
 });

@@ -6,7 +6,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { Modal } from '../../features/production-costs/common';
 import PackagingSheet from './PackagingSheet';
 
-export default function PackagingSheetActions({ productionOrderId }) {
+export default function PackagingSheetActions({ productionOrderId, operationType, batchNumber }) {
   const { session } = useAuth();
   const [mode, setMode] = useState(''), [result, setResult] = useState(null), [error, setError] = useState(''), [printing, setPrinting] = useState(false);
   const [pieces, setPieces] = useState(0);
@@ -48,7 +48,7 @@ export default function PackagingSheetActions({ productionOrderId }) {
   }
   function close() { if (!printing) { setMode(''); setResult(null); setError(''); } }
   const disabled = !Number.isSafeInteger(Number(productionOrderId)) || Number(productionOrderId) <= 0;
-  return <BatchSheetActions productionOrderId={productionOrderId} kind="packaging"><button type="button" disabled={disabled} onClick={() => setMode('open')}><FileText size={17}/>Apri foglio confezionamento</button>
+  return <BatchSheetActions productionOrderId={productionOrderId} kind="packaging" operationType={operationType} batchNumber={batchNumber}><button type="button" disabled={disabled} onClick={() => setMode('open')}><FileText size={17}/>Apri foglio confezionamento</button>
     {mode && <Modal title="Foglio di confezionamento" onClose={close} className="dashboard-production-sheet packaging-sheet-modal">
       {printMessage && <p role="status" className="pc-note">{printMessage}</p>}
       {error && <p role="alert" className="pc-note">{error}</p>}

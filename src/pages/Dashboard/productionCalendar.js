@@ -9,7 +9,13 @@ export function stationPanelUrl(operationType, resourceCode) {
   return `/produzione/progremes.PlanningProduction?destination=station&station=${encodeURIComponent(code)}&workspaceMesWindow=1`;
 }
 
+export function isProductionActivityClosed(activity) {
+  return [activity.stato, activity.status, activity.executionStatus].some(value =>
+    ['completata', 'completato', 'completed', 'terminata', 'terminato', 'chiusa', 'chiuso', 'closed'].includes(String(value || '').trim().toLowerCase()));
+}
+
 export function stationActionUrl(activity, operation) {
+  if (operation === 'close' && isProductionActivityClosed(activity)) return '';
   const base = stationPanelUrl(activity.operationType, activity.resourceCode);
   const orderId = Number(activity.productionOrderId);
   if (!base || !['start', 'close'].includes(operation) || !Number.isSafeInteger(orderId) || orderId <= 0 || orderId > 2147483647) return '';

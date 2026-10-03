@@ -13,10 +13,17 @@ export function createHrPlanReader({ base = process.env.PROGREMES_URL, secret = 
     const path = `/api/workspace/ai/planning/${operation}`;
     const body = Buffer.from(JSON.stringify({ ...(operation === 'get' ? { id: input.id } : { calendar: true, ...(input.revision ? { calendarRevision: input.revision } : {}) }), actor: 'workspace:hr-production-calendar' }));
     const timestamp = Math.floor(Date.now() / 1000), eventId = randomUUID();
-    const response = await transport(new URL(path, base), { method: 'POST', body, redirect: 'error', signal: AbortSignal.timeout(25000), headers: {
+    let response;
+    try { response = await transport(new URL(path, base), { method: 'POST', body, redirect: 'error', signal: AbortSignal.timeout(60000), headers: {
       'Content-Type': 'application/json', [HMAC_HEADERS.timestamp]: String(timestamp), [HMAC_HEADERS.eventId]: eventId,
       [HMAC_HEADERS.signature]: signProductionMessage({ method: 'POST', path, timestamp, eventId, body, secret: secret.trim() }),
-    } });
+    } }); }
+    catch (error) {
+      const timeout = error.name === 'TimeoutError' || error.code === 23;
+      throw Object.assign(new Error(timeout ? 'Timeout nel caricamento del calendario MES.' : 'Collegamento calendario MES non disponibile.'), {
+        code: timeout ? 'MES_CALENDAR_TIMEOUT' : 'MES_CALENDAR_CONNECTION', status: 502, operation,
+      });
+    }
     if (!response.ok) throw Object.assign(new Error('Lettura piano MES non disponibile.'), {
       code: 'MES_PLAN_READ_FAILED', status: [401, 403].includes(response.status) ? response.status : 502, upstreamStatus: response.status, operation,
     });

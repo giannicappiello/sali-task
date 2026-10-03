@@ -164,6 +164,7 @@ export async function productionCalendarRequest(req, dependencies = {}) {
 }
 
 export async function handleHrProductionCalendar(req, res) {
+  const started = Date.now();
   res.setHeader('Cache-Control', 'private, no-store');
   try {
     const result = await productionCalendarRequest(req);
@@ -171,7 +172,7 @@ export async function handleHrProductionCalendar(req, res) {
   }
   catch (error) {
     const status = error.status || 500;
-    if (status >= 500) console.error('HR production calendar unavailable', { code: error.code, upstreamStatus: error.upstreamStatus, operation: error.operation });
+    if (status >= 500) console.error('HR production calendar unavailable', { code: error.code, upstreamStatus: error.upstreamStatus, operation: error.operation, elapsedMs: Date.now() - started });
     return res.status(status).json({ error: status < 500 ? error.message : 'Pianificazione MES non disponibile. Le lavorazioni potrebbero non essere visibili: riprova tra poco.' });
   }
 }

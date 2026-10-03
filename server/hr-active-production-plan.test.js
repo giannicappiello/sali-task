@@ -78,3 +78,12 @@ test('upstream failure identifies the failed read without copying server details
     return true;
   });
 });
+
+
+test('calendar timeout reports a stable safe diagnostic without exposing transport details', async () => {
+  const reader = createHrPlanReader({ base: 'https://mes.example', secret: 'private-secret', transport: async () => { throw new DOMException('private transport details', 'TimeoutError'); } });
+  await assert.rejects(reader('state'), error => {
+    assert.equal(error.code, 'MES_CALENDAR_TIMEOUT'); assert.equal(error.status, 502); assert.equal(error.operation, 'state');
+    assert.equal(JSON.stringify(error).includes('private'), false); return true;
+  });
+});

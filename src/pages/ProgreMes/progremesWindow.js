@@ -67,14 +67,18 @@ export function progremesWorkspaceDestination(data) {
   } catch { return null; }
 }
 
-export async function requestProgremesNavigation(accessToken, { screenCode = "", search = "", signal, fetcher = fetch } = {}) {
+let connectedSessionKey = null;
+export function rememberProgremesSession(key) { connectedSessionKey = key; }
+export function forgetProgremesSession() { connectedSessionKey = null; }
+
+export async function requestProgremesNavigation(accessToken, { screenCode = "", search = "", sessionKey = null, signal, fetcher = fetch } = {}) {
   if (!accessToken) throw new Error("Sessione Workspace non disponibile.");
   const params = new URLSearchParams(search);
   params.delete(PROGREMES_POPUP_PARAM);
   const response = await fetcher("/api/mexal/automation", {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "progremes_sso", ...(screenCode ? { screenCode, context: Object.fromEntries(params) } : {}) }),
+    body: JSON.stringify({ action: sessionKey && connectedSessionKey === sessionKey ? "progremes_navigation" : "progremes_sso", ...(screenCode ? { screenCode, context: Object.fromEntries(params) } : {}) }),
     signal,
   });
   const payload = await response.json().catch(() => ({}));

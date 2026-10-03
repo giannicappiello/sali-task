@@ -122,14 +122,13 @@ function SectionLauncher({ sectionCode }) {
 
 export default function Production() {
   const { "*": sectionPath } = useParams();
-  const { session, hasPermission, dataScope, isAdminUser, hasScreenAccess, hasAreaAccess, hasExplicitScreenGrant, hasModuleAccess } = useAuth();
+  const { session, hasPermission, dataScope, isAdminUser, hasScreenAccess, hasAreaAccess, hasExplicitScreenGrant } = useAuth();
   const accessToken = session?.access_token;
   const [sections, setSections] = useState([]);
   const [catalog, setCatalog] = useState({ screens: [], links: [] });
 
   async function fetchSections() {
-    const payload = hasModuleAccess("progremes") || hasScreenAccess("progremes.PlanningProduction")
-      ? await requestProgremes("progremes_user_sections", accessToken) : { sections: [] };
+    const payload = await requestProgremes("progremes_user_sections", accessToken);
     const [screens, links] = await Promise.all([
       supabase.from("workspace_schermate").select("codice,nome,descrizione,percorso,attiva,area,aree,provider").eq("attiva", true),
       supabase.from("workspace_moduli_schermate").select("modulo_codice,schermata_codice,ordine,visibile_menu,predefinita").eq("modulo_codice", "progremes").eq("visibile_menu", true).order("ordine"),

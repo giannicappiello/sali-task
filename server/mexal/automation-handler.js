@@ -672,6 +672,8 @@ export default async function handler(req, res) {
       case "ai_order_capabilities":
       case "ai_order_document":
         return sendSuccess(res, 200, await handleAIOrderDocument(req));
+      case "progremes_navigation":
+        return sendSuccess(res, 200, await issueProgremesTicket(req, body, { navigationOnly: true }));
       case "progremes_sso":
         return sendSuccess(res, 200, await issueProgremesTicket(req, body));
       case "progremes_user_sections":

@@ -1,5 +1,4 @@
 /* global process */
-import { canOpenPlanningProduction } from "./production-workbench-access.js";
 import { workspaceAuthFailure } from './workspace-auth-diagnostic.js';
 import { productionSheetSession, productionSheetProfileAccess } from './production-sheet-access.js';
 import { createHash, randomBytes } from "node:crypto";
@@ -20,7 +19,7 @@ function adminClient() {
   });
 }
 
-async function getWorkspaceIdentity(req, admin, operationalRead = false) {
+async function getWorkspaceIdentity(req, admin) {
   const authorization = String(req.headers.authorization || "");
   if (!authorization.startsWith("Bearer ")) {
     throw Object.assign(new Error("Sessione Workspace mancante."), { status: 401 });
@@ -39,60 +38,28 @@ async function getWorkspaceIdentity(req, admin, operationalRead = false) {
     throw Object.assign(new Error("Utente Workspace non abilitato."), { status: 403 });
   }
 
-  const { data: enabled, error: accessError } = await admin.rpc("workspace_module_enabled_for_user", {
-    target_user_id: profile.id,
-    target_module: "progremes",
-  });
-  if (accessError) throw accessError;
-  const planningProductionAllowed = await canOpenPlanningProduction(admin, profile.id);
-  if (enabled !== true && !planningProductionAllowed && !operationalRead) {
-    throw Object.assign(new Error("Accesso al modulo ProgreMES non autorizzato."), { status: 403 });
-  }
-
   const { data: adminAccess, error: adminError } = await admin.rpc("workspace_user_is_admin", {
     target_auth_user_id: user.id,
   });
   if (adminError) throw adminError;
 
-  return { user, profile, isAdmin: adminAccess === true, productionHubAllowed: enabled === true, planningProductionAllowed };
+  return { user, profile, isAdmin: adminAccess === true };
 }
 
-export async function getAuthorizedProgremesCodes(admin, identity) {
-  if (identity.isAdmin) return null;
-  const directCodes = new Set(identity.planningProductionAllowed ? ["PlanningProduction"] : []);
-  if (!identity.productionHubAllowed) return directCodes;
+export async function getProgremesScreenLevels(admin, userId) {
+  const { data, error } = await admin.rpc("workspace_progremes_screen_levels_for_user", { target_user_id: userId });
+  if (error) throw Object.assign(new Error("Verifica autorizzazioni schermate MES non disponibile."), { status: 503 });
+  return data || {};
+}
 
-  const { data: departmentRows, error: departmentsError } = await admin
-    .from("utenti_reparti")
-    .select("reparto_id")
-    .eq("utente_id", identity.profile.id);
-  if (departmentsError) throw departmentsError;
-
-  const departmentIds = [...new Set([
-    identity.profile.reparto_id,
-    ...(departmentRows || []).map((row) => row.reparto_id),
-  ].filter(Boolean))];
-  if (!departmentIds.length) return directCodes;
-
-  const { data: accessRows, error: accessError } = await admin
-    .from("progremes_reparti_moduli")
-    .select("modulo_codice")
-    .in("reparto_id", departmentIds);
-  if (accessError) throw accessError;
-  for (const row of accessRows || []) {
-    if (row.modulo_codice !== "PlanningProduction") directCodes.add(row.modulo_codice);
-  }
-  return directCodes;
+export function isProgremesScreenAuthorized(levels, screenCode) {
+  return ["lettura", "scrittura", "amministrazione"].includes(levels[screenCode]);
 }
 
 export function progremesModuleCodeFromMetadata(metadata = {}) {
   const explicit = String(metadata?.external_module_code || "").trim();
   if (explicit) return explicit;
   return String(metadata?.external_code || "").trim().split(".")[0];
-}
-
-export function isProgremesScreenAuthorized(isAdmin, authorizedCodes, metadata) {
-  return isAdmin || authorizedCodes?.has(progremesModuleCodeFromMetadata(metadata)) === true;
 }
 
 export function appendProgremesContext(returnUrl, context = {}) {
@@ -111,7 +78,7 @@ export async function listUserProgremesSections(req) {
   const identity = await getWorkspaceIdentity(req, admin);
   await ensureProgremesCatalogFresh(admin);
   if (identity.isAdmin) await ensureLocalProductionScreens(admin);
-  const authorizedCodes = await getAuthorizedProgremesCodes(admin, identity);
+  const screenLevels = await getProgremesScreenLevels(admin, identity.profile.id);
   const [{ data: screens, error }, { data: links, error: linksError }] = await Promise.all([
     admin.from("workspace_schermate").select("codice,nome,descrizione,metadati").eq("provider", "progremes").eq("attiva", true),
     admin.from("workspace_moduli_schermate").select("schermata_codice,ordine").eq("modulo_codice", "progremes").eq("visibile_menu", true).order("ordine"),
@@ -133,13 +100,13 @@ export async function listUserProgremesSections(req) {
       description: screen.descrizione || "Area operativa della gestione produzione.",
       order: screen.moduleOrder || 0,
     }))
-    .filter((screen) => identity.isAdmin || authorizedCodes?.has(screen.moduleCode));
+    .filter((screen) => isProgremesScreenAuthorized(screenLevels, screen.code));
 
   return { sections };
 }
 
-export async function issueProgremesTicket(req, body = {}) {
-  const admin = adminClient();
+export async function issueProgremesTicket(req, body = {}, { navigationOnly = false, admin: providedAdmin } = {}) {
+  const admin = providedAdmin || adminClient();
   const operationalKind = body.screenCode === 'progremes.PlanningProduction'
     ? body.context?.destination === 'filling-overview' ? 'packaging'
       : body.context?.destination === 'station-overview' || (body.context?.destination === 'station'
@@ -147,7 +114,7 @@ export async function issueProgremesTicket(req, body = {}) {
     : '';
   const operationalRead = Boolean(operationalKind);
   if (operationalRead) await productionSheetSession(req, operationalKind, { admin });
-  const identity = await getWorkspaceIdentity(req, admin, operationalRead);
+  const identity = await getWorkspaceIdentity(req, admin);
   await ensureProgremesCatalogFresh(admin);
   const { user, profile } = identity;
   if (!String(profile.email || user.email || "").trim()) {
@@ -158,20 +125,6 @@ export async function issueProgremesTicket(req, body = {}) {
   let returnUrl = "";
   if (screenCode) {
     const directOperationalRoute = progremesDirectOperationalRoute(screenCode);
-    const { data: moduleLinks, error: moduleLinkError } = await admin
-      .from("workspace_moduli_schermate")
-      .select("modulo_codice,schermata_codice")
-      .eq("schermata_codice", screenCode)
-      .eq("visibile_menu", true);
-    if (moduleLinkError) throw moduleLinkError;
-    const linkedModuleCodes = [...new Set((moduleLinks || []).map((link) => link.modulo_codice).filter(Boolean))];
-    const { data: linkedModules, error: linkedModulesError } = linkedModuleCodes.length
-      ? await admin.from("workspace_moduli").select("codice").in("codice", linkedModuleCodes).eq("attivo", true)
-      : { data: [], error: null };
-    if (linkedModulesError) throw linkedModulesError;
-    if (!(linkedModules || []).length && !directOperationalRoute) {
-      throw Object.assign(new Error("Schermata non inclusa in un modulo Workspace attivo."), { status: 404 });
-    }
     const { data: screen, error: screenError } = await admin
       .from("workspace_schermate")
       .select("metadati")
@@ -181,15 +134,33 @@ export async function issueProgremesTicket(req, body = {}) {
       .maybeSingle();
     if (screenError) throw screenError;
     if (!screen) throw Object.assign(new Error("Schermata ProgreMES non disponibile."), { status: 404 });
-    if (!identity.isAdmin && !operationalRead) {
-      const authorizedCodes = await getAuthorizedProgremesCodes(admin, identity);
-      if (!isProgremesScreenAuthorized(identity.isAdmin, authorizedCodes, screen.metadati)) {
+    if (!operationalRead) {
+      const screenLevels = await getProgremesScreenLevels(admin, profile.id);
+      if (!isProgremesScreenAuthorized(screenLevels, screenCode)) {
         throw Object.assign(new Error("Schermata ProgreMES non autorizzata."), { status: 403 });
       }
     }
     const requestedRoute = String(progremesContextualRoute(screenCode, body?.context,
       directOperationalRoute || screen.metadati?.external_route || "")).trim();
+    if (requestedRoute.includes("\\")) throw Object.assign(new Error("Destinazione MES non valida."), { status: 400 });
     if (requestedRoute.startsWith("/") && !requestedRoute.startsWith("//")) returnUrl = appendProgremesContext(requestedRoute, body?.context);
+  }
+
+  if (!screenCode) {
+    const levels = await getProgremesScreenLevels(admin, profile.id);
+    if (!Object.keys(levels).some(code => isProgremesScreenAuthorized(levels, code))) {
+      throw Object.assign(new Error("Nessuna schermata MES autorizzata."), { status: 403 });
+    }
+  }
+
+  if (navigationOnly) {
+    if (!screenCode || !returnUrl) throw Object.assign(new Error("Destinazione MES non disponibile."), { status: 404 });
+    const base = new URL(required("PROGREMES_URL"));
+    const destination = new URL(returnUrl, base);
+    if (destination.origin !== base.origin || returnUrl.includes("\\")) {
+      throw Object.assign(new Error("Destinazione MES non valida."), { status: 400 });
+    }
+    return { url: destination.toString() };
   }
 
   const ticket = randomBytes(32).toString("base64url");
@@ -241,5 +212,13 @@ export async function consumeProgremesTicket(body) {
   let fillingRead = false;
   try { await productionSheetProfileAccess(admin, operationalProfile, operationalProfile?.auth_user_id, "packaging"); fillingRead = true; }
   catch (error) { if (error.status !== 403) throw error; }
+  const screenLevels = await getProgremesScreenLevels(admin, profile.workspace_user_id);
+  const operationalPath = String(profile.percorso_destinazione || "").split("?")[0];
+  const operationalAllowed = profile.schermata_codice === "progremes.PlanningProduction"
+    && ((fillingRead && operationalPath === "/filling")
+      || (stationRead && (operationalPath === "/miscelazione" || operationalPath.startsWith("/stations/"))));
+  if (profile.schermata_codice && !isProgremesScreenAuthorized(screenLevels, profile.schermata_codice) && !operationalAllowed) {
+    throw Object.assign(new Error("Schermata ProgreMES non autorizzata."), { status: 403 });
+  }
   return { ...profile, filling_read_allowed: fillingRead, station_read_allowed: stationRead, station_write_allowed: stationRead, planning_production_level: ["lettura", "scrittura", "amministrazione"].includes(planningLevel) ? planningLevel : "" };
 }

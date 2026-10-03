@@ -1,17 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getAuthorizedProgremesCodes } from './progremes-sso.js';
-const noQueries={from(){throw Error('Unexpected legacy department query');}};
+import { getProgremesScreenLevels, isProgremesScreenAuthorized } from './progremes-sso.js';
+const noQueries={from(){throw Error('Unexpected legacy department query');},rpc:async()=>({data:{'progremes.PlanningProduction':'lettura'}})};
 test('independent planning assignment does not grant other MES modules',async()=>{
- const codes=await getAuthorizedProgremesCodes(noQueries,{isAdmin:false,productionHubAllowed:false,planningProductionAllowed:true});
- assert.deepEqual([...codes],['PlanningProduction']);
+ const levels=await getProgremesScreenLevels(noQueries,'user');
+ assert.equal(isProgremesScreenAuthorized(levels,'progremes.PlanningProduction'),true);
+ assert.equal(isProgremesScreenAuthorized(levels,'progremes.Planning'),false);
 });
 test('no assignment grants no MES module',async()=>{
- const codes=await getAuthorizedProgremesCodes(noQueries,{isAdmin:false,productionHubAllowed:false,planningProductionAllowed:false});
- assert.equal(codes.size,0);
+ const levels=await getProgremesScreenLevels({rpc:async()=>({data:{}})},'user');
+ assert.equal(isProgremesScreenAuthorized(levels,'progremes.PlanningProduction'),false);
 });
 test('a legacy department assignment cannot override effective denial of new planning screen',async()=>{
- const db={from(table){return {select(){return this;},eq:async()=>({data:[{reparto_id:'department'}]}),in:async()=>({data:[{modulo_codice:'PlanningProduction'},{modulo_codice:'Planning'}]})};}};
- const codes=await getAuthorizedProgremesCodes(db,{isAdmin:false,productionHubAllowed:true,planningProductionAllowed:false,profile:{id:'user',reparto_id:'department'}});
- assert.deepEqual([...codes],['Planning']);
+ const db={...noQueries,rpc:async()=>({data:{'progremes.PlanningProduction':'nessuno','progremes.Planning':'lettura'}})};
+ const levels=await getProgremesScreenLevels(db,'user');
+ assert.equal(isProgremesScreenAuthorized(levels,'progremes.PlanningProduction'),false);
+ assert.equal(isProgremesScreenAuthorized(levels,'progremes.Planning'),true);
 });

@@ -7,7 +7,7 @@ import { RefreshCw } from "lucide-react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { operationalMesRoute } from "../../lib/operationalMesRoute";
 import { useAuth } from "../../contexts/AuthContext";
-import { progremesWorkspaceDestination, requestProgremesNavigation } from "./progremesWindow";
+import { progremesWorkspaceDestination, requestProgremesNavigation, rememberProgremesSession, forgetProgremesSession } from "./progremesWindow";
 import { observeProgremesFrame } from "./progremesHandshake";
 import "./progremes-frame.css";
 import StationUiPopup from "./StationUiPopup";
@@ -15,16 +15,15 @@ import PlanningActionModal from "./PlanningActionModal";
 import { useWorkspaceChrome } from "../../components/workspaceChromeContext";
 
 export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog = false }) {
-  const { session, hasModuleAccess, hasScreenAccess, loading: authLoading, authorizationRevision } = useAuth();
+  const { session, hasScreenAccess, loading: authLoading, authorizationRevision } = useAuth();
   const navigate = useNavigate();
   const [fillingActivity, setFillingActivity] = useState(null);
   const [batchActivities, setBatchActivities] = useState(null);
   const accessToken = session?.access_token;
   const currentToken = useRef(accessToken);
   useEffect(() => { currentToken.current = accessToken; }, [accessToken]);
-  const allowed = screenCode === "progremes.PlanningProduction"
-    ? hasScreenAccess(screenCode) || (operationalMesRoute(`/produzione/${screenCode}`, search) && hasScreenAccess("attivita.dashboard"))
-    : hasModuleAccess("progremes");
+  const allowed = hasScreenAccess(screenCode)
+    || (operationalMesRoute(`/produzione/${screenCode}`, search) && hasScreenAccess("attivita.dashboard"));
   const frame = useRef(null);
   const [stationPath, setStationPath] = useState("");
   const [popupPath, setPopupPath] = useState("");
@@ -33,6 +32,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
   const [frameStatus, setFrameStatus] = useState({ url: "", ready: false, error: "" });
   const [syncError, setSyncError] = useState("");
   const [mesHeader, setMesHeader] = useState(null);
+  const sessionKey = JSON.stringify([session?.user?.id, authorizationRevision]);
   const requestKey = JSON.stringify([session?.user?.id, authorizationRevision, screenCode, search, retry]);
   const url = allowed && accessToken && connection.requestKey === requestKey ? connection.url : "";
   const goBackInMes = useCallback(() => {
@@ -48,7 +48,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
     // MES iframe, discard its circuit and load the entire planning again.
     if (connection.requestKey === requestKey && connection.url) return undefined;
     const controller = new AbortController();
-    requestProgremesNavigation(accessToken, { screenCode, search, signal: controller.signal })
+    requestProgremesNavigation(accessToken, { screenCode, search, sessionKey, signal: controller.signal })
       .then((nextUrl) => {
         if (!controller.signal.aborted) setConnection({ requestKey, url: nextUrl, error: "" });
       })
@@ -56,7 +56,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
         if (!controller.signal.aborted) setConnection({ requestKey, url: "", error: error.message || "Collegamento a ProgreMES non riuscito." });
       });
     return () => controller.abort();
-  }, [accessToken, allowed, authLoading, screenCode, search, requestKey, connection.requestKey, connection.url]);
+  }, [accessToken, allowed, authLoading, screenCode, search, sessionKey, requestKey, connection.requestKey, connection.url]);
 
   useEffect(() => {
     if (!url) return undefined;
@@ -95,6 +95,8 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
         navigate("/produzione", { replace: true });
       } else {
         const ready = event.data.type === "progremes-embedded-ready";
+        if (ready) rememberProgremesSession(sessionKey);
+        else if (event.data.type === "progremes-embedded-auth-error") forgetProgremesSession();
         setFrameStatus({ url, ready, error: ready ? "" : "Sessione MES non disponibile nella finestra Workspace. Premi Riprova per rinnovare l’accesso." });
       }
     };
@@ -103,7 +105,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
       onMessage: receive, onTimeout: () => setFrameStatus({ url, ready: false,
         error: "MES non ha confermato il collegamento integrato. Verifica che MES sia aggiornato e che il browser consenta la sessione incorporata.",
       }) });
-  }, [url, navigate]);
+  }, [url, navigate, sessionKey]);
 
   const error = !authLoading && !allowed ? "Accesso al modulo ProgreMES non autorizzato."
     : !authLoading && !accessToken ? "Sessione Workspace non disponibile."
@@ -127,7 +129,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
     {(!ready || error) && <div className="progremes-frame-status" role={error ? "alert" : "status"}>
       <h2>{error ? "Collegamento non disponibile" : "Apertura schermata MES..."}</h2>
       <p>{error || "Collegamento automatico alla schermata richiesta."}</p>
-      {error && allowed && accessToken && <button type="button" className="primary-action" onClick={() => setRetry((value) => value + 1)}><RefreshCw size={18} />Riprova</button>}
+      {error && allowed && accessToken && <button type="button" className="primary-action" onClick={() => { forgetProgremesSession(); setRetry((value) => value + 1); }}><RefreshCw size={18} />Riprova</button>}
     </div>}
     {url && <iframe ref={frame} key={url} src={url} data-assistant-mes-frame="true" title="Schermata MES integrata in Workspace"
       className={ready && !error ? "is-ready" : "is-connecting"} referrerPolicy="no-referrer" allowFullScreen

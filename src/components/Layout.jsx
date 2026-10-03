@@ -29,7 +29,7 @@ import {
 import { supabase } from "../lib/supabaseClient";
 import { operationalMesRoute } from "../lib/operationalMesRoute";
 import { useAuth } from "../contexts/AuthContext";
-import { isProgremesScreenPath, openProgremesWorkspaceWindow } from "../pages/ProgreMes/progremesWindow";
+import { isProgremesScreenPath, openProgremesWorkspaceWindow, progremesWorkspacePath } from "../pages/ProgreMes/progremesWindow";
 import WorkspaceScreenLayout from "./WorkspaceScreenLayout";
 import { getModuleIcon } from "../config/moduleIcons";
 import { resolveCatalogModuleDestination } from "../config/workspaceNavigation";
@@ -185,6 +185,7 @@ function Layout() {
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
   const [notifications, setNotifications] = useState([]);
+  const [isWorkspaceWindow] = useState(() => new URLSearchParams(window.location.search).has("workspaceMesWindow"));
   const [progremesConnection, setProgremesConnection] = useState({ open: false, error: "" });
   const [configuredModules, setConfiguredModules] = useState(null);
   const [configuredMenu, setConfiguredMenu] = useState(null);
@@ -257,14 +258,13 @@ function Layout() {
     ));
   }, [configuredMenu, configuredModules]);
 
-  const [isWorkspaceWindow] = useState(() => new URLSearchParams(window.location.search).has("workspaceMesWindow"));
   const [stationPopupPath, setStationPopupPath] = useState("");
   const launchProgremes = useCallback((screenCode = "", workspacePath = "") => {
     const targetScreen = workspacePath ? new URL(workspacePath, window.location.origin).pathname.split('/').pop() : screenCode;
-    const planningAllowed = targetScreen === 'progremes.PlanningProduction' && hasScreenAccess(targetScreen);
+    const screenAllowed = Boolean(targetScreen && hasScreenAccess(targetScreen));
     const operationalTarget = new URL(workspacePath || `/produzione/${targetScreen}`, window.location.origin);
     const operationalAllowed = operationalMesRoute(operationalTarget.pathname, operationalTarget.search) && hasScreenAccess("attivita.dashboard");
-    if (!planningAllowed && !operationalAllowed && !hasModuleAccess("progremes")) {
+    if (targetScreen ? !screenAllowed && !operationalAllowed : !hasModuleAccess("progremes")) {
       setProgremesConnection({ open: true, error: "Accesso al modulo ProgreMES non autorizzato." });
       return;
     }
@@ -273,12 +273,13 @@ function Layout() {
       : "/produzione");
     try {
       if (operationalTarget.searchParams.get("destination") === "station" && operationalMesRoute(operationalTarget.pathname, operationalTarget.search)) setStationPopupPath(destination);
+      else if (isWorkspaceWindow || isProgremesScreenPath(location.pathname)) navigate(progremesWorkspacePath(destination));
       else openProgremesWorkspaceWindow(destination);
       setProgremesConnection({ open: false, error: "" });
     } catch (error) {
       setProgremesConnection({ open: true, error: error.message });
     }
-  }, [hasModuleAccess, hasScreenAccess]);
+  }, [hasModuleAccess, hasScreenAccess, isWorkspaceWindow, location.pathname, navigate]);
 
   useEffect(() => {
     const handler = (event) => launchProgremes(event.detail?.screenCode || "", event.detail?.workspacePath || "");
@@ -556,7 +557,7 @@ function Layout() {
     const isProductionHub = item.module === "progremes" && item.path === "/produzione";
     if (!isProductionHub && isProgremesScreenPath(item.path)) {
       event.preventDefault();
-      launchProgremes("", item.provider === "progremes" && item.path !== "/progremes" ? item.path : "");
+      launchProgremes("", item.path !== "/progremes" ? item.path : "");
       return;
     }
     if (item.special === "orders") {

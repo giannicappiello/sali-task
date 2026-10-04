@@ -1,3 +1,4 @@
+import { gpsErrorMessage } from './hrGpsErrors';
 import { supabase } from '../../lib/supabaseClient';
 
 export async function hrNetwork(body) {
@@ -33,8 +34,8 @@ export function positionPayload(position) {
 
 export function locate() {
   return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) return reject(new Error('Geolocalizzazione non disponibile su questo dispositivo.'));
-    navigator.geolocation.getCurrentPosition((p) => resolve(positionPayload(p)), () => reject(new Error('Posizione non disponibile. Consenti la posizione precisa per Workspace e riprova.')),
+    if (!navigator.geolocation) return reject(new Error('Geolocalizzazione non supportata su questo dispositivo.'));
+    navigator.geolocation.getCurrentPosition((p) => resolve(positionPayload(p)), (error) => reject(new Error(gpsErrorMessage(error))),
       { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
   });
 }

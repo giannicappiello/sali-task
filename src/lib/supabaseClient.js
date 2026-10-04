@@ -1,3 +1,4 @@
+import { attendanceRpcFetch } from '../modules/hr/hrObservationTransport';
 import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -7,4 +8,4 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.warn("Variabili Supabase mancanti. Controlla il file .env.");
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, { global: { fetch: attendanceRpcFetch } });

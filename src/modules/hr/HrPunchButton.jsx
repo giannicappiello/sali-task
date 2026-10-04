@@ -41,6 +41,7 @@ export default function HrPunchButton({ className = '', disabled = false, onComp
       const result = mobile
         ? await hrRpc('workspace_hr_location_punch', { p_action: open ? 'out' : 'in', p_key: key.current, p_attendance_id: open?.id || null, p_position: await locate(), p_reason: reason })
         : await hrNetwork({ action: open ? 'out' : 'in', key: key.current, attendance_id: open?.id || null });
+      if (result.ignored) throw new Error(result.message || 'Accuracy insufficiente: presenza invariata.');
       key.current = crypto.randomUUID();
       await monitor.refresh();
       setMessage(!mobile ? (result.checkout_at ? 'Uscita registrata tramite rete aziendale.' : 'Entrata registrata tramite rete aziendale.') : result.checkout_at ? 'Uscita registrata. Controllo posizione terminato.' : 'Entrata registrata. Controllo posizione attivo mentre Workspace riceve il GPS.');

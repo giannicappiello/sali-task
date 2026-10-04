@@ -1,3 +1,4 @@
+import { gpsErrorMessage } from './hrGpsErrors';
 import { usesMobileLocation } from './hrPunchDevice';
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -42,27 +43,27 @@ export default function HrAttendanceProvider({ children }) {
     return () => { active = false; clearTimeout(timer); clearInterval(poll); window.removeEventListener('online', reload); window.removeEventListener('focus', reload); };
   }, [enabled, profile?.id]);
   useEffect(() => {
-    if (!usesMobileLocation() || !enabled || !ownOpen?.id || !ownOpen.auto_checkout || manualPending || !navigator.geolocation) return;
-    let active = true, pending = false, lastSent = 0;
+    if (!usesMobileLocation() || !enabled || !ownOpen?.id || !ownOpen.auto_checkout || manualPending) return;
+    if (!navigator.geolocation) return;
+    let active = true;
     const watcher = navigator.geolocation.watchPosition(async (position) => {
-      if (!active || pending) return;
-      if (!navigator.onLine || Date.now() - position.timestamp > 30000 || position.coords.accuracy > 50) {
+      if (!active) return;
+      if (!navigator.onLine || Date.now() - position.timestamp > 30000) {
         setStatus('Posizione o connessione non attendibile: ricorda il checkout manuale.'); return;
       }
-      if (!shouldSendObservation(position, ownOpen, lastSent)) return;
-      pending = true; lastSent = Date.now();
+      if (!shouldSendObservation(position)) return;
+      // Send immediately; an in-flight inside observation must not discard an outside one.
       try {
         const result = await hrRpc('workspace_hr_punch', { p_action: 'observe', p_key: crypto.randomUUID(), p_position: positionPayload(position), p_attendance_id: ownOpen.id });
         if (!active) return;
         if (result.checkout_at) {
           setOpen(null); setNotice(result.checkout_kind === 'automatic' ? 'Checkout automatico registrato: allontanamento dalla sede confermato.' : 'Presenza chiusa. Controllo posizione terminato.');
           window.dispatchEvent(new Event('workspace:hr-changed'));
-        } else setStatus('Controllo di supporto attivo mentre Workspace riceve la posizione.');
+        } else setStatus(result.ignored ? result.message : 'Posizione dentro il perimetro aziendale: presenza invariata.');
       } catch (error) { if (active) setStatus(`${error.message} Usa il checkout manuale.`); }
-      finally { pending = false; }
-    }, () => { if (active) setStatus('Posizione non disponibile: il checkout automatico non è garantito.'); },
+    }, (error) => { if (active) setStatus(gpsErrorMessage(error)); },
     { enableHighAccuracy: true, maximumAge: 0, timeout: 25000 });
     return () => { active = false; navigator.geolocation.clearWatch(watcher); };
   }, [enabled, ownOpen, manualPending]);
-  return <Context.Provider value={{ member: enabled && identity?.userId === profile?.id && identity.member, ready: enabled && identity?.userId === profile?.id && identity.ready, open: enabled ? ownOpen : null, status: ownOpen?.auto_checkout ? status : 'Controllo posizione non attivo', notice: enabled ? notice : '', refresh, setManualPending }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ member: enabled && identity?.userId === profile?.id && identity.member, ready: enabled && identity?.userId === profile?.id && identity.ready, open: enabled ? ownOpen : null, status: ownOpen?.auto_checkout ? (!navigator.geolocation ? 'Geolocalizzazione non supportata su questo dispositivo.' : status) : 'Controllo posizione non attivo', notice: enabled ? notice : '', refresh, setManualPending }}>{children}</Context.Provider>;
 }

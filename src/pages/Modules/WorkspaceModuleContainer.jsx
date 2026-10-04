@@ -7,8 +7,9 @@ import { supabase } from "../../lib/supabaseClient";
 import { getModuleIcon } from "../../config/moduleIcons";
 import { requestProgremesWorkspaceWindow } from "../ProgreMes/progremesWindow";
 
-export default function WorkspaceModuleContainer() {
-  const { moduleCode = "" } = useParams();
+export default function WorkspaceModuleContainer({ configuredModuleCode = "" }) {
+  const { moduleCode: routeModuleCode = "" } = useParams();
+  const moduleCode = configuredModuleCode || routeModuleCode;
   const location = useLocation();
   const { hasModuleAccess, hasScreenAccess, getModuleScreenGrant, canUseScreen, isAdminUser } = useAuth();
   const [catalog, setCatalog] = useState({ module: null, screens: [], links: [] });

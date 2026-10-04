@@ -36,6 +36,8 @@ const Messages = lazy(() => import("./pages/Messages/Messages"));
 const Team = lazy(() => import("./pages/Team/Team"));
 const Calendar = lazy(() => import("./pages/Calendar/Calendar"));
 const Settings = lazy(() => import("./pages/Settings/Settings"));
+const GeolocationSettings = lazy(() => import("./pages/Settings/GeolocationSettings"));
+const OtherSettings = lazy(() => import("./pages/Settings/OtherSettings"));
 const SettingsHub = lazy(() => import("./pages/Settings/SettingsHub"));
 const AccessUsers = lazy(() => import("./pages/Settings/AccessUsers"));
 const AccessRules = lazy(() => import("./pages/Settings/AccessRules"));
@@ -114,6 +116,8 @@ function App() {
 
               <Route path="home" element={<Home />} />
               <Route path="hr" element={<WorkspaceAccessGuard moduleCode="hr"><HrModule key="hr" /></WorkspaceAccessGuard>} />
+              <Route path="settings/geolocation" element={<WorkspaceAccessGuard screenCode="impostazioni.geolocalizzazione"><GeolocationSettings /></WorkspaceAccessGuard>} />
+              <Route path="settings/other" element={<WorkspaceAccessGuard screenCode="impostazioni.altre"><OtherSettings /></WorkspaceAccessGuard>} />
               <Route path="settings/hr" element={<SettingsAccessGuard adminOnly><HrModule key="hr-config" configuration /></SettingsAccessGuard>} />
               <Route path="revisione-priorita-produzione" element={<WorkspaceAccessGuard screenCode="produzione.revisione_priorita"><PriorityRevision /></WorkspaceAccessGuard>} />
               <Route path="versioni-piano-produzione" element={<WorkspaceAccessGuard screenCode="produzione.versioni_piano"><PlanningLifecycle /></WorkspaceAccessGuard>} />

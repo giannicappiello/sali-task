@@ -83,6 +83,7 @@ export default function WarehouseDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const requestSequence = useRef(0);
+  const activeRequest = useRef(null);
   const syncLock = useRef(false);
   const [syncingArticle, setSyncingArticle] = useState("");
   const [syncMessage, setSyncMessage] = useState("");
@@ -92,11 +93,13 @@ export default function WarehouseDashboard() {
   const filters = useMemo(() => ({ asOfDate, warehouse, type, unit, query, stockFilter, page, pageSize: PAGE_SIZE }), [asOfDate, page, query, stockFilter, type, unit, warehouse]);
   const load = useCallback(async () => {
     const sequence = ++requestSequence.current;
+    activeRequest.current?.abort();
     const controller = new AbortController();
+    activeRequest.current = controller;
     setLoading(true); setError("");
     try {
       const result = await loadWorkspaceWarehouse(supabase, filters, { signal: controller.signal });
-      if (sequence !== requestSequence.current) return;
+      if (controller.signal.aborted || sequence !== requestSequence.current) return;
       setData(result);
       if (warehouse === "TUTTI" && type === "TOTALE" && unit === "TUTTE" && !query && stockFilter === "all") {
         setCatalog({
@@ -106,16 +109,27 @@ export default function WarehouseDashboard() {
         });
       }
     } catch (loadError) {
-      if (loadError?.name !== "AbortError" && sequence === requestSequence.current) setError(loadError?.message || "Dashboard Magazzino non disponibile.");
+      if (!controller.signal.aborted && loadError?.name !== "AbortError" && sequence === requestSequence.current) setError(loadError?.message || "Dashboard Magazzino non disponibile.");
     } finally {
+      if (activeRequest.current === controller) activeRequest.current = null;
       if (sequence === requestSequence.current) setLoading(false);
     }
   }, [filters, query, stockFilter, type, unit, warehouse]);
 
+  const cancelLoad = useCallback(() => {
+    // Invalidate immediately, including during the search debounce.
+    ++requestSequence.current;
+    activeRequest.current?.abort();
+    activeRequest.current = null;
+  }, []);
+
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), query ? 300 : 0);
-    return () => window.clearTimeout(timer);
-  }, [load, query, stockRevision]);
+    return () => {
+      window.clearTimeout(timer);
+      cancelLoad();
+    };
+  }, [cancelLoad, load, query, stockRevision]);
 
   const summary = data.summary || {};
   const breakdown = data.breakdown || {};

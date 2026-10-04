@@ -27,6 +27,10 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
   const frame = useRef(null);
   const [stationPath, setStationPath] = useState("");
   const [popupPath, setPopupPath] = useState("");
+  const [planningView, setPlanningView] = useState({ screenCode, fullscreen: true });
+  const planningScreen = !inDialog && ["progremes.Planning", "progremes.PlanningProduction"].includes(screenCode)
+    && !["station", "station-overview", "filling-overview"].includes(new URLSearchParams(search).get("destination"));
+  const planningFullscreen = planningScreen && (planningView.screenCode !== screenCode || planningView.fullscreen);
   const [retry, setRetry] = useState(0);
   const [connection, setConnection] = useState({ requestKey: "", url: "", error: "" });
   const [frameStatus, setFrameStatus] = useState({ url: "", ready: false, error: "" });
@@ -62,6 +66,10 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
     if (!url) return undefined;
     const origin = new URL(url).origin;
     const receive = (event) => {
+      if (event.data.type === "progremes-planning-fullscreen") {
+        setPlanningView({ screenCode, fullscreen: event.data.active });
+        return;
+      }
       if (event.data.type === 'progremes-production-changed') {
         window.dispatchEvent(new Event('workspace:production-changed')); return;
       }
@@ -105,7 +113,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
       onMessage: receive, onTimeout: () => setFrameStatus({ url, ready: false,
         error: "MES non ha confermato il collegamento integrato. Verifica che MES sia aggiornato e che il browser consenta la sessione incorporata.",
       }) });
-  }, [url, navigate, sessionKey]);
+  }, [url, navigate, sessionKey, screenCode]);
 
   const error = !authLoading && !allowed ? "Accesso al modulo ProgreMES non autorizzato."
     : !authLoading && !accessToken ? "Sessione Workspace non disponibile."
@@ -114,7 +122,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
   const ready = Boolean(url && frameStatus.url === url && frameStatus.ready);
   if (!screenCode) return <Navigate to="/produzione" replace />;
 
-  return <section style={["station-overview", "filling-overview"].includes(new URLSearchParams(search).get("destination")) ? { position: "fixed", inset: 0, zIndex: 1100, margin: 0, border: 0, borderRadius: 0, height: "100dvh", width: "100vw", background: "#020f17" } : undefined} className={`${inDialog ? "progremes-card-frame" : "progremes-workspace-frame"}${["progremes.Planning", "progremes.PlanningProduction"].includes(screenCode) ? " progremes-planning-frame" : ""}`}>
+  return <section style={["station-overview", "filling-overview"].includes(new URLSearchParams(search).get("destination")) ? { position: "fixed", inset: 0, zIndex: 1100, margin: 0, border: 0, borderRadius: 0, height: "100dvh", width: "100vw", background: "#020f17" } : undefined} className={`${inDialog ? "progremes-card-frame" : "progremes-workspace-frame"}${["progremes.Planning", "progremes.PlanningProduction"].includes(screenCode) ? " progremes-planning-frame" : ""}${planningFullscreen ? " progremes-planning-fullscreen" : ""}`}>
     {stationPath && <StationUiPopup station={new URL(stationPath, window.location.origin).searchParams.get("station")} onClose={() => setStationPath("")}><ProgreMesLaunch key={stationPath} screenCode="progremes.PlanningProduction" search={new URL(stationPath, window.location.origin).search} inDialog /></StationUiPopup>}
     {fillingActivity && <PackagingActivityDialog activity={fillingActivity} onClose={() => setFillingActivity(null)} onStarted={() => setFillingActivity(current => current ? {...current, stato: "In Lavorazione"} : current)}/> }
     {batchActivities && <BatchActivitiesDialog activities={batchActivities} onClose={() => {

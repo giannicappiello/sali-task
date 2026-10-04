@@ -153,3 +153,13 @@ test('activities navigation stays within the authenticated Workspace frame',()=>
  assert.equal(progremesWorkspaceDestination({type:'progremes-workspace-navigate',path:'/activities/dashboard'}),'/activities/dashboard');
  assert.equal(progremesWorkspaceDestination({type:'progremes-workspace-navigate',path:'//evil.example/activities/dashboard'}),null);
 });
+
+test("planning fullscreen requires a boolean state from the trusted MES frame", () => {
+  const frame = {}, origin = "https://mes.example";
+  const event = active => ({ source: frame, origin, data: { type: "progremes-planning-fullscreen", active } });
+  assert.equal(isProgremesFrameMessage(event(true), frame, origin), true);
+  assert.equal(isProgremesFrameMessage(event(false), frame, origin), true);
+  assert.equal(isProgremesFrameMessage(event("true"), frame, origin), false);
+  assert.equal(isProgremesFrameMessage({ ...event(true), source: {} }, frame, origin), false);
+  assert.equal(isProgremesFrameMessage({ ...event(true), origin: "https://other.example" }, frame, origin), false);
+});

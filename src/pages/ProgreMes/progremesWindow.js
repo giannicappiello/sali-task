@@ -39,6 +39,7 @@ export function isProgremesFrameMessage(event, frameWindow, origin) {
   if (event.data?.type === 'progremes-batch-activities') return Boolean(batchActivitiesMessage(event.data));
   if (event.data?.type === "progremes-filling-activity") return Boolean(fillingActivityMessage(event.data));
   if (event.data?.type === "progremes-workspace-navigate") return Boolean(progremesWorkspaceDestination(event.data));
+  if (event.data?.type === "progremes-planning-fullscreen") return typeof event.data.active === "boolean";
   if (event.data?.type === "progremes-page-header") return typeof event.data.title === "string" && event.data.title.length <= 300
     && typeof event.data.description === "string" && event.data.description.length <= 2000
     && typeof event.data.canGoBack === "boolean";

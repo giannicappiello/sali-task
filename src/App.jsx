@@ -133,7 +133,7 @@ function App() {
               <Route path="projects" element={<Navigate to="/activities/projects" replace />} />
               <Route path="products" element={<WorkspaceAccessGuard moduleCode="prodotti"><Products /></WorkspaceAccessGuard>} />
               <Route path="magazzino" element={<Navigate to="/magazzino-dashboard" replace />} />
-              <Route path="magazzino-dashboard" element={<WorkspaceAccessGuard moduleCode="magazzino"><WarehouseDashboard /></WorkspaceAccessGuard>} />
+              <Route path="magazzino-dashboard" element={<WorkspaceAccessGuard moduleCode="magazzino" screenCode="magazzino"><WarehouseDashboard /></WorkspaceAccessGuard>} />
               <Route path="documentation" element={<WorkspaceAccessGuard moduleCode="documenti"><Documentation /></WorkspaceAccessGuard>} />
               <Route path="documentation/specification/:articleCode" element={<WorkspaceAccessGuard moduleCode="progremes_formule"><ProductSpecificationPage /></WorkspaceAccessGuard>} />
               <Route path="documentation/private" element={<WorkspaceAccessGuard moduleCode="progremes_formule"><PrivateDocuments /></WorkspaceAccessGuard>} />

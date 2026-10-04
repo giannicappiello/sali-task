@@ -126,3 +126,27 @@ test('Workspace progress reads use the exact screen grant without a MES module g
     requireScreenManagement(req, apiMock({ result }), 'workspace.production.progress', { readOnly: true }), { status: 403 });
   await assert.rejects(requireScreenManagement(req, apiMock({ result: 'scrittura', active: false }), 'workspace.production.progress', { readOnly: true }), { status: 403 });
 });
+
+test('warehouse alias preserves personal screen grants without enabling the module', () => {
+  const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const route = app.match(/<Route path="magazzino-dashboard" element=\{<WorkspaceAccessGuard ([^>]+)>/);
+  assert.ok(route, 'warehouse destination route exists');
+  const screenCode = route[1].match(/screenCode="([^"]+)"/)?.[1];
+  const moduleCode = route[1].match(/moduleCode="([^"]+)"/)?.[1];
+  const warehouse = { codice: 'magazzino', area: 'produzione', attiva: true, percorso: '/magazzino' };
+  assert.equal(screenForPath([warehouse], '/magazzino')?.codice, 'magazzino');
+  assert.equal(screenForPath([warehouse], '/magazzino-dashboard'), null);
+  const guard = readFileSync(new URL('../src/components/WorkspaceAccessGuard.jsx', import.meta.url), 'utf8');
+  const decision = guard.slice(guard.indexOf('  const resolvedScreenCode'), guard.indexOf('  const [catalogState'));
+  const decide = new Function('screenCode', 'moduleCode', 'featureCode', 'location', 'getScreenCodeForPath', 'hasScreenAccess', 'hasModuleAccess', 'hasWorkspaceFeature', decision + 'return moduleAllowed && screenGranted;');
+  for (const [decisionValue, activeUser, expected] of [['consenti', true, true], ['nega', true, false], ['consenti', false, false]]) {
+    const auth = authDecisions({
+      profile: { attivo: activeUser, ruoli: { livello_accesso: 'scrittura' } },
+      moduleAccess: [], moduleLevels: {}, areaAccess: [],
+      screenCatalog: { screens: [warehouse], links: [{ modulo_codice: 'magazzino', schermata_codice: 'magazzino' }] },
+      accessExceptions: [{ scope: 'schermata', code: 'magazzino', decision: decisionValue, level: 'amministrazione' }],
+    });
+    assert.equal(auth.hasModuleAccess('magazzino'), false);
+    assert.equal(decide(screenCode, moduleCode, undefined, { pathname: '/magazzino-dashboard' }, () => null, auth.hasScreenAccess, auth.hasModuleAccess, () => false), expected);
+  }
+});

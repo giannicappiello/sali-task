@@ -63,6 +63,31 @@ export function applySpecificationSources(data, sources) {
   return next;
 }
 
+// Preserve the authorized finished-article context for every FP file/proxy request.
+export function linkedSpecificationRequest(parentArticleCode, request) {
+  return (path, options) => {
+    const url = new URL(path, 'https://workspace.invalid/');
+    // Unsaved files use the existing preview route, restricted to internal editors.
+    if (url.pathname === '/specifications/preview') return request(path, options);
+    if (url.pathname !== '/specifications/file') throw new Error('Solo allegati FP salvati possono essere consultati.');
+    url.searchParams.set('parentArticleCode', parentArticleCode);
+    return request(url.pathname.slice(1) + url.search, options);
+  };
+}
+
+export async function saveLinkedSpecificationDrafts(linkedSpecifications, drafts, request, onSaved) {
+  for (const linked of linkedSpecifications || []) {
+    const code = linked.article.articleCode;
+    const submitted = drafts.get(code);
+    if (!submitted) continue;
+    const saved = await request('specifications/save?' + new URLSearchParams({ articleCode: code }), {
+      body: { expectedVersion: submitted.version, data: submitted.data, attachments: submitted.attachments },
+    });
+    if (drafts.get(code) === submitted) drafts.delete(code);
+    onSaved(code, saved);
+  }
+}
+
 export function specificationFileRequest(articleCode, attachment) {
   return attachment.id
     ? [`specifications/file?${new URLSearchParams({ articleCode, attachmentId: attachment.id })}`]

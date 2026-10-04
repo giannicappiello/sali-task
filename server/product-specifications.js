@@ -64,7 +64,18 @@ export async function productSpecificationOperation(identity, path, input = {}, 
     throw fail('Modifica capitolato non autorizzata.', 403);
   if (url.pathname === '/specifications/approve' && !identity.canApproveSpecification && !identity.canWriteDocuments)
     throw fail('Approvazione capitolato non autorizzata.', 403);
-  const code = await authorizeSpecificationArticle(identity, String(url.searchParams.get('articleCode') || '').trim());
+  let code;
+  const parentCode = url.searchParams.get('parentArticleCode');
+  if (parentCode !== null) {
+    // Parent context authorizes read-only saved attachments, never FP edits or approvals.
+    if (url.pathname !== '/specifications/file') throw fail('Contesto capitolato non valido.', 400);
+    const parent = await authorizeSpecificationArticle(identity, parentCode.trim());
+    const requested = key(url.searchParams.get('articleCode') || '');
+    if (/^FP/i.test(parent) || !/^FP/i.test(requested)) throw fail('Semilavorato non disponibile.', 404);
+    const sources = await loadSources(identity, parent, { includeRelated: false });
+    if (sources.bomError || !sources.components.some(c => key(c.code) === requested)) throw fail('Semilavorato non presente nella distinta corrente.', 404);
+    code = requested;
+  } else code = await authorizeSpecificationArticle(identity, String(url.searchParams.get('articleCode') || '').trim());
   const { admin, profile } = identity;
   if (url.pathname === '/specifications/sources') return loadSources(identity, code);
   if (url.pathname === '/specifications/history') {

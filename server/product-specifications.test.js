@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import process from 'node:process';
 import { validateSpecification, productSpecificationOperation, specificationRequiresWrite } from './product-specifications.js';
 import { loadSpecificationSources, readSpecificationBom } from './product-specification-sources.js';
-import { applySpecificationSources } from '../shared/productSpecification.js';
+import { applySpecificationSources, linkedSpecificationRequest, saveLinkedSpecificationDrafts } from '../shared/productSpecification.js';
 
 const payload = (extra = {}) => ({ expectedVersion: 0, data: { description: '  Prodotto finito  ', dipTubeCut: 'no' }, attachments: [], ...extra });
 function fixture({ customers = ['*'], canWrite = true, files = [], lots = [] } = {}) {
@@ -290,4 +290,116 @@ test('private customer reads bulk specification sources only for their own artic
   assert.equal(result.sources.specificationKind, 'bulk');
   f.identity.customerCodes = ['501.B'];
   await assert.rejects(productSpecificationOperation(f.identity, '/specifications?articleCode=FP001&includeSources=true', {}, deps), { status: 404 });
+});
+
+test('finished specification automatically includes every current FP once, saved notes and live formula', async () => {
+  const f = fixture({ customers: ['501.A'] });
+  Object.assign(f.tables, {
+    workspace_finished_bom_revisions: [{ id: 7, finished_article_code: 'IT0001', is_current: true }],
+    workspace_finished_bom_lines: [
+      { revision_id: 7, article_code: 'FP001', description: 'Bulk', is_removed: false },
+      { revision_id: 7, article_code: 'fp001', description: 'Bulk', is_removed: false },
+      { revision_id: 7, article_code: 'FP002', description: 'Secondo bulk', is_removed: false },
+      { revision_id: 7, article_code: 'FPOLD', is_removed: true },
+      { revision_id: 7, article_code: 'CN01', is_removed: false },
+    ],
+    workspace_product_specifications: [{ article_code: 'FP001', version: 4, data: { notes: 'Miscelare lentamente', approvedBy: 'Maria', viscosityMin: '100' }, attachments: [{ id: 'foto', section: 'formula', name: 'formula.jpg', path: 'Produzione/FP001/formula.jpg' }] }],
+    workspace_private_document_lots: [{ article_code: 'FP001', customer_code: '501.B' }],
+    ordini_clienti_cache: [{ codice_cliente: '501.B', ragione_sociale: 'Cliente riservato' }],
+  });
+  const called = [];
+  const sources = await loadSpecificationSources(f.identity, 'IT0001', { formulaClient: () => ({ formulaSpecification: async ({ articleCode }) => {
+    called.push(articleCode); return { result: { formulaData: { viscosityMin: '150', formulaCode: articleCode } } };
+  } }) });
+  assert.deepEqual(called.sort(), ['FP001', 'FP002']);
+  const [first, second] = sources.semiFinishedSpecifications;
+  assert.equal(first.specification.version, 4);
+  assert.equal(first.specification.data.notes, 'Miscelare lentamente');
+  assert.equal(first.specification.data.viscosityMin, '150');
+  assert.equal(first.specification.data.approvedBy, '');
+  assert.equal(first.specification.data.customer, '');
+  assert.equal(first.specification.attachments[0].id, 'foto');
+  assert.equal(first.dirty, true);
+  assert.equal(second.specification.version, 0);
+  assert.equal(second.specification.data.specificationKind, 'bulk');
+  assert.equal(second.dirty, true);
+  assert.equal(f.writes(), 0);
+});
+
+test('FP source outage preserves saved capitolato and exposes an explicit error', async () => {
+  const f = fixture();
+  Object.assign(f.tables, {
+    workspace_finished_bom_revisions: [{ id: 7, finished_article_code: 'IT0001', is_current: true }],
+    workspace_finished_bom_lines: [{ revision_id: 7, article_code: 'FP001', is_removed: false }],
+    workspace_product_specifications: [{ article_code: 'FP001', version: 2, data: { notes: 'Nota salvata' }, attachments: [] }],
+  });
+  const sources = await loadSpecificationSources(f.identity, 'IT0001', { formulaClient: () => ({ formulaSpecification: async () => { throw Error('MES offline'); } }) });
+  assert.equal(sources.semiFinishedSpecifications[0].specification.data.notes, 'Nota salvata');
+  assert.match(sources.semiFinishedSpecifications[0].error, /MES/);
+  const direct = await loadSpecificationSources(f.identity, 'IT0001', { includeRelated: false, formulaClient: () => { throw Error('Must not call MES'); } });
+  assert.deepEqual(direct.semiFinishedSpecifications, []);
+});
+
+test('FP attachments through a finished article require authorized parent and current BOM membership', async () => {
+  const f = fixture({ customers: ['501.A'], canWrite: false, lots: [{ article_code: 'IT0001', customer_code: '501.A' }], files: [{ path_key: 'PRODUZIONE/FP001/FOTO.JPG', path: 'Produzione/FP001/foto.jpg', active: true }] });
+  f.tables.workspace_product_specifications.push({ article_code: 'FP001', version: 1, data: {}, attachments: [{ id: 'foto', path: 'Produzione/FP001/foto.jpg', name: 'foto.jpg', section: 'formula' }] });
+  const deps = { loadSources: async (_identity, code, options) => { assert.equal(code, 'IT0001'); assert.equal(options.includeRelated, false); return { components: [{ code: 'FP001' }] }; } };
+  const route = 'specifications/file?articleCode=FP001&attachmentId=foto&parentArticleCode=IT0001';
+  const originalUrl = process.env.DOCUMENT_GATEWAY_URL, originalSecret = process.env.DOCUMENT_GATEWAY_SECRET;
+  process.env.DOCUMENT_GATEWAY_URL = 'https://gateway.example.test'; process.env.DOCUMENT_GATEWAY_SECRET = 'test-secret-at-least-32-characters';
+  try {
+    assert.match((await productSpecificationOperation(f.identity, route, {}, deps)).url, /FP001\/foto.jpg/);
+    assert.equal(f.tables.workspace_product_specification_access_log[0].article_code, 'FP001');
+    await assert.rejects(productSpecificationOperation(f.identity, route, {}, { loadSources: async () => ({ components: [] }) }), { status: 404 });
+    await assert.rejects(productSpecificationOperation(f.identity, route.replace('FP001', 'FP999'), {}, deps), { status: 404 });
+    await assert.rejects(productSpecificationOperation(f.identity, route.replace('attachmentId=foto', 'attachmentId=other'), {}, deps), { status: 404 });
+    await assert.rejects(productSpecificationOperation({ ...f.identity, customerCodes: ['501.B'] }, route, {}, deps), { status: 404 });
+    await assert.rejects(productSpecificationOperation(f.identity, 'specifications?articleCode=FP001'), { status: 404 });
+    await assert.rejects(productSpecificationOperation({ ...f.identity, customerCodes: ['*'], canWriteDocuments: true }, 'specifications/save?articleCode=FP001&parentArticleCode=IT0001', payload(), deps), { status: 400 });
+    f.tables.workspace_private_nas_files[0].active = false;
+    await assert.rejects(productSpecificationOperation(f.identity, route, {}, deps), { status: 404 });
+  } finally {
+    if (originalUrl === undefined) delete process.env.DOCUMENT_GATEWAY_URL; else process.env.DOCUMENT_GATEWAY_URL = originalUrl;
+    if (originalSecret === undefined) delete process.env.DOCUMENT_GATEWAY_SECRET; else process.env.DOCUMENT_GATEWAY_SECRET = originalSecret;
+  }
+});
+
+test('editor saves FP drafts with expected revision and retains unsaved/conflicting drafts', async () => {
+  const first = { version: 2, data: { notes: 'Nota FP001' }, attachments: [] };
+  const second = { version: 4, data: { notes: 'Nota FP002' }, attachments: [] };
+  const unrelated = { version: 1, data: {}, attachments: [] };
+  const drafts = new Map([['FP001', first], ['FP002', second], ['FP999', unrelated]]);
+  const linked = ['FP001', 'FP002'].map(articleCode => ({ article: { articleCode } }));
+  const saved = [], calls = [];
+  await assert.rejects(saveLinkedSpecificationDrafts(linked, drafts, async (path, options) => {
+    calls.push(path);
+    if (path.includes('FP002')) throw Object.assign(Error('Conflitto FP002'), { status: 409 });
+    assert.equal(options.body.expectedVersion, 2);
+    assert.equal(options.body.data.notes, 'Nota FP001');
+    return { ...first, version: 3 };
+  }, (code, specification) => saved.push([code, specification.version])), { status: 409 });
+  assert.deepEqual(saved, [['FP001', 3]]);
+  assert.equal(drafts.has('FP001'), false);
+  assert.equal(drafts.get('FP002'), second);
+  assert.equal(drafts.get('FP999'), unrelated);
+  assert.equal(calls.length, 2);
+  await saveLinkedSpecificationDrafts(linked, drafts, async (_path, options) => {
+    assert.equal(options.body.expectedVersion, 4); return { ...second, version: 5 };
+  }, (code, specification) => saved.push([code, specification.version]));
+  assert.deepEqual(saved, [['FP001', 3], ['FP002', 5]]);
+  assert.equal(drafts.has('FP002'), false);
+});
+
+test('linked FP attachment requests preserve parent context for chunk reads and use protected preview for drafts', async () => {
+  const requests = [];
+  const request = linkedSpecificationRequest('IT0001', (path, options) => { requests.push([path, options]); });
+  await request('specifications/file?articleCode=FP001&attachmentId=foto&content=true&offset=1048576');
+  const params = new URL(requests[0][0], 'https://workspace.invalid').searchParams;
+  assert.equal(params.get('parentArticleCode'), 'IT0001');
+  assert.equal(params.get('content'), 'true'); assert.equal(params.get('offset'), '1048576');
+  const body = { path: 'Produzione/FP001/foto.jpg', section: 'formula' };
+  await request('specifications/preview?articleCode=FP001', { body });
+  assert.equal(requests[1][0], 'specifications/preview?articleCode=FP001');
+  assert.deepEqual(requests[1][1], { body });
+  assert.throws(() => request('specifications/save?articleCode=FP001'), /allegati/);
 });

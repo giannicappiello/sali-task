@@ -29,7 +29,7 @@ export default function ProductSpecificationViewButton({ articleCode, descriptio
       const { createProductSpecificationPdf } = await import('./createProductSpecificationPdf');
       const data = applySpecificationSources(specification.data, sources);
       const dirty = specificationSourceFields.some(name => (specification.data[name] || '') !== (data[name] || ''));
-      const result = await createProductSpecificationPdf({ article: { articleCode, description }, specification: { ...specification, data }, photoUrl: sources.photoUrl, components: sources.components, dirty, request });
+      const result = await createProductSpecificationPdf({ article: { articleCode, description }, specification: { ...specification, data }, photoUrl: sources.photoUrl, components: sources.components, semiFinishedSpecifications: sources.semiFinishedSpecifications, dirty, request });
       if (active) { objectUrl = URL.createObjectURL(result.blob); setPdf({ ...result, url: objectUrl }); setApproval({ specification: { ...specification, data }, canApprove, disabled: dirty }); }
     }
     load().catch(cause => { if (active) setError(cause.message); });

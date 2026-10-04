@@ -1,5 +1,5 @@
 import { displayDate } from '../../lib/displayDate.js';
-import { sectionsForSpecification, specificationComponentFields, specificationFileRequest, isSpecificationImage } from '../../../shared/productSpecification.js';
+import { sectionsForSpecification, specificationComponentFields, specificationFileRequest, isSpecificationImage, linkedSpecificationRequest } from '../../../shared/productSpecification.js';
 import { specificationAttachmentContent } from './specificationAttachmentContent.js';
 
 async function imageData(url) {
@@ -16,7 +16,7 @@ async function imageData(url) {
   return { data: canvas.toDataURL('image/jpeg', 0.9), width: canvas.width, height: canvas.height };
 }
 
-export async function createProductSpecificationPdf({ article, specification, photoUrl, components = [], dirty, request, loadImage = imageData, logoBytes }) {
+export async function createProductSpecificationPdf({ article, specification, photoUrl, components = [], semiFinishedSpecifications = [], dirty, request, loadImage = imageData, logoBytes }) {
   const [{ jsPDF }, { autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
   const doc = new jsPDF();
   if (!logoBytes) {
@@ -31,9 +31,10 @@ export async function createProductSpecificationPdf({ article, specification, ph
   const status = dirty || !specification.version ? 'BOZZA - dati non salvati' : `Revisione ${specification.version}`;
   const text = value => String(value ?? '').replace(/[\u2010-\u2015]/g, '-');
   const componentLabel = code => { const component = components.find(c => c.code === code); return component?.description ? `${code} - ${component.description}` : code; };
+  let currentSpecification = specification, currentArticle = article, currentRequest = request;
   const fieldValue = (name, type) => {
-    const value = specification.data[name];
-    if (value === '__NONE__' || (!value && ({ cartonCode: 'cartonPresent', leafletCode: 'leafletPresent' }[name]) && specification.data[({ cartonCode: 'cartonPresent', leafletCode: 'leafletPresent' }[name])] === 'no')) return 'Non previsto';
+    const value = currentSpecification.data[name];
+    if (value === '__NONE__' || (!value && ({ cartonCode: 'cartonPresent', leafletCode: 'leafletPresent' }[name]) && currentSpecification.data[({ cartonCode: 'cartonPresent', leafletCode: 'leafletPresent' }[name])] === 'no')) return 'Non previsto';
     if (!value) return 'Da definire';
     if (type === 'timestamp') return displayDate(value);
     if (type === 'yesno') return value === 'yes' ? 'Sì' : 'No';
@@ -63,13 +64,13 @@ export async function createProductSpecificationPdf({ article, specification, ph
   paragraph(`${article.articleCode} - ${(specification.data.specificationKind === 'bulk' ? specification.data.description : article.description) || article.description || ''}`, 15); y += 4;
   if (photoUrl) await photo(photoUrl, `Foto prodotto ${article.articleCode}`);
   async function attachments(section) {
-    for (const attachment of specification.attachments.filter(a => a.section === section)) {
+    for (const attachment of currentSpecification.attachments.filter(a => a.section === section)) {
       const caption = attachment.caption || attachment.name;
       if (isSpecificationImage(attachment.path)) {
         try {
-          const { url } = await request(...specificationFileRequest(article.articleCode, attachment));
+          const { url } = await currentRequest(...specificationFileRequest(currentArticle.articleCode, attachment));
           await photo(url, caption, async () => {
-            const blob = await specificationAttachmentContent(article.articleCode, attachment, request);
+            const blob = await specificationAttachmentContent(currentArticle.articleCode, attachment, currentRequest);
             const localUrl = URL.createObjectURL(blob);
             try { return await loadImage(localUrl); }
             finally { URL.revokeObjectURL(localUrl); }
@@ -79,7 +80,7 @@ export async function createProductSpecificationPdf({ article, specification, ph
     }
   }
   await attachments('product');
-  for (const section of sectionsForSpecification(specification.data)) {
+  async function renderSection(section, sectionStatus) {
     room(section.id === 'acceptance' ? 42 : 24);
     doc.setFont('helvetica', 'bold'); paragraph(section.title, 12); doc.setFont('helvetica', 'normal');
     autoTable(doc, {
@@ -91,7 +92,28 @@ export async function createProductSpecificationPdf({ article, specification, ph
     y = doc.lastAutoTable.finalY + 8;
     await attachments(section.id);
     if (section.id === 'acceptance') {
-      room(8); paragraph(`Approvazione delle specifiche del presente capitolato - ${status}`, 9); y += 4;
+      room(8); paragraph(`Approvazione delle specifiche del presente capitolato - ${sectionStatus}`, 9); y += 4;
+    }
+  }
+  for (const section of sectionsForSpecification(specification.data)) {
+    await renderSection(section, status);
+    if (section.id === 'general' && specification.data.specificationKind !== 'bulk') {
+      if (!semiFinishedSpecifications.length) {
+        room(24); paragraph('FP - Capitolato semilavorato', 12);
+        paragraph('Nessun semilavorato FP presente nella distinta corrente.', 9); y += 4;
+      }
+      for (const linked of semiFinishedSpecifications) {
+        currentSpecification = linked.specification; currentArticle = linked.article;
+        currentRequest = linkedSpecificationRequest(article.articleCode, request);
+        const linkedStatus = linked.dirty || !currentSpecification.version ? 'BOZZA - dati non salvati' : 'Revisione ' + currentSpecification.version;
+        room(30); doc.setFont('helvetica', 'bold');
+        paragraph('FP - Capitolato semilavorato ' + currentArticle.articleCode, 12); doc.setFont('helvetica', 'normal');
+        paragraph(linkedStatus, 9);
+        if (linked.error) { warnings.push(currentArticle.articleCode + ': ' + linked.error); paragraph(linked.error, 9); }
+        await attachments('product');
+        for (const bulkSection of sectionsForSpecification({ ...currentSpecification.data, specificationKind: 'bulk' })) await renderSection(bulkSection, linkedStatus);
+      }
+      currentSpecification = specification; currentArticle = article; currentRequest = request;
     }
   }
   const pages = doc.getNumberOfPages();

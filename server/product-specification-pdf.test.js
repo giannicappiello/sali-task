@@ -80,3 +80,31 @@ test('titolo PDF bulk usa la descrizione completa come il campo descrizione', as
   assert.ok(raw.includes('FP135 - ' + description));
   assert.ok(raw.includes('(' + description + ')'));
 });
+
+test('finished PDF embeds FP capitolato, separate revision, notes, formula and authorized attachments', async () => {
+  const requests = [];
+  const result = await createProductSpecificationPdf({ article, logoBytes,
+    specification: { version: 3, data: { notes: 'Note confezionamento' }, attachments: [] },
+    semiFinishedSpecifications: [{ article: { articleCode: 'FP001', description: 'Bulk' }, dirty: false,
+      specification: { version: 4, data: { specificationKind: 'bulk', formulaCode: 'FORMULA001', viscosityMin: '12500', notes: 'Miscelare lentamente', approvedBy: 'Anna Bianchi' }, attachments: [{ id: 'foto', section: 'formula', path: 'Produzione/FP001/formula.jpg', name: 'formula.jpg' }] } }],
+    request: async path => { requests.push(path); return { url: 'fp-photo' }; },
+    loadImage: async () => ({ data: logoBytes, width: 775, height: 323 }),
+  });
+  const raw = new TextDecoder().decode(await result.blob.arrayBuffer());
+  for (const value of ['FP - Capitolato semilavorato FP001', 'Revisione 4', 'FORMULA001', '12500', 'Miscelare lentamente', 'Anna Bianchi', 'Note confezionamento', 'Packaging primario']) assert.ok(raw.includes(value), value);
+  assert.ok(raw.indexOf('FP - Capitolato') < raw.indexOf('Packaging primario'));
+  const params = new URL(requests[0], 'https://workspace.invalid').searchParams;
+  assert.equal(params.get('articleCode'), 'FP001'); assert.equal(params.get('parentArticleCode'), 'IT0001'); assert.equal(params.get('attachmentId'), 'foto');
+  assert.deepEqual(result.warnings, []);
+});
+
+test('finished PDF labels unsaved FP as draft and includes MES error', async () => {
+  const result = await createProductSpecificationPdf({ article, logoBytes,
+    specification: { version: 1, data: {}, attachments: [] },
+    semiFinishedSpecifications: [{ article: { articleCode: 'FP002', description: 'Bulk' }, dirty: true, error: 'Specifiche FP non aggiornabili da MES.', specification: { version: 0, data: { specificationKind: 'bulk' }, attachments: [] } }],
+  });
+  const raw = new TextDecoder().decode(await result.blob.arrayBuffer());
+  assert.ok(raw.includes('BOZZA - dati non salvati'));
+  assert.match(result.warnings[0], /FP002.*MES/);
+  assert.equal(result.fileName, 'Capitolato_IT0001_rev1.pdf');
+});

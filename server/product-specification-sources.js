@@ -1,5 +1,6 @@
 import { rows, key } from './private-documents-store.js';
 import { buildMexalClient, loadFullArticle } from './mexal/sync-products.js';
+import { applySpecificationSources, specificationSourceFields } from '../shared/productSpecification.js';
 import { createProgremesProductionClient } from './progremes-production-client.js';
 
 export async function readSpecificationBom(admin, code, mexal = buildMexalClient({ warehouse: null, timeoutMs: 12000 }), ancestors = [], budget = { calls: 0 }) {
@@ -34,7 +35,7 @@ export async function readSpecificationBom(admin, code, mexal = buildMexalClient
 }
 
 // Called only after authorizing access to the finished article.
-export async function loadSpecificationSources(identity, code, { formulaClient = createProgremesProductionClient } = {}) {
+export async function loadSpecificationSources(identity, code, { formulaClient = createProgremesProductionClient, includeRelated = true } = {}) {
   const { admin, customerCodes } = identity;
   const readCustomers = async () => {
   // Customer resolution applies to both bulk formulas and finished articles.
@@ -79,7 +80,27 @@ export async function loadSpecificationSources(identity, code, { formulaClient =
     catch { bomError = 'Impossibile leggere la distinta base. Riprova a ricaricare il capitolato.'; }
   }
   const components = [...new Map(lines.map(l => [key(l.article_code), { code: key(l.article_code), description: l.description || '' }])).values()];
+  // Only FP components of the authorized finished article can be included.
+  const semiFinishedSpecifications = includeRelated ? await Promise.all(components.filter(c => /^FP/i.test(c.code)).map(async component => {
+    const article = { articleCode: component.code, description: component.description };
+    const saved = await admin.from('workspace_product_specifications').select('*').eq('article_code', component.code).maybeSingle();
+    if (saved.error) throw saved.error;
+    const specification = saved.data ? {
+      data: saved.data.data, attachments: saved.data.attachments || [], version: saved.data.version,
+      updatedAt: saved.data.updated_at, updatedBy: saved.data.updated_by_label,
+    } : { data: { description: component.description }, attachments: [], version: 0 };
+    try {
+      const sources = await loadSpecificationSources(identity, component.code, { formulaClient });
+      const data = applySpecificationSources(specification.data, sources);
+      const dirty = !specification.version || specificationSourceFields.some(name => (specification.data[name] || '') !== (data[name] || ''));
+      return { article, specification: { ...specification, data }, dirty, error: '' };
+    } catch {
+      return { article, specification: { ...specification, data: { ...specification.data, specificationKind: 'bulk' } }, dirty: !specification.version,
+        error: 'Specifiche FP non aggiornabili da MES. Ricarica per riprovare.' };
+    }
+  })) : [];
   return {
+    semiFinishedSpecifications,
     photoUrl: /^IT/i.test(code) ? product.data?.immagine_catalogo_url || null : null,
     bomRevision: revision.data?.revision || null,
     bomError,

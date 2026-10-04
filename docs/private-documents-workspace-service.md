@@ -2,6 +2,22 @@
 
 ## Capitolati prodotti finiti
 
+Il capitolato del prodotto finito include automaticamente una sezione FP per
+ogni semilavorato della distinta corrente, deduplicato. La sezione è consultabile
+anche nell'editor e nel PDF: specifiche formula aggiornate da MES, note, allegati
+e approvazione del capitolato FP. Le revisioni FP rimangono indipendenti; in
+assenza di una revisione salvata le specifiche sono indicate come bozza.
+Gli errori MES sono espliciti e conservano il capitolato salvato disponibile.
+In Modifica capitolato, note, didascalie e allegati FP sono modificabili; Salva
+capitolato salva prima le revisioni FP modificate e poi il prodotto finito,
+con i controlli di versione esistenti. Le formule restano automatiche e le
+approvazioni FP restano indipendenti. Le bozze FP sono mantenute nella sessione.
+Gli allegati FP sono autorizzati rispetto al prodotto finito e alla distinta
+corrente, senza consentire modifiche o approvazioni dell'FP da quel contesto.
+Un FP rimosso dalla distinta non compare più e i suoi file non sono più accessibili
+tramite il prodotto finito. Nessuna migrazione o duplicazione dei capitolati.
+
+
 Ogni componente viene mostrato una sola volta con codice e descrizione; astuccio
 e bugiardino hanno l'opzione Non previsto nella stessa tendina. I vecchi valori
 descrittivi vengono conservati nei dati, senza righe duplicate nella schermata o nel PDF.

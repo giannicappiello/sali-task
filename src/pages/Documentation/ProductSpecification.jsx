@@ -1,8 +1,8 @@
 import { displayDate } from '../../lib/displayDate';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, File, FileText, Folder, FolderOpen, ImagePlus, Pencil, RefreshCw, Save, Trash2, X } from 'lucide-react';
-import { applySpecificationSources, specificationFileRequest, specificationComponentFields, isSpecificationImage, MAX_SPECIFICATION_ATTACHMENTS, specificationFields, sectionsForSpecification, specificationSourceFields, formulaFields } from '../../../shared/productSpecification';
+import { applySpecificationSources, specificationFileRequest, specificationComponentFields, isSpecificationImage, MAX_SPECIFICATION_ATTACHMENTS, specificationFields, sectionsForSpecification, specificationSourceFields, formulaFields, linkedSpecificationRequest, saveLinkedSpecificationDrafts } from '../../../shared/productSpecification';
 import '../../features/production-costs/production-costs.css';
 import './ProductSpecification.css';
 import SpecificationApproval from './SpecificationApproval';
@@ -90,11 +90,38 @@ function NasPicker({ section, articleCode, request, onSelect, onClose }) {
   </section></div>;
 }
 
+function LinkedFpSpecification({ linked, parentCode, request, editable, onChange, onPick }) {
+  const fileRequest = useMemo(() => {
+    const savedRequest = linkedSpecificationRequest(parentCode, request);
+    return (path, options) => path.startsWith('specifications/preview?') ? request(path, options) : savedRequest(path, options);
+  }, [parentCode, request]);
+  const spec = linked.specification;
+  const change = next => onChange({ ...linked, specification: { ...next, data: { ...next.data, approvedBy: '', approvedAt: '', approvedUserId: '' } }, dirty: true });
+  return <article>
+    <h4>{linked.article.articleCode} · {spec.data.description || linked.article.description}</h4>
+    <p>{spec.version ? 'Revisione ' + spec.version : 'Nessuna revisione salvata'}{linked.dirty ? ' · Bozza con specifiche aggiornate' : ''}</p>
+    {linked.error && <p role="alert">{linked.error}</p>}
+    {sectionsForSpecification({ ...spec.data, specificationKind: 'bulk' }).map(section => <div key={section.id}>
+      <h5>{section.title}</h5><div className="product-spec-fields">{section.fields.map(([name, label, type]) => <label key={name}>
+        {label}{name === 'notes' && editable
+          ? <textarea rows={3} maxLength={5000} value={spec.data.notes || ''} onChange={e => change({ ...spec, data: { ...spec.data, notes: e.target.value } })}/>
+          : <input readOnly value={type === 'timestamp' ? labelDate(spec.data[name]) : spec.data[name] || ''} placeholder="Da definire"/>}
+      </label>)}</div>
+    </div>)}
+    <div className="product-spec-attachments">{spec.attachments.map(attachment => <Attachment key={attachment.id || attachment.section + attachment.path} attachment={attachment} articleCode={linked.article.articleCode} request={fileRequest} editable={editable}
+      onChange={caption => change({ ...spec, attachments: spec.attachments.map(a => a === attachment ? { ...a, caption } : a) })}
+      onRemove={() => change({ ...spec, attachments: spec.attachments.filter(a => a !== attachment) })}/>)}</div>
+    {editable && <button type="button" disabled={spec.attachments.length >= MAX_SPECIFICATION_ATTACHMENTS} onClick={onPick}><FolderOpen size={16}/>Associa foto o documento FP dal NAS</button>}
+    {editable && <small>Le specifiche della formula sono automatiche. Salva capitolato salva anche note e allegati dell'FP nella sua revisione.</small>}
+  </article>;
+}
+
 export default function ProductSpecification({ article, canEdit, request, drafts }) {
   const code = article.articleCode;
   const [spec, setSpec] = useState(null), [dirty, setDirty] = useState(false), [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false), [error, setError] = useState(''), [message, setMessage] = useState('');
   const [picker, setPicker] = useState(null), [revisions, setRevisions] = useState(null), [historyError, setHistoryError] = useState('');
+  const [fpPicker, setFpPicker] = useState(null);
   const [reload, setReload] = useState(0);
   const [editing, setEditing] = useState(false);
   const [approvalAllowed, setApprovalAllowed] = useState(false);
@@ -114,6 +141,10 @@ export default function ProductSpecification({ article, canEdit, request, drafts
       if (active) {
         setSpec(specification || { data: initialData(article), attachments: [], version: 0 });
         setApprovalAllowed(Boolean(canApprove));
+        if (loadedSources.semiFinishedSpecifications) loadedSources.semiFinishedSpecifications = loadedSources.semiFinishedSpecifications.map(linked => {
+          const draft = drafts.get(linked.article.articleCode);
+          return draft ? { ...linked, specification: draft, dirty: true } : linked;
+        });
         setDirty(Boolean(pending)); setSources(loadedSources.sourceError ? null : loadedSources);
         setSourceError(loadedSources.sourceError || ''); setPhotoError(false); setLoading(false);
       }
@@ -121,7 +152,7 @@ export default function ProductSpecification({ article, canEdit, request, drafts
     return () => { active = false; mounted.current = false; };
   }, [article, code, drafts, request, resource, reload]);
   useEffect(() => { if (pdf) previewClose.current?.focus(); return () => { if (pdf) URL.revokeObjectURL(pdf.url); }; }, [pdf]);
-  const overlayOpen = editing || Boolean(pdf) || Boolean(picker);
+  const overlayOpen = editing || Boolean(pdf) || Boolean(picker) || Boolean(fpPicker);
   useEffect(() => {
     if (!overlayOpen) return undefined;
     const previous = document.body.style.overflow;
@@ -135,7 +166,7 @@ export default function ProductSpecification({ article, canEdit, request, drafts
     return () => { trigger?.focus(); };
   }, [editing]);
   function editorKey(event) {
-    if (picker || pdf) return;
+    if (picker || fpPicker || pdf) return;
     if (event.key === 'Escape' && !saving) { event.preventDefault(); setEditing(false); }
     if (event.key !== 'Tab') return;
     const elements = [...event.currentTarget.querySelectorAll('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), summary, a[href]')].filter(el => el.getClientRects().length);
@@ -145,13 +176,14 @@ export default function ProductSpecification({ article, canEdit, request, drafts
   }
   const displayedData = spec && sources ? applySpecificationSources(spec.data, sources) : spec?.data;
   const sourceChanges = Boolean(spec && sources && specificationSourceFields.some(name => (spec.data[name] || '') !== (displayedData[name] || '')));
+  const linkedChanges = Boolean(sources?.semiFinishedSpecifications?.some(linked => drafts.has(linked.article.articleCode)));
   const sections = sectionsForSpecification(displayedData);
   async function preview(event) {
     previewTrigger.current = event.currentTarget; setPdfLoading(true); setError('');
     try {
       const { createProductSpecificationPdf } = await import('./createProductSpecificationPdf');
       const result = await createProductSpecificationPdf({ article, specification: { ...spec, data: displayedData },
-        photoUrl: sources?.photoUrl, components: sources?.components, dirty: dirty || sourceChanges, request });
+        photoUrl: sources?.photoUrl, components: sources?.components, semiFinishedSpecifications: sources?.semiFinishedSpecifications, dirty: dirty || sourceChanges, request });
       if (mounted.current) setPdf({ ...result, url: URL.createObjectURL(result.blob) });
     } catch (cause) { if (mounted.current) setError(cause.message); }
     finally { if (mounted.current) setPdfLoading(false); }
@@ -166,7 +198,7 @@ export default function ProductSpecification({ article, canEdit, request, drafts
       setSpec(result); drafts.delete(code); setDirty(false); setRevisions(null); setMessage('Approvazione registrata.');
       if (pdf) {
         const { createProductSpecificationPdf } = await import('./createProductSpecificationPdf');
-        const updated = await createProductSpecificationPdf({ article, specification: result, photoUrl: sources?.photoUrl, components: sources?.components, dirty: false, request });
+        const updated = await createProductSpecificationPdf({ article, specification: result, photoUrl: sources?.photoUrl, components: sources?.components, semiFinishedSpecifications: sources?.semiFinishedSpecifications, dirty: false, request });
         if (mounted.current) setPdf({ ...updated, url: URL.createObjectURL(updated.blob) });
       }
     } catch (cause) { if (mounted.current) setError(cause.message); }
@@ -185,6 +217,9 @@ export default function ProductSpecification({ article, canEdit, request, drafts
     event.preventDefault(); setSaving(true); setError(''); setMessage('');
     const submitted = spec;
     try {
+      await saveLinkedSpecificationDrafts(sources?.semiFinishedSpecifications, drafts, request, (articleCode, saved) => {
+        if (mounted.current) setSources(current => ({ ...current, semiFinishedSpecifications: current.semiFinishedSpecifications.map(item => item.article.articleCode === articleCode ? { ...item, specification: saved, dirty: false, error: '' } : item) }));
+      });
       const result = await request(`specifications/save?${new URLSearchParams({ articleCode: code })}`, { body: { expectedVersion: spec.version, data: displayedData, attachments: spec.attachments } });
       if (drafts.get(code) === submitted) drafts.delete(code);
       if (mounted.current) { setSpec(result); setDirty(false); setMessage(`Capitolato salvato. Revisione ${result.version}.`); setRevisions(null); setEditing(false); }
@@ -192,7 +227,8 @@ export default function ProductSpecification({ article, canEdit, request, drafts
     finally { if (mounted.current) setSaving(false); }
   }
   function refresh() {
-    if (dirty && !window.confirm('Ricaricare il capitolato? Le modifiche non salvate di questo articolo saranno scartate.')) return;
+    if ((dirty || linkedChanges) && !window.confirm('Ricaricare il capitolato? Le modifiche non salvate di questo articolo saranno scartate.')) return;
+    for (const linked of sources?.semiFinishedSpecifications || []) drafts.delete(linked.article.articleCode);
     drafts.delete(code); setDirty(false); setLoading(true); setError(''); setMessage(''); setRevisions(null); setReload(n => n + 1);
   }
   async function loadHistory(event) {
@@ -239,6 +275,28 @@ export default function ProductSpecification({ article, canEdit, request, drafts
       {attachments('product', compact)}
     </div>;
   }
+  function updateLinked(linked) {
+    drafts.set(linked.article.articleCode, linked.specification);
+    setSources(current => ({ ...current, semiFinishedSpecifications: current.semiFinishedSpecifications.map(item => item.article.articleCode === linked.article.articleCode ? linked : item) }));
+    setMessage('');
+  }
+  function addFpFile(file) {
+    const linked = sources.semiFinishedSpecifications.find(item => item.article.articleCode === fpPicker);
+    if (linked.specification.attachments.some(a => a.section === 'formula' && a.path.toUpperCase() === file.relativePath.toUpperCase())) {
+      setError('Questo file è già associato al capitolato FP.'); setFpPicker(null); return;
+    }
+    updateLinked({ ...linked, dirty: true, specification: { ...linked.specification, data: { ...linked.specification.data, approvedBy: '', approvedAt: '', approvedUserId: '' },
+      attachments: [...linked.specification.attachments, { section: 'formula', path: file.relativePath, name: file.name, caption: '' }] } });
+    setFpPicker(null);
+  }
+  function fpSections() {
+    if (displayedData?.specificationKind === 'bulk' || !sources || sources.bomError) return null;
+    return <details className="product-spec-section" open><summary>FP · Capitolato semilavorato</summary>
+      {!sources.semiFinishedSpecifications?.length && <p>Nessun semilavorato FP presente nella distinta corrente.</p>}
+      {(sources.semiFinishedSpecifications || []).map(linked => <LinkedFpSpecification key={linked.article.articleCode} linked={linked} parentCode={code} request={request} editable={editing && canEdit && !saving}
+        onChange={updateLinked} onPick={() => setFpPicker(linked.article.articleCode)}/>)}
+    </details>;
+  }
   const notices = <>{sourceError && <p role="alert" className="private-upload-error">{sourceError} Ricarica per recuperare foto, distinta e cliente.</p>}
     {sources?.bomError && <p role="alert" className="private-upload-error">{sources.bomError}</p>}
     {sources && sources.specificationKind !== 'bulk' && !sources.bomError && !sources.components.length && <p role="status">Nessuna distinta base disponibile per questo articolo.</p>}
@@ -250,28 +308,31 @@ export default function ProductSpecification({ article, canEdit, request, drafts
         <button type="button" onClick={preview} disabled={pdfLoading || !sources || Boolean(sources.bomError)}><FileText size={17}/>{pdfLoading ? 'Preparazione PDF…' : 'Visualizza capitolato'}</button>
         {canEdit && <button type="button" ref={editTrigger} className="product-spec-save" onClick={() => setEditing(true)}><Pencil size={17}/>Modifica</button>}
       </div></div>
+      {!editing && fpSections()}
       {!editing && error && <div className="private-upload-error" role="alert">{error}</div>}
       {!editing && message && <p className="product-spec-message" role="status">{message}</p>}
       {!editing && (sourceError || sources?.bomError) && <><p role="alert">Dati del capitolato non disponibili.</p><button type="button" onClick={refresh}>Riprova</button></>}
-      {editing && createPortal(<div className="product-spec-modal product-spec-editor-overlay"><section className="pc-modal product-specification product-spec-editor" role="dialog" aria-modal="true" aria-labelledby="product-spec-editor-title" inert={Boolean(picker || pdf) || undefined} onKeyDown={editorKey}>
+      {editing && createPortal(<div className="product-spec-modal product-spec-editor-overlay"><section className="pc-modal product-specification product-spec-editor" role="dialog" aria-modal="true" aria-labelledby="product-spec-editor-title" inert={Boolean(picker || fpPicker || pdf) || undefined} onKeyDown={editorKey}>
         <header className="product-spec-editor-heading"><div><h2 id="product-spec-editor-title">Modifica capitolato</h2><p>{code} · {article.description}</p></div><button type="button" ref={editorClose} onClick={() => setEditing(false)} disabled={saving} aria-label="Chiudi modifica capitolato"><X/></button></header>
         <div className="product-spec-editor-content">{notices}
       <form onSubmit={save}><fieldset disabled={saving}>
         <div className="product-spec-overview">{productPhotos()}
           <div className="product-spec-fields"><label>Codice articolo<input value={code} readOnly/></label>{sections[0].fields.map(field)}</div></div>
-        {sections.slice(1).map(section => <details key={section.id} className="product-spec-section" open={['primary', 'formula', 'acceptance'].includes(section.id) || undefined}><summary>{section.title}</summary>{section.id === 'acceptance' && <><p>Spunta Approva per registrare il tuo nome e la data. Una modifica richiede una nuova approvazione.</p><SpecificationApproval specification={{ ...spec, data: displayedData }} canApprove={canEdit || approvalAllowed} disabled={dirty || sourceChanges} busy={saving} onApprove={approve} showDetails={false}/></>}<div className="product-spec-fields">{section.fields.map(field)}</div>{attachments(section.id)}</details>)}
-        <footer className="product-spec-footer"><div><small>{spec.updatedAt ? `Salvato il ${labelDate(spec.updatedAt)} da ${spec.updatedBy}` : 'I file restano nelle cartelle NAS esistenti.'}</small>{dirty && <small>Chiudendo il popup, le modifiche restano in bozza in questa pagina fino al salvataggio.</small>}</div><div className="product-spec-actions"><button type="button" onClick={() => setEditing(false)}>Chiudi</button><button type="button" onClick={refresh}><RefreshCw size={15}/>Ricarica</button>{canEdit && <button className="product-spec-save" type="submit" disabled={(!dirty && !sourceChanges && Boolean(spec.version)) || !sources || Boolean(sources.bomError)}><Save size={16}/>{saving ? 'Salvataggio…' : 'Salva capitolato'}</button>}</div></footer>
+        {fpSections()}
+        {sections.slice(1).map(section => <details key={section.id} className="product-spec-section" open={['primary', 'formula', 'acceptance'].includes(section.id) || undefined}><summary>{section.title}</summary>{section.id === 'acceptance' && <><p>Spunta Approva per registrare il tuo nome e la data. Una modifica richiede una nuova approvazione.</p><SpecificationApproval specification={{ ...spec, data: displayedData }} canApprove={canEdit || approvalAllowed} disabled={dirty || sourceChanges || linkedChanges} busy={saving} onApprove={approve} showDetails={false}/></>}<div className="product-spec-fields">{section.fields.map(field)}</div>{attachments(section.id)}</details>)}
+        <footer className="product-spec-footer"><div><small>{spec.updatedAt ? `Salvato il ${labelDate(spec.updatedAt)} da ${spec.updatedBy}` : 'I file restano nelle cartelle NAS esistenti.'}</small>{dirty && <small>Chiudendo il popup, le modifiche restano in bozza in questa pagina fino al salvataggio.</small>}</div><div className="product-spec-actions"><button type="button" onClick={() => setEditing(false)}>Chiudi</button><button type="button" onClick={refresh}><RefreshCw size={15}/>Ricarica</button>{canEdit && <button className="product-spec-save" type="submit" disabled={(!dirty && !sourceChanges && !linkedChanges && Boolean(spec.version)) || !sources || Boolean(sources.bomError)}><Save size={16}/>{saving ? 'Salvataggio…' : 'Salva capitolato'}</button>}</div></footer>
       </fieldset></form>
       {error && <div className="private-upload-error" role="alert">{error}</div>}{message && <p className="product-spec-message" role="status">{message}</p>}
       {spec.version > 0 && <details className="product-spec-section" onToggle={loadHistory}><summary>Storico revisioni</summary>{historyError ? <p role="alert">{historyError}</p> : revisions ? <ul>{revisions.map(r => <li key={r.version}>Rev. {r.version} · {labelDate(r.updatedAt)} · {r.updatedBy}</li>)}</ul> : <p>Caricamento revisioni…</p>}</details>}
         </div>
       </section></div>, document.body)}
     </>}
+    {fpPicker && createPortal(<NasPicker section="formula" articleCode={fpPicker} request={request} onSelect={addFpFile} onClose={() => setFpPicker(null)}/>, document.body)}
     {picker && createPortal(<NasPicker section={picker} articleCode={code} request={request} onSelect={addFile} onClose={closePicker}/>, document.body)}
     {pdf && createPortal(<div className="product-spec-modal"><section className="product-spec-pdf" role="dialog" aria-modal="true" aria-label="Anteprima capitolato" onKeyDown={e => { if (e.key === 'Escape') closePreview(); }}>
       <header><h3>Capitolato · {code}</h3><button type="button" ref={previewClose} onClick={closePreview} aria-label="Chiudi anteprima"><X/></button></header>
       {pdf.warnings.length > 0 && <p role="alert">{pdf.warnings.join(' ')}</p>}
-      <iframe title={`Capitolato ${code}`} src={pdf.url}/>{error && <p role="alert">{error}</p>}<SpecificationApproval specification={{ ...spec, data: displayedData }} canApprove={canEdit || approvalAllowed} disabled={dirty || sourceChanges} busy={saving} onApprove={approve}/><footer><small>{dirty || sourceChanges || !spec.version ? 'Bozza con i dati attualmente visualizzati.' : `Revisione ${spec.version}`}</small><a href={pdf.url} download={pdf.fileName}>Scarica PDF</a></footer>
+      <iframe title={`Capitolato ${code}`} src={pdf.url}/>{error && <p role="alert">{error}</p>}<SpecificationApproval specification={{ ...spec, data: displayedData }} canApprove={canEdit || approvalAllowed} disabled={dirty || sourceChanges || linkedChanges} busy={saving} onApprove={approve}/><footer><small>{dirty || sourceChanges || !spec.version ? 'Bozza con i dati attualmente visualizzati.' : `Revisione ${spec.version}`}</small><a href={pdf.url} download={pdf.fileName}>Scarica PDF</a></footer>
     </section></div>, document.body)}
   </section>;
 }

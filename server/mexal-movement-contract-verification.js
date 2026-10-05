@@ -33,7 +33,8 @@ export default async function movementContractVerification(req, res) {
     const rows=Array.isArray(listing)?listing:listing.dati||[];
     shapes.push({kind:'collection',keys:Object.keys(listing),rowKeys:rows[0]?Object.keys(rows[0]):[],reason:shape(rows[0]?.id_causale),note:shape(rows[0]?.nota)});
     for (const type of ['SL','CL']) {
-      const filtered=await client.getJson('/documenti/movimenti-magazzino?sigla='+type+'&max=1');
+      // Search is a documented read-only POST, equivalent to a filtered GET.
+      const filtered=await client.postJson('/documenti/movimenti-magazzino/ricerca?max=1&fields=sigla,serie,numero,cod_conto', {filtri:[{campo:'sigla',condizione:'=',valore:type}]});
       const row=(filtered.dati||[]).find(row=>row.sigla===type)||rows.find(row=>row.sigla===type);
       if(!row){shapes.push({type,found:false});continue;}
       const reference=[row.sigla,row.serie,row.numero].join('+')+(row.cod_conto?'+'+row.cod_conto:'');

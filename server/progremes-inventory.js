@@ -11,7 +11,7 @@ export function validateInventorySnapshot(value) {
   const keys = new Set();
   for (const row of value.rows) {
     const key = `${row.article_code}|${row.warehouse_number}`;
-    if (!/^[A-Z0-9][A-Z0-9._/&+ -]{0,79}$/i.test(row.article_code || "") ||
+    if (!/^[A-Z0-9&][A-Z0-9._/&+ %,-]{0,79}$/i.test(row.article_code || "") ||
         row.article_code !== row.article_code.trim().toUpperCase() || ![1, 8].includes(row.warehouse_number) ||
         ![row.on_hand, row.available, row.committed, row.unit_cost].every(Number.isFinite) ||
         row.committed < 0 || row.unit_cost < 0 || keys.has(key)) return false;
@@ -36,5 +36,8 @@ export async function handleInventorySnapshot(req, res, { admin, env = process.e
     p_hash: createHash("sha256").update(body).digest("hex"), p_rows: snapshot.rows,
   });
   if (error) return res.status(503).json({ code: "INVENTORY_APPLY_FAILED", error: "Snapshot non applicato: ritentare la consegna." });
-  return res.status(200).json({ status: data });
+  // A failed deferred replay does not undo the snapshot already saved durably.
+  const replay = await db.rpc("replay_workspace_mes_inventory_pending");
+  return res.status(200).json({ status: { ...data,
+    pendingArticles: replay.data?.pendingArticles ?? data?.pendingArticles ?? 0 } });
 }

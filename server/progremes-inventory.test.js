@@ -20,6 +20,7 @@ function response() { return { status(code) { this.code = code; return this; }, 
 test("signed CN0643 snapshot delivers the same physical balance for both warehouses in one RPC", async () => {
   const req=request(), res=response(); let calls=0;
   await handleInventorySnapshot(req,res,{ env, admin: { rpc: async (name,args) => {
+    if (name === "replay_workspace_mes_inventory_pending") return {data:{pendingArticles:0}};
     calls++; assert.equal(name,"apply_workspace_mes_inventory"); assert.equal(args.p_rows[1].on_hand,32000);
     assert.equal(args.p_captured_at,req.body.capturedAt); return {data:{applied:true}}; } } });
   assert.equal(res.code,200); assert.equal(calls,1);
@@ -47,6 +48,7 @@ test("MES text payload preserves decimal zeros and whitespace for HMAC verificat
     secret: env.PROGREMES_INTEGRATION_SECRET });
   const res = response(); let calls = 0;
   await handleInventorySnapshot(req, res, { env, admin: { rpc: async (_name, args) => {
+    if (_name === "replay_workspace_mes_inventory_pending") return {data:{pendingArticles:0}};
     calls++; assert.equal(args.p_rows[1].on_hand, 32000); return { data: { applied: true } };
   } } });
   assert.equal(res.code, 200); assert.equal(calls, 1);
@@ -54,4 +56,27 @@ test("MES text payload preserves decimal zeros and whitespace for HMAC verificat
   const parsedRes = response();
   await handleInventorySnapshot(req, parsedRes, { env, admin: { rpc: () => { throw Error("Must not execute"); } } });
   assert.equal(parsedRes.code, 401);
+});
+
+test("valid Mexal codes with ampersand, comma and percent are accepted without weakening quantity checks", () => {
+  for (const code of ["&ART.395", "26X17,5X25X5", "MP3114-SOL.2%"]) {
+    const value=snapshot(); value.rows.forEach(row=>row.article_code=code);
+    assert.equal(validateInventorySnapshot(value),true);
+  }
+  const bad=snapshot(); bad.rows.forEach(row=>row.article_code="<BAD>");
+  assert.equal(validateInventorySnapshot(bad),false);
+});
+test("catalog backlog is acknowledged only after durable storage and reported to MES", async () => {
+  const res=response(); const names=[];
+  await handleInventorySnapshot(request(),res,{env,admin:{rpc:async name=>{
+    names.push(name); return {data:{applied:true,pendingArticles:7}};
+  }}});
+  assert.equal(res.code,200); assert.equal(res.value.status.pendingArticles,7);
+  assert.deepEqual(names,["apply_workspace_mes_inventory","replay_workspace_mes_inventory_pending"]);
+});
+test("deferred replay failure preserves successful delivery and its catalog warning", async () => {
+  const res=response();
+  await handleInventorySnapshot(request(),res,{env,admin:{rpc:async name=> name==="apply_workspace_mes_inventory"
+    ? {data:{applied:true,pendingArticles:3}} : {error:Error("deferred")}}});
+  assert.equal(res.code,200); assert.equal(res.value.status.pendingArticles,3);
 });

@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { calculatePackagingTotals } from './packagingTotals.js';
 
 const fields = [
   ['operator', 'text'], ['responsible', 'text'], ['closureDate', 'date'],
@@ -39,6 +40,7 @@ export default function PackagingActualEditor({ sheet, saved, busy, onSave, onCa
       if (type !== 'textarea') input.type = type;
       input.name = key; input.value = type === 'date' ? String(actual[key] || '').slice(0,10) : actual[key] ?? (incompleteFields.includes(key) ? 0 : '');
       input.required = key !== 'notes'; input.disabled = Boolean(saved);
+      input.readOnly = ['piecesPerPallet', 'produced'].includes(key);
       input.style.cssText = 'display:block;width:100%;padding:10px;border:1px solid #b8c9e2;border-radius:8px;background:white;color:#172b49;font:inherit';
       input.maxLength = key === 'notes' ? 2000 : 200;
       if (type === 'number') { input.inputMode = 'numeric'; input.min = ['produced','piecesPerBox'].includes(key) ? '1' : '0'; input.max = '1000000000'; input.step = '1'; }
@@ -46,6 +48,12 @@ export default function PackagingActualEditor({ sheet, saved, busy, onSave, onCa
     }
     const recalculate = () => {
       if (saved) return;
+      const values = {};
+      for (const key of ['piecesPerBox', 'boxesPerLayer', 'layersPerPallet', 'pallets', 'incompletePalletFullBoxes', 'incompletePalletPiecesPerBox'])
+        values[key] = doc.querySelector(`[name="${key}"]`)?.value;
+      const totals = calculatePackagingTotals(values);
+      for (const key of ['piecesPerPallet', 'produced'])
+        doc.querySelector(`[name="${key}"]`).value = totals[key] ?? '';
       const produced = doc.querySelector('[name="produced"]');
       const planned = Number(doc.querySelector('[data-planned-quantity]')?.dataset.plannedQuantity);
       for (const row of doc.querySelectorAll('[data-bulk="true"]')) {

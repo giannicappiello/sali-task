@@ -31,9 +31,10 @@ export default async function movementContractVerification(req, res) {
   try {
     const listing=await client.getJson('/documenti/movimenti-magazzino?max=20');
     const rows=Array.isArray(listing)?listing:listing.dati||[];
-    shapes.push({kind:'collection',keys:Object.keys(listing),rowKeys:rows[0]?Object.keys(rows[0]):[]});
+    shapes.push({kind:'collection',keys:Object.keys(listing),rowKeys:rows[0]?Object.keys(rows[0]):[],reason:shape(rows[0]?.id_causale),note:shape(rows[0]?.nota)});
     for (const type of ['SL','CL']) {
-      const row=rows.find(row=>row.sigla===type);
+      const filtered=await client.getJson('/documenti/movimenti-magazzino?sigla='+type+'&max=1');
+      const row=(filtered.dati||[]).find(row=>row.sigla===type)||rows.find(row=>row.sigla===type);
       if(!row){shapes.push({type,found:false});continue;}
       const reference=[row.sigla,row.serie,row.numero].join('+')+(row.cod_conto?'+'+row.cod_conto:'');
       const detail=await client.getJson('/documenti/movimenti-magazzino/'+encodeURIComponent(reference));

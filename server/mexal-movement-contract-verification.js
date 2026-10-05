@@ -5,7 +5,7 @@ export default async function movementContractVerification(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (process.env.VERCEL_ENV !== 'preview' || req.method !== 'GET') return res.status(404).json({error:'Unavailable'});
   const client = buildMexalClient({timeoutMs:20000});
-  const resources = ['/documenti/movimenti-magazzino?info=true', '/help?extended=true'];
+  const resources = ['/documenti/movimenti-magazzino?info=true'];
   const results = [];
   for (const resource of resources) {
     try {
@@ -13,6 +13,7 @@ export default async function movementContractVerification(req, res) {
       const fields = [];
       function visit(value,path='') {
         if(!value || typeof value !== 'object')return;
+        if (['id_causale','nota'].includes(value.nome)) { fields.push({path,value}); return; }
         for(const [key,child]of Object.entries(value)) {
           const childPath=path?`${path}.${key}`:key;
           if(/causale|^nota$|^note$/i.test(key) || (typeof child === 'string' && /\b(id_causale|nota|note)\b|movimenti-magazzino/i.test(child))) fields.push({path:childPath,value:child});

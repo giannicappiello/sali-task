@@ -5,7 +5,7 @@ export default async function movementContractVerification(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (process.env.VERCEL_ENV !== 'preview' || req.method !== 'GET') return res.status(404).json({error:'Unavailable'});
   const client = buildMexalClient({timeoutMs:20000});
-  const resources = ['/help'];
+  const resources = ['/documenti/movimenti-magazzino?info=true', '/help?extended=true'];
   const results = [];
   for (const resource of resources) {
     try {

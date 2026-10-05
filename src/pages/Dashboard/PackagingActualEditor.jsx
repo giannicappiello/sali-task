@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { calculatePackagingTotals } from './packagingTotals.js';
+import { calculateMaterialActuals } from './packagingMaterialActuals.js';
 
 const fields = [
   ['operator', 'text'], ['responsible', 'text'], ['closureDate', 'date'],
@@ -23,10 +24,10 @@ export default function PackagingActualEditor({ sheet, saved, busy, onSave, onCa
         input.step = row.dataset.materialUnit?.toUpperCase() === 'PZ' ? '1' : '0.000001';
         input.inputMode = input.step === '1' ? 'numeric' : 'decimal';
         input.required = true; input.disabled = Boolean(saved);
-        input.readOnly = row.dataset.bulk === 'true' && key !== 'returned';
+        input.readOnly = key === 'deposited';
         input.dataset.materialInput = key;
         input.setAttribute('aria-label', `${row.dataset.materialCode} - ${{deposited:'Depositati',consumed:'Consumo effettivo',wasted:'Scartati',returned:'Reso'}[key]}`);
-        input.value = material?.[key] ?? (key === 'deposited' ? row.dataset.deposited ?? '' : '');
+        input.value = material?.[key] ?? (['returned', 'wasted'].includes(key) ? 0 : '');
         cell.replaceChildren(input);
       }
     }
@@ -46,7 +47,10 @@ export default function PackagingActualEditor({ sheet, saved, busy, onSave, onCa
       if (type === 'number') { input.inputMode = 'numeric'; input.min = ['produced','piecesPerBox'].includes(key) ? '1' : '0'; input.max = '1000000000'; input.step = '1'; }
       fieldLabel.append(input); cell.append(fieldLabel);
     }
-    const recalculate = () => {
+    const recalculate = event => {
+      const edited = event?.target;
+      if (edited?.dataset.materialInput === 'consumed')
+        edited.closest('[data-packaging-material]').dataset.manualConsumption = 'true';
       if (saved) return;
       const values = {};
       for (const key of ['piecesPerBox', 'boxesPerLayer', 'layersPerPallet', 'pallets', 'incompletePalletFullBoxes', 'incompletePalletPiecesPerBox'])
@@ -56,14 +60,13 @@ export default function PackagingActualEditor({ sheet, saved, busy, onSave, onCa
         doc.querySelector(`[name="${key}"]`).value = totals[key] ?? '';
       const produced = doc.querySelector('[name="produced"]');
       const planned = Number(doc.querySelector('[data-planned-quantity]')?.dataset.plannedQuantity);
-      for (const row of doc.querySelectorAll('[data-bulk="true"]')) {
+      for (const row of doc.querySelectorAll('[data-packaging-material]')) {
         const input = key => row.querySelector('[data-material-input="' + key + '"]');
-        const deposited = Number(row.dataset.deposited);
-        let consumed = produced?.value && planned > 0 ? Math.round(Number(row.dataset.required) * Number(produced.value) / planned * 1e6) / 1e6 : null;
-        if (Number(produced?.value) > planned && planned > 0) consumed = input('returned').value === '' ? null : deposited - Number(input('returned').value);
-        input('deposited').value = deposited;
-        input('consumed').value = consumed ?? '';
-        input('wasted').value = consumed !== null && input('returned').value !== '' ? Math.round((deposited - consumed - Number(input('returned').value)) * 1e6) / 1e6 : '';
+        const material = calculateMaterialActuals({ required: row.dataset.required, unit: row.dataset.materialUnit },
+          produced?.value, planned, { consumed: input('consumed').value, returned: input('returned').value, wasted: input('wasted').value },
+          row.dataset.manualConsumption === 'true');
+        input('consumed').value = material.consumed ?? '';
+        input('deposited').value = material.deposited ?? '';
       }
     };
     doc.addEventListener('input', recalculate); recalculate();
@@ -86,7 +89,7 @@ export default function PackagingActualEditor({ sheet, saved, busy, onSave, onCa
       for (const row of doc.querySelectorAll('[data-packaging-material]')) {
         const material = {articleId: Number(row.dataset.packagingMaterial)};
         for (const input of row.querySelectorAll('[data-material-input]')) {
-          if (!input.reportValidity() || input.value === '' || Number(input.value) < 0) { setError(row.dataset.materialCode + ': verificare ' + input.getAttribute('aria-label') + '. Lo scarto calcolato non può essere negativo.'); input.scrollIntoView({block:'center'}); return; }
+          if (!input.reportValidity() || input.value === '' || Number(input.value) < 0) { setError(row.dataset.materialCode + ': verificare ' + input.getAttribute('aria-label') + '. Le quantità non possono essere negative.'); input.scrollIntoView({block:'center'}); return; }
           material[input.dataset.materialInput] = Number(input.value);
         }
         if (Math.abs(material.deposited - material.consumed - material.wasted - material.returned) > 0.0000001) {

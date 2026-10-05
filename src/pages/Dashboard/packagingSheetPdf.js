@@ -45,17 +45,17 @@ export function packagingSheetPdf(sheet) {
     ['Scadenza: __________________', 'Responsabile qualità: __________________'],
   ]);
   for (const warning of sheet.avvisi || []) text(warning);
-  for (const [label, rows] of [['Semilavorato', sheet.semilavorati], ['Packaging', sheet.packaging]]) {
-    section(label, (rows || []).map(row => [row.codice, row.descrizione, row.unitaMisura,
-      number(row.quantitaRichiesta), number(row.quantitaDisponibile), sheet.magazziniOperativi]),
-    ['Codice', 'Descrizione', 'UM', 'Quantità', 'Disponibile', 'Magazzini']);
-  }
   section('Riempimento', [[`Volume: ${number(sheet.volumeMl)} ml`, `Densità: ${number(sheet.densita)}`, `Peso unitario: ${number(sheet.pesoUnitarioGr)} g`]]);
   section('Confezionamento e imballo', [
     [`Pezzi per collo: ${sheet.pezziPerCollo > 0 ? number(sheet.pezziPerCollo) : '________________'}`, 'Cartoni per strato: ________________'],
     ['Strati per pallet: ________________', 'Pezzi per pallet: ________________'],
     ['Numero pallet: ________________', 'Totale pezzi: ________________'],
   ]);
+  for (const [label, rows] of [['Semilavorato', sheet.semilavorati], ['Packaging', sheet.packaging]]) {
+    section(label, (rows || []).map(row => [row.codice, row.descrizione, row.unitaMisura,
+      number(row.quantitaRichiesta), number(row.quantitaDisponibile), sheet.magazziniOperativi]),
+    ['Codice', 'Descrizione', 'UM', 'Quantità', 'Disponibile', 'Magazzini']);
+  }
   section('Note e conferma operativa', [
     ['Note operatore: ________________________________________________________'],
     ['Operatore confezionamento / firma: _______________________________________'],

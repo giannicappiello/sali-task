@@ -38,3 +38,20 @@ test("database failure is retryable and must not acknowledge delivery", async ()
   const res=response(); await handleInventorySnapshot(request(),res,{env,admin:{rpc:async()=>({error:Error("transaction failed")})}});
   assert.equal(res.code,503); assert.equal(res.value.code,"INVENTORY_APPLY_FAILED");
 });
+
+test("MES text payload preserves decimal zeros and whitespace for HMAC verification", async () => {
+  const raw = JSON.stringify(snapshot()).replace('32000', '32000.000') + ' ';
+  const req = request(); req.body = raw;
+  req.headers[HMAC_HEADERS.signature] = signProductionMessage({ method: "POST", path: INVENTORY_PATH,
+    timestamp: req.headers[HMAC_HEADERS.timestamp], eventId: req.headers[HMAC_HEADERS.eventId], body: raw,
+    secret: env.PROGREMES_INTEGRATION_SECRET });
+  const res = response(); let calls = 0;
+  await handleInventorySnapshot(req, res, { env, admin: { rpc: async (_name, args) => {
+    calls++; assert.equal(args.p_rows[1].on_hand, 32000); return { data: { applied: true } };
+  } } });
+  assert.equal(res.code, 200); assert.equal(calls, 1);
+  req.body = JSON.parse(raw);
+  const parsedRes = response();
+  await handleInventorySnapshot(req, parsedRes, { env, admin: { rpc: () => { throw Error("Must not execute"); } } });
+  assert.equal(parsedRes.code, 401);
+});

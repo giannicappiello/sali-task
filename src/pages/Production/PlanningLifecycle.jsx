@@ -25,6 +25,7 @@ export function PlanningLifecycleForm({ token, release = false, canUseAI = false
   const [query, setQuery] = useState(""), [selected, setSelected] = useState(() => [...new Set((params.get("orders") || "").split(",").map(Number).filter(id => Number.isSafeInteger(id) && id > 0))]), [choices, setChoices] = useState({});
   const [horizons, setHorizons] = useState({ confirmationDays: 60, reviewDays: 30, releaseDays: 7 });
   const [backup, setBackup] = useState(false), [ack, setAck] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const [outcome, setOutcome] = useState("");
   const busyRef = useRef(false), results = useRef(null);
   const [openedDetail, setOpenedDetail] = useState(0);
   useEffect(() => {
@@ -37,7 +38,7 @@ export function PlanningLifecycleForm({ token, release = false, canUseAI = false
     setProposal(null); setAck(false);
     setOpenedDetail(value => value + 1);
   }
-  const invalidate = () => { setVersion(null); setProposal(null); setAck(false); setBackup(false); };
+  const invalidate = () => { setOutcome(""); setVersion(null); setProposal(null); setAck(false); setBackup(false); };
   async function request(action, data = {}) {
     const response = await fetch("/api/workspace/planning", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ action, ...data }) });
     const body = await response.json();
@@ -46,8 +47,8 @@ export function PlanningLifecycleForm({ token, release = false, canUseAI = false
   }
   async function run(work) {
     if (busyRef.current) return;
-    busyRef.current = true; setBusy(true); setError("");
-    try { await work(); } catch (e) { setError(e.message); } finally { busyRef.current = false; setBusy(false); }
+    busyRef.current = true; setBusy(true); setError(""); setOutcome("");
+    try { await work(); } catch (e) { setError(`Operazione fallita: ${e.message}`); } finally { busyRef.current = false; setBusy(false); }
   }
   async function refresh() {
     const [next] = await Promise.all([
@@ -79,7 +80,7 @@ export function PlanningLifecycleForm({ token, release = false, canUseAI = false
   async function simulate() { invalidate(); const next = await request("planning_simulate", { input: input() }); setVersion(next); results.current?.focus(); }
   async function resolveBlock(resolution) {
     if (busyRef.current) throw new Error("Attendi il completamento del calcolo in corso.");
-    busyRef.current = true; setBusy(true); setError("");
+    busyRef.current = true; setBusy(true); setError(""); setOutcome("");
     setProposal(null); setAck(false);
     try {
       const nextInput = planningResolutionInput(version.snapshot.input, resolution.orderId, localDate());
@@ -103,6 +104,7 @@ export function PlanningLifecycleForm({ token, release = false, canUseAI = false
     try { await refresh(); }
     catch (e) { throw new Error([failure, `Aggiornamento dell'esito non riuscito: ${e.message}`].filter(Boolean).join(" "), { cause: e }); }
     if (failure) throw new Error(failure);
+    setOutcome("Operazione andata a buon fine: modifica del piano applicata.");
   }
   const status = !state ? "Stato da verificare" : state.configuration?.active ? "Nuovo sistema attivo" : "Sistema attuale conservato";
   const confirmationLabel = proposal?.tool === "MES_ODL_VERIFY" ? "Verifica ODL e copertura materiali"
@@ -110,6 +112,8 @@ export function PlanningLifecycleForm({ token, release = false, canUseAI = false
   return <div className="planning-lifecycle" data-screen-code={release ? "produzione.rilascio_odl" : "produzione.versioni_piano"} aria-busy={busy}>
     {!compact && <section className="plan-intro"><CalendarClock aria-hidden="true" /><div><h2>{release ? "Storico ODL" : "Pianificare senza perdere lo storico"}</h2><p>{release ? "Archivio dei documenti precedenti. Il lavoro corrente si gestisce in Pianificazione e produzione, direttamente sugli OP e sui batch." : "OCT → RdP → OP → batch → produzione e confezionamento. Ogni modifica resta confrontabile con la versione precedente."}</p></div></section>}
     <nav className="plan-actions" aria-label="Pianificazione"><Link to={release ? "/versioni-piano-produzione" : "/rilascio-odl"}>{release ? "Versioni e revisioni del piano" : "Storico ODL"}</Link><Link to="/produzione/rdp-workbench">Workbench RdP</Link><Link to="/revisione-priorita-produzione">Revisione priorità</Link><button disabled={busy} onClick={() => run(refresh)}><RefreshCw size={16} />Aggiorna stato</button><button disabled={busy || !state?.configuration?.active} onClick={() => run(async () => { await request("planning_reconcile"); await refresh(); })}>Allinea stato Workspace</button>{canUseAI && !release && <button disabled={busy} onClick={() => window.dispatchEvent(new CustomEvent("workspace:priority-ai", { detail: { prompt: `Aiutami nella ${release ? "preparazione del rilascio ODL" : "revisione del piano"}. Leggi MES_PLAN_STATE e prepara una simulazione con MES_PLAN_SIMULATE. Spiega le conseguenze e attendi la conferma: nessuna attivazione, creazione lotti o avvio autonomo.` } }))}><Bot size={16} />Supporto IA</button>}</nav>
+    {busy && <p className="plan-notice" role="status">Elaborazione in corso…</p>}
+    {outcome && <p className="plan-notice" role="status">{outcome}</p>}
     {error && <div className="plan-notice plan-error" role="alert">{error}</div>}
     <div className="plan-kpis"><section><span>Modalità</span><strong>{status}</strong></section><section><span>Previsioni senza OP</span><strong>{state?.demands?.filter(x => x.stage === "FORECAST").length ?? "—"}</strong></section><section><span>ODL storici</span><strong>{state?.odls?.filter(x => ["RELEASED", "RELEASED_WITH_SHORTAGE"].includes(x.status)).length ?? "—"}</strong></section></div>
     {!release && <><section className="plan-panel"><h2>Domande e ordini · {filtered.length}</h2><label>Ricerca totale<input type="search" placeholder="RdP, OP, stato, articolo…" value={query} onChange={e => setQuery(e.target.value)} /></label><p>Se non selezioni righe, la proposta considera l'intero orizzonte. Le modifiche manuali sono proposte, non spostamenti già applicati.</p>

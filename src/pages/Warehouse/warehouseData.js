@@ -1,5 +1,19 @@
+function retryableWarehouseFailure(error, status) {
+  return error?.code === "57014" || status >= 500 ||
+    (status === 0 && /fetch|network|timeout/i.test(error?.message || ""));
+}
+
+function waitForWarehouseRetry(signal) {
+  return new Promise((resolve, reject) => {
+    const cancel = () => { clearTimeout(timer); reject(new DOMException("Richiesta annullata", "AbortError")); };
+    const timer = setTimeout(() => { signal?.removeEventListener("abort", cancel); resolve(); }, 800);
+    if (signal?.aborted) cancel();
+    else signal?.addEventListener("abort", cancel, { once: true });
+  });
+}
+
 export async function loadWorkspaceWarehouse(db, filters = {}, { signal } = {}) {
-  let request = db.rpc("workspace_warehouse_dashboard", {
+  const parameters = {
     p_as_of_date: filters.asOfDate,
     p_warehouse: filters.warehouse === "TUTTI" ? null : Number(String(filters.warehouse || "").replace("MAG-", "")),
     p_article_type: filters.type || "TOTALE",
@@ -8,13 +22,18 @@ export async function loadWorkspaceWarehouse(db, filters = {}, { signal } = {}) 
     p_stock_filter: filters.stockFilter || "all",
     p_limit: filters.pageSize || 100,
     p_offset: Math.max(0, (Number(filters.page || 1) - 1) * Number(filters.pageSize || 100)),
-  });
-  if (signal && typeof request.abortSignal === "function") request = request.abortSignal(signal);
-  const { data, error } = await request;
-  if (error) throw error;
-  return data || { rows: [], summary: {}, breakdown: {}, totalRows: 0, availableDates: [] };
+  };
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (signal?.aborted) throw new DOMException("Richiesta annullata", "AbortError");
+    let request = db.rpc("workspace_warehouse_dashboard", parameters);
+    if (signal && typeof request.abortSignal === "function") request = request.abortSignal(signal);
+    const { data, error, status } = await request;
+    if (signal?.aborted) throw new DOMException("Richiesta annullata", "AbortError");
+    if (!error) return data || { rows: [], summary: {}, breakdown: {}, totalRows: 0, availableDates: [] };
+    if (attempt === 1 || !retryableWarehouseFailure(error, status)) throw error;
+    await waitForWarehouseRetry(signal);
+  }
 }
-
 export function warehouseRow(row = {}) {
   const unitCost = Math.max(0, Number(row.unitCost ?? row.costo_ultimo ?? 0));
   const warehouseDetails = (row.warehouse_details || row.warehouseDetails || []).map((detail) => {

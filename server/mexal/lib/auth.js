@@ -18,7 +18,7 @@ export async function requireAdmin(req, supabaseOrFactory) {
   return { supabase, id: profile.id, authUserId: user.id };
 }
 
-export async function requirePermission(req, supabaseOrFactory, permissionCode) {
+export async function requirePermission(req, supabaseOrFactory, permissionCode, { explicitOnly = false } = {}) {
   const authorization = String(req.headers.authorization || "");
   if (!authorization.startsWith("Bearer ")) throw Object.assign(new Error("Sessione mancante."), { status: 401 });
 
@@ -43,7 +43,18 @@ export async function requirePermission(req, supabaseOrFactory, permissionCode) 
     if (!results.some((result) => result.data === true)) throw Object.assign(new Error("Autorizzazione non concessa per questa operazione."), { status: 403 });
     return { supabase, id: profile.id, authUserId: user.id };
   }
-  if (profile.ruoli?.amministratore_workspace === true || profile.ruoli?.livello_accesso === "amministrazione") {
+  if (profile.ruoli?.amministratore_workspace === true || (!explicitOnly && profile.ruoli?.livello_accesso === "amministrazione")) {
+    return { supabase, id: profile.id, authUserId: user.id };
+  }
+
+  if (explicitOnly) {
+    // Use the same effective operations as the UI: role inheritance and explicit
+    // denials are resolved centrally, independent of generic access level.
+    const { data: operations, error } = await supabase.rpc("workspace_operation_codes", { target_user_id: profile.id });
+    if (error) throw Object.assign(new Error("Verifica autorizzazioni non disponibile."), { status: 503 });
+    if (!acceptedPermissions.some((code) => (operations || []).includes(code))) {
+      throw Object.assign(new Error("Autorizzazione non concessa per questa operazione."), { status: 403 });
+    }
     return { supabase, id: profile.id, authUserId: user.id };
   }
 

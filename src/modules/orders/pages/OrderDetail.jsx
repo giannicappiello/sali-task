@@ -27,7 +27,7 @@ function childStatusClass(document) {
 
 export default function OrderDetail() {
   const { moduleCode, basePath } = useOrdersModule();
-  const { isAdminUser } = useAuth();
+  const { isAdminUser, profile, permissions } = useAuth();
   const { canWriteOrders } = useOrdersAccess(moduleCode);
   const { orderId } = useParams();
   const privateOrder = isPrivateOrderModule(moduleCode);
@@ -136,9 +136,11 @@ export default function OrderDetail() {
       const confirmedLines = lines.map((line) => ({
         ordine_id: orderId,
         codice_articolo: line.codice_articolo,
+        riga_spedizione: line.riga_spedizione === true,
+        riga_descrittiva: line.riga_descrittiva === true,
         descrizione: line.descrizione,
         quantita: line.quantita,
-        ...(privateOrder
+        ...(privateOrder || line.riga_spedizione
           ? { quantita_disponibile: 0, quantita_ocm: 0, quantita_ocx: 0, quantita_oci: 0 }
           : quantitiesForOrderLine(line, null, true, { reservation, skipAvailability: true })),
         prezzo_listino: line.prezzo_listino,
@@ -194,7 +196,7 @@ export default function OrderDetail() {
   }
 
   async function removeOrder() {
-    if (deleting || !await window.workspaceConfirm("Stai per eliminare definitivamente questo ordine e tutti i collegamenti presenti nel Workspace. L'operazione non può essere annullata. Continuare?")) return;
+    if (!canDelete || deleting || !await window.workspaceConfirm("Stai per eliminare definitivamente questo ordine e tutti i collegamenti presenti nel Workspace. I documenti già presenti in Mexal restano invariati. L'operazione non può essere annullata. Continuare?")) return;
     setDeleting(true); setError("");
     try { await deleteOrder(orderId, moduleCode); navigate(`${basePath}/elenco`, { replace: true, state: { message: "Ordine eliminato." } }); }
     catch (deleteError) { setError(deleteError.message || "Impossibile eliminare l'ordine."); }
@@ -219,7 +221,7 @@ export default function OrderDetail() {
   const hasMexalDocument = hasMexalDocuments(order);
   const isDraft = String(order.stato || "").trim().toLowerCase() === "bozza";
   const canEdit = canWriteOrders && (isDraft || (!isClosed && !hasMexalDocument && ["non_avviato", "non_inviato", "errore", "annullato", "arrestato"].includes(syncStatus)));
-  const canDelete = isAdminUser;
+  const canDelete = isAdminUser || (profile?.attivo !== false && permissions.includes("orders.delete"));
 
   return (
     <div className="orders-page">

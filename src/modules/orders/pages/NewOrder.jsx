@@ -19,6 +19,8 @@ import { ORDER_CUSTOMER_COLUMNS } from "../services/orderDataSelections";
 import { loadDirectProductCatalog } from "../services/directProductCatalog";
 import { isPrivateOrderModule, orderModuleFilter } from "../services/orderModules";
 
+import { applyOrderShipping, isShippingLine, normalizeShippingConfig } from "../services/orderShipping.js";
+
 const PAGE_SIZE = 1000;
 
 function normalize(value) {
@@ -176,6 +178,7 @@ export default function NewOrder() {
   const [pendingQuantity, setPendingQuantity] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [lines, setLines] = useState([]);
+  const [shippingConfig, setShippingConfig] = useState({});
   const [comments, setComments] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -203,7 +206,7 @@ export default function NewOrder() {
 
   useEffect(() => {
     if (!accessLoading) loadData();
-  }, [accessLoading, canAccessOrders, canWriteOrders, canSeeAll, customerCode, JSON.stringify(visibleAgents)]);
+  }, [accessLoading, canAccessOrders, canWriteOrders, canSeeAll, customerCode, JSON.stringify(visibleAgents), moduleCode]);
 
   useEffect(() => {
     if (!editingOrderId || !customers.length) return;
@@ -221,7 +224,7 @@ export default function NewOrder() {
       setSelectedCustomer(customers.find((customer) => customer.codice_cliente === existing.codice_cliente) || { codice_cliente: existing.codice_cliente, ragione_sociale: existing.ragione_sociale_cliente });
       setExistingOrderType(existing.tipo_ordine || "standard");
       setSelectedPayment({ codice: existing.codice_pagamento || "", descrizione: existing.descrizione_pagamento || "" }); setComments(existing.commenti || "");
-      setLines((existingLines || []).map((line) => withEconomics({ ...line, prodotto_origine: findMexalProductByCode(products, line.codice_articolo) || line })));
+      setLines((existingLines || []).filter((line) => !isShippingLine(line)).map((line) => withEconomics({ ...line, prodotto_origine: findMexalProductByCode(products, line.codice_articolo) || line })));
     })();
     return () => { active = false; };
   }, [editingOrderId, customers, products]);
@@ -311,12 +314,15 @@ export default function NewOrder() {
         ...productRows.map((product) => ({ ...product, option_kind: PRODUCT_OPTION_KIND.MEXAL })),
       ];
 
-      const [matrixRows, particularityRows, paymentRows] = await Promise.all([
+      const [matrixRows, particularityRows, paymentRows, shippingResult] = await Promise.all([
         loadPaged("ordini_sconti_listini", (query) => query.eq("is_active", true)),
         loadPaged("ordini_particolarita", (query) => query.eq("is_active", true)),
         loadPaged("ordini_regole_pagamento", (query) => query.eq("is_active", true)),
+        supabase.from("ordini_moduli_configurazione").select("importo_minimo_porto_franco,addebito_spedizione").eq("modulo_ordini", moduleCode).maybeSingle(),
       ]);
 
+      if (shippingResult.error) throw shippingResult.error;
+      setShippingConfig(normalizeShippingConfig(shippingResult.data || {}));
       setCustomers(customerRows);
       setProducts(productRows);
       setDiscountMatrix(matrixRows);
@@ -377,7 +383,12 @@ export default function NewOrder() {
       .slice(0, 60);
   }, [products, productSearch]);
 
-  const economics = useMemo(() => calculateOrderEconomics(lines), [lines]);
+  const documentLines = useMemo(() => applyOrderShipping(lines.map((line) => ({
+    ...line,
+    ...(privateOrder ? {} : quantitiesForOrderLine(line, availability, Boolean(availability), { reservation: isReservation, skipAvailability })),
+  })), shippingConfig, { moduleCode, reservation: isReservation }), [lines, shippingConfig, availability, privateOrder, isReservation, skipAvailability, moduleCode]);
+  const shippingLine = documentLines.find(isShippingLine);
+  const economics = useMemo(() => calculateOrderEconomics(documentLines), [documentLines]);
   const totals = useMemo(() => ({
     ...economics,
     pezzi: lines.reduce((sum, line) => sum + numberValue(line.quantita), 0),
@@ -675,6 +686,8 @@ export default function NewOrder() {
         orderType: isReservation ? "prenotazione" : "standard",
       });
 
+      Object.assign(orderPayload, normalizeShippingConfig(shippingConfig));
+
       let order;
       if (editingOrderId) {
         order = { id: editingOrderId };
@@ -686,14 +699,16 @@ export default function NewOrder() {
       // The database trigger has allocated the human number atomically. Do not
       // overwrite it with the UUID when saving the order's Mexal note.
       const noteMexal = `Workspace n. ${order.numero_ordine_visualizzato || order.id}`;
-      const linePayload = lines.map((line, index) => {
-        const quantities = privateOrder
+      const linePayload = documentLines.map((line, index) => {
+        const quantities = privateOrder || isShippingLine(line)
           ? { quantita_disponibile: 0, quantita_ocm: 0, quantita_ocx: 0, quantita_oci: 0 }
           : quantitiesForOrderLine(line, availability, confirm, { reservation: isReservation, skipAvailability });
         return {
           ordine_id: order.id,
           mexal_posizione: index + 1,
           codice_articolo: line.codice_articolo,
+          riga_spedizione: isShippingLine(line),
+          riga_descrittiva: line.riga_descrittiva === true,
           descrizione: line.descrizione,
           ean: normalize(line.ean || line.prodotto_origine?.ean) || null,
           quantita: line.quantita,
@@ -985,6 +1000,11 @@ export default function NewOrder() {
                   </Fragment>
                 );
               })}
+              {shippingLine && <tr className="orders-shipping-line">
+                <td>—</td><td><strong>Spese di spedizione</strong><small>Netto merce inferiore a {money(shippingConfig.importo_minimo_porto_franco)}</small></td>
+                <td>1</td><td>{money(shippingLine.prezzo_listino)}</td><td>—</td><td>{money(shippingLine.prezzo_netto)}</td>
+                <td>{money(shippingLine.imponibile_riga)}</td><td>{money(shippingLine.iva_riga)}</td><td>{money(shippingLine.totale_riga)}</td><td />
+              </tr>}
             </tbody>
           </table>
           {!lines.length && <div className="orders-empty"><ShoppingCart size={24} /> Cerca e aggiungi i prodotti all'ordine.</div>}

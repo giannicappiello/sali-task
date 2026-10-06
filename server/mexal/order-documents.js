@@ -1,3 +1,5 @@
+import { isShippingLine } from "../../src/modules/orders/services/orderShipping.js";
+
 export const ORDER_DOCUMENTS = Object.freeze({
   OCM: Object.freeze({ moduleCode: "M", quantityField: "quantita_ocm" }),
   OCX: Object.freeze({ moduleCode: "X", quantityField: "quantita_ocx" }),
@@ -21,7 +23,7 @@ export function reconciliationFailure(error, expectedModule, response) {
 }
 
 export function classifyOrderLines(lines, { reservation = false } = {}) {
-  return (lines || []).reduce((documents, line) => {
+  const documents = (lines || []).filter((line) => !isShippingLine(line)).reduce((documents, line) => {
     if (isImportArticle(line)) { documents.OCM.push({ ...line, quantita_documento: Number(line.quantita) || 0 }); return documents; }
     if (reservation) { documents.OCI.push({ ...line, quantita_documento: Number(line.quantita) || 0 }); return documents; }
     for (const kind of ["OCM", "OCX"]) {
@@ -30,12 +32,15 @@ export function classifyOrderLines(lines, { reservation = false } = {}) {
     }
     return documents;
   }, { OCM: [], OCX: [], OCI: [] });
+  const recipient = ["OCM", "OCX", "OCI"].find((kind) => documents[kind].length);
+  if (recipient) documents[recipient].push(...(lines || []).filter(isShippingLine).map((line) => ({ ...line, quantita_documento: 1 })));
+  return documents;
 }
 
 export function classifyPrivateOrderLines(lines) {
   const oct = (lines || []).map((line) => ({ ...line, quantita_documento: Number(line.quantita) || 0 }));
   if (!oct.length) throw new Error("OCT senza righe.");
-  const invalid = oct.find((line) => !normalizeArticleCode(line.codice_articolo) || line.quantita_documento <= 0);
+  const invalid = oct.find((line) => (!isShippingLine(line) && !normalizeArticleCode(line.codice_articolo)) || line.quantita_documento <= 0);
   if (invalid) throw new Error(`Riga OCT non valida: ${invalid.codice_articolo || "codice articolo mancante"}.`);
   return { OCT: oct };
 }
@@ -157,11 +162,20 @@ export function buildMexalOrderDocument(order, kind, lines, { serie = 1, magazzi
   if (!document || !lines?.length) return null;
   const resolvedModuleCode = text(moduleCode || document.moduleCode);
   if (!resolvedModuleCode) throw new Error(`Codice modulo Mexal mancante per ${kind}.`);
+  const shippingLines = lines.filter(isShippingLine);
+  const articleLines = lines.filter((line) => !isShippingLine(line));
+  const automaticShipping = order.importo_minimo_porto_franco !== null && order.importo_minimo_porto_franco !== undefined || shippingLines.length > 0;
+  const shippingAmount = shippingLines.reduce((sum, line) => sum + Number(line.imponibile_riga || 0), 0);
+  const shippingFields = automaticShipping ? {
+    tp_porto: [[1, shippingAmount > 0 ? "D" : "F"]],
+    tp_spese_sped: [[1, "V"]],
+    val_spese_sped: [[1, shippingAmount]],
+  } : {};
   const paymentId = number(order.id_pagamento ?? order.codice_pagamento_mexal ?? order.codice_pagamento);
   return compact({
     sigla: "OC", serie: number(serie), numero: 0, cod_conto: text(order.codice_cliente), data_documento: formatMexalOrderDate(order.data_ordine, dateFormat),
     cod_modulo: resolvedModuleCode, id_causale: number(causale) ? [[1, number(causale)]] : undefined, id_magazzino: number(magazzino), codice_agente: text(order.codice_agente_mexal),
     nota: formatMexalNota(order.note_mexal || `Workspace n. ${order.numero_ordine_visualizzato || order.id}`, notaFormat),
-    id_pagamento: paymentId, ...destinationFields(order), ...transportFields(order), ...buildRootMatrixRows(lines, magazzino, order.codice_agente_mexal, kind),
+    id_pagamento: paymentId, ...destinationFields(order), ...transportFields(order), ...shippingFields, ...buildRootMatrixRows(articleLines, magazzino, order.codice_agente_mexal, kind),
   });
 }

@@ -9,6 +9,7 @@ export async function prepareOrderVat(documents, mexal, { loadArticle = loadFull
   const missing = new Map();
   for (const [kind, lines] of Object.entries(documents)) {
     lines.forEach((line, index) => {
+      if (line.riga_spedizione === true) return;
       if (text(line.cod_iva) || text(line.codice_iva_mexal)) return;
       const code = text(line.codice_articolo).toUpperCase();
       if (!missing.has(code)) missing.set(code, { kind, row: index + 1, line });
@@ -36,6 +37,7 @@ export async function prepareOrderVat(documents, mexal, { loadArticle = loadFull
 
   const updates = new Map();
   const prepared = Object.fromEntries(Object.entries(documents).map(([kind, lines]) => [kind, lines.map((line) => {
+    if (line.riga_spedizione === true) return line;
     const snapshot = text(line.cod_iva) || text(line.codice_iva_mexal);
     if (snapshot) return { ...line, cod_iva: snapshot };
     const vat = repairs.get(text(line.codice_articolo).toUpperCase());

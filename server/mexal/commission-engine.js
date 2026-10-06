@@ -61,6 +61,7 @@ export function calculateCommissions({ order = {}, customer, lines = [], product
   const agent = text(order.codice_agente_mexal || customer?.codice_agente_mexal || customer?.dati_mexal?.cod_agente);
   if (customerCategory === null) throw commissionError({ customer, line: lines[0], customerCategory, agent, reason: "Categoria provvigionale cliente assente." });
   return lines.map((line) => {
+    if (line.riga_spedizione === true) return withoutCommission(line, "Spese di spedizione escluse dalle provvigioni.");
     const product = byCode.get(text(line.codice_articolo).toUpperCase()) || line.prodotto || {};
     const productCategory = productCommissionCategory(product);
     if (productCategory === null) return withoutCommission(line, "Categoria provvigionale prodotto assente.");

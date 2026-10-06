@@ -152,7 +152,7 @@ export default async function handler(req, res) {
     }
     const [{ data: customer, error: customerError }, { data: products, error: productsError }, { data: rules, error: rulesError }] = await Promise.all([
       admin.from("ordini_clienti_cache").select("*").eq("codice_cliente", order.codice_cliente).maybeSingle(),
-      admin.from("ordini_prodotti_cache").select("*").in("codice_articolo", lines.map((line) => line.codice_articolo)),
+      admin.from("ordini_prodotti_cache").select("*").in("codice_articolo", lines.filter((line) => !line.riga_spedizione && line.codice_articolo).map((line) => line.codice_articolo)),
       admin.from("mexal_regole_provvigioni").select("*").eq("attiva", true),
     ]);
     if (customerError) throw customerError; if (productsError) throw productsError; if (rulesError) throw rulesError;

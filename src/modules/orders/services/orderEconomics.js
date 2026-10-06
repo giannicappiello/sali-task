@@ -26,6 +26,7 @@ export function applySequentialDiscounts(listPrice, discountSequence) {
 }
 
 export function calculateOrderLineEconomics(line) {
+  if (line?.riga_spedizione === true) return { ...line };
   const quantita = numeric(line.quantita_documento ?? line.quantita);
   const prezzoListino = numeric(line.prezzo_listino ?? line.prezzo_unitario ?? line.prezzo);
   const scontoCommerciale = String(line.sconto_commerciale ?? line.sconto ?? "").trim();
@@ -50,7 +51,7 @@ export function calculateOrderLineEconomics(line) {
 
 export function calculateOrderLineEconomicsWithPayment(line) {
   const commercialDiscount = String(
-    line?.dettaglio_calcolo?.sconto_commerciale ?? line?.sconto_commerciale ?? ""
+    line?.dettaglio_calcolo?.sconto_commerciale ?? line?.sconto_commerciale ?? line?.sconto ?? ""
   ).trim();
   const paymentDiscount = String(
     line?.dettaglio_calcolo?.sconto_pagamento ?? line?.sconto_pagamento ?? ""
@@ -67,7 +68,7 @@ export function calculateOrderLineEconomicsWithPayment(line) {
 }
 
 export function calculateOrderEconomics(lines) {
-  const righe = (lines || []).map(calculateOrderLineEconomics);
+  const righe = (lines || []).map(calculateOrderLineEconomicsWithPayment);
   const totaleImponibile = roundCurrency(righe.reduce((sum, line) => sum + line.imponibile_riga, 0));
   const totaleIva = roundCurrency(righe.reduce((sum, line) => sum + line.iva_riga, 0));
   return {

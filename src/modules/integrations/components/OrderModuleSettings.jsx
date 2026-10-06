@@ -8,8 +8,11 @@ import {
   validateOrderEmailTemplate,
 } from "../../../../server/orders/order-email-template.js";
 import IntegrationStatusBadge from "./IntegrationStatusBadge";
+import { normalizeShippingConfig } from "../../orders/services/orderShipping.js";
 
 const defaults = {
+  importo_minimo_porto_franco: 0,
+  addebito_spedizione: 0,
   invia_automaticamente_mexal: false,
   serie_documento: "",
   invia_email_agente: false,
@@ -121,9 +124,13 @@ function Panel({ code, title, series }) {
       setMessage(validationError);
       return;
     }
+    let shippingConfig;
+    try { shippingConfig = normalizeShippingConfig(config); }
+    catch (error) { setMessage(error.message); return; }
     setSaving(true);
     const { error } = await supabase.from("ordini_moduli_configurazione").upsert({
       ...config,
+      ...shippingConfig,
       modulo_ordini: code,
       aggiornato_il: new Date().toISOString(),
     }, { onConflict: "modulo_ordini" });
@@ -141,6 +148,16 @@ function Panel({ code, title, series }) {
     </div>
     {loading ? <p>Caricamento configurazione...</p> : <>
       <div style={{ display: "grid", gap: 16 }}>
+        <fieldset style={{ border: "1px solid #dbe3ef", borderRadius: 10, padding: 14, margin: 0, display: "grid", gap: 12 }}>
+          <legend><strong>Spese di spedizione</strong></legend>
+          <label>Importo minimo per porto franco (€)
+            <input type="number" min="0" max="9999999999.99" step="0.01" value={config.importo_minimo_porto_franco ?? 0} onChange={(event) => set("importo_minimo_porto_franco", event.target.value)} style={{ display: "block", width: "100%", minHeight: 40, marginTop: 5 }} />
+          </label>
+          <label>Addebito spedizione (€)
+            <input type="number" min="0" max="9999999999.99" step="0.01" value={config.addebito_spedizione ?? 0} onChange={(event) => set("addebito_spedizione", event.target.value)} style={{ display: "block", width: "100%", minHeight: 40, marginTop: 5 }} />
+          </label>
+          <p style={{ margin: 0 }}>L’addebito netto si aggiunge all’ordine solo se il netto merce dopo gli sconti è inferiore alla soglia. IVA e spedizione sono escluse dal confronto. Con soglia o addebito a zero non vengono aggiunte spese.</p>
+        </fieldset>
         <Toggle label="Invio automatico a Mexal" checked={config.invia_automaticamente_mexal} onChange={(value) => set("invia_automaticamente_mexal", value)} />
         <label><strong>{isPrivate ? "Serie OCT" : "Serie documenti"}</strong><select value={config.serie_documento} onChange={(event) => set("serie_documento", event.target.value)} style={{ display: "block", width: "100%", minHeight: 40, marginTop: 6 }}><option value="">{isPrivate ? "Seleziona la serie OCT (obbligatoria)" : "Usa la configurazione Mexal predefinita"}</option>{availableSeries.map((item) => <option key={item.source_key} value={item.serie}>{item.sigla_documento || item.tipo_documento} · Serie {item.serie} · {item.descrizione}</option>)}</select></label>
         <fieldset style={{ border: 0, padding: 0, margin: 0, display: "grid", gap: 10 }}><legend><strong>Configurazione email</strong></legend><Toggle label="Email agente" checked={config.invia_email_agente} onChange={(value) => set("invia_email_agente", value)} /><Toggle label="Email cliente" checked={config.invia_email_cliente} onChange={(value) => set("invia_email_cliente", value)} /><Toggle label="Responsabile collegato" checked={config.invia_email_responsabile} onChange={(value) => set("invia_email_responsabile", value)} /></fieldset>

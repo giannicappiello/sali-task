@@ -35,6 +35,16 @@ function formatDate(value) {
 
 function vatSummary(lines) {
   return lines.reduce((summary, line) => {
+    if (line.riga_spedizione && line.dettaglio_calcolo?.ripartizione_iva?.length) {
+      for (const group of line.dettaglio_calcolo.ripartizione_iva) {
+        const rate = number(group.aliquota_iva);
+        const current = summary.get(rate) || { imponibile: 0, iva: 0 };
+        current.imponibile += number(group.imponibile_riga);
+        current.iva += number(group.iva_riga);
+        summary.set(rate, current);
+      }
+      return summary;
+    }
     const rate = number(line.aliquota_iva);
     const current = summary.get(rate) || { imponibile: 0, iva: 0 };
     current.imponibile += number(line.imponibile_riga);
@@ -72,7 +82,8 @@ export function buildOrderPdfModel(order, lines) {
   return {
     lines: totals.righe,
     totals,
-    totale_merce: totals.righe.reduce((sum, line) => sum + number(line.quantita) * number(line.prezzo_listino), 0),
+    totale_merce: totals.righe.filter((line) => !line.riga_spedizione).reduce((sum, line) => sum + number(line.quantita) * number(line.prezzo_listino), 0),
+    spese_spedizione: totals.righe.filter((line) => line.riga_spedizione).reduce((sum, line) => sum + number(line.imponibile_riga), 0),
     vat: [...vatSummary(totals.righe).entries()],
     documents: getMexalDocuments(order),
   };
@@ -249,7 +260,7 @@ function drawArticleRow(doc, lineItem, y, { showBarcode = false, showDiscountedU
 
   fitTextInCell(
     doc,
-    valueOrBlank(lineItem.aliquota_iva),
+    lineItem.riga_spedizione && lineItem.dettaglio_calcolo?.ripartizione_iva?.length > 1 ? "Ripartita" : valueOrBlank(lineItem.aliquota_iva),
     cols[amountEnd + 2] - 2.2,
     y + 2.2,
     cols[amountEnd + 2] - cols[amountEnd + 1] - 4.2,
@@ -265,7 +276,7 @@ function drawFooter(doc, order, model) {
   });
   cell(doc, 7, y, 55, 10, "Vettore", order.vettore);
   cell(doc, 62, y, 49, 10, "Data e ora trasporto", [formatDate(order.data_trasporto), order.ora_trasporto].filter(Boolean).join(" "));
-  cell(doc, 111, y, 45, 10, "Spese di trasporto", order.spese_trasporto ? money(order.spese_trasporto) : "", { align: "right" });
+  cell(doc, 111, y, 45, 10, "Spese di trasporto", model.spese_spedizione ? money(model.spese_spedizione) : order.spese_trasporto ? money(order.spese_trasporto) : "", { align: "right" });
   totalCell(y, 10, "Totale merce", money(model.totale_merce));
   cell(doc, 7, y + 10, 55, 10, "Domicilio vettore", order.domicilio_vettore);
   cell(doc, 62, y + 10, 49, 10, "Sconto merce", order.sconto_merce);
@@ -399,6 +410,8 @@ export function createZipArchive(files) {
 export async function createMexalDocumentPdfFiles(order, lines) {
   const documents = getMexalDocuments(order);
   const targets = documents.length ? documents : [null];
+  const shippingDocument = ["OCT", "OCM", "OCX", "OCI"].find((kind) => lines.some((line) => !line.riga_spedizione &&
+    (kind === "OCT" ? documents.some((document) => document.type === "OCT") : Number(line[`quantita_${kind.toLowerCase()}`]) > 0)));
   // PH retains its Sali di Ischia heading, including drafts and split Mexal documents.
   const managedCompositionAvailable = String(order?.modulo_ordini || "").toLowerCase() !== "ph" && typeof import.meta.env !== "undefined";
   return Promise.all(targets.map(async (document) => {
@@ -420,9 +433,10 @@ export async function createMexalDocumentPdfFiles(order, lines) {
     }
     const kind = document.type;
     const documentLines = lines.filter((line) => {
+      if (line.riga_spedizione) return kind === shippingDocument;
       if (kind === "OCT") return true;
       return Number(line[`quantita_${kind.toLowerCase()}`]) > 0;
-    }).map((line) => ({ ...line, quantita: kind === "OCT" ? line.quantita : line[`quantita_${kind.toLowerCase()}`] }));
+    }).map((line) => ({ ...line, quantita: kind === "OCT" || line.riga_spedizione ? line.quantita : line[`quantita_${kind.toLowerCase()}`] }));
     const doc = await createOrderPdf(order, documentLines, { document, managedLetterhead: managedCompositionAvailable });
     if (!managedCompositionAvailable) return { name: `ordine-${document.type}-${document.serie}-${document.numero}.pdf`, data: doc.output("arraybuffer"), headingSnapshot: null };
     try {

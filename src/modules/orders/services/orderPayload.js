@@ -20,6 +20,8 @@ const WRITABLE_ORDER_FIELDS = [
   "totale_documento",
   "note_mexal",
   "tipo_ordine",
+  "importo_minimo_porto_franco",
+  "addebito_spedizione",
 ];
 
 export function normalizePaymentCode(value) {

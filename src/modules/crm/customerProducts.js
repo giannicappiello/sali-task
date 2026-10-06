@@ -40,10 +40,14 @@ export function productAmount(rows) {
   const unknown = included.filter(row => row.net_amount == null || !Number.isFinite(Number(row.net_amount))).length;
   return { value: included.reduce((sum, row) => sum + (Number.isFinite(Number(row.net_amount)) ? Math.round(Number(row.net_amount) * 100) : 0), 0) / 100, unknown };
 }
+export function productQuantity(rows) {
+  return rows.filter(row => !row.excluded_from_totals)
+    .reduce((total, row) => total + Number(row.quantity || 0), 0);
+}
 export function productQuantities(rows) {
   const units = new Map();
   for (const row of rows.filter(row => !row.excluded_from_totals)) {
-    const unit = row.unit?.trim().toUpperCase() || 'UM non disponibile';
+    const unit = row.unit?.trim().toUpperCase() || '';
     units.set(unit, (units.get(unit) || 0) + Number(row.quantity || 0));
   }
   return [...units].map(([unit, quantity]) => ({ unit, quantity }));
@@ -74,7 +78,7 @@ export function groupCustomerProducts(rows, { from, to, allHistory = false }) {
     const previousAmount = previous ? productAmount(history.filter(row => inProductPeriod(row, previous.from, previous.to, false))) : null;
     const variation = previousAmount && !previousAmount.unknown && !amount.unknown && previousAmount.value > 0 ? (amount.value - previousAmount.value) / previousAmount.value * 100 : null;
     const sortedHistory = [...history].sort((a, b) => String(b.document_date || '').localeCompare(String(a.document_date || '')) || a.document_id.localeCompare(b.document_id) || a.line_position - b.line_position);
-    result.push({ code, description: sortedHistory[0]?.description || code, lines, history: sortedHistory, amount, quantities: productQuantities(lines),
+    result.push({ code, description: sortedHistory[0]?.description || code, lines, history: sortedHistory, amount, quantity: productQuantity(lines), quantities: productQuantities(lines),
       documents: new Set(lines.map(row => row.document_id)).size,
       reorders: dates.filter((date, index) => index > 0 && periodDates.has(date)).length,
       frequency, nextDate, variation });

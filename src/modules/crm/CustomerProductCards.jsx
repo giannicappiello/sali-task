@@ -13,7 +13,7 @@ function CustomerProductCard({ customerKey, kind, period, crmType }) {
   const products = useMemo(() => groupCustomerProducts(rows, { from: period.from, to: period.to }), [rows, period.from, period.to]);
   const amount = productAmount(products.flatMap(product => product.lines));
   return <section className="panel crm-panel crm-expandable-card crm-product-card">
-    <h3>{screen.title}<InfoTooltip label={screen.title} text="Articoli distinti nel periodo selezionato, da righe reali dei documenti visibili. Importi netti IVA esclusa; unità di misura mantenute separate. Nessuna duplicazione tra ordini e fatture." /></h3>
+    <h3>{screen.title}<InfoTooltip label={screen.title} text="Articoli distinti nel periodo selezionato, da righe reali dei documenti visibili. Importi netti IVA esclusa; quantità totali per prodotto. Nessuna duplicazione tra ordini e fatture." /></h3>
     {loading ? <p>Caricamento prodotti…</p> : error ? <p role="alert">{error}</p> : <><strong>{products.length} prodotti</strong><p>{formatMoney(amount.value)}{amount.unknown ? ' · importo parziale' : ''}</p><p>{products.slice(0, 2).map(product => product.description).join(' · ') || 'Nessun prodotto nel periodo'}</p></>}
     {hasScreenAccess(screen.code) ? <Link className="secondary-action" to={period.withPeriod(screen.path, { customer: customerKey, crmType, product: null, productSearch: null, productHistory: null })}>Apri dettaglio →</Link> : <small>Schermata da assegnare nelle impostazioni o non autorizzata.</small>}
   </section>;

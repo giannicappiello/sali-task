@@ -10,7 +10,7 @@ import CrmPeriodFilter from './CrmPeriodFilter';
 import { CrmCustomerStatusBadge } from './CrmCustomerStatus';
 import CrmDeleteActivityButton from './CrmDeleteActivityButton';
 import { useCustomerProductData } from './useCustomerProductData';
-import { groupCustomerProducts, productQuantities } from './customerProducts';
+import { groupCustomerProducts, productQuantity } from './customerProducts';
 import { loadAllQueryRows } from './crmDataset';
 import { crmFunctionError } from './crmFunctionError';
 import { crmTypeConfig, formatDate, formatMoney } from './crmConfig';
@@ -68,7 +68,7 @@ export default function CrmB2BAccount({ crmType = 'b2b', account, metrics, relat
   const workspaceTasks = (extra.tasks || []).filter(r => !r.crm_activity_id || !crmActivityIds.has(r.crm_activity_id));
   const activityRows = [...related.activities.map(r => ({ ...r, type: r.checklist_template?.titolo || r.tipo?.replaceAll('_', ' ') })), ...workspaceTasks.map(r => ({ ...r, workspacePhase: r, type: r.titolo, data_attivita: r.deadline, stato: r.completato_at || ['evaso','evasa','completato','completata','chiuso','chiusa'].includes(String(r.stato || '').toLowerCase()) ? 'completata' : r.stato }))];
   const customerJourney = [...journey, ...workspaceTasks.map(r => ({ event_type: 'task', entity_id: r.id, event_at: r.created_at, title: r.titolo, detail: r.stato }))];
-  const quantityLabel = products => productQuantities(products.flatMap(p => p.lines)).map(q => `${Number(q.quantity).toLocaleString('it-IT')} ${q.unit}`).join(' · ');
+  const quantityLabel = products => `${productQuantity(products.flatMap(p => p.lines)).toLocaleString('it-IT')} quantità totale`;
   const latestDate = [metrics.last_invoice_date, metrics.last_order_date].filter(Boolean).sort().at(-1);
   const card = (id, label, value, note, info) => <CrmKpiCard key={id} label={label} value={value} note={note} info={info} onClick={() => setSelected({ id, label })}/>;
   const number = value => value == null ? '—' : Number(value).toLocaleString('it-IT');
@@ -98,7 +98,7 @@ export default function CrmB2BAccount({ crmType = 'b2b', account, metrics, relat
       if (!hasScreenAccess(kind === 'purchased' ? 'crm.prodotti_acquistati' : 'crm.prodotti_ordinati')) return <p>Schermata prodotti non autorizzata per il tuo profilo.</p>;
       const data = kind === 'purchased' ? purchased : ordered; loading = data.loading; error = data.error;
       rows = kind === 'purchased' ? boughtProducts : orderedProducts;
-      columns = [col('description', 'Prodotto'), col('code', 'Codice'), { key: 'quantity', label: 'Quantità / UM', value: r => r.quantities.map(q => `${q.quantity} ${q.unit}`).join(' · ') }, col('documents', 'Documenti'), { key: 'amount', label: 'Importo netto', value: r => `${formatMoney(r.amount.value)}${r.amount.unknown ? ' (parziale)' : ''}`, sortValue: r => r.amount.value }, { key: 'history', label: 'Dettaglio', value: () => 'Apri righe', render: r => <details><summary>Righe documento</summary><CrmDetailTable rows={r.lines} columns={[col('document_number', 'Documento'), date('document_date'), col('description', 'Prodotto'), col('quantity', 'Quantità'), col('unit', 'UM'), money('net_amount', 'Importo netto'), col('document_status', 'Stato')]}/></details> }];
+      columns = [col('description', 'Prodotto'), col('code', 'Codice'), { key: 'quantity', label: 'Quantità', value: r => Number(r.quantity).toLocaleString('it-IT'), sortValue: r => r.quantity }, col('documents', 'Documenti'), { key: 'amount', label: 'Importo netto', value: r => `${formatMoney(r.amount.value)}${r.amount.unknown ? ' (parziale)' : ''}`, sortValue: r => r.amount.value }, { key: 'history', label: 'Dettaglio', value: () => 'Apri righe', render: r => <details><summary>Righe documento</summary><CrmDetailTable rows={r.lines} columns={[col('document_number', 'Documento'), date('document_date'), col('description', 'Prodotto'), col('quantity', 'Quantità'), col('unit', 'UM'), money('net_amount', 'Importo netto'), col('document_status', 'Stato')]}/></details> }];
     } else if (id === 'beauty') {
       rows = extra.beauty.map(r => ({ ...r, invoice_count: r.impact?.invoice_count, invoice_value: r.impact?.invoice_value, order_count: r.impact?.order_count, order_value: r.impact?.order_value })); error = extra.errors.beauty; loading = extra.loading;
       columns = [date('data'), col('stato', 'Stato'), col('consultant_name', 'Consulente'), col('numero_totale_pezzi_venduti', 'Pezzi'), money('fatturato_giornata', 'Fatturato giornata'), col('invoice_count', 'Fatture successive'), money('invoice_value', 'Fatturato successivo'), col('order_count', 'Ordini successivi'), money('order_value', 'Ordinato successivo')];
@@ -128,8 +128,8 @@ export default function CrmB2BAccount({ crmType = 'b2b', account, metrics, relat
       {card('order-lifetime', 'Ordinato lifetime', formatMoney(metrics.order_lifetime_total), `${number(metrics.order_lifetime_count)} ordini effettuati`, 'Totale e numero degli ordini del cliente nell’intero storico disponibile.')}
       {card('average', 'Valore medio ordine', formatMoney(metrics.average_order_value), `Su ${number(metrics.order_period_count)} ordini`, 'Ordinato nel periodo diviso per il numero di ordini nello stesso periodo.')}
       {card('latest', 'Ultimo documento', formatDate(latestDate), 'Documento più recente', 'Data più recente tra fatture e ordini disponibili del cliente.')}
-      {card('purchased', 'Prodotti acquistati', productValue(purchased, boughtProducts), quantityLabel(boughtProducts) || 'Prodotti distinti fatturati nel periodo', 'Articoli distinti presenti nelle righe delle fatture del periodo. Quantità separate per unità di misura, importi netti e note di credito mantenuti.')}
-      {card('ordered-products', 'Prodotti ordinati', productValue(ordered, orderedProducts), quantityLabel(orderedProducts) || 'Prodotti distinti negli ordini del periodo', 'Articoli distinti presenti nelle righe degli ordini del periodo. Quantità separate per unità di misura; ordini annullati esclusi dai totali monetari.')}
+      {card('purchased', 'Prodotti acquistati', productValue(purchased, boughtProducts), quantityLabel(boughtProducts) || 'Prodotti distinti fatturati nel periodo', 'Articoli distinti presenti nelle righe delle fatture del periodo. Quantità totali delle righe, importi netti e note di credito mantenuti.')}
+      {card('ordered-products', 'Prodotti ordinati', productValue(ordered, orderedProducts), quantityLabel(orderedProducts) || 'Prodotti distinti negli ordini del periodo', 'Articoli distinti presenti nelle righe degli ordini del periodo. Quantità totali delle righe; ordini annullati esclusi dai totali monetari.')}
     </div></section>
     <section className="b2b-kpi-section"><h2>2. Relazione commerciale e riordini</h2><div className="crm-kpi-grid">
       {card('opportunities', 'Opportunità aperte', number(snapshot.opportunities?.open_count), formatMoney(snapshot.opportunities?.pipeline_value), 'Opportunità commerciali aperte del cliente e relativo valore.')}

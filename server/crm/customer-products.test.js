@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { CUSTOMER_PRODUCT_CONTEXTS, customerProductAccountPath, CUSTOMER_PRODUCT_SCREENS, groupCustomerProducts, productAmount, productQuantities, previousProductPeriod, loadCustomerProductLines, loadProductCustomers } from '../../src/modules/crm/customerProducts.js';
+import { CUSTOMER_PRODUCT_CONTEXTS, customerProductAccountPath, CUSTOMER_PRODUCT_SCREENS, groupCustomerProducts, productAmount, productQuantity, productQuantities, previousProductPeriod, loadCustomerProductLines, loadProductCustomers } from '../../src/modules/crm/customerProducts.js';
 import { CRM_ROUTE_CATALOG } from '../../src/modules/crm/crmRouteCatalog.js';
 const read = path => readFileSync(new URL('../../' + path, import.meta.url), 'utf8');
 const row = (id, date, extra = {}) => ({ line_id: id, document_id: 'doc-' + id, document_date: date, product_code: 'IT001', description: 'Crema completa', quantity: 2, unit: 'PZ', net_amount: 10, line_position: 1, ...extra });
@@ -85,4 +85,23 @@ test('PRIVATE uses shared pages and returns to the PRIVATE customer, not B2B',as
  assert.match(sql,/security invoker/);assert.match(sql,/p_crm_type not in \('conto_terzi','b2b','online'\)/);
  assert.match(sql,/c.area_crm in \('conto_terzi','b2b','online'\)/);
  assert.doesNotMatch(sql,/insert into|create policy|workspace_moduli|workspace_aree/i);
+});
+
+test('CRM product totals include missing units without splitting products or duplicating lines', () => {
+ const first = row('1','2026-08-01',{unit:'PZ',quantity:4});
+ const missing = row('2','2026-08-02',{unit:null,quantity:3});
+ const blank = row('3','2026-08-03',{unit:'  ',quantity:2});
+ const credit = row('4','2026-08-04',{unit:null,quantity:-1,net_amount:-5,is_credit:true});
+ const canceled = row('5','2026-08-05',{unit:null,quantity:100,excluded_from_totals:true});
+ const rows = [first,first,missing,blank,credit,canceled];
+ const products = groupCustomerProducts(rows,period);
+ assert.equal(products.length,1);
+ assert.equal(products[0].quantity,8);
+ assert.equal(productQuantity(products.flatMap(product=>product.lines)),8);
+ assert.equal(products[0].lines.length,5);
+ assert.ok(products[0].quantities.every(item=>item.unit!=='UM non disponibile'));
+ const missingOnly = groupCustomerProducts([row('6','2026-08-06',{unit:null,product_code:'IT002',quantity:7})],period);
+ assert.equal(missingOnly.length,1);assert.equal(missingOnly[0].quantity,7);
+ const mixed = groupCustomerProducts([first,missing,...missingOnly[0].lines],period);
+ assert.equal(mixed.length,2);assert.equal(productQuantity(mixed.flatMap(product=>product.lines)),14);
 });

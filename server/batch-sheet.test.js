@@ -11,7 +11,7 @@ test('batch requests check department every time and preserve the selected phase
     });
     assert.equal(sent.phaseId, phaseId); assert.equal(sent.requestedBy, 'operator');
     if (operation === 'print') { assert.equal(sent.externalId, '75f4fb07-8b4b-42db-a5b4-ce3d9303ed11'); assert.equal(sent.printMode, 'server'); }
-    assert.equal(sent.allowShortage, operation === 'start' && kind === 'production'); assert.equal(result.canStart, true);
+    assert.equal(sent.allowShortage, ['start','print'].includes(operation) && kind === 'production'); assert.equal(result.canStart, true);
   }
 });
 test('invalid phase/hash and customer scopes never reach MES', async () => {
@@ -49,4 +49,12 @@ test('saved sheet and archive status can be read without a stale sheet hash', as
   });
   assert.equal(called,true); assert.equal(result.saved,null);
  }
+});
+
+test('print and start intent is authorized and persisted with the same operator and shortage choice',async()=>{
+ let sent;
+ await handleBatchSheet({}, {productionOrderId:42,kind:'production',operation:'print',phaseId,contentHash:'a'.repeat(64),printRequestId:'75f4fb07-8b4b-42db-a5b4-ce3d9303ed11',startAfterPrint:true,allowShortage:false}, {
+ authorize:async()=>({profile:{id:'maria'},scope:{mode:'team'}}),clientFactory:()=>({batchSheet:async payload=>{sent=payload;return {result:{printJob:{id:'job',printer:'PRODUZIONE',status:'Queued'}}};}})
+ });
+ assert.equal(sent.startAfterPrint,true);assert.equal(sent.requestedBy,'maria');assert.equal(sent.allowShortage,false);
 });

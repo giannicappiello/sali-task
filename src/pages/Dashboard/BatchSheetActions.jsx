@@ -65,12 +65,12 @@ export default function BatchSheetActions({ productionOrderId, kind, children, o
       .finally(() => { if (!controller.signal.aborted) setBusy(false); });
     return () => controller.abort();
   }, [open, phaseId, request, loadAttempt, autoEdit]);
-  async function printSheet() {
+  async function printSheet(startAfterPrint = false) {
     const pending = pendingCentralPrint(printKey, { hash: sheet.contentHash, phaseId: sheet.phaseId });
     if (pending.hash !== sheet.contentHash || pending.phaseId !== sheet.phaseId)
       throw new Error('Una stampa precedente è ancora in attesa. Verificare la coda MES prima di avviare il foglio aggiornato.');
     setPrintPending(true);
-    const job = await observeCentralPrint(() => request('print', { phaseId: pending.phaseId, contentHash: pending.hash, printRequestId: pending.id }),
+    const job = await observeCentralPrint(() => request('print', { phaseId: pending.phaseId, contentHash: pending.hash, printRequestId: pending.id, startAfterPrint, allowShortage }),
       (job, message) => setPrintMessage(message || 'Stampa ' + job.status + ' su PRODUZIONE (' + job.printer + ').'));
     if (job) {
       finishCentralPrint(printKey); setPrintPending(false);
@@ -88,7 +88,7 @@ export default function BatchSheetActions({ productionOrderId, kind, children, o
       else {
         if (operation === 'print-start') {
           const started = await batchPrintStart({ alreadyPrinted: printedHash === sheet.contentHash,
-            print: printSheet, onPrinted: () => setPrintedHash(sheet.contentHash),
+            print: () => printSheet(true), onPrinted: () => setPrintedHash(sheet.contentHash),
             start: () => request('start', { phaseId: sheet.phaseId, contentHash: sheet.contentHash, allowShortage }) });
           if (!started) return;
           setPrintMessage('Foglio stampato. Lavorazione in produzione nel MES. Il caricamento PLC viene confermato nella UI della Station collegata.');

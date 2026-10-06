@@ -23,3 +23,9 @@ test('retry after start failure reuses confirmed print',async()=>{
  assert.equal(await batchPrintStart(options()),true);
  assert.equal(prints,1);assert.equal(starts,2);
 });
+
+test('durable print-start confirmation does not issue a second start', async () => {
+ let starts=0;
+ assert.equal(await batchPrintStart({alreadyPrinted:false, print:async()=>({status:'Completed',confirmedAt:'now',sheet:{startAfterPrint:true}}),onPrinted:()=>{},start:async()=>{starts++;}}),true);
+ assert.equal(starts,0);
+});

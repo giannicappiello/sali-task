@@ -45,6 +45,7 @@ export function applyOrderShipping(lines = [], config = {}, { moduleCode = "prof
     allocated = roundCurrency(allocated + share);
     return { aliquota_iva: rate, imponibile_riga: share, iva_riga: roundCurrency(share * rate / 100) };
   });
+  const foreign = products.some((line) => line.iva_non_applicata);
   const vat = roundCurrency(split.reduce((sum, group) => sum + group.iva_riga, 0));
   return [...products, {
     codice_articolo: null,
@@ -57,11 +58,12 @@ export function applyOrderShipping(lines = [], config = {}, { moduleCode = "prof
     prezzo_netto: policy.addebito_spedizione,
     sconto_percentuale: 0, sconto_commerciale: "", sconto_pagamento: "",
     origine_prezzo: "configurazione-spedizione",
-    aliquota_iva: split.length === 1 ? split[0].aliquota_iva : 0,
+    iva_non_applicata: foreign,
+    aliquota_iva: foreign ? null : split.length === 1 ? split[0].aliquota_iva : 0,
     codice_iva_mexal: null,
     imponibile_riga: policy.addebito_spedizione,
     iva_riga: vat,
     totale_riga: roundCurrency(policy.addebito_spedizione + vat),
-    dettaglio_calcolo: { ...policy, netto_merce: net, documento_spedizione: recipient, ripartizione_iva: split },
+    dettaglio_calcolo: { ...policy, netto_merce: net, documento_spedizione: recipient, ripartizione_iva: foreign ? [] : split },
   }];
 }

@@ -2,6 +2,7 @@ export const ORDER_CUSTOMER_COLUMNS = [
   "codice_cliente",
   "ragione_sociale",
   "partita_iva",
+  "paese",
   "indirizzo",
   "cap",
   "localita",

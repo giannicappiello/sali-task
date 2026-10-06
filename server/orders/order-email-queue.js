@@ -81,6 +81,7 @@ export function buildOrderEmailQueueRows({
     return {
       ordine_id: order.id,
       evento: ORDER_CONFIRMATION_EMAIL_EVENT,
+      versione_conferma: Number(order.versione_conferma || 0),
       tipo_destinatario: recipient.type,
       destinatario: recipient.email,
       stato: "queued",
@@ -149,7 +150,7 @@ export async function enqueueOrderConfirmationEmails({
   const { data, error } = await supabase
     .from("ordini_email_invio")
     .upsert(rows, {
-      onConflict: "ordine_id,evento,destinatario",
+      onConflict: "ordine_id,evento,destinatario,versione_conferma",
       ignoreDuplicates: true,
     })
     .select("id");
@@ -167,6 +168,7 @@ export async function enqueueOrderConfirmationEmails({
       })
       .eq("ordine_id", order.id)
       .eq("evento", ORDER_CONFIRMATION_EMAIL_EVENT)
+      .eq("versione_conferma", Number(order.versione_conferma || 0))
       .in("destinatario", recipients.map(({ email }) => email))
       .in("stato", ["queued", "retry"])
       .select("id");

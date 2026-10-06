@@ -148,7 +148,7 @@ assert.deepEqual(queueResult, {
 assert.equal(queuedRows.length, 4);
 assert.ok(queuedRows.every((row) => row.corpo && row.oggetto));
 assert.deepEqual(upsertOptions, {
-  onConflict: "ordine_id,evento,destinatario",
+  onConflict: "ordine_id,evento,destinatario,versione_conferma",
   ignoreDuplicates: true,
 });
 const reconciledQueueResult = await enqueueOrderConfirmationEmails({

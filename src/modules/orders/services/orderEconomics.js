@@ -30,7 +30,7 @@ export function calculateOrderLineEconomics(line) {
   const quantita = numeric(line.quantita_documento ?? line.quantita);
   const prezzoListino = numeric(line.prezzo_listino ?? line.prezzo_unitario ?? line.prezzo);
   const scontoCommerciale = String(line.sconto_commerciale ?? line.sconto ?? "").trim();
-  const aliquotaIva = numeric(line.aliquota_iva ?? line.iva_percentuale ?? line.iva);
+  const aliquotaIva = line.iva_non_applicata ? 0 : numeric(line.aliquota_iva ?? line.iva_percentuale ?? line.iva);
   const prezzoNettoUnitario = applySequentialDiscounts(prezzoListino, scontoCommerciale);
   const imponibileRiga = roundCurrency(prezzoNettoUnitario * quantita);
   const ivaRiga = roundCurrency(imponibileRiga * aliquotaIva / 100);
@@ -42,7 +42,7 @@ export function calculateOrderLineEconomics(line) {
     prezzo_listino: prezzoListino,
     sconto_commerciale: scontoCommerciale,
     prezzo_netto: prezzoNettoUnitario,
-    aliquota_iva: aliquotaIva,
+    aliquota_iva: line.iva_non_applicata ? null : aliquotaIva,
     imponibile_riga: imponibileRiga,
     iva_riga: ivaRiga,
     totale_riga: totaleRiga,

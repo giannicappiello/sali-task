@@ -246,7 +246,7 @@ export default function OrderDetail() {
           return <div key={kind}><span>{kind}</span><strong>{value ? `${document?.serie || "-"}/${value}` : "-"}</strong></div>;
         })}
         <div><span>Totale imponibile</span><strong>{money(order.totale_imponibile ?? order.totale)}</strong></div>
-        <div><span>Totale IVA</span><strong>{money(order.totale_iva)}</strong></div>
+        <div><span>Totale IVA</span><strong>{lines.some((line) => line.iva_non_applicata) ? null : money(order.totale_iva)}</strong></div>
         <div><span>Totale documento</span><strong>{money(order.totale_documento ?? order.totale)}</strong></div>
       </section>
 
@@ -287,7 +287,7 @@ export default function OrderDetail() {
         <div className="orders-table-wrap">
           <table className="orders-table">
             <thead><tr><th>Codice</th><th>Descrizione</th><th>Q.tà</th>{!privateOrder && <><th>OCM</th><th>OCX</th><th>OCI</th></>}<th>Listino</th><th>Sconto commerciale</th><th>Netto</th><th>Imponibile</th><th>IVA</th><th>Totale</th></tr></thead>
-            <tbody>{lines.map((line) => <tr key={line.id}><td>{line.codice_articolo}</td><td>{line.descrizione}</td><td>{line.quantita}</td>{!privateOrder && <><td>{line.quantita_ocm || 0}</td><td>{line.quantita_ocx || 0}</td><td>{line.quantita_oci || 0}</td></>}<td>{money(line.prezzo_listino)}</td><td>{line.sconto_commerciale || "-"}</td><td>{money(line.prezzo_netto)}</td><td>{money(line.imponibile_riga)}</td><td>{money(line.iva_riga)} ({line.aliquota_iva || 0}%)</td><td>{money(line.totale_riga)}</td></tr>)}</tbody>
+            <tbody>{lines.map((line) => <tr key={line.id}><td>{line.codice_articolo}</td><td>{line.descrizione}</td><td>{line.quantita}</td>{!privateOrder && <><td>{line.quantita_ocm || 0}</td><td>{line.quantita_ocx || 0}</td><td>{line.quantita_oci || 0}</td></>}<td>{money(line.prezzo_listino)}</td><td>{line.sconto_commerciale || "-"}</td><td>{money(line.prezzo_netto)}</td><td>{money(line.imponibile_riga)}</td><td>{line.iva_non_applicata ? null : <>{money(line.iva_riga)} ({line.aliquota_iva || 0}%)</>}</td><td>{money(line.totale_riga)}</td></tr>)}</tbody>
           </table>
         </div>
       </section>

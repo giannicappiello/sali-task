@@ -35,6 +35,7 @@ function formatDate(value) {
 
 function vatSummary(lines) {
   return lines.reduce((summary, line) => {
+    if (line.iva_non_applicata) return summary;
     if (line.riga_spedizione && line.dettaglio_calcolo?.ripartizione_iva?.length) {
       for (const group of line.dettaglio_calcolo.ripartizione_iva) {
         const rate = number(group.aliquota_iva);
@@ -299,7 +300,7 @@ function drawFooter(doc, order, model) {
     const values = [rate, money(vatTotals.iva), money(vatTotals.imponibile), formatDate(order.scadenza), money(vatTotals.imponibile + vatTotals.iva)];
     vatColumns.forEach(({ x, width, align }, valueIndex) => fitTextInCell(doc, values[valueIndex], align === "right" ? x + width - 1.2 : x + width / 2, rowY, width - 2.4, 3, { align, fontSize: 6.2, minFontSize: 5, maxLines: 1 }));
   });
-  totalCell(y + 20, 18, "Totale IVA", money(model.totals.totale_iva));
+  totalCell(y + 20, 18, "Totale IVA", model.lines.some((line) => line.iva_non_applicata) ? "" : money(model.totals.totale_iva));
   cell(doc, 7, y + 38, 55, 9, "Trasporto a cura del", order.trasporto_a_cura_del);
   cell(doc, 62, y + 38, 49, 9, "Aspetto esteriore dei beni", order.aspetto_esteriore_beni);
   cell(doc, 111, y + 38, 45, 9, "Abbuono", order.abbuono === null || order.abbuono === undefined || order.abbuono === "" ? "" : money(order.abbuono), { align: "right" });

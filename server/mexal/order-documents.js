@@ -115,11 +115,11 @@ export function buildRootMatrixRows(lines, magazzino, defaultAgentCode, kind) {
     sconto: (line) => mexalLineDiscount(line),
     id_mag_riga: (line) => number(line.id_mag_riga ?? magazzino),
     tp_um_articolo: (line) => normalizeMexalUnitType(line.tp_um_articolo),
-    cod_iva: (line) => text(line.cod_iva) || text(line.codice_iva_mexal),
+    cod_iva: (line) => line.iva_non_applicata ? "" : text(line.cod_iva) || text(line.codice_iva_mexal),
     tipo_stato_riga: () => mexalOrderLineStatus(kind),
   };
   const result = Object.fromEntries(Object.entries(fields).map(([field, value]) => [field,
-    lines.map((line, index) => [index + 1, value(line, index + 1)]).filter(([, item]) => item !== undefined && item !== ""),
+    lines.map((line, index) => [index + 1, value(line, index + 1)]).filter(([, item], index) => item !== undefined && (item !== "" || (field === "cod_iva" && lines[index]?.iva_non_applicata))),
   ]).filter(([, values]) => values.length));
 
   const commissionRows = lines.map((line, index) => [index + 1, number(line.provvigione_percentuale ?? line.perc_provv)]).filter(([, value]) => value !== undefined);

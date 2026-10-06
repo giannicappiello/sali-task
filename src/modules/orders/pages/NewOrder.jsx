@@ -21,6 +21,8 @@ import { isPrivateOrderModule, orderModuleFilter } from "../services/orderModule
 
 import { applyOrderShipping, isShippingLine, normalizeShippingConfig } from "../services/orderShipping.js";
 
+import { applyOrderVatPolicy, isForeignOrderCustomer } from "../services/orderVatPolicy.js";
+
 const PAGE_SIZE = 1000;
 
 function normalize(value) {
@@ -221,10 +223,11 @@ export default function NewOrder() {
       const isDraft = String(existing.stato || "").toLowerCase() === "bozza";
       if (!isDraft && (existing.numero_ocm || existing.numero_ocx || existing.numero_oci || existing.numero_oct || docs?.length || !["non_avviato", "non_inviato", "errore", "annullato", "arrestato"].includes(existing.stato_sincronizzazione || "non_inviato"))) { if (active) setError("Questo ordine non è più modificabile."); return; }
       if (!active) return;
-      setSelectedCustomer(customers.find((customer) => customer.codice_cliente === existing.codice_cliente) || { codice_cliente: existing.codice_cliente, ragione_sociale: existing.ragione_sociale_cliente });
+      const editingCustomer = customers.find((customer) => customer.codice_cliente === existing.codice_cliente) || { codice_cliente: existing.codice_cliente, ragione_sociale: existing.ragione_sociale_cliente };
+      setSelectedCustomer(editingCustomer);
       setExistingOrderType(existing.tipo_ordine || "standard");
       setSelectedPayment({ codice: existing.codice_pagamento || "", descrizione: existing.descrizione_pagamento || "" }); setComments(existing.commenti || "");
-      setLines((existingLines || []).filter((line) => !isShippingLine(line)).map((line) => withEconomics({ ...line, prodotto_origine: findMexalProductByCode(products, line.codice_articolo) || line })));
+      setLines((existingLines || []).filter((line) => !isShippingLine(line)).map((line) => withEconomics({ ...line, prodotto_origine: findMexalProductByCode(products, line.codice_articolo) || line }, editingCustomer)));
     })();
     return () => { active = false; };
   }, [editingOrderId, customers, products]);
@@ -247,7 +250,7 @@ export default function NewOrder() {
         ean: normalize(product.ean),
         quantita: quantity,
         prezzo_unitario: conditions.prezzo_base,
-        ...withEconomics({ ...conditions, quantita: quantity, prodotto_origine: product }),
+        ...withEconomics({ ...conditions, quantita: quantity, prodotto_origine: product }, customer),
         disponibilita: numberValue(product.disponibilita, 0),
         unita_misura: normalize(product.unita_misura || product.um || "PZ"),
         prodotto_origine: product,
@@ -394,9 +397,9 @@ export default function NewOrder() {
     pezzi: lines.reduce((sum, line) => sum + numberValue(line.quantita), 0),
   }), [economics, lines]);
 
-  function withEconomics(line) {
+  function withEconomics(line, customer = selectedCustomer) {
     const product = line.prodotto_origine || line;
-    return calculateOrderLineEconomicsWithPayment({
+    return calculateOrderLineEconomicsWithPayment(applyOrderVatPolicy({
       ...line,
       quantita: line.quantita,
       // Mexal receives the list price and the commercial discount chain. The
@@ -406,7 +409,7 @@ export default function NewOrder() {
       // Mexal blob or from an order-line fallback.
       codice_iva_mexal: product.codice_iva_mexal || null,
       aliquota_iva: product.aliquota_iva,
-    });
+    }, customer));
   }
 
 
@@ -433,7 +436,7 @@ export default function NewOrder() {
     setLines((current) =>
       current.map((line) => ({
         ...line,
-        ...withEconomics({ ...line, ...calculateConditions(line.prodotto_origine || line, line.quantita, customer, payment) }),
+        ...withEconomics({ ...line, ...calculateConditions(line.prodotto_origine || line, line.quantita, customer, payment) }, customer),
       }))
     );
     setCustomerSearch("");
@@ -625,7 +628,7 @@ export default function NewOrder() {
   }
 
   const canCheckAvailability = lines.length > 0 && lines.every((line) => normalize(line.codice_articolo) && numberValue(line.quantita) > 0) && !checkingAvailability;
-  const productsMissingVat = useMemo(() => lines.filter((line) => !normalize(line.codice_iva_mexal) || !Number.isFinite(Number(line.aliquota_iva))), [lines]);
+  const productsMissingVat = useMemo(() => isForeignOrderCustomer(selectedCustomer) ? [] : lines.filter((line) => !normalize(line.codice_iva_mexal) || !Number.isFinite(Number(line.aliquota_iva))), [lines, selectedCustomer]);
   const availabilityValidity = useMemo(() => getAvailabilityValidity({ availability, lines, customer: selectedCustomer, invalidated: availabilityInvalidated, reservation: isReservation, skipAvailability }), [availability, lines, selectedCustomer, availabilityInvalidated, isReservation, skipAvailability]);
   const availabilityPreview = useMemo(() => buildAvailabilityPreview(lines, availability?.lines, { reservation: isReservation, skipAvailability }), [lines, availability, isReservation, skipAvailability]);
   const documentPreviewTotals = useMemo(() => ({
@@ -972,7 +975,7 @@ export default function NewOrder() {
                       </td>
                       <td>{money(line.prezzo_netto)}</td>
                       <td>{money(line.imponibile_riga)}</td>
-                      <td>{productsMissingVat.some((item) => item.codice_articolo === line.codice_articolo) ? <span className="orders-vat-missing">IVA mancante</span> : <>{money(line.iva_riga)} <small>({line.aliquota_iva}%)</small></>}</td>
+                      <td>{isForeignOrderCustomer(selectedCustomer) ? null : productsMissingVat.some((item) => item.codice_articolo === line.codice_articolo) ? <span className="orders-vat-missing">IVA mancante</span> : <>{money(line.iva_riga)} <small>({line.aliquota_iva}%)</small></>}</td>
                       <td>{money(lineTotal)}</td>
                       <td><button className="orders-icon-danger" type="button" disabled={checkingAvailability} onClick={() => removeLine(line.codice_articolo)} title="Elimina riga"><Trash2 size={17} /></button></td>
                     </tr>
@@ -1003,7 +1006,7 @@ export default function NewOrder() {
               {shippingLine && <tr className="orders-shipping-line">
                 <td>—</td><td><strong>Spese di spedizione</strong><small>Netto merce inferiore a {money(shippingConfig.importo_minimo_porto_franco)}</small></td>
                 <td>1</td><td>{money(shippingLine.prezzo_listino)}</td><td>—</td><td>{money(shippingLine.prezzo_netto)}</td>
-                <td>{money(shippingLine.imponibile_riga)}</td><td>{money(shippingLine.iva_riga)}</td><td>{money(shippingLine.totale_riga)}</td><td />
+                <td>{money(shippingLine.imponibile_riga)}</td><td>{shippingLine.iva_non_applicata ? null : money(shippingLine.iva_riga)}</td><td>{money(shippingLine.totale_riga)}</td><td />
               </tr>}
             </tbody>
           </table>
@@ -1052,7 +1055,7 @@ export default function NewOrder() {
         <div className="orders-order-total orders-order-total-enhanced">
           <div><span>Totale ordine</span><strong>{pieces(totals.pezzi)} pezzi</strong></div>
           <div><span>Imponibile</span><strong>{money(totals.totale_imponibile)}</strong></div>
-          <div><span>IVA</span><strong>{money(totals.totale_iva)}</strong></div>
+          <div><span>IVA</span><strong>{isForeignOrderCustomer(selectedCustomer) ? null : money(totals.totale_iva)}</strong></div>
           <div className="orders-order-grand-total"><span>TOTALE</span><strong>{money(totals.totale_documento)}</strong></div>
         </div>
         <div className="orders-order-actions">

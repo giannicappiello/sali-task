@@ -205,7 +205,7 @@ export default async function handler(req, res) {
       if (text(document.numero)) done.add(document.tipo_documento);
     }
     const pendingDocuments = Object.fromEntries(Object.entries(classified).filter(([kind]) => !done.has(kind)));
-    const vat = await prepareOrderVat(pendingDocuments, mexal);
+    const vat = await prepareOrderVat(pendingDocuments, mexal, { customer });
     if (vat.updates.length) {
       const { error: vatSaveError } = await admin.rpc("salva_iva_ordine_in_sync", {
         p_ordine_id: orderId, p_sync_token: syncToken, p_aggiornamenti: vat.updates,

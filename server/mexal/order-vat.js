@@ -1,10 +1,16 @@
 import { getArticleCode, getMexalVat, loadFullArticle } from "./sync-products.js";
 
+import { applyOrderVatPolicy, isForeignOrderCustomer } from "../../src/modules/orders/services/orderVatPolicy.js";
+
 const text = (value) => String(value ?? "").trim();
 
 // Validate every pending document before the first POST. Missing snapshots are
 // repaired from the authoritative article, never by assuming a default VAT.
-export async function prepareOrderVat(documents, mexal, { loadArticle = loadFullArticle } = {}) {
+export async function prepareOrderVat(documents, mexal, { loadArticle = loadFullArticle, customer } = {}) {
+  if (isForeignOrderCustomer(customer)) {
+    return { documents: Object.fromEntries(Object.entries(documents).map(([kind, lines]) =>
+      [kind, lines.map((line) => applyOrderVatPolicy(line, customer))])), updates: [] };
+  }
   const repairs = new Map();
   const missing = new Map();
   for (const [kind, lines] of Object.entries(documents)) {

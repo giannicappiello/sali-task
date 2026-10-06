@@ -1,5 +1,5 @@
 import { useAuth } from '../../contexts/AuthContext';
-import { groupCustomerProducts } from './customerProducts';
+import { CUSTOMER_PRODUCT_SCREENS, groupCustomerProducts } from './customerProducts';
 import CrmOpenOrdersDialog from './CrmOpenOrdersDialog';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -97,7 +97,7 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
     if (selected.kind === 'products') {
       if (products.loading) return <p role="status">Caricamento prodotti…</p>;
       if (products.error) return <p role="alert">{products.error}</p>;
-      if (!hasScreenAccess('crm.prodotti_ordinati')) return <p>Schermata prodotti non autorizzata per il tuo profilo.</p>;
+      if (!hasScreenAccess(CUSTOMER_PRODUCT_SCREENS[selected.metric === 'purchased' ? 'purchased' : 'ordered'].code)) return <p>Schermata prodotti non autorizzata per il tuo profilo.</p>;
       rows = groupCustomerProducts(products.rows.filter(row => row.category === selected.metric), { from: period.from, to: period.to });
       columns = [valueColumn('description', 'Prodotto'), valueColumn('code', 'Codice'), { key: 'quantity', label: 'Quantità / UM', value: r => r.quantities.map(q => `${q.quantity} ${q.unit}`).join(' · ') }, valueColumn('documents', 'Documenti'), { key: 'amount', label: 'Importo netto', value: r => `${formatMoney(r.amount.value)}${r.amount.unknown ? ' (parziale)' : ''}`, sortValue: r => r.amount.value }, { key: 'history', label: 'Dettaglio', value: () => 'Apri righe', render: r => <details><summary>Righe documento</summary><CrmDetailTable rows={r.lines} columns={[valueColumn('document_number', 'Documento'), valueColumn('customer_name', 'Cliente'), dateColumn('document_date', 'Data'), valueColumn('description', 'Prodotto'), valueColumn('quantity', 'Quantità'), valueColumn('unit', 'UM'), moneyColumn('net_amount', 'Importo netto'), valueColumn('document_status', 'Stato')]}/></details> }];
     } else if (selected.kind === 'beauty') {
@@ -131,6 +131,7 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
         {card('Ordinato', formatMoney(data.order_total), null, 'Importi netti IVA esclusa. PR in corso: documenti OCM verificati aperti e non fatturati. Prenotazioni: OCI PR verificati aperti e non fatturati e prenotazioni PH. Stralci: soli OCX verificati aperti e non fatturati. PH: ordini che restano tali e non sono fatturati. Verifica delle fatture senza limite di periodo.', { kind: 'open-orders' })}
         {card('Valore medio ordine', formatMoney(data.average_order_value), 'Periodo selezionato', 'Ordinato diviso per il numero di ordini nel periodo.', customer('ordered'))}
         {card('Prodotti ordinati', productCount('ordered'), 'Prodotti distinti nel periodo', 'Articoli degli ordini PH standard, PR in corso e Stralci OCX aperti non fatturati. Prenotazioni escluse. Nel dettaglio le quantità sono separate per unità di misura.', { kind: 'products', metric: 'ordered' })}
+        {card('Prodotti acquistati', productCount('purchased'), 'Prodotti distinti fatturati nel periodo', 'Articoli presenti nelle righe delle fatture del periodo selezionato, filtrati per agente. Ogni codice prodotto è contato una sola volta; quantità separate per unità di misura e importi netti con segno delle note di credito nel dettaglio.', { kind: 'products', metric: 'purchased' })}
         {card('Prodotti prenotati', productCount('reserved'), 'Prodotti distinti nel periodo', 'Articoli delle prenotazioni PH e degli OCI PR verificati aperti e non fatturati. Ogni codice prodotto è contato una sola volta; quantità e unità sono nel dettaglio.', { kind: 'products', metric: 'reserved' })}
         {card('Clienti senza attività nel periodo', data.inactive_customers, 'Nessun documento da 90 giorni', 'Indicatore commerciale di inattività: non modifica lo stato attivo/non attivo del CRM.', customer('inactive'))}
       </div></section>

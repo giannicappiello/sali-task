@@ -13,7 +13,7 @@ test('uses the same queued MES snapshot and identity without touching other arti
   let sent;
   let applied;
   const db = { async rpc(name, args) { applied = { name, args }; return { error: null }; },
-    from() { throw new Error('No independent Mexal inventory writes allowed'); } };
+    from(table) { assert.equal(table,'workspace_warehouse_stock'); return {select(){return this;},eq(){return this;},async in(){return {data:snapshot().rows.map(x=>({...x,synchronized_at:snapshot().capturedAt})),error:null};}}; } };
   const mes = { async syncInventoryArticle(command) { sent = command; return { result: { eventId, payload } }; } };
   const result = await syncWarehouseArticle(db, { articleCode: ' cn0643 ', warehouseNumber: 8 }, { mes });
   assert.equal(sent.articleCode, 'CN0643');
@@ -66,4 +66,12 @@ test('a non-operational warehouse refresh preserves the other warehouse rows', a
   assert.equal(writes[2].values.giacenza, 105);
   assert.deepEqual(writes[2].filters, [['codice_articolo', 'IT001']]);
   assert.equal(writes[3].values.giacenza, 105);
+});
+
+test('rejects success if Workspace keeps an old or mismatched quantity', async()=>{
+ const mes={async syncInventoryArticle(){return {result:{eventId,payload:JSON.stringify(snapshot())}};}};
+ for(const data of [[],snapshot().rows.map(x=>({...x,on_hand:1,synchronized_at:snapshot().capturedAt})),snapshot().rows.map(x=>({...x,synchronized_at:'2026-10-02T10:00:00Z'}))]) {
+  const db={async rpc(){return {error:null};},from(){return {select(){return this;},eq(){return this;},async in(){return {data,error:null};}};}};
+  await assert.rejects(syncWarehouseArticle(db,{articleCode:'CN0643',warehouseNumber:1},{mes}),/Sincronizzazione non confermata/);
+ }
 });

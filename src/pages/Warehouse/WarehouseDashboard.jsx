@@ -147,7 +147,7 @@ export default function WarehouseDashboard() {
       const result = await invokeArticleStockSync(row.article_code, row.warehouse_number);
       setSyncMessage(result.message || result.data?.message || ("Giacenza di " + row.article_code + " sincronizzata."));
       setStockRevision(value => value + 1);
-      if (asOfDate !== localDay()) setSyncMessage(message => message + " Seleziona la data di oggi per vedere la giacenza aggiornata.");
+      setAsOfDate(localDay());
     } catch (failure) { setSyncError(row.article_code + ": " + (failure.message || "Sincronizzazione non riuscita.")); }
     finally { syncLock.current = false; setSyncingArticle(""); }
   };

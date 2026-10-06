@@ -20,6 +20,14 @@ export async function syncWarehouseArticle(db, input, { mes = createProgremesPro
       p_hash: createHash("sha256").update(result.payload).digest("hex"), p_rows: snapshot.rows,
     });
     if (error) throw Object.assign(new Error("Giacenze MES aggiornate; consegna a Workspace da ritentare automaticamente."), { status: 503 });
+    const confirmed = await db.from("workspace_warehouse_stock")
+      .select("warehouse_number,on_hand,committed,available,synchronized_at")
+      .eq("article_code", articleCode).in("warehouse_number", [1, 8]);
+    if (confirmed.error || !snapshot.rows.every(expected => confirmed.data?.some(actual =>
+      actual.warehouse_number === expected.warehouse_number &&
+      new Date(actual.synchronized_at).getTime() >= new Date(snapshot.capturedAt).getTime() &&
+      ["on_hand", "committed", "available"].every(key => Number(actual[key]) === Number(expected[key])))))
+      throw Object.assign(new Error("Giacenza MES aggiornata, ma il valore in Workspace non coincide: verificare anagrafica e consegna dello snapshot. Sincronizzazione non confermata."), { status: 503 });
     return { message: "Giacenza di " + articleCode + " sincronizzata in Workspace e MES (magazzini 1 e 8)." };
   }
   // Warehouses outside MES's operational scope retain their existing Mexal source.

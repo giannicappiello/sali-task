@@ -1,3 +1,4 @@
+import { canEditOrderDraft } from "../services/orderEditPolicy.js";
 import {loadCustomerDirectory,customerDisplayName} from '../services/agentNames';
 import {invoicesForMexalDocument} from '../services/orderInvoiceReconciliation';
 import OrderStatus from "../components/OrderStatus";
@@ -220,7 +221,7 @@ export default function OrderDetail() {
   const isClosed = displayStatus.closed;
   const hasMexalDocument = hasMexalDocuments(order);
   const isDraft = String(order.stato || "").trim().toLowerCase() === "bozza";
-  const canEdit = canWriteOrders && (isDraft || (!isClosed && !hasMexalDocument && ["non_avviato", "non_inviato", "errore", "annullato", "arrestato"].includes(syncStatus)));
+  const canEdit = canWriteOrders && canEditOrderDraft(order, { hasMexalDocument });
   const canDelete = isAdminUser || (profile?.attivo !== false && permissions.includes("orders.delete"));
 
   return (
@@ -295,7 +296,7 @@ export default function OrderDetail() {
       <div className="orders-detail-actions">
         <button className="orders-secondary orders-download-pdf-mobile" type="button" disabled={downloadingPdf} onClick={downloadPdf}><Download size={18} /> {downloadingPdf ? "Generazione PDF..." : "SCARICA PDF"}</button>
         {canEdit && <button className="orders-secondary" type="button" onClick={() => navigate(`${basePath}/modifica/${orderId}`)}><Edit3 size={18} /> MODIFICA ORDINE</button>}
-        {canWriteOrders && ["ph", "private"].includes(moduleCode) && isDraft && <button className="orders-primary" type="button" disabled={confirming} onClick={confirmDraft}>{confirming ? <RefreshCw className="spin" size={18} /> : <Send size={18} />}{confirming ? (privateOrder ? "CONFERMA E INVIO..." : "CONFERMA...") : privateOrder ? "CONFERMA E CREA OCT" : "CONFERMA ORDINE"}</button>}
+        {canWriteOrders && ["ph", "private"].includes(moduleCode) && isDraft && canEdit && <button className="orders-primary" type="button" disabled={confirming} onClick={confirmDraft}>{confirming ? <RefreshCw className="spin" size={18} /> : <Send size={18} />}{confirming ? (privateOrder ? "CONFERMA E INVIO..." : "CONFERMA...") : privateOrder ? "CONFERMA E CREA OCT" : "CONFERMA ORDINE"}</button>}
         {canDelete && <button className="orders-danger" type="button" disabled={deleting} onClick={removeOrder}><Trash2 size={18} /> {deleting ? "Eliminazione definitiva..." : "ELIMINA DEFINITIVAMENTE"}</button>}
         {canWriteOrders && moduleCode !== "ph" && syncStatus === "in_corso" && <button className="orders-danger" type="button" disabled={stopping} onClick={requestStop}><OctagonX size={18} /> {stopping ? "Richiesta..." : "ARRESTA INVIO"}</button>}
         {canWriteOrders && moduleCode !== "ph" && (privateOrder || mexalSendingEnabled) && !isClosed && !["in_corso", "arresto_richiesto", "completato"].includes(syncStatus) && !hasMexalDocument && <button className="orders-primary" type="button" disabled={sending} onClick={sendToMexal}>{sending ? <RefreshCw className="spin" size={18} /> : <Send size={18} />}{["errore", "arrestato"].includes(syncStatus) ? "RIPROVA INVIO" : privateOrder ? "CREA E INVIA OCT" : "INVIA A MEXAL"}</button>}

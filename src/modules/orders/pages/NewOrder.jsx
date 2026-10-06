@@ -1,3 +1,4 @@
+import { canEditOrderDraft } from "../services/orderEditPolicy.js";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ChevronDown, ChevronUp, Info, Minus, Plus, Save, Search, ShoppingCart, Trash2 } from "lucide-react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -190,6 +191,7 @@ export default function NewOrder() {
   const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [availabilityInvalidated, setAvailabilityInvalidated] = useState(false);
   const [existingOrderType, setExistingOrderType] = useState("");
+  const [editingBlocked, setEditingBlocked] = useState(false);
   const isReservation = !isPrivateOrderModule(moduleCode) && (editingOrderId ? existingOrderType === "prenotazione" : requestedReservation);
   const privateOrder = isPrivateOrderModule(moduleCode);
   const skipAvailability = moduleCode === "ph" || privateOrder;
@@ -220,8 +222,7 @@ export default function NewOrder() {
         supabase.from("ordini_documenti_mexal").select("numero").eq("ordine_id", editingOrderId).not("numero", "is", null),
       ]);
       if (orderError || linesError || docsError) { if (active) setError((orderError || linesError || docsError).message); return; }
-      const isDraft = String(existing.stato || "").toLowerCase() === "bozza";
-      if (!isDraft && (existing.numero_ocm || existing.numero_ocx || existing.numero_oci || existing.numero_oct || docs?.length || !["non_avviato", "non_inviato", "errore", "annullato", "arrestato"].includes(existing.stato_sincronizzazione || "non_inviato"))) { if (active) setError("Questo ordine non è più modificabile."); return; }
+      if (!canEditOrderDraft(existing, { hasMexalDocument: Boolean(docs?.length) })) { if (active) { setEditingBlocked(true); setError("Un ordine già confermato/inviato non è più modificabile."); } return; }
       if (!active) return;
       const editingCustomer = customers.find((customer) => customer.codice_cliente === existing.codice_cliente) || { codice_cliente: existing.codice_cliente, ragione_sociale: existing.ragione_sociale_cliente };
       setSelectedCustomer(editingCustomer);
@@ -798,6 +799,7 @@ export default function NewOrder() {
   }
 
   if (loading) return <div className="orders-empty">Caricamento nuovo ordine...</div>;
+  if (editingBlocked) return <div className="orders-page"><div className="orders-alert orders-alert-error">{error}</div><button className="orders-secondary" type="button" onClick={goBack}>Torna agli ordini</button></div>;
 
   return (
     <div className="orders-page orders-new-order-page">

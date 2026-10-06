@@ -19,21 +19,16 @@ begin
    values(v_order,'order_confirmed','cliente','test@example.com','test',1,'sent');
   select to_jsonb(o)||jsonb_build_object('stato','bozza') into v_header from public.ordini_testate o where id=v_order;
   select jsonb_agg(to_jsonb(r)||jsonb_build_object('quantita',2,'imponibile_riga',160,'totale_riga',160)) into v_lines from public.ordini_righe r where ordine_id=v_order and not riga_spedizione;
-  perform public.aggiorna_ordine_operativo(v_order,v_header,v_lines);
-  perform public.conferma_ordine_workspace(v_order);
-  if (select versione_conferma from public.ordini_testate where id=v_order)<>2 then raise exception 'Missing reconfirmation revision';end if;
-  if (select disponibilita from public.ordini_prodotti_cache where codice_articolo=v_code)<>100-2*(array_position(array['prof','ph','private'],v_module)) then raise exception 'Stock reserved twice';end if;
-  insert into public.ordini_email_invio(ordine_id,evento,tipo_destinatario,destinatario,oggetto,versione_conferma)
-   values(v_order,'order_confirmed','cliente','test@example.com','test',2);
-  begin
-   insert into public.ordini_email_invio(ordine_id,evento,tipo_destinatario,destinatario,oggetto,versione_conferma)
-    values(v_order,'order_confirmed','cliente','test@example.com','test',2);
-  exception when unique_violation then v_duplicate:=true;end;
-  if not v_duplicate then raise exception 'Duplicate confirmation email allowed';end if;
-  if (select count(*) from public.ordini_email_invio where ordine_id=v_order)<>2 then raise exception 'Reconfirmation email lost';end if;
+  v_duplicate:=false;
+  begin perform public.aggiorna_ordine_operativo(v_order,v_header,v_lines);
+  exception when sqlstate 'P0001' then v_duplicate:=true;end;
+  if not v_duplicate then raise exception 'Sent order edit allowed';end if;
+  if (select versione_conferma from public.ordini_testate where id=v_order)<>1 then raise exception 'Sent revision changed';end if;
+  if (select disponibilita from public.ordini_prodotti_cache where codice_articolo=v_code)<>100-array_position(array['prof','ph','private'],v_module) then raise exception 'Sent stock changed';end if;
+  if (select count(*) from public.ordini_email_invio where ordine_id=v_order)<>1 then raise exception 'Unexpected email';end if;
  end loop;
  update public.ordini_clienti_cache set paese='IT' where codice_cliente=v_customer;
  update public.ordini_righe set aliquota_iva=22,codice_iva_mexal='22,0',iva_riga=35.2 where ordine_id=v_order and not riga_spedizione;
  if exists(select 1 from public.ordini_righe where ordine_id=v_order and not riga_spedizione and (iva_non_applicata or aliquota_iva<>22)) then raise exception 'Italian VAT lost';end if;
 end;$$;
-select 'PASS: foreign VAT PROF/PH/Private; shipping; reconfirmation; stock; email idempotence' as result;
+select 'PASS: foreign VAT PROF/PH/Private; shipping; sent edit lock; unchanged stock/email' as result;

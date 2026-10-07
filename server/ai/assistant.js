@@ -1,3 +1,4 @@
+import { verifiedOperationalAnswer } from './operational-outcome.js';
 import { productionStartTools, productionStartStatus } from './production-start.js';
 import { executeRequestedAction, requestedExecution, OPERATIONAL_INSTRUCTIONS } from './operational-execution.js';
 import { productionDateTools } from './production-dates.js';
@@ -938,7 +939,7 @@ async function chat(auth, body) {
   const storedAttachments = attachmentMetadata(attachments);
   const hasPendingAction = Boolean(headingAction || controlledActions.length || developmentJob);
   const developmentJobSummary = developmentJob ? { id: developmentJob.id, status: developmentJob.status } : null;
-  const answer = result.text || (developmentJob ? "Richiesta di sviluppo accodata al PC per modifica, test e pubblicazione richiesta. L’esito sarà riportato in questa chat." : hasPendingAction ? "Ho preparato l’azione richiesta. Verifica l’anteprima e conferma per applicarla." : "Non ho ottenuto un esito conclusivo verificabile. Nessuna modifica viene dichiarata completata.");
+  const answer = verifiedOperationalAnswer(result.text, allToolResults.map(item => item.output)) || (developmentJob ? "Richiesta di sviluppo accodata al PC per modifica, test e pubblicazione richiesta. L’esito sarà riportato in questa chat." : hasPendingAction ? "Ho preparato l’azione richiesta. Verifica l’anteprima e conferma per applicarla." : "Non ho ottenuto un esito conclusivo verificabile. Nessuna modifica viene dichiarata completata.");
   await saveExchange(auth.admin, conversationId, displayedPrompt(prompt, attachments), answer, sources, { model, mode, generationId, costUsd: usage.cost, downloadablePdf, artifacts, headingToolCalls: allToolCalls.map((item) => item.toolName), controlledActions, costProposalId, runtimeOperations, developmentJob: developmentJobSummary, screenContext }, { attachments: storedAttachments });
   return { conversationId, answer, sources, usage, runtime: codexEnabled() ? 'workspace-documents' : 'workspace-ai', capabilities: auth.capabilities, downloadablePdf, artifacts, headingAction, costProposalId, controlledActions, controlledAction: controlledActions[0] || null, runtimeOperations, developmentJob: developmentJobSummary };
 }

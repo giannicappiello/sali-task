@@ -1,3 +1,4 @@
+import { verifiedOperationalAnswer } from './operational-outcome.js';
 /* global Buffer */
 import { randomUUID } from 'node:crypto';
 import { CODEX_RUNTIME, codexEnabled, createCodexClient, driveCodexRun } from './codex-agent.js';
@@ -48,7 +49,7 @@ export async function runWorkspaceCodex({ auth, body, conversationId, prompt, di
       const runtimeOperations = results.map(call => call.output?.operation?.id).filter(Boolean);
       const costProposalId = results.filter(call => call.name === 'PRODUCTION_COST_PROPOSE').map(call => call.output?.proposal?.id).filter(Boolean).at(-1) || null;
       const artifacts = developmentJob ? [] : requestedArtifacts(prompt, completed.id);
-      const response = { conversationId, runId: completed.id, runtime: CODEX_RUNTIME, answer: text, sources: [], usage,
+      const response = { conversationId, runId: completed.id, runtime: CODEX_RUNTIME, answer: verifiedOperationalAnswer(text, results.map(call => call.output)), sources: [], usage,
         controlledActions, controlledAction: controlledActions[0] || null, headingAction, developmentJob: developmentSummary,
         runtimeOperations, costProposalId, artifacts, downloadablePdf: artifacts.some(item => item.kind === 'pdf') };
       const metadata = { ...response, model, mode, codexRunId: completed.id, codexSessionId: completed.session_id,

@@ -205,7 +205,7 @@ export function createProgremesProductionClient({ env = process.env, fetchImpl =
     const secret = required("PROGREMES_INTEGRATION_SECRET", env);
     const body = JSON.stringify(payload);
     const timestamp = Math.floor(now() / 1000);
-    const eventId = payload.workspaceExternalId || payload.externalId;
+    const eventId = payload.workspaceExternalId || payload.externalId || payload.workspaceOctId;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs ?? Math.min(30_000, Math.max(1_000, Number(env.PROGREMES_API_TIMEOUT_MS) || 10_000)));
     try {

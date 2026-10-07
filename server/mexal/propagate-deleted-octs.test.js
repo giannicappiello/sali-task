@@ -2,6 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { propagateDeletedOcts } from './propagate-deleted-octs.js';
 import { visibleWorkbenchOct } from '../workspacemes-workbench.js';
+import { createProgremesProductionClient } from '../progremes-production-client.js';
+import { HMAC_HEADERS, verifyProductionMessage } from '../progremes-production-hmac.js';
+
+test('OCT deletion carries a valid event identity and HMAC accepted by MES', async () => {
+  const id = 'c5e5228a-cfba-41fa-bfd4-b19e83d485da';
+  const secret = 'oct-deletion-test-secret';
+  const client = createProgremesProductionClient({ env: { PROGREMES_URL: 'https://mes.example.com', PROGREMES_INTEGRATION_SECRET: secret },
+    fetchImpl: async (url, request) => {
+      assert.equal(request.headers[HMAC_HEADERS.eventId], id);
+      assert.equal(verifyProductionMessage({ method: request.method, path: url.pathname, headers: request.headers, body: request.body, secret }), true);
+      return { ok: true, json: async () => ({ workspaceOctId: id, status: 'DELETED' }) };
+    } });
+  await client.deleteOct({ contractVersion: 4, workspaceOctId: id });
+});
 
 function fixture() {
   const job = { order_id: 'order', generation: 'generation', payload: { workspaceOctId: 'order', octReference: 'OC/2/1' } };

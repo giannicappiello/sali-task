@@ -325,3 +325,16 @@ test("diagnostics health exposes flags and counts but no configuration secrets",
   assert.equal(result.globalStatus, "GREEN");
   assert.equal("connectionString" in result, false);
 });
+
+test("partial closure, actual document references and prepared quantity survive the MES-to-AI adapter", async () => {
+ const closureSteps=[{key:"SL",status:"OK",detail:"SL 1/13261"},{key:"CL",status:"IN_ATTESA"},{key:"failure",status:"FAULT",detail:"Saldo lotto non verificabile"}];
+ const payload={page:1,pageSize:50,total:1,items:[{productionOrderId:1,orderNumber:"RDP48",phase:"Semilavorato",status:"InProduzione",
+ start:"2026-10-06",end:null,plannedQuantity:300,producedQuantity:0,progressPercent:0,
+ productionId:77,articleCode:"FP92E",scrapQuantity:0,closureSteps,closureSummary:"SL creato; CL non creato. Motivo: Saldo lotto non verificabile",
+ pendingProducedQuantity:299.65,internalSecret:"excluded"}]};
+ const client=createProgremesClient({baseUrl,secret,logger:silentLogger,fetchFn:async()=>new Response(JSON.stringify(payload),{status:200})});
+ const row=(await client.request("production-progress",{search:"RDP48"})).items[0];
+ assert.equal(row.pendingProducedQuantity,299.65);assert.equal(row.producedQuantity,0);
+ assert.deepEqual(row.closureSteps,closureSteps);assert.match(row.closureSummary,/Saldo lotto/);
+ assert.equal(row.internalSecret,undefined);
+});

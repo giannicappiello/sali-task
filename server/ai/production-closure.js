@@ -10,7 +10,7 @@ export async function findProductionForClosure(auth, orderNumber, client = creat
   if (result.total > 100) throw new Error("Ricerca troppo ampia: specificare il numero completo della RdP.");
   if (items.some(row => !row.productionId || !row.articleCode || row.scrapQuantity == null))
     throw new Error("Aggiornare ProgreMES: mancano gli identificativi necessari alla chiusura controllata.");
-  return { items, note: "Identificativo productionId = lavorazione; productionOrderId = ordine. Non sono intercambiabili. Nessuna modifica eseguita." };
+  return { items, note: "Identificativo productionId = lavorazione; productionOrderId = ordine. Non sono intercambiabili. Le quantità pendingProducedQuantity sono preparate per la chiusura, non sono perse se producedQuantity è ancora zero. closureSummary descrive gli esiti parziali e l’ultima causa registrata; se manca non inventarla. Nessuna modifica eseguita." };
 }
 
 export function assertClosureSnapshot(input, rows) {

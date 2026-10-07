@@ -849,7 +849,7 @@ async function chat(auth, body) {
   }]));
   const productionTools = controlledTools.MES_PRODUCTION_FORCE_CLOSE ? {
     MES_PRODUCTION_LOOKUP: {
-      description: "Legge le lavorazioni MES di un numero ordine/RdP esatto, con identificativi e stato attuale. Sola lettura, prima di qualsiasi proposta di chiusura.",
+      description: "Legge lavorazioni, esiti parziali SL/CL, causa del blocco e quantità in chiusura per un ordine/RdP esatto. Sola lettura. Distinguere pendingProducedQuantity dalla quantità finale e non ripetere documenti già emessi.",
       inputSchema: jsonSchema({ type: "object", additionalProperties: false, required: ["orderNumber"], properties: { orderNumber: { type: "string", minLength: 1, maxLength: 100 } } }),
       execute: ({ orderNumber }) => findProductionForClosure(auth, orderNumber),
     },

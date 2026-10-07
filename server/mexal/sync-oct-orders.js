@@ -2,6 +2,7 @@ import process from "node:process";
 import { calculateOrderLineEconomics } from "./order-economics.js";
 import { authoritativeArticleUnit, resolveOctUnitOfMeasure } from "./unit-of-measure.js";
 import { reconcileDeletedOcts } from "./reconcile-deleted-octs.js";
+import { propagateDeletedOcts } from "./propagate-deleted-octs.js";
 import { inspectMissingOctArticles, recoverOctArticleReferences } from "./oct-article-catalog.js";
 function text(value) { return String(value ?? "").trim(); }
 function upper(value) { return text(value).toUpperCase(); }
@@ -706,12 +707,18 @@ export function createOctOrdersRunHandler({ createMexalClient, createSupabaseCli
     throw new TypeError("Dipendenze handler OCT non valide.");
   return async function octOrdersRunHandler(req, res) {
     const enabled = String(env.MEXAL_OCT_IMPORT_ENABLED || "").toLowerCase() === "true";
+    const supabase = enabled ? createSupabaseClient() : null;
     const result = await syncOctOrders({
       mexal: enabled ? createMexalClient() : null,
-      supabase: enabled ? createSupabaseClient() : null,
+      supabase,
       env,
       context: req?.body?.context || {},
     });
+    if (enabled && result.completed) {
+      const propagation = await propagateDeletedOcts({ supabase });
+      Object.assign(result, propagation);
+      result.warnings = [...(result.warnings || []), ...propagation.mes_deletion_warnings];
+    }
     return res.status(200).json(result);
   };
 }

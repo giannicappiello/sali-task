@@ -222,6 +222,7 @@ export function rdpProductionState(request, productionOrders = [], octReference 
 }
 
 export function visibleWorkbenchOct(item) {
+  if (item.mesDeletedAt) return false;
   return !item.sourceDeletedAt || Boolean(item.requestId) || Boolean(item.productionOrders?.length);
 }
 
@@ -358,6 +359,13 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
     const productive = orderLines.filter((line) => !line.riga_descrittiva && text(line.codice_articolo) && number(line.quantita) > 0);
     const request = confirmedV4ProductionRequest(requestByOrder.get(text(order.id)) || null, confirmedV4RequestIds);
     const orderDiagnostics = diagnostics.filter((row) => visibleDiagnostic(row) && [row.workspaceCommercialOctId, row.entityId].map(text).includes(text(order.id)));
+    if (order.mexal_eliminato_il && !order.mexal_mes_eliminato_il) orderDiagnostics.push({
+      diagnosticId: `oct-deletion:${order.id}`, severity: "BLOCKING", errorCode: "OCT_MES_DELETION_PENDING",
+      sourceSystem: "Workspace", phase: "Cancellazione", entityType: "OCT", entityId: order.id,
+      title: "OCT eliminato in Mexal: cancellazione MES in attesa",
+      description: order.mexal_mes_eliminazione_errore || "L'ordine e le lavorazioni devono essere eliminati anche nel MES.",
+      actionRequired: "Aggiornare il MES; per lavorazioni avviate riconciliare prima lo storno, poi premere Aggiorna.", status: "OPEN",
+    });
     const productionState = rdpProductionState(request, productionOrders, octLabel(order));
     const lineRows = productive.map((line) => {
       const product = productsByCode.get(text(line.codice_articolo).toUpperCase());
@@ -388,6 +396,7 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
       orderDate: order.data_ordine, deliveryDate: order.data_consegna,
       sourceTimestamp: order.updated_at || order.mexal_sincronizzato_il || order.created_at,
       sourceDeletedAt: order.mexal_eliminato_il || null,
+      mesDeletedAt: order.mexal_mes_eliminato_il || null,
       status: effectiveStatus || request?.workspace_status || request?.stato || order.stato || "DA_VALUTARE", stage: effectiveStage,
       plannedCompletionDate: productionState.plannedCompletionDate,
       productionOrders: productionState.orders,

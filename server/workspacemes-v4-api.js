@@ -14,6 +14,9 @@ async function ensureRequestNotCancelling(admin, requestId) {
     throw fail("RdP annullata o non trovata.", "RDP_CANCELLED");
   const pending = ensure(await admin.from("workspace_rdp_cancellations").select("request_id").eq("request_id", requestId).neq("status", "REJECTED").limit(1));
   if (pending.length) throw fail("RdP in annullamento o già annullata: completare la riconciliazione, senza riconfermarla.", "RDP_CANCELLATION_PENDING");
+  const source = await admin.rpc("workspace_rdp_has_deleted_oct", { p_request_id: requestId });
+  if (source.error) throw source.error;
+  if (source.data === true) throw fail("Un OCT della RdP è stato eliminato in Mexal: completare la cancellazione MES prima di ricalcolare o confermare.", "OCT_DELETED_IN_MEXAL");
 }
 
 export function automaticWorkspaceV4Decision(preview, materials = []) {

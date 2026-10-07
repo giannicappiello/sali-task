@@ -20,6 +20,7 @@ function fixture() {
       }; return query;
     },
     async rpc(name, args) {
+      if (name === "workspace_rdp_has_deleted_oct") return { data: false };
       const row = { status: "FORECAST", mes_response: args.p_mes_response, preview_id: 1 };
       tables.workspace_v4_confirmation_mirrors.push(row); tables.workspace_v4_previews[0].status = "CONFIRMED";
       return { data: [row] };
@@ -48,12 +49,21 @@ test("mirror non salvato: recupera la risposta persistita senza richiamare MES",
   const response = { status: "FORECAST", productionCreated: false, productionOrders: [], forecastLines: ["line"] };
   const client = { v4ConfirmationEnabled: () => true, async confirmV4() { calls++; return { result: response }; } };
   const rpc = admin.rpc;
-  admin.rpc = async () => ({ error: { message: "temporarily unavailable", code: "DB_UNAVAILABLE" } });
+  admin.rpc = async (name) => name === "workspace_rdp_has_deleted_oct" ? { data: false }
+    : ({ error: { message: "temporarily unavailable", code: "DB_UNAVAILABLE" } });
   const args = { admin, client, previewId: 1, reason: "Original reason", requestedBy: "one" };
   await assert.rejects(confirmWorkspaceV4(args), { code: "V4_CONFIRM_PENDING" });
   admin.rpc = rpc;
   assert.deepEqual((await confirmWorkspaceV4(args)).mes, response);
   assert.equal(calls, 1);
+});
+
+test("OCT eliminato blocca la conferma prima di qualsiasi invio al MES", async () => {
+  const { admin } = fixture();
+  admin.rpc = async name => { assert.equal(name, "workspace_rdp_has_deleted_oct"); return { data: true }; };
+  await assert.rejects(confirmWorkspaceV4({ admin, client: { v4ConfirmationEnabled: () => true,
+    confirmV4: async () => assert.fail("Non ricreare lavorazioni eliminate") }, previewId: 1, reason: "Test cancellazione", requestedBy: "one" }),
+  { code: "OCT_DELETED_IN_MEXAL" });
 });
 
 test("conflitto storico preserva la richiesta per riconciliazione senza consentire un nuovo ricalcolo", async () => {

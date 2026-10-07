@@ -104,7 +104,8 @@ export default function BatchSheetActions({ productionOrderId, kind, children, o
     setBusy(true); setError('');
     try {
       const result = await request('complete-sheet', {phaseId, contentHash:savedActual?.sheetHash || sheet.contentHash, actual});
-      if (!result.closed) throw new Error('Chiusura non confermata: riaprire il foglio prima di riprovare.');
+      if (result.pending) { setPrintMessage(result.message); setList(await request('list')); return; }
+      if (!result.closed) throw new Error(result.message || 'Esito chiusura non verificato: controllare lo stato prima di riprovare.');
       setPrintMessage(result.message); setEditing(false); setList(await request('list')); setLoadAttempt(value => value + 1);
       window.dispatchEvent(new Event('workspace:production-changed'));
     } catch (cause) { setError(cause.message); } finally { setBusy(false); }

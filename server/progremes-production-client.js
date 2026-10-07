@@ -242,7 +242,7 @@ export function createProgremesProductionClient({ env = process.env, fetchImpl =
     syncInventoryArticle: payload => call('/api/workspace/v1/inventory/article-sync', payload, 120_000),
     formulaSpecification: payload => call('/api/workspace/v1/formula-specification', payload),
     preparationActions: payload => call('/api/workspace/v1/preparation-actions', payload, payload.operation === 'sheet' ? 120_000 : undefined),
-    batchSheet: payload => call('/api/workspace/v1/batch-sheet', payload),
+    batchSheet: payload => call('/api/workspace/v1/batch-sheet', payload, payload.operation === 'complete-sheet' ? 120_000 : undefined),
     packagingSheet: payload => call('/api/workspace/v1/packaging-sheet', payload),
     packagingActions: payload => call('/api/workspace/v1/packaging-actions', payload),
     requestEnabled: () => enabled("PROGREMES_PRODUCTION_REQUESTS_ENABLED", env),

@@ -1,3 +1,4 @@
+import { productionStartSchema as batchStartSchema, productionStartPreview, executeProductionStart } from './production-start.js';
 import { productionStartSchema, productionDatesSchema, productionDateCall } from './production-dates.js';
 /* global Buffer, process */
 import { createHash, randomUUID } from "node:crypto";
@@ -63,6 +64,7 @@ const externalEntitySchema = (entityLabel) => ({
 });
 
 export const CONTROLLED_AI_ACTIONS = Object.freeze({
+  MES_PRODUCTION_START: { system: 'mes', risk: 'write', permission: 'progremes.write', schema: batchStartSchema, description: 'Stampa il foglio del batch e avvia solo dopo stampa confermata. Leggere MES_PRODUCTION_START_PREVIEW. Seguire l’esito con MES_PRODUCTION_START_STATUS senza ripetere l’azione.' },
   MES_PRODUCTION_DATES_CORRECT: {system:'mes',risk:'write',permission:'progremes.write',schema:productionDatesSchema,
     description:'Rettifica inizio e/o fine effettivi di una fase conclusa. Prima leggere MES_PRODUCTION_DATES_LOOKUP e identificare articolo e fase. I campi non richiesti sono null: conserva gli orari, non inventarli se inizio e fine nello stesso giorno risultano invertiti. L’allineamento presenze richiede autorizzazione esplicita dell’utente. Esporre le presenze riallineate e l’effetto su durate e costi. Conferma e audit obbligatori.'},
   MES_PRODUCTION_START_CORRECT: {system:'mes',risk:'write',permission:'progremes.write',schema:productionStartSchema,
@@ -179,6 +181,7 @@ export async function proposeControlledAction(auth, tool, input, { correlationId
   const descriptor = CONTROLLED_AI_ACTIONS[tool];
   if (!descriptor || !canPropose(auth, descriptor)) throw Object.assign(new Error("Azione AI non autorizzata per questo profilo."), { status: 403 });
   if (['MES_PRODUCTION_START_CORRECT','MES_PRODUCTION_DATES_CORRECT'].includes(tool)) input = { ...input, evidence: await productionDateCall(auth, 'preview', { input }) };
+  if (tool === 'MES_PRODUCTION_START') input = { ...input, evidence: await productionStartPreview(auth, input) };
   if (tool === 'RDP_CREATE') input = await proposeRdpCreation(auth, input);
   if (['ARTICLE_UPDATE', 'ARTICLE_BULK_UPDATE'].includes(tool)) input = await productChangePreview(auth, tool, input);
   if (tool === 'UI_CONFIGURE_VIEW') {
@@ -246,6 +249,7 @@ function requiredEnvironment(name) {
 }
 
 async function executeExternalAction(auth, pending) {
+  if (pending.tool === 'MES_PRODUCTION_START') return executeProductionStart(auth, pending);
   if (pending.tool === 'RDP_CREATE') {
     let result = {}, failure = null;
     try { result = await executeRdpCreation(auth, pending); }
@@ -400,7 +404,7 @@ export async function decideControlledAction(auth, body) {
   let action = Array.isArray(decided) ? decided[0] : decided;
   let failure = null;
   if (confirmed && action.status === "confirmed" && CONTROLLED_AI_ACTIONS[action.tool].system === "mes") ({ action, failure } = await executeExternalAction(auth, action));
-  const answer = action.tool === 'RDP_CREATE' && action.status === 'executed'
+  const answer = action.tool === 'MES_PRODUCTION_START' && action.status === 'confirmed' ? 'Stampa e avvio in elaborazione.' : action.tool === 'RDP_CREATE' && action.status === 'executed'
     ? `RdP ${action.result?.rdpNumber || action.result?.requestId} creata. Stato: ${action.result?.status}. Nessun OP o lotto creato.${action.result?.previewError ? ' Calcolo MES da completare: ' + action.result.previewError.message : ''}`
     : action.tool === "MES_PRIORITY_REVISE" ? (failure || action.error || action.result?.message || "Proposta rifiutata: nessun trasferimento eseguito.") : action.status === "executed" ? "Operazione applicata e registrata nell’audit."
     : action.status === "rejected" ? "Proposta rifiutata. Nessuna modifica è stata applicata."

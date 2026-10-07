@@ -23,7 +23,7 @@ const MODE_OPTIONS = [
 ];
 
 function initialWelcome() {
-  return { id: "welcome", role: "assistant", content: "Buongiorno. Con Dati interni posso analizzare insieme le informazioni autorizzate di Workspace e ProgreMES/MES, inclusi piani, immagini e documenti. Ricerca Web resta separata e usa fonti online. Ogni piano resta una proposta finché non viene approvato.", sources: [] };
+  return { id: "welcome", role: "assistant", content: "Buongiorno. Con Dati interni posso analizzare insieme le informazioni autorizzate di Workspace e ProgreMES/MES, inclusi piani, immagini e documenti. Ricerca Web resta separata e usa fonti online. Puoi chiedermi di avviare o spostare una produzione e seguirò l’esito. Se serve una scelta, te la chiederò.", sources: [] };
 }
 
 function modeIsEnabled(capabilities, item) {
@@ -469,6 +469,32 @@ export default function AIAssistant({ getScreenContext, embedded = false, prompt
     }
   }
 
+
+  const pendingStartIds = JSON.stringify([...new Set(messages.flatMap(message =>
+    (message.controlledActions || []).filter(action => action.tool === 'MES_PRODUCTION_START' && action.state === 'confirmed').map(action => action.id)))]);
+  useEffect(() => {
+    const ids = JSON.parse(pendingStartIds);
+    if (!ids.length || !session?.access_token) return;
+    let active = true;
+    let timer;
+    async function checkStarts() {
+      for (const id of ids) {
+        try {
+          const result = await requestAI(session.access_token, { action: 'production_start_status', id });
+          if (!active) return;
+          setMessages(current => current.map(message => !(message.controlledActions || []).some(action => action.id === id)
+            ? message : { ...message, content: result.answer || message.content,
+              controlledActions: message.controlledActions.map(action => action.id === id ? { ...action, ...result.controlledAction } : action) }));
+        } catch (failure) {
+          if (active) setError(failure.message);
+        }
+      }
+      if (active) timer = window.setTimeout(checkStarts, 6000);
+    }
+    timer = window.setTimeout(checkStarts, 1000);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [pendingStartIds, session?.access_token]);
+
   async function decideControlled(messageId, action, decision) {
     if (!action?.id || decisionBusy) return;
     setDecisionBusy(true); setError("");
@@ -633,7 +659,7 @@ function HeadingActionCard({ action, busy, onConfirm, onReject }) {
   const pending = action.state === "proposed";
   const mesDocument = action.tool === "MES_DOCUMENT_GENERATE";
   return <section className="ai-heading-action" aria-label={mesDocument ? "Proposta generazione documento MES" : "Proposta associazione intestazione"}>
-    <div><FileText size={20} /><strong>{mesDocument ? "Generazione documento MES" : "Associazione intestazione"}</strong><span className={`status-badge ${pending ? "warning" : action.state === "executed" ? "success" : "neutral"}`}>{action.state}</span></div>
+    <div><FileText size={20} /><strong>{mesDocument ? "Generazione documento MES" : "Associazione intestazione"}</strong><span className={`status-badge ${pending ? "warning" : action.state === "executed" ? "success" : "neutral"}`}>{{ proposed: "Da confermare", confirmed: "In elaborazione", executed: "Completata", failed: "Non riuscita", rejected: "Annullata" }[action.state] || action.state}</span></div>
     {action.preview && <dl><div><dt>Tipo documento</dt><dd>{action.preview.documentType?.name || action.preview.documentTypeCode}</dd></div>{mesDocument ? <div><dt>Produzione MES</dt><dd>{action.preview.targetId}</dd></div> : <><div><dt>Intestazione</dt><dd>{action.preview.heading?.name}</dd></div><div><dt>Ambito</dt><dd>{action.preview.scope}</dd></div></>}</dl>}
     {pending && <div className="ai-heading-actions"><button type="button" className="secondary-action" disabled={busy} onClick={onReject}>Rifiuta</button><button type="button" className="primary-action" disabled={busy} onClick={onConfirm}>{busy ? "Applicazione..." : "Conferma e applica"}</button></div>}
   </section>;
@@ -642,12 +668,14 @@ function HeadingActionCard({ action, busy, onConfirm, onReject }) {
 function ControlledActionCard({ action, busy, onConfirm, onReject }) {
   const pending = action.state === "proposed";
   return <section className={`ai-heading-action ai-controlled-action risk-${action.risk || "write"}`} aria-label={`Proposta controllata ${action.tool}`}>
-    <div><ShieldCheck size={20}/><strong>{action.tool}</strong><span className={`status-badge ${pending ? "warning" : action.state === "executed" ? "success" : "neutral"}`}>{action.state}</span></div>
-    <p>{action.system === "mes" ? "L’applicazione avverrà in MES mediante tunnel firmato." : "L’applicazione avverrà nel Workspace con audit completo."}</p>
+    <div><ShieldCheck size={20}/><strong>{{ MES_PLAN_APPLY: "Pianificazione", MES_ODL_VERIFY: "Allineamento piano", MES_PRIORITY_REVISE: "Revisione produzione", MES_MATERIAL_REALLOCATE: "Impegni materiali", LOT_OVERRIDE: "Modifica lotto", MES_PRODUCTION_START: "Avvio produzione", RDP_CREATE: "Nuova produzione" }[action.tool] || action.tool}</strong><span className={`status-badge ${pending ? "warning" : action.state === "executed" ? "success" : "neutral"}`}>{{ proposed: "Da confermare", confirmed: "In elaborazione", executed: "Completata", failed: "Non riuscita", rejected: "Annullata" }[action.state] || action.state}</span></div>
+    {action.error && <p>{action.error}</p>}
+    <details><summary>Dettagli operazione</summary>
     {action.tool === "MES_MATERIAL_REALLOCATE" ? <MaterialTransferSummary evidence={action.preview?.evidence} /> : null}
     {["MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(action.tool) && <><PlanningVersionSummary version={action.result?.snapshot ? action.result : action.preview?.evidence} /><a href={`/versioni-piano-produzione?version=${encodeURIComponent(action.preview?.targetId || action.result?.id || "")}`}>Apri versione e verifica esito</a></>}
     {action.tool === "MES_PRIORITY_REVISE" ? <><PriorityRevisionSummary revision={action.result?.snapshot ? action.result : action.preview?.evidence} /><a href={`/revisione-priorita-produzione?revision=${encodeURIComponent(action.preview?.targetId || action.result?.id || "")}`}>Apri revisione completa e verifica esito</a></> : null}
     {action.tool !== "MES_PRIORITY_REVISE" ? <pre>{JSON.stringify(action.state === "executed" ? action.result : action.preview || action.result || {}, null, 2)}</pre> : null}
+    </details>
     {pending && <div className="ai-heading-actions"><button type="button" className="secondary-action" disabled={busy} onClick={onReject}>Rifiuta</button><button type="button" className="primary-action" disabled={busy} onClick={onConfirm}>{busy ? "Applicazione..." : "Conferma e applica"}</button></div>}
   </section>;
 }

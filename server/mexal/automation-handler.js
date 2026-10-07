@@ -36,6 +36,7 @@ import { handleProgremesReadonlyRequest } from "../../server/progremes-readonly-
 import { createProgremesClient, readAllProgremesArticles, readAllProgremesSuppliers } from "../../server/progremes-readonly-client.js";
 import { createProgremesDiagnosticManager } from "../../server/progremes-diagnostics-client.js";
 import { handleAIAssistant } from "../../server/ai/assistant.js";
+import { aiErrorMessage } from '../ai/errors.js';
 import { probeCodex } from "../../server/ai/codex-health.js";
 import { handleDevelopmentWorker } from "../../server/ai/development-jobs.js";
 import { handlePlanningWorkspace } from "../../server/planning-workspace.js";
@@ -632,7 +633,7 @@ export default async function handler(req, res) {
       if (status >= 500) console.error("Assistente AI:", error);
       return res.status(status >= 400 && status <= 599 ? status : 500).json({
         success: false,
-        error: error?.message || "Richiesta AI non riuscita.",
+        error: aiErrorMessage(error),
       });
     }
   }

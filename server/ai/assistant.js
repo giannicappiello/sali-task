@@ -1,3 +1,5 @@
+import { productionStartTools, productionStartStatus } from './production-start.js';
+import { executeRequestedAction, requestedExecution, OPERATIONAL_INSTRUCTIONS } from './operational-execution.js';
 import { productionDateTools } from './production-dates.js';
 import { codexEnabled, CODEX_RUNTIME, createCodexClient } from './codex-agent.js';
 import { codexStore } from './codex-store.js';
@@ -441,7 +443,7 @@ Regole obbligatorie:
 - non inventare record, disponibilità, vincoli o stati;
 - rispetta i moduli autorizzati indicati nel contesto;
 - distingui sempre dati aziendali, ipotesi e informazioni Web;
-- non dichiarare una modifica applicata prima della conferma: gli strumenti preparano una proposta e l’interfaccia gestisce conferma ed esecuzione;
+- non dichiarare una modifica applicata prima dell’esito persistito. Per i comandi diretti il server può confermare ed eseguire l’azione autorizzata; negli altri casi resta una proposta da confermare;
 - quando l'utente chiede di modificare dati, filtri, card, KPI, permessi, formule, pianificazione, RdP, OP, lotti o documenti usa esclusivamente uno degli strumenti di azione controllata disponibili;
 - UI_CONFIGURE_VIEW e MES_UI_CONFIGURE_VIEW configurano solo il layout supportato di screen/module/menu, conservando system-content. Non aggiungono campi, checkbox, pulsanti o logica ai popup. Per queste richieste esplicite di un admin usa CODE_LOCATE_UI e CODE_CHANGE_REQUEST sul repository indicato dal contesto. targetCode/screenCode vuoti o tipo popup non supportato dal configuratore NON impediscono lo sviluppo sul codice e non sono motivo per fermarsi o chiedere un URL;
 - se la richiesta contiene una modifica concreta e uno strumento compatibile è disponibile, DEVI invocarlo nella risposta corrente: non limitarti a spiegare la procedura, non rispondere che non puoi farlo e non chiedere conferma testuale;
@@ -841,9 +843,9 @@ async function chat(auth, body) {
     execute: (input) => executeHeadingModelTool(auth, toolName, input, { correlationId: body.correlationId }),
   }]));
   const controlledTools = Object.fromEntries(Object.entries(availableControlledActions(auth)).map(([toolName, descriptor]) => [toolName, {
-    description: `${descriptor.description || ''} Azione controllata ${descriptor.system === "mes" ? "ProgreMES/MES tramite tunnel firmato" : "Workspace"}. Rischio: ${descriptor.risk}. Crea solo una proposta da confermare; non applica subito la modifica.`,
+    description: `${descriptor.description || ''} Azione controllata ${descriptor.system === "mes" ? "ProgreMES/MES tramite tunnel firmato" : "Workspace"}. Rischio: ${descriptor.risk}. ${requestedExecution(auth, prompt, toolName) ? "Esegue la richiesta operativa tramite proposta, autorizzazione e audit del server; seguire l’esito persistito." : "Crea una proposta da confermare; non applica subito la modifica."}`,
     inputSchema: jsonSchema(descriptor.schema),
-    execute: (input) => proposeControlledAction(auth, toolName, input, { correlationId: body.correlationId }),
+    execute: (input) => executeRequestedAction(auth, prompt, toolName, input, { correlationId: body.correlationId }),
   }]));
   const productionTools = controlledTools.MES_PRODUCTION_FORCE_CLOSE ? {
     MES_PRODUCTION_LOOKUP: {
@@ -880,7 +882,7 @@ async function chat(auth, body) {
     MES_PLAN_STATUS: { description: "Verifica l'esito persistito di una versione, anche dopo timeout. PREPARING o RECONCILIATION_REQUIRED non significano rilascio completato: mai ripetere creazioni Mexal. MES_ODL_VERIFY controlla lotti già riconciliati senza crearne altri.", inputSchema: jsonSchema({ type: "object", required: ["id"], properties: { id: { type: "string", format: "uuid" } } }), execute: input => planningCall(auth, "get", input) },
   } : {};
   const tools = { ...(mode === "web" ? { web_search: openai.tools.webSearch({ externalWebAccess: true, searchContextSize: "medium" }) } : {}),
-    ...rdpCreationTools(auth, Boolean(controlledTools.RDP_CREATE)), ...productionCostTools(auth, screenContext), ...developmentTools({ ...auth, conversationId, screenContext }), ...runtimeTools({ ...auth, conversationId }), ...recoveryTools(auth, Boolean(controlledTools.MES_PLAN_APPLY)), ...conversationMemoryTools(auth), ...workspaceReadTools(auth), ...operationalReadTools(auth), ...(controlledTools.FORMULA_CREATE_REVISION ? formulaReadTools(auth) : {}), ...(controlledTools.LOT_OVERRIDE ? lotReadTools(auth) : {}), ...(controlledTools.MACHINE_INSTRUCTION_DRAFT ? machineReadTools(auth) : {}), ...((controlledTools.MES_PRODUCTION_START_CORRECT || controlledTools.MES_PRODUCTION_DATES_CORRECT) ? productionDateTools(auth) : {}), ...headingTools, ...productionTools, ...materialTools, ...priorityTools, ...planningTools, ...controlledTools };
+    ...(controlledTools.MES_PRODUCTION_START ? productionStartTools(auth) : {}), ...rdpCreationTools(auth, Boolean(controlledTools.RDP_CREATE)), ...productionCostTools(auth, screenContext), ...developmentTools({ ...auth, conversationId, screenContext }), ...runtimeTools({ ...auth, conversationId }), ...recoveryTools(auth, Boolean(controlledTools.MES_PLAN_APPLY)), ...conversationMemoryTools(auth), ...workspaceReadTools(auth), ...operationalReadTools(auth), ...(controlledTools.FORMULA_CREATE_REVISION ? formulaReadTools(auth) : {}), ...(controlledTools.LOT_OVERRIDE ? lotReadTools(auth) : {}), ...(controlledTools.MACHINE_INSTRUCTION_DRAFT ? machineReadTools(auth) : {}), ...((controlledTools.MES_PRODUCTION_START_CORRECT || controlledTools.MES_PRODUCTION_DATES_CORRECT) ? productionDateTools(auth) : {}), ...headingTools, ...productionTools, ...materialTools, ...priorityTools, ...planningTools, ...controlledTools };
   const model = process.env.AI_MODEL || DEFAULT_MODEL;
   const mutationRequested = mode !== "web" && isControlledMutationRequest(prompt);
   const controlledToolNames = Object.keys(controlledTools);
@@ -892,7 +894,7 @@ async function chat(auth, body) {
       auth, body, conversationId, prompt, displayedPrompt: displayedPrompt(prompt, attachments), attachments,
       attachmentMetadata: attachmentMetadata(attachments), mode, screenContext, context,
       history: persistedMessages, tools, requestedArtifacts,
-      instructions: systemPrompt(mode, {}, null, controlledToolNames, auth.capabilities?.role_ai_level || 'analisi') + RECOVERY_INSTRUCTIONS,
+      instructions: systemPrompt(mode, {}, null, controlledToolNames, auth.capabilities?.role_ai_level || 'analisi') + RECOVERY_INSTRUCTIONS + OPERATIONAL_INSTRUCTIONS,
     });
   }
   const generationId = await startAIGeneration(auth.admin, {
@@ -905,7 +907,7 @@ async function chat(auth, body) {
   try {
     result = await generateText({
       model,
-      system: systemPrompt(mode, context, screenContext, controlledToolNames, auth.capabilities?.role_ai_level || "analisi") + RECOVERY_INSTRUCTIONS + "\nPer anticipare produzioni e cambiare priorità usa MES_PRIORITY_LOOKUP, MES_PRIORITY_MATERIALS, MES_PRIORITY_SIMULATE e infine MES_PRIORITY_REVISE. Questa procedura prevale sul trasferimento semplice MES_MATERIAL_REALLOCATE: coordina materiali, revisioni RdP, fabbisogni e planning. Puoi proporre origini e quantità se richiesto, motivando le conseguenze; non applicare senza conferma del riepilogo. Non inventare date: mostra quelle della simulazione APS, eventuali attese e ritardi. Una revisione MES_APPLIED non è ancora completata in Workspace: usare MES_PRIORITY_STATUS. Mai dichiarare eseguito un trasferimento da una semplice simulazione. Per modificare la scelta, simulare nuovamente. Non creare nuovi OP né duplicare RdP. Per una richiesta esplicita di creazione RdP usare RDP_ORDER_LOOKUP, RDP_CREATE_PREVIEW e RDP_CREATE. Una RdP annullata non impedisce da sola una nuova RdP per lo stesso OC: il servizio verifica le righe e i duplicati. Non riattivare la RdP annullata. La creazione non equivale alla conferma del piano o all’aggiunta a un OP; per aggiungere righe OC non assegnate usare MES_PLAN_ADDITION; per fondere due OP già esistenti usare MES_PLAN_MERGE_PREVIEW e confermare tramite MES_PLAN_APPLY. Non aumentare soltanto la quantità lasciando attivo il secondo OP.",
+      system: systemPrompt(mode, context, screenContext, controlledToolNames, auth.capabilities?.role_ai_level || "analisi") + RECOVERY_INSTRUCTIONS + OPERATIONAL_INSTRUCTIONS + "\nPer anticipare produzioni e cambiare priorità usa MES_PRIORITY_LOOKUP, MES_PRIORITY_MATERIALS, MES_PRIORITY_SIMULATE e infine MES_PRIORITY_REVISE. Questa procedura prevale sul trasferimento semplice MES_MATERIAL_REALLOCATE: coordina materiali, revisioni RdP, fabbisogni e planning. Puoi proporre origini e quantità se richiesto, motivando le conseguenze; esegui solo quando il comando diretto è autorizzato dal server, oppure dopo conferma del riepilogo. Non inventare date: mostra quelle della simulazione APS, eventuali attese e ritardi. Una revisione MES_APPLIED non è ancora completata in Workspace: usare MES_PRIORITY_STATUS. Mai dichiarare eseguito un trasferimento da una semplice simulazione. Per modificare la scelta, simulare nuovamente. Non creare nuovi OP né duplicare RdP. Per una richiesta esplicita di creazione RdP usare RDP_ORDER_LOOKUP, RDP_CREATE_PREVIEW e RDP_CREATE. Una RdP annullata non impedisce da sola una nuova RdP per lo stesso OC: il servizio verifica le righe e i duplicati. Non riattivare la RdP annullata. La creazione non equivale alla conferma del piano o all’aggiunta a un OP; per aggiungere righe OC non assegnate usare MES_PLAN_ADDITION; per fondere due OP già esistenti usare MES_PLAN_MERGE_PREVIEW e confermare tramite MES_PLAN_APPLY. Non aumentare soltanto la quantità lasciando attivo il secondo OP.",
       messages,
       tools,
       prepareStep: createRecoveryStep(tools, mutationRequested && controlledToolNames.length > 0),
@@ -1076,6 +1078,7 @@ export async function handleAIAssistant(req) {
   const auth = await authorizeAIRequest(req);
   const body = req.body && typeof req.body === "object" ? req.body : {};
   if (String(body.action || '').startsWith('development_')) return handleDevelopmentSettings(auth, body);
+  if (body.action === 'production_start_status') return productionStartStatus(auth, body.id);
   if (body.action === "capabilities") return { capabilities: auth.capabilities };
   if (body.action === 'codex_cancel') return cancelCodexRun(auth, body.runId);
   if (body.action === "heading_command") return { ...(await interpretHeadingCommand(auth, body)), capabilities: auth.capabilities };

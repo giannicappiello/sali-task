@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { propagateDeletedOcts } from './propagate-deleted-octs.js';
+import { propagateDeletedOcts, resumeDeletedOcts } from './propagate-deleted-octs.js';
 import { visibleWorkbenchOct } from '../workspacemes-workbench.js';
 import { createProgremesProductionClient } from '../progremes-production-client.js';
 import { HMAC_HEADERS, verifyProductionMessage } from '../progremes-production-hmac.js';
@@ -25,6 +25,23 @@ function fixture() {
     async rpc(name, args) { calls.push({ name, args }); return { data: true }; } };
   return { db, calls, job };
 }
+test('regular idle worker resumes deletion backlog without a new OCT import', async () => {
+  const f = fixture();
+  const result = await resumeDeletedOcts({ supabase: f.db, elapsedMs: 0,
+    propagate: args => propagateDeletedOcts({ ...args, client: { deleteOct: async () => ({ result: { workspaceOctId: 'order', status: 'DELETED' } }) } }) });
+  assert.equal(result.mes_deleted_octs, 1);
+  assert.equal(f.calls[0].name, 'complete_deleted_oct');
+});
+test('deletion backlog never delays priority jobs, OCT handoff or an exhausted worker', async () => {
+  for (const constraints of [{ manualJobId: 123 }, { yieldedForOct: true }, { elapsedMs: 200_000 }]) {
+    assert.equal(await resumeDeletedOcts({ elapsedMs: 0, ...constraints,
+      propagate: () => { throw Error('Must not send to MES'); } }), null);
+  }
+});
+test('unavailable deletion queue preserves successful worker work', async () => {
+  const result = await resumeDeletedOcts({ elapsedMs: 0, propagate: async () => { throw Error('Queue unavailable'); } });
+  assert.equal(result.mes_deletion_error, 'Queue unavailable');
+});
 test('MES deletion is acknowledged only after identity and final status match', async () => {
   const f = fixture();
   const result = await propagateDeletedOcts({ supabase: f.db, client: { deleteOct: async payload => {

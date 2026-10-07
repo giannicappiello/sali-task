@@ -1,5 +1,17 @@
 import { createProgremesProductionClient } from '../progremes-production-client.js';
 
+// A completed OCT import can leave an older backlog beyond its time budget.
+// Resume it on regular worker calls, reserving room for the final MES request.
+export async function resumeDeletedOcts({ supabase, manualJobId, yieldedForOct, elapsedMs,
+  propagate = propagateDeletedOcts }) {
+  if (manualJobId || yieldedForOct || elapsedMs >= 200_000) return null;
+  try {
+    return await propagate({ supabase, limit: 5, budgetMs: 30_000 });
+  } catch (error) {
+    return { mes_deletion_error: String(error.message || 'Coda eliminazioni MES non disponibile').slice(0, 500) };
+  }
+}
+
 // Durable queue survives an old MES, transient errors and an uncertain reply.
 // MES repeats physical deletion against retained source snapshots, never new targets.
 export async function propagateDeletedOcts({ supabase, client = createProgremesProductionClient(), limit = 25, budgetMs = 60_000 }) {

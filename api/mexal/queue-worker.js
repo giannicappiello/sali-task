@@ -4,6 +4,7 @@ import { runAutomaticDocumentSync } from "../../server/document-api.js";
 import { checkAndRecordInfrastructureHealth } from "../../server/infrastructure-health.js";
 import { waitUntil } from "@vercel/functions";
 import { wakeMexalWorker } from "../../server/mexal/worker-wakeup.js";
+import { resumeDeletedOcts } from "../../server/mexal/propagate-deleted-octs.js";
 
 const LEASE_SECONDS = 300;
 const MAX_WORKER_DURATION_MS = 235000;
@@ -223,6 +224,8 @@ async function runWorker(req, res) {
       activeJob = null;
     }
 
+    const mesDeletions = await resumeDeletedOcts({ supabase: admin, manualJobId,
+      yieldedForOct, elapsedMs: Date.now() - startedAt });
     const duration = Date.now() - startedAt;
     if (yieldedForOct || manualWaiting || (optimizedProgress && (processed.length >= MAX_STEPS_PER_CALL || duration >= MAX_WORKER_DURATION_MS))) {
       wakeMexalWorker({ manualJobId, continuation: true });
@@ -245,6 +248,7 @@ async function runWorker(req, res) {
       status,
       producer,
       documentSync,
+      mesDeletions,
       infrastructureHealth,
       steps: processed.length,
       processed,

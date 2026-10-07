@@ -39,3 +39,10 @@ test('shortage execution needs an explicit choice in the current request',async(
  assert.equal(decisions,1);
 });
 
+test('resume executes only a direct closure command and preserves analysis mode',()=>{
+ assert.equal(requestedExecution(auth,'Riprendi la chiusura della RdP48','MES_PRODUCTION_RESUME_CLOSE'),true);
+ assert.equal(requestedExecution(auth,'Completa la chiusura della produzione RdP48','MES_PRODUCTION_RESUME_CLOSE'),true);
+ assert.equal(requestedExecution(auth,'Chiudi la lavorazione RdP48','MES_PRODUCTION_RESUME_CLOSE'),true);
+ for (const prompt of ['Perché la produzione è bloccata?','Riprendi la chiusura, non modificare nulla','Avvia RdP48','Chiudi la chat'])
+   assert.equal(requestedExecution(auth,prompt,'MES_PRODUCTION_RESUME_CLOSE'),false);
+});

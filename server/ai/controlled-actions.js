@@ -5,7 +5,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { planningCall, planningConfirmSchema, assertPlanningConfirmation, reconcilePlanning } from "./planning-lifecycle.js";
 import { priorityCall, priorityConfirmSchema, assertPriorityConfirmation, reconcilePriority, checkPriorityWorkspace } from "./priority-revision.js";
 import { HMAC_HEADERS, signProductionMessage } from "../progremes-production-hmac.js";
-import { assertClosureSnapshot, findProductionForClosure } from "./production-closure.js";
+import { assertClosureSnapshot, findProductionForClosure, resumeClosureSchema, readResumableClosure, assertResumableClosure } from "./production-closure.js";
 import { assertMaterialReallocation, previewMaterialReallocation, materialReallocationSchema } from "./material-reallocation.js";
 import { formulaCall, formulaRevisionSchema } from './formula-revisions.js';
 import { lotCall, lotConfirmationSchema, assertLotPreview } from './lot-maintenance.js';
@@ -64,6 +64,7 @@ const externalEntitySchema = (entityLabel) => ({
 });
 
 export const CONTROLLED_AI_ACTIONS = Object.freeze({
+  MES_PRODUCTION_RESUME_CLOSE: { system: 'mes', risk: 'write', permission: 'progremes.write', schema: resumeClosureSchema, description: 'Riprende una chiusura già iniziata dal consuntivo congelato: conserva pesate, quantità e documenti riusciti. Prima leggere MES_PRODUCTION_CLOSURE_STATE. Non forza qualità né presume SL/CL manuali. Verificare nuovamente lo stato dopo esecuzione o timeout.' },
   MES_PRODUCTION_START: { system: 'mes', risk: 'write', permission: 'progremes.write', schema: batchStartSchema, description: 'Stampa il foglio del batch e avvia solo dopo stampa confermata. Leggere MES_PRODUCTION_START_PREVIEW. Seguire lâ€™esito con MES_PRODUCTION_START_STATUS senza ripetere lâ€™azione.' },
   MES_PRODUCTION_DATES_CORRECT: {system:'mes',risk:'write',permission:'progremes.write',schema:productionDatesSchema,
     description:'Rettifica inizio e/o fine effettivi di una fase conclusa. Prima leggere MES_PRODUCTION_DATES_LOOKUP e identificare articolo e fase. I campi non richiesti sono null: conserva gli orari, non inventarli se inizio e fine nello stesso giorno risultano invertiti. Lâ€™allineamento presenze richiede autorizzazione esplicita dellâ€™utente. Esporre le presenze riallineate e lâ€™effetto su durate e costi. Conferma e audit obbligatori.'},
@@ -181,6 +182,11 @@ export async function proposeControlledAction(auth, tool, input, { correlationId
   const descriptor = CONTROLLED_AI_ACTIONS[tool];
   if (!descriptor || !canPropose(auth, descriptor)) throw Object.assign(new Error("Azione AI non autorizzata per questo profilo."), { status: 403 });
   if (['MES_PRODUCTION_START_CORRECT','MES_PRODUCTION_DATES_CORRECT'].includes(tool)) input = { ...input, evidence: await productionDateCall(auth, 'preview', { input }) };
+  if (tool === 'MES_PRODUCTION_RESUME_CLOSE') {
+    const state = await readResumableClosure(auth, input);
+    assertResumableClosure(input, state);
+    input = { ...input, evidence: state };
+  }
   if (tool === 'MES_PRODUCTION_START') input = { ...input, evidence: await productionStartPreview(auth, input) };
   if (tool === 'RDP_CREATE') input = await proposeRdpCreation(auth, input);
   if (['ARTICLE_UPDATE', 'ARTICLE_BULK_UPDATE'].includes(tool)) input = await productChangePreview(auth, tool, input);
@@ -229,7 +235,7 @@ export async function proposeControlledAction(auth, tool, input, { correlationId
   // Verification may be requested again after a failed/partial reconciliation.
   // Keep each confirmation idempotent, without reusing an immutable failed audit.
   // Plan application and actions that create lots retain their stable key.
-  const verificationAttempt = tool === "MES_ODL_VERIFY" ? `:${randomUUID()}` : "";
+  const verificationAttempt = ["MES_ODL_VERIFY", "MES_PRODUCTION_RESUME_CLOSE"].includes(tool) ? `:${randomUUID()}` : "";
   const idempotencyKey = createHash("sha256").update(`${auth.profile.id}:${tool}:${canonical}${verificationAttempt}`).digest("hex");
   const { data, error } = await auth.scoped.rpc(auth.manualPlanning ? "propose_workspace_manual_planning_action" : "propose_workspace_ai_action", {
     p_tool: tool, p_payload: input, p_request_id: randomUUID(), p_correlation_id: correlationId, p_idempotency_key: idempotencyKey,
@@ -279,7 +285,7 @@ async function executeExternalAction(auth, pending) {
       // Full-plan migration writes hundreds of phases. Leave room in the 300s
       // route budget for validation and authoritative readback after this call.
       method: "POST", signal: AbortSignal.timeout(["MES_PLAN_APPLY", "MES_ODL_VERIFY"].includes(pending.tool) ? 120000
-        : pending.tool === "MES_PRIORITY_REVISE" ? 55000
+        : ["MES_PRIORITY_REVISE", "MES_PRODUCTION_RESUME_CLOSE"].includes(pending.tool) ? 55000
           : Number(process.env.PROGREMES_API_TIMEOUT_MS || 15000)), body: payload,
       headers: { "Content-Type": "application/json", [HMAC_HEADERS.timestamp]: String(timestamp), [HMAC_HEADERS.eventId]: eventId,
         [HMAC_HEADERS.signature]: signProductionMessage({ method: "POST", path, timestamp, eventId, body: payload, secret: requiredEnvironment("PROGREMES_INTEGRATION_SECRET") }) },
@@ -323,6 +329,14 @@ async function executeExternalAction(auth, pending) {
       if (response.ok && verified.applied === true) { result = { ...verified, verifiedAfterTimeout: true }; failure = null; }
     } catch { /* Uncertain outcome remains visible; no second write. */ }
     if (failure) failure = `Esito riallocazione non confermato: ${failure} Verificare impegni e audit MES prima di ripetere.`;
+  }
+  if (pending.tool === 'MES_PRODUCTION_RESUME_CLOSE') {
+    try {
+      const state = await readResumableClosure(auth, pending.payload_summary);
+      result = { ...state, verified: true };
+      if (state.applied === true) failure = null;
+      else failure = [state.message, failure].filter(Boolean).join(' ');
+    } catch (error) { failure = `Esito chiusura non verificato: ${error.message} ${failure || ''}`; }
   }
   if (failure && pending.tool === "MES_PRODUCTION_FORCE_CLOSE") {
     // Read back the durable confirmation; never retry a warehouse-related write blindly.
@@ -385,6 +399,7 @@ export async function decideControlledAction(auth, body) {
   if (confirmed && pending.tool === "MES_MATERIAL_REALLOCATE" && pending.status === "proposed") {
     assertMaterialReallocation(pending.payload_summary, await previewMaterialReallocation(auth, pending.payload_summary));
   }
+  if (confirmed && pending.tool === 'MES_PRODUCTION_RESUME_CLOSE' && pending.status === 'proposed') assertResumableClosure(pending.payload_summary, await readResumableClosure(auth, pending.payload_summary));
   if (confirmed && pending.tool === "MES_PRODUCTION_FORCE_CLOSE" && pending.status === "proposed") {
     const current = await findProductionForClosure(auth, pending.payload_summary.orderNumber);
     assertClosureSnapshot(pending.payload_summary, current.items);

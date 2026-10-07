@@ -26,7 +26,7 @@ import { generateText, isStepCount, jsonSchema, Output } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { decideHeadingAction, executeHeadingModelTool, HEADING_AI_TOOLS, HEADING_TOOL_SCHEMAS, interpretHeadingCommand } from "./company-letterhead-actions.js";
 import { availableControlledActions, decideControlledAction, proposeControlledAction } from "./controlled-actions.js";
-import { findProductionForClosure } from "./production-closure.js";
+import { findProductionForClosure, readResumableClosure } from "./production-closure.js";
 import { previewMaterialReallocation, materialLookupSchema } from "./material-reallocation.js";
 import { priorityCall, priorityRequestSchema, reconcilePriority, simulatePriority } from "./priority-revision.js";
 import { planningCall, planningRequestSchema, reconcilePlanning } from "./planning-lifecycle.js";
@@ -46,7 +46,7 @@ function isTimeLearningRequest(value) {
 }
 
 function isControlledMutationRequest(value) {
-  return /\b(?:modifica|modificare|cambia|cambiare|imposta|impostare|aggiungi|aggiungere|rimuovi|rimuovere|nascondi|nascondere|mostra|mostrare|crea|creare|forza|forzare|collega|collegare|aggiorna|aggiornare)\b/i.test(String(value || ""));
+  return /\b(?:chiudi|riprendi|completa|avvia|sposta|modifica|modificare|cambia|cambiare|imposta|impostare|aggiungi|aggiungere|rimuovi|rimuovere|nascondi|nascondere|mostra|mostrare|crea|creare|forza|forzare|collega|collegare|aggiorna|aggiornare)\b/i.test(String(value || ""));
 }
 
 const PROPOSAL_SCHEMA = jsonSchema({
@@ -847,7 +847,12 @@ async function chat(auth, body) {
     inputSchema: jsonSchema(descriptor.schema),
     execute: (input) => executeRequestedAction(auth, prompt, toolName, input, { correlationId: body.correlationId }),
   }]));
-  const productionTools = controlledTools.MES_PRODUCTION_FORCE_CLOSE ? {
+  const productionTools = (controlledTools.MES_PRODUCTION_FORCE_CLOSE || controlledTools.MES_PRODUCTION_RESUME_CLOSE) ? {
+    ...(controlledTools.MES_PRODUCTION_RESUME_CLOSE ? { MES_PRODUCTION_CLOSURE_STATE: {
+      description: 'Legge il consuntivo gi‡ congelato, hash, fase, quantit‡, SL/CL e causa esatta della chiusura interrotta. Usare productionId di MES_PRODUCTION_LOOKUP come targetId. Per riprendere usare MES_PRODUCTION_RESUME_CLOSE; dopo rileggere questo stato. Nessuna scrittura.',
+      inputSchema: jsonSchema({ type: 'object', additionalProperties: false, required: ['targetId'], properties: {targetId: {type: 'integer', minimum: 1}} }),
+      execute: input => readResumableClosure(auth, input),
+    }} : {}),
     MES_PRODUCTION_LOOKUP: {
       description: "Legge lavorazioni, esiti parziali SL/CL, causa del blocco e quantit√† in chiusura per un ordine/RdP esatto. Sola lettura. Distinguere pendingProducedQuantity dalla quantit√† finale e non ripetere documenti gi√† emessi.",
       inputSchema: jsonSchema({ type: "object", additionalProperties: false, required: ["orderNumber"], properties: { orderNumber: { type: "string", minLength: 1, maxLength: 100 } } }),

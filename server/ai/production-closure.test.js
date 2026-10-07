@@ -29,3 +29,12 @@ test("lookup checks permission before reading MES", async () => {
   await assert.rejects(findProductionForClosure({ scoped: { rpc: async () => ({ data: false }) } }, "RDP22", { request: async () => { called = true; } }), /Permesso/);
   assert.equal(called, false);
 });
+import { resumeClosureSchema, assertResumableClosure } from './production-closure.js';
+test('resume binds frozen work and hash without claiming manual documents', () => {
+  const state={targetId:77,expectedHash:'a'.repeat(64),executionStatus:'CLOSING',produced:299.65,scrap:0,applied:false};
+  assert.doesNotThrow(()=>assertResumableClosure({targetId:77,expectedHash:state.expectedHash},state));
+  assert.throws(()=>assertResumableClosure({targetId:5278,expectedHash:state.expectedHash},state));
+  assert.throws(()=>assertResumableClosure({targetId:77,expectedHash:'b'.repeat(64)},state));
+  assert.throws(()=>assertResumableClosure({targetId:77,expectedHash:state.expectedHash},{...state,executionStatus:'RUNNING'}));
+  assert.deepEqual(resumeClosureSchema.required,['targetId','expectedHash']);
+});

@@ -27,3 +27,16 @@ export function assertClosureSnapshot(input, rows) {
   if (input.slAndClAlreadyRegistered !== true || typeof input.reason !== "string" || !input.reason.trim() || input.reason.length > 1000)
     throw new Error("Confermare che SL e CL sono già registrati manualmente e specificare il motivo.");
 }
+
+export const resumeClosureSchema = { type: 'object', additionalProperties: false, required: ['targetId', 'expectedHash'], properties: {
+  targetId: { type: 'integer', minimum: 1 }, expectedHash: { type: 'string', pattern: '^[a-f0-9]{64}$' }
+}};
+export async function readResumableClosure(auth, input) {
+  const { mesDomainCall } = await import('./formula-revisions.js');
+  return mesDomainCall(auth, 'production-closure', 'read', { targetId: input.targetId });
+}
+export function assertResumableClosure(input, state) {
+  if (state.targetId !== input.targetId || state.expectedHash !== input.expectedHash ||
+      !['CLOSING','COMPLETED'].includes(state.executionStatus) || !(state.produced > 0) || state.scrap < 0)
+    throw new Error('Consuntivo cambiato o non pronto: rileggere la chiusura.');
+}

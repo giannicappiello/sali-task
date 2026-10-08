@@ -178,13 +178,13 @@ function V3Panel({ readOnly = false, v3, canDecide, busy, onPreview, onConfirm }
   const recovering = !!preview?.snapshot?.confirmationRecovery && !preview.snapshot.confirmationRecovery.rejected;
   const confirmEnabled = v3.flags?.["workspacemes.v4.confirm"] === true;
   return <section className="rdp-decisions rdp-v3-panel">
-    {!readOnly && <button type="button" className="primary-action rdp-v3-recalculate" onClick={onPreview} disabled={busy || recovering || !v3.flags?.["workspacemes.v4.preview"]}>RICALCOLA RDP</button>}
+    {!readOnly && <button type="button" className="primary-action rdp-v3-recalculate" onClick={onPreview} disabled={busy || recovering || !v3.flags?.["workspacemes.v4.preview"]}>{preview?.snapshot?.capacityOnly ? "AGGIORNA RDP" : "RICALCOLA RDP"}</button>}
     {preview && <>
-      <p>Preview <strong>{preview.status}</strong> · distinta, disponibilità, FIFO, impegni e fabbisogni certificati da ProgreMES.</p>
+      <p>Verifica RdP <strong>{preview.status}</strong> · {preview.snapshot?.capacityOnly ? "articolo, quantità, unità di misura e consegna. Formule, fabbisogni e giacenze si verificano nella pianificazione." : "esito ricevuto da MES; i dettagli verificati sono riportati qui sotto."}</p>
       <div className="rdp-analysis-grid">{(v3.components || []).map((row) => <div key={row.id}>
         <span>{row.source} · PROGREMES</span>
-        <strong>{row.article_code} · {formatQuantity(row.gross_requirement)} {row.unit_of_measure}</strong>
-        <small>Fisico {formatQuantity(row.physical_stock)} · impegnato {formatQuantity(row.committed_quantity)} · netto {formatQuantity(row.net_stock)} · arrivi {formatQuantity(row.future_supply_quantity)} · scoperto {formatQuantity(row.shortage_quantity)}</small>
+        <strong>{preview.snapshot?.capacityOnly ? row.article_code : `${row.article_code} · ${formatQuantity(row.gross_requirement)} ${row.unit_of_measure}`}</strong>
+        {!preview.snapshot?.capacityOnly && <small>Fisico {formatQuantity(row.physical_stock)} · impegnato {formatQuantity(row.committed_quantity)} · netto {formatQuantity(row.net_stock)} · arrivi {formatQuantity(row.future_supply_quantity)} · scoperto {formatQuantity(row.shortage_quantity)}</small>}
         {row.available_at && <small>Disponibilità prevista {formatDate(row.available_at, true)}</small>}
         {row.block_code && <small className="rdp-alert-blocking">{row.block_code === "FINISHED_BULK_CONVERSION_MISSING" && row.description ? row.description : `${row.block_code}${row.description && row.description !== row.article_code ? ` · ${row.description}` : ""}`}</small>}
       </div>)}</div>
@@ -193,7 +193,7 @@ function V3Panel({ readOnly = false, v3, canDecide, busy, onPreview, onConfirm }
         <button type="button" className="primary-action rdp-v3-recalculate" onClick={onConfirm} disabled={busy || !confirmEnabled}><Factory size={16}/>{busy ? "Verifica conferma…" : recovering ? "Recupera conferma" : "Conferma RdP"}</button>
         {!confirmEnabled && <small className="rdp-v3-gate-warning" role="status">Conferma produttiva non abilitata: verificare i gate Workspace e ProgreMES nel Centro Diagnostico.</small>}
       </>}
-      {preview.status === "BLOCKED" && !v3.saga && <small className="rdp-v3-gate-warning" role="alert">La RdP contiene blocchi tecnici: correggere i codici evidenziati e premere RICALCOLA RDP. Gli scoperti senza blocchi restano confermabili. Nel nuovo ciclo, OP e fabbisogni operativi si generano con Conferma piano; materiali, lotti e lavorazioni si gestiscono direttamente nei batch.</small>}
+      {preview.status === "BLOCKED" && !v3.saga && <small className="rdp-v3-gate-warning" role="alert">Correggere i dati della richiesta indicati e aggiornare la RdP. Formule e materiali vengono verificati nella pianificazione; gli OP si generano con Conferma piano.</small>}
     </>}
   </section>;
 }
@@ -203,10 +203,11 @@ function RdpFailureDialog({ failure, onClose }) {
   const confirmationFailure = failure.phase === "confirm";
   const stalePreview = failure.code === "STALE_V4_PREVIEW";
   const blockedPreview = failure.code === "V4_PREVIEW_BLOCKED" || failure.code === "FINISHED_BULK_CONVERSION_MISSING";
+  const schedulingFailure = confirmationFailure && ["FORMULA_MISSING", "BOM_MISSING", "FORMULA_UOM_MISMATCH", "FINISHED_BULK_CONVERSION_MISSING"].includes(failure.code);
   const pending = failure.code === "V4_CONFIRM_PENDING" || failure.code === "V4_RECOVERY_REQUIRES_MES_UPDATE";
-  const eyebrow = pending ? "Recupero conferma" : stalePreview ? "Anteprima non più valida" : blockedPreview ? "Anteprima bloccata" : confirmationFailure ? "Conferma conclusa con errore" : "Elaborazione conclusa con errore";
-  const title = pending ? "Conferma ancora in verifica" : stalePreview ? "RdP da ricalcolare" : blockedPreview ? "Blocchi tecnici da risolvere" : confirmationFailure ? "Ordine di produzione non confermato" : "RdP non andata a buon fine";
-  const safetyMessage = pending ? "Conservare questa RdP. Dopo il ripristino del collegamento o l’aggiornamento MES, riaprire il dettaglio e premere Recupera conferma." : stalePreview
+  const eyebrow = schedulingFailure ? "Pianificazione da completare" : pending ? "Recupero conferma" : stalePreview ? "Anteprima non più valida" : blockedPreview ? "Anteprima bloccata" : confirmationFailure ? "Conferma conclusa con errore" : "Elaborazione conclusa con errore";
+  const title = schedulingFailure ? "Dati produttivi da completare" : pending ? "Conferma ancora in verifica" : stalePreview ? "RdP da ricalcolare" : blockedPreview ? "Blocchi tecnici da risolvere" : confirmationFailure ? "Ordine di produzione non confermato" : "RdP non andata a buon fine";
+  const safetyMessage = schedulingFailure ? "La RdP è conservata e non è stato creato alcun OP. Correggere il dato indicato, poi riprovare Conferma RdP per pianificare." : pending ? "Conservare questa RdP. Dopo il ripristino del collegamento o l’aggiornamento MES, riaprire il dettaglio e premere Recupera conferma." : stalePreview
     ? "Non è stato creato alcun ordine di produzione. Chiudere questo messaggio e premere RICALCOLA RDP, quindi verificare la nuova anteprima."
     : blockedPreview
       ? "Non è stato creato alcun ordine di produzione. Correggere i blocchi tecnici indicati nell’anteprima e ricalcolare la RdP."
@@ -259,7 +260,7 @@ export function DetailPanel({ readOnly = false, detail, onClose, onDiagnostics, 
       </button>
       {openLine === line.id && <div className="rdp-line-body">
         <div className="rdp-commercial"><h3>Dati commerciali OCT</h3><dl><div><dt>Posizione Mexal</dt><dd>{line.position ?? "—"}</dd></div><div><dt>Quantità completa</dt><dd>{line.descriptive ? "Non applicabile" : `${line.quantity ?? "—"} ${line.octUom || ""}`}</dd></div><div><dt>ProductionUom</dt><dd>{line.descriptive ? "Non applicabile" : line.productionUom || "da risolvere in MES"}</dd></div><div><dt>Conversione</dt><dd>{line.descriptive ? "Non applicabile" : line.conversion ? `${line.conversion.factor} · ${line.conversion.source}` : "Nessuna"}</dd></div></dl></div>
-        {line.descriptive ? <div className="rdp-descriptive-ok"><CheckCircle2/><div><strong>Riga esclusa correttamente</strong><p>Testo informativo Mexal: non richiede mapping, UDM, analisi MES o lavorazione produttiva.</p></div></div> : hasV3Preview ? <div className="rdp-descriptive-ok"><CheckCircle2/><div><strong>Calcolo produttivo certificato</strong><p>La distinta completa e il netting sono stati elaborati esclusivamente da ProgreMES V4; il dettaglio materiali certificato è riportato nel riepilogo sottostante.</p></div></div> : hasFinishedBom ? <FinishedBomDetails bom={line.finishedBom} /> : <><div className="rdp-mes"><h3>Analisi produttiva MES</h3><AnalysisGrid analysis={line.mesAnalysis} proposal={line.proposal} /></div><Diagnostics rows={line.diagnostics} onOpen={onDiagnostics} /></>}
+        {line.descriptive ? <div className="rdp-descriptive-ok"><CheckCircle2/><div><strong>Riga esclusa correttamente</strong><p>Testo informativo Mexal: non richiede mapping, UDM, analisi MES o lavorazione produttiva.</p></div></div> : hasV3Preview ? <div className="rdp-descriptive-ok"><CheckCircle2/><div><strong>Verifica RdP</strong><p>{detail.v3.preview.snapshot?.capacityOnly ? "Richiesta acquisita senza calcolare formule, fabbisogni o giacenze. Le verifiche produttive avvengono nella pianificazione." : "Esito della richiesta ricevuto da MES. Consultare i dettagli e gli eventuali blocchi riportati qui sotto."}</p></div></div> : hasFinishedBom ? <FinishedBomDetails bom={line.finishedBom} /> : <><div className="rdp-mes"><h3>Analisi produttiva MES</h3><AnalysisGrid analysis={line.mesAnalysis} proposal={line.proposal} /></div><Diagnostics rows={line.diagnostics} onOpen={onDiagnostics} /></>}
       </div>}
     </article>; })}</div>
     {detail.request && !readOnly && canDecide && detail.lines.some((line) => line.proposal && !line.proposal.confirmation_external_id) && <section className="rdp-decisions"><h3>Decisioni operatore disponibili</h3><p>Il backend attuale espone la pianificazione completa. Le altre decisioni saranno mostrate solo quando disponibili nel contratto MES.</p>{detail.lines.filter((line) => line.proposal && !line.proposal.confirmation_external_id).map((line) => <button type="button" className="primary-action" key={line.proposal.id} onClick={() => onDecision(line)}><Factory size={16}/>Pianificazione completa · {line.articleCode}</button>)}</section>}

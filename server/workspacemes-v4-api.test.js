@@ -51,3 +51,13 @@ test("la conferma V4 accetta soltanto un OP valido per ogni riga produttiva", ()
     (error) => error.code === "V4_PRODUCTION_INCOMPLETE",
   );
 });
+
+test("il blocco tecnico mostra articolo, causa certificata MES e azione correttiva", () => {
+  const message = "IT0541: manca il volume per pezzo e la quantità di bulk in kg per pezzo nella distinta. Inserire il volume corretto; poi premere RICALCOLA RDP.";
+  assert.throws(() => automaticWorkspaceV4Decision({ status: "BLOCKED" }, [{
+    article_code: "IT0541", block_code: "FINISHED_BULK_CONVERSION_MISSING", description: message,
+  }]), (error) => error.code === "V4_PREVIEW_BLOCKED" && error.message.includes(message));
+  assert.throws(() => automaticWorkspaceV4Decision({ status: "READY" }, [{
+    article_code: "OTHER", block_code: "BOM_MISSING", description: "OTHER",
+  }]), (error) => error.message.includes("OTHER: BOM_MISSING"));
+});

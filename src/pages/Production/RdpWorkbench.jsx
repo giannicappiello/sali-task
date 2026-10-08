@@ -186,7 +186,7 @@ function V3Panel({ readOnly = false, v3, canDecide, busy, onPreview, onConfirm }
         <strong>{row.article_code} · {formatQuantity(row.gross_requirement)} {row.unit_of_measure}</strong>
         <small>Fisico {formatQuantity(row.physical_stock)} · impegnato {formatQuantity(row.committed_quantity)} · netto {formatQuantity(row.net_stock)} · arrivi {formatQuantity(row.future_supply_quantity)} · scoperto {formatQuantity(row.shortage_quantity)}</small>
         {row.available_at && <small>Disponibilità prevista {formatDate(row.available_at, true)}</small>}
-        {row.block_code && <small className="rdp-alert-blocking">{row.block_code}</small>}
+        {row.block_code && <small className="rdp-alert-blocking">{row.block_code === "FINISHED_BULK_CONVERSION_MISSING" && row.description ? row.description : `${row.block_code}${row.description && row.description !== row.article_code ? ` · ${row.description}` : ""}`}</small>}
       </div>)}</div>
       {!!v3.requirements?.length && <p>Fabbisogni acquisto automatici: {v3.requirements.length}. Gli impegni produttivi sono gestiti esclusivamente da ProgreMES.</p>}
       {preview.status === "READY" && !v3.saga && canDecide && <>
@@ -202,7 +202,7 @@ function RdpFailureDialog({ failure, onClose }) {
   if (!failure) return null;
   const confirmationFailure = failure.phase === "confirm";
   const stalePreview = failure.code === "STALE_V4_PREVIEW";
-  const blockedPreview = failure.code === "V4_PREVIEW_BLOCKED";
+  const blockedPreview = failure.code === "V4_PREVIEW_BLOCKED" || failure.code === "FINISHED_BULK_CONVERSION_MISSING";
   const pending = failure.code === "V4_CONFIRM_PENDING" || failure.code === "V4_RECOVERY_REQUIRES_MES_UPDATE";
   const eyebrow = pending ? "Recupero conferma" : stalePreview ? "Anteprima non più valida" : blockedPreview ? "Anteprima bloccata" : confirmationFailure ? "Conferma conclusa con errore" : "Elaborazione conclusa con errore";
   const title = pending ? "Conferma ancora in verifica" : stalePreview ? "RdP da ricalcolare" : blockedPreview ? "Blocchi tecnici da risolvere" : confirmationFailure ? "Ordine di produzione non confermato" : "RdP non andata a buon fine";

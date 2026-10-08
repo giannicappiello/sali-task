@@ -21,8 +21,13 @@ async function ensureRequestNotCancelling(admin, requestId) {
 
 export function automaticWorkspaceV4Decision(preview, materials = []) {
   const hasBlockingMaterial = materials.some((material) => clean(material?.block_code));
-  if (upper(preview?.status) === "BLOCKED" || hasBlockingMaterial)
-    throw fail("La preview contiene blocchi tecnici: correggerli e ricalcolare la RdP prima della conferma.", "V4_PREVIEW_BLOCKED", 409);
+  if (upper(preview?.status) === "BLOCKED" || hasBlockingMaterial) {
+    const reasons = [...new Set(materials.filter((row) => clean(row?.block_code)).map((row) =>
+      clean(row.block_code) === "FINISHED_BULK_CONVERSION_MISSING" && clean(row.description)
+        ? clean(row.description) : `${clean(row.article_code) || "Articolo"}: ${clean(row.block_code)}${clean(row.description) && clean(row.description) !== clean(row.article_code) ? ` · ${clean(row.description)}` : ""}`))];
+    throw fail(reasons.length ? `Anteprima bloccata. ${reasons.join("; ")} Correggere i dati indicati e premere RICALCOLA RDP prima di confermare.`
+      : "La preview contiene blocchi tecnici: correggerli e ricalcolare la RdP prima della conferma.", "V4_PREVIEW_BLOCKED", 409);
+  }
   const hasShortages = materials.some((material) => Number(material?.shortage_quantity) > 0);
   return hasShortages ? "WITH_SHORTAGES" : "COMPLETE";
 }

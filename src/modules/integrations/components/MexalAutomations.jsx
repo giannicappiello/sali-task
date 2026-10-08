@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../../save-outcomes.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 import {
@@ -216,11 +217,19 @@ export default function MexalAutomations({ canManage }) {
   }, [canManage, activeRun?.id, activeRun?.status, activeRun?.metadata?.phase, driveRun]);
 
   async function save(type, rule) {
-    setSaving(true); setMessage(null);
-    try { await saveMexalAutomationRule({ supabase, ruleType: type, rule }); await reload(); setEditor(null); setMessage({ type: "success", text: "Regola automazione salvata correttamente." }); }
-    catch (error) { setMessage({ type: "error", text: error.message }); }
+    const _saveOutcome = createSaveOutcome();
+    try {
+
+    setSaving(true); setMessage(_saveOutcome.observeMessage(null));
+    try { await saveMexalAutomationRule({ supabase, ruleType: type, rule }); await reload(); setEditor(null); setMessage(_saveOutcome.observeMessage({ type: "success", text: "Regola automazione salvata correttamente." })); }
+    catch (error) {
+      _saveOutcome.failure(error);
+ setMessage(_saveOutcome.observeMessage({ type: "error", text: error.message })); }
     finally { setSaving(false); }
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function runCommissionsNow() {
     setRunningNow(true); setMessage(null);

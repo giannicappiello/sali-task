@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../../save-outcomes.js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Boxes, Plus, Save, Search, Trash2, X } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
@@ -111,12 +112,15 @@ export default function Products({ implantsOnly = false }) {
     });
   }
   async function saveKit() {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     const codice = form.codice.trim().toUpperCase();
     const descrizione = form.descrizione.trim();
-    if (!codice || !descrizione || !form.componenti.length) return setMessage("Inserisci codice, descrizione e almeno un prodotto.");
-    if (form.componenti.some((item) => !isValidPrice(item.prezzo_unitario))) return setMessage("Inserisci un prezzo valido per ogni prodotto dell’impianto.");
-    if (form.modalita_prezzo === "prezzo_fisso" && Number(form.prezzo_fisso) < 0) return setMessage("Inserisci un prezzo fisso valido.");
-    if (form.modalita_prezzo === "sconto_personalizzato" && (Number(form.sconto_personalizzato) < 0 || Number(form.sconto_personalizzato) > 100)) return setMessage("Lo sconto deve essere compreso tra 0 e 100.");
+    if (!codice || !descrizione || !form.componenti.length) return setMessage(_saveOutcome.observeFailure("Inserisci codice, descrizione e almeno un prodotto."));
+    if (form.componenti.some((item) => !isValidPrice(item.prezzo_unitario))) return setMessage(_saveOutcome.observeFailure("Inserisci un prezzo valido per ogni prodotto dell’impianto."));
+    if (form.modalita_prezzo === "prezzo_fisso" && Number(form.prezzo_fisso) < 0) return setMessage(_saveOutcome.observeFailure("Inserisci un prezzo fisso valido."));
+    if (form.modalita_prezzo === "sconto_personalizzato" && (Number(form.sconto_personalizzato) < 0 || Number(form.sconto_personalizzato) > 100)) return setMessage(_saveOutcome.observeFailure("Lo sconto deve essere compreso tra 0 e 100."));
     const payload = {
       codice, descrizione, modalita_prezzo: form.modalita_prezzo,
       prezzo_fisso: form.modalita_prezzo === "prezzo_fisso" ? Number(form.prezzo_fisso) : null,
@@ -126,15 +130,22 @@ export default function Products({ implantsOnly = false }) {
     const { data: kit, error } = form.id
       ? await supabase.from("ordini_impianti").update(payload).eq("id", form.id).select().single()
       : await supabase.from("ordini_impianti").insert(payload).select().single();
-    if (error) return setMessage(error.message);
+    if (error) return setMessage(_saveOutcome.observeFailure(error.message));
     if (form.id) {
       const { error: deleteError } = await supabase.from("ordini_impianti_componenti").delete().eq("impianto_id", kit.id);
-      if (deleteError) return setMessage(deleteError.message);
+    _saveOutcome.failure(deleteError);
+
+      if (deleteError) return setMessage(_saveOutcome.observeFailure(deleteError.message));
     }
     const { error: componentError } = await supabase.from("ordini_impianti_componenti").insert(form.componenti.map((item, index) => ({ impianto_id: kit.id, codice_articolo: item.codice_articolo, quantita: Number(item.quantita), prezzo_unitario: numericPrice(item.prezzo_unitario), posizione: index })));
-    if (componentError) return setMessage(componentError.message);
-    setForm(null); setMessage("Impianto salvato."); await loadData();
-  }
+    _saveOutcome.failure(componentError);
+
+    if (componentError) return setMessage(_saveOutcome.observeFailure(componentError.message));
+    setForm(null); setMessage(_saveOutcome.observeMessage("Impianto salvato.")); await loadData();
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
   async function deactivateKit(id) {
     if (!(await window.workspaceConfirm?.("Eliminare questo impianto?", { title: "Elimina impianto" }))) return;
     const { error } = await supabase.from("ordini_impianti").update({ attivo: false }).eq("id", id);

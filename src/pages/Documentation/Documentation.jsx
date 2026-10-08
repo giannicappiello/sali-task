@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -306,9 +307,12 @@ export default function Documentation({
   const productLines = useMemo(() => [...new Set(products.map((item) => String(item.linea_mexal || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "it")), [products]);
   function toggleGroup(field, value) { const selected = linkEditor[field] || []; setLinkEditor({ ...linkEditor, [field]: selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value] }); }
   async function saveProductLink(event) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     event.preventDefault();
     setSavingLink(true);
-    setError("");
+    (setError(_saveOutcome.observeFailure("")));
     try {
       const product = products.find(
         (item) => sameId(item.id, linkEditor.prodotto_id),
@@ -333,11 +337,16 @@ export default function Documentation({
       );
       setLinkEditor(null);
     } catch (err) {
-      setError(err.message);
+      _saveOutcome.failure(err);
+
+      (setError(_saveOutcome.observeFailure(err.message)));
     } finally {
       setSavingLink(false);
     }
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   return (
     <div className="documentation-page v4-page">

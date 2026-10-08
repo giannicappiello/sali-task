@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../../save-outcomes.js";
 import { useEffect, useMemo, useState } from "react";
 import {
   Pencil,
@@ -159,19 +160,27 @@ export default function DocumentGatewaySettings() {
     }
   }
   async function saveSection(event) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     event.preventDefault();
     try {
       await documentApi("section_save", { section: editor });
       setEditor(null);
       await load();
-      setMessage({
+      setMessage(_saveOutcome.observeMessage({
         type: "success",
         text: "Sezione salvata. Esegui la sincronizzazione per applicare la cartella ai documenti.",
-      });
+      }));
     } catch (error) {
-      setMessage({ type: "error", text: error.message });
+      _saveOutcome.failure(error);
+
+      setMessage(_saveOutcome.observeMessage({ type: "error", text: error.message }));
     }
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
   async function deleteSection(section) {
     if (
       !(await window.workspaceConfirm(
@@ -187,6 +196,9 @@ export default function DocumentGatewaySettings() {
     }
   }
   async function saveDocument(event) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     event.preventDefault();
     try {
       const currentProduct = products.find(
@@ -231,9 +243,14 @@ export default function DocumentGatewaySettings() {
       setDocumentEditor(null);
       await load();
     } catch (error) {
-      setMessage({ type: "error", text: error.message });
+      _saveOutcome.failure(error);
+
+      setMessage(_saveOutcome.observeMessage({ type: "error", text: error.message }));
     }
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
   function toggleDocumentCategory(name) {
     const selected = documentEditor.categorie_prodotto || [];
     setDocumentEditor({

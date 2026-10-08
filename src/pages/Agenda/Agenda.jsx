@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { formatDisplayDate } from '../../lib/displayLocale.js';
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -363,10 +364,13 @@ export default function Agenda() {
   }
 
   async function saveReminder(e) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     e.preventDefault();
-    if (!selected?.id && !canWriteAgenda) return alert("Non hai i permessi per creare reminder.");
-    if (selected?.id && !canEditReminder(selected)) return alert("Non hai i permessi per modificare questo reminder.");
-    if (!form.titolo.trim()) return alert("Inserisci il titolo.");
+    if (!selected?.id && !canWriteAgenda) return (alert(_saveOutcome.observeFailure("Non hai i permessi per creare reminder.")));
+    if (selected?.id && !canEditReminder(selected)) return (alert(_saveOutcome.observeFailure("Non hai i permessi per modificare questo reminder.")));
+    if (!form.titolo.trim()) return (alert(_saveOutcome.observeFailure("Inserisci il titolo.")));
 
     setSaving(true);
     const payload = {
@@ -385,16 +389,20 @@ export default function Agenda() {
       : supabase.from("agenda_reminder").insert(payload).select().single();
 
     const { data, error } = await request;
+    _saveOutcome.failure(error);
+
     if (error) {
       setSaving(false);
-      return alert(`Errore salvataggio: ${error.message}`);
+      return (alert(_saveOutcome.observeFailure(`Errore salvataggio: ${error.message}`)));
     }
 
     try {
       await saveReminderAssociations(data.id, form.prodotti, form.reparto_ids);
     } catch (associationError) {
+      _saveOutcome.failure(associationError);
+
       setSaving(false);
-      return alert(`Errore associazioni reminder: ${associationError.message}`);
+      return (alert(_saveOutcome.observeFailure(`Errore associazioni reminder: ${associationError.message}`)));
     }
 
     setSaving(false);
@@ -403,7 +411,10 @@ export default function Agenda() {
       setSelected(data);
       await loadDetail(data.id);
     }
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function deleteReminder(item) {
     if (!canEditReminder(item)) return alert("Non hai i permessi per eliminare questo reminder.");

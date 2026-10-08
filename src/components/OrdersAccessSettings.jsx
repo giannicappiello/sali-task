@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../save-outcomes.js";
 import { useEffect, useMemo, useState } from "react";
 import { Save } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
@@ -212,13 +213,16 @@ export default function OrdersAccessSettings({ canManage }) {
   }
 
   async function saveUser(user) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     if (!canManage) {
-      alert("Non hai i permessi per modificare gli accessi.");
+      (alert(_saveOutcome.observeFailure("Non hai i permessi per modificare gli accessi.")));
       return;
     }
 
     if (!user.auth_user_id) {
-      alert("Impossibile salvare l'accesso Ordini: l'utente non è collegato a un account di autenticazione.");
+      (alert(_saveOutcome.observeFailure("Impossibile salvare l'accesso Ordini: l'utente non è collegato a un account di autenticazione.")));
       return;
     }
 
@@ -226,7 +230,7 @@ export default function OrdersAccessSettings({ canManage }) {
     const validation = getValidation(draft);
 
     if (!validation.valid) {
-      alert(validation.message);
+      (alert(_saveOutcome.observeFailure(validation.message)));
       return;
     }
 
@@ -255,18 +259,23 @@ export default function OrdersAccessSettings({ canManage }) {
       : supabase.from("integrazioni_utenti").insert(payload).select("id,utente_id,enabled,ruolo_ordini");
 
     const { data, error } = await request;
+    _saveOutcome.failure(error);
+
 
     setSavingId(null);
 
     if (error || !data?.length || data[0].utente_id !== user.id) {
       console.error("Errore salvataggio accesso ordini:", error);
-      alert(error?.message || "Nessun accesso Ordini è stato aggiornato per l'utente selezionato.");
+      (alert(_saveOutcome.observeFailure(error?.message || "Nessun accesso Ordini è stato aggiornato per l'utente selezionato.")));
       return;
     }
 
     await loadData();
-    alert("Accesso Gestione Ordini salvato.");
-  }
+    (_saveOutcome.success(), alert("Accesso Gestione Ordini salvato."));
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   if (loading) {
     return (

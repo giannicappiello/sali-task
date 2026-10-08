@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { useEffect, useMemo, useState } from "react";
 import { BellRing, Check, Clock3, Save, Smartphone, Volume2, VolumeX } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
@@ -34,6 +35,9 @@ export default function NotificationSettings() {
   }
 
   async function savePreferences(next = preferences) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     setBusy(true);
     const { error } = await supabase.from("notifiche_preferenze").upsert({
       utente_id: profile.id,
@@ -44,10 +48,15 @@ export default function NotificationSettings() {
       eventi: next.eventi || {},
       updated_at: new Date().toISOString(),
     });
+    _saveOutcome.failure(error);
+
     setBusy(false);
-    setMessage(error ? error.message : "Preferenze salvate.");
+    setMessage(_saveOutcome.observeMessage(error ? error.message : "Preferenze salvate."));
     if (!error) window.dispatchEvent(new CustomEvent("workspace:notification-preferences"));
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function enableDevice() {
     if (!supported) return setMessage("Questo browser non supporta le notifiche push.");
@@ -87,6 +96,9 @@ export default function NotificationSettings() {
   }
 
   async function saveRule(rule) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     const { error } = await supabase.rpc("salva_regola_notifica", {
       p_codice: rule.codice,
       p_attiva: rule.attiva,
@@ -94,8 +106,13 @@ export default function NotificationSettings() {
       p_suono_attivo: rule.suono_attivo,
       p_anticipo_minuti: rule.anticipo_minuti || [],
     });
-    setMessage(error ? error.message : `Regola “${rule.nome}” salvata.`);
-  }
+    _saveOutcome.failure(error);
+
+    setMessage(_saveOutcome.observeMessage(error ? error.message : `Regola “${rule.nome}” salvata.`));
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   const groupedRules = useMemo(() => rules.reduce((groups, rule) => {
     groups[rule.gruppo] = [...(groups[rule.gruppo] || []), rule];

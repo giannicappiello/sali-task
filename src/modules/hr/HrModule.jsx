@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { formatDisplayDate } from '../../lib/displayLocale.js';
 import HrPunchButton from './HrPunchButton';
 import HrExcessOvertime from './HrExcessOvertime';
@@ -52,11 +53,19 @@ function Editor({ model, onClose, onSave }) {
   const key = useRef(crypto.randomUUID());
   useEffect(() => { const el = dialog.current; el.showModal(); return () => el.close(); }, []);
   async function submit(event) {
-    event.preventDefault(); if (saving) return; setSaving(true); setError('');
+    const _saveOutcome = createSaveOutcome();
+    try {
+
+    event.preventDefault(); if (saving) return; setSaving(true); (setError(_saveOutcome.observeFailure('')));
     try { await onSave(values, key.current); onClose(); }
-    catch (failure) { setError(failure.message); }
+    catch (failure) {
+      _saveOutcome.failure(failure);
+ (setError(_saveOutcome.observeFailure(failure.message))); }
     finally { setSaving(false); }
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
   return <dialog ref={dialog} className="hr-dialog" onCancel={(event) => { event.preventDefault(); if (!saving) onClose(); }} aria-labelledby="hr-editor-title">
     <form onSubmit={submit}><header><h2 id="hr-editor-title">{model.title}</h2><button type="button" aria-label="Chiudi" onClick={onClose} disabled={saving}><X size={20}/></button></header>
       {model.description && <p className="hr-muted">{model.description}</p>}

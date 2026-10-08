@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../save-outcomes.js";
 import { isCustomerRecordScope } from '../lib/customerRecordAccess.js';
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Clock3, FileText, MessageSquare, Paperclip, Save, Trash2, X } from "lucide-react";
@@ -242,21 +243,28 @@ export default function PhaseChecklistModal({
   }
 
   async function savePhase(e) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     e.preventDefault();
     if (canContribute) {
       setSaving(true);
       try {
         const { error } = await supabase.rpc("workspace_customer_task_status", { p_task_id: selectedPhase.id, p_status: form.stato });
+    _saveOutcome.failure(error);
+
         if (error) throw error;
-        onSaved?.(); onClose?.();
-      } catch (error) { alert(error.message); } finally { setSaving(false); }
+        _saveOutcome.success(); onSaved?.(); onClose?.();
+      } catch (error) {
+      _saveOutcome.failure(error);
+ (alert(_saveOutcome.observeFailure(error.message))); } finally { setSaving(false); }
       return;
     }
-    if (!canManage) return alert("Non hai i permessi per modificare le fasi.");
-    if (!form.titolo.trim()) return alert("Seleziona il titolo della fase dalla checklist.");
+    if (!canManage) return (alert(_saveOutcome.observeFailure("Non hai i permessi per modificare le fasi.")));
+    if (!form.titolo.trim()) return (alert(_saveOutcome.observeFailure("Seleziona il titolo della fase dalla checklist.")));
     const existingProductIds = selectedPhase?.id && form.crm_customer_key === (selectedPhase.crm_customer_key || projects.find(p => p.id === selectedPhase.progetto_id)?.crm_customer_key) ? getPhaseProductIds(selectedPhase.id) : [];
-    if (form.prodotti.some(id => !existingProductIds.includes(id) && !customerProducts.products.some(p => p.id === id))) return alert("Verifica i prodotti associati al cliente prima di salvare.");
-    if (!selectedPhase?.id && !form.crm_customer_key) return alert("Seleziona il cliente da collegare alla task/fase.");
+    if (form.prodotti.some(id => !existingProductIds.includes(id) && !customerProducts.products.some(p => p.id === id))) return (alert(_saveOutcome.observeFailure("Verifica i prodotti associati al cliente prima di salvare.")));
+    if (!selectedPhase?.id && !form.crm_customer_key) return (alert(_saveOutcome.observeFailure("Seleziona il cliente da collegare alla task/fase.")));
     setSaving(true);
     try {
       const now = new Date().toISOString();
@@ -280,6 +288,8 @@ export default function PhaseChecklistModal({
         ? supabase.from("v4_fasi_progetto").update(payload).eq("id", selectedPhase.id).select().single()
         : supabase.from("v4_fasi_progetto").insert(payload).select().single();
       const { data, error } = await request;
+    _saveOutcome.failure(error);
+
       if (error) throw error;
       const phaseId = data?.id || selectedPhase?.id;
       await savePhaseDepartments(phaseId, form.reparto_ids);
@@ -291,11 +301,16 @@ export default function PhaseChecklistModal({
       onSaved?.();
       onClose?.();
     } catch (error) {
+      _saveOutcome.failure(error);
+
       console.error(error);
       setSaving(false);
-      alert(error.message || "Errore salvataggio fase.");
+      (alert(_saveOutcome.observeFailure(error.message || "Errore salvataggio fase.")));
     }
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function saveComment(e) {
     e.preventDefault();

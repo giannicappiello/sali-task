@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, CheckCircle2, KeyRound, Play, Plus, RefreshCw, Save, ShieldCheck, Unplug } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -82,20 +83,36 @@ export default function DigitalConnectionsSettings() {
   }
 
   async function saveProductMapping() {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     const id = current?.id || form.id; setBusy("mapping");
-    try { await digitalConnectionsService.saveMapping({ connectionId: id, ...mapping }); setMessage({ type: "success", text: "Mapping prodotto salvato nel catalogo di corrispondenza." }); setMapping({ marketplace: "", externalSku: "", asin: "", codiceMexal: "", status: "matched" }); }
-    catch (error) { setMessage({ type: "error", text: error.message }); } finally { setBusy(""); }
-  }
+    try { await digitalConnectionsService.saveMapping({ connectionId: id, ...mapping }); setMessage(_saveOutcome.observeMessage({ type: "success", text: "Mapping prodotto salvato nel catalogo di corrispondenza." })); setMapping({ marketplace: "", externalSku: "", asin: "", codiceMexal: "", status: "matched" }); }
+    catch (error) {
+      _saveOutcome.failure(error);
+ setMessage(_saveOutcome.observeMessage({ type: "error", text: error.message })); } finally { setBusy(""); }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function save(event) {
-    event.preventDefault(); setBusy("save"); setMessage(null);
+    const _saveOutcome = createSaveOutcome();
+    try {
+
+    event.preventDefault(); setBusy("save"); setMessage(_saveOutcome.observeMessage(null));
     try {
       const result = await digitalConnectionsService.save(form);
       setSelectedId(result.connection.id); setForm((value) => ({ ...value, id: result.connection.id, secrets: {} })); setStep(4);
-      setMessage({ type: result.missingSecrets?.length ? "warning" : "success", text: result.missingSecrets?.length ? "Configurazione salvata. Completa le credenziali obbligatorie." : "Configurazione e credenziali salvate nel vault server-side. Ora esegui il test." });
+      setMessage(_saveOutcome.observeMessage({ type: result.missingSecrets?.length ? "warning" : "success", text: result.missingSecrets?.length ? "Configurazione salvata. Completa le credenziali obbligatorie." : "Configurazione e credenziali salvate nel vault server-side. Ora esegui il test." }));
       await load();
-    } catch (error) { setMessage({ type: "error", text: error.message }); } finally { setBusy(""); }
-  }
+    } catch (error) {
+      _saveOutcome.failure(error);
+ setMessage(_saveOutcome.observeMessage({ type: "error", text: error.message })); } finally { setBusy(""); }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   return <div className="crm-page crm-settings-page">
     <div className="crm-toolbar"><div><span className="crm-eyebrow">Impostazioni / CRM Online</span><h2>Digital Connection Manager</h2><p>Gestione centralizzata di provider, account, credenziali, test e sincronizzazioni.</p></div><div className="crm-plan-actions"><Link className="secondary-action crm-secondary" to="/settings"><ArrowLeft size={16} />Impostazioni</Link><button className="primary-action crm-primary" type="button" onClick={() => { setSelectedId(""); setSelectedCategory(""); setStep(1); }}><Plus size={16} />Nuova connessione</button></div></div>

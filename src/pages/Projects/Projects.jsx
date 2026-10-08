@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { loadWorkspaceProducts } from '../../lib/workspaceCrmCatalog';
 import { isCustomerRecordScope } from '../../lib/customerRecordAccess.js';
 import { formatDisplayDate } from '../../lib/displayLocale.js';
@@ -624,15 +625,18 @@ export default function Projects() {
   }
 
   async function saveProject(e) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     e.preventDefault();
-    if (!canManage) return alert("Non hai i permessi per modificare i progetti.");
-    if (!projectForm.titolo.trim()) return alert("Inserisci il titolo del progetto.");
-    if (!selectedProject?.id && !projectForm.crm_customer_key) return alert("Seleziona il cliente da collegare al progetto.");
+    if (!canManage) return (alert(_saveOutcome.observeFailure("Non hai i permessi per modificare i progetti.")));
+    if (!projectForm.titolo.trim()) return (alert(_saveOutcome.observeFailure("Inserisci il titolo del progetto.")));
+    if (!selectedProject?.id && !projectForm.crm_customer_key) return (alert(_saveOutcome.observeFailure("Seleziona il cliente da collegare al progetto.")));
     if (!selectedProject?.id && !projectForm.tipo_progetto_id) {
-      return alert("Seleziona il tipo progetto per creare automaticamente le task.");
+      return (alert(_saveOutcome.observeFailure("Seleziona il tipo progetto per creare automaticamente le task.")));
     }
     if (!selectedProject?.id && !projectForm.deadline) {
-      return alert("Inserisci la deadline per calcolare automaticamente le scadenze delle task.");
+      return (alert(_saveOutcome.observeFailure("Inserisci la deadline per calcolare automaticamente le scadenze delle task.")));
     }
 
     setSaving(true);
@@ -655,9 +659,11 @@ export default function Projects() {
       : supabase.from("v4_progetti").insert(payload).select().single();
 
     const { data, error } = await request;
+    _saveOutcome.failure(error);
+
     if (error) {
       setSaving(false);
-      return alert(error.message);
+      return (alert(_saveOutcome.observeFailure(error.message)));
     }
 
     const projectId = data.id;
@@ -677,7 +683,10 @@ export default function Projects() {
     setSaving(false);
     setProjectModal(false);
     await loadData();
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   function subtractDaysIso(dateValue, days) {
     if (!dateValue) return null;

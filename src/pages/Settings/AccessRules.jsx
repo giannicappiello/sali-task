@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { moduleAreaCodes } from "../../config/workspaceModuleAreas";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Blocks, Building2, Plus, Save, Shield, UsersRound, X } from "lucide-react";
@@ -83,7 +84,10 @@ export default function AccessRules() {
   }
 
   async function save() {
-    if (!form.nome?.trim()) return setMessage({ type: "error", text: "Inserisci il nome." });
+    const _saveOutcome = createSaveOutcome();
+    try {
+
+    if (!form.nome?.trim()) return setMessage(_saveOutcome.observeMessage({ type: "error", text: "Inserisci il nome." }));
     setSaving(true);
     const table = mode === "profili" ? "ruoli" : "reparti";
     const payload = mode === "profili" ? {
@@ -92,18 +96,25 @@ export default function AccessRules() {
     } : { nome: form.nome.trim(), descrizione: form.descrizione?.trim() || null, attivo: form.attivo !== false };
     const request = isCreating ? supabase.from(table).insert(payload).select("id").single() : supabase.from(table).update(payload).eq("id", selected.id).select("id").single();
     const { data: saved, error } = await request;
-    if (error) { setSaving(false); return setMessage({ type: "error", text: error.message }); }
+    _saveOutcome.failure(error);
+
+    if (error) { setSaving(false); return setMessage(_saveOutcome.observeMessage({ type: "error", text: error.message })); }
     const id = saved.id;
     const { error: writeError } = await supabase.rpc("workspace_replace_access_rules", {
       target_kind: mode, target_id: id, area_codes: mode === "reparti" ? selectedAreas : [], module_rules: selectedModules,
     });
+    _saveOutcome.failure(writeError);
+
     setSaving(false);
-    if (writeError) return setMessage({ type: "error", text: writeError.message });
+    if (writeError) return setMessage(_saveOutcome.observeMessage({ type: "error", text: writeError.message }));
     setSelectedId(id);
-    setMessage({ type: "success", text: `${mode === "profili" ? "Profilo" : "Reparto"} salvato.` });
+    setMessage(_saveOutcome.observeMessage({ type: "success", text: `${mode === "profili" ? "Profilo" : "Reparto"} salvato.` }));
     window.dispatchEvent(new CustomEvent("workspace:module-catalog-changed"));
     await loadData();
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   const visibleModules = useMemo(() => data.modules.filter((module) => mode === "profili" ? module.configurabile_ruolo !== false : module.assegnabile_reparto), [data.modules, mode]);
 

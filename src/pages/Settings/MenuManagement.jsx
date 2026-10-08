@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { moduleAreaCodes } from "../../config/workspaceModuleAreas";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ExternalLink, FolderTree, Menu as MenuIcon, Plus, Save, Trash2 } from "lucide-react";
@@ -127,25 +128,37 @@ export default function MenuManagement() {
   }
 
   async function saveArea(event) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     event.preventDefault();
     if (!isAdminUser) return;
     const codice = selectedArea || normalizeCode(areaForm.codice || areaForm.nome);
-    if (!codice || !cleanText(areaForm.nome)) return setMessage({ type: "error", text: "Inserisci nome e codice dell’area." });
-    setBusy(true); setMessage(null);
+    if (!codice || !cleanText(areaForm.nome)) return setMessage(_saveOutcome.observeMessage({ type: "error", text: "Inserisci nome e codice dell’area." }));
+    setBusy(true); setMessage(_saveOutcome.observeMessage(null));
     try {
       const { error } = await supabase.from("workspace_aree").upsert({ codice, nome: cleanText(areaForm.nome), descrizione: cleanText(areaForm.descrizione) || null, icona: areaForm.icona, ordine: Number(areaForm.ordine) || 0, attiva: areaForm.attiva !== false, aggiornata_il: new Date().toISOString() });
+    _saveOutcome.failure(error);
+
       if (error) throw error;
       const { error: accessError } = await supabase.rpc("workspace_replace_area_access", {
         target_area: codice, department_ids: areaForm.reparti, user_ids: areaForm.utenti,
       });
+    _saveOutcome.failure(accessError);
+
       if (accessError) throw accessError;
       await load();
       if (reloadProfile) await reloadProfile();
       window.dispatchEvent(new CustomEvent("workspace:module-catalog-changed"));
       setSelectedArea(codice);
-      setMessage({ type: "success", text: "Area e autorizzazioni salvate." });
-    } catch (error) { setMessage({ type: "error", text: error.message }); } finally { setBusy(false); }
-  }
+      setMessage(_saveOutcome.observeMessage({ type: "success", text: "Area e autorizzazioni salvate." }));
+    } catch (error) {
+      _saveOutcome.failure(error);
+ setMessage(_saveOutcome.observeMessage({ type: "error", text: error.message })); } finally { setBusy(false); }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function deleteArea() {
     const area = catalog.areas.find((item) => item.codice === selectedArea);
@@ -160,27 +173,37 @@ export default function MenuManagement() {
   }
 
   async function saveMenu(event) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     event.preventDefault();
     if (!isAdminUser) return;
     const codice = selectedMenu || normalizeCode(menuForm.codice || menuForm.nome);
-    if (!codice || !cleanText(menuForm.nome)) return setMessage({ type: "error", text: "Inserisci nome e codice della voce di menu." });
-    if (!menuForm.moduli.length) return setMessage({ type: "error", text: "Inserisci almeno un modulo nella voce di menu." });
+    if (!codice || !cleanText(menuForm.nome)) return setMessage(_saveOutcome.observeMessage({ type: "error", text: "Inserisci nome e codice della voce di menu." }));
+    if (!menuForm.moduli.length) return setMessage(_saveOutcome.observeMessage({ type: "error", text: "Inserisci almeno un modulo nella voce di menu." }));
     const currentMenu = catalog.menus.find((item) => item.codice === selectedMenu);
     if (currentMenu?.attiva !== false && menuForm.attiva === false) {
       const usages = (associations.menuModuleLinks.get(selectedMenu) || []).map((item) => `Modulo: ${item.module?.nome || item.modulo_codice}`);
       if (usages.length && !await window.workspaceConfirm(`Disattivare “${currentMenu.nome}”?\n\nQuesto elemento è utilizzato da:\n- ${usages.join("\n- ")}`)) return;
     }
-    setBusy(true); setMessage(null);
+    setBusy(true); setMessage(_saveOutcome.observeMessage(null));
     try {
       const { error } = await supabase.from("workspace_menu_voci").upsert({ codice, nome: cleanText(menuForm.nome), descrizione: cleanText(menuForm.descrizione) || null, icona: menuForm.icona, ordine: Number(menuForm.ordine) || 0, attiva: menuForm.attiva !== false, aggiornata_il: new Date().toISOString() });
+    _saveOutcome.failure(error);
+
       if (error) throw error;
       const remove = await supabase.from("workspace_menu_moduli").delete().eq("voce_codice", codice); if (remove.error) throw remove.error;
       const insert = await supabase.from("workspace_menu_moduli").insert(menuForm.moduli.map((modulo_codice, index) => ({ voce_codice: codice, modulo_codice, ordine: (index + 1) * 10 })));
       if (insert.error) throw insert.error;
       await load(); window.dispatchEvent(new CustomEvent("workspace:module-catalog-changed"));
-      setSelectedMenu(codice); setMessage({ type: "success", text: "Voce di menu salvata." });
-    } catch (error) { setMessage({ type: "error", text: error.message }); } finally { setBusy(false); }
-  }
+      setSelectedMenu(codice); setMessage(_saveOutcome.observeMessage({ type: "success", text: "Voce di menu salvata." }));
+    } catch (error) {
+      _saveOutcome.failure(error);
+ setMessage(_saveOutcome.observeMessage({ type: "error", text: error.message })); } finally { setBusy(false); }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function deleteMenu() {
     const menu = catalog.menus.find((item) => item.codice === selectedMenu);

@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { moduleAreaCodes } from "../../config/workspaceModuleAreas";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bot, KeyRound, Plus, Save, Search, ShieldCheck, UserRound, UsersRound, X } from "lucide-react";
@@ -156,14 +157,17 @@ export default function AccessUsers() {
   }
 
   async function saveUser() {
-    if (!isAdminUser) return setMessage({ type: "error", text: "Operazione riservata all'amministratore." });
+    const _saveOutcome = createSaveOutcome();
+    try {
+
+    if (!isAdminUser) return setMessage(_saveOutcome.observeMessage({ type: "error", text: "Operazione riservata all'amministratore." }));
     const managedChanged = isCreating || form.password || JSON.stringify(managedUserState(form)) !== JSON.stringify(managedUserState(savedManagedForm));
-    if (managedChanged && (!form.nome.trim() || !form.cognome.trim() || !form.email.trim())) return setMessage({ type: "error", text: "Nome, cognome ed email sono obbligatori quando modifichi i dati o l'organizzazione dell'utente." });
-    if (isCreating && form.password.length < 8) return setMessage({ type: "error", text: "Per il nuovo utente inserisci una password di almeno 8 caratteri." });
+    if (managedChanged && (!form.nome.trim() || !form.cognome.trim() || !form.email.trim())) return setMessage(_saveOutcome.observeMessage({ type: "error", text: "Nome, cognome ed email sono obbligatori quando modifichi i dati o l'organizzazione dell'utente." }));
+    if (isCreating && form.password.length < 8) return setMessage(_saveOutcome.observeMessage({ type: "error", text: "Per il nuovo utente inserisci una password di almeno 8 caratteri." }));
     const customerRole = /(^|\s)(cliente|customer)(\s|$)/i.test(selectedRole?.nome || "");
-    if (customerRole && !form.customer_codes.length) return setMessage({ type: "error", text: "Per un utente Cliente è obbligatorio selezionare l'anagrafica cliente associata." });
+    if (customerRole && !form.customer_codes.length) return setMessage(_saveOutcome.observeMessage({ type: "error", text: "Per un utente Cliente è obbligatorio selezionare l'anagrafica cliente associata." }));
     setSaving(true);
-    setMessage(null);
+    setMessage(_saveOutcome.observeMessage(null));
     let response = null;
     if (managedChanged) {
       const action = isCreating ? "create" : "update";
@@ -174,7 +178,7 @@ export default function AccessUsers() {
       response = invocation.data;
       if (invocation.error || response?.error) {
         setSaving(false);
-        return setMessage({ type: "error", text: await edgeErrorMessage(invocation.error, response) });
+        return setMessage(_saveOutcome.observeMessage({ type: "error", text: await edgeErrorMessage(invocation.error, response) }));
       }
     }
     const userId = selectedUser?.id || response?.user_id;
@@ -184,13 +188,15 @@ export default function AccessUsers() {
         ({ ambito, codice, decisione, livello_accesso: livello_accesso || null, motivazione: motivazione || null, valida_fino_a: valida_fino_a || null })),
       target_active: form.attivo !== false,
     });
-    if (accessError) { setSaving(false); return setMessage({ type: "error", text: accessError.message }); }
+    _saveOutcome.failure(accessError);
+
+    if (accessError) { setSaving(false); return setMessage(_saveOutcome.observeMessage({ type: "error", text: accessError.message })); }
     const operations = [];
     operations.push(supabase.from("mexal_agenti").update({ workspace_utente_id: null, responsabile_utente_id: null }).eq("workspace_utente_id", userId));
     operations.push(supabase.from("ai_utenti_moduli").delete().eq("utente_id", userId));
     const baseResults = await Promise.all(operations);
     const baseError = baseResults.find((result) => result.error)?.error;
-    if (baseError) { setSaving(false); return setMessage({ type: "error", text: baseError.message }); }
+    if (baseError) { setSaving(false); return setMessage(_saveOutcome.observeMessage({ type: "error", text: baseError.message })); }
     const inserts = [];
     if (form.mexal_agente_id) inserts.push(supabase.from("mexal_agenti").update({ workspace_utente_id: userId, responsabile_utente_id: form.responsabile_utente_id || null }).eq("id", form.mexal_agente_id));
     if (form.beauty_mexal_agente_id) inserts.push(supabase.from("integrazioni_utenti").upsert({ utente_id: userId, modulo: "report_giornate", mexal_agente_id: form.beauty_mexal_agente_id }, { onConflict: "utente_id,modulo" }));
@@ -199,12 +205,15 @@ export default function AccessUsers() {
     const insertResults = await Promise.all(inserts);
     const insertError = insertResults.find((result) => result.error)?.error;
     setSaving(false);
-    if (insertError) return setMessage({ type: "error", text: insertError.message });
-    setMessage({ type: "success", text: "Configurazione utente salvata." });
+    if (insertError) return setMessage(_saveOutcome.observeMessage({ type: "error", text: insertError.message }));
+    setMessage(_saveOutcome.observeMessage({ type: "success", text: "Configurazione utente salvata." }));
     setSelectedId(userId);
     await loadData();
     if (userId === profile?.id) await reloadProfile();
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   if (loading) return <div className="access-loading">Caricamento utenti e autorizzazioni...</div>;
 

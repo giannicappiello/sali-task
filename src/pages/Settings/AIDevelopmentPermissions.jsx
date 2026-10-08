@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { useEffect, useState } from 'react';
 
 const labels = { develop: 'Modifica codice e test', publish: 'Pubblica codice', browser: 'Browser Workspace', database: 'Schema e migrazioni database' };
@@ -18,11 +19,19 @@ export default function AIDevelopmentPermissions({ call }) {
     setValues(Object.fromEntries(Object.keys(labels).map(key => [key, permissions[key] === true])));
   }
   async function save() {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     setBusy(true); setStatus('');
     try { setData(await call({ action: 'development_permissions_save', userId: selected, permissions: values })); setStatus('Permessi salvati. La revoca viene verificata anche prima delle operazioni in coda.'); }
-    catch (error) { setStatus(error.message); }
+    catch (error) {
+      _saveOutcome.failure(error);
+ setStatus(error.message); }
     finally { setBusy(false); }
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
   return <section aria-labelledby="ai-development-permissions"><h3 id="ai-development-permissions">Permessi di sviluppo per utente</h3>
     <p>Gli amministratori hanno tutte le capacità integrate. Gli altri utenti partono senza permessi di sviluppo. Queste autorizzazioni si aggiungono ai permessi operativi del reparto.</p>
     <p>Pubblicazione e migrazioni consentono modifiche globali all’applicazione. Il browser usa un profilo separato per ogni utente e rispetta i permessi dell’account con cui viene effettuato l’accesso.</p>

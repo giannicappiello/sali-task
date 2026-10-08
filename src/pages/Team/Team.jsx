@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
@@ -178,35 +179,38 @@ function Team() {
   }
 
   async function handleSave(event) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     event.preventDefault();
 
     if (!canManageTeam) {
-      alert("Non hai i permessi per gestire gli utenti.");
+      (alert(_saveOutcome.observeFailure("Non hai i permessi per gestire gli utenti.")));
       return;
     }
 
     if (!form.nome.trim()) {
-      alert("Inserisci il nome dell'utente.");
+      (alert(_saveOutcome.observeFailure("Inserisci il nome dell'utente.")));
       return;
     }
 
     if (!form.cognome.trim()) {
-      alert("Inserisci il cognome dell'utente.");
+      (alert(_saveOutcome.observeFailure("Inserisci il cognome dell'utente.")));
       return;
     }
 
     if (!form.email.trim()) {
-      alert("Inserisci l'email dell'utente.");
+      (alert(_saveOutcome.observeFailure("Inserisci l'email dell'utente.")));
       return;
     }
 
     if (!editingUser && !form.password.trim()) {
-      alert("Inserisci la password iniziale dell'utente.");
+      (alert(_saveOutcome.observeFailure("Inserisci la password iniziale dell'utente.")));
       return;
     }
 
     if (form.password.trim() && form.password.trim().length < 8) {
-      alert("La password deve avere almeno 8 caratteri.");
+      (alert(_saveOutcome.observeFailure("La password deve avere almeno 8 caratteri.")));
       return;
     }
 
@@ -230,12 +234,17 @@ function Team() {
       await loadData();
       closeModal();
     } catch (error) {
+      _saveOutcome.failure(error);
+
       console.error("Errore salvataggio utente:", error);
-      alert(error.message || "Errore durante il salvataggio dell'utente.");
+      (alert(_saveOutcome.observeFailure(error.message || "Errore durante il salvataggio dell'utente.")));
     } finally {
       setSaving(false);
     }
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function toggleActive(user) {
     if (!canManageTeam) {

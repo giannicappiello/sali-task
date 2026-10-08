@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../../save-outcomes.js";
 import { formatDisplayDate } from '../../../lib/displayLocale.js';
 import { useEffect, useState } from "react";
 import { supabase } from "../services/reportSupabase";
@@ -514,15 +515,18 @@ export default function Giornate({ utente }) {
   }
 
   async function salvaGiornata(e) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     e.preventDefault();
     const effectiveConsultantId = ruoloUtente === "beauty" ? beautyIdUtente : consultantId;
     if (checkInImmediato) {
-      if (!checkInPosition || !checkInCapturedAt) return alert("Acquisisci la posizione GPS prima di registrare il check-in.");
-      if (ruoloUtente === "admin" && !effectiveConsultantId) return alert("Seleziona la Beauty consultant.");
+      if (!checkInPosition || !checkInCapturedAt) return (alert(_saveOutcome.observeFailure("Acquisisci la posizione GPS prima di registrare il check-in.")));
+      if (ruoloUtente === "admin" && !effectiveConsultantId) return (alert(_saveOutcome.observeFailure("Seleziona la Beauty consultant.")));
       let visit;
       try {
         if (tipoContatto === "nuovo_contatto") {
-          if (!nuovoContattoNome.trim()) return alert("Inserisci il nome del nuovo contatto.");
+          if (!nuovoContattoNome.trim()) return (alert(_saveOutcome.observeFailure("Inserisci il nome del nuovo contatto.")));
           visit = await createCrmBeautyContactVisit({
             name: nuovoContattoNome.trim(),
             address: nuovoContattoIndirizzo.trim(),
@@ -538,7 +542,7 @@ export default function Giornate({ utente }) {
           });
         } else {
           const selectedClient = farmacie.find((client) => client.id === farmaciaId);
-          if (!selectedClient) return alert("Seleziona un cliente.");
+          if (!selectedClient) return (alert(_saveOutcome.observeFailure("Seleziona un cliente.")));
           visit = await createCrmBeautyCustomerVisit({
             client: selectedClient,
             data,
@@ -551,17 +555,19 @@ export default function Giornate({ utente }) {
           });
         }
         const result = await executeWithGpsReason((reason) => checkInBeautyVisit(visit.activity_id, reason, checkInPosition));
-        alert(`Check-in registrato. Distanza dalla sede: ${result.distance_meters ?? "non disponibile"} m.`);
+        _saveOutcome.success(); (alert(`Check-in registrato. Distanza dalla sede: ${result.distance_meters ?? "non disponibile"} m.`));
         svuotaForm();
         setMostraForm(false);
-        await caricaDati();
+        await caricaDati(); _saveOutcome.success();
       } catch (error) {
-        alert(error.message || "Check-in non riuscito.");
+      _saveOutcome.failure(error);
+
+        (alert(_saveOutcome.observeFailure(error.message || "Check-in non riuscito.")));
       }
       return;
     }
     if (!giornataInModifica && tipoContatto === "nuovo_contatto") {
-      if (!nuovoContattoNome.trim()) return alert("Inserisci il nome del nuovo contatto.");
+      if (!nuovoContattoNome.trim()) return (alert(_saveOutcome.observeFailure("Inserisci il nome del nuovo contatto.")));
       try {
         await createCrmBeautyContactVisit({
           name: nuovoContattoNome.trim(),
@@ -577,14 +583,16 @@ export default function Giornate({ utente }) {
         });
         svuotaForm();
         setMostraForm(false);
-        await caricaDati();
+        await caricaDati(); _saveOutcome.success();
       } catch (error) {
-        alert(error.message || "Impossibile creare il nuovo contatto.");
+      _saveOutcome.failure(error);
+
+        (alert(_saveOutcome.observeFailure(error.message || "Impossibile creare il nuovo contatto.")));
       }
       return;
     }
     const selectedClient = farmacie.find((client) => client.id === farmaciaId);
-    if (!selectedClient) return alert("Seleziona un cliente.");
+    if (!selectedClient) return (alert(_saveOutcome.observeFailure("Seleziona un cliente.")));
     let linkedClientId = selectedClient.legacy_farmacia_id || null;
     if (!linkedClientId) {
       try {
@@ -600,9 +608,11 @@ export default function Giornate({ utente }) {
         });
         svuotaForm();
         setMostraForm(false);
-        await caricaDati();
+        await caricaDati(); _saveOutcome.success();
       } catch (crmError) {
-        alert(crmError.message || "Impossibile creare la giornata per il cliente selezionato.");
+      _saveOutcome.failure(crmError);
+
+        (alert(_saveOutcome.observeFailure(crmError.message || "Impossibile creare la giornata per il cliente selezionato.")));
       }
       return;
     }
@@ -627,21 +637,26 @@ export default function Giornate({ utente }) {
           .eq("id", giornataInModifica.id)
       : await supabase.from("giornate_promozionali").insert([datiGiornata]).select("*").single();
 
-    if (response.error) return alert(response.error.message);
+    if (response.error) return (alert(_saveOutcome.observeFailure(response.error.message)));
 
     const savedDay = giornataInModifica || response.data;
     if (savedDay?.id) {
       try {
         await ensureCrmBeautyVisit({ giornata: savedDay, client: selectedClient });
       } catch (crmError) {
-        alert(`La giornata è stata salvata nello storico, ma il collegamento CRM non è riuscito: ${crmError.message}`);
+      _saveOutcome.failure(crmError);
+
+        (alert(_saveOutcome.observeFailure(`La giornata è stata salvata nello storico, ma il collegamento CRM non è riuscito: ${crmError.message}`)));
       }
     }
 
     svuotaForm();
     setMostraForm(false);
     await caricaDati();
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function annullaGiornata(giornata) {
     const motivo = await window.workspacePrompt("Inserisci il motivo dell'annullamento:");

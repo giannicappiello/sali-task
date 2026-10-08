@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import {useEffect,useRef,useState} from 'react';
 import {formatMoney} from './crmConfig';
 import {costEntryPayload} from './workspaceCostModel';
@@ -11,13 +12,21 @@ export default function WorkspaceCostDialog({initial,operator,isAdmin,onSave,onC
  useEffect(()=>{dialog.current?.showModal();},[]);
  const change=(key,field,value)=>setEntries(rows=>rows.map(row=>row.key===key?{...row,[field]:value}:row));
  async function save(event){
-  event.preventDefault();if(busy)return;setError('');setBusy(true);
+    const _saveOutcome = createSaveOutcome();
+    try {
+
+  event.preventDefault();if(busy)return;(setError(_saveOutcome.observeFailure('')));setBusy(true);
   try{
    const active=entries.filter(r=>initial.id||(r.cost_type==='labor'?r.hours!=='':r.amount!=='')||r.description.trim());
    if(!active.length)throw Error('Inserisci almeno un costo di lavoro o di materiali.');
    await onSave(active.map(r=>costEntryPayload(r,target)),initial.id);onClose();
-  }catch(e){setError(e.message);}finally{setBusy(false);}
- }
+  }catch(e){
+      _saveOutcome.failure(e);
+(setError(_saveOutcome.observeFailure(e.message)));}finally{setBusy(false);}
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
  return <dialog ref={dialog} className="panel crm-cost-editor crm-cost-dialog" aria-labelledby="crm-cost-dialog-title" onCancel={e=>{e.preventDefault();if(!busy)onClose();}}>
   <header><h3 id="crm-cost-dialog-title">{initial.id?'Modifica costo':'Aggiungi costi'}</h3><button type="button" aria-label="Chiudi" disabled={busy} onClick={onClose}>✕</button></header>
   {error&&<p role="alert" className="crm-message error">{error}</p>}

@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../save-outcomes.js";
 import { useEffect, useMemo, useState } from "react";
 import { Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
@@ -76,21 +77,29 @@ export default function ProjectTypesSettings({ canManage = false, searchTerm = "
   }
 
   async function saveType(e) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     e.preventDefault();
-    if (!canManage) return alert("Non hai i permessi.");
-    if (!typeForm.nome.trim()) return alert("Inserisci il nome del tipo progetto.");
+    if (!canManage) return (alert(_saveOutcome.observeFailure("Non hai i permessi.")));
+    if (!typeForm.nome.trim()) return (alert(_saveOutcome.observeFailure("Inserisci il nome del tipo progetto.")));
     setSaving(true);
     const payload = { nome: typeForm.nome.trim(), descrizione: typeForm.descrizione.trim() || null, attivo: typeForm.attivo, competenze_crm: typeForm.competenze_crm, updated_at: new Date().toISOString() };
     const request = editingTypeId
       ? supabase.from("tipi_progetto").update(payload).eq("id", editingTypeId).select().single()
       : supabase.from("tipi_progetto").insert(payload).select().single();
     const { data, error } = await request;
+    _saveOutcome.failure(error);
+
     setSaving(false);
-    if (error) return alert(error.message);
+    if (error) return (alert(_saveOutcome.observeFailure(error.message)));
     setTypeModal(false);
     setSelectedType(data || selectedType);
     await loadData();
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function deleteType(item) {
     if (!canManage) return alert("Non hai i permessi.");
@@ -126,12 +135,15 @@ export default function ProjectTypesSettings({ canManage = false, searchTerm = "
   }
 
   async function saveRule(e) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     e.preventDefault();
-    if (!canManage) return alert("Non hai i permessi.");
-    if (!selectedType?.id) return alert("Tipo progetto non selezionato.");
-    if (!ruleForm.template_id) return alert("Seleziona una fase.");
+    if (!canManage) return (alert(_saveOutcome.observeFailure("Non hai i permessi.")));
+    if (!selectedType?.id) return (alert(_saveOutcome.observeFailure("Tipo progetto non selezionato.")));
+    if (!ruleForm.template_id) return (alert(_saveOutcome.observeFailure("Seleziona una fase.")));
     const duplicate = rules.some((row) => row.tipo_progetto_id === selectedType.id && row.template_id === ruleForm.template_id && row.id !== editingRule?.id);
-    if (duplicate) return alert("Questa fase è già associata al tipo progetto.");
+    if (duplicate) return (alert(_saveOutcome.observeFailure("Questa fase è già associata al tipo progetto.")));
     setSaving(true);
     const payload = {
       tipo_progetto_id: selectedType.id,
@@ -147,12 +159,17 @@ export default function ProjectTypesSettings({ canManage = false, searchTerm = "
     const { error: saveError } = await supabase.rpc("workspace_save_project_rule", {
       p_rule_id: editingRule?.id || null, p_rule: payload, p_competenze_crm: ruleCompetencies,
     });
+    _saveOutcome.failure(saveError);
+
     setSaving(false);
-    if (saveError) return alert(saveError.message);
+    if (saveError) return (alert(_saveOutcome.observeFailure(saveError.message)));
     setRuleModal(false);
     await loadData();
     onTemplatesChanged?.();
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function deleteRule(rule) {
     if (!canManage) return alert("Non hai i permessi.");

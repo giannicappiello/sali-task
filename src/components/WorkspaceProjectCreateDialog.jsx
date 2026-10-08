@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../save-outcomes.js";
 import { isCustomerRecordScope } from '../lib/customerRecordAccess.js';
 import { useEffect, useState } from "react";
 import { Save, X } from "lucide-react";
@@ -78,24 +79,33 @@ export default function WorkspaceProjectCreateDialog({ open, crmType, initialCus
   };
 
   async function save(event) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     event.preventDefault();
-    if (!canManage) return window.alert("Non hai i permessi per creare progetti.");
-    if (!form.titolo.trim() || !form.crm_customer_key || !form.tipo_progetto_id || !form.deadline) return window.alert("Compila titolo, cliente, tipo progetto e deadline.");
-    if (!data.projectTypes.some((item) => item.id === form.tipo_progetto_id && matchesCrmCompetency(item, crmType))) return window.alert("Tipo progetto non disponibile in questa sezione CRM.");
-    if (customerProducts.loading || customerProducts.error || form.prodotti.some(id => !customerProducts.products.some(p => p.id === id))) return window.alert("Verifica i prodotti associati al cliente prima di salvare.");
+    if (!canManage) return (window.alert(_saveOutcome.observeFailure("Non hai i permessi per creare progetti.")));
+    if (!form.titolo.trim() || !form.crm_customer_key || !form.tipo_progetto_id || !form.deadline) return (window.alert(_saveOutcome.observeFailure("Compila titolo, cliente, tipo progetto e deadline.")));
+    if (!data.projectTypes.some((item) => item.id === form.tipo_progetto_id && matchesCrmCompetency(item, crmType))) return (window.alert(_saveOutcome.observeFailure("Tipo progetto non disponibile in questa sezione CRM.")));
+    if (customerProducts.loading || customerProducts.error || form.prodotti.some(id => !customerProducts.products.some(p => p.id === id))) return (window.alert(_saveOutcome.observeFailure("Verifica i prodotti associati al cliente prima di salvare.")));
     setSaving(true);
     try {
       const rules = projectRulesForCrm(data.projectTypePhases, data.templates, form.tipo_progetto_id, crmType);
       const automaticDepartments = rules.flatMap((rule) => templateDepartments(rule.template_id));
       const departments = [...new Set([...form.reparti, ...automaticDepartments].filter(Boolean))];
       const { data: project, error } = await supabase.from("v4_progetti").insert({ titolo: form.titolo.trim(), descrizione: form.descrizione.trim() || null, deadline: form.deadline, tipo_progetto_id: form.tipo_progetto_id, crm_customer_key: form.crm_customer_key, crm_tipo: crmType || null, stato: "aperto", creato_da: actorId, modificato_da: actorId }).select("id").single();
+    _saveOutcome.failure(error);
+
       if (error) throw error;
       if (form.prodotti.length) {
         const { error: productsError } = await supabase.from("v4_progetto_prodotti").insert(form.prodotti.map((prodotto_id) => ({ progetto_id: project.id, prodotto_id, prodotto_nome: data.products.find((item) => item.id === prodotto_id)?.nome || null })));
+    _saveOutcome.failure(productsError);
+
         if (productsError) throw productsError;
       }
       if (departments.length) {
         const { error: departmentsError } = await supabase.from("v4_progetto_reparti").insert(departments.map((reparto_id) => ({ progetto_id: project.id, reparto_id })));
+    _saveOutcome.failure(departmentsError);
+
         if (departmentsError) throw departmentsError;
       }
       const createdByRule = new Map();
@@ -106,13 +116,19 @@ export default function WorkspaceProjectCreateDialog({ open, crmType, initialCus
         const phaseDepartments = templateDepartments(template.id);
         const blockingId = resolveRuleBlocker(rule, data.projectTypePhases, createdByRule, previousPhaseId);
         const { data: phase, error: phaseError } = await supabase.from("v4_fasi_progetto").insert({ progetto_id: project.id, template_id: template.id, durata_giorni: rule.durata_giorni || 1, obbligatoria: rule.obbligatoria !== false, crm_tipo: crmType || null, titolo: template.titolo, reparto_id: phaseDepartments[0] || null, stato: blockingId ? "bloccata" : "da_evadere", priorita: rule.priorita || "normale", assegnato_a: rule.responsabile_id || null, bloccante_id: blockingId, ordine: Number(rule.ordine || index + 1), deadline: subtractDaysIso(form.deadline, rule.giorni_anticipo), creato_da: actorId, modificato_da: actorId, crm_customer_key: form.crm_customer_key }).select("id").single();
+    _saveOutcome.failure(phaseError);
+
         if (phaseError) throw phaseError;
         if (phaseDepartments.length) {
           const { error: phaseDepartmentsError } = await supabase.from("v4_fase_reparti").insert(phaseDepartments.map((reparto_id) => ({ fase_id: phase.id, reparto_id, completato: false })));
+    _saveOutcome.failure(phaseDepartmentsError);
+
           if (phaseDepartmentsError) throw phaseDepartmentsError;
         }
         if (form.prodotti.length) {
           const { error: phaseProductsError } = await supabase.from("v4_fase_prodotti").insert(form.prodotti.map((prodotto_id) => ({ fase_id: phase.id, prodotto_id, prodotto_nome: data.products.find((item) => item.id === prodotto_id)?.nome || null })));
+    _saveOutcome.failure(phaseProductsError);
+
           if (phaseProductsError) throw phaseProductsError;
         }
         createdByRule.set(rule.id, phase.id);
@@ -120,16 +136,23 @@ export default function WorkspaceProjectCreateDialog({ open, crmType, initialCus
       }
       if (auditActorId) {
         const { error: auditError } = await supabase.from("v4_audit_log").insert({ entity_type: "progetto", entity_id: project.id, azione: "creazione progetto", dettagli: { testo: form.titolo.trim() }, user_id: auditActorId });
+    _saveOutcome.failure(auditError);
+
         if (auditError) console.error("Errore registrazione audit creazione progetto:", auditError);
       }
       onSaved?.();
       onClose?.();
     } catch (error) {
-      window.alert(error.message || "Errore durante la creazione del progetto.");
+      _saveOutcome.failure(error);
+
+      (window.alert(_saveOutcome.observeFailure(error.message || "Errore durante la creazione del progetto.")));
     } finally {
       setSaving(false);
     }
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   if (!open) return null;
   const selection = (label, field, options, disabled = false, placeholder = 'Seleziona') => <div className="project-selection">

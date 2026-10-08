@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../save-outcomes.js";
 import { useEffect, useMemo, useState } from "react";
 import { Save, Search } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
@@ -64,28 +65,34 @@ export default function OrganizationRelationsSettings({ canManage }) {
   }
 
   async function saveManagedAgents(user, selectedIds) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     setSaving(user.id);
-    setMessage("");
+    setMessage(_saveOutcome.observeMessage(""));
     const currentlyManaged = agents.filter((agent) => agent.responsabile_utente_id === user.id);
     const removeIds = currentlyManaged.filter((agent) => !selectedIds.includes(agent.id)).map((agent) => agent.id);
     if (removeIds.length) {
       const result = await supabase.from("mexal_agenti").update({ responsabile_utente_id: null }).in("id", removeIds);
       if (result.error) {
         setSaving("");
-        return setMessage(result.error.message);
+        return setMessage(_saveOutcome.observeFailure(result.error.message));
       }
     }
     if (selectedIds.length) {
       const result = await supabase.from("mexal_agenti").update({ responsabile_utente_id: user.id }).in("id", selectedIds);
       if (result.error) {
         setSaving("");
-        return setMessage(result.error.message);
+        return setMessage(_saveOutcome.observeFailure(result.error.message));
       }
     }
     await load();
     setSaving("");
-    setMessage(`Relazioni di ${userName(user)} salvate.`);
-  }
+    setMessage(_saveOutcome.observeMessage(`Relazioni di ${userName(user)} salvate.`));
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   return (
     <div className="panel settings-panel">

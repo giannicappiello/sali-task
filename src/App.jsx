@@ -8,6 +8,7 @@ import { AuthProvider } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Layout from "./components/Layout";
 import OrdersDataPreloader from "./components/OrdersDataPreloader";
+import SaveOutcomeNotice from "./components/SaveOutcomeNotice";
 import GlobalWindowShortcuts from "./components/GlobalWindowShortcuts";
 import GlobalSearchKeyboard from "./components/GlobalSearchKeyboard";
 import GlobalTableColumnControls from "./components/GlobalTableColumnControls";
@@ -101,6 +102,7 @@ function App() {
     <AuthProvider>
       <HrAttendanceProvider>
       <BrandedDialogProvider />
+      <SaveOutcomeNotice />
       <OrdersDataPreloader />
       <GlobalWindowShortcuts />
       <GlobalTableColumnControls />

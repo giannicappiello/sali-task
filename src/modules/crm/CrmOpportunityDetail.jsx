@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { CheckCircle2, FolderKanban, ListChecks, Plus } from "lucide-react";
@@ -108,17 +109,25 @@ export default function CrmOpportunityDetail({ type }) {
   const linkedProjectIds = new Set(links.filter((item) => item.workspace_entity_type === "project").map((item) => item.workspace_entity_id));
 
   async function saveDetails(event) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     event.preventDefault(); if (!canWrite || !opportunity) return;
-    setBusy(true); setError("");
+    setBusy(true); (setError(_saveOutcome.observeFailure("")));
     const { error: saveError } = await supabase.from("crm_opportunities").update({
       titolo: opportunity.titolo.trim(), descrizione: opportunity.descrizione || null,
       valore: opportunity.valore === "" ? null : Number(opportunity.valore),
       probabilita: opportunity.probabilita === "" ? null : Number(opportunity.probabilita),
       chiusura_prevista: opportunity.chiusura_prevista || null,
     }).eq("id", opportunity.id);
-    if (saveError) setError(saveError.message); else await load();
+    _saveOutcome.failure(saveError);
+
+    if (saveError) (setError(_saveOutcome.observeFailure(saveError.message))); else await load();
     setBusy(false);
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function changeStage(event) {
     event.preventDefault(); if (!canWrite) return;

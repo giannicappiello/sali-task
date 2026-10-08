@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../../save-outcomes.js";
 import { useCallback, useEffect, useState } from "react";
 import { Factory, RefreshCw, Save, Square } from "lucide-react";
 import { useAuth } from "../../../contexts/AuthContext";
@@ -30,7 +31,15 @@ export default function ProgremesSettings() {
 
   async function sync() { setBusy("sync"); setMessage(null); try { await call("progremes_modules_sync"); await load(); setMessage({ type: "success", text: "Catalogo moduli ProgreMES aggiornato." }); } catch (error) { setMessage({ type: "error", text: error.message }); } finally { setBusy(""); } }
   async function stop() { setBusy("stop"); try { await call("progremes_modules_stop"); await load(); setMessage({ type: "warning", text: "Richiesta di arresto inviata." }); } catch (error) { setMessage({ type: "error", text: error.message }); } finally { setBusy(""); } }
-  async function saveConfig() { setBusy("config"); try { await call("progremes_sync_config_save", data.config); await load(); setMessage({ type: "success", text: "Programmazione salvata." }); } catch (error) { setMessage({ type: "error", text: error.message }); } finally { setBusy(""); } }
+  async function saveConfig() {
+    const _saveOutcome = createSaveOutcome();
+    try {
+ setBusy("config"); try { await call("progremes_sync_config_save", data.config); await load(); setMessage(_saveOutcome.observeMessage({ type: "success", text: "Programmazione salvata." })); } catch (error) {
+      _saveOutcome.failure(error);
+ setMessage(_saveOutcome.observeMessage({ type: "error", text: error.message })); } finally { setBusy(""); }
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
   const running = data.runs.some((run) => ["in_coda", "in_esecuzione"].includes(run.stato));
 
   return <div className="mexal-page progremes-settings-page">

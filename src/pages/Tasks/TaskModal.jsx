@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { useEffect, useState } from "react";
 import { X, History, MessageCircle, Paperclip, CheckSquare, Send, Upload, Trash2, Download, Plus } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
@@ -84,23 +85,33 @@ function TaskModal({ open, mode = "create", task = null, onClose, onSaved }) {
   async function addActivity(tipo, campo, valore_nuovo, note){ await supabase.from("attivita_task").insert({ task_id: task.id, utente_id: profile?.id || null, tipo, campo, valore_nuovo, note }); }
 
   async function handleSave(e){
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     e.preventDefault();
-    if(!form.titolo.trim()) return alert("Inserisci il titolo della task.");
+    if(!form.titolo.trim()) return (alert(_saveOutcome.observeFailure("Inserisci il titolo della task.")));
     const blocker = blockerTask();
-    if(blocker && !isTaskClosed(blocker) && isTryingToClose()) return alert(`Questa task è bloccata da: ${blocker.titolo || "task bloccante"}. Completa prima la task bloccante.`);
+    if(blocker && !isTaskClosed(blocker) && isTryingToClose()) return (alert(_saveOutcome.observeFailure(`Questa task è bloccata da: ${blocker.titolo || "task bloccante"}. Completa prima la task bloccante.`)));
     setSaving(true);
     const payload = { titolo: form.titolo.trim(), descrizione: form.descrizione.trim() || null, categoria_id: form.categoria_id || null, stato_id: form.stato_id || null, progetto_id: form.progetto_id || null, prodotto_id: form.prodotto_id || null, assegnato_a_id: form.assegnato_a_id || null, deadline: form.deadline || null, bloccante_id: form.bloccante_id || null };
     if(isEditing){
       const {error}=await supabase.from("tasks").update({...payload, modificato_da_id: profile?.id || null}).eq("id", task.id);
-      if(error){ console.error(error); setSaving(false); return alert("Errore durante il salvataggio."); }
+    _saveOutcome.failure(error);
+
+      if(error){ console.error(error); setSaving(false); return (alert(_saveOutcome.observeFailure("Errore durante il salvataggio."))); }
       await addActivity("MODIFICA", "task", form.titolo.trim(), "Task modificata");
     } else {
       const {data,error}=await supabase.from("tasks").insert({...payload, creato_da_id: profile?.id || null, richiedente_id: profile?.id || null}).select("id").single();
-      if(error){ console.error(error); setSaving(false); return alert("Errore durante il salvataggio."); }
+    _saveOutcome.failure(error);
+
+      if(error){ console.error(error); setSaving(false); return (alert(_saveOutcome.observeFailure("Errore durante il salvataggio."))); }
       await supabase.from("attivita_task").insert({ task_id: data.id, utente_id: profile?.id || null, tipo:"CREAZIONE", campo:"task", valore_nuovo: form.titolo.trim(), note:"Task creata" });
     }
     setSaving(false); onSaved(); onClose();
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function addComment(e){
     e.preventDefault(); if(!newComment.trim()) return;

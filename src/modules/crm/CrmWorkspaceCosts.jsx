@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { isCustomerRecordScope } from '../../lib/customerRecordAccess.js';
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {supabase} from '../../lib/supabaseClient';
@@ -40,10 +41,16 @@ export default function CrmWorkspaceCosts(){
  const operator=[user?.nome,user?.cognome].filter(Boolean).join(' ');
  const start=(kind='task',target='')=>{setError('');setForm({kind,target});};
  async function save(payload,id){
+    const _saveOutcome = createSaveOutcome();
+    try {
+
   if(!canWrite)throw Error('Non hai il permesso di registrare costi.');
   const result=id?await supabase.from('crm_workspace_costs').update(payload[0]).eq('id',id).select('id').single():await supabase.from('crm_workspace_costs').insert(payload).select('id');
   if(result.error)throw result.error;await load();
- }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
  async function remove(){if(busy||!canWrite)return;setBusy(true);try{const r=await supabase.from('crm_workspace_costs').delete().eq('id',deleting).select('id').single();if(r.error)throw r.error;setDeleting(null);await load();}catch(e){setError(e.message);}finally{setBusy(false);}}
  const rowActions=(kind,item)=><div className="crm-cost-row-actions"><button type="button" onClick={()=>setViewCosts({kind,id:item.id,title:item.titolo})}>Visualizza costi</button>{canWrite&&<button type="button" disabled={busy} onClick={()=>start(kind,item.id)}>Aggiungi costo</button>}</div>;
  const viewedRows=viewCosts?rows.filter(r=>viewCosts.kind==='project'?r.project?.id===viewCosts.id:r.phase_id===viewCosts.id):[];

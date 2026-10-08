@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { formatDisplayDate } from '../../lib/displayLocale.js';
 import { useRef, useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
@@ -16,15 +17,23 @@ function WeekEditor({ calendar, day, onClose, onSaved }) {
   const [from, setFrom] = useState(day), [week, setWeek] = useState(() => calendarWeek(calendar, day)), [note, setNote] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   useEffect(() => { const node = dialog.current; node.showModal(); return () => node.close(); }, []);
   async function save(e) {
-    e.preventDefault(); setError(''); setBusy(true);
+    const _saveOutcome = createSaveOutcome();
+    try {
+
+    e.preventDefault(); (setError(_saveOutcome.observeFailure(''))); setBusy(true);
     try {
       if (calendar.versions.some(v => v.effectiveFrom === from)) throw new Error('Esiste già un orario con questa decorrenza. Scegli una data successiva oppure modifica il singolo giorno.');
       const validated = Object.fromEntries(Object.entries(week).map(([d, slots]) => [d, validateSlots(slots)]));
       if (!Object.values(validated).some(s => s.length)) throw new Error('Configura almeno una fascia settimanale.');
       await hrRpc('workspace_company_calendar_save', { p_action: 'version', p_data: { effectiveFrom: from, week: validated, note: note.trim() || 'Aggiornamento orario settimanale' } });
       await onSaved(); onClose();
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
-  }
+    } catch (e) {
+      _saveOutcome.failure(e);
+ (setError(_saveOutcome.observeFailure(e.message))); } finally { setBusy(false); }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
   return <dialog ref={dialog} className="hr-dialog" aria-labelledby="hr-week-title" onCancel={e => { e.preventDefault(); if (!busy) onClose(); }}><form onSubmit={save}><header><h2 id="hr-week-title">Orario settimanale</h2><button type="button" disabled={busy} onClick={onClose} aria-label="Chiudi"><X size={18}/></button></header><fieldset disabled={busy}><div className="hr-form-grid"><label>Decorrenza<input type="date" required min={romeDay()} value={from} onChange={e => { setFrom(e.target.value); setWeek(calendarWeek(calendar, e.target.value)); }}/></label><label>Nota<input maxLength={300} value={note} onChange={e => setNote(e.target.value)}/></label></div>{CALENDAR_DAYS.map((name, i) => <section className="hr-week-editor-day" key={name}><label className="hr-calendar-switch"><input type="checkbox" checked={week[String(i + 1)].length > 0} onChange={e => setWeek({ ...week, [String(i + 1)]: e.target.checked ? [['07:30', '16:30']] : [] })}/>{name}</label>{week[String(i + 1)].length > 0 && <Slots slots={week[String(i + 1)]} disabled={busy} onChange={slots => setWeek({ ...week, [String(i + 1)]: slots })}/>}</section>)}</fieldset><p className="hr-note">La nuova decorrenza conserva gli orari precedenti. Eccezioni giornaliere e festività mantengono la precedenza.</p>{error && <p role="alert" className="hr-error">{error}</p>}<footer><button type="button" disabled={busy} onClick={onClose}>Annulla</button><button className="hr-primary" disabled={busy}>{busy ? 'Salvataggio…' : 'Salva settimana'}</button></footer></form></dialog>;
 }
 function DayEditor({ calendar, day, onSaved }) {
@@ -33,10 +42,18 @@ function DayEditor({ calendar, day, onSaved }) {
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const past = day < romeDay();
   async function save(e) {
-    e.preventDefault(); setError(''); setBusy(true);
+    const _saveOutcome = createSaveOutcome();
+    try {
+
+    e.preventDefault(); (setError(_saveOutcome.observeFailure(''))); setBusy(true);
     try { await hrRpc('workspace_company_calendar_save', calendarSavePayload(calendar, draft)); await onSaved(); }
-    catch (e) { setError(e.message); } finally { setBusy(false); }
-  }
+    catch (e) {
+      _saveOutcome.failure(e);
+ (setError(_saveOutcome.observeFailure(e.message))); } finally { setBusy(false); }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
   return <form onSubmit={save}><fieldset disabled={busy || past}><label className="hr-calendar-switch"><input type="checkbox" checked={draft.open} onChange={e => setDraft({ ...draft, open: e.target.checked })}/>Giorno aperto</label>{draft.open && <Slots slots={draft.slots} disabled={busy || past} onChange={slots => setDraft({ ...draft, slots })}/>}<div className="hr-calendar-apply-row"><label>Applica a<select value={draft.scope} onChange={e => setDraft({ ...draft, scope: e.target.value })}><option value="day">Solo questo giorno</option><option value="recurring">Ogni {CALENDAR_DAYS[isoWeekday(day) - 1].toLowerCase()} da questa data</option></select></label><label>Nota<input maxLength={300} value={draft.note} placeholder="Nota facoltativa" onChange={e => setDraft({ ...draft, note: e.target.value })}/></label></div><button className="hr-primary hr-full" disabled={busy || past}>{busy ? 'Salvataggio…' : 'Salva orario'}</button></fieldset>{past && <p className="hr-muted hr-small">Il calendario passato è consultabile e non modificabile.</p>}{draft.scope === 'recurring' && <p className="hr-muted hr-small">Valido fino alla prossima versione settimanale. Le eccezioni giornaliere e le chiusure esistenti restano valide.</p>}{error && <p className="hr-error" role="alert">{error}</p>}</form>;
 }
 export default function CompanyCalendar({ snapshot, month, onMonthChange, onViewChange, onReload }) {

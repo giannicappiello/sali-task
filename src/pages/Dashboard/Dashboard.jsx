@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { productionStatus } from '../../lib/productionStatus.js';
 import { productionOverviewAccess } from "../../lib/productionOverviewAccess.js";
 import { loadWorkspaceProducts } from '../../lib/workspaceCrmCatalog';
@@ -477,8 +478,11 @@ function Dashboard({ toolbarTarget = null }) {
   }
 
   async function saveReminder(e) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     e.preventDefault();
-    if (!reminderForm.titolo.trim()) return alert("Inserisci il titolo del reminder.");
+    if (!reminderForm.titolo.trim()) return (alert(_saveOutcome.observeFailure("Inserisci il titolo del reminder.")));
     setSaving(true);
     const payload = {
       utente_id: selectedReminder?.utente_id || profile.id,
@@ -494,11 +498,16 @@ function Dashboard({ toolbarTarget = null }) {
       ? supabase.from("agenda_reminder").update(payload).eq("id", selectedReminder.id).select().single()
       : supabase.from("agenda_reminder").insert(payload).select().single();
     const { error } = await request;
+    _saveOutcome.failure(error);
+
     setSaving(false);
-    if (error) return alert(error.message);
+    if (error) return (alert(_saveOutcome.observeFailure(error.message)));
     setReminderModalOpen(false);
     await loadData();
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function completeReminder(item) {
     const { error } = await supabase.from("agenda_reminder").update({ completato: true, stato: "Completato", completato_il: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", item.id);

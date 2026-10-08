@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { useEffect, useMemo, useState } from "react";
 import { CalendarClock, Camera, CircleDollarSign, Coins, Database, Factory, Gauge, Globe2, Save, ShieldCheck, ShoppingCart, UserCheck, Users } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
@@ -157,9 +158,12 @@ export default function AISettings() {
   }
 
   async function saveDepartment(departmentId) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     if (!canManage) return;
     setSaving(departmentId);
-    setMessage(null);
+    setMessage(_saveOutcome.observeMessage(null));
     const policy = policyFor(departmentId);
     const payload = {
       reparto_id: departmentId,
@@ -194,17 +198,20 @@ export default function AISettings() {
     setSaving("");
     const { data, error } = policyResult;
     if (!error && modulesResult.error) {
-      setMessage({ type: "error", text: modulesResult.error.message });
+      setMessage(_saveOutcome.observeMessage({ type: "error", text: modulesResult.error.message }));
       return;
     }
     if (error) {
-      setMessage({ type: "error", text: error.message });
+      setMessage(_saveOutcome.observeMessage({ type: "error", text: error.message }));
       return;
     }
     setPolicies((current) => ({ ...current, [departmentId]: data }));
     setModulePolicies((current) => ({ ...current, ...Object.fromEntries((modulesResult.data || []).map((item) => [`${item.reparto_id}:${item.modulo_codice}`, item])) }));
-    setMessage({ type: "success", text: "Capacità, moduli e limiti AI salvati." });
-  }
+    setMessage(_saveOutcome.observeMessage({ type: "success", text: "Capacità, moduli e limiti AI salvati." }));
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function verifyUser(userId = selectedUserId) {
     if (!userId) {
@@ -222,6 +229,9 @@ export default function AISettings() {
   }
 
   async function saveUserOverride(moduleCode, allowed, visionValue) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     if (!selectedUserId) return;
     const key = `${selectedUserId}:${moduleCode}`;
     setSaving(`override:${moduleCode}`);
@@ -234,12 +244,17 @@ export default function AISettings() {
       aggiornato_il: new Date().toISOString(),
     };
     const { data, error } = await supabase.from("ai_utenti_moduli").upsert(payload, { onConflict: "utente_id,modulo_codice" }).select().single();
+    _saveOutcome.failure(error);
+
     setSaving("");
-    if (error) return setMessage({ type: "error", text: error.message });
+    if (error) return setMessage(_saveOutcome.observeMessage({ type: "error", text: error.message }));
     setUserOverrides((current) => ({ ...current, [key]: data }));
     await verifyUser(selectedUserId);
-    setMessage({ type: "success", text: "Eccezione utente aggiornata." });
-  }
+    setMessage(_saveOutcome.observeMessage({ type: "success", text: "Eccezione utente aggiornata." }));
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   if (!canManage) {
     return <section className="ai-settings-page"><div className="ai-settings-denied"><ShieldCheck size={42} /><h1>Accesso riservato</h1><p>La configurazione dell’AI è disponibile soltanto agli amministratori del Workspace.</p><button type="button" onClick={goBack}>Torna alle impostazioni</button></div></section>;

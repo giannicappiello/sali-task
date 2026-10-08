@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../save-outcomes.js";
 import { useEffect, useMemo, useState } from "react";
 import { Save, ShieldCheck } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
@@ -160,10 +161,13 @@ export default function PharmacyAccessSettings({ canManage }) {
   }
 
   async function save() {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     if (!canManage || !selectedId || !selectedUser) return;
 
     if (form.enabled && !selectedUser.email) {
-      return alert("L'utente selezionato non ha un indirizzo email.");
+      return (alert(_saveOutcome.observeFailure("L'utente selezionato non ha un indirizzo email.")));
     }
 
     setSaving(true);
@@ -191,18 +195,25 @@ export default function PharmacyAccessSettings({ canManage }) {
       const { error } = await supabase
         .from("integrazioni_utenti")
         .upsert(payload, { onConflict: "utente_id,modulo" });
+    _saveOutcome.failure(error);
+
 
       if (error) throw error;
 
       await load();
       chooseUser(selectedId);
-      alert("Accessi Gestione Farmacie aggiornati.");
+      (_saveOutcome.success(), alert("Accessi Gestione Farmacie aggiornati."));
     } catch (error) {
-      alert(error.message || "Errore durante il salvataggio degli accessi.");
+      _saveOutcome.failure(error);
+
+      (alert(_saveOutcome.observeFailure(error.message || "Errore durante il salvataggio degli accessi.")));
     } finally {
       setSaving(false);
     }
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   return (
     <div className="panel settings-panel pharmacy-access-settings">

@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { useEffect, useState } from "react";
 import { Plus, Save, RefreshCw, Trash2 } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
@@ -33,10 +34,18 @@ export default function ProductionCostConfiguration(){
  const edit=(key,i,values)=>setSettings(s=>({...s,[key]:s[key].map((x,n)=>n===i?{...x,...values}:x)}));
  const remove=(key,i)=>update(key,settings[key].filter((_,n)=>n!==i));
  async function machines(){setBusy(true);setError("");try{const r=await action(token,"machines");setSettings(s=>({...s,mixingOperatorsCount:r.machines[0]?.mixingOperatorsCount??null,machines:r.machines.map(m=>({...m,washCost:"",...s.machines.find(x=>x.id===m.id)}))}));setMessage("Impianti e numero operatori Miscelazione importati. Nessun piano MES è stato modificato.");}catch(e){setError(e.message);}finally{setBusy(false);}}
- async function save(e){e.preventDefault();setError("");setMessage("");setBusy(true);try{validateSettings(settings);const approved=appliedProposal&&sameSettings(settings,appliedProposal.candidate);await action(token,"save-configuration",{settings,effectiveFrom:effective,note,applyToHistory,...(approved?{proposalId:appliedProposal.id,confirmProposal:true}:{})});const r=await action(token,"configuration");setCompanyCalendar(r.companyCalendar);setVersions(r.configurations);setAppliedProposal(null);
+ async function save(e){
+    const _saveOutcome = createSaveOutcome();
+    try {
+e.preventDefault();(setError(_saveOutcome.observeFailure("")));setMessage(_saveOutcome.observeMessage(""));setBusy(true);try{validateSettings(settings);const approved=appliedProposal&&sameSettings(settings,appliedProposal.candidate);await action(token,"save-configuration",{settings,effectiveFrom:effective,note,applyToHistory,...(approved?{proposalId:appliedProposal.id,confirmProposal:true}:{})});const r=await action(token,"configuration");setCompanyCalendar(r.companyCalendar);setVersions(r.configurations);setAppliedProposal(null);
  const historicalDepartments=[settings.laborRules?.station?.basis==="historical_productivity"?"STATION":null,settings.laborRules?.filling?.basis==="historical_pieces"?"FILLING":null].filter(Boolean);
- setMessage(historicalDepartments.length?"Versione salvata. Dalla decorrenza i criteri storici "+historicalDepartments.join(" e ")+" ricalcolano anche le produzioni concluse con le medie MES aggiornate. Dati originali invariati.":applyToHistory?"Nuova versione applicata allo storico ricostruito dalla decorrenza scelta. Operazione tracciata; preventivi originali invariati.":"Nuova versione salvata. Le produzioni prive di versione vengono associate; quelle già associate conservano la configurazione.");
- }catch(e){setError(e.message);}finally{setBusy(false);}}
+ setMessage(_saveOutcome.observeMessage(historicalDepartments.length?"Versione salvata. Dalla decorrenza i criteri storici "+historicalDepartments.join(" e ")+" ricalcolano anche le produzioni concluse con le medie MES aggiornate. Dati originali invariati.":applyToHistory?"Nuova versione applicata allo storico ricostruito dalla decorrenza scelta. Operazione tracciata; preventivi originali invariati.":"Nuova versione salvata. Le produzioni prive di versione vengono associate; quelle già associate conservano la configurazione."));
+ }catch(e){
+      _saveOutcome.failure(e);
+(setError(_saveOutcome.observeFailure(e.message)));}finally{setBusy(false);}
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
  const calendarVersion=companyCalendar?.versions.filter(v=>v.effectiveFrom<=effective).sort((a,b)=>a.effectiveFrom.localeCompare(b.effectiveFrom)).at(-1);
  return <main className="pc-page pc-configuration" data-column-controls="off">
  {error&&<p className="pc-error" role="alert">{error}</p>}{message&&<p className="pc-success" role="status">{message}</p>}

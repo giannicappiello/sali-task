@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../../save-outcomes.js";
 import { useEffect, useState } from "react";
 import { supabase as reportSupabase } from "../services/reportSupabase";
 import { supabase as primarySupabase } from "../../../lib/supabaseClient";
@@ -226,6 +227,9 @@ export default function Prodotti({ utente }) {
   }
 
   async function salvaProdotto(e) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     e.preventDefault();
 
     const datiProdotto = {
@@ -242,14 +246,20 @@ export default function Prodotti({ utente }) {
       ? await reportSupabase.from("prodotti").update(datiProdotto).eq("id", prodottoInModifica.id)
       : await reportSupabase.from("prodotti").insert([datiProdotto]);
 
-    if (response.error) return alert(response.error.message);
+    if (response.error) return (alert(_saveOutcome.observeFailure(response.error.message)));
 
     svuotaFormProdotto();
     setMostraFormProdotto(false);
     await caricaDati();
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function salvaCategoria(e) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     e.preventDefault();
 
     const datiCategoria = { nome: nomeCategoria };
@@ -258,14 +268,20 @@ export default function Prodotti({ utente }) {
       ? await reportSupabase.from("categorie_prodotti").update(datiCategoria).eq("id", categoriaInModifica.id)
       : await reportSupabase.from("categorie_prodotti").insert([datiCategoria]);
 
-    if (response.error) return alert(response.error.message);
+    if (response.error) return (alert(_saveOutcome.observeFailure(response.error.message)));
 
     svuotaFormCategoria();
     setMostraFormCategoria(false);
     await caricaDati();
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function salvaSottocategoria(e) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     e.preventDefault();
 
     const datiSottocategoria = { nome: nomeSottocategoria };
@@ -277,12 +293,15 @@ export default function Prodotti({ utente }) {
           .eq("id", sottocategoriaInModifica.id)
       : await reportSupabase.from("sottocategorie_prodotti").insert([datiSottocategoria]);
 
-    if (response.error) return alert(response.error.message);
+    if (response.error) return (alert(_saveOutcome.observeFailure(response.error.message)));
 
     svuotaFormSottocategoria();
     setMostraFormSottocategoria(false);
     await caricaDati();
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function eliminaProdotto(prodotto) {
     const conferma = await window.workspaceConfirm(`Vuoi eliminare "${prodotto.nome}"?`);

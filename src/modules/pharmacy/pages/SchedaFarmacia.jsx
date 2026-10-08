@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../../save-outcomes.js";
 import { useEffect, useState } from "react";
 import { supabase } from "../services/reportSupabase";
 import { supabase as workspaceSupabase } from "../../../lib/supabaseClient";
@@ -116,19 +117,26 @@ export default function SchedaFarmacia({ farmacia, beauty, crmOnly = false, onBa
     .sort((a, b) => new Date(a.data) - new Date(b.data))[0];
 
   async function salvaNoteCommerciali() {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     if (crmOnly && farmacia.crm_account_id) {
       const { data: account, error: readError } = await workspaceSupabase
         .from("crm_accounts")
         .select("metadati")
         .eq("id", farmacia.crm_account_id)
         .single();
-      if (readError) return alert(readError.message);
+    _saveOutcome.failure(readError);
+
+      if (readError) return (alert(_saveOutcome.observeFailure(readError.message)));
       const { error } = await workspaceSupabase
         .from("crm_accounts")
         .update({ metadati: { ...(account?.metadati || {}), note_commerciali: noteCommerciali } })
         .eq("id", farmacia.crm_account_id);
-      if (error) return alert(error.message);
-      alert("Note commerciali salvate");
+    _saveOutcome.failure(error);
+
+      if (error) return (alert(_saveOutcome.observeFailure(error.message)));
+      (_saveOutcome.success(), alert("Note commerciali salvate"));
       return;
     }
 
@@ -136,11 +144,16 @@ export default function SchedaFarmacia({ farmacia, beauty, crmOnly = false, onBa
       .from("farmacie")
       .update({ note_commerciali: noteCommerciali })
       .eq("id", farmacia.id);
+    _saveOutcome.failure(error);
 
-    if (error) return alert(error.message);
 
-    alert("Note commerciali salvate");
-  }
+    if (error) return (alert(_saveOutcome.observeFailure(error.message)));
+
+    (_saveOutcome.success(), alert("Note commerciali salvate"));
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   return (
     <div>

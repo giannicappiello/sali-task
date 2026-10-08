@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../../save-outcomes.js";
 import { useEffect, useState } from "react";
 import { supabase } from "../services/reportSupabase";
 
@@ -108,6 +109,9 @@ export default function Utenti() {
   }
 
   async function salva(e) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     e.preventDefault();
 
     try {
@@ -128,6 +132,8 @@ export default function Utenti() {
             },
           }
         );
+    _saveOutcome.failure(error);
+
 
         if (error) throw new Error(error.message);
         if (data?.success === false) throw new Error(data.error);
@@ -146,24 +152,31 @@ export default function Utenti() {
             },
           }
         );
+    _saveOutcome.failure(error);
+
 
         if (error) throw new Error(error.message);
         if (data?.success === false) throw new Error(data.error);
       }
 
-      alert(
-        modifica
+      (alert(
+        _saveOutcome.observeFailure(modifica
           ? "Dati aggiornati correttamente"
-          : "Utente creato correttamente"
-      );
+          : "Utente creato correttamente")
+      ));
 
       resetForm();
       setMostraForm(false);
       await caricaDati();
     } catch (err) {
-      alert(err.message);
+      _saveOutcome.failure(err);
+
+      (alert(_saveOutcome.observeFailure(err.message)));
     }
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function elimina(tipo, item) {
     const nomeItem = tipo === "utente" ? item.nome : nomeCompleto(item);

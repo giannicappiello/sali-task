@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import InfoTooltip from "../../components/InfoTooltip";
@@ -30,8 +31,24 @@ export default function CrmAnalyticsPage({ type }) {
   }, [period.from, period.to, type]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
   const navigation = crmNavigation(type);
-  async function saveSettings(event) { event.preventDefault(); const { error: saveError } = await supabase.from("crm_workflow_settings").update(settings).eq("crm_tipo", type); if (saveError) setError(saveError.message); else await load(); }
-  async function saveStage(stage) { const { error: saveError } = await supabase.from("crm_opportunity_stages").update({ probabilita_default: stage.probabilita_default, soglia_aging_giorni: stage.soglia_aging_giorni }).eq("id", stage.id); if (saveError) setError(saveError.message); else await load(); }
+  async function saveSettings(event) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+ event.preventDefault(); const { error: saveError } = await supabase.from("crm_workflow_settings").update(settings).eq("crm_tipo", type);
+    _saveOutcome.failure(saveError);
+ if (saveError) (setError(_saveOutcome.observeFailure(saveError.message))); else await load();
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
+  async function saveStage(stage) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+ const { error: saveError } = await supabase.from("crm_opportunity_stages").update({ probabilita_default: stage.probabilita_default, soglia_aging_giorni: stage.soglia_aging_giorni }).eq("id", stage.id);
+    _saveOutcome.failure(saveError);
+ if (saveError) (setError(_saveOutcome.observeFailure(saveError.message))); else await load();
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
   async function addLossReason(event) { event.preventDefault(); const name = newReason.trim(); if (!name) return; const code = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, ""); const { error: saveError } = await supabase.from("crm_loss_reasons").insert({ crm_tipo: type, codice: code, nome: name, ordine: Number(lossReasons.at(-1)?.ordine || 0) + 10 }); if (saveError) setError(saveError.message); else { setNewReason(""); await load(); } }
   return <div className="crm-page">
     <CrmPageHeader eyebrow={config.label} title={`Analisi ${config.label}`} description="Indicatori della pipeline sul perimetro CRM autorizzato." actions={<CrmPeriodFilter period={period} compact />}><CrmSectionNav items={navigation} period={period} label={`Navigazione ${config.label}`} /></CrmPageHeader>

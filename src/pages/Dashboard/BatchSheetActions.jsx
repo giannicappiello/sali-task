@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { productionStatus } from '../../lib/productionStatus.js';
 import { displayDate } from '../../lib/displayDate.js';
 import { batchPrintStart } from './batchPrintStart.js';
@@ -100,16 +101,24 @@ export default function BatchSheetActions({ productionOrderId, kind, children, o
     finally { setBusy(false); }
   }
   async function saveSheet(actual) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     if (busy) return;
-    setBusy(true); setError('');
+    setBusy(true); (setError(_saveOutcome.observeFailure('')));
     try {
       const result = await request('complete-sheet', {phaseId, contentHash:savedActual?.sheetHash || sheet.contentHash, actual});
-      if (result.pending) { setPrintMessage(result.message); setList(await request('list')); return; }
+      if (result.pending) { _saveOutcome.partial(result.message || "Foglio salvato; chiusura ancora in attesa della conferma MES."); setPrintMessage(result.message); setList(await request('list')); return; }
       if (!result.closed) throw new Error(result.message || 'Esito chiusura non verificato: controllare lo stato prima di riprovare.');
-      setPrintMessage(result.message); setEditing(false); setList(await request('list')); setLoadAttempt(value => value + 1);
+      _saveOutcome.success(result.message); setPrintMessage(result.message); setEditing(false); setList(await request('list')); setLoadAttempt(value => value + 1);
       window.dispatchEvent(new Event('workspace:production-changed'));
-    } catch (cause) { setError(cause.message); } finally { setBusy(false); }
-  }
+    } catch (cause) {
+      _saveOutcome.failure(cause);
+ (setError(_saveOutcome.observeFailure(cause.message))); } finally { setBusy(false); }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
   if (list?.managed === false) return children;
   const title = kind === 'production' ? 'produzione' : operationType === 'Cartoning' ? 'astucciatura' : 'confezionamento';
   return <>

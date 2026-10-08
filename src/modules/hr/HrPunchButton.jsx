@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { useEffect, useRef, useState } from 'react';
 import { useHrAttendance } from './HrAttendanceProvider';
 import { hrNetwork, hrRpc, locate } from './hrService';
@@ -35,8 +36,11 @@ export default function HrPunchButton({ className = '', disabled = false, onComp
   const setManualPending = monitor?.setManualPending;
   useEffect(() => { setManualPending?.(dialog || busy); return () => setManualPending?.(false); }, [dialog, busy, setManualPending]);
   async function punch(reason = '') {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     if (pending.current) return;
-    pending.current = true; setBusy(true); setError(''); setMessage('');
+    pending.current = true; setBusy(true); (setError(_saveOutcome.observeFailure(''))); setMessage(_saveOutcome.observeMessage(''));
     try {
       const result = mobile
         ? await hrRpc('workspace_hr_location_punch', { p_action: open ? 'out' : 'in', p_key: key.current, p_attendance_id: open?.id || null, p_position: await locate(), p_reason: reason })
@@ -44,12 +48,17 @@ export default function HrPunchButton({ className = '', disabled = false, onComp
       if (result.ignored) throw new Error(result.message || 'Accuracy insufficiente: presenza invariata.');
       key.current = crypto.randomUUID();
       await monitor.refresh();
-      setMessage(!mobile ? (result.checkout_at ? 'Uscita registrata tramite rete aziendale.' : 'Entrata registrata tramite rete aziendale.') : result.checkout_at ? 'Uscita registrata. Controllo posizione terminato.' : 'Entrata registrata. Controllo posizione attivo mentre Workspace riceve il GPS.');
+      setMessage(_saveOutcome.observeMessage(!mobile ? (result.checkout_at ? 'Uscita registrata tramite rete aziendale.' : 'Entrata registrata tramite rete aziendale.') : result.checkout_at ? 'Uscita registrata. Controllo posizione terminato.' : 'Entrata registrata. Controllo posizione attivo mentre Workspace riceve il GPS.'));
       window.dispatchEvent(new Event('workspace:hr-changed'));
       await onComplete?.();
-    } catch (failure) { setError(failure.message); throw failure; }
+    } catch (failure) {
+      _saveOutcome.failure(failure);
+ (setError(_saveOutcome.observeFailure(failure.message))); throw failure; }
     finally { pending.current = false; setBusy(false); }
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
   return <>
     <button type="button" className={className} disabled={disabled || busy || !monitor?.ready} onClick={() => open && mobile ? setDialog(true) : void punch().catch(() => {})}>
       {busy ? 'Verifica posizione…' : open ? 'Registra uscita' : 'Registra entrata'}

@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { displayDate } from '../../lib/displayDate';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -214,7 +215,10 @@ export default function ProductSpecification({ article, canEdit, request, drafts
     setError(''); closePicker();
   }
   async function save(event) {
-    event.preventDefault(); setSaving(true); setError(''); setMessage('');
+    const _saveOutcome = createSaveOutcome();
+    try {
+
+    event.preventDefault(); setSaving(true); (setError(_saveOutcome.observeFailure(''))); setMessage(_saveOutcome.observeMessage(''));
     const submitted = spec;
     try {
       await saveLinkedSpecificationDrafts(sources?.semiFinishedSpecifications, drafts, request, (articleCode, saved) => {
@@ -222,10 +226,15 @@ export default function ProductSpecification({ article, canEdit, request, drafts
       });
       const result = await request(`specifications/save?${new URLSearchParams({ articleCode: code })}`, { body: { expectedVersion: spec.version, data: displayedData, attachments: spec.attachments } });
       if (drafts.get(code) === submitted) drafts.delete(code);
-      if (mounted.current) { setSpec(result); setDirty(false); setMessage(`Capitolato salvato. Revisione ${result.version}.`); setRevisions(null); setEditing(false); }
-    } catch (cause) { if (mounted.current) setError(cause.message); }
+      if (mounted.current) { setSpec(result); setDirty(false); setMessage(_saveOutcome.observeMessage(`Capitolato salvato. Revisione ${result.version}.`)); setRevisions(null); setEditing(false); }
+    } catch (cause) {
+      _saveOutcome.failure(cause);
+ if (mounted.current) (setError(_saveOutcome.observeFailure(cause.message))); }
     finally { if (mounted.current) setSaving(false); }
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
   function refresh() {
     if ((dirty || linkedChanges) && !window.confirm('Ricaricare il capitolato? Le modifiche non salvate di questo articolo saranno scartate.')) return;
     for (const linked of sources?.semiFinishedSpecifications || []) drafts.delete(linked.article.articleCode);

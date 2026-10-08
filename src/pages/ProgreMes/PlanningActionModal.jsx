@@ -34,7 +34,7 @@ export default function PlanningActionModal({ path, onClose, onNavigate }) {
     }
   }
   const content = <Suspense fallback={<p role="status">Caricamento dati...</p>}>
-    {url.pathname === "/produzione/rdp-workbench" ? <Requests compact onNavigate={onNavigate} onReturnToPlan={onClose}/>
+    {url.pathname === "/produzione/rdp-workbench" ? <Requests key={path} compact initialTab={url.searchParams.get("tab")} onNavigate={onNavigate} onReturnToPlan={onClose}/>
       : url.pathname === "/produzione/fabbisogni-acquisto" ? <Purchasing/>
       : url.pathname === "/revisione-priorita-produzione" ? <Priority key={path} compact initialSearch={url.search}/>
       : <Lifecycle key={path} compact initialSearch={url.search} release={url.pathname === "/rilascio-odl"}/>}

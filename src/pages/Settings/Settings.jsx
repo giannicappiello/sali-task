@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Pencil, Plus, Save, Search, Trash2, X } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
@@ -333,39 +334,50 @@ export default function Settings({ section = "team" }) {
   }
 
   async function saveReparto(e) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     e.preventDefault();
-    if (!canManage) return alert("Non hai i permessi.");
+    if (!canManage) return (alert(_saveOutcome.observeFailure("Non hai i permessi.")));
     const payload = { nome: departmentForm.nome.trim(), descrizione: departmentForm.descrizione.trim() || null, attivo: departmentForm.attivo };
-    if (!payload.nome) return alert("Inserisci il nome del reparto.");
+    if (!payload.nome) return (alert(_saveOutcome.observeFailure("Inserisci il nome del reparto.")));
     setSaving(true);
     const request = modal.item
       ? supabase.from("reparti").update(payload).eq("id", modal.item.id).select("id").single()
       : supabase.from("reparti").insert(payload).select("id").single();
     const { data, error } = await request;
+    _saveOutcome.failure(error);
+
     setSaving(false);
-    if (error) return alert(error.message);
+    if (error) return (alert(_saveOutcome.observeFailure(error.message)));
     const departmentId = data?.id || modal.item?.id;
     const deleteModules = await supabase.from("reparti_moduli").delete().eq("reparto_id", departmentId);
-    if (deleteModules.error) return alert(deleteModules.error.message);
+    if (deleteModules.error) return (alert(_saveOutcome.observeFailure(deleteModules.error.message)));
     const moduleRows = (departmentForm.moduli || []).map((modulo) => ({ reparto_id: departmentId, modulo }));
     if (moduleRows.length) {
       const insertModules = await supabase.from("reparti_moduli").insert(moduleRows);
-      if (insertModules.error) return alert(insertModules.error.message);
+      if (insertModules.error) return (alert(_saveOutcome.observeFailure(insertModules.error.message)));
     }
     const deleteProgremesModules = await supabase.from("progremes_reparti_moduli").delete().eq("reparto_id", departmentId);
-    if (deleteProgremesModules.error) return alert(deleteProgremesModules.error.message);
+    if (deleteProgremesModules.error) return (alert(_saveOutcome.observeFailure(deleteProgremesModules.error.message)));
     const progremesRows = (departmentForm.progremes_moduli || []).map((modulo_codice) => ({ reparto_id: departmentId, modulo_codice }));
     if (progremesRows.length) {
       const insertProgremesModules = await supabase.from("progremes_reparti_moduli").insert(progremesRows);
-      if (insertProgremesModules.error) return alert(insertProgremesModules.error.message);
+      if (insertProgremesModules.error) return (alert(_saveOutcome.observeFailure(insertProgremesModules.error.message)));
     }
     closeModal();
     await loadData();
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function saveRuolo(e) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     e.preventDefault();
-    if (!canManage) return alert("Non hai i permessi.");
+    if (!canManage) return (alert(_saveOutcome.observeFailure("Non hai i permessi.")));
     const payload = {
       nome: roleForm.nome.trim(),
       descrizione: roleForm.descrizione.trim() || null,
@@ -375,7 +387,7 @@ export default function Settings({ section = "team" }) {
       livello_ai: roleForm.livello_ai || "analisi",
       accesso_come_beauty: roleForm.accesso_come_beauty === true,
     };
-    if (!payload.nome) return alert("Inserisci il nome del ruolo.");
+    if (!payload.nome) return (alert(_saveOutcome.observeFailure("Inserisci il nome del ruolo.")));
 
     setSaving(true);
     const request = modal.item
@@ -383,9 +395,11 @@ export default function Settings({ section = "team" }) {
       : supabase.from("ruoli").insert(payload).select().single();
 
     const { data, error } = await request;
+    _saveOutcome.failure(error);
+
     if (error) {
       setSaving(false);
-      return alert(error.message);
+      return (alert(_saveOutcome.observeFailure(error.message)));
     }
 
     const roleModuleRows = roleConfigurableModules.map(({ code }) => ({
@@ -398,18 +412,24 @@ export default function Settings({ section = "team" }) {
       .upsert(roleModuleRows, { onConflict: "ruolo_id,modulo" });
     if (moduleLevelsResult.error) {
       setSaving(false);
-      return alert(moduleLevelsResult.error.message);
+      return (alert(_saveOutcome.observeFailure(moduleLevelsResult.error.message)));
     }
 
     setSaving(false);
     closeModal();
     await loadData();
     if (reloadProfile) await reloadProfile();
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function saveTemplate(e) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     e.preventDefault();
-    if (!canManage) return alert("Non hai i permessi.");
+    if (!canManage) return (alert(_saveOutcome.observeFailure("Non hai i permessi.")));
     const selectedDepartmentIds = Array.isArray(templateForm.reparto_ids) ? templateForm.reparto_ids.filter(Boolean) : [];
     const payload = {
       titolo: templateForm.titolo.trim(),
@@ -418,7 +438,7 @@ export default function Settings({ section = "team" }) {
       ordine: Number(templateForm.ordine) || 1,
       attivo: templateForm.attivo,
     };
-    if (!payload.titolo) return alert("Inserisci la voce checklist.");
+    if (!payload.titolo) return (alert(_saveOutcome.observeFailure("Inserisci la voce checklist.")));
 
     setSaving(true);
     const request = modal.item
@@ -426,9 +446,11 @@ export default function Settings({ section = "team" }) {
       : supabase.from("checklist_template").insert(payload).select("id").single();
 
     const { data, error } = await request;
+    _saveOutcome.failure(error);
+
     if (error) {
       setSaving(false);
-      return alert(error.message);
+      return (alert(_saveOutcome.observeFailure(error.message)));
     }
 
     const templateId = data?.id || modal.item?.id;
@@ -439,19 +461,25 @@ export default function Settings({ section = "team" }) {
       const insertRes = await supabase.from("checklist_template_reparti").insert(rows);
       if (insertRes.error) {
         setSaving(false);
-        return alert(insertRes.error.message);
+        return (alert(_saveOutcome.observeFailure(insertRes.error.message)));
       }
     }
 
     setSaving(false);
     closeModal();
     await loadData();
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function saveUserAccess(e) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     e.preventDefault();
-    if (!canManage) return alert("Non hai i permessi.");
-    if (!modal.item?.id) return alert("Utente non selezionato.");
+    if (!canManage) return (alert(_saveOutcome.observeFailure("Non hai i permessi.")));
+    if (!modal.item?.id) return (alert(_saveOutcome.observeFailure("Utente non selezionato.")));
     setSaving(true);
 
     const selectedDepartmentIds = [
@@ -460,18 +488,22 @@ export default function Settings({ section = "team" }) {
 
     const { data: exceptions, error: exceptionsError } = await supabase.from("workspace_eccezioni_utente")
       .select("ambito,codice,decisione,livello_accesso,motivazione,valida_fino_a").eq("utente_id", modal.item.id);
-    if (exceptionsError) { setSaving(false); return alert(exceptionsError.message); }
+    _saveOutcome.failure(exceptionsError);
+
+    if (exceptionsError) { setSaving(false); return (alert(_saveOutcome.observeFailure(exceptionsError.message))); }
     const { error: accessError } = await supabase.rpc("workspace_save_user_access", {
       target_user_id: modal.item.id, target_role_id: userAccessForm.ruolo_id || null,
       department_ids: selectedDepartmentIds, personal_exceptions: exceptions || [], target_active: userAccessForm.attivo !== false,
     });
-    if (accessError) { setSaving(false); return alert(accessError.message); }
+    _saveOutcome.failure(accessError);
+
+    if (accessError) { setSaving(false); return (alert(_saveOutcome.observeFailure(accessError.message))); }
     const specialPermissionRows = (userAccessForm.permessi || []).map((permesso_id) => ({ utente_id: modal.item.id, permesso_id }));
     if (specialPermissionRows.length > 0) {
       const insertSpecialPermissions = await supabase.from("permessi_utente").upsert(specialPermissionRows, { onConflict: "utente_id,permesso_id" });
       if (insertSpecialPermissions.error) {
         setSaving(false);
-        return alert(insertSpecialPermissions.error.message);
+        return (alert(_saveOutcome.observeFailure(insertSpecialPermissions.error.message)));
       }
     }
     let deleteSpecialPermissions = supabase.from("permessi_utente").delete().eq("utente_id", modal.item.id);
@@ -481,7 +513,7 @@ export default function Settings({ section = "team" }) {
     const deleteObsoleteSpecialPermissions = await deleteSpecialPermissions;
     if (deleteObsoleteSpecialPermissions.error) {
       setSaving(false);
-      return alert(deleteObsoleteSpecialPermissions.error.message);
+      return (alert(_saveOutcome.observeFailure(deleteObsoleteSpecialPermissions.error.message)));
     }
 
     const currentLinkedAgent = mexalAgents.find((agent) => agent.workspace_utente_id === modal.item.id);
@@ -489,7 +521,7 @@ export default function Settings({ section = "team" }) {
       const unlinkRes = await supabase.from("mexal_agenti").update({ workspace_utente_id: null }).eq("id", currentLinkedAgent.id);
       if (unlinkRes.error) {
         setSaving(false);
-        return alert(unlinkRes.error.message);
+        return (alert(_saveOutcome.observeFailure(unlinkRes.error.message)));
       }
     }
     if (userAccessForm.workspace_mexal_agente_id) {
@@ -499,7 +531,7 @@ export default function Settings({ section = "team" }) {
       }).eq("id", userAccessForm.workspace_mexal_agente_id);
       if (linkRes.error) {
         setSaving(false);
-        return alert(linkRes.error.message);
+        return (alert(_saveOutcome.observeFailure(linkRes.error.message)));
       }
     }
 
@@ -508,7 +540,7 @@ export default function Settings({ section = "team" }) {
     });
     if (syncAccess.error) {
       setSaving(false);
-      return alert(syncAccess.error.message);
+      return (alert(_saveOutcome.observeFailure(syncAccess.error.message)));
     }
 
     const beautyAccessResult = await supabase
@@ -519,13 +551,13 @@ export default function Settings({ section = "team" }) {
       .maybeSingle();
     if (beautyAccessResult.error) {
       setSaving(false);
-      return alert(beautyAccessResult.error.message);
+      return (alert(_saveOutcome.observeFailure(beautyAccessResult.error.message)));
     }
 
     const beautyAccess = beautyAccessResult.data;
     if (beautyAccess?.enabled && (!modal.item.nome?.trim() || !modal.item.email?.trim())) {
       setSaving(false);
-      return alert("Per accedere a Beauty Days sono obbligatori nome ed email dell'utente.");
+      return (alert(_saveOutcome.observeFailure("Per accedere a Beauty Days sono obbligatori nome ed email dell'utente.")));
     }
 
     let external = {
@@ -547,7 +579,7 @@ export default function Settings({ section = "team" }) {
       });
       if (ensureRes.error || ensureRes.data?.error) {
         setSaving(false);
-        return alert(await getFunctionErrorMessage(ensureRes.error, ensureRes.data?.error));
+        return (alert(_saveOutcome.observeFailure(await getFunctionErrorMessage(ensureRes.error, ensureRes.data?.error))));
       }
       external = { ...external, ...ensureRes.data };
     }
@@ -565,14 +597,17 @@ export default function Settings({ section = "team" }) {
       .eq("modulo", "report_giornate");
     if (beautyRelation.error) {
       setSaving(false);
-      return alert(beautyRelation.error.message);
+      return (alert(_saveOutcome.observeFailure(beautyRelation.error.message)));
     }
 
     setSaving(false);
     closeModal();
     await loadData();
     if (reloadProfile) await reloadProfile();
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function remove(type, item) {
     if (!canManage) return alert("Non hai i permessi.");
@@ -584,12 +619,15 @@ export default function Settings({ section = "team" }) {
   }
 
   async function saveNewUser(e) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     e.preventDefault();
-    if (!canManage) return alert("Non hai i permessi.");
+    if (!canManage) return (alert(_saveOutcome.observeFailure("Non hai i permessi.")));
     if (!newUserForm.nome.trim() || !newUserForm.cognome.trim() || !newUserForm.email.trim() || !newUserForm.password) {
-      return alert("Nome, cognome, email e password iniziale sono obbligatori.");
+      return (alert(_saveOutcome.observeFailure("Nome, cognome, email e password iniziale sono obbligatori.")));
     }
-    if (newUserForm.password.length < 8) return alert("La password deve avere almeno 8 caratteri.");
+    if (newUserForm.password.length < 8) return (alert(_saveOutcome.observeFailure("La password deve avere almeno 8 caratteri.")));
 
     setSaving(true);
     const { data, error } = await supabase.functions.invoke("admin-manage-user", {
@@ -604,11 +642,16 @@ export default function Settings({ section = "team" }) {
         reparto_ids: newUserForm.reparto_ids || [],
       },
     });
+    _saveOutcome.failure(error);
+
     setSaving(false);
-    if (error || data?.error) return alert(await getFunctionErrorMessage(error, data?.error));
+    if (error || data?.error) return (alert(_saveOutcome.observeFailure(await getFunctionErrorMessage(error, data?.error))));
     closeModal();
     await loadData();
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function getFunctionErrorMessage(error, fallback) {
     if (fallback) return fallback;

@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { useRef, useState } from 'react';
 import { calculatePackagingTotals } from './packagingTotals.js';
 import { calculateMaterialActuals } from './packagingMaterialActuals.js';
@@ -75,13 +76,14 @@ export default function PackagingActualEditor({ sheet, saved, busy, onSave, onCa
     pieces?.addEventListener('input', updatePieces); updatePieces();
   }
   function submit() {
-    if (saved) { setError(''); onSave(actual); return; }
-    const doc = frame.current?.contentDocument; if (!doc) return;
+    const _saveOutcome = createSaveOutcome();
+    if (saved) { setError(_saveOutcome.observeFailure('')); onSave(actual); return; }
+    const doc = frame.current?.contentDocument; if (!doc) { _saveOutcome.failure("Il foglio non è ancora disponibile: attendi il caricamento."); return; }
     const value = {...actual};
     for (const [key,type] of fields) {
       const input = doc.querySelector(`[name="${key}"]`);
-      if (!input) { setError('Aggiornare MES: foglio incompleto.'); return; }
-      if (!saved && !input.reportValidity()) { setError('Compilare correttamente il campo: ' + (input.closest('label')?.firstChild?.textContent || key)); input.scrollIntoView({block:'center'}); return; }
+      if (!input) { setError(_saveOutcome.observeFailure('Aggiornare MES: foglio incompleto.')); return; }
+      if (!saved && !input.reportValidity()) { setError(_saveOutcome.observeFailure('Compilare correttamente il campo: ' + (input.closest('label')?.firstChild?.textContent || key))); input.scrollIntoView({block:'center'}); return; }
       value[key] = type === 'number' ? Number(input.value) : input.value;
     }
     if (!saved && doc.querySelector('[data-packaging-version="2"]')) {
@@ -89,11 +91,11 @@ export default function PackagingActualEditor({ sheet, saved, busy, onSave, onCa
       for (const row of doc.querySelectorAll('[data-packaging-material]')) {
         const material = {articleId: Number(row.dataset.packagingMaterial)};
         for (const input of row.querySelectorAll('[data-material-input]')) {
-          if (!input.reportValidity() || input.value === '' || Number(input.value) < 0) { setError(row.dataset.materialCode + ': verificare ' + input.getAttribute('aria-label') + '. Le quantità non possono essere negative.'); input.scrollIntoView({block:'center'}); return; }
+          if (!input.reportValidity() || input.value === '' || Number(input.value) < 0) { setError(_saveOutcome.observeFailure(row.dataset.materialCode + ': verificare ' + input.getAttribute('aria-label') + '. Le quantità non possono essere negative.')); input.scrollIntoView({block:'center'}); return; }
           material[input.dataset.materialInput] = Number(input.value);
         }
         if (Math.abs(material.deposited - material.consumed - material.wasted - material.returned) > 0.0000001) {
-          setError(`${row.dataset.materialCode}: Depositati deve corrispondere a Consumo effettivo + Scartati + Reso.`); return;
+          setError(_saveOutcome.observeFailure(`${row.dataset.materialCode}: Depositati deve corrispondere a Consumo effettivo + Scartati + Reso.`)); return;
         }
         value.materials.push(material);
       }
@@ -101,11 +103,11 @@ export default function PackagingActualEditor({ sheet, saved, busy, onSave, onCa
     for (const key of incompleteFields) {
       const input = doc.querySelector(`[name="${key}"]`);
       if (input) {
-        if (!saved && !input.reportValidity()) return;
+        if (!saved && !input.reportValidity()) { _saveOutcome.failure(input.validationMessage); return; }
         value[key] = Number(input.value);
       }
     }
-    setError(''); onSave(value);
+    setError(_saveOutcome.observeFailure('')); onSave(value);
   }
   return <>
     {error && <p role="alert">{error}</p>}

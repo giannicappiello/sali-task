@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../../save-outcomes.js";
 import { formatDisplayDate } from '../../../lib/displayLocale.js';
 import { useEffect, useState } from "react";
 import { supabase } from "../services/reportSupabase";
@@ -306,13 +307,16 @@ setRichiestaContatto(
   }
 
   async function salvaAperturaContatto(e) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     e.preventDefault();
 
     const farmacia = getFarmacia(farmaciaId);
-    if (!farmacia) return alert("Seleziona un cliente");
-    if (!beautyId) return alert("Seleziona una beauty");
+    if (!farmacia) return (alert(_saveOutcome.observeFailure("Seleziona un cliente")));
+    if (!beautyId) return (alert(_saveOutcome.observeFailure("Seleziona una beauty")));
     if (!nuovaApertura && !richiestaContatto) {
-      return alert("Seleziona almeno Nuova apertura o Richiesta di contatto");
+      return (alert(_saveOutcome.observeFailure("Seleziona almeno Nuova apertura o Richiesta di contatto")));
     }
 
     let linkedClientId = farmacia.legacy_farmacia_id || null;
@@ -321,7 +325,9 @@ setRichiestaContatto(
         const link = await ensureBeautyClientLink(farmacia.codice_cliente);
         linkedClientId = link.legacy_farmacia_id;
       } catch (linkError) {
-        return alert(linkError.message || "Impossibile collegare il cliente allo storico Beauty Days.");
+      _saveOutcome.failure(linkError);
+
+        return (alert(_saveOutcome.observeFailure(linkError.message || "Impossibile collegare il cliente allo storico Beauty Days.")));
       }
     }
 
@@ -348,13 +354,18 @@ setRichiestaContatto(
     };
 
     const { error } = await supabase.from("aperture_contatti").insert([dati]);
+    _saveOutcome.failure(error);
 
-    if (error) return alert(error.message);
+
+    if (error) return (alert(_saveOutcome.observeFailure(error.message)));
 
     resetForm();
     setMostraForm(false);
     await caricaDati();
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   function apriTrasformaModal(record) {
     setRecordSelezionato(record);

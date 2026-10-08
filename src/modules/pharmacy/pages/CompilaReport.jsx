@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../../save-outcomes.js";
 import { formatDisplayDate } from '../../../lib/displayLocale.js';
 import { useCallback, useEffect, useState } from "react";
 import { supabase as reportSupabase } from "../services/reportSupabase";
@@ -252,9 +253,12 @@ export default function CompilaReport({
   }
 
   async function salvaReport(e) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     e.preventDefault();
     if (checkoutContext && !noteFinali.trim()) {
-      alert("Le note finali sono obbligatorie per completare il check-out.");
+      (alert(_saveOutcome.observeFailure("Le note finali sono obbligatorie per completare il check-out.")));
       return;
     }
 
@@ -289,8 +293,10 @@ export default function CompilaReport({
         .from("crm_visit_details")
         .update({ report_data: { ...crmReportData, report } })
         .eq("activity_id", giornata.crm_activity_id);
-      if (error) return alert(error.message);
-      reportSaved();
+    _saveOutcome.failure(error);
+
+      if (error) return (alert(_saveOutcome.observeFailure(error.message)));
+      _saveOutcome.success(); reportSaved();
       return;
     }
 
@@ -298,8 +304,10 @@ export default function CompilaReport({
       .from("vendite_prodotti")
       .delete()
       .eq("giornata_id", giornata.id);
+    _saveOutcome.failure(deleteOldVenditeError);
 
-    if (deleteOldVenditeError) return alert(deleteOldVenditeError.message);
+
+    if (deleteOldVenditeError) return (alert(_saveOutcome.observeFailure(deleteOldVenditeError.message)));
 
     const { error: updateError } = await reportSupabase
       .from("giornate_promozionali")
@@ -316,8 +324,10 @@ export default function CompilaReport({
         stato: "eseguita",
       })
       .eq("id", giornata.id);
+    _saveOutcome.failure(updateError);
 
-    if (updateError) return alert(updateError.message);
+
+    if (updateError) return (alert(_saveOutcome.observeFailure(updateError.message)));
 
     const righeVenditeLegacy = righeVendite.map((v) => ({
         giornata_id: giornata.id,
@@ -328,12 +338,17 @@ export default function CompilaReport({
       const { error: venditeError } = await reportSupabase
         .from("vendite_prodotti")
         .insert(righeVenditeLegacy);
+    _saveOutcome.failure(venditeError);
 
-      if (venditeError) return alert(venditeError.message);
+
+      if (venditeError) return (alert(_saveOutcome.observeFailure(venditeError.message)));
     }
 
     reportSaved();
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function confermaPianificazione(e) {
     e.preventDefault();

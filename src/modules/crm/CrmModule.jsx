@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, Navigate, Route, Routes, useParams, useSearchParams } from "react-router-dom";
 import { Bot, BriefcaseBusiness, Plus, Search, ShoppingBag, Store } from "lucide-react";
@@ -311,11 +312,19 @@ function AccountsPage({ type }) {
   useEffect(() => { const timer = window.setTimeout(() => void load(), 180); return () => window.clearTimeout(timer); }, [load]);
 
   async function save(event) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     event.preventDefault(); if (!canWrite) return;
     const payload = { ...form, tipo: type, nome: form.nome.trim(), responsabile_id: profile.id, reparto_id: profile.reparto_ids?.[0] || profile.reparto_id || null, creato_da: profile.id, codice_cliente_mexal: null, fonte: "crm_only" };
-    const { error: saveError } = await supabase.from("crm_accounts").insert(payload); if (saveError) return setError(saveError.message);
+    const { error: saveError } = await supabase.from("crm_accounts").insert(payload);
+    _saveOutcome.failure(saveError);
+ if (saveError) return (setError(_saveOutcome.observeFailure(saveError.message)));
     setForm(EMPTY_ACCOUNT); setOpen(false); await load();
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function changeCustomerStatus({ active, reason }) {
     if (!statusCustomer || !canWrite) return;
@@ -668,11 +677,19 @@ function BriefsPage() {
   }, []);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
   async function save(event) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     event.preventDefault();
     const payload = { ...form, crm_tipo: "conto_terzi", account_id: form.account_id || null, opportunity_id: form.opportunity_id || null, prezzo_target: form.prezzo_target === "" ? null : Number(form.prezzo_target), quantita: form.quantita === "" ? null : Number(form.quantita), mercati: form.mercati.split(",").map((value) => value.trim()).filter(Boolean), certificazioni: form.certificazioni.split(",").map((value) => value.trim()).filter(Boolean), responsabile_id: profile.id, reparto_id: profile.reparto_ids?.[0] || profile.reparto_id || null, creato_da: profile.id };
     const { error: saveError } = await supabase.from("crm_briefs").insert(payload);
-    if (saveError) setError(saveError.message); else { setForm(emptyBrief); await load(); }
-  }
+    _saveOutcome.failure(saveError);
+
+    if (saveError) (setError(_saveOutcome.observeFailure(saveError.message))); else { setForm(emptyBrief); await load(); }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
   const navigation = crmNavigation("conto_terzi");
   return <div className="crm-page">
     <CrmPageHeader eyebrow="Conto Terzi" title="Brief Cliente" description="Brief strutturati collegabili a cliente, progetto commerciale, progetto Workspace e AI Business Assistant." actions={<Link className="primary-action crm-primary" to="/crm/ai"><Bot size={17} />Apri AI Brief</Link>}><CrmSectionNav items={navigation} period={period} label="Navigazione Conto Terzi" /></CrmPageHeader>

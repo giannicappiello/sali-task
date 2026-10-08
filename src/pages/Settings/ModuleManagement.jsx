@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Blocks, ExternalLink, Monitor, Pencil, Plus, Save, ShieldCheck, Trash2 } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -207,19 +208,22 @@ export default function ModuleManagement() {
   }
 
   async function saveModule(event) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     event.preventDefault();
-    if (!isAdminUser) return setMessage({ type: "error", text: "Operazione riservata all’amministratore Workspace." });
+    if (!isAdminUser) return setMessage(_saveOutcome.observeMessage({ type: "error", text: "Operazione riservata all’amministratore Workspace." }));
     const code = selectedCode || normalizeCode(form.codice || form.nome);
     const name = cleanText(form.nome);
-    if (!code || !name) return setMessage({ type: "error", text: "Inserisci codice e nome del modulo." });
-    if (!moduleAreaCodes(form).length) return setMessage({ type: "error", text: "Seleziona almeno un’area per il modulo." });
+    if (!code || !name) return setMessage(_saveOutcome.observeMessage({ type: "error", text: "Inserisci codice e nome del modulo." }));
+    if (!moduleAreaCodes(form).length) return setMessage(_saveOutcome.observeMessage({ type: "error", text: "Seleziona almeno un’area per il modulo." }));
     const currentModule = modules.find((item) => item.codice === selectedCode);
     if (currentModule?.attivo !== false && form.attivo === false) {
       const usages = [...(associations.moduleLinks.get(selectedCode) || []).map((item) => `Schermata: ${item.screen?.nome || item.schermata_codice}`), ...(associations.moduleMenus.get(selectedCode) || []).map((item) => `Menu: ${item.menu?.nome || item.voce_codice}`)];
       if (usages.length && !await window.workspaceConfirm(`Disattivare “${currentModule.nome}”?\n\nQuesto elemento è utilizzato da:\n- ${usages.join("\n- ")}`)) return;
     }
     setBusy(true);
-    setMessage(null);
+    setMessage(_saveOutcome.observeMessage(null));
     try {
       const defaultScreen = screens.find((screen) => screen.codice === form.predefinita);
       const dedicatedContainer = form.tipo === "contenitore" && cleanText(form.percorso) && !cleanText(form.percorso).startsWith("/moduli/");
@@ -247,17 +251,24 @@ export default function ModuleManagement() {
         target_screen_codes: form.schermate,
         target_default_screen: form.predefinita || null,
       });
+    _saveOutcome.failure(saveError);
+
       if (saveError) throw saveError;
       await load();
       window.dispatchEvent(new CustomEvent("workspace:module-catalog-changed"));
       setSelectedCode(code);
-      setMessage({ type: "success", text: form.schermate.length ? "Modulo e composizione salvati." : "Modulo salvato senza schermate associate." });
+      setMessage(_saveOutcome.observeMessage({ type: "success", text: form.schermate.length ? "Modulo e composizione salvati." : "Modulo salvato senza schermate associate." }));
     } catch (error) {
-      setMessage({ type: "error", text: error.message });
+      _saveOutcome.failure(error);
+
+      setMessage(_saveOutcome.observeMessage({ type: "error", text: error.message }));
     } finally {
       setBusy(false);
     }
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function notifyMesDeletion() {
     try {
@@ -310,6 +321,9 @@ export default function ModuleManagement() {
   }
 
   async function saveScreen(event) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     event.preventDefault();
     if (!screenForm || !isAdminUser) return;
     const currentScreen = screens.find((item) => item.codice === screenForm.codice);
@@ -325,12 +339,17 @@ export default function ModuleManagement() {
       attiva: screenForm.protetta ? true : screenForm.attiva !== false,
       ordine: Number(screenForm.ordine) || 0,
     } });
+    _saveOutcome.failure(error);
+
     setBusy(false);
-    if (error) return setMessage({ type: "error", text: error.message });
+    if (error) return setMessage(_saveOutcome.observeMessage({ type: "error", text: error.message }));
     await load();
     window.dispatchEvent(new CustomEvent("workspace:module-catalog-changed"));
-    setMessage({ type: "success", text: "Schermata aggiornata." });
-  }
+    setMessage(_saveOutcome.observeMessage({ type: "success", text: "Schermata aggiornata." }));
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   const selectedModule = modules.find((item) => item.codice === selectedCode);
   const pickerScreens = useMemo(() => {

@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowDown, ArrowLeft, ArrowUp, Copy, Eye, Link2, Monitor, PanelTop, Plus, Save, Smartphone, Tablet, Trash2, Type } from "lucide-react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
@@ -112,8 +113,11 @@ export default function ScreenBuilder() {
   }
 
   async function save() {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     if (!target || !isAdminUser) return;
-    setBusy(true); setMessage(null);
+    setBusy(true); setMessage(_saveOutcome.observeMessage(null));
     const { data, error } = await supabase.rpc("admin_save_workspace_builder_layout", {
       p_target_type: targetType,
       p_target_code: targetCode,
@@ -121,18 +125,26 @@ export default function ScreenBuilder() {
       p_target_description: target.description?.trim() || "",
       p_target_layout: normalizeWorkspaceLayout(layout, { requireSystemContent: targetType !== "screen" || target.chiave_componente !== "screen-builder" }),
     });
+    _saveOutcome.failure(error);
+
     setBusy(false);
-    if (error) return setMessage({ type: "error", text: error.message });
-    setMessage({ type: "success", text: `Versione ${data} pubblicata.` });
+    if (error) return setMessage(_saveOutcome.observeMessage({ type: "error", text: error.message }));
+    setMessage(_saveOutcome.observeMessage({ type: "success", text: `Versione ${data} pubblicata.` }));
     window.dispatchEvent(new CustomEvent("workspace:module-catalog-changed"));
     window.dispatchEvent(new CustomEvent("workspace:builder-layout-changed"));
     await load();
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function saveAsNew(event) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     event.preventDefault();
     const code = cleanCode(clone.code || clone.name);
-    if (!code || !clone.name.trim()) return setMessage({ type: "error", text: "Inserisci nome e codice della nuova schermata." });
+    if (!code || !clone.name.trim()) return setMessage(_saveOutcome.observeMessage({ type: "error", text: "Inserisci nome e codice della nuova schermata." }));
     const customBlocks = blocks.filter((block) => block.type !== "system-content");
     const clonedLayout = { version: 1, blocks: customBlocks.length ? customBlocks : [createBlock("panel")] };
     setBusy(true);
@@ -143,11 +155,16 @@ export default function ScreenBuilder() {
       p_new_description: clone.description.trim(),
       p_target_layout: clonedLayout,
     });
+    _saveOutcome.failure(error);
+
     setBusy(false);
-    if (error) return setMessage({ type: "error", text: error.message });
+    if (error) return setMessage(_saveOutcome.observeMessage({ type: "error", text: error.message }));
     window.dispatchEvent(new CustomEvent("workspace:module-catalog-changed"));
     navigate(`/settings/layout-builder/screen/${encodeURIComponent(data)}`, { replace: true });
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   if (!targetDefinition) return <Navigate to="/settings/modules" replace />;
   if (loading) return <div className="screen-builder-loading">Caricamento editor…</div>;

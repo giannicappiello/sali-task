@@ -1,0 +1,5 @@
+.save-outcome-notice { position:fixed;top:20px;right:20px;z-index:2147483647;display:flex;align-items:flex-start;gap:16px;max-width:min(480px,calc(100vw - 40px));padding:16px 20px;border:1px solid #86c7a4;border-radius:12px;background:#edf9f1;color:#17623c;box-shadow:0 8px 32px #142b4933;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit; }
+.save-outcome-notice.error { background:#fff2f0;border-color:#e5a8a0;color:#9b2c25; }
+.save-outcome-notice button { border:0;background:transparent;color:inherit;font:inherit;font-size:22px;line-height:1;cursor:pointer; }
+
+.save-outcome-notice.warning { background:#fff8e1;border-color:#e5c36c;color:#775900; }

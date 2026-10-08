@@ -1,3 +1,4 @@
+import { reconcilePlanningView, planningSyncFailure, planningSyncResolution } from "./planningSync.js";
 import PackagingActivityDialog from '../Dashboard/PackagingActivityDialog';
 import BatchActivitiesDialog from '../Dashboard/BatchActivitiesDialog';
 import { batchActivitiesMessage } from './batchActivitiesMessage.js';
@@ -35,6 +36,23 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
   const [connection, setConnection] = useState({ requestKey: "", url: "", error: "" });
   const [frameStatus, setFrameStatus] = useState({ url: "", ready: false, error: "" });
   const [syncError, setSyncError] = useState("");
+  const [syncing, setSyncing] = useState(false);
+  const [syncComplete, setSyncComplete] = useState(false);
+  const [syncResolution, setSyncResolution] = useState(null);
+  const syncAttempt = useRef(0);
+  const alignWorkspace = useCallback(async () => {
+    const attempt = ++syncAttempt.current;
+    setSyncing(true); setSyncComplete(false); setSyncResolution(null); setSyncError("");
+    try {
+      await reconcilePlanningView(currentToken.current);
+      if (attempt === syncAttempt.current) { setSyncError(""); setSyncComplete(true); }
+    } catch (error) {
+      if (attempt === syncAttempt.current) { setSyncError(planningSyncFailure(error)); setSyncResolution(planningSyncResolution(error)); }
+    } finally {
+      if (attempt === syncAttempt.current) setSyncing(false);
+    }
+  }, []);
+  useEffect(() => () => { syncAttempt.current += 1; }, []);
   const [mesHeader, setMesHeader] = useState(null);
   const sessionKey = JSON.stringify([session?.user?.id, authorizationRevision]);
   const requestKey = JSON.stringify([session?.user?.id, authorizationRevision, screenCode, search, retry]);
@@ -85,10 +103,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
         return;
       }
       if (event.data.type === "progremes-planning-applied") {
-        setSyncError("");
-        fetch("/api/workspace/planning", { method: "POST", headers: { Authorization: `Bearer ${currentToken.current}`, "Content-Type": "application/json" }, body: JSON.stringify({ action: "planning_reconcile" }) })
-          .then(async response => { const result = await response.json(); if (!response.ok) throw new Error(result.error || "Allineamento non riuscito"); })
-          .catch(() => setSyncError("Piano salvato in MES. Completa l’allineamento da Versioni e revisioni del piano con Allinea stato Workspace; non ripetere la generazione."));
+        void alignWorkspace();
         return;
       }
       if (event.data.type === "progremes-workspace-navigate") {
@@ -113,7 +128,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
       onMessage: receive, onTimeout: () => setFrameStatus({ url, ready: false,
         error: "MES non ha confermato il collegamento integrato. Verifica che MES sia aggiornato e che il browser consenta la sessione incorporata.",
       }) });
-  }, [url, navigate, sessionKey, screenCode]);
+  }, [url, navigate, sessionKey, screenCode, alignWorkspace]);
 
   const error = !authLoading && !allowed ? "Accesso al modulo ProgreMES non autorizzato."
     : !authLoading && !accessToken ? "Sessione Workspace non disponibile."
@@ -133,7 +148,7 @@ export default function ProgreMesLaunch({ screenCode = "", search = "", inDialog
       if (url) frame.current?.contentWindow?.postMessage({ type: 'workspace-mes-refresh-planning' }, new URL(url).origin);
     }}/>}
     {popupPath && <PlanningActionModal path={popupPath} onClose={() => { setPopupPath(""); if (url) frame.current?.contentWindow?.postMessage({ type: "workspace-mes-refresh-planning" }, new URL(url).origin); }} onNavigate={setPopupPath} />}
-    {syncError && <div className="progremes-frame-status" role="alert">{syncError}</div>}
+    {(syncError || syncing || syncComplete) && <div className="progremes-frame-status" role={syncError ? "alert" : "status"}>{syncError || (syncing ? "Piano salvato in MES. Allineamento Workspace in corso…" : "Piano salvato e Workspace allineato correttamente.")}{syncResolution && <button type="button" onClick={() => setPopupPath(syncResolution.path)}>{syncResolution.label}</button>}{syncError && <button type="button" disabled={syncing} onClick={alignWorkspace}>Riprova allineamento</button>}</div>}
     {(!ready || error) && <div className="progremes-frame-status" role={error ? "alert" : "status"}>
       <h2>{error ? "Collegamento non disponibile" : "Apertura schermata MES..."}</h2>
       <p>{error || "Collegamento automatico alla schermata richiesta."}</p>

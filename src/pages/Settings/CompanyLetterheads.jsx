@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { formatDisplayDate } from '../../lib/displayLocale.js';
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Archive, Bot, CheckCircle2, FilePlus2, Link2, PenLine, Pencil, Plus, RefreshCw, Search, ShieldCheck, Upload } from "lucide-react";
@@ -107,10 +108,13 @@ export default function CompanyLetterheads() {
   }
 
   async function saveHeading(event) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     event.preventDefault(); if (!canManage || busy) return;
     const file = event.currentTarget.elements.templateFile?.files[0];
-    if (!headingForm.id && !file) { setError("Il file originale è obbligatorio per la prima versione."); return; }
-    setBusy(true); setError("");
+    if (!headingForm.id && !file) { (setError(_saveOutcome.observeFailure("Il file originale è obbligatorio per la prima versione."))); return; }
+    setBusy(true); (setError(_saveOutcome.observeFailure("")));
     try {
       const rpcName = headingForm.id ? "company_letterhead_update" : "company_letterhead_create";
       const params = { p_name: headingForm.name, p_code: headingForm.code, p_description: headingForm.description || null, p_company_brand: headingForm.companyBrand, p_kind: headingForm.kind, p_language: headingForm.language, p_valid_from: headingForm.validFrom || null, p_valid_to: headingForm.validTo || null, p_is_default: headingForm.isDefault, p_notes: headingForm.notes || null };
@@ -120,8 +124,13 @@ export default function CompanyLetterheads() {
       const headingId = headingForm.id || result.data;
       if (file) await uploadVersion(headingId, headingForm.format, file);
       setHeadingForm(null); await load(); setSelectedId(headingId);
-    } catch (saveError) { setError(saveError.message); } finally { setBusy(false); }
-  }
+    } catch (saveError) {
+      _saveOutcome.failure(saveError);
+ (setError(_saveOutcome.observeFailure(saveError.message))); } finally { setBusy(false); }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function addVersion(event) {
     event.preventDefault(); if (!fileTarget || busy) return;
@@ -131,19 +140,27 @@ export default function CompanyLetterheads() {
   }
 
   async function saveSignature(event) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     event.preventDefault(); if (!canManage || busy) return;
-    const file=event.currentTarget.elements.signatureFile.files[0]; if(!file){setError("Il file firma è obbligatorio.");return;}
+    const file=event.currentTarget.elements.signatureFile.files[0]; if(!file){(setError(_saveOutcome.observeFailure("Il file firma è obbligatorio.")));return;}
     const extension=file.name.split(".").pop()?.toLowerCase(); const allowed={png:"image/png",jpg:"image/jpeg",jpeg:"image/jpeg"};
-    if(!allowed[extension]||file.type!==allowed[extension]||file.size<=0||file.size>10_485_760){setError("Firma non valida: usa PNG o JPG fino a 10 MB.");return;}
-    if(!await hasExpectedMagic(file,extension==="png"?"PNG":"JPEG")){setError("Il contenuto del file firma non corrisponde al formato dichiarato.");return;}
-    setBusy(true);setError("");
+    if(!allowed[extension]||file.type!==allowed[extension]||file.size<=0||file.size>10_485_760){(setError(_saveOutcome.observeFailure("Firma non valida: usa PNG o JPG fino a 10 MB.")));return;}
+    if(!await hasExpectedMagic(file,extension==="png"?"PNG":"JPEG")){(setError(_saveOutcome.observeFailure("Il contenuto del file firma non corrisponde al formato dichiarato.")));return;}
+    setBusy(true);(setError(_saveOutcome.observeFailure("")));
     try{
       const created=await supabase.rpc("company_signature_create",{p_name:signatureForm.name,p_code:signatureForm.code,p_signer_name:signatureForm.signerName,p_signer_role:signatureForm.signerRole||null,p_description:signatureForm.description||null,p_valid_from:signatureForm.validFrom||null,p_valid_to:signatureForm.validTo||null,p_notes:signatureForm.notes||null}); if(created.error)throw created.error;
       const path=`${created.data}/${crypto.randomUUID()}/${cleanFileName(file.name)}`; const uploaded=await supabase.storage.from("company-signatures").upload(path,file,{contentType:file.type,upsert:false}); if(uploaded.error)throw uploaded.error;
       const version=await supabase.rpc("company_signature_add_version",{p_signature_id:created.data,p_storage_path:path,p_original_filename:file.name,p_mime_type:file.type,p_size_bytes:file.size,p_sha256:await sha256(file),p_valid_from:null,p_valid_to:null}); if(version.error){await supabase.storage.from("company-signatures").remove([path]);throw version.error;}
       setSignatureForm(null);await load();
-    }catch(saveError){setError(saveError.message);}finally{setBusy(false);}
-  }
+    }catch(saveError){
+      _saveOutcome.failure(saveError);
+(setError(_saveOutcome.observeFailure(saveError.message)));}finally{setBusy(false);}
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function attachSignature(event){event.preventDefault();if(busy)return;setBusy(true);setError("");const result=await supabase.rpc("company_letterhead_attach_signature",{p_letterhead_id:signatureLinkForm.letterheadId,p_signature_id:signatureLinkForm.signatureId,p_placement:signatureLinkForm.placement,p_label:signatureLinkForm.label||null,p_sort_order:Number(signatureLinkForm.sortOrder||0),p_valid_from:null,p_valid_to:null});if(result.error)setError(result.error.message);else{setSignatureLinkForm(null);await load();}setBusy(false);}
 
@@ -155,10 +172,16 @@ export default function CompanyLetterheads() {
   }
 
   async function saveRule(event) {
-    event.preventDefault(); if (busy) return; setBusy(true); setError("");
+    const _saveOutcome = createSaveOutcome();
+    try {
+
+    event.preventDefault(); if (busy) return; setBusy(true); (setError(_saveOutcome.observeFailure("")));
     const result = await supabase.rpc("company_letterhead_upsert_rule", { p_rule_id: null, p_document_type_code: ruleForm.documentTypeCode, p_letterhead_id: ruleForm.letterheadId, p_scope: ruleForm.scope, p_brand: ruleForm.brand || null, p_business_area: ruleForm.businessArea || null, p_language: ruleForm.language || null, p_priority: Number(ruleForm.priority || 0), p_active: true, p_valid_from: ruleForm.validFrom || null, p_valid_to: ruleForm.validTo || null });
-    if (result.error) setError(result.error.message); else { setRuleForm(null); await load(); } setBusy(false);
-  }
+    if (result.error) (setError(_saveOutcome.observeFailure(result.error.message))); else { setRuleForm(null); await load(); } setBusy(false);
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   return <>
     <div className="company-letterheads-page"><div className="letterhead-page-actions"><button className="secondary-action" type="button" onClick={() => navigate("/assistente-ai?prompt=Quali%20tipi%20documento%20non%20hanno%20una%20carta%20intestata%3F")}><Bot size={17}/> Configura con AI</button>{canManage && <button className="secondary-action" type="button" onClick={()=>setSignatureForm({...EMPTY_SIGNATURE})}><PenLine size={17}/> Nuova firma</button>}{canManage && <button className="primary-action" type="button" onClick={() => setHeadingForm({ ...EMPTY_HEADING })}><Plus size={17}/> Nuova intestazione</button>}</div>

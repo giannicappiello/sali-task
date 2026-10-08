@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { useEffect, useState } from 'react';
 import { ArrowLeft, Save } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -17,15 +18,23 @@ export default function GeolocationSettings() {
     return () => { active = false; };
   }, []);
   async function save(event) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     event.preventDefault(); if (busy || !canSave) return;
     setBusy(true); setFeedback(null);
     try {
       const data = await hrRpc('workspace_hr_save_geolocation_settings', { p_radius: Number(form.presence_radius), p_accuracy: Number(form.max_accuracy) });
       setForm(data); setFeedback({ text: 'Impostazioni salvate.' });
       window.dispatchEvent(new Event('workspace:hr-changed'));
-    } catch (error) { setFeedback({ error: true, text: 'Errore di salvataggio: ' + error.message }); }
+    } catch (error) {
+      _saveOutcome.failure(error);
+ setFeedback({ error: true, text: 'Errore di salvataggio: ' + error.message }); }
     finally { setBusy(false); }
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
   return <div className="settings-page v4-page">
     <div className="page-title-row"><div><Link className="settings-hub-back" to="/settings/other"><ArrowLeft size={17} />Altre impostazioni</Link><h1>Impostazioni Geolocalizzazione</h1><p>Impostazioni → Altre impostazioni → Impostazioni Geolocalizzazione</p></div></div>
     {feedback && <p role={feedback.error ? 'alert' : 'status'}>{feedback.text}</p>}

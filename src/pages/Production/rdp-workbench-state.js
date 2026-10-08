@@ -85,3 +85,8 @@ export function v3RecalculationOutcomeFailure(response = {}, refreshedDetail = {
     message: "Il ricalcolo non ha prodotto una preview READY e la RdP non può proseguire.",
   };
 }
+export function workbenchMatchesTab(row, tab) {
+  if (tab === "all") return row.stage !== "history";
+  if (tab === "blocked" && row.sourceDeletedAt && !row.mesDeletedAt) return true;
+  return row.stage === tab;
+}

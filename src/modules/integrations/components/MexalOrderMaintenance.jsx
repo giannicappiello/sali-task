@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../../save-outcomes.js";
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 
@@ -17,7 +18,15 @@ export default function MexalOrderMaintenance({ canManage }) {
     const timer = window.setTimeout(load, 0);
     return () => window.clearTimeout(timer);
   }, [load]);
-  async function save() { setBusy(true); setMessage(null); try { const result = await invoke({ action: "order_maintenance_save", settings }); setSettings(result.settings); setMessage({ type: "success", text: "Impostazioni di manutenzione salvate." }); } catch (error) { setMessage({ type: "error", text: error.message }); } finally { setBusy(false); } }
+  async function save() {
+    const _saveOutcome = createSaveOutcome();
+    try {
+ setBusy(true); setMessage(_saveOutcome.observeMessage(null)); try { const result = await invoke({ action: "order_maintenance_save", settings }); setSettings(result.settings); setMessage(_saveOutcome.observeMessage({ type: "success", text: "Impostazioni di manutenzione salvate." })); } catch (error) {
+      _saveOutcome.failure(error);
+ setMessage(_saveOutcome.observeMessage({ type: "error", text: error.message })); } finally { setBusy(false); }
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
   async function purge() {
     if (!await window.workspaceConfirm(`Eliminare definitivamente SOLO da Workspace i documenti EVASI da più di ${settings.giorni_conservazione_evasi} giorni e le relative righe? Mexal non verrà modificato.`)) return;
     setBusy(true); setMessage(null);

@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../../save-outcomes.js";
 import { canEditOrderDraft } from "../services/orderEditPolicy.js";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ChevronDown, ChevronUp, Info, Minus, Plus, Save, Search, ShoppingCart, Trash2 } from "lucide-react";
@@ -658,22 +659,25 @@ export default function NewOrder() {
   }
 
   async function saveOrder({ confirm = false } = {}) {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     if (saving) return;
     if (!selectedCustomer) {
-      setError("Seleziona un cliente.");
+      (setError(_saveOutcome.observeFailure("Seleziona un cliente.")));
       return;
     }
     if (!lines.length) {
-      setError("Inserisci almeno un prodotto.");
+      (setError(_saveOutcome.observeFailure("Inserisci almeno un prodotto.")));
       return;
     }
     if (confirm && !availabilityValidity.valid) {
-      setError("Verifica nuovamente le disponibilità prima di confermare l’ordine.");
+      (setError(_saveOutcome.observeFailure("Verifica nuovamente le disponibilità prima di confermare l’ordine.")));
       return;
     }
 
     setSaving(true);
-    setError("");
+    (setError(_saveOutcome.observeFailure("")));
 
     try {
       const now = new Date();
@@ -697,6 +701,8 @@ export default function NewOrder() {
         order = { id: editingOrderId };
       } else {
         const { data, error: orderError } = await supabase.from("ordini_testate").insert({ ...orderPayload, modulo_ordini: moduleCode }).select("id,numero_ordine_visualizzato").single();
+    _saveOutcome.failure(orderError);
+
         if (orderError) throw orderError; order = data;
       }
 
@@ -742,8 +748,12 @@ export default function NewOrder() {
         await updateOrder(order.id, { ...orderPayload, note_mexal: noteMexal }, linePayload);
       } else {
         const { error: linesError } = await supabase.from("ordini_righe").insert(linePayload);
+    _saveOutcome.failure(linesError);
+
         if (linesError) throw linesError;
         const { error: noteError } = await supabase.from("ordini_testate").update(buildWritableOrderPayload({ note_mexal: noteMexal })).eq("id", order.id);
+    _saveOutcome.failure(noteError);
+
         if (noteError) throw noteError;
       }
 
@@ -753,6 +763,8 @@ export default function NewOrder() {
           "conferma_ordine_workspace",
           { p_ordine_id: order.id }
         );
+    _saveOutcome.failure(confirmError);
+
         if (confirmError) throw confirmError;
 
         try {
@@ -765,6 +777,8 @@ export default function NewOrder() {
         // Per PR e Private l'invio parte subito in produzione. PH resta interno
         // al Workspace e non avvia mai una sincronizzazione Mexal.
         const { data: moduleConfig, error: moduleConfigError } = await supabase.from("ordini_moduli_configurazione").select("invia_automaticamente_mexal").eq("modulo_ordini", moduleCode).maybeSingle();
+    _saveOutcome.failure(moduleConfigError);
+
         if (moduleConfigError) throw moduleConfigError;
         if (moduleCode === "ph") {
           mexalMessage += " Ordine PH confermato senza invio a Mexal.";
@@ -791,12 +805,17 @@ export default function NewOrder() {
         },
       });
     } catch (saveError) {
+      _saveOutcome.failure(saveError);
+
       console.error("Errore salvataggio ordine:", saveError);
-      setError(saveError.message || "Errore durante il salvataggio dell'ordine.");
+      (setError(_saveOutcome.observeFailure(saveError.message || "Errore durante il salvataggio dell'ordine.")));
     } finally {
       setSaving(false);
     }
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   if (loading) return <div className="orders-empty">Caricamento nuovo ordine...</div>;
   if (editingBlocked) return <div className="orders-page"><div className="orders-alert orders-alert-error">{error}</div><button className="orders-secondary" type="button" onClick={goBack}>Torna agli ordini</button></div>;

@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../save-outcomes.js";
 import { useEffect, useMemo, useState } from "react";
 import { Clipboard, RefreshCw, Save } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
@@ -57,14 +58,22 @@ export default function OrdersDocumentSeriesSettings({ canManage }) {
   }
 
   async function save() {
+    const _saveOutcome = createSaveOutcome();
+    try {
+
     if (!canManage) return;
-    if (!config.serie_ocm || !config.serie_ocx) { setMessageType("error"); return setMessage("Seleziona entrambe le serie."); }
-    setSaving(true); setMessage(""); setMessageType("info");
+    if (!config.serie_ocm || !config.serie_ocx) { setMessageType("error"); return setMessage(_saveOutcome.observeFailure("Seleziona entrambe le serie.")); }
+    setSaving(true); setMessage(_saveOutcome.observeMessage("")); setMessageType("info");
     const { error } = await supabase.from("ordini_configurazione_documenti").upsert({ id: 1, ...config, aggiornato_il: new Date().toISOString() });
+    _saveOutcome.failure(error);
+
     setSaving(false);
     setMessageType(error ? "error" : "success");
-    setMessage(error ? error.message : "Configurazione serie salvata.");
-  }
+    setMessage(_saveOutcome.observeMessage(error ? error.message : "Configurazione serie salvata."));
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   async function openDiagnostics() {
     if (!diagnostics) {

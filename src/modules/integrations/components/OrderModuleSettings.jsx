@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../../save-outcomes.js";
 import { useEffect, useState } from "react";
 import { Save } from "lucide-react";
 import { supabase } from "../../../lib/supabaseClient";
@@ -114,19 +115,24 @@ function Panel({ code, title, series }) {
   }
 
   async function save() {
-    setMessage("");
+    const _saveOutcome = createSaveOutcome();
+    try {
+
+    setMessage(_saveOutcome.observeMessage(""));
     if (isPrivate && !String(config.serie_documento || "").trim()) {
-      setMessage("Seleziona la serie OCT prima di salvare la configurazione OrdiniPrivate.");
+      setMessage(_saveOutcome.observeFailure("Seleziona la serie OCT prima di salvare la configurazione OrdiniPrivate."));
       return;
     }
     const validationError = validateEmailTemplates(config);
     if (validationError) {
-      setMessage(validationError);
+      setMessage(_saveOutcome.observeFailure(validationError));
       return;
     }
     let shippingConfig;
     try { shippingConfig = normalizeShippingConfig(config); }
-    catch (error) { setMessage(error.message); return; }
+    catch (error) {
+      _saveOutcome.failure(error);
+ setMessage(_saveOutcome.observeFailure(error.message)); return; }
     setSaving(true);
     const { error } = await supabase.from("ordini_moduli_configurazione").upsert({
       ...config,
@@ -134,9 +140,14 @@ function Panel({ code, title, series }) {
       modulo_ordini: code,
       aggiornato_il: new Date().toISOString(),
     }, { onConflict: "modulo_ordini" });
+    _saveOutcome.failure(error);
+
     setSaving(false);
-    setMessage(error ? error.message : "Configurazione salvata.");
-  }
+    setMessage(_saveOutcome.observeMessage(error ? error.message : "Configurazione salvata."));
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
 
   return <section className="mexal-table-panel">
     <div className="mexal-section-heading">

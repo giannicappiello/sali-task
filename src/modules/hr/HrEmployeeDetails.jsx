@@ -1,3 +1,4 @@
+import { createSaveOutcome } from "../../save-outcomes.js";
 import { useRef, useState } from 'react';
 import { agreementDisplay, agreementValues, AGREEMENT_FIELDS } from './hrAgreements';
 import { formatDate, romeDay } from './hrTime';
@@ -19,7 +20,10 @@ export default function HrEmployeeDetails({ employee, contracts, sites, users = 
     return <label key={key}>{label}{key === 'overtime_separate' ? <input className="hr-agreement-checkbox" type="checkbox" checked={values[key] === true} onChange={e => change(key, e.target.checked)}/> : <input value={values[key] ?? ''} onChange={e => change(key, e.target.value)}/>}</label>;
   };
   async function save(event) {
-    event.preventDefault(); if (busy || !dirty) return; setBusy(true); setError('');
+    const _saveOutcome = createSaveOutcome();
+    try {
+
+    event.preventDefault(); if (busy || !dirty) return; setBusy(true); (setError(_saveOutcome.observeFailure('')));
     const employeeId = employee.user_id;
     try {
       const changed = [...AGREEMENT_FIELDS.map(([key]) => key), 'effective_from'].some(key => values[key] !== base[key]);
@@ -34,9 +38,14 @@ export default function HrEmployeeDetails({ employee, contracts, sites, users = 
       await onSaved(); delete keys.current[employeeId];
       setDrafts(all => { const next = { ...all }; delete next[employeeId]; return next; });
       setSaved(employeeId);
-    } catch (failure) { setError(failure.message); }
+    } catch (failure) {
+      _saveOutcome.failure(failure);
+ (setError(_saveOutcome.observeFailure(failure.message))); }
     finally { setBusy(false); }
-  }
+
+      _saveOutcome.success();
+    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+}
   return <form className="hr-inline-employee" onSubmit={save}>
     <div className="hr-heading hr-profile-head"><div className="hr-profile-identity"><span className="hr-avatar" aria-hidden="true">{employee.name.split(' ').map(s => s[0]).slice(0, 2).join('')}</span><div><h2>{employee.name}</h2><span className="hr-muted hr-small">{employee.active ? 'Attivo' : 'Non attivo'} · {dirty ? 'Modifiche da salvare' : 'Scheda dipendente'}</span></div></div></div>
     <fieldset className="hr-card-scroll hr-profile-content" disabled={busy}>

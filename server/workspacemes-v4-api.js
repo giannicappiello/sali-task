@@ -181,15 +181,18 @@ export async function confirmWorkspaceV4({ admin, previewId, reason, requestedBy
           throw fail("Aggiornare MES per recuperare la conferma originale, poi premere Recupera conferma. Non ricalcolare la RdP.", "V4_RECOVERY_REQUIRES_MES_UPDATE", 409);
         throw recoveryError;
       }
-      if (original.confirmationExternalId !== command.externalId || original.previewExternalId !== command.previewExternalId ||
+      const equivalentPreview = original.previewExternalId === command.previewExternalId ||
+        (clean(original.previewExternalId) && original.workspaceRdpExternalId === request.external_id);
+      if (original.confirmationExternalId !== command.externalId || !equivalentPreview ||
           original.idempotencyKey !== command.idempotencyKey || original.expectedPreviewHash !== command.expectedPreviewHash ||
           original.decision !== command.decision || !clean(original.decidedBy) || !clean(original.reason) ||
           original.result?.externalId !== command.externalId || original.result?.status !== "FORECAST")
         throw fail("L'esito recuperato non corrisponde alla conferma richiesta.", "V4_RECOVERY_IDENTITY_MISMATCH");
-      command = { ...command, reason: original.reason, decidedBy: original.decidedBy,
+      command = { ...command, previewExternalId: original.previewExternalId, reason: original.reason, decidedBy: original.decidedBy,
         correlationId: original.correlationId, causationId: original.causationId };
       recovery = { ...recovery, command, actor: original.decidedBy.replace(/^workspace:/, ""), rejected: false,
-        reconciliationRequired: false, recoveredBy: requestedBy, originalConfirmedAt: original.confirmedAt };
+        reconciliationRequired: false, recoveredBy: requestedBy, originalConfirmedAt: original.confirmedAt,
+        originalPreviewExternalId: original.previewExternalId };
       sent = { result: original.result };
     } else {
       const uncertain = error.code === "V4_PLANNING_BUSY" || error.name === "AbortError" || error.name === "TypeError" || /TIMEOUT|HTTP_50[234]/.test(error.code || "");
@@ -206,11 +209,11 @@ export async function confirmWorkspaceV4({ admin, previewId, reason, requestedBy
       ...saved.snapshot, confirmationRecovery: { ...recovery, response: sent.result },
     } }).eq("id", preview.id));
     const result = ensure(await admin.rpc(sent.result.status === "FORECAST" ? "confirm_workspace_forecast_after_mes" : "confirm_workspace_v4_after_mes", {
-      p_preview_id: preview.id, p_external_id: externalId, p_idempotency_key: idempotencyKey,
+      p_preview_id: preview.id, p_external_id: command.externalId, p_idempotency_key: command.idempotencyKey,
       p_payload_hash: payloadHash(command), p_expected_row_version: preview.local_row_version,
       p_decision: normalizedDecision, p_mes_response: sent.result,
       p_actor: recovery.actor, p_reason: command.reason,
-      p_correlation_id: preview.correlation_id, p_causation_id: preview.external_id,
+      p_correlation_id: command.correlationId, p_causation_id: command.causationId,
     }))[0];
     return { confirmation: result, mes: sent.result };
   } catch (error) {

@@ -99,3 +99,40 @@ test("recupero rifiuta una conferma appartenente ad altra anteprima", async () =
   await assert.rejects(confirmWorkspaceV4({ admin, client, previewId: 1, reason: "Original reason", requestedBy: "one" }), { code: "V4_RECOVERY_IDENTITY_MISMATCH" });
   assert.equal(tables.workspace_v4_confirmation_mirrors.length, 0);
 });
+
+test("anteprima equivalente recupera la conferma originale senza una nuova pianificazione", async () => {
+  const { admin, tables } = fixture(); let sentCommand, calls = 0, mirrorArgs;
+  const rpc = admin.rpc;
+  admin.rpc = async (name, args) => { if (name === "confirm_workspace_forecast_after_mes") mirrorArgs = args; return rpc(name, args); };
+  const client = { v4ConfirmationEnabled: () => true,
+    async confirmV4(id, command) { calls++; sentCommand = command; throw Object.assign(new Error("conflict"), { code: "V4_IDEMPOTENCY_CONFLICT" }); },
+    async recoverV4(id, command) { return { result: { confirmationExternalId: command.externalId,
+      previewExternalId: "original-preview", workspaceRdpExternalId: id, expectedPreviewHash: command.expectedPreviewHash,
+      idempotencyKey: command.idempotencyKey, decision: command.decision, reason: "Original reason",
+      decidedBy: "workspace:original", correlationId: "original-correlation", causationId: "original-preview",
+      confirmedAt: "2026-10-08T13:49:32Z", result: { externalId: command.externalId, status: "FORECAST", productionCreated: false, productionOrders: [], forecastLines: ["line"] } } }; }
+  };
+  const args = { admin, client, previewId: 1, reason: "New reason", requestedBy: "two" };
+  assert.equal((await confirmWorkspaceV4(args)).mes.status, "FORECAST");
+  const saved = tables.workspace_v4_previews[0].snapshot.confirmationRecovery;
+  assert.equal(saved.originalPreviewExternalId, "original-preview");
+  assert.equal(saved.command.previewExternalId, "original-preview");
+  assert.equal(mirrorArgs.p_external_id, sentCommand.externalId);
+  assert.equal(mirrorArgs.p_causation_id, "original-preview");
+  await confirmWorkspaceV4(args); assert.equal(calls, 1);
+});
+
+for (const mismatch of ["workspaceRdpExternalId", "expectedPreviewHash", "decision"]) {
+  test(`anteprima differente rifiuta recupero con ${mismatch} diverso`, async () => {
+    const { admin, tables } = fixture();
+    const client = { v4ConfirmationEnabled: () => true,
+      async confirmV4() { throw Object.assign(new Error("conflict"), { code: "V4_IDEMPOTENCY_CONFLICT" }); },
+      async recoverV4(id, command) { return { result: { confirmationExternalId: command.externalId,
+        previewExternalId: "original-preview", workspaceRdpExternalId: id, expectedPreviewHash: command.expectedPreviewHash,
+        idempotencyKey: command.idempotencyKey, decision: command.decision, reason: "Original reason", decidedBy: "workspace:original",
+        result: { externalId: command.externalId, status: "FORECAST", productionCreated: false, forecastLines: ["line"] },
+        [mismatch]: "different" } }; } };
+    await assert.rejects(confirmWorkspaceV4({ admin, client, previewId: 1, reason: "Original reason", requestedBy: "one" }), { code: "V4_RECOVERY_IDENTITY_MISMATCH" });
+    assert.equal(tables.workspace_v4_confirmation_mirrors.length, 0);
+  });
+}

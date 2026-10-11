@@ -3,6 +3,12 @@ export function uncertainConfirmation(error) {
     /^(V4_CONFIRM_PENDING|V4_PLANNING_BUSY|PROGREMES_TIMEOUT|PROGREMES_HTTP_50[234])$/.test(error?.code || "");
 }
 
+export function requiresConfirmationRecovery(preview, code) {
+  // A definitive rejection permits correction/recalculation even if the detail
+  // still contains the pending marker captured before that response arrived.
+  if (code) return uncertainConfirmation({ code });
+  return !!preview?.snapshot?.confirmationRecovery && !preview.snapshot.confirmationRecovery.rejected;
+}
 const pendingError = (cause) => Object.assign(new Error(
   `La verifica non ha restituito un esito conclusivo entro il tempo previsto.${cause?.code === "V4_PLANNING_BUSY" ? ` ${cause.message}` : ""} Premi Recupera conferma per verificare la stessa richiesta. Non aggiornare o ricreare la RdP.`),
   { code: "V4_CONFIRM_PENDING", cause });

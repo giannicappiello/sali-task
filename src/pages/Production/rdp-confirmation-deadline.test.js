@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { recoverConfirmation } from "./rdp-confirmation-recovery.js";
+import { recoverConfirmation, requiresConfirmationRecovery } from "./rdp-confirmation-recovery.js";
 
 test("una richiesta che non risponde termina come esito incerto e viene annullata", async () => {
   const signals = [];
@@ -49,4 +49,14 @@ test("una risposta tardiva al primo tentativo non sostituisce la risposta recupe
   }, { attempts: 2, attemptTimeoutMs: 10, wait: async () => {} }), expected);
   late({ mes: { status: "old response" } });
   assert.equal(calls, 2);
+});
+
+test("un rifiuto definitivo permette la correzione anche se il dettaglio aveva un recupero pendente", () => {
+  const preview = { snapshot: { confirmationRecovery: { rejected: false } } };
+  assert.equal(requiresConfirmationRecovery(preview, "V4_PREVIEW_STALE"), false);
+  assert.equal(requiresConfirmationRecovery(preview, "FINISHED_BULK_CONVERSION_MISSING"), false);
+  assert.equal(requiresConfirmationRecovery(preview, "V4_CONFIRM_PENDING"), true);
+  assert.equal(requiresConfirmationRecovery(preview, "V4_PLANNING_BUSY"), true);
+  assert.equal(requiresConfirmationRecovery(preview), true);
+  assert.equal(requiresConfirmationRecovery({ snapshot: { confirmationRecovery: { rejected: true } } }), false);
 });

@@ -307,11 +307,16 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
   } else {
   let ordersQuery = admin.from("ordini_testate").select("*").eq("origine", "mexal_oct");
   if (expectedCustomerCode) ordersQuery = ordersQuery.in("codice_cliente", Array.isArray(expectedCustomerCode) ? expectedCustomerCode : [expectedCustomerCode]);
-  source = await Promise.all([
+  const [loadedOrders, loadedRequests] = await Promise.all([
     ordersQuery.order("data_consegna", { ascending: true }).limit(500),
-    admin.from("ordini_righe").select("*").order("mexal_posizione", { ascending: true }).limit(5000),
     admin.from("workspace_production_requests").select("*").order("created_at", { ascending: false }).limit(500),
   ]);
+  if (loadedOrders.error || loadedRequests.error) throw loadedOrders.error || loadedRequests.error;
+  // A global limit does not override the API row cap. Read all pages for the
+  // displayed OCTs so late article positions cannot disappear behind text rows.
+  const loadedLines = await readRowsByIds(admin, "ordini_righe", "ordine_id", (loadedOrders.data || []).map(order => order.id));
+  loadedLines.sort((a, b) => number(a.mexal_posizione) - number(b.mexal_posizione));
+  source = [loadedOrders, { data: loadedLines }, loadedRequests];
   }
   const [{ data: orders, error: orderError }, { data: lines, error: lineError }, { data: requests, error: requestError }] = source;
   if (orderError || lineError || requestError) throw orderError || lineError || requestError;

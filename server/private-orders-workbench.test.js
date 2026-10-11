@@ -6,7 +6,7 @@ import { privateWorkbenchSession, loadPrivateWorkbenchOrders, assertPrivateWorkb
 import { listProductionWorkbench, productionWorkbenchDetail } from "./workspacemes-workbench.js";
 import { privateWorkbenchMatchesSearch } from "../src/modules/orders/services/privateWorkbenchSearch.js";
 
-function database(tables = {}, rpcs = {}) {
+function database(tables = {}, rpcs = {}, apiRowCap = Infinity) {
   return {
     auth: { getUser: async () => ({ data: { user: { id: "AUTH" } } }) },
     rpc: async (name) => ({ data: rpcs[name] ?? null }),
@@ -20,7 +20,7 @@ function database(tables = {}, rpcs = {}) {
         limit: (n) => { rows = rows.slice(0, n); return query; },
         range: (a, b) => { rows = rows.slice(a, b + 1); return query; },
         maybeSingle: () => { single = true; return query; },
-        then: (resolve, reject) => Promise.resolve({ data: single ? rows[0] || null : rows, error: null }).then(resolve, reject),
+        then: (resolve, reject) => Promise.resolve({ data: single ? rows[0] || null : rows.slice(0, apiRowCap), error: null }).then(resolve, reject),
       };
       return query;
     },
@@ -125,4 +125,31 @@ test('calendario cliente riusa la riconciliazione reale Produzioni senza ampliar
  });
  assert.deepEqual(result.items.map(x=>x.operationType),['Production','Packaging']);
  assert.ok(result.items.every(x=>x.productionOrderId===1 && !x.resourceCode));
+});
+
+test("global OCT list retains late articles beyond the API row cap and excludes unrelated order lines", async () => {
+  const textLines = Array.from({ length: 1100 }, (_, index) => ({
+    id: `A-${String(index).padStart(4, "0")}`, ordine_id: "A", mexal_posizione: index + 1,
+    riga_descrittiva: true, mexal_attiva: true, quantita: 0,
+  }));
+  const admin = database({
+    ordini_testate: [orders[0], { ...orders[1], mexal_numero: 1063 }],
+    ordini_righe: [...textLines,
+      { id: "A-late", ordine_id: "A", mexal_posizione: 1101, codice_articolo: "CO0020", quantita: 9600, mexal_attiva: true },
+      { id: "B-late", ordine_id: "B", mexal_posizione: 1102, codice_articolo: "CO0020", quantita: 9600, mexal_attiva: true },
+      { id: "outside", ordine_id: "NOT-DISPLAYED", mexal_posizione: 1, codice_articolo: "UNRELATED", quantita: 100 },
+      { id: "inactive", ordine_id: "A", mexal_posizione: 1103, codice_articolo: "OLD", quantita: 100, mexal_attiva: false },
+    ],
+    workspace_production_requests: [],
+  }, {}, 1000);
+  const result = await listProductionWorkbench({ admin });
+  assert.equal(result.items.length, 2);
+  for (const id of ["A", "B"]) {
+    const order = result.items.find(row => row.id === id);
+    assert.equal(order.ready, true);
+    assert.equal(order.productiveLineCount, 1);
+    assert.equal(order.quantity, 9600);
+    assert.equal(order.lines[0].articleCode, "CO0020");
+  }
+  assert.equal(result.items.find(row => row.id === "A").lineCount, 1101);
 });

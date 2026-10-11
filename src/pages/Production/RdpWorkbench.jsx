@@ -96,7 +96,7 @@ export function OctOrderCard({ row, selectable, selected, onToggle, onOpen, onDi
         <span>{row.plannedCompletionDate ? formatDate(row.plannedCompletionDate, true) : "Da pianificare"}</span>
         <span>{badge(line.productionStatus, row.ready ? "neutral" : "red")}</span>
       </div>)}
-      {!row.lines?.length && <div className="rdp-oct-line-empty">Righe conservate nello storico della RdP.</div>}
+      {!row.lines?.length && <div className="rdp-oct-line-empty">{row.stage === "history" ? "Righe conservate nello storico della RdP." : "Nessuna riga produttiva attiva disponibile per questo OCT."}</div>}
     </div>
     {loadBatches && row.productionOrders?.length > 0 && <CommercialBatchProgress orders={row.productionOrders} load={loadBatches}/>}
     <footer><Diagnostics rows={row.diagnostics} onOpen={onDiagnostic}/></footer>

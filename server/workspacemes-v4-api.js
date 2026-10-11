@@ -192,8 +192,8 @@ export async function confirmWorkspaceV4({ admin, previewId, reason, requestedBy
         reconciliationRequired: false, recoveredBy: requestedBy, originalConfirmedAt: original.confirmedAt };
       sent = { result: original.result };
     } else {
-      const uncertain = error.name === "AbortError" || error.name === "TypeError" || /TIMEOUT|HTTP_50[234]/.test(error.code || "");
-      if (uncertain) throw fail("Conferma in verifica: recupero dell'esito MES della stessa richiesta.", "V4_CONFIRM_PENDING", 202);
+      const uncertain = error.code === "V4_PLANNING_BUSY" || error.name === "AbortError" || error.name === "TypeError" || /TIMEOUT|HTTP_50[234]/.test(error.code || "");
+      if (uncertain) throw fail(error.code === "V4_PLANNING_BUSY" ? error.message : "Conferma in verifica: recupero dell'esito MES della stessa richiesta.", error.code === "V4_PLANNING_BUSY" ? error.code : "V4_CONFIRM_PENDING", 202);
       ensure(await admin.from("workspace_v4_previews").update({ snapshot: {
         ...saved.snapshot, confirmationRecovery: { ...recovery, rejected: error.code !== "V4_IDEMPOTENCY_CONFLICT", reconciliationRequired: error.code === "V4_IDEMPOTENCY_CONFLICT" },
       } }).eq("id", preview.id));

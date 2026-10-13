@@ -148,7 +148,10 @@ export default function WarehouseDashboard() {
       setSyncMessage(result.message || result.data?.message || ("Giacenza di " + row.article_code + " sincronizzata."));
       setStockRevision(value => value + 1);
       setAsOfDate(localDay());
-    } catch (failure) { setSyncError(row.article_code + ": " + (failure.message || "Sincronizzazione non riuscita.")); }
+    } catch (failure) {
+      if (failure.details?.workspaceUpdated) setStockRevision(value => value + 1);
+      setSyncError(row.article_code + ": " + (failure.message || "Sincronizzazione non riuscita."));
+    }
     finally { syncLock.current = false; setSyncingArticle(""); }
   };
 

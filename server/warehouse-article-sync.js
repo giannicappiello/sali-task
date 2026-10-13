@@ -1,10 +1,27 @@
+import { randomUUID } from "node:crypto";
+import { createProgremesProductionClient } from "./progremes-production-client.js";
 import { buildMexalClient, loadFullArticle, mapArticleWarehouseStock, warehouseSnapshotDate } from "./mexal/sync-products.js";
 
-export async function syncWarehouseArticle(db, input, { mexalFactory = buildMexalClient } = {}) {
+export async function syncWarehouseArticle(db, input, { mexalFactory = buildMexalClient, mes = createProgremesProductionClient() } = {}) {
   const articleCode = String(input.articleCode || "").trim().toUpperCase();
   const warehouse = Number(input.warehouseNumber);
   if (!/^[A-Z0-9][A-Z0-9._/&+ -]{0,79}$/.test(articleCode) || !Number.isSafeInteger(warehouse) || warehouse < 1)
     throw Object.assign(new Error("Articolo o magazzino non valido."), { status: 400 });
+  const completeMesSync = async (message) => {
+    try {
+      const { result } = await mes.syncInventoryArticle({ externalId: randomUUID(), articleCode });
+      if (result?.success !== true || result.articleCode !== articleCode ||
+          !Array.isArray(result.warehouseNumbers) || result.warehouseNumbers.length !== 2 ||
+          ![1, 8].every(number => result.warehouseNumbers.includes(number)))
+        throw new Error("Conferma della sincronizzazione MES non valida.");
+      return { message, workspaceUpdated: true, mesUpdated: true };
+    } catch (error) {
+      throw Object.assign(new Error("Workspace aggiornato; sincronizzazione MES non completata: " + error.message), {
+        status: 503, code: "ARTICLE_STOCK_MES_INCOMPLETE",
+        details: { workspaceUpdated: true, mesUpdated: false, articleCode, upstreamCode: error.code },
+      });
+    }
+  };
   if ([1, 8].includes(warehouse)) {
     const existing = await db.from("workspace_warehouse_stock").select("warehouse_number,warehouse_name")
       .eq("article_code", articleCode).in("warehouse_number", [1, 8]);
@@ -38,7 +55,7 @@ export async function syncWarehouseArticle(db, input, { mexalFactory = buildMexa
       p_article_code: articleCode, p_captured_at: capturedAt, p_rows: rows,
     });
     if (applied.error) throw Object.assign(new Error("Aggiornamento giacenza Workspace non completato: " + applied.error.message), { status: 503 });
-    if (applied.data?.superseded) return { message: "Giacenza di " + articleCode + " già aggiornata da una lettura Mexal più recente." };
+    if (applied.data?.superseded) return completeMesSync("MES aggiornato; Workspace conserva la lettura Mexal più recente di " + articleCode + ".");
     const confirmed = await db.from("workspace_warehouse_stock")
       .select("warehouse_number,on_hand,committed,available,synchronized_at")
       .eq("article_code", articleCode).in("warehouse_number", [1, 8]);
@@ -47,7 +64,7 @@ export async function syncWarehouseArticle(db, input, { mexalFactory = buildMexa
       new Date(actual.synchronized_at).getTime() >= new Date(capturedAt).getTime() &&
       ["on_hand", "committed", "available"].every(key => Number(actual[key]) === Number(expected[key])))))
       throw Object.assign(new Error("Giacenza letta da Mexal ma salvataggio Workspace non confermato. Riprova l'aggiornamento del solo articolo."), { status: 503 });
-    return { message: "Giacenza di " + articleCode + " aggiornata direttamente da Mexal in Workspace (magazzini 1 e 8)." };
+    return completeMesSync("Giacenza di " + articleCode + " aggiornata da Mexal in Workspace e MES (magazzini 1 e 8). Gli impegni restano specifici di ciascuna applicazione.");
   }
   // Warehouses outside MES's operational scope retain their existing Mexal source.
   const existing = await db.from("workspace_warehouse_stock").select("warehouse_name")
@@ -78,5 +95,5 @@ export async function syncWarehouseArticle(db, input, { mexalFactory = buildMexa
       .eq("codice_mexal", articleCode).eq("sincronizzato_mexal", true);
     if (product.error) throw product.error;
   }
-  return { message: "Giacenza di " + articleCode + " sincronizzata nel magazzino " + warehouse + "." };
+  return completeMesSync("Giacenza di " + articleCode + " aggiornata in Workspace (magazzino " + warehouse + ") e MES (magazzini 1 e 8).");
 }

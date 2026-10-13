@@ -1,7 +1,5 @@
 import { Buffer } from "node:buffer";
-import { createHash } from "node:crypto";
 import process from "node:process";
-import { createClient } from "@supabase/supabase-js";
 import { verifyProductionMessage, HMAC_HEADERS } from "./progremes-production-hmac.js";
 
 export const INVENTORY_PATH = "/api/progremes-inventory/snapshot";
@@ -20,7 +18,7 @@ export function validateInventorySnapshot(value) {
   return [...keys].every(key => keys.has(key.replace(/\|(1|8)$/, (_, number) => `|${number === "1" ? "8" : "1"}`)));
 }
 
-export async function handleInventorySnapshot(req, res, { admin, env = process.env } = {}) {
+export async function handleInventorySnapshot(req, res, { env = process.env } = {}) {
   if (req.method !== "POST") return res.status(405).json({ error: "Metodo non consentito." });
   if (env.PROGREMES_PRODUCTION_CALLBACKS_ENABLED !== "true") return res.status(403).json({ code: "MODULE_DISABLED" });
   const body = Buffer.from(typeof req.body === "string" ? req.body : JSON.stringify(req.body || {}));
@@ -30,14 +28,7 @@ export async function handleInventorySnapshot(req, res, { admin, env = process.e
   try { snapshot = JSON.parse(body.toString("utf8")); } catch { return res.status(400).json({ code: "INVALID_REQUEST" }); }
   if (!validateInventorySnapshot(snapshot) || !/^[0-9a-f-]{36}$/i.test(req.headers[HMAC_HEADERS.eventId] || ""))
     return res.status(400).json({ code: "INVALID_SNAPSHOT" });
-  const db = admin || createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
-  const { data, error } = await db.rpc("apply_workspace_mes_inventory", {
-    p_event_id: req.headers[HMAC_HEADERS.eventId], p_captured_at: snapshot.capturedAt,
-    p_hash: createHash("sha256").update(body).digest("hex"), p_rows: snapshot.rows,
-  });
-  if (error) return res.status(503).json({ code: "INVENTORY_APPLY_FAILED", error: "Snapshot non applicato: ritentare la consegna." });
-  // A failed deferred replay does not undo the snapshot already saved durably.
-  const replay = await db.rpc("replay_workspace_mes_inventory_pending");
-  return res.status(200).json({ status: { ...data,
-    pendingArticles: replay.data?.pendingArticles ?? data?.pendingArticles ?? 0 } });
+  // Acknowledge legacy signed deliveries explicitly as retired, never as applied.
+  // Workspace now reads physical stock directly from Mexal and never imports MES commitments.
+  return res.status(200).json({ status: { retired: true, source: "MEXAL_DIRECT", pendingArticles: 0 } });
 }

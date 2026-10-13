@@ -1,34 +1,53 @@
-import { createHash, randomUUID } from "node:crypto";
-import { createProgremesProductionClient } from "./progremes-production-client.js";
-import { validateInventorySnapshot } from "./progremes-inventory.js";
 import { buildMexalClient, loadFullArticle, mapArticleWarehouseStock, warehouseSnapshotDate } from "./mexal/sync-products.js";
 
-export async function syncWarehouseArticle(db, input, { mes = createProgremesProductionClient(), mexalFactory = buildMexalClient } = {}) {
+export async function syncWarehouseArticle(db, input, { mexalFactory = buildMexalClient } = {}) {
   const articleCode = String(input.articleCode || "").trim().toUpperCase();
   const warehouse = Number(input.warehouseNumber);
   if (!/^[A-Z0-9][A-Z0-9._/&+ -]{0,79}$/.test(articleCode) || !Number.isSafeInteger(warehouse) || warehouse < 1)
     throw Object.assign(new Error("Articolo o magazzino non valido."), { status: 400 });
   if ([1, 8].includes(warehouse)) {
-    const { result } = await mes.syncInventoryArticle({ externalId: randomUUID(), articleCode });
-    let snapshot;
-    try { snapshot = JSON.parse(result.payload); } catch { /* rejected below */ }
-    if (!validateInventorySnapshot(snapshot) || snapshot.rows.some(row => row.article_code !== articleCode) ||
-        !/^[0-9a-f-]{36}$/i.test(result.eventId || ""))
-      throw Object.assign(new Error("Snapshot giacenze MES non valido."), { status: 502 });
-    const { error } = await db.rpc("apply_workspace_mes_inventory", {
-      p_event_id: result.eventId, p_captured_at: snapshot.capturedAt,
-      p_hash: createHash("sha256").update(result.payload).digest("hex"), p_rows: snapshot.rows,
+    const existing = await db.from("workspace_warehouse_stock").select("warehouse_number,warehouse_name")
+      .eq("article_code", articleCode).in("warehouse_number", [1, 8]);
+    if (existing.error) throw existing.error;
+    if (!existing.data?.some(row => row.warehouse_number === warehouse))
+      throw Object.assign(new Error("Riga articolo-magazzino non presente."), { status: 400 });
+    const capturedAt = new Date().toISOString();
+    // Read just this article directly from Mexal in both operational warehouses.
+    // No write happens until both responses have been validated.
+    const rows = await Promise.all([1, 8].map(async number => {
+      const client = mexalFactory({ warehouse: number, timeoutMs: 15000, retryOptions: { maxRetries: 1 } });
+      const article = await loadFullArticle(client, articleCode, {});
+      const fields = ["qta_inventario", "qta_carico", "qta_scarico"];
+      if (!fields.some(field => article[field] != null))
+        throw Object.assign(new Error(`Mexal non restituisce progressivi per ${articleCode}, magazzino ${number}. Giacenze precedenti conservate.`), { status: 502 });
+      for (const field of fields) {
+        const value = article[field];
+        if (value == null) continue; // Mexal can omit a zero progressive.
+        if (String(value).trim() === "" || !Number.isFinite(Number(String(value).replace(",", "."))))
+          throw Object.assign(new Error(`Mexal non restituisce ${field} per ${articleCode}, magazzino ${number}. Giacenze precedenti conservate.`), { status: 502 });
+      }
+      const row = mapArticleWarehouseStock(article, { number,
+        name: existing.data.find(x => x.warehouse_number === number)?.warehouse_name ||
+          (number === 1 ? "Magazzino 1 Progrè" : "Magazzino c/Terzi") }, { synchronizedAt: capturedAt });
+      if (row.article_code !== articleCode)
+        throw Object.assign(new Error("Mexal ha restituito un articolo diverso da quello richiesto."), { status: 502 });
+      row.source_payload = { ...article, source_system: "Mexal" };
+      return row;
+    }));
+    const applied = await db.rpc("apply_workspace_mexal_article_stock", {
+      p_article_code: articleCode, p_captured_at: capturedAt, p_rows: rows,
     });
-    if (error) throw Object.assign(new Error("Giacenze MES aggiornate; consegna a Workspace da ritentare automaticamente."), { status: 503 });
+    if (applied.error) throw Object.assign(new Error("Aggiornamento giacenza Workspace non completato: " + applied.error.message), { status: 503 });
+    if (applied.data?.superseded) return { message: "Giacenza di " + articleCode + " già aggiornata da una lettura Mexal più recente." };
     const confirmed = await db.from("workspace_warehouse_stock")
       .select("warehouse_number,on_hand,committed,available,synchronized_at")
       .eq("article_code", articleCode).in("warehouse_number", [1, 8]);
-    if (confirmed.error || !snapshot.rows.every(expected => confirmed.data?.some(actual =>
+    if (confirmed.error || !rows.every(expected => confirmed.data?.some(actual =>
       actual.warehouse_number === expected.warehouse_number &&
-      new Date(actual.synchronized_at).getTime() >= new Date(snapshot.capturedAt).getTime() &&
+      new Date(actual.synchronized_at).getTime() >= new Date(capturedAt).getTime() &&
       ["on_hand", "committed", "available"].every(key => Number(actual[key]) === Number(expected[key])))))
-      throw Object.assign(new Error("Giacenza MES aggiornata, ma il valore in Workspace non coincide: verificare anagrafica e consegna dello snapshot. Sincronizzazione non confermata."), { status: 503 });
-    return { message: "Giacenza di " + articleCode + " sincronizzata in Workspace e MES (magazzini 1 e 8)." };
+      throw Object.assign(new Error("Giacenza letta da Mexal ma salvataggio Workspace non confermato. Riprova l'aggiornamento del solo articolo."), { status: 503 });
+    return { message: "Giacenza di " + articleCode + " aggiornata direttamente da Mexal in Workspace (magazzini 1 e 8)." };
   }
   // Warehouses outside MES's operational scope retain their existing Mexal source.
   const existing = await db.from("workspace_warehouse_stock").select("warehouse_name")

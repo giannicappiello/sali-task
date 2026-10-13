@@ -1,3 +1,4 @@
+import { materialConsumptionWithoutBulkTransfer } from "./material-consumption.js";
 const number = value => value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value)) ? Number(value) : null;
 
 export function evidenceDate(evidence) {
@@ -10,7 +11,7 @@ export function applicableConfiguration(evidence, configurations) {
   b.effective_from.localeCompare(a.effective_from)||String(b.created_at).localeCompare(String(a.created_at)))[0]||null;
 }
 export function historicalConsumption(evidence) {
- return (evidence.historicalMaterials||[]).filter(m=>m.withdrawnAt).map(m=>({...m,
+ return materialConsumptionWithoutBulkTransfer(evidence,evidence.historicalMaterials||[]).filter(m=>m.withdrawnAt).map(m=>({...m,
   unitCost:number(m.currentUnitCost)>0?Number(m.currentUnitCost):null,
   valuationSource:"Quantità scaricata in MES; valorizzazione ricostruita al costo ultimo disponibile, non prezzo SL storico",
  }));

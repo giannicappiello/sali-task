@@ -20,6 +20,7 @@ export default function BatchSheetActions({ productionOrderId, kind, children, o
   const [autoEdit, setAutoEdit] = useState(false);
   const [editing, setEditing] = useState(false), [savedActual, setSavedActual] = useState(null);
   const [confirmStart, setConfirmStart] = useState(false);
+  const [lotCode,setLotCode] = useState(''), [startOperation,setStartOperation] = useState('');
   const [allowShortage, setAllowShortage] = useState(false);
   const [printedHash, setPrintedHash] = useState('');
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -67,11 +68,11 @@ export default function BatchSheetActions({ productionOrderId, kind, children, o
     return () => controller.abort();
   }, [open, phaseId, request, loadAttempt, autoEdit]);
   async function printSheet(startAfterPrint = false) {
-    const pending = pendingCentralPrint(printKey, { hash: sheet.contentHash, phaseId: sheet.phaseId });
+    const pending = pendingCentralPrint(printKey, { hash: sheet.contentHash, phaseId: sheet.phaseId, startAfterPrint });
     if (pending.hash !== sheet.contentHash || pending.phaseId !== sheet.phaseId)
       throw new Error('Una stampa precedente è ancora in attesa. Verificare la coda MES prima di avviare il foglio aggiornato.');
     setPrintPending(true);
-    const job = await observeCentralPrint(() => request('print', { phaseId: pending.phaseId, contentHash: pending.hash, printRequestId: pending.id, startAfterPrint, allowShortage }),
+    const job = await observeCentralPrint(() => request('print', { phaseId: pending.phaseId, contentHash: pending.hash, printRequestId: pending.id, startAfterPrint: pending.startAfterPrint ?? startAfterPrint, allowShortage }),
       (job, message) => setPrintMessage(message || 'Stampa ' + job.status + ' su PRODUZIONE (' + job.printer + ').'));
     if (job) {
       finishCentralPrint(printKey); setPrintPending(false);
@@ -81,6 +82,29 @@ export default function BatchSheetActions({ productionOrderId, kind, children, o
     }
     return job;
   }
+  async function confirmLotAndStart() {
+    if(busy || !lotCode.trim()) return;
+    setBusy(true); setError('');
+    try {
+      await request('confirm-start-lot',{phaseId,lotCode});
+      const value=await request('sheet',{phaseId});
+      const blob=value.packagingSheet ? (await import('./packagingSheetPdf.js')).packagingSheetPdf(value.packagingSheet) : new Blob([Uint8Array.from(atob(value.pdfBase64), c=>c.charCodeAt(0))],{type:'application/pdf'});
+      const prepared={...value,url:URL.createObjectURL(blob)};
+      setSheet(prepared);setPrintedHash('');setList(await request('list'));setConfirmStart(false);
+      // Use the freshly generated hash immediately, rather than the preceding render's sheet.
+      if(startOperation==='print-start' || kind==='packaging') {
+        const pending=pendingCentralPrint(printKey,{hash:value.contentHash,phaseId:value.phaseId,startAfterPrint:true});
+        if(pending.hash!==value.contentHash || pending.phaseId!==value.phaseId) throw new Error('Verificare la stampa precedente prima di avviare il foglio aggiornato.');
+        const job=await observeCentralPrint(()=>request('print',{phaseId:value.phaseId,contentHash:value.contentHash,printRequestId:pending.id,startAfterPrint:true,allowShortage}),(_,message)=>setPrintMessage(message));
+        if(!job) {setPrintPending(true);setPrintMessage('Stampa o avvio ancora in elaborazione: riprendere la verifica della stessa richiesta.');return;}
+        if(job?.status==='Failed' || job?.confirmationError) throw new Error(job.confirmationError || job.error);
+        if(job) finishCentralPrint(printKey);
+      } else await request('start',{phaseId:value.phaseId,contentHash:value.contentHash,allowShortage});
+      setList(await request('list'));setPrintMessage('Lotto salvato. Lavorazione avviata nel MES.');
+      window.dispatchEvent(new Event('workspace:production-changed'));
+    } catch(cause) {setError(cause.message);} finally {setBusy(false);}
+  }
+  function openStartLot(operation) {setLotCode(phase?.lotCode || '');setStartOperation(operation);setConfirmStart(true);}
   async function act(operation) {
     if (busy || sheet?.isActual) return;
     setBusy(true); setError('');
@@ -145,12 +169,16 @@ export default function BatchSheetActions({ productionOrderId, kind, children, o
       {busy && <p role="status">Operazione in corso…</p>}
       {sheet && !editing && <iframe title={`Foglio di ${title}`} srcDoc={sheet.sheetHtml || undefined} src={sheet.sheetHtml ? undefined : sheet.url}/>}
       {editing && sheet && <PackagingActualEditor key={phaseId} sheet={sheet} saved={savedActual} busy={busy} onSave={saveSheet} onCancel={() => setEditing(false)}/>}
-      {confirmStart && <p>Confermi l’avvio del batch {phase?.number} selezionato su {phase?.resource}?</p>}
+      {confirmStart && <Modal title="Conferma il lotto da utilizzare" className="batch-start-lot-modal" onClose={()=>{if(!busy)setConfirmStart(false);}}>
+        <h3>Conferma il lotto da utilizzare</h3><label>Numero lotto<input value={lotCode} maxLength={30} disabled={busy} onChange={e=>setLotCode(e.target.value)}/></label>
+        <p>Puoi modificarlo. Il lotto viene salvato prima della stampa e dell’avvio.</p>
+        <button disabled={busy || !lotCode.trim()} onClick={confirmLotAndStart}>Salva lotto e prosegui</button><button disabled={busy} onClick={()=>setConfirmStart(false)}>Annulla</button>
+      </Modal>}
       {!editing && <footer><button type="button" disabled={busy} onClick={() => { setOpen(false); setSheet(null); setError(''); }}>Chiudi</button>
         <button type="button" disabled={!sheet || busy || sheet.isActual} onClick={() => act('print')}><Printer size={17}/>{printPending ? 'Verifica stampa' : kind === 'production' ? 'Stampa Foglio' : printMessage ? 'Ristampa su PRODUZIONE' : 'Stampa su PRODUZIONE'}</button>
         {kind === 'production' && !sheet?.isActual && <label className="batch-start-shortage"><input type="checkbox" checked={allowShortage} disabled={busy || phase?.executionStatus !== 'NOT_STARTED'} onChange={e => setAllowShortage(e.target.checked)}/> Avvia con materiali mancanti</label>}
-        {kind === 'production' && !sheet?.isActual && <button type="button" disabled={!sheet || busy || phase?.executionStatus !== 'NOT_STARTED'} onClick={() => act('print-start')}><Play size={17}/>Stampa e Avvia</button>}
-        {kind !== 'production' && phase?.executionStatus === 'NOT_STARTED' && <button type="button" disabled={!sheet || busy} onClick={() => confirmStart ? act('start') : setConfirmStart(true)}><Play size={17}/>{confirmStart ? 'Conferma avvio' : 'Avvia lavorazione'}</button>}
+        {kind === 'production' && !sheet?.isActual && <button type="button" disabled={!sheet || busy || phase?.executionStatus !== 'NOT_STARTED'} onClick={() => openStartLot('print-start')}><Play size={17}/>Stampa e Avvia</button>}
+        {kind !== 'production' && phase?.executionStatus === 'NOT_STARTED' && <button type="button" disabled={!sheet || busy} onClick={() => openStartLot('start')}><Play size={17}/>{confirmStart ? 'Conferma avvio' : 'Avvia lavorazione'}</button>}
         {kind === 'packaging' && [3,7].includes(phase?.phase) && phase?.executionStatus === 'COMPLETED' && <button type="button" disabled={busy} onClick={async () => { try { setPrintMessage((await request('archive-status',{phaseId})).message); } catch(e) { setError(e.message); } }}>Verifica PDF sul NAS</button>}
       </footer>}
     </Modal>}

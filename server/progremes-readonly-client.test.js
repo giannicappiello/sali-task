@@ -338,3 +338,31 @@ test("partial closure, actual document references and prepared quantity survive 
  assert.deepEqual(row.closureSteps,closureSteps);assert.match(row.closureSummary,/Saldo lotto/);
  assert.equal(row.internalSecret,undefined);
 });
+
+
+test("allows a full minute for cost requests and clamps longer timeouts", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    for (const timeoutMs of [60_000, 120_000]) {
+      let aborted = false;
+      const client = createProgremesClient({
+        baseUrl, secret, timeoutMs, logger: silentLogger,
+        fetchFn: async (_url, init) => new Promise((_resolve, reject) => {
+          init.signal.addEventListener("abort", () => {
+            aborted = true;
+            reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+          }, { once: true });
+        }),
+      });
+      const pending = assert.rejects(client.request("production-cost-evidence", { page: 1, pageSize: 100 }),
+        (error) => error.code === "TIMEOUT" && error.status === 504);
+      t.mock.timers.tick(59_999);
+      assert.equal(aborted, false);
+      t.mock.timers.tick(1);
+      await pending;
+      assert.equal(aborted, true);
+    }
+  } finally {
+    t.mock.timers.reset();
+  }
+});

@@ -10,20 +10,22 @@ import LaborCriteriaFields from "./LaborCriteriaFields";
 import { sameSettings } from "./labor-rules";
 import CurrentCostHistory from "./CurrentCostHistory";
 import CostInfo from "./CostInfo";
+import { DEFAULT_HISTORY_FROM } from "./history-period";
 
 
 const days=["Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica"];
+const configurationSettings=settings=>({...defaultSettings(),historyFrom:DEFAULT_HISTORY_FROM,historyTo:"",...settings});
 export default function ProductionCostConfiguration(){
  const {session,hasModuleAccess}=useAuth(),token=session?.access_token;
  const [appliedProposal,setAppliedProposal]=useState(null);
  const [companyCalendar,setCompanyCalendar]=useState(null);
  const [configurationLoaded,setConfigurationLoaded]=useState(false);
 
- const [settings,setSettings]=useState(defaultSettings),[versions,setVersions]=useState([]),[canWrite,setCanWrite]=useState(false);
+ const [settings,setSettings]=useState(()=>configurationSettings()),[versions,setVersions]=useState([]),[canWrite,setCanWrite]=useState(false);
 
  const [applyToHistory,setApplyToHistory]=useState(false);
  const [effective,setEffective]=useState(new Date().toISOString().slice(0,10)),[note,setNote]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState(""),[message,setMessage]=useState("");
- useEffect(()=>{if(!token)return;let alive=true;action(token,"configuration").then(r=>{if(alive){setCompanyCalendar(r.companyCalendar);setVersions(r.configurations);setCanWrite(r.canWrite);setConfigurationLoaded(true);if(r.configurations[0])setSettings({...defaultSettings(),...r.configurations[0].settings});}}).catch(e=>alive&&setError(e.message));return()=>{alive=false;};},[token]);
+ useEffect(()=>{if(!token)return;let alive=true;action(token,"configuration").then(r=>{if(alive){setCompanyCalendar(r.companyCalendar);setVersions(r.configurations);setCanWrite(r.canWrite);setConfigurationLoaded(true);if(r.configurations[0])setSettings(configurationSettings(r.configurations[0].settings));}}).catch(e=>alive&&setError(e.message));return()=>{alive=false;};},[token]);
  useEffect(()=>{
   publishCostAssistantDraft({token,settings,disabled:!canWrite||!hasModuleAccess?.("assistente_ai")||busy,onApply:p=>{
    setSettings(p.candidate);setAppliedProposal(p);setMessage("Proposta IA confermata e trasferita nel modulo. Verifica la decorrenza e salva la nuova versione per attivarla.");
@@ -60,6 +62,7 @@ e.preventDefault();(setError(_saveOutcome.observeFailure("")));setMessage(_saveO
  {calendarVersion?<div className="pc-hr-week">{days.map((day,i)=><div key={day}><strong>{day}</strong><span>{calendarVersion.week[String(i+1)].map(slot=>slot.join("–")).join(" · ")||"Chiuso"}</span></div>)}</div>:<p role="status">Calendario HR non disponibile per la decorrenza selezionata.</p>}
  <a href="/settings/hr">Apri calendario in Rendicontazioni HR</a></section></div>
  <LaborCriteriaFields settings={settings} onChange={v=>update("laborRules",v)}/>
+ <section className="pc-panel"><h2>Periodo di calcolo delle medie</h2><div className="pc-fields"><Field label="Data inizio calcolo medie"><input required type="date" value={settings.historyFrom} max={settings.historyTo||undefined} onChange={e=>update("historyFrom",e.target.value)}/></Field><Field label="Data fine calcolo medie"><input type="date" value={settings.historyTo} min={settings.historyFrom} onChange={e=>update("historyTo",e.target.value)}/></Field></div><p>Periodo comune alle medie di bulk e confezionamento, selezionato per data di chiusura. Lascia la data fine vuota per aggiornare la media fino all’ultimo turno completato. I turni senza attività sono inclusi; il turno in corso è escluso. Salva la nuova versione per applicare le date ai consuntivi.</p></section>
  <section className="pc-panel"><div className="pc-toolbar"><h2>Lavaggi e obiettivi <CostInfo title="Lavaggi e obiettivo per lavorazione"><div className="pc-config-explanation"><div><strong>Lavaggio</strong><p>Durata standard e costo diretto di un lavaggio. La manodopera viene conteggiata separatamente.</p></div><div><strong>Obiettivo STATION per lavorazione</strong><p>Importo desiderato dopo i costi, conteggiato una sola volta per ogni lavorazione, indipendentemente dai turni. I valori precedenti sono mantenuti come importi per lavorazione.</p></div><div><strong>Consuntivo per turno</strong><p>(Valore OCT − costi consuntivi) ÷ turni effettivi. L’obiettivo non viene sottratto dal guadagno reale: serve come termine di confronto.</p></div></div></CostInfo></h2><button type="button" onClick={machines}><RefreshCw size={17}/>Carica impianti e organico da MES</button></div>
  <div className="pc-table-wrap"><table className="pc-station-config" data-no-column-controls="true"><thead><tr><th>Impianto</th><th>Reparto</th><th>Lavaggio standard (min)</th><th>Costo lavaggio (€)</th><th>Obiettivo per lavorazione (€)</th></tr></thead><tbody>{settings.machines.map((m,i)=><tr key={m.id}><td><strong>{m.code}</strong><small>{m.name}</small></td><td>{m.department}</td><td><Numeric value={m.washMinutes} onChange={v=>edit("machines",i,{washMinutes:v})}/></td><td><Numeric value={m.washCost} onChange={v=>edit("machines",i,{washCost:v})}/></td><td>{["TurboEmulsore","Miscelatore"].includes(m.type)?<Numeric value={m.gainPerWork??m.gainPerShift??""} onChange={v=>edit("machines",i,{gainPerWork:v})}/>:"Non applicabile (filling/altro)"}</td></tr>)}</tbody></table></div>
  {!settings.machines.length&&<p>Caricare gli impianti per configurare lavaggi e obiettivi.</p>}</section>
@@ -69,6 +72,6 @@ e.preventDefault();(setError(_saveOutcome.observeFailure("")));setMessage(_saveO
  <p className="pc-note"><label><input type="checkbox" checked={applyToHistory} onChange={e=>setApplyToHistory(e.target.checked)}/> Applica anche allo storico</label> <CostInfo title="Applicazione allo storico"><p>Applica questa versione alle produzioni storiche prive di preventivo congelato, dalla decorrenza scelta. La scelta resta nel registro; non modifica i dati MES né i preventivi originali.</p></CostInfo></p>
  <div className="pc-save"><button className="pc-primary" type="submit"><Save size={18}/>{busy?"Salvataggio…":"Salva nuova versione"}</button></div></fieldset></form>
  {!canWrite&&<p className="pc-note">Accesso in sola lettura.</p>}
- <details className="pc-panel pc-config-versions"><summary>Versioni conservate · {versions.length}</summary>{versions.map(v=><article className="pc-version" key={v.id}><div><strong>Dal {date(v.effective_from)}</strong><span>{money(v.settings.laborHourly)} / ora/uomo · creata il {date(v.created_at)}</span><small>{v.note}</small>{v.settings.aiDefinition&&<small>Definita con IA · proposta {v.settings.aiDefinition.proposalId} · confermata il {date(v.settings.aiDefinition.confirmedAt)}</small>}</div><button onClick={()=>{setSettings({...defaultSettings(),...v.settings});setAppliedProposal(null);setMessage("Versione caricata nel modulo. Il salvataggio crea una nuova versione, senza alterare lo storico.");}}>Consulta / usa come base</button></article>)}{!versions.length&&<p>Nessuna tariffa inserita: i dati storici saranno consultabili senza costi inventati.</p>}</details>
+ <details className="pc-panel pc-config-versions"><summary>Versioni conservate · {versions.length}</summary>{versions.map(v=><article className="pc-version" key={v.id}><div><strong>Dal {date(v.effective_from)}</strong><span>{money(v.settings.laborHourly)} / ora/uomo · creata il {date(v.created_at)}</span><small>{v.note}</small>{v.settings.aiDefinition&&<small>Definita con IA · proposta {v.settings.aiDefinition.proposalId} · confermata il {date(v.settings.aiDefinition.confirmedAt)}</small>}</div><button onClick={()=>{setSettings(configurationSettings(v.settings));setAppliedProposal(null);setMessage("Versione caricata nel modulo. Il salvataggio crea una nuova versione, senza alterare lo storico.");}}>Consulta / usa come base</button></article>)}{!versions.length&&<p>Nessuna tariffa inserita: i dati storici saranno consultabili senza costi inventati.</p>}</details>
  </main>;
 }

@@ -18,6 +18,7 @@ export function HistoryNotes({record:r}) {
  const count=kind==="STATION"?h.mixingOperatorsCount:h.packagingOperatorsCount;
  const shift=count>0&&hourly!=null&&hourly!==""?count*Number(hourly)*8:null;
  return <section key={kind}><h3>Media storica {kind}</h3><p>Periodo: {timestamp(h.periodStart)} → {timestamp(h.periodEnd)}. Turni completati: {quantity(h.calendarShifts)}; lavorazioni concluse: {quantity(h.completedWorks)}. Turno corrente escluso; inclusi i turni senza attività.</p>
+ {h.historyFrom&&<p>Campione selezionato per data di chiusura dal {timestamp(h.historyFrom)}; inclusi i lotti avviati prima e conclusi nel periodo.</p>}
  <p>Organico: {quantity(count)} × {money(hourly)} × 8 ore. Costo turno reparto: {money(shift)}. Produttività media: {quantity(h.productivity)} {kind==="STATION"?"chiusure/turno":"pezzi/turno"}.</p>
  {kind==="STATION"?<p>Costo medio base: {money(!h.error&&h.productivity>0&&shift!==null?shift/h.productivity:null)}.</p>:<p>Pezzi FILLING chiusi: {quantity(h.completedPieces)}; astucciati separati: {quantity(h.cartoningPieces)}; astucciature concluse: {quantity(h.cartoningCompletedWorks)}. Costo manodopera al pezzo: {unitMoney(fillingUnitLabor(h,hourly))}.</p>}
  {h.error&&<p>{h.error}</p>}{h.cartoningWarning&&<p>{h.cartoningWarning}</p>}<p>{h.calendar?.historyWarning}</p><p>Fonte: {h.calendar?.source}. Acquisizione UTC: {timestamp(h.generatedAt)}. Revisione: {h.snapshotId||"Non disponibile"}. Criterio: {policy||"Non disponibile"}.</p></section>;

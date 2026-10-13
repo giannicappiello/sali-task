@@ -11,6 +11,7 @@ import { availableCosts } from "./available-costs.js";
 import { forecastOperations } from "./planned-timing.js";
 import { packagingBaseline, productDocuments, productRows } from "./packaging-evidence.js";
 import { materialConsumptionWithoutBulkTransfer } from "./material-consumption.js";
+import { validateHistoryPeriod } from "./history-period.js";
 export const number = (v) => v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v)) ? Number(v) : null;
 export const sumKnown = (values) => values.length && values.every(v => number(v) !== null) ? values.reduce((s,v) => s + Number(v),0) : null;
 export const delta = (actual, planned) => number(actual) !== null && number(planned) !== null ? actual-planned : null;
@@ -30,6 +31,7 @@ export const defaultSettings = () => ({ laborHourly: "", referenceShiftHours:8, 
 
 export function validateSettings(settings) {
  validateLaborRules(settings);
+ validateHistoryPeriod(settings);
  if (!settings || number(settings.laborHourly) === null || number(settings.laborHourly)<0) throw new Error("Inserire il costo ora/uomo, anche zero se esplicitamente previsto.");
  if(number(settings.referenceShiftHours??8)===null||Number(settings.referenceShiftHours??8)<=0||Number(settings.referenceShiftHours??8)>24)throw new Error("La durata del turno di riferimento deve essere maggiore di zero e al massimo 24 ore.");
  if (!Array.isArray(settings.shifts) || !settings.shifts.length) throw new Error("Definire almeno un turno.");

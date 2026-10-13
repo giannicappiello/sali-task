@@ -9,7 +9,7 @@ export default function CurrentCostHistory({token,settings}) {
  const [data,setData]=useState({}),[revision,setRevision]=useState(0);
  const currentSettings=useRef(settings);
  useEffect(()=>{currentSettings.current=settings;},[settings]);
- const calendar=JSON.stringify({shifts:settings?.shifts||[]});
+ const calendar=JSON.stringify({shifts:settings?.shifts||[],historyFrom:settings?.historyFrom,historyTo:settings?.historyTo});
  const ready=Boolean(settings);
  const requestKey=calendar+"|"+revision;
  const loading=ready&&data.key!==requestKey;

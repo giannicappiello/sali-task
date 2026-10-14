@@ -28,6 +28,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/workspace/oct-reconciliation",
+      "destination": "/api/mexal/automation?route=oct-reconciliation"
+    },
+    {
       "source": "/api/progremes-inventory/snapshot",
       "destination": "/api/mexal/automation?route=progremes-inventory-snapshot"
     },

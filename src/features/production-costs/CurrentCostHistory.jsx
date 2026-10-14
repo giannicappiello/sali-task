@@ -4,12 +4,13 @@ import {action,money,quantity,unitMoney} from "./client";
 import {fillingUnitLabor} from "./filling-history";
 import {formatDisplayDate} from "../../lib/displayLocale";
 import CostInfo from "./CostInfo";
+import {Field} from "./common";
 const stamp=value=>value?formatDisplayDate(value,{hour:"2-digit",minute:"2-digit"}):"—";
-export default function CurrentCostHistory({token,settings}) {
+export default function CurrentCostHistory({token,settings,onHistoryChange,canEdit=false}) {
  const [data,setData]=useState({}),[revision,setRevision]=useState(0);
  const currentSettings=useRef(settings);
  useEffect(()=>{currentSettings.current=settings;},[settings]);
- const calendar=JSON.stringify({shifts:settings?.shifts||[]});
+ const calendar=JSON.stringify({shifts:settings?.shifts||[],historyFrom:settings?.historyFrom,historyTo:settings?.historyTo});
  const ready=Boolean(settings);
  const requestKey=calendar+"|"+revision;
  const loading=ready&&data.key!==requestKey;
@@ -26,7 +27,7 @@ export default function CurrentCostHistory({token,settings}) {
   return()=>{active=false;clearTimeout(timer);};
  },[token,ready,requestKey]);
  return <section className="pc-current-history" aria-label="Medie storiche attuali" aria-busy={loading}>
-  <div className="pc-toolbar"><h2>Medie storiche attuali <CostInfo title="Medie storiche attuali"><p>Lavorazioni MES e calendario aziendale HR acquisiti all’apertura. «Aggiorna medie» acquisisce una nuova lettura. Il turno corrente è escluso; i turni completati senza attività sono inclusi.</p><p>I costi usano la tariffa ora/uomo presente nella scheda, anche se non ancora salvata. Le medie sono consultabili anche quando il criterio scelto usa un altro metodo.</p></CostInfo></h2><button type="button" disabled={loading||!ready} onClick={()=>setRevision(n=>n+1)}><RefreshCw size={16}/>{loading?"Acquisizione…":"Aggiorna medie"}</button></div>
+  <div className="pc-toolbar pc-history-controls"><h2>Medie storiche attuali <CostInfo title="Medie storiche attuali"><p>Lavorazioni MES e calendario aziendale HR acquisiti all’apertura. «Aggiorna medie» acquisisce una nuova lettura. Il turno corrente è escluso; i turni completati senza attività sono inclusi.</p><p>I costi usano la tariffa ora/uomo presente nella scheda, anche se non ancora salvata. Le medie sono consultabili anche quando il criterio scelto usa un altro metodo.</p><p>Le date selezionano le chiusure di bulk e confezionamento. Fine vuota: ultimo turno completato. Salva la nuova versione per applicare il periodo ai consuntivi.</p></CostInfo></h2><Field label="Data inizio calcolo medie"><input form="production-cost-settings" required type="date" disabled={!canEdit} value={settings?.historyFrom??""} max={settings?.historyTo||undefined} onChange={e=>onHistoryChange("historyFrom",e.target.value)}/></Field><Field label="Data fine calcolo medie"><input form="production-cost-settings" type="date" disabled={!canEdit} value={settings?.historyTo??""} min={settings?.historyFrom} onChange={e=>onHistoryChange("historyTo",e.target.value)}/></Field><button type="button" disabled={loading||!ready} onClick={()=>setRevision(n=>n+1)}><RefreshCw size={16}/>{loading?"Acquisizione…":"Aggiorna medie"}</button></div>
   <div className="pc-history-grid">{["station","filling"].map(kind=>{
    const h=loading?null:data[kind],station=kind==="station",title=station?"STATION":"FILLING";
    const count=station?h?.mixingOperatorsCount:h?.packagingOperatorsCount;

@@ -10,20 +10,22 @@ import LaborCriteriaFields from "./LaborCriteriaFields";
 import { sameSettings } from "./labor-rules";
 import CurrentCostHistory from "./CurrentCostHistory";
 import CostInfo from "./CostInfo";
+import { DEFAULT_HISTORY_FROM } from "./history-period";
 
 
 const days=["Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica"];
+const configurationSettings=settings=>({...defaultSettings(),historyFrom:DEFAULT_HISTORY_FROM,historyTo:"",...settings});
 export default function ProductionCostConfiguration(){
  const {session,hasModuleAccess}=useAuth(),token=session?.access_token;
  const [appliedProposal,setAppliedProposal]=useState(null);
  const [companyCalendar,setCompanyCalendar]=useState(null);
  const [configurationLoaded,setConfigurationLoaded]=useState(false);
 
- const [settings,setSettings]=useState(defaultSettings),[versions,setVersions]=useState([]),[canWrite,setCanWrite]=useState(false);
+ const [settings,setSettings]=useState(()=>configurationSettings()),[versions,setVersions]=useState([]),[canWrite,setCanWrite]=useState(false);
 
  const [applyToHistory,setApplyToHistory]=useState(false);
  const [effective,setEffective]=useState(new Date().toISOString().slice(0,10)),[note,setNote]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState(""),[message,setMessage]=useState("");
- useEffect(()=>{if(!token)return;let alive=true;action(token,"configuration").then(r=>{if(alive){setCompanyCalendar(r.companyCalendar);setVersions(r.configurations);setCanWrite(r.canWrite);setConfigurationLoaded(true);if(r.configurations[0])setSettings({...defaultSettings(),...r.configurations[0].settings});}}).catch(e=>alive&&setError(e.message));return()=>{alive=false;};},[token]);
+ useEffect(()=>{if(!token)return;let alive=true;action(token,"configuration").then(r=>{if(alive){setCompanyCalendar(r.companyCalendar);setVersions(r.configurations);setCanWrite(r.canWrite);setConfigurationLoaded(true);if(r.configurations[0])setSettings(configurationSettings(r.configurations[0].settings));}}).catch(e=>alive&&setError(e.message));return()=>{alive=false;};},[token]);
  useEffect(()=>{
   publishCostAssistantDraft({token,settings,disabled:!canWrite||!hasModuleAccess?.("assistente_ai")||busy,onApply:p=>{
    setSettings(p.candidate);setAppliedProposal(p);setMessage("Proposta IA confermata e trasferita nel modulo. Verifica la decorrenza e salva la nuova versione per attivarla.");
@@ -51,8 +53,8 @@ e.preventDefault();(setError(_saveOutcome.observeFailure("")));setMessage(_saveO
  {error&&<p className="pc-error" role="alert">{error}</p>}{message&&<p className="pc-success" role="status">{message}</p>}
 
  {appliedProposal&&<p className="pc-note">{sameSettings(settings,appliedProposal.candidate)?"Proposta IA confermata, non ancora salvata.":"Hai modificato manualmente i valori della proposta: il prossimo salvataggio sarà una versione manuale."}</p>}
- <CurrentCostHistory token={token} settings={configurationLoaded?settings:null}/>
- <form onSubmit={save}><fieldset disabled={!canWrite||busy}>
+ <CurrentCostHistory token={token} settings={configurationLoaded?settings:null} onHistoryChange={update} canEdit={configurationLoaded&&canWrite&&!busy}/>
+ <form id="production-cost-settings" onSubmit={save}><fieldset disabled={!canWrite||busy}>
  <div className="pc-config-top"><section className="pc-panel pc-tariff-card"><h2>Tariffa e versione <CostInfo title="Costo del personale"><p>Un unico costo ora/uomo per tutti gli operatori. I tempi effettivi restano quelli rilevati in MES. Decorrenza e nota si applicano alla nuova versione salvata.</p></CostInfo></h2><div className="pc-fields"><Field label="Costo ora/uomo (€)"><Numeric required value={settings.laborHourly} onChange={v=>update("laborHourly",v)}/></Field><Field label="Decorrenza della nuova versione"><input required type="date" value={effective} onChange={e=>setEffective(e.target.value)}/></Field><Field label="Nota della versione"><input value={note} onChange={e=>setNote(e.target.value)} placeholder="Es. tariffe approvate settembre"/></Field></div></section>
 
  <section className="pc-panel pc-calendar-card"><h2>Turni e calendario HR <CostInfo title="Calendario aziendale HR"><p>Orari, chiusure, festività ed eccezioni provengono da Rendicontazioni HR. I calcoli usano la versione valida nel giorno della lavorazione, anche per le medie storiche STATION e FILLING. Ogni fascia aziendale HR conta come un turno; gli intervalli fra fasce non sono ore lavorative.</p><p>Qui è mostrata la settimana valida alla decorrenza selezionata. Gli orari personali dei dipendenti e le loro assenze non cambiano il calendario aziendale. Le presenze effettive restano quelle registrate.</p><p>La durata economica resta un criterio di costo separato: le medie storiche utilizzano 8 ore per turno. Se HR non è disponibile il calcolo viene segnalato come non verificabile, senza usare vecchi orari manuali.</p></CostInfo></h2>
@@ -69,6 +71,6 @@ e.preventDefault();(setError(_saveOutcome.observeFailure("")));setMessage(_saveO
  <p className="pc-note"><label><input type="checkbox" checked={applyToHistory} onChange={e=>setApplyToHistory(e.target.checked)}/> Applica anche allo storico</label> <CostInfo title="Applicazione allo storico"><p>Applica questa versione alle produzioni storiche prive di preventivo congelato, dalla decorrenza scelta. La scelta resta nel registro; non modifica i dati MES né i preventivi originali.</p></CostInfo></p>
  <div className="pc-save"><button className="pc-primary" type="submit"><Save size={18}/>{busy?"Salvataggio…":"Salva nuova versione"}</button></div></fieldset></form>
  {!canWrite&&<p className="pc-note">Accesso in sola lettura.</p>}
- <details className="pc-panel pc-config-versions"><summary>Versioni conservate · {versions.length}</summary>{versions.map(v=><article className="pc-version" key={v.id}><div><strong>Dal {date(v.effective_from)}</strong><span>{money(v.settings.laborHourly)} / ora/uomo · creata il {date(v.created_at)}</span><small>{v.note}</small>{v.settings.aiDefinition&&<small>Definita con IA · proposta {v.settings.aiDefinition.proposalId} · confermata il {date(v.settings.aiDefinition.confirmedAt)}</small>}</div><button onClick={()=>{setSettings({...defaultSettings(),...v.settings});setAppliedProposal(null);setMessage("Versione caricata nel modulo. Il salvataggio crea una nuova versione, senza alterare lo storico.");}}>Consulta / usa come base</button></article>)}{!versions.length&&<p>Nessuna tariffa inserita: i dati storici saranno consultabili senza costi inventati.</p>}</details>
+ <details className="pc-panel pc-config-versions"><summary>Versioni conservate · {versions.length}</summary>{versions.map(v=><article className="pc-version" key={v.id}><div><strong>Dal {date(v.effective_from)}</strong><span>{money(v.settings.laborHourly)} / ora/uomo · creata il {date(v.created_at)}</span><small>{v.note}</small>{v.settings.aiDefinition&&<small>Definita con IA · proposta {v.settings.aiDefinition.proposalId} · confermata il {date(v.settings.aiDefinition.confirmedAt)}</small>}</div><button onClick={()=>{setSettings(configurationSettings(v.settings));setAppliedProposal(null);setMessage("Versione caricata nel modulo. Il salvataggio crea una nuova versione, senza alterare lo storico.");}}>Consulta / usa come base</button></article>)}{!versions.length&&<p>Nessuna tariffa inserita: i dati storici saranno consultabili senza costi inventati.</p>}</details>
  </main>;
 }

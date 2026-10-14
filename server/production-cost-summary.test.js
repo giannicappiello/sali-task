@@ -18,7 +18,7 @@ test('partial material values feed totals and margins without overwriting comple
  assert.equal(r.plannedKnownSubtotal,117.75);assert.equal(r.actualKnownSubtotal,117.75);
  assert.equal(r.plannedTotal,null);assert.equal(r.actualTotal,null);assert.equal(r.plannedMargin,null);assert.equal(r.actualMargin,null);
  const display=displayRecord(r);assert.equal(display.plannedMargin,882.25);assert.equal(display.actualMargin,882.25);assert.equal(display.costPartial.actualMargin,true);
- const rows=costRows(r);for(const name of ['Materie prime','Totale costi']){
+ const rows=costRows(r);for(const name of ['Materie prime','Subtotale costi (prima dell’obiettivo)']){
   const row=rows.find(x=>x.name===name);assert.equal(row.p,117.75);assert.equal(row.a,117.75);assert.equal(row.pp,true);assert.equal(row.ap,true);
  }
 });

@@ -10,6 +10,8 @@ import { materialBaseline,materialCode } from "./material-baseline.js";
 import { availableCosts } from "./available-costs.js";
 import { forecastOperations } from "./planned-timing.js";
 import { packagingBaseline, productDocuments, productRows } from "./packaging-evidence.js";
+import { materialConsumptionWithoutBulkTransfer } from "./material-consumption.js";
+import { validateHistoryPeriod } from "./history-period.js";
 export const number = (v) => v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v)) ? Number(v) : null;
 export const sumKnown = (values) => values.length && values.every(v => number(v) !== null) ? values.reduce((s,v) => s + Number(v),0) : null;
 export const delta = (actual, planned) => number(actual) !== null && number(planned) !== null ? actual-planned : null;
@@ -29,6 +31,7 @@ export const defaultSettings = () => ({ laborHourly: "", referenceShiftHours:8, 
 
 export function validateSettings(settings) {
  validateLaborRules(settings);
+ validateHistoryPeriod(settings);
  if (!settings || number(settings.laborHourly) === null || number(settings.laborHourly)<0) throw new Error("Inserire il costo ora/uomo, anche zero se esplicitamente previsto.");
  if(number(settings.referenceShiftHours??8)===null||Number(settings.referenceShiftHours??8)<=0||Number(settings.referenceShiftHours??8)>24)throw new Error("La durata del turno di riferimento deve essere maggiore di zero e al massimo 24 ore.");
  if (!Array.isArray(settings.shifts) || !settings.shifts.length) throw new Error("Definire almeno un turno.");
@@ -104,7 +107,7 @@ export function calculateRecord(evidence,configuration,adjustment={},commercial=
  const plannedMaterials=materialPlan.rows,plannedPackaging=packagingPlan.rows;
  if(materialPlan.recovered)warnings.push("Quantità formula mancanti recuperate dalla revisione collegata alla lavorazione e dalla quantità del lotto. Per i componenti assenti dal preventivo si usano i costi ultimi disponibili, non prezzi storici; i prezzi originali registrati restano prioritari. Il preventivo salvato resta invariato.");
  if(!plannedMaterials.length)warnings.push("Quantità formula non disponibili: manca un preventivo materiali utilizzabile o la revisione formula storica collegata. I consumi SL non vengono copiati nel preventivo.");
- const bulkMaterials=evidence.bulkSl?.length?evidence.bulkSl.flatMap(x=>x.materials||[]):recoveredConsumption;
+ const bulkMaterials=evidence.bulkSl?.length?materialConsumptionWithoutBulkTransfer(evidence,evidence.bulkSl.flatMap(x=>x.materials||[])):recoveredConsumption;
  if(recoveredProducts.length)warnings.push("Bulk/confezionamento ricostruiti dagli impegni V4 marcati consumati: quantità fabbisogno e costi ultimi, non righe SL originali.");
  const forecast=forecastOperations(evidence),ops=forecast.operations;
  warnings.push(forecast.source);

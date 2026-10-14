@@ -1,4 +1,5 @@
 import { createProgremesProductionClient } from '../progremes-production-client.js';
+import { clarifyArchivedOctAudit } from '../workspacemes-oct-reconciliation.js';
 
 // A completed OCT import can leave an older backlog beyond its time budget.
 // Resume it on regular worker calls, reserving room for the final MES request.
@@ -32,7 +33,7 @@ export async function propagateDeletedOcts({ supabase, client = createProgremesP
         p_order_id: job.order_id, p_generation: job.generation, p_response: result,
       });
       if (completeError) throw completeError;
-      if (data === true) completed++;
+      if (data === true) { await clarifyArchivedOctAudit(supabase, job, result); completed++; }
     } catch (failure) {
       const message = String(failure.message || 'Eliminazione MES da riconciliare').slice(0, 500);
       const { error: saveError } = await supabase.rpc('record_deleted_oct_failure', {

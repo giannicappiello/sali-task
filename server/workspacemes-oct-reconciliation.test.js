@@ -1,0 +1,15 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {Buffer} from 'node:buffer';
+import {signProductionMessage,HMAC_HEADERS} from './progremes-production-hmac.js';
+import {handleOctReconciliation,OCT_RECONCILIATION_PATH} from './workspacemes-oct-reconciliation.js';
+const secret='test-oct-reconciliation-secret';
+function request(input){const body=JSON.stringify(input);const timestamp=String(Math.floor(Date.now()/1000));const eventId='oct-reconciliation';return {method:'POST',body,headers:{[HMAC_HEADERS.timestamp]:timestamp,[HMAC_HEADERS.eventId]:eventId,[HMAC_HEADERS.signature]:signProductionMessage({method:'POST',path:OCT_RECONCILIATION_PATH,timestamp,eventId,body:Buffer.from(body),secret})}};}
+function response(){return {setHeader(){},status(code){this.code=code;return this;},json(data){this.data=data;return this;}};}
+function admin(job){return {calls:[],from(){return {select(){return this;},eq(){return this;},order(){return this;},limit(){return Promise.resolve({data:[job]});},single(){return Promise.resolve({data:job});}};},async rpc(name,args){this.calls.push({name,args});return {data:true};}};}
+const receipt={workspaceOctId:'oct',status:'DELETED',deletedOrders:0,deletedOperations:0,blockers:[],archivedOrderIds:[4095]};
+test('diagnostica OCT richiede la firma MES prima di accedere alla coda',async()=>{const res=response();await handleOctReconciliation({method:'POST',headers:{},body:'{}'},res,{admin:{from:()=>assert.fail('Accesso non autorizzato')},secret});assert.equal(res.code,401);});
+test('diagnostica firmata restituisce i motivi senza modificare la coda',async()=>{const db=admin({status:'PENDING',last_error:'Lavorazione in corso'});const res=response();await handleOctReconciliation(request({action:'audit'}),res,{admin:db,secret});assert.equal(res.code,200);assert.equal(res.data.jobs[0].last_error,'Lavorazione in corso');assert.equal(db.calls.length,0);});
+test('registrazione archiviazione richiede zero eliminazioni e ricevuta senza blocchi',async()=>{const db=admin({generation:'g',status:'PENDING'});for(const change of [{deletedOrders:1},{blockers:['in corso']},{archivedOrderIds:[]}]){const res=response();await handleOctReconciliation(request({action:'completeArchive',orderId:'oct',generation:'g',receipt:{...receipt,...change}}),res,{admin:db,secret});assert.equal(res.code,400);}assert.equal(db.calls.length,0);});
+test('una nuova generazione OCT non accetta la ricevuta precedente',async()=>{const db=admin({generation:'new',status:'PENDING'});const res=response();await handleOctReconciliation(request({action:'completeArchive',orderId:'oct',generation:'old',receipt}),res,{admin:db,secret});assert.equal(res.code,409);assert.equal(db.calls.length,0);});
+test('ricevuta di completamento conserva nel registro i riferimenti degli OP archiviati',async()=>{const db=admin({generation:'g',status:'PENDING',payload:{rdpExternalIds:[]}});const res=response();await handleOctReconciliation(request({action:'completeArchive',orderId:'oct',generation:'g',receipt}),res,{admin:db,secret});assert.equal(res.code,200);assert.deepEqual(db.calls[0].args.p_response.archivedOrderIds,[4095]);});

@@ -136,3 +136,28 @@ for (const mismatch of ["workspaceRdpExternalId", "expectedPreviewHash", "decisi
     assert.equal(tables.workspace_v4_confirmation_mirrors.length, 0);
   });
 }
+
+
+test("OCT cambiato dopo l’anteprima non invia una revisione obsoleta al MES", async () => {
+  const { admin, tables } = fixture();
+  tables.workspace_v4_previews[0].snapshot.commercialDemand = {
+    items:[{lineId:"line",orderId:"oct",commercialArticleCode:"FP"}],orders:[{orderId:"oct",versionHash:"old"}]
+  };
+  tables.workspace_v4_previews[0].oct_hash = "old";
+  const demandReader = async () => ({items:[{lineId:"line",orderId:"oct",commercialArticleCode:"FP"}],
+    orders:[{orderId:"oct",versionHash:"changed"}]});
+  await assert.rejects(confirmWorkspaceV4({admin,previewId:1,reason:"Aggiorna OCT",requestedBy:"one",demandReader,
+    client:{v4ConfirmationEnabled:()=>true,confirmV4:async()=>assert.fail("Non aggiornare da dati obsoleti")}}),
+    {code:"STALE_V4_PREVIEW"});
+  assert.equal(tables.workspace_v4_previews[0].snapshot.confirmationRecovery,undefined);
+});
+
+test("la revisione OP recupera un esito UPDATED senza creare o reinviare un ordine", async () => {
+  const {admin}=fixture(); let calls=0;
+  const response={status:"UPDATED",productionCreated:true,productionUpdated:true,productionOrders:[{id:5412,number:"RDP145"}]};
+  const client={v4ConfirmationEnabled:()=>true,confirmV4:async()=>{calls++;return {result:response};}};
+  const args={admin,client,previewId:1,reason:"Aggiorna OP esistente",requestedBy:"one"};
+  assert.deepEqual((await confirmWorkspaceV4(args)).mes,response);
+  assert.deepEqual((await confirmWorkspaceV4(args)).mes,response);
+  assert.equal(calls,1);
+});

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { buildProductionDemand } from "./production-netting.js";
 import { aggregateWorkspaceHashes, createProgremesProductionClient } from "./progremes-production-client.js";
 import { deterministicUuid, payloadHash } from "./workspacemes-v3.js";
 
@@ -82,7 +83,18 @@ function buildPreviewIdentity({ requestId, octHash, demands }) {
     correlationId: deterministicUuid({ purpose: "v4-correlation", idempotencyKey }) };
 }
 
-export async function createWorkspaceV4Preview({ admin, requestId, requestedBy, client = createProgremesProductionClient() }) {
+export async function refreshWorkspaceV4Demand(admin, original, demandReader = buildProductionDemand) {
+  const current = await demandReader({ admin, lineIds: original.items.map(item => item.lineId),
+    conversions: original.items.map(item => item.conversion).filter(Boolean) });
+  const previous = new Map(original.items.map(item => [item.lineId, item]));
+  if (current.items.length !== previous.size || current.items.some(item =>
+    !previous.has(item.lineId) || upper(item.commercialArticleCode) !== upper(previous.get(item.lineId).commercialArticleCode) ||
+    clean(item.orderId) !== clean(previous.get(item.lineId).orderId)))
+    throw fail("Le righe OCT sono cambiate: scegliere quali lavorazioni mantenere prima di aggiornare la RdP.", "V5_REVISION_SCOPE_CHANGED");
+  return current;
+}
+
+export async function createWorkspaceV4Preview({ admin, requestId, requestedBy, client = createProgremesProductionClient(), demandReader = buildProductionDemand }) {
   if (!client.v4PreviewEnabled()) throw fail("Preview WorkspaceMES V4 disabilitata.", "V4_PREVIEW_DISABLED", 403);
   const input = await loadDemand(admin, requestId);
   await ensureRequestNotCancelling(admin, requestId);
@@ -90,6 +102,7 @@ export async function createWorkspaceV4Preview({ admin, requestId, requestedBy, 
     .eq("production_request_id", requestId).order("captured_at", { ascending: false }).limit(1))[0];
   if (latest?.status === "READY" && latest.snapshot?.confirmationRecovery && !latest.snapshot.confirmationRecovery.rejected)
     throw fail("Recuperare la conferma in corso prima di ricalcolare la RdP.", "V4_CONFIRM_PENDING");
+  input.demand = await refreshWorkspaceV4Demand(admin, input.demand, demandReader);
   const orders = new Map(input.demand.orders.map((order) => [clean(order.orderId), order]));
   const demands = input.demand.items.map((item) => {
     const order = orders.get(clean(item.orderId));
@@ -125,7 +138,7 @@ export async function createWorkspaceV4Preview({ admin, requestId, requestedBy, 
     p_external_id: identity.externalId, p_production_request_id: requestId,
     p_preview_hash: sent.result.snapshotHash, p_idempotency_key: identity.idempotencyKey,
     p_payload_hash: payloadHash(command), p_status: status, p_oct_hash: octHash,
-    p_row_version: sent.result.rowVersion, p_snapshot: sent.result,
+    p_row_version: sent.result.rowVersion, p_snapshot: { ...sent.result, commercialDemand: input.demand },
     p_correlation_id: identity.correlationId, p_causation_id: input.request.external_id,
     p_requested_by: requestedBy, p_materials: materials,
   }))[0];
@@ -134,7 +147,7 @@ export async function createWorkspaceV4Preview({ admin, requestId, requestedBy, 
 }
 
 export async function confirmWorkspaceV4({ admin, previewId, reason, requestedBy,
-  client = createProgremesProductionClient() }) {
+  client = createProgremesProductionClient(), demandReader = buildProductionDemand }) {
   if (!client.v4ConfirmationEnabled()) throw fail("Conferma WorkspaceMES V4 disabilitata.", "V4_CONFIRM_DISABLED", 403);
   if (clean(reason).length < 5) throw fail("Motivazione obbligatoria.", "INVALID_REASON", 400);
   const previews = ensure(await admin.from("workspace_v4_previews").select("*").eq("id", previewId).limit(1));
@@ -158,6 +171,11 @@ export async function confirmWorkspaceV4({ admin, previewId, reason, requestedBy
     decision: normalizedDecision,
     reason: clean(reason), decidedBy: `workspace:${requestedBy || "service"}`,
     correlationId: preview.correlation_id, causationId: preview.external_id };
+  if (!preview.snapshot?.confirmationRecovery && preview.snapshot?.commercialDemand) {
+    const current = await refreshWorkspaceV4Demand(admin, preview.snapshot.commercialDemand, demandReader);
+    if (aggregateWorkspaceHashes(current.orders.map(order => order.versionHash)) !== preview.oct_hash)
+      throw fail("L’OCT è cambiato dopo l’anteprima: premi Aggiorna RdP e conferma i nuovi dati.", "STALE_V4_PREVIEW");
+  }
   // Claim once before sending. Concurrent callers and later sessions reuse the
   // exact original payload, including actor/reason, required by MES idempotency.
   ensure(await admin.from("workspace_v4_previews").update({ snapshot: {
@@ -186,7 +204,7 @@ export async function confirmWorkspaceV4({ admin, previewId, reason, requestedBy
       if (original.confirmationExternalId !== command.externalId || !equivalentPreview ||
           original.idempotencyKey !== command.idempotencyKey || original.expectedPreviewHash !== command.expectedPreviewHash ||
           original.decision !== command.decision || !clean(original.decidedBy) || !clean(original.reason) ||
-          original.result?.externalId !== command.externalId || original.result?.status !== "FORECAST")
+          original.result?.externalId !== command.externalId || !["FORECAST", "UPDATED"].includes(original.result?.status))
         throw fail("L'esito recuperato non corrisponde alla conferma richiesta.", "V4_RECOVERY_IDENTITY_MISMATCH");
       command = { ...command, previewExternalId: original.previewExternalId, reason: original.reason, decidedBy: original.decidedBy,
         correlationId: original.correlationId, causationId: original.causationId };

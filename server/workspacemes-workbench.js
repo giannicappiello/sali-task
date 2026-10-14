@@ -489,24 +489,6 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
   const requestItemByLine = new Map((requestItemsResult.data || []).map((row) => [text(row.ordine_riga_id), row]));
   const proposalByItem = new Map(proposals.map((row) => [text(row.production_request_item_id), row]));
   const currentProductive = currentLines.filter((line) => !line.riga_descrittiva && text(line.codice_articolo) && number(line.quantita) > 0);
-  const previousItems = Array.isArray(sentSnapshot?.snapshot?.items) ? sentSnapshot.snapshot.items : [];
-  const previousByLine = new Map(previousItems.map((item) => [text(item.lineId), item]));
-  const currentByLine = new Map(currentProductive.map((line) => [text(line.id), line]));
-  const delta = {
-    added: currentProductive.filter((line) => !previousByLine.has(text(line.id))).map((line) => ({ lineId: line.id, articleCode: line.codice_articolo, quantity: line.quantita, uom: currentOctUnit(line) })),
-    removed: previousItems.filter((item) => !currentByLine.has(text(item.lineId))).map((item) => ({ lineId: item.lineId, articleCode: item.commercialArticleCode, quantity: item.requestedQuantity, uom: item.requestedUnitOfMeasure })),
-    changed: currentProductive.flatMap((line) => {
-      const previous = previousByLine.get(text(line.id));
-      if (!previous) return [];
-      const uom = text(currentOctUnit(line)).toUpperCase();
-      const changed = number(line.quantita) !== number(previous.requestedQuantity) || uom !== text(previous.requestedUnitOfMeasure).toUpperCase();
-      return changed ? [{ lineId: line.id, articleCode: line.codice_articolo, fromQuantity: previous.requestedQuantity, toQuantity: line.quantita, fromUom: previous.requestedUnitOfMeasure, toUom: uom }] : [];
-    }),
-  };
-  const deliveryChanged = (orders || []).some((order) => {
-    const previous = (sentSnapshot?.snapshot?.orders || []).find((item) => text(item.orderId) === text(order.id));
-    return previous && text(previous.requestedDeliveryDate) !== text(order.data_consegna);
-  });
   const v2Decision = null;
   let v3 = null;
   if (request) {
@@ -540,13 +522,32 @@ export async function productionWorkbenchDetail({ admin, orderId = null, request
     v3 = { flags, preview, components, saga, commitments, requirements, purchaseDocuments,
       blockers: components.filter((row) => text(row.block_code)).map((row) => ({ articleCode: row.article_code, code: row.block_code, owner: "PROGREMES" })) };
   }
+  const revisionBaseline = (v3?.saga && v3.preview?.snapshot?.commercialDemand) || sentSnapshot?.snapshot;
+  const previousItems = Array.isArray(revisionBaseline?.items) ? revisionBaseline.items : [];
+  const previousByLine = new Map(previousItems.map((item) => [text(item.lineId), item]));
+  const currentByLine = new Map(currentProductive.map((line) => [text(line.id), line]));
+  const delta = {
+    added: currentProductive.filter((line) => !previousByLine.has(text(line.id))).map((line) => ({ lineId: line.id, articleCode: line.codice_articolo, quantity: line.quantita, uom: currentOctUnit(line) })),
+    removed: previousItems.filter((item) => !currentByLine.has(text(item.lineId))).map((item) => ({ lineId: item.lineId, articleCode: item.commercialArticleCode, quantity: item.requestedQuantity, uom: item.requestedUnitOfMeasure })),
+    changed: currentProductive.flatMap((line) => {
+      const previous = previousByLine.get(text(line.id));
+      if (!previous) return [];
+      const uom = text(currentOctUnit(line)).toUpperCase();
+      const changed = number(line.quantita) !== number(previous.requestedQuantity) || uom !== text(previous.requestedUnitOfMeasure).toUpperCase();
+      return changed ? [{ lineId: line.id, articleCode: line.codice_articolo, fromQuantity: previous.requestedQuantity, toQuantity: line.quantita, fromUom: previous.requestedUnitOfMeasure, toUom: uom }] : [];
+    }),
+  };
+  const deliveryChanged = (orders || []).some((order) => {
+    const previous = (revisionBaseline?.orders || []).find((item) => text(item.orderId) === text(order.id));
+    return previous && text(previous.requestedDeliveryDate) !== text(order.data_consegna);
+  });
   return {
     orders: (orders || []).map((order) => ({ id: order.id, label: octLabel(order), customer: customerName(order, customersByCode), orderDate: order.data_ordine, deliveryDate: order.data_consegna })),
     request: request ? { ...request, stage: requestStage(request) } : null,
     cancellation: evaluateProductionRequestCancellation({ request, proposals, events: productionEvents }),
     v2Decision,
     v3,
-    revision: { modified: Boolean(sentSnapshot && (delta.added.length || delta.removed.length || delta.changed.length || deliveryChanged)), deliveryChanged, ...delta },
+    revision: { modified: Boolean(revisionBaseline && (delta.added.length || delta.removed.length || delta.changed.length || deliveryChanged)), deliveryChanged, ...delta },
     lines: visibleLines.map((line) => {
       const product = productByCode.get(text(line.codice_articolo).toUpperCase());
       const requestItem = requestItemByLine.get(text(line.id));

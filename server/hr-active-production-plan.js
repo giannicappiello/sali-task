@@ -44,9 +44,14 @@ export function activePlanRows(state, version) {
     return [{ productionOrderId: task.orderId, orderNumber: task.orderNumber || demand?.number || '',
       articleCode: task.articleCode || demand?.articleCode || '', articleDescription: task.description || demand?.description || '',
       operationType, start: task.start, end: task.end, actualStart: task.actualStart || null,
+      ...(state.displayedPlanning === true ? { displayedPlanning: true, taskId: task.id,
+        batchNumber: task.batchNumber, batchCount: task.batchCount, quantity: task.quantity,
+        productionId: task.actualProductionId,
+        workingIntervals: task.workingIntervals || [] } : {}),
       ...((task.status === 0 || task.status === 'Planned') && task.calendarIntervalsJson
         ? { confirmedIntervals: JSON.parse(task.calendarIntervalsJson) } : {}),
-      status: forecast ? 'Previsione' : statuses[task.status] || String(task.status || 'Pianificata'),
+      status: state.displayedPlanning === true && task.displayStatus ? task.displayStatus
+        : forecast ? 'Previsione' : statuses[task.status] || String(task.status || 'Pianificata'),
       resource: resource ? [resource.code, resource.description].filter(Boolean).join(' · ') : '',
       resourceCode: resource?.code || '',
       customerName: task.customerName || demand?.customer || '',
@@ -63,6 +68,10 @@ export async function readActiveProductionPlan(read = createHrPlanReader(), lega
   if (state.notModified) {
     if (!previous) throw new Error('Calendario precedente non disponibile.');
     return { ...previous, ...metadata };
+  }
+  if (state.displayedPlanning === true) {
+    return { items: activePlanRows(state, state.version), source: 'planning-operativo',
+      versionId: state.version?.id || null, ...metadata };
   }
   if (state.configuration?.active !== true) return { items: await legacy(), source: 'archivio', versionId: null, ...metadata };
   const id = state.configuration.activeVersionId;

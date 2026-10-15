@@ -104,6 +104,8 @@ export function calendarRows(rows, allowed, from, to) {
       productionOrderId: row.productionOrderId, orderNumber: row.orderNumber,
       articleCode: row.articleCode, articleDescription: row.articleDescription,
       operationType: row.operationType, start: row.start, end: row.end, status: row.status, actualStart: row.actualStart || null,
+      ...(row.displayedPlanning === true ? {displayedPlanning:true, taskId:row.taskId, batchNumber:row.batchNumber,
+        batchCount:row.batchCount, quantity:row.quantity, productionId:row.productionId} : {}),
       ...(Array.isArray(row.workingIntervals) ? { workingIntervals: row.workingIntervals } : {}),
       ...(row.resource ? { resource: row.resource } : {}),
       ...(row.resourceCode ? { resourceCode: row.resourceCode } : {}),
@@ -143,7 +145,7 @@ export async function productionCalendarRequest(req, dependencies = {}) {
   rows = rows.filter(row => allowed.includes(row.operationType));
   let calendarConflicts = 0;
   if (rows.length) {
-    const { data: calendar, error } = dependencies.readCalendar ? { data: await dependencies.readCalendar() }
+    const { data: calendar, error } = rows.every(row => row.displayedPlanning === true) ? { data:null } : dependencies.readCalendar ? { data: await dependencies.readCalendar() }
       : await admin.rpc('workspace_company_calendar_data');
     if (error) throw error;
     rows = rows.map(row => {

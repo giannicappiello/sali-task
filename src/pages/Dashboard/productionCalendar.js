@@ -1,4 +1,5 @@
 import { productionStatus } from '../../lib/productionStatus.js';
+export const productionActivityStatus = activity => activity.displayedPlanning === true ? activity.stato : productionStatus(activity.stato, activity.actualStart);
 const labels = { Production: 'Preparazione', Packaging: 'Confezionamento', Cartoning: 'Confezionamento' };
 
 // All PC stations use authenticated MES pages; the local Raspberry UI is independent.
@@ -39,11 +40,13 @@ export function productionActivities(rows) {
     return [{
       id: `mes-${row.productionOrderId}-${row.operationType}-${start}-${index}`,
       productionOrderId: row.productionOrderId,
+      displayedPlanning:row.displayedPlanning === true, taskId: row.taskId, batchNumber:row.batchNumber, batchCount:row.batchCount,
+      quantity:row.quantity, productionId:row.productionId,
       operationType: row.operationType, actualStart: plantTime(row.actualStart) || null,
       tipo: 'production', titolo: `${row.orderNumber} · ${row.articleCode}`,
       ...(Array.isArray(row.workingIntervals) ? { workingIntervals: row.workingIntervals.map(i => ({ start: plantTime(i.start), end: plantTime(i.end) })) } : {}),
       descrizione: row.articleDescription, start, end, deadline: end.slice(0, 10),
-      stato: productionStatus(row.status, plantTime(row.actualStart), row.actualEnd), reparto: labels[row.operationType],
+      stato: row.displayedPlanning === true ? row.status : productionStatus(row.status, plantTime(row.actualStart), row.actualEnd), reparto: labels[row.operationType],
       resource: row.resource || '', forecast: row.forecast === true,
       resourceCode: row.resourceCode || '', orderNumber: row.orderNumber || '', articleCode: row.articleCode || '',
       customerName: row.customerName || '', rdpReference: row.rdpReference || '', octReference: row.octReference || '',

@@ -3,6 +3,14 @@ import { plantTime } from '../src/pages/Dashboard/productionCalendar.js';
 
 export function calendarProjection(row, calendar, from, to) {
   const start = plantTime(row.start), end = plantTime(row.end);
+  // These are the exact visible segments already resolved by the MES Planner.
+  // Preserve them across HR calendar changes; only the Planner can replan work.
+  if (row.displayedPlanning === true) {
+    const intervals = (row.workingIntervals || []).map(i => ({start:plantTime(i.start ?? i.Start),end:plantTime(i.end ?? i.End)}));
+    if (intervals.some(i => !i.start || !i.end || i.end <= i.start || i.start < start || i.end > end))
+      throw new Error('Fasce del Planning MES non valide.');
+    return { intervals: intervals.filter(i => i.start < `${to}T24:00` && i.end > `${from}T00:00`), conflict:false };
+  }
   const confirmed = Array.isArray(row.confirmedIntervals);
   const ranges = confirmed ? row.confirmedIntervals.map(i => ({ start: plantTime(i.Start ?? i.start), end: plantTime(i.End ?? i.end) })) : [{ start, end }];
   if (ranges.some(i => !i.start || i.end <= i.start || i.start < start || i.end > end)) throw new Error('Fasce della lavorazione non valide.');

@@ -8,6 +8,12 @@ Da questa cartella: `npm ci`, poi `npm run dev`. Configurare in `.env.local` sol
 
 Logo, immagine e palette riprendono il catalogo Sali di Ischia fornito dal committente. Il pulsante **Scarica Fidelity** usa il prompt di installazione quando disponibile e mostra le istruzioni del dispositivo negli altri casi. Su Safari la disponibilità di Home/Dock dipende dalla versione del sistema.
 
+## Accesso amministratori sul sito Club
+
+Gli utenti attivi con ruolo Amministratore Workspace accedono anche al sito Club usando le stesse credenziali. Il server verifica il ruolo interno e i permessi CRM; non viene creata un’iscrizione cliente. La panoramica e gli elenchi mostrano dati reali di tutti i negozi, con accesso alle bozze dei documenti e approvazione delle richieste secondo i permessi già esistenti.
+
+Il selettore **Esplora le schermate** apre le modalità Cliente, Negozio, Pagina di accesso e Modulo di iscrizione. Le prove riutilizzano i componenti effettivi con un adattatore locale senza accesso a Supabase. Il banner indica sempre i dati dimostrativi. Il contesto è condiviso tra Cliente e Negozio nella stessa pagina; ricaricare o scegliere Ripristina prova lo azzera. Le prove non verificano invio email o pagamenti esterni. Per il QR/fotocamera, la lettura effettiva richiede il permesso del dispositivo.
+
 ## Apertura del programma
 
 1. In **Negozi**, selezionare il responsabile CRM e l’email assistenza.
@@ -24,7 +30,7 @@ Progetto Vercel dedicato `salidischia-club`, directory radice `apps/salidischia-
 
 Nel progetto Supabase gli URL di ritorno consentiti devono comprendere `https://club.salidischia.it/**` e `https://salidischia-club.vercel.app/**`. Preservare gli URL e le impostazioni degli altri servizi.
 
-Le migrazioni richieste sono `20261017120000`, `20261017150000` e `20261017151000`. Non applicare migrazioni estranee al Club durante un rilascio mirato.
+Le migrazioni richieste sono `20261017120000`, `20261017150000` `20261017151000` e `20261017160000`. Non applicare migrazioni estranee al Club durante un rilascio mirato.
 
 ## Confini dei dati
 
@@ -34,4 +40,4 @@ Acquisti, righe, movimenti wallet e cronologia CRM sono registrati atomicamente.
 
 ## Verifica
 
-Dal repository: `node --test test/club-model.test.mjs test/club-database.test.mjs test/club-public-database.test.mjs`, con `@electric-sql/pglite` disponibile o `PGLITE_MODULE` impostato al suo URL file. Sono coperti permessi, isolamento utenti/negozi, consensi/versioni, acquisti, storni, richieste, approvazioni, spedizioni e consegne. Eseguire inoltre le build di Workspace e dell’app Club e verificare nel browser desktop e mobile.
+Dal repository: `node --test test/club-model.test.mjs test/club-database.test.mjs test/club-public-database.test.mjs test/club-admin-access.test.mjs`, con `@electric-sql/pglite` disponibile o `PGLITE_MODULE` impostato al suo URL file. Sono coperti permessi, isolamento utenti/negozi, consensi/versioni, acquisti, storni, richieste, approvazioni, spedizioni e consegne. Eseguire inoltre le build di Workspace e dell’app Club e verificare nel browser desktop e mobile.

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { Download, X } from 'lucide-react';
-import { message } from './client';
 
 export function Alert({ error, children }) { return error ? <div className="notice error" role="alert">{error}</div> : children ? <div className="notice" role="status">{children}</div> : null; }
 export function Loading() { return <div className="loading" role="status"><span className="spinner" />Un momento…</div>; }
@@ -8,18 +7,6 @@ export function Modal({ title, children, onClose }) {
   const ref = useRef(null);
   useEffect(() => { const node = ref.current, previous = document.activeElement; node.showModal(); return () => { node.close(); previous?.focus?.(); }; }, []);
   return <dialog ref={ref} className="club-dialog" aria-label={title} onCancel={e => { e.preventDefault(); onClose(); }} onClick={e => { if (e.target === ref.current) onClose(); }}><header><h2>{title}</h2><button type="button" className="icon-button" aria-label="Chiudi" onClick={onClose}><X size={22} /></button></header>{children}</dialog>;
-}
-export function useAction() {
-  const lock = useRef(false);
-  const [busy, setBusy] = useState(false), [error, setError] = useState('');
-  async function run(action) {
-    if (lock.current) return { ok: false };
-    lock.current = true; setBusy(true); setError('');
-    try { return { ok: true, value: await action() }; }
-    catch (failure) { setError(message(failure)); return { ok: false }; }
-    finally { lock.current = false; setBusy(false); }
-  }
-  return { busy, error, run, setError };
 }
 export function InstallApp() {
   const [prompt, setPrompt] = useState(null), [guide, setGuide] = useState(false);

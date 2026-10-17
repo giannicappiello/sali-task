@@ -1,0 +1,5 @@
+import Auth from './Auth';
+
+export default function ClubLanding({ info, invite = '' }) {
+  return <div className="landing"><section className="brand-story"><div className="story-art"><img src="/catalog-hero.webp" alt="Trattamento cosmetico e dettagli delle acque termali, dal catalogo Sali di Ischia" /><div className="story-stamp"><img src="/catalog-logo.png" alt="Sali di Ischia" /></div></div><div className="story-copy"><span className="eyebrow">IL TUO RITUALE, UN NUOVO VALORE</span><h1>La bellezza<br />di farne parte.</h1><p>I tuoi acquisti Sali di Ischia diventano un budget da dedicare a te. Una Fidelity personale, un negozio di fiducia e nuovi vantaggi da scoprire.</p>{info?.program && <div className="program-rate"><strong>{info.program.cashback_percent}%</strong><span>di cashback sugli acquisti validi<br />secondo le condizioni del programma</span></div>}<div className="story-steps"><span><b>01</b>Scegli il tuo negozio</span><span><b>02</b>Accumula cashback</span><span><b>03</b>Scegli il tuo premio</span></div></div></section><Auth info={info} invite={invite} /></div>;
+}

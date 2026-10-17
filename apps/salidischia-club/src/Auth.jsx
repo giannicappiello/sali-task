@@ -1,9 +1,11 @@
+import { useAction } from './useAction';
 import { useState } from 'react';
 import { ArrowRight } from 'lucide-react';
-import { supabase } from './client';
-import { Alert, useAction } from './ui';
+import { usePortalAuth } from './usePortalApi';
+import { Alert } from './ui';
 
 export default function Auth({ info, invite = '' }) {
+  const auth = usePortalAuth();
   const [mode, setMode] = useState('login'), [email, setEmail] = useState(''), [password, setPassword] = useState(''), [name, setName] = useState(''), [feedback, setFeedback] = useState('');
   const { busy, error, run } = useAction();
   async function submit(event) {
@@ -12,13 +14,14 @@ export default function Auth({ info, invite = '' }) {
       const emailAddress = email.trim();
       if (mode === 'signup') {
         const redirect = new URL('/', location.origin); if (invite) redirect.searchParams.set('invito', invite);
-        const { data, error: failure } = await supabase.auth.signUp({ email: emailAddress, password, options: { emailRedirectTo: redirect.href, data: { club_app: 'salidischia-club', nome: name.trim() } } });
+        const { data, error: failure, preview } = await auth.signUp({ email: emailAddress, password, options: { emailRedirectTo: redirect.href, data: { club_app: 'salidischia-club', nome: name.trim() } } });
         if (failure) throw failure;
-        if (!data.session) setFeedback('Controlla la tua email e conferma l’indirizzo per proseguire. Se hai già un account, usa Accedi.');
+        if (preview) setFeedback('Iscrizione simulata: nessun account creato e nessuna email inviata.');
+        else if (!data.session) setFeedback('Controlla la tua email e conferma l’indirizzo per proseguire. Se hai già un account, usa Accedi.');
       } else if (mode === 'reset') {
-        const { error: failure } = await supabase.auth.resetPasswordForEmail(emailAddress, { redirectTo: location.origin + '/?recupero=1' });
-        if (failure) throw failure;setFeedback('Se l’indirizzo è associato a un account, riceverai un’email per recuperare la password.');
-      } else { const { error: failure } = await supabase.auth.signInWithPassword({ email: emailAddress, password });if (failure) throw failure; }
+        const { error: failure, preview } = await auth.resetPasswordForEmail(emailAddress, { redirectTo: location.origin + '/?recupero=1' });
+        if (failure) throw failure;setFeedback(preview ? 'Recupero simulato: nessuna email inviata.' : 'Se l’indirizzo è associato a un account, riceverai un’email per recuperare la password.');
+      } else { const { error: failure, preview } = await auth.signInWithPassword({ email: emailAddress, password });if (failure) throw failure;if (preview) setFeedback('Accesso simulato riuscito. Usa il selettore in alto per provare Cliente o Negozio.'); }
     });
   }
   const registrationAvailable = !!info?.registration_available || !!invite;
@@ -32,6 +35,7 @@ export default function Auth({ info, invite = '' }) {
   </section>;
 }
 export function Recovery({ onDone }) {
+  const auth = usePortalAuth();
   const [password, setPassword] = useState('');const { busy, error, run } = useAction();
-  return <section className="panel form-panel"><h1>La tua nuova password</h1><Alert error={error} /><form className="form-stack" onSubmit={async e => { e.preventDefault(); const result = await run(async () => { const { error: failure } = await supabase.auth.updateUser({ password });if (failure) throw failure; });if (result.ok) onDone(); }}><label>Nuova password<input required type="password" minLength={10} maxLength={128} autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} /></label><button className="button primary" disabled={busy}>Salva nuova password</button></form></section>;
+  return <section className="panel form-panel"><h1>La tua nuova password</h1><Alert error={error} /><form className="form-stack" onSubmit={async e => { e.preventDefault(); const result = await run(async () => { const { error: failure } = await auth.updateUser({ password });if (failure) throw failure; });if (result.ok) onDone(); }}><label>Nuova password<input required type="password" minLength={10} maxLength={128} autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} /></label><button className="button primary" disabled={busy}>Salva nuova password</button></form></section>;
 }

@@ -1,8 +1,11 @@
+import { useAction } from './useAction';
+import { usePortalRpc } from './usePortalApi';
 import { useState } from 'react';
-import { rpc } from './client';
-import { Alert, useAction } from './ui';
+
+import { Alert } from './ui';
 
 export default function Onboarding({ info, invite, onComplete }) {
+  const rpc = usePortalRpc();
   const [name, setName] = useState(''), [phone, setPhone] = useState(''), [accepted, setAccepted] = useState(false), [marketing, setMarketing] = useState(false), [profiling, setProfiling] = useState(false);
   const { busy, error, run } = useAction();
   async function submit(event) { event.preventDefault();const result = await run(() => invite ? rpc('club_claim_store_invite', { invitation_token: invite }) : rpc('club_enroll_member', { display_name: name.trim(), phone_number: phone.trim(), accept_program: accepted, marketing, profiling, expected_terms_url: info.terms_url, expected_privacy_url: info.privacy_url }));if (result.ok) { sessionStorage.removeItem('club-invitation');history.replaceState(null, '', '/');await onComplete(); } }

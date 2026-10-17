@@ -1,0 +1,19 @@
+/* Composition only: typography, panels, cards, tables and actions use CRM styles. */
+.club-page .club-form{display:grid;gap:20px}
+.club-page .club-fields,.b2b-kpi-dialog .club-fields{border:0;padding:0;margin:0;min-width:0}
+.club-page .club-checks,.b2b-kpi-dialog .club-checks{display:flex;flex-wrap:wrap;gap:12px 24px;margin:12px 0 18px}
+.club-page .club-checks label,.b2b-kpi-dialog .club-checks label{display:flex;align-items:center;gap:8px;min-height:44px}
+.club-page .club-checks input,.b2b-kpi-dialog .club-checks input{width:18px;height:18px;min-height:0}
+.club-page .club-form label,.b2b-kpi-dialog .club-form label{display:grid;gap:6px}
+.club-page .club-form input:not([type=checkbox]),.club-page .club-form select,.club-page .club-form textarea,.b2b-kpi-dialog .club-form input:not([type=checkbox]),.b2b-kpi-dialog .club-form select,.b2b-kpi-dialog .club-form textarea{min-height:42px;width:100%;padding:8px 11px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--card);color:var(--text);font:inherit}
+.club-page .club-form textarea,.b2b-kpi-dialog .club-form textarea{min-height:90px;resize:vertical}
+.club-page .club-calculation{display:grid;align-content:center;gap:5px}
+.club-page .club-calculation strong{font-size:1.5rem}
+.club-page .club-row-actions{display:flex;gap:8px;flex-wrap:wrap;min-width:200px}
+.club-page .club-row-actions button{min-height:40px}
+.club-page .club-request-table td>strong{display:block;margin-top:4px}
+.club-page .club-request-table td{overflow-wrap:anywhere}
+.club-page .club-form .club-checks label,.b2b-kpi-dialog .club-form .club-checks label{display:flex}
+.club-page :disabled,.b2b-kpi-dialog .club-form :disabled{cursor:default}
+.b2b-kpi-dialog .club-form{display:grid;gap:18px}
+@media(max-width:640px){.club-page .club-checks,.b2b-kpi-dialog .club-checks{display:grid;gap:4px}.club-page .crm-toolbar>label{width:100%}.club-page .crm-toolbar select{width:100%}.club-page .crm-modal-actions{flex-wrap:wrap}}

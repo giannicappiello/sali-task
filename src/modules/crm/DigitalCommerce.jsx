@@ -67,8 +67,9 @@ function DigitalKpi({ label, value, status, note, to }) {
 }
 
 export function DigitalHome() {
-  const { hasModuleAccess } = useAuth();
+  const { hasModuleAccess, hasScreenAccess } = useAuth();
   const items = [
+    { code: "salidischiaclub", name: "SalidischiaClub", description: "Fidelity, cashback, premi e richieste dei clienti.", to: "/crm/online/salidischiaclub", icon: ShoppingBag, allowed: hasScreenAccess("crm.online.club.dashboard", "crm_online") },
     { code: "digital", name: "Panoramica Digital", description: "KPI aggregati e stato delle fonti.", to: "/crm/online/digital", icon: BarChart3, allowed: hasModuleAccess("crm_online") },
     { code: "ecommerce", name: "Ecommerce", description: "Clienti, ordini, prodotti e vendite del sito.", to: "/crm/online/ecommerce", icon: ShoppingBag, allowed: hasModuleAccess("crm_online_ecommerce") },
     { code: "clients", name: "Clienti Online", description: "Anagrafiche, segmenti, consensi e valore cliente.", to: "/crm/online/clienti", icon: UsersRound, allowed: hasModuleAccess("crm_online") },

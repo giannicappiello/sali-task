@@ -35,6 +35,7 @@ import { loadAllQueryRows, loadAllRpcRows } from "./crmDataset";
 import { CRM_ROUTE_ALIASES, CRM_ROUTE_CATALOG } from "./crmRouteCatalog";
 import { crmNavigation } from "./crmNavigation";
 import { CrmB2BFollowUpPage, CrmB2BReordersPage, CrmBeautyDaysPage, CrmBrandDirectDashboard, CrmProjectsPage } from "./CrmWorkflowPages";
+import CrmClub from "./club/CrmClub";
 import "./crm.css";
 import "./workspace-alignment.css";
 
@@ -749,6 +750,7 @@ function renderCrmView(route) {
     case "reorders": return <CrmB2BReordersPage />;
     case "beautydays": return <CrmBeautyDaysPage />;
     case "briefs": return <BriefsPage />;
+    case "club": return <CrmClub page={route.clubPage} />;
     case "online-home": return <DigitalHome />;
     case "digital-dashboard": return <DigitalDashboard />;
     case "digital-channel": return <DigitalChannel channel={route.channel} />;

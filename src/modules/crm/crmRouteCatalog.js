@@ -1,4 +1,9 @@
 export const CRM_ROUTE_CATALOG = Object.freeze([
+  { path: "online/salidischiaclub", catalogPath: "/crm/online/salidischiaclub", moduleCode: "crm_online", screenCode: "crm.online.club.dashboard", view: "club", clubPage: "dashboard" },
+  { path: "online/salidischiaclub/richieste", catalogPath: "/crm/online/salidischiaclub/richieste", moduleCode: "crm_online", screenCode: "crm.online.club.richieste", view: "club", clubPage: "requests" },
+  { path: "online/salidischiaclub/configurazione", catalogPath: "/crm/online/salidischiaclub/configurazione", moduleCode: "crm_online", screenCode: "crm.online.club.configurazione", view: "club", clubPage: "configuration" },
+  { path: "online/salidischiaclub/premi", catalogPath: "/crm/online/salidischiaclub/premi", moduleCode: "crm_online", screenCode: "crm.online.club.premi", view: "club", clubPage: "rewards" },
+  { path: "online/salidischiaclub/clienti", catalogPath: "/crm/online/salidischiaclub/clienti", moduleCode: "crm_online", screenCode: "crm.online.club.clienti", view: "club", clubPage: "members" },
   { path: "conto-terzi/rendicontazione", catalogPath: "/crm/conto-terzi/rendicontazione", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.rendicontazione", view: "costs", type: "conto_terzi" },
   { index: true, path: "", catalogPath: "/crm", moduleCode: "crm", screenCode: "crm.dashboard", view: "overview" },
   { path: "direct", catalogPath: "/crm/direct", moduleCode: "crm_direct", screenCode: "crm.direct.dashboard", view: "direct-overview" },

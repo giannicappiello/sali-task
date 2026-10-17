@@ -32,6 +32,7 @@ export function crmNavigation(type) {
   return [
     ["Dashboard", basePath],
     ["Clienti", `${basePath}/clienti`],
+    ["SalidischiaClub", `${basePath}/salidischiaclub`],
     ["Campagne", `${basePath}/campagne`],
     ["Creator", `${basePath}/creators`],
     ["Customer Journey", `${basePath}/journey`],

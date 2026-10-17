@@ -25,7 +25,7 @@ export default function Auth({ info, invite = '' }) {
     });
   }
   const registrationAvailable = !!info?.registration_available || !!invite;
-  return <section className="auth-panel" aria-label="Accesso al Club"><span className="eyebrow">{invite ? 'AREA NEGOZIANTE' : 'LA TUA FIDELITY'}</span><h2>{mode === 'signup' ? 'Entra nel Club.' : mode === 'reset' ? 'Ritrova il tuo accesso.' : 'Bentornata. Bentornato.'}</h2><p className="muted">{invite ? 'Usa l’indirizzo email a cui è destinato l’invito del tuo negozio.' : 'Un account dedicato a Sali di Ischia Club.'}</p>
+  return <section className="auth-panel" aria-label="Accesso al Club"><span className="eyebrow">{invite ? 'AREA NEGOZIANTE' : 'LA TUA FIDELITY'}</span><h2>{mode === 'signup' ? 'Entra nel Club.' : mode === 'reset' ? 'Ritrova il tuo accesso.' : 'Bentornata. Bentornato.'}</h2><p className="muted">{invite ? 'Usa l’indirizzo email a cui è destinato l’invito del tuo negozio.' : 'Clienti e negozi: account Club. Staff: credenziali Workspace.'}</p>
     <div className="segmented" aria-label="Accesso o iscrizione"><button type="button" aria-pressed={mode === 'login'} onClick={() => setMode('login')}>Accedi</button><button type="button" aria-pressed={mode === 'signup'} disabled={!registrationAvailable} onClick={() => setMode('signup')}>Iscriviti</button></div>
     {!registrationAvailable && <p className="notice">Stiamo preparando l’apertura delle iscrizioni. Potrai registrarti qui appena il programma sarà disponibile.</p>}
     <Alert error={error} /><Alert>{feedback}</Alert>

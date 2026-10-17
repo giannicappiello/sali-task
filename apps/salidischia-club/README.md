@@ -14,6 +14,16 @@ Gli utenti attivi con ruolo Amministratore Workspace accedono anche al sito Club
 
 Il selettore **Esplora le schermate** apre le modalità Cliente, Negozio, Pagina di accesso e Modulo di iscrizione. Le prove riutilizzano i componenti effettivi con un adattatore locale senza accesso a Supabase. Il banner indica sempre i dati dimostrativi. Il contesto è condiviso tra Cliente e Negozio nella stessa pagina; ricaricare o scegliere Ripristina prova lo azzera. Le prove non verificano invio email o pagamenti esterni. Per il QR/fotocamera, la lettura effettiva richiede il permesso del dispositivo.
 
+## Aggiornamenti dell’app installata
+
+Il controllo avviene all’apertura, al ritorno alla pagina e periodicamente quando è visibile e connessa. Una nuova versione resta in attesa e mostra **Nuova versione disponibile**. **Aggiorna ora** la attiva e ricarica la pagina; **Più tardi** riduce l’avviso a un richiamo riapribile, conservando i moduli aperti. Un aggiornamento confermato in un’altra scheda non forza il ricaricamento delle altre schede.
+
+## Profili staff e visibilità
+
+Agenti, beauty, responsabili e backoffice usano gli account Workspace attivi. Occorrono i permessi già configurati sul modulo CRM BtoC e sulle schermate SalidischiaClub; il Club non assegna automaticamente nuovi privilegi. Menu e azioni riflettono i livelli lettura/scrittura/amministrazione. La visibilità dei negozi usa `crm_visible_canonical_customer_codes()`; gli iscritti sono collegati attraverso il negozio di fiducia o la visibilità della loro anagrafica CRM (`crm_row_visible`). Associazioni beauty, gerarchie e reparti rimangono quelli Workspace. Anche KPI, dettagli, elenchi del CRM e mutazioni sono filtrati sul server; acquisti e richieste mantengono il vincolo del negozio autorizzato.
+
+HTTPS è servito da Vercel con redirect HTTP, HSTS e aggiornamento automatico delle richieste di risorse HTTP verso HTTPS. Non aggirare errori di certificato sul client.
+
 ## Apertura del programma
 
 1. In **Negozi**, selezionare il responsabile CRM e l’email assistenza.
@@ -30,7 +40,7 @@ Progetto Vercel dedicato `salidischia-club`, directory radice `apps/salidischia-
 
 Nel progetto Supabase gli URL di ritorno consentiti devono comprendere `https://club.salidischia.it/**` e `https://salidischia-club.vercel.app/**`. Preservare gli URL e le impostazioni degli altri servizi.
 
-Le migrazioni richieste sono `20261017120000`, `20261017150000` `20261017151000` e `20261017160000`. Non applicare migrazioni estranee al Club durante un rilascio mirato.
+Le migrazioni richieste sono `20261017120000`, `20261017150000` `20261017151000` `20261017160000` e `20261017170000`. Non applicare migrazioni estranee al Club durante un rilascio mirato.
 
 ## Confini dei dati
 
@@ -40,4 +50,6 @@ Acquisti, righe, movimenti wallet e cronologia CRM sono registrati atomicamente.
 
 ## Verifica
 
-Dal repository: `node --test test/club-model.test.mjs test/club-database.test.mjs test/club-public-database.test.mjs test/club-admin-access.test.mjs`, con `@electric-sql/pglite` disponibile o `PGLITE_MODULE` impostato al suo URL file. Sono coperti permessi, isolamento utenti/negozi, consensi/versioni, acquisti, storni, richieste, approvazioni, spedizioni e consegne. Eseguire inoltre le build di Workspace e dell’app Club e verificare nel browser desktop e mobile.
+Dal repository: `node --test test/club-model.test.mjs test/club-database.test.mjs test/club-public-database.test.mjs test/club-admin-access.test.mjs test/club-staff-scope.test.mjs`, con `@electric-sql/pglite` disponibile o `PGLITE_MODULE` impostato al suo URL file. Sono coperti permessi, isolamento utenti/negozi, consensi/versioni, acquisti, storni, richieste, approvazioni, spedizioni e consegne. Eseguire inoltre le build di Workspace e dell’app Club e verificare nel browser desktop e mobile.
+
+Per il ciclo di aggiornamento PWA, dopo la build Club eseguire `node test/club-pwa-updates.browser.mjs` dal repository, con Playwright disponibile oppure `PLAYWRIGHT_MODULE` impostato al suo URL file. La prova usa due versioni di service worker, due schede e moduli compilati; verifica rinvio, aggiornamento esplicito e assenza di ricaricamento forzato nell’altra scheda. Gli artefatti della prova rimangono nella cartella temporanea generata.

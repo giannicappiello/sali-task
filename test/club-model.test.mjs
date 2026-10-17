@@ -6,7 +6,7 @@ import { crmNavigation } from '../src/modules/crm/crmNavigation.js';
 
 test('Club hierarchy stays inside BtoC and opens dashboard first', () => {
   const routes = CRM_ROUTE_CATALOG.filter(r => r.view === 'club');
-  assert.equal(routes.length, 5);
+  assert.equal(routes.length, 7);
   assert.equal(routes.find(r => r.catalogPath === CLUB_PATH).clubPage, 'dashboard');
   assert.ok(routes.every(r => r.moduleCode === 'crm_online' && r.catalogPath.startsWith('/crm/online/')));
   assert.ok(crmNavigation('online').some(([name, path]) => name === 'SalidischiaClub' && path === CLUB_PATH));

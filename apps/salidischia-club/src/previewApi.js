@@ -145,7 +145,8 @@ export function createPreviewApi({ readCatalog } = {}) {
         if (!['approved', 'ready'].includes(row.status)) throw Error('Richiesta non pronta.');
         row.status = 'completed'; wallet.reserved = round(wallet.reserved - row.reserved_amount); wallet.used = round(wallet.used + row.reserved_amount); break;
       }
-      case 'club_enroll_member': if (!args.accept_program || args.display_name.trim().length < 2) throw Error('Completa nome e accettazione del programma.'); result = member.id; break;
+      case 'club_enrollment_identity': return { email: 'cliente@example.test', first_name: '', last_name: '' };
+      case 'club_enroll_member': if (!args.first_name?.trim() || !args.last_name?.trim() || args.email_address !== 'cliente@example.test' || !args.accept_program || !args.profiling) throw Error('Completa nome, cognome, email e consensi.');Object.assign(consents, { marketing: false, profiling: true });result = member.id; break;
       default: throw Error('Questa azione non è disponibile nella prova. Nessun dato reale è stato modificato.');
     }
     return result === undefined ? null : copy(result);

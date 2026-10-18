@@ -6,7 +6,7 @@ import { Alert } from './ui';
 
 export default function Auth({ info, invite = '' }) {
   const auth = usePortalAuth();
-  const [mode, setMode] = useState('login'), [email, setEmail] = useState(''), [password, setPassword] = useState(''), [name, setName] = useState(''), [feedback, setFeedback] = useState('');
+  const [mode, setMode] = useState('login'), [email, setEmail] = useState(''), [password, setPassword] = useState(''), [firstName, setFirstName] = useState(''), [lastName, setLastName] = useState(''), [feedback, setFeedback] = useState('');
   const { busy, error, run } = useAction();
   async function submit(event) {
     event.preventDefault(); setFeedback('');
@@ -14,7 +14,7 @@ export default function Auth({ info, invite = '' }) {
       const emailAddress = email.trim();
       if (mode === 'signup') {
         const redirect = new URL('/', location.origin); if (invite) redirect.searchParams.set('invito', invite);
-        const { data, error: failure, preview } = await auth.signUp({ email: emailAddress, password, options: { emailRedirectTo: redirect.href, data: { club_app: 'salidischia-club', nome: name.trim() } } });
+        const { data, error: failure, preview } = await auth.signUp({ email: emailAddress, password, options: { emailRedirectTo: redirect.href, data: { club_app: 'salidischia-club', nome: `${firstName.trim()} ${lastName.trim()}`, first_name: firstName.trim(), last_name: lastName.trim() } } });
         if (failure) throw failure;
         if (preview) setFeedback('Iscrizione simulata: nessun account creato e nessuna email inviata.');
         else if (!data.session) setFeedback('Controlla la tua email e conferma l’indirizzo per proseguire. Se hai già un account, usa Accedi.');
@@ -29,7 +29,7 @@ export default function Auth({ info, invite = '' }) {
     <div className="segmented" aria-label="Accesso o iscrizione"><button type="button" aria-pressed={mode === 'login'} onClick={() => setMode('login')}>Accedi</button><button type="button" aria-pressed={mode === 'signup'} disabled={!registrationAvailable} onClick={() => setMode('signup')}>Iscriviti</button></div>
     {!registrationAvailable && <p className="notice">Stiamo preparando l’apertura delle iscrizioni. Potrai registrarti qui appena il programma sarà disponibile.</p>}
     <Alert error={error} /><Alert>{feedback}</Alert>
-    <form onSubmit={submit} className="form-stack"><fieldset disabled={busy}>{mode === 'signup' && <label>Nome e cognome<input required autoComplete="name" maxLength={200} value={name} onChange={e => setName(e.target.value)} /></label>}<label>Email<input required type="email" autoComplete="email" maxLength={254} value={email} onChange={e => setEmail(e.target.value)} /></label>{mode !== 'reset' && <label>Password<input required type="password" minLength={mode === 'signup' ? 10 : 1} maxLength={128} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} value={password} onChange={e => setPassword(e.target.value)} />{mode === 'signup' && <small>Almeno 10 caratteri.</small>}</label>}<button className="button primary full" disabled={busy || (mode === 'signup' && !registrationAvailable)}>{busy ? 'Attendi…' : mode === 'signup' ? 'Crea il tuo account' : mode === 'reset' ? 'Invia email di recupero' : 'Accedi al Club'}<ArrowRight size={18} /></button></fieldset></form>
+    <form onSubmit={submit} className="form-stack"><fieldset disabled={busy}>{mode === 'signup' && <div className="form-grid"><label>Nome<input required autoComplete="given-name" maxLength={100} value={firstName} onChange={e => setFirstName(e.target.value)} /></label><label>Cognome<input required autoComplete="family-name" maxLength={100} value={lastName} onChange={e => setLastName(e.target.value)} /></label></div>}<label>Email<input required type="email" autoComplete="email" maxLength={254} value={email} onChange={e => setEmail(e.target.value)} /></label>{mode !== 'reset' && <label>Password<input required type="password" minLength={mode === 'signup' ? 10 : 1} maxLength={128} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} value={password} onChange={e => setPassword(e.target.value)} />{mode === 'signup' && <small>Almeno 10 caratteri.</small>}</label>}<button className="button primary full" disabled={busy || (mode === 'signup' && !registrationAvailable)}>{busy ? 'Attendi…' : mode === 'signup' ? 'Crea il tuo account' : mode === 'reset' ? 'Invia email di recupero' : 'Accedi al Club'}<ArrowRight size={18} /></button></fieldset></form>
     <button type="button" className="text-button" onClick={() => setMode(mode === 'reset' ? 'login' : 'reset')}>{mode === 'reset' ? 'Torna all’accesso' : 'Hai dimenticato la password?'}</button>
     <div className="legal-links">{info?.privacy_url && <a href={info.privacy_url} target="_blank" rel="noopener noreferrer">Privacy</a>}{info?.terms_url && <a href={info.terms_url} target="_blank" rel="noopener noreferrer">Condizioni del Club</a>}</div>
   </section>;

@@ -30,9 +30,11 @@ export function createPreviewApi() {
   async function rpc(name, args = {}) {
     let result;
     switch (name) {
+      case 'club_pdf_sections': return [];
       case 'club_catalog_categories': return [{ id: 1, name: 'Skin Care', parent_id: null }, { id: 2, name: 'Body Care', parent_id: null }];
       case 'club_feed': return { rows: [], total: 0 };
       case 'club_post': return null;
+      case 'club_browse_catalog':
       case 'club_catalog_products': result = page(filter(products, args.search_text).filter(p => !args.category_id || p.category_ids.includes(args.category_id)).map(catalogProduct), args, 24);break;
       case 'club_catalog_product': result = catalogProduct(products.find(p => p.id === args.target_id));break;
       case 'club_shop_offers': result = { ...page(offers.filter(o => o.status === 'published' && o.store_code === member.store_code), args, 12), store_code: member.store_code, store_name: member.store_name };break;

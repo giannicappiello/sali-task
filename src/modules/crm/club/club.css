@@ -22,3 +22,5 @@
 .club-form .club-category-options label,.club-form .club-media-options label,.club-form .club-selected-media label{display:flex;gap:10px;align-items:center}.club-form input[type=checkbox],.club-form input[type=radio]{width:18px;min-width:18px;height:18px;min-height:0;padding:0;flex:none}.club-form .club-category-options,.club-form .club-media-options{border-color:var(--border)}.club-form .club-selected-media{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm)}.club-form .club-media-options small{color:var(--muted)}
 
 .club-form .club-editor-fields{display:grid;gap:18px}.b2b-kpi-dialog .club-form input[type=radio],.club-page .club-form input[type=radio]{width:18px;min-height:0;padding:0}
+
+.club-order-position{display:flex;align-items:center;gap:6px}.club-order-position input{width:78px;min-height:36px}.club-order-table tr[draggable="true"]{cursor:grab}.club-order-table td{vertical-align:middle}

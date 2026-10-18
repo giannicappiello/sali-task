@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist';
+import { GlobalWorkerOptions, PDFDataRangeTransport, getDocument } from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { usePortalAuth } from './usePortalApi';
+import { supabase } from './client';
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 
 export default function PdfPreview({ id, title }) {
-  const auth = usePortalAuth(), canvas = useRef(null), container = useRef(null);
+  const auth = supabase.auth, canvas = useRef(null), container = useRef(null);
   const [pdf, setPdf] = useState(null), [page, setPage] = useState(1), [width, setWidth] = useState(300);
   const [error, setError] = useState(''), [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -23,11 +23,33 @@ export default function PdfPreview({ id, title }) {
         const {data} = await auth.getSession();
         const headers = {'Content-Type':'application/json'};
         if (data.session?.access_token) headers.Authorization = `Bearer ${data.session.access_token}`;
-        const response = await fetch('/api/club-pdf-preview', {method:'POST',headers,body:JSON.stringify({document_id:id}),signal:controller.signal});
-        if (!response.ok) throw Error((await response.json()).error || 'Anteprima PDF non disponibile.');
-        const bytes = new Uint8Array(await response.arrayBuffer());
+        async function readSlice(start, end) {
+          const response = await fetch('/api/club-pdf-preview', {method:'POST',headers,body:JSON.stringify({document_id:id,start,end}),signal:controller.signal});
+          if (!response.ok) throw Error((await response.json()).error || 'Anteprima PDF non disponibile.');
+          const length = Number(/\/(\d+)$/.exec(response.headers.get('content-range') || '')?.[1]);
+          if (!length) throw Error('Anteprima PDF non disponibile.');
+          return {bytes:new Uint8Array(await response.arrayBuffer()),length};
+        }
+        async function readRange(start, end) {
+          if (end - start <= 1048576) return readSlice(start,end);
+          const slices = [];
+          for (let begin = start;begin < end;begin += 1048576) slices.push([begin,Math.min(end,begin + 1048576)]);
+          const parts = [];
+          for (let i = 0;i < slices.length;i += 4) parts.push(...await Promise.all(slices.slice(i,i + 4).map(([begin,finish]) => readSlice(begin,finish))));
+          const bytes = new Uint8Array(parts.reduce((total,part) => total + part.bytes.length,0));
+          let offset = 0;for (const part of parts) {bytes.set(part.bytes,offset);offset += part.bytes.length;}
+          return {bytes,length:parts[0].length};
+        }
+        const first = await readRange(0,262144);
         if (!active) return;
-        task = getDocument({data:bytes,isEvalSupported:false});
+        class DocumentRange extends PDFDataRangeTransport {
+          requestDataRange(begin, end) {
+            void readRange(begin,end).then(({bytes}) => {if (active) this.onDataRange(begin,bytes);}).catch(failure => {if (active) {setError(failure.message);setLoading(false);void task?.destroy();}});
+          }
+          abort() { controller.abort(); }
+        }
+        const range = new DocumentRange(first.length,first.bytes);
+        task = getDocument({range,rangeChunkSize:262144,disableAutoFetch:true,disableStream:true,isEvalSupported:false});
         const document = await task.promise;
         if (active) { setPdf(document);setPage(1); }
       } catch (failure) { if (active) { setError(failure.message);setLoading(false); } }

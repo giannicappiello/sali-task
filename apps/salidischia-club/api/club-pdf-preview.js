@@ -6,6 +6,8 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST');return res.status(405).json({error:'Metodo non consentito.'}); }
   const id = req.body?.document_id;
   if (typeof id !== 'string' || !/^[a-f0-9-]{36}$/i.test(id)) return res.status(400).json({error:'Documento non valido.'});
+  const start = req.body?.start ?? 0, end = req.body?.end ?? 262144;
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end <= start || end - start > 1048576) return res.status(400).json({error:'Intervallo documento non valido.'});
   try {
     const headers = {'Content-Type':'application/json'};
     if (req.headers.authorization) headers.Authorization = String(req.headers.authorization);
@@ -15,19 +17,22 @@ export default async function handler(req, res) {
     if (!lookup.ok) return res.status(lookup.status).json({error:'Documento non disponibile.'});
     const url = data.urls?.[id];
     if (!url || !url.startsWith('https://')) return res.status(404).json({error:'Documento non disponibile.'});
-    const response = await fetch(url, {signal,redirect:'error'});
+    const response = await fetch(url, {signal,redirect:'error',headers:{Range:`bytes=${start}-${end - 1}`}});
     if (!response.ok || !response.headers.get('content-type')?.toLowerCase().includes('application/pdf')) return res.status(415).json({error:'Anteprima disponibile solo per PDF.'});
+    const range = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(response.headers.get('content-range') || '');
+    if (response.status !== 206 || !range || Number(range[1]) !== start || Number(range[2]) >= end || Number(range[3]) <= Number(range[2])) return res.status(502).json({error:'Anteprima temporaneamente non disponibile.'});
     const reader = response.body.getReader(), chunks = [];
     let length = 0;
     while (true) {
       const {done,value} = await reader.read();
       if (done) break;
       length += value.byteLength;
-      if (length > 20 * 1024 * 1024) { await reader.cancel();return res.status(413).json({error:'Apri il documento completo per consultare questo PDF.'}); }
+      if (length > end - start) { await reader.cancel();return res.status(502).json({error:'Risposta documento non valida.'}); }
       chunks.push(Buffer.from(value));
     }
     res.setHeader('Content-Type','application/pdf');
     res.setHeader('X-Content-Type-Options','nosniff');
-    return res.status(200).send(Buffer.concat(chunks));
+    res.setHeader('Content-Range', response.headers.get('content-range'));
+    return res.status(206).send(Buffer.concat(chunks));
   } catch { return res.status(502).json({error:'Anteprima temporaneamente non disponibile. Puoi aprire il documento completo.'}); }
 }

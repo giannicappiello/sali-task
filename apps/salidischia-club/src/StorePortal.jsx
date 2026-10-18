@@ -53,7 +53,7 @@ function StoreHistory() {
 export default function StorePortal() {
   const [offerCreation, setOfferCreation] = useState(false);
   const [view, setView] = useState('customers'), [code, setCode] = useState(''), [query, setQuery] = useState(''), [search, setSearch] = useState(''), [page, setPage] = useState(0), [feedback, setFeedback] = useState('');
-  const { data, error, loading, reload } = useAsync('club_store_portal', { search_text: query, page_offset: page * 25 });
+  const { data, error, loading, reload } = useAsync('club_store_portal', { search_text: query, page_offset: page * 25 }, true, 30000);
   const tabs = [['customers', 'Clienti', UsersRound], ['orders', 'Ordini', ClipboardList], ['supply', 'Genera ordine', ClipboardList], ['purchase', 'Acquisto', ScanLine], ['pickups', 'Ritiri', Gift], ['history', 'Storico', History], ['offers', 'Offerte', Gift]];
   function navigate(next) { setView(next);setFeedback('');setOfferCreation(false); }
   return <div className="portal"><div className="store-heading"><Store size={20} /><span>{data?.store_name || 'Il tuo negozio Sali di Ischia'}</span></div><Alert error={error} /><Alert>{feedback}</Alert>

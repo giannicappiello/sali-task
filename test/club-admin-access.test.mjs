@@ -25,7 +25,7 @@ test('Club recognizes active Workspace administrators without enrolling or eleva
 });
 
 test('Admin previews share simulated state without accessing real APIs',async()=>{
- const {createPreviewApi}=await import('../apps/salidischia-club/src/previewApi.js');
+ const {createPreviewApi}=await import('./fixtures/club-preview-api.js');
  const a=createPreviewApi(),b=createPreviewApi();
  const original=globalThis.fetch;globalThis.fetch=()=>{throw Error('Preview attempted a real network request');};
  try{

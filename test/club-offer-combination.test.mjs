@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { combinedPrice } from '../apps/salidischia-club/src/offerPricing.js';
-import { createPreviewApi } from '../apps/salidischia-club/src/previewApi.js';
+import { createPreviewApi } from './fixtures/club-preview-api.js';
 process.env.CLUB_OFFER_FIXTURE_ONLY = '1';
 const { createOfferFixture, id } = await import('./club-store-offers.test.mjs');
 

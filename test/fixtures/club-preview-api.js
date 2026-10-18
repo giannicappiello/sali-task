@@ -1,4 +1,4 @@
-import { combinedPrice } from './offerPricing.js';
+import { combinedPrice } from '../../apps/salidischia-club/src/offerPricing.js';
 // Simulation writes remain local. Readers fetch real catalog and retailer identity only.
 export function createPreviewApi({ readCatalog, readRetailer } = {}) {
   const now = () => new Date().toISOString();

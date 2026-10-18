@@ -5,16 +5,16 @@ import { usePortalRpc } from './usePortalApi';
 
 // Read-only queries may retry transient transport failures. Mutations use
 // useAction and are never retried here.
-export default function useAsync(name, parameters = {}, enabled = true) {
+export default function useAsync(name, parameters = {}, enabled = true, refreshInterval = 0) {
   const rpc = usePortalRpc();
   const [result, setResult] = useState({ data: null, error: '', loading: true });
   const key = JSON.stringify(parameters), sequence = useRef(0);
   const connectionFailed = useRef(false), pending = useRef(0);
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (options) => {
     if (!enabled) return;
     const request = ++sequence.current;
     pending.current = request;connectionFailed.current = false;
-    setResult(current => ({ ...current, loading: true, error: '' }));
+    setResult(current => ({ ...current, loading: options?.background === true ? !current.data : true, error: '' }));
     try {
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
@@ -43,10 +43,12 @@ export default function useAsync(name, parameters = {}, enabled = true) {
     return () => { clearTimeout(timer);generation.current++; };
   }, [reload]);
   useEffect(() => {
-    const reconnect = () => { if (connectionFailed.current && !pending.current) void reload(); };
+    const reconnect = () => { if ((connectionFailed.current || refreshInterval > 0) && !pending.current) void reload({background:true}); };
     const visible = () => { if (document.visibilityState === 'visible') reconnect(); };
     window.addEventListener('online', reconnect);document.addEventListener('visibilitychange', visible);
-    return () => { window.removeEventListener('online', reconnect);document.removeEventListener('visibilitychange', visible); };
-  }, [reload]);
+    if (refreshInterval > 0) window.addEventListener('focus', visible);
+    const timer = refreshInterval > 0 ? setInterval(visible, refreshInterval) : null;
+    return () => { window.removeEventListener('online', reconnect);document.removeEventListener('visibilitychange', visible);window.removeEventListener('focus', visible);if (timer) clearInterval(timer); };
+  }, [reload, refreshInterval]);
   return { ...result, data: enabled ? result.data : null, error: enabled ? result.error : '', loading: enabled && result.loading, reload };
 }

@@ -1,3 +1,4 @@
+import process from 'node:process';
 import { signedUrl, filePath } from "./document-gateway.js";
 import { handleClubMedia } from "./club-media.js";
 import { createClient } from "@supabase/supabase-js";

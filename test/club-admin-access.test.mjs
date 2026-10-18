@@ -42,6 +42,8 @@ test('Admin previews share simulated state without accessing real APIs',async()=
   await a.rpc('club_select_store',{target_store_code:'DEMO-B'});assert.equal((await a.rpc('club_store_portal')).total,0);await assert.rejects(a.rpc('club_lookup_member',{member_code:'CLUB-DEMO-001'}),/non disponibile/);
   await assert.rejects(a.rpc('club_admin_public_settings',{payload:{}}),/non è disponibile/);
   assert.equal((await b.rpc('club_member_portal')).wallet.available,80);
+  const promo=await b.rpc('club_save_store_offer',{payload:{title:'Prezzo dimostrativo',kind:'discount',scope:'product',product_id:'demo-product',discount_mode:'price',sale_price:24,requirements:[]}});
+  await b.rpc('club_publish_store_offer',{target_id:promo});assert.equal((await b.rpc('club_catalog_product',{target_id:'demo-product'})).pricing.price,24);assert.equal((await b.rpc('club_catalog_product',{target_id:'demo-product'})).pricing.discount_percent,20);assert.equal((await b.rpc('club_member_portal')).wallet.available,80);
   assert.equal((await a.auth.signInWithPassword({})).preview,true);
  }finally{globalThis.fetch=original;}
 });

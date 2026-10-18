@@ -1,4 +1,6 @@
 export const CRM_ROUTE_CATALOG = Object.freeze([
+  { path: "online/salidischiaclub/prodotti", catalogPath: "/crm/online/salidischiaclub/prodotti", moduleCode: "crm_online", screenCode: "crm.online.club.catalogo", view: "club", clubPage: "catalog" },
+  { path: "online/salidischiaclub/contenuti", catalogPath: "/crm/online/salidischiaclub/contenuti", moduleCode: "crm_online", screenCode: "crm.online.club.contenuti", view: "club", clubPage: "contents" },
   { path: "online/salidischiaclub/negozi", catalogPath: "/crm/online/salidischiaclub/negozi", moduleCode: "crm_online", screenCode: "crm.online.club.negozi", view: "club", clubPage: "stores" },
   { path: "online/salidischiaclub/regolamento", catalogPath: "/crm/online/salidischiaclub/regolamento", moduleCode: "crm_online", screenCode: "crm.online.club.regolamento", view: "club", clubPage: "documents" },
   { path: "online/salidischiaclub", catalogPath: "/crm/online/salidischiaclub", moduleCode: "crm_online", screenCode: "crm.online.club.dashboard", view: "club", clubPage: "dashboard" },

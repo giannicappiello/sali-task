@@ -14,6 +14,8 @@ import ClubMembers from './ClubMembers';
 import ClubStores from './ClubStores';
 import ClubDocuments from './ClubDocuments';
 import './club.css';
+import ClubCatalogEditor from './ClubCatalogEditor';
+import ClubContents from './ClubContents';
 
 function ClubDashboard() {
   const period = useCrmPeriod();
@@ -43,8 +45,8 @@ function ClubDashboard() {
 }
 
 export default function CrmClub({ page = 'dashboard' }) {
-  const titles = { dashboard: 'SalidischiaClub', requests: 'Richieste Club', configuration: 'Configurazione Club', rewards: 'Catalogo premi Club', members: 'Clienti e movimenti Club', stores: 'Negozi e accessi Club', documents: 'Regolamento e privacy Club' };
-  const descriptions = { dashboard: 'Fidelity, cashback e richieste dei clienti Sali di Ischia.', requests: 'Verifica i dettagli e approva le richieste di rimborso o premio.', configuration: 'Percentuale cashback, modalità di rimborso, ritiro e spedizione.', rewards: 'Prodotti Workspace e premi disponibili per il riscatto.', members: 'Consumatori collegati al CRM BtoC e movimenti del budget.', stores: 'Adesione dei negozi BtoB, inviti e accessi indipendenti.', documents: 'Testi consultabili nell’app e storico delle versioni accettate.' };
+  const titles = { catalog: 'Prodotti Club', contents: 'Novità e comunicazioni Club', dashboard: 'SalidischiaClub', requests: 'Richieste Club', configuration: 'Configurazione Club', rewards: 'Catalogo premi Club', members: 'Clienti e movimenti Club', stores: 'Negozi e accessi Club', documents: 'Regolamento e privacy Club' };
+  const descriptions = { catalog: 'Categorie Sali di Ischia, ricerca e materiali dalla libreria Workspace.', contents: 'Prepara, programma e pubblica novità, offerte e comunicazioni.', dashboard: 'Fidelity, cashback e richieste dei clienti Sali di Ischia.', requests: 'Verifica i dettagli e approva le richieste di rimborso o premio.', configuration: 'Percentuale cashback, modalità di rimborso, ritiro e spedizione.', rewards: 'Prodotti Workspace e premi disponibili per il riscatto.', members: 'Consumatori collegati al CRM BtoC e movimenti del budget.', stores: 'Adesione dei negozi BtoB, inviti e accessi indipendenti.', documents: 'Testi consultabili nell’app e storico delle versioni accettate.' };
   return <div className="crm-page club-page">
     <CrmPageHeader eyebrow="CRM BtoC · SalidischiaClub" title={titles[page]} description={descriptions[page]} actions={<Link className="secondary-action crm-secondary" to="/crm/online">CRM BtoC</Link>}><CrmSectionNav items={CLUB_NAVIGATION} label="Navigazione SalidischiaClub" /></CrmPageHeader>
     {page === 'dashboard' && <ClubDashboard />}
@@ -54,5 +56,7 @@ export default function CrmClub({ page = 'dashboard' }) {
     {page === 'members' && <ClubMembers />}
     {page === 'stores' && <ClubStores />}
     {page === 'documents' && <ClubDocuments />}
+    {page === 'catalog' && <ClubCatalogEditor />}
+    {page === 'contents' && <ClubContents />}
   </div>;
 }

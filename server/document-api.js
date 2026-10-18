@@ -1,4 +1,5 @@
-import { createHmac } from "node:crypto";
+import { signedUrl, filePath } from "./document-gateway.js";
+import { handleClubMedia } from "./club-media.js";
 import { createClient } from "@supabase/supabase-js";
 
 const required = (name) => {
@@ -25,16 +26,6 @@ async function authenticate(req, admin, requiredPermission = null) {
     if (!permissionRows?.length) throw Object.assign(new Error("Autorizzazione non concessa per questa operazione."), { status: 403 });
   }
   return { profile, isAdmin };
-}
-
-function signedUrl(pathname) {
-  const expires = Math.floor(Date.now() / 1000) + 900;
-  const signature = createHmac("sha256", required("DOCUMENT_GATEWAY_SECRET")).update(`${pathname}\n${expires}`).digest("hex");
-  return `${required("DOCUMENT_GATEWAY_URL")}${pathname}?expires=${expires}&signature=${signature}`;
-}
-
-function filePath(path) {
-  return `/files/${String(path).split("/").map(encodeURIComponent).join("/")}`;
 }
 
 function group(extension) {
@@ -160,6 +151,7 @@ export default async function documentApiHandler(req, res) {
   try {
     const admin = adminClient();
     const action = String(req.query?.action || req.body?.action || "list");
+    if (req.method === "POST" && action === "club_urls") return await handleClubMedia(req, res, admin);
     if (req.method === "POST" && (action === "list" || action === "admin_list")) {
       const { isAdmin } = await authenticate(req, admin, action === "admin_list" ? ["integrations.configure", "integrations.sync.documents"] : null);
       let documentsQuery = admin.from("documenti_workspace").select("*").eq("attivo", true).order("titolo");

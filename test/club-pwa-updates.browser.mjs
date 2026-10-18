@@ -20,7 +20,7 @@ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const origin='http://127.0.0.1:'+server.address().port;
 const browser=await chromium.launch({channel:'msedge',headless:true});
 try{
- const context=await browser.newContext();await context.route('**/rest/v1/rpc/club_public_info',r=>r.fulfill({json:{program:null,registration_available:false,terms_url:null,privacy_url:null}}));
+ const context=await browser.newContext();await context.route('**/rest/v1/rpc/club_feed',r=>r.fulfill({json:{rows:[],total:0}}));await context.route('**/rest/v1/rpc/club_public_info',r=>r.fulfill({json:{program:null,registration_available:false,terms_url:null,privacy_url:null}}));
  const errors=[];const a=await context.newPage();a.on('pageerror',e=>errors.push(e.message));
  await a.goto(origin);await a.getByRole('heading',{name:/La bellezza/}).waitFor();await a.evaluate(()=>navigator.serviceWorker.ready);await a.waitForFunction(()=>!!navigator.serviceWorker.controller);
  assert.equal(await a.getByText('Nuova versione disponibile',{exact:true}).count(),0);

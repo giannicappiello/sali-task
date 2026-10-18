@@ -1,8 +1,8 @@
 export const CLUB_PATH = '/crm/online/salidischiaclub';
-export const CLUB_SCREENS = Object.freeze({ dashboard: 'crm.online.club.dashboard', requests: 'crm.online.club.richieste', configuration: 'crm.online.club.configurazione', rewards: 'crm.online.club.premi', members: 'crm.online.club.clienti', stores: 'crm.online.club.negozi', documents: 'crm.online.club.regolamento' });
+export const CLUB_SCREENS = Object.freeze({ dashboard: 'crm.online.club.dashboard', requests: 'crm.online.club.richieste', configuration: 'crm.online.club.configurazione', rewards: 'crm.online.club.premi', members: 'crm.online.club.clienti', stores: 'crm.online.club.negozi', documents: 'crm.online.club.regolamento', catalog: 'crm.online.club.catalogo', contents: 'crm.online.club.contenuti' });
 export const CLUB_NAVIGATION = Object.freeze([
   ['Dashboard', CLUB_PATH], ['Richieste', `${CLUB_PATH}/richieste`],
-  ['Configurazione', `${CLUB_PATH}/configurazione`], ['Premi', `${CLUB_PATH}/premi`], ['Clienti e movimenti', `${CLUB_PATH}/clienti`], ['Negozi', `${CLUB_PATH}/negozi`], ['Regolamento', `${CLUB_PATH}/regolamento`],
+  ['Configurazione', `${CLUB_PATH}/configurazione`], ['Premi', `${CLUB_PATH}/premi`], ['Clienti e movimenti', `${CLUB_PATH}/clienti`], ['Negozi', `${CLUB_PATH}/negozi`], ['Regolamento', `${CLUB_PATH}/regolamento`], ['Prodotti', `${CLUB_PATH}/prodotti`], ['Novità e comunicazioni', `${CLUB_PATH}/contenuti`],
 ]);
 export const REQUEST_STATUS = Object.freeze({ pending: 'Da approvare', approved: 'Approvata', ready: 'Pronta al ritiro', shipped: 'Spedita', completed: 'Completata', cancelled: 'Annullata', rejected: 'Rifiutata' });
 export const MODE_LABELS = Object.freeze({ products: 'Prodotti', prizes: 'Premi', money: 'Denaro' });

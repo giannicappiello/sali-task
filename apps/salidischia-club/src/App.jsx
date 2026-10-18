@@ -11,6 +11,10 @@ import StorePortal from './StorePortal';
 import Regulation from './Regulation';
 import AppUpdate from './AppUpdate';
 import './style.css';
+import './club-content.css';
+import ClubCatalog from './ClubCatalog';
+import ClubFeed from './ClubFeed';
+import ClubHomeContent from './ClubHomeContent';
 
 const AdminPortal = lazy(() => import('./AdminPortal'));
 
@@ -34,8 +38,8 @@ export default function App() {
     return () => { active = false;data.subscription.unsubscribe(); };
   }, []);
   return <div className="club-app"><header className="app-header"><a className="brand" href="/" aria-label="Sali di Ischia Club, pagina iniziale"><img src="/logo.png" alt="Sali di Ischia" /><span>CLUB<small>FIDELITY & CASHBACK</small></span></a><div className="header-actions"><InstallApp />{session && <button type="button" className="icon-button" aria-label="Esci dal Club" onClick={() => supabase.auth.signOut()}><LogOut size={20} /></button>}</div></header>
-    <AppUpdate /><main>{publicError && <Alert error={publicError} />}{location.pathname.startsWith('/regolamento') ? <Regulation /> : checking || publicLoading ? <Loading /> : recovery && session ? <Recovery onDone={() => { setRecovery(false);history.replaceState(null, '', '/'); }} /> : session ? <Account key={session.user.id} publicInfo={info} invite={invite} /> : <>
-      <ClubLanding info={info} invite={invite} />
+    <nav className="public-content-nav" aria-label="Scopri il Club"><a href="/prodotti">Prodotti</a><a href="/novita">Novità e offerte</a><a href="/comunicazioni">Comunicazioni</a></nav><AppUpdate /><main>{publicError && <Alert error={publicError} />}{location.pathname.startsWith('/prodotti') ? <ClubCatalog /> : location.pathname.startsWith('/novita') ? <ClubFeed /> : location.pathname.startsWith('/comunicazioni') ? <ClubFeed contentKind="communication" /> : location.pathname.startsWith('/regolamento') ? <Regulation /> : checking || publicLoading ? <Loading /> : recovery && session ? <Recovery onDone={() => { setRecovery(false);history.replaceState(null, '', '/'); }} /> : session ? <Account key={session.user.id} publicInfo={info} invite={invite} /> : <>
+      <ClubLanding info={info} invite={invite} /><ClubHomeContent />
     </>}</main><footer className="site-footer"><span>SALI DI ISCHIA · CLUB</span><div><a href="/regolamento">Regolamento e privacy</a><a href="https://www.salidischia.it" target="_blank" rel="noopener noreferrer">Scopri Sali di Ischia</a>{info?.privacy_url && <a href={info.privacy_url} target="_blank" rel="noopener noreferrer">Privacy</a>}{info?.terms_url && <a href={info.terms_url} target="_blank" rel="noopener noreferrer">Condizioni</a>}{info?.support_email && <a href={`mailto:${info.support_email}`}>Assistenza</a>}</div></footer></div>;
 }
 

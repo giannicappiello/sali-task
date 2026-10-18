@@ -21,6 +21,9 @@ export function createPreviewApi() {
   async function rpc(name, args = {}) {
     let result;
     switch (name) {
+      case 'club_catalog_categories': return [];
+      case 'club_catalog_products': case 'club_feed': return { rows: [], total: 0 };
+      case 'club_catalog_product': case 'club_post': return null;
       case 'club_member_portal': result = { member, wallet, rewards: rewards.filter(r => r.stock > 0), public_info: info, consents }; break;
       case 'club_list_stores': result = page(filter(stores, args.search_text), args, 25); break;
       case 'club_select_store': {

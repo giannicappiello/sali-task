@@ -2,6 +2,10 @@ import productionActions from '../../server/production-actions-handler.js';
 import { handleInventorySnapshot } from '../../server/progremes-inventory.js';
 
 export default async function handler(req, res) {
+  if (req.query?.route === 'club-supply-order') {
+    const { handleClubSupply } = await import('../../server/club-supply-orders.js');
+    return handleClubSupply(req, res);
+  }
   if (req.query?.route === 'oct-reconciliation') {
     const { handleOctReconciliation } = await import('../../server/workspacemes-oct-reconciliation.js');
     return handleOctReconciliation(req, res);

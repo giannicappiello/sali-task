@@ -1,6 +1,6 @@
 import { combinedPrice } from './offerPricing.js';
-// Simulation writes remain local. The optional reader is used only for catalog reads.
-export function createPreviewApi({ readCatalog } = {}) {
+// Simulation writes remain local. Readers fetch real catalog and retailer identity only.
+export function createPreviewApi({ readCatalog, readRetailer } = {}) {
   const now = () => new Date().toISOString();
   const copy = value => structuredClone(value);
   const program = { cashback_percent: 5, reimbursement_modes: ['products', 'prizes', 'money'], delivery_methods: ['pickup', 'home'], cash_minimum: 20, cash_method: 'bank_transfer', shipping_fee: 4.9, shipping_payment: 'wallet', free_shipping_threshold: 30 };
@@ -145,14 +145,26 @@ export function createPreviewApi({ readCatalog } = {}) {
         if (!['approved', 'ready'].includes(row.status)) throw Error('Richiesta non pronta.');
         row.status = 'completed'; wallet.reserved = round(wallet.reserved - row.reserved_amount); wallet.used = round(wallet.used + row.reserved_amount); break;
       }
-      case 'club_enrollment_identity': return { kind: previewRetailer ? 'store' : 'consumer', email: previewRetailer ? 'negozio@example.test' : 'cliente@example.test', first_name: '', last_name: '', legal_name: previewRetailer ? 'Rivenditore dimostrativo Ischia' : undefined, shop_name: previewShopName };
+      case 'club_enrollment_identity': return { kind: previewRetailer ? 'store' : 'consumer', email: previewRetailer ? previewCustomer.masked_email : 'cliente@example.test', email_is_masked: previewRetailer, first_name: '', last_name: '', legal_name: previewRetailer ? previewCustomer.legal_name : undefined, shop_name: previewShopName };
       case 'club_enroll_retailer': if (!args.first_name?.trim() || !args.last_name?.trim() || !args.accept_program || !args.profiling) throw Error('Completa dati e consensi del negozio.');result = stores[0].store_code;break;
       case 'club_enroll_member': if (!args.first_name?.trim() || !args.last_name?.trim() || args.email_address !== 'cliente@example.test' || !args.accept_program || !args.profiling) throw Error('Completa nome, cognome, email e consensi.');Object.assign(consents, { marketing: false, profiling: true });result = member.id; break;
       default: throw Error('Questa azione non è disponibile nella prova. Nessun dato reale è stato modificato.');
     }
     return result === undefined ? null : copy(result);
   }
-  let previewRetailer = false, previewShopName = '';
-  async function retailerRegistration(input) { if (input.mode === 'lookup') { if (!/^(IT)?[0-9]{11}$/i.test(input.vat_number.replace(/\s/g, ''))) throw Error('Inserisci una partita IVA di 11 cifre.');return { token: 'demo', legal_name: 'Rivenditore dimostrativo Ischia', masked_email: 'n•••@example.test' }; }if (input.password?.length < 6) throw Error('Password di almeno 6 caratteri.');previewRetailer = true;previewShopName = input.shop_name;return { message: 'Account rivenditore simulato: nessuna email inviata. Usa Modulo di iscrizione per completare la prova.' }; }
+  let previewRetailer = false, previewShopName = '', previewCustomer = null;
+  async function retailerRegistration(input) {
+    if (input.mode === 'lookup') {
+      previewCustomer = null;
+      if (!readRetailer) throw Error('Verifica anagrafica non disponibile. Riprova più tardi.');
+      const customer = await readRetailer({ mode: 'lookup', vat_number: input.vat_number });
+      previewCustomer = customer;
+      return copy(customer);
+    }
+    if (input.mode !== 'signup' || !previewCustomer || input.token !== previewCustomer.token) throw Error('Riparti dalla verifica della partita IVA.');
+    if (!input.password || input.password.length < 6) throw Error('Password di almeno 6 caratteri.');
+    previewRetailer = true;previewShopName = input.shop_name;
+    return { message: 'Account rivenditore simulato: nessuna email inviata. Usa Modulo di iscrizione per completare la prova.' };
+  }
   return { rpc, retailerRegistration, info: copy(info), auth: { signInWithPassword: async () => ({ error: null, preview: true }), signUp: async () => ({ data: { session: null }, error: null, preview: true }), resetPasswordForEmail: async () => ({ error: null, preview: true }) } };
 }

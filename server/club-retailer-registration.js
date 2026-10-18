@@ -2,6 +2,12 @@ import { createHash, randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import process from 'node:process';
 
+export function maskRetailerEmail(email) {
+  const at = email.lastIndexOf('@');
+  if (at < 1) throw new Error('Invalid registered email');
+  const local = Array.from(email.slice(0, at));
+  return local[0] + '.'.repeat(local.length - 1) + email.slice(at);
+}
 const hash = value => createHash('sha256').update(value).digest('hex');
 export async function handleRetailerRegistration(req, res, admin) {
   res.setHeader('Cache-Control', 'private, no-store');
@@ -17,8 +23,8 @@ export async function handleRetailerRegistration(req, res, admin) {
       if (!await call('club_registration_limit', { bucket_key: 'vat:' + hash(vat.replace(/\W/g, '').toUpperCase()), max_requests: 25, window_seconds: 900 })) return res.status(429).json({ error: 'Attendi qualche minuto prima di riprovare.' });
       const challenge = randomBytes(32).toString('hex');
       const customer = await call('club_retailer_lookup', { vat_number: vat, challenge_hash: hash(challenge) });
-      const email = customer.email, at = email.indexOf('@');
-      return res.status(200).json({ token: challenge, legal_name: customer.legal_name, masked_email: email.slice(0, 1) + '•••' + email.slice(at) });
+      const details = Object.fromEntries(['legal_name', 'vat_number', 'tax_code', 'address', 'postal_code', 'city', 'province', 'country', 'phone', 'shop_name'].map(key => [key, customer[key] ?? null]));
+      return res.status(200).json({ ...details, token: challenge, masked_email: maskRetailerEmail(customer.email) });
     }
     if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token) || typeof password !== 'string' || password.length < 6 || password.length > 128 || typeof shopName !== 'string' || shopName.length > 120) return res.status(400).json({ error: 'Controlla i dati. La password deve avere almeno 6 caratteri.' });
     const challenge = await call('club_retailer_challenge', { challenge_hash: hash(token) });

@@ -1,0 +1,17 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { handleRetailerRegistration } from './club-retailer-registration.js';
+const response=()=>({headers:{},statusCode:200,setHeader(k,v){this.headers[k]=v;},status(n){this.statusCode=n;return this;},json(body){this.body=body;return this;}});
+function fixture(){const calls=[],signups=[];return {calls,signups,admin:{rpc:async(name,args)=>{calls.push({name,args});return {data:name==='club_registration_limit'?true:name==='club_retailer_lookup'?{legal_name:'Negozio Workspace',email:'store@example.test'}:name==='club_retailer_challenge'?{registration_id:'reg',email:'store@example.test',legal_name:'Negozio Workspace'}:null,error:null};},auth:{signUp:async args=>{signups.push(args);return {data:{user:{id:'user'},session:null},error:null};}}}};}
+test('VAT lookup discloses company and masked email only, using an opaque random challenge',async()=>{
+const f=fixture(),res=response();await handleRetailerRegistration({method:'POST',headers:{},body:{mode:'lookup',vat_number:'12345678901'}},res,f.admin);assert.equal(res.statusCode,200);assert.equal(res.body.legal_name,'Negozio Workspace');assert.equal(res.body.masked_email,'s•••@example.test');assert.match(res.body.token,/^[a-f0-9]{64}$/);assert.equal(res.body.email,undefined);const lookup=f.calls.find(c=>c.name==='club_retailer_lookup');assert.notEqual(lookup.args.challenge_hash,res.body.token);assert.equal(f.signups.length,0);
+});
+test('only the CRM email reaches signup; six characters accepted and password never sent to database RPCs',async()=>{
+const f=fixture(),res=response();await handleRetailerRegistration({method:'POST',headers:{},body:{mode:'signup',token:'a'.repeat(64),password:'abcdef',shop_name:'Beauty Ischia',email:'attacker@example.test',store_code:'other'}},res,f.admin);assert.equal(res.statusCode,200);assert.equal(f.signups[0].email,'store@example.test');assert.equal(f.signups[0].password,'abcdef');assert.equal(f.signups[0].options.data.club_app,'salidischia-club');assert.equal(f.signups[0].options.emailRedirectTo,'https://club.salidischia.it/');assert.equal(JSON.stringify(f.calls).includes('abcdef'),false);assert.equal(res.body.session,undefined);assert.equal(f.calls.find(c=>c.name==='club_bind_retailer_registration').args.shop_name,'Beauty Ischia');
+});
+test('five-character passwords and auto-confirmed signup never bind a retailer identity',async()=>{
+const f=fixture(),res=response();await handleRetailerRegistration({method:'POST',headers:{},body:{mode:'signup',token:'a'.repeat(64),password:'abcde',shop_name:''}},res,f.admin);assert.equal(res.statusCode,400);assert.equal(f.signups.length,0);f.admin.auth.signUp=async()=>({data:{user:{id:'user'},session:{access_token:'unsafe'}},error:null});const second=response();await handleRetailerRegistration({method:'POST',headers:{},body:{mode:'signup',token:'a'.repeat(64),password:'abcdef',shop_name:''}},second,f.admin);assert.equal(second.statusCode,503);assert.equal(f.calls.some(c=>c.name==='club_bind_retailer_registration'),false);
+});
+test('request limit stops signup and internal database errors are not exposed',async()=>{
+const f=fixture();f.admin.rpc=async()=>({data:false,error:null});const res=response();await handleRetailerRegistration({method:'POST',headers:{},body:{mode:'lookup',vat_number:'12345678901'}},res,f.admin);assert.equal(res.statusCode,429);assert.equal(f.signups.length,0);
+});

@@ -1,0 +1,14 @@
+import { useState } from 'react';
+import { useAction } from './useAction';
+import { useRetailerRegistration } from './usePortalApi';
+import { Alert } from './ui';
+
+export default function RetailerSignup({ onBack }) {
+  const register = useRetailerRegistration(), action = useAction();
+  const [vat, setVat] = useState(''), [customer, setCustomer] = useState(null), [password, setPassword] = useState(''), [shopName, setShopName] = useState(''), [feedback, setFeedback] = useState('');
+  async function submit(event) {
+    event.preventDefault();const result = await action.run(() => customer ? register({ mode: 'signup', token: customer.token, password, shop_name: shopName.trim() }) : register({ mode: 'lookup', vat_number: vat.trim() }));
+    if (result.ok) { if (customer) { setFeedback(result.value.message);setPassword(''); }else setCustomer(result.value); }
+  }
+  return <><button type="button" className="text-button" onClick={onBack}>Cambia tipo di iscrizione</button><Alert error={action.error} /><Alert>{feedback}</Alert>{!feedback && <form className="form-stack" onSubmit={submit}><fieldset disabled={action.busy}>{!customer ? <><label>Partita IVA<input required autoComplete="off" inputMode="numeric" maxLength={32} value={vat} onChange={e => setVat(e.target.value)} placeholder="11 cifre, con o senza IT" /></label><button className="button primary full">{action.busy ? 'Verifica…' : 'Riconosci il mio negozio'}</button></> : <><div className="notice"><strong>{customer.legal_name}</strong><p>Partita IVA: {vat}</p><small>Confermerai l’accesso tramite l’email già registrata: {customer.masked_email}.</small></div><label>Password<input required type="password" minLength={6} maxLength={128} autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} /><small>Almeno 6 caratteri.</small></label><label>Nome Negozio<input maxLength={120} autoComplete="organization" value={shopName} onChange={e => setShopName(e.target.value)} /><small>Il nome con cui i clienti potranno trovare il tuo negozio nel Club.</small></label><button className="button primary full">{action.busy ? 'Creazione…' : 'Crea account rivenditore'}</button><button type="button" className="text-button" onClick={() => { setCustomer(null);setPassword(''); }}>Cambia partita IVA</button></>}</fieldset></form>}</>;
+}

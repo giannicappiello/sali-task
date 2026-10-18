@@ -1,3 +1,4 @@
+import retailerRegistrationHandler from "../club-retailer-registration.js";
 import { syncWarehouseArticle } from "../warehouse-article-sync.js";
 import { ensurePrinterScreen } from '../../server/workspace-printer-screen.js';
 import { createWorkspaceRdp } from '../workspace-rdp-create.js';
@@ -649,6 +650,7 @@ export default async function handler(req, res) {
       });
     }
   }
+  if (req.query?.route === "club-retailer-registration") return retailerRegistrationHandler(req, res);
   const body = req.body || {};
   const phase = body.action || "request";
   if (req.method !== "POST") return sendFailure(res, 405, phase, "Metodo non consentito.");

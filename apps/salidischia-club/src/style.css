@@ -6,3 +6,5 @@
 @media(max-width:370px){.brand small{display:none}.install-button{padding:8px 9px;font-size:9px}.brand-story{gap:14px;grid-template-columns:100px 1fr}.story-copy h1{font-size:25px}.story-art{height:250px}.portal{padding-left:14px;padding-right:14px}.quick-card{padding:16px}.bottom-nav{gap:0;padding-left:8px;padding-right:8px}.pagination{gap:8px}.pagination .button{padding:10px;font-size:11px}}
 @media(pointer:coarse){input:not([type=checkbox]),select,textarea{font-size:16px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;scroll-behavior:auto!important}}
+
+.signup-choices{display:grid;gap:14px;margin:22px 0}.signup-choices .button{white-space:normal;text-align:center}

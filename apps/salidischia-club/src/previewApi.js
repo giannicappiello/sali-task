@@ -155,11 +155,11 @@ export function createPreviewApi({ readCatalog, readRetailer } = {}) {
   let previewRetailer = false, previewShopName = '', previewCustomer = null;
   async function retailerRegistration(input) {
     if (input.mode === 'lookup') {
-      previewCustomer = null;
+      previewCustomer = null;previewRetailer = false;
       if (!readRetailer) throw Error('Verifica anagrafica non disponibile. Riprova più tardi.');
       const customer = await readRetailer({ mode: 'lookup', vat_number: input.vat_number });
-      previewCustomer = customer;
-      return copy(customer);
+      previewCustomer = { ...customer, token: crypto.randomUUID() };
+      return copy(previewCustomer);
     }
     if (input.mode !== 'signup' || !previewCustomer || input.token !== previewCustomer.token) throw Error('Riparti dalla verifica della partita IVA.');
     if (!input.password || input.password.length < 6) throw Error('Password di almeno 6 caratteri.');

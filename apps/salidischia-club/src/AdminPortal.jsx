@@ -8,12 +8,12 @@ import useAsync from './useAsync';
 import { Alert, Loading, Modal } from './ui';
 import { PortalApiProvider } from './PortalApi';
 import { createPreviewApi } from './previewApi';
-import { retailerRegistration as readRetailer } from './retailerClient';
 import MemberPortal from './MemberPortal';
 import StorePortal from './StorePortal';
 import ClubLanding from './ClubLanding';
 import Onboarding from './Onboarding';
 
+const readRetailer = input => rpc('club_admin_retailer_lookup', { vat_number: input.vat_number });
 const crm = 'https://workspace.progre.it/crm/online/salidischiaclub';
 const sections = [['dashboard', 'Panoramica'], ['members', 'Clienti'], ['requests', 'Richieste'], ['purchases', 'Acquisti'], ['stores', 'Negozi'], ['rules', 'Premi e regole'], ['documents', 'Regolamento'], ['catalog', 'Prodotti'], ['contents', 'Novità e comunicazioni']];
 

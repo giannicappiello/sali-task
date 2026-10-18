@@ -1,1 +1,11 @@
 .order-actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center}.order-note{display:grid;gap:8px;margin:20px 0}.cart-lines{border:0;padding:0;min-width:0}.cart-line{display:grid;grid-template-columns:minmax(0,1fr) 90px;gap:12px;padding:18px 0;border-bottom:1px solid var(--line)}.cart-line label{display:grid;gap:6px}.cart-line input{width:100%;padding:8px}.cart-line>.text-button{grid-column:1/-1;justify-self:start;font-size:12px}.order-lines{padding:0;list-style:none}.order-lines li{display:flex;justify-content:space-between;gap:14px;padding:10px 0;border-bottom:1px solid var(--line)}.order-lines strong{white-space:nowrap}.product-orders{margin-top:24px}.product-orders h1{font-size:30px}.product-orders small{overflow-wrap:anywhere}.order-ready{background:#e3efe4;color:#23472d}.cart-button{white-space:nowrap}.catalog-product .order-actions{margin-top:22px}.catalog-product .order-actions .text-button{margin:0}.catalog-product .order-actions .button{margin:0}.catalog-product{cursor:default}.public-content-nav{flex-wrap:wrap}.header-actions{flex-wrap:wrap}@media(max-width:600px){.cart-button{font-size:11px;padding:9px}.order-actions>.button{flex:1}.product-orders .row-between{flex-wrap:wrap;gap:10px}.order-lines li{font-size:13px}.cart-line{grid-template-columns:minmax(0,1fr) 75px}}
+
+/* Keep the action row at the same height across all cards in a grid row. */
+.catalog-product{display:flex;flex-direction:column}
+.catalog-product>.content-cover{flex-shrink:0}
+.catalog-product>div:last-child{display:flex;flex:1;flex-direction:column;min-width:0}
+.catalog-product .order-actions{margin-top:auto;padding-top:22px;flex-wrap:nowrap;justify-content:space-between;gap:8px}
+.catalog-product .order-actions>.text-button{white-space:nowrap;gap:6px;flex:none}
+.catalog-product .order-actions>.button{flex:none;white-space:nowrap;padding-inline:14px}
+@media(max-width:1050px){.catalog-product .order-actions>.text-button,.catalog-product .order-actions>.button{font-size:11px}}
+@media(max-width:640px){.club-catalog .catalog-grid{grid-template-columns:minmax(0,1fr)}.catalog-product .order-actions{padding-top:18px}.catalog-product h2{font-size:18px}.catalog-product .content-cover{height:220px}}

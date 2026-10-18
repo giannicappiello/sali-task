@@ -48,7 +48,8 @@ export default function PdfPreview({ id, title }) {
           }
           abort() { controller.abort(); }
         }
-        const range = new DocumentRange(first.length,first.bytes);
+        // No progressive stream follows the initial block; remaining bytes arrive through ranges.
+        const range = new DocumentRange(first.length,first.bytes,true);
         task = getDocument({range,rangeChunkSize:262144,disableAutoFetch:true,disableStream:true,isEvalSupported:false});
         const document = await task.promise;
         if (active) { setPdf(document);setPage(1); }

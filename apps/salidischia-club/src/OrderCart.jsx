@@ -46,7 +46,7 @@ export function CartButton() {
 export function OrderButton({ product }) {
   const cart = useCart();
   if (!cart) return <a className="button primary" href={`/prodotti?prodotto=${encodeURIComponent(product.id)}`}>Ordina</a>;
-  return <button type="button" className="button primary" onClick={() => cart.add(product)}>Ordina<ShoppingBag size={16} /></button>;
+  return <button type="button" className="button primary" onClick={event => { event.stopPropagation();cart.add(product); }}>Ordina<ShoppingBag size={16} /></button>;
 }
 function CartContents({ signedIn, items, change, requestKeyRef, feedback, onSent }) {
   const rpc = usePortalRpc(), action = useAction();

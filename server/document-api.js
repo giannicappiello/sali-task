@@ -1,3 +1,4 @@
+import { readAllDocumentRows, loadDocumentProductCatalog } from "./document-catalog.js";
 import process from 'node:process';
 import { signedUrl, filePath } from "./document-gateway.js";
 import { handleClubMedia } from "./club-media.js";
@@ -65,14 +66,12 @@ async function sync(admin, { runId = null } = {}) {
   if (!response.ok) throw Object.assign(new Error(`Gateway documentale non disponibile (${response.status}).`), { status: 502 });
   const manifest = await response.json();
   const now = new Date().toISOString();
-  const [{ data: catalog, error: catalogError }, { data: sections, error: sectionsError }, { data: products, error: productsError }] = await Promise.all([
-    admin.from("documenti_workspace").select("*"),
+  const [catalog, { data: sections, error: sectionsError }, products] = await Promise.all([
+    readAllDocumentRows(() => admin.from("documenti_workspace").select("*").order("id")),
     admin.from("sezioni_documentali").select("*").eq("attiva", true),
-    admin.from("prodotti").select("id,nome,codice,codice_mexal").eq("attivo_mexal", true).eq("mostra_in_app", true),
+    loadDocumentProductCatalog(admin),
   ]);
-  if (catalogError) throw catalogError;
   if (sectionsError) throw sectionsError;
-  if (productsError) throw productsError;
   const byPath = new Map((catalog || []).map((row) => [row.percorso, row]));
   const productCodes = (products || []).map((product) => ({ ...product, code: String(product.codice_mexal || product.codice || "").trim().toUpperCase() })).filter((product) => product.code.startsWith("IT")).sort((a, b) => b.code.length - a.code.length);
   const rows = (manifest.files || []).map((file) => {

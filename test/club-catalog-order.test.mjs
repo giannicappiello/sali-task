@@ -51,6 +51,13 @@ test('PDF catalogue order, CRM reordering and Workspace document parity',async t
    await q('update club_catalog_products set visible=false where product_id=$1',[id(51)]);paths=await rpc('select club_media_paths($1,null) as value',[docs]);assert.deepEqual(Object.keys(paths),[id(702)]);
    await q('update club_catalog_products set visible=true where product_id=$1',[id(51)]);await q('update documenti_workspace set categorie_prodotto=\'{}\' where id=$1',[id(710)]);await actor(null);product=await rpc('select club_catalog_product($1) as value',[id(51)]);assert.equal(product.media.length,2);
   });
+  await t.test('technical sheet backfill matches exact filenames, preserves explicit links and rejects prefix-only matches',async()=>{
+   await db.exec(`reset role;insert into sezioni_documentali(id,nome)values('${id(801)}','Schede tecniche');insert into documenti_workspace(id,nome_file,titolo,mime_group,sezione_id,prodotto_id)values('${id(720)}','IT0569.pdf','Scheda mousse','pdf','${id(801)}',null),('${id(721)}','IT05690.pdf','Codice diverso','pdf','${id(801)}',null),('${id(722)}','IT0208.pdf','Collegamento esplicito','pdf','${id(801)}','${id(50)}');alter table documenti_workspace add column prodotto text,add column aggiornato_il timestamptz;`);
+   await db.exec(await readFile(new URL('../supabase/migrations/20261018140000_salidischia_club_document_sku_links.sql',import.meta.url),'utf8'));
+   const rows=await q('select id,prodotto_id from documenti_workspace where id=any($1)',[[720,721,722].map(id)]);
+   assert.equal(rows.find(d=>d.id===id(720)).prodotto_id,id(52));assert.equal(rows.find(d=>d.id===id(721)).prodotto_id,null);assert.equal(rows.find(d=>d.id===id(722)).prodotto_id,id(50));
+   await actor(null);assert.ok((await rpc('select club_catalog_product($1) as value',[id(52)])).media.some(d=>d.id===id(720)));
+  });
   await t.test('read-only staff cannot save order; external Club boundary denies CRM methods',async()=>{
    await db.exec(`reset role;create or replace function workspace_screen_level_for_user(uuid,text) returns text language sql stable as $$select case when $1='${id(10)}' then 'lettura' else 'amministrazione' end$$;`);
    await actor(10);assert.equal((await rpc('select club_catalog_order() as value')).rows.length,5);await assert.rejects(q('select club_set_catalog_order($1,2)',[[]]),/non autorizzato/);

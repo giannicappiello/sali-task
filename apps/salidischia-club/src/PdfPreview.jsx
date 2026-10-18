@@ -9,6 +9,7 @@ GlobalWorkerOptions.workerSrc = workerUrl;
 export default function PdfPreview({ id, title }) {
   const auth = supabase.auth, canvas = useRef(null), container = useRef(null);
   const [pdf, setPdf] = useState(null), [page, setPage] = useState(1), [width, setWidth] = useState(300);
+  const [thumbnail, setThumbnail] = useState('');
   const [error, setError] = useState(''), [loading, setLoading] = useState(true);
   useEffect(() => {
     const observer = new ResizeObserver(entries => setWidth(Math.max(100, Math.floor(entries[0].contentRect.width))));
@@ -42,6 +43,13 @@ export default function PdfPreview({ id, title }) {
         }
         const first = await readRange(0,262144);
         if (!active) return;
+        if (first.length > 20 * 1024 * 1024) {
+          const embedded = /<xmpGImg:image>([\s\S]*?)<\/xmpGImg:image>/i.exec(new TextDecoder().decode(first.bytes))?.[1];
+          const jpeg = embedded?.replace(/&#x0*a;|&#0*10;|\s/gi,'');
+          if (jpeg && jpeg.length < 300000 && /^[A-Za-z0-9+/]+={0,2}$/.test(jpeg)) {
+            setThumbnail('data:image/jpeg;base64,' + jpeg);setLoading(false);return;
+          }
+        }
         class DocumentRange extends PDFDataRangeTransport {
           requestDataRange(begin, end) {
             void readRange(begin,end).then(({bytes}) => {if (active) this.onDataRange(begin,bytes);}).catch(failure => {if (active) {setError(failure.message);setLoading(false);void task?.destroy();}});
@@ -77,5 +85,5 @@ export default function PdfPreview({ id, title }) {
     void draw();
     return () => { active = false;render?.cancel(); };
   }, [pdf, page, width]);
-  return <div className="product-pdf" ref={container}>{loading && <p role="status">Caricamento anteprima PDF…</p>}{error && <p role="alert">{error}</p>}{pdf && <div className="pdf-page-controls"><button type="button" className="icon-button" aria-label="Pagina PDF precedente" disabled={page <= 1} onClick={() => setPage(n => n - 1)}><ChevronLeft size={18} /></button><span>Pagina {page} di {pdf.numPages}</span><button type="button" className="icon-button" aria-label="Pagina PDF successiva" disabled={page >= pdf.numPages} onClick={() => setPage(n => n + 1)}><ChevronRight size={18} /></button></div>}<canvas ref={canvas} aria-label={`${title}, pagina ${page}`} role="img" hidden={!!error} /></div>;
+  return <div className="product-pdf" ref={container}>{loading && <p role="status">Caricamento anteprima PDF…</p>}{error && <p role="alert">{error}</p>}{pdf && <div className="pdf-page-controls"><button type="button" className="icon-button" aria-label="Pagina PDF precedente" disabled={page <= 1} onClick={() => setPage(n => n - 1)}><ChevronLeft size={18} /></button><span>Pagina {page} di {pdf.numPages}</span><button type="button" className="icon-button" aria-label="Pagina PDF successiva" disabled={page >= pdf.numPages} onClick={() => setPage(n => n + 1)}><ChevronRight size={18} /></button></div>}{thumbnail && <><img className="pdf-embedded-thumbnail" src={thumbnail} alt={`Anteprima PDF: ${title}`} /><p className="subtle">Anteprima del documento. Apri il PDF completo per consultarlo in dettaglio.</p></>}<canvas ref={canvas} aria-label={`${title}, pagina ${page}`} role="img" hidden={!!error || !!thumbnail} /></div>;
 }

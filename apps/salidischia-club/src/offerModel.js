@@ -4,7 +4,8 @@ export function offerScope(offer) {
 }
 export function offerConditions(offer) {
   const required = offer.requirements?.map(row => `${row.quantity} × ${row.name}`).join(' + ');
-  return offer.kind === 'bundle_gift' ? `Acquista ${required}: ricevi in omaggio ${offer.gift_quantity} × ${offer.gift_name}.` : offer.kind === 'bundle_discount' ? `Acquista ${required}: ottieni un ulteriore ${offer.discount_percent}% sui prodotti richiesti dall’offerta.` : offer.discount_mode === 'price' ? `Prezzo di vendita ${Number(offer.sale_price).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })} · ${offerScope(offer)}.` : `${offer.discount_percent}% di sconto · ${offerScope(offer)}.`;
+  const policy = offer.combination_mode === 'stack' ? ' Cumulabile con le offerte precedenti.' : offer.combination_mode === 'replace' ? ' Sostituisce le offerte precedenti sui prodotti coinvolti.' : '';
+  return (offer.kind === 'bundle_gift' ? `Acquista ${required}: ricevi in omaggio ${offer.gift_quantity} × ${offer.gift_name}.` : offer.kind === 'bundle_discount' ? `Acquista ${required}: ottieni un ulteriore ${offer.discount_percent}% sui prodotti richiesti dall’offerta.` : offer.discount_mode === 'price' ? `Prezzo di vendita ${Number(offer.sale_price).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })} · ${offerScope(offer)}.` : `${offer.discount_percent}% di sconto · ${offerScope(offer)}.`) + policy;
 }
 export function offerStatus(offer) {
   return offer.status === 'draft' ? 'Bozza' : offer.status === 'archived' ? 'Sospesa' : new Date(offer.starts_at) > new Date() ? 'Programmata' : offer.ends_at && new Date(offer.ends_at) <= new Date() ? 'Scaduta' : 'Attiva';

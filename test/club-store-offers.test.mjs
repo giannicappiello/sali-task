@@ -17,6 +17,7 @@ export async function createOfferFixture(){
  `);
  await db.query('select club_catalog_products()');await db.query('select club_catalog_product($1)',[id(50)]);
  await db.exec(await readFile(new URL('../supabase/migrations/20261018110000_salidischia_club_store_offers.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../supabase/migrations/20261018130000_salidischia_club_offer_combination.sql',import.meta.url),'utf8'));
  return db;
 }
 if(!process.env.CLUB_OFFER_FIXTURE_ONLY)test('Store offers: ownership, exact prices, best discounts, conditional rewards and trusted-store boundaries',async t=>{

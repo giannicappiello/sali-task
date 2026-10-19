@@ -1,3 +1,4 @@
+import { invokeAdminUser } from "../../lib/adminUserRequest.js";
 import { createSaveOutcome } from "../../save-outcomes.js";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Pencil, Plus, Save, Search, Trash2, X } from "lucide-react";
@@ -630,7 +631,7 @@ export default function Settings({ section = "team" }) {
     if (newUserForm.password.length < 8) return (alert(_saveOutcome.observeFailure("La password deve avere almeno 8 caratteri.")));
 
     setSaving(true);
-    const { data, error } = await supabase.functions.invoke("admin-manage-user", {
+    const { data, error } = await invokeAdminUser(supabase, {
       body: {
         action: "create",
         ...newUserForm,
@@ -674,7 +675,7 @@ export default function Settings({ section = "team" }) {
     if (!await window.workspaceConfirm(`Eliminare definitivamente ${name}?\n\nVerranno rimossi l'account di accesso, il profilo workspace e gli eventuali profili collegati a Beauty Days. Le attività già registrate resteranno archiviate.`)) return;
 
     setSaving(true);
-    const { data, error } = await supabase.functions.invoke("admin-manage-user", {
+    const { data, error } = await invokeAdminUser(supabase, {
       body: { action: "delete", id: item.id, auth_user_id: item.auth_user_id },
     });
     setSaving(false);

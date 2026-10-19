@@ -1,5 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+import { adminAuthFailure } from "./auth-failure.js";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -25,7 +27,7 @@ Deno.serve(async (req) => {
 
     const authHeader = req.headers.get("Authorization");
 
-    if (!authHeader) {
+    if (!/^Bearer\s+\S+$/i.test(authHeader || "")) {
       return json({ error: "Non autenticato." }, 401);
     }
 
@@ -47,10 +49,11 @@ Deno.serve(async (req) => {
     const {
       data: { user },
       error: userError,
-    } = await userClient.auth.getUser();
+    } = await userClient.auth.getUser(authHeader!.replace(/^Bearer\s+/i, ""));
 
     if (userError || !user) {
-      return json({ error: "Sessione non valida." }, 401);
+      const failure = adminAuthFailure(userError);
+      return json(failure.body, failure.status);
     }
 
     const { data: callerProfile, error: profileError } = await adminClient

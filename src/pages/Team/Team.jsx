@@ -1,3 +1,4 @@
+import { invokeAdminUser } from "../../lib/adminUserRequest.js";
 import { createSaveOutcome } from "../../save-outcomes.js";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -160,9 +161,7 @@ function Team() {
   }
 
   async function callAdminFunction(payload) {
-    const { data, error } = await supabase.functions.invoke(
-      "admin-manage-user",
-      {
+    const { data, error } = await invokeAdminUser(supabase, {
         body: payload,
       }
     );

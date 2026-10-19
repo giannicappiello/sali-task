@@ -1,3 +1,4 @@
+import { invokeAdminUser } from "../../lib/adminUserRequest.js";
 import { createSaveOutcome } from "../../save-outcomes.js";
 import { moduleAreaCodes } from "../../config/workspaceModuleAreas";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -171,7 +172,7 @@ export default function AccessUsers() {
     let response = null;
     if (managedChanged) {
       const action = isCreating ? "create" : "update";
-      const invocation = await supabase.functions.invoke("admin-manage-user", { body: {
+      const invocation = await invokeAdminUser(supabase, { body: {
         action, id: selectedUser?.id, auth_user_id: selectedUser?.auth_user_id, nome: form.nome.trim(), cognome: form.cognome.trim(), email: form.email.trim(), telefono: form.telefono.trim(),
         password: form.password, ruolo_id: form.ruolo_id || null, reparto_id: null, defer_access_update: !isCreating, responsabile_utente_id: form.responsabile_utente_id || null, customer_codes: form.customer_codes, attivo: form.attivo,
       } });
@@ -212,7 +213,10 @@ export default function AccessUsers() {
     if (userId === profile?.id) await reloadProfile();
 
       _saveOutcome.success();
-    } catch (_saveError) { _saveOutcome.failure(_saveError); throw _saveError; }
+    } catch (_saveError) {
+      _saveOutcome.failure(_saveError);
+      setMessage({ type: "error", text: _saveError.message || "Salvataggio non riuscito. Riprova." });
+    } finally { setSaving(false); }
 }
 
   if (loading) return <div className="access-loading">Caricamento utenti e autorizzazioni...</div>;

@@ -10,18 +10,34 @@ function basic(username, password) {
   return `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
 }
 
-async function request(url, options, fetcher) {
+function diagnosticMessage(value, options) {
+  let message = typeof value === 'string' ? value : '';
+  const secretValues = Object.entries(options.headers || {})
+    .filter(([name]) => /authorization|token|key|secret/i.test(name))
+    .flatMap(([, value]) => [String(value), String(value).replace(/^(Bearer|Basic)\s+/i, '')]);
+  if (typeof options.body === 'string') for (const [name, value] of new URLSearchParams(options.body)) {
+    if (/token|secret|key|password/i.test(name)) secretValues.push(value);
+  }
+  for (const value of secretValues) if (value.length >= 4) message = message.split(value).join('[REDACTED]');
+  return message.slice(0, 350);
+}
+
+async function request(url, options, fetcher, stage = '') {
   const response = await fetcher(url, options);
   if (!response.ok) {
-    const providerMessage = typeof response.data === "object" ? response.data?.message || response.data?.error_description || response.data?.error : null;
-    throw Object.assign(new Error(providerMessage || `Provider HTTP ${response.status}.`), { status: response.status === 401 || response.status === 403 ? 422 : 502, code: `provider_${response.status}` });
+    const providerError = Array.isArray(response.data?.errors) ? response.data.errors[0] : null;
+    const providerMessage = diagnosticMessage(providerError?.message || response.data?.message || response.data?.error_description || response.data?.error, options);
+    const providerCode = diagnosticMessage(providerError?.code || (response.data?.error_description ? response.data?.error : null), options);
+    const detail = [providerCode, providerMessage].filter(Boolean).join(': ');
+    const message = stage ? `${stage} HTTP ${response.status}${detail ? ` — ${detail}` : '.'}` : detail || `Provider HTTP ${response.status}.`;
+    throw Object.assign(new Error(message), { status: response.status === 401 || response.status === 403 ? 422 : 502, code: `provider_${response.status}` });
   }
   return response.data || {};
 }
 
-async function formToken(url, fields, fetcher) {
+async function formToken(url, fields, fetcher, stage = '') {
   const body = new URLSearchParams(fields).toString();
-  return request(url, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body }, fetcher);
+  return request(url, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body }, fetcher, stage);
 }
 
 async function refreshAccessToken(connection, secrets, fetcher) {
@@ -29,7 +45,7 @@ async function refreshAccessToken(connection, secrets, fetcher) {
   switch (connection.provider_code) {
     case "amazon_sp_api":
     case "amazon_ads":
-      return formToken("https://api.amazon.com/auth/o2/token", { grant_type: "refresh_token", refresh_token: secrets.lwa_refresh_token || secrets.refresh_token, client_id: c.lwa_client_id || c.client_id, client_secret: secrets.lwa_client_secret || secrets.client_secret }, fetcher);
+      return formToken("https://api.amazon.com/auth/o2/token", { grant_type: "refresh_token", refresh_token: secrets.lwa_refresh_token || secrets.refresh_token, client_id: c.lwa_client_id || c.client_id, client_secret: secrets.lwa_client_secret || secrets.client_secret }, fetcher, "Autenticazione Amazon (LWA)");
     case "google_ads":
       return formToken("https://oauth2.googleapis.com/token", { grant_type: "refresh_token", refresh_token: secrets.refresh_token, client_id: c.client_id, client_secret: secrets.client_secret }, fetcher);
     default:
@@ -84,7 +100,7 @@ export async function testProviderConnection(connection, secrets, { fetcher = sa
         accounts = (data.data || []).map((row) => account(row.id, row.attributes?.contact_information?.organization_name || row.id, "mailing")); break;
       case "amazon_sp_api": {
         const token = await refreshAccessToken(connection, secrets, fetcher);
-        data = await request(`${endpoints.amazonSp[c.region || "eu"]}/sellers/v1/marketplaceParticipations`, { headers: { "x-amz-access-token": token.access_token } }, fetcher);
+        data = await request(`${endpoints.amazonSp[c.region || "eu"]}/sellers/v1/marketplaceParticipations`, { headers: { "x-amz-access-token": token.access_token, "user-agent": "Workspace/1.0 (Language=JavaScript; Platform=Node.js)", "x-amz-date": new Date().toISOString().replace(/[:-]|\.\d{3}/g, ""), accept: "application/json" } }, fetcher, "Amazon Seller SP-API");
         accounts = (data.payload || data.marketplaceParticipations || []).map((row) => account(row.marketplace?.id || row.marketplaceId, row.marketplace?.name || row.marketplaceId, "seller", row.marketplace?.id || row.marketplaceId, row.marketplace?.defaultCurrencyCode)); break;
       }
       case "amazon_ads": {

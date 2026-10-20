@@ -36,6 +36,8 @@ import { CRM_ROUTE_ALIASES, CRM_ROUTE_CATALOG } from "./crmRouteCatalog";
 import { crmNavigation } from "./crmNavigation";
 import { CrmB2BFollowUpPage, CrmB2BReordersPage, CrmBeautyDaysPage, CrmBrandDirectDashboard, CrmProjectsPage } from "./CrmWorkflowPages";
 import CrmClub from "./club/CrmClub";
+import { digitalConnectionsService } from "../integrations/services/digitalConnectionsService";
+import { customerOrigin, customerDisplayName } from "./customerIdentity";
 import "./crm.css";
 import "./workspace-alignment.css";
 
@@ -157,6 +159,7 @@ function Kpi({ label, value, note, to }) {
 
 const ACCOUNT_COLUMNS = [
   { value: (row) => `${row.nome} ${row.codice}` },
+  { value: (row) => row.origine },
   { value: (row) => `${formatMoney(row.invoice_total)} ${row.invoice_count || 0} fatture` },
   { value: (row) => `${formatMoney(row.order_total)} ${row.order_count || 0} ordini` },
   { value: (row) => formatDate(row.ultimo_ordine_il || row.last_purchase) },
@@ -256,6 +259,8 @@ function AccountsPage({ type }) {
   const [customerStatus, setCustomerStatus] = useCrmCustomerStatus("active");
   const search = searchParams.get("customerSearch") || "";
   const page = Math.max(0, Number(searchParams.get("customerPage") || 0));
+  const [refreshingProfiles, setRefreshingProfiles] = useState(false);
+  const [profileProgress, setProfileProgress] = useState("");
   const [rows, setRows] = useState([]); const [canonicalTotal, setCanonicalTotal] = useState(0); const [prospectTotal, setProspectTotal] = useState(0);
   const [form, setForm] = useState(EMPTY_ACCOUNT); const [open, setOpen] = useState(false); const [error, setError] = useState(""); const [loading, setLoading] = useState(true);
   const [statusCustomer, setStatusCustomer] = useState(null); const [statusBusy, setStatusBusy] = useState(false);
@@ -278,7 +283,7 @@ function AccountsPage({ type }) {
   const load = useCallback(async () => {
     setLoading(true);
     const term = search.trim().replaceAll(",", " ");
-    const [canonicalResult, prospectResult, countryResult, cadenceResult] = await Promise.all([
+    const [canonicalResult, prospectResult, countryResult, cadenceResult, identityResult] = await Promise.all([
       loadAllRpcRows("crm_customer_metric_details", {
         p_crm_type: type, p_from: period.from, p_to: period.to, p_metric: metric,
         p_search: term || null, p_customer_status: customerStatus,
@@ -288,19 +293,21 @@ function AccountsPage({ type }) {
       }) : Promise.resolve({ data: [], error: null }),
       supabase.rpc("crm_customer_country_catalog", { p_crm_type: type }),
       supabase.rpc("crm_customer_cadence_details", { p_crm_type: type, p_to: period.to }),
+      loadAllQueryRows((from, to) => supabase.from("crm_accounts").select("id,nome,fonte,metadati").eq("tipo", type).order("id").range(from, to)),
     ]);
-    const loadError = canonicalResult.error || prospectResult.error || countryResult.error || cadenceResult.error;
+    const loadError = canonicalResult.error || prospectResult.error || countryResult.error || cadenceResult.error || identityResult.error;
     if (loadError) { setError(loadError.message); setLoading(false); return; }
+    const identities = new Map((identityResult.data || []).map(row => [row.id, row]));
     const countries = new Map((countryResult.data || []).map((row) => [row.entity_key, row.country_code]));
     const cadence = new Map((cadenceResult.data || []).map((row) => [row.codice_cliente, row]));
     const canonicalRows = (canonicalResult.data || []).map((row) => ({
       ...row, ...(cadence.get(row.codice_cliente) || {}), entityKey: `mexal:${row.codice_cliente}`, routeId: customerRouteId("mexal", row.codice_cliente),
-      source: "Workspace/Mexal", nome: row.ragione_sociale, codice: row.codice_cliente, areaLabel: config.label,
+      source: "Workspace/Mexal", origine: "Mexal", nome: row.ragione_sociale, codice: row.codice_cliente, areaLabel: config.label,
       paese: countries.get(`mexal:${row.codice_cliente}`) || null,
       crm_active: row.crm_active !== false, opportunities: row.opportunita_count || 0,
     }));
     const prospectRows = (prospectResult.data || []).map((row) => ({
-      ...row, entityKey: `crm:${row.id}`, routeId: customerRouteId("crm", row.id), source: "Prospect CRM-only",
+      ...row, origine: customerOrigin(identities.get(row.id)), nome: customerDisplayName(identities.get(row.id) || row), entityKey: `crm:${row.id}`, routeId: customerRouteId("crm", row.id), source: "Prospect CRM-only",
       codice: row.email || "—", agente_classificazione: null, origine_classificazione: "crm_only", areaLabel: config.label,
       paese: countries.get(`crm:${row.id}`) || null,
       crm_active: row.crm_active !== false, opportunities: row.opportunita_count || 0,
@@ -311,6 +318,18 @@ function AccountsPage({ type }) {
     setError(""); setLoading(false);
   }, [config.label, customerStatus, metric, period.from, period.to, search, type]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 180); return () => window.clearTimeout(timer); }, [load]);
+
+  async function refreshProfiles() {
+    setRefreshingProfiles(true); setError('');
+    try {
+      const { connections } = await digitalConnectionsService.list();
+      for (const c of connections.filter(c => c.abilitata && ['woocommerce', 'mailchimp'].includes(c.provider_code))) {
+        await digitalConnectionsService.refreshCustomerProfiles(c.id, count => setProfileProgress(`${c.nome}: ${count} anagrafiche elaborate`));
+      }
+      await load(); setProfileProgress('Anagrafiche aggiornate. I nominativi assenti nella fonte restano non disponibili.');
+    } catch (e) { setError(e.message); }
+    finally { setRefreshingProfiles(false); }
+  }
 
   async function save(event) {
     const _saveOutcome = createSaveOutcome();
@@ -345,7 +364,8 @@ function AccountsPage({ type }) {
     </CrmPageHeader>
     <div className="crm-filters"><label><Search size={16} /><input value={search} onChange={(event) => updateCustomerParam("customerSearch", event.target.value)} placeholder="Ragione sociale, agente, email o codice" /></label><CrmCustomerStatusFilter value={customerStatus} onChange={(value) => { setCustomerStatus(value); updateCustomerParam("customerPage", "", false); }} id={`customer-status-${type}`} /></div>
     <ErrorBox error={error} retry={load} />
-    {loading ? <div className="crm-loading">Caricamento clienti...</div> : null}<div className="crm-table-wrap"><table ref={tableRef} data-column-controls-mode="dataset" className="crm-table crm-customer-table crm-control-table"><thead><tr><th>Cliente</th><th>Fatturato</th><th>Ordinato</th><th>Ultimo ordine</th><th>Frequenza</th><th>Riordino previsto</th><th>Responsabile</th><th>Stato CRM</th><th>Stato Mexal</th><th>Azioni</th></tr></thead><tbody>{pageRows.map((row) => <tr key={row.entityKey}><td><CrmCustomerLink crmType={type} customerKey={row.entityKey} name={row.nome} period={period}><strong>{row.nome}</strong><small>{row.codice}</small></CrmCustomerLink></td><td><strong>{formatMoney(row.invoice_total)}</strong><small>{row.invoice_count || 0} fatture</small></td><td><strong>{formatMoney(row.order_total)}</strong><small>{row.order_count || 0} ordini</small></td><td>{formatDate(row.ultimo_ordine_il || row.last_purchase)}</td><td>{row.average_gap_days == null ? "—" : `${Number(row.average_gap_days).toLocaleString("it-IT", { useGrouping: 'always',  maximumFractionDigits: 1 })} gg`}</td><td>{formatDate(row.expected_reorder_date)}</td><td>{row.agente_classificazione || "Senza agente"}</td><td><CrmCustomerStatusBadge active={row.crm_active} />{row.crm_status_reason ? <small>{row.crm_status_reason}</small> : null}</td><td>{row.source === "Workspace/Mexal" ? (row.attivo_mexal === false ? "Annullato" : "Attivo") : "Non presente"}</td><td><details className="crm-row-actions"><summary>Azioni</summary><div><CrmCustomerLink crmType={type} customerKey={row.entityKey} name={row.nome} period={period}>Apri cliente</CrmCustomerLink>{canWrite ? <button type="button" onClick={(event) => openCreation(event, "task", row)}>Nuova attività</button> : null}{canWrite && hasPermission("projects.write") ? <button type="button" onClick={(event) => openCreation(event, "project", row)}>Nuovo progetto</button> : null}{canWrite ? <button type="button" className={row.crm_active ? "danger-action" : "secondary-action"} onClick={() => setStatusCustomer(row)}>{row.crm_active ? "Disattiva" : "Riattiva"}</button> : null}</div></details></td></tr>)}</tbody></table>{!loading && !pageRows.length ? <div className="crm-empty">Nessun cliente corrisponde allo stato CRM e ai filtri selezionati.</div> : null}</div>
+    {type === 'online' && hasPermission('integrations.configure') ? <div className="crm-toolbar"><button type="button" className="secondary-action" disabled={refreshingProfiles} onClick={refreshProfiles}>{refreshingProfiles ? 'Aggiornamento anagrafiche…' : 'Aggiorna anagrafiche da sito e Mailchimp'}</button><span role="status">{profileProgress}</span></div> : null}
+    {loading ? <div className="crm-loading">Caricamento clienti...</div> : null}<div className="crm-table-wrap"><table ref={tableRef} data-column-controls-mode="dataset" className="crm-table crm-customer-table crm-control-table"><thead><tr><th>Cliente</th><th>Origine</th><th>Fatturato</th><th>Ordinato</th><th>Ultimo ordine</th><th>Frequenza</th><th>Riordino previsto</th><th>Responsabile</th><th>Stato CRM</th><th>Stato Mexal</th><th>Azioni</th></tr></thead><tbody>{pageRows.map((row) => <tr key={row.entityKey}><td><CrmCustomerLink crmType={type} customerKey={row.entityKey} name={row.nome} period={period}><strong>{row.nome}</strong><small>{row.codice}</small></CrmCustomerLink></td><td>{row.origine}</td><td><strong>{formatMoney(row.invoice_total)}</strong><small>{row.invoice_count || 0} fatture</small></td><td><strong>{formatMoney(row.order_total)}</strong><small>{row.order_count || 0} ordini</small></td><td>{formatDate(row.ultimo_ordine_il || row.last_purchase)}</td><td>{row.average_gap_days == null ? "—" : `${Number(row.average_gap_days).toLocaleString("it-IT", { useGrouping: 'always',  maximumFractionDigits: 1 })} gg`}</td><td>{formatDate(row.expected_reorder_date)}</td><td>{row.agente_classificazione || "Senza agente"}</td><td><CrmCustomerStatusBadge active={row.crm_active} />{row.crm_status_reason ? <small>{row.crm_status_reason}</small> : null}</td><td>{row.source === "Workspace/Mexal" ? (row.attivo_mexal === false ? "Annullato" : "Attivo") : "Non presente"}</td><td><details className="crm-row-actions"><summary>Azioni</summary><div><CrmCustomerLink crmType={type} customerKey={row.entityKey} name={row.nome} period={period}>Apri cliente</CrmCustomerLink>{canWrite ? <button type="button" onClick={(event) => openCreation(event, "task", row)}>Nuova attività</button> : null}{canWrite && hasPermission("projects.write") ? <button type="button" onClick={(event) => openCreation(event, "project", row)}>Nuovo progetto</button> : null}{canWrite ? <button type="button" className={row.crm_active ? "danger-action" : "secondary-action"} onClick={() => setStatusCustomer(row)}>{row.crm_active ? "Disattiva" : "Riattiva"}</button> : null}</div></details></td></tr>)}</tbody></table>{!loading && !pageRows.length ? <div className="crm-empty">Nessun cliente corrisponde allo stato CRM e ai filtri selezionati.</div> : null}</div>
     <div className="crm-pagination"><button type="button" disabled={page === 0} onClick={() => updateCustomerParam("customerPage", page - 1, false)}>Precedente</button><span>Pagina {page + 1} · {filteredTotal} clienti</span><button type="button" disabled={(page + 1) * CRM_CUSTOMER_PAGE_SIZE >= filteredTotal} onClick={() => updateCustomerParam("customerPage", page + 1, false)}>Successiva</button></div>
     {open ? <div className="crm-modal-backdrop"><form className="crm-modal" onSubmit={save}><h3>Nuovo prospect CRM-only {config.label}</h3><p>Il prospect resta nel layer CRM e non crea né duplica un cliente Workspace/Mexal.</p><label>Nome<input required value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} /></label><div className="crm-form-grid"><label>Stato<select value={form.stato} onChange={(e) => setForm({ ...form, stato: e.target.value })}><option value="prospect">Prospect</option><option value="attivo">Attivo</option></select></label><label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label><label>Telefono<input value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} /></label></div><div className="crm-modal-actions"><button type="button" onClick={() => setOpen(false)}>Annulla</button><button className="primary-action crm-primary">Salva prospect</button></div></form></div> : null}
     <WorkspaceTaskDialog open={creation?.kind === "task"} crmType={type} initialCustomerKey={creation?.customerKey || ""} canManage={canWrite} onClose={() => setCreation(null)} onSaved={load} />
@@ -387,6 +407,7 @@ function AccountDetail({ type }) {
       if (statusResult.error) return setError(statusResult.error.message);
       current = { ...prospectResult.data, entity_kind: "prospect", entityKey, crm_account_id: prospectResult.data.id, area_crm: type, crm_active: statusResult.data?.crm_active !== false, crm_status_changed_at: statusResult.data?.changed_at || null, crm_status_reason: statusResult.data?.reason || null };
     }
+    current.nome = customerDisplayName(current);
     setAccount(current);
     const catalogResult = await supabase.rpc("workspace_activity_catalog", { p_crm_tipo: type });
     if (catalogResult.error) { setActivityTemplates([]); return setError(catalogResult.error.message); }
@@ -473,7 +494,7 @@ function AccountDetail({ type }) {
       <Kpi label="Ultimo documento" value={formatDate(metrics.last_invoice_date || metrics.last_order_date)} to="#invoices" />
     </div> : null}
     <div className="crm-detail-grid crm-expandable-grid">
-      <CrmExpandableCard title="Anagrafica" preview={<>{account.codice_cliente_mexal || "Prospect CRM-only"}<br />{account.email || account.telefono || "Contatti non disponibili"}</>}><dl><div><dt>Codice cliente</dt><dd>{account.codice_cliente_mexal || "—"}</dd></div><div><dt>Stato CRM</dt><dd><CrmCustomerStatusBadge active={account.crm_active} /></dd></div><div><dt>Stato relazione</dt><dd>{account.stato || "—"}</dd></div><div><dt>Agente Workspace/Mexal</dt><dd>{account.agente_nome || "—"}</dd></div><div><dt>Area CRM</dt><dd>{config.label}</dd></div><div><dt>Classificazione</dt><dd>{account.origine_classificazione ? `${account.origine_classificazione} · ${account.modalita_classificazione}` : "CRM-only"}</dd></div><div><dt>Partita IVA</dt><dd>{account.partita_iva || "—"}</dd></div><div><dt>Paese / nazionalità</dt><dd>{account.paese || "—"}</dd></div><div><dt>Email</dt><dd>{account.email || "—"}</dd></div><div><dt>Telefono</dt><dd>{account.telefono || "—"}</dd></div><div><dt>Indirizzo</dt><dd>{[account.indirizzo, account.cap, account.citta, account.provincia].filter(Boolean).join(" · ") || "—"}</dd></div><div><dt>Valore CRM</dt><dd>{formatMoney(account.valore_cliente)}</dd></div></dl></CrmExpandableCard>
+      <CrmExpandableCard title="Anagrafica" preview={<>{account.codice_cliente_mexal || "Prospect CRM-only"}<br />{account.email || account.telefono || "Contatti non disponibili"}</>}><dl><div><dt>Origine</dt><dd>{customerOrigin(account)}</dd></div><div><dt>Nome</dt><dd>{account.metadati?.anagrafica?.nome || "—"}</dd></div><div><dt>Cognome</dt><dd>{account.metadati?.anagrafica?.cognome || "—"}</dd></div><div><dt>Codice cliente</dt><dd>{account.codice_cliente_mexal || "—"}</dd></div><div><dt>Stato CRM</dt><dd><CrmCustomerStatusBadge active={account.crm_active} /></dd></div><div><dt>Stato relazione</dt><dd>{account.stato || "—"}</dd></div><div><dt>Agente Workspace/Mexal</dt><dd>{account.agente_nome || "—"}</dd></div><div><dt>Area CRM</dt><dd>{config.label}</dd></div><div><dt>Classificazione</dt><dd>{account.origine_classificazione ? `${account.origine_classificazione} · ${account.modalita_classificazione}` : "CRM-only"}</dd></div><div><dt>Partita IVA</dt><dd>{account.partita_iva || "—"}</dd></div><div><dt>Paese / nazionalità</dt><dd>{account.paese || "—"}</dd></div><div><dt>Email</dt><dd>{account.email || "—"}</dd></div><div><dt>Telefono</dt><dd>{account.telefono || "—"}</dd></div><div><dt>Indirizzo</dt><dd>{[account.indirizzo, account.cap, account.citta, account.provincia].filter(Boolean).join(" · ") || "—"}</dd></div><div><dt>Indirizzo di spedizione</dt><dd>{[account.metadati?.anagrafica?.spedizione?.address_1, account.metadati?.anagrafica?.spedizione?.address_2, account.metadati?.anagrafica?.spedizione?.postcode, account.metadati?.anagrafica?.spedizione?.city, account.metadati?.anagrafica?.spedizione?.state, account.metadati?.anagrafica?.spedizione?.country].filter(Boolean).join(" · ") || "—"}</dd></div><div><dt>Valore CRM</dt><dd>{formatMoney(account.valore_cliente)}</dd></div></dl></CrmExpandableCard>
       <CrmExpandableCard title="AI Summary" preview={<>Sintesi su richiesta.<br />Dati limitati al perimetro autorizzato.</>}><p>La sintesi AI viene generata soltanto su richiesta dall’AI Business Assistant e nel perimetro autorizzato.</p><Link to="/crm/ai" state={{ accountId: account.crm_account_id || null, customerCode: account.codice_cliente_mexal || null, crmType: type }}>Apri AI Brief</Link></CrmExpandableCard>
     </div>
     {(account.crm_account_id || account.codice_cliente_mexal) ? <div className="crm-kpi-grid crm-account-operational-kpis">

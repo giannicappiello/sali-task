@@ -1,5 +1,6 @@
 /* global process */
 import crypto from "node:crypto";
+import { fetchCustomerProfiles } from "./customer-profiles.js";
 import { createClient } from "@supabase/supabase-js";
 import { DIGITAL_PROVIDER_REGISTRY, providerDefinition, requiredSecretNames, validateProviderConfiguration } from "../../shared/digitalProviderRegistry.js";
 import { requireAdmin, requirePermission, requireScreenManagement } from "../mexal/lib/auth.js";
@@ -188,6 +189,18 @@ async function synchronize(db, actorId, connection, mode = "manual") {
   }
 }
 
+async function refreshCustomerProfiles(req, body) {
+  const auth = await authorize(req);
+  const connection = await connectionById(auth.supabase, body.id);
+  if (!connection.abilitata) throw Object.assign(new Error('Connessione disattivata.'), { status: 400 });
+  const result = await fetchCustomerProfiles(connection, await decryptedSecrets(auth.supabase, connection.id), body.cursor || {});
+  for (const row of result.rows) {
+    const { error } = await auth.supabase.rpc('crm_enrich_customer_profile_service', { target_connection_id: connection.id, profile: row });
+    if (error) throw error;
+  }
+  return { recordsRead: result.rows.length, next: result.next };
+}
+
 async function synchronizeCommerce(db, actorId, connection, mode) {
   const { data: runId, error: lockError } = await db.rpc('crm_claim_commerce_import_service', {
     target_connection_id: connection.id, target_triggered_by: actorId || null,
@@ -310,7 +323,7 @@ export async function handleDigitalConnectionManager(req, res) {
     if (action === "dispatch") return res.status(200).json({ success: true, ...(await dispatchDigitalSchedule(req)) });
     if (["list", "operational"].includes(action)) { const auth = await authorize(req); const data = action === "list" ? { registry: DIGITAL_PROVIDER_REGISTRY.map(safeProvider), connections: await list(auth.supabase) } : await operationalData(auth.supabase, body); return res.status(200).json({ success: true, ...data }); }
     if (req.method !== "POST") return res.status(405).json({ success: false, error: "Metodo non consentito." });
-    const handlers = { save, revoke_secret: revokeSecret, test: testConnection, activate, deactivate, sync_now: syncNow, save_mapping: saveMapping, oauth_start: oauthStart };
+    const handlers = { refresh_customer_profiles: refreshCustomerProfiles, save, revoke_secret: revokeSecret, test: testConnection, activate, deactivate, sync_now: syncNow, save_mapping: saveMapping, oauth_start: oauthStart };
     if (!handlers[action]) throw Object.assign(new Error("Azione Connection Manager non supportata."), { status: 400 });
     return res.status(200).json({ success: true, ...(await handlers[action](req, body)) });
   } catch (error) {

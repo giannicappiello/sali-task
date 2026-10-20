@@ -65,6 +65,24 @@ test('Commerce SQL atomically resumes pages, preserves manual data and imports c
     c.consent = { ...c.consent, status: 'withdrawn', captured_at: '2026-10-02T00:00:00Z', withdrawn_at: '2026-10-02T00:00:00Z' };
     await commit('customers', [c], { page: 9 });
     assert.equal((await db.query('select count(*)::int n from crm_marketing_consents')).rows[0].n, 2);
+    await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261020130000_crm_customer_profiles.sql', import.meta.url), 'utf8'));
+    const enriched = wooCustomer({ id: 1, first_name: 'Mario', last_name: 'Rossi', billing: { address_1: 'Via Mare', city: 'Ischia', postcode: '80077' }, shipping: { address_1: 'Via Roma' } });
+    await commit('customers', [enriched], { page: 10 });
+    let profile = (await db.query('select * from crm_accounts')).rows[0];
+    assert.equal(profile.nome, 'Rossi Mario'); assert.equal(profile.indirizzo, 'Via Mare');
+    assert.equal(profile.metadati.anagrafica.spedizione.address_1, 'Via Roma');
+    await commit('customers', [wooCustomer({ id: 1, email: 'one@example.com' })], { page: 11 });
+    profile = (await db.query('select * from crm_accounts')).rows[0];
+    assert.equal(profile.nome, 'Rossi Mario'); assert.equal(profile.indirizzo, 'Via Mare');
+    assert.equal(profile.metadati.anagrafica.spedizione.address_1, 'Via Roma');
+    await db.exec("update crm_accounts set codice_cliente_mexal='501',nome='Mexal originale'");
+    await commit('customers', [enriched], { page: 12 });
+    assert.equal((await db.query('select nome from crm_accounts')).rows[0].nome, 'Mexal originale');
+    await db.exec("update crm_accounts set codice_cliente_mexal=null,fonte='mailchimp',nome='Altra fonte'");
+    await commit('customers', [enriched], { page: 13 });
+    assert.equal((await db.query('select nome from crm_accounts')).rows[0].nome, 'Altra fonte');
+    await assert.rejects(commit('orders', [{ ...order, ordered_at: 'invalid' }], { page: 14 }));
+    assert.deepEqual((await db.query('select import_state from crm_external_connections')).rows[0].import_state, { page: 13 });
     await db.exec("set test.auth_role='authenticated'");
     await assert.rejects(commit('customers', [], { page: 10 }), /Servizio riservato/);
     await db.exec(`

@@ -15,6 +15,14 @@ async function request(action, payload = {}, method = "POST") {
 
 export const digitalConnectionsService = Object.freeze({
   list: () => request("list"),
+  refreshCustomerProfiles: async (id, onProgress = () => {}) => {
+    let cursor = null, count = 0;
+    do {
+      const result = await request('refresh_customer_profiles', { id, cursor });
+      count += result.recordsRead; cursor = result.next; onProgress(count);
+    } while (cursor);
+    return count;
+  },
   orderDetail: (orderId) => request('order_detail', { orderId }),
   operational: (id = null) => request("operational", id ? { id } : {}),
   save: (payload) => request("save", payload),

@@ -10,11 +10,31 @@ const text = (v) => String(v ?? '').slice(0, 1000);
 export function publicAsset(value) {
   try { const u = new URL(value); return u.protocol === 'https:' && !u.username && !u.password && !u.search ? u.href : null; } catch { return null; }
 }
+const clean = (v) => text(v).trim() || null;
+const address = (v = {}) => Object.fromEntries(['first_name','last_name','company','address_1','address_2','city','state','postcode','country','phone','email'].map(k => [k, clean(v[k])]));
 export function wooCustomer(row) {
-  const email = text(row.email || row.billing?.email).trim().toLowerCase();
-  return { external_id: String(row.id), nome: text([row.first_name || row.billing?.first_name, row.last_name || row.billing?.last_name].filter(Boolean).join(' ') || row.billing?.company || email || `Cliente ${row.id}`), email: email || null,
+  const billing = row.billing || {}, shipping = row.shipping || {};
+  const email = text(row.email || billing.email).trim().toLowerCase();
+  const fiscal = (keys) => clean((row.meta_data || []).find(m => keys.includes(m.key))?.value);
+  const nome = clean(billing.first_name || row.first_name), cognome = clean(billing.last_name || row.last_name);
+  return { external_id: String(row.id), nome: [cognome, nome].filter(Boolean).join(' ') || clean(billing.company) || 'Nominativo non disponibile', email: email || null,
     email_hash: email ? crypto.createHash('sha256').update(email).digest('hex') : null,
-    telefono: text(row.billing?.phone) || null, paese: text(row.billing?.country) || null };
+    telefono: clean(billing.phone || shipping.phone), paese: clean(billing.country || shipping.country),
+    indirizzo: [billing.address_1, billing.address_2].filter(Boolean).join(', ') || null,
+    citta: clean(billing.city), provincia: clean(billing.state), cap: clean(billing.postcode),
+    partita_iva: fiscal(['billing_vat','_billing_vat','billing_piva','_billing_piva','billing_vat_number']),
+    codice_fiscale: fiscal(['billing_cf','_billing_cf','billing_codice_fiscale','_billing_codice_fiscale']),
+    anagrafica: { nome, cognome, azienda: clean(billing.company), fatturazione: address(billing), spedizione: address(shipping) } };
+}
+export function mailchimpCustomer(member) {
+  const fields = member.merge_fields || {};
+  const pick = (...keys) => keys.map(k => fields[k]).find(v => typeof v === 'string' && v.trim());
+  const a = fields.ADDRESS || fields.INDIRIZZO || {};
+  const c = wooCustomer({ id: member.id, email: member.email_address,
+    first_name: pick('FNAME','NOME','FIRSTNAME'), last_name: pick('LNAME','COGNOME','LASTNAME'),
+    billing: { company: pick('COMPANY','AZIENDA'), phone: pick('PHONE','TELEFONO','CELLULARE'),
+      address_1: a.addr1, address_2: a.addr2, city: a.city, state: a.state, postcode: a.zip, country: a.country } });
+  return c;
 }
 export function wooProduct(row, parent = null) {
   return { external_id: String(row.id), parent_external_id: parent ? String(parent.id) : null, external_sku: text(row.sku), asin: null,
@@ -23,7 +43,7 @@ export function wooProduct(row, parent = null) {
     assets: [...(row.images || (row.image ? [row.image] : parent?.images || [])).map((v) => ({ type: 'image', url: publicAsset(v.src), name: text(v.name) })), ...(row.downloads || []).map((v) => ({ type: 'document', url: publicAsset(v.file), name: text(v.name) }))].filter((v) => v.url) };
 }
 export function wooOrder(row, refunds = []) {
-  const guest = !row.customer_id && row.billing?.email ? wooCustomer({ id: `guest:${crypto.createHash('sha256').update(row.billing.email.trim().toLowerCase()).digest('hex')}`, billing: row.billing }) : null;
+  const guest = row.customer_id || row.billing?.email ? wooCustomer({ id: row.customer_id || `guest:${crypto.createHash('sha256').update(row.billing.email.trim().toLowerCase()).digest('hex')}`, billing: row.billing, shipping: row.shipping, meta_data: row.meta_data }) : null;
   const taxRefund = refunds.reduce((n, r) => n + (r.line_items || []).reduce((t, l) => t + Math.abs(money(l.total_tax) || 0), 0), 0);
   const refunded = (row.refunds || []).reduce((n, r) => n + Math.abs(money(r.total) || 0), 0);
   const total = money(row.total), tax = money(row.total_tax);
@@ -93,7 +113,7 @@ export async function fetchCommercePage(connection, secrets, previous, { fetcher
     kind = 'customers';
     if (state.phase === 'audiences') next.audiences = [...(state.audiences || []), ...list.map((l) => text(l.id))];
     else rows = list.map((member) => {
-      const c = wooCustomer({ id: member.id, email: member.email_address, first_name: member.merge_fields?.FNAME, last_name: member.merge_fields?.LNAME });
+      const c = mailchimpCustomer(member);
       const explicitDenied = member.marketing_permissions?.length && !member.marketing_permissions.some((p) => p.enabled);
       const status = member.status === 'unsubscribed' ? 'withdrawn' : member.status === 'cleaned' || explicitDenied ? 'denied' : member.status === 'subscribed' ? 'granted' : 'unknown';
       return { ...c, consent: { purpose: 'email_marketing', status, source: `mailchimp:${state.audience}`, captured_at: member.timestamp_opt || member.last_changed || null,

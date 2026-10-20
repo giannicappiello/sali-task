@@ -26,13 +26,17 @@ export function wooCustomer(row) {
     codice_fiscale: fiscal(['billing_cf','_billing_cf','billing_codice_fiscale','_billing_codice_fiscale']),
     anagrafica: { nome, cognome, azienda: clean(billing.company), fatturazione: address(billing), spedizione: address(shipping) } };
 }
-export function mailchimpCustomer(member) {
+export function mailchimpCustomer(member, schema = []) {
   const fields = member.merge_fields || {};
   const pick = (...keys) => keys.map(k => fields[k]).find(v => typeof v === 'string' && v.trim());
-  const a = fields.ADDRESS || fields.INDIRIZZO || {};
+  const mapped = (names, type) => {
+    const matches = schema.filter(f => (type && f.type === type) || names.includes(String(f.name || '').trim().toLowerCase()));
+    return matches.length === 1 ? fields[matches[0].tag] : null;
+  };
+  const a = fields.ADDRESS || fields.INDIRIZZO || mapped([], 'address') || {};
   const c = wooCustomer({ id: member.id, email: member.email_address,
-    first_name: pick('FNAME','NOME','FIRSTNAME'), last_name: pick('LNAME','COGNOME','LASTNAME'),
-    billing: { company: pick('COMPANY','AZIENDA'), phone: pick('PHONE','TELEFONO','CELLULARE'),
+    first_name: pick('FNAME','NOME','FIRSTNAME') || mapped(['nome','first name','firstname']), last_name: pick('LNAME','COGNOME','LASTNAME') || mapped(['cognome','last name','lastname','surname']),
+    billing: { company: pick('COMPANY','AZIENDA') || mapped(['azienda','company','ragione sociale']), phone: pick('PHONE','TELEFONO','CELLULARE') || mapped(['telefono','cellulare','phone'], 'phone'),
       address_1: a.addr1, address_2: a.addr2, city: a.city, state: a.state, postcode: a.zip, country: a.country } });
   return c;
 }
@@ -108,12 +112,14 @@ export async function fetchCommercePage(connection, secrets, previous, { fetcher
     const root = `https://${dc}.api.mailchimp.com/3.0/`;
     const path = state.phase === 'audiences' ? 'lists' : `lists/${encodeURIComponent(state.audience)}/members`;
     const data = await request(`${root}${path}?count=20&offset=${(state.page - 1) * 20}`, { headers, timeoutMs: 20000 }, fetcher, 'Importazione Mailchimp');
+    const schema = state.phase === 'audiences' ? null : await request(`${root}lists/${encodeURIComponent(state.audience)}/merge-fields?count=1000`, { headers, timeoutMs: 20000 }, fetcher, 'Campi anagrafici Mailchimp');
+    if (schema && (!Array.isArray(schema.merge_fields) || schema.total_items > schema.merge_fields.length)) throw new Error('Campi Mailchimp incompleti.');
     const list = state.phase === 'audiences' ? data.lists : data.members;
     if (!Array.isArray(list)) throw new Error('Risposta Mailchimp non valida: pagina non acquisita.');
     kind = 'customers';
     if (state.phase === 'audiences') next.audiences = [...(state.audiences || []), ...list.map((l) => text(l.id))];
     else rows = list.map((member) => {
-      const c = mailchimpCustomer(member);
+      const c = mailchimpCustomer(member, schema?.merge_fields);
       const explicitDenied = member.marketing_permissions?.length && !member.marketing_permissions.some((p) => p.enabled);
       const status = member.status === 'unsubscribed' ? 'withdrawn' : member.status === 'cleaned' || explicitDenied ? 'denied' : member.status === 'subscribed' ? 'granted' : 'unknown';
       return { ...c, consent: { purpose: 'email_marketing', status, source: `mailchimp:${state.audience}`, captured_at: member.timestamp_opt || member.last_changed || null,

@@ -31,11 +31,13 @@ export async function fetchCustomerProfiles(connection, secrets, cursor = {}, fe
     if (!Number.isInteger(audienceIndex) || audienceIndex < 0) throw new Error('Audience non valida.');
     const audience = audiences.lists[audienceIndex];
     if (!audience) return { rows: [], next: null };
+    const schema = await get(`${root}lists/${encodeURIComponent(audience.id)}/merge-fields?count=1000`, headers);
+    if (!Array.isArray(schema.merge_fields) || schema.total_items > schema.merge_fields.length) throw new Error('Campi Mailchimp incompleti.');
     const data = await get(`${root}lists/${encodeURIComponent(audience.id)}/members?count=50&offset=${(page - 1) * 50}`, headers);
     if (!Array.isArray(data.members)) throw new Error('Contatti Mailchimp non validi.');
     const next = (page - 1) * 50 + data.members.length < data.total_items ? { audienceIndex, page: page + 1 }
       : audienceIndex + 1 < audiences.lists.length ? { audienceIndex: audienceIndex + 1, page: 1 } : null;
-    return { rows: data.members.map(mailchimpCustomer), next };
+    return { rows: data.members.map(member => mailchimpCustomer(member, schema.merge_fields)), next };
   }
   throw new Error('Anagrafiche non accessibili con questo connettore. Per Amazon servono i ruoli autorizzati per i dati personali.');
 }

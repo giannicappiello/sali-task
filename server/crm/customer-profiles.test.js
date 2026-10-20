@@ -39,3 +39,8 @@ test('Profile refresh has its own bounded cursor and never changes the running o
   await assert.rejects(fetchCustomerProfiles(connection, {}, { phase: '../secrets' }), /Fase/);
   await assert.rejects(fetchCustomerProfiles({ provider_code: 'amazon_sp_api' }, {}), /ruoli/);
 });
+
+test('Mailchimp resolves renamed merge tags by audience schema without guessing ambiguous fields', () => {
+  const c = mailchimpCustomer({ id: '1', merge_fields: { MMERGE1: 'Anna', MMERGE2: 'Verdi', MMERGE3: { addr1: 'Via A' } } }, [{ tag: 'MMERGE1', name: 'Nome', type: 'text' }, { tag: 'MMERGE2', name: 'Cognome', type: 'text' }, { tag: 'MMERGE3', name: 'Sede', type: 'address' }]);
+  assert.equal(c.nome, 'Verdi Anna'); assert.equal(c.indirizzo, 'Via A');
+});

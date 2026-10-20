@@ -103,6 +103,7 @@ test('Mailchimp imports audiences, members and explicit consent changes without 
   } });
   assert.equal(a.next.phase, 'members'); assert.equal(a.hasMore, true);
   const b = await fetchCommercePage(connection, { api_key: 'private-us5' }, a.next, { now, fetcher: async (url) => {
+    if (url.includes('/merge-fields')) return ok({ merge_fields: [], total_items: 0 });
     assert.match(url, /lists\/audience\/members/);
     return ok({ total_items: 3, members: [
       { id: 'a', email_address: 'a@example.com', status: 'subscribed', timestamp_opt: '2026-01-01T00:00:00Z' },

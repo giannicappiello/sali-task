@@ -46,8 +46,14 @@ export function wooProduct(row, parent = null) {
     stock: money(row.stock_quantity), status: text(row.status),
     assets: [...(row.images || (row.image ? [row.image] : parent?.images || [])).map((v) => ({ type: 'image', url: publicAsset(v.src), name: text(v.name) })), ...(row.downloads || []).map((v) => ({ type: 'document', url: publicAsset(v.file), name: text(v.name) }))].filter((v) => v.url) };
 }
+export function wooShippingLines(row) {
+  const lines = row.shipping_lines?.length ? row.shipping_lines : money(row.shipping_total) != null ? [{ id: 'total', total: row.shipping_total }] : [];
+  return lines.map(line => ({ external_line_id: `shipping:${line.id}`, external_sku: '', type: 'shipping',
+    name: `Spese di spedizione${line.method_title ? ` · ${text(line.method_title)}` : ''}`,
+    quantity: 1, unit_price: money(line.total), line_revenue: money(line.total), discount: 0 }));
+}
 export function wooOrder(row, refunds = []) {
-  const guest = row.customer_id || row.billing?.email ? wooCustomer({ id: row.customer_id || `guest:${crypto.createHash('sha256').update(row.billing.email.trim().toLowerCase()).digest('hex')}`, billing: row.billing, shipping: row.shipping, meta_data: row.meta_data }) : null;
+  const guest = row.id != null ? wooCustomer({ id: row.customer_id || (row.billing?.email ? `guest:${crypto.createHash('sha256').update(row.billing.email.trim().toLowerCase()).digest('hex')}` : `guest-order:${row.id}`), billing: row.billing, shipping: row.shipping, meta_data: row.meta_data }) : null;
   const taxRefund = refunds.reduce((n, r) => n + (r.line_items || []).reduce((t, l) => t + Math.abs(money(l.total_tax) || 0), 0), 0);
   const refunded = (row.refunds || []).reduce((n, r) => n + Math.abs(money(r.total) || 0), 0);
   const total = money(row.total), tax = money(row.total_tax);
@@ -55,8 +61,8 @@ export function wooOrder(row, refunds = []) {
     ordered_at: row.date_created_gmt ? `${row.date_created_gmt.replace(/Z$/, '')}Z` : row.date_created,
     currency: row.currency, gross_revenue: total, discounts: money(row.discount_total), refunds: refunded, fees: null,
     net_revenue: total === null || tax === null ? null : rounded(total - tax - refunded + taxRefund),
-    raw_summary: { provider: 'woocommerce', tax, financial_basis: 'total_excluding_tax_after_refunds' },
-    lines: (row.line_items || []).map((l) => ({ external_line_id: String(l.id), external_sku: text(l.sku), quantity: money(l.quantity), unit_price: money(l.price), line_revenue: money(l.total), discount: money(l.subtotal) !== null && money(l.total) !== null ? rounded(Number(l.subtotal) - Number(l.total)) : null })) };
+    raw_summary: { provider: 'woocommerce', customer_name: guest?.nome || null, tax, financial_basis: 'total_excluding_tax_after_refunds' },
+    lines: (row.line_items || []).map((l) => ({ external_line_id: String(l.id), name: text(l.name), type: 'product', external_sku: text(l.sku), quantity: money(l.quantity), unit_price: money(l.price), line_revenue: money(l.total), discount: money(l.subtotal) !== null && money(l.total) !== null ? rounded(Number(l.subtotal) - Number(l.total)) : null })).concat(wooShippingLines(row)) };
 }
 export function amazonOrder(row) {
   const total = money(row.proceeds?.grandTotal?.amount);

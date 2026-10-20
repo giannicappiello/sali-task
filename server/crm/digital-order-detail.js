@@ -1,15 +1,16 @@
 /* global Buffer */
 import { request, refreshAccessToken } from './digital-provider-adapters.js';
 import { safeFetch } from './digital-security.js';
+import { wooShippingLines } from './commerce-import.js';
 
 export function wooOrderDetail(order) {
   return {
-    customerName: [order.billing?.first_name, order.billing?.last_name].filter(Boolean).join(' ').trim() || order.billing?.company || null,
+    customerName: [order.billing?.last_name, order.billing?.first_name].filter(Boolean).join(' ').trim() || order.billing?.company || null,
     lines: (order.line_items || []).map((line) => ({
       id: String(line.id), name: line.name || line.sku || 'Prodotto non identificato', sku: line.sku || null,
       quantity: line.quantity, unitPrice: line.price ?? null, amount: line.total ?? null,
       discount: line.subtotal != null && line.total != null ? Math.round((Number(line.subtotal) - Number(line.total)) * 100) / 100 : null,
-    })),
+    })).concat(wooShippingLines(order).map(line => ({ id: line.external_line_id, name: line.name, sku: null, quantity: 1, unitPrice: line.unit_price, amount: line.line_revenue, discount: 0, type: 'shipping' }))),
   };
 }
 

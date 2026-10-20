@@ -83,6 +83,21 @@ test('Commerce SQL atomically resumes pages, preserves manual data and imports c
     assert.equal((await db.query('select nome from crm_accounts')).rows[0].nome, 'Altra fonte');
     await assert.rejects(commit('orders', [{ ...order, ordered_at: 'invalid' }], { page: 14 }));
     assert.deepEqual((await db.query('select import_state from crm_external_connections')).rows[0].import_state, { page: 13 });
+    await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261020150000_crm_order_customer_and_shipping.sql', import.meta.url), 'utf8'));
+    const orphanId = (await db.query("insert into crm_external_orders(connection_id,external_id,ordered_at,stato,net_revenue) values($1,'13729',now(),'completed',131.23) returning id", [conn])).rows[0].id;
+    const orphan = wooOrder({ id: 13729, customer_id: 0, billing: { first_name: 'Daniela', last_name: 'Mottola' }, shipping_lines: [{ id: 99, total: '15' }] });
+    const repair = { ...orphan.customer, order_external_id: orphan.external_id, order_lines: orphan.lines };
+    const enrich = (row) => db.query('select crm_enrich_customer_profile_service($1,$2::jsonb)', [conn, JSON.stringify(row)]);
+    await enrich(repair); await enrich(repair);
+    const repaired = (await db.query('select o.account_id,o.external_customer_id,o.raw_summary,a.nome from crm_external_orders o join crm_accounts a on a.id=o.account_id where o.id=$1', [orphanId])).rows[0];
+    assert.equal(repaired.nome, 'Mottola Daniela'); assert.equal(repaired.raw_summary.customer_name, 'Mottola Daniela');
+    assert.equal((await db.query("select count(*)::int n from crm_external_customers where external_id='guest-order:13729'")).rows[0].n, 1);
+    assert.equal((await db.query('select count(*)::int n from crm_external_order_lines where order_id=$1', [orphanId])).rows[0].n, 1);
+    assert.equal(Number((await db.query('select line_revenue from crm_external_order_lines where order_id=$1', [orphanId])).rows[0].line_revenue), 15);
+    assert.equal(Number((await db.query('select order_count from crm_external_customers where id=$1', [repaired.external_customer_id])).rows[0].order_count), 1);
+    await enrich({ ...repair, order_lines: [] });
+    assert.equal((await db.query('select count(*)::int n from crm_external_order_lines where order_id=$1', [orphanId])).rows[0].n, 0);
+    await db.query('delete from crm_external_orders where id=$1', [orphanId]);
     await db.exec("set test.auth_role='authenticated'");
     await assert.rejects(commit('customers', [], { page: 10 }), /Servizio riservato/);
     await db.exec(`

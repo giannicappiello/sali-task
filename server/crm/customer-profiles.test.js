@@ -44,3 +44,14 @@ test('Mailchimp resolves renamed merge tags by audience schema without guessing 
   const c = mailchimpCustomer({ id: '1', merge_fields: { MMERGE1: 'Anna', MMERGE2: 'Verdi', MMERGE3: { addr1: 'Via A' } } }, [{ tag: 'MMERGE1', name: 'Nome', type: 'text' }, { tag: 'MMERGE2', name: 'Cognome', type: 'text' }, { tag: 'MMERGE3', name: 'Sede', type: 'address' }]);
   assert.equal(c.nome, 'Verdi Anna'); assert.equal(c.indirizzo, 'Via A');
 });
+
+test('Guest orders without email still have a stable source identity and include shipping costs', async () => {
+  const raw = { id: 13729, customer_id: 0, billing: { first_name: 'Daniela', last_name: 'Mottola' }, shipping_total: '15.00',
+    line_items: [{ id: 1, name: 'Sale', quantity: 2, total: '100', price: '50' }], shipping_lines: [{ id: 2, method_title: 'Corriere', total: '15.00' }] };
+  const order = wooOrder(raw);
+  assert.equal(order.customer_external_id, 'guest-order:13729');
+  assert.equal(order.customer.nome, 'Mottola Daniela'); assert.equal(order.raw_summary.customer_name, 'Mottola Daniela');
+  assert.equal(order.lines.length, 2); assert.equal(order.lines[1].type, 'shipping'); assert.equal(order.lines[1].line_revenue, 15);
+  const page = await fetchCustomerProfiles({ provider_code: 'woocommerce', configurazione: { site_url: 'https://store.example' } }, {}, { phase: 'orders' }, async () => ({ ok: true, status: 200, data: [raw] }));
+  assert.equal(page.rows[0].order_external_id, '13729'); assert.equal(page.rows[0].order_lines[1].external_line_id, 'shipping:2');
+});

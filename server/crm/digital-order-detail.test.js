@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadDigitalOrderDetail } from './digital-order-detail.js';
+import { wooOrderDetail, loadDigitalOrderDetail } from './digital-order-detail.js';
 import { salesDays } from '../../src/modules/crm/digitalSalesDayModel.js';
 
 test('Daily expansion totals match eligible orders and retain excluded orders for inspection', () => {
@@ -44,7 +44,7 @@ test('Woo detail returns historical product names, guest billing name, quantitie
     assert.equal(url, 'https://store.example/wp-json/wc/v3/orders/13729'); assert.equal(options.method, undefined);
     return { ok: true, status: 200, data: { id: 13729, billing: { first_name: 'Nome', last_name: 'Cliente' }, line_items: [{ id: 9, name: 'Prodotto acquistato', sku: '', quantity: 2, price: '5', subtotal: '12', total: '10' }] } };
   } }));
-  assert.equal(result.order.customerName, 'Nome Cliente'); assert.equal(result.order.lines[0].name, 'Prodotto acquistato');
+  assert.equal(result.order.customerName, 'Cliente Nome'); assert.equal(result.order.lines[0].name, 'Prodotto acquistato');
   assert.equal(result.order.lines[0].discount, 2); assert.equal(result.order.lines[0].quantity, 2);
   assert.ok(!JSON.stringify(result).includes('private'));
 });
@@ -66,4 +66,11 @@ test('Amazon detail never requests restricted buyer information and resolves pro
   }));
   assert.equal(result.order.lines[0].name, 'Nome Amazon'); assert.match(result.order.customerUnavailable, /non fornito da Amazon/);
   assert.ok(!urls.some((u) => /BUYER|RECIPIENT/.test(u))); assert.equal(result.order.warning, null);
+});
+
+test('Woo order detail includes shipping as a separate net row without adding it twice to totals', () => {
+  const detail = wooOrderDetail({ billing: { first_name: 'Daniela', last_name: 'Mottola' }, line_items: [{ id: 1, name: 'Sale', quantity: 1, price: '100', subtotal: '100', total: '100' }], shipping_lines: [{ id: 2, method_title: 'Corriere', total: '15.00' }] });
+  assert.equal(detail.customerName, 'Mottola Daniela'); assert.equal(detail.lines.length, 2);
+  assert.equal(detail.lines[1].type, 'shipping'); assert.equal(Number(detail.lines[1].amount), 15);
+  assert.equal(wooOrderDetail({ line_items: [], shipping_total: '0' }).lines[0].amount, 0);
 });

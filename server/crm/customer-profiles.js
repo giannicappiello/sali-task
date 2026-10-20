@@ -16,7 +16,7 @@ export async function fetchCustomerProfiles(connection, secrets, cursor = {}, fe
     const data = await get(`${root}${phase}?per_page=50&page=${page}&orderby=id&order=asc`, headers);
     if (!Array.isArray(data)) throw new Error('Anagrafiche WooCommerce non valide.');
     // Reuse the same stable guest/provider identity as the normal order import.
-    const rows = phase === 'customers' ? data.map(wooCustomer) : data.filter(r => r.customer_id || r.billing?.email).map(r => wooOrder(r).customer);
+    const rows = phase === 'customers' ? data.map(wooCustomer) : data.map(r => { const order = wooOrder(r); return { ...order.customer, order_external_id: order.external_id, order_lines: order.lines }; });
     const next = data.length === 50 ? { phase, page: page + 1 } : phase === 'customers' ? { phase: 'orders', page: 1 } : null;
     return { rows, next };
   }

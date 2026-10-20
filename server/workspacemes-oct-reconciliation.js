@@ -16,19 +16,22 @@ export async function handleOctReconciliation(req,res,{admin,secret=process.env.
       if(error)throw error;
       return res.status(200).json({jobs:data||[]});
     }
-    if(input.action!=='completeArchive')return res.status(400).json({error:'Azione non valida.'});
+    if(!['completeArchive','completeDeletion'].includes(input.action))return res.status(400).json({error:'Azione non valida.'});
     const receipt=input.receipt;
+    const deletion=input.action==='completeDeletion';
+    const validCounts=Number.isSafeInteger(receipt?.deletedOrders)&&receipt.deletedOrders>=0&&Number.isSafeInteger(receipt?.deletedOperations)&&receipt.deletedOperations>=0;
     if(!input.orderId||!input.generation||receipt?.workspaceOctId!==input.orderId||receipt.status!=='DELETED'||
-      receipt.deletedOrders!==0||receipt.deletedOperations!==0||receipt.blockers?.length!==0||
-      !Array.isArray(receipt.archivedOrderIds)||!receipt.archivedOrderIds.length||
+      !validCounts||receipt.blockers?.length!==0||
+      (deletion?receipt.deletedOrders+receipt.deletedOperations===0:receipt.deletedOrders!==0||receipt.deletedOperations!==0)||
+      !Array.isArray(receipt.archivedOrderIds)||(!deletion&&!receipt.archivedOrderIds.length)||
       receipt.archivedOrderIds.some(id=>!Number.isSafeInteger(id)||id<=0)||new Set(receipt.archivedOrderIds).size!==receipt.archivedOrderIds.length)
-      return res.status(400).json({error:'Ricevuta archiviazione MES non valida.'});
+      return res.status(400).json({error:'Ricevuta riconciliazione MES non valida.'});
     const {data:job,error}=await db.from('workspace_oct_deletions').select('generation,status,mes_response,payload').eq('order_id',input.orderId).single();
     if(error)throw error;
     if(job.generation!==input.generation)return res.status(409).json({error:'OCT modificato dopo la ricevuta MES: rileggere lo stato.'});
     if(job.status==='COMPLETED'){
       const stored=job.mes_response;
-      if(stored?.workspaceOctId!==receipt.workspaceOctId||stored?.deletedOrders!==0||stored?.deletedOperations!==0||
+      if(stored?.workspaceOctId!==receipt.workspaceOctId||stored?.deletedOrders!==receipt.deletedOrders||stored?.deletedOperations!==receipt.deletedOperations||
         JSON.stringify([...(stored?.archivedOrderIds||[])].sort((a,b)=>a-b))!==JSON.stringify([...receipt.archivedOrderIds].sort((a,b)=>a-b)))
         return res.status(409).json({error:'La ricevuta non corrisponde all’archiviazione già registrata.'});
       await clarifyArchivedOctAudit(db,job,stored);
@@ -39,7 +42,7 @@ export async function handleOctReconciliation(req,res,{admin,secret=process.env.
     if(result.error)throw result.error;
     if(result.data!==true)return res.status(409).json({error:'OCT cambiato durante la conferma dell’archiviazione.'});
     await clarifyArchivedOctAudit(db,job,receipt);
-    return res.status(200).json({completed:true,archivedOrders:receipt.archivedOrderIds.length});
+    return res.status(200).json({completed:true,archivedOrders:receipt.archivedOrderIds.length,deletedOrders:receipt.deletedOrders});
   }catch{return res.status(503).json({error:'Riconciliazione OCT non disponibile; riprendere la stessa richiesta.'});}
 }
 

@@ -2,13 +2,14 @@
 import crypto from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { DIGITAL_PROVIDER_REGISTRY, providerDefinition, requiredSecretNames, validateProviderConfiguration } from "../../shared/digitalProviderRegistry.js";
-import { requireAdmin, requirePermission } from "../mexal/lib/auth.js";
+import { requireAdmin, requirePermission, requireScreenManagement } from "../mexal/lib/auth.js";
 import { decryptSecret, encryptSecret, maskSecret, redact } from "./digital-security.js";
 import { makeSyncIdempotencyKey } from "./digital-connectors.js";
 import { testProviderConnection } from "./digital-provider-adapters.js";
 import { completeDigitalOAuth, startDigitalOAuth } from "./digital-oauth.js";
 import { notifyDigitalAdmins } from "./digital-notifications.js";
 import { COMMERCE_PROVIDERS, fetchCommercePage } from "./commerce-import.js";
+import { loadDigitalOrderDetail } from './digital-order-detail.js';
 
 const SAFE_CONNECTION_FIELDS = "id,tipo,provider_code,provider,nome,category,auth_type,stato,endpoint_url,site_url,external_account_id,marketplace_ids,configurazione,secret_references,credenziali_stato,abilitata,sync_attivo,sync_frequency,is_default,ultimo_test_il,ultimo_test_stato,ultimo_test_messaggio,errori_consecutivi,ultimo_sync_il,prossima_run_il,ultimo_errore,oauth_scade_il,webhook_path,webhook_stato,ultimo_webhook_il,disabilitata_il,aggiornata_il,import_state,responsabile_id,reparto_id";
 
@@ -275,6 +276,36 @@ export async function dispatchDigitalSchedule(req) {
 export async function handleDigitalConnectionManager(req, res) {
   const body = req.body || {}; const action = String(body.action || req.query?.action || "list");
   try {
+    if (action === 'order_detail') {
+      res.setHeader('Cache-Control', 'private, no-store');
+      if (req.method !== 'POST') return res.status(405).json({ success: false, error: 'Metodo non consentito.' });
+      if (!/^[a-f0-9-]{36}$/i.test(String(body.orderId || ''))) throw Object.assign(new Error('Ordine non valido.'), { status: 400 });
+      const authorization = String(req.headers.authorization || '');
+      if (!authorization.startsWith('Bearer ')) throw Object.assign(new Error('Sessione mancante.'), { status: 401 });
+      // Authorization is the user's JWT: PostgREST applies the same RLS as the CRM.
+      const reader = createClient(required('SUPABASE_URL'), required('SUPABASE_SERVICE_ROLE_KEY'), {
+        global: { headers: { Authorization: authorization } }, auth: { persistSession: false, autoRefreshToken: false },
+      });
+      const db = serviceClient();
+      const detail = await loadDigitalOrderDetail(body.orderId, {
+        visibleOrder: async (id) => {
+          const { data, error } = await reader.from('crm_external_orders').select('id,connection_id,external_id,marketplace,stato,ordered_at,currency,net_revenue,gross_revenue,discounts,refunds,crm_accounts(nome)').eq('id', id).maybeSingle();
+          if (error) throw error; return data;
+        },
+        connection: (id) => connectionById(db, id),
+        authorizeScreen: (screen) => requireScreenManagement(req, db, screen, { readOnly: true }),
+        secrets: (id) => decryptedSecrets(db, id),
+        cachedLines: async (id) => {
+          const rows = [];
+          for (let from = 0; ; from += 200) {
+            const { data, error } = await reader.from('crm_external_order_lines').select('id,external_line_id,external_sku,asin,quantity,unit_price,line_revenue,discount,metadati,prodotti(nome)').eq('order_id', id).order('external_line_id').range(from, from + 199);
+            if (error) throw error; rows.push(...(data || [])); if (data.length < 200) break;
+          }
+          return rows.map((l) => ({ id: l.id, name: l.metadati?.name || l.prodotti?.nome || l.external_sku || l.asin || 'Prodotto non identificato', sku: l.external_sku, asin: l.asin, quantity: l.quantity, unitPrice: l.unit_price, amount: l.line_revenue, discount: l.discount }));
+        },
+      });
+      return res.status(200).json({ success: true, ...detail });
+    }
     if (action === "oauth_callback") { const result = await completeDigitalOAuth(serviceClient(), req.query || {}); return res.redirect(302, result.redirectPath); }
     if (action === "dispatch") return res.status(200).json({ success: true, ...(await dispatchDigitalSchedule(req)) });
     if (["list", "operational"].includes(action)) { const auth = await authorize(req); const data = action === "list" ? { registry: DIGITAL_PROVIDER_REGISTRY.map(safeProvider), connections: await list(auth.supabase) } : await operationalData(auth.supabase, body); return res.status(200).json({ success: true, ...data }); }

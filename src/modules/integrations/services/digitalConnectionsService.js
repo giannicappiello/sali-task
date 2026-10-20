@@ -15,6 +15,7 @@ async function request(action, payload = {}, method = "POST") {
 
 export const digitalConnectionsService = Object.freeze({
   list: () => request("list"),
+  orderDetail: (orderId) => request('order_detail', { orderId }),
   operational: (id = null) => request("operational", id ? { id } : {}),
   save: (payload) => request("save", payload),
   test: (id) => request("test", { id }),

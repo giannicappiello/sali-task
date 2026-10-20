@@ -73,6 +73,11 @@ export async function fetchCommercePage(connection, secrets, previous, { fetcher
     }
   };
   const state = previous?.version === 1 && !previous.completed ? structuredClone(previous) : initialImportState(connection, now);
+  // Populate the visible dashboard first, then continue the older order cursor.
+  if (connection.provider_code === 'amazon_sp_api' && state.phase === 'orders' && !state.priorityImported) {
+    state.originalOrders = { from: state.from, to: state.to, token: state.token };
+    state.priorityImported = true; state.phase = 'products'; state.token = null; state.marketplaceIndex = 0;
+  }
   const next = structuredClone(state);
   const configuration = connection.configurazione || {};
   let rows = [], kind = state.phase;
@@ -168,9 +173,17 @@ export async function fetchCommercePage(connection, secrets, previous, { fetcher
     rows = kind === 'orders' ? data.orders.filter((r) => markets.includes(r.salesChannel?.marketplaceId)).map(amazonOrder) : data.items.map((r) => amazonProduct(r, markets[state.marketplaceIndex]));
     next.token = data.pagination?.nextToken || null;
     if (!next.token) {
-      if (kind === 'orders') next.phase = 'products';
+      if (kind === 'orders' && state.recentStage) {
+        Object.assign(next, state.originalOrders); delete next.originalOrders; next.recentStage = false;
+      } else if (kind === 'orders') { if (state.priorityImported) next.completed = true; else next.phase = 'products'; }
       else if (state.marketplaceIndex + 1 < markets.length) next.marketplaceIndex++;
-      else next.completed = true;
+      else if (state.originalOrders) {
+        next.phase = 'orders';
+        const recentFrom = Date.parse(state.to) - 90 * 86400000;
+        if (Date.parse(state.originalOrders.from) >= recentFrom) {
+          Object.assign(next, state.originalOrders); delete next.originalOrders; next.recentStage = false;
+        } else { next.recentStage = true; next.from = new Date(recentFrom).toISOString(); }
+      } else next.completed = true;
     }
   } else throw new Error('Importazione dati non disponibile per questo provider.');
   next.counts[kind] += rows.length;

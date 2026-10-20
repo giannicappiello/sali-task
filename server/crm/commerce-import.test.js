@@ -9,7 +9,7 @@ const ok = (data) => ({ ok: true, status: 200, data });
 
 test('Amazon imports Italian orders with the current API and resumes the same fixed window', async () => {
   const calls = [];
-  const page = await fetchCommercePage(amazon, {}, {}, { now, fetcher: async (url, options) => {
+  const page = await fetchCommercePage(amazon, {}, { ...initialImportState(amazon, now), priorityImported: true }, { now, fetcher: async (url, options) => {
     calls.push({ url, options });
     if (url.includes('/auth/')) return ok({ access_token: 'private-token' });
     return ok({ orders: [{ orderId: 'IT-1', createdTime: '2026-10-01T00:00:00Z', salesChannel: { marketplaceId: 'APJ6JRA9NG5V4' }, orderItems: [] }, { orderId: 'USA-1', salesChannel: { marketplaceId: 'USA' } }], pagination: { nextToken: 'page-2' } });
@@ -44,7 +44,7 @@ test('Amazon offers use configured seller and marketplace, then complete', async
 });
 
 test('Provider denial preserves input cursor and hides credentials', async () => {
-  const state = initialImportState(amazon, now), before = JSON.stringify(state);
+  const state = { ...initialImportState(amazon, now), priorityImported: true }, before = JSON.stringify(state);
   await assert.rejects(fetchCommercePage(amazon, {}, state, { now, fetcher: async (url) => url.includes('/auth/') ? ok({ access_token: 'private-token' }) : { ok: false, status: 403, data: { errors: [{ code: 'Unauthorized', message: 'private-token denied' }] } } }), (error) => {
     assert.equal(error.code, 'provider_403'); assert.match(error.message, /Importazione Amazon orders/); assert.ok(!error.message.includes('private-token')); return true;
   });
@@ -113,4 +113,17 @@ test('Mailchimp imports audiences, members and explicit consent changes without 
   assert.deepEqual(b.rows.map((r) => r.consent.status), ['granted', 'withdrawn', 'unknown']);
   assert.equal(b.rows[1].consent.withdrawn_at, '2026-01-02T00:00:00Z'); assert.equal(b.hasMore, false);
   assert.ok(!JSON.stringify(b).includes('private-us5'));
+});
+
+test('Amazon prioritizes catalogue and recent orders, then resumes the historical token unchanged', async () => {
+  const original = { ...initialImportState(amazon, now), token: 'historical-page', counts: { orders: 3100, products: 0, customers: 0 } };
+  const fetcher = async (url) => url.includes('/auth/') ? ok({ access_token: 'secret' }) : url.includes('/listings/') ? ok({ items: [] }) : ok({ orders: [] });
+  const products = await fetchCommercePage(amazon, {}, original, { now, fetcher });
+  assert.equal(products.kind, 'products'); assert.equal(products.next.phase, 'orders'); assert.equal(products.next.recentStage, true);
+  assert.equal(products.next.token, null); assert.ok(products.next.from > original.from);
+  const recent = await fetchCommercePage(amazon, {}, products.next, { now, fetcher });
+  assert.equal(recent.next.token, 'historical-page'); assert.equal(recent.next.from, original.from);
+  assert.equal(recent.next.to, original.to); assert.equal(recent.next.completed, false);
+  const history = await fetchCommercePage(amazon, {}, recent.next, { now, fetcher });
+  assert.equal(history.next.completed, true);
 });

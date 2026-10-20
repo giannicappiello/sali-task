@@ -171,14 +171,18 @@ export function DigitalChannel({ channel }) {
   const sourceDefinitions = DIGITAL_CONNECTIONS.filter((item) => definition.types.includes(item.type));
   async function importData() {
     setImporting(true); setError(''); stopImport.current = false;
+    let importError = '';
     try {
       for (const connection of connections.filter((c) => c.abilitata && ['amazon_sp_api', 'woocommerce', 'mailchimp'].includes(c.provider_code))) {
         if (stopImport.current) break;
-        const result = await digitalConnectionsService.syncAll(connection.id, { shouldStop: () => stopImport.current, onProgress: (p) => setProgress(p.retryAfterMs ? `Limite temporaneo del provider. Ripresa automatica tra ${Math.ceil(p.retryAfterMs / 1000)} secondi.` : `${connection.nome}: ${p.counts?.orders || 0} ordini, ${p.counts?.products || 0} prodotti, ${p.counts?.customers || 0} clienti elaborati.`) });
+        const result = await digitalConnectionsService.syncAll(connection.id, { shouldStop: () => stopImport.current, onProgress: (p) => {
+          setProgress(p.retryAfterMs ? `Limite temporaneo del provider. Ripresa automatica tra ${Math.ceil(p.retryAfterMs / 1000)} secondi.` : `${connection.nome}: ${p.counts?.orders || 0} ordini, ${p.counts?.products || 0} prodotti, ${p.counts?.customers || 0} clienti elaborati.`);
+          if (p.retryAfterMs || p.resource === 'products') void load();
+        } });
         setProgress(result.paused ? 'Importazione sospesa. Premi Importa dati per riprendere.' : 'Importazione completata.');
       }
-    } catch (e) { setError(`${e.message} La pagina non completata verrà riprovata alla prossima importazione.`); }
-    finally { setImporting(false); await load(); }
+    } catch (e) { importError = `${e.message} La pagina non completata verrà riprovata alla prossima importazione.`; }
+    finally { setImporting(false); await load(); if (importError) setError(importError); }
   }
   return <div className="crm-page"><div className="crm-toolbar"><div><span className="crm-eyebrow"><Icon size={16} /> CRM Online</span><h2>{definition.title}</h2><p>Layer provider-agnostic: nessuna azione esterna automatica.</p></div><div className="crm-toolbar-actions"><CrmPeriodFilter period={period} compact /><Link className="secondary-action crm-secondary" to="/settings/crm-digital">Configura in Impostazioni</Link></div></div>
     {error ? <div className="crm-message error">{error}</div> : null}

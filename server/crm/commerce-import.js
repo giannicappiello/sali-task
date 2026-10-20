@@ -153,7 +153,7 @@ export async function fetchCommercePage(connection, secrets, previous, { fetcher
     const query = new URLSearchParams(); let path;
     if (kind === 'orders') {
       query.set('marketplaceIds', markets.join(',')); query.set('lastUpdatedAfter', state.from); query.set('lastUpdatedBefore', state.to);
-      query.set('maxResultsPerPage', '20'); query.set('includedData', 'PROCEEDS,FULFILLMENT');
+      query.set('maxResultsPerPage', '100'); query.set('includedData', 'PROCEEDS,FULFILLMENT');
       if (state.token) query.set('paginationToken', state.token);
       path = '/orders/2026-01-01/orders';
     } else {

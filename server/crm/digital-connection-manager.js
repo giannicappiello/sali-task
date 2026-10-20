@@ -207,6 +207,12 @@ async function synchronizeCommerce(db, actorId, connection, mode) {
     await finish(page.hasMore ? 'partial' : 'completed', { read: page.rows.length, updated: page.rows.length, failed: 0 }, { source: mode, resource: page.kind, counts: page.next.counts, hasMore: page.hasMore });
     return { runId, status: page.hasMore ? 'partial' : 'completed', hasMore: page.hasMore, recordsRead: page.rows.length, resource: page.kind, counts: page.next.counts };
   } catch (error) {
+    if (error.code === 'provider_429') {
+      const state = (await connectionById(db, connection.id)).import_state;
+      await finish('partial', { failed: 0 }, { source: mode, rate_limited: true, cursor_preserved: true });
+      return { runId, status: 'partial', hasMore: true, retryAfterMs: connection.provider_code === 'amazon_sp_api' ? 180000 : 60000,
+        recordsRead: 0, counts: state.counts || { customers: 0, products: 0, orders: 0 } };
+    }
     await finish('failed', { failed: 1 }, { source: mode, cursor_preserved: true }, error);
     throw error;
   }
@@ -259,7 +265,7 @@ export async function dispatchDigitalSchedule(req) {
     try {
       let result;
       do { result = await synchronize(db, null, connection, 'scheduled'); }
-      while (result.hasMore && Date.now() < deadline);
+      while (result.hasMore && !result.retryAfterMs && Date.now() < deadline);
       results.push({ connectionId: connection.id, ...result });
     } catch (runError) { results.push({ connectionId: connection.id, status: 'failed', error: runError.message }); }
   }

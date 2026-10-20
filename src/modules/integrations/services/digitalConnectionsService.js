@@ -27,6 +27,11 @@ export const digitalConnectionsService = Object.freeze({
       result = await request('sync_now', { id });
       onProgress(result);
       if (shouldStop()) return { ...result, paused: Boolean(result.hasMore) };
+      const resumeAt = Date.now() + Number(result.retryAfterMs || 0);
+      while (Date.now() < resumeAt) {
+        if (shouldStop()) return { ...result, paused: true };
+        await new Promise((resolve) => setTimeout(resolve, Math.min(1000, resumeAt - Date.now())));
+      }
     } while (result.hasMore);
     return result;
   },

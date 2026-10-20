@@ -19,6 +19,7 @@ test('Amazon imports Italian orders with the current API and resumes the same fi
   assert.equal(url.origin, 'https://sellingpartnerapi-eu.amazon.com');
   assert.equal(url.pathname, '/orders/2026-01-01/orders');
   assert.equal(url.searchParams.get('marketplaceIds'), 'APJ6JRA9NG5V4');
+  assert.equal(url.searchParams.get('maxResultsPerPage'), '100');
   assert.ok(!url.searchParams.get('includedData').includes('BUYER'));
   assert.equal(page.next.token, 'page-2'); assert.equal(page.next.completed, false);
   await fetchCommercePage(amazon, {}, page.next, { now: new Date('2026-10-20T11:00:00Z'), fetcher: async (url) => {

@@ -174,7 +174,7 @@ export function DigitalChannel({ channel }) {
     try {
       for (const connection of connections.filter((c) => c.abilitata && ['amazon_sp_api', 'woocommerce', 'mailchimp'].includes(c.provider_code))) {
         if (stopImport.current) break;
-        const result = await digitalConnectionsService.syncAll(connection.id, { shouldStop: () => stopImport.current, onProgress: (p) => setProgress(`${connection.nome}: ${p.counts?.orders || 0} ordini, ${p.counts?.products || 0} prodotti, ${p.counts?.customers || 0} clienti elaborati.`) });
+        const result = await digitalConnectionsService.syncAll(connection.id, { shouldStop: () => stopImport.current, onProgress: (p) => setProgress(p.retryAfterMs ? `Limite temporaneo del provider. Ripresa automatica tra ${Math.ceil(p.retryAfterMs / 1000)} secondi.` : `${connection.nome}: ${p.counts?.orders || 0} ordini, ${p.counts?.products || 0} prodotti, ${p.counts?.customers || 0} clienti elaborati.`) });
         setProgress(result.paused ? 'Importazione sospesa. Premi Importa dati per riprendere.' : 'Importazione completata.');
       }
     } catch (e) { setError(`${e.message} La pagina non completata verrà riprovata alla prossima importazione.`); }

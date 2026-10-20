@@ -53,8 +53,8 @@ async function readDashboard(from, to, channel, marketplace) {
   ]);
   for (const response of [orders, lines, identities, prospects, canonical, sources]) if (response.error) throw response.error;
   const identity = new Map(identities.data.map(row => [row.id, row]));
-  const accounts = [...canonical.data.map(row => ({ ...row, id: row.crm_account_id || `mexal:${row.codice_cliente}`, entityKey: `mexal:${row.codice_cliente}`, nome: row.ragione_sociale, origine: 'Mexal', mailing: mailing.data.get(row.crm_account_id) || EMPTY_MAILING })),
-    ...prospects.data.map(row => ({ ...row, entityKey: `crm:${row.id}`, nome: customerDisplayName(identity.get(row.id) || row), origine: customerOrigin(identity.get(row.id)), mailing: mailing.data.get(row.id) || EMPTY_MAILING }))];
+  const accounts = [...canonical.data.map(row => ({ ...row, id: row.crm_account_id || `mexal:${row.codice_cliente}`, entityKey: `mexal:${row.codice_cliente}`, nome: row.ragione_sociale, origine: 'Mexal', mailing: mailing.data.get(row.crm_account_id) || mailing.data.fallback || EMPTY_MAILING })),
+    ...prospects.data.map(row => ({ ...row, entityKey: `crm:${row.id}`, nome: customerDisplayName(identity.get(row.id) || row), origine: customerOrigin(identity.get(row.id)), mailing: mailing.data.get(row.id) || mailing.data.fallback || EMPTY_MAILING }))];
   const scoped = new Set([...(sources.data || []).map(row => row.account_id), ...orders.data.map(row => row.account_id)]);
   const marketScoped = new Set(orders.data.map(row => row.account_id));
   return { loadedAt: Date.now(), connections, accounts: accounts.filter(row => (!channel || scoped.has(row.id)) && (!marketplace || marketScoped.has(row.id))), orders: orders.data, lines: lines.data,

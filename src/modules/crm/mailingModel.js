@@ -1,6 +1,7 @@
 export const EMPTY_MAILING = { label: 'Dato non disponibile', subscribed: null, received: null, partial: true, audiences: [], deliveries: [] };
 export function mailingByAccount(consents, deliveries, identities, connections) {
   const result = new Map();
+  result.fallback = connections.length && connections.every(row => row.import_state?.mailing_complete && row.import_state?.completed) ? { ...EMPTY_MAILING, label: 'Non presente in Mailchimp', subscribed: false, notPresent: true } : EMPTY_MAILING;
   const complete = new Set(connections.filter(row => row.import_state?.mailing_complete).map(row => row.id));
   const entry = id => { if (!result.has(id)) result.set(id, { ...EMPTY_MAILING, audiences: [], deliveries: [], connectionIds: new Set() }); return result.get(id); };
   for (const identity of identities) if (identity.account_id) entry(identity.account_id).connectionIds.add(identity.connection_id);

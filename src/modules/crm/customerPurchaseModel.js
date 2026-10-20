@@ -44,5 +44,5 @@ export function purchasesByAccount(orders, from, to) {
 }
 
 export function formatPurchaseAmount(value, currency = 'EUR') {
-  return value == null ? 'Dato non disponibile' : new Intl.NumberFormat('it-IT', { style: 'currency', currency }).format(value);
+  return value == null ? 'Dato non disponibile' : new Intl.NumberFormat('it-IT', { useGrouping: 'always', style: 'currency', currency }).format(value);
 }

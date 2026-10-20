@@ -267,6 +267,7 @@ function AccountsPage({ type }) {
   const customerRequest = useRef(0);
   const [refreshingProfiles, setRefreshingProfiles] = useState(false);
   const [profileProgress, setProfileProgress] = useState("");
+  const [kpiRows, setKpiRows] = useState([]);
   const [rows, setRows] = useState([]); const [canonicalTotal, setCanonicalTotal] = useState(0); const [prospectTotal, setProspectTotal] = useState(0);
   const [form, setForm] = useState(EMPTY_ACCOUNT); const [open, setOpen] = useState(false); const [error, setError] = useState(""); const [loading, setLoading] = useState(true);
   const [statusCustomer, setStatusCustomer] = useState(null); const [statusBusy, setStatusBusy] = useState(false);
@@ -293,10 +294,10 @@ function AccountsPage({ type }) {
     const [canonicalResult, prospectResult, countryResult, cadenceResult, identityResult, purchaseResult, mailingResult] = await Promise.all([
       loadAllRpcRows("crm_customer_metric_details", {
         p_crm_type: type, p_from: period.from, p_to: period.to, p_metric: metric,
-        p_search: term || null, p_customer_status: customerStatus,
+        p_search: term || null, p_customer_status: type === "online" ? "all" : customerStatus,
       }),
       (metric === "all" || type === "online") ? loadAllRpcRows("crm_prospect_customer_details", {
-        p_crm_type: type, p_search: term || null, p_customer_status: customerStatus,
+        p_crm_type: type, p_search: term || null, p_customer_status: type === "online" ? "all" : customerStatus,
       }) : Promise.resolve({ data: [], error: null }),
       supabase.rpc("crm_customer_country_catalog", { p_crm_type: type }),
       supabase.rpc("crm_customer_cadence_details", { p_crm_type: type, p_to: period.to }),
@@ -318,10 +319,10 @@ function AccountsPage({ type }) {
       source: "Workspace/Mexal", origine: "Mexal", nome: row.ragione_sociale, codice: row.codice_cliente, areaLabel: config.label,
       paese: countries.get(`mexal:${row.codice_cliente}`) || null,
       crm_active: row.crm_active !== false, opportunities: row.opportunita_count || 0,
-      ...onlineMetrics(row.crm_account_id), mailing: mailingResult.data.get(row.crm_account_id) || EMPTY_MAILING,
+      ...onlineMetrics(row.crm_account_id), mailing: mailingResult.data.get(row.crm_account_id) || mailingResult.data.fallback || EMPTY_MAILING,
     }));
     const prospectRows = (prospectResult.data || []).map((row) => ({
-      ...row, ...onlineMetrics(row.id), mailing: mailingResult.data.get(row.id) || EMPTY_MAILING, origine: customerOrigin(identities.get(row.id)), nome: customerDisplayName(identities.get(row.id) || row), entityKey: `crm:${row.id}`, routeId: customerRouteId("crm", row.id), source: "Prospect CRM-only",
+      ...row, ...onlineMetrics(row.id), mailing: mailingResult.data.get(row.id) || mailingResult.data.fallback || EMPTY_MAILING, origine: customerOrigin(identities.get(row.id)), nome: customerDisplayName(identities.get(row.id) || row), entityKey: `crm:${row.id}`, routeId: customerRouteId("crm", row.id), source: "Prospect CRM-only",
       codice: row.email || "—", agente_classificazione: null, origine_classificazione: "crm_only", areaLabel: config.label,
       paese: countries.get(`crm:${row.id}`) || null,
       crm_active: row.crm_active !== false, opportunities: row.opportunita_count || 0,
@@ -333,7 +334,9 @@ function AccountsPage({ type }) {
       if (metric === "inactive") return !row.ultimo_ordine_il || row.ultimo_ordine_il < new Date(Date.parse(period.to) - 90 * 86400000).toISOString().slice(0, 10);
       return false;
     });
-    setRows([...canonicalRows, ...visibleProspects]);
+    const allRows = [...canonicalRows, ...visibleProspects];
+    setKpiRows(allRows);
+    setRows(type === "online" ? allRows.filter(row => customerStatus === 'all' || (customerStatus === 'active' ? row.crm_active : !row.crm_active)) : allRows);
     setCanonicalTotal(canonicalRows.length);
     setProspectTotal(visibleProspects.length);
     setError(mailingResult.error ? `Stato mailing non disponibile: ${mailingResult.error.message}` : ""); setLoading(false);
@@ -386,7 +389,7 @@ function AccountsPage({ type }) {
     <div className="crm-filters"><label><Search size={16} /><input value={search} onChange={(event) => updateCustomerParam("customerSearch", event.target.value)} placeholder="Ragione sociale, agente, email o codice" /></label><CrmCustomerStatusFilter value={customerStatus} onChange={(value) => { setCustomerStatus(value); updateCustomerParam("customerPage", "", false); }} id={`customer-status-${type}`} /></div>
     <ErrorBox error={error} retry={load} />
     {type === 'online' && hasPermission('integrations.configure') ? <div className="crm-toolbar"><button type="button" className="secondary-action" disabled={refreshingProfiles} onClick={refreshProfiles}>{refreshingProfiles ? 'Aggiornamento anagrafiche…' : 'Aggiorna anagrafiche da sito e Mailchimp'}</button><span role="status">{profileProgress}</span></div> : null}
-    {type === "online" && !loading ? <OnlineCustomerListKpis rows={rows} period={period}/> : null}
+    {type === "online" && !loading ? <OnlineCustomerListKpis rows={kpiRows} period={period}/> : null}
     {type === "online" ? <p className="crm-source-notes">Acquisti nel periodo: ordini importati da sito, Amazon e altri marketplace collegati al cliente; importi netti IVA, spedizione inclusa e rimborsi detratti. Ordini falliti, annullati o in attesa esclusi. Ultimo ordine e frequenza: storico fino alla data finale, su giorni di acquisto distinti.</p> : null}
     {loading ? <div className="crm-loading">Caricamento clienti...</div> : null}<div className="crm-table-wrap"><table ref={tableRef} data-column-controls-mode="dataset" className="crm-table crm-customer-table crm-control-table"><thead><tr><th>Cliente</th><th>Origine</th>{type === "online" ? <th>Iscrizione mailing</th> : null}<th>{type === "online" ? "Fatturato Mexal" : "Fatturato"}</th><th>{type === "online" ? "Acquisti online" : "Ordinato"}</th><th>Ultimo ordine</th><th>Frequenza</th><th>Riordino previsto</th><th>Responsabile</th><th>Stato CRM</th><th>Stato Mexal</th><th>Azioni</th></tr></thead><tbody>{pageRows.map((row) => <tr key={row.entityKey}><td><CrmCustomerLink crmType={type} customerKey={row.entityKey} name={row.nome} period={period}><strong>{row.nome}</strong><small>{row.codice}</small></CrmCustomerLink></td><td>{row.origine}</td>{type === "online" ? <td>{row.mailing?.label || EMPTY_MAILING.label}</td> : null}<td><strong>{formatMoney(row.invoice_total)}</strong><small>{row.invoice_count || 0} fatture</small></td><td><strong>{formatPurchaseAmount(row.order_total, row.currency)}</strong><small>{row.order_count || 0} ordini</small></td><td>{formatDate(row.ultimo_ordine_il || row.last_purchase)}</td><td>{row.average_gap_days == null ? "—" : `${Number(row.average_gap_days).toLocaleString("it-IT", { useGrouping: 'always',  maximumFractionDigits: 1 })} gg`}</td><td>{formatDate(row.expected_reorder_date)}</td><td>{row.agente_classificazione || "Senza agente"}</td><td><CrmCustomerStatusBadge active={row.crm_active} />{row.crm_status_reason ? <small>{row.crm_status_reason}</small> : null}</td><td>{row.source === "Workspace/Mexal" ? (row.attivo_mexal === false ? "Annullato" : "Attivo") : "Non presente"}</td><td><details className="crm-row-actions"><summary>Azioni</summary><div><CrmCustomerLink crmType={type} customerKey={row.entityKey} name={row.nome} period={period}>Apri cliente</CrmCustomerLink>{canWrite ? <button type="button" onClick={(event) => openCreation(event, "task", row)}>Nuova attività</button> : null}{canWrite && hasPermission("projects.write") ? <button type="button" onClick={(event) => openCreation(event, "project", row)}>Nuovo progetto</button> : null}{canWrite ? <button type="button" className={row.crm_active ? "danger-action" : "secondary-action"} onClick={() => setStatusCustomer(row)}>{row.crm_active ? "Disattiva" : "Riattiva"}</button> : null}</div></details></td></tr>)}</tbody></table>{!loading && !pageRows.length ? <div className="crm-empty">Nessun cliente corrisponde allo stato CRM e ai filtri selezionati.</div> : null}</div>
     <div className="crm-pagination"><button type="button" disabled={page === 0} onClick={() => updateCustomerParam("customerPage", page - 1, false)}>Precedente</button><span>Pagina {page + 1} · {filteredTotal} clienti</span><button type="button" disabled={(page + 1) * CRM_CUSTOMER_PAGE_SIZE >= filteredTotal} onClick={() => updateCustomerParam("customerPage", page + 1, false)}>Successiva</button></div>
@@ -463,7 +466,7 @@ function AccountDetail({ type }) {
     const projectLinksResult = opportunityIds.length ? await supabase.from("crm_workspace_links").select("workspace_entity_id").eq("crm_entity_type", "opportunity").eq("workspace_entity_type", "project").in("crm_entity_id", opportunityIds) : emptyResult;
     if (projectLinksResult.error) failures.push(projectLinksResult.error.message);
     setWarning([...new Set(failures)].join(" · "));
-    setRelated({ contacts: contactsResult.data || [], opportunities: opportunitiesResult.data || [], activities: activitiesResult.data || [], briefs: briefsResult.data || [], orders: ordersResult.data || [], invoices: invoicesResult.data || [], consents: consentsResult.data || [], events: eventsResult.data || [], externalOrders: externalOrdersResult.data || [], externalLines: externalLinesResult.data || [], mailing: mailingResult.data.get(crmAccountId) || EMPTY_MAILING, projectCount: new Set((projectLinksResult.data || []).map((item) => item.workspace_entity_id)).size });
+    setRelated({ contacts: contactsResult.data || [], opportunities: opportunitiesResult.data || [], activities: activitiesResult.data || [], briefs: briefsResult.data || [], orders: ordersResult.data || [], invoices: invoicesResult.data || [], consents: consentsResult.data || [], events: eventsResult.data || [], externalOrders: externalOrdersResult.data || [], externalLines: externalLinesResult.data || [], mailing: mailingResult.data.get(crmAccountId) || mailingResult.data.fallback || EMPTY_MAILING, projectCount: new Set((projectLinksResult.data || []).map((item) => item.workspace_entity_id)).size });
     if (crmAccountId) {
       const [snapshotResult, journeyResult] = await Promise.all([
         supabase.rpc("crm_account_commercial_snapshot", { p_account_id: crmAccountId, p_from: period.from, p_to: period.to }),

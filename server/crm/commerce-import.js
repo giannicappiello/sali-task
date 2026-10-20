@@ -22,9 +22,9 @@ export function wooCustomer(row) {
     telefono: clean(billing.phone || shipping.phone), paese: clean(billing.country || shipping.country),
     indirizzo: [billing.address_1, billing.address_2].filter(Boolean).join(', ') || null,
     citta: clean(billing.city), provincia: clean(billing.state), cap: clean(billing.postcode),
-    partita_iva: fiscal(['billing_vat','_billing_vat','billing_piva','_billing_piva','billing_vat_number']),
+    partita_iva: fiscal(['billing_vat','_billing_vat','billing_piva','_billing_piva','billing_vat_number','p_iva','_p_iva','partita_iva']),
     codice_fiscale: fiscal(['billing_cf','_billing_cf','billing_codice_fiscale','_billing_codice_fiscale']),
-    anagrafica: { nome, cognome, azienda: clean(billing.company), fatturazione: address(billing), spedizione: address(shipping) } };
+    anagrafica: { nome, cognome, azienda: clean(billing.company), pec: fiscal(['billing_pec','_billing_pec','pec']), codice_univoco: fiscal(['codice_univoco','billing_codice_univoco','billing_sdi']), tipologia: fiscal(['tipologia','billing_tipologia']), fatturazione: address(billing), spedizione: address(shipping) } };
 }
 export function mailchimpCustomer(member, schema = []) {
   const fields = member.merge_fields || {};

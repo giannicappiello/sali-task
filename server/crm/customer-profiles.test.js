@@ -55,3 +55,11 @@ test('Guest orders without email still have a stable source identity and include
   const page = await fetchCustomerProfiles({ provider_code: 'woocommerce', configurazione: { site_url: 'https://store.example' } }, {}, { phase: 'orders' }, async () => ({ ok: true, status: 200, data: [raw] }));
   assert.equal(page.rows[0].order_external_id, '13729'); assert.equal(page.rows[0].order_lines[1].external_line_id, 'shipping:2');
 });
+
+test('Sali di Ischia fiscal checkout fields preserve VAT leading zeros, company, PEC and SDI', () => {
+  const c = wooCustomer({ id:1074, billing:{ first_name:'Daniela',last_name:'Mottola',company:'Dierre SRLS' },
+    meta_data:[{key:'p_iva',value:'00123456789'},{key:'billing_pec',value:'company@pec.example'},{key:'codice_univoco',value:'ABC1234'},{key:'tipologia',value:'azienda'}] });
+  assert.equal(c.partita_iva,'00123456789'); assert.equal(c.anagrafica.azienda,'Dierre SRLS');
+  assert.equal(c.anagrafica.pec,'company@pec.example'); assert.equal(c.anagrafica.codice_univoco,'ABC1234');
+  assert.equal(c.nome,'Mottola Daniela');
+});

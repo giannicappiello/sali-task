@@ -22,7 +22,7 @@ function diagnosticMessage(value, options) {
   return message.slice(0, 350);
 }
 
-async function request(url, options, fetcher, stage = '') {
+export async function request(url, options, fetcher, stage = '') {
   const response = await fetcher(url, options);
   if (!response.ok) {
     const providerError = Array.isArray(response.data?.errors) ? response.data.errors[0] : null;
@@ -40,7 +40,7 @@ async function formToken(url, fields, fetcher, stage = '') {
   return request(url, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body }, fetcher, stage);
 }
 
-async function refreshAccessToken(connection, secrets, fetcher) {
+export async function refreshAccessToken(connection, secrets, fetcher) {
   const c = connection.configurazione || {};
   switch (connection.provider_code) {
     case "amazon_sp_api":

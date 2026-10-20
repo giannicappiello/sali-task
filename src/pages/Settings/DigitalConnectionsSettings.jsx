@@ -70,7 +70,10 @@ export default function DigitalConnectionsSettings() {
     try {
       if (action === "test") await digitalConnectionsService.test(id);
       if (action === "activate") await digitalConnectionsService.activate(id, form.syncFrequency);
-      if (action === "sync") await digitalConnectionsService.syncNow(id);
+      if (action === "sync") {
+        const result = await digitalConnectionsService.syncAll(id, { onProgress: (page) => setMessage({ type: 'success', text: `Importazione: ${page.counts?.customers || 0} clienti, ${page.counts?.orders || 0} ordini, ${page.counts?.products || 0} prodotti elaborati.` }) });
+        if (result.counts) successText = `Importazione completata: ${result.counts.customers} clienti, ${result.counts.orders} ordini, ${result.counts.products} prodotti elaborati.`;
+      }
       if (action === "deactivate") await digitalConnectionsService.deactivate(id);
       setMessage({ type: "success", text: successText }); await load();
     } catch (error) { setMessage({ type: "error", text: error.message }); } finally { setBusy(""); }

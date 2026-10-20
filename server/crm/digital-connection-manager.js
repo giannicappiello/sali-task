@@ -8,8 +8,9 @@ import { makeSyncIdempotencyKey } from "./digital-connectors.js";
 import { testProviderConnection } from "./digital-provider-adapters.js";
 import { completeDigitalOAuth, startDigitalOAuth } from "./digital-oauth.js";
 import { notifyDigitalAdmins } from "./digital-notifications.js";
+import { COMMERCE_PROVIDERS, fetchCommercePage } from "./commerce-import.js";
 
-const SAFE_CONNECTION_FIELDS = "id,tipo,provider_code,provider,nome,category,auth_type,stato,endpoint_url,site_url,external_account_id,marketplace_ids,configurazione,secret_references,credenziali_stato,abilitata,sync_attivo,sync_frequency,is_default,ultimo_test_il,ultimo_test_stato,ultimo_test_messaggio,errori_consecutivi,ultimo_sync_il,prossima_run_il,ultimo_errore,oauth_scade_il,webhook_path,webhook_stato,ultimo_webhook_il,disabilitata_il,aggiornata_il";
+const SAFE_CONNECTION_FIELDS = "id,tipo,provider_code,provider,nome,category,auth_type,stato,endpoint_url,site_url,external_account_id,marketplace_ids,configurazione,secret_references,credenziali_stato,abilitata,sync_attivo,sync_frequency,is_default,ultimo_test_il,ultimo_test_stato,ultimo_test_messaggio,errori_consecutivi,ultimo_sync_il,prossima_run_il,ultimo_errore,oauth_scade_il,webhook_path,webhook_stato,ultimo_webhook_il,disabilitata_il,aggiornata_il,import_state,responsabile_id,reparto_id";
 
 function required(name) {
   const value = String(process.env[name] || "").trim();
@@ -161,6 +162,7 @@ async function deactivate(req, body) {
 }
 
 async function synchronize(db, actorId, connection, mode = "manual") {
+  if (COMMERCE_PROVIDERS.includes(connection.provider_code)) return synchronizeCommerce(db, actorId, connection, mode);
   const key = makeSyncIdempotencyKey({ connectionId: connection.id, syncType: "account_discovery", windowStart: mode === "scheduled" ? new Date().toISOString().slice(0, 10) : crypto.randomUUID() });
   const { data: claimedRunId, error: claimError } = await db.rpc("crm_claim_sync_run_service", { target_connection_id: connection.id, target_sync_type: "account_discovery", target_mode: "incremental", target_idempotency_key: key, target_triggered_by: actorId || null });
   if (claimError) throw claimError;
@@ -181,6 +183,31 @@ async function synchronize(db, actorId, connection, mode = "manual") {
     const consecutiveErrors = Number(connection.errori_consecutivi || 0) + 1;
     await db.from("crm_external_connections").update({ ultimo_errore: error.message, errori_consecutivi: consecutiveErrors }).eq("id", connection.id);
     if (consecutiveErrors >= 2) await notifyDigitalAdmins(db, connection, "crm_digital_sync_error").catch(() => null);
+    throw error;
+  }
+}
+
+async function synchronizeCommerce(db, actorId, connection, mode) {
+  const { data: runId, error: lockError } = await db.rpc('crm_claim_commerce_import_service', {
+    target_connection_id: connection.id, target_triggered_by: actorId || null,
+  });
+  if (lockError) throw Object.assign(lockError, { status: lockError.code === '55P03' ? 409 : 500 });
+  const finish = async (status, counts, details, error = null) => {
+    const result = await db.rpc('crm_complete_sync_run_service', { target_run_id: runId, target_status: status,
+      target_counts: counts, target_error_code: error?.code || null, target_error_message: error?.message || null, target_details: details });
+    if (result.error) throw result.error;
+  };
+  try {
+    // Read the cursor after acquiring the lock: another request may have just finished a page.
+    const fresh = await connectionById(db, connection.id);
+    const page = await fetchCommercePage(fresh, await decryptedSecrets(db, connection.id), fresh.import_state);
+    const { error } = await db.rpc('crm_import_commerce_page_service', { target_connection_id: connection.id, target_run_id: runId,
+      expected_state: fresh.import_state, resource_kind: page.kind, page_rows: page.rows, next_state: page.next });
+    if (error) throw error;
+    await finish(page.hasMore ? 'partial' : 'completed', { read: page.rows.length, updated: page.rows.length, failed: 0 }, { source: mode, resource: page.kind, counts: page.next.counts, hasMore: page.hasMore });
+    return { runId, status: page.hasMore ? 'partial' : 'completed', hasMore: page.hasMore, recordsRead: page.rows.length, resource: page.kind, counts: page.next.counts };
+  } catch (error) {
+    await finish('failed', { failed: 1 }, { source: mode, cursor_preserved: true }, error);
     throw error;
   }
 }
@@ -226,7 +253,16 @@ export async function dispatchDigitalSchedule(req) {
   for (const connection of expired || []) { await db.from("crm_external_connections").update({ stato: "oauth_scaduto", abilitata: false, sync_attivo: false }).eq("id", connection.id); await notifyDigitalAdmins(db, connection, "crm_digital_oauth_expired", { cooldownHours: 24 }).catch(() => null); }
   const { data, error } = await db.from("crm_external_connections").select(SAFE_CONNECTION_FIELDS).eq("abilitata", true).eq("sync_attivo", true).eq("sync_frequency", "daily").lte("prossima_run_il", now).limit(10);
   if (error) throw error; const results = [];
-  for (const connection of data || []) { try { results.push({ connectionId: connection.id, ...(await synchronize(db, null, connection, "scheduled")) }); } catch (runError) { results.push({ connectionId: connection.id, status: "failed", error: runError.message }); } }
+  const deadline = Date.now() + 180000;
+  for (const connection of data || []) {
+    if (Date.now() >= deadline) break;
+    try {
+      let result;
+      do { result = await synchronize(db, null, connection, 'scheduled'); }
+      while (result.hasMore && Date.now() < deadline);
+      results.push({ connectionId: connection.id, ...result });
+    } catch (runError) { results.push({ connectionId: connection.id, status: 'failed', error: runError.message }); }
+  }
   return { processed: results.length, results };
 }
 

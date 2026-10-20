@@ -1,0 +1,70 @@
+/* global process */
+// PostgreSQL integration: PGLITE_MODULE points to the installed @electric-sql/pglite entry.
+// No production connection or credentials are used.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import { wooCustomer, wooProduct, wooOrder } from './commerce-import.js';
+
+test('Commerce SQL atomically resumes pages, preserves manual data and imports consent history', { skip: !process.env.PGLITE_MODULE }, async () => {
+  const { PGlite } = await import(process.env.PGLITE_MODULE);
+  const db = new PGlite();
+  try {
+    await db.exec(`create role authenticated; create role anon; create role service_role;
+      create schema auth;
+      create function auth.role() returns text language sql as $$select coalesce(current_setting('test.auth_role',true),'service_role')$$;
+      create function public.crm_row_visible(uuid,uuid,text) returns boolean language sql as $$select true$$;
+      create table utenti(id uuid primary key); create table reparti(id uuid primary key); create table mexal_agenti(id uuid primary key);
+      create table prodotti(id uuid primary key default gen_random_uuid(),codice_mexal text,immagine_url text,immagine_catalogo_url text);
+      create table crm_external_connections(id uuid primary key default gen_random_uuid(),abilitata boolean default true,
+        provider_code text, tipo text, responsabile_id uuid,reparto_id uuid,aggiornata_il timestamptz);
+      create table workspace_moduli(codice text primary key,attivo boolean);
+      create table workspace_schermate(codice text primary key,attiva boolean);
+      create table workspace_moduli_schermate(modulo_codice text,schermata_codice text,ordine integer,predefinita boolean,visibile_menu boolean,unique(modulo_codice,schermata_codice));
+      create function crm_claim_sync_run_service(uuid,text,text,text,uuid) returns uuid language sql as $$ select gen_random_uuid() $$;`);
+    const platform = await fs.readFile(new URL('../../supabase/migrations/20260824120000_crm_platform_ai.sql', import.meta.url), 'utf8');
+    const foundation = await fs.readFile(new URL('../../supabase/migrations/20260824130000_crm_online_digital_commerce.sql', import.meta.url), 'utf8');
+    const extract = (sql, name) => sql.match(new RegExp(`create table if not exists public\\.${name} \\([\\s\\S]*?\\n\\);`, 'i'))?.[0];
+    await db.exec(extract(platform, 'crm_accounts'));
+    for (const name of ['crm_external_customers', 'crm_external_orders', 'crm_external_order_lines', 'crm_sync_runs', 'crm_marketing_consents', 'crm_product_mappings']) await db.exec(extract(foundation, name));
+    // Metrics has unrelated campaign/creator foreign keys, stub their target tables.
+    await db.exec('create table crm_external_campaigns(id uuid primary key); create table crm_creators(id uuid primary key);');
+    await db.exec(extract(foundation, 'crm_external_metrics'));
+    await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261020110000_crm_commerce_import.sql', import.meta.url), 'utf8'));
+    const conn = (await db.query("insert into crm_external_connections(provider_code,tipo) values('woocommerce','ecommerce') returning id")).rows[0].id;
+    const run = (await db.query("insert into crm_sync_runs(connection_id,sync_type,status,idempotency_key) values($1,'commerce_import','running','test') returning id", [conn])).rows[0].id;
+    let state = {};
+    const commit = async (kind, rows, next) => {
+      await db.query('select crm_import_commerce_page_service($1,$2,$3::jsonb,$4,$5::jsonb,$6::jsonb)', [conn, run, JSON.stringify(state), kind, JSON.stringify(rows), JSON.stringify(next)]);
+      state = next;
+    };
+    const c = wooCustomer({ id: 1, email: 'one@example.com', first_name: 'One' });
+    await commit('customers', [c], { page: 2 });
+    await db.exec("update crm_accounts set nome='Nome manuale'");
+    await commit('customers', [c], { page: 3 });
+    assert.equal((await db.query('select count(*)::int n from crm_accounts')).rows[0].n, 1);
+    assert.equal((await db.query('select nome from crm_accounts')).rows[0].nome, 'Nome manuale');
+    const prod = (await db.query("insert into prodotti(codice_mexal) values('IT1') returning id")).rows[0].id;
+    await commit('products', [wooProduct({ id: 1, sku: 'IT1', name: 'Sale', price: '12' })], { page: 4 });
+    assert.equal((await db.query('select product_id from crm_external_products')).rows[0].product_id, prod);
+    const order = wooOrder({ id: 1, customer_id: 1, total: '122', total_tax: '22', status: 'completed', currency: 'EUR', date_created_gmt: '2026-10-01T00:00:00', line_items: [{ id: 1, sku: 'IT1', quantity: 1, total: '100' }] });
+    await commit('orders', [order], { page: 5 });
+    await commit('orders', [order], { page: 6 });
+    assert.equal((await db.query('select count(*)::int n from crm_external_orders')).rows[0].n, 1);
+    assert.equal((await db.query('select count(*)::int n from crm_external_order_lines')).rows[0].n, 1);
+    assert.equal((await db.query('select count(*)::int n from crm_external_metrics')).rows[0].n, 1);
+    assert.equal((await db.query('select product_id from crm_external_order_lines')).rows[0].product_id, prod);
+    await assert.rejects(commit('orders', [{ ...order, external_id: 'valid' }, { ...order, external_id: 'invalid', ordered_at: 'not-a-date' }], { page: 7 }));
+    assert.equal((await db.query('select count(*)::int n from crm_external_orders')).rows[0].n, 1);
+    assert.deepEqual((await db.query('select import_state from crm_external_connections')).rows[0].import_state, { page: 6 });
+    await assert.rejects(db.query('select crm_import_commerce_page_service($1,$2,$3::jsonb,$4,$5::jsonb,$6::jsonb)', [conn, run, '{}', 'customers', '[]', '{}']), /Cursore modificato/);
+    c.consent = { purpose: 'email_marketing', status: 'granted', source: 'mailchimp:list', captured_at: '2026-10-01T00:00:00Z', proof_reference: 'list:1' };
+    await commit('customers', [c], { page: 7 });
+    await commit('customers', [c], { page: 8 });
+    c.consent = { ...c.consent, status: 'withdrawn', captured_at: '2026-10-02T00:00:00Z', withdrawn_at: '2026-10-02T00:00:00Z' };
+    await commit('customers', [c], { page: 9 });
+    assert.equal((await db.query('select count(*)::int n from crm_marketing_consents')).rows[0].n, 2);
+    await db.exec("set test.auth_role='authenticated'");
+    await assert.rejects(commit('customers', [], { page: 10 }), /Servizio riservato/);
+  } finally { await db.close(); }
+});

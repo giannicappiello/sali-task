@@ -91,6 +91,7 @@ export async function safeFetch(input, options = {}, dependencies = {}) {
     const request = transport.request(url, { method: options.method || "GET", headers: options.headers || {}, timeout: timeoutMs, lookup: (_hostname, lookupOptions, callback) => lookupOptions?.all ? callback(null, [{ address, family }]) : callback(null, address, family) }, (response) => {
       if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location) {
         response.resume();
+        if (new URL(response.headers.location, url).origin !== url.origin) return reject(Object.assign(new Error('Redirect verso un altro dominio non consentito per le API del provider.'), { status: 502 }));
         if (Number(options.redirects || 0) >= 2) return reject(Object.assign(new Error("Troppi redirect dal provider."), { status: 502 }));
         return resolve(safeFetch(new URL(response.headers.location, url).toString(), { ...options, redirects: Number(options.redirects || 0) + 1 }, dependencies));
       }

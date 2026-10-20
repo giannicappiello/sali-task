@@ -20,6 +20,10 @@ export function connectionDataStatus(connection) {
   if (connection.stato === "errore") return "error";
   if (!connection.abilitata || connection.stato === "non_configurato") return "not_available";
   if (!connection.ultimo_sync_il) return "not_synced";
+  if (['amazon_sp_api', 'woocommerce', 'mailchimp'].includes(connection.provider_code)) {
+    if (!connection.import_state?.version) return 'not_synced';
+    if (!connection.import_state.completed) return 'partial';
+  }
   if (connection.stato === "configurazione_parziale") return "partial";
   return "available";
 }

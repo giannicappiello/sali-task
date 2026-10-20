@@ -21,6 +21,15 @@ export const digitalConnectionsService = Object.freeze({
   activate: (id, syncFrequency) => request("activate", { id, syncFrequency }),
   deactivate: (id) => request("deactivate", { id }),
   syncNow: (id) => request("sync_now", { id }),
+  syncAll: async (id, { onProgress = () => {}, shouldStop = () => false } = {}) => {
+    let result;
+    do {
+      result = await request('sync_now', { id });
+      onProgress(result);
+      if (shouldStop()) return { ...result, paused: Boolean(result.hasMore) };
+    } while (result.hasMore);
+    return result;
+  },
   revokeSecret: (id, secretName) => request("revoke_secret", { id, secretName }),
   saveMapping: (payload) => request("save_mapping", payload),
   oauthStart: (id) => request("oauth_start", { id }),

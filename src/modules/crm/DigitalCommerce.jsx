@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { BarChart3, Bot, Mail, Megaphone, RefreshCw, ShoppingBag, Store, UsersRound, Workflow } from "lucide-react";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
@@ -11,6 +11,7 @@ import { formatDate, formatMoney } from "./crmConfig";
 import CrmCustomerLink from "./CrmCustomerLink";
 import CrmPeriodFilter, { useCrmPeriod } from "./CrmPeriodFilter";
 import { loadAllQueryRows } from "./crmDataset";
+import { digitalConnectionsService } from '../integrations/services/digitalConnectionsService';
 
 import "./digital.css";
 const CHANNEL_META = Object.freeze({
@@ -71,10 +72,10 @@ export function DigitalHome() {
   const items = [
     { code: "salidischiaclub", name: "SalidischiaClub", description: "Fidelity, cashback, premi e richieste dei clienti.", to: "/crm/online/salidischiaclub", icon: ShoppingBag, allowed: hasScreenAccess("crm.online.club.dashboard", "crm_online") },
     { code: "digital", name: "Panoramica Digital", description: "KPI aggregati e stato delle fonti.", to: "/crm/online/digital", icon: BarChart3, allowed: hasModuleAccess("crm_online") },
-    { code: "ecommerce", name: "Ecommerce", description: "Clienti, ordini, prodotti e vendite del sito.", to: "/crm/online/ecommerce", icon: ShoppingBag, allowed: hasModuleAccess("crm_online_ecommerce") },
+    { code: "ecommerce", name: "Ecommerce", description: "Clienti, ordini, prodotti e vendite del sito.", to: "/crm/online/ecommerce", icon: ShoppingBag, allowed: hasScreenAccess("crm.online.ecommerce", "crm_online") },
     { code: "clients", name: "Clienti Online", description: "Anagrafiche, segmenti, consensi e valore cliente.", to: "/crm/online/clienti", icon: UsersRound, allowed: hasModuleAccess("crm_online") },
-    { code: "mailing", name: "Mailing", description: "Campagne, automazioni e performance newsletter.", to: "/crm/online/mailing", icon: Mail, allowed: hasModuleAccess("crm_online_mailing") },
-    { code: "amazon", name: "Amazon", description: "Seller, Ads e mapping SKU senza scraping.", to: "/crm/online/amazon", icon: Store, allowed: hasModuleAccess("crm_online_amazon") },
+    { code: "mailing", name: "Mailing", description: "Campagne, automazioni e performance newsletter.", to: "/crm/online/mailing", icon: Mail, allowed: hasScreenAccess("crm.online.mailing", "crm_online") },
+    { code: "amazon", name: "Amazon", description: "Seller, Ads e mapping SKU senza scraping.", to: "/crm/online/amazon", icon: Store, allowed: hasScreenAccess("crm.online.amazon", "crm_online") },
     { code: "adv", name: "ADV", description: "Meta Ads e Google Ads.", to: "/crm/online/adv", icon: Megaphone, allowed: hasModuleAccess("crm_online_adv") },
     { code: "creators", name: "Creator / Social", description: "Collaborazioni, contenuti e ROI.", to: "/crm/online/creators", icon: UsersRound, allowed: hasModuleAccess("crm_online") },
     { code: "journey", name: "Customer Journey", description: "Eventi autorizzati e paginati.", to: "/crm/online/journey", icon: Workflow, allowed: hasModuleAccess("crm_online") },
@@ -98,7 +99,7 @@ export function DigitalDashboard({ analytics = false }) {
     const window = { from: period.from, to: period.to };
     const [dashboard, connectionResult] = await Promise.all([
       supabase.rpc("crm_digital_dashboard", { target_from: window.from, target_to: window.to, target_channel: channel || null, target_marketplace: marketplace || null }),
-      supabase.from("crm_external_connections").select("id,tipo,nome,provider,stato,abilitata,ultimo_sync_il,ultimo_errore,marketplace_ids"),
+      supabase.from("crm_external_connections").select("id,tipo,nome,provider,provider_code,stato,abilitata,ultimo_sync_il,ultimo_errore,marketplace_ids,import_state"),
     ]);
     const loadError = dashboard.error || connectionResult.error;
     if (loadError) setError(loadError.message); else { setData(dashboard.data); setConnections(connectionResult.data || []); }
@@ -134,6 +135,11 @@ export function DigitalChannel({ channel }) {
   const [orders, setOrders] = useState([]);
   const [metrics, setMetrics] = useState([]);
   const [mappings, setMappings] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [importing, setImporting] = useState(false);
+  const [progress, setProgress] = useState('');
+  const stopImport = useRef(false);
+  const { isAdmin } = useAuth();
   const [metricPage, setMetricPage] = useState(0);
   const [orderPage, setOrderPage] = useState(0);
   const [error, setError] = useState("");
@@ -145,25 +151,42 @@ export function DigitalChannel({ channel }) {
   const { pageRows: orderRows, total: orderTotal } = usePaginatedDataset(orders, ORDER_COLUMNS, orderQuery, orderPage, DIGITAL_PAGE_SIZE);
   const load = useCallback(async () => {
     setError("");
-    const connectionResult = await supabase.from("crm_external_connections").select("id,tipo,nome,provider,stato,abilitata,ultimo_sync_il,prossima_run_il,ultimo_errore,marketplace_ids").in("tipo", definition.types);
+    const connectionResult = await supabase.from("crm_external_connections").select("id,tipo,nome,provider,provider_code,stato,abilitata,ultimo_sync_il,prossima_run_il,ultimo_errore,marketplace_ids,import_state").in("tipo", definition.types);
     if (connectionResult.error) return setError(connectionResult.error.message);
     const ids = (connectionResult.data || []).map((item) => item.id);
     setConnections(connectionResult.data || []);
-    if (!ids.length) { setOrders([]); setMetrics([]); setMappings([]); return; }
+    if (!ids.length) { setOrders([]); setMetrics([]); setMappings([]); setProducts([]); return; }
     const requests = [loadAllQueryRows((from, to) => supabase.from("crm_external_metrics").select("id,metric_date,channel,marketplace,impressions,clicks,spend,revenue,orders,conversions,attribution_method").in("connection_id", ids).gte("metric_date", period.from).lte("metric_date", period.to).order("metric_date", { ascending: false }).range(from, to))];
     if (["ecommerce", "amazon"].includes(channel)) requests.push(loadAllQueryRows((from, to) => supabase.from("crm_external_orders").select("id,external_id,marketplace,stato,ordered_at,net_revenue,attribution_method").in("connection_id", ids).gte("ordered_at", period.from).lte("ordered_at", period.to + "T23:59:59.999Z").order("ordered_at", { ascending: false }).range(from, to)));
     if (channel === "amazon") requests.push(loadAllQueryRows((from, to) => supabase.from("crm_product_mappings").select("id,marketplace,external_sku,asin,codice_mexal,status,prodotti(nome,codice)").in("connection_id", ids).order("aggiornato_il", { ascending: false }).range(from, to)));
     const results = await Promise.all(requests); const failure = results.find((item) => item.error)?.error;
     if (failure) setError(failure.message); else { setMetrics(results[0].data || []); setOrders(results[1]?.data || []); setMappings(channel === "amazon" ? results[2]?.data || [] : []); }
+    if (['ecommerce', 'amazon'].includes(channel)) {
+      const imported = await loadAllQueryRows((from, to) => supabase.from('crm_external_products').select('id,nome,external_sku,asin,marketplace,price,currency,stock,assets,product_id').in('connection_id', ids).order('nome').order('id').range(from, to));
+      if (imported.error) setError(imported.error.message); else setProducts(imported.data || []);
+    }
   }, [channel, definition.types, period.from, period.to]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
   const Icon = definition.icon;
   const sourceDefinitions = DIGITAL_CONNECTIONS.filter((item) => definition.types.includes(item.type));
+  async function importData() {
+    setImporting(true); setError(''); stopImport.current = false;
+    try {
+      for (const connection of connections.filter((c) => c.abilitata && ['amazon_sp_api', 'woocommerce', 'mailchimp'].includes(c.provider_code))) {
+        if (stopImport.current) break;
+        const result = await digitalConnectionsService.syncAll(connection.id, { shouldStop: () => stopImport.current, onProgress: (p) => setProgress(`${connection.nome}: ${p.counts?.orders || 0} ordini, ${p.counts?.products || 0} prodotti, ${p.counts?.customers || 0} clienti elaborati.`) });
+        setProgress(result.paused ? 'Importazione sospesa. Premi Importa dati per riprendere.' : 'Importazione completata.');
+      }
+    } catch (e) { setError(`${e.message} La pagina non completata verrà riprovata alla prossima importazione.`); }
+    finally { setImporting(false); await load(); }
+  }
   return <div className="crm-page"><div className="crm-toolbar"><div><span className="crm-eyebrow"><Icon size={16} /> CRM Online</span><h2>{definition.title}</h2><p>Layer provider-agnostic: nessuna azione esterna automatica.</p></div><div className="crm-toolbar-actions"><CrmPeriodFilter period={period} compact /><Link className="secondary-action crm-secondary" to="/settings/crm-digital">Configura in Impostazioni</Link></div></div>
     {error ? <div className="crm-message error">{error}</div> : null}
+    {['amazon', 'ecommerce', 'mailing'].includes(channel) ? <section className="panel crm-panel"><h3>Importazione dati</h3><p>Importa ordini, prodotti, immagini e materiali disponibili. Le pagine completate sono salvate e l’importazione può essere ripresa.</p>{isAdmin() ? <button type="button" className="secondary-action crm-secondary" disabled={importing || !connections.some((c) => c.abilitata && ['amazon_sp_api', 'woocommerce', 'mailchimp'].includes(c.provider_code))} onClick={() => void importData()}><RefreshCw size={16} />{importing ? 'Importazione in corso…' : 'Importa dati'}</button> : null}{importing ? <button type="button" onClick={() => { stopImport.current = true; }}>Sospendi dopo questa pagina</button> : null}<p role="status" aria-live="polite">{progress}</p>{channel === 'amazon' ? <small>Ordini richiesti per gli ultimi due anni e aggiornamenti successivi, nei marketplace configurati. Clienti, rimborsi, commissioni e Ads dipendono dai permessi disponibili. Gli importi non forniti restano non disponibili.</small> : null}</section> : null}
     <div className="crm-connection-grid">{sourceDefinitions.map((source) => { const current = connections.find((item) => item.tipo === source.type); return <article key={source.type}><div><strong>{source.label}</strong><StatusPill status={connectionDataStatus(current)} /></div><p>{current?.provider || "Provider non identificato"}</p><small>{current?.ultimo_errore || source.sourceNeeded}</small></article>; })}</div>
     <section className="panel crm-panel"><h3>Metriche disponibili</h3><div className="crm-table-wrap"><table ref={metricTableRef} data-column-controls-mode="dataset" className="crm-table"><thead><tr><th>Data</th><th>Canale</th><th>Marketplace</th><th>Spend</th><th>Revenue</th><th>Ordini</th><th>Attribuzione</th></tr></thead><tbody>{metricRows.map((row) => <tr key={row.id}><td>{formatDate(row.metric_date)}</td><td>{row.channel}</td><td>{row.marketplace || "—"}</td><td>{metricValue(row.spend, formatMoney)}</td><td>{metricValue(row.revenue, formatMoney)}</td><td>{metricValue(row.orders)}</td><td>{row.attribution_method}</td></tr>)}</tbody></table>{!metricRows.length ? <div className="crm-empty">Dato non sincronizzato: configura il provider reale e avvia una sincronizzazione autorizzata.</div> : null}</div><div className="crm-pagination"><button type="button" disabled={metricPage === 0} onClick={() => setMetricPage((value) => value - 1)}>Precedente</button><span>Pagina {metricPage + 1} · {metricTotal} righe</span><button type="button" disabled={(metricPage + 1) * DIGITAL_PAGE_SIZE >= metricTotal} onClick={() => setMetricPage((value) => value + 1)}>Successiva</button></div></section>
     {orders.length || ["ecommerce", "amazon"].includes(channel) ? <section className="panel crm-panel"><h3>Ordini</h3><div className="crm-table-wrap"><table ref={orderTableRef} data-column-controls-mode="dataset" className="crm-table"><thead><tr><th>Ordine</th><th>Data</th><th>Marketplace</th><th>Stato</th><th>Revenue netta</th><th>Attribuzione</th></tr></thead><tbody>{orderRows.map((row) => <tr key={row.id}><td>{row.external_id}</td><td>{formatDate(row.ordered_at)}</td><td>{row.marketplace || "Sito"}</td><td>{row.stato || "—"}</td><td>{metricValue(row.net_revenue, formatMoney)}</td><td>{row.attribution_method}</td></tr>)}</tbody></table>{!orderRows.length ? <div className="crm-empty">Nessun ordine sincronizzato.</div> : null}</div><div className="crm-pagination"><button type="button" disabled={orderPage === 0} onClick={() => setOrderPage((value) => value - 1)}>Precedente</button><span>Pagina {orderPage + 1} · {orderTotal} righe</span><button type="button" disabled={(orderPage + 1) * DIGITAL_PAGE_SIZE >= orderTotal} onClick={() => setOrderPage((value) => value + 1)}>Successiva</button></div></section> : null}
+    {['amazon', 'ecommerce'].includes(channel) ? <section className="panel crm-panel"><h3>Prodotti importati · {products.length}</h3><div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Prodotto</th><th>SKU / ASIN</th><th>Marketplace</th><th>Prezzo</th><th>Materiali</th><th>Collegamento catalogo</th></tr></thead><tbody>{products.map((p) => <tr key={p.id}><td>{p.nome}</td><td>{p.external_sku || '—'}{p.asin ? ` / ${p.asin}` : ''}</td><td>{p.marketplace}</td><td>{p.price == null ? 'Dato non disponibile' : p.currency ? new Intl.NumberFormat('it-IT', { style: 'currency', currency: p.currency }).format(p.price) : Number(p.price).toLocaleString('it-IT', { minimumFractionDigits: 2 })}</td><td>{(p.assets || []).map((a, i) => <span key={`${a.url}:${i}`}><a href={a.url} target="_blank" rel="noopener noreferrer">{a.name || (a.type === 'image' ? 'Immagine' : 'Documento')}</a>{' '}</span>)}</td><td>{p.product_id ? 'Collegato' : 'Da verificare'}</td></tr>)}</tbody></table>{!products.length ? <div className="crm-empty">Nessun prodotto importato. Avvia Importa dati per acquisire il catalogo della fonte.</div> : null}</div></section> : null}
     {channel === "amazon" ? <section className="panel crm-panel"><h3>Mapping Amazon ↔ Prodotti Workspace/Mexal</h3><div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Marketplace</th><th>SKU</th><th>ASIN</th><th>Prodotto</th><th>Stato</th></tr></thead><tbody>{mappings.map((row) => <tr key={row.id}><td>{row.marketplace || "—"}</td><td>{row.external_sku}</td><td>{row.asin || "—"}</td><td>{row.prodotti?.nome || row.codice_mexal || "Non mappato"}</td><td><StatusPill status={row.status === "matched" ? "available" : row.status === "probable" ? "partial" : "not_available"} /></td></tr>)}</tbody></table>{!mappings.length ? <div className="crm-empty">Nessun mapping disponibile; non viene creato un secondo catalogo prodotti.</div> : null}</div></section> : null}
   </div>;
 }

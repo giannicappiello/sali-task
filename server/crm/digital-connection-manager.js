@@ -10,6 +10,7 @@ import { testProviderConnection } from "./digital-provider-adapters.js";
 import { completeDigitalOAuth, startDigitalOAuth } from "./digital-oauth.js";
 import { notifyDigitalAdmins } from "./digital-notifications.js";
 import { COMMERCE_PROVIDERS, fetchCommercePage } from "./commerce-import.js";
+import { authorizedDigitalScheduler, runDigitalDailyJobs } from "./digital-daily-scheduler.js";
 import { loadDigitalOrderDetail } from './digital-order-detail.js';
 
 const SAFE_CONNECTION_FIELDS = "id,tipo,provider_code,provider,nome,category,auth_type,stato,endpoint_url,site_url,external_account_id,marketplace_ids,configurazione,secret_references,credenziali_stato,abilitata,sync_attivo,sync_frequency,is_default,ultimo_test_il,ultimo_test_stato,ultimo_test_messaggio,errori_consecutivi,ultimo_sync_il,prossima_run_il,ultimo_errore,oauth_scade_il,webhook_path,webhook_stato,ultimo_webhook_il,disabilitata_il,aggiornata_il,import_state,responsabile_id,reparto_id";
@@ -241,13 +242,13 @@ async function syncNow(req, body) {
 async function operationalData(db, body = {}) {
   const connectionId = body.id || null;
   const connections = await list(db);
-  let runQuery = db.from("crm_sync_runs").select("id,connection_id,sync_type,mode,status,started_at,completed_at,records_read,records_inserted,records_updated,records_failed,duration_ms,error_code,error_message,details,created_at").order("created_at", { ascending: false }).limit(100);
+  let runQuery = db.from("crm_sync_runs").select("id,connection_id,sync_type,mode,status,started_at,completed_at,records_read,records_inserted,records_updated,records_failed,duration_ms,error_code,error_message,details,created_at").or("sync_type.eq.daily_full,details->>source.is.null,details->>source.neq.scheduled").order("created_at", { ascending: false }).limit(100);
   let auditQuery = db.from("crm_connection_audit").select("id,connection_id,provider_code,operation,outcome,details,created_at").order("created_at", { ascending: false }).limit(100);
   let mappingQuery = db.from("crm_product_mappings").select("id,connection_id,marketplace,external_sku,asin,product_id,codice_mexal,status,match_method,verified_at").order("aggiornato_il", { ascending: false }).limit(100);
   if (connectionId) { runQuery = runQuery.eq("connection_id", connectionId); auditQuery = auditQuery.eq("connection_id", connectionId); mappingQuery = mappingQuery.eq("connection_id", connectionId); }
   const [runs, audits, mappings] = await Promise.all([runQuery, auditQuery, mappingQuery]);
   if (runs.error) throw runs.error; if (audits.error) throw audits.error; if (mappings.error) throw mappings.error;
-  return { connections, runs: runs.data || [], audit: audits.data || [], mappings: mappings.data || [], diagnostics: { scheduler: "daily", connectionCount: connections.length, activeCount: connections.filter((row) => row.abilitata).length, failedCount: connections.filter((row) => row.stato === "errore").length } };
+  return { connections, runs: runs.data || [], audit: audits.data || [], mappings: mappings.data || [], diagnostics: { scheduler: "Ogni giorno alle 23:00 (Europe/Rome)", automaticCount: connections.filter(row => row.abilitata && row.sync_attivo).length, connectionCount: connections.length, activeCount: connections.filter((row) => row.abilitata).length, failedCount: connections.filter((row) => row.stato === "errore").length } };
 }
 
 async function oauthStart(req, body) {
@@ -267,23 +268,12 @@ async function saveMapping(req, body) {
 }
 
 export async function dispatchDigitalSchedule(req) {
-  if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) throw Object.assign(new Error("Cron non autorizzato."), { status: 401 });
-  const db = serviceClient(); const now = new Date().toISOString();
-  const { data: expired } = await db.from("crm_external_connections").select(SAFE_CONNECTION_FIELDS).eq("abilitata", true).in("provider_code", ["shopify", "meta_ads"]).not("oauth_scade_il", "is", null).lte("oauth_scade_il", now);
-  for (const connection of expired || []) { await db.from("crm_external_connections").update({ stato: "oauth_scaduto", abilitata: false, sync_attivo: false }).eq("id", connection.id); await notifyDigitalAdmins(db, connection, "crm_digital_oauth_expired", { cooldownHours: 24 }).catch(() => null); }
-  const { data, error } = await db.from("crm_external_connections").select(SAFE_CONNECTION_FIELDS).eq("abilitata", true).eq("sync_attivo", true).eq("sync_frequency", "daily").lte("prossima_run_il", now).limit(10);
-  if (error) throw error; const results = [];
-  const deadline = Date.now() + 180000;
-  for (const connection of data || []) {
-    if (Date.now() >= deadline) break;
-    try {
-      let result;
-      do { result = await synchronize(db, null, connection, 'scheduled'); }
-      while (result.hasMore && !result.retryAfterMs && Date.now() < deadline);
-      results.push({ connectionId: connection.id, ...result });
-    } catch (runError) { results.push({ connectionId: connection.id, status: 'failed', error: runError.message }); }
-  }
-  return { processed: results.length, results };
+  if (!authorizedDigitalScheduler(req, process.env.SUPABASE_SERVICE_ROLE_KEY, process.env.CRON_SECRET)) throw Object.assign(new Error("Cron non autorizzato."), { status: 401 });
+  const db = serviceClient();
+  return runDigitalDailyJobs({ db, connectionById, synchronize: async (...args) => {
+    if (!COMMERCE_PROVIDERS.includes(args[2].provider_code)) throw new Error('Importazione completa non disponibile per questo provider.');
+    return synchronize(...args);
+  } });
 }
 
 export async function handleDigitalConnectionManager(req, res) {

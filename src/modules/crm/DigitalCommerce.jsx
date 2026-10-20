@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { BarChart3, Bot, Mail, Megaphone, RefreshCw, ShoppingBag, Store, UsersRound, Workflow } from "lucide-react";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
-import InfoTooltip from "../../components/InfoTooltip";
 import { useDatasetTableControls, usePaginatedDataset, useResetPageCallback } from "../../components/useDatasetTableControls";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
@@ -39,25 +38,9 @@ const JOURNEY_COLUMNS = [
   { value: (row) => row.fonte || "unknown" },
   { value: (row) => row.consenso_riferimento || "Non richiesto / non disponibile" },
 ];
-const DIGITAL_KPI_INFO = {
-  Revenue: "Somma dei ricavi netti attribuiti ai canali, marketplace e periodo selezionati.",
-  Ordini: "Numero di ordini distinti acquisiti dalle fonti autorizzate nel periodo selezionato.",
-  "Clienti identificati": "Numero di identità cliente distinte collegate tramite matching autorizzato.",
-  AOV: "Valore medio ordine: revenue divisa per il numero di ordini del periodo.",
-  "Marketing spend": "Somma della spesa pubblicitaria importata dalle connessioni ADV selezionate.",
-  ROAS: "Ritorno sulla spesa pubblicitaria: revenue attribuita divisa per marketing spend.",
-  LTV: "Valore economico medio generato dal cliente lungo lo storico disponibile.",
-  "Conversion rate": "Rapporto percentuale tra conversioni e sessioni o visite tracciate.",
-};
-
 function StatusPill({ status }) {
   const definition = DATA_STATUS[status] || DATA_STATUS.not_available;
   return <span className={`crm-data-status ${definition.className}`}>{definition.label}</span>;
-}
-
-function DigitalKpi({ label, value, status, note, to }) {
-  const content = <><span>{label}<InfoTooltip label={label} text={DIGITAL_KPI_INFO[label] || note || `Indicatore ${label} calcolato sui filtri correnti.`} /></span><strong>{value}</strong><StatusPill status={status} />{note ? <small>{note}</small> : null}{to ? <em>Apri dettaglio →</em> : null}</>;
-  return to ? <Link className="crm-kpi" to={to} aria-label={`${label}: ${value}. Apri dettaglio`}>{content}</Link> : <article className="crm-kpi">{content}</article>;
 }
 
 export function DigitalHome() {
@@ -78,48 +61,7 @@ export function DigitalHome() {
   return <ModuleContainerLayout icon={ShoppingBag} eyebrow="CRM Online" title="Digital Commerce & Marketing" description="Ecommerce, mailing, Amazon, ADV e creator in un unico perimetro autorizzato." items={items} emptyTitle="Nessuna sezione Digital disponibile" emptyDescription="Assegna i moduli CRM Online dal pannello Moduli." />;
 }
 
-export function DigitalDashboard({ analytics = false }) {
-  const { hasModuleAccess } = useAuth();
-  const period = useCrmPeriod();
-  const [channel, setChannel] = useState("");
-  const [marketplace, setMarketplace] = useState("");
-  const [data, setData] = useState(null);
-  const [connections, setConnections] = useState([]);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
-  const load = useCallback(async () => {
-    setLoading(true); setError("");
-    const window = { from: period.from, to: period.to };
-    const [dashboard, connectionResult] = await Promise.all([
-      supabase.rpc("crm_digital_dashboard", { target_from: window.from, target_to: window.to, target_channel: channel || null, target_marketplace: marketplace || null }),
-      supabase.from("crm_external_connections").select("id,tipo,nome,provider,provider_code,stato,abilitata,ultimo_sync_il,ultimo_errore,marketplace_ids,import_state"),
-    ]);
-    const loadError = dashboard.error || connectionResult.error;
-    if (loadError) setError(loadError.message); else { setData(dashboard.data); setConnections(connectionResult.data || []); }
-    setLoading(false);
-  }, [channel, marketplace, period.from, period.to]);
-  useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
-  const dataStatus = data?.dataStatus || "not_available";
-  const availableChannels = DIGITAL_CONNECTIONS.filter((item) => hasModuleAccess(item.moduleCode));
-  const marketplaces = [...new Set(connections.flatMap((item) => item.marketplace_ids || []))];
-  const drilldown = (path, metric) => period.withPeriod(path, { ...(channel ? { channel } : {}), ...(marketplace ? { marketplace } : {}), metric });
-  return <div className="crm-page">
-    <div className="crm-toolbar"><div><span className="crm-eyebrow">{analytics ? "Analisi Digital" : "Panoramica Digital"}</span><h2>{analytics ? "Performance multicanale" : "Digital Commerce Dashboard"}</h2><p>I valori assenti restano esplicitamente non disponibili; nessuno zero sostitutivo.</p></div><Link className="secondary-action crm-secondary" to={period.withPeriod("/crm/online")}>Aree Digital</Link></div>
-    <div className="crm-digital-filters"><CrmPeriodFilter period={period} compact /><label>Canale<select value={channel} onChange={(event) => setChannel(event.target.value)}><option value="">Tutti gli autorizzati</option>{availableChannels.map((item) => <option key={item.type} value={item.type}>{item.label}</option>)}</select></label><label>Marketplace<select value={marketplace} onChange={(event) => setMarketplace(event.target.value)}><option value="">Tutti</option>{marketplaces.map((item) => <option key={item}>{item}</option>)}</select></label><button type="button" className="secondary-action crm-secondary" onClick={() => void load()}><RefreshCw size={16} />Aggiorna</button></div>
-    {error ? <div className="crm-message error">{error}</div> : null}
-    {loading ? <div className="crm-loading">Calcolo aggregati server-side...</div> : <div className="crm-kpi-grid">
-      <DigitalKpi label="Revenue" value={metricValue(data?.revenue, formatMoney)} status={dataStatus} to={drilldown("/crm/online/ecommerce", "revenue")} />
-      <DigitalKpi label="Ordini" value={metricValue(data?.orders)} status={dataStatus} to={drilldown("/crm/online/ecommerce", "orders")} />
-      <DigitalKpi label="Clienti identificati" value={metricValue(data?.customers)} status={dataStatus} note="Solo match autorizzati" to={drilldown("/crm/online/clienti", "identified")} />
-      <DigitalKpi label="AOV" value={metricValue(data?.aov, formatMoney)} status={dataStatus} to={drilldown("/crm/online/ecommerce", "aov")} />
-      <DigitalKpi label="Marketing spend" value={metricValue(data?.marketingSpend, formatMoney)} status={data?.marketingSpend == null ? "not_available" : "available"} to={drilldown("/crm/online/adv", "spend")} />
-      <DigitalKpi label="ROAS" value={metricValue(data?.roas, (value) => `${Number(value).toLocaleString('it-IT', { useGrouping: 'always',  minimumFractionDigits: 2, maximumFractionDigits: 2 })}×`)} status={data?.roas == null ? "not_available" : "available"} to={drilldown("/crm/online/adv", "roas")} />
-      <DigitalKpi label="LTV" value="Dato non disponibile" status="not_available" note="Richiede storico clienti e ordini del provider reale" to={drilldown("/crm/online/clienti", "ltv")} />
-      <DigitalKpi label="Conversion rate" value="Dato non disponibile" status="not_available" note="Richiede sessioni e checkout autorizzati" to={drilldown("/crm/online/analytics", "conversion")} />
-    </div>}
-    <section className="panel crm-panel"><h3>Stato fonti</h3><div className="crm-connection-grid">{availableChannels.map((definition) => { const connection = connections.find((item) => item.tipo === definition.type); return <article key={definition.type}><div><strong>{definition.label}</strong><StatusPill status={connectionDataStatus(connection)} /></div><p>{connection?.provider || definition.sourceNeeded}</p><small>{connection?.ultimo_sync_il ? `Ultimo sync ${new Date(connection.ultimo_sync_il).toLocaleString("it-IT")}` : "Nessuna sincronizzazione disponibile"}</small></article>; })}</div></section>
-  </div>;
-}
+export { default as DigitalDashboard } from "./DigitalCommercialDashboard";
 
 export function DigitalChannel({ channel }) {
   const definition = CHANNEL_META[channel];

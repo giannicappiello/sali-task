@@ -38,6 +38,8 @@ import { CrmB2BFollowUpPage, CrmB2BReordersPage, CrmBeautyDaysPage, CrmBrandDire
 import CrmClub from "./club/CrmClub";
 import { digitalConnectionsService } from "../integrations/services/digitalConnectionsService";
 import { customerOrigin, customerDisplayName } from "./customerIdentity";
+import { customerPurchases, purchasesByAccount, ordersInPeriod, formatPurchaseAmount } from "./customerPurchaseModel.js";
+import { loadCustomerOrders } from "./customerPurchases";
 import "./crm.css";
 import "./workspace-alignment.css";
 
@@ -161,7 +163,7 @@ const ACCOUNT_COLUMNS = [
   { value: (row) => `${row.nome} ${row.codice}` },
   { value: (row) => row.origine },
   { value: (row) => `${formatMoney(row.invoice_total)} ${row.invoice_count || 0} fatture` },
-  { value: (row) => `${formatMoney(row.order_total)} ${row.order_count || 0} ordini` },
+  { value: (row) => `${formatPurchaseAmount(row.order_total, row.currency)} ${row.order_count || 0} ordini` },
   { value: (row) => formatDate(row.ultimo_ordine_il || row.last_purchase) },
   { value: (row) => row.average_gap_days == null ? "—" : `${Number(row.average_gap_days).toLocaleString("it-IT", { useGrouping: 'always',  maximumFractionDigits: 1 })} gg` },
   { value: (row) => formatDate(row.expected_reorder_date) },
@@ -259,6 +261,7 @@ function AccountsPage({ type }) {
   const [customerStatus, setCustomerStatus] = useCrmCustomerStatus("active");
   const search = searchParams.get("customerSearch") || "";
   const page = Math.max(0, Number(searchParams.get("customerPage") || 0));
+  const customerRequest = useRef(0);
   const [refreshingProfiles, setRefreshingProfiles] = useState(false);
   const [profileProgress, setProfileProgress] = useState("");
   const [rows, setRows] = useState([]); const [canonicalTotal, setCanonicalTotal] = useState(0); const [prospectTotal, setProspectTotal] = useState(0);
@@ -281,22 +284,28 @@ function AccountsPage({ type }) {
   const [tableRef, tableQuery] = useDatasetTableControls({ onQueryChange: resetCustomerPage });
   const { pageRows, total: filteredTotal } = usePaginatedDataset(rows, ACCOUNT_COLUMNS, tableQuery, page, CRM_CUSTOMER_PAGE_SIZE);
   const load = useCallback(async () => {
+    const sequence = ++customerRequest.current;
     setLoading(true);
     const term = search.trim().replaceAll(",", " ");
-    const [canonicalResult, prospectResult, countryResult, cadenceResult, identityResult] = await Promise.all([
+    const [canonicalResult, prospectResult, countryResult, cadenceResult, identityResult, purchaseResult] = await Promise.all([
       loadAllRpcRows("crm_customer_metric_details", {
         p_crm_type: type, p_from: period.from, p_to: period.to, p_metric: metric,
         p_search: term || null, p_customer_status: customerStatus,
       }),
-      metric === "all" ? loadAllRpcRows("crm_prospect_customer_details", {
+      (metric === "all" || type === "online") ? loadAllRpcRows("crm_prospect_customer_details", {
         p_crm_type: type, p_search: term || null, p_customer_status: customerStatus,
       }) : Promise.resolve({ data: [], error: null }),
       supabase.rpc("crm_customer_country_catalog", { p_crm_type: type }),
       supabase.rpc("crm_customer_cadence_details", { p_crm_type: type, p_to: period.to }),
       loadAllQueryRows((from, to) => supabase.from("crm_accounts").select("id,nome,fonte,metadati").eq("tipo", type).order("id").range(from, to)),
+      type === "online" ? loadCustomerOrders(period.to) : Promise.resolve({ data: [], error: null }),
     ]);
-    const loadError = canonicalResult.error || prospectResult.error || countryResult.error || cadenceResult.error || identityResult.error;
+    if (sequence !== customerRequest.current) return;
+    const loadError = canonicalResult.error || prospectResult.error || countryResult.error || cadenceResult.error || identityResult.error || purchaseResult.error;
     if (loadError) { setError(loadError.message); setLoading(false); return; }
+    const purchases = purchasesByAccount(purchaseResult.data || [], period.from, period.to);
+    const emptyPurchases = customerPurchases([], period.from, period.to);
+    const onlineMetrics = id => type === "online" ? (purchases.get(id) || emptyPurchases) : {};
     const identities = new Map((identityResult.data || []).map(row => [row.id, row]));
     const countries = new Map((countryResult.data || []).map((row) => [row.entity_key, row.country_code]));
     const cadence = new Map((cadenceResult.data || []).map((row) => [row.codice_cliente, row]));
@@ -305,19 +314,27 @@ function AccountsPage({ type }) {
       source: "Workspace/Mexal", origine: "Mexal", nome: row.ragione_sociale, codice: row.codice_cliente, areaLabel: config.label,
       paese: countries.get(`mexal:${row.codice_cliente}`) || null,
       crm_active: row.crm_active !== false, opportunities: row.opportunita_count || 0,
+      ...onlineMetrics(row.crm_account_id),
     }));
     const prospectRows = (prospectResult.data || []).map((row) => ({
-      ...row, origine: customerOrigin(identities.get(row.id)), nome: customerDisplayName(identities.get(row.id) || row), entityKey: `crm:${row.id}`, routeId: customerRouteId("crm", row.id), source: "Prospect CRM-only",
+      ...row, ...onlineMetrics(row.id), origine: customerOrigin(identities.get(row.id)), nome: customerDisplayName(identities.get(row.id) || row), entityKey: `crm:${row.id}`, routeId: customerRouteId("crm", row.id), source: "Prospect CRM-only",
       codice: row.email || "—", agente_classificazione: null, origine_classificazione: "crm_only", areaLabel: config.label,
       paese: countries.get(`crm:${row.id}`) || null,
       crm_active: row.crm_active !== false, opportunities: row.opportunita_count || 0,
     }));
-    setRows([...canonicalRows, ...prospectRows]);
+    const visibleProspects = prospectRows.filter(row => {
+      if (type !== "online" || metric === "all") return true;
+      if (metric === "active" || metric === "ordered") return row.order_count > 0;
+      if (metric === "new") return row.first_purchase >= period.from && row.first_purchase <= period.to;
+      if (metric === "inactive") return !row.ultimo_ordine_il || row.ultimo_ordine_il < new Date(Date.parse(period.to) - 90 * 86400000).toISOString().slice(0, 10);
+      return false;
+    });
+    setRows([...canonicalRows, ...visibleProspects]);
     setCanonicalTotal(canonicalRows.length);
-    setProspectTotal(prospectRows.length);
+    setProspectTotal(visibleProspects.length);
     setError(""); setLoading(false);
   }, [config.label, customerStatus, metric, period.from, period.to, search, type]);
-  useEffect(() => { const timer = window.setTimeout(() => void load(), 180); return () => window.clearTimeout(timer); }, [load]);
+  useEffect(() => { const timer = window.setTimeout(() => void load(), 180); return () => { window.clearTimeout(timer); customerRequest.current++; }; }, [load]);
 
   async function refreshProfiles() {
     setRefreshingProfiles(true); setError('');
@@ -359,13 +376,14 @@ function AccountsPage({ type }) {
   const metricLabels = { all: "Tutti i clienti", active: "Attivi nel periodo", new: "Nuovi nel periodo", invoiced: "Con fatture nel periodo", ordered: "Con ordini nel periodo", inactive: "Inattivi da almeno 90 giorni" };
   const navigation = crmNavigation(type);
   return <div className="crm-page">
-    <CrmPageHeader eyebrow={config.label} title={`Clienti ${config.label}`} description={`${canonicalTotal} clienti Workspace/Mexal nel dettaglio “${metricLabels[metric] || metric}” · ${prospectTotal} prospect CRM-only.`} actions={<><CrmPeriodFilter period={period} compact />{canWrite ? <button className="primary-action crm-primary" type="button" onClick={() => setOpen(true)}><Plus size={17} />Nuovo prospect</button> : null}</>}>
+    <CrmPageHeader eyebrow={config.label} title={`Clienti ${config.label}`} description={`${canonicalTotal} clienti Workspace/Mexal nel dettaglio “${metricLabels[metric] || metric}” · ${prospectTotal} ${type === "online" ? "contatti online" : "prospect CRM-only"}.`} actions={<><CrmPeriodFilter period={period} compact />{canWrite ? <button className="primary-action crm-primary" type="button" onClick={() => setOpen(true)}><Plus size={17} />Nuovo prospect</button> : null}</>}>
       <CrmSectionNav items={navigation} period={period} label={`Navigazione ${config.label}`} />
     </CrmPageHeader>
     <div className="crm-filters"><label><Search size={16} /><input value={search} onChange={(event) => updateCustomerParam("customerSearch", event.target.value)} placeholder="Ragione sociale, agente, email o codice" /></label><CrmCustomerStatusFilter value={customerStatus} onChange={(value) => { setCustomerStatus(value); updateCustomerParam("customerPage", "", false); }} id={`customer-status-${type}`} /></div>
     <ErrorBox error={error} retry={load} />
     {type === 'online' && hasPermission('integrations.configure') ? <div className="crm-toolbar"><button type="button" className="secondary-action" disabled={refreshingProfiles} onClick={refreshProfiles}>{refreshingProfiles ? 'Aggiornamento anagrafiche…' : 'Aggiorna anagrafiche da sito e Mailchimp'}</button><span role="status">{profileProgress}</span></div> : null}
-    {loading ? <div className="crm-loading">Caricamento clienti...</div> : null}<div className="crm-table-wrap"><table ref={tableRef} data-column-controls-mode="dataset" className="crm-table crm-customer-table crm-control-table"><thead><tr><th>Cliente</th><th>Origine</th><th>Fatturato</th><th>Ordinato</th><th>Ultimo ordine</th><th>Frequenza</th><th>Riordino previsto</th><th>Responsabile</th><th>Stato CRM</th><th>Stato Mexal</th><th>Azioni</th></tr></thead><tbody>{pageRows.map((row) => <tr key={row.entityKey}><td><CrmCustomerLink crmType={type} customerKey={row.entityKey} name={row.nome} period={period}><strong>{row.nome}</strong><small>{row.codice}</small></CrmCustomerLink></td><td>{row.origine}</td><td><strong>{formatMoney(row.invoice_total)}</strong><small>{row.invoice_count || 0} fatture</small></td><td><strong>{formatMoney(row.order_total)}</strong><small>{row.order_count || 0} ordini</small></td><td>{formatDate(row.ultimo_ordine_il || row.last_purchase)}</td><td>{row.average_gap_days == null ? "—" : `${Number(row.average_gap_days).toLocaleString("it-IT", { useGrouping: 'always',  maximumFractionDigits: 1 })} gg`}</td><td>{formatDate(row.expected_reorder_date)}</td><td>{row.agente_classificazione || "Senza agente"}</td><td><CrmCustomerStatusBadge active={row.crm_active} />{row.crm_status_reason ? <small>{row.crm_status_reason}</small> : null}</td><td>{row.source === "Workspace/Mexal" ? (row.attivo_mexal === false ? "Annullato" : "Attivo") : "Non presente"}</td><td><details className="crm-row-actions"><summary>Azioni</summary><div><CrmCustomerLink crmType={type} customerKey={row.entityKey} name={row.nome} period={period}>Apri cliente</CrmCustomerLink>{canWrite ? <button type="button" onClick={(event) => openCreation(event, "task", row)}>Nuova attività</button> : null}{canWrite && hasPermission("projects.write") ? <button type="button" onClick={(event) => openCreation(event, "project", row)}>Nuovo progetto</button> : null}{canWrite ? <button type="button" className={row.crm_active ? "danger-action" : "secondary-action"} onClick={() => setStatusCustomer(row)}>{row.crm_active ? "Disattiva" : "Riattiva"}</button> : null}</div></details></td></tr>)}</tbody></table>{!loading && !pageRows.length ? <div className="crm-empty">Nessun cliente corrisponde allo stato CRM e ai filtri selezionati.</div> : null}</div>
+    {type === "online" ? <p className="crm-source-notes">Acquisti nel periodo: ordini importati da sito, Amazon e altri marketplace collegati al cliente; importi netti IVA, spedizione inclusa e rimborsi detratti. Ordini falliti, annullati o in attesa esclusi. Ultimo ordine e frequenza: storico fino alla data finale, su giorni di acquisto distinti.</p> : null}
+    {loading ? <div className="crm-loading">Caricamento clienti...</div> : null}<div className="crm-table-wrap"><table ref={tableRef} data-column-controls-mode="dataset" className="crm-table crm-customer-table crm-control-table"><thead><tr><th>Cliente</th><th>Origine</th><th>{type === "online" ? "Fatturato Mexal" : "Fatturato"}</th><th>{type === "online" ? "Acquisti online" : "Ordinato"}</th><th>Ultimo ordine</th><th>Frequenza</th><th>Riordino previsto</th><th>Responsabile</th><th>Stato CRM</th><th>Stato Mexal</th><th>Azioni</th></tr></thead><tbody>{pageRows.map((row) => <tr key={row.entityKey}><td><CrmCustomerLink crmType={type} customerKey={row.entityKey} name={row.nome} period={period}><strong>{row.nome}</strong><small>{row.codice}</small></CrmCustomerLink></td><td>{row.origine}</td><td><strong>{formatMoney(row.invoice_total)}</strong><small>{row.invoice_count || 0} fatture</small></td><td><strong>{formatPurchaseAmount(row.order_total, row.currency)}</strong><small>{row.order_count || 0} ordini</small></td><td>{formatDate(row.ultimo_ordine_il || row.last_purchase)}</td><td>{row.average_gap_days == null ? "—" : `${Number(row.average_gap_days).toLocaleString("it-IT", { useGrouping: 'always',  maximumFractionDigits: 1 })} gg`}</td><td>{formatDate(row.expected_reorder_date)}</td><td>{row.agente_classificazione || "Senza agente"}</td><td><CrmCustomerStatusBadge active={row.crm_active} />{row.crm_status_reason ? <small>{row.crm_status_reason}</small> : null}</td><td>{row.source === "Workspace/Mexal" ? (row.attivo_mexal === false ? "Annullato" : "Attivo") : "Non presente"}</td><td><details className="crm-row-actions"><summary>Azioni</summary><div><CrmCustomerLink crmType={type} customerKey={row.entityKey} name={row.nome} period={period}>Apri cliente</CrmCustomerLink>{canWrite ? <button type="button" onClick={(event) => openCreation(event, "task", row)}>Nuova attività</button> : null}{canWrite && hasPermission("projects.write") ? <button type="button" onClick={(event) => openCreation(event, "project", row)}>Nuovo progetto</button> : null}{canWrite ? <button type="button" className={row.crm_active ? "danger-action" : "secondary-action"} onClick={() => setStatusCustomer(row)}>{row.crm_active ? "Disattiva" : "Riattiva"}</button> : null}</div></details></td></tr>)}</tbody></table>{!loading && !pageRows.length ? <div className="crm-empty">Nessun cliente corrisponde allo stato CRM e ai filtri selezionati.</div> : null}</div>
     <div className="crm-pagination"><button type="button" disabled={page === 0} onClick={() => updateCustomerParam("customerPage", page - 1, false)}>Precedente</button><span>Pagina {page + 1} · {filteredTotal} clienti</span><button type="button" disabled={(page + 1) * CRM_CUSTOMER_PAGE_SIZE >= filteredTotal} onClick={() => updateCustomerParam("customerPage", page + 1, false)}>Successiva</button></div>
     {open ? <div className="crm-modal-backdrop"><form className="crm-modal" onSubmit={save}><h3>Nuovo prospect CRM-only {config.label}</h3><p>Il prospect resta nel layer CRM e non crea né duplica un cliente Workspace/Mexal.</p><label>Nome<input required value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} /></label><div className="crm-form-grid"><label>Stato<select value={form.stato} onChange={(e) => setForm({ ...form, stato: e.target.value })}><option value="prospect">Prospect</option><option value="attivo">Attivo</option></select></label><label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label><label>Telefono<input value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} /></label></div><div className="crm-modal-actions"><button type="button" onClick={() => setOpen(false)}>Annulla</button><button className="primary-action crm-primary">Salva prospect</button></div></form></div> : null}
     <WorkspaceTaskDialog open={creation?.kind === "task"} crmType={type} initialCustomerKey={creation?.customerKey || ""} canManage={canWrite} onClose={() => setCreation(null)} onSaved={load} />
@@ -427,7 +445,7 @@ function AccountDetail({ type }) {
       relatedQuery("crm_briefs", "id,titolo,stato,aggiornato_il"),
       customerCode ? supabase.from("ordini_testate").select("id,numero_ordine_visualizzato,data_ordine,stato,totale_documento").eq("codice_cliente", customerCode).gte("data_ordine", period.from).lte("data_ordine", period.to).order("data_ordine", { ascending: false }).limit(50) : emptyResult,
       customerCode ? supabase.from("mexal_fatture_vendita").select("id,sigla,serie,numero,data_documento,totale_documento").eq("codice_cliente", customerCode).gte("data_documento", period.from).lte("data_documento", period.to).order("data_documento", { ascending: false }).limit(50) : emptyResult,
-      type === "online" && crmAccountId ? supabase.from("crm_external_orders").select("id,external_id,ordered_at,stato,net_revenue,attribution_method").eq("account_id", crmAccountId).order("ordered_at", { ascending: false }).limit(50) : emptyResult,
+      type === "online" && crmAccountId ? loadCustomerOrders(period.to, crmAccountId) : emptyResult,
       type === "online" && crmAccountId ? supabase.from("crm_marketing_consents").select("id,purpose,status,legal_basis,source,captured_at,withdrawn_at").eq("account_id", crmAccountId).order("captured_at", { ascending: false }).limit(50) : emptyResult,
       type === "online" && crmAccountId ? supabase.from("crm_customer_events").select("id,fase,avvenuto_il,fonte").eq("account_id", crmAccountId).order("avvenuto_il", { ascending: false }).limit(50) : emptyResult,
     ]);
@@ -480,6 +498,8 @@ function AccountDetail({ type }) {
   }
   if (error) return <ErrorBox error={error} retry={load} />; if (!account) return <div className="crm-loading">Caricamento cliente...</div>;
   if (type === "b2b" || type === "conto_terzi") return <><CrmB2BAccount crmType={type} account={account} metrics={metrics} related={related} commercialSnapshot={commercialSnapshot} journey={journey} period={period} warning={warning} canWrite={canWrite} activity={activity} setActivity={setActivity} activityTemplates={activityTemplates} activityBusy={activityBusy} addActivity={addActivity} load={load} onStatus={() => setStatusDialogOpen(true)}/><CrmCustomerStatusDialog customer={statusDialogOpen ? account : null} busy={statusBusy} onClose={() => setStatusDialogOpen(false)} onConfirm={(change) => void changeCustomerStatus(change)}/></>;
+  const purchaseMetrics = customerPurchases(related.externalOrders, period.from, period.to);
+  const periodExternalOrders = ordersInPeriod(related.externalOrders, period.from, period.to);
   return <div className="crm-page">
     <CrmPageHeader eyebrow={config.label} title={account.nome} description={account.codice_cliente_mexal ? `Cliente Workspace/Mexal ${account.codice_cliente_mexal}` : "Prospect CRM-only"} actions={<><Link className="secondary-action crm-secondary" to={period.withPeriod(`${config.basePath}/clienti`)}>Torna ai clienti</Link>{canWrite ? <button type="button" className={account.crm_active ? "danger-action crm-danger" : "secondary-action crm-secondary"} onClick={() => setStatusDialogOpen(true)}>{account.crm_active ? "Disattiva cliente" : "Riattiva cliente"}</button> : null}</>}>
       <div className="crm-account-status-line"><span className={`crm-source-badge ${account.entity_kind}`}>{account.entity_kind === "canonical" ? "Anagrafica canonica" : "CRM-only"}</span><CrmCustomerStatusBadge active={account.crm_active} />{account.crm_status_reason ? <span>{account.crm_status_reason}</span> : null}</div><CrmSectionNav items={crmNavigation(type)} period={period} label={`Navigazione ${config.label}`} />
@@ -515,7 +535,7 @@ function AccountDetail({ type }) {
       <CustomerProductCards customerKey={account.codice_cliente_mexal ? `mexal:${account.codice_cliente_mexal}` : account.entityKey} period={period} crmType={type} /></> : null}
       <CrmExpandableCard title="Note e documenti" preview={<>{account.metadati?.note || "Nessuna nota CRM disponibile."}<br />Documenti nel perimetro autorizzato.</>}><p>{account.metadati?.note || "Nessuna nota CRM disponibile."}</p><p>I documenti restano nella libreria Workspace e vengono mostrati solo quando esiste un collegamento autorizzato.</p></CrmExpandableCard>
     </div>
-    {type === "online" ? <><section className="panel crm-panel"><h3>Profilo acquisti ecommerce</h3><dl><div><dt>Ordini</dt><dd>{related.externalOrders.length || "Dato non disponibile"}</dd></div><div><dt>Valore totale</dt><dd>{related.externalOrders.length ? formatMoney(related.externalOrders.reduce((sum, item) => sum + Number(item.net_revenue || 0), 0)) : "Dato non disponibile"}</dd></div><div><dt>AOV</dt><dd>{related.externalOrders.length ? formatMoney(related.externalOrders.reduce((sum, item) => sum + Number(item.net_revenue || 0), 0) / related.externalOrders.length) : "Dato non disponibile"}</dd></div><div><dt>Segmenti</dt><dd>{account.segmenti?.join(", ") || "Dato non disponibile"}</dd></div></dl></section><section className="panel crm-panel"><h3>Ordini ecommerce</h3>{related.externalOrders.map((item) => <div className="crm-row-card" key={item.id}><strong>{item.external_id}</strong><span>{formatDate(item.ordered_at)} · {formatMoney(item.net_revenue)} · {item.attribution_method}</span></div>)}{!related.externalOrders.length ? <p>Dato non sincronizzato: serve il connettore ecommerce reale.</p> : null}</section><section className="panel crm-panel"><h3>Consensi marketing</h3>{related.consents.map((item) => <div className="crm-row-card" key={item.id}><strong>{item.purpose}</strong><span>{item.status} · {item.legal_basis || "base giuridica non disponibile"} · {item.source || "fonte non disponibile"}</span></div>)}{!related.consents.length ? <p>Dato non disponibile.</p> : null}</section><section className="panel crm-panel"><h3>Customer journey</h3>{related.events.map((item) => <div className="crm-row-card" key={item.id}><strong>{item.fase}</strong><span>{formatDate(item.avvenuto_il)} · {item.fonte || "unknown"}</span></div>)}{!related.events.length ? <p>Nessun evento autorizzato disponibile.</p> : null}</section></> : null}
+    {type === "online" ? <><section className="panel crm-panel"><h3>Profilo acquisti online nel periodo</h3><p>Sito, Amazon e altri marketplace collegati al cliente. Importi netti IVA con spedizione e rimborsi; esclusi ordini falliti, annullati o in attesa.</p><dl><div><dt>Ordini</dt><dd>{purchaseMetrics.order_count}</dd></div><div><dt>Valore totale</dt><dd>{formatPurchaseAmount(purchaseMetrics.order_total, purchaseMetrics.currency)}</dd></div><div><dt>Valore medio ordine</dt><dd>{formatPurchaseAmount(purchaseMetrics.average_order_value, purchaseMetrics.currency)}</dd></div><div><dt>Ultimo ordine</dt><dd>{formatDate(purchaseMetrics.ultimo_ordine_il)}</dd></div><div><dt>Frequenza media (storico)</dt><dd>{purchaseMetrics.average_gap_days == null ? "—" : `${purchaseMetrics.average_gap_days.toLocaleString("it-IT", { maximumFractionDigits: 1 })} gg`}</dd></div><div><dt>Segmenti</dt><dd>{account.segmenti?.join(", ") || "Dato non disponibile"}</dd></div></dl></section><section className="panel crm-panel"><h3>Ordini online nel periodo</h3>{periodExternalOrders.map((item) => <div className="crm-row-card" key={item.id}><strong>{item.external_id}</strong><span>{formatDate(item.ordered_at)} · {formatPurchaseAmount(item.net_revenue, item.currency)} · {item.marketplace} · {item.stato}</span></div>)}{!periodExternalOrders.length ? <p>Nessun ordine importato collegato al cliente nel periodo selezionato.</p> : null}</section><section className="panel crm-panel"><h3>Consensi marketing</h3>{related.consents.map((item) => <div className="crm-row-card" key={item.id}><strong>{item.purpose}</strong><span>{item.status} · {item.legal_basis || "base giuridica non disponibile"} · {item.source || "fonte non disponibile"}</span></div>)}{!related.consents.length ? <p>Dato non disponibile.</p> : null}</section><section className="panel crm-panel"><h3>Customer journey</h3>{related.events.map((item) => <div className="crm-row-card" key={item.id}><strong>{item.fase}</strong><span>{formatDate(item.avvenuto_il)} · {item.fonte || "unknown"}</span></div>)}{!related.events.length ? <p>Nessun evento autorizzato disponibile.</p> : null}</section></> : null}
     {type === "b2b" ? <CrmBeautyCustomerPanel customerCode={account.codice_cliente_mexal} /> : null}
     <CrmCustomerStatusDialog customer={statusDialogOpen ? account : null} busy={statusBusy} onClose={() => setStatusDialogOpen(false)} onConfirm={(change) => void changeCustomerStatus(change)} />
   </div>;

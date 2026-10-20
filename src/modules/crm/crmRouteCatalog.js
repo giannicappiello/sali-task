@@ -36,7 +36,7 @@ export const CRM_ROUTE_CATALOG = Object.freeze([
   { path: "online/digital", catalogPath: "/crm/online/digital", moduleCode: "crm_online", screenCode: "crm.online.digital", view: "digital-dashboard" },
   { path: "online/ecommerce", catalogPath: "/crm/online/ecommerce", moduleCode: "crm_online_ecommerce", screenCode: "crm.online.ecommerce", view: "digital-channel", channel: "ecommerce" },
   { path: "online/mailing", catalogPath: "/crm/online/mailing", moduleCode: "crm_online_mailing", screenCode: "crm.online.mailing", view: "digital-channel", channel: "mailing" },
-  { path: "online/amazon", catalogPath: "/crm/online/amazon", moduleCode: "crm_online_amazon", screenCode: "crm.online.amazon", view: "digital-channel", channel: "amazon" },
+  { path: "online/amazon", catalogPath: "/crm/online/amazon", moduleCode: "crm_online", screenCode: "crm.online.amazon", view: "digital-channel", channel: "amazon" },
   { path: "online/adv", catalogPath: "/crm/online/adv", moduleCode: "crm_online_adv", screenCode: "crm.online.adv", view: "digital-channel", channel: "adv" },
   { path: "online/clienti", catalogPath: "/crm/online/clienti", moduleCode: "crm_online", screenCode: "crm.online.clienti", view: "accounts", type: "online" },
   { path: "online/clienti/:id", catalogPath: "/crm/online/clienti/:id", moduleCode: "crm_online", screenCode: "crm.online.cliente", view: "account", type: "online" },

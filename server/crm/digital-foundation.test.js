@@ -20,7 +20,7 @@ test("ogni route canale usa modulo e screen guard dedicati", () => {
   for (const [moduleCode, screenCode] of [
     ["crm_online_ecommerce", "crm.online.ecommerce"],
     ["crm_online_mailing", "crm.online.mailing"],
-    ["crm_online_amazon", "crm.online.amazon"],
+    ["crm_online", "crm.online.amazon"],
     ["crm_online_adv", "crm.online.adv"],
   ]) assert.ok(CRM_ROUTE_CATALOG.some((route) => route.moduleCode === moduleCode && route.screenCode === screenCode));
 });

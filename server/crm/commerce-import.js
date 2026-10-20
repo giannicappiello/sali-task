@@ -1,5 +1,6 @@
 /* global Buffer */
 import crypto from 'node:crypto';
+import { fetchMailingReports } from './mailing-reports.js';
 import { safeFetch } from './digital-security.js';
 import { request, refreshAccessToken } from './digital-provider-adapters.js';
 
@@ -116,6 +117,10 @@ export async function fetchCommercePage(connection, secrets, previous, { fetcher
     if (!/^us\d+$/.test(dc)) throw new Error('Data center Mailchimp non valido.');
     const headers = { authorization: secrets.access_token ? `Bearer ${secrets.access_token}` : `Basic ${Buffer.from(`workspace:${secrets.api_key}`).toString('base64')}` };
     const root = `https://${dc}.api.mailchimp.com/3.0/`;
+    if (['reports','recipients'].includes(state.phase)) {
+      const report = await fetchMailingReports(state, path => request(root + path, { headers, timeoutMs: 20000, maxBytes: 2000000 }, fetcher, 'Report mailing Mailchimp'));
+      rows = report.rows; Object.assign(next, report.next); kind = 'mailings';
+    } else {
     const path = state.phase === 'audiences' ? 'lists' : `lists/${encodeURIComponent(state.audience)}/members`;
     const data = await request(`${root}${path}?count=20&offset=${(state.page - 1) * 20}`, { headers, timeoutMs: 20000 }, fetcher, 'Importazione Mailchimp');
     const schema = state.phase === 'audiences' ? null : await request(`${root}lists/${encodeURIComponent(state.audience)}/merge-fields?count=1000`, { headers, timeoutMs: 20000 }, fetcher, 'Campi anagrafici Mailchimp');
@@ -128,7 +133,7 @@ export async function fetchCommercePage(connection, secrets, previous, { fetcher
       const c = mailchimpCustomer(member, schema?.merge_fields);
       const explicitDenied = member.marketing_permissions?.length && !member.marketing_permissions.some((p) => p.enabled);
       const status = member.status === 'unsubscribed' ? 'withdrawn' : member.status === 'cleaned' || explicitDenied ? 'denied' : member.status === 'subscribed' ? 'granted' : 'unknown';
-      return { ...c, consent: { purpose: 'email_marketing', status, source: `mailchimp:${state.audience}`, captured_at: member.timestamp_opt || member.last_changed || null,
+      return { ...c, consent: { purpose: 'email_marketing', status, source: `mailchimp:${state.audience}`, captured_at: member.last_changed || member.timestamp_opt || null,
         withdrawn_at: status === 'withdrawn' ? member.last_changed || null : null, proof_reference: `mailchimp:${state.audience}:${member.id}`, provider_status: member.status } };
     });
     next.page++;
@@ -137,7 +142,9 @@ export async function fetchCommercePage(connection, secrets, previous, { fetcher
       const audiences = next.audiences || [];
       next.audience = audiences.shift() || null; next.audiences = audiences;
       next.phase = 'members';
-      next.completed = !next.audience;
+      next.completed = false;
+      if (!next.audience) { next.phase = 'reports'; next.reportPage = 1; }
+    }
     }
   } else if (connection.provider_code === 'woocommerce') {
     const base = String(configuration.site_url).replace(/\/$/, '') + '/wp-json/wc/v3/';
@@ -218,7 +225,7 @@ export async function fetchCommercePage(connection, secrets, previous, { fetcher
       } else next.completed = true;
     }
   } else throw new Error('Importazione dati non disponibile per questo provider.');
-  next.counts[kind] += rows.length;
+  next.counts[kind] = Number(next.counts[kind] || 0) + rows.length;
   next.updatedAt = now.toISOString();
   // Do not retain an arbitrarily large product queue in the safe summary returned to the client.
   return { kind, rows, next, hasMore: !next.completed };

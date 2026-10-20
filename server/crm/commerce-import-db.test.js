@@ -17,7 +17,7 @@ test('Commerce SQL atomically resumes pages, preserves manual data and imports c
       create table utenti(id uuid primary key); create table reparti(id uuid primary key); create table mexal_agenti(id uuid primary key);
       create table prodotti(id uuid primary key default gen_random_uuid(),codice_mexal text,immagine_url text,immagine_catalogo_url text);
       create table crm_external_connections(id uuid primary key default gen_random_uuid(),abilitata boolean default true,
-        provider_code text, tipo text,aggiornata_il timestamptz);
+        provider_code text, tipo text,aggiornata_il timestamptz,ultimo_sync_il timestamptz);
       create table workspace_moduli(codice text primary key,attivo boolean);
       create table workspace_schermate(codice text primary key,attiva boolean);
       create table workspace_moduli_schermate(modulo_codice text,schermata_codice text,ordine integer,predefinita boolean,visibile_menu boolean,unique(modulo_codice,schermata_codice));
@@ -164,6 +164,20 @@ test('Commerce SQL atomically resumes pages, preserves manual data and imports c
     assert.deepEqual(await visible(), ['1','other']);
     await db.exec("set test.module_access='false'");
     assert.deepEqual(await visible(), []);
+    await db.exec('reset role');
+    await db.exec("set test.auth_role='service_role'; create function public.club_external_identity() returns boolean language sql as $$select false$$;");
+    await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261020220000_crm_mailing_deliveries.sql', import.meta.url), 'utf8'));
+    await db.query("update crm_external_connections set provider_code='mailchimp' where id=$1",[conn]);
+    const delivery={member_hash:'1',list_id:'list',campaign_id:'campaign',title:'Newsletter',sent_at:'2026-10-01T00:00:00Z',status:'sent'};
+    await commit('mailings',[delivery],{page:100});
+    await commit('mailings',[delivery],{page:101,mailing_complete:true});
+    assert.equal((await db.query('select count(*)::int n from crm_mailing_deliveries')).rows[0].n,1);
+    const savedDelivery=(await db.query('select * from crm_mailing_deliveries')).rows[0];
+    assert.equal(savedDelivery.delivery_status,'sent');
+    await assert.rejects(commit('mailings',[{...delivery,sent_at:'invalid'}],{page:102}));
+    assert.deepEqual((await db.query('select import_state from crm_external_connections where id=$1',[conn])).rows[0].import_state,{page:101,mailing_complete:true});
+    await db.exec('set role authenticated');
+    await assert.rejects(db.query('delete from crm_mailing_deliveries'));
     await db.exec('reset role');
   } finally { await db.close(); }
 });

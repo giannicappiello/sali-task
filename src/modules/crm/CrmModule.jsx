@@ -39,6 +39,9 @@ import CrmClub from "./club/CrmClub";
 import { digitalConnectionsService } from "../integrations/services/digitalConnectionsService";
 import { customerOrigin, customerDisplayName } from "./customerIdentity";
 import { customerPurchases, purchasesByAccount, ordersInPeriod, formatPurchaseAmount } from "./customerPurchaseModel.js";
+import { loadOnlineMailing } from "./mailingData";
+import { EMPTY_MAILING } from "./mailingModel.js";
+import OnlineCustomerListKpis from "./OnlineCustomerListKpis";
 import { loadCustomerOrders } from "./customerPurchases";
 import "./crm.css";
 import "./workspace-alignment.css";
@@ -282,12 +285,12 @@ function AccountsPage({ type }) {
   }, [setSearchParams]);
   const resetCustomerPage = useCallback(() => updateCustomerParam("customerPage", "", false), [updateCustomerParam]);
   const [tableRef, tableQuery] = useDatasetTableControls({ onQueryChange: resetCustomerPage });
-  const { pageRows, total: filteredTotal } = usePaginatedDataset(rows, ACCOUNT_COLUMNS, tableQuery, page, CRM_CUSTOMER_PAGE_SIZE);
+  const { pageRows, total: filteredTotal } = usePaginatedDataset(rows, type === "online" ? [...ACCOUNT_COLUMNS.slice(0,2), { value: row => row.mailing?.label }, ...ACCOUNT_COLUMNS.slice(2)] : ACCOUNT_COLUMNS, tableQuery, page, CRM_CUSTOMER_PAGE_SIZE);
   const load = useCallback(async () => {
     const sequence = ++customerRequest.current;
     setLoading(true);
     const term = search.trim().replaceAll(",", " ");
-    const [canonicalResult, prospectResult, countryResult, cadenceResult, identityResult, purchaseResult] = await Promise.all([
+    const [canonicalResult, prospectResult, countryResult, cadenceResult, identityResult, purchaseResult, mailingResult] = await Promise.all([
       loadAllRpcRows("crm_customer_metric_details", {
         p_crm_type: type, p_from: period.from, p_to: period.to, p_metric: metric,
         p_search: term || null, p_customer_status: customerStatus,
@@ -299,6 +302,7 @@ function AccountsPage({ type }) {
       supabase.rpc("crm_customer_cadence_details", { p_crm_type: type, p_to: period.to }),
       loadAllQueryRows((from, to) => supabase.from("crm_accounts").select("id,nome,fonte,metadati").eq("tipo", type).order("id").range(from, to)),
       type === "online" ? loadCustomerOrders(period.to) : Promise.resolve({ data: [], error: null }),
+      type === "online" ? loadOnlineMailing() : Promise.resolve({ data: new Map(), error: null }),
     ]);
     if (sequence !== customerRequest.current) return;
     const loadError = canonicalResult.error || prospectResult.error || countryResult.error || cadenceResult.error || identityResult.error || purchaseResult.error;
@@ -314,10 +318,10 @@ function AccountsPage({ type }) {
       source: "Workspace/Mexal", origine: "Mexal", nome: row.ragione_sociale, codice: row.codice_cliente, areaLabel: config.label,
       paese: countries.get(`mexal:${row.codice_cliente}`) || null,
       crm_active: row.crm_active !== false, opportunities: row.opportunita_count || 0,
-      ...onlineMetrics(row.crm_account_id),
+      ...onlineMetrics(row.crm_account_id), mailing: mailingResult.data.get(row.crm_account_id) || EMPTY_MAILING,
     }));
     const prospectRows = (prospectResult.data || []).map((row) => ({
-      ...row, ...onlineMetrics(row.id), origine: customerOrigin(identities.get(row.id)), nome: customerDisplayName(identities.get(row.id) || row), entityKey: `crm:${row.id}`, routeId: customerRouteId("crm", row.id), source: "Prospect CRM-only",
+      ...row, ...onlineMetrics(row.id), mailing: mailingResult.data.get(row.id) || EMPTY_MAILING, origine: customerOrigin(identities.get(row.id)), nome: customerDisplayName(identities.get(row.id) || row), entityKey: `crm:${row.id}`, routeId: customerRouteId("crm", row.id), source: "Prospect CRM-only",
       codice: row.email || "—", agente_classificazione: null, origine_classificazione: "crm_only", areaLabel: config.label,
       paese: countries.get(`crm:${row.id}`) || null,
       crm_active: row.crm_active !== false, opportunities: row.opportunita_count || 0,
@@ -332,7 +336,7 @@ function AccountsPage({ type }) {
     setRows([...canonicalRows, ...visibleProspects]);
     setCanonicalTotal(canonicalRows.length);
     setProspectTotal(visibleProspects.length);
-    setError(""); setLoading(false);
+    setError(mailingResult.error ? `Stato mailing non disponibile: ${mailingResult.error.message}` : ""); setLoading(false);
   }, [config.label, customerStatus, metric, period.from, period.to, search, type]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 180); return () => { window.clearTimeout(timer); customerRequest.current++; }; }, [load]);
 
@@ -382,8 +386,9 @@ function AccountsPage({ type }) {
     <div className="crm-filters"><label><Search size={16} /><input value={search} onChange={(event) => updateCustomerParam("customerSearch", event.target.value)} placeholder="Ragione sociale, agente, email o codice" /></label><CrmCustomerStatusFilter value={customerStatus} onChange={(value) => { setCustomerStatus(value); updateCustomerParam("customerPage", "", false); }} id={`customer-status-${type}`} /></div>
     <ErrorBox error={error} retry={load} />
     {type === 'online' && hasPermission('integrations.configure') ? <div className="crm-toolbar"><button type="button" className="secondary-action" disabled={refreshingProfiles} onClick={refreshProfiles}>{refreshingProfiles ? 'Aggiornamento anagrafiche…' : 'Aggiorna anagrafiche da sito e Mailchimp'}</button><span role="status">{profileProgress}</span></div> : null}
+    {type === "online" && !loading ? <OnlineCustomerListKpis rows={rows} period={period}/> : null}
     {type === "online" ? <p className="crm-source-notes">Acquisti nel periodo: ordini importati da sito, Amazon e altri marketplace collegati al cliente; importi netti IVA, spedizione inclusa e rimborsi detratti. Ordini falliti, annullati o in attesa esclusi. Ultimo ordine e frequenza: storico fino alla data finale, su giorni di acquisto distinti.</p> : null}
-    {loading ? <div className="crm-loading">Caricamento clienti...</div> : null}<div className="crm-table-wrap"><table ref={tableRef} data-column-controls-mode="dataset" className="crm-table crm-customer-table crm-control-table"><thead><tr><th>Cliente</th><th>Origine</th><th>{type === "online" ? "Fatturato Mexal" : "Fatturato"}</th><th>{type === "online" ? "Acquisti online" : "Ordinato"}</th><th>Ultimo ordine</th><th>Frequenza</th><th>Riordino previsto</th><th>Responsabile</th><th>Stato CRM</th><th>Stato Mexal</th><th>Azioni</th></tr></thead><tbody>{pageRows.map((row) => <tr key={row.entityKey}><td><CrmCustomerLink crmType={type} customerKey={row.entityKey} name={row.nome} period={period}><strong>{row.nome}</strong><small>{row.codice}</small></CrmCustomerLink></td><td>{row.origine}</td><td><strong>{formatMoney(row.invoice_total)}</strong><small>{row.invoice_count || 0} fatture</small></td><td><strong>{formatPurchaseAmount(row.order_total, row.currency)}</strong><small>{row.order_count || 0} ordini</small></td><td>{formatDate(row.ultimo_ordine_il || row.last_purchase)}</td><td>{row.average_gap_days == null ? "—" : `${Number(row.average_gap_days).toLocaleString("it-IT", { useGrouping: 'always',  maximumFractionDigits: 1 })} gg`}</td><td>{formatDate(row.expected_reorder_date)}</td><td>{row.agente_classificazione || "Senza agente"}</td><td><CrmCustomerStatusBadge active={row.crm_active} />{row.crm_status_reason ? <small>{row.crm_status_reason}</small> : null}</td><td>{row.source === "Workspace/Mexal" ? (row.attivo_mexal === false ? "Annullato" : "Attivo") : "Non presente"}</td><td><details className="crm-row-actions"><summary>Azioni</summary><div><CrmCustomerLink crmType={type} customerKey={row.entityKey} name={row.nome} period={period}>Apri cliente</CrmCustomerLink>{canWrite ? <button type="button" onClick={(event) => openCreation(event, "task", row)}>Nuova attività</button> : null}{canWrite && hasPermission("projects.write") ? <button type="button" onClick={(event) => openCreation(event, "project", row)}>Nuovo progetto</button> : null}{canWrite ? <button type="button" className={row.crm_active ? "danger-action" : "secondary-action"} onClick={() => setStatusCustomer(row)}>{row.crm_active ? "Disattiva" : "Riattiva"}</button> : null}</div></details></td></tr>)}</tbody></table>{!loading && !pageRows.length ? <div className="crm-empty">Nessun cliente corrisponde allo stato CRM e ai filtri selezionati.</div> : null}</div>
+    {loading ? <div className="crm-loading">Caricamento clienti...</div> : null}<div className="crm-table-wrap"><table ref={tableRef} data-column-controls-mode="dataset" className="crm-table crm-customer-table crm-control-table"><thead><tr><th>Cliente</th><th>Origine</th>{type === "online" ? <th>Iscrizione mailing</th> : null}<th>{type === "online" ? "Fatturato Mexal" : "Fatturato"}</th><th>{type === "online" ? "Acquisti online" : "Ordinato"}</th><th>Ultimo ordine</th><th>Frequenza</th><th>Riordino previsto</th><th>Responsabile</th><th>Stato CRM</th><th>Stato Mexal</th><th>Azioni</th></tr></thead><tbody>{pageRows.map((row) => <tr key={row.entityKey}><td><CrmCustomerLink crmType={type} customerKey={row.entityKey} name={row.nome} period={period}><strong>{row.nome}</strong><small>{row.codice}</small></CrmCustomerLink></td><td>{row.origine}</td>{type === "online" ? <td>{row.mailing?.label || EMPTY_MAILING.label}</td> : null}<td><strong>{formatMoney(row.invoice_total)}</strong><small>{row.invoice_count || 0} fatture</small></td><td><strong>{formatPurchaseAmount(row.order_total, row.currency)}</strong><small>{row.order_count || 0} ordini</small></td><td>{formatDate(row.ultimo_ordine_il || row.last_purchase)}</td><td>{row.average_gap_days == null ? "—" : `${Number(row.average_gap_days).toLocaleString("it-IT", { useGrouping: 'always',  maximumFractionDigits: 1 })} gg`}</td><td>{formatDate(row.expected_reorder_date)}</td><td>{row.agente_classificazione || "Senza agente"}</td><td><CrmCustomerStatusBadge active={row.crm_active} />{row.crm_status_reason ? <small>{row.crm_status_reason}</small> : null}</td><td>{row.source === "Workspace/Mexal" ? (row.attivo_mexal === false ? "Annullato" : "Attivo") : "Non presente"}</td><td><details className="crm-row-actions"><summary>Azioni</summary><div><CrmCustomerLink crmType={type} customerKey={row.entityKey} name={row.nome} period={period}>Apri cliente</CrmCustomerLink>{canWrite ? <button type="button" onClick={(event) => openCreation(event, "task", row)}>Nuova attività</button> : null}{canWrite && hasPermission("projects.write") ? <button type="button" onClick={(event) => openCreation(event, "project", row)}>Nuovo progetto</button> : null}{canWrite ? <button type="button" className={row.crm_active ? "danger-action" : "secondary-action"} onClick={() => setStatusCustomer(row)}>{row.crm_active ? "Disattiva" : "Riattiva"}</button> : null}</div></details></td></tr>)}</tbody></table>{!loading && !pageRows.length ? <div className="crm-empty">Nessun cliente corrisponde allo stato CRM e ai filtri selezionati.</div> : null}</div>
     <div className="crm-pagination"><button type="button" disabled={page === 0} onClick={() => updateCustomerParam("customerPage", page - 1, false)}>Precedente</button><span>Pagina {page + 1} · {filteredTotal} clienti</span><button type="button" disabled={(page + 1) * CRM_CUSTOMER_PAGE_SIZE >= filteredTotal} onClick={() => updateCustomerParam("customerPage", page + 1, false)}>Successiva</button></div>
     {open ? <div className="crm-modal-backdrop"><form className="crm-modal" onSubmit={save}><h3>Nuovo prospect CRM-only {config.label}</h3><p>Il prospect resta nel layer CRM e non crea né duplica un cliente Workspace/Mexal.</p><label>Nome<input required value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} /></label><div className="crm-form-grid"><label>Stato<select value={form.stato} onChange={(e) => setForm({ ...form, stato: e.target.value })}><option value="prospect">Prospect</option><option value="attivo">Attivo</option></select></label><label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label><label>Telefono<input value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} /></label></div><div className="crm-modal-actions"><button type="button" onClick={() => setOpen(false)}>Annulla</button><button className="primary-action crm-primary">Salva prospect</button></div></form></div> : null}
     <WorkspaceTaskDialog open={creation?.kind === "task"} crmType={type} initialCustomerKey={creation?.customerKey || ""} canManage={canWrite} onClose={() => setCreation(null)} onSaved={load} />
@@ -403,6 +408,7 @@ function AccountDetail({ type }) {
   const [statusDialogOpen, setStatusDialogOpen] = useState(false); const [statusBusy, setStatusBusy] = useState(false);
   const load = useCallback(async () => {
     setError(""); setWarning("");
+    if (type === "online") setAccount(null);
     const route = parseCustomerRouteId(id);
     let current;
     if (route.kind === "canonical") {
@@ -426,7 +432,7 @@ function AccountDetail({ type }) {
       current = { ...prospectResult.data, entity_kind: "prospect", entityKey, crm_account_id: prospectResult.data.id, area_crm: type, crm_active: statusResult.data?.crm_active !== false, crm_status_changed_at: statusResult.data?.changed_at || null, crm_status_reason: statusResult.data?.reason || null };
     }
     current.nome = customerDisplayName(current);
-    setAccount(current);
+    if (type !== "online") setAccount(current);
     const catalogResult = await supabase.rpc("workspace_activity_catalog", { p_crm_tipo: type });
     if (catalogResult.error) { setActivityTemplates([]); return setError(catalogResult.error.message); }
     setActivityTemplates((catalogResult.data || []).filter((item) => item.classe === "semplice"));
@@ -438,7 +444,7 @@ function AccountDetail({ type }) {
       const metricResult = await supabase.rpc("crm_customer_period_metrics", { p_customer_code: customerCode, p_crm_type: type, p_from: period.from, p_to: period.to });
       if (metricResult.error) setWarning(metricResult.error.message); else setMetrics(metricResult.data || {});
     } else setMetrics({});
-    const [contactsResult, opportunitiesResult, activitiesResult, briefsResult, ordersResult, invoicesResult, externalOrdersResult, consentsResult, eventsResult] = await Promise.all([
+    const [contactsResult, opportunitiesResult, activitiesResult, briefsResult, ordersResult, invoicesResult, externalOrdersResult, consentsResult, eventsResult, externalLinesResult, mailingResult] = await Promise.all([
       relatedQuery("crm_contacts", "*"),
       relatedQuery("crm_opportunities", "*,crm_opportunity_stages(nome,finale)"),
       relatedQuery("crm_activities", "*,checklist_template:catalog_template_id(titolo)"),
@@ -448,14 +454,16 @@ function AccountDetail({ type }) {
       type === "online" && crmAccountId ? loadCustomerOrders(period.to, crmAccountId) : emptyResult,
       type === "online" && crmAccountId ? supabase.from("crm_marketing_consents").select("id,purpose,status,legal_basis,source,captured_at,withdrawn_at").eq("account_id", crmAccountId).order("captured_at", { ascending: false }).limit(50) : emptyResult,
       type === "online" && crmAccountId ? supabase.from("crm_customer_events").select("id,fase,avvenuto_il,fonte").eq("account_id", crmAccountId).order("avvenuto_il", { ascending: false }).limit(50) : emptyResult,
+      type === "online" && crmAccountId ? loadAllQueryRows((from,to) => supabase.from('crm_external_order_lines').select('id,order_id,external_line_id,external_sku,asin,product_id,quantity,line_revenue,metadati,crm_external_orders!inner(account_id,ordered_at)').eq('crm_external_orders.account_id',crmAccountId).gte('crm_external_orders.ordered_at',period.from).lte('crm_external_orders.ordered_at',period.to+'T23:59:59.999Z').order('id').range(from,to)) : emptyResult,
+      type === "online" && crmAccountId ? loadOnlineMailing(crmAccountId) : { data: new Map(), error: null },
     ]);
-    const failures = [contactsResult, opportunitiesResult, activitiesResult, briefsResult, ordersResult, invoicesResult, externalOrdersResult, consentsResult, eventsResult].filter((result) => result.error).map((result) => result.error.message);
+    const failures = [contactsResult, opportunitiesResult, activitiesResult, briefsResult, ordersResult, invoicesResult, externalOrdersResult, consentsResult, eventsResult, externalLinesResult, mailingResult].filter((result) => result.error).map((result) => result.error.message);
     activitiesResult.data?.sort((a, b) => String(b.data_attivita || "").localeCompare(String(a.data_attivita || "")));
     const opportunityIds = (opportunitiesResult.data || []).map((item) => item.id);
     const projectLinksResult = opportunityIds.length ? await supabase.from("crm_workspace_links").select("workspace_entity_id").eq("crm_entity_type", "opportunity").eq("workspace_entity_type", "project").in("crm_entity_id", opportunityIds) : emptyResult;
     if (projectLinksResult.error) failures.push(projectLinksResult.error.message);
     setWarning([...new Set(failures)].join(" · "));
-    setRelated({ contacts: contactsResult.data || [], opportunities: opportunitiesResult.data || [], activities: activitiesResult.data || [], briefs: briefsResult.data || [], orders: ordersResult.data || [], invoices: invoicesResult.data || [], consents: consentsResult.data || [], events: eventsResult.data || [], externalOrders: externalOrdersResult.data || [], projectCount: new Set((projectLinksResult.data || []).map((item) => item.workspace_entity_id)).size });
+    setRelated({ contacts: contactsResult.data || [], opportunities: opportunitiesResult.data || [], activities: activitiesResult.data || [], briefs: briefsResult.data || [], orders: ordersResult.data || [], invoices: invoicesResult.data || [], consents: consentsResult.data || [], events: eventsResult.data || [], externalOrders: externalOrdersResult.data || [], externalLines: externalLinesResult.data || [], mailing: mailingResult.data.get(crmAccountId) || EMPTY_MAILING, projectCount: new Set((projectLinksResult.data || []).map((item) => item.workspace_entity_id)).size });
     if (crmAccountId) {
       const [snapshotResult, journeyResult] = await Promise.all([
         supabase.rpc("crm_account_commercial_snapshot", { p_account_id: crmAccountId, p_from: period.from, p_to: period.to }),
@@ -468,6 +476,7 @@ function AccountDetail({ type }) {
       if (snapshotResult.error) setWarning((currentWarning) => [currentWarning, snapshotResult.error.message].filter(Boolean).join(" · "));
       setCommercialSnapshot(snapshotResult.data || {}); setJourney([]);
     } else { setCommercialSnapshot({}); setJourney([]); }
+    if (type === "online") setAccount(current);
   }, [id, period.from, period.to, type]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
   async function addActivity(event) {
@@ -497,7 +506,7 @@ function AccountDetail({ type }) {
     finally { setStatusBusy(false); }
   }
   if (error) return <ErrorBox error={error} retry={load} />; if (!account) return <div className="crm-loading">Caricamento cliente...</div>;
-  if (type === "b2b" || type === "conto_terzi") return <><CrmB2BAccount crmType={type} account={account} metrics={metrics} related={related} commercialSnapshot={commercialSnapshot} journey={journey} period={period} warning={warning} canWrite={canWrite} activity={activity} setActivity={setActivity} activityTemplates={activityTemplates} activityBusy={activityBusy} addActivity={addActivity} load={load} onStatus={() => setStatusDialogOpen(true)}/><CrmCustomerStatusDialog customer={statusDialogOpen ? account : null} busy={statusBusy} onClose={() => setStatusDialogOpen(false)} onConfirm={(change) => void changeCustomerStatus(change)}/></>;
+  if (type === "b2b" || type === "conto_terzi" || type === "online") return <><CrmB2BAccount crmType={type} account={account} metrics={metrics} related={related} commercialSnapshot={commercialSnapshot} journey={journey} period={period} warning={warning} canWrite={canWrite} activity={activity} setActivity={setActivity} activityTemplates={activityTemplates} activityBusy={activityBusy} addActivity={addActivity} load={load} onStatus={() => setStatusDialogOpen(true)}/><CrmCustomerStatusDialog customer={statusDialogOpen ? account : null} busy={statusBusy} onClose={() => setStatusDialogOpen(false)} onConfirm={(change) => void changeCustomerStatus(change)}/></>;
   const purchaseMetrics = customerPurchases(related.externalOrders, period.from, period.to);
   const periodExternalOrders = ordersInPeriod(related.externalOrders, period.from, period.to);
   return <div className="crm-page">

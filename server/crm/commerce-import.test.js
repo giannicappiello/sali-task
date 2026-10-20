@@ -112,7 +112,7 @@ test('Mailchimp imports audiences, members and explicit consent changes without 
     ] });
   } });
   assert.deepEqual(b.rows.map((r) => r.consent.status), ['granted', 'withdrawn', 'unknown']);
-  assert.equal(b.rows[1].consent.withdrawn_at, '2026-01-02T00:00:00Z'); assert.equal(b.hasMore, false);
+  assert.equal(b.rows[1].consent.withdrawn_at, '2026-01-02T00:00:00Z'); assert.equal(b.hasMore, true); assert.equal(b.next.phase, 'reports');
   assert.ok(!JSON.stringify(b).includes('private-us5'));
 });
 

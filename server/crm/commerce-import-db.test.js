@@ -26,9 +26,10 @@ test('Commerce SQL atomically resumes pages, preserves manual data and imports c
     const foundation = await fs.readFile(new URL('../../supabase/migrations/20260824130000_crm_online_digital_commerce.sql', import.meta.url), 'utf8');
     const extract = (sql, name) => sql.match(new RegExp(`create table if not exists public\\.${name} \\([\\s\\S]*?\\n\\);`, 'i'))?.[0];
     await db.exec(extract(platform, 'crm_accounts'));
-    for (const name of ['crm_external_customers', 'crm_external_orders', 'crm_external_order_lines', 'crm_sync_runs', 'crm_marketing_consents', 'crm_product_mappings']) await db.exec(extract(foundation, name));
+    for (const name of ['crm_external_accounts','crm_external_customers', 'crm_external_orders', 'crm_external_order_lines', 'crm_sync_runs', 'crm_marketing_consents', 'crm_product_mappings']) await db.exec(extract(foundation, name));
     // Metrics has unrelated campaign/creator foreign keys, stub their target tables.
-    await db.exec('create table crm_external_campaigns(id uuid primary key); create table crm_creators(id uuid primary key);');
+    await db.exec('create table crm_campaigns(id uuid primary key); create table crm_creators(id uuid primary key);');
+    await db.exec(extract(foundation, 'crm_external_campaigns'));
     await db.exec(extract(foundation, 'crm_external_metrics'));
     await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261020110000_crm_commerce_import.sql', import.meta.url), 'utf8'));
     const conn = (await db.query("insert into crm_external_connections(provider_code,tipo) values('woocommerce','ecommerce') returning id")).rows[0].id;
@@ -66,5 +67,29 @@ test('Commerce SQL atomically resumes pages, preserves manual data and imports c
     assert.equal((await db.query('select count(*)::int n from crm_marketing_consents')).rows[0].n, 2);
     await db.exec("set test.auth_role='authenticated'");
     await assert.rejects(commit('customers', [], { page: 10 }), /Servizio riservato/);
+    await db.exec(`
+      create function public.crm_has_module_level(text,text) returns boolean language sql stable as $$select coalesce(nullif(current_setting('test.module_access',true),'')::boolean,true)$$;
+      create function public.crm_digital_module_for_connection(text) returns text language sql immutable as $$select 'crm_online'$$;
+      create function public.workspace_current_profile_id() returns uuid language sql stable as $$select nullif(current_setting('test.profile_id',true),'')::uuid$$;
+      create function public.workspace_data_scope() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('test.scope',true),'')::jsonb,'{"mode":"tutti"}'::jsonb)$$;
+      grant usage on schema public,auth to authenticated;
+      grant select on all tables in schema public to authenticated;
+      alter table crm_external_orders enable row level security;`);
+    await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261020113000_crm_commerce_read_policies.sql', import.meta.url), 'utf8'));
+    const a = '00000000-0000-0000-0000-000000000001', b = '00000000-0000-0000-0000-000000000002';
+    await db.query('insert into utenti(id) values($1),($2)', [a, b]);
+    await db.query('update crm_external_orders set responsabile_id=$1', [a]);
+    await db.query("insert into crm_external_orders(connection_id,external_id,ordered_at,responsabile_id) values($1,'other',now(),$2),($1,'unowned',now(),null)", [conn, b]);
+    await db.query("select set_config('test.profile_id',$1,false)", [a]);
+    await db.exec('set role authenticated');
+    const visible = async () => (await db.query('select external_id from crm_external_orders order by external_id')).rows.map((r) => r.external_id);
+    assert.deepEqual(await visible(), ['1', 'other', 'unowned']);
+    await db.exec(`set test.scope='{"mode":"personali"}'`);
+    assert.deepEqual(await visible(), ['1']);
+    await db.exec(`set test.scope='{"mode":"team","user_ids":{"${b}":true},"department_ids":{}}'`);
+    assert.deepEqual(await visible(), ['1','other']);
+    await db.exec("set test.module_access='false'");
+    assert.deepEqual(await visible(), []);
+    await db.exec('reset role');
   } finally { await db.close(); }
 });

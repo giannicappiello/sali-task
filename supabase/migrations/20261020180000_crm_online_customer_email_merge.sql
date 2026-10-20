@@ -1,10 +1,12 @@
+begin;
+
 create or replace function public.crm_normalized_contact_email(value text)
 returns text language sql immutable set search_path=public as $$
   select case when btrim(value) ~ '^[^[:space:]@]+@[^[:space:]@]+[.][^[:space:]@]+$' then lower(btrim(value)) end;
 $$;
 
 -- Private recovery/audit records never leave the database or become visible to CRM readers.
-create table public.crm_customer_merge_audit (
+create table if not exists public.crm_customer_merge_audit (
   id uuid primary key default gen_random_uuid(), merged_account_id uuid not null unique,
   kept_account_id uuid not null, duplicate_snapshot jsonb not null, keeper_snapshot jsonb not null,
   moved_links jsonb not null default '{}', merged_at timestamptz not null default now()
@@ -83,6 +85,7 @@ begin
     where id=k.id;
   delete from public.crm_accounts where id=d.id;
 end $$;
+
 revoke all on function public.crm_merge_online_customer_service(uuid,uuid) from public,anon,authenticated;
 grant execute on function public.crm_merge_online_customer_service(uuid,uuid) to service_role;
 
@@ -172,3 +175,5 @@ begin
   if definition=original then raise exception 'Profile customer creation not found'; end if;
   execute definition;
 end $$;
+
+commit;

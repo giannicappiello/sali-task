@@ -17,7 +17,7 @@ test('Commerce SQL atomically resumes pages, preserves manual data and imports c
       create table utenti(id uuid primary key); create table reparti(id uuid primary key); create table mexal_agenti(id uuid primary key);
       create table prodotti(id uuid primary key default gen_random_uuid(),codice_mexal text,immagine_url text,immagine_catalogo_url text);
       create table crm_external_connections(id uuid primary key default gen_random_uuid(),abilitata boolean default true,
-        provider_code text, tipo text, responsabile_id uuid,reparto_id uuid,aggiornata_il timestamptz);
+        provider_code text, tipo text,aggiornata_il timestamptz);
       create table workspace_moduli(codice text primary key,attivo boolean);
       create table workspace_schermate(codice text primary key,attiva boolean);
       create table workspace_moduli_schermate(modulo_codice text,schermata_codice text,ordine integer,predefinita boolean,visibile_menu boolean,unique(modulo_codice,schermata_codice));

@@ -5,6 +5,8 @@ insert into public.workspace_moduli_schermate(modulo_codice,schermata_codice,ord
   where m.codice='crm_online' and m.attivo and s.attiva and s.codice in ('crm.online.ecommerce','crm.online.mailing')
   on conflict(modulo_codice,schermata_codice) do nothing;
 alter table public.crm_external_connections add column if not exists import_state jsonb not null default '{}';
+alter table public.crm_external_connections add column if not exists responsabile_id uuid references public.utenti(id) on delete set null;
+alter table public.crm_external_connections add column if not exists reparto_id uuid references public.reparti(id) on delete set null;
 create table public.crm_external_products (
   id uuid primary key default gen_random_uuid(),
   connection_id uuid not null references public.crm_external_connections(id) on delete cascade,

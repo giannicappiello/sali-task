@@ -108,7 +108,7 @@ export default function CrmB2BAccount({ crmType = 'b2b', account, metrics: sourc
     if (id === 'mailing-status') {
       rows = mailing.audiences; columns = [col('source','Audience'),col('status','Stato'),date('captured_at','Consenso'),date('withdrawn_at','Disiscrizione')];
     } else if (id === 'mailing-received') {
-      rows = mailing.deliveries; columns = [col('title','Campagna'),date('sent_at','Data invio'),col('delivery_status','Esito')];
+      rows = [...new Map(mailing.deliveries.filter(row => row.delivery_status === 'sent').map(row => [`${row.connection_id}:${row.campaign_id}`, row])).values()]; columns = [col('title','Campagna'),date('sent_at','Data invio'),col('delivery_status','Esito')];
     } else if (isOnline && ['order-period','order-lifetime','average','latest','frequency','reorder'].includes(id)) {
       return <DigitalSalesDays orders={id === 'order-period' || id === 'average' ? ordersInPeriod(related.externalOrders || [],period.from,period.to) : related.externalOrders || []} loading={false}/>;
     } else if (id.startsWith('invoice') || id.startsWith('order-') || id === 'average' || id === 'latest' || id === 'frequency' || id === 'reorder') {
@@ -162,7 +162,7 @@ export default function CrmB2BAccount({ crmType = 'b2b', account, metrics: sourc
       {(isB2B || isOnline) && card('reorder', 'Prossimo riordino atteso', formatDate(snapshot.b2b?.expected_reorder_date), snapshot.b2b?.classification?.replaceAll('_', ' ') || 'Prospect', 'Data attesa del prossimo riordino stimata dalla frequenza storica individuale.')}
     </div></section>
     <section className="b2b-kpi-section"><h2>3. Attività, timeline, progetti e CRM</h2><div className="crm-kpi-grid">{operational}</div></section>
-    {selected && <CrmKpiDialog key={`${key}-${selected.id}`} title={selected.label} subtitle={`${account.nome} · ${selected.id.endsWith('lifetime') || ['beauty','frequency','reorder','activities','timeline','projects','contacts','briefs','account','opportunities','weighted','overdue','notes','ai'].includes(selected.id) ? 'Storico e situazione corrente' : `${formatDate(period.from)} – ${formatDate(period.to)}`}`} onClose={() => { setSelected(null); setActionError(''); }}>{actionError && <p role="alert">{actionError}</p>}{detail()}</CrmKpiDialog>}
+    {selected && <CrmKpiDialog key={`${key}-${selected.id}`} title={selected.label} subtitle={`${account.nome} · ${selected.id.endsWith('lifetime') || ['mailing-status','mailing-received','beauty','frequency','reorder','activities','timeline','projects','contacts','briefs','account','opportunities','weighted','overdue','notes','ai'].includes(selected.id) ? 'Storico e situazione corrente' : `${formatDate(period.from)} – ${formatDate(period.to)}`}`} onClose={() => { setSelected(null); setActionError(''); }}>{actionError && <p role="alert">{actionError}</p>}{detail()}</CrmKpiDialog>}
     <WorkspaceTaskDialog open={taskDialog.open} phase={taskDialog.phase} crmType={crmType} initialCustomerKey={key} canManage={canWrite} onClose={() => setTaskDialog({ open: false, phase: null })} onSaved={() => { setRevision(v => v + 1); load(); }}/>
     <WorkspaceProjectCreateDialog open={createProject} crmType={crmType} initialCustomerKey={key} onClose={() => setCreateProject(false)} onSaved={() => { setCreateProject(false); setRevision(v => v + 1); load(); }}/>
   </div>;

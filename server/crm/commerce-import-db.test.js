@@ -98,6 +98,9 @@ test('Commerce SQL atomically resumes pages, preserves manual data and imports c
     await enrich({ ...repair, order_lines: [] });
     assert.equal((await db.query('select count(*)::int n from crm_external_order_lines where order_id=$1', [orphanId])).rows[0].n, 0);
     await db.query('delete from crm_external_orders where id=$1', [orphanId]);
+    await commit('orders', [{ ...order, customer: enriched, lines: [...order.lines, orphan.lines[0]] }], { page: 14 });
+    assert.equal((await db.query("select count(*)::int n from crm_external_order_lines where metadati->>'type'='shipping'")).rows[0].n, 1);
+    assert.equal((await db.query("select raw_summary->>'customer_name' as name from crm_external_orders where external_id='1'")).rows[0].name, 'Rossi Mario');
     await db.exec("set test.auth_role='authenticated'");
     await assert.rejects(commit('customers', [], { page: 10 }), /Servizio riservato/);
     await db.exec(`

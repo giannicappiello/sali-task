@@ -52,7 +52,10 @@ function syncSortIndicators(state) {
       active ? (state.direction === "asc" ? "ascending" : "descending") : "none",
     );
     const indicator = header.querySelector("[data-sort-indicator]");
-    if (indicator) indicator.textContent = active && state.direction === "desc" ? "↓" : "↑";
+    const symbol = active && state.direction === "desc" ? "↓" : "↑";
+    // Replacing even identical text creates a childList mutation. The global
+    // observer would otherwise schedule another animation frame indefinitely.
+    if (indicator && indicator.textContent !== symbol) indicator.textContent = symbol;
     const button = header.querySelector("[data-sort-button]");
     if (button) button.classList.toggle("is-active", active);
   });
@@ -196,7 +199,6 @@ function ensureTableControls(table) {
 
 export default function GlobalTableColumnControls() {
   useEffect(() => {
-    const enhancedTables = new Set();
     const pendingTables = new Set();
     let scheduledFrame = null;
 
@@ -205,9 +207,6 @@ export default function GlobalTableColumnControls() {
       tables.forEach((table) => {
         if (!table.isConnected) return;
         ensureTableControls(table);
-        if (table.classList.contains("workspace-table-column-enabled")) {
-          enhancedTables.add(table);
-        }
       });
     };
 
@@ -246,7 +245,10 @@ export default function GlobalTableColumnControls() {
     return () => {
       observer.disconnect();
       if (scheduledFrame !== null) window.cancelAnimationFrame(scheduledFrame);
-      enhancedTables.forEach((table) => {
+      pendingTables.clear();
+      // Detached tables must be collectible during navigation, rather than
+      // retained until this app-wide component finally unmounts.
+      document.querySelectorAll("table.workspace-table-column-enabled").forEach((table) => {
         table.querySelectorAll("[data-column-control]").forEach((node) => node.remove());
         table.querySelectorAll(".workspace-table-column-header").forEach((header) => {
           header.classList.remove("workspace-table-column-header");

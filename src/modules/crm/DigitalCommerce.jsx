@@ -13,6 +13,8 @@ import { loadAllQueryRows } from "./crmDataset";
 import { digitalConnectionsService } from '../integrations/services/digitalConnectionsService';
 
 import DigitalSalesDays from "./DigitalSalesDays";
+import DigitalChannelKpis from "./DigitalChannelKpis";
+import { customerDisplayName } from "./customerIdentity";
 import "./digital.css";
 const CHANNEL_META = Object.freeze({
   ecommerce: { title: "Ecommerce", icon: ShoppingBag, types: ["ecommerce"], moduleCode: "crm_online_ecommerce" },
@@ -68,6 +70,8 @@ export function DigitalChannel({ channel }) {
   const period = useCrmPeriod();
   const [connections, setConnections] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [lines, setLines] = useState([]);
+  const loadVersion = useRef(0);
   const [metrics, setMetrics] = useState([]);
   const [mappings, setMappings] = useState([]);
   const [products, setProducts] = useState([]);
@@ -81,25 +85,30 @@ export function DigitalChannel({ channel }) {
   const resetMetricPage = useResetPageCallback(setMetricPage);
   const [metricTableRef, metricQuery] = useDatasetTableControls({ onQueryChange: resetMetricPage });
   const { pageRows: metricRows, total: metricTotal } = usePaginatedDataset(metrics, METRIC_COLUMNS, metricQuery, metricPage, DIGITAL_PAGE_SIZE);
-  const load = useCallback(async () => {
-    setError("");
+  const load = useCallback(async (isCancelled = () => false) => {
+    const version = ++loadVersion.current;
+    setSalesLoading(true); setError("");
     const connectionResult = await supabase.from("crm_external_connections").select("id,tipo,nome,provider,provider_code,stato,abilitata,ultimo_sync_il,prossima_run_il,ultimo_errore,marketplace_ids,import_state").in("tipo", definition.types);
+    if (version !== loadVersion.current || isCancelled()) return;
     if (connectionResult.error) { setSalesLoading(false); return setError(connectionResult.error.message); }
     const ids = (connectionResult.data || []).map((item) => item.id);
     setConnections(connectionResult.data || []);
-    if (!ids.length) { setOrders([]); setMetrics([]); setMappings([]); setProducts([]); setSalesLoading(false); return; }
+    if (!ids.length) { setOrders([]); setLines([]); setMetrics([]); setMappings([]); setProducts([]); setSalesLoading(false); return; }
     const requests = [["ecommerce", "amazon"].includes(channel) ? Promise.resolve({ data: [], error: null }) : loadAllQueryRows((from, to) => supabase.from("crm_external_metrics").select("id,metric_date,channel,marketplace,impressions,clicks,spend,revenue,orders,conversions,attribution_method").in("connection_id", ids).gte("metric_date", period.from).lte("metric_date", period.to).order("metric_date", { ascending: false }).range(from, to))];
-    if (["ecommerce", "amazon"].includes(channel)) requests.push(loadAllQueryRows((from, to) => supabase.from("crm_external_orders").select("id,external_id,marketplace,stato,ordered_at,currency,net_revenue,attribution_method,raw_summary").in("connection_id", ids).gte("ordered_at", period.from).lte("ordered_at", period.to + "T23:59:59.999Z").order("ordered_at", { ascending: false }).range(from, to)));
+    if (["ecommerce", "amazon"].includes(channel)) requests.push(loadAllQueryRows((from, to) => supabase.from("crm_external_orders").select("id,account_id,external_id,marketplace,stato,ordered_at,currency,net_revenue,attribution_method,raw_summary,crm_accounts(id,nome,codice_cliente_mexal,metadati)").in("connection_id", ids).gte("ordered_at", period.from).lte("ordered_at", period.to + "T23:59:59.999Z").order("ordered_at", { ascending: false }).order("id").range(from, to)));
     if (channel === "amazon") requests.push(loadAllQueryRows((from, to) => supabase.from("crm_product_mappings").select("id,marketplace,external_sku,asin,codice_mexal,status,prodotti(nome,codice)").in("connection_id", ids).order("aggiornato_il", { ascending: false }).range(from, to)));
-    const results = await Promise.all(requests); const failure = results.find((item) => item.error)?.error;
+    if (["ecommerce", "amazon"].includes(channel)) requests.push(loadAllQueryRows((from, to) => supabase.from('crm_external_order_lines').select('id,order_id,external_line_id,external_sku,asin,product_id,quantity,line_revenue,metadati,crm_external_orders!inner(connection_id,ordered_at)').in('crm_external_orders.connection_id', ids).gte('crm_external_orders.ordered_at', period.from).lte('crm_external_orders.ordered_at', period.to + 'T23:59:59.999Z').order('id').range(from, to)));
+    const results = await Promise.all(requests);
+    if (version !== loadVersion.current || isCancelled()) return; const failure = results.find((item) => item.error)?.error;
     setSalesLoading(false);
-    if (failure) setError(failure.message); else { setMetrics(results[0].data || []); setOrders(results[1]?.data || []); setMappings(channel === "amazon" ? results[2]?.data || [] : []); }
+    if (failure) setError(failure.message); else { setMetrics(results[0].data || []); setOrders((results[1]?.data || []).map(row => ({ ...row, customerName: row.crm_accounts ? customerDisplayName(row.crm_accounts) : row.raw_summary?.customer_name }))); setLines(['ecommerce', 'amazon'].includes(channel) ? results.at(-1)?.data || [] : []); setMappings(channel === "amazon" ? results[2]?.data || [] : []); }
     if (['ecommerce', 'amazon'].includes(channel)) {
       const imported = await loadAllQueryRows((from, to) => supabase.from('crm_external_products').select('id,nome,external_sku,asin,marketplace,price,currency,stock,assets,product_id').in('connection_id', ids).order('nome').order('id').range(from, to));
+      if (version !== loadVersion.current || isCancelled()) return;
       if (imported.error) setError(imported.error.message); else setProducts(imported.data || []);
     }
   }, [channel, definition.types, period.from, period.to]);
-  useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
+  useEffect(() => { let active = true; const timer = window.setTimeout(() => void load(() => !active), 0); return () => { active = false; window.clearTimeout(timer); }; }, [load]);
   const Icon = definition.icon;
   const sourceDefinitions = DIGITAL_CONNECTIONS.filter((item) => definition.types.includes(item.type));
   async function importData() {
@@ -121,6 +130,7 @@ export function DigitalChannel({ channel }) {
     {error ? <div className="crm-message error">{error}</div> : null}
     {['amazon', 'ecommerce', 'mailing'].includes(channel) ? <section className="panel crm-panel"><h3>Importazione dati</h3><p>Importa ordini, prodotti, immagini e materiali disponibili. Le pagine completate sono salvate e l’importazione può essere ripresa.</p>{isAdmin() ? <button type="button" className="secondary-action crm-secondary" disabled={importing || !connections.some((c) => c.abilitata && ['amazon_sp_api', 'woocommerce', 'mailchimp'].includes(c.provider_code))} onClick={() => void importData()}><RefreshCw size={16} />{importing ? 'Importazione in corso…' : 'Importa dati'}</button> : null}{importing ? <button type="button" onClick={() => { stopImport.current = true; }}>Sospendi dopo questa pagina</button> : null}<p role="status" aria-live="polite">{progress}</p>{channel === 'amazon' ? <small>Ordini richiesti per gli ultimi due anni e aggiornamenti successivi, nei marketplace configurati. Clienti, rimborsi, commissioni e Ads dipendono dai permessi disponibili. Gli importi non forniti restano non disponibili.</small> : null}</section> : null}
     <div className="crm-connection-grid">{sourceDefinitions.map((source) => { const current = connections.find((item) => item.tipo === source.type); return <article key={source.type}><div><strong>{source.label}</strong><StatusPill status={connectionDataStatus(current)} /></div><p>{current?.provider || "Provider non identificato"}</p><small>{current?.ultimo_errore || source.sourceNeeded}</small></article>; })}</div>
+    {["ecommerce", "amazon"].includes(channel) ? <DigitalChannelKpis key={`${channel}:${period.from}:${period.to}`} orders={orders} lines={lines} period={period} loading={salesLoading} error={error}/> : null}
     {["ecommerce", "amazon"].includes(channel) ? <DigitalSalesDays key={`${channel}:${period.from}:${period.to}`} orders={orders} loading={salesLoading} /> : <section className="panel crm-panel"><h3>Metriche disponibili</h3><div className="crm-table-wrap"><table ref={metricTableRef} data-column-controls-mode="dataset" className="crm-table"><thead><tr><th>Data</th><th>Canale</th><th>Marketplace</th><th>Spend</th><th>Revenue</th><th>Ordini</th><th>Attribuzione</th></tr></thead><tbody>{metricRows.map((row) => <tr key={row.id}><td>{formatDate(row.metric_date)}</td><td>{row.channel}</td><td>{row.marketplace || "—"}</td><td>{metricValue(row.spend, formatMoney)}</td><td>{metricValue(row.revenue, formatMoney)}</td><td>{metricValue(row.orders)}</td><td>{row.attribution_method}</td></tr>)}</tbody></table>{!metricRows.length ? <div className="crm-empty">Dato non sincronizzato: configura il provider reale e avvia una sincronizzazione autorizzata.</div> : null}</div><div className="crm-pagination"><button type="button" disabled={metricPage === 0} onClick={() => setMetricPage((value) => value - 1)}>Precedente</button><span>Pagina {metricPage + 1} · {metricTotal} righe</span><button type="button" disabled={(metricPage + 1) * DIGITAL_PAGE_SIZE >= metricTotal} onClick={() => setMetricPage((value) => value + 1)}>Successiva</button></div></section>}
     {['amazon', 'ecommerce'].includes(channel) ? <details className="panel crm-panel crm-catalog-disclosure"><summary>Prodotti importati · {products.length}</summary><div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Prodotto</th><th>SKU / ASIN</th><th>Marketplace</th><th>Prezzo</th><th>Materiali</th><th>Collegamento catalogo</th></tr></thead><tbody>{products.map((p) => <tr key={p.id}><td>{p.nome}</td><td>{p.external_sku || '—'}{p.asin ? ` / ${p.asin}` : ''}</td><td>{p.marketplace}</td><td>{p.price == null ? 'Dato non disponibile' : p.currency ? new Intl.NumberFormat('it-IT', { style: 'currency', currency: p.currency }).format(p.price) : Number(p.price).toLocaleString('it-IT', { minimumFractionDigits: 2 })}</td><td>{(p.assets || []).map((a, i) => <span key={`${a.url}:${i}`}><a href={a.url} target="_blank" rel="noopener noreferrer">{a.name || (a.type === 'image' ? 'Immagine' : 'Documento')}</a>{' '}</span>)}</td><td>{p.product_id ? 'Collegato' : 'Da verificare'}</td></tr>)}</tbody></table>{!products.length ? <div className="crm-empty">Nessun prodotto importato. Avvia Importa dati per acquisire il catalogo della fonte.</div> : null}</div></details> : null}
     {channel === "amazon" ? <details className="panel crm-panel crm-catalog-disclosure"><summary>Mapping Amazon ↔ Prodotti Workspace/Mexal</summary><div className="crm-table-wrap"><table className="crm-table"><thead><tr><th>Marketplace</th><th>SKU</th><th>ASIN</th><th>Prodotto</th><th>Stato</th></tr></thead><tbody>{mappings.map((row) => <tr key={row.id}><td>{row.marketplace || "—"}</td><td>{row.external_sku}</td><td>{row.asin || "—"}</td><td>{row.prodotti?.nome || row.codice_mexal || "Non mappato"}</td><td><StatusPill status={row.status === "matched" ? "available" : row.status === "probable" ? "partial" : "not_available"} /></td></tr>)}</tbody></table>{!mappings.length ? <div className="crm-empty">Nessun mapping disponibile; non viene creato un secondo catalogo prodotti.</div> : null}</div></details> : null}

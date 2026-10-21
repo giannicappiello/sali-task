@@ -1,7 +1,8 @@
+import { combineAmounts } from './digitalOrderValueModel.js';
 import { useState } from 'react';
 import { CrmKpiCard, CrmKpiDialog, CrmDetailTable } from './CrmKpiDetail';
 import CrmCustomerLink from './CrmCustomerLink';
-import { knownAmounts, displayAmounts } from './digitalDashboardModel.js';
+import { displayAmounts } from './digitalDashboardModel.js';
 import { formatDate } from './crmConfig';
 export default function OnlineCustomerListKpis({ rows, period }) {
   const [selected, setSelected] = useState(null);
@@ -13,8 +14,8 @@ export default function OnlineCustomerListKpis({ rows, period }) {
     {card('Clienti CRM attivi', active.length, active, 'Stato CRM attivo')}
     {card('Clienti CRM non attivi', rows.length-active.length, rows.filter(row => !row.crm_active), 'Storico conservato')}
     {card('Clienti attivi nel periodo', sales.length, sales, 'Con acquisti identificati')}
-    {card('Importo acquisti', displayAmounts(knownAmounts(sales.map(row => ({ net_revenue: row.order_total, currency: row.currency })))), sales, 'Importi noti nel periodo')}
-    {card('Ordini', sales.reduce((sum,row)=>sum+row.order_count,0), sales, 'Ordini collegati ai clienti')}
+    {['fulfilled','waiting'].map(kind=>{const subset=rows.filter(row=>row[`${kind}_count`]>0),amounts=combineAmounts(subset.map(row=>row[`${kind}_amounts`]));return card(kind==='fulfilled'?'Valore ordini evasi':'Valore ordini da evadere',displayAmounts(amounts),subset,`${subset.reduce((sum,row)=>sum+row[`${kind}_count`],0)} ordini · ${amounts.missing} senza importo netto`);})}
+    {card('Ordini', rows.reduce((sum,row)=>sum+(row.fulfilled_count || 0)+(row.waiting_count || 0),0), rows.filter(row=>row.fulfilled_count || row.waiting_count), 'Ordini evasi e da evadere collegati ai clienti')}
     {card('Iscritti mailing', rows.filter(row=>row.mailing?.subscribed === true).length, rows.filter(row=>row.mailing?.subscribed === true), 'Almeno una audience attiva')}
     {card('Disiscritti mailing', rows.filter(row=>row.mailing?.label === 'Disiscritto').length, rows.filter(row=>row.mailing?.label === 'Disiscritto'), 'Nessuna audience attiva')}
   </div></section>{selected ? <CrmKpiDialog title={selected.label} subtitle={`${formatDate(period.from)} – ${formatDate(period.to)}`} onClose={()=>setSelected(null)}><CrmDetailTable rows={selected.rows} columns={[
@@ -22,6 +23,9 @@ export default function OnlineCustomerListKpis({ rows, period }) {
     {key:'origine',label:'Origine',value:row=>row.origine},
     {key:'mailing',label:'Iscrizione mailing',value:row=>row.mailing?.label},
     {key:'received',label:'Mailing ricevute',value:row=>row.mailing?.received == null ? 'Dato non disponibile' : `${row.mailing.received}${row.mailing.partial ? ' (parziale)' : ''}`},
-    {key:'ordini',label:'Ordini',value:row=>row.order_count},
+    {key:'fulfilled',label:'Valore evasi',value:row=>displayAmounts(row.fulfilled_amounts || {totals:[],known:0,missing:0})},
+    {key:'waiting',label:'Valore da evadere',value:row=>displayAmounts(row.waiting_amounts || {totals:[],known:0,missing:0})},
+    {key:'fulfilled_count',label:'Ordini evasi',value:row=>row.fulfilled_count || 0},
+    {key:'waiting_count',label:'Ordini da evadere',value:row=>row.waiting_count || 0},
   ]}/></CrmKpiDialog> : null}</>;
 }

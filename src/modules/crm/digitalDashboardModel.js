@@ -1,21 +1,14 @@
 import { countsInSales } from './digitalSalesDayModel.js';
 import { customerPurchases, ordersInPeriod, formatPurchaseAmount } from './customerPurchaseModel.js';
 
-export function knownAmounts(rows, field = 'net_revenue') {
-  const totals = new Map(); let missing = 0;
-  for (const row of rows) {
-    if (row[field] == null || !Number.isFinite(Number(row[field]))) { missing++; continue; }
-    const currency = row.currency || 'EUR';
-    totals.set(currency, (totals.get(currency) || 0) + Number(row[field]));
-  }
-  return { totals: [...totals].map(([currency, amount]) => ({ currency, amount: Math.round(amount * 100) / 100 })), missing, known: rows.length - missing };
-}
+import { knownAmounts, fulfillmentSummary, marketplaceBreakdown } from './digitalOrderValueModel.js';
+export { knownAmounts } from './digitalOrderValueModel.js';
 
 export function displayAmounts(amounts) {
   return amounts.totals.length ? amounts.totals.map(row => formatPurchaseAmount(row.amount, row.currency)).join(' · ') : amounts.missing ? 'Dato non disponibile' : formatPurchaseAmount(0);
 }
 
-export function buildDigitalDashboard({ accounts, orders, lines, from, to }) {
+export function buildDigitalDashboard({ accounts, orders, lines, from, to, connections = [] }) {
   const periodOrders = ordersInPeriod(orders, from, to);
   const sales = periodOrders.filter(countsInSales);
   const history = ordersInPeriod(orders, null, to).filter(countsInSales);
@@ -51,6 +44,6 @@ export function buildDigitalDashboard({ accounts, orders, lines, from, to }) {
     product.documents.add(order.id);
     product.lines.push({ ...line, currency: order.currency, external_id: order.external_id, ordered_at: order.ordered_at, marketplace: order.marketplace });
   }
-  return { customers, periodOrders, sales, amounts: knownAmounts(sales), unidentified: sales.filter(order => !order.account_id).length,
+  return { customers, periodOrders, sales, orderValues:fulfillmentSummary(periodOrders), marketplaces:marketplaceBreakdown(periodOrders,connections), amounts: knownAmounts(sales), unidentified: sales.filter(order => !order.account_id).length,
     products: [...products.values()].map(product => ({ ...product, documents: product.documents.size, amounts: knownAmounts(product.lines, 'line_revenue') })) };
 }

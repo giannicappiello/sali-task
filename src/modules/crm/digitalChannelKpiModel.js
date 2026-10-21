@@ -1,3 +1,4 @@
+import { fulfillmentSummary } from './digitalOrderValueModel.js';
 import { amazonProductsPreview } from '../../../shared/amazonOrderAmounts.js';
 import { countsInSales } from './digitalSalesDayModel.js';
 import { knownAmounts } from './digitalDashboardModel.js';
@@ -25,7 +26,7 @@ export function digitalChannelKpis(orders, lines) {
   }
   const amounts = knownAmounts(sales);
   const averages = { ...amounts, totals: amounts.totals.map(total => ({ ...total, amount: total.amount / sales.filter(order => (order.currency || 'EUR') === total.currency && order.net_revenue != null && Number.isFinite(Number(order.net_revenue))).length })) };
-  return { sales, amounts, averages, unidentified: sales.filter(order => !order.account_id).length,
+  return { sales, amounts, averages, orderValues:fulfillmentSummary(orders), unidentified: sales.filter(order => !order.account_id).length,
     customers: [...grouped.values()].map(row => ({ ...row, count: row.orders.length, amounts: knownAmounts(row.orders) })),
     products: [...products.values()].map(row => ({ ...row, count: row.orders.size, amounts: knownAmounts(row.lines, 'line_revenue') })) };
 }

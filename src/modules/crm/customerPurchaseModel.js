@@ -1,3 +1,4 @@
+import { fulfillmentSummary } from './digitalOrderValueModel.js';
 import { countsInSales } from './digitalSalesDayModel.js';
 
 const dayOf = value => {
@@ -15,6 +16,7 @@ export function ordersInPeriod(orders, from, to) {
 // All providers share the same account link. Amounts already include shipping,
 // discounts and refunds: never add line totals to the order total again.
 export function customerPurchases(orders, from, to) {
+  const values = fulfillmentSummary(ordersInPeriod(orders,from,to));
   const history = ordersInPeriod(orders, null, to).filter(countsInSales);
   const period = ordersInPeriod(history, from, to);
   const currencies = [...new Set(period.map(order => order.currency || 'EUR'))];
@@ -25,6 +27,7 @@ export function customerPurchases(orders, from, to) {
   const last = days.at(-1) || null;
   const gap = days.length > 1 ? (Date.parse(last) - Date.parse(days[0])) / 86400000 / (days.length - 1) : null;
   return {
+    order_averages:values.averages, fulfilled_amounts:values.fulfilled.amounts, waiting_amounts:values.waiting.amounts, fulfilled_count:values.fulfilled.orders.length, waiting_count:values.waiting.orders.length,
     order_total: amount, order_count: period.length,
     currency: currencies.length === 1 ? currencies[0] : 'EUR', currencies,
     average_order_value: period.length && amount != null ? amount / period.length : null,

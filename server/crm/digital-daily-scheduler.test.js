@@ -68,3 +68,32 @@ test('SQL schedule handles Rome DST, idempotency, leases, retry and history', { 
     await db.exec('reset role');
   } finally { await db.close(); }
 });
+
+
+test('Amazon finishes an old cursor then catches up to the scheduled window before completing', async () => {
+  const calls=[]; let step=0;
+  const connection={abilitata:true,sync_attivo:true,provider_code:'amazon_sp_api',import_state:{completed:false,to:'2026-10-20T09:00:00Z'}};
+  const db={rpc:async(name,params)=>{calls.push({name,params});return {data:name.includes('claim')?{id:'job',lease_token:'token',connection_id:'connection',run_id:'run'}:{},error:null};},
+    from:()=>({select:()=>({eq:()=>({single:async()=>({data:{created_at:'2026-10-20T21:00:00Z'},error:null})})})})};
+  const result=await runDigitalDailyJobs({db,connectionById:async()=>connection,synchronize:async()=>{
+    step++; connection.import_state={completed:true,to:step===1?'2026-10-20T09:00:00Z':'2026-10-20T21:27:00Z'};
+    return {status:'completed',hasMore:false,recordsRead:step===1?100:27};
+  }});
+  const progress=calls.filter(c=>c.name.includes('progress'));
+  assert.equal(step,2); assert.equal(result.results[0].hasMore,false);
+  assert.equal(progress[0].params.p_status,'queued'); assert.equal(progress[0].params.p_details.catch_up_required,true);
+  assert.equal(progress[1].params.p_status,'completed'); assert.equal(progress[1].params.p_details.coverage_target,'2026-10-20T20:57:00.000Z');
+  assert.equal(progress[1].params.p_details.coverage_through,'2026-10-20T21:27:00Z');
+});
+
+test('Amazon catch-up survives HTTP budget exhaustion and uses the original job time on retry', async () => {
+  const calls=[];
+  const connection={abilitata:true,sync_attivo:true,provider_code:'amazon_sp_api',import_state:{completed:true,to:'2026-10-20T09:00:00Z'}};
+  const db={rpc:async(name,params)=>{calls.push({name,params});return {data:name.includes('claim')?{id:'job',lease_token:'token',connection_id:'connection',run_id:'run'}:{},error:null};},
+    from:()=>({select:()=>({eq:()=>({single:async()=>({data:{created_at:'2026-10-20T21:00:00Z'},error:null})})})})};
+  const first=await runDigitalDailyJobs({db,budgetMs:0,now:()=>Date.parse('2026-10-20T21:30:00Z'),connectionById:async()=>connection,synchronize:async()=>({status:'completed',hasMore:false})});
+  assert.equal(first.results[0].hasMore,true); assert.equal(calls.at(-1).params.p_status,'queued'); assert.equal(calls.at(-1).params.p_release,true);
+  connection.import_state.to='2026-10-20T21:27:00Z';
+  const retry=await runDigitalDailyJobs({db,now:()=>Date.parse('2026-10-21T02:00:00Z'),connectionById:async()=>connection,synchronize:async()=>({status:'completed',hasMore:false})});
+  assert.equal(retry.results[0].hasMore,false); assert.equal(calls.at(-1).params.p_status,'completed');
+});

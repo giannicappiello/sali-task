@@ -5,9 +5,10 @@ import ModuleContainerLayout from "../../components/ModuleContainerLayout";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
 import { getModuleIcon } from "../../config/moduleIcons";
+import { initialModuleScreen } from "../../config/workspaceNavigation";
 import { requestProgremesWorkspaceWindow } from "../ProgreMes/progremesWindow";
 
-export default function WorkspaceModuleContainer({ configuredModuleCode = "" }) {
+export default function WorkspaceModuleContainer({ configuredModuleCode = "", openInitialScreen = false }) {
   const { moduleCode: routeModuleCode = "" } = useParams();
   const moduleCode = configuredModuleCode || routeModuleCode;
   const location = useLocation();
@@ -26,7 +27,7 @@ export default function WorkspaceModuleContainer({ configuredModuleCode = "" }) 
         const queries = [
           supabase.from("workspace_moduli").select("codice,nome,descrizione,attivo,tipo,icona").eq("codice", moduleCode).eq("attivo", true).maybeSingle(),
           supabase.from("workspace_schermate").select("codice,nome,descrizione,provider,percorso,attiva,area,icona,metadati").eq("attiva", true),
-          supabase.from("workspace_moduli_schermate").select("schermata_codice,ordine,visibile_menu").eq("modulo_codice", moduleCode).eq("visibile_menu", true).order("ordine"),
+          supabase.from("workspace_moduli_schermate").select("schermata_codice,ordine,predefinita,visibile_menu").eq("modulo_codice", moduleCode).eq("visibile_menu", true).order("ordine"),
         ];
         const [moduleResult, screensResult, linksResult] = await Promise.all(queries);
         const loadError = moduleResult.error || screensResult.error || linksResult.error;
@@ -62,6 +63,10 @@ export default function WorkspaceModuleContainer({ configuredModuleCode = "" }) 
   const ModuleIcon = getModuleIcon(catalog.module?.icona, LayoutGrid);
 
   if (!loading && !allowed) return <Navigate to="/home" replace />;
+  const initial = openInitialScreen ? initialModuleScreen(catalog.links, screens) : null;
+  if (!loading && !error && allowed && initial) return <Navigate
+    to={{ pathname: initial.percorso, search: location.search }}
+    state={{ ...location.state, workspaceModuleCode: moduleCode }} replace />;
 
   return <ModuleContainerLayout
     icon={ModuleIcon}

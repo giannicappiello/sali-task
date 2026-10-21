@@ -47,7 +47,7 @@ function StatusPill({ status }) {
 }
 
 export function DigitalHome() {
-  return <WorkspaceModuleContainer configuredModuleCode="crm_online" />;
+  return <WorkspaceModuleContainer configuredModuleCode="crm_online" openInitialScreen />;
 }
 
 export { default as DigitalDashboard } from "./DigitalCommercialDashboard";

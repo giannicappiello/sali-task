@@ -19,3 +19,10 @@ export function resolveCatalogModuleDestination(module, template, screens = [], 
   if (catalogDestination) return catalogDestination;
   return validWorkspacePath(template?.path) ? template.path : "";
 }
+
+// Pass only screens already filtered for the current user's access.
+export function initialModuleScreen(links, screens) {
+  const initial = links.find(link => link.predefinita && link.visibile_menu !== false);
+  if (!initial) return null;
+  return screens.find(screen => screen.codice === initial.schermata_codice) || null;
+}

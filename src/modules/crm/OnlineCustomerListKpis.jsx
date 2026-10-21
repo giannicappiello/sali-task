@@ -1,4 +1,4 @@
-import { combineAmounts } from './digitalOrderValueModel.js';
+import { combineAmounts, amountBasisNote } from './digitalOrderValueModel.js';
 import { useState } from 'react';
 import { CrmKpiCard, CrmKpiDialog, CrmDetailTable } from './CrmKpiDetail';
 import CrmCustomerLink from './CrmCustomerLink';
@@ -14,7 +14,7 @@ export default function OnlineCustomerListKpis({ rows, period }) {
     {card('Clienti CRM attivi', active.length, active, 'Stato CRM attivo')}
     {card('Clienti CRM non attivi', rows.length-active.length, rows.filter(row => !row.crm_active), 'Storico conservato')}
     {card('Clienti attivi nel periodo', sales.length, sales, 'Con acquisti identificati')}
-    {['fulfilled','waiting'].map(kind=>{const subset=rows.filter(row=>row[`${kind}_count`]>0),amounts=combineAmounts(subset.map(row=>row[`${kind}_amounts`]));return card(kind==='fulfilled'?'Valore ordini evasi':'Valore ordini da evadere',displayAmounts(amounts),subset,`${subset.reduce((sum,row)=>sum+row[`${kind}_count`],0)} ordini · ${amounts.missing} senza importo netto`);})}
+    {['fulfilled','waiting'].map(kind=>{const subset=rows.filter(row=>row[`${kind}_count`]>0),amounts=combineAmounts(subset.map(row=>row[`${kind}_amounts`]));return card(kind==='fulfilled'?'Valore ordini evasi':'Valore ordini da evadere',displayAmounts(amounts),subset,`${subset.reduce((sum,row)=>sum+row[`${kind}_count`],0)} ordini · ${amounts.missing} senza importo${amountBasisNote(amounts) ? " · "+amountBasisNote(amounts) : ""}`);})}
     {card('Ordini', rows.reduce((sum,row)=>sum+(row.fulfilled_count || 0)+(row.waiting_count || 0),0), rows.filter(row=>row.fulfilled_count || row.waiting_count), 'Ordini evasi e da evadere collegati ai clienti')}
     {card('Iscritti mailing', rows.filter(row=>row.mailing?.subscribed === true).length, rows.filter(row=>row.mailing?.subscribed === true), 'Almeno una audience attiva')}
     {card('Disiscritti mailing', rows.filter(row=>row.mailing?.label === 'Disiscritto').length, rows.filter(row=>row.mailing?.label === 'Disiscritto'), 'Nessuna audience attiva')}

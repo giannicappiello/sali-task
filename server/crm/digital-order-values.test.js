@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { fulfillmentSummary, marketplaceBreakdown, combineAmounts } from '../../src/modules/crm/digitalOrderValueModel.js';
 import { customerPurchases } from '../../src/modules/crm/customerPurchaseModel.js';
 import { salesDays } from '../../src/modules/crm/digitalSalesDayModel.js';
+import { withOrderPreviews } from '../../shared/amazonOrderAmounts.js';
 
 const orders = [
   {id:'s',connection_id:'a',marketplace:'APJ6JRA9NG5V4',stato:'SHIPPED',net_revenue:100,currency:'EUR',ordered_at:'2026-10-21'},
@@ -45,4 +46,26 @@ test('KPI drilldowns include waiting order amounts and expose incomplete daily t
   assert.equal(euro.amount,200); assert.equal(euro.count,4); assert.equal(euro.missingAmountCount,1);
   const waiting=salesDays(fulfillmentSummary(orders).waiting.orders,true).find(row=>row.currency==='EUR');
   assert.equal(waiting.amount,40); assert.equal(waiting.count,2);
+});
+
+test('waiting cards sum the same available values as order details without changing confirmed net totals',()=>{
+  const pending=[
+    {id:'p',stato:'PENDING',ordered_at:'2026-10-21',currency:'EUR',net_revenue:null,gross_revenue:null},
+    {id:'g',stato:'UNSHIPPED',ordered_at:'2026-10-21',currency:'EUR',net_revenue:null,gross_revenue:24.4},
+    {id:'n',stato:'processing',ordered_at:'2026-10-21',currency:'EUR',net_revenue:10,gross_revenue:12.2},
+    {id:'z',stato:'PENDING',ordered_at:'2026-10-21',currency:'EUR',net_revenue:0,gross_revenue:12},
+    {id:'u',stato:'PENDING',ordered_at:'2026-10-21',currency:'EUR',net_revenue:null},
+  ];
+  const hydrated=withOrderPreviews(pending,[{order_id:'p',quantity:2,unit_price:14.7,line_revenue:null}]);
+  const summary=fulfillmentSummary(hydrated);
+  assert.equal(summary.waiting.amounts.totals[0].amount,63.8);
+  assert.equal(summary.waiting.amounts.estimated,1); assert.equal(summary.waiting.amounts.gross,1);
+  assert.equal(summary.waiting.amounts.missing,1);
+  assert.equal(summary.amounts.totals[0].amount,10); // Confirmed net and averages stay financial totals.
+  assert.equal(summary.averages.totals[0].amount,5);
+  const day=salesDays(hydrated,true,true)[0];
+  assert.equal(day.amount,63.8); assert.equal(day.availableEstimated,1); assert.equal(day.availableGross,1);
+  assert.equal(pending[0].net_revenue,null); assert.equal(pending[0].pricePreview,undefined);
+  const customer=customerPurchases(hydrated,'2026-10-01','2026-10-21');
+  assert.equal(customer.waiting_amounts.totals[0].amount,63.8);
 });

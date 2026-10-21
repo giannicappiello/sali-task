@@ -18,3 +18,9 @@ export function orderDisplayAmount(order) {
   if (order.pricePreview) return { amount: order.pricePreview.amount, note: 'Solo prodotti · provvisorio', basis: 'products' };
   return { amount: null, note: '', basis: 'unavailable' };
 }
+
+export function withOrderPreviews(orders, lines) {
+  const byOrder = new Map();
+  for (const line of lines) { if (!byOrder.has(line.order_id)) byOrder.set(line.order_id,[]); byOrder.get(line.order_id).push(line); }
+  return orders.map(order=>({...order,pricePreview:amazonProductsPreview(byOrder.get(order.id),order.currency) || order.pricePreview}));
+}

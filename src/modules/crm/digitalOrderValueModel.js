@@ -1,3 +1,4 @@
+import { orderDisplayAmount } from '../../../shared/amazonOrderAmounts.js';
 import { fulfillmentBucket } from './digitalSalesDayModel.js';
 import { marketplaceLabel } from './marketplaceLabel.js';
 
@@ -13,7 +14,7 @@ export function knownAmounts(rows, field = 'net_revenue') {
 
 export function combineAmounts(groups) {
   const amounts = knownAmounts(groups.flatMap(group => group?.totals || []).map(row => ({...row,net_revenue:row.amount})));
-  return {...amounts,known:groups.reduce((sum,row)=>sum+(row?.known || 0),0),missing:groups.reduce((sum,row)=>sum+(row?.missing || 0),0)};
+  return {...amounts,estimated:groups.reduce((sum,row)=>sum+(row?.estimated || 0),0),gross:groups.reduce((sum,row)=>sum+(row?.gross || 0),0),known:groups.reduce((sum,row)=>sum+(row?.known || 0),0),missing:groups.reduce((sum,row)=>sum+(row?.missing || 0),0)};
 }
 
 export function averageAmounts(rows) {
@@ -25,7 +26,7 @@ export function fulfillmentSummary(orders) {
   const fulfilled = orders.filter(order=>fulfillmentBucket(order)==='fulfilled');
   const waiting = orders.filter(order=>fulfillmentBucket(order)==='waiting');
   const eligible = orders.filter(order=>fulfillmentBucket(order)!=='other');
-  return {orders:eligible,fulfilled:{orders:fulfilled,amounts:knownAmounts(fulfilled)},waiting:{orders:waiting,amounts:knownAmounts(waiting)},amounts:knownAmounts(eligible),averages:averageAmounts(eligible)};
+  return {orders:eligible,fulfilled:{orders:fulfilled,amounts:knownAmounts(fulfilled)},waiting:{orders:waiting,amounts:availableWaitingAmounts(waiting),netAmounts:knownAmounts(waiting)},amounts:knownAmounts(eligible),averages:averageAmounts(eligible)};
 }
 
 export function marketplaceBreakdown(orders, connections = []) {
@@ -43,4 +44,12 @@ export function marketplaceBreakdown(orders, connections = []) {
     groups.get(key).orders.push(order);
   }
   return [...groups.values()].map(row=>({...row, ...fulfillmentSummary(row.orders)})).sort((a,b)=>a.currency.localeCompare(b.currency)||a.label.localeCompare(b.label));
+}
+
+export function availableWaitingAmounts(orders) {
+  const values=orders.map(order=>({...order,display:orderDisplayAmount(order)}));
+  return {...knownAmounts(values.map(row=>({...row,display_amount:row.display.amount})),'display_amount'),estimated:values.filter(row=>row.display.basis==='products').length,gross:values.filter(row=>row.display.basis==='gross').length};
+}
+export function amountBasisNote(amounts) {
+  return [amounts?.estimated ? amounts.estimated+' importi provvisori' : '',amounts?.gross ? amounts.gross+' totali IVA inclusa' : ''].filter(Boolean).join(' · ');
 }

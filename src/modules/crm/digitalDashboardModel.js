@@ -1,3 +1,4 @@
+import { withOrderPreviews } from '../../../shared/amazonOrderAmounts.js';
 import { countsInSales } from './digitalSalesDayModel.js';
 import { customerPurchases, ordersInPeriod, formatPurchaseAmount } from './customerPurchaseModel.js';
 
@@ -9,7 +10,7 @@ export function displayAmounts(amounts) {
 }
 
 export function buildDigitalDashboard({ accounts, orders, lines, from, to, connections = [] }) {
-  const periodOrders = ordersInPeriod(orders, from, to);
+  const periodOrders = withOrderPreviews(ordersInPeriod(orders, from, to),lines);
   const sales = periodOrders.filter(countsInSales);
   const history = ordersInPeriod(orders, null, to).filter(countsInSales);
   const grouped = new Map();

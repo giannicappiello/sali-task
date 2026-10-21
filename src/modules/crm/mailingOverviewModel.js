@@ -1,9 +1,12 @@
+import { purchasesByAccount, customerPurchases } from './customerPurchaseModel.js';
 import { mailingByAccount } from './mailingModel.js';
 import { customerDisplayName } from './customerIdentity.js';
 
 export const deliveryLabel = status => ({sent: 'Inviata', hard: 'Rimbalzo permanente', soft: 'Rimbalzo temporaneo'}[status] || status || 'Non disponibile');
 const italianDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' });
-export function mailingOverview(identities, consents, deliveries, connections, period) {
+export function mailingOverview(identities, consents, deliveries, connections, period, orders = []) {
+  const purchases = purchasesByAccount(orders, period.from, period.to);
+  const purchaseFor = id => purchases.get(id) || customerPurchases([], period.from, period.to);
   const ids = new Set(connections.map(row => row.id));
   const scopedIdentities = identities.filter(row => ids.has(row.connection_id));
   const accounts = new Map();
@@ -23,13 +26,13 @@ export function mailingOverview(identities, consents, deliveries, connections, p
     const key = row.connection_id + ':' + row.campaign_id;
     if (!campaigns.has(key)) campaigns.set(key, { id: key, title: row.title || row.campaign_id, sent_at: row.sent_at, recipients: [], sent: 0, bounced: 0, other: 0 });
     const campaign = campaigns.get(key);
-    campaign.recipients.push({ ...row, name: customerDisplayName(accounts.get(row.account_id)), email: accounts.get(row.account_id)?.email || '' });
+    campaign.recipients.push({ ...row, purchases: purchaseFor(row.account_id), name: customerDisplayName(accounts.get(row.account_id)), email: accounts.get(row.account_id)?.email || '' });
     if (row.delivery_status === 'sent') campaign.sent++;
     else if (['hard', 'soft'].includes(row.delivery_status)) campaign.bounced++;
     else campaign.other++;
   }
   const contacts = [...accounts.values()].map(account => ({
-    id: account.id, name: customerDisplayName(account), email: account.email || '',
+    id: account.id, purchases: purchaseFor(account.id), name: customerDisplayName(account), email: account.email || '',
     ...statuses.get(account.id), receivedInPeriod: new Set(inPeriod.filter(row => row.account_id === account.id && row.delivery_status === 'sent').map(row => row.connection_id + ':' + row.campaign_id)).size,
   })).sort((a,b) => a.name.localeCompare(b.name, 'it'));
   return { contacts, subscribers: contacts.filter(row => row.subscribed === true),

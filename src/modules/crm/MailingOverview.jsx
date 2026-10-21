@@ -4,10 +4,13 @@ import { loadAllQueryRows } from './crmDataset';
 import { mailingOverview, deliveryLabel } from './mailingOverviewModel.js';
 import { CrmKpiCard, CrmKpiDialog, CrmDetailTable } from './CrmKpiDetail';
 import CrmCustomerLink from './CrmCustomerLink';
+import { loadCustomerOrders } from './customerPurchases';
+import { displayAmounts } from './digitalDashboardModel.js';
+import { amountBasisNote } from './digitalOrderValueModel.js';
 import { formatDate } from './crmConfig';
 
 export default function MailingOverview({ connections, period }) {
-  const [data, setData] = useState({ identities: [], consents: [], deliveries: [] });
+  const [data, setData] = useState({ identities: [], consents: [], deliveries: [], orders: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState(null);
@@ -16,8 +19,9 @@ export default function MailingOverview({ connections, period }) {
     const ids = connections.filter(row => row.provider_code === 'mailchimp').map(row => row.id);
     async function load() {
       setLoading(true); setError('');
-      if (!ids.length) { setData({identities:[],consents:[],deliveries:[]}); setLoading(false); return; }
+      if (!ids.length) { setData({identities:[],consents:[],deliveries:[],orders:[]}); setLoading(false); return; }
       const results = await Promise.all([
+        loadCustomerOrders(period.to),
         loadAllQueryRows((from,to) => supabase.from('crm_external_customers').select('id,connection_id,account_id,crm_accounts(id,nome,email,codice_cliente_mexal,metadati)').in('connection_id',ids).order('id').range(from,to)),
         loadAllQueryRows((from,to) => supabase.from('crm_marketing_consents').select('id,account_id,status,source,captured_at,withdrawn_at,created_at:creato_il').like('source','mailchimp:%').order('id').range(from,to)),
         loadAllQueryRows((from,to) => supabase.from('crm_mailing_deliveries').select('id,connection_id,account_id,campaign_id,title,sent_at,delivery_status').in('connection_id',ids).order('id').range(from,to)),
@@ -25,17 +29,23 @@ export default function MailingOverview({ connections, period }) {
       if (!active) return;
       const failure = results.find(row => row.error)?.error;
       if (failure) setError(failure.message);
-      else setData({identities:results[0].data || [],consents:results[1].data || [],deliveries:results[2].data || []});
+      else setData({orders:results[0].data || [],identities:results[1].data || [],consents:results[2].data || [],deliveries:results[3].data || []});
       setLoading(false);
     }
     void load().catch(e => { if(active) {setError(e.message);setLoading(false);} });
     return () => { active = false; };
-  },[connections]);
-  const model = useMemo(() => mailingOverview(data.identities,data.consents,data.deliveries,connections.filter(row=>row.provider_code==='mailchimp'),period),[data,connections,period]);
+  },[connections,period.to]);
+  const model = useMemo(() => mailingOverview(data.identities,data.consents,data.deliveries,connections.filter(row=>row.provider_code==='mailchimp'),period,data.orders),[data,connections,period]);
+  const purchaseColumn = {
+    key: 'purchases', label: 'Ordinato / Acquistato',
+    value: row => 'account_id' in row && !row.account_id ? 'Anagrafica non collegata' : 'Acquistato: ' + displayAmounts(row.purchases.fulfilled_amounts) + ' · Da evadere: ' + displayAmounts(row.purchases.waiting_amounts),
+    render: row => 'account_id' in row && !row.account_id ? 'Anagrafica non collegata' : <div><div>Acquistato: <strong>{displayAmounts(row.purchases.fulfilled_amounts)}</strong></div><small>{row.purchases.fulfilled_count} ordini evasi{row.purchases.fulfilled_amounts.missing ? ' · '+row.purchases.fulfilled_amounts.missing+' senza importo' : ''}</small><div>Da evadere: <strong>{displayAmounts(row.purchases.waiting_amounts)}</strong></div><small>{row.purchases.waiting_count} ordini{row.purchases.waiting_amounts.missing ? ' · '+row.purchases.waiting_amounts.missing+' senza importo' : ''}{amountBasisNote(row.purchases.waiting_amounts) ? ' · '+amountBasisNote(row.purchases.waiting_amounts) : ''}</small></div>,
+  };
   const contactColumns = [
     {key:'name',label:'Cognome e Nome',value:row=>row.name,render:row=><CrmCustomerLink crmType="online" accountId={row.id} name={row.name} period={period}/>},
     {key:'email',label:'Email',value:row=>row.email},
     {key:'status',label:'Iscrizione mailing',value:row=>row.label},
+    purchaseColumn,
     {key:'period',label:'Mailing ricevute nel periodo',value:row=>row.receivedInPeriod},
     {key:'received',label:'Mailing ricevute totali',value:row=>row.received == null ? 'Dato non disponibile' : row.received},
   ];
@@ -44,7 +54,7 @@ export default function MailingOverview({ connections, period }) {
   const complete = connections.filter(row=>row.provider_code==='mailchimp').every(row=>row.import_state?.completed && row.import_state?.mailing_complete);
   return <>
     <section className="b2b-kpi-section" aria-label="KPI Mailchimp"><h2>Mailchimp</h2>
-      <p>Contatti e iscrizioni: stato attuale. Campagne e invii: dal {formatDate(period.from)} al {formatDate(period.to)}. Gli invii registrati non attestano la lettura dell’email.</p>
+      <p>Contatti e iscrizioni: stato attuale. Campagne e invii: dal {formatDate(period.from)} al {formatDate(period.to)}. Gli invii registrati non attestano la lettura dell’email. Ordinato / Acquistato comprende gli ordini collegati al nominativo nel periodo, da tutti i canali: acquistato per gli evasi e da evadere per quelli in attesa, esclusi annullati e falliti; non indica vendite attribuite alla campagna.</p>
       {!complete ? <p role="status">Importazione parziale: i conteggi possono essere incompleti.</p> : null}
       <div className="crm-kpi-grid">
         <CrmKpiCard label="Contatti Mailchimp" value={model.contacts.length} note="Anagrafiche uniche collegate" info="Contatti importati da Mailchimp, compresi quelli già presenti dal sito. Ogni anagrafica è contata una volta." onClick={()=>setSelected({kind:'contacts',title:'Contatti Mailchimp'})}/>
@@ -66,6 +76,7 @@ export default function MailingOverview({ connections, period }) {
       {['contacts','subscribers'].includes(selected.kind) ? <CrmDetailTable rows={selected.kind==='subscribers'?model.subscribers:model.contacts} columns={contactColumns}/> : selected.kind==='campaigns' ? <ul>{model.campaigns.map(row=><li key={row.id}><button type="button" className="crm-customer-link" onClick={()=>setSelected({kind:'recipients',title:row.title,rows:row.recipients})}>{row.title}</button> · {formatDate(row.sent_at)} · {row.sent} invii</li>)}</ul> : <CrmDetailTable rows={selected.rows || model.campaigns.flatMap(row=>row.recipients).filter(row=>row.delivery_status==='sent')} columns={[
         {key:'name',label:'Cognome e Nome',value:row=>row.name,render:row=>row.account_id ? <CrmCustomerLink crmType="online" accountId={row.account_id} name={row.name} period={period}/> : 'Anagrafica non collegata'},
         {key:'email',label:'Email',value:row=>row.email},
+        purchaseColumn,
         {key:'title',label:'Campagna',value:row=>row.title},
         {key:'status',label:'Esito',value:row=>deliveryLabel(row.delivery_status)},
         {key:'date',label:'Data invio',value:row=>formatDate(row.sent_at)},

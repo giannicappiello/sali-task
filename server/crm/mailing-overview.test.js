@@ -33,3 +33,22 @@ test('period boundaries follow Italy local day, unknown dates are not fabricated
  assert.equal(m.sent,1);assert.equal(m.campaigns.length,1);
  assert.equal(m.contacts.length,0);
 });
+
+test('purchase column follows the contact across marketplaces, excludes failed orders and respects the selected period',()=>{
+ const identities=[{connection_id:'mc',account_id:'a',crm_accounts:{id:'a',nome:'Anna Verdi'}}];
+ const order={account_id:'a',currency:'EUR',ordered_at:'2026-10-10T12:00:00Z'};
+ const orders=[
+  {...order,id:'site',marketplace:'website',stato:'completed',net_revenue:100},
+  {...order,id:'amazon',marketplace:'Amazon_IT',stato:'shipped',net_revenue:25},
+  {...order,id:'waiting',marketplace:'website',stato:'processing',net_revenue:40},
+  {...order,id:'cancelled',stato:'cancelled',net_revenue:999},
+  {...order,id:'old',ordered_at:'2026-01-01',stato:'completed',net_revenue:200},
+  {...order,id:'other',account_id:'b',stato:'completed',net_revenue:500},
+ ];
+ const deliveries=[{id:'d',connection_id:'mc',account_id:'a',campaign_id:'c',sent_at:'2026-10-10',delivery_status:'sent'}];
+ const m=mailingOverview(identities,[],deliveries,[connection],{from:'2026-10-01',to:'2026-10-21'},orders);
+ assert.equal(m.contacts[0].purchases.fulfilled_count,2);
+ assert.equal(m.contacts[0].purchases.fulfilled_amounts.totals[0].amount,125);
+ assert.equal(m.contacts[0].purchases.waiting_amounts.totals[0].amount,40);
+ assert.deepEqual(m.campaigns[0].recipients[0].purchases,m.contacts[0].purchases);
+});

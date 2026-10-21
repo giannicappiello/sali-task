@@ -15,6 +15,7 @@ import { authorizedDigitalScheduler, runDigitalDailyJobs } from "./digital-daily
 import { loadDigitalOrderDetail } from './digital-order-detail.js';
 import { synchronizeAmazonCox } from './amazon-cox.js';
 import { buildMexalClient } from '../mexal/sync-products.js';
+import { probeAmazonBuyer } from './amazon-buyer.js';
 
 const SAFE_CONNECTION_FIELDS = "id,tipo,provider_code,provider,nome,category,auth_type,stato,endpoint_url,site_url,external_account_id,marketplace_ids,configurazione,secret_references,credenziali_stato,abilitata,sync_attivo,sync_frequency,is_default,ultimo_test_il,ultimo_test_stato,ultimo_test_messaggio,errori_consecutivi,ultimo_sync_il,prossima_run_il,ultimo_errore,oauth_scade_il,webhook_path,webhook_stato,ultimo_webhook_il,disabilitata_il,aggiornata_il,import_state,amazon_cox_state,amazon_cox_from,responsabile_id,reparto_id";
 
@@ -297,6 +298,25 @@ export async function dispatchDigitalSchedule(req) {
 export async function handleDigitalConnectionManager(req, res) {
   const body = req.body || {}; const action = String(body.action || req.query?.action || "list");
   try {
+    if (action === 'amazon_buyer_probe') {
+      res.setHeader('Cache-Control','private, no-store');
+      if (req.method !== 'POST') return res.status(405).json({ success:false,error:'Metodo non consentito.' });
+      const db = serviceClient();
+      const result = await probeAmazonBuyer({
+        authorize: async () => {
+          if (!authorizedDigitalScheduler(req,required('SUPABASE_SERVICE_ROLE_KEY'),process.env.CRON_SECRET)) throw Object.assign(new Error('Verifica riservata al servizio.'),{status:401});
+        },
+        loadOrder: async () => {
+          const { data,error } = await db.from('crm_external_orders')
+            .select('connection_id,external_id,crm_external_connections!inner(provider_code,abilitata)')
+            .eq('crm_external_connections.provider_code','amazon_sp_api').eq('crm_external_connections.abilitata',true)
+            .ilike('stato','shipped').order('ordered_at',{ascending:false}).limit(1).maybeSingle();
+          if (error) throw error; return data;
+        },
+        connection:id => connectionById(db,id), secrets:id => decryptedSecrets(db,id),
+      });
+      return res.status(200).json({ success:true,...result });
+    }
     if (action === 'order_detail') {
       res.setHeader('Cache-Control', 'private, no-store');
       if (req.method !== 'POST') return res.status(405).json({ success: false, error: 'Metodo non consentito.' });

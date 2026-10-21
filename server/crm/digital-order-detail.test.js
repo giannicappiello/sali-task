@@ -56,7 +56,7 @@ test('Provider failure or wrong order ID retains imported data with a visible wa
   }
 });
 
-test('Amazon detail never requests restricted buyer information and resolves product titles', async () => {
+test('Amazon detail requests BUYER after authorization and resolves product titles when name is absent', async () => {
   const urls = [];
   const result = await loadDigitalOrderDetail('id', dependencies({
     connection: async () => ({ id: 'c', tipo: 'amazon_seller', provider_code: 'amazon_sp_api', configurazione: { region: 'eu', lwa_client_id: 'client' } }),
@@ -65,7 +65,7 @@ test('Amazon detail never requests restricted buyer information and resolves pro
     fetcher: async (url) => { urls.push(url); return url.includes('/auth/') ? { ok: true, data: { access_token: 'private' } } : { ok: true, data: { order: { orderId: '13729', orderItems: [{ orderItemId: '1', quantityOrdered: 2, product: { title: 'Nome Amazon', sellerSku: 'SKU' } }] } } }; },
   }));
   assert.equal(result.order.lines[0].name, 'Nome Amazon'); assert.match(result.order.customerUnavailable, /non fornito da Amazon/);
-  assert.ok(!urls.some((u) => /BUYER|RECIPIENT/.test(u))); assert.equal(result.order.warning, null);
+  assert.ok(urls.some((u) => /BUYER/.test(u))); assert.ok(!urls.some(u => /RECIPIENT/.test(u))); assert.equal(result.order.warning, null);
 });
 
 test('Woo order detail includes shipping as a separate net row without adding it twice to totals', () => {

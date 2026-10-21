@@ -1,9 +1,10 @@
 /* global Buffer */
-import { request, refreshAccessToken } from './digital-provider-adapters.js';
+import { request } from './digital-provider-adapters.js';
 import { safeFetch } from './digital-security.js';
 import { amazonProductsPreview } from '../../shared/amazonOrderAmounts.js';
 import { amazonOrder, wooShippingLines } from './commerce-import.js';
 import { formatMexalOrderReference, wooMexalOrderReference } from '../../shared/wooMexalReference.js';
+import { fetchAmazonOrderWithBuyer, amazonBuyerUnavailable } from './amazon-buyer.js';
 
 export function wooOrderDetail(order) {
   return {
@@ -43,15 +44,14 @@ export async function loadDigitalOrderDetail(orderId, dependencies) {
       warning = 'Il sito non è raggiungibile. Sono mostrati i dettagli già importati, che possono essere incompleti.';
     }
   } else if (connection.provider_code === 'amazon_sp_api') {
+    result.buyerAccess = 'unavailable';
     try {
       const secrets = await dependencies.secrets(connection.id);
       const fetcher = dependencies.fetcher || safeFetch;
-      const token = await refreshAccessToken(connection, secrets, fetcher);
-      const root = { eu: 'https://sellingpartnerapi-eu.amazon.com', na: 'https://sellingpartnerapi-na.amazon.com', fe: 'https://sellingpartnerapi-fe.amazon.com' }[connection.configurazione.region || 'eu'];
-      const data = await request(`${root}/orders/2026-01-01/orders/${encodeURIComponent(order.external_id)}?includedData=PROCEEDS,FULFILLMENT`, {
-        headers: { 'x-amz-access-token': token.access_token, 'user-agent': 'Workspace/1.0 (Language=JavaScript; Platform=Node.js)', accept: 'application/json' },
-      }, fetcher, 'Dettaglio ordine Amazon');
-      if (String(data.order?.orderId) !== String(order.external_id) || !Array.isArray(data.order?.orderItems)) throw new Error('Dettaglio non valido.');
+      const buyer = await fetchAmazonOrderWithBuyer(connection,secrets,order.external_id,{fetcher});
+      const data = { order:buyer.order };
+      result.customerName = buyer.customerName;
+      result.buyerAccess = buyer.buyerAccess;
       const current = amazonOrder(data.order);
       result.amount = current.net_revenue ?? order.net_revenue;
       result.total = current.gross_revenue ?? order.gross_revenue;
@@ -67,5 +67,5 @@ export async function loadDigitalOrderDetail(orderId, dependencies) {
     currency: order.currency, amount: order.net_revenue, total: order.gross_revenue, discounts: order.discounts, refunds: order.refunds,
     marketplace: order.marketplace, ...result, warning,
     coxStatus: order.cox_status, coxReference: order.cox_reference, coxError: order.cox_error,
-    customerUnavailable: !result.customerName ? connection.provider_code === 'amazon_sp_api' ? 'Nome cliente non fornito da Amazon con i permessi disponibili.' : 'Nome cliente non disponibile.' : null } };
+    customerUnavailable: !result.customerName ? connection.provider_code === 'amazon_sp_api' ? amazonBuyerUnavailable(result.buyerAccess,result.status || order.stato) : 'Nome cliente non disponibile.' : null } };
 }

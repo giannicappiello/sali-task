@@ -3,9 +3,11 @@ import { request, refreshAccessToken } from './digital-provider-adapters.js';
 import { safeFetch } from './digital-security.js';
 import { amazonProductsPreview } from '../../shared/amazonOrderAmounts.js';
 import { amazonOrder, wooShippingLines } from './commerce-import.js';
+import { formatMexalOrderReference, wooMexalOrderReference } from '../../shared/wooMexalReference.js';
 
 export function wooOrderDetail(order) {
   return {
+    mexalOc: wooMexalOrderReference(order),
     customerName: [order.billing?.last_name, order.billing?.first_name].filter(Boolean).join(' ').trim() || order.billing?.company || null,
     lines: (order.line_items || []).map((line) => ({
       id: String(line.id), name: line.name || line.sku || 'Prodotto non identificato', sku: line.sku || null,
@@ -23,7 +25,7 @@ export async function loadDigitalOrderDetail(orderId, dependencies) {
   const connection = await dependencies.connection(order.connection_id);
   await dependencies.authorizeScreen(connection.tipo === 'ecommerce' ? 'crm.online.ecommerce' : 'crm.online.amazon');
   const lines = await dependencies.cachedLines(order.id);
-  let result = { customerName: order.crm_accounts?.nome || null, lines };
+  let result = { customerName: order.crm_accounts?.nome || null, lines, mexalOc: connection.provider_code === 'woocommerce' ? formatMexalOrderReference(order.raw_summary?.mexal_oc) : null };
   let warning = null;
   if (connection.provider_code === 'woocommerce') {
     try {
@@ -34,6 +36,9 @@ export async function loadDigitalOrderDetail(orderId, dependencies) {
       }, dependencies.fetcher || safeFetch, 'Dettaglio ordine WooCommerce');
       if (String(data.id) !== String(order.external_id) || !Array.isArray(data.line_items)) throw new Error('Dettaglio non valido.');
       result = wooOrderDetail(data);
+      if (result.mexalOc && result.mexalOc !== order.raw_summary?.mexal_oc && dependencies.saveMexalReference) {
+        try { await dependencies.saveMexalReference(order, result.mexalOc); } catch { /* The live reference remains available if caching is temporarily unavailable. */ }
+      }
     } catch {
       warning = 'Il sito non è raggiungibile. Sono mostrati i dettagli già importati, che possono essere incompleti.';
     }

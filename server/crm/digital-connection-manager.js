@@ -310,12 +310,18 @@ export async function handleDigitalConnectionManager(req, res) {
       const db = serviceClient();
       const detail = await loadDigitalOrderDetail(body.orderId, {
         visibleOrder: async (id) => {
-          const { data, error } = await reader.from('crm_external_orders').select('id,connection_id,external_id,marketplace,stato,ordered_at,currency,net_revenue,gross_revenue,discounts,refunds,cox_status,cox_reference,cox_error,crm_accounts(nome)').eq('id', id).maybeSingle();
+          const { data, error } = await reader.from('crm_external_orders').select('id,connection_id,external_id,marketplace,stato,ordered_at,currency,net_revenue,gross_revenue,discounts,refunds,cox_status,cox_reference,cox_error,raw_summary,crm_accounts(nome)').eq('id', id).maybeSingle();
           if (error) throw error; return data;
         },
         connection: (id) => connectionById(db, id),
         authorizeScreen: (screen) => requireScreenManagement(req, db, screen, { readOnly: true }),
         secrets: (id) => decryptedSecrets(db, id),
+        saveMexalReference: async (order, reference) => {
+          let update = db.from('crm_external_orders').update({ raw_summary: { ...(order.raw_summary || {}), mexal_oc: reference } }).eq('id', order.id).eq('connection_id', order.connection_id);
+          update = order.raw_summary == null ? update.is('raw_summary', null) : update.eq('raw_summary', JSON.stringify(order.raw_summary));
+          const { error } = await update;
+          if (error) throw error;
+        },
         cachedLines: async (id) => {
           const rows = [];
           for (let from = 0; ; from += 200) {

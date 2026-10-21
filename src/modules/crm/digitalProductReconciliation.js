@@ -23,3 +23,10 @@ export function productAsinRows(product) {
   }
   return [...variants.values()].map(row=>({...row,count:row.orders.size,amounts:knownAmounts(row.lines,'line_revenue')}));
 }
+
+export function importedProductsWithMappings(products, mappings) {
+  const bySku = new Map(mappings.map(row=>[mappingKey(row.connection_id,row.marketplace,row.external_sku),row]));
+  return products.map(product=>({...product,mapping:bySku.get(mappingKey(product.connection_id,product.marketplace,product.external_sku)) || {
+    connection_id:product.connection_id,marketplace:product.marketplace,external_sku:product.external_sku,asin:product.asin,product_id:product.product_id,
+  }}));
+}

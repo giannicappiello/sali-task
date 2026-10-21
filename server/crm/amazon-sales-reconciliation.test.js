@@ -38,3 +38,14 @@ test('reconciliation unifies distinct ASINs under one product and keeps exact AS
   assert.equal(reconcileDigitalLines(orders,lines,mappings.map(row=>({...row,connection_id:'other'})))[0].product_id,undefined);
   assert.equal(reconcileDigitalLines(orders,lines,mappings.map(row=>({...row,marketplace:'FR'})))[0].product_id,undefined);
 });
+
+
+test('imported product actions use the exact connection, marketplace and SKU mapping', async () => {
+  const {importedProductsWithMappings}=await import('../../src/modules/crm/digitalProductReconciliation.js');
+  const products=[{id:'p',connection_id:'c',marketplace:'IT',external_sku:'sku',asin:'A'},{id:'f',connection_id:'c',marketplace:'FR',external_sku:'sku',asin:'A'}];
+  const mapping={id:'m',connection_id:'c',marketplace:'IT',external_sku:'sku',product_id:'canonical',status:'matched'};
+  const rows=importedProductsWithMappings(products,[mapping]);
+  assert.equal(rows[0].mapping.id,'m'); assert.equal(rows[0].mapping.product_id,'canonical');
+  assert.equal(rows[1].mapping.id,undefined); assert.equal(rows[1].mapping.marketplace,'FR'); assert.equal(rows[1].mapping.asin,'A');
+  assert.equal(products[0].mapping,undefined);
+});

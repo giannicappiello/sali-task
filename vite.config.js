@@ -8,7 +8,7 @@ export default defineConfig({
     VitePWA({
       registerType: "prompt",
       injectRegister: false,
-      includeAssets: ["favicon.svg", "pwa-192x192.png", "pwa-512x512.png", "pwa-maskable-512x512.png"],
+      includeAssets: ["favicon.svg", "apple-touch-icon.png", "pwa-192x192.png", "pwa-512x512.png", "pwa-maskable-512x512.png"],
       manifest: {
         name: "Progre Workspace",
         short_name: "Progre",
@@ -21,17 +21,17 @@ export default defineConfig({
         icons: [
           {
             src: "/pwa-192x192.png",
-            sizes: "192x192",
+            sizes: "400x400",
             type: "image/png"
           },
           {
             src: "/pwa-512x512.png",
-            sizes: "512x512",
+            sizes: "1067x1067",
             type: "image/png"
           },
           {
             src: "/pwa-maskable-512x512.png",
-            sizes: "512x512",
+            sizes: "1067x1067",
             type: "image/png",
             purpose: "maskable"
           }
@@ -51,6 +51,7 @@ export default defineConfig({
           handler: "NetworkFirst",
           options: {
             cacheName: "workspace-navigation-v1",
+            precacheFallback: { fallbackURL: "/offline.html" },
             fetchOptions: { cache: "no-store" },
             cacheableResponse: { statuses: [200] },
             expiration: { maxEntries: 30, maxAgeSeconds: 7 * 24 * 60 * 60 }

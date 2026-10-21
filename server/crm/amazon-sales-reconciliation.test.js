@@ -49,3 +49,22 @@ test('imported product actions use the exact connection, marketplace and SKU map
   assert.equal(rows[1].mapping.id,undefined); assert.equal(rows[1].mapping.marketplace,'FR'); assert.equal(rows[1].mapping.asin,'A');
   assert.equal(products[0].mapping,undefined);
 });
+
+test('website imported duplicates share their SKU reconciliation without affecting another store or Amazon',async()=>{
+ const {importedProductsWithMappings}=await import('../../src/modules/crm/digitalProductReconciliation.js');
+ const products=[
+  {id:'en',connection_id:'woo',marketplace:'website',external_sku:'IT0198'},
+  {id:'it',connection_id:'woo',marketplace:'website',external_sku:'IT0198'},
+  {id:'amazon',connection_id:'amazon',marketplace:'IT',external_sku:'IT0198'},
+  {id:'other',connection_id:'other-store',marketplace:'website',external_sku:'IT0198'},
+ ];
+ const mapping={id:'m',connection_id:'woo',marketplace:'website',external_sku:'IT0198',product_id:'canonical',codice_mexal:'IT0198',status:'matched'};
+ const rows=importedProductsWithMappings(products,[mapping]);
+ assert.equal(rows[0].mapping.id,'m');assert.equal(rows[1].mapping.id,'m');
+ assert.equal(rows[2].mapping.id,undefined);assert.equal(rows[3].mapping.id,undefined);
+ const orders=[{id:'order',connection_id:'woo',marketplace:'website',stato:'completed',currency:'EUR'}];
+ const lines=[{id:'line',order_id:'order',external_sku:'IT0198',quantity:2,line_revenue:20}];
+ const reconciled=reconcileDigitalLines(orders,lines,[mapping]);
+ assert.equal(reconciled[0].product_id,'canonical');
+ assert.equal(digitalChannelKpis(orders,reconciled).products[0].code,'IT0198');
+});

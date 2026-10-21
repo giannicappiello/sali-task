@@ -24,3 +24,13 @@ test('Amazon cannot reconcile non-IT products or mappings from another connectio
     assert.equal(db.writes.length,0);
   }
 });
+
+test('WooCommerce reconciliation validates IT catalogue products and preserves source and website scope',async()=>{
+ const woo={id:'woo',provider_code:'woocommerce'};
+ const good=database({mappingConnection:'woo'});
+ const saved=await persistProductMapping(good,woo,{...body,marketplace:'website'},'actor');
+ assert.equal(saved.connection_id,'woo');assert.equal(saved.marketplace,'website');assert.equal(saved.codice_mexal,'IT001');
+ const bad=database({code:'PH001',mappingConnection:'woo'});
+ await assert.rejects(persistProductMapping(bad,woo,{...body,marketplace:'website'},'actor'),error=>error.status===400);
+ assert.equal(bad.writes.length,0);
+});

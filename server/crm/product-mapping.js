@@ -14,7 +14,7 @@ export async function persistProductMapping(db, connection, body, actorId) {
     query = productId ? query.eq('id',productId) : query.eq('codice_mexal',code);
     const product = await query.single();
     if (product.error) throw product.error;
-    if (connection.provider_code === 'amazon_sp_api' && ![product.data.codice,product.data.codice_mexal].some(value=>/^IT/i.test(value || ''))) fail('Per Amazon seleziona un prodotto con codice IT.');
+    if (['amazon_sp_api', 'woocommerce'].includes(connection.provider_code) && ![product.data.codice,product.data.codice_mexal].some(value=>/^IT/i.test(value || ''))) fail('Seleziona un prodotto con codice IT.');
     productId = product.data.id; code = product.data.codice_mexal || product.data.codice;
   }
   const payload = { ...(body.mappingId ? {id:body.mappingId} : {}),connection_id:connection.id,marketplace:body.marketplace || null,

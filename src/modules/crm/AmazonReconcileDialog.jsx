@@ -5,7 +5,7 @@ import { loadAllQueryRows } from './crmDataset';
 import { digitalConnectionsService } from '../integrations/services/digitalConnectionsService';
 import { marketplaceLabel } from './marketplaceLabel.js';
 
-export default function AmazonReconcileDialog({ mapping, onClose, onSaved }) {
+export default function AmazonReconcileDialog({ mapping, onClose, onSaved, channelLabel = "Amazon" }) {
   const [products,setProducts] = useState([]), [query,setQuery] = useState(''), [selected,setSelected] = useState(mapping.product_id || '');
   const [loading,setLoading] = useState(true), [busy,setBusy] = useState(false), [error,setError] = useState('');
   useEffect(()=>{
@@ -27,7 +27,7 @@ export default function AmazonReconcileDialog({ mapping, onClose, onSaved }) {
       await onSaved();
     } catch(failure) { setError(failure.message); setBusy(false); }
   }
-  return <CrmKpiDialog title="Riconcilia prodotto Amazon" subtitle={`${marketplaceLabel(mapping.marketplace)} · SKU ${mapping.external_sku} · ASIN ${mapping.asin || '—'}`} onClose={()=>{if(!busy) onClose();}}>
+  return <CrmKpiDialog title={`Riconcilia prodotto ${channelLabel}`} subtitle={`${marketplaceLabel(mapping.marketplace)} · SKU ${mapping.external_sku}${mapping.asin ? ' · ASIN '+mapping.asin : ''}`} onClose={()=>{if(!busy) onClose();}}>
     <form className="crm-form-grid crm-amazon-reconcile-form" onSubmit={save}>
       <label>Cerca prodotto IT<input type="search" value={query} onChange={event=>setQuery(event.target.value)} placeholder="Codice IT o nome prodotto" disabled={loading || busy}/></label>
       <label>Prodotto Workspace (codice IT)<select aria-label="Prodotto Workspace (codice IT)" required value={selected} disabled={loading || busy} onChange={event=>setSelected(event.target.value)}>
@@ -36,7 +36,7 @@ export default function AmazonReconcileDialog({ mapping, onClose, onSaved }) {
         {options.map(row=><option key={row.id} value={row.id}>{row.codice_mexal || row.codice} · {row.nome}</option>)}
       </select></label>
       {loading ? <p role="status">Caricamento prodotti IT…</p> : <p>{options.length} prodotti disponibili per la ricerca.</p>}
-      <p>Gli ASIN riconciliati con lo stesso prodotto contribuiscono a un unico totale. I dettagli ASIN restano consultabili nel prodotto.</p>
+      <p>I prodotti esterni riconciliati con lo stesso prodotto Workspace contribuiscono a un unico totale. Il collegamento resta distinto per fonte, marketplace e SKU.</p>
       {error ? <p role="alert" className="crm-message error">{error}</p> : null}
       <button type="submit" className="primary-action" disabled={loading || busy || !product}>{busy ? 'Salvataggio…' : 'Salva riconciliazione'}</button>
     </form>

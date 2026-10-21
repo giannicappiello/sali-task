@@ -61,5 +61,6 @@ export async function loadDigitalOrderDetail(orderId, dependencies) {
   return { order: { id: order.id, number: order.external_id, date: order.ordered_at, status: order.stato,
     currency: order.currency, amount: order.net_revenue, total: order.gross_revenue, discounts: order.discounts, refunds: order.refunds,
     marketplace: order.marketplace, ...result, warning,
+    coxStatus: order.cox_status, coxReference: order.cox_reference, coxError: order.cox_error,
     customerUnavailable: !result.customerName ? connection.provider_code === 'amazon_sp_api' ? 'Nome cliente non fornito da Amazon con i permessi disponibili.' : 'Nome cliente non disponibile.' : null } };
 }

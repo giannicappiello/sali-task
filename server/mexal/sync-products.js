@@ -277,6 +277,12 @@ export function buildMexalClient({ request = requestMexal, warehouse, retryOptio
     anno,
     magazzino,
 
+    async calculateDocument(document) {
+      const response = await request({ url: `${baseUrl}/webapi/servizi`, headers, method: 'POST',
+        body: JSON.stringify({ cmd: 'totali_documento', dati: { in_documento: document } }), timeoutMs });
+      return parseJsonResponse(response, 'Calcolo documento Mexal');
+    },
+
     async getJson(path) {
       const execute = async () => {
         const response = await request({ url: `${baseUrl}/webapi/risorse${path}`, headers, timeoutMs });

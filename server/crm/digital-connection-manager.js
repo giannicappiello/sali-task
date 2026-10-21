@@ -13,8 +13,10 @@ import { notifyDigitalAdmins } from "./digital-notifications.js";
 import { COMMERCE_PROVIDERS, fetchCommercePage } from "./commerce-import.js";
 import { authorizedDigitalScheduler, runDigitalDailyJobs } from "./digital-daily-scheduler.js";
 import { loadDigitalOrderDetail } from './digital-order-detail.js';
+import { synchronizeAmazonCox } from './amazon-cox.js';
+import { buildMexalClient } from '../mexal/sync-products.js';
 
-const SAFE_CONNECTION_FIELDS = "id,tipo,provider_code,provider,nome,category,auth_type,stato,endpoint_url,site_url,external_account_id,marketplace_ids,configurazione,secret_references,credenziali_stato,abilitata,sync_attivo,sync_frequency,is_default,ultimo_test_il,ultimo_test_stato,ultimo_test_messaggio,errori_consecutivi,ultimo_sync_il,prossima_run_il,ultimo_errore,oauth_scade_il,webhook_path,webhook_stato,ultimo_webhook_il,disabilitata_il,aggiornata_il,import_state,responsabile_id,reparto_id";
+const SAFE_CONNECTION_FIELDS = "id,tipo,provider_code,provider,nome,category,auth_type,stato,endpoint_url,site_url,external_account_id,marketplace_ids,configurazione,secret_references,credenziali_stato,abilitata,sync_attivo,sync_frequency,is_default,ultimo_test_il,ultimo_test_stato,ultimo_test_messaggio,errori_consecutivi,ultimo_sync_il,prossima_run_il,ultimo_errore,oauth_scade_il,webhook_path,webhook_stato,ultimo_webhook_il,disabilitata_il,aggiornata_il,import_state,amazon_cox_state,amazon_cox_from,responsabile_id,reparto_id";
 
 function required(name) {
   const value = String(process.env[name] || "").trim();
@@ -216,10 +218,27 @@ async function synchronizeCommerce(db, actorId, connection, mode) {
   try {
     // Read the cursor after acquiring the lock: another request may have just finished a page.
     const fresh = await connectionById(db, connection.id);
+    const emitCox = async () => {
+      const cox = await synchronizeAmazonCox({ db, connection: fresh,
+        clientForYear: year => buildMexalClient({ year, warehouse: 4 }) });
+      await finish(cox.hasMore ? 'partial' : 'completed', { read: 0, updated: cox.emitted, failed: cox.failed },
+        { source: mode, resource: 'amazon_cox', hasMore: cox.hasMore, cox });
+      return { runId, status: cox.hasMore ? 'partial' : 'completed', hasMore: cox.hasMore,
+        recordsRead: 0, resource: 'amazon_cox', counts: fresh.import_state?.counts || {}, cox };
+    };
+    if (fresh.provider_code === 'amazon_sp_api' && fresh.amazon_cox_state?.active) return await emitCox();
     const page = await fetchCommercePage(fresh, await decryptedSecrets(db, connection.id), fresh.import_state);
     const { error } = await db.rpc('crm_import_commerce_page_service', { target_connection_id: connection.id, target_run_id: runId,
       expected_state: fresh.import_state, resource_kind: page.kind, page_rows: page.rows, next_state: page.next });
     if (error) throw error;
+    if (fresh.provider_code === 'amazon_sp_api' && !page.hasMore) {
+      const saved = await db.from('crm_external_connections').update({ amazon_cox_state: { active: true } }).eq('id', fresh.id);
+      if (saved.error) throw saved.error;
+      // Start with the next bounded request; all provider pages have been committed.
+      await finish('partial', { read: page.rows.length, updated: page.rows.length, failed: 0 },
+        { source: mode, resource: page.kind, counts: page.next.counts, hasMore: true });
+      return { runId, status: 'partial', hasMore: true, recordsRead: page.rows.length, resource: page.kind, counts: page.next.counts };
+    }
     await finish(page.hasMore ? 'partial' : 'completed', { read: page.rows.length, updated: page.rows.length, failed: 0 }, { source: mode, resource: page.kind, counts: page.next.counts, hasMore: page.hasMore });
     return { runId, status: page.hasMore ? 'partial' : 'completed', hasMore: page.hasMore, recordsRead: page.rows.length, resource: page.kind, counts: page.next.counts };
   } catch (error) {
@@ -291,7 +310,7 @@ export async function handleDigitalConnectionManager(req, res) {
       const db = serviceClient();
       const detail = await loadDigitalOrderDetail(body.orderId, {
         visibleOrder: async (id) => {
-          const { data, error } = await reader.from('crm_external_orders').select('id,connection_id,external_id,marketplace,stato,ordered_at,currency,net_revenue,gross_revenue,discounts,refunds,crm_accounts(nome)').eq('id', id).maybeSingle();
+          const { data, error } = await reader.from('crm_external_orders').select('id,connection_id,external_id,marketplace,stato,ordered_at,currency,net_revenue,gross_revenue,discounts,refunds,cox_status,cox_reference,cox_error,crm_accounts(nome)').eq('id', id).maybeSingle();
           if (error) throw error; return data;
         },
         connection: (id) => connectionById(db, id),

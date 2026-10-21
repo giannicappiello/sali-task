@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { CrmKpiCard, CrmKpiDialog, CrmDetailTable } from './CrmKpiDetail';
 import CrmCustomerLink from './CrmCustomerLink';
 import DigitalSalesDays from './DigitalSalesDays';
+import DigitalProductAsins from './DigitalProductAsins';
 import { digitalChannelKpis } from './digitalChannelKpiModel.js';
 import { displayAmounts } from './digitalDashboardModel.js';
 import { formatDate } from './crmConfig';
@@ -18,12 +19,12 @@ export default function DigitalChannelKpis({ orders, lines, period, loading, err
     {card('Valore medio ordine', displayAmounts(model.averages), model.amounts.missing ? `Parziale: ${model.amounts.known} ordini con importo` : 'Totale / numero ordini per valuta', 'Media degli ordini validi con importo disponibile, suddivisa per valuta.', 'orders')}
     {card('Prodotti Venduti', model.products.length, 'Prodotti distinti nel periodo', 'Prodotti presenti negli ordini validi. Quantità sommate anche senza UDM; spedizioni escluse dal conteggio prodotti. Apri per quantità e importi delle righe disponibili.', 'products')}
   </div></section>{selected ? <CrmKpiDialog title={selected.label} subtitle={`${formatDate(period.from)} – ${formatDate(period.to)}`} onClose={() => setSelected(null)}>
-    {selected.kind === 'orders' ? <DigitalSalesDays orders={model.sales} loading={false}/> : selected.kind === 'customers' ? <CrmDetailTable rows={model.customers} columns={[
+    {selected.kind === 'orders' ? <DigitalSalesDays orders={model.sales} loading={false} splitFulfillment={channelLabel === 'Amazon'}/> : selected.kind === 'customers' ? <CrmDetailTable rows={model.customers} columns={[
       { key: 'nome', label: 'Cognome e Nome', value: row => row.nome, render: row => <CrmCustomerLink crmType="online" accountId={row.id} name={row.nome} period={period}/> },
       { key: 'count', label: 'Ordini', value: row => row.count },
       { key: 'amount', label: 'Importo', value: row => displayAmounts(row.amounts) },
     ]}/> : <CrmDetailTable rows={model.products} columns={[
-      { key: 'name', label: 'Prodotto', value: row => row.name },
+      { key: 'name', label: 'Prodotto', value: row => row.name, render: row => channelLabel === 'Amazon' ? <DigitalProductAsins product={row}/> : row.name },
       { key: 'code', label: 'Codice / ASIN', value: row => row.code },
       { key: 'quantity', label: 'Quantità', value: row => `${row.quantity.toLocaleString('it-IT')}${row.unknownQuantity ? ' (parziale)' : ''}` },
       { key: 'count', label: 'Ordini', value: row => row.count },

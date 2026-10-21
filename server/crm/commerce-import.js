@@ -70,10 +70,10 @@ export function amazonOrder(row) {
   const taxRows = (row.proceeds?.breakdowns || []).filter((b) => b.type === 'TAX');
   const tax = taxRows.length ? taxRows.reduce((s, b) => s + Number(b.subtotal?.amount || 0), 0) : null;
   return { external_id: text(row.orderId), marketplace: row.salesChannel?.marketplaceId, stato: text(row.fulfillment?.fulfillmentStatus || 'UNKNOWN'), ordered_at: row.createdTime,
-    currency: row.proceeds?.grandTotal?.currencyCode || 'EUR', gross_revenue: total,
+    currency: row.proceeds?.grandTotal?.currencyCode || row.orderItems?.find(line=>line.product?.price?.unitPrice?.currencyCode)?.product.price.unitPrice.currencyCode || 'EUR', gross_revenue: total,
     net_revenue: total !== null && tax !== null ? rounded(total - tax) : null, discounts: null, refunds: null, fees: null,
     raw_summary: { provider: 'amazon_sp_api', last_updated: row.lastUpdatedTime, financial_basis: tax === null ? 'net_unavailable_without_tax_breakdown' : 'proceeds_excluding_tax_before_unavailable_refunds_and_fees' },
-    lines: (row.orderItems || []).map((l) => ({ external_line_id: text(l.orderItemId), external_sku: text(l.product?.sellerSku), asin: l.product?.asin || null, quantity: money(l.quantityOrdered), unit_price: money(l.product?.price?.unitPrice?.amount), line_revenue: money(l.proceeds?.proceedsTotal?.amount) })) };
+    lines: (row.orderItems || []).map((l) => ({ external_line_id: text(l.orderItemId), name: text(l.product?.title || l.product?.sellerSku || l.product?.asin), type: 'product', external_sku: text(l.product?.sellerSku), asin: l.product?.asin || null, quantity: money(l.quantityOrdered), unit_price: money(l.product?.price?.unitPrice?.amount), line_revenue: money(l.proceeds?.proceedsTotal?.amount) })) };
 }
 export function amazonProduct(row, marketplace) {
   const summary = (row.summaries || []).find((s) => s.marketplaceId === marketplace) || {};

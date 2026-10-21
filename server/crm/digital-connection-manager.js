@@ -1,5 +1,6 @@
 /* global process */
 import crypto from "node:crypto";
+import { persistProductMapping } from "./product-mapping.js";
 import { fetchCustomerProfiles } from "./customer-profiles.js";
 import { createClient } from "@supabase/supabase-js";
 import { DIGITAL_PROVIDER_REGISTRY, providerDefinition, requiredSecretNames, validateProviderConfiguration } from "../../shared/digitalProviderRegistry.js";
@@ -259,11 +260,9 @@ async function oauthStart(req, body) {
 
 async function saveMapping(req, body) {
   const auth = await authorize(req, true); const connection = await connectionById(auth.supabase, body.connectionId);
-  const payload = { id: body.mappingId || undefined, connection_id: body.connectionId, marketplace: body.marketplace || null, external_sku: String(body.externalSku || "").trim(), asin: body.asin || null, product_id: body.productId || null, codice_mexal: body.codiceMexal || null, status: body.status || "unmatched", match_method: body.matchMethod || "manual", verified_by: auth.id, verified_at: new Date().toISOString(), aggiornato_il: new Date().toISOString() };
-  if (!payload.external_sku) throw Object.assign(new Error("SKU esterno obbligatorio."), { status: 400 });
-  const { data, error } = await auth.supabase.from("crm_product_mappings").upsert(payload).select().single(); if (error) throw error;
-  await audit(auth.supabase, auth.id, connection, "mapping.updated", "success", { fields: payload });
-  if (["probable", "unmatched"].includes(payload.status)) await notifyDigitalAdmins(auth.supabase, connection, "crm_digital_mapping_anomaly", { cooldownHours: 24 }).catch(() => null);
+  const data = await persistProductMapping(auth.supabase,connection,body,auth.id);
+  await audit(auth.supabase, auth.id, connection, "mapping.updated", "success", { fields: data });
+  if (["probable", "unmatched"].includes(data.status)) await notifyDigitalAdmins(auth.supabase, connection, "crm_digital_mapping_anomaly", { cooldownHours: 24 }).catch(() => null);
   return { mapping: data };
 }
 

@@ -1,3 +1,4 @@
+import { amazonProductsPreview } from '../../../shared/amazonOrderAmounts.js';
 import { countsInSales } from './digitalSalesDayModel.js';
 import { knownAmounts } from './digitalDashboardModel.js';
 
@@ -14,8 +15,8 @@ export function digitalChannelKpis(orders, lines) {
   for (const line of lines) {
     const order = index.get(line.order_id);
     if (!order || line.metadati?.type === 'shipping' || String(line.external_line_id || '').startsWith('shipping:')) continue;
-    const key = String(line.product_id || line.external_sku || line.asin || `line:${line.id}`);
-    if (!products.has(key)) products.set(key, { id: key, code: line.external_sku || line.asin || line.product_id || '—', name: line.metadati?.name || line.metadati?.nome || line.external_sku || line.asin || 'Prodotto', quantity: 0, unknownQuantity: false, orders: new Set(), lines: [] });
+    const key = String(line.product_id || line.canonical_code || line.asin || line.external_sku || `line:${line.id}`);
+    if (!products.has(key)) products.set(key, { id: key, code: line.canonical_code || line.external_sku || line.asin || line.product_id || '—', name: line.canonical_name || line.metadati?.name || line.metadati?.nome || line.external_sku || line.asin || 'Prodotto', quantity: 0, unknownQuantity: false, orders: new Set(), lines: [] });
     const product = products.get(key);
     if (line.quantity == null || !Number.isFinite(Number(line.quantity))) product.unknownQuantity = true;
     else product.quantity += Number(line.quantity);
@@ -34,5 +35,8 @@ export function scopeDigitalChannelSales(channel, connections, orders, lines) {
   const ids = new Set(connections.filter(row => row.tipo === type).map(row => row.id));
   const scopedOrders = orders.filter(row => ids.has(row.connection_id));
   const orderIds = new Set(scopedOrders.map(row => row.id));
-  return { orders: scopedOrders, lines: lines.filter(row => orderIds.has(row.order_id)) };
+  const scopedLines = lines.filter(row => orderIds.has(row.order_id));
+  const byOrder = new Map();
+  for (const line of scopedLines) { if (!byOrder.has(line.order_id)) byOrder.set(line.order_id,[]); byOrder.get(line.order_id).push(line); }
+  return { orders: channel === 'amazon' ? scopedOrders.map(order => ({...order,pricePreview:amazonProductsPreview(byOrder.get(order.id),order.currency)})) : scopedOrders, lines: scopedLines };
 }

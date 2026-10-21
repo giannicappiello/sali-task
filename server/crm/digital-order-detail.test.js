@@ -74,3 +74,12 @@ test('Woo order detail includes shipping as a separate net row without adding it
   assert.equal(detail.lines[1].type, 'shipping'); assert.equal(Number(detail.lines[1].amount), 15);
   assert.equal(wooOrderDetail({ line_items: [], shipping_total: '0' }).lines[0].amount, 0);
 });
+
+test('fresh Amazon financial values replace stale cached detail without inventing tax for pending products', async () => {
+  const result = await loadDigitalOrderDetail('id',dependencies({
+    connection:async()=>({id:'c',tipo:'amazon_seller',provider_code:'amazon_sp_api',configurazione:{region:'eu'}}),
+    authorizeScreen:async()=>{},secrets:async()=>({}),
+    fetcher:async url=>url.includes('/auth/')?{ok:true,data:{access_token:'private'}}:{ok:true,data:{order:{orderId:'13729',proceeds:{grandTotal:{amount:'24.4',currencyCode:'EUR'},breakdowns:[{type:'TAX',subtotal:{amount:'4.4'}}]},fulfillment:{fulfillmentStatus:'SHIPPED'},orderItems:[{orderItemId:'1',quantityOrdered:2,product:{title:'Crema',price:{unitPrice:{amount:'12.2'}}}}]}}},
+  }));
+  assert.equal(result.order.amount,20); assert.equal(result.order.total,24.4); assert.equal(result.order.status,'SHIPPED');
+});

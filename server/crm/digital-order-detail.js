@@ -1,7 +1,8 @@
 /* global Buffer */
 import { request, refreshAccessToken } from './digital-provider-adapters.js';
 import { safeFetch } from './digital-security.js';
-import { wooShippingLines } from './commerce-import.js';
+import { amazonProductsPreview } from '../../shared/amazonOrderAmounts.js';
+import { amazonOrder, wooShippingLines } from './commerce-import.js';
 
 export function wooOrderDetail(order) {
   return {
@@ -46,6 +47,12 @@ export async function loadDigitalOrderDetail(orderId, dependencies) {
         headers: { 'x-amz-access-token': token.access_token, 'user-agent': 'Workspace/1.0 (Language=JavaScript; Platform=Node.js)', accept: 'application/json' },
       }, fetcher, 'Dettaglio ordine Amazon');
       if (String(data.order?.orderId) !== String(order.external_id) || !Array.isArray(data.order?.orderItems)) throw new Error('Dettaglio non valido.');
+      const current = amazonOrder(data.order);
+      result.amount = current.net_revenue ?? order.net_revenue;
+      result.total = current.gross_revenue ?? order.gross_revenue;
+      result.currency = data.order.proceeds?.grandTotal?.currencyCode || data.order.orderItems.find(line => line.product?.price?.unitPrice?.currencyCode)?.product.price.unitPrice.currencyCode || order.currency;
+      result.status = current.stato === 'UNKNOWN' ? order.stato : current.stato;
+      result.pricePreview = amazonProductsPreview(current.lines,result.currency);
       result.lines = data.order.orderItems.map((line) => ({ id: line.orderItemId, name: line.product?.title || line.product?.sellerSku || line.product?.asin || 'Prodotto non identificato',
         sku: line.product?.sellerSku, asin: line.product?.asin, quantity: line.quantityOrdered, unitPrice: line.product?.price?.unitPrice?.amount ?? null,
         amount: line.proceeds?.proceedsTotal?.amount ?? null, discount: null }));

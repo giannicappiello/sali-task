@@ -15,6 +15,8 @@ import { loadOnlineMailing } from './mailingData';
 import { EMPTY_MAILING } from './mailingModel.js';
 import { customerDisplayName, customerOrigin } from './customerIdentity';
 import { formatDate, formatMoney } from './crmConfig';
+import { reconcileDigitalLines } from './digitalProductReconciliation.js';
+import DigitalProductAsins from './DigitalProductAsins';
 import { marketplaceLabel } from './marketplaceLabel.js';
 import { formatPurchaseAmount } from './customerPurchaseModel.js';
 import { buildDigitalDashboard, displayAmounts } from './digitalDashboardModel.js';
@@ -31,7 +33,7 @@ async function readDashboard(from, to, channel, marketplace) {
   const ids = connections.filter(row => !channel || row.tipo === channel).map(row => row.id);
   const noRows = { data: [], error: null };
   const end = new Date(`${to}T00:00:00Z`); end.setUTCDate(end.getUTCDate() + 1);
-  const [orders, lines, identities, prospects, canonical, sources, commercial, marketing, opportunities, activities, mailing] = await Promise.all([
+  const [orders, lines, identities, prospects, canonical, sources, commercial, marketing, opportunities, activities, mailing, mappings] = await Promise.all([
     ids.length ? loadAllQueryRows((start, last) => {
       let query = supabase.from('crm_external_orders').select('id,connection_id,account_id,external_id,ordered_at,stato,net_revenue,currency,marketplace,raw_summary').in('connection_id', ids).lt('ordered_at', end.toISOString());
       if (marketplace) query = query.eq('marketplace', marketplace);
@@ -51,14 +53,15 @@ async function readDashboard(from, to, channel, marketplace) {
     loadAllQueryRows((start, last) => supabase.from('crm_opportunities').select('id,titolo,valore,probabilita,chiusura_prevista,crm_accounts!inner(id,nome,tipo),crm_opportunity_stages(nome,finale)').eq('crm_accounts.tipo', 'online').order('id').range(start, last)),
     loadAllQueryRows((start, last) => supabase.from('crm_activities').select('id,titolo,stato,tipo,data_attivita,crm_accounts(nome)').eq('crm_tipo', 'online').order('id').range(start, last)),
     loadOnlineMailing(),
+    ids.length ? loadAllQueryRows((start,last)=>supabase.from('crm_product_mappings').select('id,connection_id,marketplace,external_sku,asin,product_id,codice_mexal,status,prodotti(nome,codice,codice_mexal)').in('connection_id',ids).order('id').range(start,last)) : noRows,
   ]);
-  for (const response of [orders, lines, identities, prospects, canonical, sources]) if (response.error) throw response.error;
+  for (const response of [orders, lines, identities, prospects, canonical, sources, mappings]) if (response.error) throw response.error;
   const identity = new Map(identities.data.map(row => [row.id, row]));
   const accounts = [...canonical.data.map(row => ({ ...row, id: row.crm_account_id || `mexal:${row.codice_cliente}`, entityKey: `mexal:${row.codice_cliente}`, nome: row.ragione_sociale, origine: 'Mexal', mailing: mailing.data.get(row.crm_account_id) || mailing.data.fallback || EMPTY_MAILING })),
     ...prospects.data.map(row => ({ ...row, entityKey: `crm:${row.id}`, nome: customerDisplayName(identity.get(row.id) || row), origine: customerOrigin(identity.get(row.id)), mailing: mailing.data.get(row.id) || mailing.data.fallback || EMPTY_MAILING }))];
   const scoped = new Set([...(sources.data || []).map(row => row.account_id), ...orders.data.map(row => row.account_id)]);
   const marketScoped = new Set(orders.data.map(row => row.account_id));
-  return { loadedAt: Date.now(), connections, accounts: accounts.filter(row => (!channel || scoped.has(row.id)) && (!marketplace || marketScoped.has(row.id))), orders: orders.data, lines: lines.data,
+  return { loadedAt: Date.now(), connections, accounts: accounts.filter(row => (!channel || scoped.has(row.id)) && (!marketplace || marketScoped.has(row.id))), orders: orders.data, lines: reconcileDigitalLines(orders.data,lines.data,mappings.data),
     commercial: commercial.error ? null : commercial.data, marketing: marketing.error ? null : marketing.data,
     opportunities: opportunities.error ? null : opportunities.data, activities: activities.error ? null : activities.data,
     warnings: [commercial, marketing, opportunities, activities, mailing].filter(row => row.error).map(row => row.error.message) };
@@ -96,7 +99,7 @@ export default function DigitalCommercialDashboard({ analytics = false }) {
   function detail() {
     if (selected.kind === 'orders') return <DigitalSalesDays orders={selected.rows || model.periodOrders} loading={false}/>;
     if (selected.kind === 'customers') return <CrmDetailTable rows={selected.rows} columns={[customerColumn, column('origine', 'Origine'), column('mailing', 'Iscrizione mailing', row => row.mailing?.label || EMPTY_MAILING.label), column('received', 'Mailing ricevute', row => row.mailing?.received == null ? 'Dato non disponibile' : `${row.mailing.received}${row.mailing.partial ? ' (parziale)' : ''}`), { key: 'amount', label: 'Importo acquisti', value: row => displayAmounts(row.amounts) }, column('order_count', 'Ordini nel periodo'), column('history_count', 'Ordini storici'), dateColumn('ultimo_ordine_il', 'Ultimo ordine'), column('average_gap_days', 'Frequenza (giorni)', row => row.average_gap_days == null ? '—' : row.average_gap_days.toLocaleString('it-IT', { maximumFractionDigits: 1 })), dateColumn('expected_reorder_date', 'Riordino previsto')]}/>;
-    if (selected.kind === 'products') return <CrmDetailTable rows={selected.rows} columns={[column('name', 'Prodotto'), column('code', 'Codice / ASIN'), column('quantity', 'Quantità', row => `${row.quantity.toLocaleString('it-IT')}${row.unknownQuantity ? ' (parziale)' : ''}`), column('documents', 'Ordini'), column('amount', 'Importo righe', row => displayAmounts(row.amounts)), { key: 'detail', label: 'Dettaglio', value: () => 'Righe ordine', render: row => <details><summary>Righe ordine</summary><CrmDetailTable rows={row.lines} columns={[column('external_id', 'Ordine'), dateColumn('ordered_at', 'Data'), column('marketplace', 'Marketplace', row => marketplaceLabel(row.marketplace)), column('quantity', 'Quantità'), column('line_revenue', 'Importo riga', row => formatPurchaseAmount(row.line_revenue, row.currency))]}/></details> }]}/>;
+    if (selected.kind === 'products') return <CrmDetailTable rows={selected.rows} columns={[{...column('name','Prodotto'),render:row=><DigitalProductAsins product={row}/>}, column('code', 'Codice / ASIN'), column('quantity', 'Quantità', row => `${row.quantity.toLocaleString('it-IT')}${row.unknownQuantity ? ' (parziale)' : ''}`), column('documents', 'Ordini'), column('amount', 'Importo righe', row => displayAmounts(row.amounts)), { key: 'detail', label: 'Dettaglio', value: () => 'Righe ordine', render: row => <details><summary>Righe ordine</summary><CrmDetailTable rows={row.lines} columns={[column('external_id', 'Ordine'), dateColumn('ordered_at', 'Data'), column('marketplace', 'Marketplace', row => marketplaceLabel(row.marketplace)), column('quantity', 'Quantità'), column('line_revenue', 'Importo riga', row => formatPurchaseAmount(row.line_revenue, row.currency))]}/></details> }]}/>;
     if (selected.kind === 'projects') return data.opportunities == null ? <p>Dati progetti non disponibili.</p> : <CrmDetailTable rows={selected.rows} columns={[column('titolo', 'Progetto'), column('cliente', 'Cliente', row => row.crm_accounts?.nome), moneyColumn('valore', 'Valore'), column('probabilita', 'Probabilità %'), dateColumn('chiusura_prevista', 'Chiusura prevista'), { key: 'open', label: 'Dettaglio', value: () => 'Apri progetto', render: row => <Link to={period.withPeriod(`/crm/online/pipeline/${row.id}`)}>Apri progetto</Link> }]}/>;
     if (selected.kind === 'activities') return data.activities == null ? <p>Dati attività non disponibili.</p> : <CrmDetailTable rows={selected.rows} columns={[column('titolo', 'Attività'), column('cliente', 'Cliente', row => row.crm_accounts?.nome), column('tipo', 'Tipo'), dateColumn('data_attivita', 'Scadenza'), column('stato', 'Stato')]}/>;
     return <><p>{selected.info}</p><Link to={period.withPeriod(selected.path, { metric: selected.metric || null })}>Apri dettaglio</Link></>;

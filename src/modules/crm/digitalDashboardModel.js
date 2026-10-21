@@ -41,11 +41,11 @@ export function buildDigitalDashboard({ accounts, orders, lines, from, to }) {
     const status = String(order.stato || '').toLowerCase();
     const category = ['pending', 'on-hold', 'pending_availability'].includes(status) ? 'reserved' : !countsInSales(order) ? null : ['completed', 'shipped', 'refunded', 'delivered'].includes(status) ? 'purchased' : 'ordered';
     if (!category) continue;
-    const code = line.product_id || line.external_sku || line.asin;
+    const code = line.product_id || line.canonical_code || line.asin || line.external_sku;
     // Missing identifiers stay separate rather than merging unrelated unnamed products.
     const key = code ? String(code) : `line:${line.id}`;
     const id = `${category}:${key}`;
-    if (!products.has(id)) products.set(id, { id, category, code: line.external_sku || line.asin || line.product_id || 'Codice non disponibile', name: line.metadati?.name || line.metadati?.nome || line.external_sku || line.asin || 'Prodotto', quantity: 0, unknownQuantity: false, documents: new Set(), lines: [] });
+    if (!products.has(id)) products.set(id, { id, category, code: line.canonical_code || line.external_sku || line.asin || line.product_id || 'Codice non disponibile', name: line.canonical_name || line.metadati?.name || line.metadati?.nome || line.external_sku || line.asin || 'Prodotto', quantity: 0, unknownQuantity: false, documents: new Set(), lines: [] });
     const product = products.get(id);
     if (line.quantity == null) product.unknownQuantity = true; else product.quantity += Number(line.quantity);
     product.documents.add(order.id);

@@ -1,3 +1,4 @@
+import { loadOrderWithRecovery } from "../services/orderDetailRecovery.js";
 import { canEditOrderDraft } from "../services/orderEditPolicy.js";
 import {loadCustomerDirectory,customerDisplayName} from '../services/agentNames';
 import {invoicesForMexalDocument} from '../services/orderInvoiceReconciliation';
@@ -52,9 +53,12 @@ export default function OrderDetail() {
     setError("");
     setOrder(null);
     try {
-      if (moduleCode !== "ph") await recoverOrderSync(orderId, moduleCode);
       const [result, configResult] = await Promise.all([
-        loadOrderDetail(orderId, moduleCode),
+        loadOrderWithRecovery({
+          loadDetail: () => loadOrderDetail(orderId, moduleCode),
+          recoverSync: () => recoverOrderSync(orderId),
+          moduleCode, canRecover: canWriteOrders,
+        }),
         supabase
           .from("ordini_moduli_configurazione")
           .select("invia_automaticamente_mexal")
@@ -62,6 +66,7 @@ export default function OrderDetail() {
           .maybeSingle(),
       ]);
       if (configResult.error) throw configResult.error;
+      if (result.syncRecoveryError) console.warn("Recupero sincronizzazione ordine non disponibile:", result.syncRecoveryError.message);
 
       const sendingEnabled = configResult.data?.invia_automaticamente_mexal !== false;
       let loadedOrder = result.order;

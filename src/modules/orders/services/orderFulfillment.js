@@ -1,3 +1,4 @@
+import { postOrderJson } from "./orderApiRequest.js";
 import { enrichOrderInvoices } from "./orderInvoices";
 import { supabase } from "../../../lib/supabaseClient.js";
 import { agentDisplayName, loadAgentNameMap } from "./agentNames.js";
@@ -6,21 +7,7 @@ import { enrichOrderLinesWithBarcode } from "./orderLineBarcode.js";
 import { filterOrderModuleDocuments, orderModuleCodeFromOrder, orderModuleDocumentTypes, orderModuleFilter } from "./orderModules.js";
 export { buildAvailabilityPreview } from "./availability.js";
 
-async function getAccessToken() {
-  const { data: { session }, error } = await supabase.auth.getSession();
-  if (error || !session?.access_token) throw new Error("Sessione scaduta. Effettua nuovamente l'accesso.");
-  return session.access_token;
-}
-
-async function postJson(url, body) {
-  const token = await getAccessToken();
-  const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
-  const raw = await response.text();
-  let payload;
-  try { payload = raw ? JSON.parse(raw) : {}; } catch { payload = { error: raw || "Risposta API non valida." }; }
-  if (!response.ok) throw new Error(payload.error || `Errore API (${response.status}).`);
-  return payload;
-}
+const postJson = (url, body) => postOrderJson(url, body, { supabase });
 
 export function submitOrderToMexal(orderId, moduleCode) { return postJson("/api/mexal/submit-order", { orderId, moduleCode }); }
 export function enqueueOrderConfirmationEmail(orderId, moduleCode) { return postJson("/api/mexal/orders/enqueue-confirmation-emails", { orderId, moduleCode }); }

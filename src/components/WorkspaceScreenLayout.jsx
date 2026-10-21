@@ -11,6 +11,7 @@ import { getModuleIcon } from "../config/moduleIcons";
 import WorkspacePageHeader from "./WorkspacePageHeader";
 import WorkspaceScreenComposition from "./WorkspaceScreenComposition";
 import { normalizeWorkspaceLayout } from "./workspaceScreenLayoutConfig";
+import { exactWorkspaceScreen } from "./workspaceScreenMatch";
 import { isProgremesScreenPath } from "../pages/ProgreMes/progremesWindow";
 import "./workspace-screen-layout.css";
 import { useWorkspaceChrome } from "./workspaceChromeContext";
@@ -92,7 +93,7 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
   const presentation = useMemo(() => {
     const pathname = location.pathname.replace(/\/$/, "") || "/";
     const exactModule = catalog.modules.find((module) => (module.percorso || "").replace(/\/$/, "") === pathname);
-    const exactScreen = catalog.screens.find((screen) => (screen.percorso || "").replace(/\/$/, "") === pathname);
+    const exactScreen = exactWorkspaceScreen(catalog.screens, pathname);
     const isContainer = BUILT_IN_CONTAINER_PATHS.has(pathname)
       || isDynamicContainerPath(pathname)
       || (exactModule?.tipo === "contenitore" && !exactScreen && !isOrdersPath(pathname));
@@ -132,7 +133,7 @@ export default function WorkspaceScreenLayout({ fallbackTitle, fallbackDescripti
     const orderBackTarget = ordersBackTarget(pathname);
     const parentPath = orderBackTarget?.path || navigationParent?.percorso || "";
 
-    const exactScreenPath = Boolean(screen?.percorso && screen.percorso.replace(/\/$/, "") === pathname);
+    const exactScreenPath = Boolean(exactScreen);
     return {
       container: false,
       denied: Boolean(screen && !hasScreenAccess(screen.codice, parentModule?.codice)),

@@ -6,13 +6,13 @@ import { digitalChannelKpis } from './digitalChannelKpiModel.js';
 import { displayAmounts } from './digitalDashboardModel.js';
 import { formatDate } from './crmConfig';
 
-export default function DigitalChannelKpis({ orders, lines, period, loading, error }) {
+export default function DigitalChannelKpis({ orders, lines, period, loading, error, channelLabel }) {
   const [selected, setSelected] = useState(null);
   const model = useMemo(() => digitalChannelKpis(orders, lines), [orders, lines]);
   if (loading) return <p role="status">Caricamento KPI vendite…</p>;
   if (error) return null;
   const card = (label, value, note, info, kind) => <CrmKpiCard key={label} label={label} value={value} note={note} info={info} onClick={() => setSelected({ label, kind })}/>;
-  return <><section className="b2b-kpi-section" aria-label="KPI vendite del periodo"><div className="crm-kpi-grid">
+  return <><section className="b2b-kpi-section" aria-label={`KPI ${channelLabel || 'vendite'} del periodo`}><h2>KPI {channelLabel || 'vendite'}</h2><div className="crm-kpi-grid">
     {card('Totale Ordinato', displayAmounts(model.amounts), model.amounts.missing ? `Parziale: ${model.amounts.missing} ordini senza importo` : `${model.sales.length} ordini nel periodo`, 'Importi netti IVA degli ordini validi, inclusi spedizioni, sconti e rimborsi disponibili. Esclusi annullati, falliti e in attesa. Valute mantenute separate.', 'orders')}
     {card('Clienti che hanno ordinato', model.customers.length, model.unidentified ? `${model.unidentified} ordini senza anagrafica collegata` : 'Clienti unici nel periodo', 'Ogni anagrafica CRM con ordini validi viene contata una volta. Apri l’elenco e seleziona il nome per la scheda cliente.', 'customers')}
     {card('Valore medio ordine', displayAmounts(model.averages), model.amounts.missing ? `Parziale: ${model.amounts.known} ordini con importo` : 'Totale / numero ordini per valuta', 'Media degli ordini validi con importo disponibile, suddivisa per valuta.', 'orders')}

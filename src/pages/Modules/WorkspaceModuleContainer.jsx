@@ -53,10 +53,11 @@ export default function WorkspaceModuleContainer({ configuredModuleCode = "" }) 
     return catalog.links
       .map((link) => ({ ...screenByCode.get(link.schermata_codice), ordine: link.ordine }))
       .filter((screen) => screen.codice && screen.metadati?.kind !== "topic")
+      .filter((screen) => screen.percorso && !screen.percorso.includes("/:") && screen.percorso.replace(/\/$/, "") !== location.pathname.replace(/\/$/, ""))
       .filter((screen) => hasScreenAccess(screen.codice, moduleCode))
       .filter((screen) => !screen.metadati?.admin_only || isAdminUser)
       .filter((screen) => canUseScreen(screen.codice, "lettura"));
-  }, [canUseScreen, catalog.links, catalog.screens, hasScreenAccess, isAdminUser, moduleCode]);
+  }, [canUseScreen, catalog.links, catalog.screens, hasScreenAccess, isAdminUser, moduleCode, location.pathname]);
 
   const ModuleIcon = getModuleIcon(catalog.module?.icona, LayoutGrid);
 

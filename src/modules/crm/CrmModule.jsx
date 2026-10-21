@@ -47,7 +47,10 @@ import "./crm.css";
 import "./workspace-alignment.css";
 
 function Screen({ moduleCode, screenCode, children }) {
-  return <WorkspaceAccessGuard moduleCode={moduleCode} screenCode={screenCode}>{children}</WorkspaceAccessGuard>;
+  // A screen's placement is independent of its authorization. Online pages
+  // may be moved to another configured module without changing their route.
+  const parentModule = screenCode?.startsWith("crm.online.") ? undefined : moduleCode;
+  return <WorkspaceAccessGuard moduleCode={parentModule} screenCode={screenCode}>{children}</WorkspaceAccessGuard>;
 }
 
 function ErrorBox({ error, retry }) {
@@ -806,7 +809,7 @@ function renderCrmView(route) {
     case "club": return <CrmClub page={route.clubPage} />;
     case "online-home": return <DigitalHome />;
     case "digital-dashboard": return <DigitalDashboard />;
-    case "digital-channel": return <DigitalChannel channel={route.channel} />;
+    case "digital-channel": return <DigitalChannel key={route.channel} channel={route.channel} />;
     case "online-manager": return <OnlineManager entity={route.entity} />;
     case "digital-journey": return <DigitalJourney />;
     case "digital-analytics": return <DigitalDashboard analytics />;

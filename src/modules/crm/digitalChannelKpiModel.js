@@ -28,3 +28,11 @@ export function digitalChannelKpis(orders, lines) {
     customers: [...grouped.values()].map(row => ({ ...row, count: row.orders.length, amounts: knownAmounts(row.orders) })),
     products: [...products.values()].map(row => ({ ...row, count: row.orders.size, amounts: knownAmounts(row.lines, 'line_revenue') })) };
 }
+
+export function scopeDigitalChannelSales(channel, connections, orders, lines) {
+  const type = channel === 'ecommerce' ? 'ecommerce' : channel === 'amazon' ? 'amazon_seller' : null;
+  const ids = new Set(connections.filter(row => row.tipo === type).map(row => row.id));
+  const scopedOrders = orders.filter(row => ids.has(row.connection_id));
+  const orderIds = new Set(scopedOrders.map(row => row.id));
+  return { orders: scopedOrders, lines: lines.filter(row => orderIds.has(row.order_id)) };
+}

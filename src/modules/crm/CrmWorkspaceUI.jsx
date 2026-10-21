@@ -31,6 +31,8 @@ export function CrmSectionNav({ items, period, label }) {
     .map((item) => item.path)
     .filter((path) => location.pathname === path || location.pathname.startsWith(`${path}/`))
     .sort((left, right) => right.length - left.length)[0] || null;
+  // Online pages use the shared Workspace navigation, configured per module.
+  if (location.pathname === '/crm/online' || location.pathname.startsWith('/crm/online/')) return null;
   return (
     <nav className="crm-section-nav" aria-label={label}>
       {orderedItems.map(({ itemLabel, path }) => {

@@ -28,9 +28,9 @@ export default function AmazonReconcileDialog({ mapping, onClose, onSaved }) {
     } catch(failure) { setError(failure.message); setBusy(false); }
   }
   return <CrmKpiDialog title="Riconcilia prodotto Amazon" subtitle={`${marketplaceLabel(mapping.marketplace)} · SKU ${mapping.external_sku} · ASIN ${mapping.asin || '—'}`} onClose={()=>{if(!busy) onClose();}}>
-    <form className="crm-form-grid" onSubmit={save}>
+    <form className="crm-form-grid crm-amazon-reconcile-form" onSubmit={save}>
       <label>Cerca prodotto IT<input type="search" value={query} onChange={event=>setQuery(event.target.value)} placeholder="Codice IT o nome prodotto" disabled={loading || busy}/></label>
-      <label>Prodotto Workspace (codice IT)<select required value={selected} disabled={loading || busy} onChange={event=>setSelected(event.target.value)}>
+      <label>Prodotto Workspace (codice IT)<select aria-label="Prodotto Workspace (codice IT)" required value={selected} disabled={loading || busy} onChange={event=>setSelected(event.target.value)}>
         <option value="">Seleziona un prodotto…</option>
         {product && !options.some(row=>row.id===product.id) ? <option value={product.id}>{product.codice_mexal || product.codice} · {product.nome}</option> : null}
         {options.map(row=><option key={row.id} value={row.id}>{row.codice_mexal || row.codice} · {row.nome}</option>)}

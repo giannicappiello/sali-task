@@ -3,12 +3,17 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
+import { createGeneratedSheetHandler } from './generated-sheets.mjs';
 
 const PORT = Number(process.env.DOC_GATEWAY_PORT || 8787);
 const HOST = "127.0.0.1";
 const ROOT = String(process.env.DOC_GATEWAY_ROOT || "").trim();
 const SECRET = String(process.env.DOC_GATEWAY_SECRET || "").trim();
 const MAX_MANIFEST_FILES = Number(process.env.DOC_GATEWAY_MAX_FILES || 50000);
+const generatedSheets = createGeneratedSheetHandler({ root: ROOT, secret: SECRET,
+  enabled: process.env.DOC_GATEWAY_ALLOW_SHEET_WRITES === '1', folder: process.env.DOCUMENT_SHEETS_FOLDER || 'Schede Tecniche',
+  origins: String(process.env.DOC_GATEWAY_SHEET_ORIGINS || 'https://workspace.progre.it').split(',').map(s => s.trim()).filter(Boolean),
+});
 const ALLOWED_EXTENSIONS = new Set([".pdf", ".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4", ".webm", ".mov", ".m4v"]);
 
 if (!ROOT) throw new Error("DOC_GATEWAY_ROOT non configurato.");
@@ -95,6 +100,7 @@ function serveFile(req, res, file, stats) {
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+    if (await generatedSheets(req, res, url)) return;
     if (req.method === "GET" && url.pathname === "/health") return json(res, 200, { ok: true, service: "progre-document-gateway" });
     if (req.method !== "GET" && req.method !== "HEAD") return json(res, 405, { error: "Metodo non consentito." });
     if (!authorized(url)) return json(res, 403, { error: "Collegamento non valido o scaduto." });

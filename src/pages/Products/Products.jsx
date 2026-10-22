@@ -1,9 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { FileText, Package, Search, Megaphone, Factory } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import ImplantsManager from "../../modules/orders/pages/Products";
 import { loadDirectProductCatalog } from "../../modules/orders/services/directProductCatalog";
 import "../../modules/orders/orders-module.css";
+import { useAuth } from '../../contexts/AuthContext';
+import DirectProductSheet, { SheetStatus } from './DirectProductSheet';
+import { getSheet, listSheetSummaries } from './directSheetService';
+import { sheetStatus } from '../../../shared/directProductSheet.js';
+import './direct-sheets.css';
+const SheetTemplateEditor = lazy(() => import('./SheetTemplateEditor'));
 
 function getProductDisplayName(product) {
   const raw = product?.json_mexal;
@@ -57,6 +63,9 @@ async function documentApi(action, extra = {}) {
 }
 
 export default function Products() {
+  const { canUseModule } = useAuth();
+  const [summaries, setSummaries] = useState({}), [summariesLoaded, setSummariesLoaded] = useState(false), [sheetError, setSheetError] = useState('');
+  const [templateProduct, setTemplateProduct] = useState(null), [templateContent, setTemplateContent] = useState({}), [templateOpen, setTemplateOpen] = useState(false), [templateLoading, setTemplateLoading] = useState(false);
   const [products, setProducts] = useState([]);
   const [implantCount, setImplantCount] = useState(0);
   const [query, setQuery] = useState("");
@@ -85,6 +94,8 @@ export default function Products() {
     documentApi("list").then((result) => { setProductDocuments(result.documents || []); setDocumentSections(result.sections || []); }).catch((error) => console.error("Documenti prodotti:", error.message));
     return () => window.clearTimeout(timer);
   }, []);
+  useEffect(() => { let live = true; listSheetSummaries().then(rows => { if (live) { setSummaries(Object.fromEntries(rows.map(r => [r.product_id, r]))); setSummariesLoaded(true); } }).catch(e => { if (live) setSheetError(e.message); }); return () => { live = false; }; }, []);
+  function updateSummary(row) { if (row) setSummaries(current => ({ ...current, [row.product_id]: { ...row, filled_count: sheetStatus(row).count } })); }
 
   const sectionCounts = useMemo(() => {
     const counts = { IT: 0, MKT: 0, IMP: implantCount };
@@ -125,6 +136,12 @@ export default function Products() {
   }, [products, query, activeSection]);
 
   const selected = filtered.find((item) => item.id === selectedId) || filtered[0] || null;
+  async function openTemplates() {
+    setTemplateLoading(true);
+    try { const sheet = selected ? await getSheet(selected.id) : null; setTemplateProduct(selected); setTemplateContent(sheet?.content || {}); setTemplateOpen(true); }
+    catch (e) { setSheetError(e.message); }
+    finally { setTemplateLoading(false); }
+  }
 
   const activeSectionInfo =
     SECTIONS.find((section) => section.id === activeSection) || SECTIONS[0];
@@ -156,7 +173,9 @@ export default function Products() {
             non attivi e quelli appartenenti a linee contenenti “Fuori Produzione”.
           </p>
         </div>
+        {canUseModule('prodotti', 'amministrazione') && <button type="button" className="primary-action" disabled={templateLoading} onClick={openTemplates}>Template scheda tecnica</button>}
       </div>
+      {sheetError && <p className="direct-sheet-error" role="alert">Schede tecniche: {sheetError}</p>}
 
       <div className="product-section-tabs" role="tablist" aria-label="Tipologie articolo">
         {SECTIONS.map((section) => {
@@ -233,6 +252,7 @@ export default function Products() {
                       .filter(Boolean)
                       .join(" · ")}
                   </small>
+                  {summariesLoaded && <SheetStatus sheet={summaries[product.id]} />}
                 </button>
               ))}
           </div>
@@ -246,7 +266,7 @@ export default function Products() {
           ) : (
             <div className="panel product-hero">
               <span className="status-pill done">Attivo in Mexal</span>
-              <h2>{getProductDisplayName(selected)}</h2>
+              <DirectProductSheet key={selected.id} product={selected} onSaved={updateSummary} />
               <p>{selected.descrizione || "Nessuna descrizione disponibile."}</p>
 
               <div className={`product-primary-details ${selected.immagine_catalogo_url ? "has-image" : ""}`}>
@@ -305,6 +325,7 @@ export default function Products() {
         </div>
       </div>}
 
+      {templateOpen && <Suspense fallback={<p>Caricamento editor…</p>}><SheetTemplateEditor product={templateProduct} content={templateContent} onClose={() => setTemplateOpen(false)} /></Suspense>}
       <style>{`
         .product-section-tabs {
           display: grid;

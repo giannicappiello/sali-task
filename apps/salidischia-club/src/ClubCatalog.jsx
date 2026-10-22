@@ -10,12 +10,14 @@ import { categoryPath } from './catalogModel';
 import './club-content.css';
 import { ProductPrice, StoreOfferDetail } from './ShopOffers';
 
+const sheetSections = [['description','Descrizione'],['features','Caratteristiche'],['active_ingredients','Principi Attivi'],['inci','INCI/CTFA'],['directions','Modo d’uso'],['warnings','Avvertenze/Controindicazioni']];
+
 export function ProductDetail({ id, onClose }) {
   const [offer, setOffer] = useState(null);
   const { data, error, loading } = useAsync('club_catalog_product', { target_id: id });
   const materials = useMediaUrls(data?.media || []);
   const cover = data?.media?.find(item => item.cover && item.kind === 'immagine');
-  return <Modal title="Scheda prodotto" onClose={onClose}><Alert error={error} />{loading ? <Loading /> : data ? <article className="catalog-detail"><span className="eyebrow">SALI DI ISCHIA · {data.code}</span><h2>{data.name}</h2><ProductMediaCarousel key={data.id} media={data.media} {...materials} image={(cover && materials.urls[cover.id]) || data.image_url} title={data.name} /><ProductPrice pricing={data.pricing} onOffer={setOffer} /><div className="document-copy">{data.description ? data.description.split(/\n\s*\n/).map((text, index) => <p key={index}>{text}</p>) : <p>La descrizione di questo prodotto è in preparazione.</p>}</div><OrderButton product={data} />{offer && <StoreOfferDetail offer={offer} onClose={() => setOffer(null)} />}</article> : !error && <p>Prodotto non disponibile.</p>}</Modal>;
+  return <Modal title="Scheda prodotto" onClose={onClose}><Alert error={error} />{loading ? <Loading /> : data ? <article className="catalog-detail"><span className="eyebrow">SALI DI ISCHIA · {data.code}</span><h2>{data.name}</h2><ProductMediaCarousel key={data.id} media={data.media} {...materials} image={(cover && materials.urls[cover.id]) || data.image_url} title={data.name} /><ProductPrice pricing={data.pricing} onOffer={setOffer} /><div className="document-copy">{data.product_sheet ? sheetSections.filter(([key]) => data.product_sheet[key]).map(([key,label]) => <section key={key}><h3>{label}</h3><p style={{ whiteSpace: 'pre-wrap' }}>{data.product_sheet[key]}</p></section>) : data.description ? data.description.split(/\n\s*\n/).map((text, index) => <p key={index}>{text}</p>) : <p>La descrizione di questo prodotto è in preparazione.</p>}</div><OrderButton product={data} />{offer && <StoreOfferDetail offer={offer} onClose={() => setOffer(null)} />}</article> : !error && <p>Prodotto non disponibile.</p>}</Modal>;
 }
 
 export default function ClubCatalog({ onBack, initialSearch = '' }) {

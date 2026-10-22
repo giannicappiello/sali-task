@@ -232,7 +232,7 @@ function discountRows(lineItem) {
     if (index % 2 === 0) rows.push(index ? `+${part}` : part); else rows[rows.length - 1] += `+${part}`;
     return rows;
   }, []);
-  const payment = lineItem.sconto_pagamento || lineItem.sconto_pagamento_percentuale;
+  const payment = lineItem.dettaglio_calcolo?.escludi_sconto_pagamento ? "" : lineItem.sconto_pagamento || lineItem.sconto_pagamento_percentuale;
   return payment ? [...commercial, valueOrBlank(payment)] : commercial;
 }
 

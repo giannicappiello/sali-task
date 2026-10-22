@@ -68,7 +68,7 @@ export function mexalLineDiscount(line) {
     ? line.dettaglio_calcolo
     : {};
   const commercialDiscount = text(detail.sconto_commerciale ?? line?.sconto_commerciale);
-  const paymentDiscount = text(detail.sconto_pagamento ?? line?.sconto_pagamento);
+  const paymentDiscount = detail.escludi_sconto_pagamento ? "" : text(detail.sconto_pagamento ?? line?.sconto_pagamento);
   return formatMexalDiscount([commercialDiscount, paymentDiscount].filter(Boolean).join("+"));
 }
 

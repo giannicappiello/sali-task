@@ -53,7 +53,7 @@ export function calculateOrderLineEconomicsWithPayment(line) {
   const commercialDiscount = String(
     line?.dettaglio_calcolo?.sconto_commerciale ?? line?.sconto_commerciale ?? line?.sconto ?? ""
   ).trim();
-  const paymentDiscount = String(
+  const paymentDiscount = line?.dettaglio_calcolo?.escludi_sconto_pagamento ? "" : String(
     line?.dettaglio_calcolo?.sconto_pagamento ?? line?.sconto_pagamento ?? ""
   ).trim();
   const calculated = calculateOrderLineEconomics({

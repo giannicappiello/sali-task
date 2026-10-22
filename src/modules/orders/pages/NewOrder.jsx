@@ -25,6 +25,8 @@ import { applyOrderShipping, isShippingLine, normalizeShippingConfig } from "../
 
 import { applyOrderVatPolicy, isForeignOrderCustomer } from "../services/orderVatPolicy.js";
 
+import { applyOrderPaymentDiscountPolicy, excludesOrderPaymentDiscount } from "../services/orderPaymentPolicy.js";
+
 const PAGE_SIZE = 1000;
 
 function normalize(value) {
@@ -401,7 +403,7 @@ export default function NewOrder() {
 
   function withEconomics(line, customer = selectedCustomer) {
     const product = line.prodotto_origine || line;
-    return calculateOrderLineEconomicsWithPayment(applyOrderVatPolicy({
+    return calculateOrderLineEconomicsWithPayment(applyOrderPaymentDiscountPolicy(applyOrderVatPolicy({
       ...line,
       quantita: line.quantita,
       // Mexal receives the list price and the commercial discount chain. The
@@ -411,12 +413,13 @@ export default function NewOrder() {
       // Mexal blob or from an order-line fallback.
       codice_iva_mexal: product.codice_iva_mexal || null,
       aliquota_iva: product.aliquota_iva,
-    }, customer));
+    }, customer), moduleCode));
   }
 
 
   function calculateConditions(product, quantity, customer = selectedCustomer, payment = selectedPayment) {
     return calculateLineConditions({
+      moduleCode,
       customer,
       product,
       payment,
@@ -1009,7 +1012,7 @@ export default function NewOrder() {
                             <div><span>Categoria cliente</span><strong>{line.dettaglio_calcolo?.categoria_sconto_cliente || "-"}</strong></div>
                             <div><span>Categoria articolo</span><strong>{line.dettaglio_calcolo?.categoria_sconto_articolo || "-"}</strong></div>
                             <div><span>Regola applicata</span><strong>{conditionLabel(line)}</strong></div>
-                            <div><span>Sconto pagamento</span><strong>{line.sconto_pagamento || "-"}</strong></div>
+                            {!excludesOrderPaymentDiscount(moduleCode) && <div><span>Sconto pagamento</span><strong>{line.sconto_pagamento || "-"}</strong></div>}
                             <div><span>Prezzo netto</span><strong>{money(line.prezzo_netto)}</strong></div>
                           </div>
                           {line.origine_prezzo === "particolarita-prezzo" && (

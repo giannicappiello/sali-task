@@ -1,3 +1,5 @@
+import { excludesOrderPaymentDiscount } from "./orderPaymentPolicy.js";
+
 function text(value) {
   return String(value ?? "").trim();
 }
@@ -512,6 +514,7 @@ function paymentCode(payment, customer) {
 }
 
 export function calculateLineConditions({
+  moduleCode,
   customer,
   product,
   payment,
@@ -568,7 +571,7 @@ export function calculateLineConditions({
   // 2) particolarità sconto: sostituisce la matrice;
   // 3) per MKT* e IT*-TST/CMP lo sconto del listino nell'anagrafica articolo Mexal;
   // 4) matrice sconti;
-  // 5) sconto pagamento, applicato sempre dopo la condizione commerciale.
+  // 5) sconto pagamento dopo la condizione commerciale, escluso per PR e PH.
   const commercialChain = normalizeDiscountChain(
     discountRule
       ? ruleValue(discountRule)
@@ -582,7 +585,8 @@ export function calculateLineConditions({
 
   const code = paymentCode(payment, customer);
 
-  const paymentRule =
+  const excludedPaymentDiscount = excludesOrderPaymentDiscount(moduleCode);
+  const paymentRule = excludedPaymentDiscount ? null :
     (paymentRules || [])
       .map(mergedRow)
       .filter(isActive)
@@ -597,7 +601,7 @@ export function calculateLineConditions({
           integer(a.priority, 0)
       )[0] || null;
 
-  const paymentChain = normalizeDiscountChain(
+  const paymentChain = excludedPaymentDiscount ? "" : normalizeDiscountChain(
     paymentRule?.sconto_esteso ??
       paymentRule?.sconto ??
       payment?.sconto ??
@@ -651,6 +655,7 @@ export function calculateLineConditions({
     regola_sconto_id: discountRule?.id ?? null,
     regola_pagamento_id: paymentRule?.id ?? null,
     dettaglio_calcolo: {
+      ...(excludedPaymentDiscount ? { escludi_sconto_pagamento: true } : {}),
       data_ordine: orderDate,
       codice_listino: text(
         customer?.codice_listino ??

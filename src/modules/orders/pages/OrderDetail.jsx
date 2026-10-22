@@ -1,3 +1,6 @@
+import { applyOrderPaymentDiscountPolicy, excludesOrderPaymentDiscount } from "../services/orderPaymentPolicy.js";
+import { calculateOrderEconomics } from "../services/orderEconomics.js";
+import { applyOrderShipping } from "../services/orderShipping.js";
 import { loadOrderWithRecovery } from "../services/orderDetailRecovery.js";
 import { canEditOrderDraft } from "../services/orderEditPolicy.js";
 import {loadCustomerDirectory,customerDisplayName} from '../services/agentNames';
@@ -61,7 +64,7 @@ export default function OrderDetail() {
         }),
         supabase
           .from("ordini_moduli_configurazione")
-          .select("invia_automaticamente_mexal")
+          .select("invia_automaticamente_mexal,importo_minimo_porto_franco,addebito_spedizione")
           .eq("modulo_ordini", moduleCode)
           .maybeSingle(),
       ]);
@@ -75,6 +78,12 @@ export default function OrderDetail() {
         : Number(line.quantita_ocm || 0) > 0 || Number(line.quantita_ocx || 0) > 0 || Number(line.quantita_oci || 0) > 0);
 
       const isDraft = String(loadedOrder.stato || "").trim().toLowerCase() === "bozza";
+      if (isDraft && excludesOrderPaymentDiscount(moduleCode)) {
+        const goods = calculateOrderEconomics(result.lines.map((line) => applyOrderPaymentDiscountPolicy(line, moduleCode)));
+        const totals = calculateOrderEconomics(applyOrderShipping(goods.righe, configResult.data || {}, { moduleCode, reservation: loadedOrder.tipo_ordine === "prenotazione" }));
+        result.lines = totals.righe;
+        loadedOrder = { ...loadedOrder, totale: totals.totale_documento, totale_imponibile: totals.totale_imponibile, totale_iva: totals.totale_iva, totale_documento: totals.totale_documento };
+      }
       if (canWriteOrders && moduleCode === "prof" && !isDraft && !sendingEnabled && hasConfirmedQuantities && loadedOrder.stato_sincronizzazione !== "completato") {
         const moduleFilter = orderModuleFilter(moduleCode);
         const { data: closedOrder, error: closeError } = await supabase

@@ -89,7 +89,7 @@ export function initialImportState(connection, now = new Date()) {
   const end = new Date(now.getTime() - 180000).toISOString();
   const start = new Date(now); start.setUTCFullYear(start.getUTCFullYear() - 2);
   return { version: 1, phase: connection.provider_code === 'mailchimp' ? 'audiences' : connection.provider_code === 'woocommerce' ? 'customers' : 'orders', page: 1, token: null, marketplaceIndex: 0,
-    from: connection.import_state?.completed ? connection.import_state.to : start.toISOString(), to: end,
+    from: connection.import_state?.completed ? new Date(Date.parse(connection.import_state.to)-1000).toISOString() : start.toISOString(), to: end, incremental: Boolean(connection.import_state?.completed),
     counts: { customers: 0, products: 0, orders: 0 }, completed: false };
 }
 
@@ -154,7 +154,9 @@ export async function fetchCommercePage(connection, secrets, previous, { fetcher
     const get = (path) => request(base + path, { headers, timeoutMs: 20000, maxBytes: 2000000 }, fetcher, 'Importazione WooCommerce');
     const path = state.phase === 'variations' ? `products/${state.parent.id}/variations` : state.phase;
     const pageSize = kind === 'orders' ? 5 : 20;
-    const data = await get(`${path}?per_page=${pageSize}&page=${state.page}&orderby=id&order=asc`);
+    const parameters = new URLSearchParams({per_page:String(pageSize),page:String(state.page),orderby:'id',order:'asc'});
+    if(state.incremental && ['orders','products'].includes(state.phase)) {parameters.set('modified_after',state.from);parameters.set('modified_before',state.to);parameters.set('dates_are_gmt','true');}
+    const data = await get(path+'?'+parameters);
     if (!Array.isArray(data)) throw new Error('Risposta WooCommerce non valida: pagina non acquisita.');
     const pageHasMore = data.length === pageSize;
     if (kind === 'customers') rows = data.map(wooCustomer);
@@ -200,11 +202,12 @@ export async function fetchCommercePage(connection, secrets, previous, { fetcher
     if (kind === 'orders') {
       query.set('marketplaceIds', markets.join(',')); query.set('lastUpdatedAfter', state.from); query.set('lastUpdatedBefore', state.to);
       query.set('maxResultsPerPage', '100'); query.set('includedData', 'PROCEEDS,FULFILLMENT,PACKAGES');
-      query.set('fulfillmentStatuses','SHIPPED,PENDING,UNSHIPPED,PARTIALLY_SHIPPED,PENDING_AVAILABILITY');
+      query.set('fulfillmentStatuses','SHIPPED,PENDING,UNSHIPPED,PARTIALLY_SHIPPED,PENDING_AVAILABILITY,CANCELLED');
       if (state.token) query.set('paginationToken', state.token);
       path = '/orders/2026-01-01/orders';
     } else {
       query.set('marketplaceIds', markets[state.marketplaceIndex]); query.set('pageSize', '20'); query.set('includedData', 'summaries,offers,fulfillmentAvailability');
+      if(state.incremental) {query.set('lastUpdatedAfter',state.from);query.set('lastUpdatedBefore',state.to);}
       if (state.token) query.set('pageToken', state.token);
       const seller = configuration.seller_id || connection.external_account_id;
       if (!seller) throw new Error('Seller ID Amazon mancante.');
@@ -213,7 +216,7 @@ export async function fetchCommercePage(connection, secrets, previous, { fetcher
     const data = await request(`${root}${path}?${query}`, { headers, timeoutMs: 20000, maxBytes: 2000000 }, fetcher, `Importazione Amazon ${kind}`);
     if (!Array.isArray(kind === 'orders' ? data.orders : data.items)) throw new Error('Risposta Amazon non valida: pagina non acquisita.');
     if(kind==='orders') {
-      const selected=data.orders.filter(r=>markets.includes(r.salesChannel?.marketplaceId) && ['SHIPPED','PENDING','UNSHIPPED','PARTIALLY_SHIPPED','PENDING_AVAILABILITY'].includes(r.fulfillment?.fulfillmentStatus));
+      const selected=data.orders.filter(r=>markets.includes(r.salesChannel?.marketplaceId) && ['SHIPPED','PENDING','UNSHIPPED','PARTIALLY_SHIPPED','PENDING_AVAILABILITY','CANCELLED'].includes(r.fulfillment?.fulfillmentStatus));
       const dates=await loadShipmentDates(selected.filter(r=>r.fulfillment?.fulfillmentStatus==='SHIPPED').map(r=>r.orderId));
       rows=selected.map(row=>amazonOrder(row,packageShippedAt(row)||dates.get(row.orderId)||null));
     } else rows=data.items.map(r=>amazonProduct(r,markets[state.marketplaceIndex]));

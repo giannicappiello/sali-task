@@ -179,5 +179,25 @@ test('Commerce SQL atomically resumes pages, preserves manual data and imports c
     await db.exec('set role authenticated');
     await assert.rejects(db.query('delete from crm_mailing_deliveries'));
     await db.exec('reset role');
+    await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261021150000_amazon_cox_exports.sql',import.meta.url),'utf8'));
+    await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261022140000_commerce_order_delta_cancellations.sql',import.meta.url),'utf8'));
+    const amz=(await db.query("insert into crm_external_connections(provider_code,tipo) values('amazon_sp_api','amazon_seller') returning id")).rows[0].id;
+    const amzRun=(await db.query("insert into crm_sync_runs(connection_id,sync_type,status,idempotency_key) values($1,'commerce_import','running','amz-delta') returning id",[amz])).rows[0].id;
+    const saveAmz=(prior,rows,next)=>db.query('select crm_import_commerce_page_service($1,$2,$3,$4,$5,$6)',[amz,amzRun,JSON.stringify(prior),'orders',JSON.stringify(rows),JSON.stringify(next)]);
+    const amzOrder={...order,external_id:'123-1234567-1234567',stato:'PENDING'};
+    await saveAmz({},[amzOrder],{page:2});
+    const amzId=(await db.query('select id from crm_external_orders where connection_id=$1',[amz])).rows[0].id;
+    await assert.rejects(saveAmz({},[{...amzOrder,stato:'CANCELLED'}],{page:3}),/Cursore modificato/);
+    assert.equal((await db.query('select count(*)::int n from crm_external_orders where id=$1',[amzId])).rows[0].n,1);
+    await saveAmz({page:2},[{...amzOrder,stato:'CANCELLED'}],{page:3});
+    assert.equal((await db.query('select count(*)::int n from crm_external_orders where id=$1',[amzId])).rows[0].n,0);
+    await saveAmz({page:3},[{...amzOrder,external_id:'222-1234567-1234567',stato:'CANCELLED'}],{page:4});
+    assert.equal((await db.query('select count(*)::int n from crm_external_orders where connection_id=$1',[amz])).rows[0].n,0);
+    await saveAmz({page:4},[amzOrder],{page:5});
+    const journalId=(await db.query('select id from crm_external_orders where connection_id=$1',[amz])).rows[0].id;
+    await db.query("insert into crm_amazon_cox_exports(amazon_order_id,order_id,status) values($1,$2,'processing')",[amzOrder.external_id,journalId]);
+    await saveAmz({page:5},[{...amzOrder,stato:'CANCELLED'}],{page:6});
+    assert.equal((await db.query('select stato from crm_external_orders where id=$1',[journalId])).rows[0].stato,'CANCELLED');
+    assert.equal((await db.query('select count(*)::int n from crm_amazon_cox_exports where order_id=$1',[journalId])).rows[0].n,1);
   } finally { await db.close(); }
 });

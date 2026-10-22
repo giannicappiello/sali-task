@@ -92,7 +92,7 @@ test('Assets exclude insecure, credentialed and signed URLs', () => {
 
 test('Completed Amazon import starts its next update window at the previous upper bound', () => {
   const state = initialImportState({ ...amazon, import_state: { completed: true, to: '2026-10-01T00:00:00Z' } }, now);
-  assert.equal(state.from, '2026-10-01T00:00:00Z');
+  assert.equal(state.from, '2026-09-30T23:59:59.000Z');
 });
 
 test('Mailchimp imports audiences, members and explicit consent changes without subscribing anyone', async () => {

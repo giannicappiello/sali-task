@@ -219,8 +219,8 @@ export async function syncSalesInvoicePage({
 
   return {
     success: failures.length === 0,
-    completed,
-    status: completed ? "completed" : "running",
+    completed: completed && failures.length === 0,
+    status: failures.length ? "retry" : completed ? "completed" : "running",
     next: collection?.next || null,
     processed: candidates.length,
     lines: lineCount,

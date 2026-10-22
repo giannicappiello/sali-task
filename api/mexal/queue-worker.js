@@ -72,32 +72,8 @@ async function callAutomation(req, job, secret) {
 }
 
 async function resumeBlockedCycles(admin) {
-  const { data: cycles, error: cyclesError } = await admin
-    .from("mexal_sync_cycles")
-    .select("id,metadata")
-    .eq("status", "failed")
-    .order("scheduled_for", { ascending: true })
-    .limit(20);
-  if (cyclesError) throw cyclesError;
-  for (const cycle of cycles || []) {
-    if (cycle.metadata?.producer === "workspace_manual_stocks") continue;
-    const { error: jobsError } = await admin
-      .from("mexal_sync_jobs")
-      .update({ status: "skipped", completed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-      .eq("cycle_id", cycle.id)
-      .eq("status", "failed");
-    if (jobsError) throw jobsError;
-    const { error: cycleError } = await admin
-      .from("mexal_sync_cycles")
-      .update({
-        status: "queued",
-        completed_at: null,
-        error_message: "Ciclo ripreso automaticamente: i job falliti sono stati saltati.",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", cycle.id);
-    if (cycleError) throw cycleError;
-  }
+  // Atomic database recovery retains errors and never relabels failures as skipped.
+  return rpc(admin, "resume_blocked_mexal_sync_cycles", {});
 }
 
 async function runWorker(req, res) {

@@ -1,3 +1,4 @@
+import { packageShippedAt } from './amazon-shipments.js';
 /* global Buffer */
 import crypto from 'node:crypto';
 import { wooMexalOrderReference } from '../../shared/wooMexalReference.js';
@@ -66,14 +67,14 @@ export function wooOrder(row, refunds = []) {
     raw_summary: { provider: 'woocommerce', customer_name: guest?.nome || null, tax, financial_basis: 'total_excluding_tax_after_refunds', mexal_oc: wooMexalOrderReference(row) },
     lines: (row.line_items || []).map((l) => ({ external_line_id: String(l.id), name: text(l.name), type: 'product', external_sku: text(l.sku), quantity: money(l.quantity), unit_price: money(l.price), line_revenue: money(l.total), discount: money(l.subtotal) !== null && money(l.total) !== null ? rounded(Number(l.subtotal) - Number(l.total)) : null })).concat(wooShippingLines(row)) };
 }
-export function amazonOrder(row) {
+export function amazonOrder(row, shippedAt = packageShippedAt(row)) {
   const total = money(row.proceeds?.grandTotal?.amount);
   const taxRows = (row.proceeds?.breakdowns || []).filter((b) => b.type === 'TAX');
   const tax = taxRows.length ? taxRows.reduce((s, b) => s + Number(b.subtotal?.amount || 0), 0) : null;
-  return { external_id: text(row.orderId), marketplace: row.salesChannel?.marketplaceId, stato: text(row.fulfillment?.fulfillmentStatus || 'UNKNOWN'), ordered_at: row.createdTime,
+  return { external_id: text(row.orderId), marketplace: row.salesChannel?.marketplaceId, stato: text(row.fulfillment?.fulfillmentStatus || 'UNKNOWN'), ordered_at: shippedAt || row.createdTime,
     currency: row.proceeds?.grandTotal?.currencyCode || row.orderItems?.find(line=>line.product?.price?.unitPrice?.currencyCode)?.product.price.unitPrice.currencyCode || 'EUR', gross_revenue: total,
     net_revenue: total !== null && tax !== null ? rounded(total - tax) : null, discounts: null, refunds: null, fees: null,
-    raw_summary: { provider: 'amazon_sp_api', last_updated: row.lastUpdatedTime, financial_basis: tax === null ? 'net_unavailable_without_tax_breakdown' : 'proceeds_excluding_tax_before_unavailable_refunds_and_fees' },
+    raw_summary: { provider: 'amazon_sp_api', purchase_date:row.createdTime, fulfilled_at:shippedAt, date_basis:shippedAt?'fulfillment':'purchase_unverified', last_updated: row.lastUpdatedTime, financial_basis: tax === null ? 'net_unavailable_without_tax_breakdown' : 'proceeds_excluding_tax_before_unavailable_refunds_and_fees' },
     lines: (row.orderItems || []).map((l) => ({ external_line_id: text(l.orderItemId), name: text(l.product?.title || l.product?.sellerSku || l.product?.asin), type: 'product', external_sku: text(l.product?.sellerSku), asin: l.product?.asin || null, quantity: money(l.quantityOrdered), unit_price: money(l.product?.price?.unitPrice?.amount), line_revenue: money(l.proceeds?.proceedsTotal?.amount) })) };
 }
 export function amazonProduct(row, marketplace) {
@@ -93,7 +94,7 @@ export function initialImportState(connection, now = new Date()) {
 }
 
 // Exactly one bounded page per call. The database commits the page and its cursor together.
-export async function fetchCommercePage(connection, secrets, previous, { fetcher = safeFetch, now = new Date() } = {}) {
+export async function fetchCommercePage(connection, secrets, previous, { fetcher = safeFetch, now = new Date(), loadShipmentDates = async()=>new Map() } = {}) {
   const transport = fetcher;
   const deadline = Date.now() + 120000;
   fetcher = async (url, options) => {
@@ -198,7 +199,8 @@ export async function fetchCommercePage(connection, secrets, previous, { fetcher
     const query = new URLSearchParams(); let path;
     if (kind === 'orders') {
       query.set('marketplaceIds', markets.join(',')); query.set('lastUpdatedAfter', state.from); query.set('lastUpdatedBefore', state.to);
-      query.set('maxResultsPerPage', '100'); query.set('includedData', 'PROCEEDS,FULFILLMENT');
+      query.set('maxResultsPerPage', '100'); query.set('includedData', 'PROCEEDS,FULFILLMENT,PACKAGES');
+      query.set('fulfillmentStatuses','SHIPPED,PENDING,UNSHIPPED,PARTIALLY_SHIPPED,PENDING_AVAILABILITY');
       if (state.token) query.set('paginationToken', state.token);
       path = '/orders/2026-01-01/orders';
     } else {
@@ -210,7 +212,11 @@ export async function fetchCommercePage(connection, secrets, previous, { fetcher
     }
     const data = await request(`${root}${path}?${query}`, { headers, timeoutMs: 20000, maxBytes: 2000000 }, fetcher, `Importazione Amazon ${kind}`);
     if (!Array.isArray(kind === 'orders' ? data.orders : data.items)) throw new Error('Risposta Amazon non valida: pagina non acquisita.');
-    rows = kind === 'orders' ? data.orders.filter((r) => markets.includes(r.salesChannel?.marketplaceId)).map(amazonOrder) : data.items.map((r) => amazonProduct(r, markets[state.marketplaceIndex]));
+    if(kind==='orders') {
+      const selected=data.orders.filter(r=>markets.includes(r.salesChannel?.marketplaceId) && ['SHIPPED','PENDING','UNSHIPPED','PARTIALLY_SHIPPED','PENDING_AVAILABILITY'].includes(r.fulfillment?.fulfillmentStatus));
+      const dates=await loadShipmentDates(selected.filter(r=>r.fulfillment?.fulfillmentStatus==='SHIPPED').map(r=>r.orderId));
+      rows=selected.map(row=>amazonOrder(row,packageShippedAt(row)||dates.get(row.orderId)||null));
+    } else rows=data.items.map(r=>amazonProduct(r,markets[state.marketplaceIndex]));
     next.token = data.pagination?.nextToken || null;
     if (!next.token) {
       if (kind === 'orders' && state.recentStage) {

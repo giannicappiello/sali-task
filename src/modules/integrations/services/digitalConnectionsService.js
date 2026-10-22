@@ -30,10 +30,10 @@ export const digitalConnectionsService = Object.freeze({
   activate: (id, syncFrequency) => request("activate", { id, syncFrequency }),
   deactivate: (id) => request("deactivate", { id }),
   syncNow: (id) => request("sync_now", { id }),
-  syncAll: async (id, { onProgress = () => {}, shouldStop = () => false } = {}) => {
+  syncAll: async (id, { onProgress = () => {}, shouldStop = () => false, shipmentDatesOnly = false } = {}) => {
     let result;
     do {
-      result = await request('sync_now', { id });
+      result = await request(shipmentDatesOnly ? 'sync_amazon_shipment_dates' : 'sync_now', { id });
       onProgress(result);
       if (shouldStop()) return { ...result, paused: Boolean(result.hasMore) };
       const resumeAt = Date.now() + Number(result.retryAfterMs || 0);

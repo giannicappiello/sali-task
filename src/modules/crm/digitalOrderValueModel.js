@@ -1,5 +1,5 @@
 import { orderDisplayAmount } from '../../../shared/amazonOrderAmounts.js';
-import { fulfillmentBucket } from './digitalSalesDayModel.js';
+import { fulfillmentBucket, verifiedFulfillment } from './digitalSalesDayModel.js';
 import { marketplaceLabel } from './marketplaceLabel.js';
 
 export function knownAmounts(rows, field = 'net_revenue') {
@@ -23,6 +23,7 @@ export function averageAmounts(rows) {
 }
 
 export function fulfillmentSummary(orders) {
+  orders = orders.filter(verifiedFulfillment);
   const fulfilled = orders.filter(order=>fulfillmentBucket(order)==='fulfilled');
   const waiting = orders.filter(order=>fulfillmentBucket(order)==='waiting');
   const eligible = orders.filter(order=>fulfillmentBucket(order)!=='other');

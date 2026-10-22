@@ -1,7 +1,8 @@
 import { orderDisplayAmount } from '../../../shared/amazonOrderAmounts.js';
 import { marketplaceLabel } from './marketplaceLabel.js';
 const EXCLUDED = new Set(['cancelled','canceled','failed','pending','on-hold','pending_availability','unfulfillable']);
-export function countsInSales(order) { return !EXCLUDED.has(String(order.stato || '').toLowerCase()); }
+export function verifiedFulfillment(order) { return order.raw_summary?.provider !== 'amazon_sp_api' || fulfillmentBucket(order) !== 'fulfilled' || Boolean(order.fulfilled_at || order.raw_summary?.fulfilled_at); }
+export function countsInSales(order) { return verifiedFulfillment(order) && !EXCLUDED.has(String(order.stato || '').toLowerCase()); }
 export function fulfillmentBucket(order) {
   const status = String(order.stato || '').toLowerCase();
   if (['shipped','completed','delivered','refunded'].includes(status)) return 'fulfilled';
@@ -13,7 +14,7 @@ export function salesDays(orders, includeWaiting = false, availableWaiting = fal
   for (const order of orders) {
     const date = new Date(order.ordered_at);
     if (!Number.isFinite(date.getTime())) continue;
-    const day = date.toISOString().slice(0, 10), currency = order.currency || 'EUR';
+    const day = order.raw_summary?.provider === "amazon_sp_api" && order.fulfilled_at ? new Intl.DateTimeFormat("sv-SE", {timeZone:"Europe/Rome",year:"numeric",month:"2-digit",day:"2-digit"}).format(date) : date.toISOString().slice(0, 10), currency = order.currency || 'EUR';
     const key = `${day}:${currency}`;
     if (!days.has(key)) days.set(key, { id: key, date: day, currency, marketplaces: new Set(), orders: [], count: 0, amount: 0, unknownAmount: false, missingAmountCount:0, availableEstimated:0, availableGross:0, fulfilledCount:0, waitingCount:0, fulfilledAmount:0, fulfilledMissing:0 });
     const group = days.get(key); group.orders.push(order); group.marketplaces.add(marketplaceLabel(order.marketplace, 'Sito'));

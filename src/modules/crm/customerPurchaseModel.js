@@ -1,5 +1,5 @@
 import { fulfillmentSummary } from './digitalOrderValueModel.js';
-import { countsInSales } from './digitalSalesDayModel.js';
+import { countsInSales, verifiedFulfillment } from './digitalSalesDayModel.js';
 
 const dayOf = value => {
   const date = new Date(value);
@@ -9,7 +9,7 @@ const dayOf = value => {
 export function ordersInPeriod(orders, from, to) {
   return orders.filter(order => {
     const day = dayOf(order.ordered_at);
-    return day && (!from || day >= from) && (!to || day <= to);
+    return verifiedFulfillment(order) && day && (!from || day >= from) && (!to || day <= to);
   });
 }
 

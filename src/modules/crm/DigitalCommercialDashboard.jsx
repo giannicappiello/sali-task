@@ -37,7 +37,7 @@ async function readDashboard(from, to, channel, marketplace) {
   const end = new Date(`${to}T00:00:00Z`); end.setUTCDate(end.getUTCDate() + 1);
   const [orders, lines, identities, prospects, canonical, sources, commercial, marketing, opportunities, activities, mailing, mappings] = await Promise.all([
     ids.length ? loadAllQueryRows((start, last) => {
-      let query = supabase.from('crm_external_orders').select('id,connection_id,account_id,external_id,ordered_at,stato,gross_revenue,net_revenue,currency,marketplace,raw_summary').in('connection_id', ids).lt('ordered_at', end.toISOString());
+      let query = supabase.from('crm_external_orders').select('id,connection_id,account_id,external_id,fulfilled_at,raw_summary,ordered_at,stato,gross_revenue,net_revenue,currency,marketplace').in('connection_id', ids).lt('ordered_at', end.toISOString());
       if (marketplace) query = query.eq('marketplace', marketplace);
       return query.order('ordered_at', { ascending: false }).order('id').range(start, last);
     }) : noRows,

@@ -12,7 +12,7 @@ test('Amazon imports Italian orders with the current API and resumes the same fi
   const page = await fetchCommercePage(amazon, {}, { ...initialImportState(amazon, now), priorityImported: true }, { now, fetcher: async (url, options) => {
     calls.push({ url, options });
     if (url.includes('/auth/')) return ok({ access_token: 'private-token' });
-    return ok({ orders: [{ orderId: 'IT-1', createdTime: '2026-10-01T00:00:00Z', salesChannel: { marketplaceId: 'APJ6JRA9NG5V4' }, orderItems: [] }, { orderId: 'USA-1', salesChannel: { marketplaceId: 'USA' } }], pagination: { nextToken: 'page-2' } });
+    return ok({ orders: [{ orderId: 'IT-1', fulfillment:{fulfillmentStatus:'SHIPPED'}, createdTime: '2026-10-01T00:00:00Z', salesChannel: { marketplaceId: 'APJ6JRA9NG5V4' }, orderItems: [] }, { orderId: 'USA-1', salesChannel: { marketplaceId: 'USA' } }], pagination: { nextToken: 'page-2' } });
   } });
   assert.equal(page.rows.length, 1); assert.equal(page.rows[0].external_id, 'IT-1');
   const url = new URL(calls[1].url);

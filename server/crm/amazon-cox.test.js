@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { amazonOrderDate, buildAmazonCox, verifyAmazonCox, emitAmazonCox, synchronizeAmazonCox, AMAZON_CUSTOMER_CODE, createdCoxReference, reconcileAmazonCox } from './amazon-cox.js';
 
-const order = { id:'order1', external_id:'123-1234567-1234567', marketplace:'IT', stato:'SHIPPED', currency:'EUR', ordered_at:'2026-10-21T22:30:00Z', gross_revenue:29.8, net_revenue:24.43 };
+const order = { id:'order1', external_id:'123-1234567-1234567', marketplace:'IT', stato:'SHIPPED', currency:'EUR', ordered_at:'2026-10-19T08:00:00Z', fulfilled_at:'2026-10-21T22:30:00Z', gross_revenue:29.8, net_revenue:24.43 };
 const customer = { codice:AMAZON_CUSTOMER_CODE, ragione_sociale:'Cliente AMAZON', cod_pagamento:4 };
 const lines = [{ external_sku:'AMZ1', quantity:2, line_revenue:29.8 }];
 const mappings = [{ external_sku:'AMZ1', marketplace:'IT', status:'matched', codice_mexal:'IT0060' }];
@@ -10,7 +10,7 @@ const articles = new Map([['IT0060',{ codice:'IT0060', alq_iva:'22,0' }]]);
 const payload = () => buildAmazonCox(order,lines,mappings,articles,customer);
 const actual = () => ({ ...payload(), numero:123, tot_documento:[[1,29.8]], tot_iva:[[1,5.37]] });
 
-test('COX has Amazon customer, warehouse 4 and original order date in Italian calendar', () => {
+test('COX has Amazon customer, warehouse 4 and actual shipment date in Italian calendar', () => {
   const p=payload();
   assert.equal(p.sigla,'CO');assert.equal(p.cod_modulo,'X');assert.equal(p.cod_conto,AMAZON_CUSTOMER_CODE);
   assert.equal(p.id_magazzino,4);assert.deepEqual(p.id_mag_da_riga,[[1,4]]);
@@ -21,6 +21,7 @@ test('COX has Amazon customer, warehouse 4 and original order date in Italian ca
 });
 test('unshipped and partly shipped orders, unknown mappings and provisional totals cannot be exported', () => {
   for(const stato of ['UNSHIPPED','PARTIALLY_SHIPPED','CANCELED','pending','UNKNOWN']) assert.throws(()=>buildAmazonCox({...order,stato},lines,mappings,articles,customer),/spediti/);
+  assert.throws(()=>buildAmazonCox({...order,fulfilled_at:null},lines,mappings,articles,customer),/Data effettiva/);
   assert.throws(()=>buildAmazonCox(order,lines,[],articles,customer),/associazione/);
   assert.throws(()=>buildAmazonCox(order,[{...lines[0],line_revenue:null}],mappings,articles,customer),/definitivo/);
   assert.throws(()=>buildAmazonCox({...order,gross_revenue:35},lines,mappings,articles,customer),/Totale righe/);
@@ -32,9 +33,9 @@ test('readback checks customer, original date, warehouse, lines, reference, gros
   assert.deepEqual(verifyAmazonCox(actual(),payload(),order),{year:'2026',series:1,number:123,date:'20261022'});
   for(const mutation of [{id_magazzino:5},{cod_modulo:'M'},{data_documento:'20261023'},{tot_documento:[[1,30]]},{tot_iva:[[1,5.38]]},{nota:[[1,'Altro ordine']]},{id_mag_da_riga:[[1,5]]},{quantita:[[1,1]]}]) assert.throws(()=>verifyAmazonCox({...actual(),...mutation},payload(),order));
 });
-test('lot-managed articles request Mexal automatic withdrawal from warehouse 4',()=>{
+test('lot-managed articles defer allocation to explicit FIFO preflight',()=>{
   const p=buildAmazonCox(order,lines,mappings,new Map([['IT0060',{...articles.get('IT0060'),cod_tp_lotto:'aj',gest_rich_lotto:'S'}]]),customer);
-  assert.deepEqual(p.id_lotto,[[1,-2]]);assert.deepEqual(p.qta_lotto,[[1,2]]);assert.deepEqual(p.id_mag_da_riga,[[1,4]]);
+  assert.deepEqual(p.id_lotto,[]);assert.deepEqual(p.qta_lotto,[]);assert.deepEqual(p.id_mag_da_riga,[[1,4]]);
 });
 
 function fixture({timeout=false,existing=false,claimed=true,failPreflight=false,wrongTotals=false,deliveryStatus="reconciliation_required"}={}) {
@@ -71,7 +72,7 @@ test('missing mappings and wrong preventive totals block all document writes',as
 test('cutoff is mandatory and old orders are skipped while scan advances',async()=>{
   await assert.rejects(synchronizeAmazonCox({db:{},connection:{}}),/data iniziale/);
   let updated;
-  const db={from(){return {select(){return this;},eq(){return this;},ilike(){return this;},in(){return this;},order(){return this;},gt(){return this;},gte(){return this;},limit(){return Promise.resolve({data:[{...order,id:'1',ordered_at:'2026-10-20T10:00:00Z'},{...order,id:'2',ordered_at:'2026-10-19T10:00:00Z'},{...order,id:'3'}]});},update(v){updated=v;return this;},then(resolve){return Promise.resolve({data:null}).then(resolve);}};}};
+  const db={from(){return {select(){return this;},eq(){return this;},ilike(){return this;},in(){return this;},order(){return this;},gt(){return this;},gte(){return this;},not(){return this;},limit(){return Promise.resolve({data:[{...order,id:'1',fulfilled_at:'2026-10-20T10:00:00Z'},{...order,id:'2',fulfilled_at:'2026-10-19T10:00:00Z'},{...order,id:'3'}]});},update(v){updated=v;return this;},then(resolve){return Promise.resolve({data:null}).then(resolve);}};}};
   const result=await synchronizeAmazonCox({db,connection:{id:'conn',amazon_cox_from:'2026-10-21',amazon_cox_state:{phase:'emit'}}});
   assert.equal(result.hasMore,true);assert.deepEqual(updated.amazon_cox_state,{active:true,phase:'emit',after:'2'});assert.equal(result.results.length,0);
 });
@@ -100,7 +101,7 @@ test('missing or different uncertain documents stay unresolved and cannot be re-
 
 test('recovery phase advances its own cursor then emission starts separately',async()=>{
  let saved,queried;
- const db={from(table){ const q={select(){return q;},eq(field,value){if(field==='cox_status') queried=value;return q;},order(){return q;},gt(){return q;},ilike(){return q;},in(){return q;},gte(){return q;},limit(){return Promise.resolve({data:[]});},update(value){saved=value;return q;},then(resolve){return Promise.resolve({data:null}).then(resolve);}};return q;}};
+ const db={from(table){ const q={select(){return q;},eq(field,value){if(field==='cox_status') queried=value;return q;},order(){return q;},gt(){return q;},ilike(){return q;},in(){return q;},gte(){return q;},not(){return q;},limit(){return Promise.resolve({data:[]});},update(value){saved=value;return q;},then(resolve){return Promise.resolve({data:null}).then(resolve);}};return q;}};
  const result=await synchronizeAmazonCox({db,connection:{id:'conn',amazon_cox_from:'2026-10-21'}});
  assert.equal(queried,'reconciliation_required');assert.equal(result.hasMore,true);
  assert.deepEqual(saved.amazon_cox_state,{active:true,phase:'emit'});

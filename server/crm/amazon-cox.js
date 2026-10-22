@@ -1,3 +1,4 @@
+import { prepareFifoLots } from './amazon-fifo.js';
 // COX uses gross prices (verified against the existing COX document contract).
 const text = value => String(value ?? '').trim();
 const cents = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) ? Math.round(Number(value) * 100) : null;
@@ -18,6 +19,7 @@ export function buildAmazonCox(order, lines, mappings, articles, customer) {
   assert(order.currency === 'EUR', 'Valuta Amazon diversa da EUR: verificare prima di emettere il COX.');
   assert(customer?.codice === AMAZON_CUSTOMER_CODE && text(customer.ragione_sociale).toUpperCase() === 'CLIENTE AMAZON', 'Anagrafica CLIENTE AMAZON non verificata.');
   assert(/^\d{3}-\d{7}-\d{7}$/.test(order.external_id), 'Numero ordine Amazon non valido.');
+  assert(order.fulfilled_at && Number.isFinite(Date.parse(order.fulfilled_at)), 'Data effettiva di evasione Amazon non disponibile: COX non emesso.');
   assert(lines.length > 0, 'Ordine Amazon senza righe.');
   const gross = cents(order.gross_revenue);
   assert(gross > 0, 'Totale ordine Amazon non disponibile.');
@@ -41,7 +43,7 @@ export function buildAmazonCox(order, lines, mappings, articles, customer) {
   const matrix = key => prepared.map((line, index) => [index + 1, line[key]]);
   return {
     sigla: 'CO', cod_modulo: 'X', serie: 1, numero: 0, cod_conto: AMAZON_CUSTOMER_CODE,
-    data_documento: amazonOrderDate(order.ordered_at), id_causale: [[1, 2]], id_magazzino: 4, id_magazzino_a: 0,
+    data_documento: amazonOrderDate(order.fulfilled_at), id_causale: [[1, 2]], id_magazzino: 4, id_magazzino_a: 0,
     nota: [[1, order.external_id]], id_pagamento: Number(customer.cod_pagamento) || 4,
     codice_agente: text(customer.cod_agente), acconto_pagato: gross / 100,
     tp_porto: [[1, 'F']], tp_spese_sped: [[1, 'V']], val_spese_sped: [[1, 0]],
@@ -51,8 +53,8 @@ export function buildAmazonCox(order, lines, mappings, articles, customer) {
     id_mag_da_riga: prepared.map((_, index) => [index + 1, 4]),
     tp_um_articolo: prepared.map((_, index) => [index + 1, '1']),
     sconto: prepared.map((_, index) => [index + 1, '']),
-    id_lotto: prepared.flatMap((line,index) => line.lot ? [[index + 1,-2]] : []),
-    qta_lotto: prepared.flatMap((line,index) => line.lot ? [[index + 1,line.quantity]] : []),
+    id_lotto: [],
+    qta_lotto: [],
   };
 }
 
@@ -66,6 +68,11 @@ export function verifyAmazonCox(actual, payload, order) {
     assert(Array.isArray(actual[key]) && actual[key].length === payload[key].length, `Righe COX diverse: ${key}.`);
     const values = new Map(actual[key]);
     for (const [index, value] of payload[key]) assert(key === 'prezzo' ? Math.abs(Number(values.get(index)) - value) < 0.000001 : text(values.get(index)) === text(value), `Righe COX diverse: ${key}.`);
+  }
+  if(payload.id_lotto?.length) for(const key of ['id_lotto','qta_lotto','pos_righe_lotto','nr_righe_lotto']) {
+    assert(Array.isArray(actual[key]) && actual[key].length===payload[key].length, 'Lotti COX diversi: '+key);
+    const values=new Map(actual[key]);
+    for(const [index,value] of payload[key]) assert(Number(values.get(index))===Number(value), 'Lotti COX diversi: '+key);
   }
   assert(cents(scalar(actual.tot_documento)) === cents(order.gross_revenue), 'Totale COX diverso dal totale Amazon.');
   assert(cents(scalar(actual.tot_iva)) === cents(order.gross_revenue) - cents(order.net_revenue), 'IVA COX diversa da Amazon.');
@@ -99,7 +106,7 @@ async function prepareAmazonCox(db,connection,order,mexal) {
     const mappings = skus.length ? await checked(await db.from('crm_product_mappings').select('external_sku,marketplace,status,codice_mexal').eq('connection_id', connection.id).eq('marketplace', order.marketplace).in('external_sku', skus).limit(1001)) : [];
     const articles = new Map();
     for (const code of new Set(mappings.filter(m => m.status === 'matched').map(m => m.codice_mexal).filter(Boolean))) articles.set(code, await mexal.getJson(`/articoli/${encodeURIComponent(code)}`));
-    return buildAmazonCox(order, lines, mappings, articles, customer);
+    return {payload:buildAmazonCox(order, lines, mappings, articles, customer),articles};
 }
 
 export function createdCoxReference(created) {
@@ -121,8 +128,8 @@ export async function reconcileAmazonCox({db,connection,order,clientForYear}) {
   const delivery=await checked(await db.from('crm_amazon_cox_exports').select('token,status').eq('amazon_order_id',order.external_id).single());
   if (delivery.status!=='reconciliation_required') return {status:'skipped'};
   try {
-    const date=amazonOrderDate(order.ordered_at),mexal=clientForYear(date.slice(0,4));
-    const payload=await prepareAmazonCox(db,connection,order,mexal);
+    const date=amazonOrderDate(order.fulfilled_at),mexal=clientForYear(date.slice(0,4));
+    const {payload}=await prepareAmazonCox(db,connection,order,mexal);
     const existing=await existingCox(mexal,order);
     if (!existing) return {status:'reconciliation_required',error:'COX non ancora trovato: nessuna nuova emissione.'};
     const actual=await mexal.getJson(`${COX_RESOURCE}/CO+${Number(existing.serie)}+${Number(existing.numero)}+${AMAZON_CUSTOMER_CODE}`);
@@ -140,8 +147,9 @@ export async function emitAmazonCox({ db, connection, order, clientForYear }) {
     p_order_id: order.id, p_token: claim, p_status: status, p_reference: reference, p_error: error,
   }));
   try {
-    const date = amazonOrderDate(order.ordered_at), mexal = clientForYear(date.slice(0,4));
-    const payload = await prepareAmazonCox(db,connection,order,mexal);
+    const date = amazonOrderDate(order.fulfilled_at), mexal = clientForYear(date.slice(0,4));
+    const prepared = await prepareAmazonCox(db,connection,order,mexal);
+    let payload = prepared.payload;
     const existing = await existingCox(mexal, order);
     let actual;
     if (existing) {
@@ -150,6 +158,7 @@ export async function emitAmazonCox({ db, connection, order, clientForYear }) {
       actual = await mexal.getJson(`${COX_RESOURCE}/CO+${Number(existing.serie)}+${Number(existing.numero)}+${AMAZON_CUSTOMER_CODE}`);
     }
     else {
+      payload = await prepareFifoLots(mexal,payload,prepared.articles);
       const calculated = await mexal.calculateDocument(payload);
       assert(cents(calculated.tot_imponibile) !== null && cents(calculated.tot_imposta) !== null &&
         cents(calculated.tot_imponibile) + cents(calculated.tot_imposta) === cents(order.gross_revenue) &&
@@ -184,22 +193,22 @@ export async function synchronizeAmazonCox({ db, connection, clientForYear, batc
   assert(/^\d{4}-\d{2}-\d{2}$/.test(connection.amazon_cox_from || ''), 'Configurare la data iniziale COX Amazon dopo aver riconciliato i corrispettivi storici.');
   const state = connection.amazon_cox_state || {};
   if ((state.phase || (state.after ? 'emit' : 'reconcile'))==='reconcile') {
-    let recover=db.from('crm_external_orders').select('id,external_id,marketplace,stato,ordered_at,currency,gross_revenue,net_revenue').eq('connection_id',connection.id).eq('cox_status','reconciliation_required').order('id').limit(batchSize+1);
+    let recover=db.from('crm_external_orders').select('id,external_id,marketplace,stato,ordered_at,currency,gross_revenue,net_revenue,fulfilled_at').eq('connection_id',connection.id).eq('cox_status','reconciliation_required').order('id').limit(batchSize+1);
     if(state.after) recover=recover.gt('id',state.after);
     const rows=await checked(await recover),batch=rows.slice(0,batchSize),results=[];
     for(const order of batch) results.push({orderId:order.id,...await reconcileAmazonCox({db,connection,order,clientForYear})});
     await checked(await db.from('crm_external_connections').update({amazon_cox_state:rows.length>batchSize ? {active:true,phase:'reconcile',after:batch.at(-1).id} : {active:true,phase:'emit'}}).eq('id',connection.id));
     return {hasMore:true,results,emitted:results.filter(row=>row.status==='emitted').length,failed:results.filter(row=>row.status==='reconciliation_required').length};
   }
-  let query = db.from('crm_external_orders').select('id,external_id,marketplace,stato,ordered_at,currency,gross_revenue,net_revenue')
+  let query = db.from('crm_external_orders').select('id,external_id,marketplace,stato,ordered_at,currency,gross_revenue,net_revenue,fulfilled_at')
     .eq('connection_id', connection.id).ilike('stato', 'shipped').in('cox_status', ['pending','blocked'])
-    .gte('ordered_at', new Date(Date.parse(`${connection.amazon_cox_from}T00:00:00Z`) - 7200000).toISOString())
+    .not('fulfilled_at','is',null).gte('fulfilled_at', new Date(Date.parse(`${connection.amazon_cox_from}T00:00:00Z`) - 7200000).toISOString())
     .order('id').limit(batchSize + 1);
   if (state.after) query = query.gt('id', state.after);
   // The cutoff is an Italian order date, not a UTC timestamp or shipment date.
   const orders = await checked(await query), batch = orders.slice(0,batchSize), results = [];
   for (const order of batch) {
-    if (amazonOrderDate(order.ordered_at) < connection.amazon_cox_from.replaceAll('-','')) continue;
+    if (amazonOrderDate(order.fulfilled_at) < connection.amazon_cox_from.replaceAll('-','')) continue;
     results.push({ orderId: order.id, ...await emitAmazonCox({ db, connection, order, clientForYear }) });
   }
   const hasMore = orders.length > batchSize;

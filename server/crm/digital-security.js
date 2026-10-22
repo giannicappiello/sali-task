@@ -98,6 +98,7 @@ export async function safeFetch(input, options = {}, dependencies = {}) {
       let size = 0; const chunks = [];
       response.on("data", (chunk) => { size += chunk.length; if (size > maxBytes) request.destroy(Object.assign(new Error("Risposta provider troppo grande."), { status: 502 })); else chunks.push(chunk); });
       response.on("end", () => {
+        if(options.binary) { resolve({ok:response.statusCode>=200 && response.statusCode<300,status:response.statusCode,headers:response.headers,data:Buffer.concat(chunks)});return;}
         const text = Buffer.concat(chunks).toString("utf8");
         let data = text; try { data = text ? JSON.parse(text) : null; } catch { /* provider may return text */ }
         resolve({ ok: response.statusCode >= 200 && response.statusCode < 300, status: response.statusCode, headers: response.headers, data });

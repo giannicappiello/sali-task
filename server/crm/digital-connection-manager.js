@@ -1,3 +1,4 @@
+import { synchronizeShipmentDates } from './amazon-shipments.js';
 /* global process */
 import crypto from "node:crypto";
 import { persistProductMapping } from "./product-mapping.js";
@@ -17,7 +18,7 @@ import { synchronizeAmazonCox } from './amazon-cox.js';
 import { buildMexalClient } from '../mexal/sync-products.js';
 import { probeAmazonBuyer } from './amazon-buyer.js';
 
-const SAFE_CONNECTION_FIELDS = "id,tipo,provider_code,provider,nome,category,auth_type,stato,endpoint_url,site_url,external_account_id,marketplace_ids,configurazione,secret_references,credenziali_stato,abilitata,sync_attivo,sync_frequency,is_default,ultimo_test_il,ultimo_test_stato,ultimo_test_messaggio,errori_consecutivi,ultimo_sync_il,prossima_run_il,ultimo_errore,oauth_scade_il,webhook_path,webhook_stato,ultimo_webhook_il,disabilitata_il,aggiornata_il,import_state,amazon_cox_state,amazon_cox_from,responsabile_id,reparto_id";
+const SAFE_CONNECTION_FIELDS = "id,tipo,provider_code,provider,nome,category,auth_type,stato,endpoint_url,site_url,external_account_id,marketplace_ids,configurazione,secret_references,credenziali_stato,abilitata,sync_attivo,sync_frequency,is_default,ultimo_test_il,ultimo_test_stato,ultimo_test_messaggio,errori_consecutivi,ultimo_sync_il,prossima_run_il,ultimo_errore,oauth_scade_il,webhook_path,webhook_stato,ultimo_webhook_il,disabilitata_il,aggiornata_il,import_state,amazon_cox_state,amazon_cox_from,amazon_shipment_state,amazon_shipments_covered_at,responsabile_id,reparto_id";
 
 function required(name) {
   const value = String(process.env[name] || "").trim();
@@ -206,7 +207,7 @@ async function refreshCustomerProfiles(req, body) {
   return { recordsRead: result.rows.length, next: result.next };
 }
 
-async function synchronizeCommerce(db, actorId, connection, mode) {
+async function synchronizeCommerce(db, actorId, connection, mode, shipmentDatesOnly = false) {
   const { data: runId, error: lockError } = await db.rpc('crm_claim_commerce_import_service', {
     target_connection_id: connection.id, target_triggered_by: actorId || null,
   });
@@ -219,6 +220,14 @@ async function synchronizeCommerce(db, actorId, connection, mode) {
   try {
     // Read the cursor after acquiring the lock: another request may have just finished a page.
     const fresh = await connectionById(db, connection.id);
+    if(fresh.provider_code==='amazon_sp_api') {
+      const shipping=await synchronizeShipmentDates({db,connection:fresh,secrets:await decryptedSecrets(db,fresh.id)});
+      if(shipping.hasMore || shipping.recordsRead!=null) {
+        await finish('partial',{read:shipping.recordsRead||0,updated:shipping.recordsRead||0},{source:mode,resource:'amazon_shipments',hasMore:true,reports:shipping.reports});
+        return {...shipping,hasMore:true,runId,status:'partial'};
+      }
+    }
+    if(shipmentDatesOnly) { await finish('completed',{read:0,updated:0},{source:mode,resource:'amazon_shipments',hasMore:false});return {runId,status:'completed',resource:'amazon_shipments',hasMore:false}; }
     const emitCox = async () => {
       const cox = await synchronizeAmazonCox({ db, connection: fresh,
         clientForYear: year => buildMexalClient({ year, warehouse: 4 }) });
@@ -228,7 +237,7 @@ async function synchronizeCommerce(db, actorId, connection, mode) {
         recordsRead: 0, resource: 'amazon_cox', counts: fresh.import_state?.counts || {}, cox };
     };
     if (fresh.provider_code === 'amazon_sp_api' && fresh.amazon_cox_state?.active) return await emitCox();
-    const page = await fetchCommercePage(fresh, await decryptedSecrets(db, connection.id), fresh.import_state);
+    const page = await fetchCommercePage(fresh, await decryptedSecrets(db, connection.id), fresh.import_state,{loadShipmentDates:async ids=>{if(!ids.length)return new Map();const {data,error}=await db.from('crm_amazon_shipment_dates').select('external_id,shipped_at').eq('connection_id',fresh.id).in('external_id',ids);if(error)throw error;return new Map(data.map(row=>[row.external_id,row.shipped_at]));}});
     const { error } = await db.rpc('crm_import_commerce_page_service', { target_connection_id: connection.id, target_run_id: runId,
       expected_state: fresh.import_state, resource_kind: page.kind, page_rows: page.rows, next_state: page.next });
     if (error) throw error;
@@ -252,6 +261,12 @@ async function synchronizeCommerce(db, actorId, connection, mode) {
     await finish('failed', { failed: 1 }, { source: mode, cursor_preserved: true }, error);
     throw error;
   }
+}
+
+async function syncAmazonShipmentDates(req,body) {
+  const auth=await authorize(req,true), connection=await connectionById(auth.supabase,body.id);
+  if(!connection.abilitata || connection.provider_code !== 'amazon_sp_api') throw Object.assign(new Error('Connessione Amazon attiva richiesta.'),{status:409});
+  return synchronizeCommerce(auth.supabase,auth.id,connection,'manual_dates',true);
 }
 
 async function syncNow(req, body) {
@@ -357,7 +372,7 @@ export async function handleDigitalConnectionManager(req, res) {
     if (action === "dispatch") return res.status(200).json({ success: true, ...(await dispatchDigitalSchedule(req)) });
     if (["list", "operational"].includes(action)) { const auth = await authorize(req); const data = action === "list" ? { registry: DIGITAL_PROVIDER_REGISTRY.map(safeProvider), connections: await list(auth.supabase) } : await operationalData(auth.supabase, body); return res.status(200).json({ success: true, ...data }); }
     if (req.method !== "POST") return res.status(405).json({ success: false, error: "Metodo non consentito." });
-    const handlers = { refresh_customer_profiles: refreshCustomerProfiles, save, revoke_secret: revokeSecret, test: testConnection, activate, deactivate, sync_now: syncNow, save_mapping: saveMapping, oauth_start: oauthStart };
+    const handlers = { refresh_customer_profiles: refreshCustomerProfiles, save, revoke_secret: revokeSecret, test: testConnection, activate, deactivate, sync_now: syncNow, sync_amazon_shipment_dates: syncAmazonShipmentDates, save_mapping: saveMapping, oauth_start: oauthStart };
     if (!handlers[action]) throw Object.assign(new Error("Azione Connection Manager non supportata."), { status: 400 });
     return res.status(200).json({ success: true, ...(await handlers[action](req, body)) });
   } catch (error) {

@@ -12,6 +12,7 @@ test('COX journal: duplicate connections, service permissions, retryable preflig
       create table crm_external_orders(id uuid primary key default gen_random_uuid(),connection_id uuid references crm_external_connections(id),external_id text,stato text,ordered_at timestamptz);
       insert into crm_external_connections(provider_code) values('amazon_sp_api'),('amazon_sp_api'),('woocommerce');`);
     await db.exec(await readFile(new URL('../../supabase/migrations/20261021150000_amazon_cox_exports.sql',import.meta.url),'utf8'));
+    await db.exec(await readFile(new URL('../../supabase/migrations/20261022113000_amazon_cox_verified_reconciliation.sql',import.meta.url),'utf8'));
     const conns=(await db.query('select * from crm_external_connections order by provider_code')).rows;
     const add=async(conn,external,date='2026-10-21T08:00:00Z',status='SHIPPED')=>(await db.query('insert into crm_external_orders(connection_id,external_id,stato,ordered_at) values($1,$2,$3,$4) returning id',[conn.id,external,status,date])).rows[0].id;
     const claim=async id=>(await db.query('select crm_claim_amazon_cox_service($1) token',[id])).rows[0].token;
@@ -22,6 +23,9 @@ test('COX journal: duplicate connections, service permissions, retryable preflig
     await assert.rejects(finish(first,token,'blocked'),/Claim COX/);
     await finish(first,retry,'reconciliation_required');assert.equal(await claim(duplicate),null);
     assert.equal((await db.query('select cox_status from crm_external_orders where id=$1',[duplicate])).rows[0].cox_status,'reconciliation_required');
+    await assert.rejects(finish(first,retry,'blocked'),/Claim COX/);
+    await finish(first,retry,'emitted',{year:'2026',series:1,number:123,date:'20261021'});
+    assert.equal(await claim(first),null);
     const second=await add(conns[0],'222-1234567-1234567'),t2=await claim(second);
     await assert.rejects(finish(second,t2,'emitted'),/Riferimento/);
     await finish(second,t2,'emitted',{year:'2026',series:1,number:987,date:'20261021'});
@@ -33,7 +37,7 @@ test('COX journal: duplicate connections, service permissions, retryable preflig
     await assert.rejects(claim(await add(conns[2],'website')),/Ordine Amazon/);
     await db.exec("set test.auth_role='authenticated'");
     await assert.rejects(claim(second),/Servizio riservato/);
-    await assert.rejects(db.query("update crm_external_orders set cox_status='emitted' where id=$1",[first]),/riservato/);
+    await assert.rejects(db.query("update crm_external_orders set cox_status='blocked' where id=$1",[first]),/riservato/);
     await assert.rejects(db.query("insert into crm_external_orders(cox_status) values('emitted')"),/riservato/);
     assert.equal((await db.query('select count(*)::int n from crm_amazon_cox_exports')).rows[0].n,3);
   }finally{await db.close();}

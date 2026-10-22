@@ -6,7 +6,7 @@ La sincronizzazione completa Amazon, manuale o quotidiana, importa i dati e poi 
 - Prima data d'ordine autorizzata: 21 ottobre 2026, calendario Europe/Rome. La stessa data dell'ordine determina data e anno gestionale del documento.
 - Sigla CO, modulo X, serie 1, cliente Mexal 501.02156 (Cliente AMAZON), causale 2, magazzino 4 sia in testata sia sulle righe.
 - Associazioni SKU/articoli lette ogni volta da Workspace per connessione e marketplace. Solo articoli IT riconciliati.
-- Nota `Ordine Amazon <numero>`. Prezzi lordi definitivi, già scontati, con aliquota articolo verificata. Calcolo preventivo Mexal prima del salvataggio; rilettura di data, cliente, magazzino, righe, totale e IVA dopo. Imponibile e imposta devono coincidere con i valori definitivi Amazon.
+- Nota `<numero ordine Amazon>` (numero all’inizio, senza prefisso: la lista Mexal visualizza solo i primi caratteri). Prezzi lordi definitivi, già scontati, con aliquota articolo verificata. Calcolo preventivo Mexal prima del salvataggio; rilettura di data, cliente, magazzino, righe, totale e IVA dopo. Imponibile e imposta devono coincidere con i valori definitivi Amazon.
 - Per articoli con lotto obbligatorio, richiesta di autoprelievo Mexal (`id_lotto=-2`), senza scegliere arbitrariamente un lotto.
 - Importi mancanti, valute diverse da EUR e differenze fra totale righe e totale ordine bloccano l'emissione: nessuna ripartizione arbitraria di imposte, sconti o spedizione.
 
@@ -19,3 +19,5 @@ La fase COX prosegue a lotti limitati usando `amazon_cox_state`; la sincronizzaz
 Test: `node --test server/crm/amazon-cox.test.js`. Per il test PostgreSQL locale impostare `PGLITE_MODULE` all'entry ESM di `@electric-sql/pglite` ed eseguire anche `server/crm/amazon-cox-db.test.js`.
 
 Nota operativa: la cronologia remota presenta vecchie migrazioni mancanti. Per questo rilascio il proprietario ha autorizzato esplicitamente l’applicazione e la registrazione della sola migrazione COX; non eseguire le migrazioni pregresse non pertinenti con un push globale.
+
+I riferimenti di ritorno sono letti da numero/serie anche in dati[] o da Location, poi verificati rileggendo il documento. Una fase separata, in sola lettura su Mexal, ricontrolla i COX reconciliation_required: collega solo un documento univoco con nota, cliente, data, magazzino, righe, totale e IVA corrispondenti. Nessun POST documento durante il recupero. Il cursore distingue le fasi reconcile/emit per non bloccare gli altri ordini su una riconciliazione irrisolta.

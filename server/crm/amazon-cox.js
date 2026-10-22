@@ -42,7 +42,7 @@ export function buildAmazonCox(order, lines, mappings, articles, customer) {
   return {
     sigla: 'CO', cod_modulo: 'X', serie: 1, numero: 0, cod_conto: AMAZON_CUSTOMER_CODE,
     data_documento: amazonOrderDate(order.ordered_at), id_causale: [[1, 2]], id_magazzino: 4, id_magazzino_a: 0,
-    nota: [[1, `Ordine Amazon ${order.external_id}`]], id_pagamento: Number(customer.cod_pagamento) || 4,
+    nota: [[1, order.external_id]], id_pagamento: Number(customer.cod_pagamento) || 4,
     codice_agente: text(customer.cod_agente), acconto_pagato: gross / 100,
     tp_porto: [[1, 'F']], tp_spese_sped: [[1, 'V']], val_spese_sped: [[1, 0]],
     id_riga: prepared.map((_, index) => [index + 1, 0]),
@@ -91,6 +91,47 @@ async function existingCox(mexal, order) {
   return matches[0];
 }
 
+async function prepareAmazonCox(db,connection,order,mexal) {
+    const customer = await mexal.getJson(`/clienti/${AMAZON_CUSTOMER_CODE}`);
+    const lines = await checked(await db.from('crm_external_order_lines').select('external_sku,quantity,line_revenue').eq('order_id', order.id).order('external_line_id').limit(1001));
+    assert(lines.length <= 1000, 'Ordine con troppe righe per una singola emissione.');
+    const skus = [...new Set(lines.map(l => l.external_sku))];
+    const mappings = skus.length ? await checked(await db.from('crm_product_mappings').select('external_sku,marketplace,status,codice_mexal').eq('connection_id', connection.id).eq('marketplace', order.marketplace).in('external_sku', skus).limit(1001)) : [];
+    const articles = new Map();
+    for (const code of new Set(mappings.filter(m => m.status === 'matched').map(m => m.codice_mexal).filter(Boolean))) articles.set(code, await mexal.getJson(`/articoli/${encodeURIComponent(code)}`));
+    return buildAmazonCox(order, lines, mappings, articles, customer);
+}
+
+export function createdCoxReference(created) {
+  const row = Array.isArray(created?.dati) ? created.dati[0] : created?.dati || created;
+  const number = Number(row?.numero), series = Number(row?.serie || 1);
+  if (Number.isSafeInteger(number) && number > 0 && Number.isSafeInteger(series) && series > 0) return {number,series};
+  const headers = created?.mexalHttpResponse?.headers || {};
+  const location = Object.entries(headers).find(([key])=>key.toLowerCase()==='location')?.[1];
+  if (!location) return null;
+  let path;
+  try { path=decodeURIComponent(new URL(String(location),'https://mexal.invalid').pathname); } catch {return null;}
+  const match = /\/documenti\/movimenti-magazzino\/CO\+(\d+)\+(\d+)\+501\.02156$/.exec(path);
+  if (!match || Number(match[1])<=0 || Number(match[2])<=0) return null;
+  return {series:Number(match[1]),number:Number(match[2])};
+}
+
+export async function reconcileAmazonCox({db,connection,order,clientForYear}) {
+  // Mexal is read-only here: uncertainty must never cause a second document POST.
+  const delivery=await checked(await db.from('crm_amazon_cox_exports').select('token,status').eq('amazon_order_id',order.external_id).single());
+  if (delivery.status!=='reconciliation_required') return {status:'skipped'};
+  try {
+    const date=amazonOrderDate(order.ordered_at),mexal=clientForYear(date.slice(0,4));
+    const payload=await prepareAmazonCox(db,connection,order,mexal);
+    const existing=await existingCox(mexal,order);
+    if (!existing) return {status:'reconciliation_required',error:'COX non ancora trovato: nessuna nuova emissione.'};
+    const actual=await mexal.getJson(`${COX_RESOURCE}/CO+${Number(existing.serie)}+${Number(existing.numero)}+${AMAZON_CUSTOMER_CODE}`);
+    const reference=verifyAmazonCox(actual,payload,order);
+    await checked(await db.rpc('crm_finish_amazon_cox_service',{p_order_id:order.id,p_token:delivery.token,p_status:'emitted',p_reference:reference,p_error:null}));
+    return {status:'emitted',reference,reconciled:true};
+  } catch(error) {return {status:'reconciliation_required',error:String(error.message).slice(0,500)};}
+}
+
 export async function emitAmazonCox({ db, connection, order, clientForYear }) {
   const claim = await checked(await db.rpc('crm_claim_amazon_cox_service', { p_order_id: order.id }));
   if (!claim) return { status: 'skipped' };
@@ -100,14 +141,7 @@ export async function emitAmazonCox({ db, connection, order, clientForYear }) {
   }));
   try {
     const date = amazonOrderDate(order.ordered_at), mexal = clientForYear(date.slice(0,4));
-    const customer = await mexal.getJson(`/clienti/${AMAZON_CUSTOMER_CODE}`);
-    const lines = await checked(await db.from('crm_external_order_lines').select('external_sku,quantity,line_revenue').eq('order_id', order.id).order('external_line_id').limit(1001));
-    assert(lines.length <= 1000, 'Ordine con troppe righe per una singola emissione.');
-    const skus = [...new Set(lines.map(l => l.external_sku))];
-    const mappings = skus.length ? await checked(await db.from('crm_product_mappings').select('external_sku,marketplace,status,codice_mexal').eq('connection_id', connection.id).eq('marketplace', order.marketplace).in('external_sku', skus).limit(1001)) : [];
-    const articles = new Map();
-    for (const code of new Set(mappings.filter(m => m.status === 'matched').map(m => m.codice_mexal).filter(Boolean))) articles.set(code, await mexal.getJson(`/articoli/${encodeURIComponent(code)}`));
-    const payload = buildAmazonCox(order, lines, mappings, articles, customer);
+    const payload = await prepareAmazonCox(db,connection,order,mexal);
     const existing = await existingCox(mexal, order);
     let actual;
     if (existing) {
@@ -125,7 +159,8 @@ export async function emitAmazonCox({ db, connection, order, clientForYear }) {
       // Mark uncertainty before POST, since the server may commit and lose its response.
       writeStarted = true;
       const created = await mexal.postJson(COX_RESOURCE, payload);
-      let number = Number(created.numero || created.dati?.numero), series = Number(created.serie || created.dati?.serie || 1);
+      const returned = createdCoxReference(created);
+      let number = returned?.number, series = returned?.series;
       if (!number) {
         const found = await existingCox(mexal, order);
         assert(found, 'COX inviato: riferimento da riconciliare.'); number = Number(found.numero); series = Number(found.serie);
@@ -148,6 +183,14 @@ export async function emitAmazonCox({ db, connection, order, clientForYear }) {
 export async function synchronizeAmazonCox({ db, connection, clientForYear, batchSize = 2 }) {
   assert(/^\d{4}-\d{2}-\d{2}$/.test(connection.amazon_cox_from || ''), 'Configurare la data iniziale COX Amazon dopo aver riconciliato i corrispettivi storici.');
   const state = connection.amazon_cox_state || {};
+  if ((state.phase || (state.after ? 'emit' : 'reconcile'))==='reconcile') {
+    let recover=db.from('crm_external_orders').select('id,external_id,marketplace,stato,ordered_at,currency,gross_revenue,net_revenue').eq('connection_id',connection.id).eq('cox_status','reconciliation_required').order('id').limit(batchSize+1);
+    if(state.after) recover=recover.gt('id',state.after);
+    const rows=await checked(await recover),batch=rows.slice(0,batchSize),results=[];
+    for(const order of batch) results.push({orderId:order.id,...await reconcileAmazonCox({db,connection,order,clientForYear})});
+    await checked(await db.from('crm_external_connections').update({amazon_cox_state:rows.length>batchSize ? {active:true,phase:'reconcile',after:batch.at(-1).id} : {active:true,phase:'emit'}}).eq('id',connection.id));
+    return {hasMore:true,results,emitted:results.filter(row=>row.status==='emitted').length,failed:results.filter(row=>row.status==='reconciliation_required').length};
+  }
   let query = db.from('crm_external_orders').select('id,external_id,marketplace,stato,ordered_at,currency,gross_revenue,net_revenue')
     .eq('connection_id', connection.id).ilike('stato', 'shipped').in('cox_status', ['pending','blocked'])
     .gte('ordered_at', new Date(Date.parse(`${connection.amazon_cox_from}T00:00:00Z`) - 7200000).toISOString())
@@ -160,6 +203,6 @@ export async function synchronizeAmazonCox({ db, connection, clientForYear, batc
     results.push({ orderId: order.id, ...await emitAmazonCox({ db, connection, order, clientForYear }) });
   }
   const hasMore = orders.length > batchSize;
-  await checked(await db.from('crm_external_connections').update({ amazon_cox_state: hasMore ? { active: true, after: batch.at(-1).id } : {} }).eq('id', connection.id));
+  await checked(await db.from('crm_external_connections').update({ amazon_cox_state: hasMore ? { active: true, phase:'emit', after: batch.at(-1).id } : {} }).eq('id', connection.id));
   return { hasMore, results, emitted: results.filter(r => r.status === 'emitted').length, failed: results.filter(r => ['blocked','reconciliation_required'].includes(r.status)).length };
 }

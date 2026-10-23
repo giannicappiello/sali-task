@@ -55,7 +55,10 @@ export function defaultLayout() {
   })) };
 }
 export function templateBoxText(box, values) {
-  return box.kind === 'title' ? fieldLabel(box.field, values.__language) : String(values[box.field] || '');
+  if (box.kind !== 'title') return String(values[box.field] || '');
+  const text = fieldLabel(box.field, values.__language);
+  const locale = (SHEET_LANGUAGES.find(language => language.code === values.__language) || SHEET_LANGUAGES[0]).locale.replace('_', '-');
+  return box.titleCase === 'uppercase' ? text.toLocaleUpperCase(locale) : box.titleCase === 'lowercase' ? text.toLocaleLowerCase(locale) : text;
 }
 export function titleBox(box) {
   return { ...box, id: crypto.randomUUID(), kind: 'title', y: Math.max(0, box.y - 2.5), height: 2.5, fontSize: 9, bold: true, vertical: 'top', lockAspect: false };

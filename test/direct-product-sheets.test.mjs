@@ -112,6 +112,8 @@ test('Database permissions, revisions, translations, template validation and pub
     });
     await t.test('template geometry, default uniqueness and concurrent updates are enforced',async()=>{
       await as('amministrazione');const row=(await q('select * from direct_save_sheet_template(null,$1,$2,true,0)',['Template A',defaultLayout()]))[0];
+      const overlap=defaultLayout();overlap.boxes[1]={...overlap.boxes[1],x:overlap.boxes[0].x,y:overlap.boxes[0].y,width:overlap.boxes[0].width,height:overlap.boxes[0].height};
+      assert.ok((await q('select * from direct_save_sheet_template(null,$1,$2,false,0)',['Overlapping boxes',overlap]))[0].id);
       const invalid=defaultLayout();invalid.boxes[0].x=200;await assert.rejects(q('select direct_save_sheet_template(null,$1,$2,false,0)',['Bad',invalid]),/non validi/);
       await assert.rejects(q('select direct_save_sheet_template($1,$2,$3,true,0)',[row.id,'Template A',defaultLayout()]),/altro utente/);
       await q('select direct_save_sheet_template(null,$1,$2,true,0)',['Template B',defaultLayout()]);assert.equal((await q('select count(*)::int as n from direct_product_sheet_templates where is_default'))[0].n,1);

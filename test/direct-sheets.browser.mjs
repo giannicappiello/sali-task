@@ -71,6 +71,8 @@ try{
  await page.waitForFunction(()=>document.querySelector('.direct-template-page').style.backgroundImage.includes('data:image/jpeg'));
  await page.getByRole('button',{name:'+ Titolo Descrizione',exact:true}).click();
  assert.equal(await page.getByRole('button',{name:'Casella Titolo Descrizione',exact:true}).locator('.direct-template-box-content').innerText(),'Descrizione');
+ await page.getByLabel('Maiuscole/minuscole titoli',{exact:true}).selectOption('uppercase');
+ assert.equal(await page.getByRole('button',{name:'Casella Titolo Descrizione',exact:true}).locator('.direct-template-box-content').innerText(),'DESCRIZIONE');
  await page.getByLabel('Colore testo',{exact:true}).fill('#cc0000');
  const photoChecks=page.locator('.direct-template-workspace>aside').first();
  await photoChecks.getByLabel('Titolo · Descrizione',{exact:true}).uncheck();await photoChecks.getByLabel('Foto prodotto',{exact:true}).check();

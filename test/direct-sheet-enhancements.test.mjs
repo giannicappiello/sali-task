@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { jsPDF } from 'jspdf';
 import { SHEET_FIELDS, defaultLayout, titleBox, templateBoxText, resizeBox, generationContent, photoCrop, photoSourceRect } from '../shared/directProductSheet.js';
-import { textBoxLayout } from '../src/pages/Products/directSheetPdf.js';
+import { textBoxLayout, buildDirectSheetPdf } from '../src/pages/Products/directSheetPdf.js';
 import { archiveSheetFiles } from '../shared/directSheetArchive.js';
 import { translateSheetContent } from '../server/direct-product-sheets.js';
 test('Separate titles use localized headings and their own typography',()=>{
@@ -10,6 +10,10 @@ test('Separate titles use localized headings and their own typography',()=>{
  assert.equal(title.kind,'title');assert.notEqual(title.id,box.id);assert.equal(title.bold,true);assert.equal(box.bold,false);
  assert.equal(templateBoxText(title,{__language:'ENG',description:'Body'}),'Description');
  assert.equal(templateBoxText(box,{__language:'ENG',description:'Body'}),'Body');
+ assert.equal(templateBoxText({...title,titleCase:'uppercase'},{__language:'ENG'}),'DESCRIPTION');
+ assert.equal(templateBoxText({...title,titleCase:'lowercase'},{__language:'IT'}),'descrizione');
+ assert.equal(templateBoxText({...title,field:'category',titleCase:'uppercase'},{__language:'FR'}),'CATÉGORIE');
+ assert.equal(templateBoxText({...box,titleCase:'uppercase'},{description:'Body'}),'Body');
  const doc=new jsPDF({unit:'pt'});assert.deepEqual(textBoxLayout(doc,title,layout.pages[0],{__language:'ENG'}).lines,['Description']);
 });
 test('Photo proportions are retained for numeric and edge-limited resizing',()=>{
@@ -41,4 +45,11 @@ test('Photo crop clamps malformed and out-of-bounds rectangles and maps to sourc
  assert.deepEqual(photoSourceRect(400,200,{x:25,y:10,width:50,height:80}),[100,20,200,160]);
  assert.deepEqual(photoCrop({x:99,y:-20,width:200,height:NaN}),{x:99,y:0,width:1,height:100});
  for(const crop of [null,{}, {x:Infinity,y:'wrong',width:-3,height:200}]){const r=photoCrop(crop);assert.ok(r.width>=1&&r.height>=1&&r.x+r.width<=100&&r.y+r.height<=100);}
+});
+
+test('Overlapping title and content boxes do not block PDF generation',async()=>{
+ const base=defaultLayout(),body=base.boxes.find(box=>box.field==='description');
+ const title={...titleBox(body),x:body.x,y:body.y,width:body.width,height:body.height,titleCase:'uppercase'};
+ const result=await buildDirectSheetPdf({layout:{...base,boxes:[body,title]},values:{description:'Short body text',__language:'ENG'}});
+ assert.ok(result.doc.output().includes('DESCRIPTION'));assert.ok(result.doc.output().includes('Short body text'));
 });

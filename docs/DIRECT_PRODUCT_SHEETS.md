@@ -60,3 +60,5 @@ Il gateway accetta scritture esclusivamente sull’endpoint dedicato e su nomi v
 `node test/direct-sheets.browser.mjs` esegue il flusso browser → RPC/SQL → template/allineamenti → traduzione approvata → PDF a due pagine → JPEG per lingua → caricamento firmato → conferma NAS, con browser e NAS locali temporanei. Supporta `PGLITE_MODULE`, `PLAYWRIGHT_MODULE`, `PLAYWRIGHT_CHANNEL` e `DIRECT_SHEETS_BROWSER_OUTPUT` per i runtime di test. Nessuna chiamata AI reale o pubblicazione a provider esterni viene eseguita dai test.
 
 Selezionando una casella foto, **Ritaglia foto** apre una selezione trascinabile con coordinate percentuali modificabili. **Applica ritaglio** aggiorna soltanto la casella selezionata, conservando il ritaglio nel template e applicandolo a anteprima, PDF e JPEG. **Ripristina foto intera** annulla il taglio. La foto dell’anagrafica non viene modificata.
+
+Per ciascuna casella titolo, **Maiuscole/minuscole titoli** permette di scegliere Normale, TUTTO MAIUSCOLO o tutto minuscolo. La scelta segue il titolo nella lingua generata e si applica anche ai titoli selezionati insieme, senza modificare i contenuti.

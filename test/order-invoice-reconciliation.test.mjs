@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { invoiceCoverage, attachInvoiceLinks } from '../src/modules/orders/services/orderInvoiceReconciliation.js';
+import { invoiceCoverage, attachInvoiceLinks, invoicesForMexalDocument } from '../src/modules/orders/services/orderInvoiceReconciliation.js';
 import { getOrderDisplayStatus } from '../src/modules/orders/services/orderDisplayStatus.js';
 const expected=[{code:'A',unit:'1',quantity:10},{code:'B',unit:'1',quantity:2}];
 const invoice=(id,a,b)=>({id,single_order:true,articles:[[1,'A'],[2,'B']],quantities:[[1,a],[2,b]],units:[[1,'1'],[2,'1']]});
@@ -17,3 +17,8 @@ assert.equal(getOrderDisplayStatus({stato_sincronizzazione:'annullato'}).label,'
 assert.equal(getOrderDisplayStatus(order).label,'INVIATO');
 assert.equal(getOrderDisplayStatus({...linked,modulo_ordini:'ph',stato:'aperto'}).label,'APERTO');
 console.log('Invoice coverage, ambiguity, units, deduplication and operational state: PASS');
+
+const refInvoice={id:'series-test',order_references:{numbers:[[1,'0092']],dates:[[1,'20260101']],types:[[1,'OC']],series:[[1,2]]}};
+assert.equal(invoicesForMexalDocument({numero:92,anno:2026,sigla:'OC',serie:2},[refInvoice]).length,1);
+assert.equal(invoicesForMexalDocument({numero:92,anno:2026,sigla:'OC',serie:1},[refInvoice]).length,0);
+assert.equal(invoicesForMexalDocument({numero:92,anno:2025,sigla:'OC',serie:2},[refInvoice]).length,0);

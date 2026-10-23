@@ -39,9 +39,10 @@ export function attachInvoiceLinks(orders, links) {
 export function invoicesForMexalDocument(document, invoices) {
  return (invoices || []).filter(invoice => {
   const refs=invoice.order_references || {};
-  const dates=matrix(refs.dates),types=matrix(refs.types);
+  const dates=matrix(refs.dates),types=matrix(refs.types),series=matrix(refs.series);
   return [...matrix(refs.numbers)].some(([position,number])=>
-   String(number)===String(document.numero)&&
+   String(Number(number))===String(Number(document.numero))&&
+   Number(series.get(position))===Number(document.serie)&&
    String(dates.get(position)||'').slice(0,4)===String(document.anno)&&
    String(types.get(position)||'')===String(document.sigla||'OC'));
  });

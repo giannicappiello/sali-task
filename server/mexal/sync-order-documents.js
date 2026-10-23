@@ -67,11 +67,9 @@ async function updateMissingParentOrders(supabase, orderIds) {
   return missingOrderIds.length;
 }
 
-export async function purgeEvictedOrderDocuments({ supabase, days }) {
-  const cutoff = new Date(Date.now() - Number(days) * 86400000).toISOString();
-  const { data, error } = await supabase.from("ordini_documenti_mexal").delete().eq("stato_operativo", "EVASO").lt("evaso_il", cutoff).select("id,modulo,tipo_documento");
-  if (error) throw error;
-  return { eliminati: data?.length || 0, ordiniph: (data || []).filter((row) => row.modulo === "ORDINIPH").length, ordinipr: (data || []).filter((row) => row.modulo === "ORDINIPR").length, cutoff };
+// Compatibility for older callers: order history has no expiry.
+export async function purgeEvictedOrderDocuments() {
+  return { eliminati: 0, ordiniph: 0, ordinipr: 0, conservazione_permanente: true };
 }
 
 export async function syncOrderDocuments({ supabase, mexal, origin = "manual" }) {
@@ -105,12 +103,7 @@ export async function syncOrderDocuments({ supabase, mexal, origin = "manual" })
   }
   const parentOrdersMissingFromMexal = await updateMissingParentOrders(supabase, (documents || []).map((document) => document.ordine_id));
   cancelled = cancelled || await runStatus(supabase, run.id) !== "running";
-  const { data: maintenance } = cancelled ? { data: null } : await supabase.from("mexal_ordini_manutenzione").select("*").eq("id", 1).maybeSingle();
-  let cleanup = null;
-  if (maintenance?.pulizia_automatica) {
-    cleanup = await purgeEvictedOrderDocuments({ supabase, days: maintenance.giorni_conservazione_evasi });
-    await supabase.from("mexal_ordini_manutenzione").update({ ultima_pulizia_il: new Date().toISOString(), ultimo_riepilogo: cleanup, aggiornato_il: new Date().toISOString() }).eq("id", 1);
-  }
+  const cleanup = { eliminati: 0, conservazione_permanente: true };
   const processed = open + missingFromMexal + failed;
   if (!cancelled) {
     const status = failed ? "completed_with_errors" : "completed";

@@ -576,29 +576,17 @@ async function maintenanceGet(req) {
   return { settings: data };
 }
 
-async function maintenanceSave(req, body) {
+async function maintenanceSave(req) {
   const admin = await createAdmin(req, "integrations.configure");
-  const days = Number(body.settings?.giorni_conservazione_evasi);
-  if (!Number.isInteger(days) || days < 1 || days > 3650) throw Object.assign(new Error("I giorni di conservazione devono essere compresi tra 1 e 3650."), { status: 400 });
-  const { data, error } = await admin.supabase.from("mexal_ordini_manutenzione").upsert({
-    id: 1,
-    giorni_conservazione_evasi: days,
-    pulizia_automatica: Boolean(body.settings?.pulizia_automatica),
-    aggiornato_il: new Date().toISOString(),
-  }).select().single();
+  const { data, error } = await admin.supabase.from("mexal_ordini_manutenzione")
+    .update({ pulizia_automatica: false, aggiornato_il: new Date().toISOString() }).eq("id", 1).select().single();
   if (error) throw error;
-  return { settings: data };
+  return { settings: data, conservazione_permanente: true };
 }
 
 async function maintenancePurge(req) {
-  const admin = await createAdmin(req, "integrations.configure");
-  const { data: settings, error } = await admin.supabase.from("mexal_ordini_manutenzione").select("*").eq("id", 1).single();
-  if (error) throw error;
-  const summary = await purgeEvictedOrderDocuments({ supabase: admin.supabase, days: settings.giorni_conservazione_evasi });
-  const now = new Date().toISOString();
-  await admin.supabase.from("mexal_ordini_manutenzione").update({ ultima_pulizia_il: now, ultimo_riepilogo: summary, aggiornato_il: now }).eq("id", 1);
-  console.info("Mexal order Workspace cleanup", summary);
-  return { summary };
+  await createAdmin(req, "integrations.configure");
+  return { summary: await purgeEvictedOrderDocuments() };
 }
 
 export default async function handler(req, res) {

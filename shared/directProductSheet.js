@@ -60,6 +60,15 @@ export function templateBoxText(box, values) {
 export function titleBox(box) {
   return { ...box, id: crypto.randomUUID(), kind: 'title', y: Math.max(0, box.y - 2.5), height: 2.5, fontSize: 9, bold: true, vertical: 'top', lockAspect: false };
 }
+export function photoCrop(value = {}) {
+  const number = (key, fallback) => Number.isFinite(Number(value?.[key])) ? Number(value[key]) : fallback;
+  const x = Math.max(0, Math.min(99, number('x', 0))), y = Math.max(0, Math.min(99, number('y', 0)));
+  return { x, y, width: Math.max(1, Math.min(100 - x, number('width', 100))), height: Math.max(1, Math.min(100 - y, number('height', 100))) };
+}
+export function photoSourceRect(width, height, crop) {
+  const area = photoCrop(crop);
+  return [width * area.x / 100, height * area.y / 100, width * area.width / 100, height * area.height / 100];
+}
 export function resizeBox(box, width, height, axis = 'width') {
   if (box.field !== 'photo' || !box.lockAspect) return boundBox({ ...box, width, height });
   const requested = axis === 'height' ? height / box.height : width / box.width;

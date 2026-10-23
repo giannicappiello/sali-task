@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { jsPDF } from 'jspdf';
-import { SHEET_FIELDS, defaultLayout, titleBox, templateBoxText, resizeBox, generationContent } from '../shared/directProductSheet.js';
+import { SHEET_FIELDS, defaultLayout, titleBox, templateBoxText, resizeBox, generationContent, photoCrop, photoSourceRect } from '../shared/directProductSheet.js';
 import { textBoxLayout } from '../src/pages/Products/directSheetPdf.js';
 import { archiveSheetFiles } from '../shared/directSheetArchive.js';
 import { translateSheetContent } from '../server/direct-product-sheets.js';
@@ -34,4 +34,11 @@ test('Saving reports each file, continues after failure, and confirms only verif
  assert.deepEqual(results.map(r=>r.status),['saved','unconfirmed','saved']);assert.match(results[1].error,/attesa/);assert.equal(states.length,6);
  const unverified=await archiveSheetFiles({files:[files[0]],prepare:async()=>({}),upload:async()=>{},confirm:async()=>({saved:false,filename:files[0].name})});
  assert.equal(unverified[0].status,'unconfirmed');
+});
+
+test('Photo crop clamps malformed and out-of-bounds rectangles and maps to source pixels',()=>{
+ assert.deepEqual(photoCrop(),{x:0,y:0,width:100,height:100});
+ assert.deepEqual(photoSourceRect(400,200,{x:25,y:10,width:50,height:80}),[100,20,200,160]);
+ assert.deepEqual(photoCrop({x:99,y:-20,width:200,height:NaN}),{x:99,y:0,width:1,height:100});
+ for(const crop of [null,{}, {x:Infinity,y:'wrong',width:-3,height:200}]){const r=photoCrop(crop);assert.ok(r.width>=1&&r.height>=1&&r.x+r.width<=100&&r.y+r.height<=100);}
 });

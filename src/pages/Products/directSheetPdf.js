@@ -1,4 +1,4 @@
-import { TEMPLATE_FIELDS, fieldLabel, generationContent, sheetValues, templateBoxText } from '../../../shared/directProductSheet.js';
+import { TEMPLATE_FIELDS, fieldLabel, generationContent, sheetValues, templateBoxText, photoSourceRect } from '../../../shared/directProductSheet.js';
 
 // The PDF and editor use the same point coordinates, font and wrapping metrics.
 export function textBoxLayout(doc, box, page, values) {
@@ -39,8 +39,9 @@ export async function buildDirectSheetPdf({ layout, values, loadPhoto = photoDat
       const width = page.width * box.width / 100 - 8, height = page.height * box.height / 100 - 8;
       if (box.field === 'photo') {
         if (photo) {
-          const props = doc.getImageProperties(photo), scale = Math.min(width / props.width, height / props.height);
-          doc.addImage(photo, 'JPEG', x + (width - props.width * scale) / 2, y + (height - props.height * scale) / 2, props.width * scale, props.height * scale);
+          const cropped = box.crop ? await croppedPhoto(photo, box.crop) : photo;
+          const props = doc.getImageProperties(cropped), scale = Math.min(width / props.width, height / props.height);
+          doc.addImage(cropped, 'JPEG', x + (width - props.width * scale) / 2, y + (height - props.height * scale) / 2, props.width * scale, props.height * scale);
         } else missing.push('Foto prodotto');
         continue;
       }
@@ -59,6 +60,13 @@ export async function buildDirectSheetPdf({ layout, values, loadPhoto = photoDat
 function imageElement(data) {
   return new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = () => reject(new Error('Immagine del template non valida.')); img.src = data; });
 }
+async function croppedPhoto(data, crop) {
+  const img = await imageElement(data), rect = photoSourceRect(img.width, img.height, crop), canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(rect[2])); canvas.height = Math.max(1, Math.round(rect[3]));
+  const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, ...rect, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', .94);
+}
 export async function renderSheetJpeg({ layout, values, photo, scale = 2 }) {
   if (layout.pages.length !== 1) throw new Error('Il template deve contenere una sola pagina per lingua.');
   const { jsPDF } = await import('jspdf'), measureDoc = new jsPDF({ unit: 'pt' });
@@ -71,7 +79,7 @@ export async function renderSheetJpeg({ layout, values, photo, scale = 2 }) {
     const x = page.width * box.x / 100 + 4, y = page.height * box.y / 100 + 4;
     const width = page.width * box.width / 100 - 8, height = page.height * box.height / 100 - 8;
     if (box.field === 'photo') {
-      if (photoImage) { const ratio = Math.min(width / photoImage.width, height / photoImage.height); ctx.drawImage(photoImage, x + (width - photoImage.width * ratio) / 2, y + (height - photoImage.height * ratio) / 2, photoImage.width * ratio, photoImage.height * ratio); }
+      if (photoImage) { const rect = photoSourceRect(photoImage.width, photoImage.height, box.crop), ratio = Math.min(width / rect[2], height / rect[3]); ctx.drawImage(photoImage, ...rect, x + (width - rect[2] * ratio) / 2, y + (height - rect[3] * ratio) / 2, rect[2] * ratio, rect[3] * ratio); }
       continue;
     }
     const measured = textBoxLayout(measureDoc, box, page, values);

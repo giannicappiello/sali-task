@@ -58,3 +58,5 @@ Il gateway accetta scritture esclusivamente sull’endpoint dedicato e su nomi v
 `node --test test/direct-product-sheets.test.mjs` verifica logica, adapter con risposte simulate, traduzioni, gateway HTTP su NAS temporaneo e migrazioni su PostgreSQL WASM tramite le fixture PGlite esistenti.
 
 `node test/direct-sheets.browser.mjs` esegue il flusso browser → RPC/SQL → template/allineamenti → traduzione approvata → PDF a due pagine → JPEG per lingua → caricamento firmato → conferma NAS, con browser e NAS locali temporanei. Supporta `PGLITE_MODULE`, `PLAYWRIGHT_MODULE`, `PLAYWRIGHT_CHANNEL` e `DIRECT_SHEETS_BROWSER_OUTPUT` per i runtime di test. Nessuna chiamata AI reale o pubblicazione a provider esterni viene eseguita dai test.
+
+Selezionando una casella foto, **Ritaglia foto** apre una selezione trascinabile con coordinate percentuali modificabili. **Applica ritaglio** aggiorna soltanto la casella selezionata, conservando il ritaglio nel template e applicandolo a anteprima, PDF e JPEG. **Ripristina foto intera** annulla il taglio. La foto dell’anagrafica non viene modificata.

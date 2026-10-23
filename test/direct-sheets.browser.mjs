@@ -74,6 +74,10 @@ try{
  await page.getByLabel('Colore testo',{exact:true}).fill('#cc0000');
  const photoChecks=page.locator('.direct-template-workspace>aside').first();
  await photoChecks.getByLabel('Titolo · Descrizione',{exact:true}).uncheck();await photoChecks.getByLabel('Foto prodotto',{exact:true}).check();
+ await page.getByRole('button',{name:'Ritaglia foto',exact:true}).click();
+ await page.getByLabel('Sinistra (%)',{exact:true}).fill('25');await page.getByLabel('Larghezza ritaglio (%)',{exact:true}).fill('50');
+ await page.getByRole('button',{name:'Applica ritaglio',exact:true}).click();
+ await page.waitForFunction(()=>{const svg=document.querySelector('.direct-template-box.selected svg');return svg&&Number(svg.getAttribute('viewBox').split(' ')[0])>0;});
  await page.getByLabel('Blocca proporzioni foto',{exact:true}).check();await page.getByLabel('Larghezza (%)',{exact:true}).fill('13');
  assert.equal(Number(await page.getByLabel('Altezza (%)',{exact:true}).inputValue()),10.5);
  await photoChecks.getByLabel('Foto prodotto',{exact:true}).uncheck();
@@ -107,5 +111,12 @@ try{
  await page.screenshot({path:path.join(out,'jpeg-lingue.png'),fullPage:true});await page.getByRole('button',{name:'Chiudi',exact:true}).click();
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(out,'prodotto-mobile.png'),fullPage:true});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  await page.goto(uiOrigin+'/fixture.html?level=lettura');await page.getByRole('button',{name:'Genera scheda tecnica',exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Compila Scheda',exact:true}).count(),0);assert.equal(await page.getByRole('button',{name:'Template scheda tecnica',exact:true}).count(),0);
- assert.deepEqual(errors,[]);console.log('PASS: UI → SQL revisions → JPEG template alignment → reviewed translation → six-page PDF → signed NAS writes and checksum confirmation → six language JPEGs and individual save outcomes → read-only permissions → mobile.');console.log('Artifacts: '+out);
+ const cropPixel=await page.evaluate(async()=>{
+  const {renderSheetJpeg}=await import('/src/pages/Products/directSheetPdf.js');
+  const {defaultLayout}=await import('/shared/directProductSheet.js');
+  const source=document.createElement('canvas');source.width=200;source.height=100;const ctx=source.getContext('2d');ctx.fillStyle='red';ctx.fillRect(0,0,100,100);ctx.fillStyle='blue';ctx.fillRect(100,0,100,100);
+  const base=defaultLayout(),layout={...base,boxes:[{...base.boxes[0],x:10,y:10,width:80,height:80,crop:{x:50,y:0,width:50,height:100}}]};
+  const data=await renderSheetJpeg({layout,values:{},photo:source.toDataURL('image/jpeg'),scale:1});const img=new Image();img.src=data;await img.decode();const canvas=document.createElement('canvas');canvas.width=img.width;canvas.height=img.height;const out=canvas.getContext('2d');out.drawImage(img,0,0);return [...out.getImageData(Math.floor(img.width/2),Math.floor(img.height/2),1,1).data];
+ });assert.ok(cropPixel[2]>200&&cropPixel[0]<40,'JPEG must contain only the selected blue half');
+ assert.deepEqual(errors,[]);console.log('PASS: UI → SQL revisions → JPEG template alignment → reviewed translation → six-page PDF → signed NAS writes and checksum confirmation → cropped photo, six language JPEGs and individual save outcomes → read-only permissions → mobile.');console.log('Artifacts: '+out);
 }catch(e){console.log('Browser errors:',errors);if(currentPage)await currentPage.screenshot({path:path.join(out,'failure.png'),fullPage:true}).catch(()=>{});throw e;}finally{await browser?.close();await vite?.close();await new Promise(resolve=>nas.close(resolve));await db.close();}

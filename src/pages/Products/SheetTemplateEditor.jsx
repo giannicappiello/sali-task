@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import SheetDialog from './SheetDialog';
+import SheetPhotoCrop, { SheetPhoto } from './SheetPhotoCrop';
 import { alignBoxes, boundBox, defaultLayout, TEMPLATE_FIELDS, sheetValues, templateBoxText, titleBox, resizeBox } from '../../../shared/directProductSheet.js';
 import { discardChanges, getTemplate, listTemplates, saveTemplate, sheetChannelApi } from './directSheetService';
 import { buildDirectSheetPdf, jpegBackground } from './directSheetPdf';
@@ -20,6 +21,7 @@ export default function SheetTemplateEditor({ product, content, onClose, onSaved
   const [template, setTemplate] = useState(initialTemplate), [original, setOriginal] = useState(() => JSON.stringify(initialTemplate()));
   const [templates, setTemplates] = useState([]), [selected, setSelected] = useState([]), [pageId, setPageId] = useState('page-1');
   const [busy, setBusy] = useState(true), [error, setError] = useState(''), [notice, setNotice] = useState(''), [preview, setPreview] = useState(null);
+  const [cropping, setCropping] = useState(null);
   const gesture = useRef(null);
   const layout = template.layout, page = layout.pages.find(p => p.id === pageId) || layout.pages[0];
   const boxes = layout.boxes.filter(b => b.page === page.id), chosen = boxes.filter(b => selected.includes(b.id)), active = chosen[0];
@@ -130,7 +132,7 @@ export default function SheetTemplateEditor({ product, content, onClose, onSaved
             onPointerDown={e => startDrag(e, box)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectBox(box.id, e.shiftKey); } else nudge(e, box); }}>
             <span className="direct-template-box-tag">{box.kind === 'title' ? 'Titolo · ' : ''}{field.label}</span>
             <div className="direct-template-box-content" style={{ textAlign: box.align, justifyContent: box.vertical === 'middle' ? 'center' : box.vertical === 'bottom' ? 'flex-end' : 'flex-start', fontFamily: { helvetica: 'Arial', times: 'Times New Roman', courier: 'Courier New' }[box.font], fontWeight: box.bold ? 'bold' : 'normal', color: box.color, fontSize: `${box.fontSize * 100 / page.width}cqw` }}>
-              {field.image ? values.photo ? <img src={values.photo} alt="Foto prodotto" draggable="false" /> : <span>Foto prodotto</span> : <span>{templateBoxText(box, values)}</span>}
+              {field.image ? values.photo ? <SheetPhoto src={values.photo} crop={box.crop} /> : <span>Foto prodotto</span> : <span>{templateBoxText(box, values)}</span>}
             </div>
             {picked && <span className="direct-template-resize" aria-hidden="true" onPointerDown={e => startDrag(e, box, true)} />}
           </div>;
@@ -138,6 +140,7 @@ export default function SheetTemplateEditor({ product, content, onClose, onSaved
       </div></div>
       <aside><h3>Proprietà {chosen.length > 1 ? `(${chosen.length} caselle)` : ''}</h3>{active ? <fieldset disabled={busy} className="direct-template-properties">
         {['x', 'y', 'width', 'height'].map((key, i) => <label key={key}>{['Posizione X (%)', 'Posizione Y (%)', 'Larghezza (%)', 'Altezza (%)'][i]}<input type="number" step="0.1" min={i < 2 ? 0 : 2} max={100} value={Number(active[key].toFixed(2))} onChange={e => updateBoxes({ [key]: Number(e.target.value) })} /></label>)}
+        {active.field === 'photo' && <><button type="button" disabled={!values.photo} onClick={() => setCropping(active)}>Ritaglia foto</button><button type="button" disabled={!active.crop} onClick={() => changeLayout(current => ({ ...current, boxes: current.boxes.map(b => b.id === active.id ? { ...b, crop: undefined } : b) }))}>Ripristina foto intera</button></>}
         {active.field === 'photo' && <label className="direct-check"><input type="checkbox" checked={Boolean(active.lockAspect)} onChange={e => updateBoxes({ lockAspect: e.target.checked })} />Blocca proporzioni foto</label>}
         {active.kind === 'title' && <p>Il titolo segue la lingua della scheda ed è indipendente dal testo.</p>}
         <label>Pagina caselle<select aria-label="Pagina caselle" value={active.page} onChange={e => { updateBoxes({ page: e.target.value }); setPageId(e.target.value); }}>{layout.pages.map((p, i) => <option key={p.id} value={p.id}>Pagina {i + 1}</option>)}</select></label>
@@ -151,6 +154,7 @@ export default function SheetTemplateEditor({ product, content, onClose, onSaved
       </fieldset> : <p>Seleziona una casella per modificarne posizione e testo.</p>}</aside>
     </div>
     <footer><span>{dirty ? 'Modifiche non salvate' : 'Template salvato o nuovo'}</span><button type="button" disabled={busy} onClick={showPreview}>Anteprima PDF</button><button type="button" className="primary-action" disabled={busy || !template.name.trim() || !layout.boxes.length} onClick={save}>{busy ? 'Operazione in corso…' : 'Salva template'}</button></footer>
+    {cropping && <SheetPhotoCrop src={values.photo} crop={cropping.crop} onClose={() => setCropping(null)} onApply={crop => { changeLayout(current => ({ ...current, boxes: current.boxes.map(b => b.id === cropping.id ? { ...b, crop } : b) })); setCropping(null); }} />}
     {preview && <SheetPdfPreview result={preview} onClose={() => setPreview(null)} />}
   </SheetDialog>;
 }

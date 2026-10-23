@@ -52,13 +52,13 @@ test('Overlapping title and content boxes do not block PDF generation',async()=>
  const base=defaultLayout(),body=base.boxes.find(box=>box.field==='description');
  const title={...titleBox(body),x:body.x,y:body.y,width:body.width,height:body.height,titleCase:'uppercase'};
  const result=await buildDirectSheetPdf({layout:{...base,boxes:[body,title]},values:{description:'Short body text',__language:'ENG'}});
- assert.ok(result.doc.output().includes('DESCRIPTION'));assert.ok(result.doc.output().includes('Short body text'));
+ assert.ok(result.doc.internal.pages.flat().join('\n').includes('DESCRIPTION'));assert.ok(result.doc.internal.pages.flat().join('\n').includes('Short body text'));
 });
 
 test('Overflow is reported without blocking preview generation',async()=>{
  const base=defaultLayout(),body={...base.boxes.find(box=>box.field==='description'),height:2,fontSize:60};
  const result=await buildDirectSheetPdf({layout:{...base,boxes:[body]},values:{description:'This deliberately long text extends beyond its box.'}});
- assert.ok(result.doc.output().startsWith('%PDF-'));assert.equal(result.warnings.length,1);assert.match(result.warnings[0],/fuori casella/);
+ assert.ok(result.doc.output().startsWith('%PDF-'));assert.ok(result.doc.output().includes('/FlateDecode')); assert.equal(result.warnings.length,1);assert.match(result.warnings[0],/fuori casella/);
 });
 
 test('JPEG print density is 300 dpi without recompressing image data or duplicating JFIF',()=>{

@@ -8,11 +8,12 @@ import { archiveSheetFiles } from '../../../shared/directSheetArchive.js';
 function GeneratedFile({ file }) {
   const media = useRef(null), download = useRef(null);
   useEffect(() => { const url = URL.createObjectURL(file.blob); media.current.src = url; download.current.href = url; return () => URL.revokeObjectURL(url); }, [file.blob]);
-  return <section className="direct-generated-file"><strong>{file.name}</strong>{file.name.endsWith('.pdf') ? <iframe ref={media} title={file.name} /> : <img ref={media} alt={`Scheda ${file.languages.join(', ')}`} />}<a ref={download} download={file.name}>Scarica {file.name}</a></section>;
+  return <section className="direct-generated-file"><strong>{file.name}</strong><small>{(file.blob.size / 1000000).toLocaleString('it-IT', { maximumFractionDigits: 2 })} MB</small>{file.name.endsWith('.pdf') ? <iframe ref={media} title={file.name} /> : <img ref={media} alt={`Scheda ${file.languages.join(', ')}`} />}<a ref={download} download={file.name}>Scarica {file.name}</a></section>;
 }
 async function checksum(blob) { return [...new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))].map(b => b.toString(16).padStart(2, '0')).join(''); }
 export default function SheetGenerateDialog({ product, sheet, translations, canArchive, onClose }) {
   const [templates, setTemplates] = useState([]), [templateId, setTemplateId] = useState(''), [format, setFormat] = useState('pdf'), [languages, setLanguages] = useState(['IT']);
+  const [jpegQuality, setJpegQuality] = useState(.94);
   const [results, setResults] = useState([]), [warnings, setWarnings] = useState([]);
   const [files, setFiles] = useState([]), [saved, setSaved] = useState([]), [archives, setArchives] = useState([]), [busy, setBusy] = useState(false), [error, setError] = useState(''), [message, setMessage] = useState('');
   useEffect(() => { let live = true; listTemplates().then(rows => { if (live) { setTemplates(rows); setTemplateId(rows.find(row => row.is_default)?.id || rows[0]?.id || ''); } }).catch(e => { if (live) setError(e.message); }); sheetChannelApi('archives', { productId: product.id }).then(data => { if (live) setArchives(data.files); }).catch(e => { if (live) setError(e.message); }); return () => { live = false; }; }, [product.id]);
@@ -21,7 +22,7 @@ export default function SheetGenerateDialog({ product, sheet, translations, canA
     if (busy) return; setBusy(true); setError(''); setMessage('Caricamento template…'); setWarnings([]); setResults([]); setSaved([]); setFiles([]);
     try {
       const template = await getTemplate(templateId);
-      const generated = await generateSheetFiles({ layout: template.layout, product, sheet, translations, languages, format, onProgress: setMessage, loadPhoto: () => loadSheetPhoto(product.id), loadLogo: loadSheetLogo });
+      const generated = await generateSheetFiles({ layout: template.layout, product, sheet, translations, languages, format, jpegQuality, onProgress: setMessage, loadPhoto: () => loadSheetPhoto(product.id), loadLogo: loadSheetLogo });
       setFiles(generated); setWarnings([...new Set(generated.flatMap(file => file.warnings || []))]);
       if (archive) {
         const outcome = await archiveSheetFiles({ files: generated, onProgress: setMessage,
@@ -49,6 +50,7 @@ export default function SheetGenerateDialog({ product, sheet, translations, canA
         return <label className="direct-check" key={language.code}><input type="checkbox" checked={languages.includes(language.code)} disabled={!valid} onChange={e => { setLanguages(current => SHEET_LANGUAGES.map(l => l.code).filter(code => code === language.code ? e.target.checked : current.includes(code))); changed(); }} />{language.label} ({language.code}){!valid && <small>Da tradurre, aggiornare o approvare in “Compila Scheda”</small>}</label>;
       })}</div>
       <label>Formato<select aria-label="Formato" value={format} onChange={e => { setFormat(e.target.value); changed(); }}><option value="pdf">PDF vettoriale · una pagina per lingua</option><option value="jpeg">JPEG alta risoluzione · 300 dpi</option></select></label>
+      {format === 'jpeg' && <label>Peso JPEG · risoluzione sempre 300 dpi<select aria-label="Peso JPEG" value={jpegQuality} onChange={e => { setJpegQuality(Number(e.target.value)); changed(); }}><option value="0.9">Compatto</option><option value="0.94">Bilanciato</option><option value="0.98">Qualità massima</option></select></label>}
       <p>I nomi vengono ricavati dal codice articolo: {product.codice_mexal || product.codice}{format === 'pdf' ? '.pdf' : '_IT.jpeg, _ENG.jpeg…'}. Una nuova generazione sostituisce il file omonimo sul NAS, conservando la versione precedente.</p>
     </fieldset>
     {error && <p className="direct-sheet-error" role="alert">{error}</p>}{message && <p role="status">{message}</p>}{saved.length > 0 && <p role="status">File verificati sul NAS: {saved.join(', ')}</p>}

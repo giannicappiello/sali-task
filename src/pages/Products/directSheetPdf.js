@@ -27,9 +27,9 @@ export async function photoData(url) {
     return canvas.toDataURL('image/jpeg', .98);
   } finally { bitmap.close(); }
 }
-export async function buildDirectSheetPdf({ layout, values, loadPhoto = photoData, pdfDocument, logo }) {
+export async function buildDirectSheetPdf({ layout, values, loadPhoto = photoData, pdfDocument, logo, deferLogoVector = false }) {
   const { jsPDF } = await import('jspdf');
-  const first = layout.pages[0], doc = pdfDocument || new jsPDF({ unit: 'pt', format: [first.width, first.height], orientation: first.width > first.height ? 'landscape' : 'portrait' });
+  const first = layout.pages[0], doc = pdfDocument || new jsPDF({ compress: true, putOnlyUsedFonts: true, unit: 'pt', format: [first.width, first.height], orientation: first.width > first.height ? 'landscape' : 'portrait' });
   doc.setProperties({ title: `Scheda tecnica ${values.code} - ${values.name}`, subject: 'Scheda tecnica prodotto' });
   const overflow = [], missing = [];
   const hasPhotoBox = layout.boxes.some(b => b.field === 'photo');
@@ -38,7 +38,7 @@ export async function buildDirectSheetPdf({ layout, values, loadPhoto = photoDat
     if (index || pdfDocument) doc.addPage([page.width, page.height], page.width > page.height ? 'landscape' : 'portrait');
     if (page.background) doc.addImage(page.background, 'JPEG', 0, 0, page.width, page.height);
     if(page.logoMask){const r=page.logoMask;doc.setFillColor(255,255,255);doc.rect(page.width*r.x/100,page.height*r.y/100,page.width*r.width/100,page.height*r.height/100,'F');}
-  if(page.logo && logo){const r=page.logo,x=page.width*r.x/100,y=page.height*r.y/100,w=page.width*r.width/100,h=page.height*r.height/100;doc.setFillColor(255,255,255);doc.rect(x,y,w,h,'F');const props=doc.getImageProperties(logo.previewDataUrl),ratio=Math.min(w/props.width,h/props.height);doc.addImage(logo.previewDataUrl,'PNG',x+(w-props.width*ratio)/2,y+(h-props.height*ratio)/2,props.width*ratio,props.height*ratio);}
+  if(page.logo && logo && !deferLogoVector){const r=page.logo,x=page.width*r.x/100,y=page.height*r.y/100,w=page.width*r.width/100,h=page.height*r.height/100;doc.setFillColor(255,255,255);doc.rect(x,y,w,h,'F');const props=doc.getImageProperties(logo.previewDataUrl),ratio=Math.min(w/props.width,h/props.height);doc.addImage(logo.previewDataUrl,'PNG',x+(w-props.width*ratio)/2,y+(h-props.height*ratio)/2,props.width*ratio,props.height*ratio);}
     for (const box of layout.boxes.filter(b => b.page === page.id)) {
       const x = page.width * box.x / 100 + 4, y = page.height * box.y / 100 + 4;
       const width = page.width * box.width / 100 - 8, height = page.height * box.height / 100 - 8;
@@ -72,7 +72,7 @@ async function croppedPhoto(data, crop) {
   ctx.drawImage(img, ...rect, 0, 0, canvas.width, canvas.height);
   return canvas.toDataURL('image/jpeg', .98);
 }
-export async function renderSheetJpeg({ layout, values, photo, scale = SHEET_EXPORT_DPI / 72, logo, onWarning = () => {} }) {
+export async function renderSheetJpeg({ layout, values, photo, scale = SHEET_EXPORT_DPI / 72, logo, jpegQuality = .94, onWarning = () => {} }) {
   if (layout.pages.length !== 1) throw new Error('Il template deve contenere una sola pagina per lingua.');
   const { jsPDF } = await import('jspdf'), measureDoc = new jsPDF({ unit: 'pt' });
   const page = layout.pages[0], canvas = document.createElement('canvas');
@@ -103,9 +103,9 @@ export async function renderSheetJpeg({ layout, values, photo, scale = SHEET_EXP
     });
   }
   if (overflow.length) onWarning(`${values.__language || 'IT'}: testo fuori casella (${[...new Set(overflow)].join(', ')}). La generazione prosegue.`);
-  return canvas.toDataURL('image/jpeg', .98);
+  return canvas.toDataURL('image/jpeg', jpegQuality);
 }
-export async function generateSheetFiles({ layout, product, sheet, translations, languages, format, loadPhoto = photoData, onProgress = () => {}, loadLogo = async () => null }) {
+export async function generateSheetFiles({ layout, product, sheet, translations, languages, format, loadPhoto = photoData, onProgress = () => {}, loadLogo = async () => null, jpegQuality = .94 }) {
   if (layout.pages.length !== 1) throw new Error('Il template deve contenere una sola pagina per lingua.');
   if (!languages.length || new Set(languages).size !== languages.length) throw new Error('Seleziona almeno una lingua, senza duplicati.');
   if (!['jpeg', 'pdf'].includes(format)) throw new Error('Formato file non valido.');
@@ -121,11 +121,11 @@ export async function generateSheetFiles({ layout, product, sheet, translations,
     await new Promise(resolve => setTimeout(resolve, 0));
     const warnings = [];
     if (format === 'pdf') {
-      const result = await buildDirectSheetPdf({ layout, values: { ...values, ...content, __language: language }, loadPhoto: async () => photo, pdfDocument, logo });
+      const result = await buildDirectSheetPdf({ layout, values: { ...values, ...content, __language: language }, loadPhoto: async () => photo, pdfDocument, logo, deferLogoVector: true });
       pdfDocument = result.doc;
       warnings.push(...result.warnings.map(message => language + ': ' + message));
       pages.push({ language, warnings });
-    } else pages.push({ language, warnings, data: await renderSheetJpeg({ layout, values: { ...values, ...content, __language: language }, photo, logo, onWarning: message => warnings.push(message) }) });
+    } else pages.push({ language, warnings, data: await renderSheetJpeg({ layout, values: { ...values, ...content, __language: language }, photo, logo, jpegQuality, onWarning: message => warnings.push(message) }) });
   }
   onProgress('Preparazione file…');
   if (format === 'jpeg') return Promise.all(pages.map(async page => ({ name: `${code}_${page.language}.jpeg`, languages: [page.language], warnings: page.warnings, blob: new Blob([jpegWithDpi(await (await fetch(page.data)).arrayBuffer())], { type: 'image/jpeg' }) })));

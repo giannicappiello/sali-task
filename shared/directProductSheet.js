@@ -50,7 +50,7 @@ export function defaultLayout() {
   return { pages: [{ id: 'page-1', width: 595.28, height: 841.89, background: '' }], boxes: TEMPLATE_FIELDS.map(({ key, image }, index) => ({
     id: key, field: key, page: 'page-1', x: index === 0 ? 68 : 6, y: index === 0 || key === 'name' ? 3 : index < 6 ? 9.5 + (index - 2) * 4 : 27 + (index - 6) * 11.5,
     width: index === 0 ? 26 : index < 6 ? 60 : 88, height: image ? 21 : key === 'name' ? 6.4 : index < 6 ? 4 : 11,
-    font: 'helvetica', fontSize: key === 'name' ? 14 : index < 6 ? 9 : 10, bold: key === 'name', color: '#172033', align: 'left', vertical: 'top', showLabel: !image && key !== 'name',
+    font: 'helvetica', fontSize: key === 'name' ? 14 : index < 6 ? 9 : 10, bold: key === 'name', color: '#172033', align: 'left', vertical: 'top', showLabel: false,
   })) };
 }
 export function boundBox(box) {

@@ -5,7 +5,7 @@ export function textBoxLayout(doc, box, page, values) {
   const width = page.width * box.width / 100 - 8, height = page.height * box.height / 100 - 8;
   doc.setFont(box.font, box.bold ? 'bold' : 'normal'); doc.setFontSize(box.fontSize);
   const value = String(values[box.field] || '');
-  const text = (box.showLabel ? `${fieldLabel(box.field, values.__language)}\n` : '') + value;
+  const text = value;
   const lines = doc.splitTextToSize(text, Math.max(1, width));
   const lineHeight = box.fontSize * 1.2, textHeight = lines.length * lineHeight;
   const overflow = textHeight > height + 0.01 || lines.some(line => doc.getTextWidth(line) > width + 0.1);

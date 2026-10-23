@@ -129,7 +129,7 @@ export default function SheetTemplateEditor({ product, content, onClose, onSaved
             onPointerDown={e => startDrag(e, box)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectBox(box.id, e.shiftKey); } else nudge(e, box); }}>
             <span className="direct-template-box-tag">{field.label}</span>
             <div className="direct-template-box-content" style={{ textAlign: box.align, justifyContent: box.vertical === 'middle' ? 'center' : box.vertical === 'bottom' ? 'flex-end' : 'flex-start', fontFamily: { helvetica: 'Arial', times: 'Times New Roman', courier: 'Courier New' }[box.font], fontWeight: box.bold ? 'bold' : 'normal', color: box.color, fontSize: `${box.fontSize * 100 / page.width}cqw` }}>
-              {field.image ? values.photo ? <img src={values.photo} alt="Foto prodotto" draggable="false" /> : <span>Foto prodotto</span> : <span>{box.showLabel ? `${field.label}\n` : ''}{values[box.field] || `[${field.label}]`}</span>}
+              {field.image ? values.photo ? <img src={values.photo} alt="Foto prodotto" draggable="false" /> : <span>Foto prodotto</span> : <span>{values[box.field] || ''}</span>}
             </div>
             {picked && <span className="direct-template-resize" aria-hidden="true" onPointerDown={e => startDrag(e, box, true)} />}
           </div>;
@@ -144,7 +144,6 @@ export default function SheetTemplateEditor({ product, content, onClose, onSaved
         <label>Allineamento verticale testo<select aria-label="Allineamento verticale testo" value={active.vertical} onChange={e => updateBoxes({ vertical: e.target.value })}><option value="top">In alto</option><option value="middle">Al centro</option><option value="bottom">In basso</option></select></label>
         <label>Colore testo<input type="color" value={active.color} onChange={e => updateBoxes({ color: e.target.value })} /></label>
         <label className="direct-check"><input type="checkbox" checked={active.bold} onChange={e => updateBoxes({ bold: e.target.checked })} />Grassetto</label>
-        <label className="direct-check"><input type="checkbox" checked={active.showLabel} onChange={e => updateBoxes({ showLabel: e.target.checked })} />Mostra etichetta campo nel PDF</label>
         <button type="button" onClick={() => { changeLayout(current => ({ ...current, boxes: current.boxes.filter(b => !selected.includes(b.id)) })); setSelected([]); }}>Elimina caselle selezionate</button>
       </fieldset> : <p>Seleziona una casella per modificarne posizione e testo.</p>}</aside>
     </div>

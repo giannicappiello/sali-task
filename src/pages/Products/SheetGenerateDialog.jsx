@@ -13,16 +13,16 @@ function GeneratedFile({ file }) {
 async function checksum(blob) { return [...new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))].map(b => b.toString(16).padStart(2, '0')).join(''); }
 export default function SheetGenerateDialog({ product, sheet, translations, canArchive, onClose }) {
   const [templates, setTemplates] = useState([]), [templateId, setTemplateId] = useState(''), [format, setFormat] = useState('pdf'), [languages, setLanguages] = useState(['IT']);
-  const [results, setResults] = useState([]);
+  const [results, setResults] = useState([]), [warnings, setWarnings] = useState([]);
   const [files, setFiles] = useState([]), [saved, setSaved] = useState([]), [archives, setArchives] = useState([]), [busy, setBusy] = useState(false), [error, setError] = useState(''), [message, setMessage] = useState('');
   useEffect(() => { let live = true; listTemplates().then(rows => { if (live) { setTemplates(rows); setTemplateId(rows.find(row => row.is_default)?.id || rows[0]?.id || ''); } }).catch(e => { if (live) setError(e.message); }); sheetChannelApi('archives', { productId: product.id }).then(data => { if (live) setArchives(data.files); }).catch(e => { if (live) setError(e.message); }); return () => { live = false; }; }, [product.id]);
-  function changed() { setResults([]); setFiles([]); setSaved([]); setMessage(''); setError(''); }
+  function changed() { setWarnings([]); setResults([]); setFiles([]); setSaved([]); setMessage(''); setError(''); }
   async function generate(archive) {
-    if (busy) return; setBusy(true); setError(''); setMessage('Caricamento template…'); setResults([]); setSaved([]); setFiles([]);
+    if (busy) return; setBusy(true); setError(''); setMessage('Caricamento template…'); setWarnings([]); setResults([]); setSaved([]); setFiles([]);
     try {
       const template = await getTemplate(templateId);
       const generated = await generateSheetFiles({ layout: template.layout, product, sheet, translations, languages, format, onProgress: setMessage, loadPhoto: async () => (await sheetChannelApi('photo', { productId: product.id })).dataUrl });
-      setFiles(generated);
+      setFiles(generated); setWarnings([...new Set(generated.flatMap(file => file.warnings || []))]);
       if (archive) {
         const outcome = await archiveSheetFiles({ files: generated, onProgress: setMessage,
           onResult: result => { setResults(current => [...current.filter(r => r.name !== result.name), result]); if (result.status === 'saved') setSaved(current => [...current, result.name]); },
@@ -53,6 +53,7 @@ export default function SheetGenerateDialog({ product, sheet, translations, canA
     </fieldset>
     {error && <p className="direct-sheet-error" role="alert">{error}</p>}{message && <p role="status">{message}</p>}{saved.length > 0 && <p role="status">File verificati sul NAS: {saved.join(', ')}</p>}
     <footer><button type="button" disabled={busy || !templateId || !languages.length} onClick={() => void generate(false)}>Anteprima</button>{canArchive && <button type="button" className="primary-action" disabled={busy || !templateId || !languages.length} onClick={() => void generate(true)}>{busy ? 'Generazione e salvataggio…' : 'Genera e salva sul NAS'}</button>}</footer>
+    {warnings.length > 0 && <section aria-label="Avvisi impaginazione" className="direct-sheet-notice" role="status"><strong>Avvisi non bloccanti</strong><ul>{warnings.map(message => <li key={message}>{message}</li>)}</ul></section>}
     {results.length > 0 && <section aria-label="Esiti salvataggio" aria-live="polite"><h3>Esiti salvataggio</h3><ul>{results.map(result => <li key={result.name}><strong>{result.name}</strong>: {result.status === 'saved' ? 'Salvato e verificato sul NAS' : result.status === 'pending' ? 'Salvataggio in corso…' : result.status === 'unconfirmed' ? 'Salvataggio non confermato: ' + result.error : 'Non salvato: ' + result.error}</li>)}</ul></section>}
     <div className="direct-generated-files">{files.map((file, index) => <GeneratedFile key={`${file.name}-${index}-${file.blob.size}`} file={file} />)}</div>
     {archives.length > 0 && <section><h3>Ultimi file salvati sul NAS</h3><ul>{archives.map(file => <li key={file.id}><a href={file.url} target="_blank" rel="noreferrer">{file.filename}</a> · {file.languages.join(', ')} · rev. {file.source_revision}</li>)}</ul></section>}

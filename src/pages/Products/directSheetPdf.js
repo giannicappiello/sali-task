@@ -54,8 +54,8 @@ export async function buildDirectSheetPdf({ layout, values, loadPhoto = photoDat
       doc.text(measure.lines, tx, y + offset, { baseline: 'top', align: box.align, lineHeightFactor: 1.2, maxWidth: width });
     }
   }
-  if (overflow.length) throw new Error(`Testo fuori casella: ${[...new Set(overflow)].join(', ')}. Amplia le caselle o riduci il carattere nel template.`);
-  return { doc, missing: [...new Set(missing)] };
+  const warnings = overflow.length ? [`Testo fuori casella: ${[...new Set(overflow)].join(', ')}. La generazione prosegue.`] : [];
+  return { doc, missing: [...new Set(missing)], warnings };
 }
 function imageElement(data) {
   return new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = () => reject(new Error('Immagine del template non valida.')); img.src = data; });
@@ -67,7 +67,7 @@ async function croppedPhoto(data, crop) {
   ctx.drawImage(img, ...rect, 0, 0, canvas.width, canvas.height);
   return canvas.toDataURL('image/jpeg', .94);
 }
-export async function renderSheetJpeg({ layout, values, photo, scale = 2 }) {
+export async function renderSheetJpeg({ layout, values, photo, scale = 2, onWarning = () => {} }) {
   if (layout.pages.length !== 1) throw new Error('Il template deve contenere una sola pagina per lingua.');
   const { jsPDF } = await import('jspdf'), measureDoc = new jsPDF({ unit: 'pt' });
   const page = layout.pages[0], canvas = document.createElement('canvas');
@@ -95,7 +95,7 @@ export async function renderSheetJpeg({ layout, values, photo, scale = 2 }) {
       } else ctx.fillText(line, box.align === 'right' ? x + width : box.align === 'center' ? x + width / 2 : x, yy);
     });
   }
-  if (overflow.length) throw new Error(`${values.__language || 'IT'}: testo fuori casella (${overflow.join(', ')}). Modifica il template prima di generare.`);
+  if (overflow.length) onWarning(`${values.__language || 'IT'}: testo fuori casella (${[...new Set(overflow)].join(', ')}). La generazione prosegue.`);
   return canvas.toDataURL('image/jpeg', .94);
 }
 export async function generateSheetFiles({ layout, product, sheet, translations, languages, format, loadPhoto = photoData, onProgress = () => {} }) {
@@ -110,15 +110,16 @@ export async function generateSheetFiles({ layout, product, sheet, translations,
   for (const [index, { language, content }] of contents.entries()) {
     onProgress(`Generazione ${language} · ${index + 1}/${contents.length}…`);
     await new Promise(resolve => setTimeout(resolve, 0));
-    pages.push({ language, data: await renderSheetJpeg({ layout, values: { ...values, ...content, __language: language }, photo }) });
+    const warnings = [];
+    pages.push({ language, warnings, data: await renderSheetJpeg({ layout, values: { ...values, ...content, __language: language }, photo, onWarning: message => warnings.push(message) }) });
   }
   onProgress('Preparazione file…');
-  if (format === 'jpeg') return Promise.all(pages.map(async page => ({ name: `${code}_${page.language}.jpeg`, languages: [page.language], blob: await (await fetch(page.data)).blob() })));
+  if (format === 'jpeg') return Promise.all(pages.map(async page => ({ name: `${code}_${page.language}.jpeg`, languages: [page.language], warnings: page.warnings, blob: await (await fetch(page.data)).blob() })));
   const { jsPDF } = await import('jspdf'), page = layout.pages[0];
   const doc = new jsPDF({ unit: 'pt', format: [page.width, page.height], orientation: page.width > page.height ? 'landscape' : 'portrait' });
   doc.setProperties({ title: `${code} - Scheda tecnica - ${languages.join(', ')}` });
   pages.forEach((item, index) => { if (index) doc.addPage([page.width, page.height], page.width > page.height ? 'landscape' : 'portrait'); doc.addImage(item.data, 'JPEG', 0, 0, page.width, page.height); });
-  return [{ name: `${code}.pdf`, languages, blob: doc.output('blob') }];
+  return [{ name: `${code}.pdf`, languages, warnings: pages.flatMap(item => item.warnings), blob: doc.output('blob') }];
 }
 export async function jpegBackground(file) {
   if (file.type !== 'image/jpeg' || file.size > 10 * 1024 * 1024) throw new Error('Carica un JPEG di massimo 10 MB.');

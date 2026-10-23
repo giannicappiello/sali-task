@@ -9,6 +9,7 @@ export function SheetPdfPreview({ result, onClose }) {
   const [url] = useState(() => URL.createObjectURL(result.doc.output('blob')));
   useEffect(() => () => URL.revokeObjectURL(url), [url]);
   return <SheetDialog title="Anteprima scheda tecnica" wide onClose={onClose}>
+    {result.warnings?.map(message => <p key={message} role="status" className="direct-sheet-notice">Avviso: {message}</p>)}
     {result.missing.length > 0 && <p className="direct-sheet-notice">Dati assenti nell’anagrafica o nella scheda: {result.missing.join(', ')}.</p>}
     <iframe className="direct-sheet-pdf" title="Anteprima PDF scheda tecnica" src={url} />
     <footer><button type="button" onClick={() => result.doc.save('scheda-tecnica.pdf')}>Scarica PDF</button></footer>

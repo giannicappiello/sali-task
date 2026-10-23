@@ -89,7 +89,7 @@ try{
  const positions=await page.locator('.direct-template-box.selected').evaluateAll(nodes=>nodes.map(n=>n.style.left));assert.deepEqual(positions,['6%','6%','6%']);
  await page.getByLabel('Allineamento testo',{exact:true}).selectOption('center');await page.getByLabel('Allineamento verticale testo',{exact:true}).selectOption('middle');
  while(await checks.locator('input:checked').count())await checks.locator('input:checked').first().uncheck();await checks.getByLabel('Descrizione',{exact:true}).check();
- await page.getByLabel('Altezza (%)',{exact:true}).fill('2');await page.getByLabel('Dimensione testo (pt)',{exact:true}).fill('60');await page.getByRole('button',{name:'Anteprima PDF',exact:true}).click();await page.getByRole('alert').filter({hasText:'fuori casella'}).waitFor();
+ await page.getByLabel('Altezza (%)',{exact:true}).fill('2');await page.getByLabel('Dimensione testo (pt)',{exact:true}).fill('60');await page.getByRole('button',{name:'Anteprima PDF',exact:true}).click();await page.getByRole('status').filter({hasText:'Testo fuori casella'}).waitFor();await page.getByTitle('Anteprima PDF scheda tecnica',{exact:true}).waitFor();await page.getByRole('button',{name:'Chiudi',exact:true}).last().click();
  await page.getByLabel('Altezza (%)',{exact:true}).fill('11');await page.getByLabel('Dimensione testo (pt)',{exact:true}).fill('10');await page.getByRole('button',{name:'Salva template',exact:true}).click();await page.getByText('Template salvato.',{exact:true}).waitFor();
  await page.screenshot({path:path.join(out,'editor.png'),fullPage:true});
  const defaultId=await page.getByLabel('Template salvati',{exact:true}).inputValue();assert.ok(defaultId);
@@ -108,7 +108,16 @@ try{
  await page.getByRole('button',{name:'Chiudi',exact:true}).click();
  await page.getByRole('button',{name:'Genera scheda tecnica',exact:true}).click();await page.waitForFunction(id=>document.querySelector('select[aria-label="Template"]')?.value===id,defaultId); for(const language of SHEET_LANGUAGES.filter(l=>l.code!=='IT'))await page.getByRole('checkbox',{name:language.label+' ('+language.code+')',exact:true}).check();await page.getByRole('button',{name:'Genera e salva sul NAS',exact:true}).click();await page.getByText('Salvataggio sul NAS completato e verificato.',{exact:true}).waitFor();
  const pdf=await PDFDocument.load(await readFile(path.join(nasRoot,'Schede Tecniche','IT0492.pdf')));assert.equal(pdf.getPageCount(),6);await page.getByRole('region',{name:'Esiti salvataggio',exact:true}).getByText('IT0492.pdf:',{exact:false}).waitFor();assert.equal(await page.getByRole('button',{name:'Genera e salva sul NAS',exact:true}).isEnabled(),true);
+ await page.evaluate(async id=>{
+  const post=async(url,body)=>{const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const result=await response.json();if(result.error)throw Error(result.error.message);return result.data;};
+  const template=await post('/__table',{table:'direct_product_sheet_templates',columns:'*',filters:[['id',id]],single:true,level:'amministrazione'});
+  template.layout.boxes=template.layout.boxes.map(box=>box.field==='description'&&box.kind!=='title'?{...box,height:2,fontSize:60}:box);
+  await post('/__rpc',{name:'direct_save_sheet_template',args:{target_id:id,template_name:template.name,template_layout:template.layout,make_default:true,expected_revision:template.revision},level:'amministrazione'});
+ },defaultId);
  await page.screenshot({path:path.join(out,'pdf-lingue.png'),fullPage:true});await page.getByLabel('Formato',{exact:true}).selectOption('jpeg');await page.getByRole('button',{name:'Genera e salva sul NAS',exact:true}).click();await page.getByText('Salvataggio sul NAS completato e verificato.',{exact:true}).waitFor();
+ await page.getByRole('status',{name:'Avvisi impaginazione',exact:true}).waitFor();
+ assert.equal(await page.getByRole('status',{name:'Avvisi impaginazione',exact:true}).locator('li').count(),6);
+ assert.equal(await page.getByRole('region',{name:'Esiti salvataggio',exact:true}).getByText('Salvato e verificato sul NAS',{exact:false}).count(),6);
  for(const lang of SHEET_LANGUAGES.map(l=>l.code))assert.equal((await readFile(path.join(nasRoot,'Schede Tecniche',`IT0492_${lang}.jpeg`))).subarray(0,3).toString('hex'),'ffd8ff');
  await page.screenshot({path:path.join(out,'jpeg-lingue.png'),fullPage:true});await page.getByRole('button',{name:'Chiudi',exact:true}).click();
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(out,'prodotto-mobile.png'),fullPage:true});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
@@ -120,5 +129,5 @@ try{
   const base=defaultLayout(),layout={...base,boxes:[{...base.boxes[0],x:10,y:10,width:80,height:80,crop:{x:50,y:0,width:50,height:100}}]};
   const data=await renderSheetJpeg({layout,values:{},photo:source.toDataURL('image/jpeg'),scale:1});const img=new Image();img.src=data;await img.decode();const canvas=document.createElement('canvas');canvas.width=img.width;canvas.height=img.height;const out=canvas.getContext('2d');out.drawImage(img,0,0);return [...out.getImageData(Math.floor(img.width/2),Math.floor(img.height/2),1,1).data];
  });assert.ok(cropPixel[2]>200&&cropPixel[0]<40,'JPEG must contain only the selected blue half');
- assert.deepEqual(errors,[]);console.log('PASS: UI → SQL revisions → JPEG template alignment → reviewed translation → six-page PDF → signed NAS writes and checksum confirmation → cropped photo, six language JPEGs and individual save outcomes → read-only permissions → mobile.');console.log('Artifacts: '+out);
+ assert.deepEqual(errors,[]);console.log('PASS: UI → SQL revisions → JPEG template alignment → reviewed translation → six-page PDF → signed NAS writes and checksum confirmation → cropped photo, non-blocking overflow warnings, six language JPEGs and individual save outcomes → read-only permissions → mobile.');console.log('Artifacts: '+out);
 }catch(e){console.log('Browser errors:',errors);if(currentPage)await currentPage.screenshot({path:path.join(out,'failure.png'),fullPage:true}).catch(()=>{});throw e;}finally{await browser?.close();await vite?.close();await new Promise(resolve=>nas.close(resolve));await db.close();}

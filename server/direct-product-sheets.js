@@ -1,10 +1,11 @@
 /* global process */
 import { createClient } from '@supabase/supabase-js';
 import { SHEET_FIELDS, SHEET_LANGUAGES, generationContent, sheetStatus } from '../shared/directProductSheet.js';
-import { decryptSecret, safeError, safeFetch } from './crm/digital-security.js';
+import { decryptSecret, safeError } from './crm/digital-security.js';
 import { publishSheetToChannel } from './direct-sheet-publishers.js';
 import { signSheetArchive } from '../hosting/document-gateway/generated-sheets.mjs';
 import { signedUrl, filePath } from './document-gateway.js';
+import { loadNasProductPhotos, loadNasBrandLogo } from './direct-product-photos.js';
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -50,26 +51,26 @@ function archiveSigning(job, method) {
   if (!process.env.DOCUMENT_GATEWAY_URL || String(process.env.DOCUMENT_GATEWAY_SECRET || '').length < 32) throw fail('Gateway NAS non configurato.', 503);
   return signSheetArchive({ baseUrl: process.env.DOCUMENT_GATEWAY_URL, secret: process.env.DOCUMENT_GATEWAY_SECRET, filename: job.filename, sha256: job.sha256, size: job.size_bytes, revision: job.source_revision, issuedAt: job.issued_at, method });
 }
-export function createSheetHandler({ identity = sheetIdentity, publisher = publishSheetToChannel, translate = translateSheetContent, fetcher = fetch, photoFetcher = safeFetch, onError = error => console.error('direct_product_sheets', error.code || error.name || 'unknown') } = {}) {
+export function createSheetHandler({ identity = sheetIdentity, publisher = publishSheetToChannel, translate = translateSheetContent, fetcher = fetch, photoSources = loadNasProductPhotos, logoSource = loadNasBrandLogo, onError = error => console.error('direct_product_sheets', error.code || error.name || 'unknown') } = {}) {
   return async (req, res) => {
     res.setHeader('Cache-Control', 'private, no-store');
     if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo non consentito.' });
     const body = req.body || {};
     try {
-      const known = ['targets','publish','translate','prepare_archive','confirm_archive','archives','photo'];
+      const known = ['targets','publish','translate','prepare_archive','confirm_archive','archives','photo','photos','logo'];
       if (!known.includes(body.action)) throw fail('Operazione non valida.');
-      const auth = await identity(req, ['targets','publish'].includes(body.action), ['archives','photo'].includes(body.action));
+      const auth = await identity(req, ['targets','publish'].includes(body.action), ['archives','photo','photos','logo'].includes(body.action));
       const { db, reader, actorId } = auth;
+      if (body.action === 'logo') return res.status(200).json(await logoSource(fetcher));
+      if (body.action === 'photos') return res.status(200).json({ photos: Object.fromEntries((await photoSources(fetcher)).map(photo => [photo.code, { url: photo.url, source: 'NAS originale' }])) });
       if (!uuid.test(String(body.productId || ''))) throw fail('Prodotto non valido.');
       if (body.action === 'photo') {
         const product = await result(db.from('prodotti').select('*').eq('id',body.productId).single());
         if (!/^(IT|MKT)/i.test(product.codice_mexal || product.codice || '')) throw fail('Prodotto Direct non valido.');
-        const url = product.immagine_catalogo_url || product.immagine_url;
-        if (!url) throw fail('Foto prodotto non presente in anagrafica.',404);
-        const response = await photoFetcher(url,{binary:true,maxBytes:2*1024*1024,redirects:2});
-        const mime = String(response.headers?.['content-type'] || '').split(';')[0];
-        if (!response.ok || !['image/jpeg','image/png','image/webp','image/gif'].includes(mime)) throw fail('Foto anagrafica non disponibile per la generazione.',502);
-        return res.status(200).json({ dataUrl:`data:${mime};base64,${response.data.toString('base64')}` });
+        const code=String(product.codice_mexal || product.codice || '').trim().toUpperCase();
+        const photo=(await photoSources(fetcher)).find(item=>item.code===code);
+        if(!photo)throw fail('Foto originale NAS non presente: serve un file chiamato esattamente '+code+' nella cartella FotoProdotti.',404);
+        return res.status(200).json({url:photo.url,source:'NAS originale'});
       }
       if (body.action === 'targets') {
         const mappings = await result(reader.from('crm_product_mappings').select('id,connection_id,marketplace,external_sku,crm_external_connections!inner(nome,provider_code,abilitata)').eq('product_id', body.productId).eq('status','matched').eq('crm_external_connections.abilitata',true).limit(100));

@@ -4,6 +4,7 @@ import { createReadStream } from "node:fs";
 import { lstat, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 import { createGeneratedSheetHandler } from './generated-sheets.mjs';
+import { productPhotos } from './product-photos.mjs';
 
 const PORT = Number(process.env.DOC_GATEWAY_PORT || 8787);
 const HOST = "127.0.0.1";
@@ -104,11 +105,15 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/health") return json(res, 200, { ok: true, service: "progre-document-gateway" });
     if (req.method !== "GET" && req.method !== "HEAD") return json(res, 405, { error: "Metodo non consentito." });
     if (!authorized(url)) return json(res, 403, { error: "Collegamento non valido o scaduto." });
+    if (url.pathname === "/product-logo") { await resolveSafeFile("FotoProdotti/Salidischia.pdf"); await resolveSafeFile("FotoProdotti/Salidischia-preview.png"); return json(res,200,{available:true}); }
+    if (url.pathname === "/product-photos") return json(res, 200, { photos: await productPhotos(ROOT) });
     if (url.pathname === "/manifest") {
       const files = await scanDirectory(await realpath(ROOT));
       return json(res, 200, { generatedAt: new Date().toISOString(), count: files.length, files });
     }
     if (url.pathname.startsWith("/files/")) {
+      const origin=req.headers.origin;
+      if(origin&&String(process.env.DOC_GATEWAY_SHEET_ORIGINS||'https://workspace.progre.it').split(',').map(value=>value.trim()).includes(origin)){res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin');}
       const relative = safeRelativePath(url.pathname.slice("/files/".length));
       const { fileReal, stats } = await resolveSafeFile(relative);
       if (req.method === "HEAD") { res.writeHead(200, { "Content-Length": stats.size, "Content-Type": MIME.get(path.extname(fileReal).toLowerCase()) || "application/octet-stream", "Accept-Ranges": "bytes" }); return res.end(); }

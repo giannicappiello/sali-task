@@ -38,7 +38,7 @@ export function sheetValues(product, content = {}) {
   return { ...emptySheet(), ...content, name: mexalName || product?.nome || '', code: product?.codice_mexal || product?.codice || '',
     ean: product?.ean || '', category: content.category ?? product?.categoria_mexal ?? '',
     format: product?.formato || raw.formato || product?.confezione || raw.confezione || '',
-    photo: product?.immagine_catalogo_url || product?.immagine_url || '' };
+    photo: product?.nas_photo_url || '' };
 }
 export function sheetText(content) {
   return SHEET_FIELDS.filter(({ key }) => content?.[key]?.trim()).map(({ key, label }) => `${label}\n${content[key].trim()}`).join('\n\n');

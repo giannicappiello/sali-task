@@ -6,7 +6,7 @@ import { loadDirectProductCatalog } from "../../modules/orders/services/directPr
 import "../../modules/orders/orders-module.css";
 import { useAuth } from '../../contexts/AuthContext';
 import DirectProductSheet, { SheetStatus } from './DirectProductSheet';
-import { getSheet, listSheetSummaries } from './directSheetService';
+import { getSheet, listSheetSummaries, sheetChannelApi } from './directSheetService';
 import { sheetStatus } from '../../../shared/directProductSheet.js';
 import './direct-sheets.css';
 const SheetTemplateEditor = lazy(() => import('./SheetTemplateEditor'));
@@ -79,7 +79,8 @@ export default function Products() {
   async function loadProducts() {
     try {
       const catalog = await loadDirectProductCatalog(supabase);
-      setProducts(catalog.products);
+      const source = await sheetChannelApi('photos', {}).catch(() => ({photos:{}}));
+      setProducts(catalog.products.map(product=>{const url=source.photos[String(product.codice_mexal||product.codice||'').trim().toUpperCase()]?.url||null;return {...product,nas_photo_url:url,immagine_catalogo_url:url,immagine_url:null};}));
       setImplantCount(catalog.implants.length);
     } catch (error) {
       console.error("Prodotti Mexal:", error.message);

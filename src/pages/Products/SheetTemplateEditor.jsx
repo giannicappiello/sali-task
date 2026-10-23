@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import SheetDialog from './SheetDialog';
 import SheetPhotoCrop, { SheetPhoto } from './SheetPhotoCrop';
-import { alignBoxes, boundBox, defaultLayout, TEMPLATE_FIELDS, sheetValues, templateBoxText, titleBox, resizeBox } from '../../../shared/directProductSheet.js';
-import { discardChanges, getTemplate, listTemplates, saveTemplate, sheetChannelApi } from './directSheetService';
+import { alignBoxes, boundBox, defaultLayout, TEMPLATE_FIELDS, sheetValues, templateBoxText, titleBox, resizeBox, photoCrop } from '../../../shared/directProductSheet.js';
+import { discardChanges, getTemplate, listTemplates, saveTemplate, loadSheetPhoto, loadSheetLogo } from './directSheetService';
 import { buildDirectSheetPdf, jpegBackground } from './directSheetPdf';
 
 export function SheetPdfPreview({ result, onClose }) {
@@ -22,11 +22,16 @@ export default function SheetTemplateEditor({ product, content, onClose, onSaved
   const [template, setTemplate] = useState(initialTemplate), [original, setOriginal] = useState(() => JSON.stringify(initialTemplate()));
   const [templates, setTemplates] = useState([]), [selected, setSelected] = useState([]), [pageId, setPageId] = useState('page-1');
   const [busy, setBusy] = useState(true), [error, setError] = useState(''), [notice, setNotice] = useState(''), [preview, setPreview] = useState(null);
+  const [brandLogo, setBrandLogo] = useState(null);
+  useEffect(()=>{let live=true;loadSheetLogo().then(logo=>{if(live)setBrandLogo(logo);}).catch(()=>{});return()=>{live=false;};},[]);
+  const [originalPhoto, setOriginalPhoto] = useState('');
+  useEffect(() => { let live=true; loadSheetPhoto(product.id).then(photo=>{if(live)setOriginalPhoto(photo);}).catch(()=>{});return()=>{live=false;}; }, [product.id]);
   const [cropping, setCropping] = useState(null);
-  const gesture = useRef(null);
+  const gesture = useRef(null), logoGesture = useRef(null);
+  function updateLogo(patch) { changeLayout(current=>({...current,pages:current.pages.map(p=>p.id===page.id?{...p,logo:photoCrop({...p.logo,...patch})}:p)})); }
   const layout = template.layout, page = layout.pages.find(p => p.id === pageId) || layout.pages[0];
   const boxes = layout.boxes.filter(b => b.page === page.id), chosen = boxes.filter(b => selected.includes(b.id)), active = chosen[0];
-  const dirty = JSON.stringify(template) !== original, values = sheetValues(product, content);
+  const dirty = JSON.stringify(template) !== original, values = { ...sheetValues(product, content), photo: originalPhoto };
   useEffect(() => {
     let live = true;
     async function initialize() {
@@ -69,7 +74,7 @@ export default function SheetTemplateEditor({ product, content, onClose, onSaved
     if (!file) return; setBusy(true); setError('');
     try {
       const { data, landscape } = await jpegBackground(file);
-      changeLayout(current => ({ ...current, pages: current.pages.map(p => p.id === page.id ? { ...p, background: data, width: landscape ? 841.89 : 595.28, height: landscape ? 595.28 : 841.89 } : p) }));
+      changeLayout(current => ({ ...current, pages: current.pages.map(p => p.id === page.id ? { ...p, background: data, logoMask: undefined, width: landscape ? 841.89 : 595.28, height: landscape ? 595.28 : 841.89 } : p) }));
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
   function selectBox(id, multiple) { setSelected(ids => multiple ? ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id] : [id]); }
@@ -83,6 +88,7 @@ export default function SheetTemplateEditor({ product, content, onClose, onSaved
     stage.setPointerCapture(event.pointerId);
   }
   function move(event) {
+    const logo=logoGesture.current;if(logo){updateLogo({x:Math.max(0,Math.min(100-logo.rect.width,logo.rect.x+(event.clientX-logo.x)/logo.stage.width*100)),y:Math.max(0,Math.min(100-logo.rect.height,logo.rect.y+(event.clientY-logo.y)/logo.stage.height*100))});return;}
     const g = gesture.current; if (!g) return;
     let dx = (event.clientX - g.x) / g.rect.width * 100, dy = (event.clientY - g.y) / g.rect.height * 100;
     const group = g.boxes.filter(b => g.ids.includes(b.id));
@@ -102,7 +108,7 @@ export default function SheetTemplateEditor({ product, content, onClose, onSaved
   }
   async function showPreview() {
     setBusy(true); setError('');
-    try { setPreview(await buildDirectSheetPdf({ layout, values, loadPhoto: async () => (await sheetChannelApi('photo', { productId: product.id })).dataUrl })); } catch (e) { setError(e.message); } finally { setBusy(false); }
+    try { setPreview(await buildDirectSheetPdf({ layout, values, loadPhoto: () => loadSheetPhoto(product.id), logo: brandLogo })); } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
   return <SheetDialog title="Template scheda tecnica" wide onClose={close} busy={busy}>
     <fieldset className="direct-template-controls" disabled={busy}>
@@ -116,6 +122,7 @@ export default function SheetTemplateEditor({ product, content, onClose, onSaved
         <button type="button" disabled={!page.background} onClick={() => changeLayout(current => ({ ...current, pages: current.pages.map(p => p.id === page.id ? { ...p, background: '' } : p) }))}>Rimuovi sfondo</button>
         <label>Orientamento<select aria-label="Orientamento" value={page.width > page.height ? 'landscape' : 'portrait'} onChange={e => changeLayout(current => ({ ...current, pages: current.pages.map(p => p.id === page.id ? { ...p, width: e.target.value === 'landscape' ? 841.89 : 595.28, height: e.target.value === 'landscape' ? 595.28 : 841.89 } : p) }))}><option value="portrait">A4 verticale</option><option value="landscape">A4 orizzontale</option></select></label>
       </div>
+      <div className="direct-sheet-actions"><label className="direct-check"><input type="checkbox" checked={Boolean(page.logo)} disabled={!brandLogo} onChange={e=>changeLayout(current=>({...current,pages:current.pages.map(p=>p.id===page.id?{...p,logo:e.target.checked?{x:7.58,y:4.96,width:11.94,height:9.58}:undefined}:p)}))} />Logo originale dal NAS</label>{page.logo&&[['x','Logo X (%)'],['y','Logo Y (%)'],['width','Larghezza logo (%)'],['height','Altezza logo (%)']].map(([key,label])=><label key={key}>{label}<input type="number" aria-label={label} min={key==='x'||key==='y'?0:1} max="100" step="0.1" value={Number(page.logo[key].toFixed(2))} onChange={e=>updateLogo({[key]:Number(e.target.value)})}/></label>)}</div>
       <div className="direct-template-align" aria-label="Allineamento caselle">{alignments.map(([key, label]) => <button type="button" key={key} disabled={!chosen.length || (key.startsWith('distribute') && chosen.length < 3)} onClick={() => changeLayout(current => ({ ...current, boxes: alignBoxes(current.boxes, selected, key) }))}>{label}</button>)}</div>
     </fieldset>
     {error && <p className="direct-sheet-error" role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
@@ -126,7 +133,9 @@ export default function SheetTemplateEditor({ product, content, onClose, onSaved
         <h3>Caselle nella pagina</h3>{boxes.map(box => <label className="direct-check" key={box.id}><input type="checkbox" checked={selected.includes(box.id)} onChange={() => selectBox(box.id, true)} />{box.kind === 'title' ? 'Titolo · ' : ''}{TEMPLATE_FIELDS.find(f => f.key === box.field).label}</label>)}
       </aside>
       <div className="direct-template-canvas-wrap"><div className="direct-template-page" style={{ aspectRatio: `${page.width}/${page.height}`, backgroundImage: page.background ? `url(${page.background})` : undefined }}
-        onPointerMove={move} onPointerUp={() => { gesture.current = null; }} onPointerCancel={() => { gesture.current = null; }} onLostPointerCapture={() => { gesture.current = null; }}>
+        onPointerMove={move} onPointerUp={() => { gesture.current = null; logoGesture.current=null; }} onPointerCancel={() => { gesture.current = null; logoGesture.current=null; }} onLostPointerCapture={() => { gesture.current = null; logoGesture.current=null; }}>
+        {page.logoMask && <div style={{position:'absolute',left:page.logoMask.x+'%',top:page.logoMask.y+'%',width:page.logoMask.width+'%',height:page.logoMask.height+'%',background:'#fff',pointerEvents:'none'}} />}
+        {page.logo && brandLogo && <div title="Trascina il logo" onPointerDown={e=>{if(busy||e.button!==0)return;e.preventDefault();e.stopPropagation();const stage=e.currentTarget.closest('.direct-template-page');logoGesture.current={x:e.clientX,y:e.clientY,rect:page.logo,stage:stage.getBoundingClientRect()};stage.setPointerCapture(e.pointerId);}} style={{position:'absolute',left:page.logo.x+'%',top:page.logo.y+'%',width:page.logo.width+'%',height:page.logo.height+'%',background:'#fff',cursor:'move',border:'1px dashed #94a3b8',boxSizing:'border-box'}}><img src={brandLogo.previewDataUrl} alt="Logo originale NAS" draggable={false} style={{width:'100%',height:'100%',objectFit:'contain'}} /></div>}
         {boxes.map(box => { const field = TEMPLATE_FIELDS.find(f => f.key === box.field), picked = selected.includes(box.id);
           return <div role="button" aria-label={`Casella ${box.kind === 'title' ? 'Titolo ' : ''}${field.label}`} aria-pressed={picked} tabIndex={busy ? -1 : 0} key={box.id} className={`direct-template-box ${picked ? 'selected' : ''}`}
             style={{ left: `${box.x}%`, top: `${box.y}%`, width: `${box.width}%`, height: `${box.height}%` }}

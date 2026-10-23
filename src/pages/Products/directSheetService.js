@@ -38,3 +38,20 @@ export async function sheetChannelApi(action, input) {
   if (!response.ok) throw new Error(body.error || 'Invio ai canali non disponibile.');
   return body;
 }
+
+export async function loadSheetPhoto(productId) {
+ const data=await sheetChannelApi('photo',{productId});
+ const response=await fetch(data.url,{signal:AbortSignal.timeout(60000)});
+ if(!response.ok)throw new Error('Foto originale NAS non disponibile.');
+ const blob=await response.blob();if(!blob.type.startsWith('image/'))throw new Error('Il file NAS non è una foto valida.');
+ return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Lettura foto NAS non riuscita.'));reader.readAsDataURL(blob);});
+}
+
+export async function loadSheetLogo() {
+ const source=await sheetChannelApi('logo',{});if(!source.available)return null;
+ const [pdf,preview]=await Promise.all([fetch(source.pdfUrl,{signal:AbortSignal.timeout(60000)}),fetch(source.previewUrl,{signal:AbortSignal.timeout(60000)})]);
+ if(!pdf.ok||!preview.ok)throw new Error('Logo originale NAS non disponibile.');
+ const [pdfBytes,blob]=await Promise.all([pdf.arrayBuffer(),preview.blob()]);
+ const previewDataUrl=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Lettura logo non riuscita.'));reader.readAsDataURL(blob);});
+ return {pdfBytes,previewDataUrl};
+}

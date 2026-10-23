@@ -62,3 +62,7 @@ Il gateway accetta scritture esclusivamente sull’endpoint dedicato e su nomi v
 Selezionando una casella foto, **Ritaglia foto** apre una selezione trascinabile con coordinate percentuali modificabili. **Applica ritaglio** aggiorna soltanto la casella selezionata, conservando il ritaglio nel template e applicandolo a anteprima, PDF e JPEG. **Ripristina foto intera** annulla il taglio. La foto dell’anagrafica non viene modificata.
 
 Per ciascuna casella titolo, **Maiuscole/minuscole titoli** permette di scegliere Normale, TUTTO MAIUSCOLO o tutto minuscolo. La scelta segue il titolo nella lingua generata e si applica anche ai titoli selezionati insieme, senza modificare i contenuti.
+
+Le immagini in Prodotti Direct, nelle anteprime e nelle esportazioni provengono esclusivamente da `FotoProdotti/<codice articolo>.<estensione>` del NAS, con corrispondenza esatta del codice. Non si usano foto Mexal come alternativa. Il logo originale è `FotoProdotti/Salidischia.pdf`; `Salidischia-preview.png` ne è la preview ad alta definizione. Il PDF generato incorpora il logo vettoriale nella posizione del template.
+
+Nel template, **Logo originale dal NAS** abilita il logo separato. Si può trascinare sulla pagina oppure impostare **Logo X/Y**, **Larghezza logo** e **Altezza logo**; il rapporto grafico del logo viene mantenuto dentro il riquadro. La posizione è salvata nel template.

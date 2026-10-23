@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import SheetDialog from './SheetDialog';
 import { SHEET_LANGUAGES, generationContent } from '../../../shared/directProductSheet.js';
-import { getTemplate, listTemplates, sheetChannelApi } from './directSheetService';
+import { getTemplate, listTemplates, sheetChannelApi, loadSheetPhoto, loadSheetLogo } from './directSheetService';
 import { generateSheetFiles } from './directSheetPdf';
 import { archiveSheetFiles } from '../../../shared/directSheetArchive.js';
 
@@ -21,7 +21,7 @@ export default function SheetGenerateDialog({ product, sheet, translations, canA
     if (busy) return; setBusy(true); setError(''); setMessage('Caricamento template…'); setWarnings([]); setResults([]); setSaved([]); setFiles([]);
     try {
       const template = await getTemplate(templateId);
-      const generated = await generateSheetFiles({ layout: template.layout, product, sheet, translations, languages, format, onProgress: setMessage, loadPhoto: async () => (await sheetChannelApi('photo', { productId: product.id })).dataUrl });
+      const generated = await generateSheetFiles({ layout: template.layout, product, sheet, translations, languages, format, onProgress: setMessage, loadPhoto: () => loadSheetPhoto(product.id), loadLogo: loadSheetLogo });
       setFiles(generated); setWarnings([...new Set(generated.flatMap(file => file.warnings || []))]);
       if (archive) {
         const outcome = await archiveSheetFiles({ files: generated, onProgress: setMessage,

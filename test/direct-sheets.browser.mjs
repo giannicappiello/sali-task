@@ -107,7 +107,7 @@ try{
  }
  await page.getByRole('button',{name:'Chiudi',exact:true}).click();
  await page.getByRole('button',{name:'Genera scheda tecnica',exact:true}).click();await page.waitForFunction(id=>document.querySelector('select[aria-label="Template"]')?.value===id,defaultId); for(const language of SHEET_LANGUAGES.filter(l=>l.code!=='IT'))await page.getByRole('checkbox',{name:language.label+' ('+language.code+')',exact:true}).check();await page.getByRole('button',{name:'Genera e salva sul NAS',exact:true}).click();await page.getByText('Salvataggio sul NAS completato e verificato.',{exact:true}).waitFor();
- const pdf=await PDFDocument.load(await readFile(path.join(nasRoot,'Schede Tecniche','IT0492.pdf')));assert.equal(pdf.getPageCount(),6);await page.getByRole('region',{name:'Esiti salvataggio',exact:true}).getByText('IT0492.pdf:',{exact:false}).waitFor();assert.equal(await page.getByRole('button',{name:'Genera e salva sul NAS',exact:true}).isEnabled(),true);
+ const pdf=await PDFDocument.load(await readFile(path.join(nasRoot,'Schede Tecniche','IT0492.pdf')));assert.equal(pdf.getPageCount(),6);assert.ok((await readFile(path.join(nasRoot,'Schede Tecniche','IT0492.pdf'))).toString('latin1').includes('DESCRIPTION'),'PDF must contain actual vector text');await page.getByRole('region',{name:'Esiti salvataggio',exact:true}).getByText('IT0492.pdf:',{exact:false}).waitFor();assert.equal(await page.getByRole('button',{name:'Genera e salva sul NAS',exact:true}).isEnabled(),true);
  await page.evaluate(async id=>{
   const post=async(url,body)=>{const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const result=await response.json();if(result.error)throw Error(result.error.message);return result.data;};
   const template=await post('/__table',{table:'direct_product_sheet_templates',columns:'*',filters:[['id',id]],single:true,level:'amministrazione'});
@@ -119,6 +119,10 @@ try{
  assert.equal(await page.getByRole('status',{name:'Avvisi impaginazione',exact:true}).locator('li').count(),6);
  assert.equal(await page.getByRole('region',{name:'Esiti salvataggio',exact:true}).getByText('Salvato e verificato sul NAS',{exact:false}).count(),6);
  for(const lang of SHEET_LANGUAGES.map(l=>l.code))assert.equal((await readFile(path.join(nasRoot,'Schede Tecniche',`IT0492_${lang}.jpeg`))).subarray(0,3).toString('hex'),'ffd8ff');
+ const highRes=await readFile(path.join(nasRoot,'Schede Tecniche','IT0492_IT.jpeg'));
+ assert.equal(highRes[13],1);assert.equal(highRes[14]*256+highRes[15],300);assert.equal(highRes[16]*256+highRes[17],300);
+ const dimensions=await page.evaluate(async base64=>{const img=new Image();img.src='data:image/jpeg;base64,'+base64;await img.decode();return [img.naturalWidth,img.naturalHeight];},highRes.toString('base64'));
+ assert.deepEqual(dimensions,[2480,3508]);
  await page.screenshot({path:path.join(out,'jpeg-lingue.png'),fullPage:true});await page.getByRole('button',{name:'Chiudi',exact:true}).click();
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(out,'prodotto-mobile.png'),fullPage:true});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  await page.goto(uiOrigin+'/fixture.html?level=lettura');await page.getByRole('button',{name:'Genera scheda tecnica',exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Compila Scheda',exact:true}).count(),0);assert.equal(await page.getByRole('button',{name:'Template scheda tecnica',exact:true}).count(),0);
@@ -129,5 +133,5 @@ try{
   const base=defaultLayout(),layout={...base,boxes:[{...base.boxes[0],x:10,y:10,width:80,height:80,crop:{x:50,y:0,width:50,height:100}}]};
   const data=await renderSheetJpeg({layout,values:{},photo:source.toDataURL('image/jpeg'),scale:1});const img=new Image();img.src=data;await img.decode();const canvas=document.createElement('canvas');canvas.width=img.width;canvas.height=img.height;const out=canvas.getContext('2d');out.drawImage(img,0,0);return [...out.getImageData(Math.floor(img.width/2),Math.floor(img.height/2),1,1).data];
  });assert.ok(cropPixel[2]>200&&cropPixel[0]<40,'JPEG must contain only the selected blue half');
- assert.deepEqual(errors,[]);console.log('PASS: UI → SQL revisions → JPEG template alignment → reviewed translation → six-page PDF → signed NAS writes and checksum confirmation → cropped photo, non-blocking overflow warnings, six language JPEGs and individual save outcomes → read-only permissions → mobile.');console.log('Artifacts: '+out);
+ assert.deepEqual(errors,[]);console.log('PASS: UI → SQL revisions → JPEG template alignment → reviewed translation → six-page vector PDF → signed NAS writes and checksum confirmation → cropped photo, non-blocking overflow warnings, six language 300-dpi JPEGs and individual save outcomes → read-only permissions → mobile.');console.log('Artifacts: '+out);
 }catch(e){console.log('Browser errors:',errors);if(currentPage)await currentPage.screenshot({path:path.join(out,'failure.png'),fullPage:true}).catch(()=>{});throw e;}finally{await browser?.close();await vite?.close();await new Promise(resolve=>nas.close(resolve));await db.close();}

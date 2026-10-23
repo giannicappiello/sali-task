@@ -48,7 +48,7 @@ export default function SheetGenerateDialog({ product, sheet, translations, canA
       <div className="direct-language-choices">{SHEET_LANGUAGES.map(language => { let valid = true; try { generationContent(sheet, translations, language.code, product); } catch { valid = false; }
         return <label className="direct-check" key={language.code}><input type="checkbox" checked={languages.includes(language.code)} disabled={!valid} onChange={e => { setLanguages(current => SHEET_LANGUAGES.map(l => l.code).filter(code => code === language.code ? e.target.checked : current.includes(code))); changed(); }} />{language.label} ({language.code}){!valid && <small>Da tradurre, aggiornare o approvare in “Compila Scheda”</small>}</label>;
       })}</div>
-      <label>Formato<select aria-label="Formato" value={format} onChange={e => { setFormat(e.target.value); changed(); }}><option value="pdf">PDF unico · una pagina per lingua</option><option value="jpeg">JPEG separati · un file per lingua</option></select></label>
+      <label>Formato<select aria-label="Formato" value={format} onChange={e => { setFormat(e.target.value); changed(); }}><option value="pdf">PDF vettoriale · una pagina per lingua</option><option value="jpeg">JPEG alta risoluzione · 300 dpi</option></select></label>
       <p>I nomi vengono ricavati dal codice articolo: {product.codice_mexal || product.codice}{format === 'pdf' ? '.pdf' : '_IT.jpeg, _ENG.jpeg…'}. Una nuova generazione sostituisce il file omonimo sul NAS, conservando la versione precedente.</p>
     </fieldset>
     {error && <p className="direct-sheet-error" role="alert">{error}</p>}{message && <p role="status">{message}</p>}{saved.length > 0 && <p role="status">File verificati sul NAS: {saved.join(', ')}</p>}

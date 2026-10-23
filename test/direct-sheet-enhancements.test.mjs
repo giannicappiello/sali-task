@@ -1,3 +1,4 @@
+import { jpegWithDpi, SHEET_EXPORT_DPI } from '../shared/directSheetResolution.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { jsPDF } from 'jspdf';
@@ -58,4 +59,12 @@ test('Overflow is reported without blocking preview generation',async()=>{
  const base=defaultLayout(),body={...base.boxes.find(box=>box.field==='description'),height:2,fontSize:60};
  const result=await buildDirectSheetPdf({layout:{...base,boxes:[body]},values:{description:'This deliberately long text extends beyond its box.'}});
  assert.ok(result.doc.output().startsWith('%PDF-'));assert.equal(result.warnings.length,1);assert.match(result.warnings[0],/fuori casella/);
+});
+
+test('JPEG print density is 300 dpi without recompressing image data or duplicating JFIF',()=>{
+ const original=new Uint8Array([255,216,255,217]);const result=jpegWithDpi(original);
+ assert.equal(SHEET_EXPORT_DPI,300);assert.equal(result[13],1);assert.equal(result[14]*256+result[15],300);assert.equal(result[16]*256+result[17],300);
+ assert.deepEqual([...result.slice(-2)],[255,217]);assert.equal(jpegWithDpi(result).length,result.length);
+ assert.equal(jpegWithDpi(result,600)[14]*256+jpegWithDpi(result,600)[15],600);
+ assert.throws(()=>jpegWithDpi(new Uint8Array([1,2])),/JPEG/);
 });

@@ -19,12 +19,30 @@ const initialTemplate = () => ({ name: 'Scheda tecnica Direct', layout: defaultL
 export default function SheetTemplateEditor({ product, content, onClose, onSaved }) {
   const [template, setTemplate] = useState(initialTemplate), [original, setOriginal] = useState(() => JSON.stringify(initialTemplate()));
   const [templates, setTemplates] = useState([]), [selected, setSelected] = useState([]), [pageId, setPageId] = useState('page-1');
-  const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState(''), [preview, setPreview] = useState(null);
+  const [busy, setBusy] = useState(true), [error, setError] = useState(''), [notice, setNotice] = useState(''), [preview, setPreview] = useState(null);
   const gesture = useRef(null);
   const layout = template.layout, page = layout.pages.find(p => p.id === pageId) || layout.pages[0];
   const boxes = layout.boxes.filter(b => b.page === page.id), chosen = boxes.filter(b => selected.includes(b.id)), active = chosen[0];
   const dirty = JSON.stringify(template) !== original, values = sheetValues(product, content);
-  useEffect(() => { let live = true; listTemplates().then(rows => { if (live) setTemplates(rows); }).catch(e => { if (live) setError(e.message); }); return () => { live = false; }; }, []);
+  useEffect(() => {
+    let live = true;
+    async function initialize() {
+      try {
+        const rows = await listTemplates();
+        if (!live) return;
+        setTemplates(rows);
+        const preferred = rows.find(row => row.is_default);
+        if (preferred) {
+          const next = await getTemplate(preferred.id);
+          if (!live) return;
+          setTemplate(next); setOriginal(JSON.stringify(next)); setPageId(next.layout.pages[0].id);
+        }
+      } catch (e) { if (live) setError(e.message); }
+      finally { if (live) setBusy(false); }
+    }
+    void initialize();
+    return () => { live = false; };
+  }, []);
   function changeLayout(transform) { setTemplate(current => ({ ...current, layout: transform(current.layout) })); setNotice(''); }
   function updateBoxes(patch) { changeLayout(current => ({ ...current, boxes: current.boxes.map(b => selected.includes(b.id) ? boundBox({ ...b, ...patch }) : b) })); }
   async function close() { if (!busy && await discardChanges(dirty)) onClose(); }

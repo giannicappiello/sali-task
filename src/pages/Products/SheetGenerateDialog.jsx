@@ -13,7 +13,7 @@ async function checksum(blob) { return [...new Uint8Array(await crypto.subtle.di
 export default function SheetGenerateDialog({ product, sheet, translations, canArchive, onClose }) {
   const [templates, setTemplates] = useState([]), [templateId, setTemplateId] = useState(''), [format, setFormat] = useState('pdf'), [languages, setLanguages] = useState(['IT']);
   const [files, setFiles] = useState([]), [saved, setSaved] = useState([]), [archives, setArchives] = useState([]), [busy, setBusy] = useState(false), [error, setError] = useState(''), [message, setMessage] = useState('');
-  useEffect(() => { let live = true; listTemplates().then(rows => { if (live) { setTemplates(rows); setTemplateId(rows[0]?.id || ''); } }).catch(e => { if (live) setError(e.message); }); sheetChannelApi('archives', { productId: product.id }).then(data => { if (live) setArchives(data.files); }).catch(e => { if (live) setError(e.message); }); return () => { live = false; }; }, [product.id]);
+  useEffect(() => { let live = true; listTemplates().then(rows => { if (live) { setTemplates(rows); setTemplateId(rows.find(row => row.is_default)?.id || rows[0]?.id || ''); } }).catch(e => { if (live) setError(e.message); }); sheetChannelApi('archives', { productId: product.id }).then(data => { if (live) setArchives(data.files); }).catch(e => { if (live) setError(e.message); }); return () => { live = false; }; }, [product.id]);
   function changed() { setFiles([]); setSaved([]); setMessage(''); setError(''); }
   async function generate(archive) {
     if (busy) return; setBusy(true); setError(''); setMessage('');

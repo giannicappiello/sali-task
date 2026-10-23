@@ -85,7 +85,7 @@ test('Database permissions, revisions, translations, template validation and pub
   try {
     await db.exec(await readFile(new URL('../supabase/migrations/20261018110000_salidischia_club_store_offers.sql',import.meta.url),'utf8'));
     await db.exec(`alter table prodotti add column if not exists codice text;create table if not exists crm_product_mappings(id uuid primary key);create or replace function public.workspace_access_context() returns jsonb language sql stable as $$select case when current_setting('test.direct_level',true)='nessuno' then '{"modules":[],"module_levels":{}}'::jsonb else jsonb_build_object('modules',jsonb_build_array('prodotti'),'module_levels',jsonb_build_object('prodotti',current_setting('test.direct_level',true))) end$$;`);
-    for(const file of ['20261022160000_direct_product_sheets.sql','20261022161000_direct_sheet_languages_archive.sql'])await db.exec(await readFile(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));
+    for(const file of ['20261022160000_direct_product_sheets.sql','20261022161000_direct_sheet_languages_archive.sql','20261023140000_direct_sheet_titles_category.sql'])await db.exec(await readFile(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));
     await t.test('readers cannot save, writers cannot manage templates or publish',async()=>{
       await as('lettura');await assert.rejects(q('select direct_save_product_sheet($1,$2,0)',[productId,content]),/non autorizzata/);
       await as('scrittura');await assert.rejects(q('select direct_save_sheet_template(null,$1,$2,true,0)',['Test',defaultLayout()]),/non autorizzata/);
@@ -98,6 +98,17 @@ test('Database permissions, revisions, translations, template validation and pub
       await assert.rejects(q('select direct_save_product_sheet($1,$2,1)',[productId,{...content,unexpected:'x'}]),/non validi/);
       await assert.rejects(q('select direct_save_sheet_translation($1,\'ENG\',$2,1,0,true)',[productId,{...content,inci:'changed'}]),/identico/);
       await q('select direct_save_sheet_translation($1,\'ENG\',$2,1,0,true)',[productId,content]);
+    });
+    await t.test('category translations are retained and stale category approval is rejected',async()=>{
+      await db.exec('reset role');await q('update prodotti set categoria_mexal=$1 where id=$2',['Cura del corpo',productId]);await as('scrittura');
+      await assert.rejects(q('select direct_save_sheet_translation($1,\'ENG\',$2,1,1,true)',[productId,content]),/categoria/);
+      const translated={...content,category:'Body care',category_source:'Cura del corpo'};
+      const saved=(await q('select * from direct_save_sheet_translation($1,\'ENG\',$2,1,1,true)',[productId,translated]))[0];
+      assert.equal(saved.content.category,'Body care');assert.equal(saved.content.category_source,'Cura del corpo');
+      await db.exec('reset role');await q('update prodotti set categoria_mexal=$1 where id=$2',['Viso',productId]);await as('scrittura');
+      await assert.rejects(q('select direct_save_sheet_translation($1,\'ENG\',$2,1,2,true)',[productId,translated]),/categoria/);
+      const draft=(await q('select * from direct_save_sheet_translation($1,\'ENG\',$2,1,2,false)',[productId,translated]))[0];
+      assert.equal(draft.content.category_source,'Cura del corpo');
     });
     await t.test('template geometry, default uniqueness and concurrent updates are enforced',async()=>{
       await as('amministrazione');const row=(await q('select * from direct_save_sheet_template(null,$1,$2,true,0)',['Template A',defaultLayout()]))[0];

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { FileText } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { SHEET_FIELDS, SHEET_LANGUAGES, emptySheet, sheetStatus, sheetValues } from '../../../shared/directProductSheet.js';
+import { SHEET_FIELDS, SHEET_LANGUAGES, emptySheet, sheetStatus, sheetValues, fieldLabel } from '../../../shared/directProductSheet.js';
 import { discardChanges, getSheet, getTranslations, publishClub, saveSheet, saveTranslation, sheetChannelApi } from './directSheetService';
 import SheetDialog from './SheetDialog';
 const SheetGenerateDialog = lazy(() => import('./SheetGenerateDialog'));
@@ -40,7 +40,7 @@ function SheetContentEditor({ product, sheet: initial, translations: initialTran
   async function changeLanguage(next) {
     if (!await discardChanges(dirty)) return;
     const row = next === 'IT' ? source : translations.find(t => t.language === next), value = { ...emptySheet(), ...row?.content };
-    if (next !== 'IT') value.inci = source?.content.inci || '';
+    if (next !== 'IT') { value.inci = source?.content.inci || ''; value.category ??= ''; value.category_source ??= String(product.categoria_mexal || '').trim(); }
     const approved = Boolean(row?.reviewed && row.source_revision === source?.revision);
     setLanguage(next); setContent(value); setOriginal(JSON.stringify(value)); setReviewed(approved); setOriginalReviewed(approved); setError(''); setMessage('');
   }
@@ -68,7 +68,7 @@ function SheetContentEditor({ product, sheet: initial, translations: initialTran
       <div className="direct-sheet-actions"><label>Lingua della scheda<select aria-label="Lingua della scheda" disabled={busy} value={language} onChange={e => void changeLanguage(e.target.value)}>{SHEET_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label} ({l.code})</option>)}</select></label><SheetStatus sheet={{ content }} /></div>
       {language !== 'IT' && <><p>La traduzione va controllata prima di generare i documenti. L’INCI/CTFA resta identico alla scheda italiana.</p>{currentTranslation && currentTranslation.source_revision !== source?.revision && <p className="direct-sheet-notice">La scheda italiana è cambiata: aggiorna e rivedi questa traduzione.</p>}<button type="button" disabled={busy || sheetStatus(source).count !== 6} onClick={translate}>Traduci automaticamente dall’italiano salvato</button></>}
       {error && <p className="direct-sheet-error" role="alert">{error}</p>}{message && <p role="status">{message}</p>}
-      <fieldset disabled={busy}>{SHEET_FIELDS.map(field => <label key={field.key}>{field.label}<textarea aria-label={field.label} rows={field.key === 'inci' ? 4 : 5} maxLength={12000} value={content[field.key]} readOnly={language !== 'IT' && field.key === 'inci'} onChange={e => { setContent(current => ({ ...current, [field.key]: e.target.value })); if (language !== 'IT') setReviewed(false); }} /><small>{content[field.key].length}/12000</small></label>)}
+      <fieldset disabled={busy}>{language !== 'IT' && <label>Categoria tradotta <small>Italiano: {product.categoria_mexal || '—'}</small><input aria-label="Categoria tradotta" maxLength={12000} value={content.category || ''} onChange={e => { setContent(current => ({ ...current, category: e.target.value, category_source: String(product.categoria_mexal || '').trim() })); setReviewed(false); }} />{content.category_source !== String(product.categoria_mexal || '').trim() && <small>La categoria italiana è cambiata: aggiorna la traduzione.</small>}</label>}{SHEET_FIELDS.map(field => <label key={field.key}>{language === 'IT' ? field.label : `${field.label} · ${fieldLabel(field.key, language)}`}<textarea aria-label={field.label} rows={field.key === 'inci' ? 4 : 5} maxLength={12000} value={content[field.key]} readOnly={language !== 'IT' && field.key === 'inci'} onChange={e => { setContent(current => ({ ...current, [field.key]: e.target.value })); if (language !== 'IT') setReviewed(false); }} /><small>{content[field.key].length}/12000</small></label>)}
       {language !== 'IT' && <label className="direct-check"><input type="checkbox" checked={reviewed} onChange={e => setReviewed(e.target.checked)} />Ho controllato la traduzione e la approvo per la generazione.</label>}</fieldset>
       <footer><span>{dirty ? 'Modifiche non salvate' : 'Tutti i testi visualizzati sono salvati o ancora vuoti'}</span><button type="submit" className="primary-action" disabled={busy || !dirty || (language !== 'IT' && sheetStatus(source).count !== 6)}>{busy ? 'Operazione in corso…' : 'Salva scheda'}</button></footer>
     </form>

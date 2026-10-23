@@ -15,7 +15,7 @@ export const saveTranslation = (id, language, content, sourceRevision, revision,
 export const saveSheet = (id, content, revision) => result(supabase.rpc('direct_save_product_sheet', { target_id: id, payload: content, expected_revision: revision || 0 }));
 export const publishClub = (id, revision) => result(supabase.rpc('direct_publish_product_sheet_club', { target_id: id, expected_revision: revision }));
 export const listTemplates = () => result(supabase.from('direct_product_sheet_templates').select('id,name,is_default,revision,updated_at').order('is_default', { ascending: false }).order('name'));
-export const getTemplate = id => result(supabase.from('direct_product_sheet_templates').select('*').eq('id', id).single());
+export const getTemplate = id => result(supabase.from('direct_product_sheet_templates').select('*').eq('id', id).single().abortSignal(AbortSignal.timeout(30000)));
 export const saveTemplate = (template, makeDefault) => result(supabase.rpc('direct_save_sheet_template', {
   target_id: template.id || null, template_name: template.name, template_layout: template.layout,
   make_default: makeDefault, expected_revision: template.revision || 0,
@@ -30,6 +30,7 @@ export async function listSheetSummaries() {
 export async function sheetChannelApi(action, input) {
   const { data: { session } } = await supabase.auth.getSession();
   const response = await fetch('/api/mexal/automation?route=direct-product-sheets', {
+    signal: AbortSignal.timeout(action === 'translate' ? 110000 : 40000),
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token || ''}` },
     body: JSON.stringify({ action, ...input }),
   });

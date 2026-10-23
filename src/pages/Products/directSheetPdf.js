@@ -1,10 +1,10 @@
-import { TEMPLATE_FIELDS, fieldLabel, generationContent, sheetValues } from '../../../shared/directProductSheet.js';
+import { TEMPLATE_FIELDS, fieldLabel, generationContent, sheetValues, templateBoxText } from '../../../shared/directProductSheet.js';
 
 // The PDF and editor use the same point coordinates, font and wrapping metrics.
 export function textBoxLayout(doc, box, page, values) {
   const width = page.width * box.width / 100 - 8, height = page.height * box.height / 100 - 8;
   doc.setFont(box.font, box.bold ? 'bold' : 'normal'); doc.setFontSize(box.fontSize);
-  const value = String(values[box.field] || '');
+  const value = templateBoxText(box, values);
   const text = value;
   const lines = doc.splitTextToSize(text, Math.max(1, width));
   const lineHeight = box.fontSize * 1.2, textHeight = lines.length * lineHeight;
@@ -90,15 +90,21 @@ export async function renderSheetJpeg({ layout, values, photo, scale = 2 }) {
   if (overflow.length) throw new Error(`${values.__language || 'IT'}: testo fuori casella (${overflow.join(', ')}). Modifica il template prima di generare.`);
   return canvas.toDataURL('image/jpeg', .94);
 }
-export async function generateSheetFiles({ layout, product, sheet, translations, languages, format, loadPhoto = photoData }) {
+export async function generateSheetFiles({ layout, product, sheet, translations, languages, format, loadPhoto = photoData, onProgress = () => {} }) {
   if (!languages.length || new Set(languages).size !== languages.length) throw new Error('Seleziona almeno una lingua, senza duplicati.');
   if (!['jpeg', 'pdf'].includes(format)) throw new Error('Formato file non valido.');
   const values = sheetValues(product), code = String(values.code).trim().toUpperCase();
   if (!/^(IT|MKT)[A-Z0-9_-]+$/.test(code)) throw new Error('Il codice articolo contiene caratteri non consentiti nel nome file.');
-  const contents = languages.map(language => ({ language, content: generationContent(sheet, translations, language) }));
+  const contents = languages.map(language => ({ language, content: generationContent(sheet, translations, language, product) }));
+  onProgress('Caricamento foto prodotto…');
   const photo = layout.boxes.some(b => b.field === 'photo') && values.photo ? await loadPhoto(values.photo) : null;
   const pages = [];
-  for (const { language, content } of contents) pages.push({ language, data: await renderSheetJpeg({ layout, values: { ...values, ...content, __language: language }, photo }) });
+  for (const [index, { language, content }] of contents.entries()) {
+    onProgress(`Generazione ${language} · ${index + 1}/${contents.length}…`);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    pages.push({ language, data: await renderSheetJpeg({ layout, values: { ...values, ...content, __language: language }, photo }) });
+  }
+  onProgress('Preparazione file…');
   if (format === 'jpeg') return Promise.all(pages.map(async page => ({ name: `${code}_${page.language}.jpeg`, languages: [page.language], blob: await (await fetch(page.data)).blob() })));
   const { jsPDF } = await import('jspdf'), page = layout.pages[0];
   const doc = new jsPDF({ unit: 'pt', format: [page.width, page.height], orientation: page.width > page.height ? 'landscape' : 'portrait' });

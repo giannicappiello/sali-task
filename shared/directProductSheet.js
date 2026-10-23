@@ -19,11 +19,12 @@ export const TEMPLATE_FIELDS = [
 export function fieldLabel(key, language = 'IT') {
   return (SHEET_LANGUAGES.find(l => l.code === language) || SHEET_LANGUAGES[0]).headings[TEMPLATE_FIELDS.findIndex(f => f.key === key)];
 }
-export function generationContent(sheet, translations, language) {
+export function generationContent(sheet, translations, language, product) {
   if (!sheet || sheetStatus(sheet).count !== 6) throw new Error('Completa e salva tutti i sei campi della scheda italiana.');
   if (language === 'IT') return sheet.content;
   const row = translations.find(t => t.language === language);
   if (!row || !row.reviewed || row.source_revision !== sheet.revision || sheetStatus({ content: row.content }).count !== 6) throw new Error(`Traduzione ${language} assente, da rivedere o non aggiornata alla scheda italiana.`);
+  if (product && String(product.categoria_mexal || '').trim() && (!row.content.category?.trim() || row.content.category_source !== String(product.categoria_mexal).trim())) throw new Error(`Categoria ${language} da tradurre o aggiornare in “Compila Scheda”.`);
   return row.content;
 }
 export const emptySheet = () => Object.fromEntries(SHEET_FIELDS.map(({ key }) => [key, '']));
@@ -35,7 +36,7 @@ export function sheetValues(product, content = {}) {
   const raw = product?.json_mexal || {};
   const mexalName = `${String(raw.descrizione || '').trimEnd()}${String(raw.descrizione_agg || '').trimStart()}`.replace(/\s+/g, ' ').trim();
   return { ...emptySheet(), ...content, name: mexalName || product?.nome || '', code: product?.codice_mexal || product?.codice || '',
-    ean: product?.ean || '', category: product?.categoria_mexal || '',
+    ean: product?.ean || '', category: content.category ?? product?.categoria_mexal ?? '',
     format: product?.formato || raw.formato || product?.confezione || raw.confezione || '',
     photo: product?.immagine_catalogo_url || product?.immagine_url || '' };
 }
@@ -52,6 +53,19 @@ export function defaultLayout() {
     width: index === 0 ? 26 : index < 6 ? 60 : 88, height: image ? 21 : key === 'name' ? 6.4 : index < 6 ? 4 : 11,
     font: 'helvetica', fontSize: key === 'name' ? 14 : index < 6 ? 9 : 10, bold: key === 'name', color: '#172033', align: 'left', vertical: 'top', showLabel: false,
   })) };
+}
+export function templateBoxText(box, values) {
+  return box.kind === 'title' ? fieldLabel(box.field, values.__language) : String(values[box.field] || '');
+}
+export function titleBox(box) {
+  return { ...box, id: crypto.randomUUID(), kind: 'title', y: Math.max(0, box.y - 2.5), height: 2.5, fontSize: 9, bold: true, vertical: 'top', lockAspect: false };
+}
+export function resizeBox(box, width, height, axis = 'width') {
+  if (box.field !== 'photo' || !box.lockAspect) return boundBox({ ...box, width, height });
+  const requested = axis === 'height' ? height / box.height : width / box.width;
+  const min = Math.max(2 / box.width, 2 / box.height), max = Math.min((100 - box.x) / box.width, (100 - box.y) / box.height);
+  const scale = Math.max(Math.min(min, max), Math.min(max, Number.isFinite(requested) ? requested : 1));
+  return { ...box, width: box.width * scale, height: box.height * scale };
 }
 export function boundBox(box) {
   const width = Math.max(2, Math.min(100, Number(box.width) || 2)), height = Math.max(2, Math.min(100, Number(box.height) || 2));
@@ -82,7 +96,7 @@ export function alignBoxes(boxes, ids, action) {
     if (action === 'bottom') updated.y = bottom - b.height;
     if (action === 'same-width') updated.width = selected[0].width;
     if (action === 'same-height') updated.height = selected[0].height;
-    changes.set(b.id, updated);
+    changes.set(b.id, action === 'same-width' || action === 'same-height' ? resizeBox(b, updated.width, updated.height, action === 'same-height' ? 'height' : 'width') : updated);
   }
   return boxes.map(b => changes.has(b.id) ? boundBox(changes.get(b.id)) : b);
 }

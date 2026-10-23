@@ -4,9 +4,11 @@
 
 In Prodotti Direct, accanto al titolo del prodotto, **Compila Scheda** apre i sei testi. Lo stato Da compilare / Parziale / Completa indica quanti campi della scheda italiana sono valorizzati. I testi sono separati dagli import Mexal; ogni salvataggio italiano crea una revisione e conserva la versione precedente.
 
-La selezione della lingua permette di tradurre automaticamente in ENG, FR, DE, ES e PT usando l’italiano salvato. La traduzione è una proposta da controllare: deve essere approvata esplicitamente e salvata prima di generare documenti. L’INCI/CTFA è copiato esattamente. Una modifica della revisione italiana rende obsolete le approvazioni delle traduzioni precedenti.
+La selezione della lingua permette di tradurre automaticamente in ENG, FR, DE, ES e PT usando l’italiano salvato. La categoria anagrafica viene tradotta insieme ai testi e può essere corretta nel campo “Categoria tradotta”. Se cambia la categoria italiana, la traduzione va aggiornata. La traduzione è una proposta da controllare: deve essere approvata esplicitamente e salvata prima di generare documenti. L’INCI/CTFA è copiato esattamente. Una modifica della revisione italiana rende obsolete le approvazioni delle traduzioni precedenti.
 
 **Template scheda tecnica** gestisce i template condivisi. Si possono caricare sfondi JPEG, aggiungere o rimuovere campi, trascinare e ridimensionare le caselle, specificarne le coordinate percentuali, scegliere font/dimensione/colore e allineare il testo orizzontalmente e verticalmente. Selezione multipla: spunte o Maiusc + clic. Sono disponibili bordi e centri, distribuzione orizzontale/verticale e uniformazione delle dimensioni. Con una sola casella gli allineamenti si riferiscono alla pagina. Le frecce spostano le caselle; Maiusc + frecce aumenta il passo. L’anteprima blocca testi fuori casella, senza tagliarli o ridurre automaticamente i caratteri.
+
+Nell’editor, “Titoli separati” aggiunge caselle titolo indipendenti dai contenuti: posizione, font, dimensione, colore e allineamento si gestiscono separatamente. I titoli usano le etichette localizzate nella lingua del documento. Le etichette già incorporate nello sfondo JPEG devono essere rimosse dal file di sfondo se non devono apparire in tutte le lingue. Selezionando la foto, “Blocca proporzioni foto” mantiene il rapporto della casella durante il ridimensionamento tramite maniglia, larghezza o altezza.
 
 Il template è una pagina A4 verticale o orizzontale. La generazione la ripete una volta per lingua. Usare JPEG con grafica fissa (logo e decorazioni), senza titoli italiani incorporati quando il template è multilingue: le etichette dei campi vengono tradotte dal generatore. Foto, nome, codice, EAN, categoria e formato sono letti dall’anagrafica; i dati mancanti restano vuoti. Non vengono inventati valori o ingredienti.
 
@@ -15,7 +17,7 @@ Il template è una pagina A4 verticale o orizzontale. La generazione la ripete u
 - JPEG: `IT0001_IT.jpeg`, `IT0001_ENG.jpeg` (un file per lingua).
 - PDF: `IT0001.pdf` (un unico file, una pagina per lingua nell’ordine mostrato).
 
-Anteprima prepara file scaricabili senza scrivere sul NAS. **Genera e salva sul NAS** scrive i file e conferma il checksum letto dal gateway prima di dichiararli salvati. Se il NAS fallisce, i documenti generati restano scaricabili e compare l’errore. PDF e JPEG usano gli stessi rendering a 144 dpi: il PDF contiene immagini delle pagine, senza testo selezionabile. Limite NAS: 20 MiB per file.
+Anteprima prepara file scaricabili senza scrivere sul NAS. **Genera e salva sul NAS** scrive i file e conferma il checksum letto dal gateway prima di dichiararli salvati. Durante la generazione compare l’avanzamento per lingua; durante l’archiviazione “Esiti salvataggio” riporta il risultato di ciascun file. Un errore su un JPEG non interrompe i successivi. Le chiamate hanno timeout; se manca la conferma, il file viene indicato come non confermato e resta scaricabile. Lo storico viene aggiornato senza tenere occupata l’operazione. PDF e JPEG usano gli stessi rendering a 144 dpi: il PDF contiene immagini delle pagine, senza testo selezionabile. Limite NAS: 20 MiB per file.
 
 ## Autorizzazioni
 
@@ -39,9 +41,9 @@ Riferimenti dei contratti: [WooCommerce Products](https://developer.woocommerce.
 
 ## Attivazione
 
-Questa modifica richiede applicazione delle due migrazioni dedicate, rilascio di Workspace e Club e aggiornamento del gateway documentale. Non eseguire migrazioni storiche non correlate come effetto collaterale.
+Questa modifica richiede applicazione delle migrazioni dedicate, rilascio di Workspace e Club e aggiornamento del gateway documentale. Non eseguire migrazioni storiche non correlate come effetto collaterale.
 
-1. Applicare tramite il canale amministrativo approvato **solo** `20261022160000_direct_product_sheets.sql` e `20261022161000_direct_sheet_languages_archive.sql`, dopo aver verificato lo schema corrente. Sono additive e non cambiano dati di prodotto, prezzi o assegnazioni dei permessi.
+1. Applicare tramite il canale amministrativo approvato **solo** `20261022160000_direct_product_sheets.sql`, `20261022161000_direct_sheet_languages_archive.sql` e `20261023140000_direct_sheet_titles_category.sql`, dopo aver verificato lo schema corrente. Sono additive e non cambiano dati di prodotto, prezzi o assegnazioni dei permessi.
 2. Distribuire il frontend/API Workspace e il frontend Club aggiornati.
 3. Aggiornare sul computer NAS `hosting/document-gateway/server.mjs` insieme a `generated-sheets.mjs`, conservando la configurazione e il segreto esistenti. Il modulo usa solo librerie Node native.
 4. Impostare nel servizio gateway `DOC_GATEWAY_ALLOW_SHEET_WRITES=1`. Il valore predefinito mantiene la sola lettura.

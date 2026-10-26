@@ -1,7 +1,7 @@
 import { packageShippedAt } from './amazon-shipments.js';
 /* global Buffer */
 import crypto from 'node:crypto';
-import { wooMexalOrderReference } from '../../shared/wooMexalReference.js';
+import { wooMexalOrderReference, wooMexalSyncStatus } from '../../shared/wooMexalReference.js';
 import { fetchMailingReports } from './mailing-reports.js';
 import { safeFetch } from './digital-security.js';
 import { request, refreshAccessToken } from './digital-provider-adapters.js';
@@ -64,7 +64,7 @@ export function wooOrder(row, refunds = []) {
     ordered_at: row.date_created_gmt ? `${row.date_created_gmt.replace(/Z$/, '')}Z` : row.date_created,
     currency: row.currency, gross_revenue: total, discounts: money(row.discount_total), refunds: refunded, fees: null,
     net_revenue: total === null || tax === null ? null : rounded(total - tax - refunded + taxRefund),
-    raw_summary: { provider: 'woocommerce', customer_name: guest?.nome || null, tax, financial_basis: 'total_excluding_tax_after_refunds', mexal_oc: wooMexalOrderReference(row) },
+    raw_summary: { provider: 'woocommerce', customer_name: guest?.nome || null, tax, financial_basis: 'total_excluding_tax_after_refunds', mexal_oc: wooMexalOrderReference(row), mexal_sync: wooMexalSyncStatus(row) },
     lines: (row.line_items || []).map((l) => ({ external_line_id: String(l.id), name: text(l.name), type: 'product', external_sku: text(l.sku), quantity: money(l.quantity), unit_price: money(l.price), line_revenue: money(l.total), discount: money(l.subtotal) !== null && money(l.total) !== null ? rounded(Number(l.subtotal) - Number(l.total)) : null })).concat(wooShippingLines(row)) };
 }
 export function amazonOrder(row, shippedAt = packageShippedAt(row)) {

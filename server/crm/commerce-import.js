@@ -202,8 +202,10 @@ export async function fetchCommercePage(connection, secrets, previous, { fetcher
     if (kind === 'orders') {
       query.set('marketplaceIds', markets.join(',')); query.set('lastUpdatedAfter', state.from); query.set('lastUpdatedBefore', state.to);
       query.set('maxResultsPerPage', '100'); query.set('includedData', 'PROCEEDS,FULFILLMENT,PACKAGES');
-      query.set('fulfillmentStatuses','SHIPPED,PENDING,UNSHIPPED,PARTIALLY_SHIPPED,PENDING_AVAILABILITY,CANCELLED');
-      if (state.token) query.set('paginationToken', state.token);
+      query.set('fulfillmentStatuses','SHIPPED,PENDING,UNSHIPPED,PARTIALLY_SHIPPED,PENDING_AVAILABILITY,CANCELLED,UNFULFILLABLE');
+      // Tokens expire after 24h. Replay the same committed window, never skip it.
+      const tokenDate=Date.parse(state.tokenIssuedAt || state.updatedAt || '');
+      if (state.token && (!Number.isFinite(tokenDate) || now.getTime()-tokenDate<23*3600000)) query.set('paginationToken', state.token);
       path = '/orders/2026-01-01/orders';
     } else {
       query.set('marketplaceIds', markets[state.marketplaceIndex]); query.set('pageSize', '20'); query.set('includedData', 'summaries,offers,fulfillmentAvailability');
@@ -213,14 +215,21 @@ export async function fetchCommercePage(connection, secrets, previous, { fetcher
       if (!seller) throw new Error('Seller ID Amazon mancante.');
       path = `/listings/2021-08-01/items/${encodeURIComponent(seller)}`;
     }
-    const data = await request(`${root}${path}?${query}`, { headers, timeoutMs: 20000, maxBytes: 2000000 }, fetcher, `Importazione Amazon ${kind}`);
+    let data;
+    try { data = await request(`${root}${path}?${query}`, { headers, timeoutMs: 20000, maxBytes: 2000000 }, fetcher, `Importazione Amazon ${kind}`); }
+    catch(error) {
+      if(kind!=='orders' || !query.has('paginationToken') || error.code!=='provider_400' || !/pagination.*token|token.*(?:invalid|expired)/i.test(error.message)) throw error;
+      query.delete('paginationToken');
+      data=await request(`${root}${path}?${query}`,{headers,timeoutMs:20000,maxBytes:2000000},fetcher,'Ripresa finestra ordini Amazon');
+    }
     if (!Array.isArray(kind === 'orders' ? data.orders : data.items)) throw new Error('Risposta Amazon non valida: pagina non acquisita.');
     if(kind==='orders') {
-      const selected=data.orders.filter(r=>markets.includes(r.salesChannel?.marketplaceId) && ['SHIPPED','PENDING','UNSHIPPED','PARTIALLY_SHIPPED','PENDING_AVAILABILITY','CANCELLED'].includes(r.fulfillment?.fulfillmentStatus));
+      const selected=data.orders.filter(r=>markets.includes(r.salesChannel?.marketplaceId));
       const dates=await loadShipmentDates(selected.filter(r=>r.fulfillment?.fulfillmentStatus==='SHIPPED').map(r=>r.orderId));
       rows=selected.map(row=>amazonOrder(row,packageShippedAt(row)||dates.get(row.orderId)||null));
     } else rows=data.items.map(r=>amazonProduct(r,markets[state.marketplaceIndex]));
     next.token = data.pagination?.nextToken || null;
+    next.tokenIssuedAt=next.token?now.toISOString():null;
     if (!next.token) {
       if (kind === 'orders' && state.recentStage) {
         Object.assign(next, state.originalOrders); delete next.originalOrders; next.recentStage = false;

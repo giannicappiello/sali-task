@@ -207,7 +207,10 @@ async function refreshCustomerProfiles(req, body) {
   return { recordsRead: result.rows.length, next: result.next };
 }
 
-async function synchronizeCommerce(db, actorId, connection, mode, shipmentDatesOnly = false) {
+export async function synchronizeCommerce(db, actorId, connection, mode, shipmentDatesOnly = false, {
+  readConnection=connectionById, readSecrets=decryptedSecrets, fetchPage=fetchCommercePage,
+  shipmentSync=synchronizeShipmentDates, coxSync=synchronizeAmazonCox,
+}={}) {
   const { data: runId, error: lockError } = await db.rpc('crm_claim_commerce_import_service', {
     target_connection_id: connection.id, target_triggered_by: actorId || null,
   });
@@ -219,38 +222,52 @@ async function synchronizeCommerce(db, actorId, connection, mode, shipmentDatesO
   };
   try {
     // Read the cursor after acquiring the lock: another request may have just finished a page.
-    const fresh = await connectionById(db, connection.id);
-    if(fresh.provider_code==='amazon_sp_api') {
-      const shipping=await synchronizeShipmentDates({db,connection:fresh,secrets:await decryptedSecrets(db,fresh.id)});
-      if(shipping.hasMore || shipping.recordsRead!=null) {
-        await finish('partial',{read:shipping.recordsRead||0,updated:shipping.recordsRead||0},{source:mode,resource:'amazon_shipments',hasMore:true,reports:shipping.reports});
-        return {...shipping,hasMore:true,runId,status:'partial'};
+    const fresh = await readConnection(db, connection.id);
+    let shipmentWarning=fresh.amazon_shipment_state?.lastError || null;
+    if(fresh.provider_code==='amazon_sp_api' && (shipmentDatesOnly || (fresh.amazon_cox_state?.active && fresh.amazon_cox_state.phase==='shipments'))) {
+      let shipping;
+      try { shipping=await shipmentSync({db,connection:fresh,secrets:await readSecrets(db,fresh.id)}); }
+      catch(error) {
+        if(shipmentDatesOnly) throw error;
+        shipmentWarning=String(error.message).slice(0,500);
+        const saved=await db.from('crm_external_connections').update({amazon_shipment_state:{...fresh.amazon_shipment_state,lastError:shipmentWarning,retryAt:new Date(Date.now()+900000).toISOString()}}).eq('id',fresh.id);
+        if(saved.error) throw saved.error;
+        shipping={hasMore:false,warning:shipmentWarning};
       }
+      shipmentWarning=shipping.warning || null;
+      if(shipping.hasMore || shipmentDatesOnly) {
+        const status=shipping.hasMore?'partial':'completed';
+        await finish(status,{read:shipping.recordsRead||0,updated:shipping.recordsRead||0},{source:mode,resource:'amazon_shipments',hasMore:shipping.hasMore,reports:shipping.reports,shipmentWarning});
+        return {...shipping,runId,status,shipmentWarning};
+      }
+      fresh.amazon_cox_state={active:true,phase:'reconcile'};
+      const saved=await db.from('crm_external_connections').update({amazon_cox_state:fresh.amazon_cox_state}).eq('id',fresh.id);
+      if(saved.error) throw saved.error;
     }
-    if(shipmentDatesOnly) { await finish('completed',{read:0,updated:0},{source:mode,resource:'amazon_shipments',hasMore:false});return {runId,status:'completed',resource:'amazon_shipments',hasMore:false}; }
     const emitCox = async () => {
-      const cox = await synchronizeAmazonCox({ db, connection: fresh,
+      const cox = await coxSync({ db, connection: fresh,
         clientForYear: year => buildMexalClient({ year, warehouse: 4 }) });
       await finish(cox.hasMore ? 'partial' : 'completed', { read: 0, updated: cox.emitted, failed: cox.failed },
-        { source: mode, resource: 'amazon_cox', hasMore: cox.hasMore, cox });
+        { source: mode, resource: 'amazon_cox', hasMore: cox.hasMore, cox, shipmentWarning });
       return { runId, status: cox.hasMore ? 'partial' : 'completed', hasMore: cox.hasMore,
-        recordsRead: 0, resource: 'amazon_cox', counts: fresh.import_state?.counts || {}, cox };
+        recordsRead: 0, resource: 'amazon_cox', counts: fresh.import_state?.counts || {}, cox, shipmentWarning };
     };
     if (fresh.provider_code === 'amazon_sp_api' && fresh.amazon_cox_state?.active) return await emitCox();
-    const page = await fetchCommercePage(fresh, await decryptedSecrets(db, connection.id), fresh.import_state,{loadShipmentDates:async ids=>{if(!ids.length)return new Map();const {data,error}=await db.from('crm_amazon_shipment_dates').select('external_id,shipped_at').eq('connection_id',fresh.id).in('external_id',ids);if(error)throw error;return new Map(data.map(row=>[row.external_id,row.shipped_at]));}});
+    const page = await fetchPage(fresh, await readSecrets(db, connection.id), fresh.import_state,{loadShipmentDates:async ids=>{if(!ids.length)return new Map();const {data,error}=await db.from('crm_amazon_shipment_dates').select('external_id,shipped_at').eq('connection_id',fresh.id).in('external_id',ids);if(error)throw error;return new Map(data.map(row=>[row.external_id,row.shipped_at]));}});
     const { error } = await db.rpc('crm_import_commerce_page_service', { target_connection_id: connection.id, target_run_id: runId,
       expected_state: fresh.import_state, resource_kind: page.kind, page_rows: page.rows, next_state: page.next });
     if (error) throw error;
+    const recoveryOrders=mode==='recovery' && page.kind==='orders' ? {orderIds:page.rows.map(row=>row.external_id)} : {};
     if (fresh.provider_code === 'amazon_sp_api' && !page.hasMore) {
-      const saved = await db.from('crm_external_connections').update({ amazon_cox_state: { active: true } }).eq('id', fresh.id);
+      const saved = await db.from('crm_external_connections').update({ amazon_cox_state: { active: true, phase:'shipments' } }).eq('id', fresh.id);
       if (saved.error) throw saved.error;
       // Start with the next bounded request; all provider pages have been committed.
       await finish('partial', { read: page.rows.length, updated: page.rows.length, failed: 0 },
         { source: mode, resource: page.kind, counts: page.next.counts, hasMore: true });
-      return { runId, status: 'partial', hasMore: true, recordsRead: page.rows.length, resource: page.kind, counts: page.next.counts };
+      return { runId, status: 'partial', hasMore: true, recordsRead: page.rows.length, resource: page.kind, counts: page.next.counts, ...recoveryOrders };
     }
     await finish(page.hasMore ? 'partial' : 'completed', { read: page.rows.length, updated: page.rows.length, failed: 0 }, { source: mode, resource: page.kind, counts: page.next.counts, hasMore: page.hasMore });
-    return { runId, status: page.hasMore ? 'partial' : 'completed', hasMore: page.hasMore, recordsRead: page.rows.length, resource: page.kind, counts: page.next.counts };
+    return { runId, status: page.hasMore ? 'partial' : 'completed', hasMore: page.hasMore, recordsRead: page.rows.length, resource: page.kind, counts: page.next.counts, ...recoveryOrders };
   } catch (error) {
     if (error.code === 'provider_429') {
       const state = (await connectionById(db, connection.id)).import_state;
@@ -313,6 +330,14 @@ export async function dispatchDigitalSchedule(req) {
 export async function handleDigitalConnectionManager(req, res) {
   const body = req.body || {}; const action = String(body.action || req.query?.action || "list");
   try {
+    if(action==='recover_amazon_import') {
+      res.setHeader('Cache-Control','private, no-store');
+      if(req.method!=='POST') return res.status(405).json({success:false,error:'Metodo non consentito.'});
+      if(!authorizedDigitalScheduler(req,required('SUPABASE_SERVICE_ROLE_KEY'),process.env.CRON_SECRET)) throw Object.assign(new Error('Recupero riservato al servizio.'),{status:401});
+      const db=serviceClient(), connection=await connectionById(db,body.id);
+      if(connection.provider_code!=='amazon_sp_api' || !connection.abilitata) throw Object.assign(new Error('Connessione Amazon attiva richiesta.'),{status:409});
+      return res.status(200).json({success:true,...await synchronizeCommerce(db,null,connection,'recovery')});
+    }
     if (action === 'amazon_buyer_probe') {
       res.setHeader('Cache-Control','private, no-store');
       if (req.method !== 'POST') return res.status(405).json({ success:false,error:'Metodo non consentito.' });

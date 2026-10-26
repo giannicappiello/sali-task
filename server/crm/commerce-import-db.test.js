@@ -199,5 +199,18 @@ test('Commerce SQL atomically resumes pages, preserves manual data and imports c
     await saveAmz({page:5},[{...amzOrder,stato:'CANCELLED'}],{page:6});
     assert.equal((await db.query('select stato from crm_external_orders where id=$1',[journalId])).rows[0].stato,'CANCELLED');
     assert.equal((await db.query('select count(*)::int n from crm_amazon_cox_exports where order_id=$1',[journalId])).rows[0].n,1);
+    await db.exec(await fs.readFile(new URL('../../supabase/migrations/20261026100000_preserve_amazon_cancelled_order_snapshots.sql',import.meta.url),'utf8'));
+    const cancelled={...amzOrder,external_id:'222-1234567-1234567',stato:'CANCELLED'};
+    await saveAmz({page:6},[cancelled,{...amzOrder,stato:'CANCELLED'}],{page:7});
+    await saveAmz({page:7},[cancelled,{...amzOrder,stato:'CANCELLED'}],{page:8});
+    assert.equal((await db.query('select count(*)::int n from crm_external_orders where connection_id=$1',[amz])).rows[0].n,2);
+    assert.equal((await db.query('select cox_error from crm_external_orders where connection_id=$1 and external_id=$2',[amz,cancelled.external_id])).rows[0].cox_error,null);
+    assert.match((await db.query('select cox_error from crm_external_orders where id=$1',[journalId])).rows[0].cox_error,/verificare il COX/);
+    assert.equal((await db.query('select count(*)::int n from crm_amazon_cox_exports where order_id=$1',[journalId])).rows[0].n,1);
+    assert.equal((await db.query('select count(*)::int n from crm_external_metrics where connection_id=$1',[amz])).rows[0].n,0);
+    await assert.rejects(saveAmz({page:7},[{...cancelled,stato:'SHIPPED'}],{page:9}),/Cursore modificato/);
+    assert.deepEqual((await db.query('select import_state from crm_external_connections where id=$1',[amz])).rows[0].import_state,{page:8});
+    await db.exec("set test.auth_role='authenticated'");
+    await assert.rejects(saveAmz({page:8},[],{page:9}),/Servizio riservato/);
   } finally { await db.close(); }
 });

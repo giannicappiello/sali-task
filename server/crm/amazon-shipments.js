@@ -35,13 +35,13 @@ export function packageShippedAt(order) {
 
 async function checked(result) {if(result.error) throw result.error;return result.data;}
 export async function synchronizeShipmentDates({db,connection,secrets,fetcher=safeFetch,now=new Date()}) {
-  // Daily reports run before order import and before any COX. Old dates are never guessed.
+  // Reports enrich already imported orders before any COX. Old dates are never guessed.
   if(connection.amazon_shipments_covered_at && Date.parse(connection.amazon_shipments_covered_at)>=Date.parse(now.toISOString().slice(0,10))) return {hasMore:false};
   let state=structuredClone(connection.amazon_shipment_state || {});
   if(state.retryAt && Date.parse(state.retryAt)>now.getTime()) return {hasMore:false,warning:state.lastError,deferred:true};
   // Amazon's historical window moves while a backfill runs. Avoid requesting
   // the exact 18-month boundary, which can already be outside retention by POST.
-  const available=new Date(now);available.setUTCMonth(available.getUTCMonth()-18);available.setUTCDate(available.getUTCDate()+1);
+  const available=new Date(now);available.setUTCMonth(available.getUTCMonth()-18);available.setUTCDate(available.getUTCDate()+1);available.setUTCHours(0,0,0,0);
   if(!state.target) {
     const floor=available;
     const start=connection.amazon_shipments_covered_at ? new Date(Date.parse(connection.amazon_shipments_covered_at)-14*86400000) : floor;

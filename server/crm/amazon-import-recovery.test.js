@@ -31,8 +31,13 @@ test('rolling retention replaces the old FATAL report with a valid window',async
   const result=await synchronizeShipmentDates({db:{rpc:async(n,args)=>{writes.push(args);return {data:null};}},connection:{id:'conn',provider_code:'amazon_sp_api',configurazione:{region:'eu'},amazon_shipment_state:{target:'2026-10-22T10:14:42Z',floor:'2025-04-22T10:17:42Z',start:'2025-04-22T10:17:42Z',end:'2025-04-30T10:14:42Z',reportId:'old-fatal',reports:18}},secrets:{},now,
     fetcher:async(url,opts)=>{calls.push({url,opts});return url.includes('/auth/')?{ok:true,data:{access_token:'private'}}:{ok:true,data:{reportId:'replacement'}};}});
   assert.ok(!calls.some(c=>c.url.includes('old-fatal')));const body=JSON.parse(calls[1].opts.body);
-  assert.equal(body.dataStartTime,'2025-04-27T12:00:00.000Z');assert.equal(body.dataEndTime,'2025-04-30T10:14:42Z');
+  assert.equal(body.dataStartTime,'2025-04-27T00:00:00.000Z');assert.equal(body.dataEndTime,'2025-04-30T10:14:42Z');
   assert.equal(writes[0].p_covered_at,null);assert.equal(result.hasMore,true);
+  // Advancing the clock between polls must not discard a report just requested.
+  const polled=[];
+  await synchronizeShipmentDates({db:{rpc:async()=>({data:null})},connection:{id:'conn',configurazione:{region:'eu'},amazon_shipment_state:writes[0].p_state},secrets:{},now:new Date(now.getTime()+30000),
+    fetcher:async url=>{polled.push(url);return url.includes('/auth/')?{ok:true,data:{access_token:'private'}}:{ok:true,data:{processingStatus:'IN_PROGRESS'}};}});
+  assert.ok(polled.some(url=>url.endsWith('/reports/replacement')));
 });
 test('FATAL preserves a missing window, defers retry and never reports false coverage',async()=>{
   const writes=[],now=new Date('2026-10-26T12:00:00Z'),connection={id:'conn',provider_code:'amazon_sp_api',configurazione:{region:'eu'},amazon_shipment_state:{target:'2026-10-26T10:00:00Z',floor:'2026-10-01T00:00:00Z',start:'2026-10-01T00:00:00Z',end:'2026-10-26T10:00:00Z',reportId:'bad'}};

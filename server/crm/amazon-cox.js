@@ -80,7 +80,12 @@ export function verifyAmazonCox(actual, payload, order) {
   for (const key of ['codice_articolo','quantita','prezzo','id_mag_da_riga',...(order.raw_summary?.tax_collection?['cod_iva']:[])]) {
     assert(Array.isArray(actual[key]) && actual[key].length === payload[key].length, `Righe COX diverse: ${key}.`);
     const values = new Map(actual[key]);
-    for (const [index, value] of payload[key]) assert(key === 'prezzo' ? Math.abs(Number(values.get(index)) - value) < 0.000001 : text(values.get(index)) === text(value), `Righe COX diverse: ${key}.`);
+    for (const [index, value] of payload[key]) {
+      const equal=key==='prezzo'?Math.abs(Number(values.get(index))-value)<0.000001:
+        key==='cod_iva'?text(values.get(index)).toUpperCase().replace(/[,.]0+$/,'')===text(value).toUpperCase().replace(/[,.]0+$/,''):
+          text(values.get(index))===text(value);
+      assert(equal,`Righe COX diverse: ${key}.`);
+    }
   }
   if(payload.id_lotto?.length) for(const key of ['id_lotto','qta_lotto','pos_righe_lotto','nr_righe_lotto']) {
     assert(Array.isArray(actual[key]) && actual[key].length===payload[key].length, 'Lotti COX diversi: '+key);
@@ -88,7 +93,9 @@ export function verifyAmazonCox(actual, payload, order) {
     for(const [index,value] of payload[key]) assert(Number(values.get(index))===Number(value), 'Lotti COX diversi: '+key);
   }
   const fiscal=amazonCoxFinancials(order);
-  const moneyVerification=verifyAmazonMoney(fiscal.order,cents(scalar(actual.tot_documento)),cents(scalar(actual.tot_iva)));
+  // Mexal represents a verified N41 document's zero VAT with an empty matrix.
+  const actualTax=fiscal.vatCode==='N41' && Array.isArray(actual.tot_iva) && actual.tot_iva.length===0?0:cents(scalar(actual.tot_iva));
+  const moneyVerification=verifyAmazonMoney(fiscal.order,cents(scalar(actual.tot_documento)),actualTax);
   return { year: payload.data_documento.slice(0,4), series: Number(actual.serie), number: Number(actual.numero), date: payload.data_documento,
     ...(moneyVerification.totalDifferenceCents || moneyVerification.taxDifferenceCents ? {moneyVerification} : {}),
     ...(fiscal.proof?{taxTreatment:fiscal.proof}:{}) };

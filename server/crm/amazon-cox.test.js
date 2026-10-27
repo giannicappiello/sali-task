@@ -101,6 +101,9 @@ test('N41 exports net proceeds, excludes Amazon collected tax and verifies the f
   assert.equal(ref.taxTreatment.amazonCollectedTaxCents,99);assert.equal(ref.taxTreatment.documentTotalCents,1221);
   assert.throws(()=>verifyAmazonCox({...readback,cod_iva:[[1,'22']]},doc,mpf),/cod_iva/);
   assert.throws(()=>verifyAmazonCox({...readback,tot_documento:[[1,13.2]]},doc,mpf),/prima cifra/);
+  assert.equal(verifyAmazonCox({...readback,cod_iva:[[1,'N41,0']],tot_iva:[]},doc,mpf).taxTreatment.documentTotalCents,1221);
+  assert.throws(()=>verifyAmazonCox({...readback,cod_iva:[[1,'N410']],tot_iva:[]},doc,mpf),/cod_iva/);
+  assert.throws(()=>verifyAmazonCox({...actual(),tot_iva:[]},payload(),order),/prima cifra/);
 });
 test('timeout is persisted as reconciliation required, and an existing claim is never retried',async()=>{
   const f=fixture({timeout:true});const r=await emitAmazonCox({db:f.db,connection:{id:'conn'},order,clientForYear:()=>f.mexal});

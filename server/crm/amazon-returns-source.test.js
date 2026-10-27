@@ -1,7 +1,7 @@
 /* global process */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {financialTransactions,safeFinancialTransaction,returnReportRows,legacyRefundEvents} from './amazon-returns-source.js';
+import {financialTransactions,safeFinancialTransaction,returnReportRows,legacyRefundEvents,refundFinancialEvents} from './amazon-returns-source.js';
 import {handleDigitalConnectionManager as handler} from './digital-connection-manager.js';
 
 test('financial source preserves refund identifiers and monetary trees without customer PII',async()=>{
@@ -23,6 +23,7 @@ test('FBA report keeps disposition and return identity but never customer commen
 });
 
 test('legacy refund source preserves adjustments and discounts without buyer identity',async()=>{
+ assert.equal(refundFinancialEvents,legacyRefundEvents);
  const urls=[];
  const result=await legacyRefundEvents({provider_code:'amazon_sp_api',configurazione:{region:'eu'}},{},{orderId:'405-5097949-2429931',fetcher:async url=>{
   urls.push(url);return {ok:true,data:url.includes('/auth/')?{access_token:'secret'}:{payload:{FinancialEvents:{RefundEventList:[{AmazonOrderId:'405-5097949-2429931',BuyerName:'PRIVATE',ShipmentItemAdjustmentList:[{OrderAdjustmentItemId:'adjustment-1',SellerSKU:'IT0058 - FBA',QuantityShipped:1,ItemChargeAdjustmentList:[{ChargeType:'Principal',ChargeAmount:{CurrencyAmount:-12.05,CurrencyCode:'EUR'}}],PromotionAdjustmentList:[{PromotionId:'discount-1',PromotionAmount:{CurrencyAmount:1,CurrencyCode:'EUR'}}]}]}]},NextToken:'next'}}};
@@ -31,6 +32,20 @@ test('legacy refund source preserves adjustments and discounts without buyer ide
  assert.equal(result.refunds[0].ShipmentItemAdjustmentList[0].OrderAdjustmentItemId,'adjustment-1');
  assert.equal(result.refunds[0].ShipmentItemAdjustmentList[0].PromotionAdjustmentList[0].PromotionAmount.CurrencyAmount,1);
  assert.equal(result.nextToken,'next');assert.ok(!JSON.stringify(result).includes('PRIVATE'));
+ assert.equal(result.sourceApi,'finances_v0');
+});
+
+test('refund date cursor scans and resumes the official financial API without losing its time window',async()=>{
+ let called;
+ const result=await refundFinancialEvents({provider_code:'amazon_sp_api',configurazione:{region:'eu'}},{},{from:'2026-10-21T00:00:00Z',to:'2026-10-27T08:00:00Z',nextToken:'page-2',fetcher:async url=>{
+  if(url.includes('/auth/'))return {ok:true,data:{access_token:'secret'}};
+  called=new URL(url);return {ok:true,data:{payload:{FinancialEvents:{}}}};
+ }});
+ assert.equal(called.pathname,'/finances/v0/financialEvents');
+ assert.equal(called.searchParams.get('PostedAfter'),'2026-10-21T00:00:00Z');
+ assert.equal(called.searchParams.get('PostedBefore'),'2026-10-27T08:00:00Z');
+ assert.equal(called.searchParams.get('NextToken'),'page-2');
+ assert.deepEqual(result.refunds,[]);assert.equal(result.nextToken,null);
 });
 
 test('returns diagnostic rejects missing service authorization before provider access',async()=>{

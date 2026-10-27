@@ -6,7 +6,7 @@ async function amazonClient(connection,secrets,fetcher) {
   const root={eu:'https://sellingpartnerapi-eu.amazon.com',na:'https://sellingpartnerapi-na.amazon.com',fe:'https://sellingpartnerapi-fe.amazon.com'}[connection.configurazione?.region || 'eu'];
   if(!root)throw new Error('Regione Amazon non valida.');
   const token=await refreshAccessToken(connection,secrets,fetcher);
-  return (path,options={})=>request(root+path,{headers:{'x-amz-access-token':token.access_token,accept:'application/json','content-type':'application/json'},timeoutMs:20000,maxBytes:2097152,...options},fetcher,'Resi Amazon');
+  return (path,options={})=>request(root+path,{headers:{'x-amz-access-token':token.access_token,'user-agent':'Workspace/1.0 (Language=JavaScript; Platform=Node.js)',accept:'application/json','content-type':'application/json'},timeoutMs:20000,maxBytes:2097152,...options},fetcher,'Resi Amazon');
 }
 
 const money=value=>value && {currencyAmount:value.currencyAmount,currencyCode:value.currencyCode};
@@ -52,8 +52,13 @@ export async function legacyRefundEvents(connection,secrets,{orderId,from,to,nex
       ItemTaxWithheldList:(item.ItemTaxWithheldList || []).map(row=>({TaxCollectionModel:row.TaxCollectionModel,TaxesWithheld:(row.TaxesWithheld || []).map(tax=>({ChargeType:tax.ChargeType,ChargeAmount:tax.ChargeAmount}))}))
     }))
   }));
-  return {refunds,nextToken:data.payload.NextToken || null};
+  return {sourceApi:'finances_v0',refunds,nextToken:data.payload.NextToken || null};
 }
+
+// Use the supported API verified against this seller's production account.
+// Its refund adjustments include the amount paid back to the customer, unlike
+// a transaction balance that can also contain Amazon commissions.
+export const refundFinancialEvents=legacyRefundEvents;
 
 export function returnReportRows(input) {
   const records=[];let row=[],cell='',quoted=false;

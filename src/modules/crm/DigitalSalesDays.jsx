@@ -30,7 +30,8 @@ function MexalSyncInfo({ value, compact = false }) {
   const label = value.status === 'blocked' ? `Invio Mexal bloccato: ${value.message}` : stale ? 'Verifica connettore non recente' : 'Invio Mexal verificato';
   if (compact) return value.status === 'blocked' || stale ? <small style={{ display: 'block' }} role="status">{label}</small> : null;
   const date = (v) => v ? new Date(v).toLocaleString('it-IT') : 'non disponibile';
-  return <div className="crm-message" role="status"><p>{label}</p><p>Ultima verifica: {date(value.checkedAt)}. Catalogo aggiornato: {date(value.catalogAt)}.</p>{stale || catalogStale ? <p>Controllare che il computer del connettore sia acceso e la sincronizzazione sia in esecuzione.</p> : null}</div>;
+  const comparison=value.amountComparison;
+  return <div className="crm-message" role="status"><p>{label}</p><p>Ultima verifica: {date(value.checkedAt)}. Catalogo aggiornato: {date(value.catalogAt)}.</p>{comparison && (comparison.totalDifferenceCents!==0 || comparison.taxDifferenceCents!==0) ? <p>Totale sito: {amount(comparison.sourceTotalCents/100)} · Totale OC: {amount(comparison.mexalTotalCents/100)}. Scostamento accettato nei centesimi: euro e prima cifra decimale coincidono.</p> : null}{stale || catalogStale ? <p>Controllare che il computer del connettore sia acceso e la sincronizzazione sia in esecuzione.</p> : null}</div>;
 }
 
 function OrderDetail({ selected, onClose, onReference }) {

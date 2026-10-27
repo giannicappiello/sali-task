@@ -18,6 +18,15 @@ test('sync status is bound to its order and exposes only classified reasons',asy
  const result=await loadDigitalOrderDetail('uuid',deps({fetcher:async()=>({ok:true,data:order})}));
  assert.equal(result.order.mexalSync.status,'blocked');
 });
+
+test('verified cent difference is shown only when euro and first decimal match',()=>{
+ const comparison={policy:'first_decimal',sourceTotalCents:6203,mexalTotalCents:6204,sourceTaxCents:1119,mexalTaxCents:1119,totalDifferenceCents:1,taxDifferenceCents:0};
+ const value={version:1,source_order_id:'13741',status:'verified',checked_at:'2026-10-27T09:00:00Z',amount_comparison:comparison};
+ const order={id:13741,meta_data:[{key:'_sdi_mexal_sync_v1',value}]};
+ assert.equal(wooMexalSyncStatus(order).amountComparison.totalDifferenceCents,1);
+ value.amount_comparison={...comparison,mexalTotalCents:6210,totalDifferenceCents:7};assert.equal(wooMexalSyncStatus(order).amountComparison,undefined);
+ value.amount_comparison={...comparison,totalDifferenceCents:0};assert.equal(wooMexalSyncStatus(order).amountComparison,undefined);
+});
 test('only a verified OC belonging to the same Woo order is imported', () => {
   assert.equal(wooMexalOrderReference(source), 'OC/1/17359');
   assert.equal(wooOrder(source).raw_summary.mexal_oc, 'OC/1/17359');

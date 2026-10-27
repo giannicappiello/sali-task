@@ -1,0 +1,13 @@
+{
+  "site": "https://salidischia.it",
+  "company": "TEST",
+  "year": 2026,
+  "module": "",
+  "series": 1,
+  "warehouse": 5,
+  "taxCodes": { "1": "22" },
+  "shippingTaxVerified": false,
+  "shippingTaxCode": "22",
+  "cutoverVerified": false,
+  "contractVerified": false
+}

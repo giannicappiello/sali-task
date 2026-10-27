@@ -33,6 +33,13 @@ test('legacy refund source preserves adjustments and discounts without buyer ide
  assert.equal(result.refunds[0].ShipmentItemAdjustmentList[0].PromotionAdjustmentList[0].PromotionAmount.CurrencyAmount,1);
  assert.equal(result.nextToken,'next');assert.ok(!JSON.stringify(result).includes('PRIVATE'));
  assert.equal(result.sourceApi,'finances_v0');
+ assert.equal(result.includesDeferredTransactions,false);
+});
+
+test('financial authorization failure retains only the safe Amazon request reference for support',async()=>{
+ await assert.rejects(()=>financialTransactions({provider_code:'amazon_sp_api',configurazione:{region:'eu'}},{},{orderId:'405-5097949-2429931',fetcher:async url=>url.includes('/auth/')?{ok:true,data:{access_token:'secret'}}:{ok:false,status:403,headers:{'x-amzn-requestid':'request-123','authorization':'secret'},data:{errors:[{code:'Unauthorized',message:'Access denied'}]}}}),error=>{
+  assert.equal(error.providerRequestId,'request-123');assert.equal(error.code,'provider_403');assert.ok(!JSON.stringify(error).includes('secret'));return true;
+ });
 });
 
 test('refund date cursor scans and resumes the official financial API without losing its time window',async()=>{

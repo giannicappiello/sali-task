@@ -418,6 +418,6 @@ export async function handleDigitalConnectionManager(req, res) {
   } catch (error) {
     if (action === "oauth_callback") return res.redirect(302, "/settings/crm-digital?oauth=error");
     const status = Number(error.status || 500); if (status >= 500) console.error("CRM Digital Connection Manager", redact({ message: error.message, code: error.code }));
-    return res.status(status >= 400 && status <= 599 ? status : 500).json({ success: false, error: String(error.message || "Operazione non riuscita.").slice(0, 500) });
+    return res.status(status >= 400 && status <= 599 ? status : 500).json({ success: false, error: String(error.message || "Operazione non riuscita.").slice(0, 500),...(action==='amazon_returns_probe' && error.providerRequestId?{providerRequestId:error.providerRequestId}:{}) });
   }
 }

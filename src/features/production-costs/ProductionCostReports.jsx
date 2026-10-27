@@ -5,7 +5,7 @@ import {invoiceReferences,groupedInvoices} from './invoice-summary';
 import {conclusionDate,splitSaliDiIschia} from "./summary-totals";
 import {InvoiceCells,InvoiceHeaders,InvoiceBalance,invoiceDifference} from "./InvoiceSummary";
 import CostSummaryCards from "./CostSummaryCards";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback,useEffect, useMemo, useRef, useState } from "react";
 import { PackagingPlan } from "./PackagingPlan";
 import { RefreshCw, Search } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
@@ -13,11 +13,11 @@ import { Field, Numeric, Modal } from "./common";
 import { action, money, quantity, date,unitMoney,signedMoney,signedPercent } from "./client";
 import { costVariance, costVariancePercent } from "./cost-engine";
 import { matchesProductionSearch } from "./search";
-import { matchesWorkflow, workflowLabel } from "./workflow-status";
+import { matchesWorkflow } from "./workflow-status";
 import CostInfo, { RecordNotes } from "./CostInfo";
 import { costRows,displayRecord } from "./cost-display";
-import { sumAvailable } from "./available-costs";
 import StationOvertime from "./StationOvertime";
+import {syncCostHistory,recoverCostDocuments,watchCostHistory} from "./history-sync";
 
 function Amount({value,partial,signed=false}){
  return <><span className={signed&&value!=null?(value>0?"pc-balance-positive":value<0?"pc-balance-negative":""):undefined}>{(signed?signedMoney:money)(value)}</span>{partial&&value!=null&&<small className="pc-partial">Parziale</small>}</>;
@@ -90,35 +90,36 @@ export default function ProductionCostReports(){
  const {session}=useAuth(),token=session?.access_token;
  const [records,setRecords]=useState([]),[canWrite,setCanWrite]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(""),[progress,setProgress]=useState("");
  const [query,setQuery]=useState(""),[from,setFrom]=useState(""),[to,setTo]=useState(""),[invoiceState,setInvoiceState]=useState(""),[machine,setMachine]=useState(""),[selected,setSelected]=useState(null);
- const mounted=useRef(true);useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
- async function load(){const r=await action(token,"list");if(mounted.current){setRecords(r.records);setCanWrite(r.canWrite);}}
- useEffect(()=>{if(!token)return;let alive=true;action(token,"list").then(r=>{if(alive){setRecords(r.records);setCanWrite(r.canWrite);}}).catch(e=>alive&&setError(e.message)).finally(()=>alive&&setBusy(false));return()=>{alive=false;};},[token]);
- async function sync(){setBusy(true);setError("");try{let page=1,result,unresolved=0,recovered=0;do{
-  result=await action(token,"sync",{page});if(!mounted.current)return;
-  for(const [index,id] of (result.octRecoveryIds||[]).entries()){
-   setProgress(`Recupero OC originali - pagina ${page}, produzione ${index+1}/${result.octRecoveryIds.length}`);
-   const oct=await action(token,"sync-oct",{id});if(!mounted.current)return;
-   unresolved+=oct.warnings?.length||0;
-  }
-  for(const [index,id] of (result.recoveryIds||[]).entries()){
-   setProgress(`Recupero SL confezionamento - pagina ${page}, produzione ${index+1}/${result.recoveryIds.length}`);
-   const sl=await action(token,"sync-product-sl",{id});if(!mounted.current)return;
-   recovered+=sl.recovered;unresolved+=sl.warnings?.length||0;
-  }
-  setProgress(`Importati ${Math.min(page*100,result.total)} / ${result.total} ordini MES`);page++;
- }while(result.hasMore);await load();setProgress(`Importazione completata. ${recovered} SL storici disponibili.${unresolved?" "+unresolved+" segnalazioni nelle informazioni delle produzioni.":""}`);
- }catch(e){setError(e.message);await load().catch(()=>{});}finally{if(mounted.current)setBusy(false);}}
- async function recoverAllOct(){
-  setBusy(true);setError("");let warnings=0,recovered=0;
-  try{for(const [index,r] of records.entries()){
-   if(!mounted.current)return;
-   setProgress(`Recupero OC originali: ${index+1} / ${records.length}`);
-   const result=await action(token,"sync-oct",{id:r.id});
-   recovered+=result.recovered;warnings+=result.warnings?.length||0;
-  }
-  await load();setProgress(`Recupero OC completato: ${recovered} collegamenti disponibili.${warnings?" "+warnings+" segnalazioni consultabili nel dettaglio Economia.":""}`);
-  }catch(e){setError(e.message);await load().catch(()=>{});}finally{if(mounted.current)setBusy(false);}
+ const syncAbort=useRef(null);
+ const autoWatcher=useRef(null);
+ const [autoUpdating,setAutoUpdating]=useState(false);
+ const mounted=useRef(true);useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;syncAbort.current?.abort();};},[]);
+ const load=useCallback(async(signal)=>{const r=await action(token,"list",{},{signal,timeoutMs:90000});if(mounted.current){setRecords(r.records);setCanWrite(r.canWrite);}},[token]);
+ useEffect(()=>{
+  if(!token)return;let initial=true,active=true;
+  const watcher=watchCostHistory({isBusy:()=>Boolean(syncAbort.current),onError:e=>{if(active)setError(e.message);},run:async signal=>{
+   setAutoUpdating(true);
+   try{
+    if(initial){await load(signal);initial=false;}
+    await syncCostHistory({request:(op,body,options)=>action(token,op,body,options),refresh:()=>load(signal),signal,recoverDocuments:false});
+    if(active){setError("");setProgress("Storico MES aggiornato automaticamente. Aggiornamento attivo a ogni chiusura e ogni minuto.");}
+   }finally{if(active)setAutoUpdating(false);}
+  }});autoWatcher.current=watcher;
+  return()=>{active=false;watcher.dispose();if(autoWatcher.current===watcher)autoWatcher.current=null;};
+ },[token,load]);
+ async function runSync(onlyOct=false){
+  const controller=new AbortController();syncAbort.current=controller;
+  setBusy(true);setError("");setProgress(onlyOct?"Recupero OC originali…":"Importazione storico MES…");
+   const options={request:(op,body,requestOptions)=>action(token,op,body,requestOptions),refresh:()=>load(),
+   signal:controller.signal,onProgress:message=>{if(mounted.current)setProgress(message);}};
+  try{
+   const result=onlyOct?await recoverCostDocuments({...options,jobs:records.map(r=>({id:r.id,oct:true}))}):await syncCostHistory(options);
+   if(mounted.current)setProgress(`${onlyOct?"Recupero OC completato":`Storico MES aggiornato: ${result.imported} ordini`}. ${result.ocRecovered} OC e ${result.slRecovered} SL recuperati.${result.failures?` ${result.failures} recuperi documenti non riusciti; i dati MES restano disponibili.`:""}${result.warnings?` ${result.warnings} segnalazioni nei dettagli delle produzioni.`:""}`);
+  }catch(e){
+   if(mounted.current){if(controller.signal.aborted)setProgress("Aggiornamento interrotto. I dati MES già importati restano disponibili.");else setError(e.message);await load().catch(()=>{});}
+  }finally{if(syncAbort.current===controller)syncAbort.current=null;if(mounted.current)setBusy(false);autoWatcher.current?.idle();}
  }
+ const sync=()=>runSync(),recoverAllOct=()=>runSync(true);
  const machines=useMemo(()=>[...new Map(records.flatMap(r=>r.phases.map(p=>[p.machineId,p.machine?.code||"Impianto "+p.machineId]))).entries()], [records]);
  const filtered=useMemo(()=>records.filter(r=>{
   const d=String(r.works?.[0]?.start||r.date||"").slice(0,10);
@@ -131,11 +132,9 @@ export default function ProductionCostReports(){
  const {ordinary:displayed,sali:saliRows}=splitSaliDiIschia(allDisplayed);
  const summaryRow=r=>({id:r.id,order:r.orderNumber,concludedAt:conclusionDate(r.works),customer:r.customerName,articleCode:r.articleCode,description:r.articleName,references:r.links?.map(l=>l.oct),reasons:r.commercial?.octReasons,oct:r.octRevenue,octPartial:r.costPartial.octRevenue,actual:r.actualWithObjective,planned:r.plannedWithObjective,objective:r.plannedObjective,invoice:r.commercial?.invoiceRevenue,invoiceReferences:invoiceReferences(r.commercial?.invoices)});
  const closedRows=displayed.filter(r=>r.closed);
- const comparable=key=>closedRows.filter(r=>r.actualWithObjective!=null&&r[key]!=null&&(key!=="octRevenue"||!r.costPartial.octRevenue));
- const excluded=closedRows.filter(r=>!comparable("octRevenue").includes(r));
 
  return <main className="pc-page" data-column-controls="off">
- <section className="pc-panel pc-report-controls"><div className="pc-report-control-row"><Field label="Ricerca totale"><input aria-label="Ricerca totale" placeholder="Cliente, OC/RdP, prodotto, lotto, operatore, reparto…" value={query} onChange={e=>setQuery(e.target.value)}/></Field><Field label="Dal (avvio / data ordine)"><input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></Field><Field label="Al"><input type="date" value={to} onChange={e=>setTo(e.target.value)}/></Field><Field label="Stato fatture"><select value={invoiceState} onChange={e=>setInvoiceState(e.target.value)}><option value="">Tutte</option><option value="available">Disponibili</option><option value="missing">Non disponibili</option></select></Field><Field label="Impianto"><select value={machine} onChange={e=>setMachine(e.target.value)}><option value="">Tutti</option>{machines.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></Field><button disabled={busy||!records.length} onClick={recoverAllOct} title="Recupera gli OC originali di tutte le produzioni">Recupera OC originali</button><button className="pc-primary" disabled={busy} onClick={sync}><RefreshCw size={15}/>{busy?"Caricamento…":"Aggiorna storico MES"}</button></div>{progress&&<p role="status">{progress}</p>}</section>
+ <section className="pc-panel pc-report-controls"><div className="pc-report-control-row"><Field label="Ricerca totale"><input aria-label="Ricerca totale" placeholder="Cliente, OC/RdP, prodotto, lotto, operatore, reparto…" value={query} onChange={e=>setQuery(e.target.value)}/></Field><Field label="Dal (avvio / data ordine)"><input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></Field><Field label="Al"><input type="date" value={to} onChange={e=>setTo(e.target.value)}/></Field><Field label="Stato fatture"><select value={invoiceState} onChange={e=>setInvoiceState(e.target.value)}><option value="">Tutte</option><option value="available">Disponibili</option><option value="missing">Non disponibili</option></select></Field><Field label="Impianto"><select value={machine} onChange={e=>setMachine(e.target.value)}><option value="">Tutti</option>{machines.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></Field><button disabled={busy||autoUpdating||!records.length} onClick={recoverAllOct} title="Recupera gli OC originali di tutte le produzioni">Recupera OC originali</button><button className="pc-primary" disabled={busy||autoUpdating} onClick={sync}><RefreshCw size={15}/>{busy?"Caricamento…":"Aggiorna storico MES"}</button>{busy&&<button type="button" onClick={()=>{syncAbort.current?.abort();setProgress("Interruzione in corso…");}}>Interrompi</button>}</div>{(progress||autoUpdating)&&<p role="status">{autoUpdating?"Aggiornamento automatico dello storico MES…":progress}</p>}</section>
  {error&&<p className="pc-error" role="alert">{error}</p>}
  <CostSummaryCards rows={closedRows.map(summaryRow)} saliRows={saliRows.map(summaryRow)}/>
 

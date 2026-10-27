@@ -1,0 +1,23 @@
+import{readFile,writeFile}from'node:fs/promises';
+import{mexalTransport}from'../src/clients.mjs';
+import{MexalAdapter}from'../src/adapter.mjs';
+import{prepareOrder,documentPayload}from'../src/order.mjs';
+const orderId=process.argv[2]||'13729';
+if(!/^\d+$/.test(orderId))throw new Error('ID non valido');
+const config=JSON.parse(await readFile('.private/connector-config.json','utf8'));
+const source=JSON.parse(await readFile(`data/ordine-${orderId}.json`,'utf8'));
+const plan=prepareOrder(source,config);
+// Read-only audit of a historical order. These overrides are never saved or used by the worker.
+const auditConfig={...config,importFrom:plan.date,legacyReconciledThrough:Number(plan.orderId)-1};
+const api=mexalTransport();const adapter=new MexalAdapter(api,auditConfig);
+await adapter.preflight(plan,auditConfig);
+const already=await adapter.findExistingOrder(plan);
+const patch=adapter.customerPatch(plan.customer);
+const lookup=await api.search('clienti',[{campo:'partita_iva',condizione:'=',valore:patch.partita_iva}]);
+const matches=lookup.data?.dati||[];
+if(matches.length!==1)throw new Error('Per questa anteprima serve un cliente fiscale identificato univocamente.');
+const code=matches[0].codice;
+const payload=documentPayload(plan,code,config);
+const totals=await adapter.validateTotals(plan,payload);
+await writeFile(`output/ordine-${orderId}-anteprima-reale.json`,JSON.stringify({mode:'read-only',plan,customerCode:code,customerPatch:patch,payload,totals,existingMarker:Boolean(already)},null,2));
+console.log(JSON.stringify({mode:'read-only',orderId,customerCode:code,total:(Number(totals.tot_imponibile)+Number(totals.tot_imposta)),shipping:totals.spese_trasporto,tax:totals.tot_imposta,existingMarker:Boolean(already)}));

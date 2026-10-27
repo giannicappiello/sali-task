@@ -1,0 +1,13 @@
+import {readFile,writeFile}from'node:fs/promises';
+import{prepareOrder,documentPayload}from'../src/order.mjs';
+import{mexalTransport}from'../src/clients.mjs';
+const source=JSON.parse(await readFile('data/ordine-13729.json','utf8'));
+const plan=prepareOrder(source,{company:process.env.MEXAL_AZIENDA,year:process.env.MEXAL_ANNO});
+const taxCodes=Object.fromEntries(plan.lines.flatMap(x=>x.taxes.map(t=>[t.id,'22'])));
+const config={module:'X',series:1,warehouse:Number(process.env.MEXAL_MAGAZZINO),taxCodes,shippingTaxVerified:true,shippingTaxCode:'22',paymentCodes:{[plan.paymentMethod]:4}};
+const payload=documentPayload(plan,'501.02388',config);
+await writeFile('output/ordine-13729-payload-proposto.json',JSON.stringify(payload,null,2));
+const api=mexalTransport();
+const result=await api.calculateDocument(payload);
+await writeFile('.private/order-calculated.json',JSON.stringify(result,null,2));
+console.log(JSON.stringify({status:result.status,keys:Object.keys(result.data||{}),taxIds:Object.keys(taxCodes)}));

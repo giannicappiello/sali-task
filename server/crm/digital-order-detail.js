@@ -3,12 +3,13 @@ import { request } from './digital-provider-adapters.js';
 import { safeFetch } from './digital-security.js';
 import { amazonProductsPreview } from '../../shared/amazonOrderAmounts.js';
 import { amazonOrder, wooShippingLines } from './commerce-import.js';
-import { formatMexalOrderReference, wooMexalOrderReference } from '../../shared/wooMexalReference.js';
+import { formatMexalOrderReference, wooMexalOrderReference, wooMexalSyncStatus } from '../../shared/wooMexalReference.js';
 import { fetchAmazonOrderWithBuyer, amazonBuyerUnavailable } from './amazon-buyer.js';
 
 export function wooOrderDetail(order) {
   return {
     mexalOc: wooMexalOrderReference(order),
+    mexalSync: wooMexalSyncStatus(order),
     customerName: [order.billing?.last_name, order.billing?.first_name].filter(Boolean).join(' ').trim() || order.billing?.company || null,
     lines: (order.line_items || []).map((line) => ({
       id: String(line.id), name: line.name || line.sku || 'Prodotto non identificato', sku: line.sku || null,
@@ -26,7 +27,7 @@ export async function loadDigitalOrderDetail(orderId, dependencies) {
   const connection = await dependencies.connection(order.connection_id);
   await dependencies.authorizeScreen(connection.tipo === 'ecommerce' ? 'crm.online.ecommerce' : 'crm.online.amazon');
   const lines = await dependencies.cachedLines(order.id);
-  let result = { customerName: order.crm_accounts?.nome || null, lines, mexalOc: connection.provider_code === 'woocommerce' ? formatMexalOrderReference(order.raw_summary?.mexal_oc) : null };
+  let result = { customerName: order.crm_accounts?.nome || null, lines, mexalOc: connection.provider_code === 'woocommerce' ? formatMexalOrderReference(order.raw_summary?.mexal_oc) : null, mexalSync: connection.provider_code === 'woocommerce' ? order.raw_summary?.mexal_sync || null : null };
   let warning = null;
   if (connection.provider_code === 'woocommerce') {
     try {

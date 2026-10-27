@@ -1,0 +1,20 @@
+{
+  "name": "salidischia-mexal-connector",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "preview": "node --env-file-if-exists=.env.local src/cli.mjs preview",
+    "inspect:mexal": "node --env-file-if-exists=.env.local src/inspect.mjs",
+    "fetch:order": "node --env-file-if-exists=.env.local src/fetch-order.mjs",
+    "preview:live": "node --env-file-if-exists=.env.local scripts/preview-live.mjs",
+    "sync:preview": "node --env-file-if-exists=.env.local scripts/run-once.mjs",
+    "sync:once": "node --env-file-if-exists=.env.local scripts/run-once.mjs --write"
+  },
+  "devDependencies": {
+    "php-parser": "^3.7.0"
+  }
+}

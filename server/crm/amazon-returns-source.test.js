@@ -1,7 +1,7 @@
 /* global process */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {financialTransactions,safeFinancialTransaction,returnReportRows} from './amazon-returns-source.js';
+import {financialTransactions,safeFinancialTransaction,returnReportRows,legacyRefundEvents} from './amazon-returns-source.js';
 import {handleDigitalConnectionManager as handler} from './digital-connection-manager.js';
 
 test('financial source preserves refund identifiers and monetary trees without customer PII',async()=>{
@@ -20,6 +20,17 @@ test('FBA report keeps disposition and return identity but never customer commen
  const rows=returnReportRows('return-date\torder-id\tsku\tquantity\tdetailed-disposition\tstatus\tlicense-plate-number\tcustomer-comments\n2026-10-26T08:00:00Z\t405-5097949-2429931\tIT0058 - FBA\t1\tSELLABLE\tUnit returned to inventory\tLPN-1\tPrivate\n');
  assert.equal(rows[0]['detailed-disposition'],'SELLABLE');assert.equal(rows[0]['license-plate-number'],'LPN-1');assert.ok(!JSON.stringify(rows).includes('Private'));
  assert.throws(()=>returnReportRows('order-id\n405-5097949-2429931'),/senza campo/);
+});
+
+test('legacy refund source preserves adjustments and discounts without buyer identity',async()=>{
+ const urls=[];
+ const result=await legacyRefundEvents({provider_code:'amazon_sp_api',configurazione:{region:'eu'}},{},{orderId:'405-5097949-2429931',fetcher:async url=>{
+  urls.push(url);return {ok:true,data:url.includes('/auth/')?{access_token:'secret'}:{payload:{FinancialEvents:{RefundEventList:[{AmazonOrderId:'405-5097949-2429931',BuyerName:'PRIVATE',ShipmentItemAdjustmentList:[{OrderAdjustmentItemId:'adjustment-1',SellerSKU:'IT0058 - FBA',QuantityShipped:1,ItemChargeAdjustmentList:[{ChargeType:'Principal',ChargeAmount:{CurrencyAmount:-12.05,CurrencyCode:'EUR'}}],PromotionAdjustmentList:[{PromotionId:'discount-1',PromotionAmount:{CurrencyAmount:1,CurrencyCode:'EUR'}}]}]}]},NextToken:'next'}}};
+ }});
+ assert.match(urls[1],/\/finances\/v0\/orders\/405-5097949-2429931\/financialEvents/);
+ assert.equal(result.refunds[0].ShipmentItemAdjustmentList[0].OrderAdjustmentItemId,'adjustment-1');
+ assert.equal(result.refunds[0].ShipmentItemAdjustmentList[0].PromotionAdjustmentList[0].PromotionAmount.CurrencyAmount,1);
+ assert.equal(result.nextToken,'next');assert.ok(!JSON.stringify(result).includes('PRIVATE'));
 });
 
 test('returns diagnostic rejects missing service authorization before provider access',async()=>{

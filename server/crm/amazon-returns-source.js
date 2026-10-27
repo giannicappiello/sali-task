@@ -33,6 +33,28 @@ export async function financialTransactions(connection,secrets,{orderId,from,to,
   return {transactions:data.payload.transactions.map(safeFinancialTransaction),nextToken:data.payload.nextToken || null};
 }
 
+// Finances v0 remains an official source of refund charges and adjustment IDs.
+// Keep the diagnostic free of buyer names, addresses and other unrelated events.
+export async function legacyRefundEvents(connection,secrets,{orderId,from,to,nextToken,fetcher=safeFetch}={}) {
+  const call=await amazonClient(connection,secrets,fetcher),query=new URLSearchParams({MaxResultsPerPage:'100'});
+  if(orderId && !/^\d{3}-\d{7}-\d{7}$/.test(orderId))throw new Error('Ordine Amazon non valido.');
+  if(!orderId){query.set('PostedAfter',from);query.set('PostedBefore',to);}
+  if(nextToken)query.set('NextToken',nextToken);
+  const path=orderId?'/finances/v0/orders/'+encodeURIComponent(orderId)+'/financialEvents':'/finances/v0/financialEvents';
+  const data=await call(path+'?'+query);
+  if(!data.payload?.FinancialEvents)throw new Error('Eventi finanziari Amazon incompleti.');
+  const refunds=(data.payload.FinancialEvents.RefundEventList || []).map(event=>({
+    AmazonOrderId:event.AmazonOrderId,MarketplaceName:event.MarketplaceName,PostedDate:event.PostedDate,
+    ShipmentItemAdjustmentList:(event.ShipmentItemAdjustmentList || []).map(item=>({
+      SellerSKU:item.SellerSKU,OrderItemId:item.OrderItemId,OrderAdjustmentItemId:item.OrderAdjustmentItemId,QuantityShipped:item.QuantityShipped,
+      ItemChargeAdjustmentList:(item.ItemChargeAdjustmentList || []).map(row=>({ChargeType:row.ChargeType,ChargeAmount:row.ChargeAmount})),
+      PromotionAdjustmentList:(item.PromotionAdjustmentList || []).map(row=>({PromotionType:row.PromotionType,PromotionId:row.PromotionId,PromotionAmount:row.PromotionAmount})),
+      ItemTaxWithheldList:(item.ItemTaxWithheldList || []).map(row=>({TaxCollectionModel:row.TaxCollectionModel,TaxesWithheld:(row.TaxesWithheld || []).map(tax=>({ChargeType:tax.ChargeType,ChargeAmount:tax.ChargeAmount}))}))
+    }))
+  }));
+  return {refunds,nextToken:data.payload.NextToken || null};
+}
+
 export function returnReportRows(input) {
   const records=[];let row=[],cell='',quoted=false;
   const text=String(input).replace(/^\uFEFF/,'');

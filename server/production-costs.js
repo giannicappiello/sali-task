@@ -19,6 +19,7 @@ import { activeFillingPolicy } from "../src/features/production-costs/filling-hi
 import { validateOvertime,latestCostAdjustment } from "../src/features/production-costs/overtime.js";
 import { recoverPackagingSl, slReferences } from "./mexal/production-packaging-sl.js";
 import { recoverProductionOct } from "./mexal/production-oct.js";
+import { needsOctRecovery,octRecoverySignature } from "./production-oct-refresh.js";
 
 const fail = (message,status=400) => Object.assign(new Error(message),{status});
 const check = (result) => {if(result.error)throw result.error;return result.data;};
@@ -102,7 +103,7 @@ export async function handleProductionCosts(req,body) {
   // Re-read before merging so simultaneous SL recovery cannot be overwritten.
   const current=await recordFor(session,row.mes_order_id);
   const evidence={...current.evidence,recoveredOctLines:recovery.lines,
-   octRecovery:{warnings:recovery.warnings,recoveredAt:recovery.recoveredAt}};
+   octRecovery:{warnings:recovery.warnings,recoveredAt:recovery.recoveredAt,targetSignature:octRecoverySignature(row.evidence)}};
   check(await admin.from("production_cost_records").update({evidence}).eq("mes_order_id",row.mes_order_id));
   return {recovered:recovery.lines.length,warnings:recovery.warnings};
  }
@@ -149,7 +150,7 @@ export async function handleProductionCosts(req,body) {
   }
   const recoveryIds=scoped(result.items.map(e=>({evidence:e})),session.scope)
    .filter(r=>slReferences(r.evidence.productSlReference).length).map(r=>r.evidence.id);
-  const octRecoveryIds=scoped(result.items.map(e=>({evidence:e})),session.scope).map(r=>r.evidence.id);
+  const octRecoveryIds=scoped(result.items.map(e=>({evidence:e})),session.scope).filter(r=>needsOctRecovery(r.evidence)).map(r=>r.evidence.id);
   return {page,total:result.total,imported:result.items.length,hasMore:page*100<result.total,recoveryIds,octRecoveryIds};
  }
  if(op==="overtime"){

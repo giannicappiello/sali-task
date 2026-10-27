@@ -17,6 +17,7 @@ import { loadDigitalOrderDetail } from './digital-order-detail.js';
 import { synchronizeAmazonCox } from './amazon-cox.js';
 import { buildMexalClient } from '../mexal/sync-products.js';
 import { probeAmazonBuyer } from './amazon-buyer.js';
+import { financialTransactions,fbaReturnReport } from './amazon-returns-source.js';
 
 const SAFE_CONNECTION_FIELDS = "id,tipo,provider_code,provider,nome,category,auth_type,stato,endpoint_url,site_url,external_account_id,marketplace_ids,configurazione,secret_references,credenziali_stato,abilitata,sync_attivo,sync_frequency,is_default,ultimo_test_il,ultimo_test_stato,ultimo_test_messaggio,errori_consecutivi,ultimo_sync_il,prossima_run_il,ultimo_errore,oauth_scade_il,webhook_path,webhook_stato,ultimo_webhook_il,disabilitata_il,aggiornata_il,import_state,amazon_cox_state,amazon_cox_from,amazon_shipment_state,amazon_shipments_covered_at,responsabile_id,reparto_id";
 
@@ -333,6 +334,17 @@ export async function dispatchDigitalSchedule(req) {
 export async function handleDigitalConnectionManager(req, res) {
   const body = req.body || {}; const action = String(body.action || req.query?.action || "list");
   try {
+    if(action==='amazon_returns_probe') {
+      res.setHeader('Cache-Control','private, no-store');
+      if(req.method!=='POST')return res.status(405).json({success:false,error:'Metodo non consentito.'});
+      if(!authorizedDigitalScheduler(req,required('SUPABASE_SERVICE_ROLE_KEY'),process.env.CRON_SECRET))throw Object.assign(new Error('Verifica resi riservata al servizio.'),{status:401});
+      const db=serviceClient(),connection=await connectionById(db,body.id);
+      if(connection.provider_code!=='amazon_sp_api' || !connection.abilitata)throw new Error('Connessione Amazon attiva richiesta.');
+      const secrets=await decryptedSecrets(db,connection.id);
+      const from=connection.amazon_cox_from+'T00:00:00Z',to=new Date(Date.now()-180000).toISOString();
+      const result=body.report?await fbaReturnReport(connection,secrets,{from,to,reportId:body.reportId}):await financialTransactions(connection,secrets,{orderId:body.orderId,from,to,nextToken:body.nextToken});
+      return res.status(200).json({success:true,...result});
+    }
     if(action==='recover_amazon_import') {
       res.setHeader('Cache-Control','private, no-store');
       if(req.method!=='POST') return res.status(405).json({success:false,error:'Metodo non consentito.'});

@@ -1,5 +1,7 @@
 import { useAuth } from '../../contexts/AuthContext';
-import { CUSTOMER_PRODUCT_SCREENS, groupCustomerProducts } from './customerProducts';
+import CrmProductDocumentLines from './CrmProductDocumentLines';
+import {loadDashboardProductSummary,loadDashboardProductRows} from './dashboardProducts';
+import { CUSTOMER_PRODUCT_SCREENS } from './customerProducts';
 import CrmOpenOrdersDialog from './CrmOpenOrdersDialog';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -22,16 +24,19 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
   const { hasScreenAccess } = useAuth();
   const agentCodes = useMemo(() => new Set(agentCustomers.filter(row => row.agent_code === agent).map(row => row.customer_code)), [agentCustomers, agent]);
   const agentOptions = useMemo(() => [...new Map(agentCustomers.filter(row => row.agent_code).map(row => [row.agent_code, row.agent_name || row.agent_code])).entries()].sort((a, b) => a[1].localeCompare(b[1], 'it')), [agentCustomers]);
-  const [products, setProducts] = useState({ rows: [], loading: true, error: '' });
-  useEffect(() => {
-    let active = true;
-    setProducts({ rows: [], loading: true, error: '' });
-    loadAllRpcRows('crm_dashboard_product_lines', { p_crm_type: 'b2b', p_from: period.from, p_to: period.to, p_agent: agent || null })
-      .then(({ data, error }) => { if (active) setProducts({ rows: data || [], loading: false, error: error?.message || '' }); })
-      .catch(error => { if (active) setProducts({ rows: [], loading: false, error: error.message }); });
-    return () => { active = false; };
-  }, [period.from, period.to, agent]);
-  const productCount = category => products.loading ? '…' : products.error ? '—' : new Set(products.rows.filter(row => row.category === category).map(row => row.product_code)).size;
+  const [productRevision,setProductRevision]=useState(0);
+  const [products,setProducts]=useState({counts:{},loading:true,error:''});
+  useEffect(()=>{
+    let active=true;const controller=new AbortController();
+    const timer=setTimeout(()=>{
+      setProducts({counts:{},loading:true,error:''});
+      loadDashboardProductSummary(supabase,{p_crm_type:'b2b',p_from:period.from,p_to:period.to,p_agent:agent||null},controller.signal)
+      .then(counts=>{if(active)setProducts({counts,loading:false,error:''});})
+      .catch(error=>{if(active)setProducts({counts:{},loading:false,error:error.message});});
+    },0);
+    return()=>{active=false;clearTimeout(timer);controller.abort();};
+  },[period.from,period.to,agent,productRevision]);
+  const productCount=category=>products.loading?'…':products.error?'—':products.counts[category] ?? 0;
   const [selected, setSelected] = useState(null); const [details, setDetails] = useState({ rows: [], loading: false, error: '' });
   const [extra, setExtra] = useState({ lifecycle: null, beauty: null, errors: {} });
   useEffect(() => {
@@ -56,13 +61,16 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
     }, 0); return () => { active = false; clearTimeout(timer); };
   }, [period.from, period.to, agent, agentCodes]);
   useEffect(() => {
-    if (!selected || ['open-orders', 'products'].includes(selected.kind)) return;
+    if (!selected || selected.kind === 'open-orders') return;
     let active = true; const controller = new AbortController();
     const timer = setTimeout(async () => {
       setDetails({ rows: [], loading: true, error: '' });
       try {
         let rows = [];
-        if (selected.kind === 'customers') {
+        if (selected.kind === 'products') {
+          rows=await loadDashboardProductRows(supabase,'crm_dashboard_product_groups',{p_crm_type:'b2b',p_from:period.from,p_to:period.to,p_agent:agent||null,p_category:selected.metric},controller.signal);
+          rows=rows.map(row=>({...row,amount:{value:Number(row.net_amount),unknown:Number(row.unknown_amounts)}}));
+        } else if (selected.kind === 'customers') {
           const result = await loadAllRpcRows('crm_customer_metric_details', { p_crm_type: 'b2b', p_from: period.from, p_to: period.to, p_metric: selected.metric || 'all', p_search: null, p_customer_status: selected.status || 'active' });
           if (result.error) throw result.error; rows = result.data;
           if (selected.metric === 'all') {
@@ -82,7 +90,7 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
           if (result.error) throw result.error;
           rows = result.data.filter(r => selected.metric === 'reorders' ? Number(r.numero_ordini) > 1 : r.classificazione === selected.metric);
         }
-        if (agent) rows = rows.filter(row => agentCodes.has(row.codice_cliente || row.customer_code || row.crm_accounts?.codice_cliente_mexal));
+        if (agent && selected.kind !== 'products') rows = rows.filter(row => agentCodes.has(row.codice_cliente || row.customer_code || row.crm_accounts?.codice_cliente_mexal));
         if (active) setDetails({ rows, loading: false, error: '' });
       } catch (failure) { if (active) setDetails({ rows: [], loading: false, error: failure.message }); }
     }, 0); return () => { active = false; controller.abort(); clearTimeout(timer); };
@@ -95,11 +103,11 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
   function detail() {
     let rows = details.rows; let columns;
     if (selected.kind === 'products') {
-      if (products.loading) return <p role="status">Caricamento prodotti…</p>;
-      if (products.error) return <p role="alert">{products.error}</p>;
+      if (details.loading) return <p role="status">Caricamento prodotti…</p>;
+      if (details.error) return <p role="alert">{details.error}</p>;
       if (!hasScreenAccess(CUSTOMER_PRODUCT_SCREENS[selected.metric === 'purchased' ? 'purchased' : 'ordered'].code)) return <p>Schermata prodotti non autorizzata per il tuo profilo.</p>;
-      rows = groupCustomerProducts(products.rows.filter(row => row.category === selected.metric), { from: period.from, to: period.to });
-      columns = [valueColumn('description', 'Prodotto'), valueColumn('code', 'Codice'), { key: 'quantity', label: 'Quantità', value: r => Number(r.quantity).toLocaleString('it-IT'), sortValue: r => r.quantity }, valueColumn('documents', 'Documenti'), { key: 'amount', label: 'Importo netto', value: r => `${formatMoney(r.amount.value)}${r.amount.unknown ? ' (parziale)' : ''}`, sortValue: r => r.amount.value }, { key: 'history', label: 'Dettaglio', value: () => 'Apri righe', render: r => <details><summary>Righe documento</summary><CrmDetailTable rows={r.lines} columns={[valueColumn('document_number', 'Documento'), valueColumn('customer_name', 'Cliente'), dateColumn('document_date', 'Data'), valueColumn('description', 'Prodotto'), valueColumn('quantity', 'Quantità'), valueColumn('unit', 'UM'), moneyColumn('net_amount', 'Importo netto'), valueColumn('document_status', 'Stato')]}/></details> }];
+      rows = details.rows;
+      columns = [valueColumn('description', 'Prodotto'), valueColumn('code', 'Codice'), { key: 'quantity', label: 'Quantità', value: r => Number(r.quantity).toLocaleString('it-IT'), sortValue: r => r.quantity }, valueColumn('documents', 'Documenti'), { key: 'amount', label: 'Importo netto', value: r => `${formatMoney(r.amount.value)}${r.amount.unknown ? ' (parziale)' : ''}`, sortValue: r => r.amount.value }, { key: 'history', label: 'Dettaglio', value: () => 'Apri righe', render: r => <CrmProductDocumentLines code={r.code} parameters={{p_crm_type:'b2b',p_from:period.from,p_to:period.to,p_agent:agent||null,p_category:selected.metric}}/> }];
     } else if (selected.kind === 'beauty') {
       if (extra.errors.beauty) return <p role="alert">{extra.errors.beauty}</p>;
       if (!extra.beauty) return <p>Caricamento Beauty Days…</p>;
@@ -130,6 +138,7 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
         {card('Fatturato', formatMoney(data.invoice_total), `${data.invoice_count || 0} fatture`, data.invoice_source_note || 'Somma del fatturato nel periodo selezionato.', customer('invoiced'))}
         {card('Ordinato', formatMoney(data.order_total), null, 'Importi netti IVA esclusa. PR in corso: documenti OCM verificati aperti e non fatturati. Prenotazioni: OCI PR verificati aperti e non fatturati e prenotazioni PH. Stralci: soli OCX verificati aperti e non fatturati. PH: ordini che restano tali e non sono fatturati. Verifica delle fatture senza limite di periodo.', { kind: 'open-orders' })}
         {card('Valore medio ordine', formatMoney(data.average_order_value), `${data.order_count || 0} ordini padre nel periodo`, 'Ordinato diviso per il numero di ordini padre distinti nel periodo. OCM e OCX dello stesso ordine padre contano come un solo ordine.', customer('ordered'))}
+        {products.error ? <p role="alert" className="crm-message error">Conteggi prodotti non disponibili: {products.error} <button type="button" onClick={()=>setProductRevision(v=>v+1)}>Riprova</button></p> : null}
         {card('Prodotti ordinati', productCount('ordered'), 'Prodotti distinti nel periodo', 'Articoli degli ordini PH standard, PR in corso e Stralci OCX aperti non fatturati. Prenotazioni escluse. Nel dettaglio le quantità sono sommate per prodotto.', { kind: 'products', metric: 'ordered' })}
         {card('Prodotti acquistati', productCount('purchased'), 'Prodotti distinti fatturati nel periodo', 'Articoli presenti nelle righe delle fatture del periodo selezionato, filtrati per agente. Ogni codice prodotto è contato una sola volta; quantità totali e importi netti con segno delle note di credito nel dettaglio.', { kind: 'products', metric: 'purchased' })}
         {card('Prodotti prenotati', productCount('reserved'), 'Prodotti distinti nel periodo', 'Articoli delle prenotazioni PH e degli OCI PR verificati aperti e non fatturati. Ogni codice prodotto è contato una sola volta; quantità e unità sono nel dettaglio.', { kind: 'products', metric: 'reserved' })}

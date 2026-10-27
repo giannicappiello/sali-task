@@ -1,3 +1,4 @@
+import {ACCOUNT_COLUMNS,ONLINE_ACCOUNT_COLUMNS} from './crmCustomerColumns';
 import { amountBasisNote } from './digitalOrderValueModel.js';
 import { displayAmounts } from './digitalDashboardModel.js';
 import { createSaveOutcome } from "../../save-outcomes.js";
@@ -167,19 +168,6 @@ function Kpi({ label, value, note, to }) {
   return to ? <Link className="kpi-card crm-kpi" to={to} aria-label={`${label}: ${value}. Apri dettaglio`}>{content}</Link> : <article className="kpi-card crm-kpi">{content}</article>;
 }
 
-const ACCOUNT_COLUMNS = [
-  { value: (row) => `${row.nome} ${row.codice}` },
-  { value: (row) => row.origine },
-  { value: (row) => `${formatMoney(row.invoice_total)} ${row.invoice_count || 0} fatture` },
-  { value: (row) => `${formatPurchaseAmount(row.order_total, row.currency)} ${row.order_count || 0} ordini` },
-  { value: (row) => formatDate(row.ultimo_ordine_il || row.last_purchase) },
-  { value: (row) => row.average_gap_days == null ? "—" : `${Number(row.average_gap_days).toLocaleString("it-IT", { useGrouping: 'always',  maximumFractionDigits: 1 })} gg` },
-  { value: (row) => formatDate(row.expected_reorder_date) },
-  { value: (row) => row.agente_classificazione || "Senza agente" },
-  { value: (row) => `${row.crm_active ? "Attivo" : "Non attivo"} ${row.crm_status_reason || ""}` },
-  { value: (row) => row.source === "Workspace/Mexal" ? (row.attivo_mexal === false ? "Annullato" : "Attivo") : "Non presente" },
-  { value: (row) => row.crm_active ? "Apri cliente Nuova attività Nuovo progetto Disattiva" : "Apri cliente Nuova attività Nuovo progetto Riattiva" },
-];
 
 function CrmDashboard({ type }) {
   const config = crmTypeConfig(type);
@@ -291,7 +279,7 @@ function AccountsPage({ type }) {
   }, [setSearchParams]);
   const resetCustomerPage = useCallback(() => updateCustomerParam("customerPage", "", false), [updateCustomerParam]);
   const [tableRef, tableQuery] = useDatasetTableControls({ onQueryChange: resetCustomerPage });
-  const { pageRows, total: filteredTotal } = usePaginatedDataset(rows, type === "online" ? [...ACCOUNT_COLUMNS.slice(0,2), { value: row => row.mailing?.label }, ...ACCOUNT_COLUMNS.slice(2)] : ACCOUNT_COLUMNS, tableQuery, page, CRM_CUSTOMER_PAGE_SIZE);
+  const { pageRows, total: filteredTotal } = usePaginatedDataset(rows, type === "online" ? ONLINE_ACCOUNT_COLUMNS : ACCOUNT_COLUMNS, tableQuery, page, CRM_CUSTOMER_PAGE_SIZE);
   const load = useCallback(async () => {
     const sequence = ++customerRequest.current;
     setLoading(true);

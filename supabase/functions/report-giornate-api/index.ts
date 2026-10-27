@@ -1,4 +1,5 @@
 import { applyOrganizationScope, loadCustomerVisitScope } from "./organizationScope.js";
+import { syncBeautyDayTasks } from "./beautyTaskSync.js";
 import { loadCrmBeautyCustomer, loadCrmBeautyDashboard } from "./crmBeautyData.js";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -170,6 +171,7 @@ Deno.serve(async (req) => {
         if (body.columns) query = query.select(body.columns);
       } else if (body.operation === "delete") {
         query = report.from(body.table).delete();
+        if (body.table === "giornate_promozionali") query = query.select("*");
       } else {
         query = report.from(body.table).select(body.columns || "*", body.selectOptions || {});
       }
@@ -185,6 +187,13 @@ Deno.serve(async (req) => {
       if (body.modifiers?.maybeSingle) query = query.maybeSingle();
       const result = await query;
       if (result.error) return json({ error: result.error.message, details: result.error.details }, 400);
+      if (write && body.table === "giornate_promozionali") {
+        try {
+          await syncBeautyDayTasks(primary, report, result.data, profile.id, body.operation === "delete");
+        } catch (taskError: any) {
+          return json({ error: `Giornata salvata nello storico, ma collegamento alle task non riuscito: ${taskError.message}` }, 400);
+        }
+      }
       return json({ data: result.data, count: result.count ?? null });
     }
 

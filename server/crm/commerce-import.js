@@ -1,4 +1,5 @@
 import { packageShippedAt } from './amazon-shipments.js';
+import { amazonTaxSnapshot } from './amazon-tax.js';
 /* global Buffer */
 import crypto from 'node:crypto';
 import { wooMexalOrderReference } from '../../shared/wooMexalReference.js';
@@ -71,10 +72,11 @@ export function amazonOrder(row, shippedAt = packageShippedAt(row)) {
   const total = money(row.proceeds?.grandTotal?.amount);
   const taxRows = (row.proceeds?.breakdowns || []).filter((b) => b.type === 'TAX');
   const tax = taxRows.length ? taxRows.reduce((s, b) => s + Number(b.subtotal?.amount || 0), 0) : null;
+  const taxCollection=amazonTaxSnapshot(row);
   return { external_id: text(row.orderId), marketplace: row.salesChannel?.marketplaceId, stato: text(row.fulfillment?.fulfillmentStatus || 'UNKNOWN'), ordered_at: shippedAt || row.createdTime,
     currency: row.proceeds?.grandTotal?.currencyCode || row.orderItems?.find(line=>line.product?.price?.unitPrice?.currencyCode)?.product.price.unitPrice.currencyCode || 'EUR', gross_revenue: total,
     net_revenue: total !== null && tax !== null ? rounded(total - tax) : null, discounts: null, refunds: null, fees: null,
-    raw_summary: { provider: 'amazon_sp_api', purchase_date:row.createdTime, fulfilled_at:shippedAt, date_basis:shippedAt?'fulfillment':'purchase_unverified', last_updated: row.lastUpdatedTime, financial_basis: tax === null ? 'net_unavailable_without_tax_breakdown' : 'proceeds_excluding_tax_before_unavailable_refunds_and_fees' },
+    raw_summary: { provider: 'amazon_sp_api', purchase_date:row.createdTime, fulfilled_at:shippedAt, date_basis:shippedAt?'fulfillment':'purchase_unverified', last_updated: row.lastUpdatedTime, financial_basis: tax === null ? 'net_unavailable_without_tax_breakdown' : 'proceeds_excluding_tax_before_unavailable_refunds_and_fees',...(taxCollection?{tax_collection:taxCollection}:{}) },
     lines: (row.orderItems || []).map((l) => ({ external_line_id: text(l.orderItemId), name: text(l.product?.title || l.product?.sellerSku || l.product?.asin), type: 'product', external_sku: text(l.product?.sellerSku), asin: l.product?.asin || null, quantity: money(l.quantityOrdered), unit_price: money(l.product?.price?.unitPrice?.amount), line_revenue: money(l.proceeds?.proceedsTotal?.amount) })) };
 }
 export function amazonProduct(row, marketplace) {
@@ -94,7 +96,7 @@ export function initialImportState(connection, now = new Date()) {
 }
 
 // Exactly one bounded page per call. The database commits the page and its cursor together.
-export async function fetchCommercePage(connection, secrets, previous, { fetcher = safeFetch, now = new Date(), loadShipmentDates = async()=>new Map() } = {}) {
+export async function fetchCommercePage(connection, secrets, previous, { fetcher = safeFetch, now = new Date(), loadShipmentDates = async()=>new Map(), loadTaxClassifications = async()=>new Map() } = {}) {
   const transport = fetcher;
   const deadline = Date.now() + 120000;
   fetcher = async (url, options) => {
@@ -201,7 +203,7 @@ export async function fetchCommercePage(connection, secrets, previous, { fetcher
     const query = new URLSearchParams(); let path;
     if (kind === 'orders') {
       query.set('marketplaceIds', markets.join(',')); query.set('lastUpdatedAfter', state.from); query.set('lastUpdatedBefore', state.to);
-      query.set('maxResultsPerPage', '100'); query.set('includedData', 'PROCEEDS,FULFILLMENT,PACKAGES');
+      query.set('maxResultsPerPage', '100'); query.set('includedData', state.taxAccess==='denied'?'PROCEEDS,FULFILLMENT,PACKAGES':'PROCEEDS,FULFILLMENT,PACKAGES,TAX');
       query.set('fulfillmentStatuses','SHIPPED,PENDING,UNSHIPPED,PARTIALLY_SHIPPED,PENDING_AVAILABILITY,CANCELLED,UNFULFILLABLE');
       // Tokens expire after 24h. Replay the same committed window, never skip it.
       const tokenDate=Date.parse(state.tokenIssuedAt || state.updatedAt || '');
@@ -216,17 +218,27 @@ export async function fetchCommercePage(connection, secrets, previous, { fetcher
       path = `/listings/2021-08-01/items/${encodeURIComponent(seller)}`;
     }
     let data;
-    try { data = await request(`${root}${path}?${query}`, { headers, timeoutMs: 20000, maxBytes: 2000000 }, fetcher, `Importazione Amazon ${kind}`); }
-    catch(error) {
-      if(kind!=='orders' || !query.has('paginationToken') || error.code!=='provider_400' || !/pagination.*token|token.*(?:invalid|expired)/i.test(error.message)) throw error;
-      query.delete('paginationToken');
-      data=await request(`${root}${path}?${query}`,{headers,timeoutMs:20000,maxBytes:2000000},fetcher,'Ripresa finestra ordini Amazon');
+    for(let attempt=0;attempt<3;attempt++) {
+      try { data=await request(`${root}${path}?${query}`,{headers,timeoutMs:20000,maxBytes:2000000},fetcher,`Importazione Amazon ${kind}`);break; }
+      catch(error) {
+        if(kind==='orders' && error.code==='provider_403' && query.get('includedData').split(',').includes('TAX')) {
+          // Restricted tax permissions must not stop ordinary order import.
+          query.set('includedData','PROCEEDS,FULFILLMENT,PACKAGES');query.delete('paginationToken');next.taxAccess='denied';continue;
+        }
+        if(kind==='orders' && query.has('paginationToken') && error.code==='provider_400' && /pagination.*token|token.*(?:invalid|expired)/i.test(error.message)) {query.delete('paginationToken');continue;}
+        throw error;
+      }
     }
     if (!Array.isArray(kind === 'orders' ? data.orders : data.items)) throw new Error('Risposta Amazon non valida: pagina non acquisita.');
     if(kind==='orders') {
       const selected=data.orders.filter(r=>markets.includes(r.salesChannel?.marketplaceId));
       const dates=await loadShipmentDates(selected.filter(r=>r.fulfillment?.fulfillmentStatus==='SHIPPED').map(r=>r.orderId));
       rows=selected.map(row=>amazonOrder(row,packageShippedAt(row)||dates.get(row.orderId)||null));
+      const classifications=await loadTaxClassifications(rows.filter(row=>!row.raw_summary.tax_collection).map(row=>row.external_id));
+      for(const row of rows) {
+        const confirmed=classifications.get(row.external_id);
+        if(!row.raw_summary.tax_collection && confirmed?.source==='user_confirmed') row.raw_summary.tax_collection=confirmed;
+      }
     } else rows=data.items.map(r=>amazonProduct(r,markets[state.marketplaceIndex]));
     next.token = data.pagination?.nextToken || null;
     next.tokenIssuedAt=next.token?now.toISOString():null;

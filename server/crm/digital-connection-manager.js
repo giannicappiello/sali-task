@@ -253,7 +253,10 @@ export async function synchronizeCommerce(db, actorId, connection, mode, shipmen
         recordsRead: 0, resource: 'amazon_cox', counts: fresh.import_state?.counts || {}, cox, shipmentWarning };
     };
     if (fresh.provider_code === 'amazon_sp_api' && fresh.amazon_cox_state?.active) return await emitCox();
-    const page = await fetchPage(fresh, await readSecrets(db, connection.id), fresh.import_state,{loadShipmentDates:async ids=>{if(!ids.length)return new Map();const {data,error}=await db.from('crm_amazon_shipment_dates').select('external_id,shipped_at').eq('connection_id',fresh.id).in('external_id',ids);if(error)throw error;return new Map(data.map(row=>[row.external_id,row.shipped_at]));}});
+    const page = await fetchPage(fresh, await readSecrets(db, connection.id), fresh.import_state,{
+      loadShipmentDates:async ids=>{if(!ids.length)return new Map();const {data,error}=await db.from('crm_amazon_shipment_dates').select('external_id,shipped_at').eq('connection_id',fresh.id).in('external_id',ids);if(error)throw error;return new Map(data.map(row=>[row.external_id,row.shipped_at]));},
+      loadTaxClassifications:async ids=>{if(!ids.length)return new Map();const {data,error}=await db.from('crm_external_orders').select('external_id,raw_summary').eq('connection_id',fresh.id).in('external_id',ids);if(error)throw error;return new Map(data.filter(row=>row.raw_summary?.tax_collection?.source==='user_confirmed').map(row=>[row.external_id,row.raw_summary.tax_collection]));},
+    });
     const { error } = await db.rpc('crm_import_commerce_page_service', { target_connection_id: connection.id, target_run_id: runId,
       expected_state: fresh.import_state, resource_kind: page.kind, page_rows: page.rows, next_state: page.next });
     if (error) throw error;

@@ -16,17 +16,17 @@ const columns=[
 export default function CrmProductDocumentLines({parameters,code}) {
  const [open,setOpen]=useState(false),[revision,setRevision]=useState(0);
  const [state,setState]=useState({rows:[],loading:true,error:''});
- const {p_crm_type,p_from,p_to,p_agent,p_category}=parameters;
+ const {p_crm_type,p_from,p_to,p_agent,p_category,p_order_module}=parameters;
  useEffect(()=>{
   if(!open) return;
   let active=true;const controller=new AbortController();
   const timer=setTimeout(()=>{
    setState({rows:[],loading:true,error:''});
-   loadDashboardProductRows(supabase,'crm_dashboard_product_detail_lines',{p_crm_type,p_from,p_to,p_agent,p_category,p_product:code},controller.signal)
+   loadDashboardProductRows(supabase,'crm_dashboard_product_detail_lines',{p_crm_type,p_from,p_to,p_agent,p_category,p_product:code,...(p_order_module?{p_order_module}:{})},controller.signal)
    .then(rows=>{if(active)setState({rows,loading:false,error:''});})
    .catch(error=>{if(active)setState({rows:[],loading:false,error:error.message});});
   },0);
   return()=>{active=false;clearTimeout(timer);controller.abort();};
- },[open,revision,p_crm_type,p_from,p_to,p_agent,p_category,code]);
+ },[open,revision,p_crm_type,p_from,p_to,p_agent,p_category,p_order_module,code]);
  return <details onToggle={event=>setOpen(event.currentTarget.open)}><summary>Righe documento</summary>{open ? state.loading ? <p role="status">Caricamento righe…</p> : state.error ? <p role="alert">{state.error} <button type="button" onClick={()=>setRevision(v=>v+1)}>Riprova</button></p> : <CrmDetailTable rows={state.rows} columns={columns}/> : null}</details>;
 }

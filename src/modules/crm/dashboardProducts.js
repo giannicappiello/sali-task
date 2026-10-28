@@ -11,7 +11,7 @@ async function request(client,name,parameters,signal) {
  }finally{clearTimeout(timer);signal?.removeEventListener('abort',cancel);}
 }
 export async function loadDashboardProductSummary(client,parameters,signal) {
- const data=await request(client,'crm_dashboard_product_summary',parameters,signal);
+ const data=await request(client,parameters.p_order_module?'crm_b2b_order_product_summary':'crm_dashboard_product_summary',parameters,signal);
  if(!data || Array.isArray(data) || typeof data!=='object') throw new Error('Riepilogo prodotti non valido.');
  return Object.fromEntries(['ordered','purchased','reserved'].map(category=>{
   const value=Number(data[category] ?? 0);
@@ -23,7 +23,7 @@ export async function loadDashboardProductRows(client,name,parameters,signal) {
  const rows=[];
  for(let offset=0;;offset+=500){
   if(signal?.aborted) throw new Error('Caricamento annullato.');
-  const data=await request(client,name,{...parameters,p_limit:500,p_offset:offset},signal);
+  const data=await request(client,parameters.p_order_module?name.replace('crm_dashboard_product_','crm_b2b_order_product_'):name,{...parameters,p_limit:500,p_offset:offset},signal);
   if(!Array.isArray(data)) throw new Error('Dettaglio prodotti non valido.');
   rows.push(...data);if(data.length<500) return rows;
  }

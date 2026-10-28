@@ -30,7 +30,7 @@ export default function AmazonRefunds({connections,period,refreshKey}){
  const filtered=useMemo(()=>rows.filter(row=>row.amazon_order_id.includes(filter.trim())),[rows,filter]);
  const visible=filtered.slice(page*25,(page+1)*25),total=filtered.reduce((sum,row)=>sum+Number(row.gross || 0),0);
  const warning=connections.find(c=>c.provider_code==='amazon_sp_api' && c.amazon_refund_state?.lastError)?.amazon_refund_state.lastError;
- return <section className="panel crm-panel"><h3>Rimborsi Amazon · {filtered.length}</h3>
+ return <details className="panel crm-panel crm-catalog-disclosure" open><summary>Rimborsi Amazon · {rows.length}</summary>
   <p>COX con quantità negative dalla data del rimborso. L’articolo rientra nel magazzino 4 solo dopo conferma Amazon di vendibilità; altrimenti viene usato RESOAMAZON. Le conferme successive aggiornano lo stesso COX.</p>
   {warning?<div className="crm-message error">Sincronizzazione rimborsi da riprendere: {warning}</div>:null}
   {error?<div className="crm-message error">{error}</div>:null}
@@ -43,5 +43,5 @@ export default function AmazonRefunds({connections,period,refreshKey}){
    })}</td><td>{row.gross==null?'Da verificare':formatMoney(-Number(row.gross))}</td><td><span>{labels[row.export_status] || row.export_status} · </span><AmazonCoxStatus status={row.cox_reference?'emitted':null} reference={row.cox_reference} error={row.error}/>{!row.cox_reference && row.error?<small>{row.error}</small>:null}</td></tr>)}
   </tbody></table>{!visible.length && !loading?<div className="crm-empty">Nessun rimborso acquisito nel periodo selezionato.</div>:null}</div>
   <div className="crm-pagination"><button type="button" disabled={!page} onClick={()=>setPage(p=>p-1)}>Precedente</button><span>Pagina {page+1} · {filtered.length} rimborsi</span><button type="button" disabled={(page+1)*25>=filtered.length} onClick={()=>setPage(p=>p+1)}>Successiva</button></div>
- </section>;
+ </details>;
 }

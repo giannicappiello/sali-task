@@ -47,6 +47,7 @@ function parseItalianNumber(value) {
 }
 
 export function tableComparableValue(value) {
+  if(typeof value === "number") return Number.isFinite(value) ? {type:"number",value} : {type:"empty",value:""};
   const text = String(value ?? "").replace(/\s+/g, " ").trim();
   if (!text || text === "—" || text === "-") {
     return { type: "empty", value: "" };
@@ -81,9 +82,12 @@ export function stableSortTableRows(rows, valueForRow, direction = "asc") {
   return rows
     .map((row, index) => ({ row, index }))
     .sort((left, right) => {
+      const leftValue=valueForRow(left.row),rightValue=valueForRow(right.row);
+      const leftEmpty=tableComparableValue(leftValue).type==='empty',rightEmpty=tableComparableValue(rightValue).type==='empty';
+      if(leftEmpty!==rightEmpty) return leftEmpty?1:-1;
       const comparison = compareTableValues(
-        valueForRow(left.row),
-        valueForRow(right.row),
+        leftValue,
+        rightValue,
       );
       return comparison === 0
         ? left.index - right.index
@@ -100,7 +104,7 @@ export function applyDatasetTableQuery(rows, columns, query) {
 
   const column = query.sortColumn === null ? null : columns[query.sortColumn];
   return column
-    ? stableSortTableRows(filtered, column.value, query.direction)
+    ? stableSortTableRows(filtered, column.sortValue || column.value, query.direction)
     : filtered;
 }
 

@@ -5,8 +5,9 @@ export const quantity=v=>v===null||v===undefined?"—":Number(v).toLocaleString(
 export const signedMoney=v=>v==null?"Non disponibile":Number(v).toLocaleString("it-IT",{ useGrouping: 'always', style:"currency",currency:"EUR",signDisplay:"exceptZero"});
 export const signedPercent=v=>v==null?"—":Number(v).toLocaleString("it-IT",{ useGrouping: 'always', maximumFractionDigits:2,signDisplay:"exceptZero"})+"%";
 export const date=v=>v?formatDisplayDate(new Date(v), {}):"—";
-export async function action(token,operation,extra={}) {
- const response=await fetch("/api/mexal/automation",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({action:"production_costs",operation,...extra})});
+export async function action(token,operation,extra={},options={}) {
+ const signals=[options.signal,options.timeoutMs?AbortSignal.timeout(options.timeoutMs):null].filter(Boolean);
+ const response=await fetch("/api/mexal/automation",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({action:"production_costs",operation,...extra}),...(signals.length?{signal:signals.length===1?signals[0]:AbortSignal.any(signals)}:{})});
  const result=await response.json();
  if(!response.ok||result.success===false)throw new Error(result.error||result.message||"Operazione non riuscita.");
  return result;

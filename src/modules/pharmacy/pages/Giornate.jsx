@@ -635,18 +635,19 @@ export default function Giornate({ utente }) {
           .from("giornate_promozionali")
           .update(datiGiornata)
           .eq("id", giornataInModifica.id)
+          .select("*").single()
       : await supabase.from("giornate_promozionali").insert([datiGiornata]).select("*").single();
 
     if (response.error) return (alert(_saveOutcome.observeFailure(response.error.message)));
 
-    const savedDay = giornataInModifica || response.data;
+    const savedDay = response.data;
     if (savedDay?.id) {
       try {
         await ensureCrmBeautyVisit({ giornata: savedDay, client: selectedClient });
       } catch (crmError) {
-      _saveOutcome.failure(crmError);
-
-        (alert(_saveOutcome.observeFailure(`La giornata è stata salvata nello storico, ma il collegamento CRM non è riuscito: ${crmError.message}`)));
+        const message = `La giornata è stata salvata nello storico, ma il collegamento CRM non è riuscito: ${crmError.message}`;
+        _saveOutcome.partial(message);
+        alert(message);
       }
     }
 

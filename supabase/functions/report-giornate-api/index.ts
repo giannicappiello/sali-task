@@ -1,3 +1,5 @@
+import { applyOrganizationScope, loadCustomerVisitScope } from "./organizationScope.js";
+import { syncBeautyDayTasks } from "./beautyTaskSync.js";
 import { loadCrmBeautyCustomer, loadCrmBeautyDashboard } from "./crmBeautyData.js";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -93,7 +95,7 @@ Deno.serve(async (req) => {
         if (updateError) throw updateError;
         access = { ...access, ...ensured };
       }
-      const organizationScope = await loadOrganizationScope(primary, scopedPrimary, access, isAdmin);
+      const organizationScope = await loadOrganizationScope(primary, scopedPrimary, report, access, isAdmin);
       return json({
         user_id: profile.id,
         external_user_id: access.external_user_id,
@@ -121,7 +123,7 @@ Deno.serve(async (req) => {
       if (!isAdmin && !["write", "admin"].includes(access.access_level)) {
         return json({ error: "Accesso in sola lettura" }, 403);
       }
-      const organizationScope = await loadOrganizationScope(primary, scopedPrimary, access, isAdmin);
+      const organizationScope = await loadOrganizationScope(primary, scopedPrimary, report, access, isAdmin);
       const result = await ensureClientLink(primary, report, body.codice_cliente, organizationScope, isAdmin);
       return json(result);
     }
@@ -153,10 +155,11 @@ Deno.serve(async (req) => {
     }
 
     if (body.action === "query") {
-      const organizationScope = await loadOrganizationScope(primary, scopedPrimary, access, isAdmin);
       if (!allowedTables.has(body.table)) return json({ error: `Tabella non autorizzata: ${body.table}` }, 403);
       const write = ["insert", "update", "delete"].includes(body.operation);
       if (write && !isAdmin && !["write", "admin"].includes(access.access_level)) return json({ error: "Accesso in sola lettura" }, 403);
+      const customerVisits = !write && ["giornate_promozionali", "beauty_consultant"].includes(body.table);
+      const organizationScope = await loadOrganizationScope(primary, scopedPrimary, report, access, isAdmin, customerVisits);
       let query: any;
       if (body.operation === "insert") {
         const defaults = access.data_scope?.insert_defaults?.[body.table] || {};
@@ -168,6 +171,7 @@ Deno.serve(async (req) => {
         if (body.columns) query = query.select(body.columns);
       } else if (body.operation === "delete") {
         query = report.from(body.table).delete();
+        if (body.table === "giornate_promozionali") query = query.select("*");
       } else {
         query = report.from(body.table).select(body.columns || "*", body.selectOptions || {});
       }
@@ -175,7 +179,7 @@ Deno.serve(async (req) => {
       for (const f of (body.filters || [])) query = applyFilter(query, f);
       const scoped = access.data_scope?.filters?.[body.table] || {};
       if (!isAdmin) for (const [column, value] of Object.entries(scoped)) query = Array.isArray(value) ? query.in(column, value) : query.eq(column, value);
-      if (!isAdmin) query = applyOrganizationScope(query, body.table, organizationScope);
+      if (!isAdmin) query = applyOrganizationScope(query, body.table, organizationScope, write);
       if (body.modifiers?.order) query = query.order(body.modifiers.order.column, { ascending: body.modifiers.order.ascending });
       if (body.modifiers?.range) query = query.range(body.modifiers.range.from, body.modifiers.range.to);
       if (body.modifiers?.limit) query = query.limit(body.modifiers.limit);
@@ -183,6 +187,13 @@ Deno.serve(async (req) => {
       if (body.modifiers?.maybeSingle) query = query.maybeSingle();
       const result = await query;
       if (result.error) return json({ error: result.error.message, details: result.error.details }, 400);
+      if (write && body.table === "giornate_promozionali") {
+        try {
+          await syncBeautyDayTasks(primary, report, result.data, profile.id, body.operation === "delete");
+        } catch (taskError: any) {
+          return json({ error: `Giornata salvata nello storico, ma collegamento alle task non riuscito: ${taskError.message}` }, 400);
+        }
+      }
       return json({ data: result.data, count: result.count ?? null });
     }
 
@@ -412,7 +423,7 @@ function applyFilter(query: any, f: any) {
   return query;
 }
 
-async function loadOrganizationScope(primary: any, scopedPrimary: any, access: any, isAdmin: boolean) {
+async function loadOrganizationScope(primary: any, scopedPrimary: any, report: any, access: any, isAdmin: boolean, customerVisits = false) {
   if (isAdmin) return { mode: "tutti", visibleAgentIds: null, visibleBeautyIds: null };
   // Must run with the caller's JWT, never the service-role client's empty auth.uid().
   const { data: scope, error } = await scopedPrimary.rpc("workspace_data_scope");
@@ -439,16 +450,8 @@ async function loadOrganizationScope(primary: any, scopedPrimary: any, access: a
   if (access.external_beauty_id && !visibleBeautyIds.includes(access.external_beauty_id)) {
     visibleBeautyIds.push(access.external_beauty_id);
   }
-  return { mode: scope.mode, visibleAgentIds: ids, visibleBeautyIds };
-}
-
-function applyOrganizationScope(query: any, table: string, scope: any) {
-  const beautyIds = scope.visibleBeautyIds || [];
-  const none = "00000000-0000-0000-0000-000000000000";
-  if (table === "beauty_consultant") return beautyIds.length ? query.in("id", beautyIds) : query.eq("id", none);
-  if (table === "giornate_promozionali") return beautyIds.length ? query.in("consultant_id", beautyIds) : query.eq("consultant_id", none);
-  if (table === "aperture_contatti") return beautyIds.length ? query.in("beauty_id", beautyIds) : query.eq("beauty_id", none);
-  return query;
+  const organizationScope = { mode: scope.mode, visibleAgentIds: ids, visibleBeautyIds, writableBeautyIds: visibleBeautyIds };
+  return customerVisits ? loadCustomerVisitScope(scopedPrimary, report, access, organizationScope) : organizationScope;
 }
 
 function normalizeAllowedPages(value: unknown) {

@@ -304,7 +304,7 @@ export default function Tasks() {
   async function loadPlanning() {
     setLoading(true);
 
-    const [projectsRes, phasesRes, projectDepartmentsRes, phaseDepartmentsRes, departmentsRes, phaseProductsRes, productsRes, templatesRes, templateDepartmentsRes, customersRes] = await Promise.all([
+    const [projectsRes, phasesRes, projectDepartmentsRes, phaseDepartmentsRes, departmentsRes, phaseProductsRes, productsRes, templatesRes, templateDepartmentsRes, customersRes, beautyTasksRes] = await Promise.all([
       supabase.from("v4_progetti").select("id,titolo,descrizione,deadline,priorita,stato,created_at,creato_da,crm_customer_key,crm_tipo").order("created_at", { ascending: false }),
       supabase
         .from("v4_fasi_progetto")
@@ -319,6 +319,7 @@ export default function Tasks() {
       supabase.from("checklist_template").select("id,titolo,reparto_id,ordine,attivo,competenze_crm,reparti(id,nome)").eq("attivo", true).order("ordine", { ascending: true }),
       supabase.from("checklist_template_reparti").select("id,template_id,reparto_id"),
       loadCrmCustomerDirectory(supabase),
+      supabase.rpc("workspace_visible_beauty_task_ids"),
     ]);
 
     if (projectsRes.error) console.error("Planning progetti:", projectsRes.error.message);
@@ -327,6 +328,8 @@ export default function Tasks() {
     if (phaseDepartmentsRes.error) console.error("Planning reparti fase:", phaseDepartmentsRes.error.message);
     if (customersRes.error) console.error("Anagrafica clienti CRM:", customersRes.error.message);
 
+    const visibleBeautyTaskIds = new Set(beautyTasksRes.data || []);
+    if (beautyTasksRes.error) console.error("Task Beauty Days:", beautyTasksRes.error.message);
     const allProjects = projectsRes.data || [];
     const allPhases = phasesRes.data || [];
     const allProjectDepartments = projectDepartmentsRes.data || [];
@@ -350,7 +353,7 @@ export default function Tasks() {
       ? allPhases
       : allPhases.filter((phase) => {
           const ids = phaseDepartmentIdsByPhase.get(phase.id) || [];
-          return phase.assegnato_a === actorId || [phase.reparto_id, ...(phaseDepartmentIdsByPhase.get(phase.id) || [])].some((id) => userDepartmentIds.includes(id)) || canViewScopedData({
+          return visibleBeautyTaskIds.has(phase.id) || phase.assegnato_a === actorId || [phase.reparto_id, ...(phaseDepartmentIdsByPhase.get(phase.id) || [])].some((id) => userDepartmentIds.includes(id)) || canViewScopedData({
             ownerId: phase.creato_da,
             customerKey: phase.crm_customer_key || phase.v4_progetti?.crm_customer_key || allProjects.find((project) => project.id === phase.progetto_id)?.crm_customer_key,
             userIds: [phase.assegnato_a],
@@ -371,11 +374,13 @@ export default function Tasks() {
     );
 
     const directPhaseIds = new Set(directlyVisiblePhases.map((phase) => phase.id));
-    const visiblePhases = allPhases.filter((phase) => phase.progetto_id ? visibleProjectIds.has(phase.progetto_id) : directPhaseIds.has(phase.id));
+    const visiblePhases = allPhases.filter((phase) =>
+      !(visibleBeautyTaskIds.has(phase.id) && normalize(phase.stato) === "annullata") &&
+      (phase.progetto_id ? visibleProjectIds.has(phase.progetto_id) : directPhaseIds.has(phase.id)));
 
     const visiblePhaseIds = new Set(visiblePhases.map((phase) => phase.id));
     setProjects(allProjects.filter((project) => visibleProjectIds.has(project.id)));
-    setPhases(visiblePhases);
+    setPhases(visiblePhases.map(phase => ({ ...phase, beauty_shared: visibleBeautyTaskIds.has(phase.id) })));
     setDepartments((departmentsRes.data || []).filter((item) => item.attivo !== false && (dataScope?.mode === "tutti" || selectableDepartmentIds.has(item.id) || allPhaseDepartments.some((row) => row.reparto_id === item.id && visiblePhases.some((phase) => phase.id === row.fase_id)))));
     setPhaseDepartments(allPhaseDepartments.filter((row) => visiblePhaseIds.has(row.fase_id)));
     setPhaseProducts((phaseProductsRes.data || []).filter((row) => visiblePhaseIds.has(row.fase_id)));
@@ -451,7 +456,7 @@ export default function Tasks() {
       if (originFilter === "crm" && phase.source_type !== "crm_activity") return false;
       if (originFilter === "workspace" && phase.source_type === "crm_activity") return false;
       if (departmentFilter !== "all" && !phase.planningDepartments.some((item) => item.id === departmentFilter) && phase.reparto_id !== departmentFilter) return false;
-      if (mineOnly && phase.assegnato_a !== actorId && phase.creato_da !== actorId) return false;
+      if (mineOnly && !phase.beauty_shared && phase.assegnato_a !== actorId && phase.creato_da !== actorId) return false;
       if (statusFilter === "aperte" && isDone(phase)) return false;
       if (statusFilter === "oggi" && !(phase.deadline_day === todayIso() && !isDone(phase))) return false;
       if (statusFilter === "settimana" && !(phase.deadline_day && phase.deadline_day >= todayIso() && phase.deadline_day <= weekEndIso() && !isDone(phase))) return false;

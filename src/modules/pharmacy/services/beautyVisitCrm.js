@@ -1,4 +1,5 @@
 import { supabase } from "../../../lib/supabaseClient";
+import { beautyVisitStartsAt } from "./beautyVisitTime.js";
 
 const POSITION_OPTIONS = {
   enableHighAccuracy: true,
@@ -115,7 +116,7 @@ export async function ensureCrmBeautyVisit({ giornata, client, title }) {
     });
     if (!geocodeError && !geocodeResponse?.error) target = geocodeResponse?.data || null;
   }
-  const startsAt = `${giornata.data}T${giornata.ora_inizio || "09:00"}:00`;
+  const startsAt = beautyVisitStartsAt(giornata.data, giornata.ora_inizio);
   const { data, error } = await supabase.rpc("crm_create_beauty_visit", {
     p_customer_code: client.codice_cliente,
     p_customer_name: client.nome,
@@ -150,7 +151,7 @@ export async function createCrmBeautyContactVisit({ name, address, city, phone, 
     p_phone: phone || null,
     p_email: email || null,
     p_title: title || `Visita Beauty - ${name}`,
-    p_starts_at: `${data}T${oraInizio || "09:00"}:00`,
+    p_starts_at: beautyVisitStartsAt(data, oraInizio),
     p_target_latitude: target?.latitude || null,
     p_target_longitude: target?.longitude || null,
     p_legacy_giornata_id: null,
@@ -205,7 +206,7 @@ export async function createCrmBeautyCustomerVisit({ client, data, oraInizio, ti
     p_phone: client.telefono || null,
     p_email: client.email || null,
     p_title: title || `Visita Beauty - ${client.nome}`,
-    p_starts_at: `${data}T${oraInizio || "09:00"}:00`,
+    p_starts_at: beautyVisitStartsAt(data, oraInizio),
     p_target_latitude: target?.latitude || null,
     p_target_longitude: target?.longitude || null,
     p_legacy_giornata_id: null,

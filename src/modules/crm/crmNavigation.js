@@ -13,6 +13,8 @@ export function crmNavigation(type) {
   }
   if (type === "b2b") {
     return [
+      ["Ordini PH", `${basePath}/ordini-ph`],
+      ["Ordini PR", `${basePath}/ordini-pr`],
       ["Dashboard", basePath],
       ["Clienti / Prospect", `${basePath}/clienti`],
       ["Pipeline acquisizione", `${basePath}/pipeline`],

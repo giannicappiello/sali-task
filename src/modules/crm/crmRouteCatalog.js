@@ -22,6 +22,8 @@ export const CRM_ROUTE_CATALOG = Object.freeze([
   { path: "conto-terzi/progetti", catalogPath: "/crm/conto-terzi/progetti", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.progetti", view: "projects", type: "conto_terzi" },
   { path: "conto-terzi/brief", catalogPath: "/crm/conto-terzi/brief", moduleCode: "crm_conto_terzi", screenCode: "crm.conto_terzi.brief", view: "briefs" },
   { path: "b2b", catalogPath: "/crm/b2b", moduleCode: "crm_b2b", screenCode: "crm.b2b.dashboard", view: "dashboard", type: "b2b" },
+  { path: "b2b/ordini-ph", catalogPath: "/crm/b2b/ordini-ph", moduleCode: "crm_b2b", screenCode: "crm.b2b.ordini_ph", view: "order-dashboard", type: "b2b", orderModule: "ph" },
+  { path: "b2b/ordini-pr", catalogPath: "/crm/b2b/ordini-pr", moduleCode: "crm_b2b", screenCode: "crm.b2b.ordini_pr", view: "order-dashboard", type: "b2b", orderModule: "prof" },
   { path: "b2b/clienti", catalogPath: "/crm/b2b/clienti", moduleCode: "crm_b2b", screenCode: "crm.b2b.clienti", view: "accounts", type: "b2b" },
   { path: "b2b/clienti/:id", catalogPath: "/crm/b2b/clienti/:id", moduleCode: "crm_b2b", screenCode: "crm.b2b.cliente", view: "account", type: "b2b" },
   { path: "prodotti-ordinati", catalogPath: "/crm/prodotti-ordinati", screenCode: "crm.prodotti_ordinati", view: "customer-products", kind: "ordered" },

@@ -152,7 +152,7 @@ function Dashboard({ toolbarTarget = null }) {
       return;
     }
 
-    const [phasesRes, phaseDepartmentsRes, phaseProductsRes, remindersRes, reminderDepartmentsRes, messageParticipantsRes, projectsRes, projectDepartmentsRes, departmentsRes, productsRes, templatesRes, templateDepartmentsRes, customersRes] = await Promise.all([
+    const [phasesRes, phaseDepartmentsRes, phaseProductsRes, remindersRes, reminderDepartmentsRes, messageParticipantsRes, projectsRes, projectDepartmentsRes, departmentsRes, productsRes, templatesRes, templateDepartmentsRes, customersRes, beautyTasksRes] = await Promise.all([
       supabase
         .from("v4_fasi_progetto")
         .select("id,titolo,descrizione,note,stato,deadline,reparto_id,progetto_id,crm_customer_key,completato_at,creato_da,v4_progetti(id,titolo,crm_customer_key),reparti(id,nome)")
@@ -175,6 +175,7 @@ function Dashboard({ toolbarTarget = null }) {
       supabase.from("checklist_template").select("id,titolo,reparto_id,ordine,attivo,reparti(id,nome)").eq("attivo", true).order("ordine", { ascending: true }),
       supabase.from("checklist_template_reparti").select("id,template_id,reparto_id"),
       loadCrmCustomerDirectory(supabase),
+      supabase.rpc("workspace_visible_beauty_task_ids"),
     ]);
 
     if (phasesRes.error) console.error("Dashboard fasi:", phasesRes.error.message);
@@ -187,12 +188,15 @@ function Dashboard({ toolbarTarget = null }) {
     if (projectDepartmentsRes.error) console.error("Dashboard reparti progetto:", projectDepartmentsRes.error.message);
     if (customersRes.error) console.error("Anagrafica clienti CRM dashboard:", customersRes.error.message);
 
+    const visibleBeautyTaskIds = new Set(beautyTasksRes.data || []);
+    if (beautyTasksRes.error) console.error("Task Beauty Days:", beautyTasksRes.error.message);
     const allPhaseDepartments = phaseDepartmentsRes.data || [];
     const visibleTasks = (phasesRes.data || []).filter((phase) => {
+      if (visibleBeautyTaskIds.has(phase.id) && normalize(phase.stato) === "annullata") return false;
       const phaseDeps = allPhaseDepartments
         .filter((row) => row.fase_id === phase.id && row.reparto_id)
         .map((row) => row.reparto_id);
-      return canViewScopedData({
+      return visibleBeautyTaskIds.has(phase.id) || canViewScopedData({
         ownerId: phase.creato_da,
         customerKey: phase.crm_customer_key || phase.v4_progetti?.crm_customer_key,
         departmentIds: phaseDeps.length ? phaseDeps : [phase.reparto_id].filter(Boolean),

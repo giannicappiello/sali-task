@@ -45,20 +45,23 @@ export function assistantReportFilename(title, date = new Date()) {
   return `${slug}-${date.toISOString().slice(0, 10)}.pdf`;
 }
 
-function addWrappedText(doc, text, y, { bold = false, size = 10, logoDataUrl = null } = {}) {
+function addWrappedText(doc, text, y, { bold = false, size = 10, logoDataUrl = null, managedLetterhead = false } = {}) {
   const pageHeight = doc.internal.pageSize.getHeight();
   const lines = doc.splitTextToSize(cleanMarkdown(text), 178);
-  const height = Math.max(1, lines.length) * (size * 0.48);
-  if (y + height > pageHeight - 18) {
-    doc.addPage();
-    drawContentPageFrame(doc, logoDataUrl);
-    y = 32;
+  const lineHeight = size * 0.48;
+  for (const line of lines) {
+    if (y + lineHeight > pageHeight - 18) {
+      doc.addPage();
+      if (!managedLetterhead) drawContentPageFrame(doc, logoDataUrl);
+      y = 32;
+    }
+    doc.setFont("helvetica", bold ? "bold" : "normal");
+    doc.setFontSize(size);
+    doc.setTextColor(31, 45, 68);
+    doc.text(line, 16, y);
+    y += lineHeight;
   }
-  doc.setFont("helvetica", bold ? "bold" : "normal");
-  doc.setFontSize(size);
-  doc.setTextColor(31, 45, 68);
-  doc.text(lines, 16, y);
-  return y + height + 2.5;
+  return y + 2.5;
 }
 
 const BRAND = {
@@ -96,7 +99,7 @@ function drawBrandMark(doc, logoDataUrl, x, y, width = 70, height = 25) {
   doc.text("H U M A N   C O S M E T I C S", x + width / 2, y + 18, { align: "center" });
 }
 
-function drawCover(doc, { title, subtitle, generatedAt, author, logoDataUrl }) {
+function drawCover(doc, { title, subtitle, generatedAt, author, logoDataUrl, reportLabel = "REPORT AI" }) {
   doc.setFillColor(...BRAND.navy);
   doc.rect(0, 0, 210, 297, "F");
   drawBrandMark(doc, logoDataUrl, 24, 23, 78, 28);
@@ -107,7 +110,7 @@ function drawCover(doc, { title, subtitle, generatedAt, author, logoDataUrl }) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
   doc.setTextColor(255, 255, 255);
-  doc.text("REPORT AI", 24, 100);
+  doc.text(reportLabel, 24, 100);
   doc.setFontSize(25);
   const titleLines = doc.splitTextToSize(title, 156);
   doc.text(titleLines, 24, 114);
@@ -154,19 +157,19 @@ function drawContentPageFrame(doc, logoDataUrl = null) {
   doc.rect(16, 23, 12, 1.5, "F");
 }
 
-export function buildAssistantPdf({ content, generatedAt = new Date(), author = "Progre AI", includeChart = false, logoDataUrl = null, managedLetterhead = false }) {
+export function buildAssistantPdf({ content, generatedAt = new Date(), author = "Progre AI", includeChart = false, logoDataUrl = null, managedLetterhead = false, reportLabel = "REPORT AI", footerLabel = "Documento generato da Progre AI - dati interni autorizzati" }) {
   const title = assistantReportTitle(content);
   const subtitle = firstBodyLine(content, title).slice(0, 180);
   const doc = new jsPDF({ unit: "mm", format: "a4", compress: true });
   const lines = String(content || "").split(/\r?\n/);
 
   if (managedLetterhead) {
-    doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(...BRAND.navy); doc.text("REPORT AI", 24, 92);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(...BRAND.navy); doc.text(reportLabel, 24, 92);
     doc.setFontSize(25); doc.text(doc.splitTextToSize(title, 156), 24, 108);
     doc.setFont("helvetica", "normal"); doc.setFontSize(11); doc.text(doc.splitTextToSize(subtitle, 156), 24, 145);
     doc.setFontSize(9.5); doc.text(`Data di elaborazione: ${formatDisplayDate(generatedAt, {})}`, 24, 220);
     doc.text(`Preparato da: ${author}`, 24, 232);
-  } else drawCover(doc, { title, subtitle, generatedAt, author, logoDataUrl });
+  } else drawCover(doc, { title, subtitle, generatedAt, author, logoDataUrl, reportLabel });
   doc.addPage();
   if (!managedLetterhead) drawContentPageFrame(doc, logoDataUrl);
 
@@ -201,7 +204,7 @@ export function buildAssistantPdf({ content, generatedAt = new Date(), author = 
       continue;
     }
     const isHeading = /^#{1,6}\s+/.test(raw);
-    y = addWrappedText(doc, raw.replace(/^[-*]\s+/, "- "), y, { bold: isHeading, size: isHeading ? 12 : 10, logoDataUrl });
+    y = addWrappedText(doc, raw.replace(/^[-*]\s+/, "- "), y, { bold: isHeading, size: isHeading ? 12 : 10, logoDataUrl, managedLetterhead });
     index += 1;
   }
 
@@ -213,7 +216,7 @@ export function buildAssistantPdf({ content, generatedAt = new Date(), author = 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     doc.setTextColor(108, 121, 144);
-    doc.text("Documento generato da Progre AI - dati interni autorizzati", 16, 289);
+    doc.text(footerLabel, 16, 289);
     doc.text(`Pagina ${page - 1} di ${Math.max(1, pages - 1)}`, 194, 289, { align: "right" });
   }
   return doc;

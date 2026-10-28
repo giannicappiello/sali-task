@@ -34,6 +34,7 @@ import WorkspaceScreenLayout from "./WorkspaceScreenLayout";
 import { getModuleIcon } from "../config/moduleIcons";
 import { resolveCatalogModuleDestination } from "../config/workspaceNavigation";
 import ContextualAIAssistant from "./ContextualAIAssistant";
+import ScreenExport from "./ScreenExport";
 import "../styles/compact-headers.css";
 import "../styles/unified-chrome.css";
 import useBackNavigation from "../hooks/useBackNavigation";
@@ -698,6 +699,7 @@ function Layout() {
           </div>
 
           <div className="topbar-actions">
+            <ScreenExport />
             <ContextualAIAssistant title={screenHeader?.title || currentPage.title} module={currentPage.title} />
             {location.pathname !== "/home" && <button type="button" className="topbar-home-btn topbar-back-btn" onClick={screenHeader?.onBack || goBack} aria-label={screenHeader?.backLabel ? `Torna a ${screenHeader.backLabel}` : "Indietro"}><ArrowLeft size={19} /><span>Indietro</span></button>}
             <button type="button" className="topbar-home-btn" onClick={() => navigate("/home")} aria-label="Vai alla Home"><Home size={19} /><span>Home</span></button>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Info, X } from 'lucide-react';
 import './crm-kpi-detail.css';
 import { queryDetailRows } from './crmDetailQuery';
+import { registerTableTotals } from '../../../shared/screen-export/totals.js';
 
 export function CrmKpiCard({ label, value, note, info, onClick }) {
   const [showInfo, setShowInfo] = useState(false);
@@ -18,15 +19,17 @@ export function CrmDetailTable({ rows, columns, empty = 'Nessun dato disponibile
   const [search, setSearch] = useState(''); const [filters, setFilters] = useState({});
   const [sort, setSort] = useState({ key: '', direction: 'asc' }); const [hidden, setHidden] = useState([]);
   const [page, setPage] = useState(0);
+  const reportTable = useRef(null);
   const visible = columns.filter(c => !hidden.includes(c.key));
   const result = useMemo(() => queryDetailRows(rows, columns, search, filters, sort), [rows, columns, search, filters, sort]);
+  useEffect(() => registerTableTotals(reportTable.current, () => result.map(row => visible.map(column => column.value(row)))), [result, visible]);
   const pages = Math.max(1, Math.ceil(result.length / 25)); const current = Math.min(page, pages - 1);
   return <>
     <div className="b2b-detail-tools"><label>Cerca nel dettaglio<input type="search" value={search} onChange={e => { setSearch(e.target.value); setPage(0); }} placeholder="Cerca in tutte le colonne"/></label>
       <details className="b2b-column-picker"><summary>Colonne visibili</summary><div>{columns.map(c => <label key={c.key}><input type="checkbox" checked={!hidden.includes(c.key)} disabled={visible.length === 1 && !hidden.includes(c.key)} onChange={e => setHidden(e.target.checked ? hidden.filter(k => k !== c.key) : [...hidden, c.key])}/>{c.label}</label>)}</div></details>
       <button type="button" className="secondary-action" onClick={() => { setSearch(''); setFilters({}); setSort({ key: '', direction: 'asc' }); setHidden([]); setPage(0); }}>Azzera filtri</button>
     </div>
-    <div className="b2b-detail-table-wrap"><table className="crm-table" data-column-controls="off"><thead><tr>{visible.map(c => <th key={c.key} aria-sort={sort.key === c.key ? sort.direction === 'asc' ? 'ascending' : 'descending' : 'none'}>
+    <div className="b2b-detail-table-wrap"><table ref={reportTable} className="crm-table" data-column-controls="off"><thead><tr>{visible.map(c => <th key={c.key} aria-sort={sort.key === c.key ? sort.direction === 'asc' ? 'ascending' : 'descending' : 'none'}>
       <button type="button" className="b2b-sort" onClick={() => { setSort({ key: c.key, direction: sort.key === c.key && sort.direction === 'asc' ? 'desc' : 'asc' }); setPage(0); }}>{c.label}{sort.key === c.key ? sort.direction === 'asc' ? <ArrowUp size={14}/> : <ArrowDown size={14}/> : null}</button>
       <input aria-label={`Filtra ${c.label}`} placeholder="Filtra…" value={filters[c.key] || ''} onChange={e => { setFilters({ ...filters, [c.key]: e.target.value }); setPage(0); }}/>
     </th>)}</tr></thead><tbody>{result.slice(current * 25, current * 25 + 25).map((row, i) => <tr key={row.id || row.key || i}>{visible.map(c => <td key={c.key}>{c.render ? c.render(row) : String(c.value(row) ?? '—')}</td>)}</tr>)}</tbody></table></div>

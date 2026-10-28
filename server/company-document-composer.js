@@ -10,6 +10,7 @@ const MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingm
 const ALLOWED_TYPES = new Map([
   ["ORDINE_CLIENTE", { format: "PDF", modules: ["ordini_pr", "ordini_ph", "ordini_private"] }],
   ["REPORT_ASSISTENTE_AI", { format: "PDF", ai: true }],
+  ["REPORT_SCHERMATA", { format: "PDF", screen: true }],
 ]);
 
 function httpError(message, status = 400, code = "INVALID_REQUEST") {
@@ -40,6 +41,8 @@ function assertDocumentAccess(auth, documentTypeCode) {
   if (!descriptor) throw httpError("Tipo documento non collegato a un generatore Workspace reale.", 400, "DOCUMENT_TYPE_NOT_INTEGRATED");
   if (auth.profile?.ruoli?.amministratore_workspace === true) return descriptor;
   if (descriptor.ai && auth.capabilities?.module_access === true) return descriptor;
+  // A screen report contains only the current UI, already authorized by its module.
+  if (descriptor.screen && auth.profile?.id) return descriptor;
   const levels = auth.access?.module_levels || {};
   if (descriptor.modules?.some((module) => levelAllowsRead(levels[module]))) return descriptor;
   throw httpError("Non hai accesso al generatore documentale richiesto.", 403, "FORBIDDEN");
@@ -206,7 +209,7 @@ export async function handleWorkspaceDocumentCompose(req, res) {
     const descriptor = assertDocumentAccess(auth, input.documentTypeCode);
     const outputFormat = String(input.outputFormat || descriptor.format).toUpperCase();
     if (!["PDF", "DOCX"].includes(outputFormat)) throw httpError("Formato di output non supportato.");
-    const snapshot = await frozenResolution(auth.admin, input);
+    const snapshot = await frozenResolution(auth.admin, descriptor.screen ? { ...input, documentTypeCode: "REPORT_ASSISTENTE_AI" } : input);
     const expectedMime = outputFormat === "PDF" ? MIME_PDF : MIME_DOCX;
     if (snapshot.version.mime_type !== expectedMime) throw httpError(`L’intestazione risolta non è in formato ${outputFormat}.`, 409, "LETTERHEAD_FORMAT_MISMATCH");
     const [templateBytes, signatures] = await Promise.all([

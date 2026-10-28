@@ -72,7 +72,7 @@ export default function CommercialOrdersScreen({ data, stage, onStage, loading, 
           </tr>{!customerScoped && expanded===row.id && <tr><td colSpan={6} className="commercial-detail-cell"><OrderDetail key={row.id} row={row} loadBatches={id=>loadBatches(row,id)} onOpen={onOpen} onDiagnostic={onDiagnostic}/></td></tr>}</Fragment>)}
         </tbody></table></div>
         {!rows.length && <p className="commercial-empty">Nessun ordine per i filtri impostati. Premi “Azzera filtri” per tornare all’elenco.</p>}
-        <footer className="commercial-pagination"><span>{rows.length ? `${currentPage*PAGE_SIZE+1}–${Math.min((currentPage+1)*PAGE_SIZE,rows.length)} di ${rows.length}` : "0 ordini"}</span><button type="button" className="secondary-action" disabled={currentPage===0} onClick={()=>{setPage(currentPage-1);setExpanded(null);}}>Precedente</button><button type="button" className="secondary-action" disabled={(currentPage+1)*PAGE_SIZE>=rows.length} onClick={()=>{setPage(currentPage+1);setExpanded(null);}}>Successiva</button></footer>
+        <footer className="commercial-pagination"><span>{rows.length ? `${currentPage*PAGE_SIZE+1}–${Math.min((currentPage+1)*PAGE_SIZE,rows.length)} di ${rows.length}` : "0 ordini"}</span><button type="button" className="secondary-action" disabled={currentPage===0} onClick={()=>{setPage(currentPage-1);if (!document.documentElement.dataset.progreReportReading) setExpanded(null);}}>Precedente</button><button type="button" className="secondary-action" disabled={(currentPage+1)*PAGE_SIZE>=rows.length} onClick={()=>{setPage(currentPage+1);if (!document.documentElement.dataset.progreReportReading) setExpanded(null);}}>Successiva</button></footer>
       </>}
     </section>
   </section>;

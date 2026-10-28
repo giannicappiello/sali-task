@@ -264,7 +264,7 @@ function AccountsPage({ type,orderModule=null,embedded=false,customerGroup=null 
   const orderAgent=orderModule?searchParams.get("agent")||null:null;
   const { profile, canUseModule, hasPermission } = useAuth();
   const canWrite = canUseModule(config.moduleCode, "scrittura");
-  const [customerStatus, setCustomerStatus] = useCrmCustomerStatus("active");
+  const [customerStatus, setCustomerStatus] = useCrmCustomerStatus(embedded && orderModule==='prof'?"all":"active");
   const customerParam=name=>customerGroup?`${customerGroup}_${name}`:name;
   const search = searchParams.get(customerParam("customerSearch")) || "";
   const page = Math.max(0, Number(searchParams.get(customerParam("customerPage")) || 0));

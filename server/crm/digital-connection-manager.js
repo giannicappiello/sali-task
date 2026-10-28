@@ -17,9 +17,10 @@ import { loadDigitalOrderDetail } from './digital-order-detail.js';
 import { synchronizeAmazonCox } from './amazon-cox.js';
 import { buildMexalClient } from '../mexal/sync-products.js';
 import { probeAmazonBuyer } from './amazon-buyer.js';
+import { synchronizeAmazonRefunds } from './amazon-refunds.js';
 import { financialTransactions,fbaReturnReport,refundFinancialEvents } from './amazon-returns-source.js';
 
-const SAFE_CONNECTION_FIELDS = "id,tipo,provider_code,provider,nome,category,auth_type,stato,endpoint_url,site_url,external_account_id,marketplace_ids,configurazione,secret_references,credenziali_stato,abilitata,sync_attivo,sync_frequency,is_default,ultimo_test_il,ultimo_test_stato,ultimo_test_messaggio,errori_consecutivi,ultimo_sync_il,prossima_run_il,ultimo_errore,oauth_scade_il,webhook_path,webhook_stato,ultimo_webhook_il,disabilitata_il,aggiornata_il,import_state,amazon_cox_state,amazon_cox_from,amazon_shipment_state,amazon_shipments_covered_at,responsabile_id,reparto_id";
+const SAFE_CONNECTION_FIELDS = "id,tipo,provider_code,provider,nome,category,auth_type,stato,endpoint_url,site_url,external_account_id,marketplace_ids,configurazione,secret_references,credenziali_stato,abilitata,sync_attivo,sync_frequency,is_default,ultimo_test_il,ultimo_test_stato,ultimo_test_messaggio,errori_consecutivi,ultimo_sync_il,prossima_run_il,ultimo_errore,oauth_scade_il,webhook_path,webhook_stato,ultimo_webhook_il,disabilitata_il,aggiornata_il,import_state,amazon_cox_state,amazon_cox_from,amazon_shipment_state,amazon_shipments_covered_at,amazon_refunds_from,amazon_refund_state,responsabile_id,reparto_id";
 
 function required(name) {
   const value = String(process.env[name] || "").trim();
@@ -210,7 +211,7 @@ async function refreshCustomerProfiles(req, body) {
 
 export async function synchronizeCommerce(db, actorId, connection, mode, shipmentDatesOnly = false, {
   readConnection=connectionById, readSecrets=decryptedSecrets, fetchPage=fetchCommercePage,
-  shipmentSync=synchronizeShipmentDates, coxSync=synchronizeAmazonCox,
+  shipmentSync=synchronizeShipmentDates, coxSync=synchronizeAmazonCox, refundSync=synchronizeAmazonRefunds, refundsOnly=false,
 }={}) {
   const { data: runId, error: lockError } = await db.rpc('crm_claim_commerce_import_service', {
     target_connection_id: connection.id, target_triggered_by: actorId || null,
@@ -224,6 +225,22 @@ export async function synchronizeCommerce(db, actorId, connection, mode, shipmen
   try {
     // Read the cursor after acquiring the lock: another request may have just finished a page.
     const fresh = await readConnection(db, connection.id);
+    const emitRefunds=async()=>{
+      let refunds;
+      try{refunds=await refundSync({db,connection:fresh,secrets:await readSecrets(db,fresh.id),clientForYear:year=>buildMexalClient({year,warehouse:4})});}
+      catch(error){
+        const current=await readConnection(db,fresh.id),message=String(error.message).slice(0,500);
+        const saved=await db.from('crm_external_connections').update({amazon_refund_state:{...current.amazon_refund_state,active:false,lastError:message,retryAt:new Date(Date.now()+900000).toISOString()}}).eq('id',fresh.id);
+        if(saved.error)throw saved.error;
+        refunds={hasMore:false,failed:1,warning:message};
+      }
+      await finish(refunds.hasMore?'partial':'completed',{read:refunds.recordsRead || 0,updated:(refunds.emitted || 0)+(refunds.updated || 0),failed:refunds.failed || 0},{source:mode,resource:'amazon_refunds',hasMore:refunds.hasMore,refunds});
+      return {...refunds,refunds,runId,status:refunds.hasMore?'partial':'completed',resource:'amazon_refunds',counts:fresh.import_state?.counts || {}};
+    };
+    if(fresh.provider_code==='amazon_sp_api' && (refundsOnly || fresh.amazon_refund_state?.active)){
+      if(!fresh.amazon_refunds_from)throw new Error('Configurare la data iniziale dei rimborsi Amazon.');
+      return await emitRefunds();
+    }
     let shipmentWarning=fresh.amazon_shipment_state?.lastError || null;
     if(fresh.provider_code==='amazon_sp_api' && (shipmentDatesOnly || (fresh.amazon_cox_state?.active && fresh.amazon_cox_state.phase==='shipments'))) {
       let shipping;
@@ -248,9 +265,14 @@ export async function synchronizeCommerce(db, actorId, connection, mode, shipmen
     const emitCox = async () => {
       const cox = await coxSync({ db, connection: fresh,
         clientForYear: year => buildMexalClient({ year, warehouse: 4 }) });
-      await finish(cox.hasMore ? 'partial' : 'completed', { read: 0, updated: cox.emitted, failed: cox.failed },
-        { source: mode, resource: 'amazon_cox', hasMore: cox.hasMore, cox, shipmentWarning });
-      return { runId, status: cox.hasMore ? 'partial' : 'completed', hasMore: cox.hasMore,
+      const hasMore=cox.hasMore || Boolean(fresh.amazon_refunds_from);
+      if(!cox.hasMore && fresh.amazon_refunds_from){
+        const saved=await db.from('crm_external_connections').update({amazon_refund_state:{...fresh.amazon_refund_state,active:true}}).eq('id',fresh.id);
+        if(saved.error)throw saved.error;
+      }
+      await finish(hasMore ? 'partial' : 'completed', { read: 0, updated: cox.emitted, failed: cox.failed },
+        { source: mode, resource: 'amazon_cox', hasMore, cox, shipmentWarning });
+      return { runId, status: hasMore ? 'partial' : 'completed', hasMore,
         recordsRead: 0, resource: 'amazon_cox', counts: fresh.import_state?.counts || {}, cox, shipmentWarning };
     };
     if (fresh.provider_code === 'amazon_sp_api' && fresh.amazon_cox_state?.active) return await emitCox();
@@ -288,6 +310,12 @@ async function syncAmazonShipmentDates(req,body) {
   const auth=await authorize(req,true), connection=await connectionById(auth.supabase,body.id);
   if(!connection.abilitata || connection.provider_code !== 'amazon_sp_api') throw Object.assign(new Error('Connessione Amazon attiva richiesta.'),{status:409});
   return synchronizeCommerce(auth.supabase,auth.id,connection,'manual_dates',true);
+}
+
+async function syncAmazonRefunds(req,body){
+  const auth=await authorize(req,true),connection=await connectionById(auth.supabase,body.id);
+  if(!connection.abilitata || connection.provider_code!=='amazon_sp_api')throw Object.assign(new Error('Connessione Amazon attiva richiesta.'),{status:409});
+  return synchronizeCommerce(auth.supabase,auth.id,connection,'manual_refunds',false,{refundsOnly:true});
 }
 
 async function syncNow(req, body) {
@@ -345,13 +373,13 @@ export async function handleDigitalConnectionManager(req, res) {
       const result=body.report?await fbaReturnReport(connection,secrets,{from,to,reportId:body.reportId}):await (body.transactions?financialTransactions:refundFinancialEvents)(connection,secrets,{orderId:body.orderId,from,to,nextToken:body.nextToken});
       return res.status(200).json({success:true,...result});
     }
-    if(action==='recover_amazon_import') {
+    if(['recover_amazon_import','recover_amazon_refunds'].includes(action)) {
       res.setHeader('Cache-Control','private, no-store');
       if(req.method!=='POST') return res.status(405).json({success:false,error:'Metodo non consentito.'});
       if(!authorizedDigitalScheduler(req,required('SUPABASE_SERVICE_ROLE_KEY'),process.env.CRON_SECRET)) throw Object.assign(new Error('Recupero riservato al servizio.'),{status:401});
       const db=serviceClient(), connection=await connectionById(db,body.id);
       if(connection.provider_code!=='amazon_sp_api' || !connection.abilitata) throw Object.assign(new Error('Connessione Amazon attiva richiesta.'),{status:409});
-      return res.status(200).json({success:true,...await synchronizeCommerce(db,null,connection,'recovery')});
+      return res.status(200).json({success:true,...await synchronizeCommerce(db,null,connection,'recovery',false,{refundsOnly:action==='recover_amazon_refunds'})});
     }
     if (action === 'amazon_buyer_probe') {
       res.setHeader('Cache-Control','private, no-store');
@@ -412,7 +440,7 @@ export async function handleDigitalConnectionManager(req, res) {
     if (action === "dispatch") return res.status(200).json({ success: true, ...(await dispatchDigitalSchedule(req)) });
     if (["list", "operational"].includes(action)) { const auth = await authorize(req); const data = action === "list" ? { registry: DIGITAL_PROVIDER_REGISTRY.map(safeProvider), connections: await list(auth.supabase) } : await operationalData(auth.supabase, body); return res.status(200).json({ success: true, ...data }); }
     if (req.method !== "POST") return res.status(405).json({ success: false, error: "Metodo non consentito." });
-    const handlers = { refresh_customer_profiles: refreshCustomerProfiles, save, revoke_secret: revokeSecret, test: testConnection, activate, deactivate, sync_now: syncNow, sync_amazon_shipment_dates: syncAmazonShipmentDates, save_mapping: saveMapping, oauth_start: oauthStart };
+    const handlers = { refresh_customer_profiles: refreshCustomerProfiles, save, revoke_secret: revokeSecret, test: testConnection, activate, deactivate, sync_now: syncNow, sync_amazon_shipment_dates: syncAmazonShipmentDates, sync_amazon_refunds:syncAmazonRefunds, save_mapping: saveMapping, oauth_start: oauthStart };
     if (!handlers[action]) throw Object.assign(new Error("Azione Connection Manager non supportata."), { status: 400 });
     return res.status(200).json({ success: true, ...(await handlers[action](req, body)) });
   } catch (error) {

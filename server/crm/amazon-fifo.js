@@ -35,6 +35,11 @@ export function applyFifoLots(payload, articles, lots, stock) {
 export async function prepareFifoLots(mexal,payload,articles) {
   const codes=[...new Set(payload.codice_articolo.map(([,code])=>code).filter(code=>String(articles.get(code)?.cod_tp_lotto||'').trim()))];
   if(!codes.length) return payload;
+  const {stock,lots}=await loadWarehouseLots(mexal,codes);
+  return applyFifoLots(payload,articles,lots,stock);
+}
+
+async function loadWarehouseLots(mexal,codes){
   const stock=[],lots=[];
   let next;const seen=new Set();
   do {
@@ -54,5 +59,25 @@ export async function prepareFifoLots(mexal,payload,articles) {
       if(seenLots.size>50) throw new Error('Lettura lotti troppo estesa.');
     } while(next);
   }
-  return applyFifoLots(payload,articles,lots,stock);
+  return {lots,stock};
+}
+
+// A return increases stock. The owner selected an existing warehouse-4 lot;
+// incoming quantities must not be capped by the quantity currently remaining.
+export async function prepareReturnLots(mexal,payload,articles){
+ const codes=[...new Set(payload.codice_articolo.map(([,code])=>code).filter(code=>String(articles.get(code)?.cod_tp_lotto||'').trim()))];
+ if(!codes.length)return payload;
+ const {stock,lots}=await loadWarehouseLots(mexal,codes);
+ const ids=[],amounts=[],positions=[],counts=[],decimals=[],quantities=new Map(payload.quantita);
+ for(const [row,code] of payload.codice_articolo){
+  if(!codes.includes(code))continue;
+  const warehouseLots=stock.filter(s=>s.code===code),byId=new Map(warehouseLots.map(s=>[s.lotId,s.quantity]));
+  const candidates=lots.filter(l=>l.cod_articolo===code && byId.has(Number(l.id)) && l.stato==='C' && l.caricato==='S' && /^\d{8}$/.test(l.data_carico) && l.data_carico<=payload.data_documento)
+   .sort((a,b)=>Number((byId.get(Number(b.id))||0)>0)-Number((byId.get(Number(a.id))||0)>0)||a.data_carico.localeCompare(b.data_carico)||Number(a.id)-Number(b.id));
+  if(!candidates.length)throw new Error('Nessun lotto esistente nel magazzino 4 verificabile per il reso '+code+'.');
+  const quantity=Number(quantities.get(row));
+  if(!Number.isFinite(quantity) || quantity>=0)throw new Error('Quantità reso per lotto non negativa.');
+  const index=ids.length+1;ids.push([index,Number(candidates[0].id)]);amounts.push([index,quantity]);positions.push([row,index]);counts.push([row,1]);decimals.push([index,6]);
+ }
+ return {...payload,id_lotto:ids,qta_lotto:amounts,pos_righe_lotto:positions,nr_righe_lotto:counts,dec_qta_lotto:decimals};
 }

@@ -112,7 +112,7 @@ async function existingCox(mexal, order) {
       { campo: 'cod_conto', condizione: '=', valore: AMAZON_CUSTOMER_CODE }, { campo: 'nota', condizione: 'contiene', valore: order.external_id },
     ] });
     assert(Array.isArray(page.dati), 'Ricerca COX incompleta.');
-    matches.push(...page.dati.filter(row => new RegExp(`(^|[^0-9-])${order.external_id}($|[^0-9-])`).test(text(scalar(row.nota)))));
+    matches.push(...page.dati.filter(row => !text(scalar(row.nota)).includes('RESO:') && new RegExp(`(^|[^0-9-])${order.external_id}($|[^0-9-])`).test(text(scalar(row.nota)))));
     next = page.next; assert(!next || !seen.has(next), 'Cursore ricerca COX ripetuto.'); seen.add(next);
     assert(seen.size <= 50, 'Ricerca COX troppo estesa.');
   } while (next);

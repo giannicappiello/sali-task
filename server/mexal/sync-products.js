@@ -331,6 +331,12 @@ export function buildMexalClient({ request = requestMexal, warehouse, retryOptio
       }
     },
 
+    async putJson(path,payload) {
+      const body=JSON.stringify(payload);
+      const response=await request({url:`${baseUrl}/webapi/risorse${path}`,headers:{...headers,'Content-Type':'application/json','Content-Length':Buffer.byteLength(body)},method:'PUT',body,timeoutMs});
+      return parseJsonResponse(response,path);
+    },
+
     async getBinary(path) {
       const response = await request({
         url: `${baseUrl}/webapi/risorse${path}`,

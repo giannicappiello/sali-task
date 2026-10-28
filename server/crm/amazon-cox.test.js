@@ -71,6 +71,16 @@ test('new COX saves its verified reference; existing COX is linked without POST'
   }
 });
 
+test('a refund COX with the same order number cannot shadow or duplicate the sale',async()=>{
+ const f=fixture({existing:true}),original=f.mexal.postJson;
+ f.mexal.postJson=async(path,p)=>{
+  if(path.includes('/ricerca'))return {dati:[{...actual(),nota:[[1,order.external_id]]},{...actual(),numero:999,nota:[[1,order.external_id+' RESO:abcdef']]}]};
+  return original(path,p);
+ };
+ const result=await emitAmazonCox({db:f.db,connection:{id:'conn'},order,clientForYear:()=>f.mexal});
+ assert.equal(result.status,'emitted');assert.equal(result.reference.number,123);assert.equal(f.created,0);
+});
+
 test('rounding passes preflight and readback with an audit, real VAT differences block before POST',async()=>{
   const roundedOrder={...order,gross_revenue:44.56,net_revenue:36.53};
   const f=fixture();

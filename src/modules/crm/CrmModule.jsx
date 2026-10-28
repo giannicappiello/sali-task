@@ -171,10 +171,11 @@ function Kpi({ label, value, note, to }) {
 
 function CrmPrDashboard(){
  const [mypharmaOpen,setMypharmaOpen]=useState(false);
- return <><CrmDashboard type="b2b" orderModule="prof" customerGroup="regular"/><section className="panel crm-panel"><details onToggle={event=>setMypharmaOpen(event.currentTarget.open)}><summary><strong>MYPHARMA · KPI e clienti Ordini PR</strong></summary><p>I valori MYPHARMA sono separati dai totali principali di Ordini PR.</p>{mypharmaOpen?<CrmDashboard type="b2b" orderModule="prof" customerGroup="mypharma"/>:null}</details></section></>;
+ const mypharmaSection=<section className="panel crm-panel"><details onToggle={event=>setMypharmaOpen(event.currentTarget.open)}><summary><strong>MYPHARMA · KPI e clienti Ordini PR</strong></summary><p>I valori MYPHARMA sono separati dai totali principali di Ordini PR.</p>{mypharmaOpen?<CrmDashboard type="b2b" orderModule="prof" customerGroup="mypharma"/>:null}</details></section>;
+ return <CrmDashboard type="b2b" orderModule="prof" customerGroup="regular" beforeCustomers={mypharmaSection}/>;
 }
 
-function CrmDashboard({ type, orderModule = null,customerGroup=null }) {
+function CrmDashboard({ type, orderModule = null,customerGroup=null,beforeCustomers=null }) {
   const config = crmTypeConfig(type);
   const period = useCrmPeriod();
   const [params, setParams] = useSearchParams();
@@ -211,7 +212,7 @@ function CrmDashboard({ type, orderModule = null,customerGroup=null }) {
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => { window.clearTimeout(timer); request.current++; }; }, [load]);
 
   const navigation = crmNavigation(type);
-  if (type === "b2b") return <CrmB2BDashboard data={data} firstOrderSuggestions={firstOrderSuggestions} loading={loading} error={error} period={period} retry={load} agent={agent} onAgentChange={onAgentChange} agentCustomers={agentCustomers} orderModule={orderModule} customerGroup={customerGroup} scopeCodes={scopeCodes}>{orderModule ? <AccountsPage type="b2b" orderModule={orderModule} customerGroup={customerGroup} embedded/> : null}</CrmB2BDashboard>;
+  if (type === "b2b") return <CrmB2BDashboard data={data} firstOrderSuggestions={firstOrderSuggestions} loading={loading} error={error} period={period} retry={load} agent={agent} onAgentChange={onAgentChange} agentCustomers={agentCustomers} orderModule={orderModule} customerGroup={customerGroup} scopeCodes={scopeCodes}>{beforeCustomers}{orderModule ? <AccountsPage type="b2b" orderModule={orderModule} customerGroup={customerGroup} embedded/> : null}</CrmB2BDashboard>;
   return <div className="crm-page">
     <CrmPageHeader eyebrow={config.label} title={`Dashboard ${config.label}`} description="KPI reali nel tuo ambito dati. Ordinato Workspace e fatturato Mexal restano metriche distinte." actions={<CrmPeriodFilter period={period} />}>
       <CrmSectionNav items={navigation} period={period} label={`Aree CRM ${config.label}`} />
@@ -263,7 +264,7 @@ function AccountsPage({ type,orderModule=null,embedded=false,customerGroup=null 
   const orderAgent=orderModule?searchParams.get("agent")||null:null;
   const { profile, canUseModule, hasPermission } = useAuth();
   const canWrite = canUseModule(config.moduleCode, "scrittura");
-  const [customerStatus, setCustomerStatus] = useCrmCustomerStatus("active");
+  const [customerStatus, setCustomerStatus] = useCrmCustomerStatus(embedded && orderModule==='prof'?"all":"active");
   const customerParam=name=>customerGroup?`${customerGroup}_${name}`:name;
   const search = searchParams.get(customerParam("customerSearch")) || "";
   const page = Math.max(0, Number(searchParams.get(customerParam("customerPage")) || 0));

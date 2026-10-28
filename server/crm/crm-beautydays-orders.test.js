@@ -42,7 +42,7 @@ function sources({missingName=false,error=null,extraOrders=[]}={}) {
  primary:database({
   beauty_clienti_mexal:[{codice_cliente:"A",legacy_farmacia_id:"f1",beauty_external_id:"c1"}],
   ordini_clienti_cache:missingName?[]:[{codice_cliente:"A",ragione_sociale:"Farmacia Canonica"}],
-  crm_order_kpi_source:[...commercial.orders,...extraOrders],mexal_fatture_vendita:[],
+  crm_order_kpi_source:[...commercial.orders,...extraOrders],crm_sales_invoices:[],
  },error?{crm_order_kpi_source:error}:{}),
  report:database({
   giornate_promozionali:[{...day,farmacia_id:"f1",consultant_id:"c1",numero_totale_pezzi_venduti:2,fatturato_giornata:12},

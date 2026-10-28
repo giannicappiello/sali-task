@@ -55,8 +55,8 @@ export default function CrmB2BAccount({ crmType = 'b2b', account, metrics: sourc
     const timer = setTimeout(async () => {
       setExtra({ loading: true, invoices: [], orders: [], beauty: [], projects: [], tasks: [], errors: {} });
       const requests = {
-        invoices: code ? loadAllQueryRows((from, to) => supabase.from('mexal_fatture_vendita').select('id,sigla,serie,numero,data_documento,totale_documento').eq('codice_cliente', code).order('id').range(from, to)).then(take) : Promise.resolve([]),
-        orders: code ? loadAllQueryRows((from, to) => supabase.from('ordini_testate').select('id,numero_ordine_visualizzato,data_ordine,totale_documento,stato').eq('codice_cliente', code).order('id').range(from, to)).then(take) : Promise.resolve([]),
+        invoices: code ? loadAllQueryRows((from, to) => supabase.from('crm_sales_invoices').select('id,sigla,serie,numero,data_documento,totale_documento').eq('codice_cliente', code).order('id').range(from, to)).then(take) : Promise.resolve([]),
+        orders: code ? loadAllQueryRows((from, to) => supabase.from('crm_sales_orders').select('id,numero_ordine_visualizzato,data_ordine,totale_documento,stato').eq('codice_cliente', code).order('id').range(from, to)).then(take) : Promise.resolve([]),
         tasks: loadAllQueryRows((from, to) => supabase.from('v4_fasi_progetto').select('*').eq('crm_customer_key', key).eq('crm_tipo', crmType).order('id').range(from, to)).then(take),
         projects: loadAllQueryRows((from, to) => supabase.from('v4_progetti').select('id,titolo,stato,deadline,crm_customer_key').eq('crm_customer_key', key).eq('crm_tipo', crmType).order('id').range(from, to)).then(take),
         beauty: (async () => {

@@ -169,7 +169,12 @@ function Kpi({ label, value, note, to }) {
 }
 
 
-function CrmDashboard({ type, orderModule = null }) {
+function CrmPrDashboard(){
+ const [mypharmaOpen,setMypharmaOpen]=useState(false);
+ return <><CrmDashboard type="b2b" orderModule="prof" customerGroup="regular"/><section className="panel crm-panel"><details onToggle={event=>setMypharmaOpen(event.currentTarget.open)}><summary><strong>MYPHARMA · KPI e clienti Ordini PR</strong></summary><p>I valori MYPHARMA sono separati dai totali principali di Ordini PR.</p>{mypharmaOpen?<CrmDashboard type="b2b" orderModule="prof" customerGroup="mypharma"/>:null}</details></section></>;
+}
+
+function CrmDashboard({ type, orderModule = null,customerGroup=null }) {
   const config = crmTypeConfig(type);
   const period = useCrmPeriod();
   const [params, setParams] = useSearchParams();
@@ -186,11 +191,11 @@ function CrmDashboard({ type, orderModule = null }) {
     setLoading(true); setError('');
     try {
       const [metricsResult, statusResult, suggestionResult, agentResult,scopeResult] = await Promise.all([
-        supabase.rpc(orderModule ? 'crm_b2b_order_dashboard_metrics' : type === 'b2b' ? 'crm_dashboard_metrics_filtered' : 'crm_dashboard_metrics', { p_crm_type: type, p_from: period.from, p_to: period.to, p_inactivity_days: 90, ...(orderModule?{p_order_module:orderModule}:{}), ...(type === 'b2b' ? { p_agent: agent || null } : {}) }),
-        orderModule ? supabase.rpc('crm_b2b_order_status_counts',{p_order_module:orderModule,p_from:period.from,p_to:period.to,p_agent:agent||null}) : supabase.rpc(type === 'b2b' ? 'crm_customer_status_counts_filtered' : 'crm_customer_status_counts', { p_crm_type: type, ...(type === 'b2b' ? { p_agent: agent || null } : {}) }),
+        supabase.rpc(orderModule ? 'crm_b2b_order_dashboard_metrics' : type === 'b2b' ? 'crm_dashboard_metrics_filtered' : 'crm_dashboard_metrics', { p_crm_type: type, p_from: period.from, p_to: period.to, p_inactivity_days: 90, ...(orderModule?{p_order_module:orderModule,...(customerGroup?{p_customer_group:customerGroup}:{})}:{}), ...(type === 'b2b' ? { p_agent: agent || null } : {}) }),
+        orderModule ? supabase.rpc('crm_b2b_order_status_counts',{p_order_module:orderModule,...(customerGroup?{p_customer_group:customerGroup}:{}),p_from:period.from,p_to:period.to,p_agent:agent||null}) : supabase.rpc(type === 'b2b' ? 'crm_customer_status_counts_filtered' : 'crm_customer_status_counts', { p_crm_type: type, ...(type === 'b2b' ? { p_agent: agent || null } : {}) }),
         type === 'b2b' ? supabase.rpc('crm_b2b_first_order_suggestions') : Promise.resolve({ data: [] }),
         type === 'b2b' ? loadAllRpcRows('crm_b2b_agent_customers', {}) : Promise.resolve({ data: [] }),
-        orderModule ? loadAllQueryRows((from,to)=>supabase.rpc('crm_b2b_order_customers',{p_order_module:orderModule,p_from:period.from,p_to:period.to,p_agent:agent||null}).range(from,to)) : Promise.resolve({data:[]}),
+        orderModule ? loadAllQueryRows((from,to)=>supabase.rpc('crm_b2b_order_customers',{p_order_module:orderModule,...(customerGroup?{p_customer_group:customerGroup}:{}),p_from:period.from,p_to:period.to,p_agent:agent||null}).range(from,to)) : Promise.resolve({data:[]}),
       ]);
       if (sequence !== request.current) return;
       const failure = metricsResult.error || statusResult.error || suggestionResult.error || agentResult.error || scopeResult.error;
@@ -202,11 +207,11 @@ function CrmDashboard({ type, orderModule = null }) {
       setFirstOrderSuggestions((suggestionResult.data || []).filter(row => (!agent || codes.has(row.customer_code)) && (!orderModule || scopeResult.data.some(c=>c.customer_code===row.customer_code))));
     } catch (failure) { if (sequence === request.current) { setError(failure.message); setData({}); setFirstOrderSuggestions([]); } }
     finally { if (sequence === request.current) setLoading(false); }
-  }, [period.from, period.to, type, agent,orderModule]);
+  }, [period.from, period.to, type, agent,orderModule,customerGroup]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => { window.clearTimeout(timer); request.current++; }; }, [load]);
 
   const navigation = crmNavigation(type);
-  if (type === "b2b") return <CrmB2BDashboard data={data} firstOrderSuggestions={firstOrderSuggestions} loading={loading} error={error} period={period} retry={load} agent={agent} onAgentChange={onAgentChange} agentCustomers={agentCustomers} orderModule={orderModule} scopeCodes={scopeCodes}>{orderModule ? <AccountsPage type="b2b" orderModule={orderModule} embedded/> : null}</CrmB2BDashboard>;
+  if (type === "b2b") return <CrmB2BDashboard data={data} firstOrderSuggestions={firstOrderSuggestions} loading={loading} error={error} period={period} retry={load} agent={agent} onAgentChange={onAgentChange} agentCustomers={agentCustomers} orderModule={orderModule} customerGroup={customerGroup} scopeCodes={scopeCodes}>{orderModule ? <AccountsPage type="b2b" orderModule={orderModule} customerGroup={customerGroup} embedded/> : null}</CrmB2BDashboard>;
   return <div className="crm-page">
     <CrmPageHeader eyebrow={config.label} title={`Dashboard ${config.label}`} description="KPI reali nel tuo ambito dati. Ordinato Workspace e fatturato Mexal restano metriche distinte." actions={<CrmPeriodFilter period={period} />}>
       <CrmSectionNav items={navigation} period={period} label={`Aree CRM ${config.label}`} />
@@ -250,7 +255,7 @@ function parseCustomerRouteId(value) {
 }
 
 
-function AccountsPage({ type,orderModule=null,embedded=false }) {
+function AccountsPage({ type,orderModule=null,embedded=false,customerGroup=null }) {
   const config = crmTypeConfig(type);
   const period = useCrmPeriod();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -259,8 +264,9 @@ function AccountsPage({ type,orderModule=null,embedded=false }) {
   const { profile, canUseModule, hasPermission } = useAuth();
   const canWrite = canUseModule(config.moduleCode, "scrittura");
   const [customerStatus, setCustomerStatus] = useCrmCustomerStatus("active");
-  const search = searchParams.get("customerSearch") || "";
-  const page = Math.max(0, Number(searchParams.get("customerPage") || 0));
+  const customerParam=name=>customerGroup?`${customerGroup}_${name}`:name;
+  const search = searchParams.get(customerParam("customerSearch")) || "";
+  const page = Math.max(0, Number(searchParams.get(customerParam("customerPage")) || 0));
   const customerRequest = useRef(0);
   const [refreshingProfiles, setRefreshingProfiles] = useState(false);
   const [profileProgress, setProfileProgress] = useState("");
@@ -276,11 +282,12 @@ function AccountsPage({ type,orderModule=null,embedded=false }) {
   const updateCustomerParam = useCallback((name, value, resetPage = true) => {
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
-      if (value === null || value === undefined || value === "") next.delete(name); else next.set(name, String(value));
-      if (resetPage) next.delete("customerPage");
+      const paramName=customerGroup?`${customerGroup}_${name}`:name;
+      if (value === null || value === undefined || value === "") next.delete(paramName); else next.set(paramName, String(value));
+      if (resetPage) next.delete(customerGroup?`${customerGroup}_customerPage`:"customerPage");
       return next;
     }, { replace: true });
-  }, [setSearchParams]);
+  }, [setSearchParams,customerGroup]);
   const resetCustomerPage = useCallback(() => updateCustomerParam("customerPage", "", false), [updateCustomerParam]);
   const [tableRef, tableQuery] = useDatasetTableControls({ onQueryChange: resetCustomerPage });
   const { pageRows, total: filteredTotal } = usePaginatedDataset(rows, type === "online" ? ONLINE_ACCOUNT_COLUMNS : ACCOUNT_COLUMNS, tableQuery, page, CRM_CUSTOMER_PAGE_SIZE);
@@ -291,13 +298,13 @@ function AccountsPage({ type,orderModule=null,embedded=false }) {
     const [canonicalResult, prospectResult, countryResult, cadenceResult, identityResult, purchaseResult, mailingResult] = await Promise.all([
       loadAllRpcRows(orderModule?"crm_b2b_order_customer_details":"crm_customer_metric_details", {
         p_crm_type: type, p_from: period.from, p_to: period.to, p_metric: metric,
-        ...(orderModule?{p_order_module:orderModule,p_agent:orderAgent}:{}), p_search: term || null, p_customer_status: type === "online" ? "all" : customerStatus,
+        ...(orderModule?{p_order_module:orderModule,...(customerGroup?{p_customer_group:customerGroup}:{}),p_agent:orderAgent}:{}), p_search: term || null, p_customer_status: type === "online" ? "all" : customerStatus,
       }),
       (!orderModule && (metric === "all" || type === "online")) ? loadAllRpcRows("crm_prospect_customer_details", {
         p_crm_type: type, p_search: term || null, p_customer_status: type === "online" ? "all" : customerStatus,
       }) : Promise.resolve({ data: [], error: null }),
       supabase.rpc("crm_customer_country_catalog", { p_crm_type: type }),
-      orderModule ? supabase.rpc("crm_b2b_order_cadence",{p_order_module:orderModule,p_from:period.from,p_to:period.to,p_agent:orderAgent}) : supabase.rpc("crm_customer_cadence_details", { p_crm_type: type, p_to: period.to }),
+      orderModule ? supabase.rpc("crm_b2b_order_cadence",{p_order_module:orderModule,...(customerGroup?{p_customer_group:customerGroup}:{}),p_from:period.from,p_to:period.to,p_agent:orderAgent}) : supabase.rpc("crm_customer_cadence_details", { p_crm_type: type, p_to: period.to }),
       loadAllQueryRows((from, to) => supabase.from("crm_accounts").select("id,nome,fonte,metadati").eq("tipo", type).order("id").range(from, to)),
       type === "online" ? loadCustomerOrders(period.to) : Promise.resolve({ data: [], error: null }),
       type === "online" ? loadOnlineMailing() : Promise.resolve({ data: new Map(), error: null }),
@@ -337,7 +344,7 @@ function AccountsPage({ type,orderModule=null,embedded=false }) {
     setCanonicalTotal(canonicalRows.length);
     setProspectTotal(visibleProspects.length);
     setError(mailingResult.error ? `Stato mailing non disponibile: ${mailingResult.error.message}` : ""); setLoading(false);
-  }, [config.label, customerStatus, metric, period.from, period.to, search, type,orderModule,orderAgent]);
+  }, [config.label, customerStatus, metric, period.from, period.to, search, type,orderModule,orderAgent,customerGroup]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 180); return () => { window.clearTimeout(timer); customerRequest.current++; }; }, [load]);
 
   async function refreshProfiles() {
@@ -380,7 +387,7 @@ function AccountsPage({ type,orderModule=null,embedded=false }) {
   const metricLabels = { all: "Tutti i clienti", active: "Attivi nel periodo", new: "Nuovi nel periodo", invoiced: "Con fatture nel periodo", ordered: "Con ordini nel periodo", inactive: "Inattivi da almeno 90 giorni" };
   const navigation = crmNavigation(type);
   return <div className="crm-page">
-    {embedded ? <h2>Clienti Ordini {orderModule==='ph'?'PH':'PR'}</h2> : <CrmPageHeader eyebrow={config.label} title={`Clienti ${config.label}`} description={`${canonicalTotal} clienti Workspace/Mexal nel dettaglio “${metricLabels[metric] || metric}” · ${prospectTotal} ${type === "online" ? "contatti online" : "prospect CRM-only"}.`} actions={<><CrmPeriodFilter period={period} compact />{canWrite ? <button className="primary-action crm-primary" type="button" onClick={() => setOpen(true)}><Plus size={17} />Nuovo prospect</button> : null}</>}>
+    {embedded ? <h2>{customerGroup==='mypharma'?'MYPHARMA · ':''}Clienti Ordini {orderModule==='ph'?'PH':'PR'}</h2> : <CrmPageHeader eyebrow={config.label} title={`Clienti ${config.label}`} description={`${canonicalTotal} clienti Workspace/Mexal nel dettaglio “${metricLabels[metric] || metric}” · ${prospectTotal} ${type === "online" ? "contatti online" : "prospect CRM-only"}.`} actions={<><CrmPeriodFilter period={period} compact />{canWrite ? <button className="primary-action crm-primary" type="button" onClick={() => setOpen(true)}><Plus size={17} />Nuovo prospect</button> : null}</>}>
       <CrmSectionNav items={navigation} period={period} label={`Navigazione ${config.label}`} />
     </CrmPageHeader>}
     <div className="crm-filters"><label><Search size={16} /><input value={search} onChange={(event) => updateCustomerParam("customerSearch", event.target.value)} placeholder="Ragione sociale, agente, email o codice" /></label><CrmCustomerStatusFilter value={customerStatus} onChange={(value) => { setCustomerStatus(value); updateCustomerParam("customerPage", "", false); }} id={`customer-status-${type}`} /></div>
@@ -786,7 +793,7 @@ function renderCrmView(route) {
     case "direct-overview": return <CrmDirectOverview />;
     case "brand-direct-dashboard": return <CrmBrandDirectDashboard />;
     case "dashboard": return route.type === "conto_terzi" ? <CrmPrivateDashboard /> : <CrmDashboard type={route.type} />;
-    case "order-dashboard": return <CrmDashboard type="b2b" orderModule={route.orderModule}/>;
+    case "order-dashboard": return route.orderModule==='prof'?<CrmPrDashboard/>:<CrmDashboard type="b2b" orderModule={route.orderModule}/>;
     case "accounts": return <AccountsPage type={route.type} />;
     case "account": return <AccountDetail type={route.type} />;
     case "customer-products": return <CustomerProductsPage kind={route.kind} />;

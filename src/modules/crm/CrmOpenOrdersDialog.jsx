@@ -1,3 +1,4 @@
+import {prCustomerGroupMatches} from './prCustomerGroups';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CrmKpiDialog, CrmDetailTable } from './CrmKpiDetail';
@@ -11,7 +12,7 @@ const categories = [
   ['ph_reservations', 'Ordini PH prenotazioni', 'ph_prenotazioni_total'],
   ['pr_reservations', 'Ordini PR prenotazioni', 'pr_prenotazioni_total'],
 ];
-export default function CrmOpenOrdersDialog({ title, values, filters, onClose,orderModule=null }) {
+export default function CrmOpenOrdersDialog({ title, values, filters, onClose,orderModule=null,customerGroup=null }) {
   const [category, setCategory] = useState(null);
   const [result, setResult] = useState({ rows: [], loading: false, error: '' });
   const filterKey = JSON.stringify(filters);
@@ -21,11 +22,11 @@ export default function CrmOpenOrdersDialog({ title, values, filters, onClose,or
     const timer=setTimeout(()=>{
     setResult({ rows: [], loading: true, error: '' });
     loadAllRpcRows('crm_open_order_category_details', { ...JSON.parse(filterKey), p_category: category[0] })
-      .then(({ data, error }) => { if (active) setResult({ rows: data || [], loading: false, error: error?.message || '' }); })
+      .then(({ data, error }) => { if (active) setResult({ rows: (data || []).filter(row=>prCustomerGroupMatches(row.customer_code,customerGroup)), loading: false, error: error?.message || '' }); })
       .catch(error => { if (active) setResult({ rows: [], loading: false, error: error.message }); });
     },0);
     return () => { active = false;clearTimeout(timer); };
-  }, [category, filterKey]);
+  }, [category, filterKey,customerGroup]);
   const columns = [
     { key: 'order', label: 'Ordine', value: r => r.order_number, render: r => <Link to={`${r.module_code === 'ph' ? '/ordini-ph' : '/ordini-prof'}/elenco/${r.order_id}`}>{r.order_number}</Link> },
     { key: 'customer', label: 'Cliente', value: r => r.customer_name },

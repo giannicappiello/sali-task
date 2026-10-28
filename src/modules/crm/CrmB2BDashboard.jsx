@@ -21,11 +21,11 @@ const valueColumn = (key, label) => ({ key, label, value: r => r[key] });
 const moneyColumn = (key, label) => ({ key, label, value: r => formatMoney(r[key]), sortValue: r => Number(r[key] || 0) });
 const dateColumn = (key, label) => ({ key, label, value: r => formatDate(r[key]), sortValue: r => r[key] });
 
-export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, error, period, retry, agent = '', onAgentChange, agentCustomers = [],orderModule=null,scopeCodes=[],children=null }) {
+export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, error, period, retry, agent = '', onAgentChange, agentCustomers = [],orderModule=null,customerGroup=null,scopeCodes=[],children=null }) {
   const { hasScreenAccess } = useAuth();
   const scopeSet=useMemo(()=>new Set(scopeCodes),[scopeCodes]);
-  const orderParams=useMemo(()=>orderModule?{p_order_module:orderModule}:{},[orderModule]);
-  const title=orderModule?`Ordini ${orderModule==='ph'?'PH':'PR'}`:'Dashboard B2B';
+  const orderParams=useMemo(()=>orderModule?{p_order_module:orderModule,...(customerGroup?{p_customer_group:customerGroup}:{})}:{},[orderModule,customerGroup]);
+  const title=customerGroup==='mypharma'?'MYPHARMA · Ordini PR':orderModule?`Ordini ${orderModule==='ph'?'PH':'PR'}`:'Dashboard B2B';
   const agentCodes = useMemo(() => new Set(agentCustomers.filter(row => row.agent_code === agent).map(row => row.customer_code)), [agentCustomers, agent]);
   const agentOptions = useMemo(() => [...new Map(agentCustomers.filter(row => row.agent_code).map(row => [row.agent_code, row.agent_name || row.agent_code])).entries()].sort((a, b) => a[1].localeCompare(b[1], 'it')), [agentCustomers]);
   const [productRevision,setProductRevision]=useState(0);
@@ -50,13 +50,13 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
       const results = await Promise.allSettled([
         (async () => {
           if (!agent && !orderModule) { const r = await supabase.rpc('crm_b2b_lifecycle_summary'); if (r.error) throw r.error; return r.data; }
-          const r = await loadAllQueryRows((from, to) => supabase.rpc(orderModule?'crm_b2b_order_lifecycle_details':'crm_b2b_lifecycle_details',orderModule?{p_order_module:orderModule,p_from:period.from,p_to:period.to,p_agent:agent||null}:{}).range(from, to));
+          const r = await loadAllQueryRows((from, to) => supabase.rpc(orderModule?'crm_b2b_order_lifecycle_details':'crm_b2b_lifecycle_details',orderModule?{p_order_module:orderModule,...(customerGroup?{p_customer_group:customerGroup}:{}),p_from:period.from,p_to:period.to,p_agent:agent||null}:{}).range(from, to));
           if (r.error) throw r.error;
           const rows = r.data.filter(row => (!agent || agentCodes.has(row.codice_cliente)) && (!orderModule || scopeSet.has(row.codice_cliente)));
           return { prospects: rows.filter(r => r.classificazione === 'prospect').length, first_order: rows.filter(r => r.classificazione === 'primo_ordine').length, reorders: rows.filter(r => Number(r.numero_ordini) > 1).length, at_risk: rows.filter(r => r.classificazione === 'a_rischio').length, dormant: rows.filter(r => r.classificazione === 'dormiente').length, lost: rows.filter(r => r.classificazione === 'perso').length };
         })(),
         (async () => { const settings = await supabase.from('crm_workflow_settings').select('beauty_post_evento_giorni').eq('crm_tipo', 'b2b').maybeSingle(); if (settings.error) throw settings.error;
-          const [result,orderScope]=await Promise.all([supabase.functions.invoke('report-giornate-api', { body: { action: 'crm-beauty-dashboard', postDays: settings.data?.beauty_post_evento_giorni || 30, from: period.from, to: period.to } }),orderModule?loadAllQueryRows((from,to)=>supabase.rpc('crm_b2b_order_scope_orders',{p_order_module:orderModule,p_from:period.from,p_to:period.to,p_agent:agent||null}).range(from,to)):Promise.resolve({data:[]})]);
+          const [result,orderScope]=await Promise.all([supabase.functions.invoke('report-giornate-api', { body: { action: 'crm-beauty-dashboard', postDays: settings.data?.beauty_post_evento_giorni || 30, from: period.from, to: period.to } }),orderModule?loadAllQueryRows((from,to)=>supabase.rpc('crm_b2b_order_scope_orders',{p_order_module:orderModule,...(customerGroup?{p_customer_group:customerGroup}:{}),p_from:period.from,p_to:period.to,p_agent:agent||null}).range(from,to)):Promise.resolve({data:[]})]);
           if(orderScope.error) throw orderScope.error;
           if (result.error) throw await crmFunctionError(result.error); if (result.data?.error) throw new Error(result.data.error); return orderModule?scopeBeautyOrders(result.data,(orderScope.data||[]).map(r=>r.order_id)):result.data;
         })(),
@@ -64,7 +64,7 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
       if (!active) return;
       const next = { errors: {} }; ['lifecycle', 'beauty'].forEach((key, i) => { next[key] = results[i].status === 'fulfilled' ? results[i].value : null; if (results[i].status === 'rejected') next.errors[key] = results[i].reason.message; }); setExtra(next);
     }, 0); return () => { active = false; clearTimeout(timer); };
-  }, [period.from, period.to, agent, agentCodes,orderModule,scopeSet]);
+  }, [period.from, period.to, agent, agentCodes,orderModule,scopeSet,customerGroup]);
   useEffect(() => {
     if (!selected || selected.kind === 'open-orders') return;
     let active = true; const controller = new AbortController();
@@ -76,7 +76,7 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
           rows=await loadDashboardProductRows(supabase,'crm_dashboard_product_groups',{p_crm_type:'b2b',p_from:period.from,p_to:period.to,p_agent:agent||null,...orderParams,p_category:selected.metric},controller.signal);
           rows=rows.map(row=>({...row,amount:{value:Number(row.net_amount),unknown:Number(row.unknown_amounts)}}));
         } else if (selected.kind === 'customers') {
-          const result = await loadAllRpcRows(orderModule?'crm_b2b_order_customer_details':'crm_customer_metric_details', { ...(orderModule?{p_order_module:orderModule,p_agent:agent||null}:{}), p_crm_type: 'b2b', p_from: period.from, p_to: period.to, p_metric: selected.metric || 'all', p_search: null, p_customer_status: selected.status || 'active' });
+          const result = await loadAllRpcRows(orderModule?'crm_b2b_order_customer_details':'crm_customer_metric_details', { ...(orderModule?{p_order_module:orderModule,...(customerGroup?{p_customer_group:customerGroup}:{}),p_agent:agent||null}:{}), p_crm_type: 'b2b', p_from: period.from, p_to: period.to, p_metric: selected.metric || 'all', p_search: null, p_customer_status: selected.status || 'active' });
           if (result.error) throw result.error; rows = result.data;
           if (selected.metric === 'all' && !orderModule) {
             const prospects = await loadAllRpcRows('crm_prospect_customer_details', { p_crm_type: 'b2b', p_search: null, p_customer_status: selected.status || 'active' });
@@ -91,7 +91,7 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
           const result = await loadAllQueryRows((from, to) => supabase.from('crm_activities').select('*,crm_accounts(nome,codice_cliente_mexal),checklist_template:catalog_template_id(titolo)').eq('crm_tipo', 'b2b').order('id').range(from, to)); if (result.error) throw result.error;
           rows = result.data.filter(r => r.stato !== 'completata' && r.data_attivita && new Date(r.data_attivita) < new Date());
         } else if (selected.kind === 'lifecycle') {
-          const result = await loadAllQueryRows((from, to) => supabase.rpc(orderModule?'crm_b2b_order_lifecycle_details':'crm_b2b_lifecycle_details',orderModule?{p_order_module:orderModule,p_from:period.from,p_to:period.to,p_agent:agent||null}:{}).range(from, to).abortSignal(controller.signal));
+          const result = await loadAllQueryRows((from, to) => supabase.rpc(orderModule?'crm_b2b_order_lifecycle_details':'crm_b2b_lifecycle_details',orderModule?{p_order_module:orderModule,...(customerGroup?{p_customer_group:customerGroup}:{}),p_from:period.from,p_to:period.to,p_agent:agent||null}:{}).range(from, to).abortSignal(controller.signal));
           if (result.error) throw result.error;
           rows = result.data.filter(r => selected.metric === 'reorders' ? Number(r.numero_ordini) > 1 : r.classificazione === selected.metric);
         }
@@ -100,7 +100,7 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
         if (active) setDetails({ rows, loading: false, error: '' });
       } catch (failure) { if (active) setDetails({ rows: [], loading: false, error: failure.message }); }
     }, 0); return () => { active = false; controller.abort(); clearTimeout(timer); };
-  }, [selected, period.from, period.to, agent, agentCodes,orderModule,scopeSet,orderParams]);
+  }, [selected, period.from, period.to, agent, agentCodes,orderModule,scopeSet,orderParams,customerGroup]);
   const events = (extra.beauty?.events || []).filter(r => r.data >= period.from && r.data <= period.to && (!agent || agentCodes.has(r.customer_code)) && (!orderModule || scopeSet.has(r.customer_code)));
   const executed = events.filter(r => r.stato === 'eseguita');
   const card = (label, value, note, info, selection) => <CrmKpiCard key={label} label={label} value={value ?? '—'} note={note} info={info} onClick={() => { setDetails({ rows: [], loading: true, error: '' }); setSelected({ label, ...selection }); }}/ >;
@@ -132,7 +132,7 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
   }
   const life = extra.lifecycle || {}; const lifeValue = name => extra.errors.lifecycle ? '—' : extra.lifecycle ? life[name] : '…';
   const beautyValue = value => extra.errors.beauty ? '—' : extra.beauty ? value : '…';
-  return <div className="crm-page b2b-dashboard-page"><CrmPageHeader eyebrow="CRM B2B" title={title} description={orderModule?`Ordini ${orderModule==='ph'?'PH':'PR'} nel periodo; fatturato, relazione e attività dei clienti collegati.`:"Clienti, attività commerciali e Beauty Days"}><div className="b2b-navigation-period"><CrmSectionNav items={crmNavigation('b2b')} period={period} label="Navigazione CRM B2B"/><div className="b2b-dashboard-filters"><label className="b2b-agent-filter">Agente<select value={agent} onChange={event => onAgentChange(event.target.value)}><option value="">Tutti gli agenti</option>{agent && !agentOptions.some(([code]) => code === agent) && <option value={agent}>{agent}</option>}{agentOptions.map(([code, name]) => <option key={code} value={code}>{name}</option>)}</select></label><CrmPeriodFilter period={period} compact/></div></div></CrmPageHeader>
+  return <div className="crm-page b2b-dashboard-page"><CrmPageHeader eyebrow="CRM B2B" title={title} description={customerGroup==='regular'?'Ordini PR nel periodo, escluso MYPHARMA. KPI e clienti MYPHARMA sono nella sezione dedicata in fondo alla pagina.':orderModule?`Ordini ${orderModule==='ph'?'PH':'PR'} nel periodo; fatturato, relazione e attività dei clienti collegati.`:"Clienti, attività commerciali e Beauty Days"}><div className="b2b-navigation-period"><CrmSectionNav items={crmNavigation('b2b')} period={period} label="Navigazione CRM B2B"/><div className="b2b-dashboard-filters"><label className="b2b-agent-filter">Agente<select value={agent} onChange={event => onAgentChange(event.target.value)}><option value="">Tutti gli agenti</option>{agent && !agentOptions.some(([code]) => code === agent) && <option value={agent}>{agent}</option>}{agentOptions.map(([code, name]) => <option key={code} value={code}>{name}</option>)}</select></label><CrmPeriodFilter period={period} compact/></div></div></CrmPageHeader>
     {error && <div role="alert" className="crm-message error">{error}<button onClick={retry}>Riprova</button></div>}
     {loading ? <p role="status">Caricamento KPI…</p> : <>
       <section className="b2b-kpi-section"><h2>1. Clienti, fatturato e ordini</h2><div className="crm-kpi-grid">
@@ -169,7 +169,7 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
       </div>{extra.errors.beauty && <p role="alert">{extra.errors.beauty}</p>}</section>
     </>}
     {children}
-    {selected?.kind === 'open-orders' && <CrmOpenOrdersDialog orderModule={orderModule} title="Ordinato" values={data} filters={{ p_scope: 'global', p_crm_type: 'b2b', p_from: period.from, p_to: period.to, p_agent: agent || null }} onClose={() => setSelected(null)}/>}
+    {selected?.kind === 'open-orders' && <CrmOpenOrdersDialog customerGroup={customerGroup} orderModule={orderModule} title="Ordinato" values={data} filters={{ p_scope: 'global', p_crm_type: 'b2b', p_from: period.from, p_to: period.to, p_agent: agent || null }} onClose={() => setSelected(null)}/>}
     {selected && selected.kind !== 'open-orders' && <CrmKpiDialog key={`${selected.label}-${period.from}-${period.to}`} title={selected.label} subtitle={`CRM B2B · ${formatDate(period.from)} – ${formatDate(period.to)}`} onClose={() => setSelected(null)}>{detail()}</CrmKpiDialog>}
   </div>;
 }

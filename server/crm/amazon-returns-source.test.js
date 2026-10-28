@@ -22,6 +22,15 @@ test('FBA report keeps disposition and return identity but never customer commen
  assert.throws(()=>returnReportRows('order-id\n405-5097949-2429931'),/senza campo/);
 });
 
+test('financial parser keeps refund amounts when Amazon uses null breakdown leaves',()=>{
+ const result=safeFinancialTransaction({transactionId:'refund-null-leaves',transactionType:'Refund',breakdowns:null,items:[{breakdowns:[{breakdownType:'ProductCharges',breakdownAmount:{currencyAmount:-14.7,currencyCode:'EUR'},breakdowns:[{breakdownType:'Principal',breakdownAmount:{currencyAmount:-12.05,currencyCode:'EUR'},breakdowns:null},{breakdownType:'Tax',breakdownAmount:{currencyAmount:-2.65,currencyCode:'EUR'}}]}]}]});
+ assert.deepEqual(result.breakdowns,[]);
+ assert.equal(result.items[0].breakdowns[0].breakdowns[0].breakdownAmount.currencyAmount,-12.05);
+ assert.equal(result.items[0].breakdowns[0].breakdowns[1].breakdownAmount.currencyAmount,-2.65);
+ assert.deepEqual(result.items[0].breakdowns[0].breakdowns[0].breakdowns,[]);
+ assert.throws(()=>safeFinancialTransaction({breakdowns:{unexpected:true}}),/non valido/);
+});
+
 test('legacy refund source preserves adjustments and discounts without buyer identity',async()=>{
  assert.equal(refundFinancialEvents,legacyRefundEvents);
  const urls=[];

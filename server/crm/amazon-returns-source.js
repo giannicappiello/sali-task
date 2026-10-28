@@ -20,7 +20,10 @@ async function amazonClient(connection,secrets,fetcher) {
 
 const money=value=>value && {currencyAmount:value.currencyAmount,currencyCode:value.currencyCode};
 const breakdowns=(rows=[],depth=0)=>{
-  if(!Array.isArray(rows) || rows.length>100 || depth>8)throw new Error('Dettaglio finanziario Amazon troppo esteso o non valido.');
+  // Amazon can represent absent children as null as well as omitting them.
+  // An empty leaf has no further depth and must not reject the whole page.
+  if(rows==null)return [];
+  if(!Array.isArray(rows) || rows.length>100 || (rows.length && depth>8))throw new Error('Dettaglio finanziario Amazon troppo esteso o non valido.');
   return rows.map(row=>({breakdownType:row.breakdownType,breakdownAmount:money(row.breakdownAmount),breakdowns:breakdowns(row.breakdowns,depth+1)}));
 };
 export function safeFinancialTransaction(row) {

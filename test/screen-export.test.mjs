@@ -67,6 +67,9 @@ test('column totals parse Italian money, client counts, negatives and decimal pr
   assert.equal(formatColumnTotal(sums[3]),'4 kg · 3 pz');
   assert.equal(numericParts('12.50')[0].digits,2);
   assert.deepEqual(numericParts('28/10/2026'),[]);
+  assert.deepEqual(numericParts('SALI DI ISCHIA IT0547 IT0547-TST'),[]);
+  assert.deepEqual(numericParts('Nicola & C. CO0014 CO0015 +2 articoli'),[]);
+  assert.deepEqual(sumColumns(['Cliente / articoli'],[['Nicola & C. CO0014 CO0015 +2 articoli'],['Milano 123 456']])[0],[]);
   assert.equal(formatColumnTotal(sumColumns(['Importo'],[['10,20 € 3 fatture'],['20,30 € 2 fatture']])[0]),'30,50 € · 5 fatture');
 });
 test('existing totals are preserved and exports add page then general totals only once',()=>{

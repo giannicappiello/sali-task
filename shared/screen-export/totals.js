@@ -19,6 +19,12 @@ export function numericParts(value) {
   const source = String(value ?? '').replace(/\u00a0/g,' ').replaceAll('−','-').trim();
   if (!source || /^0\d/.test(source) || /\d[/-]\d|\d:\d/.test(source)) return [];
   const matches = [...source.matchAll(/[+-]?(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d+)?(?:\.\d+)?/g)];
+  // Every part of a value must belong to a measure. Multiple numbers in
+  // customer names, article codes or other prose are not additive values.
+  const residue = source.replace(/[+-]?(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d+)?(?:\.\d+)?/g, '')
+    .replace(/\b(?:EUR|USD|GBP|kg|g|l|ml|pz|pezzi|gg|giorni|ore|h|min|clienti|ordini|fatture|righe|articoli)\b/gi, '')
+    .replace(/[€$£%\s·•;,|()+-]/g, '');
+  if (residue) return [];
   const result = [];
   for (let i=0;i<matches.length;i++) {
     const match=matches[i], raw=match[0];
@@ -52,7 +58,7 @@ export function tableData(table) {
 export function sumColumns(headers, rows) {
   const unitIndex=headers.findIndex(header=>/^(udm|um|u\.m\.|unit[aà](?: di misura)?)$/i.test(header));
   return headers.map((header,index)=>{
-    if (identifier.test(header) || description.test(header)) return [];
+    if (identifier.test(header) || header.split(/\s*[/·|]\s*/).some(part=>description.test(part))) return [];
     const buckets=new Map();
     for(const row of rows){
       for(const part of numericParts(row[index])){

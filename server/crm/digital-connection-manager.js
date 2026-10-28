@@ -227,7 +227,7 @@ export async function synchronizeCommerce(db, actorId, connection, mode, shipmen
     let shipmentWarning=fresh.amazon_shipment_state?.lastError || null;
     if(fresh.provider_code==='amazon_sp_api' && (shipmentDatesOnly || (fresh.amazon_cox_state?.active && fresh.amazon_cox_state.phase==='shipments'))) {
       let shipping;
-      try { shipping=await shipmentSync({db,connection:fresh,secrets:await readSecrets(db,fresh.id)}); }
+      try { shipping=await shipmentSync({db,connection:fresh,secrets:await readSecrets(db,fresh.id),...(shipmentDatesOnly?{coverageThrough:new Date(Date.now()-180000).toISOString()}:{})}); }
       catch(error) {
         if(shipmentDatesOnly) throw error;
         shipmentWarning=String(error.message).slice(0,500);

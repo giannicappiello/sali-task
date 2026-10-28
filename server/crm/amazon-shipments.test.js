@@ -43,3 +43,30 @@ test('denied reports do not advance cursor and cannot trigger COX',async()=>{
  assert.equal(writes,0);
 });
 
+test('evening sync refreshes shipment data acquired earlier on the same day',async()=>{
+ const writes=[],requests=[];
+ const connection={id:'c',configurazione:{region:'eu'},marketplace_ids:['IT'],amazon_shipments_covered_at:'2026-10-27T09:41:41.180Z',import_state:{completed:true,to:'2026-10-27T21:57:03.076Z'}};
+ const result=await synchronizeShipmentDates({db:{rpc:async(name,args)=>{writes.push({name,args});return {data:null};}},connection,secrets:{},now:new Date('2026-10-27T22:00:10Z'),fetcher:async(url,options)=>{
+  if(url.includes('/auth/'))return {ok:true,data:{access_token:'secret'}};
+  requests.push(JSON.parse(options.body));return {ok:true,data:{reportId:'evening-report'}};
+ }});
+ assert.equal(result.hasMore,true);assert.equal(result.retryAfterMs,30000);
+ assert.equal(requests[0].dataEndTime,'2026-10-27T21:57:03.076Z');
+ assert.equal(writes[0].args.p_state.reportId,'evening-report');
+ assert.equal(writes[0].args.p_covered_at,null);
+});
+
+test('shipment coverage already reaching the committed import window does not create another report',async()=>{
+ const result=await synchronizeShipmentDates({db:{rpc:async()=>assert.fail('No coverage change needed')},connection:{amazon_shipments_covered_at:'2026-10-27T21:57:03.076Z',import_state:{to:'2026-10-27T21:57:03.076Z'}},secrets:{},now:new Date('2026-10-27T22:30:00Z'),fetcher:async()=>assert.fail('No new provider call needed')});
+ assert.equal(result.hasMore,false);
+});
+
+test('explicit shipment refresh can advance beyond the last order import window',async()=>{
+ let requestBody;
+ await synchronizeShipmentDates({db:{rpc:async()=>({data:null})},connection:{id:'c',configurazione:{region:'eu'},marketplace_ids:['IT'],amazon_shipments_covered_at:'2026-10-27T09:00:00Z',import_state:{to:'2026-10-27T09:00:00Z'}},secrets:{},now:new Date('2026-10-27T22:00:00Z'),coverageThrough:'2026-10-27T21:57:00Z',fetcher:async(url,options)=>{
+  if(url.includes('/auth/'))return {ok:true,data:{access_token:'secret'}};
+  requestBody=JSON.parse(options.body);return {ok:true,data:{reportId:'manual-refresh'}};
+ }});
+ assert.equal(requestBody.dataEndTime,'2026-10-27T21:57:00.000Z');
+});
+

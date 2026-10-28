@@ -34,10 +34,15 @@ export function packageShippedAt(order) {
 }
 
 async function checked(result) {if(result.error) throw result.error;return result.data;}
-export async function synchronizeShipmentDates({db,connection,secrets,fetcher=safeFetch,now=new Date()}) {
+export async function synchronizeShipmentDates({db,connection,secrets,fetcher=safeFetch,now=new Date(),coverageThrough}) {
   // Reports enrich already imported orders before any COX. Old dates are never guessed.
-  if(connection.amazon_shipments_covered_at && Date.parse(connection.amazon_shipments_covered_at)>=Date.parse(now.toISOString().slice(0,10))) return {hasMore:false};
   let state=structuredClone(connection.amazon_shipment_state || {});
+  // A report from the morning does not cover orders imported that evening.
+  // Bind coverage to the committed order window, not just its calendar day.
+  const requested=coverageThrough || connection.import_state?.to;
+  const cutoff=now.getTime()-180000;
+  const requiredThrough=new Date(isTimestamp(requested)?Math.min(Date.parse(requested),cutoff):cutoff).toISOString();
+  if(!state.target && !state.reportId && connection.amazon_shipments_covered_at && Date.parse(connection.amazon_shipments_covered_at)>=Date.parse(requiredThrough))return {hasMore:false};
   if(state.retryAt && Date.parse(state.retryAt)>now.getTime()) return {hasMore:false,warning:state.lastError,deferred:true};
   // Amazon's historical window moves while a backfill runs. Avoid requesting
   // the exact 18-month boundary, which can already be outside retention by POST.
@@ -45,7 +50,7 @@ export async function synchronizeShipmentDates({db,connection,secrets,fetcher=sa
   if(!state.target) {
     const floor=available;
     const start=connection.amazon_shipments_covered_at ? new Date(Date.parse(connection.amazon_shipments_covered_at)-14*86400000) : floor;
-    state={target:new Date(now.getTime()-180000).toISOString(),floor:start.toISOString(),end:new Date(now.getTime()-180000).toISOString(),reports:0};
+    state={target:requiredThrough,floor:start.toISOString(),end:requiredThrough,reports:0};
   }
   if(Date.parse(state.floor)<available.getTime()) {
     state.floor=available.toISOString();state.unavailableBefore=state.floor;

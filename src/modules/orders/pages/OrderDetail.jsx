@@ -1,3 +1,4 @@
+import { validateOrderCartons } from '../services/orderCartonRules.js';
 import { applyOrderPaymentDiscountPolicy, excludesOrderPaymentDiscount } from "../services/orderPaymentPolicy.js";
 import { calculateOrderEconomics } from "../services/orderEconomics.js";
 import { applyOrderShipping } from "../services/orderShipping.js";
@@ -40,6 +41,7 @@ export default function OrderDetail() {
   const goBack = useBackNavigation(`${basePath}/elenco`);
   const [order, setOrder] = useState(null);
   const [lines, setLines] = useState([]);
+  const [cartonRules, setCartonRules] = useState([]);
   const [agentName, setAgentName] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -102,6 +104,11 @@ export default function OrderDetail() {
 
       const directory=await loadCustomerDirectory([loadedOrder.codice_cliente]);
       loadedOrder={...loadedOrder,ragione_sociale_cliente:customerDisplayName(loadedOrder,directory.namesByCode)};
+      if (isDraft && ['prof', 'ph'].includes(moduleCode)) {
+        const { data, error: rulesError } = await supabase.from('ordini_regole_cartonaggi').select('*').eq('modulo_ordini', moduleCode).eq('attiva', true);
+        if (rulesError) throw rulesError;
+        setCartonRules(data || []);
+      } else setCartonRules([]);
       setOrder(loadedOrder);
       setLines(result.lines);
       setAgentName(loadedOrder.agente_nome || "-");
@@ -140,6 +147,13 @@ export default function OrderDetail() {
 
   async function confirmDraft() {
     if (confirming || !isDraft) return;
+    if (['prof', 'ph'].includes(moduleCode)) {
+      const { data, error: rulesError } = await supabase.from('ordini_regole_cartonaggi').select('*').eq('modulo_ordini', moduleCode).eq('attiva', true);
+      if (rulesError) { setError(rulesError.message); return; }
+      setCartonRules(data || []);
+      const violations = validateOrderCartons(lines, data || [], moduleCode);
+      if (violations.length) { setError(violations.map(item => item.message).join('\n')); return; }
+    }
     if (!await window.workspaceConfirm(privateOrder
       ? "Confermare e inviare questo OCT senza modificarlo?"
       : "Confermare questo ordine PH senza modificarlo?")) return;
@@ -235,6 +249,7 @@ export default function OrderDetail() {
   const isClosed = displayStatus.closed;
   const hasMexalDocument = hasMexalDocuments(order);
   const isDraft = String(order.stato || "").trim().toLowerCase() === "bozza";
+  const cartonViolations = isDraft ? validateOrderCartons(lines, cartonRules, moduleCode) : [];
   const canEdit = canWriteOrders && canEditOrderDraft(order, { hasMexalDocument });
   const canDelete = isAdminUser || (profile?.attivo !== false && permissions.includes("orders.delete"));
 
@@ -302,7 +317,7 @@ export default function OrderDetail() {
         <div className="orders-table-wrap">
           <table className="orders-table">
             <thead><tr><th>Codice</th><th>Descrizione</th><th>Q.tà</th>{!privateOrder && <><th>OCM</th><th>OCX</th><th>OCI</th></>}<th>Listino</th><th>Sconto commerciale</th><th>Netto</th><th>Imponibile</th><th>IVA</th><th>Totale</th></tr></thead>
-            <tbody>{lines.map((line) => <tr key={line.id}><td>{line.codice_articolo}</td><td>{line.descrizione}</td><td>{line.quantita}</td>{!privateOrder && <><td>{line.quantita_ocm || 0}</td><td>{line.quantita_ocx || 0}</td><td>{line.quantita_oci || 0}</td></>}<td>{money(line.prezzo_listino)}</td><td>{line.sconto_commerciale || "-"}</td><td>{money(line.prezzo_netto)}</td><td>{money(line.imponibile_riga)}</td><td>{line.iva_non_applicata ? null : <>{money(line.iva_riga)} ({line.aliquota_iva || 0}%)</>}</td><td>{money(line.totale_riga)}</td></tr>)}</tbody>
+            <tbody>{lines.map((line) => <tr key={line.id}><td>{line.codice_articolo}</td><td>{line.descrizione}{cartonViolations.filter(item => item.code === String(line.codice_articolo).trim().toUpperCase()).map(item => <small className="orders-vat-missing" role="alert" key={item.ruleId}>{item.message}</small>)}</td><td>{line.quantita}</td>{!privateOrder && <><td>{line.quantita_ocm || 0}</td><td>{line.quantita_ocx || 0}</td><td>{line.quantita_oci || 0}</td></>}<td>{money(line.prezzo_listino)}</td><td>{line.sconto_commerciale || "-"}</td><td>{money(line.prezzo_netto)}</td><td>{money(line.imponibile_riga)}</td><td>{line.iva_non_applicata ? null : <>{money(line.iva_riga)} ({line.aliquota_iva || 0}%)</>}</td><td>{money(line.totale_riga)}</td></tr>)}</tbody>
           </table>
         </div>
       </section>

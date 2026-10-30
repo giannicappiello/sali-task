@@ -8,6 +8,7 @@ import {
   ORDER_EMAIL_TEMPLATE_DEFAULTS,
   validateOrderEmailTemplate,
 } from "../../../../server/orders/order-email-template.js";
+import OrderCartonSettings from './OrderCartonSettings';
 import IntegrationStatusBadge from "./IntegrationStatusBadge";
 import { normalizeShippingConfig } from "../../orders/services/orderShipping.js";
 
@@ -86,6 +87,7 @@ function TemplateFields({ section, config, onChange }) {
 
 function Panel({ code, title, series }) {
   const isPrivate = code === "private";
+  const [tab, setTab] = useState('general');
   const availableSeries = isPrivate ? octOrderSeriesOptions(series) : series;
   const [config, setConfig] = useState(defaults);
   const [loading, setLoading] = useState(true);
@@ -157,7 +159,11 @@ function Panel({ code, title, series }) {
       </div>
       <IntegrationStatusBadge status="configuration" />
     </div>
-    {loading ? <p>Caricamento configurazione...</p> : <>
+    {!isPrivate && <div className="carton-config-tabs" role="tablist" aria-label="Configurazione ordini">
+      <button type="button" role="tab" aria-selected={tab === 'general'} onClick={() => setTab('general')}>Generale</button>
+      <button type="button" role="tab" aria-selected={tab === 'cartons'} onClick={() => setTab('cartons')}>Gestione Cartonaggi</button>
+    </div>}
+    {tab === 'cartons' && !isPrivate ? <OrderCartonSettings key={code} moduleCode={code} /> : loading ? <p>Caricamento configurazione...</p> : <>
       <div style={{ display: "grid", gap: 16 }}>
         <fieldset style={{ border: "1px solid #dbe3ef", borderRadius: 10, padding: 14, margin: 0, display: "grid", gap: 12 }}>
           <legend><strong>Spese di spedizione</strong></legend>

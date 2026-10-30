@@ -1,0 +1,12 @@
+.order-carton-settings { display:grid; gap:14px; padding-top:16px; }
+.carton-rule-editor { border:1px solid #dbe3ef; border-radius:10px; padding:16px; display:grid; gap:14px; min-width:0; }
+.carton-rule-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; }
+.carton-rule-editor label>input:not([type=checkbox]),.carton-rule-editor select { display:block; width:100%; min-height:40px; margin-top:5px; }
+.carton-selection-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+.carton-product-list { max-height:300px; overflow:auto; border:1px solid #dbe3ef; border-radius:8px; padding:10px; }
+.carton-product-list label { display:flex; align-items:center; gap:10px; padding:7px 0; }
+.carton-saved-rule { border:1px solid #dbe3ef; border-radius:8px; padding:14px; display:grid; gap:10px; }
+.carton-saved-rule p { margin:0; }
+.carton-config-tabs { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0; }
+.carton-config-tabs [aria-selected=true] { font-weight:700; border-bottom:3px solid #2563eb; }
+.orders-carton-violation { display:block; color:#b91c1c; font-weight:600; margin-top:5px; }

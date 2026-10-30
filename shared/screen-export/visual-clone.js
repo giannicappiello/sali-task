@@ -1,5 +1,6 @@
 // Preserve the authorized rendered layout, without live controls or secrets.
-const OMIT = 'script,style,noscript,iframe,[hidden],[data-report-export],[data-report-totals],[data-workspace-assistant],.workspace-context-ai-backdrop,.assistant-popup-trigger,.workspace-table-column-controls,.table-column-controls,[data-column-control]';
+export const TRANSIENT_REPORT_UI = '.b2b-column-picker,.b2b-kpi-explanation,.dropdown-menu,.mud-popover,[role="menu"],[role="tooltip"],[data-report-omit]';
+const OMIT = 'script,style,noscript,iframe,[hidden],[data-report-export],[data-report-totals],[data-workspace-assistant],.workspace-context-ai-backdrop,.assistant-popup-trigger,.workspace-table-column-controls,.table-column-controls,[data-column-control],'+TRANSIENT_REPORT_UI;
 const SECRET = /password|passwd|secret|token|authorization|api.?key|credenzial/i;
 
 export function cloneVisualContent(root, { isVisible, findPagers, replacements = new Map(), tableKeys = new Map() }) {
@@ -8,6 +9,9 @@ export function cloneVisualContent(root, { isVisible, findPagers, replacements =
   const clone = root.cloneNode(true), copies = [clone, ...clone.querySelectorAll('*')];
   originals.forEach((source, index) => {
     let target = copies[index];
+    const disclosure=source.closest('details:not([open])');
+    const summary=disclosure?.querySelector(':scope > summary');
+    if (disclosure && source!==disclosure && !summary?.contains(source)) { target.remove(); return; }
     // Accessibility-hidden graphics (and SVG defs) still belong to the visual.
     const svg=source.closest('svg');
     const renderedGraphic=svg && svg.getClientRects().length>0 && view.getComputedStyle(svg).visibility!=='hidden';

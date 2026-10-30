@@ -1,15 +1,21 @@
 import html2canvas from 'html2canvas';
 import { tableHeaders } from './capture.js';
 
-function addVisualTotals(report) {
+export function addVisualTotals(report) {
   const groups = new Map();
   for (const block of report.blocks.filter(block=>block.type==='table')) {
     const key = block.key ?? ''; if (!groups.has(key)) groups.set(key,[]); groups.get(key).push(block);
   }
   for (const table of report.visualRoot.querySelectorAll('table')) {
     const block = groups.get(table.dataset.exportTableIndex ?? '')?.shift();
+    // Rebuild native total rows from the normalized export, so repeated page
+    // footers never survive as pixels in the visual report.
+    for(const row of table.querySelectorAll('tbody > tr,tfoot > tr')) {
+      if(row.closest('table')===table && [...row.children].some(cell=>/^(?:totale(?:\s|$)|total(?:\s|$)|grand total|page total)/i.test(cell.textContent.trim())))row.remove();
+    }
+    for(const footer of table.querySelectorAll('tfoot'))if(!footer.children.length)footer.remove();
     if (!block || table.querySelector('tfoot')) continue;
-    const totals = block.rows.filter(row=>/^Totale (pagina|generale)(?:\s|$)/.test(row[0] || ''));
+    const totals = block.rows.filter(row=>row.some(cell=>/^(?:totale(?:\s|$)|total(?:\s|$)|grand total)/i.test(String(cell || '').trim())));
     if (!totals.length) continue;
     const headers = tableHeaders(table), footer = table.ownerDocument.createElement('tfoot');
     totals.forEach(row=>{

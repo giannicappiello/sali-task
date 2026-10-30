@@ -72,16 +72,16 @@ test('column totals parse Italian money, client counts, negatives and decimal pr
   assert.deepEqual(sumColumns(['Cliente / articoli'],[['Nicola & C. CO0014 CO0015 +2 articoli'],['Milano 123 456']])[0],[]);
   assert.equal(formatColumnTotal(sumColumns(['Importo'],[['10,20 € 3 fatture'],['20,30 € 2 fatture']])[0]),'30,50 € · 5 fatture');
 });
-test('existing totals are preserved and exports add page then general totals only once',()=>{
+test('existing totals are preserved and exports add only the general total once',()=>{
   const win=new Window();win.document.body.innerHTML='<table><thead><tr><th>Cliente</th><th>Importo</th></tr></thead><tbody><tr><td>Roma</td><td>10,00 €</td></tr><tr><td>Totale</td><td>10,00 €</td></tr></tbody></table>';
   assert.equal(hasExistingTotals(win.document.querySelector('table')),true);
   const original={blocks:[{type:'table',key:'0',headers:['Cliente','Importo'],rows:[['Roma','10,00 €'],['Totale','10,00 €']]}]};
   appendReportTotals(original);assert.equal(original.blocks[0].rows.length,2);
   const report={blocks:[{type:'table',key:'0',headers:['Cliente','Importo'],rows:[['Roma','10,00 €']]},{type:'table',key:'0',headers:['Cliente','Importo'],rows:[['Milano','20,00 €']]}]};
   appendReportTotals(report);
-  assert.deepEqual(report.blocks[0].rows.at(-1),['Totale pagina','10,00 €']);
+  assert.deepEqual(report.blocks[0].rows.at(-1),['Roma','10,00 €']);
   assert.deepEqual(report.blocks[1].rows.at(-1),['Totale generale','30,00 €']);
-  appendReportTotals(report);assert.equal(report.blocks[1].rows.length,3);
+  appendReportTotals(report);assert.equal(report.blocks[1].rows.length,2);
 });
 test('multilevel headers retain their actual numeric column positions',()=>{
   const win=new Window();win.document.body.innerHTML='<table><thead><tr><th rowspan="2">Cliente</th><th colspan="2">Importi</th></tr><tr><th>Gennaio</th><th>Febbraio</th></tr></thead><tbody><tr><td>Roma</td><td>10,00 €</td><td>20,00 €</td></tr></tbody></table>';
@@ -145,4 +145,29 @@ test('visual PDF, Word and Excel embed layout pages and Excel retains complete d
 test('visual pagination avoids breaking a card or a table row that fits on A4',async()=>{
   const {layoutBands}=await import(base+'shared/screen-export/visual.js');
   assert.deepEqual(layoutBands(2200,1000,[{top:900,bottom:1100}]),[{y:0,height:900},{y:900,height:1000},{y:1900,height:300}]);
+});
+
+test('visual and data reports exclude column menus without changing the live selection',async()=>{
+  const f=fixture();
+  f.root.insertAdjacentHTML('afterbegin','<details open class="b2b-column-picker"><summary>Colonne visibili</summary><div><label><input type="checkbox" checked>Importo</label></div></details><details><summary>Nota</summary><div>CONTENUTO CHIUSO</div></details><div role="tooltip">COPERTURA</div>');
+  const report=await captureCompleteReport({root:f.root,title:'Popup',visual:true,isVisible:visible,settle:async()=>{}});
+  assert.equal(report.visualRoot.querySelectorAll('.b2b-column-picker,[role="tooltip"]').length,0);
+  assert.ok(!report.visualRoot.textContent.includes('CONTENUTO CHIUSO'));
+  assert.ok(!JSON.stringify(report.blocks).includes('Colonne visibili'));
+  assert.equal(f.root.querySelector('.b2b-column-picker').open,true);
+  assert.equal(f.root.querySelector('.b2b-column-picker input').checked,true);
+});
+
+test('visual and data exports contain one grand total and no native page totals',async()=>{
+  const report={blocks:[{type:'table',key:'0',headers:['Cliente','Importo'],rows:[['Roma','10 €'],['Totale pagina','10 €'],['Totale generale','30 €']]},{type:'table',key:'0',headers:['Cliente','Importo'],rows:[['Milano','20 €'],['Totale pagina','20 €'],['Totale generale','30 €']]}]};
+  appendReportTotals(report);
+  const values=report.blocks.flatMap(block=>block.rows).flat();
+  assert.equal(values.filter(value=>value==='Totale pagina').length,0);
+  assert.equal(values.filter(value=>value==='Totale generale').length,1);
+  const win=new Window();win.document.body.innerHTML='<main>'+[0,1].map(()=>'<table data-export-table-index="0"><thead><tr><th>Cliente</th><th>Importo</th></tr></thead><tbody><tr><td>Roma</td><td>10 €</td></tr></tbody><tfoot><tr><td>Totale pagina</td><td>10 €</td></tr><tr><td>Totale generale</td><td>30 €</td></tr></tfoot></table>').join('')+'</main>';
+  report.visualRoot=win.document.querySelector('main');
+  const {addVisualTotals}=await import(base+'shared/screen-export/visual.js');addVisualTotals(report);
+  assert.ok(!report.visualRoot.textContent.includes('Totale pagina'));
+  assert.equal(report.visualRoot.querySelectorAll('tfoot tr').length,1);
+  assert.ok(report.visualRoot.querySelector('tfoot').textContent.includes('30 €'));
 });

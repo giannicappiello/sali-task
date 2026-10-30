@@ -39,3 +39,5 @@ L’esportazione riproduce disposizione, colori, card KPI, grafici canvas/SVG, t
 PDF e Word incorporano le pagine grafiche per mantenere la fedeltà visiva. Excel apre il foglio Schermata con la stessa riproduzione e contiene anche Dati completi con tutte le righe in celle. Le immagini delle pagine sono condivise dai tre formati. Password e campi segreti, assistente AI e controlli Esporta sono esclusi.
 
 Le immagini esterne richiedono l’accesso CORS del server di origine; un’immagine non leggibile interrompe il report anziché produrre un file incompleto. Non si aggirano le autorizzazioni del browser. La navigazione originale dell’elenco viene ripristinata anche dopo errore o annullamento.
+
+I report esportati contengono soltanto il totale generale, una volta in fondo a ogni elenco; i totali pagina restano soltanto nell’interfaccia. I menu Colonne visibili, le tendine operative e i tooltip non vengono stampati, anche se aperti, così non coprono i dati. Le colonne selezionate e lo stato dei menu nell’applicazione restano invariati.

@@ -1,8 +1,8 @@
-import { cloneVisualContent } from './visual-clone.js';
+import { cloneVisualContent, TRANSIENT_REPORT_UI } from './visual-clone.js';
 // This module reads only the current authorized UI. Only pagination controls
 // are followed; mutations, row actions and application APIs are never invoked.
 export const DIALOGS = '[role="dialog"],[role="alertdialog"],[aria-modal="true"],dialog[open],.modal.show .modal-content,.mud-dialog,.production-batch-inspector,.modal-backdrop > .modal-card,.letterhead-modal > .letterhead-dialog,.private-upload-modal > form';
-const OMIT = 'script,style,noscript,iframe,[hidden],[aria-hidden="true"],[data-report-export],[data-report-totals],[data-workspace-assistant],.workspace-context-ai-backdrop,.assistant-popup-trigger,.workspace-table-column-controls,.table-column-controls';
+const OMIT = 'script,style,noscript,iframe,[hidden],[aria-hidden="true"],[data-report-export],[data-report-totals],[data-workspace-assistant],.workspace-context-ai-backdrop,.assistant-popup-trigger,.workspace-table-column-controls,.table-column-controls,'+TRANSIENT_REPORT_UI;
 const SECRET = /password|passwd|secret|token|authorization|api.?key|credenzial/i;
 const PAGERS = '[data-export-pagination],[class*="pagination"],[class*="Pagination"],.mud-table-pagination,nav[aria-label*="aginaz"],nav[aria-label*="agination"]';
 const clean = value => String(value ?? '').replace(/\s+/g, ' ').trim();

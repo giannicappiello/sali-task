@@ -97,13 +97,22 @@ export function appendReportTotals(report) {
     if(!groups.has(key))groups.set(key,[]);groups.get(key).push(block);
   }
   for(const blocks of groups.values()) {
+    // Screen footers retain both totals; exported reports contain only the grand total.
+    const pageTotal=row=>row.some(cell=>/^(?:totale (?:di |della )?pagina|page total)(?:\s|$)/i.test(String(cell || '').trim()));
+    const grandTotal=row=>row.some(cell=>/^(?:totale generale|grand total|totale|total)$/i.test(String(cell || '').trim()));
+    blocks.forEach(block=>{block.rows=block.rows.filter(row=>!pageTotal(row));});
+    const existing=blocks.flatMap(block=>block.rows).filter(grandTotal);
+    if(existing.length){
+      const last=existing.at(-1);
+      blocks.forEach(block=>{block.rows=block.rows.filter(row=>!grandTotal(row)||row===last);});
+      continue;
+    }
     if(blocks.some(block=>block.rows.some(row=>row.some(cell=>totalLabel.test(String(cell || ''))))))continue;
     const headers=blocks[0].headers;
     const general=sumColumns(headers,blocks.flatMap(block=>block.rows));
     if(!general.some(parts=>parts.length))continue;
     const labelColumn=general.findIndex(parts=>!parts.length);
     const values=(totals,label)=>headers.map((_,index)=>index===Math.max(0,labelColumn)?`${label}${totals[index].length?' · '+formatColumnTotal(totals[index]):''}`:formatColumnTotal(totals[index]));
-    blocks.forEach(block=>block.rows.push(values(sumColumns(headers,block.rows),'Totale pagina')));
     blocks.at(-1).rows.push(values(general,'Totale generale'));
   }
   return report;

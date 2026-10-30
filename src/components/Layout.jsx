@@ -62,7 +62,7 @@ const baseMenuItems = [
 ];
 
 const pageInfo = {
-  "/magazzino/allestisci-ordini": { title: "Allestisci Ordini", subtitle: "Scansioni, lotti FIFO, colli e bancali." },
+  "/logistica/allestisci-ordini": { title: "Allestisci Ordini", subtitle: "Scansioni, lotti FIFO, colli e bancali." },
   "/home": { title: "Home", subtitle: "Accesso rapido ai moduli del Workspace." },
   "/hr": { title: "Human Resources", subtitle: "Presenze, turni e gestione delle richieste." },
   "/settings/hr": { title: "Rendicontazioni HR", subtitle: "Schede dipendente e accordi riservati agli admin." },

@@ -399,7 +399,7 @@ export default function OrderPreparation() {
     <main className="order-preparation">
       <header className="op-heading">
         <div>
-          <span className="op-eyebrow">Logistica / Magazzino</span>
+          <span className="op-eyebrow">Logistica</span>
           <h1>
             <Package aria-hidden="true" /> Allestisci Ordini
           </h1>

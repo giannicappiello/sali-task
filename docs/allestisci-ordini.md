@@ -1,6 +1,6 @@
 # Allestisci Ordini
 
-Schermata autonoma: **Logistica > Magazzino > Allestisci Ordini**, percorso `/magazzino/allestisci-ordini`, codice catalogo `magazzino.allestisci_ordini`.
+Schermata autonoma: **Menu Logistica > Allestisci Ordini**, percorso `/logistica/allestisci-ordini`, codice catalogo `magazzino.allestisci_ordini`.
 
 ## Funzionamento
 
@@ -38,3 +38,5 @@ Con esito DDT incerto senza documento rintracciabile serve verifica amministrati
 ## Attivazione
 
 Il 30 ottobre 2026 e stata applicata e registrata esclusivamente la migrazione di questa funzione sul progetto Supabase collegato. Serie BC 1 e magazzino 5 verificati tramite i DDT recenti Mexal. I pezzi per cartone vengono configurati direttamente nella schermata, secondo la scelta dell'utente; non sono dedotti da minimi commerciali. Il rilascio usa il lockfile pnpm aggiornato per ZXing.
+
+Allestisci Ordini e un modulo autonomo nel menu Logistica, accanto a Magazzino. La seconda migrazione `20261030170000_order_preparation_logistics_menu.sql` separa i collegamenti del catalogo e preserva i permessi della schermata. Il vecchio indirizzo redirige al nuovo mantenendo i parametri della preparazione.

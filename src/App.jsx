@@ -2,7 +2,7 @@ import { lazy as reactLazy, Suspense } from "react";
 import { loadModuleWithRecovery } from "./deployment-recovery.js";
 import { waitForModuleRetry } from "./workspace-updates.js";
 const lazy = importer => reactLazy(() => loadModuleWithRecovery(importer, waitForModuleRetry));
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import { AuthProvider } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -98,6 +98,11 @@ function Loader() {
   );
 }
 
+function LegacyOrderPreparationRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={{ pathname: "/logistica/allestisci-ordini", search }} replace />;
+}
+
 function App() {
   return (
     <AuthProvider>
@@ -136,7 +141,8 @@ function App() {
               <Route path="projects" element={<Navigate to="/activities/projects" replace />} />
               <Route path="products" element={<WorkspaceAccessGuard moduleCode="prodotti"><Products /></WorkspaceAccessGuard>} />
               <Route path="magazzino" element={<Navigate to="/magazzino-dashboard" replace />} />
-              <Route path="magazzino/allestisci-ordini" element={<WorkspaceAccessGuard moduleCode="magazzino" screenCode="magazzino.allestisci_ordini"><OrderPreparation /></WorkspaceAccessGuard>} />
+              <Route path="logistica/allestisci-ordini" element={<WorkspaceAccessGuard moduleCode="allestisci_ordini" screenCode="magazzino.allestisci_ordini"><OrderPreparation /></WorkspaceAccessGuard>} />
+              <Route path="magazzino/allestisci-ordini" element={<LegacyOrderPreparationRedirect />} />
               <Route path="magazzino-dashboard" element={<WorkspaceAccessGuard moduleCode="magazzino" screenCode="magazzino"><WarehouseDashboard /></WorkspaceAccessGuard>} />
               <Route path="documentation" element={<WorkspaceAccessGuard moduleCode="documenti"><Documentation /></WorkspaceAccessGuard>} />
               <Route path="documentation/specification/:articleCode" element={<WorkspaceAccessGuard moduleCode="progremes_formule"><ProductSpecificationPage /></WorkspaceAccessGuard>} />

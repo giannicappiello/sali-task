@@ -12,3 +12,15 @@ Dal 28 ottobre 2026 tutte le letture CRM dei documenti Mexal usano le viste anal
 Le viste usano security_invoker e i permessi/RLS delle fonti originali. Le funzioni CRM mantengono firme e controlli di autorizzazione. Le nuove funzioni CRM che leggono documenti Mexal devono usare le stesse viste analitiche.
 
 Verifica: server/crm/crm-exclusions.test.js; confronto transazionale in produzione di KPI B2B, PH, PR e MYPHARMA e degli ordini aperti prima/dopo.
+
+## Prestazioni e aggiornamento incrementale (30 ottobre 2026)
+
+crm_invoice_rollups e crm_order_rollups conservano soltanto i riepiloghi numerici per documento. Le tabelle Mexal originali rimangono complete. Le viste CRM mantengono gli stessi nomi, colonne, esclusioni e criteri di visibilità.
+
+I trigger di testata e i trigger di statement sulle righe aggiornano i soli documenti coinvolti, inclusi entrambi i documenti quando una riga cambia padre. I cambiamenti sono atomici con la sincronizzazione; non dipendono da un cron. La prima migrazione ricostruisce lo storico una sola volta. Non disabilitare questi trigger negli importatori. Le funzioni interne di aggiornamento non sono invocabili da utenti applicativi.
+
+Il dettaglio clienti condiviso da tutti i CRM e le varianti PH/PR/MYPHARMA raggruppano una volta fatture e ordini per il gruppo autorizzato. Le pagine successive mantengono il conteggio globale e gli stessi filtri. I collegamenti contabili usati per escludere ordini già fatturati restano sulle fonti originali.
+
+Il limite API di authenticated e authenticator passa a 15 secondi; anon mantiene il limite precedente. L’aumento non sostituisce la verifica dei tempi: le nuove query sono collaudate anche con il vecchio limite di 8 secondi. La migrazione notifica PostgREST per ricaricare la configurazione.
+
+Test: server/crm/crm-rollups.test.js (equivalenza viste, aggiornamenti e cancellazioni, spostamento righe, RLS, divieto di modifica o ricostruzione dei riepiloghi da utenti applicativi). Benchmark ripetibile con rollback e ruolo autenticato: server/crm/crm-performance-verification.sql. Il confronto delle vecchie e nuove funzioni su dati reali copre B2B, Online, conto terzi, PH, PR, MYPHARMA e le seconde pagine.

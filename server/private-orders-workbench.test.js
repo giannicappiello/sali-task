@@ -153,3 +153,36 @@ test("global OCT list retains late articles beyond the API row cap and excludes 
   }
   assert.equal(result.items.find(row => row.id === "A").lineCount, 1101);
 });
+
+test("order overviews avoid full MES response payloads and retain active and historical RdP state", async () => {
+  const tables = {
+    ordini_testate: [orders[0]],
+    ordini_righe: [{ id: "L", ordine_id: "A", codice_articolo: "FP1", quantita: 12 }],
+    workspace_production_requests: [
+      { id: "R-active", external_id: "E-active", ordine_id: "A", rdp_number: 18, workspace_status: "CONFIRMED", created_at: "2026-10-30" },
+      { id: "R-old", external_id: "E-old", ordine_id: "A", rdp_number: 17, workspace_status: "CANCELLED", created_at: "2026-10-29", cancelled_at: "2026-10-30T08:00:00Z" },
+    ],
+    workspace_production_request_items: [{ id: "I", production_request_id: "R-active", ordine_id: "A", ordine_riga_id: "L", mes_payload: { requested: 12, free: 12, plannable: 0 } }],
+  };
+  for (const scopedOrders of [null, [orders[0]]]) {
+    const backing = database(tables);
+    let reads = 0;
+    const admin = { from(table) {
+      const query = backing.from(table);
+      if (table === "workspace_production_requests") query.select = columns => {
+        reads++;
+        // Model the timeout caused by serializing the full MES analysis.
+        assert.ok(!columns.split(",").some(column => ["*", "last_response"].includes(column.trim())), "overview requested the heavy MES response");
+        return query;
+      };
+      return query;
+    } };
+    const result = await listProductionWorkbench({ admin, scopedOrders });
+    assert.ok(reads > 0);
+    assert.equal(result.items[0].requestExternalId, "E-active");
+    assert.equal(result.items[0].rdpNumber, 18);
+    assert.equal(result.items[0].lines[0].productionStatus, "COPERTO DA MAGAZZINO");
+    assert.equal(result.history[0].rdpNumber, 17);
+    assert.equal(result.history[0].sourceTimestamp, "2026-10-30T08:00:00Z");
+  }
+});

@@ -3,8 +3,15 @@ import { createPortal } from 'react-dom';
 import { AlertTriangle, CalendarDays, CheckCircle2, Info, X } from "lucide-react";
 import "./BrandedDialogProvider.css";
 
+function visibleViewport() {
+  const viewport = window.visualViewport;
+  return { top: viewport?.offsetTop || 0, left: viewport?.offsetLeft || 0,
+    width: viewport?.width || window.innerWidth, height: viewport?.height || window.innerHeight };
+}
+
 export default function BrandedDialogProvider() {
   const [dialog, setDialog] = useState(null);
+  const [dialogViewport, setDialogViewport] = useState(null);
   const [inputValue, setInputValue] = useState("");
   const resolver = useRef(null);
   const datePicker = useRef(null);
@@ -14,6 +21,7 @@ export default function BrandedDialogProvider() {
     const open = (type, message, options = {}) => new Promise((resolve) => {
       resolver.current = resolve;
       setInputValue(options.defaultValue || "");
+      setDialogViewport(options.viewportCentered ? visibleViewport() : null);
       setDialog({ type, message: String(message ?? ""), ...options });
     });
     window.workspaceAlert = (message, options) => open("alert", message, options);
@@ -48,6 +56,20 @@ export default function BrandedDialogProvider() {
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [dialog, inputValue]);
 
+  useEffect(() => {
+    if (!dialog?.viewportCentered) return undefined;
+    const update = () => setDialogViewport(visibleViewport());
+    const viewport = window.visualViewport;
+    viewport?.addEventListener('resize', update);
+    viewport?.addEventListener('scroll', update);
+    window.addEventListener('resize', update);
+    return () => {
+      viewport?.removeEventListener('resize', update);
+      viewport?.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
+  }, [dialog?.viewportCentered]);
+
   if (!dialog) return null;
   const destructive = dialog.variant === "danger" || /elimin|disattiv|arrest|annull/i.test(dialog.message);
   const Icon = destructive ? AlertTriangle : dialog.type === "alert" ? Info : CheckCircle2;
@@ -55,8 +77,9 @@ export default function BrandedDialogProvider() {
   const isItalianDate = dialog.inputType === "italian-date";
   // A confirmation opened from a native modal must stay inside its top layer.
   const portalTarget = document.querySelector('dialog[data-workspace-assistant][open]') || [...document.querySelectorAll('dialog[open]')].at(-1) || document.body;
-  return createPortal(<div className="brand-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) close(cancelValue); }}>
-    <section className="brand-dialog" role="dialog" aria-modal="true" aria-labelledby="brand-dialog-title">
+  return createPortal(<div className={'brand-dialog-backdrop' + (dialog.viewportCentered ? ' viewport-centered' : '')}
+    style={dialog.viewportCentered && dialogViewport ? { inset: 'auto', top: dialogViewport.top, left: dialogViewport.left, width: dialogViewport.width, height: dialogViewport.height } : undefined} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) close(cancelValue); }}>
+    <section className="brand-dialog" role={dialog.type === 'alert' && destructive ? 'alertdialog' : 'dialog'} aria-modal="true" aria-labelledby="brand-dialog-title">
       <button className="brand-dialog-close" type="button" onClick={() => close(cancelValue)} aria-label="Chiudi"><X size={20} /></button>
       <div className="brand-dialog-brand"><img src="/pwa-192x192.png" alt="" /><span>PROGRE WORKSPACE</span></div>
       <div className={`brand-dialog-icon ${destructive ? "danger" : ""}`}><Icon size={26} /></div>

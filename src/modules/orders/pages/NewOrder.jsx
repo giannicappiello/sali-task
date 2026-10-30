@@ -27,6 +27,7 @@ import { applyOrderVatPolicy, isForeignOrderCustomer } from "../services/orderVa
 
 import { applyOrderPaymentDiscountPolicy, excludesOrderPaymentDiscount } from "../services/orderPaymentPolicy.js";
 
+import { isOrderQuantityError, showCartonViolations, showOrderQuantityError } from '../services/orderQuantityDialog.js';
 import { cartonRuleLabel, cartonRulesForProduct, validateOrderCartons } from '../services/orderCartonRules.js';
 
 const PAGE_SIZE = 1000;
@@ -473,7 +474,7 @@ export default function NewOrder() {
     const addedQuantity = Math.max(1, numberValue(requestedQuantity, 1));
     const existingQuantity = numberValue(lines.find(line => line.codice_articolo === code)?.quantita);
     const violations = validateOrderCartons([{ codice_articolo: code, quantita: existingQuantity + addedQuantity }], cartonRules, moduleCode);
-    if (violations.length) { setError(violations.map(item => item.message).join('\n')); return false; }
+    if (violations.length) { setError(''); void showCartonViolations(violations); return false; }
 
     invalidateAvailability();
     setLines((current) => {
@@ -584,7 +585,7 @@ export default function NewOrder() {
       if (value === null || value === undefined) return;
       const quantity = Number(String(value).replace(",", "."));
       if (!Number.isFinite(quantity) || quantity <= 0) {
-        await window.workspaceAlert?.("Inserisci una quantità valida maggiore di zero.");
+        await showOrderQuantityError("Inserisci una quantità valida maggiore di zero.");
         return;
       }
       addProduct(product, quantity);
@@ -604,7 +605,8 @@ export default function NewOrder() {
     if (!pendingProduct) return;
     const quantity = Number(String(pendingQuantity).replace(",", "."));
     if (!Number.isFinite(quantity) || quantity <= 0) {
-      setError("Inserisci una quantità valida maggiore di zero.");
+      setError('');
+      void showOrderQuantityError("Inserisci una quantità valida maggiore di zero.");
       productQuantityRef.current?.focus();
       return;
     }
@@ -654,6 +656,7 @@ export default function NewOrder() {
 
   async function verifyAvailability() {
     if (!canCheckAvailability) return;
+    if (cartonViolations.length) { await showCartonViolations(cartonViolations); return; }
     setCheckingAvailability(true);
     setError("");
     const requestId = ++availabilityRequestId.current;
@@ -685,7 +688,8 @@ export default function NewOrder() {
       return;
     }
     if (cartonViolations.length) {
-      setError(_saveOutcome.observeFailure(cartonViolations.map(item => item.message).join('\n')));
+      setError('');
+      await showCartonViolations(cartonViolations);
       return;
     }
     if (confirm && !availabilityValidity.valid) {
@@ -831,7 +835,10 @@ export default function NewOrder() {
       _saveOutcome.failure(saveError);
 
       console.error("Errore salvataggio ordine:", saveError);
-      (setError(_saveOutcome.observeFailure(saveError.message || "Errore durante il salvataggio dell'ordine.")));
+      if (isOrderQuantityError(saveError)) {
+        setError('');
+        await showOrderQuantityError(saveError.message);
+      } else (setError(_saveOutcome.observeFailure(saveError.message || "Errore durante il salvataggio dell'ordine.")));
     } finally {
       setSaving(false);
     }
@@ -994,14 +1001,16 @@ export default function NewOrder() {
                       <td>{line.codice_articolo}</td>
                       <td>
                         <div>{line.descrizione}</div>
-                        {cartonViolations.filter(item => item.code === String(line.codice_articolo).trim().toUpperCase()).map(item => <small className="orders-vat-missing" role="alert" key={item.ruleId}>{item.message}</small>)}
                         {line.dettaglio_calcolo?.impianto && <small className="orders-kit-line">Impianto {line.dettaglio_calcolo.impianto.codice} · {line.dettaglio_calcolo.impianto.descrizione}</small>}
                         <small>Categoria sconto articolo: {line.dettaglio_calcolo?.categoria_sconto_articolo || productDiscountCategory(line.prodotto_origine) || "-"}</small>
                       </td>
                       <td>
                         <div className="orders-quantity-control">
                           <button type="button" disabled={checkingAvailability} onClick={() => updateLine(line.codice_articolo, "quantita", line.quantita - 1)}><Minus size={15} /></button>
-                          <input type="number" min="1" step="1" disabled={checkingAvailability} aria-invalid={cartonViolations.some(item => item.code === String(line.codice_articolo).trim().toUpperCase())} value={line.quantita} onChange={(event) => updateLine(line.codice_articolo, "quantita", event.target.value)} />
+                          <input type="number" min="1" step="1" disabled={checkingAvailability} onBlur={() => {
+                            const violations = cartonViolations.filter(item => item.code === String(line.codice_articolo).trim().toUpperCase());
+                            if (violations.length) void showCartonViolations(violations);
+                          }} aria-invalid={cartonViolations.some(item => item.code === String(line.codice_articolo).trim().toUpperCase())} value={line.quantita} onChange={(event) => updateLine(line.codice_articolo, "quantita", event.target.value)} />
                           <button type="button" disabled={checkingAvailability} onClick={() => updateLine(line.codice_articolo, "quantita", line.quantita + 1)}><Plus size={15} /></button>
                         </div>
                       </td>
@@ -1116,10 +1125,10 @@ export default function NewOrder() {
               </>}
             </div>
           )}
-          <button className="orders-secondary" type="button" disabled={saving || cartonViolations.length > 0} onClick={() => saveOrder({ confirm: false })}>
+          <button className="orders-secondary" type="button" disabled={saving} onClick={() => saveOrder({ confirm: false })}>
             <Save size={18} /> Salva bozza
           </button>
-          <button className="orders-primary" type="button" disabled={saving || checkingAvailability || !availabilityValidity.valid || productsMissingVat.length > 0 || cartonViolations.length > 0} onClick={() => saveOrder({ confirm: true })}>
+          <button className="orders-primary" type="button" disabled={saving || checkingAvailability || !availabilityValidity.valid || productsMissingVat.length > 0} onClick={() => saveOrder({ confirm: true })}>
             <ShoppingCart size={18} /> {saving ? "Salvataggio..." : privateOrder ? "Conferma e crea OCT" : "Conferma ordine"}
           </button>
           {!isReservation && !skipAvailability && !availabilityValidity.valid && <small className="orders-confirmation-note">{availabilityValidity.reason}</small>}

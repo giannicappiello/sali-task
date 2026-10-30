@@ -67,6 +67,7 @@ export default function Products() {
   const [summaries, setSummaries] = useState({}), [summariesLoaded, setSummariesLoaded] = useState(false), [sheetError, setSheetError] = useState('');
   const [templateProduct, setTemplateProduct] = useState(null), [templateContent, setTemplateContent] = useState({}), [templateOpen, setTemplateOpen] = useState(false), [templateLoading, setTemplateLoading] = useState(false);
   const [products, setProducts] = useState([]);
+  const [photoError, setPhotoError] = useState('');
   const [implantCount, setImplantCount] = useState(0);
   const [query, setQuery] = useState("");
   const [activeSection, setActiveSection] = useState("IT");
@@ -79,7 +80,11 @@ export default function Products() {
   async function loadProducts() {
     try {
       const catalog = await loadDirectProductCatalog(supabase);
-      const source = await sheetChannelApi('photos', {}).catch(() => ({photos:{}}));
+      setPhotoError('');
+      const source = await sheetChannelApi('photos', {}).catch(error => {
+        setPhotoError(error.message || 'Archivio foto NAS non disponibile.');
+        return { photos: {} };
+      });
       setProducts(catalog.products.map(product=>{const url=source.photos[String(product.codice_mexal||product.codice||'').trim().toUpperCase()]?.url||null;return {...product,nas_photo_url:url,immagine_catalogo_url:url,immagine_url:null};}));
       setImplantCount(catalog.implants.length);
     } catch (error) {
@@ -177,6 +182,7 @@ export default function Products() {
         {canUseModule('prodotti', 'amministrazione') && <button type="button" className="primary-action" disabled={templateLoading} onClick={openTemplates}>Template scheda tecnica</button>}
       </div>
       {sheetError && <p className="direct-sheet-error" role="alert">Schede tecniche: {sheetError}</p>}
+      {photoError && <p className="direct-sheet-error" role="alert">Foto prodotti: {photoError} <button type="button" onClick={() => void loadProducts()}>Riprova</button></p>}
 
       <div className="product-section-tabs" role="tablist" aria-label="Tipologie articolo">
         {SECTIONS.map((section) => {

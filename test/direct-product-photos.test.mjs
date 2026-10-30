@@ -16,3 +16,14 @@ test('Photo API ignores Mexal photos and reports a missing NAS original',async()
  let res=response();await createSheetHandler({identity:async()=>({db}),photoSources:async()=>[{code:'IT0019',url:'https://nas.test/original.png'}]})(request,res);assert.equal(res.data.url,'https://nas.test/original.png');
  res=response();await createSheetHandler({identity:async()=>({db}),photoSources:async()=>[]})(request,res);assert.equal(res.code,404);assert.match(res.data.error,/NAS/);assert.ok(!res.data.url);
 });
+
+test('An unreadable NAS photo does not hide readable products', async()=>{
+ const root=await mkdtemp(path.join(tmpdir(),'nas-partial-'));await mkdir(path.join(root,'FotoProdotti'));
+ for(const name of ['IT0019.png','IT0035.jpg','IT0056.jpg'])await writeFile(path.join(root,'FotoProdotti',name),'photo');
+ const {realpath}=await import('node:fs/promises');
+ for(const code of ['EPERM','EACCES','ENOENT','UNKNOWN']){
+  const warnings=[];const rows=await productPhotos(root,{resolvePath:async file=>{if(file.endsWith('IT0035.jpg'))throw Object.assign(new Error('unreadable'),{code});return realpath(file);},onWarning:w=>warnings.push(w)});
+  assert.deepEqual(rows.map(p=>p.code).sort(),['IT0019','IT0056']);assert.deepEqual(warnings,[{filename:'IT0035.jpg',code}]);
+ }
+ await assert.rejects(productPhotos(path.join(root,'missing')), {code:'ENOENT'});
+});

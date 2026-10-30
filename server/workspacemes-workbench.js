@@ -2,6 +2,10 @@ import { authoritativeArticleUnit, resolveOctUnitOfMeasure } from "./mexal/unit-
 import { evaluateProductionRequestCancellation } from "./workspacemes-rdp-cancellation.js";
 import { assertPrivateWorkbenchDetailScope, readRowsByIds } from "./private-orders-workbench.js";
 
+// The list only needs identifiers, status and timestamps. last_response can
+// contain a full MES analysis; serializing it for every row can time out PostgREST.
+const WORKBENCH_REQUEST_COLUMNS = "id,external_id,ordine_id,workspace_status,stato,rdp_number,created_at,updated_at,cancelled_at";
+
 function text(value) { return String(value ?? "").trim(); }
 function number(value) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : 0; }
 
@@ -296,10 +300,10 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
     const ids = scopedOrders.map((order) => order.id);
     const [lines, primaryRequests, linkedItems] = await Promise.all([
       readRowsByIds(admin, "ordini_righe", "ordine_id", ids),
-      readRowsByIds(admin, "workspace_production_requests", "ordine_id", ids),
+      readRowsByIds(admin, "workspace_production_requests", "ordine_id", ids, WORKBENCH_REQUEST_COLUMNS),
       readRowsByIds(admin, "workspace_production_request_items", "ordine_id", ids, "id,production_request_id"),
     ]);
-    const linkedRequests = await readRowsByIds(admin, "workspace_production_requests", "id", linkedItems.map((item) => item.production_request_id));
+    const linkedRequests = await readRowsByIds(admin, "workspace_production_requests", "id", linkedItems.map((item) => item.production_request_id), WORKBENCH_REQUEST_COLUMNS);
     const requests = [...new Map([...primaryRequests, ...linkedRequests].map((request) => [request.id, request])).values()]
       .sort((a, b) => text(b.created_at).localeCompare(text(a.created_at)) || text(a.id).localeCompare(text(b.id)));
     lines.sort((a, b) => number(a.mexal_posizione) - number(b.mexal_posizione));
@@ -309,7 +313,7 @@ export async function listProductionWorkbench({ admin, diagnostics = [], product
   if (expectedCustomerCode) ordersQuery = ordersQuery.in("codice_cliente", Array.isArray(expectedCustomerCode) ? expectedCustomerCode : [expectedCustomerCode]);
   const [loadedOrders, loadedRequests] = await Promise.all([
     ordersQuery.order("data_consegna", { ascending: true }).limit(500),
-    admin.from("workspace_production_requests").select("*").order("created_at", { ascending: false }).limit(500),
+    admin.from("workspace_production_requests").select(WORKBENCH_REQUEST_COLUMNS).order("created_at", { ascending: false }).limit(500),
   ]);
   if (loadedOrders.error || loadedRequests.error) throw loadedOrders.error || loadedRequests.error;
   // A global limit does not override the API row cap. Read all pages for the

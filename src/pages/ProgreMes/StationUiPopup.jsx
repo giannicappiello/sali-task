@@ -8,7 +8,8 @@ export default function StationUiPopup({ station, onClose, children }) {
     const element = dialog.current;
     let dimensions;
     const fit = () => {
-      if (!dimensions) return;
+      // Do not shrink the modal to compensate for the user's native pinch zoom.
+      if ((window.visualViewport?.scale || 1) > 1.01 || !dimensions) return;
       const header = element.querySelector("header").getBoundingClientRect().height;
       const content = element.querySelector(".station-ui-popup-content");
       const chromeHeight = header + parseFloat(getComputedStyle(content).paddingBottom);

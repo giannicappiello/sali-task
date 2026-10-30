@@ -1,3 +1,4 @@
+import { cloneVisualContent } from './visual-clone.js';
 // This module reads only the current authorized UI. Only pagination controls
 // are followed; mutations, row actions and application APIs are never invoked.
 export const DIALOGS = '[role="dialog"],[role="alertdialog"],[aria-modal="true"],dialog[open],.modal.show .modal-content,.mud-dialog,.production-batch-inspector,.modal-backdrop > .modal-card,.letterhead-modal > .letterhead-dialog,.private-upload-modal > form';
@@ -150,7 +151,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // Preserve duplicate rows: each page is appended exactly once, never deduplicated
 // by text. Repeated values are legitimate business records.
-export async function captureCompleteReport({ root, title, system = 'Workspace', progress = () => {}, signal, isVisible = visible, settle = null }) {
+export async function captureCompleteReport({ root, title, system = 'Workspace', progress = () => {}, signal, isVisible = visible, settle = null, visual = false }) {
   const started = Date.now();
   while ([...root.querySelectorAll('[aria-busy="true"],.loading,.crm-loading,.warehouse-loading,.loading-state')].some(isVisible)) {
     signal?.throwIfAborted();
@@ -164,7 +165,7 @@ export async function captureCompleteReport({ root, title, system = 'Workspace',
     const getPager = () => findPagers(root, isVisible)[index];
     const originalCollection = collectionFor(getPager(), root);
     const originalPath = nodePath(root, originalCollection);
-    const pages = [];
+    const pages = [], visualPages = [];
     let displacement = 0;
     let primaryError;
     const move = async direction => {
@@ -196,6 +197,7 @@ export async function captureCompleteReport({ root, title, system = 'Workspace',
         signal?.throwIfAborted();
         progress(`Acquisizione elenco ${index + 1} di ${pagers.length}, pagina ${page}…`);
         pages.push(cloneContent(collectionFor(getPager(), root), isVisible, new Map(), new Map([...root.querySelectorAll('table')].map((table,i) => [table,i]))));
+        if (visual) visualPages.push(cloneVisualContent(collectionFor(getPager(), root), {isVisible,findPagers,tableKeys:new Map([...root.querySelectorAll('table')].map((table,i)=>[table,i]))}));
         if (disabled(paginationControls(getPager()).next)) {
           const position = clean(getPager().textContent).match(/(?:pagina|page)\s*(\d+)\s*(?:di|of|\/)\s*(\d+)/i);
           if (position && Number(position[1]) < Number(position[2])) throw new Error('L’elenco non è stato acquisito fino all’ultima pagina. Nessun file generato.');
@@ -214,11 +216,11 @@ export async function captureCompleteReport({ root, title, system = 'Workspace',
       } catch (error) { primaryError ||= error; }
     }
     if (primaryError) throw primaryError;
-    replacements.push({ path: originalPath, pages });
+    replacements.push({ path: originalPath, pages, visualPages });
   }
   const replaceMap = new Map(replacements.map(item => [atPath(root, item.path), item.pages]));
   const result = cloneContent(root, isVisible, replaceMap, new Map([...root.querySelectorAll('table')].map((table,i) => [table,i])));
-  return { title: clean(title) || 'Report', system, generatedAt: new Date().toISOString(), blocks: contentBlocks(result) };
+  return { title: clean(title) || 'Report', system, generatedAt: new Date().toISOString(), blocks: contentBlocks(result), ...(visual ? {visualRoot:cloneVisualContent(root,{isVisible,findPagers,replacements:new Map(replacements.map(item=>[atPath(root,item.path),item.visualPages])),tableKeys:new Map([...root.querySelectorAll('table')].map((table,i)=>[table,i]))})} : {}) };
 }
 
 let readQueue = Promise.resolve();

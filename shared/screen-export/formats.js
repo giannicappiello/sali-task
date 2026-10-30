@@ -1,5 +1,5 @@
 import PizZip from 'pizzip';
-import { buildAssistantPdf } from '../../src/pages/AIAssistant/assistantPdf.js';
+import { buildAssistantPdf, drawContentPageFrame } from '../../src/pages/AIAssistant/assistantPdf.js';
 
 const NAVY = '112640', GREEN = '169158', INK = '1F2D44', PALE = 'EEF7F3';
 const xml = value => [...String(value ?? '')].filter(char => char.charCodeAt(0) >= 32 || ['\n','\r','\t'].includes(char)).join('').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&apos;');
@@ -19,6 +19,7 @@ export function reportMarkdown(report) {
 }
 
 export function buildReportPdf(report, { logoDataUrl, managedLetterhead = false } = {}) {
+  if (report.visualPages?.length) return buildVisualPdf(report,{logoDataUrl,managedLetterhead});
   return buildAssistantPdf({ content: reportMarkdown(report), generatedAt: new Date(report.generatedAt), author: report.system,
     logoDataUrl, managedLetterhead, reportLabel: 'REPORT', footerLabel: `Report ${report.system} - esportazione completa` });
 }
@@ -39,7 +40,7 @@ export function buildReportDocx(report, logoBytes) {
   const coverContent = `${wordParagraph('PROGRE', 'Brand')}${logoBytes ? wordLogo() : ''}${wordParagraph('WORKSPACE + PROGREMES / MES', 'CoverSmall')}${wordParagraph('REPORT', 'CoverSmall', '<w:spacing w:before="2000"/>')}${wordParagraph(report.title, 'CoverTitle')}${wordParagraph('Esportazione completa della schermata', 'CoverSmall')}${wordParagraph(`Data di elaborazione: ${date(report.generatedAt)}`, 'CoverSmall', '<w:spacing w:before="2400"/>')}${wordParagraph(`Preparato da: ${report.system}`, 'CoverSmall')}`;
   const cover = `<w:tbl><w:tblPr><w:tblW w:w="10092" w:type="dxa"/><w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="10092"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="13000" w:hRule="atLeast"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="10092" w:type="dxa"/><w:shd w:fill="${NAVY}"/><w:tcMar><w:top w:w="500" w:type="dxa"/><w:left w:w="500" w:type="dxa"/><w:bottom w:w="500" w:type="dxa"/><w:right w:w="500" w:type="dxa"/></w:tcMar></w:tcPr>${coverContent}</w:tc></w:tr></w:tbl><w:p><w:pPr><w:sectPr>${section}</w:sectPr></w:pPr></w:p>`;
   // Tables remain editable Word tables. Prevent individual rows splitting over pages.
-  const body = report.blocks.map(block => {
+  const body = report.visualPages?.length ? report.visualPages.map(wordVisualImage).join('') : report.blocks.map(block => {
     if (block.type !== 'table') return wordParagraph(block.text, block.type === 'heading' ? 'Heading1' : 'Normal');
     const count = Math.max(block.headers.length, ...block.rows.map(row => row.length), 1);
     const width = Math.floor(10092 / count);
@@ -53,6 +54,10 @@ export function buildReportDocx(report, logoBytes) {
   zip.file('_rels/.rels', relations(relation('document', 'officeDocument', 'word/document.xml')));
   zip.file('word/_rels/document.xml.rels', relations(relation('styles','styles','styles.xml') + relation('header','header','header.xml') + relation('footer','footer','footer.xml') + (logoBytes ? relation('logo','image','media/progre.png') : '')));
   if (logoBytes) zip.file('word/media/progre.png', logoBytes);
+  if (report.visualPages?.length) {
+    report.visualPages.forEach((page,i)=>zip.file('word/media/screen'+i+'.png',page.dataUrl.split(',')[1],{base64:true}));
+    zip.file('word/_rels/document.xml.rels',zip.file('word/_rels/document.xml.rels').asText().replace('</Relationships>',report.visualPages.map((_,i)=>relation('screen'+i,'image','media/screen'+i+'.png')).join('')+'</Relationships>'));
+  }
   packageBase(zip, [['document','document.main'],['styles','styles'],['header','header'],['footer','footer']].map(([file, type]) => `<Override PartName="/word/${file}.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.${type}+xml"/>`).join(''));
   return new Blob([zip.generate({ type: 'uint8array', compression: 'DEFLATE' })], { type: MIME_DOCX });
 }
@@ -80,7 +85,48 @@ export function buildReportXlsx(report, logoBytes) {
   zip.file('_rels/.rels', relations(relation('workbook','officeDocument','xl/workbook.xml')));
   zip.file('xl/_rels/workbook.xml.rels', relations(relation('sheet1','worksheet','worksheets/sheet1.xml')+relation('styles','styles','styles.xml')));
   packageBase(zip, `${logoBytes ? '<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>' : ''}<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>`);
+  if (report.visualPages?.length) addWorkbookVisuals(zip,report);
   return new Blob([zip.generate({type:'uint8array',compression:'DEFLATE'})], {type:MIME_XLSX});
 }
 
 export const reportBrand = { navy: NAVY, green: GREEN };
+
+
+function wordVisualImage(page, index) {
+  const width=6408000, height=Math.round(width*page.height/page.width);
+  return `<w:p><w:pPr><w:spacing w:before="0" w:after="0"/>${index ? '<w:pageBreakBefore/>' : ''}</w:pPr><w:r><w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><wp:extent cx="${width}" cy="${height}"/><wp:docPr id="${index+2}" name="Schermata ${index+1}"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="${index+2}" name="Schermata ${index+1}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="screen${index}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${width}" cy="${height}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
+}
+
+function addWorkbookVisuals(zip,report) {
+  const pages=report.visualPages, width=6408000, stride=40;
+  const anchors=pages.map((page,i)=>{
+    zip.file(`xl/media/screen${i}.png`,page.dataUrl.split(',')[1],{base64:true});
+    const height=Math.round(width*page.height/page.width);
+    return `<xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${i*stride}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:ext cx="${width}" cy="${height}"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${i+1}" name="Schermata ${i+1}"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="screen${i}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${width}" cy="${height}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>`;
+  }).join('');
+  zip.file('xl/drawings/drawing2.xml',`<?xml version="1.0" encoding="UTF-8"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${anchors}</xdr:wsDr>`);
+  zip.file('xl/drawings/_rels/drawing2.xml.rels',relations(pages.map((_,i)=>relation(`screen${i}`,'image',`../media/screen${i}.png`)).join('')));
+  zip.file('xl/worksheets/_rels/sheet2.xml.rels',relations(relation('drawing','drawing','../drawings/drawing2.xml')));
+  zip.file('xl/worksheets/sheet2.xml',`<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="18"/><cols><col min="1" max="10" width="9.4" customWidth="1"/></cols><sheetData>${Array.from({length:pages.length*stride},(_,i)=>`<row r="${i+1}" ht="18" customHeight="1"/>`).join('')}</sheetData><printOptions horizontalCentered="1"/><pageMargins left="0.4" right="0.4" top="0.6" bottom="0.6" header="0.2" footer="0.2"/><pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"/><headerFooter><oddHeader>&amp;LPROGRE&amp;R${xml(report.title).replaceAll('&amp;', '&amp;&amp;')}</oddHeader><oddFooter>&amp;LStruttura della schermata&amp;RPagina &amp;P di &amp;N</oddFooter></headerFooter>${pages.length>1 ? `<rowBreaks count="${pages.length-1}" manualBreakCount="${pages.length-1}">${pages.slice(1).map((_,i)=>`<brk id="${(i+1)*stride}" min="0" max="16383" man="1"/>`).join('')}</rowBreaks>` : ''}<drawing r:id="drawing"/></worksheet>`);
+  let workbook=zip.file('xl/workbook.xml').asText().replaceAll('Report Progre','Dati completi').replaceAll('localSheetId="0"','localSheetId="1"');
+  workbook=workbook.replace('<sheets>','<sheets><sheet name="Schermata" sheetId="2" r:id="screen"/>').replace('</definedNames>',`<definedName name="_xlnm.Print_Area" localSheetId="0">'Schermata'!$A$1:$J$${pages.length*stride}</definedName></definedNames>`);
+  zip.file('xl/workbook.xml',workbook);
+  zip.file('xl/_rels/workbook.xml.rels',zip.file('xl/_rels/workbook.xml.rels').asText().replace('</Relationships>',relation('screen','worksheet','worksheets/sheet2.xml')+'</Relationships>'));
+  zip.file('[Content_Types].xml',zip.file('[Content_Types].xml').asText().replace('</Types>','<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/drawings/drawing2.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>'));
+}
+
+function buildVisualPdf(report,{logoDataUrl,managedLetterhead=false}={}) {
+  const doc=buildAssistantPdf({content:`# ${report.title}`,generatedAt:new Date(report.generatedAt),author:report.system,logoDataUrl,managedLetterhead,reportLabel:'REPORT',footerLabel:''});
+  report.visualPages.forEach((page,i)=>{
+    if (i) {doc.addPage();if(!managedLetterhead)drawContentPageFrame(doc,logoDataUrl);}
+    else doc.setPage(2);
+    doc.addImage(page.dataUrl,'PNG',16,32,178,178*page.height/page.width,undefined,'FAST');
+  });
+  const count=report.visualPages.length;
+  for(let i=0;i<count;i++){
+    doc.setPage(i+2);doc.setFillColor(255,255,255);doc.rect(16,284,178,10,'F');doc.setDrawColor(220,228,239);doc.line(16,283,194,283);
+    doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(108,121,144);
+    doc.text(`Report ${report.system} - struttura della schermata`,16,289);doc.text(`Pagina ${i+1} di ${count}`,194,289,{align:'right'});
+  }
+  return doc;
+}

@@ -114,3 +114,35 @@ test('PDF, DOCX and XLSX include every record with A4 layout and no executable s
   const parsed=await PDFDocument.load(pdf.output('arraybuffer'));assert.ok(parsed.getPageCount()>=2);assert.ok(Math.abs(parsed.getPage(0).getSize().height-841.89)<1);
   assert.ok(reportFileName(report,'pdf').endsWith('.pdf'));
 });
+
+test('visual capture retains KPI layout, SVG, fields and every paginated row',async()=>{
+  const f=fixture();
+  f.root.insertAdjacentHTML('afterbegin','<div class="kpi-grid" style="display:grid;grid-template-columns:1fr 1fr"><button class="kpi-card">Clienti 533</button><button class="kpi-card">Fatturato 12.000 €</button></div><svg width="200" height="80"><rect width="80" height="60" fill="green"/></svg><input aria-label="Password" value="SEGRETO"><input aria-label="Nome" value="Gianni">');
+  const report=await captureCompleteReport({root:f.root,title:'Layout',visual:true,isVisible:visible,settle:async()=>{}});
+  assert.deepEqual(f.state,[2,1]);
+  assert.equal(report.visualRoot.querySelectorAll('.kpi-card').length,2);
+  assert.equal(report.visualRoot.querySelectorAll('svg rect').length,1);
+  assert.equal(report.visualRoot.querySelectorAll('tbody tr').length,20);
+  assert.ok(report.visualRoot.textContent.includes('Gianni'));
+  assert.ok(!report.visualRoot.textContent.includes('SEGRETO'));
+  assert.equal(report.visualRoot.querySelectorAll('.pagination').length,0);
+});
+
+test('visual PDF, Word and Excel embed layout pages and Excel retains complete data',async()=>{
+  const report={title:'Dashboard visiva',system:'Workspace',generatedAt:new Date().toISOString(),blocks:[{type:'table',headers:['Cliente','Importo'],rows:[['Roma','10,00 €'],['Totale generale','10,00 €']]}],visualPages:[{dataUrl:'data:image/png;base64,'+fs.readFileSync(new URL('../public/progre-logo-white.png',import.meta.url)).toString('base64'),width:1000,height:1200}]};
+  const word=new PizZip(await buildReportDocx(report).arrayBuffer());
+  assert.ok(word.file('word/media/screen0.png'));
+  assert.ok(word.file('word/document.xml').asText().includes('r:embed="screen0"'));
+  const excel=new PizZip(await buildReportXlsx(report).arrayBuffer());
+  assert.ok(excel.file('xl/workbook.xml').asText().includes('name="Schermata"'));
+  assert.ok(excel.file('xl/workbook.xml').asText().includes('name="Dati completi"'));
+  assert.ok(excel.file('xl/worksheets/sheet1.xml').asText().includes('Totale generale'));
+  assert.ok(excel.file('xl/drawings/drawing2.xml').asText().includes('screen0'));
+  const pdf=await PDFDocument.load(buildReportPdf(report).output('arraybuffer'));
+  assert.equal(pdf.getPageCount(),2);
+});
+
+test('visual pagination avoids breaking a card or a table row that fits on A4',async()=>{
+  const {layoutBands}=await import(base+'shared/screen-export/visual.js');
+  assert.deepEqual(layoutBands(2200,1000,[{top:900,bottom:1100}]),[{y:0,height:900},{y:900,height:1000},{y:1900,height:300}]);
+});

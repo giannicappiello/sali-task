@@ -31,3 +31,11 @@ I test verificano due elenchi di cinque pagine, avvio da pagine intermedie, ripr
 Le colonne numeriche espongono due righe di footer: Totale pagina e Totale generale, con i valori nella stessa colonna dei dati. Una tabella con totali esistenti non riceve altri footer. Codici, identificativi, date e numeri d’ordine non vengono sommati. Le quantità con UDM diverse rimangono separate. Il medesimo comportamento è applicato ai documenti esportati.
 
 I dataset React comuni, i dettagli CRM e il magazzino registrano i dati completi con registerTableTotals. Il magazzino legge le pagine autorizzate dal servizio già esistente, mantenendo i filtri e il perimetro cliente. Per le altre tabelle paginated il raccoglitore effettua una lettura completa con indicatore di avanzamento e ripristina la pagina iniziale. Durante questa lettura il contenuto è temporaneamente bloccato per evitare modifiche di filtri e pagina. I risultati vengono riutilizzati finché i dati della pagina e i filtri coincidono; un errore viene mostrato come Non disponibile.
+
+## Struttura visiva della schermata
+
+L’esportazione riproduce disposizione, colori, card KPI, grafici canvas/SVG, testi e valori correnti delle caselle. Conserva la larghezza di impaginazione della schermata aperta e adatta il risultato alle pagine A4 del modello Progre, senza ridisporre le card. I contenitori con scorrimento vengono espansi; gli elenchi paginati comprendono tutte le righe e i totali. Quando possibile, card, grafici e righe non vengono spezzati tra due pagine.
+
+PDF e Word incorporano le pagine grafiche per mantenere la fedeltà visiva. Excel apre il foglio Schermata con la stessa riproduzione e contiene anche Dati completi con tutte le righe in celle. Le immagini delle pagine sono condivise dai tre formati. Password e campi segreti, assistente AI e controlli Esporta sono esclusi.
+
+Le immagini esterne richiedono l’accesso CORS del server di origine; un’immagine non leggibile interrompe il report anziché produrre un file incompleto. Non si aggirano le autorizzazioni del browser. La navigazione originale dell’elenco viene ripristinata anche dopo errore o annullamento.

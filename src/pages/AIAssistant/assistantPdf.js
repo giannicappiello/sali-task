@@ -137,7 +137,7 @@ function drawCover(doc, { title, subtitle, generatedAt, author, logoDataUrl, rep
   doc.rect(24, 272, 38, 2, "F");
 }
 
-function drawContentPageFrame(doc, logoDataUrl = null) {
+export function drawContentPageFrame(doc, logoDataUrl = null) {
   doc.setFillColor(...BRAND.navy);
   doc.rect(0, 0, 210, 18, "F");
   if (logoDataUrl) {

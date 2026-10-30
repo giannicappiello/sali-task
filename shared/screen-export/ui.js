@@ -40,7 +40,7 @@ export function installScreenExport({ doc = document, system = 'Workspace', logo
     const title = (popup ? popup.querySelector('h1,h2,h3')?.textContent || popup.getAttribute('aria-label') : doc.querySelector('.topbar h1,.mes-unified-topbar h1,main h1')?.textContent) || doc.title || system;
     const dialog = doc.createElement('dialog'); currentDialog = dialog;
     dialog.dataset.reportExport = ''; dialog.className = 'progre-export-dialog'; dialog.setAttribute('aria-labelledby','progre-export-title');
-    dialog.innerHTML = '<h2 id="progre-export-title">Esporta report Progre</h2><p class="progre-export-title"></p><p>Formato A4 · modello report AI Progre. Include tutte le pagine degli elenchi con i filtri e l’ordinamento attuali.</p><div class="progre-export-options"><button type="button" data-format="xlsx">Excel (.xlsx)</button><button type="button" data-format="docx">Word (.docx)</button><button type="button" data-format="pdf">PDF (.pdf)</button></div><p class="progre-export-status" role="status" aria-live="polite"></p><footer><button type="button" data-close>Chiudi</button></footer>';
+    dialog.innerHTML = '<h2 id="progre-export-title">Esporta report Progre</h2><p class="progre-export-title"></p><p>Formato A4 · modello report AI Progre. Riproduce card, grafici, testi e disposizione della schermata, includendo tutte le pagine degli elenchi. Excel include anche il foglio Dati completi.</p><div class="progre-export-options"><button type="button" data-format="xlsx">Excel (.xlsx)</button><button type="button" data-format="docx">Word (.docx)</button><button type="button" data-format="pdf">PDF (.pdf)</button></div><p class="progre-export-status" role="status" aria-live="polite"></p><footer><button type="button" data-close>Chiudi</button></footer>';
     dialog.querySelector('.progre-export-title').textContent = title;
     const status = dialog.querySelector('[role=status]');
     let controller;
@@ -53,7 +53,13 @@ export function installScreenExport({ doc = document, system = 'Workspace', logo
       dialog.querySelector('[data-close]').textContent = 'Interrompi'; status.setAttribute('role','status');
       status.textContent = 'Preparazione del report completo…';
       try {
-        const report = appendReportTotals(await exclusiveReportRead(() => captureCompleteReport({root,title,system,signal:controller.signal,progress:text => {status.textContent = text;}}),doc));
+        const report = await exclusiveReportRead(async () => {
+          const {renderVisualPages} = await import('./visual.js');
+          const options={root,title,system,signal:controller.signal,progress:text=>{status.textContent=text;},visual:true};
+          const result=appendReportTotals(await captureCompleteReport(options));
+          result.visualPages=await renderVisualPages(result,options);
+          return result;
+        },doc);
         controller.signal.throwIfAborted(); status.textContent = 'Creazione del documento…';
         const [formats, logo] = await Promise.all([import('./formats.js'), logoData(logoUrl)]);
         let blob;

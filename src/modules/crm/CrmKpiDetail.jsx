@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Info, X } from 'lucide-react';
 import './crm-kpi-detail.css';
 import { queryDetailRows } from './crmDetailQuery';
@@ -15,7 +15,7 @@ export function CrmKpiCard({ label, value, note, info, onClick }) {
   </article>;
 }
 
-export function CrmDetailTable({ rows, columns, empty = 'Nessun dato disponibile per i filtri selezionati.' }) {
+export function CrmDetailTable({ rows, columns, renderExpanded, empty = 'Nessun dato disponibile per i filtri selezionati.' }) {
   const [search, setSearch] = useState(''); const [filters, setFilters] = useState({});
   const [sort, setSort] = useState({ key: '', direction: 'asc' }); const [hidden, setHidden] = useState([]);
   const [page, setPage] = useState(0);
@@ -32,7 +32,12 @@ export function CrmDetailTable({ rows, columns, empty = 'Nessun dato disponibile
     <div className="b2b-detail-table-wrap"><table ref={reportTable} className="crm-table" data-column-controls="off"><thead><tr>{visible.map(c => <th key={c.key} aria-sort={sort.key === c.key ? sort.direction === 'asc' ? 'ascending' : 'descending' : 'none'}>
       <button type="button" className="b2b-sort" onClick={() => { setSort({ key: c.key, direction: sort.key === c.key && sort.direction === 'asc' ? 'desc' : 'asc' }); setPage(0); }}>{c.label}{sort.key === c.key ? sort.direction === 'asc' ? <ArrowUp size={14}/> : <ArrowDown size={14}/> : null}</button>
       <input aria-label={`Filtra ${c.label}`} placeholder="Filtra…" value={filters[c.key] || ''} onChange={e => { setFilters({ ...filters, [c.key]: e.target.value }); setPage(0); }}/>
-    </th>)}</tr></thead><tbody>{result.slice(current * 25, current * 25 + 25).map((row, i) => <tr key={row.id || row.key || i}>{visible.map(c => <td key={c.key}>{c.render ? c.render(row) : String(c.value(row) ?? '—')}</td>)}</tr>)}</tbody></table></div>
+    </th>)}</tr></thead><tbody>{result.slice(current * 25, current * 25 + 25).map((row, i) => {
+      const expanded = renderExpanded?.(row);
+      return <Fragment key={row.id || row.key || i}><tr>{visible.map(c => <td key={c.key}>{c.render ? c.render(row) : String(c.value(row) ?? '—')}</td>)}</tr>
+        {expanded && <tr className="crm-detail-expanded-row"><td colSpan={visible.length}>{expanded}</td></tr>}
+      </Fragment>;
+    })}</tbody></table></div>
     {!result.length && <p className="crm-empty">{empty}</p>}
     <div className="b2b-detail-pagination"><span role="status">{result.length} di {rows.length} righe · Pagina {current + 1} di {pages}</span><div><button type="button" className="secondary-action" disabled={!current} onClick={() => setPage(current - 1)}>Precedente</button><button type="button" className="secondary-action" disabled={current + 1 >= pages} onClick={() => setPage(current + 1)}>Successiva</button></div></div>
   </>;

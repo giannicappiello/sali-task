@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CrmKpiDialog, CrmDetailTable } from './CrmKpiDetail';
+import CrmCustomerInvoiceTable from './CrmCustomerInvoiceTable';
 import { loadAllRpcRows } from './crmDataset';
 import { formatDate, formatMoney } from './crmConfig';
 
@@ -43,12 +44,13 @@ export default function CrmPrivateDashboardDialog({ title, filters, onClose }) {
     ] : []),
   ];
   const sum = result.rows.reduce((total, row) => total + Number(metric === 'forecast' ? row.weighted : row.amount || 0), 0);
-  return <CrmKpiDialog title={title === 'Fatturato' ? 'Fatture · CRM Private' : title}
+  return <CrmKpiDialog title={title === 'Fatturato' ? 'Fatturato per cliente · CRM Private' : title}
     subtitle={projects ? 'Progetti aperti della pipeline Private · come nel totale della card' : `${formatDate(filters.p_from)} – ${formatDate(filters.p_to)} · filtri della dashboard`}
     onClose={onClose}>
     {result.loading ? <p role="status">Caricamento dettaglio…</p> : result.error ? <div role="alert"><p>{result.error}</p><button type="button" onClick={() => setAttempt(n => n + 1)}>Riprova</button></div> : <>
       {!customers && <p>Totale: <strong>{formatMoney(sum)}</strong>{!projects && ' · IVA esclusa'}</p>}
-      <CrmDetailTable key={`${metric}-${filterKey}`} rows={result.rows} columns={columns}/>
+      {metric === 'invoices' ? <CrmCustomerInvoiceTable key={`${metric}-${filterKey}`} rows={result.rows} customerLink={customerLink}/>
+        : <CrmDetailTable key={`${metric}-${filterKey}`} rows={result.rows} columns={columns}/>}
     </>}
   </CrmKpiDialog>;
 }

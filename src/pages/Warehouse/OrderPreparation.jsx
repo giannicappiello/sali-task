@@ -344,7 +344,7 @@ export default function OrderPreparation() {
         setCartonPieces("");
         return response;
       }
-      if (operation === "scan" && response.scan) setCartonPrompt(null);
+      if (operation === "scan" && response.preparation) setCartonPrompt(null);
       if (response.preparation) accept(response.preparation);
 
       if (response.verification) setCheck(response.verification);
@@ -880,7 +880,7 @@ export default function OrderPreparation() {
                           <small>{line.description}</small>
                           <small>
                             {piecesPerCarton && specificationVersion
-                              ? `${format(piecesPerCarton)} pezzi/cartone · Capitolato rev. ${specificationVersion}`
+                              ? `${format(piecesPerCarton)} ${piecesPerCarton === 1 ? "pezzo" : "pezzi"}/cartone · Capitolato rev. ${specificationVersion}`
                               : "Cartone: compila i pezzi nel capitolato prodotto"}
                           </small>
                         </td>

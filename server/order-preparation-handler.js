@@ -1,4 +1,8 @@
 import {
+  preparationPackaging,
+  saveMissingPreparationPackaging,
+} from "./order-preparation-packaging.js";
+import {
   readOrderIndex,
   synchronizeOrderIndex,
   orderIndexStatus,
@@ -154,7 +158,7 @@ async function barcodeProduct(db, barcode, source) {
   const [configs, cache] = await Promise.all([
     db
       .from("warehouse_preparation_products")
-      .select("code,barcode,pieces_per_carton")
+      .select("code,barcode")
       .eq("barcode", barcode)
       .limit(2),
     db
@@ -183,15 +187,14 @@ async function barcodeProduct(db, barcode, source) {
     description: cache.data[0]?.descrizione || code,
   };
 
-  const config = checked(
-    await db
-      .from("warehouse_preparation_products")
-      .select("pieces_per_carton")
-      .eq("code", code)
-      .maybeSingle(),
-  );
-
-  return { ...product, piecesPerCarton: config?.pieces_per_carton || null };
+  const packaging = await preparationPackaging(db, [code]);
+  return {
+    ...product,
+    piecesPerCarton: null,
+    packagingSpecificationVersion: null,
+    packagingSpecificationEmpty: true,
+    ...packaging.get(code),
+  };
 }
 
 function editPacking(row, operation, body) {
@@ -339,18 +342,29 @@ export function createOrderPreparationHandler({
         });
       }
 
-      if (op === "settings")
+      if (op === "settings") {
+        const products = checked(
+          await db
+            .from("warehouse_preparation_products")
+            .select("code,barcode")
+            .order("code")
+            .limit(2000),
+        );
+        const packaging = await preparationPackaging(
+          db,
+          products.map((p) => p.code),
+        );
         return res.status(200).json({
           settings,
-          products: checked(
-            await db
-              .from("warehouse_preparation_products")
-              .select("*")
-              .order("code")
-              .limit(2000),
-          ),
+          products: products.map((p) => ({
+            ...p,
+            pieces_per_carton: packaging.get(p.code)?.piecesPerCarton || null,
+            specification_version:
+              packaging.get(p.code)?.packagingSpecificationVersion || null,
+          })),
           canConfigure: session.canConfigure,
         });
+      }
 
       if (op === "configure") {
         const value = {
@@ -404,16 +418,15 @@ export function createOrderPreparationHandler({
         const barcode = text(body.barcode);
         assert(barcode.length <= 100, "Barcode troppo lungo.");
 
-        const pieces =
-          body.piecesPerCarton == null || body.piecesPerCarton === ""
-            ? null
-            : integer(body.piecesPerCarton, "Pezzi per cartone");
+        assert(
+          body.piecesPerCarton == null || body.piecesPerCarton === "",
+          "I pezzi per cartone si modificano nel capitolato prodotto, sezione Imballo.",
+        );
 
         checked(
           await db.from("warehouse_preparation_products").upsert({
             code,
             barcode: barcode || null,
-            pieces_per_carton: pieces,
             updated_at: new Date().toISOString(),
           }),
         );
@@ -507,11 +520,36 @@ export function createOrderPreparationHandler({
         assert(["piece", "carton"].includes(body.mode), "Modalità non valida.");
 
         const product = await barcodeProduct(db, barcode, row.source);
-
-        assert(
-          body.mode !== "carton" || product.piecesPerCarton,
-          `Configura i pezzi per cartone di ${product.code}.`,
-        );
+        if (body.mode === "carton" && !product.piecesPerCarton) {
+          assert(
+            row.source.lines.some((line) => line.code === product.code),
+            "Prodotto non previsto nell'ordine: non è possibile compilare il capitolato da questa lettura.",
+          );
+          assert(
+            product.packagingSpecificationEmpty,
+            `Pezzi per cartone di ${product.code} non validi: correggi il capitolato prodotto, sezione Imballo.`,
+          );
+          if (body.piecesPerCarton == null || body.piecesPerCarton === "")
+            return res
+              .status(200)
+              .json({
+                requiresCartonPieces: true,
+                product: { code: product.code },
+              });
+          assert(
+            row.state.packages.some((p) => p.id === body.packageId),
+            "Collo non valido.",
+          );
+          Object.assign(
+            product,
+            await saveMissingPreparationPackaging(
+              db,
+              product.code,
+              body.piecesPerCarton,
+              profile.id,
+            ),
+          );
+        }
 
         const state = structuredClone(row.state);
         state.confirmedLots = false;
@@ -523,6 +561,9 @@ export function createOrderPreparationHandler({
           code: product.code,
           mode: body.mode,
           quantity: body.mode === "piece" ? 1 : product.piecesPerCarton,
+          ...(body.mode === "carton"
+            ? { specificationVersion: product.packagingSpecificationVersion }
+            : {}),
           at: new Date().toISOString(),
           actor: profile.id,
         });

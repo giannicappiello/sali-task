@@ -492,3 +492,19 @@
     text-align: center;
   }
 }
+
+.op-carton-prompt {
+  border: 2px solid #267bb4;
+}
+.op-carton-prompt label {
+  max-width: 260px;
+  margin: 12px 0;
+}
+.op-carton-prompt .op-toolbar {
+  margin-top: 12px;
+}
+@media (max-width: 850px) {
+  .op-carton-prompt .op-toolbar button {
+    width: 100%;
+  }
+}

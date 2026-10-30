@@ -1,3 +1,4 @@
+import { preparationPackaging } from "./order-preparation-packaging.js";
 import { createHash } from "node:crypto";
 
 import {
@@ -118,13 +119,17 @@ export async function loadOrderContext(client, reference, db, settings) {
 
   const codes = [...new Set(allRows.map((r) => r.code))];
 
-  const [packing, cache] = await Promise.all([
-    db.from("warehouse_preparation_products").select("*").in("code", codes),
+  const [packing, cache, packaging] = await Promise.all([
+    db
+      .from("warehouse_preparation_products")
+      .select("code,barcode")
+      .in("code", codes),
 
     db
       .from("ordini_prodotti_cache")
       .select("codice_articolo,descrizione,ean,unita_misura")
       .in("codice_articolo", codes),
+    preparationPackaging(db, codes),
   ]);
 
   if (packing.error) throw packing.error;
@@ -158,7 +163,9 @@ export async function loadOrderContext(client, reference, db, settings) {
 
             unit: authoritativeArticleUnit(a) || upper(cached?.unita_misura),
             barcode: text(config?.barcode || a.cod_alternativo || cached?.ean),
-            piecesPerCarton: config?.pieces_per_carton || null,
+            piecesPerCarton: packaging.get(code)?.piecesPerCarton || null,
+            packagingSpecificationVersion:
+              packaging.get(code)?.packagingSpecificationVersion || null,
 
             lotRequired: !!text(a.cod_tp_lotto),
             physical: Math.max(

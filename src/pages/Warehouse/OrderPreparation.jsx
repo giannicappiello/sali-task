@@ -44,8 +44,7 @@ function PreparationSettings({ onClose, onSaved }) {
   const [series, setSeries] = useState(""),
     [warehouse, setWarehouse] = useState("5"),
     [code, setCode] = useState(""),
-    [barcode, setBarcode] = useState(""),
-    [pieces, setPieces] = useState("");
+    [barcode, setBarcode] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -136,10 +135,13 @@ function PreparationSettings({ onClose, onSaved }) {
             )}
           </form>
 
-          <h3>Barcode e pezzi per cartone</h3>
+          <h3>Barcode personalizzati</h3>
           <p>
             Lo stesso barcode vale un pezzo in modalità Pezzo e un cartone in
-            modalità Cartone.
+            modalità Cartone. I pezzi per cartone vengono letti automaticamente
+            dal capitolato prodotto in Documenti Private, sezione Imballo. Se il
+            dato manca, alla lettura di un cartone ti verrà chiesto di
+            inserirlo: sarà salvato nel capitolato.
           </p>
 
           {data.canConfigure && (
@@ -149,7 +151,6 @@ function PreparationSettings({ onClose, onSaved }) {
                 void save("configure_product", {
                   code,
                   barcode,
-                  piecesPerCarton: pieces,
                 });
               }}
             >
@@ -172,16 +173,6 @@ function PreparationSettings({ onClose, onSaved }) {
                 />
               </label>
 
-              <label>
-                Pezzi per cartone
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={pieces}
-                  onChange={(e) => setPieces(e.target.value)}
-                />
-              </label>
               <button disabled={busy}>Salva articolo</button>
             </form>
           )}
@@ -204,7 +195,12 @@ function PreparationSettings({ onClose, onSaved }) {
                       {p.barcode || "Anagrafica Mexal"}
                     </td>
                     <td data-label="Pezzi/cartone">
-                      {p.pieces_per_carton || "Da configurare"}
+                      {p.pieces_per_carton || "Da compilare nel capitolato"}
+                      {p.specification_version && (
+                        <small>
+                          Capitolato revisione {p.specification_version}
+                        </small>
+                      )}
                     </td>
                     <td data-label="Azioni">
                       {data.canConfigure && (
@@ -212,7 +208,6 @@ function PreparationSettings({ onClose, onSaved }) {
                           onClick={() => {
                             setCode(p.code);
                             setBarcode(p.barcode || "");
-                            setPieces(p.pieces_per_carton || "");
                           }}
                         >
                           Modifica
@@ -224,6 +219,12 @@ function PreparationSettings({ onClose, onSaved }) {
               </tbody>
             </table>
           </div>
+          {!data.products.length && (
+            <p className="op-empty">
+              Nessun barcode personalizzato. Sono utilizzati i barcode Mexal e i
+              pezzi per cartone del capitolato prodotto.
+            </p>
+          )}
         </>
       )}
     </section>
@@ -242,7 +243,9 @@ export default function OrderPreparation() {
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
-    [notice, setNotice] = useState("");
+    [notice, setNotice] = useState(""),
+    [cartonPrompt, setCartonPrompt] = useState(null),
+    [cartonPieces, setCartonPieces] = useState("");
 
   const [query, setQuery] = useState(""),
     [camera, setCamera] = useState(false),
@@ -258,7 +261,11 @@ export default function OrderPreparation() {
 
   const current = useRef(row),
     lock = useRef(false),
-    input = useRef(null);
+    input = useRef(null),
+    cartonInput = useRef(null);
+  useEffect(() => {
+    if (cartonPrompt) cartonInput.current?.focus();
+  }, [cartonPrompt]);
   useEffect(() => {
     current.current = row;
   }, [row]);
@@ -280,6 +287,7 @@ export default function OrderPreparation() {
       setLoading(true);
       setError("");
       setNotice("");
+      setCartonPrompt(null);
       try {
         const r = await preparationApi(
           id ? "get" : "list",
@@ -331,6 +339,12 @@ export default function OrderPreparation() {
     try {
       const response = await preparationApi(operation, body);
       setPending(null);
+      if (response.requiresCartonPieces) {
+        setCartonPrompt({ code: response.product.code, body });
+        setCartonPieces("");
+        return response;
+      }
+      if (operation === "scan" && response.scan) setCartonPrompt(null);
       if (response.preparation) accept(response.preparation);
 
       if (response.verification) setCheck(response.verification);
@@ -383,10 +397,14 @@ export default function OrderPreparation() {
   }
 
   const scan = async (value) => {
-    if (!canWrite || !activePackage) return;
-    await perform("scan", { barcode: value, mode, packageId: activePackage });
+    if (!canWrite || !activePackage || cartonPrompt) return;
+    const response = await perform("scan", {
+      barcode: value,
+      mode,
+      packageId: activePackage,
+    });
     setBarcode("");
-    input.current?.focus();
+    if (!response?.requiresCartonPieces) input.current?.focus();
   };
 
   const editable =
@@ -683,11 +701,11 @@ export default function OrderPreparation() {
                   <select
                     value={mode}
                     onChange={(e) => setMode(e.target.value)}
-                    disabled={busy}
+                    disabled={busy || !!cartonPrompt}
                   >
                     <option value="piece">Pezzo · 1 pezzo per lettura</option>
                     <option value="carton">
-                      Cartone · pezzi configurati per articolo
+                      Cartone · pezzi dal capitolato
                     </option>
                   </select>
                 </label>
@@ -697,7 +715,7 @@ export default function OrderPreparation() {
                   <select
                     value={activePackage}
                     onChange={(e) => setActivePackage(e.target.value)}
-                    disabled={busy}
+                    disabled={busy || !!cartonPrompt}
                   >
                     {packages.map((p) => (
                       <option key={p.id} value={p.id}>
@@ -709,7 +727,7 @@ export default function OrderPreparation() {
 
                 <button
                   onClick={() => setCamera((v) => !v)}
-                  disabled={!packages.length}
+                  disabled={!packages.length || !!cartonPrompt}
                 >
                   <Camera size={17} />
                   {camera ? "Chiudi fotocamera" : "Apri fotocamera"}
@@ -724,6 +742,7 @@ export default function OrderPreparation() {
                   <label>
                     Barcode prodotto
                     <input
+                      disabled={busy || !!cartonPrompt}
                       ref={input}
                       autoComplete="off"
                       value={barcode}
@@ -734,7 +753,9 @@ export default function OrderPreparation() {
                   </label>
                   <button
                     className="op-primary"
-                    disabled={busy || !barcode || !activePackage}
+                    disabled={
+                      busy || !!cartonPrompt || !barcode || !activePackage
+                    }
                   >
                     Aggiungi {mode === "piece" ? "pezzo" : "cartone"}
                   </button>
@@ -751,11 +772,69 @@ export default function OrderPreparation() {
                 </strong>
               </p>
 
+              {cartonPrompt && (
+                <form
+                  className="op-notice op-carton-prompt"
+                  aria-label="Pezzi per cartone mancanti"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void perform(
+                      "scan",
+                      {},
+                      {
+                        ...cartonPrompt.body,
+                        piecesPerCarton: Number(cartonPieces),
+                      },
+                    );
+                  }}
+                >
+                  <h3>Pezzi per cartone · {cartonPrompt.code}</h3>
+                  <p>
+                    Il dato manca nel capitolato. Indica quanti pezzi contiene
+                    questo cartone: il valore sarà salvato nel capitolato
+                    prodotto, sezione Imballo, e usato anche per le prossime
+                    letture.
+                  </p>
+                  <label>
+                    Pezzi per cartone
+                    <input
+                      ref={cartonInput}
+                      type="number"
+                      min="1"
+                      max="1000000"
+                      step="1"
+                      inputMode="numeric"
+                      required
+                      value={cartonPieces}
+                      onChange={(e) => setCartonPieces(e.target.value)}
+                      disabled={busy}
+                    />
+                  </label>
+                  <div className="op-toolbar">
+                    <button
+                      className="op-primary"
+                      disabled={busy || !cartonPieces}
+                    >
+                      Salva nel capitolato e aggiungi cartone
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        setCartonPrompt(null);
+                        input.current?.focus();
+                      }}
+                    >
+                      Annulla lettura
+                    </button>
+                  </div>
+                </form>
+              )}
               <BarcodeCamera
                 enabled={camera}
                 onRead={scan}
                 onClose={() => setCamera(false)}
-                paused={busy || !!pending}
+                paused={busy || !!pending || !!cartonPrompt}
               />
             </section>
           )}
@@ -783,11 +862,27 @@ export default function OrderPreparation() {
                         .filter((s) => s.code === code)
                         .reduce((n, s) => n + s.quantity, 0);
 
+                    const lastCarton = scans.findLast(
+                      (s) =>
+                        s.code === code &&
+                        s.mode === "carton" &&
+                        s.specificationVersion,
+                    );
+                    const piecesPerCarton =
+                      lastCarton?.quantity || line.piecesPerCarton;
+                    const specificationVersion =
+                      lastCarton?.specificationVersion ||
+                      line.packagingSpecificationVersion;
                     return (
                       <tr key={code}>
                         <td data-label="Articolo">
                           <strong>{code}</strong>
                           <small>{line.description}</small>
+                          <small>
+                            {piecesPerCarton && specificationVersion
+                              ? `${format(piecesPerCarton)} pezzi/cartone · Capitolato rev. ${specificationVersion}`
+                              : "Cartone: compila i pezzi nel capitolato prodotto"}
+                          </small>
                         </td>
                         <td data-label="Barcode">
                           {line.barcode || "Da configurare"}

@@ -13,11 +13,32 @@ export async function preparationDatabase(PGlite) {
  create table workspace_schermate(codice text primary key,nome text,descrizione text,provider text,percorso text,chiave_componente text,protetta boolean,attiva boolean,ordine int,area text,aree text[],icona text,metadati jsonb,ultima_sincronizzazione timestamptz);
  create table workspace_moduli_schermate(modulo_codice text,schermata_codice text,ordine int,predefinita boolean,visibile_menu boolean,primary key(modulo_codice,schermata_codice));
  create table permessi(codice text primary key,descrizione text,modulo text);
- create table ordini_prodotti_cache(codice_articolo text,descrizione text,ean text,unita_misura text);
+ create table ordini_prodotti_cache(codice_articolo text,descrizione text,ean text,unita_misura text,dati_mexal jsonb default '{}');
  create table ordini_clienti_cache(codice_cliente text,ragione_sociale text);
- insert into ordini_prodotti_cache values('IT0001','Primo prodotto','000001','PZ'),('IT0002','Secondo prodotto','000002','PZ'),('IT0003','Prodotto estraneo','000003','PZ');
+ insert into ordini_prodotti_cache(codice_articolo,descrizione,ean,unita_misura) values('IT0001','Primo prodotto','000001','PZ'),('IT0002','Secondo prodotto','000002','PZ'),('IT0003','Prodotto estraneo','000003','PZ');
  insert into ordini_clienti_cache values('501.00001','Cliente prova');`);
   const { readFile } = await import("node:fs/promises");
+  await db.exec(
+    await readFile(
+      new URL(
+        "../supabase/migrations/20260920120000_workspace_product_specifications.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  await db.exec(
+    await readFile(
+      new URL(
+        "../supabase/migrations/20260920121000_product_specification_conflict_status.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  await db.exec(`insert into workspace_product_specifications(article_code,version,data,updated_by,updated_by_label)
+    values('IT0001',3,'{"piecesPerBox":"2","customer":"private-not-exposed"}','${actor}','Test');`);
+
   await db.exec(await readFile(migration, "utf8"));
   await db.exec(`create schema extensions;create schema vault;create schema net;create schema cron;
     create table vault.decrypted_secrets(name text,decrypted_secret text);
@@ -42,6 +63,7 @@ export async function preparationDatabase(PGlite) {
   return db;
 }
 const allowed = new Set([
+  "workspace_product_specifications",
   "warehouse_order_sync_cache",
   "warehouse_preparation_settings",
   "warehouse_preparation_products",
@@ -65,6 +87,8 @@ export function supabaseAdapter(sql) {
         single = false,
         maybe = false;
       const column = (c) => {
+        if (c === "pieces_per_carton:data->>piecesPerBox")
+          return "data->>'piecesPerBox' as pieces_per_carton";
         if (!/^[a-z_]+$/.test(c)) throw Error("Bad column");
         return c;
       };
@@ -152,6 +176,21 @@ export function supabaseAdapter(sql) {
     },
     async rpc(name, args) {
       try {
+        if (name === "save_workspace_product_specification") {
+          const r = await sql.query(
+            "select save_workspace_product_specification($1,$2,$3,$4,$5,$6) value",
+            [
+              args.p_article_code,
+              args.p_expected_version,
+              args.p_data,
+              args.p_attachments,
+              args.p_user_id,
+              args.p_user_label,
+            ],
+          );
+          return { data: r.rows[0].value, error: null };
+        }
+
         if (
           name === "warehouse_claim_order_index_sync" ||
           name === "warehouse_finish_order_index_sync"

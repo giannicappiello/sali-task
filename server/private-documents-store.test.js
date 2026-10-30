@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { matchFile, normalizePath, allowedLots, visibleDocuments, linkRow, syncLots, synchronizeNas, rows, catalogue } from './private-documents-store.js';
+import { matchFile, normalizePath, allowedLots, visibleDocuments, linkRow, syncLots, synchronizeNas, rows, catalogue, readArchive } from './private-documents-store.js';
 import { documentsOnlyArticle, filterDocumentArticles, readCachedArticle, cacheArticle } from '../src/pages/Documentation/private-documents-catalogue.js';
 const articles=[{articleCode:'MP2022',articleType:'MateriaPrima'},{articleCode:'MP2025',articleType:'MateriaPrima'}];
 const lots=[{articleCode:'MP2022',lotCode:'12345'},{articleCode:'MP2025',lotCode:'67890'}];
@@ -103,4 +103,29 @@ test('paginazione ordinata e parallela non perde righe oltre la soglia 1000',asy
   }})})})};
   assert.deepEqual(await rows(admin,'documenti_workspace'),data);
   assert.equal(calls.length,7);assert.equal(peak,4);assert.ok(calls.every(c=>c.column==='id'));
+});
+
+
+test('ricerca archivio esclude inattivi e fuori produzione ma conserva lo storico',async()=>{
+  const products=[
+    {codice_articolo:'IT0016',mostra_in_app:true},
+    {codice_articolo:'IT0015',mostra_in_app:false},
+    {codice_articolo:'IT-FUORI-PRODUZIONE',mostra_in_app:false},
+    {codice_articolo:'MP2022',mostra_in_app:true},
+  ];
+  const historicalDocument={external_id:'old-doc',codice_articolo:'IT0015',attivo:true};
+  const historicalLot={article_code:'IT0015',lot_code:'00123'};
+  const admin={from(table){
+    let records=table==='ordini_prodotti_cache'?[...products]:table==='workspace_private_documents'?[historicalDocument]:table==='workspace_private_document_lots'?[historicalLot]:[];
+    return {select(){return this;},order(){return this;},or(){return this;},
+      eq(column,value){records=records.filter(row=>row[column]===value);return this;},
+      async range(from,to){return {data:records.slice(from,to+1),count:records.length};}};
+  }};
+  const visible=await readArchive(admin,null,{visibleOnly:true});
+  assert.deepEqual(catalogue(visible,['*']).map(a=>a.articleCode),['IT0016','MP2022']);
+  assert.deepEqual(visible.documents,[historicalDocument]);
+  assert.equal(visible.lots[0].lotCode,'00123');
+  const historical=await readArchive(admin,'IT0015');
+  assert.deepEqual(historical.articles.map(a=>a.articleCode),['IT0015']);
+  assert.deepEqual(historical.documents,[historicalDocument]);
 });

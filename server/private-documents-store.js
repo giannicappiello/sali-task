@@ -69,11 +69,14 @@ export function articleType(code, hasBom) {
   if(key(code).startsWith('FP')) return 'Semilavorato';
   return hasBom==='S'||/^(IT|DC|CO|BT|DD|CW|DR)/i.test(code)?'ProdottoFinito':'Packaging';
 }
-export async function readArchive(admin, articleCode=null) {
+export async function readArchive(admin, articleCode=null, {visibleOnly=false}={}) {
   const byCode=column=>q=>articleCode?q.eq(column,column==='article_code'?key(articleCode):articleCode):q;
   const genealogyFilter=q=>articleCode?q.or(`codice_articolo_prodotto.eq.${JSON.stringify(articleCode)},codice_articolo_materia_prima.eq.${JSON.stringify(articleCode)}`):q;
   const [catalog,documents,genealogy,lotRows,files,genericDocuments]=await Promise.all([
-    rows(admin,'ordini_prodotti_cache','codice_articolo,descrizione,unita_misura,has_bom:dati_mexal->>gest_dbp',byCode('codice_articolo')),
+    rows(admin,'ordini_prodotti_cache','codice_articolo,descrizione,unita_misura,has_bom:dati_mexal->>gest_dbp',q=>{
+      const query=byCode('codice_articolo')(q);
+      return visibleOnly?query.eq('mostra_in_app',true):query;
+    }),
     rows(admin,'workspace_private_documents','*',byCode('codice_articolo')),rows(admin,'workspace_sl_genealogy','*',genealogyFilter),
     rows(admin,'workspace_private_document_lots','article_code,lot_code,customer_code',byCode('article_code')),rows(admin,'workspace_private_nas_files'),
     articleCode?Promise.resolve([]):rows(admin,'documenti_workspace','percorso,prodotto_id,attivo')]);
@@ -244,7 +247,7 @@ export async function privateDocumentOperation(identity, path, input={}) {
     if(!data?.codice_articolo) throw fail('Documento non disponibile.',404);
     code=data.codice_articolo;
   }
-  const archive=await readArchive(admin,code);
+  const archive=await readArchive(admin,code,{visibleOnly:url.pathname==='/articles'});
   const needsArticles=url.pathname.startsWith('/articles')||url.pathname==='/documents/reference';
   const articles=needsArticles?catalogue(archive,customerCodes):[];
   if(url.pathname==='/articles') {

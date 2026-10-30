@@ -34,3 +34,7 @@ Per questa prima versione sono ammessi articoli con unità principale in pezzi e
 - Da completare prima dell'uso operativo: prova della fotocamera sui dispositivi effettivi e prima trasformazione controllata di un OCM reale, verificando in Mexal evasione dell'origine, DDT e scarico dei lotti. Il servizio di calcolo non dimostra da solo l'effettiva trasformazione nativa.
 
 Con esito DDT incerto senza documento rintracciabile serve verifica amministrativa su Mexal; non è previsto un pulsante che azzeri il blocco e rischi di emettere un duplicato. Le riserve Workspace non sono prenotazioni globali Mexal: altri operatori/integrazioni possono modificare i progressivi tra una lettura e l'emissione, che resta soggetta ai controlli del gestionale.
+
+## Attivazione
+
+Il 30 ottobre 2026 e stata applicata e registrata esclusivamente la migrazione di questa funzione sul progetto Supabase collegato. Serie BC 1 e magazzino 5 verificati tramite i DDT recenti Mexal. I pezzi per cartone vengono configurati direttamente nella schermata, secondo la scelta dell'utente; non sono dedotti da minimi commerciali. Il rilascio usa il lockfile pnpm aggiornato per ZXing.

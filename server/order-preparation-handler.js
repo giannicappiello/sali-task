@@ -1,3 +1,8 @@
+import {
+  readOrderIndex,
+  synchronizeOrderIndex,
+  orderIndexStatus,
+} from "./order-preparation-sync.js";
 import { randomUUID } from "node:crypto";
 
 import { buildMexalClient } from "./mexal/sync-products.js";
@@ -22,7 +27,6 @@ import {
   fingerprint,
   unwrap,
   pages,
-  eligibleOrders,
   loadOrderContext,
   lotInventory,
   buildDdt,
@@ -312,48 +316,41 @@ export function createOrderPreparationHandler({
             .limit(500),
         );
 
-        const orders = await eligibleOrders(client);
+        let index = await readOrderIndex(db);
+        if (body.refresh === true || !index.last_synced_at) {
+          try {
+            index = await synchronizeOrderIndex(
+              db,
+              client,
+              body.refresh ? "manual" : "bootstrap",
+            );
+          } catch (error) {
+            index = await readOrderIndex(db);
+            if (!index.last_synced_at) throw error;
+          }
+        }
 
-        const codes = [...new Set(orders.map((o) => o.customerCode))];
-
-        const names = codes.length
-          ? checked(
-              await db
-                .from("ordini_clienti_cache")
-                .select("codice_cliente,ragione_sociale")
-                .in("codice_cliente", codes),
-            )
-          : [];
-
-        return res
-          .status(200)
-          .json({
-            orders: orders.map((o) => ({
-              ...o,
-              customerName:
-                names.find((n) => n.codice_cliente === o.customerCode)
-                  ?.ragione_sociale || o.customerCode,
-            })),
-            preparations: preparations.map(exposed),
-            canWrite: session.canWrite,
-            canConfigure: session.canConfigure,
-          });
+        return res.status(200).json({
+          orders: index.orders,
+          sync: orderIndexStatus(index),
+          preparations: preparations.map(exposed),
+          canWrite: session.canWrite,
+          canConfigure: session.canConfigure,
+        });
       }
 
       if (op === "settings")
-        return res
-          .status(200)
-          .json({
-            settings,
-            products: checked(
-              await db
-                .from("warehouse_preparation_products")
-                .select("*")
-                .order("code")
-                .limit(2000),
-            ),
-            canConfigure: session.canConfigure,
-          });
+        return res.status(200).json({
+          settings,
+          products: checked(
+            await db
+              .from("warehouse_preparation_products")
+              .select("*")
+              .order("code")
+              .limit(2000),
+          ),
+          canConfigure: session.canConfigure,
+        });
 
       if (op === "configure") {
         const value = {
@@ -413,14 +410,12 @@ export function createOrderPreparationHandler({
             : integer(body.piecesPerCarton, "Pezzi per cartone");
 
         checked(
-          await db
-            .from("warehouse_preparation_products")
-            .upsert({
-              code,
-              barcode: barcode || null,
-              pieces_per_carton: pieces,
-              updated_at: new Date().toISOString(),
-            }),
+          await db.from("warehouse_preparation_products").upsert({
+            code,
+            barcode: barcode || null,
+            pieces_per_carton: pieces,
+            updated_at: new Date().toISOString(),
+          }),
         );
 
         return res.status(200).json({ saved: true });
@@ -461,13 +456,11 @@ export function createOrderPreparationHandler({
       let row = checked(await db.from(TABLE).select("*").eq("id", id).single());
 
       if (op === "get")
-        return res
-          .status(200)
-          .json({
-            preparation: exposed(row),
-            canWrite: session.canWrite,
-            canConfigure: session.canConfigure,
-          });
+        return res.status(200).json({
+          preparation: exposed(row),
+          canWrite: session.canWrite,
+          canConfigure: session.canConfigure,
+        });
 
       assert(
         row.source.year === Number(client.anno),
@@ -537,16 +530,14 @@ export function createOrderPreparationHandler({
         validatePacking(state);
         row = await mutate(db, row, profile.id, "save", { state }, event);
 
-        return res
-          .status(200)
-          .json({
-            preparation: exposed(row),
-            scan: {
-              code: product.code,
-              quantity: body.mode === "piece" ? 1 : product.piecesPerCarton,
-              wrong: !row.source.lines.some((l) => l.code === product.code),
-            },
-          });
+        return res.status(200).json({
+          preparation: exposed(row),
+          scan: {
+            code: product.code,
+            quantity: body.mode === "piece" ? 1 : product.piecesPerCarton,
+            wrong: !row.source.lines.some((l) => l.code === product.code),
+          },
+        });
       }
 
       if (
@@ -595,13 +586,11 @@ export function createOrderPreparationHandler({
             source_hash: context.hash,
           });
 
-          return res
-            .status(409)
-            .json({
-              error:
-                "L’OCM è cambiato in Mexal. Quantità aggiornate; ripeti il riscontro.",
-              preparation: exposed(row),
-            });
+          return res.status(409).json({
+            error:
+              "L’OCM è cambiato in Mexal. Quantità aggiornate; ripeti il riscontro.",
+            preparation: exposed(row),
+          });
         }
 
         const verification = await plan(db, row, context, client);
@@ -717,13 +706,11 @@ export function createOrderPreparationHandler({
             error: error.message,
           });
 
-          return res
-            .status(202)
-            .json({
-              preparation: exposed(row),
-              warning:
-                "Esito DDT da verificare. Non viene ripetuto l’invio a Mexal.",
-            });
+          return res.status(202).json({
+            preparation: exposed(row),
+            warning:
+              "Esito DDT da verificare. Non viene ripetuto l’invio a Mexal.",
+          });
         }
       }
 
@@ -757,11 +744,9 @@ export function createOrderPreparationHandler({
 
       throw Object.assign(new Error("Operazione non valida."), { status: 400 });
     } catch (error) {
-      return res
-        .status(error.status || 500)
-        .json({
-          error: error.message || "Operazione di allestimento non riuscita.",
-        });
+      return res.status(error.status || 500).json({
+        error: error.message || "Operazione di allestimento non riuscita.",
+      });
     }
   };
 }

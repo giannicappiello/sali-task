@@ -187,22 +187,26 @@ function PreparationSettings({ onClose, onSaved }) {
           )}
 
           <div className="op-table-wrap">
-            <table>
+            <table data-column-controls="off">
               <thead>
                 <tr>
                   <th>Articolo</th>
                   <th>Barcode</th>
                   <th>Pezzi/cartone</th>
-                  <th />
+                  <th>Azioni</th>
                 </tr>
               </thead>
               <tbody>
                 {data.products.map((p) => (
                   <tr key={p.code}>
-                    <td>{p.code}</td>
-                    <td>{p.barcode || "Anagrafica Mexal"}</td>
-                    <td>{p.pieces_per_carton || "Da configurare"}</td>
-                    <td>
+                    <td data-label="Articolo">{p.code}</td>
+                    <td data-label="Barcode">
+                      {p.barcode || "Anagrafica Mexal"}
+                    </td>
+                    <td data-label="Pezzi/cartone">
+                      {p.pieces_per_carton || "Da configurare"}
+                    </td>
+                    <td data-label="Azioni">
                       {data.canConfigure && (
                         <button
                           onClick={() => {
@@ -231,6 +235,7 @@ export default function OrderPreparation() {
     id = params.get("id"),
     [orders, setOrders] = useState([]),
     [history, setHistory] = useState([]),
+    [sync, setSync] = useState(null),
     [row, setRow] = useState(null);
 
   const [canWrite, setCanWrite] = useState(false),
@@ -270,27 +275,35 @@ export default function OrderPreparation() {
     );
   }, []);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const r = await preparationApi(id ? "get" : "list", id ? { id } : {});
-      setCanWrite(r.canWrite);
+  const load = useCallback(
+    async (refresh = false) => {
+      setLoading(true);
+      setError("");
+      setNotice("");
+      try {
+        const r = await preparationApi(
+          id ? "get" : "list",
+          id ? { id } : { refresh },
+        );
+        setCanWrite(r.canWrite);
 
-      if (r.preparation) accept(r.preparation);
-      else {
-        setCamera(false);
-        setPending(null);
-        setOrders(r.orders);
-        setHistory(r.preparations);
-        setRow(null);
+        if (r.preparation) accept(r.preparation);
+        else {
+          setCamera(false);
+          setPending(null);
+          setOrders(r.orders);
+          setHistory(r.preparations);
+          setSync(r.sync);
+          setRow(null);
+        }
+      } catch (e) {
+        setError(e.message);
+      } finally {
+        setLoading(false);
       }
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [id, accept]);
+    },
+    [id, accept],
+  );
 
   // Load server-owned data when the route changes.
 
@@ -421,7 +434,7 @@ export default function OrderPreparation() {
               Elenco ordini
             </button>
           )}
-          <button onClick={() => void load()} disabled={busy}>
+          <button onClick={() => void load(true)} disabled={busy || loading}>
             <RefreshCw size={16} />
             Aggiorna
           </button>
@@ -472,10 +485,28 @@ export default function OrderPreparation() {
         />
       )}
 
+      {!id && sync && (
+        <p className="op-sync" role="status">
+          {sync.lastSyncedAt
+            ? `Ultima sincronizzazione: ${new Date(sync.lastSyncedAt).toLocaleString("it-IT", { timeZone: "Europe/Rome" })}. `
+            : ""}
+          {sync.enabled
+            ? "Sincronizzazione automatica ogni giorno alle 12:00 (ora italiana)."
+            : "Sincronizzazione automatica in attivazione."}
+          {sync.inProgress && " Aggiornamento in corso."}
+          {sync.lastError && (
+            <span className="op-bad">
+              {" "}
+              Ultimo aggiornamento non riuscito: {sync.lastError}. Sono mostrati
+              gli ultimi dati disponibili.
+            </span>
+          )}
+        </p>
+      )}
       {loading ? (
         <p className="op-empty">Caricamento allestimenti…</p>
       ) : !row ? (
-        <>
+        <div className="op-order-lists">
           <section className="op-panel">
             <div className="op-toolbar">
               <h2>OCM da allestire</h2>
@@ -496,7 +527,7 @@ export default function OrderPreparation() {
             </p>
 
             <div className="op-table-wrap">
-              <table>
+              <table data-column-controls="off">
                 <thead>
                   <tr>
                     <th>OCM</th>
@@ -504,7 +535,7 @@ export default function OrderPreparation() {
                     <th>Cliente</th>
                     <th>Note</th>
                     <th>Stato</th>
-                    <th />
+                    <th>Azioni</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -518,24 +549,26 @@ export default function OrderPreparation() {
                       const prep = prepared(o);
                       return (
                         <tr key={`${o.year}:${o.reference}`}>
-                          <td>
+                          <td data-label="OCM">
                             <strong>
                               {o.series}/{o.number}
                             </strong>
                           </td>
-                          <td>
+                          <td data-label="Data">
                             {String(o.date).replace(
                               /^(\d{4})(\d{2})(\d{2})$/,
                               "$3/$2/$1",
                             )}
                           </td>
-                          <td>
+                          <td data-label="Cliente">
                             {o.customerName}
                             <small>{o.customerCode}</small>
                           </td>
-                          <td>{o.note}</td>
-                          <td>{prep ? labels[prep.status] : "Da preparare"}</td>
-                          <td>
+                          <td data-label="Note">{o.note}</td>
+                          <td data-label="Stato">
+                            {prep ? labels[prep.status] : "Da preparare"}
+                          </td>
+                          <td data-label="Azioni">
                             {prep ? (
                               <button
                                 onClick={() => setParams({ id: prep.id })}
@@ -572,26 +605,28 @@ export default function OrderPreparation() {
           <section className="op-panel">
             <h2>Preparazioni salvate e spedizioni</h2>
             <div className="op-table-wrap">
-              <table>
+              <table data-column-controls="off">
                 <thead>
                   <tr>
                     <th>OCM</th>
                     <th>Cliente</th>
                     <th>Stato</th>
                     <th>DDT</th>
-                    <th />
+                    <th>Azioni</th>
                   </tr>
                 </thead>
                 <tbody>
                   {history.map((p) => (
                     <tr key={p.id}>
-                      <td>
+                      <td data-label="OCM">
                         {p.source.series}/{p.source.number} · {p.source.year}
                       </td>
-                      <td>{p.source.customerName}</td>
-                      <td>{labels[p.status]}</td>
-                      <td>{p.ddt ? `${p.ddt.series}/${p.ddt.number}` : "—"}</td>
-                      <td>
+                      <td data-label="Cliente">{p.source.customerName}</td>
+                      <td data-label="Stato">{labels[p.status]}</td>
+                      <td data-label="DDT">
+                        {p.ddt ? `${p.ddt.series}/${p.ddt.number}` : "—"}
+                      </td>
+                      <td data-label="Azioni">
                         <button onClick={() => setParams({ id: p.id })}>
                           Apri
                         </button>
@@ -607,7 +642,7 @@ export default function OrderPreparation() {
               )}
             </div>
           </section>
-        </>
+        </div>
       ) : (
         <>
           <section className="op-panel op-order">
@@ -728,7 +763,7 @@ export default function OrderPreparation() {
           <section className="op-panel">
             <h2>Prodotti dell’ordine</h2>
             <div className="op-table-wrap">
-              <table>
+              <table data-column-controls="off">
                 <thead>
                   <tr>
                     <th>Articolo</th>
@@ -750,14 +785,17 @@ export default function OrderPreparation() {
 
                     return (
                       <tr key={code}>
-                        <td>
+                        <td data-label="Articolo">
                           <strong>{code}</strong>
                           <small>{line.description}</small>
                         </td>
-                        <td>{line.barcode || "Da configurare"}</td>
-                        <td>{format(expected)}</td>
-                        <td>{format(actual)}</td>
+                        <td data-label="Barcode">
+                          {line.barcode || "Da configurare"}
+                        </td>
+                        <td data-label="Richiesti">{format(expected)}</td>
+                        <td data-label="Letti">{format(actual)}</td>
                         <td
+                          data-label="Riscontro"
                           className={
                             actual === expected
                               ? "op-good"
@@ -943,14 +981,14 @@ export default function OrderPreparation() {
           <section className="op-panel">
             <h2>Ultime letture</h2>
             <div className="op-table-wrap">
-              <table>
+              <table data-column-controls="off">
                 <thead>
                   <tr>
                     <th>Prodotto</th>
                     <th>Modalità</th>
                     <th>Pezzi</th>
                     <th>Collo</th>
-                    <th />
+                    <th>Azioni</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -959,13 +997,15 @@ export default function OrderPreparation() {
                     .reverse()
                     .map((s) => (
                       <tr key={s.id}>
-                        <td>{s.code}</td>
-                        <td>{s.mode === "piece" ? "Pezzo" : "Cartone"}</td>
-                        <td>{s.quantity}</td>
-                        <td>
+                        <td data-label="Prodotto">{s.code}</td>
+                        <td data-label="Modalità">
+                          {s.mode === "piece" ? "Pezzo" : "Cartone"}
+                        </td>
+                        <td data-label="Pezzi">{s.quantity}</td>
+                        <td data-label="Collo">
                           {packages.find((p) => p.id === s.packageId)?.number}
                         </td>
-                        <td>
+                        <td data-label="Azioni">
                           {editable && (
                             <button
                               disabled={busy}
@@ -1157,7 +1197,7 @@ export default function OrderPreparation() {
 function LotTable({ allocations }) {
   return (
     <div className="op-table-wrap">
-      <table>
+      <table data-column-controls="off">
         <thead>
           <tr>
             <th>Articolo</th>
@@ -1170,14 +1210,14 @@ function LotTable({ allocations }) {
         <tbody>
           {allocations.map((a, i) => (
             <tr key={`${a.position}:${a.lotId}:${i}`}>
-              <td>{a.code}</td>
-              <td>{a.lotCode || "Non gestito a lotti"}</td>
-              <td>
+              <td data-label="Articolo">{a.code}</td>
+              <td data-label="Lotto">{a.lotCode || "Non gestito a lotti"}</td>
+              <td data-label="Ingresso">
                 {a.entryDate?.replace(/^(\d{4})(\d{2})(\d{2})$/, "$3/$2/$1") ||
                   "—"}
               </td>
-              <td>{a.warehouse}</td>
-              <td>{format(a.quantity)}</td>
+              <td data-label="Magazzino">{a.warehouse}</td>
+              <td data-label="Pezzi">{format(a.quantity)}</td>
             </tr>
           ))}
         </tbody>

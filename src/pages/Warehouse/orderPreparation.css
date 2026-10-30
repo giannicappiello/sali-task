@@ -1,7 +1,10 @@
 .order-preparation {
-  max-width: 1500px;
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+  font-size: 16px;
   margin: 0 auto;
-  padding: 16px;
+  padding: clamp(16px, 2vw, 32px);
   color: var(--text-primary, #16324a);
 }
 .op-heading {
@@ -366,5 +369,126 @@
   }
   .op-camera {
     padding: 9px;
+  }
+}
+
+.order-preparation *,
+.order-preparation *::before {
+  box-sizing: border-box;
+}
+.order-preparation :is(section, div, form, label) {
+  min-width: 0;
+}
+.order-preparation :is(p, td, h2, li) {
+  overflow-wrap: anywhere;
+}
+.op-toolbar > label:has(input[type="search"]) {
+  margin-left: auto;
+  width: min(100%, 340px);
+}
+.op-sync {
+  color: #415b70;
+  line-height: 1.6;
+  margin: 0 0 18px;
+}
+.op-order-lists {
+  display: grid;
+  gap: 20px;
+  align-items: start;
+}
+.op-order-lists > .op-panel {
+  margin-bottom: 0;
+}
+@media (min-width: 1800px) {
+  .op-order-lists {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  }
+}
+@media (max-width: 850px) {
+  .order-preparation {
+    padding: 12px;
+  }
+  .order-preparation input,
+  .order-preparation select {
+    width: 100%;
+    font-size: 16px;
+    min-height: 44px;
+  }
+  .op-heading .op-toolbar {
+    width: 100%;
+  }
+  .op-heading .op-toolbar button {
+    flex: 1 1 130px;
+    font-size: 14px;
+  }
+  .op-toolbar > label:has(input[type="search"]) {
+    width: 100%;
+    margin-left: 0;
+  }
+  .op-table-wrap {
+    overflow: visible;
+  }
+  .order-preparation table,
+  .order-preparation tbody {
+    display: block;
+    width: 100%;
+  }
+  .order-preparation thead {
+    display: none;
+  }
+  .order-preparation tbody > tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 12px;
+    padding: 16px 0;
+    border-bottom: 1px solid #dbe4eb;
+  }
+  .order-preparation td {
+    display: block;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+  }
+  .order-preparation td::before {
+    content: attr(data-label);
+    display: block;
+    color: #53697a;
+    font-size: 12px;
+    margin-bottom: 5px;
+  }
+  .order-preparation
+    td:is(
+      [data-label="Cliente"],
+      [data-label="Note"],
+      [data-label="Descrizione"],
+      [data-label="Barcode"],
+      [data-label="Azioni"]
+    ) {
+    grid-column: 1 / -1;
+  }
+  .order-preparation td[data-label="Azioni"]::before {
+    display: none;
+  }
+  .order-preparation td[data-label="Azioni"] button {
+    width: 100%;
+  }
+  .op-pallet {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .op-pallet label {
+    flex: 1 1 160px;
+  }
+  .op-counts {
+    flex-wrap: wrap;
+  }
+  .op-confirm-box button {
+    width: 100%;
+    margin: 6px 0;
+  }
+  .op-working {
+    width: max-content;
+    max-width: calc(100vw - 24px);
+    text-align: center;
   }
 }

@@ -19,12 +19,30 @@ export async function preparationDatabase(PGlite) {
  insert into ordini_clienti_cache values('501.00001','Cliente prova');`);
   const { readFile } = await import("node:fs/promises");
   await db.exec(await readFile(migration, "utf8"));
+  await db.exec(`create schema extensions;create schema vault;create schema net;create schema cron;
+    create table vault.decrypted_secrets(name text,decrypted_secret text);
+    insert into vault.decrypted_secrets values('SUPABASE_SERVICE_ROLE_KEY','test-only-secret');
+    create function extensions.hmac(text,text,text) returns bytea language sql as $$select convert_to('test-digest','UTF8')$$;
+    create table net.test_requests(id bigserial primary key,url text);
+    create function net.http_post(url text,headers jsonb,body jsonb,timeout_milliseconds int) returns bigint language sql as $$insert into net.test_requests(url) values(url) returning id$$;
+    create function cron.schedule(text,text,text) returns bigint language sql as $$select 1::bigint$$;`);
+  await db.exec(
+    await readFile(
+      new URL(
+        "../supabase/migrations/20261030180000_order_preparation_noon_sync.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+
   await db.exec(
     "update warehouse_preparation_settings set ddt_series=1;insert into warehouse_preparation_products(code,pieces_per_carton) values('IT0001',2)",
   );
   return db;
 }
 const allowed = new Set([
+  "warehouse_order_sync_cache",
   "warehouse_preparation_settings",
   "warehouse_preparation_products",
   "warehouse_order_preparations",
@@ -134,6 +152,20 @@ export function supabaseAdapter(sql) {
     },
     async rpc(name, args) {
       try {
+        if (
+          name === "warehouse_claim_order_index_sync" ||
+          name === "warehouse_finish_order_index_sync"
+        ) {
+          const values =
+            name === "warehouse_claim_order_index_sync"
+              ? [args.p_source]
+              : [args.p_token, args.p_orders, args.p_error];
+          const result = await sql.query(
+            `select ${name}(${values.map((_, i) => "$" + (i + 1)).join(",")}) value`,
+            values,
+          );
+          return { data: result.rows[0].value, error: null };
+        }
         if (name !== "warehouse_preparation_mutate")
           throw Error("Unexpected RPC");
         const r = await sql.query(

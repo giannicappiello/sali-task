@@ -29,6 +29,7 @@ const ActivitiesModule = lazy(() => import("./pages/Activities/ActivitiesModule"
 const Agenda = lazy(() => import("./pages/Agenda/Agenda"));
 const Products = lazy(() => import("./pages/Products/Products"));
 const WarehouseDashboard = lazy(() => import("./pages/Warehouse/WarehouseDashboard"));
+const OrderPreparation = lazy(() => import("./pages/Warehouse/OrderPreparation"));
 const Documentation = lazy(() => import("./pages/Documentation/Documentation"));
 const ProductSpecificationPage = lazy(() => import("./pages/Documentation/ProductSpecificationPage"));
 const PrivateDocuments = lazy(() => import("./pages/Documentation/PrivateDocuments"));
@@ -135,6 +136,7 @@ function App() {
               <Route path="projects" element={<Navigate to="/activities/projects" replace />} />
               <Route path="products" element={<WorkspaceAccessGuard moduleCode="prodotti"><Products /></WorkspaceAccessGuard>} />
               <Route path="magazzino" element={<Navigate to="/magazzino-dashboard" replace />} />
+              <Route path="magazzino/allestisci-ordini" element={<WorkspaceAccessGuard moduleCode="magazzino" screenCode="magazzino.allestisci_ordini"><OrderPreparation /></WorkspaceAccessGuard>} />
               <Route path="magazzino-dashboard" element={<WorkspaceAccessGuard moduleCode="magazzino" screenCode="magazzino"><WarehouseDashboard /></WorkspaceAccessGuard>} />
               <Route path="documentation" element={<WorkspaceAccessGuard moduleCode="documenti"><Documentation /></WorkspaceAccessGuard>} />
               <Route path="documentation/specification/:articleCode" element={<WorkspaceAccessGuard moduleCode="progremes_formule"><ProductSpecificationPage /></WorkspaceAccessGuard>} />

@@ -1,6 +1,6 @@
 import { formatDisplayDate } from '../../lib/displayLocale.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BarChart3, CalendarDays, Info, RefreshCw, Search } from "lucide-react";
+import { BarChart3, CalendarDays, Info, PackageCheck, RefreshCw, Search } from "lucide-react";
 import ModuleContainerLayout from "../../components/ModuleContainerLayout";
 import { useAuth } from "../../contexts/AuthContext";
 import { useReportTableTotals } from "../../components/useReportTableTotals";
@@ -71,7 +71,7 @@ function WarehouseKpis({ items }) {
 }
 
 export default function WarehouseDashboard() {
-  const { dataScope, hasPermission } = useAuth();
+  const { dataScope, hasPermission, hasScreenAccess } = useAuth();
   const [data, setData] = useState({ rows: [], summary: {}, breakdown: {}, totalRows: 0, availableDates: [] });
   const [type, setType] = useState("TOTALE");
   const [unit, setUnit] = useState("TUTTE");
@@ -173,7 +173,12 @@ export default function WarehouseDashboard() {
     finally { syncLock.current = false; setSyncingArticle(""); }
   };
 
-  return <ModuleContainerLayout icon={BarChart3} eyebrow="Modulo Workspace" title="Magazzino" description={customerScoped ? "Giacenze inventariali storiche degli articoli collegati al cliente." : "Giacenze inventariali storiche per articolo e singolo magazzino."} backFallback="/home">
+  return <ModuleContainerLayout icon={BarChart3} eyebrow="Modulo Workspace" title="Magazzino" description={customerScoped ? "Giacenze inventariali storiche degli articoli collegati al cliente." : "Giacenze inventariali storiche per articolo e singolo magazzino."} backFallback="/home"
+    items={!customerScoped && hasScreenAccess("magazzino.allestisci_ordini", "magazzino") ? [{
+      code: "magazzino.allestisci_ordini", name: "Allestisci Ordini",
+      description: "Prepara gli OCM consegnati al magazzino, scansiona i prodotti e genera DDT e packing list.",
+      to: "/magazzino/allestisci-ordini", icon: PackageCheck,
+    }] : []}>
     <div className="warehouse-dashboard-page">
       <section className="warehouse-dashboard-toolbar"><div className="warehouse-dashboard-types" aria-label="Selezione rapida tipologia">{TYPES.map((item) => <button key={item} type="button" className={type === item ? "active" : ""} onClick={() => { setPage(1); setType(item); }}>{item}<span>{item === "TOTALE" ? Object.values(catalog.types).reduce((sum, value) => sum + value, 0) : (catalog.types[item] || 0)}</span></button>)}</div><button className="warehouse-dashboard-refresh" type="button" onClick={load} disabled={loading}><RefreshCw size={17} className={loading ? "warehouse-spin" : ""} />Aggiorna</button></section>
       <section className="warehouse-dashboard-filters"><label><span><CalendarDays size={15} />Giacenza al giorno</span><input type="date" max={localDay()} value={asOfDate} onChange={(event) => { setPage(1); setAsOfDate(event.target.value); }} /></label><label><span>UDM</span><select value={unit} onChange={(event) => { setPage(1); setUnit(event.target.value); }}><option value="TUTTE">Tutte le UDM</option>{catalog.units.map((item) => <option key={item.unit_of_measure} value={item.unit_of_measure}>{item.unit_of_measure}</option>)}</select></label>{!customerScoped && <label><span>Magazzino</span><select value={warehouse} onChange={(event) => { setPage(1); setWarehouse(event.target.value); }}><option value="TUTTI">Tutti i magazzini</option>{catalog.warehouses.map((item) => <option key={item.warehouse_number} value={`MAG-${item.warehouse_number}`}>MAG-{item.warehouse_number}{item.warehouse_name ? ` · ${item.warehouse_name}` : ""}</option>)}</select></label>}<button type="button" onClick={resetFilters}>Azzera filtri</button></section>

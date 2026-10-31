@@ -329,8 +329,9 @@ export async function lotInventory(client, lines) {
       }),
     );
 
+  const observations=[];
   for (const b of balances.values()) {
-    if (b.lotId <= 0 || b.quantity <= 0) continue;
+    if (b.lotId <= 0 || b.quantity <= 0) {if(b.quantity>0)observations.push({...b,state:"Senza lotto"});continue;}
     const m = meta.get(b.lotId);
 
     assert(
@@ -338,6 +339,7 @@ export async function lotInventory(client, lines) {
       "Identità lotto Mexal non coerente.",
     );
 
+    observations.push({...b,lotCode:text(m.cod_ute_lotto),entryDate:text(m.data_carico),expiry:text(m.data_validita),state:text(m.stato),loaded:text(m.caricato)});
     if (m.stato !== "C" || m.caricato !== "S") continue;
 
     lots.push({
@@ -356,6 +358,7 @@ export async function lotInventory(client, lines) {
 
   return {
     lots,
+    observations,
     lines: lines.map((l) => ({
       ...l,
       physical: Math.max(0, totals.get(l.code + ":" + l.warehouse) || 0),

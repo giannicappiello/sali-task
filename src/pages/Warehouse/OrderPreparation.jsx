@@ -1209,6 +1209,10 @@ export default function OrderPreparation() {
                 {source.fifoIssue && (
                   <p className="op-error">{source.fifoIssue}</p>
                 )}
+                {source.fifoIssue && source.fifoDiagnostics && <details><summary>Dettagli disponibilità lotti</summary>
+                  {source.fifoDiagnostics.lines.map(item=><p key={`${item.code}:${item.warehouse}`}>{item.code} · Magazzino {item.warehouse} · Giacenza fisica: {format(item.physical)} · Gestione lotti: {item.lotRequired?"sì":"no"}</p>)}
+                  <div className="op-table-wrap"><table data-column-controls="off"><thead><tr><th>Articolo</th><th>Lotto</th><th>Quantità</th><th>Stato</th><th>Caricato</th><th>Ingresso</th><th>Validità</th></tr></thead><tbody>{source.fifoDiagnostics.lots.map(item=><tr key={`${item.code}:${item.warehouse}:${item.lotId}`}><td>{item.code}</td><td>{item.lotCode || item.lotId || "Senza lotto"}</td><td>{format(item.quantity)}</td><td>{item.state || "—"}</td><td>{item.loaded || "—"}</td><td>{item.entryDate || "—"}</td><td>{item.expiry || "—"}</td></tr>)}</tbody></table></div>
+                </details>}
                 <LotTable
                   allocations={
                     row.verification?.allocations || source.fifoProposal || []

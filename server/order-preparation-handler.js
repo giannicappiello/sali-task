@@ -514,6 +514,7 @@ export function createOrderPreparationHandler({
           row = structuredClone(row);
           try {
             const inventory=await lotInventory(client,row.source.lines);
+            row.source.fifoDiagnostics={lines:inventory.lines.map(item=>({code:item.code,warehouse:item.warehouse,physical:item.physical,lotRequired:item.lotRequired})),lots:inventory.observations};
             row.source.fifoProposal=allocateFifo(inventory.lines,inventory.lots,await held(db,row.id),today());
             delete row.source.fifoIssue;
           } catch(error) { row.source.fifoIssue=error.message; }

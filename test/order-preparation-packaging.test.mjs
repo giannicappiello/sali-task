@@ -452,6 +452,7 @@ test("packing list preview refreshes real destination and weights without changi
     assert.deepEqual((await f.sql.query('select * from warehouse_preparation_lot_holds')).rows,holds);assert.equal(f.mexal.sends,0);
     await f.sql.exec("update workspace_product_specifications set data=data-'totalWeightGrams' where article_code='IT0001'");
     r=await f.call('preview_packing_list',{id:row.id});assert.equal(r.data.requiresProductWeight,true);
+    for(const invalid of [null,0,-1,'bad']) assert.equal((await f.call('complete_weight',{id:row.id,productCode:'IT0001',unitWeightGrams:invalid})).statusCode,400);
     r=await f.call('complete_weight',{id:row.id,productCode:'IT0001',unitWeightGrams:350});assert.equal(r.statusCode,200);
     assert.deepEqual((await f.sql.query("select version,status,state,verification from warehouse_order_preparations where id=$1",[row.id])).rows[0],before);
     f.readOnly();r=await f.call('preview_packing_list',{id:row.id});assert.equal(r.statusCode,200);

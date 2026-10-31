@@ -1164,7 +1164,7 @@ export default function OrderPreparation() {
             )}
           </section>
 
-          {cartonPrompt && !camera && <PreparationProductPrompt modal prompt={cartonPrompt} pieces={cartonPieces} onPieces={setCartonPieces} weight={unitWeight} onWeight={setUnitWeight} busy={busy} onCancel={()=>setCartonPrompt(null)} onSave={()=>perform(cartonPrompt.operation,{},{...cartonPrompt.body,productCode:cartonPrompt.code,...(cartonPrompt.needsPieces?{piecesPerCarton:Number(cartonPieces)}:{}),...(cartonPrompt.needsWeight?{unitWeightGrams:unitWeight}:{})})}/>}
+          {cartonPrompt && !camera && <PreparationProductPrompt modal error={error} prompt={cartonPrompt} pieces={cartonPieces} onPieces={setCartonPieces} weight={unitWeight} onWeight={setUnitWeight} busy={busy} onCancel={()=>setCartonPrompt(null)} onSave={()=>perform(cartonPrompt.operation,{},{...cartonPrompt.body,productCode:cartonPrompt.code,...(cartonPrompt.needsPieces?{piecesPerCarton:Number(cartonPieces)}:{}),...(cartonPrompt.needsWeight?{unitWeightGrams:unitWeight}:{})})}/>}
           {editable && <BarcodeCamera
             enabled={camera}
             onRead={scan}

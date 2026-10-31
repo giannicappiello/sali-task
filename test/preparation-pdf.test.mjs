@@ -1,7 +1,7 @@
 import {packingWeights} from '../shared/preparationWeights.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildPreparationPdf,preparationPdf} from '../src/pages/Warehouse/preparationPdf.js';
+import {buildPreparationPdf,preparationPdf,packingListFileName} from '../src/pages/Warehouse/preparationPdf.js';
 const products=[['IT0082','Bagno Doccia Pure White 1000ml'],['IT0418','Shampoo Ristrutturante']];
 const content=(code,lotCode,quantity)=>({code,description:products.find(p=>p[0]===code)[1],lotCode,quantity});
 const sample={id:'demo',source:{series:1,number:17458,year:2026,customerName:'Cliente di esempio / Sample customer',customerCode:'DEMO',destination:{}},verification:{summary:{totalPallets:2,totalPackages:4,totalPieces:37,pallets:[{id:'p1',number:1},{id:'p2',number:2}],packages:[{number:1,palletId:'p1',pieces:12,contents:[content('IT0082','100701062',2),content('IT0082','100701063',10)]},{number:2,palletId:'p1',pieces:12,contents:[content('IT0418','110602018',12)]},{number:3,palletId:'p2',pieces:1,contents:[content('IT0418','110602018',1)]},{number:4,palletId:'p2',pieces:12,contents:[content('IT0082','100701063',12)]}]}}};
@@ -76,4 +76,10 @@ test('long product descriptions stay intact on one line and do not increase box 
   assert.ok(page.some(entry=>entry.text==='IT0082' && Math.abs(entry.y-line.y)<0.02));
   assert.equal(page.find(entry=>entry.text==='COLLO / BOX 2').y,baseline.find(entry=>entry.text==='COLLO / BOX 2').y);
   assert.equal(doc.getNumberOfPages(),1);
+});
+
+test('confirmed packing list filename uses the actual DDT number, provisional PDF uses OCM reference',()=>{
+ assert.equal(packingListFileName({...sample,ddt:{series:2,number:12345}}),'PackList_12345.pdf');
+ assert.equal(packingListFileName(sample),'PackList_OCM_1_17458.pdf');
+ assert.equal(packingListFileName({...sample,ddt:{number:0}}),'PackList_OCM_1_17458.pdf');
 });

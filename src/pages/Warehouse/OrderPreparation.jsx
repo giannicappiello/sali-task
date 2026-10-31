@@ -20,7 +20,7 @@ import BarcodeCamera from "./BarcodeCamera.jsx";
 
 import { preparationApi } from "./preparationApi.js";
 
-import { preparationPdf } from "./preparationPdf.js";
+import { preparationPdf, packingListFileName } from "./preparationPdf.js";
 
 import {
   comparePacking,
@@ -381,7 +381,7 @@ export default function OrderPreparation() {
         return response;
       }
       if (["scan","verify","preview_packing_list"].includes(operation) && response.preparation) setCartonPrompt(null);
-      if(operation === "preview_packing_list" && response.preparation){setPackingPreview(preparationPdf(response.preparation,{preview:true}));return response;}
+      if(operation === "preview_packing_list" && response.preparation){setPackingPreview({bytes:preparationPdf(response.preparation,{preview:true}),fileName:packingListFileName(response.preparation)});return response;}
       if (response.preparation) accept(response.preparation,true);
       if (operation === "scan" && response.preparation) {
         const saved = response.preparation.state.scans.find(
@@ -1270,7 +1270,7 @@ export default function OrderPreparation() {
         </>
       )}
 
-      {packingPreview && <PackingListPreview bytes={packingPreview} fileName={`Packing-list-${row?.source?.series || 1}-${row?.source?.number || "ordine"}.pdf`} onClose={()=>setPackingPreview(null)}/>}
+      {packingPreview && <PackingListPreview bytes={packingPreview.bytes} fileName={packingPreview.fileName} onClose={()=>setPackingPreview(null)}/>}
       {busy && (
         <div className="op-working" role="status">
           Operazione in corso…

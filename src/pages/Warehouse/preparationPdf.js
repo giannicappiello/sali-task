@@ -140,8 +140,13 @@ export function buildPreparationPdf(preparation) {
   return doc;
 }
 
+export function packingListFileName(preparation) {
+  const number=Number(preparation.ddt?.number);
+  return Number.isSafeInteger(number) && number>0 ? `PackList_${number}.pdf` : `PackList_OCM_${preparation.source.series}_${preparation.source.number}.pdf`;
+}
+
 export function preparationPdf(preparation,{preview=false}={}) {
   const doc=buildPreparationPdf(preparation);
   if(preview) return doc.output("arraybuffer");
-  doc.save(`Packing-list-${preparation.source.series}-${preparation.source.number}.pdf`);
+  doc.save(packingListFileName(preparation));
 }

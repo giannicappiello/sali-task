@@ -508,3 +508,6 @@
     width: 100%;
   }
 }
+
+.order-preparation textarea { display:block; width:100%; box-sizing:border-box; min-height:110px; padding:10px; margin:6px 0; font:inherit; color:inherit; background:var(--card-bg,#fff); border:1px solid #b9cad7; border-radius:7px; resize:vertical; }
+@media(max-width:850px) { .order-preparation textarea {font-size:16px;} }

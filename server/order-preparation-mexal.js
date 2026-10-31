@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 
 import {
   assert,
+  cleanWarehouseHandoffNote,
+  documentNotes,
   text,
   upper,
   matrix,
@@ -84,7 +86,7 @@ export async function eligibleOrders(client) {
   return docs.filter(eligibleOrder).map((d) => ({
     ...orderIdentity(d, client.anno),
     date: d.data_documento,
-    note: text(scalar(d.nota)),
+    note: documentNotes(d.nota),
     warehouse: Number(d.id_magazzino) || null,
   }));
 }
@@ -217,7 +219,7 @@ export async function loadOrderContext(client, reference, db, settings) {
     source: {
       ...identity,
       date: raw.data_documento,
-      note: text(scalar(raw.nota)),
+      note: documentNotes(raw.nota),
       customerName: text(customer.ragione_sociale) || identity.customerCode,
 
       destination: text(scalar(raw.cod_anag_sped))
@@ -367,6 +369,7 @@ export function buildDdt(
   allocations,
   settings,
   date = today(),
+  notes,
 ) {
   const { source } = context,
     raw = context.raw;
@@ -381,13 +384,19 @@ export function buildDdt(
     "Identità delle righe origine non verificata.",
   );
 
+  assert(notes === undefined || typeof notes === "string", "Note BCS non valide.");
+  const shippingNotes = cleanWarehouseHandoffNote(notes === undefined ? raw.nota : notes);
+  assert(shippingNotes.length <= 1000, "Le note BCS possono contenere al massimo 1000 caratteri.");
+  const reason = integer(scalar(raw.id_causale), "Causale dell'ordine");
+
   // Native document transformation: reference the original header and original row IDs.
 
   // Mexal retains the original economics, transport and textual rows, while lots are explicit.
 
   const payload = {
     sigla: "BC",
-    cod_modulo: "",
+    cod_modulo: "S",
+    id_causale: [[1, reason]],
     serie: integer(settings.ddt_series, "Serie DDT"),
     numero: 0,
     cod_conto: source.customerCode,
@@ -406,7 +415,7 @@ export function buildDdt(
     nota: [
       [
         1,
-        [text(scalar(raw.nota)), `ALL:${preparation.id}`]
+        [shippingNotes, `ALL:${preparation.id}`]
           .filter(Boolean)
           .join(" | "),
       ],
@@ -473,6 +482,7 @@ export function verifyDdt(actual, preparation, payload) {
   const raw = unwrap(actual);
   assert(
     raw.sigla === "BC" &&
+      text(raw.cod_modulo) === text(payload.cod_modulo) &&
       Number(raw.serie) === payload.serie &&
       Number(raw.numero) > 0 &&
       raw.cod_conto === payload.cod_conto,
@@ -483,6 +493,11 @@ export function verifyDdt(actual, preparation, payload) {
     text(scalar(raw.nota)).includes(`ALL:${preparation.id}`),
     "Riferimento allestimento assente nel DDT.",
   );
+
+  if (payload.id_causale) assert(Number(scalar(raw.id_causale)) === Number(scalar(payload.id_causale)),
+    "Causale del DDT diversa dall'ordine originale.");
+  assert(documentNotes(raw.nota).replace(/\r\n/g, "\n").trim() === documentNotes(payload.nota).replace(/\r\n/g, "\n").trim(),
+    "Note del DDT diverse dalle note confermate.");
 
   const origins = matrix(raw.sigla_doc_orig),
     series = matrix(raw.serie_doc_orig),
@@ -595,7 +610,8 @@ export function verifyDdt(actual, preparation, payload) {
   );
 
   return {
-    signature: "BC",
+    signature: "BC" + text(raw.cod_modulo),
+    notes: cleanWarehouseHandoffNote(documentNotes(raw.nota).replace(`ALL:${preparation.id}`, "")),
     series: Number(raw.serie),
     number: Number(raw.numero),
     date: raw.data_documento,

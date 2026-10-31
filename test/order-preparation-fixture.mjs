@@ -229,6 +229,7 @@ export function mexalFixture() {
   const raw = {
     sigla: "OC",
     cod_modulo: "M",
+    id_causale: [[1, 1]],
     serie: 1,
     numero: 900,
     data_documento: "20261030",

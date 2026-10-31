@@ -21,7 +21,7 @@ import { preparationApi } from "./preparationApi.js";
 
 import { preparationPdf } from "./preparationPdf.js";
 
-import { comparePacking } from "../../../shared/orderPreparation.js";
+import { comparePacking, cleanWarehouseHandoffNote } from "../../../shared/orderPreparation.js";
 
 import "./orderPreparation.css";
 
@@ -109,7 +109,7 @@ function PreparationSettings({ onClose, onSaved }) {
             }}
           >
             <label>
-              Serie DDT (BC)
+              Serie DDT (BCS)
               <input
                 type="number"
                 min="1"
@@ -257,6 +257,7 @@ export default function OrderPreparation() {
     [check, setCheck] = useState(null),
     [confirmedLots, setConfirmedLots] = useState(false),
     [confirmDdt, setConfirmDdt] = useState(false),
+    [ddtNotes, setDdtNotes] = useState(""),
     [pending, setPending] = useState(null);
 
   const current = useRef(row),
@@ -1179,7 +1180,7 @@ export default function OrderPreparation() {
                   <button
                     className="op-primary"
                     disabled={busy || !confirmedLots}
-                    onClick={() => setConfirmDdt(true)}
+                    onClick={() => { setDdtNotes(cleanWarehouseHandoffNote(source.note)); setConfirmDdt(true); }}
                   >
                     Genera DDT e packing list
                   </button>
@@ -1193,22 +1194,27 @@ export default function OrderPreparation() {
                 role="group"
                 aria-label="Conferma emissione DDT"
               >
-                <h3>Conferma emissione DDT su Mexal</h3>
+                <h3>Conferma emissione BCS su Mexal</h3>
                 <p>
                   OCM {source.series}/{source.number} · {source.customerName} ·{" "}
                   {totalPieces} pezzi · {packages.length} colli ·{" "}
                   {pallets.length} bancali.
                 </p>
-                <p>Il DDT evaderà l’OCM e movimenterà i lotti confermati.</p>
+                <p>La BCS evaderà l’OCM e movimenterà i lotti confermati. La causale dell’ordine resta invariata.</p>
+                <label>Note della BCS
+                  <textarea value={ddtNotes} onChange={e => setDdtNotes(e.target.value)} rows={4} maxLength={1000} disabled={busy}
+                    placeholder="Inserisci le note da riportare sul documento"/>
+                </label>
+                <small>Rimosso il testo di consegna al magazzino. Puoi modificare o aggiungere le note prima della conferma.</small>
                 <button disabled={busy} onClick={() => setConfirmDdt(false)}>
                   Indietro
                 </button>
                 <button
                   className="op-primary"
                   disabled={busy}
-                  onClick={() => void perform("export", { confirmedLots })}
+                  onClick={() => void perform("export", { confirmedLots, ddtNotes })}
                 >
-                  Conferma e crea DDT
+                  Conferma e crea BCS
                 </button>
               </div>
             )}

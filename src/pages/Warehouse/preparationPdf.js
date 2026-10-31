@@ -17,7 +17,7 @@ export function preparationPdf(preparation) {
     `Cliente: ${source.customerName} (${source.customerCode})`,
     `Destinazione: ${[source.destination?.code, source.destination?.address, source.destination?.postalCode, source.destination?.city].filter(Boolean).join(" · ") || "Come da OCM Mexal"}`,
     ddt
-      ? `DDT ${ddt.series}/${ddt.number} del ${String(ddt.date).replace(/^(\d{4})(\d{2})(\d{2})$/, "$3/$2/$1")}`
+      ? `DDT ${ddt.signature || "BC"} ${ddt.series}/${ddt.number} del ${String(ddt.date).replace(/^(\d{4})(\d{2})(\d{2})$/, "$3/$2/$1")}`
       : "DDT non ancora emesso",
     `Colli: ${summary.totalPackages} · Pezzi: ${summary.totalPieces} · Bancali: ${summary.totalPallets}`,
   ];

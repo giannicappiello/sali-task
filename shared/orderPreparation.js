@@ -27,7 +27,7 @@ export function eligibleOrder(document) {
   return (
     upper(document.sigla) === "OC" &&
     upper(document.cod_modulo) === "M" &&
-    /\bconsegnato\s+mgz\b/i.test(text(scalar(document.nota)))
+    /\bconsegnato\s+(?:al\s+)?mgz\b/i.test(documentNotes(document.nota))
   );
 }
 export function orderIdentity(document, year) {
@@ -326,4 +326,13 @@ export function packingSummary(state, contents, lines) {
         })),
     })),
   };
+}
+
+export function documentNotes(value) {
+  return Array.isArray(value) ? value.map(row => Array.isArray(row) ? row.at(-1) : row).join("\n") : text(value);
+}
+export function cleanWarehouseHandoffNote(value) {
+  return documentNotes(value).replace(/\bconsegnato\s+(?:al\s+)?mgz\b/gi, "")
+    .replace(/[ \t]{2,}/g, " ").replace(/\|[ \t]*\|/g, "|")
+    .replace(/(^|\n)[ \t]*[|;,][ \t]*/g, "$1").replace(/[ \t]*[|;,][ \t]*(?=$|\n)/g, "").trim();
 }

@@ -240,6 +240,7 @@ function editPacking(row, operation, body) {
 async function existingDdt(client, row) {
   const docs = await pages(client, "/documenti/movimenti-magazzino", [
     { campo: "sigla", condizione: "=", valore: "BC" },
+    ...(row.export_payload?.cod_modulo ? [{ campo: "cod_modulo", condizione: "=", valore: row.export_payload.cod_modulo }] : []),
     { campo: "cod_conto", condizione: "=", valore: row.source.customerCode },
 
     { campo: "nota", condizione: "contiene", valore: `ALL:${row.id}` },
@@ -693,6 +694,8 @@ export function createOrderPreparationHandler({
           context,
           verification.allocations,
           settings,
+          undefined,
+          body.ddtNotes,
         );
 
         // Calculation is read-only and checks the native transformation before the durable send marker.

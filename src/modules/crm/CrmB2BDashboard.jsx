@@ -1,6 +1,6 @@
 import {scopeBeautyOrders} from './orderDashboardScope';
 import { useAuth } from '../../contexts/AuthContext';
-import CrmProductDocumentLines from './CrmProductDocumentLines';
+import CrmProductPurchaseTable from './CrmProductPurchaseTable';
 import {loadDashboardProductSummary,loadDashboardProductRows} from './dashboardProducts';
 import { CUSTOMER_PRODUCT_SCREENS } from './customerProducts';
 import CrmOpenOrdersDialog from './CrmOpenOrdersDialog';
@@ -113,7 +113,7 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
       if (details.error) return <p role="alert">{details.error}</p>;
       if (!hasScreenAccess(CUSTOMER_PRODUCT_SCREENS[selected.metric === 'purchased' ? 'purchased' : 'ordered'].code)) return <p>Schermata prodotti non autorizzata per il tuo profilo.</p>;
       rows = details.rows;
-      columns = [valueColumn('description', 'Prodotto'), valueColumn('code', 'Codice'), { key: 'quantity', label: 'Quantità', value: r => Number(r.quantity).toLocaleString('it-IT'), sortValue: r => r.quantity }, valueColumn('documents', 'Documenti'), { key: 'amount', label: 'Importo netto', value: r => `${formatMoney(r.amount.value)}${r.amount.unknown ? ' (parziale)' : ''}`, sortValue: r => r.amount.value }, { key: 'history', label: 'Dettaglio', value: () => 'Apri righe', render: r => <CrmProductDocumentLines code={r.code} parameters={{p_crm_type:'b2b',p_from:period.from,p_to:period.to,p_agent:agent||null,...orderParams,p_category:selected.metric}}/> }];
+      return <CrmProductPurchaseTable rows={rows} parameters={{p_crm_type:'b2b',p_from:period.from,p_to:period.to,p_agent:agent||null,...orderParams,p_category:selected.metric}}/>;
     } else if (selected.kind === 'beauty') {
       if (extra.errors.beauty) return <p role="alert">{extra.errors.beauty}</p>;
       if (!extra.beauty) return <p>Caricamento Beauty Days…</p>;

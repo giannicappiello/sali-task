@@ -1,3 +1,4 @@
+import CrmProductPurchaseTable from './CrmProductPurchaseTable';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import DigitalSalesDays from './DigitalSalesDays';
@@ -121,7 +122,7 @@ export default function CrmB2BAccount({ crmType = 'b2b', account, metrics: sourc
       if (!isOnline && !hasScreenAccess(kind === 'purchased' ? 'crm.prodotti_acquistati' : 'crm.prodotti_ordinati')) return <p>Schermata prodotti non autorizzata per il tuo profilo.</p>;
       const data = kind === 'purchased' ? purchased : ordered; loading = data.loading; error = data.error;
       rows = kind === 'purchased' ? boughtProducts : orderedProducts;
-      columns = [col('description', 'Prodotto'), col('code', 'Codice'), { key: 'quantity', label: 'Quantità', value: r => Number(r.quantity).toLocaleString('it-IT'), sortValue: r => r.quantity }, col('documents', 'Documenti'), { key: 'amount', label: 'Importo netto', value: r => `${formatMoney(r.amount.value)}${r.amount.unknown ? ' (parziale)' : ''}`, sortValue: r => r.amount.value }, { key: 'history', label: 'Dettaglio', value: () => 'Apri righe', render: r => <details><summary>Righe documento</summary><CrmDetailTable rows={r.lines} columns={[col('document_number', 'Documento'), date('document_date'), col('description', 'Prodotto'), col('quantity', 'Quantità'), col('unit', 'UM'), money('net_amount', 'Importo netto'), col('document_status', 'Stato')]}/></details> }];
+      return loading ? <p role="status">Caricamento prodotti…</p> : error ? <p role="alert">{error}</p> : <CrmProductPurchaseTable rows={rows} customer={{code:account.codice_cliente_mexal,name:account.nome}}/>;
     } else if (id === 'beauty') {
       rows = extra.beauty.map(r => ({ ...r, invoice_count: r.impact?.invoice_count, invoice_value: r.impact?.invoice_value, order_count: r.impact?.order_count, order_value: r.impact?.order_value })); error = extra.errors.beauty; loading = extra.loading;
       columns = [date('data'), col('stato', 'Stato'), col('consultant_name', 'Consulente'), col('numero_totale_pezzi_venduti', 'Pezzi'), money('fatturato_giornata', 'Fatturato giornata'), col('invoice_count', 'Fatture successive'), money('invoice_value', 'Fatturato successivo'), col('order_count', 'Ordini successivi'), money('order_value', 'Ordinato successivo')];

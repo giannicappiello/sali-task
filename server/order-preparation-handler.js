@@ -34,6 +34,7 @@ import {
   unwrap,
   pages,
   loadOrderContext,
+  packingListDescriptions,
   deliveryDestination,
   lotInventoryForWarehouses as lotInventory,
   buildDdt,
@@ -568,6 +569,7 @@ export function createOrderPreparationHandler({
           }
           summary=packingWeights(summary,lines,settings);
         }
+        summary=await packingListDescriptions(client,summary);
         const destination=await deliveryDestination(client,row.source_raw,row.source.customerCode);
         return res.status(200).json({preparation:exposed({...row,source:{...row.source,destination},verification:{...row.verification,summary,destination}})});
       }

@@ -1,3 +1,4 @@
+import {buildName} from "./mexal/sync-products.js";
 import { preparationPackaging } from "./order-preparation-packaging.js";
 import { createHash } from "node:crypto";
 
@@ -173,7 +174,7 @@ export async function loadOrderContext(client, reference, db, settings) {
           return {
             code,
             description:
-              text(a.descr_completa || a.descrizione || cached?.descrizione) ||
+              text(a.descr_completa) || buildName(a) || text(cached?.descrizione) ||
               code,
 
             unit: authoritativeArticleUnit(a) || upper(cached?.unita_misura),
@@ -644,4 +645,20 @@ export function verifyDdt(actual, preparation, payload) {
     customerCode: raw.cod_conto,
     reference: `BC+${raw.serie}+${raw.numero}+${raw.cod_conto}`,
   };
+}
+
+// Old preparations may contain only Mexal's first description segment. Refresh
+// display names without reloading an evaded order or touching quantities/holds.
+export async function packingListDescriptions(client, summary) {
+  const codes=[...new Set(summary.packages.flatMap(pack=>pack.contents.map(row=>row.code)))];
+  const names=new Map();
+  for(let offset=0;offset<codes.length;offset+=5) {
+    await Promise.all(codes.slice(offset,offset+5).map(async code=>{
+      const article=unwrap(await client.getJson("/articoli/"+encodeURIComponent(code)));
+      assert(upper(article.codice || article.cod_articolo)===code,"Anagrafica articolo Mexal non verificata: "+code);
+      const name=text(article.descr_completa) || buildName(article);
+      if(name)names.set(code,name);
+    }));
+  }
+  return {...summary,packages:summary.packages.map(pack=>({...pack,contents:pack.contents.map(row=>({...row,description:names.get(row.code) || row.description || row.code}))}))};
 }

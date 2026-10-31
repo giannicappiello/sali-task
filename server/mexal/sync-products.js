@@ -524,7 +524,7 @@ export function isActiveArticle(article) {
   );
 }
 
-function buildName(article) {
+export function buildName(article) {
   const description = String(article?.descrizione || "").trimEnd();
   const additionalDescription = String(article?.descrizione_agg || "").trimStart();
 

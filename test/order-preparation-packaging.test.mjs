@@ -459,3 +459,27 @@ test("packing list preview refreshes real destination and weights without changi
     assert.equal((await f.call('complete_weight',{id:row.id,productCode:'IT0001',unitWeightGrams:400})).statusCode,403);
   }finally{await f.sql.close();}
 });
+
+test("packing list retrieves both Mexal name segments even for previously verified preparations without changing their snapshot",async()=>{
+  const f=await fixture();
+  try{
+    let row=f.row;
+    for(const [barcode,mode] of [['000001','carton'],['000002','piece']]){const r=await f.call('scan',{...f.scan(barcode),mode,version:row.version});row=r.data.preparation;}
+    let r=await f.call('verify',{id:row.id,version:row.version,eventId:event()});row=r.data.preparation;
+    const before=(await f.sql.query('select * from warehouse_order_preparations where id=$1',[row.id])).rows[0];
+    const get=f.mexal.getJson.bind(f.mexal);
+    f.mexal.getJson=async path=>{
+      const result=await get(path);
+      if(path==='/articoli/IT0001')return {...result,descrizione:'Bagno Doccia Pure Wh',descrizione_agg:'ite 1000ml'};
+      if(path==='/articoli/IT0002')return {...result,descrizione:'Abbreviata',descrizione_agg:' aggiunta',descr_completa:'Descrizione completa prodotto due'};
+      return result;
+    };
+    f.readOnly();r=await f.call('preview_packing_list',{id:row.id});
+    assert.equal(r.statusCode,200,JSON.stringify(r.data));
+    const contents=r.data.preparation.verification.summary.packages.flatMap(pack=>pack.contents);
+    assert.ok(contents.filter(item=>item.code==='IT0001').every(item=>item.description==='Bagno Doccia Pure White 1000ml'));
+    assert.ok(contents.filter(item=>item.code==='IT0002').every(item=>item.description==='Descrizione completa prodotto due'));
+    assert.deepEqual((await f.sql.query('select * from warehouse_order_preparations where id=$1',[row.id])).rows[0],before);
+    assert.equal(f.mexal.sends,0);
+  }finally{await f.sql.close();}
+});

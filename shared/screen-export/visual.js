@@ -75,7 +75,7 @@ export async function renderVisualPages(report, { signal, progress = () => {} } 
       signal?.throwIfAborted(); progress(`Riproduzione della schermata · pagina ${index+1} di ${bands.length}…`);
       const canvas=await html2canvas(host,{backgroundColor:'#ffffff',scale:1.5,width,height:band.height,x:0,y:band.y,scrollX:0,scrollY:0,windowWidth:doc.documentElement.clientWidth,windowHeight:doc.documentElement.clientHeight,logging:false,useCORS:true,allowTaint:false});
       signal?.throwIfAborted();
-      pages.push({dataUrl:canvas.toDataURL('image/png'),width:canvas.width,height:canvas.height});
+      pages.push({dataUrl:canvas.toDataURL('image/png'),pdfDataUrl:canvas.toDataURL('image/jpeg',0.92),width:canvas.width,height:canvas.height});
       canvas.width=1; canvas.height=1;
     }
     return pages;

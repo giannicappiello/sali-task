@@ -120,17 +120,18 @@ function signatureBox(page, placement, index, count) {
   return { x, y: 62, maxWidth: itemWidth - 12, maxHeight: 52 };
 }
 
-async function composePdf(templateBytes, contentBytes, signatures, snapshot) {
+async function composePdf(templateBytes, contentBytes, signatures, snapshot, {pageOffset=0}={}) {
   const [template, content] = await Promise.all([PDFDocument.load(templateBytes), PDFDocument.load(contentBytes)]);
   const output = await PDFDocument.create();
   const templatePages = template.getPages();
   if (!templatePages.length) throw httpError("Il PDF intestazione non contiene pagine.", 409, "EMPTY_TEMPLATE");
   const signatureImages = await Promise.all(signatures.map((asset) => embedSignature(output, asset)));
+  const font = await output.embedFont(StandardFonts.Helvetica);
   for (let index = 0; index < content.getPageCount(); index += 1) {
     const source = content.getPage(index);
     const { width, height } = source.getSize();
     const page = output.addPage([width, height]);
-    const templatePage = await output.embedPage(templatePages[Math.min(index, templatePages.length - 1)]);
+    const templatePage = await output.embedPage(templatePages[Math.min(pageOffset+index, templatePages.length - 1)]);
     page.drawPage(templatePage, { x: 0, y: 0, width, height });
     const contentPage = await output.embedPage(source);
     page.drawPage(contentPage, { x: 0, y: 0, width, height });
@@ -140,12 +141,11 @@ async function composePdf(templateBytes, contentBytes, signatures, snapshot) {
       const scale = Math.min(box.maxWidth / image.width, box.maxHeight / image.height, 1);
       page.drawImage(image, { x: box.x, y: box.y, width: image.width * scale, height: image.height * scale });
     });
-    const font = await output.embedFont(StandardFonts.Helvetica);
     page.drawText(`Intestazione ${snapshot.version.letterhead_version_id || snapshot.version.id} - v${snapshot.version.version}`, {
       x: 36, y: 8, size: 5.5, font, color: rgb(0.42, 0.42, 0.42), opacity: 0.65,
     });
   }
-  return Buffer.from(await output.save({ useObjectStreams: false }));
+  return Buffer.from(await output.save({ useObjectStreams: true }));
 }
 
 function xmlEscape(value) {
@@ -220,7 +220,9 @@ export async function handleWorkspaceDocumentCompose(req, res) {
     if (outputFormat === "PDF") {
       const contentBytes = Buffer.from(String(input.contentBase64 || ""), "base64");
       if (!contentBytes.length || contentBytes.subarray(0, 4).toString() !== "%PDF") throw httpError("Contenuto PDF non valido.");
-      bytes = await composePdf(templateBytes, contentBytes, signatures, snapshot);
+      const pageOffset=descriptor.screen?Number(input.pageOffset||0):0;
+      if(!Number.isSafeInteger(pageOffset)||pageOffset<0)throw httpError("Indice pagina PDF non valido.");
+      bytes = await composePdf(templateBytes, contentBytes, signatures, snapshot,{pageOffset});
     } else {
       bytes = composeDocx(templateBytes, input.data, signatures);
     }

@@ -23,10 +23,11 @@ async function accessToken() {
   return data.session.access_token;
 }
 
-export async function composeWorkspaceDocument(input) {
+export async function composeWorkspaceDocument(input, {signal} = {}) {
   const token = await accessToken();
   const response = await fetch("/api/company-documents/compose", {
     method: "POST",
+    signal,
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
@@ -37,7 +38,16 @@ export async function composeWorkspaceDocument(input) {
   return { ...payload, blob: base64ToBlob(payload.fileBase64, payload.mediaType) };
 }
 
-export async function composeWorkspacePdf({ pdf, ...metadata }) {
+export async function composeWorkspacePdf({ pdf, signal, progress, ...metadata }) {
   const source = pdf instanceof Blob ? await pdf.arrayBuffer() : pdf;
-  return composeWorkspaceDocument({ ...metadata, outputFormat: "PDF", contentBase64: arrayBufferToBase64(source) });
+  if(metadata.documentTypeCode !== 'REPORT_SCHERMATA')return composeWorkspaceDocument({ ...metadata, outputFormat: "PDF", contentBase64: arrayBufferToBase64(source) },{signal});
+  const {composePdfBatches}=await import('../../shared/screen-export/compose-pdf.js');
+  const issuedAt=metadata.issuedAt||new Date().toISOString();
+  let last;
+  const bytes=await composePdfBatches(source,async (part,pageOffset)=>{
+    last=await composeWorkspaceDocument({...metadata,issuedAt,pageOffset,outputFormat:'PDF',contentBase64:arrayBufferToBase64(part)},{signal});
+    return last.blob.arrayBuffer();
+  },{signal,progress});
+  const hash=await crypto.subtle.digest('SHA-256',bytes);
+  return {...last,fileBase64:arrayBufferToBase64(bytes),sha256:[...new Uint8Array(hash)].map(n=>n.toString(16).padStart(2,'0')).join(''),blob:new Blob([bytes],{type:'application/pdf'})};
 }

@@ -68,7 +68,7 @@ export function installScreenExport({ doc = document, system = 'Workspace', logo
         if (button.dataset.format === 'pdf') {
           if (composePdf) {
             const pdf = formats.buildReportPdf(report, {logoDataUrl:logo.dataUrl,managedLetterhead:true});
-            try { blob = await composePdf(pdf.output('arraybuffer')); }
+            try { blob = await composePdf(pdf.output('arraybuffer'),{signal:controller.signal,progress:text=>{status.textContent=text;}}); }
             catch (error) {
               if (error.code !== 'LETTERHEAD_NOT_CONFIGURED') throw error;
               blob = formats.buildReportPdf(report, {logoDataUrl:logo.dataUrl}).output('blob');

@@ -120,7 +120,7 @@ function buildVisualPdf(report,{logoDataUrl,managedLetterhead=false}={}) {
   report.visualPages.forEach((page,i)=>{
     if (i) {doc.addPage();if(!managedLetterhead)drawContentPageFrame(doc,logoDataUrl);}
     else doc.setPage(2);
-    doc.addImage(page.dataUrl,'PNG',16,32,178,178*page.height/page.width,undefined,'FAST');
+    doc.addImage(page.pdfDataUrl||page.dataUrl,page.pdfDataUrl?'JPEG':'PNG',16,32,178,178*page.height/page.width,undefined,'SLOW');
   });
   const count=report.visualPages.length;
   for(let i=0;i<count;i++){

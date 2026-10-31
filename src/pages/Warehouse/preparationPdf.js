@@ -2,7 +2,6 @@ import { jsPDF } from "jspdf";
 import { drawProgreOrderHeader } from "../../modules/orders/services/orderPdf.js";
 
 const boxWord = n => n === 1 ? "box" : "boxes";
-const pieces = n => `${n} ${n === 1 ? "pezzo / piece" : "pezzi / pieces"}`;
 const date = value => String(value || "").replace(/^(\d{4})(\d{2})(\d{2})$/, "$3/$2/$1");
 
 export function buildPreparationPdf(preparation) {
@@ -34,91 +33,99 @@ export function buildPreparationPdf(preparation) {
     `Destinazione / Delivery address: ${destination}`,
     ddt ? `DDT / Delivery note: ${ddt.signature || "BCS"} ${ddt.series}/${ddt.number} - ${date(ddt.date)}` : "DDT non ancora emesso / Delivery note not issued",
   ].map(line => doc.splitTextToSize(line, 188));
-  const infoHeight = info.reduce((n, lines) => n + lines.length * 4 + 2, 0) + 4;
+  const infoHeight = info.reduce((n, lines) => n + lines.length * 3.5 + 1, 0) + 4;
   if (infoHeight > 125) throw new Error("Dati intestazione troppo estesi per la packing list.");
   frame(7, 46, 196, infoHeight);
   let iy = 52;
-  for (const lines of info) { text(lines, 11, iy); iy += lines.length * 4 + 2; }
-  first.start = first.end = 46 + infoHeight + 6;
+  for (const lines of info) { text(lines, 11, iy); iy += lines.length * 3.5 + 1; }
+  first.start = first.end = 46 + infoHeight + 3;
 
   const weight = n => n == null ? "N/D / N/A" : Number(n).toLocaleString("it-IT",{minimumFractionDigits:3,maximumFractionDigits:3}) + " Kg";
-  const nextPage = () => {
-    const page = { groups: [], start: 44, end: 44 };
-    pages.push(page); return page;
-  };
-  let page = first;
+  const totalsY = 252;
   const pallets = [...summary.pallets].sort((a,b) => a.number - b.number);
   if (summary.packages.some(p => !p.palletId)) pallets.push({ id: null, number: null });
-  for (const pallet of pallets) {
-    const packages = summary.packages.filter(p => (p.palletId || null) === pallet.id).sort((a,b) => a.number - b.number);
-    if (!packages.length) continue;
-    let group;
-    const newGroup = continued => {
-      if (page.end + 55 > 276) page = nextPage();
-      group = { pallet, packages: [], top: page.end, height: 17, continued,
-        boxCount: packages.length, pieceCount: packages.reduce((n,p)=>n+p.pieces,0) };
-      page.groups.push(group); page.end = group.top + 17;
-    };
-    newGroup(false);
-    for (const pack of packages) {
-      const rows = pack.contents.flatMap(row => {
-        doc.setFont("helvetica", "normal"); doc.setFontSize(7.5);
-        const lines = doc.splitTextToSize(String(row.description || row.code), 86);
-        const lotLines = doc.splitTextToSize(String(row.lotCode || "Non gestito / N/A"),38);
-        const chunks = [];
-        const lineCount=Math.max(lines.length,lotLines.length);
-        for (let i=0;i<lineCount;i+=35) chunks.push({ ...row, descriptionLines:lines.slice(i,i+35),lotLines:lotLines.slice(i,i+35), quantity:i===0?row.quantity:"", height:Math.max(5.3,Math.min(35,lineCount-i)*3.3+1) });
-        return chunks;
-      });
-      if (!rows.length) rows.push({code:"-",lotCode:"-",quantity:0,descriptionLines:["Vuoto / Empty"],lotLines:["-"],height:5.3});
-      let offset=0;
-      while(offset<rows.length) {
-        const remainingHeight=rows.slice(offset).reduce((n,r)=>n+r.height,0)+20;
-        // Keep an ordinary box together whenever it fits a fresh page.
-        if (page.end+remainingHeight+4>276 && remainingHeight+17<=236 && group.packages.length) {
-          page=nextPage(); newGroup(true);
+  // Measure before drawing: reserve the summary only on the final content page.
+  // If it overflows, move actual boxes/rows with it rather than adding a totals-only page.
+  const layout = (summaryPage = Infinity) => {
+    const result = [{groups:[],start:first.start,end:first.start}];
+    let page = result[0];
+    const limit = () => result.length - 1 >= summaryPage ? totalsY - 3 : 279;
+    const nextPage = () => { page={groups:[],start:44,end:44};result.push(page); };
+    for (const pallet of pallets) {
+      const packages = summary.packages.filter(p => (p.palletId || null) === pallet.id).sort((a,b) => a.number - b.number);
+      if (!packages.length) continue;
+      let group;
+      const newGroup = continued => {
+        group = {pallet,packages:[],top:page.end,height:continued?11:8,continued,
+          boxCount:packages.length,pieceCount:packages.reduce((n,p)=>n+p.pieces,0)};
+        page.groups.push(group);page.end=group.top+group.height;
+      };
+      // A heading must have room for the first row, not occupy a page by itself.
+      if(page.end+31>limit())nextPage();
+      newGroup(false);
+      for(const pack of packages) {
+        const rows=pack.contents.flatMap(row=>{
+          doc.setFont("helvetica","normal");doc.setFontSize(7.5);
+          const description=String(row.description || row.code).replace(/\s+/g," ").trim();
+          const descriptionSize=Math.min(7.5,7.5*115/Math.max(doc.getTextWidth(description),1));
+          const lines=[description];
+          const lotLines=doc.splitTextToSize(String(row.lotCode || "Non gestito / N/A"),29);
+          const chunks=[],lineCount=Math.max(lines.length,lotLines.length);
+          for(let i=0;i<lineCount;i+=35)chunks.push({...row,descriptionLines:lines.slice(i,i+35),descriptionSize,lotLines:lotLines.slice(i,i+35),quantity:i===0?row.quantity:"",height:Math.max(4.5,Math.min(35,lineCount-i)*3.3+1)});
+          return chunks;
+        });
+        if(!rows.length)rows.push({code:"-",quantity:0,descriptionLines:["Vuoto / Empty"],lotLines:["-"],height:4.5});
+        let offset=0;
+        while(offset<rows.length){
+          const remainingHeight=rows.slice(offset).reduce((n,r)=>n+r.height,0)+13;
+          if((page.end+remainingHeight+2>limit() && remainingHeight+11<=totalsY-3-44 && group.packages.length) || page.end+rows[offset].height+15>limit()){
+            // Remove a heading if even a very tall first row had to move.
+            if(!group.packages.length){page.groups.pop();page.end=group.top;}
+            nextPage();newGroup(offset>0 || packages.indexOf(pack)>0);
+          }
+          const chunk={pack,rows:[],top:page.end,continued:offset>0,height:13};
+          while(offset<rows.length && page.end+chunk.height+rows[offset].height+2<=limit()){
+            chunk.rows.push(rows[offset]);chunk.height+=rows[offset].height;offset++;
+          }
+          group.packages.push(chunk);page.end+=chunk.height+1;
+          group.height=page.end-group.top+0.5;
+          if(offset<rows.length){nextPage();newGroup(true);}
         }
-        if(page.end+rows[offset].height+24>276) { page=nextPage(); newGroup(true); }
-        const chunk={pack,rows:[],top:page.end,continued:offset>0,height:20};
-        while(offset<rows.length && page.end+chunk.height+rows[offset].height+4<=276) {
-          chunk.rows.push(rows[offset]);chunk.height+=rows[offset].height;offset++;
-        }
-        group.packages.push(chunk); page.end+=chunk.height+2;
-        group.height=page.end-group.top+1;
-        if(offset<rows.length){ page=nextPage();newGroup(true); }
       }
+      page.end+=2;
     }
-    page.end+=5;
-  }
+    return result;
+  };
+  let measured=layout();
+  if(measured.at(-1).end>totalsY-3)measured=layout(measured.length-1);
+  pages.splice(0,pages.length,...measured);
   for(let index=0;index<pages.length;index++) {
     if(index){doc.addPage();drawProgreOrderHeader(doc);text(title,7,38,11,true);}
     for(const group of pages[index].groups) {
       frame(7,group.top,196,group.height,249);
-      frame(7,group.top,196,16,242);
-      text(group.pallet.number ? `PALLET ${group.pallet.number}${group.continued ? " - continua / continued" : ""}` : "SENZA PALLET / NO PALLET",11,group.top+6.6,10,true);
-      text(`${group.boxCount} ${group.boxCount===1?"collo":"colli"} / ${boxWord(group.boxCount)}  |  ${pieces(group.pieceCount)}`,199,group.top+6.6,8,true,"right");
-      text(`Peso netto / Net weight: ${weight(group.pallet.netWeightKg)}`,11,group.top+12,7);
-      text(`Peso lordo / Gross weight: ${weight(group.pallet.grossWeightKg)}`,199,group.top+12,7,false,"right");
+      frame(7,group.top,196,group.continued?10:7,242);
+      text(group.pallet.number ? `PALLET ${group.pallet.number}` : "SENZA PALLET / NO PALLET",11,group.top+4.4,9,true);
+      text(`Peso netto / Net weight: ${weight(group.pallet.netWeightKg)}`,43,group.top+4.4,7);
+      text(`Peso lordo / Gross weight: ${weight(group.pallet.grossWeightKg)}`,104,group.top+4.4,7);
+      text(`${group.boxCount} ${group.boxCount===1?"collo":"colli"} / ${boxWord(group.boxCount)}`,199,group.top+4.4,7,true,"right");
+      if(group.continued)text("continua / continued",199,group.top+8.2,6.5,false,"right");
       for(const chunk of group.packages) {
         const y=chunk.top;
         frame(11,y,188,chunk.height);
-        text(`COLLO / BOX ${chunk.pack.number}${chunk.continued ? " - continua / continued" : ""}`,14,y+5,8,true);
-        text(pieces(chunk.pack.pieces),196,y+5,8,true,"right");
-        text(`Peso netto / Net weight: ${weight(chunk.pack.netWeightKg)}`,14,y+10,7);
-        text(`Peso lordo / Gross weight: ${weight(chunk.pack.grossWeightKg)}`,196,y+10,7,false,"right");
-        text("CODICE / ITEM",14,y+14,5.7,true);text("PRODOTTO / PRODUCT",43,y+14,5.7,true);
-        text("LOTTO / BATCH",139,y+14,5.7,true);text("PZ / PCS",196,y+14,5.7,true,"right");
-        let ry=y+19;
+        text(`COLLO / BOX ${chunk.pack.number}`,14,y+4.2,8,true);
+        text(`Peso netto / Net weight: ${weight(chunk.pack.netWeightKg)}`,65,y+4.2,7);
+        text(`Peso lordo / Gross weight: ${weight(chunk.pack.grossWeightKg)}`,132,y+4.2,7);
+        text(`CODICE / ITEM${chunk.continued ? " *" : ""}`,14,y+8.4,5.7,true);text("PRODOTTO / PRODUCT",36,y+8.4,5.7,true);
+        text("LOTTO / BATCH",155,y+8.4,5.7,true);text(`PZ / PCS (${chunk.pack.pieces})`,196,y+8.4,5.7,true,"right");
+        let ry=y+12.5;
         for(const row of chunk.rows) {
-          text(row.code,14,ry,7.5,true);text(row.descriptionLines,43,ry,7.5);
-          text(row.lotLines,139,ry,7.5);text(row.quantity,196,ry,8,true,"right");
+          text(row.code,14,ry,7.5,true);text(row.descriptionLines,36,ry,row.descriptionSize || 7.5);
+          text(row.lotLines,155,ry,7.5);text(row.quantity,196,ry,8,true,"right");
           ry+=row.height;
         }
       }
     }
   }
-  let totalsY=page.end+2;
-  if(totalsY+29>279){doc.addPage();drawProgreOrderHeader(doc);text(title,7,38,11,true);totalsY=44;}
   frame(7,totalsY,196,27,242);
   for(const [x,label,value] of [[11,"TOTALE PALLET / TOTAL PALLETS",summary.totalPallets],[77,"TOTALE COLLI / TOTAL BOXES",summary.totalPackages],[143,"TOTALE PEZZI / TOTAL PIECES",summary.totalPieces]]){
     text(label,x,totalsY+5.5,6.5,true);text(value,x,totalsY+14,14,true);

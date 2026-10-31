@@ -34,8 +34,14 @@ function PdfPage({pdf,number,zoom}) {
   return <article className="op-pdf-page" ref={host} style={{width:`${zoom}%`,aspectRatio:"210 / 297"}}>{error ? <p role="alert">{error}</p> : <canvas ref={canvas} role="img" aria-label={`Packing list, pagina ${number}`}/>}</article>;
 }
 
-export default function PackingListPreview({bytes,onClose}) {
+export default function PackingListPreview({bytes,fileName="Packing-list.pdf",onClose}) {
   const dialog=useRef(null);
+  const downloadLink=useRef(null);
+  useEffect(()=>{
+    const url=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));
+    downloadLink.current.href=url;
+    return ()=>URL.revokeObjectURL(url);
+  },[bytes]);
   const [pdf,setPdf]=useState(null),[error,setError]=useState(''),[zoom,setZoom]=useState(100);
   useEffect(()=>{
     const element=dialog.current;element.showModal();
@@ -54,8 +60,8 @@ export default function PackingListPreview({bytes,onClose}) {
     })();
     return ()=>{active=false;void task?.destroy().catch(()=>{});};
   },[bytes]);
-  return <dialog ref={dialog} className="op-packing-preview" aria-label="Packing list" onCancel={event=>{event.preventDefault();onClose();}}>
-    <header><strong>Packing list{pdf?` · ${pdf.numPages} ${pdf.numPages===1?'pagina':'pagine'}`:''}</strong><button type="button" onClick={onClose}>Chiudi anteprima</button></header>
+  return <dialog ref={dialog} className="op-packing-preview" data-report-export="" aria-label="Packing list" onCancel={event=>{event.preventDefault();onClose();}}>
+    <header><strong>Packing list{pdf?` · ${pdf.numPages} ${pdf.numPages===1?'pagina':'pagine'}`:''}</strong><div className="op-pdf-actions"><a ref={downloadLink} className="op-pdf-download" download={fileName}>Download PDF</a><button type="button" onClick={onClose}>Chiudi anteprima</button></div></header>
     <div className="op-pdf-zoom" aria-label="Ingrandimento packing list"><button type="button" aria-label="Riduci ingrandimento" disabled={zoom<=75} onClick={()=>setZoom(value=>value-25)}>−</button><span>{zoom}%</span><button type="button" aria-label="Aumenta ingrandimento" disabled={zoom>=300} onClick={()=>setZoom(value=>value+25)}>+</button></div>
     <section className="op-pdf-pages" aria-label="Pagine della packing list">
       {error && <p role="alert">{error}</p>}

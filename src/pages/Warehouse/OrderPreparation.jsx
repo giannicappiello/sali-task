@@ -1270,7 +1270,7 @@ export default function OrderPreparation() {
         </>
       )}
 
-      {packingPreview && <PackingListPreview bytes={packingPreview} onClose={()=>setPackingPreview(null)}/>}
+      {packingPreview && <PackingListPreview bytes={packingPreview} fileName={`Packing-list-${row?.source?.series || 1}-${row?.source?.number || "ordine"}.pdf`} onClose={()=>setPackingPreview(null)}/>}
       {busy && (
         <div className="op-working" role="status">
           Operazione in corso…

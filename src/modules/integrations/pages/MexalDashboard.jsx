@@ -40,6 +40,7 @@ import {
   startMexalSync,
   stopMexalRun,
 } from "../services/mexalSyncService";
+import { stockQueueUiState } from "../services/stockQueueUi";
 import { claimSyncStart, releaseSyncStart, stockResumeUiState } from "../services/stockResumeUi";
 import { supabase } from "../../../lib/supabaseClient";
 import {
@@ -418,8 +419,8 @@ export default function MexalDashboard() {
   const stockRun = latestRunsByType.stocks || entityRuns.stocks;
   const currentStockJob = stockJob && Number(stockJob.sync_run_id) === Number(stockRun?.id) ? stockJob : null;
   const stockQueued = currentStockJob && ["queued", "retry", "leased", "running"].includes(currentStockJob.status);
-  const stockServerPhase = currentStockJob?.status === "retry" ? "Ripresa automatica in attesa"
-    : currentStockJob?.status === "queued" ? "In coda sul server" : "Elaborazione sul server";
+  const stockQueueUi = stockQueueUiState(currentStockJob);
+  const stockServerPhase = stockQueueUi.phase;
   const stockServerProgress = stockRun?.metadata?.total > 0 ? Math.round(Number(stockRun.processed || 0) / stockRun.metadata.total * 100) : 0;
 
   const runningRuns = runs.filter((item) => item.status === "running").length;
@@ -460,6 +461,9 @@ export default function MexalDashboard() {
               {...card}
               actionLabel={card.type === "stocks" && currentStockJob?.status === "failed" ? "Riprendi" : stockResume?.actionLabel || card.actionLabel}
               running={cardRunning}
+              waiting={card.type === "stocks" && stockQueueUi.waiting}
+              runStatusLabel={card.type === "stocks" ? stockQueueUi.statusLabel : null}
+              runningLabel={card.type === "stocks" && stockQueueUi.waiting ? "In attesa di ripresa automatica" : card.runningLabel}
               stopping={card.type === "sales_invoices" ? stoppingInvoiceSync : stoppingRunId === card.lastRunData?.id}
               canStop={["sales_invoices", "product_categories", "stocks"].includes(card.type)}
               lastRun={formatDate(card.lastRun || card.lastRunData?.started_at)}
@@ -483,8 +487,9 @@ export default function MexalDashboard() {
         <MexalProgress running={running || Boolean(activeSync) || Boolean(stockQueued)} progress={stockQueued && !activeSync ? stockServerProgress : progress} phase={stockQueued && !activeSync ? `Giacenze: ${stockRun?.processed || 0}/${stockRun?.metadata?.total || "?"} articoli · ${stockServerPhase}` : phase} />
         {currentStockJob && <div className={`mexal-alert alert-${currentStockJob.status === "failed" ? "error" : "info"}`}>
           <span>Giacenze · ultimo avanzamento: {formatDate(stockRun?.metadata?.checkpointed_at)}.
-            {currentStockJob.status === "retry" && ` Nuovo tentativo: ${formatDate(currentStockJob.available_at)}.`}
-            {currentStockJob.last_error && ` Ultimo errore: ${currentStockJob.last_error}`}
+            {stockQueueUi.nextAttemptAt && ` Ripresa automatica prevista dalle ${formatDate(stockQueueUi.nextAttemptAt)}.`}
+            {stockQueueUi.waiting && !stockQueueUi.nextAttemptAt && " Ripresa automatica al prossimo passaggio del worker, senza attendere la fascia notturna."}
+            {currentStockJob.last_error && ` Ultima interruzione registrata: ${currentStockJob.last_error}`}
             {currentStockJob.status === "failed" && " Tentativi automatici esauriti: usa Riprendi per riprovare dal punto salvato."}
             {currentStockJob.status === "completed" && ` Conclusa: ${stockRun?.inserted || 0} nuovi articoli importati, ${stockRun?.failed || 0} errori. Dettagli nello storico.`}
           </span>

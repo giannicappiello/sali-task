@@ -9,6 +9,8 @@ export default function MexalSyncCard({
   recordCount,
   enabled = false,
   running = false,
+  waiting = false,
+  runStatusLabel,
   stopping = false,
   lastRun,
   onSync,
@@ -78,7 +80,7 @@ export default function MexalSyncCard({
       )}
       {run && (
         <small className="mexal-sync-run-summary">
-          Stato: {run.status} · Elaborati: {run.processed || 0} · Inseriti: {run.inserted || 0} · Aggiornati: {run.updated || 0} · Errori: {run.failed || 0}
+          Stato: {runStatusLabel || run.status} · Elaborati: {run.processed || 0} · Inseriti: {run.inserted || 0} · Aggiornati: {run.updated || 0} · Errori: {run.failed || 0}
         </small>
       )}
       <div className="mexal-sync-actions">
@@ -91,7 +93,7 @@ export default function MexalSyncCard({
           }}
           disabled={running}
         >
-          {running ? <RefreshCw size={17} className="spin" /> : null}
+          {running ? waiting ? <Clock3 size={17} /> : <RefreshCw size={17} className="spin" /> : null}
           {isAgentsCard ? "Gestisci agenti" : effectiveEnabled ? (running ? (runningLabel || "Sincronizzazione...") : (actionLabel || "Sincronizza")) : "Apri roadmap"}
         </button>
         {(hasRunningRun || (running && canStop)) && (

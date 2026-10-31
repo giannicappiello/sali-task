@@ -21,7 +21,7 @@ export async function loadDashboardProductSummary(client,parameters,signal) {
 }
 export async function loadDashboardProductRows(client,name,parameters,signal) {
  const rows=[];
- const rpcName=name.endsWith('_product_groups')?name+'_with_customers':name;
+ const rpcName=name.endsWith('_product_groups')?name+'_with_agents':name;
  for(let offset=0;;offset+=500){
   if(signal?.aborted) throw new Error('Caricamento annullato.');
   const data=await request(client,parameters.p_order_module?rpcName.replace('crm_dashboard_product_','crm_b2b_order_product_'):rpcName,{...parameters,p_limit:500,p_offset:offset},signal);

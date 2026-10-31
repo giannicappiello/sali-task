@@ -39,3 +39,13 @@ test('aggregation and sorting use all loaded rows before pagination, including n
  const sorted=queryDetailRows(customers[0].documents,[{key:'quantity',value:r=>r.quantity,sortValue:r=>r.quantity}],'',{}, {key:'quantity',direction:'asc'});
  assert.equal(sorted[0].quantity,-1);
 });
+
+test('agent totals combine all customer documents, preserve unknown sales and do not count unassigned rows as agents',async()=>{
+ const {productAgents}=await import('../../src/modules/crm/productPurchaseDetails.js');
+ const groups=productAgents(lines.map((r,i)=>({...r,agent_code:i<3?'A':'B',agent_name:i<3?'Agente A':'Agente B'})));
+ assert.equal(groups.length,2);assert.equal(groups[0].quantity,9);assert.equal(groups[0].customers,1);assert.equal(groups[0].amount,90);
+ assert.equal(groups.reduce((s,r)=>s+r.quantity,0),10);
+ const unassigned=productAgents([{...lines[0],net_amount:null}]);
+ assert.equal(unassigned[0].id,'');assert.equal(unassigned[0].unknownAmount,true);
+ assert.equal(productAgents([lines[0]],{agentCode:'A',agentName:'Agente A'})[0].id,'A');
+});

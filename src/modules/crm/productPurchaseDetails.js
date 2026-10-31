@@ -26,3 +26,15 @@ export function productCustomers(lines, fallback={}) {
  }
  return [...groups.values()].map(group=>({...group,documents:productDocuments(group.lines)})).sort((a,b)=>a.customer_name.localeCompare(b.customer_name,'it'));
 }
+
+export function productAgents(lines,fallback={}) {
+ const groups=new Map();
+ for(const row of lines) {
+  const code=row.agent_code||fallback.agentCode||'';
+  const name=row.agent_name||fallback.agentName||'Senza agente';
+  const id=code||(name==='Senza agente'?'':name);
+  if(!groups.has(id))groups.set(id,{id,agent_code:code,agent_name:name,quantity:0,amount:0,unknownAmount:false,lines:[]});
+  const group=groups.get(id);group.lines.push(row);addAmount(group,row);
+ }
+ return [...groups.values()].map(group=>({...group,customers:productCustomers(group.lines,fallback).length}));
+}

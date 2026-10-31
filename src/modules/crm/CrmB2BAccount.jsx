@@ -122,7 +122,7 @@ export default function CrmB2BAccount({ crmType = 'b2b', account, metrics: sourc
       if (!isOnline && !hasScreenAccess(kind === 'purchased' ? 'crm.prodotti_acquistati' : 'crm.prodotti_ordinati')) return <p>Schermata prodotti non autorizzata per il tuo profilo.</p>;
       const data = kind === 'purchased' ? purchased : ordered; loading = data.loading; error = data.error;
       rows = kind === 'purchased' ? boughtProducts : orderedProducts;
-      return loading ? <p role="status">Caricamento prodotti…</p> : error ? <p role="alert">{error}</p> : <CrmProductPurchaseTable rows={rows} customer={{code:account.codice_cliente_mexal,name:account.nome}}/>;
+      return loading ? <p role="status">Caricamento prodotti…</p> : error ? <p role="alert">{error}</p> : <CrmProductPurchaseTable rows={rows} customer={{code:account.codice_cliente_mexal,name:account.nome,agentCode:account.codice_agente_mexal,agentName:account.agente_nome}}/>;
     } else if (id === 'beauty') {
       rows = extra.beauty.map(r => ({ ...r, invoice_count: r.impact?.invoice_count, invoice_value: r.impact?.invoice_value, order_count: r.impact?.order_count, order_value: r.impact?.order_value })); error = extra.errors.beauty; loading = extra.loading;
       columns = [date('data'), col('stato', 'Stato'), col('consultant_name', 'Consulente'), col('numero_totale_pezzi_venduti', 'Pezzi'), money('fatturato_giornata', 'Fatturato giornata'), col('invoice_count', 'Fatture successive'), money('invoice_value', 'Fatturato successivo'), col('order_count', 'Ordini successivi'), money('order_value', 'Ordinato successivo')];

@@ -542,7 +542,7 @@ export default function OrderPreparation() {
         h.source.reference === order.reference && h.source.year === order.year,
     );
 
-  const scanPanel=editable ? <button className="op-primary op-open-scanner" disabled={busy || !!pending} onClick={()=>setCamera(true)}><Camera size={18}/> Scansiona prodotti</button> : null;
+
   const renderPackage = (p) => (
     <article
       key={p.id}
@@ -924,7 +924,7 @@ export default function OrderPreparation() {
                   key={b.id}
                   className={`op-pallet-card${b.id === activePallet ? " active" : ""}`}
                 >
-                  <div className="op-toolbar">
+                  <div className="op-pallet-card-heading">
                     <h3>Bancale {b.number}</h3>
                     <span>
                       {
@@ -943,35 +943,32 @@ export default function OrderPreparation() {
                         : "colli"}
                     </span>
                     {editable && (
-                      <>
-                        {activePallet !== b.id && (
-                          <button
-                            disabled={busy || !!cartonPrompt}
-                            onClick={() => choosePallet(b)}
-                          >
-                            Scansiona su questo bancale
-                          </button>
-                        )}
-                        <button
-                          disabled={busy || !!cartonPrompt}
-                          onClick={() => newDraftPackage(b.id)}
-                        >
-                          <Package size={16} /> Nuovo collo
-                        </button>
-                        <button
-                          disabled={
-                            busy || packages.some((p) => p.palletId === b.id)
-                          }
-                          onClick={() =>
-                            void perform("remove_pallet", { palletId: b.id })
-                          }
-                        >
-                          Rimuovi vuoto
-                        </button>
-                      </>
+                      <button
+                        className="op-delete-pallet"
+                        disabled={busy || packages.some((p) => p.palletId === b.id)}
+                        onClick={() => void perform("remove_pallet", { palletId: b.id })}
+                      >
+                        Elimina
+                      </button>
                     )}
                   </div>
-                  {b.id === activePallet && scanPanel}
+                  {editable && (
+                    <div className="op-pallet-card-actions">
+                      <button
+                        disabled={busy || !!cartonPrompt}
+                        onClick={() => newDraftPackage(b.id)}
+                      >
+                        <Package size={16} /> Nuovo collo
+                      </button>
+                      <button
+                        className="op-primary"
+                        disabled={busy || !!pending || !!cartonPrompt}
+                        onClick={() => { if (activePallet !== b.id) choosePallet(b); setCamera(true); }}
+                      >
+                        <Camera size={16} /> Scansiona prodotti
+                      </button>
+                    </div>
+                  )}
                   <div className="op-package-grid">
                     {visiblePackages
                       .filter((p) => p.palletId === b.id)

@@ -542,3 +542,15 @@
 @media(max-width:600px){.op-order-products-heading,.op-order-product>summary{gap:4px;padding-right:4px;padding-left:19px;grid-template-columns:minmax(62px,1.2fr) repeat(3,minmax(0,1fr))}.op-order-product>summary::before{left:4px}.op-order-products-heading{font-size:11px}.op-order-product>summary{font-size:13px}}
 
 .op-camera-carton-prompt{padding:8px;border:1px solid #267bb4;border-radius:6px;margin:8px 0}.op-camera-carton-prompt label{display:flex;flex-direction:column;gap:5px;font-size:14px}.op-camera-carton-prompt input{font:inherit;font-size:16px;min-height:36px;width:100%;box-sizing:border-box}.op-camera-carton-prompt>div{display:flex;gap:6px;margin-top:6px}.op-camera-carton-prompt button{font-size:14px;padding:6px 8px;min-height:36px}
+
+.op-pallet-card-heading{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;margin-bottom:10px;min-width:0}
+.op-pallet-card-heading h3{margin:0 auto 0 0;min-width:0}
+.op-pallet-card-heading>span{font-size:13px;white-space:nowrap}
+.order-preparation .op-pallet-card-heading .op-delete-pallet{width:auto;flex:0 0 auto;min-width:0;padding:7px 12px}
+.op-pallet-card-actions{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.45fr);gap:8px;margin-bottom:12px}
+.order-preparation .op-pallet-card-actions button{width:100%;min-width:0;min-height:42px;margin:0;padding:8px 6px;font-size:14px;line-height:1.2}
+.op-pallet-card-actions button svg{flex-shrink:0}
+@media(max-width:400px){.order-preparation .op-pallet-card-actions button{font-size:12px;gap:4px}.op-pallet-card-actions{gap:6px}}
+
+@media(max-width:600px){.op-pallet-card .op-package-grid{grid-template-columns:minmax(0,1fr)}.op-pallet-card .op-package{min-width:0}}
+@media(max-width:400px){.order-preparation .op-package .op-package-actions button{font-size:12px;padding:6px 4px}}

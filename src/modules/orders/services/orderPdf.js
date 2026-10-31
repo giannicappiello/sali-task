@@ -193,6 +193,11 @@ function drawCompanyHeader(doc, logo, continuation = false, hideCompanyDetails =
   line(doc, PAGE.left, continuation ? 27 : 31, PAGE.right, continuation ? 27 : 31);
 }
 
+// Reuse the exact Progre order letterhead for logistics documents.
+export function drawProgreOrderHeader(doc, continuation = false) {
+  drawCompanyHeader(doc, COMPANY_LOGO_DATA_URL, continuation);
+}
+
 function drawPartyBlock(doc, order, model) {
   const y = 32; const left = 7; const mid = 119; const right = 203;
   const purchase = order.party_kind === "supplier";

@@ -11,7 +11,7 @@ const SENSITIVE_KEY = /authorization|token|secret|password|credential|cookie|ses
 function requestJson({ url, headers = {} }) {
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
-    const req = https.request({ protocol: parsed.protocol, hostname: parsed.hostname, port: parsed.port || 443, path: `${parsed.pathname}${parsed.search}`, method: "GET", headers, rejectUnauthorized: false, timeout: 60000 }, (response) => {
+    const req = https.request({ protocol: parsed.protocol, hostname: parsed.hostname, port: parsed.port || 443, path: `${parsed.pathname}${parsed.search}`, method: "GET", headers, rejectUnauthorized: false, timeout: 300000 }, (response) => {
       const chunks = [];
       response.on("data", (chunk) => chunks.push(chunk));
       response.on("end", () => {

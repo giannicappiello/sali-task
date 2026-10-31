@@ -120,7 +120,7 @@ export async function handleProductionCosts(req,body) {
   const page=Number(body.page||1);
   if(!Number.isInteger(page)||page<1||page>100000)throw fail("Pagina non valida.");
   let result;
-  try {result=await createProgremesClient({timeoutMs:60000}).request("production-cost-evidence",{page,pageSize:100});}
+  try {result=await createProgremesClient({timeoutMs: 300000}).request("production-cost-evidence",{page,pageSize:100});}
   catch(error){throw fail(error.upstreamStatus===404?"Aggiornare MES: il collegamento ai consuntivi non è ancora installato. I dati già importati restano disponibili.":"MES non raggiungibile per i consuntivi. I dati già importati restano disponibili.",502);}
   const configs=await readConfigurations(admin);
   const existing=await readAllRows(()=>admin.from("production_cost_records").select("*").order("mes_order_id"));

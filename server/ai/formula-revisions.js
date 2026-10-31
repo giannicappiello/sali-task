@@ -30,7 +30,7 @@ export async function mesDomainCall(auth, domain, operation, input = {}, transpo
   const path = `/api/workspace/ai/${domain}/${operation}`;
   const body = Buffer.from(JSON.stringify({ ...input, actor: `workspace:${auth.profile.id}` }));
   const timestamp = Math.floor(Date.now() / 1000), eventId = randomUUID();
-  const response = await transport(new URL(path, process.env.PROGREMES_URL), { method: 'POST', body, signal: AbortSignal.timeout(20000), headers: {
+  const response = await transport(new URL(path, process.env.PROGREMES_URL), { method: 'POST', body, signal: AbortSignal.timeout(300000), headers: {
     'Content-Type': 'application/json', [HMAC_HEADERS.timestamp]: String(timestamp), [HMAC_HEADERS.eventId]: eventId,
     [HMAC_HEADERS.signature]: signProductionMessage({ method: 'POST', path, timestamp, eventId, body, secret }),
   } });

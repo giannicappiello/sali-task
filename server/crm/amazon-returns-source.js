@@ -13,7 +13,7 @@ async function amazonClient(connection,secrets,fetcher) {
       if(typeof value==='string' && /^[a-zA-Z0-9-]{1,100}$/.test(value))requestId=value;
       return response;
     };
-    try{return await request(root+path,{headers:{'x-amz-access-token':token.access_token,'user-agent':'Workspace/1.0 (Language=JavaScript; Platform=Node.js)',accept:'application/json','content-type':'application/json'},timeoutMs:20000,maxBytes:2097152,...options},tracedFetcher,'Resi Amazon');}
+    try{return await request(root+path,{headers:{'x-amz-access-token':token.access_token,'user-agent':'Workspace/1.0 (Language=JavaScript; Platform=Node.js)',accept:'application/json','content-type':'application/json'},timeoutMs: 300000,maxBytes:2097152,...options},tracedFetcher,'Resi Amazon');}
     catch(error){if(requestId)error.providerRequestId=requestId;throw error;}
   };
 }
@@ -95,7 +95,7 @@ export async function fbaReturnReport(connection,secrets,{reportId,from,to,fetch
   if(result.processingStatus!=='DONE')return {reportId,status:result.processingStatus};
   const doc=await call('/reports/2021-06-30/documents/'+encodeURIComponent(result.reportDocumentId));
   if(!doc.url || ![undefined,'GZIP'].includes(doc.compressionAlgorithm))throw new Error('Formato report resi non supportato.');
-  const response=await fetcher(doc.url,{binary:true,timeoutMs:20000,maxBytes:2097152});
+  const response=await fetcher(doc.url,{binary:true,timeoutMs: 300000,maxBytes:2097152});
   if(!response.ok)throw new Error('Download report resi non riuscito.');
   const content=doc.compressionAlgorithm==='GZIP'?gunzipSync(response.data,{maxOutputLength:20971520}).toString('utf8'):String(response.data);
   return {reportId,status:'DONE',rows:returnReportRows(content)};

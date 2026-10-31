@@ -127,7 +127,7 @@ export function unassociated(archive) {
   return archive.files.filter(f=>f.active&&!linked.has(key(f.path))).map(f=>({relativePath:f.path,name:f.name,sizeBytes:f.size_bytes,
     reason:matchFile(f,archive.articles,archive.lots).reason||'In attesa di sincronizzazione.'}));
 }
-export async function syncLots(admin, {client=buildMexalClient({warehouse:null,timeoutMs:15000})}={}) {
+export async function syncLots(admin, {client=buildMexalClient({warehouse:null,timeoutMs: 300000})}={}) {
   const result=[],seen=new Set(); let next=null;
   const deadline=Date.now()+90000;
   do {
@@ -160,7 +160,7 @@ export function linkRow(file, match, input={}, user='Workspace', now=new Date().
     valido_al:input.validUntil||null,note:value(input.notes)||null,sincronizzato_il:now};
 }
 export async function synchronizeNas(admin,{force=false,fetchManifest=async()=>{
-  const response=await fetch(gatewayUrl('/manifest'),{signal:AbortSignal.timeout(60000)});
+  const response=await fetch(gatewayUrl('/manifest'),{signal:AbortSignal.timeout(300000)});
   if(!response.ok) throw fail(`Archivio NAS Workspace non disponibile (${response.status}).`,502);
   return response.json();
 },refreshLots=syncLots}={}) {

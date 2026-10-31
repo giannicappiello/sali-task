@@ -3,7 +3,7 @@ import { buildMexalClient, loadFullArticle } from './mexal/sync-products.js';
 import { applySpecificationSources, specificationSourceFields } from '../shared/productSpecification.js';
 import { createProgremesProductionClient } from './progremes-production-client.js';
 
-export async function readSpecificationBom(admin, code, mexal = buildMexalClient({ warehouse: null, timeoutMs: 12000 }), ancestors = [], budget = { calls: 0 }) {
+export async function readSpecificationBom(admin, code, mexal = buildMexalClient({ warehouse: null, timeoutMs: 300000 }), ancestors = [], budget = { calls: 0 }) {
   if (ancestors.includes(key(code)) || ancestors.length >= 6 || ++budget.calls > 20) throw new Error('Distinta base ricorsiva o troppo estesa.');
   const items = [], tokens = new Set();
   let next = '';

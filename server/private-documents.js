@@ -94,7 +94,7 @@ export async function handlePrivateDocuments(req, body = {}) {
 
 export async function readPrivateDocumentChunk(url, offset, fetchFile = fetch) {
   const chunkSize = 1024 * 1024;
-  const response = await fetchFile(url, { headers: { Range: `bytes=${offset}-${offset + chunkSize - 1}` }, signal: AbortSignal.timeout(60000) });
+  const response = await fetchFile(url, { headers: { Range: `bytes=${offset}-${offset + chunkSize - 1}` }, signal: AbortSignal.timeout(300000) });
   if (offset === 0 && response.status === 416 && response.headers.get("content-range") === "bytes */0") return { base64: "", nextOffset: null };
   if (!response.ok) throw new Error(`Lettura documento NAS non riuscita (${response.status}).`);
   const range = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(response.headers.get("content-range") || "");

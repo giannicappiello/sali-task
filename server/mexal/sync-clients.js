@@ -106,7 +106,7 @@ function requestMexal({ url, headers }) {
         method: "GET",
         headers,
         rejectUnauthorized: false,
-        timeout: 60000,
+        timeout: 300000,
       },
       (response) => {
         const chunks = [];

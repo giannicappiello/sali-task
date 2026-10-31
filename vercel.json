@@ -2,22 +2,25 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
     "api/cron/mexal-products.js": {
-      "maxDuration": 300
+      "maxDuration": 800
     },
     "api/mexal/submit-order.js": {
-      "maxDuration": 300
+      "maxDuration": 800
     },
     "api/mexal/automation.js": {
-      "maxDuration": 300,
+      "maxDuration": 800,
       "regions": [
         "fra1"
       ]
     },
     "api/mexal/queue-worker.js": {
-      "maxDuration": 300
+      "maxDuration": 800
     },
     "api/cron/mexal-dispatcher.js": {
-      "maxDuration": 300
+      "maxDuration": 800
+    },
+    "api/**/*.js": {
+      "maxDuration": 800
     }
   },
   "crons": [

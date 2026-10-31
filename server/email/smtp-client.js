@@ -55,9 +55,9 @@ export function createSmtpClient({
       user: settings.user,
       pass: settings.password,
     },
-    connectionTimeout: 20_000,
-    greetingTimeout: 20_000,
-    socketTimeout: 60_000,
+    connectionTimeout: 300_000,
+    greetingTimeout: 300_000,
+    socketTimeout: 300_000,
     tls: {
       minVersion: "TLSv1.2",
       rejectUnauthorized: true,

@@ -15,7 +15,7 @@ export async function triggerArubaOrderEmailWorker({ fetchImpl = fetch } = {}) {
         "X-Progre-Worker-Secret": secret,
       },
       body: JSON.stringify({ action: "run", source: "workspace" }),
-      signal: AbortSignal.timeout(90_000),
+      signal: AbortSignal.timeout(300000),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {

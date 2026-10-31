@@ -122,12 +122,12 @@ export async function fetchCommercePage(connection, secrets, previous, { fetcher
     const headers = { authorization: secrets.access_token ? `Bearer ${secrets.access_token}` : `Basic ${Buffer.from(`workspace:${secrets.api_key}`).toString('base64')}` };
     const root = `https://${dc}.api.mailchimp.com/3.0/`;
     if (['reports','recipients'].includes(state.phase)) {
-      const report = await fetchMailingReports(state, path => request(root + path, { headers, timeoutMs: 20000, maxBytes: 2000000 }, fetcher, 'Report mailing Mailchimp'));
+      const report = await fetchMailingReports(state, path => request(root + path, { headers, timeoutMs: 300000, maxBytes: 2000000 }, fetcher, 'Report mailing Mailchimp'));
       rows = report.rows; Object.assign(next, report.next); kind = 'mailings';
     } else {
     const path = state.phase === 'audiences' ? 'lists' : `lists/${encodeURIComponent(state.audience)}/members`;
-    const data = await request(`${root}${path}?count=20&offset=${(state.page - 1) * 20}`, { headers, timeoutMs: 20000 }, fetcher, 'Importazione Mailchimp');
-    const schema = state.phase === 'audiences' ? null : await request(`${root}lists/${encodeURIComponent(state.audience)}/merge-fields?count=1000`, { headers, timeoutMs: 20000 }, fetcher, 'Campi anagrafici Mailchimp');
+    const data = await request(`${root}${path}?count=20&offset=${(state.page - 1) * 20}`, { headers, timeoutMs: 300000 }, fetcher, 'Importazione Mailchimp');
+    const schema = state.phase === 'audiences' ? null : await request(`${root}lists/${encodeURIComponent(state.audience)}/merge-fields?count=1000`, { headers, timeoutMs: 300000 }, fetcher, 'Campi anagrafici Mailchimp');
     if (schema && (!Array.isArray(schema.merge_fields) || schema.total_items > schema.merge_fields.length)) throw new Error('Campi Mailchimp incompleti.');
     const list = state.phase === 'audiences' ? data.lists : data.members;
     if (!Array.isArray(list)) throw new Error('Risposta Mailchimp non valida: pagina non acquisita.');
@@ -153,7 +153,7 @@ export async function fetchCommercePage(connection, secrets, previous, { fetcher
   } else if (connection.provider_code === 'woocommerce') {
     const base = String(configuration.site_url).replace(/\/$/, '') + '/wp-json/wc/v3/';
     const headers = { authorization: `Basic ${Buffer.from(`${secrets.consumer_key}:${secrets.consumer_secret}`).toString('base64')}` };
-    const get = (path) => request(base + path, { headers, timeoutMs: 20000, maxBytes: 2000000 }, fetcher, 'Importazione WooCommerce');
+    const get = (path) => request(base + path, { headers, timeoutMs: 300000, maxBytes: 2000000 }, fetcher, 'Importazione WooCommerce');
     const path = state.phase === 'variations' ? `products/${state.parent.id}/variations` : state.phase;
     const pageSize = kind === 'orders' ? 5 : 20;
     const parameters = new URLSearchParams({per_page:String(pageSize),page:String(state.page),orderby:'id',order:'asc'});
@@ -219,7 +219,7 @@ export async function fetchCommercePage(connection, secrets, previous, { fetcher
     }
     let data;
     for(let attempt=0;attempt<3;attempt++) {
-      try { data=await request(`${root}${path}?${query}`,{headers,timeoutMs:20000,maxBytes:2000000},fetcher,`Importazione Amazon ${kind}`);break; }
+      try { data=await request(`${root}${path}?${query}`,{headers,timeoutMs: 300000,maxBytes:2000000},fetcher,`Importazione Amazon ${kind}`);break; }
       catch(error) {
         if(kind==='orders' && error.code==='provider_403' && query.get('includedData').split(',').includes('TAX')) {
           // Restricted tax permissions must not stop ordinary order import.

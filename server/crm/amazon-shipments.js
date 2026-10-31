@@ -64,7 +64,7 @@ export async function synchronizeShipmentDates({db,connection,secrets,fetcher=sa
   if(!root) throw new Error('Regione Amazon non valida.');
   const token=await refreshAccessToken(connection,secrets,fetcher);
   const headers={'x-amz-access-token':token.access_token,'content-type':'application/json',accept:'application/json'};
-  const call=(path,options={})=>request(root+'/reports/2021-06-30/'+path,{headers,timeoutMs:20000,...options},fetcher,'Report spedizioni FBA');
+  const call=(path,options={})=>request(root+'/reports/2021-06-30/'+path,{headers,timeoutMs: 300000,...options},fetcher,'Report spedizioni FBA');
   let rows=[],wait=0;
   if(!state.reportId) {
     state.start=new Date(Math.max(Date.parse(state.floor),Date.parse(state.end)-30*86400000)).toISOString();
@@ -83,7 +83,7 @@ export async function synchronizeShipmentDates({db,connection,secrets,fetcher=sa
       const doc=await call('documents/'+encodeURIComponent(report.reportDocumentId));
       if(!doc.url || ![undefined,'GZIP'].includes(doc.compressionAlgorithm)) throw new Error('Formato report spedizioni non supportato.');
       // No Amazon authorization header is ever sent to the signed download URL.
-      const response=await fetcher(doc.url,{binary:true,timeoutMs:20000,maxBytes:2097152});
+      const response=await fetcher(doc.url,{binary:true,timeoutMs: 300000,maxBytes:2097152});
       if(!response.ok) throw new Error('Download report spedizioni Amazon non riuscito.');
       const content=doc.compressionAlgorithm==='GZIP' ? gunzipSync(response.data,{maxOutputLength:20*1024*1024}).toString('utf8') : String(response.data);
       rows=shipmentReportDates(content);state.reports++;

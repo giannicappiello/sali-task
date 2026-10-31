@@ -14,7 +14,7 @@ export function createHrPlanReader({ base = process.env.PROGREMES_URL, secret = 
     const body = Buffer.from(JSON.stringify({ ...(operation === 'get' ? { id: input.id } : { calendar: true, ...(input.revision ? { calendarRevision: input.revision } : {}) }), actor: 'workspace:hr-production-calendar' }));
     const timestamp = Math.floor(Date.now() / 1000), eventId = randomUUID();
     let response;
-    try { response = await transport(new URL(path, base), { method: 'POST', body, redirect: 'error', signal: AbortSignal.timeout(60000), headers: {
+    try { response = await transport(new URL(path, base), { method: 'POST', body, redirect: 'error', signal: AbortSignal.timeout(300000), headers: {
       'Content-Type': 'application/json', [HMAC_HEADERS.timestamp]: String(timestamp), [HMAC_HEADERS.eventId]: eventId,
       [HMAC_HEADERS.signature]: signProductionMessage({ method: 'POST', path, timestamp, eventId, body, secret: secret.trim() }),
     } }); }

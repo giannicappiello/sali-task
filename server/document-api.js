@@ -62,7 +62,7 @@ async function stopRequested(admin, runId) {
 }
 
 async function sync(admin, { runId = null } = {}) {
-  const response = await fetch(signedUrl("/manifest"), { signal: AbortSignal.timeout(120000) });
+  const response = await fetch(signedUrl("/manifest"), { signal: AbortSignal.timeout(300000) });
   if (!response.ok) throw Object.assign(new Error(`Gateway documentale non disponibile (${response.status}).`), { status: 502 });
   const manifest = await response.json();
   const now = new Date().toISOString();

@@ -57,7 +57,7 @@ export async function readStartPrintJob(id,{env=process.env,transport=fetch}={})
  if(!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id || '')) throw fail('Identificativo stampa non valido.');
  const url=new URL(`/api/workspace/v1/print/${id}`,env.PROGREMES_URL);
  if(url.protocol!=='https:' || !env.PROGREMES_INTEGRATION_SECRET) throw fail('Collegamento stampa MES non configurato.');
- const response=await transport(url,{redirect:'error',headers:{'X-Workspace-Secret':env.PROGREMES_INTEGRATION_SECRET},signal:AbortSignal.timeout(15000)});
+ const response=await transport(url,{redirect:'error',headers:{'X-Workspace-Secret':env.PROGREMES_INTEGRATION_SECRET},signal:AbortSignal.timeout(300000)});
  const job=await response.json();
  if(!response.ok) throw fail(job.error || job.code || 'Stato stampa non disponibile.');
  return job;

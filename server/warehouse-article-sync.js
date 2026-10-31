@@ -32,7 +32,7 @@ export async function syncWarehouseArticle(db, input, { mexalFactory = buildMexa
     // Read just this article directly from Mexal in both operational warehouses.
     // No write happens until both responses have been validated.
     const rows = await Promise.all([1, 8].map(async number => {
-      const client = mexalFactory({ warehouse: number, timeoutMs: 15000, retryOptions: { maxRetries: 1 } });
+      const client = mexalFactory({ warehouse: number, timeoutMs: 300000, retryOptions: { maxRetries: 1 } });
       const article = await loadFullArticle(client, articleCode, {});
       const fields = ["qta_inventario", "qta_carico", "qta_scarico"];
       if (!fields.some(field => article[field] != null))
@@ -71,7 +71,7 @@ export async function syncWarehouseArticle(db, input, { mexalFactory = buildMexa
     .eq("article_code", articleCode).eq("warehouse_number", warehouse).maybeSingle();
   if (existing.error) throw existing.error;
   if (!existing.data) throw Object.assign(new Error("Riga articolo-magazzino non presente."), { status: 400 });
-  const client = mexalFactory({ warehouse, timeoutMs: 15000, retryOptions: { maxRetries: 1 } });
+  const client = mexalFactory({ warehouse, timeoutMs: 300000, retryOptions: { maxRetries: 1 } });
   const article = await loadFullArticle(client, articleCode, {});
   const row = mapArticleWarehouseStock(article, { number: warehouse, name: existing.data.warehouse_name });
   if (row.article_code !== articleCode) throw new Error("Mexal ha restituito un articolo diverso da quello richiesto.");

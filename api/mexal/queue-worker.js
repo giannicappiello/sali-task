@@ -6,7 +6,7 @@ import { waitUntil } from "@vercel/functions";
 import { wakeMexalWorker } from "../../server/mexal/worker-wakeup.js";
 import { resumeDeletedOcts } from "../../server/mexal/propagate-deleted-octs.js";
 
-const LEASE_SECONDS = 300;
+const LEASE_SECONDS = 900;
 const MAX_WORKER_DURATION_MS = 235000;
 const MAX_STEPS_PER_CALL = 30;
 

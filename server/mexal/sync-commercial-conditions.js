@@ -386,7 +386,7 @@ function createMexalClient() {
           method: "GET",
           headers,
           rejectUnauthorized: false,
-          timeout: 6e4
+          timeout: 300000
         },
         (response) => {
           const chunks = [];

@@ -1,8 +1,8 @@
 // @ts-check
 
-const DEFAULT_TIMEOUT_MS = 10_000;
+const DEFAULT_TIMEOUT_MS = 300_000;
 const MIN_TIMEOUT_MS = 1_000;
-const MAX_TIMEOUT_MS = 60_000;
+const MAX_TIMEOUT_MS = 600_000;
 const MAX_PAGE = 100_000;
 const MAX_PAGE_SIZE = 500;
 const MAX_SEARCH_LENGTH = 200;

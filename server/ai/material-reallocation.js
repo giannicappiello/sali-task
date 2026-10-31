@@ -34,7 +34,7 @@ export async function previewMaterialReallocation(auth, input, transport = fetch
   const body = Buffer.from(JSON.stringify({ orderNumber, articleCode }));
   const timestamp = Math.floor(Date.now() / 1000); const eventId = randomUUID();
   const response = await transport(new URL(path, base), {
-    method: "POST", body, signal: AbortSignal.timeout(20000),
+    method: "POST", body, signal: AbortSignal.timeout(300000),
     headers: { "Content-Type": "application/json", [HMAC_HEADERS.timestamp]: String(timestamp), [HMAC_HEADERS.eventId]: eventId,
       [HMAC_HEADERS.signature]: signProductionMessage({ method: "POST", path, timestamp, eventId, body, secret }) },
   });

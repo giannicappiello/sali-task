@@ -73,7 +73,7 @@ export async function handleCostAI(req,body,session,{generate=generateText,autho
   check(await admin.from("production_cost_ai_proposals").update({generation_id:generationId}).eq("id",body.requestId));
   const context={laborHourly:base.laborHourly,referenceShiftHours:base.referenceShiftHours??8,laborRules:laborRules(base),mixingOperatorsCount:base.mixingOperatorsCount,calendarSource:"Calendario aziendale HR: modifiche in Rendicontazioni HR",
    machines:base.machines.map(m=>({id:m.id,code:m.code,name:m.name,type:m.type,gainPerWork:m.gainPerWork??m.gainPerShift,washMinutes:m.washMinutes,washCost:m.washCost}))};
-  const generated=await generate({model,system:COST_SYSTEM_PROMPT,messages:[...history,{role:"user",content:`Configurazione attualmente nel modulo (dati): ${JSON.stringify(context)}\nRichiesta: ${prompt}`}],output:Output.object({schema:jsonSchema(COST_PROPOSAL_SCHEMA)}),maxOutputTokens:4500,maxRetries:1,abortSignal:AbortSignal.timeout(120000),providerOptions:{gateway:{user:profile.id,tags:["feature:production-cost-configuration"]}}});
+  const generated=await generate({model,system:COST_SYSTEM_PROMPT,messages:[...history,{role:"user",content:`Configurazione attualmente nel modulo (dati): ${JSON.stringify(context)}\nRichiesta: ${prompt}`}],output:Output.object({schema:jsonSchema(COST_PROPOSAL_SCHEMA)}),maxOutputTokens:4500,maxRetries:1,abortSignal:AbortSignal.timeout(300000),providerOptions:{gateway:{user:profile.id,tags:["feature:production-cost-configuration"]}}});
   // Save the unique output before secondary usage accounting can fail.
   const output=generated.output;
   const usesHistory=(output?.patch?.station?.basis||base.laborRules?.station?.basis)==="historical_productivity";

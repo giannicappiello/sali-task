@@ -7,7 +7,7 @@ import { safeFetch } from './digital-security.js';
 export async function fetchCustomerProfiles(connection, secrets, cursor = {}, fetcher = safeFetch) {
   const page = Number(cursor.page || 1);
   if (!Number.isInteger(page) || page < 1 || page > 100000) throw new Error('Pagina anagrafiche non valida.');
-  const get = (url, headers) => request(url, { headers, timeoutMs: 20000, maxBytes: 4000000 }, fetcher, 'Aggiornamento anagrafiche');
+  const get = (url, headers) => request(url, { headers, timeoutMs: 300000, maxBytes: 4000000 }, fetcher, 'Aggiornamento anagrafiche');
   if (connection.provider_code === 'woocommerce') {
     const phase = cursor.phase || 'customers';
     if (!['customers', 'orders'].includes(phase)) throw new Error('Fase anagrafiche non valida.');

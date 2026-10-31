@@ -3,7 +3,7 @@ import { sectionsForSpecification, specificationComponentFields, specificationFi
 import { specificationAttachmentContent } from './specificationAttachmentContent.js';
 
 async function imageData(url) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  const response = await fetch(url, { signal: AbortSignal.timeout(90000) });
   if (!response.ok) throw new Error('Foto non disponibile');
   const blob = await response.blob();
   const bitmap = await createImageBitmap(blob);
@@ -20,7 +20,7 @@ export async function createProductSpecificationPdf({ article, specification, ph
   const [{ jsPDF }, { autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
   const doc = new jsPDF();
   if (!logoBytes) {
-    const response = await fetch('/progre-logo-white.png', { signal: AbortSignal.timeout(10000) });
+    const response = await fetch('/progre-logo-white.png', { signal: AbortSignal.timeout(90000) });
     if (!response.ok) throw new Error('Logo Progré non disponibile. Riprova a generare il capitolato.');
     logoBytes = new Uint8Array(await response.arrayBuffer());
   }

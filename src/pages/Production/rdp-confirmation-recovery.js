@@ -15,7 +15,7 @@ const pendingError = (cause) => Object.assign(new Error(
 
 export async function recoverConfirmation(send, {
   onPending = () => {}, wait = ms => new Promise(resolve => setTimeout(resolve, ms)),
-  attempts = 6, attemptTimeoutMs = 75000, totalTimeoutMs = 180000,
+  attempts = 6, attemptTimeoutMs = 360000, totalTimeoutMs = 720000,
 } = {}) {
   const deadline = Date.now() + totalTimeoutMs;
   let lastError;

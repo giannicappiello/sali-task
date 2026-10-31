@@ -182,7 +182,7 @@ function round4(value) {
   return Math.round((value + Number.EPSILON) * 10000) / 10000;
 }
 
-function requestMexal({ url, headers, binary = false, method = "GET", body, timeoutMs = 45000 }) {
+function requestMexal({ url, headers, binary = false, method = "GET", body, timeoutMs = 300000 }) {
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
 
@@ -247,7 +247,7 @@ function parseJsonResponse(response, label) {
   return parsed;
 }
 
-export function buildMexalClient({ request = requestMexal, warehouse, retryOptions, year, timeoutMs = 45000 } = {}) {
+export function buildMexalClient({ request = requestMexal, warehouse, retryOptions, year, timeoutMs = 300000 } = {}) {
   const baseUrl = requireEnv("MEXAL_BASE_URL").replace(/\/+$/, "");
   const username = requireEnv("MEXAL_USERNAME");
   const password = requireEnv("MEXAL_PASSWORD");
@@ -1328,7 +1328,7 @@ export default async function handler(req, res) {
       return requestMexal({ ...options, timeoutMs: Math.min(options.timeoutMs, remaining) });
     };
     const stockClientOptions = action === "sync-stock-it"
-      ? { retryOptions: stockRetryOptions, timeoutMs: 15000, request: stockRequest } : {};
+      ? { retryOptions: stockRetryOptions, timeoutMs: 300000, request: stockRequest } : {};
     const mexal = buildMexalClient({ ...stockClientOptions });
     const availabilityClients = {
       warehouse5: Number(mexal.magazzino) === STOCK_WAREHOUSE

@@ -10,7 +10,7 @@ export async function editProductionDates(session, row, body, transport = fetch)
   const bytes=Buffer.from(JSON.stringify({...input,actor})),eventId=randomUUID(),timestamp=Math.floor(Date.now()/1000);
   const secret=process.env.PROGREMES_INTEGRATION_SECRET?.trim();
   if(!secret||!process.env.PROGREMES_URL)throw new Error('Collegamento MES non configurato.');
-  const response=await transport(new URL(path,process.env.PROGREMES_URL),{method:'POST',body:bytes,signal:AbortSignal.timeout(30000),headers:{'Content-Type':'application/json',[HMAC_HEADERS.eventId]:eventId,[HMAC_HEADERS.timestamp]:String(timestamp),[HMAC_HEADERS.signature]:signProductionMessage({method:'POST',path,timestamp,eventId,body:bytes,secret})}});
+  const response=await transport(new URL(path,process.env.PROGREMES_URL),{method:'POST',body:bytes,signal:AbortSignal.timeout(300000),headers:{'Content-Type':'application/json',[HMAC_HEADERS.eventId]:eventId,[HMAC_HEADERS.timestamp]:String(timestamp),[HMAC_HEADERS.signature]:signProductionMessage({method:'POST',path,timestamp,eventId,body:bytes,secret})}});
   const result=await response.json();
   if(!response.ok)throw new Error(result.error||'Rettifica MES non disponibile.');
   return result;

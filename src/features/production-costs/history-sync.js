@@ -8,7 +8,7 @@ export async function recoverCostDocuments({jobs,request,refresh,onProgress=()=>
    for(const [needed,operation] of [[job.oct,"sync-oct"],[job.sl,"sync-product-sl"]]){
     if(!needed)continue;check(signal);
     try{
-     const result=await request(operation,{id:job.id},{signal,timeoutMs:90000});
+     const result=await request(operation,{id:job.id},{signal,timeoutMs:360000});
      warnings+=result.warnings?.length||0;
      if(job.sl&&operation==="sync-product-sl")slRecovered+=result.recovered||0;
      if(operation==="sync-oct")ocRecovered+=result.recovered||0;
@@ -28,7 +28,7 @@ export async function syncCostHistory({request,refresh,onProgress=()=>{},signal,
  let page=1,result,imported=0;const jobs=new Map();
  do{
   check(signal);onProgress(`Importazione storico MES · pagina ${page}…`);
-  result=await request("sync",{page},{signal,timeoutMs:90000});
+  result=await request("sync",{page},{signal,timeoutMs:360000});
   imported+=result.imported||0;
   for(const [key,ids] of [["oct",result.octRecoveryIds],["sl",result.recoveryIds]])for(const id of ids||[]){
    const job=jobs.get(id)||{id};job[key]=true;jobs.set(id,job);

@@ -28,7 +28,7 @@ export function createCodexClient({ apiKey = process.env.OPENAI_API_KEY, transpo
       method,
       headers: { Authorization: `Bearer ${apiKey}`, 'OpenAI-Beta': 'agents=v1', 'Content-Type': 'application/json' },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(25000),
+      signal: AbortSignal.timeout(300000),
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {

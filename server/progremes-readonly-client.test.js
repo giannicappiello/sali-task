@@ -340,10 +340,10 @@ test("partial closure, actual document references and prepared quantity survive 
 });
 
 
-test("allows a full minute for cost requests and clamps longer timeouts", async (t) => {
+test("allows long MES requests and clamps them to ten minutes", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   try {
-    for (const timeoutMs of [60_000, 120_000]) {
+    for (const timeoutMs of [600_000, 900_000]) {
       let aborted = false;
       const client = createProgremesClient({
         baseUrl, secret, timeoutMs, logger: silentLogger,
@@ -356,7 +356,7 @@ test("allows a full minute for cost requests and clamps longer timeouts", async 
       });
       const pending = assert.rejects(client.request("production-cost-evidence", { page: 1, pageSize: 100 }),
         (error) => error.code === "TIMEOUT" && error.status === 504);
-      t.mock.timers.tick(59_999);
+      t.mock.timers.tick(599_999);
       assert.equal(aborted, false);
       t.mock.timers.tick(1);
       await pending;

@@ -63,7 +63,7 @@ export function parsePackagingSl(detail,{reference,year,customer,bulkCode,packag
 
 // Only GET on exact existing documents. Bound each recovery to one production;
 // failures leave prior evidence available and are returned as explicit diagnostics.
-export async function recoverPackagingSl(evidence,{clientForYear=year=>buildMexalClient({year,warehouse:null,timeoutMs:7000}),findHeaders=slHeaders,now=new Date().toISOString()}={}) {
+export async function recoverPackagingSl(evidence,{clientForYear=year=>buildMexalClient({year,warehouse:null,timeoutMs: 300000}),findHeaders=slHeaders,now=new Date().toISOString()}={}) {
  const references=slReferences(evidence.productSlReference),documents=[],warnings=[];
  const works=(evidence.works||[]).filter(w=>["Confezionamento","Astucciatura"].includes(w.phase));
  const dates=works.flatMap(w=>[w.start,w.end]).filter(Boolean);

@@ -1035,7 +1035,7 @@ async function applyProgremesProposal(proposal, actorId) {
   const url = new URL(String(process.env.PROGREMES_AI_APPLY_PATH || "/api/workspace/ai/planning/apply"), required("PROGREMES_URL"));
   const response = await fetch(url, {
     method: "POST",
-    signal: AbortSignal.timeout(55000),
+    signal: AbortSignal.timeout(300000),
     headers: { "Content-Type": "application/json", "X-Workspace-Secret": required("PROGREMES_INTEGRATION_SECRET") },
     body: JSON.stringify({ proposalId: proposal.id, actor: `workspace:${actorId}`, criterion: proposal.criterio, proposal: proposal.proposta }),
   });

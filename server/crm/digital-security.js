@@ -84,7 +84,7 @@ export async function assertPublicHttpsUrl(input, dependencies = {}) {
 
 export async function safeFetch(input, options = {}, dependencies = {}) {
   const { url, address, family } = await resolvePublicHttpsUrl(input, dependencies);
-  const timeoutMs = Math.min(Number(options.timeoutMs || 10000), 20000);
+  const timeoutMs = Math.min(Number(options.timeoutMs || 300000), 600000);
   const maxBytes = Math.min(Number(options.maxBytes || 1024 * 1024), 2 * 1024 * 1024);
   const transport = dependencies.transport || (url.protocol === "https:" ? https : http);
   return new Promise((resolve, reject) => {

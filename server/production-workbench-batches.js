@@ -23,7 +23,7 @@ export async function readWorkbenchBatches({ detail, productionOrderId, actor, t
   const body = Buffer.from(JSON.stringify({ orderId: productionOrderId, actor: `workspace:${actor}` }));
   const timestamp = Math.floor(Date.now() / 1000), eventId = randomUUID();
   const response = await transport(new URL(path, base), { method: "POST", body,
-    signal: AbortSignal.timeout(15000), headers: { "Content-Type": "application/json",
+    signal: AbortSignal.timeout(300000), headers: { "Content-Type": "application/json",
       [HMAC_HEADERS.timestamp]: String(timestamp), [HMAC_HEADERS.eventId]: eventId,
       [HMAC_HEADERS.signature]: signProductionMessage({ method: "POST", path, timestamp, eventId, body, secret }) } });
   const result = await response.json();

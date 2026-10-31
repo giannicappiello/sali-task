@@ -86,7 +86,7 @@ export function createOrderIndexSyncHandler({
     try {
       const cache = await synchronizeOrderIndex(
         adminFactory(),
-        clientFactory({ warehouse: null, timeoutMs: 20000 }),
+        clientFactory({ warehouse: null, timeoutMs: 300000 }),
         "scheduled",
       );
       return res

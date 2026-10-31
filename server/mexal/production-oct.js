@@ -38,7 +38,7 @@ export async function readProductionOct(document,{target,year,mexal,now}){
   unitPrice:line.prezzo_netto,discount:line.sconto_commerciale,position:line.mexal_posizione,
   date:h.data_ordine,recoveredAt:now,source:"Riga ordine originale Mexal: importo netto effettivo, IVA esclusa"};
 }
-export async function recoverProductionOct(evidence,{clientForYear=year=>buildMexalClient({year,warehouse:null,timeoutMs:7000}),now=new Date().toISOString()}={}){
+export async function recoverProductionOct(evidence,{clientForYear=year=>buildMexalClient({year,warehouse:null,timeoutMs: 300000}),now=new Date().toISOString()}={}){
  const lines=[],warnings=[],deadline=Date.now()+40000;
  for(const target of octTargets(evidence)){
   const year=Number(String(target.date||"").slice(0,4));

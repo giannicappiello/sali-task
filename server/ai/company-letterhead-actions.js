@@ -229,7 +229,7 @@ async function decideMesDocumentAction(auth, pending, confirmed) {
   const eventId = pending.request_id;
   let result = null; let failure = null;
   try {
-    const response = await fetch(new URL(path, requiredEnvironment("PROGREMES_URL")), { method: "POST", signal: AbortSignal.timeout(Number(process.env.PROGREMES_API_TIMEOUT_MS || 15000)),
+    const response = await fetch(new URL(path, requiredEnvironment("PROGREMES_URL")), { method: "POST", signal: AbortSignal.timeout(Math.max(300000, Number(process.env.PROGREMES_API_TIMEOUT_MS || 300000))),
       headers: { "Content-Type": "application/json", [HMAC_HEADERS.timestamp]: String(timestamp), [HMAC_HEADERS.eventId]: eventId,
         [HMAC_HEADERS.signature]: signProductionMessage({ method: "POST", path, timestamp, eventId, body: payload, secret: requiredEnvironment("PROGREMES_INTEGRATION_SECRET") }) }, body: payload });
     result = await response.json().catch(() => ({}));

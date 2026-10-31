@@ -4,7 +4,7 @@ import { createProgremesClient } from "./progremes-readonly-client.js";
 import { fillingHistorySummary,withAdditionalFillingShifts } from "../src/features/production-costs/filling-history.js";
 import { PRODUCTION_COST_HISTORY_FROM } from "./production-cost-history-period.js";
 
-export async function readFillingHistory(admin,{settings,companyCalendar,historyFrom=settings?.historyFrom??PRODUCTION_COST_HISTORY_FROM,historyTo=settings?.historyTo??"",request=()=>createProgremesClient({timeoutMs:30000}).request("production-cost-filling-history")}={}) {
+export async function readFillingHistory(admin,{settings,companyCalendar,historyFrom=settings?.historyFrom??PRODUCTION_COST_HISTORY_FROM,historyTo=settings?.historyTo??"",request=()=>createProgremesClient({timeoutMs: 300000}).request("production-cost-filling-history")}={}) {
  try {
   companyCalendar??=await readCostCalendar(admin);
   settings={...settings,companyCalendar,historyFrom,historyTo};

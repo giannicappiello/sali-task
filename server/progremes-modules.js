@@ -124,7 +124,7 @@ export async function syncProgremesModules(req, supabase, origin = "manuale", sk
   try {
     const response = await fetch(new URL("/api/workspace/modules", required("PROGREMES_URL")), {
       headers: { "X-Workspace-Secret": required("PROGREMES_INTEGRATION_SECRET") },
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(300000),
     });
     if (!response.ok) throw new Error(`ProgreMES ha risposto con stato ${response.status}.`);
     const sourcePayload = await response.json();

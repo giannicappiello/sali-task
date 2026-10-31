@@ -10,7 +10,7 @@ export async function deliverCatalogDeletions(admin, fetcher = fetch, catalog = 
   if (!catalog) {
     const response = await fetcher(new URL('/api/workspace/modules', process.env.PROGREMES_URL), {
       headers: { 'X-Workspace-Secret': process.env.PROGREMES_INTEGRATION_SECRET },
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(300000),
     });
     if (!response.ok) throw new Error(`Impossibile verificare il catalogo MES (${response.status}).`);
     catalog = await response.json();
@@ -30,7 +30,7 @@ export async function deliverCatalogDeletions(admin, fetcher = fetch, catalog = 
     const response = await fetcher(new URL('/api/workspace/modules/deletions', process.env.PROGREMES_URL), {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workspace-Secret': process.env.PROGREMES_INTEGRATION_SECRET },
       body: JSON.stringify({ codes: batch.filter(r => r.kind === 'module').map(r => r.external_code), screens: batch.filter(r => r.kind === 'screen').map(r => r.external_code) }),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(300000),
     });
     if (!response.ok) throw new Error(`MES non ha confermato l'allineamento del catalogo (${response.status}). Moduli: ${batch.filter(r => r.kind === 'module').map(r => r.external_code).join(', ') || 'nessuno'}; schermate: ${batch.filter(r => r.kind === 'screen').map(r => r.external_code).join(', ') || 'nessuna'}.`);
   }

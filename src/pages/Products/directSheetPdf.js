@@ -15,7 +15,7 @@ export function textBoxLayout(doc, box, page, values) {
 }
 export async function photoData(url) {
   if (!url) return null;
-  const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  const response = await fetch(url, { signal: AbortSignal.timeout(90000) });
   if (!response.ok) throw new Error('Foto prodotto non disponibile per il PDF.');
   const blob = await response.blob();
   if (!blob.type.startsWith('image/')) throw new Error('La foto prodotto non è un’immagine valida.');

@@ -30,7 +30,7 @@ export default function SheetGenerateDialog({ product, sheet, translations, canA
           prepare: async file => sheetChannelApi('prepare_archive', { productId: product.id, revision: sheet.revision, templateId: template.id, templateRevision: template.revision,
             translationRevisions: Object.fromEntries(translations.map(t => [t.language, t.revision])), filename: file.name, format, languages: file.languages, sha256: await checksum(file.blob), size: file.blob.size }),
           upload: async (file, prepared) => {
-            const upload = await fetch(prepared.url, { method: 'PUT', signal: AbortSignal.timeout(60000), headers: { 'Content-Type': format === 'pdf' ? 'application/pdf' : 'image/jpeg' }, body: file.blob });
+            const upload = await fetch(prepared.url, { method: 'PUT', signal: AbortSignal.timeout(90000), headers: { 'Content-Type': format === 'pdf' ? 'application/pdf' : 'image/jpeg' }, body: file.blob });
             const response = await upload.json().catch(() => ({}));
             if (!upload.ok) throw new Error(response.error || 'Scrittura sul NAS non disponibile. Il file è scaricabile qui sotto.');
           },

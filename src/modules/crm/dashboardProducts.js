@@ -3,7 +3,7 @@ async function request(client,name,parameters,signal) {
  const controller=new AbortController();
  const cancel=()=>controller.abort();
  if(signal?.aborted) controller.abort(); else signal?.addEventListener('abort',cancel,{once:true});
- const timer=setTimeout(()=>controller.abort(),45000);
+ const timer=setTimeout(()=>controller.abort(),90000);
  try {
   const {data,error}=await client.rpc(name,parameters).abortSignal(controller.signal);
   if(error) throw new Error(controller.signal.aborted && !signal?.aborted ? 'Tempo di caricamento prodotti superato. Riprova.' : error.message || 'Dati prodotti non disponibili.');

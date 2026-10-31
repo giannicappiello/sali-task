@@ -366,9 +366,9 @@ export function createOrderPreparationHandler({
           .single(),
       );
 
-      const client = clientFactory({ warehouse: null, timeoutMs: 20000 });
+      const client = clientFactory({ warehouse: null, timeoutMs: 300000 });
       const inventoryFactory = ({ warehouse }) => clientFactory({
-        warehouse, year: client.anno, timeoutMs: 20000,
+        warehouse, year: client.anno, timeoutMs: 300000,
       });
 
       if (op === "list") {

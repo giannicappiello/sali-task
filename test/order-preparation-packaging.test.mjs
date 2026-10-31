@@ -100,7 +100,7 @@ test("missing carton quantity asks before scanning, fills the specification and 
   const f = await fixture();
   try {
     await f.sql.exec(
-      `update workspace_product_specifications set data='{"piecesPerBox":"","notes":"Keep notes","approvedBy":"Old approval","approvedAt":"2026-10-01","approvedUserId":"old"}',attachments='[{"id":"kept","path":"saved.pdf","section":"box"}]' where article_code='IT0001'`,
+      `update workspace_product_specifications set data='{"piecesPerBox":"","totalWeightGrams":"1000","notes":"Keep notes","approvedBy":"Old approval","approvedAt":"2026-10-01","approvedUserId":"old"}',attachments='[{"id":"kept","path":"saved.pdf","section":"box"}]' where article_code='IT0001'`,
     );
     const scan = f.scan();
     let response = await f.call("scan", scan);
@@ -142,7 +142,8 @@ test("missing carton quantity asks before scanning, fills the specification and 
 test("missing specification is created; invalid, unauthorized and concurrent writes never corrupt it", async () => {
   const f = await fixture();
   try {
-    const scan = f.scan("000002");
+    await f.sql.exec("delete from workspace_product_specifications where article_code='IT0002'");
+    const scan = {...f.scan("000002"),unitWeightGrams:500};
     let response = await f.call("scan", scan);
     assert.equal(response.data.requiresCartonPieces, true);
     for (const value of [0, -1, 1.5, "bad", 1000001]) {
@@ -391,4 +392,47 @@ test("verify, cancel and reopen refresh historical FIFO errors without reserving
     const shortage=await f.call("verify",{id:row.id,version:row.version,eventId:event()});
     assert.equal(shortage.statusCode,409);assert.match(shortage.data.error,/FIFO insufficienti/);
   } finally {await f.sql.close();}
+});
+
+test("missing product weight is requested for a single piece and saved to the specification with no duplicated scan",async()=>{
+  const f=await fixture();
+  try{
+    await f.sql.exec(`update workspace_product_specifications set data=data-'totalWeightGrams'||'{"format":"250","notes":"Keep weight notes"}'::jsonb where article_code='IT0001'`);
+    const body={...f.scan(),mode:'piece'};
+    let r=await f.call('scan',body);
+    assert.equal(r.statusCode,200);assert.equal(r.data.requiresProductWeight,true);assert.equal(r.data.requiresCartonPieces,false);
+    assert.equal((await f.call('get',{id:f.row.id})).data.preparation.state.scans.length,0);
+    for(const unitWeightGrams of [0,-1,'bad','250 ml','1.0001']){
+      r=await f.call('scan',{...body,unitWeightGrams});assert.equal(r.statusCode,400);
+    }
+    r=await f.call('scan',{...body,unitWeightGrams:'280.125'});
+    assert.equal(r.statusCode,200,JSON.stringify(r.data));assert.equal(r.data.preparation.state.scans.length,1);
+    const saved=(await f.sql.query("select data,version from workspace_product_specifications where article_code='IT0001'")).rows[0];
+    assert.equal(saved.data.totalWeightGrams,'280.125');assert.equal(saved.data.format,'250');assert.equal(saved.data.notes,'Keep weight notes');assert.equal(saved.version,4);
+    r=await f.call('scan',{...body,unitWeightGrams:999});assert.equal(r.data.preparation.state.scans.length,1);
+    assert.equal((await f.sql.query("select version from workspace_product_specifications where article_code='IT0001'")).rows[0].version,4);
+  }finally{await f.sql.close();}
+});
+
+test("old scans request missing weights at verification; configured tare and canonical weights are snapshotted",async()=>{
+  const f=await fixture();
+  try{
+    let row=f.row;
+    for(const [barcode,mode] of [['000001','carton'],['000002','piece']]){
+      const r=await f.call('scan',{...f.scan(barcode),mode,version:row.version});assert.equal(r.statusCode,200);row=r.data.preparation;
+    }
+    await f.sql.exec("update workspace_product_specifications set data=data-'totalWeightGrams' where article_code='IT0001'");
+    const body={id:row.id,version:row.version,eventId:event()};
+    let r=await f.call('verify',body);assert.equal(r.data.requiresProductWeight,true);assert.equal(r.data.product.code,'IT0001');
+    r=await f.call('verify',{...body,productCode:'IT0001',unitWeightGrams:'250.5'});
+    assert.equal(r.statusCode,200,JSON.stringify(r.data));assert.equal(r.data.preparation.status,'verified');
+    const summary=r.data.preparation.verification.summary;
+    assert.equal(summary.weightTotals.netWeightKg,1.001);assert.equal(summary.weightTotals.grossWeightKg,1.301);
+    assert.equal(summary.packages[0].grossWeightKg,1.301);
+    const invalid=await f.call('configure',{warehouse:5,ddtSeries:null,boxTareKg:-1,palletTareKg:20});assert.equal(invalid.statusCode,400);
+    const configured=await f.call('configure',{warehouse:5,ddtSeries:null,boxTareKg:'0.450',palletTareKg:'22.500'});assert.equal(configured.statusCode,200,JSON.stringify(configured.data));
+    const settings=await f.call('settings');assert.equal(Number(settings.data.settings.box_tare_kg),0.45);
+    const exported=await f.call('export',{id:row.id,version:r.data.preparation.version,eventId:event()});
+    assert.equal(exported.statusCode,409);assert.match(exported.data.error,/Pesi prodotto o tare aggiornati/);assert.equal(f.mexal.sends,0);
+  }finally{await f.sql.close();}
 });

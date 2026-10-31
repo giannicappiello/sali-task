@@ -1,3 +1,4 @@
+import {productWeightGrams} from '../shared/preparationWeights.js';
 import { assert, integer } from "../shared/orderPreparation.js";
 import { articleType } from "./private-documents-store.js";
 import { checked } from "./order-preparation-auth.js";
@@ -10,7 +11,7 @@ export async function preparationPackaging(db, codes) {
   const specs = checked(
     await db
       .from("workspace_product_specifications")
-      .select("article_code,version,pieces_per_carton:data->>piecesPerBox")
+      .select("article_code,version,pieces_per_carton:data->>piecesPerBox,unit_weight_grams:data->>totalWeightGrams")
       .in("article_code", unique),
   );
   return new Map(
@@ -20,6 +21,8 @@ export async function preparationPackaging(db, codes) {
         spec.article_code,
         {
           piecesPerCarton: pieces && pieces <= 1000000 ? pieces : null,
+          unitWeightGrams: productWeightGrams(spec.unit_weight_grams),
+          weightSpecificationEmpty: String(spec.unit_weight_grams ?? "").trim() === "",
           packagingSpecificationVersion: spec.version,
           packagingSpecificationEmpty:
             String(spec.pieces_per_carton ?? "").trim() === "",
@@ -32,7 +35,10 @@ export async function preparationPackaging(db, codes) {
 // Only fill an empty packaging field. The canonical save RPC preserves revision history
 // and rejects concurrent edits; no specification details are returned to the browser.
 export async function saveMissingPreparationPackaging(db, code, input, actor) {
-  const pieces = integer(input, "Pezzi per cartone");
+  const requested = typeof input === "object" ? input : {piecesPerCarton: input};
+  const pieces = requested.piecesPerCarton == null ? null : integer(requested.piecesPerCarton, "Pezzi per cartone");
+  const weight = requested.unitWeightGrams == null ? null : productWeightGrams(requested.unitWeightGrams);
+  assert(requested.unitWeightGrams == null || weight, "Peso Totale in grammi non valido.");
   const catalog = checked(
     await db
       .from("ordini_prodotti_cache")
@@ -53,16 +59,19 @@ export async function saveMissingPreparationPackaging(db, code, input, actor) {
       .maybeSingle(),
   );
   const current = specificationPiecesPerBox(saved?.data?.piecesPerBox);
-  if (current && current <= 1000000)
-    return {
-      piecesPerCarton: current,
-      packagingSpecificationVersion: saved.version,
-    };
-  assert(
-    String(saved?.data?.piecesPerBox ?? "").trim() === "",
-    "Il capitolato contiene un valore non valido: correggilo in Documenti Private, sezione Imballo.",
-  );
-  const data = { ...(saved?.data || {}), piecesPerBox: String(pieces) };
+  const currentWeight = productWeightGrams(saved?.data?.totalWeightGrams);
+  const data = { ...(saved?.data || {}) };
+  if(pieces && !current) {
+    assert(String(data.piecesPerBox ?? "").trim() === "", "Il capitolato contiene pezzi per cartone non validi: correggilo in Documenti Private.");
+    data.piecesPerBox = String(pieces);
+  }
+  if(weight && !currentWeight) {
+    assert(String(data.totalWeightGrams ?? "").trim() === "", "Il capitolato contiene un peso non valido: correggilo in Documenti Private.");
+    data.totalWeightGrams = String(weight);
+  }
+  if(JSON.stringify(data) === JSON.stringify(saved?.data || {})) return {
+    piecesPerCarton: current, unitWeightGrams: currentWeight, packagingSpecificationVersion: saved?.version || 0,
+  };
   delete data.approvedBy;
   delete data.approvedAt;
   delete data.approvedUserId;
@@ -83,7 +92,8 @@ export async function saveMissingPreparationPackaging(db, code, input, actor) {
     );
   const updated = checked(result);
   return {
-    piecesPerCarton: pieces,
+    piecesPerCarton: current || pieces,
+    unitWeightGrams: currentWeight || weight,
     packagingSpecificationVersion: updated.version,
   };
 }

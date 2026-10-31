@@ -1,9 +1,12 @@
+import {packingWeights} from '../shared/preparationWeights.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildPreparationPdf} from '../src/pages/Warehouse/preparationPdf.js';
+import {buildPreparationPdf,preparationPdf} from '../src/pages/Warehouse/preparationPdf.js';
 const products=[['IT0082','Bagno Doccia Pure White 1000ml'],['IT0418','Shampoo Ristrutturante']];
 const content=(code,lotCode,quantity)=>({code,description:products.find(p=>p[0]===code)[1],lotCode,quantity});
 const sample={id:'demo',source:{series:1,number:17458,year:2026,customerName:'Cliente di esempio / Sample customer',customerCode:'DEMO',destination:{}},verification:{summary:{totalPallets:2,totalPackages:4,totalPieces:37,pallets:[{id:'p1',number:1},{id:'p2',number:2}],packages:[{number:1,palletId:'p1',pieces:12,contents:[content('IT0082','100701062',2),content('IT0082','100701063',10)]},{number:2,palletId:'p1',pieces:12,contents:[content('IT0418','110602018',12)]},{number:3,palletId:'p2',pieces:1,contents:[content('IT0418','110602018',1)]},{number:4,palletId:'p2',pieces:12,contents:[content('IT0082','100701063',12)]}]}}};
+
+sample.verification.summary=packingWeights(sample.verification.summary,[{code:'IT0082',unitWeightGrams:1000},{code:'IT0418',unitWeightGrams:500}],{box_tare_kg:0.3,pallet_tare_kg:20});
 
 test('packing list groups boxes inside pallets, keeps FIFO splits and uses bilingual Box/Boxes labels',()=>{
   const doc=buildPreparationPdf(sample);
@@ -13,6 +16,8 @@ test('packing list groups boxes inside pallets, keeps FIFO splits and uses bilin
   assert.ok(text.indexOf('(COLLO / BOX 2)')<text.indexOf('(PALLET 2)'));
   assert.ok(text.indexOf('(COLLO / BOX 4)')<text.indexOf('(TOTALE COLLI / TOTAL BOXES)'));
   assert.ok(!text.toLowerCase().includes('carton'));
+  assert.ok(!/BOZZA|DRAFT/.test(text));
+  assert.ok(text.includes('Peso netto / Net weight'));assert.ok(text.includes('71,700 Kg'));
   assert.throws(()=>buildPreparationPdf({...sample,verification:null}),/riscontro/);
 });
 
@@ -27,4 +32,10 @@ test('large packing lists repeat pallet context, retain every box and show shipm
   assert.equal(text.split('TOTALE COLLI / TOTAL BOXES').length-1,1);
   assert.ok(text.includes('continua / continued'));
   assert.ok(text.includes('(432)'));
+});
+
+test('packing list preview returns PDF bytes without downloading or adding draft markings',()=>{
+  const bytes=preparationPdf(sample,{preview:true});
+  assert.ok(bytes instanceof ArrayBuffer);
+  const file=Buffer.from(bytes).toString('latin1');assert.ok(file.startsWith('%PDF-'));assert.ok(!/BOZZA|DRAFT/.test(file));
 });

@@ -1,3 +1,4 @@
+import {packingWeights, tareWeightKg} from '../shared/preparationWeights.js';
 import { productCodeInScan } from "../shared/productScan.js";
 import {
   preparationPackaging,
@@ -33,6 +34,7 @@ import {
   unwrap,
   pages,
   loadOrderContext,
+  deliveryDestination,
   lotInventoryForWarehouses as lotInventory,
   buildDdt,
   verifyDdt,
@@ -51,7 +53,7 @@ const uuid = (value) => {
 const exposed = (r) => ({
   id: r.id,
   source: r.verification?.ok ? {
-    ...r.source, fifoIssue: undefined, fifoDiagnostics: undefined,
+    ...r.source, destination:r.verification.destination || r.source.destination, fifoIssue: undefined, fifoDiagnostics: undefined,
     fifoProposal: r.verification.allocations,
   } : r.source,
   state: r.state,
@@ -108,7 +110,7 @@ async function refreshFifoAdvisory(row, db, inventoryFactory, force = false) {
   return refreshed;
 }
 
-async function plan(db, row, context, inventoryFactory) {
+async function plan(db, row, context, inventoryFactory, settings) {
   const comparison = comparePacking(context.source.lines, row.state);
   if (!comparison.ok) return comparison;
 
@@ -159,7 +161,8 @@ async function plan(db, row, context, inventoryFactory) {
         ]),
       ).values(),
     ],
-    summary: packingSummary(row.state, contents, context.source.lines),
+    summary: packingWeights(packingSummary(row.state, contents, context.source.lines),context.source.lines,settings),
+    destination: context.source.destination,
     sourceHash: context.hash,
     checkedAt: new Date().toISOString(),
   };
@@ -231,6 +234,8 @@ async function barcodeProduct(db, barcode, source) {
     piecesPerCarton: null,
     packagingSpecificationVersion: null,
     packagingSpecificationEmpty: true,
+    unitWeightGrams: null,
+    weightSpecificationEmpty: true,
     ...packaging.get(code),
   };
 }
@@ -428,6 +433,8 @@ export function createOrderPreparationHandler({
               ? null
               : integer(body.ddtSeries, "Serie DDT"),
           default_warehouse: integer(body.warehouse, "Magazzino"),
+          ...(Object.hasOwn(body,"boxTareKg") ? {box_tare_kg:tareWeightKg(body.boxTareKg,"Peso cartone")} : {}),
+          ...(Object.hasOwn(body,"palletTareKg") ? {pallet_tare_kg:tareWeightKg(body.palletTareKg,"Peso pallet")} : {}),
           updated_at: new Date().toISOString(),
         };
 
@@ -531,6 +538,7 @@ export function createOrderPreparationHandler({
         return res.status(200).json({product:{code:product.code,description:product.description,piecesPerCarton:product.piecesPerCarton,wrong:!row.source.lines.some(item=>item.code===product.code)}});
       }
       if (op === "get") {
+        row = {...row,source:{...row.source,destination:await deliveryDestination(client,row.source_raw,row.source.customerCode)}};
         row = await refreshFifoAdvisory(row, db, inventoryFactory);
         return res.status(200).json({preparation:exposed(row),canWrite:session.canWrite,canConfigure:session.canConfigure});
       }
@@ -602,33 +610,20 @@ export function createOrderPreparationHandler({
           });
         }
         const product = await barcodeProduct(db, barcode, row.source);
-        if (body.mode === "carton" && !product.piecesPerCarton) {
-          assert(
-            row.source.lines.some((line) => line.code === product.code),
-            "Prodotto non previsto nell'ordine: non è possibile compilare il capitolato da questa lettura.",
-          );
-          assert(
-            product.packagingSpecificationEmpty,
-            `Pezzi per cartone di ${product.code} non validi: correggi il capitolato prodotto, sezione Imballo.`,
-          );
-          if (body.piecesPerCarton == null || body.piecesPerCarton === "")
-            return res.status(200).json({
-              requiresCartonPieces: true,
-              product: { code: product.code },
-            });
-          assert(
-            state.packages.some((p) => p.id === body.packageId),
-            "Collo non valido.",
-          );
-          Object.assign(
-            product,
-            await saveMissingPreparationPackaging(
-              db,
-              product.code,
-              body.piecesPerCarton,
-              profile.id,
-            ),
-          );
+        const ordered = row.source.lines.some(line => line.code === product.code);
+        const needsPieces = body.mode === "carton" && !product.piecesPerCarton;
+        const needsWeight = ordered && !product.unitWeightGrams;
+        if(needsPieces || needsWeight) {
+          assert(ordered,"Prodotto non previsto nell'ordine: non è possibile compilare il capitolato da questa lettura.");
+          assert(!needsPieces || product.packagingSpecificationEmpty, `Pezzi per cartone di ${product.code} non validi: correggi il capitolato prodotto.`);
+          assert(!needsWeight || product.weightSpecificationEmpty, `Peso Totale in grammi di ${product.code} non valido: correggi il capitolato prodotto.`);
+          if((needsPieces && (body.piecesPerCarton == null || body.piecesPerCarton === "")) || (needsWeight && (body.unitWeightGrams == null || body.unitWeightGrams === ""))) return res.status(200).json({
+            requiresCartonPieces:needsPieces,requiresProductWeight:needsWeight,product:{code:product.code},
+          });
+          Object.assign(product,await saveMissingPreparationPackaging(db,product.code,{
+            ...(needsPieces?{piecesPerCarton:body.piecesPerCarton}:{}),
+            ...(needsWeight?{unitWeightGrams:body.unitWeightGrams}:{}),
+          },profile.id));
         }
 
         state.confirmedLots = false;
@@ -714,7 +709,17 @@ export function createOrderPreparationHandler({
           });
         }
 
-        const verification = await plan(db, row, context, inventoryFactory);
+        const packingComparison = comparePacking(context.source.lines,row.state);
+        if(op === "verify" && !packingComparison.ok) return res.status(200).json({preparation:exposed(row),verification:packingComparison});
+        for(const line of context.source.lines) {
+          if(line.unitWeightGrams) continue;
+          if(op === "verify" && body.productCode === line.code && body.unitWeightGrams != null) {
+            const packaging=await saveMissingPreparationPackaging(db,line.code,{unitWeightGrams:body.unitWeightGrams},profile.id);
+            for(const same of context.source.lines.filter(item=>item.code===line.code)) Object.assign(same,packaging);
+          } else if(op === "verify") return res.status(200).json({requiresProductWeight:true,product:{code:line.code}});
+          else assert(false,`Peso mancante per ${line.code}: ripeti il riscontro per completarlo.`);
+        }
+        const verification = await plan(db, row, context, inventoryFactory, settings);
 
         if (op === "verify") {
           if (!verification.ok)
@@ -758,6 +763,7 @@ export function createOrderPreparationHandler({
           409,
         );
 
+        assert(fingerprint(verification.summary.weightTotals) === fingerprint(row.verification.summary.weightTotals) && fingerprint(verification.summary.productWeights) === fingerprint(row.verification.summary.productWeights),"Pesi prodotto o tare aggiornati: ripeti il riscontro prima dell'emissione.",409);
         assert(
           settings.ddt_series,
           "Configura la serie DDT prima dell’emissione.",

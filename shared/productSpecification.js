@@ -1,6 +1,6 @@
 export const specificationSections = [
   { id: 'general', title: 'Dati del prodotto', fields: [
-    ['format', 'Formato'], ['ean', 'EAN'], ['customer', 'Cliente'], ['semiFinished', 'Semilavorato'],
+    ['format', 'Formato ml'], ['totalWeightGrams', 'Peso Totale in grammi', 'weight'], ['ean', 'EAN'], ['customer', 'Cliente'], ['semiFinished', 'Semilavorato'],
     ['appearance', 'Aspetto'], ['fragrance', 'Profumo'], ['description', 'Descrizione prodotto', 'textarea'],
   ] },
   { id: 'primary', title: 'Packaging primario', fields: [

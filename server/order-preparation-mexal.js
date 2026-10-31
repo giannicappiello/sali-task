@@ -91,6 +91,19 @@ export async function eligibleOrders(client) {
   }));
 }
 
+export async function deliveryDestination(client, raw, customerCode, customer = null) {
+  const shippingId = text(scalar(raw.id_ind_sped));
+  const code = shippingId && shippingId !== "0" ? shippingId : text(scalar(raw.cod_anag_sped));
+  if(code && code !== "0") {
+    const address = unwrap(await client.getJson("/indirizzi-spedizione/" + encodeURIComponent(code)));
+    assert(text(address.id) === code && (!address.cod_conto || upper(address.cod_conto) === upper(customerCode)),"Destinazione Mexal non coerente con il cliente dell'ordine.");
+    assert(text(address.indirizzo),"Indirizzo di spedizione Mexal non compilato.");
+    return {code,name:text(address.descrizione),address:text(address.indirizzo),postalCode:text(address.cap),city:text(address.localita),province:text(address.provincia),country:text(address.cod_paese)};
+  }
+  const party = customer || unwrap(await client.getJson("/clienti/" + encodeURIComponent(customerCode)));
+  return {code:"",name:text(party.ragione_sociale),address:text(party.indirizzo),city:text(party.localita),postalCode:text(party.cap),province:text(party.provincia),country:text(party.cod_paese || party.paese_iso)};
+}
+
 export async function loadOrderContext(client, reference, db, settings) {
   assert(/^OC\+\d+\+\d+$/.test(reference), "Riferimento OCM non valido.");
 
@@ -166,6 +179,7 @@ export async function loadOrderContext(client, reference, db, settings) {
             unit: authoritativeArticleUnit(a) || upper(cached?.unita_misura),
             barcode: text(config?.barcode || a.cod_alternativo || cached?.ean),
             piecesPerCarton: packaging.get(code)?.piecesPerCarton || null,
+            unitWeightGrams: packaging.get(code)?.unitWeightGrams || null,
             packagingSpecificationVersion:
               packaging.get(code)?.packagingSpecificationVersion || null,
 
@@ -222,19 +236,7 @@ export async function loadOrderContext(client, reference, db, settings) {
       note: documentNotes(raw.nota),
       customerName: text(customer.ragione_sociale) || identity.customerCode,
 
-      destination: text(scalar(raw.cod_anag_sped))
-        ? {
-            code: text(scalar(raw.cod_anag_sped)),
-            address: "Destinazione Mexal " + text(scalar(raw.cod_anag_sped)),
-            city: "",
-            postalCode: "",
-          }
-        : {
-            code: "",
-            address: text(customer.indirizzo),
-            city: text(customer.localita),
-            postalCode: text(customer.cap),
-          },
+      destination: await deliveryDestination(client,raw,identity.customerCode,customer),
       lines,
     },
     raw,

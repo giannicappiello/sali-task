@@ -1,3 +1,5 @@
+import PackingListPreview from "./PackingListPreview.jsx";
+import PreparationProductPrompt from "./PreparationProductPrompt.jsx";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useSearchParams } from "react-router-dom";
@@ -46,7 +48,9 @@ function PreparationSettings({ onClose, onSaved }) {
   const [series, setSeries] = useState(""),
     [warehouse, setWarehouse] = useState("5"),
     [code, setCode] = useState(""),
-    [barcode, setBarcode] = useState("");
+    [barcode, setBarcode] = useState(""),
+    [boxTare, setBoxTare] = useState(""),
+    [palletTare, setPalletTare] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -54,6 +58,8 @@ function PreparationSettings({ onClose, onSaved }) {
       setData(r);
       setSeries(r.settings.ddt_series || "");
       setWarehouse(r.settings.default_warehouse);
+      setBoxTare(r.settings.box_tare_kg ?? "");
+      setPalletTare(r.settings.pallet_tare_kg ?? "");
     } catch (e) {
       setError(e.message);
     }
@@ -107,6 +113,7 @@ function PreparationSettings({ onClose, onSaved }) {
               void save("configure", {
                 ddtSeries: series ? Number(series) : null,
                 warehouse: Number(warehouse),
+                boxTareKg: boxTare, palletTareKg: palletTare,
               });
             }}
           >
@@ -132,6 +139,8 @@ function PreparationSettings({ onClose, onSaved }) {
               />
             </label>
 
+            <label>Peso cartone vuoto (Kg)<input type="number" min="0" max="10000" step="0.001" required value={boxTare} onChange={event=>setBoxTare(event.target.value)} disabled={!data.canConfigure || busy}/></label>
+            <label>Peso pallet vuoto (Kg)<input type="number" min="0" max="10000" step="0.001" required value={palletTare} onChange={event=>setPalletTare(event.target.value)} disabled={!data.canConfigure || busy}/></label>
             {data.canConfigure && (
               <button disabled={busy}>Salva configurazione</button>
             )}
@@ -247,7 +256,9 @@ export default function OrderPreparation() {
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [cartonPrompt, setCartonPrompt] = useState(null),
-    [cartonPieces, setCartonPieces] = useState("");
+    [cartonPieces, setCartonPieces] = useState(""),
+    [unitWeight, setUnitWeight] = useState(""),
+    [packingPreview,setPackingPreview] = useState(null);
 
   const [query, setQuery] = useState(""),
     [camera, setCamera] = useState(false),
@@ -262,6 +273,7 @@ export default function OrderPreparation() {
     [ddtNotes, setDdtNotes] = useState(""),
     [pending, setPending] = useState(null);
 
+  const previewAfterCheck = useRef(false);
   const current = useRef(row),
     lock = useRef(false),
     input = useRef(null),
@@ -363,12 +375,12 @@ export default function OrderPreparation() {
     try {
       const response = await preparationApi(operation, body);
       setPending(null);
-      if (response.requiresCartonPieces) {
-        setCartonPrompt({ code: response.product.code, body });
-        setCartonPieces("");
+      if (response.requiresCartonPieces || response.requiresProductWeight) {
+        setCartonPrompt({ code: response.product.code, body, operation, needsPieces:!!response.requiresCartonPieces, needsWeight:!!response.requiresProductWeight });
+        setCartonPieces("");setUnitWeight("");
         return response;
       }
-      if (operation === "scan" && response.preparation) setCartonPrompt(null);
+      if (["scan","verify"].includes(operation) && response.preparation) setCartonPrompt(null);
       if (response.preparation) accept(response.preparation,true);
       if (operation === "scan" && response.preparation) {
         const saved = response.preparation.state.scans.find(
@@ -431,6 +443,7 @@ export default function OrderPreparation() {
       }
 
       if (response.verification) setCheck(response.verification);
+      if(operation === "verify" && response.verification?.ok && previewAfterCheck.current){previewAfterCheck.current=false;setPackingPreview(preparationPdf(response.preparation,{preview:true}));}
 
       if (response.warning) setNotice(response.warning);
       if (
@@ -464,11 +477,12 @@ export default function OrderPreparation() {
 
       if (operation === "verify" && response.verification?.ok)
         setNotice(
-          "Riscontro positivo. Puoi emettere i documenti o scaricare la bozza della packing list.",
+          "Riscontro positivo. Puoi emettere i documenti o visualizzare la packing list.",
         );
 
       return response;
     } catch (e) {
+      previewAfterCheck.current=false;
       setError(e.message);
       if (!e.status || e.status >= 500) setPending({ operation, body });
       if (e.status === 409) await load();
@@ -1007,7 +1021,7 @@ export default function OrderPreparation() {
               </p>
             ))}
 
-            {editable && row.status !== "verified" && (
+            {editable && (row.status !== "verified" || !row.verification?.summary?.weightTotals) && (
               <button
                 className="op-primary"
                 disabled={busy || !scans.length}
@@ -1118,7 +1132,8 @@ export default function OrderPreparation() {
                 disabled={busy}
                 onClick={() => {
                   try {
-                    preparationPdf(row);
+                    if(!row.verification.summary.weightTotals && editable){previewAfterCheck.current=true;void perform("verify");}
+                    else setPackingPreview(preparationPdf(row,{preview:true}));
                   } catch (e) {
                     setError(e.message);
                   }
@@ -1127,7 +1142,7 @@ export default function OrderPreparation() {
                 <FileDown size={16} />
                 {row.ddt
                   ? "Scarica packing list"
-                  : "Anteprima packing list · bozza"}
+                  : "Visualizza packing list"}
               </button>
             )}
 
@@ -1151,14 +1166,15 @@ export default function OrderPreparation() {
             )}
           </section>
 
+          {cartonPrompt && !camera && <PreparationProductPrompt modal prompt={cartonPrompt} pieces={cartonPieces} onPieces={setCartonPieces} weight={unitWeight} onWeight={setUnitWeight} busy={busy} onCancel={()=>{setCartonPrompt(null);previewAfterCheck.current=false;}} onSave={()=>perform(cartonPrompt.operation,{},{...cartonPrompt.body,productCode:cartonPrompt.code,...(cartonPrompt.needsPieces?{piecesPerCarton:Number(cartonPieces)}:{}),...(cartonPrompt.needsWeight?{unitWeightGrams:unitWeight}:{})})}/>}
           {editable && <BarcodeCamera
             enabled={camera}
             onRead={scan}
             onResolve={async barcode=>(await preparationApi("resolve_product",{id:row.id,barcode})).product}
             onClose={()=>setCamera(false)}
             paused={busy || !!pending}
-            cartonPrompt={cartonPrompt} cartonPieces={cartonPieces} onCartonPieces={setCartonPieces}
-            onSaveCarton={()=>perform("scan",{},{...cartonPrompt.body,piecesPerCarton:Number(cartonPieces)})}
+            cartonPrompt={cartonPrompt} cartonPieces={cartonPieces} onCartonPieces={setCartonPieces} unitWeight={unitWeight} onUnitWeight={setUnitWeight}
+            onSaveCarton={()=>perform(cartonPrompt.operation,{},{...cartonPrompt.body,productCode:cartonPrompt.code,...(cartonPrompt.needsPieces?{piecesPerCarton:Number(cartonPieces)}:{}),...(cartonPrompt.needsWeight?{unitWeightGrams:unitWeight}:{})})}
             onCancelCarton={()=>setCartonPrompt(null)}
             mode={mode} onModeChange={setMode}
             pallets={pallets} activePallet={activePallet} onPalletChange={id=>choosePallet(pallets.find(item=>item.id===id))}
@@ -1256,6 +1272,7 @@ export default function OrderPreparation() {
         </>
       )}
 
+      {packingPreview && <PackingListPreview bytes={packingPreview} onClose={()=>setPackingPreview(null)}/>}
       {busy && (
         <div className="op-working" role="status">
           Operazione in corso…

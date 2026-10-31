@@ -6,3 +6,5 @@
 
 .product-spec-approval{padding:12px 0;display:flex;flex-direction:column;gap:8px}.product-spec-approval label{display:flex;align-items:center;gap:10px;font-weight:600}.product-spec-approval input[type=checkbox]{width:18px;height:18px;min-height:0;padding:0;margin:0;accent-color:#1569d4}.product-spec-approval p{margin:0}.product-spec-approval small{color:#637b9a}
 
+
+.product-spec-format-weight{display:grid;grid-template-columns:minmax(0,.7fr) minmax(0,1.3fr);gap:12px;min-width:0}

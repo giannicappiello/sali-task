@@ -1,3 +1,4 @@
+import PreparationProductPrompt from "./PreparationProductPrompt.jsx";
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cameraErrorMessage } from "./barcodeFrame.js";
@@ -13,7 +14,7 @@ import {
 } from "./cameraSettings.js";
 
 function CameraSession({ onRead, onResolve, onClose, paused, onRestart, contextLabel,
-  mode="piece",onModeChange,pallets=[],activePallet,onPalletChange,packages=[],activePackage,onPackageChange,onNewPallet,onNewPackage,cartonPrompt,cartonPieces,onCartonPieces,onSaveCarton,onCancelCarton }) {
+  mode="piece",onModeChange,pallets=[],activePallet,onPalletChange,packages=[],activePackage,onPackageChange,onNewPallet,onNewPackage,cartonPrompt,cartonPieces,onCartonPieces,unitWeight,onUnitWeight,onSaveCarton,onCancelCarton }) {
   const dialog = useRef(null),
     video = useRef(null),
     decoder = useRef(null),
@@ -122,11 +123,11 @@ function CameraSession({ onRead, onResolve, onClose, paused, onRestart, contextL
             `${scan.code}: +${scan.quantity} ${scan.quantity === 1 ? "pezzo" : "pezzi"}`,
           );
         }
-      } else if (!result?.requiresCartonPieces)
+      } else if (!result?.requiresCartonPieces && !result?.requiresProductWeight)
         setError("Lettura non confermata: controlla il riepilogo.");
   }
-  async function saveCarton(event){
-    event.preventDefault();if(state.current.busy || paused)return;
+  async function saveCarton(){
+    if(state.current.busy || paused)return;
     state.current.busy=true;setBusy(true);
     try{const result=await onSaveCarton();if(!state.current.cancelled)finishResult(result,state.current.captured);}
     finally{state.current.busy=false;if(!state.current.cancelled)setBusy(false);}
@@ -389,7 +390,7 @@ function CameraSession({ onRead, onResolve, onClose, paused, onRestart, contextL
               <div className="op-camera-product" role="status">{resolving ? "Ricerca prodotto…" : product ? <><strong>{product.code} · {product.description}</strong><small>{mode==="piece" ? "1 pezzo" : product.piecesPerCarton ? `${product.piecesPerCarton} pezzi per cartone` : "Pezzi per cartone da compilare nel capitolato"}</small>{product.wrong && <small className="op-bad">Prodotto non previsto nell’ordine</small>}</> : "Prodotto non identificato"}</div>
               <button type="button" disabled={busy || paused || !!cartonPrompt} onClick={resetCode}>Rileggi</button>
             </div>}
-            {cartonPrompt && <form className="op-camera-carton-prompt" onSubmit={saveCarton}><label>Pezzi per cartone · {cartonPrompt.code}<input aria-label="Pezzi per cartone" type="number" min="1" max="1000000" step="1" required value={cartonPieces} onChange={event=>onCartonPieces(event.target.value)} disabled={busy || paused}/></label><div><button type="submit" disabled={busy || paused || !cartonPieces}>Salva e conferma cartone</button><button type="button" disabled={busy || paused} onClick={onCancelCarton}>Annulla</button></div></form>}
+            {cartonPrompt && <PreparationProductPrompt prompt={cartonPrompt} pieces={cartonPieces} onPieces={onCartonPieces} weight={unitWeight} onWeight={onUnitWeight} busy={busy || paused} onCancel={onCancelCarton} onSave={saveCarton}/>}
           {error && (
             <p className="op-camera-error" role="alert">
               {error}

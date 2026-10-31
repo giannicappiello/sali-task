@@ -37,9 +37,11 @@ export async function preparationDatabase(PGlite) {
     ),
   );
   await db.exec(`insert into workspace_product_specifications(article_code,version,data,updated_by,updated_by_label)
-    values('IT0001',3,'{"piecesPerBox":"2","customer":"private-not-exposed"}','${actor}','Test');`);
+    values('IT0001',3,'{"piecesPerBox":"2","totalWeightGrams":"1000","customer":"private-not-exposed"}','${actor}','Test');`);
 
   await db.exec(await readFile(migration, "utf8"));
+  await db.exec(await readFile(new URL("../supabase/migrations/20261031130000_order_preparation_weights.sql",import.meta.url),"utf8"));
+  await db.exec(`insert into workspace_product_specifications(article_code,version,data,updated_by,updated_by_label) values('IT0002',1,'{"totalWeightGrams":"500"}','${actor}','Test');`);
   await db.exec(`create schema extensions;create schema vault;create schema net;create schema cron;
     create table vault.decrypted_secrets(name text,decrypted_secret text);
     insert into vault.decrypted_secrets values('SUPABASE_SERVICE_ROLE_KEY','test-only-secret');
@@ -58,7 +60,7 @@ export async function preparationDatabase(PGlite) {
   );
 
   await db.exec(
-    "update warehouse_preparation_settings set ddt_series=1;insert into warehouse_preparation_products(code,pieces_per_carton) values('IT0001',2)",
+    "update warehouse_preparation_settings set ddt_series=1,box_tare_kg=0.3,pallet_tare_kg=20;insert into warehouse_preparation_products(code,pieces_per_carton) values('IT0001',2)",
   );
   return db;
 }
@@ -89,6 +91,7 @@ export function supabaseAdapter(sql) {
       const column = (c) => {
         if (c === "pieces_per_carton:data->>piecesPerBox")
           return "data->>'piecesPerBox' as pieces_per_carton";
+        if (c === "unit_weight_grams:data->>totalWeightGrams") return "data->>'totalWeightGrams' as unit_weight_grams";
         if (!/^[a-z_]+$/.test(c)) throw Error("Bad column");
         return c;
       };
@@ -313,6 +316,7 @@ export function mexalFixture() {
           cod_tp_lotto: "A",
         };
       }
+      if (path.startsWith("/indirizzi-spedizione/")) return {id:decodeURIComponent(path.split('/').at(-1)),cod_conto:'501.00001',descrizione:'Destinazione prova',indirizzo:'Via Esempio 10',cap:'00100',localita:'Roma',provincia:'RM',cod_paese:'IT'};
       if (path.startsWith("/progressivi-articoli"))
         return {
           cod_articolo: [

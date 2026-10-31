@@ -1,3 +1,4 @@
+import { productWeightGrams } from '../shared/preparationWeights.js';
 import { createHash } from 'node:crypto';
 import { articleType, rows, readArchive, catalogue, normalizePath, gatewayUrl, key } from './private-documents-store.js';
 import { specificationFields, specificationAttachmentSections, isSpecificationImage, MAX_SPECIFICATION_ATTACHMENTS, applySpecificationSources, specificationSourceFields } from '../shared/productSpecification.js';
@@ -14,7 +15,8 @@ export function validateSpecification(input) {
     const v = input.data[name] ?? '';
     if (typeof v !== 'string' || v.length > (type === 'textarea' ? 5000 : 500)) throw fail(`Campo ${name} non valido o troppo lungo.`);
     if (type === 'yesno' && !['', 'yes', 'no'].includes(v)) throw fail(`Campo ${name} non valido.`);
-    data[name] = v.trim();
+    if (type === 'weight' && v.trim() && !productWeightGrams(v)) throw fail('Peso Totale in grammi non valido: inserisci un valore positivo con al massimo tre decimali.');
+    data[name] = type === 'weight' && v.trim() ? String(productWeightGrams(v)) : v.trim();
   }
   if (!Array.isArray(input.attachments) || input.attachments.length > MAX_SPECIFICATION_ATTACHMENTS)
     throw fail(`Sono consentiti al massimo ${MAX_SPECIFICATION_ATTACHMENTS} allegati.`);

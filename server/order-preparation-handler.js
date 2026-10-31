@@ -1,4 +1,4 @@
-import {packingWeights, tareWeightKg} from '../shared/preparationWeights.js';
+import {packingWeights, tareWeightKg, productWeightGrams} from '../shared/preparationWeights.js';
 import { productCodeInScan } from "../shared/productScan.js";
 import {
   preparationPackaging,
@@ -336,7 +336,7 @@ export function createOrderPreparationHandler({
         { db, profile } = session;
       const op = body.operation;
 
-      const canRead = ["list", "get", "settings", "reconcile", "resolve_product"].includes(op);
+      const canRead = ["list", "get", "settings", "reconcile", "resolve_product", "preview_packing_list"].includes(op);
 
       assert(
         canRead ||
@@ -548,6 +548,29 @@ export function createOrderPreparationHandler({
         "Seleziona l’anno Mexal dell’ordine prima di operare.",
         409,
       );
+
+      if(op === "complete_weight") {
+        assert(productWeightGrams(body.unitWeightGrams),"Peso Totale in grammi non valido.");
+        assert(row.source.lines.some(line=>line.code===upper(body.productCode)),"Prodotto non previsto nell'ordine.");
+        await saveMissingPreparationPackaging(db,upper(body.productCode),{unitWeightGrams:body.unitWeightGrams},profile.id);
+        return res.status(200).json({saved:true});
+      }
+      if(op === "preview_packing_list") {
+        assert(row.verification?.summary,"Esegui il riscontro prima di visualizzare la packing list.");
+        let summary=row.verification.summary;
+        if(!summary.weightTotals) {
+          const metadata=await preparationPackaging(db,row.source.lines.map(line=>line.code));
+          const lines=row.source.lines.map(line=>({...line,unitWeightGrams:metadata.get(line.code)?.unitWeightGrams}));
+          const missing=lines.find(line=>!line.unitWeightGrams);
+          if(missing) {
+            assert(session.canWrite,`Peso mancante nel capitolato di ${missing.code}: richiedi il completamento del capitolato.`);
+            return res.status(200).json({requiresProductWeight:true,product:{code:missing.code}});
+          }
+          summary=packingWeights(summary,lines,settings);
+        }
+        const destination=await deliveryDestination(client,row.source_raw,row.source.customerCode);
+        return res.status(200).json({preparation:exposed({...row,source:{...row.source,destination},verification:{...row.verification,summary,destination}})});
+      }
 
       const event = uuid(body.eventId);
 

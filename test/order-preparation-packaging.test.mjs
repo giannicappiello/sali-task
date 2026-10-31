@@ -436,3 +436,25 @@ test("old scans request missing weights at verification; configured tare and can
     assert.equal(exported.statusCode,409);assert.match(exported.data.error,/Pesi prodotto o tare aggiornati/);assert.equal(f.mexal.sends,0);
   }finally{await f.sql.close();}
 });
+
+test("packing list preview refreshes real destination and weights without changing state, version, holds or emitting documents",async()=>{
+  const f=await fixture();
+  try{
+    let row=f.row;
+    for(const [barcode,mode] of [['000001','carton'],['000002','piece']]){const r=await f.call('scan',{...f.scan(barcode),mode,version:row.version});row=r.data.preparation;}
+    let r=await f.call('verify',{id:row.id,version:row.version,eventId:event()});row=r.data.preparation;
+    await f.sql.query("update warehouse_order_preparations set verification=verification #- '{summary,weightTotals}' where id=$1",[row.id]);
+    const before=(await f.sql.query("select version,status,state,verification from warehouse_order_preparations where id=$1",[row.id])).rows[0];
+    const holds=(await f.sql.query('select * from warehouse_preparation_lot_holds')).rows;
+    r=await f.call('preview_packing_list',{id:row.id});assert.equal(r.statusCode,200,JSON.stringify(r.data));
+    assert.ok(r.data.preparation.verification.summary.weightTotals);assert.equal(r.data.preparation.source.destination.address,'Via prova 1');
+    assert.deepEqual((await f.sql.query("select version,status,state,verification from warehouse_order_preparations where id=$1",[row.id])).rows[0],before);
+    assert.deepEqual((await f.sql.query('select * from warehouse_preparation_lot_holds')).rows,holds);assert.equal(f.mexal.sends,0);
+    await f.sql.exec("update workspace_product_specifications set data=data-'totalWeightGrams' where article_code='IT0001'");
+    r=await f.call('preview_packing_list',{id:row.id});assert.equal(r.data.requiresProductWeight,true);
+    r=await f.call('complete_weight',{id:row.id,productCode:'IT0001',unitWeightGrams:350});assert.equal(r.statusCode,200);
+    assert.deepEqual((await f.sql.query("select version,status,state,verification from warehouse_order_preparations where id=$1",[row.id])).rows[0],before);
+    f.readOnly();r=await f.call('preview_packing_list',{id:row.id});assert.equal(r.statusCode,200);
+    assert.equal((await f.call('complete_weight',{id:row.id,productCode:'IT0001',unitWeightGrams:400})).statusCode,403);
+  }finally{await f.sql.close();}
+});

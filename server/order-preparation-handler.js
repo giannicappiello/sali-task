@@ -33,7 +33,7 @@ import {
   unwrap,
   pages,
   loadOrderContext,
-  lotInventory,
+  lotInventoryForWarehouses as lotInventory,
   buildDdt,
   verifyDdt,
 } from "./order-preparation-mexal.js";
@@ -90,11 +90,11 @@ async function held(db, id) {
   }));
 }
 
-async function plan(db, row, context, client) {
+async function plan(db, row, context, inventoryFactory) {
   const comparison = comparePacking(context.source.lines, row.state);
   if (!comparison.ok) return comparison;
 
-  const inventory = await lotInventory(client, context.source.lines),
+  const inventory = await lotInventory(inventoryFactory, context.source.lines),
     other = await held(db, row.id);
 
   const allocations = allocateFifo(
@@ -343,6 +343,9 @@ export function createOrderPreparationHandler({
       );
 
       const client = clientFactory({ warehouse: null, timeoutMs: 20000 });
+      const inventoryFactory = ({ warehouse }) => clientFactory({
+        warehouse, year: client.anno, timeoutMs: 20000,
+      });
 
       if (op === "list") {
         const preparations = checked(
@@ -478,7 +481,7 @@ export function createOrderPreparationHandler({
         );
 
         try {
-          const inventory = await lotInventory(client, context.source.lines);
+          const inventory = await lotInventory(inventoryFactory, context.source.lines);
           context.source.fifoProposal = allocateFifo(
             inventory.lines,
             inventory.lots,
@@ -513,7 +516,7 @@ export function createOrderPreparationHandler({
         if (row.source.fifoIssue && ["draft","verified"].includes(row.status) && !row.verification?.ok) {
           row = structuredClone(row);
           try {
-            const inventory=await lotInventory(client,row.source.lines);
+            const inventory=await lotInventory(inventoryFactory,row.source.lines);
             row.source.fifoDiagnostics={lines:inventory.lines.map(item=>({code:item.code,warehouse:item.warehouse,physical:item.physical,lotRequired:item.lotRequired})),lots:inventory.observations};
             row.source.fifoProposal=allocateFifo(inventory.lines,inventory.lots,await held(db,row.id),today());
             delete row.source.fifoIssue;
@@ -697,7 +700,7 @@ export function createOrderPreparationHandler({
           });
         }
 
-        const verification = await plan(db, row, context, client);
+        const verification = await plan(db, row, context, inventoryFactory);
 
         if (op === "verify") {
           if (!verification.ok)

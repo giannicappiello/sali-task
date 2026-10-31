@@ -242,6 +242,27 @@ export async function loadOrderContext(client, reference, db, settings) {
   };
 }
 
+// This Mexal installation defaults to warehouse 1 when the coordinate is absent.
+// Read each explicit source warehouse independently, including multi-warehouse OCMs.
+export async function lotInventoryForWarehouses(clientFactory, lines) {
+  const groups = new Map();
+  for (const line of lines) {
+    const warehouse = integer(line.warehouse, "Magazzino della riga");
+    if (!groups.has(warehouse)) groups.set(warehouse, []);
+    groups.get(warehouse).push(line);
+  }
+  const result = { lots: [], observations: [], lines: [] };
+  const refreshed = new Map();
+  for (const [warehouse, warehouseLines] of groups) {
+    const inventory = await lotInventory(clientFactory({ warehouse }), warehouseLines);
+    result.lots.push(...inventory.lots);
+    result.observations.push(...inventory.observations);
+    warehouseLines.forEach((line, index) => refreshed.set(line, inventory.lines[index]));
+  }
+  result.lines = lines.map(line => refreshed.get(line));
+  return result;
+}
+
 export async function lotInventory(client, lines) {
   const warehouses = [...new Set(lines.map((l) => l.warehouse))];
   const lots = [],

@@ -252,7 +252,15 @@ test(
           canWrite,
           canConfigure: false,
         }),
-        clientFactory: () => mexal,
+        clientFactory: ({ warehouse }) => ({
+          ...mexal,
+          async getJson(path) {
+            if (path.startsWith("/progressivi-articoli")) {
+              assert.equal(warehouse, 5, "FIFO must explicitly read the OCM warehouse");
+            }
+            return mexal.getJson(path);
+          },
+        }),
       });
       const call = async (operation, body = {}) => {
         const response = {

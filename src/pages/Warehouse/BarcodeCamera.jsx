@@ -163,7 +163,7 @@ function CameraSession({ onRead, onClose, paused, contextLabel, deviceId, device
       {paused && <p role="status">Attendi la conferma della lettura in corso prima di acquisire un altro prodotto.</p>}
       <div className="op-camera-actions"><button type="button" className="op-camera-read" disabled={!ready || busy || adjusting || cooling || paused} onClick={() => void capture(true)}>{busy ? "Lettura in corso…" : "Leggi barcode / QR"}</button>
         <button type="button" disabled={busy} onClick={onRestart}>Riprova fotocamera</button></div>
-      <label className="op-camera-photo">Scatta / carica foto<input type="file" accept="image/*" capture="environment" disabled={busy || adjusting || cooling || paused} onChange={event => {const file=event.target.files?.[0];event.target.value="";if(file) void capture(true,file);}}/></label>
+      <label className="op-camera-photo">Scatta / carica foto<input type="file" accept="image/*" capture="environment" disabled={busy || adjusting || cooling || paused} onClick={() => {state.current.auto=false;setAutomatic(false);}} onChange={event => {const file=event.target.files?.[0];event.target.value="";if(file) void capture(true,file);}}/></label>
       <label className="op-camera-auto"><input type="checkbox" checked={automatic} disabled={!ready || busy || paused} onChange={event => {state.current.auto=event.target.checked;setAutomatic(event.target.checked);}}/>Leggi automaticamente il prossimo codice (una acquisizione)</label>
     </div>
   </dialog>, document.body);

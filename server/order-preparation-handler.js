@@ -1,3 +1,4 @@
+import { productCodeInScan } from "../shared/productScan.js";
 import {
   preparationPackaging,
   saveMissingPreparationPackaging,
@@ -155,7 +156,10 @@ function assertVersion(row, body) {
 }
 
 async function barcodeProduct(db, barcode, source) {
-  const [configs, cache] = await Promise.all([
+  let qrCode;
+  try { qrCode = productCodeInScan(barcode); }
+  catch (error) { throw Object.assign(error, {status:400}); }
+  const [configs, cache, byCode] = await Promise.all([
     db
       .from("warehouse_preparation_products")
       .select("code,barcode")
@@ -166,11 +170,15 @@ async function barcodeProduct(db, barcode, source) {
       .select("codice_articolo,ean,descrizione")
       .eq("ean", barcode)
       .limit(3),
+    qrCode ? db.from("ordini_prodotti_cache").select("codice_articolo,descrizione")
+      .eq("codice_articolo", qrCode).limit(2) : Promise.resolve({data:[],error:null}),
   ]);
 
   const matches = new Set([
     ...checked(configs).map((r) => r.code),
     ...checked(cache).map((r) => upper(r.codice_articolo)),
+    ...checked(byCode).map((r) => upper(r.codice_articolo)),
+    ...source.lines.filter(l => qrCode && l.code === qrCode).map(l => l.code),
     ...source.lines.filter((l) => l.barcode === barcode).map((l) => l.code),
   ]);
 
@@ -178,18 +186,19 @@ async function barcodeProduct(db, barcode, source) {
     matches.size === 1,
     matches.size
       ? "Barcode associato a più prodotti: correggi l’anagrafica."
-      : "Barcode non riconosciuto. Configura il codice del prodotto.",
+      : "Barcode o codice IT non riconosciuto. Verifica il prodotto e la sua anagrafica.",
   );
 
   const code = [...matches][0];
   const product = source.lines.find((l) => l.code === code) || {
     code,
-    description: cache.data[0]?.descrizione || code,
+    description: byCode.data[0]?.descrizione || cache.data[0]?.descrizione || code,
   };
 
   const packaging = await preparationPackaging(db, [code]);
   return {
     ...product,
+    scannedValue: qrCode ? code : barcode,
     piecesPerCarton: null,
     packagingSpecificationVersion: null,
     packagingSpecificationEmpty: true,
@@ -517,7 +526,7 @@ export function createOrderPreparationHandler({
         );
       if (op === "scan") {
         const barcode = text(body.barcode);
-        assert(barcode && barcode.length <= 100, "Barcode non valido.");
+        assert(barcode && barcode.length <= 4096, "Barcode, codice IT o URL QR non valido.");
         assert(["piece", "carton"].includes(body.mode), "Modalità non valida.");
 
         const product = await barcodeProduct(db, barcode, row.source);
@@ -558,7 +567,7 @@ export function createOrderPreparationHandler({
         state.scans.push({
           id: event,
           packageId: uuid(body.packageId),
-          barcode,
+          barcode: product.scannedValue,
           code: product.code,
           mode: body.mode,
           quantity: body.mode === "piece" ? 1 : product.piecesPerCarton,

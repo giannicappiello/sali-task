@@ -201,3 +201,24 @@ test("missing specification is created; invalid, unauthorized and concurrent wri
     await g.sql.close();
   }
 });
+
+test("QR URLs and manual IT codes resolve through the catalog, retain picking checks and never store URLs as barcodes", async () => {
+ const f=await fixture(); let row=f.row;
+ try {
+  for (const value of ['it0001','https://prodotti.example/scheda/IT0001.html','https://prodotti.example/?codice=it0001','https://prodotti.example/?codice=%49%54%30%30%30%31']) {
+   const input={...f.scan(value),version:row.version,mode:'piece'};
+   const response=await f.call('scan',input); assert.equal(response.statusCode,200,JSON.stringify(response.data));
+   row=response.data.preparation; assert.equal(response.data.scan.code,'IT0001');assert.equal(row.state.scans.at(-1).barcode,'IT0001');
+   const replay=await f.call('scan',input);assert.equal(replay.data.preparation.state.scans.length,row.state.scans.length);
+  }
+  let response=await f.call('scan',{...f.scan('https://prodotti.example/?code=IT0001'),version:row.version});
+  assert.equal(response.data.scan.quantity,2);row=response.data.preparation;
+  response=await f.call('scan',{...f.scan('IT0003'),version:row.version,mode:'piece'});assert.equal(response.data.scan.wrong,true);row=response.data.preparation;
+  for(const value of ['IT999999','https://example.test/IT0001/IT0002','x'.repeat(4097)]) {
+   response=await f.call('scan',{...f.scan(value),version:row.version,mode:'piece'});assert.equal(response.statusCode,400);
+  }
+  await f.sql.exec("update ordini_prodotti_cache set ean='IT0001' where codice_articolo='IT0002'");
+  response=await f.call('scan',{...f.scan('IT0001'),version:row.version,mode:'piece'});assert.equal(response.statusCode,400);
+  f.readOnly();response=await f.call('scan',{...f.scan('IT0001'),version:row.version});assert.equal(response.statusCode,403);
+ } finally {await f.sql.close();}
+});

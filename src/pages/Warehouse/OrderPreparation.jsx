@@ -341,6 +341,7 @@ export default function OrderPreparation() {
       const response = await preparationApi(operation, body);
       setPending(null);
       if (response.requiresCartonPieces) {
+        setCamera(false);
         setCartonPrompt({ code: response.product.code, body });
         setCartonPieces("");
         return response;
@@ -391,6 +392,7 @@ export default function OrderPreparation() {
       setError(e.message);
       if (!e.status || e.status >= 500) setPending({ operation, body });
       if (e.status === 409) await load();
+      return { error: e.message, status: e.status };
     } finally {
       lock.current = false;
       setBusy(false);
@@ -405,7 +407,8 @@ export default function OrderPreparation() {
       packageId: activePackage,
     });
     setBarcode("");
-    if (!response?.requiresCartonPieces) input.current?.focus();
+    if (!camera && !response?.requiresCartonPieces) input.current?.focus();
+    return response;
   };
 
   const editable =
@@ -741,15 +744,15 @@ export default function OrderPreparation() {
                   }}
                 >
                   <label>
-                    Barcode prodotto
+                    Barcode, codice IT o URL del QR
                     <input
                       disabled={busy || !!cartonPrompt}
                       ref={input}
                       autoComplete="off"
                       value={barcode}
                       onChange={(e) => setBarcode(e.target.value)}
-                      placeholder="Scansiona o inserisci il barcode"
-                      maxLength={100}
+                      placeholder="Barcode, IT0017 o URL del QR"
+                      maxLength={4096}
                     />
                   </label>
                   <button
@@ -836,6 +839,7 @@ export default function OrderPreparation() {
                 onRead={scan}
                 onClose={() => setCamera(false)}
                 paused={busy || !!pending || !!cartonPrompt}
+                contextLabel={`${mode === "piece" ? "Pezzo" : "Cartone"} · Collo ${packages.find(p => p.id === activePackage)?.number || "da selezionare"}`}
               />
             </section>
           )}

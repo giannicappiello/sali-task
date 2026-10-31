@@ -93,8 +93,8 @@ async function held(db, id) {
   }));
 }
 
-async function refreshFifoAdvisory(row, db, inventoryFactory) {
-  if (!row.source.fifoIssue || !["draft", "verified"].includes(row.status) || row.verification?.ok) return row;
+async function refreshFifoAdvisory(row, db, inventoryFactory, force = false) {
+  if ((!force && !row.source.fifoIssue) || !["draft", "verified"].includes(row.status) || row.verification?.ok) return row;
   const refreshed = structuredClone(row);
   try {
     const inventory = await lotInventory(inventoryFactory, refreshed.source.lines);
@@ -553,7 +553,7 @@ export function createOrderPreparationHandler({
       );
 
       if (replay) {
-        if (op === "reopen") row = await refreshFifoAdvisory(row, db, inventoryFactory);
+        if (op === "reopen") row = await refreshFifoAdvisory(row, db, inventoryFactory, true);
         return res.status(200).json({ preparation: exposed(row) });
       }
 
@@ -683,7 +683,7 @@ export function createOrderPreparationHandler({
 
       if (op === "reopen") {
         row = await mutate(db, row, profile.id, "reopen", {}, event);
-        row = await refreshFifoAdvisory(row, db, inventoryFactory);
+        row = await refreshFifoAdvisory(row, db, inventoryFactory, true);
         return res.status(200).json({ preparation: exposed(row) });
       }
 

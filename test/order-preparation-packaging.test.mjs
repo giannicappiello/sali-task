@@ -380,6 +380,8 @@ test("verify, cancel and reopen refresh historical FIFO errors without reserving
     assert.equal((await f.sql.query("select count(*)::int n from warehouse_preparation_lot_holds")).rows[0].n,0);
     await action("verify");assert.equal(row.status,"verified");
     await action("cancel");
+    // A reopened preparation must also refresh a previously successful proposal.
+    await f.sql.query("update warehouse_order_preparations set source=source - 'fifoIssue' where id=$1",[row.id]);
     const getJson=f.mexal.getJson.bind(f.mexal);
     f.mexal.getJson=async path=>{
       const p=await getJson(path);

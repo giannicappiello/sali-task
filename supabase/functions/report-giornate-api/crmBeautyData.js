@@ -58,8 +58,8 @@ async function loadCommercialImpact(primary, customerCodes, days, postDays, peri
     readForKeys(customerCodes, codes => primary.from("crm_order_kpi_source")
       .select("id,codice_cliente,data_ordine,totale_documento").in("codice_cliente", codes)
       .gte("data_ordine", from).lte("data_ordine", to).order("id")),
-    readForKeys(customerCodes, codes => primary.from("crm_sales_invoices")
-      .select("id,codice_cliente,data_documento,totale_documento").in("codice_cliente", codes)
+    readForKeys(customerCodes, codes => primary.from("crm_invoice_financials")
+      .select("id,codice_cliente,data_documento,totale_documento:net_amount").in("codice_cliente", codes)
       .gte("data_documento", from).lte("data_documento", to).order("id")),
   ]);
   return { orders, invoices };

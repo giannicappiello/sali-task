@@ -1,3 +1,4 @@
+import { netSalesLineAmount, asNetSalesLine } from '../../shared/netRevenue.js';
 /* global Buffer */
 import { request } from './digital-provider-adapters.js';
 import { safeFetch } from './digital-security.js';
@@ -27,7 +28,7 @@ export async function loadDigitalOrderDetail(orderId, dependencies) {
   const connection = await dependencies.connection(order.connection_id);
   await dependencies.authorizeScreen(connection.tipo === 'ecommerce' ? 'crm.online.ecommerce' : 'crm.online.amazon');
   const lines = await dependencies.cachedLines(order.id);
-  let result = { customerName: order.crm_accounts?.nome || null, lines, mexalOc: connection.provider_code === 'woocommerce' ? formatMexalOrderReference(order.raw_summary?.mexal_oc) : null, mexalSync: connection.provider_code === 'woocommerce' ? order.raw_summary?.mexal_sync || null : null };
+  let result = { customerName: order.crm_accounts?.nome || null, lines:connection.provider_code==='amazon_sp_api'?lines.map(line=>asNetSalesLine(line,{...order,raw_summary:{...order.raw_summary,provider:'amazon_sp_api'}})):lines, mexalOc: connection.provider_code === 'woocommerce' ? formatMexalOrderReference(order.raw_summary?.mexal_oc) : null, mexalSync: connection.provider_code === 'woocommerce' ? order.raw_summary?.mexal_sync || null : null };
   let warning = null;
   if (connection.provider_code === 'woocommerce') {
     try {
@@ -58,10 +59,14 @@ export async function loadDigitalOrderDetail(orderId, dependencies) {
       result.total = current.gross_revenue ?? order.gross_revenue;
       result.currency = data.order.proceeds?.grandTotal?.currencyCode || data.order.orderItems.find(line => line.product?.price?.unitPrice?.currencyCode)?.product.price.unitPrice.currencyCode || order.currency;
       result.status = current.stato === 'UNKNOWN' ? order.stato : current.stato;
-      result.pricePreview = amazonProductsPreview(current.lines,result.currency);
-      result.lines = data.order.orderItems.map((line) => ({ id: line.orderItemId, name: line.product?.title || line.product?.sellerSku || line.product?.asin || 'Prodotto non identificato',
-        sku: line.product?.sellerSku, asin: line.product?.asin, quantity: line.quantityOrdered, unitPrice: line.product?.price?.unitPrice?.amount ?? null,
-        amount: line.proceeds?.proceedsTotal?.amount ?? null, discount: null }));
+      result.pricePreview = amazonProductsPreview(current.lines,result.currency,current);
+      result.lines = data.order.orderItems.map(line => {
+        const amount = netSalesLineAmount(current.lines.find(row => row.external_line_id === line.orderItemId) || {}, current);
+        return { id: line.orderItemId, name: line.product?.title || line.product?.sellerSku || line.product?.asin || 'Prodotto non identificato',
+          sku: line.product?.sellerSku, asin: line.product?.asin, quantity: line.quantityOrdered,
+          unitPrice: Number(line.quantityOrdered) > 0 && amount !== null ? amount / Number(line.quantityOrdered) : null,
+          amount, discount: null };
+      });
     } catch { warning = 'Amazon non è raggiungibile. Sono mostrati i dettagli già importati, che possono essere incompleti.'; }
   }
   return { order: { id: order.id, number: order.external_id, date: order.ordered_at, status: order.stato,

@@ -251,7 +251,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
 
   const kpis = useMemo(() => {
     const common = [
-      ["Fatturato", formatMoney(totals.invoice_total), `${totals.invoice_count || 0} fatture Mexal`, "top", invoiceDelta],
+      ["Fatturato", formatMoney(totals.invoice_total), `${totals.invoice_count || 0} fatture Mexal · IVA esclusa`, "top", invoiceDelta],
       ["OCT aperti", formatMoney(totals.oct_order_total), "OCT non fatturati · IVA esclusa", "top"],
       ["OC aperti", formatMoney(totals.oc_order_total), null, "portfolio"],
       ["Clienti Mexal attivi", number(totals.mexal_active_customers), "Stato anagrafico Mexal", "top"],
@@ -297,7 +297,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
       {scope === "global" ? <section className="crm-control-panel" id="business">
         <header><div><span>Composizione business</span><h3>PRIVATE vs DIRECT</h3></div></header>
         <div className="crm-control-business crm-business-summary">{(data?.business || []).map((row) => {
-          const totals = <><strong>{row.business}</strong><span>{formatMoney(row.invoice_total)} fatturato</span>{row.business === "DIRECT" ? <><span>{formatMoney(Number(row.pr_order_total || 0) + Number(row.stralci_order_total || 0) + Number(row.ph_order_total || 0) + Number(row.prenotazioni_order_total || 0))} OC aperti</span><CrmOpenOrderBreakdown values={row}/></> : <span>{formatMoney(row.oct_order_total)} OCT aperti</span>}<span>{number(row.customers)} clienti</span></>;
+          const totals = <><strong>{row.business}</strong><span>{formatMoney(row.invoice_total)} fatturato · IVA esclusa</span>{row.business === "DIRECT" ? <><span>{formatMoney(Number(row.pr_order_total || 0) + Number(row.stralci_order_total || 0) + Number(row.ph_order_total || 0) + Number(row.prenotazioni_order_total || 0))} OC aperti</span><CrmOpenOrderBreakdown values={row}/></> : <span>{formatMoney(row.oct_order_total)} OCT aperti</span>}<span>{number(row.customers)} clienti</span></>;
           if (row.business === "PRIVATE") return <Link key={row.business} to={period.withPeriod("/crm/conto-terzi")}>{totals}</Link>;
           return <article className="crm-business-card" key={row.business}>
             {totals}

@@ -52,5 +52,5 @@ export function availableWaitingAmounts(orders) {
   return {...knownAmounts(values.map(row=>({...row,display_amount:row.display.amount})),'display_amount'),estimated:values.filter(row=>row.display.basis==='products').length,gross:values.filter(row=>row.display.basis==='gross').length};
 }
 export function amountBasisNote(amounts) {
-  return [amounts?.estimated ? amounts.estimated+' importi provvisori' : '',amounts?.gross ? amounts.gross+' totali IVA inclusa' : ''].filter(Boolean).join(' · ');
+  return [amounts?.estimated ? amounts.estimated+' importi provvisori' : '',''].filter(Boolean).join(' · ');
 }

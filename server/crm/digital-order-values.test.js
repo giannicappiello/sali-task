@@ -58,14 +58,14 @@ test('waiting cards sum the same available values as order details without chang
   ];
   const hydrated=withOrderPreviews(pending,[{order_id:'p',quantity:2,unit_price:14.7,line_revenue:null}]);
   const summary=fulfillmentSummary(hydrated);
-  assert.equal(summary.waiting.amounts.totals[0].amount,63.8);
-  assert.equal(summary.waiting.amounts.estimated,1); assert.equal(summary.waiting.amounts.gross,1);
-  assert.equal(summary.waiting.amounts.missing,1);
+  assert.equal(summary.waiting.amounts.totals[0].amount,10);
+  assert.equal(summary.waiting.amounts.estimated,0); assert.equal(summary.waiting.amounts.gross,0);
+  assert.equal(summary.waiting.amounts.missing,3);
   assert.equal(summary.amounts.totals[0].amount,10); // Confirmed net and averages stay financial totals.
   assert.equal(summary.averages.totals[0].amount,5);
   const day=salesDays(hydrated,true,true)[0];
-  assert.equal(day.amount,63.8); assert.equal(day.availableEstimated,1); assert.equal(day.availableGross,1);
+  assert.equal(day.amount,10); assert.equal(day.availableEstimated,0); assert.equal(day.availableGross,0);
   assert.equal(pending[0].net_revenue,null); assert.equal(pending[0].pricePreview,undefined);
   const customer=customerPurchases(hydrated,'2026-10-01','2026-10-21');
-  assert.equal(customer.waiting_amounts.totals[0].amount,63.8);
+  assert.equal(customer.waiting_amounts.totals[0].amount,10);
 });

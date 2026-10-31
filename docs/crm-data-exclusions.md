@@ -24,3 +24,8 @@ Il dettaglio clienti condiviso da tutti i CRM e le varianti PH/PR/MYPHARMA raggr
 Il limite API di authenticated e authenticator passa a 15 secondi; anon mantiene il limite precedente. L’aumento non sostituisce la verifica dei tempi: le nuove query sono collaudate anche con il vecchio limite di 8 secondi. La migrazione notifica PostgREST per ricaricare la configurazione.
 
 Test: server/crm/crm-rollups.test.js (equivalenza viste, aggiornamenti e cancellazioni, spostamento righe, RLS, divieto di modifica o ricostruzione dei riepiloghi da utenti applicativi). Benchmark ripetibile con rollback e ruolo autenticato: server/crm/crm-performance-verification.sql. Il confronto delle vecchie e nuove funzioni su dati reali copre B2B, Online, conto terzi, PH, PR, MYPHARMA e le seconde pagine.
+
+## Fatturato IVA esclusa
+Dal 31 ottobre 2026 card, elenchi, dettagli, confronti e contesto AI utilizzano il medesimo imponibile ufficiale di crm_invoice_financials.net_amount, dopo le esclusioni CRM. Lo zero e le note di credito sono conservati. Se manca l’imponibile, si usa totale documento meno IVA documentata, oppure il netto delle righe; mai il solo totale lordo o una divisione fissa per 1,22. I documenti originali conservano lordo e IVA per la contabilità.
+I KPI digitali utilizzano solo importi netti comprovati. Le righe Amazon richiedono evidenza fiscale; in assenza il netto resta non disponibile, mentre il totale documento IVA inclusa resta esplicitamente identificato nel dettaglio. I dati originali necessari ai COX non vengono modificati.
+I consuntivi Workspace collegati al MES attribuiscono il fatturato alle lavorazioni dalle righe fattura nette; il MES importa i valori commerciali netti. Nessuna modifica ai comandi macchina o ai parametri di produzione.

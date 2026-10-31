@@ -39,5 +39,5 @@ export function scopeDigitalChannelSales(channel, connections, orders, lines) {
   const scopedLines = lines.filter(row => orderIds.has(row.order_id));
   const byOrder = new Map();
   for (const line of scopedLines) { if (!byOrder.has(line.order_id)) byOrder.set(line.order_id,[]); byOrder.get(line.order_id).push(line); }
-  return { orders: channel === 'amazon' ? scopedOrders.map(order => ({...order,pricePreview:amazonProductsPreview(byOrder.get(order.id),order.currency)})) : scopedOrders, lines: scopedLines };
+  return { orders: channel === 'amazon' ? scopedOrders.map(order => ({...order,pricePreview:amazonProductsPreview(byOrder.get(order.id),order.currency,order)})) : scopedOrders, lines: scopedLines };
 }

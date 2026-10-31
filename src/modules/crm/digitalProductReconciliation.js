@@ -1,9 +1,11 @@
+import { asNetSalesLine } from '../../../shared/netRevenue.js';
 import { knownAmounts } from './digitalDashboardModel.js';
 const mappingKey = (connection, marketplace, sku) => JSON.stringify([connection, marketplace || '', sku || '']);
 export function reconcileDigitalLines(orders, lines, mappings = []) {
   const orderById = new Map(orders.map(order => [order.id, order]));
   const bySku = new Map(mappings.map(row => [mappingKey(row.connection_id,row.marketplace,row.external_sku),row]));
-  return lines.map(line => {
+  return lines.map(raw => {
+    const line=asNetSalesLine(raw,orderById.get(raw.order_id));
     const order = orderById.get(line.order_id);
     const mapping = order && bySku.get(mappingKey(order.connection_id,order.marketplace,line.external_sku));
     if (!mapping) return line;

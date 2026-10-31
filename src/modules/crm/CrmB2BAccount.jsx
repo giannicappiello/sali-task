@@ -55,7 +55,7 @@ export default function CrmB2BAccount({ crmType = 'b2b', account, metrics: sourc
     const timer = setTimeout(async () => {
       setExtra({ loading: true, invoices: [], orders: [], beauty: [], projects: [], tasks: [], errors: {} });
       const requests = {
-        invoices: code ? loadAllQueryRows((from, to) => supabase.from('crm_sales_invoices').select('id,sigla,serie,numero,data_documento,totale_documento').eq('codice_cliente', code).order('id').range(from, to)).then(take) : Promise.resolve([]),
+        invoices: code ? loadAllQueryRows((from, to) => supabase.from('crm_invoice_financials').select('id,sigla,serie,numero,data_documento,net_amount').eq('codice_cliente', code).order('id').range(from, to)).then(take) : Promise.resolve([]),
         orders: code ? loadAllQueryRows((from, to) => supabase.from('crm_sales_orders').select('id,numero_ordine_visualizzato,data_ordine,totale_documento,stato').eq('codice_cliente', code).order('id').range(from, to)).then(take) : Promise.resolve([]),
         tasks: loadAllQueryRows((from, to) => supabase.from('v4_fasi_progetto').select('*').eq('crm_customer_key', key).eq('crm_tipo', crmType).order('id').range(from, to)).then(take),
         projects: loadAllQueryRows((from, to) => supabase.from('v4_progetti').select('id,titolo,stato,deadline,crm_customer_key').eq('crm_customer_key', key).eq('crm_tipo', crmType).order('id').range(from, to)).then(take),
@@ -77,7 +77,7 @@ export default function CrmB2BAccount({ crmType = 'b2b', account, metrics: sourc
     }, 0);
     return () => { active = false; clearTimeout(timer); };
   }, [account.codice_cliente_mexal, key, revision, crmType, isB2B]);
-  const invoices = extra.invoices.map(r => ({ id: r.id, number: `${r.sigla} ${r.serie}/${r.numero}`, date: r.data_documento, amount: Number(r.totale_documento || 0), status: 'Sincronizzata' }));
+  const invoices = extra.invoices.map(r => ({ id: r.id, number: `${r.sigla} ${r.serie}/${r.numero}`, date: r.data_documento, amount: r.net_amount == null ? null : Number(r.net_amount), status: 'Sincronizzata' }));
   const orders = isOnline ? (related.externalOrders || []).map(r => ({ id:r.id,number:r.external_id,date:r.ordered_at.slice(0,10),amount:r.net_revenue,status:r.stato })) : extra.orders.map(r => ({ id: r.id, number: r.numero_ordine_visualizzato || 'Numero non disponibile', date: r.data_ordine, amount: Number(r.totale_documento || 0), status: r.stato }));
   const crmActivityIds = new Set(related.activities.map(r => r.id));
   const workspaceTasks = (extra.tasks || []).filter(r => !r.crm_activity_id || !crmActivityIds.has(r.crm_activity_id));

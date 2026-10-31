@@ -44,6 +44,7 @@ export default defineConfig({
         cacheId: "workspace-assets-v3",
         // HTML must come from the current deployment, not an older precache.
         globIgnores: ["**/index.html"],
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2,wasm}"],
         navigateFallback: null,
         runtimeCaching: [{
           urlPattern: ({ request, url }) => request.mode === "navigate" &&

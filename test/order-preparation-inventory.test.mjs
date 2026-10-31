@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {lotInventoryForWarehouses} from '../server/order-preparation-mexal.js';
-import {allocateFifo} from '../shared/orderPreparation.js';
+import {allocateFifo,distributeLots} from '../shared/orderPreparation.js';
 
 test('FIFO explicitly reads each source warehouse; omitted coordinate would read warehouse 1', async () => {
   const scopes=[];
@@ -34,4 +34,14 @@ test('FIFO never borrows stock from another warehouse', async()=>{
   assert.equal(inventory.lines[0].physical,0);
   assert.deepEqual(inventory.lots,[]);
   assert.throws(()=>allocateFifo(inventory.lines,inventory.lots,[],'20261031'),/insufficienti/);
+});
+
+
+test('FIFO exhausts the oldest lot then takes only the remaining quantity from the newer lot, preserving box contents',()=>{
+  const allocations=allocateFifo([{code:'IT0082',position:1,warehouse:5,quantity:24,lotRequired:true}],
+    [{code:'IT0082',warehouse:5,lotId:10005,lotCode:'100701063',quantity:376,entryDate:'20260727'},
+     {code:'IT0082',warehouse:5,lotId:9209,lotCode:'100701062',quantity:2,entryDate:'20260413'}],[],'20261031');
+  assert.deepEqual(allocations.map(a=>[a.lotCode,a.quantity]),[['100701062',2],['100701063',22]]);
+  const contents=distributeLots({packages:[{id:'box1'},{id:'box2'}],scans:[{packageId:'box1',code:'IT0082',quantity:12},{packageId:'box2',code:'IT0082',quantity:12}]},allocations);
+  assert.deepEqual(contents.map(c=>[c.packageId,c.lotCode,c.quantity]),[['box1','100701062',2],['box1','100701063',10],['box2','100701063',12]]);
 });

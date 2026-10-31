@@ -369,7 +369,6 @@ test(
         id,
         version: row.version,
         eventId: event(),
-        confirmedLots: true,
         ddtNotes: "consegnato al mgz | Scaricare sul retro",
       });
       assert.equal(response.statusCode, 202, JSON.stringify(response.data));

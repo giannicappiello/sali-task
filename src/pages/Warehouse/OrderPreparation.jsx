@@ -258,7 +258,6 @@ export default function OrderPreparation() {
 
   const [settings, setSettings] = useState(false),
     [check, setCheck] = useState(null),
-    [confirmedLots, setConfirmedLots] = useState(false),
     [confirmDdt, setConfirmDdt] = useState(false),
     [ddtNotes, setDdtNotes] = useState(""),
     [pending, setPending] = useState(null);
@@ -304,7 +303,6 @@ export default function OrderPreparation() {
       setDraftPackage(next);setActivePackage(next.id);
     }else setActivePackage(selectedPackage?.id || "");
     setCheck(r.verification);
-    setConfirmedLots(false);
     setConfirmDdt(false);
   }, []);
 
@@ -466,7 +464,7 @@ export default function OrderPreparation() {
 
       if (operation === "verify" && response.verification?.ok)
         setNotice(
-          "Riscontro positivo. Conferma il prelievo dei lotti FIFO prima del DDT.",
+          "Riscontro positivo. Puoi emettere i documenti o scaricare la bozza della packing list.",
         );
 
       return response;
@@ -1009,7 +1007,7 @@ export default function OrderPreparation() {
               </p>
             ))}
 
-            {editable && (
+            {editable && row.status !== "verified" && (
               <button
                 className="op-primary"
                 disabled={busy || !scans.length}
@@ -1027,29 +1025,16 @@ export default function OrderPreparation() {
                 <p className="op-good">
                   Articoli, quantità e imballi corrispondono all’OCM.
                 </p>
-                <LotTable allocations={check.allocations} />
-
-                <label className="op-confirm">
-                  <input
-                    type="checkbox"
-                    checked={confirmedLots}
-                    disabled={busy}
-                    onChange={(e) => setConfirmedLots(e.target.checked)}
-                  />
-                  Confermo di aver prelevato e confezionato i lotti FIFO
-                  indicati.
-                </label>
-
                 {editable && (
                   <button
                     className="op-primary"
-                    disabled={busy || !confirmedLots}
+                    disabled={busy}
                     onClick={() => {
                       setDdtNotes(cleanWarehouseHandoffNote(source.note));
                       setConfirmDdt(true);
                     }}
                   >
-                    Genera DDT e packing list
+                    Emetti BCS e packing list
                   </button>
                 )}
               </>
@@ -1068,7 +1053,7 @@ export default function OrderPreparation() {
                   {pallets.length} bancali.
                 </p>
                 <p>
-                  La BCS evaderà l’OCM e movimenterà i lotti confermati. La
+                  La BCS evaderà l’OCM e movimenterà i lotti selezionati automaticamente. La
                   causale dell’ordine resta invariata.
                 </p>
                 <label>
@@ -1093,7 +1078,7 @@ export default function OrderPreparation() {
                   className="op-primary"
                   disabled={busy}
                   onClick={() =>
-                    void perform("export", { confirmedLots, ddtNotes })
+                    void perform("export", { ddtNotes })
                   }
                 >
                   Conferma e crea BCS
@@ -1195,7 +1180,7 @@ export default function OrderPreparation() {
             })}</div>
           </section>
 
-          {row.status !== "completed" &&
+          {row.status === "draft" &&
             (source.fifoProposal?.length > 0 || source.fifoIssue) && (
               <section className="op-panel">
                 <h2>Lotti FIFO da prelevare</h2>

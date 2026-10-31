@@ -45,6 +45,7 @@ async function fixture() {
   return {
     sql,
     db,
+    mexal,
     call,
     row,
     readOnly: () => {
@@ -351,4 +352,41 @@ test("FIFO proposal uses today's date, refreshes stale warnings and product look
   assert.equal((await f.call("resolve_product",{id:f.row.id,barcode:"UNKNOWN"})).statusCode,400);
   f.readOnly();assert.equal((await f.call("resolve_product",{id:f.row.id,barcode:"IT0001"})).statusCode,200);
  }finally{await f.sql.close();}
+});
+
+
+test("verify, cancel and reopen refresh historical FIFO errors without reserving on reopen; real shortages still block",async()=>{
+  const f=await fixture();
+  try {
+    let row=f.row;
+    for(const [barcode,mode] of [["000001","carton"],["000002","piece"]]) {
+      const r=await f.call("scan",{...f.scan(barcode),version:row.version,mode});
+      assert.equal(r.statusCode,200,JSON.stringify(r.data)); row=r.data.preparation;
+    }
+    await f.sql.query("update warehouse_order_preparations set source=source || $1::jsonb where id=$2",[JSON.stringify({fifoIssue:"Lotti FIFO insufficienti",fifoProposal:[]}),row.id]);
+    const action=async (operation,eventId=event())=>{
+      const r=await f.call(operation,{id:row.id,version:row.version,eventId});
+      assert.equal(r.statusCode,200,JSON.stringify(r.data));row=r.data.preparation;return r;
+    };
+    await action("verify");
+    assert.equal(row.status,"verified");assert.equal(row.source.fifoIssue,undefined);
+    assert.equal((await f.call("get",{id:row.id})).data.preparation.source.fifoIssue,undefined);
+    await action("cancel");
+    const reopenEvent=event();await action("reopen",reopenEvent);
+    const replay=await f.call("reopen",{id:row.id,version:row.version-1,eventId:reopenEvent});
+    assert.equal(replay.statusCode,200);assert.equal(replay.data.preparation.source.fifoIssue,undefined);
+    assert.equal(replay.data.preparation.version,row.version);
+    assert.equal(row.status,"draft");assert.equal(row.source.fifoIssue,undefined);assert.ok(row.source.fifoProposal.length);
+    assert.equal((await f.sql.query("select count(*)::int n from warehouse_preparation_lot_holds")).rows[0].n,0);
+    await action("verify");assert.equal(row.status,"verified");
+    await action("cancel");
+    const getJson=f.mexal.getJson.bind(f.mexal);
+    f.mexal.getJson=async path=>{
+      const p=await getJson(path);
+      return path.startsWith("/progressivi-articoli")?{...p,qta_inventario:[],qta_carico:[],qta_scarico:[]}:p;
+    };
+    await action("reopen");assert.match(row.source.fifoIssue,/FIFO insufficienti/);
+    const shortage=await f.call("verify",{id:row.id,version:row.version,eventId:event()});
+    assert.equal(shortage.statusCode,409);assert.match(shortage.data.error,/FIFO insufficienti/);
+  } finally {await f.sql.close();}
 });

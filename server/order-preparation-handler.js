@@ -50,7 +50,10 @@ const uuid = (value) => {
 
 const exposed = (r) => ({
   id: r.id,
-  source: r.source,
+  source: r.verification?.ok ? {
+    ...r.source, fifoIssue: undefined, fifoDiagnostics: undefined,
+    fifoProposal: r.verification.allocations,
+  } : r.source,
   state: r.state,
   status: r.status,
   version: r.version,
@@ -88,6 +91,21 @@ async function held(db, id) {
     lotId: Number(r.lot_id),
     quantity: Number(r.quantity),
   }));
+}
+
+async function refreshFifoAdvisory(row, db, inventoryFactory) {
+  if (!row.source.fifoIssue || !["draft", "verified"].includes(row.status) || row.verification?.ok) return row;
+  const refreshed = structuredClone(row);
+  try {
+    const inventory = await lotInventory(inventoryFactory, refreshed.source.lines);
+    refreshed.source.fifoDiagnostics = {
+      lines: inventory.lines.map(({code,warehouse,physical,lotRequired}) => ({code,warehouse,physical,lotRequired})),
+      lots: inventory.observations,
+    };
+    refreshed.source.fifoProposal = allocateFifo(inventory.lines,inventory.lots,await held(db,row.id),today());
+    delete refreshed.source.fifoIssue;
+  } catch(error) { refreshed.source.fifoIssue=error.message; }
+  return refreshed;
 }
 
 async function plan(db, row, context, inventoryFactory) {
@@ -513,15 +531,7 @@ export function createOrderPreparationHandler({
         return res.status(200).json({product:{code:product.code,description:product.description,piecesPerCarton:product.piecesPerCarton,wrong:!row.source.lines.some(item=>item.code===product.code)}});
       }
       if (op === "get") {
-        if (row.source.fifoIssue && ["draft","verified"].includes(row.status) && !row.verification?.ok) {
-          row = structuredClone(row);
-          try {
-            const inventory=await lotInventory(inventoryFactory,row.source.lines);
-            row.source.fifoDiagnostics={lines:inventory.lines.map(item=>({code:item.code,warehouse:item.warehouse,physical:item.physical,lotRequired:item.lotRequired})),lots:inventory.observations};
-            row.source.fifoProposal=allocateFifo(inventory.lines,inventory.lots,await held(db,row.id),today());
-            delete row.source.fifoIssue;
-          } catch(error) { row.source.fifoIssue=error.message; }
-        }
+        row = await refreshFifoAdvisory(row, db, inventoryFactory);
         return res.status(200).json({preparation:exposed(row),canWrite:session.canWrite,canConfigure:session.canConfigure});
       }
 
@@ -542,7 +552,10 @@ export function createOrderPreparationHandler({
           .maybeSingle(),
       );
 
-      if (replay) return res.status(200).json({ preparation: exposed(row) });
+      if (replay) {
+        if (op === "reopen") row = await refreshFifoAdvisory(row, db, inventoryFactory);
+        return res.status(200).json({ preparation: exposed(row) });
+      }
 
       assertVersion(row, body);
 
@@ -670,6 +683,7 @@ export function createOrderPreparationHandler({
 
       if (op === "reopen") {
         row = await mutate(db, row, profile.id, "reopen", {}, event);
+        row = await refreshFifoAdvisory(row, db, inventoryFactory);
         return res.status(200).json({ preparation: exposed(row) });
       }
 
@@ -735,11 +749,6 @@ export function createOrderPreparationHandler({
         assert(
           row.status === "verified" && verification.ok,
           "Riscontro positivo richiesto prima del DDT.",
-        );
-
-        assert(
-          body.confirmedLots === true,
-          "Conferma il prelievo dei lotti FIFO indicati.",
         );
 
         assert(

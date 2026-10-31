@@ -7,9 +7,9 @@ export function isNormalDecodeMiss(error) {
 export function createFrameDecoder(reader, createCanvas = () => document.createElement("canvas")) {
   const frame = createCanvas(), rotated = createCanvas();
   return video => {
-    if (video.readyState < 2 || !video.videoWidth || !video.videoHeight)
+    if ((typeof video.readyState === "number" && video.readyState < 2) || !(video.videoWidth || video.naturalWidth) || !(video.videoHeight || video.naturalHeight))
       throw new Error("Attendi che l'immagine della fotocamera sia pronta, poi riprova.");
-    frame.width = video.videoWidth; frame.height = video.videoHeight;
+    frame.width = video.videoWidth || video.naturalWidth; frame.height = video.videoHeight || video.naturalHeight;
     const context = frame.getContext("2d", {willReadFrequently:true});
     if (!context) throw new Error("Impossibile acquisire l'immagine della fotocamera.");
     context.drawImage(video, 0, 0, frame.width, frame.height);

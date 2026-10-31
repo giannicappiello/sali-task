@@ -533,3 +533,5 @@
 .op-camera-message {background:#e0f3e9;color:#166342;}
 .op-camera-error {background:#fff0f0;color:#952b2b;}
 @media(max-width:600px) {.op-camera-shell {padding:14px;} .op-camera-header h2 {font-size:20px;} .op-camera-actions button {width:100%;flex:auto;} .op-camera-dialog video {height:34dvh;} }
+
+.op-camera-controls{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:12px 0}.op-camera-controls label{flex:1;min-width:140px}.op-camera-controls input[type=range]{width:100%;min-height:44px}.op-camera-photo{display:flex;flex-direction:column;gap:8px;margin:12px 0;font-weight:600}.op-camera-photo input{max-width:100%;font-size:16px}

@@ -27,3 +27,10 @@ test("normal misses do not disable later captures and fatal frame errors are vis
  assert.throws(()=>f.read({readyState:0,videoWidth:0,videoHeight:0}),/Attendi/);
  assert.match(cameraErrorMessage({name:'NotAllowedError'}),/Accesso.*negato/);
 });
+
+
+test("full resolution photos decode independently of video readiness",()=>{
+ const f=frameFixture(()=>({getText:()=>"IT0017"}));
+ assert.equal(f.read({naturalWidth:4032,naturalHeight:3024}),"IT0017");
+ assert.equal(f.canvases[0].width,4032);assert.equal(f.canvases[0].height,3024);
+});

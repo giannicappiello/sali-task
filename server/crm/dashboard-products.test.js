@@ -56,3 +56,11 @@ test('SQL summary, product groups and lazy lines retain scope, agents, credits, 
  await assert.rejects(db.query("select crm_dashboard_product_summary('b2b','2026-01-01','2026-10-27')"),/permission denied/);
  }finally{await db.close();}
 });
+
+test('product summaries request server-side distinct customer counts without loading document lines',async()=>{
+ const calls=[],client={rpc(name,args){calls.push({name,args});return{abortSignal:async()=>({data:[{code:'IT1',customers:241,documents:553}]})};}};
+ const rows=await loadDashboardProductRows(client,'crm_dashboard_product_groups',{p_order_module:'prof',p_customer_group:'regular'});
+ assert.equal(rows[0].customers,241);
+ assert.equal(calls[0].name,'crm_b2b_order_product_groups_with_customers');
+ assert.equal(calls[0].args.p_customer_group,'regular');assert.equal(calls.length,1);
+});

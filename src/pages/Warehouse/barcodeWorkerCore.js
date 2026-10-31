@@ -13,3 +13,10 @@ export function createScanCandidate(maxAge=700){
   let value=null,at=0;
   return{update(code,now=Date.now()){value=code;at=now;},take(now=Date.now()){const result=value && now-at<=maxAge ? value : null;value=null;return result;},clear(){value=null;}};
 }
+
+// After confirming, the held label must leave the frame (or change) before
+// automatic capture arms again. The button can still explicitly reacquire it.
+export function createNextScanGate(){
+  let confirmed=null;
+  return{confirm(code){confirmed=code;},observe(code){if(!code){confirmed=null;return null;}if(code===confirmed)return null;confirmed=null;return code;},reset(){confirmed=null;}};
+}

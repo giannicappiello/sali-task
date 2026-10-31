@@ -21,7 +21,10 @@ import { preparationApi } from "./preparationApi.js";
 
 import { preparationPdf } from "./preparationPdf.js";
 
-import { comparePacking, cleanWarehouseHandoffNote } from "../../../shared/orderPreparation.js";
+import {
+  comparePacking,
+  cleanWarehouseHandoffNote,
+} from "../../../shared/orderPreparation.js";
 
 import "./orderPreparation.css";
 
@@ -251,6 +254,8 @@ export default function OrderPreparation() {
     [camera, setCamera] = useState(false),
     [mode, setMode] = useState("piece"),
     [activePackage, setActivePackage] = useState(""),
+    [activePallet, setActivePallet] = useState(""),
+    [draftPackage, setDraftPackage] = useState(null),
     [barcode, setBarcode] = useState("");
 
   const [settings, setSettings] = useState(false),
@@ -263,7 +268,11 @@ export default function OrderPreparation() {
   const current = useRef(row),
     lock = useRef(false),
     input = useRef(null),
-    cartonInput = useRef(null);
+    cartonInput = useRef(null),
+    selection = useRef({ activePackage: "", activePallet: "" });
+  useEffect(() => {
+    selection.current = { activePackage, activePallet };
+  }, [activePackage, activePallet]);
   useEffect(() => {
     if (cartonPrompt) cartonInput.current?.focus();
   }, [cartonPrompt]);
@@ -272,15 +281,25 @@ export default function OrderPreparation() {
   }, [row]);
 
   const accept = useCallback((r) => {
+    current.current = r;
     setRow(r);
+    setDraftPackage(null);
+    const selectedPallet =
+      r.state.pallets.find(
+        (item) => item.id === selection.current.activePallet,
+      ) || r.state.pallets[0];
+    const selectedPackage =
+      r.state.packages.find(
+        (item) =>
+          item.id === selection.current.activePackage &&
+          item.palletId === selectedPallet?.id,
+      ) ||
+      r.state.packages.find((item) => item.palletId === selectedPallet?.id);
+    setActivePallet(selectedPallet?.id || "");
+    setActivePackage(selectedPackage?.id || "");
     setCheck(r.verification);
     setConfirmedLots(false);
     setConfirmDdt(false);
-    setActivePackage((old) =>
-      r.state.packages.some((p) => p.id === old)
-        ? old
-        : r.state.packages[0]?.id || "",
-    );
   }, []);
 
   const load = useCallback(
@@ -348,6 +367,65 @@ export default function OrderPreparation() {
       }
       if (operation === "scan" && response.preparation) setCartonPrompt(null);
       if (response.preparation) accept(response.preparation);
+      if (operation === "scan" && response.preparation) {
+        const saved = response.preparation.state.scans.find(
+          (item) => item.id === body.eventId,
+        );
+        if (saved) {
+          response.scan ||= {
+            code: saved.code,
+            quantity: saved.quantity,
+            wrong: !response.preparation.source.lines.some(
+              (item) => item.code === saved.code,
+            ),
+          };
+          const destination = response.preparation.state.packages.find(
+            (item) => item.id === saved.packageId,
+          );
+          setActivePallet(destination.palletId || "");
+          if (saved.mode === "carton" && !response.scan.wrong) {
+            const next = {
+              id: crypto.randomUUID(),
+              number:
+                Math.max(
+                  0,
+                  ...response.preparation.state.packages.map(
+                    (item) => item.number,
+                  ),
+                ) + 1,
+              palletId: destination.palletId,
+            };
+            setDraftPackage(next);
+            setActivePackage(next.id);
+          } else setActivePackage(saved.packageId);
+        }
+      }
+      if (operation === "add_pallet" && response.preparation) {
+        const destination = response.preparation.state.packages.find(
+          (item) =>
+            item.palletId === body.palletId &&
+            !response.preparation.state.scans.some(
+              (scan) => scan.packageId === item.id,
+            ),
+        );
+        setActivePallet(body.palletId);
+        if (destination) setActivePackage(destination.id);
+        else {
+          const next = {
+            id: crypto.randomUUID(),
+            number:
+              Math.max(
+                0,
+                ...response.preparation.state.packages.map(
+                  (item) => item.number,
+                ),
+              ) + 1,
+            palletId: body.palletId,
+          };
+          setDraftPackage(next);
+          setActivePackage(next.id);
+        }
+      }
 
       if (response.verification) setCheck(response.verification);
 
@@ -379,7 +457,6 @@ export default function OrderPreparation() {
 
       if (operation === "begin") {
         setParams({ id: response.preparation.id });
-        setTimeout(() => setCamera(true), 0);
       }
 
       if (operation === "verify" && response.verification?.ok)
@@ -405,6 +482,9 @@ export default function OrderPreparation() {
       barcode: value,
       mode,
       packageId: activePackage,
+      ...(draftPackage?.id === activePackage
+        ? { createPackage: true, palletId: draftPackage.palletId }
+        : {}),
     });
     setBarcode("");
     if (!camera && !response?.requiresCartonPieces) input.current?.focus();
@@ -420,6 +500,34 @@ export default function OrderPreparation() {
     scans = row?.state.scans || [],
     packages = row?.state.packages || [],
     pallets = row?.state.pallets || [];
+  const visiblePackages =
+    draftPackage && !packages.some((item) => item.id === draftPackage.id)
+      ? [...packages, draftPackage]
+      : packages;
+  function choosePackage(item) {
+    setActivePackage(item.id);
+    setActivePallet(item.palletId || "");
+    if (item.id !== draftPackage?.id) setDraftPackage(null);
+  }
+  function newDraftPackage(palletId) {
+    const next = {
+      id: crypto.randomUUID(),
+      number: Math.max(0, ...packages.map((item) => item.number)) + 1,
+      palletId,
+    };
+    setDraftPackage(next);
+    setActivePackage(next.id);
+    setActivePallet(palletId);
+  }
+  function choosePallet(item) {
+    const empty = packages.find(
+      (p) =>
+        p.palletId === item.id &&
+        !scans.some((scan) => scan.packageId === p.id),
+    );
+    if (empty) choosePackage(empty);
+    else newDraftPackage(item.id);
+  }
 
   const totalPieces = scans.reduce((n, s) => n + s.quantity, 0),
     totalExpected = source?.lines.reduce((n, l) => n + l.quantity, 0) || 0;
@@ -429,6 +537,244 @@ export default function OrderPreparation() {
       (h) =>
         h.source.reference === order.reference && h.source.year === order.year,
     );
+
+  const scanPanel = editable ? (
+    <section className="op-panel op-pallet-scanner">
+      <h2>
+        <ScanLine size={20} /> Scansiona prodotti
+      </h2>
+      <div className="op-scan-controls">
+        <label>
+          Modalità
+          <select
+            value={mode}
+            onChange={(e) => setMode(e.target.value)}
+            disabled={busy || !!cartonPrompt}
+          >
+            <option value="piece">Pezzo · 1 pezzo per lettura</option>
+            <option value="carton">Cartone · pezzi dal capitolato</option>
+          </select>
+        </label>
+
+        <label>
+          Collo attivo
+          <select
+            value={activePackage}
+            onChange={(e) =>
+              choosePackage(
+                visiblePackages.find((item) => item.id === e.target.value),
+              )
+            }
+            disabled={busy || !!cartonPrompt}
+          >
+            {visiblePackages
+              .filter((item) => item.palletId === activePallet)
+              .map((p) => (
+                <option key={p.id} value={p.id}>
+                  Collo {p.number}
+                </option>
+              ))}
+          </select>
+        </label>
+
+        <button
+          onClick={() => setCamera((v) => !v)}
+          disabled={!activePackage || !activePallet || busy || !!cartonPrompt}
+        >
+          <Camera size={17} />
+          {camera ? "Chiudi fotocamera" : "Apri fotocamera"}
+        </button>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void scan(barcode);
+          }}
+        >
+          <label>
+            Barcode, codice IT o URL del QR
+            <input
+              disabled={busy || !!cartonPrompt}
+              ref={input}
+              autoComplete="off"
+              value={barcode}
+              onChange={(e) => setBarcode(e.target.value)}
+              placeholder="Barcode, IT0017 o URL del QR"
+              maxLength={4096}
+            />
+          </label>
+          <button
+            className="op-primary"
+            disabled={busy || !!cartonPrompt || !barcode || !activePackage}
+          >
+            Aggiungi {mode === "piece" ? "pezzo" : "cartone"}
+          </button>
+        </form>
+      </div>
+      <p className="op-mode">
+        Modalità attiva:{" "}
+        <strong>{mode === "piece" ? "PEZZO" : "CARTONE"}</strong> ·
+        Destinazione:{" "}
+        <strong>
+          Collo{" "}
+          {visiblePackages.find((p) => p.id === activePackage)?.number ||
+            "da selezionare"}
+        </strong>
+      </p>
+
+      {cartonPrompt && (
+        <form
+          className="op-notice op-carton-prompt"
+          aria-label="Pezzi per cartone mancanti"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void perform(
+              "scan",
+              {},
+              {
+                ...cartonPrompt.body,
+                piecesPerCarton: Number(cartonPieces),
+              },
+            );
+          }}
+        >
+          <h3>Pezzi per cartone · {cartonPrompt.code}</h3>
+          <p>
+            Il dato manca nel capitolato. Indica quanti pezzi contiene questo
+            cartone: il valore sarà salvato nel capitolato prodotto, sezione
+            Imballo, e usato anche per le prossime letture.
+          </p>
+          <label>
+            Pezzi per cartone
+            <input
+              ref={cartonInput}
+              type="number"
+              min="1"
+              max="1000000"
+              step="1"
+              inputMode="numeric"
+              required
+              value={cartonPieces}
+              onChange={(e) => setCartonPieces(e.target.value)}
+              disabled={busy}
+            />
+          </label>
+          <div className="op-toolbar">
+            <button className="op-primary" disabled={busy || !cartonPieces}>
+              Salva nel capitolato e aggiungi cartone
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setCartonPrompt(null);
+                input.current?.focus();
+              }}
+            >
+              Annulla lettura
+            </button>
+          </div>
+        </form>
+      )}
+      <BarcodeCamera
+        enabled={camera}
+        onRead={scan}
+        onClose={() => setCamera(false)}
+        paused={busy || !!pending || !!cartonPrompt}
+        contextLabel={`Bancale ${pallets.find((item) => item.id === activePallet)?.number || "—"} · Collo ${visiblePackages.find((p) => p.id === activePackage)?.number || "—"} · ${mode === "piece" ? "Pezzo" : "Cartone"}`}
+      />
+    </section>
+  ) : null;
+  const renderPackage = (p) => (
+    <article
+      key={p.id}
+      className={p.id === activePackage ? "op-package active" : "op-package"}
+    >
+      <div className="op-toolbar">
+        <h3>Collo {p.number}</h3>
+        <strong>
+          {format(
+            scans
+              .filter((s) => s.packageId === p.id)
+              .reduce((n, s) => n + s.quantity, 0),
+          )}{" "}
+          {scans
+            .filter((s) => s.packageId === p.id)
+            .reduce((n, s) => n + s.quantity, 0) === 1
+            ? "pezzo"
+            : "pezzi"}
+        </strong>
+      </div>
+
+      {p.id !== draftPackage?.id && (
+        <label>
+          Bancale
+          <select
+            value={p.palletId || ""}
+            disabled={!editable || busy || !!cartonPrompt}
+            onChange={(e) =>
+              void perform("assign", {
+                packageId: p.id,
+                palletId: e.target.value || null,
+              })
+            }
+          >
+            <option value="">Senza bancale</option>
+            {pallets.map((b) => (
+              <option key={b.id} value={b.id}>
+                Bancale {b.number}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      <ul>
+        {[
+          ...new Set(
+            scans.filter((s) => s.packageId === p.id).map((s) => s.code),
+          ),
+        ].map((code) => (
+          <li key={code}>
+            {code}{" "}
+            <strong>
+              {format(
+                scans
+                  .filter((s) => s.packageId === p.id && s.code === code)
+                  .reduce((n, s) => n + s.quantity, 0),
+              )}{" "}
+              pz
+            </strong>
+          </li>
+        ))}
+      </ul>
+
+      {editable && (
+        <div className="op-toolbar">
+          <button
+            disabled={busy || !!cartonPrompt}
+            onClick={() => choosePackage(p)}
+          >
+            Usa questo collo
+          </button>
+          <button
+            disabled={busy || scans.some((s) => s.packageId === p.id)}
+            onClick={() =>
+              p.id === draftPackage?.id
+                ? (setDraftPackage(null),
+                  setActivePackage(
+                    packages.find((item) => item.palletId === p.palletId)?.id ||
+                      "",
+                  ))
+                : void perform("remove_package", { packageId: p.id })
+            }
+          >
+            Rimuovi vuoto
+          </button>
+        </div>
+      )}
+    </article>
+  );
 
   return (
     <main className="order-preparation">
@@ -694,155 +1040,97 @@ export default function OrderPreparation() {
             </div>
           </section>
 
-          {editable && (
-            <section className="op-panel">
-              <h2>
-                <ScanLine size={20} /> Scansione prodotti
-              </h2>
-              <div className="op-scan-controls">
-                <label>
-                  Modalità
-                  <select
-                    value={mode}
-                    onChange={(e) => setMode(e.target.value)}
-                    disabled={busy || !!cartonPrompt}
-                  >
-                    <option value="piece">Pezzo · 1 pezzo per lettura</option>
-                    <option value="carton">
-                      Cartone · pezzi dal capitolato
-                    </option>
-                  </select>
-                </label>
-
-                <label>
-                  Collo attivo
-                  <select
-                    value={activePackage}
-                    onChange={(e) => setActivePackage(e.target.value)}
-                    disabled={busy || !!cartonPrompt}
-                  >
-                    {packages.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        Collo {p.number}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
+          <section className="op-panel op-pallets-panel">
+            <div className="op-pallets-heading">
+              <h2>Bancali</h2>
+              {editable && (
                 <button
-                  onClick={() => setCamera((v) => !v)}
-                  disabled={!packages.length || !!cartonPrompt}
+                  disabled={busy || !!cartonPrompt}
+                  onClick={() =>
+                    void perform("add_pallet", {
+                      palletId: crypto.randomUUID(),
+                      assignUnassigned: pallets.length === 0,
+                    })
+                  }
                 >
-                  <Camera size={17} />
-                  {camera ? "Chiudi fotocamera" : "Apri fotocamera"}
+                  <Truck size={16} /> Nuovo bancale
                 </button>
-
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void scan(barcode);
-                  }}
-                >
-                  <label>
-                    Barcode, codice IT o URL del QR
-                    <input
-                      disabled={busy || !!cartonPrompt}
-                      ref={input}
-                      autoComplete="off"
-                      value={barcode}
-                      onChange={(e) => setBarcode(e.target.value)}
-                      placeholder="Barcode, IT0017 o URL del QR"
-                      maxLength={4096}
-                    />
-                  </label>
-                  <button
-                    className="op-primary"
-                    disabled={
-                      busy || !!cartonPrompt || !barcode || !activePackage
-                    }
-                  >
-                    Aggiungi {mode === "piece" ? "pezzo" : "cartone"}
-                  </button>
-                </form>
-              </div>
-              <p className="op-mode">
-                Modalità attiva:{" "}
-                <strong>{mode === "piece" ? "PEZZO" : "CARTONE"}</strong> ·
-                Destinazione:{" "}
-                <strong>
-                  Collo{" "}
-                  {packages.find((p) => p.id === activePackage)?.number ||
-                    "da selezionare"}
-                </strong>
-              </p>
-
-              {cartonPrompt && (
-                <form
-                  className="op-notice op-carton-prompt"
-                  aria-label="Pezzi per cartone mancanti"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void perform(
-                      "scan",
-                      {},
-                      {
-                        ...cartonPrompt.body,
-                        piecesPerCarton: Number(cartonPieces),
-                      },
-                    );
-                  }}
-                >
-                  <h3>Pezzi per cartone · {cartonPrompt.code}</h3>
-                  <p>
-                    Il dato manca nel capitolato. Indica quanti pezzi contiene
-                    questo cartone: il valore sarà salvato nel capitolato
-                    prodotto, sezione Imballo, e usato anche per le prossime
-                    letture.
-                  </p>
-                  <label>
-                    Pezzi per cartone
-                    <input
-                      ref={cartonInput}
-                      type="number"
-                      min="1"
-                      max="1000000"
-                      step="1"
-                      inputMode="numeric"
-                      required
-                      value={cartonPieces}
-                      onChange={(e) => setCartonPieces(e.target.value)}
-                      disabled={busy}
-                    />
-                  </label>
-                  <div className="op-toolbar">
-                    <button
-                      className="op-primary"
-                      disabled={busy || !cartonPieces}
-                    >
-                      Salva nel capitolato e aggiungi cartone
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => {
-                        setCartonPrompt(null);
-                        input.current?.focus();
-                      }}
-                    >
-                      Annulla lettura
-                    </button>
-                  </div>
-                </form>
               )}
-              <BarcodeCamera
-                enabled={camera}
-                onRead={scan}
-                onClose={() => setCamera(false)}
-                paused={busy || !!pending || !!cartonPrompt}
-                contextLabel={`${mode === "piece" ? "Pezzo" : "Cartone"} · Collo ${packages.find(p => p.id === activePackage)?.number || "da selezionare"}`}
-              />
-            </section>
-          )}
+            </div>
+            {pallets.length === 0 && (
+              <p>Crea un bancale per iniziare la scansione dei prodotti.</p>
+            )}
+            <div className="op-pallet-cards">
+              {pallets.map((b) => (
+                <article
+                  key={b.id}
+                  className={`op-pallet-card${b.id === activePallet ? " active" : ""}`}
+                >
+                  <div className="op-toolbar">
+                    <h3>Bancale {b.number}</h3>
+                    <span>
+                      {
+                        packages.filter(
+                          (p) =>
+                            p.palletId === b.id &&
+                            scans.some((scan) => scan.packageId === p.id),
+                        ).length
+                      }{" "}
+                      {packages.filter(
+                        (p) =>
+                          p.palletId === b.id &&
+                          scans.some((scan) => scan.packageId === p.id),
+                      ).length === 1
+                        ? "collo"
+                        : "colli"}
+                    </span>
+                    {editable && (
+                      <>
+                        {activePallet !== b.id && (
+                          <button
+                            disabled={busy || !!cartonPrompt}
+                            onClick={() => choosePallet(b)}
+                          >
+                            Scansiona su questo bancale
+                          </button>
+                        )}
+                        <button
+                          disabled={busy || !!cartonPrompt}
+                          onClick={() => newDraftPackage(b.id)}
+                        >
+                          <Package size={16} /> Nuovo collo
+                        </button>
+                        <button
+                          disabled={
+                            busy || packages.some((p) => p.palletId === b.id)
+                          }
+                          onClick={() =>
+                            void perform("remove_pallet", { palletId: b.id })
+                          }
+                        >
+                          Rimuovi vuoto
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  {b.id === activePallet && scanPanel}
+                  <div className="op-package-grid">
+                    {visiblePackages
+                      .filter((p) => p.palletId === b.id)
+                      .map(renderPackage)}
+                  </div>
+                </article>
+              ))}
+            </div>
+            {packages.some((p) => !p.palletId) && (
+              <div className="op-unassigned-packages">
+                <h3>Colli da assegnare a un bancale</h3>
+                <div className="op-package-grid">
+                  {packages.filter((p) => !p.palletId).map(renderPackage)}
+                </div>
+              </div>
+            )}
+          </section>
 
           <section className="op-panel">
             <h2>Prodotti dell’ordine</h2>
@@ -936,147 +1224,6 @@ export default function OrderPreparation() {
                 />
               </section>
             )}
-
-          <section className="op-panel">
-            <div className="op-toolbar">
-              <h2>Colli e bancali</h2>
-              {editable && (
-                <>
-                  <button
-                    disabled={busy}
-                    onClick={() =>
-                      void perform("add_package", {
-                        packageId: crypto.randomUUID(),
-                      })
-                    }
-                  >
-                    <Package size={16} />
-                    Nuovo collo
-                  </button>
-                  <button
-                    disabled={busy}
-                    onClick={() =>
-                      void perform("add_pallet", {
-                        palletId: crypto.randomUUID(),
-                      })
-                    }
-                  >
-                    <Truck size={16} />
-                    Nuovo bancale
-                  </button>
-                </>
-              )}
-            </div>
-
-            <div className="op-package-grid">
-              {packages.map((p) => (
-                <article
-                  key={p.id}
-                  className={
-                    p.id === activePackage ? "op-package active" : "op-package"
-                  }
-                >
-                  <div className="op-toolbar">
-                    <h3>Collo {p.number}</h3>
-                    <strong>
-                      {format(
-                        scans
-                          .filter((s) => s.packageId === p.id)
-                          .reduce((n, s) => n + s.quantity, 0),
-                      )}{" "}
-                      {scans
-                        .filter((s) => s.packageId === p.id)
-                        .reduce((n, s) => n + s.quantity, 0) === 1
-                        ? "pezzo"
-                        : "pezzi"}
-                    </strong>
-                  </div>
-
-                  <label>
-                    Bancale
-                    <select
-                      value={p.palletId || ""}
-                      disabled={!editable || busy}
-                      onChange={(e) =>
-                        void perform("assign", {
-                          packageId: p.id,
-                          palletId: e.target.value || null,
-                        })
-                      }
-                    >
-                      <option value="">Senza bancale</option>
-                      {pallets.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          Bancale {b.number}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <ul>
-                    {[
-                      ...new Set(
-                        scans
-                          .filter((s) => s.packageId === p.id)
-                          .map((s) => s.code),
-                      ),
-                    ].map((code) => (
-                      <li key={code}>
-                        {code}{" "}
-                        <strong>
-                          {format(
-                            scans
-                              .filter(
-                                (s) => s.packageId === p.id && s.code === code,
-                              )
-                              .reduce((n, s) => n + s.quantity, 0),
-                          )}{" "}
-                          pz
-                        </strong>
-                      </li>
-                    ))}
-                  </ul>
-
-                  {editable && (
-                    <div className="op-toolbar">
-                      <button onClick={() => setActivePackage(p.id)}>
-                        Usa questo collo
-                      </button>
-                      <button
-                        disabled={
-                          busy || scans.some((s) => s.packageId === p.id)
-                        }
-                        onClick={() =>
-                          void perform("remove_package", { packageId: p.id })
-                        }
-                      >
-                        Rimuovi vuoto
-                      </button>
-                    </div>
-                  )}
-                </article>
-              ))}
-            </div>
-
-            {pallets.map((b) => (
-              <div key={b.id} className="op-pallet">
-                Bancale {b.number}:{" "}
-                <strong>
-                  {packages.filter((p) => p.palletId === b.id).length} cartoni
-                </strong>
-                {editable && (
-                  <button
-                    disabled={busy || packages.some((p) => p.palletId === b.id)}
-                    onClick={() =>
-                      void perform("remove_pallet", { palletId: b.id })
-                    }
-                  >
-                    Rimuovi vuoto
-                  </button>
-                )}
-              </div>
-            ))}
-          </section>
 
           <section className="op-panel">
             <h2>Ultime letture</h2>
@@ -1184,7 +1331,10 @@ export default function OrderPreparation() {
                   <button
                     className="op-primary"
                     disabled={busy || !confirmedLots}
-                    onClick={() => { setDdtNotes(cleanWarehouseHandoffNote(source.note)); setConfirmDdt(true); }}
+                    onClick={() => {
+                      setDdtNotes(cleanWarehouseHandoffNote(source.note));
+                      setConfirmDdt(true);
+                    }}
                   >
                     Genera DDT e packing list
                   </button>
@@ -1204,19 +1354,34 @@ export default function OrderPreparation() {
                   {totalPieces} pezzi · {packages.length} colli ·{" "}
                   {pallets.length} bancali.
                 </p>
-                <p>La BCS evaderà l’OCM e movimenterà i lotti confermati. La causale dell’ordine resta invariata.</p>
-                <label>Note della BCS
-                  <textarea value={ddtNotes} onChange={e => setDdtNotes(e.target.value)} rows={4} maxLength={1000} disabled={busy}
-                    placeholder="Inserisci le note da riportare sul documento"/>
+                <p>
+                  La BCS evaderà l’OCM e movimenterà i lotti confermati. La
+                  causale dell’ordine resta invariata.
+                </p>
+                <label>
+                  Note della BCS
+                  <textarea
+                    value={ddtNotes}
+                    onChange={(e) => setDdtNotes(e.target.value)}
+                    rows={4}
+                    maxLength={1000}
+                    disabled={busy}
+                    placeholder="Inserisci le note da riportare sul documento"
+                  />
                 </label>
-                <small>Rimosso il testo di consegna al magazzino. Puoi modificare o aggiungere le note prima della conferma.</small>
+                <small>
+                  Rimosso il testo di consegna al magazzino. Puoi modificare o
+                  aggiungere le note prima della conferma.
+                </small>
                 <button disabled={busy} onClick={() => setConfirmDdt(false)}>
                   Indietro
                 </button>
                 <button
                   className="op-primary"
                   disabled={busy}
-                  onClick={() => void perform("export", { confirmedLots, ddtNotes })}
+                  onClick={() =>
+                    void perform("export", { confirmedLots, ddtNotes })
+                  }
                 >
                   Conferma e crea BCS
                 </button>

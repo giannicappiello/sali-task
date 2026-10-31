@@ -203,22 +203,138 @@ test("missing specification is created; invalid, unauthorized and concurrent wri
 });
 
 test("QR URLs and manual IT codes resolve through the catalog, retain picking checks and never store URLs as barcodes", async () => {
- const f=await fixture(); let row=f.row;
- try {
-  for (const value of ['it0001','https://prodotti.example/scheda/IT0001.html','https://prodotti.example/?codice=it0001','https://prodotti.example/?codice=%49%54%30%30%30%31']) {
-   const input={...f.scan(value),version:row.version,mode:'piece'};
-   const response=await f.call('scan',input); assert.equal(response.statusCode,200,JSON.stringify(response.data));
-   row=response.data.preparation; assert.equal(response.data.scan.code,'IT0001');assert.equal(row.state.scans.at(-1).barcode,'IT0001');
-   const replay=await f.call('scan',input);assert.equal(replay.data.preparation.state.scans.length,row.state.scans.length);
+  const f = await fixture();
+  let row = f.row;
+  try {
+    for (const value of [
+      "it0001",
+      "https://prodotti.example/scheda/IT0001.html",
+      "https://prodotti.example/?codice=it0001",
+      "https://prodotti.example/?codice=%49%54%30%30%30%31",
+    ]) {
+      const input = { ...f.scan(value), version: row.version, mode: "piece" };
+      const response = await f.call("scan", input);
+      assert.equal(response.statusCode, 200, JSON.stringify(response.data));
+      row = response.data.preparation;
+      assert.equal(response.data.scan.code, "IT0001");
+      assert.equal(row.state.scans.at(-1).barcode, "IT0001");
+      const replay = await f.call("scan", input);
+      assert.equal(
+        replay.data.preparation.state.scans.length,
+        row.state.scans.length,
+      );
+    }
+    let response = await f.call("scan", {
+      ...f.scan("https://prodotti.example/?code=IT0001"),
+      version: row.version,
+    });
+    assert.equal(response.data.scan.quantity, 2);
+    row = response.data.preparation;
+    response = await f.call("scan", {
+      ...f.scan("IT0003"),
+      version: row.version,
+      mode: "piece",
+    });
+    assert.equal(response.data.scan.wrong, true);
+    row = response.data.preparation;
+    for (const value of [
+      "IT999999",
+      "https://example.test/IT0001/IT0002",
+      "x".repeat(4097),
+    ]) {
+      response = await f.call("scan", {
+        ...f.scan(value),
+        version: row.version,
+        mode: "piece",
+      });
+      assert.equal(response.statusCode, 400);
+    }
+    await f.sql.exec(
+      "update ordini_prodotti_cache set ean='IT0001' where codice_articolo='IT0002'",
+    );
+    response = await f.call("scan", {
+      ...f.scan("IT0001"),
+      version: row.version,
+      mode: "piece",
+    });
+    assert.equal(response.statusCode, 400);
+    f.readOnly();
+    response = await f.call("scan", {
+      ...f.scan("IT0001"),
+      version: row.version,
+    });
+    assert.equal(response.statusCode, 403);
+  } finally {
+    await f.sql.close();
   }
-  let response=await f.call('scan',{...f.scan('https://prodotti.example/?code=IT0001'),version:row.version});
-  assert.equal(response.data.scan.quantity,2);row=response.data.preparation;
-  response=await f.call('scan',{...f.scan('IT0003'),version:row.version,mode:'piece'});assert.equal(response.data.scan.wrong,true);row=response.data.preparation;
-  for(const value of ['IT999999','https://example.test/IT0001/IT0002','x'.repeat(4097)]) {
-   response=await f.call('scan',{...f.scan(value),version:row.version,mode:'piece'});assert.equal(response.statusCode,400);
+});
+
+test("pallet picking assigns existing packages and creates a new carton only with its first confirmed scan, atomically and idempotently", async () => {
+  const f = await fixture();
+  try {
+    const palletId = event();
+    let response = await f.call("add_pallet", {
+      id: f.row.id,
+      version: f.row.version,
+      eventId: event(),
+      palletId,
+      assignUnassigned: true,
+    });
+    assert.equal(response.statusCode, 200, JSON.stringify(response.data));
+    let row = response.data.preparation;
+    assert.equal(row.state.packages[0].palletId, palletId);
+    response = await f.call("scan", {
+      id: row.id,
+      version: row.version,
+      eventId: event(),
+      barcode: "000001",
+      mode: "carton",
+      packageId: row.state.packages[0].id,
+    });
+    assert.equal(response.statusCode, 200, JSON.stringify(response.data));
+    row = response.data.preparation;
+    assert.equal(row.state.packages.length, 1);
+    assert.equal(row.state.scans.length, 1);
+    assert.equal(row.state.scans[0].quantity, 2);
+    // A virtual next package must not create an empty packing-list entry.
+    assert.equal(
+      row.state.packages.filter(
+        (p) => !row.state.scans.some((s) => s.packageId === p.id),
+      ).length,
+      0,
+    );
+    const nextId = event(),
+      body = {
+        id: row.id,
+        version: row.version,
+        eventId: event(),
+        barcode: "000002",
+        mode: "piece",
+        packageId: nextId,
+        createPackage: true,
+        palletId,
+      };
+    response = await f.call("scan", body);
+    assert.equal(response.statusCode, 200, JSON.stringify(response.data));
+    row = response.data.preparation;
+    assert.equal(row.state.packages.length, 2);
+    assert.equal(row.state.packages[1].palletId, palletId);
+    assert.equal(row.state.packages[1].number, 2);
+    response = await f.call("scan", body);
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.data.preparation.state.packages.length, 2);
+    assert.equal(response.data.preparation.state.scans.length, 2);
+    const invalid = await f.call("scan", {
+      ...body,
+      version: row.version,
+      eventId: event(),
+      packageId: event(),
+      palletId: event(),
+    });
+    assert.equal(invalid.statusCode, 400);
+    const state = await f.call("get", { id: row.id });
+    assert.equal(state.data.preparation.state.packages.length, 2);
+  } finally {
+    await f.sql.close();
   }
-  await f.sql.exec("update ordini_prodotti_cache set ean='IT0001' where codice_articolo='IT0002'");
-  response=await f.call('scan',{...f.scan('IT0001'),version:row.version,mode:'piece'});assert.equal(response.statusCode,400);
-  f.readOnly();response=await f.call('scan',{...f.scan('IT0001'),version:row.version});assert.equal(response.statusCode,403);
- } finally {await f.sql.close();}
 });

@@ -157,8 +157,11 @@ function assertVersion(row, body) {
 
 async function barcodeProduct(db, barcode, source) {
   let qrCode;
-  try { qrCode = productCodeInScan(barcode); }
-  catch (error) { throw Object.assign(error, {status:400}); }
+  try {
+    qrCode = productCodeInScan(barcode);
+  } catch (error) {
+    throw Object.assign(error, { status: 400 });
+  }
   const [configs, cache, byCode] = await Promise.all([
     db
       .from("warehouse_preparation_products")
@@ -170,15 +173,22 @@ async function barcodeProduct(db, barcode, source) {
       .select("codice_articolo,ean,descrizione")
       .eq("ean", barcode)
       .limit(3),
-    qrCode ? db.from("ordini_prodotti_cache").select("codice_articolo,descrizione")
-      .eq("codice_articolo", qrCode).limit(2) : Promise.resolve({data:[],error:null}),
+    qrCode
+      ? db
+          .from("ordini_prodotti_cache")
+          .select("codice_articolo,descrizione")
+          .eq("codice_articolo", qrCode)
+          .limit(2)
+      : Promise.resolve({ data: [], error: null }),
   ]);
 
   const matches = new Set([
     ...checked(configs).map((r) => r.code),
     ...checked(cache).map((r) => upper(r.codice_articolo)),
     ...checked(byCode).map((r) => upper(r.codice_articolo)),
-    ...source.lines.filter(l => qrCode && l.code === qrCode).map(l => l.code),
+    ...source.lines
+      .filter((l) => qrCode && l.code === qrCode)
+      .map((l) => l.code),
     ...source.lines.filter((l) => l.barcode === barcode).map((l) => l.code),
   ]);
 
@@ -192,7 +202,8 @@ async function barcodeProduct(db, barcode, source) {
   const code = [...matches][0];
   const product = source.lines.find((l) => l.code === code) || {
     code,
-    description: byCode.data[0]?.descrizione || cache.data[0]?.descrizione || code,
+    description:
+      byCode.data[0]?.descrizione || cache.data[0]?.descrizione || code,
   };
 
   const packaging = await preparationPackaging(db, [code]);
@@ -217,10 +228,15 @@ function editPacking(row, operation, body) {
       palletId: body.palletId ? uuid(body.palletId) : null,
     });
   } else if (operation === "add_pallet") {
+    const palletId = uuid(body.palletId);
     state.pallets.push({
-      id: uuid(body.palletId),
+      id: palletId,
       number: Math.max(0, ...state.pallets.map((p) => p.number)) + 1,
     });
+    if (body.assignUnassigned === true) {
+      for (const item of state.packages)
+        if (!item.palletId) item.palletId = palletId;
+    }
   } else if (operation === "assign") {
     const p = state.packages.find((p) => p.id === body.packageId);
     assert(p, "Collo non trovato.");
@@ -249,7 +265,15 @@ function editPacking(row, operation, body) {
 async function existingDdt(client, row) {
   const docs = await pages(client, "/documenti/movimenti-magazzino", [
     { campo: "sigla", condizione: "=", valore: "BC" },
-    ...(row.export_payload?.cod_modulo ? [{ campo: "cod_modulo", condizione: "=", valore: row.export_payload.cod_modulo }] : []),
+    ...(row.export_payload?.cod_modulo
+      ? [
+          {
+            campo: "cod_modulo",
+            condizione: "=",
+            valore: row.export_payload.cod_modulo,
+          },
+        ]
+      : []),
     { campo: "cod_conto", condizione: "=", valore: row.source.customerCode },
 
     { campo: "nota", condizione: "contiene", valore: `ALL:${row.id}` },
@@ -388,8 +412,9 @@ export function createOrderPreparationHandler({
 
         if (value.ddt_series) {
           const series = await client.getJson("/dati-generali/serie-documenti");
-          const { prepareDocumentSeries } =
-            await import("./mexal/sync-document-series.js");
+          const { prepareDocumentSeries } = await import(
+            "./mexal/sync-document-series.js"
+          );
 
           assert(
             prepareDocumentSeries(series).rows.some(
@@ -526,9 +551,28 @@ export function createOrderPreparationHandler({
         );
       if (op === "scan") {
         const barcode = text(body.barcode);
-        assert(barcode && barcode.length <= 4096, "Barcode, codice IT o URL QR non valido.");
+        assert(
+          barcode && barcode.length <= 4096,
+          "Barcode, codice IT o URL QR non valido.",
+        );
         assert(["piece", "carton"].includes(body.mode), "Modalità non valida.");
 
+        const packageId = uuid(body.packageId);
+        const state = structuredClone(row.state);
+        if (!state.packages.some((item) => item.id === packageId)) {
+          assert(body.createPackage === true, "Collo non valido.");
+          const palletId = uuid(body.palletId);
+          assert(
+            state.pallets.some((item) => item.id === palletId),
+            "Bancale del collo inesistente.",
+          );
+          state.packages.push({
+            id: packageId,
+            number:
+              Math.max(0, ...state.packages.map((item) => item.number)) + 1,
+            palletId,
+          });
+        }
         const product = await barcodeProduct(db, barcode, row.source);
         if (body.mode === "carton" && !product.piecesPerCarton) {
           assert(
@@ -540,14 +584,12 @@ export function createOrderPreparationHandler({
             `Pezzi per cartone di ${product.code} non validi: correggi il capitolato prodotto, sezione Imballo.`,
           );
           if (body.piecesPerCarton == null || body.piecesPerCarton === "")
-            return res
-              .status(200)
-              .json({
-                requiresCartonPieces: true,
-                product: { code: product.code },
-              });
+            return res.status(200).json({
+              requiresCartonPieces: true,
+              product: { code: product.code },
+            });
           assert(
-            row.state.packages.some((p) => p.id === body.packageId),
+            state.packages.some((p) => p.id === body.packageId),
             "Collo non valido.",
           );
           Object.assign(
@@ -561,7 +603,6 @@ export function createOrderPreparationHandler({
           );
         }
 
-        const state = structuredClone(row.state);
         state.confirmedLots = false;
 
         state.scans.push({

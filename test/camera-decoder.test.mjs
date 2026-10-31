@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 import {createCameraDecoder} from "../src/pages/Warehouse/cameraDecoder.js";
-import {createScanCandidate,barcodeReadOptions,nearestBarcode} from "../src/pages/Warehouse/barcodeWorkerCore.js";
+import {createScanCandidate,createNextScanGate,barcodeReadOptions,nearestBarcode} from "../src/pages/Warehouse/barcodeWorkerCore.js";
 import {prepareZXingModule,readBarcodes} from "zxing-wasm/reader";
 import {prepareZXingModule as prepareWriter,writeBarcode} from "zxing-wasm/writer";
 
@@ -55,4 +55,11 @@ test("real C++ reader decodes rotated, low-contrast, noisy and slightly blurred 
   const results=await readBarcodes(image,barcodeReadOptions);
   assert.equal(nearestBarcode(results,image.width,image.height),text,format);
  }
+});
+
+test("a confirmed label must leave or change before automatic capture can hold the next product",()=>{
+ const gate=createNextScanGate();assert.equal(gate.observe("IT0001"),"IT0001");gate.confirm("IT0001");
+ assert.equal(gate.observe("IT0001"),null);assert.equal(gate.observe("IT0001"),null);assert.equal(gate.observe("IT0002"),"IT0002");
+ gate.confirm("IT0002");assert.equal(gate.observe(null),null);assert.equal(gate.observe("IT0002"),"IT0002");
+ gate.confirm("IT0002");gate.reset();assert.equal(gate.observe("IT0002"),"IT0002");
 });

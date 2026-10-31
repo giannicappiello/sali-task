@@ -1,3 +1,4 @@
+import { displayDate as formatDate } from '../../../lib/displayDate.js';
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -9,11 +10,6 @@ function money(value) {
   return Number(value || 0).toLocaleString("it-IT", { useGrouping: 'always',  style: "currency", currency: "EUR" });
 }
 
-function formatDate(value) {
-  if (!value) return "-";
-  const [year, month, day] = String(value).slice(0, 10).split("-");
-  return year && month && day ? `${day}-${month}-${year}` : value;
-}
 
 export default function Invoices() {
   const navigate = useNavigate();

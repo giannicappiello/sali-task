@@ -1,3 +1,4 @@
+import { displayDate as formatDate } from '../../../lib/displayDate.js';
 import { useEffect, useState } from "react";
 import { ArrowLeft, LockKeyhole } from "lucide-react";
 import { useParams } from "react-router-dom";
@@ -10,11 +11,6 @@ function money(value) {
   return Number(value || 0).toLocaleString("it-IT", { useGrouping: 'always',  style: "currency", currency: "EUR" });
 }
 
-function formatDate(value) {
-  if (!value) return "-";
-  const [year, month, day] = String(value).slice(0, 10).split("-");
-  return `${day}-${month}-${year}`;
-}
 
 export default function InvoiceDetail() {
   const { invoiceId } = useParams();

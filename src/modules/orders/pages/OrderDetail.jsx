@@ -1,3 +1,4 @@
+import { displayDate } from '../../../lib/displayDate.js';
 import { isOrderQuantityError, showCartonViolations, showOrderQuantityError } from '../services/orderQuantityDialog.js';
 import { validateOrderCartons } from '../services/orderCartonRules.js';
 import { applyOrderPaymentDiscountPolicy, excludesOrderPaymentDiscount } from "../services/orderPaymentPolicy.js";
@@ -258,12 +259,12 @@ export default function OrderDetail() {
       {message && <div className="orders-alert orders-alert-success">{message}</div>}
 
       <section className="orders-panel orders-detail-summary">
-        <div><span>Data</span><strong>{order.data_ordine || "-"}</strong></div>
+        <div><span>Data</span><strong>{displayDate(order.data_ordine)}</strong></div>
         <div><span>Cliente</span><strong>{customerDisplayName(order)}</strong></div>
         <div><span>Agente</span><strong>{agentName || "-"}</strong></div>
         <div><span>Pagamento</span><strong>{order.descrizione_pagamento || order.codice_pagamento || "-"}</strong></div>
         <div><span>Stato</span><OrderStatus order={order} basePath={basePath} /></div>
-        {moduleCode !== "ph" && <div><span>Ultimo tentativo</span><strong>{order.ultimo_tentativo_sync ? new Date(order.ultimo_tentativo_sync).toLocaleString("it-IT") : "-"}</strong></div>}
+        {moduleCode !== "ph" && <div><span>Ultimo tentativo</span><strong>{order.ultimo_tentativo_sync ? displayDate(order.ultimo_tentativo_sync, true) : "-"}</strong></div>}
         {moduleCode !== "ph" && (privateOrder ? ["OCT"] : ["OCM", "OCX", "OCI"]).map((kind) => {
           const document = order.mexal_documents?.find((item) => item.tipo_documento === kind);
           const value = document?.numero || order[`numero_${kind.toLowerCase()}`];
@@ -286,8 +287,8 @@ export default function OrderDetail() {
                 <p>{`${document.serie || "-"}/${document.numero || "-"}${document.anno ? ` · ${document.anno}` : ""}`}</p>
               </div>
               <div>
-                {invoicesForMexalDocument(document,order.linked_invoices).length ? invoicesForMexalDocument(document,order.linked_invoices).map(invoice=><Link key={invoice.id} style={{display:'block'}} to={`${basePath}/fatture/${invoice.id}`}>{invoice.sigla} {invoice.serie}/{invoice.numero} · {String(invoice.data_documento||'').split('-').reverse().join('-')}</Link>) : <span className={`orders-status ${childStatusClass(document)}`}>{document.stato_operativo || "APERTO"}</span>}
-                <small>{document.ultimo_sync_mexal ? `Controllato ${new Date(document.ultimo_sync_mexal).toLocaleString("it-IT")}` : "Non ancora controllato"}</small>
+                {invoicesForMexalDocument(document,order.linked_invoices).length ? invoicesForMexalDocument(document,order.linked_invoices).map(invoice=><Link key={invoice.id} style={{display:'block'}} to={`${basePath}/fatture/${invoice.id}`}>{invoice.sigla} {invoice.serie}/{invoice.numero} · {displayDate(invoice.data_documento)}</Link>) : <span className={`orders-status ${childStatusClass(document)}`}>{document.stato_operativo || "APERTO"}</span>}
+                <small>{document.ultimo_sync_mexal ? `Controllato ${displayDate(document.ultimo_sync_mexal, true)}` : "Non ancora controllato"}</small>
               </div>
             </div>
             <div className="orders-table-wrap"><table className="orders-table">

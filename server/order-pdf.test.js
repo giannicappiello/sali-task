@@ -27,6 +27,8 @@ test("il PDF usa il numero completo del documento Mexal e mantiene Workspace sol
   assert.match(output, /RIFERIMENTO WORKSPACE/);
   assert.match(output, /3\/2026/);
   assert.doesNotMatch(output, /NUMERO ORDINE WORKSPACE/);
+  assert.match(output, /20-07-2026/);
+  assert.doesNotMatch(output, /20\/07\/2026|2026-07-20/);
 });
 
 test("il PDF degli ordini PH riporta il barcode dell'articolo oltre a codice e descrizione", async () => {

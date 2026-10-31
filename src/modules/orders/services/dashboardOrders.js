@@ -1,3 +1,4 @@
+import { displayDate } from '../../../lib/displayDate.js';
 import { getOrderDisplayStatus } from "./orderDisplayStatus.js";
 export const DASHBOARD_DOCUMENT_FIELDS = ["numero_ocm", "numero_ocx", "numero_oci"];
 
@@ -15,6 +16,7 @@ export function matchesDashboardOrder(order, query, statusFilter = "", monthFilt
   if (!term) return true;
   return [
     order.numero_ordine,
+    displayDate(order.data_ordine),
     order.ragione_sociale_cliente,
     order.agente_visualizzato,
     order.numero_ordine_visualizzato,

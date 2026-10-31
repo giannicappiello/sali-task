@@ -1,3 +1,4 @@
+import { displayDate } from '../../../lib/displayDate.js';
 import { enrichOrderInvoices } from "../services/orderInvoices";
 import OrderStatus from "../components/OrderStatus";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -123,6 +124,7 @@ export default function Orders() {
       if (!q) return true;
       return [
         ...Object.values(item),
+        displayDate(item.data_ordine),
         getOrderDisplayStatus(item).label,
         ...(item.linked_invoices || []).map(invoice => `${invoice.sigla} ${invoice.serie}/${invoice.numero}`),
         customerDisplayName(item, customersByCode),
@@ -160,7 +162,7 @@ export default function Orders() {
                 const parentReference = item.numero_ordine_visualizzato || item.numero_ordine || "Bozza";
                 return [
                   <tr key={item.id} className="orders-clickable-row" onClick={() => navigate(`${basePath}/elenco/${item.id}`)}>
-                    <td>PADRE</td><td>{item.data_ordine || "-"}</td><td>{parentReference}</td><td>-</td><td>{customerDisplayName(item, customersByCode)}</td><td>{agentDisplayName(item, agentsByCode, agentsByCustomer)}</td>
+                    <td>PADRE</td><td>{displayDate(item.data_ordine)}</td><td>{parentReference}</td><td>-</td><td>{customerDisplayName(item, customersByCode)}</td><td>{agentDisplayName(item, agentsByCode, agentsByCustomer)}</td>
                     <td><OrderStatus order={item} basePath={basePath} /></td>
                     <td>{Number(item.totale_imponibile ?? item.totale ?? 0).toLocaleString("it-IT", { useGrouping: 'always',  style: "currency", currency: "EUR" })}</td><td>{Number(item.totale_iva || 0).toLocaleString("it-IT", { useGrouping: 'always',  style: "currency", currency: "EUR" })}</td><td>{Number(item.totale_documento ?? item.totale ?? 0).toLocaleString("it-IT", { useGrouping: 'always',  style: "currency", currency: "EUR" })}</td>
                   </tr>,
@@ -168,7 +170,7 @@ export default function Orders() {
                     const documentStatus = String(document.stato_operativo || "APERTO").toUpperCase();
                     const documentStatusClass = documentStatus === "EVASO" ? "evaso" : documentStatus === "APERTO" ? "inviato-mexal" : documentStatus === "ANNULLATO" ? "annullato" : "errore";
                     return <tr key={`${item.id}-${document.tipo_documento}-${document.serie}-${document.numero}`} className="orders-clickable-row orders-child-order-row" onClick={() => navigate(`${basePath}/elenco/${item.id}`)}>
-                      <td>{document.tipo_documento}</td><td>{item.data_ordine || "-"}</td><td>{`${document.serie || "-"}/${document.numero}`}</td><td>{parentReference}</td><td colSpan={2}>Documento figlio Mexal</td>
+                      <td>{document.tipo_documento}</td><td>{displayDate(item.data_ordine)}</td><td>{`${document.serie || "-"}/${document.numero}`}</td><td>{parentReference}</td><td colSpan={2}>Documento figlio Mexal</td>
                       <td><span className={`orders-status ${documentStatusClass}`}>{documentStatus}</span></td><td>-</td><td>-</td><td>-</td>
                     </tr>;
                   }),

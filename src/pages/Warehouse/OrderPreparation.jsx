@@ -6,7 +6,6 @@ import {
   Camera,
   Package,
   Truck,
-  ScanLine,
   CheckCircle2,
   RefreshCw,
   Settings,
@@ -255,8 +254,7 @@ export default function OrderPreparation() {
     [mode, setMode] = useState("piece"),
     [activePackage, setActivePackage] = useState(""),
     [activePallet, setActivePallet] = useState(""),
-    [draftPackage, setDraftPackage] = useState(null),
-    [barcode, setBarcode] = useState("");
+    [draftPackage, setDraftPackage] = useState(null);
 
   const [settings, setSettings] = useState(false),
     [check, setCheck] = useState(null),
@@ -280,7 +278,12 @@ export default function OrderPreparation() {
     current.current = row;
   }, [row]);
 
-  const accept = useCallback((r) => {
+  const accept = useCallback((r, preserveFifo = false) => {
+    const prior=current.current;
+    if(preserveFifo && prior?.id===r.id && !prior.source.fifoIssue && prior.source.fifoProposal?.length && r.source.fifoIssue){
+      r={...r,source:{...r.source,fifoProposal:prior.source.fifoProposal}};
+      delete r.source.fifoIssue;
+    }
     current.current = r;
     setRow(r);
     setDraftPackage(null);
@@ -296,7 +299,10 @@ export default function OrderPreparation() {
       ) ||
       r.state.packages.find((item) => item.palletId === selectedPallet?.id);
     setActivePallet(selectedPallet?.id || "");
-    setActivePackage(selectedPackage?.id || "");
+    if(!selectedPackage && selectedPallet){
+      const next={id:crypto.randomUUID(),number:Math.max(0,...r.state.packages.map(item=>item.number))+1,palletId:selectedPallet.id};
+      setDraftPackage(next);setActivePackage(next.id);
+    }else setActivePackage(selectedPackage?.id || "");
     setCheck(r.verification);
     setConfirmedLots(false);
     setConfirmDdt(false);
@@ -360,13 +366,12 @@ export default function OrderPreparation() {
       const response = await preparationApi(operation, body);
       setPending(null);
       if (response.requiresCartonPieces) {
-        setCamera(false);
         setCartonPrompt({ code: response.product.code, body });
         setCartonPieces("");
         return response;
       }
       if (operation === "scan" && response.preparation) setCartonPrompt(null);
-      if (response.preparation) accept(response.preparation);
+      if (response.preparation) accept(response.preparation,true);
       if (operation === "scan" && response.preparation) {
         const saved = response.preparation.state.scans.find(
           (item) => item.id === body.eventId,
@@ -486,7 +491,6 @@ export default function OrderPreparation() {
         ? { createPackage: true, palletId: draftPackage.palletId }
         : {}),
     });
-    setBarcode("");
     if (!camera && !response?.requiresCartonPieces) input.current?.focus();
     return response;
   };
@@ -538,153 +542,7 @@ export default function OrderPreparation() {
         h.source.reference === order.reference && h.source.year === order.year,
     );
 
-  const scanPanel = editable ? (
-    <section className="op-panel op-pallet-scanner">
-      <h2>
-        <ScanLine size={20} /> Scansiona prodotti
-      </h2>
-      <div className="op-scan-controls">
-        <label>
-          Modalità
-          <select
-            value={mode}
-            onChange={(e) => setMode(e.target.value)}
-            disabled={busy || !!cartonPrompt}
-          >
-            <option value="piece">Pezzo · 1 pezzo per lettura</option>
-            <option value="carton">Cartone · pezzi dal capitolato</option>
-          </select>
-        </label>
-
-        <label>
-          Collo attivo
-          <select
-            value={activePackage}
-            onChange={(e) =>
-              choosePackage(
-                visiblePackages.find((item) => item.id === e.target.value),
-              )
-            }
-            disabled={busy || !!cartonPrompt}
-          >
-            {visiblePackages
-              .filter((item) => item.palletId === activePallet)
-              .map((p) => (
-                <option key={p.id} value={p.id}>
-                  Collo {p.number}
-                </option>
-              ))}
-          </select>
-        </label>
-
-        <button
-          onClick={() => setCamera((v) => !v)}
-          disabled={!activePackage || !activePallet || busy || !!cartonPrompt}
-        >
-          <Camera size={17} />
-          {camera ? "Chiudi fotocamera" : "Apri fotocamera"}
-        </button>
-
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void scan(barcode);
-          }}
-        >
-          <label>
-            Barcode, codice IT o URL del QR
-            <input
-              disabled={busy || !!cartonPrompt}
-              ref={input}
-              autoComplete="off"
-              value={barcode}
-              onChange={(e) => setBarcode(e.target.value)}
-              placeholder="Barcode, IT0017 o URL del QR"
-              maxLength={4096}
-            />
-          </label>
-          <button
-            className="op-primary"
-            disabled={busy || !!cartonPrompt || !barcode || !activePackage}
-          >
-            Aggiungi {mode === "piece" ? "pezzo" : "cartone"}
-          </button>
-        </form>
-      </div>
-      <p className="op-mode">
-        Modalità attiva:{" "}
-        <strong>{mode === "piece" ? "PEZZO" : "CARTONE"}</strong> ·
-        Destinazione:{" "}
-        <strong>
-          Collo{" "}
-          {visiblePackages.find((p) => p.id === activePackage)?.number ||
-            "da selezionare"}
-        </strong>
-      </p>
-
-      {cartonPrompt && (
-        <form
-          className="op-notice op-carton-prompt"
-          aria-label="Pezzi per cartone mancanti"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void perform(
-              "scan",
-              {},
-              {
-                ...cartonPrompt.body,
-                piecesPerCarton: Number(cartonPieces),
-              },
-            );
-          }}
-        >
-          <h3>Pezzi per cartone · {cartonPrompt.code}</h3>
-          <p>
-            Il dato manca nel capitolato. Indica quanti pezzi contiene questo
-            cartone: il valore sarà salvato nel capitolato prodotto, sezione
-            Imballo, e usato anche per le prossime letture.
-          </p>
-          <label>
-            Pezzi per cartone
-            <input
-              ref={cartonInput}
-              type="number"
-              min="1"
-              max="1000000"
-              step="1"
-              inputMode="numeric"
-              required
-              value={cartonPieces}
-              onChange={(e) => setCartonPieces(e.target.value)}
-              disabled={busy}
-            />
-          </label>
-          <div className="op-toolbar">
-            <button className="op-primary" disabled={busy || !cartonPieces}>
-              Salva nel capitolato e aggiungi cartone
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                setCartonPrompt(null);
-                input.current?.focus();
-              }}
-            >
-              Annulla lettura
-            </button>
-          </div>
-        </form>
-      )}
-      <BarcodeCamera
-        enabled={camera}
-        onRead={scan}
-        onClose={() => setCamera(false)}
-        paused={busy || !!pending || !!cartonPrompt}
-        contextLabel={`Bancale ${pallets.find((item) => item.id === activePallet)?.number || "—"} · Collo ${visiblePackages.find((p) => p.id === activePackage)?.number || "—"} · ${mode === "piece" ? "Pezzo" : "Cartone"}`}
-      />
-    </section>
-  ) : null;
+  const scanPanel=editable ? <button className="op-primary op-open-scanner" disabled={busy || !!pending} onClick={()=>setCamera(true)}><Camera size={18}/> Scansiona prodotti</button> : null;
   const renderPackage = (p) => (
     <article
       key={p.id}
@@ -750,7 +608,7 @@ export default function OrderPreparation() {
       </ul>
 
       {editable && (
-        <div className="op-toolbar">
+        <div className="op-toolbar op-package-actions">
           <button
             disabled={busy || !!cartonPrompt}
             onClick={() => choosePackage(p)}
@@ -1133,148 +991,6 @@ export default function OrderPreparation() {
           </section>
 
           <section className="op-panel">
-            <h2>Prodotti dell’ordine</h2>
-            <div className="op-table-wrap">
-              <table data-column-controls="off">
-                <thead>
-                  <tr>
-                    <th>Articolo</th>
-                    <th>Barcode</th>
-                    <th>Richiesti</th>
-                    <th>Letti</th>
-                    <th>Riscontro</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...new Set(source.lines.map((l) => l.code))].map((code) => {
-                    const line = source.lines.find((l) => l.code === code),
-                      expected = source.lines
-                        .filter((l) => l.code === code)
-                        .reduce((n, l) => n + l.quantity, 0),
-                      actual = scans
-                        .filter((s) => s.code === code)
-                        .reduce((n, s) => n + s.quantity, 0);
-
-                    const lastCarton = scans.findLast(
-                      (s) =>
-                        s.code === code &&
-                        s.mode === "carton" &&
-                        s.specificationVersion,
-                    );
-                    const piecesPerCarton =
-                      lastCarton?.quantity || line.piecesPerCarton;
-                    const specificationVersion =
-                      lastCarton?.specificationVersion ||
-                      line.packagingSpecificationVersion;
-                    return (
-                      <tr key={code}>
-                        <td data-label="Articolo">
-                          <strong>{code}</strong>
-                          <small>{line.description}</small>
-                          <small>
-                            {piecesPerCarton && specificationVersion
-                              ? `${format(piecesPerCarton)} ${piecesPerCarton === 1 ? "pezzo" : "pezzi"}/cartone · Capitolato rev. ${specificationVersion}`
-                              : "Cartone: compila i pezzi nel capitolato prodotto"}
-                          </small>
-                        </td>
-                        <td data-label="Barcode">
-                          {line.barcode || "Da configurare"}
-                        </td>
-                        <td data-label="Richiesti">{format(expected)}</td>
-                        <td data-label="Letti">{format(actual)}</td>
-                        <td
-                          data-label="Riscontro"
-                          className={
-                            actual === expected
-                              ? "op-good"
-                              : actual > expected
-                                ? "op-bad"
-                                : ""
-                          }
-                        >
-                          {actual === expected
-                            ? "Completo"
-                            : actual > expected
-                              ? `In più: ${format(actual - expected)}`
-                              : `Mancano ${format(expected - actual)}`}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          {row.status !== "completed" &&
-            (source.fifoProposal?.length > 0 || source.fifoIssue) && (
-              <section className="op-panel">
-                <h2>Lotti FIFO da prelevare</h2>
-                <p>
-                  Preleva i lotti indicati, partendo da quello entrato per
-                  primo. Il barcode identifica il prodotto, non il lotto.
-                </p>
-                {source.fifoIssue && (
-                  <p className="op-error">{source.fifoIssue}</p>
-                )}
-                <LotTable
-                  allocations={
-                    row.verification?.allocations || source.fifoProposal || []
-                  }
-                />
-              </section>
-            )}
-
-          <section className="op-panel">
-            <h2>Ultime letture</h2>
-            <div className="op-table-wrap">
-              <table data-column-controls="off">
-                <thead>
-                  <tr>
-                    <th>Prodotto</th>
-                    <th>Modalità</th>
-                    <th>Pezzi</th>
-                    <th>Collo</th>
-                    <th>Azioni</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {scans
-                    .slice(-30)
-                    .reverse()
-                    .map((s) => (
-                      <tr key={s.id}>
-                        <td data-label="Prodotto">{s.code}</td>
-                        <td data-label="Modalità">
-                          {s.mode === "piece" ? "Pezzo" : "Cartone"}
-                        </td>
-                        <td data-label="Pezzi">{s.quantity}</td>
-                        <td data-label="Collo">
-                          {packages.find((p) => p.id === s.packageId)?.number}
-                        </td>
-                        <td data-label="Azioni">
-                          {editable && (
-                            <button
-                              disabled={busy}
-                              onClick={() =>
-                                void perform("undo", { scanId: s.id })
-                              }
-                            >
-                              Annulla lettura
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-              {!scans.length && (
-                <p className="op-empty">Nessuna lettura registrata.</p>
-              )}
-            </div>
-          </section>
-
-          <section className="op-panel">
             <h2>
               <CheckCircle2 size={20} /> Riscontro e documenti
             </h2>
@@ -1452,6 +1168,105 @@ export default function OrderPreparation() {
               </details>
             )}
           </section>
+
+          {editable && <BarcodeCamera
+            enabled={camera}
+            onRead={scan}
+            onResolve={async barcode=>(await preparationApi("resolve_product",{id:row.id,barcode})).product}
+            onClose={()=>setCamera(false)}
+            paused={busy || !!pending}
+            cartonPrompt={cartonPrompt} cartonPieces={cartonPieces} onCartonPieces={setCartonPieces}
+            onSaveCarton={()=>perform("scan",{},{...cartonPrompt.body,piecesPerCarton:Number(cartonPieces)})}
+            onCancelCarton={()=>setCartonPrompt(null)}
+            mode={mode} onModeChange={setMode}
+            pallets={pallets} activePallet={activePallet} onPalletChange={id=>choosePallet(pallets.find(item=>item.id===id))}
+            packages={visiblePackages.filter(item=>item.palletId===activePallet)} activePackage={activePackage} onPackageChange={id=>choosePackage(visiblePackages.find(item=>item.id===id))}
+            onNewPallet={()=>perform("add_pallet",{palletId:crypto.randomUUID(),assignUnassigned:pallets.length===0})}
+            onNewPackage={()=>newDraftPackage(activePallet)}
+            contextLabel={`Bancale ${pallets.find(item=>item.id===activePallet)?.number || "—"} · Collo ${visiblePackages.find(item=>item.id===activePackage)?.number || "—"}`}
+          />}
+
+          <section className="op-panel">
+            <h2>Prodotti dell’ordine</h2>
+            <div className="op-order-products-heading" aria-hidden="true"><span>Codice IT</span><span>Richiesti</span><span>Letti</span><span>Mancanti</span></div>
+            <div className="op-order-products">{[...new Set(source.lines.map(item=>item.code))].map(code=>{
+              const line=source.lines.find(item=>item.code===code),expected=source.lines.filter(item=>item.code===code).reduce((n,item)=>n+item.quantity,0),actual=scans.filter(item=>item.code===code).reduce((n,item)=>n+item.quantity,0);
+              const lastCarton=scans.findLast(item=>item.code===code && item.mode==="carton" && item.specificationVersion),pieces=lastCarton?.quantity || line.piecesPerCarton,revision=lastCarton?.specificationVersion || line.packagingSpecificationVersion;
+              return <details key={code} className="op-order-product"><summary aria-label={`${code}: richiesti ${expected}, letti ${actual}, mancanti ${Math.max(0,expected-actual)}`}><strong>{code}</strong><span>{format(expected)}</span><span className={actual>expected?"op-bad":actual===expected?"op-good":""}>{format(actual)}</span><span>{format(Math.max(0,expected-actual))}</span></summary>
+                <div className="op-order-product-details"><strong>{line.description}</strong><span>Barcode: {line.barcode || "Da configurare"}</span><span>{pieces ? `${format(pieces)} pezzi/cartone${revision?` — Capitolato rev. ${revision}`:""}` : "Pezzi per cartone da compilare nel capitolato prodotto"}</span>{actual>expected && <span className="op-bad">In pi—: {format(actual-expected)} pezzi</span>}</div>
+              </details>;
+            })}</div>
+          </section>
+
+          {row.status !== "completed" &&
+            (source.fifoProposal?.length > 0 || source.fifoIssue) && (
+              <section className="op-panel">
+                <h2>Lotti FIFO da prelevare</h2>
+                <p>
+                  Preleva i lotti indicati, partendo da quello entrato per
+                  primo. Il barcode identifica il prodotto, non il lotto.
+                </p>
+                {source.fifoIssue && (
+                  <p className="op-error">{source.fifoIssue}</p>
+                )}
+                <LotTable
+                  allocations={
+                    row.verification?.allocations || source.fifoProposal || []
+                  }
+                />
+              </section>
+            )}
+
+          <section className="op-panel">
+            <h2>Ultime letture</h2>
+            <div className="op-table-wrap">
+              <table data-column-controls="off">
+                <thead>
+                  <tr>
+                    <th>Prodotto</th>
+                    <th>Modalità</th>
+                    <th>Pezzi</th>
+                    <th>Collo</th>
+                    <th>Azioni</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scans
+                    .slice(-30)
+                    .reverse()
+                    .map((s) => (
+                      <tr key={s.id}>
+                        <td data-label="Prodotto">{s.code}</td>
+                        <td data-label="Modalità">
+                          {s.mode === "piece" ? "Pezzo" : "Cartone"}
+                        </td>
+                        <td data-label="Pezzi">{s.quantity}</td>
+                        <td data-label="Collo">
+                          {packages.find((p) => p.id === s.packageId)?.number}
+                        </td>
+                        <td data-label="Azioni">
+                          {editable && (
+                            <button
+                              disabled={busy}
+                              onClick={() =>
+                                void perform("undo", { scanId: s.id })
+                              }
+                            >
+                              Annulla lettura
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+              {!scans.length && (
+                <p className="op-empty">Nessuna lettura registrata.</p>
+              )}
+            </div>
+          </section>
+
+
         </>
       )}
 

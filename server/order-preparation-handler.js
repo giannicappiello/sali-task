@@ -313,7 +313,7 @@ export function createOrderPreparationHandler({
         { db, profile } = session;
       const op = body.operation;
 
-      const canRead = ["list", "get", "settings", "reconcile"].includes(op);
+      const canRead = ["list", "get", "settings", "reconcile", "resolve_product"].includes(op);
 
       assert(
         canRead ||
@@ -503,12 +503,23 @@ export function createOrderPreparationHandler({
       const id = uuid(body.id);
       let row = checked(await db.from(TABLE).select("*").eq("id", id).single());
 
-      if (op === "get")
-        return res.status(200).json({
-          preparation: exposed(row),
-          canWrite: session.canWrite,
-          canConfigure: session.canConfigure,
-        });
+      if (op === "resolve_product") {
+        const barcode = text(body.barcode);
+        assert(barcode && barcode.length<=100 && !/^https?:\/\//i.test(barcode), "Inserisci un barcode o un codice articolo IT valido.");
+        const product = await barcodeProduct(db,barcode,row.source);
+        return res.status(200).json({product:{code:product.code,description:product.description,piecesPerCarton:product.piecesPerCarton,wrong:!row.source.lines.some(item=>item.code===product.code)}});
+      }
+      if (op === "get") {
+        if (row.source.fifoIssue && ["draft","verified"].includes(row.status) && !row.verification?.ok) {
+          row = structuredClone(row);
+          try {
+            const inventory=await lotInventory(client,row.source.lines);
+            row.source.fifoProposal=allocateFifo(inventory.lines,inventory.lots,await held(db,row.id),today());
+            delete row.source.fifoIssue;
+          } catch(error) { row.source.fifoIssue=error.message; }
+        }
+        return res.status(200).json({preparation:exposed(row),canWrite:session.canWrite,canConfigure:session.canConfigure});
+      }
 
       assert(
         row.source.year === Number(client.anno),

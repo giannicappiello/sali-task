@@ -2,7 +2,6 @@ import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cameraErrorMessage } from "./barcodeFrame.js";
 import { createCameraDecoder } from "./cameraDecoder.js";
-import { productCodeInScan } from "../../../shared/productScan.js";
 import {
   createScanCandidate,
   createNextScanGate,
@@ -13,13 +12,15 @@ import {
   focusPointInPreview,
 } from "./cameraSettings.js";
 
-function CameraSession({ onRead, onClose, paused, onRestart, contextLabel }) {
+function CameraSession({ onRead, onResolve, onClose, paused, onRestart, contextLabel,
+  mode="piece",onModeChange,pallets=[],activePallet,onPalletChange,packages=[],activePackage,onPackageChange,onNewPallet,onNewPackage,cartonPrompt,cartonPieces,onCartonPieces,onSaveCarton,onCancelCarton }) {
   const dialog = useRef(null),
     video = useRef(null),
     decoder = useRef(null),
     track = useRef(null);
   const state = useRef({
     onRead,
+    onResolve,
     paused,
     busy: false,
     cancelled: false,
@@ -37,26 +38,31 @@ function CameraSession({ onRead, onClose, paused, onRestart, contextLabel }) {
   const [message, setMessage] = useState(""),
     [error, setError] = useState(""),
     [focusPoint, setFocusPoint] = useState(null);
-  const [captured, setCaptured] = useState(null);
+  const [captured, setCaptured] = useState(null),[product,setProduct]=useState(null),[resolving,setResolving]=useState(false),[manual,setManual]=useState("");
+  const resolveVersion=useRef(0);
   const titleId = useId();
-  function holdCode(code) {
-    state.current.captured = code;
-    setCaptured(code);
+  async function holdCode(code) {
+    const version=++resolveVersion.current;
+    state.current.captured=code;state.current.product=null;
+    state.current.resolving=!!code;setCaptured(code);setProduct(null);setResolving(!!code);
+    if(!code)return;
+    setError("");setMessage("");
+    try{
+      const result=await state.current.onResolve(code);
+      if(state.current.cancelled || version!==resolveVersion.current)return;
+      if(!result?.code)throw Error("Prodotto non trovato. Verifica il barcode o inserisci il codice IT.");
+      state.current.product=result;setProduct(result);
+    }catch(failure){if(!state.current.cancelled && version===resolveVersion.current)setError(failure.message || "Impossibile identificare il prodotto.");}
+    finally{if(!state.current.cancelled && version===resolveVersion.current){state.current.resolving=false;setResolving(false);}}
   }
   function resetCode() {
-    releaseGate.current.reset();
-    candidate.current.clear();
-    holdCode(null);
-    setError("");
-    setMessage("");
+    releaseGate.current.reset();candidate.current.clear();void holdCode(null);setError("");setMessage("");
   }
-  useEffect(() => {
-    Object.assign(state.current, { onRead, paused });
-  }, [onRead, paused]);
+  useEffect(()=>{Object.assign(state.current,{onRead,onResolve,paused});},[onRead,onResolve,paused]);
 
   async function focusAt(point) {
     const selectedTrack = track.current;
-    if (!selectedTrack || state.current.busy || state.current.cancelled) return;
+    if (!selectedTrack || state.current.busy || state.current.cancelled || cartonPrompt) return;
     resetCode();
     const generation = ++focusGeneration.current;
     // No capture can start halfway through an explicit touch-focus request.
@@ -95,18 +101,49 @@ function CameraSession({ onRead, onClose, paused, onRestart, contextLabel }) {
     void focusAt(point);
   }
 
+  function finishResult(result,code){
+    if (result?.error)
+        setError(
+          result.error +
+            (!result.status || result.status >= 500
+              ? " Chiudi e usa Verifica / riprova."
+              : ""),
+        );
+      else if (result?.scan) {
+        const scan = result.scan;
+        releaseGate.current.confirm(code);
+        holdCode(null);
+        if (scan.wrong)
+          setError(
+            `Prodotto non previsto: ${scan.code}. Annulla la lettura dal riepilogo.`,
+          );
+        else {
+          setMessage(
+            `${scan.code}: +${scan.quantity} ${scan.quantity === 1 ? "pezzo" : "pezzi"}`,
+          );
+        }
+      } else if (!result?.requiresCartonPieces)
+        setError("Lettura non confermata: controlla il riepilogo.");
+  }
+  async function saveCarton(event){
+    event.preventDefault();if(state.current.busy || paused)return;
+    state.current.busy=true;setBusy(true);
+    try{const result=await onSaveCarton();if(!state.current.cancelled)finishResult(result,state.current.captured);}
+    finally{state.current.busy=false;if(!state.current.cancelled)setBusy(false);}
+  }
+
   async function capture() {
     const current = state.current;
-    if (!ready) {
+    if (!ready && !current.captured) {
       if (!starting) onRestart();
       return;
     }
     if (
       current.cancelled ||
       current.busy ||
-      current.paused ||
+      current.paused || current.resolving || (current.captured && !current.product) ||
       Date.now() < current.nextAllowedAt ||
-      !decoder.current
+      (!decoder.current && !current.captured)
     )
       return;
     current.busy = true;
@@ -154,28 +191,7 @@ function CameraSession({ onRead, onClose, paused, onRestart, contextLabel }) {
       );
       const result = await current.onRead(code);
       if (current.cancelled) return;
-      if (result?.error)
-        setError(
-          result.error +
-            (!result.status || result.status >= 500
-              ? " Chiudi e usa Verifica / riprova."
-              : ""),
-        );
-      else if (result?.scan) {
-        const scan = result.scan;
-        releaseGate.current.confirm(code);
-        holdCode(null);
-        if (scan.wrong)
-          setError(
-            `Prodotto non previsto: ${scan.code}. Annulla la lettura dal riepilogo.`,
-          );
-        else {
-          setMessage(
-            `${scan.code}: +${scan.quantity} ${scan.quantity === 1 ? "pezzo" : "pezzi"}`,
-          );
-        }
-      } else if (!result?.requiresCartonPieces)
-        setError("Lettura non confermata: controlla il riepilogo.");
+      finishResult(result,code);
     } catch (failure) {
       if (!current.cancelled) setError(cameraErrorMessage(failure));
     } finally {
@@ -250,7 +266,7 @@ function CameraSession({ onRead, onClose, paused, onRestart, contextLabel }) {
         async function preview() {
           if (cancelled) return;
           if (
-            !current.captured &&
+            !current.captured && !current.manualEditing && !current.resolving &&
             !current.busy &&
             !current.paused &&
             !current.decoding &&
@@ -359,26 +375,21 @@ function CameraSession({ onRead, onClose, paused, onRestart, contextLabel }) {
           )}
         </div>
         <footer className="op-camera-footer">
-          {captured && (
-            <div className="op-camera-confirmation">
-              <strong>
-                {(() => {
-                  try {
-                    return productCodeInScan(captured) || captured;
-                  } catch {
-                    return captured;
-                  }
-                })()}
-              </strong>
-              <button
-                type="button"
-                disabled={busy || paused}
-                onClick={resetCode}
-              >
-                Rileggi
-              </button>
+          <div className="op-camera-tools">
+            <div className="op-camera-selectors">
+              <label>Pezzi / cartoni<select aria-label="Modalità scansione" value={mode} disabled={busy || paused || !!cartonPrompt} onChange={event=>onModeChange(event.target.value)}><option value="piece">Pezzi</option><option value="carton">Cartoni</option></select></label>
+              <label><span>Bancale <button type="button" aria-label="Nuovo bancale dalla fotocamera" disabled={busy || paused || !!cartonPrompt} onClick={()=>void onNewPallet()}>+</button></span><select aria-label="Bancale attivo" value={activePallet} disabled={busy || paused || !!cartonPrompt} onChange={event=>onPalletChange(event.target.value)}>{pallets.map(item=><option key={item.id} value={item.id}>{item.number}</option>)}</select></label>
+              <label><span>Collo <button type="button" aria-label="Nuovo collo dalla fotocamera" disabled={busy || paused || !activePallet || !!cartonPrompt} onClick={()=>onNewPackage()}>+</button></span><select aria-label="Collo attivo" value={activePackage} disabled={busy || paused || !!cartonPrompt} onChange={event=>onPackageChange(event.target.value)}>{packages.map(item=><option key={item.id} value={item.id}>{item.number}</option>)}</select></label>
             </div>
-          )}
+            <form className="op-camera-manual" onSubmit={event=>{event.preventDefault();if(!manual.trim() || busy || paused || cartonPrompt)return;state.current.manualEditing=false;void holdCode(manual.trim());setManual("");}}>
+              <input aria-label="Barcode o codice articolo IT" placeholder="Barcode o codice IT" autoComplete="off" maxLength={100} value={manual} disabled={busy || paused || !!cartonPrompt} onChange={event=>{state.current.manualEditing=!!event.target.value;resetCode();setManual(event.target.value);}}/>
+              <button type="submit" disabled={!manual.trim() || busy || paused || !!cartonPrompt}>Cerca</button>
+            </form>
+            {captured && <div className="op-camera-confirmation">
+              <div className="op-camera-product" role="status">{resolving ? "Ricerca prodotto…" : product ? <><strong>{product.code} · {product.description}</strong><small>{mode==="piece" ? "1 pezzo" : product.piecesPerCarton ? `${product.piecesPerCarton} pezzi per cartone` : "Pezzi per cartone da compilare nel capitolato"}</small>{product.wrong && <small className="op-bad">Prodotto non previsto nell’ordine</small>}</> : "Prodotto non identificato"}</div>
+              <button type="button" disabled={busy || paused || !!cartonPrompt} onClick={resetCode}>Rileggi</button>
+            </div>}
+            {cartonPrompt && <form className="op-camera-carton-prompt" onSubmit={saveCarton}><label>Pezzi per cartone · {cartonPrompt.code}<input aria-label="Pezzi per cartone" type="number" min="1" max="1000000" step="1" required value={cartonPieces} onChange={event=>onCartonPieces(event.target.value)} disabled={busy || paused}/></label><div><button type="submit" disabled={busy || paused || !cartonPieces}>Salva e conferma cartone</button><button type="button" disabled={busy || paused} onClick={onCancelCarton}>Annulla</button></div></form>}
           {error && (
             <p className="op-camera-error" role="alert">
               {error}
@@ -389,10 +400,11 @@ function CameraSession({ onRead, onClose, paused, onRestart, contextLabel }) {
               {message}
             </p>
           )}
+          </div>
           <button
             type="button"
             className="op-camera-read"
-            disabled={starting || busy || cooling || paused}
+            disabled={(!captured && starting) || busy || cooling || paused || resolving || (captured && !product) || !activePackage || !activePallet || !!cartonPrompt}
             onClick={() => void capture()}
             aria-busy={busy || starting}
           >
@@ -411,12 +423,14 @@ export default function BarcodeCamera({
   onClose,
   paused = false,
   contextLabel = "",
+  ...controls
 }) {
   const [attempt, setAttempt] = useState(0);
   if (!enabled) return null;
   return (
     <CameraSession
       key={attempt}
+      {...controls}
       onRead={onRead}
       onClose={onClose}
       paused={paused}

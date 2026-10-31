@@ -112,6 +112,7 @@ test("packaging rejects empty cartons, empty pallets and unassigned cartons", ()
   assert.match(comparePacking([line()], state).packagingErrors[0], /vuoto/);
 });
 test("FIFO consumes only same warehouse, eligible dates and available non-reserved stock across repeated rows", () => {
+  assert.throws(()=>allocateFifo([line(1)],[lot(1,8)]),/Data di riferimento FIFO/);
   const allocations = allocateFifo(
     [line(3), { ...line(2), position: 3 }],
     [

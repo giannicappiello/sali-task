@@ -338,3 +338,17 @@ test("pallet picking assigns existing packages and creates a new carton only wit
     await f.sql.close();
   }
 });
+
+test("FIFO proposal uses today's date, refreshes stale warnings and product lookup never records a scan",async()=>{
+ const f=await fixture();try{
+  assert.ok(f.row.source.fifoProposal?.length,JSON.stringify(f.row.source));assert.equal(f.row.source.fifoIssue,undefined);
+  const before=await f.call("get",{id:f.row.id});
+  const resolved=await f.call("resolve_product",{id:f.row.id,barcode:"000001"});assert.equal(resolved.statusCode,200,JSON.stringify(resolved.data));assert.equal(resolved.data.product.code,"IT0001");assert.equal(resolved.data.product.description,"Primo prodotto");
+  assert.equal(resolved.data.product.piecesPerCarton,2);
+  const after=await f.call("get",{id:f.row.id});assert.equal(after.data.preparation.version,before.data.preparation.version);assert.equal(after.data.preparation.state.scans.length,0);
+  await f.sql.query("update warehouse_order_preparations set source=source || $1::jsonb where id=$2",[JSON.stringify({fifoIssue:"Lotti FIFO insufficienti",fifoProposal:[]}),f.row.id]);
+  const refreshed=await f.call("get",{id:f.row.id});assert.equal(refreshed.data.preparation.source.fifoIssue,undefined);assert.ok(refreshed.data.preparation.source.fifoProposal.length);
+  assert.equal((await f.call("resolve_product",{id:f.row.id,barcode:"UNKNOWN"})).statusCode,400);
+  f.readOnly();assert.equal((await f.call("resolve_product",{id:f.row.id,barcode:"IT0001"})).statusCode,200);
+ }finally{await f.sql.close();}
+});

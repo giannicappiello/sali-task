@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 import {createCameraDecoder} from "../src/pages/Warehouse/cameraDecoder.js";
-import {createScanCandidate,createNextScanGate,barcodeReadOptions,nearestBarcode} from "../src/pages/Warehouse/barcodeWorkerCore.js";
+import {createScanCandidate,createNextScanGate,barcodeReadOptions,nearestBarcode,decodeBarcodeImage} from "../src/pages/Warehouse/barcodeWorkerCore.js";
 import {prepareZXingModule,readBarcodes} from "zxing-wasm/reader";
 import {prepareZXingModule as prepareWriter,writeBarcode} from "zxing-wasm/writer";
 
@@ -46,10 +46,10 @@ function photographedSymbol(symbol,angle,invert=false){
  const original=data.slice();for(let y=0;y<height;y++)for(let x=1;x<width-1;x++)for(let ch=0;ch<3;ch++){const i=(y*width+x)*4+ch;data[i]=(original[i-4]+2*original[i]+original[i+4])/4;}
  return{width,height,data};
 }
-test("real C++ reader decodes rotated, low-contrast, noisy and slightly blurred EAN, Code128 and QR labels",async()=>{
+test("real C++ reader decodes rotated, low-contrast, noisy and slightly blurred EAN, Code128 and linear labels",async()=>{
  await prepareZXingModule({overrides:{wasmBinary:await readFile(new URL(import.meta.resolve("zxing-wasm/reader/zxing_reader.wasm")))},fireImmediately:true});
  await prepareWriter({overrides:{wasmBinary:await readFile(new URL(import.meta.resolve("zxing-wasm/writer/zxing_writer.wasm")))},fireImmediately:true});
- for(const [format,text,angle,invert] of [["EAN13","4006381333931",Math.PI/2,false],["Code128","IT0017",0.21,false],["QRCode","https://prodotti.example/scheda?codice=IT0017",-0.18,true]]){
+ for(const [format,text,angle,invert] of [["EAN13","4006381333931",Math.PI/2,false],["Code128","IT0017",0.21,false],["Code39","IT0017",-0.18,false]]){
   const output=await writeBarcode(text,{format});assert.equal(output.error,"");
   const image=photographedSymbol(output.symbol,angle,invert);
   const results=await readBarcodes(image,barcodeReadOptions);
@@ -62,4 +62,18 @@ test("a confirmed label must leave or change before automatic capture can hold t
  assert.equal(gate.observe("IT0001"),null);assert.equal(gate.observe("IT0001"),null);assert.equal(gate.observe("IT0002"),"IT0002");
  gate.confirm("IT0002");assert.equal(gate.observe(null),null);assert.equal(gate.observe("IT0002"),"IT0002");
  gate.confirm("IT0002");gate.reset();assert.equal(gate.observe("IT0002"),"IT0002");
+});
+
+test("QR codes are excluded and the centred second pass preserves a valid linear barcode",async()=>{
+ const output=await writeBarcode("https://prodotti.example/IT0017",{format:"QRCode"});
+ const image=photographedSymbol(output.symbol,0);
+ assert.equal(await decodeBarcodeImage(image,readBarcodes,(data,width,height)=>({data,width,height})),null);
+ let passes=0;const linear=await writeBarcode("IT0017",{format:"Code128"});const photo=photographedSymbol(linear.symbol,0.18);
+ const result=await decodeBarcodeImage(photo,async(data,options)=>{passes++;if(passes===1)return[];assert.deepEqual(options.formats,["AllLinear"]);assert.equal(options.tryDownscale,false);return readBarcodes(data,options);},(data,width,height)=>({data,width,height}));
+ assert.equal(result,"IT0017");assert.equal(passes,2);
+ assert.equal(nearestBarcode([{isValid:true,text:"url",format:"QRCode"}],800,600),null);
+});
+
+test("reads the EAN values from OCM 1/17458",async()=>{
+ for(const code of ["8052747541386","8052747544189"]){const output=await writeBarcode(code,{format:"EAN13"});assert.equal(output.error,"");const photo=photographedSymbol(output.symbol,0.16);assert.equal(await decodeBarcodeImage(photo,readBarcodes,(data,width,height)=>({data,width,height})),code);}
 });

@@ -200,6 +200,7 @@ export function comparePacking(lines, state) {
   };
 }
 export function allocateFifo(lines, lots, heldByOthers = [], today) {
+  assert(/^\d{8}$/.test(String(today || "")), "Data di riferimento FIFO mancante o non valida.");
   const held = new Map();
   for (const r of heldByOthers) {
     const key = `${r.code}:${r.warehouse}:${r.lotId}`;

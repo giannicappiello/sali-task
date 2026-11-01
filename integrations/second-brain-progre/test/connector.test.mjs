@@ -35,8 +35,13 @@ test('local login rejects cross-origin submissions and emits an escaped form',as
   const local=await startInteraction({type:'login',client:{login:async()=>{calls++;}},ttlMs:10000});
   try{
     const page=await fetch(local.url); assert.equal(page.status,200);assert.equal(page.headers.get('cache-control'),'no-store');
+    assert.equal(page.headers.get('referrer-policy'),'same-origin');
     const response=await fetch(local.url,{method:'POST',headers:{origin:'https://evil.test','Content-Type':'application/x-www-form-urlencoded'},body:'email=a&password=b'});
     assert.equal(response.status,403);assert.equal(calls,0);
+    const opaque=await fetch(local.url,{method:'POST',headers:{origin:'null','Content-Type':'application/x-www-form-urlencoded'},body:'email=a&password=b'});
+    assert.equal(opaque.status,403);assert.equal(calls,0);
+    const accepted=await fetch(local.url,{method:'POST',headers:{origin:new URL(local.url).origin,'Content-Type':'application/x-www-form-urlencoded'},body:'email=a&password=b'});
+    assert.equal(accepted.status,200);assert.equal(calls,1);
   }finally{local.close();}
 });
 test('MCP initialize and tools/list work without a saved login; stdout contains JSON only',async()=>{

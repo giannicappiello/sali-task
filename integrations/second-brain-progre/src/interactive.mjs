@@ -13,7 +13,9 @@ export async function startInteraction({ type, client, proposal, onChanged = () 
   if (prepared?.terminal) return { terminal: true, outcome: prepared.proposal };
   const server = createServer(async (req, res) => {
     const origin = `http://127.0.0.1:${server.address().port}`;
-    res.setHeader('Cache-Control','no-store'); res.setHeader('Referrer-Policy','no-referrer');
+    // no-referrer turns native form POST Origin into "null" in browsers,
+    // conflicting with the required same-origin check below.
+    res.setHeader('Cache-Control','no-store'); res.setHeader('Referrer-Policy','same-origin');
     res.setHeader('X-Content-Type-Options','nosniff'); res.setHeader('X-Frame-Options','DENY');
     res.setHeader('Content-Security-Policy', `default-src 'none'; style-src 'nonce-${nonce}'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`);
     const url = new URL(req.url, origin);

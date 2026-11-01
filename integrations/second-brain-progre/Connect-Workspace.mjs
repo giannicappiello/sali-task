@@ -6,7 +6,7 @@ import { startInteraction } from './src/interactive.mjs';
 try {
   const config=JSON.parse((await readFile(new URL('./config.json',import.meta.url),'utf8')).replace(/^\uFEFF/,''));
   const client=createClient(config,createVault());
-  const interaction=await startInteraction({type:'login',client});
+  const interaction=await startInteraction({type:'login',client,ttlMs:900000});
   process.stdout.write(`Apri questo collegamento nel browser di questo PC e accedi a Workspace:\n${interaction.url}\n`);
   const timer=setInterval(()=>{
     const result=interaction.getStatus();

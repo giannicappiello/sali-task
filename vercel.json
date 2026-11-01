@@ -31,6 +31,22 @@
   ],
   "rewrites": [
     {
+      "source": "/.well-known/oauth-protected-resource",
+      "destination": "/api/mexal/automation?route=second-brain-online&operation=resource-metadata"
+    },
+    {
+      "source": "/.well-known/oauth-authorization-server",
+      "destination": "/api/mexal/automation?route=second-brain-online&operation=authorization-metadata"
+    },
+    {
+      "source": "/api/second-brain/mcp",
+      "destination": "/api/mexal/automation?route=second-brain-online&operation=mcp"
+    },
+    {
+      "source": "/api/second-brain/oauth/:operation",
+      "destination": "/api/mexal/automation?route=second-brain-online&operation=:operation"
+    },
+    {
       "source": "/api/workspace/oct-reconciliation",
       "destination": "/api/mexal/automation?route=oct-reconciliation"
     },

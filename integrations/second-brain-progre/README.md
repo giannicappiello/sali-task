@@ -1,5 +1,7 @@
 # Second Brain Progrè — connettore Codex
 
+**Modalità consigliata: collegamento online senza installazioni.** Seguire la pagina Second Brain in Workspace e [la documentazione online](../../docs/second-brain-online.md). Il pacchetto Windows descritto sotto è una compatibilità transitoria, non è necessario per il nuovo collegamento nell'account OpenAI.
+
 Usa Codex con l'account ChatGPT di ciascuna persona e collega i servizi già presenti in Workspace. Il connettore non chiama modelli OpenAI: il ragionamento è svolto nella chat, secondo il piano del singolo utente. **Genera ordini con AI resta nel modulo Workspace e mantiene le API esterne esistenti.**
 
 ## Accesso di utenti e PC

@@ -2,6 +2,10 @@ import productionActions from "../../server/production-actions-handler.js";
 import { handleInventorySnapshot } from "../../server/progremes-inventory.js";
 
 export default async function handler(req, res) {
+  if (req.query?.route === 'second-brain-online') {
+    const {handleOnline}=await import('../../server/second-brain/online-handler.js');
+    return handleOnline(req,res);
+  }
   if (req.query?.route === 'second-brain') {
     try {
       const { handleSecondBrain } = await import('../../server/second-brain/handler.js');

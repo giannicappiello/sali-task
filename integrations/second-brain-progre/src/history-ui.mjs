@@ -4,7 +4,7 @@ import { parseHistory } from './history.mjs';
 import { page } from './interactive.mjs';
 
 export async function startHistoryImport(client, ttlMs = 1800000) {
-  await client.request({action:'catalog'});
+  const owner=(await client.request({action:'catalog'})).identity.id;
   const secret=randomBytes(32).toString('hex'),nonce=randomBytes(16).toString('hex');
   let prepared=null,status='waiting',imported=0,error=null,cancelled=false;
   const run=async()=>{
@@ -12,7 +12,7 @@ export async function startHistoryImport(client, ttlMs = 1800000) {
     try {
       for(let i=0;i<prepared.entries.length;i+=20){
         if(cancelled){status='cancelled';return;}
-        await client.request({action:'import_history',entries:prepared.entries.slice(i,i+20)});
+        await client.request({action:'import_history',expectedUserId:owner,entries:prepared.entries.slice(i,i+20)});
         imported=Math.min(i+20,prepared.entries.length);
       }
       status='completed';prepared=null;

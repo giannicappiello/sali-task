@@ -68,6 +68,7 @@ export async function handleSecondBrain(req, dependencies = {}) {
   }
   if (body.action === 'import_history') {
     // Dedicated desktop import UI only. Never advertise this as a model tool.
+    if (body.expectedUserId !== auth.profile.id) throw fail('Identita cambiata durante l’importazione. Riaprire il collegamento.',403);
     if (!Array.isArray(body.entries) || !body.entries.length || body.entries.length > 20) throw fail('Lotto importazione non valido.');
     for (const entry of body.entries) {
       validateInput(brainProposalSchemas.MEMORY_SAVE, entry);

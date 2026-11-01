@@ -45,7 +45,7 @@ export async function authorizationInput(input){
  return {client_id:input.client_id,redirect_uri:input.redirect_uri,response_type:'code',code_challenge:input.code_challenge,code_challenge_method:'S256',state:input.state,resource:RESOURCE,scope:scopes.join(' ')};
 }
 export async function grantConnection(auth,input,refreshToken){
- const verified=await authorizationInput(input);if(typeof refreshToken!=='string'||refreshToken.length<16||refreshToken.length>4000)throw fail('Accedi personalmente per collegare Codex.');
+ const verified=await authorizationInput(input);if(typeof refreshToken!=='string'||!refreshToken.trim()||refreshToken.length>4000)throw fail('Accedi personalmente per collegare Codex.');
  const claims=JSON.parse(Buffer.from(auth.token.split('.')[1],'base64url').toString()),id=randomUUID();
  const aad=id+'|'+auth.profile.id+'|'+verified.client_id;
  check(await auth.admin.from('second_brain_connections').insert({id,user_id:auth.profile.id,auth_user_id:claims.sub,client_id:verified.client_id,session_sealed:seal({accessToken:auth.token,refreshToken,authUserId:claims.sub},aad),session_expires_at:new Date(claims.exp*1000).toISOString()}));

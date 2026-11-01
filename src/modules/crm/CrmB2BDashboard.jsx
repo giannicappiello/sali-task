@@ -1,3 +1,4 @@
+import CrmB2BFinancialDialog from './CrmB2BFinancialDialog';
 import {scopeBeautyOrders} from './orderDashboardScope';
 import { useAuth } from '../../contexts/AuthContext';
 import CrmProductPurchaseTable from './CrmProductPurchaseTable';
@@ -28,6 +29,20 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
   const title=customerGroup==='mypharma'?'MYPHARMA · Ordini PR':orderModule?`Ordini ${orderModule==='ph'?'PH':'PR'}`:'Dashboard B2B';
   const agentCodes = useMemo(() => new Set(agentCustomers.filter(row => row.agent_code === agent).map(row => row.customer_code)), [agentCustomers, agent]);
   const agentOptions = useMemo(() => [...new Map(agentCustomers.filter(row => row.agent_code).map(row => [row.agent_code, row.agent_name || row.agent_code])).entries()].sort((a, b) => a[1].localeCompare(b[1], 'it')), [agentCustomers]);
+  const financialParameters=useMemo(()=>({p_from:period.from,p_to:period.to,p_agent:agent||null,p_order_module:orderModule,p_customer_group:customerGroup}),[period.from,period.to,agent,orderModule,customerGroup]);
+  const [financialRevision,setFinancialRevision]=useState(0);
+  const [financial,setFinancial]=useState({data:null,loading:true,error:''});
+  useEffect(()=>{
+   let active=true;const controller=new AbortController();
+   const timer=setTimeout(()=>{
+    setFinancial({data:null,loading:true,error:''});
+    supabase.rpc('crm_b2b_financial_kpis',financialParameters).abortSignal(controller.signal)
+     .then(({data,error})=>{if(active)setFinancial({data,loading:false,error:error?.message||''});})
+     .catch(error=>{if(active)setFinancial({data:null,loading:false,error:error.message});});
+   },0);
+   return()=>{active=false;clearTimeout(timer);controller.abort();};
+  },[financialParameters,financialRevision]);
+  const financialValue=key=>financial.loading?'…':financial.error?'—':formatMoney(financial.data?.[key]);
   const [productRevision,setProductRevision]=useState(0);
   const [products,setProducts]=useState({counts:{},loading:true,error:''});
   useEffect(()=>{
@@ -66,7 +81,7 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
     }, 0); return () => { active = false; clearTimeout(timer); };
   }, [period.from, period.to, agent, agentCodes,orderModule,scopeSet,customerGroup]);
   useEffect(() => {
-    if (!selected || selected.kind === 'open-orders') return;
+    if (!selected || ['open-orders','financial'].includes(selected.kind)) return;
     let active = true; const controller = new AbortController();
     const timer = setTimeout(async () => {
       setDetails({ rows: [], loading: true, error: '' });
@@ -143,7 +158,10 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
         {card('Nuovi clienti', data.new_customers, 'Prima vendita nel periodo', 'Clienti con prima vendita documentata nel periodo selezionato.', customer('new'))}
         {card('Fatturato', formatMoney(data.invoice_total), `${data.invoice_count || 0} fatture · IVA esclusa`, data.invoice_source_note || 'Imponibile ufficiale delle fatture nel periodo selezionato, IVA esclusa.', customer('invoiced'))}
         {card('Ordinato', formatMoney(data.order_total), null, 'Importi netti IVA esclusa. PR in corso: documenti OCM verificati aperti e non fatturati. Prenotazioni: OCI PR verificati aperti e non fatturati e prenotazioni PH. Stralci: soli OCX verificati aperti e non fatturati. PH: ordini che restano tali e non sono fatturati. Verifica delle fatture senza limite di periodo.', { kind: 'open-orders' })}
-        {card('Valore medio ordine', formatMoney(data.average_order_value), `${data.order_count || 0} ordini padre nel periodo`, 'Ordinato diviso per il numero di ordini padre distinti nel periodo. OCM e OCX dello stesso ordine padre contano come un solo ordine.', customer('ordered'))}
+        {financial.error&&<p role="alert">KPI finanziari non disponibili: {financial.error} <button type="button" onClick={()=>setFinancialRevision(n=>n+1)}>Riprova</button></p>}
+        {orderModule!=='prof'&&card('Valore medio ordine',financialValue('average_ph_order'),(financial.data?.ph_order_count||0)+' ordini padre PH · IVA esclusa','Totale netto dei soli ordini padre PH aperti non fatturati, incluse le prenotazioni PH, diviso il loro numero. Gli ordini PR sono esclusi; ogni padre conta una sola volta.',{kind:'financial',metric:'ph_average'})}
+        {orderModule!=='ph'&&card('Valore medio fattura',financialValue('average_invoice'),(financial.data?.invoice_count||0)+' fatture · IVA esclusa','Fatturato netto del periodo diviso il numero di documenti di fatturazione nello stesso perimetro. Note di credito considerate con il loro segno.',{kind:'financial',metric:'invoice_average'})}
+        {card('Consumo medio mensile/cliente',financialValue('monthly_consumption'),(financial.data?.contributors||0)+' clienti contribuenti · '+Number(financial.data?.months||0).toLocaleString('it-IT',{maximumFractionDigits:2})+' mesi','(Totale netto ordini aperti non fatturati + fatture nette) / clienti distinti con almeno un documento a importo non nullo e diverso da zero / mesi del periodo. Ogni mese intero vale 1; i mesi parziali pesano per giorni inclusi / giorni del mese. I filtri di questa schermata sono applicati a tutti i dati.',{kind:'financial',metric:'monthly_consumption'})}
         {products.error ? <p role="alert" className="crm-message error">Conteggi prodotti non disponibili: {products.error} <button type="button" onClick={()=>setProductRevision(v=>v+1)}>Riprova</button></p> : null}
         {card('Prodotti ordinati', productCount('ordered'), 'Prodotti distinti nel periodo', 'Articoli degli ordini PH standard, PR in corso e Stralci OCX aperti non fatturati. Prenotazioni escluse. Nel dettaglio le quantità sono sommate per prodotto.', { kind: 'products', metric: 'ordered' })}
         {card('Prodotti acquistati', productCount('purchased'), 'Prodotti distinti fatturati nel periodo', 'Articoli presenti nelle righe delle fatture del periodo selezionato, filtrati per agente. Ogni codice prodotto è contato una sola volta; quantità totali e importi netti con segno delle note di credito nel dettaglio.', { kind: 'products', metric: 'purchased' })}
@@ -170,6 +188,7 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
     </>}
     {children}
     {selected?.kind === 'open-orders' && <CrmOpenOrdersDialog customerGroup={customerGroup} orderModule={orderModule} title="Ordinato" values={data} filters={{ p_scope: 'global', p_crm_type: 'b2b', p_from: period.from, p_to: period.to, p_agent: agent || null }} onClose={() => setSelected(null)}/>}
-    {selected && selected.kind !== 'open-orders' && <CrmKpiDialog key={`${selected.label}-${period.from}-${period.to}`} title={selected.label} subtitle={`CRM B2B · ${formatDate(period.from)} – ${formatDate(period.to)}`} onClose={() => setSelected(null)}>{detail()}</CrmKpiDialog>}
+    {selected?.kind === 'financial' && <CrmB2BFinancialDialog title={selected.label} metric={selected.metric} parameters={financialParameters} kpis={financial.data||{}} summaryLoading={financial.loading} summaryError={financial.error} onRetry={()=>setFinancialRevision(n=>n+1)} period={period} onClose={()=>setSelected(null)}/>}
+    {selected && !['open-orders','financial'].includes(selected.kind) && <CrmKpiDialog key={`${selected.label}-${period.from}-${period.to}`} title={selected.label} subtitle={`CRM B2B · ${formatDate(period.from)} – ${formatDate(period.to)}`} onClose={() => setSelected(null)}>{detail()}</CrmKpiDialog>}
   </div>;
 }

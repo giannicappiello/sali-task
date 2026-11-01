@@ -182,7 +182,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
         .gte("cost_date", requestArguments.p_from).lte("cost_date", requestArguments.p_to)
         .order("id").range(from, to).abortSignal(controller.signal)
     ) : Promise.resolve({ data: [], error: null });
-    const pieRequest=scope==='global'?supabase.rpc('crm_commercial_direct_revenue_breakdown',Object.fromEntries(Object.entries(requestArguments).filter(([key])=>!['p_compare','p_granularity'].includes(key)))).abortSignal(controller.signal):Promise.resolve({data:[],error:null});
+    const pieRequest=scope==='global'?supabase.rpc('crm_commercial_direct_revenue_composition',Object.fromEntries(Object.entries(requestArguments).filter(([key])=>!['p_compare','p_granularity'].includes(key)))).abortSignal(controller.signal):Promise.resolve({data:[],error:null});
     const [dashboardResult, countryResult, costsResult, pieResult] = await Promise.all([request, countryRequest, costsRequest,pieRequest]);
     if (sequence !== requestSequence.current || controller.signal.aborted) return;
     activeRequest.current = null;
@@ -309,7 +309,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
         })}<DirectRevenuePie totalAmount={data?.business?.find(row=>row.business==='DIRECT')?.invoice_total} revenueItems={data?.direct_revenue_items||[]} error={data?.direct_revenue_error}/></div>
       </section> : null}
 
-      <section className="crm-control-panel" id="trend"><header><div><span>Andamento</span><h3>Composizione fatturato PRIVATE / DIRECT</h3></div><select aria-label="Raggruppamento andamento" value={granularity} onChange={(event) => setFilter("granularity", event.target.value)}><option value="day">Giorno</option><option value="week">Settimana</option><option value="month">Mese</option></select></header><RevenueTrend rows={data?.trend || []} /></section>
+      <section className="crm-control-panel" id="trend"><header><div><span>Andamento</span><h3>Composizione fatturato PRIVATE / DIRECT</h3></div><select aria-label="Raggruppamento andamento" value={granularity} onChange={(event) => setFilter("granularity", event.target.value)}><option value="day">Giorno</option><option value="week">Settimana</option><option value="month">Mese</option></select></header><RevenueTrend rows={data?.trend || []} totalAmount={totals.invoice_total} privateAmount={data?.business?.find(row=>row.business==='PRIVATE')?.invoice_total} directAmount={data?.business?.find(row=>row.business==='DIRECT')?.invoice_total}/></section>
 
       {scope === "private" ? <>
         <section className="crm-control-split"><article className="crm-control-panel"><header><div><span>Dipendenza commerciale</span><h3>Concentrazione fatturato</h3></div></header>{[1, 5, 10].map((limit) => { const total = Number(data?.concentration?.total || 0); const value = Number(data?.concentration?.[`top_${limit}`] || 0); return <div className="crm-control-concentration" key={limit}><span>Top {limit}</span><strong>{total ? percentage(value / total * 100) : "—"}</strong><i style={{ width: `${total ? value / total * 100 : 0}%` }} /></div>; })}</article><article className="crm-control-panel" id="reorders"><header><div><span>Frequenza cliente</span><h3>Riordini PRIVATE</h3></div></header><ReorderHealth rows={data?.reorder_health || []} linkFor={linkFor} /></article></section>

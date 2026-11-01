@@ -2,6 +2,11 @@ import { activeDialogs, captureCompleteReport, cloneContent, collectionFor, cont
 
 const providers = new WeakMap();
 const providerSums = new WeakMap();
+const summaryProviders = new WeakMap();
+export function registerTableSummary(table,getTotals){
+ if(!table)return()=>{};summaryProviders.set(table,getTotals);table.dispatchEvent(new CustomEvent('progre:totals-data',{bubbles:true}));
+ return()=>{if(summaryProviders.get(table)===getTotals)summaryProviders.delete(table);};
+}
 const text = node => [...node.childNodes].map(child => child.nodeType === 3 ? child.textContent : text(child)).join(' ').replace(/\s+/g,' ').trim();
 const identifier = /\b(codice|code|id|ean|barcode|lotto|numero ordine|priorit[aà]|data|date|anno|telefono|cap|partita iva)\b/i;
 const description = /^(cliente|articolo|prodotto|descrizione|nome|numero|n[.°º]?|agente|operatore|impianto|magazzino)$/i;
@@ -149,7 +154,9 @@ export function installTableTotals({doc=document}={}) {
         try {const collection=collectionFor(pager,root);return collection===table || collection.contains(table) && !table.closest('article');}
         catch {return true;}
       });
-      if(provider) {
+      const summary=summaryProviders.get(table);
+      if(summary){try{general=summary(data.headers);}catch(error){footer.title=error.message;}}
+      else if(provider) {
         try{
           let cacheByHeader=providerSums.get(provider);
           if(!cacheByHeader){cacheByHeader=new Map();providerSums.set(provider,cacheByHeader);}

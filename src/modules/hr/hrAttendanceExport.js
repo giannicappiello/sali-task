@@ -3,6 +3,7 @@ import { monthDays, romeDay, romeInstant, formatDate, formatTime } from './hrTim
 import { comparePeople } from './hrPeople.js';
 import { calendarDay } from './hrCalendar.js';
 import { agreementForDay, separateOvertime } from './hrAgreements.js';
+import {defaultPresenceEnabled,defaultPresenceDay} from './hrDefaultPresence.js';
 import { styleAttendanceFile } from './hrWorkbookStyles.js';
 
 const round = value => Math.round(value * 100) / 100;
@@ -28,7 +29,9 @@ export function attendanceExportRows(data, month, now = new Date()) {
       const next = new Date(`${day}T12:00:00Z`); next.setUTCDate(next.getUTCDate() + 1);
       const start = millis(romeInstant(`${day}T00:00`)), end = millis(romeInstant(`${next.toISOString().slice(0, 10)}T00:00`));
       const daily = attendance.filter(a => millis(a.checkin_at) < end && (a.checkout_at ? millis(a.checkout_at) > start : +now > start));
-      const incomplete = daily.some(a => !a.checkout_at);
+      const assumed=defaultPresenceDay(data,employee.user_id,day);
+      const automatic=defaultPresenceEnabled(data,day);
+      const incomplete = !automatic && daily.some(a => !a.checkout_at);
       const actual = daily.filter(a => a.checkout_at).map(a => [millis(a.checkin_at), millis(a.checkout_at)]);
       const planned = shifts.map(s => [millis(s.starts_at), millis(s.ends_at)]);
       const plannedMinutes = unionMinutes(planned, start, end);
@@ -37,16 +40,17 @@ export function attendanceExportRows(data, month, now = new Date()) {
       const leave = requests('leave'), permission = requests('permission'), overtime = requests('overtime'), illness = requests('illness'), pregnancy = requests('pregnancy');
       const absences = [...leave, ...permission, ...illness, ...pregnancy];
       const notes = [];
+      if(automatic)notes.push(day>today ? 'Giorno futuro: escluso dalle presenze consuntive' : assumed?.scheduled ? 'Presenza da orario, al netto delle assenze approvate; nessuna timbratura richiesta' : 'Orario dipendente non configurato');
       if (incomplete) notes.push('Timbratura senza uscita: ore da verificare');
       if (absences.length && !plannedMinutes) notes.push('Assenze approvate senza turno: quantità da definire');
-      if (plannedMinutes && day < today && !daily.length && !absences.length) notes.push('Assenza da verificare');
-      const uncovered = day < today && plannedMinutes && !incomplete ? Math.max(0, plannedMinutes - pause - unionMinutes(overlaps([...actual, ...absences], planned), start, end)) : null;
+      if (!automatic && plannedMinutes && day < today && !daily.length && !absences.length) notes.push('Assenza da verificare');
+      const uncovered = automatic ? 0 : day < today && plannedMinutes && !incomplete ? Math.max(0, plannedMinutes - pause - unionMinutes(overlaps([...actual, ...absences], planned), start, end)) : null;
       if (uncovered > 0 && !notes.includes('Assenza da verificare')) notes.push('Copertura del turno da verificare');
       const row = { Dipendente: employee.name, Matricola: employee.employee_code || '', Data: day,
         Giorno: formatDisplayDate(new Date(start), { timeZone: 'Europe/Rome', weekday: 'long' }),
-        'Entrate / uscite': daily.map(a => `${formatDate(a.checkin_at)} ${formatTime(a.checkin_at)} → ${a.checkout_at ? `${formatDate(a.checkout_at)} ${formatTime(a.checkout_at)}` : 'USCITA MANCANTE'}`).join('; '),
+        'Entrate / uscite': automatic ? (day>today ? 'Presenza prevista · giorno futuro' : assumed?.scheduled ? 'Presenza secondo orario dipendente' : 'Orario non configurato') : daily.map(a => `${formatDate(a.checkin_at)} ${formatTime(a.checkin_at)} → ${a.checkout_at ? `${formatDate(a.checkout_at)} ${formatTime(a.checkout_at)}` : 'USCITA MANCANTE'}`).join('; '),
         'Ore turno lordo': round(plannedMinutes / 60), 'Pausa prevista (min)': pause,
-        'Ore presenza rilevata': incomplete ? null : round(unionMinutes(actual, start, end) / 60),
+        'Ore presenza rilevata': automatic ? (day>today || !assumed?.scheduled ? null : round(assumed.presence_minutes/60)) : incomplete ? null : round(unionMinutes(actual, start, end) / 60),
         'Ferie approvate': leave.length ? 'Sì' : '', 'Ore ferie su turno lordo': leave.length && !plannedMinutes ? null : round(unionMinutes(overlaps(leave, planned), start, end) / 60),
         'Permessi approvati': permission.length ? 'Sì' : '', 'Ore permessi su turno lordo': permission.length && !plannedMinutes ? null : round(unionMinutes(overlaps(permission, planned), start, end) / 60),
         'Malattia approvata': illness.length ? 'Sì' : '', 'Maternità approvata': pregnancy.length ? 'Sì' : '',

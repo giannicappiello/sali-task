@@ -7,7 +7,7 @@ export const WORKSPACE_MODULES = Object.freeze({
   allestisci_ordini: { code: "allestisci_ordini", label: "Allestisci Ordini", kind: "business", departmentAssignable: true, roleConfigurable: true },
   magazzino: { code: "magazzino", label: "Magazzino", kind: "business", departmentAssignable: true, roleConfigurable: true },
   documenti: { code: "documenti", label: "Documenti Direct", kind: "business", departmentAssignable: true, roleConfigurable: true },
-  assistente_ai: { code: "assistente_ai", label: "Assistente AI", kind: "business", departmentAssignable: true, roleConfigurable: true },
+  assistente_ai: { code: "assistente_ai", label: "Second Brain Progrè", kind: "business", departmentAssignable: true, roleConfigurable: true },
   messaggi: { code: "messaggi", label: "Messaggi", kind: "business", alwaysAvailable: true, roleConfigurable: true, selfServiceLevel: "scrittura" },
   notifiche: { code: "notifiche", label: "Notifiche", kind: "system", alwaysAvailable: true },
   beauty_days: { code: "beauty_days", label: "Beauty Days", kind: "business", departmentAssignable: true, roleConfigurable: true },

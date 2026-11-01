@@ -5,8 +5,6 @@ import { useAuth } from "../../contexts/AuthContext";
 import useBackNavigation from "../../hooks/useBackNavigation";
 import { supabase } from "../../lib/supabaseClient";
 import InfoTooltip from "../../components/InfoTooltip";
-import AILearningDiagnostics from './AILearningDiagnostics';
-import AIDevelopmentSettings from './AIDevelopmentSettings';
 import "./ai-settings.css";
 
 const EMPTY_POLICY = Object.freeze({
@@ -265,8 +263,6 @@ export default function AISettings() {
       {message && <div className={`ai-settings-message ${message.type}`}>{message.text}</div>}
       {loading ? <div className="ai-settings-loading">Caricamento configurazione...</div> : (
         <>
-        <AILearningDiagnostics />
-        <AIDevelopmentSettings />
         <section className="ai-cost-report" aria-labelledby="ai-cost-report-title">
           <div className="ai-cost-report-heading">
             <div><span>CONTROLLO COSTI</span><h2 id="ai-cost-report-title">Rendicontazione AI per utente</h2><p>Costi effettivi comunicati da AI Gateway, espressi in dollari USA.</p></div>

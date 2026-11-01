@@ -1,6 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
 import { runAutomaticProgremesModuleSync } from "../../server/progremes-modules.js";
-import { runAutomaticTimeLearningScan } from "../../server/ai/assistant.js";
 
 const TIMEZONE = "Europe/Rome";
 const SCHEDULE_MODE = "daily_vercel_hobby";
@@ -285,12 +284,7 @@ export default async function handler(req, res) {
     } catch (progremesError) {
       progremes = { due: true, error: progremesError?.message || "Sincronizzazione ProgreMES non riuscita." };
     }
-    let autoplanning;
-    try {
-      autoplanning = await runAutomaticTimeLearningScan();
-    } catch (autoplanningError) {
-      autoplanning = { error: autoplanningError?.message || "Verifica automatica dei tempi non riuscita." };
-    }
+    const autoplanning = { retired: true, replacement: 'second-brain-progre' };
 
     const protocol = String(req.headers["x-forwarded-proto"] || "https").split(",")[0].trim();
     const host = req.headers["x-forwarded-host"] || req.headers.host;

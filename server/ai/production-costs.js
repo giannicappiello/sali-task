@@ -1,10 +1,10 @@
-import { readCostCalendar } from "../production-cost-calendar.js";
-import { generateText, jsonSchema, Output } from "ai";
-import { authorizeAIRequest, startAIGeneration, completeAIGeneration, failAIGeneration } from "./assistant.js";
+
+
+import { authorizeAIRequest } from "./access.js";
 import { applyCostProposal, proposalChanges, costExamples } from "../../src/features/production-costs/cost-proposals.js";
-import { laborRules, sameSettings } from "../../src/features/production-costs/labor-rules.js";
-import { readStationHistory, stationHistorySummary } from "../production-station-history.js";
-import { readFillingHistory,fillingHistorySummary } from "../production-filling-history.js";
+import { sameSettings } from "../../src/features/production-costs/labor-rules.js";
+
+
 
 const error=(message,status=400)=>Object.assign(new Error(message),{status});
 const check=r=>{if(r.error)throw r.error;return r.data;};
@@ -48,53 +48,12 @@ export async function approvedCostSettings(admin,profileId,body) {
  if(body.confirmProposal!==true||proposal.status!=="complete"||!proposal.candidate||!sameSettings(settings,proposal.candidate))throw error("Confermare la proposta esatta prima del salvataggio. Se hai modificato i campi, richiedi una nuova proposta o salva come modifica manuale.",409);
  return {...settings,aiDefinition:{proposalId:proposal.id,generationId:proposal.generation_id,confirmedBy:profileId,confirmedAt:new Date().toISOString()}};
 }
-export async function handleCostAI(req,body,session,{generate=generateText,authorize=authorizeAIRequest}={}) {
+export async function handleCostAI(req,body,session,{authorize=authorizeAIRequest}={}) {
  const {admin,profile}=session;
  const auth=await authorize(req); // Existing AI entitlement; never bypass it.
  if(!auth.capabilities.internal_data)throw error("Analisi dei dati interni non abilitata per l'IA.",403);
  if(body.operation==="ai-history")return {proposals:check(await admin.from("production_cost_ai_proposals").select("id,prompt,status,created_at").eq("created_by",profile.id).order("created_at",{ascending:false}).limit(30))};
  if(body.operation==="ai-proposal")return {proposal:await ownedCostProposal(admin,profile.id,body.id)};
- const prompt=String(body.prompt||"").trim();
- if(!prompt||prompt.length>6000||!uuid(body.requestId))throw error("Inserisci una richiesta entro 6.000 caratteri.");
- const base=structuredClone(body.settings);if(!base||JSON.stringify(base).length>80000||!Array.isArray(base.machines)||base.machines.length>200)throw error("Configurazione troppo grande o non valida.");delete base.aiDefinition;
- const existing=check(await admin.from("production_cost_ai_proposals").select("*").eq("id",body.requestId).eq("created_by",profile.id).maybeSingle());
- if(existing){if(existing.prompt!==prompt||!sameSettings(base,existing.base_settings))throw error("Richiesta già usata con dati diversi.",409);return {proposal:existing};}
- const caps=auth.capabilities;
- if(caps.cost_limit_exceeded||(Number(caps.monthly_limit)>0&&Number(caps.monthly_requests)>=Number(caps.monthly_limit)))throw error("Limite di utilizzo IA raggiunto.",429);
- const countResult=await admin.from("production_cost_ai_proposals").select("id",{count:"exact",head:true}).eq("created_by",profile.id).gte("created_at",new Date(Date.now()-86400000).toISOString());
- if(countResult.error)throw countResult.error;if(countResult.count>=50)throw error("Limite di sicurezza: 50 richieste nelle ultime 24 ore.",429);
- const history=[];let parentId=body.parentId||null;
- for(let i=0;parentId&&i<8;i++){const row=await ownedCostProposal(admin,profile.id,parentId);history.unshift({role:"assistant",content:JSON.stringify({answer:row.result?.answer||row.error||"Proposta in elaborazione.",questions:row.result?.questions,patch:row.result?.patch}).slice(0,10000)});history.unshift({role:"user",content:row.prompt});parentId=row.parent_id;}
- const model=globalThis.process.env.AI_MODEL||"openai/gpt-6-astra";
- check(await admin.from("production_cost_ai_proposals").insert({id:body.requestId,created_by:profile.id,parent_id:body.parentId||null,prompt,base_settings:base,model}));
- let generationId;
- try {
-  generationId=await startAIGeneration(admin,{profileId:profile.id,conversationId:null,type:"chat_interna",model});
-  check(await admin.from("production_cost_ai_proposals").update({generation_id:generationId}).eq("id",body.requestId));
-  const context={laborHourly:base.laborHourly,referenceShiftHours:base.referenceShiftHours??8,laborRules:laborRules(base),mixingOperatorsCount:base.mixingOperatorsCount,calendarSource:"Calendario aziendale HR: modifiche in Rendicontazioni HR",
-   machines:base.machines.map(m=>({id:m.id,code:m.code,name:m.name,type:m.type,gainPerWork:m.gainPerWork??m.gainPerShift,washMinutes:m.washMinutes,washCost:m.washCost}))};
-  const generated=await generate({model,system:COST_SYSTEM_PROMPT,messages:[...history,{role:"user",content:`Configurazione attualmente nel modulo (dati): ${JSON.stringify(context)}\nRichiesta: ${prompt}`}],output:Output.object({schema:jsonSchema(COST_PROPOSAL_SCHEMA)}),maxOutputTokens:4500,maxRetries:1,abortSignal:AbortSignal.timeout(300000),providerOptions:{gateway:{user:profile.id,tags:["feature:production-cost-configuration"]}}});
-  // Save the unique output before secondary usage accounting can fail.
-  const output=generated.output;
-  const usesHistory=(output?.patch?.station?.basis||base.laborRules?.station?.basis)==="historical_productivity";
-  const preview=evaluateCostProposal(base,output);
-  const usesFillingHistory=(output?.patch?.filling?.basis||base.laborRules?.filling?.basis)==="historical_pieces";
-  const companyCalendar=await readCostCalendar(admin);
-  const [historySource,fillingSource]=await Promise.all([
-   usesHistory?readStationHistory(admin,{settings:preview.candidate||base,companyCalendar}).then(stationHistorySummary):null,
-   usesFillingHistory?readFillingHistory(admin,{settings:preview.candidate||base,companyCalendar}).then(fillingHistorySummary):null
-  ]);
-  const evaluated=evaluateCostProposal(base,output,historySource,fillingSource,companyCalendar);
-  check(await admin.from("production_cost_ai_proposals").update({status:"complete",result:{...output,...evaluated,candidate:undefined},candidate:evaluated.candidate,completed_at:new Date().toISOString()}).eq("id",body.requestId));
-  const usage=await completeAIGeneration(admin,{generationId,profileId:profile.id,result:generated});
-  check(await admin.from("production_cost_ai_proposals").update({usage}).eq("id",body.requestId));
-  return {proposal:await ownedCostProposal(admin,profile.id,body.requestId)};
- }catch(e){
-  if(generationId)await failAIGeneration(admin,generationId,e);
-  // Preserve an already-completed proposal if usage accounting alone failed.
-  const row=await ownedCostProposal(admin,profile.id,body.requestId);
-  if(row.status==="complete")return {proposal:row,warning:"Proposta conservata; registrazione utilizzo IA da verificare."};
-  check(await admin.from("production_cost_ai_proposals").update({status:"error",error:"Generazione IA non riuscita. Nessuna configurazione è stata modificata.",completed_at:new Date().toISOString()}).eq("id",body.requestId));
-  throw error("Generazione IA non riuscita. La richiesta è conservata nello storico; nessuna configurazione è stata modificata.",502);
- }
+ throw error("La generazione del precedente assistente e stata rimossa. Usa Second Brain Progre dalle icone AI.",410);
+
 }

@@ -36,12 +36,8 @@ import { listProgremesIntegration, saveProgremesSyncConfig, stopProgremesModules
 import { handleProgremesReadonlyRequest } from "../../server/progremes-readonly-api.js";
 import { createProgremesClient, readAllProgremesArticles, readAllProgremesSuppliers } from "../../server/progremes-readonly-client.js";
 import { createProgremesDiagnosticManager } from "../../server/progremes-diagnostics-client.js";
-import { handleAIAssistant } from "../../server/ai/assistant.js";
 import { aiErrorMessage } from '../ai/errors.js';
-import { probeCodex } from "../../server/ai/codex-health.js";
-import { handleDevelopmentWorker } from "../../server/ai/development-jobs.js";
 import { handlePlanningWorkspace } from "../../server/planning-workspace.js";
-import { handleCrmBrief } from "../../server/ai/crm-brief.js";
 import { handleAIOrderDocument } from "../../server/ai/order-document.js";
 import { handleWorkspaceDocumentCompose } from "../../server/company-document-composer.js";
 import { cancelProductionRequest, confirmProductionProposal, handleProductionEvent, previewProductionRequest } from "../../server/progremes-production-api.js";
@@ -590,15 +586,6 @@ async function maintenancePurge(req) {
 }
 
 export default async function handler(req, res) {
-  if (req.query?.route === "codex-health") {
-    try {
-      if (req.method !== "POST") return res.status(405).json({ success: false, error: "Metodo non consentito." });
-      requireScheduledWorker(req);
-      return res.status(200).json({ success: true, ...await probeCodex() });
-    } catch (error) {
-      return res.status(error.status || 502).json({ success: false, error: error.message || "Verifica Codex non riuscita." });
-    }
-  }
   if (req.query?.route === "company-letterheads-mes") return handleMesHeadingResolve(req, res);
   if (req.query?.route === "hr-production-calendar") return handleHrProductionCalendar(req, res);
   if (req.query?.route === "company-calendar") return handleCompanyCalendar(req, res);
@@ -613,30 +600,12 @@ export default async function handler(req, res) {
   if (req.query?.route === "progremes-readonly") {
     return handleProgremesReadonlyRequest(req, res);
   }
-  if (["ai", "ai-worker", "planning-workspace"].includes(req.query?.route)) {
-    try {
-      const result = await (req.query.route === "planning-workspace" ? handlePlanningWorkspace(req) : req.query.route === 'ai-worker' ? handleDevelopmentWorker(req) : handleAIAssistant(req));
-      return res.status(200).json({ success: true, ...result });
-    } catch (error) {
-      const status = Number(error?.status || 500);
-      if (status >= 500) console.error("Assistente AI:", error);
-      return res.status(status >= 400 && status <= 599 ? status : 500).json({
-        success: false,
-        error: aiErrorMessage(error),
-      });
-    }
+  if (['ai','ai-worker','crm-ai','codex-health'].includes(req.query?.route)) {
+    return res.status(410).json({success:false,error:'Il precedente assistente e stato rimosso. Apri Second Brain Progre dalle icone AI.',replacement:'/assistente-ai'});
   }
-  if (req.query?.route === "crm-ai") {
-    try {
-      const result = await handleCrmBrief(req);
-      return res.status(200).json({ success: true, ...result });
-    } catch (error) {
-      const status = Number(error?.status || 500);
-      if (status >= 500) console.error("CRM AI Brief:", error);
-      return res.status(status >= 400 && status <= 599 ? status : 500).json({
-        success: false, error: error?.message || "Richiesta CRM AI non riuscita.",
-      });
-    }
+  if (req.query?.route === 'planning-workspace') {
+    try { return res.status(200).json({success:true,...await handlePlanningWorkspace(req)}); }
+    catch(error) { return res.status(error.status || 500).json({success:false,error:aiErrorMessage(error)}); }
   }
   if (req.query?.route === "club-retailer-registration") return retailerRegistrationHandler(req, res);
   const body = req.body || {};

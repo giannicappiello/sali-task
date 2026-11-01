@@ -45,4 +45,6 @@ Dal repository: `node --test server/second-brain/handler.test.js integrations/se
 
 La migrazione `20261101180000_second_brain_progre.sql` aggiunge soltanto tabelle/funzioni Second Brain. `server/second-brain/security-regression.sql` si esegue dentro una transazione di prova con rollback, dopo il corpo della migrazione: controlla proprietà, isolamento di due utenti, conferme e deduplicazione.
 
-L'endpoint è `POST /api/mexal/automation?route=second-brain`. La vecchia chat non viene rimossa da questo rilascio: prima si verifica la copertura reale, poi si può dismettere l'interfaccia conservando i servizi condivisi e la generazione ordini AI.
+L'endpoint è `POST /api/mexal/automation?route=second-brain`. Le icone AI di Workspace e MES aprono `/assistente-ai`: la pagina prepara una richiesta controllabile e apre Codex con il protocollo ufficiale `codex://new?prompt=...`. L'utente invia personalmente il testo. Il download Windows è disponibile dalla pagina. Non viene inviata una password nel collegamento.
+
+La precedente chat e le deleghe al worker sono rimosse. I vecchi endpoint chat/worker/CRM AI rispondono HTTP 410. La migrazione `20261101190000_retire_legacy_assistant.sql` elimina chat, messaggi, argomenti e lavori del vecchio assistente, bloccandone la ricreazione anche da vecchi client. Conserva autorizzazioni, audit delle azioni, memoria Second Brain e generazione ordini AI. Gli helper PDF usati anche dai report restano disponibili.

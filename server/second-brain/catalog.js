@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { workspaceReadTools } from '../ai/workspace-search.js';
 import { operationalReadTools, canReadModule } from '../ai/operational-read.js';
-import { conversationMemoryTools } from '../ai/conversation-memory.js';
 import { availableControlledActions, proposeControlledAction } from '../ai/controlled-actions.js';
 import { formulaReadTools } from '../ai/formula-revisions.js';
 import { lotReadTools } from '../ai/lot-maintenance.js';
@@ -33,7 +32,7 @@ const datasets = {
 
 export function createBrainCatalog(auth) {
   const controlled = availableControlledActions(auth);
-  const tools = { ...workspaceReadTools(auth), ...operationalReadTools(auth), ...conversationMemoryTools(auth),
+  const tools = { ...workspaceReadTools(auth), ...operationalReadTools(auth),
     ...recoveryTools(auth, Boolean(controlled.MES_PLAN_APPLY)), ...memoryTools(auth), ...activityTools(auth), ...businessReadTools(auth),
     ...rdpCreationTools(auth, Boolean(controlled.RDP_CREATE)),
     ...(controlled.FORMULA_CREATE_REVISION ? formulaReadTools(auth) : {}),

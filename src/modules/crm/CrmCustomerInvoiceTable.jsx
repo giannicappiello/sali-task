@@ -12,7 +12,7 @@ const documentColumns = [
   { key: 'amount', label: 'Imponibile', value: r => formatMoney(r.amount), sortValue: r => Number(r.amount) },
 ];
 
-export default function CrmCustomerInvoiceTable({ rows, customerLink }) {
+export default function CrmCustomerInvoiceTable({ rows, customerLink, linkDocuments = true }) {
   const groups = useMemo(() => groupCustomerInvoices(rows), [rows]);
   const [expanded, setExpanded] = useState(() => new Set());
   const toggle = id => setExpanded(previous => {
@@ -39,6 +39,6 @@ export default function CrmCustomerInvoiceTable({ rows, customerLink }) {
   return <CrmDetailTable rows={groups} columns={columns} renderExpanded={row => expanded.has(row.id)
     ? <section className="crm-customer-invoice-detail" id={detailId(row)} aria-label={`Fatture di ${row.customer_name}`}>
       <h3>{row.customer_name} · {row.invoice_count} documenti · {formatMoney(row.amount)}</h3>
-      <CrmDetailTable rows={row.invoices} columns={documentColumns}/>
+      <CrmDetailTable rows={row.invoices} columns={linkDocuments?documentColumns:documentColumns.map(c=>c.key==='document'?{...c,render:r=>r.title}:c)}/>
     </section> : null}/>;
 }

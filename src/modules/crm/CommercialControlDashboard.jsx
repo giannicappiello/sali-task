@@ -1,3 +1,5 @@
+import CrmCommercialMetricDialog from './CrmCommercialMetricDialog';
+import {RevenueTrend,DirectRevenuePie} from './CommercialRevenueCharts';
 import CrmPrivateDashboardDialog from './CrmPrivateDashboardDialog';
 import CrmOpenOrdersDialog from './CrmOpenOrdersDialog';
 import CrmOpenOrderBreakdown from './CrmOpenOrderBreakdown';
@@ -92,18 +94,6 @@ function Empty({ children = "Nessun dato reale disponibile nel perimetro selezio
   return <div className="crm-control-empty">{children}</div>;
 }
 
-function Trend({ rows }) {
-  const max = Math.max(1, ...(rows || []).map((row) => Number(row.invoice_total || 0)));
-  if (!rows?.length) return <Empty />;
-  return <div className="crm-control-trend" role="img" aria-label="Composizione del fatturato tra PRIVATE e DIRECT">
-    {rows.map((row) => { const total = Number(row.invoice_total || 0); const privateValue = Number(row.private_invoice_total || 0); const directValue = Number(row.direct_invoice_total || 0); return <div className="crm-control-trend-row" key={row.bucket}>
-      <time>{formatDate(row.bucket)}</time>
-      <div className="crm-control-composition" style={{ width: `${Math.max(1, total / max * 100)}%` }}><i className="private" style={{ width: `${total ? privateValue / total * 100 : 0}%` }} /><i className="direct" style={{ width: `${total ? directValue / total * 100 : 0}%` }} /><span>{formatMoney(total)}</span></div>
-    </div>; })}
-    <footer><span><i className="private" />PRIVATE</span><span><i className="direct" />DIRECT</span></footer>
-  </div>;
-}
-
 function ReorderHealth({ rows, linkFor }) {
   if (!rows?.length) return <Empty />;
   return <div className="crm-control-health">
@@ -137,6 +127,7 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
   const [loading, setLoading] = useState(true);
   const [openOrders, setOpenOrders] = useState(false);
   const [privateDetail, setPrivateDetail] = useState(null);
+  const [commercialDetail,setCommercialDetail]=useState(null);
   const [error, setError] = useState("");
   const [costTotal, setCostTotal] = useState(null);
   const activeRequest = useRef(null);
@@ -191,7 +182,8 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
         .gte("cost_date", requestArguments.p_from).lte("cost_date", requestArguments.p_to)
         .order("id").range(from, to).abortSignal(controller.signal)
     ) : Promise.resolve({ data: [], error: null });
-    const [dashboardResult, countryResult, costsResult] = await Promise.all([request, countryRequest, costsRequest]);
+    const pieRequest=scope==='global'?supabase.rpc('crm_commercial_direct_revenue_breakdown',Object.fromEntries(Object.entries(requestArguments).filter(([key])=>!['p_compare','p_granularity'].includes(key)))).abortSignal(controller.signal):Promise.resolve({data:[],error:null});
+    const [dashboardResult, countryResult, costsResult, pieResult] = await Promise.all([request, countryRequest, costsRequest,pieRequest]);
     if (sequence !== requestSequence.current || controller.signal.aborted) return;
     activeRequest.current = null;
     setCostTotal(costsResult.error ? null : costSummary(costsResult.data || []).total);
@@ -208,6 +200,8 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
       }));
       setData({
         ...(dashboardResult.data || {}),
+        direct_revenue_items:pieResult.data||[],
+        direct_revenue_error:pieResult.error?.message,
         attention: withCountry(dashboardResult.data?.attention),
         top_customers: withCountry(dashboardResult.data?.top_customers),
       });
@@ -291,8 +285,9 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
       {scope === "private" && privateDetail && <CrmPrivateDashboardDialog title={privateDetail}
         filters={{ p_from: period.from, p_to: period.to, p_market: market || null, p_country: country || null, p_agent: agent || null, p_customer: customer || null }}
         onClose={() => setPrivateDetail(null)}/>}
+      {commercialDetail && <CrmCommercialMetricDialog title={commercialDetail} filters={Object.fromEntries(Object.entries(requestArguments).filter(([key])=>!['p_compare','p_granularity'].includes(key)))} onClose={()=>setCommercialDetail(null)}/>}
       {openOrders && <CrmOpenOrdersDialog title="OC aperti" values={totals} filters={Object.fromEntries(Object.entries(requestArguments).filter(([key]) => !['p_compare','p_granularity'].includes(key)))} onClose={() => setOpenOrders(false)}/>}
-      <div className={`crm-control-kpis ${scope === "direct" ? "wide" : ""}`}>{kpis.map(([label, value, note, target, delta]) => <MetricCard key={label} label={label} value={value} note={note} delta={delta} to={cardDestination(label, target)} onClick={scope === "private" && label !== "Consuntivi Attività" ? () => setPrivateDetail(label) : label === "OC aperti" ? () => setOpenOrders(true) : undefined} />)}</div>
+      <div className={`crm-control-kpis ${scope === "direct" ? "wide" : ""}`}>{kpis.map(([label, value, note, target, delta]) => <MetricCard key={label} label={label} value={value} note={note} delta={delta} to={cardDestination(label, target)} onClick={scope === "private" && label !== "Consuntivi Attività" ? () => setPrivateDetail(label) : label === "OC aperti" ? () => setOpenOrders(true) : ["Fatturato","OCT aperti","Clienti Mexal attivi","Nuovi clienti","Clienti persi"].includes(label) ? () => setCommercialDetail(label) : undefined} />)}</div>
 
       {scope === "global" ? <section className="crm-control-panel" id="business">
         <header><div><span>Composizione business</span><h3>PRIVATE vs DIRECT</h3></div></header>
@@ -311,10 +306,10 @@ export default function CommercialControlDashboard({ scope, embedded = false }) 
             </div>
             <small>Estero {formatMoney(data?.direct_breakdown?.foreign_invoice_total)}</small>
           </article>;
-        })}</div>
+        })}<DirectRevenuePie totalAmount={data?.business?.find(row=>row.business==='DIRECT')?.invoice_total} revenueItems={data?.direct_revenue_items||[]} error={data?.direct_revenue_error}/></div>
       </section> : null}
 
-      <section className="crm-control-panel" id="trend"><header><div><span>Andamento</span><h3>Composizione fatturato PRIVATE / DIRECT</h3></div><select aria-label="Raggruppamento andamento" value={granularity} onChange={(event) => setFilter("granularity", event.target.value)}><option value="day">Giorno</option><option value="week">Settimana</option><option value="month">Mese</option></select></header><Trend rows={data?.trend || []} /></section>
+      <section className="crm-control-panel" id="trend"><header><div><span>Andamento</span><h3>Composizione fatturato PRIVATE / DIRECT</h3></div><select aria-label="Raggruppamento andamento" value={granularity} onChange={(event) => setFilter("granularity", event.target.value)}><option value="day">Giorno</option><option value="week">Settimana</option><option value="month">Mese</option></select></header><RevenueTrend rows={data?.trend || []} /></section>
 
       {scope === "private" ? <>
         <section className="crm-control-split"><article className="crm-control-panel"><header><div><span>Dipendenza commerciale</span><h3>Concentrazione fatturato</h3></div></header>{[1, 5, 10].map((limit) => { const total = Number(data?.concentration?.total || 0); const value = Number(data?.concentration?.[`top_${limit}`] || 0); return <div className="crm-control-concentration" key={limit}><span>Top {limit}</span><strong>{total ? percentage(value / total * 100) : "—"}</strong><i style={{ width: `${total ? value / total * 100 : 0}%` }} /></div>; })}</article><article className="crm-control-panel" id="reorders"><header><div><span>Frequenza cliente</span><h3>Riordini PRIVATE</h3></div></header><ReorderHealth rows={data?.reorder_health || []} linkFor={linkFor} /></article></section>

@@ -13,13 +13,18 @@ function Login() {
   const [remember, setRemember] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState(null);
+  const pending = location.state?.from;
+  const brainView = new URLSearchParams(pending?.search || "").get("view");
+  const destination = pending?.pathname === "/assistente-ai" && ["connect", "review"].includes(brainView)
+    ? { pathname: "/assistente-ai", search: pending.search }
+    : "/home";
 
   useEffect(() => {
     const saved = window.localStorage.getItem("progre-login-email");
     if (saved) setEmail(saved);
   }, []);
 
-  if (session) return <Navigate to="/home" replace />;
+  if (session) return <Navigate to={destination} replace />;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -37,7 +42,7 @@ function Login() {
     }
     if (remember) window.localStorage.setItem("progre-login-email", email.trim());
     else window.localStorage.removeItem("progre-login-email");
-    navigate("/home", { replace: true });
+    navigate(destination, { replace: true });
   }
 
   async function handleResetPassword() {

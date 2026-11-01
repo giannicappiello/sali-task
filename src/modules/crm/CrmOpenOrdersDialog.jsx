@@ -1,8 +1,8 @@
-import {prCustomerGroupMatches} from './prCustomerGroups';
-import { useEffect, useState } from 'react';
+import CrmRemoteDetailTable from './CrmRemoteDetailTable';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CrmKpiDialog, CrmDetailTable } from './CrmKpiDetail';
-import { loadAllRpcRows } from './crmDataset';
+import { CrmKpiDialog } from './CrmKpiDetail';
+
 import { formatDate, formatMoney } from './crmConfig';
 
 const categories = [
@@ -14,29 +14,17 @@ const categories = [
 ];
 export default function CrmOpenOrdersDialog({ title, values, filters, onClose,orderModule=null,customerGroup=null }) {
   const [category, setCategory] = useState(null);
-  const [result, setResult] = useState({ rows: [], loading: false, error: '' });
-  const filterKey = JSON.stringify(filters);
-  useEffect(() => {
-    if (!category) return;
-    let active = true;
-    const timer=setTimeout(()=>{
-    setResult({ rows: [], loading: true, error: '' });
-    loadAllRpcRows('crm_open_order_category_details', { ...JSON.parse(filterKey), p_category: category[0] })
-      .then(({ data, error }) => { if (active) setResult({ rows: (data || []).filter(row=>prCustomerGroupMatches(row.customer_code,customerGroup)), loading: false, error: error?.message || '' }); })
-      .catch(error => { if (active) setResult({ rows: [], loading: false, error: error.message }); });
-    },0);
-    return () => { active = false;clearTimeout(timer); };
-  }, [category, filterKey,customerGroup]);
   const columns = [
-    { key: 'order', label: 'Ordine', value: r => r.order_number, render: r => <Link to={`${r.module_code === 'ph' ? '/ordini-ph' : '/ordini-prof'}/elenco/${r.order_id}`}>{r.order_number}</Link> },
-    { key: 'customer', label: 'Cliente', value: r => r.customer_name },
-    { key: 'date', label: 'Data', value: r => formatDate(r.document_date), sortValue: r => r.document_date },
-    { key: 'amount', label: 'Importo categoria', value: r => formatMoney(r.amount), sortValue: r => Number(r.amount) },
+    { key: 'order',remoteFields:['order_number'], label: 'Ordine', value: r => r.order_number, render: r => <Link to={`${r.module_code === 'ph' ? '/ordini-ph' : '/ordini-prof'}/elenco/${r.order_id}`}>{r.order_number}</Link> },
+    { key: 'customer',remoteFields:['customer_name'], label: 'Cliente', value: r => r.customer_name },
+    { key: 'date',remoteFields:['document_date'],remoteFormat:'date', label: 'Data', value: r => formatDate(r.document_date), sortValue: r => r.document_date },
+    { key: 'amount',remoteFormat:'money', label: 'Importo categoria', value: r => formatMoney(r.amount), sortValue: r => Number(r.amount) },
   ];
   return <CrmKpiDialog title={category ? category[1] : title} subtitle={`${formatDate(filters.p_from)} – ${formatDate(filters.p_to)} · IVA esclusa`} onClose={onClose}>
     {!category ? <div className="crm-order-category-list">{categories.filter(item=>!orderModule || (orderModule==='ph'?item[0].startsWith('ph'):!item[0].startsWith('ph'))).map(item => <button type="button" key={item[0]} onClick={() => setCategory(item)}><span>{item[1]}</span><strong>{formatMoney(values[item[2]])}</strong><span aria-hidden="true">→</span></button>)}<p>Totale: <strong>{formatMoney(categories.filter(item=>!orderModule || (orderModule==='ph'?item[0].startsWith('ph'):!item[0].startsWith('ph'))).reduce((sum, item) => sum + Number(values[item[2]] || 0), 0))}</strong></p></div> : <>
       <button type="button" className="secondary-action" onClick={() => setCategory(null)}>← Tutte le categorie</button>
-      {result.loading ? <p role="status">Caricamento ordini…</p> : result.error ? <p role="alert">{result.error}</p> : <CrmDetailTable key={category[0]} rows={result.rows} columns={columns} empty="Nessun ordine in questa categoria per i filtri selezionati."/>}
+      <CrmRemoteDetailTable key={category[0]} source="crm_open_order_category_details" parameters={{...filters,p_category:category[0]}} rowFilters={customerGroup==='mypharma'?[{field:'customer_code',op:'eq',value:'501.00288'}]:customerGroup==='regular'?[{field:'customer_code',op:'neq',value:'501.00288'}]:[]} columns={columns} empty="Nessun ordine in questa categoria per i filtri selezionati."/>
+
     </>}
   </CrmKpiDialog>;
 }

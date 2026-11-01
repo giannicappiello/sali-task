@@ -1,8 +1,9 @@
+import CrmRemoteDetailTable from './CrmRemoteDetailTable';
 import CrmB2BFinancialDialog from './CrmB2BFinancialDialog';
 import {scopeBeautyOrders} from './orderDashboardScope';
 import { useAuth } from '../../contexts/AuthContext';
 import CrmProductPurchaseTable from './CrmProductPurchaseTable';
-import {loadDashboardProductSummary,loadDashboardProductRows} from './dashboardProducts';
+import {loadDashboardProductSummary} from './dashboardProducts';
 import { CUSTOMER_PRODUCT_SCREENS } from './customerProducts';
 import CrmOpenOrdersDialog from './CrmOpenOrdersDialog';
 import { useEffect, useMemo, useState } from 'react';
@@ -14,13 +15,13 @@ import CrmPeriodFilter from './CrmPeriodFilter';
 import CrmCustomerLink from './CrmCustomerLink';
 import { crmNavigation } from './crmNavigation';
 import { formatDate, formatMoney } from './crmConfig';
-import { loadAllQueryRows, loadAllRpcRows } from './crmDataset';
+import { loadAllQueryRows } from './crmDataset';
 import { beautyDetailEvents, postEventOrderValue } from './crmBeautyData';
 import { crmFunctionError } from './crmFunctionError';
 
 const valueColumn = (key, label) => ({ key, label, value: r => r[key] });
-const moneyColumn = (key, label) => ({ key, label, value: r => formatMoney(r[key]), sortValue: r => Number(r[key] || 0) });
-const dateColumn = (key, label) => ({ key, label, value: r => formatDate(r[key]), sortValue: r => r[key] });
+const moneyColumn = (key, label) => ({ key, label,remoteFormat:'money', value: r => formatMoney(r[key]), sortValue: r => Number(r[key] || 0) });
+const dateColumn = (key, label) => ({ key, label,remoteFormat:'date', value: r => formatDate(r[key]), sortValue: r => r[key] });
 
 export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, error, period, retry, agent = '', onAgentChange, agentCustomers = [],orderModule=null,customerGroup=null,scopeCodes=[],children=null }) {
   const { hasScreenAccess } = useAuth();
@@ -56,7 +57,7 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
     return()=>{active=false;clearTimeout(timer);controller.abort();};
   },[period.from,period.to,agent,productRevision,orderParams]);
   const productCount=category=>products.loading?'…':products.error?'—':products.counts[category] ?? 0;
-  const [selected, setSelected] = useState(null); const [details, setDetails] = useState({ rows: [], loading: false, error: '' });
+  const [selected, setSelected] = useState(null);
   const [extra, setExtra] = useState({ lifecycle: null, beauty: null, errors: {} });
   useEffect(() => {
     let active = true;
@@ -65,10 +66,8 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
       const results = await Promise.allSettled([
         (async () => {
           if (!agent && !orderModule) { const r = await supabase.rpc('crm_b2b_lifecycle_summary'); if (r.error) throw r.error; return r.data; }
-          const r = await loadAllQueryRows((from, to) => supabase.rpc(orderModule?'crm_b2b_order_lifecycle_details':'crm_b2b_lifecycle_details',orderModule?{p_order_module:orderModule,...(customerGroup?{p_customer_group:customerGroup}:{}),p_from:period.from,p_to:period.to,p_agent:agent||null}:{}).range(from, to));
-          if (r.error) throw r.error;
-          const rows = r.data.filter(row => (!agent || agentCodes.has(row.codice_cliente)) && (!orderModule || scopeSet.has(row.codice_cliente)));
-          return { prospects: rows.filter(r => r.classificazione === 'prospect').length, first_order: rows.filter(r => r.classificazione === 'primo_ordine').length, reorders: rows.filter(r => Number(r.numero_ordini) > 1).length, at_risk: rows.filter(r => r.classificazione === 'a_rischio').length, dormant: rows.filter(r => r.classificazione === 'dormiente').length, lost: rows.filter(r => r.classificazione === 'perso').length };
+          const r=await supabase.rpc('crm_kpi_lifecycle_summary',{p_from:period.from,p_to:period.to,p_agent:agent||null,p_order_module:orderModule,p_customer_group:customerGroup});
+          if(r.error)throw r.error;return r.data;
         })(),
         (async () => { const settings = await supabase.from('crm_workflow_settings').select('beauty_post_evento_giorni').eq('crm_tipo', 'b2b').maybeSingle(); if (settings.error) throw settings.error;
           const [result,orderScope]=await Promise.all([supabase.functions.invoke('report-giornate-api', { body: { action: 'crm-beauty-dashboard', postDays: settings.data?.beauty_post_evento_giorni || 30, from: period.from, to: period.to } }),orderModule?loadAllQueryRows((from,to)=>supabase.rpc('crm_b2b_order_scope_orders',{p_order_module:orderModule,...(customerGroup?{p_customer_group:customerGroup}:{}),p_from:period.from,p_to:period.to,p_agent:agent||null}).range(from,to)):Promise.resolve({data:[]})]);
@@ -80,55 +79,16 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
       const next = { errors: {} }; ['lifecycle', 'beauty'].forEach((key, i) => { next[key] = results[i].status === 'fulfilled' ? results[i].value : null; if (results[i].status === 'rejected') next.errors[key] = results[i].reason.message; }); setExtra(next);
     }, 0); return () => { active = false; clearTimeout(timer); };
   }, [period.from, period.to, agent, agentCodes,orderModule,scopeSet,customerGroup]);
-  useEffect(() => {
-    if (!selected || ['open-orders','financial'].includes(selected.kind)) return;
-    let active = true; const controller = new AbortController();
-    const timer = setTimeout(async () => {
-      setDetails({ rows: [], loading: true, error: '' });
-      try {
-        let rows = [];
-        if (selected.kind === 'products') {
-          rows=await loadDashboardProductRows(supabase,'crm_dashboard_product_groups',{p_crm_type:'b2b',p_from:period.from,p_to:period.to,p_agent:agent||null,...orderParams,p_category:selected.metric},controller.signal);
-          rows=rows.map(row=>({...row,amount:{value:Number(row.net_amount),unknown:Number(row.unknown_amounts)}}));
-        } else if (selected.kind === 'customers') {
-          const result = await loadAllRpcRows(orderModule?'crm_b2b_order_customer_details':'crm_customer_metric_details', { ...(orderModule?{p_order_module:orderModule,...(customerGroup?{p_customer_group:customerGroup}:{}),p_agent:agent||null}:{}), p_crm_type: 'b2b', p_from: period.from, p_to: period.to, p_metric: selected.metric || 'all', p_search: null, p_customer_status: selected.status || 'active' });
-          if (result.error) throw result.error; rows = result.data;
-          if (selected.metric === 'all' && !orderModule) {
-            const prospects = await loadAllRpcRows('crm_prospect_customer_details', { p_crm_type: 'b2b', p_search: null, p_customer_status: selected.status || 'active' });
-            if (prospects.error) throw prospects.error;
-            rows = [...rows, ...prospects.data.map(r => ({ ...r, account_id: r.id, ragione_sociale: r.nome }))];
-          }
-        } else if (selected.kind === 'opportunities') {
-          const result = await loadAllQueryRows((from, to) => supabase.from('crm_opportunities').select('*,crm_accounts!inner(id,nome,tipo,codice_cliente_mexal),crm_opportunity_stages(nome,finale)').eq('crm_accounts.tipo', 'b2b').order('id').range(from, to));
-          if (result.error) throw result.error;
-          rows = result.data.filter(r => !r.crm_opportunity_stages?.finale && (selected.metric !== 'overdue' || r.chiusura_prevista && r.chiusura_prevista < new Date().toISOString().slice(0, 10)));
-        } else if (selected.kind === 'activities') {
-          const result = await loadAllQueryRows((from, to) => supabase.from('crm_activities').select('*,crm_accounts(nome,codice_cliente_mexal),checklist_template:catalog_template_id(titolo)').eq('crm_tipo', 'b2b').order('id').range(from, to)); if (result.error) throw result.error;
-          rows = result.data.filter(r => r.stato !== 'completata' && r.data_attivita && new Date(r.data_attivita) < new Date());
-        } else if (selected.kind === 'lifecycle') {
-          const result = await loadAllQueryRows((from, to) => supabase.rpc(orderModule?'crm_b2b_order_lifecycle_details':'crm_b2b_lifecycle_details',orderModule?{p_order_module:orderModule,...(customerGroup?{p_customer_group:customerGroup}:{}),p_from:period.from,p_to:period.to,p_agent:agent||null}:{}).range(from, to).abortSignal(controller.signal));
-          if (result.error) throw result.error;
-          rows = result.data.filter(r => selected.metric === 'reorders' ? Number(r.numero_ordini) > 1 : r.classificazione === selected.metric);
-        }
-        if(orderModule && selected.kind!=='products') rows=rows.filter(row=>scopeSet.has(row.codice_cliente || row.customer_code || row.crm_accounts?.codice_cliente_mexal));
-        if (agent && selected.kind !== 'products') rows = rows.filter(row => agentCodes.has(row.codice_cliente || row.customer_code || row.crm_accounts?.codice_cliente_mexal));
-        if (active) setDetails({ rows, loading: false, error: '' });
-      } catch (failure) { if (active) setDetails({ rows: [], loading: false, error: failure.message }); }
-    }, 0); return () => { active = false; controller.abort(); clearTimeout(timer); };
-  }, [selected, period.from, period.to, agent, agentCodes,orderModule,scopeSet,orderParams,customerGroup]);
   const events = (extra.beauty?.events || []).filter(r => r.data >= period.from && r.data <= period.to && (!agent || agentCodes.has(r.customer_code)) && (!orderModule || scopeSet.has(r.customer_code)));
   const executed = events.filter(r => r.stato === 'eseguita');
-  const card = (label, value, note, info, selection) => <CrmKpiCard key={label} label={label} value={value ?? '—'} note={note} info={info} onClick={() => { setDetails({ rows: [], loading: true, error: '' }); setSelected({ label, ...selection }); }}/ >;
+  const card = (label, value, note, info, selection) => <CrmKpiCard key={label} label={label} value={value ?? '—'} note={note} info={info} onClick={() => { setSelected({ label, ...selection }); }}/ >;
   const customer = (metric = 'all', status = orderModule==='prof' && metric!=='all'?'all':'active') => ({ kind: 'customers', metric, status });
-  const clientColumn = { key: 'customer', label: 'Cliente', value: r => r.ragione_sociale || r.customer_name || r.crm_accounts?.nome || r.nome, render: r => <CrmCustomerLink crmType="b2b" customerCode={r.codice_cliente || r.customer_code || r.crm_accounts?.codice_cliente_mexal} accountId={r.account_id || r.crm_accounts?.id} name={r.ragione_sociale || r.customer_name || r.crm_accounts?.nome || r.nome} period={period}/> };
+  const clientColumn = { key: 'customer',remoteFields:['ragione_sociale','customer_name','crm_accounts.nome','nome'], label: 'Cliente', value: r => r.ragione_sociale || r.customer_name || r.crm_accounts?.nome || r.nome, render: r => <CrmCustomerLink crmType="b2b" customerCode={r.codice_cliente || r.customer_code || r.crm_accounts?.codice_cliente_mexal} accountId={r.account_id || r.crm_accounts?.id} name={r.ragione_sociale || r.customer_name || r.crm_accounts?.nome || r.nome} period={period}/> };
   function detail() {
-    let rows = details.rows; let columns;
+    let rows = []; let columns;
     if (selected.kind === 'products') {
-      if (details.loading) return <p role="status">Caricamento prodotti…</p>;
-      if (details.error) return <p role="alert">{details.error}</p>;
       if (!hasScreenAccess(CUSTOMER_PRODUCT_SCREENS[selected.metric === 'purchased' ? 'purchased' : 'ordered'].code)) return <p>Schermata prodotti non autorizzata per il tuo profilo.</p>;
-      rows = details.rows;
-      return <CrmProductPurchaseTable rows={rows} parameters={{p_crm_type:'b2b',p_from:period.from,p_to:period.to,p_agent:agent||null,...orderParams,p_category:selected.metric}}/>;
+      return <CrmProductPurchaseTable remote parameters={{p_crm_type:'b2b',p_from:period.from,p_to:period.to,p_agent:agent||null,...orderParams,p_category:selected.metric}}/>;
     } else if (selected.kind === 'beauty') {
       if (extra.errors.beauty) return <p role="alert">{extra.errors.beauty}</p>;
       if (!extra.beauty) return <p>Caricamento Beauty Days…</p>;
@@ -136,8 +96,25 @@ export default function CrmB2BDashboard({ data, firstOrderSuggestions, loading, 
       columns = [clientColumn, dateColumn('data', 'Data'), valueColumn('stato', 'Stato'), valueColumn('numero_totale_pezzi_venduti', 'Pezzi'), moneyColumn('fatturato_giornata', 'Fatturato giornata'), moneyColumn('order_value', 'Ordinato post-evento')];
     } else if (selected.kind === 'first') { rows = firstOrderSuggestions; columns = [clientColumn, valueColumn('opportunity_title', 'Progetto'), dateColumn('first_order_date', 'Primo ordine'), moneyColumn('first_order_value', 'Valore'), { key: 'open', label: 'Conferma', value: () => 'Apri progetto', render: r => <Link to={period.withPeriod(`/crm/b2b/pipeline/${r.opportunity_id}`)}>Apri progetto</Link> }];
     } else {
-      if (details.loading) return <p role="status">Caricamento dettagli…</p>;
-      if (details.error) return <p role="alert">{details.error}</p>;
+      if(selected.kind==='customers'||selected.kind==='lifecycle'){
+        const lifecycle=selected.kind==='lifecycle';
+        const source=lifecycle?(orderModule?'crm_b2b_order_lifecycle_details':'crm_b2b_lifecycle_details'):(orderModule?'crm_b2b_order_customer_details':selected.metric==='all'?'crm_b2b_customers_card':'crm_customer_metric_details');
+        const parameters=lifecycle?(orderModule?{p_order_module:orderModule,...(customerGroup?{p_customer_group:customerGroup}:{}),p_from:period.from,p_to:period.to,p_agent:agent||null}:{})
+          :{...(orderModule?{p_order_module:orderModule,...(customerGroup?{p_customer_group:customerGroup}:{}),p_agent:agent||null}:{}),p_crm_type:'b2b',p_from:period.from,p_to:period.to,p_metric:selected.metric||'all',p_search:null,p_customer_status:selected.status||'active'};
+        const cols=lifecycle?[clientColumn,valueColumn('classificazione','Classificazione'),dateColumn('ultimo_ordine_il','Ultimo ordine'),valueColumn('numero_ordini','Ordini storici'),valueColumn('frequenza_media_giorni','Frequenza media (giorni)'),dateColumn('contatto_consigliato_il','Riordino atteso')]
+          :[clientColumn,valueColumn('codice_cliente','Codice'),valueColumn('agente_classificazione','Agente'),moneyColumn('invoice_total','Fatturato'),valueColumn('invoice_count','Fatture'),moneyColumn('order_total','Ordinato'),valueColumn('order_count','Ordini')];
+        const rowFilters=[...(agent&&!orderModule?[{field:'codice_cliente',op:'in',value:[...agentCodes]}]:[]),...(lifecycle?[selected.metric==='reorders'?{field:'numero_ordini',op:'gt',value:1}:{field:'classificazione',op:'eq',value:selected.metric}]:[])];
+        return <CrmRemoteDetailTable rowFilters={rowFilters} key={JSON.stringify([source,parameters,selected.metric])} source={source} parameters={parameters} columns={cols}/>;
+      }
+
+      if(selected.kind==='opportunities'||selected.kind==='activities'){
+       const opportunity=selected.kind==='opportunities';
+       const source=opportunity?'crm_kpi_opportunities':'crm_kpi_activities';
+       const cols=opportunity?[clientColumn,valueColumn('titolo','Progetto'),{key:'stage',remoteFields:['crm_opportunity_stages.nome'],label:'Fase',value:r=>r.crm_opportunity_stages?.nome},moneyColumn('valore','Valore'),valueColumn('probabilita','Probabilità %'),dateColumn('chiusura_prevista','Chiusura prevista'),{key:'open',label:'Dettaglio',value:()=>'',render:r=><Link to={period.withPeriod(`/crm/b2b/pipeline/${r.id}`)}>Apri progetto</Link>}]
+       :[clientColumn,valueColumn('titolo','Attività'),{key:'type',remoteFields:['checklist_template.titolo','tipo'],label:'Voce checklist',value:r=>r.checklist_template?.titolo||r.tipo},dateColumn('data_attivita','Scadenza'),valueColumn('stato','Stato')];
+       const rowFilters=[...(agent?[{field:'crm_accounts.codice_cliente_mexal',op:'in',value:[...agentCodes]}]:[]),...(orderModule?[{field:'crm_accounts.codice_cliente_mexal',op:'in',value:[...scopeSet]}]:[])];
+       return <CrmRemoteDetailTable source={source} parameters={{p_crm_type:'b2b',...(opportunity?{p_metric:selected.metric||null}:{})}} columns={cols} rowFilters={rowFilters}/>;
+      }
       if (selected.kind === 'customers') columns = [clientColumn, valueColumn('codice_cliente', 'Codice'), valueColumn('agente_classificazione', 'Agente'), moneyColumn('invoice_total', 'Fatturato'), valueColumn('invoice_count', 'Fatture'), moneyColumn('order_total', 'Ordinato'), valueColumn('order_count', 'Ordini')];
       else if (selected.kind === 'opportunities') columns = [clientColumn, valueColumn('titolo', 'Progetto'), { key: 'stage', label: 'Fase', value: r => r.crm_opportunity_stages?.nome }, moneyColumn('valore', 'Valore'), valueColumn('probabilita', 'Probabilità %'), dateColumn('chiusura_prevista', 'Chiusura prevista'), { key: 'open', label: 'Dettaglio', value: () => 'Apri progetto', render: r => <Link to={period.withPeriod(`/crm/b2b/pipeline/${r.id}`)}>Apri progetto</Link> }];
       else if (selected.kind === 'activities') columns = [clientColumn, valueColumn('titolo', 'Attività'), { key: 'type', label: 'Voce checklist', value: r => r.checklist_template?.titolo || r.tipo }, dateColumn('data_attivita', 'Scadenza'), valueColumn('stato', 'Stato')];

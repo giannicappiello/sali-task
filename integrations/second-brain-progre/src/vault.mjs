@@ -10,7 +10,10 @@ export async function dpapi(value, decrypt = false) {
     ? '$s=ConvertTo-SecureString ([Console]::In.ReadToEnd()); $p=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($s); try {[Console]::Out.Write([Runtime.InteropServices.Marshal]::PtrToStringBSTR($p))} finally {[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($p)}'
     : '$s=ConvertTo-SecureString ([Console]::In.ReadToEnd()) -AsPlainText -Force; [Console]::Out.Write((ConvertFrom-SecureString $s))';
   return new Promise((resolve, reject) => {
-    const child = spawn('powershell.exe', ['-NoLogo','-NoProfile','-NonInteractive','-Command',code], { windowsHide: true, stdio: ['pipe','pipe','pipe'] });
+    // A Codex host can inherit PSModulePath from PowerShell 7. Windows PowerShell
+    // must load its own signed Security module, not an incompatible inherited one.
+    const child = spawn('powershell.exe', ['-NoLogo','-NoProfile','-NonInteractive','-Command',code], { windowsHide: true, stdio: ['pipe','pipe','pipe'],
+      env: { ...process.env, PSModulePath: join(process.env.SystemRoot || 'C:\\Windows','System32','WindowsPowerShell','v1.0','Modules') } });
     let output = ''; const timer = setTimeout(() => { child.kill(); reject(new Error('Protezione sessione scaduta.')); }, 15000);
     child.stdout.on('data', part => { output += part; });
     child.stderr.on('data', () => {}); // PowerShell error details must not reveal credential input.

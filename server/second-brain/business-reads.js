@@ -8,7 +8,7 @@ const orderModules={prof:'ordini_pr',ph:'ordini_ph',private:'ordini_private'};
 const check=result=>{if(result.error)throw result.error;return result.data;};
 export function businessReadTools(auth) {
   const tools={},types=Object.keys(orderModules).filter(type=>canReadModule(auth,[orderModules[type]]));
-  if(types.length)tools.WORKSPACE_ORDERS_SEARCH={description:'Legge ordini commerciali nella cache Mexal sincronizzata, con filtri e paginazione. Rispetta moduli, integrazioni e agenti del richiedente. Non genera o invia ordini.',effect:'read',inputSchema:objectSchema({
+  if(types.length)tools.WORKSPACE_ORDERS_SEARCH={description:'Legge documenti nella cache ordini Mexal, inclusi annullati e bozze: non è il KPI Ordinato CRM. Per analisi allineate alla dashboard usare CRM_CUSTOMER_SEARCH con orderModule. Usare agente_nome nei report, mantenendo il codice solo come riferimento. Rispetta moduli, integrazioni e agenti del richiedente. Non genera o invia ordini.',effect:'read',inputSchema:objectSchema({
     module:{type:'string',enum:types},customerCode:{type:'string',maxLength:80},offset:{type:'integer',minimum:0,maximum:100000},
   },['module']),execute:async input=>{
     const admin=auth.profile.ruoli?.amministratore_workspace===true;
@@ -22,7 +22,7 @@ export function businessReadTools(auth) {
     }
     if(input.customerCode)q=q.eq('codice_cliente',input.customerCode);
     const offset=input.offset || 0,rows=check(await q.range(offset,offset+50)) || [];
-    const fields=['id','modulo_ordini','numero_ordine_visualizzato','numero_ordine','data_ordine','codice_cliente','ragione_sociale_cliente','codice_agente_mexal','stato','stato_sincronizzazione','totale_imponibile','totale_iva','totale_documento','totale'];
+    const fields=['id','modulo_ordini','numero_ordine_visualizzato','numero_ordine','data_ordine','codice_cliente','ragione_sociale_cliente','codice_agente_mexal','agente_nome','stato','stato_sincronizzazione','totale_imponibile','totale_iva','totale_documento','totale'];
     return {rows:rows.slice(0,50).map(row=>Object.fromEntries(fields.filter(key=>Object.hasOwn(row,key)).map(key=>[key,row[key]]))),nextOffset:rows.length>50?offset+50:null,source:'ordini_testate',readAt:new Date().toISOString()};
   }};
   const fullInvoiceScope=types.length && Object.values(orderModules).every(module=>!auth.access.modules?.includes(module)||canReadModule(auth,[module]));

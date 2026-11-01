@@ -28,11 +28,22 @@ export async function readOperationalData(auth, operation, input) {
     offset = input.offset ?? 0;
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > 100000) throw new Error('Pagina non valida.');
     if (!['active', 'inactive', 'all'].includes(input.status || 'active')) throw new Error('Stato cliente non valido.');
-    rpc = 'crm_customer_metric_details'; args = { p_crm_type: input.type, p_from: from, p_to: to, p_metric: 'all', p_search: String(input.query || '').slice(0, 160) || null, p_customer_status: input.status || 'active' };
+    // SQL pagination is mandatory. A PostgREST range neither supplies these
+    // function arguments nor replaces pagination inside the function.
+    rpc = 'crm_customer_metric_details'; args = { p_crm_type: input.type, p_from: from, p_to: to, p_metric: 'all', p_search: String(input.query || '').slice(0, 160) || null, p_customer_status: input.status || 'active', p_limit: 51, p_offset: offset };
+    if (input.orderModule !== undefined) {
+      if (input.type !== 'b2b' || !['prof', 'ph'].includes(input.orderModule)) throw new Error('Perimetro ordini CRM non valido.');
+      if (!canReadModule(auth, [input.orderModule === 'prof' ? 'ordini_pr' : 'ordini_ph'])) throw denied();
+      const group = input.customerGroup ?? (input.orderModule === 'prof' ? 'regular' : 'all');
+      if (!['all', 'regular', 'mypharma'].includes(group) || (input.orderModule === 'ph' && group !== 'all')) throw new Error('Gruppo clienti non valido per il modulo ordini.');
+      rpc = 'crm_b2b_order_customer_details';
+      Object.assign(args, { p_order_module: input.orderModule, p_customer_group: group, p_agent: input.agent || null });
+    } else if (input.customerGroup !== undefined || input.agent !== undefined) {
+      throw new Error('Specificare orderModule per filtrare gruppo clienti o agente.');
+    }
   } else throw new Error('Operazione non disponibile.');
   // Reuse the same authorization-enforcing RPCs as the product UI, always with the user's JWT.
-  let request = auth.scoped.rpc(rpc, args);
-  if (offset !== undefined) request = request.range(offset, offset + 50);
+  const request = auth.scoped.rpc(rpc, args);
   const { data, error } = await request;
   if (error) throw error;
   return { source: rpc, readAt: new Date().toISOString(), data: offset === undefined ? data : (data || []).slice(0, 50), nextOffset: offset !== undefined && data?.length > 50 ? offset + 50 : null };
@@ -48,8 +59,8 @@ export function operationalReadTools(auth) {
   };
   const types = Object.entries(crmModules).filter(([, module]) => canReadModule(auth, [module])).map(([type]) => type);
   if (types.length) tools.CRM_CUSTOMER_SEARCH = {
-    description: 'Cerca clienti Workspace/Mexal per codice o ragione sociale, anche oltre i dati iniziali. Riutilizza classificazione e autorizzazioni del CRM e distingue clienti attivi/inattivi. Paginare finché nextOffset è null.',
-    inputSchema: jsonSchema({ type: 'object', additionalProperties: false, required: ['type', 'from', 'to'], properties: { type: { type: 'string', enum: types }, from: { type: 'string' }, to: { type: 'string' }, query: { type: 'string', maxLength: 160 }, status: { type: 'string', enum: ['active', 'inactive', 'all'] }, offset: { type: 'integer', minimum: 0 } } }), execute: input => readOperationalData(auth, 'customers', input),
+    description: 'Cerca clienti Workspace/Mexal e metriche ufficiali per periodo. Il nome agente è in agente_classificazione: usare sempre i nomi nei report. Per la schermata Ordini PR usare type=b2b, orderModule=prof, customerGroup=regular; MyPharma è separato. Per Ordini PH usare orderModule=ph. Filtri e importi riutilizzano le RPC della schermata, non le somme della cache ordini. Paginare finché nextOffset è null.',
+    inputSchema: jsonSchema({ type: 'object', additionalProperties: false, required: ['type', 'from', 'to'], properties: { type: { type: 'string', enum: types }, from: { type: 'string' }, to: { type: 'string' }, query: { type: 'string', maxLength: 160 }, status: { type: 'string', enum: ['active', 'inactive', 'all'] }, offset: { type: 'integer', minimum: 0 }, orderModule: { type: 'string', enum: ['prof', 'ph'] }, customerGroup: { type: 'string', enum: ['all', 'regular', 'mypharma'] }, agent: { type: 'string', maxLength: 80 } } }), execute: input => readOperationalData(auth, 'customers', input),
   };
   return tools;
 }

@@ -29,4 +29,4 @@ if ($codexPath) {
   Write-Output "command = '$nodePath'"
   Write-Output "args = ['$scriptPath', '--config', '$configTomlPath']"
 }
-Write-Output 'Avvia una nuova chat, usa BRAIN_LOGIN e accedi personalmente nella pagina locale. Non copiare session.dpapi sull’altro PC.'
+Write-Output 'Avvia una nuova chat, usa BRAIN_LOGIN e accedi personalmente nella pagina locale. Non copiare session.dpapi su altri PC.'

@@ -26,3 +26,7 @@ Non occorrono Node.js, pacchetti o script sui PC. La prima associazione deve ess
 `online-security-regression.sql` si esegue in una transazione con rollback dopo la migrazione dedicata: prova rifiuto di PKCE errato, riutilizzo di codici/refresh e connessioni revocate, e negazione dell'accesso alle sessioni dal ruolo authenticated.
 
 Non dichiarare completato il collegamento nell'account OpenAI finché la sua autorizzazione e una lettura MCP reale non sono riuscite. Il connettore locale precedente resta una compatibilità transitoria; non è la procedura proposta agli utenti.
+
+Verifica in produzione del 01-11-2026: il plugin privato ha completato OAuth con CIMD e PKCE; una chat OpenAI ha letto BRAIN_STATUS e BRAIN_MEMORY_SEARCH attraverso il trasporto remoto. Non sono state eseguite modifiche ai dati aziendali durante questa prova. Questa verifica riguarda l'account autorizzato, non gli account di altri utenti.
+
+Il login Workspace riprende le sole pagine Second Brain di consenso e conferma conservando i parametri del collegamento. I refresh token Supabase sono opachi: non si assume una loro lunghezza minima. La migrazione `20261101210000_second_brain_memory_read_performance.sql` mantiene le stesse regole RLS e valuta identità e abilitazione una volta per query; evita il ricalcolo per ogni frammento importato. Il test SQL con rollback verifica ancora isolamento tra utenti, conferma e idempotenza.

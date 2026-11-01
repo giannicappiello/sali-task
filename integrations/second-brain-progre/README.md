@@ -2,15 +2,17 @@
 
 Usa Codex con l'account ChatGPT di ciascuna persona e collega i servizi già presenti in Workspace. Il connettore non chiama modelli OpenAI: il ragionamento è svolto nella chat, secondo il piano del singolo utente. **Genera ordini con AI resta nel modulo Workspace e mantiene le API esterne esistenti.**
 
-## Accesso dei due utenti
+## Accesso di utenti e PC
 
 Ogni persona usa il proprio account Codex e il proprio profilo Workspace. Non condividere password, cartelle di sessione o l'accesso dell'amministratore. Un account personale Codex non è automaticamente un membro dello spazio ChatGPT Business.
+
+Il pacchetto si installa su ogni PC autorizzato, senza un limite applicativo di due postazioni. Ogni sessione conserva l'identità Workspace della persona: i permessi sono verificati dal server a ogni richiesta. Il numero di postazioni non assegna licenze Codex aggiuntive e non sostituisce i posti del piano Business. Per aggiungere una persona occorrono il suo accesso Codex e un profilo Workspace abilitato ai moduli consentiti. Non distribuire un account aziendale unico o sessioni preautenticate.
 
 Requisiti: Windows, Node.js 22 o successivo, Codex, accesso Workspace con modulo AI abilitato. Il backend Second Brain deve essere pubblicato e la migrazione dedicata applicata prima del login.
 
 1. Estrai il pacchetto in una cartella personale permanente.
-2. Esegui `Install-SecondBrain.ps1` con URL Supabase e chiave **pubblica** della stessa installazione Workspace. Non usare mai service-role o chiavi OpenAI.
-3. Aggiungi il blocco MCP stampato dallo script alle impostazioni Codex. Il pacchetto non sovrascrive la configurazione Codex esistente.
+2. Esegui `Install-SecondBrain.ps1` dal terminale PowerShell. Il pacchetto aziendale include `config.json` con i soli parametri pubblici. Per un'installazione dai sorgenti, specifica URL Supabase e chiave **pubblica** della stessa installazione Workspace. Non usare mai service-role o chiavi OpenAI.
+3. Lo script registra il connettore nel tuo profilo Codex. Se non trova Codex CLI, stampa il blocco MCP da aggiungere alle impostazioni. Gli altri connettori rimangono configurati. Mantieni la cartella del pacchetto nel percorso scelto.
 4. Apri una nuova chat locale Codex e richiedi il collegamento a Second Brain Progrè (`BRAIN_LOGIN`).
 5. Apri il collegamento locale e accedi al tuo utente Workspace nel browser. Non inserire credenziali nella chat.
 6. Verifica `BRAIN_STATUS`: devono comparire connessione e identità corrette.

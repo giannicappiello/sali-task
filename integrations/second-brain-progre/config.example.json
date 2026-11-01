@@ -1,0 +1,5 @@
+{
+  "workspaceUrl": "https://workspace.progre.it",
+  "supabaseUrl": "https://YOUR_PROJECT.supabase.co",
+  "supabaseAnonKey": "PUBLIC_ANON_KEY_FROM_WORKSPACE"
+}

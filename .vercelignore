@@ -18,5 +18,8 @@ artifact.md
 tools
 .env
 .env.*
+integrations/second-brain-progre/config.json
+integrations/second-brain-progre/private-imports
+**/*.dpapi
 **/config.php
 **/config.txt

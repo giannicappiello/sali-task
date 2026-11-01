@@ -1,0 +1,5 @@
+config.json
+*.dpapi
+*.lock
+node_modules/
+private-imports/

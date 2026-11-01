@@ -2,6 +2,16 @@ import productionActions from "../../server/production-actions-handler.js";
 import { handleInventorySnapshot } from "../../server/progremes-inventory.js";
 
 export default async function handler(req, res) {
+  if (req.query?.route === 'second-brain') {
+    try {
+      const { handleSecondBrain } = await import('../../server/second-brain/handler.js');
+      return res.status(200).json({ success: true, ...await handleSecondBrain(req) });
+    } catch (error) {
+      const status = Number(error.status || 500);
+      return res.status(status >= 400 && status <= 599 ? status : 500).json({ success: false,
+        error: status < 500 ? error.message : 'Second Brain non disponibile. Verificare il collegamento e il registro operazioni.' });
+    }
+  }
   if (req.query?.route === "order-preparation-sync") {
     const { default: synchronize } =
       await import("../../server/order-preparation-sync.js");

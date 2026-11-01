@@ -1,0 +1,46 @@
+# Second Brain Progrè — connettore Codex
+
+Usa Codex con l'account ChatGPT di ciascuna persona e collega i servizi già presenti in Workspace. Il connettore non chiama modelli OpenAI: il ragionamento è svolto nella chat, secondo il piano del singolo utente. **Genera ordini con AI resta nel modulo Workspace e mantiene le API esterne esistenti.**
+
+## Accesso dei due utenti
+
+Ogni persona usa il proprio account Codex e il proprio profilo Workspace. Non condividere password, cartelle di sessione o l'accesso dell'amministratore. Un account personale Codex non è automaticamente un membro dello spazio ChatGPT Business.
+
+Requisiti: Windows, Node.js 22 o successivo, Codex, accesso Workspace con modulo AI abilitato. Il backend Second Brain deve essere pubblicato e la migrazione dedicata applicata prima del login.
+
+1. Estrai il pacchetto in una cartella personale permanente.
+2. Esegui `Install-SecondBrain.ps1` con URL Supabase e chiave **pubblica** della stessa installazione Workspace. Non usare mai service-role o chiavi OpenAI.
+3. Aggiungi il blocco MCP stampato dallo script alle impostazioni Codex. Il pacchetto non sovrascrive la configurazione Codex esistente.
+4. Apri una nuova chat locale Codex e richiedi il collegamento a Second Brain Progrè (`BRAIN_LOGIN`).
+5. Apri il collegamento locale e accedi al tuo utente Workspace nel browser. Non inserire credenziali nella chat.
+6. Verifica `BRAIN_STATUS`: devono comparire connessione e identità corrette.
+
+La sessione è salvata con Windows DPAPI nella cartella personale `.progre-second-brain`; non può essere trasferita all'altro utente/PC. Il token Workspace non viene consegnato al modello. Le pagine locali durano pochi minuti e accettano soltanto richieste dalla propria origine.
+
+## Operazioni
+
+Il catalogo viene ricostruito sul server a ogni chiamata, intersecando permessi aziendali, livello AI e scope dei moduli. Le letture restituiscono dati attuali; simulazioni e proposte non equivalgono all'applicazione.
+
+Le modifiche preparano una proposta. Usa `BRAIN_REVIEW` con `kind` (`controlled`, `heading`, `brain`) e l'ID restituito per aprire il riepilogo. La persona verifica input e situazione precedente e conferma nel browser. Codex non deve automatizzare questa pagina. Dopo la conferma leggere `BRAIN_STATUS`, `BRAIN_ACTION_STATUS` e gli strumenti di verifica del dominio. Un timeout non autorizza a ripetere l'azione.
+
+La creazione attività/progetto usa il catalogo CRM e il servizio `workspace_create_operational_activity`, conservando workflow, reparti e task automatiche. Le rettifiche generiche di progetto/task sono limitate ai campi esposti e richiedono il valore `updated_at` letto prima della proposta. Cambiare la deadline di progetto non ricalcola automaticamente quelle delle task: il riepilogo lo dichiara.
+
+Non sono esposti SQL, shell, credenziali o deleghe al vecchio modello AI. Sviluppo del codice e analisi dei documenti vengono svolti da Codex con i suoi strumenti. Nessun comando PLC è implicito nel collegamento.
+
+## Memoria e chat
+
+`BRAIN_MEMORY_SEARCH` ricerca nella memoria autorizzata. `MEMORY_SAVE` prepara una voce con fonte, data, categoria e visibilità personale, di reparto o aziendale. Solo un amministratore può pubblicare una voce aziendale. Le voci collegate a progetti richiedono anche accesso a quei progetti.
+
+`BRAIN_IMPORT_HISTORY` apre l'importatore locale: seleziona un file JSON esportato da ChatGPT, JSONL storico o un JSON normalizzato `{ "conversations": [{ "id": "...", "title": "...", "messages": [{ "id": "...", "role": "user", "text": "...", "at": "..." }] }] }`.
+
+Prima di confermare, controlla l'intera anteprima oscurata. Sono inclusi solo testi utente/assistente, non output degli strumenti, ragionamento nascosto o immagini. I filtri rimuovono formati riconoscibili di chiavi, token e password; testi con segreti non etichettati devono essere esclusi nella revisione. Gli archivi si importano inizialmente nella memoria personale del richiedente; il secondo utente non li vede automaticamente. La reimportazione aggiorna le stesse fonti senza duplicarle. Ogni lotto è atomico e auditato. Le richieste storiche non autorizzano operazioni e gli esiti vanno verificati sui sistemi correnti.
+
+Gli archivi originali e `ContestoChat` non devono essere aggiunti al repository né ai pacchetti. Il connettore non garantisce l'accesso automatico a chat remote non esportate, allegati o account di altre persone.
+
+## Verifica e rilascio
+
+Dal repository: `node --test server/second-brain/handler.test.js integrations/second-brain-progre/test/*.test.mjs`.
+
+La migrazione `20261101180000_second_brain_progre.sql` aggiunge soltanto tabelle/funzioni Second Brain. `server/second-brain/security-regression.sql` si esegue dentro una transazione di prova con rollback, dopo il corpo della migrazione: controlla proprietà, isolamento di due utenti, conferme e deduplicazione.
+
+L'endpoint è `POST /api/mexal/automation?route=second-brain`. La vecchia chat non viene rimossa da questo rilascio: prima si verifica la copertura reale, poi si può dismettere l'interfaccia conservando i servizi condivisi e la generazione ordini AI.

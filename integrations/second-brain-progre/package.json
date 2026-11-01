@@ -1,0 +1,9 @@
+{
+  "name": "@progre/second-brain-connector",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": { "start": "node src/server.mjs", "test": "node --test test/*.test.mjs" },
+  "description": "Connettore Codex per i servizi Workspace esistenti. Nessuna generazione tramite API OpenAI."
+}

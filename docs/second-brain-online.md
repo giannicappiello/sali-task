@@ -4,6 +4,20 @@ Il servizio riusa il catalogo e i controlli Second Brain già verificati, con tr
 
 Endpoint: `https://workspace.progre.it/api/second-brain/mcp`.
 
+## Diagnostica sito e Amazon
+
+Il catalogo espone `COMMERCE_CONNECTIONS_READ`, `COMMERCE_ORDERS_SEARCH` e
+`COMMERCE_SYNC_RUNS_READ` per i canali `sito` (WooCommerce) e `amazon` (Seller).
+Ogni canale richiede il corrispondente modulo CRM nel perimetro AI; tutte le
+letture usano il client personale con le RLS esistenti. Le risposte sono paginate
+a 50 righe e non includono credenziali, configurazioni o payload grezzi.
+Per ordini mancanti cercare prima gli identificativi originali con `externalIds`,
+poi consultare stato connessione e registro sincronizzazioni. Le date di filtro
+sono giorni UTC. Un risultato vuoto nella cache non prova l'assenza sul provider.
+Questi strumenti non ritentano importazioni né emettono documenti Mexal.
+Dopo il rilascio aggiornare gli strumenti del plugin nelle impostazioni OpenAI.
+Verifica: `node --test server/second-brain/commerce-reads.test.js server/second-brain/handler.test.js`.
+
 Non occorrono Node.js, pacchetti o script sui PC. La prima associazione deve essere autorizzata nel proprio account OpenAI: aggiunta del server MCP personalizzato, oppure distribuzione del plugin da parte dell'amministratore OpenAI. Il pulsante Workspace apre la directory OpenAI; non installa o approva permessi al posto dell'utente. La disponibilità effettiva delle funzioni di collegamento dipende dal piano e dalle policy di quell'account, da verificare nella sua interfaccia.
 
 ## Identità e sessioni

@@ -20,6 +20,15 @@ test('analysis user cannot see operational mutation tools or generative delegate
   assert(!tools.ACTIVITY_CREATE);
   for (const name of ['chat','CODE_CHANGE_REQUEST','PRODUCTION_COST_PROPOSE','DATABASE_APPLY_MIGRATIONS','ORDER_AI_GENERATE']) assert(!tools[name]);
 });
+test('online catalog advertises scoped commerce diagnostics as read-only without executing them',async()=>{
+  const commerceAuth={...auth,access:{modules:['crm_online_ecommerce'],module_levels:{}},capabilities:{...auth.capabilities,allowed_modules:['crm_online_ecommerce']},scoped:{from(){throw Error('Catalog must not read data');}}};
+  const output=await handleSecondBrain({method:'POST',body:{action:'catalog'}},{authorize:async()=>commerceAuth});
+  for(const name of ['COMMERCE_CONNECTIONS_READ','COMMERCE_ORDERS_SEARCH','COMMERCE_SYNC_RUNS_READ']) {
+    const tool=output.tools.find(item=>item.name===name);
+    assert(tool,name);assert.equal(tool.effect,'read');assert.equal(tool.annotations.readOnlyHint,true);
+    assert.deepEqual(tool.inputSchema.properties.channel.enum,['sito']);
+  }
+});
 test('catalog does not execute any tool and advertises no external generation', async () => {
   let calls=0;
   const output=await handleSecondBrain({method:'POST',body:{action:'catalog'}},{authorize:async()=>auth,catalog:()=>({READ:{description:'read',effect:'read',inputSchema:objectSchema(),execute:()=>calls++}})});

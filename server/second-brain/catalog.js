@@ -18,6 +18,7 @@ import { HEADING_AI_TOOLS, HEADING_TOOL_SCHEMAS, executeHeadingModelTool } from 
 import { objectSchema, uuidSchema, plainSchema } from './schema.js';
 import { memoryTools, activityTools } from './memory-activities.js';
 import { businessReadTools } from './business-reads.js';
+import { commerceReadTools } from './commerce-reads.js';
 
 const read = (description, schema, execute) => ({ description, inputSchema: schema, execute, effect: 'read' });
 const querySchema = objectSchema({ query: { type: 'string', minLength: 1, maxLength: 160 } }, ['query']);
@@ -33,7 +34,7 @@ const datasets = {
 export function createBrainCatalog(auth) {
   const controlled = availableControlledActions(auth);
   const tools = { ...workspaceReadTools(auth), ...operationalReadTools(auth),
-    ...recoveryTools(auth, Boolean(controlled.MES_PLAN_APPLY)), ...memoryTools(auth), ...activityTools(auth), ...businessReadTools(auth),
+    ...recoveryTools(auth, Boolean(controlled.MES_PLAN_APPLY)), ...memoryTools(auth), ...activityTools(auth), ...businessReadTools(auth), ...commerceReadTools(auth),
     ...rdpCreationTools(auth, Boolean(controlled.RDP_CREATE)),
     ...(controlled.FORMULA_CREATE_REVISION ? formulaReadTools(auth) : {}),
     ...(controlled.LOT_OVERRIDE ? lotReadTools(auth) : {}),

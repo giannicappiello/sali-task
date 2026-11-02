@@ -15,6 +15,7 @@ import { randomUUID } from "node:crypto";
 import { appendPreparationScan } from '../shared/preparationScanning.js';
 import { shipmentPreview, finalizeShipment, shipmentReadback, validateDispatchSettings } from './preparation-dispatch.js';
 import { createMesDdtPrinting } from './ddt-mes-print.js';
+import {previewOrphanDdtDeletion,deleteOrphanDdt} from './preparation-ddt-deletion.js';
 
 import { buildMexalClient } from "./mexal/sync-products.js";
 
@@ -596,6 +597,16 @@ export function createOrderPreparationHandler({
 
       const id = uuid(body.id);
       let row = checked(await db.from(TABLE).select("*").eq("id", id).single());
+      if (['preview_ddt_delete','delete_orphan_ddt'].includes(op)) {
+        assert(session.canConfigure && session.canWrite,'Recupero riservato agli amministratori con scrittura.',403);
+        assert(row.version===Number(body.version) && row.status==='uncertain','Preparazione cambiata: aggiorna la schermata.',409);
+        const recoveryClient=clientFactory({warehouse:null,year:row.source.year,timeoutMs:60000});
+        const actual=await existingDdt(recoveryClient,row);
+        if(op==='preview_ddt_delete') return res.status(200).json({deletionPreview:await previewOrphanDdtDeletion({db,client:recoveryClient,row,actual})});
+        assert(body.confirmed===true,'Conferma esplicita della cancellazione richiesta.',400);
+        row=await deleteOrphanDdt({db,client:recoveryClient,row,actor:profile.id,actual,hash:body.deletionHash,reference:body.reference,findExisting:()=>existingDdt(recoveryClient,row)});
+        return res.status(200).json({preparation:exposed(row),deletedReference:body.reference});
+      }
       if (op === 'print_document') {
         assert(session.canWrite,'Permesso di stampa richiesto.',403);
         if ((body.kind==='bcf_print'?settings.ddt_printer_id:settings.packing_printer_id)?.startsWith('MES:')) await mesPrinting.inventory(db);

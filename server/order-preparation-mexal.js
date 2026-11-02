@@ -506,7 +506,18 @@ export function buildDdt(
   return payload;
 }
 
-export function verifyDdt(actual, preparation, payload, {forLinkRepair=false}={}) {
+export function verifyOrphanDdtForDeletion(actual,preparation,currentOrder) {
+  const raw=unwrap(actual),order=unwrap(currentOrder),payload=preparation.export_payload;
+  assert(preparation.status==='uncertain','Recupero consentito solo per un invio da verificare.',409);
+  verifyDdt(raw,preparation,payload,{forDeletion:true});
+  assert(order.sigla==='OC' && Number(order.serie)===preparation.source.series && Number(order.numero)===preparation.source.number && order.cod_conto===preparation.source.customerCode,'OCM origine non corrispondente.');
+  assert(text(order.data_ult_mod)===text(scalar(payload.dt_ult_mod_orig)),'OCM modificato dopo il tentativo di emissione: verifica necessaria.',409);
+  const rows=orderRows(order);
+  assert(rows.length===preparation.source.lines.length && preparation.source.lines.every(line=>rows.some(r=>r.id===line.id && r.code===line.code && r.quantity===line.quantity && r.warehouse===line.warehouse)),'Contenuto OCM modificato: collegamento automatico bloccato.',409);
+  return raw;
+}
+
+export function verifyDdt(actual, preparation, payload, {forDeletion=false}={}) {
   const raw = unwrap(actual);
   assert(
     raw.sigla === "BC" &&
@@ -533,10 +544,10 @@ export function verifyDdt(actual, preparation, payload, {forLinkRepair=false}={}
   const origins = nativeOrder.size ? nativeOrder : matrix(raw.sigla_doc_orig),
     series = matrix(nativeOrder.size ? raw.serie_ordine : raw.serie_doc_orig),
     numbers = matrix(nativeOrder.size ? raw.numero_ordine : raw.numero_doc_orig);
-  if (forLinkRepair) assert(!nativeOrder.size,'Bolla già collegata: verificare i riferimenti esistenti.');
+  if (forDeletion) assert(!nativeOrder.size,'Bolla già collegata: verificare i riferimenti esistenti.');
 
   assert(
-    forLinkRepair || [...origins].some(
+    forDeletion || [...origins].some(
       ([i, s]) =>
         s === "OC" &&
         Number(series.get(i)) === preparation.source.series &&
@@ -569,7 +580,7 @@ export function verifyDdt(actual, preparation, payload, {forLinkRepair=false}={}
       (line) => line.id === originalId,
     );
     assert(
-      (forLinkRepair ? group === 1 : (origins.get(group) === "OC" &&
+      (forDeletion ? group === 1 : (origins.get(group) === "OC" &&
         Number(series.get(group)) === preparation.source.series &&
         Number(numbers.get(group)) === preparation.source.number)) &&
         original &&

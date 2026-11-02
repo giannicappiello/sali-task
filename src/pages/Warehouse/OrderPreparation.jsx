@@ -256,6 +256,8 @@ export default function OrderPreparation() {
     [row, setRow] = useState(null);
 
   const [canWrite, setCanWrite] = useState(false),
+    [canConfigure,setCanConfigure] = useState(false),
+    [deletionPreview,setDeletionPreview] = useState(null),
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
@@ -340,6 +342,7 @@ export default function OrderPreparation() {
           id ? { id } : { refresh },
         );
         setCanWrite(r.canWrite);
+        setCanConfigure(r.canConfigure);
 
         if (r.preparation) accept(r.preparation);
         else {
@@ -385,6 +388,8 @@ export default function OrderPreparation() {
     try {
       if(operation === "preview_packing_list" && body.unitWeightGrams != null) await preparationApi("complete_weight",{id:body.id,productCode:body.productCode,unitWeightGrams:body.unitWeightGrams});
       const response = await preparationApi(operation, body);
+      if(response.deletionPreview) setDeletionPreview(response.deletionPreview);
+      if(response.deletedReference) {setDeletionPreview(null);setNotice("Bolla eliminata in Mexal. Scansioni e imballi conservati: ripeti il riscontro prima di emettere la nuova BCF.");}
       setPending(null);
       if (response.requiresCartonPieces || response.requiresProductWeight) {
         setCartonPrompt({ code: response.product.code, body, operation, needsPieces:!!response.requiresCartonPieces, needsWeight:!!response.requiresProductWeight });
@@ -1071,6 +1076,14 @@ export default function OrderPreparation() {
                 >
                   Verifica esito DDT
                 </button>
+                {canConfigure && <button disabled={busy || !canWrite} onClick={()=>void perform('preview_ddt_delete')}>Prepara eliminazione bolla senza collegamento</button>}
+                {deletionPreview && <div className="op-confirm-box" role="group" aria-label="Conferma eliminazione bolla Mexal">
+                  <h3>Elimina BCF {deletionPreview.series}/{deletionPreview.number}</h3>
+                  <p>La bolla verrà cancellata da Mexal. Letture, colli, bancali e registro resteranno conservati. Sarà necessario un nuovo riscontro prima dell’emissione.</p>
+                  <button disabled={busy} onClick={()=>setDeletionPreview(null)}>Indietro</button>
+                  <button disabled={busy || !canWrite} onClick={()=>void perform('delete_orphan_ddt',{confirmed:true,deletionHash:deletionPreview.hash,reference:deletionPreview.reference})}>Conferma eliminazione BCF {deletionPreview.series}/{deletionPreview.number}</button>
+                </div>}
+
               </div>
             )}
 

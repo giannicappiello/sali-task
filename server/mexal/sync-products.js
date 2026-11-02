@@ -355,6 +355,12 @@ export function buildMexalClient({ request = requestMexal, warehouse, retryOptio
       return parseJsonResponse(response,path);
     },
 
+    async deleteJson(path) {
+      // Destructive operations are never retried by the transport.
+      const response=await request({url:`${baseUrl}/webapi/risorse${path}`,headers,method:'DELETE',timeoutMs});
+      return parseJsonResponse(response,path);
+    },
+
     async getBinary(path, { accept } = {}) {
       const response = await request({
         url: `${baseUrl}/webapi/risorse${path}`,

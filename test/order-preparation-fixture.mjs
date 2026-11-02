@@ -69,6 +69,7 @@ export async function preparationDatabase(PGlite) {
   await db.exec(await readFile(new URL('../supabase/migrations/20261102120000_ddt_recipient_preferences.sql',import.meta.url),'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/20261102121000_ddt_mes_print_bridge.sql',import.meta.url),'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/20261102160000_ddt_print_copies.sql',import.meta.url),'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/20261102170000_reopen_deleted_orphan_ddt.sql',import.meta.url),'utf8'));
   await db.exec(`update warehouse_preparation_settings set bcf_contract_verified=true,contract_evidence='Synthetic contract, no real emission',ddt_pdf_path='/documenti/movimenti-magazzino/{reference}/test-pdf',backoffice_emails='["office@example.test"]';`);
   return db;
 }
@@ -153,6 +154,7 @@ export function supabaseAdapter(sql) {
           data = d;
           return query;
         },
+        insert(d) {mode="insert";data=d;return query;},
         upsert(d) {
           mode = "upsert";
           data = d;
@@ -175,6 +177,7 @@ export function supabaseAdapter(sql) {
               });
               statement = `update ${table} set ${set.join(",")}${where} returning *`;
             }
+            if(mode === "insert") {const keys=Object.keys(data).map(column);values=Object.values(data);statement=`insert into ${table}(${keys}) values(${values.map((_,i)=>"$"+(i+1))}) returning *`;}
             if (mode === "upsert") {
               const keys = Object.keys(data).map(column),
                 args = Object.values(data);
@@ -228,6 +231,7 @@ export function supabaseAdapter(sql) {
           warehouse_commit_shipment:['p_id','p_files'], warehouse_configure_preparation:['p_actor','p_expected','p_settings'],
           warehouse_claim_shipment_email:['p_worker'],warehouse_update_shipment_email:['p_id','p_worker','p_token','p_action','p_message','p_definitive'],
           warehouse_resolve_shipment_email:['p_id','p_actor','p_outcome','p_reason'],warehouse_enqueue_print:['p_id','p_request','p_kind','p_actor'],
+          warehouse_reopen_deleted_ddt:['p_id','p_version','p_actor','p_request','p_evidence'],
           warehouse_print_worker:['p_station','p_action','p_input'],
           warehouse_enqueue_print_copies:['p_id','p_request','p_kind','p_actor','p_copies'],
           warehouse_mes_print:['p_id','p_action','p_token','p_data'],

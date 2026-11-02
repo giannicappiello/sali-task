@@ -30,7 +30,7 @@ export default function DdtSettings() {
     try {await preparationApi(resolution.print?'ddt_reprint':'ddt_recover_email',resolution.print?{printId:resolution.id,eventId:resolution.request,reason,confirmed:true}:{emailId:resolution.id,outcome:resolution.outcome,reason,confirmed:true});setResolution(null);setReason('');await load();setNotice('Esito registrato nello storico ordine.');}
     catch(e){setError(e.message);}finally{setBusy(false);}
   }
-  return <main className="op-page integrations-page"><h1>Configurazioni DDT</h1><p>BCF e packing list inviate insieme a cliente, agente e backoffice. Cliente e agente provengono dalle anagrafiche dell’ordine e vengono mostrati prima dell’emissione.</p>
+  return <main className="order-preparation op-page integrations-page ddt-settings-page"><h1>Configurazioni DDT</h1><p>BCF e packing list inviate insieme a cliente, agente e backoffice. Cliente e agente provengono dalle anagrafiche dell’ordine e vengono mostrati prima dell’emissione.</p>
     {error && <p role="alert" className="op-error">{error}</p>}{notice && <p role="status">{notice}</p>}
     {data && <form className="op-settings" onSubmit={save}><fieldset disabled={busy || !data.canConfigure}><legend>Destinatari e messaggio</legend>
       <label>Indirizzi backoffice, uno per riga<textarea required value={form.backofficeEmails} onChange={e=>field('backofficeEmails',e.target.value)}/></label>

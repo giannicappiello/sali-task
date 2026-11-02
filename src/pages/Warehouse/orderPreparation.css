@@ -1,3 +1,25 @@
+.ddt-settings-page .op-settings fieldset {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+.ddt-settings-page .op-settings legend {
+  margin-bottom: 16px;
+  font-weight: 600;
+}
+.ddt-settings-page .op-settings label {
+  min-width: 0;
+}
+.ddt-settings-page .op-settings details label {
+  margin-top: 12px;
+}
+.ddt-settings-page .op-settings :is(input, select, textarea) {
+  width: 100%;
+  box-sizing: border-box;
+}
 .order-preparation {
   width: 100%;
   max-width: none;

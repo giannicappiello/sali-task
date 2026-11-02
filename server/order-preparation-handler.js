@@ -599,7 +599,8 @@ export function createOrderPreparationHandler({
       if (op === 'print_document') {
         assert(session.canWrite,'Permesso di stampa richiesto.',403);
         if ((body.kind==='bcf_print'?settings.ddt_printer_id:settings.packing_printer_id)?.startsWith('MES:')) await mesPrinting.inventory(db);
-        const job = checked(await db.rpc('warehouse_enqueue_print',{p_id:id,p_request:uuid(body.eventId),p_kind:body.kind,p_actor:profile.id}));
+        const copies=body.copies == null ? null : integer(body.copies,'Numero copie',1,50);
+        const job = checked(await db.rpc(copies == null ? 'warehouse_enqueue_print' : 'warehouse_enqueue_print_copies',{p_id:id,p_request:uuid(body.eventId),p_kind:body.kind,p_actor:profile.id,...(copies == null ? {} : {p_copies:copies})}));
         return res.status(200).json({printJob:job.printer_id.startsWith('MES:')?await mesPrinting.sync(db,job.id):job});
       }
       if (op === 'preview_packing_list' && row.status === 'completed' && row.ddt?.signature === 'BCF') return res.status(200).json(await shipmentReadback(db,row,'packing_list'));

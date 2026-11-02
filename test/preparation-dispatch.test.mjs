@@ -153,6 +153,36 @@ test('full pallet, replay, reopen, partial correction, fresh verification, BCF a
     assert.equal((await printing.sync(f.db,mesRequest)).status,'printing');
     assert.equal((await printing.sync(f.db,mesRequest)).status,'submitted');
     await printing.sync(f.db,mesRequest);assert.equal(posts,2);assert.equal(accepted,1);
+    // Selectable copies use the single-copy original and retain the count on retry.
+    await f.sql.exec("update warehouse_print_jobs set status='failed' where printer_id not like 'MES:%'");
+    const copiesId=event(),args={p_id:f.row.id,p_request:copiesId,p_kind:'bcf_print',p_actor:actor,p_copies:2};
+    const selected=await f.db.rpc('warehouse_enqueue_print_copies',args);
+    assert.equal(selected.error,null);assert.equal(selected.data.copies,2);assert.equal(selected.data.reprint_of,mesRequest);
+    assert.equal((await f.db.rpc('warehouse_enqueue_print_copies',args)).data.id,copiesId);
+    assert.ok((await f.db.rpc('warehouse_enqueue_print_copies',{...args,p_copies:3})).error);
+    assert.ok((await f.db.rpc('warehouse_enqueue_print_copies',{...args,p_request:event()})).error);
+    for(const invalid of [0,51,null]) assert.ok((await f.db.rpc('warehouse_enqueue_print_copies',{...args,p_request:event(),p_copies:invalid})).error);
+    const original=ok(await f.call('document',{kind:'bcf'})).document;
+    let copyPosts=0;
+    const selectable=createMesDdtPrinting({env:{PROGREMES_URL:'https://mes.example.test',PROGREMES_INTEGRATION_SECRET:'test'},transport:async(url,options)=>{
+      copyPosts++;assert.equal(options.method,'POST');assert.equal(url.searchParams.get('copies'),'2');
+      assert.equal(url.searchParams.get('forceReprint'),'true');assert.equal(url.searchParams.get('reprintOfJobId'),remoteId);
+      assert.equal(createHashForTest(options.body),original.sha256);
+      assert.equal((await PDFDocument.load(options.body)).getPageCount(),1);
+      return {ok:true,json:async()=>({id:event(),requestId:'ddt:'+copiesId,printer:'MES Laser',status:'Completed'})};
+    }});
+    assert.equal((await selectable.sync(f.db,copiesId)).status,'submitted');
+    await selectable.sync(f.db,copiesId);assert.equal(copyPosts,1);
+    assert.equal((await f.sql.query("select payload->>'copies' copies from warehouse_preparation_events where event_type='print_copies_selected'")).rows[0].copies,'2');
+    await f.sql.exec("update warehouse_preparation_settings set packing_printer_id='MES:MES Laser'");
+    const packingKind='packing_pallet_'+pallet,packingId=event();
+    const packingDoc=ok(await f.call('document',{kind:packingKind})).document;
+    assert.equal((await f.db.rpc('warehouse_enqueue_print_copies',{...args,p_request:packingId,p_kind:packingKind,p_copies:4})).error,null);
+    const packingPrinter=createMesDdtPrinting({env:{PROGREMES_URL:'https://mes.example.test',PROGREMES_INTEGRATION_SECRET:'test'},transport:async(url,options)=>{
+      assert.equal(url.searchParams.get('copies'),'4');assert.equal(createHashForTest(options.body),packingDoc.sha256);
+      return {ok:true,json:async()=>({id:event(),requestId:'ddt:'+packingId,printer:'MES Laser',status:'Completed'})};
+    }});
+    assert.equal((await packingPrinter.sync(f.db,packingId)).status,'submitted');
     f.readonly();assert.equal((await f.call('print_document',{kind:'bcf_print'})).statusCode,403);
     assert.equal((await f.call('ddt_configure',{backofficeEmails:['x@example.test']})).statusCode,403);
   } finally {await f.sql.close();}

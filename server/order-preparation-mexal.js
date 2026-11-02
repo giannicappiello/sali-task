@@ -180,6 +180,7 @@ export async function loadOrderContext(client, reference, db, settings) {
             unit: authoritativeArticleUnit(a) || upper(cached?.unita_misura),
             barcode: text(config?.barcode || a.cod_alternativo || cached?.ean),
             piecesPerCarton: packaging.get(code)?.piecesPerCarton || null,
+            boxesPerPallet: packaging.get(code)?.boxesPerPallet || null,
             unitWeightGrams: packaging.get(code)?.unitWeightGrams || null,
             packagingSpecificationVersion:
               packaging.get(code)?.packagingSpecificationVersion || null,
@@ -411,9 +412,9 @@ export function buildDdt(
     "Identità delle righe origine non verificata.",
   );
 
-  assert(notes === undefined || typeof notes === "string", "Note BCS non valide.");
+  assert(notes === undefined || typeof notes === "string", "Note BCF non valide.");
   const shippingNotes = cleanWarehouseHandoffNote(notes === undefined ? raw.nota : notes);
-  assert(shippingNotes.length <= 1000, "Le note BCS possono contenere al massimo 1000 caratteri.");
+  assert(shippingNotes.length <= 1000, "Le note BCF possono contenere al massimo 1000 caratteri.");
   const reason = integer(scalar(raw.id_causale), "Causale dell'ordine");
 
   // Native document transformation: reference the original header and original row IDs.
@@ -422,7 +423,7 @@ export function buildDdt(
 
   const payload = {
     sigla: "BC",
-    cod_modulo: "S",
+    cod_modulo: "F",
     id_causale: [[1, reason]],
     serie: integer(settings.ddt_series, "Serie DDT"),
     numero: 0,

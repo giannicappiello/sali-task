@@ -11,7 +11,7 @@ export async function preparationPackaging(db, codes) {
   const specs = checked(
     await db
       .from("workspace_product_specifications")
-      .select("article_code,version,pieces_per_carton:data->>piecesPerBox,unit_weight_grams:data->>totalWeightGrams")
+      .select("article_code,version,pieces_per_carton:data->>piecesPerBox,boxes_per_pallet:data->>boxesPerPallet,unit_weight_grams:data->>totalWeightGrams")
       .in("article_code", unique),
   );
   return new Map(
@@ -21,6 +21,7 @@ export async function preparationPackaging(db, codes) {
         spec.article_code,
         {
           piecesPerCarton: pieces && pieces <= 1000000 ? pieces : null,
+          boxesPerPallet: specificationPiecesPerBox(spec.boxes_per_pallet) <= 2000 ? specificationPiecesPerBox(spec.boxes_per_pallet) : null,
           unitWeightGrams: productWeightGrams(spec.unit_weight_grams),
           weightSpecificationEmpty: String(spec.unit_weight_grams ?? "").trim() === "",
           packagingSpecificationVersion: spec.version,
@@ -48,7 +49,7 @@ export async function saveMissingPreparationPackaging(db, code, input, actor) {
   );
   assert(
     catalog &&
-      articleType(code, catalog.dati_mexal?.gest_dbp) === "ProdottoFinito",
+      (articleType(code, catalog.dati_mexal?.gest_dbp) === "ProdottoFinito" || /^MKT[A-Z0-9_-]/.test(code)),
     "Il capitolato può essere compilato solo per un prodotto finito esistente.",
   );
   const saved = checked(

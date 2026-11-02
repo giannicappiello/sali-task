@@ -173,7 +173,7 @@ function runTest(array $config): array
 
 function processOne(array $config): array
 {
-    $claimed = apiRequest($config, ['action' => 'claim']);
+    $claimed = apiRequest($config, ['action' => 'claim', 'shipment_protocol' => 1]);
     if (($claimed['status'] ?? '') === 'idle') {
         return ['status' => 'idle'];
     }
@@ -181,6 +181,8 @@ function processOne(array $config): array
         throw new RuntimeException('Risposta claim non valida.');
     }
     $email = $claimed['email'];
+    $shipment = str_starts_with((string)$email['id'], 'ddt:');
+    $definitive = false;
     try {
         $mail = buildMail(
             $config,
@@ -189,7 +191,12 @@ function processOne(array $config): array
             (string)$email['corpo'],
             is_array($claimed['attachments'] ?? null) ? $claimed['attachments'] : []
         );
+        if ($shipment) {
+            apiRequest($config, ['action' => 'sending', 'email_id' => $email['id'],
+                'worker_id' => $claimed['worker_id'], 'lock_token' => $email['lock_token']]);
+        }
         if (!sendMessage($mail)) {
+            $definitive = true;
             throw new RuntimeException('La funzione mail() ha rifiutato il messaggio.');
         }
         apiRequest($config, [
@@ -208,6 +215,7 @@ function processOne(array $config): array
             'lock_token' => $email['lock_token'],
             'error' => $error->getMessage(),
             'permanent' => false,
+            'definitive' => $definitive,
         ]);
         throw $error;
     }

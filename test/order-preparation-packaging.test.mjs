@@ -430,7 +430,8 @@ test("old scans request missing weights at verification; configured tare and can
     assert.equal(summary.weightTotals.netWeightKg,1.001);assert.equal(summary.weightTotals.grossWeightKg,1.301);
     assert.equal(summary.packages[0].grossWeightKg,1.301);
     const invalid=await f.call('configure',{warehouse:5,ddtSeries:null,boxTareKg:-1,palletTareKg:20});assert.equal(invalid.statusCode,400);
-    const configured=await f.call('configure',{warehouse:5,ddtSeries:null,boxTareKg:'0.450',palletTareKg:'22.500'});assert.equal(configured.statusCode,200,JSON.stringify(configured.data));
+    const settingsBefore=await f.call('settings');
+    const configured=await f.call('configure',{settingsVersion:settingsBefore.data.settings.updated_at,warehouse:5,ddtSeries:null,boxTareKg:'0.450',palletTareKg:'22.500'});assert.equal(configured.statusCode,200,JSON.stringify(configured.data));
     const settings=await f.call('settings');assert.equal(Number(settings.data.settings.box_tare_kg),0.45);
     const exported=await f.call('export',{id:row.id,version:r.data.preparation.version,eventId:event()});
     assert.equal(exported.statusCode,409);assert.match(exported.data.error,/Pesi prodotto o tare aggiornati/);assert.equal(f.mexal.sends,0);

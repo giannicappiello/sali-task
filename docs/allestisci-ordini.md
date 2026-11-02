@@ -1,5 +1,9 @@
 # Allestisci Ordini
 
+Per l'evoluzione BCF, scansioni MKT/Bancale, correzioni, registro immutabile,
+email e stampanti consultare [la procedura DDT](operations/ddt-fulfillment.md).
+La sezione seguente documenta l'attivazione iniziale del 30 ottobre.
+
 Schermata autonoma: **Menu Logistica > Allestisci Ordini**, percorso `/logistica/allestisci-ordini`, codice catalogo `magazzino.allestisci_ordini`.
 
 ## Funzionamento

@@ -9,6 +9,7 @@ const SCREEN_ICONS = Object.freeze({
   "integrazioni.mexal": Database,
   "integrazioni.mexal_agenti": UserRound,
   "integrazioni.serie_documenti": FileCog,
+  "integrazioni.ddt": FileCog,
   "integrazioni.ordini_pr": ShoppingCart,
   "integrazioni.ordini_ph": ShoppingCart,
   "integrazioni.ordini_private": ShoppingCart,

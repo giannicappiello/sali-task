@@ -26,7 +26,7 @@ export const specificationSections = [
     ['boxCode', 'Codice imballo'], ['piecesPerBox', 'Pezzi per cartone'], ['boxDimensions', 'Dimensioni cartone (mm)'], ['boxNotes', 'Istruzioni imballo', 'textarea'],
   ] },
   { id: 'pallet', title: 'Pallet', fields: [
-    ['palletType', 'Tipo pallet'], ['boxesPerLayer', 'Cartoni per strato'], ['layers', 'Numero di strati'], ['palletNotes', 'Note pallettizzazione', 'textarea'],
+    ['palletType', 'Tipo pallet'], ['boxesPerPallet', 'Colli per bancale'], ['boxesPerLayer', 'Cartoni per strato'], ['layers', 'Numero di strati'], ['palletNotes', 'Note pallettizzazione', 'textarea'],
   ] },
   { id: 'other', title: 'Note e allegati', fields: [['notes', 'Note aggiuntive', 'textarea']] },
   { id: 'acceptance', title: 'Approvazione del capitolato', fields: [['approvedBy', 'Approvato da', 'readonly'], ['approvedAt', 'Il', 'timestamp']] },

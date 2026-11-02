@@ -1,3 +1,6 @@
+import PreparationHistory from './PreparationHistory.jsx';
+import PreparationPackageEditor from './PreparationPackageEditor.jsx';
+import {Link} from 'react-router-dom';
 import PackingListPreview from "./PackingListPreview.jsx";
 import PreparationProductPrompt from "./PreparationProductPrompt.jsx";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -113,12 +116,12 @@ function PreparationSettings({ onClose, onSaved }) {
               void save("configure", {
                 ddtSeries: series ? Number(series) : null,
                 warehouse: Number(warehouse),
-                boxTareKg: boxTare, palletTareKg: palletTare,
+                boxTareKg: boxTare, palletTareKg: palletTare, settingsVersion:data.settings.updated_at,
               });
             }}
           >
             <label>
-              Serie DDT (BCS)
+              Serie DDT (BCF)
               <input
                 type="number"
                 min="1"
@@ -146,6 +149,7 @@ function PreparationSettings({ onClose, onSaved }) {
             )}
           </form>
 
+          <p><Link to="/integrations/configurazioni-ddt">Configurazioni DDT ed email</Link></p>
           <h3>Barcode personalizzati</h3>
           <p>
             Lo stesso barcode vale un pezzo in modalità Pezzo e un cartone in
@@ -258,7 +262,9 @@ export default function OrderPreparation() {
     [cartonPrompt, setCartonPrompt] = useState(null),
     [cartonPieces, setCartonPieces] = useState(""),
     [unitWeight, setUnitWeight] = useState(""),
-    [packingPreview,setPackingPreview] = useState(null);
+    [packingPreview,setPackingPreview] = useState(null),
+    [dispatchPreview,setDispatchPreview] = useState(null),
+    [editingPackage,setEditingPackage] = useState(null);
 
   const [query, setQuery] = useState(""),
     [camera, setCamera] = useState(false),
@@ -315,6 +321,7 @@ export default function OrderPreparation() {
     }else setActivePackage(selectedPackage?.id || "");
     setCheck(r.verification);
     setConfirmDdt(false);
+    setDispatchPreview(null);
   }, []);
 
   const load = useCallback(
@@ -381,6 +388,7 @@ export default function OrderPreparation() {
         return response;
       }
       if (["scan","verify","preview_packing_list"].includes(operation) && response.preparation) setCartonPrompt(null);
+      if(operation === "preview_packing_list" && response.document){setPackingPreview({bytes:Uint8Array.from(atob(response.document.base64),char=>char.charCodeAt(0)).buffer,fileName:response.document.filename});return response;}
       if(operation === "preview_packing_list" && response.preparation){setPackingPreview({bytes:preparationPdf(response.preparation,{preview:true}),fileName:packingListFileName(response.preparation)});return response;}
       if (response.preparation) accept(response.preparation,true);
       if (operation === "scan" && response.preparation) {
@@ -399,7 +407,7 @@ export default function OrderPreparation() {
             (item) => item.id === saved.packageId,
           );
           setActivePallet(destination.palletId || "");
-          if (saved.mode === "carton" && !response.scan.wrong) {
+          if (["carton","pallet"].includes(saved.mode) && !response.scan.wrong) {
             const next = {
               id: crypto.randomUUID(),
               number:
@@ -446,19 +454,7 @@ export default function OrderPreparation() {
       if (response.verification) setCheck(response.verification);
 
       if (response.warning) setNotice(response.warning);
-      if (
-        ["export", "reconcile"].includes(operation) &&
-        response.preparation?.status === "completed"
-      ) {
-        try {
-          preparationPdf(response.preparation);
-        } catch (e) {
-          setError(
-            "DDT confermato. Riprova il download della packing list: " +
-              e.message,
-          );
-        }
-      }
+      if (response.shipment) setNotice('BCF confermata. Documenti archiviati e invii accodati.');
 
       if (response.scan) {
         setNotice(
@@ -497,6 +493,7 @@ export default function OrderPreparation() {
     const response = await perform("scan", {
       barcode: value,
       mode,
+      palletId: activePallet,
       packageId: activePackage,
       ...(draftPackage?.id === activePackage
         ? { createPackage: true, palletId: draftPackage.palletId }
@@ -553,6 +550,24 @@ export default function OrderPreparation() {
         h.source.reference === order.reference && h.source.year === order.year,
     );
 
+
+  async function prepareEmission() {
+    setBusy(true);setError('');
+    try {const preview=await preparationApi('preview_dispatch',{id:row.id});setDispatchPreview(preview);setDdtNotes(cleanWarehouseHandoffNote(source.note));setConfirmDdt(true);}
+    catch(e){setError(e.message);}finally{setBusy(false);}
+  }
+
+  async function printDocument(kind) {
+    const key=`warehouse-print:${row.id}:${kind}`;
+    const request=JSON.parse(sessionStorage.getItem(key) || 'null') || {id:row.id,eventId:crypto.randomUUID(),kind};
+    sessionStorage.setItem(key,JSON.stringify(request));
+    const result=await perform('print_document',{},request);
+    if (result?.printJob) {
+      const status=result.printJob.status;
+      setNotice(({queued:'Stampa accodata.',leased:'Stampa acquisita dall’agente.',printing:'Invio alla stampante in corso.',submitted:'Documento inviato alla stampante.',uncertain:'Esito stampa da verificare: controlla la stampante prima di ristampare.',failed:'Stampa non riuscita: controlla Configurazioni DDT.'})[status]);
+      if (['submitted','failed'].includes(status)) sessionStorage.removeItem(key);
+    }
+  }
 
   const renderPackage = (p) => (
     <article
@@ -621,11 +636,12 @@ export default function OrderPreparation() {
       {editable && (
         <div className="op-toolbar op-package-actions">
           <button
-            disabled={busy || !!cartonPrompt}
+            disabled={p.closed || busy || !!cartonPrompt}
             onClick={() => choosePackage(p)}
           >
-            Usa questo collo
+            {p.closed ? "Collo riscontrato" : "Usa questo collo"}
           </button>
+          <button disabled={busy} onClick={()=>setEditingPackage(p.id)}>{p.closed ? "Riapri e modifica" : "Modifica contenuto"}</button>
           <button
             disabled={busy || scans.some((s) => s.packageId === p.id)}
             onClick={() =>
@@ -1042,12 +1058,9 @@ export default function OrderPreparation() {
                   <button
                     className="op-primary"
                     disabled={busy}
-                    onClick={() => {
-                      setDdtNotes(cleanWarehouseHandoffNote(source.note));
-                      setConfirmDdt(true);
-                    }}
+                    onClick={()=>void prepareEmission()}
                   >
-                    Emetti BCS e packing list
+                    Emetti BCF e packing list
                   </button>
                 )}
               </>
@@ -1059,18 +1072,19 @@ export default function OrderPreparation() {
                 role="group"
                 aria-label="Conferma emissione DDT"
               >
-                <h3>Conferma emissione BCS su Mexal</h3>
+                <h3>Conferma emissione BCF su Mexal</h3>
+                <p>La BCF e la packing list completa saranno inviate a:</p><ul>{dispatchPreview?.recipients.map(recipient=><li key={recipient.email}>{recipient.roles.join(', ')}: {recipient.email}</li>)}</ul>
                 <p>
                   OCM {source.series}/{source.number} · {source.customerName} ·{" "}
                   {totalPieces} pezzi · {packages.length} colli ·{" "}
                   {pallets.length} bancali.
                 </p>
                 <p>
-                  La BCS evaderà l’OCM e movimenterà i lotti selezionati automaticamente. La
+                  La BCF evaderà l’OCM e movimenterà i lotti selezionati automaticamente. La
                   causale dell’ordine resta invariata.
                 </p>
                 <label>
-                  Note della BCS
+                  Note della BCF
                   <textarea
                     value={ddtNotes}
                     onChange={(e) => setDdtNotes(e.target.value)}
@@ -1091,10 +1105,10 @@ export default function OrderPreparation() {
                   className="op-primary"
                   disabled={busy}
                   onClick={() =>
-                    void perform("export", { ddtNotes })
+                    void perform("export", { ddtNotes, dispatchHash:dispatchPreview?.hash })
                   }
                 >
-                  Conferma e crea BCS
+                  Conferma e crea BCF
                 </button>
               </div>
             )}
@@ -1182,6 +1196,9 @@ export default function OrderPreparation() {
             contextLabel={`Bancale ${pallets.find(item=>item.id===activePallet)?.number || "—"} · Collo ${visiblePackages.find(item=>item.id===activePackage)?.number || "—"}`}
           />}
 
+          {editingPackage && packages.some(item=>item.id===editingPackage) && editable && <PreparationPackageEditor key={editingPackage} pack={packages.find(item=>item.id===editingPackage)} scans={scans.filter(item=>item.packageId===editingPackage)} busy={busy} onAction={perform} onSelect={pack=>{choosePackage(pack);setMode('piece');setCamera(true);}} onClose={()=>setEditingPackage(null)}/>}
+          {row.status === 'completed' && <section className="op-panel"><h2>Documenti e stampa</h2><button disabled={busy} onClick={()=>void perform('finalize_documents')}>Completa documenti e invii</button><button disabled={busy || !canWrite} onClick={()=>void printDocument('bcf_print')}>Stampa DDT - 3 copie</button>{pallets.map(pallet=><button key={pallet.id} disabled={busy || !canWrite} onClick={()=>void printDocument('packing_pallet_'+pallet.id)}>Stampa packing bancale {pallet.number}</button>)}</section>}
+          <PreparationHistory key={row.id} id={row.id}/>
           <section className="op-panel">
             <h2>Prodotti dell’ordine</h2>
             <div className="op-order-products-heading" aria-hidden="true"><span>Codice IT</span><span>Richiesti</span><span>Letti</span><span>Mancanti</span></div>
@@ -1238,7 +1255,7 @@ export default function OrderPreparation() {
                       <tr key={s.id}>
                         <td data-label="Prodotto">{s.code}</td>
                         <td data-label="Modalità">
-                          {s.mode === "piece" ? "Pezzo" : "Cartone"}
+                          {{piece:"Pezzo",carton:"Collo",pallet:"Bancale"}[s.mode]}
                         </td>
                         <td data-label="Pezzi">{s.quantity}</td>
                         <td data-label="Collo">
@@ -1249,10 +1266,10 @@ export default function OrderPreparation() {
                             <button
                               disabled={busy}
                               onClick={() =>
-                                void perform("undo", { scanId: s.id })
+                                setEditingPackage(s.packageId)
                               }
                             >
-                              Annulla lettura
+                              Modifica nel collo
                             </button>
                           )}
                         </td>

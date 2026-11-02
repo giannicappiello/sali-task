@@ -337,10 +337,10 @@ export function buildMexalClient({ request = requestMexal, warehouse, retryOptio
       return parseJsonResponse(response,path);
     },
 
-    async getBinary(path) {
+    async getBinary(path, { accept } = {}) {
       const response = await request({
         url: `${baseUrl}/webapi/risorse${path}`,
-        headers,
+        headers: accept ? { ...headers, Accept: accept } : headers,
         binary: true,
       });
 

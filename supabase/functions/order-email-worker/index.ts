@@ -2,8 +2,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createSmtpClient } from "../../../server/email/smtp-client.js";
 import {
   ORDER_EMAIL_LEASE_SECONDS,
-  processNextOrderEmailJob,
 } from "../../../server/orders/order-email-job.js";
+import { processNextWorkspaceEmailJob } from '../../../server/orders/workspace-email-job.js';
 
 const JSON_HEADERS = {
   "Content-Type": "application/json; charset=utf-8",
@@ -26,7 +26,7 @@ Deno.serve(async (request: Request) => {
       requireEnv("SUPABASE_SERVICE_ROLE_KEY"),
       { auth: { persistSession: false, autoRefreshToken: false } },
     );
-    const result = await processNextOrderEmailJob({
+    const result = await processNextWorkspaceEmailJob({
       supabase,
       smtp,
       workerId,

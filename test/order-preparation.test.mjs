@@ -365,7 +365,9 @@ test(
         2,
       );
       mexal.timeout = true;
+      const dispatchPreview = await call("preview_dispatch", {id});
       response = await call("export", {
+        dispatchHash:dispatchPreview.data.hash,
         id,
         version: row.version,
         eventId: event(),
@@ -375,7 +377,7 @@ test(
       row = response.data.preparation;
       assert.equal(row.status, "uncertain");
       assert.equal(mexal.sends, 1);
-      assert.equal(mexal.ddt.cod_modulo, "S");
+      assert.equal(mexal.ddt.cod_modulo, "F");
       assert.deepEqual(mexal.ddt.id_causale, [[1, 1]]);
       assert.ok(mexal.ddt.nota[0][1].startsWith("Scaricare sul retro | ALL:"));
       assert.ok(!/consegnato/i.test(mexal.ddt.nota[0][1]));
@@ -504,7 +506,7 @@ test(
       b = await mutate(
         b,
         "claim_export",
-        { confirmedLots: true, source_hash: "hash", payload: {} },
+        { confirmedLots: true, source_hash: "hash", payload: {cod_modulo:'F'}, dispatch:{recipients:[]} },
         token,
       );
       await assert.rejects(
@@ -522,7 +524,7 @@ test(
   },
 );
 
-test("BCS preserves sale reason, cleans handoff notes and verifies the exact confirmed notes", async () => {
+test("BCF preserves sale reason, cleans handoff notes and verifies the exact confirmed notes", async () => {
  const { cleanWarehouseHandoffNote, eligibleOrder } = await import('../shared/orderPreparation.js');
  assert.equal(cleanWarehouseHandoffNote('CONSEGNATO AL MGZ | Consegnare al piano'), 'Consegnare al piano');
  assert.equal(cleanWarehouseHandoffNote([[1,'Prima nota'],[2,'consegnato mgz'],[3,'Ultima nota']]), 'Prima nota\n\nUltima nota');
@@ -530,9 +532,9 @@ test("BCS preserves sale reason, cleans handoff notes and verifies the exact con
  const f=mexalFixture(),source={series:1,number:900,date:f.raw.data_documento,customerCode:f.raw.cod_conto,lines:orderRows(f.raw).map(r=>({...r,lotRequired:true}))};
  const prep={id:event(),source,state:initialPacking()},allocations=source.lines.map((r,i)=>({...r,lotId:i+51,quantity:r.quantity}));
  const payload=buildDdt(prep,{source,raw:f.raw},allocations,{ddt_series:1},'20261031','Nuove note: suonare al cancello.');
- assert.equal(payload.cod_modulo,'S');assert.deepEqual(payload.id_causale,f.raw.id_causale);
+ assert.equal(payload.cod_modulo,'F');assert.deepEqual(payload.id_causale,f.raw.id_causale);
  assert.equal(payload.nota[0][1],`Nuove note: suonare al cancello. | ALL:${prep.id}`);
- const actual={...structuredClone(payload),numero:123};assert.equal(verifyDdt(actual,prep,payload).signature,'BCS');
+ const actual={...structuredClone(payload),numero:123};assert.equal(verifyDdt(actual,prep,payload).signature,'BCF');
  assert.throws(()=>verifyDdt({...actual,cod_modulo:''},prep,payload),/non corrispondente/);
  assert.throws(()=>verifyDdt({...actual,id_causale:[[1,2]]},prep,payload),/Causale/);
  assert.throws(()=>verifyDdt({...actual,nota:[[1,`Altra nota | ALL:${prep.id}`]]},prep,payload),/Note/);

@@ -15,6 +15,7 @@ export async function preparationDatabase(PGlite) {
  create table permessi(codice text primary key,descrizione text,modulo text);
  create table ordini_prodotti_cache(codice_articolo text,descrizione text,ean text,unita_misura text,dati_mexal jsonb default '{}');
  create table ordini_clienti_cache(codice_cliente text,ragione_sociale text);
+ create table mexal_agenti(codice text primary key,email text);insert into mexal_agenti values('602.00001','agent@example.test');
  insert into ordini_prodotti_cache(codice_articolo,descrizione,ean,unita_misura) values('IT0001','Primo prodotto','000001','PZ'),('IT0002','Secondo prodotto','000002','PZ'),('IT0003','Prodotto estraneo','000003','PZ');
  insert into ordini_clienti_cache values('501.00001','Cliente prova');`);
   const { readFile } = await import("node:fs/promises");
@@ -62,10 +63,19 @@ export async function preparationDatabase(PGlite) {
   await db.exec(
     "update warehouse_preparation_settings set ddt_series=1,box_tare_kg=0.3,pallet_tare_kg=20;insert into warehouse_preparation_products(code,pieces_per_carton) values('IT0001',2)",
   );
+  await db.exec(await readFile(new URL('../supabase/migrations/20261102110000_preparation_dispatch_audit.sql',import.meta.url),'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/20261102112000_ddt_print_queue.sql',import.meta.url),'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/20261102111000_ddt_configuration_screen.sql',import.meta.url),'utf8'));
+  await db.exec(`update warehouse_preparation_settings set bcf_contract_verified=true,contract_evidence='Synthetic contract, no real emission',ddt_pdf_path='/documenti/movimenti-magazzino/{reference}/test-pdf',backoffice_emails='["office@example.test"]';`);
   return db;
 }
 const allowed = new Set([
   "workspace_product_specifications",
+  "mexal_agenti",
+  "warehouse_preparation_documents",
+  "warehouse_shipment_emails",
+  "warehouse_printers",
+  "warehouse_print_jobs",
   "warehouse_order_sync_cache",
   "warehouse_preparation_settings",
   "warehouse_preparation_products",
@@ -91,8 +101,9 @@ export function supabaseAdapter(sql) {
       const column = (c) => {
         if (c === "pieces_per_carton:data->>piecesPerBox")
           return "data->>'piecesPerBox' as pieces_per_carton";
+        if (c === "boxes_per_pallet:data->>boxesPerPallet") return "data->>'boxesPerPallet' as boxes_per_pallet";
         if (c === "unit_weight_grams:data->>totalWeightGrams") return "data->>'totalWeightGrams' as unit_weight_grams";
-        if (!/^[a-z_]+$/.test(c)) throw Error("Bad column");
+        if (!/^[a-z_][a-z0-9_]*$/.test(c)) throw Error("Bad column " + c);
         return c;
       };
       const query = {
@@ -105,6 +116,8 @@ export function supabaseAdapter(sql) {
           filters.push(`${column(c)}=$${values.length}`);
           return query;
         },
+        gt(c,v) {values.push(v);filters.push(`${column(c)}>$${values.length}`);return query;},
+        range(a,b) {limit=` limit ${Number(b-a+1)} offset ${Number(a)}`;return query;},
         neq(c, v) {
           values.push(v);
           filters.push(`${column(c)}<>$${values.length}`);
@@ -208,6 +221,18 @@ export function supabaseAdapter(sql) {
           );
           return { data: result.rows[0].value, error: null };
         }
+        const signatures = {
+          warehouse_commit_shipment:['p_id','p_files'], warehouse_configure_preparation:['p_actor','p_expected','p_settings'],
+          warehouse_claim_shipment_email:['p_worker'],warehouse_update_shipment_email:['p_id','p_worker','p_token','p_action','p_message','p_definitive'],
+          warehouse_resolve_shipment_email:['p_id','p_actor','p_outcome','p_reason'],warehouse_enqueue_print:['p_id','p_request','p_kind','p_actor'],
+          warehouse_print_worker:['p_station','p_action','p_input'],
+          warehouse_reprint:['p_id','p_request','p_actor','p_reason'],
+        };
+        if(signatures[name]) {
+          const values=signatures[name].map(key=>args[key]);
+          const result=await sql.query(`select ${name}(${values.map((_,i)=>'$'+(i+1)).join(',')}) value`,values);
+          return {data:result.rows[0].value,error:null};
+        }
         if (name !== "warehouse_preparation_mutate")
           throw Error("Unexpected RPC");
         const r = await sql.query(
@@ -237,6 +262,7 @@ export function mexalFixture() {
     numero: 900,
     data_documento: "20261030",
     cod_conto: "501.00001",
+    codice_agente: "602.00001",
     nota: [[1, "CONSEGNATO MGZ"]],
     id_magazzino: 5,
     data_ult_mod: "20261030 100000",
@@ -301,6 +327,7 @@ export function mexalFixture() {
       if (path.startsWith("/clienti/"))
         return {
           ragione_sociale: "Cliente prova",
+          email:"customer@example.test",
           indirizzo: "Via prova 1",
           localita: "Napoli",
           cap: "80100",
@@ -355,6 +382,10 @@ export function mexalFixture() {
       if (path === "/dati-generali/serie-documenti")
         return { sigla_documento: [[1, "BC"]], serie: [[1, 1]] };
       throw Error("Unexpected GET " + path);
+    },
+    async getBinary() {
+      const {jsPDF}=await import('jspdf');const pdf=new jsPDF();pdf.text('Synthetic BCF - no real emission',10,10);
+      return {status:200,body:Buffer.from(pdf.output('arraybuffer'))};
     },
     async calculateDocument() {
       fixture.calculations++;

@@ -276,7 +276,7 @@ assert.match(migration, /security definer[\s\S]*set search_path = pg_catalog, pu
 assert.match(migration, /complete_order_email[\s\S]*provider_message_id/);
 assert.match(migration, /retry_order_email[\s\S]*'failed'[\s\S]*'retry'/);
 assert.match(migration, /order-email-worker-every-minute/);
-assert.match(worker, /processNextOrderEmailJob/);
+assert.match(worker, /processNextWorkspaceEmailJob/);
 assert.match(worker, /x-order-email-worker-secret/);
 assert.match(sharedJob, /claim_next_order_email/);
 assert.match(sharedJob, /loadOrderPdfEmailData/);

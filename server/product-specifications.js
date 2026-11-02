@@ -33,6 +33,17 @@ export function validateSpecification(input) {
     seen.add(id);
     return { id, section: item.section, path, caption: caption.trim(), name: path.split('/').at(-1) };
   });
+  if (data.boxesPerPallet) {
+    const boxes = Number(data.boxesPerPallet), pieces = Number(data.piecesPerBox);
+    if (!/^\d+$/.test(data.boxesPerPallet) || !Number.isSafeInteger(boxes) || boxes < 1 || boxes > 2000)
+      throw fail('Colli per bancale non validi: inserisci un intero da 1 a 2000.');
+    if (!/^\d+$/.test(data.piecesPerBox) || !Number.isSafeInteger(pieces) || pieces < 1 || boxes * pieces > 1000000)
+      throw fail('Pezzi per collo mancanti o totale pezzi per bancale superiore a 1000000.');
+    for (const field of ['boxesPerLayer','layers']) if (data[field] && (!/^\d+$/.test(data[field]) || Number(data[field])<1 || Number(data[field])>2000))
+      throw fail('Cartoni per strato e numero di strati devono essere interi positivi.');
+    if (data.boxesPerLayer && data.layers && Number(data.boxesPerLayer) * Number(data.layers) !== boxes)
+      throw fail('Colli per bancale diversi da cartoni per strato × numero di strati.');
+  }
   return { data, attachments };
 }
 
@@ -46,13 +57,13 @@ export async function authorizeSpecificationArticle(identity, code) {
   if (!customerCodes.includes('*')) {
     const archive = await readArchive(admin, code);
     const article = catalogue(archive, customerCodes).find(a => key(a.articleCode) === key(code));
-    if (!article || !['ProdottoFinito', 'Semilavorato'].includes(article.articleType)) throw fail('Articolo non disponibile.', 404);
+    if (!article || (!['ProdottoFinito', 'Semilavorato'].includes(article.articleType) && !/^MKT[A-Z0-9_-]/i.test(article.articleCode))) throw fail('Articolo non disponibile.', 404);
     return article.articleCode;
   }
   const { data, error } = await admin.from('ordini_prodotti_cache')
     .select('codice_articolo,has_bom:dati_mexal->>gest_dbp').eq('codice_articolo', code).maybeSingle();
   if (error) throw error;
-  if (!data || !['ProdottoFinito', 'Semilavorato'].includes(articleType(data.codice_articolo, data.has_bom))) throw fail('Articolo non disponibile.', 404);
+  if (!data || (!['ProdottoFinito', 'Semilavorato'].includes(articleType(data.codice_articolo, data.has_bom)) && !/^MKT[A-Z0-9_-]/i.test(data.codice_articolo))) throw fail('Articolo non disponibile.', 404);
   return data.codice_articolo;
 }
 

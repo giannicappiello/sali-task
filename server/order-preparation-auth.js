@@ -7,7 +7,7 @@ export const checked = (result) => {
 };
 export async function preparationSession(
   req,
-  { admin = createProgremesReadonlyAdmin() } = {},
+  { admin = createProgremesReadonlyAdmin(), screen = SCREEN, configuration = false } = {},
 ) {
   const token = /^Bearer (.+)$/i.exec(
     String(req.headers?.authorization || ""),
@@ -45,7 +45,7 @@ export async function preparationSession(
   const level = checked(
     await admin.rpc("workspace_screen_level_for_user", {
       target_user_id: profile.id,
-      target_screen: SCREEN,
+      target_screen: screen,
     }),
   );
   assert(
@@ -58,13 +58,13 @@ export async function preparationSession(
       await admin.rpc("workspace_screen_permission_for_user", {
         target_user_id: profile.id,
         permission_code: code,
-        target_screen: SCREEN,
+        target_screen: screen,
       }),
     ) === true;
   return {
     db: admin,
     profile,
-    canWrite: await permission("warehouse.fulfillment.write"),
-    canConfigure: await permission("warehouse.fulfillment.configure"),
+    canWrite: configuration ? false : await permission("warehouse.fulfillment.write"),
+    canConfigure: await permission(configuration ? "integrations.configure" : "warehouse.fulfillment.configure"),
   };
 }

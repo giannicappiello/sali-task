@@ -134,7 +134,7 @@ export function validatePacking(state) {
     );
     integer(s.quantity, "Pezzi letti");
     assert(
-      ["piece", "carton"].includes(s.mode),
+      ["piece", "carton", "pallet"].includes(s.mode),
       "Modalità di scansione non valida.",
     );
     assert(

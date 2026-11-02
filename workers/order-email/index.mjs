@@ -7,8 +7,8 @@ import { createClient } from "@supabase/supabase-js";
 import { createSmtpClient } from "../../server/email/smtp-client.js";
 import {
   ORDER_EMAIL_LEASE_SECONDS,
-  processNextOrderEmailJob,
 } from "../../server/orders/order-email-job.js";
+import { processNextWorkspaceEmailJob } from '../../server/orders/workspace-email-job.js';
 
 export const ORDER_EMAIL_IDLE_WAIT_MS = 60_000;
 
@@ -42,7 +42,7 @@ export async function runOrderEmailWorker({
   signalSource = process,
   createSupabaseClient = createClient,
   createSmtp = createSmtpClient,
-  processJob = processNextOrderEmailJob,
+  processJob = processNextWorkspaceEmailJob,
   workerId = createOrderEmailWorkerId(),
   leaseSeconds = ORDER_EMAIL_LEASE_SECONDS,
   idleWaitMs = ORDER_EMAIL_IDLE_WAIT_MS,

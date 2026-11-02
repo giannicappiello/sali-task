@@ -1,6 +1,9 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
+import {Buffer} from 'node:buffer';
+import process from 'node:process';
 import { createClient } from "@supabase/supabase-js";
 import { loadOrderPdfEmailData } from "../../../server/orders/order-pdf-server.js";
+import { claimShipmentEmail, updateShipmentEmail } from '../../../server/shipment-email-worker.js';
 
 const LEASE_SECONDS = 300;
 
@@ -52,6 +55,14 @@ export default async function handler(req, res) {
 
     if (action === "claim") {
       const id = workerId(req);
+      // Old Aruba workers must not acquire DDT jobs until they support the
+      // durable before-send marker. Existing order mail stays compatible.
+      if (req.body?.shipment_protocol === 1) {
+        const shipment = await claimShipmentEmail(supabase,id);
+        if (shipment) return res.status(200).json({status:'claimed',worker_id:id,email:{id:'ddt:'+shipment.job.id,
+          lock_token:shipment.job.lock_token,destinatario:shipment.job.recipient,oggetto:shipment.job.subject,corpo:shipment.job.body},
+          attachments:shipment.attachments.map(attachmentPayload)});
+      }
       const { data, error } = await supabase.rpc("claim_next_order_email", {
         p_worker_id: id,
         p_lease_seconds: LEASE_SECONDS,
@@ -92,6 +103,13 @@ export default async function handler(req, res) {
       }
     }
 
+    if (String(req.body?.email_id || '').startsWith('ddt:') && ['sending','complete','retry'].includes(action)) {
+      const id = String(req.body.email_id).slice(4);
+      if (!/^[a-f0-9-]{36}$/i.test(id)) return res.status(400).json({error:'Invio DDT non valido.'});
+      await updateShipmentEmail(supabase,{id,lock_token:req.body.lock_token},req.body.worker_id,action,
+        action === 'complete' ? String(req.body.message_id || '') : String(req.body.error || ''),req.body.definitive === true);
+      return res.status(200).json({status:action});
+    }
     if (action === "complete") {
       const { error } = await supabase.rpc("complete_order_email", {
         p_email_id: req.body?.email_id,

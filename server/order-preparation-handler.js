@@ -10,6 +10,9 @@ import {
   orderIndexStatus,
 } from "./order-preparation-sync.js";
 import { randomUUID } from "node:crypto";
+import { appendPreparationScan } from '../shared/preparationScanning.js';
+import { shipmentPreview, finalizeShipment, shipmentReadback, validateDispatchSettings } from './preparation-dispatch.js';
+import { handleDdtPrintWorker } from './ddt-print-worker.js';
 
 import { buildMexalClient } from "./mexal/sync-products.js";
 
@@ -218,7 +221,7 @@ async function barcodeProduct(db, barcode, source) {
     matches.size === 1,
     matches.size
       ? "Barcode associato a più prodotti: correggi l’anagrafica."
-      : "Barcode o codice IT non riconosciuto. Verifica il prodotto e la sua anagrafica.",
+      : "Barcode o codice IT/MKT non riconosciuto. Verifica il prodotto e la sua anagrafica.",
   );
 
   const code = [...matches][0];
@@ -233,6 +236,7 @@ async function barcodeProduct(db, barcode, source) {
     ...product,
     scannedValue: qrCode ? code : barcode,
     piecesPerCarton: null,
+    boxesPerPallet: null,
     packagingSpecificationVersion: null,
     packagingSpecificationEmpty: true,
     unitWeightGrams: null,
@@ -264,6 +268,7 @@ function editPacking(row, operation, body) {
   } else if (operation === "assign") {
     const p = state.packages.find((p) => p.id === body.packageId);
     assert(p, "Collo non trovato.");
+    assert(!p.closed, 'Riapri il collo prima di cambiarne il bancale.');
     p.palletId = body.palletId ? uuid(body.palletId) : null;
   } else if (operation === "remove_package") {
     assert(
@@ -277,10 +282,22 @@ function editPacking(row, operation, body) {
       "Sposta prima i cartoni dal bancale.",
     );
     state.pallets = state.pallets.filter((p) => p.id !== body.palletId);
-  } else if (operation === "undo") {
+  } else if (operation === "reopen_package") {
+    const pack = state.packages.find(item => item.id === body.packageId);
+    assert(pack, 'Collo non trovato.');
+    assert(text(body.reason).length >= 3 && text(body.reason).length <= 1000, 'Indica il motivo della riapertura.');
+    pack.closed = false;
+  } else if (operation === "undo" || operation === "remove_quantity") {
     const index = state.scans.findIndex((s) => s.id === body.scanId);
     assert(index >= 0, "Lettura non trovata.");
-    state.scans.splice(index, 1);
+    const scan = state.scans[index];
+    assert(!state.packages.find(item => item.id === scan.packageId)?.closed, 'Riapri il collo prima di correggere il contenuto.');
+    assert(text(body.reason).length >= 3 && text(body.reason).length <= 1000, 'Indica il motivo della correzione.');
+    const quantity = operation === 'undo' ? scan.quantity : integer(body.quantity, 'Pezzi da rimuovere', 1, scan.quantity);
+    if (quantity === scan.quantity) state.scans.splice(index, 1);
+    else {
+      state.scans[index] = {...scan, quantity: scan.quantity - quantity, corrected: true};
+    }
   } else throw new Error("Modifica imballi non valida.");
 
   return validatePacking(state);
@@ -332,23 +349,25 @@ export function createOrderPreparationHandler({
     try {
       const body = req.body || {};
       assert(JSON.stringify(body).length < 200000, "Richiesta troppo estesa.");
+      if (body.operation === 'print_worker') return res.status(200).json(await handleDdtPrintWorker(req));
 
-      const session = await authorize(req),
+      const configuration = ['ddt_settings','ddt_configure','ddt_queue','ddt_recover_email','ddt_reprint'].includes(body.operation);
+      const session = await authorize(req, configuration ? {screen:'integrazioni.ddt',configuration:true} : {}),
         { db, profile } = session;
       const op = body.operation;
 
-      const canRead = ["list", "get", "settings", "reconcile", "resolve_product", "preview_packing_list"].includes(op);
+      const canRead = ["list", "get", "settings", "reconcile", "resolve_product", "preview_packing_list", "audit", "preview_dispatch", "shipment", "document", "ddt_settings", "ddt_queue"].includes(op);
 
       assert(
         canRead ||
           session.canWrite ||
-          (["configure", "configure_product"].includes(op) &&
+          (["configure", "configure_product", "ddt_configure", "ddt_recover_email", "ddt_reprint"].includes(op) &&
             session.canConfigure),
         "Permesso di scrittura richiesto.",
         403,
       );
 
-      if (["configure", "configure_product"].includes(op))
+      if (["configure", "configure_product", "ddt_configure", "ddt_recover_email", "ddt_reprint"].includes(op))
         assert(
           session.canConfigure,
           "Configurazione riservata agli amministratori della schermata.",
@@ -366,6 +385,35 @@ export function createOrderPreparationHandler({
           .single(),
       );
 
+      if (op === 'ddt_settings') return res.status(200).json({settings,canConfigure:session.canConfigure,
+        printers:checked(await db.from('warehouse_printers').select('id,station,name,last_seen').order('name'))});
+      if (op === 'ddt_queue') {
+        const offset = integer(body.offset || 0, 'Pagina invii', 0, 1000000);
+        let query = db.from('warehouse_shipment_emails').select('id,preparation_id,recipient,roles,status,attempts,last_error,sent_at,provider_message_id,created_at').order('created_at',{ascending:false}).order('id').range(offset,offset+49);
+        if (body.status) { assert(['queued','leased','sending','retry','uncertain','sent','failed'].includes(body.status),'Stato non valido.'); query = query.eq('status',body.status); }
+        const emails = checked(await query);
+        const prints = checked(await db.from('warehouse_print_jobs').select('id,preparation_id,document_kind,printer_id,status,error,created_at').order('created_at',{ascending:false}).limit(50));
+        return res.status(200).json({emails,prints,nextOffset:emails.length === 50 ? offset+50 : null});
+      }
+      if (op === 'ddt_recover_email') {
+        assert(body.confirmed === true && ['sent','retry'].includes(body.outcome) && text(body.reason).length >= 3, 'Conferma esito e motivo richiesti.');
+        const result = checked(await db.rpc('warehouse_resolve_shipment_email',{p_id:uuid(body.emailId),p_actor:profile.id,p_outcome:body.outcome,p_reason:text(body.reason)}));
+        return res.status(200).json({email:result});
+      }
+      if (op === 'ddt_reprint') {
+        assert(body.confirmed === true && text(body.reason).length>=3,'Conferma ristampa e motivo richiesti.');
+        const result=checked(await db.rpc('warehouse_reprint',{p_id:uuid(body.printId),p_request:uuid(body.eventId),p_actor:profile.id,p_reason:text(body.reason)}));
+        return res.status(200).json({printJob:result});
+      }
+      if (op === 'ddt_configure') {
+        const value = validateDispatchSettings(body);
+        for (const key of ['ddt_printer_id','packing_printer_id']) if (value[key]) assert(checked(await db.from('warehouse_printers').select('id').eq('id',value[key]).maybeSingle()),'Stampante non presente nell’inventario.');
+        const merged = {...settings,...value};
+        if (merged.bcf_contract_verified) assert(merged.ddt_pdf_path && text(merged.contract_evidence),'Indica percorso PDF verificato ed evidenza del contratto BCF.');
+        const result = await db.rpc('warehouse_configure_preparation',{p_actor:profile.id,p_expected:body.settingsVersion,p_settings:value});
+        if (result.error) throw Object.assign(new Error(result.error.message),{status:result.error.code === '40001' ? 409 : 400});
+        return res.status(200).json({saved:true});
+      }
       const client = clientFactory({ warehouse: null, timeoutMs: 300000 });
       const inventoryFactory = ({ warehouse }) => clientFactory({
         warehouse, year: client.anno, timeoutMs: 300000,
@@ -455,12 +503,8 @@ export function createOrderPreparationHandler({
           );
         }
 
-        checked(
-          await db
-            .from("warehouse_preparation_settings")
-            .update(value)
-            .eq("id", true),
-        );
+        const result = await db.rpc('warehouse_configure_preparation',{p_actor:profile.id,p_expected:body.settingsVersion,p_settings:value});
+        if (result.error) throw Object.assign(new Error(result.error.message),{status:result.error.code === '40001' ? 409 : 400});
         return res.status(200).json({ saved: true });
       }
 
@@ -531,14 +575,35 @@ export function createOrderPreparationHandler({
 
       const id = uuid(body.id);
       let row = checked(await db.from(TABLE).select("*").eq("id", id).single());
+      if (op === 'print_document') {
+        assert(session.canWrite,'Permesso di stampa richiesto.',403);
+        const job = checked(await db.rpc('warehouse_enqueue_print',{p_id:id,p_request:uuid(body.eventId),p_kind:body.kind,p_actor:profile.id}));
+        return res.status(200).json({printJob:job});
+      }
+      if (op === 'preview_packing_list' && row.status === 'completed' && row.ddt?.signature === 'BCF') return res.status(200).json(await shipmentReadback(db,row,'packing_list'));
 
+      if (op === 'preview_dispatch') return res.status(200).json(await shipmentPreview(db, client, row, settings));
+      if (op === 'shipment' || op === 'document') return res.status(200).json(await shipmentReadback(db, row, op === 'document' ? body.kind : null));
+      if (op === 'audit') {
+        const after = Math.max(0, Number(body.after) || 0);
+        const events = checked(await db.from('warehouse_preparation_events').select('id,event_id,event_type,actor,payload,created_at')
+          .eq('preparation_id', id).gt('id', after).order('id').limit(100));
+        return res.status(200).json({events, nextAfter: events.length === 100 ? events.at(-1).id : null});
+      }
+      if (op === 'finalize_documents') {
+        assert(session.canWrite, 'Permesso di scrittura richiesto.', 403);
+        assert(row.status === 'completed', 'DDT non confermato.', 409);
+        const historicalClient = clientFactory({warehouse:null,year:row.source.year,timeoutMs:300000});
+        return res.status(200).json(await finalizeShipment(db, historicalClient, row));
+      }
       if (op === "resolve_product") {
         const barcode = text(body.barcode);
-        assert(barcode && barcode.length<=100 && !/^https?:\/\//i.test(barcode), "Inserisci un barcode o un codice articolo IT valido.");
+        assert(barcode && barcode.length<=100 && !/^https?:\/\//i.test(barcode), "Inserisci un barcode o un codice articolo IT/MKT valido.");
         const product = await barcodeProduct(db,barcode,row.source);
-        return res.status(200).json({product:{code:product.code,description:product.description,piecesPerCarton:product.piecesPerCarton,wrong:!row.source.lines.some(item=>item.code===product.code)}});
+        return res.status(200).json({product:{code:product.code,description:product.description,piecesPerCarton:product.piecesPerCarton,boxesPerPallet:product.boxesPerPallet,wrong:!row.source.lines.some(item=>item.code===product.code)}});
       }
       if (op === "get") {
+        if (row.status === 'completed') return res.status(200).json({preparation:exposed(row),canWrite:session.canWrite,canConfigure:session.canConfigure});
         row = {...row,source:{...row.source,destination:await deliveryDestination(client,row.source_raw,row.source.customerCode)}};
         row = await refreshFifoAdvisory(row, db, inventoryFactory);
         return res.status(200).json({preparation:exposed(row),canWrite:session.canWrite,canConfigure:session.canConfigure});
@@ -601,6 +666,8 @@ export function createOrderPreparationHandler({
           "remove_package",
           "remove_pallet",
           "undo",
+          "remove_quantity",
+          "reopen_package",
           "verify",
           "export",
         ].includes(op)
@@ -616,28 +683,14 @@ export function createOrderPreparationHandler({
           barcode && barcode.length <= 4096,
           "Barcode, codice IT o URL QR non valido.",
         );
-        assert(["piece", "carton"].includes(body.mode), "Modalità non valida.");
+        assert(["piece", "carton", "pallet"].includes(body.mode), "Modalità non valida.");
 
-        const packageId = uuid(body.packageId);
-        const state = structuredClone(row.state);
-        if (!state.packages.some((item) => item.id === packageId)) {
-          assert(body.createPackage === true, "Collo non valido.");
-          const palletId = uuid(body.palletId);
-          assert(
-            state.pallets.some((item) => item.id === palletId),
-            "Bancale del collo inesistente.",
-          );
-          state.packages.push({
-            id: packageId,
-            number:
-              Math.max(0, ...state.packages.map((item) => item.number)) + 1,
-            palletId,
-          });
-        }
+        uuid(body.packageId);
         const product = await barcodeProduct(db, barcode, row.source);
         const ordered = row.source.lines.some(line => line.code === product.code);
-        const needsPieces = body.mode === "carton" && !product.piecesPerCarton;
+        const needsPieces = body.mode !== "piece" && !product.piecesPerCarton;
         const needsWeight = ordered && !product.unitWeightGrams;
+        if (body.mode === 'pallet') assert(product.boxesPerPallet, 'Compila Colli per bancale nel capitolato prima della lettura.');
         if(needsPieces || needsWeight) {
           assert(ordered,"Prodotto non previsto nell'ordine: non è possibile compilare il capitolato da questa lettura.");
           assert(!needsPieces || product.packagingSpecificationEmpty, `Pezzi per cartone di ${product.code} non validi: correggi il capitolato prodotto.`);
@@ -651,30 +704,14 @@ export function createOrderPreparationHandler({
           },profile.id));
         }
 
-        state.confirmedLots = false;
-
-        state.scans.push({
-          id: event,
-          packageId: uuid(body.packageId),
-          barcode: product.scannedValue,
-          code: product.code,
-          mode: body.mode,
-          quantity: body.mode === "piece" ? 1 : product.piecesPerCarton,
-          ...(body.mode === "carton"
-            ? { specificationVersion: product.packagingSpecificationVersion }
-            : {}),
-          at: new Date().toISOString(),
-          actor: profile.id,
-        });
-
-        validatePacking(state);
-        row = await mutate(db, row, profile.id, "save", { state }, event);
+        const state = appendPreparationScan(row.state, product, body, event, profile.id, randomUUID, new Date().toISOString());
+        row = await mutate(db, row, profile.id, "save", { state, operation: "scan", scanMode: body.mode }, event);
 
         return res.status(200).json({
           preparation: exposed(row),
           scan: {
             code: product.code,
-            quantity: body.mode === "piece" ? 1 : product.piecesPerCarton,
+            quantity: body.mode === "piece" ? 1 : product.piecesPerCarton * (body.mode === "pallet" ? product.boxesPerPallet : 1),
             wrong: !row.source.lines.some((l) => l.code === product.code),
           },
         });
@@ -688,6 +725,8 @@ export function createOrderPreparationHandler({
           "remove_package",
           "remove_pallet",
           "undo",
+          "remove_quantity",
+          "reopen_package",
         ].includes(op)
       ) {
         row = await mutate(
@@ -695,7 +734,7 @@ export function createOrderPreparationHandler({
           row,
           profile.id,
           "save",
-          { state: editPacking(row, op, body) },
+          { state: editPacking(row, op, body), operation: op, reason: text(body.reason), scanId: body.scanId || null, packageId: body.packageId || null, quantity: body.quantity || null },
           event,
         );
         return res.status(200).json({ preparation: exposed(row) });
@@ -789,10 +828,14 @@ export function createOrderPreparationHandler({
         );
 
         assert(fingerprint(verification.summary.weightTotals) === fingerprint(row.verification.summary.weightTotals) && fingerprint(verification.summary.productWeights) === fingerprint(row.verification.summary.productWeights),"Pesi prodotto o tare aggiornati: ripeti il riscontro prima dell'emissione.",409);
+        assert(fingerprint(verification.destination) === fingerprint(row.verification.destination), 'Destinazione aggiornata: ripeti il riscontro prima dell’emissione.',409);
         assert(
           settings.ddt_series,
           "Configura la serie DDT prima dell’emissione.",
         );
+
+        const dispatch = await shipmentPreview(db, client, row, settings);
+        assert(body.dispatchHash === dispatch.hash, "Destinatari o configurazione aggiornati: riapri il riepilogo emissione.", 409);
 
         const payload = buildDdt(
           row,
@@ -812,7 +855,7 @@ export function createOrderPreparationHandler({
           row,
           profile.id,
           "claim_export",
-          { confirmedLots: true, source_hash: context.hash, payload },
+          { confirmedLots: true, source_hash: context.hash, payload, dispatch },
           event,
         );
 
@@ -846,9 +889,11 @@ export function createOrderPreparationHandler({
           row = await mutate(db, row, profile.id, "finish", {
             token: event,
             ddt,
+            confirmedDocument: actual,
           });
 
-          return res.status(200).json({ preparation: exposed(row) });
+          const shipment = await finalizeShipment(db, client, row);
+          return res.status(200).json({ preparation: exposed(row), ...shipment });
         } catch (error) {
           row = await mutate(db, row, profile.id, "uncertain", {
             token: event,
@@ -884,11 +929,13 @@ export function createOrderPreparationHandler({
           {
             token: row.export_token,
             ddt: verifyDdt(actual, row, row.export_payload),
+            confirmedDocument: actual,
           },
           event,
         );
 
-        return res.status(200).json({ preparation: exposed(row) });
+        const shipment = await finalizeShipment(db, client, row);
+        return res.status(200).json({ preparation: exposed(row), ...shipment });
       }
 
       throw Object.assign(new Error("Operazione non valida."), { status: 400 });

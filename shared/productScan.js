@@ -7,7 +7,7 @@ export function productCodeInScan(value) {
     try { const next = decodeURIComponent(decoded); if (next === decoded) break; decoded = next; }
     catch { break; }
   }
-  const codes = [...new Set((decoded.toUpperCase().match(/\bIT[0-9]+[A-Z0-9]*(?:[-_][A-Z0-9]+)*\b/g) || []))];
-  if (codes.length > 1) throw new Error("Il QR contiene più codici IT: inserisci il codice del prodotto desiderato.");
+  const codes = [...new Set((decoded.toUpperCase().match(/\b(?:IT[0-9]+[A-Z0-9]*|MKT[-_]?[A-Z0-9]+)(?:[-_][A-Z0-9]+)*\b/g) || []))];
+  if (codes.length > 1) throw new Error("Il QR contiene più codici IT/MKT: inserisci il codice del prodotto desiderato.");
   return codes[0] || null;
 }

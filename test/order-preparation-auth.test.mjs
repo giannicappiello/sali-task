@@ -106,3 +106,9 @@ test("allestimento permissions stay bounded to this screen", async () => {
   );
   assert(result.canWrite && result.canConfigure);
 });
+test('DDT configuration uses its own screen and never grants warehouse mutation access',async()=>{
+  const db=adminFixture({level:'lettura',write:true,configure:false});
+  const result=await preparationSession({headers:{authorization:'Bearer valid'}},{admin:db,screen:'integrazioni.ddt',configuration:true});
+  assert.equal(result.canWrite,false);assert.equal(result.canConfigure,false);
+  assert.ok(db.calls.every(([,args])=>args.target_screen==='integrazioni.ddt'));
+});

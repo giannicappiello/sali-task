@@ -4,13 +4,25 @@ import { drawProgreOrderHeader } from "../../modules/orders/services/orderPdf.js
 const boxWord = n => n === 1 ? "box" : "boxes";
 const date = value => String(value || "").replace(/^(\d{4})(\d{2})(\d{2})$/, "$3/$2/$1");
 
-export function buildPreparationPdf(preparation) {
+export function preparationForPallet(preparation, palletId) {
+  const summary = preparation.verification?.summary;
+  const pallet = summary?.pallets.find(item => item.id === palletId);
+  if (!pallet) throw new Error('Bancale non trovato nel riscontro.');
+  const packages = summary.packages.filter(item => item.palletId === palletId);
+  return {...preparation,verification:{...preparation.verification,summary:{...summary,
+    pallets:[pallet],packages,totalPallets:1,totalPackages:packages.length,totalPieces:packages.reduce((n,item)=>n+item.pieces,0),
+    weightTotals:{...summary.weightTotals,netWeightKg:pallet.netWeightKg,grossWeightKg:pallet.grossWeightKg},
+  }}};
+}
+
+export function buildPreparationPdf(preparation, {palletId}={}) {
+  if (palletId) preparation = preparationForPallet(preparation,palletId);
   const summary = preparation.verification?.summary;
   if (!summary) throw new Error("Esegui il riscontro prima di generare la packing list.");
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const { source, ddt } = preparation;
   doc.setProperties({title:`Packing list OCM ${source.series}/${source.number}`,author:"Progre SRL"});
-  const title = "PACKING LIST";
+  const title = palletId ? `PACKING LIST - BANCALE ${summary.pallets[0].number}` : "PACKING LIST";
   const text = (value, x, y, size = 8, bold = false, align = "left") => {
     doc.setTextColor(34, 34, 34);
     doc.setFont("helvetica", bold ? "bold" : "normal");
@@ -31,7 +43,7 @@ export function buildPreparationPdf(preparation) {
     `Ordine / Order: OCM ${source.series}/${source.number} - ${source.year}`,
     `Cliente / Customer: ${source.customerName} (${source.customerCode})`,
     `Destinazione / Delivery address: ${destination}`,
-    ddt ? `DDT / Delivery note: ${ddt.signature || "BCS"} ${ddt.series}/${ddt.number} - ${date(ddt.date)}` : "DDT non ancora emesso / Delivery note not issued",
+    ddt ? `DDT / Delivery note: ${ddt.signature || "BC"} ${ddt.series}/${ddt.number} - ${date(ddt.date)}` : "DDT non ancora emesso / Delivery note not issued",
   ].map(line => doc.splitTextToSize(line, 188));
   const infoHeight = info.reduce((n, lines) => n + lines.length * 3.5 + 1, 0) + 4;
   if (infoHeight > 125) throw new Error("Dati intestazione troppo estesi per la packing list.");

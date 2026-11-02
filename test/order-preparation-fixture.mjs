@@ -70,6 +70,7 @@ export async function preparationDatabase(PGlite) {
   await db.exec(await readFile(new URL('../supabase/migrations/20261102121000_ddt_mes_print_bridge.sql',import.meta.url),'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/20261102160000_ddt_print_copies.sql',import.meta.url),'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/20261102170000_reopen_deleted_orphan_ddt.sql',import.meta.url),'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/20261102180000_reset_rejected_ddt.sql',import.meta.url),'utf8'));
   await db.exec(`update warehouse_preparation_settings set bcf_contract_verified=true,contract_evidence='Synthetic contract, no real emission',ddt_pdf_path='/documenti/movimenti-magazzino/{reference}/test-pdf',backoffice_emails='["office@example.test"]';`);
   return db;
 }
@@ -232,6 +233,7 @@ export function supabaseAdapter(sql) {
           warehouse_claim_shipment_email:['p_worker'],warehouse_update_shipment_email:['p_id','p_worker','p_token','p_action','p_message','p_definitive'],
           warehouse_resolve_shipment_email:['p_id','p_actor','p_outcome','p_reason'],warehouse_enqueue_print:['p_id','p_request','p_kind','p_actor'],
           warehouse_reopen_deleted_ddt:['p_id','p_version','p_actor','p_request','p_evidence'],
+          warehouse_reset_rejected_ddt:['p_id','p_version','p_actor','p_event','p_token','p_evidence'],
           warehouse_print_worker:['p_station','p_action','p_input'],
           warehouse_enqueue_print_copies:['p_id','p_request','p_kind','p_actor','p_copies'],
           warehouse_mes_print:['p_id','p_action','p_token','p_data'],
@@ -407,6 +409,7 @@ export function mexalFixture() {
         return { dati: fixture.ddt ? [fixture.ddt] : [] };
       if (path === "/documenti/movimenti-magazzino?sigla_trasformazione=BC") {
         if (!Array.isArray(payload.dt_ult_mod_orig)) throw Error('Concurrency token must be indexed by source header');
+        if (payload.sigla_ordine?.[0]?.[1] !== 'OC' || payload.serie_ordine?.[0]?.[1] !== 1 || payload.numero_ordine?.[0]?.[1] !== 900) throw Error('Native source order headers are mandatory');
         fixture.sends++;
         fixture.ddt = { ...structuredClone(payload), numero: 123,
           sigla_ordine:structuredClone(payload.sigla_doc_orig),serie_ordine:structuredClone(payload.serie_doc_orig),numero_ordine:structuredClone(payload.numero_doc_orig),data_ordine:structuredClone(payload.data_doc_orig),

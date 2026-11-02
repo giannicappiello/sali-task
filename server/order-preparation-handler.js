@@ -15,7 +15,7 @@ import { randomUUID } from "node:crypto";
 import { appendPreparationScan } from '../shared/preparationScanning.js';
 import { shipmentPreview, finalizeShipment, shipmentReadback, validateDispatchSettings } from './preparation-dispatch.js';
 import { createMesDdtPrinting } from './ddt-mes-print.js';
-import {previewOrphanDdtDeletion,deleteOrphanDdt} from './preparation-ddt-deletion.js';
+import {previewOrphanDdtDeletion,deleteOrphanDdt,isKnownRejectedDdt,resetRejectedDdt} from './preparation-ddt-deletion.js';
 
 import { buildMexalClient } from "./mexal/sync-products.js";
 
@@ -950,6 +950,10 @@ export function createOrderPreparationHandler({
         );
 
         const actual = await existingDdt(client, row);
+        if (!actual && isKnownRejectedDdt(row)) {
+          row=await resetRejectedDdt({db,client,row,actor:profile.id,eventId:event,findExisting:()=>existingDdt(client,row)});
+          return res.status(200).json({preparation:exposed(row),warning:'Mexal aveva rifiutato la richiesta senza creare documenti. Tentativo archiviato: ripeti il riscontro prima della nuova emissione.'});
+        }
         assert(
           actual,
           "DDT non ancora rintracciabile. Nessun nuovo invio eseguito: verifica Mexal prima di procedere.",

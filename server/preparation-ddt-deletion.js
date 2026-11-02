@@ -1,9 +1,20 @@
 import {createHash} from 'node:crypto';
 import {assert} from '../shared/orderPreparation.js';
-import {verifyOrphanDdtForDeletion,unwrap} from './order-preparation-mexal.js';
+import {verifyOrphanDdtForDeletion,unwrap,fingerprint} from './order-preparation-mexal.js';
 import {checked} from './order-preparation-auth.js';
 
 const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
+export const isKnownRejectedDdt=row=>row.status==='uncertain' && /^6001.*Mancano dei campi chiave e\/o obbligatori: sigla_ordine serie_ordine numero_ordine/.test(row.error || '');
+export async function resetRejectedDdt({db,client,row,actor,eventId,findExisting}) {
+  assert(isKnownRejectedDdt(row),'Rifiuto Mexal non riconosciuto: nessun ripristino automatico.',409);
+  await noDispatch(db,row);
+  assert(!await findExisting(),'Una bolla corrisponde ancora all’allestimento: recupero bloccato.',409);
+  const order=unwrap(await client.getJson('/documenti/ordini-clienti/'+encodeURIComponent(row.source.reference)));
+  assert(fingerprint(order)===row.source_hash,'OCM modificato: recupero automatico bloccato.',409);
+  const records=(await client.orderHistory(row.source))?.storia_ordine;
+  assert(Array.isArray(records) && records.length>0 && records.every(record=>record.sigla_documento==='OC' && Number(record.serie_documento)===row.source.series && Number(record.numero_documento)===row.source.number),'Storico Mexal con documenti derivati o non verificabile: emissione bloccata.',409);
+  return checked(await db.rpc('warehouse_reset_rejected_ddt',{p_id:row.id,p_version:row.version,p_actor:actor,p_event:eventId,p_token:row.export_token,p_evidence:{searchEmpty:true,historyOnlySourceOrder:true,orderHash:fingerprint(order),checkedAt:new Date().toISOString()}}));
+}
 export function deletionRequestId(row) {
   const h=digest(['delete-orphan-bcf-v1',row.id,row.export_token]).slice(0,32);
   return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;

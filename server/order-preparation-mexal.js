@@ -430,6 +430,11 @@ export function buildDdt(
     cod_conto: source.customerCode,
     data_documento: date,
 
+    sigla_ordine: [[1, "OC"]],
+    serie_ordine: [[1, source.series]],
+    numero_ordine: [[1, source.number]],
+    data_ordine: [[1, source.date]],
+
     sigla_doc_orig: [[1, "OC"]],
     serie_doc_orig: [[1, source.series]],
     numero_doc_orig: [[1, source.number]],

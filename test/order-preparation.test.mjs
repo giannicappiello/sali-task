@@ -201,6 +201,10 @@ test("DDT retains all source row references and rejects extra products, incorrec
     [3, 23],
   ]);
   assert.deepEqual(payload.sigla_doc_orig, [[1, "OC"]]);
+  assert.deepEqual(payload.sigla_ordine, [[1, "OC"]]);
+  assert.deepEqual(payload.serie_ordine, [[1, 1]]);
+  assert.deepEqual(payload.numero_ordine, [[1, 900]]);
+  assert.deepEqual(payload.data_ordine, [[1, f.raw.data_documento]]);
   assert.deepEqual(payload.dt_ult_mod_orig, [[1,f.raw.data_ult_mod]]);
   assert.deepEqual(payload.quantita, f.raw.quantita);
   assert.deepEqual(payload.id_mag_da_riga, f.raw.id_mag_riga);
@@ -216,7 +220,7 @@ test("DDT retains all source row references and rejects extra products, incorrec
   extra.quantita.push([4, 1]);
   assert.throws(() => verifyDdt(extra, prep, payload), /Quantità/);
   assert.throws(
-    () => verifyDdt({ ...actual, numero_doc_orig: [[1, 999]] }, prep, payload),
+    () => verifyDdt({ ...actual, numero_ordine: [[1, 999]] }, prep, payload),
     /collegamento/,
   );
   assert.throws(

@@ -1,8 +1,8 @@
 /* global process */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildDdt,verifyOrphanDdtForDeletion} from '../server/order-preparation-mexal.js';
-import {previewOrphanDdtDeletion,deleteOrphanDdt} from '../server/preparation-ddt-deletion.js';
+import {buildDdt,verifyOrphanDdtForDeletion,fingerprint} from '../server/order-preparation-mexal.js';
+import {previewOrphanDdtDeletion,deleteOrphanDdt,resetRejectedDdt} from '../server/preparation-ddt-deletion.js';
 import {orderRows,initialPacking} from '../shared/orderPreparation.js';
 import {preparationDatabase,supabaseAdapter,mexalFixture,event,actor} from './order-preparation-fixture.mjs';
 import {createOrderPreparationHandler} from '../server/order-preparation-handler.js';
@@ -59,5 +59,24 @@ test('recovery API requires both administrator and write permissions before any 
       await handler({method:'POST',body:{operation:'delete_orphan_ddt',id:f.row.id,version:f.row.version,confirmed:true}},result);
       assert.equal(result.code,403);assert.equal(f.deletes,0);
     }
+  }finally{await f.sql.close();}
+});
+test('known mandatory-field rejection resets only with no document, unchanged source and no derived history',async()=>{
+  const f=await fixture();try {
+    f.row.error='6001 - errore gestionale [Mancano dei campi chiave e/o obbligatori: sigla_ordine serie_ordine numero_ordine]';
+    f.row.source_hash=fingerprint(f.raw);
+    await f.sql.query('update warehouse_order_preparations set error=$1,source_hash=$2',[f.row.error,f.row.source_hash]);
+    const records=[{sigla_documento:'OC',serie_documento:1,numero_documento:900}];
+    f.client.orderHistory=async()=>({storia_ordine:records});
+    const args={...f,actor,eventId:event(),findExisting:async()=>null};
+    await assert.rejects(resetRejectedDdt({...args,row:{...f.row,error:'Timeout'}}),/non riconosciuto/);
+    await assert.rejects(resetRejectedDdt({...args,findExisting:f.findExisting}),/corrisponde ancora/);
+    await assert.rejects(resetRejectedDdt({...args,row:{...f.row,source_hash:'changed'}}),/OCM modificato/);
+    records.push({sigla_documento:'BC',serie_documento:1,numero_documento:999});
+    await assert.rejects(resetRejectedDdt(args),/Storico Mexal/);records.pop();
+    const result=await resetRejectedDdt(args);
+    assert.equal(result.status,'draft');assert.equal(f.deletes,0);assert.deepEqual(result.state,f.row.state);
+    const audit=(await f.sql.query("select payload from warehouse_preparation_events where event_type='ddt_rejected_without_document'")).rows[0].payload;
+    assert.deepEqual(audit.payload,f.row.export_payload);assert.equal(audit.exportToken,f.row.export_token);assert.equal(audit.searchEmpty,true);
   }finally{await f.sql.close();}
 });

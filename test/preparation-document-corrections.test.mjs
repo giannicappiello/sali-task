@@ -6,7 +6,7 @@ import {jsPDF} from 'jspdf';
 import {createOrderPreparationHandler} from '../server/order-preparation-handler.js';
 import {preparationDatabase,supabaseAdapter,mexalFixture,actor,event} from './order-preparation-fixture.mjs';
 import {ensureDdtPdf,ensurePackingPdf} from '../server/preparation-ddt-pdf.js';
-import {preparationAuditRecord} from '../shared/preparationAudit.js';
+import {preparationAuditRecord,preparationAuditPage} from '../shared/preparationAudit.js';
 import {buildPreparationAuditPdf} from '../src/pages/Warehouse/preparationAuditPdf.js';
 import {buildPreparationPdf} from '../src/pages/Warehouse/preparationPdf.js';
 const {PGlite}=await import(process.env.PGLITE_MODULE);
@@ -65,4 +65,16 @@ test('compact packing fits 55 single-article boxes in two pages and audit uses t
  const registry=buildPreparationAuditPdf(prep,[record]);assert.equal(registry.getNumberOfPages(),1);
  await writeFile(new URL('../../packing-layout-check.pdf',import.meta.url),Buffer.from(packing.output('arraybuffer')));
  await writeFile(new URL('../../register-layout-check.pdf',import.meta.url),Buffer.from(registry.output('arraybuffer')));
+});
+
+test('legacy full snapshots emit each insertion once across export pages and resolve operator names',()=>{
+ const pack={id:event(),number:1,palletId:'p1'},a={id:event(),code:'IT0520',quantity:3,packageId:pack.id,at:'2026-11-02T10:00:00Z',actor},b={...a,id:event(),code:'IT0509'};
+ const state=scans=>({scans,packages:[pack],pallets:[{id:'p1',number:1}]});
+ const e=(id,scans)=>({id,event_id:event(),actor,event_type:'save',created_at:'2026-11-02T10:05:00Z',payload:{state:state(scans)}});
+ const operators=[{id:actor,nome:'Mario',cognome:'Rossi'}];
+ const first=preparationAuditPage([e(1,[a]),e(2,[a,b])],{operators});
+ assert.equal(first[0].readings.length,1);assert.equal(first[1].readings.length,1);assert.equal(first[1].readings[0].id,b.id);assert.equal(first[0].operatorName,'Mario Rossi');
+ const next=preparationAuditPage([e(3,[a,b]),e(4,[{...a,quantity:2},b]),e(5,[b])],{operators,previousState:state([a,b])});
+ assert.equal(next[0].readings.length,0);assert.equal(next[1].readings[0].action,'correction');assert.equal(next[2].readings[0].action,'remove');
+ assert.equal(next[2].readings[0].id,a.id);assert.equal(next[2].readings[0].previousQuantity,2);
 });

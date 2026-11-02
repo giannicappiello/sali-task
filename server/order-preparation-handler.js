@@ -17,7 +17,7 @@ import { shipmentPreview, finalizeShipment, shipmentReadback, validateDispatchSe
 import { createMesDdtPrinting } from './ddt-mes-print.js';
 import {previewOrphanDdtDeletion,deleteOrphanDdt,isKnownRejectedDdt,resetRejectedDdt} from './preparation-ddt-deletion.js';
 import {ensureDdtPdf,ensurePackingPdf} from './preparation-ddt-pdf.js';
-import {preparationAuditRecord} from '../shared/preparationAudit.js';
+import {preparationAuditPage} from '../shared/preparationAudit.js';
 import {readEmittedDdt} from './preparation-ddt-readback.js';
 
 import { buildMexalClient } from "./mexal/sync-products.js";
@@ -631,7 +631,10 @@ export function createOrderPreparationHandler({
         const latest=body.maxId==null?checked(await db.from('warehouse_preparation_events').select('id').eq('preparation_id',id).order('id',{ascending:false}).limit(1)):null;
         const maxId=body.maxId==null?(latest[0]?.id||0):integer(body.maxId,'Fine registro',0,Number.MAX_SAFE_INTEGER);
         const events=checked(await db.from('warehouse_preparation_events').select('id,event_id,event_type,actor,payload,created_at').eq('preparation_id',id).gt('id',after).lte('id',maxId).order('id').limit(100));
-        return res.status(200).json({preparation:exposed(row),records:events.map(preparationAuditRecord),maxId,nextAfter:events.length===100?events.at(-1).id:null,generatedAt:new Date().toISOString()});
+        const prior=after?checked(await db.from('warehouse_preparation_events').select('payload').eq('preparation_id',id).lte('id',after).not('payload->state','is',null).order('id',{ascending:false}).limit(1)):[];
+        const actorIds=[...new Set(events.flatMap(event=>[event.actor,...(event.payload?.state?.scans||[]).map(scan=>scan.actor)]).filter(Boolean))];
+        const operators=actorIds.length?checked(await db.from('utenti').select('id,nome,cognome').in('id',actorIds)):[];
+        return res.status(200).json({preparation:exposed(row),records:preparationAuditPage(events,{previousState:prior[0]?.payload.state,operators}),maxId,nextAfter:events.length===100?events.at(-1).id:null,generatedAt:new Date().toISOString()});
       }
       if (op === 'audit') {
         const after = Math.max(0, Number(body.after) || 0);

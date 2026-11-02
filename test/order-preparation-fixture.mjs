@@ -7,7 +7,7 @@ export const migration = new URL(
 export async function preparationDatabase(PGlite) {
   const db = new PGlite();
   await db.exec(`create role anon;create role authenticated;create role service_role;
- create table utenti(id uuid primary key,attivo boolean);insert into utenti values('${actor}',true);
+ create table utenti(id uuid primary key,attivo boolean);insert into utenti values('${actor}',true);alter table utenti add column nome text,add column cognome text;update utenti set nome='Mario',cognome='Rossi';
  create table workspace_aree(codice text primary key,nome text,descrizione text,icona text,ordine int);
  create table workspace_moduli(codice text primary key,aree text[],aggiornato_il timestamptz);insert into workspace_moduli values('magazzino',array['produzione'],now());
  create table workspace_schermate(codice text primary key,nome text,descrizione text,provider text,percorso text,chiave_componente text,protetta boolean,attiva boolean,ordine int,area text,aree text[],icona text,metadati jsonb,ultima_sincronizzazione timestamptz);
@@ -124,6 +124,7 @@ export function supabaseAdapter(sql) {
           filters.push(`${column(c)}=$${values.length}`);
           return query;
         },
+        not(c,op,v) {if(c!=='payload->state'||op!=='is'||v!==null)throw Error('Unexpected JSON filter');filters.push("payload->'state' is not null");return query;},
         lte(c,v) {values.push(v);filters.push(`${column(c)}<=$${values.length}`);return query;},
         gt(c,v) {values.push(v);filters.push(`${column(c)}>$${values.length}`);return query;},
         range(a,b) {limit=` limit ${Number(b-a+1)} offset ${Number(a)}`;return query;},

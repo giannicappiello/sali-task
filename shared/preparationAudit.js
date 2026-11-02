@@ -10,3 +10,23 @@ export function preparationAuditRecord(event){
  for(const scan of before?.scans||[]){if(state&&!state.scans.some(s=>s.id===scan.id))readings.push({...location(scan),id:scan.id,code:scan.code,quantity:0,previousQuantity:scan.quantity,action:'remove',at:scan.at||null,actor:scan.actor||null,mode:scan.mode});}
  return {id:event.id,eventId:event.event_id,at:event.created_at,actor:event.actor,operatorName:p.operatorName||event.actor,operation:p.operation||event.event_type,readings,reason:p.reason||p.message||p.error||null,ddt:p.ddt||null,documents:p.documents?.map(f=>({filename:f.filename,sha256:f.sha256})),recipients:p.recipients||null,printer:p.printer_id||null,copies:p.copies||null,lots:p.verification?.allocations?.map(l=>({code:l.code,lot:l.lotCode||l.lotId,quantity:l.quantity,warehouse:l.warehouse}))||null};
 }
+
+export function preparationAuditPage(events,{previousState=null,operators=[]}={}){
+ const names=new Map(operators.map(u=>[u.id,[u.nome,u.cognome].filter(Boolean).join(' ').trim()||u.id]));
+ return events.map(event=>{
+  const payload=event.payload||{},state=payload.state;
+  const before=payload.beforeState||previousState;
+  const record=preparationAuditRecord({...event,payload:{...payload,...(before?{beforeState:before}:{})}});
+  if(state)previousState=state;
+  if(!payload.operatorName||payload.operatorName===event.actor)record.operatorName=names.get(event.actor)||event.actor;
+  record.readings=record.readings.map(scan=>({...scan,operatorName:scan.actor?names.get(scan.actor)||scan.actor:null}));
+  record.packingChanges=[];
+  if(state){
+   for(const pack of state.packages||[]){const old=before?.packages?.find(p=>p.id===pack.id);if(!old)record.packingChanges.push(`Collo ${pack.number} aggiunto`);else if(old.palletId!==pack.palletId){const from=before.pallets?.find(p=>p.id===old.palletId)?.number??'nessuno',to=state.pallets?.find(p=>p.id===pack.palletId)?.number??'nessuno';record.packingChanges.push(`Collo ${pack.number}: bancale ${from} -> ${to}`);}}
+   for(const pack of before?.packages||[])if(!state.packages?.some(p=>p.id===pack.id))record.packingChanges.push(`Collo ${pack.number} eliminato`);
+   for(const pallet of state.pallets||[])if(!before?.pallets?.some(p=>p.id===pallet.id))record.packingChanges.push(`Bancale ${pallet.number} aggiunto`);
+   for(const pallet of before?.pallets||[])if(!state.pallets?.some(p=>p.id===pallet.id))record.packingChanges.push(`Bancale ${pallet.number} eliminato`);
+  }
+  return record;
+ });
+}

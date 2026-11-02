@@ -50,6 +50,18 @@ test('lot-managed articles defer allocation to explicit FIFO preflight',()=>{
   assert.deepEqual(p.id_lotto,[]);assert.deepEqual(p.qta_lotto,[]);assert.deepEqual(p.id_mag_da_riga,[[1,4]]);
 });
 
+test('France uses verified Italian article VAT without changing Amazon gross proceeds or inventing source tax',()=>{
+ const fr={...order,marketplace:'A13V1IB3VIYZZH',gross_revenue:15.99,net_revenue:13.32};
+ const p=buildAmazonCox(fr,[{...lines[0],quantity:1,line_revenue:15.99}],mappings.map(m=>({...m,marketplace:fr.marketplace})),articles,customer);
+ const a={...p,numero:123,tot_documento:[[1,15.99]],tot_iva:[[1,2.88]]};
+ const result=verifyAmazonCox(a,p,fr);assert.equal(result.taxTreatment.amazonTaxCents,267);assert.equal(result.taxTreatment.documentTaxCents,288);assert.equal(result.moneyVerification.totalDifferenceCents,0);
+ assert.equal(fr.net_revenue,13.32);assert.deepEqual(p.cod_iva,[[1,'22,0']]);
+ assert.throws(()=>verifyAmazonCox({...a,cod_iva:[[1,'20']]},p,fr),/cod_iva/);
+ assert.throws(()=>verifyAmazonCox({...a,tot_iva:[[1,2.67]]},p,fr),/IVA italiana/);
+ assert.throws(()=>verifyAmazonCox({...a,tot_documento:[[1,16.10]]},p,fr),/tolleranza/);
+ assert.throws(()=>verifyAmazonCox({...a,tot_iva:[[1,null]]},p,fr),/IVA italiana/);
+});
+
 function fixture({timeout=false,existing=false,claimed=true,failPreflight=false,wrongTotals=false,deliveryStatus="reconciliation_required"}={}) {
   const calls=[];let created=0;
   const db={

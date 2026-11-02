@@ -1,6 +1,7 @@
 import { prepareFifoLots } from './amazon-fifo.js';
 import { sameFirstDecimal } from '../../shared/moneyFirstDecimal.js';
 import { amazonCoxFinancials } from './amazon-tax.js';
+import { withinTenCents } from '../../integrations/salidischia-mexal-connector/src/money-policy.mjs';
 // COX uses gross prices (verified against the existing COX document contract).
 const text = value => String(value ?? '').trim();
 const cents = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) ? Math.round(Number(value) * 100) : null;
@@ -9,9 +10,28 @@ const scalar = value => Array.isArray(value) ? value[0]?.[1] : value;
 export const AMAZON_CUSTOMER_CODE = '501.02156';
 export const COX_RESOURCE = '/documenti/movimenti-magazzino';
 
-export function verifyAmazonMoney(order,totalCents,taxCents) {
+// Explicit business instruction, 2026-11-02: France uses the Italian article VAT
+// already configured in Mexal. Amazon tax remains in the imported source data.
+const italianArticleVat=order=>order.marketplace==='A13V1IB3VIYZZH'&&!order.raw_summary?.tax_collection;
+function expectedArticleTax(payload){
+  assert(payload?.cod_modulo==='X'&&Array.isArray(payload.cod_iva),'Aliquote COX italiane non disponibili.');
+  const prices=new Map(payload.prezzo),quantities=new Map(payload.quantita),groups=new Map();
+  for(const [i,code]of payload.cod_iva){
+    const rate=text(code).replace(',','.');assert(/^\d+(?:\.\d{1,2})?$/.test(rate)&&Number(rate)<=100,'Aliquota COX italiana non numerica: verifica richiesta.');
+    const gross=cents(Number(prices.get(i))*Number(quantities.get(i)));assert(Number.isSafeInteger(gross)&&gross>=0,'Riga COX senza importo verificabile.');
+    const bps=Math.round(Number(rate)*100);groups.set(bps,(groups.get(bps)||0)+gross);
+  }
+  return [...groups].reduce((sum,[bps,gross])=>sum+gross-Math.round(gross*10000/(10000+bps)),0);
+}
+
+export function verifyAmazonMoney(order,totalCents,taxCents,payload) {
   const sourceTotalCents=cents(order.gross_revenue),netCents=cents(order.net_revenue);
   const sourceTaxCents=sourceTotalCents!==null && netCents!==null ? sourceTotalCents-netCents : null;
+  if(italianArticleVat(order)){
+    const expectedTaxCents=expectedArticleTax(payload);
+    assert(Number.isSafeInteger(sourceTaxCents)&&sourceTaxCents>=0&&withinTenCents(totalCents,sourceTotalCents)&&withinTenCents(taxCents,expectedTaxCents),'Totale o IVA italiana Mexal oltre la tolleranza di 10 centesimi: COX non verificato.');
+    return{policy:'italian_article_vat',sourceTotalCents,mexalTotalCents:totalCents,sourceTaxCents,expectedTaxCents,mexalTaxCents:taxCents,totalDifferenceCents:totalCents-sourceTotalCents,taxDifferenceCents:taxCents-sourceTaxCents};
+  }
   assert(sameFirstDecimal(totalCents,sourceTotalCents) && sameFirstDecimal(taxCents,sourceTaxCents),
     'Totale/IVA Mexal diverso da Amazon alla prima cifra decimale: verificare il COX.');
   return {policy:'first_decimal',sourceTotalCents,mexalTotalCents:totalCents,sourceTaxCents,mexalTaxCents:taxCents,
@@ -77,7 +97,7 @@ export function verifyAmazonCox(actual, payload, order) {
   for (const key of ['cod_conto','data_documento','id_magazzino']) assert(text(actual[key]) === text(payload[key]), `COX diverso: ${key}.`);
   const note = text(scalar(actual.nota));
   assert(new RegExp(`(^|[^0-9-])${order.external_id}($|[^0-9-])`).test(note), 'Riferimento ordine Amazon non verificato nelle note COX.');
-  for (const key of ['codice_articolo','quantita','prezzo','id_mag_da_riga',...(order.raw_summary?.tax_collection?['cod_iva']:[])]) {
+  for (const key of ['codice_articolo','quantita','prezzo','id_mag_da_riga',...(order.raw_summary?.tax_collection||italianArticleVat(order)?['cod_iva']:[])]) {
     assert(Array.isArray(actual[key]) && actual[key].length === payload[key].length, `Righe COX diverse: ${key}.`);
     const values = new Map(actual[key]);
     for (const [index, value] of payload[key]) {
@@ -95,10 +115,10 @@ export function verifyAmazonCox(actual, payload, order) {
   const fiscal=amazonCoxFinancials(order);
   // Mexal represents a verified N41 document's zero VAT with an empty matrix.
   const actualTax=fiscal.vatCode==='N41' && Array.isArray(actual.tot_iva) && actual.tot_iva.length===0?0:cents(scalar(actual.tot_iva));
-  const moneyVerification=verifyAmazonMoney(fiscal.order,cents(scalar(actual.tot_documento)),actualTax);
+  const moneyVerification=verifyAmazonMoney(fiscal.order,cents(scalar(actual.tot_documento)),actualTax,payload);
   return { year: payload.data_documento.slice(0,4), series: Number(actual.serie), number: Number(actual.numero), date: payload.data_documento,
     ...(moneyVerification.totalDifferenceCents || moneyVerification.taxDifferenceCents ? {moneyVerification} : {}),
-    ...(fiscal.proof?{taxTreatment:fiscal.proof}:{}) };
+    ...(fiscal.proof?{taxTreatment:fiscal.proof}:italianArticleVat(order)?{taxTreatment:{model:'ITALIAN_ARTICLE_VAT',source:'user_confirmed_2026-11-02',amazonTaxCents:moneyVerification.sourceTaxCents,expectedDocumentTaxCents:moneyVerification.expectedTaxCents,documentTaxCents:actualTax}}:{}) };
 }
 
 async function checked(result) { if (result.error) throw result.error; return result.data; }
@@ -184,7 +204,7 @@ export async function emitAmazonCox({ db, connection, order, clientForYear }) {
       const calculated = await mexal.calculateDocument(payload);
       const calculatedNet=cents(calculated.tot_imponibile),calculatedTax=cents(calculated.tot_imposta);
       assert(calculatedNet!==null && calculatedTax!==null, 'Totale/IVA preventivo Mexal non disponibile: COX non emesso.');
-      verifyAmazonMoney(prepared.financialOrder,calculatedNet+calculatedTax,calculatedTax);
+      verifyAmazonMoney(prepared.financialOrder,calculatedNet+calculatedTax,calculatedTax,payload);
       // A persisted processing claim is never automatically reclaimed after process death.
       // Mark uncertainty before POST, since the server may commit and lose its response.
       writeStarted = true;

@@ -72,10 +72,11 @@ export async function preparationDatabase(PGlite) {
   await db.exec(await readFile(new URL('../supabase/migrations/20261102170000_reopen_deleted_orphan_ddt.sql',import.meta.url),'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/20261102180000_reset_rejected_ddt.sql',import.meta.url),'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/20261102190000_rejected_lot_conversion.sql',import.meta.url),'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/20261102200000_automatic_ddt_completion.sql',import.meta.url),'utf8'));
   await db.exec(`update warehouse_preparation_settings set bcf_contract_verified=true,contract_evidence='Synthetic contract, no real emission',ddt_pdf_path='/documenti/movimenti-magazzino/{reference}/test-pdf',backoffice_emails='["office@example.test"]';`);
   return db;
 }
-const allowed = new Set([
+const allowed = new Set(["utenti", "warehouse_completion_jobs",
   "workspace_product_specifications",
   "mexal_agenti",
   "warehouse_preparation_documents",
@@ -237,6 +238,7 @@ export function supabaseAdapter(sql) {
           warehouse_reset_rejected_ddt:['p_id','p_version','p_actor','p_event','p_token','p_evidence'],
           warehouse_print_worker:['p_station','p_action','p_input'],
           warehouse_enqueue_print_copies:['p_id','p_request','p_kind','p_actor','p_copies'],
+          warehouse_completion_claim:[],warehouse_completion_result:['p_id','p_token','p_done','p_error','p_blocked'],
           warehouse_mes_print:['p_id','p_action','p_token','p_data'],
           warehouse_reprint:['p_id','p_request','p_actor','p_reason'],
         };

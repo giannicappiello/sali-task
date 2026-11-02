@@ -659,3 +659,7 @@
 @media(max-width:600px){.op-discrepancy-packages{display:grid;grid-template-columns:minmax(0,1fr);}.op-collapsible>summary h2{font-size:18px;}.op-pallet-card>summary h3{font-size:16px;}}
 
 .op-print-documents{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;}.op-print-document{display:flex;flex-direction:column;gap:10px;min-width:0;border:1px solid #c8d6e0;border-radius:10px;padding:12px;}.op-print-document label{display:flex;flex-direction:column;gap:6px;}.op-print-document input{width:100%;box-sizing:border-box;}.order-preparation .op-print-document button{white-space:normal;min-width:0;overflow-wrap:anywhere;}
+
+.op-reprint-dialog {width:min(480px,calc(100vw - 24px));}
+.op-reprint-dialog label {display:grid;gap:6px;margin:16px 0;}
+.op-reprint-dialog :is(input,select) {width:100%;min-width:0;box-sizing:border-box;font:inherit;min-height:44px;}

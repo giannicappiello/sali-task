@@ -2,6 +2,10 @@ import productionActions from "../../server/production-actions-handler.js";
 import { handleInventorySnapshot } from "../../server/progremes-inventory.js";
 
 export default async function handler(req, res) {
+  if(req.query?.route==='order-preparation-completion') {
+    const {default:completion}=await import('../../server/preparation-auto-completion.js');
+    return completion(req,res);
+  }
   if (req.query?.route === 'second-brain-online') {
     const {handleOnline}=await import('../../server/second-brain/online-handler.js');
     return handleOnline(req,res);

@@ -1,6 +1,7 @@
 import PreparationHistory from './PreparationHistory.jsx';
 import PreparationPackageEditor from './PreparationPackageEditor.jsx';
 import PreparationPackageRemoval from './PreparationPackageRemoval.jsx';
+import PreparationReprintDialog from './PreparationReprintDialog.jsx';
 import {Link} from 'react-router-dom';
 import PackingListPreview from "./PackingListPreview.jsx";
 import PreparationProductPrompt from "./PreparationProductPrompt.jsx";
@@ -270,7 +271,8 @@ export default function OrderPreparation() {
     [editingPackage,setEditingPackage] = useState(null),
     [removingPackage,setRemovingPackage] = useState(null),
     [palletSearch,setPalletSearch] = useState(""),
-    [printCopies,setPrintCopies] = useState({});
+    [reprintOpen,setReprintOpen] = useState(false),
+    [completionStatus,setCompletionStatus] = useState(null);
 
   const [query, setQuery] = useState(""),
     [camera, setCamera] = useState(false),
@@ -329,6 +331,24 @@ export default function OrderPreparation() {
     setConfirmDdt(false);
     setDispatchPreview(null);
   }, []);
+
+  useEffect(() => {
+    if (!row?.id || !['exporting','uncertain','completed'].includes(row.status)) return;
+    let disposed=false, running=false;
+    const timer=setInterval(async()=>{
+      if(lock.current || running) return;
+      running=true;
+      try {
+        const result=await preparationApi('completion_status',{id:row.id});
+        if(disposed) return;
+        setCompletionStatus(result.completion);
+        if(result.preparation.version!==current.current?.version || result.preparation.status!==current.current?.status) accept(result.preparation);
+        if(!result.completion || ['completed','blocked'].includes(result.completion.status)) clearInterval(timer);
+      } catch { /* A later poll recovers a transient connection failure. */ }
+      finally {running=false;}
+    },5000);
+    return ()=>{disposed=true;clearInterval(timer);};
+  },[row?.id,row?.status,accept]);
 
   const load = useCallback(
     async (refresh = false) => {
@@ -585,9 +605,8 @@ export default function OrderPreparation() {
     catch(e){setError(e.message);}finally{setBusy(false);}
   }
 
-  async function printDocument(kind) {
+  async function printDocument(kind,copies) {
     const key=`warehouse-print:${row.id}:${kind}`;
-    const copies=Number(printCopies[kind] ?? (kind==='bcf_print' ? 3 : 1));
     if (!Number.isInteger(copies) || copies<1 || copies>50) {setError('Inserisci un numero di copie tra 1 e 50.');return;}
     const saved=JSON.parse(sessionStorage.getItem(key) || 'null');
     if(saved && saved.copies !== copies){setError(`La richiesta precedente è di ${saved.copies ?? (kind==='bcf_print'?3:1)} copie. Verifica prima il suo esito in Configurazioni DDT.`);return;}
@@ -599,6 +618,7 @@ export default function OrderPreparation() {
       setNotice(({queued:'Stampa accodata.',leased:'Stampa acquisita dall’agente.',printing:'Invio alla stampante in corso.',submitted:'Documento inviato alla stampante.',uncertain:'Esito stampa da verificare: controlla la stampante prima di ristampare.',failed:'Stampa non riuscita: controlla Configurazioni DDT.'})[status]);
       if (['submitted','failed'].includes(status)) sessionStorage.removeItem(key);
     }
+    return result;
   }
 
   const renderPackage = (p) => (
@@ -1068,7 +1088,7 @@ export default function OrderPreparation() {
               <div className="op-notice">
                 <p>
                   Il documento potrebbe essere già presente in Mexal. Verifica
-                  l’esito; non ripetere l’emissione.
+                  automaticamente il completamento; non ripetere l’emissione.
                 </p>
                 <button
                   disabled={busy || !canWrite}
@@ -1093,6 +1113,9 @@ export default function OrderPreparation() {
               </button>
             )}
 
+            {row.status==='completed' && <button disabled={busy || !canWrite} onClick={()=>{setError('');setNotice('');setReprintOpen(true);}}>Ristampa</button>}
+            {completionStatus && !['completed','blocked'].includes(completionStatus.status) && <p className="op-notice" role="status">Completamento automatico di documenti, invii e stampa in corso.</p>}
+            {completionStatus?.status==='blocked' && <p className="op-error" role="alert">Completamento da verificare: {completionStatus.last_error}</p>}
             {row.ddt && (
               <p className="op-good">
                 DDT {row.ddt.series}/{row.ddt.number} confermato in Mexal.
@@ -1252,22 +1275,7 @@ export default function OrderPreparation() {
 
           {editingPackage && packages.some(item=>item.id===editingPackage) && editable && <PreparationPackageEditor key={editingPackage} pack={packages.find(item=>item.id===editingPackage)} scans={scans.filter(item=>item.packageId===editingPackage)} busy={busy} error={error} onAction={perform} onSelect={pack=>{choosePackage(pack);setEditingPackage(null);setMode('piece');setCamera(true);}} onClose={()=>setEditingPackage(null)}/>}
           {removingPackage && packages.some(item=>item.id===removingPackage) && editable && <PreparationPackageRemoval key={removingPackage} pack={packages.find(item=>item.id===removingPackage)} quantity={format(scans.filter(scan=>scan.packageId===removingPackage).reduce((n,scan)=>n+scan.quantity,0))} busy={busy} error={error} onClose={()=>setRemovingPackage(null)} onRemove={async reason=>{const result=await perform('remove_package',{packageId:removingPackage,confirmed:true,reason});if(result && !result.error){setRemovingPackage(null);setEditingPackage(null);}}}/>}
-          {row.status === 'completed' && <section className="op-panel">
-            <h2>Documenti e ristampa</h2>
-            <button disabled={busy} onClick={()=>void perform('finalize_documents')}>Completa documenti e invii</button>
-            <p>Scegli le copie e stampa i documenti già emessi.</p>
-            <div className="op-print-documents">
-              {[{kind:'bcf_print',label:'DDT',defaultCopies:3},...pallets.map(pallet=>({kind:'packing_pallet_'+pallet.id,label:`Packing list bancale ${pallet.number}`,defaultCopies:1}))].map(document=>(
-                <div key={document.kind} className="op-print-document">
-                  <strong>{document.label}</strong>
-                  <label>Numero copie · {document.label}
-                    <input type="number" inputMode="numeric" min="1" max="50" step="1" disabled={busy} value={printCopies[document.kind] ?? document.defaultCopies} onChange={event=>setPrintCopies(previous=>({...previous,[document.kind]:event.target.value}))}/>
-                  </label>
-                  <button disabled={busy || !canWrite} onClick={()=>void printDocument(document.kind)}>Stampa / Ristampa {document.label}</button>
-                </div>
-              ))}
-            </div>
-          </section>}
+          {reprintOpen && <PreparationReprintDialog pallets={pallets} busy={busy} error={error} notice={notice} onPrint={printDocument} onClose={()=>setReprintOpen(false)}/>}
 
           <PreparationHistory key={row.id} id={row.id}/>
           <details className="op-panel op-collapsible" open>

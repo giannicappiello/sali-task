@@ -16,6 +16,7 @@ import { appendPreparationScan } from '../shared/preparationScanning.js';
 import { shipmentPreview, finalizeShipment, shipmentReadback, validateDispatchSettings } from './preparation-dispatch.js';
 import { createMesDdtPrinting } from './ddt-mes-print.js';
 import {previewOrphanDdtDeletion,deleteOrphanDdt,isKnownRejectedDdt,resetRejectedDdt} from './preparation-ddt-deletion.js';
+import {readEmittedDdt} from './preparation-ddt-readback.js';
 
 import { buildMexalClient } from "./mexal/sync-products.js";
 
@@ -72,7 +73,7 @@ const exposed = (r) => ({
   updatedAt: r.updated_at,
 });
 
-async function mutate(db, row, actor, action, data, event = randomUUID()) {
+export async function mutate(db, row, actor, action, data, event = randomUUID()) {
   const result = await db.rpc("warehouse_preparation_mutate", {
     p_id: row?.id || null,
     p_version: row?.version || 0,
@@ -308,7 +309,7 @@ function editPacking(row, operation, body) {
   return validatePacking(state);
 }
 
-async function existingDdt(client, row) {
+export async function existingDdt(client, row) {
   const docs = await pages(client, "/documenti/movimenti-magazzino", [
     { campo: "sigla", condizione: "=", valore: "BC" },
     ...(row.export_payload?.cod_modulo
@@ -360,7 +361,7 @@ export function createOrderPreparationHandler({
         { db, profile } = session;
       const op = body.operation;
 
-      const canRead = ["list", "get", "settings", "reconcile", "resolve_product", "preview_packing_list", "audit", "preview_dispatch", "shipment", "document", "ddt_settings", "ddt_queue"].includes(op);
+      const canRead = ["list", "get", "completion_status", "settings", "reconcile", "resolve_product", "preview_packing_list", "audit", "preview_dispatch", "shipment", "document", "ddt_settings", "ddt_queue"].includes(op);
 
       assert(
         canRead ||
@@ -607,6 +608,7 @@ export function createOrderPreparationHandler({
         row=await deleteOrphanDdt({db,client:recoveryClient,row,actor:profile.id,actual,hash:body.deletionHash,reference:body.reference,findExisting:()=>existingDdt(recoveryClient,row)});
         return res.status(200).json({preparation:exposed(row),deletedReference:body.reference});
       }
+      if (op === 'completion_status') return res.status(200).json({preparation:exposed(row),completion:checked(await db.from('warehouse_completion_jobs').select('status,last_error,updated_at').eq('preparation_id',id).maybeSingle())});
       if (op === 'print_document') {
         assert(session.canWrite,'Permesso di stampa richiesto.',403);
         if ((body.kind==='bcf_print'?settings.ddt_printer_id:settings.packing_printer_id)?.startsWith('MES:')) await mesPrinting.inventory(db);
@@ -897,22 +899,8 @@ export function createOrderPreparationHandler({
         try {
           // One POST only. A timeout leaves an uncertain journal and may only be reconciled by reads.
 
-          const result = unwrap(
-            await client.postJson("/documenti/movimenti-magazzino?sigla_trasformazione=BC", payload),
-          );
-
-          let actual = result;
-
-          if (!Number(actual.numero)) actual = await existingDdt(client, row);
-          else
-            actual = unwrap(
-              await client.getJson(
-                "/documenti/movimenti-magazzino/" +
-                  encodeURIComponent(
-                    `BC+${payload.serie}+${actual.numero}+${payload.cod_conto}`,
-                  ),
-              ),
-            );
+          const creation = await client.postJson("/documenti/movimenti-magazzino?sigla_trasformazione=BC", payload);
+          const actual=await readEmittedDdt({client,creation,payload,findExisting:()=>existingDdt(client,row)});
 
           assert(
             actual,

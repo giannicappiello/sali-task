@@ -5,6 +5,7 @@ import {buildDdt,verifyOrphanDdtForDeletion} from '../server/order-preparation-m
 import {previewOrphanDdtDeletion,deleteOrphanDdt} from '../server/preparation-ddt-deletion.js';
 import {orderRows,initialPacking} from '../shared/orderPreparation.js';
 import {preparationDatabase,supabaseAdapter,mexalFixture,event,actor} from './order-preparation-fixture.mjs';
+import {createOrderPreparationHandler} from '../server/order-preparation-handler.js';
 const {PGlite}=await import(process.env.PGLITE_MODULE);
 async function fixture() {
   const sql=await preparationDatabase(PGlite),db=supabaseAdapter(sql),raw=mexalFixture().raw;
@@ -48,5 +49,15 @@ test('deletion rejects native links, changed quantities or lots, source changes 
     assert.throws(()=>verifyOrphanDdtForDeletion(doc,f.row,{...f.raw,data_ult_mod:'changed'}),/OCM modificato/);
     await f.sql.query("insert into warehouse_preparation_documents(preparation_id,kind,filename,sha256,base64,snapshot) values($1,'bcf','doc.pdf',$2,'QQ==','{}')",[f.row.id,'a'.repeat(64)]);
     await assert.rejects(previewOrphanDdtDeletion({...f,actual:doc}),/già registrati/);assert.equal(f.deletes,0);
+  }finally{await f.sql.close();}
+});
+test('recovery API requires both administrator and write permissions before any deletion',async()=>{
+  const f=await fixture();try{
+    for(const permissions of [{canWrite:true,canConfigure:false},{canWrite:false,canConfigure:true}]) {
+      const handler=createOrderPreparationHandler({authorize:async()=>({db:f.db,profile:{id:actor},...permissions}),clientFactory:()=>f.client});
+      const result={setHeader(){},status(code){this.code=code;return this;},json(body){this.body=body;return this;}};
+      await handler({method:'POST',body:{operation:'delete_orphan_ddt',id:f.row.id,version:f.row.version,confirmed:true}},result);
+      assert.equal(result.code,403);assert.equal(f.deletes,0);
+    }
   }finally{await f.sql.close();}
 });

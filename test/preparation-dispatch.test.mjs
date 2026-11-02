@@ -192,7 +192,7 @@ test('automatic Mexal verification preserves recipient and printer settings, che
   const f=await fixture();
   try {
     const get=f.mexal.getJson.bind(f.mexal),post=f.mexal.postJson.bind(f.mexal);
-    f.mexal.getJson=async path=>path==='/help'?{risorse:[{regexp:'^/documenti/moduli-stampa/[A-Z]+$',method:'GET'}]}:path==='/documenti/moduli-stampa/BC'?{elenco_moduli_stampa_disponibili:[{codice:'BCF'}]}:get(path);
+    f.mexal.getJson=async path=>path==='/help'?{risorse:[{regexp:'^/documenti/moduli-stampa/[A-Z]+$',method:'GET'}]}:path==='/documenti/moduli-stampa/BC'?{elenco_moduli_stampa_disponibili:[{codice:'BCF'},{codice:'BCS',descrizione:'Bolla senza Prezzi'}]}:get(path);
     f.mexal.postJson=async(path,body)=>path.startsWith('/documenti/movimenti-magazzino/ricerca')?{dati:[{sigla:'BC',serie:1,numero:10,cod_conto:'501.00001'}]}:post(path,body);
     f.mexal.printMovementPdf=()=>f.mexal.getBinary();
     const initial=ok(await f.call('ddt_settings')).settings;

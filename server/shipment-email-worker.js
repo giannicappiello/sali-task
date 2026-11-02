@@ -7,7 +7,7 @@ export async function claimShipmentEmail(db, worker) {
   const job = checked(await db.rpc('warehouse_claim_shipment_email',{p_worker:worker}));
   if (!job) return null;
   try {
-    const files = checked(await db.from('warehouse_preparation_documents').select('kind,filename,sha256,base64').eq('preparation_id',job.preparation_id).in('kind',['bcf','packing_list']));
+    const files = checked(await db.from('warehouse_current_preparation_documents').select('kind,filename,sha256,base64').eq('preparation_id',job.preparation_id).in('kind',['bcf','packing_list']));
     assert(files.length === 2, 'Allegati spedizione incompleti.');
     assert(files.reduce((size,file)=>size+file.base64.length,0)<=4000000, 'Allegati superiori al limite del servizio email (3 MB).');
     const attachments = files.map(file=>{

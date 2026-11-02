@@ -1,3 +1,4 @@
+import {ensureDdtPdf,ensurePackingPdf} from './preparation-ddt-pdf.js';
 import { createHash } from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import { PDFDocument } from 'pdf-lib';
@@ -75,7 +76,7 @@ export async function shipmentPreview(db, client, row, settings) {
     else recipients.push({email:candidate.email,roles:[candidate.role]});
   }
   const snapshot = {preparationId:row.id, sourceHash:row.source_hash, version:row.version,
-    recipients, agentCode, emailCustomers, emailAgents, pdfPath:settings.ddt_pdf_path, contractEvidence:settings.contract_evidence,
+    recipients, agentCode, emailCustomers, emailAgents, pdfPath:settings.ddt_pdf_path, pdfPrintModule:'S', packingLayout:'compact-v2', contractEvidence:settings.contract_evidence,
     subject:settings.email_subject || 'Documenti spedizione {documento}',
     body:settings.email_body || 'In allegato la bolla {documento} e la packing list dell’ordine {ordine}.',
   };
@@ -85,12 +86,12 @@ export async function shipmentPreview(db, client, row, settings) {
 export async function shipmentReadback(db, row, kind) {
   if (kind) {
     assert(['bcf','bcf_print','packing_list'].includes(kind) || /^packing_pallet_[a-f0-9-]{36}$/.test(kind), 'Documento non valido.');
-    const document = checked(await db.from('warehouse_preparation_documents').select('kind,filename,sha256,base64,created_at')
+    const document = checked(await db.from('warehouse_current_preparation_documents').select('kind,filename,sha256,base64,created_at')
       .eq('preparation_id',row.id).eq('kind',kind).single());
     return {document};
   }
   const [documents, jobs] = await Promise.all([
-    db.from('warehouse_preparation_documents').select('kind,filename,sha256,created_at').eq('preparation_id',row.id),
+    db.from('warehouse_current_preparation_documents').select('kind,filename,sha256,created_at').eq('preparation_id',row.id),
     db.from('warehouse_shipment_emails').select('id,recipient,roles,status,attempts,last_error,sent_at,provider_message_id').eq('preparation_id',row.id),
   ]);
   return {documents:checked(documents),emails:checked(jobs)};
@@ -104,7 +105,7 @@ export async function finalizeShipment(db, client, row, { trigger = triggerAruba
     assert(Number(client.anno) === row.source.year, 'Anno Mexal diverso da quello della spedizione: nessun PDF recuperato.',409);
     const snapshot = row.dispatch_snapshot;
     assert(snapshot?.recipients?.length, 'Riepilogo destinatari non disponibile.', 409);
-    const existing = checked(await db.from('warehouse_preparation_documents').select('kind').eq('preparation_id',row.id));
+    const existing = checked(await db.from('warehouse_current_preparation_documents').select('kind').eq('preparation_id',row.id));
     if (existing.length !== 3 + row.state.pallets.length) {
       const actual = row.confirmed_document;
       verifyDdt(actual, row, row.export_payload);
@@ -126,6 +127,8 @@ export async function finalizeShipment(db, client, row, { trigger = triggerAruba
         .map(({bytes,...file}) => ({...file,base64:bytes.toString('base64'),sha256:hash(bytes)}));
       checked(await db.rpc('warehouse_commit_shipment', {p_id:row.id,p_files:files}));
     }
+    await ensureDdtPdf(db,client,row);
+    await ensurePackingPdf(db,row);
     const dispatch = await trigger();
     return {shipment:await shipmentReadback(db,row),dispatch};
   } catch (error) {

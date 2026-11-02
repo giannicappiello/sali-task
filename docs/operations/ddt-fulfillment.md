@@ -66,18 +66,25 @@ La POST di emissione rimane unica e viene preceduta dal claim persistito.
 Un timeout consente solo riconciliazione tramite marcatore ALL e controlli
 di origine/quantità/lotti. La riconciliazione delle vecchie BCS conserva il
 cod_modulo del payload storico. Errori successivi di PDF/email non riaprono
-l'emissione: **Completa documenti e invii** recupera esclusivamente gli artefatti.
+l'emissione: il completamento automatico recupera esclusivamente gli artefatti.
 
 ## PDF e email
 
-Il recupero del PDF usa `POST /webapi/servizi` con comando
-`stampa_movimento_magazzino` e `dati={sigla:BC,serie,numero,cod_conto,cod_modulo:F}`.
-Il 2 novembre 2026 la prova in produzione su BC+1+23 ha restituito un PDF
-di 564545 byte, SHA256 f22194398afbe0c3338106b08acaac74f925e28b7716aedb0a74ef6fb4b40065.
-La verifica automatica legge un BC esistente, richiede il modulo F, valida il
-PDF e registra evidenza e collegamento nella configurazione con controllo
-concorrenza. Non emette nuovi documenti. Il catalogo reale conferma BCF
-"Stampa Indirizzo" e BCS "Bolla senza Prezzi".
+Il documento emesso resta BCF (`cod_modulo:F`), con trasformazione nativa dell�OCM.
+Per il PDF il servizio `POST /webapi/servizi`, comando `stampa_movimento_magazzino`,
+richiede invece esplicitamente `dati.cod_modulo:S`: il catalogo reale descrive
+BCF come "Stampa Indirizzo" e BCS come "Bolla senza Prezzi". Il modulo del PDF
+non cambia il movimento gi� emesso. Non viene effettuata una seconda emissione
+n� un primo comando di stampa da scartare. Il 2 novembre 2026 sono stati verificati
+contenuto e resa del PDF S su BC+1+23: cliente, righe articoli, quantit� e trasporto.
+La diagnostica espone un�anteprima scaricabile per verificare il contenuto.
+
+I PDF storici con layout indirizzo e le packing list precedenti non vengono
+sovrascritti. Le correzioni appendono versioni in
+`warehouse_preparation_document_revisions`, con operatore, timestamp server,
+hash precedente/nuovo e motivazione nel registro immutabile. La vista
+`warehouse_current_preparation_documents` serve la versione corrente a download,
+MES e invii futuri. Le email gi� accettate non vengono reinviate automaticamente.
 
 Una transazione archivia BCF originale, PDF DDT con tre copie complete,
 packing list completa e una packing list per ciascun bancale. Quelle per
@@ -149,3 +156,13 @@ regressioni email verificano il flusso con PostgreSQL/PGlite e Mexal sintetico.
 Per le suite DB impostare `PGLITE_MODULE` al modulo PGlite disponibile localmente.
 Queste prove non inviano email reali, non stampano e non movimentano Mexal.
 Il modulo Genera ordine con AI rimane nel proprio flusso Workspace.
+
+## Registro PDF e packing list compatta
+Il pulsante Scarica Registro accanto a Ristampa esporta tutti gli eventi fino
+all�ID acquisito all�inizio del download, con paginazione stabile. Il PDF usa
+la stessa `drawProgreOrderHeader` della packing list e riporta ordine, cliente,
+operatori, date/ore Europe/Rome, UUID letture/colli/eventi, quantit� precedenti e
+correzioni. Le date originarie assenti sono indicate come non registrate.
+Le packing list `compact-v2` usano titoli di colonna una volta per pagina,
+numero collo per riga e tutti i lotti, pesi e totali; resta un PDF per bancale.
+Scarica DDT e Scarica packing list sono sulla stessa riga nella card Riscontro.

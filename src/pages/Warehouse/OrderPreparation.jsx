@@ -1,4 +1,5 @@
 import PreparationHistory from './PreparationHistory.jsx';
+import {buildPreparationAuditPdf} from './preparationAuditPdf.js';
 import PreparationPackageEditor from './PreparationPackageEditor.jsx';
 import PreparationPackageRemoval from './PreparationPackageRemoval.jsx';
 import PreparationReprintDialog from './PreparationReprintDialog.jsx';
@@ -419,6 +420,7 @@ export default function OrderPreparation() {
       if (["scan","verify","preview_packing_list"].includes(operation) && response.preparation) setCartonPrompt(null);
       if(operation === "preview_packing_list" && response.document){setPackingPreview({bytes:Uint8Array.from(atob(response.document.base64),char=>char.charCodeAt(0)).buffer,fileName:response.document.filename});return response;}
       if(operation === "preview_packing_list" && response.preparation){setPackingPreview({bytes:preparationPdf(response.preparation,{preview:true}),fileName:packingListFileName(response.preparation)});return response;}
+      if(operation==='document' && response.document){setPackingPreview({bytes:Uint8Array.from(atob(response.document.base64),char=>char.charCodeAt(0)).buffer,fileName:response.document.filename});return response;}
       if (response.preparation) accept(response.preparation,true);
       if (operation === "scan" && response.preparation) {
         const saved = response.preparation.state.scans.find(
@@ -603,6 +605,20 @@ export default function OrderPreparation() {
     setBusy(true);setError('');
     try {const preview=await preparationApi('preview_dispatch',{id:row.id});setDispatchPreview(preview);setDdtNotes(cleanWarehouseHandoffNote(source.note));setConfirmDdt(true);}
     catch(e){setError(e.message);}finally{setBusy(false);}
+  }
+
+  async function downloadRegister(){
+    if(lock.current)return;lock.current=true;setBusy(true);setError('');
+    try{
+      let after=0,maxId=null,first=null;const records=[];
+      do{
+        const result=await preparationApi('audit_export',{id:current.current.id,after,...(maxId==null?{}:{maxId})});
+        first ||= result;maxId=result.maxId;records.push(...result.records);after=result.nextAfter;
+        if(records.length>100000)throw new Error('Registro troppo esteso: contatta il backoffice per l’esportazione completa.');
+      }while(after!==null);
+      buildPreparationAuditPdf(first.preparation,records,{generatedAt:first.generatedAt}).save(`Registro_OCM_${first.preparation.source.series}_${first.preparation.source.number}.pdf`);
+      setNotice('Registro ordine scaricato.');
+    }catch(e){setError(e.message);}finally{lock.current=false;setBusy(false);}
   }
 
   async function printDocument(kind,copies) {
@@ -1113,7 +1129,7 @@ export default function OrderPreparation() {
               </button>
             )}
 
-            {row.status==='completed' && <button disabled={busy || !canWrite} onClick={()=>{setError('');setNotice('');setReprintOpen(true);}}>Ristampa</button>}
+            <div className="op-toolbar op-register-actions">{row.status==='completed' && <button disabled={busy || !canWrite} onClick={()=>{setError('');setNotice('');setReprintOpen(true);}}>Ristampa</button>}<button disabled={busy} onClick={()=>void downloadRegister()}>Scarica Registro</button></div>
             {completionStatus && !['completed','blocked'].includes(completionStatus.status) && <p className="op-notice" role="status">Completamento automatico di documenti, invii e stampa in corso.</p>}
             {completionStatus?.status==='blocked' && <p className="op-error" role="alert">Completamento da verificare: {completionStatus.last_error}</p>}
             {row.ddt && (
@@ -1123,7 +1139,7 @@ export default function OrderPreparation() {
             )}
 
             {row.verification?.summary && (
-              <button
+              <div className="op-document-downloads"><button
                 disabled={busy}
                 onClick={() => {
                   try {
@@ -1137,7 +1153,7 @@ export default function OrderPreparation() {
                 {row.ddt
                   ? "Scarica packing list"
                   : "Visualizza packing list"}
-              </button>
+              </button>{row.ddt && <button disabled={busy} onClick={()=>void perform('document',{kind:'bcf'})}><FileDown size={16}/>Scarica DDT</button>}</div>
             )}
 
             {editable && (

@@ -16,6 +16,8 @@ import { appendPreparationScan } from '../shared/preparationScanning.js';
 import { shipmentPreview, finalizeShipment, shipmentReadback, validateDispatchSettings } from './preparation-dispatch.js';
 import { createMesDdtPrinting } from './ddt-mes-print.js';
 import {previewOrphanDdtDeletion,deleteOrphanDdt,isKnownRejectedDdt,resetRejectedDdt} from './preparation-ddt-deletion.js';
+import {ensureDdtPdf,ensurePackingPdf} from './preparation-ddt-pdf.js';
+import {preparationAuditRecord} from '../shared/preparationAudit.js';
 import {readEmittedDdt} from './preparation-ddt-readback.js';
 
 import { buildMexalClient } from "./mexal/sync-products.js";
@@ -361,7 +363,7 @@ export function createOrderPreparationHandler({
         { db, profile } = session;
       const op = body.operation;
 
-      const canRead = ["list", "get", "completion_status", "settings", "reconcile", "resolve_product", "preview_packing_list", "audit", "preview_dispatch", "shipment", "document", "ddt_settings", "ddt_queue"].includes(op);
+      const canRead = ["list", "get", "completion_status", "settings", "reconcile", "resolve_product", "preview_packing_list", "audit", "audit_export", "preview_dispatch", "shipment", "document", "ddt_settings", "ddt_queue"].includes(op);
 
       assert(
         canRead ||
@@ -394,10 +396,11 @@ export function createOrderPreparationHandler({
       if (op === 'ddt_verify') {
         const report = await runDdtContractDiagnostics(clientFactory({warehouse:null}));
         assert(report.modules?.payload?.elenco_moduli_stampa_disponibili?.some(module=>module.codice==='BCF'), 'Modulo BCF non disponibile in Mexal.',409);
+        assert(report.modules?.payload?.elenco_moduli_stampa_disponibili?.some(module=>module.codice==='BCS' && /bolla/i.test(module.descrizione)), 'Modulo DDT senza prezzi non disponibile in Mexal.',409);
         assert(report.services?.ok, report.services?.error || 'Recupero PDF Mexal non verificato.',409);
         const result = await db.rpc('warehouse_configure_preparation',{p_actor:profile.id,p_expected:body.settingsVersion,p_settings:{
           ddt_pdf_path:MEXAL_BCF_PDF_SERVICE,bcf_contract_verified:true,
-          contract_evidence:`${report.checkedAt}: BCF (Stampa Indirizzo); ${report.services.command}; ${report.services.reference}; PDF ${report.services.bytes} byte; SHA256 ${report.services.sha256}`,
+          contract_evidence:`${report.checkedAt}: Documento BCF; PDF DDT con modulo S (Bolla senza Prezzi), escluso Stampa Indirizzo; ${report.services.command}; ${report.services.reference}; PDF ${report.services.bytes} byte; SHA256 ${report.services.sha256}`,
         }});
         if (result.error) throw Object.assign(new Error(result.error.message),{status:result.error.code === '40001'?409:400});
         return res.status(200).json({verified:true,checkedAt:report.checkedAt,bytes:report.services.bytes});
@@ -609,8 +612,10 @@ export function createOrderPreparationHandler({
         return res.status(200).json({preparation:exposed(row),deletedReference:body.reference});
       }
       if (op === 'completion_status') return res.status(200).json({preparation:exposed(row),completion:checked(await db.from('warehouse_completion_jobs').select('status,last_error,updated_at').eq('preparation_id',id).maybeSingle())});
+      if(row.status==='completed' && ((op==='preview_packing_list') || (['document','print_document'].includes(op) && body.kind!=='bcf' && body.kind!=='bcf_print')))await ensurePackingPdf(db,row,profile.id,session.canWrite);
       if (op === 'print_document') {
         assert(session.canWrite,'Permesso di stampa richiesto.',403);
+        if(body.kind==='bcf_print')await ensureDdtPdf(db,clientFactory({warehouse:null,year:row.source.year,timeoutMs:60000}),row,profile.id);
         if ((body.kind==='bcf_print'?settings.ddt_printer_id:settings.packing_printer_id)?.startsWith('MES:')) await mesPrinting.inventory(db);
         const copies=body.copies == null ? null : integer(body.copies,'Numero copie',1,50);
         const job = checked(await db.rpc(copies == null ? 'warehouse_enqueue_print' : 'warehouse_enqueue_print_copies',{p_id:id,p_request:uuid(body.eventId),p_kind:body.kind,p_actor:profile.id,...(copies == null ? {} : {p_copies:copies})}));
@@ -619,7 +624,15 @@ export function createOrderPreparationHandler({
       if (op === 'preview_packing_list' && row.status === 'completed' && row.ddt?.signature === 'BCF') return res.status(200).json(await shipmentReadback(db,row,'packing_list'));
 
       if (op === 'preview_dispatch') return res.status(200).json(await shipmentPreview(db, client, row, settings));
+      if(op==='document' && ['bcf','bcf_print'].includes(body.kind))await ensureDdtPdf(db,clientFactory({warehouse:null,year:row.source.year,timeoutMs:60000}),row,profile.id,session.canWrite);
       if (op === 'shipment' || op === 'document') return res.status(200).json(await shipmentReadback(db, row, op === 'document' ? body.kind : null));
+      if(op==='audit_export') {
+        const after=integer(body.after||0,'Cursore registro',0,Number.MAX_SAFE_INTEGER);
+        const latest=body.maxId==null?checked(await db.from('warehouse_preparation_events').select('id').eq('preparation_id',id).order('id',{ascending:false}).limit(1)):null;
+        const maxId=body.maxId==null?(latest[0]?.id||0):integer(body.maxId,'Fine registro',0,Number.MAX_SAFE_INTEGER);
+        const events=checked(await db.from('warehouse_preparation_events').select('id,event_id,event_type,actor,payload,created_at').eq('preparation_id',id).gt('id',after).lte('id',maxId).order('id').limit(100));
+        return res.status(200).json({preparation:exposed(row),records:events.map(preparationAuditRecord),maxId,nextAfter:events.length===100?events.at(-1).id:null,generatedAt:new Date().toISOString()});
+      }
       if (op === 'audit') {
         const after = Math.max(0, Number(body.after) || 0);
         const events = checked(await db.from('warehouse_preparation_events').select('id,event_id,event_type,actor,payload,created_at')

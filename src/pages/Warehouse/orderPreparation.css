@@ -663,3 +663,5 @@
 .op-reprint-dialog {width:min(480px,calc(100vw - 24px));}
 .op-reprint-dialog label {display:grid;gap:6px;margin:16px 0;}
 .op-reprint-dialog :is(input,select) {width:100%;min-width:0;box-sizing:border-box;font:inherit;min-height:44px;}
+
+.op-document-downloads{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px}.op-document-downloads button{min-width:0;white-space:nowrap;font-size:12px;padding:8px 9px;gap:4px}.op-register-actions{gap:8px}

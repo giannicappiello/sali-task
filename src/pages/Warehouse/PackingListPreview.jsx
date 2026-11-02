@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 
-function PdfPage({pdf,number,zoom}) {
+function PdfPage({pdf,number,zoom,title}) {
   const host=useRef(null),canvas=useRef(null);
   const [width,setWidth]=useState(0),[error,setError]=useState(''),[visible,setVisible]=useState(false);
   useEffect(()=>{
@@ -31,10 +31,11 @@ function PdfPage({pdf,number,zoom}) {
     })();
     return ()=>{active=false;render?.cancel();};
   },[pdf,number,width,visible]);
-  return <article className="op-pdf-page" ref={host} style={{width:`${zoom}%`,aspectRatio:"210 / 297"}}>{error ? <p role="alert">{error}</p> : <canvas ref={canvas} role="img" aria-label={`Packing list, pagina ${number}`}/>}</article>;
+  return <article className="op-pdf-page" ref={host} style={{width:`${zoom}%`,aspectRatio:"210 / 297"}}>{error ? <p role="alert">{error}</p> : <canvas ref={canvas} role="img" aria-label={`${title}, pagina ${number}`}/>}</article>;
 }
 
 export default function PackingListPreview({bytes,fileName="Packing-list.pdf",onClose}) {
+  const title=/^(DDT|BCF)[_ -]/i.test(fileName)?'DDT':'Packing list';
   const dialog=useRef(null);
   const downloadLink=useRef(null);
   useEffect(()=>{
@@ -60,13 +61,13 @@ export default function PackingListPreview({bytes,fileName="Packing-list.pdf",on
     })();
     return ()=>{active=false;void task?.destroy().catch(()=>{});};
   },[bytes]);
-  return <dialog ref={dialog} className="op-packing-preview" data-report-export="" aria-label="Packing list" onCancel={event=>{event.preventDefault();onClose();}}>
-    <header><strong>Packing list{pdf?` · ${pdf.numPages} ${pdf.numPages===1?'pagina':'pagine'}`:''}</strong><div className="op-pdf-actions"><a ref={downloadLink} className="op-pdf-download" download={fileName}>Download PDF</a><button type="button" onClick={onClose}>Chiudi anteprima</button></div></header>
-    <div className="op-pdf-zoom" aria-label="Ingrandimento packing list"><button type="button" aria-label="Riduci ingrandimento" disabled={zoom<=75} onClick={()=>setZoom(value=>value-25)}>−</button><span>{zoom}%</span><button type="button" aria-label="Aumenta ingrandimento" disabled={zoom>=300} onClick={()=>setZoom(value=>value+25)}>+</button></div>
-    <section className="op-pdf-pages" aria-label="Pagine della packing list">
+  return <dialog ref={dialog} className="op-packing-preview" data-report-export="" aria-label={title} onCancel={event=>{event.preventDefault();onClose();}}>
+    <header><strong>{title}{pdf?` · ${pdf.numPages} ${pdf.numPages===1?'pagina':'pagine'}`:''}</strong><div className="op-pdf-actions"><a ref={downloadLink} className="op-pdf-download" download={fileName}>Download PDF</a><button type="button" onClick={onClose}>Chiudi anteprima</button></div></header>
+    <div className="op-pdf-zoom" aria-label={`Ingrandimento ${title}`}><button type="button" aria-label="Riduci ingrandimento" disabled={zoom<=75} onClick={()=>setZoom(value=>value-25)}>−</button><span>{zoom}%</span><button type="button" aria-label="Aumenta ingrandimento" disabled={zoom>=300} onClick={()=>setZoom(value=>value+25)}>+</button></div>
+    <section className="op-pdf-pages" aria-label={`Pagine ${title}`}>
       {error && <p role="alert">{error}</p>}
       {!pdf && !error && <p role="status">Caricamento packing list…</p>}
-      {pdf && Array.from({length:pdf.numPages},(_,i)=><PdfPage key={i+1} pdf={pdf} number={i+1} zoom={zoom}/>)}
+      {pdf && Array.from({length:pdf.numPages},(_,i)=><PdfPage key={i+1} pdf={pdf} number={i+1} zoom={zoom} title={title}/>)}
     </section>
   </dialog>;
 }

@@ -399,9 +399,13 @@ export function mexalFixture() {
         return { dati: [structuredClone(raw)] };
       if (path.startsWith("/documenti/movimenti-magazzino/ricerca"))
         return { dati: fixture.ddt ? [fixture.ddt] : [] };
-      if (path === "/documenti/movimenti-magazzino") {
+      if (path === "/documenti/movimenti-magazzino?sigla_trasformazione=BC") {
+        if (!Array.isArray(payload.dt_ult_mod_orig)) throw Error('Concurrency token must be indexed by source header');
         fixture.sends++;
-        fixture.ddt = { ...structuredClone(payload), numero: 123 };
+        fixture.ddt = { ...structuredClone(payload), numero: 123,
+          sigla_ordine:structuredClone(payload.sigla_doc_orig),serie_ordine:structuredClone(payload.serie_doc_orig),numero_ordine:structuredClone(payload.numero_doc_orig),data_ordine:structuredClone(payload.data_doc_orig),
+          sigla_doc_orig:[[1,'BC']],serie_doc_orig:[[1,payload.serie]],numero_doc_orig:[[1,123]],
+        };
         if (fixture.timeout) throw Error("Timeout dopo accettazione Mexal");
         return fixture.ddt;
       }

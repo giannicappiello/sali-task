@@ -435,7 +435,7 @@ export function buildDdt(
     numero_doc_orig: [[1, source.number]],
     data_doc_orig: [[1, source.date]],
 
-    dt_ult_mod_orig: text(raw.data_ult_mod),
+    dt_ult_mod_orig: [[1,text(raw.data_ult_mod)]],
 
     id_rif_testata: allIds.map(([pos]) => [pos, 1]),
     id_riga_orig: allIds.map(([pos, id]) => [pos, Number(id)]),
@@ -506,7 +506,7 @@ export function buildDdt(
   return payload;
 }
 
-export function verifyDdt(actual, preparation, payload) {
+export function verifyDdt(actual, preparation, payload, {forLinkRepair=false}={}) {
   const raw = unwrap(actual);
   assert(
     raw.sigla === "BC" &&
@@ -527,12 +527,16 @@ export function verifyDdt(actual, preparation, payload) {
   assert(documentNotes(raw.nota).replace(/\r\n/g, "\n").trim() === documentNotes(payload.nota).replace(/\r\n/g, "\n").trim(),
     "Note del DDT diverse dalle note confermate.");
 
-  const origins = matrix(raw.sigla_doc_orig),
-    series = matrix(raw.serie_doc_orig),
-    numbers = matrix(raw.numero_doc_orig);
+  // sigla_doc_orig identifies the movement itself on a persisted GET. Native
+  // order links are published in sigla_ordine/serie_ordine/numero_ordine.
+  const nativeOrder = matrix(raw.sigla_ordine);
+  const origins = nativeOrder.size ? nativeOrder : matrix(raw.sigla_doc_orig),
+    series = matrix(nativeOrder.size ? raw.serie_ordine : raw.serie_doc_orig),
+    numbers = matrix(nativeOrder.size ? raw.numero_ordine : raw.numero_doc_orig);
+  if (forLinkRepair) assert(!nativeOrder.size,'Bolla già collegata: verificare i riferimenti esistenti.');
 
   assert(
-    [...origins].some(
+    forLinkRepair || [...origins].some(
       ([i, s]) =>
         s === "OC" &&
         Number(series.get(i)) === preparation.source.series &&
@@ -565,9 +569,9 @@ export function verifyDdt(actual, preparation, payload) {
       (line) => line.id === originalId,
     );
     assert(
-      origins.get(group) === "OC" &&
+      (forLinkRepair ? group === 1 : (origins.get(group) === "OC" &&
         Number(series.get(group)) === preparation.source.series &&
-        Number(numbers.get(group)) === preparation.source.number &&
+        Number(numbers.get(group)) === preparation.source.number)) &&
         original &&
         !usedOrigins.has(originalId) &&
         original.code === row.code &&

@@ -201,10 +201,16 @@ test("DDT retains all source row references and rejects extra products, incorrec
     [3, 23],
   ]);
   assert.deepEqual(payload.sigla_doc_orig, [[1, "OC"]]);
+  assert.deepEqual(payload.dt_ult_mod_orig, [[1,f.raw.data_ult_mod]]);
   assert.deepEqual(payload.quantita, f.raw.quantita);
   assert.deepEqual(payload.id_mag_da_riga, f.raw.id_mag_riga);
   const actual = { ...structuredClone(payload), numero: 123 };
   assert.equal(verifyDdt(actual, prep, payload).number, 123);
+  const persisted={...actual,sigla_doc_orig:[[1,'BC']],numero_doc_orig:[[1,123]],sigla_ordine:[[1,'OC']],serie_ordine:[[1,1]],numero_ordine:[[1,900]]};
+  assert.equal(verifyDdt(persisted,prep,payload).number,123);
+  assert.throws(()=>verifyDdt({...persisted,numero_ordine:[[1,901]]},prep,payload),/collegamento/);
+  const orphan={...persisted,sigla_ordine:[],serie_ordine:[],numero_ordine:[]};
+  assert.throws(()=>verifyDdt(orphan,prep,payload),/collegamento/);
   const extra = structuredClone(actual);
   extra.codice_articolo.push([4, "IT0003"]);
   extra.quantita.push([4, 1]);

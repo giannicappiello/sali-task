@@ -869,7 +869,7 @@ export function createOrderPreparationHandler({
           body.ddtNotes,
         );
 
-        // Calculation is read-only and checks the native transformation before the durable send marker.
+        // Calculation checks totals only. Native conversion is enabled on the POST URL below.
 
         await client.calculateDocument(payload);
 
@@ -886,7 +886,7 @@ export function createOrderPreparationHandler({
           // One POST only. A timeout leaves an uncertain journal and may only be reconciled by reads.
 
           const result = unwrap(
-            await client.postJson("/documenti/movimenti-magazzino", payload),
+            await client.postJson("/documenti/movimenti-magazzino?sigla_trasformazione=BC", payload),
           );
 
           let actual = result;

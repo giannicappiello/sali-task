@@ -14,5 +14,7 @@ export async function preparationDdtDiagnostics(client,row) {
   let currentOrder;
   try {currentOrder=technical(await client.getJson('/documenti/ordini-clienti/'+encodeURIComponent(row.source.reference)));}
   catch(error){currentOrder={error:error.message};}
-  return {readOnly:true,id:row.id,status:row.status,error:row.error,source:{reference:row.source.reference,year:row.source.year},expected:technical(row.export_payload),actual:actual.map(technical),currentOrder};
+  let history;
+  try {history=await client.orderHistory(row.source);}catch(error){history={error:error.message};}
+  return {readOnly:true,id:row.id,status:row.status,error:row.error,source:{reference:row.source.reference,year:row.source.year},expected:technical(row.export_payload),actual:actual.map(technical),currentOrder,history};
 }

@@ -283,6 +283,12 @@ export function buildMexalClient({ request = requestMexal, warehouse, retryOptio
       return parseJsonResponse(response, 'Calcolo documento Mexal');
     },
 
+    async orderHistory({series,number,year}) {
+      const body=JSON.stringify({cmd:'get_storico_ordine',dati:{in_serie_ordine:series,in_numero_ordine:number,in_anno_ordine:year,in_anno_inizio_ricerca:year}});
+      const response=await request({url:`${baseUrl}/webapi/servizi`,headers:{...headers,'Content-Type':'application/json','Content-Length':Buffer.byteLength(body)},method:'POST',body,timeoutMs});
+      return parseJsonResponse(response,'Storia ordine Mexal');
+    },
+
     async printMovementPdf(document) {
       const { sigla, serie, numero, cod_conto, cod_modulo } = document;
       if (sigla !== 'BC' || !Number.isSafeInteger(serie) || serie < 1 || !Number.isSafeInteger(numero) || numero < 1 || !/^[0-9.]{3,20}$/.test(cod_conto) || cod_modulo !== 'F') throw new Error('Riferimento BCF non valido.');

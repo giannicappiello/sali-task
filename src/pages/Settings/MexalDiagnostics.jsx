@@ -162,7 +162,7 @@ export default function MexalDiagnostics() {
       <div className="panel-header"><h3>Verifica collegamento DDT Mexal</h3></div>
       <p>Legge il catalogo e i moduli BC reali. Non emette documenti e non modifica le configurazioni.</p>
       <button className="secondary-action" type="button" onClick={executeDdtContract} disabled={Boolean(loading)}>{loading === "ddt-contract" ? "Verifica in corso..." : "Verifica moduli BCF e BCS"}</button>
-      {ddtContract && <JsonPanel title="Esito lettura moduli DDT" value={ddtContract} />}
+      {ddtContract && <><JsonPanel title="Esito lettura moduli DDT" value={{...ddtContract,services:ddtContract.services && {...ddtContract.services,previewPdfBase64:undefined}}} />{ddtContract.services?.previewPdfBase64 && <a download="verifica-ddt-mexal.pdf" href={'data:application/pdf;base64,'+ddtContract.services.previewPdfBase64}>Scarica PDF DDT verificato</a>}</>}
     </section>
     <div className="page-title-row"><div><button className="secondary-action mexal-diagnostics-back" type="button" onClick={goBack}><ArrowLeft size={18} /> Torna a Mexal ERP</button><h1>Diagnostica Mexal</h1><p>Legge dati reali e individua i campi corretti usati da Mexal.</p></div></div>
 

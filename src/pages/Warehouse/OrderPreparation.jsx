@@ -1,5 +1,6 @@
 import PreparationHistory from './PreparationHistory.jsx';
 import PreparationPackageEditor from './PreparationPackageEditor.jsx';
+import PreparationPackageRemoval from './PreparationPackageRemoval.jsx';
 import {Link} from 'react-router-dom';
 import PackingListPreview from "./PackingListPreview.jsx";
 import PreparationProductPrompt from "./PreparationProductPrompt.jsx";
@@ -265,8 +266,7 @@ export default function OrderPreparation() {
     [packingPreview,setPackingPreview] = useState(null),
     [dispatchPreview,setDispatchPreview] = useState(null),
     [editingPackage,setEditingPackage] = useState(null),
-    [removingPackage,setRemovingPackage] = useState(null),
-    [removeReason,setRemoveReason] = useState('');
+    [removingPackage,setRemovingPackage] = useState(null);
 
   const [query, setQuery] = useState(""),
     [camera, setCamera] = useState(false),
@@ -639,11 +639,11 @@ export default function OrderPreparation() {
         <div className="op-toolbar op-package-actions">
           <button
             disabled={p.closed || busy || !!cartonPrompt}
-            onClick={() => choosePackage(p)}
+            onClick={() => {choosePackage(p);setCamera(true);}}
           >
             Seleziona
           </button>
-          <button disabled={busy || p.id===draftPackage?.id} onClick={()=>setEditingPackage(p.id)}>Modifica</button>
+          <button disabled={busy || p.id===draftPackage?.id} onClick={()=>{setError('');setEditingPackage(p.id);}}>Modifica</button>
           <button
             disabled={busy}
             onClick={() =>
@@ -653,19 +653,13 @@ export default function OrderPreparation() {
                     packages.find((item) => item.palletId === p.palletId)?.id ||
                       "",
                   ))
-                : (setRemoveReason(''),setRemovingPackage(p.id))
+                : (setError(''),setRemovingPackage(p.id))
             }
           >
             Elimina
           </button>
         </div>
       )}
-      {removingPackage===p.id && editable && <section className="op-remove-confirm" role="group" aria-label="Conferma eliminazione collo">
-        <h3>Elimina collo {p.number}</h3>
-        <p>Verranno rimossi il collo e tutti i suoi {format(scans.filter(s=>s.packageId===p.id).reduce((n,s)=>n+s.quantity,0))} pezzi. Sarà necessario un nuovo riscontro. L’eliminazione resterà nello storico.</p>
-        <label>Motivo<textarea maxLength={1000} value={removeReason} onChange={e=>setRemoveReason(e.target.value)}/></label>
-        <div className="op-toolbar"><button disabled={busy} onClick={()=>setRemovingPackage(null)}>Annulla</button><button disabled={busy || removeReason.trim().length<3} onClick={async()=>{const result=await perform('remove_package',{packageId:p.id,confirmed:true,reason:removeReason});if(result){setRemovingPackage(null);setEditingPackage(null);}}}>Elimina collo e contenuto</button></div>
-      </section>}
     </article>
   );
 
@@ -1205,6 +1199,7 @@ export default function OrderPreparation() {
           />}
 
           {editingPackage && packages.some(item=>item.id===editingPackage) && editable && <PreparationPackageEditor key={editingPackage} pack={packages.find(item=>item.id===editingPackage)} scans={scans.filter(item=>item.packageId===editingPackage)} busy={busy} error={error} onAction={perform} onSelect={pack=>{choosePackage(pack);setEditingPackage(null);setMode('piece');setCamera(true);}} onClose={()=>setEditingPackage(null)}/>}
+          {removingPackage && packages.some(item=>item.id===removingPackage) && editable && <PreparationPackageRemoval key={removingPackage} pack={packages.find(item=>item.id===removingPackage)} quantity={format(scans.filter(scan=>scan.packageId===removingPackage).reduce((n,scan)=>n+scan.quantity,0))} busy={busy} error={error} onClose={()=>setRemovingPackage(null)} onRemove={async reason=>{const result=await perform('remove_package',{packageId:removingPackage,confirmed:true,reason});if(result && !result.error){setRemovingPackage(null);setEditingPackage(null);}}}/>}
           {row.status === 'completed' && <section className="op-panel"><h2>Documenti e stampa</h2><button disabled={busy} onClick={()=>void perform('finalize_documents')}>Completa documenti e invii</button><button disabled={busy || !canWrite} onClick={()=>void printDocument('bcf_print')}>Stampa DDT - 3 copie</button>{pallets.map(pallet=><button key={pallet.id} disabled={busy || !canWrite} onClick={()=>void printDocument('packing_pallet_'+pallet.id)}>Stampa packing bancale {pallet.number}</button>)}</section>}
           <PreparationHistory key={row.id} id={row.id}/>
           <section className="op-panel">

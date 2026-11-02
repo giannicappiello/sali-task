@@ -8,11 +8,13 @@
   overflow: auto;
   box-sizing: border-box;
   color: inherit;
+  font-size: 16px;
 }
 .op-package-editor-dialog::backdrop {background: rgb(15 35 55 / 55%);}
 .op-package-editor-dialog .op-panel {margin: 0; min-width: 0;}
 .op-package-editor-dialog textarea {width: 100%; box-sizing: border-box;}
 .op-package-editor-dialog button {min-height: 44px; white-space: normal;}
+.op-package-editor-dialog :is(button,input,textarea) {font: inherit;}
 
 .ddt-settings-page .op-settings fieldset {
   display: grid;

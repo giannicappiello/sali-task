@@ -643,7 +643,7 @@ export default function OrderPreparation() {
           >
             Seleziona
           </button>
-          <button disabled={busy} onClick={()=>setEditingPackage(p.id)}>Modifica</button>
+          <button disabled={busy || p.id===draftPackage?.id} onClick={()=>setEditingPackage(p.id)}>Modifica</button>
           <button
             disabled={busy}
             onClick={() =>
@@ -1204,7 +1204,7 @@ export default function OrderPreparation() {
             contextLabel={`Bancale ${pallets.find(item=>item.id===activePallet)?.number || "—"} · Collo ${visiblePackages.find(item=>item.id===activePackage)?.number || "—"}`}
           />}
 
-          {editingPackage && packages.some(item=>item.id===editingPackage) && editable && <PreparationPackageEditor key={editingPackage} pack={packages.find(item=>item.id===editingPackage)} scans={scans.filter(item=>item.packageId===editingPackage)} busy={busy} onAction={perform} onSelect={pack=>{choosePackage(pack);setMode('piece');setCamera(true);}} onClose={()=>setEditingPackage(null)}/>}
+          {editingPackage && packages.some(item=>item.id===editingPackage) && editable && <PreparationPackageEditor key={editingPackage} pack={packages.find(item=>item.id===editingPackage)} scans={scans.filter(item=>item.packageId===editingPackage)} busy={busy} error={error} onAction={perform} onSelect={pack=>{choosePackage(pack);setEditingPackage(null);setMode('piece');setCamera(true);}} onClose={()=>setEditingPackage(null)}/>}
           {row.status === 'completed' && <section className="op-panel"><h2>Documenti e stampa</h2><button disabled={busy} onClick={()=>void perform('finalize_documents')}>Completa documenti e invii</button><button disabled={busy || !canWrite} onClick={()=>void printDocument('bcf_print')}>Stampa DDT - 3 copie</button>{pallets.map(pallet=><button key={pallet.id} disabled={busy || !canWrite} onClick={()=>void printDocument('packing_pallet_'+pallet.id)}>Stampa packing bancale {pallet.number}</button>)}</section>}
           <PreparationHistory key={row.id} id={row.id}/>
           <section className="op-panel">

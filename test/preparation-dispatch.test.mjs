@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {PDFDocument} from 'pdf-lib';
 import {createOrderPreparationHandler} from '../server/order-preparation-handler.js';
 import {preparationDatabase,supabaseAdapter,mexalFixture,actor,event} from './order-preparation-fixture.mjs';
@@ -8,8 +9,9 @@ import {appendPreparationScan,palletQuantity} from '../shared/preparationScannin
 import {initialPacking} from '../shared/orderPreparation.js';
 import {claimShipmentEmail,updateShipmentEmail} from '../server/shipment-email-worker.js';
 import {buildPreparationPdf,preparationForPallet} from '../src/pages/Warehouse/preparationPdf.js';
-import {validateDispatchSettings} from '../server/preparation-dispatch.js';
+import {validateDispatchSettings,shipmentPreview} from '../server/preparation-dispatch.js';
 import {validateSpecification} from '../server/product-specifications.js';
+import {createMesDdtPrinting} from '../server/ddt-mes-print.js';
 const {PGlite}=await import(process.env.PGLITE_MODULE);
 
 async function fixture() {
@@ -24,6 +26,31 @@ async function fixture() {
   return {sql,db,mexal,call,get row(){return row;},readonly(){writable=false;}};
 }
 const ok=response=>{assert.equal(response.statusCode,200,JSON.stringify(response.data));return response.data;};
+const createHashForTest=value=>createHash('sha256').update(value).digest('hex');
+
+test('recipient switches persist with audit and exclude disabled roles without requiring their addresses',async()=>{
+  const f=await fixture();
+  try {
+    const initial=ok(await f.call('ddt_settings'));
+    ok(await f.call('ddt_configure',{settingsVersion:initial.settings.updated_at,emailCustomers:false,emailAgents:false}));
+    const saved=ok(await f.call('ddt_settings')).settings;
+    assert.equal(saved.email_customers,false);assert.equal(saved.email_agents,false);
+    const events=await f.sql.query('select before_settings,after_settings from warehouse_dispatch_configuration_events order by created_at desc limit 1');
+    assert.equal(events.rows[0].before_settings.email_customers,true);
+    assert.equal(events.rows[0].after_settings.email_agents,false);
+    const row={id:event(),version:1,source_hash:'test',source:{customerCode:'missing'},source_raw:{}};
+    let customerCalls=0;
+    const client={getJson:async()=>{customerCalls++;return {email:'client@example.test'};}};
+    const disabled=await shipmentPreview(f.db,client,row,saved);
+    assert.equal(customerCalls,0);assert.deepEqual(disabled.recipients,[{email:'office@example.test',roles:['backoffice']}]);
+    const customerOnly=await shipmentPreview(f.db,client,row,{...saved,email_customers:true});
+    assert.equal(customerCalls,1);assert.ok(customerOnly.recipients.some(r=>r.roles.includes('cliente')));
+    assert.notEqual(customerOnly.hash,disabled.hash);
+    await assert.rejects(shipmentPreview(f.db,client,row,{...saved,email_agents:true}),/Agente assente/);
+    assert.throws(()=>validateDispatchSettings({emailCustomers:'false'}),/Scelta destinatari/);
+    assert.deepEqual(validateDispatchSettings({emailCustomers:false,emailAgents:true}),{email_customers:false,email_agents:true});
+  } finally {await f.sql.close();}
+});
 
 test('MKT recognition retains ambiguities and pallet quantities cannot be forged or inferred',()=>{
   assert.equal(productCodeInScan('https://catalog.test/MKT-ALFA'),'MKT-ALFA');
@@ -92,8 +119,47 @@ test('full pallet, replay, reopen, partial correction, fresh verification, BCF a
     const repeat=await f.call('ddt_reprint',{confirmed:true,printId:job.id,eventId:nextPrint,reason:'Verificata mancata uscita cartacea'});ok(repeat);
     ok(await f.call('ddt_reprint',{confirmed:true,printId:job.id,eventId:nextPrint,reason:'Verificata mancata uscita cartacea'}));
     assert.equal((await f.sql.query('select count(*)::int n from warehouse_print_jobs')).rows[0].n,2);
+    let posts=0,accepted=0;const remoteId=event();
+    const printing=createMesDdtPrinting({env:{PROGREMES_URL:'https://mes.example.test',PROGREMES_INTEGRATION_SECRET:'test'},transport:async(url,options)=>{
+      if(url.pathname.endsWith('/printers'))return {ok:true,json:async()=>({enabled:true,printers:[{name:'MES Laser',available:true,canPrintSilently:true},{name:'PDF',available:true,canPrintSilently:false}]})};
+      if(options.method==='POST'){
+        posts++;assert.equal(url.searchParams.get('copies'),'1');assert.equal(url.searchParams.get('printer'),'MES Laser');
+        assert.equal(createHashForTest(options.body),print.sha256);
+        if(posts===1){accepted++;throw Error('Response lost after acceptance');}
+      }
+      return {ok:true,json:async()=>({id:remoteId,requestId:'ddt:'+mesRequest,printer:'MES Laser',status:options.method==='POST'?'Queued':'Completed'})};
+    }});
+    await printing.inventory(f.db);
+    assert.equal((await f.sql.query("select count(*)::int n from warehouse_printers where station='MES'")).rows[0].n,1);
+    await f.sql.exec("update warehouse_preparation_settings set ddt_printer_id='MES:MES Laser'");
+    const mesRequest=event();
+    assert.equal((await f.db.rpc('warehouse_enqueue_print',{p_id:f.row.id,p_request:mesRequest,p_kind:'bcf_print',p_actor:actor})).error,null);
+    assert.equal((await printing.sync(f.db,mesRequest)).status,'uncertain');
+    assert.equal((await printing.sync(f.db,mesRequest)).status,'printing');
+    assert.equal((await printing.sync(f.db,mesRequest)).status,'submitted');
+    await printing.sync(f.db,mesRequest);assert.equal(posts,2);assert.equal(accepted,1);
     f.readonly();assert.equal((await f.call('print_document',{kind:'bcf_print'})).statusCode,403);
     assert.equal((await f.call('ddt_configure',{backofficeEmails:['x@example.test']})).statusCode,403);
+  } finally {await f.sql.close();}
+});
+
+test('delete a verified full package atomically, release FIFO and retain removed readings in immutable audit',async()=>{
+  const f=await fixture();
+  try {
+    ok(await f.call('begin',{reference:'OC+1+900'}));
+    const pallet=event();ok(await f.call('add_pallet',{palletId:pallet,assignUnassigned:true}));
+    const packageId=f.row.state.packages[0].id;
+    for(const line of f.row.source.lines) for(let i=0;i<line.quantity;i++) ok(await f.call('scan',{barcode:line.code,mode:'piece',packageId}));
+    ok(await f.call('verify'));assert.equal(f.row.status,'verified');
+    const quantity=f.row.state.scans.reduce((n,s)=>n+s.quantity,0),requestId=event();
+    assert.equal((await f.call('remove_package',{packageId})).statusCode,400);
+    ok(await f.call('remove_package',{packageId,confirmed:true,reason:'Collo danneggiato',eventId:requestId}));
+    assert.equal(f.row.status,'draft');assert.equal(f.row.state.scans.length,0);assert.equal(f.row.state.packages.length,0);
+    assert.equal((await f.sql.query('select count(*)::int n from warehouse_preparation_lot_holds')).rows[0].n,0);
+    const audit=ok(await f.call('audit')).events.find(e=>e.event_id===requestId);
+    assert.equal(audit.payload.removedPackage.id,packageId);
+    assert.equal(audit.payload.removedScans.reduce((n,s)=>n+s.quantity,0),quantity);
+    ok(await f.call('remove_package',{packageId,confirmed:true,reason:'Collo danneggiato',eventId:requestId}));
   } finally {await f.sql.close();}
 });
 

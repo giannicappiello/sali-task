@@ -96,42 +96,27 @@ installare più scheduler inutilmente.
 
 ## Stampa sulle stampanti configurate
 
-Il repository MES espone stampe dei fogli produzione, non un contratto generico
-per questi PDF. Il nuovo agente Windows `workers/ddt-print/index.mjs` espone
-l'inventario delle stampanti Windows e preleva una coda dedicata. Impostare
-nell'ambiente dell'agente:
+Il servizio di stampa integrato Workspace/MES espone `GET /api/workspace/v1/printers`, `POST /api/workspace/v1/print` e `GET /api/workspace/v1/print/{id}`. Il gateway DDT riusa `PROGREMES_URL` e `PROGREMES_INTEGRATION_SECRET` sul server. Non occorre un secondo agente, SumatraPDF o un nuovo segreto.
 
-- `DDT_WORKSPACE_URL`: origine HTTPS di Workspace;
-- `DDT_PRINT_WORKER_SECRET`: segreto dedicato di almeno 32 caratteri,
-  uguale a quello configurato sul backend; mai nel frontend;
-- `DDT_PRINT_STATION`: identificativo stabile della postazione;
-- `SUMATRA_PDF_PATH`: percorso dell'eseguibile SumatraPDF installato e verificato.
+Configurazioni DDT sincronizza le stampanti disponibili per stampa silenziosa dal MES. Le scelte DDT e packing restano in questo pannello. Il PDF DDT contiene gia tre copie; al MES viene inviata una copia del file. Ogni packing list contiene il solo bancale selezionato.
 
-Avvio: `node workers/ddt-print/index.mjs`; `--once` per un giro singolo.
-Configurare l'avvio nella postazione con l'account che vede le stampanti.
-L'agente non è installato né avviato automaticamente da questa modifica.
-La [stampa a stampante nominata](https://www.sumatrapdfreader.org/docs/Command-line-arguments)
-usa argomenti separati, senza shell e senza finestre interattive. Non viene
-mai aperto il selettore stampanti del browser. Il PDF DDT contiene già le tre
-copie; all'agente viene richiesta una sola copia del file.
+Il registro Workspace conserva PDF, SHA-256, richiesta, stampante ed esito MES. Un timeout viene riconciliato riusando identico PDF e requestId: non crea una nuova stampa. Dopo aver ricevuto l'identificativo MES si controlla lo stato tramite GET. Completed nel MES indica accettazione dallo spooler; Workspace lo espone come submitted, senza attestare l'uscita della carta. Le ristampe esplicite fanno riferimento al job MES originale.
 
-Selezionare DDT e packing list nel pannello dopo che l'agente ha comunicato
-l'inventario. Stampante assente o postazione non aggiornata bloccano il job.
-La richiesta mantiene lo stesso identificativo durante retry/verifica;
-un crash dopo l'avvio della stampa produce `uncertain`, senza ristampa automatica.
-`submitted` indica l'accettazione dal programma di stampa: verificare la carta.
-Il pannello permette una ristampa motivata dopo verifica di un errore/esito incerto.
+L'invio al cliente e all'agente si abilita separatamente. Le preferenze entrano nell'hash dell'anteprima e nello snapshot confermato. Le anagrafiche disattivate non vengono richieste o validate. Gli invii gia preparati mantengono lo snapshot originale. Il backoffice resta obbligatorio per una nuova emissione.
+
+Elimina rimuove collo e scansioni insieme, richiede conferma e motivo per colli pieni, invalida il riscontro e libera le riserve FIFO. Il registro conserva contenuto rimosso e operatore. Ordini completati o con emissione incerta restano protetti.
 
 ## Migrazioni e conservazione
 
-Applicare, nell'ordine, soltanto le tre nuove migrazioni di questo intervento:
+Applicare, nell'ordine, le migrazioni di questo intervento:
 
 - `20261102110000_preparation_dispatch_audit.sql`;
 - `20261102111000_ddt_configuration_screen.sql`;
-- `20261102112000_ddt_print_queue.sql`.
+- `20261102112000_ddt_print_queue.sql`;
+- `20261102120000_ddt_recipient_preferences.sql`;
+- `20261102121000_ddt_mes_print_bridge.sql`.
 
-Pubblicare backend/frontend/worker insieme dopo le verifiche sopra. Non è stata
-applicata alcuna migrazione in produzione. Non modificare vecchie migrazioni
+Pubblicare backend/frontend/worker insieme dopo le verifiche sopra. Non modificare vecchie migrazioni
 già installate. Il rollback applicativo non deve eliminare eventi, PDF o invii;
 non ripristinare un vecchio backend che emetta BCS sulle nuove preparazioni.
 

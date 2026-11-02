@@ -12,7 +12,7 @@ export default function DdtSettings() {
     setError('');
     try {
       const [config,queue] = await Promise.all([preparationApi('ddt_settings'),preparationApi('ddt_queue',{status:filter,offset})]);
-      setData(config);setForm({backofficeEmails:(config.settings.backoffice_emails || []).join('\n'),emailSubject:config.settings.email_subject,emailBody:config.settings.email_body,
+      setData(config);setForm({emailCustomers:config.settings.email_customers !== false,emailAgents:config.settings.email_agents !== false,backofficeEmails:(config.settings.backoffice_emails || []).join('\n'),emailSubject:config.settings.email_subject,emailBody:config.settings.email_body,
         ddtPdfPath:config.settings.ddt_pdf_path || '',bcfContractVerified:config.settings.bcf_contract_verified,contractEvidence:config.settings.contract_evidence,
         ddtPrinterId:config.settings.ddt_printer_id || '',packingPrinterId:config.settings.packing_printer_id || ''});
       setEmails(queue.emails);setPrints(queue.prints);setNext(queue.nextOffset);
@@ -30,16 +30,21 @@ export default function DdtSettings() {
     try {await preparationApi(resolution.print?'ddt_reprint':'ddt_recover_email',resolution.print?{printId:resolution.id,eventId:resolution.request,reason,confirmed:true}:{emailId:resolution.id,outcome:resolution.outcome,reason,confirmed:true});setResolution(null);setReason('');await load();setNotice('Esito registrato nello storico ordine.');}
     catch(e){setError(e.message);}finally{setBusy(false);}
   }
-  return <main className="order-preparation op-page integrations-page ddt-settings-page"><h1>Configurazioni DDT</h1><p>BCF e packing list inviate insieme a cliente, agente e backoffice. Cliente e agente provengono dalle anagrafiche dell’ordine e vengono mostrati prima dell’emissione.</p>
+  return <main className="order-preparation op-page integrations-page ddt-settings-page"><h1>Configurazioni DDT</h1><p>Configura chi riceve BCF e packing list. Gli indirizzi di clienti e agenti provengono dalle anagrafiche dell’ordine; il riepilogo mostra i destinatari effettivi prima dell’emissione.</p>
     {error && <p role="alert" className="op-error">{error}</p>}{notice && <p role="status">{notice}</p>}
     {data && <form className="op-settings" onSubmit={save}><fieldset disabled={busy || !data.canConfigure}><legend>Destinatari e messaggio</legend>
-      <label>Indirizzi backoffice, uno per riga<textarea required value={form.backofficeEmails} onChange={e=>field('backofficeEmails',e.target.value)}/></label>
+      <label className="ddt-recipient-choice"><input type="checkbox" checked={form.emailCustomers} onChange={e=>field('emailCustomers',e.target.checked)}/>Invia al cliente</label>
+      <label className="ddt-recipient-choice"><input type="checkbox" checked={form.emailAgents} onChange={e=>field('emailAgents',e.target.checked)}/>Invia all’agente</label>
+      <small>La scelta viene registrata nel riepilogo di ogni nuova spedizione. Gli invii già preparati conservano i destinatari confermati.</small>
+      <label>Indirizzi backoffice, uno per riga<textarea value={form.backofficeEmails} onChange={e=>field('backofficeEmails',e.target.value)}/></label>
+      <small>Prima di emettere una spedizione è necessario configurare almeno un indirizzo backoffice.</small>
       <label>Oggetto<input required maxLength={300} value={form.emailSubject} onChange={e=>field('emailSubject',e.target.value)}/></label>
       <label>Messaggio<textarea required maxLength={10000} value={form.emailBody} onChange={e=>field('emailBody',e.target.value)}/></label>
       <small>Puoi usare {'{documento}'} nel messaggio e nell’oggetto, e {'{ordine}'} nel messaggio.</small>
-      <h2>Stampanti</h2><p>Le stampanti vengono rilevate dall’agente della postazione di magazzino. La stampa operativa usa queste scelte senza richiedere una nuova selezione.</p>
+      <h2>Stampanti</h2><p>Usa le stampanti del servizio Workspace/MES già installato. La stampa operativa usa queste scelte senza richiedere una nuova selezione.</p>
+      {data.printerError && <p role="alert" className="op-error">{data.printerError}</p>}
       {[['ddtPrinterId','Stampante DDT - 3 copie'],['packingPrinterId','Stampante packing list per bancale']].map(([name,label])=><label key={name}>{label}<select value={form[name]} onChange={e=>field(name,e.target.value)}><option value="">Seleziona stampante</option>{data.printers.map(printer=><option key={printer.id} value={printer.id}>{printer.name} · {printer.station}{Date.now()-Date.parse(printer.last_seen)>600000?' · Offline':''}</option>)}</select></label>)}
-      {!data.printers.length && <p>Nessuna stampante rilevata: collegare l’agente di stampa Windows.</p>}
+      {!data.printers.length && <p>Il servizio Workspace/MES non ha restituito stampanti disponibili. Verifica il servizio esistente in Impostazioni → Stampanti, poi premi “Aggiorna”.</p>}
       <details><summary>Collegamento documenti Mexal</summary><p>Compilare dopo la verifica del contratto WebAPI e del modulo aziendale F.</p>
         <label>Percorso PDF BCF verificato<input value={form.ddtPdfPath} onChange={e=>field('ddtPdfPath',e.target.value)}/></label><small>Percorso relativo Mexal, con {'{reference}'} al posto del riferimento documento.</small>
         <label>Evidenza della verifica<textarea value={form.contractEvidence} onChange={e=>field('contractEvidence',e.target.value)} placeholder="Riferimento alla verifica del modulo F, serie e PDF"/></label>

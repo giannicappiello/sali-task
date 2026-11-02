@@ -15,6 +15,11 @@ export function emailAddress(value) {
 }
 export function validateDispatchSettings(body) {
   const settings = {};
+  for (const [input,column] of [['emailCustomers','email_customers'],['emailAgents','email_agents']]) {
+    if (!Object.hasOwn(body,input)) continue;
+    assert(typeof body[input] === 'boolean', 'Scelta destinatari non valida.');
+    settings[column] = body[input];
+  }
   for (const [input,column] of [['ddtPrinterId','ddt_printer_id'],['packingPrinterId','packing_printer_id']]) {
     if (!Object.hasOwn(body,input)) continue;
     assert(typeof body[input] === 'string' && body[input].length<=340 && !/[\r\n]/.test(body[input]),'Stampante non valida.');
@@ -48,15 +53,20 @@ export async function shipmentPreview(db, client, row, settings) {
   validateDispatchSettings({ddtPdfPath: settings.ddt_pdf_path});
   assert(settings.backoffice_emails?.length, 'Configura almeno un destinatario backoffice DDT.', 409);
   const raw = row.source_raw;
-  const customer = unwrap(await client.getJson('/clienti/' + encodeURIComponent(row.source.customerCode)));
   const agentCode = text(scalar(raw.codice_agente));
-  assert(agentCode, 'Agente assente sull’OCM: completa l’anagrafica prima dell’emissione.', 409);
-  const agent = checked(await db.from('mexal_agenti').select('codice,email').eq('codice',agentCode).maybeSingle());
-  const candidates = [
-    {role:'cliente', email:emailAddress(scalar(customer.email || customer.mail || customer.posta_elettronica))},
-    {role:'agente', email:emailAddress(agent?.email)},
-    ...settings.backoffice_emails.map(email => ({role:'backoffice',email:emailAddress(email)})),
-  ];
+  const emailCustomers = settings.email_customers !== false;
+  const emailAgents = settings.email_agents !== false;
+  const candidates = [];
+  if (emailCustomers) {
+    const customer = unwrap(await client.getJson('/clienti/' + encodeURIComponent(row.source.customerCode)));
+    candidates.push({role:'cliente',email:emailAddress(scalar(customer.email || customer.mail || customer.posta_elettronica))});
+  }
+  if (emailAgents) {
+    assert(agentCode, 'Agente assente sull’OCM: completa l’anagrafica prima dell’emissione.', 409);
+    const agent = checked(await db.from('mexal_agenti').select('codice,email').eq('codice',agentCode).maybeSingle());
+    candidates.push({role:'agente',email:emailAddress(agent?.email)});
+  }
+  candidates.push(...settings.backoffice_emails.map(email => ({role:'backoffice',email:emailAddress(email)})));
   const recipients = [];
   for (const candidate of candidates) {
     const existing = recipients.find(item => item.email === candidate.email);
@@ -64,7 +74,7 @@ export async function shipmentPreview(db, client, row, settings) {
     else recipients.push({email:candidate.email,roles:[candidate.role]});
   }
   const snapshot = {preparationId:row.id, sourceHash:row.source_hash, version:row.version,
-    recipients, agentCode, pdfPath:settings.ddt_pdf_path, contractEvidence:settings.contract_evidence,
+    recipients, agentCode, emailCustomers, emailAgents, pdfPath:settings.ddt_pdf_path, contractEvidence:settings.contract_evidence,
     subject:settings.email_subject || 'Documenti spedizione {documento}',
     body:settings.email_body || 'In allegato la bolla {documento} e la packing list dell’ordine {ordine}.',
   };

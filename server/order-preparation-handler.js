@@ -12,7 +12,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { appendPreparationScan } from '../shared/preparationScanning.js';
 import { shipmentPreview, finalizeShipment, shipmentReadback, validateDispatchSettings } from './preparation-dispatch.js';
-import { handleDdtPrintWorker } from './ddt-print-worker.js';
+import { createMesDdtPrinting } from './ddt-mes-print.js';
 
 import { buildMexalClient } from "./mexal/sync-products.js";
 
@@ -271,10 +271,12 @@ function editPacking(row, operation, body) {
     assert(!p.closed, 'Riapri il collo prima di cambiarne il bancale.');
     p.palletId = body.palletId ? uuid(body.palletId) : null;
   } else if (operation === "remove_package") {
-    assert(
-      !state.scans.some((s) => s.packageId === body.packageId),
-      "Svuota il collo prima di rimuoverlo.",
-    );
+    assert(state.packages.some(p=>p.id===body.packageId), 'Collo non trovato.');
+    if (state.scans.some(s=>s.packageId===body.packageId)) {
+      assert(body.confirmed === true, 'Conferma l’eliminazione del collo e del suo contenuto.');
+      assert(text(body.reason).length>=3 && text(body.reason).length<=1000, 'Indica il motivo dell’eliminazione.');
+    }
+    state.scans = state.scans.filter(s=>s.packageId!==body.packageId);
     state.packages = state.packages.filter((p) => p.id !== body.packageId);
   } else if (operation === "remove_pallet") {
     assert(
@@ -349,7 +351,6 @@ export function createOrderPreparationHandler({
     try {
       const body = req.body || {};
       assert(JSON.stringify(body).length < 200000, "Richiesta troppo estesa.");
-      if (body.operation === 'print_worker') return res.status(200).json(await handleDdtPrintWorker(req));
 
       const configuration = ['ddt_settings','ddt_configure','ddt_queue','ddt_recover_email','ddt_reprint'].includes(body.operation);
       const session = await authorize(req, configuration ? {screen:'integrazioni.ddt',configuration:true} : {}),
@@ -385,9 +386,16 @@ export function createOrderPreparationHandler({
           .single(),
       );
 
-      if (op === 'ddt_settings') return res.status(200).json({settings,canConfigure:session.canConfigure,
-        printers:checked(await db.from('warehouse_printers').select('id,station,name,last_seen').order('name'))});
+      const mesPrinting = createMesDdtPrinting();
+      if (op === 'ddt_settings') {
+        let printerError=null;
+        try {await mesPrinting.inventory(db);}catch(error){printerError=error.message;}
+        return res.status(200).json({settings,canConfigure:session.canConfigure,printerError,
+          printers:checked(await db.from('warehouse_printers').select('id,station,name,last_seen').eq('station','MES').order('name'))});
+      }
       if (op === 'ddt_queue') {
+        const pending=checked(await db.from('warehouse_print_jobs').select('id').eq('station','MES').in('status',['printing','uncertain']).order('created_at').limit(10));
+        await Promise.allSettled(pending.map(job=>mesPrinting.sync(db,job.id)));
         const offset = integer(body.offset || 0, 'Pagina invii', 0, 1000000);
         let query = db.from('warehouse_shipment_emails').select('id,preparation_id,recipient,roles,status,attempts,last_error,sent_at,provider_message_id,created_at').order('created_at',{ascending:false}).order('id').range(offset,offset+49);
         if (body.status) { assert(['queued','leased','sending','retry','uncertain','sent','failed'].includes(body.status),'Stato non valido.'); query = query.eq('status',body.status); }
@@ -403,7 +411,7 @@ export function createOrderPreparationHandler({
       if (op === 'ddt_reprint') {
         assert(body.confirmed === true && text(body.reason).length>=3,'Conferma ristampa e motivo richiesti.');
         const result=checked(await db.rpc('warehouse_reprint',{p_id:uuid(body.printId),p_request:uuid(body.eventId),p_actor:profile.id,p_reason:text(body.reason)}));
-        return res.status(200).json({printJob:result});
+        return res.status(200).json({printJob:result.printer_id.startsWith('MES:')?await mesPrinting.sync(db,result.id):result});
       }
       if (op === 'ddt_configure') {
         const value = validateDispatchSettings(body);
@@ -577,8 +585,9 @@ export function createOrderPreparationHandler({
       let row = checked(await db.from(TABLE).select("*").eq("id", id).single());
       if (op === 'print_document') {
         assert(session.canWrite,'Permesso di stampa richiesto.',403);
+        if ((body.kind==='bcf_print'?settings.ddt_printer_id:settings.packing_printer_id)?.startsWith('MES:')) await mesPrinting.inventory(db);
         const job = checked(await db.rpc('warehouse_enqueue_print',{p_id:id,p_request:uuid(body.eventId),p_kind:body.kind,p_actor:profile.id}));
-        return res.status(200).json({printJob:job});
+        return res.status(200).json({printJob:job.printer_id.startsWith('MES:')?await mesPrinting.sync(db,job.id):job});
       }
       if (op === 'preview_packing_list' && row.status === 'completed' && row.ddt?.signature === 'BCF') return res.status(200).json(await shipmentReadback(db,row,'packing_list'));
 
@@ -734,7 +743,8 @@ export function createOrderPreparationHandler({
           row,
           profile.id,
           "save",
-          { state: editPacking(row, op, body), operation: op, reason: text(body.reason), scanId: body.scanId || null, packageId: body.packageId || null, quantity: body.quantity || null },
+          { state: editPacking(row, op, body), operation: op, reason: text(body.reason), scanId: body.scanId || null, packageId: body.packageId || null, quantity: body.quantity || null,
+            ...(op === 'remove_package' ? {removedPackage:row.state.packages.find(p=>p.id===body.packageId),removedScans:row.state.scans.filter(s=>s.packageId===body.packageId)} : {}) },
           event,
         );
         return res.status(200).json({ preparation: exposed(row) });

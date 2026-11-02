@@ -264,7 +264,9 @@ export default function OrderPreparation() {
     [unitWeight, setUnitWeight] = useState(""),
     [packingPreview,setPackingPreview] = useState(null),
     [dispatchPreview,setDispatchPreview] = useState(null),
-    [editingPackage,setEditingPackage] = useState(null);
+    [editingPackage,setEditingPackage] = useState(null),
+    [removingPackage,setRemovingPackage] = useState(null),
+    [removeReason,setRemoveReason] = useState('');
 
   const [query, setQuery] = useState(""),
     [camera, setCamera] = useState(false),
@@ -639,11 +641,11 @@ export default function OrderPreparation() {
             disabled={p.closed || busy || !!cartonPrompt}
             onClick={() => choosePackage(p)}
           >
-            {p.closed ? "Collo riscontrato" : "Usa questo collo"}
+            Seleziona
           </button>
-          <button disabled={busy} onClick={()=>setEditingPackage(p.id)}>{p.closed ? "Riapri e modifica" : "Modifica contenuto"}</button>
+          <button disabled={busy} onClick={()=>setEditingPackage(p.id)}>Modifica</button>
           <button
-            disabled={busy || scans.some((s) => s.packageId === p.id)}
+            disabled={busy}
             onClick={() =>
               p.id === draftPackage?.id
                 ? (setDraftPackage(null),
@@ -651,13 +653,19 @@ export default function OrderPreparation() {
                     packages.find((item) => item.palletId === p.palletId)?.id ||
                       "",
                   ))
-                : void perform("remove_package", { packageId: p.id })
+                : (setRemoveReason(''),setRemovingPackage(p.id))
             }
           >
-            Rimuovi vuoto
+            Elimina
           </button>
         </div>
       )}
+      {removingPackage===p.id && editable && <section className="op-remove-confirm" role="group" aria-label="Conferma eliminazione collo">
+        <h3>Elimina collo {p.number}</h3>
+        <p>Verranno rimossi il collo e tutti i suoi {format(scans.filter(s=>s.packageId===p.id).reduce((n,s)=>n+s.quantity,0))} pezzi. Sarà necessario un nuovo riscontro. L’eliminazione resterà nello storico.</p>
+        <label>Motivo<textarea maxLength={1000} value={removeReason} onChange={e=>setRemoveReason(e.target.value)}/></label>
+        <div className="op-toolbar"><button disabled={busy} onClick={()=>setRemovingPackage(null)}>Annulla</button><button disabled={busy || removeReason.trim().length<3} onClick={async()=>{const result=await perform('remove_package',{packageId:p.id,confirmed:true,reason:removeReason});if(result){setRemovingPackage(null);setEditingPackage(null);}}}>Elimina collo e contenuto</button></div>
+      </section>}
     </article>
   );
 

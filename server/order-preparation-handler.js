@@ -388,9 +388,9 @@ export function createOrderPreparationHandler({
 
       const mesPrinting = createMesDdtPrinting();
       if (op === 'ddt_settings') {
-        let printerError=null;
-        try {await mesPrinting.inventory(db);}catch(error){printerError=error.message;}
-        return res.status(200).json({settings,canConfigure:session.canConfigure,printerError,
+        let printerError=null,printerConfiguration=null;
+        try {printerConfiguration=(await mesPrinting.inventory(db)).configuration;}catch(error){printerError=error.message;}
+        return res.status(200).json({settings,canConfigure:session.canConfigure,printerError,printerConfiguration,
           printers:checked(await db.from('warehouse_printers').select('id,station,name,last_seen').eq('station','MES').order('name'))});
       }
       if (op === 'ddt_queue') {

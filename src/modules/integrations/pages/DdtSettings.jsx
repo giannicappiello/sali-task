@@ -20,6 +20,7 @@ export default function DdtSettings() {
   },[filter,offset]);
   useEffect(()=>{const timer=setTimeout(()=>void load(),0);return ()=>clearTimeout(timer);},[load]);
   const field = (name,value) => setForm(old=>({...old,[name]:value}));
+  const printerDepartments = name => [['warehousePrinter','Magazzino'],['productionPrinter','Produzione'],['officePrinter','Ufficio'],['secretariatPrinter','Segreteria']].filter(([key])=>data?.printerConfiguration?.[key]===name).map(([,label])=>label).join(', ');
   async function save(event) {
     event.preventDefault();setBusy(true);setNotice('');setError('');
     try {await preparationApi('ddt_configure',{...form,backofficeEmails:form.backofficeEmails.split(/[\n;,]+/).map(v=>v.trim()).filter(Boolean),settingsVersion:data.settings.updated_at});await load();setNotice('Configurazione DDT salvata.');}
@@ -43,7 +44,8 @@ export default function DdtSettings() {
       <small>Puoi usare {'{documento}'} nel messaggio e nell’oggetto, e {'{ordine}'} nel messaggio.</small>
       <h2>Stampanti</h2><p>Usa le stampanti del servizio Workspace/MES già installato. La stampa operativa usa queste scelte senza richiedere una nuova selezione.</p>
       {data.printerError && <p role="alert" className="op-error">{data.printerError}</p>}
-      {[['ddtPrinterId','Stampante DDT - 3 copie'],['packingPrinterId','Stampante packing list per bancale']].map(([name,label])=><label key={name}>{label}<select value={form[name]} onChange={e=>field(name,e.target.value)}><option value="">Seleziona stampante</option>{data.printers.map(printer=><option key={printer.id} value={printer.id}>{printer.name} · {printer.station}{Date.now()-Date.parse(printer.last_seen)>600000?' · Offline':''}</option>)}</select></label>)}
+      {data.printerConfiguration?.warehousePrinter && <p>Magazzino nel MES: <strong>{data.printerConfiguration.warehousePrinter}</strong></p>}
+      {[['ddtPrinterId','Stampante DDT - 3 copie'],['packingPrinterId','Stampante packing list per bancale']].map(([name,label])=><label key={name}>{label}<select value={form[name]} onChange={e=>field(name,e.target.value)}><option value="">Seleziona stampante</option>{data.printers.map(printer=><option key={printer.id} value={printer.id}>{printerDepartments(printer.name)?printerDepartments(printer.name)+' · ':''}{printer.name}{Date.now()-Date.parse(printer.last_seen)>600000?' · Offline':''}</option>)}</select></label>)}
       {!data.printers.length && <p>Il servizio Workspace/MES non ha restituito stampanti disponibili. Verifica il servizio esistente in Impostazioni → Stampanti, poi premi “Aggiorna”.</p>}
       <details><summary>Collegamento documenti Mexal</summary><p>Compilare dopo la verifica del contratto WebAPI e del modulo aziendale F.</p>
         <label>Percorso PDF BCF verificato<input value={form.ddtPdfPath} onChange={e=>field('ddtPdfPath',e.target.value)}/></label><small>Percorso relativo Mexal, con {'{reference}'} al posto del riferimento documento.</small>

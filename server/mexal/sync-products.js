@@ -283,6 +283,11 @@ export function buildMexalClient({ request = requestMexal, warehouse, retryOptio
       return parseJsonResponse(response, 'Calcolo documento Mexal');
     },
 
+    async getServiceHelp() {
+      const response = await request({ url: `${baseUrl}/webapi/servizi/help`, headers, timeoutMs: 30000 });
+      return parseJsonResponse(response, 'Catalogo servizi Mexal');
+    },
+
     async getJson(path) {
       const execute = async () => {
         const response = await request({ url: `${baseUrl}/webapi/risorse${path}`, headers, timeoutMs });

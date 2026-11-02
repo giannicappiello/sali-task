@@ -21,11 +21,20 @@ export async function runDdtContractDiagnostics(client) {
     if (findTechnicalCredentialPath(payload)) throw new Error("Risposta Mexal con campi riservati: visualizzazione bloccata.");
     modules = { ok: true, endpoint: path, payload };
   }
+  let services;
+  if (client.getServiceHelp) {
+    try {
+      const payload = await client.getServiceHelp();
+      if (findTechnicalCredentialPath(payload)) throw new Error("Catalogo con campi riservati.");
+      services = { ok: true, endpoint: "/webapi/servizi/help", payload };
+    } catch (error) { services = { ok: false, error: error.message }; }
+  }
   return {
     readOnly: true,
     checkedAt: new Date().toISOString(),
     catalog: relevant.map(({ regexp, descrizione, method }) => ({ regexp, descrizione, method })),
     modules,
+    services,
     pdfEndpointAdvertised: relevant.some((item) => /pdf/i.test(item.regexp)),
     contractVerified: false,
     explanation: "La presenza del modulo non dimostra il contratto del PDF. Nessun documento emesso e nessuna configurazione modificata.",

@@ -30,6 +30,7 @@ export const digitalConnectionsService = Object.freeze({
   activate: (id, syncFrequency) => request("activate", { id, syncFrequency }),
   deactivate: (id) => request("deactivate", { id }),
   syncNow: (id) => request("sync_now", { id }),
+  prepareAmazonBackfill: (id,from) => request('prepare_amazon_backfill',{id,from}),
   syncAll: async (id, { onProgress = () => {}, shouldStop = () => false, shipmentDatesOnly = false } = {}) => {
     let result;
     do {

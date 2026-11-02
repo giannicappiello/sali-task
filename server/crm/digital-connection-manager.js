@@ -1,4 +1,5 @@
 import { synchronizeShipmentDates } from './amazon-shipments.js';
+import { prepareAmazonBackfill } from './commerce-backfill.js';
 /* global process */
 import crypto from "node:crypto";
 import { persistProductMapping } from "./product-mapping.js";
@@ -324,6 +325,14 @@ async function syncNow(req, body) {
   const result = await synchronize(auth.supabase, auth.id, connection); await audit(auth.supabase, auth.id, connection, "sync.manual", "success", { status: result.status, count: result.recordsRead }); return result;
 }
 
+async function prepareBackfill(req,body){
+ const auth=await authorize(req,true);
+ const connection=await connectionById(auth.supabase,body.id);
+ const result=await prepareAmazonBackfill(auth.supabase,connection.id,auth.id,body.from);
+ await audit(auth.supabase,auth.id,connection,'sync.backfill.prepared','success',result);
+ return result;
+}
+
 async function operationalData(db, body = {}) {
   const connectionId = body.id || null;
   const connections = await list(db);
@@ -440,7 +449,7 @@ export async function handleDigitalConnectionManager(req, res) {
     if (action === "dispatch") return res.status(200).json({ success: true, ...(await dispatchDigitalSchedule(req)) });
     if (["list", "operational"].includes(action)) { const auth = await authorize(req); const data = action === "list" ? { registry: DIGITAL_PROVIDER_REGISTRY.map(safeProvider), connections: await list(auth.supabase) } : await operationalData(auth.supabase, body); return res.status(200).json({ success: true, ...data }); }
     if (req.method !== "POST") return res.status(405).json({ success: false, error: "Metodo non consentito." });
-    const handlers = { refresh_customer_profiles: refreshCustomerProfiles, save, revoke_secret: revokeSecret, test: testConnection, activate, deactivate, sync_now: syncNow, sync_amazon_shipment_dates: syncAmazonShipmentDates, sync_amazon_refunds:syncAmazonRefunds, save_mapping: saveMapping, oauth_start: oauthStart };
+    const handlers = { prepare_amazon_backfill:prepareBackfill, refresh_customer_profiles: refreshCustomerProfiles, save, revoke_secret: revokeSecret, test: testConnection, activate, deactivate, sync_now: syncNow, sync_amazon_shipment_dates: syncAmazonShipmentDates, sync_amazon_refunds:syncAmazonRefunds, save_mapping: saveMapping, oauth_start: oauthStart };
     if (!handlers[action]) throw Object.assign(new Error("Azione Connection Manager non supportata."), { status: 400 });
     return res.status(200).json({ success: true, ...(await handlers[action](req, body)) });
   } catch (error) {

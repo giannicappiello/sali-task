@@ -1,6 +1,8 @@
 import { findTechnicalCredentialPath } from "./full-help-download.js";
+import { createHash } from "node:crypto";
 
-// Only catalogue-advertised GETs are permitted. This diagnostic cannot issue a DDT.
+// Reads modules and renders an existing movement through the print-only service.
+// The ricerca POST searches existing records; it cannot issue a DDT.
 function entries(value, result = []) {
   if (!value || typeof value !== "object") return result;
   if (typeof value.regexp === "string" && value.method === "GET") result.push(value);
@@ -22,11 +24,14 @@ export async function runDdtContractDiagnostics(client) {
     modules = { ok: true, endpoint: path, payload };
   }
   let services;
-  if (client.getServiceHelp) {
+  if (client.printMovementPdf) {
     try {
-      const payload = await client.getServiceHelp();
-      if (findTechnicalCredentialPath(payload)) throw new Error("Catalogo con campi riservati.");
-      services = { ok: true, endpoint: "/webapi/servizi/help", payload };
+      const collection = await client.postJson('/documenti/movimenti-magazzino/ricerca?max=1&fields=sigla,serie,numero,cod_conto,cod_modulo', {filtri:[{campo:'sigla',condizione:'=',valore:'BC'}]});
+      const first = (Array.isArray(collection) ? collection : collection.dati || collection.risultati || [])[0];
+      if (!first || first.sigla !== 'BC') throw new Error('Nessun documento BC disponibile nel campione.');
+      const document = {...first,sigla:'BC',serie:Number(first.serie),numero:Number(first.numero),cod_modulo:'F'};
+      const pdf = await client.printMovementPdf(document);
+      services = { ok:true, endpoint:'/webapi/servizi', command:'stampa_movimento_magazzino', module:'F', reference:`BC+${document.serie}+${document.numero}`, bytes:pdf.body.length, sha256:createHash('sha256').update(pdf.body).digest('hex') };
     } catch (error) { services = { ok: false, error: error.message }; }
   }
   return {

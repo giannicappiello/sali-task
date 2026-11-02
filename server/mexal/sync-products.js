@@ -283,9 +283,16 @@ export function buildMexalClient({ request = requestMexal, warehouse, retryOptio
       return parseJsonResponse(response, 'Calcolo documento Mexal');
     },
 
-    async getServiceHelp() {
-      const response = await request({ url: `${baseUrl}/webapi/servizi/help`, headers, timeoutMs: 30000 });
-      return parseJsonResponse(response, 'Catalogo servizi Mexal');
+    async printMovementPdf(document) {
+      const { sigla, serie, numero, cod_conto, cod_modulo } = document;
+      if (sigla !== 'BC' || !Number.isSafeInteger(serie) || serie < 1 || !Number.isSafeInteger(numero) || numero < 1 || !/^[0-9.]{3,20}$/.test(cod_conto) || cod_modulo !== 'F') throw new Error('Riferimento BCF non valido.');
+      const body = JSON.stringify({cmd:'stampa_movimento_magazzino',dati:{sigla,serie,numero,cod_conto,cod_modulo}});
+      const response = await request({url:`${baseUrl}/webapi/servizi`,headers:{...headers,Accept:'application/pdf','Content-Type':'application/json','Content-Length':Buffer.byteLength(body)},method:'POST',body,binary:true,timeoutMs:60000});
+      if (response.status < 200 || response.status >= 300) {
+        parseJsonResponse({...response,body:Buffer.from(response.body).toString('utf8')},'Stampa PDF BCF Mexal');
+      }
+      if (!Buffer.from(response.body).subarray(0,5).equals(Buffer.from('%PDF-'))) throw new Error('Il servizio stampa Mexal non ha restituito un PDF.');
+      return response;
     },
 
     async getJson(path) {

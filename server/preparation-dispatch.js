@@ -8,6 +8,7 @@ import { unwrap, verifyDdt } from './order-preparation-mexal.js';
 import { triggerArubaOrderEmailWorker } from './orders/order-email-dispatch.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
+export const MEXAL_BCF_PDF_SERVICE = 'mexal:stampa_movimento_magazzino';
 export function emailAddress(value) {
   const email = text(value).toLowerCase();
   assert(email.length <= 254 && /^[^\s@;,<>]+@[^\s@;,<>]+\.[^\s@;,<>]+$/.test(email), 'Indirizzo email mancante o non valido.');
@@ -31,7 +32,7 @@ export function validateDispatchSettings(body) {
   }
   if (Object.hasOwn(body, 'ddtPdfPath')) {
     const path = text(body.ddtPdfPath);
-    assert(!path || (/^\/documenti\/[A-Za-z0-9_/{}.?=&%+-]+$/.test(path) && !path.includes('..') && path.split('{reference}').length === 2), 'Percorso PDF Mexal non valido: usa un percorso /documenti/ con {reference}.');
+    assert(!path || path === MEXAL_BCF_PDF_SERVICE || (/^\/documenti\/[A-Za-z0-9_/{}.?=&%+-]+$/.test(path) && !path.includes('..') && path.split('{reference}').length === 2), 'Collegamento PDF Mexal non valido.');
     settings.ddt_pdf_path = path || null;
   }
   if (Object.hasOwn(body, 'backofficeEmails')) {
@@ -107,7 +108,10 @@ export async function finalizeShipment(db, client, row, { trigger = triggerAruba
     if (existing.length !== 3 + row.state.pallets.length) {
       const actual = row.confirmed_document;
       verifyDdt(actual, row, row.export_payload);
-      const result = await client.getBinary(snapshot.pdfPath.replace('{reference}',encodeURIComponent(row.ddt.reference)),{accept:'application/pdf'});
+      if (snapshot.pdfPath === MEXAL_BCF_PDF_SERVICE) verifyDdt(await client.getJson('/documenti/movimenti-magazzino/'+encodeURIComponent(row.ddt.reference)),row,row.export_payload);
+      const result = snapshot.pdfPath === MEXAL_BCF_PDF_SERVICE
+        ? await client.printMovementPdf({sigla:'BC',serie:Number(row.ddt.series),numero:Number(row.ddt.number),cod_conto:row.source.customerCode,cod_modulo:'F'})
+        : await client.getBinary(snapshot.pdfPath.replace('{reference}',encodeURIComponent(row.ddt.reference)),{accept:'application/pdf'});
       const pdf = Buffer.from(result.body);
       assert(pdf.subarray(0,5).toString() === '%PDF-' && pdf.length <= 10 * 1024 * 1024, 'Il servizio Mexal non ha restituito un PDF BCF valido.');
       const preparation = {...row,source:{...row.source,destination:row.verification.destination || row.source.destination}};

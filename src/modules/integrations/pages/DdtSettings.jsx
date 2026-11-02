@@ -31,6 +31,11 @@ export default function DdtSettings() {
     try {await preparationApi(resolution.print?'ddt_reprint':'ddt_recover_email',resolution.print?{printId:resolution.id,eventId:resolution.request,reason,confirmed:true}:{emailId:resolution.id,outcome:resolution.outcome,reason,confirmed:true});setResolution(null);setReason('');await load();setNotice('Esito registrato nello storico ordine.');}
     catch(e){setError(e.message);}finally{setBusy(false);}
   }
+  async function verifyMexal() {
+    setBusy(true);setError('');setNotice('');
+    try {await preparationApi('ddt_verify',{settingsVersion:data.settings.updated_at});await load();setNotice('Collegamento BCF verificato: PDF originale Mexal disponibile.');}
+    catch(e){setError(e.message);}finally{setBusy(false);}
+  }
   return <main className="order-preparation op-page integrations-page ddt-settings-page"><h1>Configurazioni DDT</h1><p>Configura chi riceve BCF e packing list. Gli indirizzi di clienti e agenti provengono dalle anagrafiche dell’ordine; il riepilogo mostra i destinatari effettivi prima dell’emissione.</p>
     {error && <p role="alert" className="op-error">{error}</p>}{notice && <p role="status">{notice}</p>}
     {data && <form className="op-settings" onSubmit={save}><fieldset disabled={busy || !data.canConfigure}><legend>Destinatari e messaggio</legend>
@@ -47,10 +52,10 @@ export default function DdtSettings() {
       {data.printerConfiguration?.warehousePrinter && <p>Magazzino nel MES: <strong>{data.printerConfiguration.warehousePrinter}</strong></p>}
       {[['ddtPrinterId','Stampante DDT - 3 copie'],['packingPrinterId','Stampante packing list per bancale']].map(([name,label])=><label key={name}>{label}<select value={form[name]} onChange={e=>field(name,e.target.value)}><option value="">Seleziona stampante</option>{data.printers.map(printer=><option key={printer.id} value={printer.id}>{printerDepartments(printer.name)?printerDepartments(printer.name)+' · ':''}{printer.name}{Date.now()-Date.parse(printer.last_seen)>600000?' · Offline':''}</option>)}</select></label>)}
       {!data.printers.length && <p>Il servizio Workspace/MES non ha restituito stampanti disponibili. Verifica il servizio esistente in Impostazioni → Stampanti, poi premi “Aggiorna”.</p>}
-      <details><summary>Collegamento documenti Mexal</summary><p>Compilare dopo la verifica del contratto WebAPI e del modulo aziendale F.</p>
-        <label>Percorso PDF BCF verificato<input value={form.ddtPdfPath} onChange={e=>field('ddtPdfPath',e.target.value)}/></label><small>Percorso relativo Mexal, con {'{reference}'} al posto del riferimento documento.</small>
-        <label>Evidenza della verifica<textarea value={form.contractEvidence} onChange={e=>field('contractEvidence',e.target.value)} placeholder="Riferimento alla verifica del modulo F, serie e PDF"/></label>
-        <label><input type="checkbox" checked={form.bcfContractVerified} onChange={e=>field('bcfContractVerified',e.target.checked)}/>Contratto BCF e PDF verificati</label>
+      <h2>Collegamento documenti Mexal</h2><p>{form.bcfContractVerified?'Collegamento BCF verificato. Il PDF originale viene recuperato direttamente da Mexal.':'Collegamento PDF da verificare.'}</p>
+      <button type="button" disabled={busy} onClick={()=>void verifyMexal()}>{busy?'Verifica in corso...':'Verifica collegamento Mexal'}</button>
+      <details><summary>Dettagli della verifica</summary>
+        <p>{form.contractEvidence || 'Nessuna verifica completata.'}</p>
       </details><button type="submit">Salva configurazione DDT</button></fieldset></form>}
     <section className="op-panel"><h2>Controllo invii</h2><div className="op-toolbar"><label>Stato<select value={filter} onChange={e=>{setOffset(0);setFilter(e.target.value);}}><option value="">Tutti</option>{Object.entries(statusNames).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label><button disabled={busy} onClick={()=>void load()}>Aggiorna</button></div>
       <div className="op-table-wrap"><table><thead><tr><th>Ordine</th><th>Destinatario</th><th>Stato</th><th>Tentativi</th><th>Ultimo errore</th><th>Azioni</th></tr></thead><tbody>{emails.map(mail=><tr key={mail.id}>

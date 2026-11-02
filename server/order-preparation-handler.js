@@ -1,5 +1,7 @@
 import {packingWeights, tareWeightKg, productWeightGrams} from '../shared/preparationWeights.js';
 import { productCodeInScan } from "../shared/productScan.js";
+import { runDdtContractDiagnostics } from './mexal/ddt-contract-diagnostics.js';
+import { MEXAL_BCF_PDF_SERVICE } from './preparation-dispatch.js';
 import {
   preparationPackaging,
   saveMissingPreparationPackaging,
@@ -352,7 +354,7 @@ export function createOrderPreparationHandler({
       const body = req.body || {};
       assert(JSON.stringify(body).length < 200000, "Richiesta troppo estesa.");
 
-      const configuration = ['ddt_settings','ddt_configure','ddt_queue','ddt_recover_email','ddt_reprint'].includes(body.operation);
+      const configuration = ['ddt_settings','ddt_configure','ddt_verify','ddt_queue','ddt_recover_email','ddt_reprint'].includes(body.operation);
       const session = await authorize(req, configuration ? {screen:'integrazioni.ddt',configuration:true} : {}),
         { db, profile } = session;
       const op = body.operation;
@@ -362,13 +364,13 @@ export function createOrderPreparationHandler({
       assert(
         canRead ||
           session.canWrite ||
-          (["configure", "configure_product", "ddt_configure", "ddt_recover_email", "ddt_reprint"].includes(op) &&
+          (["configure", "configure_product", "ddt_configure", "ddt_verify", "ddt_recover_email", "ddt_reprint"].includes(op) &&
             session.canConfigure),
         "Permesso di scrittura richiesto.",
         403,
       );
 
-      if (["configure", "configure_product", "ddt_configure", "ddt_recover_email", "ddt_reprint"].includes(op))
+      if (["configure", "configure_product", "ddt_configure", "ddt_verify", "ddt_recover_email", "ddt_reprint"].includes(op))
         assert(
           session.canConfigure,
           "Configurazione riservata agli amministratori della schermata.",
@@ -387,6 +389,17 @@ export function createOrderPreparationHandler({
       );
 
       const mesPrinting = createMesDdtPrinting();
+      if (op === 'ddt_verify') {
+        const report = await runDdtContractDiagnostics(clientFactory({warehouse:null}));
+        assert(report.modules?.payload?.elenco_moduli_stampa_disponibili?.some(module=>module.codice==='BCF'), 'Modulo BCF non disponibile in Mexal.',409);
+        assert(report.services?.ok, report.services?.error || 'Recupero PDF Mexal non verificato.',409);
+        const result = await db.rpc('warehouse_configure_preparation',{p_actor:profile.id,p_expected:body.settingsVersion,p_settings:{
+          ddt_pdf_path:MEXAL_BCF_PDF_SERVICE,bcf_contract_verified:true,
+          contract_evidence:`${report.checkedAt}: BCF (Stampa Indirizzo); ${report.services.command}; ${report.services.reference}; PDF ${report.services.bytes} byte; SHA256 ${report.services.sha256}`,
+        }});
+        if (result.error) throw Object.assign(new Error(result.error.message),{status:result.error.code === '40001'?409:400});
+        return res.status(200).json({verified:true,checkedAt:report.checkedAt,bytes:report.services.bytes});
+      }
       if (op === 'ddt_settings') {
         let printerError=null,printerConfiguration=null;
         try {printerConfiguration=(await mesPrinting.inventory(db)).configuration;}catch(error){printerError=error.message;}

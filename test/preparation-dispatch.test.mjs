@@ -7,9 +7,9 @@ import {preparationDatabase,supabaseAdapter,mexalFixture,actor,event} from './or
 import {productCodeInScan} from '../shared/productScan.js';
 import {appendPreparationScan,palletQuantity} from '../shared/preparationScanning.js';
 import {initialPacking} from '../shared/orderPreparation.js';
-import {claimShipmentEmail,updateShipmentEmail} from '../server/shipment-email-worker.js';
+import {claimShipmentEmail,updateShipmentEmail,claimShipmentForHttpWorker} from '../server/shipment-email-worker.js';
 import {buildPreparationPdf,preparationForPallet} from '../src/pages/Warehouse/preparationPdf.js';
-import {validateDispatchSettings,shipmentPreview} from '../server/preparation-dispatch.js';
+import {validateDispatchSettings,shipmentPreview,MEXAL_BCF_PDF_SERVICE} from '../server/preparation-dispatch.js';
 import {validateSpecification} from '../server/product-specifications.js';
 import {createMesDdtPrinting} from '../server/ddt-mes-print.js';
 const {PGlite}=await import(process.env.PGLITE_MODULE);
@@ -69,6 +69,9 @@ test('MKT recognition retains ambiguities and pallet quantities cannot be forged
 test('full pallet, replay, reopen, partial correction, fresh verification, BCF and immutable artifacts',async()=>{
   const f=await fixture();
   try {
+    await f.sql.query('update warehouse_preparation_settings set ddt_pdf_path=$1',[MEXAL_BCF_PDF_SERVICE]);
+    let pdfRequests=0;
+    f.mexal.printMovementPdf=async document=>{pdfRequests++;assert.deepEqual(document,{sigla:'BC',serie:1,numero:123,cod_conto:'501.00001',cod_modulo:'F'});return f.mexal.getBinary();};
     f.mexal.raw.quantita[0][1]=4;
     await f.sql.exec("update workspace_product_specifications set data=data||'{\"boxesPerPallet\":\"2\"}' where article_code='IT0001'");
     ok(await f.call('begin',{reference:'OC+1+900'}));const pallet=event();
@@ -94,6 +97,7 @@ test('full pallet, replay, reopen, partial correction, fresh verification, BCF a
     assert.equal((await PDFDocument.load(Buffer.from(print.base64,'base64'))).getPageCount(),3);
     await f.sql.exec("update warehouse_preparation_settings set email_body='changed after emission'");
     ok(await f.call('finalize_documents'));assert.equal(f.mexal.sends,1);
+    assert.equal(pdfRequests,1);
     assert.equal((await f.sql.query('select count(*)::int n from warehouse_shipment_emails')).rows[0].n,3);
     await assert.rejects(f.sql.exec('delete from warehouse_preparation_events'),/immutabile/);
     await assert.rejects(f.sql.exec("update warehouse_preparation_documents set filename='changed'"),/immutabile/);
@@ -104,6 +108,17 @@ test('full pallet, replay, reopen, partial correction, fresh verification, BCF a
     await updateShipmentEmail(f.db,claim.job,'test-worker','complete','provider-123');
     await updateShipmentEmail(f.db,claim.job,'test-worker','retry','late timeout');
     assert.equal((await f.sql.query('select status from warehouse_shipment_emails where id=$1',[claim.job.id])).rows[0].status,'sent');
+    const legacy=await claimShipmentForHttpWorker(f.db,'legacy-aruba',{legacyAruba:true});
+    assert.equal(legacy.attachments.length,2);
+    assert.equal((await f.sql.query('select status from warehouse_shipment_emails where id=$1',[legacy.job.id])).rows[0].status,'sending');
+    // Claim response lost: the unchanged Aruba worker never received the job.
+    await f.sql.query("update warehouse_shipment_emails set lease_expires_at=now()-interval '1 second' where id=$1",[legacy.job.id]);
+    const nextLegacy=await claimShipmentForHttpWorker(f.db,'legacy-aruba-next',{legacyAruba:true});
+    assert.notEqual(nextLegacy.job.id,legacy.job.id);
+    assert.equal((await f.sql.query('select status from warehouse_shipment_emails where id=$1',[legacy.job.id])).rows[0].status,'uncertain');
+    await updateShipmentEmail(f.db,nextLegacy.job,'legacy-aruba-next','complete','aruba-message-id');
+    assert.equal((await f.sql.query('select status from warehouse_shipment_emails where id=$1',[nextLegacy.job.id])).rows[0].status,'sent');
+    assert.equal(await claimShipmentForHttpWorker(f.db,'legacy-aruba-late',{legacyAruba:true}),null);
     // Only trusted printer inventory can make a printer selectable.
     ok(await f.db.rpc('warehouse_print_worker',{p_station:'MAGAZZINO',p_action:'inventory',p_input:{printers:['Warehouse Laser']}}).then(r=>({statusCode:r.error?400:200,data:r.error || r.data})));
     await f.sql.exec("update warehouse_preparation_settings set ddt_printer_id='MAGAZZINO:Warehouse Laser',packing_printer_id='MAGAZZINO:Warehouse Laser'");
@@ -140,6 +155,30 @@ test('full pallet, replay, reopen, partial correction, fresh verification, BCF a
     await printing.sync(f.db,mesRequest);assert.equal(posts,2);assert.equal(accepted,1);
     f.readonly();assert.equal((await f.call('print_document',{kind:'bcf_print'})).statusCode,403);
     assert.equal((await f.call('ddt_configure',{backofficeEmails:['x@example.test']})).statusCode,403);
+  } finally {await f.sql.close();}
+});
+
+test('automatic Mexal verification preserves recipient and printer settings, checks a real PDF and audits only the integration change',async()=>{
+  const f=await fixture();
+  try {
+    const get=f.mexal.getJson.bind(f.mexal),post=f.mexal.postJson.bind(f.mexal);
+    f.mexal.getJson=async path=>path==='/help'?{risorse:[{regexp:'^/documenti/moduli-stampa/[A-Z]+$',method:'GET'}]}:path==='/documenti/moduli-stampa/BC'?{elenco_moduli_stampa_disponibili:[{codice:'BCF'}]}:get(path);
+    f.mexal.postJson=async(path,body)=>path.startsWith('/documenti/movimenti-magazzino/ricerca')?{dati:[{sigla:'BC',serie:1,numero:10,cod_conto:'501.00001'}]}:post(path,body);
+    f.mexal.printMovementPdf=()=>f.mexal.getBinary();
+    const initial=ok(await f.call('ddt_settings')).settings;
+    ok(await f.call('ddt_verify',{settingsVersion:initial.updated_at}));
+    const saved=ok(await f.call('ddt_settings')).settings;
+    assert.equal(saved.ddt_pdf_path,MEXAL_BCF_PDF_SERVICE);
+    assert.equal(saved.bcf_contract_verified,true);
+    assert.deepEqual(saved.backoffice_emails,initial.backoffice_emails);
+    assert.equal(saved.ddt_printer_id,initial.ddt_printer_id);
+    assert.equal(f.mexal.sends,0);
+    assert.match(saved.contract_evidence,/SHA256 [a-f0-9]{64}/);
+    assert.ok((await f.sql.query('select count(*)::int n from warehouse_dispatch_configuration_events')).rows[0].n>0);
+    f.mexal.printMovementPdf=async()=>{throw Error('PDF unavailable');};
+    assert.equal((await f.call('ddt_verify',{settingsVersion:saved.updated_at})).statusCode,409);
+    assert.equal(String(ok(await f.call('ddt_settings')).settings.updated_at),String(saved.updated_at));
+    f.readonly();assert.equal((await f.call('ddt_verify')).statusCode,403);
   } finally {await f.sql.close();}
 });
 

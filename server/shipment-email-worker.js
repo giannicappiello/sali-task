@@ -25,6 +25,15 @@ export async function updateShipmentEmail(db, job, worker, action, message='', d
   return checked(await db.rpc('warehouse_update_shipment_email', {p_id:job.id,p_worker:worker,p_token:job.lock_token,p_action:action,p_message:message,p_definitive:definitive}));
 }
 
+// The existing Aruba worker already supports multiple attachments and lock-token
+// acknowledgements. Mark before handing off to it: a lost claim response or an
+// ambiguous mail() result must stay uncertain, never be resent automatically.
+export async function claimShipmentForHttpWorker(db, worker, {legacyAruba=false}={}) {
+  const shipment = await claimShipmentEmail(db,worker);
+  if (shipment && legacyAruba) await updateShipmentEmail(db,shipment.job,worker,'sending');
+  return shipment;
+}
+
 export async function processNextShipmentEmailJob({supabase,smtp,workerId,isPermanentError=()=>false}) {
   const claimed = await claimShipmentEmail(supabase,workerId);
   if (!claimed) return {status:'idle'};

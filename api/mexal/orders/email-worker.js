@@ -3,7 +3,7 @@ import {Buffer} from 'node:buffer';
 import process from 'node:process';
 import { createClient } from "@supabase/supabase-js";
 import { loadOrderPdfEmailData } from "../../../server/orders/order-pdf-server.js";
-import { claimShipmentEmail, updateShipmentEmail } from '../../../server/shipment-email-worker.js';
+import { claimShipmentForHttpWorker, updateShipmentEmail } from '../../../server/shipment-email-worker.js';
 
 const LEASE_SECONDS = 300;
 
@@ -55,10 +55,9 @@ export default async function handler(req, res) {
 
     if (action === "claim") {
       const id = workerId(req);
-      // Old Aruba workers must not acquire DDT jobs until they support the
-      // durable before-send marker. Existing order mail stays compatible.
-      if (req.body?.shipment_protocol === 1) {
-        const shipment = await claimShipmentEmail(supabase,id);
+      const legacyAruba = req.body?.shipment_protocol == null && String(req.headers['x-worker-source'] || '') === 'aruba';
+      if (req.body?.shipment_protocol === 1 || legacyAruba) {
+        const shipment = await claimShipmentForHttpWorker(supabase,id,{legacyAruba});
         if (shipment) return res.status(200).json({status:'claimed',worker_id:id,email:{id:'ddt:'+shipment.job.id,
           lock_token:shipment.job.lock_token,destinatario:shipment.job.recipient,oggetto:shipment.job.subject,corpo:shipment.job.body},
           attachments:shipment.attachments.map(attachmentPayload)});

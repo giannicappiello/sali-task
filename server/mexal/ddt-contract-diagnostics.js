@@ -1,5 +1,6 @@
 import { findTechnicalCredentialPath } from "./full-help-download.js";
 import { createHash } from "node:crypto";
+import { PDFDocument } from 'pdf-lib';
 
 // Reads modules and renders an existing movement through the print-only service.
 // The ricerca POST searches existing records; it cannot issue a DDT.
@@ -31,7 +32,9 @@ export async function runDdtContractDiagnostics(client) {
       if (!first || first.sigla !== 'BC') throw new Error('Nessun documento BC disponibile nel campione.');
       const document = {...first,sigla:'BC',serie:Number(first.serie),numero:Number(first.numero),cod_modulo:'F'};
       const pdf = await client.printMovementPdf(document);
-      services = { ok:true, endpoint:'/webapi/servizi', command:'stampa_movimento_magazzino', module:'F', reference:`BC+${document.serie}+${document.numero}`, bytes:pdf.body.length, sha256:createHash('sha256').update(pdf.body).digest('hex') };
+      const pages = (await PDFDocument.load(pdf.body)).getPageCount();
+      if (!pages) throw new Error('PDF Mexal privo di pagine.');
+      services = { ok:true, endpoint:'/webapi/servizi', command:'stampa_movimento_magazzino', module:'F', reference:`BC+${document.serie}+${document.numero}`, bytes:pdf.body.length, pages, sha256:createHash('sha256').update(pdf.body).digest('hex') };
     } catch (error) { services = { ok: false, error: error.message }; }
   }
   return {
@@ -41,7 +44,7 @@ export async function runDdtContractDiagnostics(client) {
     modules,
     services,
     pdfEndpointAdvertised: relevant.some((item) => /pdf/i.test(item.regexp)),
-    contractVerified: false,
-    explanation: "La presenza del modulo non dimostra il contratto del PDF. Nessun documento emesso e nessuna configurazione modificata.",
+    contractVerified: services?.ok === true,
+    explanation: services?.ok ? "PDF originale recuperato dal servizio di stampa con modulo F. Nessun documento emesso e nessuna configurazione modificata." : "Recupero PDF non verificato. Nessun documento emesso e nessuna configurazione modificata.",
   };
 }

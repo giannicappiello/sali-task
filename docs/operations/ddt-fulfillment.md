@@ -70,6 +70,15 @@ l'emissione: **Completa documenti e invii** recupera esclusivamente gli artefatt
 
 ## PDF e email
 
+Il recupero del PDF usa `POST /webapi/servizi` con comando
+`stampa_movimento_magazzino` e `dati={sigla:BC,serie,numero,cod_conto,cod_modulo:F}`.
+Il 2 novembre 2026 la prova in produzione su BC+1+23 ha restituito un PDF
+di 564545 byte, SHA256 f22194398afbe0c3338106b08acaac74f925e28b7716aedb0a74ef6fb4b40065.
+La verifica automatica legge un BC esistente, richiede il modulo F, valida il
+PDF e registra evidenza e collegamento nella configurazione con controllo
+concorrenza. Non emette nuovi documenti. Il catalogo reale conferma BCF
+"Stampa Indirizzo" e BCS "Bolla senza Prezzi".
+
 Una transazione archivia BCF originale, PDF DDT con tre copie complete,
 packing list completa e una packing list per ciascun bancale. Quelle per
 bancale includono solo i relativi colli/lotti e i suoi totali/pesi, conservando
@@ -88,9 +97,13 @@ non si riprova automaticamente: il pannello richiede verifica, motivo e
 conferma esplicita dell'esito o di un nuovo tentativo. `sent` significa
 accettazione dal servizio email, non consegna nella casella finale.
 
-Aggiornare `hosting/aruba-order-email/worker.php` insieme al backend: solo
-worker che dichiarano `shipment_protocol=1` ricevono invii DDT. Anche il worker
-Node e la funzione Supabase utilizzano il nuovo dispatcher condiviso. Il cron
+Il worker Aruba esistente supporta gia allegati multipli e conferma con token.
+Per le richieste storiche `X-Worker-Source: aruba` senza `shipment_protocol`,
+il backend registra `sending` prima di restituire il messaggio: una risposta
+claim persa o un errore ambiguo resta `uncertain` senza reinvio automatico.
+I worker aggiornati dichiarano `shipment_protocol=1` e registrano il marker
+prima di chiamare `mail()`. Non occorre aggiornare il file Aruba per il flusso
+compatibile. Anche il worker Node e la funzione Supabase utilizzano il dispatcher condiviso. Il cron
 Aruba esistente recupera i retry quando è questo il trasporto attivo; non
 installare più scheduler inutilmente.
 

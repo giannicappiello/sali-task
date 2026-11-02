@@ -200,6 +200,7 @@ test("DDT retains all source row references and rejects extra products, incorrec
     [2, 22],
     [3, 23],
   ]);
+  assert.deepEqual(payload.id_riga,f.raw.id_riga);
   assert.deepEqual(payload.sigla_doc_orig, [[1, "OC"]]);
   assert.deepEqual(payload.sigla_ordine, [[1, "OC"]]);
   assert.deepEqual(payload.serie_ordine, [[1, 1]]);

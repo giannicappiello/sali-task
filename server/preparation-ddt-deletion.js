@@ -4,7 +4,7 @@ import {verifyOrphanDdtForDeletion,unwrap,fingerprint} from './order-preparation
 import {checked} from './order-preparation-auth.js';
 
 const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
-export const isKnownRejectedDdt=row=>row.status==='uncertain' && /^6001.*Mancano dei campi chiave e\/o obbligatori: sigla_ordine serie_ordine numero_ordine/.test(row.error || '');
+export const isKnownRejectedDdt=row=>row.status==='uncertain' && /^6001.*(?:Mancano dei campi chiave e\/o obbligatori: sigla_ordine serie_ordine numero_ordine|Codificati troppi codici lotto \(riga \d+\))/.test(row.error || '');
 export async function resetRejectedDdt({db,client,row,actor,eventId,findExisting}) {
   assert(isKnownRejectedDdt(row),'Rifiuto Mexal non riconosciuto: nessun ripristino automatico.',409);
   await noDispatch(db,row);

@@ -477,7 +477,9 @@ export function buildDdt(
   ])
     payload[field] = structuredClone(raw[field] || []);
 
-  payload.id_riga = allIds.map(([position]) => [position, 0]);
+  // In native conversion these are existing source rows, including descriptive rows.
+  // Zero denotes a newly inserted row and loses the source row context used for lots.
+  payload.id_riga = allIds.map(([position,id]) => [position,Number(id)]);
 
   payload.id_magazzino = Number(raw.id_magazzino) || source.lines[0].warehouse;
 

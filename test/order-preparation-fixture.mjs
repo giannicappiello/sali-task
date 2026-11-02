@@ -71,6 +71,7 @@ export async function preparationDatabase(PGlite) {
   await db.exec(await readFile(new URL('../supabase/migrations/20261102160000_ddt_print_copies.sql',import.meta.url),'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/20261102170000_reopen_deleted_orphan_ddt.sql',import.meta.url),'utf8'));
   await db.exec(await readFile(new URL('../supabase/migrations/20261102180000_reset_rejected_ddt.sql',import.meta.url),'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/20261102190000_rejected_lot_conversion.sql',import.meta.url),'utf8'));
   await db.exec(`update warehouse_preparation_settings set bcf_contract_verified=true,contract_evidence='Synthetic contract, no real emission',ddt_pdf_path='/documenti/movimenti-magazzino/{reference}/test-pdf',backoffice_emails='["office@example.test"]';`);
   return db;
 }
@@ -409,6 +410,7 @@ export function mexalFixture() {
         return { dati: fixture.ddt ? [fixture.ddt] : [] };
       if (path === "/documenti/movimenti-magazzino?sigla_trasformazione=BC") {
         if (!Array.isArray(payload.dt_ult_mod_orig)) throw Error('Concurrency token must be indexed by source header');
+        if (JSON.stringify(payload.id_riga)!==JSON.stringify(raw.id_riga)) throw Error('Native conversion must retain source row IDs');
         if (payload.sigla_ordine?.[0]?.[1] !== 'OC' || payload.serie_ordine?.[0]?.[1] !== 1 || payload.numero_ordine?.[0]?.[1] !== 900) throw Error('Native source order headers are mandatory');
         fixture.sends++;
         fixture.ddt = { ...structuredClone(payload), numero: 123,

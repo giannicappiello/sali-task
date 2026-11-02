@@ -1,4 +1,5 @@
 import {pages,unwrap} from '../order-preparation-mexal.js';
+import {findTechnicalCredentialPath} from './full-help-download.js';
 
 const fields=['sigla','cod_modulo','serie','numero','data_documento','data_ult_mod','id_riga','tp_riga','codice_articolo','quantita','id_magazzino','id_mag_riga','id_mag_da_riga','tipo_stato_riga','id_lotto','qta_lotto','nr_righe_lotto','pos_righe_lotto'];
 function technical(document) {
@@ -16,5 +17,10 @@ export async function preparationDdtDiagnostics(client,row) {
   catch(error){currentOrder={error:error.message};}
   let history;
   try {history=await client.orderHistory(row.source);}catch(error){history={error:error.message};}
-  return {readOnly:true,id:row.id,status:row.status,error:row.error,source:{reference:row.source.reference,year:row.source.year},expected:technical(row.export_payload),actual:actual.map(technical),currentOrder,history};
+  const contract={};
+  for(const path of ['/documenti/movimenti-magazzino?info=true','/documenti/movimenti-magazzino/righe?info=true']) {
+    try {const schema=await client.getJson(path);if(findTechnicalCredentialPath(schema))throw Error('Schema con campi riservati: visualizzazione bloccata.');contract[path]=schema;}
+    catch(error){contract[path]={error:error.message};}
+  }
+  return {readOnly:true,id:row.id,status:row.status,error:row.error,source:{reference:row.source.reference,year:row.source.year},expected:technical(row.export_payload),actual:actual.map(technical),currentOrder,history,contract};
 }

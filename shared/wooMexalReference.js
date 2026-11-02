@@ -1,4 +1,4 @@
-import {sameFirstDecimal} from '../integrations/salidischia-mexal-connector/src/money-policy.mjs';
+import {sameFirstDecimal,withinTenCents} from '../integrations/salidischia-mexal-connector/src/money-policy.mjs';
 export const MEXAL_OC_META_KEY = '_sdi_mexal_oc_v1';
 const reasons = {
   order_changed: 'L’ordine è cambiato dopo l’importazione: occorre riconciliarlo.',
@@ -6,7 +6,8 @@ const reasons = {
   address_invalid: 'Indirizzo o indicazioni di consegna da verificare.',
   api_error: 'Il gestionale o il sito ha restituito un errore API.',
   validation_failed: 'Dati ordine non validi per l’invio al gestionale.',
-  totals_mismatch: 'I totali differiscono alla prima cifra decimale: controllare righe, IVA e spedizione.',
+  totals_mismatch: 'I totali differiscono oltre la tolleranza di 10 centesimi: controllare righe, IVA e spedizione.',
+  customer_link_conflict: 'L’anagrafica Mexal è già associata a un altro collegamento: verificare il cliente prima di inviare.',
 };
 export function wooMexalSyncStatus(order) {
   const entries=(order?.meta_data||[]).filter(x=>x.key==='_sdi_mexal_sync_v1');
@@ -16,7 +17,8 @@ export function wooMexalSyncStatus(order) {
   const diagnostic=/^mexal_(\d{1,8})_([a-z][a-z0-9_]{0,63})$/.exec(v.error_code||'');
   const message=v.status==='blocked'?(diagnostic?`Mexal ha rifiutato il campo ${diagnostic[2]} (errore ${diagnostic[1]}).`:reasons[v.error_code]||reasons.validation_failed):null;
   const c=v.amount_comparison;
-  const validComparison=v.status==='verified'&&c?.policy==='first_decimal'&&sameFirstDecimal(c.sourceTotalCents,c.mexalTotalCents)&&sameFirstDecimal(c.sourceTaxCents,c.mexalTaxCents)&&c.totalDifferenceCents===c.mexalTotalCents-c.sourceTotalCents&&c.taxDifferenceCents===c.mexalTaxCents-c.sourceTaxCents;
+  const compare=c?.policy==='ten_cents'?withinTenCents:c?.policy==='first_decimal'?sameFirstDecimal:null;
+  const validComparison=v.status==='verified'&&compare&&compare(c.sourceTotalCents,c.mexalTotalCents)&&compare(c.sourceTaxCents,c.mexalTaxCents)&&c.totalDifferenceCents===c.mexalTotalCents-c.sourceTotalCents&&c.taxDifferenceCents===c.mexalTaxCents-c.sourceTaxCents;
   return {status:v.status,message,checkedAt:v.checked_at,catalogAt:Number.isFinite(Date.parse(v.catalog_at))?v.catalog_at:null,...(validComparison?{amountComparison:c}:{})};
 }
 

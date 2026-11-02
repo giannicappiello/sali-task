@@ -76,13 +76,36 @@ test('flusso completo adapter: crea cliente e destinazione, poi OC e rilettura',
  assert.equal(j.get(p.key).status,'verified');j.close();
 });
 
+test('codice fiscale normalizzato in maiuscolo senza cambiare sorgente o hash',async()=>{
+ const order=exampleOrder();order.meta_data.push({key:'billing_cf',value:' rssmra80a01h501u '});
+ const p=prepareOrder(order,options),original=p.customer.fiscalCode,c=testConfig(),api=fakeApi(),a=new MexalAdapter(api,c);
+ await a.preflight(p,c);const code=await a.ensureCustomer(p.customer);await a.verifyCustomer(code,p.customer);
+ assert.equal(api.clients[0].fiscalCode,'RSSMRA80A01H501U');assert.equal(p.customer.fiscalCode,original);
+});
+
+test('società: verifica ragione sociale e dati fiscali senza richiedere nome e cognome di persona fisica',async()=>{
+ const p=prepareOrder(exampleOrder(),options),c=testConfig(),api=fakeApi();
+ c.contract.customer.fields.type={field:'gest_per_fisica',encoding:'scalar',values:{azienda:'N',privato:'S'}};
+ const a=new MexalAdapter(api,c);await a.preflight(p,c);const code=await a.ensureCustomer(p.customer);await a.verifyCustomer(code,p.customer);
+ assert.equal(api.clients[0].gest_per_fisica,'N');assert.equal(api.clients[0].bill_first_name,undefined);assert.equal(api.clients[0].bill_last_name,undefined);assert.equal(api.clients[0].bill_company,p.customer.billing.company);
+ api.clients[0].bill_company='Altra società';await assert.rejects(a.verifyCustomer(code,p.customer),/billing.company/);
+});
+
+test('riconciliazione esplicita DIRECT a BtoC limitata al conto e alla identità fiscale autorizzati',async()=>{
+ const p=prepareOrder(exampleOrder(),options),api=fakeApi(),c={...testConfig(),externalPrefix:'WOO-',customerAlternateOverrides:{99:{customerCode:'501.77',previousAlternate:'DIRECT',alternate:'BtoC'}}};
+ api.clients.push({codice:'501.77',vat:p.customer.vat,bill_country:'IT',externalId:'DIRECT',data_ult_mod:'20261102 120000'});
+ const a=new MexalAdapter(api,c);await a.preflight(p,c);assert.equal(await a.ensureCustomer(p.customer),'501.77');await a.verifyCustomer('501.77',p.customer);assert.equal(api.clients[0].externalId,'BtoC');
+ c.customerAlternateOverrides[99].customerCode='501.78';await a.preflight(p,c);await assert.rejects(a.ensureCustomer(p.customer),/altro collegamento/);
+ c.customerAlternateOverrides[99].customerCode='501.77';api.clients[0].vat='different';await a.preflight(p,c);await assert.rejects(a.ensureCustomer(p.customer,{expectedCode:'501.77'}),/Cliente di recupero/);
+});
+
 test('calcolo preventivo e rilettura applicano la stessa regola, con prova nel journal',async()=>{
  for(const crossesBoundary of [false,true]){
   const api=fakeApi(),c={...testConfig(),totalsServiceVerified:true},j=new Journal(':memory:'),p=prepareOrder(exampleOrder(),options);
-  const totals={tot_imponibile:131.23,tot_imposta:crossesBoundary?28.90:28.88,spese_trasporto:15,totali_righe:p.lines.map(l=>({imponibile:l.netCents/100,quantita:l.quantity}))};
+  const totals={tot_imponibile:131.23,tot_imposta:crossesBoundary?28.98:28.88,spese_trasporto:15,totali_righe:p.lines.map(l=>({imponibile:l.netCents/100,quantita:l.quantity}))};
   api.calculateDocument=async()=>({data:totals});api.documentTotals=async()=>({data:totals});
   const action=syncOrder(p,{mexal:new MexalAdapter(api,c),config:c,journal:j,dryRun:false});
-  if(crossesBoundary){await assert.rejects(action,/prima cifra/);assert.equal(api.orders.length,0);}
+  if(crossesBoundary){await assert.rejects(action,/10 centesimi/);assert.equal(api.orders.length,0);}
   else{await action;const saved=j.get(p.key);assert.equal(saved.status,'verified');assert.equal(JSON.parse(saved.verification_json).totalDifferenceCents,1);assert.equal(api.orders.length,1);}
   j.close();
  }

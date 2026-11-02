@@ -59,7 +59,7 @@ test('carte e portafogli digitali conservano il pagamento configurato e i totali
  }
 });
 test('rifiuta ordini non pagati, rimborsi, dati incompleti e totali errati', () => {
-  for (const mutate of [o=>o.date_paid=null,o=>o.status='pending',o=>o.refunds=[{id:1}],o=>o.total='160.20',o=>o.currency='USD',o=>o.billing.address_1='',o=>o.line_items[0].sku='',o=>o.fee_lines=[{total:'1'}],o=>o.line_items[0].total_tax='17.00']) {
+  for (const mutate of [o=>o.date_paid=null,o=>o.status='pending',o=>o.refunds=[{id:1}],o=>o.total='160.21',o=>o.currency='USD',o=>o.billing.address_1='',o=>o.line_items[0].sku='',o=>o.fee_lines=[{total:'1'}],o=>o.line_items[0].total_tax='17.00']) {
     const o=exampleOrder();mutate(o);assert.throws(()=>prepareOrder(o,options));
   }
   assert.throws(()=>decimal('-1'));assert.throws(()=>decimal('1.001'));

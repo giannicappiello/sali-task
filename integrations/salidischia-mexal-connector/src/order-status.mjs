@@ -6,6 +6,7 @@ export function syncErrorCode(error,record){
  if(/già acquisito ma modificato/.test(message))return 'order_changed';
  if(/incompleto o incerto|riconciliazione/.test(message))return 'reconciliation_required';
  if(/HTTP \d+/.test(message))return 'api_error';
+ if(/Codice alternativo cliente già utilizzato/.test(message))return 'customer_link_conflict';
  if(/indirizzo|address|indicazioni/i.test(message))return 'address_invalid';
  if(/totali|Totali|IVA.*diversa|Totale.*diverso/.test(message))return 'totals_mismatch';
  return 'validation_failed';

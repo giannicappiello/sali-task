@@ -5,6 +5,7 @@ test('stato blocco usa fase ed errore originari senza diffondere dati cliente',a
  assert.equal(await publishOrderStatus({source,result:{mode:'attention-required'},record,error:new Error('incerto'),woo}),'updated');
  assert.equal(value.error_code,'mexal_6001_cod_alternativo');assert.equal(value.phase,'customer_pending');assert.equal(value.reference,null);
  assert.equal(syncErrorCode(new Error('dati cliente riservati')),'validation_failed');
+ assert.equal(syncErrorCode(new Error('Codice alternativo cliente già utilizzato da un altro collegamento.')),'customer_link_conflict');
 });
 test('stato invariato non riscrive il sito nello stesso intervallo orario',async()=>{
  const record={status:'verified',document_ref:'OC+1+17395'},source={id:13738,meta_data:[]};let value,calls=0;

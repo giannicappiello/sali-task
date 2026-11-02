@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import {resolveMexalSku} from './sku.mjs';
-import {sameFirstDecimal} from './money-policy.mjs';
+import {withinTenCents} from './money-policy.mjs';
 
 const text = value => String(value ?? '').trim();
 function fail(message) { throw new Error(message); }
@@ -80,7 +80,7 @@ export function prepareOrder(order, { site = 'https://salidischia.it', company, 
   if (shippingCents !== decimal(order.shipping_total || '0')) fail('Totale spedizione incoerente.');
   if (sum(shipping.map(row => row.taxCents)) !== decimal(order.shipping_tax || '0')) fail('IVA spedizione diversa dal totale.');
   const sourceTotalCents=decimal(order.total),sourceTaxCents=decimal(order.total_tax||'0');
-  if (!sameFirstDecimal(taxCents,sourceTaxCents)||!sameFirstDecimal(totalCents,sourceTotalCents)) fail('I totali dell’ordine non quadrano alla prima cifra decimale.');
+  if (!withinTenCents(taxCents,sourceTaxCents)||!withinTenCents(totalCents,sourceTotalCents)) fail('I totali dell’ordine non quadrano entro la tolleranza di 10 centesimi.');
   const date = text(order.date_created).slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || new Date(`${date}T12:00:00Z`).toISOString().slice(0, 10) !== date) fail('Data ordine non valida.');
   if (date.slice(0, 4) !== String(year)) fail('Anno dell’ordine diverso dall’esercizio configurato.');

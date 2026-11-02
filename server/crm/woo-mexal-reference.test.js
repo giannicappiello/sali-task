@@ -36,6 +36,15 @@ test('only a verified OC belonging to the same Woo order is imported', () => {
     assert.equal(wooMexalOrderReference({ ...source, meta_data: [{ ...meta, value }] }), null);
   }
 });
+
+test('ten-cent proof supports decimal boundaries and rejects excess, invalid policy and incorrect arithmetic',()=>{
+ const c={policy:'ten_cents',sourceTotalCents:2260,mexalTotalCents:2259,sourceTaxCents:408,mexalTaxCents:407,totalDifferenceCents:-1,taxDifferenceCents:-1};
+ const v={version:1,source_order_id:'13753',status:'verified',checked_at:'2026-11-02T13:00:00Z',amount_comparison:c};
+ const order={id:13753,meta_data:[{key:'_sdi_mexal_sync_v1',value:v}]};
+ assert.equal(wooMexalSyncStatus(order).amountComparison.totalDifferenceCents,-1);
+ v.amount_comparison={...c,mexalTotalCents:2270,totalDifferenceCents:10};assert.ok(wooMexalSyncStatus(order).amountComparison);
+ for(const bad of [{...c,mexalTotalCents:2271,totalDifferenceCents:11},{...c,mexalTaxCents:419,taxDifferenceCents:11},{...c,policy:'unknown'},{...c,totalDifferenceCents:0}]){v.amount_comparison=bad;assert.equal(wooMexalSyncStatus(order).amountComparison,undefined);}
+});
 const cached = { id: 'uuid', external_id: '13730', connection_id: 'c', raw_summary: { tax: 1, mexal_oc: 'OC/1/17358' } };
 const deps = overrides => ({ visibleOrder: async () => cached, connection: async () => ({ id: 'c', tipo: 'ecommerce', provider_code: 'woocommerce', configurazione: { site_url: 'https://store.example' } }), authorizeScreen: async () => {}, cachedLines: async () => [], secrets: async () => ({}), ...overrides });
 test('live OC is returned and cached only after order and screen authorization', async () => {

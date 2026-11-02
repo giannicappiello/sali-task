@@ -60,6 +60,14 @@ function verifyAddressNotes(actual,source){
 
 export class MexalAdapter {
   constructor(transport,config){this.api=transport;this.config=config;this.contract=config.contract;}
+  customerBindings(customer){
+    const fields=this.contract.customer.fields;
+    // In Mexal these are the legal person's name/surname, not company contacts.
+    // Companies are identified and verified through ragione_sociale instead.
+    return customer.type==='azienda'&&fields.type?.values?.azienda==='N'
+      ?Object.fromEntries(Object.entries(fields).filter(([path])=>!['billing.first_name','billing.last_name'].includes(path)))
+      :fields;
+  }
   async collection(path){
     let next=null;const seen=new Set(),rows=[];
     for(let page=0;page<(this.config.maxPages||200);page++){
@@ -84,7 +92,7 @@ export class MexalAdapter {
     // Mexal rejects ':' in cod_alternativo. Keep the source plan/hash unchanged.
     const id=/^guest:\d+$/.test(customer.externalId)?customer.externalId.replace('guest:','GUEST-'):customer.externalId;
     const split=splitAddress(customer.billing,this.config.addressMaxLength);
-    return {...customer,billing:split.address,addressNotes:split.notes,displayName:customer.billing.company||[customer.billing.last_name,customer.billing.first_name].filter(Boolean).join(' '),externalId:this.resolvedCustomerExternalId||(this.config.externalPrefix?`${this.config.externalPrefix}${id}`:`${this.plan.site}|${id}`)};
+    return {...customer,fiscalCode:text(customer.fiscalCode).toUpperCase().replace(/\s/g,''),billing:split.address,addressNotes:split.notes,displayName:customer.billing.company||[customer.billing.last_name,customer.billing.first_name].filter(Boolean).join(' '),externalId:this.resolvedCustomerExternalId||(this.config.externalPrefix?`${this.config.externalPrefix}${id}`:`${this.plan.site}|${id}`)};
   }
   destinationSource(customer,customerCode){
     const source=customer.shipping;
@@ -151,20 +159,28 @@ export class MexalAdapter {
       const code=text(mappedValue(row,c.code));assert(code,'Codice cliente non leggibile.');
       row=record(await this.api.request(`/clienti/${encodeURIComponent(code)}`));
       const oldExternal=text(mappedValue(row,c.fields.externalId));
+      // Explicit, per-account reconciliation only; a shared commercial label
+      // must never become a global lookup key or permit a different fiscal identity.
+      const override=this.config.customerAlternateOverrides?.[customer.externalId];
+      const authorizedAlternate=Boolean(override&&override.customerCode===code&&fiscalMatches[0]&&text(mappedValue(fiscalMatches[0],c.code))===code&&[override.previousAlternate,override.alternate].includes(oldExternal));
+      if(authorizedAlternate){
+        assert(text(override.alternate),'Codice alternativo autorizzato mancante.');
+        source.externalId=text(override.alternate);this.resolvedCustomerExternalId=source.externalId;
+      }
       // A returning guest has a different order ID. Reuse only the unique fiscal
       // match and preserve our existing alternate code; never match by name/email.
       const prefix=this.config.externalPrefix;
       if(oldExternal&&oldExternal!==source.externalId&&/^guest:\d+$/.test(customer.externalId)&&fiscalMatches[0]&&text(mappedValue(fiscalMatches[0],c.code))===code&&prefix&&oldExternal.startsWith(prefix)&&/^(?:GUEST-)?\d+$/.test(oldExternal.slice(prefix.length))){
         source.externalId=oldExternal;this.resolvedCustomerExternalId=oldExternal;
       }
-      assert(!oldExternal||oldExternal===source.externalId,'Codice alternativo cliente già utilizzato da un altro collegamento.');
+      assert(authorizedAlternate||!oldExternal||oldExternal===source.externalId,'Codice alternativo cliente già utilizzato da un altro collegamento.');
       for(const key of ['vat','fiscalCode']){
         const previous=text(mappedValue(row,c.fields[key]));
         assert(!source[key] || !previous || fiscal(previous,key==='vat'?source.billing.country:'')===fiscal(source[key],key==='vat'?source.billing.country:''),'Dati fiscali confliggenti: aggiornamento cliente bloccato.');
       }
     }
     if(expectedCode)assert(row&&text(mappedValue(row,c.code))===expectedCode,'Cliente di recupero non corrispondente: nessuna creazione consentita.');
-    const payload=encodeFields(source,c.fields);
+    const payload=encodeFields(source,this.customerBindings(customer));
     if(source.addressNotes.length){
       assert(!row||(row.descr_nota||[]).every(([,v])=>!text(v)||/^SDI(?::|-A2 )/.test(text(v))),'Note cliente già occupate: impossibile salvare le indicazioni senza sovrascriverle.');
       payload.descr_nota=source.addressNotes;
@@ -191,10 +207,10 @@ export class MexalAdapter {
     }
     return this.resolveCreated(await this.api.request('/clienti',{method:'POST',payload}),'/clienti',c.code);
   }
-  customerPatch(customer){return encodeFields(this.customerSource(customer),this.contract.customer.fields);}
+  customerPatch(customer){return encodeFields(this.customerSource(customer),this.customerBindings(customer));}
   async verifyCustomer(code,customer){
     const actual=record(await this.api.request(`/clienti/${encodeURIComponent(code)}`)),source=this.customerSource(customer);
-    verifyFields(actual,source,this.contract.customer.fields);verifyAddressNotes(actual,source);
+    verifyFields(actual,source,this.customerBindings(customer));verifyAddressNotes(actual,source);
   }
   async prepareDestination(code,plan){
     const c=this.contract.destination,source=this.destinationSource(plan.customer,code);

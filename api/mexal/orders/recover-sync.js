@@ -6,6 +6,7 @@ import { runOrderDestinationDiagnostics } from "../../../server/mexal/order-dest
 import { runCommissionDiagnostics } from "../../../server/mexal/commission-diagnostics.js";
 import { runCommissionRulesDiagnostics } from "../../../server/mexal/commission-rules-diagnostics.js";
 import { downloadFullMexalHelp } from "../../../server/mexal/full-help-download.js";
+import { runDdtContractDiagnostics } from "../../../server/mexal/ddt-contract-diagnostics.js";
 import { syncCommissionCategories } from "../../../server/mexal/sync-commission-categories.js";
 import { runListPriceCommissionsDiagnostics } from "../../../server/mexal/list-price-commissions-diagnostics.js";
 import {
@@ -26,6 +27,11 @@ export default async function handler(req, res) {
   try {
     const admin = createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false } });
     const authorization = await verifyUser(req, admin, { allowOrdersUser: true });
+
+    if (req.body?.action === "ddt-contract-diagnostics") {
+      if (!authorization?.isAdmin) return res.status(403).json({ error: "Diagnostica riservata agli amministratori." });
+      return res.status(200).json(await runDdtContractDiagnostics(buildMexalClient()));
+    }
 
     if (req.body?.action === "order-contract-diagnostics") {
       if (!authorization?.isAdmin) return res.status(403).json({ error: "Diagnostica riservata agli amministratori." });

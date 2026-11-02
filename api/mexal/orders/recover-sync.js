@@ -7,6 +7,7 @@ import { runCommissionDiagnostics } from "../../../server/mexal/commission-diagn
 import { runCommissionRulesDiagnostics } from "../../../server/mexal/commission-rules-diagnostics.js";
 import { downloadFullMexalHelp } from "../../../server/mexal/full-help-download.js";
 import { runDdtContractDiagnostics } from "../../../server/mexal/ddt-contract-diagnostics.js";
+import { preparationDdtDiagnostics } from '../../../server/mexal/preparation-ddt-diagnostics.js';
 import { syncCommissionCategories } from "../../../server/mexal/sync-commission-categories.js";
 import { runListPriceCommissionsDiagnostics } from "../../../server/mexal/list-price-commissions-diagnostics.js";
 import {
@@ -27,6 +28,14 @@ export default async function handler(req, res) {
   try {
     const admin = createClient(required("SUPABASE_URL"), required("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false } });
     const authorization = await verifyUser(req, admin, { allowOrdersUser: true });
+
+    if (req.body?.action === 'preparation-ddt-diagnostics') {
+      if (!authorization?.isAdmin) return res.status(403).json({error:'Diagnostica riservata agli amministratori.'});
+      if (!/^[a-f0-9-]{36}$/i.test(req.body.preparationId || '')) return res.status(400).json({error:'Identificativo allestimento non valido.'});
+      const {data:row,error}=await admin.from('warehouse_order_preparations').select('id,status,error,source,export_payload').eq('id',req.body.preparationId).single();
+      if(error)throw error;
+      return res.status(200).json(await preparationDdtDiagnostics(buildMexalClient({year:row.source.year,warehouse:null}),row));
+    }
 
     if (req.body?.action === "ddt-contract-diagnostics") {
       if (!authorization?.isAdmin) return res.status(403).json({ error: "Diagnostica riservata agli amministratori." });

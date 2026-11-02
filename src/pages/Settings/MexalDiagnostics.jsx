@@ -35,6 +35,7 @@ export default function MexalDiagnostics() {
   const [destinationClient, setDestinationClient] = useState("501.03320");
   const [result, setResult] = useState(null);
   const [ddtContract, setDdtContract] = useState(null);
+  const [preparationId,setPreparationId]=useState(''),[preparationDdt,setPreparationDdt]=useState(null);
   const [commercialResult, setCommercialResult] = useState(null);
   const [destinationResult, setDestinationResult] = useState(null);
   const [commissionResult, setCommissionResult] = useState(null);
@@ -58,6 +59,11 @@ export default function MexalDiagnostics() {
     try { setDdtContract(await postDiagnostics({ action: "ddt-contract-diagnostics" })); }
     catch (diagnosticError) { setError(diagnosticError.message || "Verifica moduli DDT non riuscita."); }
     finally { setLoading(""); }
+  }
+  async function executePreparationDdt() {
+    setLoading('preparation-ddt');setError('');
+    try {setPreparationDdt(await postDiagnostics({action:'preparation-ddt-diagnostics',preparationId}));}
+    catch(e){setError(e.message);}finally{setLoading('');}
   }
 
   async function executeCommercial() {
@@ -151,6 +157,7 @@ export default function MexalDiagnostics() {
   if (!isAdminUser) return <div className="orders-empty">Diagnostica Mexal riservata agli amministratori.</div>;
 
   return <div className="settings-page v4-page mexal-diagnostics-page">
+    <section className="panel settings-panel"><h3>Diagnostica collegamento OCM e BCF</h3><label>Identificativo allestimento<input value={preparationId} onChange={event=>setPreparationId(event.target.value)}/></label><button type="button" disabled={!!loading || !preparationId} onClick={()=>void executePreparationDdt()}>Leggi collegamento OCM e BCF</button>{preparationDdt && <JsonPanel title="Collegamento OCM e BCF reale" value={preparationDdt}/>}</section>
     <section className="panel settings-panel">
       <div className="panel-header"><h3>Verifica collegamento DDT Mexal</h3></div>
       <p>Legge il catalogo e i moduli BC reali. Non emette documenti e non modifica le configurazioni.</p>
